@@ -171,7 +171,10 @@
 # member refuses the run while its merge poll stays armed. After every member is
 # proven merged, the top pull request's merge commit tree must equal the gated
 # commit's tree; a mismatch or an unreadable tree is reported as actionable and
-# exits nonzero, while the landed merge stays recorded.
+# exits nonzero, while the landed merge stays recorded. GitHub's asynchronous
+# merge request binds only the top's head, so a push to a lower member between
+# its verification and the merge is not refused by the forge; that tree check is
+# what detects any such unverified content reaching the trunk.
 #
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [--allow-missing <check-name>] [-- <extra forge merge args>]
 #        fm-pr-merge.sh --stack <gated-head-sha> <top-task-id> <top-pr-url> --member <task-id> <pr-url> [--member <task-id> <pr-url>]... [-- --squash|--merge|--rebase]
