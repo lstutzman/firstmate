@@ -135,7 +135,46 @@
 # explicit captain instruction and never skips the live green check, the
 # away-record read, or a captain hold.
 #
+# Stack mode merges a GitHub stacked pull request set (GitHub's stacked pull
+# requests, built with the gh stack extension) through this same guarded path.
+# The caller names the gated head commit, the top pull request with its task,
+# and every other pull request in the stack with its own task; each constituent
+# pull request belongs to exactly one task. It is GitHub-only and attended-only:
+# merging a stack needs GitHub's asynchronous merge API, so stack mode is refused
+# while the away-posture record exists, like any other asynchronous merge path.
+# --attended-override, --allow-red, and --allow-missing are refused in stack
+# mode, and the only extra argument accepted is one of --squash, --merge, or
+# --rebase (squash by default). Every constituent task's control lock is held,
+# and its captain hold must be released, exactly as for a single merge. The
+# merge is refused unless every condition holds, each read live:
+#   - the top pull request's live head is the gated head commit;
+#   - every constituent task already recorded exactly this pull request as its
+#     pr= and a pr_head= (through bin/fm-pr-check.sh), read before this run
+#     re-records them, and each pull request's live head still equals that
+#     recorded head, so nothing changed since it was recorded;
+#   - GitHub reports exactly one open stack containing the top pull request,
+#     its members are exactly the named pull requests, every one is open, not a
+#     draft, and unmerged, and they chain linearly from the stack's base branch
+#     (the trunk) to the named top, so the top is the stack's top;
+#   - every member passes the single-merge mergeability and check verification,
+#     with required checks read from the trunk for every member, because GitHub
+#     applies the trunk's merge requirements to the whole stack;
+#   - the trunk's head is an ancestor of the gated head, so the merged trunk
+#     tree can equal the gated tree.
+# The stack is then merged with one asynchronous merge request on the top pull
+# request (PUT pulls/<top>/merge-async with sha=<gated head> and
+# merge_action=direct_merge), which binds the gated head and never enqueues; the
+# request is polled on a bounded cadence. gh stack merge is not used because it
+# cannot bind a head commit. Success is never taken from that request's status:
+# every member must read back as merged, each member individually proven merged
+# gets its merge outcome recorded as a single merge would, and any unproven
+# member refuses the run while its merge poll stays armed. After every member is
+# proven merged, the top pull request's merge commit tree must equal the gated
+# commit's tree; a mismatch or an unreadable tree is reported as actionable and
+# exits nonzero, while the landed merge stays recorded.
+#
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--allow-red <check-name>] [--allow-missing <check-name>] [-- <extra forge merge args>]
+#        fm-pr-merge.sh --stack <gated-head-sha> <top-task-id> <top-pr-url> --member <task-id> <pr-url> [--member <task-id> <pr-url>]... [-- --squash|--merge|--rebase]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
 # an auto-merge-queued or unconfirmed request leaves the poll armed and records
@@ -160,6 +199,30 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+
+# Stack-mode state is assigned here rather than inherited from the environment,
+# so nothing outside this run can switch a single merge into stack behavior.
+STACK_MODE=false
+STACK_GATED_HEAD=
+STACK_MERGE_METHOD=squash
+STACK_IDS=()
+STACK_URLS=()
+STACK_LOCKS=()
+FM_PR_STACK_TRUNK=
+FM_PR_STACK_API_VERSION=2026-03-10
+if [ "${1:-}" = --stack ]; then
+  if [ "$#" -lt 4 ]; then
+    echo "error: invalid stack merge request" >&2
+    exit 2
+  fi
+  STACK_MODE=true
+  STACK_GATED_HEAD=$2
+  shift 2
+  if ! fm_pr_head_valid "$STACK_GATED_HEAD"; then
+    echo "error: --stack requires the gated head commit as a full commit id" >&2
+    exit 2
+  fi
+fi
 
 if [ "$#" -lt 2 ]; then
   echo "error: invalid PR merge request" >&2
@@ -226,6 +289,13 @@ while [ "$#" -gt 0 ]; do
       echo "error: --allow-missing requires a separate check name argument" >&2
       exit 2
       ;;
+    --member)
+      [ "$STACK_MODE" = true ] || { echo "error: --member applies only to a --stack merge" >&2; exit 2; }
+      [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "error: --member requires a task id and a PR URL" >&2; exit 2; }
+      STACK_IDS+=("$2")
+      STACK_URLS+=("$3")
+      shift 3
+      ;;
     --) shift; break ;;
     *) break ;;
   esac
@@ -237,6 +307,81 @@ fi
 if [ "${#ALLOW_MISSING[@]}" -gt 0 ] && [ "$PROVIDER" = gitlab ]; then
   echo "error: --allow-missing does not apply to GitLab, where a merge already requires the head pipeline to have succeeded" >&2
   exit 2
+fi
+
+# Validate a stack merge request before any state is read. The top task and
+# pull request become entry 0 of STACK_IDS and STACK_URLS, ahead of the members.
+stack_validate_request() {
+  local i j member_id member_url parsed parsed_provider parsed_repo parsed_url
+  if [ "$PROVIDER" != github ]; then
+    echo "error: --stack merges only a GitHub stacked pull request set" >&2
+    return 1
+  fi
+  if [ "$ATTENDED_OVERRIDE" = true ] || [ "${#ALLOW_RED[@]}" -gt 0 ] || [ "${#ALLOW_MISSING[@]}" -gt 0 ]; then
+    echo "error: --stack does not accept --attended-override, --allow-red, or --allow-missing; every guard stays absolute for a stack" >&2
+    return 1
+  fi
+  if [ "${#STACK_IDS[@]}" -eq 0 ]; then
+    echo "error: --stack requires at least one --member below the top pull request" >&2
+    return 1
+  fi
+  case "$#" in
+    0) ;;
+    1)
+      case "$1" in
+        --squash) STACK_MERGE_METHOD=squash ;;
+        --merge) STACK_MERGE_METHOD=merge ;;
+        --rebase) STACK_MERGE_METHOD=rebase ;;
+        *)
+          echo "error: --stack accepts only --squash, --merge, or --rebase as an extra argument" >&2
+          return 1
+          ;;
+      esac
+      ;;
+    *)
+      echo "error: --stack accepts only --squash, --merge, or --rebase as an extra argument" >&2
+      return 1
+      ;;
+  esac
+  STACK_IDS=("$ID" "${STACK_IDS[@]}")
+  STACK_URLS=("$URL" "${STACK_URLS[@]}")
+  i=1
+  while [ "$i" -lt "${#STACK_IDS[@]}" ]; do
+    member_id=${STACK_IDS[$i]}
+    member_url=${STACK_URLS[$i]}
+    # Parsed in a subshell so FM_PR_* stays the top pull request's identity.
+    if ! fm_pr_task_id_valid "$member_id" \
+      || ! parsed=$(fm_pr_url_parse "$member_url" \
+        && printf '%s %s %s\n' "$FM_PR_PROVIDER" "$FM_PR_HOST/$FM_PR_PATH" "$FM_PR_URL"); then
+      echo "error: invalid stack member" >&2
+      return 1
+    fi
+    read -r parsed_provider parsed_repo parsed_url <<PARSED
+$parsed
+PARSED
+    if [ "$parsed_provider" != github ] || [ "$parsed_repo" != "$PR_HOST/$PR_PATH" ]; then
+      echo "error: stack member $parsed_url is not in the same GitHub repository as $URL" >&2
+      return 1
+    fi
+    STACK_URLS[i]=$parsed_url
+    i=$((i + 1))
+  done
+  i=0
+  while [ "$i" -lt "${#STACK_IDS[@]}" ]; do
+    j=$((i + 1))
+    while [ "$j" -lt "${#STACK_IDS[@]}" ]; do
+      if [ "${STACK_IDS[$i]}" = "${STACK_IDS[$j]}" ] || [ "${STACK_URLS[$i]}" = "${STACK_URLS[$j]}" ]; then
+        echo "error: a stack merge names each task and each pull request exactly once" >&2
+        return 1
+      fi
+      j=$((j + 1))
+    done
+    i=$((i + 1))
+  done
+}
+if [ "$STACK_MODE" = true ]; then
+  stack_validate_request "$@" || exit 2
+  set --
 fi
 
 caller_has_merge_method() {
@@ -398,8 +543,13 @@ MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 MERGE_CONTROL_LOCK=
 MERGE_META_LOCK=
 merge_control_cleanup() {
+  local stack_lock
   [ -z "$MERGE_META_LOCK" ] || fm_lock_release "$MERGE_META_LOCK" || true
   fm_afk_contract_lock_release || true
+  for stack_lock in "${STACK_LOCKS[@]+"${STACK_LOCKS[@]}"}"; do
+    fm_lock_release "$stack_lock" || true
+  done
+  STACK_LOCKS=()
   [ -z "$MERGE_CONTROL_LOCK" ] || fm_lock_release "$MERGE_CONTROL_LOCK" || true
 }
 trap merge_control_cleanup EXIT
@@ -412,6 +562,41 @@ fi
 if [ "$FM_BACKLOG_META_SPAWN_GEN" != "$MERGE_EXPECTED_SPAWN_GEN" ]; then
   echo "error: task $ID changed incarnation while waiting to merge; refusing" >&2
   exit 1
+fi
+
+# A stack merge holds every constituent task's control lock, taken after the
+# top task's in task-id order, with the same incarnation check the top passed.
+stack_lock_members() {
+  local member_id member_meta expected_gen lock
+  while IFS= read -r member_id; do
+    [ -n "$member_id" ] || continue
+    member_meta="$STATE/$member_id.meta"
+    if [ ! -f "$member_meta" ] || [ -L "$member_meta" ]; then
+      echo "error: task metadata is unavailable for stack member $member_id" >&2
+      return 1
+    fi
+    if ! fm_backlog_meta_spawn_gen_optional "$member_meta" "$STATE"; then
+      echo "error: PR merge refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
+      return 1
+    fi
+    expected_gen=$FM_BACKLOG_META_SPAWN_GEN
+    lock="$STATE/.control-$member_id.lock"
+    fm_lock_acquire_wait "$lock"
+    STACK_LOCKS+=("$lock")
+    if ! fm_backlog_meta_spawn_gen_optional "$member_meta" "$STATE"; then
+      echo "error: task $member_id changed while waiting to merge; refusing: $FM_BACKLOG_TRANSITION_ERROR" >&2
+      return 1
+    fi
+    if [ "$FM_BACKLOG_META_SPAWN_GEN" != "$expected_gen" ]; then
+      echo "error: task $member_id changed incarnation while waiting to merge; refusing" >&2
+      return 1
+    fi
+  done <<IDS
+$(printf '%s\n' "${STACK_IDS[@]:1}" | LC_ALL=C sort)
+IDS
+}
+if [ "$STACK_MODE" = true ]; then
+  stack_lock_members || exit 1
 fi
 
 # Reading the merge request state needs both tools. Report them together and
@@ -806,7 +991,9 @@ $red
 EOF
 
   unreported=''
-  if ! github_read_required_contexts "$base"; then
+  # A stack member's own base is the branch below it; GitHub applies the
+  # trunk's merge requirements to the whole stack, so stack mode reads those.
+  if ! github_read_required_contexts "${FM_PR_STACK_TRUNK:-$base}"; then
     while IFS= read -r line; do
       refusals="$refusals  - $line, so a required check that has not reported cannot be ruled out
 "
@@ -860,6 +1047,36 @@ EOF
     "$URL" "$live_head" >&2
   FM_PR_MERGE_HEAD=$live_head
   FM_PR_GITHUB_BASE=$base
+}
+
+# mergeable reads UNKNOWN for a short while after a push or base-branch change
+# while GitHub recomputes it; retry a bounded number of times, re-reading and
+# re-checking every live condition on each attempt, rather than refusing a pull
+# request that is simply still being computed. The delay is capped at 0-10
+# seconds so the wait stays short under the lock.
+github_verify_mergeable_with_retry() {
+  local mergeable_retry_delay mergeable_attempt=1 mergeable_status
+  mergeable_retry_delay=${FM_PR_GITHUB_MERGEABLE_RETRY_DELAY:-3}
+  case "$mergeable_retry_delay" in
+    [0-9] | 10) ;;
+    *) mergeable_retry_delay=3 ;;
+  esac
+  while :; do
+    mergeable_status=0
+    github_verify_mergeable || mergeable_status=$?
+    if [ "$mergeable_status" -eq 0 ]; then
+      return 0
+    fi
+    if [ "$mergeable_status" -ne 3 ] || [ "$mergeable_attempt" -ge 5 ]; then
+      break
+    fi
+    sleep "$mergeable_retry_delay"
+    mergeable_attempt=$((mergeable_attempt + 1))
+  done
+  if [ "$mergeable_status" -eq 3 ]; then
+    printf 'error: mergeability for %s is still being computed by GitHub; retry shortly\n' "$URL" >&2
+  fi
+  return 1
 }
 
 # Read one live GitHub pull request view after gh returns. The selected
@@ -1326,6 +1543,402 @@ gitlab_confirm_merged() {
   [ "$state" = merged ]
 }
 
+# Stack mode. bin/fm-pr-merge.sh's header owns the contract; these functions
+# reuse the single-merge gates and recorders by pointing the per-task globals at
+# one constituent task and pull request at a time. Entry 0 is the top.
+STACK_RECORDED_HEADS=()
+STACK_HEAD_REFS=()
+STACK_BASES=()
+STACK_AUTHORITIES=()
+STACK_PROVEN=()
+
+stack_select() {
+  ID=${STACK_IDS[$1]}
+  META="$STATE/$ID.meta"
+  fm_pr_url_parse "${STACK_URLS[$1]}" || return 1
+  URL=$FM_PR_URL
+  PR_NUMBER=$FM_PR_NUMBER
+}
+
+stack_gh_api() {
+  gh api -H "X-GitHub-Api-Version: $FM_PR_STACK_API_VERSION" "$@"
+}
+
+stack_numbers() {
+  local i=0
+  while [ "$i" -lt "${#STACK_URLS[@]}" ]; do
+    printf '%s\n' "${STACK_URLS[$i]##*/}"
+    i=$((i + 1))
+  done
+}
+
+# Each constituent task must already have recorded this pull request and its
+# head. Read before anything here re-records them, so a later live head that
+# differs proves the pull request changed after it was recorded.
+stack_read_recorded_heads() {
+  local i=0 recorded_url head refusals=''
+  while [ "$i" -lt "${#STACK_IDS[@]}" ]; do
+    stack_select "$i" || return 1
+    recorded_url=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
+    head=$(grep '^pr_head=' "$META" | tail -1 | cut -d= -f2- || true)
+    if [ "$recorded_url" != "$URL" ]; then
+      refusals="$refusals  - task $ID has not recorded $URL as its pull request
+"
+    elif ! fm_pr_head_valid "$head"; then
+      refusals="$refusals  - task $ID has no recorded head for $URL
+"
+    fi
+    STACK_RECORDED_HEADS[i]=$head
+    i=$((i + 1))
+  done
+  if [ -n "$refusals" ]; then
+    printf 'error: refusing to merge the stack topped by %s\n' "${STACK_URLS[0]}" >&2
+    printf '%s' "$refusals" >&2
+    return 1
+  fi
+}
+
+# The live stack must be the one this merge names, and every member open.
+stack_read_live() {
+  local json count stack expected live refusals='' number state draft merged head_ref i
+  if ! json=$(stack_gh_api "repos/$PR_OWNER/$PR_REPO/stacks?pull_request=${STACK_URLS[0]##*/}" 2>/dev/null) \
+    || [ -z "$json" ] \
+    || ! count=$(printf '%s' "$json" | jq -r 'if type == "array" then length else error("unreadable") end' 2>/dev/null); then
+    echo "error: could not read the GitHub stack for ${STACK_URLS[0]} before merging" >&2
+    return 1
+  fi
+  if [ "$count" -eq 0 ]; then
+    echo "error: refusing to merge: ${STACK_URLS[0]} is not in a GitHub stack" >&2
+    return 1
+  fi
+  if [ "$count" -ne 1 ] || ! stack=$(printf '%s' "$json" | jq -c '
+      .[0]
+      | if type == "object" and (.open | type) == "boolean"
+           and (.base.ref | type) == "string" and (.base.ref | length) > 0
+           and (.pull_requests | type) == "array"
+        then {
+          open,
+          trunk: .base.ref,
+          prs: [ .pull_requests[]
+            | if type == "object" and (.number | type) == "number"
+                 and (.state | type) == "string" and (.draft | type) == "boolean"
+                 and (.head.ref | type) == "string" and (.head.ref | length) > 0
+              then {number, state, draft, merged: (.merged_at != null), head_ref: .head.ref}
+              else error("invalid stack member") end ]
+        }
+        else error("unreadable stack") end' 2>/dev/null); then
+    echo "error: could not read the GitHub stack for ${STACK_URLS[0]} before merging" >&2
+    return 1
+  fi
+
+  FM_PR_STACK_TRUNK=$(printf '%s' "$stack" | jq -r '.trunk')
+  printf '%s' "$stack" | jq -e '.open == true' >/dev/null \
+    || refusals="$refusals  - the stack is not open
+"
+  expected=$(stack_numbers | jq -sc 'sort')
+  live=$(printf '%s' "$stack" | jq -c '[.prs[].number] | sort')
+  [ "$expected" = "$live" ] \
+    || refusals="$refusals  - the live stack holds pull requests $live, but this merge names $expected
+"
+  while read -r number state draft merged head_ref; do
+    [ -n "$number" ] || continue
+    case "$state" in
+      [oO][pP][eE][nN]) ;;
+      *) refusals="$refusals  - stack pull request #$number is $state, not open
+" ;;
+    esac
+    [ "$draft" = false ] \
+      || refusals="$refusals  - stack pull request #$number is a draft
+"
+    [ "$merged" = false ] \
+      || refusals="$refusals  - stack pull request #$number is already merged
+"
+    i=0
+    while [ "$i" -lt "${#STACK_URLS[@]}" ]; do
+      [ "${STACK_URLS[$i]##*/}" != "$number" ] || STACK_HEAD_REFS[i]=$head_ref
+      i=$((i + 1))
+    done
+  done <<MEMBERS
+$(printf '%s' "$stack" | jq -r '.prs[] | "\(.number) \(.state) \(.draft) \(.merged) \(.head_ref)"')
+MEMBERS
+
+  if [ -n "$refusals" ]; then
+    printf 'error: refusing to merge the stack topped by %s\n' "${STACK_URLS[0]}" >&2
+    printf '%s' "$refusals" >&2
+    return 1
+  fi
+}
+
+# Every member passes the single-merge verification, required checks read from
+# the trunk, and its live head still equals its recorded head; the top's live
+# head is the gated head. Every member is checked before refusing.
+stack_verify_members() {
+  local i=0 failed=0
+  while [ "$i" -lt "${#STACK_IDS[@]}" ]; do
+    stack_select "$i" || return 1
+    if ! github_verify_mergeable_with_retry; then
+      failed=1
+    elif [ "$FM_PR_MERGE_HEAD" != "${STACK_RECORDED_HEADS[$i]}" ]; then
+      printf 'error: refusing to merge the stack: %s moved to %s after task %s recorded head %s\n' \
+        "$URL" "$FM_PR_MERGE_HEAD" "$ID" "${STACK_RECORDED_HEADS[$i]}" >&2
+      failed=1
+    elif [ "$i" -eq 0 ] && [ "$FM_PR_MERGE_HEAD" != "$STACK_GATED_HEAD" ]; then
+      printf 'error: refusing to merge the stack: the top %s is at %s, not the gated head %s\n' \
+        "$URL" "$FM_PR_MERGE_HEAD" "$STACK_GATED_HEAD" >&2
+      failed=1
+    fi
+    STACK_BASES[i]=$FM_PR_GITHUB_BASE
+    i=$((i + 1))
+  done
+  [ "$failed" -eq 0 ]
+}
+
+# The members chain linearly from the trunk, each based on the head branch of
+# the one below, and the chain ends at the named top.
+stack_verify_chain() {
+  local i=0 links='' order
+  while [ "$i" -lt "${#STACK_URLS[@]}" ]; do
+    links="$links$(jq -nc --argjson number "${STACK_URLS[$i]##*/}" \
+      --arg head "${STACK_HEAD_REFS[$i]}" --arg base "${STACK_BASES[$i]}" \
+      '{number: $number, head: $head, base: $base}')
+"
+    i=$((i + 1))
+  done
+  if ! order=$(printf '%s' "$links" | jq -rs --arg trunk "$FM_PR_STACK_TRUNK" '
+      . as $prs
+      | reduce range(0; $prs | length) as $step ({at: $trunk, order: [], ok: true};
+          .at as $at
+          | [$prs[] | select(.base == $at)] as $next
+          | if .ok and ($next | length) == 1
+            then .order += [$next[0].number] | .at = $next[0].head
+            else .ok = false end)
+      | if .ok then .order | last | tostring else error("not a linear chain") end' 2>/dev/null); then
+    printf 'error: refusing to merge: the stack topped by %s does not chain linearly from %s\n' \
+      "${STACK_URLS[0]}" "$FM_PR_STACK_TRUNK" >&2
+    return 1
+  fi
+  if [ "$order" != "${STACK_URLS[0]##*/}" ]; then
+    printf 'error: refusing to merge: %s is not the top of its stack; #%s is\n' \
+      "${STACK_URLS[0]}" "$order" >&2
+    return 1
+  fi
+}
+
+# The trunk's head must be an ancestor of the gated head, or merging the stack
+# could not leave the trunk's tree equal to the gated tree.
+stack_verify_trunk_ancestry() {
+  local json status
+  if ! json=$(stack_gh_api "repos/$PR_OWNER/$PR_REPO/compare/$(github_urlencode_path_segment "$FM_PR_STACK_TRUNK")...$STACK_GATED_HEAD" 2>/dev/null) \
+    || ! status=$(printf '%s' "$json" | jq -r 'if type == "object" and (.status | type) == "string" then .status else error("unreadable") end' 2>/dev/null); then
+    printf 'error: could not read whether %s is an ancestor of the gated head %s before merging\n' \
+      "$FM_PR_STACK_TRUNK" "$STACK_GATED_HEAD" >&2
+    return 1
+  fi
+  if [ "$status" != ahead ]; then
+    printf 'error: refusing to merge: the gated head %s is %s relative to %s, so the merged %s tree could not equal the gated tree\n' \
+      "$STACK_GATED_HEAD" "$status" "$FM_PR_STACK_TRUNK" "$FM_PR_STACK_TRUNK" >&2
+    return 1
+  fi
+}
+
+# Merging a stack needs GitHub's asynchronous merge API, so stack mode is
+# attended-only. Each member's merge authority is resolved for persistence.
+stack_require_attended() {
+  local i=0 away_status
+  while [ "$i" -lt "${#STACK_IDS[@]}" ]; do
+    stack_select "$i" || return 1
+    away_status=0
+    require_current_away_authority || away_status=$?
+    [ "$away_status" -eq 0 ] || return "$away_status"
+    if [ "$FM_PR_AWAY_POSTURE" = true ]; then
+      echo "error: --stack is attended-only; while the away-posture record exists only a synchronous merge may run, and a stack merges through GitHub's asynchronous merge API" >&2
+      return 2
+    fi
+    STACK_AUTHORITIES[i]=$FM_PR_MERGE_AUTHORITY
+    i=$((i + 1))
+  done
+}
+
+# Record each member as a single merge does before the forge call, refusing
+# when the recording moved a member's head from the one just verified.
+stack_record_members() {
+  local i=0 head
+  while [ "$i" -lt "${#STACK_IDS[@]}" ]; do
+    stack_select "$i" || return 1
+    require_recorded_pr_identity || return 1
+    record_pr_metadata || return 1
+    head=$(grep '^pr_head=' "$META" | tail -1 | cut -d= -f2- || true)
+    if [ -n "$head" ] && [ "$head" != "${STACK_RECORDED_HEADS[$i]}" ]; then
+      printf 'error: refusing to merge the stack: %s moved to %s while it was being recorded\n' "$URL" "$head" >&2
+      return 1
+    fi
+    require_released_captain_hold || return 1
+    i=$((i + 1))
+  done
+}
+
+stack_release_locks() {
+  local stack_lock
+  fm_afk_contract_lock_release || true
+  for stack_lock in "${STACK_LOCKS[@]+"${STACK_LOCKS[@]}"}"; do
+    fm_lock_release "$stack_lock" || true
+  done
+  STACK_LOCKS=()
+  fm_lock_release "$MERGE_CONTROL_LOCK" || true
+  MERGE_CONTROL_LOCK=
+}
+
+stack_tree_of() {
+  stack_gh_api "repos/$PR_OWNER/$PR_REPO/commits/$1" 2>/dev/null \
+    | jq -r 'if type == "object" and (.commit.tree.sha | type) == "string" then .commit.tree.sha else error("unreadable") end' 2>/dev/null
+}
+
+# After every member is proven merged, the top's merge commit tree must be the
+# gated commit's tree.
+stack_verify_merged_tree() {
+  local merge_commit merged_tree gated_tree
+  stack_select 0 || return 1
+  if ! merge_commit=$(stack_gh_api "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER" 2>/dev/null \
+      | jq -r 'if type == "object" and (.merge_commit_sha | type) == "string" then .merge_commit_sha else error("unreadable") end' 2>/dev/null) \
+    || ! fm_pr_head_valid "$merge_commit" \
+    || ! merged_tree=$(stack_tree_of "$merge_commit") || [ -z "$merged_tree" ] \
+    || ! gated_tree=$(stack_tree_of "$STACK_GATED_HEAD") || [ -z "$gated_tree" ]; then
+    printf 'actionable: the stack topped by %s landed and is recorded as merged, but whether %s now has the gated tree could not be read\n' \
+      "$URL" "$FM_PR_STACK_TRUNK" >&2
+    return 1
+  fi
+  if [ "$merged_tree" != "$gated_tree" ]; then
+    printf 'actionable: the stack topped by %s landed and is recorded as merged, but %s at merge commit %s has tree %s, not the gated tree %s of %s\n' \
+      "$URL" "$FM_PR_STACK_TRUNK" "$merge_commit" "$merged_tree" "$gated_tree" "$STACK_GATED_HEAD" >&2
+    return 1
+  fi
+  printf 'verified: %s at merge commit %s has the gated tree of %s\n' \
+    "$FM_PR_STACK_TRUNK" "$merge_commit" "$STACK_GATED_HEAD"
+}
+
+stack_merge() {
+  local i status merge_status=0 merge_output merge_err request_status uuid
+  local poll_output poll_delay poll_attempts attempt=0 failed=0 unproven='' outcome_rc
+  stack_read_recorded_heads || return 1
+  stack_read_live || return 1
+  stack_verify_members || return 1
+  stack_verify_chain || return 1
+  stack_verify_trunk_ancestry || return 1
+  status=0
+  stack_require_attended || status=$?
+  [ "$status" -eq 0 ] || return "$status"
+  stack_record_members || return 1
+
+  # The away record is locked first, so this last presence and authority read
+  # and the forge request below share one live-owner critical section.
+  hold_away_record_for_merge || return 1
+  status=0
+  stack_require_attended || status=$?
+  [ "$status" -eq 0 ] || return "$status"
+
+  stack_select 0 || return 1
+  merge_err=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-stack.XXXXXX") || return 1
+  merge_output=$(stack_gh_api --method PUT "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/merge-async" \
+    -f "sha=$STACK_GATED_HEAD" -f "merge_method=$STACK_MERGE_METHOD" -f merge_action=direct_merge \
+    2>"$merge_err") || merge_status=$?
+  if [ "$merge_status" -ne 0 ]; then
+    stack_release_locks
+    [ -z "$merge_output" ] || printf '%s\n' "$merge_output" >&2
+    cat "$merge_err" >&2 2>/dev/null || true
+    rm -f "$merge_err"
+    printf 'error: GitHub refused the stack merge request for %s; nothing is reported as merged and every member'"'"'s merge poll remains armed\n' "$URL" >&2
+    return "$merge_status"
+  fi
+  rm -f "$merge_err"
+  FM_PR_GITHUB_MERGE_ACCEPTED=true
+  i=0
+  while [ "$i" -lt "${#STACK_IDS[@]}" ]; do
+    stack_select "$i" || return 1
+    FM_PR_MERGE_AUTHORITY=${STACK_AUTHORITIES[$i]}
+    persist_accepted_merge_authority || failed=1
+    i=$((i + 1))
+  done
+  [ "$failed" -eq 0 ] || return 1
+  stack_release_locks
+
+  # The request runs in the background on GitHub; wait a bounded time for it
+  # to settle. Its status only shapes the report: every member is proven below.
+  poll_delay=${FM_PR_STACK_POLL_DELAY:-5}
+  case "$poll_delay" in
+    [0-9] | [12][0-9] | 30) ;;
+    *) poll_delay=5 ;;
+  esac
+  poll_attempts=${FM_PR_STACK_POLL_ATTEMPTS:-60}
+  case "$poll_attempts" in
+    [1-9] | [1-9][0-9] | [1-9][0-9][0-9]) ;;
+    *) poll_attempts=60 ;;
+  esac
+  request_status=$(printf '%s' "$merge_output" | jq -r '.status // ""' 2>/dev/null || true)
+  uuid=$(printf '%s' "$merge_output" | jq -r '.details.uuid // ""' 2>/dev/null || true)
+  stack_select 0 || return 1
+  while [ "$request_status" = pending ] && [ -n "$uuid" ] && [ "$attempt" -lt "$poll_attempts" ]; do
+    sleep "$poll_delay"
+    attempt=$((attempt + 1))
+    if poll_output=$(stack_gh_api "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/merge-async/$uuid" 2>/dev/null) \
+      && [ -n "$poll_output" ]; then
+      merge_output=$poll_output
+      request_status=$(printf '%s' "$poll_output" | jq -r '.status // ""' 2>/dev/null || true)
+    fi
+  done
+
+  i=0
+  while [ "$i" -lt "${#STACK_IDS[@]}" ]; do
+    stack_select "$i" || return 1
+    STACK_PROVEN[i]=false
+    if github_read_outcome && [ "$FM_PR_GITHUB_MERGED" = true ]; then
+      STACK_PROVEN[i]=true
+      printf 'verified: %s is merged (state=%s, merged=%s, isInMergeQueue=%s)\n' \
+        "$URL" "$FM_PR_GITHUB_STATE" "$FM_PR_GITHUB_MERGED" "$FM_PR_GITHUB_QUEUED"
+    else
+      unproven="${unproven:+$unproven, }$URL"
+    fi
+    i=$((i + 1))
+  done
+
+  # Reached only for members the forge confirmed merged, so each landed
+  # constituent records its outcome exactly as a single merge does.
+  i=0
+  while [ "$i" -lt "${#STACK_IDS[@]}" ]; do
+    if [ "${STACK_PROVEN[$i]}" = true ]; then
+      stack_select "$i" || return 1
+      outcome_rc=0
+      fm_merge_outcome_report "$FM_HOME" "$STATE" "$ID" "$URL" self \
+        "${STACK_AUTHORITIES[$i]:-}" || outcome_rc=$?
+      case "$outcome_rc" in
+        0) ;;
+        3)
+          printf 'actionable: merged %s but could not report it upward: this home has no readable secondmate identity or parent binding (.fm-secondmate-home, .fm-secondmate-parent)\n' \
+            "$URL" >&2
+          ;;
+        *)
+          printf 'actionable: merged %s but could not record the outcome for supervision\n' "$URL" >&2
+          ;;
+      esac
+    fi
+    i=$((i + 1))
+  done
+
+  if [ -n "$unproven" ]; then
+    stack_select 0 || return 1
+    github_report_forge_output "$merge_output"
+    printf 'error: the stack merge request for %s ended %s, and these stack pull requests are not proven merged: %s; this run refuses instead of reporting an unproved merge, and their merge polls remain armed\n' \
+      "$URL" "${request_status:-unreadable}" "$unproven" >&2
+    return 1
+  fi
+  stack_verify_merged_tree || return 1
+}
+
+if [ "$STACK_MODE" = true ]; then
+  stack_status=0
+  stack_merge || stack_status=$?
+  exit "$stack_status"
+fi
+
 # Record before either forge call. This arms the merge poll without claiming a
 # landed outcome, so even a provider read failure after a real merge cannot
 # leave teardown without the PR identity it needs to verify the result.
@@ -1348,35 +1961,7 @@ case "$PROVIDER" in
       merge_args=(--squash)
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
-    # mergeable reads UNKNOWN for a short while after a push or base-branch
-    # change while GitHub recomputes it; retry a bounded number of times,
-    # re-reading and re-checking every live condition on each attempt, rather
-    # than refusing a pull request that is simply still being computed. The
-    # delay is capped at 0-10 seconds so the wait stays short under the lock.
-    mergeable_retry_delay=${FM_PR_GITHUB_MERGEABLE_RETRY_DELAY:-3}
-    case "$mergeable_retry_delay" in
-      [0-9] | 10) ;;
-      *) mergeable_retry_delay=3 ;;
-    esac
-    mergeable_attempt=1
-    while :; do
-      mergeable_status=0
-      github_verify_mergeable || mergeable_status=$?
-      if [ "$mergeable_status" -eq 0 ]; then
-        break
-      fi
-      if [ "$mergeable_status" -ne 3 ] || [ "$mergeable_attempt" -ge 5 ]; then
-        break
-      fi
-      sleep "$mergeable_retry_delay"
-      mergeable_attempt=$((mergeable_attempt + 1))
-    done
-    if [ "$mergeable_status" -ne 0 ]; then
-      if [ "$mergeable_status" -eq 3 ]; then
-        printf 'error: mergeability for %s is still being computed by GitHub; retry shortly\n' "$URL" >&2
-      fi
-      exit 1
-    fi
+    github_verify_mergeable_with_retry || exit 1
     # The away record is locked first, so this last presence and authority read
     # and the forge command below share one live-owner critical section.
     hold_away_record_for_merge || exit 1
