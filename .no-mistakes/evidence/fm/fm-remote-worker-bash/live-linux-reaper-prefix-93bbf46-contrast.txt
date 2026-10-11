@@ -1,0 +1,14 @@
+launcher BASH=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-bash5.onhj4B/inst/bin/bash (5.2.37(1)-release)
+ensure_worker rc=0 err=
+heartbeat+identity OK
+== worker processes (ps)
+60755 bash /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-live-lx.z3aigP/root/bin/fm-remote-job-worker.sh
+60810 bash /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-live-lx.z3aigP/root/bin/fm-remote-job-worker.sh --serve
+60918 bash /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-live-lx.z3aigP/root/bin/fm-remote-job-worker.sh --serve
+== real job through the Linux worker
+job exit=1 lines=       6 stderr_bytes=       0
+== prune the code root, then run the real orphan reaper
+reaper rc=0
+pid 60755 STILL ALIVE
+pid 60810 STILL ALIVE
+pid 60918 STILL ALIVE

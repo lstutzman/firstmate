@@ -1,0 +1,14 @@
+== host bash candidates: ls: /opt/homebrew/bin/bash: No such file or directory ls: /usr/local/bin/bash: No such file or directory  PATH bash=/bin/bash (3.2.57(1)-release)
+resolve_bash rc=1 bin=''
+write_launchagent rc=1 err=no bash 4 or newer is installed to run the remote job worker; install one (brew install bash) and rerun
+LaunchAgents dir contents: []
+== real doctor, check mode, disposable HOME
+mode=check
+platform=darwin
+check remote-job-worker=human: no bash 4 or newer is installed to run the remote job worker
+check remote-job-worker-loaded=skip: no bash 4 or newer is available to run the worker
+check remote-job-probe=skip: no bash 4 or newer is available to run the worker
+action: remote-job-worker: install bash 4 or newer (brew install bash), then rerun this command with --fix
+error: this host is not ready for a remote second mate; unresolved: remote-job-worker launchagent launchagent-loaded herdr-server
+doctor exit=1
+LaunchAgents dir contents after doctor: []

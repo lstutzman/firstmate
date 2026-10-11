@@ -1,0 +1,14 @@
+ok - the LaunchAgent launches the worker through the resolved bash and keeps its Aqua, KeepAlive and log contract
+ok - a LaunchAgent that runs the worker directly no longer matches and is rewritten
+ok - no bash >= 4 refuses the LaunchAgent write and names the gap
+ok - a stale-code crash heartbeat cannot count as replacement readiness
+ok - the live worker recreates missing readiness independently of a blocked sweep
+ok - a slow sequence-claim sweep keeps readiness fresh and cannot trigger a LaunchAgent bootout
+ok - concurrent Darwin ensures serialize one reload and adopt its fresh worker
+ok - stale readiness logs the named condition without reloading a verified launchd-tracked live owner
+ok - Darwin stops an untracked stale-code owner and starts the current worker through launchd
+ok - Darwin replaces a current-code owner that the loaded agent does not track
+ok - a fresh spawn survives when the caller that started it dies before publication
+ok - a dead repair-lock holder is reclaimed by one caller at a time
+ok - Darwin reload waits for asynchronous bootout cleanup before bootstrap (2s)
+ALL TESTS PASSED

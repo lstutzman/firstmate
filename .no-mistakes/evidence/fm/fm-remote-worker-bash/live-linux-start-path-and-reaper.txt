@@ -1,0 +1,15 @@
+launcher BASH=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-bash5.onhj4B/inst/bin/bash (5.2.37(1)-release)
+ensure_worker rc=0 err=
+heartbeat+identity OK
+== worker processes (ps)
+57264 /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-bash5.onhj4B/inst/bin/bash /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-live-lx.YOLjhe/root/bin/fm-remote-job-worker.sh
+57318 /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-bash5.onhj4B/inst/bin/bash /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-live-lx.YOLjhe/root/bin/fm-remote-job-worker.sh --serve
+57399 /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-bash5.onhj4B/inst/bin/bash /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-live-lx.YOLjhe/root/bin/fm-remote-job-worker.sh --serve
+== real job through the Linux worker
+job exit=1 lines=       6 stderr_bytes=       0
+== prune the code root, then run the real orphan reaper
+reaped abandoned remote job worker 57264 (pruned code root /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-live-lx.YOLjhe/root)
+reaper rc=0
+pid 57264 gone
+pid 57318 gone
+pid 57399 gone

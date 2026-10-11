@@ -1,0 +1,30 @@
+== resolve_bash (host candidates, bash5 first on PATH)
+rc=0 FM_REMOTE_JOB_BASH_BIN=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-bash5.onhj4B/inst/bin/bash
+write_launchagent rc=0 err=
+== ProgramArguments in written plist /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-live.tsVJaI/acct/Library/LaunchAgents/dev.firstmate.remote-job.plist
+["\/var\/folders\/w7\/_1vd8cbs0hd3vx7cndzrjzf40000gn\/T\/fm-bash5.onhj4B\/inst\/bin\/bash","\/private\/var\/folders\/w7\/_1vd8cbs0hd3vx7cndzrjzf40000gn\/T\/fm-live.tsVJaI\/root\/bin\/fm-remote-job-worker.sh"]
+== contract matches: yes
+bootstrap rc=0
+kickstart rc=0
+worker heartbeat + identity: OK
+	state = running
+	program = /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-bash5.onhj4B/inst/bin/bash
+	pid = 44436
+	last exit code = (never exited)
+		state = active
+		state = active
+== ps of worker pid 44436
+44436 /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-bash5.onhj4B/inst/bin/bash /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-live.tsVJaI/root/bin/fm-remote-job-worker.sh
+== stage real remote-job-probe job (fm-remote-doctor.sh --worker-tool-probe)
+job exit=1
+-- stdout
+required git=/usr/bin/git
+required jq=/usr/bin/jq
+required herdr=/opt/homebrew/bin/herdr
+required tasks-axi=/opt/homebrew/bin/tasks-axi
+required treehouse=MISSING
+required harness=MISSING
+-- stderr
+bootout rc=0
+worker gone after bootout
+== agent log
