@@ -120,7 +120,7 @@ start_worker() {
     fm_remote_job_start_linux_worker "$root" "$account_home" >&2 || exit 1
     deadline=$(( $(date +%s) + 10 ))
     while [ "$(date +%s)" -lt "$deadline" ]; do
-      pid=$(pgrep -f "^/bin/bash $root/bin/fm-remote-job-worker.sh\$" | head -n 1)
+      pid=$(pgrep -f "^([^ ]*/)?bash $root/bin/fm-remote-job-worker.sh\$" | head -n 1)
       if pid_is_numeric "$pid"; then
         printf '%s\n' "$pid"
         exit 0
