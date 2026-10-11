@@ -39,7 +39,7 @@ BASE_PATH="$TOOLS:/usr/bin:/bin:/usr/sbin:/sbin"
 
 # Stand-in interpreters that only answer the version probe, so the fixture
 # does not depend on which bash the host installs. The worker LaunchAgent runs
-# the worker through FM_REMOTE_JOB_BASH; CASE_JOB_BASH swaps it per case.
+# the worker through FM_TEST_REMOTE_JOB_BASH; CASE_JOB_BASH swaps it per case.
 JOB_BASH5="$TOOLS/bash5"
 JOB_BASH3="$TOOLS/bash3"
 cat > "$JOB_BASH5" <<'SH'
@@ -338,7 +338,7 @@ doctor() {
     FM_FAKE_DSCL_HANG="${CASE_DSCL_HANG:-0}" \
     FM_LAUNCH_AGENT_SHELL="$([ "${CASE_RESOLVE_DSCL:-0}" = 1 ] || printf '%s' "$CASE_LOGIN_SHELL")" \
     SHELL="${CASE_ENV_SHELL-${SHELL-}}" \
-    FM_REMOTE_JOB_BASH="${CASE_JOB_BASH-$JOB_BASH5}" \
+    FM_TEST_REMOTE_JOB_BASH="${CASE_JOB_BASH-$JOB_BASH5}" \
     FM_REMOTE_JOB_PLATFORM_OVERRIDE="${CASE_PLATFORM_OVERRIDE-}" \
     FM_REMOTE_JOB_ACTIVE="${CASE_REMOTE_JOB_ACTIVE-1}" \
     "$ROOT/bin/fm-remote-doctor.sh" "$@" 2>&1

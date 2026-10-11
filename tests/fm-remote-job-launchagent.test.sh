@@ -158,7 +158,7 @@ cat > "$FAKE_BASH3" <<'SH'
 exit 64
 SH
 chmod +x "$STUB_BIN/rmdir" "$STUB_BIN/touch" "$STUB_BIN/mv" "$STUB_BIN/launchctl" "$FAKE_BASH5" "$FAKE_BASH3"
-export FM_REMOTE_JOB_BASH="$FAKE_BASH5"
+export FM_TEST_REMOTE_JOB_BASH="$FAKE_BASH5"
 export PATH="$STUB_BIN:$PATH"
 export FM_TEST_REAL_RMDIR="$REAL_RMDIR" FM_TEST_LAUNCH_LOG="$LAUNCH_LOG"
 export FM_TEST_REAL_TOUCH="$REAL_TOUCH" FM_TEST_STALE_GATE="$TMP_ROOT/stale-gate"
@@ -234,11 +234,11 @@ pass 'a LaunchAgent that runs the worker directly no longer matches and is rewri
 # With no bash >= 4 there is nothing to launch the worker through, so the
 # library refuses to write an agent that cannot run and leaves the old one.
 cp "$FM_TEST_PLIST" "$TMP_ROOT/plist.before"
-FM_REMOTE_JOB_BASH="$FAKE_BASH3" fm_remote_job_resolve_bash && fail 'a bash older than 4 resolved'
-FM_REMOTE_JOB_BASH="$FAKE_BASH3" fm_remote_job_write_launchagent "$REMOTE_ROOT" "$ACCOUNT_HOME" \
+FM_TEST_REMOTE_JOB_BASH="$FAKE_BASH3" fm_remote_job_resolve_bash && fail 'a bash older than 4 resolved'
+FM_TEST_REMOTE_JOB_BASH="$FAKE_BASH3" fm_remote_job_write_launchagent "$REMOTE_ROOT" "$ACCOUNT_HOME" \
   && fail 'a LaunchAgent was written with no bash >= 4'
 cmp -s "$TMP_ROOT/plist.before" "$FM_TEST_PLIST" || fail 'a refused write changed the installed LaunchAgent'
-FM_REMOTE_JOB_BASH="$FAKE_BASH3" fm_remote_job_write_launchagent "$REMOTE_ROOT" "$ACCOUNT_HOME" 2>/dev/null
+FM_TEST_REMOTE_JOB_BASH="$FAKE_BASH3" fm_remote_job_write_launchagent "$REMOTE_ROOT" "$ACCOUNT_HOME" 2>/dev/null
 case "$FM_REMOTE_JOB_ERROR" in
   *'bash 4'*) ;;
   *) fail "the refused write did not name the bash gap: ${FM_REMOTE_JOB_ERROR:-no diagnostic}" ;;

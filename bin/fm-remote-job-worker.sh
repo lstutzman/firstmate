@@ -1292,7 +1292,7 @@ worker_supervise_linux() {
       return 0
     fi
     started=$SECONDS
-    "$SCRIPT_DIR/fm-remote-job-worker.sh" --serve &
+    "$BASH" "$SCRIPT_DIR/fm-remote-job-worker.sh" --serve &
     WORKER_SUPERVISED_PID=$!
     wait "$WORKER_SUPERVISED_PID" 2>/dev/null
     child_status=$?
