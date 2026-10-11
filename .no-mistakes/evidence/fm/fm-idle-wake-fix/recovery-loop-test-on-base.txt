@@ -1,0 +1,4 @@
+T2_WATCH_OUTPUT=signal: /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-watch-recovery-loop.QLlhma/recovery-gap-successor/state/crew.status 
+T2_QUEUE_ROW=1791749974	2	signal	crew.status	signal: /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-watch-recovery-loop.QLlhma/recovery-gap-successor/state/crew.status
+ok - a resurfacing handling successor stays alive and supervises instead of going blind
+not ok - a handling successor never surfaced an appended inbox row: 

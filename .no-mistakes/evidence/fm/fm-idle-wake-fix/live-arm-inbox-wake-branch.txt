@@ -1,0 +1,29 @@
+[21:20:28] start handling-successor arm (as the Claude Stop hook does after an actionable close)
+[21:20:31] successor arm output so far:
+    watcher: started pid=10321 (beacon fresh) recovery-generation=pred.1.aaa
+[21:20:31] start a plain foreground arm (next Stop's arm)
+[21:20:37] after 9s idle - successor alive? yes; fg alive? yes
+    successor out:
+      watcher: started pid=10321 (beacon fresh) recovery-generation=pred.1.aaa
+    fg out:
+      watcher: attached pid=10321 (beacon 0s)
+[21:20:37] captain taps a decision: fm-inbox.sh note
+queued 1791750037-7wsm0w
+  Captain's Log: decision ACCEPTED for option B
+  firstmate will pick this up at its next check.
+    inbox rc=0
+    queue now:
+      1791750028	1	check	predecessor	check: predecessor delivered wake
+      1791750037	2	check	inbox:1791750037-7wsm0w	check: captain inbox note 1791750037-7wsm0w - Captain's Log: decision ACCEPTED for option B
+[21:20:48] after note - successor alive? no; fg alive? no
+    successor out:
+      watcher: started pid=10321 (beacon fresh) recovery-generation=pred.1.aaa
+      check: rearm-resurface
+    fg out:
+      watcher: attached pid=10321 (beacon 0s)
+      check: rearm-resurface
+[21:20:48] start the NEXT handling successor (after the inbox wake was delivered); must stay quiet
+[21:20:58] next successor alive after 10s? yes
+    watcher: started pid=17345 (beacon fresh) recovery-generation=13209.1791750037.iduFxv
+    no re-announcement
+[21:20:59] lab removed

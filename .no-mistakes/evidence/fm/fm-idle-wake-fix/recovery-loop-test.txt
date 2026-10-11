@@ -1,0 +1,9 @@
+T2_WATCH_OUTPUT=signal: /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-watch-recovery-loop.Xg2n4k/recovery-gap-successor/state/crew.status 
+T2_QUEUE_ROW=1791749901	2	signal	crew.status	signal: /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-watch-recovery-loop.Xg2n4k/recovery-gap-successor/state/crew.status
+ok - a resurfacing handling successor stays alive and supervises instead of going blind
+T3_WATCH_OUTPUT=check: rearm-resurface 
+ok - a handling successor surfaces a row appended after it started, and only that
+T1_MESSAGES=1
+T1_LOCK_PID=59140
+T1_MARKER=announced:downtime:seed.1.aaa
+ok - unacknowledged recovery is announced at most once per generation and the successor stays alive
