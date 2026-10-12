@@ -1,0 +1,89 @@
+=== S1: config/typesafe-base-url -> local Jev, no key
+exit=0
+--- stdout
+dispatch-resolve:
+  status: escalate
+  model: -   latency_ms: 0   tokens: 10/1
+  rule: rule_1 (A simple bug fix with a stated root cause.)   confidence: 0.95
+  probabilities: default=0.05 rule_1=0.95
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr
+--- requests received by local Jev:
+{"path": "/v1/systemone", "authorization": null, "model": "jev-latest", "options": ["default", "rule_1"]}
+=== S2: hosted key in .env and env + custom URL
+exit=0
+--- stdout
+dispatch-resolve:
+  status: escalate
+  model: -   latency_ms: 0   tokens: 10/1
+  rule: rule_1 (A simple bug fix with a stated root cause.)   confidence: 0.95
+  probabilities: default=0.05 rule_1=0.95
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr
+--- requests received by local Jev:
+{"path": "/v1/systemone", "authorization": null, "model": "jev-latest", "options": ["default", "rule_1"]}
+=== S3: token file + custom model + hosted key present
+exit=0
+--- stdout
+dispatch-resolve:
+  status: escalate
+  model: -   latency_ms: 0   tokens: 10/1
+  rule: rule_1 (A simple bug fix with a stated root cause.)   confidence: 0.95
+  probabilities: default=0.05 rule_1=0.95
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr
+--- requests received by local Jev:
+{"path": "/v1/systemone", "authorization": "Bearer LOCAL-JEV-TOKEN-abc123", "model": "jev-local-test", "options": ["default", "rule_1"]}
+=== S4: TYPESAFE_BASE_URL env overrides config (config points to dead port 1)
+exit=0
+--- stdout
+dispatch-resolve:
+  status: escalate
+  model: -   latency_ms: 0   tokens: 10/1
+  rule: rule_1 (A simple bug fix with a stated root cause.)   confidence: 0.95
+  probabilities: default=0.05 rule_1=0.95
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr
+--- requests received by local Jev:
+{"path": "/v1/systemone", "authorization": null, "model": "jev-latest", "options": ["default", "rule_1"]}
+=== S5a: http:/// rejected
+exit=2
+--- stdout
+--- stderr
+error: typesafe base URL has no host: http:
+--- requests received by local Jev:
+=== S5b: ftp:// rejected
+exit=2
+--- stdout
+--- stderr
+error: typesafe base URL must be an http:// or https:// URL: ftp://jev.local:8800
+--- requests received by local Jev:
+=== S6: configured token file missing
+exit=2
+--- stdout
+--- stderr
+error: typesafe token file is not a readable file: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-jev-srv.rsehw4/does-not-exist
+--- requests received by local Jev:
+=== S7: nothing configured -> off
+exit=0
+--- stdout
+--- stderr
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.BgiIq2/.env, and no custom base URL or token file configured)
+--- requests received by local Jev:
+=== S8: local Jev down -> status error, exit 0
+exit=0
+--- stdout
+dispatch-resolve:
+  status: error
+  reason: http 000 after 0 ms: 
+--- stderr
+dispatch-resolve: error (http 000 after 0 ms: )
+--- requests received by local Jev:

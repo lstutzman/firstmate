@@ -1,0 +1,8 @@
+=== I1: primary home config propagated to a secondmate home
+propagate exit=0
+typesafe-base-url: http://127.0.0.1:18831
+typesafe-model: jev-local-test
+typesafe-token-file: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-jev-srv.rsehw4/jev-token
+secondmate resolver exit=0
+--- request seen by local Jev from secondmate:
+{"path": "/v1/systemone", "authorization": "Bearer LOCAL-JEV-TOKEN-abc123", "model": "jev-local-test", "options": ["default", "rule_1"]}

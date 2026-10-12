@@ -1,0 +1,19 @@
+=== B1: nothing configured, rule has typed-only defect (approval: firstmate) -> untyped check, silent
+exit=0
+(no CREW_DISPATCH line)
+=== B2: config/typesafe-base-url set, no key -> typed checks run and report the defect
+exit=0
+CREW_DISPATCH: invalid config/crew-dispatch.json - approval must be "captain" when present
+=== B2b: TYPESAFE_BASE_URL env set, no key -> typed checks run
+exit=0
+CREW_DISPATCH: invalid config/crew-dispatch.json - approval must be "captain" when present
+=== B3: host-less base URL reported by bootstrap
+exit=0
+CREW_DISPATCH: invalid typesafe base URL - typesafe base URL has no host: http:
+=== B4: missing token file reported by bootstrap
+exit=0
+CREW_DISPATCH: invalid typesafe token file - typesafe token file is not a readable file: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-jev-srv.rsehw4/missing-token
+=== B5: valid token file alone -> typed checks run, token never printed
+exit=0
+CREW_DISPATCH: invalid config/crew-dispatch.json - approval must be "captain" when present
+0
