@@ -560,6 +560,22 @@ test_verified_merge_closes_decisions_naming_the_pr() {
   pass "a verified merge closes the open asks naming that exact PR URL"
 }
 
+# The merge poll records an outcome through the same library without having
+# loaded the decision fold itself; it must still close the merged PR's asks.
+test_polled_merge_closes_decisions_naming_the_pr() {
+  local case_dir open
+  case_dir=$(make_case poll-closes-merge-word-asks)
+  printf 'needs-decision [key=merge-word]: merge https://github.com/example/repo/pull/9?\n' \
+    > "$case_dir/state/mate.status"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" bash -c '
+    . "$1/bin/fm-merge-outcome-lib.sh"
+    fm_merge_outcome_report "$2" "$3" task-x1 https://github.com/example/repo/pull/9 poll external
+  ' _ "$ROOT" "$case_dir/home" "$case_dir/state" || fail "the polled outcome was not recorded"
+  open=$(bash -c '. "$1/bin/fm-classify-lib.sh"; scan_open_decisions "$2"' _ "$ROOT" "$case_dir/state")
+  assert_not_contains "$open" "pull/9?" "a polled merge left the merged PR's ask open"
+  pass "a polled merge closes the open asks naming that exact PR URL"
+}
+
 # The forge call is the point of no return: once gh-axi has merged, nothing this
 # script does afterwards can un-merge it. Proving pr= is already in the task's
 # meta at that moment is what makes a later failure unable to lose the merge.
@@ -2392,6 +2408,7 @@ test_github_agreeing_queue_rules_keep_retry_guidance
 test_github_conflicting_queue_rules_report_ambiguity
 test_verified_merge_records_pr_and_head
 test_verified_merge_closes_decisions_naming_the_pr
+test_polled_merge_closes_decisions_naming_the_pr
 test_pr_metadata_is_recorded_before_the_forge_call
 test_merge_failure_propagates_after_recording
 test_github_open_unqueued_outcome_refuses
