@@ -194,6 +194,50 @@ assert_absent "$LOG/argv" "absent key never calls curl"
 assert_absent "$LOG/quota-axi.calls" "absent key never reads quota-axi"
 pass "absent key is off: one stderr line, exit 0, no network call"
 
+# --- configurable base URL: config file, env override, keyless local Jev -----
+URL_FILE="$HOME_DIR/config/typesafe-base-url"
+LOCAL_JEV=http://slartibartfast.tail299042.ts.net:8800
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+printf '%s\n' '# no URL here, comment only' '' > "$URL_FILE"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$(cat "$LOG/argv")" 'https://api.typesafe.ai/v1/systemone' "a URL file with no URL line keeps the default endpoint"
+rm -f "$URL_FILE"
+reset_log
+printf '%s\n' '# local Jev' "$LOCAL_JEV/" > "$URL_FILE"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "config file URL exits 0"
+assert_contains "$(cat "$LOG/argv")" "$LOCAL_JEV/v1/systemone" "config/typesafe-base-url sets the endpoint, trailing slash trimmed"
+assert_contains "$(cat "$LOG/header")" "Authorization: Bearer $KEY" "a key is still sent to a configured URL when present"
+reset_log
+TYPESAFE_BASE_URL=http://env-jev.example:9000 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$(cat "$LOG/argv")" 'http://env-jev.example:9000/v1/systemone' "TYPESAFE_BASE_URL overrides the config file"
+reset_log
+run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "a configured URL works without a key"
+assert_contains "$out" '  status: clear' "keyless local Jev produces a clear result"
+assert_contains "$(cat "$LOG/argv")" "$LOCAL_JEV/v1/systemone" "keyless request goes to the configured URL"
+assert_not_contains "$(cat "$LOG/argv")" '@/dev/fd/3' "keyless request sends no auth header"
+assert_not_contains "$(cat "$LOG/argv")" 'Authorization' "keyless request names no Authorization header"
+assert_not_contains "$err" 'dispatch-resolve: off' "a configured URL is the on switch"
+for bad in 'ftp://jev.example' 'jev.example:8800' 'http://' 'http://jev example'; do
+  reset_log
+  printf '%s\n' "$bad" > "$URL_FILE"
+  run code out err "$BRIEF" --project pager
+  expect_code 2 "$code" "invalid base URL rejected: $bad"
+  assert_contains "$err" 'typesafe base URL' "invalid base URL is named: $bad"
+  assert_absent "$LOG/argv" "invalid base URL never reaches curl: $bad"
+done
+rm -f "$URL_FILE"
+reset_log
+TYPESAFE_BASE_URL=ftp://nope run code out err "$BRIEF" --project pager
+expect_code 2 "$code" "invalid env base URL rejected"
+reset_log
+run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "no URL and no key is off again"
+assert_contains "$err" 'dispatch-resolve: off' "unset URL keeps the off behaviour"
+pass "base URL: default unchanged, file used, env overrides, keyless custom URL on, invalid rejected"
+
 # --- .env key, and the environment wins over it ------------------------------
 printf '%s\n' '# local secrets' 'FMX_PAIRING_TOKEN=abc' "export TYPESAFE_API_KEY=\"$KEY\"" > "$HOME_DIR/.env"
 reset_log

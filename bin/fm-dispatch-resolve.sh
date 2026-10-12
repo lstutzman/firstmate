@@ -8,13 +8,23 @@
 # Opt-in gate: TYPESAFE_API_KEY non-empty in this process environment, else a
 #   TYPESAFE_API_KEY= line in $FM_HOME/.env read with fmx_env_get, the same
 #   accessor as FMX_PAIRING_TOKEN (bin/fm-env-lib.sh). The environment wins.
-#   Absent in both: one "dispatch-resolve: off" line on stderr, nothing on
-#   stdout, exit 0, no network call, so firstmate dispatches exactly as today.
+#   A configured non-default base URL (below) is also an on switch, with no key.
+#   Neither a key nor a custom URL: one "dispatch-resolve: off" line on stderr,
+#   nothing on stdout, exit 0, no network call, so firstmate dispatches
+#   exactly as today.
+#
+# Base URL: TYPESAFE_BASE_URL in the environment, else the first non-blank,
+#   non-# line of config/typesafe-base-url, else https://api.typesafe.ai. Only
+#   http:// and https:// URLs with no whitespace are accepted; anything else is
+#   a configuration error (exit 2) before any call. Trailing slashes are
+#   trimmed. Point it at a local System One (for example
+#   http://host:8800); with no key the request carries no Authorization
+#   header, with a key it still carries the bearer header.
 #   The key lives in one shell variable and reaches curl as a header read from
 #   a file descriptor, never on argv; nothing logs or writes it.
 #
 # What it does when on with at least one rule: one POST to
-#   https://api.typesafe.ai/v1/systemone with the project name and the brief's
+#   <base URL>/v1/systemone with the project name and the brief's
 #   `## Captain's intent` and `## Firstmate spec` sections, tagged when it is a
 #   scout brief (the whole brief when it has neither section), as state and
 #   ONE Choice question whose options are every rule's `when` from
@@ -63,7 +73,8 @@
 #   actionable, never selected around.
 #
 # Environment:
-#   TYPESAFE_API_KEY is the only resolver-specific environment setting.
+#   TYPESAFE_API_KEY and TYPESAFE_BASE_URL are the resolver-specific
+#   environment settings.
 #
 # Authority: this tool never replaces firstmate's judgment, quota-array-dispatch,
 #   the captain-approval gate, or fm-spawn.sh validation; it publishes one
@@ -92,7 +103,7 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
 CONFIDENCE_FLOOR=0.6
 TS_MODEL=jev-latest
-TS_BASE=https://api.typesafe.ai
+TS_DEFAULT_BASE=https://api.typesafe.ai
 TS_TIMEOUT=5
 DEFAULT_WHEN="No listed rule applies to this task."
 
@@ -120,12 +131,33 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# ---- base URL ------------------------------------------------------------------
+TS_BASE=${TYPESAFE_BASE_URL:-}
+if [ -z "$TS_BASE" ] && [ -r "$CONFIG/typesafe-base-url" ]; then
+  TS_BASE=$(awk '/^[[:space:]]*(#|$)/ { next } { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }' "$CONFIG/typesafe-base-url")
+fi
+if [ -n "$TS_BASE" ]; then
+  case "$TS_BASE" in
+    http://?*|https://?*) ;;
+    *) die "typesafe base URL must be an http:// or https:// URL: $TS_BASE" ;;
+  esac
+  case "$TS_BASE" in
+    *[[:space:]]*) die "typesafe base URL must not contain whitespace: $TS_BASE" ;;
+  esac
+  while [ "${TS_BASE%/}" != "$TS_BASE" ]; do TS_BASE=${TS_BASE%/}; done
+  case "$TS_BASE" in
+    http://|https://) die "typesafe base URL has no host: $TS_BASE" ;;
+  esac
+else
+  TS_BASE=$TS_DEFAULT_BASE
+fi
+
 # ---- opt-in gate ---------------------------------------------------------------
 if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
   TYPESAFE_API_KEY_PRIVATE=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
 fi
-if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
-  echo "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $FM_HOME/.env)" >&2
+if [ -z "$TYPESAFE_API_KEY_PRIVATE" ] && [ "$TS_BASE" = "$TS_DEFAULT_BASE" ]; then
+  echo "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $FM_HOME/.env, and no custom base URL configured)" >&2
   exit 0
 fi
 
@@ -323,10 +355,16 @@ command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
     }')
   never_send_check
   T0=$(fm_timing_now_ms)
-  HTTP=$(printf '%s' "$REQUEST" | curl -sS --max-time "$TS_TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
-    -X POST "$TS_BASE/v1/systemone" -H 'Content-Type: application/json' \
-    -H @/dev/fd/3 3< <(printf 'Authorization: Bearer %s\n' "$TYPESAFE_API_KEY_PRIVATE") \
-    --data-binary @- 2>/dev/null) || HTTP=000
+  if [ -n "$TYPESAFE_API_KEY_PRIVATE" ]; then
+    HTTP=$(printf '%s' "$REQUEST" | curl -sS --max-time "$TS_TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
+      -X POST "$TS_BASE/v1/systemone" -H 'Content-Type: application/json' \
+      -H @/dev/fd/3 3< <(printf 'Authorization: Bearer %s\n' "$TYPESAFE_API_KEY_PRIVATE") \
+      --data-binary @- 2>/dev/null) || HTTP=000
+  else
+    HTTP=$(printf '%s' "$REQUEST" | curl -sS --max-time "$TS_TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
+      -X POST "$TS_BASE/v1/systemone" -H 'Content-Type: application/json' \
+      --data-binary @- 2>/dev/null) || HTTP=000
+  fi
   T1=$(fm_timing_now_ms)
   LAT_MS=$(( T1 - T0 ))
   [ "$HTTP" = 200 ] || emit_error "http $HTTP after ${LAT_MS} ms: $(head -c 200 "$RESP_FILE" 2>/dev/null | tr '\n' ' ')"

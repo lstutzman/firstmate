@@ -1199,6 +1199,8 @@ Secondmate homes inherit this file from the primary, so a secondmate's own crewm
 `bin/fm-dispatch-resolve.sh` resolves one concrete crewmate or scout profile from a written brief with typesafe.ai's System One model (Jev), so the rule match that firstmate otherwise reasons out in its own context becomes one short tool turn.
 It is off unless `TYPESAFE_API_KEY` is non-empty in the calling environment or the home's gitignored `.env` holds a `TYPESAFE_API_KEY=` line; the environment wins, matching the Relay and mail-plane contracts, and the Relay accessor in `bin/fm-env-lib.sh` reads the line.
 
+A configured non-default base URL (next section) is also an on switch, so a local System One needs no key.
+
 Off means one `dispatch-resolve: off` line on stderr, nothing on stdout, exit 0, and no network call, so firstmate dispatches exactly as it does without the tool.
 This section is the single owner of the tool's operator contract; the script header owns its exact flags and output lines, and "Crew dispatch profiles" above owns the declared rule and profile fields it applies.
 
@@ -1207,6 +1209,21 @@ Rules come only from the effective home's `config/crew-dispatch.json`; `FM_CONFI
 ```sh
 bin/fm-dispatch-resolve.sh data/<id>/brief.md --project <name>        # TOON block on stdout
 ```
+
+**Base URL (config/typesafe-base-url)**
+
+The resolver posts to `<base URL>/v1/systemone`, with the base URL defaulting to `https://api.typesafe.ai`.
+To use a self-hosted System One, such as a local Jev, put one URL in the optional local, gitignored `config/typesafe-base-url`, or set `TYPESAFE_BASE_URL` in the calling environment, which wins over the file.
+The file's first non-blank line not beginning with `#` is the URL; like `config/crew-dispatch.json` it is inherited into secondmate homes.
+
+```text
+# local Jev
+http://slartibartfast.tail299042.ts.net:8800
+```
+
+Only `http://` and `https://` URLs without whitespace are accepted, and trailing slashes are trimmed; anything else is an exit 2 configuration error before any call.
+With a non-default base URL configured the resolver is on even without `TYPESAFE_API_KEY`, and a keyless request sends no `Authorization` header; if a key is present it is still sent as the bearer header.
+An unset URL changes nothing: the default endpoint, and off without a key.
 
 **When firstmate invokes the resolver**
 
