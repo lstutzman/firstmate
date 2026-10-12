@@ -3,6 +3,8 @@
 # inbox and ring a constant doorbell line into its terminal, best-effort.
 # Usage: fm-send.sh <target> [--resolve-key <key>]... [--fire-and-forget <delivery-id>] <text...>
 #        fm-send.sh --check-key <task-id> <key>   (prints open, closed, or unknown; sends nothing)
+# A text steer to a remote secondmate that names a path under this host's HOME
+# or FM_HOME warns on stderr that the remote mate cannot read it, and still sends.
 #   <target> may be an exact task id, a legacy fm-<id> task label resolved
 #   through this home's state/<id>.meta, or an explicit well-formed backend
 #   target. fm-send refuses unresolved guesses rather than falling back to a
@@ -500,6 +502,30 @@ fm_send_check_key() { # <task-id> <key>
   fi
   echo unknown
 }
+# A remote mate cannot read this host's files: warn (and still send) for each
+# word of a remote steer that names a path under this host's HOME or FM_HOME.
+fm_send_warn_local_paths() { # <message>
+  local word path prefix home_phys warned=' '
+  home_phys=$(cd "$FM_HOME" 2>/dev/null && pwd -P) || home_phys=$FM_HOME
+  set -f
+  # shellcheck disable=SC2086 # deliberate word splitting into candidate paths.
+  set -- $1
+  set +f
+  for word in "$@"; do
+    path=${word#"${word%%[!\"\'\`(<]*}"}
+    path=${path%"${path##*[!\"\'\`.,;:)>]}"}
+    for prefix in "${HOME:-}" "$FM_HOME" "$home_phys"; do
+      case "$prefix" in /?*) ;; *) continue ;; esac
+      case "$path" in "$prefix" | "$prefix"/*) ;; *) continue ;; esac
+      case "$warned" in *" $path "*) ;; *)
+        echo "warning: the remote mate cannot read $path; paste the content or send it as a document" >&2
+        warned="$warned$path "
+        ;;
+      esac
+      break
+    done
+  done
+}
 if [ "${1:-}" = --check-key ]; then
   [ $# -eq 3 ] || {
     echo "usage: fm-send.sh --check-key <task-id> <key>" >&2
@@ -860,6 +886,7 @@ else
       exit 1
       ;;
     esac
+    fm_send_warn_local_paths "$MESSAGE"
   fi
   # The pre-marker answer text, kept for the closing resolved note so the
   # durable ledger records the plain answer without marker or corr bytes.
