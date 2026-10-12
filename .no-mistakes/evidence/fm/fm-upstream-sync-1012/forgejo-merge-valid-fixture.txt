@@ -1,0 +1,17 @@
+fm-pr-merge rc=0 (fixture status JSON corrected to the bash-5 rendering)
+--- stdout
+armed: state/task-x1.check.sh
+--- stderr (non-banner)
+verified: https://forgejo.example/fixture/fixture-repo/pulls/9 is open and mergeable, with a successful combined status at head cccccccccccccccccccccccccccccccccccccccc
+--- tea calls
+login list --output json
+login list --output json
+api --login fm-fixture --repo fixture/fixture-repo /repos/{owner}/{repo}
+api --login fm-fixture --repo fixture/fixture-repo /repos/{owner}/{repo}/pulls/9
+api --login fm-fixture --repo fixture/fixture-repo /repos/{owner}/{repo}/commits/cccccccccccccccccccccccccccccccccccccccc/status?limit=50&page=1
+api --login fm-fixture --repo fixture/fixture-repo /repos/{owner}/{repo}/commits/cccccccccccccccccccccccccccccccccccccccc/status?limit=50&page=2
+api --login fm-fixture --repo fixture/fixture-repo -X POST /repos/{owner}/{repo}/pulls/9/merge -f Do=merge -f head_commit_id=cccccccccccccccccccccccccccccccccccccccc
+api --login fm-fixture --repo fixture/fixture-repo /repos/{owner}/{repo}/pulls/9
+--- meta pr=
+pr=https://forgejo.example/fixture/fixture-repo/pulls/9
+--- gh-axi calls:        0

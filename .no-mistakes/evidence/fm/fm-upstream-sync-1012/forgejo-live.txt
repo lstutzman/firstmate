@@ -1,0 +1,18 @@
+# registry: "- my forge app [no-mistakes forge=forgejo] ..." and "- plain - ..."
+$ bin/fm-project-mode.sh --forge "my forge app"
+forgejo
+exit=0
+$ bin/fm-project-mode.sh "my forge app"
+no-mistakes off
+exit=0
+$ bin/fm-project-mode.sh --forge plain
+none
+exit=0
+$ PATH=<no tea> bin/fm-pr-check.sh task-x https://localhost/fixture/fixture-repo/pulls/1
+error: watching a Forgejo pull request requires tea and jq on PATH
+exit=1
+task meta unchanged after refusal: yes
+armed task-x check script present: 0
+$ PATH=<no tea> bin/fm-pr-poll.sh --validated forgejo https://localhost/fixture/fixture-repo/pulls/1 localhost fixture/fixture-repo 1
+exit=0
+(empty poll output = no wake, never a false 'merged')
