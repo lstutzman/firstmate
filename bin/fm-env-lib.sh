@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Shared .env-style file accessor.
+# Shared .env-style file accessor and typesafe base URL resolution.
 # Usage: . bin/fm-env-lib.sh
 #
 # This file is the single owner of the one-key .env read: the Relay pairing
@@ -28,4 +28,37 @@ fmx_env_get() {
     \'*\') val=${val#\'}; val=${val%\'} ;;
   esac
   printf '%s' "$val"
+}
+
+FM_TYPESAFE_DEFAULT_BASE=https://api.typesafe.ai
+
+# fm_typesafe_base_url <config-dir>
+# Resolve the typesafe base URL for the dispatch resolver: TYPESAFE_BASE_URL in
+# the environment, else the first non-blank, non-# line of
+# <config-dir>/typesafe-base-url, else FM_TYPESAFE_DEFAULT_BASE. Accepts only
+# http:// or https:// URLs with a host and no whitespace; trailing slashes are
+# trimmed. Prints the URL and succeeds, or prints the reason and returns 1.
+# bin/fm-dispatch-resolve.sh and bin/fm-bootstrap.sh both resolve through here,
+# so a non-default result turns the resolver on in both by the same rule.
+fm_typesafe_base_url() {
+  local config=$1 url=${TYPESAFE_BASE_URL:-}
+  if [ -z "$url" ] && [ -r "$config/typesafe-base-url" ]; then
+    url=$(awk '/^[[:space:]]*(#|$)/ { next } { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }' "$config/typesafe-base-url")
+  fi
+  if [ -z "$url" ]; then
+    printf '%s' "$FM_TYPESAFE_DEFAULT_BASE"
+    return 0
+  fi
+  case "$url" in
+    http://?*|https://?*) ;;
+    *) printf 'typesafe base URL must be an http:// or https:// URL: %s' "$url"; return 1 ;;
+  esac
+  case "$url" in
+    *[[:space:]]*) printf 'typesafe base URL must not contain whitespace: %s' "$url"; return 1 ;;
+  esac
+  while [ "${url%/}" != "$url" ]; do url=${url%/}; done
+  case "$url" in
+    http://|https://) printf 'typesafe base URL has no host: %s' "$url"; return 1 ;;
+  esac
+  printf '%s' "$url"
 }

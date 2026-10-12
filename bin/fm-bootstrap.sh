@@ -1047,7 +1047,7 @@ EOF
 }
 
 crew_dispatch_validate() {
-  local file err verified_harnesses typed_key typed_active=false
+  local file err verified_harnesses typed_key typed_base typed_active=false
   file="$CONFIG/crew-dispatch.json"
   [ -f "$file" ] || return 0
   if ! command -v jq >/dev/null 2>&1; then
@@ -1061,6 +1061,11 @@ crew_dispatch_validate() {
   typed_key=$TYPESAFE_API_KEY_PRIVATE
   [ -n "$typed_key" ] || typed_key=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
   [ -z "$typed_key" ] || typed_active=true
+  if ! typed_base=$(fm_typesafe_base_url "$CONFIG"); then
+    echo "CREW_DISPATCH: invalid typesafe base URL - $typed_base"
+    return 0
+  fi
+  [ "$typed_base" = "$FM_TYPESAFE_DEFAULT_BASE" ] || typed_active=true
   if $typed_active; then
     verified_harnesses=$(fm_control_harnesses | jq -Rsc 'split("\n") | map(select(length > 0))')
   else

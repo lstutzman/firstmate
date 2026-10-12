@@ -103,7 +103,6 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
 CONFIDENCE_FLOOR=0.6
 TS_MODEL=jev-latest
-TS_DEFAULT_BASE=https://api.typesafe.ai
 TS_TIMEOUT=5
 DEFAULT_WHEN="No listed rule applies to this task."
 
@@ -132,31 +131,13 @@ while [ $# -gt 0 ]; do
 done
 
 # ---- base URL ------------------------------------------------------------------
-TS_BASE=${TYPESAFE_BASE_URL:-}
-if [ -z "$TS_BASE" ] && [ -r "$CONFIG/typesafe-base-url" ]; then
-  TS_BASE=$(awk '/^[[:space:]]*(#|$)/ { next } { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }' "$CONFIG/typesafe-base-url")
-fi
-if [ -n "$TS_BASE" ]; then
-  case "$TS_BASE" in
-    http://?*|https://?*) ;;
-    *) die "typesafe base URL must be an http:// or https:// URL: $TS_BASE" ;;
-  esac
-  case "$TS_BASE" in
-    *[[:space:]]*) die "typesafe base URL must not contain whitespace: $TS_BASE" ;;
-  esac
-  while [ "${TS_BASE%/}" != "$TS_BASE" ]; do TS_BASE=${TS_BASE%/}; done
-  case "$TS_BASE" in
-    http://|https://) die "typesafe base URL has no host: $TS_BASE" ;;
-  esac
-else
-  TS_BASE=$TS_DEFAULT_BASE
-fi
+TS_BASE=$(fm_typesafe_base_url "$CONFIG") || die "$TS_BASE"
 
 # ---- opt-in gate ---------------------------------------------------------------
 if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
   TYPESAFE_API_KEY_PRIVATE=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
 fi
-if [ -z "$TYPESAFE_API_KEY_PRIVATE" ] && [ "$TS_BASE" = "$TS_DEFAULT_BASE" ]; then
+if [ -z "$TYPESAFE_API_KEY_PRIVATE" ] && [ "$TS_BASE" = "$FM_TYPESAFE_DEFAULT_BASE" ]; then
   echo "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $FM_HOME/.env, and no custom base URL configured)" >&2
   exit 0
 fi
