@@ -532,6 +532,34 @@ test_verified_merge_records_pr_and_head() {
   pass "fm-pr-merge records pr= and pr_head= for a verified GitHub merge"
 }
 
+# A verified merge answers every open "waiting for your word" ask that names
+# that exact PR URL, in any task of this home, keyed or unkeyed, and leaves an
+# ask naming a different PR open.
+test_verified_merge_closes_decisions_naming_the_pr() {
+  local case_dir rc open
+  case_dir=$(make_case closes-merge-word-asks)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  printf 'blocked [key=wait-merge]: waiting for https://github.com/example/repo/pull/9 to merge\n' \
+    > "$case_dir/state/task-x1.status"
+  printf 'needs-decision [at=1791900000]: merge https://github.com/example/repo/pull/9?\n' \
+    > "$case_dir/state/mate.status"
+  printf 'needs-decision [key=other]: merge https://github.com/example/repo/pull/90?\n' \
+    >> "$case_dir/state/mate.status"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "closes-merge-word-asks: fm-pr-merge should succeed"
+  open=$(bash -c '. "$1/bin/fm-classify-lib.sh"; scan_open_decisions "$2"' _ "$ROOT" "$case_dir/state")
+  assert_not_contains "$open" "pull/9 to merge" "the merged PR's keyed ask stayed open"
+  assert_not_contains "$open" "pull/9?" "the merged PR's unkeyed ask stayed open"
+  assert_contains "$open" "pull/90?" "an ask naming a different PR was closed"
+  assert_grep ': merged https://github.com/example/repo/pull/9 at deadbeefcafefeed0000000000000000deadbeef' \
+    "$case_dir/state/task-x1.status" "the close did not record the merge evidence"
+  pass "a verified merge closes the open asks naming that exact PR URL"
+}
+
 # The forge call is the point of no return: once gh-axi has merged, nothing this
 # script does afterwards can un-merge it. Proving pr= is already in the task's
 # meta at that moment is what makes a later failure unable to lose the merge.
@@ -2363,6 +2391,7 @@ test_github_closed_unqueued_outcome_omits_retry_flags
 test_github_agreeing_queue_rules_keep_retry_guidance
 test_github_conflicting_queue_rules_report_ambiguity
 test_verified_merge_records_pr_and_head
+test_verified_merge_closes_decisions_naming_the_pr
 test_pr_metadata_is_recorded_before_the_forge_call
 test_merge_failure_propagates_after_recording
 test_github_open_unqueued_outcome_refuses
