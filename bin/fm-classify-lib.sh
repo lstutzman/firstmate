@@ -779,16 +779,21 @@ _fm_status_corr_id() {  # <status-line> <out-var>
   _fm_status_unstamped "$1" __fm_corr_head
   case "$__fm_corr_head" in *:*) __fm_corr_head=${__fm_corr_head%%:*} ;; esac
   case "$__fm_corr_head" in *corr=*) ;; *) return 1 ;; esac
+  # Split on whitespace by expansion, never by unquoted word splitting, so a
+  # glob character in the head cannot expand into file names.
   __fm_corr_head=${__fm_corr_head//\]/\] }
-  for __fm_corr_word in $__fm_corr_head; do
-    __fm_corr_word=${__fm_corr_word#\[}
+  __fm_corr_head=${__fm_corr_head//\[/ }
+  while :; do
+    __fm_corr_head=${__fm_corr_head#"${__fm_corr_head%%[![:space:]]*}"}
+    [ -n "$__fm_corr_head" ] || return 1
+    __fm_corr_word=${__fm_corr_head%%[[:space:]]*}
+    __fm_corr_head=${__fm_corr_head#"$__fm_corr_word"}
     __fm_corr_word=${__fm_corr_word%\]}
     if _fm_classify_is_corr_token "$__fm_corr_word"; then
       printf -v "$2" '%s' "${__fm_corr_word#corr=}"
       return 0
     fi
   done
-  return 1
 }
 
 # The synthetic key of an unkeyed line stamped at or after the cutover, into
