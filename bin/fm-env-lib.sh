@@ -32,6 +32,14 @@ fmx_env_get() {
 
 FM_TYPESAFE_DEFAULT_BASE=https://api.typesafe.ai
 
+# fm_typesafe_config_line <config-dir> <name>
+# Print the first non-blank, non-# line of <config-dir>/<name>, trimmed; nothing
+# when the file is absent, unreadable, or has no such line.
+fm_typesafe_config_line() {
+  [ -r "$1/$2" ] || return 0
+  awk '/^[[:space:]]*(#|$)/ { next } { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }' "$1/$2"
+}
+
 # fm_typesafe_base_url <config-dir>
 # Resolve the typesafe base URL for the dispatch resolver: TYPESAFE_BASE_URL in
 # the environment, else the first non-blank, non-# line of
@@ -42,9 +50,7 @@ FM_TYPESAFE_DEFAULT_BASE=https://api.typesafe.ai
 # so a non-default result turns the resolver on in both by the same rule.
 fm_typesafe_base_url() {
   local config=$1 url=${TYPESAFE_BASE_URL:-}
-  if [ -z "$url" ] && [ -r "$config/typesafe-base-url" ]; then
-    url=$(awk '/^[[:space:]]*(#|$)/ { next } { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }' "$config/typesafe-base-url")
-  fi
+  [ -n "$url" ] || url=$(fm_typesafe_config_line "$config" typesafe-base-url)
   if [ -z "$url" ]; then
     printf '%s' "$FM_TYPESAFE_DEFAULT_BASE"
     return 0
@@ -61,4 +67,29 @@ fm_typesafe_base_url() {
     http://|https://) printf 'typesafe base URL has no host: %s' "$url"; return 1 ;;
   esac
   printf '%s' "$url"
+}
+
+# fm_typesafe_token <config-dir>
+# Read the local Jev bearer token from the file whose path is the first line of
+# <config-dir>/typesafe-token-file (a leading ~/ expands to HOME). Prints the
+# token and succeeds; prints nothing and succeeds when no token file is
+# configured; prints the reason, never the contents, and returns 1 when the
+# configured file is unreadable or empty.
+fm_typesafe_token() {
+  local path token
+  path=$(fm_typesafe_config_line "$1" typesafe-token-file)
+  [ -n "$path" ] || return 0
+  case "$path" in
+    "~/"*) path=$HOME/${path#"~/"} ;;
+  esac
+  if [ ! -f "$path" ] || [ ! -r "$path" ]; then
+    printf 'typesafe token file is not a readable file: %s' "$path"
+    return 1
+  fi
+  token=$(tr -d '\r\n' < "$path")
+  if [ -z "$token" ]; then
+    printf 'typesafe token file is empty: %s' "$path"
+    return 1
+  fi
+  printf '%s' "$token"
 }

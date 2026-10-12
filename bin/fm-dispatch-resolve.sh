@@ -8,7 +8,8 @@
 # Opt-in gate: TYPESAFE_API_KEY non-empty in this process environment, else a
 #   TYPESAFE_API_KEY= line in $FM_HOME/.env read with fmx_env_get, the same
 #   accessor as FMX_PAIRING_TOKEN (bin/fm-env-lib.sh). The environment wins.
-#   A configured non-default base URL (below) is also an on switch, with no key.
+#   A configured non-default base URL or token file (below) is also an on
+#   switch.
 #   Neither a key nor a custom URL: one "dispatch-resolve: off" line on stderr,
 #   nothing on stdout, exit 0, no network call, so firstmate dispatches
 #   exactly as today.
@@ -20,6 +21,14 @@
 #   trimmed. Point it at a local System One (for example
 #   http://host:8800); with no key the request carries no Authorization
 #   header, with a key it still carries the bearer header.
+#
+# Model and token: the model is the first non-blank, non-# line of
+#   config/typesafe-model, else jev-latest. A local System One that needs a
+#   bearer token takes it from the file whose path is the first such line of
+#   config/typesafe-token-file (a leading ~/ expands to HOME), read at call time
+#   and never printed or logged; TYPESAFE_API_KEY, from the environment or
+#   .env, wins over it. A configured file that is unreadable or empty is a
+#   configuration error (exit 2) naming the path, never the contents.
 #   The key lives in one shell variable and reaches curl as a header read from
 #   a file descriptor, never on argv; nothing logs or writes it.
 #
@@ -102,7 +111,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-brief-heading-lib.sh"
 
 CONFIDENCE_FLOOR=0.6
-TS_MODEL=jev-latest
+TS_MODEL=$(fm_typesafe_config_line "$CONFIG" typesafe-model)
+TS_MODEL=${TS_MODEL:-jev-latest}
 TS_TIMEOUT=5
 DEFAULT_WHEN="No listed rule applies to this task."
 
@@ -136,6 +146,9 @@ TS_BASE=$(fm_typesafe_base_url "$CONFIG") || die "$TS_BASE"
 # ---- opt-in gate ---------------------------------------------------------------
 if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
   TYPESAFE_API_KEY_PRIVATE=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
+fi
+if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
+  TYPESAFE_API_KEY_PRIVATE=$(fm_typesafe_token "$CONFIG") || die "$TYPESAFE_API_KEY_PRIVATE"
 fi
 if [ -z "$TYPESAFE_API_KEY_PRIVATE" ] && [ "$TS_BASE" = "$FM_TYPESAFE_DEFAULT_BASE" ]; then
   echo "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $FM_HOME/.env, and no custom base URL configured)" >&2

@@ -1066,6 +1066,7 @@ crew_dispatch_validate() {
     return 0
   fi
   [ "$typed_base" = "$FM_TYPESAFE_DEFAULT_BASE" ] || typed_active=true
+  [ -z "$(fm_typesafe_config_line "$CONFIG" typesafe-token-file)" ] || typed_active=true
   if $typed_active; then
     verified_harnesses=$(fm_control_harnesses | jq -Rsc 'split("\n") | map(select(length > 0))')
   else
