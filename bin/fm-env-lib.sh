@@ -64,7 +64,8 @@ fm_typesafe_base_url() {
   esac
   while [ "${url%/}" != "$url" ]; do url=${url%/}; done
   case "$url" in
-    http://|https://) printf 'typesafe base URL has no host: %s' "$url"; return 1 ;;
+    http://[!/]*|https://[!/]*) ;;
+    *) printf 'typesafe base URL has no host: %s' "$url"; return 1 ;;
   esac
   printf '%s' "$url"
 }

@@ -19,15 +19,15 @@
 #   http:// and https:// URLs with no whitespace are accepted; anything else is
 #   a configuration error (exit 2) before any call. Trailing slashes are
 #   trimmed. Point it at a local System One (for example
-#   http://host:8800); with no key the request carries no Authorization
-#   header, with a key it still carries the bearer header.
+#   http://host:8800); TYPESAFE_API_KEY is never sent to a non-default base
+#   URL, so with no token file the request carries no Authorization header.
 #
 # Model and token: the model is the first non-blank, non-# line of
 #   config/typesafe-model, else jev-latest. A local System One that needs a
 #   bearer token takes it from the file whose path is the first such line of
 #   config/typesafe-token-file (a leading ~/ expands to HOME), read at call time
-#   and never printed or logged; TYPESAFE_API_KEY, from the environment or
-#   .env, wins over it. A configured file that is unreadable or empty is a
+#   and never printed or logged; it wins over TYPESAFE_API_KEY, which is sent
+#   only to the default base URL. A configured file that is unreadable or empty is a
 #   configuration error (exit 2) naming the path, never the contents.
 #   The key lives in one shell variable and reaches curl as a header read from
 #   a file descriptor, never on argv; nothing logs or writes it.
@@ -144,12 +144,15 @@ done
 TS_BASE=$(fm_typesafe_base_url "$CONFIG") || die "$TS_BASE"
 
 # ---- opt-in gate ---------------------------------------------------------------
-if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
+TS_TOKEN=$(fm_typesafe_token "$CONFIG") || die "$TS_TOKEN"
+if [ -n "$TS_TOKEN" ]; then
+  TYPESAFE_API_KEY_PRIVATE=$TS_TOKEN
+elif [ "$TS_BASE" != "$FM_TYPESAFE_DEFAULT_BASE" ]; then
+  TYPESAFE_API_KEY_PRIVATE=
+elif [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
   TYPESAFE_API_KEY_PRIVATE=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
 fi
-if [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
-  TYPESAFE_API_KEY_PRIVATE=$(fm_typesafe_token "$CONFIG") || die "$TYPESAFE_API_KEY_PRIVATE"
-fi
+unset TS_TOKEN
 if [ -z "$TYPESAFE_API_KEY_PRIVATE" ] && [ "$TS_BASE" = "$FM_TYPESAFE_DEFAULT_BASE" ]; then
   echo "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $FM_HOME/.env, and no custom base URL configured)" >&2
   exit 0

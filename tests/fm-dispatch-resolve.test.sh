@@ -196,7 +196,7 @@ pass "absent key is off: one stderr line, exit 0, no network call"
 
 # --- configurable base URL: config file, env override, keyless local Jev -----
 URL_FILE="$HOME_DIR/config/typesafe-base-url"
-LOCAL_JEV=http://slartibartfast.tail299042.ts.net:8800
+LOCAL_JEV=http://jev.local:8800
 reset_log
 write_response "$RESPONSE" rule_4 0.9
 printf '%s\n' '# no URL here, comment only' '' > "$URL_FILE"
@@ -208,7 +208,13 @@ printf '%s\n' '# local Jev' "$LOCAL_JEV/" > "$URL_FILE"
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
 expect_code 0 "$code" "config file URL exits 0"
 assert_contains "$(cat "$LOG/argv")" "$LOCAL_JEV/v1/systemone" "config/typesafe-base-url sets the endpoint, trailing slash trimmed"
-assert_contains "$(cat "$LOG/header")" "Authorization: Bearer $KEY" "a key is still sent to a configured URL when present"
+assert_not_contains "$(cat "$LOG/argv")" '@/dev/fd/3' "TYPESAFE_API_KEY is not sent to a custom URL"
+assert_not_contains "$(cat "$LOG/argv")$(cat "$LOG/header" 2>/dev/null)" "$KEY" "TYPESAFE_API_KEY never reaches a custom URL"
+reset_log
+printf '%s\n' "TYPESAFE_API_KEY=$KEY" > "$HOME_DIR/.env"
+run code out err "$BRIEF" --project pager
+assert_not_contains "$(cat "$LOG/argv")$(cat "$LOG/header" 2>/dev/null)" "$KEY" ".env key never reaches a custom URL"
+rm -f "$HOME_DIR/.env"
 reset_log
 TYPESAFE_BASE_URL=http://env-jev.example:9000 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
 assert_contains "$(cat "$LOG/argv")" 'http://env-jev.example:9000/v1/systemone' "TYPESAFE_BASE_URL overrides the config file"
@@ -220,7 +226,7 @@ assert_contains "$(cat "$LOG/argv")" "$LOCAL_JEV/v1/systemone" "keyless request 
 assert_not_contains "$(cat "$LOG/argv")" '@/dev/fd/3' "keyless request sends no auth header"
 assert_not_contains "$(cat "$LOG/argv")" 'Authorization' "keyless request names no Authorization header"
 assert_not_contains "$err" 'dispatch-resolve: off' "a configured URL is the on switch"
-for bad in 'ftp://jev.example' 'jev.example:8800' 'http://' 'http://jev example'; do
+for bad in 'ftp://jev.example' 'jev.example:8800' 'http://' 'http:///' 'https:////jev' 'http://jev example'; do
   reset_log
   printf '%s\n' "$bad" > "$URL_FILE"
   run code out err "$BRIEF" --project pager
@@ -263,12 +269,16 @@ assert_not_contains "$out$err" "$LOCAL_TOKEN" "token is never printed"
 assert_equals $'curl:clean\nquota-axi:clean' "$(cat "$LOG/child-env")" "token is absent from every child environment"
 reset_log
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
-assert_equals "Authorization: Bearer $KEY" "$(cat "$LOG/header")" "TYPESAFE_API_KEY wins over the token file"
+assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "the token file wins over TYPESAFE_API_KEY at a custom URL"
 rm -f "$URL_FILE"
 reset_log
 run code out err "$BRIEF" --project pager
 expect_code 0 "$code" "a token file alone turns the resolver on"
 assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "token file alone supplies the bearer"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$(cat "$LOG/argv")" 'https://api.typesafe.ai/v1/systemone' "token file with the default URL keeps the hosted endpoint"
+assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "the token file wins over TYPESAFE_API_KEY at the default URL"
 printf '%s\n' '~/jev-token-home' > "$TOKEN_FILE_CFG"
 mkdir -p "$TMP_ROOT/fakehome"
 printf '%s\n' "$LOCAL_TOKEN" > "$TMP_ROOT/fakehome/jev-token-home"
@@ -290,7 +300,7 @@ rm -f "$TOKEN_FILE_CFG" "$TOKEN_PATH"
 reset_log
 run code out err "$BRIEF" --project pager
 assert_contains "$err" 'dispatch-resolve: off' "removing the token file returns to off"
-pass "model and token file: model configurable, token file is the bearer, key wins, bad file rejected"
+pass "model and token file: model configurable, token file is the bearer and wins over the key, bad file rejected"
 
 # --- .env key, and the environment wins over it ------------------------------
 printf '%s\n' '# local secrets' 'FMX_PAIRING_TOKEN=abc' "export TYPESAFE_API_KEY=\"$KEY\"" > "$HOME_DIR/.env"

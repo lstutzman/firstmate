@@ -1218,11 +1218,11 @@ The file's first non-blank line not beginning with `#` is the URL; like `config/
 
 ```text
 # local Jev
-http://slartibartfast.tail299042.ts.net:8800
+http://jev.local:8800
 ```
 
 Only `http://` and `https://` URLs without whitespace are accepted, and trailing slashes are trimmed; anything else is an exit 2 configuration error before any call, and bootstrap reports it as `CREW_DISPATCH: invalid typesafe base URL - ...` when `config/crew-dispatch.json` exists.
-With a non-default base URL configured the resolver is on even without `TYPESAFE_API_KEY`, and a keyless request sends no `Authorization` header; if a key is present it is still sent as the bearer header.
+With a non-default base URL configured the resolver is on even without `TYPESAFE_API_KEY`; the key is sent only to the default `https://api.typesafe.ai`, never to a custom URL, so without a token file (below) the request sends no `Authorization` header.
 An unset URL changes nothing: the default endpoint, and off without a key.
 
 **Model and token file (config/typesafe-model, config/typesafe-token-file)**
@@ -1231,7 +1231,7 @@ A local System One can need its own model name and bearer token.
 The optional local, gitignored `config/typesafe-model` holds the model name on its first non-blank line not beginning with `#`; unset keeps `jev-latest`.
 The optional `config/typesafe-token-file` holds, on its first such line, the path of a file whose contents are the bearer token (a leading `~/` expands to `HOME`).
 The token is read at call time, sent only on the fd-fed `Authorization` header, and never printed or logged.
-`TYPESAFE_API_KEY` from the environment or `.env` wins over the token file, so hosted typesafe.ai use is unchanged.
+A configured token file wins over `TYPESAFE_API_KEY` from the environment or `.env`, at the default or a custom base URL; the key is sent only to the default base URL.
 A configured token file makes the resolver and the bootstrap rule check active, like a custom URL; one that is unreadable or empty is an exit 2 configuration error naming the path.
 A custom URL with no key and no token file stays keyless.
 Both files are inherited into secondmate homes like `config/typesafe-base-url`.
