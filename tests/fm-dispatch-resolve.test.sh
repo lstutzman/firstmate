@@ -279,6 +279,7 @@ reset_log
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
 assert_contains "$(cat "$LOG/argv")" 'https://api.typesafe.ai/v1/systemone' "token file with the default URL keeps the hosted endpoint"
 assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "the token file wins over TYPESAFE_API_KEY at the default URL"
+# shellcheck disable=SC2088  # The config line holds a literal ~/ for the resolver to expand.
 printf '%s\n' '~/jev-token-home' > "$TOKEN_FILE_CFG"
 mkdir -p "$TMP_ROOT/fakehome"
 printf '%s\n' "$LOCAL_TOKEN" > "$TMP_ROOT/fakehome/jev-token-home"

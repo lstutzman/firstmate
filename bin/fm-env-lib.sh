@@ -80,6 +80,7 @@ fm_typesafe_token() {
   local path token
   path=$(fm_typesafe_config_line "$1" typesafe-token-file)
   [ -n "$path" ] || return 0
+  # shellcheck disable=SC2088  # Matches a literal leading ~/ to expand it.
   case "$path" in
     "~/"*) path=$HOME/${path#"~/"} ;;
   esac
