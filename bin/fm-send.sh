@@ -2,6 +2,7 @@
 # Steer a task by durable record: write the message into the task's steering
 # inbox and ring a constant doorbell line into its terminal, best-effort.
 # Usage: fm-send.sh <target> [--resolve-key <key>]... [--fire-and-forget <delivery-id>] <text...>
+#        fm-send.sh --check-key <task-id> <key>   (prints open, closed, or unknown; sends nothing)
 #   <target> may be an exact task id, a legacy fm-<id> task label resolved
 #   through this home's state/<id>.meta, or an explicit well-formed backend
 #   target. fm-send refuses unresolved guesses rather than falling back to a
@@ -438,6 +439,76 @@ fm_send_resolve_target() { # <raw-target>
   return 1
 }
 
+# Resolve a --resolve-key key that the status log no longer owns to the
+# captain-held task that carries it: the key as a task id itself (the collapsed
+# identity - a captain call IS a task held for the captain), then the legacy
+# derived `<task>-decision-<key>` identity for pre-collapse rows. Answerable
+# means not closed and still carrying the captain-hold annotations tasks-axi
+# preserves even past a hold-until date.
+fm_send_hold_resolved_id() { # <task-id> <decision-key>
+  local show id state hold_kind
+  command -v tasks-axi >/dev/null 2>&1 || return 1
+  for id in "$2" "$1-decision-$2"; do
+    show=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE='' "$SCRIPT_DIR/fm-tasks-axi.sh" show "$id" --full 2>/dev/null) || continue
+    state=$(printf '%s\n' "$show" | sed -n 's/^  state: //p' | head -1)
+    hold_kind=$(printf '%s\n' "$show" | sed -n 's/^  hold_kind: //p' | head -1)
+    [ "$state" != "done" ] || continue
+    [ "$hold_kind" = captain ] || continue
+    printf '%s\n' "$id"
+    return 0
+  done
+  return 1
+}
+
+# --check-key <task> <key>: print open, closed, or unknown for a decision key in
+# this home's ledger, and send nothing - a probe never needs a real send.
+# open = folded open in the task's status log or held as a captain task;
+# closed = a decision line once named the key; unknown = never named.
+fm_send_check_key() { # <task-id> <key>
+  local task=$1 k=$2 status line verb
+  case "$task" in
+  '' | *[!A-Za-z0-9._-]*)
+    echo "error: --check-key task '$task' is not a valid task id" >&2
+    return 1
+    ;;
+  esac
+  case "$k" in
+  '' | *[!A-Za-z0-9._-]*)
+    echo "error: --check-key '$k' is not a valid decision key (allowed: A-Z a-z 0-9 . _ -)" >&2
+    return 1
+    ;;
+  esac
+  status="$STATE/$task.status"
+  case "$(status_open_decisions "$status")" in
+  "$k"$'\t'* | *$'\n'"$k"$'\t'*)
+    echo open
+    return 0
+    ;;
+  esac
+  if fm_send_hold_resolved_id "$task" "$k" >/dev/null; then
+    echo open
+    return 0
+  fi
+  if [ -f "$status" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      status_line_verb "$line" verb
+      case "$verb" in needs-decision | blocked | resolved | captain-held) ;; *) continue ;; esac
+      [ "$(_fm_decision_key "$line" 2>/dev/null)" = "$k" ] || continue
+      echo closed
+      return 0
+    done <"$status"
+  fi
+  echo unknown
+}
+if [ "${1:-}" = --check-key ]; then
+  [ $# -eq 3 ] || {
+    echo "usage: fm-send.sh --check-key <task-id> <key>" >&2
+    exit 1
+  }
+  fm_send_check_key "$2" "$3"
+  exit
+fi
+
 RAW_TARGET=$1
 fm_send_resolve_target "$RAW_TARGET" || exit 1
 T=$RESOLVED_TARGET
@@ -559,27 +630,6 @@ RESOLVE_STATUS_KEYS=
 RESOLVE_HOLD_KEYS=
 RESOLVE_CLOSE_MAX=$FM_LINE_CAP_DEFAULT
 
-# Resolve a --resolve-key key that the status log no longer owns to the
-# captain-held task that carries it: the key as a task id itself (the collapsed
-# identity - a captain call IS a task held for the captain), then the legacy
-# derived `<task>-decision-<key>` identity for pre-collapse rows. Answerable
-# means not closed and still carrying the captain-hold annotations tasks-axi
-# preserves even past a hold-until date.
-fm_send_hold_resolved_id() { # <task-id> <decision-key>
-  local show id state hold_kind
-  command -v tasks-axi >/dev/null 2>&1 || return 1
-  for id in "$2" "$1-decision-$2"; do
-    show=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE='' "$SCRIPT_DIR/fm-tasks-axi.sh" show "$id" --full 2>/dev/null) || continue
-    state=$(printf '%s\n' "$show" | sed -n 's/^  state: //p' | head -1)
-    hold_kind=$(printf '%s\n' "$show" | sed -n 's/^  hold_kind: //p' | head -1)
-    [ "$state" != "done" ] || continue
-    [ "$hold_kind" = captain ] || continue
-    printf '%s\n' "$id"
-    return 0
-  done
-  return 1
-}
-
 # Close-note body for --resolve-key. Ordinary keys keep answered: <excerpt>.
 # A pending-reply-* key uses the owning library's vocabulary so the reserved-key
 # fold actually closes it (fm_pending_reply_close_note_for_key).
@@ -623,6 +673,14 @@ if [ -n "$RESOLVE_KEYS" ]; then
     echo "error: --resolve-key requires a nonempty answer message" >&2
     exit 1
   fi
+  # A throwaway answer would close a live decision as answered. No length rule:
+  # "A", "yes" and "1b" are real captain answers.
+  case "$(printf '%s' "$*" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:].!?')" in
+  x | xx | xxx | test | testing | probe | ping | tbd | todo | placeholder | dummy | foo | asdf)
+    echo "error: --resolve-key answer '$*' looks like a placeholder and would close the decision as answered; send the captain's words, or check the key with --check-key; nothing was sent" >&2
+    exit 1
+    ;;
+  esac
   RESOLVE_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
   RESOLVE_STATUS_FILE="$STATE/$RESOLVE_TASK_ID.status"
   resolve_open_set=$(status_open_decisions "$RESOLVE_STATUS_FILE")
