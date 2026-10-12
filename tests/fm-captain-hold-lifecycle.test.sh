@@ -884,6 +884,28 @@ test_answer_records_and_closes() {
 
 # --release lifts the hold instead of closing, preserving the work item's own
 # body under the record; a re-held task later accepts a new answer.
+test_answer_reads_the_decision_from_stdin() {
+  local home show
+  home=$(make_home answer-stdin)
+  run_captain "$home" hold sample-stdin-call \
+    --title "Choose the stdin option" --reason "captain stdin choice pending" --repo sample >/dev/null \
+    || fail "could not register the captain-held task"
+  if run_captain "$home" answer sample-stdin-call --decision-file <(printf 'Piped.\n') \
+    > "$home/pipe.out" 2> "$home/pipe.err"; then
+    fail "answer accepted a process-substitution decision file"
+  fi
+  assert_contains "$(cat "$home/pipe.err")" "process substitution is not supported" \
+    "a non-regular decision file was not explained"
+  printf 'Captain chose the stdin option.\n' \
+    | run_captain "$home" answer sample-stdin-call --decision-file - >/dev/null \
+    || fail "answer could not read the captain decision from stdin"
+  show=$(tasks_in "$home" show sample-stdin-call --full)
+  assert_contains "$show" "state: done" "a stdin-answered captain-held task did not close"
+  assert_contains "$show" "Captain chose the stdin option." \
+    "the stdin-answered task did not record the captain decision text"
+  pass "answer reads the captain decision from stdin and explains a non-regular decision file"
+}
+
 test_release_frees_held_work() {
   local home show out snap
   home=$(make_home release-work)
@@ -4640,6 +4662,7 @@ test_hold_decodes_a_bare_scalar_body_without_the_nonref_default
 test_retained_body_keeps_its_utf8_bytes
 test_completion_gate_attests_and_transfers
 test_answer_records_and_closes
+test_answer_reads_the_decision_from_stdin
 test_release_frees_held_work
 test_hold_stamp_precedes_hold_visibility
 test_interrupted_answer_preserves_hold_age
