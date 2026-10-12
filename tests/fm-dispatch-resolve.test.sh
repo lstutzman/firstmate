@@ -194,6 +194,115 @@ assert_absent "$LOG/argv" "absent key never calls curl"
 assert_absent "$LOG/quota-axi.calls" "absent key never reads quota-axi"
 pass "absent key is off: one stderr line, exit 0, no network call"
 
+# --- configurable base URL: config file, env override, keyless local Jev -----
+URL_FILE="$HOME_DIR/config/typesafe-base-url"
+LOCAL_JEV=http://jev.local:8800
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+printf '%s\n' '# no URL here, comment only' '' > "$URL_FILE"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$(cat "$LOG/argv")" 'https://api.typesafe.ai/v1/systemone' "a URL file with no URL line keeps the default endpoint"
+rm -f "$URL_FILE"
+reset_log
+printf '%s\n' '# local Jev' "$LOCAL_JEV/" > "$URL_FILE"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "config file URL exits 0"
+assert_contains "$(cat "$LOG/argv")" "$LOCAL_JEV/v1/systemone" "config/typesafe-base-url sets the endpoint, trailing slash trimmed"
+assert_not_contains "$(cat "$LOG/argv")" '@/dev/fd/3' "TYPESAFE_API_KEY is not sent to a custom URL"
+assert_not_contains "$(cat "$LOG/argv")$(cat "$LOG/header" 2>/dev/null)" "$KEY" "TYPESAFE_API_KEY never reaches a custom URL"
+reset_log
+printf '%s\n' "TYPESAFE_API_KEY=$KEY" > "$HOME_DIR/.env"
+run code out err "$BRIEF" --project pager
+assert_not_contains "$(cat "$LOG/argv")$(cat "$LOG/header" 2>/dev/null)" "$KEY" ".env key never reaches a custom URL"
+rm -f "$HOME_DIR/.env"
+reset_log
+TYPESAFE_BASE_URL=http://env-jev.example:9000 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$(cat "$LOG/argv")" 'http://env-jev.example:9000/v1/systemone' "TYPESAFE_BASE_URL overrides the config file"
+reset_log
+run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "a configured URL works without a key"
+assert_contains "$out" '  status: clear' "keyless local Jev produces a clear result"
+assert_contains "$(cat "$LOG/argv")" "$LOCAL_JEV/v1/systemone" "keyless request goes to the configured URL"
+assert_not_contains "$(cat "$LOG/argv")" '@/dev/fd/3' "keyless request sends no auth header"
+assert_not_contains "$(cat "$LOG/argv")" 'Authorization' "keyless request names no Authorization header"
+assert_not_contains "$err" 'dispatch-resolve: off' "a configured URL is the on switch"
+for bad in 'ftp://jev.example' 'jev.example:8800' 'http://' 'http:///' 'https:////jev' 'http://jev example'; do
+  reset_log
+  printf '%s\n' "$bad" > "$URL_FILE"
+  run code out err "$BRIEF" --project pager
+  expect_code 2 "$code" "invalid base URL rejected: $bad"
+  assert_contains "$err" 'typesafe base URL' "invalid base URL is named: $bad"
+  assert_absent "$LOG/argv" "invalid base URL never reaches curl: $bad"
+done
+rm -f "$URL_FILE"
+reset_log
+TYPESAFE_BASE_URL=ftp://nope run code out err "$BRIEF" --project pager
+expect_code 2 "$code" "invalid env base URL rejected"
+reset_log
+run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "no URL and no key is off again"
+assert_contains "$err" 'dispatch-resolve: off' "unset URL keeps the off behaviour"
+pass "base URL: default unchanged, file used, env overrides, keyless custom URL on, invalid rejected"
+
+# --- configurable model and token file (local Jev) ---------------------------
+MODEL_FILE="$HOME_DIR/config/typesafe-model"
+TOKEN_FILE_CFG="$HOME_DIR/config/typesafe-token-file"
+TOKEN_PATH="$TMP_ROOT/jev-token"
+LOCAL_TOKEN='local-jev-token-7a1b-never-printed'
+reset_log
+printf '%s\n' '# model' 'local-general' > "$MODEL_FILE"
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_equals 'local-general' "$(jq -r .model "$LOG/body")" "config/typesafe-model sets the request model"
+rm -f "$MODEL_FILE"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_equals 'jev-latest' "$(jq -r .model "$LOG/body")" "unset model keeps jev-latest"
+printf '%s\n' "$LOCAL_TOKEN" > "$TOKEN_PATH"
+printf '%s\n' '# local Jev token' "$TOKEN_PATH" > "$TOKEN_FILE_CFG"
+printf '%s\n' "$LOCAL_JEV" > "$URL_FILE"
+reset_log
+run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "a configured token file works without TYPESAFE_API_KEY"
+assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "token file contents ride as the bearer on the fd header"
+assert_not_contains "$(cat "$LOG/argv")" "$LOCAL_TOKEN" "token never appears on curl argv"
+assert_not_contains "$out$err" "$LOCAL_TOKEN" "token is never printed"
+assert_equals $'curl:clean\nquota-axi:clean' "$(cat "$LOG/child-env")" "token is absent from every child environment"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "the token file wins over TYPESAFE_API_KEY at a custom URL"
+rm -f "$URL_FILE"
+reset_log
+run code out err "$BRIEF" --project pager
+expect_code 0 "$code" "a token file alone turns the resolver on"
+assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "token file alone supplies the bearer"
+reset_log
+TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
+assert_contains "$(cat "$LOG/argv")" 'https://api.typesafe.ai/v1/systemone' "token file with the default URL keeps the hosted endpoint"
+assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "the token file wins over TYPESAFE_API_KEY at the default URL"
+# shellcheck disable=SC2088  # The config line holds a literal ~/ for the resolver to expand.
+printf '%s\n' '~/jev-token-home' > "$TOKEN_FILE_CFG"
+mkdir -p "$TMP_ROOT/fakehome"
+printf '%s\n' "$LOCAL_TOKEN" > "$TMP_ROOT/fakehome/jev-token-home"
+reset_log
+HOME="$TMP_ROOT/fakehome" run code out err "$BRIEF" --project pager
+assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "a leading ~/ in the token file path expands to HOME"
+printf '%s\n' "$TMP_ROOT/no-such-token" > "$TOKEN_FILE_CFG"
+reset_log
+run code out err "$BRIEF" --project pager
+expect_code 2 "$code" "an unreadable token file is a configuration error"
+assert_contains "$err" 'typesafe token file' "unreadable token file is named"
+assert_absent "$LOG/argv" "unreadable token file never reaches curl"
+: > "$TOKEN_PATH"
+printf '%s\n' "$TOKEN_PATH" > "$TOKEN_FILE_CFG"
+reset_log
+run code out err "$BRIEF" --project pager
+expect_code 2 "$code" "an empty token file is a configuration error"
+rm -f "$TOKEN_FILE_CFG" "$TOKEN_PATH"
+reset_log
+run code out err "$BRIEF" --project pager
+assert_contains "$err" 'dispatch-resolve: off' "removing the token file returns to off"
+pass "model and token file: model configurable, token file is the bearer and wins over the key, bad file rejected"
+
 # --- .env key, and the environment wins over it ------------------------------
 printf '%s\n' '# local secrets' 'FMX_PAIRING_TOKEN=abc' "export TYPESAFE_API_KEY=\"$KEY\"" > "$HOME_DIR/.env"
 reset_log
