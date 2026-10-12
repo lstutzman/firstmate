@@ -1161,7 +1161,7 @@ Set it high when a wrong pick is costly and low when the rule is a safe runner-u
 **Provider identifiers and mappings**
 
 A profile `provider` optionally names the quota-axi provider family whose rows apply to that profile; when present, profile and rule-floor provider IDs must match the strict whole-string pattern `^[a-z0-9]+(-[a-z0-9]+)*\z`.
-Bootstrap validates resolver-only `approval`, `min_confidence`, `floor`, and present `provider` values only while typed resolution is active; without the key those inert fields and the pre-existing verified-harness baseline preserve bootstrap behavior.
+Bootstrap validates resolver-only `approval`, `min_confidence`, `floor`, and present `provider` values only while typed resolution is active (a key, a configured non-default base URL, or a configured `config/typesafe-token-file`, by the resolver's own resolution rule); otherwise those inert fields and the pre-existing verified-harness baseline preserve bootstrap behavior.
 
 Typed resolution additively recognizes `gemini` because AGENTS.md section 4 verifies it for crewmate and scout dispatch.
 
@@ -1195,7 +1195,7 @@ See [`docs/examples/crew-dispatch.json`](examples/crew-dispatch.json) for a star
 - When the file exists, bootstrap validates it with `jq`.
 - Valid files stay silent by default; with `FM_BOOTSTRAP_VERBOSE_FACTS=1`, bootstrap emits `BOOTSTRAP_INFO: crew dispatch active config/crew-dispatch.json`, one `BOOTSTRAP_INFO:` fact per rule, and one fact for the optional default profile set.
 - Malformed JSON, malformed rules, an empty or malformed profile array, an unverified harness, or an effort value unsupported by that harness is reported as `CREW_DISPATCH: invalid config/crew-dispatch.json - ...`.
-- While typed resolution is active, malformed `approval`, `min_confidence`, `floor`, and present `provider` declarations receive the same diagnostic; without the key those inert declarations preserve the pre-existing bootstrap behavior.
+- While typed resolution is active, malformed `approval`, `min_confidence`, `floor`, and present `provider` declarations receive the same diagnostic; while it is off those inert declarations preserve the pre-existing bootstrap behavior.
 - Missing `jq` is reported through the normal `MISSING: jq` install-consent flow.
 - While the file remains present, no crewmate or scout spawn may proceed without an explicit resolved harness; malformed configuration must be reported and corrected rather than selected around.
 
@@ -1208,6 +1208,8 @@ Secondmate homes inherit this file from the primary, so a secondmate's own crewm
 `bin/fm-dispatch-resolve.sh` resolves one concrete crewmate or scout profile from a written brief with typesafe.ai's System One model (Jev), so the rule match that firstmate otherwise reasons out in its own context becomes one short tool turn.
 It is off unless `TYPESAFE_API_KEY` is non-empty in the calling environment or the home's gitignored `.env` holds a `TYPESAFE_API_KEY=` line; the environment wins, matching the Relay and mail-plane contracts, and the Relay accessor in `bin/fm-env-lib.sh` reads the line.
 
+A configured non-default base URL or a configured `config/typesafe-token-file` (next sections) is also an on switch, so a local System One needs no key.
+
 Off means one `dispatch-resolve: off` line on stderr, nothing on stdout, exit 0, and no network call, so firstmate dispatches exactly as it does without the tool.
 This section is the single owner of the tool's operator contract; the script header owns its exact flags and output lines, and "Crew dispatch profiles" above owns the declared rule and profile fields it applies.
 
@@ -1216,6 +1218,32 @@ Rules come only from the effective home's `config/crew-dispatch.json`; `FM_CONFI
 ```sh
 bin/fm-dispatch-resolve.sh data/<id>/brief.md --project <name>        # TOON block on stdout
 ```
+
+**Base URL (config/typesafe-base-url)**
+
+The resolver posts to `<base URL>/v1/systemone`, with the base URL defaulting to `https://api.typesafe.ai`.
+To use a self-hosted System One, such as a local Jev, put one URL in the optional local, gitignored `config/typesafe-base-url`, or set `TYPESAFE_BASE_URL` in the calling environment, which wins over the file.
+The file's first non-blank line not beginning with `#` is the URL; like `config/crew-dispatch.json` it is inherited into secondmate homes.
+
+```text
+# local Jev
+http://jev.local:8800
+```
+
+Only `http://` and `https://` URLs without whitespace are accepted, and trailing slashes are trimmed; anything else is an exit 2 configuration error before any call, and bootstrap reports it as `CREW_DISPATCH: invalid typesafe base URL - ...` when `config/crew-dispatch.json` exists.
+With a non-default base URL configured the resolver is on even without `TYPESAFE_API_KEY`; the key is sent only to the default `https://api.typesafe.ai`, never to a custom URL, so without a token file (below) the request sends no `Authorization` header.
+An unset URL changes nothing: the default endpoint, and off without a key.
+
+**Model and token file (config/typesafe-model, config/typesafe-token-file)**
+
+A local System One can need its own model name and bearer token.
+The optional local, gitignored `config/typesafe-model` holds the model name on its first non-blank line not beginning with `#`; unset keeps `jev-latest`.
+The optional `config/typesafe-token-file` holds, on its first such line, the path of a file whose contents are the bearer token (a leading `~/` expands to `HOME`).
+The token is read at call time, sent only on the fd-fed `Authorization` header, and never printed or logged.
+A configured token file wins over `TYPESAFE_API_KEY` from the environment or `.env`, at the default or a custom base URL; the key is sent only to the default base URL.
+A configured token file makes the resolver and the bootstrap rule check active, like a custom URL; one that is unreadable or empty is an exit 2 configuration error naming the path.
+A custom URL with no key and no token file stays keyless.
+Both files are inherited into secondmate homes like `config/typesafe-base-url`.
 
 **When firstmate invokes the resolver**
 
@@ -1312,7 +1340,7 @@ Firstmate passes its profile line unless it states a reason to override, such as
 
 - The resolver and bootstrap copy an environment-provided key into a non-exported private variable and unset `TYPESAFE_API_KEY` before launching child processes, so the secret is absent from child environments.
 - The resolver sends the key to `curl` only as a header read from a file descriptor, never on argv, and nothing prints, logs, or writes it.
-- The resolver fixes the endpoint at `https://api.typesafe.ai`, model at `jev-latest`, default confidence floor at 0.6, and request timeout at 5 seconds; `TYPESAFE_API_KEY` is its only resolver-specific environment setting.
+- The resolver defaults the endpoint to `https://api.typesafe.ai` and the model to `jev-latest` (overridable as described above) and fixes the default confidence floor at 0.6 and the request timeout at 5 seconds; `TYPESAFE_API_KEY` and `TYPESAFE_BASE_URL` are its only resolver-specific environment settings.
 
 The live rule-match evidence is recorded in [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md).
 
@@ -2438,7 +2466,8 @@ FMX_RELAY_URL=https://myfirstmate.io   # optional Relay endpoint override, mainl
 FMX_ENV_FILE=           # optional alternate .env file for direct Relay client invocations; bootstrap still checks $FM_HOME/.env
 FMX_DRY_RUN=            # truthy previews Relay replies and dismissals to state/x-outbox/ without posting or requiring a token
 FMX_X_REPLY_MAX_CHARS=280   # X reply per-message split budget; values below 50 clamp to 50
-TYPESAFE_API_KEY=       # typed dispatch resolution opt-in, from the environment or .env; absent means bin/fm-dispatch-resolve.sh is off (docs/configuration.md "Typed dispatch resolution")
+TYPESAFE_API_KEY=       # typed dispatch resolution opt-in, from the environment or .env; absent, with no custom base URL or token file, means bin/fm-dispatch-resolve.sh is off (docs/configuration.md "Typed dispatch resolution")
+TYPESAFE_BASE_URL=      # optional System One base URL override, wins over config/typesafe-base-url; a non-default URL also turns the resolver on (docs/configuration.md "Typed dispatch resolution")
 FMX_DISCORD_REPLY_MAX_CHARS=1900   # Discord reply per-message split budget; values below 50 clamp to 50, values above 2000 reset to 1900
 FMX_X_THREAD_MAX=25     # maximum messages in one auto-split reply thread
 FMX_FOLLOWUP_MAX_AGE_SECS=604800   # local window for posting Relay completion follow-ups (7 days)
