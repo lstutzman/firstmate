@@ -396,6 +396,36 @@ test_check_key_reports_without_sending() {
   pass "fm-send --check-key reports open, closed, or unknown and sends nothing"
 }
 
+# After the unkeyed cutover each stamped unkeyed ask is listed under its own
+# synthetic key, which --check-key reports and --resolve-key closes exactly.
+test_synthetic_unkeyed_key_is_answerable() {
+  local dir fb log home out rc
+  dir="$TMP_ROOT/synthetic"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home synthetic)
+  fm_write_meta "$home/state/t4.meta" "window=sess:fm-t4" "kind=ship"
+  printf 'needs-decision [at=1791900000]: merge PR one?\n' > "$home/state/t4.status"
+  printf 'needs-decision [at=1791900100]: merge PR two?\n' >> "$home/state/t4.status"
+  out=$(drain_out "$home")
+  assert_contains "$out" "t4 [key=u-1791900000] needs-decision: merge PR one?" "the first ask should list under its synthetic key"
+  assert_contains "$out" "t4 [key=u-1791900100] needs-decision: merge PR two?" "the second ask should list under its own key"
+  out=$(run_send "$fb" "$home" "$log" --check-key t4 u-1791900000) || fail "--check-key of a synthetic key failed"
+  assert_equals "open" "$out" "an open synthetic key should read open"
+  run_send "$fb" "$home" "$log" t4 --resolve-key u-1791900000 "merge it"; rc=$?
+  expect_code 0 "$rc" "answering a synthetic key should succeed"
+  out=$(run_send "$fb" "$home" "$log" --check-key t4 u-1791900000) || fail "--check-key after the answer failed"
+  assert_equals "closed" "$out" "an answered synthetic key should read closed"
+  out=$(drain_out "$home")
+  assert_not_contains "$out" "merge PR one?" "the answered ask should leave OPEN DECISIONS"
+  assert_contains "$out" "[key=u-1791900100]" "the unanswered ask must stay open"
+  fm_write_meta "$home/state/t5.meta" "window=sess:fm-t5" "kind=ship"
+  printf 'needs-decision [at=1791900000]: lone ask\n' > "$home/state/t5.status"
+  printf 'resolved [at=1791900200]: settled\n' >> "$home/state/t5.status"
+  out=$(run_send "$fb" "$home" "$log" --check-key t5 u-1791900000) || fail "--check-key of a lone settled ask failed"
+  assert_equals "closed" "$out" "an ask its lone bare resolution closed should read closed"
+  pass "fm-send: a synthetic unkeyed key is listed, checkable, and closes exactly its ask"
+}
+
 # The close is an enqueue-time fact: the durable record IS the delivery, so a
 # failed doorbell keystroke must not reopen the split-brain where the close
 # waited on an unconfirmable submit.
@@ -963,6 +993,7 @@ test_routine_steer_never_closes
 test_not_open_key_refuses_before_send
 test_placeholder_answer_refuses_before_send
 test_check_key_reports_without_sending
+test_synthetic_unkeyed_key_is_answerable
 test_failed_ring_still_closes_at_enqueue
 test_failed_enqueue_does_not_close
 test_multiple_keys_close_together

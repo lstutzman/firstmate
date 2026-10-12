@@ -1659,7 +1659,10 @@ parent_evidence_reconciliation_json() {  # <summary-json-file> <activities-json>
   jq -n --slurpfile summary "$1" --argjson activities "$2" --argjson decisions "$3" '
     ($summary[0]) as $summary
     |
-    def keyed: . != null and . != "" and . != "default";
+    # A synthetic u-<epoch>[-<corr>] key (bin/fm-classify-lib.sh key grammar)
+    # names an unkeyed line, not an identity to match, so it reads unkeyed too.
+    def keyed: . != null and . != "" and . != "default"
+      and (test("^u-[0-9]+(-[0-9A-Fa-f]{16})?$") | not);
     def result($e; $matches; $complete; $surface):
       $e + {
         verdict:(if ($e.key | keyed | not) then "inconclusive"

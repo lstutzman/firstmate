@@ -495,7 +495,7 @@ fm_send_check_key() { # <task-id> <key>
     while IFS= read -r line || [ -n "$line" ]; do
       status_line_verb "$line" verb
       case "$verb" in needs-decision | blocked | resolved | captain-held) ;; *) continue ;; esac
-      [ "$(_fm_decision_key "$line" 2>/dev/null)" = "$k" ] || continue
+      [ "$(status_line_decision_key "$line" 2>/dev/null)" = "$k" ] || continue
       echo closed
       return 0
     done <"$status"
