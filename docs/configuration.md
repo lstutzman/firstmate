@@ -1152,7 +1152,7 @@ Set it high when a wrong pick is costly and low when the rule is a safe runner-u
 **Provider identifiers and mappings**
 
 A profile `provider` optionally names the quota-axi provider family whose rows apply to that profile; when present, profile and rule-floor provider IDs must match the strict whole-string pattern `^[a-z0-9]+(-[a-z0-9]+)*\z`.
-Bootstrap validates resolver-only `approval`, `min_confidence`, `floor`, and present `provider` values only while typed resolution is active (a key or a configured non-default base URL, by the resolver's own resolution rule); otherwise those inert fields and the pre-existing verified-harness baseline preserve bootstrap behavior.
+Bootstrap validates resolver-only `approval`, `min_confidence`, `floor`, and present `provider` values only while typed resolution is active (a key, a configured non-default base URL, or a configured `config/typesafe-token-file`, by the resolver's own resolution rule); otherwise those inert fields and the pre-existing verified-harness baseline preserve bootstrap behavior.
 
 Typed resolution additively recognizes `gemini` because AGENTS.md section 4 verifies it for crewmate and scout dispatch.
 
@@ -1199,7 +1199,7 @@ Secondmate homes inherit this file from the primary, so a secondmate's own crewm
 `bin/fm-dispatch-resolve.sh` resolves one concrete crewmate or scout profile from a written brief with typesafe.ai's System One model (Jev), so the rule match that firstmate otherwise reasons out in its own context becomes one short tool turn.
 It is off unless `TYPESAFE_API_KEY` is non-empty in the calling environment or the home's gitignored `.env` holds a `TYPESAFE_API_KEY=` line; the environment wins, matching the Relay and mail-plane contracts, and the Relay accessor in `bin/fm-env-lib.sh` reads the line.
 
-A configured non-default base URL (next section) is also an on switch, so a local System One needs no key.
+A configured non-default base URL or a configured `config/typesafe-token-file` (next sections) is also an on switch, so a local System One needs no key.
 
 Off means one `dispatch-resolve: off` line on stderr, nothing on stdout, exit 0, and no network call, so firstmate dispatches exactly as it does without the tool.
 This section is the single owner of the tool's operator contract; the script header owns its exact flags and output lines, and "Crew dispatch profiles" above owns the declared rule and profile fields it applies.

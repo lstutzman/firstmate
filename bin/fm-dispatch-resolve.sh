@@ -10,7 +10,7 @@
 #   accessor as FMX_PAIRING_TOKEN (bin/fm-env-lib.sh). The environment wins.
 #   A configured non-default base URL or token file (below) is also an on
 #   switch.
-#   Neither a key nor a custom URL: one "dispatch-resolve: off" line on stderr,
+#   Neither a key, a custom URL, nor a token file: one "dispatch-resolve: off" line on stderr,
 #   nothing on stdout, exit 0, no network call, so firstmate dispatches
 #   exactly as today.
 #
@@ -154,7 +154,7 @@ elif [ -z "$TYPESAFE_API_KEY_PRIVATE" ]; then
 fi
 unset TS_TOKEN
 if [ -z "$TYPESAFE_API_KEY_PRIVATE" ] && [ "$TS_BASE" = "$FM_TYPESAFE_DEFAULT_BASE" ]; then
-  echo "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $FM_HOME/.env, and no custom base URL configured)" >&2
+  echo "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and $FM_HOME/.env, and no custom base URL or token file configured)" >&2
   exit 0
 fi
 
