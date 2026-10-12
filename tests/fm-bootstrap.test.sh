@@ -1235,12 +1235,23 @@ ROWS
     TYPESAFE_BASE_URL=ftp://jev.local FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
   [ "$out" = 'CREW_DISPATCH: invalid typesafe base URL - typesafe base URL must be an http:// or https:// URL: ftp://jev.local' ] \
     || fail "bootstrap must report an unusable typesafe base URL, got: $out"
-  printf '%s\n' '/tmp/some-jev-token' > "$case_dir/home/config/typesafe-token-file"
+  printf '%s\n' "$case_dir/no-such-jev-token" > "$case_dir/home/config/typesafe-token-file"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  [ "$out" = "CREW_DISPATCH: invalid typesafe token file - typesafe token file is not a readable file: $case_dir/no-such-jev-token" ] \
+    || fail "bootstrap must report a missing typesafe token file, got: $out"
+  : > "$case_dir/jev-token"
+  printf '%s\n' "$case_dir/jev-token" > "$case_dir/home/config/typesafe-token-file"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  [ "$out" = "CREW_DISPATCH: invalid typesafe token file - typesafe token file is empty: $case_dir/jev-token" ] \
+    || fail "bootstrap must report an empty typesafe token file, got: $out"
+  printf '%s\n' 'secret-jev-token-never-printed' > "$case_dir/jev-token"
   out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
     FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
   [ "$out" = 'CREW_DISPATCH: invalid config/crew-dispatch.json - use profile model and effort must be non-empty strings, and provider must match ^[a-z0-9]+(-[a-z0-9]+)*\z when present' ] \
     || fail "a configured token file must activate resolver-field validation, got: $out"
-  rm -f "$case_dir/home/config/typesafe-token-file"
+  rm -f "$case_dir/home/config/typesafe-token-file" "$case_dir/jev-token"
 
   rm -f "$case_dir/home/.env"
   printf '%s\n' '{"default":{"harness":"devin","model":"swe-2-medium"}}' > "$case_dir/home/config/crew-dispatch.json"

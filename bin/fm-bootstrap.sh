@@ -1047,7 +1047,7 @@ EOF
 }
 
 crew_dispatch_validate() {
-  local file err verified_harnesses typed_key typed_base typed_active=false
+  local file err verified_harnesses typed_key typed_base typed_token typed_active=false
   file="$CONFIG/crew-dispatch.json"
   [ -f "$file" ] || return 0
   if ! command -v jq >/dev/null 2>&1; then
@@ -1066,7 +1066,12 @@ crew_dispatch_validate() {
     return 0
   fi
   [ "$typed_base" = "$FM_TYPESAFE_DEFAULT_BASE" ] || typed_active=true
-  [ -z "$(fm_typesafe_config_line "$CONFIG" typesafe-token-file)" ] || typed_active=true
+  if ! typed_token=$(fm_typesafe_token "$CONFIG"); then
+    echo "CREW_DISPATCH: invalid typesafe token file - $typed_token"
+    return 0
+  fi
+  [ -z "$typed_token" ] || typed_active=true
+  typed_token=
   if $typed_active; then
     verified_harnesses=$(fm_control_harnesses | jq -Rsc 'split("\n") | map(select(length > 0))')
   else
