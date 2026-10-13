@@ -1391,10 +1391,10 @@ A herdr, zellij, or cmux home is therefore never told `tmux` is missing, and the
 
 `tasks-axi` and `quota-axi` are essential bootstrap tools in every profile.
 
-- An absent or incompatible `tasks-axi` reports `MISSING: tasks-axi (install: npm install -g tasks-axi@0.2.6)`; when `config/backlog-backend` is not `manual`, a home with a configured non-markdown adapter or a markdown backlog refuses lifecycle mutation until compatible `tasks-axi` is on `PATH`, while a manual-backend home keeps its backlog hand-edited.
-- An absent or incompatible `gh-axi` reports `MISSING: gh-axi (install: npm install -g gh-axi@0.1.38 && gh-axi setup hooks)`.
+- An absent or incompatible `tasks-axi` reports `MISSING: tasks-axi (install: npm install -g --ignore-scripts tasks-axi@0.2.6)`; when `config/backlog-backend` is not `manual`, a home with a configured non-markdown adapter or a markdown backlog refuses lifecycle mutation until compatible `tasks-axi` is on `PATH`, while a manual-backend home keeps its backlog hand-edited.
+- An absent or incompatible `gh-axi` reports `MISSING: gh-axi (install: npm install -g --ignore-scripts gh-axi@0.1.38 && gh-axi setup hooks)`.
 - An absent or board-incompatible `lavish-axi` reports `PRESENTATION_UNAVAILABLE` with the 0.1.77 compatibility floor, install command, and explicit text fallback; compatible versions below 0.1.80 retain legacy board replies and report an upgrade recommendation for synchronous acceptance, while [`bootstrap-diagnostics`](../.agents/skills/bootstrap-diagnostics/SKILL.md) owns diagnostic handling.
-- An absent or too-old `quota-axi` reports `MISSING: quota-axi (install: npm install -g quota-axi@0.1.60)`; firstmate cannot resolve a profile array without a compatible binary.
+- An absent or too-old `quota-axi` reports `MISSING: quota-axi (install: npm install -g --ignore-scripts quota-axi@0.1.60)`; firstmate cannot resolve a profile array without a compatible binary.
 
 **Checkout diagnostics**
 
