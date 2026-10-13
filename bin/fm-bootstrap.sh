@@ -797,14 +797,19 @@ secondmate_handoff_detect() {
   done
 }
 
+# shellcheck source=bin/fm-install-pins.sh disable=SC1091
+. "$SCRIPT_DIR/fm-install-pins.sh"
+
 install_cmd() {
   case "$1" in
     tmux|node|git|gh|curl|jq|orca|zellij) echo "brew install $1  # or the platform's package manager" ;;
     cmux) echo "brew install --cask cmux  # or see https://cmux.com" ;;
-    treehouse) echo "curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh" ;;
-    no-mistakes) echo "curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh" ;;
-    gh-axi|chrome-devtools-axi|lavish-axi) echo "npm install -g $1 && $1 setup hooks" ;;
-    tasks-axi|quota-axi) echo "npm install -g $1" ;;
+    treehouse|no-mistakes) echo "\"$SCRIPT_DIR/fm-install-pinned.sh\" $1" ;;
+    gh-axi) echo "npm install -g --ignore-scripts gh-axi@$FM_PIN_GH_AXI_VERSION && gh-axi setup hooks" ;;
+    chrome-devtools-axi) echo "npm install -g --ignore-scripts chrome-devtools-axi@$FM_PIN_CHROME_DEVTOOLS_AXI_VERSION && chrome-devtools-axi setup hooks" ;;
+    lavish-axi) echo "npm install -g --ignore-scripts lavish-axi@$FM_PIN_LAVISH_AXI_VERSION && lavish-axi setup hooks" ;;
+    tasks-axi) echo "npm install -g --ignore-scripts tasks-axi@$FM_PIN_TASKS_AXI_VERSION" ;;
+    quota-axi) echo "npm install -g --ignore-scripts quota-axi@$FM_PIN_QUOTA_AXI_VERSION" ;;
     *) return 1 ;;
   esac
 }
