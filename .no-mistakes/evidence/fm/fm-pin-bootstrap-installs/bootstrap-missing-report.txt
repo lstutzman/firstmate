@@ -1,0 +1,8 @@
+## fm-bootstrap.sh in a disposable lab home, pinned tools absent from PATH
+MISSING: treehouse (install: "/Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4TV5NM4N2WSJGF2CX5MDPHR/bin/fm-install-pinned.sh" treehouse)
+MISSING: no-mistakes (install: "/Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4TV5NM4N2WSJGF2CX5MDPHR/bin/fm-install-pinned.sh" no-mistakes)
+MISSING: gh-axi (install: npm install -g --ignore-scripts gh-axi@0.1.38 && gh-axi setup hooks)
+MISSING: chrome-devtools-axi (install: npm install -g --ignore-scripts chrome-devtools-axi@0.1.40 && chrome-devtools-axi setup hooks)
+MISSING: tasks-axi (install: npm install -g --ignore-scripts tasks-axi@0.2.6)
+MISSING: quota-axi (install: npm install -g --ignore-scripts quota-axi@0.1.60)
+PRESENTATION_UNAVAILABLE: lavish-axi (requires >=0.1.77; install: npm install -g --ignore-scripts lavish-axi@0.1.86 && lavish-axi setup hooks) - nonvisual work may proceed with plain-text decisions and reports; install or upgrade before using Lavish

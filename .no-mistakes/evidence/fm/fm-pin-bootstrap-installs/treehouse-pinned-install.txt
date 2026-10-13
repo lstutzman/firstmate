@@ -1,0 +1,7 @@
+## Live pinned treehouse install (real GitHub release, disposable dir)
+downloading treehouse v3.1.1 from https://github.com/kunchenguid/treehouse/releases/download/v3.1.1/treehouse-v3.1.1-darwin-arm64.tar.gz
+treehouse v3.1.1 installed to /tmp/fmpin.B9SG1H/th-bin/treehouse
+exit=0
+total 26128
+-rwxr-xr-x@ 1 leestutzman  wheel  13374434 Oct 13 15:47 treehouse
+v3.1.1

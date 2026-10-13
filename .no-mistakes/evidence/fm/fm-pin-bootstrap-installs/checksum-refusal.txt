@@ -1,0 +1,23 @@
+## no-mistakes pinned release asset: real GitHub download vs pinned SHA-256
+pinned darwin_arm64: d8525e8dfc9b0bf27bdb3fe432d271b3ede7754eba34d3f110b5a33add93f865
+actual:              d8525e8dfc9b0bf27bdb3fe432d271b3ede7754eba34d3f110b5a33add93f865
+no-mistakes version v1.88.0 (9dc5ac8) 2026-10-05T13:26:06Z
+
+## Adversarial: real treehouse asset, tampered pin -> installer must refuse
+downloading treehouse v3.1.1 from https://github.com/kunchenguid/treehouse/releases/download/v3.1.1/treehouse-v3.1.1-darwin-arm64.tar.gz
+fm-install-pinned.sh: checksum mismatch for treehouse-v3.1.1-darwin-arm64.tar.gz (expected deadbeef00000000000000000000000000000000000000000000000000000000, got 79926e73e420560eeee2ca1b3bd2a26f7aeca8f0122ddff79c909fa48342976a); refusing to install
+exit=1
+ls: /tmp/fmpin.B9SG1H/th-tamper: No such file or directory
+
+## Adversarial: real no-mistakes asset, tampered pin -> must refuse before install or daemon restart
+downloading no-mistakes v1.88.0 from https://github.com/kunchenguid/no-mistakes/releases/download/v1.88.0/no-mistakes-v1.88.0-darwin-arm64.tar.gz
+fm-install-pinned.sh: checksum mismatch for no-mistakes-v1.88.0-darwin-arm64.tar.gz (expected deadbeef00000000000000000000000000000000000000000000000000000000, got d8525e8dfc9b0bf27bdb3fe432d271b3ede7754eba34d3f110b5a33add93f865); refusing to install
+exit=1
+ls: /tmp/fmpin.B9SG1H/nm-link: No such file or directory
+ls: /tmp/fmpin.B9SG1H/nm-tamper: No such file or directory
+
+## Adversarial: swapped archive served from the pinned URL path (MITM) with genuine pins -> refuse
+downloading treehouse v3.1.1 from file:///tmp/fmpin.B9SG1H/evil/v3.1.1/treehouse-v3.1.1-darwin-arm64.tar.gz
+fm-install-pinned.sh: checksum mismatch for treehouse-v3.1.1-darwin-arm64.tar.gz (expected 79926e73e420560eeee2ca1b3bd2a26f7aeca8f0122ddff79c909fa48342976a, got 47f9887686ea8330d4d6ad23efdf29e1b7846d09bcafb625151c57d33525de71); refusing to install
+exit=1
+ls: /tmp/fmpin.B9SG1H/th-evil: No such file or directory
