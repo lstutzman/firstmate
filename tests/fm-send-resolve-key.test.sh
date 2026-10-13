@@ -426,6 +426,30 @@ test_synthetic_unkeyed_key_is_answerable() {
   pass "fm-send: a synthetic unkeyed key is listed, checkable, and closes exactly its ask"
 }
 
+# Answering the synthetic keys an OPEN DECISIONS drain listed is this home's own
+# bookkeeping, exactly like answering stated keys: it must not re-wake the home.
+test_synthetic_key_close_after_fold_is_self_announced() {
+  local dir fb log home rc out
+  dir="$TMP_ROOT/synthetic-fold"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home synthetic-fold)
+  fm_write_meta "$home/state/t8.meta" "window=sess:fm-t8" "kind=ship"
+  {
+    printf 'needs-decision [at=1791900000]: approve spend?\n'
+    printf 'needs-decision [at=1791900100]: pick a vendor\n'
+  } > "$home/state/t8.status"
+  out=$(drain_out "$home")
+  assert_contains "$out" "[key=u-1791900100]" "precondition: the drain should list both synthetic keys"
+  run_send "$fb" "$home" "$log" t8 --resolve-key u-1791900000 --resolve-key u-1791900100 \
+    "approve spend, pick acme"; rc=$?
+  expect_code 0 "$rc" "an answer resolving two folded synthetic keys should succeed"
+  FM_STATE_OVERRIDE="$home/state" bash -c '
+    . "$1"; fm_wake_signal_seen_current "$2" "$3"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$home/state/t8.status" \
+    || fail "answering folded synthetic keys was left to re-wake this home"
+  pass "fm-send --resolve-key: closing folded synthetic keys never wakes this home"
+}
+
 # The close is an enqueue-time fact: the durable record IS the delivery, so a
 # failed doorbell keystroke must not reopen the split-brain where the close
 # waited on an unconfirmable submit.
@@ -994,6 +1018,7 @@ test_not_open_key_refuses_before_send
 test_placeholder_answer_refuses_before_send
 test_check_key_reports_without_sending
 test_synthetic_unkeyed_key_is_answerable
+test_synthetic_key_close_after_fold_is_self_announced
 test_failed_ring_still_closes_at_enqueue
 test_failed_enqueue_does_not_close
 test_multiple_keys_close_together
