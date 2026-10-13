@@ -284,6 +284,96 @@ test_incremental_agrees_with_full_fold_across_appends
 # `resolved` claims the question is settled outright, while `captain-held` is
 # the verified transfer to that task, so treating them alike would either lose
 # the record-divergence signal or invent one on every correct transfer.
+# After the unkeyed cutover, every stamped unkeyed needs-decision or blocked
+# line opens its own entry under the synthetic key u-<at-epoch>, so a later
+# unkeyed ask no longer replaces an earlier one still waiting on the captain.
+test_unkeyed_asks_after_cutover_each_stay_open() {
+  local dir expected
+  dir=$(case_dir unkeyed-cutover)
+  printf 'needs-decision [at=1000]: merge PR one?\n' > "$dir/s.status"
+  printf 'working [at=1500]: unrelated\n' >> "$dir/s.status"
+  printf 'blocked [at=2000]: need the vendor key\n' >> "$dir/s.status"
+  expected=$(printf 'u-1000\tneeds-decision\tmerge PR one?\nu-2000\tblocked\tneed the vendor key\n')
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/s.status" "$expected" "unkeyed asks after the cutover"
+  pass "unkeyed asks after the cutover each stay open under a synthetic key"
+}
+test_unkeyed_asks_after_cutover_each_stay_open
+
+# A stamped unkeyed resolution after the cutover closes an unkeyed entry only
+# when exactly one is open in its scope (the task, or the task plus its
+# correlation id); with several open it closes none, and each closes by its
+# synthetic key. Unstamped and pre-cutover lines keep the shared default bucket.
+test_unkeyed_resolution_after_cutover_closes_only_a_lone_ask() {
+  local dir corr=0123456789abcdef expected
+  dir=$(case_dir unkeyed-resolve)
+  printf 'needs-decision [at=1000]: lone ask\n' > "$dir/lone.status"
+  printf 'resolved [at=1100]: answered\n' >> "$dir/lone.status"
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/lone.status" "" "a lone unkeyed ask"
+
+  printf 'needs-decision [at=1000]: first ask\n' > "$dir/two.status"
+  printf 'needs-decision [at=2000]: second ask\n' >> "$dir/two.status"
+  printf 'resolved [at=2100]: answered one of them\n' >> "$dir/two.status"
+  expected=$(printf 'u-1000\tneeds-decision\tfirst ask\nu-2000\tneeds-decision\tsecond ask\n')
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/two.status" "$expected" "two unkeyed asks and a bare resolution"
+  printf 'resolved [key=u-1000] [at=2200]: answered: A\n' >> "$dir/two.status"
+  expected=$(printf 'u-2000\tneeds-decision\tsecond ask\n')
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/two.status" "$expected" "closing one synthetic key by name"
+
+  printf 'needs-decision [corr=%s] [at=1000]: correlated ask\n' "$corr" > "$dir/corr.status"
+  printf 'needs-decision [at=2000]: uncorrelated ask\n' >> "$dir/corr.status"
+  printf 'resolved corr=%s [at=2100]: answered the correlated ask\n' "$corr" >> "$dir/corr.status"
+  expected=$(printf 'u-2000\tneeds-decision\tuncorrelated ask\n')
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/corr.status" "$expected" "a correlated resolution in task-plus-id scope"
+
+  printf 'needs-decision [at=100]: legacy first\n' > "$dir/legacy.status"
+  printf 'needs-decision: legacy unstamped\n' >> "$dir/legacy.status"
+  expected=$(printf 'default\tneeds-decision\tlegacy unstamped\n')
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/legacy.status" "$expected" "pre-cutover and unstamped lines"
+  printf 'resolved [at=1100]: closes the lone legacy entry\n' >> "$dir/legacy.status"
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/legacy.status" "" "a post-cutover resolution closing a lone legacy entry"
+  pass "an unkeyed resolution after the cutover closes only a lone ask in its scope"
+}
+test_unkeyed_resolution_after_cutover_closes_only_a_lone_ask
+
+# An unstamped bare resolution still clears a worker's single open ask when that
+# ask was stamped after the cutover, as it did before synthetic keys; with
+# several asks open it closes none.
+test_unstamped_resolution_closes_a_lone_stamped_ask() {
+  local dir expected
+  dir=$(case_dir unkeyed-unstamped-resolve)
+  printf 'needs-decision [at=1000]: merge it?\n' > "$dir/lone.status"
+  printf 'resolved: captain said yes\n' >> "$dir/lone.status"
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/lone.status" "" "an unstamped resolution of a lone stamped ask"
+
+  printf 'needs-decision [at=1000]: merge it?\n' > "$dir/held.status"
+  printf 'captain-held: waiting on the captain\n' >> "$dir/held.status"
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/held.status" "" "an unstamped captain-held line on a lone stamped ask"
+
+  printf 'needs-decision [at=1000]: first ask\n' > "$dir/two.status"
+  printf 'needs-decision [at=2000]: second ask\n' >> "$dir/two.status"
+  printf 'resolved: answered one of them\n' >> "$dir/two.status"
+  expected=$(printf 'u-1000\tneeds-decision\tfirst ask\nu-2000\tneeds-decision\tsecond ask\n')
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/two.status" "$expected" "an unstamped resolution with two stamped asks open"
+  pass "an unstamped resolution closes only a lone stamped ask"
+}
+test_unstamped_resolution_closes_a_lone_stamped_ask
+
+# status_key_closing_verb reads a synthetic unkeyed key the way the fold does:
+# open while its ask is open, and the closing verb once it is closed.
+test_closing_verb_reads_a_synthetic_unkeyed_key() {
+  local dir
+  dir=$(case_dir unkeyed-closing-verb)
+  printf 'needs-decision [at=1000]: first ask\n' > "$dir/s.status"
+  printf 'needs-decision [at=2000]: second ask\n' >> "$dir/s.status"
+  assert_equals "needs-decision" "$(FM_CLASSIFY_UNKEYED_CUTOVER=500 status_key_closing_verb "$dir/s.status" u-1000)" \
+    "an open synthetic key should read as its opening verb"
+  printf 'captain-held [key=u-1000] [at=2100]: transferred\n' >> "$dir/s.status"
+  assert_equals "captain-held" "$(FM_CLASSIFY_UNKEYED_CUTOVER=500 status_key_closing_verb "$dir/s.status" u-1000)" \
+    "a transferred synthetic key should read as captain-held"
+  pass "status_key_closing_verb reads a synthetic unkeyed key like the fold"
+}
+test_closing_verb_reads_a_synthetic_unkeyed_key
+
 test_closing_verb_separates_resolution_from_durable_transfer() {
   local dir f
   dir=$(case_dir closing-verb)

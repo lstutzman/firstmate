@@ -160,9 +160,13 @@ PARENT_STATUS="$STATE/$ID.status"
 REMOTE_STATUS="$REMOTE_HOME/state/parent-replies.status"
 PARENT_INBOX="$STATE/$ID.inbox"
 REMOTE_INBOX="$REMOTE_HOME/state/parent-route/$ID.inbox"
+# The inbox take command runs from the remote code root, not this Mac's.
+PARENT_TAKE="$FM_ROOT/bin/fm-task-inbox.sh"
+REMOTE_TAKE="$REMOTE_ROOT/bin/fm-task-inbox.sh"
 while IFS= read -r line || [ -n "$line" ]; do
   line=${line//"$PARENT_STATUS"/"$REMOTE_STATUS"}
   line=${line//"$PARENT_INBOX"/"$REMOTE_INBOX"}
+  line=${line//"$PARENT_TAKE"/"$REMOTE_TAKE"}
   printf '%s\n' "$line"
 done < "$BRIEF" > "$TMP/charter.remote"
 

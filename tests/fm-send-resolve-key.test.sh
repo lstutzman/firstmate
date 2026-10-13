@@ -347,6 +347,109 @@ test_not_open_key_refuses_before_send() {
   pass "fm-send --resolve-key: a key that is not open refuses loudly before anything is sent"
 }
 
+# A throwaway answer would close a live captain decision as answered, so a
+# placeholder answer refuses before anything is sent; a short real answer such
+# as "A" still closes.
+test_placeholder_answer_refuses_before_send() {
+  local dir fb log home err rc placeholder
+  dir="$TMP_ROOT/placeholder"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"; err="$dir/send.err"
+  home=$(setup_home placeholder)
+  fm_write_meta "$home/state/t4.meta" "window=sess:fm-t4" "kind=ship"
+  printf 'needs-decision [key=real-key]: choose\n' > "$home/state/t4.status"
+  for placeholder in x "Test." " PING " tbd; do
+    : > "$log"
+    env PATH="$fb:$PATH" \
+      FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+      "$SEND" t4 --resolve-key real-key "$placeholder" >/dev/null 2>"$err"; rc=$?
+    [ "$rc" -ne 0 ] || fail "placeholder answer '$placeholder' should refuse"
+    assert_contains "$(cat "$err")" "looks like a placeholder" "the refusal should say why"
+    [ ! -d "$home/state/t4.inbox" ] || fail "a placeholder answer still enqueued an inbox record"
+    if grep -F 'resolved' "$home/state/t4.status" >/dev/null; then
+      fail "a placeholder answer closed the decision: $(cat "$home/state/t4.status")"
+    fi
+  done
+  run_send "$fb" "$home" "$log" t4 --resolve-key real-key "A"; rc=$?
+  expect_code 0 "$rc" "a one-letter real answer should still close"
+  pass "fm-send --resolve-key: a placeholder answer refuses before send, a short real one closes"
+}
+
+# --check-key probes a decision key without sending: open, closed, or unknown.
+test_check_key_reports_without_sending() {
+  local dir fb log home out
+  dir="$TMP_ROOT/check-key"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home check-key)
+  fm_write_meta "$home/state/t4.meta" "window=sess:fm-t4" "kind=ship"
+  printf 'needs-decision [key=still-open]: choose\n' > "$home/state/t4.status"
+  printf 'needs-decision [key=was-open]: choose again\n' >> "$home/state/t4.status"
+  printf 'resolved [key=was-open]: answered: B\n' >> "$home/state/t4.status"
+  : > "$log"
+  out=$(run_send "$fb" "$home" "$log" --check-key t4 still-open) || fail "--check-key of an open key failed"
+  assert_equals "open" "$out" "an open key should read open"
+  out=$(run_send "$fb" "$home" "$log" --check-key t4 was-open) || fail "--check-key of a closed key failed"
+  assert_equals "closed" "$out" "a resolved key should read closed"
+  out=$(run_send "$fb" "$home" "$log" --check-key t4 never-seen) || fail "--check-key of an unknown key failed"
+  assert_equals "unknown" "$out" "a key the log never named should read unknown"
+  [ ! -s "$log" ] || fail "--check-key typed text: $(cat "$log")"
+  [ ! -d "$home/state/t4.inbox" ] || fail "--check-key enqueued an inbox record"
+  pass "fm-send --check-key reports open, closed, or unknown and sends nothing"
+}
+
+# After the unkeyed cutover each stamped unkeyed ask is listed under its own
+# synthetic key, which --check-key reports and --resolve-key closes exactly.
+test_synthetic_unkeyed_key_is_answerable() {
+  local dir fb log home out rc
+  dir="$TMP_ROOT/synthetic"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home synthetic)
+  fm_write_meta "$home/state/t4.meta" "window=sess:fm-t4" "kind=ship"
+  printf 'needs-decision [at=1791900000]: merge PR one?\n' > "$home/state/t4.status"
+  printf 'needs-decision [at=1791900100]: merge PR two?\n' >> "$home/state/t4.status"
+  out=$(drain_out "$home")
+  assert_contains "$out" "t4 [key=u-1791900000] needs-decision: merge PR one?" "the first ask should list under its synthetic key"
+  assert_contains "$out" "t4 [key=u-1791900100] needs-decision: merge PR two?" "the second ask should list under its own key"
+  out=$(run_send "$fb" "$home" "$log" --check-key t4 u-1791900000) || fail "--check-key of a synthetic key failed"
+  assert_equals "open" "$out" "an open synthetic key should read open"
+  run_send "$fb" "$home" "$log" t4 --resolve-key u-1791900000 "merge it"; rc=$?
+  expect_code 0 "$rc" "answering a synthetic key should succeed"
+  out=$(run_send "$fb" "$home" "$log" --check-key t4 u-1791900000) || fail "--check-key after the answer failed"
+  assert_equals "closed" "$out" "an answered synthetic key should read closed"
+  out=$(drain_out "$home")
+  assert_not_contains "$out" "merge PR one?" "the answered ask should leave OPEN DECISIONS"
+  assert_contains "$out" "[key=u-1791900100]" "the unanswered ask must stay open"
+  fm_write_meta "$home/state/t5.meta" "window=sess:fm-t5" "kind=ship"
+  printf 'needs-decision [at=1791900000]: lone ask\n' > "$home/state/t5.status"
+  printf 'resolved [at=1791900200]: settled\n' >> "$home/state/t5.status"
+  out=$(run_send "$fb" "$home" "$log" --check-key t5 u-1791900000) || fail "--check-key of a lone settled ask failed"
+  assert_equals "closed" "$out" "an ask its lone bare resolution closed should read closed"
+  pass "fm-send: a synthetic unkeyed key is listed, checkable, and closes exactly its ask"
+}
+
+# Answering the synthetic keys an OPEN DECISIONS drain listed is this home's own
+# bookkeeping, exactly like answering stated keys: it must not re-wake the home.
+test_synthetic_key_close_after_fold_is_self_announced() {
+  local dir fb log home rc out
+  dir="$TMP_ROOT/synthetic-fold"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home synthetic-fold)
+  fm_write_meta "$home/state/t8.meta" "window=sess:fm-t8" "kind=ship"
+  {
+    printf 'needs-decision [at=1791900000]: approve spend?\n'
+    printf 'needs-decision [at=1791900100]: pick a vendor\n'
+  } > "$home/state/t8.status"
+  out=$(drain_out "$home")
+  assert_contains "$out" "[key=u-1791900100]" "precondition: the drain should list both synthetic keys"
+  run_send "$fb" "$home" "$log" t8 --resolve-key u-1791900000 --resolve-key u-1791900100 \
+    "approve spend, pick acme"; rc=$?
+  expect_code 0 "$rc" "an answer resolving two folded synthetic keys should succeed"
+  FM_STATE_OVERRIDE="$home/state" bash -c '
+    . "$1"; fm_wake_signal_seen_current "$2" "$3"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$home/state/t8.status" \
+    || fail "answering folded synthetic keys was left to re-wake this home"
+  pass "fm-send --resolve-key: closing folded synthetic keys never wakes this home"
+}
+
 # The close is an enqueue-time fact: the durable record IS the delivery, so a
 # failed doorbell keystroke must not reopen the split-brain where the close
 # waited on an unconfirmable submit.
@@ -912,6 +1015,10 @@ test_colon_first_key_position_is_answerable
 test_answer_starts_work_never_orphans
 test_routine_steer_never_closes
 test_not_open_key_refuses_before_send
+test_placeholder_answer_refuses_before_send
+test_check_key_reports_without_sending
+test_synthetic_unkeyed_key_is_answerable
+test_synthetic_key_close_after_fold_is_self_announced
 test_failed_ring_still_closes_at_enqueue
 test_failed_enqueue_does_not_close
 test_multiple_keys_close_together

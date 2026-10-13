@@ -441,7 +441,9 @@ status_paused_until() {  # <status-line> -> epoch on stdout
 # their grammar. Missing, malformed, or duplicate time fields mean UNKNOWN time;
 # never infer emission time from file mtime, a wake, or observation time. Relays
 # preserve source tags and leave legacy source events unstamped. Time describes
-# event history only and must never decide current state or decision closure.
+# event history only and must never decide current state or decision closure,
+# with one exception: the decision fold reads an unkeyed line's stamp against
+# the unkeyed cutover to choose its key (see the key grammar below).
 # This parser owns that grammar; every reader below is a thin adapter over it,
 # so no second spelling of "well-formed" can drift against this one.
 # Internals carry a reserved prefix: bash locals are dynamically scoped, so a
@@ -597,10 +599,22 @@ status_event_recorded() {  # <status-file> <new-status-line>
 # carry a token, the documented before-colon one wins and the note-head token
 # stays note text. A token deeper inside the note is prose, never a stated key,
 # so a summary merely MENTIONING "[key=x]" cannot open or close that decision.
-# A line with no token in either position uses the key "default", preserving
-# the historical one-open-decision-per-task behavior (a bare "resolved:" closes
-# "default"). A stated key whose slug fails the charset below is rejected (the
-# folds skip the line), never rewritten to "default".
+# A line with no token in either position is unkeyed. An unkeyed line stamped
+# at or after the unkeyed cutover (FM_CLASSIFY_UNKEYED_CUTOVER_DEFAULT below)
+# opens its own entry under the synthetic key "u-<at-epoch>", or
+# "u-<at-epoch>-<corr>" when it carries a correlation token, so a later unkeyed
+# ask never replaces an earlier one still open; OPEN DECISIONS prints that key
+# and fm-send --resolve-key closes exactly that ask. An unkeyed resolution,
+# stamped or not, closes the entry under its own key when one is open; otherwise
+# it closes an unkeyed entry only when exactly one is open in its scope - the
+# task, or the task plus its correlation id when it carries one - and closes none
+# when several are open, so each is closed by key. Two unkeyed asks stamped in
+# the same second share one synthetic key, the later replacing the earlier. Every
+# other unkeyed ask - unstamped, or stamped before the cutover - keeps the
+# historical "default" key and one-open-decision-per-task behavior, so older logs
+# fold exactly as before.
+# A stated key whose slug fails the charset below is rejected (the folds skip
+# the line), never rewritten to "default".
 # The parsers are pure reads of a single line. Status metadata may contain any
 # number of "[name=value]" tags before the colon, in any order, so verb parsing
 # ends at the first tag rather than special-casing "[key=...]".
@@ -754,6 +768,101 @@ _fm_decision_key() {  # <status-line> [<keyless>] -> key slug, or <keyless> (def
   _fm_decision_slug_ok "$k" || return 1
   printf '%s' "$k"
 }
+# Unkeyed lines stamped at or after this epoch take synthetic keys (see the key
+# grammar above). FM_CLASSIFY_UNKEYED_CUTOVER overrides it.
+FM_CLASSIFY_UNKEYED_CUTOVER_DEFAULT=1791843600
+
+# The correlation id a line's head carries, bracketed or not, into <out-var>;
+# fails when there is none.
+_fm_status_corr_id() {  # <status-line> <out-var>
+  local __fm_corr_head __fm_corr_word
+  printf -v "$2" '%s' ''
+  _fm_status_unstamped "$1" __fm_corr_head
+  case "$__fm_corr_head" in *:*) __fm_corr_head=${__fm_corr_head%%:*} ;; esac
+  case "$__fm_corr_head" in *corr=*) ;; *) return 1 ;; esac
+  # Split on whitespace by expansion, never by unquoted word splitting, so a
+  # glob character in the head cannot expand into file names.
+  __fm_corr_head=${__fm_corr_head//\]/\] }
+  __fm_corr_head=${__fm_corr_head//\[/ }
+  while :; do
+    __fm_corr_head=${__fm_corr_head#"${__fm_corr_head%%[![:space:]]*}"}
+    [ -n "$__fm_corr_head" ] || return 1
+    __fm_corr_word=${__fm_corr_head%%[[:space:]]*}
+    __fm_corr_head=${__fm_corr_head#"$__fm_corr_word"}
+    __fm_corr_word=${__fm_corr_word%\]}
+    if _fm_classify_is_corr_token "$__fm_corr_word"; then
+      printf -v "$2" '%s' "${__fm_corr_word#corr=}"
+      return 0
+    fi
+  done
+}
+
+# The synthetic key of an unkeyed line stamped at or after the cutover, into
+# <out-var>; fails for an unstamped or pre-cutover line. The caller has already
+# established that the line states no key.
+_fm_unkeyed_synthetic_key() {  # <status-line> <out-var>
+  local __fm_syn_epoch __fm_syn_corr __fm_syn_cutover
+  printf -v "$2" '%s' ''
+  _fm_status_at_epoch "$1" __fm_syn_epoch || return 1
+  __fm_syn_cutover=${FM_CLASSIFY_UNKEYED_CUTOVER:-$FM_CLASSIFY_UNKEYED_CUTOVER_DEFAULT}
+  [ "$__fm_syn_epoch" -ge "$__fm_syn_cutover" ] || return 1
+  if _fm_status_corr_id "$1" __fm_syn_corr; then
+    printf -v "$2" 'u-%s-%s' "$__fm_syn_epoch" "$__fm_syn_corr"
+  else
+    printf -v "$2" 'u-%s' "$__fm_syn_epoch"
+  fi
+}
+
+# The decision key the fold assigns <status-line>: its stated key, a synthetic
+# key for a stamped unkeyed line after the cutover, or "default". Fails for a
+# malformed stated key.
+status_line_decision_key() {  # <status-line>
+  local stated synthetic
+  stated=$(_fm_decision_key "$1" '') || return 1
+  if [ -n "$stated" ]; then
+    printf '%s' "$stated"
+  elif _fm_unkeyed_synthetic_key "$1" synthetic; then
+    printf '%s' "$synthetic"
+  else
+    printf 'default'
+  fi
+}
+
+# 0 when <key> has the shape of a synthetic unkeyed key (u-<digits> with an
+# optional -<16 hex> correlation suffix).
+_fm_is_synthetic_key() {  # <key>
+  local rest=${1#u-}
+  [ "$rest" != "$1" ] || return 1
+  case "$rest" in
+    *-*) _fm_classify_is_corr_token "corr=${rest#*-}" || return 1; rest=${rest%%-*} ;;
+  esac
+  case "$rest" in ''|*[!0-9]*) return 1 ;; esac
+  return 0
+}
+
+# The one unkeyed entry an unkeyed resolution whose own key is not open closes:
+# with <corr>, the single open synthetic entry carrying that correlation id;
+# without, the single open unkeyed entry ("default" or synthetic) of the task.
+# Fails when none or several match.
+_fm_unkeyed_close_target() {  # <open-set> <corr-or-empty>
+  local line key found='' count=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key=${line%%$'\t'*}
+    if [ -n "$2" ]; then
+      case "$key" in *-"$2") _fm_is_synthetic_key "$key" || continue ;; *) continue ;; esac
+    else
+      [ "$key" = default ] || _fm_is_synthetic_key "$key" || continue
+    fi
+    found=$key
+    count=$((count + 1))
+  done <<EOF
+$1
+EOF
+  [ "$count" -eq 1 ] || return 1
+  printf '%s' "$found"
+}
+
 # Drop the record for <key> from a newline-terminated "<key>\t<verb>\t<note>" set.
 # Portable (no associative arrays) so the fold runs on bash 3.2 as well as 4+.
 _fm_decision_drop() {  # <open-set> <key>
@@ -833,7 +942,7 @@ _fm_status_kind() {
 }
 
 _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb> <kind>
-  local open=$1 line=$2 resolve=$3 held=$4 kind=$5 verb key note unstamped
+  local open=$1 line=$2 resolve=$3 held=$4 kind=$5 verb key note unstamped unkeyed corr
   # Both colon tests below ask where the head ends, the same question the note
   # and key readers ask, so they read the same unstamped copy those readers do.
   # A worker-written time tag must never decide whether a decision opens or
@@ -861,7 +970,12 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
     needs-decision|blocked|"$resolve"|"$held") ;;
     *) printf '%s' "$open"; return 0 ;;
   esac
-  key=$(_fm_decision_key "$line") || { printf '%s' "$open"; return 0; }
+  key=$(_fm_decision_key "$line" '') || { printf '%s' "$open"; return 0; }
+  unkeyed=0
+  if [ -z "$key" ]; then
+    unkeyed=1
+    _fm_unkeyed_synthetic_key "$line" key || key=default
+  fi
   _fm_decision_key_transition_allowed "$key" "$(status_line_note "$line")" \
     || { printf '%s' "$open"; return 0; }
   case "$verb" in
@@ -872,6 +986,13 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
       open="${open}${key}"$'\t'"${verb}"$'\t'"${note}"$'\n'
       ;;
     "$resolve"|"$held")
+      case "$unkeyed:"$'\n'"$open" in
+        0:*|*$'\n'"$key"$'\t'*) ;;
+        *)
+          _fm_status_corr_id "$line" corr || corr=''
+          key=$(_fm_unkeyed_close_target "$open" "$corr") || { printf '%s' "$open"; return 0; }
+          ;;
+      esac
       open=$(_fm_decision_drop "$open" "$key")
       [ -n "$open" ] && open="${open}"$'\n'
       ;;
@@ -1042,7 +1163,9 @@ status_key_closing_verb() {  # <status-file> <key>
           needs-decision|blocked|"$resolve"|"$held") ;;
           *) continue ;;
         esac
-        if [ "$want" != default ]; then
+        # A synthetic key's opener and closers are unkeyed lines, so read them
+        # all, as for "default"; the fold below sorts out which one is $want.
+        if [ "$want" != default ] && ! _fm_is_synthetic_key "$want"; then
           case "$line" in *"[key=$want]"*) ;; *) continue ;; esac
         fi
         ;;
@@ -1192,10 +1315,13 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # malformed worker stamp whose colons used to pose as the head/note separator
 # no longer opens or closes anything; cursors folded under that reading are
 # discarded.
+# 10: a stamped unkeyed line after the unkeyed cutover opens its own synthetic
+# key instead of replacing "default", so cursors folded under the shared
+# default bucket are discarded.
 # Version 4 was already spent on the bracketed-tag parser change above, and a
 # cursor persisted under that reading predates this one, so it must still be
 # discarded and rebuilt from byte 0 under the new reading.
-FM_OPEN_DECISIONS_FOLD_VERSION=9
+FM_OPEN_DECISIONS_FOLD_VERSION=10
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity

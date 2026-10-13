@@ -786,6 +786,7 @@ test_parent_evidence_reconciles_by_verb_and_key() {
   printf 'paused: legacy pause without an identity\n' >> "$home/state/hold.status"
   printf 'blocked [key=vendor-release]: waiting for vendor release\n' > "$home/state/blocked.status"
   printf 'blocked: legacy block without an identity\n' >> "$home/state/blocked.status"
+  printf 'blocked [at=1000]: stamped block without an identity\n' >> "$home/state/blocked.status"
   printf 'needs-decision [key=stale-route]: choose the old route\n' > "$home/state/decision.status"
   printf 'working: legacy work without an identity\n' >> "$home/state/decision.status"
   cat > "$hold/data/backlog.md" <<'EOF'
@@ -822,7 +823,7 @@ EOF
   fakebin=$(make_fakebin "$home")
   refresh_local_secondmate_ledgers "$home"
   canonical=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
-    "$ROOT/bin/fm-fleet-snapshot.sh" --json)
+    FM_CLASSIFY_UNKEYED_CUTOVER=500 "$ROOT/bin/fm-fleet-snapshot.sh" --json)
   printf '%s' "$canonical" | jq -e '
     (.secondmate_current.records[] | select(.id == "hold")
       | .current.state == "externally_held"
@@ -840,7 +841,9 @@ EOF
           and (.parent_event.reconciliation.decisions
             | any(.verb == "blocked" and .key == "vendor-release" and .verdict == "corroborates"))
           and (.parent_event.reconciliation.decisions
-            | any(.verb == "blocked" and .key == "default" and .verdict == "inconclusive" and .matched == null)))
+            | any(.verb == "blocked" and .key == "default" and .verdict == "inconclusive" and .matched == null))
+          and (.parent_event.reconciliation.decisions
+            | any(.verb == "blocked" and .key == "u-1000" and .verdict == "inconclusive" and .matched == null)))
       and (.secondmate_current.records[] | select(.id == "decision")
         | .current.state == "captain_decision"
           and .contradiction == true

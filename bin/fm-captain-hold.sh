@@ -22,7 +22,7 @@
 # Usage:
 #   fm-captain-hold.sh hold <task-id> --reason <reason> \
 #     [--title <title>] [--repo <repo>] [--origin <origin-id>] [--until YYYY-MM-DD]
-#   fm-captain-hold.sh answer <task-id> --decision-file <path> [--release]
+#   fm-captain-hold.sh answer <task-id> --decision-file <path|-> [--release]   (- reads stdin)
 #   fm-captain-hold.sh answers [<legacy-origin> | --any-origin] --source <provenance>   (keyed answers on stdin)
 #   fm-captain-hold.sh reconcile-requests --source-id <source-id> --source <provenance>   (task ids on stdin)
 #   fm-captain-hold.sh bind <source-id> [<legacy-origin> | --any-origin]
@@ -330,11 +330,15 @@ BINDING_ANY='(any)'
 DECISION_TEXT=''
 DECISION_DIGEST=''
 
-load_decision() {  # <path>; sets DECISION_TEXT and DECISION_DIGEST
+load_decision() {  # <path>, or - for stdin; sets DECISION_TEXT and DECISION_DIGEST
   local path=$1 decision
   [ -n "$path" ] || fail "--decision-file is required"
-  [ -f "$path" ] || fail "decision file does not exist: $path"
-  decision=$(cat "$path")
+  if [ "$path" = - ]; then
+    decision=$(cat)
+  else
+    [ -f "$path" ] || fail "decision file must be a regular file (process substitution is not supported): $path"
+    decision=$(cat "$path")
+  fi
   [ -n "$decision" ] || fail "decision file must not be empty"
   [ "$(printf '%s' "$decision" | LC_ALL=C wc -c | tr -d ' ')" -le 8192 ] \
     || fail "decision file exceeds 8192 bytes"

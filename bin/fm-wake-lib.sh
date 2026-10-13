@@ -2583,8 +2583,9 @@ fm_wake_status_mark_current() {  # <state> <status-file>
 #     decisions from counting as live);
 #   - "already read" means the watcher's classified seen offset equals the
 #     pre-append size, or the OPEN DECISIONS fold cursor does and every
-#     non-blank line the watcher has not classified yet is a keyed
-#     needs-decision or blocked line, which OPEN DECISIONS listed as open. The
+#     non-blank line the watcher has not classified yet is a needs-decision or
+#     blocked line under its own (stated or synthetic) key, which OPEN
+#     DECISIONS listed as open. The
 #     fold reads bytes it never prints, so a worker's `failed:`, `paused:`,
 #     `working:`, `resolved` or verb-less line there must still wake, and so
 #     must a captain-held line, which raises the watcher's needs-decision
@@ -2638,8 +2639,9 @@ fm_wake_status_append_self_announced() {  # <state> <status-file> <line>...
         needs-decision|blocked) ;;
         *) return 1 ;;
       esac
-      _fm_key_before_colon "$line" || _fm_key_at_note_head "$line" >/dev/null || return 1
-      _fm_decision_key "$line" >/dev/null || return 1
+      # Listed under its own key: a stated one, or the synthetic key a stamped
+      # unkeyed line takes after the cutover (bin/fm-classify-lib.sh).
+      [ "$(status_line_decision_key "$line" 2>/dev/null || echo default)" != default ] || return 1
     done <<EOF
 $lag
 EOF

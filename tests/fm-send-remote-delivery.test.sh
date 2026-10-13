@@ -258,6 +258,33 @@ test_remote_steer_lands_in_remote_inbox() {
   pass "fm-send remote: a text steer lands as a durable remote inbox record and exits 0 at enqueue"
 }
 
+# A remote mate cannot read this host's files, so a steer naming a path under
+# this host's HOME or FM_HOME warns while still delivering; a steer naming no
+# local path stays silent.
+test_remote_steer_warns_on_local_paths() {
+  local dir fb ssh_log home rhome rc err fakehome
+  dir="$TMP_ROOT/remote-local-path"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); ssh_log="$dir/ssh.log"; : > "$ssh_log"
+  rhome=$(setup_remote_secondmate_home remote-local-path)
+  home=$(setup_remote_parent_home remote-local-path "$rhome")
+  fakehome="$dir/userhome"; mkdir -p "$fakehome"
+  rc=0
+  send_env "$fb" "$home" "$ssh_log" HOME="$fakehome" \
+    "$SEND" rsm "read $fakehome/notes/plan.md and $home/data/report.md first" >"$dir/out" 2>"$dir/err" || rc=$?
+  err=$(cat "$dir/err")
+  expect_code 0 "$rc" "a warned remote steer must still be delivered: $err"
+  assert_contains "$err" "the remote mate cannot read $fakehome/notes/plan.md" \
+    "a HOME path should warn"
+  assert_contains "$err" "the remote mate cannot read $home/data/report.md" \
+    "an FM_HOME path should warn"
+  [ -n "$(remote_inbox_records "$rhome")" ] || fail "the warned steer must still land remotely"
+  : > "$ssh_log"
+  send_env "$fb" "$home" "$ssh_log" HOME="$fakehome" \
+    "$SEND" rsm "read /remote/root/data/report.md" >"$dir/out2" 2>"$dir/err2" || rc=$?
+  assert_not_contains "$(cat "$dir/err2")" "cannot read" "a remote-side path must not warn"
+  pass "fm-send remote: a steer naming a local path warns and still delivers"
+}
+
 test_remote_rerun_is_idempotent() {
   local dir fb ssh_log home rhome rc err count pend corr expected_cmd arg quoted rec ssh_before resend_cmd
   dir="$TMP_ROOT/remote-idem"; mkdir -p "$dir"
@@ -786,6 +813,7 @@ test_local_pending_does_not_close_resolve_key() {
 }
 
 test_remote_steer_lands_in_remote_inbox
+test_remote_steer_warns_on_local_paths
 test_remote_rerun_is_idempotent
 test_remote_retry_failure_preserves_ambiguous_expectation
 test_remote_fire_and_forget_never_arms_reply_recovery

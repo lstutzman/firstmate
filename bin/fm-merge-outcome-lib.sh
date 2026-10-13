@@ -22,6 +22,13 @@
 # is committed, so a failed commit stays eligible for at-least-once retry and
 # may rarely duplicate rather than leave a merge silent.
 #
+# A recorded merge also closes every open decision in this home whose note
+# names that exact PR URL - a "waiting for your word" ask the merge itself
+# answered - with a self-announced `resolved [key=<key>]: merged <url> at
+# <head>` line (fm_merge_outcome_close_asks). A captain hold already moved to
+# its captain-held task is no longer an open status decision, so the hold stays
+# governed by its own lifecycle.
+#
 # Sourced by bin/fm-pr-merge.sh, bin/fm-watch.sh, and tests. No side effects on
 # source beyond its sourced libraries.
 
@@ -33,6 +40,25 @@ _FM_MERGE_OUTCOME_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
 FM_MERGE_OUTCOME_ALREADY_RECORDED=false
+
+# Best effort: close each open decision in <state> whose note names <url> with
+# no further digit after it, recording the task's merged head as evidence.
+fm_merge_outcome_close_asks() {  # <state> <task-id> <url>
+  local state=$1 id=$2 url=$3 open task key verb note head evidence rc=0
+  open=$(scan_open_decisions "$state") || return 1
+  head=$(sed -n 's/^pr_head=//p' "$state/$id.meta" 2>/dev/null | tail -1)
+  evidence="merged $url${head:+ at $head}"
+  while IFS=$'\t' read -r task key verb note; do
+    [ -n "$task" ] || continue
+    case "$note" in *"$url" | *"$url"[!0-9]*) ;; *) continue ;; esac
+    _fm_decision_key_transition_allowed "$key" "$evidence" || continue
+    fm_wake_status_append_self_announced "$state" "$state/$task.status" \
+      "resolved [key=$key]: $evidence" || [ "$?" -eq 1 ] || rc=1
+  done <<EOF
+$open
+EOF
+  return "$rc"
+}
 
 # fm_merge_outcome_report <home> <state> <task-id> <pr-url> <origin> [authority]
 #
@@ -94,6 +120,7 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [autho
     # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
     FM_MERGE_OUTCOME_ALREADY_RECORDED=true
     fm_lock_release "$lock"
+    fm_merge_outcome_close_asks "$state" "$id" "$FM_PR_URL" || true
     return 0
   fi
 
@@ -109,6 +136,7 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [autho
       "$provider" "$host" "$path" "$number" || status=1
   fi
   fm_lock_release "$lock"
+  [ "$status" -ne 0 ] || fm_merge_outcome_close_asks "$state" "$id" "$FM_PR_URL" || true
   # Opt-in fleet activity ledger (docs/fleet-ledger.md); off costs one file test.
   [ ! -e "${FM_CONFIG_OVERRIDE:-$home/config}/fleet-ledger" ] || [ "$status" -ne 0 ] || FM_HOME=$home FM_STATE_OVERRIDE=$state "$_FM_MERGE_OUTCOME_LIB_DIR/fm-fleet-ledger.sh" merged "$id" pr "$FM_PR_URL" || true
   return "$status"

@@ -544,3 +544,30 @@ run_inbox "$home" drain --ack "$did" >/dev/null || fail "drain --ack failed"
 assert_absent "$home/state/inbox/$did.note" "acked note leaves pending"
 assert_present "$home/state/inbox/handled/$did.note" "acked note is in handled"
 pass "drain --ack still moves the note to handled"
+
+# --- drain --ack refuses an id it cannot account for ------------------------
+
+# A whole id list passed as ONE argument (zsh does not word-split an unquoted
+# variable) is not a note id, and an id found neither pending nor handled was
+# never acknowledged; both must fail naming the id, and a bad id anywhere in the
+# list must leave every valid note pending.
+home=$(make_home drain-bad-ids)
+first=$(run_inbox "$home" note "first") || fail "note for bad-id drain failed"
+first=${first#queued }
+first=${first%%$'\n'*}
+second=$(run_inbox "$home" note "second") || fail "second note for bad-id drain failed"
+second=${second#queued }
+second=${second%%$'\n'*}
+if run_inbox "$home" drain --ack "$first $second" > "$home/joined.out" 2> "$home/joined.err"; then
+  fail "drain --ack accepted a space-joined id list as one id"
+fi
+assert_contains "$(cat "$home/joined.err")" "$first $second" "the joined-list refusal names the argument"
+if run_inbox "$home" drain --ack "$first" no-such-note > "$home/unknown.out" 2> "$home/unknown.err"; then
+  fail "drain --ack reported success for an id that was never a note"
+fi
+assert_contains "$(cat "$home/unknown.err")" "no-such-note" "the unknown-id refusal names the id"
+assert_present "$home/state/inbox/$first.note" "a refused ack list moved a valid note"
+run_inbox "$home" drain --ack "$first" >/dev/null || fail "drain --ack of a real note failed"
+again=$(run_inbox "$home" drain --ack "$first") || fail "re-acking a handled note should succeed"
+assert_contains "$again" "already-acked $first" "a handled note reports already-acked"
+pass "drain --ack refuses joined or unknown ids and acks nothing on refusal"

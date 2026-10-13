@@ -4104,6 +4104,35 @@ test_leaked_worktree_process_is_reaped() {
   pass "a leaked descendant process rooted under the task's worktree is reaped by teardown, not left surviving"
 }
 
+# A daemon started from the task's copy - its own session leader, reparented to
+# init, like a Colima VM a worker started there - is shared infrastructure, not
+# a leaked worker process: teardown reports it and leaves it running.
+test_daemonised_worktree_process_is_reported_not_reaped() {
+  local case_dir rc pid=''
+  case_dir=$(make_case daemon-not-reaped)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  ( cd "$case_dir/wt" && perl -MPOSIX -e 'exit 0 if fork; POSIX::setsid(); open(STDIN, "<", "/dev/null"); open(STDOUT, ">", "/dev/null"); open(STDERR, ">", "/dev/null"); exec "sleep", "317"' )
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    pid=$(pgrep -f -n '^sleep 317$' 2>/dev/null) && [ "$(ps -o ppid= -p "$pid" | tr -d ' ')" = 1 ] && break
+    pid=''
+    sleep 0.2
+  done
+  [ -n "$pid" ] || fail "daemon-not-reaped: setup daemon did not start detached"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  if ! kill -0 "$pid" 2>/dev/null; then
+    fail "daemon-not-reaped: teardown killed a daemonised process: $(cat "$case_dir/stderr")"
+  fi
+  kill -KILL "$pid" 2>/dev/null || true
+  expect_code 0 "$rc" "daemon-not-reaped: teardown should still succeed: $(cat "$case_dir/stderr")"
+  assert_grep "leaving daemonised" "$case_dir/stderr" \
+    "daemon-not-reaped: teardown did not report the daemon it left running"
+  assert_grep "$pid" "$case_dir/stderr" "daemon-not-reaped: the report did not name the daemon"
+  pass "a daemonised process rooted under the task's worktree is reported, not reaped"
+}
+
 test_leaked_tasktmp_process_is_reaped() {
   local case_dir rc pid
   case_dir=$(make_case leaked-tasktmp-reap)
@@ -4739,6 +4768,7 @@ test_not_found_status_after_abort_confirms_completion
 test_another_branchs_parked_run_is_never_touched
 test_own_autonomous_run_is_left_alone
 test_leaked_worktree_process_is_reaped
+test_daemonised_worktree_process_is_reported_not_reaped
 test_leaked_tasktmp_process_is_reaped
 test_lsof_absent_reaps_tmux_process_group
 test_lsof_error_refuses_before_removal

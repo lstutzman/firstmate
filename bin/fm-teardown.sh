@@ -283,7 +283,12 @@
 #     grace period to any survivor whose process identity still matches. Both
 #     roots are unique per task and never
 #     shared, so this can never reach another task's or the primary's
-#     processes. Idempotent: nothing left to find is a silent no-op.
+#     processes. A daemonised session is the exception: a process whose session
+#     leader is itself rooted there and reparented to init (a setsid daemon,
+#     such as a Colima VM a worker started from its copy) is shared
+#     infrastructure, so it is reported and left running rather than reaped,
+#     while an orphan that merely lost its parent keeps the worker's session
+#     and is still reaped. Idempotent: nothing left to find is a silent no-op.
 #   Fix 3 - sweep abandoned remote job workers. A remote job worker started
 #     from a worktree's own bin/ outlives that worktree's removal without
 #     being reachable by Fix 2, because its working directory is wherever it
@@ -2137,10 +2142,11 @@ task_pid_list_contains() {  # <pid-list> <pid>
   printf '%s\n' "$1" | grep -Fxq "$2"
 }
 
+TASK_DAEMONS_REPORTED=
 task_pids_under_roots() {  # <dir>...
   TASK_PIDS=
   TASK_PIDS_FAILED_DIR=
-  local dir dir_pids pids=""
+  local dir dir_pids pids="" pid sid leader_ppid kept='' daemon=''
   for dir in "$@"; do
     [ -n "$dir" ] || continue
     if ! dir_pids=$(pids_with_cwd_under "$dir"); then
@@ -2151,6 +2157,45 @@ task_pids_under_roots() {  # <dir>...
 $dir_pids"
   done
   TASK_PIDS=$(printf '%s\n' "$pids" | grep -E '^[0-9]+$' | sort -un || true)
+  [ -n "$TASK_PIDS" ] || return 0
+  # Leave a daemonised session alone: a process whose session leader is itself
+  # rooted under these roots and reparented to init (a setsid daemon such as a
+  # Colima VM started from the task's copy) is shared infrastructure, not a
+  # leaked worker process. An unreadable session id keeps the process reapable.
+  # shellcheck disable=SC2086 # deliberate word splitting: one pid per argument.
+  while read -r pid sid; do
+    if [ -n "$sid" ] && task_pid_list_contains "$TASK_PIDS" "$sid"; then
+      leader_ppid=$(ps -o ppid= -p "$sid" 2>/dev/null | tr -d '[:space:]')
+      if [ "$leader_ppid" = 1 ]; then
+        daemon="$daemon $pid"
+        continue
+      fi
+    fi
+    kept="$kept$pid
+"
+  done < <(task_process_sessions $TASK_PIDS)
+  TASK_PIDS=$(printf '%s' "$kept" | grep -E '^[0-9]+$' || true)
+  if [ -n "$daemon" ] && [ -z "$TASK_DAEMONS_REPORTED" ]; then
+    TASK_DAEMONS_REPORTED=1
+    echo "teardown: leaving daemonised process(es) rooted under the task's copy for $ID running:$daemon (each leads or belongs to its own session under init; stop them by hand if they belong only to this task)" >&2
+  fi
+}
+
+# Print "<pid> <session-id>" for each pid, or "<pid>" when its session id cannot
+# be read (no python3, or the process is gone).
+task_process_sessions() {  # <pid>...
+  [ "$#" -gt 0 ] || return 0
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import os, sys
+for p in sys.argv[1:]:
+    try:
+        print(p, os.getsid(int(p)))
+    except (OSError, ValueError):
+        print(p)
+' "$@" && return 0
+  fi
+  printf '%s\n' "$@"
 }
 
 reap_task_backend_process_group() {  # <label>

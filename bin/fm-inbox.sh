@@ -54,6 +54,9 @@
 # --request-id or --json, a saved-but-unannounced note exits 3 so a caller can
 # tell it from a genuine failure (exit 1, nothing saved) and repair rather than
 # enqueue again.
+# `drain --ack` checks every id before moving any: an id that is malformed (such
+# as a whole list passed as one argument) or found neither pending nor handled
+# exits 1 naming it and acks nothing; `already-acked` means it is in handled/.
 # `receipts` is the bounded JSON view of pending and handled notes, their
 # acknowledgement, announcement, and any recorded reply. Default bounds omit
 # rather than implying the first page is everything; omitted[] names the
@@ -1117,8 +1120,15 @@ cmd_drain() {
   if [ "${1:-}" = "--ack" ]; then
     shift
     [ "$#" -gt 0 ] || die "usage: fm-inbox.sh drain --ack <id>..."
-    mkdir -p "$INBOX/handled"
+    # Account for every id before moving any, so one bad id (or a whole list
+    # passed as a single argument) acks nothing and fails naming it.
     local id
+    for id in "$@"; do
+      valid_note_id "$id" || die "invalid note id: '$id' (pass one id per argument)"
+      [ -f "$INBOX/$id.note" ] || [ -f "$INBOX/handled/$id.note" ] \
+        || die "no pending or handled note with id: $id"
+    done
+    mkdir -p "$INBOX/handled"
     for id in "$@"; do
       if [ -f "$INBOX/$id.note" ]; then
         mv "$INBOX/$id.note" "$INBOX/handled/$id.note"

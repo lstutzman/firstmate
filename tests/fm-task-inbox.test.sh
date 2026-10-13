@@ -189,6 +189,34 @@ test_write_is_durable_and_exact() {
   pass "inbox: a steer is written durably and round-trips byte-exact with a self-describing doorbell"
 }
 
+# bin/fm-task-inbox.sh take is the worker's one glob-free read: it prints every
+# waiting record in numeric order and files each into handled/, and reports an
+# empty or absent inbox instead of failing on a no-match glob.
+test_take_prints_in_order_and_acknowledges() {
+  local state inbox out
+  state="$TMP_ROOT/take/state"; mkdir -p "$state"
+  inbox="$state/t1.inbox"
+  out=$("$ROOT/bin/fm-task-inbox.sh" take "$inbox") || fail "take of an absent inbox failed"
+  assert_equals "inbox empty" "$out" "an absent inbox should read empty"
+  inbox_lib "$state" fm_task_inbox_write "$state" t1 $'first steer\nsecond line' >/dev/null \
+    || fail "inbox write failed"
+  inbox_lib "$state" fm_task_inbox_write "$state" t1 "second steer" >/dev/null \
+    || fail "second inbox write failed"
+  out=$("$ROOT/bin/fm-task-inbox.sh" take "$inbox") || fail "take of a waiting inbox failed"
+  assert_contains "$out" $'first steer\nsecond line' "take should print each body verbatim"
+  case "$out" in
+    *"first steer"*"second steer"*) : ;;
+    *) fail "take should print records in numeric order: $out" ;;
+  esac
+  [ ! -e "$inbox/001.msg" ] && [ ! -e "$inbox/002.msg" ] \
+    || fail "take should move every printed record out of the inbox"
+  [ -f "$inbox/handled/001.msg" ] && [ -f "$inbox/handled/002.msg" ] \
+    || fail "take should file every printed record into handled/"
+  out=$("$ROOT/bin/fm-task-inbox.sh" take "$inbox") || fail "take of a drained inbox failed"
+  assert_equals "inbox empty" "$out" "a drained inbox should read empty"
+  pass "inbox: take prints waiting records in order, files them into handled/, and reads an empty inbox as empty"
+}
+
 # The doorbell may land in a pane whose agent has exited, where it is a shell
 # command line. Execute the real line in real shells and assert it is inert:
 # exit 0, no output, and nothing in the inbox touched.
@@ -1182,6 +1210,7 @@ test_watcher_dead_pane_ignores_stale_busy_state() {
 }
 
 test_write_is_durable_and_exact
+test_take_prints_in_order_and_acknowledges
 test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
