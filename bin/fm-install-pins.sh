@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # fm-install-pins.sh - the single place fleet bootstrap installs are pinned.
 #
 # Sourced by fm-bootstrap.sh (npm pins) and fm-install-pinned.sh (release
