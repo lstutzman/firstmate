@@ -335,6 +335,29 @@ test_unkeyed_resolution_after_cutover_closes_only_a_lone_ask() {
 }
 test_unkeyed_resolution_after_cutover_closes_only_a_lone_ask
 
+# An unstamped bare resolution still clears a worker's single open ask when that
+# ask was stamped after the cutover, as it did before synthetic keys; with
+# several asks open it closes none.
+test_unstamped_resolution_closes_a_lone_stamped_ask() {
+  local dir expected
+  dir=$(case_dir unkeyed-unstamped-resolve)
+  printf 'needs-decision [at=1000]: merge it?\n' > "$dir/lone.status"
+  printf 'resolved: captain said yes\n' >> "$dir/lone.status"
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/lone.status" "" "an unstamped resolution of a lone stamped ask"
+
+  printf 'needs-decision [at=1000]: merge it?\n' > "$dir/held.status"
+  printf 'captain-held: waiting on the captain\n' >> "$dir/held.status"
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/held.status" "" "an unstamped captain-held line on a lone stamped ask"
+
+  printf 'needs-decision [at=1000]: first ask\n' > "$dir/two.status"
+  printf 'needs-decision [at=2000]: second ask\n' >> "$dir/two.status"
+  printf 'resolved: answered one of them\n' >> "$dir/two.status"
+  expected=$(printf 'u-1000\tneeds-decision\tfirst ask\nu-2000\tneeds-decision\tsecond ask\n')
+  FM_CLASSIFY_UNKEYED_CUTOVER=500 assert_fold "$dir/two.status" "$expected" "an unstamped resolution with two stamped asks open"
+  pass "an unstamped resolution closes only a lone stamped ask"
+}
+test_unstamped_resolution_closes_a_lone_stamped_ask
+
 # status_key_closing_verb reads a synthetic unkeyed key the way the fold does:
 # open while its ask is open, and the closing verb once it is closed.
 test_closing_verb_reads_a_synthetic_unkeyed_key() {

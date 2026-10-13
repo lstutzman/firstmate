@@ -604,14 +604,15 @@ status_event_recorded() {  # <status-file> <new-status-line>
 # opens its own entry under the synthetic key "u-<at-epoch>", or
 # "u-<at-epoch>-<corr>" when it carries a correlation token, so a later unkeyed
 # ask never replaces an earlier one still open; OPEN DECISIONS prints that key
-# and fm-send --resolve-key closes exactly that ask. A stamped unkeyed resolution
-# after the cutover closes an unkeyed entry only when exactly one is open in its
-# scope - the task, or the task plus its correlation id when it carries one - and
-# closes none when several are open, so each is closed by key. Two unkeyed asks
-# stamped in the same second share one synthetic key, the later replacing the
-# earlier. Every other unkeyed line - unstamped, or stamped before the cutover -
-# keeps the historical "default" key and one-open-decision-per-task behavior
-# (a bare "resolved:" closes "default"), so older logs fold exactly as before.
+# and fm-send --resolve-key closes exactly that ask. An unkeyed resolution,
+# stamped or not, closes the entry under its own key when one is open; otherwise
+# it closes an unkeyed entry only when exactly one is open in its scope - the
+# task, or the task plus its correlation id when it carries one - and closes none
+# when several are open, so each is closed by key. Two unkeyed asks stamped in
+# the same second share one synthetic key, the later replacing the earlier. Every
+# other unkeyed ask - unstamped, or stamped before the cutover - keeps the
+# historical "default" key and one-open-decision-per-task behavior, so older logs
+# fold exactly as before.
 # A stated key whose slug fails the charset below is rejected (the folds skip
 # the line), never rewritten to "default".
 # The parsers are pure reads of a single line. Status metadata may contain any
@@ -839,7 +840,7 @@ _fm_is_synthetic_key() {  # <key>
   return 0
 }
 
-# The one unkeyed entry a stamped unkeyed resolution after the cutover closes:
+# The one unkeyed entry an unkeyed resolution whose own key is not open closes:
 # with <corr>, the single open synthetic entry carrying that correlation id;
 # without, the single open unkeyed entry ("default" or synthetic) of the task.
 # Fails when none or several match.
@@ -941,7 +942,7 @@ _fm_status_kind() {
 }
 
 _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb> <kind>
-  local open=$1 line=$2 resolve=$3 held=$4 kind=$5 verb key note unstamped synthetic corr
+  local open=$1 line=$2 resolve=$3 held=$4 kind=$5 verb key note unstamped unkeyed corr
   # Both colon tests below ask where the head ends, the same question the note
   # and key readers ask, so they read the same unstamped copy those readers do.
   # A worker-written time tag must never decide whether a decision opens or
@@ -970,9 +971,10 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
     *) printf '%s' "$open"; return 0 ;;
   esac
   key=$(_fm_decision_key "$line" '') || { printf '%s' "$open"; return 0; }
-  synthetic=0
+  unkeyed=0
   if [ -z "$key" ]; then
-    if _fm_unkeyed_synthetic_key "$line" key; then synthetic=1; else key=default; fi
+    unkeyed=1
+    _fm_unkeyed_synthetic_key "$line" key || key=default
   fi
   _fm_decision_key_transition_allowed "$key" "$(status_line_note "$line")" \
     || { printf '%s' "$open"; return 0; }
@@ -984,10 +986,13 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
       open="${open}${key}"$'\t'"${verb}"$'\t'"${note}"$'\n'
       ;;
     "$resolve"|"$held")
-      if [ "$synthetic" = 1 ]; then
-        _fm_status_corr_id "$line" corr || corr=''
-        key=$(_fm_unkeyed_close_target "$open" "$corr") || { printf '%s' "$open"; return 0; }
-      fi
+      case "$unkeyed:"$'\n'"$open" in
+        0:*|*$'\n'"$key"$'\t'*) ;;
+        *)
+          _fm_status_corr_id "$line" corr || corr=''
+          key=$(_fm_unkeyed_close_target "$open" "$corr") || { printf '%s' "$open"; return 0; }
+          ;;
+      esac
       open=$(_fm_decision_drop "$open" "$key")
       [ -n "$open" ] && open="${open}"$'\n'
       ;;
