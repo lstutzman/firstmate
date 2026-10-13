@@ -1,0 +1,17 @@
+## Scenario 4: a merged PR closes open asks naming that exact URL (poll origin, lab home)
+-- before:
+t5 [key=merge-42] needs-decision: waiting for your word to merge https://github.com/lstutzman/demo/pull/42
+t5 [key=u-1791900300] needs-decision: unkeyed: ok to merge https://github.com/lstutzman/demo/pull/42?
+t5 [key=other] needs-decision: merge https://github.com/lstutzman/demo/pull/420 instead?
+t6 [key=pick] needs-decision: pick a vendor
+$ fm_merge_outcome_report $FM_HOME $STATE t5 https://github.com/lstutzman/demo/pull/42 poll external
+[rc 0]
+-- t5 status log after:
+needs-decision [key=merge-42] [at=1791900000]: waiting for your word to merge https://github.com/lstutzman/demo/pull/42
+needs-decision [at=1791900300]: unkeyed: ok to merge https://github.com/lstutzman/demo/pull/42?
+needs-decision [key=other] [at=1791900400]: merge https://github.com/lstutzman/demo/pull/420 instead?
+resolved [key=merge-42] [at=1791883180]: merged https://github.com/lstutzman/demo/pull/42 at abc1234
+resolved [key=u-1791900300] [at=1791883180]: merged https://github.com/lstutzman/demo/pull/42 at abc1234
+-- OPEN DECISIONS after:
+t5 [key=other] needs-decision: merge https://github.com/lstutzman/demo/pull/420 instead?
+t6 [key=pick] needs-decision: pick a vendor

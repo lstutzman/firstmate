@@ -1,0 +1,4 @@
+ok - a leaked descendant process rooted under the task's worktree is reaped by teardown, not left surviving
+ok - a daemonised process rooted under the task's worktree is reported, not reaped
+ok - a leaked descendant process rooted under the task's per-task tasktmp is reaped by teardown too
+[exit 0]

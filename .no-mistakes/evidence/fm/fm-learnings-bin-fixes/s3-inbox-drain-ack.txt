@@ -1,0 +1,36 @@
+## Scenario 3: fm-inbox drain --ack refuses ids it cannot account for
+$ bin/fm-inbox.sh note -- first captain note
+queued 1791883030-m3bk9w
+  first captain note
+  firstmate will pick this up at its next check.
+[exit 0]
+$ bin/fm-inbox.sh note -- second captain note
+queued 1791883030-anrZ2A
+  second captain note
+  firstmate will pick this up at its next check.
+[exit 0]
+pending ids: 1791883030-anrZ2A 1791883030-m3bk9w
+-- whole list passed as ONE zsh argument (the original failure):
+$ bin/fm-inbox.sh drain --ack 1791883030-anrZ2A 1791883030-m3bk9w
+fm-inbox: invalid note id: '1791883030-anrZ2A 1791883030-m3bk9w' (pass one id per argument)
+[exit 1]
+pending after: 2 notes
+-- valid-format id found nowhere:
+$ bin/fm-inbox.sh drain --ack 1791883030-anrZ2A 99999999-deadbeef
+fm-inbox: no pending or handled note with id: 99999999-deadbeef
+[exit 1]
+$ bin/fm-inbox.sh drain --ack 20260101T000000Z-0000
+fm-inbox: no pending or handled note with id: 20260101T000000Z-0000
+[exit 1]
+pending after: 2 notes
+-- one id per argument:
+$ bin/fm-inbox.sh drain --ack 1791883030-anrZ2A 1791883030-m3bk9w
+acked 1791883030-anrZ2A
+acked 1791883030-m3bk9w
+[exit 0]
+-- re-ack of handled ids:
+$ bin/fm-inbox.sh drain --ack 1791883030-anrZ2A
+already-acked 1791883030-anrZ2A
+[exit 0]
+1791883030-anrZ2A.note
+1791883030-m3bk9w.note

@@ -1,0 +1,22 @@
+## Scenario 7: remote steer naming this host's paths warns and still delivers
+(lab FM_HOME=/private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.mNO6xW; remote reached via loopback ssh shim that runs the real remote entrypoint against /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.mNO6xW/remote-home)
+$ fm-send.sh rsm "read /Users/leestutzman/Documents/plan.md and /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.mNO6xW/data/report.md first, then '/Users/leestutzman/notes/x.txt'."
+warning: the remote mate cannot read /Users/leestutzman/Documents/plan.md; paste the content or send it as a document
+warning: the remote mate cannot read /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.mNO6xW/data/report.md; paste the content or send it as a document
+warning: the remote mate cannot read /Users/leestutzman/notes/x.txt; paste the content or send it as a document
+notice: doorbell not typed because the agent in fm-remote:p1 has exited; the steer is durably recorded at /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.mNO6xW/remote-home/state/parent-route/rsm.inbox/001.msg for recovery
+[exit 0]
+remote inbox records:
+001.msg
+handled
+-- remote-side path only (no warning expected):
+$ fm-send.sh rsm "read /remote/root/data/report.md"
+notice: doorbell not typed because the agent in fm-remote:p1 has exited; the steer is durably recorded at /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.mNO6xW/remote-home/state/parent-route/rsm.inbox/002.msg for recovery
+[exit 0]
+-- local target naming a local path (no warning expected):
+$ fm-send.sh t1 "see /Users/leestutzman/Documents/plan.md"
+[exit 0]
+remote inbox records now:
+001.msg
+002.msg
+handled

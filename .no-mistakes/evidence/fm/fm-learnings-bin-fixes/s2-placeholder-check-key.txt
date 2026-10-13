@@ -1,0 +1,39 @@
+## Scenario 2: placeholder answers refuse; real short answers close
+$ bin/fm-send.sh t4 --resolve-key real-key x
+error: --resolve-key answer 'x' looks like a placeholder and would close the decision as answered; send the captain's words, or check the key with --check-key; nothing was sent
+[exit 1]
+$ bin/fm-send.sh t4 --resolve-key real-key Test.
+error: --resolve-key answer 'Test.' looks like a placeholder and would close the decision as answered; send the captain's words, or check the key with --check-key; nothing was sent
+[exit 1]
+$ bin/fm-send.sh t4 --resolve-key real-key  PING 
+error: --resolve-key answer ' PING ' looks like a placeholder and would close the decision as answered; send the captain's words, or check the key with --check-key; nothing was sent
+[exit 1]
+$ bin/fm-send.sh t4 --resolve-key real-key tbd
+error: --resolve-key answer 'tbd' looks like a placeholder and would close the decision as answered; send the captain's words, or check the key with --check-key; nothing was sent
+[exit 1]
+$ bin/fm-send.sh t4 --resolve-key real-key asdf!
+error: --resolve-key answer 'asdf!' looks like a placeholder and would close the decision as answered; send the captain's words, or check the key with --check-key; nothing was sent
+[exit 1]
+$ bin/fm-send.sh t4 --resolve-key real-key TODO
+error: --resolve-key answer 'TODO' looks like a placeholder and would close the decision as answered; send the captain's words, or check the key with --check-key; nothing was sent
+[exit 1]
+status log after placeholder attempts:
+needs-decision [key=real-key]: choose A or B
+ls: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t4.inbox: No such file or directory
+$ bin/fm-send.sh --check-key t4 real-key
+open
+[exit 0]
+$ bin/fm-send.sh t4 --resolve-key real-key A
+[exit 0]
+$ bin/fm-send.sh --check-key t4 real-key
+closed
+[exit 0]
+$ bin/fm-send.sh --check-key t4 never-seen
+unknown
+[exit 0]
+$ bin/fm-send.sh --check-key t4 bad key
+error: --check-key 'bad key' is not a valid decision key (allowed: A-Z a-z 0-9 . _ -)
+[exit 1]
+inbox records written (only the real answer):
+001.msg
+handled

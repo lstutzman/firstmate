@@ -1,0 +1,41 @@
+## Scenario 5: brief names one glob-safe take command
+# Firstmate instruction inbox
+Firstmate steers you through durable message files in '/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t9.inbox'.
+When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - run `'/Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4T7K89NBJDC97Z23M7FBC4F/bin/fm-task-inbox.sh' take '/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t9.inbox'` and act on each message it prints, in the order printed.
+That one command is the acknowledgement: it files each printed message into handled/; without it firstmate rings again and eventually treats you as stuck. When it prints `inbox empty`, no action is needed.
+
+extracted worker command: '/Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4T7K89NBJDC97Z23M7FBC4F/bin/fm-task-inbox.sh' take '/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t9.inbox'
+-- empty inbox, run in zsh as a compound line (old glob would abort with 'no matches found'):
+$ zsh -c ''/Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4T7K89NBJDC97Z23M7FBC4F/bin/fm-task-inbox.sh' take '/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t9.inbox' && echo after-take-ran'
+inbox empty
+after-take-ran
+[exit 0]
+-- for contrast, the old instruction's glob under zsh:
+zsh:1: no matches found: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t9.inbox/*.msg
+[exit 1]
+-- firstmate steers twice via real fm-send:
+$ bin/fm-send.sh t9 first steer: rebase on main
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+[exit 0]
+$ bin/fm-send.sh t9 second steer: then rerun the tests
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+[exit 0]
+001.msg
+002.msg
+handled
+$ zsh -c ''/Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4T7K89NBJDC97Z23M7FBC4F/bin/fm-task-inbox.sh' take '/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t9.inbox''
+--- 001.msg
+first steer: rebase on main
+--- 002.msg
+second steer: then rerun the tests
+[exit 0]
+inbox after take:
+/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t9.inbox:
+handled
+
+/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t9.inbox/handled:
+001.msg
+002.msg
+$ zsh -c ''/Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4T7K89NBJDC97Z23M7FBC4F/bin/fm-task-inbox.sh' take '/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW/state/t9.inbox''   (again)
+inbox empty
+[exit 0]

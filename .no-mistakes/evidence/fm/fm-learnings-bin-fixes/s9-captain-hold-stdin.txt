@@ -1,0 +1,15 @@
+## Scenario 9: fm-captain-hold answer --decision-file - reads stdin
+$ bin/fm-captain-hold.sh hold lab-call --title Pick the lab option --reason captain choice pending --repo demo
+lab-call
+[exit 0]
+-- process substitution (non-regular file):
+$ fm-captain-hold.sh answer lab-call --decision-file <(printf 'Piped.')
+fm-captain-hold: decision file must be a regular file (process substitution is not supported): /dev/fd/11
+[exit 1]
+-- stdin:
+$ printf 'Captain chose option B.' | fm-captain-hold.sh answer lab-call --decision-file -
+answered: lab-call
+[exit 0]
+-- task after answer:
+  state: done
+  body: "Resolution recorded by fm-captain-hold.\nDecision digest: 0a2d3627ad27e6cd00109930f1a94bd8f694752628f83eb2756be8d3e40a61d8\nResolution mode: answered\n\nCaptain decision:\nCaptain chose option B."

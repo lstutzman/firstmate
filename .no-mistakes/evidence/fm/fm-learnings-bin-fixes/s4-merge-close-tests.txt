@@ -1,0 +1,3 @@
+ok - a verified merge closes the open asks naming that exact PR URL
+ok - a polled merge closes the open asks naming that exact PR URL
+[exit 0]

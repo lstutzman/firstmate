@@ -1,0 +1,63 @@
+## Scenario 1a: two unkeyed asks after cutover both stay open
+needs-decision [at=1791900000]: merge PR https://github.com/o/r/pull/1?
+working [at=1791900050]: unrelated
+blocked [at=1791900100]: need the vendor key
+$ fm-wake-drain.sh (OPEN DECISIONS)
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t1 [key=u-1791900000] needs-decision: merge PR https://github.com/o/r/pull/1?
+t1 [key=u-1791900100] blocked: need the vendor key
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+$ bin/fm-send.sh --check-key t1 u-1791900000
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+open
+[exit 0]
+$ bin/fm-send.sh --check-key t1 u-1791900100
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+open
+[exit 0]
+## Scenario 1b: bare resolved with two open closes none
+$ fm-wake-drain.sh (OPEN DECISIONS)
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t1 [key=u-1791900000] needs-decision: merge PR https://github.com/o/r/pull/1?
+t1 [key=u-1791900100] blocked: need the vendor key
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+## Scenario 1c: --resolve-key u-<epoch> closes exactly that ask
+$ bin/fm-send.sh t1 --resolve-key u-1791900000 merge it
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+[exit 0]
+$ bin/fm-send.sh --check-key t1 u-1791900000
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+closed
+[exit 0]
+$ bin/fm-send.sh --check-key t1 u-1791900100
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+open
+[exit 0]
+resolved [key=u-1791900000] [at=1791882995]: answered: merge it
+$ fm-wake-drain.sh (OPEN DECISIONS)
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t1 [key=u-1791900100] blocked: need the vendor key
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+## Scenario 1d: unstamped bare resolved clears a lone stamped ask (round-1 fix)
+needs-decision [at=1791900000]: merge it?
+resolved: captain said yes
+$ bin/fm-send.sh --check-key t2 u-1791900000
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.mNO6xW
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+closed
+[exit 0]
+$ fm-wake-drain.sh (OPEN DECISIONS)
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t1 [key=u-1791900100] blocked: need the vendor key
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+## Scenario 1e: unstamped ask keeps default bucket (recorded decision)
+$ fm-wake-drain.sh (OPEN DECISIONS)
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+t1 [key=u-1791900100] blocked: need the vendor key
+t3 needs-decision: newer unstamped ask
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
