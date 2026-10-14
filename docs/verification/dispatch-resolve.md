@@ -109,7 +109,7 @@ It proves the key is absent from child environments, never appears on `curl` arg
 It proves the request uses the fixed endpoint and model, carries only the project, the brief's task sections read by the shared brief-heading parser with a scout line only for a scout brief and never a ship brief's delivery mode (or the whole brief when it has neither section), and rule Choice with one option per rule plus the fixed neutral none option, and never carries `why`, `use`, or quota.
 It proves a declared `min_confidence` is checked against the rule's own probability both as the pick and as a runner-up, a picked rule below it falls to the most probable runner-up that clears its floor, is `ambiguous` when none does or two tie, and that a file without declared floors keeps the global 0.6 floor on confidence unchanged.
 It proves the clear, fixed-floor ambiguous with candidate evidence, escalate (approval with candidate evidence, unverifiable rule floor, tie, nothing rankable), known rule-floor fall-through, known and unverifiable profile-floor evidence, explicit-provider and provider-ID enforcement, authoritative Agy and explicit-provider Gemini routing, partial providers, eligible unranked candidates and their clear-result note, concrete quota vetoes and profile-floor shortfalls taking precedence over uncertainty, account-wide quota veto, limiting-bound ranking, schema-6 account-row binding with schema-5 compatibility, missing-curl and quota-axi failures, HTTP 429 and 500, transport failure, malformed usage, zero-mass or malformed probabilities or confidence, malformed or duplicate profile, invalid selector, removed-option rejection, and out-of-range rule ID paths behave as the contract states, with configuration errors exiting 2 before any network call.
-It proves the optional `config/cpa-usage-host` pooled Claude quota overlay with a fake `ssh` that records argv, a fake `hostname`, and a fixture `cpa-usage-axi` accounts table: pooled accounts rank the Claude candidate on a fractional `spendPriority` that competes on `quota-axi`'s scale, a blank window counts as nothing used, an exhausted pool makes the candidate ineligible, `local` and this machine's own short host name in any case run the read without ssh, only a plain host name reaches ssh as one non-interactive call with a connect bound, schema-6 snapshots keep a valid default account row, a failed, timed-out (an all-zero `FM_CPA_USAGE_TIMEOUT` still bounds at the default), malformed (a non-numeric window or a row off the table's columns), or Claude-row-less read degrades to `quota-axi`'s own `claude` entry with one stderr line, and an absent file leaves resolution unchanged.
+Its "pooled Claude quota from cpa-usage-axi" section covers every rule of the `config/cpa-usage-host` contract with a fake `ssh`, a fake `hostname`, and fixture `cpa-usage-axi` accounts tables, and `tests/fm-quota-choose.test.sh` covers `fm_quota_replace_provider` for schema 5, schema 6, and a result that fails snapshot validation.
 `tests/fm-bootstrap.test.sh` proves bootstrap ignores resolver-only fields without the typed key, validates each malformed shape when the environment or home `.env` activates typed resolution, and prevents an environment-provided key from reaching child processes.
 
 ```console
@@ -118,3 +118,23 @@ $ bash tests/fm-dispatch-resolve.test.sh | tail -1
 ```
 
 A live run needs a key and is not part of the suite; rerun the table above by pointing the tool at a brief with the key injected for that one command.
+
+## Pooled Claude quota against a live cpa-usage-axi
+
+Verified 2026-10-14 against `cpa-usage-axi` on `slartibartfast`.
+It has no machine-readable mode, so the resolver reads its TOON `accounts` table:
+
+```console
+$ ssh slartibartfast cpa-usage-axi --json
+cpa-usage-axi: error: unrecognized arguments: --json
+$ ssh slartibartfast cpa-usage-axi accounts | head -1
+accounts[4]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+```
+
+With `config/cpa-usage-host` set to `slartibartfast`, the real ssh read, a fake `curl` answering `rule_1` at 0.94, and a fake `quota-axi` reporting `claude` unknown, a one-Claude-profile rule resolved:
+
+```text
+  status: clear
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=18.75%  spendPriority=0.1875  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+```

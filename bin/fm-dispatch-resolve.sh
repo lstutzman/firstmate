@@ -54,22 +54,13 @@
 #   docs/configuration.md "Crew dispatch profiles" owns the declared fields and
 #   "Typed dispatch resolution" owns this tool's operator contract.
 #
-# Pooled Claude quota: when config/cpa-usage-host exists, its first non-blank,
-#   non-# line names the ssh host that runs cpa-usage-axi. The literal `local`,
-#   or this machine's own short host name (hostname -s, else uname -n up to
-#   its first dot, compared case-insensitively), runs it here without ssh.
-#   One bounded `cpa-usage-axi accounts` read (ssh BatchMode=yes,
-#   ConnectTimeout=5, FM_CPA_USAGE_TIMEOUT seconds overall, default 10, via
-#   fm_run_timed) replaces the snapshot's claude entry with one all_models
-#   row: each claude account has remaining 1 - max(used_5h, used_7d), where a
-#   blank, inactive window counts as 0 and any other non-numeric window, or a
-#   row off the table's columns, makes the whole read malformed; the row's
-#   percent is 100 times their mean, its spendPriority is that mean itself, a
-#   fraction in [0, 1] on the scale of quota-axi's own scalar, and runway is
-#   exhausted_now only when every account is at 0. A failed, timed-out, or
-#   malformed read, or one with no claude rows, keeps quota-axi's own claude
-#   entry and prints one "dispatch-resolve: cpa-usage pool unavailable" line
-#   on stderr. With no config file nothing changes and nothing is read.
+# Pooled Claude quota: an optional config/cpa-usage-host makes one
+#   `cpa-usage-axi accounts` read (ssh -o BatchMode=yes -o ConnectTimeout=5,
+#   or run here for `local` or this machine's own short host name, bounded by
+#   fm_run_timed to FM_CPA_USAGE_TIMEOUT seconds, default 10) replace the
+#   snapshot's claude entry through fm_quota_replace_provider in
+#   bin/fm-quota-axi-lib.sh. docs/configuration.md "Typed dispatch
+#   resolution" owns the pooling rules and the fallbacks.
 #
 # Never-send check: when the optional $FM_HOME/config/dispatch-never-send list
 #   exists, every string value of the built request is checked against it
