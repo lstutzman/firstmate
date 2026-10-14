@@ -427,11 +427,11 @@ cpa_pool_overlay() {
   else
     cpa_skip "config/cpa-usage-host is not a host name"; return 0
   fi
-  case "$rc" in
-    0) ;;
-    124) cpa_skip "cpa-usage-axi on $host timed out after ${CPA_TIMEOUT}s"; return 0 ;;
-    *) cpa_skip "cpa-usage-axi on $host failed with exit $rc"; return 0 ;;
-  esac
+  if fm_timed_out "$rc"; then
+    cpa_skip "cpa-usage-axi on $host timed out after ${CPA_TIMEOUT}s"; return 0
+  elif [ "$rc" -ne 0 ]; then
+    cpa_skip "cpa-usage-axi on $host failed with exit $rc"; return 0
+  fi
   pool=$(jq -Rsc '
     def num: try tonumber catch null;
     def used: if . == "" then 0 else num end;  # blank: no active window, nothing used

@@ -1007,6 +1007,7 @@ cat > "$FAKEBIN/ssh" <<'SH'
 printf '%s\n' "$@" >> "${FAKE_CURL_LOG:?}/ssh.argv"
 [ "${FAKE_CPA_FAIL:-0}" = 1 ] && exit 255
 [ "${FAKE_CPA_HANG:-0}" = 1 ] && sleep 30
+[ "${FAKE_CPA_KILLED:-0}" = 1 ] && kill -KILL $$
 cat "${CPA_FIXTURE:?}"
 SH
 chmod +x "$FAKEBIN/ssh"
@@ -1073,6 +1074,14 @@ expect_code 0 "$code" "a hung pool read exits 0"
 assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "a hung pool read leaves the quota-axi claude entry"
 assert_equals 'dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 1s); claude quota from quota-axi' "$err" "a hung pool read is bounded and named"
 pass "config/cpa-usage-host: the pool read has an overall bound"
+
+# A KILL-escalated bound surfaces as status 137 (128 + SIGKILL); the fake
+# produces that status by killing itself, and it must read as the bound.
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" FAKE_CPA_KILLED=1 run code out err "$BRIEF"
+expect_code 0 "$code" "a KILLed pool read exits 0"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 10s); claude quota from quota-axi' "$err" "a KILL-escalated bound is reported as a timeout"
+pass "config/cpa-usage-host: a KILL-escalated bound reads as a timeout"
 
 reset_log
 TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=00 run code out err "$BRIEF"
