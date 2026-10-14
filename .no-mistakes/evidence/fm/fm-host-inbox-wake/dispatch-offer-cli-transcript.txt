@@ -1,0 +1,81 @@
++(eval):6> bin/fm-lab-home.sh create /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP
++(eval):7> touch /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/config/supervision-host
++(eval):8> S=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state 
++(eval):9> printf 'project=demo\nwindow=fm-demo\n'
++(eval):10> date +%s
++(eval):10> printf 'working [at=%s]: step one\n' 1791971518
++(eval):11> env -u NO_MISTAKES_GATE 'FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP' bash -c '. bin/fm-wake-lib.sh; fm_wake_append signal demo.status "signal: $1/demo.status"' _ /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state
++(eval):12> : '== baseline: attended host offer, no captain note queued'
++(eval):13> printf 'signal: %s\n' /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/demo.status
++(eval):13> FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP node bin/fm-branch-dispatch.mjs offer
+eligible=1
+status=safe
+corrupted=0
+rows=1
+tasks=demo
+unscoped=0
++(eval):14> : '== captain queues an inbox note via the real CLI'
++(eval):15> env -u NO_MISTAKES_GATE 'FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP' bin/fm-inbox.sh note 'captain: ship the hotfix first'
+queued 1791971518-GIVU6b
+  captain: ship the hotfix first
+  firstmate will pick this up at its next check.
++(eval):16> cat /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/.wake-queue
+1791971518	1	signal	demo.status	signal: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/demo.status
+1791971518	2	check	inbox:1791971518-GIVU6b	check: captain inbox note 1791971518-GIVU6b - captain: ship the hotfix first
++(eval):17> : '== attended host offer for the same signal close, note queued (expect eligible=0)'
++(eval):18> printf 'signal: %s\n' /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/demo.status
++(eval):18> FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP node bin/fm-branch-dispatch.mjs offer
+eligible=0
+status=safe
+corrupted=0
+rows=1
+tasks=demo
+unscoped=0
++(eval):19> : '== away host offer, note queued (expect unchanged: eligible=1)'
++(eval):20> printf 'signal: %s\n' /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/demo.status
++(eval):20> FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP node bin/fm-branch-dispatch.mjs offer --afk
+eligible=1
+status=safe
+corrupted=0
+rows=1 2
+tasks=demo
+unscoped=1
++(eval):21> : '== Pi offer rule (attendedHost=false), note queued (expect unchanged: true)'
++(eval):22> node '--input-type=module' -e 'const d = await import(process.argv[1]); const v = d.branchOfferForWake(process.argv[2], process.argv[3], false); console.log("pi eligible=" + v.eligible)' /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4WVZR8YQD150955AM63790T/.pi/extensions/lib/fm-branch-dispatch.ts /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state 'signal: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/demo.status'
+pi eligible=true
++(eval):23> : '== main drains: the note is presented'
++(eval):24> env -u NO_MISTAKES_GATE 'FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP' bin/fm-wake-drain.sh
++(eval):24> head -20
+1791971518	1	signal	demo.status	signal: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/demo.status
+1791971518	2	check	inbox:1791971518-GIVU6b	check: captain inbox note 1791971518-GIVU6b - captain: ship the hotfix first
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 3356.1791971518.PXWvV2
+wake annotation: latest wake-EVENT observed at drain, not current state: demo.status: working [at=1791971518]: step one
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
++(eval):25> : '== after main drain: attended offer'
++(eval):26> cat /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/.wake-queue
+1791971518	1	signal	demo.status	signal: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/demo.status
+1791971518	2	check	inbox:1791971518-GIVU6b	check: captain inbox note 1791971518-GIVU6b - captain: ship the hotfix first
++(eval):27> printf 'signal: %s\n' /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP/state/demo.status
++(eval):27> FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.vyjkoP node bin/fm-branch-dispatch.mjs offer
+eligible=0
+status=safe
+corrupted=0
+rows=1
+tasks=demo
+unscoped=0
++(eval):28> set +x
+== main acks through 2
+== a later signal close with no unread check row: attended offer (expect eligible=1)
+eligible=1
+status=safe
+corrupted=0
+rows=3
+tasks=demo
+unscoped=0

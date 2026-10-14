@@ -1,0 +1,6 @@
+ok - dispatch entry: the host reads branch eligibility, the offer rule, and the wake prompt from the Pi branch's own owner
+ok - host: a captain inbox note queued before a close the branch could take reaches main with that close
+not ok - the close must carry the watcher's reason line
+--- /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-supervision-host.xL1Voa/main-only-successor/host.out ---
+/Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4WVZR8YQD150955AM63790T/bin/fm-watch-arm.sh: line 630: 39995 Terminated: 15          "$WATCH" > "$child_out"
+watcher: FAILED - no live watcher with a fresh beacon

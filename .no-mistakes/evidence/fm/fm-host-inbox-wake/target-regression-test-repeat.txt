@@ -1,0 +1,8 @@
+ok - host: a captain inbox note queued before a close the branch could take reaches main with that close
+--- run 1
+ok - host: a captain inbox note queued before a close the branch could take reaches main with that close
+--- run 2
+ok - host: a captain inbox note queued before a close the branch could take reaches main with that close
+--- run 3
+ok - host: a captain inbox note queued before a close the branch could take reaches main with that close
+--- run 4

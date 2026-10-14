@@ -1,0 +1,12 @@
+not ok - inbox: the captain's note stayed queued behind the host instead of waking main: 1791971331	1	check	inbox:1791971331-fjGcXo	check: captain inbox note 1791971331-fjGcXo - captain: ship the hotfix first
+1791971327	start	gen=host-74440-1791971327	primary=claude
+1791971346	handled	turn=host-74440-1791971327.1	posture=attended	rc=0	reports=1	error=0 cost=0.25 conversation_cost=0.25 input=5 cache_read=100 cache_write=10 output=20 turns=3	signal: /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-supervision-host.lUO3GB/inbox-behind-signal/state/demo.
+--- base run 1
+not ok - inbox: the captain's note stayed queued behind the host instead of waking main: 1791971385	1	check	inbox:1791971384-mXhg0f	check: captain inbox note 1791971384-mXhg0f - captain: ship the hotfix first
+1791971379	start	gen=host-12636-1791971379	primary=claude
+1791971401	handled	turn=host-12636-1791971379.1	posture=attended	rc=0	reports=1	error=0 cost=0.25 conversation_cost=0.25 input=5 cache_read=100 cache_write=10 output=20 turns=3	signal: /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-supervision-host.VwyC0x/inbox-behind-signal/state/demo.
+--- base run 2
+not ok - inbox: the captain's note stayed queued behind the host instead of waking main: 1791971439	1	check	inbox:1791971438-vIiLqy	check: captain inbox note 1791971438-vIiLqy - captain: ship the hotfix first
+1791971435	start	gen=host-60938-1791971435	primary=claude
+1791971452	handled	turn=host-60938-1791971435.1	posture=attended	rc=0	reports=1	error=0 cost=0.25 conversation_cost=0.25 input=5 cache_read=100 cache_write=10 output=20 turns=3	signal: /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-supervision-host.pYoEU9/inbox-behind-signal/state/demo.
+--- base run 3
