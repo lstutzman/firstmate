@@ -1,0 +1,24 @@
+## scenario: s8-exhausted-pool-ineligible
+$ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/homes/s8-exhausted-pool-ineligible bin/fm-dispatch-resolve.sh brief.md --project rule_1
+config/cpa-usage-host: slartibartfast
+PATH shims: ssh (fixture table), quota-axi (cursor 91%/0.7597, claude unknown)   env: fixture cpa-exhausted (both accounts at 1.00)
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-lab-1.0   latency_ms: 0   tokens: 500/40
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: default=0.03 rule_2=0.03 rule_1=0.94
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=0%  spendPriority=-  runway=exhausted_now  -> not eligible: runway exhausted_now at all_models
+--- stderr ---
+--- exit=0 wall=0.19s ---
+--- ssh argv seen by the shim ---
+-o
+BatchMode=yes
+-o
+ConnectTimeout=5
+--
+slartibartfast
+cpa-usage-axi
+accounts

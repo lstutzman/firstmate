@@ -1,0 +1,28 @@
+## scenario: s9a-own-short-hostname-runs-locally
+$ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/homes/s9a-own-short-hostname-runs-locally bin/fm-dispatch-resolve.sh brief.md --project rule_1
+config/cpa-usage-host: lees-mac-mini
+PATH shims: ssh (transparent recorder -> real /usr/bin/ssh)   env: real hostname -s = Lees-Mac-mini; real ~/.local/bin/cpa-usage-axi (an ssh wrapper to slartibartfast)
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-lab-1.0   latency_ms: 0   tokens: 500/40
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: default=0.03 rule_2=0.03 rule_1=0.94
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=26%  spendPriority=0.26  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+--- exit=0 wall=1.47s ---
+--- ssh argv seen by the shim ---
+-o
+BatchMode=yes
+slartibartfast
+.local/bin/cpa-usage-axi 'accounts'
+-o
+BatchMode=yes
+slartibartfast
+.local/bin/cpa-usage-axi 'accounts'
+--
+oracle: n=4 mean=0.2600 -> remaining=26.00% spendPriority=0.2600
+note: the only ssh argv above is the local cpa-usage-axi wrapper's own call (no ConnectTimeout=5, no -- separator); the resolver's ssh form never appears
+note: the ssh argv list holds two entries because the shim log dir was reused from attempt 1 (its failing shim logged the same wrapper call); both entries are the local wrapper form, neither is the resolver form (-o ConnectTimeout=5 -- <host> cpa-usage-axi accounts)

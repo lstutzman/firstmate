@@ -1,0 +1,53 @@
+## scenario: s12-config-push-pushes-cpa-usage-host-to-live-secondmate
+$ FM_HOME=<marked lab home> bin/fm-config-push.sh   (fake tmux backend on PATH; sm = detached-worktree secondmate home registered in state/sm.meta)
+primary config/cpa-usage-host:
+  | # CLIProxyAPI usage host
+  | slartibartfast
+--- stdout ---
+config-push: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/push-home -> live secondmate homes
+secondmate sm (/private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.Gfqq0B/push-world/sm):
+  home: dirty working tree - local-material push continuing
+  crew-dispatch.json: unchanged
+  dispatch-never-send: unchanged
+  typesafe-base-url: unchanged
+  typesafe-model: unchanged
+  typesafe-token-file: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  keep-ai-trailers: unchanged
+  supervision-host-off: unchanged
+  firstmate-role: unchanged
+  cpa-usage-host: pushed
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate sm: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c050d9982933.git)
+--- exit=1 ---
+--- stderr ---
+--- secondmate home config/ after push ---
+total 16
+drwxr-xr-x@  4 leestutzman  staff  128 Oct 14 15:15 .
+drwxr-xr-x@ 10 leestutzman  staff  320 Oct 14 15:15 ..
+-rw-------@  1 leestutzman  staff    5 Oct 14 15:15 backend
+-rw-------@  1 leestutzman  staff   40 Oct 14 15:15 cpa-usage-host
+sm/config/cpa-usage-host bytes:
+  | # CLIProxyAPI usage host
+  | slartibartfast
+--- reread instruction written for the live secondmate (cpa-usage-host block) ---
+3-config/cpa-usage-host
+4:-----BEGIN config/cpa-usage-host-----
+5-# CLIProxyAPI usage host
+6-slartibartfast
+7------END config/cpa-usage-host-----
+8-config/cpa-usage-host
+9:-----BEGIN config/cpa-usage-host-----
+10-# CLIProxyAPI usage host
+11-slartibartfast
+12------END config/cpa-usage-host-----
+--- reread pointer delivered to the secondmate's routed inbox ---
+(eval):29: no matches found: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/push-home/state/sm.inbox/*.msg

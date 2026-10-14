@@ -1,0 +1,18 @@
+## scenario: s10-host-option-injection-refused
+$ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/homes/s10-host-option-injection-refused bin/fm-dispatch-resolve.sh brief.md --project rule_1
+config/cpa-usage-host: -oProxyCommand=sh evil
+PATH shims: ssh (fixture table), quota-axi (cursor 91%/0.7597, claude unknown)   env: host value is an ssh option
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-lab-1.0   latency_ms: 0   tokens: 500/40
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: default=0.03 rule_2=0.03 rule_1=0.94
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit=0 wall=0.17s ---
+--- ssh argv seen by the shim ---
+<no ssh call>

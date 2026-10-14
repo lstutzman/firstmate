@@ -1,0 +1,22 @@
+## scenario: s1-real-pool-over-ssh-slartibartfast
+$ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/homes/s1-real-pool-over-ssh-slartibartfast bin/fm-dispatch-resolve.sh brief.md --project rule_1
+config/cpa-usage-host: slartibartfast
+PATH shims: none   env: none
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-lab-1.0   latency_ms: 0   tokens: 500/40
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: default=0.03 rule_2=0.03 rule_1=0.94
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=26.25%  spendPriority=0.2625  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+--- exit=0 wall=1.20s ---
+--- ssh argv seen by the shim ---
+<no ssh call>
+    lee@propertycompass.co.uk remaining=0.0000
+    lstutzman@gmail.com remaining=0.4200
+    marleycrittendom@gmail.com remaining=0.6300
+    misterrobot@propertycompass.co.uk remaining=0.0000
+oracle: n=4 mean=0.2625 -> remaining=26.25% spendPriority=0.2625

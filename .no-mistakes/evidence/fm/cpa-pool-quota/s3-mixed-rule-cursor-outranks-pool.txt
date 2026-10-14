@@ -1,0 +1,25 @@
+## scenario: s3-mixed-rule-cursor-outranks-pool
+$ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/homes/s3-mixed-rule-cursor-outranks-pool bin/fm-dispatch-resolve.sh brief.md --project rule_2
+config/cpa-usage-host: slartibartfast
+PATH shims: ssh (fixture table), quota-axi (cursor 91%/0.7597, claude unknown)   env: fixture cpa-4275 (oracle: (0+0.85+0.78+0.08)/4 = 0.4275)
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-lab-1.0   latency_ms: 0   tokens: 500/40
+  rule: rule_2 (A simple bug fix with a stated root cause.)   confidence: 0.94
+  probabilities: default=0.03 rule_1=0.03 rule_2=0.94
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  candidate: cursor:cursor-grok-4.6-medium  provider=cursor  scope=all_models  remaining=91%  spendPriority=0.7597  runway=through_reset  -> eligible
+  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'
+--- stderr ---
+--- exit=0 wall=0.35s ---
+--- ssh argv seen by the shim ---
+-o
+BatchMode=yes
+-o
+ConnectTimeout=5
+--
+slartibartfast
+cpa-usage-axi
+accounts

@@ -1,0 +1,19 @@
+## scenario: s9c-own-hostname-any-case-no-ssh-direct-cpa-usage-axi
+$ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/homes/s9c-own-hostname-any-case-no-ssh-direct-cpa-usage-axi bin/fm-dispatch-resolve.sh brief.md --project rule_1
+config/cpa-usage-host: LEES-MAC-MINI
+PATH shims: cpa-usage-axi (records argv, fixture cpa-4275), ssh (exits 255 if called), quota-axi (claude unknown)   env: real hostname -s = Lees-Mac-mini
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-lab-1.0   latency_ms: 0   tokens: 500/40
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: default=0.03 rule_2=0.03 rule_1=0.94
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+--- exit=0 wall=0.37s ---
+--- ssh argv seen by the shim ---
+<no ssh call>
+--- cpa-usage-axi argv seen by the stub ---
+accounts

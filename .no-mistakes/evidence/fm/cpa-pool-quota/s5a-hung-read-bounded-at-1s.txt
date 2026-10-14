@@ -1,0 +1,25 @@
+## scenario: s5a-hung-read-bounded-at-1s
+$ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/homes/s5a-hung-read-bounded-at-1s bin/fm-dispatch-resolve.sh brief.md --project rule_1
+config/cpa-usage-host: slartibartfast
+PATH shims: ssh (hangs 30s), quota-axi (claude unknown)   env: SHIM_SSH_HANG=1 FM_CPA_USAGE_TIMEOUT=1
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-lab-1.0   latency_ms: 1000   tokens: 500/40
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: default=0.03 rule_2=0.03 rule_1=0.94
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 1s); claude quota from quota-axi
+--- exit=0 wall=1.57s ---
+--- ssh argv seen by the shim ---
+-o
+BatchMode=yes
+-o
+ConnectTimeout=5
+--
+slartibartfast
+cpa-usage-axi
+accounts

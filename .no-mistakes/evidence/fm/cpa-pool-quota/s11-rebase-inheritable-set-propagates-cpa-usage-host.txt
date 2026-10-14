@@ -1,0 +1,39 @@
+## scenario: s11-rebase-inheritable-set-propagates-cpa-usage-host
+$ . bin/fm-config-inherit-lib.sh; fm_config_inherit_items; propagate_inheritable_config primary/config secondmate/config primary
+--- declared inheritable items (the rebase conflict site) ---
+config/crew-dispatch.json
+config/dispatch-never-send
+config/typesafe-base-url
+config/typesafe-model
+config/typesafe-token-file
+config/crew-harness
+config/backlog-backend
+config/backend
+config/herdr-presentation-spaces
+config/startup-memory-budget
+config/trace-context
+config/launch-env-allowlist
+config/claude-permission-mode
+config/lavish-axi-host
+config/keep-ai-trailers
+config/supervision-host-off
+config/firstmate-role
+config/cpa-usage-host
+data/captain-shared.md
+--- propagate: stdout/stderr ---
+propagate rc=0
+--- secondmate/config after propagate ---
+total 16
+drwxr-xr-x@ 4 leestutzman  staff  128 Oct 14 15:12 .
+drwxr-xr-x@ 4 leestutzman  staff  128 Oct 14 15:12 ..
+-rw-------@ 1 leestutzman  staff   15 Oct 14 15:12 cpa-usage-host
+-rw-------@ 1 leestutzman  staff   32 Oct 14 15:12 crew-dispatch.json
+secondmate/config/cpa-usage-host = slartibartfast
+secondmate/config/crew-dispatch.json = {"default":{"harness":"codex"}}
+firstmate-role receipt present: no
+--- primary value changes -> converges ---
+propagate rc=0
+secondmate/config/cpa-usage-host = local
+--- primary file removed -> absence mirrored downstream ---
+propagate rc=0
+secondmate/config/cpa-usage-host exists: no

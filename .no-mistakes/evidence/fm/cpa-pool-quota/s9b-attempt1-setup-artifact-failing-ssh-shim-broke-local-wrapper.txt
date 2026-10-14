@@ -1,0 +1,21 @@
+## scenario: s9b-literal-local-runs-locally
+$ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.Gfqq0B/homes/s9b-literal-local-runs-locally bin/fm-dispatch-resolve.sh brief.md --project rule_1
+config/cpa-usage-host: local
+PATH shims: ssh   env: SHIM_SSH_FAIL=1; real local cpa-usage-axi
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-lab-1.0   latency_ms: 0   tokens: 500/40
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: default=0.03 rule_2=0.03 rule_1=0.94
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on local failed with exit 255); claude quota from quota-axi
+--- exit=0 wall=0.80s ---
+--- ssh argv seen by the shim ---
+-o
+BatchMode=yes
+slartibartfast
+.local/bin/cpa-usage-axi 'accounts'
