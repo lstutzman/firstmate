@@ -287,7 +287,10 @@ ensure() {
           write_record "$session" "$(record_field workspace)" "$pane" ""
           return 0
         fi
-        fm_backend_herdr_cli "$session" pane close "$pane" >/dev/null 2>&1
+        if ! fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane"; then
+          diagnose "herdr did not confirm closing idle observer pane $pane, so no new pane was opened"
+          return 0
+        fi
         ;;
       dead) ;;
       *) diagnose "herdr could not say whether observer pane $pane still exists"; return 0 ;;
@@ -314,8 +317,8 @@ ensure() {
   if ! fm_backend_herdr_cli "$session" pane run "$pane" "$cmd" >/dev/null 2>&1; then
     # Only a pane proven to hold a lone idle shell is closed and forgotten, so
     # the next ensure opens a fresh one; any other pane stays recorded.
-    if fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null 2>&1; then
-      fm_backend_herdr_cli "$session" pane close "$pane" >/dev/null 2>&1
+    if fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null 2>&1 \
+      && fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane"; then
       write_record "" "" "" "$prior"
     fi
     diagnose "herdr opened an observer pane but could not start the observer in it"

@@ -380,6 +380,20 @@ test_ensure_keeps_a_new_pane_it_cannot_prove_idle_after_a_failed_start() {
   pass "observe: a failed start keeps a pane it cannot prove idle rather than closing it"
 }
 
+test_ensure_opens_no_second_pane_when_a_close_is_not_confirmed() {
+  local home out
+  home=$(make_observer_home ensure-close-fails)
+  ensure "$home" >/dev/null
+  echo idle > "$home/herdr/state-p1"
+  : > "$home/herdr/close-fails"
+  out=$(ensure "$home")
+  assert_contains "$out" "the host continues headless" "an unconfirmed close must get one diagnostic"
+  assert_equals 1 "$(grep -c '^workspace create' "$home/herdr/calls")" "an unconfirmed close must not open a second pane"
+  ensure "$home" >/dev/null
+  assert_equals 1 "$(grep -c '^workspace create' "$home/herdr/calls")" "a pane still present must stay the recorded one"
+  pass "observe: ensure opens no second pane when closing the old one is not confirmed"
+}
+
 test_ensure_replaces_a_pane_the_observer_could_not_start_in() {
   local home out
   home=$(make_observer_home ensure-run-fails)
@@ -479,6 +493,7 @@ test_ensure_opens_one_observer_pane_and_reuses_it
 test_ensure_reopens_a_closed_observer_pane
 test_ensure_leaves_a_pane_busy_with_another_program_alone
 test_ensure_keeps_a_new_pane_it_cannot_prove_idle_after_a_failed_start
+test_ensure_opens_no_second_pane_when_a_close_is_not_confirmed
 test_ensure_replaces_a_pane_the_observer_could_not_start_in
 test_ensure_replaces_a_restored_pane_with_no_observer_running
 test_ensure_on_another_backend_says_so_once_and_touches_no_herdr
