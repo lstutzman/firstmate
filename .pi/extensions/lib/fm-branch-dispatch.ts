@@ -594,7 +594,8 @@ export interface BranchOfferVerdict {
 // The offer rule for one actionable close: whether a branch may take it, in
 // either posture. The Pi watcher (fm-primary-pi-watch.ts) and the supervision
 // host off Pi (bin/fm-branch-dispatch.mjs offer) both route through this one
-// owner, so a close reaches main off Pi exactly when it would on Pi.
+// owner, so a close reaches main off Pi exactly when it would on Pi, except
+// for the host-only check-row rule below.
 //
 // A check-kind close (merge-confirmation polls, Relay mentions,
 // credential/auth failures, and every other legitimately main-only class -
@@ -639,8 +640,8 @@ export function branchOfferForWake(state: string, message: string, afk: boolean,
     scope.taskByWakeKey[key] ?? scope.taskByWakeKey[key.replace(/^fm-/, "")] ?? key;
   const needsDecisionTasks = new Set(scope.needsDecisionKeys.map(taskIdentity));
   const isNeedsDecisionTrigger = triggerKeys.some((key) => needsDecisionTasks.has(taskIdentity(key)));
-  const mainCheckForHost = attendedHost && !afk && scope.mainCheckQueued;
-  const attendedEligible = !isCheckTrigger && !isNeedsDecisionTrigger && !mainCheckForHost && (
+  const checkRowHoldsMain = attendedHost && !afk && scope.mainCheckQueued;
+  const attendedEligible = !isCheckTrigger && !isNeedsDecisionTrigger && !checkRowHoldsMain && (
     afk ? scopeForUnreadWake(state, heartbeat, false).eligible : scope.eligible
   );
   const eligible = afk ? scope.eligible : attendedEligible;

@@ -107,7 +107,7 @@ Only an away record is away: no record, or the record daemon-backed quiet mode w
 
 The host asks the Pi branch's offer rule (`branchOfferForWake`, through `bin/fm-branch-dispatch.mjs offer`) whether the branch may take the close.
 So apart from the one rule below, a close reaches main off Pi exactly when it would on Pi: a check trigger, a decision-owned signal or stale trigger, and a scan that is unsafe or holds nothing for the branch stay main's.
-The host adds one rule: while any check row, such as a captain inbox note, waits unread in the queue, every close stays main's, because a row appended straight to the queue has no close of its own once the watcher is already closing on another trigger.
+The host adds one rule: while any check row, such as a captain inbox note, waits unread in the queue, every close stays main's; `branchOfferForWake` owns why.
 On that main-only pass-through the host starts the successor watcher cycle and leaves it running, then prints the close unchanged.
 That successor, like one a turn hands back at its start (see [Away](#away)), runs in a process group of its own, so the harness tearing down the hook's group after the rewake does not stop it.
 The host leaves the watcher's recovery marker reading downtime, confirming no handling handoff, because the re-arm owner delivers a close to main only while that marker reads downtime.

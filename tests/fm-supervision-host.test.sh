@@ -1058,13 +1058,7 @@ test_main_only_pass_through_leaves_the_successor_watcher_running() {
   pass "host: a main-only pass-through leaves the successor watcher running and the close undelivered for main"
 }
 
-# The live failure this guards: a captain inbox note appended straight to the
-# queue while the watcher was already closing on a crewmate's signal never got
-# a close of its own, the engine took that signal close and acknowledged only
-# its granted row, and the successor's baseline already covered the note, so
-# the note sat queued while main stayed parked. The signal grace holds the
-# watcher between seeing the signal and closing on it, which is where the note
-# lands.
+# A check row queued before a close the branch could take keeps that close on main.
 test_captain_inbox_note_queued_before_a_branch_close_reaches_main() {
   local home note_seq signal_seq drained
   home=$(make_home inbox-behind-signal attended)
