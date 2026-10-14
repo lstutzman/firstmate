@@ -187,12 +187,42 @@ test_a_running_turn_renders_its_wake_and_follows_its_new_conversation() {
   pass "observe: a running turn renders its wake and its own conversation"
 }
 
+test_a_finished_new_conversation_turn_does_not_render_the_earlier_one_again() {
+  local home
+  home=$(make_home flip)
+  engine_record "$home" "$SESSION_A"
+  transcript_turn "$home/claude/projects/-code-root/$SESSION_A.jsonl" 21 earlier
+  start_follow "$home"
+  wait_rendered "$home" "[engine] earlier: the demo task moved on."
+  # A turn starts a new conversation; its record names it.
+  printf 'turn=host-9.5\nrows=14\ntasks=demo\nunscoped=0\nwake=signal: demo\nposture=away\nsession=%s\n' "$SESSION_B" \
+    > "$home/state/.supervision-host-turn"
+  transcript_turn "$home/claude/projects/-code-root/$SESSION_B.jsonl" 22 newer
+  wait_rendered "$home" "[engine] newer: the demo task moved on."
+  # The host removes the turn record before it writes the engine record, which
+  # still names the earlier conversation until then (or for good, after a
+  # failed turn).
+  rm -f "$home/state/.supervision-host-turn"
+  sleep 0.5
+  engine_record "$home" "$SESSION_B"
+  transcript_turn "$home/claude/projects/-code-root/$SESSION_B.jsonl" 23 latest
+  wait_rendered "$home" "[engine] latest: the demo task moved on."
+  sleep 0.3
+  stop_follow
+  assert_equals 1 "$(rendered_count "$home" "[engine] earlier: the demo task moved on.")" \
+    "the earlier conversation must not render again when the follower falls back to it"
+  assert_equals 1 "$(rendered_count "$home" "[engine] newer: the demo task moved on.")" \
+    "the new conversation must not render again once the engine record names it"
+  pass "observe: moving between conversations renders each conversation's lines once"
+}
+
 # --- the observer pane -------------------------------------------------------
 
 # A stateful fake herdr: it logs every call to $FAKE_HERDR_DIR/calls, answers
 # status as a running protocol-20 server, mints workspace and pane ids on
 # workspace create, and reports a pane present while its id is listed in
 # $FAKE_HERDR_DIR/panes (a case closes a pane by removing it).
+# A $FAKE_HERDR_DIR/run-fails file makes the next pane run fail.
 # FAKE_HERDR_DOWN=1 makes every call fail as an unreachable server would.
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/herdr")
 cat > "$FAKEBIN/herdr" <<'SH'
@@ -216,7 +246,11 @@ case "$1 ${2:-}" in
       printf '{"error":{"code":"pane_not_found"}}\n'
       exit 1
     fi ;;
-  'pane run') ;;
+  'pane run')
+    if [ -e "$dir/run-fails" ]; then rm -f "$dir/run-fails"; exit 1; fi ;;
+  'pane close')
+    grep -vx -- "$3" "$dir/panes" > "$dir/panes.tmp" 2>/dev/null; mv -f "$dir/panes.tmp" "$dir/panes"
+    echo $(( $(cat "$dir/closed" 2>/dev/null || echo 0) + 1 )) > "$dir/closed" ;;
   *) printf '{"error":{"code":"unexpected"}}\n'; exit 1 ;;
 esac
 SH
@@ -266,6 +300,20 @@ test_ensure_reopens_a_closed_observer_pane() {
   assert_equals 2 "$(grep -c '^workspace create' "$home/herdr/calls")" "exactly one new pane must replace the closed one"
   assert_grep "pane run p2 " "$home/herdr/calls" "the observer must start in the replacement pane"
   pass "observe: ensure reopens an observer pane the captain closed"
+}
+
+test_ensure_replaces_a_pane_the_observer_could_not_start_in() {
+  local home out
+  home=$(make_observer_home ensure-run-fails)
+  : > "$home/herdr/run-fails"
+  out=$(ensure "$home")
+  assert_contains "$out" "could not start the observer in it; the host continues headless" \
+    "a pane the observer could not start in must get one diagnostic"
+  assert_grep "pane close p1" "$home/herdr/calls" "the idle pane must be closed"
+  out=$(ensure "$home")
+  assert_contains "$out" "observer pane p2" "the next ensure must open a new pane"
+  assert_equals 1 "$(grep -c '^pane run p2 .*bin/fm-host-observe.sh follow' "$home/herdr/calls")" "the new pane must run the follower"
+  pass "observe: ensure replaces a pane the observer could not start in"
 }
 
 test_ensure_on_another_backend_says_so_once_and_touches_no_herdr() {
@@ -319,10 +367,12 @@ test_ensure_without_the_opt_in_does_nothing() {
 test_ledger_lines_render_with_time_kind_and_fields
 test_a_running_turn_renders_its_wake_and_follows_its_new_conversation
 test_follow_renders_each_new_event_once_across_absence_rotation_and_restart
+test_a_finished_new_conversation_turn_does_not_render_the_earlier_one_again
 test_engine_turn_activity_renders_condensed
 test_outcomes_render_their_verdict_task_and_summary
 test_ensure_opens_one_observer_pane_and_reuses_it
 test_ensure_reopens_a_closed_observer_pane
+test_ensure_replaces_a_pane_the_observer_could_not_start_in
 test_ensure_on_another_backend_says_so_once_and_touches_no_herdr
 test_ensure_degrades_once_when_herdr_is_unreachable
 test_overlapping_ensures_open_one_pane

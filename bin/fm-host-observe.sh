@@ -136,21 +136,24 @@ pass_turn() {
     "$(turn_field posture)" "$turn" "$(turn_field tasks)" "$(turn_field wake)"
 }
 
-# The engine transcript: complete lines past the byte offset already rendered,
-# restarting at the top for a new conversation or a shrunken file. A running
+# The engine transcript: complete lines past the byte offset already rendered
+# in that conversation, restarting at the top of a shrunken file. A running
 # turn's record names its conversation before the engine record does, which a
-# new conversation's turn updates only once it succeeds.
+# new conversation's turn updates only once it succeeds, so the follower can
+# move back to an earlier conversation; each keeps its own offset, and a
+# conversation newly followed starts with its newest BACKLOG events.
 TR_SESSION=
-TR_OFFSET=0
+TR_OFFSETS=
 pass_transcript() {  # <first-pass>
-  local session file size data
+  local session file size data offset cap=$1
   session=$(turn_field session)
   [ -n "$session" ] || session=$(sed -n 's/^session=//p' "$ENGINE_RECORD" 2>/dev/null | head -n 1)
   [ -n "$session" ] || return 0
   if [ "$session" != "$TR_SESSION" ]; then
     TR_SESSION=$session
-    TR_OFFSET=0
+    cap=1
   fi
+  offset=$(printf '%s\n' "$TR_OFFSETS" | awk -v s="$session" '$1 == s { o = $2 } END { print o + 0 }')
   file=
   for file in "$CLAUDE_STORE"/projects/*/"$session".jsonl; do
     [ -f "$file" ] && break
@@ -159,14 +162,15 @@ pass_transcript() {  # <first-pass>
   [ -n "$file" ] || return 0
   size=$(wc -c < "$file" 2>/dev/null | tr -d ' ')
   case "$size" in ''|*[!0-9]*) return 0 ;; esac
-  [ "$size" -ge "$TR_OFFSET" ] || TR_OFFSET=0
-  [ "$size" -gt "$TR_OFFSET" ] || return 0
-  data=$(tail -c +"$((TR_OFFSET + 1))" "$file" 2>/dev/null | head -c "$((size - TR_OFFSET))"; printf .)
+  [ "$size" -ge "$offset" ] || offset=0
+  [ "$size" -gt "$offset" ] || return 0
+  data=$(tail -c +"$((offset + 1))" "$file" 2>/dev/null | head -c "$((size - offset))"; printf .)
   data=${data%.}
   case "$data" in *$'\n'*) ;; *) return 0 ;; esac
   data=${data%"${data##*$'\n'}"}
-  TR_OFFSET=$((TR_OFFSET + ${#data}))
-  printf '%s' "$data" | render_transcript | backlog "$1"
+  offset=$((offset + ${#data}))
+  TR_OFFSETS=$(printf '%s\n' "$TR_OFFSETS" | awk -v s="$session" 'NF && $1 != s'; printf '%s %s\n' "$session" "$offset")
+  printf '%s' "$data" | render_transcript | backlog "$cap"
 }
 
 # The outcome tail: rows above the highest sequence rendered. A tail whose
@@ -290,11 +294,13 @@ ensure() {
   fi
   # Recorded before the observer starts, so a later ensure never opens a
   # second pane beside this one.
-  write_record "$session" "$workspace" "$pane" ""
+  write_record "$session" "$workspace" "$pane" "$(record_field note)"
   cmd="FM_HOME=$(printf '%q' "$FM_HOME")"
   [ -z "${CLAUDE_CONFIG_DIR:-}" ] || cmd="$cmd CLAUDE_CONFIG_DIR=$(printf '%q' "$CLAUDE_CONFIG_DIR")"
   cmd="$cmd $(printf '%q' "$SCRIPT_DIR/fm-host-observe.sh") follow"
   if ! fm_backend_herdr_cli "$session" pane run "$pane" "$cmd" >/dev/null 2>&1; then
+    fm_backend_herdr_cli "$session" pane close "$pane" >/dev/null 2>&1
+    write_record "" "" "" "$(record_field note)"
     diagnose "herdr opened observer pane $pane but could not start the observer in it"
     return 0
   fi
