@@ -1005,6 +1005,7 @@ write_cpa "$CPA_FIXTURE" \
 cat > "$FAKEBIN/ssh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >> "${FAKE_CURL_LOG:?}/ssh.argv"
+[ "${FAKE_CPA_NOISE:-0}" = 1 ] && printf 'Warning: Permanently added slartibartfast to known hosts.\nssh: connect to host slartibartfast port 22: Connection refused\n' >&2
 [ "${FAKE_CPA_FAIL:-0}" = 1 ] && exit 255
 [ "${FAKE_CPA_HANG:-0}" = 1 ] && sleep 30
 [ "${FAKE_CPA_KILLED:-0}" = 1 ] && kill -KILL $$
@@ -1067,6 +1068,15 @@ assert_contains "$out" '  reason: no rankable eligible candidate' "a failed pool
 assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "a failed pool read leaves the quota-axi claude entry"
 assert_equals 'dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast failed with exit 255); claude quota from quota-axi' "$err" "a failed pool read says so in one stderr line"
 pass "config/cpa-usage-host: a failed pool read degrades to the quota-axi claude entry"
+
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" FAKE_CPA_NOISE=1 FAKE_CPA_FAIL=1 run code out err "$BRIEF"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast failed with exit 255); claude quota from quota-axi' "$err" "ssh's own stderr never reaches the resolver's stderr on failure"
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" FAKE_CPA_NOISE=1 run code out err "$BRIEF"
+assert_contains "$out" '  status: clear' "ssh stderr noise does not spoil a good read"
+assert_equals '' "$err" "ssh's own stderr never reaches the resolver's stderr on success"
+pass "config/cpa-usage-host: ssh stderr noise stays out of the resolver's one diagnostic line"
 
 reset_log
 TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=1 run code out err "$BRIEF"
