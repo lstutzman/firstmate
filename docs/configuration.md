@@ -1352,17 +1352,18 @@ The [shared quota library](../bin/fm-quota-axi-lib.sh) accepts schema 5 and sche
 
 When Claude traffic is pooled through CLIProxyAPI, `quota-axi` on a host without the Claude keychain reports the `claude` provider as unknown, which leaves every Claude candidate unranked.
 The optional local, gitignored `config/cpa-usage-host` names, on its first non-blank line not beginning with `#`, the ssh host that runs the read-only `cpa-usage-axi`, or `local` to run it on this host.
+A value equal to this machine's own short host name, compared case-insensitively, also runs it here without ssh, so a secondmate home that inherits the file on the usage host itself still reads the pool.
 
 ```text
 # CLIProxyAPI usage host
 slartibartfast
 ```
 
-With the file present, one bounded `cpa-usage-axi accounts` read replaces the snapshot's `claude` entry with one known `all_models` row whose remaining percent and `spendPriority` are the mean, over fresh Claude accounts, of each account's tighter 5-hour or 7-day window.
+With the file present, one bounded `cpa-usage-axi accounts` read replaces the snapshot's `claude` entry with one known `all_models` row whose remaining percent is the mean, over every Claude account, of each account's remaining share of its tighter 5-hour or 7-day window.
+The row's `spendPriority` is that same mean as a fraction between 0 and 1, on the magnitude of `quota-axi`'s own scalar, so a Claude candidate ranks against other providers rather than above them.
 A blank window, which `cpa-usage-axi` prints when none is active, counts as nothing used.
-The row's runway is `exhausted_now` only when every fresh account is exhausted, which makes Claude candidates ineligible.
-An account observation older than 180 minutes counts as unknown and is left out of the mean.
-A failed, timed-out, all-stale, or malformed read, or a value that is not a plain host name, keeps `quota-axi`'s own `claude` entry and prints one `dispatch-resolve: cpa-usage pool unavailable` line on stderr.
+The row's runway is `exhausted_now` only when every account is exhausted, which makes Claude candidates ineligible.
+A failed, timed-out, or malformed read, a read with no Claude account rows, or a value that is not a plain host name, keeps `quota-axi`'s own `claude` entry and prints one `dispatch-resolve: cpa-usage pool unavailable` line on stderr.
 An absent file changes nothing and makes no read.
 Every Claude candidate binds to the same pooled row, so two Claude candidates in one rule tie and escalate unless their profile floors or other rows separate them.
 The file is inherited into secondmate homes like `config/typesafe-base-url`.
