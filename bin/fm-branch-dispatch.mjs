@@ -6,7 +6,10 @@
 // It reimplements nothing: .pi/extensions/lib/fm-branch-dispatch.ts stays the
 // single owner of which queued rows the branch may claim and of the wake text,
 // and this file only prints that module's answers in a shape a shell can read.
-// The Pi branch extension and this entry therefore apply identical rules.
+// The Pi branch extension and this entry therefore apply identical rules,
+// except that `offer` judges the close as the attended supervision host, so
+// the host-only check-row rule that branchOfferForWake owns applies here and
+// not on Pi.
 //
 // Usage:
 //   fm-branch-dispatch.mjs scope [--heartbeat] [--afk]
