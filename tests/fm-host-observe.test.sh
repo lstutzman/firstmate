@@ -222,7 +222,10 @@ test_a_finished_new_conversation_turn_does_not_render_the_earlier_one_again() {
 # status as a running protocol-20 server, mints workspace and pane ids on
 # workspace create, and reports a pane present while its id is listed in
 # $FAKE_HERDR_DIR/panes (a case closes a pane by removing it).
-# A $FAKE_HERDR_DIR/run-fails file makes the next pane run fail.
+# A $FAKE_HERDR_DIR/run-fails file makes the next pane run fail. A pane's
+# process-info shows the command its last pane run started while its id is
+# listed in $FAKE_HERDR_DIR/running, and a bare shell otherwise (a case
+# restarts the server by emptying that file: herdr restores the pane idle).
 # FAKE_HERDR_DOWN=1 makes every call fail as an unreachable server would.
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/herdr")
 cat > "$FAKEBIN/herdr" <<'SH'
@@ -247,9 +250,16 @@ case "$1 ${2:-}" in
       exit 1
     fi ;;
   'pane run')
-    if [ -e "$dir/run-fails" ]; then rm -f "$dir/run-fails"; exit 1; fi ;;
+    if [ -e "$dir/run-fails" ]; then rm -f "$dir/run-fails"; exit 1; fi
+    printf '%s\t%s\n' "$3" "$4" >> "$dir/running" ;;
+  'pane process-info')
+    cmd=$(awk -F '\t' -v p="$4" '$1 == p { c = $2 } END { print c }' "$dir/running" 2>/dev/null)
+    jq -nc --arg pane "$4" --arg cmd "$cmd" '{result:{type:"pane_process_info",process_info:{pane_id:$pane,shell_pid:4242,
+      foreground_processes:(if $cmd == "" then [{pid:4242,name:"zsh",argv0:"zsh",cmdline:"-zsh"}]
+        else [{pid:4243,name:"bash",argv0:"bash",cmdline:("bash " + ($cmd | split(" ") | last(.[] | select(test("fm-host-observe")))) + " follow")}] end)}}}' ;;
   'pane close')
     grep -vx -- "$3" "$dir/panes" > "$dir/panes.tmp" 2>/dev/null; mv -f "$dir/panes.tmp" "$dir/panes"
+    grep -v -- "^$3	" "$dir/running" > "$dir/running.tmp" 2>/dev/null; mv -f "$dir/running.tmp" "$dir/running"
     echo $(( $(cat "$dir/closed" 2>/dev/null || echo 0) + 1 )) > "$dir/closed" ;;
   *) printf '{"error":{"code":"unexpected"}}\n'; exit 1 ;;
 esac
@@ -314,6 +324,21 @@ test_ensure_replaces_a_pane_the_observer_could_not_start_in() {
   assert_contains "$out" "observer pane p2" "the next ensure must open a new pane"
   assert_equals 1 "$(grep -c '^pane run p2 .*bin/fm-host-observe.sh follow' "$home/herdr/calls")" "the new pane must run the follower"
   pass "observe: ensure replaces a pane the observer could not start in"
+}
+
+test_ensure_replaces_a_restored_pane_with_no_observer_running() {
+  local home out
+  home=$(make_observer_home ensure-restored)
+  ensure "$home" >/dev/null
+  # The herdr server restarts and restores p1 as a bare shell.
+  : > "$home/herdr/running"
+  out=$(ensure "$home")
+  assert_contains "$out" "observer pane p2" "a restored pane with no observer must be replaced"
+  assert_grep "pane close p1" "$home/herdr/calls" "the idle restored pane must be closed"
+  assert_equals 1 "$(grep -c '^pane run p2 .*bin/fm-host-observe.sh follow' "$home/herdr/calls")" "the new pane must run the follower"
+  out=$(ensure "$home")
+  assert_equals "" "$out" "a pane running the observer must be reused silently"
+  pass "observe: ensure replaces a restored observer pane that no longer runs the observer"
 }
 
 test_ensure_on_another_backend_says_so_once_and_touches_no_herdr() {
@@ -385,6 +410,7 @@ test_outcomes_render_their_verdict_task_and_summary
 test_ensure_opens_one_observer_pane_and_reuses_it
 test_ensure_reopens_a_closed_observer_pane
 test_ensure_replaces_a_pane_the_observer_could_not_start_in
+test_ensure_replaces_a_restored_pane_with_no_observer_running
 test_ensure_on_another_backend_says_so_once_and_touches_no_herdr
 test_ensure_degrades_once_when_herdr_is_unreachable
 test_ensure_reports_a_problem_again_after_an_open
