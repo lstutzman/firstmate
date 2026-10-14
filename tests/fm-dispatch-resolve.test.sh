@@ -1074,6 +1074,13 @@ assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, 
 assert_equals 'dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 1s); claude quota from quota-axi' "$err" "a hung pool read is bounded and named"
 pass "config/cpa-usage-host: the pool read has an overall bound"
 
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=00 run code out err "$BRIEF"
+expect_code 0 "$code" "a hung pool read under an all-zero bound exits 0"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "an all-zero bound never lets the hung read rank the claude candidate"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 10s); claude quota from quota-axi' "$err" "an all-zero FM_CPA_USAGE_TIMEOUT falls back to the default bound instead of none"
+pass "config/cpa-usage-host: FM_CPA_USAGE_TIMEOUT=00 still bounds a hung read"
+
 cat > "$FAKEBIN/cpa-usage-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >> "${FAKE_CURL_LOG:?}/cpa-usage-axi.argv"

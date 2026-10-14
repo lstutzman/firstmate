@@ -135,7 +135,8 @@ TS_MODEL=${TS_MODEL:-jev-latest}
 TS_TIMEOUT=5
 CPA_CONNECT_TIMEOUT=5
 CPA_TIMEOUT=${FM_CPA_USAGE_TIMEOUT:-10}
-case "$CPA_TIMEOUT" in ''|*[!0-9]*|0) CPA_TIMEOUT=10 ;; esac
+case "$CPA_TIMEOUT" in ''|*[!0-9]*) CPA_TIMEOUT=10 ;; *) CPA_TIMEOUT=$((10#$CPA_TIMEOUT)) ;; esac
+[ "$CPA_TIMEOUT" -gt 0 ] || CPA_TIMEOUT=10
 DEFAULT_WHEN="No listed rule applies to this task."
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
