@@ -271,7 +271,7 @@ ensure() {
     return 0
   fi
   session=$(fm_backend_herdr_session)
-  if [ "$(fm_backend_herdr_cli "$session" status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null)" != true ]; then
+  if [ "$(fm_backend_herdr_server_running_state "$session")" != running ]; then
     diagnose "herdr session '$session' has no running server"
     return 0
   fi
