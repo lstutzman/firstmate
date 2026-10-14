@@ -26,27 +26,33 @@
 # a tail copy replaced whole, and a host that restarted are all followed
 # without a restart. --once renders the backlog and exits.
 #
-# READ-ONLY: it only reads those files. It takes no lock, acknowledges no wake,
-# moves no outcome cursor, and writes nothing under state/, so it can never
-# change what the host or main does.
+# READ-ONLY: follow only reads those files. It takes no lock, acknowledges no
+# wake, moves no outcome cursor, and writes nothing, so it can never change
+# what the host or main does.
 #
-# ensure keeps exactly one herdr pane running `follow` for this home, and is
-# the only writer of the observer's own state. The host runs it in the
-# background at every start (bin/fm-supervision-host.sh). It does nothing
-# unless the local config/supervision-host-observer exists. On the herdr
-# backend (bin/fm-backend.sh fm_backend_name) it opens the pane in its own
-# workspace labeled <home workspace label>-host-observer
-# (firstmate-host-observer on a primary) in the selected herdr session, records
-# the session, workspace, and pane in state/.supervision-host-observer, and on
-# later calls reuses that pane while herdr reports it present and not visibly
-# idle. It opens a new one when herdr reports the pane gone, or present with
-# the follower no longer in its foreground (a pane herdr restored as a bare
-# shell), and closes and forgets a pane whose follower could not be started,
-# so the next ensure reopens. It never starts a herdr server. Any other
-# backend, or a herdr that is missing, outdated, not running, or not
-# answering, gets one "observer: ..." diagnostic line on stdout, printed again
-# only when the problem changes, and nothing else. One ensure runs at a time
-# (state/.supervision-host-observer.lock). It always exits 0.
+# ensure keeps exactly one herdr pane running `follow` for this home. It is the
+# only writer of the observer's own state, state/.supervision-host-observer
+# and its lock, and writes nothing else. The host runs it in the background at
+# every start (bin/fm-supervision-host.sh), so a pane closed during a park
+# returns at the next host start. It does nothing unless the local
+# config/supervision-host-observer exists. On the herdr backend
+# (bin/fm-backend.sh fm_backend_name) it opens the pane in its own workspace
+# labeled <home workspace label>-host-observer (firstmate-host-observer on a
+# primary) in the selected herdr session and records the session, workspace,
+# and pane. Later calls keep that pane while herdr reports it present, unless
+# the adapter's idle-shell proof (fm_backend_herdr_pane_idle_shell_pid) shows
+# it holds only a lone idle shell, as herdr restores a pane after a server
+# restart; such a pane is closed through the adapter's confirmed close and
+# replaced. A pane running anything else is never closed, and one whose
+# processes cannot be read is kept and reported. A new pane whose follower
+# could not be started is closed and forgotten only under the same proof. From
+# the create until the pane is recorded, terminating signals are ignored, so a
+# caller's bound or group teardown cannot leave an unrecorded pane. It never
+# starts a herdr server. Any other backend, a herdr that is missing, outdated,
+# not running, or not answering, or a close herdr does not confirm, gets one
+# "observer: ..." diagnostic line on stdout, printed again only when the
+# problem changes, and nothing else. One ensure runs at a time under
+# bin/fm-wake-lib.sh's lock. It always exits 0.
 set -u
 export LC_ALL=C
 
@@ -120,8 +126,9 @@ pass_ledger() {  # <first-pass>
   printf '%s\n' "$lines" | backlog "$1" | render_ledger
 }
 
-turn_field() {  # <key>
-  sed -n "s/^$1=//p" "$TURN_FILE" 2>/dev/null | head -n 1
+# The first value of <key> in a key=value record.
+field() {  # <file> <key>
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1
 }
 
 # The running turn: one [wake] line per turn the host starts, timed by its
@@ -129,14 +136,14 @@ turn_field() {  # <key>
 TURN_LAST=
 pass_turn() {
   local turn epoch
-  turn=$(turn_field turn)
+  turn=$(field "$TURN_FILE" turn)
   [ -n "$turn" ] && [ "$turn" != "$TURN_LAST" ] || return 0
   TURN_LAST=$turn
   epoch=$(stat -c %Y "$TURN_FILE" 2>/dev/null || stat -f %m "$TURN_FILE" 2>/dev/null)
   case "$epoch" in ''|*[!0-9]*) epoch=$(date +%s) ;; esac
   printf '%s [wake] %s turn=%s tasks=%s: %s\n' \
     "$(jq -nr --argjson e "$epoch" '$e | strflocaltime("%H:%M:%S")')" \
-    "$(turn_field posture)" "$turn" "$(turn_field tasks)" "$(turn_field wake)"
+    "$(field "$TURN_FILE" posture)" "$turn" "$(field "$TURN_FILE" tasks)" "$(field "$TURN_FILE" wake)"
 }
 
 # The engine transcript: complete lines past the byte offset already rendered
@@ -149,8 +156,8 @@ TR_SESSION=
 TR_OFFSETS=
 pass_transcript() {  # <first-pass>
   local session file size data offset cap=$1
-  session=$(turn_field session)
-  [ -n "$session" ] || session=$(sed -n 's/^session=//p' "$ENGINE_RECORD" 2>/dev/null | head -n 1)
+  session=$(field "$TURN_FILE" session)
+  [ -n "$session" ] || session=$(field "$ENGINE_RECORD" session)
   [ -n "$session" ] || return 0
   if [ "$session" != "$TR_SESSION" ]; then
     TR_SESSION=$session
@@ -210,10 +217,6 @@ follow() {  # [--once]
   done
 }
 
-record_field() {  # <key>
-  sed -n "s/^$1=//p" "$OBSERVER_RECORD" 2>/dev/null | head -n 1
-}
-
 write_record() {  # <session> <workspace> <pane> <note>
   local tmp
   tmp=$(mktemp "$OBSERVER_RECORD.tmp.XXXXXX" 2>/dev/null) || return 0
@@ -225,8 +228,8 @@ write_record() {  # <session> <workspace> <pane> <note>
 # One diagnostic per distinct problem: repeated parks with the same problem
 # stay quiet until it changes or clears.
 diagnose() {  # <text>
-  [ "$(record_field note)" = "$1" ] || printf 'observer: %s; the host continues headless\n' "$1"
-  write_record "$(record_field session)" "$(record_field workspace)" "$(record_field pane)" "$1"
+  [ "$(field "$OBSERVER_RECORD" note)" = "$1" ] || printf 'observer: %s; the host continues headless\n' "$1"
+  write_record "$(field "$OBSERVER_RECORD" session)" "$(field "$OBSERVER_RECORD" workspace)" "$(field "$OBSERVER_RECORD" pane)" "$1"
 }
 
 # Parks can follow each other faster than herdr answers, so one ensure runs at
@@ -264,8 +267,8 @@ ensure_locked() {
     diagnose "herdr session '$session' has no running server"
     return 0
   fi
-  pane=$(record_field pane)
-  if [ -n "$pane" ] && [ "$(record_field session)" = "$session" ]; then
+  pane=$(field "$OBSERVER_RECORD" pane)
+  if [ -n "$pane" ] && [ "$(field "$OBSERVER_RECORD" session)" = "$session" ]; then
     presence=$(fm_backend_herdr_pane_presence_state "$session" "$pane")
     case "$presence" in
       present)
@@ -276,7 +279,7 @@ ensure_locked() {
           if [ "$(fm_backend_herdr_pane_process_state "$session" "$pane")" = unreadable ]; then
             diagnose "herdr could not read what observer pane $pane runs, so it was left as it is"
           else
-            write_record "$session" "$(record_field workspace)" "$pane" ""
+            write_record "$session" "$(field "$OBSERVER_RECORD" workspace)" "$pane" ""
           fi
           return 0
         fi
@@ -306,7 +309,7 @@ ensure_locked() {
   fi
   # Recorded before the observer starts, so a later ensure never opens a
   # second pane beside this one.
-  prior=$(record_field note)
+  prior=$(field "$OBSERVER_RECORD" note)
   write_record "$session" "$workspace" "$pane" ""
   trap - TERM INT HUP
   cmd="FM_HOME=$(printf '%q' "$FM_HOME")"

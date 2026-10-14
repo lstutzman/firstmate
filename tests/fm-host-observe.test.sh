@@ -503,6 +503,7 @@ test_a_group_terminated_ensure_still_records_the_pane_it_created() {
   home=$(make_observer_home ensure-terminated)
   # A caller's bound or process-group teardown terminates ensure's group
   # while herdr is creating the pane.
+  # shellcheck disable=SC2016 # perl code, not shell
   ensure "$home" FAKE_HERDR_SLOW=1 perl -e 'setpgrp(0, 0); open(my $f, ">", shift) or die; print $f $$; close $f; exec @ARGV' "$home/pgid" > "$home/first.out" &
   pid=$!
   i=0
