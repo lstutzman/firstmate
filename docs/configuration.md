@@ -1366,6 +1366,7 @@ The row's runway is `exhausted_now` only when every account is exhausted, which 
 A failed, timed-out, or malformed read, a read with no Claude account rows, or a value that is not a plain host name, keeps `quota-axi`'s own `claude` entry and prints one `dispatch-resolve: cpa-usage pool unavailable` line on stderr.
 An absent file changes nothing and makes no read.
 Every Claude candidate binds to the same pooled row, so two Claude candidates in one rule tie and escalate unless their profile floors or other rows separate them.
+While the pool is in effect that row is the only Claude evidence, so a rule or profile floor on a `model:` scope for Claude is unverifiable: the rule escalates and the profile stays eligible but unranked.
 The file is inherited into secondmate homes like `config/typesafe-base-url`.
 
 **Confidence and fallback rules**
