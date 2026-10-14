@@ -331,7 +331,7 @@ If a branch offer loses the claim race to main, it rejects its settlement so the
 [`pi-supervision-branch.md`](pi-supervision-branch.md#components-and-their-owners) owns branch eligibility, mixed-queue dispatch, the pre-drain recheck, and heartbeat's all-or-nothing rule.
 
 While attended, a check-kind row is main-owned, including a heartbeat review.
-So it is never part of a branch claim and never defers one.
+So it is never part of a branch claim and, on Pi, never defers one; an attended supervision host keeps every close on main while one waits unread ([supervision-host.md](supervision-host.md#attended) owns that rule).
 Main is woken for it on that check's own triggering close.
 Under the away-posture record the exclusion lifts and a check row is offered to and claimed by the branch like every other actionable row.
 
