@@ -290,6 +290,10 @@ ensure_locked() {
     esac
   fi
   label="$(fm_backend_herdr_workspace_label)-host-observer"
+  # From the create until the pane is recorded, a terminating signal to this
+  # group (a caller's bound or process-group teardown) is ignored, by herdr
+  # too, so a pane herdr made is never left unrecorded for a second to join.
+  trap '' TERM INT HUP
   if ! out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$FM_HOME" --label "$label" --no-focus 2>/dev/null); then
     diagnose "herdr could not open the '$label' workspace in session '$session'"
     return 0
@@ -304,6 +308,7 @@ ensure_locked() {
   # second pane beside this one.
   prior=$(record_field note)
   write_record "$session" "$workspace" "$pane" ""
+  trap - TERM INT HUP
   cmd="FM_HOME=$(printf '%q' "$FM_HOME")"
   [ -z "${CLAUDE_CONFIG_DIR:-}" ] || cmd="$cmd CLAUDE_CONFIG_DIR=$(printf '%q' "$CLAUDE_CONFIG_DIR")"
   cmd="$cmd $(printf '%q' "$SCRIPT_DIR/fm-host-observe.sh") follow"

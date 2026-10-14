@@ -232,7 +232,8 @@ test_a_finished_new_conversation_turn_does_not_render_the_earlier_one_again() {
 # run that succeeds makes an idle pane run the follower.
 # A $FAKE_HERDR_DIR/run-fails file makes the next pane run fail, and a
 # $FAKE_HERDR_DIR/close-fails file makes pane close leave the pane in place.
-# FAKE_HERDR_SLOW=<s> makes workspace create take that long.
+# FAKE_HERDR_SLOW=<s> makes workspace create answer that long after the pane
+# exists, the window in which a killed caller would lose it.
 # FAKE_HERDR_DOWN=1 makes every call fail as an unreachable server would.
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/herdr")
 cat > "$FAKEBIN/herdr" <<'SH'
@@ -245,11 +246,11 @@ case "$1 ${2:-}" in
   'status --json')
     printf '{"client":{"version":"0.9.0","protocol":20},"server":{"running":true,"protocol":20,"compatible":true}}\n' ;;
   'workspace create')
-    [ -z "${FAKE_HERDR_SLOW:-}" ] || sleep "$FAKE_HERDR_SLOW"
     n=$(( $(cat "$dir/created" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$dir/created"
     printf 'p%s\n' "$n" >> "$dir/panes"
     cat "$dir/new-state" > "$dir/state-p$n" 2>/dev/null || echo idle > "$dir/state-p$n"
+    [ -z "${FAKE_HERDR_SLOW:-}" ] || sleep "$FAKE_HERDR_SLOW"
     printf '{"result":{"workspace":{"workspace_id":"w%s"},"tab":{"tab_id":"t%s"},"root_pane":{"pane_id":"p%s"}}}\n' "$n" "$n" "$n" ;;
   'pane get')
     if grep -qx -- "$3" "$dir/panes" 2>/dev/null; then
@@ -486,6 +487,23 @@ test_overlapping_ensures_open_one_pane() {
   pass "observe: overlapping ensures open exactly one observer pane"
 }
 
+test_a_group_terminated_ensure_still_records_the_pane_it_created() {
+  local home pid i
+  home=$(make_observer_home ensure-terminated)
+  # A caller's bound or process-group teardown terminates ensure's group
+  # while herdr is creating the pane.
+  ensure "$home" FAKE_HERDR_SLOW=1 perl -e 'setpgrp(0, 0); open(my $f, ">", shift) or die; print $f $$; close $f; exec @ARGV' "$home/pgid" > "$home/first.out" &
+  pid=$!
+  i=0
+  while [ ! -s "$home/herdr/created" ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -s "$home/herdr/created" ] || fail "fixture: herdr never started creating the pane"
+  kill -TERM -- "-$(cat "$home/pgid")" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  ensure "$home" >/dev/null
+  assert_equals 1 "$(grep -c . "$home/herdr/panes")" "a terminated ensure must not leave an unrecorded pane beside a new one"
+  pass "observe: an ensure terminated mid-create still records its pane, so no orphan pane is left"
+}
+
 test_ensure_without_the_opt_in_does_nothing() {
   local home out
   home=$(make_home ensure-off)
@@ -514,4 +532,5 @@ test_ensure_on_another_backend_says_so_once_and_touches_no_herdr
 test_ensure_degrades_once_when_herdr_is_unreachable
 test_ensure_reports_a_problem_again_after_an_open
 test_overlapping_ensures_open_one_pane
+test_a_group_terminated_ensure_still_records_the_pane_it_created
 test_ensure_without_the_opt_in_does_nothing
