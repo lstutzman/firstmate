@@ -60,7 +60,7 @@
 #   (ssh BatchMode=yes, ConnectTimeout=5, FM_CPA_USAGE_TIMEOUT seconds overall,
 #   default 10, via fm_run_timed) replaces the snapshot's claude entry with one
 #   all_models row: each fresh claude account (age_min <= 180) has remaining
-#   1 - max(used_5h, used_7d), the row's percent and spendPriority are 100 times
+#   1 - max(used_5h, used_7d) (a blank, inactive window counts as 0), the row's percent and spendPriority are 100 times
 #   their mean, and runway is exhausted_now only when every account is at 0.
 #   A failed, timed-out, malformed, or all-stale read keeps quota-axi's own
 #   claude entry and prints one "dispatch-resolve: cpa-usage pool unavailable"
@@ -423,6 +423,7 @@ cpa_pool_overlay() {
   esac
   pool=$(jq -Rsc --argjson stale "$CPA_STALE_MIN" '
     def num: try tonumber catch null;
+    def used: if . == "" then 0 else num end;  # blank: no active window, nothing used
     split("\n") as $lines |
     ([$lines | to_entries[] | select(.value | test("^accounts\\[[0-9]+\\]\\{[^}]*\\}:$"))] | first // null) as $head |
     if $head == null then empty else
@@ -432,7 +433,7 @@ cpa_pool_overlay() {
     | .rows) as $rows |
     [$rows[] | select(length == ($fields | length)) | [$fields, .] | transpose | map({key: .[0], value: .[1]}) | from_entries
       | select(.provider == "claude")
-      | {u5: (.used_5h | num), u7: (.used_7d | num), age: (.age_min | num)}
+      | {u5: (.used_5h | used), u7: (.used_7d | used), age: (.age_min | num)}
       | select((.u5 | type) == "number" and (.u7 | type) == "number" and (.age | type) == "number" and .age <= $stale)
       | ([1 - ([.u5, .u7] | max), 0] | max | [., 1] | min)] as $remaining |
     if ($remaining | length) == 0 then empty else

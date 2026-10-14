@@ -1103,6 +1103,15 @@ assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, 
 assert_equals 'dispatch-resolve: cpa-usage pool unavailable (no fresh claude account rows from cpa-usage-axi on slartibartfast); claude quota from quota-axi' "$err" "an all-stale pool says so in one stderr line"
 pass "config/cpa-usage-host: stale account observations count as unknown"
 
+CPA_BLANK="$TMP_ROOT/cpa-blank.toon"
+write_cpa "$CPA_BLANK" \
+  'idle5h@example.com,claude,,,0.40,2030-01-07T20:00Z,2030-01-01T07:35Z,0,0' \
+  'busy@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1'
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_BLANK" run code out err "$BRIEF"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  scope=all_models  remaining=70%  spendPriority=70  runway=through_reset  -> eligible' "a blank window (none active) counts as nothing used, so the account stays in the pool"
+pass "config/cpa-usage-host: an account with no active window still counts toward the pool"
+
 rm -f "$CPA_HOST_FILE"
 reset_log
 TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" run code out err "$BRIEF"

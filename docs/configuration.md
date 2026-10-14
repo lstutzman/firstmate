@@ -1359,6 +1359,7 @@ slartibartfast
 ```
 
 With the file present, one bounded `cpa-usage-axi accounts` read replaces the snapshot's `claude` entry with one known `all_models` row whose remaining percent and `spendPriority` are the mean, over fresh Claude accounts, of each account's tighter 5-hour or 7-day window.
+A blank window, which `cpa-usage-axi` prints when none is active, counts as nothing used.
 The row's runway is `exhausted_now` only when every fresh account is exhausted, which makes Claude candidates ineligible.
 An account observation older than 180 minutes counts as unknown and is left out of the mean.
 A failed, timed-out, all-stale, or malformed read, or a value that is not a plain host name, keeps `quota-axi`'s own `claude` entry and prints one `dispatch-resolve: cpa-usage pool unavailable` line on stderr.
