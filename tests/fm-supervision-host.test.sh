@@ -2053,7 +2053,7 @@ test_attended_latch_keeps_closes_on_main_and_records_recovery_off_main() {
 
 # The opt-in observer pane (bin/fm-host-observe.sh ensure, whose own suite
 # covers its herdr behavior) is ensured beside the host without delaying it: a
-# herdr that takes seconds to open the pane must not hold back the first cycle.
+# herdr that has not answered the pane create must not hold back the first cycle.
 test_host_start_ensures_the_observer_pane_without_waiting_for_herdr() {
   local home
   home=$(make_home observer away)
@@ -2065,7 +2065,8 @@ printf '%s\n' "$*" >> "$FAKE_HERDR_DIR/calls"
 case "$1 ${2:-}" in
   'status --json') printf '{"client":{"version":"0.9.0","protocol":20},"server":{"running":true}}\n' ;;
   'workspace create')
-    sleep 8
+    i=0
+    while [ ! -e "$FAKE_HERDR_DIR/release" ] && [ "$i" -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
     printf '{"result":{"workspace":{"workspace_id":"w1"},"tab":{"tab_id":"t1"},"root_pane":{"pane_id":"p1"}}}\n' ;;
   'pane run') ;;
   *) exit 1 ;;
@@ -2074,12 +2075,15 @@ SH
   chmod +x "$home/fakebin/herdr"
   (
     unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID HERDR_SOCKET_PATH FM_BACKEND_HERDR_BIN
-    export FM_BACKEND=herdr HERDR_SESSION=fm-observe-fake FAKE_HERDR_DIR="$home/herdr"
+    # No real herdr is reachable: only the fake in the home's fakebin.
+    PATH=$(fm_test_base_path_sans "$PATH" herdr)
+    export PATH FM_BACKEND=herdr HERDR_SESSION=fm-lab-observe-fake FAKE_HERDR_DIR="$home/herdr"
     start_host "$home"
   )
   wait_until 60 watcher_live "$home" || fail "observer: the host's first cycle waited on herdr: $(cat "$home/host.out")"
-  assert_grep 'workspace create' "$home/herdr/calls" "the host must ensure the observer pane at start"
+  wait_until 100 grep -qF 'workspace create' "$home/herdr/calls" || fail "observer: the host must ensure the observer pane at start"
   assert_no_grep 'pane run' "$home/herdr/calls" "fixture: herdr answered before the first cycle started"
+  : > "$home/herdr/release"
   wait_until 150 grep -qF 'pane run p1 ' "$home/herdr/calls" || fail "observer: the pane never got its observer: $(cat "$home/herdr/calls")"
   wait_until 50 grep -qF "	observer	opened observer pane p1 in herdr workspace 'firstmate-host-observer'" "$home/state/.supervision-host.log" \
     || fail "observer: the ledger must record the opened pane: $(cat "$home/state/.supervision-host.log")"
