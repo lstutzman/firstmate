@@ -146,7 +146,9 @@
 # the processes it runs), .supervision-host-engine (the engine conversation:
 # engine, model, session id, main-session key, turn count, running cost),
 # .supervision-host-turn and .supervision-host-receipts (the current turn's
-# report scope and the reports it recorded), .supervision-host-prompt and
+# report scope, posture, wake, and engine conversation, and the reports it
+# recorded; the read-only observer bin/fm-host-observe.sh follows the turn
+# record), .supervision-host-prompt and
 # .supervision-host-wake (the prompt and wake text of the current turn),
 # .supervision-host-mirror (the dialog-mirror feed while an attended wake is
 # rendered), .supervision-host-left (the pid and identity of the successor arm a
@@ -902,8 +904,8 @@ handle_wake() {  # <reason-lines>
   turn="$GEN.$TURN_SEQ"
   LAST_TURN=$turn
   : > "$RECEIPTS"
-  printf 'turn=%s\nrows=%s\ntasks=%s\nunscoped=%s\nwake=%s\nposture=%s\n' \
-    "$turn" "$rows" "$tasks" "${unscoped:-0}" "$first" "$TURN_POSTURE" > "$TURN_FILE"
+  printf 'turn=%s\nrows=%s\ntasks=%s\nunscoped=%s\nwake=%s\nposture=%s\nsession=%s\n' \
+    "$turn" "$rows" "$tasks" "${unscoped:-0}" "$first" "$TURN_POSTURE" "$ENGINE_SESSION" > "$TURN_FILE"
   readback=
   if [ "$TURN_POSTURE" = away ]; then
     readback=$(mktemp "$STATE/.supervision-host-readback.XXXXXX") || readback=
@@ -1057,6 +1059,20 @@ trap 'exit 143' TERM
 trap 'exit 130' INT
 activate || { echo "supervision-host stood down: the host record could not be written"; exit 0; }
 log_line "start	gen=$GEN	primary=$PRIMARY"
+
+# The opt-in observer pane: bin/fm-host-observe.sh ensure owns its gate, herdr
+# handling, and one-line diagnostics, which land in this ledger. It runs in
+# the background under a bound, in a process group of its own, and owned by
+# its own subshell rather than by this host, so herdr can never delay or fail
+# the host and the host's exit never cuts a pane creation short.
+observer_ensure() {
+  local note
+  FM_EXEC_TIMED_OWNER_PID=$(exec sh -c 'printf "%s" "$PPID"')
+  export FM_EXEC_TIMED_OWNER_PID
+  note=$(fm_exec_timed 20 2 "$SCRIPT_DIR/fm-host-observe.sh" ensure </dev/null 2>/dev/null) || true
+  [ -z "$note" ] || log_line "observer	${note#observer: }"
+}
+[ ! -e "$CONFIG/supervision-host-observer" ] || observer_ensure &
 
 # The first cycle.
 if [ "$FIRST_ARM_RESTART" -eq 1 ]; then

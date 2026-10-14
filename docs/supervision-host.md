@@ -57,6 +57,7 @@ Until they land, their current behavior stays as described in their own owners.
 | The dialog mirror | `bin/fm-host-mirror.sh` | Owns the mirror files, writers, verified-writer list, and feed; see [The dialog mirror](#the-dialog-mirror). |
 | The captain-outcome drain | `bin/fm-wake-drain.sh` | Presents visible new and unprocessed outcomes in its `BRANCH OUTCOMES` section; `bin/fm-branch-outcome.sh mark-processed` is main's acknowledgement; see [Captain outcomes](#captain-outcomes). |
 | The main side | [supervision-protocols/supervision-host.md](supervision-protocols/supervision-host.md) | What main reads at session start on a home that runs the host, rendered for its harness. |
+| The observer | `bin/fm-host-observe.sh` | A read-only live view of the host's files, and the opt-in herdr pane that runs it; see [The observer pane](#the-observer-pane). |
 
 ### Arm owners
 
@@ -344,6 +345,21 @@ Each engine turn's line carries these fields, and this log is where engine cost 
 - The turn's cost.
 - The conversation's running cost.
 
+## The observer pane
+
+The engine runs headless, so its work is visible only through the host's files.
+`bin/fm-host-observe.sh follow` turns those files into a readable live stream: each wake the host takes, the engine's assistant text and tool calls condensed to one line each, each outcome's verdict, and the ledger's routes, latch trips, and recoveries.
+It reads the host ledger, the running turn's record, the engine conversation's transcript in Claude's own project store, and the outcome store's display tail, and nothing else.
+It takes no lock, acknowledges no wake, and moves no outcome cursor, so watching changes nothing the host or main does.
+On a Claude Code primary it complements the Calm mod's [supervision notes](calm.md#supervision-notes-on-claude-code), which show outcomes but not the engine's turn activity.
+
+With `config/supervision-host-observer` present ([configuration.md](configuration.md#the-observer-pane)), every host start ensures one herdr pane running that view, in a workspace of its own labeled `firstmate-host-observer` (`2ndmate-<id>-host-observer` in a secondmate home).
+The host runs the ensure in the background, so herdr never delays or fails it, and the ledger records the opened pane or a single diagnostic per distinct problem.
+On any other backend, or when herdr is unavailable, the host continues headless.
+The pane is checked only when a host starts, so a pane closed during a park returns at the next host start.
+A pane left holding only an idle shell, as herdr restores one after a server restart or as the view leaves it when stopped at a bare prompt, is replaced then too; a pane running anything else is never closed.
+The script's header owns the rendered sources, the pane's reuse and reopening, and the diagnostics.
+
 ## Engines
 
 A verified engine is a headless mode of a harness whose isolation, actor propagation, promptless permissions, bounding, and caching were measured.
@@ -418,6 +434,7 @@ Each arm owner's own suite covers its host mode against a stub host.
 | `tests/fm-host-mirror.test.sh` | The dialog mirror's writers through the tracked Claude and Cursor registrations, the home gate, the feed, and the verified-writer list. |
 | `tests/fm-afk-launch.test.sh` | The home gate on each primary, the `/afk` daemon refusal, and `/quiet` on a home that runs the host: the statement, the paused statement, each named missing part, the quiet daemon fallback that carries its recorded mode, a failed quiet start that archives its quiet record, and the refusal under a live away record until the return. |
 | `tests/fm-afk-return.test.sh` | The return's drain-owned read-cursor advance through the away window on a host home, and none on Pi. |
+| `tests/fm-host-observe.test.sh` | The observer's rendering of fixture host files, its following across rotation and a new conversation, and its pane ensure against a fake herdr, including reuse, reopening, overlap, and the degrade paths. |
 | `tests/fm-supervision-host-live-e2e.test.sh` | Runs a real engine turn; opt-in because it spends tokens. |
 | `tests/fm-supervision-host-attended-live-e2e.test.sh` | Opt-in credentialed guard for repeated attended main-only hand-backs to an idle Claude primary, the successor's own close, a close that turns main-only at its turn, and a stand-in remote listener; accepts a pre-fix ref for a negative control. |
 | `tests/fm-host-mirror-live-e2e.test.sh` | Proves the Claude and Cursor mirror writers against the real harnesses; opt-in because it spends tokens. |

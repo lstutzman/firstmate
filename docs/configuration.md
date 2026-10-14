@@ -301,6 +301,7 @@ Both choices are local to each Firstmate home and are not part of secondmate inh
 ## Supervision host (config/supervision-host)
 
 Two optional local, gitignored files control the supervision host for this home: `config/supervision-host-off` opts the home out, and `config/supervision-host` opts a home in and selects its engine.
+A third, `config/supervision-host-observer`, opens a live view of the host's work; see [The observer pane](#the-observer-pane).
 The host runs the supervision branch's contract on a headless engine session beside a non-Pi primary.
 [docs/supervision-host.md](supervision-host.md) defines its design, current scope, and verified engines.
 A Claude, Cursor, OpenCode, omp, Grok, or Codex primary can run the host.
@@ -337,6 +338,13 @@ The opt-out is inherited into secondmate homes: a primary that opts out also opt
 The primary-authoritative propagation contract, including removal of a mate's local opt-out when the primary has none, is owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
 `config/supervision-host` is local to each home and not inherited, because each home's engine and model are its own choice.
 While the home runs the host, main's lease-checked commands also take the per-task lease lock, so a claim by the host's engine cannot race a mutation main already started (`bin/fm-lease-lib.sh`).
+
+### The observer pane
+
+A present `config/supervision-host-observer`, whatever it holds, asks the host to keep one herdr pane open that live-follows its wakes, the engine's turn activity, and each verdict ([supervision-host.md](supervision-host.md#the-observer-pane)).
+It takes effect at the next host start, and removing it stops new panes but leaves an open one for the captain to close.
+It is local to each home and not inherited, because every home that set it would open its own workspace in the shared herdr session.
+Run `bin/fm-host-observe.sh follow` in any terminal for the same view without the file.
 
 ## Backlog backend (.tasks.toml / config/backlog-backend)
 
