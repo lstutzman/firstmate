@@ -146,7 +146,9 @@
 # the processes it runs), .supervision-host-engine (the engine conversation:
 # engine, model, session id, main-session key, turn count, running cost),
 # .supervision-host-turn and .supervision-host-receipts (the current turn's
-# report scope and the reports it recorded), .supervision-host-prompt and
+# report scope, posture, wake, and engine conversation, and the reports it
+# recorded; the read-only observer bin/fm-host-observe.sh follows the turn
+# record), .supervision-host-prompt and
 # .supervision-host-wake (the prompt and wake text of the current turn),
 # .supervision-host-mirror (the dialog-mirror feed while an attended wake is
 # rendered), .supervision-host-left (the pid and identity of the successor arm a
@@ -902,8 +904,8 @@ handle_wake() {  # <reason-lines>
   turn="$GEN.$TURN_SEQ"
   LAST_TURN=$turn
   : > "$RECEIPTS"
-  printf 'turn=%s\nrows=%s\ntasks=%s\nunscoped=%s\nwake=%s\nposture=%s\n' \
-    "$turn" "$rows" "$tasks" "${unscoped:-0}" "$first" "$TURN_POSTURE" > "$TURN_FILE"
+  printf 'turn=%s\nrows=%s\ntasks=%s\nunscoped=%s\nwake=%s\nposture=%s\nsession=%s\n' \
+    "$turn" "$rows" "$tasks" "${unscoped:-0}" "$first" "$TURN_POSTURE" "$ENGINE_SESSION" > "$TURN_FILE"
   readback=
   if [ "$TURN_POSTURE" = away ]; then
     readback=$(mktemp "$STATE/.supervision-host-readback.XXXXXX") || readback=

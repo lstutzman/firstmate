@@ -69,6 +69,7 @@ n=$(( $(ls "$FM_HOME"/engine-call.* 2>/dev/null | wc -l) + 1 ))
 {
   printf 'mode=%s\nactor=%s\nholder=%s\nprimary=%s\nturn=%s\n' "$mode" "${FM_SUPERVISION_ACTOR:-}" \
     "${FM_LEASE_HOLDER_PID:-}" "${FM_SUPERVISION_PRIMARY_HARNESS:-}" "${FM_BRANCH_REPORT_TURN:-}"
+  printf 'turn_session=%s\n' "$(sed -n 's/^session=//p' "$STATE/.supervision-host-turn" 2>/dev/null)"
   for a in "$@"; do printf 'arg=%s\n' "$a"; done
 } > "$FM_HOME/engine-call.$n"
 case "$mode" in held|captain-held) printf 'ready\n' > "$FM_HOME/stub-ready" ;; esac
@@ -2050,6 +2051,22 @@ test_attended_latch_keeps_closes_on_main_and_records_recovery_off_main() {
   pass "host: attended, two engine errors latch the session, main keeps every close unchanged in the cooldown, a failed probe doubles it up to its cap, and a routine probe's recovery stays in the ledger, off main"
 }
 
+# The observer (bin/fm-host-observe.sh) follows a running turn's conversation
+# before the engine record names it, which for a new conversation happens only
+# once its turn succeeds.
+test_running_turn_record_names_its_engine_conversation() {
+  local home session
+  home=$(make_home turn-session away)
+  start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "turn session: the host never started a watcher cycle: $(cat "$home/host.out")"
+  append_status "$home" 'step one'
+  wait_until 250 handled_at_least "$home" 1 || fail "turn session: the wake was not handled: $(cat "$home/state/.supervision-host.log")"
+  session=$(awk 'prev == "arg=--session-id" { sub(/^arg=/, ""); print; exit } { prev = $0 }' "$home/engine-call.1")
+  [ -n "$session" ] || fail "fixture: the first turn opened no conversation"
+  assert_re "^turn_session=$session\$" "$home/engine-call.1" "the running turn's record must name its engine conversation"
+  pass "host: the running turn's record names its engine conversation"
+}
+
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main() {
   local home lock_pid session first second pid watcher
   home=$(make_home away-handled away)
@@ -3001,6 +3018,7 @@ test_attended_wake_carries_the_dialog_mirror
 test_dialog_bearing_files_are_owner_only
 test_undelivered_dialog_is_fed_again_on_the_next_turn
 test_attended_wake_with_an_unreadable_mirror_reaches_main
+test_running_turn_record_names_its_engine_conversation
 test_away_wake_is_handled_on_the_engine_and_never_reaches_main
 test_away_turn_without_a_report_hands_the_wake_to_main
 test_return_during_an_engine_turn_hands_its_outcomes_to_main
