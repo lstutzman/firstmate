@@ -310,6 +310,8 @@ ensure_locked() {
   write_record "$session" "$workspace" "$pane" ""
   trap - TERM INT HUP
   cmd="FM_HOME=$(printf '%q' "$FM_HOME")"
+  [ -z "${FM_STATE_OVERRIDE:-}" ] || cmd="$cmd FM_STATE_OVERRIDE=$(printf '%q' "$FM_STATE_OVERRIDE")"
+  [ -z "${FM_CONFIG_OVERRIDE:-}" ] || cmd="$cmd FM_CONFIG_OVERRIDE=$(printf '%q' "$FM_CONFIG_OVERRIDE")"
   [ -z "${CLAUDE_CONFIG_DIR:-}" ] || cmd="$cmd CLAUDE_CONFIG_DIR=$(printf '%q' "$CLAUDE_CONFIG_DIR")"
   cmd="$cmd $(printf '%q' "$SCRIPT_DIR/fm-host-observe.sh") follow"
   if ! fm_backend_herdr_cli "$session" pane run "$pane" "$cmd" >/dev/null 2>&1; then

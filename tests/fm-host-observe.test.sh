@@ -342,6 +342,17 @@ test_ensure_opens_one_observer_pane_and_reuses_it() {
   pass "observe: ensure opens exactly one observer pane and reuses it while it exists"
 }
 
+test_the_pane_follows_the_same_state_and_config_overrides() {
+  local home
+  home=$(make_observer_home ensure-overrides)
+  mkdir -p "$home/elsewhere/state" "$home/elsewhere/config"
+  mv "$home/config/supervision-host-observer" "$home/elsewhere/config/"
+  ensure "$home" FM_STATE_OVERRIDE="$home/elsewhere/state" FM_CONFIG_OVERRIDE="$home/elsewhere/config" >/dev/null
+  assert_grep "FM_STATE_OVERRIDE=$home/elsewhere/state" "$home/herdr/calls" "the follower must read the overridden state"
+  assert_grep "FM_CONFIG_OVERRIDE=$home/elsewhere/config" "$home/herdr/calls" "the follower must carry the overridden config"
+  pass "observe: the pane's follower carries the home's state and config overrides"
+}
+
 test_ensure_reopens_a_closed_observer_pane() {
   local home out
   home=$(make_observer_home ensure-reopen)
@@ -521,6 +532,7 @@ test_a_finished_new_conversation_turn_does_not_render_the_earlier_one_again
 test_engine_turn_activity_renders_condensed
 test_outcomes_render_their_verdict_task_and_summary
 test_ensure_opens_one_observer_pane_and_reuses_it
+test_the_pane_follows_the_same_state_and_config_overrides
 test_ensure_reopens_a_closed_observer_pane
 test_ensure_leaves_a_pane_busy_with_another_program_alone
 test_ensure_keeps_a_new_pane_it_cannot_prove_idle_after_a_failed_start
