@@ -1359,7 +1359,7 @@ A value equal to this machine's own short host name, compared case-insensitively
 slartibartfast
 ```
 
-With the file present, one bounded `cpa-usage-axi accounts` read replaces the snapshot's `claude` entry with one known `all_models` row whose remaining percent is the mean, over every Claude account, of each account's remaining share of its tighter 5-hour or 7-day window.
+With the file present, one `cpa-usage-axi accounts` read, bounded to `FM_CPA_USAGE_TIMEOUT` seconds overall (default 10; a blank, non-numeric, or zero value resets to 10), replaces the snapshot's `claude` entry with one known `all_models` row whose remaining percent is the mean, over every Claude account, of each account's remaining share of its tighter 5-hour or 7-day window.
 The row's `spendPriority` is that same mean as a fraction between 0 and 1, on the magnitude of `quota-axi`'s own scalar, so a Claude candidate ranks against other providers rather than above them.
 A blank window, which `cpa-usage-axi` prints when none is active, counts as nothing used; any other non-numeric window, or a row that does not match the table's columns, makes the whole read malformed.
 The row's runway is `exhausted_now` only when every account is exhausted, which makes Claude candidates ineligible.
@@ -1413,7 +1413,7 @@ Firstmate passes its profile line unless it states a reason to override, such as
 
 - The resolver and bootstrap copy an environment-provided key into a non-exported private variable and unset `TYPESAFE_API_KEY` before launching child processes, so the secret is absent from child environments.
 - The resolver sends the key to `curl` only as a header read from a file descriptor, never on argv, and nothing prints, logs, or writes it.
-- The resolver defaults the endpoint to `https://api.typesafe.ai` and the model to `jev-latest` (overridable as described above) and fixes the default confidence floor at 0.6 and the request timeout at 5 seconds; `TYPESAFE_API_KEY` and `TYPESAFE_BASE_URL` are its only resolver-specific environment settings.
+- The resolver defaults the endpoint to `https://api.typesafe.ai` and the model to `jev-latest` (overridable as described above) and fixes the default confidence floor at 0.6 and the request timeout at 5 seconds; `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, and `FM_CPA_USAGE_TIMEOUT` are its only resolver-specific environment settings.
 
 The live rule-match evidence is recorded in [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md).
 
