@@ -1,0 +1,9 @@
+dispatch-resolve:
+  status: clear
+  model: local-general   latency_ms: 0   tokens: 324/0
+  rule: rule_3 (Normal implementation: a feature or bug fix with tests in a )   confidence: 0.9326378802458445
+  probabilities: rule_1=0.0033983238972723484 rule_2=0.038891758769750595 rule_3=0.9422610402107239 rule_4=0.0016052547143772244 rule_5=0.0008592308731749654 rule_6=0.00035818072501569986 default=0.012626305222511292
+  note: rule matched
+  candidate: claude:claude-sonnet-5-5  provider=claude  scope=all_models  remaining=35.75%  spendPriority=35.75  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'claude-sonnet-5-5' --effort 'medium'
+exit=0

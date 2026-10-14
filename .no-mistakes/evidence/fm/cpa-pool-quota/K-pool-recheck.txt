@@ -1,0 +1,8 @@
+accounts[4]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  lee@propertycompass.co.uk,claude,0.00,,1.00,2026-10-16T15:00Z,2026-10-14T08:52Z,59,0
+  lstutzman@gmail.com,claude,,,0.79,2026-10-20T04:58Z,2026-10-14T09:51Z,0,361726097
+  marleycrittendom@gmail.com,claude,0.32,2026-10-14T12:00Z,0.27,2026-10-20T06:00Z,2026-10-14T09:51Z,0,536308866
+  misterrobot@propertycompass.co.uk,claude,0.34,2026-10-14T11:50Z,0.96,2026-10-19T14:00Z,2026-10-14T09:51Z,0,665500152
+help[2]:
+  Run `cpa-usage-axi windows --account <email>` for per-window history
+  Run `cpa-usage-axi ration` for windows used this week
