@@ -1361,7 +1361,7 @@ slartibartfast
 
 With the file present, one bounded `cpa-usage-axi accounts` read replaces the snapshot's `claude` entry with one known `all_models` row whose remaining percent is the mean, over every Claude account, of each account's remaining share of its tighter 5-hour or 7-day window.
 The row's `spendPriority` is that same mean as a fraction between 0 and 1, on the magnitude of `quota-axi`'s own scalar, so a Claude candidate ranks against other providers rather than above them.
-A blank window, which `cpa-usage-axi` prints when none is active, counts as nothing used.
+A blank window, which `cpa-usage-axi` prints when none is active, counts as nothing used; any other non-numeric window, or a row that does not match the table's columns, makes the whole read malformed.
 The row's runway is `exhausted_now` only when every account is exhausted, which makes Claude candidates ineligible.
 A failed, timed-out, or malformed read, a read with no Claude account rows, or a value that is not a plain host name, keeps `quota-axi`'s own `claude` entry and prints one `dispatch-resolve: cpa-usage pool unavailable` line on stderr.
 An absent file changes nothing and makes no read.

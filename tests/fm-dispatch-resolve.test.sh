@@ -1135,13 +1135,22 @@ pass "config/cpa-usage-host: an account with no active window still counts towar
 CPA_BAD="$TMP_ROOT/cpa-bad.toon"
 write_cpa "$CPA_BAD" \
   'bad@example.com,claude,n/a,,0.40,2030-01-07T20:00Z,2030-01-01T07:35Z,0,0' \
-  'idle@example.com,claude,,,,,2030-01-01T07:35Z,0,0' \
   'busy@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1'
 reset_log
 TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_BAD" run code out err "$BRIEF"
-assert_contains "$out" 'candidate: claude:sonnet  provider=claude  scope=all_models  remaining=90%  spendPriority=0.9  runway=through_reset  -> eligible' "a non-blank non-numeric window drops only its own account; an account with no active window at all has used nothing"
-assert_equals '' "$err" "a dropped account is not a pool failure"
-pass "config/cpa-usage-host: a non-numeric window drops only its own account"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "a non-blank non-numeric window is a malformed read, so the quota-axi claude entry stays and the other account never ranks alone"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (malformed cpa-usage-axi read on slartibartfast); claude quota from quota-axi' "$err" "a malformed read says so in one stderr line"
+pass "config/cpa-usage-host: a non-numeric window is a malformed read that degrades to the quota-axi claude entry"
+
+CPA_WIDE="$TMP_ROOT/cpa-wide.toon"
+write_cpa "$CPA_WIDE" \
+  'wide@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1,extra' \
+  'busy@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1'
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_WIDE" run code out err "$BRIEF"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "a row off the table's columns is a malformed read, so the quota-axi claude entry stays"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (malformed cpa-usage-axi read on slartibartfast); claude quota from quota-axi' "$err" "a row off the table's columns says so in one stderr line"
+pass "config/cpa-usage-host: a row off the table's columns is a malformed read that degrades to the quota-axi claude entry"
 
 rm -f "$CPA_HOST_FILE"
 reset_log

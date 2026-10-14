@@ -61,14 +61,15 @@
 #   One bounded `cpa-usage-axi accounts` read (ssh BatchMode=yes,
 #   ConnectTimeout=5, FM_CPA_USAGE_TIMEOUT seconds overall, default 10, via
 #   fm_run_timed) replaces the snapshot's claude entry with one all_models
-#   row: each claude account has remaining 1 - max(used_5h, used_7d) (a blank,
-#   inactive window counts as 0); the row's percent is 100 times their mean,
-#   its spendPriority is that mean itself, a fraction in [0, 1] on the scale
-#   of quota-axi's own scalar, and runway is exhausted_now only when every
-#   account is at 0. A failed, timed-out, or malformed read, or one with no
-#   claude rows, keeps quota-axi's own claude entry and prints one
-#   "dispatch-resolve: cpa-usage pool unavailable" line on stderr. With no
-#   config file nothing changes and nothing is read.
+#   row: each claude account has remaining 1 - max(used_5h, used_7d), where a
+#   blank, inactive window counts as 0 and any other non-numeric window, or a
+#   row off the table's columns, makes the whole read malformed; the row's
+#   percent is 100 times their mean, its spendPriority is that mean itself, a
+#   fraction in [0, 1] on the scale of quota-axi's own scalar, and runway is
+#   exhausted_now only when every account is at 0. A failed, timed-out, or
+#   malformed read, or one with no claude rows, keeps quota-axi's own claude
+#   entry and prints one "dispatch-resolve: cpa-usage pool unavailable" line
+#   on stderr. With no config file nothing changes and nothing is read.
 #
 # Never-send check: when the optional $FM_HOME/config/dispatch-never-send list
 #   exists, every string value of the built request is checked against it
@@ -440,12 +441,16 @@ cpa_pool_overlay() {
     (reduce $lines[($head.key + 1):][] as $l ({done: false, rows: []};
       if .done then . elif ($l | startswith("  ")) then .rows += [$l | ltrimstr("  ") | split(",")] else .done = true end)
     | .rows) as $rows |
-    [$rows[] | select(length == ($fields | length)) | [$fields, .] | transpose | map({key: .[0], value: .[1]}) | from_entries
-      | select(.provider == "claude")
-      | {u5: (.used_5h | used), u7: (.used_7d | used)}
-      | select((.u5 | type) == "number" and (.u7 | type) == "number")
-      | ([1 - ([.u5, .u7] | max), 0] | max | [., 1] | min)] as $remaining |
-    if ($remaining | length) == 0 then empty else
+    [$rows[] |
+      if length != ($fields | length) then "malformed" else
+        ([$fields, .] | transpose | map({key: .[0], value: .[1]}) | from_entries)
+        | select(.provider == "claude")
+        | {u5: (.used_5h | used), u7: (.used_7d | used)}
+        | if (.u5 | type) != "number" or (.u7 | type) != "number" then "malformed"
+          else ([1 - ([.u5, .u7] | max), 0] | max | [., 1] | min) end
+      end] as $remaining |
+    if any($remaining[]; . == "malformed") then "malformed"
+    elif ($remaining | length) == 0 then empty else
       (($remaining | add) / ($remaining | length) * 10000 | round) as $bp |
       {provider: "claude",
        quotaSemantics: {status: "known", effectiveAvailability: [
@@ -453,7 +458,10 @@ cpa_pool_overlay() {
           runway: {status: (if all($remaining[]; . == 0) then "exhausted_now" else "through_reset" end)},
           selection: {spendPriority: ($bp / 10000)}}]}}
     end end' <<<"$accounts" 2>/dev/null)
-  [ -n "$pool" ] || { cpa_skip "no claude account rows from cpa-usage-axi on $host"; return 0; }
+  case "$pool" in
+    '') cpa_skip "no claude account rows from cpa-usage-axi on $host"; return 0 ;;
+    '"malformed"') cpa_skip "malformed cpa-usage-axi read on $host"; return 0 ;;
+  esac
   if merged=$(jq -c --argjson pool "$pool" '
        (if .schemaVersion == 6 then $pool + {accountKey: "default"} else $pool end) as $entry |
        .providers = [.providers[] | select(.provider != "claude")] + [$entry]' "$QUOTA" 2>/dev/null) &&
