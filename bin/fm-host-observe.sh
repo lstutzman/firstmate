@@ -248,7 +248,7 @@ ensure_lock() {
 }
 
 ensure() {
-  local backend session pane presence out workspace label cmd
+  local backend session pane presence out workspace label cmd prior
   [ -e "$CONFIG/supervision-host-observer" ] || return 0
   [ -d "$STATE" ] || return 0
   ensure_lock || return 0
@@ -294,14 +294,15 @@ ensure() {
   fi
   # Recorded before the observer starts, so a later ensure never opens a
   # second pane beside this one.
-  write_record "$session" "$workspace" "$pane" "$(record_field note)"
+  prior=$(record_field note)
+  write_record "$session" "$workspace" "$pane" ""
   cmd="FM_HOME=$(printf '%q' "$FM_HOME")"
   [ -z "${CLAUDE_CONFIG_DIR:-}" ] || cmd="$cmd CLAUDE_CONFIG_DIR=$(printf '%q' "$CLAUDE_CONFIG_DIR")"
   cmd="$cmd $(printf '%q' "$SCRIPT_DIR/fm-host-observe.sh") follow"
   if ! fm_backend_herdr_cli "$session" pane run "$pane" "$cmd" >/dev/null 2>&1; then
     fm_backend_herdr_cli "$session" pane close "$pane" >/dev/null 2>&1
-    write_record "" "" "" "$(record_field note)"
-    diagnose "herdr opened observer pane $pane but could not start the observer in it"
+    write_record "" "" "" "$prior"
+    diagnose "herdr opened an observer pane but could not start the observer in it"
     return 0
   fi
   printf "observer: opened observer pane %s in herdr workspace '%s' (session %s)\n" "$pane" "$label" "$session"

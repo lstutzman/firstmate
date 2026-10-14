@@ -343,6 +343,18 @@ test_ensure_degrades_once_when_herdr_is_unreachable() {
   pass "observe: ensure degrades with one diagnostic while herdr is unreachable"
 }
 
+test_ensure_reports_a_problem_again_after_an_open() {
+  local home out
+  home=$(make_observer_home ensure-down-open-down)
+  out=$(ensure "$home" FAKE_HERDR_DOWN=1)
+  assert_contains "$out" "the host continues headless" "an unreachable herdr must get one diagnostic"
+  out=$(ensure "$home")
+  assert_contains "$out" "observer pane p1" "a herdr that comes back must get its pane"
+  out=$(ensure "$home" FAKE_HERDR_DOWN=1)
+  assert_contains "$out" "the host continues headless" "a problem that returns after an open must be reported again"
+  pass "observe: ensure reports a problem again once a pane opened in between"
+}
+
 test_overlapping_ensures_open_one_pane() {
   local home
   home=$(make_observer_home ensure-overlap)
@@ -375,5 +387,6 @@ test_ensure_reopens_a_closed_observer_pane
 test_ensure_replaces_a_pane_the_observer_could_not_start_in
 test_ensure_on_another_backend_says_so_once_and_touches_no_herdr
 test_ensure_degrades_once_when_herdr_is_unreachable
+test_ensure_reports_a_problem_again_after_an_open
 test_overlapping_ensures_open_one_pane
 test_ensure_without_the_opt_in_does_nothing
