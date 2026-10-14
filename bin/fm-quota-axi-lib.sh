@@ -143,6 +143,25 @@ fm_quota_json_valid() {
   ' >/dev/null 2>&1
 }
 
+# fm_quota_replace_provider <snapshot-file> <provider> <percent> <spend-priority> <runway-status>
+# Prints the snapshot with every <provider> row replaced by one known
+# all_models row carrying the given percent remaining, spendPriority, and
+# runway status; under schema 6 that row is the provider's "default" account,
+# the row quota_row falls back to. Fails, printing nothing, unless the result
+# passes fm_quota_json_valid.
+fm_quota_replace_provider() {
+  local merged
+  merged=$(jq -c --arg provider "$2" --argjson pct "$3" --argjson priority "$4" --arg runway "$5" '
+    ({provider: $provider,
+      quotaSemantics: {status: "known", effectiveAvailability: [
+        {scope: "all_models", status: "known", effectivePercentRemaining: $pct,
+         runway: {status: $runway}, selection: {spendPriority: $priority}}]}}
+     + (if .schemaVersion == 6 then {accountKey: "default"} else {} end)) as $entry |
+    .providers = [.providers[] | select(.provider != $provider)] + [$entry]' "$1" 2>/dev/null) || return 1
+  fm_quota_json_valid <<<"$merged" || return 1
+  printf '%s\n' "$merged"
+}
+
 fm_quota_single_provider_table() {
   printf '%s\n' \
     'claude claude' \

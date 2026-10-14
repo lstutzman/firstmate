@@ -418,7 +418,7 @@ cpa_this_host() {
   printf '%s' "${name%%.*}" | tr '[:upper:]' '[:lower:]'
 }
 cpa_pool_overlay() {
-  local host=$1 accounts rc pool merged
+  local host=$1 accounts rc pool merged pct priority runway
   if [ "$host" = local ] || [ "$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')" = "$(cpa_this_host)" ]; then
     accounts=$(fm_run_timed "$CPA_TIMEOUT" cpa-usage-axi accounts 2>/dev/null </dev/null); rc=$?
   elif [[ "$host" =~ ^[A-Za-z0-9_][A-Za-z0-9._@:-]*$ ]]; then
@@ -432,7 +432,7 @@ cpa_pool_overlay() {
   elif [ "$rc" -ne 0 ]; then
     cpa_skip "cpa-usage-axi on $host failed with exit $rc"; return 0
   fi
-  pool=$(jq -Rsc '
+  pool=$(jq -Rsr '
     def num: if test("^[0-9]+(\\.[0-9]+)?$") then tonumber else null end;  # plain decimals only, never nan or infinity
     def used: if . == "" then 0 else num end;  # blank: no active window, nothing used
     split("\n") as $lines |
@@ -453,20 +453,14 @@ cpa_pool_overlay() {
     if any($remaining[]; . == "malformed") then "malformed"
     elif ($remaining | length) == 0 then empty else
       (($remaining | add) / ($remaining | length) * 10000 | round) as $bp |
-      {provider: "claude",
-       quotaSemantics: {status: "known", effectiveAvailability: [
-         {scope: "all_models", status: "known", effectivePercentRemaining: ($bp / 100),
-          runway: {status: (if all($remaining[]; . == 0) then "exhausted_now" else "through_reset" end)},
-          selection: {spendPriority: ($bp / 10000)}}]}}
+      "\($bp / 100) \($bp / 10000) \(if all($remaining[]; . == 0) then "exhausted_now" else "through_reset" end)"
     end end' <<<"$accounts" 2>/dev/null)
   case "$pool" in
     '') cpa_skip "no claude account rows from cpa-usage-axi on $host"; return 0 ;;
-    '"malformed"') cpa_skip "malformed cpa-usage-axi read on $host"; return 0 ;;
+    malformed) cpa_skip "malformed cpa-usage-axi read on $host"; return 0 ;;
   esac
-  if merged=$(jq -c --argjson pool "$pool" '
-       (if .schemaVersion == 6 then $pool + {accountKey: "default"} else $pool end) as $entry |
-       .providers = [.providers[] | select(.provider != "claude")] + [$entry]' "$QUOTA" 2>/dev/null) &&
-     fm_quota_json_valid <<<"$merged"; then
+  read -r pct priority runway <<<"$pool"
+  if merged=$(fm_quota_replace_provider "$QUOTA" claude "$pct" "$priority" "$runway"); then
     printf '%s\n' "$merged" > "$QUOTA"
   else
     cpa_skip "pooled claude entry failed snapshot validation"
