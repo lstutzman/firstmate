@@ -1132,6 +1132,17 @@ TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_BLANK" r
 assert_contains "$out" 'candidate: claude:sonnet  provider=claude  scope=all_models  remaining=70%  spendPriority=0.7  runway=through_reset  -> eligible' "a blank window (none active) counts as nothing used, so the account stays in the pool"
 pass "config/cpa-usage-host: an account with no active window still counts toward the pool"
 
+CPA_BAD="$TMP_ROOT/cpa-bad.toon"
+write_cpa "$CPA_BAD" \
+  'bad@example.com,claude,n/a,,0.40,2030-01-07T20:00Z,2030-01-01T07:35Z,0,0' \
+  'idle@example.com,claude,,,,,2030-01-01T07:35Z,0,0' \
+  'busy@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1'
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_BAD" run code out err "$BRIEF"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  scope=all_models  remaining=90%  spendPriority=0.9  runway=through_reset  -> eligible' "a non-blank non-numeric window drops only its own account; an account with no active window at all has used nothing"
+assert_equals '' "$err" "a dropped account is not a pool failure"
+pass "config/cpa-usage-host: a non-numeric window drops only its own account"
+
 rm -f "$CPA_HOST_FILE"
 reset_log
 TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" run code out err "$BRIEF"
