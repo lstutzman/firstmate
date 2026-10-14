@@ -250,17 +250,6 @@ ensure_lock() {
   trap 'rm -rf "$OBSERVER_RECORD.lock" 2>/dev/null' EXIT
 }
 
-# observer_in_pane <session> <pane>: whether herdr's process-info shows the
-# follower in the pane's foreground, as running|idle|unknown.
-observer_in_pane() {
-  fm_backend_herdr_cli "$1" pane process-info --pane "$2" 2>/dev/null | jq -r --arg pane "$2" '
-    .result.process_info
-    | if .pane_id != $pane or (.foreground_processes | type) != "array" then "unknown"
-      elif any(.foreground_processes[]; (.cmdline // ((.argv // []) | join(" ")))
-        | test("fm-host-observe\\.sh follow")) then "running"
-      else "idle" end' 2>/dev/null || printf 'unknown'
-}
-
 ensure() {
   local backend session pane presence out workspace label cmd prior
   [ -e "$CONFIG/supervision-host-observer" ] || return 0
@@ -292,8 +281,9 @@ ensure() {
     case "$presence" in
       present)
         # herdr restores a pane across a server restart as a bare shell, so a
-        # present pane counts only while the observer still runs in it.
-        if [ "$(observer_in_pane "$session" "$pane")" != idle ]; then
+        # pane the adapter proves holds only an idle shell is replaced. Any
+        # other pane, the follower's or one the captain is using, is kept.
+        if ! fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null 2>&1; then
           write_record "$session" "$(record_field workspace)" "$pane" ""
           return 0
         fi
