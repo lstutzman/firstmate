@@ -482,6 +482,7 @@ test_overlapping_ensures_open_one_pane() {
   ensure "$home" FAKE_HERDR_SLOW=1 > "$home/second.out" &
   wait
   assert_equals 1 "$(grep -c '^workspace create' "$home/herdr/calls")" "overlapping ensures must open exactly one pane"
+  assert_absent "$home/state/.supervision-host-observer.lock" "the finished ensures must release their lock"
   pass "observe: overlapping ensures open exactly one observer pane"
 }
 

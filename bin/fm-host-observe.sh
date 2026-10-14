@@ -230,31 +230,20 @@ diagnose() {  # <text>
 }
 
 # Parks can follow each other faster than herdr answers, so one ensure runs at
-# a time; another finds the lock held and leaves the pane to it. A lock whose
-# holder died is taken over.
-ensure_lock() {
-  local lock="$OBSERVER_RECORD.lock" holder
-  if ! mkdir "$lock" 2>/dev/null; then
-    holder=$(cat "$lock/pid" 2>/dev/null)
-    case "$holder" in
-      ''|*[!0-9]*)
-        # A holder that has not written its pid yet, unless it never will.
-        [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ] || return 1
-        ;;
-      *) ! kill -0 "$holder" 2>/dev/null || return 1 ;;
-    esac
-    rm -rf "$lock" 2>/dev/null
-    mkdir "$lock" 2>/dev/null || return 1
-  fi
-  printf '%s\n' "$$" > "$lock/pid"
-  trap 'rm -rf "$OBSERVER_RECORD.lock" 2>/dev/null' EXIT
-}
-
+# a time under bin/fm-wake-lib.sh's identity-checked lock, which reclaims a
+# dead holder's; another finds it held and leaves the pane to that one.
 ensure() {
-  local backend session pane presence out workspace label cmd prior
   [ -e "$CONFIG/supervision-host-observer" ] || return 0
   [ -d "$STATE" ] || return 0
-  ensure_lock || return 0
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh" || return 0
+  fm_lock_try_acquire "$OBSERVER_RECORD.lock" || return 0
+  ensure_locked
+  fm_lock_release "$OBSERVER_RECORD.lock"
+}
+
+ensure_locked() {
+  local backend session pane presence out workspace label cmd prior
   # shellcheck source=bin/fm-backend.sh
   . "$SCRIPT_DIR/fm-backend.sh" || { diagnose "the backend library could not be loaded"; return 0; }
   backend=$(fm_backend_name 2>/dev/null)
