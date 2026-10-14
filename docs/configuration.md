@@ -343,7 +343,6 @@ While the home runs the host, main's lease-checked commands also take the per-ta
 
 A present `config/supervision-host-observer`, whatever it holds, asks the host to keep one herdr pane open that live-follows its wakes, the engine's turn activity, and each verdict ([supervision-host.md](supervision-host.md#the-observer-pane)).
 It takes effect at the next host start, and removing it stops new panes but leaves an open one for the captain to close.
-It applies only on the herdr backend; on any other backend the host records one diagnostic in its ledger and continues headless.
 It is local to each home and not inherited, because every home that set it would open its own workspace in the shared herdr session.
 Run `bin/fm-host-observe.sh follow` in any terminal for the same view without the file.
 

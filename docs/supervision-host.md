@@ -356,6 +356,8 @@ On a Claude Code primary it complements the Calm mod's [supervision notes](calm.
 With `config/supervision-host-observer` present ([configuration.md](configuration.md#the-observer-pane)), every host start ensures one herdr pane running that view, in a workspace of its own labeled `firstmate-host-observer` (`2ndmate-<id>-host-observer` in a secondmate home).
 The host runs the ensure in the background, so herdr never delays or fails it, and the ledger records the opened pane or a single diagnostic per distinct problem.
 On any other backend, or when herdr is unavailable, the host continues headless.
+The pane is checked only when a host starts, so a pane closed during a park returns at the next host start.
+A pane left holding only an idle shell, as herdr restores one after a server restart or as the view leaves it when stopped at a bare prompt, is replaced then too; a pane running anything else is never closed.
 The script's header owns the rendered sources, the pane's reuse and reopening, and the diagnostics.
 
 ## Engines
