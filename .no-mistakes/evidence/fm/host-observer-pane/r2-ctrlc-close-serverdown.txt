@@ -1,0 +1,46 @@
+$ herdr pane send-keys w2:p1 ctrl+c   # captain stops the view
+["-zsh"]
+$ ensure
+observer: opened observer pane w3:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv2-14940-27937)
+rc=0
+session=fm-lab-obsv2-14940-27937
+workspace=w3
+pane=w3:p1
+note=
+[{"workspace_id":"w3","label":"firstmate-host-observer"}]
+["sleep 1","bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4WX1HQRM4MA7NV253XQX03A/bin/fm-host-observe.sh follow"]
+$ herdr pane close w3:p1   # captain closes the pane
+[]
+$ ensure
+observer: opened observer pane w4:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv2-14940-27937)
+rc=0
+session=fm-lab-obsv2-14940-27937
+workspace=w4
+pane=w4:p1
+note=
+[{"workspace_id":"w4","label":"firstmate-host-observer"}]
+["sleep 1","bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4WX1HQRM4MA7NV253XQX03A/bin/fm-host-observe.sh follow"]
+$ fm-herdr-lab.sh stop <lab>
+$ ensure  # down
+observer: herdr session 'fm-lab-obsv2-14940-27937' has no running server; the host continues headless
+rc=0
+$ ensure  # down again (dedup)
+rc=0
+lab running after ensures: false
+$ fm-herdr-lab.sh provision <lab>
+$ ensure  # up
+observer: opened observer pane w5:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv2-14940-27937)
+rc=0
+session=fm-lab-obsv2-14940-27937
+workspace=w5
+pane=w5:p1
+note=
+$ fm-herdr-lab.sh stop <lab>
+$ ensure  # down again -> reported again
+observer: herdr session 'fm-lab-obsv2-14940-27937' has no running server; the host continues headless
+rc=0
+$ fm-herdr-lab.sh provision <lab>
+$ ensure
+observer: opened observer pane w6:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv2-14940-27937)
+rc=0
+[{"workspace_id":"w6","label":"firstmate-host-observer"}]

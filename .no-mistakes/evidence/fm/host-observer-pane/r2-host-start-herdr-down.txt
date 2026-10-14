@@ -1,0 +1,11 @@
+(lab herdr server stopped before the host starts)
+--- host ledger
+1791972870	start	gen=host-28024-1791972870	primary=claude
+1791972870	observer	herdr session 'fm-lab-obsv2-14940-27937' has no running server; the host continues headless
+1791972871	pass-through	attended	main-only	check: rearm-resurface
+--- park.out (first cycle status)
+watcher: started pid=28310 (beacon fresh)
+check: rearm-resurface
+exit=0
+--- host still parked: yes
+--- lab server running: false

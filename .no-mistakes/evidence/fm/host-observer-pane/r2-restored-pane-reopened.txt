@@ -1,0 +1,34 @@
+--- before restart: record
+session=fm-lab-obsv2-14940-27937
+workspace=w1
+pane=w1:p1
+note=
+$ fm-herdr-lab.sh stop <lab>
+rc=0
+$ fm-herdr-lab.sh provision <lab>
+rc=0
+--- after restart: workspaces / restored pane foreground
+[{"workspace_id":"w1","label":"firstmate-host-observer"}]
+["-zsh"]
+$ ensure  # host start after herdr restart
+observer: opened observer pane w2:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv2-14940-27937)
+rc=0
+session=fm-lab-obsv2-14940-27937
+workspace=w2
+pane=w2:p1
+note=
+--- workspaces
+[{"workspace_id":"w2","label":"firstmate-host-observer"}]
+--- process-info w2:p1
+["sleep 1","bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4WX1HQRM4MA7NV253XQX03A/bin/fm-host-observe.sh follow"]
+$ ensure  # next host start (reuse)
+rc=0
+session=fm-lab-obsv2-14940-27937
+workspace=w2
+pane=w2:p1
+note=
+--- pane read w2:p1
+❯ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.yxhjVB /Users/leestutzman/.no-mistakes/worktrees/c05
+0d9982933/01M4WX1HQRM4MA7NV253XQX03A/bin/fm-host-observe.sh follow
+observing the supervision host of /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.yxhjVB (read-only; Ctrl-C st
+ops only this view)

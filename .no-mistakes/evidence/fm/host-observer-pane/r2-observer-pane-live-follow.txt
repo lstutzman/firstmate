@@ -1,0 +1,18 @@
+$ CLAUDE_CONFIG_DIR=<lab>/claude ensure
+observer: opened observer pane w7:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv2-14940-27937)
+rc=0
+--- pane read w7:p1 (live follow)
+XQX03A/bin/fm-host-observe.sh follow
+observing the supervision host of /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.yxhjVB (read-only; Ctrl-C st
+ops only this view)
+11:07:20 [host] start: gen=host-1-1791972440 | primary=claude
+11:07:22 [host] turn: turn=host-1.1 | result=ok | in=1200 out=300
+11:07:22 [host] latch: cooldown=300 | reason=engine-errors
+11:07:22 [wake] attended turn=host-1.1 tasks=demo-task: branch-outcome demo-task
+11:07:22 [engine] Reviewing the outcome for demo-task.
+11:07:22 [engine] > Bash: bin/fm-crew-state.sh demo-task
+11:07:22 [engine] < state=done
+11:07:22 [outcome] CAPTAIN demo-task: needs captain sign-off
+11:07:22 [outcome] routine (silent) demo-2: merged clean
+--- host state unchanged by the observer over 4s of polling: yes
+--- lock/cursor files created by observer: none

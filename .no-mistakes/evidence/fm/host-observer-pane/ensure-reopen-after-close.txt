@@ -1,0 +1,20 @@
+$ herdr pane close w1:p1   # captain closes the observer
+rc=0
+$ fm-host-observe.sh ensure
+observer: opened observer pane w2:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv-59957-25747)
+rc=0
+session=fm-lab-obsv-59957-25747
+workspace=w2
+pane=w2:p1
+note=
+--- workspaces
+[{"workspace_id":"w2","label":"firstmate-host-observer"}]
+--- new pane w2:p1 tail:
+observing the supervision host of /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.MvsRHE (read-only; Ctrl-C stops only this view)
+10:58:52 [host] start: gen=1 | primary=x
+10:59:21 [host] latch: cooldown 300s after 3 empty turns
+10:59:21 [engine] S2 fresh conversation line
+10:58:52 [outcome] CAPTAIN demo-task: PR 7 ready for your merge
+10:59:21 [outcome] routine (silent) demo-task: nothing new
+$ fm-host-observe.sh ensure   # again -> reuse, silent
+rc=0

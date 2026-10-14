@@ -1,0 +1,25 @@
+$ ensure  # 1st, opted in
+observer: opened observer pane w1:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv2-14940-27937)
+rc=0
+session=fm-lab-obsv2-14940-27937
+workspace=w1
+pane=w1:p1
+note=
+--- herdr pane process-info w1:p1
+["sleep 1","bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4WX1HQRM4MA7NV253XQX03A/bin/fm-host-observe.sh follow"]
+$ ensure  # 2nd (must reuse, not churn)
+rc=0
+session=fm-lab-obsv2-14940-27937
+workspace=w1
+pane=w1:p1
+note=
+$ ensure  # 3rd
+rc=0
+session=fm-lab-obsv2-14940-27937
+workspace=w1
+pane=w1:p1
+note=
+--- workspaces
+[{"workspace_id":"w1","label":"firstmate-host-observer"}]
+--- pane read w1:p1
+jq: parse error: Invalid numeric literal at line 1, column 72

@@ -1,0 +1,20 @@
+$ fm-herdr-lab.sh stop <lab>
+rc=0 lab server running=false
+$ ensure  # server down (1)
+observer: herdr session 'fm-lab-obsv-59957-25747' has no running server; the host continues headless
+rc=0
+lab server running after ensure=false
+$ ensure  # server down (2) -> deduplicated
+rc=0
+$ fm-herdr-lab.sh provision <lab>  # server back
+rc=0 running=true
+$ ensure  # server up, recorded pane gone with old server
+rc=0
+note=
+$ fm-herdr-lab.sh stop <lab>
+running=false
+$ ensure  # server down again -> reported again
+observer: herdr session 'fm-lab-obsv-59957-25747' has no running server; the host continues headless
+rc=0
+$ fm-herdr-lab.sh provision <lab>
+rc=0 running=true

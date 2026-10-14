@@ -1,0 +1,2 @@
+lab home entries (path size mtime) before/after 8s of live follow polling (FM_HOST_OBSERVE_POLL=1):
+IDENTICAL (17 entries)

@@ -1,0 +1,19 @@
+primary lab config: backend supervision-host-observer 
+$ propagate_secondmate_inheritance <primary-lab> <secondmate-lab>
+rc=0
+secondmate config after inheritance: backend 
+$ ensure (secondmate, not opted in)
+rc=0
+(no observer record written)
+$ touch config/supervision-host-observer; ensure (secondmate)
+observer: opened observer pane w8:p1 in herdr workspace '2ndmate-sm1-host-observer' (session fm-lab-obsv2-14940-27937)
+rc=0
+[{"workspace_id":"w7","label":"firstmate-host-observer"},{"workspace_id":"w8","label":"2ndmate-sm1-host-observer"}]
+
+tmux-backend home (opted in):
+$ ensure
+observer: the observer pane needs the herdr backend, and this home runs tmux; the host continues headless
+rc=0
+$ ensure (again: deduplicated)
+rc=0
+workspaces unchanged: ["firstmate-host-observer","2ndmate-sm1-host-observer"]

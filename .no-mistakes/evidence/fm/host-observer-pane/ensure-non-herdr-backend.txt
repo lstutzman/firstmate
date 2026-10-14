@@ -1,0 +1,5 @@
+$ ensure #1  (config/backend=tmux, opted in)
+observer: the observer pane needs the herdr backend, and this home runs tmux; the host continues headless
+rc=0
+$ ensure #2  (config/backend=tmux, opted in)
+rc=0

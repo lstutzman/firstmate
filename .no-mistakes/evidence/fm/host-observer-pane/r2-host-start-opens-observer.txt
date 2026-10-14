@@ -1,0 +1,22 @@
+--- host ledger (real fm-supervision-host.sh park under a lock-holding stand-in primary; lab home opted in; lab herdr session)
+1791972852	start	gen=host-8943-1791972852	primary=claude
+1791972852	observer	opened observer pane wA:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv2-14940-27937)
+--- park.out so far
+watcher: started pid=9302 (beacon fresh)
+--- host still parked: yes
+--- observer record
+session=fm-lab-obsv2-14940-27937
+workspace=wA
+pane=wA:p1
+note=
+--- workspaces
+[{"workspace_id":"w8","label":"2ndmate-sm1-host-observer"},{"workspace_id":"wA","label":"firstmate-host-observer"}]
+--- observer pane wA:p1 foreground
+["sleep 1","bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4WX1HQRM4MA7NV253XQX03A/bin/fm-host-observe.sh follow"]
+--- pane read
+d9982933/01M4WX1HQRM4MA7NV253XQX03A/bin/fm-host-observe.sh follow
+observing the supervision host of /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.yxhjVB (read-only; Ctrl-C sto
+ps only this view)
+11:14:12 [host] start: gen=host-8943-1791972852 | primary=claude
+11:14:12 [host] observer: opened observer pane wA:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obsv2-
+14940-27937)

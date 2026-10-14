@@ -1,0 +1,16 @@
+FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.MvsRHE CLAUDE_CONFIG_DIR=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.MvsRHE/claude /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4WX1HQRM4MA7NV253XQX03A/bin/fm-host-observe.sh follow
+
+_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.MvsRHE
+❯ FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.MvsRHE CLAUDE_CONFIG_DIR=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.MvsRHE/claude /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4WX1HQRM4MA7NV253XQX03A/bin/fm-host-observe.sh follow
+observing the supervision host of /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.MvsRHE (read-only; Ctrl-C stops only this view)
+10:58:52 [host] start: gen=1 | primary=x
+10:58:52 [wake] away turn=1.1 tasks=demo-task: signal: demo-task finished
+10:58:52 [engine] Checking demo-task status now.
+10:58:52 [engine] > Bash: bin/fm-status.sh demo-task
+10:58:52 [engine] < demo-task: PR #7 open, CI green
+10:58:52 [outcome] CAPTAIN demo-task: PR 7 ready for your merge
+10:59:21 [host] latch: cooldown 300s after 3 empty turns
+10:59:21 [wake] attended turn=1.2 tasks=demo-task: heartbeat
+10:59:21 [engine] S2 fresh conversation line
+10:59:21 [engine] S1 new line after flip
+10:59:21 [outcome] routine (silent) demo-task: nothing new

@@ -1,0 +1,14 @@
+(lab herdr server was stopped and re-provisioned; record names w2:p1)
+$ ensure  # host start after herdr restart
+rc=0
+session=fm-lab-obsv-59957-25747
+workspace=w2
+pane=w2:p1
+note=
+$ ensure  # next host start
+rc=0
+--- herdr pane process-info w2:p1
+--- herdr pane read w2:p1
+
+_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.MvsRHE
+❯--- follow processes for any lab home: 0

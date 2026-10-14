@@ -1,0 +1,12 @@
+primary lab config: backend supervision-host-observer 
+$ propagate_secondmate_inheritance <primary-lab> <secondmate-lab>   (real fm-config-inherit-lib.sh, bash)
+rc=0
+secondmate lab config after inheritance: backend 
+$ fm-host-observe.sh ensure  (secondmate, not opted in)
+rc=0
+(no observer record written)
+$ touch config/supervision-host-observer (secondmate opts in itself); ensure
+observer: opened observer pane w3:p1 in herdr workspace '2ndmate-sm1-host-observer' (session fm-lab-obsv-59957-25747)
+rc=0
+--- workspaces
+[{"workspace_id":"w2","label":"firstmate-host-observer"},{"workspace_id":"w3","label":"2ndmate-sm1-host-observer"}]
