@@ -107,6 +107,7 @@ Only an away record is away: no record, or the record daemon-backed quiet mode w
 
 The host asks the Pi branch's offer rule (`branchOfferForWake`, through `bin/fm-branch-dispatch.mjs offer`) whether the branch may take the close.
 So a close reaches main off Pi exactly when it would on Pi: a check trigger, a decision-owned signal or stale trigger, and a scan that is unsafe or holds nothing for the branch stay main's.
+The host adds one rule: while any check row, such as a captain inbox note, waits unread in the queue, every close stays main's, because a row appended straight to the queue has no close of its own once the watcher is already closing on another trigger.
 On that main-only pass-through the host starts the successor watcher cycle and leaves it running, then prints the close unchanged.
 That successor, like one a turn hands back at its start (see [Away](#away)), runs in a process group of its own, so the harness tearing down the hook's group after the rewake does not stop it.
 The host leaves the watcher's recovery marker reading downtime, confirming no handling handoff, because the re-arm owner delivers a close to main only while that marker reads downtime.
@@ -125,7 +126,7 @@ A close the engine takes is handled as in [One wake](#one-wake), with the dialog
 A handled wake with only routine outcomes never reaches main.
 A handled wake that recorded a captain outcome while the captain is still attended exits with one `supervision-host: branch-outcome:` line naming its store rows, without the close it handled; see [Captain outcomes](#captain-outcomes).
 A turn that fails hands its close to main with one `supervision-host:` line, as away.
-Main-only rows that share the queue with the branch's rows stay queued for main, which is woken for each on its own triggering close, as on Pi.
+Other main-only rows that share the queue with the branch's rows stay queued for main, which is woken for each on its own triggering close, as on Pi.
 The engine turn runs beside a captain who is present, so its guarded actions take the task leases that keep it and main off the same task.
 
 ### Away

@@ -136,6 +136,12 @@ export interface UnreadWakeScope {
    */
   checkSeqs: string[];
   /**
+   * True when this scan left at least one check-kind row for main (the
+   * attended posture). The supervision host's offer reads it; see
+   * branchOfferForWake.
+   */
+  mainCheckQueued: boolean;
+  /**
    * The heartbeat rows included in eligibleSeqs. A heartbeat names no task,
    * so a prompt that claims one is not scoped by task, including when a
    * non-heartbeat wake claims it in the away posture.
@@ -153,6 +159,7 @@ const EMPTY_SCOPE: UnreadWakeScope = {
   corrupted: false,
   needsDecisionKeys: [],
   checkSeqs: [],
+  mainCheckQueued: false,
   heartbeatSeqs: [],
   taskByWakeKey: {},
 };
@@ -165,6 +172,7 @@ const UNSAFE_SCOPE: UnreadWakeScope = {
   corrupted: true,
   needsDecisionKeys: [],
   checkSeqs: [],
+  mainCheckQueued: false,
   heartbeatSeqs: [],
   taskByWakeKey: {},
 };
@@ -413,6 +421,7 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean, afk = fals
   const eligibleTasks = new Set<string>();
   const needsDecisionKeys: string[] = [];
   const checkSeqs: string[] = [];
+  let mainCheckQueued = false;
   const heartbeatSeqs: string[] = [];
   const staleDecisionOwnership = new Map<string, boolean>();
   const resolveVerb = process.env.FM_CLASSIFY_RESOLVE_VERB || "resolved";
@@ -445,6 +454,8 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean, afk = fals
       if (afk) {
         eligibleSeqs.push(seq);
         checkSeqs.push(seq);
+      } else {
+        mainCheckQueued = true;
       }
       continue;
     }
@@ -563,6 +574,7 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean, afk = fals
     corrupted: false,
     needsDecisionKeys,
     checkSeqs,
+    mainCheckQueued,
     heartbeatSeqs,
     taskByWakeKey: Object.fromEntries(taskByKey),
   };
@@ -600,6 +612,13 @@ export interface BranchOfferVerdict {
 // row: until that row is read, a later signal or stale trigger for the same
 // task stays on main. Other tasks and heartbeat handling remain independent.
 //
+// For the attended supervision host (attendedHost), any unread check row also
+// keeps the close on main. A row appended straight to the queue, such as a
+// captain inbox note, has no close of its own once the watcher is already
+// closing on another trigger, and the host's successor counts it as
+// delivered, so a close the engine took would leave it queued with main
+// parked. Main's drain of this close presents it instead.
+//
 // The away posture collapses that partition: every actionable row is
 // branch-eligible and the trigger class no longer forces anything to main
 // (scopeForUnreadWake owns the per-row rule).
@@ -620,7 +639,8 @@ export function branchOfferForWake(state: string, message: string, afk: boolean,
     scope.taskByWakeKey[key] ?? scope.taskByWakeKey[key.replace(/^fm-/, "")] ?? key;
   const needsDecisionTasks = new Set(scope.needsDecisionKeys.map(taskIdentity));
   const isNeedsDecisionTrigger = triggerKeys.some((key) => needsDecisionTasks.has(taskIdentity(key)));
-  const attendedEligible = !isCheckTrigger && !isNeedsDecisionTrigger && (
+  const mainCheckForHost = attendedHost && !afk && scope.mainCheckQueued;
+  const attendedEligible = !isCheckTrigger && !isNeedsDecisionTrigger && !mainCheckForHost && (
     afk ? scopeForUnreadWake(state, heartbeat, false).eligible : scope.eligible
   );
   const eligible = afk ? scope.eligible : attendedEligible;

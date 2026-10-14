@@ -412,6 +412,16 @@ test_dispatch_entry_scopes_rows_and_renders_the_away_tail() {
   out=$(printf 'check: merge landed: fixture\n' | FM_HOME="$home" node "$DISPATCH" offer --afk)
   assert_contains "$out" "eligible=1" "an away check trigger must be the branch's"
   out=$(printf 'signal: %s\n' "$state/demo.status" | FM_HOME="$home" node "$DISPATCH" offer)
+  assert_contains "$out" "eligible=0" "an attended close must stay main's while a check row waits for main"
+  out=$(printf 'signal: %s\n' "$state/demo.status" | FM_HOME="$home" node "$DISPATCH" offer --afk)
+  assert_contains "$out" "eligible=1" "an away close must stay the branch's beside a check row"
+  out=$(node --input-type=module -e '
+    const dispatch = await import(process.argv[1]);
+    console.log(dispatch.branchOfferForWake(process.argv[2], process.argv[3], false).eligible);
+  ' "$ROOT/.pi/extensions/lib/fm-branch-dispatch.ts" "$state" "signal: $state/demo.status")
+  [ "$out" = true ] || fail "the host-only check-row veto changed Pi's existing offer rule"
+  awk -F '\t' '$3 != "check"' "$state/.wake-queue" > "$state/.wake-queue.tmp" && mv "$state/.wake-queue.tmp" "$state/.wake-queue"
+  out=$(printf 'signal: %s\n' "$state/demo.status" | FM_HOME="$home" node "$DISPATCH" offer)
   assert_contains "$out" "eligible=1" "an attended signal trigger with a claimable row must be the branch's"
   assert_contains "$out" "rows=1" "the offer must carry the scope it judged"
 
@@ -1046,6 +1056,41 @@ test_main_only_pass_through_leaves_the_successor_watcher_running() {
   kill -0 "$pid" 2>/dev/null || fail "successor: the watcher exited after the pass-through (pid $pid)"
   [ "$(cat "$home/state/.watch.lock/pid" 2>/dev/null)" = "$pid" ] || fail "successor: the watcher lock moved after the pass-through"
   pass "host: a main-only pass-through leaves the successor watcher running and the close undelivered for main"
+}
+
+# The live failure this guards: a captain inbox note appended straight to the
+# queue while the watcher was already closing on a crewmate's signal never got
+# a close of its own, the engine took that signal close and acknowledged only
+# its granted row, and the successor's baseline already covered the note, so
+# the note sat queued while main stayed parked. The signal grace holds the
+# watcher between seeing the signal and closing on it, which is where the note
+# lands.
+test_captain_inbox_note_queued_before_a_branch_close_reaches_main() {
+  local home note_seq signal_seq drained
+  home=$(make_home inbox-behind-signal attended)
+  FM_SIGNAL_GRACE=6 start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "inbox: the host never started a watcher cycle"
+  append_status "$home" 'step one'
+  sleep 2.5
+  FM_HOME="$home" "$ROOT/bin/fm-inbox.sh" note 'captain: ship the hotfix first' >/dev/null \
+    || fail "fixture: the captain's inbox note was not queued"
+  wait_until 250 sh -c 'grep -q "	signal: " "$1"' _ "$home/state/.supervision-host.log" \
+    || fail "inbox: the watcher never closed on the signal: $(cat "$home/state/.supervision-host.log")"
+  # The watcher appends its close's row when it closes, so a note sequenced
+  # below the queue's newest row was queued before that close.
+  note_seq=$(awk -F '\t' '$3 == "check" { print $2; exit }' "$home/state/.wake-queue")
+  signal_seq=$(cat "$home/state/.wake-queue.seq")
+  [ -n "$note_seq" ] && [ "$note_seq" -lt "$signal_seq" ] \
+    || fail "fixture: the note was not queued before the signal close: $(cat "$home/state/.wake-queue")"
+  wait_until 150 host_exited "$home" \
+    || fail "inbox: the captain's note stayed queued behind the host instead of waking main: $(cat "$home/state/.wake-queue"; cat "$home/state/.supervision-host.log")"
+  expect_code 0 "$(cat "$home/host.rc")" "the close carrying main's note must exit 0"
+  assert_re '^signal: .*demo.status' "$home/host.out" "the close must reach main as the arm printed it"
+  [ "$(engine_calls "$home")" -eq 0 ] || fail "inbox: the engine took a close while a note for main was queued"
+  drained=$(FM_HOME="$home" "$FAKE_CLAUDE" -c '"$0" 2>&1' "$ROOT/bin/fm-wake-drain.sh")
+  assert_contains "$drained" "captain inbox note" "main's drain must present the captain's note"
+  stop_home_processes "$home"
+  pass "host: a captain inbox note queued before a close the branch could take reaches main with that close"
 }
 
 # The session-lock holder's process identity cannot be read (its proc entry
@@ -2982,6 +3027,7 @@ test_quiet_record_without_its_daemon_is_a_present_captain
 test_attended_main_only_close_passes_straight_to_main
 test_off_written_while_parked_passes_the_next_attended_close_to_main
 test_main_only_pass_through_leaves_the_successor_watcher_running
+test_captain_inbox_note_queued_before_a_branch_close_reaches_main
 test_attended_close_with_unidentified_main_session_passes_to_main
 test_close_accepted_away_that_turns_attended_passes_to_main
 test_attended_close_that_turns_main_only_before_its_turn_passes_to_main
