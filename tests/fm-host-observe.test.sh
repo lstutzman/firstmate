@@ -187,8 +187,143 @@ test_a_running_turn_renders_its_wake_and_follows_its_new_conversation() {
   pass "observe: a running turn renders its wake and its own conversation"
 }
 
+# --- the observer pane -------------------------------------------------------
+
+# A stateful fake herdr: it logs every call to $FAKE_HERDR_DIR/calls, answers
+# status as a running protocol-20 server, mints workspace and pane ids on
+# workspace create, and reports a pane present while its id is listed in
+# $FAKE_HERDR_DIR/panes (a case closes a pane by removing it).
+# FAKE_HERDR_DOWN=1 makes every call fail as an unreachable server would.
+FAKEBIN=$(fm_fakebin "$TMP_ROOT/herdr")
+cat > "$FAKEBIN/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+dir=${FAKE_HERDR_DIR:?}
+printf '%s\n' "$*" >> "$dir/calls"
+[ "${FAKE_HERDR_DOWN:-0}" != 1 ] || { printf 'error: could not connect to the herdr server\n' >&2; exit 1; }
+case "$1 ${2:-}" in
+  'status --json')
+    printf '{"client":{"version":"0.9.0","protocol":20},"server":{"running":true,"protocol":20,"compatible":true}}\n' ;;
+  'workspace create')
+    [ -z "${FAKE_HERDR_SLOW:-}" ] || sleep "$FAKE_HERDR_SLOW"
+    n=$(( $(wc -l < "$dir/panes" 2>/dev/null || echo 0) + $(cat "$dir/closed" 2>/dev/null || echo 0) + 1 ))
+    printf 'p%s\n' "$n" >> "$dir/panes"
+    printf '{"result":{"workspace":{"workspace_id":"w%s"},"tab":{"tab_id":"t%s"},"root_pane":{"pane_id":"p%s"}}}\n' "$n" "$n" "$n" ;;
+  'pane get')
+    if grep -qx -- "$3" "$dir/panes" 2>/dev/null; then
+      printf '{"result":{"pane":{"pane_id":"%s"}}}\n' "$3"
+    else
+      printf '{"error":{"code":"pane_not_found"}}\n'
+      exit 1
+    fi ;;
+  'pane run') ;;
+  *) printf '{"error":{"code":"unexpected"}}\n'; exit 1 ;;
+esac
+SH
+chmod +x "$FAKEBIN/herdr"
+# No real herdr is reachable from these cases, whatever the developer runs in.
+SAFE_PATH="$FAKEBIN:$(fm_test_base_path_sans "$PATH" herdr)"
+
+ensure() {  # <home> [extra env assignments...]
+  local home=$1
+  shift
+  env FM_HOME="$home" FAKE_HERDR_DIR="$home/herdr" HERDR_SESSION=fm-observe-fake PATH="$SAFE_PATH" \
+    FM_BACKEND=herdr "$@" "$OBSERVE" ensure 2>&1
+}
+
+make_observer_home() {  # <name>
+  local home
+  home=$(make_home "$1")
+  mkdir -p "$home/herdr"
+  : > "$home/config/supervision-host-observer"
+  printf '%s\n' "$home"
+}
+
+test_ensure_opens_one_observer_pane_and_reuses_it() {
+  local home out
+  home=$(make_observer_home ensure-once)
+  out=$(ensure "$home")
+  assert_contains "$out" "observer pane p1" "the first ensure must report the pane it opened"
+  assert_grep "workspace create --cwd $home --label firstmate-host-observer --no-focus --session fm-observe-fake" "$home/herdr/calls" \
+    "the observer must open its own clearly labeled workspace in the selected session"
+  assert_grep "pane run p1 " "$home/herdr/calls" "the observer must start in the new pane"
+  assert_grep "bin/fm-host-observe.sh follow" "$home/herdr/calls" "the pane must run the follower"
+  out=$(ensure "$home")
+  assert_equals "" "$out" "a second ensure with the pane present must say nothing"
+  assert_equals 1 "$(grep -c '^workspace create' "$home/herdr/calls")" "a second ensure must not open another pane"
+  pass "observe: ensure opens exactly one observer pane and reuses it while it exists"
+}
+
+test_ensure_reopens_a_closed_observer_pane() {
+  local home out
+  home=$(make_observer_home ensure-reopen)
+  ensure "$home" >/dev/null
+  # The captain closes the pane.
+  : > "$home/herdr/panes"
+  echo 1 > "$home/herdr/closed"
+  out=$(ensure "$home")
+  assert_contains "$out" "observer pane p2" "a closed observer pane must be opened again"
+  assert_equals 2 "$(grep -c '^workspace create' "$home/herdr/calls")" "exactly one new pane must replace the closed one"
+  assert_grep "pane run p2 " "$home/herdr/calls" "the observer must start in the replacement pane"
+  pass "observe: ensure reopens an observer pane the captain closed"
+}
+
+test_ensure_on_another_backend_says_so_once_and_touches_no_herdr() {
+  local home out
+  home=$(make_observer_home ensure-tmux)
+  out=$(ensure "$home" FM_BACKEND=tmux)
+  assert_contains "$out" "observer: the observer pane needs the herdr backend, and this home runs tmux; the host continues headless" \
+    "another backend must get one clear diagnostic"
+  out=$(ensure "$home" FM_BACKEND=tmux)
+  assert_equals "" "$out" "the same diagnostic must not repeat at every park"
+  assert_absent "$home/herdr/calls" "another backend must never reach herdr"
+  pass "observe: ensure on another backend prints one diagnostic and does nothing"
+}
+
+test_ensure_degrades_once_when_herdr_is_unreachable() {
+  local home out rc
+  home=$(make_observer_home ensure-down)
+  out=$(ensure "$home" FAKE_HERDR_DOWN=1)
+  rc=$?
+  expect_code 0 "$rc" "an unreachable herdr must not fail the caller"
+  assert_contains "$out" "the host continues headless" "an unreachable herdr must get one diagnostic"
+  assert_equals 1 "$(printf '%s\n' "$out" | grep -c .)" "an unreachable herdr must get exactly one line"
+  out=$(ensure "$home" FAKE_HERDR_DOWN=1)
+  assert_equals "" "$out" "the same diagnostic must not repeat at every park"
+  out=$(ensure "$home")
+  assert_contains "$out" "observer pane p1" "a herdr that comes back must get its pane"
+  pass "observe: ensure degrades with one diagnostic while herdr is unreachable"
+}
+
+test_overlapping_ensures_open_one_pane() {
+  local home
+  home=$(make_observer_home ensure-overlap)
+  # Two parks in quick succession while herdr answers slowly.
+  ensure "$home" FAKE_HERDR_SLOW=1 > "$home/first.out" &
+  ensure "$home" FAKE_HERDR_SLOW=1 > "$home/second.out" &
+  wait
+  assert_equals 1 "$(grep -c '^workspace create' "$home/herdr/calls")" "overlapping ensures must open exactly one pane"
+  pass "observe: overlapping ensures open exactly one observer pane"
+}
+
+test_ensure_without_the_opt_in_does_nothing() {
+  local home out
+  home=$(make_home ensure-off)
+  mkdir -p "$home/herdr"
+  out=$(ensure "$home")
+  assert_equals "" "$out" "a home without the opt-in must say nothing"
+  assert_absent "$home/herdr/calls" "a home without the opt-in must never reach herdr"
+  pass "observe: ensure without config/supervision-host-observer does nothing"
+}
+
 test_ledger_lines_render_with_time_kind_and_fields
 test_a_running_turn_renders_its_wake_and_follows_its_new_conversation
 test_follow_renders_each_new_event_once_across_absence_rotation_and_restart
 test_engine_turn_activity_renders_condensed
 test_outcomes_render_their_verdict_task_and_summary
+test_ensure_opens_one_observer_pane_and_reuses_it
+test_ensure_reopens_a_closed_observer_pane
+test_ensure_on_another_backend_says_so_once_and_touches_no_herdr
+test_ensure_degrades_once_when_herdr_is_unreachable
+test_overlapping_ensures_open_one_pane
+test_ensure_without_the_opt_in_does_nothing

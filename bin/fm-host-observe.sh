@@ -4,6 +4,7 @@
 #
 # Usage:
 #   fm-host-observe.sh follow [--once]
+#   fm-host-observe.sh ensure
 #
 # follow renders the host's own durable files as readable lines on stdout, one
 # per event, each led by its local HH:MM:SS time and its source:
@@ -28,6 +29,21 @@
 # READ-ONLY: it only reads those files. It takes no lock, acknowledges no wake,
 # moves no outcome cursor, and writes nothing under state/, so it can never
 # change what the host or main does.
+#
+# ensure keeps exactly one herdr pane running `follow` for this home, and is
+# the only writer of the observer's own state. The host runs it in the
+# background at every start (bin/fm-supervision-host.sh). It does nothing
+# unless the local config/supervision-host-observer exists. On the herdr
+# backend (bin/fm-backend.sh fm_backend_name) it opens the pane in its own
+# workspace labeled <home workspace label>-host-observer
+# (firstmate-host-observer on a primary) in the selected herdr session, records
+# the session, workspace, and pane in state/.supervision-host-observer, and on
+# later calls reuses that pane while herdr reports it present, opening a new
+# one only when herdr reports it gone. It never starts a herdr server. Any other
+# backend, or a herdr that is missing, outdated, not running, or not
+# answering, gets one "observer: ..." diagnostic line on stdout, printed again
+# only when the problem changes, and nothing else. One ensure runs at a time
+# (state/.supervision-host-observer.lock). It always exits 0.
 set -u
 export LC_ALL=C
 
@@ -35,11 +51,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
 HOST_LOG="$STATE/.supervision-host.log"
 OUTCOME_TAIL="$STATE/.branch-outcomes-tail.jsonl"
 ENGINE_RECORD="$STATE/.supervision-host-engine"
 TURN_FILE="$STATE/.supervision-host-turn"
+OBSERVER_RECORD="$STATE/.supervision-host-observer"
 CLAUDE_STORE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 POLL=${FM_HOST_OBSERVE_POLL:-1}
@@ -185,10 +203,109 @@ follow() {  # [--once]
   done
 }
 
+record_field() {  # <key>
+  sed -n "s/^$1=//p" "$OBSERVER_RECORD" 2>/dev/null | head -n 1
+}
+
+write_record() {  # <session> <workspace> <pane> <note>
+  local tmp
+  tmp=$(mktemp "$OBSERVER_RECORD.tmp.XXXXXX" 2>/dev/null) || return 0
+  printf 'session=%s\nworkspace=%s\npane=%s\nnote=%s\n' "$1" "$2" "$3" "$4" > "$tmp" \
+    && mv -f "$tmp" "$OBSERVER_RECORD"
+  rm -f "$tmp" 2>/dev/null || true
+}
+
+# One diagnostic per distinct problem: repeated parks with the same problem
+# stay quiet until it changes or clears.
+diagnose() {  # <text>
+  [ "$(record_field note)" = "$1" ] || printf 'observer: %s; the host continues headless\n' "$1"
+  write_record "$(record_field session)" "$(record_field workspace)" "$(record_field pane)" "$1"
+}
+
+# Parks can follow each other faster than herdr answers, so one ensure runs at
+# a time; another finds the lock held and leaves the pane to it. A lock whose
+# holder died is taken over.
+ensure_lock() {
+  local lock="$OBSERVER_RECORD.lock" holder
+  if ! mkdir "$lock" 2>/dev/null; then
+    holder=$(cat "$lock/pid" 2>/dev/null)
+    case "$holder" in
+      ''|*[!0-9]*)
+        # A holder that has not written its pid yet, unless it never will.
+        [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ] || return 1
+        ;;
+      *) ! kill -0 "$holder" 2>/dev/null || return 1 ;;
+    esac
+    rm -rf "$lock" 2>/dev/null
+    mkdir "$lock" 2>/dev/null || return 1
+  fi
+  printf '%s\n' "$$" > "$lock/pid"
+  trap 'rm -rf "$OBSERVER_RECORD.lock" 2>/dev/null' EXIT
+}
+
+ensure() {
+  local backend session pane presence out workspace label cmd
+  [ -e "$CONFIG/supervision-host-observer" ] || return 0
+  [ -d "$STATE" ] || return 0
+  ensure_lock || return 0
+  # shellcheck source=bin/fm-backend.sh
+  . "$SCRIPT_DIR/fm-backend.sh" || { diagnose "the backend library could not be loaded"; return 0; }
+  backend=$(fm_backend_name 2>/dev/null)
+  if [ "$backend" != herdr ]; then
+    diagnose "the observer pane needs the herdr backend, and this home runs ${backend:-no known backend}"
+    return 0
+  fi
+  if ! fm_backend_source herdr 2>/dev/null; then
+    diagnose "the herdr backend could not be loaded"
+    return 0
+  fi
+  if ! out=$(fm_backend_herdr_version_check 2>&1); then
+    diagnose "herdr is unavailable (${out:-no usable herdr client})"
+    return 0
+  fi
+  session=$(fm_backend_herdr_session)
+  if [ "$(fm_backend_herdr_cli "$session" status --json 2>/dev/null | jq -r '.server.running // false' 2>/dev/null)" != true ]; then
+    diagnose "herdr session '$session' has no running server"
+    return 0
+  fi
+  pane=$(record_field pane)
+  if [ -n "$pane" ] && [ "$(record_field session)" = "$session" ]; then
+    presence=$(fm_backend_herdr_pane_presence_state "$session" "$pane")
+    case "$presence" in
+      present) write_record "$session" "$(record_field workspace)" "$pane" ""; return 0 ;;
+      dead) ;;
+      *) diagnose "herdr could not say whether observer pane $pane still exists"; return 0 ;;
+    esac
+  fi
+  label="$(fm_backend_herdr_workspace_label)-host-observer"
+  if ! out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$FM_HOME" --label "$label" --no-focus 2>/dev/null); then
+    diagnose "herdr could not open the '$label' workspace in session '$session'"
+    return 0
+  fi
+  workspace=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
+  pane=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
+  if [ -z "$workspace" ] || [ -z "$pane" ]; then
+    diagnose "herdr opened the '$label' workspace without naming its pane"
+    return 0
+  fi
+  # Recorded before the observer starts, so a later ensure never opens a
+  # second pane beside this one.
+  write_record "$session" "$workspace" "$pane" ""
+  cmd="FM_HOME=$(printf '%q' "$FM_HOME")"
+  [ -z "${CLAUDE_CONFIG_DIR:-}" ] || cmd="$cmd CLAUDE_CONFIG_DIR=$(printf '%q' "$CLAUDE_CONFIG_DIR")"
+  cmd="$cmd $(printf '%q' "$SCRIPT_DIR/fm-host-observe.sh") follow"
+  if ! fm_backend_herdr_cli "$session" pane run "$pane" "$cmd" >/dev/null 2>&1; then
+    diagnose "herdr opened observer pane $pane but could not start the observer in it"
+    return 0
+  fi
+  printf "observer: opened observer pane %s in herdr workspace '%s' (session %s)\n" "$pane" "$label" "$session"
+}
+
 case "${1:-}" in
   follow)
     shift
     follow "$@"
     ;;
-  *) printf 'usage: fm-host-observe.sh follow [--once]\n' >&2; exit 2 ;;
+  ensure) ensure ;;
+  *) printf 'usage: fm-host-observe.sh follow [--once] | ensure\n' >&2; exit 2 ;;
 esac
