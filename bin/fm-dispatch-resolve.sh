@@ -433,7 +433,7 @@ cpa_pool_overlay() {
     cpa_skip "cpa-usage-axi on $host failed with exit $rc"; return 0
   fi
   pool=$(jq -Rsc '
-    def num: try tonumber catch null;
+    def num: if test("^[0-9]+(\\.[0-9]+)?$") then tonumber else null end;  # plain decimals only, never nan or infinity
     def used: if . == "" then 0 else num end;  # blank: no active window, nothing used
     split("\n") as $lines |
     ([$lines | to_entries[] | select(.value | test("^accounts\\[[0-9]+\\]\\{[^}]*\\}:$"))] | first // null) as $head |

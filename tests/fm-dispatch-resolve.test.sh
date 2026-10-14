@@ -1158,6 +1158,17 @@ assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, 
 assert_equals 'dispatch-resolve: cpa-usage pool unavailable (malformed cpa-usage-axi read on slartibartfast); claude quota from quota-axi' "$err" "a malformed read says so in one stderr line"
 pass "config/cpa-usage-host: a non-numeric window is a malformed read that degrades to the quota-axi claude entry"
 
+for word in nan NaN infinity -infinity 1e400; do
+  write_cpa "$CPA_BAD" \
+    "bad@example.com,claude,$word,,0.40,2030-01-07T20:00Z,2030-01-01T07:35Z,0,0" \
+    'busy@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1'
+  reset_log
+  TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_BAD" run code out err "$BRIEF"
+  assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "used_5h=$word is a malformed read, so the quota-axi claude entry stays"
+  assert_equals 'dispatch-resolve: cpa-usage pool unavailable (malformed cpa-usage-axi read on slartibartfast); claude quota from quota-axi' "$err" "used_5h=$word says so in one stderr line"
+done
+pass "config/cpa-usage-host: only plain decimal windows count as numbers"
+
 CPA_WIDE="$TMP_ROOT/cpa-wide.toon"
 write_cpa "$CPA_WIDE" \
   'wide@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1,extra' \
