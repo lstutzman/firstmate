@@ -38,8 +38,11 @@
 # workspace labeled <home workspace label>-host-observer
 # (firstmate-host-observer on a primary) in the selected herdr session, records
 # the session, workspace, and pane in state/.supervision-host-observer, and on
-# later calls reuses that pane while herdr reports it present, opening a new
-# one only when herdr reports it gone. It never starts a herdr server. Any other
+# later calls reuses that pane while herdr reports it present and not visibly
+# idle. It opens a new one when herdr reports the pane gone, or present with
+# the follower no longer in its foreground (a pane herdr restored as a bare
+# shell), and closes and forgets a pane whose follower could not be started,
+# so the next ensure reopens. It never starts a herdr server. Any other
 # backend, or a herdr that is missing, outdated, not running, or not
 # answering, gets one "observer: ..." diagnostic line on stdout, printed again
 # only when the problem changes, and nothing else. One ensure runs at a time
