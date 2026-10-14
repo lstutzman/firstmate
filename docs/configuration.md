@@ -1348,6 +1348,24 @@ The [shared quota library](../bin/fm-quota-axi-lib.sh) accepts schema 5 and sche
 - An expanded provider with no matching account row leaves the candidate eligible but unranked.
 - Known applicable rows from a provider with partial quota semantics remain rankable; rows whose own status is not known remain unrankable.
 
+**Pooled Claude quota (config/cpa-usage-host)**
+
+When Claude traffic is pooled through CLIProxyAPI, `quota-axi` on a host without the Claude keychain reports the `claude` provider as unknown, which leaves every Claude candidate unranked.
+The optional local, gitignored `config/cpa-usage-host` names, on its first non-blank line not beginning with `#`, the ssh host that runs the read-only `cpa-usage-axi`, or `local` to run it on this host.
+
+```text
+# CLIProxyAPI usage host
+slartibartfast
+```
+
+With the file present, one bounded `cpa-usage-axi accounts` read replaces the snapshot's `claude` entry with one known `all_models` row whose remaining percent and `spendPriority` are the mean, over fresh Claude accounts, of each account's tighter 5-hour or 7-day window.
+The row's runway is `exhausted_now` only when every fresh account is exhausted, which makes Claude candidates ineligible.
+An account observation older than 180 minutes counts as unknown and is left out of the mean.
+A failed, timed-out, all-stale, or malformed read, or a value that is not a plain host name, keeps `quota-axi`'s own `claude` entry and prints one `dispatch-resolve: cpa-usage pool unavailable` line on stderr.
+An absent file changes nothing and makes no read.
+Every Claude candidate binds to the same pooled row, so two Claude candidates in one rule tie and escalate unless their profile floors or other rows separate them.
+The file is inherited into secondmate homes like `config/typesafe-base-url`.
+
 **Confidence and fallback rules**
 
 - A rule that declares `min_confidence` is checked against that rule's own probability, whether it is the picked option or a runner-up, so a runner-up never needs weaker support than it would as the pick.
@@ -2520,6 +2538,7 @@ FMX_DRY_RUN=            # truthy previews Relay replies and dismissals to state/
 FMX_X_REPLY_MAX_CHARS=280   # X reply per-message split budget; values below 50 clamp to 50
 TYPESAFE_API_KEY=       # typed dispatch resolution opt-in, from the environment or .env; absent, with no custom base URL or token file, means bin/fm-dispatch-resolve.sh is off (docs/configuration.md "Typed dispatch resolution")
 TYPESAFE_BASE_URL=      # optional System One base URL override, wins over config/typesafe-base-url; a non-default URL also turns the resolver on (docs/configuration.md "Typed dispatch resolution")
+FM_CPA_USAGE_TIMEOUT=10 # overall seconds bound on the resolver's pooled Claude quota read when config/cpa-usage-host exists (docs/configuration.md "Typed dispatch resolution")
 FMX_DISCORD_REPLY_MAX_CHARS=1900   # Discord reply per-message split budget; values below 50 clamp to 50, values above 2000 reset to 1900
 FMX_X_THREAD_MAX=25     # maximum messages in one auto-split reply thread
 FMX_FOLLOWUP_MAX_AGE_SECS=604800   # local window for posting Relay completion follow-ups (7 days)
