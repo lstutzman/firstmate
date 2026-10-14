@@ -1,0 +1,16 @@
+{
+  "rules": [
+    { "when": "New feature work on the app.",
+      "use": { "harness": "claude", "model": "opus", "effort": "high" } },
+    { "when": "A simple bug fix with a stated root cause.",
+      "use": [
+        { "harness": "claude", "model": "sonnet", "effort": "high" },
+        { "harness": "cursor", "model": "cursor-grok-4.6-medium" },
+        { "harness": "kimi", "model": "kimi-code/k3" }
+      ] }
+  ],
+  "default": [
+    { "harness": "claude", "model": "opus" },
+    { "harness": "cursor", "model": "cursor-grok-4.6-high" }
+  ]
+}

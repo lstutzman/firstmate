@@ -1,0 +1,25 @@
+## resolver at the target commit 27ceceab
+## FM_HOME: disposable lab home; config/cpa-usage-host = local; cpa-usage-axi on PATH is a STUB (not live) printing this table:
+accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  idle5h@example.com,claude,,,0.40,2030-01-07T20:00Z,2030-01-01T07:35Z,0,0
+  busy@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1
+help[1]:
+  Run cpa-usage-axi ration for windows used this week
+## Jev: real local Jev on slartibartfast; quota-axi: real (claude unknown on this host)
+## expected per intent: idle5h remaining 1-max(0,0.40)=0.60, busy remaining 1-max(0.20,0.10)=0.80, mean 0.70 -> remaining=70% (pre-fix drops idle5h -> 80%)
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: local-general   latency_ms: 0   tokens: 161/0
+  rule: rule_2 (A simple bug fix with a stated root cause.)   confidence: 0.9419414401054382
+  probabilities: rule_1=0.0036905689630657434 rule_2=0.9612942934036255 default=0.03501514345407486
+  note: rule matched
+  note: 2 eligible candidate(s) unranked (cursor, kimi)
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=70%  spendPriority=0.7  runway=through_reset  -> eligible
+  candidate: cursor:cursor-grok-4.6-medium  provider=cursor  -> eligible, unranked: provider cursor unmeasured (unknown): disclosed uncertainty
+  candidate: kimi:kimi-code/k3  provider=kimi  -> eligible, unranked: provider kimi unmeasured (unknown): disclosed uncertainty
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- exit: 0 ---
+--- stderr ---
+--- stub invocations ---
+stub cpa-usage-axi accounts

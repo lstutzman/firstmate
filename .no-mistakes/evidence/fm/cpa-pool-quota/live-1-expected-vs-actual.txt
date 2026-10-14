@@ -1,0 +1,37 @@
+## real cpa-usage-axi table captured immediately BEFORE scenario 1 (emails masked):
+accounts[4]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  <acct>@propertycompass.co.uk,claude,0.00,,1.00,2026-10-16T14:59Z,2026-10-14T10:52Z,43,0
+  <acct>@gmail.com,claude,0.12,2026-10-14T16:00Z,0.20,2026-10-20T20:00Z,2026-10-14T11:35Z,0,34158382
+  <acct>@gmail.com,claude,0.56,2026-10-14T12:00Z,0.31,2026-10-20T06:00Z,2026-10-14T11:35Z,0,803256650
+  <acct>@propertycompass.co.uk,claude,0.53,2026-10-14T11:50Z,1.00,2026-10-19T14:00Z,2026-10-14T11:35Z,0,855705351
+help[2]:
+  Run `cpa-usage-axi windows --account <email>` for per-window history
+  Run `cpa-usage-axi ration` for windows used this week
+
+## real table captured immediately AFTER scenario 1:
+accounts[4]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  <acct>@propertycompass.co.uk,claude,0.00,,1.00,2026-10-16T14:59Z,2026-10-14T10:52Z,43,0
+  <acct>@gmail.com,claude,0.12,2026-10-14T16:00Z,0.20,2026-10-20T20:00Z,2026-10-14T11:35Z,0,34158382
+  <acct>@gmail.com,claude,0.56,2026-10-14T12:00Z,0.31,2026-10-20T06:00Z,2026-10-14T11:35Z,0,803256650
+  <acct>@propertycompass.co.uk,claude,0.53,2026-10-14T11:50Z,1.00,2026-10-19T14:00Z,2026-10-14T11:35Z,0,855705351
+help[2]:
+  Run `cpa-usage-axi windows --account <email>` for per-window history
+  Run `cpa-usage-axi ration` for windows used this week
+
+## tables identical: the pool did not change during the run
+
+## independent recomputation (awk, documented formula) from the BEFORE table:
+  claude account 1: used_5h=0.00 used_7d=1.00 -> remaining 0.0000
+  claude account 2: used_5h=0.12 used_7d=0.20 -> remaining 0.8000
+  claude account 3: used_5h=0.56 used_7d=0.31 -> remaining 0.4400
+  claude account 4: used_5h=0.53 used_7d=1.00 -> remaining 0.0000
+claude accounts=4 blank windows=0 mean=0.310000 -> expected candidate line: remaining=31% spendPriority=0.31
+## independent recomputation from the AFTER table:
+  claude account 1: used_5h=0.00 used_7d=1.00 -> remaining 0.0000
+  claude account 2: used_5h=0.12 used_7d=0.20 -> remaining 0.8000
+  claude account 3: used_5h=0.56 used_7d=0.31 -> remaining 0.4400
+  claude account 4: used_5h=0.53 used_7d=1.00 -> remaining 0.0000
+claude accounts=4 blank windows=0 mean=0.310000 -> expected candidate line: remaining=31% spendPriority=0.31
+
+## resolver's claude candidate line from scenario 1:
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=31%  spendPriority=0.31  runway=through_reset  -> eligible

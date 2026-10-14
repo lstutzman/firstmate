@@ -1,0 +1,22 @@
+## scenario: 1-pool-ssh-slartibartfast
+## FM_HOME=$LAB (disposable); config/cpa-usage-host: slartibartfast
+## Jev: config/typesafe-base-url -> local Jev on slartibartfast; quota-axi: real; cpa-usage-axi: real (over ssh)
+## command: env -u NO_MISTAKES_GATE  FM_HOME=$LAB PATH=$LAB/shim:$PATH bin/fm-dispatch-resolve.sh $LAB/brief.md --project pager
+## started: 2026-10-14T11:35:26Z on Lees-Mac-mini
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: local-general   latency_ms: 0   tokens: 161/0
+  rule: rule_2 (A simple bug fix with a stated root cause.)   confidence: 0.9419414401054382
+  probabilities: rule_1=0.0036905689630657434 rule_2=0.9612942934036255 default=0.03501514345407486
+  note: rule matched
+  note: 2 eligible candidate(s) unranked (cursor, kimi)
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=31%  spendPriority=0.31  runway=through_reset  -> eligible
+  candidate: cursor:cursor-grok-4.6-medium  provider=cursor  -> eligible, unranked: provider cursor unmeasured (unknown): disclosed uncertainty
+  candidate: kimi:kimi-code/k3  provider=kimi  -> eligible, unranked: provider kimi unmeasured (unknown): disclosed uncertainty
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- exit: 0 ---
+--- stderr ---
+--- ssh invocations observed through a PATH shim (argv only) ---
+ssh -o BatchMode=yes -o ConnectTimeout=5 -- slartibartfast cpa-usage-axi accounts
+## finished: 2026-10-14T11:35:27Z

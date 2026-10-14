@@ -1,0 +1,21 @@
+## scenario: 0-no-pool
+## FM_HOME=$LAB (disposable); config/cpa-usage-host: (absent)
+## Jev: config/typesafe-base-url -> local Jev on slartibartfast; quota-axi: real; cpa-usage-axi: real (over ssh)
+## command: env -u NO_MISTAKES_GATE  FM_HOME=$LAB PATH=$LAB/shim:$PATH bin/fm-dispatch-resolve.sh $LAB/brief.md --project pager
+## started: 2026-10-14T11:35:24Z on Lees-Mac-mini
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: local-general   latency_ms: 0   tokens: 161/0
+  rule: rule_2 (A simple bug fix with a stated root cause.)   confidence: 0.9419414401054382
+  probabilities: rule_1=0.0036905689630657434 rule_2=0.9612942934036255 default=0.03501514345407486
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+  candidate: cursor:cursor-grok-4.6-medium  provider=cursor  -> eligible, unranked: provider cursor unmeasured (unknown): disclosed uncertainty
+  candidate: kimi:kimi-code/k3  provider=kimi  -> eligible, unranked: provider kimi unmeasured (unknown): disclosed uncertainty
+--- exit: 0 ---
+--- stderr ---
+--- ssh invocations observed through a PATH shim (argv only) ---
+(none)
+## finished: 2026-10-14T11:35:25Z

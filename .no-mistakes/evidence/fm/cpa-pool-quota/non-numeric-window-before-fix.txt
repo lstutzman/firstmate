@@ -1,0 +1,12 @@
+## pre-fix resolver (4271d3e9); config/cpa-usage-host = local; STUB cpa-usage-axi prints:
+accounts[3]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  bad@example.com,claude,n/a,,0.40,2030-01-07T20:00Z,2030-01-01T07:35Z,0,0
+  idle@example.com,claude,,,,,2030-01-01T07:35Z,0,0
+  busy@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1
+help[1]:
+  Run cpa-usage-axi ration for windows used this week
+## expected per intent: 'n/a' (non-blank, non-numeric) drops its account; both-blank idle account counts as nothing used (remaining 1.00); busy remaining 0.80; mean 0.90 -> remaining=90% spendPriority=0.9
+--- stdout (claude candidate line) ---
+  status: clear
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=80%  spendPriority=80  runway=through_reset  -> eligible
+--- stderr ---
