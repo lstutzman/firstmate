@@ -466,7 +466,7 @@ cpa_pool_overlay() {
     cpa_skip "pooled claude entry failed snapshot validation"
   fi
 }
-CPA_HOST=$(fm_typesafe_config_line "$CONFIG" cpa-usage-host)
+CPA_HOST=$(fm_config_line "$CONFIG" cpa-usage-host)
 [ -z "$CPA_HOST" ] || cpa_pool_overlay "$CPA_HOST"
 
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------

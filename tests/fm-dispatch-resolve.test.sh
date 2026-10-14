@@ -1004,7 +1004,7 @@ write_cpa "$CPA_FIXTURE" \
   'codex@example.com,codex,0.99,,0.99,,2030-01-01T07:35Z,0,0'
 cat > "$FAKEBIN/ssh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$@" >> "${FAKE_CURL_LOG:?}/ssh.argv"
+printf '%s\n' "$@" >> "${FAKE_POOL_LOG:?}/ssh.argv"
 [ "${FAKE_CPA_NOISE:-0}" = 1 ] && printf 'Warning: Permanently added slartibartfast to known hosts.\nssh: connect to host slartibartfast port 22: Connection refused\n' >&2
 [ "${FAKE_CPA_FAIL:-0}" = 1 ] && exit 255
 [ "${FAKE_CPA_HANG:-0}" = 1 ] && sleep 30
@@ -1017,7 +1017,7 @@ cat > "$FAKEBIN/hostname" <<'SH'
 printf '%s\n' "${FAKE_HOSTNAME:-pool-test-host}"
 SH
 chmod +x "$FAKEBIN/hostname"
-export CPA_FIXTURE
+export CPA_FIXTURE FAKE_POOL_LOG="$LOG"
 POOL_RESPONSE="$TMP_ROOT/pool-response.json"
 cat > "$POOL_RESPONSE" <<'JSON'
 { "model": "jev-1.13.0",
@@ -1102,7 +1102,7 @@ pass "config/cpa-usage-host: FM_CPA_USAGE_TIMEOUT=00 still bounds a hung read"
 
 cat > "$FAKEBIN/cpa-usage-axi" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$@" >> "${FAKE_CURL_LOG:?}/cpa-usage-axi.argv"
+printf '%s\n' "$@" >> "${FAKE_POOL_LOG:?}/cpa-usage-axi.argv"
 cat "${CPA_FIXTURE:?}"
 SH
 chmod +x "$FAKEBIN/cpa-usage-axi"
@@ -1204,6 +1204,7 @@ assert_absent "$LOG/ssh.argv" "without config/cpa-usage-host no pool read happen
 assert_equals '' "$err" "without config/cpa-usage-host stderr stays quiet"
 pass "config/cpa-usage-host absent: resolution is unchanged"
 rm -f "$FAKEBIN/hostname"
+unset CPA_FIXTURE FAKE_POOL_LOG
 cp "$BASE_RULES" "$RULES"
 
 # --- quota-axi is read exactly once --------------------------------------------

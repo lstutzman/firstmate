@@ -32,13 +32,16 @@ fmx_env_get() {
 
 FM_TYPESAFE_DEFAULT_BASE=https://api.typesafe.ai
 
-# fm_typesafe_config_line <config-dir> <name>
+# fm_config_line <config-dir> <name>
 # Print the first non-blank, non-# line of <config-dir>/<name>, trimmed; nothing
 # when the file is absent, unreadable, or has no such line.
-fm_typesafe_config_line() {
+fm_config_line() {
   [ -r "$1/$2" ] || return 0
   awk '/^[[:space:]]*(#|$)/ { next } { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }' "$1/$2"
 }
+
+# fm_typesafe_config_line <config-dir> <name>: fm_config_line for the typesafe-* files.
+fm_typesafe_config_line() { fm_config_line "$@"; }
 
 # fm_typesafe_base_url <config-dir>
 # Resolve the typesafe base URL for the dispatch resolver: TYPESAFE_BASE_URL in
