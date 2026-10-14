@@ -1,0 +1,28 @@
+--- A3b: live rendering in the real pane: ledger, turn record, outcome tail ---
+pane=w1:p1
+pane visible text:
+13:20:46 [host] start: gen=lab-1 | primary=claude
+13:20:46 [wake] away turn=lab-1.1 tasks=demo: signal: demo.status
+13:20:46 [outcome] CAPTAIN demo: PR 13 needs your merge
+
+--- A5: the captain closes the pane -> next ensure reopens one ---
+closed w1:p1; presence now: "pane_not_found"
+rc=0 stdout: [observer: opened observer pane w2:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+observer workspaces in lab: [{"workspace_id":"w2","label":"firstmate-host-observer"}]
+record:
+session=fm-lab-observer-4360-29598
+workspace=w2
+pane=w2:p1
+note=
+
+--- A6: pane closed again, two overlapping ensures -> exactly one new pane ---
+closed w2:p1
+first:  []
+second: [observer: opened observer pane w3:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+observer workspaces in lab: [{"workspace_id":"w3","label":"firstmate-host-observer"}]
+record:
+session=fm-lab-observer-4360-29598
+workspace=w3
+pane=w3:p1
+note=
+lock left behind? none

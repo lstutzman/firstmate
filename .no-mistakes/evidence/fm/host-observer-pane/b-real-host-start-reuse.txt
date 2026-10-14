@@ -1,0 +1,39 @@
+--- B1: the real host starts with the opt-in -> ensures the pane in the background and records it ---
+closed wA:p1 so the host start has a pane to open; observer workspaces: []
+watcher live; host.out first line: 
+ledger:
+  1791980692	start	gen=host-25128-1791980692	primary=claude
+  1791980693	observer	opened observer pane wB:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)
+observer workspaces in lab: [{"workspace_id":"wB","label":"firstmate-host-observer"}]
+record: session=fm-lab-observer-4360-29598 workspace=wB pane=wB:p1 note= 
+
+--- B1b: a status append wakes the host; the stub engine handles it; the pane follows it live ---
+engine-call.1 (the turn record named its conversation to the engine):
+  mode=handle
+  turn=host-25128-1791980692.1
+  turn_session=31cd8e5d-4c8a-4cd4-9e04-184c5a980dcf
+  arg=--session-id
+  session-id arg=31cd8e5d-4c8a-4cd4-9e04-184c5a980dcf
+pane wB:p1 visible text:
+  13:24:52 [host] start: gen=host-25128-1791980692 | primary=claude
+  13:24:53 [host] observer: opened observer pane wB:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-obser
+  13:24:55 [wake] away turn=host-25128-1791980692.1 tasks=demo: signal: /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40
+  13:24:57 [outcome] routine demo: stub handled demo
+  13:24:58 [host] handled: turn=host-25128-1791980692.1 | posture=away | rc=0 | reports=1 | error=0 cost=0.25 conversatio
+
+--- B2: the host is stopped and started again -> the pane is reused silently ---
+host stopped (rc file: 143)
+observer ledger lines before=1 after=1
+ledger tail:
+  1791980698	handled	turn=host-25128-1791980692.1	posture=away
+  1791980702	start	gen=host-39722-1791980702	primary=claude
+  1791980704	no-op	nothing for the branch to claim	check: rearm-resurface
+observer workspaces in lab: [{"workspace_id":"wB","label":"firstmate-host-observer"}]
+record: session=fm-lab-observer-4360-29598 workspace=wB pane=wB:p1 note= 
+pane wB:p1 still runs the follower: {"pane_id":"wB:p1","shell_pid":25829,"fg":[{"pid":45856,"name":"sleep","cmdline":"sleep 1"},{"pid":27172,"name":"bash","cmdline":"bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4X2W4TP3WJX6HRCQEE7CN85/bin/fm-host-observe.sh follow"}]}
+host stopped again
+--- B3: without the opt-in file the host start touches no pane ---
+closed wB:p1; observer workspaces: []
+observer workspaces in lab (expect none): []
+observer ledger lines now: 1
+host stopped (B3)

@@ -1,0 +1,21 @@
+--- A12: ensure's process group TERMed between herdr creating the pane and ensure recording it ---
+closed w9:p1; observer workspaces: []
+shim: 13:23:47 created, holding the answer 2s
+workspaces at the moment of the kill: [{"workspace_id":"wA","label":"firstmate-host-observer"}]
+record at the moment of the kill: session=fm-lab-observer-4360-29598 workspace=w9 pane=w9:p1 note= 
+13:23:47 sent TERM to the ensure process group
+terminated ensure rc=0 stdout: [observer: opened observer pane wA:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+record after the terminated ensure:
+session=fm-lab-observer-4360-29598
+workspace=wA
+pane=wA:p1
+note=
+observer workspaces after it: [{"workspace_id":"wA","label":"firstmate-host-observer"}]
+recorded pane wA:p1 processes: {"pane_id":"wA:p1","shell_pid":87702,"fg":[{"pid":90545,"name":"sleep","cmdline":"sleep 1"},{"pid":89574,"name":"bash","cmdline":"bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4X2W4TP3WJX6HRCQEE7CN85/bin/fm-host-observe.sh follow"}]}
+next ensure (normal path) rc=0 stdout: []
+observer workspaces after the next ensure (must be exactly one): [{"workspace_id":"wA","label":"firstmate-host-observer"}]
+record:
+session=fm-lab-observer-4360-29598
+workspace=wA
+pane=wA:p1
+note=

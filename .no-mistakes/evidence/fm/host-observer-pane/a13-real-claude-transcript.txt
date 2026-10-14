@@ -1,0 +1,14 @@
+--- A13: a real Claude print-mode conversation is followed as [engine] lines ---
+session=cd6b9749-a2ba-4142-aea1-6171be8c7563
+claude turn stderr/rc: rc=0 
+{"type":"result","subtype":"success","is_error":false,"num_turns":2,"session_id":"cd6b9749-a2ba-4142-aea1-6171be8c7563","cost":0.1205627,"result":"The command printed `observer-live-check`."}
+transcript: /Users/leestutzman/.claude/projects/-private-var-folders-w7--1vd8cbs0hd3vx7cndzrjzf40000gn-T-fm-lab-X7agpV-claude-cwd/cd6b9749-a2ba-4142-aea1-6171be8c7563.jsonl (39 rows)
+follow --once over the lab home renders:
+13:21:54 [engine] > Bash: echo observer-live-check
+13:21:55 [engine] < observer-live-check
+13:21:58 [engine] The command printed `observer-live-check`.
+
+the live pane w8:p1 renders the same conversation:
+13:21:54 [engine] > Bash: echo observer-live-check
+13:21:55 [engine] < observer-live-check
+13:21:58 [engine] The command printed `observer-live-check`.

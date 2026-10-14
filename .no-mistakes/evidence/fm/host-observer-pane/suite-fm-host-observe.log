@@ -1,0 +1,22 @@
+ok - observe: a host ledger line renders readably
+ok - observe: a running turn renders its wake and its own conversation
+ok - observe: the follower renders each new event once across absent files, rotation, truncation, and a new conversation
+ok - observe: moving between conversations renders each conversation's lines once
+ok - observe: the engine's turn activity renders as condensed text and tool calls
+ok - observe: outcomes render their verdict, task, and summary
+ok - observe: ensure opens exactly one observer pane and reuses it while it exists
+ok - observe: the pane's follower carries the home's state and config overrides
+ok - observe: ensure reopens an observer pane the captain closed
+ok - observe: ensure leaves a pane busy with another program alone
+ok - observe: a failed start keeps a pane it cannot prove idle rather than closing it
+ok - observe: ensure opens no second pane when closing the old one is not confirmed
+ok - observe: ensure keeps a pane whose processes cannot be read and says so once
+ok - observe: ensure replaces a pane the observer could not start in
+ok - observe: ensure replaces a restored observer pane that no longer runs the observer
+ok - observe: ensure on another backend prints one diagnostic and does nothing
+ok - observe: ensure degrades with one diagnostic while herdr is unreachable
+ok - observe: ensure reports a problem again once a pane opened in between
+ok - observe: overlapping ensures open exactly one observer pane
+ok - observe: an ensure terminated mid-create still records its pane, so no orphan pane is left
+ok - observe: ensure without config/supervision-host-observer does nothing
+rc=0

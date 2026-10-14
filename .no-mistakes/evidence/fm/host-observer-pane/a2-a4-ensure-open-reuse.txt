@@ -1,0 +1,38 @@
+--- A2: FM_BACKEND=tmux -> one diagnostic, then silent; herdr untouched ---
+rc=0 first:  [observer: the observer pane needs the herdr backend, and this home runs tmux; the host continues headless]
+rc=0 second: []
+record:
+session=
+workspace=
+pane=
+note=the observer pane needs the herdr backend, and this home runs tmux
+observer workspaces in lab: []
+
+--- A3: herdr backend -> opens one observer pane ---
+rc=0 stdout: [observer: opened observer pane w1:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+record:
+session=fm-lab-observer-4360-29598
+workspace=w1
+pane=w1:p1
+note=
+observer workspaces in lab: [{"workspace_id":"w1","label":"firstmate-host-observer"}]
+pane=w1:p1
+pane process-info: {"pane_id":"w1:p1","shell_pid":61796,"fg":[{"pid":63009,"name":"sleep","cmdline":"sleep 1"},{"pid":62980,"name":"bash","cmdline":"bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4X2W4TP3WJX6HRCQEE7CN85/bin/fm-host-observe.sh follow"}]}
+pane visible text:
+FM_HOME=/private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.X7agpV /Users/leestutzman/.no-mistakes/worktree
+s/c050d9982933/01M4X2W4TP3WJX6HRCQEE7CN85/bin/fm-host-observe.sh follow
+
+_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.X7agpV
+❯ FM_HOME=/private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.X7agpV /Users/leestutzman/.no-mistakes/worktr
+ees/c050d9982933/01M4X2W4TP3WJX6HRCQEE7CN85/bin/fm-host-observe.sh follow
+observing the supervision host of /private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.X7agpV (read-only; Ct
+rl-C stops only this view)
+
+--- A4: second ensure -> silent, still one pane ---
+rc=0 stdout: []
+observer workspaces in lab: [{"workspace_id":"w1","label":"firstmate-host-observer"}]
+record:
+session=fm-lab-observer-4360-29598
+workspace=w1
+pane=w1:p1
+note=

@@ -1,0 +1,41 @@
+--- A9: FM_STATE_OVERRIDE / FM_CONFIG_OVERRIDE carried into the pane ---
+rc=0 stdout: [observer: opened observer pane w6:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+override record (/private/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-lab.X7agpV/elsewhere/state):
+session=fm-lab-observer-4360-29598
+workspace=w6
+pane=w6:p1
+note=
+home record unchanged:
+session=fm-lab-observer-4360-29598
+workspace=w5
+pane=w5:p1
+note=
+override pane=w6:p1
+command line typed into the pane (visible text, first lines):
+FM_CONFIG_OVERRIDE=/private/var/folders/w7/_1vd8cbs0hd
+FM_CONFIG_OVERRIDE=/private/var/folders/w7/_1vd8cbs0hd3v
+FM_STATE_OVERRIDE=/private/var/folders/
+FM_STATE_OVERRIDE=/private/var/folders/w7
+override pane renders the overridden state's ledger:
+13:22:25 [host] handled: turn=elsewhere-1.1
+closed override pane; presence: "pane_not_found"
+observer workspaces in lab: [{"workspace_id":"w5","label":"firstmate-host-observer"}]
+
+--- A10: a stale lock whose holder is dead is reclaimed (shared fm-wake-lib lock) ---
+closed w5:p1 so a successful ensure is visible as an open
+fixture: dead holder pid=6265
+rc=0 stdout: [observer: opened observer pane w7:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+lock after ensure: none
+observer workspaces in lab: [{"workspace_id":"w7","label":"firstmate-host-observer"}]
+record:
+session=fm-lab-observer-4360-29598
+workspace=w7
+pane=w7:p1
+note=
+
+--- A10b: a lock whose holder is alive makes ensure yield (no second pane, lock kept) ---
+closed w7:p1
+rc=0 stdout: []
+observer workspaces in lab (expect none, the holder owns the pane): []
+after the holder is gone and its lock removed, rc=0 stdout: [observer: opened observer pane w8:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+observer workspaces in lab: [{"workspace_id":"w8","label":"firstmate-host-observer"}]

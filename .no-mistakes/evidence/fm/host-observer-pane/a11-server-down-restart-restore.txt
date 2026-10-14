@@ -1,0 +1,28 @@
+--- A11: lab server stopped -> one diagnostic, no server started, deduplicated ---
+recorded pane before stop: w8:p1
+lab stop rc=0
+sessions: [{"name":"default","default":true,"running":true},{"name":"fm-lab-observer-4360-29598","default":false,"running":false}]
+rc=0 first:  [observer: herdr session 'fm-lab-observer-4360-29598' has no running server; the host continues headless]
+sessions after ensure (observer must never start a server): [{"name":"default","running":true},{"name":"fm-lab-observer-4360-29598","running":false}]
+rc=0 second: []
+record:
+session=fm-lab-observer-4360-29598
+workspace=w8
+pane=w8:p1
+note=herdr session 'fm-lab-observer-4360-29598' has no running server
+
+--- A11b: server restarted -> herdr restores the pane as a bare shell -> ensure replaces it ---
+provision rc=0
+sessions: [{"name":"default","running":true},{"name":"fm-lab-observer-4360-29598","running":true}]
+observer workspaces after restart: [{"workspace_id":"w8","label":"firstmate-host-observer"}]
+restored pane w8:p1 presence: "w8:p1"
+restored pane w8:p1 processes: {"pane_id":"w8:p1","shell_pid":50193,"fg":[{"pid":50193,"name":"zsh","cmdline":"-zsh"}]}
+rc=0 stdout: [observer: opened observer pane w9:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+old restored pane presence: "pane_not_found"
+observer workspaces in lab: [{"workspace_id":"w9","label":"firstmate-host-observer"}]
+record:
+session=fm-lab-observer-4360-29598
+workspace=w9
+pane=w9:p1
+note=
+new pane w9:p1: {"pane_id":"w9:p1","shell_pid":54124,"fg":[{"pid":55892,"name":"sleep","cmdline":"sleep 1"},{"pid":54769,"name":"bash","cmdline":"bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4X2W4TP3WJX6HRCQEE7CN85/bin/fm-host-observe.sh follow"}]}

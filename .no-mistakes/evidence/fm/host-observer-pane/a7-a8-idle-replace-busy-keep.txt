@@ -1,0 +1,34 @@
+--- A7: follower Ctrl-C'd to a bare prompt -> proven idle shell -> closed and replaced ---
+pane=w3:p1
+before: {"pane_id":"w3:p1","shell_pid":93824,"fg":[{"pid":12242,"name":"sleep","cmdline":"sleep 1"},{"pid":95184,"name":"bash","cmdline":"bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4X2W4TP3WJX6HRCQEE7CN85/bin/fm-host-observe.sh follow"}]}
+after ctrl+c: {"pane_id":"w3:p1","shell_pid":93824,"fg":[{"pid":93824,"name":"zsh","cmdline":"-zsh"}]}
+rc=0 stdout: [observer: opened observer pane w4:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+old pane presence: "pane_not_found"
+observer workspaces in lab: [{"workspace_id":"w4","label":"firstmate-host-observer"}]
+record:
+session=fm-lab-observer-4360-29598
+workspace=w4
+pane=w4:p1
+note=
+new pane w4:p1: {"pane_id":"w4:p1","shell_pid":16357,"fg":[{"pid":17739,"name":"sleep","cmdline":"sleep 1"},{"pid":17659,"name":"bash","cmdline":"bash /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4X2W4TP3WJX6HRCQEE7CN85/bin/fm-host-observe.sh follow"}]}
+
+--- A8: pane busy with another program (sleep 600) -> kept, never closed, no second pane ---
+busy pane: {"pane_id":"w4:p1","shell_pid":16357,"fg":[{"pid":19714,"name":"sleep","cmdline":"sleep 600"}]}
+rc=0 stdout: []
+busy pane presence: "w4:p1"
+observer workspaces in lab: [{"workspace_id":"w4","label":"firstmate-host-observer"}]
+record:
+session=fm-lab-observer-4360-29598
+workspace=w4
+pane=w4:p1
+note=
+--- A8b: the captain stops that program -> idle -> next ensure replaces the pane ---
+idle again: {"pane_id":"w4:p1","shell_pid":16357,"fg":[{"pid":16357,"name":"zsh","cmdline":"-zsh"}]}
+rc=0 stdout: [observer: opened observer pane w5:p1 in herdr workspace 'firstmate-host-observer' (session fm-lab-observer-4360-29598)]
+old busy pane presence: "pane_not_found"
+observer workspaces in lab: [{"workspace_id":"w5","label":"firstmate-host-observer"}]
+record:
+session=fm-lab-observer-4360-29598
+workspace=w5
+pane=w5:p1
+note=
