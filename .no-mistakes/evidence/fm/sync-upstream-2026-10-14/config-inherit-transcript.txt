@@ -1,0 +1,79 @@
+## primary config/firstmate-role:
+# fork maintainer
+maintainer github.com/lstutzman/firstmate
+$ FM_HOME=$PRIMARY bin/fm-config-push.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.HCfuGE -> live secondmate homes
+secondmate sm-lab (/private/tmp/fmsm.zSon/home):
+fm-config-inherit: error: primary source header missing required main-authoritative warning: missing "main-authoritative" data/captain-shared.md at /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.HCfuGE/data/captain-shared.md
+  crew-dispatch.json: unchanged
+  dispatch-never-send: unchanged
+  typesafe-base-url: pushed
+  typesafe-model: pushed
+  typesafe-token-file: pushed
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  keep-ai-trailers: unchanged
+  supervision-host-off: unchanged
+  firstmate-role: pushed
+  data/captain-shared.md: error - primary source header missing required main-authoritative warning: missing "main-authoritative"
+CONFIG_REREAD: secondmate sm-lab: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c050d9982933.git)
+exit=1
+
+## secondmate config/ after push:
+.fm-inherit-firstmate-role.generation
+firstmate-role
+typesafe-base-url
+typesafe-model
+typesafe-token-file
+typesafe-base-url: https://typesafe.example.test 
+typesafe-model: jev-local-model 
+typesafe-token-file: /nonexistent/token 
+firstmate-role: maintainer github.com/lstutzman/firstmate 
+.fm-inherit-firstmate-role.generation: 1 42 61436880f70da73d21c73b838daab97e6e9ee88888c3a6d53950b1524607707d put 
+## secondmate data/captain-shared.md:
+cat: /tmp/fmsm.zSon/home/data/captain-shared.md: No such file or directory
+$ FM_HOME=$SECONDMATE bin/fm-role.sh report
+fm-role: maintainer github.com/lstutzman/firstmate (inherited)
+$ FM_HOME=$SECONDMATE bin/fm-role.sh check <fork clone>
+authorized: maintainer scope github.com/lstutzman/firstmate
+exit=0
+
+## adversarial: tamper secondmate role file (receipt no longer matches)
+fm-role: user - unverified inherited grant: the inherited role grant diverges from the receipt
+
+## revocation: primary drops grant, push again
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.HCfuGE -> live secondmate homes
+secondmate sm-lab (/private/tmp/fmsm.zSon/home):
+fm-config-inherit: error: primary source header missing required main-authoritative warning: missing "main-authoritative" data/captain-shared.md at /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.HCfuGE/data/captain-shared.md
+  crew-dispatch.json: unchanged
+  dispatch-never-send: unchanged
+  typesafe-base-url: unchanged
+  typesafe-model: unchanged
+  typesafe-token-file: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  keep-ai-trailers: unchanged
+  supervision-host-off: unchanged
+  firstmate-role: pushed - mirrored primary absence
+  data/captain-shared.md: error - primary source header missing required main-authoritative warning: missing "main-authoritative"
+CONFIG_REREAD: secondmate sm-lab: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c050d9982933.git)
+exit=1
+fm-role: user (inherited)
+refused: this home runs as firstmate user/operator and holds no publication authority for github.com/lstutzman/firstmate
+exit=1

@@ -1,0 +1,27 @@
+## 1. default role (no config/firstmate-role)
+$ FM_HOME=$PRIMARY bin/fm-role.sh report
+fm-role: user (default)
+$ FM_HOME=$PRIMARY bin/fm-role.sh check <fork clone, origin=lstutzman/firstmate>
+refused: this home runs as firstmate user/operator and holds no publication authority for github.com/lstutzman/firstmate
+exit=1
+$ ... check <unrelated repo>
+not a self-repository task
+exit=2
+$ ... check <fork clone> upstream-consent github.com/lstutzman/firstmate
+authorized: task consent for github.com/lstutzman/firstmate
+exit=0
+$ ... check <fork clone> upstream-consent github.com/kunchenguid/firstmate   (adversarial: consent for wrong target)
+refused: this home runs as firstmate user/operator and holds no publication authority for github.com/lstutzman/firstmate
+exit=1
+
+## 2. maintainer grant github.com/lstutzman/firstmate
+fm-role: maintainer github.com/lstutzman/firstmate (local)
+authorized: maintainer scope github.com/lstutzman/firstmate
+exit=0
+$ adversarial: add upstream remote -> kunchenguid/firstmate becomes target
+refused: this home runs as firstmate user/operator and holds no publication authority for github.com/kunchenguid/firstmate
+exit=1
+$ malformed role file
+fm-role: user (local) - malformed role file: invalid repository scope 'notascope'
+refused: this home runs as firstmate user/operator and holds no publication authority for github.com/lstutzman/firstmate
+exit=1

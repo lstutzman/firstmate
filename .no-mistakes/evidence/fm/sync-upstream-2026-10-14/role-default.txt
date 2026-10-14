@@ -1,0 +1,12 @@
+$ FM_HOME=<primary> bin/fm-role.sh report   # no config
+(eval):8: command not found: env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE
+$ FM_HOME=<primary> bin/fm-role.sh check <this firstmate worktree>
+(eval):10: command not found: env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE
+exit=127
+--- git remotes of worktree:
+origin	https://github.com/lstutzman/firstmate.git (fetch)
+origin	https://github.com/lstutzman/firstmate.git (push)
+$ ... check <worktree> upstream-consent github.com/someone/else
+(eval):13: command not found: env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE -u FM_PROJECTS_OVERRIDE
+exit=127
+origin=https://github.com/lstutzman/firstmate.git

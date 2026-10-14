@@ -1,0 +1,13 @@
+ok - sweep: distinct secondmate relaunches serialize across the task-set lock
+ok - sweep: an authoritatively missing Pi secondmate window is relaunched
+ok - sweep: an authoritatively missing pi-signed secondmate window is relaunched
+ok - sweep: failed relaunch diagnostics distinguish a confidently missing endpoint
+ok - relaunch: the spawn timeout bounds the lock wait before touching the endpoint
+ok - sweep: an unreadable or unwritable relaunch ledger refuses to kill or spawn
+fmt-fm-pi-branch-extension.log: 49 ok, 0 not ok
+fmt-fm-pi-watch-extension.log: 60 ok, 0 not ok
+fmt-fm-secondmate-liveness.log: 21 ok, 0 not ok
+fmt-fm-secondmate-safety.log: 81 ok, 0 not ok
+fmt-fm-self-repo-role.log: 20 ok, 0 not ok
+fmt-fm-session-start.log: 60 ok, 0 not ok
+fmt-fm-stow-cascade.log: 6 ok, 0 not ok

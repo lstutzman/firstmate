@@ -1,0 +1,20 @@
+$ FM_HOME=$PRIMARY bin/fm-config-push.sh   (captain-shared.md with Memory layering section)
+config-push: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.HCfuGE -> live secondmate homes
+secondmate sm-lab (/private/tmp/fmsm.zSon/home):
+  trace-context: unchanged - session-scoped
+  data/captain-shared.md: pushed
+CONFIG_REREAD: secondmate sm-lab: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c050d9982933.git)
+exit=
+## secondmate data/captain-shared.md:
+-r--r--r--@ 1 leestutzman  wheel  480 Oct 14 08:59 /tmp/fmsm.zSon/home/data/captain-shared.md
+<!-- main-authoritative: read-only in secondmate homes; must not be edited there. Edit on the main firstmate and send a marked status or document pointer. -->
+# Shared captain preferences
+
+## Memory layering
+
+| Tier | Destination | Authoritative for | Correction rule |
+|---|---|---|---|
+| slarti-memory | MCP tools `mcp__mcp-memory-service__*` | decisions, corrections, references | append-only supersession |
+| data/ | local files | disposable per-machine cache | edit freely |
+## secondmate config typesafe still present:
+jev-local-model
