@@ -20,7 +20,7 @@
 #              tool result, condensed to one line.
 #   [outcome]  state/.branch-outcomes-tail.jsonl, the outcome store's display
 #              tail: each verdict (CAPTAIN or routine, silent marked) and summary.
-# It starts with the newest FM_HOST_OBSERVE_BACKLOG (20) events of each source,
+# It starts with the newest 20 events of each source,
 # then polls every FM_HOST_OBSERVE_POLL (1) seconds and renders each new event
 # once. A file that does not exist yet, a ledger the host rotated or truncated,
 # a tail copy replaced whole, and a host that restarted are all followed
@@ -46,13 +46,15 @@
 # replaced. A pane running anything else is never closed, and one whose
 # processes cannot be read is kept and reported. A new pane whose follower
 # could not be started is closed and forgotten only under the same proof. From
-# the create until the pane is recorded, terminating signals are ignored, so a
-# caller's bound or group teardown cannot leave an unrecorded pane. It never
-# starts a herdr server. Any other backend, a herdr that is missing, outdated,
-# not running, or not answering, or a close herdr does not confirm, gets one
-# "observer: ..." diagnostic line on stdout, printed again only when the
-# problem changes, and nothing else. One ensure runs at a time under
-# bin/fm-wake-lib.sh's lock. It always exits 0.
+# the create until the pane is recorded, TERM, INT, and HUP are ignored, so a
+# caller's bound or group teardown cannot leave an unrecorded pane through
+# those signals; the host's wrapper (bin/fm-supervision-host.sh) escalates to
+# KILL 2 s after its 20 s bound or a teardown, so a herdr create slower than
+# that can still orphan a pane. It never starts a herdr server. Any other
+# backend, a herdr that is missing, outdated, not running, or not answering,
+# or a close herdr does not confirm, gets one "observer: ..." diagnostic line
+# on stdout, printed again only when the problem changes, and nothing else.
+# One ensure runs at a time under bin/fm-wake-lib.sh's lock. It always exits 0.
 set -u
 export LC_ALL=C
 
@@ -71,8 +73,7 @@ CLAUDE_STORE="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 POLL=${FM_HOST_OBSERVE_POLL:-1}
 case "$POLL" in ''|*[!0-9.]*) POLL=1 ;; esac
-BACKLOG=${FM_HOST_OBSERVE_BACKLOG:-20}
-case "$BACKLOG" in ''|*[!0-9]*) BACKLOG=20 ;; esac
+BACKLOG=20
 
 render_ledger() {  # stdin: ledger lines
   jq -Rr 'split("\t") as $f
@@ -293,9 +294,10 @@ ensure_locked() {
     esac
   fi
   label="$(fm_backend_herdr_workspace_label)-host-observer"
-  # From the create until the pane is recorded, a terminating signal to this
-  # group (a caller's bound or process-group teardown) is ignored, by herdr
-  # too, so a pane herdr made is never left unrecorded for a second to join.
+  # From the create until the pane is recorded, TERM, INT, and HUP to this
+  # group (a caller's bound or process-group teardown) are ignored, by herdr
+  # too, so a pane herdr made is not left unrecorded for a second to join;
+  # only the wrapper's later KILL can still cut this window short.
   trap '' TERM INT HUP
   if ! out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$FM_HOME" --label "$label" --no-focus 2>/dev/null); then
     diagnose "herdr could not open the '$label' workspace in session '$session'"
