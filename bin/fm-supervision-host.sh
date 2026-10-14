@@ -1060,6 +1060,20 @@ trap 'exit 130' INT
 activate || { echo "supervision-host stood down: the host record could not be written"; exit 0; }
 log_line "start	gen=$GEN	primary=$PRIMARY"
 
+# The opt-in observer pane: bin/fm-host-observe.sh ensure owns its gate, herdr
+# handling, and one-line diagnostics, which land in this ledger. It runs in
+# the background under a bound, in a process group of its own, and owned by
+# its own subshell rather than by this host, so herdr can never delay or fail
+# the host and the host's exit never cuts a pane creation short.
+observer_ensure() {
+  local note
+  FM_EXEC_TIMED_OWNER_PID=$(exec sh -c 'printf "%s" "$PPID"')
+  export FM_EXEC_TIMED_OWNER_PID
+  note=$(fm_exec_timed 20 2 "$SCRIPT_DIR/fm-host-observe.sh" ensure </dev/null 2>/dev/null) || true
+  [ -z "$note" ] || log_line "observer	${note#observer: }"
+}
+[ ! -e "$CONFIG/supervision-host-observer" ] || observer_ensure &
+
 # The first cycle.
 if [ "$FIRST_ARM_RESTART" -eq 1 ]; then
   start_arm "$OWNER_PREDECESSOR" --restart
