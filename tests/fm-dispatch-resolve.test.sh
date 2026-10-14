@@ -975,6 +975,143 @@ assert_contains "$out" '  reason: quota-axi --json returned an invalid snapshot'
 cp "$BASE_RULES" "$RULES"
 pass "schema 6: each candidate binds to its account row; schema 5 is unchanged"
 
+# --- pooled Claude quota from cpa-usage-axi ----------------------------------
+# config/cpa-usage-host names where cpa-usage-axi runs; its pooled accounts
+# replace quota-axi's claude entry, which a keychain-less host reports unknown.
+POOL_RULES="$TMP_ROOT/pool-rules.json"
+POOL_QUOTA="$TMP_ROOT/pool-quota.json"
+CPA_FIXTURE="$TMP_ROOT/cpa-accounts.toon"
+CPA_HOST_FILE="$HOME_DIR/config/cpa-usage-host"
+cat > "$POOL_RULES" <<'JSON'
+{ "rules": [ { "when": "Routine Claude work.", "min_confidence": 0.9,
+  "use": { "harness": "claude", "model": "sonnet", "effort": "high" } } ] }
+JSON
+jq '.providers |= map(if .provider == "claude" then .quotaSemantics = {status: "unknown", effectiveAvailability: []} else . end)' "$QUOTA" > "$POOL_QUOTA"
+write_cpa() {  # <path> <row>...: an accounts table in cpa-usage-axi's TOON shape
+  local path=$1
+  shift
+  {
+    printf 'accounts[%s]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:\n' "$#"
+    printf '  %s\n' "$@"
+    printf 'help[1]:\n  Run cpa-usage-axi ration for windows used this week\n'
+  } > "$path"
+}
+write_cpa "$CPA_FIXTURE" \
+  'reserve@example.com,claude,0.00,,1.00,2030-01-03T15:00Z,2030-01-01T06:52Z,43,0' \
+  'one@example.com,claude,0.15,2030-01-01T11:00Z,0.13,2030-01-07T20:00Z,2030-01-01T07:35Z,0,165494245' \
+  'two@example.com,claude,0.06,2030-01-01T12:00Z,0.22,2030-01-07T06:00Z,2030-01-01T07:35Z,0,81088936' \
+  'three@example.com,claude,0.12,2030-01-01T11:50Z,0.92,2030-01-06T14:00Z,2030-01-01T07:35Z,0,218157013' \
+  'codex@example.com,codex,0.99,,0.99,,2030-01-01T07:35Z,0,0'
+cat > "$FAKEBIN/ssh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "${FAKE_CURL_LOG:?}/ssh.argv"
+[ "${FAKE_CPA_FAIL:-0}" = 1 ] && exit 255
+[ "${FAKE_CPA_HANG:-0}" = 1 ] && sleep 30
+cat "${CPA_FIXTURE:?}"
+SH
+chmod +x "$FAKEBIN/ssh"
+export CPA_FIXTURE
+cat > "$RESPONSE" <<'JSON'
+{ "model": "jev-1.13.0",
+  "answers": { "rule": { "type": "choice", "choice": "rule_1", "confidence": 0.94,
+    "probabilities": { "rule_1": 0.94, "default": 0.06 } } },
+  "usage": { "input_tokens": 812, "output_tokens": 60 } }
+JSON
+cp "$POOL_RULES" "$RULES"
+
+printf 'slartibartfast\n' > "$CPA_HOST_FILE"
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" run code out err "$BRIEF"
+expect_code 0 "$code" "pooled claude quota exits 0"
+assert_contains "$out" '  status: clear' "pooled claude headroom makes the matched rule clear"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=42.75  runway=through_reset  -> eligible' "pool remaining is the mean of each claude account's tighter window"
+assert_contains "$out" "  profile: --harness 'claude' --model 'sonnet' --effort 'high'" "the pooled claude candidate is dispatched"
+assert_equals $'-o\nBatchMode=yes\n-o\nConnectTimeout=5\n--\nslartibartfast\ncpa-usage-axi\naccounts' "$(cat "$LOG/ssh.argv")" "the pool read is one non-interactive ssh call with a connect bound"
+pass "config/cpa-usage-host: pooled claude accounts rank the claude candidate"
+
+CPA_EXHAUSTED="$TMP_ROOT/cpa-exhausted.toon"
+write_cpa "$CPA_EXHAUSTED" \
+  'one@example.com,claude,1.00,2030-01-01T11:00Z,0.40,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1' \
+  'two@example.com,claude,0.20,2030-01-01T12:00Z,1.00,2030-01-07T06:00Z,2030-01-01T07:35Z,0,1'
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_EXHAUSTED" run code out err "$BRIEF"
+assert_not_contains "$out" '  status: clear' "an exhausted pool never clears the claude candidate"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  scope=all_models  remaining=0%  spendPriority=-  runway=exhausted_now  -> not eligible: runway exhausted_now at all_models' "every exhausted account exhausts the pool"
+assert_not_contains "$out" '  profile:' "an exhausted pool prints no profile"
+pass "config/cpa-usage-host: an exhausted pool makes the claude candidate ineligible"
+
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" FAKE_CPA_FAIL=1 run code out err "$BRIEF"
+expect_code 0 "$code" "a failed pool read exits 0"
+assert_contains "$out" '  reason: no rankable eligible candidate' "a failed pool read keeps the quota-axi outcome"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "a failed pool read leaves the quota-axi claude entry"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast failed with exit 255); claude quota from quota-axi' "$err" "a failed pool read says so in one stderr line"
+pass "config/cpa-usage-host: a failed pool read degrades to the quota-axi claude entry"
+
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=1 run code out err "$BRIEF"
+expect_code 0 "$code" "a hung pool read exits 0"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "a hung pool read leaves the quota-axi claude entry"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 1s); claude quota from quota-axi' "$err" "a hung pool read is bounded and named"
+pass "config/cpa-usage-host: the pool read has an overall bound"
+
+cat > "$FAKEBIN/cpa-usage-axi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "${FAKE_CURL_LOG:?}/cpa-usage-axi.argv"
+cat "${CPA_FIXTURE:?}"
+SH
+chmod +x "$FAKEBIN/cpa-usage-axi"
+printf '# pooled Claude usage runs on this host\nlocal\n' > "$CPA_HOST_FILE"
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" run code out err "$BRIEF"
+assert_contains "$out" '  status: clear' "a local pool read clears the claude candidate"
+assert_equals 'accounts' "$(cat "$LOG/cpa-usage-axi.argv")" "local runs cpa-usage-axi accounts directly"
+assert_absent "$LOG/ssh.argv" "local never calls ssh"
+rm -f "$FAKEBIN/cpa-usage-axi"
+printf 'slartibartfast\n' > "$CPA_HOST_FILE"
+pass "config/cpa-usage-host: local runs cpa-usage-axi on this host"
+
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$SCHEMA6" run code out err "$BRIEF"
+assert_contains "$out" '  status: clear' "a schema 6 snapshot takes the pooled claude entry"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=42.75  runway=through_reset  -> eligible' "the pooled entry binds as the claude default account"
+assert_equals '' "$err" "a valid schema 6 overlay is silent on stderr"
+pass "config/cpa-usage-host: schema 6 snapshots keep a valid claude default row"
+
+printf -- '-oProxyCommand=sh evil\n' > "$CPA_HOST_FILE"
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" run code out err "$BRIEF"
+expect_code 0 "$code" "a malformed pool host exits 0"
+assert_absent "$LOG/ssh.argv" "a malformed pool host never reaches ssh"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi' "$err" "a malformed pool host is named without its value"
+printf 'slartibartfast\n' > "$CPA_HOST_FILE"
+pass "config/cpa-usage-host: only a plain host name reaches ssh"
+
+CPA_STALE="$TMP_ROOT/cpa-stale.toon"
+write_cpa "$CPA_STALE" \
+  'fresh@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,180,1' \
+  'stale@example.com,claude,0.90,2030-01-01T12:00Z,0.90,2030-01-07T06:00Z,2030-01-01T04:35Z,181,1'
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_STALE" run code out err "$BRIEF"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  scope=all_models  remaining=80%  spendPriority=80  runway=through_reset  -> eligible' "an observation older than 180 minutes is left out of the pool"
+write_cpa "$CPA_STALE" \
+  'stale@example.com,claude,0.10,2030-01-01T12:00Z,0.10,2030-01-07T06:00Z,2030-01-01T04:35Z,181,1' \
+  'fresh-codex@example.com,codex,0.10,,0.10,,2030-01-01T07:35Z,0,1'
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_STALE" run code out err "$BRIEF"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "an all-stale pool leaves the quota-axi claude entry"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (no fresh claude account rows from cpa-usage-axi on slartibartfast); claude quota from quota-axi' "$err" "an all-stale pool says so in one stderr line"
+pass "config/cpa-usage-host: stale account observations count as unknown"
+
+rm -f "$CPA_HOST_FILE"
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" run code out err "$BRIEF"
+assert_contains "$out" '  reason: no rankable eligible candidate' "without config/cpa-usage-host the quota-axi claude entry decides"
+assert_absent "$LOG/ssh.argv" "without config/cpa-usage-host no pool read happens"
+assert_equals '' "$err" "without config/cpa-usage-host stderr stays quiet"
+pass "config/cpa-usage-host absent: resolution is unchanged"
+cp "$BASE_RULES" "$RULES"
+
 # --- quota-axi is read exactly once --------------------------------------------
 reset_log
 write_response "$RESPONSE" rule_4 0.9

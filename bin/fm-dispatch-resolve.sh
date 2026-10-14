@@ -54,6 +54,18 @@
 #   docs/configuration.md "Crew dispatch profiles" owns the declared fields and
 #   "Typed dispatch resolution" owns this tool's operator contract.
 #
+# Pooled Claude quota: when config/cpa-usage-host exists, its first non-blank,
+#   non-# line names the ssh host that runs cpa-usage-axi (or the literal
+#   `local` to run it here). One bounded `cpa-usage-axi accounts` read
+#   (ssh BatchMode=yes, ConnectTimeout=5, FM_CPA_USAGE_TIMEOUT seconds overall,
+#   default 10, via fm_run_timed) replaces the snapshot's claude entry with one
+#   all_models row: each fresh claude account (age_min <= 180) has remaining
+#   1 - max(used_5h, used_7d), the row's percent and spendPriority are 100 times
+#   their mean, and runway is exhausted_now only when every account is at 0.
+#   A failed, timed-out, malformed, or all-stale read keeps quota-axi's own
+#   claude entry and prints one "dispatch-resolve: cpa-usage pool unavailable"
+#   line on stderr. With no config file nothing changes and nothing is read.
+#
 # Never-send check: when the optional $FM_HOME/config/dispatch-never-send list
 #   exists, every string value of the built request is checked against it
 #   before the POST. Each non-blank, non-# line is a literal matched
@@ -107,6 +119,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-env-lib.sh"
 # shellcheck source=bin/fm-timing-lib.sh
 . "$SCRIPT_DIR/fm-timing-lib.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-brief-heading-lib.sh
 . "$SCRIPT_DIR/fm-brief-heading-lib.sh"
 
@@ -114,6 +128,10 @@ CONFIDENCE_FLOOR=0.6
 TS_MODEL=$(fm_typesafe_config_line "$CONFIG" typesafe-model)
 TS_MODEL=${TS_MODEL:-jev-latest}
 TS_TIMEOUT=5
+CPA_STALE_MIN=180
+CPA_CONNECT_TIMEOUT=5
+CPA_TIMEOUT=${FM_CPA_USAGE_TIMEOUT:-10}
+case "$CPA_TIMEOUT" in ''|*[!0-9]*|0) CPA_TIMEOUT=10 ;; esac
 DEFAULT_WHEN="No listed rule applies to this task."
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
@@ -384,6 +402,59 @@ jq -e --slurpfile rules "$RULES" '
 command -v quota-axi >/dev/null 2>&1 || emit_error "quota-axi not installed"
 quota-axi --json > "$QUOTA" 2>/dev/null || emit_error "quota-axi --json failed"
 fm_quota_json_valid < "$QUOTA" || emit_error "quota-axi --json returned an invalid snapshot"
+
+# ---- optional pooled Claude quota: cpa-usage-axi replaces the claude entry ------
+# Any failure keeps quota-axi's own claude entry and says so once on stderr.
+cpa_skip() { echo "dispatch-resolve: cpa-usage pool unavailable ($1); claude quota from quota-axi" >&2; }
+cpa_pool_overlay() {
+  local host=$1 accounts rc pool merged
+  if [ "$host" = local ]; then
+    accounts=$(fm_run_timed "$CPA_TIMEOUT" cpa-usage-axi accounts 2>/dev/null </dev/null); rc=$?
+  elif [[ "$host" =~ ^[A-Za-z0-9_][A-Za-z0-9._@:-]*$ ]]; then
+    accounts=$(fm_run_timed "$CPA_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout="$CPA_CONNECT_TIMEOUT" \
+      -- "$host" cpa-usage-axi accounts 2>/dev/null </dev/null); rc=$?
+  else
+    cpa_skip "config/cpa-usage-host is not a host name"; return 0
+  fi
+  case "$rc" in
+    0) ;;
+    124) cpa_skip "cpa-usage-axi on $host timed out after ${CPA_TIMEOUT}s"; return 0 ;;
+    *) cpa_skip "cpa-usage-axi on $host failed with exit $rc"; return 0 ;;
+  esac
+  pool=$(jq -Rsc --argjson stale "$CPA_STALE_MIN" '
+    def num: try tonumber catch null;
+    split("\n") as $lines |
+    ([$lines | to_entries[] | select(.value | test("^accounts\\[[0-9]+\\]\\{[^}]*\\}:$"))] | first // null) as $head |
+    if $head == null then empty else
+    ($head.value | capture("\\{(?<f>[^}]*)\\}").f | split(",")) as $fields |
+    (reduce $lines[($head.key + 1):][] as $l ({done: false, rows: []};
+      if .done then . elif ($l | startswith("  ")) then .rows += [$l | ltrimstr("  ") | split(",")] else .done = true end)
+    | .rows) as $rows |
+    [$rows[] | select(length == ($fields | length)) | [$fields, .] | transpose | map({key: .[0], value: .[1]}) | from_entries
+      | select(.provider == "claude")
+      | {u5: (.used_5h | num), u7: (.used_7d | num), age: (.age_min | num)}
+      | select((.u5 | type) == "number" and (.u7 | type) == "number" and (.age | type) == "number" and .age <= $stale)
+      | ([1 - ([.u5, .u7] | max), 0] | max | [., 1] | min)] as $remaining |
+    if ($remaining | length) == 0 then empty else
+      ((($remaining | add) / ($remaining | length) * 10000 | round) / 100) as $pct |
+      {provider: "claude",
+       quotaSemantics: {status: "known", effectiveAvailability: [
+         {scope: "all_models", status: "known", effectivePercentRemaining: $pct,
+          runway: {status: (if all($remaining[]; . == 0) then "exhausted_now" else "through_reset" end)},
+          selection: {spendPriority: $pct}}]}}
+    end end' <<<"$accounts" 2>/dev/null)
+  [ -n "$pool" ] || { cpa_skip "no fresh claude account rows from cpa-usage-axi on $host"; return 0; }
+  if merged=$(jq -c --argjson pool "$pool" '
+       (if .schemaVersion == 6 then $pool + {accountKey: "default"} else $pool end) as $entry |
+       .providers = [.providers[] | select(.provider != "claude")] + [$entry]' "$QUOTA" 2>/dev/null) &&
+     fm_quota_json_valid <<<"$merged"; then
+    printf '%s\n' "$merged" > "$QUOTA"
+  else
+    cpa_skip "pooled claude entry failed snapshot validation"
+  fi
+}
+CPA_HOST=$(fm_typesafe_config_line "$CONFIG" cpa-usage-host)
+[ -z "$CPA_HOST" ] || cpa_pool_overlay "$CPA_HOST"
 
 # ---- resolution: declared gates + quota evidence + argmax, all in jq ------------
 RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg none_criterion "$DEFAULT_WHEN" --argjson pmap "$PMAP" \
