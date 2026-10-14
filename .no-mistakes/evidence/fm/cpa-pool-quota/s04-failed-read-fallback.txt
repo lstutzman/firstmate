@@ -1,0 +1,57 @@
+# S4: a failed pool read keeps quota-axi's own claude entry (unknown here) and prints exactly one stderr line; ssh's own stderr never leaks
+
+### REAL ssh to a host that does not resolve
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | no-such-host-cpa.invalid 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on no-such-host-cpa.invalid failed with exit 255); claude quota from quota-axi
+--- exit 0 after 213 ms ---
+PASS: exit 0
+PASS: quota-axi claude entry kept (unmeasured)
+PASS: escalates: no rankable candidate
+PASS: one stderr line naming the exit status
+
+### fake ssh: exit 255 with known-hosts and connection-refused noise on its stderr
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_FAIL=1 FAKE_CPA_NOISE=1 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast failed with exit 255); claude quota from quota-axi
+--- exit 0 after 227 ms ---
+PASS: stderr is exactly the one resolver line
+PASS: claude entry kept
+
+### fake ssh: success with the same stderr noise
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_NOISE=1 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 252 ms ---
+PASS: noise does not spoil a good read
+PASS: stderr empty on success

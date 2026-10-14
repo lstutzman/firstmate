@@ -1,0 +1,2 @@
+{ "rules": [ { "when": "Routine Claude work.", "min_confidence": 0.9,
+  "use": { "harness": "claude", "model": "sonnet", "effort": "high" } } ] }

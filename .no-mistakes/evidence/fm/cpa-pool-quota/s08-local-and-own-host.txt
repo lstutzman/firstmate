@@ -1,0 +1,131 @@
+# S8: 'local' or this machine's own short host name (real hostname -s: Lees-Mac-mini) runs cpa-usage-axi here with no ssh; any other value goes over ssh. Recording fakes for ssh and cpa-usage-axi.
+
+### value: local
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$LAB/fake-cpa:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | local 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 386 ms ---
+PASS: [local] cpa-usage-axi accounts ran here
+PASS: [local] ssh never called
+PASS: [local] clear, silent
+
+### value: LEES-MAC-MINI
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$LAB/fake-cpa:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | LEES-MAC-MINI 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 217 ms ---
+PASS: [LEES-MAC-MINI] cpa-usage-axi accounts ran here
+PASS: [LEES-MAC-MINI] ssh never called
+PASS: [LEES-MAC-MINI] clear, silent
+
+### value: lees-mac-mini
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$LAB/fake-cpa:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | lees-mac-mini 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 236 ms ---
+PASS: [lees-mac-mini] cpa-usage-axi accounts ran here
+PASS: [lees-mac-mini] ssh never called
+PASS: [lees-mac-mini] clear, silent
+
+### value: Lees-Mac-mini
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$LAB/fake-cpa:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | Lees-Mac-mini 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 228 ms ---
+PASS: [Lees-Mac-mini] cpa-usage-axi accounts ran here
+PASS: [Lees-Mac-mini] ssh never called
+PASS: [Lees-Mac-mini] clear, silent
+
+### value: slartibartfast
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$LAB/fake-cpa:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 299 ms ---
+PASS: [slartibartfast] went over ssh
+PASS: [slartibartfast] cpa-usage-axi not run here
+
+### value: lees-mac-mini.local
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$LAB/fake-cpa:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | lees-mac-mini.local 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 282 ms ---
+PASS: [lees-mac-mini.local] went over ssh
+PASS: [lees-mac-mini.local] cpa-usage-axi not run here
+
+### value: Lees-Mac-minix
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$LAB/fake-cpa:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | Lees-Mac-minix 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 301 ms ---
+PASS: [Lees-Mac-minix] went over ssh
+PASS: [Lees-Mac-minix] cpa-usage-axi not run here

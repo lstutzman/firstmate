@@ -1,0 +1,18 @@
+# S11 (documented): while the pool is in effect the pooled all_models row is the only Claude evidence, so a rule floor on model:fable is unverifiable and escalates
+
+### rule_1 (floor claude/model:fable >= 20%) with the pool at 42.75%
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (New feature work on the app.)   confidence: 0.95
+  probabilities: rule_1=0.95 rule_2=0.012500000000000011 rule_3=0.012500000000000011 rule_4=0.012500000000000011 default=0.012500000000000011
+  reason: rule rule_1 floor claude/model:fable is unverifiable
+  candidate: claude:fable  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+--- stderr ---
+
+--- exit 0 after 270 ms ---
+PASS: escalates
+PASS: names the unverifiable floor

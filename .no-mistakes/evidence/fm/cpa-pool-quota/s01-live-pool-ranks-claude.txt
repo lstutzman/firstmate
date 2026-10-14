@@ -1,0 +1,78 @@
+# S1: live pooled Claude quota from cpa-usage-axi on slartibartfast ranks the Claude candidate
+# Real quota-axi 0.1.60 on this host (Claude keychain absent), real ssh to slartibartfast, real curl to a local keyless Jev stand-in (config/typesafe-base-url -> 127.0.0.1).
+# Real quota-axi snapshot on this host (no account identifiers in it):
+#   {"schemaVersion":5,"claude":{"status":"unknown","rows":0}}
+
+### ssh host: real read over ssh
+$ FM_HOME=$LAB/home PATH=$PATH bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | # CLIProxyAPI usage host | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=16.5%  spendPriority=0.165  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 1554 ms ---
+
+--- oracle (python, from a raw table read taken immediately before the run; accounts redacted) ---
+accounts[4]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  account-1@redacted,claude,0.00,,1.00,2026-10-16T14:59Z,2026-10-14T14:52Z,30,0
+  account-2@redacted,claude,0.82,2026-10-14T16:00Z,0.31,2026-10-20T20:00Z,2026-10-14T15:22Z,0,469752879
+  account-3@redacted,claude,0.52,2026-10-14T17:00Z,0.40,2026-10-20T06:00Z,2026-10-14T15:22Z,0,596735658
+  account-4@redacted,claude,0.00,,1.00,2026-10-19T13:59Z,2026-10-14T14:37Z,45,127492956
+help[2]:
+  Run `cpa-usage-axi windows --account <email>` for per-window history
+  Run `cpa-usage-axi ration` for windows used this week
+per-account remaining share of the tighter window: 0 0.18 0.48 0  (claude accounts: 4)
+expected: remaining=16.5%  spendPriority=0.165  runway=through_reset
+WARNING: table moved during the run
+3c3
+<account>,claude,0.82,2026-10-14T16:00Z,0.31,2026-10-20T20:00Z,2026-10-14T15:22Z,0,469752879
+---
+<account>,claude,0.82,2026-10-14T16:00Z,0.31,2026-10-20T20:00Z,2026-10-14T15:22Z,0,470282175
+PASS: exit 0
+PASS: status clear
+PASS: pooled row equals the oracle
+PASS: claude profile dispatched
+PASS: stderr silent
+
+### local: real local cpa-usage-axi wrapper (which itself sshes to slartibartfast)
+$ FM_HOME=$LAB/home PATH=$PATH bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | local 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=16.5%  spendPriority=0.165  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 1398 ms ---
+PASS: local value yields the same pooled row
+PASS: local value: stderr silent
+
+### own host name (lees-mac-mini; real hostname -s is Lees-Mac-mini): runs cpa-usage-axi here
+$ FM_HOME=$LAB/home PATH=$PATH bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | lees-mac-mini 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=16.5%  spendPriority=0.165  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 1350 ms ---
+PASS: own host name yields the same pooled row
+PASS: own host name: stderr silent

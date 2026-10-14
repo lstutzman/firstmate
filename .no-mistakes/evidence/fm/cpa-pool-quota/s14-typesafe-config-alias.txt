@@ -1,0 +1,20 @@
+# S14: after the fm_config_line refactor, config/typesafe-model and config/typesafe-base-url still steer the request (seen by the local Jev stand-in)
+
+### config/typesafe-model=jev-custom-model
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 224 ms ---
+requests carrying model jev-custom-model: before=0 after=1; base URL in use: http://127.0.0.1:58059; total requests received by the stand-in: 73
+PASS: the request carried the configured model
+PASS: clear

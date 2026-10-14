@@ -1,0 +1,217 @@
+# S5: a hung read is bounded by FM_CPA_USAGE_TIMEOUT (default 10; blank/non-numeric/zero resets to 10); a KILL-escalated status 137 reads as a timeout. Timeout mechanism on this host: perl
+
+### fake ssh ignores TERM and loops; FM_CPA_USAGE_TIMEOUT=1
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=1 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 1s); claude quota from quota-axi
+--- exit 0 after 1626 ms ---
+PASS: exit 0
+PASS: named as a 1s timeout
+PASS: returned within 5s (took 1626 ms)
+PASS: claude entry kept
+FAIL: no hung fake ssh left behind (pids: 90312)
+
+### fake ssh ignores TERM and loops; FM_CPA_USAGE_TIMEOUT=2
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=2 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 2s); claude quota from quota-axi
+--- exit 0 after 2665 ms ---
+PASS: named as a 2s timeout
+PASS: took at least 2s and under 6s (2665 ms)
+
+### fake ssh kills itself with SIGKILL (status 137)
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_KILLED=1 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 10s); claude quota from quota-axi
+--- exit 0 after 202 ms ---
+PASS: 137 is reported as the bound
+PASS: claude entry kept
+
+### hang with FM_CPA_USAGE_TIMEOUT='00' falls back to the 10s default
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=00 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 10s); claude quota from quota-axi
+--- exit 0 after 10573 ms ---
+PASS: '00': named as a 10s timeout
+PASS: '00': bound fired near 10s, not unbounded (10573 ms)
+PASS: '00': claude entry kept
+
+### hang with FM_CPA_USAGE_TIMEOUT='0' falls back to the 10s default
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=0 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 10s); claude quota from quota-axi
+--- exit 0 after 10615 ms ---
+PASS: '0': named as a 10s timeout
+PASS: '0': bound fired near 10s, not unbounded (10615 ms)
+PASS: '0': claude entry kept
+
+### hang with FM_CPA_USAGE_TIMEOUT='abc' falls back to the 10s default
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=abc bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 10s); claude quota from quota-axi
+--- exit 0 after 10730 ms ---
+PASS: 'abc': named as a 10s timeout
+PASS: 'abc': bound fired near 10s, not unbounded (10730 ms)
+PASS: 'abc': claude entry kept
+
+### hang with FM_CPA_USAGE_TIMEOUT='' falls back to the 10s default
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT= bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 10s); claude quota from quota-axi
+--- exit 0 after 10624 ms ---
+PASS: '': named as a 10s timeout
+PASS: '': bound fired near 10s, not unbounded (10624 ms)
+PASS: '': claude entry kept
+
+### quick read with FM_CPA_USAGE_TIMEOUT=abc still works
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FM_CPA_USAGE_TIMEOUT=abc bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 228 ms ---
+PASS: clear
+
+--- leftover-process investigation (the check above found a matching pid 1s after the 1s hang) ---
+matching processes now: 
+
+### hang #1 with FM_CPA_USAGE_TIMEOUT=1, then sample the process table
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=1 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 1s); claude quota from quota-axi
+--- exit 0 after 1666 ms ---
+  +0s after return: 
+  +0.5s after return: 
+  +2s after return: 
+
+### hang #2 with FM_CPA_USAGE_TIMEOUT=1, then sample the process table
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=1 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 1s); claude quota from quota-axi
+--- exit 0 after 1666 ms ---
+  +0s after return: 
+  +0.5s after return: 
+  +2s after return: 
+
+### hang #3 with FM_CPA_USAGE_TIMEOUT=1, then sample the process table
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon FAKE_CPA_HANG=1 FM_CPA_USAGE_TIMEOUT=1 bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (cpa-usage-axi on slartibartfast timed out after 1s); claude quota from quota-axi
+--- exit 0 after 1659 ms ---
+  +0s after return: 
+  +0.5s after return: 
+  +2s after return: 
+
+--- conclusion on the leftover check ---
+The single FAIL above ("no hung fake ssh left behind (pids: 90312)") did not reproduce: three further 1s hangs sampled the process
+table at +0s, +0.5s and +2s after the resolver returned and found no process matching the fake ssh. The resolver's own capture
+of the read ($(...)) had already returned, which it cannot do while any process in the bounded group still holds the pipe, so the
+pid seen once was a KILLed child awaiting reaping (its parent, the perl watchdog, had exited), not a live process. Verdict: bound fires, nothing survives it.

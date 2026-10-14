@@ -1,0 +1,49 @@
+# S2: in a rule listing claude:sonnet, cursor, kimi the pooled Claude row competes on spendPriority (mean remaining fraction) against cursor's native 0.7597
+# fake quota-axi: claude unknown, cursor 91% / 0.7597 (fixtures/quota-unknown.json); fake ssh serves fixture tables
+oracle(cpa-pool.toon): remaining=42.75%  spendPriority=0.4275  runway=through_reset
+
+### pool at 42.75% vs cursor 91%/0.7597
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_4 (A simple bug fix with a stated root cause.)   confidence: 0.9
+  probabilities: rule_1=0.024999999999999994 rule_2=0.024999999999999994 rule_3=0.024999999999999994 rule_4=0.9 default=0.024999999999999994
+  note: rule matched
+  note: 1 eligible candidate(s) unranked (kimi)
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  candidate: cursor:cursor-grok-4.6-medium  provider=cursor  scope=all_models  remaining=91%  spendPriority=0.7597  runway=through_reset  -> eligible
+  candidate: kimi:kimi-code/k3  provider=kimi  -> eligible, unranked: provider kimi unmeasured (unknown): disclosed uncertainty
+  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'
+--- stderr ---
+
+--- exit 0 after 507 ms ---
+PASS: status clear
+PASS: pooled claude row shows remaining=42.75%  spendPriority=0.4275  runway=through_reset
+PASS: cursor keeps its native scalar
+PASS: cursor wins
+PASS: stderr silent
+oracle(cpa-high.toon): remaining=96%  spendPriority=0.96  runway=through_reset
+
+### pool at 96% vs cursor 91%/0.7597
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-high.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 1000   tokens: 812/60
+  rule: rule_4 (A simple bug fix with a stated root cause.)   confidence: 0.9
+  probabilities: rule_1=0.024999999999999994 rule_2=0.024999999999999994 rule_3=0.024999999999999994 rule_4=0.9 default=0.024999999999999994
+  note: rule matched
+  note: 1 eligible candidate(s) unranked (kimi)
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=96%  spendPriority=0.96  runway=through_reset  -> eligible
+  candidate: cursor:cursor-grok-4.6-medium  provider=cursor  scope=all_models  remaining=91%  spendPriority=0.7597  runway=through_reset  -> eligible
+  candidate: kimi:kimi-code/k3  provider=kimi  -> eligible, unranked: provider kimi unmeasured (unknown): disclosed uncertainty
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 261 ms ---
+PASS: pooled claude row shows remaining=96%  spendPriority=0.96  runway=through_reset
+PASS: claude wins when the pool outranks cursor

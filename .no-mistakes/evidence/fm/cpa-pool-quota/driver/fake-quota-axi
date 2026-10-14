@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "${FAKE_LOG:?}/quota-axi.calls"
+[ "${1:-}" = --json ] || exit 2
+cat "${QUOTA_AXI_FIXTURE:?}"

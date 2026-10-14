@@ -1,0 +1,17 @@
+{
+  "rules": [
+    { "when": "New feature work on the app.",
+      "floor": { "scope": "model:fable", "min_percent": 20, "provider": "claude" },
+      "use": { "harness": "claude", "model": "fable", "effort": "xhigh" } },
+    { "when": "The task generates images.",
+      "use": [ { "harness": "pi", "model": "openai-codex/gpt-5.6-sol", "provider": "codex" },
+               { "harness": "codex", "model": "gpt-5.6-sol", "floor": { "scope": "all_models", "min_percent": 50 } } ] },
+    { "when": "Genuinely very difficult design or planning work.", "approval": "captain",
+      "use": { "harness": "claude", "model": "fable", "effort": "xhigh" } },
+    { "when": "A simple bug fix with a stated root cause.",
+      "use": [ { "harness": "claude", "model": "sonnet", "effort": "high" },
+               { "harness": "cursor", "model": "cursor-grok-4.6-medium" },
+               { "harness": "kimi", "model": "kimi-code/k3" } ] }
+  ],
+  "default": [ { "harness": "claude", "model": "opus" }, { "harness": "cursor", "model": "cursor-grok-4.6-high" } ]
+}

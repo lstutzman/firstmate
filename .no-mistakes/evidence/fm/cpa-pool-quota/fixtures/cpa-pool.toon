@@ -1,0 +1,8 @@
+accounts[5]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  reserve@example.com,claude,0.00,,1.00,2030-01-03T15:00Z,2030-01-01T06:52Z,43,0
+  one@example.com,claude,0.15,2030-01-01T11:00Z,0.13,2030-01-07T20:00Z,2030-01-01T07:35Z,0,165494245
+  two@example.com,claude,0.06,2030-01-01T12:00Z,0.22,2030-01-07T06:00Z,2030-01-01T07:35Z,0,81088936
+  three@example.com,claude,0.12,2030-01-01T11:50Z,0.92,2030-01-06T14:00Z,2030-01-01T07:35Z,0,218157013
+  codex@example.com,codex,0.99,,0.99,,2030-01-01T07:35Z,0,0
+help[1]:
+  Run cpa-usage-axi ration for windows used this week

@@ -1,0 +1,294 @@
+# S7: only a plain host name reaches ssh; anything else is refused before any call, named without echoing the value. Recording fake ssh on PATH.
+
+### value: -oProxyCommand=sh evil
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | -oProxyCommand=sh evil 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit 0 after 261 ms ---
+PASS: [-oProxyCommand=sh evil] ssh never called
+PASS: [-oProxyCommand=sh evil] refused in one stderr line
+PASS: [-oProxyCommand=sh evil] value not echoed
+PASS: [-oProxyCommand=sh evil] claude entry kept, exit 0
+
+### value: host;id
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | host;id 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit 0 after 273 ms ---
+PASS: [host;id] ssh never called
+PASS: [host;id] refused in one stderr line
+PASS: [host;id] value not echoed
+PASS: [host;id] claude entry kept, exit 0
+
+### value: $(id)
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | $(id) 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit 0 after 300 ms ---
+PASS: [$(id)] ssh never called
+PASS: [$(id)] refused in one stderr line
+PASS: [$(id)] value not echoed
+PASS: [$(id)] claude entry kept, exit 0
+
+### value: slarti bartfast
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slarti bartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit 0 after 293 ms ---
+PASS: [slarti bartfast] ssh never called
+PASS: [slarti bartfast] refused in one stderr line
+PASS: [slarti bartfast] value not echoed
+PASS: [slarti bartfast] claude entry kept, exit 0
+
+### value: -v
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | -v 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit 0 after 287 ms ---
+PASS: [-v] ssh never called
+PASS: [-v] refused in one stderr line
+PASS: [-v] value not echoed
+PASS: [-v] claude entry kept, exit 0
+
+### value: slarti/bartfast
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slarti/bartfast 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit 0 after 280 ms ---
+PASS: [slarti/bartfast] ssh never called
+PASS: [slarti/bartfast] refused in one stderr line
+PASS: [slarti/bartfast] value not echoed
+PASS: [slarti/bartfast] claude entry kept, exit 0
+
+### value: `id`
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | `id` 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit 0 after 275 ms ---
+PASS: [`id`] ssh never called
+PASS: [`id`] refused in one stderr line
+PASS: [`id`] value not echoed
+PASS: [`id`] claude entry kept, exit 0
+
+### value: .hidden
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | .hidden 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit 0 after 274 ms ---
+PASS: [.hidden] ssh never called
+PASS: [.hidden] refused in one stderr line
+PASS: [.hidden] value not echoed
+PASS: [.hidden] claude entry kept, exit 0
+
+### value: -
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | - 
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+dispatch-resolve: cpa-usage pool unavailable (config/cpa-usage-host is not a host name); claude quota from quota-axi
+--- exit 0 after 271 ms ---
+PASS: [-] ssh never called
+PASS: [-] refused in one stderr line
+FAIL: [-] value not echoed
+PASS: [-] claude entry kept, exit 0
+
+### valid form: user@slartibartfast
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | user@slartibartfast 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 321 ms ---
+PASS: [user@slartibartfast] reaches ssh as one argument after --
+PASS: [user@slartibartfast] clear
+
+### valid form: slartibartfast.tail299042.ts.net
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | slartibartfast.tail299042.ts.net 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 304 ms ---
+PASS: [slartibartfast.tail299042.ts.net] reaches ssh as one argument after --
+PASS: [slartibartfast.tail299042.ts.net] clear
+
+### valid form: SLARTIBARTFAST
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | SLARTIBARTFAST 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 277 ms ---
+PASS: [SLARTIBARTFAST] reaches ssh as one argument after --
+PASS: [SLARTIBARTFAST] clear
+
+### valid form: host_1:2222
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | host_1:2222 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 219 ms ---
+PASS: [host_1:2222] reaches ssh as one argument after --
+PASS: [host_1:2222] clear
+
+### file with only a comment line
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: | # only a comment |  
+--- stdout ---
+dispatch-resolve:
+  status: escalate
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  reason: no rankable eligible candidate
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty
+--- stderr ---
+
+--- exit 0 after 186 ms ---
+PASS: comment-only file: no read
+PASS: comment-only file: stderr silent
+
+--- note on the one FAIL above ---
+"[-] value not echoed" is a check artifact: the value "-" is a substring of ordinary words in the diagnostic ("dispatch-resolve",
+"cpa-usage"). The guard did refuse "-" without calling ssh (the two PASS lines before it). Every other refused value, including
+"-oProxyCommand=sh evil", "$(id)" and "`id`", is absent from stdout and stderr.
+
+### blank and comment lines first, padded value, a second line after it
+$ FM_HOME=$LAB/home PATH=$LAB/fake-quota:$LAB/fake-ssh:$PATH QUOTA_AXI_FIXTURE=$LAB/fixtures/quota-unknown.json CPA_FIXTURE=$LAB/fixtures/cpa-pool.toon bin/fm-dispatch-resolve.sh brief.md --project pager
+# config/cpa-usage-host: |  | # leading comment |  |    slartibartfast    | ignored-second-line 
+--- stdout ---
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 after 227 ms ---
+PASS: first non-blank non-comment line, trimmed, is the host
+PASS: clear

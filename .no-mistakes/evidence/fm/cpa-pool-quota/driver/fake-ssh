@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# fixture ssh: records argv; FAKE_CPA_* select failure, stderr noise, a TERM-ignoring hang, or a self-KILL
+printf '%s\n' "$@" >> "${FAKE_LOG:?}/ssh.argv"
+[ "${FAKE_CPA_NOISE:-0}" = 1 ] && printf 'Warning: Permanently added slartibartfast to known hosts.\nssh: connect to host slartibartfast port 22: Connection refused\n' >&2
+[ "${FAKE_CPA_FAIL:-0}" = 1 ] && exit 255
+if [ "${FAKE_CPA_HANG:-0}" = 1 ]; then trap '' TERM; while :; do sleep 1; done; fi
+[ "${FAKE_CPA_KILLED:-0}" = 1 ] && kill -KILL $$
+cat "${CPA_FIXTURE:?}"

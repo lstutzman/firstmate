@@ -1,0 +1,190 @@
+# S13: config/cpa-usage-host is inherited into a secondmate home by the real fm-config-push.sh, exactly like config/typesafe-base-url; the secondmate's own resolver then ranks Claude by the pool
+
+### first push into a fresh secondmate home
+$ FM_HOME=$LAB/primary bin/fm-config-push.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+config-push: $LAB/primary -> live secondmate homes
+secondmate sm1 (/private$LAB/sm-home):
+  home: dirty working tree - local-material push continuing
+  crew-dispatch.json: pushed
+  dispatch-never-send: unchanged
+  typesafe-base-url: pushed
+  typesafe-model: unchanged
+  typesafe-token-file: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  keep-ai-trailers: unchanged
+  supervision-host-off: unchanged
+  firstmate-role: unchanged
+  cpa-usage-host: pushed
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate sm1: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c050d9982933.git)
+--- exit 1 ---
+secondmate config/: cpa-usage-host crew-dispatch.json typesafe-base-url 
+secondmate config/cpa-usage-host: # CLIProxyAPI usage host|slartibartfast|
+PASS: cpa-usage-host reported pushed
+PASS: typesafe-base-url reported pushed (the documented sibling)
+PASS: secondmate file carries the primary's bytes
+
+### second push, nothing changed
+$ FM_HOME=$LAB/primary bin/fm-config-push.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: $LAB/primary -> live secondmate homes
+secondmate sm1 (/private$LAB/sm-home):
+  home: dirty working tree - local-material push continuing
+  crew-dispatch.json: unchanged
+  dispatch-never-send: unchanged
+  typesafe-base-url: unchanged
+  typesafe-model: unchanged
+  typesafe-token-file: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  keep-ai-trailers: unchanged
+  supervision-host-off: unchanged
+  firstmate-role: unchanged
+  cpa-usage-host: unchanged
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate sm1: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c050d9982933.git)
+--- exit 1 ---
+secondmate config/: cpa-usage-host crew-dispatch.json typesafe-base-url 
+secondmate config/cpa-usage-host: # CLIProxyAPI usage host|slartibartfast|
+PASS: cpa-usage-host reported unchanged
+
+### the secondmate home resolves with its inherited file (fake quota-axi claude unknown, fake ssh fixture at 42.75%)
+$ FM_HOME=$LAB/sm-home bin/fm-dispatch-resolve.sh brief.md --project pager
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 ---
+PASS: secondmate resolver clear on the pooled row
+FAIL: secondmate resolver read the pool over ssh to the inherited host
+
+### primary value changed to local
+$ FM_HOME=$LAB/primary bin/fm-config-push.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: $LAB/primary -> live secondmate homes
+secondmate sm1 (/private$LAB/sm-home):
+  home: dirty working tree - local-material push continuing
+  crew-dispatch.json: unchanged
+  dispatch-never-send: unchanged
+  typesafe-base-url: unchanged
+  typesafe-model: unchanged
+  typesafe-token-file: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  keep-ai-trailers: unchanged
+  supervision-host-off: unchanged
+  firstmate-role: unchanged
+  cpa-usage-host: pushed
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate sm1: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c050d9982933.git)
+--- exit 1 ---
+secondmate config/: cpa-usage-host crew-dispatch.json typesafe-base-url 
+secondmate config/cpa-usage-host: local|
+PASS: changed value pushed
+PASS: secondmate file updated
+
+### primary files removed (cpa-usage-host and typesafe-base-url together)
+$ FM_HOME=$LAB/primary bin/fm-config-push.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+config-push: $LAB/primary -> live secondmate homes
+secondmate sm1 (/private$LAB/sm-home):
+  home: dirty working tree - local-material push continuing
+  crew-dispatch.json: unchanged
+  dispatch-never-send: unchanged
+  typesafe-base-url: pushed - mirrored primary absence
+  typesafe-model: unchanged
+  typesafe-token-file: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  keep-ai-trailers: unchanged
+  supervision-host-off: unchanged
+  firstmate-role: unchanged
+  cpa-usage-host: pushed - mirrored primary absence
+  data/captain-shared.md: unchanged
+CONFIG_REREAD: secondmate sm1: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c050d9982933.git)
+--- exit 1 ---
+secondmate config/: crew-dispatch.json 
+secondmate config/cpa-usage-host: 
+after removal: secondmate cpa-usage-host=absent typesafe-base-url=absent
+PASS: removal treats cpa-usage-host exactly like typesafe-base-url (absent/absent)
+PASS: removal line for cpa-usage-host matches typesafe-base-url's
+
+--- re-run of the secondmate-resolver step: the FAIL above was a harness ordering bug (the recording fake ssh's log directory was created after the run, so its argv file could not be written; the 42.75% row itself can only come from the fixture that fake serves). Log directory pre-created this time. ---
+  push:   typesafe-base-url: unchanged
+  push:   cpa-usage-host: pushed
+$ FM_HOME=$LAB/sm-home bin/fm-dispatch-resolve.sh brief.md --project pager
+# secondmate config/cpa-usage-host: # CLIProxyAPI usage host|slartibartfast|
+
+--- stderr ---
+dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-cpa-lab-01M4XF4KKYP2V0C09JNWQY4MMT/sm-home/.env, and no custom base URL or token file configured)
+--- exit 0 ---
+fake ssh argv: 
+FAIL: secondmate resolver clear on the pooled row
+FAIL: secondmate resolver read the pool over ssh to the inherited host
+FAIL: stderr silent
+
+--- the three FAILs just above are fixture state, not product behaviour: the removal step had mirrored the primary's absent typesafe-base-url into the secondmate home, so its resolver had no endpoint and no key. Its stderr was:
+    dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T/fm-cpa-lab-01M4XF4KKYP2V0C09JNWQY4MMT/sm-home/.env, and no custom base URL or token file configured)
+Restoring the primary's typesafe-base-url, pushing, and re-running:
+  push:   typesafe-base-url: pushed
+  push:   cpa-usage-host: unchanged
+$ FM_HOME=$LAB/sm-home bin/fm-dispatch-resolve.sh brief.md --project pager
+# secondmate config/: cpa-usage-host crew-dispatch.json typesafe-base-url 
+# secondmate config/cpa-usage-host: # CLIProxyAPI usage host|slartibartfast|
+dispatch-resolve:
+  status: clear
+  model: jev-1.13.0   latency_ms: 0   tokens: 812/60
+  rule: rule_1 (Routine Claude work.)   confidence: 0.94
+  probabilities: rule_1=0.94 default=0.06000000000000005
+  note: rule matched
+  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=42.75%  spendPriority=0.4275  runway=through_reset  -> eligible
+  profile: --harness 'claude' --model 'sonnet' --effort 'high'
+--- stderr ---
+
+--- exit 0 ---
+fake ssh argv: -o BatchMode=yes -o ConnectTimeout=5 -- slartibartfast cpa-usage-axi accounts 
+PASS: secondmate resolver clear on the pooled row
+PASS: secondmate resolver read the pool over ssh to the inherited host
+PASS: stderr silent

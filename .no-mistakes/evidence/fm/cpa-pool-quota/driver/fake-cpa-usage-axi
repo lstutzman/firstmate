@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "${FAKE_LOG:?}/cpa-usage-axi.argv"
+cat "${CPA_FIXTURE:?}"

@@ -1,0 +1,3 @@
+accounts[0]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+help[1]:
+  Run cpa-usage-axi ration for windows used this week
