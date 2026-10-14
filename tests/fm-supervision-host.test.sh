@@ -2055,7 +2055,8 @@ test_attended_latch_keeps_closes_on_main_and_records_recovery_off_main() {
 # covers its herdr behavior) is ensured beside the host without delaying it: a
 # herdr that has not answered the pane create must not hold back the first cycle.
 test_host_start_ensures_the_observer_pane_without_waiting_for_herdr() {
-  local home
+  local home safe_path
+  safe_path=$(fm_test_base_path_sans "$PATH" herdr)
   home=$(make_home observer away)
   : > "$home/config/supervision-host-observer"
   mkdir -p "$home/herdr"
@@ -2075,10 +2076,9 @@ SH
   chmod +x "$home/fakebin/herdr"
   (
     unset HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_WORKSPACE_ID HERDR_SOCKET_PATH FM_BACKEND_HERDR_BIN
+    export FM_BACKEND=herdr HERDR_SESSION=fm-lab-observe-fake FAKE_HERDR_DIR="$home/herdr"
     # No real herdr is reachable: only the fake in the home's fakebin.
-    PATH=$(fm_test_base_path_sans "$PATH" herdr)
-    export PATH FM_BACKEND=herdr HERDR_SESSION=fm-lab-observe-fake FAKE_HERDR_DIR="$home/herdr"
-    start_host "$home"
+    PATH=$safe_path start_host "$home"
   )
   wait_until 60 watcher_live "$home" || fail "observer: the host's first cycle waited on herdr: $(cat "$home/host.out")"
   wait_until 100 grep -qF 'workspace create' "$home/herdr/calls" || fail "observer: the host must ensure the observer pane at start"
