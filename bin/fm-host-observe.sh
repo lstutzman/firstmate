@@ -312,8 +312,12 @@ ensure() {
   [ -z "${CLAUDE_CONFIG_DIR:-}" ] || cmd="$cmd CLAUDE_CONFIG_DIR=$(printf '%q' "$CLAUDE_CONFIG_DIR")"
   cmd="$cmd $(printf '%q' "$SCRIPT_DIR/fm-host-observe.sh") follow"
   if ! fm_backend_herdr_cli "$session" pane run "$pane" "$cmd" >/dev/null 2>&1; then
-    fm_backend_herdr_cli "$session" pane close "$pane" >/dev/null 2>&1
-    write_record "" "" "" "$prior"
+    # Only a pane proven to hold a lone idle shell is closed and forgotten, so
+    # the next ensure opens a fresh one; any other pane stays recorded.
+    if fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null 2>&1; then
+      fm_backend_herdr_cli "$session" pane close "$pane" >/dev/null 2>&1
+      write_record "" "" "" "$prior"
+    fi
     diagnose "herdr opened an observer pane but could not start the observer in it"
     return 0
   fi

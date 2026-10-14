@@ -367,6 +367,19 @@ test_ensure_leaves_a_pane_busy_with_another_program_alone() {
   pass "observe: ensure leaves a pane busy with another program alone"
 }
 
+test_ensure_keeps_a_new_pane_it_cannot_prove_idle_after_a_failed_start() {
+  local home out
+  home=$(make_observer_home ensure-run-fails-busy)
+  echo busy > "$home/herdr/new-state"
+  : > "$home/herdr/run-fails"
+  out=$(ensure "$home")
+  assert_contains "$out" "the host continues headless" "a failed start must get one diagnostic"
+  assert_no_grep "pane close" "$home/herdr/calls" "a pane not proven idle must never be closed"
+  ensure "$home" >/dev/null
+  assert_equals 1 "$(grep -c '^workspace create' "$home/herdr/calls")" "the kept pane must not get a second pane beside it"
+  pass "observe: a failed start keeps a pane it cannot prove idle rather than closing it"
+}
+
 test_ensure_replaces_a_pane_the_observer_could_not_start_in() {
   local home out
   home=$(make_observer_home ensure-run-fails)
@@ -465,6 +478,7 @@ test_outcomes_render_their_verdict_task_and_summary
 test_ensure_opens_one_observer_pane_and_reuses_it
 test_ensure_reopens_a_closed_observer_pane
 test_ensure_leaves_a_pane_busy_with_another_program_alone
+test_ensure_keeps_a_new_pane_it_cannot_prove_idle_after_a_failed_start
 test_ensure_replaces_a_pane_the_observer_could_not_start_in
 test_ensure_replaces_a_restored_pane_with_no_observer_running
 test_ensure_on_another_backend_says_so_once_and_touches_no_herdr
