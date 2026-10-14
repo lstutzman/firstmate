@@ -394,6 +394,18 @@ test_ensure_opens_no_second_pane_when_a_close_is_not_confirmed() {
   pass "observe: ensure opens no second pane when closing the old one is not confirmed"
 }
 
+test_ensure_reports_a_pane_whose_processes_cannot_be_read_and_keeps_it() {
+  local home out
+  home=$(make_observer_home ensure-unreadable)
+  ensure "$home" >/dev/null
+  echo unreadable > "$home/herdr/state-p1"
+  out=$(ensure "$home")
+  assert_contains "$out" "could not read what observer pane p1 runs" "an unreadable pane must get one diagnostic"
+  assert_no_grep "pane close" "$home/herdr/calls" "an unreadable pane must never be closed"
+  assert_equals 1 "$(grep -c '^workspace create' "$home/herdr/calls")" "an unreadable pane must not get a second pane"
+  pass "observe: ensure keeps a pane whose processes cannot be read and says so once"
+}
+
 test_ensure_replaces_a_pane_the_observer_could_not_start_in() {
   local home out
   home=$(make_observer_home ensure-run-fails)
@@ -494,6 +506,7 @@ test_ensure_reopens_a_closed_observer_pane
 test_ensure_leaves_a_pane_busy_with_another_program_alone
 test_ensure_keeps_a_new_pane_it_cannot_prove_idle_after_a_failed_start
 test_ensure_opens_no_second_pane_when_a_close_is_not_confirmed
+test_ensure_reports_a_pane_whose_processes_cannot_be_read_and_keeps_it
 test_ensure_replaces_a_pane_the_observer_could_not_start_in
 test_ensure_replaces_a_restored_pane_with_no_observer_running
 test_ensure_on_another_backend_says_so_once_and_touches_no_herdr

@@ -284,7 +284,11 @@ ensure() {
         # pane the adapter proves holds only an idle shell is replaced. Any
         # other pane, the follower's or one the captain is using, is kept.
         if ! fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null 2>&1; then
-          write_record "$session" "$(record_field workspace)" "$pane" ""
+          if [ "$(fm_backend_herdr_pane_process_state "$session" "$pane")" = unreadable ]; then
+            diagnose "herdr could not read what observer pane $pane runs, so it was left as it is"
+          else
+            write_record "$session" "$(record_field workspace)" "$pane" ""
+          fi
           return 0
         fi
         if ! fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane"; then
