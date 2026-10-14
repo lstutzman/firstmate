@@ -437,7 +437,7 @@ cpa_pool_overlay() {
     def used: if . == "" then 0 else num end;  # blank: no active window, nothing used
     split("\n") as $lines |
     ([$lines | to_entries[] | select(.value | test("^accounts\\[[0-9]+\\]\\{[^}]*\\}:$"))] | first // null) as $head |
-    if $head == null then empty else
+    if $head == null then "malformed" else
     ($head.value | capture("\\{(?<f>[^}]*)\\}").f | split(",")) as $fields |
     (reduce $lines[($head.key + 1):][] as $l ({done: false, rows: []};
       if .done then . elif ($l | startswith("  ")) then .rows += [$l | ltrimstr("  ") | split(",")] else .done = true end)

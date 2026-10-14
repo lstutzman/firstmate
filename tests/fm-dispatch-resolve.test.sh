@@ -1169,6 +1169,13 @@ for word in nan NaN infinity -infinity 1e400; do
 done
 pass "config/cpa-usage-host: only plain decimal windows count as numbers"
 
+printf 'error: database is locked\n' > "$CPA_BAD"
+reset_log
+TYPESAFE_API_KEY=$KEY QUOTA_AXI_FIXTURE="$POOL_QUOTA" CPA_FIXTURE="$CPA_BAD" run code out err "$BRIEF"
+assert_contains "$out" 'candidate: claude:sonnet  provider=claude  -> eligible, unranked: provider claude unmeasured (unknown): disclosed uncertainty' "output with no accounts table leaves the quota-axi claude entry"
+assert_equals 'dispatch-resolve: cpa-usage pool unavailable (malformed cpa-usage-axi read on slartibartfast); claude quota from quota-axi' "$err" "output with no accounts table is a malformed read"
+pass "config/cpa-usage-host: output without an accounts table is a malformed read"
+
 CPA_WIDE="$TMP_ROOT/cpa-wide.toon"
 write_cpa "$CPA_WIDE" \
   'wide@example.com,claude,0.20,2030-01-01T11:00Z,0.10,2030-01-07T20:00Z,2030-01-01T07:35Z,0,1,extra' \
