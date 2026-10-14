@@ -1,0 +1,15 @@
+ok - dispatch entry: the host reads branch eligibility, the offer rule, and the wake prompt from the Pi branch's own owner
+not ok - attended: the wake was not handled on the engine: watcher: started pid=50818 (beacon fresh)
+1791976972	start	gen=host-43072-1791976971	primary=claude
+tests/.nm-targeted-host.test.sh: line 164: 35387 Terminated: 15          FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      rm -f "$FM_HOME/host.rc"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        FM_ROOT_OVERRIDE="$MIRROR_ROOT" "$MIRROR_ROOT/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      "$0" park "$@" > "$FM_HOME/host.out" 2>&1
+      printf "%s\n" "$?" > "$FM_HOME/host.rc"
+    ' "$HOST" "$@" 2>> "$home/claude.err"
+rc=1

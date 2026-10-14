@@ -1,0 +1,110 @@
+### 1. baseline: one crewmate signal row the branch could take, no check row
+
+$ cat /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/.wake-queue
+1791977233	1	signal	demo.status	signal: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/demo.status
+
+$ printf signal:\ /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/demo.status | FM_HOME=$LAB node bin/fm-branch-dispatch.mjs offer 
+eligible=1
+status=safe
+corrupted=0
+rows=1
+tasks=demo
+unscoped=0
+
+### 2. the captain queues an inbox note (real bin/fm-inbox.sh note path)
+
+$ env FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4X1T2V9CKW437DCNW4RCWKJ/bin/fm-inbox.sh note captain: ship the hotfix first
+queued 1791977237-0P35gw
+  captain: ship the hotfix first
+  firstmate will pick this up at its next check.
+
+$ cat /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/.wake-queue
+1791977233	1	signal	demo.status	signal: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/demo.status
+1791977238	2	check	inbox:1791977237-0P35gw	check: captain inbox note 1791977237-0P35gw - captain: ship the hotfix first
+
+### 3. attended host: every close stays main's while the check row waits
+
+$ printf signal:\ /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/demo.status | FM_HOME=$LAB node bin/fm-branch-dispatch.mjs offer 
+eligible=0
+status=safe
+corrupted=0
+rows=1
+tasks=demo
+unscoped=0
+
+$ printf heartbeat | FM_HOME=$LAB node bin/fm-branch-dispatch.mjs offer 
+eligible=0
+status=safe
+corrupted=0
+rows=1
+tasks=demo
+unscoped=1
+
+$ printf stale:\ demo | FM_HOME=$LAB node bin/fm-branch-dispatch.mjs offer 
+eligible=0
+status=safe
+corrupted=0
+rows=1
+tasks=demo
+unscoped=0
+
+### 4. attended scope leaves the check row to main (rows= names only the signal row)
+
+$ env FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB node /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4X1T2V9CKW437DCNW4RCWKJ/bin/fm-branch-dispatch.mjs scope
+status=safe
+corrupted=0
+rows=1
+tasks=demo
+unscoped=0
+
+### 5. away posture unchanged: the branch still takes the close beside the note
+
+$ printf signal:\ /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/demo.status | FM_HOME=$LAB node bin/fm-branch-dispatch.mjs offer --afk
+eligible=1
+status=safe
+corrupted=0
+rows=1 2
+tasks=demo
+unscoped=1
+
+### 6. Pi's own offer unchanged: no attendedHost argument, so the note does not veto
+
+$ node: branchOfferForWake(state, signal:\ /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/demo.status, afk=false)  # Pi watcher call, no attendedHost
+pi eligible=true
+
+### 7. main's drain presents the captain's note
+
+$ env FM_HOME=/var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB /Users/leestutzman/.no-mistakes/worktrees/c050d9982933/01M4X1T2V9CKW437DCNW4RCWKJ/bin/fm-wake-drain.sh
+1791977233	1	signal	demo.status	signal: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/demo.status
+1791977238	2	check	inbox:1791977237-0P35gw	check: captain inbox note 1791977237-0P35gw - captain: ship the hotfix first
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 94777.1791977233.KZpCI5
+wake annotation: latest wake-EVENT observed at drain, not current state: demo.status: working [at=1791977232]: step one
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+
+### 8. main acknowledges what its drain presented (the drain's own printed ack command); the attended close is the branch's again
+
+$ FM_HOME=$LAB bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 94777.1791977233.KZpCI5
+ack rc=0
+
+$ cat /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/.wake-queue
+(queue now holds no unread check row)
+
+$ cat /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/.wake-queue
+1791977316	3	signal	demo.status	signal: /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/demo.status
+
+$ printf signal:\ /var/folders/w7/_1vd8cbs0hd3vx7cndzrjzf40000gn/T//fm-lab.EJ19eB/state/demo.status | FM_HOME=$LAB node bin/fm-branch-dispatch.mjs offer 
+eligible=1
+status=safe
+corrupted=0
+rows=3
+tasks=demo
+unscoped=0
+
+### done; lab home removed on exit
