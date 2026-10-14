@@ -98,8 +98,8 @@
 #   actionable, never selected around.
 #
 # Environment:
-#   TYPESAFE_API_KEY and TYPESAFE_BASE_URL are the resolver-specific
-#   environment settings.
+#   TYPESAFE_API_KEY, TYPESAFE_BASE_URL, and FM_CPA_USAGE_TIMEOUT are the
+#   resolver-specific environment settings.
 #
 # Authority: this tool never replaces firstmate's judgment, quota-array-dispatch,
 #   the captain-approval gate, or fm-spawn.sh validation; it publishes one
