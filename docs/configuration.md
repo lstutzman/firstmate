@@ -1348,6 +1348,28 @@ The [shared quota library](../bin/fm-quota-axi-lib.sh) accepts schema 5 and sche
 - An expanded provider with no matching account row leaves the candidate eligible but unranked.
 - Known applicable rows from a provider with partial quota semantics remain rankable; rows whose own status is not known remain unrankable.
 
+**Pooled Claude quota (config/cpa-usage-host)**
+
+When Claude traffic is pooled through CLIProxyAPI, `quota-axi` on a host without the Claude keychain reports the `claude` provider as unknown, which leaves every Claude candidate unranked.
+The optional local, gitignored `config/cpa-usage-host` names, on its first non-blank line not beginning with `#`, the ssh host that runs the read-only `cpa-usage-axi`, or `local` to run it on this host.
+A value equal to this machine's own short host name, compared case-insensitively, also runs it here without ssh, so a secondmate home that inherits the file on the usage host itself still reads the pool.
+
+```text
+# CLIProxyAPI usage host
+slartibartfast
+```
+
+With the file present, one `cpa-usage-axi accounts` read, bounded to `FM_CPA_USAGE_TIMEOUT` seconds overall (default 10; a blank, non-numeric, or zero value resets to 10), replaces the snapshot's `claude` entry with one known `all_models` row whose remaining percent is the mean, over every Claude account, of each account's remaining share of its tighter 5-hour or 7-day window.
+The row's `spendPriority` is that same mean as a fraction between 0 and 1, on the magnitude of `quota-axi`'s own scalar, so a Claude candidate ranks against other providers rather than above them.
+A blank window, which `cpa-usage-axi` prints when none is active, counts as nothing used.
+Any other window that is not a plain decimal number (including `nan` and `infinity`), a row that does not match the table's columns, or output with no `accounts` table makes the whole read malformed.
+The row's runway is `exhausted_now` only when every account is exhausted, which makes Claude candidates ineligible.
+A failed, timed-out (including a bound that had to KILL the read), or malformed read, a read with no Claude account rows, or a value that is not a plain host name, keeps `quota-axi`'s own `claude` entry and prints one `dispatch-resolve: cpa-usage pool unavailable` line on stderr.
+An absent file changes nothing and makes no read.
+Every Claude candidate binds to the same pooled row, so two Claude candidates in one rule tie and escalate unless their profile floors or other rows separate them.
+While the pool is in effect that row is the only Claude evidence, so a rule or profile floor on a `model:` scope for Claude is unverifiable: the rule escalates and the profile stays eligible but unranked.
+The file is inherited into secondmate homes like `config/typesafe-base-url`.
+
 **Confidence and fallback rules**
 
 - A rule that declares `min_confidence` is checked against that rule's own probability, whether it is the picked option or a runner-up, so a runner-up never needs weaker support than it would as the pick.
@@ -1392,7 +1414,7 @@ Firstmate passes its profile line unless it states a reason to override, such as
 
 - The resolver and bootstrap copy an environment-provided key into a non-exported private variable and unset `TYPESAFE_API_KEY` before launching child processes, so the secret is absent from child environments.
 - The resolver sends the key to `curl` only as a header read from a file descriptor, never on argv, and nothing prints, logs, or writes it.
-- The resolver defaults the endpoint to `https://api.typesafe.ai` and the model to `jev-latest` (overridable as described above) and fixes the default confidence floor at 0.6 and the request timeout at 5 seconds; `TYPESAFE_API_KEY` and `TYPESAFE_BASE_URL` are its only resolver-specific environment settings.
+- The resolver defaults the endpoint to `https://api.typesafe.ai` and the model to `jev-latest` (overridable as described above) and fixes the default confidence floor at 0.6 and the request timeout at 5 seconds; `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, and `FM_CPA_USAGE_TIMEOUT` are its only resolver-specific environment settings.
 
 The live rule-match evidence is recorded in [`verification/dispatch-resolve.md`](verification/dispatch-resolve.md).
 
@@ -2520,6 +2542,7 @@ FMX_DRY_RUN=            # truthy previews Relay replies and dismissals to state/
 FMX_X_REPLY_MAX_CHARS=280   # X reply per-message split budget; values below 50 clamp to 50
 TYPESAFE_API_KEY=       # typed dispatch resolution opt-in, from the environment or .env; absent, with no custom base URL or token file, means bin/fm-dispatch-resolve.sh is off (docs/configuration.md "Typed dispatch resolution")
 TYPESAFE_BASE_URL=      # optional System One base URL override, wins over config/typesafe-base-url; a non-default URL also turns the resolver on (docs/configuration.md "Typed dispatch resolution")
+FM_CPA_USAGE_TIMEOUT=10 # overall seconds bound on the resolver's pooled Claude quota read when config/cpa-usage-host exists (docs/configuration.md "Typed dispatch resolution")
 FMX_DISCORD_REPLY_MAX_CHARS=1900   # Discord reply per-message split budget; values below 50 clamp to 50, values above 2000 reset to 1900
 FMX_X_THREAD_MAX=25     # maximum messages in one auto-split reply thread
 FMX_FOLLOWUP_MAX_AGE_SECS=604800   # local window for posting Relay completion follow-ups (7 days)

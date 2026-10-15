@@ -766,4 +766,34 @@ out=$(bash -c 'set -e; . "$1/fm-quota-axi-lib.sh"; fm_quota_single_provider_for_
 [ "$out" = claude ] || fail "provider-table lookup under set -e printed: $out"
 ok "provider-table lookup prints the provider when called directly under set -e"
 
+REPLACE_SNAP="$LAB/replace-snapshot.json"
+printf '%s\n' '{"schemaVersion":5,"providers":[
+  {"provider":"claude","quotaSemantics":{"status":"unknown","effectiveAvailability":[]}},
+  {"provider":"cursor","quotaSemantics":{"status":"known","effectiveAvailability":[
+    {"scope":"all_models","status":"known","effectivePercentRemaining":91,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.76}}]}}]}' > "$REPLACE_SNAP"
+out=$(bash -c '. "$1/fm-quota-axi-lib.sh"; fm_quota_replace_provider "$2" claude 42.75 0.4275 through_reset' _ "$BIN" "$REPLACE_SNAP") \
+  || fail "replacing a schema 5 provider failed"
+[ "$(jq -c '[.providers[] | select(.provider == "claude")]' <<<"$out")" = \
+  '[{"provider":"claude","quotaSemantics":{"status":"known","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":42.75,"runway":{"status":"through_reset"},"selection":{"spendPriority":0.4275}}]}}]' ] \
+  || fail "schema 5 replacement printed: $out"
+[ "$(jq -r '[.providers[] | select(.provider == "cursor")] | length' <<<"$out")" = 1 ] || fail "replacement dropped another provider"
+ok "fm_quota_replace_provider swaps one schema 5 provider for a known all_models row"
+
+printf '%s\n' '{"schemaVersion":6,"providers":[
+  {"provider":"claude","accountKey":"default","quotaSemantics":{"status":"unknown","effectiveAvailability":[]}},
+  {"provider":"claude","accountKey":"work","quotaSemantics":{"status":"unknown","effectiveAvailability":[]}},
+  {"provider":"cursor","accountKey":"default","quotaSemantics":{"status":"unknown","effectiveAvailability":[]}}]}' > "$REPLACE_SNAP"
+out=$(bash -c '. "$1/fm-quota-axi-lib.sh"; fm_quota_replace_provider "$2" claude 0 0 exhausted_now' _ "$BIN" "$REPLACE_SNAP") \
+  || fail "replacing a schema 6 provider failed"
+[ "$(jq -c '[.providers[] | select(.provider == "claude") | {accountKey, pct: .quotaSemantics.effectiveAvailability[0].effectivePercentRemaining, runway: .quotaSemantics.effectiveAvailability[0].runway.status}]' <<<"$out")" = \
+  '[{"accountKey":"default","pct":0,"runway":"exhausted_now"}]' ] \
+  || fail "schema 6 replacement printed: $out"
+ok "fm_quota_replace_provider binds a schema 6 replacement as the provider's default account"
+
+if out=$(bash -c '. "$1/fm-quota-axi-lib.sh"; fm_quota_replace_provider "$2" claude 150 1.5 through_reset' _ "$BIN" "$REPLACE_SNAP"); then
+  fail "a replacement row outside the snapshot schema was accepted: $out"
+fi
+[ -z "$out" ] || fail "a rejected replacement printed: $out"
+ok "fm_quota_replace_provider refuses a result that fails snapshot validation"
+
 printf '# all fm-quota-choose tests passed\n'
