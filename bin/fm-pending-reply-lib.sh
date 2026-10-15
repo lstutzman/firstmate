@@ -16,7 +16,10 @@
 # (held back, when config/wait-no-turns is present, while the mate waits on its
 # own open decision or blocker), and
 # escalate once if the recovery turn also completes without a correlated
-# report. Never loop, never repeatedly inject, never silently expire unresolved
+# report. A repost held back that way for longer than a bound (see
+# FM_PENDING_REPLY_HOLD_ESCALATE_SECS) is escalated once instead of being
+# re-checked on every poll for ever: it would otherwise cost a recovery check
+# per poll and never reach a person. Never loop, never repeatedly inject, never silently expire unresolved
 # records, and never treat wrong-home or structured-home heuristics as
 # acknowledgement. A same-basename restatement-copy of the mate home's
 # state/<task_id>.status onto the parent channel is a repair of the
@@ -114,6 +117,15 @@
 #                                 completion for the recovery repost, and from
 #                                 the recovery turn's completion for the
 #                                 missed-report escalation - never from delivery
+#   FM_PENDING_REPLY_HOLD_ESCALATE_SECS
+#                                 default 86400 (24 h); how long a recovery
+#                                 repost may stay held back by config/wait-no-turns
+#                                 (counted from the request turn's completion)
+#                                 before the record takes its one escalation,
+#                                 as a held decision, in place of the repost. A
+#                                 plain number of seconds; "off" never escalates
+#                                 a held record, so it stays held until the mate
+#                                 answers
 #   FM_PENDING_REPLY_DIR_OVERRIDE override the pending-replies directory (tests)
 #   FM_PENDING_REPLY_SEND_HOOK    optional command template for recovery delivery
 #                                 (tests); receives task_id and full message as args
@@ -140,6 +152,7 @@ _FM_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/n
 FM_PENDING_REPLY_SCHEMA='fm-pending-reply.v1'
 FM_PENDING_REPLY_CORR_RE='corr=[A-Fa-f0-9]{16}'
 FM_PENDING_REPLY_GRACE_DEFAULT=120
+FM_PENDING_REPLY_HOLD_ESCALATE_DEFAULT=86400
 
 fm_pending_reply_now() {
   if [ -n "${FM_PENDING_REPLY_NOW:-}" ]; then
@@ -155,6 +168,17 @@ fm_pending_reply_grace_secs() {
     ''|*[!0-9]*) g=$FM_PENDING_REPLY_GRACE_DEFAULT ;;
   esac
   printf '%s' "$g"
+}
+
+# Seconds a wait-no-turns hold may keep a recovery repost back before the record
+# escalates; prints "off" when the bound is disabled.
+fm_pending_reply_hold_escalate_secs() {
+  local h=${FM_PENDING_REPLY_HOLD_ESCALATE_SECS:-$FM_PENDING_REPLY_HOLD_ESCALATE_DEFAULT}
+  case "$h" in
+    off) ;;
+    ''|*[!0-9]*|0) h=$FM_PENDING_REPLY_HOLD_ESCALATE_DEFAULT ;;
+  esac
+  printf '%s' "$h"
 }
 
 # Directory holding durable pending-reply records for <state-dir>.
@@ -584,18 +608,24 @@ fm_pending_reply_discard_undelivered() {  # <state-dir> <corr_id>
 # 0 if a status line is a correlated acknowledgement for <corr_id>.
 # Accepts short status replies and status lines that point at a document.
 # Unrelated verbs without the token never match. Stale/wrong corr never match.
-# The parent's own pending-reply-missed escalation line must not self-resolve:
+# The parent's own pending-reply-missed and pending-reply-held escalation lines
+# must not self-resolve:
 # it names the request with pending-reply-id= rather than corr=.
 fm_pending_reply_line_resolves() {  # <line> <corr_id>
   local line=$1 corr=$2
   [ -n "$line" ] && [ -n "$corr" ] || return 1
   case "$line" in
-    *pending-reply-missed*) return 1 ;;
+    *pending-reply-missed*|*pending-reply-held*) return 1 ;;
   esac
   fm_pending_reply_text_has_corr "$line" "$corr"
 }
 
 # Scan a status file for a correlated resolve. Prints the matching line or empty.
+# Only a line holding the corr= token can resolve, so one grep pass selects
+# those lines instead of testing every line of a long-lived log in the shell.
+# The literal token is a substring of every line fm_pending_reply_line_resolves
+# accepts, so the prefilter never drops a resolving line; -a keeps a stray NUL
+# in the log from turning the matches into a summary.
 fm_pending_reply_find_resolve_line() {  # <status-file> <corr_id>
   local status_file=$1 corr=$2 line
   [ -f "$status_file" ] || return 0
@@ -605,7 +635,7 @@ fm_pending_reply_find_resolve_line() {  # <status-file> <corr_id>
       printf '%s' "$line"
       return 0
     fi
-  done < "$status_file"
+  done < <(grep -aF -- "$(fm_pending_reply_corr_token "$corr")" "$status_file" 2>/dev/null)
   return 0
 }
 
@@ -942,6 +972,15 @@ fm_pending_reply_recovery_message() {  # <record-path>
   printf '%s' "$msg"
 }
 
+# 0 when a repost held back since the request turn completed at <completed> has
+# now been held longer than the hold bound.
+fm_pending_reply_hold_escalation_due() {  # <completed-epoch> <now-epoch>
+  local bound
+  bound=$(fm_pending_reply_hold_escalate_secs)
+  [ "$bound" != off ] || return 1
+  [ $(($2 - $1)) -ge "$bound" ]
+}
+
 # Deliver the recovery message once. Caller must hold phase awaiting_report with
 # turn completed and grace elapsed. Uses FM_PENDING_REPLY_SEND_HOOK when set
 # (tests), otherwise invokes fm-send with FM_PENDING_REPLY_EXISTING_CORR so a
@@ -977,8 +1016,16 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   fm_pending_reply_missing_report_is_evidence "$state" "$task_id" "$completed" || return 1
   # config/wait-no-turns: a mate waiting on its own open decision or blocker
   # is never poked. The recovery stays unattempted until the answer lands.
+  # Past the hold bound the record escalates once instead of waiting on, which
+  # moves it out of awaiting_report so the held repost is not re-checked on
+  # every later poll; before the bound the mate is simply left alone.
   if [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ]; then
-    [ -z "$(status_own_open_decisions "$state/$task_id.status")" ] || return 1
+    if [ -n "$(status_own_open_decisions "$state/$task_id.status")" ]; then
+      if fm_pending_reply_hold_escalation_due "$completed" "$now"; then
+        fm_pending_reply_maybe_escalate "$state" "$corr" held 2>/dev/null || true
+      fi
+      return 1
+    fi
   fi
   status_file=$(fm_pending_reply_get "$rec" parent_status)
   parent_home=$(fm_pending_reply_get "$rec" parent_home)
@@ -1134,6 +1181,9 @@ fm_pending_reply_escalation_payload() {  # <record-path> <kind>
     missed)
       token=pending-reply-missed
       ;;
+    held)
+      token=pending-reply-held
+      ;;
     delivery-unknown)
       token=pending-reply-delivery-unknown
       ;;
@@ -1159,14 +1209,14 @@ fm_pending_reply_escalation_line() {  # <status-file> <record-path> <corr_id>
   while IFS= read -r line || [ -n "$line" ]; do
     [ "$(status_line_verb "$line")" = blocked ] || continue
     _fm_status_untimed "$line" untimed
-    for kind in missed delivery-unknown recovery-delivery; do
+    for kind in missed held delivery-unknown recovery-delivery; do
       payload=$(fm_pending_reply_escalation_payload "$rec" "$kind") || continue
       case "$untimed" in
         "blocked [key=$own_key]: $payload"|"blocked: $payload") found=$line; break ;;
         "blocked [key=$own_key]: $payload "*|"blocked: $payload "*) found=$line; break ;;
       esac
     done
-  done < "$status_file"
+  done < <(grep -aF -- "pending-reply-id=$corr" "$status_file" 2>/dev/null)
   printf '%s' "$found"
 }
 
@@ -1277,6 +1327,20 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
     [ "$phase" = delivery_unknown ] || return 0
   fi
   case "$phase" in
+    awaiting_report)
+      # Only the hold bound escalates a request that never had its repost: the
+      # caller names it, and every condition is re-read here under the lock.
+      [ "${3-}" = held ] || return 1
+      [ -z "$(fm_pending_reply_get "$rec" recovery_attempted_epoch)" ] || return 1
+      completed=$(fm_pending_reply_get "$rec" request_turn_completed_epoch)
+      [ -n "$completed" ] || return 1
+      [ -n "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || return 1
+      fm_pending_reply_hold_escalation_due "$completed" "$(fm_pending_reply_now)" || return 1
+      [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ] || return 1
+      [ -n "$(status_own_open_decisions "$state/$(fm_pending_reply_get "$rec" task_id).status")" ] || return 1
+      fm_pending_reply_missing_report_is_evidence "$state" \
+        "$(fm_pending_reply_get "$rec" task_id)" "$completed" || return 1
+      ;;
     recovery_sent)
       completed=$(fm_pending_reply_get "$rec" recovery_turn_completed_epoch)
       [ -n "$completed" ] || return 1
@@ -1315,6 +1379,7 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   # A resolve that failed on a later field write has still committed resolved.
   [ "$(fm_pending_reply_get "$rec" phase)" = "$phase" ] || return 1
   case "$phase" in
+    awaiting_report) kind=held ;;
     delivery_unknown) kind=delivery-unknown ;;
     recovery_failed|recovery_unknown) kind='recovery-delivery' ;;
     *) kind=missed ;;
@@ -1325,6 +1390,9 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
     if display=$(fm_pending_reply_sighting_display "$first"); then
       payload="$payload token seen in $display; parent channel has no corr="
     fi
+  fi
+  if [ "$kind" = held ]; then
+    payload="$payload no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked"
   fi
   [ -n "$parent_status" ] || return 1
   mkdir -p "$(dirname "$parent_status")" 2>/dev/null || return 1

@@ -924,7 +924,7 @@ _fm_decision_key_transition_allowed() {  # <key> <note>
 _fm_is_pending_reply_escalation() {  # <key> <note>
   case "$1" in pending-reply-*) ;; *) return 1 ;; esac
   case "$2" in
-    pending-reply-missed:*|pending-reply-delivery-unknown:*|pending-reply-recovery-delivery-failed:*|pending-reply-recovery-delivery-unknown:*) return 0 ;;
+    pending-reply-missed:*|pending-reply-held:*|pending-reply-delivery-unknown:*|pending-reply-recovery-delivery-failed:*|pending-reply-recovery-delivery-unknown:*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1058,9 +1058,15 @@ EOF
 # it keeps working, so the task is not waiting on any of them. Pending-reply
 # recovery and a fire-and-forget retry ring consult this set and leave a task
 # alone while it is non-empty.
+# Folds with the cursor-backed status_open_decisions_incremental: the watcher
+# asks this once per open pending-reply record every poll, and the whole-file
+# fold re-reads and forks per line of a log that only ever grows. The open set
+# is the same; the one difference is an unreadable log, where the whole-file
+# fold answers empty (the caller proceeds) and the incremental fold answers the
+# cursor's last trusted set (the caller keeps holding), the safer outcome.
 status_own_open_decisions() {  # <status-file>
   local line prefix
-  status_open_decisions "$1" | while IFS= read -r line || [ -n "$line" ]; do
+  status_open_decisions_incremental "$1" | while IFS= read -r line || [ -n "$line" ]; do
     for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} remote-reply-continuity- captain-hold-; do
       case "$line" in "$prefix"*) continue 2 ;; esac
     done
