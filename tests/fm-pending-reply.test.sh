@@ -39,7 +39,8 @@
 #  19. A poll over many open records folds each log once and tests only the lines
 #      holding a record's token
 #  20. A recovery repost the wait-no-turns hold keeps back for longer than the
-#      hold bound is escalated once, durably, and a restart does not repeat it
+#      hold bound is escalated once, durably, and a restart does not repeat it;
+#      the hold still holds when the open-decision cursor cannot be written
 # The hold tests run in subshells that set the clock and the config location.
 # shellcheck disable=SC2030,SC2031
 set -u
@@ -2225,8 +2226,10 @@ test_hold_bound_leaves_a_younger_hold_alone() (
   [ "$(fm_pending_reply_hold_escalate_secs)" = 1000 ] || fail "the bound must be configurable"
   unset FM_PENDING_REPLY_HOLD_ESCALATE_SECS
   [ "$(fm_pending_reply_hold_escalate_secs)" = 86400 ] || fail "the default bound must be 24 hours"
-  FM_PENDING_REPLY_HOLD_ESCALATE_SECS=nonsense
-  [ "$(fm_pending_reply_hold_escalate_secs)" = 86400 ] || fail "an invalid bound must fall back to the default"
+  for FM_PENDING_REPLY_HOLD_ESCALATE_SECS in nonsense off 0; do
+    [ "$(fm_pending_reply_hold_escalate_secs)" = 86400 ] \
+      || fail "bound $FM_PENDING_REPLY_HOLD_ESCALATE_SECS must fall back to the default"
+  done
   pass "a wait-no-turns hold younger than the bound changes nothing"
 )
 
@@ -2280,17 +2283,23 @@ test_hold_escalation_closes_when_the_report_arrives() (
   pass "a held escalation closes through the ordinary resolve when the report finally arrives"
 )
 
-test_hold_bound_off_never_escalates() (
-  local home corr state
-  hold_fixture hold-off off
+test_hold_survives_an_unwritable_open_decision_cursor() (
+  local home corr state cursor
+  hold_fixture hold-ro 1000000
   home=$HOLD_HOME
   corr=$HOLD_CORR
   state="$home/state"
-  export FM_PENDING_REPLY_NOW=99999999
+  # A directory where the fold writes its cursor's temp file makes that write fail.
+  cursor=$(_fm_open_decisions_cursor_path "$state/hibit.status")
+  mkdir "$cursor.tmp.$$"
+  export FM_PENDING_REPLY_NOW=2000
   fm_pending_reply_tick "$state"
-  [ "$(phase_of "$state" "$corr")" = awaiting_report ] || fail "bound off must keep the record held"
-  [ "$(held_lines "$state" "$corr")" = 0 ] || fail "bound off must never escalate"
-  pass "the hold bound can be switched off"
+  [ ! -e "$cursor" ] \
+    || fail "the fixture must leave the open-decision cursor unwritten"
+  [ "$(phase_of "$state" "$corr")" = awaiting_report ] \
+    || fail "a held mate must stay held when the cursor cannot be written, got $(phase_of "$state" "$corr")"
+  [ ! -s "$HOLD_HOOK_LOG" ] || fail "an unwritable cursor must not let the recovery repost through"
+  pass "a wait-no-turns hold still holds when the open-decision cursor cannot be written"
 )
 
 test_hold_bound_without_the_flag_or_the_hold_does_not_escalate() (
@@ -2362,7 +2371,7 @@ test_tick_folds_each_log_once_however_many_records_are_open || exit 1
 test_hold_bound_leaves_a_younger_hold_alone || exit 1
 test_hold_bound_escalates_once_and_survives_restart || exit 1
 test_hold_escalation_closes_when_the_report_arrives || exit 1
-test_hold_bound_off_never_escalates || exit 1
+test_hold_survives_an_unwritable_open_decision_cursor || exit 1
 test_hold_bound_without_the_flag_or_the_hold_does_not_escalate || exit 1
 
 printf 'ok - all pending-reply tests passed\n'

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# fm-retention.sh - bounded, idempotent archive pass for two grow-only stores.
+# fm-retention.sh - bounded, idempotent archive pass for the process-event inbox.
 #
 # Usage:
-#   fm-retention.sh run [--force] [--dry-run]
+#   fm-retention.sh run [--force]
 #   fm-retention.sh --help
 #
 # The watcher calls `run` on every poll once state/.retention-last-run is a day
@@ -28,21 +28,15 @@
 #                            The small .adapter, .owner-task and .extension
 #                            sidecars and the marker are left as they are.
 #                            Unhandled sequences are never touched.
-#   state/pending-replies/   a record whose phase is resolved for longer than
-#                            FM_RETENTION_PENDING_SECS (default 604800, 7 days,
-#                            counted from its resolved_epoch) and whose
-#                            escalation is closed or never existed is written to
-#                            pending-replies-<date>.tar.gz and then removed. Its
-#                            lookups all treat a missing record like a settled one.
 #
 # Status logs are deliberately not rotated here: workers append to them with a
 # bare `>>` that no lock can make safe against a rename. The remote reply
 # mirror's state/.remote-reply-mirrored-<mate> ledger deduplicates against those
 # logs, which stay as they are, so it stays consistent.
 #
-# Each category handles at most FM_RETENTION_MAX_ITEMS (default 5000) items per
-# pass, oldest first; a larger backlog drains over the following passes.
-# FM_RETENTION_NOW fixes the clock for the resolved_epoch comparison (tests).
+# A pass handles at most FM_RETENTION_MAX_ITEMS (default 5000) sequences, oldest
+# first; a larger backlog drains over the following passes.
+# FM_RETENTION_NOW fixes the clock for the cadence stamp (tests).
 # FM_HOME / FM_STATE_OVERRIDE select the home like every other script.
 set -u
 export LC_ALL=C
@@ -59,7 +53,6 @@ LOCK="$STATE/.retention.lock"
 
 INTERVAL_SECS=${FM_RETENTION_INTERVAL_SECS:-86400}
 PROCEVENT_SECS=${FM_RETENTION_PROCEVENT_SECS:-259200}
-PENDING_SECS=${FM_RETENTION_PENDING_SECS:-604800}
 MAX_ITEMS=${FM_RETENTION_MAX_ITEMS:-5000}
 
 usage() {
@@ -115,8 +108,8 @@ write_archive() {  # <prefix> <dir> <list>
 }
 
 # Archive the payload files of every sequence handled longer ago than the bound.
-retain_procevent() {  # <work-dir> <dry-run>
-  local work=$1 dry=$2 inbox="$STATE/procevent-inbox" mins marker base member name
+retain_procevent() {  # <work-dir>
+  local work=$1 inbox="$STATE/procevent-inbox" mins marker base member name
   local list="$work/procevent.list" truncate_list="$work/procevent.truncate" candidates="$work/procevent.candidates" seqs=0 archive
   : > "$list"
   : > "$truncate_list"
@@ -138,10 +131,6 @@ retain_procevent() {  # <work-dir> <dry-run>
     seqs=$((seqs + 1))
   done < "$candidates"
   [ "$seqs" -gt 0 ] || return 0
-  if [ "$dry" -eq 1 ]; then
-    printf 'retention: procevent-inbox would archive %s sequence(s)\n' "$seqs"
-    return 0
-  fi
   archive=$(write_archive procevent-inbox "$inbox" "$list") \
     || { echo "fm-retention: procevent-inbox archive failed; nothing was truncated" >&2; return 1; }
   while IFS= read -r name; do
@@ -150,71 +139,16 @@ retain_procevent() {  # <work-dir> <dry-run>
   printf 'retention: procevent-inbox archived %s sequence(s) to %s\n' "$seqs" "$archive"
 }
 
-# Archive every resolved record that is old enough and holds no open escalation.
-retain_pending_replies() {  # <work-dir> <dry-run>
-  local work=$1 dry=$2 dir="$STATE/pending-replies" now rec name corr archive
-  local list="$work/pending.list" records="$work/pending.records" count=0
-  : > "$list"
-  [ -d "$dir" ] && [ ! -L "$dir" ] || return 0
-  now=$(now_epoch)
-  for rec in "$dir"/*; do
-    [ -f "$rec" ] && [ ! -L "$rec" ] || continue
-    printf '%s\n' "$rec"
-  done > "$records.all"
-  [ -s "$records.all" ] || return 0
-  awk -v now="$now" -v secs="$PENDING_SECS" -v max="$MAX_ITEMS" '
-    {
-      path = $0
-      phase = ""; resolved = ""; escalated = ""; closed = ""
-      while ((rc = (getline line < path)) > 0) {
-        if (index(line, "phase=") == 1) phase = substr(line, 7)
-        else if (index(line, "resolved_epoch=") == 1) resolved = substr(line, 16)
-        else if (index(line, "escalated_epoch=") == 1) escalated = substr(line, 17)
-        else if (index(line, "escalation_closed_epoch=") == 1) closed = substr(line, 25)
-      }
-      close(path)
-      if (rc < 0 || phase != "resolved" || resolved !~ /^[0-9]+$/) next
-      if (now - resolved < secs) next
-      if (escalated != "" && closed == "") next
-      if (n >= max) next
-      n++
-      print path
-    }
-  ' "$records.all" > "$records"
-  while IFS= read -r rec; do
-    name=${rec##*/}
-    printf '%s\n' "$name" >> "$list"
-    corr=$name
-    if [ -f "$dir/.delivery-confirmed-$corr" ] && [ ! -L "$dir/.delivery-confirmed-$corr" ]; then
-      printf '%s\n' ".delivery-confirmed-$corr" >> "$list"
-    fi
-    count=$((count + 1))
-  done < "$records"
-  [ "$count" -gt 0 ] || return 0
-  if [ "$dry" -eq 1 ]; then
-    printf 'retention: pending-replies would archive %s record(s)\n' "$count"
-    return 0
-  fi
-  archive=$(write_archive pending-replies "$dir" "$list") \
-    || { echo "fm-retention: pending-replies archive failed; nothing was removed" >&2; return 1; }
-  while IFS= read -r name; do
-    rm -f -- "$dir/$name"
-  done < "$list"
-  printf 'retention: pending-replies archived %s record(s) to %s\n' "$count" "$archive"
-}
-
 cmd_run() {
-  local force=0 dry=0 arg last now work rc=0
+  local force=0 arg last now work rc=0
   for arg in "$@"; do
     case "$arg" in
       --force) force=1 ;;
-      --dry-run) dry=1 ;;
       *) usage 2 ;;
     esac
   done
   positive_int FM_RETENTION_INTERVAL_SECS "$INTERVAL_SECS"
   positive_int FM_RETENTION_PROCEVENT_SECS "$PROCEVENT_SECS"
-  positive_int FM_RETENTION_PENDING_SECS "$PENDING_SECS"
   positive_int FM_RETENTION_MAX_ITEMS "$MAX_ITEMS"
   [ -d "$STATE" ] || exit 0
   now=$(now_epoch)
@@ -228,12 +162,8 @@ cmd_run() {
   # Another pass in flight is not an error: it is already doing this work.
   fm_lock_try_acquire "$LOCK" || exit 0
   work=$(mktemp -d "$STATE/.retention.XXXXXX") || { fm_lock_release "$LOCK"; die "cannot create a work directory"; }
-  # A dry run changes nothing, including the cadence stamp.
-  if [ "$dry" -eq 0 ]; then
-    printf '%s\n' "$now" > "$STAMP" 2>/dev/null || true
-  fi
-  retain_procevent "$work" "$dry" || rc=1
-  retain_pending_replies "$work" "$dry" || rc=1
+  printf '%s\n' "$now" > "$STAMP" 2>/dev/null || true
+  retain_procevent "$work" || rc=1
   rm -rf -- "$work"
   fm_lock_release "$LOCK"
   exit "$rc"

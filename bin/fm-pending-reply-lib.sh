@@ -124,9 +124,8 @@
 #                                 (counted from the request turn's completion)
 #                                 before the record takes its one escalation,
 #                                 as a held decision, in place of the repost. A
-#                                 plain number of seconds; "off" never escalates
-#                                 a held record, so it stays held until the mate
-#                                 answers
+#                                 plain number of seconds; an invalid or zero
+#                                 value falls back to the default
 #   FM_PENDING_REPLY_DIR_OVERRIDE override the pending-replies directory (tests)
 #   FM_PENDING_REPLY_SEND_HOOK    optional command template for recovery delivery
 #                                 (tests); receives task_id and full message as args
@@ -172,11 +171,10 @@ fm_pending_reply_grace_secs() {
 }
 
 # Seconds a wait-no-turns hold may keep a recovery repost back before the record
-# escalates; prints "off" when the bound is disabled.
+# escalates.
 fm_pending_reply_hold_escalate_secs() {
   local h=${FM_PENDING_REPLY_HOLD_ESCALATE_SECS:-$FM_PENDING_REPLY_HOLD_ESCALATE_DEFAULT}
   case "$h" in
-    off) ;;
     ''|*[!0-9]*|0) h=$FM_PENDING_REPLY_HOLD_ESCALATE_DEFAULT ;;
   esac
   printf '%s' "$h"
@@ -978,7 +976,6 @@ fm_pending_reply_recovery_message() {  # <record-path>
 fm_pending_reply_hold_escalation_due() {  # <completed-epoch> <now-epoch>
   local bound
   bound=$(fm_pending_reply_hold_escalate_secs)
-  [ "$bound" != off ] || return 1
   [ $(($2 - $1)) -ge "$bound" ]
 }
 

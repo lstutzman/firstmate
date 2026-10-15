@@ -6,12 +6,9 @@
 #      result truncated in place; younger, unhandled, and already-archived sequences are
 #      left alone, and a second pass changes nothing
 #   2. Archiving never lets the next capture of that source reuse a sequence
-#   3. A resolved pending-reply record older than the bound is archived and
-#      removed; a younger one, an open one, and one whose escalation is still
-#      open stay, while a resolved record with a closed escalation goes
-#   4. The pass runs at most once a day, --force overrides, --dry-run changes
-#      nothing, and a failed archive removes nothing
-#   5. The per-pass bound drains a larger backlog over several passes
+#   3. The pass runs at most once a day, --force overrides, and a failed
+#      archive removes nothing
+#   4. The per-pass bound drains a larger backlog over several passes
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -29,7 +26,7 @@ age_file() {  # <path> <days-ago>
 
 new_home() {  # <name>
   local home="$TMP_ROOT/$1-$RANDOM"
-  mkdir -p "$home/state/procevent-inbox" "$home/state/pending-replies"
+  mkdir -p "$home/state/procevent-inbox"
   printf '%s\n' "$home"
 }
 
@@ -45,16 +42,6 @@ add_sequence() {  # <home> <id> <seq> <handled-days-ago|unhandled>
     chmod 0600 "$base.handled"
     age_file "$base.handled" "$4"
   fi
-}
-
-add_record() {  # <home> <corr> <phase> <resolved-epoch|-> <escalated-epoch|-> <closed-epoch|->
-  local rec="$1/state/pending-replies/$2"
-  {
-    printf 'schema=fm-pending-reply.v1\ncorr_id=%s\ntask_id=hibit\nphase=%s\n' "$2" "$3"
-    [ "$4" = - ] || printf 'resolved_epoch=%s\n' "$4"
-    [ "$5" = - ] || printf 'escalated_epoch=%s\n' "$5"
-    [ "$6" = - ] || printf 'escalation_closed_epoch=%s\n' "$6"
-  } > "$rec"
 }
 
 run_retention() {  # <home> [args...]
@@ -110,55 +97,28 @@ test_archived_sequences_are_not_reallocated() (
   pass "a capture after archiving takes a fresh sequence number"
 )
 
-test_pending_reply_archive_keeps_open_and_unclosed_records() (
-  local home pr
-  home=$(new_home pending)
-  pr="$home/state/pending-replies"
-  add_record "$home" aaaaaaaaaaaaaaa1 resolved 1000 - -
-  add_record "$home" aaaaaaaaaaaaaaa2 resolved 1000 900 1100
-  add_record "$home" aaaaaaaaaaaaaaa3 resolved 1000 900 -
-  add_record "$home" aaaaaaaaaaaaaaa4 resolved 1999000 - -
-  add_record "$home" aaaaaaaaaaaaaaa5 escalated - 900 -
-  add_record "$home" aaaaaaaaaaaaaaa6 awaiting_report - - -
-  : > "$pr/.delivery-confirmed-aaaaaaaaaaaaaaa1"
-  run_retention "$home" --force >/dev/null || fail "retention failed"
-  [ ! -e "$pr/aaaaaaaaaaaaaaa1" ] || fail "an old resolved record with no escalation must be archived"
-  [ ! -e "$pr/.delivery-confirmed-aaaaaaaaaaaaaaa1" ] || fail "its delivery marker goes with it"
-  [ ! -e "$pr/aaaaaaaaaaaaaaa2" ] || fail "an old resolved record with a closed escalation must be archived"
-  [ -e "$pr/aaaaaaaaaaaaaaa3" ] || fail "a record whose escalation is still open must stay"
-  [ -e "$pr/aaaaaaaaaaaaaaa4" ] || fail "a recently resolved record must stay"
-  [ -e "$pr/aaaaaaaaaaaaaaa5" ] || fail "an escalated, unresolved record must stay"
-  [ -e "$pr/aaaaaaaaaaaaaaa6" ] || fail "an open record must stay"
-  [ "$(archive_count "$home" pending-replies)" = 1 ] || fail "expected one pending-replies archive"
-  tar -tzf "$home/state/archive"/pending-replies-*.tar.gz | grep -qx 'aaaaaaaaaaaaaaa2' || fail "the archive must hold the record"
-  pass "only old resolved records without an open escalation are archived"
-)
-
-test_cadence_dry_run_and_failed_archive() (
-  local home out inbox fakebin
+test_cadence_and_failed_archive() (
+  local home inbox fakebin
   home=$(new_home cadence)
   inbox="$home/state/procevent-inbox"
   add_sequence "$home" src 1 5
-  out=$(run_retention "$home" --dry-run) || fail "dry run failed"
-  case "$out" in *'would archive 1 sequence'*) ;; *) fail "dry run must report what it would do: $out" ;; esac
-  [ -s "$inbox/src.1.result" ] && [ ! -e "$home/state/archive" ] && [ ! -e "$home/state/.retention-last-run" ] \
-    || fail "a dry run must change nothing, including the cadence stamp"
+  # The cadence: a pass inside the interval does nothing, --force overrides.
+  run_retention "$home" >/dev/null || fail "first timed pass failed"
+  [ -f "$home/state/.retention-last-run" ] || fail "a pass must stamp its cadence"
+  [ ! -s "$inbox/src.1.result" ] || fail "a first timed pass must archive"
+  add_sequence "$home" src 2 5
+  run_retention "$home" >/dev/null || fail "second timed pass failed"
+  [ -s "$inbox/src.2.result" ] || fail "a second pass inside the interval must do nothing"
   # A failing archive removes nothing.
   fakebin="$TMP_ROOT/fakebin-$RANDOM"
   mkdir -p "$fakebin"
   printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/tar"
   chmod +x "$fakebin/tar"
   PATH="$fakebin:$PATH" run_retention "$home" --force >/dev/null 2>&1 && fail "a failed archive must fail the pass"
-  [ -s "$inbox/src.1.result" ] || fail "a failed archive must not truncate anything"
-  # The cadence: a pass inside the interval does nothing, --force overrides.
-  run_retention "$home" >/dev/null || fail "first timed pass failed"
-  [ -f "$home/state/.retention-last-run" ] || fail "a pass must stamp its cadence"
-  add_sequence "$home" src 2 5
-  run_retention "$home" >/dev/null || fail "second timed pass failed"
-  [ -s "$inbox/src.2.result" ] || fail "a second pass inside the interval must do nothing"
+  [ -s "$inbox/src.2.result" ] || fail "a failed archive must not truncate anything"
   run_retention "$home" --force >/dev/null || fail "forced pass failed"
   [ ! -s "$inbox/src.2.result" ] || fail "--force must run inside the interval"
-  pass "the pass runs once a day, honours --force and --dry-run, and a failed archive loses nothing"
+  pass "the pass runs once a day, honours --force, and a failed archive loses nothing"
 )
 
 test_pass_is_bounded_per_run() (
@@ -180,8 +140,7 @@ test_pass_is_bounded_per_run() (
 
 test_procevent_archive_truncates_old_handled_sequences || exit 1
 test_archived_sequences_are_not_reallocated || exit 1
-test_pending_reply_archive_keeps_open_and_unclosed_records || exit 1
-test_cadence_dry_run_and_failed_archive || exit 1
+test_cadence_and_failed_archive || exit 1
 test_pass_is_bounded_per_run || exit 1
 
 printf 'ok - all retention tests passed\n'
