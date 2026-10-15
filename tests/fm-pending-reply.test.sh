@@ -36,6 +36,12 @@
 #      uncached status read - accepting any verb - immediately before firing
 #  18. A same-kind escalation after an operator close appends again and reopens
 #      the decision; a retry while that decision is still open appends nothing
+#  19. A poll over many open records folds each log once and tests only the lines
+#      holding a record's token
+#  20. A recovery repost the wait-no-turns hold keeps back for longer than the
+#      hold bound is escalated once, durably, and a restart does not repeat it
+# The hold tests run in subshells that set the clock and the config location.
+# shellcheck disable=SC2030,SC2031
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -2244,6 +2250,8 @@ test_hold_bound_escalates_once_and_survives_restart() (
   export FM_PENDING_REPLY_NOW=9000
   fm_pending_reply_tick "$state"
   fm_pending_reply_tick "$state"
+  # The single quotes keep the restarted shell's own expansions.
+  # shellcheck disable=SC2016
   again=$(env FM_PENDING_REPLY_NOW=99999 FM_PENDING_REPLY_HOLD_ESCALATE_SECS=1000 \
     FM_CONFIG_OVERRIDE="$FM_CONFIG_OVERRIDE" FM_PENDING_REPLY_SEND_HOOK=hold_hook HOLD_HOOK_LOG="$HOLD_HOOK_LOG" \
     bash -c '. "$1"; fm_pending_reply_tick "$2"; fm_pending_reply_get "$(fm_pending_reply_path "$2" "$3")" phase' _ \

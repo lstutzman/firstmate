@@ -427,7 +427,7 @@ family_for_basename() {
     fm-dispatch-resolve.test.sh|\
     fm-extension-binding.test.sh|fm-gitignore-config.test.sh|\
     fm-no-mistakes-required.test.sh|fm-peek-remote.test.sh|\
-    fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|\
+    fm-pending-reply.test.sh|fm-pi-branch-extension.test.sh|fm-retention.test.sh|\
     fm-procevent-quota.test.sh|fm-procevent-when.test.sh|fm-procevent.test.sh|\
     fm-live-gate.test.sh|\
     fm-project-origin.test.sh|fm-public-followup.test.sh|fm-quota-choose.test.sh|\
@@ -823,6 +823,7 @@ tests/fm-remote-secondmate-lifecycle-e2e.test.sh 345655
 tests/fm-remote-secondmate-parent-binding.test.sh 42294
 tests/fm-remote-secondmate-relaunch.test.sh 879
 tests/fm-remote-secondmate-trace-context.test.sh 74870
+tests/fm-retention.test.sh 4000
 tests/fm-remote-transport-lanes.test.sh 66089
 tests/fm-rovo-harness.test.sh 15691
 tests/fm-rovo-signals-live-e2e.test.sh 52
