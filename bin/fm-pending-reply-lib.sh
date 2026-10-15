@@ -19,9 +19,10 @@
 # report. A repost held back that way for longer than a bound (see
 # FM_PENDING_REPLY_HOLD_ESCALATE_SECS) is escalated once instead of being
 # re-checked on every poll for ever: it would otherwise cost a recovery check
-# per poll and never reach a person. Never loop, never repeatedly inject, never silently expire unresolved
-# records, and never treat wrong-home or structured-home heuristics as
-# acknowledgement. A same-basename restatement-copy of the mate home's
+# per poll and never reach a person. Never loop, never repeatedly inject,
+# never silently expire unresolved records, and never treat wrong-home or
+# structured-home heuristics as acknowledgement. A same-basename
+# restatement-copy of the mate home's
 # state/<task_id>.status onto the parent channel is a repair of the
 # FM_HOME-relative mixup, not acknowledgement of an arbitrary mate-home file.
 #
