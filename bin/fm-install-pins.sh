@@ -7,6 +7,7 @@
 # checksums.txt (https://github.com/<repo>/releases/download/<tag>/checksums.txt).
 # A version bump without matching checksums makes the installer refuse.
 
+# shellcheck disable=SC2034 # Pins are read by the sourcing installers.
 FM_PIN_TREEHOUSE_VERSION=3.1.1
 FM_PIN_TREEHOUSE_SHA256_darwin_amd64=7be948dcbd0da771fea6938c11f994b909ea8b440f8ae29aa2fddb6020fdebff
 FM_PIN_TREEHOUSE_SHA256_darwin_arm64=79926e73e420560eeee2ca1b3bd2a26f7aeca8f0122ddff79c909fa48342976a
