@@ -924,7 +924,7 @@ _fm_decision_key_transition_allowed() {  # <key> <note>
 _fm_is_pending_reply_escalation() {  # <key> <note>
   case "$1" in pending-reply-*) ;; *) return 1 ;; esac
   case "$2" in
-    pending-reply-missed:*|pending-reply-delivery-unknown:*|pending-reply-recovery-delivery-failed:*|pending-reply-recovery-delivery-unknown:*) return 0 ;;
+    pending-reply-missed:*|pending-reply-held:*|pending-reply-delivery-unknown:*|pending-reply-recovery-delivery-failed:*|pending-reply-recovery-delivery-unknown:*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -1058,14 +1058,41 @@ EOF
 # it keeps working, so the task is not waiting on any of them. Pending-reply
 # recovery and a fire-and-forget retry ring consult this set and leave a task
 # alone while it is non-empty.
+# Folds with the cursor-backed status_open_decisions_incremental: the watcher
+# asks this once per open pending-reply record every poll, and the whole-file
+# fold re-reads and forks per line of a log that only ever grows. That fold
+# answers from its persisted cursor, which it can only keep current by writing
+# to the state directory, so its answer is used only when the cursor it leaves
+# behind is caught up: present, of the current fold version, matching the log's
+# identity, at an offset equal to the log's current size, and holding exactly
+# the set it printed. Otherwise (a missing, stale or lagging cursor, for any
+# reason, such as an unwritable or full state directory) this answers from the
+# read-only whole-file status_open_decisions, so whether a task is held never
+# depends on a write succeeding.
 status_own_open_decisions() {  # <status-file>
-  local line prefix
-  status_open_decisions "$1" | while IFS= read -r line || [ -n "$line" ]; do
+  local f=$1 open cf cursor='' size ident expected line prefix
+  open=$(status_open_decisions_incremental "$f") || open=''
+  cf=$(_fm_open_decisions_cursor_path "$f")
+  if [ -f "$cf" ] && [ ! -L "$cf" ]; then
+    cursor=$(LC_ALL=C command cat "$cf" 2>/dev/null) || cursor=''
+  fi
+  size=$(_fm_status_file_size "$f") || size=''
+  size=${size//[[:space:]]/}
+  ident=$(_fm_open_decisions_file_ident "$f") || ident=''
+  expected="version=$FM_OPEN_DECISIONS_FOLD_VERSION:$(_fm_status_kind "$f")"$'\n'"offset=$size"$'\n'"ident=$ident"
+  [ -z "$open" ] || expected="$expected"$'\n'"$open"
+  if [ -z "$cursor" ] || [ -z "$size" ] || [ -z "$ident" ] || [ "$cursor" != "$expected" ]; then
+    open=$(status_open_decisions "$f")
+  fi
+  [ -n "$open" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
     for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} remote-reply-continuity- captain-hold-; do
       case "$line" in "$prefix"*) continue 2 ;; esac
     done
     printf '%s\n' "$line"
-  done
+  done <<EOF
+$open
+EOF
 }
 
 # 0 when the fold above still holds at least one decision OPENED by

@@ -36,6 +36,14 @@
 #      uncached status read - accepting any verb - immediately before firing
 #  18. A same-kind escalation after an operator close appends again and reopens
 #      the decision; a retry while that decision is still open appends nothing
+#  19. A poll over many open records folds each log once and tests only the lines
+#      holding a record's token
+#  20. A recovery repost the wait-no-turns hold keeps back for longer than the
+#      hold bound is escalated once, durably, and a restart does not repeat it;
+#      the hold still holds when the open-decision fold cannot write its files,
+#      including on a full disk, while the drain scan keeps its trusted set
+# The hold tests run in subshells that set the clock and the config location.
+# shellcheck disable=SC2030,SC2031
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -2101,6 +2109,251 @@ test_same_kind_escalation_reopens_after_operator_close() {
   pass "a same-kind escalation after an operator close opens the decision again"
 }
 
+# The cost shape of one watcher poll over many open records of one long log.
+# A fork-per-line fold of the whole log for every record is what made a poll
+# take minutes, so this pins the work done, not the wall clock: the cursor-backed
+# fold reads each byte of the log once however many records ask (the fold's own
+# read probe reports what each call folded), and the resolve scan tests only the
+# lines that hold a record's own token.
+test_tick_folds_each_log_once_however_many_records_are_open() (
+  local home state corr rec i n=10 lines=3000 probe line_count whole_count folded size tests_run
+  home=$(setup_parent tick-cost)
+  state="$home/state"
+  mkdir -p "$home/config"
+  : > "$home/config/wait-no-turns"
+  FM_CONFIG_OVERRIDE="$home/config"
+  export FM_PENDING_REPLY_NOW=1000
+  unset FM_PENDING_REPLY_SEND_HOOK
+  {
+    i=1
+    while [ "$i" -le "$lines" ]; do
+      if [ $((i % 50)) -eq 0 ]; then
+        printf 'done [at=%s]: step %s\n' "$i" "$i"
+      else
+        printf 'working [at=%s]: tick %s\n' "$i" "$i"
+      fi
+      i=$((i + 1))
+    done
+    printf 'needs-decision [key=ask]: narrow or wide?\n'
+  } > "$state/hibit.status"
+  i=0
+  while [ "$i" -lt "$n" ]; do
+    corr=$(fm_pending_reply_create "$home" "$state" hibit "request $i")
+    fm_pending_reply_mark_delivered "$state" "$corr"
+    fm_pending_reply_observe_busy "$state" "$corr" busy
+    fm_pending_reply_observe_busy "$state" "$corr" idle
+    # A look-alike in a longer word never resolves, but it does hold the token.
+    printf 'note [at=%s]: quoting xcorr=%s\n' "$i" "$corr" >> "$state/hibit.status"
+    i=$((i + 1))
+  done
+  probe="$TMP_ROOT/tick-cost-probe"
+  line_count="$TMP_ROOT/tick-cost-lines"
+  whole_count="$TMP_ROOT/tick-cost-whole"
+  : > "$probe"
+  : > "$line_count"
+  : > "$whole_count"
+  export FM_OPEN_DECISIONS_READ_PROBE="$probe"
+  eval "_orig_$(declare -f status_open_decisions)"
+  eval "_orig_$(declare -f fm_pending_reply_line_resolves)"
+  status_open_decisions() { printf x >> "$whole_count"; _orig_status_open_decisions "$@"; }
+  fm_pending_reply_line_resolves() { printf x >> "$line_count"; _orig_fm_pending_reply_line_resolves "$@"; }
+  export FM_PENDING_REPLY_NOW=1100
+  fm_pending_reply_tick "$state"
+  size=$(wc -c < "$state/hibit.status" | tr -d ' ')
+  folded=$(awk -F'\t' '{ total += $2 } END { print total + 0 }' "$probe")
+  tests_run=$(wc -c < "$line_count" | tr -d ' ')
+  [ "$folded" -gt 0 ] || fail "the first poll must have built the open-decision cursor"
+  [ "$folded" -le "$size" ] \
+    || fail "the poll folded $folded bytes of a $size byte log for $n records; the log must be folded once"
+  [ "$(wc -c < "$whole_count" | tr -d ' ')" = 0 ] \
+    || fail "the poll must not run the whole-log fold for any record"
+  [ "$tests_run" -le "$n" ] \
+    || fail "the poll tested $tests_run lines for $n records; only lines holding a record's token may be tested"
+  : > "$probe"
+  fm_pending_reply_tick "$state"
+  [ ! -s "$probe" ] || fail "an unchanged log must not be folded again on the next poll"
+  for rec in "$state"/pending-replies/*; do
+    [ "$(fm_pending_reply_get "$rec" phase)" = awaiting_report ] \
+      || fail "a held record must stay unattempted, got $(fm_pending_reply_get "$rec" phase)"
+  done
+  pass "a poll over $n open records folds the log once and tests only token lines"
+)
+
+# A request whose recovery repost the wait-no-turns hold keeps back is flagged
+# once after the hold bound, as a durable decision, and then left alone.
+hold_fixture() {  # <name> <bound>; sets HOLD_HOME, HOLD_CORR and HOLD_HOOK_LOG and exports the hold environment, so call it directly from a test subshell
+  local name=$1 bound=$2 home state corr
+  home=$(setup_parent "$name")
+  state="$home/state"
+  mkdir -p "$home/config"
+  : > "$home/config/wait-no-turns"
+  HOLD_HOOK_LOG="$TMP_ROOT/$name-hook.log"
+  : > "$HOLD_HOOK_LOG"
+  export FM_CONFIG_OVERRIDE="$home/config"
+  export FM_PENDING_REPLY_HOLD_ESCALATE_SECS=$bound
+  export FM_PENDING_REPLY_NOW=1000
+  # Invoked indirectly through FM_PENDING_REPLY_SEND_HOOK.
+  # shellcheck disable=SC2329
+  hold_hook() { printf '%s\n' "$1" >> "$HOLD_HOOK_LOG"; }
+  export -f hold_hook
+  export HOLD_HOOK_LOG
+  export FM_PENDING_REPLY_SEND_HOOK=hold_hook
+  corr=$(fm_pending_reply_create "$home" "$state" hibit "relayed ask")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  fm_pending_reply_observe_busy "$state" "$corr" busy
+  fm_pending_reply_observe_busy "$state" "$corr" idle
+  printf 'needs-decision [key=captain-ask]: merge or wait?\n' >> "$state/hibit.status"
+  HOLD_HOME=$home
+  HOLD_CORR=$corr
+}
+
+held_lines() {  # <state> <corr>
+  grep -c "pending-reply-held: task=hibit pending-reply-id=$2 " "$1/hibit.status" || true
+}
+
+test_hold_bound_leaves_a_younger_hold_alone() (
+  local home corr state
+  hold_fixture hold-young 1000
+  home=$HOLD_HOME
+  corr=$HOLD_CORR
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=1999
+  fm_pending_reply_tick "$state"
+  fm_pending_reply_tick "$state"
+  [ "$(phase_of "$state" "$corr")" = awaiting_report ] \
+    || fail "a hold younger than the bound must stay awaiting_report, got $(phase_of "$state" "$corr")"
+  [ "$(held_lines "$state" "$corr")" = 0 ] || fail "nothing may be escalated before the bound"
+  [ ! -s "$HOLD_HOOK_LOG" ] || fail "a held record must never be reposted"
+  [ "$(fm_pending_reply_hold_escalate_secs)" = 1000 ] || fail "the bound must be configurable"
+  unset FM_PENDING_REPLY_HOLD_ESCALATE_SECS
+  [ "$(fm_pending_reply_hold_escalate_secs)" = 86400 ] || fail "the default bound must be 24 hours"
+  for FM_PENDING_REPLY_HOLD_ESCALATE_SECS in nonsense off 0; do
+    [ "$(fm_pending_reply_hold_escalate_secs)" = 86400 ] \
+      || fail "bound $FM_PENDING_REPLY_HOLD_ESCALATE_SECS must fall back to the default"
+  done
+  pass "a wait-no-turns hold younger than the bound changes nothing"
+)
+
+test_hold_bound_escalates_once_and_survives_restart() (
+  local home corr state open again
+  hold_fixture hold-old 1000
+  home=$HOLD_HOME
+  corr=$HOLD_CORR
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=2000
+  fm_pending_reply_tick "$state"
+  [ "$(phase_of "$state" "$corr")" = escalated ] \
+    || fail "a hold past the bound must escalate, got $(phase_of "$state" "$corr")"
+  [ "$(held_lines "$state" "$corr")" = 1 ] || fail "expected exactly one held escalation line"
+  [ -z "$(fm_pending_reply_get "$(fm_pending_reply_path "$state" "$corr")" recovery_attempted_epoch)" ] \
+    || fail "the held record must not have been reposted"
+  [ ! -s "$HOLD_HOOK_LOG" ] || fail "the escalation replaces the repost"
+  open=$(status_open_decisions "$state/hibit.status" | cut -f1 | grep "^pending-reply-$corr\$" || true)
+  [ "$open" = "pending-reply-$corr" ] || fail "the escalation must open a durable keyed decision"
+  _fm_is_pending_reply_escalation "pending-reply-$corr" "pending-reply-held: task=hibit" \
+    || fail "a held escalation must wake the supervisor like every other pending-reply escalation"
+  # Polls after the escalation, and a restarted watcher, add nothing.
+  export FM_PENDING_REPLY_NOW=9000
+  fm_pending_reply_tick "$state"
+  fm_pending_reply_tick "$state"
+  # The single quotes keep the restarted shell's own expansions.
+  # shellcheck disable=SC2016
+  again=$(env FM_PENDING_REPLY_NOW=99999 FM_PENDING_REPLY_HOLD_ESCALATE_SECS=1000 \
+    FM_CONFIG_OVERRIDE="$FM_CONFIG_OVERRIDE" FM_PENDING_REPLY_SEND_HOOK=hold_hook HOLD_HOOK_LOG="$HOLD_HOOK_LOG" \
+    bash -c '. "$1"; fm_pending_reply_tick "$2"; fm_pending_reply_get "$(fm_pending_reply_path "$2" "$3")" phase' _ \
+    "$ROOT/bin/fm-pending-reply-lib.sh" "$state" "$corr")
+  [ "$again" = escalated ] || fail "a restarted watcher must find the record still escalated, got $again"
+  [ "$(held_lines "$state" "$corr")" = 1 ] || fail "a restart must not escalate again"
+  [ ! -s "$HOLD_HOOK_LOG" ] || fail "no repost may follow the escalation"
+  pass "a hold past the bound escalates exactly once and a restart does not repeat it"
+)
+
+test_hold_escalation_closes_when_the_report_arrives() (
+  local home corr state open
+  hold_fixture hold-close 1000
+  home=$HOLD_HOME
+  corr=$HOLD_CORR
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=2000
+  fm_pending_reply_tick "$state"
+  printf 'working [at=1]: answered corr=%s\n' "$corr" >> "$state/hibit.status"
+  fm_pending_reply_tick "$state"
+  [ "$(phase_of "$state" "$corr")" = resolved ] || fail "a late correlated report must still resolve the record"
+  open=$(status_open_decisions "$state/hibit.status" | cut -f1 | grep "^pending-reply-$corr\$" || true)
+  [ -z "$open" ] || fail "resolving must close the held decision"
+  pass "a held escalation closes through the ordinary resolve when the report finally arrives"
+)
+
+# Make the fold's <suffix> temp file unwritable: a directory in its place fails
+# the open, a link to /dev/full fails the write the way a full disk does.
+block_fold_file() {  # <status-file> <suffix> <dir|full>
+  local target
+  target="$(_fm_open_decisions_cursor_path "$1").$2.$$"
+  case "$3" in
+    dir) mkdir "$target" ;;
+    full) ln -s /dev/full "$target" ;;
+  esac
+}
+
+hold_with_blocked_fold_file() (  # <name> <suffix> <dir|full>
+  local home corr state
+  hold_fixture "$1" 1000000
+  home=$HOLD_HOME
+  corr=$HOLD_CORR
+  state="$home/state"
+  block_fold_file "$state/hibit.status" "$2" "$3"
+  export FM_PENDING_REPLY_NOW=2000
+  fm_pending_reply_tick "$state"
+  [ ! -f "$(_fm_open_decisions_cursor_path "$state/hibit.status")" ] \
+    || fail "the fixture must leave the open-decision cursor unwritten ($2, $3)"
+  [ "$(phase_of "$state" "$corr")" = awaiting_report ] \
+    || fail "a held mate must stay held when the fold cannot write its $2 file ($3), got $(phase_of "$state" "$corr")"
+  [ ! -s "$HOLD_HOOK_LOG" ] || fail "an unwritable $2 file ($3) must not let the recovery repost through"
+)
+
+test_hold_survives_an_unwritable_open_decision_cursor() (
+  hold_with_blocked_fold_file hold-ro-cursor tmp dir || exit 1
+  hold_with_blocked_fold_file hold-ro-span read dir || exit 1
+  if [ -c /dev/full ]; then
+    hold_with_blocked_fold_file hold-full-cursor tmp full || exit 1
+    hold_with_blocked_fold_file hold-full-span read full || exit 1
+  fi
+  pass "a wait-no-turns hold still holds when the open-decision fold cannot write its files"
+)
+
+# The drain's fleet scan keeps the fold's own answer: a span it cannot stage
+# still lists the decision the cursor already trusted.
+test_drain_scan_keeps_the_trusted_set_when_the_span_cannot_be_written() (
+  local home state listed
+  home=$(setup_parent drain-span)
+  state="$home/state"
+  printf 'needs-decision [key=captain-ask]: merge or wait?\n' >> "$state/hibit.status"
+  scan_open_decisions_incremental "$state" >/dev/null
+  printf 'working: still going\n' >> "$state/hibit.status"
+  block_fold_file "$state/hibit.status" read dir
+  listed=$(scan_open_decisions_incremental "$state" 2>/dev/null | cut -f1,2)
+  [ "$listed" = "$(printf 'hibit\tcaptain-ask')" ] \
+    || fail "the drain scan must still list the trusted decision, got: $listed"
+  [ "$(status_own_open_decisions "$state/hibit.status" | cut -f1)" = captain-ask ] \
+    || fail "the held answer must still see the decision"
+  pass "the drain scan lists the trusted set when the fold cannot stage its span"
+)
+
+test_hold_bound_without_the_flag_or_the_hold_does_not_escalate() (
+  local home corr state
+  hold_fixture hold-noflag 1000
+  home=$HOLD_HOME
+  corr=$HOLD_CORR
+  state="$home/state"
+  export FM_PENDING_REPLY_NOW=2000
+  # The mate answers its own decision: the ordinary repost runs, no hold escalation.
+  printf 'resolved [key=captain-ask]: answered: wait\n' >> "$state/hibit.status"
+  fm_pending_reply_tick "$state"
+  [ "$(held_lines "$state" "$corr")" = 0 ] || fail "a record that is no longer held must not take the hold escalation"
+  [ "$(phase_of "$state" "$corr")" = recovery_sent ] || fail "the ordinary repost must run, got $(phase_of "$state" "$corr")"
+  pass "only a record the hold actually keeps back takes the hold escalation"
+)
+
 # --- run --------------------------------------------------------------------
 
 test_normal_correlated_reply_resolves_once
@@ -2151,5 +2404,12 @@ test_remote_parent_replies_is_not_wrong_home
 test_local_parent_replies_is_wrong_home_evidence
 test_escalated_undelivered_correlation_stays_retryable
 test_same_kind_escalation_reopens_after_operator_close
+test_tick_folds_each_log_once_however_many_records_are_open || exit 1
+test_hold_bound_leaves_a_younger_hold_alone || exit 1
+test_hold_bound_escalates_once_and_survives_restart || exit 1
+test_hold_escalation_closes_when_the_report_arrives || exit 1
+test_hold_survives_an_unwritable_open_decision_cursor || exit 1
+test_drain_scan_keeps_the_trusted_set_when_the_span_cannot_be_written || exit 1
+test_hold_bound_without_the_flag_or_the_hold_does_not_escalate || exit 1
 
 printf 'ok - all pending-reply tests passed\n'

@@ -2813,6 +2813,13 @@ while :; do
   # No conversation scraping; unresolved records are never silently expired.
   fm_pending_reply_tick "$STATE" || true
 
+  # Daily archive pass for the grow-only process-event inbox (handled
+  # sequences); the script holds the rules and stamps its own cadence, so most
+  # polls cost one file-age test.
+  if [ "$(age_of "$STATE/.retention-last-run")" -ge "${FM_RETENTION_INTERVAL_SECS:-86400}" ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-retention.sh" run >/dev/null 2>&1 || true
+  fi
+
   # Endpoint liveness runs before queue observation: a positively dead or
   # missing secondmate endpoint is relaunched here on a bounded cadence, which
   # is also what unsticks that mate's foreign wake queue. The tick's single
