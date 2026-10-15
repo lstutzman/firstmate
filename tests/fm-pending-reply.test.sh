@@ -2246,6 +2246,8 @@ test_hold_bound_escalates_once_and_survives_restart() (
   [ ! -s "$HOLD_HOOK_LOG" ] || fail "the escalation replaces the repost"
   open=$(status_open_decisions "$state/hibit.status" | cut -f1 | grep "^pending-reply-$corr\$" || true)
   [ "$open" = "pending-reply-$corr" ] || fail "the escalation must open a durable keyed decision"
+  _fm_is_pending_reply_escalation "pending-reply-$corr" "pending-reply-held: task=hibit" \
+    || fail "a held escalation must wake the supervisor like every other pending-reply escalation"
   # Polls after the escalation, and a restarted watcher, add nothing.
   export FM_PENDING_REPLY_NOW=9000
   fm_pending_reply_tick "$state"
