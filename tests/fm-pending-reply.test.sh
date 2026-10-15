@@ -40,7 +40,8 @@
 #      holding a record's token
 #  20. A recovery repost the wait-no-turns hold keeps back for longer than the
 #      hold bound is escalated once, durably, and a restart does not repeat it;
-#      the hold still holds when the open-decision fold cannot write its files
+#      the hold still holds when the open-decision fold cannot write its files,
+#      including on a full disk, while the drain scan keeps its trusted set
 # The hold tests run in subshells that set the clock and the config location.
 # shellcheck disable=SC2030,SC2031
 set -u
@@ -2283,28 +2284,59 @@ test_hold_escalation_closes_when_the_report_arrives() (
   pass "a held escalation closes through the ordinary resolve when the report finally arrives"
 )
 
-# A directory where the fold writes one of its temp files makes that write fail.
-hold_with_blocked_fold_file() (  # <name> <suffix>
-  local home corr state cursor
+# Make the fold's <suffix> temp file unwritable: a directory in its place fails
+# the open, a link to /dev/full fails the write the way a full disk does.
+block_fold_file() {  # <status-file> <suffix> <dir|full>
+  local target
+  target="$(_fm_open_decisions_cursor_path "$1").$2.$$"
+  case "$3" in
+    dir) mkdir "$target" ;;
+    full) ln -s /dev/full "$target" ;;
+  esac
+}
+
+hold_with_blocked_fold_file() (  # <name> <suffix> <dir|full>
+  local home corr state
   hold_fixture "$1" 1000000
   home=$HOLD_HOME
   corr=$HOLD_CORR
   state="$home/state"
-  cursor=$(_fm_open_decisions_cursor_path "$state/hibit.status")
-  mkdir "$cursor.$2.$$"
+  block_fold_file "$state/hibit.status" "$2" "$3"
   export FM_PENDING_REPLY_NOW=2000
   fm_pending_reply_tick "$state"
-  [ ! -e "$cursor" ] \
-    || fail "the fixture must leave the open-decision cursor unwritten ($2)"
+  [ ! -f "$(_fm_open_decisions_cursor_path "$state/hibit.status")" ] \
+    || fail "the fixture must leave the open-decision cursor unwritten ($2, $3)"
   [ "$(phase_of "$state" "$corr")" = awaiting_report ] \
-    || fail "a held mate must stay held when the fold cannot write its $2 file, got $(phase_of "$state" "$corr")"
-  [ ! -s "$HOLD_HOOK_LOG" ] || fail "an unwritable $2 file must not let the recovery repost through"
+    || fail "a held mate must stay held when the fold cannot write its $2 file ($3), got $(phase_of "$state" "$corr")"
+  [ ! -s "$HOLD_HOOK_LOG" ] || fail "an unwritable $2 file ($3) must not let the recovery repost through"
 )
 
 test_hold_survives_an_unwritable_open_decision_cursor() (
-  hold_with_blocked_fold_file hold-ro-cursor tmp || exit 1
-  hold_with_blocked_fold_file hold-ro-span read || exit 1
+  hold_with_blocked_fold_file hold-ro-cursor tmp dir || exit 1
+  hold_with_blocked_fold_file hold-ro-span read dir || exit 1
+  if [ -c /dev/full ]; then
+    hold_with_blocked_fold_file hold-full-cursor tmp full || exit 1
+    hold_with_blocked_fold_file hold-full-span read full || exit 1
+  fi
   pass "a wait-no-turns hold still holds when the open-decision fold cannot write its files"
+)
+
+# The drain's fleet scan keeps the fold's own answer: a span it cannot stage
+# still lists the decision the cursor already trusted.
+test_drain_scan_keeps_the_trusted_set_when_the_span_cannot_be_written() (
+  local home state listed
+  home=$(setup_parent drain-span)
+  state="$home/state"
+  printf 'needs-decision [key=captain-ask]: merge or wait?\n' >> "$state/hibit.status"
+  scan_open_decisions_incremental "$state" >/dev/null
+  printf 'working: still going\n' >> "$state/hibit.status"
+  block_fold_file "$state/hibit.status" read dir
+  listed=$(scan_open_decisions_incremental "$state" 2>/dev/null | cut -f1,2)
+  [ "$listed" = "$(printf 'hibit\tcaptain-ask')" ] \
+    || fail "the drain scan must still list the trusted decision, got: $listed"
+  [ "$(status_own_open_decisions "$state/hibit.status" | cut -f1)" = captain-ask ] \
+    || fail "the held answer must still see the decision"
+  pass "the drain scan lists the trusted set when the fold cannot stage its span"
 )
 
 test_hold_bound_without_the_flag_or_the_hold_does_not_escalate() (
@@ -2377,6 +2409,7 @@ test_hold_bound_leaves_a_younger_hold_alone || exit 1
 test_hold_bound_escalates_once_and_survives_restart || exit 1
 test_hold_escalation_closes_when_the_report_arrives || exit 1
 test_hold_survives_an_unwritable_open_decision_cursor || exit 1
+test_drain_scan_keeps_the_trusted_set_when_the_span_cannot_be_written || exit 1
 test_hold_bound_without_the_flag_or_the_hold_does_not_escalate || exit 1
 
 printf 'ok - all pending-reply tests passed\n'

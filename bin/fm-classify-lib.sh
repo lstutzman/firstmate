@@ -1060,15 +1060,30 @@ EOF
 # alone while it is non-empty.
 # Folds with the cursor-backed status_open_decisions_incremental: the watcher
 # asks this once per open pending-reply record every poll, and the whole-file
-# fold re-reads and forks per line of a log that only ever grows. The open set
-# is the same, with two differences. When the log cannot be measured or its new
-# span cannot be read, the incremental fold answers the cursor's last trusted
-# set (the caller keeps holding), the safer outcome. When the fold cannot write
-# its read span or its cursor in the state directory it fails, and this falls
-# back to the whole-file fold rather than answer empty.
+# fold re-reads and forks per line of a log that only ever grows. That fold
+# answers from its persisted cursor, which it can only keep current by writing
+# to the state directory, so its answer is used only when the cursor it leaves
+# behind is caught up: present, of the current fold version, matching the log's
+# identity, at an offset equal to the log's current size, and holding exactly
+# the set it printed. Otherwise (a missing, stale or lagging cursor, for any
+# reason, such as an unwritable or full state directory) this answers from the
+# read-only whole-file status_open_decisions, so whether a task is held never
+# depends on a write succeeding.
 status_own_open_decisions() {  # <status-file>
-  local open line prefix
-  open=$(status_open_decisions_incremental "$1") || open=$(status_open_decisions "$1")
+  local f=$1 open cf cursor='' size ident expected line prefix
+  open=$(status_open_decisions_incremental "$f") || open=''
+  cf=$(_fm_open_decisions_cursor_path "$f")
+  if [ -f "$cf" ] && [ ! -L "$cf" ]; then
+    cursor=$(LC_ALL=C command cat "$cf" 2>/dev/null) || cursor=''
+  fi
+  size=$(_fm_status_file_size "$f") || size=''
+  size=${size//[[:space:]]/}
+  ident=$(_fm_open_decisions_file_ident "$f") || ident=''
+  expected="version=$FM_OPEN_DECISIONS_FOLD_VERSION:$(_fm_status_kind "$f")"$'\n'"offset=$size"$'\n'"ident=$ident"
+  [ -z "$open" ] || expected="$expected"$'\n'"$open"
+  if [ -z "$cursor" ] || [ -z "$size" ] || [ -z "$ident" ] || [ "$cursor" != "$expected" ]; then
+    open=$(status_open_decisions "$f")
+  fi
   [ -n "$open" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} remote-reply-continuity- captain-hold-; do
@@ -1484,14 +1499,13 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
 
   if [ "$offset" -lt "$size" ]; then
     chunk_file="$cf.read.$$"
-    : > "$chunk_file" 2>/dev/null || return 1
     _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
       || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
     chunk_size=$(LC_ALL=C wc -c < "$chunk_file" 2>/dev/null) \
-      || { rm -f "$chunk_file"; return 1; }
+      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
     chunk_size=${chunk_size//[[:space:]]/}
     case "$chunk_size" in
-      ''|*[!0-9]*) rm -f "$chunk_file"; return 1 ;;
+      ''|*[!0-9]*) rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0 ;;
     esac
     # Test-only observability seam (off by default, no production behavior
     # change): when set, records exactly how many bytes THIS call folded, so a
