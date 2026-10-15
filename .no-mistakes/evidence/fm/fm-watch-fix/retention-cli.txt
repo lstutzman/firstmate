@@ -1,0 +1,76 @@
+== before
+6 w1.1.adapter
+4 w1.1.extension
+0 w1.1.handled
+6 w1.1.owner-task
+2245 w1.1.result
+6 w1.2.adapter
+4 w1.2.extension
+0 w1.2.handled
+6 w1.2.owner-task
+2245 w1.2.result
+6 w1.3.adapter
+4 w1.3.extension
+0 w1.3.handled
+6 w1.3.owner-task
+2245 w1.3.result
+6 w1.4.adapter
+4 w1.4.extension
+0 w1.4.handled
+6 w1.4.owner-task
+2245 w1.4.result
+6 w1.5.adapter
+4 w1.5.extension
+6 w1.5.owner-task
+2245 w1.5.result
+== fm-retention.sh run
+retention: procevent-inbox archived 3 sequence(s) to /tmp/fm-lab.V9ShvV/ret/state/archive/procevent-inbox-2026-10-15.tar.gz
+rc=0
+== after
+6 w1.1.adapter
+4 w1.1.extension
+0 w1.1.handled
+6 w1.1.owner-task
+0 w1.1.result
+6 w1.2.adapter
+4 w1.2.extension
+0 w1.2.handled
+6 w1.2.owner-task
+0 w1.2.result
+6 w1.3.adapter
+4 w1.3.extension
+0 w1.3.handled
+6 w1.3.owner-task
+0 w1.3.result
+6 w1.4.adapter
+4 w1.4.extension
+0 w1.4.handled
+6 w1.4.owner-task
+2245 w1.4.result
+6 w1.5.adapter
+4 w1.5.extension
+6 w1.5.owner-task
+2245 w1.5.result
+archive:
+procevent-inbox-2026-10-15.tar.gz
+w1.1.result
+w1.1.adapter
+w1.1.owner-task
+w1.1.extension
+w1.2.result
+w1.2.adapter
+w1.2.owner-task
+w1.2.extension
+w1.3.result
+w1.3.adapter
+w1.3.owner-task
+w1.3.extension
+== immediate second run (cadence: should be a no-op)
+rc=0
+procevent-inbox-2026-10-15.tar.gz
+== --force rerun (nothing new old enough)
+rc=0
+procevent-inbox-2026-10-15.tar.gz
+== archived payload restorable:
+big result payload 1
+big result payload 3

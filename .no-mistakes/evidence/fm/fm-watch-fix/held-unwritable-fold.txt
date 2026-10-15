@@ -1,0 +1,12 @@
+== adversarial (full): config/wait-no-turns, mate holds open decision 'ask', fold cannot write
+mode=full: blocked 2 fold temp files (cursor write + read span) for pid 1999714
+cursor written: no
+after tick: phases= 5 phase=awaiting_report; reposts=0
+== adversarial (dir): config/wait-no-turns, mate holds open decision 'ask', fold cannot write
+mode=dir: blocked 2 fold temp files (cursor write + read span) for pid 2004309
+cursor written: no
+after tick: phases= 5 phase=awaiting_report; reposts=0
+== control: same blocked fold (full), mate has resolved its own decision -> repost should go out
+mode=full: blocked 2 fold temp files (cursor write + read span) for pid 2006540
+cursor written: yes
+after tick: phases= 5 phase=recovery_sent; reposts=5

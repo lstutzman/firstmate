@@ -1,0 +1,19 @@
+== run 1: real bin/fm-watch.sh, lab FM_HOME, 60 s, FM_POLL=2, default 24h hold bound
+-- oldmate.status (3 records completed 25h ago):
+working: started
+needs-decision [key=captain-ask]: merge or wait?
+blocked [key=pending-reply-de6d522f0677294c] [at=1792093619]: pending-reply-held: task=oldmate pending-reply-id=de6d522f0677294c request=relayed ask for oldmate no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
+blocked [key=pending-reply-e69f518891419f04] [at=1792093619]: pending-reply-held: task=oldmate pending-reply-id=e69f518891419f04 request=relayed ask for oldmate no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
+blocked [key=pending-reply-ed66d7193488d3f0] [at=1792093620]: pending-reply-held: task=oldmate pending-reply-id=ed66d7193488d3f0 request=relayed ask for oldmate no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
+-- record phases:
+     60 hibit awaiting_report repost_attempted=no
+      3 oldmate escalated repost_attempted=no
+
+== run 2 (adversarial): real fm-watch.sh, 150 s, open-decision cursor path squatted by a directory, hold bound 1800 s
+     57 hibit awaiting_report repost_attempted=no
+      3 hibit escalated repost_attempted=no
+      3 oldmate awaiting_report repost_attempted=no
+-- held escalations written to the parent log (records carry the absolute parent_status of the seed lab):
+blocked [key=pending-reply-027adda538bf4209] [at=1792094339]: pending-reply-held: task=hibit pending-reply-id=027adda538bf4209 request=relayed ask for hibit no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
+blocked [key=pending-reply-02b1b6837f4beac3] [at=1792094379]: pending-reply-held: task=hibit pending-reply-id=02b1b6837f4beac3 request=relayed ask for hibit no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
+blocked [key=pending-reply-057fb26ebf70abdb] [at=1792094419]: pending-reply-held: task=hibit pending-reply-id=057fb26ebf70abdb request=relayed ask for hibit no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked

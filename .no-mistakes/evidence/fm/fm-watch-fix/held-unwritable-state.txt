@@ -1,0 +1,4 @@
+== adversarial: unwritable state dir, config/wait-no-turns, mate holds 'ask'
+state dir mode: dr-xr-xr-x; cursor present: 0
+/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M50GBSVEAQ2DXQK72T8ZJ90N/bin/fm-classify-lib.sh: line 1502: /tmp/fm-lab.V9ShvV/ro/state/.hibit.open-decisions-cursor.read.1844581: Permission denied
+status_own_open_decisions answer: ask needs-decision

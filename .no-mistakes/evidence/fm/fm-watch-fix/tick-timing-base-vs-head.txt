@@ -1,0 +1,10 @@
+fm_pending_reply_tick on identical copies of one lab state: hibit.status 40,001 lines (2.27 MB) ending in an open
+needs-decision, 60 held hibit records + 3 oldmate records, config/wait-no-turns present (scripts: lab-seed.sh, tick-timing.sh)
+== HEAD
+tick 1: 28953 ms
+tick 2: 11294 ms
+tick 3: 11262 ms
+== BASE
+
+[exited with code 124]
+(BASE c4e426b: first tick not finished after the 900 s timeout; killed with exit 124)

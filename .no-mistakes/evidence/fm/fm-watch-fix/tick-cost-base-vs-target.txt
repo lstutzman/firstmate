@@ -1,0 +1,20 @@
+== 20 open records, status log 4001 lines, config/wait-no-turns, mate holding open decision
+-- base c4e426b
+tick1 37.64s
+tick2 5.48s
+-- target 55cf2b4
+tick1 5.28s
+tick2 3.63s
+-- phases base:
+     20 phase=awaiting_report
+-- phases target:
+     20 phase=awaiting_report
+== growing log (mate appends one line per poll), same 20 records
+-- base c4e426b
+tick after mate appended a line: 5.35s
+tick after mate appended a line: 5.40s
+tick after mate appended a line: 5.45s
+-- target 55cf2b4
+tick after mate appended a line: 3.53s
+tick after mate appended a line: 3.52s
+tick after mate appended a line: 3.63s

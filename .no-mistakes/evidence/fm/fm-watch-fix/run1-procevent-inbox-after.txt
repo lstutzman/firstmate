@@ -1,0 +1,22 @@
+ 
+420 .
+380 ..
+6 other.1.adapter
+0 other.1.handled
+6 other.1.owner-task
+0 other.1.result
+6 src.1.adapter
+0 src.1.handled
+6 src.1.owner-task
+0 src.1.result
+6 src.2.adapter
+0 src.2.handled
+6 src.2.owner-task
+0 src.2.result
+6 src.3.adapter
+0 src.3.handled
+6 src.3.owner-task
+270177 src.3.result
+6 src.4.adapter
+6 src.4.owner-task
+270177 src.4.result

@@ -1,0 +1,6 @@
+ok - old handled sequences are archived and truncated; young and unhandled ones stay; a rerun is a no-op
+ok - a capture after archiving takes a fresh sequence number
+ok - the pass runs once a day, honours --force, and a failed archive loses nothing
+ok - a larger backlog drains over several bounded passes
+ok - all retention tests passed
+rc=0

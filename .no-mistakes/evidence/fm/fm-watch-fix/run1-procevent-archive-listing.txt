@@ -1,0 +1,10 @@
+-rw------- lee/lee      270177 2026-10-15 20:46 other.1.result
+-rw------- lee/lee           6 2026-10-15 20:46 other.1.adapter
+-rw------- lee/lee           6 2026-10-15 20:46 other.1.owner-task
+-rw------- lee/lee      270177 2026-10-15 20:46 src.1.result
+-rw------- lee/lee           6 2026-10-15 20:46 src.1.adapter
+-rw------- lee/lee           6 2026-10-15 20:46 src.1.owner-task
+-rw------- lee/lee      270177 2026-10-15 20:46 src.2.result
+-rw------- lee/lee           6 2026-10-15 20:46 src.2.adapter
+-rw------- lee/lee           6 2026-10-15 20:46 src.2.owner-task
+1792093621

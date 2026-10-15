@@ -1,0 +1,11 @@
+== fm-watch.sh run for 40s in lab home (TMUX_TMPDIR=/tmp/fml.Q0H3Kb, no TMUX)
+watch rc=124 (124 = still running at timeout)
+Terminated                 sleep "$POLL"
+stamp: 1792096037
+archive: procevent-inbox-2026-10-15.tar.gz
+inbox sizes:
+6 w9.1.adapter
+0 w9.1.handled
+0 w9.1.result
+6 w9.2.adapter
+8 w9.2.result

@@ -1,0 +1,18 @@
+== 20 held records (fresh home, records point at it), config/wait-no-turns, default 24h bound
+bound=86400s (default); request turns completed at epoch 1000
+tick at now=80000 (held 79000s):
+phases:  20 phase=awaiting_report;  held-lines=0  reposts=0
+tick at now=87399 (held 86399s):
+phases:  20 phase=awaiting_report;  held-lines=0  reposts=0
+tick at now=87400 (held 86400s):
+phases:  20 phase=escalated;  held-lines=20  reposts=0
+tick at now=90000 (held 89000s):
+phases:  20 phase=escalated;  held-lines=20  reposts=0
+tick at now=200000 (held 199000s):
+phases:  20 phase=escalated;  held-lines=20  reposts=0
+sample escalation line:
+blocked [key=pending-reply-05b784412959fe5d] [at=1792095670]: pending-reply-held: task=hibit pending-reply-id=05b784412959fe5d request=request 17 no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
+open decisions now listed on the log (first 3):
+ask	needs-decision	narrow or wide?
+pending-reply-05b784412959fe5d	blocked	pending-reply-held: task=hibit pending-reply-id=05b784412959fe5d request=request 17 no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
+pending-reply-2684f27b4dab9157	blocked	pending-reply-held: task=hibit pending-reply-id=2684f27b4dab9157 request=request 7 no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
