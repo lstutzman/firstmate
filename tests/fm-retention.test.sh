@@ -2,8 +2,8 @@
 # Behavior tests for the daily archive pass (bin/fm-retention.sh).
 #
 # Coverage:
-#   1. A handled process-event sequence older than the bound is archived and
-#      truncated in place; younger, unhandled, and already-archived sequences are
+#   1. A handled process-event sequence older than the bound is archived and its
+#      result truncated in place; younger, unhandled, and already-archived sequences are
 #      left alone, and a second pass changes nothing
 #   2. Archiving never lets the next capture of that source reuse a sequence
 #   3. A resolved pending-reply record older than the bound is archived and
@@ -77,11 +77,11 @@ test_procevent_archive_truncates_old_handled_sequences() (
   out=$(run_retention "$home" --force) || fail "retention failed: $out"
   [ "$(archive_count "$home" procevent-inbox)" = 1 ] || fail "expected one procevent archive"
   [ ! -s "$inbox/src.1.result" ] && [ -f "$inbox/src.1.result" ] || fail "an old handled result must be truncated in place"
-  [ ! -s "$inbox/src.2.adapter" ] && [ -f "$inbox/src.2.adapter" ] || fail "an old handled adapter must be truncated in place"
+  [ -s "$inbox/src.2.adapter" ] || fail "the small adapter sidecar must be left intact"
   [ -f "$inbox/src.1.handled" ] || fail "the handled marker must stay"
   [ -s "$inbox/src.3.result" ] || fail "a sequence handled within the bound must stay"
   [ -s "$inbox/src.4.result" ] && [ -s "$inbox/src.4.adapter" ] || fail "an unhandled sequence must never be touched"
-  tar -tzf "$home/state/archive"/procevent-inbox-*.tar.gz | grep -qx 'src.1.result' || fail "the archive must hold the old payload"
+  tar -tzf "$home/state/archive"/procevent-inbox-*.tar.gz | grep -qx 'src.1.adapter' || fail "the archive must hold the whole sequence"
   [ "$(tar -xzOf "$home/state/archive"/procevent-inbox-*.tar.gz src.2.result)" = 'payload for src 2' ] \
     || fail "the archived payload must be intact"
   # A second pass has nothing left to do.

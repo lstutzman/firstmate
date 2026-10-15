@@ -16,15 +16,18 @@
 #                            owner-task,extension} plus a <id>.<seq>.handled
 #                            marker once handled. A sequence whose marker is
 #                            older than FM_RETENTION_PROCEVENT_SECS (default
-#                            259200, 72 h) has its payload files written to
-#                            procevent-inbox-<date>.tar.gz and then truncated to
-#                            zero bytes in place. The names stay because
-#                            bin/fm-procevent-lib.sh allocates the next sequence
-#                            as the first <id>.<seq>.result that does not exist
-#                            and records handling as an exclusive create of the
-#                            marker: removing a name would hand a new capture an
-#                            old sequence number whose marker already says
-#                            handled. Unhandled sequences are never touched.
+#                            259200, 72 h) has its files written to
+#                            procevent-inbox-<date>.tar.gz and its .result, the
+#                            only large file, truncated to zero bytes in place.
+#                            The name stays because bin/fm-procevent-lib.sh
+#                            allocates the next sequence as the first
+#                            <id>.<seq>.result that does not exist and records
+#                            handling as an exclusive create of the marker:
+#                            removing it would hand a new capture an old
+#                            sequence number whose marker already says handled.
+#                            The small .adapter, .owner-task and .extension
+#                            sidecars and the marker are left as they are.
+#                            Unhandled sequences are never touched.
 #   state/pending-replies/   a record whose phase is resolved for longer than
 #                            FM_RETENTION_PENDING_SECS (default 604800, 7 days,
 #                            counted from its resolved_epoch) and whose
@@ -50,6 +53,9 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 ARCHIVE_DIR="$STATE/archive"
 STAMP="$STATE/.retention-last-run"
 LOCK="$STATE/.retention.lock"
+
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
 
 INTERVAL_SECS=${FM_RETENTION_INTERVAL_SECS:-86400}
 PROCEVENT_SECS=${FM_RETENTION_PROCEVENT_SECS:-259200}
@@ -111,8 +117,9 @@ write_archive() {  # <prefix> <dir> <list>
 # Archive the payload files of every sequence handled longer ago than the bound.
 retain_procevent() {  # <work-dir> <dry-run>
   local work=$1 dry=$2 inbox="$STATE/procevent-inbox" mins marker base member name
-  local list="$work/procevent.list" candidates="$work/procevent.candidates" count=0 seqs=0 sequence_has_payload archive
+  local list="$work/procevent.list" truncate_list="$work/procevent.truncate" candidates="$work/procevent.candidates" seqs=0 archive
   : > "$list"
+  : > "$truncate_list"
   [ -d "$inbox" ] && [ ! -L "$inbox" ] || return 0
   mins=$((PROCEVENT_SECS / 60))
   find "$inbox" -maxdepth 1 -type f -name '*.handled' -mmin "+$mins" 2>/dev/null | sort > "$candidates"
@@ -121,19 +128,16 @@ retain_procevent() {  # <work-dir> <dry-run>
     base=${marker%.handled}
     # A sequence without a readable result and adapter is not one the capture
     # path wrote; leave whatever it is alone.
-    [ -f "$base.result" ] && [ ! -L "$base.result" ] || continue
+    [ -f "$base.result" ] && [ ! -L "$base.result" ] && [ -s "$base.result" ] || continue
     [ -f "$base.adapter" ] && [ ! -L "$base.adapter" ] || continue
-    sequence_has_payload=0
+    printf '%s\n' "${base##*/}.result" >> "$truncate_list"
     for member in "$base.result" "$base.adapter" "$base.owner-task" "$base.extension"; do
-      [ -f "$member" ] && [ ! -L "$member" ] && [ -s "$member" ] || continue
-      name=${member##*/}
-      printf '%s\n' "$name" >> "$list"
-      sequence_has_payload=1
+      [ -f "$member" ] && [ ! -L "$member" ] || continue
+      printf '%s\n' "${member##*/}" >> "$list"
     done
-    [ "$sequence_has_payload" -eq 1 ] && seqs=$((seqs + 1))
+    seqs=$((seqs + 1))
   done < "$candidates"
-  count=$(wc -l < "$list" | tr -d ' ')
-  [ "$count" -gt 0 ] || return 0
+  [ "$seqs" -gt 0 ] || return 0
   if [ "$dry" -eq 1 ]; then
     printf 'retention: procevent-inbox would archive %s sequence(s)\n' "$seqs"
     return 0
@@ -142,7 +146,7 @@ retain_procevent() {  # <work-dir> <dry-run>
     || { echo "fm-retention: procevent-inbox archive failed; nothing was truncated" >&2; return 1; }
   while IFS= read -r name; do
     : > "$inbox/$name"
-  done < "$list"
+  done < "$truncate_list"
   printf 'retention: procevent-inbox archived %s sequence(s) to %s\n' "$seqs" "$archive"
 }
 
@@ -200,7 +204,7 @@ retain_pending_replies() {  # <work-dir> <dry-run>
 }
 
 cmd_run() {
-  local force=0 dry=0 arg last now work rc=0 pid
+  local force=0 dry=0 arg last now work rc=0
   for arg in "$@"; do
     case "$arg" in
       --force) force=1 ;;
@@ -221,23 +225,17 @@ cmd_run() {
       *) [ $((now - last)) -ge "$INTERVAL_SECS" ] || exit 0 ;;
     esac
   fi
-  if ! mkdir "$LOCK" 2>/dev/null; then
-    pid=$(cat "$LOCK/pid" 2>/dev/null || true)
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-      exit 0
-    fi
-    rm -rf -- "$LOCK"
-    mkdir "$LOCK" 2>/dev/null || exit 0
-  fi
-  printf '%s\n' "$$" > "$LOCK/pid"
-  work=$(mktemp -d "$STATE/.retention.XXXXXX") || { rm -rf -- "$LOCK"; die "cannot create a work directory"; }
+  # Another pass in flight is not an error: it is already doing this work.
+  fm_lock_try_acquire "$LOCK" || exit 0
+  work=$(mktemp -d "$STATE/.retention.XXXXXX") || { fm_lock_release "$LOCK"; die "cannot create a work directory"; }
   # A dry run changes nothing, including the cadence stamp.
   if [ "$dry" -eq 0 ]; then
     printf '%s\n' "$now" > "$STAMP" 2>/dev/null || true
   fi
   retain_procevent "$work" "$dry" || rc=1
   retain_pending_replies "$work" "$dry" || rc=1
-  rm -rf -- "$work" "$LOCK"
+  rm -rf -- "$work"
+  fm_lock_release "$LOCK"
   exit "$rc"
 }
 

@@ -2606,6 +2606,10 @@ FM_SEND_SLEEP=0.4       # seconds between fm-send typed-plane submit checks
 FM_SEND_SETTLE=1        # seconds fm-send waits after a successful typed-plane submit; 0 disables
 FM_PENDING_REPLY_GRACE_SECS=120   # seconds after the request turn completes without a correlated parent report before its one recovery repost is eligible, and after the recovery turn completes before the missed-report escalation is eligible; never counted from delivery
 FM_PENDING_REPLY_HOLD_ESCALATE_SECS=86400   # seconds a wait-no-turns hold may keep a recovery repost back, counted from the request turn's completion, before the record takes its one held-decision escalation instead (bin/fm-pending-reply-lib.sh); "off" never escalates a held record
+FM_RETENTION_INTERVAL_SECS=86400   # seconds between the watcher's archive passes over the process-event inbox and resolved pending replies (bin/fm-retention.sh)
+FM_RETENTION_PROCEVENT_SECS=259200   # age of a handled process-event sequence, counted from its handled marker, before its result is archived and emptied; unhandled sequences are never touched
+FM_RETENTION_PENDING_SECS=604800   # age of a resolved pending-reply record, counted from its resolved_epoch, before it is archived; a record with an open escalation is never touched
+FM_RETENTION_MAX_ITEMS=5000   # most sequences and most records one archive pass handles; a larger backlog drains over later passes
 # sub-supervisor (bin/fm-supervise-daemon.sh); presence-gated via /afk
 FM_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID before tmux fallback
 FM_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target or herdr <session>:<pane-id>, otherwise auto-detected
