@@ -1061,11 +1061,11 @@ EOF
 # Folds with the cursor-backed status_open_decisions_incremental: the watcher
 # asks this once per open pending-reply record every poll, and the whole-file
 # fold re-reads and forks per line of a log that only ever grows. The open set
-# is the same, with two differences. On an unreadable log the whole-file fold
-# answers empty (the caller proceeds) and the incremental fold answers the
-# cursor's last trusted set (the caller keeps holding), the safer outcome. When
-# the cursor cannot be written the incremental fold fails, and this falls back
-# to the whole-file fold rather than answer empty.
+# is the same, with two differences. When the log cannot be measured or its new
+# span cannot be read, the incremental fold answers the cursor's last trusted
+# set (the caller keeps holding), the safer outcome. When the fold cannot write
+# its read span or its cursor in the state directory it fails, and this falls
+# back to the whole-file fold rather than answer empty.
 status_own_open_decisions() {  # <status-file>
   local open line prefix
   open=$(status_open_decisions_incremental "$1") || open=$(status_open_decisions "$1")
@@ -1484,13 +1484,14 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>]
 
   if [ "$offset" -lt "$size" ]; then
     chunk_file="$cf.read.$$"
+    : > "$chunk_file" 2>/dev/null || return 1
     _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
       || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
     chunk_size=$(LC_ALL=C wc -c < "$chunk_file" 2>/dev/null) \
-      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+      || { rm -f "$chunk_file"; return 1; }
     chunk_size=${chunk_size//[[:space:]]/}
     case "$chunk_size" in
-      ''|*[!0-9]*) rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0 ;;
+      ''|*[!0-9]*) rm -f "$chunk_file"; return 1 ;;
     esac
     # Test-only observability seam (off by default, no production behavior
     # change): when set, records exactly how many bytes THIS call folded, so a

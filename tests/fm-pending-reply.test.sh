@@ -40,7 +40,7 @@
 #      holding a record's token
 #  20. A recovery repost the wait-no-turns hold keeps back for longer than the
 #      hold bound is escalated once, durably, and a restart does not repeat it;
-#      the hold still holds when the open-decision cursor cannot be written
+#      the hold still holds when the open-decision fold cannot write its files
 # The hold tests run in subshells that set the clock and the config location.
 # shellcheck disable=SC2030,SC2031
 set -u
@@ -2283,23 +2283,28 @@ test_hold_escalation_closes_when_the_report_arrives() (
   pass "a held escalation closes through the ordinary resolve when the report finally arrives"
 )
 
-test_hold_survives_an_unwritable_open_decision_cursor() (
+# A directory where the fold writes one of its temp files makes that write fail.
+hold_with_blocked_fold_file() (  # <name> <suffix>
   local home corr state cursor
-  hold_fixture hold-ro 1000000
+  hold_fixture "$1" 1000000
   home=$HOLD_HOME
   corr=$HOLD_CORR
   state="$home/state"
-  # A directory where the fold writes its cursor's temp file makes that write fail.
   cursor=$(_fm_open_decisions_cursor_path "$state/hibit.status")
-  mkdir "$cursor.tmp.$$"
+  mkdir "$cursor.$2.$$"
   export FM_PENDING_REPLY_NOW=2000
   fm_pending_reply_tick "$state"
   [ ! -e "$cursor" ] \
-    || fail "the fixture must leave the open-decision cursor unwritten"
+    || fail "the fixture must leave the open-decision cursor unwritten ($2)"
   [ "$(phase_of "$state" "$corr")" = awaiting_report ] \
-    || fail "a held mate must stay held when the cursor cannot be written, got $(phase_of "$state" "$corr")"
-  [ ! -s "$HOLD_HOOK_LOG" ] || fail "an unwritable cursor must not let the recovery repost through"
-  pass "a wait-no-turns hold still holds when the open-decision cursor cannot be written"
+    || fail "a held mate must stay held when the fold cannot write its $2 file, got $(phase_of "$state" "$corr")"
+  [ ! -s "$HOLD_HOOK_LOG" ] || fail "an unwritable $2 file must not let the recovery repost through"
+)
+
+test_hold_survives_an_unwritable_open_decision_cursor() (
+  hold_with_blocked_fold_file hold-ro-cursor tmp || exit 1
+  hold_with_blocked_fold_file hold-ro-span read || exit 1
+  pass "a wait-no-turns hold still holds when the open-decision fold cannot write its files"
 )
 
 test_hold_bound_without_the_flag_or_the_hold_does_not_escalate() (
