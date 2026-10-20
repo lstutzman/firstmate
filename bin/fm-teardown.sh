@@ -149,7 +149,8 @@
 # strand every task in flight across that change on no evidence at all.
 # Why Treehouse's own state cannot answer this for crewmate slots, and why the
 # claim file sits on top of it, is owned by bin/fm-wake-lib.sh's slot-owner
-# claim comment.
+# claim comment. The `treehouse return` of a crewmate slot also releases the
+# durable lease bin/fm-spawn.sh took on it, which is the only release it gets.
 # The recorded endpoint's exact task identity and the record's spawn incarnation
 # are validated separately
 # before cleanup. Its current working directory is only incidental process

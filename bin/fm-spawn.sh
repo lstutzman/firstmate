@@ -290,6 +290,11 @@
 #   itself a linked worktree of the project repository still launches. A pane
 #   that never reaches an isolated worktree refuses at the end of that wait,
 #   naming the last path seen and why it was rejected.
+#   A Treehouse pool slot that any task record on this machine still names is
+#   refused, naming that task; otherwise the slot is claimed and, just before
+#   the task record is published, durably leased in place under the task id, so
+#   it stays the task's through any exit or relaunch until bin/fm-teardown.sh
+#   returns it (bin/fm-wake-lib.sh owns the claim, the lease, and the scan).
 #   That placement is proven only at launch. Every ship or scout pane therefore
 #   also receives `export FM_TASK_ID=<task-id>` before the launch command, on
 #   the same channel as GOTMPDIR, and bin/fm-test-run.sh refuses to execute the
@@ -1379,6 +1384,7 @@ SPAWN_TASK_SET_LOCK_HELD=0
 SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
+SPAWN_SLOT_LEASED=0
 RELAUNCH_REPLACEMENT_PENDING=0
 RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
@@ -1545,6 +1551,14 @@ spawn_abort_cleanup() {
     else
       echo "warning: leaving task $ID's slot claim on $WT in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it" >&2
     fi
+  fi
+  # The durable lease is not released here: `treehouse return` would kill what
+  # runs in the slot and reset it, which is teardown's job and not an abort's.
+  # A lease no record describes is never handed out again, so say how to free it.
+  if [ "$SPAWN_SLOT_LEASED" = 1 ] && [ -n "${WT:-}" ] &&
+    [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
+    SPAWN_SLOT_LEASED=0
+    echo "warning: task $ID's Treehouse pool slot $WT stays durably leased to $ID with no task record; once its window is closed, free it with: treehouse return $(shell_quote "$WT")" >&2
   fi
   if [ "$SPAWN_TREEHOUSE_PROJECT_LOCK_HELD" = 1 ]; then
     SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
@@ -4750,18 +4764,35 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   validate_spawn_worktree "treehouse get" "$T"
 
   # Claim the pool slot for this task. The interactive `treehouse get` sent to
-  # the pane above records only a process lease (Treehouse's durable
-  # `get --lease --lease-holder`, which bin/fm-home-seed.sh uses for secondmate
-  # homes, is not this path), so Treehouse cannot say which task a slot belongs
-  # to once that task's worker exits - and that is exactly when the slot is
-  # handed on and this task's worktree= line goes stale. The claim is what lets
-  # bin/fm-teardown.sh leave a slot that has since been reassigned untouched, so
-  # a slot that cannot be claimed is refused here, at the cheapest point, rather
-  # than launching a worker whose slot teardown could later release out from
-  # under its successor.
+  # the pane above records only a process reservation, so until the durable
+  # lease taken before metadata publication below, Treehouse cannot say which
+  # task a slot belongs to, and a slot leased by nothing - one taken before
+  # spawns leased their slots - is handed on once nothing runs in it. The claim
+  # is what lets bin/fm-teardown.sh leave a slot that has since been reassigned
+  # untouched, so a slot that cannot be claimed is refused here, at the cheapest
+  # point, rather than launching a worker whose slot teardown could later
+  # release out from under its successor.
   # Written under the Treehouse project lock held from before slot allocation
   # through metadata publication, so no other spawn or return sees a half-claim.
   if fm_treehouse_pool_slot "$PROJ_ABS" "$WT"; then
+    # A copy that any task record on this machine still names is that task's
+    # until its teardown, however Treehouse came to hand it out again, so it is
+    # refused before the claim below would overwrite the evidence. A single
+    # holder gets the slot leased back to it, so the next spawn is handed a
+    # different one instead of being refused on the same copy.
+    if ! fm_treehouse_slot_record_holders "$STATE" "$WT" "$STATE/$ID.meta"; then
+      echo "error: Treehouse handed task $ID pool slot $WT, but this machine's task records cannot all be read to prove no other task still names it ($FM_TREEHOUSE_SLOT_HOLDERS_ERROR); refusing to launch; inspect window $T" >&2
+      exit 1
+    fi
+    if [ "$FM_TREEHOUSE_SLOT_HOLDER_COUNT" -gt 0 ]; then
+      spawn_leased_back=
+      if [ "$FM_TREEHOUSE_SLOT_HOLDER_COUNT" -eq 1 ] &&
+        fm_treehouse_slot_lease "$PROJ_ABS" "$WT" "$FM_TREEHOUSE_SLOT_HOLDER_ID"; then
+        spawn_leased_back="; the slot is now durably leased to that task, so the next spawn is given another one"
+      fi
+      echo "error: Treehouse handed task $ID pool slot $WT, which $FM_TREEHOUSE_SLOT_HOLDERS still names as its worktree; refusing to share one copy between two tasks$spawn_leased_back. Reconcile the holder (bin/fm-crew-state.sh <id>) and free the slot only through its bin/fm-teardown.sh; inspect window $T" >&2
+      exit 1
+    fi
     if ! fm_treehouse_slot_owner_claim "$WT" "$ID" "$FM_HOME"; then
       echo "error: could not claim Treehouse pool slot $WT for task $ID; refusing to launch a worker whose slot cannot later be proved to be its own; inspect window $T" >&2
       exit 1
@@ -5529,6 +5560,18 @@ preserve_relaunch_meta() {
   exit 1
 }
 if [ "$RELAUNCH" -eq 0 ]; then
+  # Lease the claimed slot to this task before its record exists, so the copy
+  # stays this task's whether or not anything runs in it - through an exit, a
+  # relaunch, or a host restart - until bin/fm-teardown.sh's `treehouse return`
+  # releases it. Taken this late, under the project lock, so only a failure
+  # from here on can leave a leased slot without a record.
+  if [ "$SPAWN_SLOT_CLAIMED" = 1 ]; then
+    if ! fm_treehouse_slot_lease "$PROJ_ABS" "$WT" "$ID"; then
+      echo "error: could not durably lease Treehouse pool slot $WT for task $ID (${FM_TREEHOUSE_SLOT_LEASE_ERROR:-no diagnostic}); without the lease Treehouse hands the slot to the next spawn once nothing runs in it, so the worker is not launched (treehouse 3.0.0 or later is required); inspect window $T" >&2
+      exit 1
+    fi
+    SPAWN_SLOT_LEASED=1
+  fi
   if ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE"; then
     echo "error: task record for $ID could not be published ($FM_BACKLOG_TRANSITION_ERROR)" >&2
     exit 1

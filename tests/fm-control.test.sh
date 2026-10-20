@@ -832,6 +832,37 @@ test_already_stopped_exit_is_idempotent() {
   pass "fm-control exit: an already-stopped agent is idempotent success with no bytes sent"
 }
 
+# Stopping an agent must not hand its copy on: exit and interrupt leave the
+# task's worktree, its record's worktree= line, and the worktree pool alone, so
+# the copy stays leased to the task until bin/fm-teardown.sh returns it.
+test_stop_verbs_leave_the_task_copy_leased() {
+  local dir out rc verb meta_before
+  for verb in interrupt exit; do
+    dir=$(new_case "keep-copy-$verb")
+    add_task "$dir" t1 claude
+    alive_as "$dir" claude
+    cat > "$dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> '$dir/treehouse.log'
+exit 0
+SH
+    chmod +x "$dir/fakebin/treehouse"
+    printf 'kept\n' > "$dir/wt-t1/uncommitted.txt"
+    meta_before=$(cat "$dir/home/state/t1.meta")
+    out=$(run_control "$dir" t1 "$verb"); rc=$?
+    expect_code 0 "$rc" "$verb should succeed"$'\n'"$out"
+    [ ! -e "$dir/treehouse.log" ] \
+      || fail "$verb touched the worktree pool: $(cat "$dir/treehouse.log")"
+    assert_grep "worktree=$dir/wt-t1" "$dir/home/state/t1.meta" \
+      "$verb dropped the task's worktree= line"
+    # Exit may drop busy_gen= with the busy sidecar; nothing else may change.
+    [ "$(grep -v '^busy_gen=' "$dir/home/state/t1.meta")" = "$(printf '%s\n' "$meta_before" | grep -v '^busy_gen=')" ] \
+      || fail "$verb rewrote the task record beyond its busy state"
+    assert_grep 'kept' "$dir/wt-t1/uncommitted.txt" "$verb discarded uncommitted work in the copy"
+  done
+  pass "fm-control interrupt and exit leave the task's copy, its record, and the worktree pool untouched"
+}
+
 test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop() {
   local dir out rc
   dir=$(new_case gone)
@@ -1242,6 +1273,7 @@ test_verb_allowlist_is_closed
 test_resume_is_refused_with_its_reason
 test_relaunch_only_flags_are_rejected_on_other_verbs
 test_already_stopped_exit_is_idempotent
+test_stop_verbs_leave_the_task_copy_leased
 test_missing_tmux_endpoint_refuses_rather_than_claiming_a_stop
 test_interrupt_refuses_when_no_agent_runs
 test_ambiguous_endpoint_refuses
