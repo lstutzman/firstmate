@@ -1,0 +1,147 @@
+Live lab: real bin/fm-spawn.sh / fm-control.sh / fm-teardown.sh, tmux backend on private fm-lab socket, real Treehouse v3.1.1 (TREEHOUSE_ROOT in lab), real Claude haiku workers, disposable FM_HOME /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+
+=== spawn-a (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+spawned task-a harness=claude kind=scout window=primary:fm-task-a worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/1/proj
+rc=0
+
+=== exit-a (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+stopped task-a harness=claude backend=tmux endpoint=primary:fm-task-a worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/1/proj
+rc=0
+
+=== spawn-b (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+spawned task-b harness=claude kind=scout window=primary:fm-task-b worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/2/proj
+rc=0
+
+=== relaunch-a (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+error: task task-a's endpoint primary:fm-task-a reads 'missing', but tmux absence cannot be proven from a task record: the record does not carry the endpoint's socket identity, and a server-wide window inventory only describes the tmux server this process addresses, so a window absent from it may still be alive on another; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one
+error: relaunch of task-a failed while stopping the old agent and its state is 'missing', so it was not proven stopped; its original instructions were restored and the durable record was retained for recovery
+rc=1
+
+=== spawn-c (BASE-commit d0880f4 code
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned task-c harness=claude kind=scout window=primary:fm-task-c worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/3/proj
+rc=0
+
+=== exit-c (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+stopped task-c harness=claude backend=tmux endpoint=primary:fm-task-c worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/3/proj
+rc=0
+
+=== relaunch-c (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+relaunched task-c harness=claude from=claude model=haiku effort=default backend=tmux endpoint=primary:fm-task-c worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/3/proj
+rc=0
+
+=== spawn-e (BASE-commit d0880f4 code
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned task-e harness=claude kind=scout window=primary:fm-task-e worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/4/proj
+rc=0
+
+=== exit-e (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+error: task task-e's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+rc=1
+
+=== spawn-d (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned task-d harness=claude kind=scout window=primary:fm-task-d worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/5/proj
+rc=0
+
+=== spawn-g (BASE-commit d0880f4 code
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned task-g harness=claude kind=scout window=primary:fm-task-g worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/6/proj
+rc=0
+
+=== spawn-f (BASE-commit d0880f4 code
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned task-f harness=claude kind=scout window=primary:fm-task-f worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/7/proj
+rc=0
+
+=== spawn-h (BASE-commit d0880f4 code
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned task-h harness=claude kind=scout window=primary:fm-task-h worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/8/proj
+rc=0
+
+=== spawn-i (BASE-commit d0880f4 code
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned task-i harness=claude kind=scout window=primary:fm-task-i worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/9/proj
+rc=0
+
+=== spawn-j (BASE-commit d0880f4 code
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+spawned task-j harness=claude kind=scout window=primary:fm-task-j worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/9/proj
+rc=0
+
+=== spawn-k (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: Treehouse handed task task-k pool slot /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/1/proj, which task task-a still names as its worktree; refusing to share one copy between two tasks. Reconcile the holder (bin/fm-crew-state.sh <id>) and free the slot only through its bin/fm-teardown.sh; inspect window primary:fm-task-k
+rc=1
+
+=== teardown-b (CHANGED code 0c6b214
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for task-b: 61898 65136 65992 65995 65997 66053 67411 67459
+teardown: force-killing leaked worktree process(es) for task-b: 61898
+A new version of treehouse is available: v3.1.1 → v3.1.4
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown task-b complete (window primary:fm-task-b, worktree /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/2/proj)
+Backlog: task-b just finished (this home keeps no markdown backlog at /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/data/backlog.md). Update /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/data/backlog.md - move task-b to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+rc=0
+
+=== pool after task-d spawn (legacy slot 4 swept/leased to task-e)
+{"name":"1","status":"leased","lease_holder":"task-a","branch":"","nproc":0}
+{"name":"2","status":"leased","lease_holder":"task-b","branch":"","nproc":8}
+{"name":"3","status":"leased","lease_holder":"task-c","branch":"fm/task-c-lab","nproc":12}
+{"name":"4","status":"leased","lease_holder":"task-e","branch":"fm/task-e-lab","nproc":0}
+{"name":"5","status":"leased","lease_holder":"task-d","branch":"","nproc":12}
+
+=== BASE-code reproduction (clean detached legacy slot 9 handed to task-j while task-i's record names it)
+{"name":"9","status":"available","branch":"","nproc":0}
+spawned task-j harness=claude kind=scout window=primary:fm-task-j worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/9/proj
+rc=0
+task-i record: worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/9/proj
+task-j record: worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.AqHGTn/pools/.treehouse/proj-415c68/9/proj
+
+=== pool before/after task-k (stale task-a record, slot 1 returned & claim dropped)
+{"name":"1","status":"available","lease_holder":"","nproc":0}
+{"name":"2","status":"leased","lease_holder":"task-b","nproc":8}
+{"name":"3","status":"leased","lease_holder":"task-c","nproc":8}
+{"name":"4","status":"leased","lease_holder":"task-e","nproc":0}
+{"name":"5","status":"leased","lease_holder":"task-d","nproc":8}
+{"name":"6","status":"available","lease_holder":"","nproc":0}
+{"name":"7","status":"in-use","lease_holder":"","nproc":8}
+{"name":"8","status":"in-use","lease_holder":"","nproc":8}
+{"name":"9","status":"in-use","lease_holder":"","nproc":10}
+---
+{"name":"1","status":"in-use","lease_holder":"","nproc":1}
+{"name":"2","status":"leased","lease_holder":"task-b","nproc":8}
+{"name":"3","status":"leased","lease_holder":"task-c","nproc":8}
+{"name":"4","status":"leased","lease_holder":"task-e","nproc":0}
+{"name":"5","status":"leased","lease_holder":"task-d","nproc":8}
+{"name":"6","status":"leased","lease_holder":"task-g","nproc":0}
+{"name":"7","status":"leased","lease_holder":"task-f","nproc":8}
+{"name":"8","status":"leased","lease_holder":"task-h","nproc":8}
+{"name":"9","status":"leased","lease_holder":"task-j","nproc":11}
+
+=== slot 2 after teardown-b
+{"name":"2","status":"available","lease_holder":"","nproc":0}
+
+=== Observations captured during the run (treehouse status --json, condensed)
+after spawn-a:            slot 1 leased holder=task-a (worker running)
+after exit-a + window killed: slot 1 leased holder=task-a nproc=0; wip.txt + HEAD unchanged
+after spawn-b:            slot 1 leased task-a (untouched), slot 2 leased task-b; task-b.meta worktree=.../2/proj
+after exit-c (legacy):    slot 3 in-use, lease_holder "" (process reservation only)
+after relaunch-c:         slot 3 leased holder=task-c; branch fm/task-c-lab and wip.txt intact
+before spawn-d:           slot 4 available, branch fm/task-e-lab, task-e.meta still names it (the incident state)
+after spawn-d:            slot 4 leased task-e, branch+HEAD unchanged; task-d given slot 5
+after spawn-k sweep:      legacy slots 6,7,8,9 leased to their claimants (task-g, task-f, task-h, task-j); slot 1 NOT leased (stale task-a record refused without lease-back); no task-k.meta
