@@ -50,6 +50,8 @@ The workspace-trust dialog is unaffected by the permission mode and still needs 
 Completed turns can render dim predicted text inside an empty composer, indistinguishable in plain `tmux capture-pane`.
 The spawn scopes `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false` to every Claude worker and secondmate without changing global config.
 CLI `--prompt-suggestions` affects print or SDK mode only and did not suppress interactive ghost text on v2.1.186.
+A user-scope plugin can draw the same ghost through the mods API's `prompt.suggest`, which none of those switches reach: on 2.1.304 the captain's `next-steps@claude-community` plugin kept drawing it under the env var, `--prompt-suggestions false`, and `promptSuggestionEnabled: false`, and stopped only when the session's `--settings` turned the plugin off.
+Every Claude launch therefore carries that per-session `enabledPlugins` override; `bin/fm-spawn.sh` (`CLAUDE_COMPOSER_PLUGINS_OFF`) owns the list.
 
 As defense in depth, `fm_composer_strip_ghost` in `../../../bin/fm-composer-lib.sh` removes SGR-2 runs before pending classification on styled tmux, Herdr, and Zellij readers.
 `../../../docs/herdr-backend.md` under "Composer and injection safety" owns dark-TRUECOLOR tradeoffs and `../../../docs/verification/runtime-backends.md` owns captures.

@@ -934,6 +934,22 @@ not ok - mid-turn absolute cwd rail read 'pending', want empty
 
 The cursorless backends still defer: on a cursorless read (Herdr and Zellij) a full-pane capture of this version answers `unknown` because the status rail below the composer floor row is contiguous non-blank content the selector refuses to outrank, which is the strict posture and not this defect; and very narrow panes where the cwd rail starts in the left half of the row defer the same way.
 
+### 2026-10-20 claude 2.1.304 plugin ghost suggestion
+
+Verified on 2026-10-20 on macOS arm64 against Claude Code 2.1.304 in a private tmux server, launched with the captain's user settings (which enable `next-steps@claude-community`) and `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false` on every run, each turn asking for a five-item answer so the plugin's 80-character threshold is met.
+The ghost was counted from the composer row between the two rules, after a 12-second settle per turn.
+
+| Extra launch control | Turns with a ghost |
+|---|---|
+| none | 2/2 and 1/1 |
+| `--settings` `{"promptSuggestionEnabled": false}` | 3/3 |
+| `--prompt-suggestions false` | 2/2 |
+| `--settings` `{"enabledPlugins": {"next-steps@claude-community": false}}` | 0/3 |
+
+The ghost row was `ESC[39m❯` U+00A0 `ESC[2m<suggestion>ESC[0m` under both the default and `COLORTERM=truecolor`, which `fm_composer_classify_screen` reads as `empty` with the styled profile.
+Enter on a ghost-only composer fired no `UserPromptSubmit` and left the ghost in place.
+`tests/fm-spawn-dispatch-profile.test.sh` pins the per-launch override; rerun this matrix after a Claude upgrade or when the captain's plugin set changes.
+
 ## Steering-inbox doorbell
 
 The steering channel's one behavioral assumption - a real worker agent follows the constant self-describing doorbell line (list the inbox, read and act on its records in numeric order, then `mv` each into `handled/`) - was verified on 2026-08-23 against every installed verified harness, on tmux 3.6a, macOS arm64, on an isolated private socket, driving the REAL `bin/fm-send.sh` end to end (durable record plus doorbell, with one mid-wait re-ring playing the watcher's role).
