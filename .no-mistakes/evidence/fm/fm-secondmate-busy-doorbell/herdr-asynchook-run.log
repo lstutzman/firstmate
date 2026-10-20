@@ -1,0 +1,7 @@
+session=fm-lab-ghostring-81806-11925
+sleep901 running: 1
+herdr agent_status=idle
+busy_state=idle composer_state=empty
+doorbell ring_rc=0 (0=rung 1=skipped-pending 2=unreached 3=dead)
+doorbell lines in pane: 1
+teardown rc=0

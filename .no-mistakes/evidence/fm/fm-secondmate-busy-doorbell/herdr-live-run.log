@@ -1,0 +1,11 @@
+session=fm-lab-ghostring-61505-18623
+both idle
+turn1 base composer_row=[37:❯ List five more advanced git subcommands, one line each with a short description.] composer_state=empty busy_state=idle
+turn1 fixed composer_row=[37:❯] composer_state=empty busy_state=idle
+doorbell base ring_rc=0 (0=rung 1=skipped-pending 2=unreached 3=dead)
+doorbell fixed ring_rc=0 (0=rung 1=skipped-pending 2=unreached 3=dead)
+after ring base: handled= pending=1
+after ring fixed: handled= pending=1
+turn2 base composer_row=[37:❯ The inbox is at ~/.firstmate/state/labbase.inbox — read each .msg in numeric order, act on it, then mv it into handl…] composer_state=empty busy_state=idle
+turn2 fixed composer_row=[37:❯] composer_state=empty busy_state=idle
+teardown rc=0

@@ -1,0 +1,40 @@
+
+ 
+  [0m[2m[38;5;7mListed [0m[1m[38;5;7m1[0m[2m[38;5;7m directory, ran [0m[1m[38;5;7m2[0m[2m[38;5;7m shell commands [0m
+
+[0m[38;5;15m⏺ [0mCaptain, I couldn't act on this instruction because I can't find the inbox it points to.
+  
+  - [0m[1m[38;5;12mFM_TASK_INBOX[0m[1m isn't set[0m in this session, so [0m[38;5;12m"$FM_TASK_INBOX"/*.msg[0m points at nothing.
+  - [0m[1mNo [0m[1m[38;5;12mlabbase.inbox[0m[1m directory exists [0mwithin six levels of your home directory. The only no-mistakes worktree here is
+    this one, and it has no inbox.
+  - [0m[1mI didn't run or move anything[0m, and I didn't guess at another location.
+
+  This session wasn't started as a worker with a steering inbox; it has only answered the git question so far. The
+  notice may have been meant for another session, or this one was launched without its task environment. If the inbox
+  is somewhere else, give me the path, or set [0m[38;5;12mFM_TASK_INBOX[0m in this session with [0m[38;5;12m! export FM_TASK_INBOX=<path>[0m. I'll
+  then read the messages in numeric order, act on each one, and move each into [0m[38;5;12mhandled/[0m.
+
+[0m[2m[38;5;7m✻ Crunched for 23s · done 1:38 PM[0m
+
+[0m[38;5;7m[48;5;8m❯ [0m[38;5;15m[48;5;8mName five fruits, one per line, with a one-sentence fact about each. Do not use any tools.[0m[48;5;8m                           [0m
+
+[0m[38;5;15m⏺ [0mCaptain, here are five fruits:
+  
+  - [0m[1mBanana:[0m Botanically, a banana is a berry, but a strawberry is not.
+  - [0m[1mApple:[0m Apples float in water because about a quarter of their volume is air.
+  - [0m[1mPineapple:[0m A pineapple plant usually takes two to three years to produce its first fruit.
+  - [0m[1mAvocado:[0m Avocados ripen only after they are picked, so growers can store them on the tree for months.
+  - [0m[1mStrawberry: [0mA strawberry carries its seeds on the outside, about 200 of them on an average fruit.
+
+[0m[2m[38;5;7m✻[0m [0m[2m[38;5;7mCogitated for 6s · done 1:38 PM[0m
+[0m[2m[38;5;7mmisterrobot  5h 10% (4h01m)  7d 53% (6d)[0m                                                                           [0m[2m[38;5;7m[-][0m
+[0m[2m[38;5;7mmarleycrittendom  5h 12% (4h01m)  7d 15% (7d)[0m
+[0m[2m[38;5;7mlee  5h 0%  7d 99% (3d)[0m
+[0m[2m[38;5;7mlstutzman  5h 0%  7d 100% (7h21m)[0m
+[0m[1m[ Hide ][0m
+                                                 
+[0m[38;5;7m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+❯ [0m[2mThe inbox is at ~/.firstmate/state/labbase.inbox — read each .msg in numeric order, act on it, then mv it into handl…[0m
+[0m[38;5;7m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  [0m[38;5;8m55f9eb24[0m[2m[38;5;7m | [0m[38;5;2m7%[0m[2m[38;5;7m | Opus 5.5 | [0m[38;5;8m$[0m[2m[38;5;7m77[0m[38;5;8m/hr48[0m[2m[38;5;7m [0m[38;5;8mwk[0m[2m[38;5;7m F263 O1.1k s209 [0m[38;5;8mx16[0m[2m[38;5;7m [0m[38;5;8mmo[0m[2m[38;5;7m 16.4k | [0m[38;5;8mCdx[0m[38;5;2m✓[0m[2m[38;5;7m [0m[38;5;8mKmi[0m[38;5;2m✓[0m[2m[38;5;7m [0m[38;5;8mGem[0m[38;5;1m✗[0m[2m[38;5;7m | [0m[38;5;6m❯ Name five fruits, one per…[0m
+  [0m[38;5;9m⏵⏵ bypass permissions on[0m[2m[38;5;7m (shift+tab to cycle)[0m

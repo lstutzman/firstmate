@@ -1,0 +1,14 @@
+== base (pre-change settings, ghost present)
+socket=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.ATOPW2/tmux/tmux-501/fm-lab
+agent_state=unreadable
+busy_state=unknown
+composer_state=empty
+record=/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.ATOPW2/state/labbase.inbox/001.msg
+ring_rc=0 (0=rung 1=skipped-pending 2=unreached 3=dead)
+== fixed (post-change settings)
+socket=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.ATOPW2/tmux/tmux-501/fm-lab
+agent_state=unreadable
+busy_state=unknown
+composer_state=empty
+record=/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.ATOPW2/state/labfixed.inbox/001.msg
+ring_rc=0 (0=rung 1=skipped-pending 2=unreached 3=dead)

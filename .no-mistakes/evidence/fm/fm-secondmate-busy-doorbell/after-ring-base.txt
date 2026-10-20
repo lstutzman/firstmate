@@ -1,0 +1,45 @@
+
+  1. git status shows which files are modified, staged, or untracked.
+  2. git add stages changes for the next commit.
+  3. git commit records staged changes as a new commit with a message.
+  4. git pull fetches changes from a remote and merges them into the current branch.
+  5. git log shows the commit history.
+
+✻ Baked for 3s · done 1:33 PM
+
+❯ Name five fruits, one per line, with a one-sentence fact about each. Do not use any tools.
+
+⏺ Aye, captain, five fruits:
+
+  1. Banana: Bananas are botanically berries, while strawberries are not.
+  2. Apple: There are more than 7,500 known apple varieties grown around the world.
+  3. Pineapple: A pineapple plant usually takes about two years to produce a single fruit.
+  4. Avocado: Avocados ripen only after they are picked from the tree.
+  5. Strawberry: The strawberry is the only common fruit that carries its seeds on the outside.
+
+✻ Cooked for 3s · done 1:34 PM
+
+❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'labbase.inbox' steering inbox, read and act on each in numeric order, then mv each into
+  its handled/.
+
+  Searched for 1 pattern, listed 2 directories, ran 4 shell commands
+
+⏺ Found the inbox under the lab home. Reading the messages now.
+
+  Listing and printing pending inbox messages in numeric order
+  ⎿  $ mv "$FM_HOME/state/labbase.inbox/001.msg" "$FM_HOME/state/labbase.inbox/handled/" && ls "$FM_HOME/state/labbase.inbox"
+     "$FM_HOME/state/labbase.inbox/handled"
+
+· Unraveling… (38s · ↓ 1.8k tokens · thinking)
+  ⎿  Tip: /loop runs any prompt on a recurring schedule. Great for monitoring deploys, babysitting PRs, or polling status.
+misterrobot  5h 10% (4h04m)  7d 53% (6d)                                                                                                                    [-]
+marleycrittendom  5h 11% (4h04m)  7d 15% (7d)
+lee  5h 0%  7d 99% (3d)
+lstutzman  5h 0%  7d 100% (7h24m)
+[ Hide ]
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  e44935fa | 7% | Opus 5.5 | $77/hr48 wk F263 O1.1k s209 x16 mo 16.4k | Cdx✓ Kmi✓ Gem✗ | ❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg…
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.304
+▝▜██████▀  Opus 5.5 · API Usage Billing
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/c050d9982933/01M5CMFPTS6C7X5HMM02C1707Z
+
+
+❯ Reply with the single word READY. Do not use any tools.
+
+⏺ READY
+
+✻ Baked for 6s · done 1:41 PM
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+misterrobot  5h 10% (3h59m)  7d 53% (6d)                                                                           [-]
+marleycrittendom  5h 12% (3h59m)  7d 15% (7d)
+lee  5h 0%  7d 99% (3d)
+lstutzman  5h 0%  7d 100% (7h19m)
+[ Hide ]
+                                                                                                   ◐ medium · /effort
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  cde487b5 | 7% | Opus 5.5 | $79/hr47 wk F263 O1.1k s209 x16 mo 16.4k | Cdx✓ Kmi✓ Gem✗ | ❯ Reply with the single wor…
+  ⏵⏵ bypass permissions on (shift+tab to cycle)

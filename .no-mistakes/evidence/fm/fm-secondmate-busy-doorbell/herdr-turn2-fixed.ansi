@@ -1,0 +1,40 @@
+
+  
+  [0m[2m[38;5;7mSearched for [0m[1m[38;5;7m1[0m[2m[38;5;7m pattern, listed [0m[1m[38;5;7m1[0m[2m[38;5;7m directory, ran [0m[1m[38;5;7m3[0m[2m[38;5;7m shell commands [0m
+
+[0m[38;5;15m⏺ [0mCaptain, I couldn't act on that instruction because there is no inbox to read.
+  
+  - [0m[1mNo inbox location was given to this session.[0m The variable that should point to the inbox is empty here.
+  - [0m[1mThe folder isn't on this machine either. [0mI searched your home folder and the temp folders for a [0m[38;5;12mlabfixed.inbox[0m
+    folder and found nothing.
+  - [0m[1mThis session was never set up as a worker. [0mIt started without the instructions a Firstmate worker gets at launch,
+    so there's no inbox tied to it.
+  
+  I didn't read, change or move anything. If you meant to send this to a running worker, it probably went to the wrong
+  window. If you want this session to handle it, tell me where the inbox folder is and I'll work through the messages
+  in order.
+
+[0m[2m[38;5;7m✻ Worked for 23s · done 1:38 PM[0m
+
+[0m[38;5;7m[48;5;8m❯ [0m[38;5;15m[48;5;8mName five fruits, one per line, with a one-sentence fact about each. Do not use any tools.[0m[48;5;8m                           [0m
+
+[0m[38;5;15m⏺[0m Captain, here are five:
+
+  1. [0m[1mApple:[0m There are more than 7,500 known apple varieties grown around the world.
+  2. [0m[1mBanana:[0m Botanically, a banana is a berry, but a strawberry is not.
+  3. [0m[1mStrawberry:[0m It's the only common fruit that carries its seeds on the outside, about 200 per berry.
+  4. [0m[1mPineapple:[0m One pineapple plant usually takes 18 to 24 months to produce a single fruit.
+  5. [0m[1mAvocado: [0mIt's a large single-seeded berry and contains more potassium by weight than a banana.
+
+[0m[2m[38;5;7m✻[0m [0m[2m[38;5;7mCogitated for 3s · done 1:38 PM[0m
+[0m[2m[38;5;7mmisterrobot  5h 10% (4h01m)  7d 53% (6d)[0m                                                                           [0m[2m[38;5;7m[-][0m
+[0m[2m[38;5;7mmarleycrittendom  5h 12% (4h01m)  7d 15% (7d)[0m
+[0m[2m[38;5;7mlee  5h 0%  7d 99% (3d)[0m
+[0m[2m[38;5;7mlstutzman  5h 0%  7d 100% (7h21m)[0m
+[0m[1m[ Hide ][0m
+
+[0m[38;5;7m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+❯ 
+[0m[38;5;7m───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[0m
+  [0m[38;5;8mf82246b2[0m[2m[38;5;7m | [0m[38;5;2m7%[0m[2m[38;5;7m | Opus 5.5 | [0m[38;5;8m$[0m[2m[38;5;7m77[0m[38;5;8m/hr48[0m[2m[38;5;7m [0m[38;5;8mwk[0m[2m[38;5;7m F263 O1.1k s209 [0m[38;5;8mx16[0m[2m[38;5;7m [0m[38;5;8mmo[0m[2m[38;5;7m 16.4k | [0m[38;5;8mCdx[0m[38;5;2m✓[0m[2m[38;5;7m [0m[38;5;8mKmi[0m[38;5;2m✓[0m[2m[38;5;7m [0m[38;5;8mGem[0m[38;5;1m✗[0m[2m[38;5;7m | [0m[38;5;6m❯ Name five fruits, one per…[0m
+  [0m[38;5;9m⏵⏵ bypass permissions on[0m[2m[38;5;7m (shift+tab to cycle)[0m
