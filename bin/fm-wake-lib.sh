@@ -1697,6 +1697,47 @@ fm_treehouse_slot_lease() {  # <project-dir> <worktree> <holder>
   FM_TREEHOUSE_SLOT_LEASE_ERROR=
 }
 
+# Lease in place every pool slot of <project> that one of <task-record>s names
+# as its worktree= and whose claim is that record's own task, unless Treehouse
+# (`treehouse status --json`) already reports the slot leased. This covers slots
+# taken before spawns leased them, so Treehouse cannot hand a recorded copy to
+# the next `get`, which would reset it. Returns 1 with
+# FM_TREEHOUSE_SLOT_LEASE_ERROR when the pool cannot be read or a lease fails.
+# shellcheck disable=SC2034 # Output global, read by the sourcing caller.
+fm_treehouse_lease_recorded_slots() {  # <project-dir> <task-record>...
+  local project=$1 meta wt id slot status leased='' listed=0 path
+  shift
+  FM_TREEHOUSE_SLOT_LEASE_ERROR=
+  for meta in "$@"; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    wt=$(fm_meta_get "$meta" worktree)
+    [ -n "$wt" ] || continue
+    fm_treehouse_pool_slot "$project" "$wt" || continue
+    id=$(basename "$meta" .meta)
+    fm_treehouse_slot_owner_state "$wt" "$id"
+    [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] || continue
+    if [ "$listed" = 0 ]; then
+      if ! status=$( (CDPATH='' cd -- "$project" && treehouse status --json) 2>/dev/null) ||
+        ! leased=$(printf '%s' "$status" | jq -r '.[]? | select(.status == "leased") | .path' 2>/dev/null); then
+        FM_TREEHOUSE_SLOT_LEASE_ERROR="treehouse status --json for $project could not be read"
+        return 1
+      fi
+      listed=1
+    fi
+    slot=$(CDPATH='' cd -- "$wt" 2>/dev/null && pwd -P) || continue
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      [ "$(CDPATH='' cd -- "$path" 2>/dev/null && pwd -P)" = "$slot" ] && continue 2
+    done <<EOF
+$leased
+EOF
+    fm_treehouse_slot_lease "$project" "$wt" "$id" || {
+      FM_TREEHOUSE_SLOT_LEASE_ERROR="task $id's slot $wt: $FM_TREEHOUSE_SLOT_LEASE_ERROR"
+      return 1
+    }
+  done
+}
+
 # Task records on this machine that still name <worktree> as their worktree= or
 # home=, across every local Firstmate state directory (fm_local_firstmate_state_dirs,
 # so bin/fm-secondmate-registry-lib.sh must be sourced), skipping <own-meta>.

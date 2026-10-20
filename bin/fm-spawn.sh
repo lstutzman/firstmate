@@ -4701,7 +4701,18 @@ elif [ "$RELAUNCH" -eq 1 ]; then
     fi
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
+  if [ "$KIND" != secondmate ] && ! fm_treehouse_lease_recorded_slots "$PROJ_ABS" "$RELAUNCH_META"; then
+    echo "error: could not durably lease task $ID's recorded Treehouse pool slot $WT ($FM_TREEHOUSE_SLOT_LEASE_ERROR); refusing to relaunch into a copy Treehouse could hand to the next spawn; inspect window $T" >&2
+    exit 1
+  fi
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  # Under the project lock, before `treehouse get` can hand out and reset a
+  # slot, lease each slot this home's records still name and claim, so a copy
+  # taken before spawns leased their slots is never given to this spawn.
+  if ! fm_treehouse_lease_recorded_slots "$PROJ_ABS" "$STATE"/*.meta; then
+    echo "error: could not durably lease the Treehouse pool slots this home's task records still name ($FM_TREEHOUSE_SLOT_LEASE_ERROR); refusing to allocate a slot that could be one of them; inspect window $T" >&2
+    exit 1
+  fi
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
   # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
