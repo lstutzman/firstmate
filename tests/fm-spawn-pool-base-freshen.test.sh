@@ -743,6 +743,220 @@ test_pool_slot_claim_follows_the_spawn_outcome() {
   pass "a Treehouse slot claim names the launched task, refuses when unclaimable, and is dropped by a locked abort"
 }
 
+# Replace the case's silent treehouse with one that records every invocation in
+# TREEHOUSE_LOG. FM_FAKE_TREEHOUSE_NO_LEASE makes `lease` fail the way a
+# Treehouse older than 3.0.0, which has no such command, does.
+record_treehouse_calls() {
+  TREEHOUSE_LOG="$CASE_DIR/treehouse.log"
+  : > "$TREEHOUSE_LOG"
+  cat > "$FAKEBIN_DIR/treehouse" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> '$TREEHOUSE_LOG'
+if [ "\${1:-}" = lease ] && [ -n "\${FM_FAKE_TREEHOUSE_NO_LEASE:-}" ]; then
+  echo 'Error: unknown command "lease" for "treehouse"' >&2
+  exit 1
+fi
+exit 0
+SH
+  chmod +x "$FAKEBIN_DIR/treehouse"
+}
+
+# The 2026-10-19 hand-off: task A's worker was stopped with fm-control exit,
+# which leaves A's record and its worktree= line in place, and the next spawn
+# was given A's pool slot. Real Treehouse did that because the interactive
+# `treehouse get` holds only a process reservation, which lapses once nothing
+# runs in the slot. Spawn must now durably lease the slot to the task it
+# launches, which keeps real Treehouse from handing it out at all. The fake
+# pane still lands the next spawn in the same slot, so that half exercises the
+# backstop for a slot no lease protects - one leaked before spawns leased their
+# slots: the spawn must refuse, naming that task, without claiming the slot or
+# publishing a record of its own.
+test_slot_named_by_a_record_is_not_handed_to_another_spawn() {
+  local rec id holder out status holder_meta
+
+  holder='pool-handoff-holder-r1'
+  id='pool-handoff-next-r1'
+  rec=$(make_case slot-handoff "$holder")
+  read_case_record "$rec"
+  lay_out_as_pool_slot
+  record_treehouse_calls
+  out=$(run_spawn "$holder" --scout)
+  status=$?
+  expect_code 0 "$status" "the first spawn into a free Treehouse slot should launch"$'\n'"$out"
+  grep -Fxq -- "lease 1 --lease-holder $holder" "$TREEHOUSE_LOG" \
+    || fail "spawn did not durably lease its Treehouse slot to $holder; treehouse calls: $(cat "$TREEHOUSE_LOG")"
+  holder_meta=$(cat "$HOME_DIR/state/$holder.meta")
+
+  : > "$TREEHOUSE_LOG"
+  fm_test_spawn_brief "$HOME_DIR" "$id"
+  out=$(run_spawn "$id" --scout)
+  status=$?
+  [ "$status" -ne 0 ] \
+    || fail "spawn launched a second task into a slot $holder's record still names"$'\n'"$out"
+  assert_contains "$out" "task $holder" "the refusal did not name the task whose record holds the slot"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the refused spawn published a record for a slot it does not own"
+  grep -Fxq -- "task=$holder" "$SLOT_CLAIM" \
+    || fail "the refused spawn replaced $holder's slot claim: $(cat "$SLOT_CLAIM")"
+  [ "$(cat "$HOME_DIR/state/$holder.meta")" = "$holder_meta" ] \
+    || fail "the refused spawn changed $holder's task record"
+  grep -Fxq -- "lease 1 --lease-holder $holder" "$TREEHOUSE_LOG" \
+    || fail "the refusal did not lease the leaked slot back to $holder so later spawns skip it; treehouse calls: $(cat "$TREEHOUSE_LOG")"
+  if grep -Fq -- "--lease-holder $id" "$TREEHOUSE_LOG"; then
+    fail "the refused spawn leased $holder's slot to itself: $(cat "$TREEHOUSE_LOG")"
+  fi
+  pass "a slot a task record still names is refused to the next spawn and leased back to its holder"
+}
+
+# Teardown returns a slot and drops its claim before it removes the record, and
+# that removal can fail, so a record can outlive its slot. Leasing the slot back
+# to such a record would keep it from the pool for good: no Firstmate path would
+# ever return it. A holder whose claim is gone or names another task is refused
+# without a lease back.
+test_stale_record_holder_gets_no_lease_back() {
+  local rec id holder claim out status
+
+  holder='pool-stale-holder-r1'
+  for claim in absent other; do
+    id="pool-stale-next-$claim-r1"
+    rec=$(make_case "slot-stale-$claim" "$id")
+    read_case_record "$rec"
+    lay_out_as_pool_slot
+    record_treehouse_calls
+    fm_write_meta "$HOME_DIR/state/$holder.meta" "window=w" "worktree=$POOL_DIR" "project=$PROJECT_DIR" "kind=ship"
+    [ "$claim" = absent ] || printf 'task=pool-stale-successor-r1\nhome=%s\n' "$HOME_DIR" > "$SLOT_CLAIM"
+    out=$(run_spawn "$id" --scout)
+    status=$?
+    [ "$status" -ne 0 ] \
+      || fail "spawn launched into a slot $holder's record still names (claim $claim)"$'\n'"$out"
+    assert_contains "$out" "task $holder" "the refusal did not name the stale record (claim $claim)"
+    [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the refused spawn published a record (claim $claim)"
+    if grep -q -- '^lease ' "$TREEHOUSE_LOG"; then
+      fail "spawn leased the slot although its claim is $claim: $(cat "$TREEHOUSE_LOG")"
+    fi
+  done
+  pass "a record whose slot claim is gone or another task's is refused without leasing the slot back to it"
+}
+
+# The record that still names the copy may live in another local home: a
+# registered local secondmate's task shares this machine's pools.
+test_slot_named_by_a_secondmate_record_is_refused() {
+  local rec id mate out status
+
+  id='pool-handoff-cross-home-r1'
+  rec=$(make_case slot-cross-home "$id")
+  read_case_record "$rec"
+  lay_out_as_pool_slot
+  record_treehouse_calls
+  mate="$CASE_DIR/mate"
+  mkdir -p "$mate/state" "$mate/data"
+  printf -- '- mate - a local mate (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" \
+    > "$HOME_DIR/data/secondmates.md"
+  fm_write_meta "$mate/state/mate-task.meta" "window=w" "worktree=$POOL_DIR" "project=$PROJECT_DIR" "kind=ship"
+  out=$(run_spawn "$id" --scout)
+  status=$?
+  [ "$status" -ne 0 ] \
+    || fail "spawn launched into a slot a local secondmate's task record still names"$'\n'"$out"
+  assert_contains "$out" "task mate-task in $mate" \
+    "the refusal did not name the secondmate task and its home"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the refused spawn published a record"
+  [ ! -e "$SLOT_CLAIM" ] || fail "the refused spawn claimed the slot: $(cat "$SLOT_CLAIM")"
+  pass "a slot a local secondmate's task record still names is refused, naming that task and home"
+}
+
+# Without a durable lease the copy goes back to being protected only while
+# something runs in it, so a Treehouse that cannot lease refuses the spawn.
+test_spawn_refuses_a_slot_it_cannot_lease() {
+  local rec id out status
+
+  id='pool-slot-unleasable-r1'
+  rec=$(make_case slot-unleasable "$id")
+  read_case_record "$rec"
+  lay_out_as_pool_slot
+  record_treehouse_calls
+  out=$(FM_FAKE_TREEHOUSE_NO_LEASE=1 run_spawn "$id" --scout)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn launched a worker on a slot it could not durably lease"$'\n'"$out"
+  assert_contains "$out" "could not durably lease Treehouse pool slot" \
+    "spawn did not name the failed lease as the reason"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "spawn published a record for an unleased slot"
+  [ ! -e "$SLOT_CLAIM" ] && [ ! -L "$SLOT_CLAIM" ] \
+    || fail "the refused spawn left a slot claim naming a task with no record: $(cat "$SLOT_CLAIM")"
+  pass "a spawn whose Treehouse slot cannot be durably leased is refused before its record is published"
+}
+
+# A slot taken before spawns leased their slots carries only its record and its
+# claim. The fake pool models what Treehouse documents: `get` hands out the first
+# slot no lease holds and resets it to a detached HEAD, `lease` refuses a slot
+# already leased, and `status --json` reports leased slots. The pane runs the
+# `get` spawn types into it. The next spawn must lease the legacy slot before it
+# asks for one, so it is given the other slot and the legacy branch survives.
+test_legacy_unleased_record_slot_is_never_handed_out() {
+  local rec id holder out status slots leases real_tmux
+
+  holder='pool-legacy-holder-r1'
+  id='pool-legacy-next-r1'
+  rec=$(make_case slot-legacy "$id")
+  read_case_record "$rec"
+  lay_out_as_pool_slot
+  slots="$CASE_DIR/slots"
+  git -C "$PROJECT_DIR" worktree add --quiet --detach "$slots/2/project" "$INITIAL_SHA"
+  git -C "$POOL_DIR" checkout --quiet -b "fm/$holder"
+  printf 'unlanded\n' > "$POOL_DIR/uncommitted.txt"
+  fm_write_meta "$HOME_DIR/state/$holder.meta" "window=w" "worktree=$POOL_DIR" "project=$PROJECT_DIR" "kind=ship"
+  printf 'task=%s\nhome=%s\n' "$holder" "$HOME_DIR" > "$SLOT_CLAIM"
+
+  leases="$CASE_DIR/leases"
+  : > "$leases"
+  cat > "$FAKEBIN_DIR/treehouse" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in
+  lease)
+    if grep -q "^\$2 " '$leases'; then echo "worktree \$2 is already leased" >&2; exit 1; fi
+    printf '%s %s\n' "\$2" "\$4" >> '$leases' ;;
+  status)
+    sep=
+    printf '['
+    while read -r name _; do
+      printf '%s{"name":"%s","path":"%s","status":"leased"}' "\$sep" "\$name" '$slots'/"\$name"/project
+      sep=,
+    done < '$leases'
+    printf ']\n' ;;
+  get)
+    for name in 1 2; do
+      grep -q "^\$name " '$leases' && continue
+      git -C '$slots'/"\$name"/project checkout --quiet --detach
+      printf '%s\n' '$slots'/"\$name"/project
+      exit 0
+    done
+    exit 1 ;;
+esac
+exit 0
+SH
+  real_tmux="$FAKEBIN_DIR/tmux.base"
+  mv "$FAKEBIN_DIR/tmux" "$real_tmux"
+  cat > "$FAKEBIN_DIR/tmux" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *"#{pane_current_path}"*) [ ! -s '$CASE_DIR/pane' ] || { cat '$CASE_DIR/pane'; exit 0; } ;;
+  send-keys*"treehouse get"*) treehouse get > '$CASE_DIR/pane'; exit 0 ;;
+esac
+exec '$real_tmux' "\$@"
+SH
+  chmod +x "$FAKEBIN_DIR/treehouse" "$FAKEBIN_DIR/tmux"
+
+  out=$(fm_test_run_spawn "$HOME_DIR" "$PROJECT_DIR" "$FAKEBIN_DIR" "$id" "$PROJECT_DIR" --scout)
+  status=$?
+  [ "$(git -C "$POOL_DIR" symbolic-ref --quiet --short HEAD)" = "fm/$holder" ] \
+    || fail "the next spawn was handed $holder's unleased slot and reset its branch"$'\n'"$out"
+  assert_grep 'unlanded' "$POOL_DIR/uncommitted.txt" "the next spawn discarded $holder's uncommitted work"
+  grep -Fxq -- "1 $holder" "$leases" \
+    || fail "spawn did not lease $holder's recorded slot to it: $(cat "$leases")"
+  expect_code 0 "$status" "the next spawn should launch into the free slot"$'\n'"$out"
+  assert_grep "worktree=$slots/2/project" "$HOME_DIR/state/$id.meta" \
+    "the next spawn was not given the free slot"
+  pass "a legacy unleased record's slot is leased to it before the next spawn's get, which is given another slot"
+}
+
 publish_feature_branch() { # <branch>
   git -C "$CASE_DIR/publisher" checkout --quiet -b "$1"
   printf 'only on %s\n' "$1" > "$CASE_DIR/publisher/feature-only.txt"
@@ -876,6 +1090,11 @@ test_scout_base_branch_refused_on_gerrit_forge() {
 
 test_remote_seeded_home_spawns_from_treehouse_pool
 test_pool_slot_claim_follows_the_spawn_outcome
+test_slot_named_by_a_record_is_not_handed_to_another_spawn
+test_stale_record_holder_gets_no_lease_back
+test_slot_named_by_a_secondmate_record_is_refused
+test_spawn_refuses_a_slot_it_cannot_lease
+test_legacy_unleased_record_slot_is_never_handed_out
 test_linked_spawning_home_rejects_primary_before_refresh
 test_stale_pool_base_refreshes_before_branching
 test_named_base_branch_starts_from_that_branch

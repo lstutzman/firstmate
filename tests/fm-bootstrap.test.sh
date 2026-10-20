@@ -40,11 +40,13 @@ unset TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION HERDR_SOCKET_PATH \
   CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_SOCKET_PATH CMUX_TAB_ID CMUX_PANEL_ID 2>/dev/null || true
 
 # A fake toolchain where every required tool is present and gh is authenticated.
-# treehouse's `get --help` advertises --lease only when FM_FAKE_TREEHOUSE_LEASE_HELP=1.
+# treehouse's `get --help` advertises --lease only when FM_FAKE_TREEHOUSE_LEASE_HELP is
+# 1 or get-only, and its `lease` command exists only when it is 1: get-only is a
+# Treehouse older than 3.0.0, which has get --lease but no lease command.
 make_fake_toolchain() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
-  fm_fake_exit0 "$fakebin" tmux node chrome-devtools-axi
+  fm_fake_exit0 "$fakebin" tmux jq node chrome-devtools-axi
   fm_fake_version_tool "$fakebin" lavish-axi FM_FAKE_LAVISH_AXI_VERSION 0.1.80
   cat > "$fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
@@ -66,12 +68,15 @@ SH
   cat > "$fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = get ] && [ "${2:-}" = --help ]; then
-  if [ "${FM_FAKE_TREEHOUSE_LEASE_HELP:-}" = 1 ]; then
-    printf '%s\n' 'Usage: treehouse get [--lease] [--lease-holder <holder>]'
-  else
-    printf '%s\n' 'Usage: treehouse get'
-  fi
+  case "${FM_FAKE_TREEHOUSE_LEASE_HELP:-}" in
+    1|get-only) printf '%s\n' 'Usage: treehouse get [--lease] [--lease-holder <holder>]' ;;
+    *) printf '%s\n' 'Usage: treehouse get' ;;
+  esac
   exit 0
+fi
+if [ "${1:-}" = lease ] && [ "${FM_FAKE_TREEHOUSE_LEASE_HELP:-}" != 1 ]; then
+  printf '%s\n' 'Error: unknown command "lease" for "treehouse"' >&2
+  exit 1
 fi
 exit 0
 SH
@@ -307,6 +312,7 @@ test_bootstrap_reporting() {
   done <<'ROWS'
 treehouse --lease support is accepted silently^1^0.2.6^1^manual^empty^^
 treehouse without --lease reports an upgrade, gh auth is fine^0^0.2.6^1^-^grep^MISSING: treehouse (install: "@ROOT@/bin/fm-install-pinned.sh" treehouse)^NEEDS_GH_AUTH
+treehouse without the lease command reports an upgrade^get-only^0.2.6^1^-^grep^MISSING: treehouse (install: "@ROOT@/bin/fm-install-pinned.sh" treehouse)^NEEDS_GH_AUTH
 compatible tasks-axi is silent by default^1^0.2.6^1^-^empty^^
 missing tasks-axi is required by default^1^-^1^-^exact^MISSING: tasks-axi (install: npm install -g --ignore-scripts tasks-axi@0.2.6)^
 incompatible tasks-axi is required by default^1^0.1.0^1^-^exact^MISSING: tasks-axi (install: npm install -g --ignore-scripts tasks-axi@0.2.6)^
@@ -662,7 +668,8 @@ test_unknown_backend_reports_invalid_configuration() {
 
 test_json_backends_require_jq_not_tmux() {
   local backend case_dir fakebin bash_env out
-  # herdr/zellij/cmux parse their backend's JSON output, so jq is a genuine dep.
+  # herdr/zellij/cmux parse their backend's JSON output and every Treehouse spawn
+  # reads treehouse status --json, so jq is a genuine dep.
   # jq lives in a system BASE_PATH dir on many hosts, so force it missing with a
   # command()/jq() override (the same technique the git-required case uses) to keep
   # the assertion host-independent.
@@ -693,11 +700,12 @@ SH
     assert_contains "$out" "MISSING: jq" "backend=$backend must fail closed on missing jq"
     assert_not_contains "$out" "MISSING: tmux" "backend=$backend must not demand tmux when jq is missing"
   done <<'ROWS'
+tmux
 herdr
 zellij
 cmux
 ROWS
-  pass "bootstrap: JSON-emitting backends require jq (their genuine dep), never tmux"
+  pass "bootstrap: every Treehouse backend requires jq, and a non-tmux one never demands tmux"
 }
 
 test_treehouse_lease_check_follows_resolved_backend() {

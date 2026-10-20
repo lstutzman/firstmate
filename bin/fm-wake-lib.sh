@@ -1580,20 +1580,19 @@ fm_treehouse_pool_slot() {  # <project-dir> <worktree>
 # Slot-owner claim: which task a Treehouse pool slot currently belongs to.
 #
 # Treehouse can record ownership durably: `treehouse get --lease --lease-holder`
-# reserves a slot under a label until `treehouse return --if-lease-holder`
-# releases it, and Firstmate uses exactly that for secondmate homes
-# (bin/fm-home-seed.sh). Crewmate spawns do not take that path: they acquire
-# their slot through the interactive pane-driven `treehouse get`, whose state
-# entry is a live process lease (owner_pid plus owner_started_at, and `treehouse
-# status` reports in-use from the processes actually running under the path).
-# That answers "is anything running here", never "which task owns this", and it
-# is released by the very event that makes a task record stale - the worker
-# exiting - so a slot whose lease has lapsed reads identical whether it is still
-# this task's or has since been handed to another one. Firstmate therefore keeps
-# its own claim on top: one file naming the task that took the slot, written by
-# bin/fm-spawn.sh under the same project lock that allocates the slot and
-# released by bin/fm-teardown.sh when the slot goes back to the pool. Moving
-# crewmate spawns onto the durable lease is separate follow-up work.
+# reserves a slot under a label until `treehouse return` releases it, and
+# Firstmate uses exactly that for secondmate homes (bin/fm-home-seed.sh).
+# Crewmate spawns acquire their slot through the interactive pane-driven
+# `treehouse get`, whose state entry is only a process reservation (owner_pid
+# plus owner_started_at, and `treehouse status` reports in-use from the
+# processes actually running under the path). That answers "is anything running
+# here", never "which task owns this": once the reserving process is gone and
+# nothing runs in the copy - a stopped worker, for one - the next `treehouse get`
+# may hand the slot on. bin/fm-spawn.sh therefore leases each crewmate slot in
+# place (fm_treehouse_slot_lease) so only bin/fm-teardown.sh's `treehouse return`
+# frees it, and keeps its own claim on top: one file naming the task that took
+# the slot, written under the same project lock that allocates the slot and
+# released by bin/fm-teardown.sh when the slot goes back to the pool.
 #
 # The claim lives at <pool>/<slot>/.fm-slot-owner - a sibling of the repo
 # checkout rather than a file inside it - so claiming a slot can never dirty the
@@ -1673,6 +1672,129 @@ fm_treehouse_slot_owner_release() {  # <worktree> <task-id>
   [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] || return 0
   marker=$(fm_treehouse_slot_owner_marker "$worktree") || return 0
   rm -f "$marker" 2>/dev/null || true
+}
+
+# Durably lease a pool slot in place under <holder> (`treehouse lease`, Treehouse
+# 3.0.0 and later). The lease is state only - it never resets or touches the
+# copy - and Treehouse then never hands the slot to another `get` or prunes it,
+# with or without a process running in it, until `treehouse return` releases
+# it. Lease names a slot by the name `treehouse status` prints, which in the
+# fixed <pool>/<slot>/<repo> layout fm_treehouse_pool_slot accepts is the slot
+# directory's own name; it resolves against the pool of the project it runs
+# from, as the pane's `treehouse get` did. Treehouse's diagnostic, if any, is
+# left in FM_TREEHOUSE_SLOT_LEASE_ERROR.
+# shellcheck disable=SC2034 # Output global, read by the sourcing caller.
+fm_treehouse_slot_lease() {  # <project-dir> <worktree> <holder>
+  local project=$1 worktree=$2 holder=$3 slot
+  FM_TREEHOUSE_SLOT_LEASE_ERROR=
+  slot=$(CDPATH='' cd -- "$worktree" 2>/dev/null && pwd -P) || {
+    FM_TREEHOUSE_SLOT_LEASE_ERROR="worktree $worktree cannot be resolved"
+    return 1
+  }
+  FM_TREEHOUSE_SLOT_LEASE_ERROR=$( (CDPATH='' cd -- "$project" &&
+    treehouse lease "$(basename "$(dirname "$slot")")" --lease-holder "$holder") 2>&1 >/dev/null) ||
+    return 1
+  FM_TREEHOUSE_SLOT_LEASE_ERROR=
+}
+
+# Lease in place every pool slot of <project> that one of <task-record>s names
+# as its worktree= and whose claim is that record's own task, unless Treehouse
+# (`treehouse status --json`) already reports the slot leased. This covers slots
+# taken before spawns leased them, so Treehouse cannot hand a recorded copy to
+# the next `get`, which would reset it. Returns 1 with
+# FM_TREEHOUSE_SLOT_LEASE_ERROR when the pool cannot be read or a lease fails.
+# shellcheck disable=SC2034 # Output global, read by the sourcing caller.
+fm_treehouse_lease_recorded_slots() {  # <project-dir> <task-record>...
+  local project=$1 meta wt id slot status leased='' listed=0 path
+  shift
+  FM_TREEHOUSE_SLOT_LEASE_ERROR=
+  for meta in "$@"; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    wt=$(fm_meta_get "$meta" worktree)
+    [ -n "$wt" ] || continue
+    fm_treehouse_pool_slot "$project" "$wt" || continue
+    id=$(basename "$meta" .meta)
+    fm_treehouse_slot_owner_state "$wt" "$id"
+    [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] || continue
+    if [ "$listed" = 0 ]; then
+      if ! command -v jq >/dev/null 2>&1; then
+        FM_TREEHOUSE_SLOT_LEASE_ERROR="jq is required to read treehouse status --json but is not on PATH"
+        return 1
+      fi
+      if ! status=$( (CDPATH='' cd -- "$project" && treehouse status --json) 2>/dev/null) ||
+        ! leased=$(printf '%s' "$status" | jq -r '.[]? | select(.status == "leased") | .path' 2>/dev/null); then
+        FM_TREEHOUSE_SLOT_LEASE_ERROR="treehouse status --json for $project could not be read"
+        return 1
+      fi
+      listed=1
+    fi
+    slot=$(CDPATH='' cd -- "$wt" 2>/dev/null && pwd -P) || continue
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      [ "$(CDPATH='' cd -- "$path" 2>/dev/null && pwd -P)" = "$slot" ] && continue 2
+    done <<EOF
+$leased
+EOF
+    fm_treehouse_slot_lease "$project" "$wt" "$id" || {
+      FM_TREEHOUSE_SLOT_LEASE_ERROR="task $id's slot $wt: $FM_TREEHOUSE_SLOT_LEASE_ERROR"
+      return 1
+    }
+  done
+}
+
+# Task records on this machine that still name <worktree> as their worktree= or
+# home=, across every local Firstmate state directory (fm_local_firstmate_state_dirs,
+# so bin/fm-secondmate-registry-lib.sh must be sourced), skipping <own-meta>.
+# Paths compare physically, so a symlinked spelling of the same copy still
+# matches. Sets FM_TREEHOUSE_SLOT_HOLDER_COUNT, FM_TREEHOUSE_SLOT_HOLDER_ID
+# (the first match's task id, for a caller acting on a single holder), and
+# FM_TREEHOUSE_SLOT_HOLDERS (each holder as "task <id>", plus " in <home>" for a
+# record outside <first-state>, comma-separated). Returns 1 with
+# FM_TREEHOUSE_SLOT_HOLDERS_ERROR when a home or record cannot be read, because
+# an unreadable record could be the one still naming the copy.
+# shellcheck disable=SC2034 # Output globals, read by the sourcing caller.
+fm_treehouse_slot_record_holders() {  # <first-state> <worktree> <own-meta>
+  local first=$1 worktree=$2 own=$3 slot state meta field path path_slot id label
+  FM_TREEHOUSE_SLOT_HOLDER_COUNT=0
+  FM_TREEHOUSE_SLOT_HOLDER_ID=
+  FM_TREEHOUSE_SLOT_HOLDERS=
+  FM_TREEHOUSE_SLOT_HOLDERS_ERROR=
+  slot=$(CDPATH='' cd -- "$worktree" 2>/dev/null && pwd -P) || {
+    FM_TREEHOUSE_SLOT_HOLDERS_ERROR="worktree $worktree cannot be resolved"
+    return 1
+  }
+  fm_local_firstmate_state_dirs "$first" || {
+    FM_TREEHOUSE_SLOT_HOLDERS_ERROR=$FM_LOCAL_FIRSTMATE_ERROR
+    return 1
+  }
+  for state in "${FM_LOCAL_FIRSTMATE_STATES[@]}"; do
+    [ -e "$state" ] || continue
+    [ -d "$state" ] && [ -r "$state" ] && [ -x "$state" ] || {
+      FM_TREEHOUSE_SLOT_HOLDERS_ERROR="local Firstmate state directory $state cannot be read"
+      return 1
+    }
+    for meta in "$state"/*.meta; do
+      [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+      [ "$meta" -ef "$own" ] && [ "${meta##*/}" = "${own##*/}" ] && continue
+      [ -r "$meta" ] || {
+        FM_TREEHOUSE_SLOT_HOLDERS_ERROR="task record $meta cannot be read"
+        return 1
+      }
+      for field in worktree home; do
+        path=$(fm_meta_get "$meta" "$field")
+        [ -n "$path" ] || continue
+        path_slot=$(CDPATH='' cd -- "$path" 2>/dev/null && pwd -P) || continue
+        [ "$path_slot" = "$slot" ] || continue
+        id=$(basename "$meta" .meta)
+        label="task $id"
+        [ "$state" -ef "$first" ] || label="$label in $(dirname "$state")"
+        FM_TREEHOUSE_SLOT_HOLDER_COUNT=$((FM_TREEHOUSE_SLOT_HOLDER_COUNT + 1))
+        [ -n "$FM_TREEHOUSE_SLOT_HOLDER_ID" ] || FM_TREEHOUSE_SLOT_HOLDER_ID=$id
+        FM_TREEHOUSE_SLOT_HOLDERS="${FM_TREEHOUSE_SLOT_HOLDERS:+$FM_TREEHOUSE_SLOT_HOLDERS, }$label"
+        break
+      done
+    done
+  done
 }
 
 fm_failure_episode_reset() {
