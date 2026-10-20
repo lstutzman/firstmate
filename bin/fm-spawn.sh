@@ -4789,8 +4789,10 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     # A copy that any task record on this machine still names is that task's
     # until its teardown, however Treehouse came to hand it out again, so it is
     # refused before the claim below would overwrite the evidence. A single
-    # holder gets the slot leased back to it, so the next spawn is handed a
-    # different one instead of being refused on the same copy.
+    # holder whose claim the slot still carries gets it leased back, so the next
+    # spawn is handed a different one instead of being refused on the same copy;
+    # a record whose claim is gone or replaced may have outlived its slot, and a
+    # lease to it would never be returned.
     if ! fm_treehouse_slot_record_holders "$STATE" "$WT" "$STATE/$ID.meta"; then
       echo "error: Treehouse handed task $ID pool slot $WT, but this machine's task records cannot all be read to prove no other task still names it ($FM_TREEHOUSE_SLOT_HOLDERS_ERROR); refusing to launch; inspect window $T" >&2
       exit 1
@@ -4798,6 +4800,8 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     if [ "$FM_TREEHOUSE_SLOT_HOLDER_COUNT" -gt 0 ]; then
       spawn_leased_back=
       if [ "$FM_TREEHOUSE_SLOT_HOLDER_COUNT" -eq 1 ] &&
+        fm_treehouse_slot_owner_state "$WT" "$FM_TREEHOUSE_SLOT_HOLDER_ID" &&
+        [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] &&
         fm_treehouse_slot_lease "$PROJ_ABS" "$WT" "$FM_TREEHOUSE_SLOT_HOLDER_ID"; then
         spawn_leased_back="; the slot is now durably leased to that task, so the next spawn is given another one"
       fi

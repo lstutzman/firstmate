@@ -1717,6 +1717,10 @@ fm_treehouse_lease_recorded_slots() {  # <project-dir> <task-record>...
     fm_treehouse_slot_owner_state "$wt" "$id"
     [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] || continue
     if [ "$listed" = 0 ]; then
+      if ! command -v jq >/dev/null 2>&1; then
+        FM_TREEHOUSE_SLOT_LEASE_ERROR="jq is required to read treehouse status --json but is not on PATH"
+        return 1
+      fi
       if ! status=$( (CDPATH='' cd -- "$project" && treehouse status --json) 2>/dev/null) ||
         ! leased=$(printf '%s' "$status" | jq -r '.[]? | select(.status == "leased") | .path' 2>/dev/null); then
         FM_TREEHOUSE_SLOT_LEASE_ERROR="treehouse status --json for $project could not be read"

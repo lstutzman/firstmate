@@ -807,6 +807,36 @@ test_slot_named_by_a_record_is_not_handed_to_another_spawn() {
   pass "a slot a task record still names is refused to the next spawn and leased back to its holder"
 }
 
+# Teardown returns a slot and drops its claim before it removes the record, and
+# that removal can fail, so a record can outlive its slot. Leasing the slot back
+# to such a record would keep it from the pool for good: no Firstmate path would
+# ever return it. A holder whose claim is gone or names another task is refused
+# without a lease back.
+test_stale_record_holder_gets_no_lease_back() {
+  local rec id holder claim out status
+
+  holder='pool-stale-holder-r1'
+  for claim in absent other; do
+    id="pool-stale-next-$claim-r1"
+    rec=$(make_case "slot-stale-$claim" "$id")
+    read_case_record "$rec"
+    lay_out_as_pool_slot
+    record_treehouse_calls
+    fm_write_meta "$HOME_DIR/state/$holder.meta" "window=w" "worktree=$POOL_DIR" "project=$PROJECT_DIR" "kind=ship"
+    [ "$claim" = absent ] || printf 'task=pool-stale-successor-r1\nhome=%s\n' "$HOME_DIR" > "$SLOT_CLAIM"
+    out=$(run_spawn "$id" --scout)
+    status=$?
+    [ "$status" -ne 0 ] \
+      || fail "spawn launched into a slot $holder's record still names (claim $claim)"$'\n'"$out"
+    assert_contains "$out" "task $holder" "the refusal did not name the stale record (claim $claim)"
+    [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the refused spawn published a record (claim $claim)"
+    if grep -q -- '^lease ' "$TREEHOUSE_LOG"; then
+      fail "spawn leased the slot although its claim is $claim: $(cat "$TREEHOUSE_LOG")"
+    fi
+  done
+  pass "a record whose slot claim is gone or another task's is refused without leasing the slot back to it"
+}
+
 # The record that still names the copy may live in another local home: a
 # registered local secondmate's task shares this machine's pools.
 test_slot_named_by_a_secondmate_record_is_refused() {
@@ -1061,6 +1091,7 @@ test_scout_base_branch_refused_on_gerrit_forge() {
 test_remote_seeded_home_spawns_from_treehouse_pool
 test_pool_slot_claim_follows_the_spawn_outcome
 test_slot_named_by_a_record_is_not_handed_to_another_spawn
+test_stale_record_holder_gets_no_lease_back
 test_slot_named_by_a_secondmate_record_is_refused
 test_spawn_refuses_a_slot_it_cannot_lease
 test_legacy_unleased_record_slot_is_never_handed_out
