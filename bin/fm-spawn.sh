@@ -712,6 +712,16 @@ fi
 if ! KEEP_AI_TRAILERS=$(fm_config_source_present "$CONFIG/keep-ai-trailers"); then
   exit 1
 fi
+# Every Claude launch's --settings value (inline JSON or a secondmate's settings
+# file) carries this enabledPlugins override, which turns off, for that session
+# only, user-scope plugins that write into the composer. next-steps places its
+# predicted next prompt into the empty composer through the mods API's
+# prompt.suggest, which no Claude suggestion switch reaches (2.1.304: the
+# CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION env var, --prompt-suggestions false and
+# promptSuggestionEnabled all leave it drawing). That ghost made the doorbell's
+# pending-text guard skip every ring, and its text can read as a captain
+# instruction. The captain's own settings are untouched.
+CLAUDE_COMPOSER_PLUGINS_OFF='"enabledPlugins":{"next-steps@claude-community":false}'
 # Set by the forge agreement below for a forge=external ship.
 EXTERNAL_REVIEW=0
 EXTERNAL_BACKUP_REMOTE=
@@ -2248,8 +2258,10 @@ launch_template() {
   # prefix scoped to this firstmate-launched agent; it never touches the captain's
   # global config. The CLI's --prompt-suggestions flag is print/SDK-mode only and
   # does NOT suppress the interactive ghost text (verified empirically), so the env
-  # var is the correct control. The dim-aware composer reader in fm-tmux-lib.sh is
-  # the defense-in-depth backstop for any pane this flag cannot reach.
+  # var is the correct control for Claude's own suggestions. A plugin's ghost text
+  # bypasses it; CLAUDE_COMPOSER_PLUGINS_OFF above covers that. The dim-aware
+  # composer reader in fm-tmux-lib.sh is the defense-in-depth backstop for any
+  # pane these controls cannot reach.
   # Two independent controls disable claude's `/bug`/`/feedback` model-drafted
   # feedback flow (the SendFeedback tool), deliberately layered so a fleet-launched
   # agent never queues or submits a bug-report draft on the captain's behalf even
@@ -5055,9 +5067,9 @@ BUSY_GEN=
     fi
     hooks_json="\"hooks\":{\"UserPromptSubmit\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_submit\"}]}],${stop_entry}\"StopFailure\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_stopfail\"}]}],\"SessionEnd\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_sessionend\"}]}]}"
     if [ "$KIND" = secondmate ]; then
-      session_keys='"feedbackDrafts":"off",'
+      session_keys="\"feedbackDrafts\":\"off\",$CLAUDE_COMPOSER_PLUGINS_OFF,"
       if [ "$KEEP_AI_TRAILERS" != 1 ]; then
-        session_keys='"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},'
+        session_keys="$session_keys\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false},"
       fi
       printf '{%s%s}\n' "$session_keys" "$hooks_json" >"$STATE_REAL/$ID.claude-settings.json"
     else
@@ -5701,7 +5713,7 @@ case "$LAUNCH" in
   if [ "$KIND" = secondmate ]; then
     LAUNCH=${LAUNCH//__CLAUDESETTINGS__/$(shell_quote "$STATE_REAL/$ID.claude-settings.json")}
   else
-    claude_settings="'{\"feedbackDrafts\":\"off\"__CLAUDEATTRIBUTION__}'"
+    claude_settings="'{\"feedbackDrafts\":\"off\",${CLAUDE_COMPOSER_PLUGINS_OFF}__CLAUDEATTRIBUTION__}'"
     LAUNCH=${LAUNCH//__CLAUDESETTINGS__/$claude_settings}
   fi
   ;;

@@ -1528,7 +1528,7 @@ test_claude_forwards_firstmate_config_dir_when_set() {
   status=$?
   expect_code 0 "$status" "claude spawn with CLAUDE_CONFIG_DIR set should succeed"
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions $(claude_worker_add_dirs "$HOME_DIR" "$id")--settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}'" \
+  assert_contains "$launch" "CLAUDE_CONFIG_DIR='$CASE_DIR/claude-work' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude --dangerously-skip-permissions $(claude_worker_add_dirs "$HOME_DIR" "$id")--settings '{\"feedbackDrafts\":\"off\",\"enabledPlugins\":{\"next-steps@claude-community\":false},\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}'" \
     "claude launch did not forward firstmate's CLAUDE_CONFIG_DIR to the crewmate pane"
   pass "claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store"
 }
@@ -1767,6 +1767,54 @@ test_claude_secondmate_launch_carries_the_attribution_policy() {
   launch=$(cat "$LAUNCH_LOG")
   assert_attribution_policy "$launch" "claude secondmate"
   pass "a claude secondmate launch carries the attribution-off policy too"
+}
+
+# A user-scope plugin that writes into the composer (next-steps places its top
+# predicted prompt there as ghost text, which no Claude suggestion switch
+# reaches) makes the doorbell's pending-text guard skip every ring, so every
+# Claude launch turns it off for its own session.
+assert_composer_plugins_off() {  # <launch-command> <what>
+  local launch=$1 what=$2 settings
+  settings=$(claude_settings_json_arg "$launch")
+  printf '%s' "$settings" | jq -e '.enabledPlugins["next-steps@claude-community"] == false' >/dev/null \
+    || fail "$what launch settings JSON leaves the composer-writing next-steps plugin on: $settings"
+}
+
+test_claude_launches_turn_off_composer_writing_plugins() {
+  local rec id sm out status launch
+  id=profile-claude-composer-plugins-z28
+  rec=$(make_spawn_case profile-claude-composer-plugins claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "claude crewmate spawn should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_composer_plugins_off "$launch" "claude crewmate"
+  assert_attribution_policy "$launch" "claude crewmate"
+
+  id=profile-claude-composer-plugins-keep-z29
+  rec=$(make_spawn_case profile-claude-composer-plugins-keep claude "$id")
+  read_case_record "$rec"
+  : > "$HOME_DIR/config/keep-ai-trailers"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  expect_code 0 "$status" "claude crewmate spawn with keep-ai-trailers should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_composer_plugins_off "$launch" "opted-in claude crewmate"
+  assert_attribution_policy_absent "$launch" "opted-in claude crewmate"
+
+  id=profile-claude-composer-plugins-sm-z30
+  rec=$(make_spawn_case profile-claude-composer-plugins-sm claude "$id")
+  read_case_record "$rec"
+  sm="$CASE_DIR/secondmate-home"
+  make_seeded_secondmate_home "$sm" "$id"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$sm" --secondmate)
+  status=$?
+  expect_code 0 "$status" "secondmate claude spawn should succeed"$'\n'"$out"
+  launch=$(cat "$LAUNCH_LOG")
+  assert_composer_plugins_off "$launch" "claude secondmate"
+  assert_attribution_policy "$launch" "claude secondmate"
+  pass "every claude crewmate and secondmate launch turns off the composer-writing next-steps plugin"
 }
 
 test_active_dispatch_profile_does_not_block_secondmate_launch() {
@@ -2143,7 +2191,7 @@ claude_expected_launch() {  # <launch> <home> <id> <permission-flag>
   [ "$(printf '%s' "$doorbell" | "$ROOT/bin/fm-operational-input.sh" doorbell-kind)" = launch-brief ] \
     || doorbell="not a launch-brief doorbell"
   quoted="'$(printf '%s' "$doorbell" | sed "s/'/'\\\\''/g")'"
-  printf '%s' "export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$2" "$3")$(fm_test_launch_git_prefix "$1")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $4 $(claude_worker_add_dirs "$2" "$3")--settings '{\"feedbackDrafts\":\"off\",\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG $quoted"
+  printf '%s' "export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$2" "$3")$(fm_test_launch_git_prefix "$1")env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude $4 $(claude_worker_add_dirs "$2" "$3")--settings '{\"feedbackDrafts\":\"off\",\"enabledPlugins\":{\"next-steps@claude-community\":false},\"attribution\":{\"commit\":\"\",\"pr\":\"\",\"sessionUrl\":false}}' $CLAUDE_CONTROL_CHANNEL_FLAG $quoted"
 }
 
 test_claude_permission_mode_bypass_matches_absent_launch() {
@@ -2341,6 +2389,7 @@ test_claude_crewmate_launch_carries_the_attribution_policy
 test_keep_ai_trailers_omits_attribution_settings_and_strip_hooks
 test_keep_ai_trailers_reaches_secondmate_crew_launches
 test_claude_secondmate_launch_carries_the_attribution_policy
+test_claude_launches_turn_off_composer_writing_plugins
 test_active_dispatch_profile_does_not_block_secondmate_launch
 
 echo "# all fm-spawn-dispatch-profile tests passed"
