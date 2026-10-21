@@ -1154,6 +1154,20 @@ test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher() {
   pass "fm_backend_herdr_workspace_ensure: refuses to guess between two same-labeled home workspaces"
 }
 
+test_workspace_ensure_flat_workers_adopts_the_first_of_several() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/ensure-flat-workers-dup"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w4","label":"firstmate workers"},{"workspace_id":"w9","label":"firstmate workers"}]}}\n' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp flat-workers' "$ROOT" 2>&1 )
+  status=$?
+  expect_code 0 "$status" "two '<home> workers' workspaces must not block a flat fallback"$'\n'"$out"
+  [ "$out" = w4 ] || fail "flat-workers should adopt the first workers workspace w4 in list order, got '$out'"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' "an existing workers workspace must be reused, not duplicated again"
+  pass "fm_backend_herdr_workspace_ensure: a flat fallback adopts the first of several '<home> workers' workspaces"
+}
+
 test_workspace_ensure_other_home_ignores_the_launcher_identity() {
   local dir log resp fb out
   dir="$TMP_ROOT/ensure-other-home"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -5921,6 +5935,7 @@ test_launcher_identity_refuses_a_pane_and_tab_that_disagree
 test_launcher_identity_refuses_a_workspace_missing_from_the_session
 test_workspace_ensure_prefers_the_launcher_over_the_first_label_match
 test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher
+test_workspace_ensure_flat_workers_adopts_the_first_of_several
 test_workspace_ensure_other_home_ignores_the_launcher_identity
 test_container_ensure_refuses_an_ambiguous_home_label
 test_container_ensure_starts_server_and_workspace

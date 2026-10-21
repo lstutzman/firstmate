@@ -4032,7 +4032,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
     # presentation projection: projection is a presentation-only layout that is
     # never endpoint or ownership authority, and flat is already the documented
     # fallback for every recovery it cannot bind exactly
-    # (docs/herdr-backend.md "Presentation spaces").
+    # (docs/herdr-backend.md "Presentation spaces"). Like every flat fallback
+    # of a presentation-enabled home, the tab goes to that home's
+    # "<home label> workers" workspace, never the launcher's own; a home that
+    # opted out keeps the launcher's workspace.
     #
     # KNOWN LIMITATION (bead fm-herdr-rebind-leak-20260913): the tab minted
     # below is registered with no abort cleanup, so a later refusal leaves that
@@ -4047,8 +4050,12 @@ if [ "$RELAUNCH" -eq 1 ]; then
     # onto another herdr server - an identity change, published as a
     # self-consistent but wrong record.
     HERDR_REBIND_SES=${RELAUNCH_TARGET%%:*}
+    HERDR_REBIND_RELATIONSHIP=launcher-home
+    if [ "$KIND" != secondmate ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
+      HERDR_REBIND_RELATIONSHIP=flat-workers
+    fi
     HERDR_CONTAINER_RAW=$(HERDR_PANE_ID="$RELAUNCH_LAUNCHER_PANE_ID" \
-      fm_backend_herdr_container_ensure "$PROJ_ABS" launcher-home "$HERDR_REBIND_SES") || {
+      fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_REBIND_RELATIONSHIP" "$HERDR_REBIND_SES") || {
       # container_ensure returns 1 for several unrelated reasons - a failed
       # version check, a server that will not start, an ambiguous workspace
       # label, a cross-session launcher identity, a failed workspace create -

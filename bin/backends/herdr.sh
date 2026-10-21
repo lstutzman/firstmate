@@ -1971,9 +1971,12 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #   flat-workers  - a crewmate or scout from a presentation-enabled home whose
 #                   projection fell back flat. It goes to this home's one
 #                   "<home label> workers" workspace, found or created by label
-#                   exactly like the per-home lookup below, never into the
-#                   launcher's own workspace. A claimed launcher identity is
-#                   still validated first, so a broken one refuses as above.
+#                   like the per-home lookup below, never into the launcher's
+#                   own workspace. It holds no identity, so when concurrent
+#                   fallbacks created several, the first in workspace-list
+#                   order is adopted instead of refusing. A claimed launcher
+#                   identity is still validated first, so a broken one refuses
+#                   as above.
 # With no herdr ancestry at all there is no launcher workspace to inherit, so
 # the per-home label lookup below stays the resolver - but it must then resolve
 # to exactly ONE workspace. Two same-labeled home workspaces with no launcher
@@ -2004,8 +2007,8 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   fi
   matches=$(fm_backend_herdr_workspace_find_all "$session" "$label")
   count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
-  if [ "$count" -gt 1 ]; then
-    echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and this spawn has no herdr parent pane to identify which one is its own; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
+  if [ "$count" -gt 1 ] && [ "$relationship" != flat-workers ]; then
+    echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and nothing identifies which one this spawn belongs in; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
     return 3
   fi
   wsid=${matches%%$'\n'*}
