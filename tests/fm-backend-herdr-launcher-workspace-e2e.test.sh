@@ -110,6 +110,11 @@ label_of_workspace() {  # <workspace_id>
     | jq -r --arg id "$1" '.result.workspaces[]? | select(.workspace_id == $id) | .label' 2>/dev/null
 }
 
+active_tab_of_workspace() {  # <workspace_id>
+  lab workspace list 2>/dev/null \
+    | jq -r --arg id "$1" '.result.workspaces[]? | select(.workspace_id == $id) | .active_tab_id // empty' 2>/dev/null
+}
+
 tab_labels_of_workspace() {  # <workspace_id>
   lab tab list --workspace "$1" 2>/dev/null \
     | jq -r '[.result.tabs[]?.label] | sort | join(",")' 2>/dev/null
@@ -198,7 +203,7 @@ Verify the worker is placed in the correct workspace.
 EOF
 }
 
-for id in uniqA uniqB dupC dupD staleF smE presU presD; do
+for id in uniqA uniqB dupC dupD staleF smE presU presD presF presG; do
   mkdir -p "$PRIMARY_HOME/data/$id" "$SM_HOME/data/$id" "$PRES_HOME/data/$id"
   write_ship_brief "$PRIMARY_HOME/data/$id/brief.md" "$id"
   write_ship_brief "$SM_HOME/data/$id/brief.md" "$id"
@@ -279,6 +284,57 @@ PRESU_JOURNAL="$PRES_HOME/state/presU.herdr-presentation"
   || fail "the projection journal does not name its own workspace"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "a projected spawn stole focus from the captain's workspace"
 pass "real herdr E2E: presentation spaces still create the isolated child workspace and bind it under the launcher's exact parent, without stealing focus"
+
+# --- 2c. presentation spaces ON but the projection falls back flat: the worker
+#         gets this home's dedicated workers workspace, never the launcher's
+#         own workspace, and nothing there changes ---------------------------
+
+PRES_LOCK_PATH=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_presentation_session_lock_path "$1"' \
+  "$ROOT" "$HERDR_LAB_SESSION") || fail "could not resolve the lab session's presentation lock"
+PRES_LOCK_READY="$TMP_ROOT/pres-lock-ready"
+PRES_LOCK_RELEASE="$TMP_ROOT/pres-lock-release"
+ROOT="$ROOT" READY="$PRES_LOCK_READY" RELEASE="$PRES_LOCK_RELEASE" LOCK="$PRES_LOCK_PATH" bash -c '
+  . "$ROOT/bin/fm-wake-lib.sh"
+  fm_lock_try_acquire "$LOCK" || exit 1
+  : > "$READY"
+  while [ ! -e "$RELEASE" ]; do sleep 0.05; done
+  fm_lock_release "$LOCK"
+' &
+PRES_LOCK_PID=$!
+while [ ! -e "$PRES_LOCK_READY" ] && kill -0 "$PRES_LOCK_PID" 2>/dev/null; do sleep 0.01; done
+[ -e "$PRES_LOCK_READY" ] || fail "could not hold the lab session's presentation lock"
+WS_PRIMARY_TABS_BEFORE_FLAT=$(tab_labels_of_workspace "$WS_PRIMARY")
+WS_PRIMARY_ACTIVE_BEFORE_FLAT=$(active_tab_of_workspace "$WS_PRIMARY")
+spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presF "$PROJ" --mode no-mistakes --yolo off
+PRESF_RC=$SPAWN_RC; PRESF_ERR=$SPAWN_ERR
+spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presG "$PROJ" --mode no-mistakes --yolo off
+PRESG_RC=$SPAWN_RC; PRESG_ERR=$SPAWN_ERR
+: > "$PRES_LOCK_RELEASE"
+wait "$PRES_LOCK_PID" || fail "the presentation lock holder failed"
+[ "$PRESF_RC" -eq 0 ] || fail "a presentation-enabled spawn that falls back flat failed"$'\n'"$(cat "$PRESF_ERR")"
+[ "$PRESG_RC" -eq 0 ] || fail "a second presentation-enabled flat fallback failed"$'\n'"$(cat "$PRESG_ERR")"
+grep -F "presentation focus lock unavailable" "$PRESF_ERR" >/dev/null 2>&1 \
+  || fail "the presF fixture did not reach the flat fallback"$'\n'"$(cat "$PRESF_ERR")"
+PRESF_META="$PRES_HOME/state/presF.meta"
+record_worktree "$PRESF_META"
+PRESF_PANE=$(grep '^herdr_pane_id=' "$PRESF_META" | cut -d= -f2-)
+PRESF_WS=$(workspace_of_pane "$PRESF_PANE")
+[ -n "$PRESF_WS" ] || fail "could not read presF's workspace"
+[ "$PRESF_WS" != "$WS_PRIMARY" ] \
+  || fail "a flat-fallback worker from a presentation-enabled home landed in the launcher's own workspace"
+[ "$(label_of_workspace "$PRESF_WS")" = "firstmate workers" ] \
+  || fail "a flat-fallback worker did not land in this home's 'firstmate workers' workspace: '$(label_of_workspace "$PRESF_WS")'"
+[ ! -e "$PRES_HOME/state/presF.herdr-presentation" ] || fail "a flat fallback published a presentation journal"
+PRESG_META="$PRES_HOME/state/presG.meta"
+record_worktree "$PRESG_META"
+[ "$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESG_META" | cut -d= -f2-)")" = "$PRESF_WS" ] \
+  || fail "a second flat fallback did not reuse this home's workers workspace"
+[ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE_FLAT" ] \
+  || fail "a flat fallback changed the launcher workspace's tabs"
+[ "$(active_tab_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_ACTIVE_BEFORE_FLAT" ] \
+  || fail "a flat fallback changed the launcher workspace's active tab"
+[ "$(focused_workspace)" = "$WS_OTHER" ] || fail "a flat fallback stole focus from the captain's workspace"
+pass "real herdr E2E: a presentation-enabled flat fallback lands in this home's workers workspace and leaves the launcher's workspace untouched"
 
 # --- 3. duplicate label, launcher in the NON-first match, driven from a real
 #        Herdr pane so the identity comes from Herdr's own injection ----------

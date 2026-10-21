@@ -751,14 +751,18 @@ grep -F "presentation focus lock unavailable; using the ordinary flat layout wit
 LOCK_CONTENTION_META="$HOME_DIR/state/lock-contended.meta"
 remember_meta_worktree "$LOCK_CONTENTION_META" >/dev/null
 LOCK_CONTENTION_WSID=$(grep '^herdr_workspace_id=' "$LOCK_CONTENTION_META" | cut -d= -f2-)
-[ "$LOCK_CONTENTION_WSID" = "$FIRSTMATE_WSID" ] \
-  || fail "bounded lock contention did not use the ordinary flat firstmate workspace"
+[ "$LOCK_CONTENTION_WSID" != "$FIRSTMATE_WSID" ] \
+  || fail "bounded lock contention placed the worker in the launcher's own firstmate workspace"
+[ "$(lab workspace get "$LOCK_CONTENTION_WSID" | jq -r '.result.workspace.label // empty')" = "firstmate workers" ] \
+  || fail "bounded lock contention did not use this home's 'firstmate workers' workspace"
 [ ! -e "$HOME_DIR/state/lock-contended.herdr-presentation" ] \
   || fail "bounded lock contention published a projection journal"
 LOCK_CONTENTION_CALLS=$(sed -n "$((LOCK_CONTENTION_START + 1)),\$p" "$HERDR_CALL_LOG")
 # session list is required to resolve the shared session lock path before the
-# bounded acquire attempt; it must not unlock projection create or move.
-if printf '%s\n' "$LOCK_CONTENTION_CALLS" | grep -E $'^(workspace\tcreate|pane\tclose|api\tschema)' >/dev/null 2>&1; then
+# bounded acquire attempt; it must not unlock projection create or move. The
+# only workspace it may create is this home's unprojected workers workspace,
+# whose seeded default tab the ordinary flat path prunes with a pane close.
+if printf '%s\n' "$LOCK_CONTENTION_CALLS" | grep -E $'^(workspace\tcreate\t.*\t--label\t\xe2\x94\x94 |api\tschema)' >/dev/null 2>&1; then
   fail "bounded lock contention performed an unlocked projection mutation or ordering capability call"
 fi
 [ "$(wc -l < "$MOVE_CALL_LOG" | tr -d '[:space:]')" = "$LOCK_CONTENTION_MOVE_START" ] \
@@ -1171,9 +1175,9 @@ printf '%s' "$CROSS_LIST" | jq -e '
 PCW_LABEL=$(lab workspace get "$(grep '^herdr_workspace_id=' "$HOME_DIR/state/pcw.meta" | cut -d= -f2-)" | jq -r '.result.workspace.label')
 ACW_LABEL=$(lab workspace get "$(grep '^herdr_workspace_id=' "$SECOND_HOME_A/state/acw.meta" | cut -d= -f2-)" | jq -r '.result.workspace.label')
 BCW_LABEL=$(lab workspace get "$(grep '^herdr_workspace_id=' "$SECOND_HOME_B/state/bcw.meta" | cut -d= -f2-)" | jq -r '.result.workspace.label')
-case "$PCW_LABEL" in $'└ pcw · p:'*|firstmate) ;; *) fail "cross-home primary label wrong: $PCW_LABEL" ;; esac
-case "$ACW_LABEL" in $'└ acw · p:'*|2ndmate-alpha) ;; *) fail "cross-home A label wrong: $ACW_LABEL" ;; esac
-case "$BCW_LABEL" in $'└ bcw · p:'*|2ndmate-bravo) ;; *) fail "cross-home B label wrong: $BCW_LABEL" ;; esac
+case "$PCW_LABEL" in $'└ pcw · p:'*|'firstmate workers') ;; *) fail "cross-home primary label wrong: $PCW_LABEL" ;; esac
+case "$ACW_LABEL" in $'└ acw · p:'*|'2ndmate-alpha workers') ;; *) fail "cross-home A label wrong: $ACW_LABEL" ;; esac
+case "$BCW_LABEL" in $'└ bcw · p:'*|'2ndmate-bravo workers') ;; *) fail "cross-home B label wrong: $BCW_LABEL" ;; esac
 pass "real Herdr lab: concurrent primary/A/B spawns preserve parent order and exact focus"
 
 # Hold the shared session lock from a different home and force flat fallback.
@@ -1207,8 +1211,8 @@ grep -F "presentation focus lock unavailable; using the ordinary flat layout wit
 remember_meta_worktree "$SECOND_HOME_A/state/aflat.meta" >/dev/null
 AFLAT_WSID=$(grep '^herdr_workspace_id=' "$SECOND_HOME_A/state/aflat.meta" | cut -d= -f2-)
 AFLAT_LABEL=$(lab workspace get "$AFLAT_WSID" | jq -r '.result.workspace.label')
-[ "$AFLAT_LABEL" = 2ndmate-alpha ] \
-  || fail "cross-home lock contention did not use the ordinary secondmate home workspace: $AFLAT_LABEL"
+[ "$AFLAT_LABEL" = "2ndmate-alpha workers" ] \
+  || fail "cross-home lock contention did not use the secondmate home's workers workspace: $AFLAT_LABEL"
 [ ! -e "$SECOND_HOME_A/state/aflat.herdr-presentation" ] \
   || fail "cross-home lock contention published a projection journal"
 assert_focus_is "$CAPTAIN_FOCUS" "cross-home lock contention flat fallback"

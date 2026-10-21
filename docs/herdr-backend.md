@@ -167,7 +167,9 @@ Closing its last tab can remove the workspace, and the next spawn recreates it.
 
 Each new crewmate or scout is placed in a disposable one-task workspace by default, on Herdr 0.8.0 and newer.
 This section calls that one-task workspace the projection.
-Without the projection, tasks use the ordinary flat layout described under [Watching and task containers](#watching-and-task-containers).
+A home that turned the projection off, or an unconfigured home below that release, uses the ordinary flat layout described under [Watching and task containers](#watching-and-task-containers).
+When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task tab goes to that home's own workers workspace (`firstmate workers` or `2ndmate-<id> workers`) instead of the launcher's workspace.
+That workspace is created unfocused on first use, found again by its exact label, and reused while it has task tabs; a claimed launcher identity is still validated first.
 
 ### Setting values
 
@@ -468,7 +470,7 @@ Any of these preserves the candidate and lets session startup continue with at m
   Dead-owner reclaim still stops the wait when a holder crashed.
   Unbounded blocking on the session lock is never the default.
 - Existing layouts are not force-renamed or rearranged.
-- Missing or ambiguous restart bindings fall back to the ordinary home workspace while the old projection remains untouched.
+- Missing or ambiguous restart bindings fall back to the home's workers workspace while the old projection remains untouched.
 - Crashes, lost responses, failed exact-pane cleanup, or human renames can leave quarantined spaces.
   Session start removes only the exact home-local, uniquely journal-correlated, childless idle-shell shape above.
 - Spaces have no cross-home cleanup path, and a secondmate child can clean up only from its exact home.
