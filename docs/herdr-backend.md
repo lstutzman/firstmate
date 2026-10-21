@@ -357,6 +357,7 @@ A present or unknown result retains every record with a visible, retryable error
 Missing or malformed endpoint identity and missing confirmation machinery are ambiguity, never proof of a gone pane, and refuse record removal the same way.
 If lock, snapshot, pane identity, or restoration is ambiguous, cleanup warns and preserves the journal for manual inspection.
 Once the exact pane is confirmed gone, teardown retires the task's own journal when it binds that same pane, or when it is a version 1 attempt whose token-bearing projected workspace is itself confirmed gone, because nothing then remains for the session-start sweep to correlate; a journal bound to any other pane, or a version 1 attempt whose workspace is still present or unreadable, stays for that sweep.
+A spawn that aborts after its own projected create, such as one whose Treehouse slot never becomes an isolated worktree, closes its exact panes and then retires the journal it published under the same rule: the journal must still carry that spawn's token and no workspace in the named session may carry it, so a same-id retry is a fresh projected create rather than a flat fallback.
 
 ### Restart recovery
 

@@ -139,7 +139,9 @@
 #   then creates a disposable
 #   workspace containing only the ordinary task pane. A successful clean create
 #   upgrades its attempt journal with exact home, session, workspace, tab, pane,
-#   parent, and label bindings. On a same-identity restart, that complete binding
+#   parent, and label bindings. A spawn that aborts after that create closes its
+#   exact panes and retires its own journal once no workspace carries its token,
+#   so a same-id retry projects again. On a same-identity restart, that complete binding
 #   plus authoritative metadata may replace one exact agent-free husk in place.
 #   The journal, visible token, and labels alone are never endpoint or ownership
 #   authority, and every ambiguous recovery stays on the flat fallback after
@@ -1377,6 +1379,7 @@ HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
 HERDR_PROJECTION_ABORT_TASK_PANE=
 HERDR_PROJECTION_ABORT_SEEDED_PANE=
+HERDR_PROJECTION_ABORT_JOURNAL_TOKEN=
 HERDR_PRESENTATION_ORDER_LOCK=
 HERDR_PRESENTATION_ORDER_LOCK_HELD=0
 SPAWN_TASK_LOCK=
@@ -1447,6 +1450,25 @@ spawn_orca_reclaim_launch_file() {
   return 1
 }
 
+# spawn_herdr_projection_abort_retire_journal: after the exact abort cleanup,
+# remove the presentation journal this spawn itself created, so a same-id retry
+# projects again instead of falling back flat. It applies teardown's orphan
+# rule under the session presentation lock: the journal must still carry this
+# spawn's own token and the named session must confirm that no workspace
+# carries it. Anything else keeps the journal quarantined for a retry's
+# duplicate-agent inspection.
+spawn_herdr_projection_abort_retire_journal() {
+  local token
+  token=$(fm_backend_herdr_projection_journal_token "$HERDR_PRESENTATION_JOURNAL" "$ID") || return 0
+  [ "$token" = "$HERDR_PROJECTION_ABORT_JOURNAL_TOKEN" ] || return 0
+  if fm_backend_herdr_projection_token_workspace_gone \
+    "$HERDR_PROJECTION_ABORT_SESSION" "$HERDR_PRESENTATION_JOURNAL" "$ID"; then
+    rm -f "$HERDR_PRESENTATION_JOURNAL"
+  else
+    echo "warning: aborted herdr presentation for $ID could not be confirmed gone; retaining its journal, so a same-id retry spawns flat" >&2
+  fi
+}
+
 spawn_abort_cleanup() {
   local status=$?
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] &&
@@ -1487,6 +1509,7 @@ spawn_abort_cleanup() {
       "$HERDR_PROJECTION_ABORT_SESSION" \
       "$HERDR_PROJECTION_ABORT_TASK_PANE" \
       "$HERDR_PROJECTION_ABORT_SEEDED_PANE" || true
+    [ -z "$HERDR_PROJECTION_ABORT_JOURNAL_TOKEN" ] || spawn_herdr_projection_abort_retire_journal
   fi
   if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ]; then
     HERDR_PRESENTATION_ORDER_LOCK_HELD=0
@@ -4188,6 +4211,7 @@ else
             spawn_herdr_presentation_order_lock_release
           else
             HERDR_PROJECTION_ID=$(fm_backend_herdr_projection_journal_create "$STATE" "$ID") || exit 1
+            HERDR_PROJECTION_ABORT_JOURNAL_TOKEN=$HERDR_PROJECTION_ID
             HERDR_PROJECTION_LABEL=$(fm_backend_herdr_projection_workspace_label "$ID" "$HERDR_PROJECTION_ID")
             if ! FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_projection_create_task \
               "$PROJ_ABS" "$HERDR_PROJECTION_LABEL" "$W"; then
@@ -6103,6 +6127,7 @@ fi
 sleep 0.3
 if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
   HERDR_PROJECTION_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_JOURNAL_TOKEN=
   spawn_herdr_presentation_order_lock_release
 fi
 if ! spawn_send_key "$T" Enter; then
