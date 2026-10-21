@@ -4051,8 +4051,15 @@ if [ "$RELAUNCH" -eq 1 ]; then
     # self-consistent but wrong record.
     HERDR_REBIND_SES=${RELAUNCH_TARGET%%:*}
     HERDR_REBIND_RELATIONSHIP=launcher-home
-    if [ "$KIND" != secondmate ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
-      HERDR_REBIND_RELATIONSHIP=flat-workers
+    if [ "$KIND" != secondmate ]; then
+      case "$(fm_backend_herdr_presentation_preference "$CONFIG")" in
+        on) HERDR_REBIND_RELATIONSHIP=flat-workers ;;
+        default)
+          if fm_backend_herdr_presentation_default_supported "$STATE" "$HERDR_REBIND_SES"; then
+            HERDR_REBIND_RELATIONSHIP=flat-workers
+          fi
+          ;;
+      esac
     fi
     HERDR_CONTAINER_RAW=$(HERDR_PANE_ID="$RELAUNCH_LAUNCHER_PANE_ID" \
       fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_REBIND_RELATIONSHIP" "$HERDR_REBIND_SES") || {
