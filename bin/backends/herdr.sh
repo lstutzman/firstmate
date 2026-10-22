@@ -369,6 +369,13 @@ fm_backend_herdr_workspace_label() {
   printf 'firstmate'
 }
 
+# fm_backend_herdr_flat_workers_workspace_label: the per-home workspace label a
+# presentation-enabled home uses when a worker falls back to the flat layout,
+# so that worker never lands in the launching firstmate's own workspace.
+fm_backend_herdr_flat_workers_workspace_label() {
+  printf '%s workers' "$(fm_backend_herdr_workspace_label)"
+}
+
 # fm_backend_herdr_cli: run `herdr <args...>` scoped to <session>, setting
 # BOTH the HERDR_SESSION env var AND appending a trailing `--session <name>`
 # CLI flag. Verified empirically (docs/herdr-backend.md "Session targeting: the
@@ -1696,9 +1703,9 @@ fm_backend_herdr_server_ensure() {  # <session>
 # duplicate means for them - fm_backend_herdr_workspace_ensure refuses to guess
 # which one is the caller's, while the read-only recovery path below keeps its
 # historical first-match behavior.
-fm_backend_herdr_workspace_find_all() {  # <session>
-  local session=$1 label list
-  label=$(fm_backend_herdr_workspace_label)
+fm_backend_herdr_workspace_find_all() {  # <session> [<label>]
+  local session=$1 label=${2:-} list
+  [ -n "$label" ] || label=$(fm_backend_herdr_workspace_label)
   list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
   # NOTE: the jq variable is $want, NOT $label - `label` is a jq reserved
   # keyword (label/break), so declaring a jq variable named "label" is a
@@ -1961,6 +1968,15 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #   other-home    - a --secondmate launch, which stands up a DIFFERENT home's
 #                   own per-home workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
+#   flat-workers  - a crewmate or scout from a presentation-enabled home whose
+#                   projection fell back flat. It goes to this home's one
+#                   "<home label> workers" workspace, found or created by label
+#                   like the per-home lookup below, never into the launcher's
+#                   own workspace. It holds no identity, so when concurrent
+#                   fallbacks created several, the first in workspace-list
+#                   order is adopted instead of refusing. A claimed launcher
+#                   identity is still validated first, so a broken one refuses
+#                   as above.
 # With no herdr ancestry at all there is no launcher workspace to inherit, so
 # the per-home label lookup below stays the resolver - but it must then resolve
 # to exactly ONE workspace. Two same-labeled home workspaces with no launcher
@@ -1973,23 +1989,26 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   local session=$1 cwd=$2 relationship=${3:-launcher-home} wsid out label matches count status
   FM_BACKEND_HERDR_WS_ID=""
   FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
-  if [ "$relationship" = launcher-home ]; then
+  label=$(fm_backend_herdr_workspace_label)
+  if [ "$relationship" = launcher-home ] || [ "$relationship" = flat-workers ]; then
     fm_backend_herdr_launcher_identity "$session" && status=0 || status=$?
     case "$status" in
       0)
-        FM_BACKEND_HERDR_WS_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
-        printf '%s' "$FM_BACKEND_HERDR_WS_ID"
-        return 0
+        if [ "$relationship" = launcher-home ]; then
+          FM_BACKEND_HERDR_WS_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
+          printf '%s' "$FM_BACKEND_HERDR_WS_ID"
+          return 0
+        fi
         ;;
       2) ;;
       *) return 3 ;;
     esac
+    [ "$relationship" = launcher-home ] || label=$(fm_backend_herdr_flat_workers_workspace_label)
   fi
-  label=$(fm_backend_herdr_workspace_label)
-  matches=$(fm_backend_herdr_workspace_find_all "$session")
+  matches=$(fm_backend_herdr_workspace_find_all "$session" "$label")
   count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
-  if [ "$count" -gt 1 ]; then
-    echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and this spawn has no herdr parent pane to identify which one is its own; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
+  if [ "$count" -gt 1 ] && [ "$relationship" != flat-workers ]; then
+    echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and nothing identifies which one this spawn belongs in; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
     return 3
   fi
   wsid=${matches%%$'\n'*}
@@ -2043,6 +2062,7 @@ fm_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace> [<launcher-
   [ "$status" -ne 3 ] || return 1
   if [ "$status" -ne 0 ] || [ -z "$FM_BACKEND_HERDR_WS_ID" ]; then
     label=$(fm_backend_herdr_workspace_label)
+    [ "$relationship" != flat-workers ] || label=$(fm_backend_herdr_flat_workers_workspace_label)
     echo "error: failed to ensure herdr workspace '$label' in session '$session'" >&2
     return 1
   fi

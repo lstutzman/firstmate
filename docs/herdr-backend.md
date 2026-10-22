@@ -157,7 +157,7 @@ Rename it manually before expecting new tasks or recovery to use it.
 
 Recovery and list-live still scan the first workspace matching the home label, because they address panes they already recorded rather than choosing where new work goes.
 The one recovery that does place new work is the control plane's reclaim of a destroyed endpoint.
-It mints a replacement tab through this section's ordinary placement rules while pinning the herdr session the task's record names ([`agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
+It mints a replacement tab through this section's ordinary placement rules, or in the workers workspace for a home with presentation spaces on, while pinning the herdr session the task's record names ([`agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
 
 Existing task operations use recorded endpoint ids and do not move a live task when labels change.
 The per-home workspace is reused while it has task tabs.
@@ -167,7 +167,10 @@ Closing its last tab can remove the workspace, and the next spawn recreates it.
 
 Each new crewmate or scout is placed in a disposable one-task workspace by default, on Herdr 0.8.0 and newer.
 This section calls that one-task workspace the projection.
-Without the projection, tasks use the ordinary flat layout described under [Watching and task containers](#watching-and-task-containers).
+A home that turned the projection off, or an unconfigured home below that release, uses the ordinary flat layout described under [Watching and task containers](#watching-and-task-containers).
+When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task tab goes to that home's own workers workspace (`firstmate workers` or `2ndmate-<id> workers`) instead of the launcher's workspace.
+That workspace is created unfocused on first use, found again by its exact label, and reused while it has task tabs; a claimed launcher identity is still validated first.
+If concurrent fallbacks created more than one, the first in Herdr's workspace list is used rather than refusing, because that workspace carries no identity.
 
 ### Setting values
 
@@ -357,6 +360,7 @@ A present or unknown result retains every record with a visible, retryable error
 Missing or malformed endpoint identity and missing confirmation machinery are ambiguity, never proof of a gone pane, and refuse record removal the same way.
 If lock, snapshot, pane identity, or restoration is ambiguous, cleanup warns and preserves the journal for manual inspection.
 Once the exact pane is confirmed gone, teardown retires the task's own journal when it binds that same pane, or when it is a version 1 attempt whose token-bearing projected workspace is itself confirmed gone, because nothing then remains for the session-start sweep to correlate; a journal bound to any other pane, or a version 1 attempt whose workspace is still present or unreadable, stays for that sweep.
+A spawn that aborts after its own projected create, such as one whose Treehouse slot never becomes an isolated worktree, closes its exact panes and then retires the journal it published under the same rule: the journal must still carry that spawn's token and no workspace in the named session may carry it, so a same-id retry is a fresh projected create rather than a flat fallback.
 
 ### Restart recovery
 
@@ -467,7 +471,7 @@ Any of these preserves the candidate and lets session startup continue with at m
   Dead-owner reclaim still stops the wait when a holder crashed.
   Unbounded blocking on the session lock is never the default.
 - Existing layouts are not force-renamed or rearranged.
-- Missing or ambiguous restart bindings fall back to the ordinary home workspace while the old projection remains untouched.
+- Missing or ambiguous restart bindings fall back to the home's workers workspace while the old projection remains untouched.
 - Crashes, lost responses, failed exact-pane cleanup, or human renames can leave quarantined spaces.
   Session start removes only the exact home-local, uniquely journal-correlated, childless idle-shell shape above.
 - Spaces have no cross-home cleanup path, and a secondmate child can clean up only from its exact home.
