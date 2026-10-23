@@ -1,0 +1,26 @@
+## S10 the documented PropertyCompass2 command set, copied verbatim from docs/configuration.md
+decision=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr merge %s --merge --match-head-commit %s"}}' "$1" "$2" \
+  | python3 scripts/claude-hooks/verify-pr-review.py)
+printf '%s' "$decision" | jq -e '.hookSpecificOutput.permissionDecision == "allow"' >/dev/null \
+  || { printf '%s' "$decision" | jq -r '.hookSpecificOutput.permissionDecisionReason'; exit 1; }
+body=$(gh pr view "$1" --json body -q .body | tr -d '\r')
+for heading in Testing Risk 'How to revert'; do
+  grep -Eq "^#+ $heading\$" <<<"$body" || { echo "PR body has no $heading heading"; exit 1; }
+done
+
+body-good:   120060 bytes, CR count 3006
+### a) no review marker -> refused with the hook reason
+$ FAKE_BODY=body-good.txt fm-pr-check.sh pca https://github.com/o/PropertyCompass2/pull/11
+error: ready evidence pc2-doc refused https://github.com/o/PropertyCompass2/pull/11 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53: no pc-review-evidence marker for e1d01bece7ff586d1be02917698e7b9a6cfbdd53
+exit=1
+ready_evidence=fail e1d01bece7ff586d1be02917698e7b9a6cfbdd53 https://github.com/o/PropertyCompass2/pull/11 ready evidence pc2-doc refused https://github.com/o/PropertyCompass2/pull/11 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53: no pc-review-evidence marker fo
+### b) marker present, body missing How to revert -> refused
+$ FAKE_BODY=body-missing.txt fm-pr-check.sh pcb https://github.com/o/PropertyCompass2/pull/11
+error: ready evidence pc2-doc refused https://github.com/o/PropertyCompass2/pull/11 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53: PR body has no How to revert heading
+exit=1
+ready_evidence=fail e1d01bece7ff586d1be02917698e7b9a6cfbdd53 https://github.com/o/PropertyCompass2/pull/11 ready evidence pc2-doc refused https://github.com/o/PropertyCompass2/pull/11 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53: PR body has no How to revert he
+### c) marker present, CRLF >64KB body with all headings -> pass
+$ FAKE_BODY=body-good.txt fm-pr-check.sh pcc https://github.com/o/PropertyCompass2/pull/11
+armed: state/pcc.check.sh
+exit=0
+ready_evidence=pass e1d01bece7ff586d1be02917698e7b9a6cfbdd53 https://github.com/o/PropertyCompass2/pull/11

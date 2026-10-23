@@ -1,0 +1,9 @@
+## S9 merge-time re-record: evidence stops holding -> bin/fm-pr-merge.sh refuses before any forge merge call
+$ fm-pr-merge.sh evid https://github.com/o/evproj/pull/7
+error: ready evidence pc-ready refused https://github.com/o/evproj/pull/7 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53: no pc-review-evidence marker for e1d01bece7ff586d1be02917698e7b9a6cfbdd53
+exit=1
+--- gh calls made:
+pr view https://github.com/o/evproj/pull/7 --json headRefOid -q .headRefOid
+--- any pr merge call? 0
+ready_evidence=fail e1d01bece7ff586d1be02917698e7b9a6cfbdd53 https://github.com/o/evproj/pull/7 ready evidence pc-ready refused https://github.com/o/evproj/pull/7 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53: no pc-review-evidence marker for e1d01bece7ff586d1be02917698e7b9a6cfbdd53
+state: blocked · source: status-log · ready evidence pc-ready refused https://github.com/o/evproj/pull/7 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53: no pc-review-evidence marker for e1d01bece7ff586d1be02917698e7b9a6cfbdd53

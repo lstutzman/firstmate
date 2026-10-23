@@ -1,0 +1,32 @@
+## S3 state reads only read the recorded fail (crew-state + fleet snapshot), never run evidence
+evidence runs so far: 1
+$ fm-crew-state.sh evid
+state: blocked · source: status-log · ready evidence pc-ready refused https://github.com/o/evproj/pull/7 at 1c7331098369ef7c11de9cde82bb71fc49b15176: no pc-review-evidence marker for 1c7331098369ef7c11de9cde82bb71fc49b15176
+$ fm-crew-state.sh evid
+state: blocked · source: status-log · ready evidence pc-ready refused https://github.com/o/evproj/pull/7 at 1c7331098369ef7c11de9cde82bb71fc49b15176: no pc-review-evidence marker for 1c7331098369ef7c11de9cde82bb71fc49b15176
+$ fm-fleet-snapshot.sh (lab home)
+      "id": "evid",
+          "path": "/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.6Ea4Ov/state/evid.meta",
+          "path": "/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.6Ea4Ov/state/evid.status",
+          "path": "/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.6Ea4Ov/data/evid/report.md",
+        "detail": "ready evidence pc-ready refused https://github.com/o/evproj/pull/7 at 1c7331098369ef7c11de9cde82bb71fc49b15176: no pc-review-evidence marker for 1c7331098369ef7c11de9cde82bb71fc49b15176",
+evidence runs so far: 1
+
+## S4 evidence now passes -> re-registration records pass, arms poll; state reads done
+$ fm-pr-check.sh evid https://github.com/o/evproj/pull/7
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/evid.check.sh
+exit=0
+evidence runs so far: 2
+--- meta ready_evidence/pr lines
+ready_evidence=pass 1c7331098369ef7c11de9cde82bb71fc49b15176 https://github.com/o/evproj/pull/7
+pr=https://github.com/o/evproj/pull/7
+pr_head=1c7331098369ef7c11de9cde82bb71fc49b15176
+--- record count: 1
+--- poll armed?
+contributions.check-trust
+contributions.check.sh
+evid.check.sh
+$ fm-crew-state.sh evid
+state: done · source: status-log · PR https://github.com/o/evproj/pull/7
+evidence runs so far: 2

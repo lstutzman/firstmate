@@ -1,0 +1,34 @@
+## S6 project with no ready-evidence token: gate unchanged, nothing runs or is recorded
+evidence runs so far: 3
+$  fm-pr-check.sh plain https://github.com/o/plainproj/pull/3
+armed: state/plain.check.sh
+exit=0
+pr=https://github.com/o/plainproj/pull/3
+evidence runs so far: 3
+
+## S7a registered name but config file missing -> fail
+$  fm-pr-check.sh miss https://github.com/o/evproj/pull/8
+error: ready evidence pc-ready is registered but /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.6Ea4Ov/config/ready-evidence/pc-ready is missing
+exit=1
+ready_evidence=fail e1d01bece7ff586d1be02917698e7b9a6cfbdd53 https://github.com/o/evproj/pull/8 ready evidence pc-ready is registered but /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.6Ea4Ov/config/ready-evidence/pc-ready is missing
+
+## S7b command set exceeds FM_READY_EVIDENCE_TIMEOUT -> fail
+$ FM_READY_EVIDENCE_TIMEOUT=2 fm-pr-check.sh slow https://github.com/o/evproj/pull/9
+error: ready evidence pc-ready refused https://github.com/o/evproj/pull/9 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53: timed out after 2s
+exit=1
+elapsed=3s
+ready_evidence=fail e1d01bece7ff586d1be02917698e7b9a6cfbdd53 https://github.com/o/evproj/pull/9 ready evidence pc-ready refused https://github.com/o/evproj/pull/9 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53: timed out after 2s
+
+## S7c malformed binding (badproj ready-evidence=../x) -> registration refused
+$  fm-pr-check.sh bad https://github.com/o/badproj/pull/2
+error: the ready-evidence binding for badproj cannot be read (run bin/fm-project-mode.sh --ready-evidence badproj for the refusal)
+exit=1
+(no record, no pr=)
+
+## S8 no-mistakes mode: evidence runs against the forge-reported head, not the worker copy HEAD
+$ FAKE_HEAD=abcdefabcdefabcdefabcdefabcdefabcdefabcd fm-pr-check.sh nm https://github.com/o/evproj/pull/10
+armed: state/nm.check.sh
+exit=0
+ran pwd=/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.6Ea4Ov/projects/evproj url=https://github.com/o/evproj/pull/10 head=abcdefabcdefabcdefabcdefabcdefabcdefabcd
+ready_evidence=pass abcdefabcdefabcdefabcdefabcdefabcdefabcd https://github.com/o/evproj/pull/10
+pr_head=abcdefabcdefabcdefabcdefabcdefabcdefabcd

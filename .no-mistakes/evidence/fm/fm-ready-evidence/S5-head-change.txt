@@ -1,0 +1,13 @@
+## S5 adversarial: worker pushes a new head after the pass -> the old pass does not carry over
+new worker HEAD: e1d01bece7ff586d1be02917698e7b9a6cfbdd53
+ready_evidence=pass 1c7331098369ef7c11de9cde82bb71fc49b15176 https://github.com/o/evproj/pull/7
+$ fm-crew-state.sh evid
+state: blocked · source: status-log · ready evidence pc-ready not yet checked for https://github.com/o/evproj/pull/7 at e1d01bece7ff586d1be02917698e7b9a6cfbdd53; registering the PR runs it
+evidence runs so far: 2
+$ fm-pr-check.sh evid https://github.com/o/evproj/pull/7   (re-register at the new head)
+armed: state/evid.check.sh
+exit=0
+ready_evidence=pass e1d01bece7ff586d1be02917698e7b9a6cfbdd53 https://github.com/o/evproj/pull/7
+$ fm-crew-state.sh evid
+state: done · source: status-log · PR https://github.com/o/evproj/pull/7
+evidence runs so far: 3

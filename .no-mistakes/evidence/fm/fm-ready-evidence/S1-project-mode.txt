@@ -1,0 +1,27 @@
+## S1 fm-project-mode --ready-evidence
+$ fm-project-mode.sh --ready-evidence evproj
+pc-ready
+exit=0
+$ fm-project-mode.sh --ready-evidence plainproj
+exit=0
+$ fm-project-mode.sh --ready-evidence badproj
+refused: ready-evidence binding "ready-evidence=../x" registered for badproj in /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.6Ea4Ov/data/projects.md is not a file name; name a file under config/ready-evidence/, or drop the token
+exit=3
+$ fm-project-mode.sh --ready-evidence lagproj
+pc-ready
+exit=0
+$ fm-project-mode.sh --ready-evidence ghost
+warn: project "ghost" not in registry; defaulting to no-mistakes off
+exit=0
+$ fm-project-mode.sh  lagproj
+direct-PR off
+exit=0
+$ fm-project-mode.sh --landing-lag lagproj
+48
+exit=0
+$ fm-project-mode.sh --branch-prefix lagproj
+x/
+exit=0
+$ fm-project-mode.sh badproj (default posture)
+direct-PR off
+exit=0

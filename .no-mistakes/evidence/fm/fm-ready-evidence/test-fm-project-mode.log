@@ -1,0 +1,18 @@
+ok - fm-project-mode: an entry with no forge token reports forge none and keeps its two-word default output
+ok - fm-project-mode: forge=forgejo placed after the mode token binds forgejo without a warning
+ok - fm-project-mode: forge=forgejo binds in any token order and keeps +yolo
+ok - fm-project-mode: forge=forgejo on local-only is refused like every forge
+ok - fm-project-mode: the colon spelling forge:forgejo is not a forge binding
+ok - fm-project-mode: a value outside none|gerrit|forgejo|external is refused and the refusal names the accepted values
+ok - fm-project-mode: forge=external binds direct-PR, reports yolo=off with a refusal, and is refused on local-only
+ok - fm-project-mode: a missing project or absent registry defaults --forge to none
+ok - fm-project-mode: merger=<home> binds in any token order and leaves the default output unchanged
+ok - fm-project-mode: an empty or malformed merger binding is refused under --merger
+ok - fm-project-mode: no merger token, a missing project, or an absent registry prints no merger
+ok - fm-project-mode: landing-lag=<hours> binds in any token order and leaves the other outputs unchanged
+ok - fm-project-mode: an empty, zero, non-integer, or over-long landing lag is refused under --landing-lag
+ok - fm-project-mode: no landing-lag token, a missing project, or an absent registry prints no landing lag
+ok - fm-project-mode: ready-evidence=<name> binds in any token order and leaves the default output unchanged
+ok - fm-project-mode: a malformed ready-evidence binding is refused; none, or an absent registry, prints nothing
+# fm-project-mode.test.sh: all assertions passed
+bash tests/$t.test.sh  0.64s user 1.04s system 71% cpu 2.346 total

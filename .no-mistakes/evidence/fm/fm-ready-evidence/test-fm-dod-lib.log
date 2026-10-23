@@ -1,0 +1,37 @@
+ok - scout done: is not gated
+ok - unpushed ship done: is refused
+ok - no-mistakes pre-validation done: is not gated
+ok - named head on a remote-tracking ref is accepted
+ok - a moved remote branch that lacks the named head is refused
+ok - a 40-hex token in the note is not the named head
+ok - a recorded merged PR satisfies the gate after prune
+ok - the merged-PR short-circuit applies only to the recorded PR the done line names
+ok - a forge-recorded head for the named PR is accepted without a local object
+ok - a direct-PR recorded head does not cover a later unpushed commit
+ok - no-mistakes CI-ready done: with extra text is gated
+ok - keyed and spaced ship done: lines are gated
+ok - local-only linked named branch is reachable from the project clone
+ok - local-only detached HEAD only in the disposable copy is refused
+ok - standalone local-only done: requires the named head in the project clone
+ok - non-done lines are not gated
+ok - fenced and indented Captain lines are not authorized intent
+ok - PR-based DoD draft check uses gh-axi
+ok - promotion keeps a scout's recorded base branch and refuses local-only for it
+ok - registration runs ready evidence from the clone and records it; the done gate only reads the pass
+ok - a done with no record reads not yet checked and runs nothing
+ok - failing ready evidence refuses registration, is recorded, and the gate reports its line
+ok - a pass recorded for another head or PR reads not yet checked
+ok - ready evidence fails on its first failing command, not only its last
+ok - ready evidence never replaces the named-head gate
+ok - an ungated done (pipeline handoff, scout) needs no ready-evidence record
+ok - ready evidence on a recorded no-mistakes PR checks and reads the forge head
+ok - a missing file, malformed binding, timeout, or missing clone refuses rather than skipping evidence
+ok - a project with no ready-evidence token records nothing and keeps today's done gate
+ok - forge=external composes with direct-PR only and refuses a base branch
+ok - external rule one forbids origin and task-prefixed pushes and names only the backup copy
+ok - external DoD renders the contract, the review grammar, and the adapter, and refuses without one
+ok - external review done: accepted on a canonical URL alone without a backup; PR, non-https, query, fragment, forge, and pattern mismatches refused
+ok - external review done with a backup: refused until HEAD is under refs/remotes/backup/backup/, then accepted
+ok - worker role names the skill and its fallback skill file
+all fm-dod-lib tests passed
+bash tests/$t.test.sh  6.60s user 11.36s system 61% cpu 29.075 total
