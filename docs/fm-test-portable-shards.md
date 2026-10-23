@@ -21,8 +21,9 @@ A failed script's duration is excluded even when its lane uploaded an artifact.
 In particular, run 36664663190's serial 5 finished in 22m15s with an assertion failure, not a timeout; treating that as a healthy whole-lane sample would hide the failure.
 Collect successful per-script measurements for every member before calculating a split.
 
-`tests/fm-supervision-host.test.sh` uses 789123 ms from run 36669175457, after the merged [host runtime fix](https://github.com/kunchenguid/firstmate/pull/6179), rather than its pre-fix maximum of 1065298 ms.
-That post-fix value has only one sample in this baseline, so further green runs must establish its variance.
+The supervision host cases are split between `tests/fm-supervision-host.test.sh` and `tests/fm-supervision-host-limits.test.sh`, sharing `tests/supervision-host-helpers.sh`, because the single file outgrew the serial budget alone: green runs [38809352548](https://github.com/lstutzman/firstmate/actions/runs/38809352548) and [39766483872](https://github.com/lstutzman/firstmate/actions/runs/39766483872) measured it at 1263968 and 1330504 ms.
+Their hints, 709238 and 637391 ms, sum each file's slowest per-case time across those two runs, read from the `ok` line timestamps in the job logs, plus that file run's 11452 ms teardown tail.
+Those runs predate the per-case process stop in `run_cases`, so the hints are conservative until green runs of the split files measure them directly.
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
 
