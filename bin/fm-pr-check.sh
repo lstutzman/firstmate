@@ -17,8 +17,9 @@
 # draft state does not refuse, matching how the head read below is optional.
 # bin/fm-pr-merge.sh records through this script with FM_PR_CHECK_MERGE=1 and
 # skips this refusal, because its own merge-time draft refusal is authoritative.
-# The recorded pr= also frees the task's place in a declared project capacity
-# (bin/fm-project-capacity-lib.sh).
+# The recorded pr= also frees the task's place in a declared project capacity,
+# and pr_at=<epoch>, the time this PR was first recorded, is the ready age that
+# landing-lag admission reads (bin/fm-project-capacity-lib.sh).
 # Usage: fm-pr-check.sh <task-id> <pr-url>
 set -eu
 
@@ -203,12 +204,28 @@ META_DEVICE=$(fm_pr_file_device "$META") || exit 1
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ "$META_DEVICE" = "$STATE_DEVICE" ] || { echo "error: task metadata is unavailable" >&2; exit 1; }
 META_TMP=$(mktemp "$STATE/.fm-pr-meta.XXXXXX") || exit 1
+OLD_PR=
+OLD_PR_AT=
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
-    pr=*|pr_head=*) ;;
+    pr=*) OLD_PR=${line#pr=} ;;
+    pr_at=*) OLD_PR_AT=${line#pr_at=} ;;
+    pr_head=*) ;;
     *) printf '%s\n' "$line" >> "$META_TMP" || exit 1 ;;
   esac
 done < "$META"
+# The ready time is when this PR was first recorded, so recording the same PR
+# again keeps it. It precedes pr= because the identity parse rejects any
+# unrecognised line after pr=.
+case "$OLD_PR_AT" in
+  '' | *[!0-9]*) OLD_PR_AT= ;;
+esac
+if [ "$OLD_PR" = "$URL" ] && [ -n "$OLD_PR_AT" ]; then
+  PR_AT=$OLD_PR_AT
+else
+  PR_AT=$(date +%s)
+fi
+printf 'pr_at=%s\n' "$PR_AT" >> "$META_TMP" || exit 1
 printf 'pr=%s\n' "$URL" >> "$META_TMP" || exit 1
 [ -z "$PR_HEAD" ] || printf 'pr_head=%s\n' "$PR_HEAD" >> "$META_TMP" || exit 1
 chmod 0600 "$META_TMP" || exit 1

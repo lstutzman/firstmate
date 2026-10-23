@@ -68,6 +68,9 @@ Register it only on the captain's instruction, and leave it off a project every 
 The registry is not inherited, so every home that could merge the project must carry the same `merger=<home>` token on its own registry line.
 A home's id is its `.fm-secondmate-home` marker, else `main`, and a fleet has one primary home.
 
+The optional `landing-lag=<hours>` token holds back new ships for the project while its oldest ready PR on this machine has waited longer than that to land; register it only on the captain's instruction, on every home that dispatches the project.
+`docs/configuration.md` "Landing lag" owns its meaning, and a fix or landing work is spawned with `--landing-exempt`.
+
 ## Add or clone an existing project
 
 Confirm the source URL, local project name, delivery posture, and autonomy posture, stating the resolved default for each rather than asking the captain to invent one.

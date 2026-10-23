@@ -9,7 +9,8 @@
 # markdown backlog when tasks-axi is installed. A deferred spawn is judged by
 # what it left behind - no task record, no rendered launch brief, no endpoint,
 # no worktree allocation, and a backlog item still queued - never by wording
-# alone.
+# alone. The landing-lag cases below drive the same admission point for
+# a project whose oldest ready PR has waited too long to land.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -550,7 +551,7 @@ test_batch_reports_a_deferred_pair() {
   write_live "$home" live-a "$case_dir/project"
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair was deferred did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project is at capacity, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project is at capacity or its landing lags, so it stays queued" \
     "the batch did not report the deferral"
   assert_not_contains "$out" "batch: FAILED" "the batch reported a deferral as a failure"
   pass "a batch reports a capacity deferral as deferred, not failed"
@@ -624,6 +625,307 @@ SH
   pass "an Orca spawn takes the shared project lock whenever a same-origin clone is capped and defers before creating anything"
 }
 
+# --- landing lag -------------------------------------------------------------
+
+register_landing_lag() {  # <home> <hours>
+  printf -- '- project [no-mistakes landing-lag=%s] - the heavy project (added 2026-01-01)\n' "$2" \
+    > "$1/data/projects.md"
+}
+
+# A worker whose PR is ready: the pr_at= and pr= lines bin/fm-pr-check.sh
+# records, with pr_at= <hours-ago> hours (and one minute) before now, or no
+# pr_at= at all for a record made before ready times were recorded. The task's
+# recorded yolo is on unless <yolo> says otherwise; its later line wins.
+write_ready() {  # <home> <id> <project-dir> <pr-number> <hours-ago|untimed> [yolo]
+  local at=()
+  [ "$5" = untimed ] || at=("pr_at=$(($(date +%s) - $5 * 3600 - 60))")
+  write_live "$1" "$2" "$3" "yolo=${6:-on}" "${at[@]+"${at[@]}"}" "pr=https://github.com/o/r/pull/$4"
+}
+
+test_unregistered_landing_lag_keeps_dispatch_unchanged() {
+  local case_dir home out rc=0
+  case_dir=$(make_case lag-unregistered task-c)
+  home="$case_dir/home"
+  printf -- '- project [no-mistakes] - the heavy project (added 2026-01-01)\n' > "$home/data/projects.md"
+  write_ready "$home" ready-a "$case_dir/project" 1 500
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a project with no landing-lag token deferred a spawn: $out"
+  assert_contains "$out" "spawned task-c" "a project with no landing-lag token did not launch the worker"
+  assert_not_contains "$out" "landing lag" "a project with no landing-lag token printed a landing-lag line"
+  pass "a project with no landing-lag token keeps today's dispatch even with a long-waiting ready PR"
+}
+
+test_lagging_landing_defers_without_leaving_anything_behind() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case lag-exceeded task-c)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  write_ready "$home" ready-a "$case_dir/project" 1 30
+  write_ready "$home" ready-b "$case_dir/project" 2 5
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a spawn while landing lags was not deferred: $out"
+  assert_contains "$out" "deferred: project project lets a ready PR wait 24 hour(s) to land (landing-lag=24 in $home/data/projects.md), and https://github.com/o/r/pull/1 (task ready-a) has waited 30 hour(s); task task-c was not launched and its backlog item stays queued - dispatch it again once that PR lands or its task is cleaned up, or pass --landing-exempt for a fix or landing work" \
+    "the deferral did not name the limit, the oldest ready PR, and its age"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  pass "a ship spawn while the oldest ready PR exceeds the landing lag is deferred before anything exists"
+}
+
+# Only ready PRs on this project count, and a worker with no ready PR is not
+# waiting to land.
+test_landing_within_its_lag_admits_the_worker() {
+  local case_dir home out rc=0
+  case_dir=$(make_case lag-within task-c)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  write_ready "$home" ready-a "$case_dir/project" 1 20
+  write_ready "$home" other-b "$case_dir/other-project" 2 500
+  write_live "$home" live-c "$case_dir/project"
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a spawn within the landing lag was refused: $out"
+  assert_contains "$out" "spawned task-c" "a spawn within the landing lag did not launch"
+  assert_not_contains "$out" "landing lag" "a spawn within the landing lag printed a landing-lag line"
+  pass "a spawn is admitted while this project's oldest ready PR is within its landing lag"
+}
+
+# A ready PR recorded before ready times existed has no age: the spawn goes
+# ahead with one warning, unless a PR whose age is known already exceeds the
+# lag, because the oldest PR is at least that old.
+test_unknown_ready_age_warns_once_and_admits() {
+  local case_dir home out rc=0
+  case_dir=$(make_case lag-unknown task-c task-d)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  write_ready "$home" legacy-a "$case_dir/project" 1 untimed
+  write_ready "$home" legacy-b "$case_dir/project" 2 untimed
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "an unknown landing lag refused the spawn: $out"
+  assert_contains "$out" "spawned task-c" "an unknown landing lag did not launch the worker"
+  assert_contains "$out" "warning: landing lag for project project is unknown: 2 ready PR(s) have an unknown wait (legacy-a, legacy-b); launching task task-c anyway" \
+    "an unknown landing lag did not warn"
+  [ "$(printf '%s\n' "$out" | grep -c 'landing lag')" -eq 1 ] || fail "an unknown landing lag printed more than one line: $out"
+
+  write_ready "$home" ready-e "$case_dir/project" 3 30
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a known lagging PR beside unknown ones did not defer: $out"
+  assert_contains "$out" "https://github.com/o/r/pull/3 (task ready-e) has waited 30 hour(s)" \
+    "the deferral did not name the PR whose age is known"
+  pass "an unknown ready age warns once and admits, unless a known age already exceeds the lag"
+}
+
+# Fixes and landing work are exempt only when marked at spawn, and a scout or a
+# relaunch is never held for lag.
+test_landing_exempt_spawn_is_admitted() {
+  local case_dir home out rc=0
+  case_dir=$(make_case lag-exempt task-c task-s)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  write_ready "$home" ready-a "$case_dir/project" 1 30
+  out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-c)" task-c "$case_dir/project" \
+    --mode no-mistakes --yolo off --landing-exempt) || rc=$?
+  expect_code 0 "$rc" "a spawn marked --landing-exempt was held for lag: $out"
+  assert_contains "$out" "spawned task-c" "a spawn marked --landing-exempt did not launch"
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-s)" task-s "$case_dir/project" --scout) || rc=$?
+  expect_code 0 "$rc" "a scout was held for lag: $out"
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-s "$case_dir/project" --scout --landing-exempt) || rc=$?
+  expect_code 1 "$rc" "--landing-exempt on a scout was not refused: $out"
+  assert_contains "$out" "--landing-exempt applies only to ship spawns" "the scout refusal did not explain itself"
+  pass "only an explicitly exempt ship skips the landing lag, and scouts are never held for it"
+}
+
+# The oldest ready PR may belong to another local home on this machine.
+test_landing_lag_reads_every_local_home() {
+  local case_dir root mate out rc=0 mate_project
+  case_dir=$(make_case lag-machine)
+  root="$case_dir/home"
+  mate="$case_dir/mate"
+  make_home "$mate" task-m
+  mate_project="$mate/projects/project"
+  git clone -q "$(git -C "$case_dir/project" remote get-url origin)" "$mate_project"
+  printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$root" > "$mate/.fm-secondmate-parent"
+  printf -- '- mate - a local mate (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" \
+    > "$root/data/secondmates.md"
+  register_landing_lag "$mate" 24
+  write_ready "$root" ready-a "$case_dir/project" 1 30
+  git -C "$mate_project" worktree add --quiet -b wt-m "$case_dir/wt-m"
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "another local home's lagging PR did not defer the spawn: $out"
+  assert_contains "$out" "https://github.com/o/r/pull/1 (task ready-a in $root) has waited 30 hour(s)" \
+    "the deferral did not name the other home's ready PR"
+  pass "landing lag reads ready PRs from every local home on this machine"
+}
+
+# A registered limit that is not whole hours is the captain's limit unknown, so
+# the spawn refuses rather than launching as if no limit were registered.
+test_malformed_landing_lag_refuses_the_spawn() {
+  local case_dir home out rc=0
+  case_dir=$(make_case lag-malformed task-c)
+  home="$case_dir/home"
+  register_landing_lag "$home" 2d
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code 1 "$rc" "a malformed landing lag did not refuse the spawn: $out"
+  assert_contains "$out" "error: spawn refused: the landing-lag limit registered for project in $home/data/projects.md is unreadable" \
+    "the refusal did not name the unreadable limit"
+  assert_absent "$home/state/task-c.meta" "a malformed landing lag still published a record"
+  pass "a malformed landing-lag limit refuses the spawn"
+}
+
+# The Admission rule counts only a ready PR that can land. A PR whose task is
+# yolo=off waits for the captain's merge word by definition, as a payments PR
+# does, so it never holds a spawn however long it has waited.
+test_yolo_off_ready_pr_does_not_hold_a_spawn() {
+  local case_dir home out rc=0
+  case_dir=$(make_case lag-yolo-off task-c)
+  home="$case_dir/home"
+  register_landing_lag "$home" 48
+  write_ready "$home" payments-a "$case_dir/project" 1 49 off
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a 49-hour yolo-off payments PR deferred a spawn under landing-lag=48: $out"
+  assert_contains "$out" "spawned task-c" "a yolo-off ready PR kept the worker from launching"
+  assert_not_contains "$out" "landing lag" "a yolo-off ready PR printed a landing-lag line"
+  pass "a ready PR waiting for the captain's merge word (yolo off) does not count toward landing lag"
+}
+
+# A ready PR whose task is held for the captain in its backlog does not count,
+# and it counts again once the hold is lifted.
+test_captain_held_ready_pr_does_not_hold_a_spawn() {
+  local case_dir home out rc=0
+  if [ "$HAVE_TASKS_AXI" = 0 ]; then
+    pass "a captain-held ready PR does not count toward landing lag (skipped: tasks-axi is not installed)"
+    return 0
+  fi
+  case_dir=$(make_case lag-captain-hold task-c task-d)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  write_ready "$home" ready-a "$case_dir/project" 1 30
+  FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' \
+    "$ROOT/bin/fm-captain-hold.sh" hold ready-a --reason "payments PR waits for the merge word" >/dev/null 2>&1 ||
+    fail "the captain hold on ready-a could not be recorded"
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a captain-held ready PR deferred a spawn: $out"
+  assert_contains "$out" "spawned task-c" "a captain-held ready PR kept the worker from launching"
+  assert_not_contains "$out" "landing lag" "a captain-held ready PR printed a landing-lag line"
+  tasks-axi unhold ready-a --file "$home/data/backlog.md" >/dev/null
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a ready PR whose captain hold was lifted did not defer: $out"
+  pass "a ready PR held for the captain does not count toward landing lag until the hold is lifted"
+}
+
+# A ready PR with an unresolved blocked-by dependency does not count; once its
+# blocker is done it counts again.
+test_blocked_ready_pr_does_not_hold_a_spawn() {
+  local case_dir home out rc=0
+  if [ "$HAVE_TASKS_AXI" = 0 ]; then
+    pass "a blocked ready PR does not count toward landing lag (skipped: tasks-axi is not installed)"
+    return 0
+  fi
+  case_dir=$(make_case lag-blocked task-c task-d dep-x)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  write_ready "$home" ready-a "$case_dir/project" 1 30
+  tasks-axi block ready-a --by dep-x --file "$home/data/backlog.md" >/dev/null
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a ready PR blocked by an open dependency deferred a spawn: $out"
+  assert_contains "$out" "spawned task-c" "a blocked ready PR kept the worker from launching"
+  assert_not_contains "$out" "landing lag" "a blocked ready PR printed a landing-lag line"
+  tasks-axi "done" dep-x --file "$home/data/backlog.md" >/dev/null
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a ready PR whose dependency resolved did not defer: $out"
+  pass "a ready PR with an unresolved blocked-by dependency does not count toward landing lag"
+}
+
+# A home whose backlog cannot be read leaves its ready PR's wait unknown: the
+# spawn warns and launches, but a PR in another home whose age is known to
+# exceed the lag still defers it, whichever record is walked first.
+test_unreadable_backlog_does_not_hide_a_known_lag() {
+  local case_dir root mate out rc=0 mate_project
+  if [ "$HAVE_TASKS_AXI" = 0 ]; then
+    pass "an unreadable backlog does not hide a known landing lag (skipped: tasks-axi is not installed)"
+    return 0
+  fi
+  case_dir=$(make_case lag-unreadable-backlog)
+  root="$case_dir/home"
+  mate="$case_dir/mate"
+  make_home "$mate" task-m task-n
+  mate_project="$mate/projects/project"
+  git clone -q "$(git -C "$case_dir/project" remote get-url origin)" "$mate_project"
+  printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$root" > "$mate/.fm-secondmate-parent"
+  printf -- '- mate - a local mate (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" \
+    > "$root/data/secondmates.md"
+  register_landing_lag "$mate" 24
+  write_ready "$root" ready-b "$case_dir/project" 2 5
+  rm "$root/data/backlog.md"
+  mkdir "$root/data/backlog.md"
+  git -C "$mate_project" worktree add --quiet -b wt-m "$case_dir/wt-m"
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code 0 "$rc" "an unreadable backlog alone refused the spawn: $out"
+  assert_contains "$out" "warning: landing lag for project project is unknown: 1 ready PR(s) have an unknown wait (ready-b in $root (backlog unreadable)); launching task task-m anyway" \
+    "an unreadable backlog did not warn that the wait is unknown"
+  write_ready "$mate" ready-a "$mate_project" 1 30
+  rc=0
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/unused" task-n "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "an unreadable backlog hid a ready PR known to exceed the lag: $out"
+  assert_contains "$out" "https://github.com/o/r/pull/1 (task ready-a) has waited 30 hour(s)" \
+    "the deferral did not name the PR whose age is known"
+  pass "an unreadable backlog leaves a PR's wait unknown without hiding a known landing lag"
+}
+
+# Another home's backlog that times out on a read leaves its ready PR's wait
+# unknown, and the bounded-read latch that timeout sets must not refuse the
+# spawning home's own healthy backlog reads afterwards.
+test_timed_out_backlog_read_lets_the_spawn_launch() {
+  local case_dir root mate out rc=0 mate_project real_axi
+  if [ "$HAVE_TASKS_AXI" = 0 ]; then
+    pass "a timed-out backlog read in another home lets the spawn launch (skipped: tasks-axi is not installed)"
+    return 0
+  fi
+  case_dir=$(make_case lag-slow-backlog task-c)
+  root="$case_dir/home"
+  mate="$case_dir/mate"
+  make_home "$mate"
+  mate_project="$mate/projects/project"
+  git clone -q "$(git -C "$case_dir/project" remote get-url origin)" "$mate_project"
+  printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$root" > "$mate/.fm-secondmate-parent"
+  printf -- '- mate - a local mate (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" \
+    > "$root/data/secondmates.md"
+  register_landing_lag "$root" 24
+  write_ready "$mate" ready-b "$mate_project" 2 5
+  real_axi=$(command -v tasks-axi)
+  cat > "$case_dir/fakebin/tasks-axi" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = show ] && [ "\$(pwd -P)" = "\$(cd "$mate" && pwd -P)" ]; then
+  sleep 30
+fi
+exec "$real_axi" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/tasks-axi"
+  out=$(FM_BACKLOG_ROW_TIMEOUT_SECS=3 spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "another home's timed-out backlog read refused the spawn: $out"
+  assert_contains "$out" "spawned task-c" "another home's timed-out backlog read kept the worker from launching"
+  assert_contains "$out" "warning: landing lag for project project is unknown: 1 ready PR(s) have an unknown wait (ready-b in $mate (backlog unreadable)); launching task task-c anyway" \
+    "a timed-out backlog read did not warn that the wait is unknown"
+  pass "a timed-out backlog read in another home leaves the wait unknown and lets the spawn launch"
+}
+
+test_batch_reports_a_landing_lag_deferral() {
+  local case_dir home out rc=0
+  case_dir=$(make_case lag-batch task-c)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  write_ready "$home" ready-a "$case_dir/project" 1 30
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair lagged did not exit with the deferral status: $out"
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project is at capacity or its landing lags, so it stays queued" \
+    "the batch did not report the landing-lag deferral"
+  pass "a batch reports a landing-lag deferral as deferred, not failed"
+}
+
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_exhausted_capacity_defers_without_leaving_anything_behind
@@ -640,3 +942,16 @@ test_failed_spawn_after_admission_holds_no_place
 test_unreadable_declaration_refuses_every_spawn
 test_batch_reports_a_deferred_pair
 test_orca_spawn_is_admitted_under_the_shared_project_lock
+test_unregistered_landing_lag_keeps_dispatch_unchanged
+test_lagging_landing_defers_without_leaving_anything_behind
+test_landing_within_its_lag_admits_the_worker
+test_unknown_ready_age_warns_once_and_admits
+test_landing_exempt_spawn_is_admitted
+test_landing_lag_reads_every_local_home
+test_malformed_landing_lag_refuses_the_spawn
+test_yolo_off_ready_pr_does_not_hold_a_spawn
+test_captain_held_ready_pr_does_not_hold_a_spawn
+test_blocked_ready_pr_does_not_hold_a_spawn
+test_unreadable_backlog_does_not_hide_a_known_lag
+test_timed_out_backlog_read_lets_the_spawn_launch
+test_batch_reports_a_landing_lag_deferral

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--landing-exempt] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
@@ -208,6 +208,15 @@
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
+#   Landing lag: when the project's registry entry carries landing-lag=<hours>
+#   (bin/fm-project-mode.sh), a fresh ship spawn reads the age of the project's
+#   oldest ready PR on this machine (bin/fm-project-capacity-lib.sh owns which
+#   records count and how an unreadable signal is handled) and, when it has
+#   waited longer than that, is deferred exactly like a capacity deferral: one
+#   `deferred:` line, exit 75, nothing created, item still queued. A signal that
+#   cannot be read prints one `warning:` line and launches. --landing-exempt
+#   marks a ship as a fix or landing work that is never held for lag, and is
+#   refused on --scout and --secondmate spawns, which are never held for it.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -805,6 +814,7 @@ UPSTREAM_CONSENT=
 UPSTREAM_CONSENT_SET=0
 TRACEPARENT_SET=0
 RELAUNCH=0
+LANDING_EXEMPT=0
 # Opt-in only: exact-resume presentation-order lock waits instead of refusing.
 # Absent/unset keeps upstream refuse-on-contention. See header.
 HERDR_RESUME_LOCK_WAIT=0
@@ -877,6 +887,7 @@ for a in "$@"; do
     KIND_SET=1
     ;;
   --relaunch) RELAUNCH=1 ;;
+  --landing-exempt) LANDING_EXEMPT=1 ;;
   --herdr-resume-lock-wait) HERDR_RESUME_LOCK_WAIT=1 ;;
   --harness) want_value=harness ;;
   --harness=*)
@@ -980,6 +991,10 @@ if [ "$TRACEPARENT_SET" -eq 1 ]; then
     exit 1
   }
 fi
+[ "$LANDING_EXEMPT" -eq 0 ] || [ "$KIND" = ship ] || {
+  echo "error: --landing-exempt applies only to ship spawns; a $KIND spawn is never held for landing lag" >&2
+  exit 1
+}
 case "$EFFORT" in
 '' | low | medium | high | xhigh | max | ultra) ;;
 *)
@@ -1744,6 +1759,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ "$BRANCH_PREFIX_SET" -eq 0 ] || shared_args+=(--branch-prefix "$BRANCH_PREFIX")
   [ "$BASE_BRANCH_SET" -eq 0 ] || shared_args+=(--base-branch "$BASE_BRANCH")
   [ "$HERDR_RESUME_LOCK_WAIT" -eq 0 ] || shared_args+=(--herdr-resume-lock-wait)
+  [ "$LANDING_EXEMPT" -eq 0 ] || shared_args+=(--landing-exempt)
   for pair in "${POS[@]}"; do
     case "$pair" in
     *=*) : ;;
@@ -1763,7 +1779,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     pair_rc=0
     FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair_args[@]}" || pair_rc=$?
     if [ "$pair_rc" -eq "$FM_PROJECT_CAPACITY_DEFER_EXIT" ]; then
-      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project is at capacity, so it stays queued" >&2
+      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project is at capacity or its landing lags, so it stays queued" >&2
       [ "$rc" -ne 0 ] || rc=$FM_PROJECT_CAPACITY_DEFER_EXIT
     elif [ "$pair_rc" -ne 0 ]; then
       echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2
@@ -3428,6 +3444,31 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
   if [ "$FM_PROJECT_CAPACITY_OCCUPANTS" -ge "$SPAWN_PROJECT_CAPACITY" ]; then
     echo "deferred: project $(basename "$PROJ_ABS") admits $SPAWN_PROJECT_CAPACITY worker(s) at once on this machine ($FM_PROJECT_CAPACITY_FILE) and $FM_PROJECT_CAPACITY_OCCUPANTS already hold a place ($FM_PROJECT_CAPACITY_OCCUPANT_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them records its ready PR or is cleaned up" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+  fi
+fi
+# Landing-lag admission (bin/fm-project-capacity-lib.sh owns which ready PRs
+# count and why an unreadable signal launches): a fresh ship for a project whose
+# oldest ready PR has waited past its registered landing-lag is deferred here,
+# at the same point and with the same exit as a capacity deferral.
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$LANDING_EXEMPT" -eq 0 ]; then
+  SPAWN_LANDING_LAG=$("$FM_ROOT/bin/fm-project-mode.sh" --landing-lag "$(basename "$PROJ_ABS")" 2>/dev/null) || {
+    "$FM_ROOT/bin/fm-project-mode.sh" --landing-lag "$(basename "$PROJ_ABS")" >/dev/null || true
+    echo "error: spawn refused: the landing-lag limit registered for $(basename "$PROJ_ABS") in $DATA/projects.md is unreadable; correct it so the captain's limit is known (docs/configuration.md \"Landing lag\")" >&2
+    exit 1
+  }
+  if [ -n "$SPAWN_LANDING_LAG" ]; then
+    SPAWN_LANDING_LOCK=${SPAWN_TREEHOUSE_PROJECT_LOCK:-}
+    [ -n "$SPAWN_LANDING_LOCK" ] || SPAWN_LANDING_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS" 2>/dev/null) || SPAWN_LANDING_LOCK=
+    if [ -z "$SPAWN_LANDING_LOCK" ]; then
+      echo "warning: landing lag for project $(basename "$PROJ_ABS") is unknown: its project identity cannot be resolved; launching task $ID anyway" >&2
+    elif ! fm_project_landing_oldest "$SPAWN_LANDING_LOCK" "$PROJ_ABS" "$STATE" "$ID" "$CONFIG" "$DATA" "$(date +%s)"; then
+      echo "warning: landing lag for project $(basename "$PROJ_ABS") is unknown: $FM_PROJECT_CAPACITY_ERROR; launching task $ID anyway" >&2
+    elif [ -n "$FM_PROJECT_LANDING_AGE" ] && [ "$FM_PROJECT_LANDING_AGE" -gt $((SPAWN_LANDING_LAG * 3600)) ]; then
+      echo "deferred: project $(basename "$PROJ_ABS") lets a ready PR wait $SPAWN_LANDING_LAG hour(s) to land (landing-lag=$SPAWN_LANDING_LAG in $DATA/projects.md), and $FM_PROJECT_LANDING_PR (task $FM_PROJECT_LANDING_TASK) has waited $((FM_PROJECT_LANDING_AGE / 3600)) hour(s); task $ID was not launched and its backlog item stays queued - dispatch it again once that PR lands or its task is cleaned up, or pass --landing-exempt for a fix or landing work" >&2
+      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+    elif [ "$FM_PROJECT_LANDING_UNTIMED_COUNT" -gt 0 ]; then
+      echo "warning: landing lag for project $(basename "$PROJ_ABS") is unknown: $FM_PROJECT_LANDING_UNTIMED_COUNT ready PR(s) have an unknown wait ($FM_PROJECT_LANDING_UNTIMED); launching task $ID anyway" >&2
+    fi
   fi
 fi
 [ -f "$BRIEF" ] || {
