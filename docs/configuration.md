@@ -1627,7 +1627,7 @@ decision=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr merge %s -
   | python3 scripts/claude-hooks/verify-pr-review.py)
 printf '%s' "$decision" | jq -e '.hookSpecificOutput.permissionDecision == "allow"' >/dev/null \
   || { printf '%s' "$decision" | jq -r '.hookSpecificOutput.permissionDecisionReason'; exit 1; }
-body=$(gh pr view "$1" --json body -q .body)
+body=$(gh pr view "$1" --json body -q .body | tr -d '\r')
 for heading in Testing Risk 'How to revert'; do
   printf '%s\n' "$body" | grep -Eq "^#+ $heading\$" || { echo "PR body has no $heading heading"; exit 1; }
 done
