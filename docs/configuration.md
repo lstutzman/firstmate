@@ -1609,11 +1609,13 @@ A project with no `admission=` token merges exactly as before, and like `merger=
 ## Ready evidence (data/projects.md ready-evidence= token, config/ready-evidence/)
 
 A project entry may name a ready-evidence command set with `ready-evidence=<name>`, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti ready-evidence=pc-ready] - ...`.
-The command set is the local, gitignored bash file `config/ready-evidence/<name>` in the same home, run from the project clone with the PR URL as `$1` and the named head as `$2`, under `bash -e -o pipefail` so every command in it must succeed.
-`bin/fm-dod-lib.sh` runs it after the named-head gate accepts a ship's ready `done:`, so `bin/fm-crew-state.sh` reports a done whose evidence fails as blocked with the command's output, and `bin/fm-pr-check.sh` refuses to register that PR, including the merge-time re-record that runs before the merge.
+The command set is the local, gitignored bash file `config/ready-evidence/<name>` in the same home, run from the project clone with the PR or review URL as `$1` and the named head as `$2`, under `bash -e -o pipefail` so every command in it must succeed.
+It runs only where a done is registered: `bin/fm-pr-check.sh`, including the merge-time re-record that runs before the merge, and `bin/fm-review-check.sh`.
+Each run records its verdict in the task's metadata as one `ready_evidence=<pass|fail> <head> <url> [<line>]` line, and a fail refuses the registration.
+Every other done check, such as `bin/fm-crew-state.sh` and fleet snapshots, only reads that record and never runs a command: a recorded fail reads blocked with its line, and a done whose URL or head has no matching record reads blocked as not yet checked until registration runs the evidence.
 The file lives in captain-private config rather than the project or the worker's copy, because a worker that can edit its own evidence check has no check.
-A missing file, a missing clone, a malformed token, or a run longer than `FM_READY_EVIDENCE_TIMEOUT` seconds refuses the done rather than skipping the check.
-A done gate re-reads current state, so an opted-in done ship reruns its evidence on every state read until cleanup; keep the commands quick.
+A missing file, a missing clone, a malformed token, or a run longer than `FM_READY_EVIDENCE_TIMEOUT` seconds is a fail.
+A local-only project has no registration step, so it must not register ready evidence.
 Like `merger=`, the registry is not inherited, so every home that checks the project's handoffs must carry the token and the file.
 A project with no `ready-evidence=` token keeps today's done gate exactly.
 `bin/fm-project-mode.sh --ready-evidence <name>` reads the binding back, and `bin/fm-dod-lib.sh`'s header owns how the command set runs.

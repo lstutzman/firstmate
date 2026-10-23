@@ -742,11 +742,16 @@ test_ready_evidence_gates_registration_on_the_forge_head() {
     || fail "ready evidence was not given the PR URL and forge head: $(cat "$dir/evidence.log")"
   ! grep -q '^pr=' "$dir/home/state/task-a.meta" || fail "a refused registration still recorded pr="
   [ ! -e "$dir/home/state/task-a.check.sh" ] || fail "a refused registration still armed a poll"
+  grep -qF "ready_evidence=fail $head https://github.com/o/r/pull/4 ready evidence pc refused" "$dir/home/state/task-a.meta" \
+    || fail "a refused registration did not record the fail: $(cat "$dir/home/state/task-a.meta")"
   sed -i.bak '$d' "$dir/home/config/ready-evidence/pc"
   FM_TEST_GH_HEAD=$head run_check_entry "$dir" task-a https://github.com/o/r/pull/4 \
     > "$dir/stdout" 2> "$dir/stderr" || fail "a PR whose ready evidence passed was refused: $(cat "$dir/stderr")"
   [ -e "$dir/home/state/task-a.check.sh" ] || fail "a PR whose ready evidence passed was not armed"
-  pass "fm-pr-check runs a project's ready evidence on the forge head and refuses registration when it fails"
+  grep -qxF "ready_evidence=pass $head https://github.com/o/r/pull/4" "$dir/home/state/task-a.meta" \
+    || fail "a passing registration did not replace the record with a pass: $(cat "$dir/home/state/task-a.meta")"
+  [ "$(grep -c '^ready_evidence=' "$dir/home/state/task-a.meta")" = 1 ] || fail "registration left more than one record"
+  pass "fm-pr-check runs a project's ready evidence on the forge head, records the verdict, and refuses when it fails"
 }
 
 # With no forge-reported head (gh cannot supply one), the named head is the

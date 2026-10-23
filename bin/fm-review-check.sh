@@ -14,7 +14,8 @@
 # bin/fm-external-review-lib.sh's canonical-shape rules and any
 # config/external-review-url pattern, and when spawn recorded a personal backup
 # remote, the worker copy's HEAD must already be on that remote's backup
-# namespace.
+# namespace. A project's registered ready evidence then runs and its verdict is
+# recorded (bin/fm-dod-lib.sh); a fail refuses.
 # In a secondmate home it publishes the child's review-ready line to the parent
 # channel (bin/fm-parent-channel-lib.sh); a main home has no channel and this is
 # a silent no-op there.
@@ -68,7 +69,14 @@ MODE=$(fm_dod_meta_value "$META" mode)
 WT=$(fm_dod_meta_value "$META" worktree)
 PROJECT=$(fm_dod_meta_value "$META" project)
 DONE_LINE="done: review $URL uploaded for review"
-if ! GATE_REASON=$(fm_dod_accept_ship_done "${KIND:-ship}" "$MODE" "$WT" "$PROJECT" "$DONE_LINE" "$STATE" "$ID" "$META"); then
+if fm_dod_should_gate_ship_done "${KIND:-ship}" "$MODE" "$DONE_LINE" \
+  && ! GATE_REASON=$(fm_dod_accept_named_head "${KIND:-ship}" "$MODE" "$WT" "$PROJECT" "$DONE_LINE" "$STATE" "$ID" "$META"); then
+  echo "error: $GATE_REASON" >&2
+  exit 1
+fi
+# Registration is where a project's ready evidence runs and is recorded.
+if [ "${KIND:-ship}" = ship ] \
+  && ! GATE_REASON=$(fm_dod_ready_evidence_register "$META" "$MODE" "$WT" "$PROJECT" "$URL"); then
   echo "error: $GATE_REASON" >&2
   exit 1
 fi

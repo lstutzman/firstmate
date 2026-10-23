@@ -2424,38 +2424,43 @@ test_unpushed_ship_done_is_blocked() {
   pass "unpushed ship done: is current-state blocked"
 }
 
-# A pushed ship done whose project's ready evidence fails is not current-state
-# done: it reads blocked with the evidence command's output.
-test_failing_ready_evidence_done_is_blocked() {
+# A state read never runs a project's ready evidence: it reads the verdict
+# registration recorded. A recorded fail reads blocked with its line, a pass
+# for that URL and head reads done, and no matching record reads not yet checked.
+test_ready_evidence_state_read_only_reads_the_record() {
   reset_fakes
-  local d sha out
+  local d sha out url=https://example.test/o/r/pull/21
   d=$(new_case evproj)
   make_repo_on_branch "$d/wt" fm/evidence
   git -C "$d/wt" commit -q --allow-empty -m 'the fix'
   sha=$(git -C "$d/wt" rev-parse HEAD)
   git -C "$d/wt" update-ref refs/remotes/origin/fm/evidence "$sha"
   make_fakebin "$d" >/dev/null
-  mkdir -p "$d/data" "$d/config/ready-evidence"
+  mkdir -p "$d/data" "$d/config/ready-evidence" "$d/evproj"
   printf '%s\n' '- evproj [direct-PR ready-evidence=pc] - fixture (added 2026-01-01)' > "$d/data/projects.md"
-  # shellcheck disable=SC2016  # The literal $2 is the command set's own argument.
-  printf '%s\n' 'echo "no review marker for $2"' 'exit 1' > "$d/config/ready-evidence/pc"
-  mkdir -p "$d/evproj"
+  printf '%s\n' "echo ran >> '$d/evidence.log'" > "$d/config/ready-evidence/pc"
   fm_write_meta "$d/state/evidence.meta" \
     "window=fm:fm-evidence" "worktree=$d/wt" "project=$d/evproj" \
-    "kind=ship" "mode=direct-PR" "harness=claude"
-  printf 'done: PR https://example.test/o/r/pull/21\n' > "$d/state/evidence.status"
+    "kind=ship" "mode=direct-PR" "harness=claude" \
+    "ready_evidence=fail $sha $url ready evidence pc refused $url at $sha: no review marker"
+  printf 'done: PR %s\n' "$url" > "$d/state/evidence.status"
   FM_FAKE_AXI_STATUS=""
   FM_FAKE_RUNS_LIST=""
   FM_FAKE_BUSY=0
   arm_idle_record "$d/state" evidence
   out=$(FM_DATA_OVERRIDE="$d/data" FM_CONFIG_OVERRIDE="$d/config" run_crew_state "$d" evidence)
-  assert_contains "$out" "state: blocked" "a done whose ready evidence fails must not read as done"
-  assert_contains "$out" "ready evidence pc refused https://example.test/o/r/pull/21 at $sha: no review marker for $sha" \
-    "the blocked reason must carry the evidence output"
-  printf '%s\n' 'true' > "$d/config/ready-evidence/pc"
+  assert_contains "$out" "state: blocked" "a recorded ready-evidence fail must not read as done"
+  assert_contains "$out" "ready evidence pc refused $url at $sha: no review marker" \
+    "the blocked reason must carry the recorded line"
+  sed -i.bak "s|^ready_evidence=.*|ready_evidence=pass $sha $url|" "$d/state/evidence.meta"
   out=$(FM_DATA_OVERRIDE="$d/data" FM_CONFIG_OVERRIDE="$d/config" run_crew_state "$d" evidence)
-  assert_contains "$out" "state: done" "a done whose ready evidence passes reads done"
-  pass "a ship done whose ready evidence fails is current-state blocked with the command's output"
+  assert_contains "$out" "state: done" "a recorded pass for the done's URL and head reads done"
+  sed -i.bak '/^ready_evidence=/d' "$d/state/evidence.meta"
+  out=$(FM_DATA_OVERRIDE="$d/data" FM_CONFIG_OVERRIDE="$d/config" run_crew_state "$d" evidence)
+  assert_contains "$out" "state: blocked" "a done with no ready-evidence record must not read as done"
+  assert_contains "$out" "not yet checked for $url at $sha" "an unrecorded done must read not yet checked"
+  [ ! -e "$d/evidence.log" ] || fail "a state read ran the ready-evidence commands"
+  pass "a state read only reads the recorded ready-evidence verdict and never runs the commands"
 }
 
 # Fleet snapshot hands crew-state a captured meta copy outside state/. The
@@ -5691,7 +5696,7 @@ test_terminal_run_without_live_sibling_is_unchanged
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
 test_other_branch_run_ignored
 test_unpushed_ship_done_is_blocked
-test_failing_ready_evidence_done_is_blocked
+test_ready_evidence_state_read_only_reads_the_record
 test_merged_pr_reads_done_under_captured_meta
 test_no_mistakes_prevalidation_done_stays_done
 test_moved_remote_branch_without_named_head_is_blocked

@@ -120,8 +120,8 @@
 #   exit status 3, because reading it as "no admission" would merge the very
 #   classes the binding exists to stop; the other output forms ignore the token.
 # ready-evidence=<n> (orthogonal) = the project's ready-evidence command set,
-#   the file config/ready-evidence/<n> in this home, which bin/fm-dod-lib.sh
-#   runs before it accepts a ship done (that file owns how it runs). A project
+#   the file config/ready-evidence/<n> in this home, which registration runs and
+#   every done gate then reads (bin/fm-dod-lib.sh owns how). A project
 #   with no token keeps today's done gate exactly. Under --ready-evidence an
 #   empty or non-id value is refused with exit status 3 like merger=, because
 #   reading it as "no evidence" would accept the done the binding exists to check.

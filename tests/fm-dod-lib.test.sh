@@ -8,6 +8,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=bin/fm-dod-lib.sh
 . "$ROOT/bin/fm-dod-lib.sh"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$ROOT/bin/fm-wake-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-dod-lib)
 fm_git_identity fmtest fmtest@example.invalid
@@ -590,127 +592,166 @@ printf '%s\n' 'echo "no review marker for $2"' 'echo "second line" >&2' 'exit 4'
 printf '%s\n' false 'echo "a later command never runs"' > "$EV_CONFIG/ready-evidence/badbody"
 printf '%s\n' 'sleep 20' > "$EV_CONFIG/ready-evidence/slow"
 
-ev_accept() {  # <args to fm_dod_accept_ship_done>
-  FM_DATA_OVERRIDE=$EV_DATA FM_CONFIG_OVERRIDE=$EV_CONFIG FM_READY_EVIDENCE_TIMEOUT=2 fm_dod_accept_ship_done "$@"
+ev_env() {  # <command...>: run with the evidence fixtures' registry and config
+  FM_DATA_OVERRIDE=$EV_DATA FM_CONFIG_OVERRIDE=$EV_CONFIG FM_READY_EVIDENCE_TIMEOUT=2 "$@"
 }
 
 # The bare clone directories a test may name as its project, independent of
 # which fixtures ran first.
 mkdir -p "$TMP_ROOT/evpass" "$TMP_ROOT/evfail"
 
-ev_fixture() {  # <name>; leaves EV_REPO EV_WT EV_SHA with HEAD pushed
+ev_fixture() {  # <name>; leaves EV_REPO EV_WT EV_SHA EV_META with HEAD pushed
   EV_REPO="$TMP_ROOT/$1"
   EV_WT="$TMP_ROOT/$1-wt"
+  EV_META="$TMP_ROOT/$1.meta"
   fm_git_worktree "$EV_REPO" "$EV_WT" "fm/$1"
   git -C "$EV_WT" commit -q --allow-empty -m 'the fix'
   EV_SHA=$(git -C "$EV_WT" rev-parse HEAD)
   git -C "$EV_WT" update-ref "refs/remotes/origin/fm/$1" "$EV_SHA"
-}
-
-test_ready_evidence_runs_from_the_clone_with_url_and_head() {
+  fm_write_meta "$EV_META" kind=ship mode=direct-PR "worktree=$EV_WT" "project=$EV_REPO"
   : > "$TMP_ROOT/ev.log"
-  ev_fixture evpass
-  ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/11' \
-    || fail "passing ready evidence refused the done"
-  [ "$(cat "$TMP_ROOT/ev.log")" = "$(cd "$EV_REPO" && pwd -P)|https://github.com/o/r/pull/11|$EV_SHA" ] \
-    || fail "ready evidence did not run from the clone with the PR URL and head: $(cat "$TMP_ROOT/ev.log")"
-  pass "ready evidence runs from the project clone with the PR URL and named head, and a pass accepts"
 }
 
-test_failing_ready_evidence_refuses_with_its_output() {
-  local reason rc
+ev_register() {  # <url> [<project>]: register direct-PR evidence for the fixture
+  ev_env fm_dod_ready_evidence_register "$EV_META" direct-PR "$EV_WT" "${2:-$EV_REPO}" "$1"
+}
+
+ev_accept() {  # <done line> [<project>]: the read-only done gate for the fixture
+  ev_env fm_dod_accept_ship_done ship direct-PR "$EV_WT" "${2:-$EV_REPO}" "$1" "$TMP_ROOT" ev "$EV_META"
+}
+
+test_registration_runs_evidence_and_the_gate_only_reads_it() {
+  local url=https://github.com/o/r/pull/11
+  ev_fixture evpass
+  ev_register "$url" || fail "passing ready evidence refused registration"
+  [ "$(cat "$TMP_ROOT/ev.log")" = "$(cd "$EV_REPO" && pwd -P)|$url|$EV_SHA" ] \
+    || fail "ready evidence did not run from the clone with the PR URL and head: $(cat "$TMP_ROOT/ev.log")"
+  assert_grep "ready_evidence=pass $EV_SHA $url" "$EV_META" "registration did not record the pass for that URL and head"
+  : > "$TMP_ROOT/ev.log"
+  ev_accept "done: PR $url" || fail "a recorded pass for the done's URL and head was refused"
+  [ ! -s "$TMP_ROOT/ev.log" ] || fail "the done gate ran the evidence commands instead of reading the record"
+  pass "registration runs ready evidence from the clone and records it; the done gate only reads the pass"
+}
+
+test_unregistered_done_reads_not_yet_checked_without_running() {
+  local reason
+  ev_fixture evpass-unchecked
+  reason=$(ev_accept 'done: PR https://github.com/o/r/pull/12' "$TMP_ROOT/evpass") \
+    && fail "a done with no ready-evidence record was accepted"
+  assert_contains "$reason" "ready evidence ok not yet checked for https://github.com/o/r/pull/12 at $EV_SHA" \
+    "an unrecorded done did not read as not yet checked"
+  [ ! -s "$TMP_ROOT/ev.log" ] || fail "the done gate ran the evidence commands for an unrecorded done"
+  pass "a done with no record reads not yet checked and runs nothing"
+}
+
+test_failing_evidence_is_recorded_and_read_back_on_one_line() {
+  local reason gate url=https://github.com/o/r/pull/13
   ev_fixture evfail
-  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/12')
-  rc=$?
-  [ "$rc" -eq 1 ] || fail "failing ready evidence accepted the done (exit $rc)"
+  reason=$(ev_register "$url") && fail "failing ready evidence was accepted at registration"
   [ "$(printf '%s\n' "$reason" | wc -l | tr -d ' ')" = 1 ] || fail "the refusal was not one line: $reason"
-  assert_contains "$reason" "ready evidence bad refused https://github.com/o/r/pull/12 at $EV_SHA" "the refusal did not name the evidence, PR, and head"
+  assert_contains "$reason" "ready evidence bad refused $url at $EV_SHA" "the refusal did not name the evidence, URL, and head"
   assert_contains "$reason" "no review marker for $EV_SHA" "the refusal dropped the command's stdout"
   assert_contains "$reason" "second line" "the refusal dropped the command's stderr"
-  pass "failing ready evidence refuses the done with the command's output on one line"
+  assert_grep "ready_evidence=fail $EV_SHA $url ready evidence bad refused" "$EV_META" "registration did not record the fail"
+  gate=$(ev_accept "done: PR $url") && fail "a recorded fail was accepted by the done gate"
+  [ "$gate" = "$reason" ] || fail "the done gate did not report the recorded line: $gate"
+  pass "failing ready evidence refuses registration, is recorded, and the gate reports its line"
 }
 
-test_ready_evidence_stops_at_the_first_failing_command() {
+test_a_head_change_invalidates_the_record() {
+  local reason url=https://github.com/o/r/pull/14 moved
+  ev_fixture evpass-moved
+  ev_register "$url" "$TMP_ROOT/evpass" || fail "passing ready evidence refused registration"
+  git -C "$EV_WT" commit -q --allow-empty -m 'a later fix'
+  moved=$(git -C "$EV_WT" rev-parse HEAD)
+  git -C "$EV_WT" update-ref refs/remotes/origin/fm/evpass-moved "$moved"
+  reason=$(ev_accept "done: PR $url" "$TMP_ROOT/evpass") && fail "a pass recorded for an older head was accepted"
+  assert_contains "$reason" "not yet checked for $url at $moved" "a moved head did not read as not yet checked"
+  reason=$(ev_accept 'done: PR https://github.com/o/r/pull/99' "$TMP_ROOT/evpass") \
+    && fail "a pass recorded for another PR was accepted"
+  pass "a pass recorded for another head or PR reads not yet checked"
+}
+
+test_evidence_stops_at_the_first_failing_command() {
   local reason
   ev_fixture evfailbody
-  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/13') \
-    && fail "a command set whose first command fails was accepted"
+  reason=$(ev_register 'https://github.com/o/r/pull/15') && fail "a command set whose first command fails was accepted"
   assert_not_contains "$reason" "a later command never runs" "a command after the failing one still ran"
   pass "ready evidence fails on its first failing command, not only its last"
 }
 
-test_ready_evidence_runs_only_after_the_named_head_gate() {
+test_the_named_head_gate_still_comes_first() {
   local reason
-  : > "$TMP_ROOT/ev.log"
-  ev_fixture evfail-unpushed
+  ev_fixture evpass-unpushed
+  ev_register 'https://github.com/o/r/pull/16' "$TMP_ROOT/evpass" || fail "passing ready evidence refused registration"
   git -C "$EV_WT" commit -q --allow-empty -m 'only in the copy'
-  reason=$(ev_accept ship direct-PR "$EV_WT" "$TMP_ROOT/evpass" 'done: PR https://github.com/o/r/pull/14') \
-    && fail "an unpushed head was accepted because evidence passed"
+  reason=$(ev_accept 'done: PR https://github.com/o/r/pull/16' "$TMP_ROOT/evpass") \
+    && fail "an unpushed head was accepted"
   assert_contains "$reason" "is unreachable outside the worker copy" "the named-head refusal did not come first"
-  [ ! -s "$TMP_ROOT/ev.log" ] || fail "ready evidence ran for a done the named-head gate refused"
   pass "ready evidence never replaces the named-head gate"
 }
 
-test_ready_evidence_is_not_run_for_an_ungated_done() {
+test_an_ungated_done_needs_no_record() {
   ev_fixture evfail-preval
-  ev_accept ship no-mistakes "$EV_WT" "$TMP_ROOT/evfail" 'done: implementation complete' \
-    || fail "a no-mistakes pre-validation done ran ready evidence"
-  ev_accept scout direct-PR "$EV_WT" "$TMP_ROOT/evfail" 'done: report written' \
-    || fail "a scout done ran ready evidence"
-  pass "an ungated done (pipeline handoff, scout) never runs ready evidence"
+  ev_env fm_dod_accept_ship_done ship no-mistakes "$EV_WT" "$TMP_ROOT/evfail" 'done: implementation complete' \
+    || fail "a no-mistakes pre-validation done needed ready evidence"
+  ev_env fm_dod_accept_ship_done scout direct-PR "$EV_WT" "$TMP_ROOT/evfail" 'done: report written' \
+    || fail "a scout done needed ready evidence"
+  pass "an ungated done (pipeline handoff, scout) needs no ready-evidence record"
 }
 
-test_ready_evidence_uses_the_forge_recorded_head() {
-  local meta forge_head
-  : > "$TMP_ROOT/ev.log"
+test_evidence_uses_the_forge_recorded_head() {
+  local url=https://github.com/o/r/pull/17 forge_head=1111111111111111111111111111111111111111
   ev_fixture evpass-recorded
-  forge_head=1111111111111111111111111111111111111111
-  meta="$TMP_ROOT/evpass-recorded.meta"
-  fm_write_meta "$meta" kind=ship mode=no-mistakes "worktree=$EV_WT" "project=$TMP_ROOT/evpass" \
-    pr=https://github.com/o/r/pull/15 "pr_head=$forge_head"
-  ev_accept ship no-mistakes "$EV_WT" "$TMP_ROOT/evpass" 'done: PR https://github.com/o/r/pull/15 checks green' \
-    "$TMP_ROOT" evpass-recorded "$meta" || fail "a recorded PR with passing evidence was refused"
-  assert_contains "$(cat "$TMP_ROOT/ev.log")" "|https://github.com/o/r/pull/15|$forge_head" \
-    "ready evidence was not given the forge-recorded head"
-  pass "ready evidence on a recorded no-mistakes PR checks the forge-recorded head"
+  ev_env fm_dod_ready_evidence_register "$EV_META" no-mistakes "$EV_WT" "$TMP_ROOT/evpass" "$url" "$forge_head" \
+    || fail "passing evidence on the forge head refused registration"
+  assert_contains "$(cat "$TMP_ROOT/ev.log")" "|$url|$forge_head" "registration did not check the forge head"
+  printf '%s\n' "pr=$url" "pr_head=$forge_head" >> "$EV_META"
+  ev_env fm_dod_accept_ship_done ship no-mistakes "$EV_WT" "$TMP_ROOT/evpass" "done: PR $url checks green" \
+    "$TMP_ROOT" evpass-recorded "$EV_META" || fail "a pass recorded on the forge head was refused"
+  pass "ready evidence on a recorded no-mistakes PR checks and reads the forge head"
 }
 
-test_ready_evidence_refuses_when_it_cannot_run() {
+test_evidence_that_cannot_run_is_a_fail() {
   local reason
   ev_fixture evmissing
-  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/16') \
-    && fail "a registered evidence file that is missing was accepted"
+  reason=$(ev_register 'https://github.com/o/r/pull/18') && fail "a registered evidence file that is missing was accepted"
   assert_contains "$reason" "ready-evidence/absent" "the missing-file refusal did not name the file"
   ev_fixture evblank
-  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/17') \
-    && fail "a malformed evidence binding was accepted"
+  reason=$(ev_register 'https://github.com/o/r/pull/19') && fail "a malformed evidence binding was accepted"
   assert_contains "$reason" "ready-evidence binding for evblank cannot be read" "the malformed-binding refusal did not name the project"
+  reason=$(ev_accept 'done: PR https://github.com/o/r/pull/19') && fail "the gate accepted a malformed evidence binding"
   ev_fixture evslow
-  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/18') \
-    && fail "evidence that timed out was accepted"
+  reason=$(ev_register 'https://github.com/o/r/pull/20') && fail "evidence that timed out was accepted"
   assert_contains "$reason" "timed out after 2s" "the timeout refusal did not say so"
   ev_fixture evpass-noclone
-  reason=$(ev_accept ship direct-PR "$EV_WT" "$TMP_ROOT/no-such/evpass" 'done: PR https://github.com/o/r/pull/19') \
+  reason=$(ev_register 'https://github.com/o/r/pull/21' "$TMP_ROOT/no-such/evpass") \
     && fail "evidence with no project clone to run in was accepted"
   assert_contains "$reason" "project clone" "the missing-clone refusal did not say so"
   pass "a missing file, malformed binding, timeout, or missing clone refuses rather than skipping evidence"
 }
 
-test_no_ready_evidence_binding_keeps_todays_gate() {
+test_no_binding_records_nothing_and_keeps_todays_gate() {
+  local before
   ev_fixture evnone
-  ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/20' \
-    || fail "a project with no ready-evidence token was refused"
-  pass "a project with no ready-evidence token keeps today's done gate"
+  before=$(cat "$EV_META")
+  ev_register 'https://github.com/o/r/pull/22' || fail "a project with no ready-evidence token was refused at registration"
+  [ "$(cat "$EV_META")" = "$before" ] || fail "a project with no token had its metadata changed"
+  ev_accept 'done: PR https://github.com/o/r/pull/22' || fail "a project with no ready-evidence token was refused"
+  [ ! -s "$TMP_ROOT/ev.log" ] || fail "a project with no token ran evidence"
+  pass "a project with no ready-evidence token records nothing and keeps today's done gate"
 }
 
-test_ready_evidence_runs_from_the_clone_with_url_and_head
-test_failing_ready_evidence_refuses_with_its_output
-test_ready_evidence_stops_at_the_first_failing_command
-test_ready_evidence_runs_only_after_the_named_head_gate
-test_ready_evidence_is_not_run_for_an_ungated_done
-test_ready_evidence_uses_the_forge_recorded_head
-test_ready_evidence_refuses_when_it_cannot_run
-test_no_ready_evidence_binding_keeps_todays_gate
+test_registration_runs_evidence_and_the_gate_only_reads_it
+test_unregistered_done_reads_not_yet_checked_without_running
+test_failing_evidence_is_recorded_and_read_back_on_one_line
+test_a_head_change_invalidates_the_record
+test_evidence_stops_at_the_first_failing_command
+test_the_named_head_gate_still_comes_first
+test_an_ungated_done_needs_no_record
+test_evidence_uses_the_forge_recorded_head
+test_evidence_that_cannot_run_is_a_fail
+test_no_binding_records_nothing_and_keeps_todays_gate
 
 test_external_forge_is_direct_pr_only
 test_external_rule_one_forbids_every_task_push
