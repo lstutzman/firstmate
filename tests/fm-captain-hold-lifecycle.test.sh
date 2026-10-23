@@ -882,6 +882,44 @@ test_answer_records_and_closes() {
   pass "answer records the captain's words, closes idempotently, and releases routed work"
 }
 
+# `answered` is the read-only predicate the merge admission gate asks: only a
+# call the captain actually answered, and that is not held again, counts.
+test_answered_reports_only_a_recorded_captain_answer() {
+  local home rc
+  home=$(make_home answered-predicate)
+  answered_rc() { local rc=0; run_captain "$home" answered "$1" >/dev/null 2>&1 || rc=$?; printf '%s' "$rc"; }
+  [ "$(answered_rc sample-absent)" = 1 ] || fail "answered accepted a task that does not exist"
+  tasks_in "$home" add sample-plain "An ordinary task" --kind ship --repo sample >/dev/null
+  [ "$(answered_rc sample-plain)" = 1 ] || fail "answered accepted a task never held for the captain"
+  run_captain "$home" hold sample-admit --title "Admit the sample PR" \
+    --reason "captain word needed" --repo sample >/dev/null || fail "could not hold the sample call"
+  [ "$(answered_rc sample-admit)" = 1 ] || fail "answered accepted a call still held for the captain"
+  printf 'Yes, merge it.\n' > "$home/yes.txt"
+  run_captain "$home" answer sample-admit --decision-file "$home/yes.txt" >/dev/null \
+    || fail "could not answer the sample call"
+  [ "$(answered_rc sample-admit)" = 0 ] || fail "answered rejected a call the captain answered"
+
+  run_captain "$home" hold sample-plain --reason "captain go needed" >/dev/null
+  run_captain "$home" answer sample-plain --decision-file "$home/yes.txt" --release >/dev/null \
+    || fail "could not release the held work"
+  [ "$(answered_rc sample-plain)" = 0 ] || fail "answered rejected a released captain answer"
+  run_captain "$home" hold sample-plain --reason "a second captain call" >/dev/null
+  [ "$(answered_rc sample-plain)" = 1 ] || fail "answered accepted an earlier answer while a new call is held"
+
+  run_captain "$home" hold sample-moot --title "A call that went moot" \
+    --reason "captain word needed" --repo sample >/dev/null
+  request_reconciles "$home" sample-board sample-moot || fail "could not request the reconcile"
+  printf 'The PR was closed.\n' > "$home/evidence.txt"
+  run_captain "$home" reconcile close sample-moot --evidence-file "$home/evidence.txt" >/dev/null \
+    || fail "could not reconcile the moot call"
+  [ "$(answered_rc sample-moot)" = 1 ] || fail "answered accepted reconciliation evidence as the captain's words"
+
+  rc=0
+  run_captain "$home" answered 'bad/id' >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "answered did not refuse an unsafe task id (status $rc)"
+  pass "answered reports only a recorded captain answer on a call not held again"
+}
+
 # --release lifts the hold instead of closing, preserving the work item's own
 # body under the record; a re-held task later accepts a new answer.
 test_answer_reads_the_decision_from_stdin() {
@@ -4662,6 +4700,7 @@ test_hold_decodes_a_bare_scalar_body_without_the_nonref_default
 test_retained_body_keeps_its_utf8_bytes
 test_completion_gate_attests_and_transfers
 test_answer_records_and_closes
+test_answered_reports_only_a_recorded_captain_answer
 test_answer_reads_the_decision_from_stdin
 test_release_frees_held_work
 test_hold_stamp_precedes_hold_visibility

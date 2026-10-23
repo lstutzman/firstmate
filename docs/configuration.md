@@ -1586,6 +1586,25 @@ A project with no `landing-lag=` token is never held, and the token is read from
 Two parts of the admission rule are known limits, by the captain's decision, until firstmate has a signal for them: a paused landing is not read, and a ready PR held for a release day counts like any other. A merged PR also counts until its task is cleaned up, so choose a limit with those in mind.
 [`bin/fm-project-capacity-lib.sh`](../bin/fm-project-capacity-lib.sh) owns which records count and how an unreadable signal is handled, and `bin/fm-project-mode.sh --landing-lag <name>` reads the limit back.
 
+## Admission by class (data/projects.md admission= token, config/admission/)
+
+A project entry may name an admission config with `admission=<config>`, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti admission=pc2] - ...`, so that `bin/fm-pr-merge.sh` merges a PR only after the captain has answered for every class of change that needs the captain's word.
+The name points at this home's `config/admission/<config>`, a LOCAL, gitignored file with one `command=` line naming the project's own diff classifier, one `classes=` line listing the classes that need the captain's word, and an optional `clear=` line listing the verdict words that need nothing:
+
+```
+command=scripts/ci/classify-diff.sh --risk --stdin
+classes=payments legal-text data-rewriting-migration protected-gate production
+clear=none
+```
+
+The classifier runs in the home's copy of the project, never the PR's head, so a PR cannot rewrite the classifier that judges it.
+It reads the PR's changed paths on stdin, one per line and including a renamed file's old path, and prints verdict words on stdout; every word must appear in `classes=` or `clear=`, and at least one must be printed, so a classifier that ignores its mode and prints another verdict refuses rather than admitting every change.
+For each flagged class the merge is refused until task `<task-id>-admit-<class>` carries the captain's answer, recorded through `bin/fm-captain-hold.sh answer`; the refusal names each class and prints the exact `hold` and `answer` commands.
+The answer is the captain's words: as with any captain hold, firstmate merges only when those words say yes.
+A missing or malformed config, a classifier that fails or prints an empty or undeclared verdict, an unreadable or incomplete changed-file list, and a forge other than GitHub all refuse the merge rather than skipping the check, and neither `yolo`, `--attended-override`, nor the away posture skips it.
+A project with no `admission=` token merges exactly as before, and like `merger=` the token is read from the merging home's own registry, which is not inherited.
+`bin/fm-admission-lib.sh` owns the config format and classifier contract, `bin/fm-pr-merge.sh`'s header owns the merge-time check, and `bin/fm-project-mode.sh --admission <name>` reads the binding back.
+
 ## External review tool (config/external-review.md, config/external-review-url, config/external-review-backup)
 
 These optional local, gitignored files configure a home's `forge=external` projects; a home with no such project needs none of them.

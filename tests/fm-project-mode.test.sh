@@ -42,6 +42,9 @@ cat > "$DATA/projects.md" <<'EOF'
 - lagged-zero [direct-PR landing-lag=0] - a zero landing lag (added 2026-01-01)
 - lagged-word [direct-PR landing-lag=2d] - a landing lag that is not whole hours (added 2026-01-01)
 - lagged-long [direct-PR landing-lag=1234567] - a landing lag longer than six digits (added 2026-01-01)
+- admitted [direct-PR +yolo merger=slarti admission=pc2] - risky classes need the captain's word (added 2026-01-01)
+- admitted-blank [direct-PR admission=] - an empty admission binding (added 2026-01-01)
+- admitted-bad [direct-PR admission=../pc2] - an admission name that is not a config name (added 2026-01-01)
 EOF
 
 run_mode() {
@@ -173,5 +176,25 @@ out=$(run_lag missing-project); status=$?
 out=$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --landing-lag legacy 2>/dev/null); status=$?
 [ "$status" -eq 0 ] && [ -z "$out" ] || fail "an absent registry must print no landing lag (status $status, got '$out')"
 pass "fm-project-mode: no landing-lag token, a missing project, or an absent registry prints no landing lag"
+
+run_admission() {
+  FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --admission "$1" 2>/dev/null
+}
+[ "$(run_admission admitted)" = "pc2" ] || fail "admission=pc2 did not resolve: $(run_admission admitted)"
+[ "$(run_mode admitted)" = "direct-PR on" ] || fail "an admission token changed the two-word output: $(run_mode admitted)"
+[ "$(run_merger admitted)" = "slarti" ] || fail "an admission token disturbed the merger binding: $(run_merger admitted)"
+for name in admitted-blank admitted-bad; do
+  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --admission "$name" 2>/dev/null)
+  status=$?
+  [ "$status" -eq 3 ] || fail "a malformed admission for $name did not refuse (status $status, got '$out')"
+  [ -z "$out" ] || fail "a refused admission for $name still printed '$out'"
+done
+for name in legacy landed missing-project; do
+  out=$(run_admission "$name"); status=$?
+  [ "$status" -eq 0 ] && [ -z "$out" ] || fail "$name must print no admission (status $status, got '$out')"
+done
+out=$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --admission legacy 2>/dev/null); status=$?
+[ "$status" -eq 0 ] && [ -z "$out" ] || fail "an absent registry must print no admission (status $status, got '$out')"
+pass "fm-project-mode: admission=<name> binds beside other tokens, refuses a malformed name, and is empty when unset"
 
 echo "# fm-project-mode.test.sh: all assertions passed"
