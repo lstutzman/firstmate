@@ -461,10 +461,13 @@ test_stack_member_with_a_flagged_class_needs_the_captains_answer() {
   mkdir -p "$case_dir/home/config/admission" "$case_dir/project"
   printf '%s\n' 'command=./classify.sh' 'classes=payments legal-text' 'clear=code docs' \
     > "$case_dir/home/config/admission/risky"
-  printf '%s\n' '#!/usr/bin/env bash' 'paths=$(cat)' \
-    'case "$paths" in *Billing*) printf "code payments " ;; *) printf "docs " ;; esac' \
-    'case "$paths" in *Terms*) printf "legal-text" ;; esac' 'echo' \
-    > "$case_dir/project/classify.sh"
+  cat > "$case_dir/project/classify.sh" <<'SH'
+#!/usr/bin/env bash
+paths=$(cat)
+case "$paths" in *Billing*) printf "code payments " ;; *) printf "docs " ;; esac
+case "$paths" in *Terms*) printf "legal-text" ;; esac
+echo
+SH
   chmod +x "$case_dir/project/classify.sh"
   printf '[{"filename":"src/Billing/Invoice.cs"}]\n' > "$case_dir/files-2.json"
   run_default_stack "$case_dir" || rc=$?
