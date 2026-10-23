@@ -38,6 +38,7 @@ It never reads report bodies, review artifacts, terminal output, or chat.
 | `complete` | Records the reviewed captain-held task ids in the originating task's metadata. | [Recording a reviewed inventory](#recording-a-reviewed-inventory-complete) |
 | `verify` | Read-only check that scout teardown runs before removing source state. | [Checking before scout teardown](#checking-before-scout-teardown-verify) |
 | `open` | Read-only check of whether a row is still an open captain call. | [Cleanup never closes a captain call](#cleanup-never-closes-a-captain-call) |
+| `answered` | Read-only check of whether a task carries the captain's recorded answer, for the admission check in `bin/fm-pr-merge.sh`. | [Admission by class](configuration.md#admission-by-class-dataprojectsmd-admission-token-configadmission) and the script header |
 | `answers` | Channel-agnostic entry point for keyed answers. | [Answer-time resolution](#answer-time-resolution) |
 | `bind`, `unbind`, `binding` | Record that a captured-answer source feeds the keyed-answer intake. | [Source bindings](#source-bindings) |
 | `reconcile-requests` | Internal intake that records a reconcile request from a board selection. | [Reconcile](#reconcile-re-check-reality-never-a-blind-close) |
