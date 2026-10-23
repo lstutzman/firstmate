@@ -150,6 +150,9 @@ test_remote_push_keeps_child_lines() {
   out=$(remote_push "$home" "" 4) || fail "remote absent push failed: $out"
   expect_bytes "$home/config/brief-include.md" $'child rule A\nchild rule B\n' \
     "remote absent base did not leave exactly the child's own lines"
+  out=$(remote_push "$home" "" 4) || fail "a same-generation absent re-send conflicted with its own commitment: $out"
+  expect_bytes "$home/config/brief-include.md" $'child rule A\nchild rule B\n' \
+    "a same-generation absent re-send changed the child's own lines"
   pass "remote push puts the primary's text above the child's lines and keeps them on every re-push"
 }
 

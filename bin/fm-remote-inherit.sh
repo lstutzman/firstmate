@@ -202,12 +202,14 @@ esac
 
 # The committed base is composed with DEST's own lines; an empty composition
 # means no destination file, and a nonempty one is published like any put.
+# The generation record keeps the sender's own command.
+PUBLISH=$COMMAND
 if [ "$REL" = config/brief-include.md ]; then
   if [ "$COMMAND" = put ]; then compose_brief_include "$TMP"; else compose_brief_include ""; fi
-  if [ -s "$TMP" ]; then COMMAND=put; else COMMAND=absent; fi
+  if [ -s "$TMP" ]; then PUBLISH=put; else PUBLISH=absent; fi
 fi
 
-case "$COMMAND" in
+case "$PUBLISH" in
   put)
     if [ -f "$DEST" ] && cmp -s "$TMP" "$DEST"; then
       [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
