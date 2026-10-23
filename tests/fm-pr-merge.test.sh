@@ -773,11 +773,18 @@ test_merger_home_refuses_another_home() {
     "merger-refuses-other-home: the refusal did not name this home"
   # The printed command is the handoff: running it puts the handoff line on
   # this home's parent channel, where the parent watcher picks it up.
+  # It opens its own keyed decision, so an earlier unkeyed ask from the same
+  # mate neither replaces it nor is replaced by it.
+  printf '%s\n' 'needs-decision: an earlier question' > "$case_dir/parent/state/gilligan.status"
   bash -c "$(tail -n 1 "$case_dir/stderr")" \
     || fail "merger-refuses-other-home: the printed handoff command did not run"
-  assert_grep '[handoff=slarti] https://github.com/example/repo/pull/9 is ready to merge' \
-    "$case_dir/parent/state/gilligan.status" \
-    "merger-refuses-other-home: the handoff command did not reach the parent channel"
+  bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2"' _ "$ROOT" \
+    "$case_dir/parent/state/gilligan.status" > "$case_dir/open-decisions"
+  assert_grep $'merge-handoff-9\tneeds-decision\t[handoff=slarti] https://github.com/example/repo/pull/9 is ready to merge' \
+    "$case_dir/open-decisions" \
+    "merger-refuses-other-home: the handoff did not open a keyed decision on the parent channel"
+  assert_grep 'an earlier question' "$case_dir/open-decisions" \
+    "merger-refuses-other-home: the handoff replaced the mate's earlier open decision"
   [ ! -s "$case_dir/gh.log" ] || fail "merger-refuses-other-home: gh ran before the refusal"
   [ ! -s "$case_dir/gh-axi.log" ] || fail "merger-refuses-other-home: gh-axi ran before the refusal"
   assert_no_grep '^pr=' "$case_dir/state/task-x1.meta" \

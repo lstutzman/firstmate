@@ -81,10 +81,12 @@ GENERATION_FILE="$PARENT_REAL/.fm-inherit-$BASE.generation"
 fm_lock_acquire_wait "$LOCK" || die "cannot lock inherited destination"
 TMP=
 GENERATION_TMP=
-# Digest this receiver last published to DEST, captured before commit_generation
-# overwrites the record. Empty when no put generation has been committed here.
+# Digest this receiver last published to DEST, read from the record before
+# commit_generation overwrites it, which happens only once DEST is published.
+# Empty when no put generation has been committed here.
 LAST_PUBLISHED_HASH=
 LAST_PUBLISHED_BYTES=0
+GENERATION_PENDING=0
 cleanup() {
   [ -z "$TMP" ] || rm -f -- "$TMP"
   [ -z "$GENERATION_TMP" ] || rm -f -- "$GENERATION_TMP"
@@ -92,7 +94,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-commit_generation() {
+check_generation() {
   local existing_generation existing_bytes existing_hash existing_command
   if [ -e "$GENERATION_FILE" ] || [ -L "$GENERATION_FILE" ]; then
     [ -f "$GENERATION_FILE" ] && [ ! -L "$GENERATION_FILE" ] || die "inheritance generation record is unsafe"
@@ -124,6 +126,11 @@ commit_generation() {
       return 0
     fi
   fi
+  GENERATION_PENDING=1
+}
+
+commit_generation() {
+  [ "$GENERATION_PENDING" = 1 ] || return 0
   GENERATION_TMP=$(umask 077; mktemp "$PARENT_REAL/.inherit-generation.XXXXXX") \
     || die "cannot stage inheritance generation"
   printf '%s\n%s\n%s\n%s\n' "$GENERATION" "$EXPECTED_BYTES" "$EXPECTED_HASH" "$COMMAND" > "$GENERATION_TMP" \
@@ -131,6 +138,7 @@ commit_generation() {
   chmod 600 "$GENERATION_TMP" || die "cannot secure inheritance generation"
   mv -f -- "$GENERATION_TMP" "$GENERATION_FILE" || die "cannot publish inheritance generation"
   GENERATION_TMP=
+  GENERATION_PENDING=0
 }
 
 # True when the destination still holds the bytes this receiver last published,
@@ -178,7 +186,7 @@ case "$COMMAND" in
     [ "$BYTES" -eq "$EXPECTED_BYTES" ] || die "inherited material length does not match its commitment"
     ACTUAL_HASH=$(sha256_file "$TMP") || die "cannot hash inherited material"
     [ "$ACTUAL_HASH" = "$EXPECTED_HASH" ] || die "inherited material digest does not match its commitment"
-    commit_generation
+    check_generation
     ;;
   absent)
     [ "$EXPECTED_BYTES" -eq 0 ] || die "absent inheritance has a nonzero payload commitment"
@@ -187,7 +195,7 @@ case "$COMMAND" in
     EMPTY_HASH=$(sha256_file "$EMPTY") || die "cannot hash empty inheritance payload"
     rm -f -- "$EMPTY"
     [ "$EMPTY_HASH" = "$EXPECTED_HASH" ] || die "absent inheritance digest is not the empty payload"
-    commit_generation
+    check_generation
     ;;
   *) usage ;;
 esac
@@ -203,23 +211,26 @@ case "$COMMAND" in
   put)
     if [ -f "$DEST" ] && cmp -s "$TMP" "$DEST"; then
       [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
-      printf 'unchanged: %s\n' "$REL"
-      exit 0
+      OUTCOME=unchanged
+    else
+      dest_matches_last_published || quarantine_shared replaced
+      chmod 600 "$TMP" || die "cannot secure inherited material"
+      mv -f -- "$TMP" "$DEST" || die "cannot publish inherited material"
+      TMP=
+      [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
+      OUTCOME=pushed
     fi
-    dest_matches_last_published || quarantine_shared replaced
-    chmod 600 "$TMP" || die "cannot secure inherited material"
-    mv -f -- "$TMP" "$DEST" || die "cannot publish inherited material"
-    TMP=
-    [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
-    printf 'pushed: %s\n' "$REL"
     ;;
   absent)
     if [ ! -e "$DEST" ]; then
-      printf 'unchanged: %s\n' "$REL"
-      exit 0
+      OUTCOME=unchanged
+    else
+      quarantine_shared removed
+      rm -f -- "$DEST" || die "cannot remove absent inherited material"
+      OUTCOME=removed
     fi
-    quarantine_shared removed
-    rm -f -- "$DEST" || die "cannot remove absent inherited material"
-    printf 'removed: %s\n' "$REL"
     ;;
 esac
+
+commit_generation
+printf '%s: %s\n' "$OUTCOME" "$REL"

@@ -153,9 +153,36 @@ test_remote_push_keeps_child_lines() {
   pass "remote push puts the primary's text above the child's lines and keeps them on every re-push"
 }
 
+# A push that dies before the composed file is published must leave the
+# generation record on the base the file still carries; otherwise the next
+# push no longer recognises the old base and keeps it as the home's own lines.
+test_remote_failed_publish_keeps_the_old_base_recognised() {
+  local home source out
+  home="$TMP_ROOT/remote-failed/home"
+  source="$TMP_ROOT/remote-failed/source.md"
+  mkdir -p "$home/config"
+  printf '%s\n' "base rule one" > "$source"
+  printf '%s\n' "child rule A" > "$home/config/brief-include.md"
+  out=$(remote_push "$home" "$source" 1) || fail "remote first push failed: $out"
+
+  printf '%s\n' "base rule two" > "$source"
+  chmod 000 "$home/config/brief-include.md"
+  if out=$(remote_push "$home" "$source" 2); then
+    chmod 600 "$home/config/brief-include.md"
+    fail "a push that could not read the destination still succeeded: $out"
+  fi
+  chmod 600 "$home/config/brief-include.md"
+
+  out=$(remote_push "$home" "$source" 3) || fail "remote push after a failed publish failed: $out"
+  expect_bytes "$home/config/brief-include.md" $'base rule two\nchild rule A\n' \
+    "a failed publish left the old base copied into the child's own lines"
+  pass "a remote push that fails before publishing keeps the old base recognised on the next push"
+}
+
 test_local_push_keeps_child_lines
 test_local_first_push_does_not_duplicate_a_verbatim_copy
 test_base_without_trailing_newline_is_stable
 test_remote_push_keeps_child_lines
+test_remote_failed_publish_keeps_the_old_base_recognised
 
 echo "# all fm-brief-include-inheritance tests passed"
