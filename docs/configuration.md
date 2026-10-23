@@ -1580,10 +1580,10 @@ While any ready PR for the project on this machine has waited longer than that, 
 A PR's wait starts when `bin/fm-pr-check.sh` first records it as ready, and ready PRs in every local home on this machine count, while remote homes do not.
 Only a ready PR that can land counts: one whose task records `yolo=off` waits for the captain's merge word, so it does not count, and neither does one whose task's row in its home's backlog is held for the captain (`bin/fm-captain-hold.sh`) or has an unresolved `blocked-by` dependency.
 A ship spawned with `--landing-exempt` is never held, and that flag is how a fix or landing work is marked; a relaunch, a scout, and a secondmate are never held either.
-When the wait cannot be read, for example a ready PR recorded before ready times existed or a home's backlog that cannot be read, the spawn goes ahead with one `warning:` line, unless another ready PR is already known to exceed the limit.
+When a ready PR's wait is unknown, because it was recorded before ready times existed or its home's backlog cannot be read, the spawn goes ahead with one `warning:` line, unless another ready PR is already known to exceed the limit.
 A value that is not a whole number of hours refuses every fresh ship spawn for the project until it is corrected.
 A project with no `landing-lag=` token is never held, and the token is read from the spawning home's own `data/projects.md`, so each home that dispatches the project carries it on its own line.
-The check does not know that a PR is held for a release day, does not read a paused landing, and counts a merged PR until its task is cleaned up, so choose a limit with those in mind.
+Two parts of the admission rule are known limits, by the captain's decision, until firstmate has a signal for them: a paused landing is not read, and a ready PR held for a release day counts like any other. A merged PR also counts until its task is cleaned up, so choose a limit with those in mind.
 [`bin/fm-project-capacity-lib.sh`](../bin/fm-project-capacity-lib.sh) owns which records count and how an unreadable signal is handled, and `bin/fm-project-mode.sh --landing-lag <name>` reads the limit back.
 
 ## External review tool (config/external-review.md, config/external-review-url, config/external-review-backup)

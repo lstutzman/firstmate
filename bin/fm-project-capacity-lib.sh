@@ -82,14 +82,17 @@
 # secondmate, and a ship spawned with --landing-exempt (a fix or landing work)
 # are never held. A project with no landing-lag token is never held.
 # Unlike occupancy, a signal that cannot be read never holds a spawn: when the
-# local homes or a record cannot be read, or a ready PR has no pr_at= (one
-# recorded before ready times existed), the spawn goes ahead with one warning
-# line, unless a PR whose age is known already exceeds the lag, since the oldest
-# PR is at least that old. A home's backlog that cannot be read is such a
-# signal; a home that keeps no backlog holds no PR back. A registered value that is not a whole number of
-# hours still refuses the spawn, like an unreadable capacity declaration.
-# Known limits: a ready PR held for a release day counts like any other; a
-# paused landing is not read; a merged PR counts until its task is cleaned up;
+# local homes or a record cannot be read, the spawn goes ahead with one warning
+# line. A ready PR whose wait is unknown, because it has no pr_at= (one
+# recorded before ready times existed) or because its home's backlog or its
+# backlog row cannot be read, also lets the spawn go ahead with one warning
+# line, unless a PR whose age is known already exceeds the lag, since the
+# oldest PR is at least that old. A home that keeps no backlog holds no PR back.
+# A registered value that is not a whole number of hours still refuses the
+# spawn, like an unreadable capacity declaration.
+# Known limits, by the captain's decision until firstmate has a signal for
+# them: a paused landing is not read, and a ready PR held for a release day
+# counts like any other. A merged PR also counts until its task is cleaned up,
 # and remote homes are never walked.
 #
 # Requires bin/fm-wake-lib.sh (root home, local homes, project lock path),
@@ -282,10 +285,11 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
 # empty when no such PR has a readable pr_at=, FM_PROJECT_LANDING_PR to its URL,
 # and FM_PROJECT_LANDING_TASK to its task label. Sets
 # FM_PROJECT_LANDING_UNTIMED to a comma-separated list of the task labels of
-# such PRs whose pr_at= is missing or not an epoch, and
-# FM_PROJECT_LANDING_UNTIMED_COUNT to their number. Returns 1 with
-# FM_PROJECT_CAPACITY_ERROR when fm_project_records does, or when a home's
-# backlog cannot be read.
+# yolo=on ready PRs whose wait is unknown: their pr_at= is missing or not an
+# epoch, or their home's backlog or backlog row cannot be read, each of the
+# latter labelled "(backlog unreadable)". Sets FM_PROJECT_LANDING_UNTIMED_COUNT
+# to their number. Returns 1 with FM_PROJECT_CAPACITY_ERROR when
+# fm_project_records does.
 fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own-id> <first-config> <first-data> <now-epoch>
   local first=$3 now=$7 i=0 meta label pr at age state config data id rc row
   FM_PROJECT_LANDING_AGE=
@@ -311,22 +315,20 @@ fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own
     id=$(basename "$meta" .meta)
     rc=0
     fm_backlog_transition_applies "$config" "$data" ship || rc=$?
-    if [ "$rc" -eq 2 ]; then
-      FM_PROJECT_CAPACITY_ERROR="the backlog for $data cannot be read: $FM_BACKLOG_TRANSITION_ERROR"
-      return 1
-    fi
     if [ "$rc" -eq 0 ]; then
       if fm_backlog_row_probe "$data" "$id"; then
         row=${FM_BACKLOG_ROW_STATE%% *}
         [ "$row" = "done" ] || [ "$FM_BACKLOG_ROW_HOLD_KIND" != captain ] || continue
         [ "${FM_BACKLOG_ROW_STATE##* }" != yes ] || continue
       elif [ "$FM_BACKLOG_ROW_RESULT" != not_found ]; then
-        FM_PROJECT_CAPACITY_ERROR="the backlog row for task $id in $data cannot be read: $FM_BACKLOG_ROW_ERROR"
-        return 1
+        rc=2
       fi
     fi
     at=$(fm_meta_get "$meta" pr_at)
-    if [ -z "$at" ] || [ -n "${at//[0-9]/}" ]; then
+    if [ "$rc" -eq 2 ]; then
+      FM_PROJECT_LANDING_UNTIMED_COUNT=$((FM_PROJECT_LANDING_UNTIMED_COUNT + 1))
+      FM_PROJECT_LANDING_UNTIMED="${FM_PROJECT_LANDING_UNTIMED:+$FM_PROJECT_LANDING_UNTIMED, }$label (backlog unreadable)"
+    elif [ -z "$at" ] || [ -n "${at//[0-9]/}" ]; then
       FM_PROJECT_LANDING_UNTIMED_COUNT=$((FM_PROJECT_LANDING_UNTIMED_COUNT + 1))
       FM_PROJECT_LANDING_UNTIMED="${FM_PROJECT_LANDING_UNTIMED:+$FM_PROJECT_LANDING_UNTIMED, }$label"
     else

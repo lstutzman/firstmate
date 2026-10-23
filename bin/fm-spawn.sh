@@ -3467,7 +3467,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$LANDING_EXEMPT" -eq 0 ]; t
       echo "deferred: project $(basename "$PROJ_ABS") lets a ready PR wait $SPAWN_LANDING_LAG hour(s) to land (landing-lag=$SPAWN_LANDING_LAG in $DATA/projects.md), and $FM_PROJECT_LANDING_PR (task $FM_PROJECT_LANDING_TASK) has waited $((FM_PROJECT_LANDING_AGE / 3600)) hour(s); task $ID was not launched and its backlog item stays queued - dispatch it again once that PR lands or its task is cleaned up, or pass --landing-exempt for a fix or landing work" >&2
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     elif [ "$FM_PROJECT_LANDING_UNTIMED_COUNT" -gt 0 ]; then
-      echo "warning: landing lag for project $(basename "$PROJ_ABS") is unknown: $FM_PROJECT_LANDING_UNTIMED_COUNT ready PR(s) have no recorded ready time ($FM_PROJECT_LANDING_UNTIMED); launching task $ID anyway" >&2
+      echo "warning: landing lag for project $(basename "$PROJ_ABS") is unknown: $FM_PROJECT_LANDING_UNTIMED_COUNT ready PR(s) have an unknown wait ($FM_PROJECT_LANDING_UNTIMED); launching task $ID anyway" >&2
     fi
   fi
 fi

@@ -702,7 +702,7 @@ test_unknown_ready_age_warns_once_and_admits() {
   out=$(spawn_ship "$case_dir" task-c) || rc=$?
   expect_code 0 "$rc" "an unknown landing lag refused the spawn: $out"
   assert_contains "$out" "spawned task-c" "an unknown landing lag did not launch the worker"
-  assert_contains "$out" "warning: landing lag for project project is unknown: 2 ready PR(s) have no recorded ready time (legacy-a, legacy-b); launching task task-c anyway" \
+  assert_contains "$out" "warning: landing lag for project project is unknown: 2 ready PR(s) have an unknown wait (legacy-a, legacy-b); launching task task-c anyway" \
     "an unknown landing lag did not warn"
   [ "$(printf '%s\n' "$out" | grep -c 'landing lag')" -eq 1 ] || fail "an unknown landing lag printed more than one line: $out"
 
@@ -840,6 +840,42 @@ test_blocked_ready_pr_does_not_hold_a_spawn() {
   pass "a ready PR with an unresolved blocked-by dependency does not count toward landing lag"
 }
 
+# A home whose backlog cannot be read leaves its ready PR's wait unknown: the
+# spawn warns and launches, but a PR in another home whose age is known to
+# exceed the lag still defers it, whichever record is walked first.
+test_unreadable_backlog_does_not_hide_a_known_lag() {
+  local case_dir root mate out rc=0 mate_project
+  if [ "$HAVE_TASKS_AXI" = 0 ]; then
+    pass "an unreadable backlog does not hide a known landing lag (skipped: tasks-axi is not installed)"
+    return 0
+  fi
+  case_dir=$(make_case lag-unreadable-backlog)
+  root="$case_dir/home"
+  mate="$case_dir/mate"
+  make_home "$mate" task-m task-n
+  mate_project="$mate/projects/project"
+  git clone -q "$(git -C "$case_dir/project" remote get-url origin)" "$mate_project"
+  printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$root" > "$mate/.fm-secondmate-parent"
+  printf -- '- mate - a local mate (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" \
+    > "$root/data/secondmates.md"
+  register_landing_lag "$mate" 24
+  write_ready "$root" ready-b "$case_dir/project" 2 5
+  rm "$root/data/backlog.md"
+  mkdir "$root/data/backlog.md"
+  git -C "$mate_project" worktree add --quiet -b wt-m "$case_dir/wt-m"
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code 0 "$rc" "an unreadable backlog alone refused the spawn: $out"
+  assert_contains "$out" "warning: landing lag for project project is unknown: 1 ready PR(s) have an unknown wait (ready-b in $root (backlog unreadable)); launching task task-m anyway" \
+    "an unreadable backlog did not warn that the wait is unknown"
+  write_ready "$mate" ready-a "$mate_project" 1 30
+  rc=0
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/unused" task-n "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "an unreadable backlog hid a ready PR known to exceed the lag: $out"
+  assert_contains "$out" "https://github.com/o/r/pull/1 (task ready-a) has waited 30 hour(s)" \
+    "the deferral did not name the PR whose age is known"
+  pass "an unreadable backlog leaves a PR's wait unknown without hiding a known landing lag"
+}
+
 test_batch_reports_a_landing_lag_deferral() {
   local case_dir home out rc=0
   case_dir=$(make_case lag-batch task-c)
@@ -879,4 +915,5 @@ test_malformed_landing_lag_refuses_the_spawn
 test_yolo_off_ready_pr_does_not_hold_a_spawn
 test_captain_held_ready_pr_does_not_hold_a_spawn
 test_blocked_ready_pr_does_not_hold_a_spawn
+test_unreadable_backlog_does_not_hide_a_known_lag
 test_batch_reports_a_landing_lag_deferral
