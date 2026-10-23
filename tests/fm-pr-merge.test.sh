@@ -263,6 +263,16 @@ case "${1:-} ${2:-}" in
         cat "$FM_TEST_GH_RUNS"
         exit $?
         ;;
+      *" repos/"*"/pulls/"*"/files"*)
+        cat "$FM_TEST_GH_FILES"
+        exit $?
+        ;;
+      *" repos/"*"/pulls/"*)
+        if [ -f "${FM_TEST_GH_PULL:-}" ]; then
+          cat "$FM_TEST_GH_PULL"
+          exit 0
+        fi
+        ;;
       *" repos/"*"/rules/branches/"*merge_queue*) ;;
       *" repos/"*"/rules/branches/"*)
         if [ -f "${FM_TEST_GH_REQUIRED_RULES_FAIL:-}" ]; then
@@ -680,6 +690,8 @@ run_pr_merge() {
   FM_TEST_GH_BRANCH_FAIL="$case_dir/github-branch-fail" \
   FM_TEST_GH_REQUIRED_RULES="$case_dir/github-required-rules.json" \
   FM_TEST_GH_REQUIRED_RULES_FAIL="$case_dir/github-required-rules-fail" \
+  FM_TEST_GH_FILES="$case_dir/github-files.json" \
+  FM_TEST_GH_PULL="$case_dir/github-pull.json" \
   FM_TEST_META_AT_MERGE="$case_dir/meta-at-merge" \
   FM_TEST_AWAY_RECORD_AFTER_VIEW="$case_dir/away-record-after-view" \
   FM_TEST_ROOT="$ROOT" \
@@ -860,6 +872,229 @@ test_malformed_merger_field_refuses() {
   [ "$rc" -ne 0 ] || fail "malformed-merger-field: an empty merger binding still merged"
   [ ! -s "$case_dir/gh.log" ] || fail "malformed-merger-field: gh ran before the refusal"
   pass "fm-pr-merge refuses when the project's merger binding cannot be read"
+}
+
+# A project registered with admission=<config> needs the captain's recorded
+# answer for every class its own classifier flags in the pull request's
+# changed files. The classifier runs in the home's project copy, reads the
+# changed paths on stdin, and prints class words; config/admission/<config>
+# names it and the classes that need the captain's word.
+# Args: case_dir classifier-output [registry-tokens]
+register_admission() {
+  local case_dir=$1 output=$2 tokens=${3:-no-mistakes +yolo}
+  printf '%s\n' '## Projects' \
+    "- project [$tokens admission=risky] - fixture (added 2026-01-01)" \
+    > "$case_dir/home/data/projects.md"
+  mkdir -p "$case_dir/home/config/admission" "$case_dir/project"
+  printf '%s\n' '# Lee'"'"'s merge-word classes' \
+    'command=./classify.sh --risk --stdin' \
+    'classes=payments legal-text data-rewriting-migration' \
+    'clear=code docs' \
+    > "$case_dir/home/config/admission/risky"
+  printf '%s\n' "$output" > "$case_dir/classifier-output"
+  cat > "$case_dir/project/classify.sh" <<SH
+#!/usr/bin/env bash
+cat > "$case_dir/classifier-stdin"
+printf '%s\n' "\$*" > "$case_dir/classifier-args"
+cat "$case_dir/classifier-output"
+SH
+  chmod +x "$case_dir/project/classify.sh"
+  # The pull request's changed files at the verified head, one renamed.
+  printf '%s\n' \
+    '[{"filename":"src/Billing/Invoice.cs"},{"filename":"docs/new.md","previous_filename":"docs/old.md"}]' \
+    > "$case_dir/github-files.json"
+  printf '{"head":{"sha":"%s"},"changed_files":2}\n' "$(cat "$case_dir/github-head")" \
+    > "$case_dir/github-pull.json"
+}
+
+run_admission_merge() {  # <case_dir> [merge args]...; sets RC
+  local case_dir=$1
+  shift
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 "$@" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  RC=$?
+  set -e
+}
+
+assert_not_merged() {  # <case_dir> <label>
+  ! grep -q '^pr merge' "$1/gh.log" || fail "$2: gh merged the pull request"
+}
+
+test_admission_refuses_a_flagged_class_until_the_captain_answers() {
+  local case_dir hold_cmd
+  case_dir=$(make_case admission-flagged)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_admission "$case_dir" 'code payments'
+  run_admission_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "admission-flagged: a flagged class merged without the captain's answer"
+  assert_not_merged "$case_dir" admission-flagged
+  assert_grep 'payments' "$case_dir/stderr" "admission-flagged: the refusal did not name the class"
+  assert_grep 'hold task-x1-admit-9-payments' "$case_dir/stderr" \
+    "admission-flagged: the refusal did not name the hold to raise"
+  assert_grep 'answer task-x1-admit-9-payments' "$case_dir/stderr" \
+    "admission-flagged: the refusal did not name the answer to record"
+  grep -qxF 'src/Billing/Invoice.cs' "$case_dir/classifier-stdin" \
+    || fail "admission-flagged: the classifier was not given the changed file"
+  grep -qxF 'docs/old.md' "$case_dir/classifier-stdin" \
+    || fail "admission-flagged: the classifier was not given a renamed file's old path"
+  grep -qxF -- '--risk --stdin' "$case_dir/classifier-args" \
+    || fail "admission-flagged: the classifier did not get its configured arguments"
+
+  # Neither the attended override nor the away posture admits the class.
+  run_admission_merge "$case_dir" --attended-override
+  [ "$RC" -ne 0 ] || fail "admission-flagged: --attended-override admitted a flagged class"
+  write_away_record "$case_dir" --words "merge whatever is green"
+  run_admission_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "admission-flagged: the away posture admitted a flagged class"
+  assert_not_merged "$case_dir" admission-flagged
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-afk-contract.sh" archive >/dev/null \
+    || fail "admission-flagged: could not archive the away record"
+
+  # The printed hold is runnable as printed; a hold alone still refuses.
+  hold_cmd=$(grep ' hold task-x1-admit-9-payments ' "$case_dir/stderr")
+  bash -c "$hold_cmd" >/dev/null || fail "admission-flagged: the printed hold command did not run"
+  run_admission_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "admission-flagged: an unanswered hold admitted the class"
+  assert_not_merged "$case_dir" admission-flagged
+
+  printf 'Yes, merge the billing change.\n' > "$case_dir/captain-words"
+  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" answer task-x1-admit-9-payments \
+    --decision-file "$case_dir/captain-words" >/dev/null \
+    || fail "admission-flagged: could not record the captain's answer"
+  run_admission_merge "$case_dir"
+  expect_code 0 "$RC" "admission-flagged: the answered class should merge"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+
+  # A later push to the same PR that flags no new class keeps the answer.
+  write_github_live_json "$case_dir" 1234567890abcdef1234567890abcdef12345678
+  printf '{"head":{"sha":"%s"},"changed_files":2}\n' 1234567890abcdef1234567890abcdef12345678 \
+    > "$case_dir/github-pull.json"
+  : > "$case_dir/gh.log"
+  run_admission_merge "$case_dir"
+  expect_code 0 "$RC" "admission-flagged: a new head with the answered class set should still merge"
+
+  # A push that flags a new class needs the captain's word for that class.
+  printf '%s\n' 'code payments legal-text' > "$case_dir/classifier-output"
+  : > "$case_dir/gh.log"
+  run_admission_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "admission-flagged: a newly flagged class merged on the earlier answer"
+  assert_not_merged "$case_dir" admission-flagged
+  assert_grep 'hold task-x1-admit-9-legal-text' "$case_dir/stderr" \
+    "admission-flagged: the refusal did not name the newly flagged class"
+  assert_no_grep 'hold task-x1-admit-9-payments' "$case_dir/stderr" \
+    "admission-flagged: the answered class was asked for again"
+  pass "fm-pr-merge refuses a flagged class until the captain's answer for that PR is recorded, and keeps it across pushes that flag no new class"
+}
+
+# An answer belongs to the PR it was given for: the same task's other PR needs
+# its own word, even for the same class.
+test_admission_answer_does_not_carry_to_another_pr() {
+  local case_dir
+  case_dir=$(make_case admission-other-pr)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_admission "$case_dir" 'code payments'
+  printf 'Yes, merge the billing change.\n' > "$case_dir/captain-words"
+  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" hold task-x1-admit-9-payments \
+    --title "Admit https://github.com/example/repo/pull/9: payments" --reason "captain word needed" \
+    --repo project >/dev/null || fail "admission-other-pr: could not hold PR 9's call"
+  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" answer task-x1-admit-9-payments \
+    --decision-file "$case_dir/captain-words" >/dev/null || fail "admission-other-pr: could not answer PR 9's call"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/10 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  RC=$?
+  set -e
+  [ "$RC" -ne 0 ] || fail "admission-other-pr: PR 10 merged on PR 9's answer"
+  assert_not_merged "$case_dir" admission-other-pr
+  assert_grep 'hold task-x1-admit-10-payments' "$case_dir/stderr" \
+    "admission-other-pr: the refusal did not name PR 10's own call"
+  pass "fm-pr-merge does not carry a captain's admission answer to a different PR"
+}
+
+test_admission_merges_when_no_configured_class_is_flagged() {
+  local case_dir
+  case_dir=$(make_case admission-unflagged)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_admission "$case_dir" 'code docs'
+  run_admission_merge "$case_dir"
+  expect_code 0 "$RC" "admission-unflagged: a diff with no configured class should merge"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+  pass "fm-pr-merge merges an admission project's PR when no configured class is flagged"
+}
+
+# Every way the classification cannot be trusted refuses, names the problem,
+# and runs no merge.
+test_admission_refuses_when_classification_cannot_be_trusted() {
+  local case_dir label
+  for label in config-missing classifier-fails classifier-missing bad-word \
+    undeclared-word no-verdict count-mismatch head-moved files-unreadable \
+    line-break-path; do
+    case_dir=$(make_case "admission-$label")
+    add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+    : > "$case_dir/gh-axi.log"
+    register_admission "$case_dir" 'code'
+    case "$label" in
+      config-missing) rm -f "$case_dir/home/config/admission/risky" ;;
+      classifier-fails)
+        printf '%s\n' '#!/usr/bin/env bash' 'echo "classifier broke" >&2' 'exit 1' \
+          > "$case_dir/project/classify.sh"
+        ;;
+      classifier-missing) rm -f "$case_dir/project/classify.sh" ;;
+      bad-word) printf '%s\n' 'pay/ments' > "$case_dir/classifier-output" ;;
+      # A classifier that ignores its mode prints some other verdict.
+      undeclared-word) printf '%s\n' 'full' > "$case_dir/classifier-output" ;;
+      no-verdict) : > "$case_dir/classifier-output" ;;
+      count-mismatch)
+        printf '{"head":{"sha":"%s"},"changed_files":3}\n' "$(cat "$case_dir/github-head")" \
+          > "$case_dir/github-pull.json"
+        ;;
+      head-moved)
+        printf '{"head":{"sha":"%s"},"changed_files":2}\n' 1111111111111111111111111111111111111111 \
+          > "$case_dir/github-pull.json"
+        ;;
+      files-unreadable) printf 'not json\n' > "$case_dir/github-files.json" ;;
+      line-break-path)
+        printf '%s\n' '[{"filename":"docs/a\nsrc/Billing/Invoice.cs"},{"filename":"docs/b.md"}]' \
+          > "$case_dir/github-files.json"
+        ;;
+    esac
+    run_admission_merge "$case_dir"
+    [ "$RC" -ne 0 ] || fail "admission-$label: the merge ran on an untrusted classification"
+    assert_not_merged "$case_dir" "admission-$label"
+    assert_grep 'PR merge refused' "$case_dir/stderr" "admission-$label: the refusal was not stated"
+    case "$label" in
+      config-missing) assert_grep 'config/admission/risky' "$case_dir/stderr" "admission-$label: the config was not named" ;;
+      classifier-fails) assert_grep 'classifier broke' "$case_dir/stderr" "admission-$label: the classifier's error was not shown" ;;
+      classifier-missing) assert_grep 'classify.sh' "$case_dir/stderr" "admission-$label: the classifier was not named" ;;
+      bad-word) assert_grep 'pay/ments' "$case_dir/stderr" "admission-$label: the bad word was not named" ;;
+      undeclared-word) assert_grep 'printed full' "$case_dir/stderr" "admission-$label: the undeclared verdict was not named" ;;
+      no-verdict) assert_grep 'no verdict' "$case_dir/stderr" "admission-$label: the missing verdict was not named" ;;
+      count-mismatch) assert_grep 'changed files' "$case_dir/stderr" "admission-$label: the incomplete list was not named" ;;
+      head-moved) assert_grep 'moved' "$case_dir/stderr" "admission-$label: the moved head was not named" ;;
+      files-unreadable) assert_grep 'changed files' "$case_dir/stderr" "admission-$label: the unreadable list was not named" ;;
+      line-break-path) assert_grep 'changed files' "$case_dir/stderr" "admission-$label: the split path was not refused" ;;
+    esac
+  done
+  pass "fm-pr-merge refuses an admission project's merge whenever its classification cannot be trusted"
+}
+
+test_admission_refuses_outside_github() {
+  local case_dir
+  case_dir=$(make_gitlab_case admission-gitlab)
+  register_admission "$case_dir" 'code'
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  RC=$?
+  set -e
+  [ "$RC" -ne 0 ] || fail "admission-gitlab: an admission project merged on GitLab"
+  assert_grep 'GitHub' "$case_dir/stderr" "admission-gitlab: the refusal did not explain the GitHub-only check"
+  [ ! -s "$case_dir/glab.log" ] || fail "admission-gitlab: glab ran before the refusal"
+  pass "fm-pr-merge refuses an admission project's merge on a forge it cannot classify"
 }
 
 # A verified merge answers every open "waiting for your word" ask that names
@@ -4610,6 +4845,11 @@ test_merger_home_refuses_another_home
 test_merger_home_merges
 test_no_merger_field_keeps_every_home_merging
 test_malformed_merger_field_refuses
+test_admission_refuses_a_flagged_class_until_the_captain_answers
+test_admission_answer_does_not_carry_to_another_pr
+test_admission_merges_when_no_configured_class_is_flagged
+test_admission_refuses_when_classification_cannot_be_trusted
+test_admission_refuses_outside_github
 test_gitlab_head_override_args_refuse_before_recording
 test_secondmate_merge_reports_upward_once
 test_secondmate_merge_reports_on_the_local_route

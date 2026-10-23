@@ -133,6 +133,23 @@
 # before any forge command, naming the merger and the handoff line to use; the
 # merger-home block below owns how this home knows its own id.
 #
+# A project registered with admission=<config> is merged only when the captain
+# has answered for every class its own classifier flags in the pull request's
+# changed files (bin/fm-admission-lib.sh owns the config and the classifier
+# contract). The changed-file list is read from GitHub between two reads of
+# the verified head, and refuses when the head moved or the list is
+# incomplete; a stack checks each member. A flagged class is admitted only by
+# a captain answer recorded through bin/fm-captain-hold.sh answer on task
+# <task-id>-admit-<pr-number>-<class>, held with the title
+# "Admit <pr-url>: <class>", and the refusal prints the exact hold and answer
+# commands. The answer is bound to that PR and to the classes it was given
+# for, never to a head: a later push that flags no new class keeps it, while a
+# different PR or a newly flagged class needs the captain's word again. The answer is the captain's words, not a yes bit: as with a
+# released captain hold, firstmate runs the merge only on a yes. A missing or
+# malformed config, a classifier that fails, and a non-GitHub forge all refuse,
+# and neither yolo, --attended-override, nor the away posture skips the check.
+# A project with no admission token merges exactly as before.
+#
 # Before either forge merge, the task's existing per-task control lock
 # serializes the captain-hold check through the forge command. A still-held or
 # unreadable row refuses before that command, so a captain approval must be
@@ -239,6 +256,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
 # shellcheck source=bin/fm-afk-contract.sh
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# shellcheck source=bin/fm-admission-lib.sh
+. "$SCRIPT_DIR/fm-admission-lib.sh"
 
 # Stack-mode state is assigned here rather than inherited from the environment,
 # so nothing outside this run can switch a single merge into stack behavior.
@@ -631,6 +650,26 @@ if [ -n "$MERGE_PROJECT" ]; then
         1) printf '%q fm-%s %q\n' "$SCRIPT_DIR/fm-send.sh" "$MERGE_MERGER" "$MERGE_HANDOFF_LINE" >&2 ;;
         *) echo "error: this home's parent channel cannot be resolved, so report '$MERGE_HANDOFF_LINE' to the captain by hand" >&2 ;;
       esac
+      exit 1
+    fi
+  fi
+fi
+
+# Admission: read and validate the project's admission binding and config
+# before any forge command, so a broken opt-in refuses instead of merging.
+MERGE_ADMISSION=
+if [ -n "$MERGE_PROJECT" ]; then
+  if ! MERGE_ADMISSION=$("$SCRIPT_DIR/fm-project-mode.sh" --admission "$(basename "$MERGE_PROJECT")" 2>/dev/null); then
+    echo "error: PR merge refused: the admission binding for $(basename "$MERGE_PROJECT") cannot be read (run bin/fm-project-mode.sh --admission $(basename "$MERGE_PROJECT") for the refusal)" >&2
+    exit 1
+  fi
+  if [ -n "$MERGE_ADMISSION" ]; then
+    if [ "$PROVIDER" != github ]; then
+      echo "error: PR merge refused: $(basename "$MERGE_PROJECT") needs the captain's word for flagged classes, and the admission check reads a pull request's changed files only from GitHub, not $PROVIDER" >&2
+      exit 1
+    fi
+    if ! fm_admission_load "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/admission/$MERGE_ADMISSION"; then
+      echo "error: PR merge refused: $FM_ADMISSION_ERROR" >&2
       exit 1
     fi
   fi
@@ -1597,6 +1636,73 @@ require_released_captain_hold() {
   esac
 }
 
+# The admission check for the selected pull request, bound to <verified-head>:
+# the header owns the contract. Reads the changed files, then the head again,
+# so the list is the verified head's.
+require_admission_answers() {  # <verified-head>
+  local head=$1 paths files listed pull live_head changed class flagged missing='' rc call
+  [ -n "$MERGE_ADMISSION" ] || return 0
+  paths=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-admission.XXXXXX") || return 1
+  # --paginate prints one JSON array per page; jq reads them as one stream.
+  # A path with a line break would reach the classifier as two paths, so it
+  # refuses rather than being split.
+  if ! files=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/files?per_page=100" 2>/dev/null) \
+    || ! printf '%s' "$files" \
+      | jq -r '.[] | .filename, (.previous_filename // empty)
+          | if test("[\n\r]") then error("line break") else . end' > "$paths" 2>/dev/null \
+    || ! listed=$(printf '%s' "$files" | jq -s '[.[][]] | length' 2>/dev/null) \
+    || ! pull=$(gh api "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER" 2>/dev/null \
+      | jq -r '"\(.head.sha) \(.changed_files)"' 2>/dev/null); then
+    rm -f "$paths"
+    echo "error: PR merge refused: the changed files of $URL could not be read for its admission check" >&2
+    return 1
+  fi
+  read -r live_head changed <<< "$pull"
+  if [ "$live_head" != "$head" ]; then
+    rm -f "$paths"
+    echo "error: PR merge refused: $URL moved from $head to $live_head while its changed files were read for the admission check" >&2
+    return 1
+  fi
+  if [ "$changed" != "$listed" ]; then
+    rm -f "$paths"
+    echo "error: PR merge refused: GitHub listed $listed of the $changed changed files in $URL, so its admission check cannot see every change" >&2
+    return 1
+  fi
+  if ! fm_admission_classify "$MERGE_PROJECT" "$paths"; then
+    rm -f "$paths"
+    echo "error: PR merge refused: $FM_ADMISSION_ERROR" >&2
+    return 1
+  fi
+  rm -f "$paths"
+  flagged=$FM_ADMISSION_FLAGGED
+  while IFS= read -r class; do
+    [ -n "$class" ] || continue
+    rc=0
+    call="$ID-admit-$PR_NUMBER-$class"
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      "$SCRIPT_DIR/fm-captain-hold.sh" answered "$call" --title "Admit $URL: $class" || rc=$?
+    case "$rc" in
+      0) ;;
+      1) missing="$missing $class" ;;
+      *)
+        echo "error: PR merge refused: whether the captain answered admission call $call could not be read" >&2
+        return 1
+        ;;
+    esac
+  done <<< "$flagged"
+  [ -n "$missing" ] || return 0
+  echo "error: PR merge refused: $URL changes${missing}, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:" >&2
+  for class in $missing; do
+    printf 'FM_HOME=%q %q hold %q --title %q --reason %q --repo %q\n' \
+      "$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" "$ID-admit-$PR_NUMBER-$class" \
+      "Admit $URL: $class" "$URL changes $class, which needs the captain's word before it merges" \
+      "$(basename "$MERGE_PROJECT")" >&2
+    printf 'FM_HOME=%q %q answer %q --decision-file <file-with-the-captains-words>\n' \
+      "$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" "$ID-admit-$PR_NUMBER-$class" >&2
+  done
+  return 1
+}
+
 FM_PR_MERGE_AUTHORITY=
 # The authority read. bin/fm-merge-authority-lib.sh owns what the away-posture
 # record's presence means; this function owns what a merge run may do about it,
@@ -2064,6 +2170,7 @@ stack_record_members() {
       return 1
     fi
     require_released_captain_hold || return 1
+    require_admission_answers "${STACK_RECORDED_HEADS[$i]}" || return 1
     i=$((i + 1))
   done
 }
@@ -2273,6 +2380,7 @@ case "$PROVIDER" in
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
     github_verify_mergeable_with_retry || exit 1
+    require_admission_answers "$FM_PR_MERGE_HEAD" || exit 1
     # The away record is locked first, so this last presence and authority read
     # and the forge command below share one live-owner critical section.
     hold_away_record_for_merge || exit 1

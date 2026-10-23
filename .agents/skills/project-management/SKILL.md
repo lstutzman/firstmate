@@ -71,6 +71,8 @@ A home's id is its `.fm-secondmate-home` marker, else `main`, and a fleet has on
 The optional `landing-lag=<hours>` token holds back new ships for the project while its oldest ready PR on this machine has waited longer than that to land; register it only on the captain's instruction, on every home that dispatches the project.
 `docs/configuration.md` "Landing lag" owns its meaning, and a fix or landing work is spawned with `--landing-exempt`.
 
+The optional `admission=<config>` token makes `bin/fm-pr-merge.sh` refuse a PR whose changes the project's own classifier flags in a class that needs the captain's word, until the captain's answer is recorded; register it only on the captain's instruction, and `docs/configuration.md` "Admission by class" owns the config and its meaning.
+
 ## Add or clone an existing project
 
 Confirm the source URL, local project name, delivery posture, and autonomy posture, stating the resolved default for each rather than asking the captain to invent one.

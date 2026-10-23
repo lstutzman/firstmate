@@ -84,7 +84,12 @@ make_stack_case() {
   printf '{"status":"ahead","ahead_by":3,"behind_by":0}\n' > "$case_dir/compare.json"
   printf '{"status":"merged","details":{"message":"merged","sha":"%s"}}\n' "$MERGE_COMMIT" > "$case_dir/merge-async.json"
   printf '0\n' > "$case_dir/merge-async.rc"
-  printf '{"number":3,"merge_commit_sha":"%s"}\n' "$MERGE_COMMIT" > "$case_dir/pull-3.json"
+  printf '{"number":1,"head":{"sha":"%s"},"changed_files":1}\n' "$H1" > "$case_dir/pull-1.json"
+  printf '{"number":2,"head":{"sha":"%s"},"changed_files":1}\n' "$H2" > "$case_dir/pull-2.json"
+  printf '{"number":3,"merge_commit_sha":"%s","head":{"sha":"%s"},"changed_files":1}\n' "$MERGE_COMMIT" "$H3" > "$case_dir/pull-3.json"
+  for n in 1 2 3; do
+    printf '[{"filename":"docs/layer-%s.md"}]\n' "$n" > "$case_dir/files-$n.json"
+  done
   printf '{"sha":"%s","commit":{"tree":{"sha":"%s"}}}\n' "$MERGE_COMMIT" "$GATED_TREE" > "$case_dir/commit-$MERGE_COMMIT.json"
   printf '{"sha":"%s","commit":{"tree":{"sha":"%s"}}}\n' "$H3" "$GATED_TREE" > "$case_dir/commit-$H3.json"
   : > "$case_dir/gh.log"
@@ -138,7 +143,20 @@ case " $* " in
   *"/compare/"*) cat "$C/compare.json"; exit 0 ;;
   *"/rules/branches/"*) cat "$C/rules.json"; exit 0 ;;
   *"/branches/"*) cat "$C/branch.json"; exit 0 ;;
-  *"/pulls/3 "*) cat "$C/pull-3.json"; exit 0 ;;
+  *"/pulls/"*"/files"*)
+    for arg in "$@"; do
+      case "$arg" in repos/*/pulls/*/files*) n=${arg#*/pulls/}; n=${n%%/*} ;; esac
+    done
+    cat "$C/files-$n.json"
+    exit 0
+    ;;
+  *"/pulls/"*)
+    for arg in "$@"; do
+      case "$arg" in repos/*/pulls/*) n=${arg##*/} ;; esac
+    done
+    cat "$C/pull-$n.json"
+    exit 0
+    ;;
   *"/commits/"*)
     for arg in "$@"; do
       case "$arg" in repos/*/commits/*) sha=${arg##*/} ;; esac
@@ -433,6 +451,56 @@ test_invalid_stack_requests_refuse_before_any_read() {
   pass "invalid stack requests are refused before any forge read"
 }
 
+# A stack is checked member by member: a class one member's own changes flag
+# needs the captain's answer on that member's task before the stack merges.
+test_stack_member_with_a_flagged_class_needs_the_captains_answer() {
+  local case_dir rc=0
+  case_dir=$(make_stack_case admission)
+  printf '%s\n' '## Projects' '- project [no-mistakes +yolo admission=risky] - fixture (added 2026-01-01)' \
+    > "$case_dir/home/data/projects.md"
+  mkdir -p "$case_dir/home/config/admission" "$case_dir/project"
+  printf '%s\n' 'command=./classify.sh' 'classes=payments legal-text' 'clear=code docs' \
+    > "$case_dir/home/config/admission/risky"
+  cat > "$case_dir/project/classify.sh" <<'SH'
+#!/usr/bin/env bash
+paths=$(cat)
+case "$paths" in *Billing*) printf "code payments " ;; *) printf "docs " ;; esac
+case "$paths" in *Terms*) printf "legal-text" ;; esac
+echo
+SH
+  chmod +x "$case_dir/project/classify.sh"
+  printf '[{"filename":"src/Billing/Invoice.cs"}]\n' > "$case_dir/files-2.json"
+  run_default_stack "$case_dir" || rc=$?
+  [ "$rc" -ne 0 ] || fail "admission: a stack with a flagged member merged without the captain's answer"
+  assert_grep 'hold task-b2-admit-2-payments' "$case_dir/stderr" \
+    "admission: the refusal did not name the flagged member's hold"
+  assert_no_grep 'task-b1-admit' "$case_dir/stderr" "admission: an unflagged member was asked for an answer"
+  assert_no_merge_request "$case_dir" admission
+
+  printf 'Yes, merge the billing layer.\n' > "$case_dir/captain-words"
+  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" hold task-b2-admit-2-payments \
+    --title "Admit $REPO_URL/pull/2: payments" --reason "captain word needed" --repo project >/dev/null \
+    || fail "admission: could not hold the flagged member for the captain"
+  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" answer task-b2-admit-2-payments \
+    --decision-file "$case_dir/captain-words" >/dev/null \
+    || fail "admission: could not record the captain's answer"
+  rc=0
+  run_default_stack "$case_dir" || rc=$?
+  expect_code 0 "$rc" "admission: the answered stack should merge ($(cat "$case_dir/stderr"))"
+
+  # The same member flagging a class it was not answered for refuses again.
+  printf '[{"filename":"src/Billing/Invoice.cs"},{"filename":"src/Terms/Terms.cshtml"}]\n' > "$case_dir/files-2.json"
+  printf '{"number":2,"head":{"sha":"%s"},"changed_files":2}\n' "$H2" > "$case_dir/pull-2.json"
+  : > "$case_dir/gh.log"
+  rc=0
+  run_default_stack "$case_dir" || rc=$?
+  [ "$rc" -ne 0 ] || fail "admission: a member's changed class set merged on its earlier answer"
+  assert_grep 'hold task-b2-admit-2-legal-text' "$case_dir/stderr" \
+    "admission: the refusal did not name the member's newly flagged class"
+  assert_no_merge_request "$case_dir" admission
+  pass "a stack member whose changes flag an admission class needs the captain's answer for that PR and class set"
+}
+
 test_stack_merges_and_records_every_member
 test_stack_merge_method_flag_is_forwarded
 test_top_head_must_equal_gated_head
@@ -451,3 +519,4 @@ test_partially_proven_stack_refuses_and_records_only_proven_members
 test_merged_tree_mismatch_is_actionable
 test_away_record_refuses_stack_mode
 test_invalid_stack_requests_refuse_before_any_read
+test_stack_member_with_a_flagged_class_needs_the_captains_answer
