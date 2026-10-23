@@ -74,6 +74,10 @@
 # A ready PR is a task record of the same project identity, found by the same
 # local-homes walk as occupancy above, that carries pr=; its age is now minus
 # the pr_at=<epoch> bin/fm-pr-check.sh records when that PR is first recorded.
+# Only a ready PR that can land counts. One is left out when its task's
+# recorded yolo is not on, because it waits for the captain's merge word by
+# definition, or when the task's row in its own home's backlog is held for the
+# captain (bin/fm-captain-hold.sh) or has an unresolved blocked-by dependency.
 # bin/fm-spawn.sh owns the verdict and the exemptions: a relaunch, a scout, a
 # secondmate, and a ship spawned with --landing-exempt (a fix or landing work)
 # are never held. A project with no landing-lag token is never held.
@@ -81,15 +85,18 @@
 # local homes or a record cannot be read, or a ready PR has no pr_at= (one
 # recorded before ready times existed), the spawn goes ahead with one warning
 # line, unless a PR whose age is known already exceeds the lag, since the oldest
-# PR is at least that old. A registered value that is not a whole number of
+# PR is at least that old. A home's backlog that cannot be read is such a
+# signal; a home that keeps no backlog holds no PR back. A registered value that is not a whole number of
 # hours still refuses the spawn, like an unreadable capacity declaration.
-# Known limits: a ready PR held for the captain's word, a dependency, or a
-# release day counts like any other; a paused landing is not read; a merged PR
-# counts until its task is cleaned up; and remote homes are never walked.
+# Known limits: a ready PR held for a release day counts like any other; a
+# paused landing is not read; a merged PR counts until its task is cleaned up;
+# and remote homes are never walked.
 #
 # Requires bin/fm-wake-lib.sh (root home, local homes, project lock path),
-# bin/fm-secondmate-registry-lib.sh (which the local-homes walk reads), and
-# bin/fm-backend.sh (fm_meta_get) to be sourced first. No side effects on source.
+# bin/fm-secondmate-registry-lib.sh (which the local-homes walk reads),
+# bin/fm-backend.sh (fm_meta_get), and bin/fm-tasks-axi-lib.sh with
+# bin/fm-backlog-transition-lib.sh (the backlog row a ready PR is held by) to be
+# sourced first. No side effects on source.
 
 # Exit status of a spawn deferred because the project is at capacity: the
 # sysexits "temporary failure" code, so a caller can tell a deferral that leaves
@@ -266,17 +273,21 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
   return 0
 }
 
-# Find one project's oldest ready PR: the fm_project_records record carrying
-# pr= whose pr_at= is earliest.
+# Find one project's oldest ready PR that can land: the fm_project_records
+# record carrying pr= and yolo=on, whose backlog row is neither held for the
+# captain nor blocked, with the earliest pr_at=. A record in <first-state> reads
+# the backlog in <first-config> and <first-data>; one in another local home
+# reads that home's config/ and data/.
 # Sets FM_PROJECT_LANDING_AGE to that PR's age in seconds at <now-epoch>, or to
-# empty when no ready PR has a readable pr_at=, FM_PROJECT_LANDING_PR to its URL,
+# empty when no such PR has a readable pr_at=, FM_PROJECT_LANDING_PR to its URL,
 # and FM_PROJECT_LANDING_TASK to its task label. Sets
 # FM_PROJECT_LANDING_UNTIMED to a comma-separated list of the task labels of
-# ready PRs whose pr_at= is missing or not an epoch, and
+# such PRs whose pr_at= is missing or not an epoch, and
 # FM_PROJECT_LANDING_UNTIMED_COUNT to their number. Returns 1 with
-# FM_PROJECT_CAPACITY_ERROR when fm_project_records does.
-fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own-id> <now-epoch>
-  local now=$5 i=0 meta pr at age
+# FM_PROJECT_CAPACITY_ERROR when fm_project_records does, or when a home's
+# backlog cannot be read.
+fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own-id> <first-config> <first-data> <now-epoch>
+  local first=$3 now=$7 i=0 meta label pr at age state config data id rc row
   FM_PROJECT_LANDING_AGE=
   FM_PROJECT_LANDING_PR=
   FM_PROJECT_LANDING_TASK=
@@ -285,22 +296,47 @@ fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own
   fm_project_records "$1" "$2" "$3" "$4" || return 1
   while [ "$i" -lt "${#FM_PROJECT_RECORDS[@]}" ]; do
     meta=${FM_PROJECT_RECORDS[$i]}
+    label=${FM_PROJECT_RECORD_LABELS[$i]}
+    i=$((i + 1))
     pr=$(fm_meta_get "$meta" pr)
+    [ -n "$pr" ] && [ "$(fm_meta_get "$meta" yolo)" = on ] || continue
+    state=$(dirname "$meta")
+    if [ "$state" = "$first" ]; then
+      config=$5
+      data=$6
+    else
+      config="$(dirname "$state")/config"
+      data="$(dirname "$state")/data"
+    fi
+    id=$(basename "$meta" .meta)
+    rc=0
+    fm_backlog_transition_applies "$config" "$data" ship || rc=$?
+    if [ "$rc" -eq 2 ]; then
+      FM_PROJECT_CAPACITY_ERROR="the backlog for $data cannot be read: $FM_BACKLOG_TRANSITION_ERROR"
+      return 1
+    fi
+    if [ "$rc" -eq 0 ]; then
+      if fm_backlog_row_probe "$data" "$id"; then
+        row=${FM_BACKLOG_ROW_STATE%% *}
+        [ "$row" = "done" ] || [ "$FM_BACKLOG_ROW_HOLD_KIND" != captain ] || continue
+        [ "${FM_BACKLOG_ROW_STATE##* }" != yes ] || continue
+      elif [ "$FM_BACKLOG_ROW_RESULT" != not_found ]; then
+        FM_PROJECT_CAPACITY_ERROR="the backlog row for task $id in $data cannot be read: $FM_BACKLOG_ROW_ERROR"
+        return 1
+      fi
+    fi
     at=$(fm_meta_get "$meta" pr_at)
-    if [ -z "$pr" ]; then
-      :
-    elif [ -z "$at" ] || [ -n "${at//[0-9]/}" ]; then
+    if [ -z "$at" ] || [ -n "${at//[0-9]/}" ]; then
       FM_PROJECT_LANDING_UNTIMED_COUNT=$((FM_PROJECT_LANDING_UNTIMED_COUNT + 1))
-      FM_PROJECT_LANDING_UNTIMED="${FM_PROJECT_LANDING_UNTIMED:+$FM_PROJECT_LANDING_UNTIMED, }${FM_PROJECT_RECORD_LABELS[$i]}"
+      FM_PROJECT_LANDING_UNTIMED="${FM_PROJECT_LANDING_UNTIMED:+$FM_PROJECT_LANDING_UNTIMED, }$label"
     else
       age=$((now - 10#$at))
       if [ -z "$FM_PROJECT_LANDING_AGE" ] || [ "$age" -gt "$FM_PROJECT_LANDING_AGE" ]; then
         FM_PROJECT_LANDING_AGE=$age
         FM_PROJECT_LANDING_PR=$pr
-        FM_PROJECT_LANDING_TASK=${FM_PROJECT_RECORD_LABELS[$i]}
+        FM_PROJECT_LANDING_TASK=$label
       fi
     fi
-    i=$((i + 1))
   done
   return 0
 }

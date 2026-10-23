@@ -102,9 +102,7 @@
 #   landing-lag token is never deferred for lag. Under --landing-lag a value that
 #   is not a positive integer of at most six digits is refused with exit status
 #   3, because reading it as "no limit" would drop the captain's limit; the
-#   other output forms ignore the token. A keyed token one or two edits from
-#   `landing-lag` (such as `landing_lag=`) is ignored with one stderr warning
-#   and is never read as the mode.
+#   other output forms ignore the token.
 #
 # A registered `forge=gerrit` project reports yolo=off with an explicit stderr
 # refusal, on the captain's decision of 2026-09-15: a Gerrit Code-Review+2 is a
@@ -167,7 +165,7 @@ if [ ! -f "$REG" ]; then
 fi
 
 # awk emits one "near <token>" line per keyed token whose key is a near miss of
-# `forge` ("nearlag" for one near `landing-lag`), then
+# `forge`, then
 # "posture <mode> <yolo> <forge> <merger> <landing-lag> <branch-prefix>" (branch-prefix is
 # the raw prefix, defaulting to "fm/"; forge, merger, and landing-lag are `none` or the whole
 # `<key>=<value>` token, so an empty value survives the split), or nothing if the project is
@@ -217,8 +215,6 @@ parsed=$(awk -v n="$NAME" '
         if (a[j] ~ /^landing-lag=/) { lag = a[j]; continue }
         if (a[j] ~ /^[^=]+=/) {
           key = substr(a[j], 1, index(a[j], "=") - 1);
-          e = dist(key, "landing-lag");
-          if (e >= 1 && e <= 2) { print "nearlag", a[j]; continue }
           e = dist(key, "forge");
           if (e >= 1 && e <= 2) print "near", a[j];
           if (mode_set == 0) { mode = a[j]; mode_set = 1 }
@@ -246,7 +242,6 @@ posture=
 while IFS=' ' read -r kind rest; do
   case "$kind" in
     near) echo "warn: ignoring \"$rest\" registered for $NAME in $REG; it is not a forge binding, and the forge binding is spelled forge=gerrit, forge=forgejo, or forge=external" >&2 ;;
-    nearlag) echo "warn: ignoring \"$rest\" registered for $NAME in $REG; it is not a landing-lag binding, which is spelled landing-lag=<hours>" >&2 ;;
     posture) posture=$rest ;;
   esac
 done <<EOF

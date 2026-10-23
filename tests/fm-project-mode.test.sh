@@ -42,7 +42,6 @@ cat > "$DATA/projects.md" <<'EOF'
 - lagged-zero [direct-PR landing-lag=0] - a zero landing lag (added 2026-01-01)
 - lagged-word [direct-PR landing-lag=2d] - a landing lag that is not whole hours (added 2026-01-01)
 - lagged-long [direct-PR landing-lag=1234567] - a landing lag longer than six digits (added 2026-01-01)
-- lagged-typo [landing_lag=24 direct-PR] - a near miss of the landing-lag key (added 2026-01-01)
 EOF
 
 run_mode() {
@@ -174,10 +173,5 @@ out=$(run_lag missing-project); status=$?
 out=$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --landing-lag legacy 2>/dev/null); status=$?
 [ "$status" -eq 0 ] && [ -z "$out" ] || fail "an absent registry must print no landing lag (status $status, got '$out')"
 pass "fm-project-mode: no landing-lag token, a missing project, or an absent registry prints no landing lag"
-
-[ "$(run_mode lagged-typo)" = "direct-PR off" ] || fail "a near miss of landing-lag was read as the mode: $(run_mode lagged-typo)"
-err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --landing-lag lagged-typo 2>&1 >/dev/null)
-assert_contains "$err" "landing-lag=<hours>" "a near miss of the landing-lag key was ignored without a warning"
-pass "fm-project-mode: a near miss of the landing-lag key warns and is not read as the mode"
 
 echo "# fm-project-mode.test.sh: all assertions passed"

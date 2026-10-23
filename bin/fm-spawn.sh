@@ -3461,7 +3461,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$LANDING_EXEMPT" -eq 0 ]; t
     [ -n "$SPAWN_LANDING_LOCK" ] || SPAWN_LANDING_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS" 2>/dev/null) || SPAWN_LANDING_LOCK=
     if [ -z "$SPAWN_LANDING_LOCK" ]; then
       echo "warning: landing lag for project $(basename "$PROJ_ABS") is unknown: its project identity cannot be resolved; launching task $ID anyway" >&2
-    elif ! fm_project_landing_oldest "$SPAWN_LANDING_LOCK" "$PROJ_ABS" "$STATE" "$ID" "$(date +%s)"; then
+    elif ! fm_project_landing_oldest "$SPAWN_LANDING_LOCK" "$PROJ_ABS" "$STATE" "$ID" "$CONFIG" "$DATA" "$(date +%s)"; then
       echo "warning: landing lag for project $(basename "$PROJ_ABS") is unknown: $FM_PROJECT_CAPACITY_ERROR; launching task $ID anyway" >&2
     elif [ -n "$FM_PROJECT_LANDING_AGE" ] && [ "$FM_PROJECT_LANDING_AGE" -gt $((SPAWN_LANDING_LAG * 3600)) ]; then
       echo "deferred: project $(basename "$PROJ_ABS") lets a ready PR wait $SPAWN_LANDING_LAG hour(s) to land (landing-lag=$SPAWN_LANDING_LAG in $DATA/projects.md), and $FM_PROJECT_LANDING_PR (task $FM_PROJECT_LANDING_TASK) has waited $((FM_PROJECT_LANDING_AGE / 3600)) hour(s); task $ID was not launched and its backlog item stays queued - dispatch it again once that PR lands or its task is cleaned up, or pass --landing-exempt for a fix or landing work" >&2

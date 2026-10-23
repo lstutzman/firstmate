@@ -634,11 +634,12 @@ register_landing_lag() {  # <home> <hours>
 
 # A worker whose PR is ready: the pr_at= and pr= lines bin/fm-pr-check.sh
 # records, with pr_at= <hours-ago> hours (and one minute) before now, or no
-# pr_at= at all for a record made before ready times were recorded.
-write_ready() {  # <home> <id> <project-dir> <pr-number> <hours-ago|untimed>
+# pr_at= at all for a record made before ready times were recorded. The task's
+# recorded yolo is on unless <yolo> says otherwise; its later line wins.
+write_ready() {  # <home> <id> <project-dir> <pr-number> <hours-ago|untimed> [yolo]
   local at=()
   [ "$5" = untimed ] || at=("pr_at=$(($(date +%s) - $5 * 3600 - 60))")
-  write_live "$1" "$2" "$3" "${at[@]+"${at[@]}"}" "pr=https://github.com/o/r/pull/$4"
+  write_live "$1" "$2" "$3" "yolo=${6:-on}" "${at[@]+"${at[@]}"}" "pr=https://github.com/o/r/pull/$4"
 }
 
 test_unregistered_landing_lag_keeps_dispatch_unchanged() {
@@ -773,6 +774,72 @@ test_malformed_landing_lag_refuses_the_spawn() {
   pass "a malformed landing-lag limit refuses the spawn"
 }
 
+# The Admission rule counts only a ready PR that can land. A PR whose task is
+# yolo=off waits for the captain's merge word by definition, as a payments PR
+# does, so it never holds a spawn however long it has waited.
+test_yolo_off_ready_pr_does_not_hold_a_spawn() {
+  local case_dir home out rc=0
+  case_dir=$(make_case lag-yolo-off task-c)
+  home="$case_dir/home"
+  register_landing_lag "$home" 48
+  write_ready "$home" payments-a "$case_dir/project" 1 49 off
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a 49-hour yolo-off payments PR deferred a spawn under landing-lag=48: $out"
+  assert_contains "$out" "spawned task-c" "a yolo-off ready PR kept the worker from launching"
+  assert_not_contains "$out" "landing lag" "a yolo-off ready PR printed a landing-lag line"
+  pass "a ready PR waiting for the captain's merge word (yolo off) does not count toward landing lag"
+}
+
+# A ready PR whose task is held for the captain in its backlog does not count,
+# and it counts again once the hold is lifted.
+test_captain_held_ready_pr_does_not_hold_a_spawn() {
+  local case_dir home out rc=0
+  if [ "$HAVE_TASKS_AXI" = 0 ]; then
+    pass "a captain-held ready PR does not count toward landing lag (skipped: tasks-axi is not installed)"
+    return 0
+  fi
+  case_dir=$(make_case lag-captain-hold task-c task-d)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  write_ready "$home" ready-a "$case_dir/project" 1 30
+  FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' \
+    "$ROOT/bin/fm-captain-hold.sh" hold ready-a --reason "payments PR waits for the merge word" >/dev/null 2>&1 ||
+    fail "the captain hold on ready-a could not be recorded"
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a captain-held ready PR deferred a spawn: $out"
+  assert_contains "$out" "spawned task-c" "a captain-held ready PR kept the worker from launching"
+  assert_not_contains "$out" "landing lag" "a captain-held ready PR printed a landing-lag line"
+  tasks-axi unhold ready-a --file "$home/data/backlog.md" >/dev/null
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a ready PR whose captain hold was lifted did not defer: $out"
+  pass "a ready PR held for the captain does not count toward landing lag until the hold is lifted"
+}
+
+# A ready PR with an unresolved blocked-by dependency does not count; once its
+# blocker is done it counts again.
+test_blocked_ready_pr_does_not_hold_a_spawn() {
+  local case_dir home out rc=0
+  if [ "$HAVE_TASKS_AXI" = 0 ]; then
+    pass "a blocked ready PR does not count toward landing lag (skipped: tasks-axi is not installed)"
+    return 0
+  fi
+  case_dir=$(make_case lag-blocked task-c task-d dep-x)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  write_ready "$home" ready-a "$case_dir/project" 1 30
+  tasks-axi block ready-a --by dep-x --file "$home/data/backlog.md" >/dev/null
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a ready PR blocked by an open dependency deferred a spawn: $out"
+  assert_contains "$out" "spawned task-c" "a blocked ready PR kept the worker from launching"
+  assert_not_contains "$out" "landing lag" "a blocked ready PR printed a landing-lag line"
+  tasks-axi "done" dep-x --file "$home/data/backlog.md" >/dev/null
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a ready PR whose dependency resolved did not defer: $out"
+  pass "a ready PR with an unresolved blocked-by dependency does not count toward landing lag"
+}
+
 test_batch_reports_a_landing_lag_deferral() {
   local case_dir home out rc=0
   case_dir=$(make_case lag-batch task-c)
@@ -809,4 +876,7 @@ test_unknown_ready_age_warns_once_and_admits
 test_landing_exempt_spawn_is_admitted
 test_landing_lag_reads_every_local_home
 test_malformed_landing_lag_refuses_the_spawn
+test_yolo_off_ready_pr_does_not_hold_a_spawn
+test_captain_held_ready_pr_does_not_hold_a_spawn
+test_blocked_ready_pr_does_not_hold_a_spawn
 test_batch_reports_a_landing_lag_deferral
