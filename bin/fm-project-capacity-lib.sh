@@ -289,9 +289,12 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
 # epoch, or their home's backlog or backlog row cannot be read, each of the
 # latter labelled "(backlog unreadable)". Sets FM_PROJECT_LANDING_UNTIMED_COUNT
 # to their number. Returns 1 with FM_PROJECT_CAPACITY_ERROR when
-# fm_project_records does.
+# fm_project_records does. A backlog read that exceeds its bound latches
+# FM_BACKLOG_ROW_SHOW_WEDGED only for the rest of this walk, so another home's
+# slow backlog never refuses the caller's own later backlog reads.
 fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own-id> <first-config> <first-data> <now-epoch>
   local first=$3 now=$7 i=0 meta label pr at age state config data id rc row
+  local wedged=$FM_BACKLOG_ROW_SHOW_WEDGED
   FM_PROJECT_LANDING_AGE=
   FM_PROJECT_LANDING_PR=
   FM_PROJECT_LANDING_TASK=
@@ -340,5 +343,6 @@ fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own
       fi
     fi
   done
+  FM_BACKLOG_ROW_SHOW_WEDGED=$wedged
   return 0
 }

@@ -876,6 +876,43 @@ test_unreadable_backlog_does_not_hide_a_known_lag() {
   pass "an unreadable backlog leaves a PR's wait unknown without hiding a known landing lag"
 }
 
+# Another home's backlog that times out on a read leaves its ready PR's wait
+# unknown, and the bounded-read latch that timeout sets must not refuse the
+# spawning home's own healthy backlog reads afterwards.
+test_timed_out_backlog_read_lets_the_spawn_launch() {
+  local case_dir root mate out rc=0 mate_project real_axi
+  if [ "$HAVE_TASKS_AXI" = 0 ]; then
+    pass "a timed-out backlog read in another home lets the spawn launch (skipped: tasks-axi is not installed)"
+    return 0
+  fi
+  case_dir=$(make_case lag-slow-backlog task-c)
+  root="$case_dir/home"
+  mate="$case_dir/mate"
+  make_home "$mate"
+  mate_project="$mate/projects/project"
+  git clone -q "$(git -C "$case_dir/project" remote get-url origin)" "$mate_project"
+  printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$root" > "$mate/.fm-secondmate-parent"
+  printf -- '- mate - a local mate (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" \
+    > "$root/data/secondmates.md"
+  register_landing_lag "$root" 24
+  write_ready "$mate" ready-b "$mate_project" 2 5
+  real_axi=$(command -v tasks-axi)
+  cat > "$case_dir/fakebin/tasks-axi" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = show ] && [ "\$(pwd -P)" = "\$(cd "$mate" && pwd -P)" ]; then
+  sleep 30
+fi
+exec "$real_axi" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/tasks-axi"
+  out=$(FM_BACKLOG_ROW_TIMEOUT_SECS=3 spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "another home's timed-out backlog read refused the spawn: $out"
+  assert_contains "$out" "spawned task-c" "another home's timed-out backlog read kept the worker from launching"
+  assert_contains "$out" "warning: landing lag for project project is unknown: 1 ready PR(s) have an unknown wait (ready-b in $mate (backlog unreadable)); launching task task-c anyway" \
+    "a timed-out backlog read did not warn that the wait is unknown"
+  pass "a timed-out backlog read in another home leaves the wait unknown and lets the spawn launch"
+}
+
 test_batch_reports_a_landing_lag_deferral() {
   local case_dir home out rc=0
   case_dir=$(make_case lag-batch task-c)
@@ -916,4 +953,5 @@ test_yolo_off_ready_pr_does_not_hold_a_spawn
 test_captain_held_ready_pr_does_not_hold_a_spawn
 test_blocked_ready_pr_does_not_hold_a_spawn
 test_unreadable_backlog_does_not_hide_a_known_lag
+test_timed_out_backlog_read_lets_the_spawn_launch
 test_batch_reports_a_landing_lag_deferral
