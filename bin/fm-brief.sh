@@ -144,7 +144,9 @@
 # absent or blank file changes nothing; a present path that is not a readable
 # regular file, or text carrying its own "Delivery contract: mode=" line (which
 # a later scout promotion could not outrank), stops the scaffold before
-# anything is written. Secondmate charters never take it.
+# anything is written. Secondmate charters never take it. In a secondmate home
+# the file is the primary's text with the home's own lines below it
+# (bin/fm-config-inherit-lib.sh owns that composition).
 # Refuses to overwrite an existing brief.
 set -eu
 

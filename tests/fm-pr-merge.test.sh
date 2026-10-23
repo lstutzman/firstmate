@@ -740,6 +740,109 @@ test_verified_merge_records_pr_and_head() {
   pass "fm-pr-merge records pr= and pr_head= for a verified GitHub merge"
 }
 
+# A project whose registry entry names a merger home is merged only from that
+# home. Every other home is refused before any forge command runs, and the
+# refusal names the merger and the handoff line to use. The home's own id is
+# its .fm-secondmate-home marker, or main for a home without one.
+register_merger() {
+  local case_dir=$1 merger=$2
+  printf '%s\n' '## Projects' \
+    "- project [no-mistakes +yolo${merger:+ merger=$merger}] - fixture (added 2026-01-01)" \
+    > "$case_dir/home/data/projects.md"
+}
+
+test_merger_home_refuses_another_home() {
+  local case_dir rc
+  case_dir=$(make_case merger-refuses-other-home)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_merger "$case_dir" slarti
+  printf '%s\n' gilligan > "$case_dir/home/.fm-secondmate-home"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "merger-refuses-other-home: a non-merger home merged"
+  assert_grep 'merged only by home slarti' "$case_dir/stderr" \
+    "merger-refuses-other-home: the refusal did not name the merger home"
+  assert_grep 'this home is gilligan' "$case_dir/stderr" \
+    "merger-refuses-other-home: the refusal did not name this home"
+  assert_grep '[handoff=slarti] https://github.com/example/repo/pull/9' "$case_dir/stderr" \
+    "merger-refuses-other-home: the refusal did not print the handoff line"
+  [ ! -s "$case_dir/gh.log" ] || fail "merger-refuses-other-home: gh ran before the refusal"
+  [ ! -s "$case_dir/gh-axi.log" ] || fail "merger-refuses-other-home: gh-axi ran before the refusal"
+  assert_no_grep '^pr=' "$case_dir/state/task-x1.meta" \
+    "merger-refuses-other-home: pr= was recorded before the refusal"
+
+  # A home with no marker is main, and main is not slarti either.
+  rm -f "$case_dir/home/.fm-secondmate-home"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "merger-refuses-other-home: the main home merged another home's project"
+  assert_grep 'this home is main' "$case_dir/stderr" \
+    "merger-refuses-other-home: a home without a marker was not named main"
+  [ ! -s "$case_dir/gh.log" ] || fail "merger-refuses-other-home: gh ran before the main-home refusal"
+  pass "fm-pr-merge refuses a merge from a home that is not the project's merger, before any forge call"
+}
+
+test_merger_home_merges() {
+  local case_dir rc
+  case_dir=$(make_case merger-home-merges)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_merger "$case_dir" slarti
+  printf '%s\n' slarti > "$case_dir/home/.fm-secondmate-home"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merger-home-merges: the merger home's merge should succeed"
+  assert_grep 'pr=https://github.com/example/repo/pull/9' "$case_dir/state/task-x1.meta" \
+    "merger-home-merges: pr= was not recorded"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+  pass "fm-pr-merge merges from the project's registered merger home"
+}
+
+test_no_merger_field_keeps_every_home_merging() {
+  local case_dir rc
+  case_dir=$(make_case no-merger-field)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_merger "$case_dir" ''
+  printf '%s\n' gilligan > "$case_dir/home/.fm-secondmate-home"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  assert_no_grep 'merged only by home' "$case_dir/stderr" \
+    "no-merger-field: a project with no merger field was refused"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+  pass "fm-pr-merge keeps today's merge behavior for a project with no merger field"
+}
+
+test_malformed_merger_field_refuses() {
+  local case_dir rc
+  case_dir=$(make_case malformed-merger-field)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  printf '%s\n' '## Projects' '- project [no-mistakes merger=] - fixture (added 2026-01-01)' \
+    > "$case_dir/home/data/projects.md"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "malformed-merger-field: an empty merger binding still merged"
+  [ ! -s "$case_dir/gh.log" ] || fail "malformed-merger-field: gh ran before the refusal"
+  pass "fm-pr-merge refuses when the project's merger binding cannot be read"
+}
+
 # A verified merge answers every open "waiting for your word" ask that names
 # that exact PR URL, in any task of this home, keyed or unkeyed, and leaves an
 # ask naming a different PR open.
@@ -4484,6 +4587,10 @@ test_allow_missing_refused_on_forgejo() {
   pass "fm-pr-merge refuses --allow-missing on Forgejo"
 }
 
+test_merger_home_refuses_another_home
+test_merger_home_merges
+test_no_merger_field_keeps_every_home_merging
+test_malformed_merger_field_refuses
 test_gitlab_head_override_args_refuse_before_recording
 test_secondmate_merge_reports_upward_once
 test_secondmate_merge_reports_on_the_local_route
