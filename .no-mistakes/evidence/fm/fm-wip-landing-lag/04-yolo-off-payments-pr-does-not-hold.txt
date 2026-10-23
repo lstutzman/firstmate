@@ -1,0 +1,13 @@
+ready PRs: ready-on yolo=on 10h; ready-pay yolo=off 49h (payments PR waiting for the captain's merge word); landing-lag=48
+state/ready-pay.meta:project=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4/work/project
+state/ready-pay.meta:yolo=off
+state/ready-pay.meta:pr_at=1792610941
+state/ready-pay.meta:pr=https://github.com/o/r/pull/102
+state/ready-on.meta:project=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4/work/project
+state/ready-on.meta:yolo=on
+state/ready-on.meta:pr_at=1792751341
+state/ready-on.meta:pr=https://github.com/o/r/pull/101
+$ fm-spawn.sh new-ship <project> --mode no-mistakes --yolo on "sleep 900"
+spawned new-ship harness=sleep kind=ship mode=no-mistakes yolo=on window=primary:fm-new-ship worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4/work/slot-31242
+exit=0
+--- after: new-ship.meta records: 1; windows: bash fm-fix-ship fm-new-ship ; backlog row: in_flight

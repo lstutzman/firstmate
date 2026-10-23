@@ -1,0 +1,21 @@
+$ fm-pr-check.sh ready-on https://github.com/o/r/pull/101
+rc=0
+--- state/ready-on.meta after first record
+window=firstmate:fm-ready-on
+endpoint_task_id=ready-on
+worktree=/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.iPFwf4/work/wt-ready-on
+project=/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.iPFwf4/work/project
+harness=codex
+kind=ship
+mode=no-mistakes
+yolo=on
+spawn_gen=s-ready-on
+pr_at=1792787243
+pr=https://github.com/o/r/pull/101
+now=1792787245
+(pr_at backdated to 1792610857 = 49h ago)
+$ fm-pr-check.sh ready-on https://github.com/o/r/pull/101   # same PR recorded again
+rc=0
+project=/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.iPFwf4/work/project
+pr_at=1792610857
+pr=https://github.com/o/r/pull/101

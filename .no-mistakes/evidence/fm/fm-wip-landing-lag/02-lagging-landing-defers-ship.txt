@@ -1,0 +1,5 @@
+$ fm-spawn.sh new-ship <project> --mode no-mistakes --yolo on "sleep 900"   # ready-on PR waited 49h, landing-lag=48
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4
+deferred: project project lets a ready PR wait 48 hour(s) to land (landing-lag=48 in /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4/data/projects.md), and https://github.com/o/r/pull/101 (task ready-on) has waited 49 hour(s); task new-ship was not launched and its backlog item stays queued - dispatch it again once that PR lands or its task is cleaned up, or pass --landing-exempt for a fix or landing work
+exit=75
+--- after: new-ship.meta records: 0; tmux windows: primary:bash ; backlog row: queued

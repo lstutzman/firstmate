@@ -1,0 +1,5 @@
+== --landing-exempt on a scout
+$ fm-spawn.sh ship-6 <project> --scout --landing-exempt "sleep 900"
+error: --landing-exempt applies only to ship spawns; a scout spawn is never held for landing lag
+exit=1
+--- after: ship-6.meta records: 0; windows: bash fm-fix-ship fm-new-ship fm-ship-2 fm-ship-3 fm-ship-4 ; backlog row: queued

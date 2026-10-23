@@ -1,0 +1,5 @@
+$ fm-spawn.sh fix-ship <project> --mode no-mistakes --yolo on --landing-exempt "sleep 900"
+warning: /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4/data/fix-ship/launch-brief.md records no ship branch; defaulting to legacy branch fm/fix-ship
+spawned fix-ship harness=sleep kind=ship mode=no-mistakes yolo=on window=primary:fm-fix-ship worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4/work/slot-13452
+exit=
+--- after: fix-ship.meta records: 1; tmux windows: primary:bash primary:fm-fix-ship ; backlog row: in_flight

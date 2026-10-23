@@ -1,0 +1,6 @@
+== registry now says landing-lag=4x
+$ fm-spawn.sh ship-5 <project> --mode no-mistakes --yolo on "sleep 900"
+refused: landing-lag binding "landing-lag=4x" registered for project in /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4/data/projects.md is not a whole number of hours; write landing-lag=<hours> with a positive integer of at most six digits, or drop the token
+error: spawn refused: the landing-lag limit registered for project in /private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4/data/projects.md is unreadable; correct it so the captain's limit is known (docs/configuration.md "Landing lag")
+exit=1
+--- after: ship-5.meta records: 0; windows: bash fm-fix-ship fm-new-ship fm-ship-2 fm-ship-3 fm-ship-4 ; backlog row: queued

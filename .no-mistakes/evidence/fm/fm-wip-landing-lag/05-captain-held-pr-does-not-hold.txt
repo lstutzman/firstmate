@@ -1,0 +1,10 @@
+== held-pr: yolo=on, waited 49h, held for the captain
+held-pr
+  state: in_flight
+  hold_reason: "fm-hold-v1:bmVlZHMgTGVlJ3Mgd29yZCBvbiBjb3B5"
+  hold_kind: captain
+  hold_until: "-"
+$ fm-spawn.sh ship-2 <project> --mode no-mistakes --yolo on "sleep 900"
+spawned ship-2 harness=sleep kind=ship mode=no-mistakes yolo=on window=primary:fm-ship-2 worktree=/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab.iPFwf4/work/slot-12750
+exit=0
+--- after: ship-2.meta records: 1; windows: bash fm-fix-ship fm-new-ship fm-ship-2 ; backlog row: in_flight
