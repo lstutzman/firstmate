@@ -742,7 +742,7 @@ test_verified_merge_records_pr_and_head() {
 
 # A project whose registry entry names a merger home is merged only from that
 # home. Every other home is refused before any forge command runs, and the
-# refusal names the merger and the handoff line to use. The home's own id is
+# refusal names the merger and the handoff command to run. The home's own id is
 # its .fm-secondmate-home marker, or main for a home without one.
 register_merger() {
   local case_dir=$1 merger=$2
@@ -758,6 +758,9 @@ test_merger_home_refuses_another_home() {
   : > "$case_dir/gh-axi.log"
   register_merger "$case_dir" slarti
   printf '%s\n' gilligan > "$case_dir/home/.fm-secondmate-home"
+  mkdir -p "$case_dir/parent/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$case_dir/parent" \
+    > "$case_dir/home/.fm-secondmate-parent"
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -768,15 +771,20 @@ test_merger_home_refuses_another_home() {
     "merger-refuses-other-home: the refusal did not name the merger home"
   assert_grep 'this home is gilligan' "$case_dir/stderr" \
     "merger-refuses-other-home: the refusal did not name this home"
-  assert_grep '[handoff=slarti] https://github.com/example/repo/pull/9' "$case_dir/stderr" \
-    "merger-refuses-other-home: the refusal did not print the handoff line"
+  # The printed command is the handoff: running it puts the handoff line on
+  # this home's parent channel, where the parent watcher picks it up.
+  bash -c "$(tail -n 1 "$case_dir/stderr")" \
+    || fail "merger-refuses-other-home: the printed handoff command did not run"
+  assert_grep '[handoff=slarti] https://github.com/example/repo/pull/9 is ready to merge' \
+    "$case_dir/parent/state/gilligan.status" \
+    "merger-refuses-other-home: the handoff command did not reach the parent channel"
   [ ! -s "$case_dir/gh.log" ] || fail "merger-refuses-other-home: gh ran before the refusal"
   [ ! -s "$case_dir/gh-axi.log" ] || fail "merger-refuses-other-home: gh-axi ran before the refusal"
   assert_no_grep '^pr=' "$case_dir/state/task-x1.meta" \
     "merger-refuses-other-home: pr= was recorded before the refusal"
 
   # A home with no marker is main, and main is not slarti either.
-  rm -f "$case_dir/home/.fm-secondmate-home"
+  rm -f "$case_dir/home/.fm-secondmate-home" "$case_dir/home/.fm-secondmate-parent"
   set +e
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
@@ -785,6 +793,10 @@ test_merger_home_refuses_another_home() {
   [ "$rc" -ne 0 ] || fail "merger-refuses-other-home: the main home merged another home's project"
   assert_grep 'this home is main' "$case_dir/stderr" \
     "merger-refuses-other-home: a home without a marker was not named main"
+  assert_grep 'fm-send.sh fm-slarti' "$case_dir/stderr" \
+    "merger-refuses-other-home: a home with no parent was not given the fm-send handoff"
+  assert_grep 'https://github.com/example/repo/pull/9' "$case_dir/stderr" \
+    "merger-refuses-other-home: the fm-send handoff did not name the PR"
   [ ! -s "$case_dir/gh.log" ] || fail "merger-refuses-other-home: gh ran before the main-home refusal"
   pass "fm-pr-merge refuses a merge from a home that is not the project's merger, before any forge call"
 }

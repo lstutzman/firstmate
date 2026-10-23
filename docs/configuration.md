@@ -1566,8 +1566,10 @@ A project whose reviews are created by a review tool that uploads its own snapsh
 ## Merger home (data/projects.md merger= token)
 
 A project entry may name the one home that merges its PRs with `merger=<home>`, the merging home's secondmate id or `main` for the primary home, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti] - ...`.
-`bin/fm-pr-merge.sh` then refuses a merge from any other home before any forge call, naming the merger and printing the `[handoff=<home>]` line to send it instead.
-A home's own id is its seeded `.fm-secondmate-home` marker, and a home without one is `main`.
+`bin/fm-pr-merge.sh` then refuses a merge from any other home before any forge call, naming the merger and printing the one command that hands the PR to it.
+In a secondmate home that command appends a `needs-decision: [handoff=<home>] <PR URL> is ready to merge` line to the home's parent channel (the destination `fm_parent_channel_destination` in [`bin/fm-parent-channel-lib.sh`](../bin/fm-parent-channel-lib.sh) resolves), and the main home relays it to the merger; in a home with no parent it is `bin/fm-send.sh fm-<home>` with the PR URL and the same `[handoff=<home>]` token.
+A home's own id is its seeded `.fm-secondmate-home` marker, and a home without one is `main`, so a fleet has exactly one primary home.
+The binding is read from the merging home's own `data/projects.md`, which is not inherited, so every home that could merge the project must carry the same `merger=<home>` token on its own registry line; a home whose line lacks it is not refused.
 A project with no `merger=` token keeps every home's merge authority exactly as before, and `yolo` still decides whether the merger home merges without the captain's word.
 `bin/fm-project-mode.sh --merger <name>` reads the binding back, and its header owns the grammar and refusals.
 

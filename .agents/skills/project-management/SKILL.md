@@ -65,6 +65,8 @@ A forge composes with `no-mistakes`, `direct-PR`, and `no-mistakes-prod-only` (`
 
 The optional `merger=<home>` token names the one home that merges the project's PRs, by its secondmate id or `main` for the primary home; `bin/fm-pr-merge.sh` refuses every other home.
 Register it only on the captain's instruction, and leave it off a project every home may merge; `docs/configuration.md` "Merger home" owns its meaning.
+The registry is not inherited, so every home that could merge the project must carry the same `merger=<home>` token on its own registry line.
+A home's id is its `.fm-secondmate-home` marker, else `main`, and a fleet has one primary home.
 
 ## Add or clone an existing project
 

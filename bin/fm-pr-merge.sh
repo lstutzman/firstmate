@@ -622,8 +622,15 @@ if [ -n "$MERGE_PROJECT" ]; then
       [ -n "$MERGE_SELF" ] || MERGE_SELF=main
     fi
     if [ "$MERGE_SELF" != "$MERGE_MERGER" ]; then
+      MERGE_HANDOFF_LINE="needs-decision: [handoff=$MERGE_MERGER] $URL is ready to merge"
+      MERGE_HANDOFF_RC=0
+      MERGE_HANDOFF_DEST=$(fm_parent_channel_destination "$FM_HOME" "$STATE") || MERGE_HANDOFF_RC=$?
       echo "error: PR merge refused: $(basename "$MERGE_PROJECT") is merged only by home $MERGE_MERGER, and this home is $MERGE_SELF; hand the PR to that home instead:" >&2
-      echo "[handoff=$MERGE_MERGER] $URL is ready to merge" >&2
+      case "$MERGE_HANDOFF_RC" in
+        0) printf 'printf %%s\\\\n %q >> %q\n' "$MERGE_HANDOFF_LINE" "$MERGE_HANDOFF_DEST" >&2 ;;
+        1) printf '%q fm-%s %q\n' "$SCRIPT_DIR/fm-send.sh" "$MERGE_MERGER" "[handoff=$MERGE_MERGER] $URL is ready to merge" >&2 ;;
+        *) echo "error: this home's parent channel cannot be resolved, so report '$MERGE_HANDOFF_LINE' to the captain by hand" >&2 ;;
+      esac
       exit 1
     fi
   fi
