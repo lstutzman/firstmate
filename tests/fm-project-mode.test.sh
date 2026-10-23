@@ -32,6 +32,10 @@ cat > "$DATA/projects.md" <<'EOF'
 - reviewed-yolo [direct-PR +yolo forge=external] - +yolo cannot apply to an external review (added 2026-01-01)
 - reviewed-local [local-only forge=external] - an external review on a mode that publishes nothing (added 2026-01-01)
 - near-miss [direct-PR forg=external] - a near miss of the forge key (added 2026-01-01)
+- landed [direct-PR +yolo merger=slarti] - one home merges this project (added 2026-01-01)
+- landed-first [merger=slarti no-mistakes] - merger token first, order must not matter (added 2026-01-01)
+- landed-blank [direct-PR merger=] - an empty merger binding (added 2026-01-01)
+- landed-bad [direct-PR merger=sl/arti] - a merger that is not a home id (added 2026-01-01)
 EOF
 
 run_mode() {
@@ -106,5 +110,32 @@ pass "fm-project-mode: forge=external binds direct-PR, reports yolo=off with a r
 [ "$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --forge legacy 2>/dev/null)" = "none" ] \
   || fail "an absent registry file must default --forge to none"
 pass "fm-project-mode: a missing project or absent registry defaults --forge to none"
+
+run_merger() {
+  FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --merger "$1" 2>/dev/null
+}
+[ "$(run_merger landed)" = "slarti" ] || fail "merger=slarti did not resolve: $(run_merger landed)"
+[ "$(run_mode landed)" = "direct-PR on" ] || fail "a merger token changed the two-word output: $(run_mode landed)"
+[ "$(run_merger landed-first)" = "slarti" ] || fail "merger= placed before the mode did not resolve: $(run_merger landed-first)"
+[ "$(run_mode landed-first)" = "no-mistakes off" ] || fail "merger= placed before the mode was read as the mode: $(run_mode landed-first)"
+err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" landed-first 2>&1 >/dev/null)
+[ -z "$err" ] || fail "a registered merger= warned: $err"
+pass "fm-project-mode: merger=<home> binds in any token order and leaves the default output unchanged"
+
+for name in landed-blank landed-bad; do
+  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --merger "$name" 2>/dev/null)
+  status=$?
+  [ "$status" -eq 3 ] || fail "a malformed merger for $name did not refuse (status $status, got '$out')"
+  [ -z "$out" ] || fail "a refused merger for $name still printed '$out'"
+done
+pass "fm-project-mode: an empty or malformed merger binding is refused under --merger"
+
+out=$(run_merger legacy); status=$?
+[ "$status" -eq 0 ] && [ -z "$out" ] || fail "an entry with no merger token must print nothing (status $status, got '$out')"
+out=$(run_merger missing-project); status=$?
+[ "$status" -eq 0 ] && [ -z "$out" ] || fail "a missing project must print no merger (status $status, got '$out')"
+out=$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --merger legacy 2>/dev/null); status=$?
+[ "$status" -eq 0 ] && [ -z "$out" ] || fail "an absent registry must print no merger (status $status, got '$out')"
+pass "fm-project-mode: no merger token, a missing project, or an absent registry prints no merger"
 
 echo "# fm-project-mode.test.sh: all assertions passed"

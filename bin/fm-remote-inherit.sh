@@ -8,6 +8,9 @@
 # Only the inherited-material allowlist is writable or removable. Writes are
 # atomic ordinary-file replacements. data/captain-shared.md is read-only and is
 # quarantined before removal or before replacing bytes not last published here.
+# config/brief-include.md is a base, never a whole file: put and absent both
+# compose the home's own lines below it through fm_brief_include_compose in
+# bin/fm-config-inherit-lib.sh, which owns that rule.
 set -eu
 
 FM_HOME=${FM_HOME:?FM_HOME is required}
@@ -78,9 +81,12 @@ GENERATION_FILE="$PARENT_REAL/.fm-inherit-$BASE.generation"
 fm_lock_acquire_wait "$LOCK" || die "cannot lock inherited destination"
 TMP=
 GENERATION_TMP=
-# Digest this receiver last published to DEST, captured before commit_generation
-# overwrites the record. Empty when no put generation has been committed here.
+# Digest this receiver last published to DEST, read from the record before
+# commit_generation overwrites it, which happens only once DEST is published.
+# Empty when no put generation has been committed here.
 LAST_PUBLISHED_HASH=
+LAST_PUBLISHED_BYTES=0
+GENERATION_PENDING=0
 cleanup() {
   [ -z "$TMP" ] || rm -f -- "$TMP"
   [ -z "$GENERATION_TMP" ] || rm -f -- "$GENERATION_TMP"
@@ -88,7 +94,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-commit_generation() {
+check_generation() {
   local existing_generation existing_bytes existing_hash existing_command
   if [ -e "$GENERATION_FILE" ] || [ -L "$GENERATION_FILE" ]; then
     [ -f "$GENERATION_FILE" ] && [ ! -L "$GENERATION_FILE" ] || die "inheritance generation record is unsafe"
@@ -105,7 +111,10 @@ commit_generation() {
     case "$existing_hash" in ''|*[!A-Fa-f0-9]*) die "inheritance generation record is malformed" ;; esac
     [ "${#existing_hash}" -eq 64 ] || die "inheritance generation record is malformed"
     case "$existing_command" in put|absent) ;; *) die "inheritance generation record is malformed" ;; esac
-    [ "$existing_command" != put ] || LAST_PUBLISHED_HASH=$(printf '%s' "$existing_hash" | tr 'A-F' 'a-f')
+    if [ "$existing_command" = put ]; then
+      LAST_PUBLISHED_HASH=$(printf '%s' "$existing_hash" | tr 'A-F' 'a-f')
+      LAST_PUBLISHED_BYTES=$existing_bytes
+    fi
     if [ "$existing_generation" -gt "$GENERATION" ]; then
       die "inheritance write generation is superseded"
     fi
@@ -117,6 +126,11 @@ commit_generation() {
       return 0
     fi
   fi
+  GENERATION_PENDING=1
+}
+
+commit_generation() {
+  [ "$GENERATION_PENDING" = 1 ] || return 0
   GENERATION_TMP=$(umask 077; mktemp "$PARENT_REAL/.inherit-generation.XXXXXX") \
     || die "cannot stage inheritance generation"
   printf '%s\n%s\n%s\n%s\n' "$GENERATION" "$EXPECTED_BYTES" "$EXPECTED_HASH" "$COMMAND" > "$GENERATION_TMP" \
@@ -124,6 +138,7 @@ commit_generation() {
   chmod 600 "$GENERATION_TMP" || die "cannot secure inheritance generation"
   mv -f -- "$GENERATION_TMP" "$GENERATION_FILE" || die "cannot publish inheritance generation"
   GENERATION_TMP=
+  GENERATION_PENDING=0
 }
 
 # True when the destination still holds the bytes this receiver last published,
@@ -150,6 +165,18 @@ quarantine_shared() {
   printf 'quarantined: %s (%s)\n' "${quarantine#"$HOME_REAL/"}" "$reason" >&2
 }
 
+# Replace TMP with the composition of base <file-or-empty> and DEST's own lines.
+compose_brief_include() {
+  local out
+  out=$(umask 077; mktemp "$PARENT_REAL/.inherit-compose.XXXXXX") || die "cannot stage the composed brief include"
+  if ! fm_brief_include_compose "$1" "$DEST" "$LAST_PUBLISHED_BYTES" "${LAST_PUBLISHED_HASH:--}" "$out"; then
+    rm -f -- "$out"
+    die "cannot compose the inherited brief include"
+  fi
+  [ -z "$TMP" ] || rm -f -- "$TMP"
+  TMP=$out
+}
+
 case "$COMMAND" in
   put)
     TMP=$(umask 077; mktemp "$PARENT_REAL/.inherit.XXXXXX") || die "cannot stage inherited material"
@@ -159,18 +186,7 @@ case "$COMMAND" in
     [ "$BYTES" -eq "$EXPECTED_BYTES" ] || die "inherited material length does not match its commitment"
     ACTUAL_HASH=$(sha256_file "$TMP") || die "cannot hash inherited material"
     [ "$ACTUAL_HASH" = "$EXPECTED_HASH" ] || die "inherited material digest does not match its commitment"
-    commit_generation
-    if [ -f "$DEST" ] && cmp -s "$TMP" "$DEST"; then
-      [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
-      printf 'unchanged: %s\n' "$REL"
-      exit 0
-    fi
-    dest_matches_last_published || quarantine_shared replaced
-    chmod 600 "$TMP" || die "cannot secure inherited material"
-    mv -f -- "$TMP" "$DEST" || die "cannot publish inherited material"
-    TMP=
-    [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
-    printf 'pushed: %s\n' "$REL"
+    check_generation
     ;;
   absent)
     [ "$EXPECTED_BYTES" -eq 0 ] || die "absent inheritance has a nonzero payload commitment"
@@ -179,14 +195,44 @@ case "$COMMAND" in
     EMPTY_HASH=$(sha256_file "$EMPTY") || die "cannot hash empty inheritance payload"
     rm -f -- "$EMPTY"
     [ "$EMPTY_HASH" = "$EXPECTED_HASH" ] || die "absent inheritance digest is not the empty payload"
-    commit_generation
-    if [ ! -e "$DEST" ]; then
-      printf 'unchanged: %s\n' "$REL"
-      exit 0
-    fi
-    quarantine_shared removed
-    rm -f -- "$DEST" || die "cannot remove absent inherited material"
-    printf 'removed: %s\n' "$REL"
+    check_generation
     ;;
   *) usage ;;
 esac
+
+# The committed base is composed with DEST's own lines; an empty composition
+# means no destination file, and a nonempty one is published like any put.
+# The generation record keeps the sender's own command.
+PUBLISH=$COMMAND
+if [ "$REL" = config/brief-include.md ]; then
+  if [ "$COMMAND" = put ]; then compose_brief_include "$TMP"; else compose_brief_include ""; fi
+  if [ -s "$TMP" ]; then PUBLISH=put; else PUBLISH=absent; fi
+fi
+
+case "$PUBLISH" in
+  put)
+    if [ -f "$DEST" ] && cmp -s "$TMP" "$DEST"; then
+      [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
+      OUTCOME=unchanged
+    else
+      dest_matches_last_published || quarantine_shared replaced
+      chmod 600 "$TMP" || die "cannot secure inherited material"
+      mv -f -- "$TMP" "$DEST" || die "cannot publish inherited material"
+      TMP=
+      [ "$REL" != data/captain-shared.md ] || chmod 444 "$DEST"
+      OUTCOME=pushed
+    fi
+    ;;
+  absent)
+    if [ ! -e "$DEST" ]; then
+      OUTCOME=unchanged
+    else
+      quarantine_shared removed
+      rm -f -- "$DEST" || die "cannot remove absent inherited material"
+      OUTCOME=removed
+    fi
+    ;;
+esac
+
+commit_generation
+printf '%s: %s\n' "$OUTCOME" "$REL"

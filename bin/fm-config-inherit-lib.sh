@@ -31,6 +31,15 @@
 # Primary config/supervision-host-off is the fleet's supervision-host opt-out,
 # so a primary that opts out opts every secondmate home out too, while each
 # home's config/supervision-host engine line stays its own.
+# Primary config/brief-include.md holds the fleet's standing brief rules, so it
+# becomes every secondmate home's base rather than a whole-file copy: the
+# destination is the primary's text followed by the home's own lines, and only
+# the base is replaced on later pushes. The home's own lines are whatever follows
+# the base this route last published, located through the same
+# .fm-inherit-brief-include.md.generation record both routes write; a home with
+# no usable record keeps its whole file as its own lines, less a leading copy of
+# the current base. fm_brief_include_compose owns that rule, and bin/fm-brief.sh
+# owns how the composed file reaches a brief.
 # It also pushes
 # the one primary-authoritative shared captain-preference file,
 # data/captain-shared.md, into each secondmate home's data/ as a read-only copy.
@@ -87,7 +96,11 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send typesafe-base-url typesafe-model typesafe-token-file crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off firstmate-role cpa-usage-host}"
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send typesafe-base-url typesafe-model typesafe-token-file crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off firstmate-role cpa-usage-host brief-include.md}"
+
+# The one inherited item composed from a primary base plus the home's own lines
+# (see the header) instead of copied whole.
+FM_BRIEF_INCLUDE_FILE="brief-include.md"
 
 # firstmate-role additionally carries a proof-of-state receipt: a scoped role
 # grant (or its recorded absence) authorizes a secondmate home only while
@@ -286,9 +299,14 @@ record_inheritable_config_result() {
 # receiver's own commit_generation, so a torn or world-readable proof can
 # never land.
 fm_inherit_role_receipt_commit() {
-  local dest_config=$1 dest receipt gen bytes sha cmd tmp prior_gen
-  dest=$dest_config/firstmate-role
-  receipt=$dest_config/.fm-inherit-firstmate-role.generation
+  fm_inherit_receipt_commit "$1/.fm-inherit-firstmate-role.generation" "$1/firstmate-role"
+}
+
+# fm_inherit_receipt_commit <receipt> <payload> - the shared writer behind the
+# record above: <payload> present is a put of its bytes, absent an absent record.
+fm_inherit_receipt_commit() {
+  local receipt=$1 dest=$2 dest_config gen bytes sha cmd tmp prior_gen
+  dest_config=${receipt%/*}
   [ -d "$dest_config" ] && [ ! -L "$dest_config" ] || return 1
   gen=1
   if [ -f "$receipt" ] && [ ! -L "$receipt" ]; then
@@ -298,8 +316,8 @@ fm_inherit_role_receipt_commit() {
     *) gen=$((prior_gen + 1)) ;;
     esac
   fi
-  tmp=$(umask 077 && mktemp "$dest_config/.inherit-role-receipt.XXXXXX" 2>/dev/null) || return 1
-  if [ -f "$dest" ] && [ ! -L "$dest" ]; then
+  tmp=$(umask 077 && mktemp "$dest_config/.inherit-receipt.XXXXXX" 2>/dev/null) || return 1
+  if [ -n "$dest" ] && [ -f "$dest" ] && [ ! -L "$dest" ]; then
     cmd=put
     bytes=$(wc -c <"$dest" 2>/dev/null | tr -d '[:space:]') || {
       rm -f "$tmp" 2>/dev/null
@@ -332,6 +350,129 @@ fm_inherit_role_receipt_commit() {
     return 1
   }
   return 0
+}
+
+# fm_inherit_receipt_put_prior <receipt> - print "<bytes> <sha256>" of the put
+# payload a well-formed record proves, or "0 -" for an absent, missing, or
+# malformed record, which then proves no base.
+fm_inherit_receipt_put_prior() {
+  local receipt=$1 gen='' bytes='' sha='' cmd=''
+  if [ -f "$receipt" ] && [ ! -L "$receipt" ]; then
+    { IFS= read -r gen && IFS= read -r bytes && IFS= read -r sha && IFS= read -r cmd; } <"$receipt" 2>/dev/null || cmd=
+  fi
+  case "$bytes" in ''|*[!0-9]*) cmd= ;; esac
+  case "$sha" in *[!0-9a-fA-F]*) cmd= ;; esac
+  if [ "$cmd" = put ] && [ "${#sha}" -eq 64 ]; then
+    printf '%s %s\n' "$bytes" "$(printf '%s' "$sha" | tr 'A-F' 'a-f')"
+  else
+    printf '0 -\n'
+  fi
+}
+
+# fm_brief_include_compose <base-file-or-empty> <dest> <prior-bytes> <prior-sha256> <out>
+# Write the composed brief include to <out>: the base bytes, then the home's own
+# lines from <dest>. The own lines are what follows the first <prior-bytes>
+# bytes of <dest> when those bytes still hash to <prior-sha256> (the base last
+# published there); otherwise what follows a leading copy of the current base;
+# otherwise the whole of <dest>, so an edit inside the old base is re-appended
+# below the new one rather than lost. A newline is added between a base without
+# one and the own lines, and dropped again when that base is stripped.
+fm_brief_include_compose() {
+  local base=$1 dest=$2 prior_bytes=$3 prior_sha=$4 out=$5 work strip=0 base_bytes=0 status=0
+  work=$(mktemp -d "${TMPDIR:-/tmp}/fm-brief-include.XXXXXX" 2>/dev/null) || return 1
+  [ -z "$base" ] || base_bytes=$(LC_ALL=C wc -c <"$base" | tr -d ' ') || status=1
+  : >"$work/own" || status=1
+  if [ "$status" -eq 0 ] && [ -f "$dest" ]; then
+    if [ "$prior_bytes" -gt 0 ] 2>/dev/null \
+      && head -c "$prior_bytes" "$dest" >"$work/prefix" 2>/dev/null \
+      && [ "$(LC_ALL=C wc -c <"$work/prefix" | tr -d ' ')" = "$prior_bytes" ] \
+      && [ "$(fm_inherit_sha256 "$work/prefix")" = "$prior_sha" ]; then
+      strip=$prior_bytes
+    elif [ "$base_bytes" -gt 0 ] && head -c "$base_bytes" "$dest" | cmp -s - "$base"; then
+      strip=$base_bytes
+      cp "$base" "$work/prefix" || status=1
+    fi
+    tail -c +"$((strip + 1))" "$dest" >"$work/own" || status=1
+    if [ "$status" -eq 0 ] && [ "$strip" -gt 0 ] \
+      && [ "$(tail -c 1 "$work/prefix" | wc -l | tr -d ' ')" = 0 ] \
+      && [ "$(head -c 1 "$work/own" | wc -l | tr -d ' ')" = 1 ]; then
+      tail -c +2 "$work/own" >"$work/own.trim" && mv -f "$work/own.trim" "$work/own" || status=1
+    fi
+  fi
+  if [ "$status" -eq 0 ]; then
+    {
+      [ -z "$base" ] || cat "$base"
+      if [ -s "$work/own" ]; then
+        if [ "$base_bytes" -gt 0 ] && [ "$(tail -c 1 "$base" | wc -l | tr -d ' ')" = 0 ]; then
+          printf '\n'
+        fi
+        cat "$work/own"
+      fi
+    } >"$out" || status=1
+  fi
+  rm -rf "$work"
+  return "$status"
+}
+
+# propagate_brief_include <src> <source-present> <dest-config>
+# The local route's composed write of brief-include.md, recorded through the
+# same per-item report as every other item. An empty composition leaves no
+# destination file; the receipt records the base published, or its absence.
+propagate_brief_include() {
+  local src=$1 present=$2 dest_config=$3 item=$FM_BRIEF_INCLUDE_FILE dest receipt base='' prior stage reason status
+  dest="$dest_config/$item"
+  receipt="$dest_config/.fm-inherit-$item.generation"
+  if [ "$present" = 1 ] && [ ! -f "$src" ]; then
+    reason="primary source is not a regular file"
+    warn_inheritable_config_error "$item" "$src" "$reason"
+    record_inheritable_config_result "$item" error "$reason"
+    return 1
+  fi
+  if [ "$present" = 0 ] && [ ! -e "$dest" ] && [ ! -L "$dest" ]; then
+    record_inheritable_config_result "$item" unchanged ""
+    return 0
+  fi
+  if [ -L "$dest" ] || { [ -e "$dest" ] && [ ! -f "$dest" ]; }; then
+    reason="destination is not a regular file"
+    warn_inheritable_config_error "$item" "$dest" "$reason"
+    record_inheritable_config_result "$item" error "$reason"
+    return 1
+  fi
+  if ! destination_allows_inherited_item "$dest_config" "$item"; then
+    reason=$(inheritable_config_skip_reason)
+    warn_inheritable_config_skip "$item" "$dest_config" "$reason"
+    record_inheritable_config_result "$item" skipped "$reason"
+    return 0
+  fi
+  [ "$present" = 0 ] || base=$src
+  prior=$(fm_inherit_receipt_put_prior "$receipt")
+  stage=$(mktemp "${TMPDIR:-/tmp}/fm-inherit-brief-include.XXXXXX" 2>/dev/null) || stage=
+  if [ -z "$stage" ] || ! fm_brief_include_compose "$base" "$dest" "${prior%% *}" "${prior#* }" "$stage"; then
+    [ -z "$stage" ] || rm -f "$stage"
+    reason="failed to compose"
+    warn_inheritable_config_error "$item" "$dest" "$reason"
+    record_inheritable_config_result "$item" error "$reason"
+    return 1
+  fi
+  status=unchanged
+  if [ -s "$stage" ]; then
+    if [ ! -f "$dest" ] || ! cmp -s "$stage" "$dest"; then
+      copy_inheritable_file "$stage" "$dest" && status=pushed || status=error
+    fi
+  elif [ -e "$dest" ]; then
+    rm -f "$dest" 2>/dev/null && status=pushed || status=error
+  fi
+  rm -f "$stage"
+  if [ "$status" != error ] && [ -d "$dest_config" ] && ! fm_inherit_receipt_commit "$receipt" "$base"; then
+    status=error
+  fi
+  if [ "$status" = error ]; then
+    reason="failed to write the composed file or its receipt"
+    warn_inheritable_config_error "$item" "$dest" "$reason"
+    record_inheritable_config_result "$item" error "$reason"
+    return 1
+  fi
+  record_inheritable_config_result "$item" "$status" ""
 }
 
 inheritable_config_skip_reason() {
@@ -703,6 +844,10 @@ propagate_inheritable_config() {
       warn_inheritable_config_error "$item" "$src" "$reason"
       record_inheritable_config_result "$item" error "$reason"
       rc=1
+      continue
+    fi
+    if [ "$item" = "$FM_BRIEF_INCLUDE_FILE" ]; then
+      propagate_brief_include "$src" "$source_present" "$dest_config" || rc=1
       continue
     fi
     # This one scalar config is consumed as a local safety boundary, so reject

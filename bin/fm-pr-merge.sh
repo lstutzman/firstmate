@@ -129,6 +129,10 @@
 # because there is no established translation from a gh/glab-style flag into
 # a Forgejo API field yet.
 #
+# A project registered with merger=<home> is refused from every other home
+# before any forge command, naming the merger and the handoff line to use; the
+# merger-home block below owns how this home knows its own id.
+#
 # Before either forge merge, the task's existing per-task control lock
 # serializes the captain-hold check through the forge command. A still-held or
 # unreadable row refuses before that command, so a captain approval must be
@@ -597,6 +601,40 @@ if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then
   exit 1
 fi
 MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
+
+# Merger home: a project whose registry entry carries merger=<home> is merged
+# only from that home (bin/fm-project-mode.sh owns the binding). This home's
+# id is its seeded .fm-secondmate-home marker, the same secondmate id its
+# parent routes and hands off by, and `main` for a home without a marker. The
+# check runs before any forge command, and an unreadable binding refuses rather
+# than falling back to every home merging. A stack is checked through its top
+# task, because every member is already proven to be the same repository.
+MERGE_PROJECT=$(sed -n 's/^project=//p' "$META" | head -n 1)
+if [ -n "$MERGE_PROJECT" ]; then
+  if ! MERGE_MERGER=$("$SCRIPT_DIR/fm-project-mode.sh" --merger "$(basename "$MERGE_PROJECT")" 2>/dev/null); then
+    echo "error: PR merge refused: the merger binding for $(basename "$MERGE_PROJECT") cannot be read (run bin/fm-project-mode.sh --merger $(basename "$MERGE_PROJECT") for the refusal)" >&2
+    exit 1
+  fi
+  if [ -n "$MERGE_MERGER" ]; then
+    MERGE_SELF=main
+    if [ -f "$FM_HOME/.fm-secondmate-home" ] && [ ! -L "$FM_HOME/.fm-secondmate-home" ]; then
+      MERGE_SELF=$(tr -d '[:space:]' < "$FM_HOME/.fm-secondmate-home")
+      [ -n "$MERGE_SELF" ] || MERGE_SELF=main
+    fi
+    if [ "$MERGE_SELF" != "$MERGE_MERGER" ]; then
+      MERGE_HANDOFF_LINE=$(status_stamp_line "needs-decision [key=merge-handoff-${URL##*/}]: [handoff=$MERGE_MERGER] $URL is ready to merge")
+      MERGE_HANDOFF_RC=0
+      MERGE_HANDOFF_DEST=$(fm_parent_channel_destination "$FM_HOME" "$STATE") || MERGE_HANDOFF_RC=$?
+      echo "error: PR merge refused: $(basename "$MERGE_PROJECT") is merged only by home $MERGE_MERGER, and this home is $MERGE_SELF; hand the PR to that home instead:" >&2
+      case "$MERGE_HANDOFF_RC" in
+        0) printf 'printf %%s\\\\n %q >> %q\n' "$MERGE_HANDOFF_LINE" "$MERGE_HANDOFF_DEST" >&2 ;;
+        1) printf '%q fm-%s %q\n' "$SCRIPT_DIR/fm-send.sh" "$MERGE_MERGER" "$MERGE_HANDOFF_LINE" >&2 ;;
+        *) echo "error: this home's parent channel cannot be resolved, so report '$MERGE_HANDOFF_LINE' to the captain by hand" >&2 ;;
+      esac
+      exit 1
+    fi
+  fi
+fi
 
 MERGE_CONTROL_LOCK=
 MERGE_META_LOCK=

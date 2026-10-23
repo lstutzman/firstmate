@@ -1040,7 +1040,13 @@ This keeps private brief content out of tracked files.
 When the file exists, `bin/fm-brief.sh` appends its text verbatim as the scaffold's last section, `# Home brief additions`, which defers to every other section of the brief, including the ship contract a later scout promotion appends below it.
 
 An absent or blank file changes nothing, while a present path that is not a readable regular file, or text carrying its own `Delivery contract: mode=` line, stops the scaffold before anything is written.
-The text is static and never executed or expanded; secondmate charters never take it, and the file is local to each home rather than part of secondmate inherited configuration.
+The text is static and never executed or expanded, and secondmate charters never take it.
+
+The primary's file is inherited by every secondmate home as a base: the home's copy is the primary's text followed by the home's own lines.
+Each push replaces only that base, so add a home's own rules below it; an edit inside the base is kept, re-appended below the next base rather than lost.
+A home whose file predates inheritance keeps its whole file as its own lines, less a leading copy of the primary's text, so text it duplicated differently appears twice once and is pruned by hand.
+Removing the primary's file leaves each home exactly its own lines.
+`bin/fm-config-inherit-lib.sh` owns the composition on both the local and remote routes.
 
 `bin/fm-brief.sh`'s header owns the placement rule and its safety argument.
 
@@ -1556,6 +1562,16 @@ A GitLab project needs no forge token, only `glab` on `PATH`, authenticated via 
 
 A project whose reviews are created by a review tool that uploads its own snapshot of the worker's commits is registered `[direct-PR forge=external]`; it is never detected, ships `direct-PR` only, carries no yolo, and needs the [external review tool](#external-review-tool-configexternal-reviewmd-configexternal-review-url-configexternal-review-backup) configuration below.
 [`docs/external-review-forge.md`](external-review-forge.md) is the design.
+
+## Merger home (data/projects.md merger= token)
+
+A project entry may name the one home that merges its PRs with `merger=<home>`, the merging home's secondmate id or `main` for the primary home, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti] - ...`.
+`bin/fm-pr-merge.sh` then refuses a merge from any other home before any forge call, naming the merger and printing the one command that hands the PR to it.
+In a secondmate home that command appends a stamped `needs-decision [key=merge-handoff-<PR number>]: [handoff=<home>] <PR URL> is ready to merge` line to the home's parent channel (the destination `fm_parent_channel_destination` in [`bin/fm-parent-channel-lib.sh`](../bin/fm-parent-channel-lib.sh) resolves), and the main home relays it to the merger; in a home with no parent it is `bin/fm-send.sh fm-<home>` with that same line.
+A home's own id is its seeded `.fm-secondmate-home` marker, and a home without one is `main`, so a fleet has exactly one primary home.
+The binding is read from the merging home's own `data/projects.md`, which is not inherited, so every home that could merge the project must carry the same `merger=<home>` token on its own registry line; a home whose line lacks it is not refused.
+A project with no `merger=` token keeps every home's merge authority exactly as before, and `yolo` still decides whether the merger home merges without the captain's word.
+`bin/fm-project-mode.sh --merger <name>` reads the binding back, and its header owns the grammar and refusals.
 
 ## External review tool (config/external-review.md, config/external-review-url, config/external-review-backup)
 
