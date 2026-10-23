@@ -1,0 +1,133 @@
+
+===== Registry: PropertyCompass2-style project with admission=pc2 =====
+## Projects
+- project [no-mistakes +yolo admission=pc2] - fixture (added 2026-01-01)
+# Lee's merge-word classes
+command=./classify-diff.sh --risk --stdin
+classes=payments legal-text data-rewriting-migration protected-gate production
+clear=none
+$ bin/fm-project-mode.sh --admission project
+pc2
+
+===== S1: PR 9 touches billing; merge without captain word -> refused with runnable commands =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/9 
+armed: state/task-x1.check.sh
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/9 changes payments, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh hold task-x1-admit-9-payments --title Admit\ https://github.com/example/repo/pull/9:\ payments --reason https://github.com/example/repo/pull/9\ changes\ payments\,\ which\ needs\ the\ captain\'s\ word\ before\ it\ merges --repo project
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh answer task-x1-admit-9-payments --decision-file <file-with-the-captains-words>
+exit=1; gh merge invoked: 0
+
+===== S2: --attended-override does not skip it =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/9 --attended-override
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/9 changes payments, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh hold task-x1-admit-9-payments --title Admit\ https://github.com/example/repo/pull/9:\ payments --reason https://github.com/example/repo/pull/9\ changes\ payments\,\ which\ needs\ the\ captain\'s\ word\ before\ it\ merges --repo project
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh answer task-x1-admit-9-payments --decision-file <file-with-the-captains-words>
+exit=1; gh merge invoked: 0
+
+===== S3: run the printed hold command; merge still refused while held =====
+(hold raised)
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/9 
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/9 changes payments, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh hold task-x1-admit-9-payments --title Admit\ https://github.com/example/repo/pull/9:\ payments --reason https://github.com/example/repo/pull/9\ changes\ payments\,\ which\ needs\ the\ captain\'s\ word\ before\ it\ merges --repo project
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh answer task-x1-admit-9-payments --decision-file <file-with-the-captains-words>
+exit=1; gh merge invoked: 0
+
+===== S4: record the captain's words via the printed answer command; merge succeeds =====
+(answer recorded)
+$ fm-captain-hold.sh answered task-x1-admit-9-payments --title 'Admit https://github.com/example/repo/pull/9: payments'
+answered rc=0
+answered (wrong PR title) rc=1
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/9 
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+exit=0; gh merge invoked: 1
+pr merge 9 --repo example/repo --match-head-commit deadbeefcafefeed0000000000000000deadbeef --squash
+
+===== S5: new push on PR 9 (new head), still only payments -> answer kept, merges =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/9 
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/9 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head 1234567890abcdef1234567890abcdef12345678
+exit=0; gh merge invoked: 1
+
+===== S6: another push adds a Terms page -> legal-text newly flagged -> refused, names only legal-text =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/9 
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head 2222222222222222222222222222222222222222
+error: PR merge refused: https://github.com/example/repo/pull/9 changes legal-text, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh hold task-x1-admit-9-legal-text --title Admit\ https://github.com/example/repo/pull/9:\ legal-text --reason https://github.com/example/repo/pull/9\ changes\ legal-text\,\ which\ needs\ the\ captain\'s\ word\ before\ it\ merges --repo project
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh answer task-x1-admit-9-legal-text --decision-file <file-with-the-captains-words>
+exit=1; gh merge invoked: 0
+
+===== S7: a different PR (10) with the same payments class -> refused, needs its own word =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/10 
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+verified: https://github.com/example/repo/pull/10 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/10 changes payments, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh hold task-x1-admit-10-payments --title Admit\ https://github.com/example/repo/pull/10:\ payments --reason https://github.com/example/repo/pull/10\ changes\ payments\,\ which\ needs\ the\ captain\'s\ word\ before\ it\ merges --repo project
+FM_HOME=$SCR/cases/live/home /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5NACDMJ5Q44Z8N6HNGA0D37/bin/fm-captain-hold.sh answer task-x1-admit-10-payments --decision-file <file-with-the-captains-words>
+exit=1; gh merge invoked: 0
+
+===== S8 adversarial: classifier prints an undeclared verdict -> refused =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/10 
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+verified: https://github.com/example/repo/pull/10 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: the classifier './classify-diff.sh --risk --stdin' in $SCR/cases/live/project printed full, which the admission config declares in neither classes= nor clear=
+exit=1; gh merge invoked: 0
+
+===== S9 adversarial: GitHub lists fewer files than changed_files -> refused =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/10 
+armed: state/task-x1.check.sh
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+verified: https://github.com/example/repo/pull/10 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: GitHub listed 1 of the 400 changed files in https://github.com/example/repo/pull/10, so its admission check cannot see every change
+exit=1; gh merge invoked: 0
+
+===== S10: admission config missing -> refused before any forge merge =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/10 
+error: PR merge refused: the admission config $SCR/cases/live/home/config/admission/pc2 is missing or unreadable
+exit=1; gh merge invoked: 0
+
+===== S11: unflagged diff (classifier says none) merges with no captain call =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/10 
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/10 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+verified: https://github.com/example/repo/pull/10 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+exit=0; gh merge invoked: 1
+
+===== S12: project without admission= token merges exactly as before (classifier never consulted) =====
+$ FM_HOME=$LAB bin/fm-pr-merge.sh task-x1 https://github.com/example/repo/pull/11 
+armed: state/task-x1.check.sh
+verified: https://github.com/example/repo/pull/11 is merged (state=MERGED, merged=true, isInMergeQueue=false)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+verified: https://github.com/example/repo/pull/11 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+exit=0; gh merge invoked: 1
+classifier ran: no

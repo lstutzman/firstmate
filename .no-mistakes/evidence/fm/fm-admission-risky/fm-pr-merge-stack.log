@@ -1,0 +1,20 @@
+ok - a green stack merges through one head-bound request and records every member
+ok - a stack merge forwards the caller's merge method
+ok - the top pull request's live head must be the gated head
+ok - every stack member must have recorded its head before the merge
+ok - a stack member that changed since it was recorded refuses without re-recording it
+ok - the live stack must hold exactly the named pull requests
+ok - the named top must be the top of the live stack
+ok - every stack member must be open and not a draft
+ok - a red check on any stack member refuses the stack
+ok - the trunk's required checks apply to every stack member
+ok - the trunk head must be an ancestor of the gated head
+ok - a merge request the forge refuses reports nothing as merged
+ok - a pending stack merge request is polled until it settles
+ok - a failed stack merge request is refused, never reported as landed
+ok - only proven stack members are recorded as merged, and an unproven one refuses
+ok - a landed stack whose trunk tree differs from the gated tree is reported as actionable
+ok - stack mode is refused while the away-posture record exists
+ok - invalid stack requests are refused before any forge read
+ok - a stack member whose changes flag an admission class needs the captain's answer for that PR and class set
+rc=0
