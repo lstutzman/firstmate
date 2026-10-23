@@ -1,0 +1,6 @@
+ok - local push puts the primary's text above the child's lines and keeps them on every re-push
+ok - a first push into a home that already copied the base verbatim adds no duplicate
+ok - a base without a trailing newline composes and re-pushes byte-stably
+ok - remote push puts the primary's text above the child's lines and keeps them on every re-push
+ok - a remote push that fails before publishing keeps the old base recognised on the next push
+# all fm-brief-include-inheritance tests passed

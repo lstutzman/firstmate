@@ -1,0 +1,61 @@
+Note: switching to 'ccd508bfac21652f08fd54d55887f0169af06779'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+## 1. Deep Thought has no brief-include.md; primary has fleet rules
+--- /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab-sm.u6l8Pt/deepthought/config/brief-include.md:
+(absent)
+---
+config-push: /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.a8yprb -> live secondmate homes
+secondmate deepthought (/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab-sm.u6l8Pt/deepthought):
+  brief-include.md: pushed
+CONFIG_REREAD: secondmate deepthought: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c484b77911ac.git)
+--- /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab-sm.u6l8Pt/deepthought/config/brief-include.md:
+Fleet rule: never merge a red PR.
+---
+## 2. Deep Thought adds its own line below the base; primary unchanged, push again
+config-push: /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.a8yprb -> live secondmate homes
+secondmate deepthought (/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab-sm.u6l8Pt/deepthought):
+  brief-include.md: unchanged
+CONFIG_REREAD: secondmate deepthought: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c484b77911ac.git)
+--- /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab-sm.u6l8Pt/deepthought/config/brief-include.md:
+Fleet rule: never merge a red PR.
+Home rule: deepthought builds PC2 features.
+---
+## 3. Primary revises the base; push replaces only the base, own line kept
+config-push: /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.a8yprb -> live secondmate homes
+secondmate deepthought (/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab-sm.u6l8Pt/deepthought):
+  brief-include.md: pushed
+CONFIG_REREAD: secondmate deepthought: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c484b77911ac.git)
+--- /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab-sm.u6l8Pt/deepthought/config/brief-include.md:
+Fleet rule v2: never merge a red PR.
+Fleet rule v2: additive migrations need no word.
+Home rule: deepthought builds PC2 features.
+---
+## 4. Primary removes its file; the home keeps exactly its own lines
+config-push: /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.a8yprb -> live secondmate homes
+secondmate deepthought (/private/var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T/fm-lab-sm.u6l8Pt/deepthought):
+  brief-include.md: pushed
+CONFIG_REREAD: secondmate deepthought: send failed: error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/leestutzman/.no-mistakes/repos/c484b77911ac.git)
+--- /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab-sm.u6l8Pt/deepthought/config/brief-include.md:
+Home rule: deepthought builds PC2 features.
+---
+## 5. Composed file reaches a worker brief scaffolded in the secondmate home
+--- /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab-sm.u6l8Pt/deepthought/config/brief-include.md:
+Fleet rule v3: test on staging with flag on.
+Home rule: deepthought builds PC2 features.
+---
+lab torn down

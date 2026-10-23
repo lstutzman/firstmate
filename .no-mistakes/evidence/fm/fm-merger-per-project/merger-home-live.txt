@@ -1,0 +1,62 @@
+## A. Deep Thought (secondmate with a local parent) tries to merge PropertyCompass2 #3769
+exit=1
+stderr:
+  error: PR merge refused: PropertyCompass2 is merged only by home slarti, and this home is deepthought; hand the PR to that home instead:
+  printf %s\\n needs-decision\ \[key=merge-handoff-3769\]\ \[at=1792776273\]:\ \[handoff=slarti\]\ https://github.com/lstutzman/PropertyCompass2/pull/3769\ is\ ready\ to\ merge >> /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab-merger.zjNFkY/main/state/deepthought.status
+forge calls: 0
+## A2. Run the printed handoff command; parent (main) status stream gets a keyed decision
+handoff rc=0
+main/state/deepthought.status:
+  needs-decision: an earlier unkeyed question from deepthought
+  needs-decision [key=merge-handoff-3769] [at=1792776273]: [handoff=slarti] https://github.com/lstutzman/PropertyCompass2/pull/3769 is ready to merge
+open decisions (status_open_decisions):
+  default	needs-decision	an earlier unkeyed question from deepthought
+  merge-handoff-3769	needs-decision	[handoff=slarti] https://github.com/lstutzman/PropertyCompass2/pull/3769 is ready to merge## B. The main home (no marker, no parent) tries to merge
+exit=1
+stderr:
+  error: PR merge refused: PropertyCompass2 is merged only by home slarti, and this home is main; hand the PR to that home instead:
+  /Users/leestutzman/.no-mistakes/worktrees/c484b77911ac/01M5MVKN1AM3CNEZKBRT8VY130/bin/fm-send.sh fm-slarti needs-decision\ \[key=merge-handoff-3769\]\ \[at=1792776274\]:\ \[handoff=slarti\]\ https://github.com/lstutzman/PropertyCompass2/pull/3769\ is\ ready\ to\ merge
+forge calls: 0
+## C. The merger home slarti merges: passes the merger gate and reaches the forge
+exit=1
+stderr:
+  ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ●  WATCHER DOWN - SUPERVISION IS OFF
+  ●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+  ●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+  ●  This is a supervision warning only; the guarded operation WILL still run.
+  ●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+  ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  error: named head eb6c1e26f041536ec6389b7e857d96c6c72fcd20 is unreachable outside the worker copy
+forge calls: 1
+forge log:
+  gh pr view https://github.com/lstutzman/PropertyCompass2/pull/3769 --json headRefOid -q .headRefOid
+## D. Adversarial: Deep Thought's registry carries an empty merger= token
+exit=1
+stderr:
+  error: PR merge refused: the merger binding for PropertyCompass2 cannot be read (run bin/fm-project-mode.sh --merger PropertyCompass2 for the refusal)
+forge calls: 0
+## E. Adversarial: Deep Thought's registry carries merger=slarti;rm -rf
+exit=1
+stderr:
+  error: PR merge refused: the merger binding for PropertyCompass2 cannot be read (run bin/fm-project-mode.sh --merger PropertyCompass2 for the refusal)
+forge calls: 0
+## F. No merger token: Deep Thought keeps today's behavior and reaches the forge
+exit=1
+stderr:
+  ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ●  WATCHER DOWN - SUPERVISION IS OFF
+  ●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+  ●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+  ●  This is a supervision warning only; the guarded operation WILL still run.
+  ●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+  ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  error: named head eb6c1e26f041536ec6389b7e857d96c6c72fcd20 is unreachable outside the worker copy
+forge calls: 1
+## G. Spoof attempt: a symlinked .fm-secondmate-home pointing at a file saying slarti
+exit=1
+stderr:
+  error: PR merge refused: PropertyCompass2 is merged only by home slarti, and this home is main; hand the PR to that home instead:
+  error: this home's parent channel cannot be resolved, so report 'needs-decision [key=merge-handoff-3769] [at=1792776279]: [handoff=slarti] https://github.com/lstutzman/PropertyCompass2/pull/3769 is ready to merge' to the captain by hand
+forge calls: 0
+lab torn down
