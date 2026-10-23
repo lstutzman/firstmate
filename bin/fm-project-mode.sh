@@ -15,6 +15,8 @@
 # hours, or nothing under those same conditions.
 # With --admission it prints the project's registered admission config name the
 # same way.
+# With --ready-evidence it prints the project's registered ready-evidence name the
+# same way, or nothing.
 #
 # MECHANICAL CONSUMERS ONLY. This answers "what posture did the captain register
 # for this project", never "how does this task ship". A task's delivery mode,
@@ -27,8 +29,9 @@
 # and --forge for bin/fm-spawn.sh's forge agreement and yolo refusal and for
 # bin/fm-promote.sh, which takes the forge binding from here because it is a
 # project fact rather than a task choice, --merger and --admission for
-# bin/fm-pr-merge.sh's merger-home and admission refusals, and --landing-lag for
-# bin/fm-spawn.sh's landing-lag admission.
+# bin/fm-pr-merge.sh's merger-home and admission refusals, --landing-lag for
+# bin/fm-spawn.sh's landing-lag admission, and --ready-evidence for
+# bin/fm-dod-lib.sh's ready gate.
 #
 # Registry line format (data/projects.md):
 #   - <name> - <desc> (added <date>)                                 -> no-mistakes off fm/  (legacy default)
@@ -41,9 +44,11 @@
 #   - <name> [<mode> +yolo merger=<home>] - <desc> (added <date>)    -> <mode> on, --merger <home>
 #   - <name> [<mode> landing-lag=<hours>] - <desc> (added <date>)    -> <mode> off, --landing-lag <hours>
 #   - <name> [<mode> admission=<config>] - <desc> (added <date>)     -> <mode> off, --admission <config>
+#   - <name> [<mode> ready-evidence=<n>] - <desc> (added <date>)     -> <mode> off, --ready-evidence <n>
 #   <name> may contain spaces; it ends at the literal " [" or " - " that follows it.
 #   Bracket tokens are order-independent: +yolo, branch=<prefix>, forge=<value>,
-#   merger=<home>, landing-lag=<hours>, and admission=<config> are recognized by
+#   merger=<home>, landing-lag=<hours>, admission=<config>, and ready-evidence=<n>
+#   are recognized by
 #   their own shape wherever they appear, and whichever token is
 #   left over is the mode. <prefix> must not contain a space; an empty override
 #   ("branch=") resolves to "" for a bare "<task-id>" ship branch instead of the
@@ -114,6 +119,12 @@
 #   non-name value (outside [A-Za-z0-9._-], or a leading dot) is refused with
 #   exit status 3, because reading it as "no admission" would merge the very
 #   classes the binding exists to stop; the other output forms ignore the token.
+# ready-evidence=<n> (orthogonal) = the project's ready-evidence command set,
+#   the file config/ready-evidence/<n> in this home, which bin/fm-dod-lib.sh
+#   runs before it accepts a ship done (that file owns how it runs). A project
+#   with no token keeps today's done gate exactly. Under --ready-evidence an
+#   empty or non-id value is refused with exit status 3 like merger=, because
+#   reading it as "no evidence" would accept the done the binding exists to check.
 #
 # A registered `forge=gerrit` project reports yolo=off with an explicit stderr
 # refusal, on the captain's decision of 2026-09-15: a Gerrit Code-Review+2 is a
@@ -129,8 +140,8 @@
 # An unknown/missing project or unknown mode falls back to "no-mistakes off" (or
 # "fm/" under --branch-prefix) and warns to stderr, so a typo never silently
 # drops the gate. Other annotation tokens are ignored, as they always were, keyed
-# ones included: a `<key>=<value>` token whose key is neither exactly `forge` nor
-# `branch` resolves as it did before the forge existed, and in the mode slot it
+# ones included: a `<key>=<value>` token whose key is not exactly `forge`,
+# `branch`, `merger`, or `ready-evidence` resolves as it did before the forge existed, and in the mode slot it
 # is read as an unknown mode. A key one or two edits from `forge` (such as
 # `forg=` or `Forge=`) is still ignored, with one stderr warning naming the token
 # and the forge=gerrit, forge=forgejo, and forge=external spellings. The one
@@ -144,7 +155,7 @@
 # to the forge binding, so it prints even when the forge token is malformed;
 # every path that reads the forge binding (default, --forge, and spawn's
 # forge-agreement check) still refuses.
-# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--merger|--landing-lag|--admission] <project-name>
+# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--merger|--landing-lag|--admission|--ready-evidence] <project-name>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -158,6 +169,7 @@ WANT_FORGE=0
 WANT_MERGER=0
 WANT_LANDING_LAG=0
 WANT_ADMISSION=0
+WANT_EVIDENCE=0
 case "${1:-}" in
   --raw) RAW=1; shift ;;
   --branch-prefix) BRANCH_PREFIX_QUERY=1; shift ;;
@@ -165,12 +177,13 @@ case "${1:-}" in
   --merger) WANT_MERGER=1; shift ;;
   --landing-lag) WANT_LANDING_LAG=1; shift ;;
   --admission) WANT_ADMISSION=1; shift ;;
+  --ready-evidence) WANT_EVIDENCE=1; shift ;;
 esac
-NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--merger|--landing-lag|--admission] <project-name>}
+NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--merger|--landing-lag|--admission|--ready-evidence] <project-name>}
 
 if [ ! -f "$REG" ]; then
   echo "warn: no registry at $REG; defaulting $NAME to no-mistakes off" >&2
-  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] || exit 0
+  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] || exit 0
   if [ "$BRANCH_PREFIX_QUERY" -eq 1 ]; then
     echo "fm/"
   elif [ "$WANT_FORGE" -eq 1 ]; then echo none; else echo "no-mistakes off"; fi
@@ -179,8 +192,8 @@ fi
 
 # awk emits one "near <token>" line per keyed token whose key is a near miss of
 # `forge`, then
-# "posture <mode> <yolo> <forge> <merger> <landing-lag> <admission> <branch-prefix>" (branch-prefix is
-# the raw prefix, defaulting to "fm/"; forge, merger, landing-lag, and admission are `none` or the whole
+# "posture <mode> <yolo> <forge> <merger> <landing-lag> <admission> <evidence> <branch-prefix>" (branch-prefix is
+# the raw prefix, defaulting to "fm/"; forge, merger, landing-lag, admission, and evidence are `none` or the whole
 # `<key>=<value>` token, so an empty value survives the split), or nothing if the project is
 # absent. Every other token beside the mode is ignored, exactly as before either
 # annotation existed.
@@ -208,7 +221,7 @@ parsed=$(awk -v n="$NAME" '
     if (substr($0, 1, plen) != prefix) next
     after = substr($0, plen + 1);
     if (after != "" && substr(after, 1, 2) != " [" && substr(after, 1, 3) != " - ") next
-    mode="no-mistakes"; yolo="off"; branch="fm/"; forge="none"; merger="none"; lag="none"; admission="none";
+    mode="no-mistakes"; yolo="off"; branch="fm/"; forge="none"; merger="none"; lag="none"; admission="none"; evidence="none";
     if (substr(after, 1, 2) == " [") {
       s="";
       nk = split(after, rest, " ");
@@ -227,6 +240,7 @@ parsed=$(awk -v n="$NAME" '
         if (a[j] ~ /^merger=/) { merger = a[j]; continue }
         if (a[j] ~ /^landing-lag=/) { lag = a[j]; continue }
         if (a[j] ~ /^admission=/) { admission = a[j]; continue }
+        if (a[j] ~ /^ready-evidence=/) { evidence = a[j]; continue }
         if (a[j] ~ /^[^=]+=/) {
           key = substr(a[j], 1, index(a[j], "=") - 1);
           e = dist(key, "forge");
@@ -239,13 +253,13 @@ parsed=$(awk -v n="$NAME" '
     }
     # branch is printed LAST: an empty branch= override must survive as an
     # empty final field, which only holds when nothing follows it.
-    print "posture", mode, yolo, forge, merger, lag, admission, branch; exit
+    print "posture", mode, yolo, forge, merger, lag, admission, evidence, branch; exit
   }
 ' "$REG")
 
 if [ -z "$parsed" ]; then
   echo "warn: project \"$NAME\" not in registry; defaulting to no-mistakes off" >&2
-  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] || exit 0
+  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] || exit 0
   if [ "$BRANCH_PREFIX_QUERY" -eq 1 ]; then
     echo "fm/"
   elif [ "$WANT_FORGE" -eq 1 ]; then echo none; else echo "no-mistakes off"; fi
@@ -261,8 +275,8 @@ while IFS=' ' read -r kind rest; do
 done <<EOF
 $parsed
 EOF
-while IFS=' ' read -r m y f r l a b; do
-  mode=$m; yolo=$y; rest_forge=$f; merger=$r; lag=$l; admission=$a; branch=$b
+while IFS=' ' read -r m y f r l a e b; do
+  mode=$m; yolo=$y; rest_forge=$f; merger=$r; lag=$l; admission=$a; evidence=$e; branch=$b
 done <<EOF
 $posture
 EOF
@@ -303,6 +317,16 @@ if [ "$WANT_ADMISSION" -eq 1 ]; then
       echo "refused: admission binding \"$admission\" registered for $NAME in $REG is not a config name; name a file in config/admission/, or drop the token" >&2
       exit 3 ;;
     *) echo "${admission#admission=}" ;;
+  esac
+  exit 0
+fi
+if [ "$WANT_EVIDENCE" -eq 1 ]; then
+  case "$evidence" in
+    none) ;;
+    ready-evidence=*[!A-Za-z0-9._-]*|ready-evidence=)
+      echo "refused: ready-evidence binding \"$evidence\" registered for $NAME in $REG is not a file name; name a file under config/ready-evidence/, or drop the token" >&2
+      exit 3 ;;
+    *) echo "${evidence#ready-evidence=}" ;;
   esac
   exit 0
 fi

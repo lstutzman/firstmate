@@ -1606,6 +1606,31 @@ A missing or malformed config, a classifier that fails or prints an empty or und
 A project with no `admission=` token merges exactly as before, and like `merger=` the token is read from the merging home's own registry, which is not inherited.
 `bin/fm-admission-lib.sh` owns the config format and classifier contract, `bin/fm-pr-merge.sh`'s header owns the merge-time check, and `bin/fm-project-mode.sh --admission <name>` reads the binding back.
 
+## Ready evidence (data/projects.md ready-evidence= token, config/ready-evidence/)
+
+A project entry may name a ready-evidence command set with `ready-evidence=<name>`, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti ready-evidence=pc-ready] - ...`.
+The command set is the local, gitignored bash file `config/ready-evidence/<name>` in the same home, run from the project clone with the PR URL as `$1` and the named head as `$2`, under `bash -e -o pipefail` so every command in it must succeed.
+`bin/fm-dod-lib.sh` runs it after the named-head gate accepts a ship's ready `done:`, so `bin/fm-crew-state.sh` reports a done whose evidence fails as blocked with the command's output, and `bin/fm-pr-check.sh` refuses to register that PR, including the merge-time re-record that runs before the merge.
+The file lives in captain-private config rather than the project or the worker's copy, because a worker that can edit its own evidence check has no check.
+A missing file, a missing clone, a malformed token, or a run longer than `FM_READY_EVIDENCE_TIMEOUT` seconds (default 30) refuses the done rather than skipping the check.
+A done gate re-reads current state, so an opted-in done ship reruns its evidence on every state read until cleanup; keep the commands quick.
+Like `merger=`, the registry is not inherited, so every home that checks the project's handoffs must carry the token and the file.
+A project with no `ready-evidence=` token keeps today's done gate exactly.
+`bin/fm-project-mode.sh --ready-evidence <name>` reads the binding back, and `bin/fm-dod-lib.sh`'s header owns how the command set runs.
+
+For PropertyCompass2, whose `scripts/claude-hooks/verify-pr-review.py` reads a PreToolUse payload on stdin and always exits 0, the command set tests the hook's decision and the PR body headings:
+
+```bash
+decision=$(printf '{"tool_name":"Bash","tool_input":{"command":"gh pr merge %s --merge --match-head-commit %s"}}' "$1" "$2" \
+  | python3 scripts/claude-hooks/verify-pr-review.py)
+printf '%s' "$decision" | jq -e '.hookSpecificOutput.permissionDecision == "allow"' >/dev/null \
+  || { printf '%s' "$decision" | jq -r '.hookSpecificOutput.permissionDecisionReason'; exit 1; }
+body=$(gh pr view "$1" --json body -q .body)
+for heading in Testing Risk 'How to revert'; do
+  printf '%s\n' "$body" | grep -Eq "^#+ $heading\$" || { echo "PR body has no $heading heading"; exit 1; }
+done
+```
+
 ## External review tool (config/external-review.md, config/external-review-url, config/external-review-backup)
 
 These optional local, gitignored files configure a home's `forge=external` projects; a home with no such project needs none of them.

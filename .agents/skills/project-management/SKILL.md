@@ -73,6 +73,9 @@ The optional `landing-lag=<hours>` token holds back new ships for the project wh
 
 The optional `admission=<config>` token makes `bin/fm-pr-merge.sh` refuse a PR whose changes the project's own classifier flags in a class that needs the captain's word, until the captain's answer is recorded; register it only on the captain's instruction, and `docs/configuration.md` "Admission by class" owns the config and its meaning.
 
+The optional `ready-evidence=<name>` token names the command set `config/ready-evidence/<name>` that must pass before a ship's ready `done:` is accepted or its PR registered.
+Register it only on the captain's instruction, together with that file; `docs/configuration.md` "Ready evidence" owns its meaning, and a project with no token keeps today's done gate.
+
 ## Add or clone an existing project
 
 Confirm the source URL, local project name, delivery posture, and autonomy posture, stating the resolved default for each rather than asking the captain to invent one.

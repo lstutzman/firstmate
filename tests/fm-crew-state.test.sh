@@ -2424,6 +2424,40 @@ test_unpushed_ship_done_is_blocked() {
   pass "unpushed ship done: is current-state blocked"
 }
 
+# A pushed ship done whose project's ready evidence fails is not current-state
+# done: it reads blocked with the evidence command's output.
+test_failing_ready_evidence_done_is_blocked() {
+  reset_fakes
+  local d sha out
+  d=$(new_case evproj)
+  make_repo_on_branch "$d/wt" fm/evidence
+  git -C "$d/wt" commit -q --allow-empty -m 'the fix'
+  sha=$(git -C "$d/wt" rev-parse HEAD)
+  git -C "$d/wt" update-ref refs/remotes/origin/fm/evidence "$sha"
+  make_fakebin "$d" >/dev/null
+  mkdir -p "$d/data" "$d/config/ready-evidence"
+  printf '%s\n' '- evproj [direct-PR ready-evidence=pc] - fixture (added 2026-01-01)' > "$d/data/projects.md"
+  # shellcheck disable=SC2016  # The literal $2 is the command set's own argument.
+  printf '%s\n' 'echo "no review marker for $2"' 'exit 1' > "$d/config/ready-evidence/pc"
+  mkdir -p "$d/evproj"
+  fm_write_meta "$d/state/evidence.meta" \
+    "window=fm:fm-evidence" "worktree=$d/wt" "project=$d/evproj" \
+    "kind=ship" "mode=direct-PR" "harness=claude"
+  printf 'done: PR https://example.test/o/r/pull/21\n' > "$d/state/evidence.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" evidence
+  out=$(FM_DATA_OVERRIDE="$d/data" FM_CONFIG_OVERRIDE="$d/config" run_crew_state "$d" evidence)
+  assert_contains "$out" "state: blocked" "a done whose ready evidence fails must not read as done"
+  assert_contains "$out" "ready evidence pc refused https://example.test/o/r/pull/21 at $sha: no review marker for $sha" \
+    "the blocked reason must carry the evidence output"
+  printf '%s\n' 'true' > "$d/config/ready-evidence/pc"
+  out=$(FM_DATA_OVERRIDE="$d/data" FM_CONFIG_OVERRIDE="$d/config" run_crew_state "$d" evidence)
+  assert_contains "$out" "state: done" "a done whose ready evidence passes reads done"
+  pass "a ship done whose ready evidence fails is current-state blocked with the command's output"
+}
+
 # Fleet snapshot hands crew-state a captured meta copy outside state/. The
 # poll's merge marker stays in the live state dir, so a squash-merged PR whose
 # branch fleet sync pruned still reads done there.
@@ -5657,6 +5691,7 @@ test_terminal_run_without_live_sibling_is_unchanged
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
 test_other_branch_run_ignored
 test_unpushed_ship_done_is_blocked
+test_failing_ready_evidence_done_is_blocked
 test_merged_pr_reads_done_under_captured_meta
 test_no_mistakes_prevalidation_done_stays_done
 test_moved_remote_branch_without_named_head_is_blocked

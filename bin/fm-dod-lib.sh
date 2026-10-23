@@ -47,6 +47,18 @@
 # also hold the result of a passed run. These live reads are the one check at the ready
 # decision; a later rebase or patch set on the server does not revoke an armed
 # task's done. Teardown's landed-work test remains the complete discard gate.
+# Once the named head is accepted, a project registered with
+# ready-evidence=<n> (bin/fm-project-mode.sh owns the binding) must also pass
+# its ready evidence: this home's config/ready-evidence/<n>, run from the
+# project clone as `bash -e -o pipefail <file> <pr-url> <head>`, so every
+# command in it must succeed, within FM_READY_EVIDENCE_TIMEOUT seconds
+# (default 30). <pr-url> is the done's PR URL or empty; <head> is the
+# forge-recorded pr_head for the task's recorded no-mistakes PR, otherwise the
+# worker copy's HEAD. A failure, timeout, missing file, missing clone, or
+# unreadable binding refuses the done with the command's combined output on one
+# line. The file lives in captain-private config rather than the worker's copy,
+# because a worker that can edit its own evidence check has no check. A project
+# with no token runs nothing and keeps the gate above exactly.
 # The block opens with the fixed machine-readable "Delivery contract: mode=<mode>"
 # line that bin/fm-spawn.sh checks a ship brief against; a forge=gerrit block
 # appends " forge=gerrit shape=squash" to that line, and a forge=forgejo or
@@ -840,8 +852,53 @@ fm_dod_named_head_reachable_outside_worktree() {  # <worktree> <project> <mode> 
 # pr_head=, and the merge-notified marker; <meta> may be a captured copy
 # (bin/fm-fleet-snapshot.sh), so the marker is read from <state>.
 fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta>]
-  local kind=$1 mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit
-  fm_dod_should_gate_ship_done "$kind" "$mode" "$line" || return 0
+  local mode=$2 wt=$3 meta=${8:-} url head=
+  fm_dod_should_gate_ship_done "$1" "$mode" "$5" || return 0
+  fm_dod_accept_named_head "$@" || return 1
+  url=$(fm_dod_pr_url_from_done_note "$(status_line_note "$5")") || url=
+  if [ -n "$url" ] && [ -n "$meta" ] && [ "$(fm_dod_meta_value "$meta" pr)" = "$url" ] \
+    && fm_dod_forge_head_is_named_head "$mode"; then
+    head=$(fm_dod_meta_value "$meta" pr_head)
+  fi
+  if [ -z "$head" ] && [ -n "$wt" ] && [ -d "$wt" ]; then
+    head=$(git -C "$wt" rev-parse --verify HEAD 2>/dev/null) || head=
+  fi
+  fm_dod_ready_evidence_check "$4" "$url" "$head"
+}
+
+# 0 when <project> registers no ready evidence or its evidence passes for
+# <url> at <head>; 1 with a one-line reason otherwise (contract in the header).
+fm_dod_ready_evidence_check() {  # <project> <url> <head>
+  local project=$1 url=$2 head=$3 pname=${1%/} name file out rc secs=${FM_READY_EVIDENCE_TIMEOUT:-30} lib_dir
+  pname=${pname##*/}
+  # No recorded project means no registry entry, so nothing is registered.
+  [ -n "$pname" ] || return 0
+  lib_dir=$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)
+  if ! name=$(FM_HOME=${FM_HOME:-} "$lib_dir/fm-project-mode.sh" --ready-evidence "$pname" 2>/dev/null); then
+    printf '%s\n' "the ready-evidence binding for $pname cannot be read (run bin/fm-project-mode.sh --ready-evidence $pname for the refusal)"
+    return 1
+  fi
+  [ -n "$name" ] || return 0
+  file="${FM_CONFIG_OVERRIDE:-${FM_HOME:-${FM_ROOT_OVERRIDE:-$lib_dir/..}}/config}/ready-evidence/$name"
+  if [ ! -f "$file" ]; then
+    printf '%s\n' "ready evidence $name is registered for $pname but $file is missing"
+    return 1
+  fi
+  if [ -z "$project" ] || [ ! -d "$project" ]; then
+    printf '%s\n' "ready evidence $name cannot run: the project clone ${project:-(none)} is missing"
+    return 1
+  fi
+  out=$(cd "$project" && fm_run_timed "$secs" bash -e -o pipefail "$file" "$url" "$head" 2>&1 </dev/null) && return 0
+  rc=$?
+  fm_timed_out "$rc" && out="timed out after ${secs}s"
+  out=$(printf '%s' "$out" | tr '\n\t' '  ' | cut -c1-500)
+  printf '%s\n' "ready evidence $name refused ${url:-(no PR URL)} at ${head:-(no head)}: ${out:-exit $rc}"
+  return 1
+}
+
+# The named-head half of fm_dod_accept_ship_done, for a done it gates.
+fm_dod_accept_named_head() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta>]
+  local mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit
   if [ -n "$meta" ] && [ "$(fm_dod_meta_value "$meta" forge)" = external ]; then
     fm_dod_accept_external_review_done "$wt" "$project" "$line" "$meta"
     return

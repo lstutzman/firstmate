@@ -566,6 +566,148 @@ test_external_review_done_with_backup_needs_the_copy() {
   pass "external review done with a backup: refused until HEAD is under refs/remotes/backup/backup/, then accepted"
 }
 
+# Ready evidence (ready-evidence=<n> on a registry line): the gate runs the
+# home's config/ready-evidence/<n> from the project clone with the PR URL and
+# named head, and refuses a done whose evidence fails.
+EV_DATA="$TMP_ROOT/ev-data"
+EV_CONFIG="$TMP_ROOT/ev-config"
+mkdir -p "$EV_DATA" "$EV_CONFIG/ready-evidence"
+cat > "$EV_DATA/projects.md" <<'EOF'
+## Projects
+- evpass [direct-PR ready-evidence=ok] - evidence that passes (added 2026-01-01)
+- evfail [direct-PR ready-evidence=bad] - evidence that fails (added 2026-01-01)
+- evfailbody [direct-PR ready-evidence=badbody] - a middle command fails (added 2026-01-01)
+- evslow [direct-PR ready-evidence=slow] - evidence that hangs (added 2026-01-01)
+- evmissing [direct-PR ready-evidence=absent] - evidence file missing (added 2026-01-01)
+- evblank [direct-PR ready-evidence=] - malformed evidence binding (added 2026-01-01)
+- evnone [direct-PR] - no evidence binding (added 2026-01-01)
+EOF
+cat > "$EV_CONFIG/ready-evidence/ok" <<EOF
+printf '%s|%s|%s\n' "\$(pwd -P)" "\$1" "\$2" >> "$TMP_ROOT/ev.log"
+EOF
+# shellcheck disable=SC2016  # The literal $2 is the command set's own argument.
+printf '%s\n' 'echo "no review marker for $2"' 'echo "second line" >&2' 'exit 4' > "$EV_CONFIG/ready-evidence/bad"
+printf '%s\n' false 'echo "a later command never runs"' > "$EV_CONFIG/ready-evidence/badbody"
+printf '%s\n' 'sleep 20' > "$EV_CONFIG/ready-evidence/slow"
+
+ev_accept() {  # <args to fm_dod_accept_ship_done>
+  FM_DATA_OVERRIDE=$EV_DATA FM_CONFIG_OVERRIDE=$EV_CONFIG FM_READY_EVIDENCE_TIMEOUT=2 fm_dod_accept_ship_done "$@"
+}
+
+ev_fixture() {  # <name>; leaves EV_REPO EV_WT EV_SHA with HEAD pushed
+  EV_REPO="$TMP_ROOT/$1"
+  EV_WT="$TMP_ROOT/$1-wt"
+  fm_git_worktree "$EV_REPO" "$EV_WT" "fm/$1"
+  git -C "$EV_WT" commit -q --allow-empty -m 'the fix'
+  EV_SHA=$(git -C "$EV_WT" rev-parse HEAD)
+  git -C "$EV_WT" update-ref "refs/remotes/origin/fm/$1" "$EV_SHA"
+}
+
+test_ready_evidence_runs_from_the_clone_with_url_and_head() {
+  : > "$TMP_ROOT/ev.log"
+  ev_fixture evpass
+  ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/11' \
+    || fail "passing ready evidence refused the done"
+  [ "$(cat "$TMP_ROOT/ev.log")" = "$(cd "$EV_REPO" && pwd -P)|https://github.com/o/r/pull/11|$EV_SHA" ] \
+    || fail "ready evidence did not run from the clone with the PR URL and head: $(cat "$TMP_ROOT/ev.log")"
+  pass "ready evidence runs from the project clone with the PR URL and named head, and a pass accepts"
+}
+
+test_failing_ready_evidence_refuses_with_its_output() {
+  local reason rc
+  ev_fixture evfail
+  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/12')
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "failing ready evidence accepted the done (exit $rc)"
+  [ "$(printf '%s\n' "$reason" | wc -l | tr -d ' ')" = 1 ] || fail "the refusal was not one line: $reason"
+  assert_contains "$reason" "ready evidence bad refused https://github.com/o/r/pull/12 at $EV_SHA" "the refusal did not name the evidence, PR, and head"
+  assert_contains "$reason" "no review marker for $EV_SHA" "the refusal dropped the command's stdout"
+  assert_contains "$reason" "second line" "the refusal dropped the command's stderr"
+  pass "failing ready evidence refuses the done with the command's output on one line"
+}
+
+test_ready_evidence_stops_at_the_first_failing_command() {
+  local reason
+  ev_fixture evfailbody
+  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/13') \
+    && fail "a command set whose first command fails was accepted"
+  assert_not_contains "$reason" "a later command never runs" "a command after the failing one still ran"
+  pass "ready evidence fails on its first failing command, not only its last"
+}
+
+test_ready_evidence_runs_only_after_the_named_head_gate() {
+  local reason
+  : > "$TMP_ROOT/ev.log"
+  ev_fixture evfail-unpushed
+  git -C "$EV_WT" commit -q --allow-empty -m 'only in the copy'
+  reason=$(ev_accept ship direct-PR "$EV_WT" "$TMP_ROOT/evpass" 'done: PR https://github.com/o/r/pull/14') \
+    && fail "an unpushed head was accepted because evidence passed"
+  assert_contains "$reason" "is unreachable outside the worker copy" "the named-head refusal did not come first"
+  [ ! -s "$TMP_ROOT/ev.log" ] || fail "ready evidence ran for a done the named-head gate refused"
+  pass "ready evidence never replaces the named-head gate"
+}
+
+test_ready_evidence_is_not_run_for_an_ungated_done() {
+  ev_fixture evfail-preval
+  ev_accept ship no-mistakes "$EV_WT" "$TMP_ROOT/evfail" 'done: implementation complete' \
+    || fail "a no-mistakes pre-validation done ran ready evidence"
+  ev_accept scout direct-PR "$EV_WT" "$TMP_ROOT/evfail" 'done: report written' \
+    || fail "a scout done ran ready evidence"
+  pass "an ungated done (pipeline handoff, scout) never runs ready evidence"
+}
+
+test_ready_evidence_uses_the_forge_recorded_head() {
+  local meta forge_head
+  : > "$TMP_ROOT/ev.log"
+  ev_fixture evpass-recorded
+  forge_head=1111111111111111111111111111111111111111
+  meta="$TMP_ROOT/evpass-recorded.meta"
+  fm_write_meta "$meta" kind=ship mode=no-mistakes "worktree=$EV_WT" "project=$TMP_ROOT/evpass" \
+    pr=https://github.com/o/r/pull/15 "pr_head=$forge_head"
+  ev_accept ship no-mistakes "$EV_WT" "$TMP_ROOT/evpass" 'done: PR https://github.com/o/r/pull/15 checks green' \
+    "$TMP_ROOT" evpass-recorded "$meta" || fail "a recorded PR with passing evidence was refused"
+  assert_contains "$(cat "$TMP_ROOT/ev.log")" "|https://github.com/o/r/pull/15|$forge_head" \
+    "ready evidence was not given the forge-recorded head"
+  pass "ready evidence on a recorded no-mistakes PR checks the forge-recorded head"
+}
+
+test_ready_evidence_refuses_when_it_cannot_run() {
+  local reason
+  ev_fixture evmissing
+  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/16') \
+    && fail "a registered evidence file that is missing was accepted"
+  assert_contains "$reason" "ready-evidence/absent" "the missing-file refusal did not name the file"
+  ev_fixture evblank
+  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/17') \
+    && fail "a malformed evidence binding was accepted"
+  assert_contains "$reason" "ready-evidence binding for evblank cannot be read" "the malformed-binding refusal did not name the project"
+  ev_fixture evslow
+  reason=$(ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/18') \
+    && fail "evidence that timed out was accepted"
+  assert_contains "$reason" "timed out after 2s" "the timeout refusal did not say so"
+  ev_fixture evpass-noclone
+  reason=$(ev_accept ship direct-PR "$EV_WT" "$TMP_ROOT/no-such/evpass" 'done: PR https://github.com/o/r/pull/19') \
+    && fail "evidence with no project clone to run in was accepted"
+  assert_contains "$reason" "project clone" "the missing-clone refusal did not say so"
+  pass "a missing file, malformed binding, timeout, or missing clone refuses rather than skipping evidence"
+}
+
+test_no_ready_evidence_binding_keeps_todays_gate() {
+  ev_fixture evnone
+  ev_accept ship direct-PR "$EV_WT" "$EV_REPO" 'done: PR https://github.com/o/r/pull/20' \
+    || fail "a project with no ready-evidence token was refused"
+  pass "a project with no ready-evidence token keeps today's done gate"
+}
+
+test_ready_evidence_runs_from_the_clone_with_url_and_head
+test_failing_ready_evidence_refuses_with_its_output
+test_ready_evidence_stops_at_the_first_failing_command
+test_ready_evidence_runs_only_after_the_named_head_gate
+test_ready_evidence_is_not_run_for_an_ungated_done
+test_ready_evidence_uses_the_forge_recorded_head
+test_ready_evidence_refuses_when_it_cannot_run
+test_no_ready_evidence_binding_keeps_todays_gate
+
 test_external_forge_is_direct_pr_only
 test_external_rule_one_forbids_every_task_push
 test_external_dod_renders_the_adapter
