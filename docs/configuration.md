@@ -1612,7 +1612,7 @@ A project entry may name a ready-evidence command set with `ready-evidence=<name
 The command set is the local, gitignored bash file `config/ready-evidence/<name>` in the same home, run from the project clone with the PR URL as `$1` and the named head as `$2`, under `bash -e -o pipefail` so every command in it must succeed.
 `bin/fm-dod-lib.sh` runs it after the named-head gate accepts a ship's ready `done:`, so `bin/fm-crew-state.sh` reports a done whose evidence fails as blocked with the command's output, and `bin/fm-pr-check.sh` refuses to register that PR, including the merge-time re-record that runs before the merge.
 The file lives in captain-private config rather than the project or the worker's copy, because a worker that can edit its own evidence check has no check.
-A missing file, a missing clone, a malformed token, or a run longer than `FM_READY_EVIDENCE_TIMEOUT` seconds (default 30) refuses the done rather than skipping the check.
+A missing file, a missing clone, a malformed token, or a run longer than `FM_READY_EVIDENCE_TIMEOUT` seconds refuses the done rather than skipping the check.
 A done gate re-reads current state, so an opted-in done ship reruns its evidence on every state read until cleanup; keep the commands quick.
 Like `merger=`, the registry is not inherited, so every home that checks the project's handoffs must carry the token and the file.
 A project with no `ready-evidence=` token keeps today's done gate exactly.

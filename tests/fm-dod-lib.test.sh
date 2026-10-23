@@ -594,6 +594,10 @@ ev_accept() {  # <args to fm_dod_accept_ship_done>
   FM_DATA_OVERRIDE=$EV_DATA FM_CONFIG_OVERRIDE=$EV_CONFIG FM_READY_EVIDENCE_TIMEOUT=2 fm_dod_accept_ship_done "$@"
 }
 
+# The bare clone directories a test may name as its project, independent of
+# which fixtures ran first.
+mkdir -p "$TMP_ROOT/evpass" "$TMP_ROOT/evfail"
+
 ev_fixture() {  # <name>; leaves EV_REPO EV_WT EV_SHA with HEAD pushed
   EV_REPO="$TMP_ROOT/$1"
   EV_WT="$TMP_ROOT/$1-wt"
