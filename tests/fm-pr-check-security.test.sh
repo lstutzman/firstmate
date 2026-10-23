@@ -901,6 +901,44 @@ SH
 # Otherwise the product default applies: a tighter override silently kills a
 # correct poll on a loaded machine, and the watcher then only retries it or
 # exits on a later check's wake without the poll's result.
+# The ready time a PR was first recorded is what landing-lag admission reads
+# (bin/fm-project-capacity-lib.sh), so recording the same PR again keeps it and
+# a different PR starts a new one. It sits before pr= so the identity parse
+# still accepts the record.
+test_ready_time_is_recorded_once_per_pr() {
+  local dir meta before stamp tmp
+  dir=$(make_case ready-time)
+  write_task_meta "$dir"
+  meta="$dir/home/state/task-a.meta"
+  before=$(date +%s)
+  run_check_entry "$dir" task-a https://github.com/o/r/pull/37 >/dev/null 2>&1 \
+    || fail "recording a ready PR failed"
+  stamp=$(sed -n 's/^pr_at=//p' "$meta")
+  case "$stamp" in
+    '' | *[!0-9]*) fail "recording a ready PR wrote no ready time: $(cat "$meta")" ;;
+  esac
+  [ "$stamp" -ge "$before" ] || fail "the ready time $stamp predates the recording at $before"
+  [ "$(grep -c '^pr_at=' "$meta")" -eq 1 ] || fail "the ready time was written more than once"
+  [ "$(grep -n '^pr_at=' "$meta" | cut -d: -f1)" -lt "$(grep -n '^pr=' "$meta" | cut -d: -f1)" ] \
+    || fail "the ready time was written after pr=, where the identity parse rejects it"
+
+  tmp="$meta.tmp"
+  sed 's/^pr_at=.*/pr_at=1000000000/' "$meta" > "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$meta"
+  run_check_entry "$dir" task-a https://github.com/o/r/pull/37 >/dev/null 2>&1 \
+    || fail "recording the same ready PR again failed"
+  [ "$(sed -n 's/^pr_at=//p' "$meta")" = 1000000000 ] \
+    || fail "recording the same PR again reset its ready time: $(grep '^pr_at=' "$meta")"
+
+  run_check_entry "$dir" task-a https://github.com/o/r/pull/38 >/dev/null 2>&1 \
+    || fail "recording a different ready PR failed"
+  stamp=$(sed -n 's/^pr_at=//p' "$meta")
+  [ "$stamp" -ge "$before" ] || fail "a different PR kept the old PR's ready time: $stamp"
+  [ "$(grep -c '^pr_at=' "$meta")" -eq 1 ] || fail "a different PR left two ready times"
+  pass "fm-pr-check records a PR's ready time once, keeps it on a repeat, and restarts it for a different PR"
+}
+
 run_watcher_bounded() {
   local home=$1 fakebin=$2 check_interval=${FM_TEST_CHECK_INTERVAL:-0} watch_root=${FM_TEST_WATCH_ROOT:-$ROOT}
   local check_timeout_env=(-u FM_CHECK_TIMEOUT)
@@ -3634,6 +3672,7 @@ test_secondmate_record_refuses_a_pr_watch
 test_unpushed_named_head_refuses_registration
 test_direct_pr_unpushed_commit_refuses_registration
 test_valid_recording_and_merge_derivation
+test_ready_time_is_recorded_once_per_pr
 test_rejected_metacharacter_bytes_are_inert
 test_static_poll_contract
 test_atomic_interruption_leaves_no_partial_artifact

@@ -36,6 +36,13 @@ cat > "$DATA/projects.md" <<'EOF'
 - landed-first [merger=slarti no-mistakes] - merger token first, order must not matter (added 2026-01-01)
 - landed-blank [direct-PR merger=] - an empty merger binding (added 2026-01-01)
 - landed-bad [direct-PR merger=sl/arti] - a merger that is not a home id (added 2026-01-01)
+- lagged [no-mistakes +yolo merger=slarti landing-lag=48] - landing lag limited to 48 hours (added 2026-01-01)
+- lagged-first [landing-lag=12 direct-PR] - landing-lag token first, order must not matter (added 2026-01-01)
+- lagged-blank [direct-PR landing-lag=] - an empty landing-lag value (added 2026-01-01)
+- lagged-zero [direct-PR landing-lag=0] - a zero landing lag (added 2026-01-01)
+- lagged-word [direct-PR landing-lag=2d] - a landing lag that is not whole hours (added 2026-01-01)
+- lagged-long [direct-PR landing-lag=1234567] - a landing lag longer than six digits (added 2026-01-01)
+- lagged-typo [landing_lag=24 direct-PR] - a near miss of the landing-lag key (added 2026-01-01)
 EOF
 
 run_mode() {
@@ -137,5 +144,40 @@ out=$(run_merger missing-project); status=$?
 out=$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --merger legacy 2>/dev/null); status=$?
 [ "$status" -eq 0 ] && [ -z "$out" ] || fail "an absent registry must print no merger (status $status, got '$out')"
 pass "fm-project-mode: no merger token, a missing project, or an absent registry prints no merger"
+
+run_lag() {
+  FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --landing-lag "$1" 2>/dev/null
+}
+[ "$(run_lag lagged)" = "48" ] || fail "landing-lag=48 did not resolve: $(run_lag lagged)"
+[ "$(run_mode lagged)" = "no-mistakes on" ] || fail "a landing-lag token changed the two-word output: $(run_mode lagged)"
+[ "$(run_merger lagged)" = "slarti" ] || fail "a landing-lag token disturbed the merger binding: $(run_merger lagged)"
+[ "$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --branch-prefix lagged 2>/dev/null)" = "fm/" ] \
+  || fail "a landing-lag token disturbed the branch prefix"
+[ "$(run_lag lagged-first)" = "12" ] || fail "landing-lag= placed before the mode did not resolve: $(run_lag lagged-first)"
+[ "$(run_mode lagged-first)" = "direct-PR off" ] || fail "landing-lag= placed before the mode was read as the mode: $(run_mode lagged-first)"
+err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" lagged-first 2>&1 >/dev/null)
+[ -z "$err" ] || fail "a registered landing-lag= warned: $err"
+pass "fm-project-mode: landing-lag=<hours> binds in any token order and leaves the other outputs unchanged"
+
+for name in lagged-blank lagged-zero lagged-word lagged-long; do
+  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --landing-lag "$name" 2>/dev/null)
+  status=$?
+  [ "$status" -eq 3 ] || fail "a malformed landing lag for $name did not refuse (status $status, got '$out')"
+  [ -z "$out" ] || fail "a refused landing lag for $name still printed '$out'"
+done
+pass "fm-project-mode: an empty, zero, non-integer, or over-long landing lag is refused under --landing-lag"
+
+out=$(run_lag legacy); status=$?
+[ "$status" -eq 0 ] && [ -z "$out" ] || fail "an entry with no landing-lag token must print nothing (status $status, got '$out')"
+out=$(run_lag missing-project); status=$?
+[ "$status" -eq 0 ] && [ -z "$out" ] || fail "a missing project must print no landing lag (status $status, got '$out')"
+out=$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --landing-lag legacy 2>/dev/null); status=$?
+[ "$status" -eq 0 ] && [ -z "$out" ] || fail "an absent registry must print no landing lag (status $status, got '$out')"
+pass "fm-project-mode: no landing-lag token, a missing project, or an absent registry prints no landing lag"
+
+[ "$(run_mode lagged-typo)" = "direct-PR off" ] || fail "a near miss of landing-lag was read as the mode: $(run_mode lagged-typo)"
+err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --landing-lag lagged-typo 2>&1 >/dev/null)
+assert_contains "$err" "landing-lag=<hours>" "a near miss of the landing-lag key was ignored without a warning"
+pass "fm-project-mode: a near miss of the landing-lag key warns and is not read as the mode"
 
 echo "# fm-project-mode.test.sh: all assertions passed"

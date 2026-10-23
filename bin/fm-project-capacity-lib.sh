@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # fm-project-capacity-lib.sh - how many workers a project admits at once on this
-# machine, and whether a fresh worker spawn still fits.
+# machine, whether a fresh worker spawn still fits, and whether the project's
+# landing lags too far behind to start another ship.
 #
 # A project can depend on a machine-local resource that only a few workers can
 # use at the same time: a heavy test suite, a local editor stack, a device.
@@ -66,6 +67,25 @@
 # caps any project; Orca, which otherwise never takes it, is included. Freeing a
 # place needs no lock, because removing a record or adding pr= only ever lowers
 # the count.
+#
+# Landing lag: a project registered with landing-lag=<hours> in the spawning
+# home's data/projects.md (bin/fm-project-mode.sh owns the token) starts no new
+# ship while its oldest ready PR has waited more than that many hours to land.
+# A ready PR is a task record of the same project identity, found by the same
+# local-homes walk as occupancy above, that carries pr=; its age is now minus
+# the pr_at=<epoch> bin/fm-pr-check.sh records when that PR is first recorded.
+# bin/fm-spawn.sh owns the verdict and the exemptions: a relaunch, a scout, a
+# secondmate, and a ship spawned with --landing-exempt (a fix or landing work)
+# are never held. A project with no landing-lag token is never held.
+# Unlike occupancy, a signal that cannot be read never holds a spawn: when the
+# local homes or a record cannot be read, or a ready PR has no pr_at= (one
+# recorded before ready times existed), the spawn goes ahead with one warning
+# line, unless a PR whose age is known already exceeds the lag, since the oldest
+# PR is at least that old. A registered value that is not a whole number of
+# hours still refuses the spawn, like an unreadable capacity declaration.
+# Known limits: a ready PR held for the captain's word, a dependency, or a
+# release day counts like any other; a paused landing is not read; a merged PR
+# counts until its task is cleaned up; and remote homes are never walked.
 #
 # Requires bin/fm-wake-lib.sh (root home, local homes, project lock path),
 # bin/fm-secondmate-registry-lib.sh (which the local-homes walk reads), and
@@ -161,24 +181,22 @@ fm_project_capacity_lookup() {  # <config-dir> <project-name>
   return 0
 }
 
-# Count the task records holding a place in one project's capacity.
+# Collect this machine's worker task records for one project identity.
 # <project-lock> is fm_treehouse_project_lock_path for the project being
 # admitted, and <project-dir> is that project's own directory, which matches
 # without recomputing its identity. The local homes come from
 # fm_local_firstmate_state_dirs <first-state>. <own-id> is the task being
 # admitted; its own record in <first-state> is the one this spawn replaces, so
-# it is not counted.
-# Sets FM_PROJECT_CAPACITY_OCCUPANTS to the count and
-# FM_PROJECT_CAPACITY_OCCUPANT_IDS to a comma-separated list of the holders,
-# each outside <first-state> qualified with its home. Returns 1 with
-# FM_PROJECT_CAPACITY_ERROR when the local homes cannot be enumerated, or when
-# a state directory or task record in them cannot be read, since skipping it
-# could undercount the holders.
-fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> <own-id>
+# it is skipped, and secondmate records are skipped.
+# Sets FM_PROJECT_RECORDS to the record paths and FM_PROJECT_RECORD_LABELS to
+# their task ids, each outside <first-state> qualified with its home. Returns 1
+# with FM_PROJECT_CAPACITY_ERROR when the local homes cannot be enumerated, or
+# when a state directory or task record in them cannot be read.
+fm_project_records() {  # <project-lock> <project-dir> <first-state> <own-id>
   local want=$1 own=$2 first=$3 self=$4 state meta kind project lock id label i
   local -a cache_dirs cache_locks
-  FM_PROJECT_CAPACITY_OCCUPANTS=0
-  FM_PROJECT_CAPACITY_OCCUPANT_IDS=
+  FM_PROJECT_RECORDS=()
+  FM_PROJECT_RECORD_LABELS=()
   FM_PROJECT_CAPACITY_ERROR=
   fm_local_firstmate_state_dirs "$first" || {
     FM_PROJECT_CAPACITY_ERROR=$FM_LOCAL_FIRSTMATE_ERROR
@@ -200,7 +218,6 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
       }
       kind=$(fm_meta_get "$meta" kind)
       [ "$kind" != secondmate ] || continue
-      [ -z "$(fm_meta_get "$meta" pr)" ] || continue
       project=$(fm_meta_get "$meta" project)
       [ -n "$project" ] || continue
       lock=
@@ -221,9 +238,69 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
       id=$(basename "$meta" .meta)
       label=$id
       [ "$state" = "$first" ] || label="$id in $(dirname "$state")"
-      FM_PROJECT_CAPACITY_OCCUPANTS=$((FM_PROJECT_CAPACITY_OCCUPANTS + 1))
-      FM_PROJECT_CAPACITY_OCCUPANT_IDS="${FM_PROJECT_CAPACITY_OCCUPANT_IDS:+$FM_PROJECT_CAPACITY_OCCUPANT_IDS, }$label"
+      FM_PROJECT_RECORDS+=("$meta")
+      FM_PROJECT_RECORD_LABELS+=("$label")
     done
+  done
+  return 0
+}
+
+# Count the task records holding a place in one project's capacity: every
+# fm_project_records record with no recorded pr= handoff.
+# Sets FM_PROJECT_CAPACITY_OCCUPANTS to the count and
+# FM_PROJECT_CAPACITY_OCCUPANT_IDS to a comma-separated list of the holders.
+# Returns 1 with FM_PROJECT_CAPACITY_ERROR when fm_project_records does, since
+# skipping an unreadable record could undercount the holders.
+fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> <own-id>
+  local i=0
+  FM_PROJECT_CAPACITY_OCCUPANTS=0
+  FM_PROJECT_CAPACITY_OCCUPANT_IDS=
+  fm_project_records "$@" || return 1
+  while [ "$i" -lt "${#FM_PROJECT_RECORDS[@]}" ]; do
+    if [ -z "$(fm_meta_get "${FM_PROJECT_RECORDS[$i]}" pr)" ]; then
+      FM_PROJECT_CAPACITY_OCCUPANTS=$((FM_PROJECT_CAPACITY_OCCUPANTS + 1))
+      FM_PROJECT_CAPACITY_OCCUPANT_IDS="${FM_PROJECT_CAPACITY_OCCUPANT_IDS:+$FM_PROJECT_CAPACITY_OCCUPANT_IDS, }${FM_PROJECT_RECORD_LABELS[$i]}"
+    fi
+    i=$((i + 1))
+  done
+  return 0
+}
+
+# Find one project's oldest ready PR: the fm_project_records record carrying
+# pr= whose pr_at= is earliest.
+# Sets FM_PROJECT_LANDING_AGE to that PR's age in seconds at <now-epoch>, or to
+# empty when no ready PR has a readable pr_at=, FM_PROJECT_LANDING_PR to its URL,
+# and FM_PROJECT_LANDING_TASK to its task label. Sets
+# FM_PROJECT_LANDING_UNTIMED to a comma-separated list of the task labels of
+# ready PRs whose pr_at= is missing or not an epoch, and
+# FM_PROJECT_LANDING_UNTIMED_COUNT to their number. Returns 1 with
+# FM_PROJECT_CAPACITY_ERROR when fm_project_records does.
+fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own-id> <now-epoch>
+  local now=$5 i=0 meta pr at age
+  FM_PROJECT_LANDING_AGE=
+  FM_PROJECT_LANDING_PR=
+  FM_PROJECT_LANDING_TASK=
+  FM_PROJECT_LANDING_UNTIMED=
+  FM_PROJECT_LANDING_UNTIMED_COUNT=0
+  fm_project_records "$1" "$2" "$3" "$4" || return 1
+  while [ "$i" -lt "${#FM_PROJECT_RECORDS[@]}" ]; do
+    meta=${FM_PROJECT_RECORDS[$i]}
+    pr=$(fm_meta_get "$meta" pr)
+    at=$(fm_meta_get "$meta" pr_at)
+    if [ -z "$pr" ]; then
+      :
+    elif [ -z "$at" ] || [ -n "${at//[0-9]/}" ]; then
+      FM_PROJECT_LANDING_UNTIMED_COUNT=$((FM_PROJECT_LANDING_UNTIMED_COUNT + 1))
+      FM_PROJECT_LANDING_UNTIMED="${FM_PROJECT_LANDING_UNTIMED:+$FM_PROJECT_LANDING_UNTIMED, }${FM_PROJECT_RECORD_LABELS[$i]}"
+    else
+      age=$((now - 10#$at))
+      if [ -z "$FM_PROJECT_LANDING_AGE" ] || [ "$age" -gt "$FM_PROJECT_LANDING_AGE" ]; then
+        FM_PROJECT_LANDING_AGE=$age
+        FM_PROJECT_LANDING_PR=$pr
+        FM_PROJECT_LANDING_TASK=${FM_PROJECT_RECORD_LABELS[$i]}
+      fi
+    fi
+    i=$((i + 1))
   done
   return 0
 }
