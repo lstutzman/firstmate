@@ -1,0 +1,3 @@
+fixture processes left after both runs (tmproot fm-supervision-host.* or this worktree's host/watch scripts):
+count=0
+live now:

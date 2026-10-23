@@ -1,0 +1,7 @@
+== adversarial: unsplit file with its measured green time (1330504 ms) ==
+866:tests/fm-supervision-host-attended-live-e2e.test.sh 49
+867:tests/fm-supervision-host-live-e2e.test.sh 75
+868:tests/fm-supervision-host.test.sh 1330504
+fm-test-run: coverage guard: largest portable serial shard packs 1330504ms above the 1200000ms target
+fm-test-run: refresh CI hints and rebalance or add shards; do not raise the job timeout: docs/fm-test-portable-shards.md
+exit=

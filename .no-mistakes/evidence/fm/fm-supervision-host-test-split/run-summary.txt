@@ -1,0 +1,2 @@
+tests/fm-supervision-host.test.sh exit=0 seconds=952
+tests/fm-supervision-host-limits.test.sh exit=0 seconds=416

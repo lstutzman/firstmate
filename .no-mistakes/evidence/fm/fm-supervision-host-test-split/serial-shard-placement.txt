@@ -1,0 +1,4 @@
+shard 2: tests/fm-supervision-host.test.sh 
+shard 3: tests/fm-supervision-host-limits.test.sh 
+shard 4: tests/fm-supervision-host-live-e2e.test.sh 
+shard 5: tests/fm-supervision-host-attended-live-e2e.test.sh 

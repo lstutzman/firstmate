@@ -1,0 +1,2 @@
+base invoked:       75  head invoked (both files):       75  dups:        0
+IDENTICAL CASE SET
