@@ -139,9 +139,12 @@
 # contract). The changed-file list is read from GitHub between two reads of
 # the verified head, and refuses when the head moved or the list is
 # incomplete; a stack checks each member. A flagged class is admitted only by
-# a captain answer recorded on task <task-id>-admit-<class> through
-# bin/fm-captain-hold.sh answer, and the refusal prints the exact hold and
-# answer commands. The answer is the captain's words, not a yes bit: as with a
+# a captain answer recorded through bin/fm-captain-hold.sh answer on task
+# <task-id>-admit-<pr-number>-<class>, held with the title
+# "Admit <pr-url>: <class>", and the refusal prints the exact hold and answer
+# commands. The answer is bound to that PR and to the classes it was given
+# for, never to a head: a later push that flags no new class keeps it, while a
+# different PR or a newly flagged class needs the captain's word again. The answer is the captain's words, not a yes bit: as with a
 # released captain hold, firstmate runs the merge only on a yes. A missing or
 # malformed config, a classifier that fails, and a non-GitHub forge all refuse,
 # and neither yolo, --attended-override, nor the away posture skips the check.
@@ -1637,7 +1640,7 @@ require_released_captain_hold() {
 # the header owns the contract. Reads the changed files, then the head again,
 # so the list is the verified head's.
 require_admission_answers() {  # <verified-head>
-  local head=$1 paths files listed pull live_head changed class flagged missing='' rc
+  local head=$1 paths files listed pull live_head changed class flagged missing='' rc call
   [ -n "$MERGE_ADMISSION" ] || return 0
   paths=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-admission.XXXXXX") || return 1
   # --paginate prints one JSON array per page; jq reads them as one stream.
@@ -1675,26 +1678,27 @@ require_admission_answers() {  # <verified-head>
   while IFS= read -r class; do
     [ -n "$class" ] || continue
     rc=0
+    call="$ID-admit-$PR_NUMBER-$class"
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-      "$SCRIPT_DIR/fm-captain-hold.sh" answered "$ID-admit-$class" || rc=$?
+      "$SCRIPT_DIR/fm-captain-hold.sh" answered "$call" --title "Admit $URL: $class" || rc=$?
     case "$rc" in
       0) ;;
       1) missing="$missing $class" ;;
       *)
-        echo "error: PR merge refused: whether the captain answered admission call $ID-admit-$class could not be read" >&2
+        echo "error: PR merge refused: whether the captain answered admission call $call could not be read" >&2
         return 1
         ;;
     esac
   done <<< "$flagged"
   [ -n "$missing" ] || return 0
-  echo "error: PR merge refused: $URL changes${missing}, which need the captain's recorded word before merging; hold each class for the captain, then record the captain's exact words:" >&2
+  echo "error: PR merge refused: $URL changes${missing}, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:" >&2
   for class in $missing; do
     printf 'FM_HOME=%q %q hold %q --title %q --reason %q --repo %q\n' \
-      "$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" "$ID-admit-$class" \
+      "$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" "$ID-admit-$PR_NUMBER-$class" \
       "Admit $URL: $class" "$URL changes $class, which needs the captain's word before it merges" \
       "$(basename "$MERGE_PROJECT")" >&2
     printf 'FM_HOME=%q %q answer %q --decision-file <file-with-the-captains-words>\n' \
-      "$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" "$ID-admit-$class" >&2
+      "$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" "$ID-admit-$PR_NUMBER-$class" >&2
   done
   return 1
 }

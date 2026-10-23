@@ -1599,7 +1599,8 @@ clear=none
 
 The classifier runs in the home's copy of the project, never the PR's head, so a PR cannot rewrite the classifier that judges it.
 It reads the PR's changed paths on stdin, one per line and including a renamed file's old path, and prints verdict words on stdout; every word must appear in `classes=` or `clear=`, and at least one must be printed, so a classifier that ignores its mode and prints another verdict refuses rather than admitting every change.
-For each flagged class the merge is refused until task `<task-id>-admit-<class>` carries the captain's answer, recorded through `bin/fm-captain-hold.sh answer`; the refusal names each class and prints the exact `hold` and `answer` commands.
+For each flagged class the merge is refused until task `<task-id>-admit-<pr-number>-<class>`, held with the title `Admit <pr-url>: <class>`, carries the captain's answer, recorded through `bin/fm-captain-hold.sh answer`; the refusal names each class and prints the exact `hold` and `answer` commands.
+An answer is bound to its PR and to the classes it was given for, not to a head: a later push that flags no new class keeps it, while a different PR or a newly flagged class needs the captain's word again.
 The answer is the captain's words: as with any captain hold, firstmate merges only when those words say yes.
 A missing or malformed config, a classifier that fails or prints an empty or undeclared verdict, an unreadable or incomplete changed-file list, and a forge other than GitHub all refuse the merge rather than skipping the check, and neither `yolo`, `--attended-override`, nor the away posture skips it.
 A project with no `admission=` token merges exactly as before, and like `merger=` the token is read from the merging home's own registry, which is not inherited.

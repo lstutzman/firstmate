@@ -459,30 +459,43 @@ test_stack_member_with_a_flagged_class_needs_the_captains_answer() {
   printf '%s\n' '## Projects' '- project [no-mistakes +yolo admission=risky] - fixture (added 2026-01-01)' \
     > "$case_dir/home/data/projects.md"
   mkdir -p "$case_dir/home/config/admission" "$case_dir/project"
-  printf '%s\n' 'command=./classify.sh' 'classes=payments' 'clear=code docs' \
+  printf '%s\n' 'command=./classify.sh' 'classes=payments legal-text' 'clear=code docs' \
     > "$case_dir/home/config/admission/risky"
-  printf '%s\n' '#!/usr/bin/env bash' 'if grep -q Billing; then echo code payments; else echo docs; fi' \
+  printf '%s\n' '#!/usr/bin/env bash' 'paths=$(cat)' \
+    'case "$paths" in *Billing*) printf "code payments " ;; *) printf "docs " ;; esac' \
+    'case "$paths" in *Terms*) printf "legal-text" ;; esac' 'echo' \
     > "$case_dir/project/classify.sh"
   chmod +x "$case_dir/project/classify.sh"
   printf '[{"filename":"src/Billing/Invoice.cs"}]\n' > "$case_dir/files-2.json"
   run_default_stack "$case_dir" || rc=$?
   [ "$rc" -ne 0 ] || fail "admission: a stack with a flagged member merged without the captain's answer"
-  assert_grep 'hold task-b2-admit-payments' "$case_dir/stderr" \
+  assert_grep 'hold task-b2-admit-2-payments' "$case_dir/stderr" \
     "admission: the refusal did not name the flagged member's hold"
   assert_no_grep 'task-b1-admit' "$case_dir/stderr" "admission: an unflagged member was asked for an answer"
   assert_no_merge_request "$case_dir" admission
 
   printf 'Yes, merge the billing layer.\n' > "$case_dir/captain-words"
-  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" hold task-b2-admit-payments \
-    --title "Admit the billing layer" --reason "captain word needed" --repo project >/dev/null \
+  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" hold task-b2-admit-2-payments \
+    --title "Admit $REPO_URL/pull/2: payments" --reason "captain word needed" --repo project >/dev/null \
     || fail "admission: could not hold the flagged member for the captain"
-  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" answer task-b2-admit-payments \
+  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" answer task-b2-admit-2-payments \
     --decision-file "$case_dir/captain-words" >/dev/null \
     || fail "admission: could not record the captain's answer"
   rc=0
   run_default_stack "$case_dir" || rc=$?
   expect_code 0 "$rc" "admission: the answered stack should merge ($(cat "$case_dir/stderr"))"
-  pass "a stack member whose changes flag an admission class needs the captain's answer on its own task"
+
+  # The same member flagging a class it was not answered for refuses again.
+  printf '[{"filename":"src/Billing/Invoice.cs"},{"filename":"src/Terms/Terms.cshtml"}]\n' > "$case_dir/files-2.json"
+  printf '{"number":2,"head":{"sha":"%s"},"changed_files":2}\n' "$H2" > "$case_dir/pull-2.json"
+  : > "$case_dir/gh.log"
+  rc=0
+  run_default_stack "$case_dir" || rc=$?
+  [ "$rc" -ne 0 ] || fail "admission: a member's changed class set merged on its earlier answer"
+  assert_grep 'hold task-b2-admit-2-legal-text' "$case_dir/stderr" \
+    "admission: the refusal did not name the member's newly flagged class"
+  assert_no_merge_request "$case_dir" admission
+  pass "a stack member whose changes flag an admission class needs the captain's answer for that PR and class set"
 }
 
 test_stack_merges_and_records_every_member

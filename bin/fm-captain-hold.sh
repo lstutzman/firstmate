@@ -31,7 +31,7 @@
 #   fm-captain-hold.sh complete <origin-id> (--none | <task-id>...)
 #   fm-captain-hold.sh verify <origin-id>
 #   fm-captain-hold.sh open <task-id> [--identity] [--distinguish-absent]
-#   fm-captain-hold.sh answered <task-id>
+#   fm-captain-hold.sh answered <task-id> [--title <title>]
 #   fm-captain-hold.sh diverged
 #   fm-captain-hold.sh reconcile list
 #   fm-captain-hold.sh reconcile close <task-id> --evidence-file <path>
@@ -196,8 +196,10 @@
 # call? Exit 0 means the task is not an open captain call and its newest
 # resolution record carries the captain's words (mode answered, released, or
 # repaired); 1 means it does not (absent, still held, never answered, or
-# closed on reconciliation evidence); 2 or any other status means it could not
-# be established. It prints nothing and mutates nothing.
+# closed on reconciliation evidence, or its title is not the --title given);
+# 2 or any other status means it could not be established. --title binds the
+# answer to what the call was about: the title is fixed when the task is held
+# and `hold` refuses a different one. It prints nothing and mutates nothing.
 #
 # `diverged` is the read-only guard over the seam between the two records of
 # one captain call. See "record divergence" beside command_diverged below.
@@ -2051,9 +2053,15 @@ command_open() {  # <task-id> [--identity] [--distinguish-absent]
   exit 2
 }
 
-command_answered() {  # <task-id>
-  local id=${1:-} rc=0 body
-  [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+command_answered() {  # <task-id> [--title <title>]
+  local id=${1:-} rc=0 body want_title='' check_title=0
+  [ "$#" -ge 1 ] || { usage >&2; exit 2; }
+  shift
+  case "$#:${1:-}" in
+    0:) ;;
+    2:--title) want_title=$2; check_title=1 ;;
+    *) usage >&2; exit 2 ;;
+  esac
   (command_open "$id" --distinguish-absent) || rc=$?
   case "$rc" in
     0|3) return 1 ;;
@@ -2061,6 +2069,10 @@ command_answered() {  # <task-id>
     *) exit 2 ;;
   esac
   task_show "$id" || exit 2
+  if [ "$check_title" -eq 1 ] \
+    && [ "$(show_field_value "$TASK_SHOW_OUTPUT" title)" != "$want_title" ]; then
+    return 1
+  fi
   body=$(show_field "$TASK_SHOW_OUTPUT" body)
   body_has_resolution_record "$body" || return 1
   case "$(recorded_resolution_mode "$body" || true)" in

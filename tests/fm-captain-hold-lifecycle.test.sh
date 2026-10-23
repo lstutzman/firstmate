@@ -898,6 +898,15 @@ test_answered_reports_only_a_recorded_captain_answer() {
   run_captain "$home" answer sample-admit --decision-file "$home/yes.txt" >/dev/null \
     || fail "could not answer the sample call"
   [ "$(answered_rc sample-admit)" = 0 ] || fail "answered rejected a call the captain answered"
+  rc=0
+  run_captain "$home" answered sample-admit --title "Admit the sample PR" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "answered rejected the title the call was held with (status $rc)"
+  rc=0
+  run_captain "$home" answered sample-admit --title "Admit another PR" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ] || fail "answered accepted an answer given for a different title (status $rc)"
+  rc=0
+  run_captain "$home" answered sample-admit --title >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || fail "answered accepted --title with no title (status $rc)"
 
   run_captain "$home" hold sample-plain --reason "captain go needed" >/dev/null
   run_captain "$home" answer sample-plain --decision-file "$home/yes.txt" --release >/dev/null \
