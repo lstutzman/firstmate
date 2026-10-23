@@ -1629,7 +1629,7 @@ printf '%s' "$decision" | jq -e '.hookSpecificOutput.permissionDecision == "allo
   || { printf '%s' "$decision" | jq -r '.hookSpecificOutput.permissionDecisionReason'; exit 1; }
 body=$(gh pr view "$1" --json body -q .body | tr -d '\r')
 for heading in Testing Risk 'How to revert'; do
-  printf '%s\n' "$body" | grep -Eq "^#+ $heading\$" || { echo "PR body has no $heading heading"; exit 1; }
+  grep -Eq "^#+ $heading\$" <<<"$body" || { echo "PR body has no $heading heading"; exit 1; }
 done
 ```
 
