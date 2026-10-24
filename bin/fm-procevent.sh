@@ -180,10 +180,10 @@
 #
 # Polling again is adapter-owned through the same kind of seam. An adapter that
 # answers exit 0 to `bin/fm-procevent-<adapter>.sh relisten` keeps this runner
-# and its claim across an empty result and across a capture, and the runner
-# polls the registration that claim still owns. It adopts a replacement
-# registration only when that same claim still owns it and the registered
-# command is unchanged. A missing command, an error, or any other exit releases
+# and its claim across an empty result, across a capture, and across a re-arm
+# that lands between polls, and the runner polls the registration that claim
+# still owns. It adopts a replacement registration only when that same claim
+# still owns it and the registered command is unchanged. A missing command, an error, or any other exit releases
 # the claim after that one result, exactly as before. The runner still does not
 # refresh the owner lease, so a home that has gone still ends the poll.
 #
@@ -1214,11 +1214,16 @@ cmd_start() {
   fm_procevent_launch_floor_wait "$STATE" "$id" "$CLAIM_REG_IDENTITY" "$launch_floor"
   case "$?" in
     0) ;;
-    # A superseded generation leaves nothing behind. The runner marker is
-    # written before this wait, and a home sweep counts a marker with no owned
-    # claim as a preflight failure, so exiting without removing it would make
-    # that home refuse to sweep.
-    2) [ "$extension_owner" -eq 1 ] || rm -f -- "$runner"; exit 0 ;;
+    # A relisten adapter adopts a same-command re-arm here (see the header's
+    # polling-again note). Any other superseded generation leaves nothing
+    # behind. The runner marker is written before this wait, and a home sweep
+    # counts a marker with no owned claim as a preflight failure, so exiting
+    # without removing it would make that home refuse to sweep.
+    2)
+      adopt_relisten && continue
+      [ "$extension_owner" -eq 1 ] || rm -f -- "$runner"
+      exit 0
+      ;;
     *) die "cannot enforce the source launch floor: $id" ;;
   esac
   exec 7<&-

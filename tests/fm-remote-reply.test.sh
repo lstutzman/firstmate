@@ -836,6 +836,44 @@ fi
 stop_reply_listener || fail "the continuity listener did not stop"
 pass "a remote reply listener stays owned across empty waits and a delta"
 
+# `handle` and `arm` re-register the same source with the same argv. One that
+# lands while the listener is between polls is the registration the listener
+# already serves, so it must keep listening rather than exit as superseded and
+# leave the next line uncaptured. Arming afresh clears the launch-pacing stamp
+# so the first poll starts at once; the launch floor outlasting the one-second
+# window then parks the listener between polls, and the caught-up watermark an
+# empty window publishes marks the moment it gets there.
+rm -f -- "$PARENT/state/remote-replies/ios.caught-up"
+remote_env "$ADAPTER" arm ios >/dev/null || fail "the reply source could not be armed afresh"
+FM_REMOTE_REPLY_WAIT_SECONDS=1 FM_PROCEVENT_LAUNCH_FLOOR_SECONDS=10 \
+  remote_env "$ROOT/bin/fm-procevent.sh" start "$SID" >/dev/null 2>&1 &
+wait_for "$CLAIMS/$SID.claim" || fail "the re-armed listener never claimed the source"
+HELD_PID=$(sed -n '2p' "$CLAIMS/$SID.claim")
+for _ in $(seq 1 200); do
+  [ -e "$PARENT/state/remote-replies/ios.caught-up" ] && break
+  sleep 0.1
+done
+assert_present "$PARENT/state/remote-replies/ios.caught-up" \
+  "the re-armed listener's first window never closed"
+remote_env "$ADAPTER" arm ios >/dev/null || fail "the live listener's source could not be re-armed"
+printf 'working [corr=fedcbafedcbafedc]: captured after a re-arm\n' \
+  >> "$REMOTE/state/parent-replies.status"
+GEN=$((GEN + 1))
+# await_reply_result would start a replacement listener, hiding the one that
+# stopped, so wait on this listener's own capture and acknowledgement.
+for _ in $(seq 1 600); do
+  [ -f "$PARENT/state/procevent-inbox/$SID.$GEN.handled" ] && break
+  sleep 0.05
+done
+assert_present "$PARENT/state/procevent-inbox/$SID.$GEN.handled" \
+  "a re-arm between polls stopped the reply listener"
+assert_grep 'captured after a re-arm' "$PARENT/state/ios.status" \
+  "the line captured after a re-arm was not mirrored"
+[ "$(sed -n '2p' "$CLAIMS/$SID.claim")" = "$HELD_PID" ] \
+  || fail "a re-arm between polls replaced the reply listener"
+stop_reply_listener || fail "the re-armed listener did not stop"
+pass "a re-arm between polls keeps the same reply listener"
+
 # A failed transport is not an empty wait: do not launch a second read under
 # the same owner, even when the launch floor is short.
 : > "$TMP_ROOT/failed-polls"
