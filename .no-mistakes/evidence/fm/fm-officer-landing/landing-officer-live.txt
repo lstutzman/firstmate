@@ -1,0 +1,138 @@
+=== S1: Slarti's verbatim FINAL v2 example is accepted; real Linear read-only (writes: none, done-window 5)
+$ bin/fm-officer.sh list
+landing role=landing cadence="daily 06:30" check=absent
+[exit 0]
+$ bin/fm-officer.sh register landing
+registered: officer landing (state/officer-landing.check.sh)
+[exit 0]
+$ bin/fm-officer.sh run landing --date 2026-10-23
+DIGEST 2026-10-23 0 data/officers/landing/2026-10-23.md
+[exit 0]
+# Landing officer digest for 2026-10-23
+
+0 actionable finding(s); Linear writes: none.
+Facts generated 2026-10-24T18:00:00Z; production af76eb3e...; staging 9d6dc13de01f10c1ac4692702ab0c479dba9a5d5.
+
+## Counts
+
+- A1: 5
+
+## Findings
+
+- [low] A1 PC-3400: Done with no landing fact naming it; needs a probe or Lee's recorded word
+- [low] A1 PC-3401: Done with no landing fact naming it; needs a probe or Lee's recorded word
+- [low] A1 PC-3412: Done with no landing fact naming it; needs a probe or Lee's recorded word
+- [low] A1 PC-3451: Done with no landing fact naming it; needs a probe or Lee's recorded word
+- [low] A1 PC-3557: Done with no landing fact naming it; needs a probe or Lee's recorded word
+1792865425 2026-10-23 ok 0
+{"item":"PC-3594","linear_state":"In Staging","class":null,"correction":null}
+
+=== S2: write path with a stateful fake linear-axi (Linear boundary stub)
+$ bin/fm-officer.sh run landing --date 2026-10-23
+DIGEST 2026-10-23 3 data/officers/landing/2026-10-23.md
+[exit 0]
+# Landing officer digest for 2026-10-23
+
+3 actionable finding(s); Linear writes: corrections.
+Facts generated 2026-10-24T17:10:25Z; production bbbb; staging aaaa.
+
+## Counts
+
+- A1: 3
+- B1: 2
+
+## Linear writes
+
+- PC-1: closed to Done (landing-truth record; facts generated 2026-10-24T17:10:25Z)
+- PC-2: reopened to In Progress (landing-truth record; facts generated 2026-10-24T17:10:25Z)
+- PC-5: skipped to Done (item has sub-issues; facts generated 2026-10-24T17:10:25Z)
+
+## Findings
+
+- [high] A1 PC-2: Done, but PropertyCompass2#102 merged and never reached main or any release
+- [medium] B1 PC-1: In Staging, but PropertyCompass2#101 in production (release v1.71.0)
+- [medium] B1 PC-5: In Progress, but PropertyCompass2#105 in production (release v1.71.0)
+- [low] A1 PC-7: Done, but PropertyCompass2#106 not yet in production (release lag); reported only
+- [low] A1 PC-99: Done with no landing fact naming it; needs a probe or Lee's recorded word
+--- linear-axi calls
+issue list --team PC --state Done --all --max-items 100 --output json
+issue view PC-1 --sub-issues --output json
+issue comment PC-1 --body-file /tmp/fm-lab.werI0k/data/officers/landing/.evidence-2026-10-23-PC-1.md --dry-run --output json
+issue comment PC-1 --body-file /tmp/fm-lab.werI0k/data/officers/landing/.evidence-2026-10-23-PC-1.md --verify --output json
+issue update PC-1 --state Done --dry-run --output json
+issue update PC-1 --state Done --verify --output json
+issue view PC-2 --sub-issues --output json
+issue comment PC-2 --body-file /tmp/fm-lab.werI0k/data/officers/landing/.evidence-2026-10-23-PC-2.md --dry-run --output json
+issue comment PC-2 --body-file /tmp/fm-lab.werI0k/data/officers/landing/.evidence-2026-10-23-PC-2.md --verify --output json
+issue update PC-2 --state In Progress --dry-run --output json
+issue update PC-2 --state In Progress --verify --output json
+issue view PC-5 --sub-issues --output json
+--- Linear state after
+PC-1: Done
+PC-2: In Progress
+PC-5: In Progress
+PC-7: Done
+--- evidence comments posted
+--- PC-1
+Landing officer correction: moving to Done because every linked PR is merged and in production, but the release workflow did not set Done.
+
+Landing-truth record used (schema 2, generated 2026-10-24T17:10:25Z, production bbbb, staging aaaa):
+
+- repo="lstutzman/PropertyCompass2", pr=101, merged_sha="m101", merged_at="2026-10-20T10:00:00Z", on_staging=true, staging_deployed=true, on_main=true, main_promoted_at="2026-10-21T10:00:00Z", in_production=true, production_release="v1.71.0", landed_via="lone"
+--- PC-2
+Landing officer correction: moving to In Progress because it is Done, but a linked PR is merged and never reached main or any release.
+
+Landing-truth record used (schema 2, generated 2026-10-24T17:10:25Z, production bbbb, staging aaaa):
+
+- repo="lstutzman/PropertyCompass2", pr=102, merged_sha="m102", merged_at="2026-10-20T10:00:00Z", on_staging=true, staging_deployed=true, on_main=false, main_promoted_at=null, in_production=false, production_release=null, landed_via="lone"
+--- check line (watcher body)
+$ bin/fm-officer.sh check landing
+officer landing: 2026-10-23: 3 actionable finding(s) in data/officers/landing/2026-10-23.md
+[exit 0]
+
+=== S3: re-run same date is idempotent (no second comment or write)
+$ bin/fm-officer.sh run landing --date 2026-10-23
+DIGEST 2026-10-23 3 data/officers/landing/2026-10-23.md
+[exit 0]
+issue list --team PC --state Done --all --max-items 100 --output json
+issue view PC-1 --sub-issues --output json
+issue view PC-2 --sub-issues --output json
+issue view PC-5 --sub-issues --output json
+comment lines before=12 after=12
+
+=== S4 adversarial: stale facts (generated 3 days ago) make no Linear write
+$ bin/fm-officer.sh run landing --date 2026-10-23
+DIGEST 2026-10-23 4 data/officers/landing/2026-10-23.md
+[exit 0]
+4 actionable finding(s); Linear writes: corrections (none made: landing facts generated 2026-10-21T18:10:25Z are older than 36 hours).
+- stale-facts: 1
+- [high] stale-facts -: landing facts generated 2026-10-21T18:10:25Z are older than 36 hours; no Linear write made
+--- calls:
+issue list --team PC --state Done --all --max-items 100 --output json
+
+=== S5 adversarial: schema v1 / extra top-level key refused
+$ bin/fm-officer.sh run landing --date 2026-10-23
+fm-officer: officer landing run for 2026-10-23 failed: fm-officer-landing: landing facts schema_version is not 2
+[exit 1]
+1792865426 2026-10-23 failed fm-officer-landing: landing facts schema_version is not 2
+$ bin/fm-officer.sh run landing --date 2026-10-23
+fm-officer: officer landing run for 2026-10-23 failed: fm-officer-landing: landing facts top-level keys are not exactly generated_at, items, production_sha, records, schema_version, staging_sha
+[exit 1]
+1792865426 2026-10-23 failed fm-officer-landing: landing facts top-level keys are not exactly generated_at, items, production_sha, records, schema_version, staging_sha
+
+=== S6 adversarial: registry reopen-state In Staging and bad writes refused
+$ bin/fm-officer.sh run landing --date 2026-10-23
+fm-officer: officer landing: reopen-state may not be In Staging or Done
+[exit 2]
+$ bin/fm-officer.sh ensure
+OFFICER: officer landing: reopen-state may not be In Staging or Done
+[exit 0]
+$ bin/fm-officer.sh run landing --date 2026-10-23
+fm-officer: officer landing: writes must be corrections or none
+[exit 2]
+
+=== S7: real host:path read of the not-yet-shipped facts on slartibartfast fails cleanly
+$ bin/fm-officer.sh run landing --date 2026-10-23
+fm-officer: officer landing run for 2026-10-23 failed: fm-officer-landing: landing facts host slartibartfast unreachable (ssh exit 1)
+[exit 1]
+1792865426 2026-10-23 failed fm-officer-landing: landing facts host slartibartfast unreachable (ssh exit 1)
