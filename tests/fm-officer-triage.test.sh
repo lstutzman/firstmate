@@ -34,6 +34,10 @@ spec = {"sessions": [
              ["Bash", {"command": "grep -rn 'networkidle\\|rm -f' src"}, "", False],
              ["Bash", {"command": "gh auth status"},
               "bash: ghp_AbCdEf0123456789abcdefGHIJ: command not found", True],
+             ["Bash", {"command": "aws s3 ls"},
+              "error: invalid secret wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", True],
+             ["Edit", {"file_path": "/z.ts", "old_string": "a",
+                       "new_string": "await page.waitForLoadState('networkidle')"}, "", False],
              ["Edit", {"file_path": "/y.ts", "old_string": "a",
                        "new_string": "await page.goto(u, { waitUntil: 'networkidle' })"}, "", False]]},
   {"machine": "alpha", "id": "s-failed", "first_prompt": ": Firstmate operational input waiting: read 'y'",
@@ -162,6 +166,8 @@ test_rule_violation_reports_command_head_only() {
     "only the bare rm and the waitUntil networkidle edit are violations, not heredoc bodies or quoted patterns"
   assert_equals 1 "$(printf '%s' "$findings" | jq -r '.[] | select(.rule == "rm-not-trash") | .count')" \
     "the rm inside a heredoc body is not counted"
+  assert_equals 2 "$(printf '%s' "$findings" | jq -r '.[] | select(.rule == "networkidle") | .count')" \
+    "waitUntil and waitForLoadState networkidle are both counted"
   assert_equals alpha:s-done "$(printf '%s' "$findings" | jq -r '.[0].session')" "the finding names its session"
   assert_contains "$(printf '%s' "$findings" | jq -r '.[] | select(.rule == "rm-not-trash") | .summary')" "rm -rf ..." \
     "the finding carries the command head"
@@ -169,6 +175,8 @@ test_rule_violation_reports_command_head_only() {
   assert_no_grep "notes.txt" "$home/data/officers/triage/$DATE.md" "no argument text reaches the digest"
   assert_no_grep "AbCdEf0123456789" "$json" "a token in an error line never reaches the findings file"
   assert_no_grep "AbCdEf0123456789" "$home/data/officers/triage/$DATE.md" "a token in an error line never reaches the digest"
+  assert_no_grep "wJalrXUtnFEMI" "$json" "no part of a base64 secret reaches the findings file"
+  assert_no_grep "wJalrXUtnFEMI" "$home/data/officers/triage/$DATE.md" "no part of a base64 secret reaches the digest"
   assert_contains "$(jq -r '.top_errors[].signature' "$json")" "bash: <token>: command not found" \
     "the error signature keeps its shape with the token redacted"
   pass "fm-officer triage: rule violations and error signatures carry no transcript excerpt or token"

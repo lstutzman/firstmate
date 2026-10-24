@@ -90,10 +90,11 @@ SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\||\n)\s*")
 HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 NETWORKIDLE_RE = re.compile(
-    r"wait_?until['\"]?\s*[:=]\s*\\?['\"]networkidle|--wait-until[=\s]+['\"]?networkidle", re.I)
+    r"wait_?until['\"]?\s*[:=]\s*\\?['\"]networkidle|--wait-until[=\s]+['\"]?networkidle"
+    r"|wait_?for_?load_?state\(\s*\\?['\"]networkidle", re.I)
 TOKEN_RE = re.compile(
-    r"(?<![A-Za-z0-9_-])(?:(?:ghp_|gho_|ghs_|ghu_|github_pat_|sk-|xox[abprs]-|AKIA)[A-Za-z0-9_-]*"
-    r"|(?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])")
+    r"(?<![A-Za-z0-9_+/=.-])(?:(?:ghp_|gho_|ghs_|ghu_|github_pat_|sk-|xox[abprs]-|AKIA)[A-Za-z0-9_+/=.-]*"
+    r"|(?=[A-Za-z_+/=.-]*\d)[A-Za-z0-9_+/=.-]{20,})(?![A-Za-z0-9_+/=.-])")
 SLEEP_RE = re.compile(r"^sleep\s+\d")
 
 
