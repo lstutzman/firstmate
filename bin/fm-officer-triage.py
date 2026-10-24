@@ -21,6 +21,8 @@ over `ssh -o BatchMode=yes <host>` when the archive lives on another host.
 worker session to its firstmate task and outcome through the read-only
 records of every --home, and writes <date>.json and <date>.md into --out.
 It prints `DIGEST <date> <n-actionable> <date>.md` as its last stdout line.
+It fails, writing nothing, while the archive has no manifest for the day or
+its harvester has not run since the day ended, so the officer retries the day.
 
 Join order, recorded per session as join.via:
   launch-brief   the launch brief the worker read in its first tool result
@@ -52,7 +54,8 @@ SCORER = "deterministic-v1"
 
 CLASSES = [
     ("worker", re.compile(r"^\W*Firstmate operational input waiting")),
-    ("desk", re.compile(r"^Workspace boundary")),
+    ("desk", re.compile(r"^Slack message from .+ \(role [\w-]+\) in thread ")),
+    ("no-mistakes", re.compile(r"^Workspace boundary")),
     ("classifier", re.compile(r"^You are an? [\w -]*classifier\b", re.I)),
     ("supervision-engine", re.compile(r"MAIN DIALOG MIRROR")),
     ("security-review", re.compile(
@@ -447,6 +450,16 @@ def join_sessions(scanned, homes):
         s["scores"] = {}
 
 
+def require_harvested(scanned):
+    """Refuse a day the archive has not finished harvesting."""
+    date = scanned["date"]
+    if not scanned["manifest"]:
+        raise RuntimeError("no archive manifest for %s" % date)
+    last = scanned.get("harvester_last_run")
+    if last is None or last[:10] <= date:
+        raise RuntimeError("archive harvester has not run since %s ended" % date)
+
+
 def score_sessions(sessions, model):
     """Slice-2 seam: attach model scores to sessions. Slice 1 scores nothing."""
     if model != "none":
@@ -456,22 +469,14 @@ def score_sessions(sessions, model):
 
 def findings_for(scanned, expected_hosts):
     findings = []
-    date = scanned["date"]
-    if not scanned["manifest"]:
-        findings.append({"kind": "coverage", "severity": "high",
-                         "summary": "no archive manifest for %s" % date})
     present = sorted({s["machine"] for s in scanned["sessions"] if s.get("machine")})
     for host in expected_hosts:
-        if scanned["manifest"] and host not in present:
+        if host not in present:
             findings.append({"kind": "coverage", "severity": "high",
                              "summary": "no archived sessions from expected host %s" % host})
     for host in sorted(scanned.get("not_collected") or {}):
         findings.append({"kind": "coverage", "severity": "medium",
                          "summary": "archive did not collect host %s" % host})
-    last = scanned.get("harvester_last_run")
-    if scanned["manifest"] and (last is None or last[:10] <= date):
-        findings.append({"kind": "coverage", "severity": "medium",
-                         "summary": "archive harvester has not run since %s ended" % date})
     rank = {"high": 0, "medium": 1, "low": 2}
     for s in scanned["sessions"]:
         grouped = {}
@@ -624,6 +629,7 @@ def main(argv):
             scanned = remote_scan(remote.group(1), remote.group(2), args.date)
         else:
             scanned = scan(args.archive, args.date)
+        require_harvested(scanned)
         homes = [Home(h) for h in args.home]
         join_sessions(scanned, homes)
         score_sessions(scanned["sessions"], args.model)

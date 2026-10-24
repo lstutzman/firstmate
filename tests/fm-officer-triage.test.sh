@@ -5,9 +5,10 @@
 # Covers: session classification, the three join paths (launch brief,
 # worktree, trace context) with their recorded join method, outcome resolution
 # from the ledger, the live status log and a scout report, unresolved homes,
-# byte-identical reruns, archive coverage, rule violations that report only a
-# normalised command head, a remote archive read over ssh, and the model seam
-# refusing anything but model: none.
+# byte-identical reruns, archive coverage, a missing or unfinished archive day
+# failing the run, rule violations that report only a normalised command head,
+# a remote archive read over ssh, and the model seam refusing anything but
+# model: none.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -34,6 +35,11 @@ spec = {"sessions": [
              ["Bash", {"command": "sleep 30 && git status"}, "", False]]},
   {"machine": "alpha", "id": "s-classifier", "first_prompt": "You are an emotion-tone classifier for conversations.",
    "calls": []},
+  {"machine": "alpha", "id": "s-desk",
+   "first_prompt": "Slack message from Dawn (role member) in thread 1792800000.000100:\n<<<\nstatus?\n>>>",
+   "calls": []},
+  {"machine": "alpha", "id": "s-pipeline",
+   "first_prompt": "Workspace boundary (important):\n- Confine source changes to the worktree.", "calls": []},
   {"machine": "alpha", "id": "s-engine", "first_prompt": "MAIN DIALOG MIRROR turn 3",
    "calls": [["Read", {"file_path": "/x"}, "ok", False], ["Read", {"file_path": "/x"}, "ok", False]]},
   {"machine": "alpha", "id": "s-worktree", "first_prompt": "hello", "cwd": "/work/task-merged",
@@ -86,6 +92,8 @@ test_classification_join_and_outcomes() {
   assert_equals worker "$(session_field "$json" s-done .class)" "a launch-brief session is a worker"
   assert_equals classifier "$(session_field "$json" s-classifier .class)" "classifier call is classified"
   assert_equals supervision-engine "$(session_field "$json" s-engine .class)" "supervision engine turn is classified"
+  assert_equals desk "$(session_field "$json" s-desk .class)" "a Slack desk job is a desk session"
+  assert_equals no-mistakes "$(session_field "$json" s-pipeline .class)" "a no-mistakes pipeline step is its own class"
   assert_equals task-done "$(session_field "$json" s-done .join.task)" "worker joins its task"
   assert_equals launch-brief "$(session_field "$json" s-done .join.via)" "join method is recorded"
   assert_equals "done" "$(session_field "$json" s-done .join.outcome)" "done outcome comes from the status log"
@@ -137,12 +145,18 @@ test_rule_violation_reports_command_head_only() {
   pass "fm-officer triage: a bare rm is one finding with no transcript excerpt"
 }
 
-test_missing_manifest_is_a_coverage_finding() {
+test_unharvested_day_fails_the_run() {
   local home out
   home=$(make_world nomanifest)
-  out=$(FM_HOME="$home" "$OFFICER" run triage --date 2026-10-01) || fail "a day with no manifest still produces a digest: $out"
-  assert_grep "no archive manifest for 2026-10-01" "$home/data/officers/triage/2026-10-01.json" "the missing day is reported"
-  pass "fm-officer triage: a day the archive never wrote is a coverage finding"
+  out=$(FM_HOME="$home" "$OFFICER" run triage --date 2026-10-01 2>&1) && fail "a day with no manifest must fail the run"
+  assert_contains "$out" "no archive manifest for 2026-10-01" "the failure names the missing manifest"
+  assert_grep "2026-10-01 failed fm-officer-triage: no archive manifest" "$home/data/officers/triage/runs.log" "the failure is logged as an attempt"
+  assert_absent "$home/data/officers/triage/2026-10-01.json" "no findings are written for the missing day"
+  printf '%s\n' '{"started": "2026-10-23T18:00:00+00:00"}' > "$TMP_ROOT/nomanifest/archive/runs.jsonl"
+  out=$(run_officer "$home" 2>&1) && fail "a day the harvester has not finished must fail the run"
+  assert_contains "$out" "archive harvester has not run since $DATE ended" "the failure names the late harvester"
+  assert_absent "$home/data/officers/triage/$DATE.json" "no findings are written for the unfinished day"
+  pass "fm-officer triage: a missing or unfinished archive day fails the run so it is retried"
 }
 
 test_remote_archive_reads_over_ssh() {
@@ -184,6 +198,6 @@ test_classification_join_and_outcomes
 test_rerun_is_byte_identical
 test_coverage_names_missing_host
 test_rule_violation_reports_command_head_only
-test_missing_manifest_is_a_coverage_finding
+test_unharvested_day_fails_the_run
 test_remote_archive_reads_over_ssh
 test_model_seam_accepts_only_none

@@ -7,7 +7,8 @@
 #   per spec entry (index.json plus transcript.jsonl.gz), and runs.jsonl.
 #   The spec is a JSON object {"sessions": [...], "harvested": "<iso>",
 #   "records": [...]} where each session has machine, id, first_prompt, cwd and
-#   calls: a list of [tool, input, result_text, is_error].
+#   calls: a list of [tool, input, result_text, is_error]. The harvester's last
+#   run defaults to 01:00 the day after <date>.
 #
 # officer_home <dir>: a primary home with private data/ and state/.
 # officer_registry <home> <archive> [hosts] [cadence]: one triage officer line.
@@ -17,8 +18,9 @@
 
 officer_archive() {
   python3 -I - "$1" "$2" "$3" <<'PY'
-import gzip, json, os, sys
+import datetime, gzip, json, os, sys
 root, date, spec_path = sys.argv[1:4]
+next_day = (datetime.date.fromisoformat(date) + datetime.timedelta(days=1)).isoformat()
 spec = json.load(open(spec_path))
 manifest = {"date": date, "timezone": "Europe/London", "not_collected": spec.get("not_collected", {}), "sessions": []}
 for s in spec.get("sessions", []):
@@ -49,7 +51,7 @@ os.makedirs(day, exist_ok=True)
 with open(os.path.join(day, "manifest.json"), "w") as fh:
     json.dump(manifest, fh)
 with open(os.path.join(root, "runs.jsonl"), "w") as fh:
-    fh.write(json.dumps({"started": spec.get("harvested", date + "T23:59:00+00:00")}) + "\n")
+    fh.write(json.dumps({"started": spec.get("harvested", next_day + "T01:00:00+00:00")}) + "\n")
 PY
 }
 

@@ -4,9 +4,9 @@
 # Covers the kind's contract through its executable interface: registering
 # and retiring an officer's watcher check, the check's report line (exactly one
 # per new actionable digest, silence on repeats, empty digests, and an
-# unreachable archive host until its attempts run out), the scheduled run the
-# check starts outside its own process group, the OFFICER: health lines from
-# ensure, the primary-home-only rule, the write lane, and the fleet boundary
+# unreachable archive host or a late harvester until its attempts run out), the
+# scheduled run the check starts outside its own process group, the OFFICER:
+# health lines from ensure, the primary-home-only rule, the write lane, and the fleet boundary
 # (an officer run calls no fleet-acting script and no forge or Linear tool).
 set -u
 
@@ -26,6 +26,10 @@ empty_spec() {
 
 clean_spec() {
   printf '{"sessions": [{"machine": "alpha", "id": "s1", "first_prompt": "hello", "calls": []}], "harvested": "2026-10-24T01:00:00+00:00"}\n' > "$1"
+}
+
+late_spec() {
+  printf '{"sessions": [{"machine": "alpha", "id": "s1", "first_prompt": "hello", "calls": [["Bash", {"command": "rm -f /tmp/x"}, "", false]]}], "harvested": "2026-10-23T10:00:00+00:00"}\n' > "$1"
 }
 
 # make_world <name> <spec-writer>: a registered-ready home and its archive.
@@ -146,6 +150,43 @@ test_unreachable_host_is_silent_until_attempts_run_out() {
   pass "fm-officer: an unreachable archive host stays silent until its attempts run out"
 }
 
+wait_for_attempts() {  # <home> <n>: until <n> attempts for $DATE are logged and no run holds the lock.
+  local i=0
+  until [ "$(cat "$1/data/officers/triage/runs.log" 2>/dev/null | awk -v d="$DATE" '$2 == d {n++} END {print n + 0}')" -ge "$2" ] \
+    && [ ! -d "$1/data/officers/triage/.run.lock" ]; do
+    i=$((i + 1))
+    [ "$i" -lt 300 ] || fail "attempt $2 never finished"
+    sleep 0.1
+  done
+}
+
+test_late_harvester_is_retried_then_reported() {
+  local home out
+  home=$(make_world late late_spec)
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=3 officer "$home" check triage) || fail "check must exit 0"
+  wait_for_attempts "$home" 1
+  assert_grep "$DATE failed fm-officer-triage: archive harvester has not run since $DATE ended" "$home/data/officers/triage/runs.log" \
+    "a day the harvester has not finished is a failed attempt"
+  printf '%s\n' '{"started": "2026-10-24T01:00:00+00:00"}' > "$TMP_ROOT/late/archive/runs.jsonl"
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=3 officer "$home" check triage) || fail "check must exit 0"
+  assert_equals "" "$out" "a failed attempt with attempts left is silent"
+  wait_for_attempts "$home" 2
+  assert_grep "$DATE ok" "$home/data/officers/triage/runs.log" "the retry analyses the day once the harvester catches up"
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=3 officer "$home" check triage) || fail "check must exit 0"
+  assert_contains "$out" "officer triage: $DATE: 1 actionable finding(s)" "the caught-up day is reported as a digest"
+
+  home=$(make_world latefail late_spec)
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=2 officer "$home" check triage) || fail "check must exit 0"
+  wait_for_attempts "$home" 1
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=2 officer "$home" check triage) || fail "check must exit 0"
+  wait_for_attempts "$home" 2
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=2 officer "$home" check triage) || fail "check must exit 0"
+  assert_contains "$out" "officer triage: $DATE: run failed 2 time(s): " "a harvester still late after the last attempt is a failed run"
+  assert_contains "$out" "archive harvester has not run since $DATE ended" "the failed run names the late harvester"
+  assert_absent "$home/data/officers/triage/$DATE.json" "no digest is written for the unfinished day"
+  pass "fm-officer: a late harvester is retried, then reported as a failed run once attempts run out"
+}
+
 test_ensure_reports_gaps_and_is_silent_when_healthy() {
   local home out
   home=$(make_world ensure clean_spec)
@@ -230,6 +271,7 @@ test_check_reports_each_new_actionable_digest_once
 test_check_is_silent_for_an_empty_digest
 test_scheduled_run_starts_from_the_check_and_reports
 test_unreachable_host_is_silent_until_attempts_run_out
+test_late_harvester_is_retried_then_reported
 test_ensure_reports_gaps_and_is_silent_when_healthy
 test_secondmate_home_runs_no_officers
 test_run_writes_only_its_lane_and_acts_on_no_fleet
