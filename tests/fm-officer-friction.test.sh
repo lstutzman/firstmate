@@ -153,6 +153,12 @@ EOF
   cat > "$home/state/task-prb.status" <<EOF
 needs-decision [at=$((T + 60))] [key=merge]: PR 2 needs Lee's merge word
 EOF
+  printf -- '- m1 - remote mate (host: h1; root: /r; home: /r/m1; scope: fixture work; projects: alpha; added 2026-10-24)\n- m2 - remote mate (host: h2; root: /r; home: /r/m2; scope: fixture work; projects: alpha; added 2026-10-24)\n' \
+    >> "$home/data/secondmates.md"
+  printf 'needs-decision [at=%s] [key=relayed-approval]: relayed: the destructive cleanup needs Lee'"'"'s word\n' "$T" \
+    > "$home/state/m1.status"
+  printf 'needs-decision [at=%s] [key=relayed-approval]: relayed: the destructive reset needs Lee'"'"'s word\n' "$((T + 90))" \
+    > "$home/state/m2.status"
   out=$(run_officer "$home") || fail "friction run must succeed: $out"
   assert_contains "$out" "DIGEST $DATE " "run prints the digest marker"
   json="$home/data/officers/friction/$DATE.json"
@@ -169,6 +175,8 @@ EOF
     "a mate's relay into its parent channel log folds into the worker's copy in the mate's home"
   assert_equals "2 task-pra,task-prb" "$(finding "$json" policy merge-word '"\(.events) \(.evidence.tasks | join(","))"')" \
     "two task logs that reuse a key are two asks"
+  assert_equals 2 "$(jq '[.events[] | select(.key == "relayed-approval")] | length' "$json")" \
+    "two mates' channel logs that reuse a key with no task copy are two asks"
   assert_equals "Lee (token owner); main keeps the scope list" "$(finding "$json" credential scope .owner)" "the finding names an owner"
   assert_equals "guard-hook secret-hook 600" "$(status_event "$json" task-node node-line '"\(.cause) \(.sub) \(.wait_s)"')" \
     "bare key= and at= markers parse, and a shell startup file the hook blocks is the secret hook"

@@ -775,26 +775,15 @@ def status_events(homes, date, channels):
 
 def collapse_relays(events):
     """A channel log's copy of a keyed ask is a relay: it folds into a task log's copy of that key
-    in any home; channel copies with no task copy are one ask, the one that measured a wait, else
-    the first. Two task logs are never merged."""
+    in any home. Two task logs, or two channel logs, are never merged."""
     copies = {}
     for ev in events:
         if ev["key"]:
             copies.setdefault(ev["key"], []).append(ev)
     drop = set()
     for evs in copies.values():
-        relays = [e for e in evs if e["channel"]]
-        if not relays:
-            continue
-        if len(relays) < len(evs):
-            drop.update(id(e) for e in relays)
-            continue
-        logs = {}
-        for e in relays:
-            logs.setdefault((e["home"], e["task"]), []).append(e)
-        keep = min(logs, key=lambda t: (not any(e.get("wait_s") is not None for e in logs[t]),
-                                        min(e["at"] for e in logs[t]), t))
-        drop.update(id(e) for t, group in logs.items() if t != keep for e in group)
+        if any(not e["channel"] for e in evs):
+            drop.update(id(e) for e in evs if e["channel"])
     return [ev for ev in events if id(ev) not in drop]
 
 
