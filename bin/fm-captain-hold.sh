@@ -222,6 +222,9 @@
 # The hold or answer is already durable in the backlog, so a channel that
 # cannot be written is reported as `actionable:` on stderr rather than undoing
 # the record; bin/fm-inactive-reconcile.sh's diagnostics name a broken binding.
+# A `resolved` line also closes `needs-decision [key=<task>]` when that exact key
+# is still open on the channel, so a call raised under the task id and then held
+# is not left open behind its answer or release.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -259,6 +262,20 @@ publish_parent_hold() {  # <task-id> <occurrence> <verb> <note>
     0|1) PARENT_HOLD_PUBLISHED=1 ;;
     *) printf 'actionable: task %s is held for the captain in this home but that did not reach the parent channel (rc=%s)\n' "$id" "$rc" >&2 ;;
   esac
+  [ "$verb" != resolved ] || [ "$PARENT_HOLD_PUBLISHED" != 1 ] || resolve_parent_origin_key "$id" "$note"
+}
+
+# A call raised as `needs-decision [key=<task-id>]` and then held under that same
+# task id stays open in the parent's fold unless the hold's resolution closes it
+# too. Exact key only, and only while it is still open as a needs-decision, so an
+# unrelated, blocked, or already-resolved key is never touched.
+resolve_parent_origin_key() {  # <task-id> <note>
+  local id=$1 note=$2 channel open
+  channel=$(fm_parent_channel_destination "$FM_HOME" "$STATE") || return 0
+  open=$(status_open_decisions "$channel")
+  [ "$(_fm_open_set_verb "$open" "$id")" = needs-decision ] || return 0
+  fm_parent_channel_report "$FM_HOME" "$STATE" \
+    "resolved [key=$id]: captain hold $id: $(fm_parent_channel_clean_note "$note")" || true
 }
 
 CAPTAIN_META_LOCK=
