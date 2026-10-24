@@ -33,6 +33,9 @@ needs-decision [at=$T] [key=cf-scope]: Cloudflare refuses the agent token for Em
 resolved [key=cf-scope] [at=$((T + 3600))]: answered: Lee in main chat: "cf done"
 needs-decision [at=$PREV] [key=old-day]: Cloudflare refuses the agent token again; Lee needs to widen it
 EOF
+  cat > "$s/parent-replies.status" <<EOF
+needs-decision [at=$((T + 30))] [key=cf-scope]: relayed: Cloudflare refuses the agent token for Email Routing; Lee needs to widen it
+EOF
   cat > "$s/task-node.status" <<EOF
 needs-decision key=node-line at=$T: corr=21b6eac25a90a9f8 Making Node the default needs one line from Lee (hooks block me editing his shell startup file)
 resolved key=node-line at=$((T + 600)): Lee ran the line
@@ -135,6 +138,8 @@ test_status_waits_and_root_causes() {
   assert_equals "credential scope Cloudflare 3600 resolved-key lee" \
     "$(status_event "$json" task-cf cf-scope '"\(.cause) \(.sub) \(.service) \(.wait_s) \(.measured_by) \(.answered_by)"')" \
     "a keyed Cloudflare token refusal is a scope wait measured to its resolved line, answered by Lee"
+  assert_equals "1 3600 task-cf" "$(finding "$json" credential scope '"\(.events) \(.wait_total_s) \(.evidence.tasks | join(","))"')" \
+    "a relayed copy of a keyed ask in the parent channel is the same ask, and the channel is not a task"
   assert_equals "Cloudflare agent token lacks a scope, so Lee widens it" "$(finding "$json" credential scope .title)" \
     "the finding title is a stable template naming the service"
   assert_equals "Lee (token owner); main keeps the scope list" "$(finding "$json" credential scope .owner)" "the finding names an owner"
@@ -250,6 +255,7 @@ test_boundary_reads_only_and_writes_only_its_lane() {
   home=$(make_world boundary)
   fakebin=$(fm_fakebin "$TMP_ROOT/boundary")
   for cmd in ssh curl gh gh-axi linear-axi op op-agent fm-send.sh; do
+    # shellcheck disable=SC2016 # the stub expands "$*" when it runs, not here.
     printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "%s" "$*" >> "%s/calls"\nexit 1\n' "$cmd" "$fakebin" > "$fakebin/$cmd"
     chmod +x "$fakebin/$cmd"
   done

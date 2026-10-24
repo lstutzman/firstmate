@@ -37,6 +37,10 @@ wait for Lee to do. One day's friction events come from two sources:
                whose cwd is outside the worktree its task record names started
                in the wrong directory.
 
+Re-running a day with unchanged inputs rewrites identical digest bytes; the
+one environment input is this host's name, which counts as the home's own
+host for ssh-to-self.
+
 `scan` reads only the archive and prints the per-session facts as JSON, so
 `run` can send it, with the triage pass it imports, to `python3 -I -` over
 `ssh -o BatchMode=yes <host>`. `run` joins sessions to tasks exactly as the
@@ -105,6 +109,9 @@ MIN_SEVERITY = 3
 MIN_CONFIDENCE = 3
 MAX_CARDS = 5
 
+# Status logs that relay other tasks' lines rather than belong to a task: a
+# second mate's parent channel (docs/secondmate-parent-channel.md).
+CHANNEL_LOGS = {"parent-replies"}
 LEE_RE = re.compile(r"\b(Lee|captain|Captain)\b")
 STATUS_RE = re.compile(r"^([a-z][a-z-]*)\b([^:]*):\s?(.*)$")
 AT_RE = re.compile(r"(?:^|[\s\[])at=(\d+)\b")
@@ -748,7 +755,24 @@ def status_events(homes, date):
         own = ev.pop("_own")
         if len(chain) > 1 and any(m.group(1) in own for c in chain for m in SSH_HOST_RE.finditer(c["text"])):
             ev["cause"], ev["sub"] = "environment", "ssh-to-self"
-    return out
+    return collapse_relays(out)
+
+
+def collapse_relays(events):
+    """One home's copies of a keyed ask in several logs (a worker's and its relay) are one ask:
+    keep the log that measured a wait, else the one that asked first."""
+    tasks = {}
+    for ev in events:
+        if ev["key"]:
+            tasks.setdefault((ev["home"], ev["key"]), {}).setdefault(ev["task"], []).append(ev)
+    drop = set()
+    for by_task in tasks.values():
+        if len(by_task) < 2:
+            continue
+        keep = min(by_task, key=lambda t: (not any(e.get("wait_s") is not None for e in by_task[t]),
+                                           t in CHANNEL_LOGS, min(e["at"] for e in by_task[t]), t))
+        drop.update(id(e) for t, evs in by_task.items() if t != keep for e in evs)
+    return [ev for ev in events if id(ev) not in drop]
 
 
 def wrong_cwd_events(scanned, homes):
@@ -835,7 +859,7 @@ def group_findings(events, model):
             confidence = 3
         fix = propose_fix(cause, sub, model)
         fill = {"service": name or "the service", "tool": name or "a tool", "machine": machine}
-        tasks = sorted({e["task"] for e in evs if e.get("task")})
+        tasks = sorted({e["task"] for e in evs if e.get("task") and e["task"] not in CHANNEL_LOGS})
         sessions = sorted({e["session"] for e in evs if e.get("session")})
         keys = sorted({"%s@%s" % (e["key"], iso_utc(e["at"])) for e in evs if e.get("key")})
         carded = fix is not None and (cause, sub) not in NOT_CARDED \
