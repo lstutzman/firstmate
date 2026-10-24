@@ -1,0 +1,20 @@
+ok - fm-officer: register installs a trusted check; retire removes it and keeps findings
+ok - fm-officer: check prints one line for a new actionable digest and none on repeat
+ok - fm-officer: check is silent for a digest with nothing actionable
+ok - fm-officer: the check starts a due run detached, and reports it once finished
+ok - fm-officer: an unreachable archive host stays silent until its attempts run out
+ok - fm-officer: a late harvester is retried, then reported as a failed run once attempts run out
+ok - fm-officer: a failure after a reported digest is reported once and neither line repeats
+ok - fm-officer: a scheduled run that times out counts as a failed attempt
+ok - fm-officer: ensure prints OFFICER: lines for each gap and nothing when healthy
+ok - fm-officer: a second mate home refuses to register or run officers
+ok - fm-officer: a run writes only its findings lane and acts on nothing in the fleet
+rc=0
+ok - fm-officer triage: classifies sessions, joins tasks three ways, resolves outcomes
+ok - fm-officer triage: re-running the same day is byte-identical
+ok - fm-officer triage: coverage names a missing expected host
+ok - fm-officer triage: rule violations and error signatures carry no transcript excerpt or token
+ok - fm-officer triage: a missing or unfinished archive day fails the run so it is retried
+ok - fm-officer triage: a host:dir archive is scanned over ssh; unreachable fails the run
+ok - fm-officer triage: slice 1 refuses model scoring
+rc=0

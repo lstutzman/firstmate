@@ -1,0 +1,153 @@
+{
+ "actionable": 6,
+ "coverage": {
+  "harvester_last_run": "2026-10-24T01:00:00+00:00",
+  "homes_read": [
+   "/tmp/fm-lab-work.4dteYG/mate-home",
+   "/tmp/fm-lab.iouH43"
+  ],
+  "hosts_expected": [
+   "alpha",
+   "beta"
+  ],
+  "hosts_present": [
+   "alpha"
+  ],
+  "not_collected": {},
+  "sessions": 9,
+  "sessions_analysed": 9,
+  "workers_unresolved": 1
+ },
+ "findings": [
+  {
+   "kind": "coverage",
+   "severity": "high",
+   "summary": "no archived sessions from expected host beta"
+  },
+  {
+   "count": 1,
+   "kind": "rule-violation",
+   "rule": "networkidle",
+   "session": "alpha:w1",
+   "severity": "medium",
+   "summary": "networkidle: 1 call(s), e.g. Edit content sets waitUntil networkidle"
+  },
+  {
+   "count": 1,
+   "kind": "rule-violation",
+   "rule": "pkill-f",
+   "session": "alpha:w1",
+   "severity": "medium",
+   "summary": "pkill-f: 1 call(s), e.g. pkill -f ..."
+  },
+  {
+   "count": 1,
+   "kind": "rule-violation",
+   "rule": "pr-body-headings",
+   "session": "alpha:w1",
+   "severity": "medium",
+   "summary": "pr-body-headings: 1 call(s), e.g. PR body lacks Testing, Risk, How to revert"
+  },
+  {
+   "count": 1,
+   "kind": "rule-violation",
+   "rule": "rm-not-trash",
+   "session": "alpha:w1",
+   "severity": "medium",
+   "summary": "rm-not-trash: 1 call(s), e.g. rm -f ..."
+  },
+  {
+   "count": 1,
+   "kind": "rule-violation",
+   "rule": "startup-file-print",
+   "session": "alpha:w1",
+   "severity": "medium",
+   "summary": "startup-file-print: 1 call(s), e.g. cat ..."
+  }
+ ],
+ "session_mix": {
+  "classifier": 1,
+  "mate": 3,
+  "no-mistakes": 1,
+  "other": 1,
+  "reviewer": 1,
+  "worker": 2
+ },
+ "top_errors": [
+  {
+   "count": 2,
+   "signature": "hook-refusal: PreToolUse hook error: BLOCKED by guard"
+  },
+  {
+   "count": 1,
+   "signature": "tool-error: InvalidSignature for secret <token> rejected"
+  },
+  {
+   "count": 1,
+   "signature": "tool-error: bash: <token>: command not found"
+  }
+ ],
+ "wasted_turns": {
+  "re-read": 1,
+  "repeated-call": 3,
+  "retry-after-refusal": 1,
+  "sleep-then-check": 2
+ },
+ "worker_session": {
+  "cost_usd": 0.5,
+  "duration_s": 60,
+  "join": {
+   "home": "/tmp/fm-lab.iouH43",
+   "outcome": "done",
+   "outcome_source": "status",
+   "task": "t1",
+   "via": "launch-brief"
+  },
+  "session": "alpha:w1",
+  "tokens": 30,
+  "turns": 15,
+  "violations": [
+   {
+    "blocked": false,
+    "evidence": "Edit content sets waitUntil networkidle",
+    "rule": "networkidle",
+    "severity": "medium"
+   },
+   {
+    "blocked": false,
+    "evidence": "pkill -f ...",
+    "rule": "pkill-f",
+    "severity": "medium"
+   },
+   {
+    "blocked": false,
+    "evidence": "PR body lacks Testing, Risk, How to revert",
+    "rule": "pr-body-headings",
+    "severity": "medium"
+   },
+   {
+    "blocked": false,
+    "evidence": "rm -f ...",
+    "rule": "rm-not-trash",
+    "severity": "medium"
+   },
+   {
+    "blocked": false,
+    "evidence": "cat ...",
+    "rule": "startup-file-print",
+    "severity": "medium"
+   }
+  ]
+ },
+ "workers": {
+  "cost_usd": 1.0,
+  "count": 2,
+  "join_via": {
+   "launch-brief": 2
+  },
+  "outcomes": {
+   "done": 1,
+   "unresolved": 1
+  }
+ }
+}

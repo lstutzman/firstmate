@@ -1,0 +1,152 @@
+
+===== S1 register / list / ensure (healthy) =====
+registered: officer triage (state/officer-triage.check.sh)
+register rc=0
+triage role=triage cadence="daily 00:00" check=registered
+-rwx------ /tmp/fm-lab.iouH43/state/officer-triage.check.sh
+--- ensure output (expect nothing):
+--- ensure rc=0
+
+===== S2 real watcher sweeps: check starts the due run detached, then the watcher surfaces one check: wake =====
+watcher pass 1 rc=0 stdout: signal: $LAB/state/t1.status
+  drained: signal	t1.status	signal: $LAB/state/t1.status|wake annotation: unread wake-EVENT since last drain, not current state: t1.status: working|wake annotation: latest wake-EVENT observed at drain, not current state: t1.status: done: PR ready|STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):|t1 done: PR ready|
+watcher pass 2 rc=0 stdout: check: $LAB/state/officer-triage.check.sh: officer triage: 2026-10-23: 6 actionable finding(s) in data/officers/triage/2026-10-23.md
+  drained: check	$LAB/state/officer-triage.check.sh	check: $LAB/state/officer-triage.check.sh: officer triage: 2026-10-23: 6 actionable finding(s) in data/officers/triage/2026-10-23.md|
+--- runs.log:
+1792852855 2026-10-23 ok 6
+--- digest:
+DIGEST 2026-10-23 6 data/officers/triage/2026-10-23.md
+
+===== S2b repeat watcher sweep: same digest is not surfaced again =====
+watcher rc=124 (124 = ran 20s with no wake)
+0
+--- direct check (expect nothing):
+check rc=0
+
+===== S3 rendered digest =====
+# Triage officer digest for 2026-10-23
+
+6 actionable finding(s); scorer deterministic-v1.
+
+## Coverage
+
+- Hosts present: alpha (expected: alpha, beta).
+- Sessions: 9, of which 9 analysed.
+- Archive harvester last ran: 2026-10-24T01:00:00+00:00.
+- Worker sessions whose home is not readable here: 1.
+- Desk sessions are not archived: the Slack desk runs with --no-session-persistence, so 0 desk sessions is expected.
+
+## Session mix
+
+- classifier: 1
+- mate: 3
+- no-mistakes: 1
+- other: 1
+- reviewer: 1
+- worker: 2
+
+## Worker outcomes
+
+- 2 worker session(s), $1.00.
+- done: 1
+- unresolved: 1
+- Joined via: launch-brief 2.
+
+## Wasted-turn patterns
+
+- re-read: 1
+- repeated-call: 3
+- retry-after-refusal: 1
+- sleep-then-check: 2
+
+## Top error signatures
+
+- 2 x `hook-refusal: PreToolUse hook error: BLOCKED by guard`
+- 1 x `tool-error: InvalidSignature for secret <token> rejected`
+- 1 x `tool-error: bash: <token>: command not found`
+
+## Findings
+
+- [high] coverage: no archived sessions from expected host beta
+- [medium] rule-violation: networkidle: 1 call(s), e.g. Edit content sets waitUntil networkidle (alpha:w1)
+- [medium] rule-violation: pkill-f: 1 call(s), e.g. pkill -f ... (alpha:w1)
+- [medium] rule-violation: pr-body-headings: 1 call(s), e.g. PR body lacks Testing, Risk, How to revert (alpha:w1)
+- [medium] rule-violation: rm-not-trash: 1 call(s), e.g. rm -f ... (alpha:w1)
+- [medium] rule-violation: startup-file-print: 1 call(s), e.g. cat ... (alpha:w1)
+--- heredoc body counted as commands? rm-not-trash hits:
+['pkill-f: 1 call(s), e.g. pkill -f ...', 'rm-not-trash: 1 call(s), e.g. rm -f ...']
+{'alpha:c1': 'classifier', 'alpha:m1': 'mate', 'alpha:m2': 'mate', 'alpha:m3': 'mate', 'alpha:n1': 'no-mistakes', 'alpha:o1': 'other', 'alpha:r1': 'reviewer', 'alpha:w1': 'worker', 'alpha:w2': 'worker'}
+
+===== S4 secrets never reach the lane =====
+absent: ghp_Ab1Cd2
+absent: wJalrXUtnFEMI
+absent: K7MDENG
+absent: EXAMPLEKEY
+absent: only a summary
+absent: good morning
+
+===== S5 re-run the same day is byte-identical =====
+DIGEST 2026-10-23 6 data/officers/triage/2026-10-23.md
+run rc=0
+1594a99bf90f92371d2e386b8eda42df3b1215ec44f228c17cca7262b179f7b5  /tmp/fm-lab.iouH43/data/officers/triage/2026-10-23.json
+79fe66d4ebc7485468b3fe0a1bc51657911d4cf2e6c6032da4705c20b437df62  /tmp/fm-lab.iouH43/data/officers/triage/2026-10-23.md
+IDENTICAL
+
+===== S6 a run writes only its lane: no file outside data/officers/ added or changed =====
+--- pre-existing files whose content changed:
+working
+done: PR ready
+
+===== S7 unreachable archive host: silent until attempts run out, one failure line, then silent =====
+registered: officer remote (state/officer-remote.check.sh)
+check 1 rc=0 out=[]
+check 2 rc=0 out=[]
+check 3 rc=0 out=[officer remote: 2026-10-23: run failed 2 time(s): fm-officer-triage: archive host nohost.invalid unreachable or scan failed (ssh exit 255)]
+check 4 rc=0 out=[]
+check 5 rc=0 out=[]
+check 6 rc=0 out=[]
+check 7 rc=0 out=[]
+check 8 rc=0 out=[]
+--- runs.log:
+1792852878 2026-10-23 failed fm-officer-triage: archive host nohost.invalid unreachable or scan failed (ssh exit 255)
+1792852879 2026-10-23 failed fm-officer-triage: archive host nohost.invalid unreachable or scan failed (ssh exit 255)
+
+===== S8 scheduled run that hangs is bounded and logged as timed out =====
+registered: officer hang (state/officer-hang.check.sh)
+check rc=0
+--- runs.log:
+1792852890 2026-10-23 failed timed out
+--- immediate re-check does not start another run (retry window):
+no new run
+
+===== S9 ensure / real bootstrap print OFFICER: lines for gaps =====
+--- fm-officer.sh ensure:
+OFFICER: officer scorer: model "sonnet" is not available yet; slice 1 officers use model: none
+OFFICER: officer unreg: its watcher check is not registered - run bin/fm-officer.sh register unreg
+OFFICER: malformed registry line: - broken line without fields
+OFFICER: officer weekly: cadence must be "daily HH:MM", got "weekly"
+--- stale: pin clock 3 days ahead:
+OFFICER: officer triage: no finished run since 2026-10-24 14:41 (cadence daily) - see data/officers/triage/runs.log
+OFFICER: officer remote: no finished run since it was registered 2026-10-24 - see data/officers/remote/runs.log
+OFFICER: officer hang: no finished run since it was registered 2026-10-24 - see data/officers/hang/runs.log
+--- bin/fm-bootstrap.sh OFFICER lines:
+bootstrap rc=0
+OFFICER: officer scorer: model "sonnet" is not available yet; slice 1 officers use model: none
+OFFICER: officer unreg: its watcher check is not registered - run bin/fm-officer.sh register unreg
+OFFICER: malformed registry line: - broken line without fields
+OFFICER: officer weekly: cadence must be "daily HH:MM", got "weekly"
+
+===== S10 second mate home refuses officers =====
+fm-officer: officers run only in the primary home; this is a second mate home
+register rc=3
+fm-officer: officers run only in the primary home; this is a second mate home
+run rc=3
+OFFICER: data/officers.md lists officers in a second mate home; officers run only in the primary home - retire them here with bin/fm-officer.sh retire <id>
+no officer check in second mate state
+
+===== S11 retire keeps findings =====
+retired: officer triage (findings kept in data/officers/triage/)
+check gone
+2026-10-23.json
+2026-10-23.md
+0
