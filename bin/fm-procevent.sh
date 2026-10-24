@@ -183,9 +183,10 @@
 # and its claim across an empty result, across a capture, and across a re-arm
 # that lands between polls, and the runner polls the registration that claim
 # still owns. It adopts a replacement registration only when that same claim
-# still owns it and the registered command is unchanged. A missing command, an error, or any other exit releases
-# the claim after that one result, exactly as before. The runner still does not
-# refresh the owner lease, so a home that has gone still ends the poll.
+# still owns it and the registered command is unchanged. A missing command, an
+# error, or any other exit releases the claim after that one result, exactly as
+# before. The runner still does not refresh the owner lease, so a home that has
+# gone still ends the poll.
 #
 # Keyed captain answers from built-in adapters use one more seam of the same kind,
 # and this runner still decides nothing about them. Some sources carry the
