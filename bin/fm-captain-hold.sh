@@ -21,7 +21,7 @@
 #
 # Usage:
 #   fm-captain-hold.sh hold <task-id> --reason <reason> \
-#     [--title <title>] [--repo <repo>] [--origin <origin-id>] [--until YYYY-MM-DD]
+#     [--title <title>] [--repo <repo>] [--origin <origin-id>] [--origin-key <key>] [--until YYYY-MM-DD]
 #   fm-captain-hold.sh answer <task-id> --decision-file <path|-> [--release]   (- reads stdin)
 #   fm-captain-hold.sh answers [<legacy-origin> | --any-origin] --source <provenance>   (keyed answers on stdin)
 #   fm-captain-hold.sh reconcile-requests --source-id <source-id> --source <provenance>   (task ids on stdin)
@@ -222,6 +222,9 @@
 # The hold or answer is already durable in the backlog, so a channel that
 # cannot be written is reported as `actionable:` on stderr rather than undoing
 # the record; bin/fm-inactive-reconcile.sh's diagnostics name a broken binding.
+# Answering or releasing a hold also closes the `needs-decision` key it was raised
+# from (`hold --origin-key <key>`, else the task id) when that exact key is still
+# open on the channel, so the call is not asked again; reconcile does not.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -258,6 +261,29 @@ publish_parent_hold() {  # <task-id> <occurrence> <verb> <note>
   case "$rc" in
     0|1) PARENT_HOLD_PUBLISHED=1 ;;
     *) printf 'actionable: task %s is held for the captain in this home but that did not reach the parent channel (rc=%s)\n' "$id" "$rc" >&2 ;;
+  esac
+}
+
+# The needs-decision key a hold was raised from lives in a small state file named
+# for the held task and its hold occurrence, written by `hold --origin-key`.
+# Absent that, a call raised as `needs-decision [key=<task-id>]` and held under
+# the same task id is its own key.
+# Answering or releasing the hold closes that key too, or the parent's fold keeps
+# re-asking it. Exact key only, and only while it is still open as a
+# needs-decision, so an unrelated, blocked, or already-resolved key is untouched.
+origin_key_path() { printf '%s/captain-hold-origin-key/%s-%s\n' "$STATE" "$1" "$2"; }
+
+resolve_parent_origin_key() {  # <task-id> <occurrence> <note>
+  local id=$1 occurrence=$2 note=$3 key channel open rc=0
+  key=$(cat "$(origin_key_path "$id" "$occurrence")" 2>/dev/null) || key=$id
+  channel=$(fm_parent_channel_destination "$FM_HOME" "$STATE") || return 0
+  open=$(status_open_decisions "$channel")
+  [ "$(_fm_open_set_verb "$open" "$key")" = needs-decision ] || return 0
+  fm_parent_channel_report "$FM_HOME" "$STATE" \
+    "resolved [key=$key]: captain hold $id: $(fm_parent_channel_clean_note "$note")" || rc=$?
+  case "$rc" in
+    0|1) : ;;
+    *) printf 'actionable: task %s was answered but its originating key %s did not close on the parent channel (rc=%s); rerun the answer\n' "$id" "$key" "$rc" >&2 ;;
   esac
 }
 
@@ -917,7 +943,7 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origi
 
 command_hold() {
   local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind hold_set occurrence
-  local existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason previous_origin='' hold_status=0
+  local origin_key='' existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason previous_origin='' hold_status=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -926,6 +952,7 @@ command_hold() {
       --reason) shift; reason=${1:-} ;;
       --repo) shift; repo=${1:-} ;;
       --origin) shift; origin=${1:-} ;;
+      --origin-key) shift; origin_key=${1:-} ;;
       --until) shift; until=${1:-} ;;
       *) usage >&2; exit 2 ;;
     esac
@@ -938,6 +965,7 @@ command_hold() {
   if [ -n "$origin" ]; then
     validate_slug origin-id "$origin"
   fi
+  [ -z "$origin_key" ] || validate_slug origin-key "$origin_key"
   if [ -n "$until" ]; then
     case "$until" in
       [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) : ;;
@@ -1022,6 +1050,11 @@ command_hold() {
   occurrence=$(( $(resolution_record_count "$(show_field "$show" body)") + 1 ))
   [ -n "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ] \
     || fail "task $id lost its hold-set stamp while being held"
+  if [ -n "$origin_key" ]; then
+    { mkdir -p "$(dirname "$(origin_key_path "$id" "$occurrence")")" \
+      && printf '%s\n' "$origin_key" > "$(origin_key_path "$id" "$occurrence")"; } \
+      || fail "could not record the origin key for $id"
+  fi
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason"
   printf '%s\n' "$id"
 }
@@ -1527,6 +1560,7 @@ publish_parent_resolution_then_retire() {  # <task-id> <occurrence> <note>
   local id=$1 occurrence=$2 note=$3 request
   request=$(reconcile_request_path "$id")
   publish_parent_hold "$id" "$occurrence" resolved "$note"
+  [ "$PARENT_HOLD_PUBLISHED" != 1 ] || resolve_parent_origin_key "$id" "$occurrence" "$note"
   if [ -e "$request" ] && [ "$PARENT_HOLD_PUBLISHED" != 1 ]; then
     fail "could not publish the answered captain-held task $id to its parent"
   fi

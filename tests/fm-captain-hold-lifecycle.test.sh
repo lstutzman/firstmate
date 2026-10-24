@@ -1543,6 +1543,75 @@ EOF
   pass "a secondmate home publishes each hold occurrence and its answer on the parent channel"
 }
 
+# A call first raised as `needs-decision [key=<task-id>]` and then held under that
+# task id must close that original key when the hold is answered or released, so
+# the parent's open-decision fold stops re-asking an answered call.
+test_hold_answer_closes_originating_decision_key() {
+  local parent mate channel decision open
+  parent=$(make_home origin-key-parent)
+  mate=$(make_home origin-key-mate)
+  printf 'origin-key-mate\n' > "$mate/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" \
+    > "$mate/.fm-secondmate-parent"
+  channel="$parent/state/origin-key-mate.status"
+  decision="$mate/decision.txt"
+  printf 'ship it\n' > "$decision"
+  printf '%s\n' \
+    'needs-decision [at=1] [key=pillow-calls]: three card calls' \
+    'needs-decision [at=2] [key=pillow-release]: one more call' \
+    'needs-decision [at=3] [key=unrelated-call]: not a hold' \
+    'needs-decision [at=4] [key=recorded-key]: call held under another task' \
+    'needs-decision [at=5] [key=moot-key]: call reconciled on evidence' >> "$channel"
+
+  run_captain "$mate" hold pillow-calls --title "Pillow calls" --reason "three card calls" \
+    --repo sample >/dev/null || fail "pillow hold failed"
+  run_captain "$mate" hold pillow-release --title "Pillow release" --reason "one more call" \
+    --repo sample >/dev/null || fail "pillow release hold failed"
+  run_captain "$mate" answer pillow-calls --decision-file "$decision" >/dev/null \
+    || fail "pillow answer failed"
+  run_captain "$mate" answer pillow-release --decision-file "$decision" --release >/dev/null \
+    || fail "pillow release answer failed"
+
+  run_captain "$mate" hold gates-work --title "Gated work" --reason "held under another id" \
+    --repo sample --origin-key recorded-key >/dev/null || fail "origin-key hold failed"
+  run_captain "$mate" answer gates-work --decision-file "$decision" --release >/dev/null \
+    || fail "origin-key answer failed"
+  run_captain "$mate" hold moot-task --title "Moot task" --reason "may be moot" \
+    --repo sample --origin-key moot-key >/dev/null || fail "moot hold failed"
+  request_reconciles "$mate" origin-key-board moot-task || fail "could not request the reconcile"
+  printf 'The call is moot.\n' > "$mate/evidence.txt"
+  run_captain "$mate" reconcile close moot-task --evidence-file "$mate/evidence.txt" >/dev/null \
+    || fail "could not reconcile the moot task"
+
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$channel")
+  printf '%s\n' "$open" | grep -Fq 'recorded-key' \
+    && fail "a hold with a recorded origin key left that key open: $open"
+  printf '%s\n' "$open" | grep -Fq 'moot-key' \
+    || fail "a reconcile closed the origin key: $open"
+  printf '%s\n' "$open" | grep -Fq 'pillow-calls' \
+    && fail "an answered hold left its originating key open: $open"
+  printf '%s\n' "$open" | grep -Fq 'pillow-release' \
+    && fail "a released hold left its originating key open: $open"
+  printf '%s\n' "$open" | grep -Fq 'unrelated-call' \
+    || fail "an unrelated key was closed: $open"
+
+  printf '%s\n' 'needs-decision [at=6] [key=gates-work]: call raised under the task id' >> "$channel"
+  run_captain "$mate" hold gates-work --title "Gated work" --reason "held again" \
+    --repo sample >/dev/null || fail "re-hold without an origin key failed"
+  printf 'ship it again\n' > "$mate/decision-again.txt"
+  run_captain "$mate" answer gates-work --decision-file "$mate/decision-again.txt" >/dev/null \
+    || fail "re-held answer failed"
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$channel")
+  printf '%s\n' "$open" | grep -Fq 'gates-work' \
+    && fail "a re-hold reused the earlier hold's origin key and left the task-id key open: $open"
+
+  run_captain "$mate" answer pillow-calls --decision-file "$decision" >/dev/null \
+    || fail "answer retry failed"
+  [ "$(sed -E 's/ \[at=[0-9]+\]//' "$channel" | grep -c '^resolved \[key=pillow-calls\]')" = 1 ] \
+    || fail "a retry duplicated the origin resolution: $(cat "$channel")"
+  pass "answering or releasing a hold closes the needs-decision key it was raised from"
+}
+
 test_secondmate_reconcile_publishes_before_request_retirement() {
   local parent mate channel evidence out show rc request
   parent=$(make_home reconcile-parent-channel)
@@ -4721,6 +4790,7 @@ test_none_inventory_and_resolved_prose_do_not_create_holds
 test_terminal_single_owner_status_decision_does_not_block_empty_inventory
 test_secondmate_hold_stays_in_authoritative_home
 test_secondmate_home_publishes_holds_and_answers
+test_hold_answer_closes_originating_decision_key
 test_secondmate_reconcile_publishes_before_request_retirement
 test_bound_channel_answers_close_at_answer_time
 test_reconcile_never_closes_through_the_keyed_answer_intake
