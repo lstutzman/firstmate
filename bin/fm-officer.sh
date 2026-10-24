@@ -53,6 +53,9 @@
 # none, no finished run within two cadences of registration or of the last
 # finished run, and officers listed in a second mate home.
 #
+# Roles: triage (bin/fm-officer-triage.py) and landing
+# (bin/fm-officer-landing.py); each role script's header owns its pass.
+#
 # Officers run in the primary home only: register, run, and check refuse in a
 # home carrying .fm-secondmate-home.
 #
@@ -67,7 +70,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/officers.md"
-OFFICER_ROLES="triage"
+OFFICER_ROLES="triage landing"
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -184,6 +187,20 @@ line_problem() {
     triage)
       line_field "$line" archive >/dev/null \
         || { printf 'officer %s: a triage officer needs archive: <dir> or <host>:<dir>\n' "$id"; return; }
+      ;;
+    landing)
+      line_field "$line" facts >/dev/null \
+        || { printf 'officer %s: a landing officer needs facts: <path>, <host>:<path>, or an https URL\n' "$id"; return; }
+      case "$(line_field "$line" writes || echo corrections)" in
+        none|corrections) ;;
+        *) printf 'officer %s: writes must be corrections or none\n' "$id"; return ;;
+      esac
+      case "$(line_field "$line" max-corrections || echo 10)$(line_field "$line" done-window || echo 100)" in
+        ''|*[!0-9]*) printf 'officer %s: max-corrections and done-window must be whole numbers\n' "$id"; return ;;
+      esac
+      case "$(line_field "$line" reopen-state || echo 'In Progress')" in
+        'In Staging'|Done) printf 'officer %s: reopen-state may not be In Staging or Done\n' "$id"; return ;;
+      esac
       ;;
   esac
 }
@@ -319,6 +336,15 @@ role_triage() {  # <date>
 $(readable_homes)
 EOF
   python3 -I "$SCRIPT_DIR/fm-officer-triage.py" "${args[@]}"
+}
+
+role_landing() {  # <date>
+  python3 -I "$SCRIPT_DIR/fm-officer-landing.py" run --facts "$(line_field "$OFFICER_LINE" facts)" \
+    --date "$1" --out "$OFFICER_LANE" --team "$(line_field "$OFFICER_LINE" team || echo PC)" \
+    --writes "$(line_field "$OFFICER_LINE" writes || echo corrections)" \
+    --done-window "$(line_field "$OFFICER_LINE" done-window || echo 100)" \
+    --max-corrections "$(line_field "$OFFICER_LINE" max-corrections || echo 10)" \
+    --reopen-state "$(line_field "$OFFICER_LINE" reopen-state || echo 'In Progress')"
 }
 
 action_run() {

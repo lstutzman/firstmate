@@ -817,16 +817,23 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | Field | Meaning |
 | --- | --- |
 | `<id>` | Lowercase letters, digits, and dashes, at most 40 characters; names the lane `data/officers/<id>/` and the check `state/officer-<id>.check.sh` |
-| `role` | `triage` |
+| `role` | `triage` or `landing` |
 | `cadence` | `daily HH:MM` in the home's local time; the run for yesterday's date starts at the first watcher check after that time |
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
 | `archive` | Triage only: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
 | `hosts` | Triage only, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
+| `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 1), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
+| `team` | Landing only, optional: the Linear team key whose Done items are listed; default `PC` |
+| `writes` | Landing only, optional: `corrections` (default) lets the officer correct what PropertyCompass2's release workflow, the routine Done writer, missed; `none` turns Linear writes off |
+| `max-corrections` | Landing only, optional: the most items one run may correct; default 10 |
+| `reopen-state` | Landing only, optional: the state a Done item with no production evidence moves to; default `In Progress`; `In Staging` and `Done` are refused |
+| `done-window` | Landing only, optional: how many Linear Done items one run lists, in one paged read, to find Done items no landing fact names; default 100, and 0 skips that read |
 
 Example:
 
 ```text
 - triage - Joins each day's archived sessions to firstmate tasks and outcomes (role: triage; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
+- landing - Reconciles Linear against landing evidence (role: landing; cadence: daily 06:30; facts: slartibartfast:/home/lee/services/landing-truth/latest.json; team: PC; writes: corrections; model: none; added 2026-10-24)
 ```
 
 After adding a line, run `bin/fm-officer.sh register <id>` to install and trust its watcher check; `bin/fm-officer.sh retire <id>` removes the check and the line and keeps the findings.
