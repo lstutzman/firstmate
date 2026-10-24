@@ -12,7 +12,8 @@ ok - fm-project-mode: no merger token, a missing project, or an absent registry 
 ok - fm-project-mode: landing-lag=<hours> binds in any token order and leaves the other outputs unchanged
 ok - fm-project-mode: an empty, zero, non-integer, or over-long landing lag is refused under --landing-lag
 ok - fm-project-mode: no landing-lag token, a missing project, or an absent registry prints no landing lag
+ok - fm-project-mode: admission=<name> binds beside other tokens, refuses a malformed name, and is empty when unset
 ok - fm-project-mode: ready-evidence=<name> binds in any token order and leaves the default output unchanged
 ok - fm-project-mode: a malformed ready-evidence binding is refused; none, or an absent registry, prints nothing
 # fm-project-mode.test.sh: all assertions passed
-bash tests/$t.test.sh  0.64s user 1.04s system 71% cpu 2.346 total
+rc=0

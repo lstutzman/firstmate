@@ -34,4 +34,4 @@ ok - external review done: accepted on a canonical URL alone without a backup; P
 ok - external review done with a backup: refused until HEAD is under refs/remotes/backup/backup/, then accepted
 ok - worker role names the skill and its fallback skill file
 all fm-dod-lib tests passed
-bash tests/$t.test.sh  6.60s user 11.36s system 61% cpu 29.075 total
+rc=0

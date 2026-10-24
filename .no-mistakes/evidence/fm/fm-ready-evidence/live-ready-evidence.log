@@ -1,0 +1,67 @@
+### S1 crew-state on a fresh done (no registration yet); evidence runs so far: 0
+state: blocked · source: status-log · ready evidence pc-ready not yet checked for https://github.com/lab/pc2/pull/7 at 9a7dd2fc507443fab1be55523758c40b03595ec3; registering the PR runs it
+evidence runs after state read: 0
+
+### S2 fm-pr-check.sh registration, no review marker -> refuse
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: ready evidence pc-ready refused https://github.com/lab/pc2/pull/7 at 9a7dd2fc507443fab1be55523758c40b03595ec3: no pc-review-evidence marker for 9a7dd2fc507443fab1be55523758c40b03595ec3
+rc=1
+ready_evidence=fail 9a7dd2fc507443fab1be55523758c40b03595ec3 https://github.com/lab/pc2/pull/7 ready evidence pc-ready refused https://github.com/lab/pc2/pull/7 at 9a7dd2fc507443fab1be55523758c40b03595ec3: no pc-review-evidence marker for 9a7dd2fc507443fab1be55523758c40b03595ec3
+0
+--- crew-state reads recorded fail (runs before: 1)
+state: blocked · source: status-log · ready evidence pc-ready refused https://github.com/lab/pc2/pull/7 at 9a7dd2fc507443fab1be55523758c40b03595ec3: no pc-review-evidence marker for 9a7dd2fc507443fab1be55523758c40b03595ec3
+runs after: 1
+
+### S3 marker present but PR body missing 'How to revert' (CRLF body) -> refuse
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: ready evidence pc-ready refused https://github.com/lab/pc2/pull/7 at 9a7dd2fc507443fab1be55523758c40b03595ec3: PR body has no How to revert heading
+rc=1
+ready_evidence=fail 9a7dd2fc507443fab1be55523758c40b03595ec3 https://github.com/lab/pc2/pull/7 ready evidence pc-ready refused https://github.com/lab/pc2/pull/7 at 9a7dd2fc507443fab1be55523758c40b03595ec3: PR body has no How to revert heading
+
+### S4 marker + all headings (CRLF body) -> registration passes and arms
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/evid.check.sh
+rc=0
+ready_evidence=pass 9a7dd2fc507443fab1be55523758c40b03595ec3 https://github.com/lab/pc2/pull/7
+pr=https://github.com/lab/pc2/pull/7
+contributions.check-trust
+contributions.check.sh
+evid.check.sh
+--- crew-state reads recorded pass (runs before: 3)
+state: done · source: status-log · PR https://github.com/lab/pc2/pull/7
+runs after: 3
+
+### S5 worker pushes a new head -> record no longer matches
+state: blocked · source: status-log · ready evidence pc-ready not yet checked for https://github.com/lab/pc2/pull/7 at 8e390c0483dd659c1749286746fd62ad30196f72; registering the PR runs it
+runs after: 3
+
+### S6 tampered command set path: delete config file -> registration refuses
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: ready evidence pc-ready is registered but /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.MU2RED/config/ready-evidence/pc-ready is missing
+rc=1
+ready_evidence=fail 8e390c0483dd659c1749286746fd62ad30196f72 https://github.com/lab/pc2/pull/7 ready evidence pc-ready is registered but /var/folders/3z/xfcxhgmj1js2n4zf1709h2vc0000gn/T//fm-lab.MU2RED/config/ready-evidence/pc-ready is missing
+
+### S7 timeout: slow command set -> fail
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: ready evidence pc-ready refused https://github.com/lab/pc2/pull/7 at 8e390c0483dd659c1749286746fd62ad30196f72: timed out after 1s
+rc=1
+ready_evidence=fail 8e390c0483dd659c1749286746fd62ad30196f72 https://github.com/lab/pc2/pull/7 ready evidence pc-ready refused https://github.com/lab/pc2/pull/7 at 8e390c0483dd659c1749286746fd62ad30196f72: timed out after 1s
+
+### S8 project with no token: registry line without ready-evidence -> no record, unchanged gate
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/evid.check.sh
+rc=0
+0
+state: done · source: status-log · PR https://github.com/lab/pc2/pull/7
+runs: 0
+
+gh calls:
+   2 gh pr view https://github.com/lab/pc2/pull/7 --json body -q .body
+   6 gh pr view https://github.com/lab/pc2/pull/7 --json headRefOid -q .headRefOid
+   6 gh pr view https://github.com/lab/pc2/pull/7 --json isDraft
