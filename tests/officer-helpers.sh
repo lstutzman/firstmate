@@ -7,8 +7,9 @@
 #   per spec entry (index.json plus transcript.jsonl.gz), and runs.jsonl.
 #   The spec is a JSON object {"sessions": [...], "harvested": "<iso>",
 #   "records": [...]} where each session has machine, id, first_prompt, cwd and
-#   calls: a list of [tool, input, result_text, is_error]. The harvester's last
-#   run defaults to 01:00 the day after <date>.
+#   calls: a list of [tool, input, result_text, is_error], plus optional raw: a
+#   list of transcript records appended verbatim after the calls. The
+#   harvester's last run defaults to 01:00 the day after <date>.
 #
 # officer_home <dir>: a primary home with private data/ and state/.
 # officer_registry <home> <archive> [hosts] [cadence]: one triage officer line.
@@ -36,6 +37,7 @@ for s in spec.get("sessions", []):
             {"type": "tool_use", "id": tid, "name": tool, "input": args}]}})
         recs.append({"type": "user", "message": {"content": [
             {"type": "tool_result", "tool_use_id": tid, "content": result, "is_error": is_error}]}})
+    recs.extend(s.get("raw", []))
     with gzip.open(os.path.join(path, "transcript.jsonl.gz"), "wt") as fh:
         for r in recs:
             fh.write(json.dumps(r) + "\n")
