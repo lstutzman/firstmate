@@ -1574,7 +1574,7 @@ test_hold_answer_closes_originating_decision_key() {
 
   run_captain "$mate" hold gates-work --title "Gated work" --reason "held under another id" \
     --repo sample --origin-key recorded-key >/dev/null || fail "origin-key hold failed"
-  run_captain "$mate" answer gates-work --decision-file "$decision" >/dev/null \
+  run_captain "$mate" answer gates-work --decision-file "$decision" --release >/dev/null \
     || fail "origin-key answer failed"
   run_captain "$mate" hold moot-task --title "Moot task" --reason "may be moot" \
     --repo sample --origin-key moot-key >/dev/null || fail "moot hold failed"
@@ -1594,6 +1594,16 @@ test_hold_answer_closes_originating_decision_key() {
     && fail "a released hold left its originating key open: $open"
   printf '%s\n' "$open" | grep -Fq 'unrelated-call' \
     || fail "an unrelated key was closed: $open"
+
+  printf '%s\n' 'needs-decision [at=6] [key=gates-work]: call raised under the task id' >> "$channel"
+  run_captain "$mate" hold gates-work --title "Gated work" --reason "held again" \
+    --repo sample >/dev/null || fail "re-hold without an origin key failed"
+  printf 'ship it again\n' > "$mate/decision-again.txt"
+  run_captain "$mate" answer gates-work --decision-file "$mate/decision-again.txt" >/dev/null \
+    || fail "re-held answer failed"
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$channel")
+  printf '%s\n' "$open" | grep -Fq 'gates-work' \
+    && fail "a re-hold reused the earlier hold's origin key and left the task-id key open: $open"
 
   run_captain "$mate" answer pillow-calls --decision-file "$decision" >/dev/null \
     || fail "answer retry failed"
