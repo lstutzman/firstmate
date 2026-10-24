@@ -187,6 +187,47 @@ test_late_harvester_is_retried_then_reported() {
   pass "fm-officer: a late harvester is retried, then reported as a failed run once attempts run out"
 }
 
+test_failure_after_a_reported_digest_is_reported_once() {
+  local home out
+  home=$(make_world twokinds empty_spec)
+  officer_archive "$TMP_ROOT/twokinds/archive" 2026-10-22 "$TMP_ROOT/twokinds/spec.json"
+  officer "$home" run triage --date 2026-10-22 >/dev/null || fail "run for the earlier day must succeed"
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=1 officer "$home" check triage) || fail "check must exit 0"
+  assert_contains "$out" "officer triage: 2026-10-22: 1 actionable finding(s)" "the earlier digest is reported"
+  wait_for_attempts "$home" 1
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=1 officer "$home" check triage) || fail "check must exit 0"
+  assert_equals 1 "$(printf '%s\n' "$out" | grep -c .)" "only the new failure is reported"
+  assert_contains "$out" "officer triage: $DATE: run failed 1 time(s)" "the failed day is reported"
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=1 officer "$home" check triage) || fail "check must exit 0"
+  assert_equals "" "$out" "neither the digest nor the failure is repeated"
+  out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=1 officer "$home" check triage) || fail "check must exit 0"
+  assert_equals "" "$out" "later checks stay silent"
+  pass "fm-officer: a failure after a reported digest is reported once and neither line repeats"
+}
+
+test_timed_out_run_counts_as_an_attempt() {
+  local home fakebin out i
+  home=$(make_world timeout empty_spec)
+  fakebin=$(fm_fakebin "$TMP_ROOT/timeout")
+  printf '#!/usr/bin/env bash\nexec sleep 30\n' > "$fakebin/ssh"
+  chmod +x "$fakebin/ssh"
+  officer_registry "$home" "slowhost:/archive" alpha
+  out=$(PATH="$fakebin:$PATH" FM_OFFICER_RUN_TIMEOUT=1 FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=1 \
+    officer "$home" check triage) || fail "check must exit 0"
+  i=0
+  until grep -q " $DATE " "$home/data/officers/triage/runs.log" 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -lt 150 ] || fail "the timed-out run was never logged"
+    sleep 0.1
+  done
+  assert_grep "$DATE failed timed out" "$home/data/officers/triage/runs.log" "a run the timeout ends is logged as a failed attempt"
+  out=$(PATH="$fakebin:$PATH" FM_OFFICER_RUN_TIMEOUT=1 FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=1 \
+    officer "$home" check triage) || fail "check must exit 0"
+  assert_contains "$out" "officer triage: $DATE: run failed 1 time(s): timed out" "a spent timed-out attempt is reported"
+  assert_equals 1 "$(grep -c " $DATE " "$home/data/officers/triage/runs.log")" "no further run starts once attempts are spent"
+  pass "fm-officer: a scheduled run that times out counts as a failed attempt"
+}
+
 test_ensure_reports_gaps_and_is_silent_when_healthy() {
   local home out
   home=$(make_world ensure clean_spec)
@@ -272,6 +313,8 @@ test_check_is_silent_for_an_empty_digest
 test_scheduled_run_starts_from_the_check_and_reports
 test_unreachable_host_is_silent_until_attempts_run_out
 test_late_harvester_is_retried_then_reported
+test_failure_after_a_reported_digest_is_reported_once
+test_timed_out_run_counts_as_an_attempt
 test_ensure_reports_gaps_and_is_silent_when_healthy
 test_secondmate_home_runs_no_officers
 test_run_writes_only_its_lane_and_acts_on_no_fleet

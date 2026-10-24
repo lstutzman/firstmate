@@ -42,7 +42,10 @@
 #     after the last allowed attempt fails;
 #   - every other condition, including an unreachable archive host, is silent
 #     with exit 0; ensure reports lasting gaps at session start.
-# The lane's check-record file holds the last line reported.
+# The lane's check-record.digest and check-record.failure files each hold the
+# last line of their kind reported. A scheduled run that the timeout or a
+# signal ends before it logs an attempt is logged as "failed timed out" or
+# "failed exited <rc>".
 #
 # ensure (run by bin/fm-bootstrap.sh) prints one "OFFICER: ..." line per
 # actionable gap and nothing when every officer is healthy: a malformed
@@ -376,10 +379,12 @@ attempts() { awk -v d="$1" '$2 == d && $3 == "failed" {n++} END {print n + 0}' "
 finished() { awk -v d="$1" '$2 == d && $3 == "ok" {f=1} END {exit !f}' "$OFFICER_LANE/runs.log" 2>/dev/null; }
 last_attempt() { awk -v d="$1" '$2 == d {t=$1} END {print t + 0}' "$OFFICER_LANE/runs.log" 2>/dev/null || echo 0; }
 
-report_once() {  # <line>
-  [ "$(cat "$OFFICER_LANE/check-record" 2>/dev/null)" = "$1" ] && return 0
-  printf '%s\n' "$1" > "$OFFICER_LANE/check-record" || return 0
-  printf '%s\n' "$1"
+runs_for() { cat "$OFFICER_LANE/runs.log" 2>/dev/null | awk -v d="$1" '$2 == d {n++} END {print n + 0}'; }
+
+report_once() {  # <digest|failure> <line>
+  [ "$(cat "$OFFICER_LANE/check-record.$1" 2>/dev/null)" = "$2" ] && return 0
+  printf '%s\n' "$2" > "$OFFICER_LANE/check-record.$1" || return 0
+  printf '%s\n' "$2"
 }
 
 action_check() {
@@ -405,22 +410,27 @@ action_check() {
     n=${BASH_REMATCH[2]}
     path=${BASH_REMATCH[3]}
     if [ "$n" -gt 0 ]; then
-      report_once "officer $id: ${BASH_REMATCH[1]}: $n actionable finding(s) in $path"
-    elif [ "$(cat "$OFFICER_LANE/check-record" 2>/dev/null)" != "$digest" ]; then
-      printf '%s\n' "$digest" > "$OFFICER_LANE/check-record" 2>/dev/null || true
+      report_once digest "officer $id: ${BASH_REMATCH[1]}: $n actionable finding(s) in $path"
     fi
   fi
   tries=$(attempts "$date")
   if ! finished "$date" && ! lock_held && [ "$tries" -ge "$max" ]; then
     reason=$(awk -v d="$date" '$2 == d && $3 == "failed" {$1=$2=$3=""; r=$0} END {print r}' \
       "$OFFICER_LANE/runs.log" 2>/dev/null | sed 's/^ *//')
-    report_once "officer $id: $date: run failed $tries time(s): $reason"
+    report_once failure "officer $id: $date: run failed $tries time(s): $reason"
   fi
   return 0
 }
 
 action_timed_run() {  # <id> <date>: the detached scheduled run, bounded.
-  fm_run_timed "${FM_OFFICER_RUN_TIMEOUT:-3600}" bash "$SCRIPT_DIR/fm-officer.sh" run "$1" --date "$2" --scheduled
+  local before rc=0
+  load_officer "$1"
+  before=$(runs_for "$2")
+  fm_run_timed "${FM_OFFICER_RUN_TIMEOUT:-3600}" bash "$SCRIPT_DIR/fm-officer.sh" run "$1" --date "$2" --scheduled || rc=$?
+  if [ "$rc" -ne 0 ] && [ "$(runs_for "$2")" -eq "$before" ]; then
+    if fm_timed_out "$rc"; then run_log "$2" failed "timed out"; else run_log "$2" failed "exited $rc"; fi
+  fi
+  return "$rc"
 }
 
 action_ensure() {

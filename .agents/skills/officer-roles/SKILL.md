@@ -18,7 +18,7 @@ It never acts on the fleet.
 An officer may:
 
 - read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, and GitHub read-only;
-- write its own lane, `data/officers/<id>/`: dated findings, its digest marker, `runs.log`, and `check-record`;
+- write its own lane, `data/officers/<id>/`: dated findings, its digest marker, `runs.log`, and its `check-record.*` files;
 - print its one report line from its watcher check.
 
 An officer may never:

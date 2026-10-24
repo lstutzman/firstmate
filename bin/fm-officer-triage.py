@@ -87,6 +87,13 @@ SEGMENT_RULES = [
 PR_CREATE_RE = re.compile(r"\b(gh|gh-axi)\s+pr\s+create\b")
 PR_HEADINGS = ("Testing", "Risk", "How to revert")
 SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\||\n)\s*")
+HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
+NETWORKIDLE_RE = re.compile(
+    r"wait_?until['\"]?\s*[:=]\s*\\?['\"]networkidle|--wait-until[=\s]+['\"]?networkidle", re.I)
+TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_-])(?:(?:ghp_|gho_|ghs_|ghu_|github_pat_|sk-|xox[abprs]-|AKIA)[A-Za-z0-9_-]*"
+    r"|(?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])")
 SLEEP_RE = re.compile(r"^sleep\s+\d")
 
 
@@ -95,7 +102,8 @@ def normalise(text, limit=100):
     lines = [l for l in (text or "").strip().splitlines()
              if l.strip() and not re.fullmatch(r"\s*Exit code \d+\s*", l)]
     first = lines[0] if lines else (text or "").strip()
-    s = re.sub(r"\"[^\"]*\"|'[^']*'", "<str>", first)
+    s = TOKEN_RE.sub("<token>", first)
+    s = re.sub(r"\"[^\"]*\"|'[^']*'", "<str>", s)
     s = re.sub(r"(?:~|\.{0,2})?/[^\s:,)]+", "<path>", s)
     s = re.sub(r"\b[0-9a-f]{7,}\b", "<hex>", s)
     s = re.sub(r"\d+", "N", s)
@@ -106,13 +114,30 @@ def normalise(text, limit=100):
 
 def command_head(segment):
     """The command word and its leading flags, never its arguments."""
-    words = segment.split()
+    words = TOKEN_RE.sub("<token>", segment).split()
     head = []
     for word in words:
         if head and not word.startswith("-"):
             break
         head.append(word)
     return " ".join(head) + (" ..." if len(words) > len(head) else "")
+
+
+def command_segments(command):
+    """Shell command segments, skipping heredoc bodies and quoted text."""
+    kept = []
+    end = None
+    for line in command.split("\n"):
+        if end is not None:
+            if (line.lstrip("\t") if end[0] else line) == end[1]:
+                end = None
+            continue
+        kept.append(line)
+        m = HEREDOC_RE.search(line)
+        if m:
+            end = (m.group(1) == "-", m.group(3))
+    flat = QUOTED_RE.sub("''", "\n".join(kept))
+    return [s for s in SEGMENT_SPLIT.split(flat.strip()) if s]
 
 
 def classify(first_prompt):
@@ -217,19 +242,19 @@ def analyse_transcript(path):
             for key in [k for k in read_paths if k[0] == target]:
                 read_paths[key] = False
             body = json.dumps(args)
-            if "networkidle" in body:
+            if NETWORKIDLE_RE.search(body):
                 found.append(("networkidle", "medium",
                               name + " content sets waitUntil networkidle"))
         elif name == "Bash":
             command = args.get("command") or ""
-            segments = [s for s in SEGMENT_SPLIT.split(command.strip()) if s]
+            segments = command_segments(command)
             for i, segment in enumerate(segments):
                 if SLEEP_RE.match(segment) and (i + 1 < len(segments) or len(segments) == 1):
                     bump(wasted, "sleep-then-check")
                 for rule, severity, pattern in SEGMENT_RULES:
                     if pattern.search(segment):
                         found.append((rule, severity, normalise(command_head(segment), 80)))
-            if "networkidle" in command:
+            if NETWORKIDLE_RE.search(command):
                 found.append(("networkidle", "medium", "Bash command sets waitUntil networkidle"))
             if PR_CREATE_RE.search(command) and "--body " in command \
                     and "--body-file" not in command:

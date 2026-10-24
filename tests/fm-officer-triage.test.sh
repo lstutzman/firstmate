@@ -29,7 +29,13 @@ msg = {"file_path": home + "/state/operational-inbox/1.msg"}
 spec = {"sessions": [
   {"machine": "alpha", "id": "s-done", "first_prompt": ": Firstmate operational input waiting: read 'x'",
    "calls": [["Read", msg, brief_done, False],
-             ["Bash", {"command": "rm -rf /home/lee/private/notes.txt"}, "", False]]},
+             ["Bash", {"command": "rm -rf /home/lee/private/notes.txt"}, "", False],
+             ["Bash", {"command": "cat > /tmp/s.sh <<'EOF'\nrm -f -- \"$tmp\"\npkill -f worker\nEOF\nbash /tmp/s.sh"}, "", False],
+             ["Bash", {"command": "grep -rn 'networkidle\\|rm -f' src"}, "", False],
+             ["Bash", {"command": "gh auth status"},
+              "bash: ghp_AbCdEf0123456789abcdefGHIJ: command not found", True],
+             ["Edit", {"file_path": "/y.ts", "old_string": "a",
+                       "new_string": "await page.goto(u, { waitUntil: 'networkidle' })"}, "", False]]},
   {"machine": "alpha", "id": "s-failed", "first_prompt": ": Firstmate operational input waiting: read 'y'",
    "calls": [["Read", msg, brief_failed, False],
              ["Bash", {"command": "sleep 30 && git status"}, "", False]]},
@@ -152,12 +158,20 @@ test_rule_violation_reports_command_head_only() {
   run_officer "$home" >/dev/null || fail "run must succeed"
   json="$home/data/officers/triage/$DATE.json"
   findings=$(jq -c '[.findings[] | select(.kind == "rule-violation")]' "$json")
-  assert_equals 1 "$(printf '%s' "$findings" | jq length)" "one bare rm gives one rule-violation finding"
+  assert_equals "networkidle rm-not-trash" "$(printf '%s' "$findings" | jq -r '[.[].rule] | sort | join(" ")')" \
+    "only the bare rm and the waitUntil networkidle edit are violations, not heredoc bodies or quoted patterns"
+  assert_equals 1 "$(printf '%s' "$findings" | jq -r '.[] | select(.rule == "rm-not-trash") | .count')" \
+    "the rm inside a heredoc body is not counted"
   assert_equals alpha:s-done "$(printf '%s' "$findings" | jq -r '.[0].session')" "the finding names its session"
-  assert_contains "$(printf '%s' "$findings" | jq -r '.[0].summary')" "rm -rf ..." "the finding carries the command head"
+  assert_contains "$(printf '%s' "$findings" | jq -r '.[] | select(.rule == "rm-not-trash") | .summary')" "rm -rf ..." \
+    "the finding carries the command head"
   assert_no_grep "notes.txt" "$json" "no argument text reaches the findings file"
   assert_no_grep "notes.txt" "$home/data/officers/triage/$DATE.md" "no argument text reaches the digest"
-  pass "fm-officer triage: a bare rm is one finding with no transcript excerpt"
+  assert_no_grep "AbCdEf0123456789" "$json" "a token in an error line never reaches the findings file"
+  assert_no_grep "AbCdEf0123456789" "$home/data/officers/triage/$DATE.md" "a token in an error line never reaches the digest"
+  assert_contains "$(jq -r '.top_errors[].signature' "$json")" "bash: <token>: command not found" \
+    "the error signature keeps its shape with the token redacted"
+  pass "fm-officer triage: rule violations and error signatures carry no transcript excerpt or token"
 }
 
 test_unharvested_day_fails_the_run() {

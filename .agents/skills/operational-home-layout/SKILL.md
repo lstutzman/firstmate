@@ -60,7 +60,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   projects.md        thin fleet navigation registry recording each project's standing delivery posture and optional ship-branch prefix; firstmate-private, parsed by fm-project-mode.sh (section 6)
   secondmates.md      local and remote secondmate routing table; firstmate-private, maintained by the secondmate seed helpers (section 6)
   officers.md        officer registry, primary home only; schema in docs/configuration.md "Officers (data/officers.md)"
-  officers/<id>/     an officer's write lane: dated findings, digest marker, runs.log, check-record; written only by bin/fm-officer.sh and its role pass
+  officers/<id>/     an officer's write lane: dated findings, digest marker, runs.log, check-record.*; written only by bin/fm-officer.sh and its role pass
   <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
   pipeline-spend.jsonl  optional per-task no-mistakes pipeline spend, written only when config/pipeline-spend is present; bin/fm-pipeline-spend.sh owns the schema
