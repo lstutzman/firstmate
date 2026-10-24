@@ -1,0 +1,102 @@
+{
+ "bottlenecks": [
+  {
+   "category": "environment",
+   "confidence": 5,
+   "effort": "S",
+   "evidence": "3 event(s) on 2026-10-24; tasks task-swap; status swap-c2@2026-10-24T10:00:00Z, swap-c2@2026-10-24T10:30:00Z; sessions deepthought:s-dt; e.g. Lee, please run: ssh -t deepthought 'bash /x/swap.sh c2'",
+   "impact": "Removes 3 Lee step(s) and 2.0 h of agent waiting seen on 2026-10-24.",
+   "improvement": "Make Lee-step one-liners host-aware: print `bash <script>` when the session already runs on the target host and `ssh -t <host> ...` only from another machine, or install a loopback key.",
+   "owner": "main (firstmate)",
+   "severity": 5,
+   "time_saved": "about 2.0 h a day: 1 measured wait(s) on 2026-10-24 totalling 2.0 h, from ask to answer",
+   "title": "Lee-step ssh lines target the machine they run on",
+   "tldr": "Lee had to run an ssh -t <host> line inside a session on that same host, where ssh to itself has no key: 3 time(s) on 2026-10-24; agents waited 2.0 h."
+  },
+  {
+   "category": "waiting",
+   "confidence": 5,
+   "effort": "S",
+   "evidence": "1 event(s) on 2026-10-24; tasks task-mail; status mailbox-token@2026-10-24T10:00:00Z; e.g. creating staging secret E2E_MAILBOX_TOKEN is a credential change: the rules need Lee's own words naming it",
+   "impact": "Removes 1 Lee step(s) and 1.5 h of agent waiting seen on 2026-10-24.",
+   "improvement": "Adopt a standing naming rule for new staging-only credentials (name pattern, vault, owner) so a name that follows it is pre-approved; production credentials stay direct-only.",
+   "owner": "Lee (fleet rules section 5)",
+   "severity": 4,
+   "time_saved": "about 1.5 h a day: 1 measured wait(s) on 2026-10-24 totalling 1.5 h, from ask to answer",
+   "title": "New staging credentials wait on Lee's per-credential word",
+   "tldr": "Lee had to approve a new credential by name: 1 time(s) on 2026-10-24; agents waited 1.5 h."
+  },
+  {
+   "category": "waiting",
+   "confidence": 5,
+   "effort": "M",
+   "evidence": "2 event(s) on 2026-10-24; status merge-word@2026-10-24T10:00:00Z, merge-word@2026-10-24T10:01:00Z; e.g. relayed: Lee needs to give the merge word for PR 5",
+   "impact": "Removes 2 Lee step(s) and 40 min of agent waiting seen on 2026-10-24.",
+   "improvement": "Collect the day's merge-word asks into one Captain's Log card with each PR's category, gate result and diff size inline, so Lee answers them in one pass instead of one wake each.",
+   "owner": "main (firstmate)",
+   "severity": 3,
+   "time_saved": "about 40 min a day: 2 measured wait(s) on 2026-10-24 totalling 40 min, from ask to answer",
+   "title": "Merge-word asks reach Lee one at a time",
+   "tldr": "Lee had to give his merge word on a PR the rules reserve to him: 2 time(s) on 2026-10-24; agents waited 40 min."
+  },
+  {
+   "category": "tooling",
+   "confidence": 5,
+   "effort": "S",
+   "evidence": "1 event(s) on 2026-10-24; tasks task-node; status node-line@2026-10-24T10:00:00Z; e.g. Making Node the default needs one line from Lee (hooks block me editing his shell startup file)",
+   "impact": "Removes 1 Lee step(s) and 10 min of agent waiting seen on 2026-10-24.",
+   "improvement": "Give the secret-exposure hook a sanctioned path for writing op:// reference lines (never literal values) to shell startup files, with a fixture test, so agents make the edit themselves.",
+   "owner": "skills (global hooks)",
+   "severity": 3,
+   "time_saved": "about 10 min a day: 1 measured wait(s) on 2026-10-24 totalling 10 min, from ask to answer",
+   "title": "Secret-exposure hook blocks safe shell-file edits, so Lee makes them",
+   "tldr": "Lee had to make a shell startup or secret-file edit the secret-exposure hook refused: 1 time(s) on 2026-10-24; agents waited 10 min."
+  },
+  {
+   "category": "waiting",
+   "confidence": 5,
+   "effort": "M",
+   "evidence": "1 event(s) on 2026-10-24; tasks task-fleet; status fleet-sudo@2026-10-24T10:00:00Z; e.g. the fleet-app deploy needs sudo on slartibartfast: Lee runs sudo systemctl restart fleet",
+   "impact": "Removes 1 Lee step(s) and 40 min of agent waiting seen on 2026-10-24.",
+   "improvement": "Install a root-owned script for the step with a NOPASSWD sudoers rule naming that exact path (or a systemd unit the agent may start), approved once by Lee, so the agent runs it itself.",
+   "owner": "fm-lab.xJXswh home (Lee approves the sudoers rule)",
+   "severity": 3,
+   "time_saved": "about 40 min a day: 1 measured wait(s) on 2026-10-24 totalling 40 min, from ask to answer",
+   "title": "Agents hand Lee sudo steps to run by hand",
+   "tldr": "Lee had to run a sudo command or script by hand: 1 time(s) on 2026-10-24; agents waited 40 min."
+  }
+ ],
+ "cost_usd": 0,
+ "evidence": [
+  {
+   "detail": "2 session(s) analysed; harvester last ran 2026-10-25T01:00:00+00:00",
+   "name": "session archive",
+   "state": "read"
+  },
+  {
+   "detail": "8 task log(s); fleet ledger absent",
+   "name": "status logs fm-lab.xJXswh",
+   "state": "read"
+  },
+  {
+   "detail": "Not read: the registry line sets no captains-log URL; counted from status logs only.",
+   "name": "Captain's Log",
+   "state": "missing"
+  }
+ ],
+ "generated_at": "2026-10-25T08:00:00Z",
+ "notes": [
+  "Home fm-lab.xJXswh keeps no fleet ledger, so status lines of tasks already cleaned up there are not read.",
+  "No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.",
+  "A worker that resumed in the wrong directory is found only while its task record survives."
+ ],
+ "outcome": "ok",
+ "run_id": "friction-20261024",
+ "schema_version": 1,
+ "source": "friction-officer",
+ "summary": "13 friction event(s), 10 naming Lee; 8 finding(s), 5 carded.",
+ "window": {
+  "from": "2026-10-24T00:00:00Z",
+  "to": "2026-10-25T00:00:00Z"
+ }
+}

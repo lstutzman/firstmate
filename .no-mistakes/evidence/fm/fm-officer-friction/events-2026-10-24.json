@@ -1,0 +1,592 @@
+{
+ "actionable": 8,
+ "coverage": {
+  "captains_log": {
+   "state": "not-set"
+  },
+  "harvester_last_run": "2026-10-25T01:00:00+00:00",
+  "homes": [
+   {
+    "ledger": false,
+    "path": "/tmp/fm-lab.xJXswh",
+    "status_logs": 8
+   }
+  ],
+  "hosts_expected": [
+   "deepthought"
+  ],
+  "hosts_present": [
+   "deepthought"
+  ],
+  "notes": [
+   "Home fm-lab.xJXswh keeps no fleet ledger, so status lines of tasks already cleaned up there are not read.",
+   "No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.",
+   "A worker that resumed in the wrong directory is found only while its task record survives."
+  ],
+  "sessions_analysed": 2
+ },
+ "date": "2026-10-24",
+ "events": [
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-w",
+   "signature": "python3: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "python3"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-w",
+   "signature": "python3: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "python3"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-w",
+   "signature": "python3: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "python3"
+  },
+  {
+   "answered_at": 1792837200,
+   "answered_by": "lee",
+   "at": 1792836000,
+   "cause": "policy",
+   "channel": true,
+   "home": "fm-lab.xJXswh",
+   "key": "merge-word",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "relayed: Lee needs to give the merge word for PR 5",
+   "source": "status",
+   "state": "needs-decision",
+   "sub": "merge-word",
+   "task": "m1",
+   "tool": null,
+   "wait_s": 1200
+  },
+  {
+   "answered_at": 1792838400,
+   "answered_by": "lee",
+   "at": 1792836000,
+   "cause": "sudo",
+   "channel": false,
+   "home": "fm-lab.xJXswh",
+   "key": "fleet-sudo",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "the fleet-app deploy needs sudo on slartibartfast: Lee runs sudo systemctl restart fleet",
+   "source": "status",
+   "state": "blocked",
+   "sub": "sudo",
+   "task": "task-fleet",
+   "tool": null,
+   "wait_s": 2400
+  },
+  {
+   "answered_at": 1792841400,
+   "answered_by": "lee",
+   "at": 1792836000,
+   "cause": "policy",
+   "channel": false,
+   "home": "fm-lab.xJXswh",
+   "key": "mailbox-token",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "creating staging secret E2E_MAILBOX_TOKEN is a credential change: the rules need Lee's own words naming it",
+   "source": "status",
+   "state": "needs-decision",
+   "sub": "credential-approval",
+   "task": "task-mail",
+   "tool": null,
+   "wait_s": 5400
+  },
+  {
+   "answered_at": 1792836600,
+   "answered_by": "lee",
+   "at": 1792836000,
+   "cause": "guard-hook",
+   "channel": false,
+   "home": "fm-lab.xJXswh",
+   "key": "node-line",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "Making Node the default needs one line from Lee (hooks block me editing his shell startup file)",
+   "source": "status",
+   "state": "needs-decision",
+   "sub": "secret-hook",
+   "task": "task-node",
+   "tool": null,
+   "wait_s": 600
+  },
+  {
+   "answered_at": null,
+   "answered_by": null,
+   "at": 1792836000,
+   "cause": "environment",
+   "channel": false,
+   "home": "fm-lab.xJXswh",
+   "key": null,
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": null,
+   "reask": false,
+   "service": null,
+   "signature": "Lee: after the reboot this worker session was restored in the wrong directory",
+   "source": "status",
+   "state": "paused",
+   "sub": "wrong-cwd",
+   "task": "task-restore",
+   "tool": null,
+   "wait_s": null
+  },
+  {
+   "answered_at": 1792843200,
+   "answered_by": "lee",
+   "at": 1792836000,
+   "cause": "environment",
+   "channel": false,
+   "home": "fm-lab.xJXswh",
+   "key": "swap-c2",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "Lee, please run: ssh -t deepthought 'bash /x/swap.sh c2'",
+   "source": "status",
+   "state": "needs-decision",
+   "sub": "ssh-to-self",
+   "task": "task-swap",
+   "tool": null,
+   "wait_s": 7200
+  },
+  {
+   "answered_at": 1792837260,
+   "answered_by": "lee",
+   "at": 1792836060,
+   "cause": "policy",
+   "channel": true,
+   "home": "fm-lab.xJXswh",
+   "key": "merge-word",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "relayed: Lee needs to give the merge word for PR 9",
+   "source": "status",
+   "state": "needs-decision",
+   "sub": "merge-word",
+   "task": "m2",
+   "tool": null,
+   "wait_s": 1200
+  },
+  {
+   "at": 1792836300,
+   "cause": "environment",
+   "home": null,
+   "kind": "lee-command",
+   "lee": true,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-dt",
+   "signature": "ssh -t deepthought bash swap.sh",
+   "sub": "ssh-to-self",
+   "task": null,
+   "tool": null
+  },
+  {
+   "at": 1792836360,
+   "cause": "credential",
+   "home": null,
+   "kind": "lee-command",
+   "lee": true,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-dt",
+   "signature": "ssh -t otherbox bash lic.sh",
+   "sub": "ssh-key",
+   "task": null,
+   "tool": null
+  },
+  {
+   "answered_at": null,
+   "answered_by": null,
+   "at": 1792837800,
+   "cause": "environment",
+   "channel": false,
+   "home": "fm-lab.xJXswh",
+   "key": "swap-c2",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": null,
+   "reask": true,
+   "service": null,
+   "signature": "did not take. Lee, run again: ssh -t deepthought 'bash /x/swap.sh c2'",
+   "source": "status",
+   "state": "needs-decision",
+   "sub": "ssh-to-self",
+   "task": "task-swap",
+   "tool": null,
+   "wait_s": null
+  }
+ ],
+ "findings": [
+  {
+   "carded": true,
+   "category": "environment",
+   "cause": "environment",
+   "confidence": 5,
+   "effort": "S",
+   "events": 3,
+   "evidence": {
+    "cards": [],
+    "example": "Lee, please run: ssh -t deepthought 'bash /x/swap.sh c2'",
+    "sessions": [
+     "deepthought:s-dt"
+    ],
+    "status_keys": [
+     "swap-c2@2026-10-24T10:00:00Z",
+     "swap-c2@2026-10-24T10:30:00Z"
+    ],
+    "tasks": [
+     "task-swap"
+    ]
+   },
+   "fix": "Make Lee-step one-liners host-aware: print `bash <script>` when the session already runs on the target host and `ssh -t <host> ...` only from another machine, or install a loopback key.",
+   "kinds": {
+    "lee-command": 1,
+    "status-wait": 2
+   },
+   "lee_did": "run an ssh -t <host> line inside a session on that same host, where ssh to itself has no key",
+   "lee_events": 3,
+   "lee_step": true,
+   "name": null,
+   "open": 0,
+   "owner": "main (firstmate)",
+   "reasks": 1,
+   "severity": 5,
+   "sub": "ssh-to-self",
+   "title": "Lee-step ssh lines target the machine they run on",
+   "wait_max_s": 7200,
+   "wait_median_s": 7200,
+   "wait_total_s": 7200,
+   "waits_measured": 1,
+   "where": {
+    "deepthought": 1,
+    "fm-lab.xJXswh": 2
+   }
+  },
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "policy",
+   "confidence": 5,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "cards": [],
+    "example": "creating staging secret E2E_MAILBOX_TOKEN is a credential change: the rules need Lee's own words naming it",
+    "sessions": [],
+    "status_keys": [
+     "mailbox-token@2026-10-24T10:00:00Z"
+    ],
+    "tasks": [
+     "task-mail"
+    ]
+   },
+   "fix": "Adopt a standing naming rule for new staging-only credentials (name pattern, vault, owner) so a name that follows it is pre-approved; production credentials stay direct-only.",
+   "kinds": {
+    "status-wait": 1
+   },
+   "lee_did": "approve a new credential by name",
+   "lee_events": 1,
+   "lee_step": true,
+   "name": null,
+   "open": 0,
+   "owner": "Lee (fleet rules section 5)",
+   "reasks": 0,
+   "severity": 4,
+   "sub": "credential-approval",
+   "title": "New staging credentials wait on Lee's per-credential word",
+   "wait_max_s": 5400,
+   "wait_median_s": 5400,
+   "wait_total_s": 5400,
+   "waits_measured": 1,
+   "where": {
+    "fm-lab.xJXswh": 1
+   }
+  },
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "policy",
+   "confidence": 5,
+   "effort": "M",
+   "events": 2,
+   "evidence": {
+    "cards": [],
+    "example": "relayed: Lee needs to give the merge word for PR 5",
+    "sessions": [],
+    "status_keys": [
+     "merge-word@2026-10-24T10:00:00Z",
+     "merge-word@2026-10-24T10:01:00Z"
+    ],
+    "tasks": []
+   },
+   "fix": "Collect the day's merge-word asks into one Captain's Log card with each PR's category, gate result and diff size inline, so Lee answers them in one pass instead of one wake each.",
+   "kinds": {
+    "status-wait": 2
+   },
+   "lee_did": "give his merge word on a PR the rules reserve to him",
+   "lee_events": 2,
+   "lee_step": true,
+   "name": null,
+   "open": 0,
+   "owner": "main (firstmate)",
+   "reasks": 0,
+   "severity": 3,
+   "sub": "merge-word",
+   "title": "Merge-word asks reach Lee one at a time",
+   "wait_max_s": 1200,
+   "wait_median_s": 1200,
+   "wait_total_s": 2400,
+   "waits_measured": 2,
+   "where": {
+    "fm-lab.xJXswh": 2
+   }
+  },
+  {
+   "carded": true,
+   "category": "tooling",
+   "cause": "guard-hook",
+   "confidence": 5,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "cards": [],
+    "example": "Making Node the default needs one line from Lee (hooks block me editing his shell startup file)",
+    "sessions": [],
+    "status_keys": [
+     "node-line@2026-10-24T10:00:00Z"
+    ],
+    "tasks": [
+     "task-node"
+    ]
+   },
+   "fix": "Give the secret-exposure hook a sanctioned path for writing op:// reference lines (never literal values) to shell startup files, with a fixture test, so agents make the edit themselves.",
+   "kinds": {
+    "status-wait": 1
+   },
+   "lee_did": "make a shell startup or secret-file edit the secret-exposure hook refused",
+   "lee_events": 1,
+   "lee_step": true,
+   "name": null,
+   "open": 0,
+   "owner": "skills (global hooks)",
+   "reasks": 0,
+   "severity": 3,
+   "sub": "secret-hook",
+   "title": "Secret-exposure hook blocks safe shell-file edits, so Lee makes them",
+   "wait_max_s": 600,
+   "wait_median_s": 600,
+   "wait_total_s": 600,
+   "waits_measured": 1,
+   "where": {
+    "fm-lab.xJXswh": 1
+   }
+  },
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "sudo",
+   "confidence": 5,
+   "effort": "M",
+   "events": 1,
+   "evidence": {
+    "cards": [],
+    "example": "the fleet-app deploy needs sudo on slartibartfast: Lee runs sudo systemctl restart fleet",
+    "sessions": [],
+    "status_keys": [
+     "fleet-sudo@2026-10-24T10:00:00Z"
+    ],
+    "tasks": [
+     "task-fleet"
+    ]
+   },
+   "fix": "Install a root-owned script for the step with a NOPASSWD sudoers rule naming that exact path (or a systemd unit the agent may start), approved once by Lee, so the agent runs it itself.",
+   "kinds": {
+    "status-wait": 1
+   },
+   "lee_did": "run a sudo command or script by hand",
+   "lee_events": 1,
+   "lee_step": true,
+   "name": null,
+   "open": 0,
+   "owner": "fm-lab.xJXswh home (Lee approves the sudoers rule)",
+   "reasks": 0,
+   "severity": 3,
+   "sub": "sudo",
+   "title": "Agents hand Lee sudo steps to run by hand",
+   "wait_max_s": 2400,
+   "wait_median_s": 2400,
+   "wait_total_s": 2400,
+   "waits_measured": 1,
+   "where": {
+    "fm-lab.xJXswh": 1
+   }
+  },
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "credential",
+   "confidence": 4,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "cards": [],
+    "example": "ssh -t otherbox bash lic.sh",
+    "sessions": [
+     "deepthought:s-dt"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Install the agent's key in the target host's authorized_keys, or give it an ssh alias that reaches the host, and record it in the machine's bootstrap so the refusal cannot come back.",
+   "kinds": {
+    "lee-command": 1
+   },
+   "lee_did": "run an ssh step by hand because the agent's key was refused",
+   "lee_events": 1,
+   "lee_step": true,
+   "name": null,
+   "open": 0,
+   "owner": "deepthought home",
+   "reasks": 0,
+   "severity": 3,
+   "sub": "ssh-key",
+   "title": "Agents lack an ssh key for a fleet host",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "deepthought": 1
+   }
+  },
+  {
+   "carded": true,
+   "category": "tooling",
+   "cause": "missing-tool",
+   "confidence": 3,
+   "effort": "S",
+   "events": 3,
+   "evidence": {
+    "cards": [],
+    "example": "python3: command not found",
+    "sessions": [
+     "deepthought:s-w"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Add python3 to deepthought's bootstrap and its doctor check, so it is present before the next session.",
+   "kinds": {
+    "agent-hit": 3
+   },
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "name": "python3",
+   "open": 0,
+   "owner": "deepthought home",
+   "reasks": 0,
+   "severity": 3,
+   "sub": "tool",
+   "title": "A tool agents need is missing",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "deepthought": 3
+   }
+  },
+  {
+   "carded": true,
+   "category": "environment",
+   "cause": "environment",
+   "confidence": 3,
+   "effort": "M",
+   "events": 1,
+   "evidence": {
+    "cards": [],
+    "example": "Lee: after the reboot this worker session was restored in the wrong directory",
+    "sessions": [],
+    "status_keys": [],
+    "tasks": [
+     "task-restore"
+    ]
+   },
+   "fix": "Resume each worker in the worktree its task record names (cd to its meta worktree= first) and refuse a resume whose directory differs.",
+   "kinds": {
+    "status-wait": 1
+   },
+   "lee_did": "put restored worker sessions back in their task copies",
+   "lee_events": 1,
+   "lee_step": true,
+   "name": null,
+   "open": 1,
+   "owner": "main (firstmate)",
+   "reasks": 0,
+   "severity": 3,
+   "sub": "wrong-cwd",
+   "title": "Worker sessions resume in the wrong directory after a restart",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "fm-lab.xJXswh": 1
+   }
+  }
+ ],
+ "model": "none",
+ "officer_role": "friction",
+ "scorer": "friction-deterministic-v1"
+}

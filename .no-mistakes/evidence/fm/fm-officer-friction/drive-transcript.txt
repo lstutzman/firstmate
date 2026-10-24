@@ -1,0 +1,18 @@
+== fm-officer.sh list
+friction role=friction cadence="daily 06:15" check=absent
+== fm-officer.sh run friction --date 2026-10-24
+DIGEST 2026-10-24 8 data/officers/friction/2026-10-24.md
+rc=0
+2026-10-24.json
+2026-10-24.md
+2026-10-24.velocity-findings.json
+digest
+runs.log
+RERUN byte-identical: yes
+== missing day
+fm-officer: officer friction run for 2026-10-20 failed: fm-officer-friction: no archive manifest for 2026-10-20
+rc=1
+== bad captains-log
+fm-officer: officer friction: captains-log must be an https URL on a friction officer
+rc=2
+LAB=/tmp/fm-lab.xJXswh ARCH=/tmp/fm-arch.Kb55il
