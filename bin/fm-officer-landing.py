@@ -48,13 +48,16 @@ routine Done writer; this officer only corrects what it misses. With
           refused). A Done item whose PR is on main but not yet in production
           is release lag: it is reported, never written.
 
-No Linear write is made when the facts' generated_at is missing or older than
---max-facts-age hours; a stale-facts finding is raised instead.
+No Linear write is made when the facts name no production_sha or their
+generated_at is missing or older than --max-facts-age hours; a stale-facts
+finding is raised instead. A null or absent fact is unknown, never false.
 
 Each correction re-checks that Linear still shows the state the facts
 recorded, writes an evidence comment quoting the landing-truth record it
 used, then changes the state, each through linear-axi --dry-run and then
---verify; at most --max-corrections items per run. Every correction and skip
+--verify. At most --max-corrections items per run are written; a skipped
+item does not count, and a run re-checks at most five items per allowed
+correction. Every correction and skip
 is also logged with that record in the findings file. It never writes In
 Staging, never files an item, and leaves a Done item no fact names to a
 person. --writes none writes nothing to Linear.
@@ -76,6 +79,7 @@ FACT_FIELDS = ("repo", "pr", "merged_sha", "merged_at", "on_staging", "staging_d
                "on_main", "main_promoted_at", "in_production", "production_release", "landed_via")
 NOT_STARTED = {"Triage", "Backlog", "Todo", "In Progress"}
 CLOSED = {"Done", "Canceled", "Cancelled", "Duplicate"}
+VIEWS_PER_CORRECTION = 5
 TOP_KEYS = {"schema_version", "generated_at", "staging_sha", "production_sha", "records", "items"}
 
 
@@ -176,8 +180,9 @@ def judge(doc, done_listed, reopen_state="In Progress"):
             findings.append({"class": "conflict", "item": item, "severity": "medium",
                              "summary": "landing facts disagree on its Linear state: %s" % ", ".join(states)})
         elif state == "Done":
-            never = [p for p in merged if p.get("on_main") is False and not p.get("production_release")]
-            lag = [p for p in merged if p not in never and p.get("in_production") is not True]
+            never = [p for p in merged if p.get("on_main") is False and p.get("production_release") is None]
+            lag = [p for p in merged if p not in never and p.get("in_production") is False]
+            unknown = [p for p in merged if p not in never and not isinstance(p.get("in_production"), bool)]
             if never:
                 record["class"] = "A1"
                 record["proposed_state"] = reopen_state
@@ -185,12 +190,18 @@ def judge(doc, done_listed, reopen_state="In Progress"):
                 findings.append({"class": "A1", "item": item, "severity": "high",
                                  "summary": "Done, but %s merged and never reached main or any release"
                                  % pr_list(never)})
-            elif lag:
+            elif not merged:
                 record["class"] = "A1"
                 findings.append({"class": "A1", "item": item, "severity": "low",
-                                 "summary": "Done, but %s not yet in production (release lag; reported only)"
-                                 % pr_list(lag)})
-        elif state not in CLOSED and merged:
+                                 "summary": "Done, but no linked PR (%s) is merged; needs a probe or Lee's recorded word"
+                                 % (pr_list(prs) or "none")})
+            elif lag or unknown:
+                record["class"] = "A1"
+                parts = (["%s not yet in production (release lag)" % pr_list(lag)] if lag else []) + \
+                        (["%s production status unknown" % pr_list(unknown)] if unknown else [])
+                findings.append({"class": "A1", "item": item, "severity": "low",
+                                 "summary": "Done, but %s; reported only" % "; ".join(parts)})
+        elif state is not None and state not in CLOSED and merged:
             if len(in_prod) == len(merged) == len(prs):
                 record["class"] = "B1"
                 record["proposed_state"] = "Done"
@@ -224,7 +235,9 @@ def releases(prs):
 
 
 def facts_age_problem(doc, max_hours, now):
-    """Why the facts are too old to write from, or None when they are fresh."""
+    """Why the facts cannot be written from, or None when they are fresh."""
+    if not doc.get("production_sha"):
+        return "landing facts name no production_sha, so production status is unknown"
     stamp = doc.get("generated_at")
     try:
         made = datetime.datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
@@ -242,7 +255,7 @@ def evidence_comment(record, doc, action, to_state):
     why = ("every linked PR is merged and in production, but the release workflow did not set Done"
            if action == "close" else
            "it is Done, but a linked PR is merged and never reached main or any release")
-    lines = ["Landing officer correction: moved to %s because %s." % (to_state, why), "",
+    lines = ["Landing officer correction: moving to %s because %s." % (to_state, why), "",
              "Landing-truth record used (schema %s, generated %s, production %s, staging %s):" % (
                  doc.get("schema_version"), doc.get("generated_at"),
                  doc.get("production_sha"), doc.get("staging_sha")), ""]
@@ -261,7 +274,10 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state):
             Staging.
     """
     results = []
-    for record in [r for r in view if r["correction"]][:max_corrections]:
+    attempts = 0
+    for record in [r for r in view if r["correction"]][:max_corrections * VIEWS_PER_CORRECTION]:
+        if attempts >= max_corrections:
+            break
         item = record["item"]
         action = record["correction"]
         to_state = "Done" if action == "close" else reopen_state
@@ -278,6 +294,7 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state):
                 results.append({"item": item, "action": "skipped", "to": to_state, "record": used,
                                 "reason": "item has sub-issues"})
                 continue
+            attempts += 1
             body = os.path.join(out, ".evidence-%s-%s.md" % (date, item))
             with open(body, "w", encoding="utf-8") as fh:
                 fh.write(evidence_comment(record, doc, action, to_state))

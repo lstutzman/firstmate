@@ -43,11 +43,21 @@ write_facts() {  # <file>
    "linear_ids": ["PC-7"], "linear_state": {"PC-7": "Done"}, "landed_via": "pile-1023"},
   "lstutzman/PropertyCompass2#107": {"repo": "lstutzman/PropertyCompass2", "pr": 107, "head_sha": "h107", "merged_sha": "m107", "merged_at": "2026-10-18T10:00:00Z",
    "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-18T15:00:00Z", "in_production": true, "production_release": "v1.70.1",
-   "linear_ids": ["PC-10", "PC-11"], "linear_state": {"PC-10": "Done", "PC-11": "In Review"}, "landed_via": "lone"}
+   "linear_ids": ["PC-10", "PC-11"], "linear_state": {"PC-10": "Done", "PC-11": "In Review"}, "landed_via": "lone"},
+  "lstutzman/PropertyCompass2#108": {"repo": "lstutzman/PropertyCompass2", "pr": 108, "head_sha": "h108", "merged_sha": null, "merged_at": null,
+   "on_staging": false, "staging_deployed": false, "on_main": false, "main_promoted_at": null, "in_production": false, "production_release": null,
+   "linear_ids": ["PC-12"], "linear_state": {"PC-12": "Done"}, "landed_via": "lone"},
+  "lstutzman/PropertyCompass2#109": {"repo": "lstutzman/PropertyCompass2", "pr": 109, "head_sha": "h109", "merged_sha": "m109", "merged_at": "2026-10-23T11:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": null, "main_promoted_at": null, "in_production": null, "production_release": null,
+   "linear_ids": ["PC-13"], "linear_state": {"PC-13": "Done"}, "landed_via": "lone"},
+  "lstutzman/PropertyCompass2#110": {"repo": "lstutzman/PropertyCompass2", "pr": 110, "head_sha": "h110", "merged_sha": "m110", "merged_at": "2026-10-18T11:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-18T15:00:00Z", "in_production": true, "production_release": "v1.70.1",
+   "linear_ids": ["PC-14"], "linear_state": {}, "landed_via": "lone"}
  },
  "items": {"PC-1": ["lstutzman/PropertyCompass2#101"], "PC-2": ["lstutzman/PropertyCompass2#102"], "PC-3": ["lstutzman/PropertyCompass2#103"],
   "PC-4": ["lstutzman/PropertyCompass2#104"], "PC-5": ["lstutzman/PropertyCompass2#105"], "PC-7": ["lstutzman/PropertyCompass2#106"],
-  "PC-10": ["lstutzman/PropertyCompass2#107"], "PC-11": ["lstutzman/PropertyCompass2#107"]}}
+  "PC-10": ["lstutzman/PropertyCompass2#107"], "PC-11": ["lstutzman/PropertyCompass2#107"],
+  "PC-12": ["lstutzman/PropertyCompass2#108"], "PC-13": ["lstutzman/PropertyCompass2#109"], "PC-14": ["lstutzman/PropertyCompass2#110"]}}
 JSON
 }
 
@@ -57,6 +67,7 @@ fake_linear() {
   cat > "$1/linear-axi" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$2"
+[ "\$1 \$2 \$6" != "issue comment --verify" ] || cat "\$5" >> "$2.bodies"
 case "\$1 \$2" in
   "issue list") echo '{"ok":true,"data":{"issues":[{"identifier":"PC-2"},{"identifier":"PC-4"},{"identifier":"PC-9"}]}}' ;;
   "issue view")
@@ -117,6 +128,12 @@ test_classes_from_facts() {
   assert_equals "" "$(finding "$json" PC-4)" "Done and in production is consistent"
   assert_equals "" "$(finding "$json" PC-10)" "a PR's state for one of its ids is read for that id"
   assert_equals B1 "$(finding "$json" PC-11)" "the same PR's other id keeps its own state"
+  assert_equals A1 "$(finding "$json" PC-12)" "Done with no linked PR merged is false done"
+  assert_equals null "$(jq -r '.items[] | select(.item == "PC-12") | .correction' "$json")" "an unmerged Done item is left to a person"
+  assert_equals A1 "$(finding "$json" PC-13)" "Done with unknown production status is reported"
+  assert_contains "$(jq -r '.findings[] | select(.item == "PC-13") | .summary' "$json")" "production status unknown" "unknown is never read as not in production"
+  assert_equals null "$(jq -r '.items[] | select(.item == "PC-13") | .correction' "$json")" "unknown on_main is never reopened"
+  assert_equals "" "$(finding "$json" PC-14)" "an item with no recorded state is not status lag"
   assert_equals A1 "$(finding "$json" PC-9)" "Done with no landing fact is raised for a person"
   assert_equals "In Progress" "$(jq -r '.items[] | select(.item == "PC-2") | .proposed_state' "$json")" "A1 proposes reopening to In Progress"
   assert_equals Done "$(jq -r '.items[] | select(.item == "PC-1") | .proposed_state' "$json")" "B1 in production proposes Done"
@@ -154,6 +171,9 @@ test_closes_only_fully_landed_items_with_evidence() {
   assert_no_grep "In Staging --" "$LINEAR_LOG" "no update ever sets In Staging"
   assert_no_grep "update PC-9" "$LINEAR_LOG" "a Done item no fact names is left to a person"
   assert_no_grep "update PC-4" "$LINEAR_LOG" "a consistent item is left alone"
+  assert_no_grep "update PC-13" "$LINEAR_LOG" "an item with unknown production status is never written"
+  assert_no_grep "PC-14" "$LINEAR_LOG" "an item with no recorded state is never written"
+  assert_contains "$(sed -n 1p "$LINEAR_LOG.bodies")" "Landing officer correction: moving to Done" "the comment states the move it is about to make"
   pass "fm-officer landing: corrections are on by default: close what the workflow missed, reopen false done, never In Staging"
 }
 
@@ -170,6 +190,10 @@ test_stale_or_undated_facts_make_no_write() {
   sed -i.bak 's/; model: none/; max-facts-age: 48; model: none/' "$home/data/officers.md"
   run_landing "$home" $((NOW + 36 * 3600)) >/dev/null || fail "landing run must succeed"
   assert_grep "issue update PC-2 --state In Progress --verify" "$LINEAR_LOG" "max-facts-age widens the limit"
+  make_world noprod; home=$WORLD_HOME
+  jq '.production_sha = null' "$TMP_ROOT/noprod/facts.json" > "$TMP_ROOT/noprod/f" && mv "$TMP_ROOT/noprod/f" "$TMP_ROOT/noprod/facts.json"
+  run_landing "$home" >/dev/null || fail "a run with no production_sha must still finish"
+  assert_no_grep "issue update" "$LINEAR_LOG" "facts with no production_sha write nothing"
   make_world undated; home=$WORLD_HOME
   jq '.generated_at = null' "$TMP_ROOT/undated/facts.json" > "$TMP_ROOT/undated/f" && mv "$TMP_ROOT/undated/f" "$TMP_ROOT/undated/facts.json"
   run_landing "$home" >/dev/null || fail "an undated-facts run must still finish"
@@ -188,6 +212,12 @@ test_changed_state_and_cap_stop_a_close() {
   sed -i.bak 's/; model: none/; max-corrections: 0; model: none/' "$home/data/officers.md"
   run_landing "$home" >/dev/null || fail "landing run must succeed"
   assert_no_grep "issue view" "$LINEAR_LOG" "max-corrections 0 corrects nothing"
+  make_world cap1; home=$WORLD_HOME
+  sed -i.bak 's/"state":"In Staging"/"state":"Done"/' "$FAKEBIN/linear-axi"
+  sed -i.bak 's/; model: none/; max-corrections: 1; model: none/' "$home/data/officers.md"
+  run_landing "$home" >/dev/null || fail "landing run must succeed"
+  assert_grep "issue update PC-2 --state In Progress --verify" "$LINEAR_LOG" "skipped items do not use up the cap"
+  assert_no_grep "update PC-5" "$LINEAR_LOG" "the cap still stops after one write"
   pass "fm-officer landing: a moved Linear state or the close cap stops a close"
 }
 
