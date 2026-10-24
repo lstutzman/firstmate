@@ -54,6 +54,7 @@ SCORER = "deterministic-v1"
 
 CLASSES = [
     ("worker", re.compile(r"^\W*Firstmate operational input waiting")),
+    # The Slack desk's job prompt, built in fleet-app src/slack/desk/desk.cjs.
     ("desk", re.compile(r"^Slack message from .+ \(role [\w-]+\) in thread ")),
     ("no-mistakes", re.compile(r"^Workspace boundary")),
     ("classifier", re.compile(r"^You are an? [\w -]*classifier\b", re.I)),
@@ -567,6 +568,8 @@ def render_md(doc):
     lines.append("- Sessions: %d, of which %d analysed." % (cov["sessions"], cov["sessions_analysed"]))
     lines.append("- Archive harvester last ran: %s." % (cov["harvester_last_run"] or "never"))
     lines.append("- Worker sessions whose home is not readable here: %d." % cov["workers_unresolved"])
+    lines.append("- Desk sessions are not archived: the Slack desk runs with"
+                 " --no-session-persistence, so 0 desk sessions is expected.")
     lines += ["", "## Session mix", ""]
     for k, n in doc["session_mix"].items():
         lines.append("- %s: %d" % (k, n))

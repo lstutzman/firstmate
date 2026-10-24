@@ -35,6 +35,7 @@ spec = {"sessions": [
              ["Bash", {"command": "sleep 30 && git status"}, "", False]]},
   {"machine": "alpha", "id": "s-classifier", "first_prompt": "You are an emotion-tone classifier for conversations.",
    "calls": []},
+  # The desk job prompt as fleet-app src/slack/desk/desk.cjs builds it.
   {"machine": "alpha", "id": "s-desk",
    "first_prompt": "Slack message from Dawn (role member) in thread 1792800000.000100:\n<<<\nstatus?\n>>>",
    "calls": []},
@@ -94,6 +95,7 @@ test_classification_join_and_outcomes() {
   assert_equals supervision-engine "$(session_field "$json" s-engine .class)" "supervision engine turn is classified"
   assert_equals desk "$(session_field "$json" s-desk .class)" "a Slack desk job is a desk session"
   assert_equals no-mistakes "$(session_field "$json" s-pipeline .class)" "a no-mistakes pipeline step is its own class"
+  assert_grep "Desk sessions are not archived" "$home/data/officers/triage/$DATE.md" "the digest notes that desk sessions are not archived"
   assert_equals task-done "$(session_field "$json" s-done .join.task)" "worker joins its task"
   assert_equals launch-brief "$(session_field "$json" s-done .join.via)" "join method is recorded"
   assert_equals "done" "$(session_field "$json" s-done .join.outcome)" "done outcome comes from the status log"
