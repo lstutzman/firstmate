@@ -826,7 +826,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 Example:
 
 ```text
-- triage - Joins each day's archived sessions to firstmate tasks and outcomes (role: triage; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mini; model: none; added 2026-10-24)
+- triage - Joins each day's archived sessions to firstmate tasks and outcomes (role: triage; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 ```
 
 After adding a line, run `bin/fm-officer.sh register <id>` to install and trust its watcher check; `bin/fm-officer.sh retire <id>` removes the check and the line and keeps the findings.

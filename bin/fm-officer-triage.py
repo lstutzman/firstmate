@@ -34,6 +34,9 @@ Outcome order: the home's fleet ledger, then its live state/<task>.status,
 then data/<task>/report.md. A task whose home is not a readable --home is
 `unresolved`, and counted under coverage.
 
+A session no first-prompt class names is a `mate` when its cwd is a home
+root: a --home, or a home a worker's launch brief named that day.
+
 Determinism: output is a pure function of the archive and home records, with
 sorted keys and no wall-clock stamps, so re-running a day rewrites identical
 bytes. Findings carry normalised signatures only, never transcript text.
@@ -451,6 +454,15 @@ def join_sessions(scanned, homes):
         s["scores"] = {}
 
 
+def classify_mates(scanned, homes):
+    roots = {h.path for h in homes}
+    roots.update(s["join"]["home"].rstrip("/") for s in scanned["sessions"]
+                 if s["class"] == "worker" and (s.get("join") or {}).get("via") == "launch-brief")
+    for s in scanned["sessions"]:
+        if s["class"] == "other" and (s.get("cwd") or "").rstrip("/") in roots:
+            s["class"] = "mate"
+
+
 def require_harvested(scanned):
     """Refuse a day the archive has not finished harvesting."""
     date = scanned["date"]
@@ -635,6 +647,7 @@ def main(argv):
         require_harvested(scanned)
         homes = [Home(h) for h in args.home]
         join_sessions(scanned, homes)
+        classify_mates(scanned, homes)
         score_sessions(scanned["sessions"], args.model)
     except (RuntimeError, ValueError) as exc:
         print("fm-officer-triage: %s" % exc, file=sys.stderr)

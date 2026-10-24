@@ -2,7 +2,7 @@
 # Behavior tests for the triage officer's deterministic pass, driven through
 # bin/fm-officer.sh run against a fixture archive and fixture home records.
 #
-# Covers: session classification, the three join paths (launch brief,
+# Covers: session classification (mates by home-root cwd included), the three join paths (launch brief,
 # worktree, trace context) with their recorded join method, outcome resolution
 # from the ledger, the live status log and a scout report, unresolved homes,
 # byte-identical reruns, archive coverage, a missing or unfinished archive day
@@ -20,11 +20,11 @@ DATE=2026-10-23
 
 # spec <file> <home>: four sessions and two task records for the join tests.
 write_spec() {
-  local file=$1 home=$2
+  local file=$1 home=$2 mate=$3
   python3 -I - "$file" "$home" "$(officer_worker_brief "$home" task-done)" \
-    "$(officer_worker_brief "$home" task-failed)" <<'PY'
+    "$(officer_worker_brief "$home" task-failed)" "$mate" <<'PY'
 import json, sys
-path, home, brief_done, brief_failed = sys.argv[1:5]
+path, home, brief_done, brief_failed, mate = sys.argv[1:6]
 msg = {"file_path": home + "/state/operational-inbox/1.msg"}
 spec = {"sessions": [
   {"machine": "alpha", "id": "s-done", "first_prompt": ": Firstmate operational input waiting: read 'x'",
@@ -40,7 +40,11 @@ spec = {"sessions": [
    "first_prompt": "Slack message from Dawn (role member) in thread 1792800000.000100:\n<<<\nstatus?\n>>>",
    "calls": []},
   {"machine": "alpha", "id": "s-pipeline",
-   "first_prompt": "Workspace boundary (important):\n- Confine source changes to the worktree.", "calls": []},
+   "first_prompt": "Workspace boundary (important):\n- Confine source changes to the worktree.", "cwd": home,
+   "calls": []},
+  {"machine": "alpha", "id": "s-main", "first_prompt": "ahoy", "cwd": home + "/", "calls": []},
+  {"machine": "alpha", "id": "s-secondmate", "first_prompt": "ahoy", "cwd": mate, "calls": []},
+  {"machine": "alpha", "id": "s-briefed-home", "first_prompt": "ahoy", "cwd": "/far/home", "calls": []},
   {"machine": "alpha", "id": "s-engine", "first_prompt": "MAIN DIALOG MIRROR turn 3",
    "calls": [["Read", {"file_path": "/x"}, "ok", False], ["Read", {"file_path": "/x"}, "ok", False]]},
   {"machine": "alpha", "id": "s-worktree", "first_prompt": "hello", "cwd": "/work/task-merged",
@@ -57,10 +61,15 @@ PY
 
 # A home whose records resolve each joined task to a known outcome.
 make_world() {
-  local name=$1 home archive
+  local name=$1 home archive mate
   home="$TMP_ROOT/$name/home"
+  mate="$TMP_ROOT/$name/mate"
   archive="$TMP_ROOT/$name/archive"
   officer_home "$home"
+  officer_home "$mate"
+  home=$(cd "$home" && pwd -P)
+  mate=$(cd "$mate" && pwd -P)
+  printf -- '- mate - fixture (home: %s; scope: fixture; projects: sample; added 2026-10-24)\n' "$mate" > "$home/data/secondmates.md"
   printf 'working [at=1]: started\ndone [at=2]: finished\n' > "$home/state/task-done.status"
   printf 'working [at=1]: started\nfailed [at=2]: could not build\n' > "$home/state/task-failed.status"
   printf 'kind=ship\nworktree=/work/task-merged\n' > "$home/state/task-merged.meta"
@@ -68,7 +77,7 @@ make_world() {
   printf 'kind=scout\ntraceparent=00-0123456789abcdef0123456789abcdef-1111111111111111-01\n' > "$home/state/task-scout.meta"
   mkdir -p "$home/data/task-scout"
   printf 'report\n' > "$home/data/task-scout/report.md"
-  write_spec "$TMP_ROOT/$name/spec.json" "$home"
+  write_spec "$TMP_ROOT/$name/spec.json" "$home" "$mate"
   officer_archive "$archive" "$DATE" "$TMP_ROOT/$name/spec.json"
   officer_registry "$home" "$archive" "alpha,beta"
   printf '%s\n' "$home"
@@ -95,6 +104,10 @@ test_classification_join_and_outcomes() {
   assert_equals supervision-engine "$(session_field "$json" s-engine .class)" "supervision engine turn is classified"
   assert_equals desk "$(session_field "$json" s-desk .class)" "a Slack desk job is a desk session"
   assert_equals no-mistakes "$(session_field "$json" s-pipeline .class)" "a no-mistakes pipeline step is its own class"
+  assert_equals mate "$(session_field "$json" s-main .class)" "a session in this home's root is a mate"
+  assert_equals mate "$(session_field "$json" s-secondmate .class)" "a session in a local second mate home is a mate"
+  assert_equals mate "$(session_field "$json" s-briefed-home .class)" "a session in a home a worker's launch brief named is a mate"
+  assert_equals other "$(session_field "$json" s-worktree .class)" "a session outside every home root is not a mate"
   assert_grep "Desk sessions are not archived" "$home/data/officers/triage/$DATE.md" "the digest notes that desk sessions are not archived"
   assert_equals task-done "$(session_field "$json" s-done .join.task)" "worker joins its task"
   assert_equals launch-brief "$(session_field "$json" s-done .join.via)" "join method is recorded"
