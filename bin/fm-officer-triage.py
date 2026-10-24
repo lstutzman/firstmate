@@ -285,9 +285,8 @@ def load_json(path):
         return None
 
 
-def scan(archive, date):
-    """Per-session facts for one archive day; reads only the archive."""
-    manifest = load_json(os.path.join(archive, "by-date", date, "manifest.json"))
+def harvester_last_run(archive):
+    """The archive harvester's latest start time from runs.jsonl, or None."""
     runs = []
     try:
         with open(os.path.join(archive, "runs.jsonl"), encoding="utf-8") as fh:
@@ -298,9 +297,15 @@ def scan(archive, date):
                     continue
     except OSError:
         pass
+    return max([r for r in runs if isinstance(r, str)], default=None)
+
+
+def scan(archive, date):
+    """Per-session facts for one archive day; reads only the archive."""
+    manifest = load_json(os.path.join(archive, "by-date", date, "manifest.json"))
     out = {"date": date, "manifest": manifest is not None, "sessions": [],
            "task_records": [], "pipeline_runs": [], "not_collected": {},
-           "harvester_last_run": max([r for r in runs if isinstance(r, str)], default=None)}
+           "harvester_last_run": harvester_last_run(archive)}
     if manifest is None:
         return out
     out["not_collected"] = manifest.get("not_collected") or {}

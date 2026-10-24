@@ -53,8 +53,9 @@
 # none, no finished run within two cadences of registration or of the last
 # finished run, and officers listed in a second mate home.
 #
-# Roles: triage (bin/fm-officer-triage.py) and landing
-# (bin/fm-officer-landing.py); each role script's header owns its pass.
+# Roles: triage (bin/fm-officer-triage.py), landing
+# (bin/fm-officer-landing.py), and friction (bin/fm-officer-friction.py); each
+# role script's header owns its pass.
 #
 # Officers run in the primary home only: register, run, and check refuse in a
 # home carrying .fm-secondmate-home.
@@ -70,7 +71,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/officers.md"
-OFFICER_ROLES="triage landing"
+OFFICER_ROLES="triage landing friction"
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -184,9 +185,9 @@ line_problem() {
   [ "$model" = none ] \
     || { printf 'officer %s: model "%s" is not available yet; slice 1 officers use model: none\n' "$id" "$model"; return; }
   case "$role" in
-    triage)
+    triage|friction)
       line_field "$line" archive >/dev/null \
-        || { printf 'officer %s: a triage officer needs archive: <dir> or <host>:<dir>\n' "$id"; return; }
+        || { printf 'officer %s: a %s officer needs archive: <dir> or <host>:<dir>\n' "$id" "$role"; return; }
       ;;
     landing)
       line_field "$line" facts >/dev/null \
@@ -323,11 +324,15 @@ run_log() {  # <date> <ok|failed> <detail>
   printf '%s %s %s %s\n' "$(now_epoch)" "$1" "$2" "$3" >> "$OFFICER_LANE/runs.log"
 }
 
-role_triage() {  # <date>
+# role_archive <script> <date> [args...]: a pass that reads the session
+# archive and every readable home: triage and friction.
+role_archive() {
   local -a args
-  local home hosts
+  local script=$1 home hosts
+  shift
   args=(run --archive "$(line_field "$OFFICER_LINE" archive)" --date "$1" --out "$OFFICER_LANE"
     --model "$(line_field "$OFFICER_LINE" model)")
+  shift
   hosts=$(line_field "$OFFICER_LINE" hosts || true)
   [ -z "$hosts" ] || args+=(--hosts "$hosts")
   while IFS= read -r home; do
@@ -335,8 +340,12 @@ role_triage() {  # <date>
   done <<EOF
 $(readable_homes)
 EOF
-  python3 -I "$SCRIPT_DIR/fm-officer-triage.py" "${args[@]}"
+  python3 -I "$SCRIPT_DIR/$script" "${args[@]}" "$@"
 }
+
+role_triage() { role_archive fm-officer-triage.py "$1"; }  # <date>
+
+role_friction() { role_archive fm-officer-friction.py "$1" --now "$(now_epoch)"; }  # <date>
 
 role_landing() {  # <date>
   python3 -I "$SCRIPT_DIR/fm-officer-landing.py" run --facts "$(line_field "$OFFICER_LINE" facts)" \

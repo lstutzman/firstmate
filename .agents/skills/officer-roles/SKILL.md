@@ -18,7 +18,7 @@ It never acts on the fleet.
 An officer may:
 
 - read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, and GitHub read-only;
-- write its own lane, `data/officers/<id>/`: dated findings, its digest marker, `runs.log`, and its `check-record.*` files;
+- write its own lane, `data/officers/<id>/`: dated findings (a friction officer's include its fleet-app velocity findings file), its digest marker, `runs.log`, and its `check-record.*` files;
 - print its one report line from its watcher check;
 - for a landing officer, unless its registry line says `writes: none`, correct what PropertyCompass2's release workflow (the routine Done writer) missed, through `linear-axi` `--dry-run` then `--verify`, at most `max-corrections` written items a run (skips do not count):
   set Done on an item whose every linked PR the landing-truth facts show merged and in production and that has no sub-issues, or move a Done item the facts name, with a linked PR merged that never reached main (`on_main` false) or any release, to its `reopen-state`; a Done item on main but not yet in production is release lag, reported and never written;
@@ -30,7 +30,7 @@ An officer may never:
 - drain, acknowledge, or otherwise touch the wake queue;
 - spawn, steer, interrupt, relaunch, merge, land, or clean up any worker or second mate;
 - answer, hold, or close a captain call, or edit Captain's Log cards;
-- write to a project, another home, or any record outside its lane, Linear aside as above;
+- write to a project, another home, or any record outside its lane, Linear aside as above, or post its findings to fleet-app or any other service;
 - write In Staging, make any Linear change other than those two corrections, or file a Linear item;
 - collect landing facts itself: the fleet-app landing-truth job owns them, and the officer only judges them;
 - run crew of its own, or call a model in slice 1 (`model: none`).
