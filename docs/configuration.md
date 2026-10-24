@@ -13,6 +13,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
+| Role agents that report on the fleet | [Officers](#officers-dataofficersmd) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
 
 ## FM_HOME
@@ -801,6 +802,37 @@ This does not relax protection for any other untracked file.
 An existing linked-worktree home that predates this rule advances through its marker-only state during its next bootstrap or spawn local sync, after which Git ignores the marker normally.
 
 A local standalone-clone home cannot receive a primary-local commit through that no-fetch sync, so it receives the rule through `/updatefirstmate`'s origin refresh instead.
+
+## Officers (data/officers.md)
+
+An officer is a role agent the primary home owns: it reads fleet records on its own daily cadence, writes only its findings lane, and reports one line to its first mate.
+The `officer-roles` skill owns what an officer may and may never do and how its report is handled; `bin/fm-officer.sh`'s header owns the mechanics.
+
+Officers live locally in the primary home's `data/officers.md`, one line per officer:
+
+```text
+- <id> - <role sentence> (role: <role>; cadence: daily HH:MM; model: none; <role fields>; added YYYY-MM-DD)
+```
+
+| Field | Meaning |
+| --- | --- |
+| `<id>` | Lowercase letters, digits, and dashes, at most 40 characters; names the lane `data/officers/<id>/` and the check `state/officer-<id>.check.sh` |
+| `role` | `triage` |
+| `cadence` | `daily HH:MM` in the home's local time; the run for yesterday's date starts at the first watcher check after that time |
+| `model` | `none`; model scoring is a later slice, and any other value is refused |
+| `archive` | Triage only: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
+| `hosts` | Triage only, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
+
+Example:
+
+```text
+- triage - Joins each day's archived sessions to firstmate tasks and outcomes (role: triage; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mini; model: none; added 2026-10-24)
+```
+
+After adding a line, run `bin/fm-officer.sh register <id>` to install and trust its watcher check; `bin/fm-officer.sh retire <id>` removes the check and the line and keeps the findings.
+Session start runs `bin/fm-officer.sh ensure`, which prints one `OFFICER:` line per gap.
+A second mate home never runs officers: `register` and `run` refuse there, and `ensure` reports any registry it finds.
+The triage officer reads this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets it resolve tasks that were already cleaned up.
 
 ## Harness support
 
