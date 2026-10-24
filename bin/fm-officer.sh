@@ -188,6 +188,10 @@ line_problem() {
     triage|friction)
       line_field "$line" archive >/dev/null \
         || { printf 'officer %s: a %s officer needs archive: <dir> or <host>:<dir>\n' "$id" "$role"; return; }
+      if line_field "$line" captains-log >/dev/null; then
+        [ "$role" = friction ] && [[ "$(line_field "$line" captains-log)" == https://* ]] \
+          || { printf 'officer %s: captains-log must be an https URL on a friction officer\n' "$id"; return; }
+      fi
       ;;
     landing)
       line_field "$line" facts >/dev/null \
@@ -345,7 +349,15 @@ EOF
 
 role_triage() { role_archive fm-officer-triage.py "$1"; }  # <date>
 
-role_friction() { role_archive fm-officer-friction.py "$1" --now "$(now_epoch)"; }  # <date>
+role_friction() {  # <date>
+  local log
+  log=$(line_field "$OFFICER_LINE" captains-log || true)
+  if [ -n "$log" ]; then
+    role_archive fm-officer-friction.py "$1" --captains-log "$log" --now "$(now_epoch)"
+  else
+    role_archive fm-officer-friction.py "$1" --now "$(now_epoch)"
+  fi
+}
 
 role_landing() {  # <date>
   python3 -I "$SCRIPT_DIR/fm-officer-landing.py" run --facts "$(line_field "$OFFICER_LINE" facts)" \

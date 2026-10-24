@@ -10,8 +10,9 @@
 # measured to Lee's next message, ssh to the session's own host), line-anchored
 # agent-side refusals, a worker resumed outside its worktree, the fleet-app
 # velocity findings file and its limits, byte-identical digests on re-run, the
-# boundary (no network, no writes outside the lane), a remote archive, and
-# the registry refusing a friction line with no archive.
+# boundary (no network, no writes outside the lane), a remote archive,
+# Captain's Log cards no status line accounts for (and an unreachable log),
+# and the registry refusing a friction line with no archive.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -292,6 +293,62 @@ SH
   pass "fm-officer friction: a host:dir archive is scanned over ssh"
 }
 
+test_captains_log_cards_read_only() {
+  local home fakebin json vel md hashed
+  home=$(make_world cards)
+  fakebin=$(fm_fakebin "$TMP_ROOT/cards")
+  printf 'needs-decision [at=%s] [key=captain-hold-pc-1234-1]: Lee, pick (a) or (b) for PC-1234\n' "$T" \
+    > "$home/state/task-hold.status"
+  # fleet-app cardId(): lowercased "<task>-<key>", a dash, and ten hex characters of sha256("<task>\0<key>").
+  hashed="task-cf-cf-scope-$(printf 'task-cf\0cf-scope' | sha256sum | cut -c1-10)"
+  jq -n --arg h "$hashed" --arg t "2026-10-23T10:01:00.000Z" '{name: "captains-log", value: {cards: [
+      {id: $h, band: "now", question: "Widen the Cloudflare token?", advice: "a", replies: ["yes"],
+       asked: $t, state: "asked"},
+      {id: "pc-1234", band: "now", question: "Pick (a) or (b)?", advice: "a", replies: ["a"],
+       asked: $t, state: "asked"},
+      {id: "cf-dns-step", band: "now", question: "Add the MX record in the Cloudflare dashboard > zone settings",
+       advice: "it is one record", replies: ["done"], asked: "2026-10-23T10:01:40.000Z", state: "answered",
+       answer: {text: "done", at: "2026-10-23T10:31:40.000Z"}},
+      {id: "old-card", band: "now", question: "Sign in to the Azure portal > admin", advice: "a", replies: ["ok"],
+       asked: "2026-10-22T10:00:00.000Z", state: "asked"}]}}' > "$TMP_ROOT/cards/state.json"
+  cat > "$fakebin/curl" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$fakebin/curl.calls"
+cat "$TMP_ROOT/cards/state.json"
+SH
+  chmod +x "$fakebin/curl"
+  printf -- '- friction - Finds friction (role: friction; cadence: daily 06:15; archive: %s; captains-log: https://fleet.test/api/captains-log; model: none; added 2026-10-24)\n' \
+    "$TMP_ROOT/cards/archive" > "$home/data/officers.md"
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "run with a Captain's Log must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  assert_grep "https://fleet.test/api/captains-log" "$fakebin/curl.calls" "the registry URL is the one endpoint read"
+  assert_equals "cf-dns-step credential console-step Cloudflare 1800" \
+    "$(jq -r '[.events[] | select(.kind == "card-only")] | map("\(.card) \(.cause) \(.sub) \(.service) \(.wait_s)") | join(";")' "$json")" \
+    "only a card asked that day with no keyed or held status line is counted, measured to its answer"
+  assert_equals "cf-dns-step" "$(finding "$json" credential console-step '.evidence.cards | join(",")')" \
+    "the finding names the card as evidence"
+  assert_equals "read" "$(jq -r '.evidence[] | select(.name == "Captain'"'"'s Log") | .state' "$vel")" \
+    "the velocity file records the Captain's Log as read"
+  cat > "$fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+exit 7
+SH
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "an unreachable Captain's Log must not fail the run"
+  md="$home/data/officers/friction/$DATE.md"
+  assert_grep "The Captain's Log is unreachable (curl exit 7)" "$md" "an unreachable endpoint is a coverage gap in the digest"
+  assert_equals 0 "$(jq '[.events[] | select(.kind == "card-only")] | length' "$json")" "no card is counted when none was read"
+  assert_equals 1 "$(jq '[.events[] | select(.task == "task-cf" and .kind == "status-wait")] | length' "$json")" \
+    "the run continues on the status logs"
+  assert_equals "missing" "$(jq -r '.evidence[] | select(.name == "Captain'"'"'s Log") | .state' "$vel")" \
+    "the velocity file marks the Captain's Log missing"
+  printf -- '- friction - Finds friction (role: friction; cadence: daily 06:15; archive: %s; captains-log: http://fleet.test/api/captains-log; model: none; added 2026-10-24)\n' \
+    "$TMP_ROOT/cards/archive" > "$home/data/officers.md"
+  assert_contains "$(FM_HOME="$home" "$OFFICER" run friction --date "$DATE" 2>&1)" "captains-log must be an https URL" \
+    "a non-https Captain's Log URL is refused"
+  pass "fm-officer friction: Captain's Log cards are read once, read-only, and an unreachable log is a coverage gap"
+}
+
 test_registry_and_unharvested_day() {
   local home out
   home=$(make_world registry)
@@ -311,4 +368,5 @@ test_velocity_findings_file
 test_rerun_digest_is_byte_identical
 test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh
+test_captains_log_cards_read_only
 test_registry_and_unharvested_day

@@ -822,6 +822,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
 | `archive` | Triage and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
 | `hosts` | Triage and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
+| `captains-log` | Friction only, optional: the fleet-app Captain's Log endpoint, an `https://` URL ending `/api/captains-log`, read with one `GET`; a card asked that day that no status line accounts for is counted as a Lee step, and an unreachable endpoint is a coverage note while the run continues on status logs and the archive |
 | `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2 with exactly the top-level keys `schema_version`, `generated_at`, `staging_sha`, `production_sha`, `records` keyed `<repo>#<pr>`, and `items` mapping each Linear id to its record keys; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
 | `team` | Landing only, optional: the Linear team key whose Done items are listed; default `PC` |
 | `writes` | Landing only, optional: `corrections` (default) lets the officer correct what PropertyCompass2's release workflow, the routine Done writer, missed; `none` turns Linear writes off |
@@ -841,7 +842,7 @@ Example:
 After adding a line, run `bin/fm-officer.sh register <id>` to install and trust its watcher check; `bin/fm-officer.sh retire <id>` removes the check and the line and keeps the findings.
 Session start runs `bin/fm-officer.sh ensure`, which prints one `OFFICER:` line per gap.
 A second mate home never runs officers: `register` and `run` refuse there, and `ensure` reports any registry it finds.
-The friction officer also writes `<date>.velocity-findings.json`, a fleet-app velocity findings file (`FINDINGS_SCHEMA` schema version 1, source `friction-officer`) for the velocity audit page; it never posts that file itself.
+The friction officer also writes `<date>.velocity-findings.json`, a fleet-app velocity findings file (`FINDINGS_SCHEMA` schema version 1, source `friction-officer`) for the velocity audit page (`/runs/velocity-audit`); it never posts that file itself. The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
 The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets it resolve tasks that were already cleaned up.
 
 ## Harness support

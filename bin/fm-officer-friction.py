@@ -8,10 +8,10 @@ Usage:
   fm-officer-friction.py scan --archive <dir> --date <YYYY-MM-DD>
   fm-officer-friction.py run --archive <dir|host:dir> --date <YYYY-MM-DD>
                              --out <lane-dir> [--home <dir>]... [--hosts a,b]
-                             [--model none] [--now <epoch>]
+                             [--captains-log <https-url>] [--model none] [--now <epoch>]
 
 Friction is anything that slowed an agent down, above all a step it had to
-wait for Lee to do. One day's friction events come from two sources:
+wait for Lee to do. One day's friction events come from three sources:
 
   status logs  every needs-decision and blocked line opened that day (local
                time) in a --home's live state/<task>.status logs and its fleet
@@ -36,6 +36,13 @@ wait for Lee to do. One day's friction events come from two sources:
                `command not found` is agent-side friction. A worker session
                whose cwd is outside the worktree its task record names started
                in the wrong directory.
+  captain's log with --captains-log, the cards fleet-app serves at GET
+               <fleet-app>/api/captains-log (src/captains-log.ts), read with
+               curl and never written: a card asked that day whose id is no
+               status line's card id (fleet-app's cardId of its task and key)
+               is a Lee step the status logs missed, measured to its answer.
+               An unreachable endpoint is a coverage gap in the digest, and
+               the pass continues on the other two sources.
 
 Re-running a day with unchanged inputs rewrites identical digest bytes; the
 one environment input is this host's name, which counts as the home's own
@@ -64,7 +71,7 @@ It prints `DIGEST <date> <n-actionable> <date>.md` as its last stdout line;
 n-actionable counts findings that clear the card bar (severity and confidence
 of at least 3, as the page's aggregation requires). It fails, writing nothing,
 while the archive day is missing or not yet harvested. It never posts the
-velocity file anywhere.
+velocity file anywhere: the fleet app pulls it from the lane.
 
 Each finding states what Lee had to do, how often, how long agents waited,
 the root cause, a proposed fix that removes the step, an owner, and evidence
@@ -80,6 +87,7 @@ and slice 1 accepts only --model none.
 import argparse
 import datetime
 import gzip
+import hashlib
 import importlib.util
 import json
 import os
@@ -119,6 +127,8 @@ KEY_RE = re.compile(r"(?:^|[\s\[])key=([^\]\s]+)")
 URL_RE = re.compile(r"https?://\S+")
 CORR_RE = re.compile(r"\bcorr=[0-9a-f]+\s*")
 SSH_HOST_RE = re.compile(r"\bssh (?:-\w+ )*(?:[\w.-]+@)?([\w.-]+) '")
+CARD_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+HOLD_KEY_RE = re.compile(r"^captain-hold-(.+)-\d+$")
 
 # An assistant asking Lee to act. Only assistant text blocks are matched.
 ASK_RE = re.compile(
@@ -775,6 +785,62 @@ def collapse_relays(events):
     return [ev for ev in events if id(ev) not in drop]
 
 
+def _hashed_card_id(task, key):
+    text = re.sub(r"^-+", "", re.sub(r"[^a-z0-9-]", "-", "-".join(x for x in (task, key) if x).lower())) or "card"
+    digest = hashlib.sha256(("%s\0%s" % (task, key or "")).encode("utf-8")).hexdigest()[:10]
+    return "%s-%s" % (text[:53], digest)
+
+
+def card_id(task, key):
+    """The Captain's Log card id of a status line, as fleet-app's cardId() derives it."""
+    m = HOLD_KEY_RE.match(key) if key is not None else None
+    hold = task if key is None else (m.group(1) if m else None)
+    if hold is not None:
+        return hold if CARD_ID_RE.match(hold) else _hashed_card_id(hold, None)
+    return _hashed_card_id(task, key)
+
+
+def load_captains_log(source):
+    """The cards fleet-app serves at GET <fleet-app>/api/captains-log; read-only."""
+    proc = subprocess.run(["curl", "-fsS", "--max-time", "30", source], capture_output=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError("unreachable (curl exit %d)" % proc.returncode)
+    try:
+        state = json.loads(proc.stdout.decode("utf-8"))
+    except ValueError:
+        raise RuntimeError("its answer is not JSON")
+    value = state.get("value") if isinstance(state, dict) else None
+    cards = value.get("cards") if isinstance(value, dict) else None
+    if not isinstance(cards, list):
+        raise RuntimeError("its answer holds no card list")
+    return [c for c in cards if isinstance(c, dict)]
+
+
+def card_events(cards, homes, date):
+    """Cards asked on <date> that no status line in the homes accounts for: Lee steps seen only as cards."""
+    start, end = day_bounds(date)
+    known = set()
+    for home in homes:
+        for task, stream in status_streams(home).items():
+            known.add(card_id(task, None))
+            known.update(card_id(task, e["key"]) for e in stream if e["key"])
+    out = []
+    for card in cards:
+        at = epoch_of(card.get("asked"))
+        if at is None or not start <= at < end or card.get("id") in known:
+            continue
+        text = clean("%s %s" % (card.get("question") or "", card.get("advice") or ""))
+        cause, sub, pos = classify(text)
+        answer = card.get("answer") if isinstance(card.get("answer"), dict) else {}
+        answered_at = epoch_of(answer.get("at"))
+        out.append({"kind": "card-only", "at": at, "card": card.get("id"), "cause": cause, "sub": sub,
+                    "lee": True, "service": service_of(text, pos), "tool": None,
+                    "signature": scrub(card.get("question") or ""), "answered_at": answered_at,
+                    "wait_s": max(0, answered_at - at) if answered_at is not None else None,
+                    "measured_by": "card-answer" if answered_at is not None else None})
+    return out
+
+
 def wrong_cwd_events(scanned, homes):
     by_path = {h.path: h for h in homes}
     out = []
@@ -794,7 +860,7 @@ def wrong_cwd_events(scanned, homes):
     return out
 
 
-def all_events(scanned, homes, date):
+def all_events(scanned, homes, date, cards):
     events = []
     wrong_cwd_events(scanned, homes)
     for s in scanned["sessions"]:
@@ -803,8 +869,9 @@ def all_events(scanned, homes, date):
             events.append(dict(ev, session=s["session"], machine=s["machine"], task=join.get("task"),
                                home=join.get("home")))
     events.extend(status_events(homes, date))
-    events.sort(key=lambda e: (e.get("at") or 0, e["kind"], e.get("session") or e.get("task") or "",
-                               e["signature"]))
+    events.extend(card_events(cards, homes, date))
+    events.sort(key=lambda e: (e.get("at") or 0, e["kind"],
+                               e.get("session") or e.get("task") or e.get("card") or "", e["signature"]))
     return events
 
 
@@ -851,7 +918,7 @@ def group_findings(events, model):
         severity = 2 + (1 if lee else 0) + (1 if total and total >= 3600 else 0) \
             + (1 if total and total >= 6 * 3600 else 0) + (1 if len(evs) >= 3 else 0)
         severity = max(1, min(5, severity))
-        if any(e["kind"] == "status-wait" and e.get("wait_s") is not None for e in evs):
+        if any(e["kind"] in ("status-wait", "card-only") and e.get("wait_s") is not None for e in evs):
             confidence = 5
         elif any(e["kind"] == "lee-command" for e in evs):
             confidence = 4
@@ -862,6 +929,7 @@ def group_findings(events, model):
         tasks = sorted({e["task"] for e in evs if e.get("task") and e["task"] not in CHANNEL_LOGS})
         sessions = sorted({e["session"] for e in evs if e.get("session")})
         keys = sorted({"%s@%s" % (e["key"], iso_utc(e["at"])) for e in evs if e.get("key")})
+        cards = sorted({e["card"] for e in evs if e.get("card")})
         carded = fix is not None and (cause, sub) not in NOT_CARDED \
             and severity >= MIN_SEVERITY and confidence >= MIN_CONFIDENCE
         finding = {
@@ -871,13 +939,13 @@ def group_findings(events, model):
             "waits_measured": len(waits), "wait_total_s": total,
             "wait_median_s": waits[len(waits) // 2] if waits else None,
             "wait_max_s": waits[-1] if waits else None,
-            "open": sum(1 for e in evs if e["kind"] == "status-wait" and not e["reask"]
-                        and e.get("wait_s") is None),
+            "open": sum(1 for e in evs if (e["kind"] == "card-only" or e["kind"] == "status-wait"
+                                           and not e["reask"]) and e.get("wait_s") is None),
             "reasks": sum(1 for e in evs if e.get("reask")),
             "severity": severity, "confidence": confidence, "carded": carded,
             "owner": None, "title": None, "lee_did": None, "fix": None, "effort": None,
             "category": CATEGORY.get(cause, "other"),
-            "evidence": {"tasks": tasks, "sessions": sessions, "status_keys": keys,
+            "evidence": {"tasks": tasks, "sessions": sessions, "status_keys": keys, "cards": cards,
                          "example": sorted(e["signature"] for e in evs)[0]},
             "where": dict(sorted(places.items())),
         }
@@ -910,6 +978,8 @@ def bottleneck(f, date):
         parts.append("tasks " + ", ".join(ev["tasks"][:4]))
     if ev["status_keys"]:
         parts.append("status " + ", ".join(ev["status_keys"][:3]))
+    if ev["cards"]:
+        parts.append("cards " + ", ".join(ev["cards"][:3]))
     if ev["sessions"]:
         parts.append("sessions " + ", ".join(s.split(":")[0] + ":" + s.split(":")[-1][:8]
                                              for s in ev["sessions"][:3]))
@@ -949,8 +1019,16 @@ def velocity_doc(doc, now):
         evidence.append({"name": clip("status logs " + place(home["path"]), 40), "state": "read",
                          "detail": clip("%d task log(s); fleet ledger %s" % (
                              home["status_logs"], "read" if home["ledger"] else "absent"), 400)})
-    evidence.append({"name": "Captain's Log store", "state": "missing", "detail": clip(
-        "Not read: its cards come from the keyed needs-decision lines read above.", 400)})
+    log = cov["captains_log"]
+    if log["state"] == "read":
+        detail = "%d card(s) read; %d asked on %s with no status line counted" % (
+            log["cards"], log["card_only"], doc["date"])
+    elif log["state"] == "unreachable":
+        detail = "Not read: the endpoint is %s; counted from status logs only." % log["reason"]
+    else:
+        detail = "Not read: the registry line sets no captains-log URL; counted from status logs only."
+    evidence.append({"name": "Captain's Log", "state": "read" if log["state"] == "read" else "missing",
+                     "detail": clip(detail, 400)})
     return {
         "schema_version": 1,
         "source": "friction-officer",
@@ -968,7 +1046,7 @@ def velocity_doc(doc, now):
     }
 
 
-def coverage(scanned, homes, hosts):
+def coverage(scanned, homes, hosts, log):
     present = sorted({s["machine"] for s in scanned["sessions"] if s.get("machine")})
     home_rows = []
     notes = []
@@ -990,14 +1068,21 @@ def coverage(scanned, homes, hosts):
         notes.append("The archive did not collect host %s." % host)
     for harness, n in sorted((scanned.get("not_analysed") or {}).items()):
         notes.append("%d %s session(s) were not analysed (claude-code transcripts only)." % (n, harness))
+    if log["state"] == "unreachable":
+        notes.append("The Captain's Log is %s, so Lee steps seen only as cards are not counted; findings come"
+                     " from status logs and the archive." % log["reason"])
+    elif log["state"] == "not-set":
+        notes.append("No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.")
     notes.append("A worker that resumed in the wrong directory is found only while its task record survives.")
-    return {"hosts_expected": hosts, "hosts_present": present, "homes": home_rows,
+    return {"hosts_expected": hosts, "hosts_present": present, "homes": home_rows, "captains_log": log,
             "harvester_last_run": scanned.get("harvester_last_run"),
             "sessions_analysed": len(scanned["sessions"]), "notes": notes}
 
 
-def summarise(scanned, homes, hosts, model):
-    events = all_events(scanned, homes, scanned["date"])
+def summarise(scanned, homes, hosts, model, cards, log):
+    events = all_events(scanned, homes, scanned["date"], cards)
+    if log["state"] == "read":
+        log = dict(log, cards=len(cards), card_only=sum(1 for e in events if e["kind"] == "card-only"))
     findings = group_findings(events, model)
     for e in events:
         if e.get("home"):
@@ -1007,7 +1092,7 @@ def summarise(scanned, homes, hosts, model):
         "scorer": SCORER,
         "model": model,
         "date": scanned["date"],
-        "coverage": coverage(scanned, homes, hosts),
+        "coverage": coverage(scanned, homes, hosts, log),
         "events": events,
         "findings": findings,
         "actionable": sum(1 for f in findings if f["carded"]),
@@ -1029,6 +1114,9 @@ def render_md(doc):
     for home in cov["homes"]:
         lines.append("- Home %s: %d status log(s), fleet ledger %s." % (
             place(home["path"]), home["status_logs"], "read" if home["ledger"] else "absent"))
+    if cov["captains_log"]["state"] == "read":
+        lines.append("- Captain's Log: %d card(s) read, %d Lee step(s) seen only as a card." % (
+            cov["captains_log"]["cards"], cov["captains_log"]["card_only"]))
     for note in cov["notes"]:
         lines.append("- " + note)
     lines += ["", "## Findings", ""]
@@ -1050,8 +1138,9 @@ def render_md(doc):
         lines.append("- Proposed fix: %s" % (f["fix"] or "none yet; the model seam is off (model: none)."))
         lines.append("- Owner: %s; effort %s." % (f["owner"] or "not stated", f["effort"] or "not stated"))
         ev = f["evidence"]
-        lines.append("- Evidence: tasks %s; status %s; sessions %s; e.g. `%s`." % (
+        lines.append("- Evidence: tasks %s; status %s; cards %s; sessions %s; e.g. `%s`." % (
             ", ".join(ev["tasks"]) or "none", ", ".join(ev["status_keys"]) or "none",
+            ", ".join(ev["cards"]) or "none",
             ", ".join(ev["sessions"][:6]) or "none", ev["example"].replace("`", "'")))
         lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
@@ -1065,6 +1154,7 @@ def main(argv):
     parser.add_argument("--out")
     parser.add_argument("--home", action="append", default=[])
     parser.add_argument("--hosts", default="")
+    parser.add_argument("--captains-log")
     parser.add_argument("--model", default="none")
     parser.add_argument("--now", type=int)
     args = parser.parse_args(argv)
@@ -1090,7 +1180,13 @@ def main(argv):
         triage.join_sessions(scanned, homes)
         triage.classify_mates(scanned, homes)
         hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
-        doc = summarise(scanned, homes, hosts, args.model)
+        cards, log = [], {"state": "not-set"}
+        if args.captains_log:
+            try:
+                cards, log = load_captains_log(args.captains_log), {"state": "read"}
+            except RuntimeError as exc:
+                log = {"state": "unreachable", "reason": str(exc)}
+        doc = summarise(scanned, homes, hosts, args.model, cards, log)
     except (RuntimeError, ValueError) as exc:
         print("fm-officer-friction: %s" % exc, file=sys.stderr)
         return 1
