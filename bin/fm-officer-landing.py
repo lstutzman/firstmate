@@ -22,7 +22,8 @@ keys. Any other schema version or layout fails the run. This pass adds the offic
 those facts plus Linear:
 
   A1 false done      the item is Done, but a PR linked to it is merged and not
-                     in production, or no landing fact names the item at all;
+                     in production, no linked PR is merged, or no landing fact
+                     names the item at all;
   B1 false not-done  every PR linked to the item is in production, but the
                      item is not Done (proposed state Done); or a linked PR is
                      on staging while the item is still before In Staging

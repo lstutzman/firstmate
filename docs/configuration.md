@@ -827,7 +827,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `writes` | Landing only, optional: `corrections` (default) lets the officer correct what PropertyCompass2's release workflow, the routine Done writer, missed; `none` turns Linear writes off |
 | `max-corrections` | Landing only, optional: the most items one run may correct; default 10. An item skipped on its re-check does not count, and a run re-checks at most five items per allowed correction |
 | `reopen-state` | Landing only, optional: the state a Done item moves to when its linked PR never reached main (`on_main` false) or any release; default `In Progress`; `In Staging` and `Done` are refused. A Done item on main but not yet in production is release lag and is only reported |
-| `max-facts-age` | Landing only, optional: the oldest facts, in hours since their `generated_at`, the officer writes to Linear from; default 36. Older or missing `generated_at`, or facts with no `production_sha`, make no Linear write and raises a `stale-facts` finding |
+| `max-facts-age` | Landing only, optional: the oldest facts, in hours since their `generated_at`, the officer writes to Linear from; default 36. Older or missing `generated_at`, or facts with no `production_sha`, make no Linear write and raise a `stale-facts` finding |
 | `done-window` | Landing only, optional: how many Linear Done items one run lists, in one paged read, to find Done items no landing fact names; default 100, and 0 skips that read |
 
 Example:
