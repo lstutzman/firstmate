@@ -1559,7 +1559,9 @@ test_hold_answer_closes_originating_decision_key() {
   printf '%s\n' \
     'needs-decision [at=1] [key=pillow-calls]: three card calls' \
     'needs-decision [at=2] [key=pillow-release]: one more call' \
-    'needs-decision [at=3] [key=unrelated-call]: not a hold' >> "$channel"
+    'needs-decision [at=3] [key=unrelated-call]: not a hold' \
+    'needs-decision [at=4] [key=recorded-key]: call held under another task' \
+    'needs-decision [at=5] [key=moot-key]: call reconciled on evidence' >> "$channel"
 
   run_captain "$mate" hold pillow-calls --title "Pillow calls" --reason "three card calls" \
     --repo sample >/dev/null || fail "pillow hold failed"
@@ -1570,7 +1572,22 @@ test_hold_answer_closes_originating_decision_key() {
   run_captain "$mate" answer pillow-release --decision-file "$decision" --release >/dev/null \
     || fail "pillow release answer failed"
 
+  run_captain "$mate" hold gates-work --title "Gated work" --reason "held under another id" \
+    --repo sample --origin-key recorded-key >/dev/null || fail "origin-key hold failed"
+  run_captain "$mate" answer gates-work --decision-file "$decision" >/dev/null \
+    || fail "origin-key answer failed"
+  run_captain "$mate" hold moot-task --title "Moot task" --reason "may be moot" \
+    --repo sample --origin-key moot-key >/dev/null || fail "moot hold failed"
+  request_reconciles "$mate" origin-key-board moot-task || fail "could not request the reconcile"
+  printf 'The call is moot.\n' > "$mate/evidence.txt"
+  run_captain "$mate" reconcile close moot-task --evidence-file "$mate/evidence.txt" >/dev/null \
+    || fail "could not reconcile the moot task"
+
   open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$channel")
+  printf '%s\n' "$open" | grep -Fq 'recorded-key' \
+    && fail "a hold with a recorded origin key left that key open: $open"
+  printf '%s\n' "$open" | grep -Fq 'moot-key' \
+    || fail "a reconcile closed the origin key: $open"
   printf '%s\n' "$open" | grep -Fq 'pillow-calls' \
     && fail "an answered hold left its originating key open: $open"
   printf '%s\n' "$open" | grep -Fq 'pillow-release' \
