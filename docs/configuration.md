@@ -843,7 +843,7 @@ After adding a line, run `bin/fm-officer.sh register <id>` to install and trust 
 Session start runs `bin/fm-officer.sh ensure`, which prints one `OFFICER:` line per gap.
 A second mate home never runs officers: `register` and `run` refuse there, and `ensure` reports any registry it finds.
 The friction officer also writes `<date>.velocity-findings.json`, a fleet-app velocity findings file (`FINDINGS_SCHEMA` schema version 1, source `friction-officer`) for the velocity audit page (`/runs/velocity-audit`); it never posts that file itself. The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
-The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets it resolve tasks that were already cleaned up.
+The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets them resolve tasks that were already cleaned up.
 
 ## Harness support
 
