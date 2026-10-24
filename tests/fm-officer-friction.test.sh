@@ -81,6 +81,8 @@ spec = {"sessions": [
     user("done", t + 300),
     user("<bash-input>ssh -t alpha 'bash /x/swap.sh c2'</bash-input>", t + 400),
     user("<bash-stdout></bash-stdout><bash-stderr>lee@alpha: Permission denied (publickey).</bash-stderr>", t + 401),
+    user("<bash-input>ssh -t beta 'bash /x/lic.sh'</bash-input>", t + 450),
+    user("<bash-stdout></bash-stdout><bash-stderr>lee@beta: Permission denied (publickey).</bash-stderr>", t + 451),
     user("<bash-input>/opt/homebrew/bin/op run --env-file=/Users/x/prod.env -- python3 s.py --token ghp_AbCdEf0123456789abcdefGHIJ</bash-input>", t + 500),
     user("<bash-input>brew install openjdk@21</bash-input>", t + 600)]},
   {"machine": "alpha", "id": "s-worker", "first_prompt": ": Firstmate operational input waiting: read 'w'",
@@ -131,8 +133,26 @@ status_event() {  # <json> <task> <key|null> <jq-path>
 }
 
 test_status_waits_and_root_causes() {
-  local home out json
+  local home out json mate
   home=$(make_world status)
+  mate="$TMP_ROOT/status/matehome"
+  officer_home "$mate"
+  mate=$(cd "$mate" && pwd -P)
+  printf -- '- dt - fixture mate (home: %s; scope: fixture work; projects: alpha; added 2026-10-24)\n' "$mate" \
+    > "$home/data/secondmates.md"
+  cat > "$mate/state/task-dt.status" <<EOF
+needs-decision [at=$T] [key=dt-gate]: the gate-integrity guard needs ALLOW_GATE_EDIT from Lee
+resolved [key=dt-gate] [at=$((T + 600))]: Lee set it
+EOF
+  cat > "$home/state/dt.status" <<EOF
+needs-decision [at=$((T + 20))] [key=dt-gate]: relayed: the gate-integrity guard needs ALLOW_GATE_EDIT from Lee
+EOF
+  cat > "$home/state/task-pra.status" <<EOF
+needs-decision [at=$T] [key=merge]: PR 1 needs Lee's merge word
+EOF
+  cat > "$home/state/task-prb.status" <<EOF
+needs-decision [at=$((T + 60))] [key=merge]: PR 2 needs Lee's merge word
+EOF
   out=$(run_officer "$home") || fail "friction run must succeed: $out"
   assert_contains "$out" "DIGEST $DATE " "run prints the digest marker"
   json="$home/data/officers/friction/$DATE.json"
@@ -141,8 +161,14 @@ test_status_waits_and_root_causes() {
     "a keyed Cloudflare token refusal is a scope wait measured to its resolved line, answered by Lee"
   assert_equals "1 3600 task-cf" "$(finding "$json" credential scope '"\(.events) \(.wait_total_s) \(.evidence.tasks | join(","))"')" \
     "a relayed copy of a keyed ask in the parent channel is the same ask, and the channel is not a task"
-  assert_equals "Cloudflare agent token lacks a scope, so Lee widens it" "$(finding "$json" credential scope .title)" \
-    "the finding title is a stable template naming the service"
+  assert_equals "An agent token lacks a scope, so Lee widens it|Cloudflare" \
+    "$(finding "$json" credential scope '"\(.title)|\(.name)"')" \
+    "the finding title is a stable template, and the group keeps the service's name"
+  assert_equals "1 600 task-dt" \
+    "$(finding "$json" guard-hook gate-edit '"\(.events) \(.wait_total_s) \(.evidence.tasks | join(","))"')" \
+    "a mate's relay into its parent channel log folds into the worker's copy in the mate's home"
+  assert_equals "2 task-pra,task-prb" "$(finding "$json" policy merge-word '"\(.events) \(.evidence.tasks | join(","))"')" \
+    "two task logs that reuse a key are two asks"
   assert_equals "Lee (token owner); main keeps the scope list" "$(finding "$json" credential scope .owner)" "the finding names an owner"
   assert_equals "guard-hook secret-hook 600" "$(status_event "$json" task-node node-line '"\(.cause) \(.sub) \(.wait_s)"')" \
     "bare key= and at= markers parse, and a shell startup file the hook blocks is the secret hook"
@@ -179,6 +205,9 @@ test_transcript_lee_steps_and_refusals() {
   assert_equals "environment ssh-to-self" \
     "$(jq -r '[.events[] | select(.kind == "lee-command" and (.signature | startswith("ssh")))][0] | "\(.cause) \(.sub)"' "$json")" \
     "Lee typing ssh to the session's own host is ssh-to-self"
+  assert_equals "credential ssh-key" \
+    "$(jq -r '[.events[] | select(.kind == "lee-command" and (.signature | startswith("ssh -t beta")))][0] | "\(.cause) \(.sub)"' "$json")" \
+    "a key refusal from another host is a missing ssh key, not ssh-to-self"
   assert_equals "op run" "$(jq -r '[.events[] | select(.kind == "lee-command" and .service == "1Password")][0].signature' "$json")" \
     "a typed command keeps only its command words"
   assert_equals "openjdk" "$(jq -r '[.events[] | select(.kind == "lee-command" and .cause == "missing-tool")][0].tool' "$json")" \
@@ -231,9 +260,9 @@ for b in d["bottlenecks"]:
     assert 3 <= b["severity"] <= 5 and 3 <= b["confidence"] <= 5, (b["title"], b["severity"], b["confidence"])
     assert not re.search(r"\d", b["title"]), b["title"]
 PY
-  assert_equals "Cloudflare agent token lacks a scope, so Lee widens it" \
-    "$(jq -r '[.bottlenecks[] | select(.title | startswith("Cloudflare"))][0].title' "$vel")" \
-    "a status-backed Lee step clears the card bar"
+  assert_equals "An agent token lacks a scope, so Lee widens it" \
+    "$(jq -r '[.bottlenecks[] | select(.tldr | startswith("Cloudflare: "))][0].title' "$vel")" \
+    "a status-backed Lee step clears the card bar, with the service named in its tldr, not its title"
   assert_no_grep "pick (a) the short wording" "$vel" "a product decision never becomes a card"
   pass "fm-officer friction: the velocity findings file has fleet-app's shape and limits"
 }
@@ -342,6 +371,11 @@ SH
     "the run continues on the status logs"
   assert_equals "missing" "$(jq -r '.evidence[] | select(.name == "Captain'"'"'s Log") | .state' "$vel")" \
     "the velocity file marks the Captain's Log missing"
+  printf '#!/usr/bin/env bash\nprintf "<html>sign in</html>"\n' > "$fakebin/curl"
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "a non-JSON Captain's Log must not fail the run"
+  assert_grep "The Captain's Log is unreadable (not JSON), so" "$md" "a non-JSON answer reads as an unreadable log"
+  assert_equals "Not read: the endpoint is unreadable (not JSON); counted from status logs only." \
+    "$(jq -r '.evidence[] | select(.name == "Captain'"'"'s Log") | .detail' "$vel")" "the velocity detail reads as a sentence"
   printf -- '- friction - Finds friction (role: friction; cadence: daily 06:15; archive: %s; captains-log: http://fleet.test/api/captains-log; model: none; added 2026-10-24)\n' \
     "$TMP_ROOT/cards/archive" > "$home/data/officers.md"
   assert_contains "$(FM_HOME="$home" "$OFFICER" run friction --date "$DATE" 2>&1)" "captains-log must be an https URL" \

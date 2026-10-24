@@ -8,7 +8,8 @@ Usage:
   fm-officer-friction.py scan --archive <dir> --date <YYYY-MM-DD>
   fm-officer-friction.py run --archive <dir|host:dir> --date <YYYY-MM-DD>
                              --out <lane-dir> [--home <dir>]... [--hosts a,b]
-                             [--captains-log <https-url>] [--model none] [--now <epoch>]
+                             [--captains-log <https-url>] [--channel <mate-id>]...
+                             [--model none] [--now <epoch>]
 
 Friction is anything that slowed an agent down, above all a step it had to
 wait for Lee to do. One day's friction events come from three sources:
@@ -118,7 +119,8 @@ MIN_CONFIDENCE = 3
 MAX_CARDS = 5
 
 # Status logs that relay other tasks' lines rather than belong to a task: a
-# second mate's parent channel (docs/secondmate-parent-channel.md).
+# second mate's parent channel (docs/secondmate-parent-channel.md), here and,
+# as state/<mate-id>.status, in its parent home (each --channel <mate-id>).
 CHANNEL_LOGS = {"parent-replies"}
 LEE_RE = re.compile(r"\b(Lee|captain|Captain)\b")
 STATUS_RE = re.compile(r"^([a-z][a-z-]*)\b([^:]*):\s?(.*)$")
@@ -229,7 +231,8 @@ CATEGORY = {"guard-hook": "tooling", "missing-tool": "tooling", "credential": "w
             "service-limit": "environment", "lee-command": "waiting", "other": "other"}
 
 # (cause, sub) -> title, what Lee had to do, the fix, owner, effort.
-# {service}, {tool} and {machine} are filled from the group.
+# {service}, {tool} and {machine} are filled from the group, never in a title, so a
+# title is the same for every group of its cause; the bottleneck's tldr names the group.
 FIXES = {
     ("guard-hook", "secret-hook"): (
         "Secret-exposure hook blocks safe shell-file edits, so Lee makes them",
@@ -244,7 +247,7 @@ FIXES = {
         " logged wrapper, instead of Lee typing the export into the worker's pane.",
         "PropertyCompass2 (gate hooks)", "M"),
     ("guard-hook", "refused"): (
-        "{tool} refusals slow agents down",
+        "Hook refusals slow agents down",
         "nothing directly; agents retried around the refusal",
         "Where the refusal is right, make its message name the allowed command so the agent's next try"
         " succeeds; where it is a false positive, report it to the hook's owner with a fixture.",
@@ -256,7 +259,7 @@ FIXES = {
         " where it is a false positive, report it to the hook's owner with a fixture.",
         "skills (global hooks)", "S"),
     ("service-limit", "rate-limit"): (
-        "{service} rate limits stall agents until the limit resets",
+        "Service rate limits stall agents until the limit resets",
         "wait for, or raise, a {service} rate limit",
         "Serve repeat reads from a cache (op-agent's for 1Password) and count calls per host, so one busy"
         " worker cannot exhaust the shared limit; warn at 80% instead of failing at 100%.",
@@ -274,25 +277,25 @@ FIXES = {
         " that follows it is pre-approved; production credentials stay direct-only.",
         "Lee (fleet rules section 5)", "S"),
     ("credential", "create-denied"): (
-        "Agents cannot create {service} items, so Lee creates them",
+        "Agents cannot create secret items, so Lee creates them",
         "create a secret or item the agents' account may not create",
         "Give the agents' service account create rights in one dedicated staging vault, or a create-only"
         " broker that generates the value and never prints it.",
         "Lee ({service} admin)", "S"),
     ("credential", "scope"): (
-        "{service} agent token lacks a scope, so Lee widens it",
+        "An agent token lacks a scope, so Lee widens it",
         "widen or roll a {service} token for the agents",
         "Keep the agent token's required scopes in one checked list and probe them at session start, so a"
         " widening is asked for once, with the full list, before work starts.",
         "Lee (token owner); main keeps the scope list", "S"),
     ("credential", "login"): (
-        "{service} CLI is not signed in for agents",
+        "A service CLI is not signed in for agents",
         "sign a CLI in, or out, by hand",
         "Authenticate the CLI from a service-account token through op-agent instead of an interactive login,"
         " and check it in the machine's session-start doctor.",
         "{machine} home", "S"),
     ("credential", "lee-session"): (
-        "Lee runs commands under his own {service} session",
+        "Lee runs commands under his own signed-in session",
         "run a command under his own signed-in {service} session",
         "Where a staging-scoped key would do, let the agent run it under op-agent; where it needs a production"
         " key, keep it Lee's but hand it as one ready line from main.",
@@ -304,7 +307,7 @@ FIXES = {
         " the host, and record it in the machine's bootstrap so the refusal cannot come back.",
         "{machine} home", "S"),
     ("credential", "console-step"): (
-        "Lee does {service} console steps an agent token could do",
+        "Lee does console steps an agent token could do",
         "click through {service} console steps by hand",
         "Check whether the agent token's API covers the step; if it does, widen the token once and let the"
         " agent do it; if it does not, hand it as one ready line or link with the exact values.",
@@ -316,7 +319,7 @@ FIXES = {
         " stop waiting on it.",
         "Lee", "S"),
     ("missing-tool", "tool"): (
-        "{tool} is missing on {machine}",
+        "A tool agents need is missing",
         "install a tool by hand",
         "Add {tool} to {machine}'s bootstrap and its doctor check, so it is present before the next session.",
         "{machine} home", "S"),
@@ -488,9 +491,10 @@ def user_text(rec):
 def classify_command(command, machine=None, after=""):
     """(cause, sub) of a command Lee typed on `machine`; `after` is its shell output."""
     _, host = command_signature(command)
-    if machine and host and (re.sub(r"^[^@]*@", "", host) == machine
-                             or "Permission denied (publickey" in after):
+    if host and machine and re.sub(r"^[^@]*@", "", host) == machine:
         return "environment", "ssh-to-self"
+    if host and "Permission denied (publickey" in after:
+        return "credential", "ssh-key"
     cause, sub, _ = classify(command, COMMAND_RULES)
     if cause == "other":
         cause, sub, _ = classify(command)
@@ -716,7 +720,7 @@ def host_names(home):
     return {place(home.path), socket.gethostname().split(".")[0]}
 
 
-def status_events(homes, date):
+def status_events(homes, date, channels):
     """Waits opened on <date>: one event per ask, re-asks of an open key marked and not re-measured."""
     start, end = day_bounds(date)
     out = []
@@ -751,6 +755,7 @@ def status_events(homes, date):
                         answered_by = "lee" if LEE_RE.search(answer["text"]) else "firstmate"
                 out.append({
                     "kind": "status-wait" if waits else "status-report", "home": home.path, "task": task,
+                    "channel": task in channels,
                     "state": ev["state"], "key": ev["key"], "at": ev["at"], "source": ev["source"],
                     "reask": len(chain) > 1, "answered_at": answer["at"] if answer else None,
                     "wait_s": max(0, answer["at"] - ev["at"]) if answer else None,
@@ -769,19 +774,27 @@ def status_events(homes, date):
 
 
 def collapse_relays(events):
-    """One home's copies of a keyed ask in several logs (a worker's and its relay) are one ask:
-    keep the log that measured a wait, else the one that asked first."""
-    tasks = {}
+    """A channel log's copy of a keyed ask is a relay: it folds into a task log's copy of that key
+    in any home; channel copies with no task copy are one ask, the one that measured a wait, else
+    the first. Two task logs are never merged."""
+    copies = {}
     for ev in events:
         if ev["key"]:
-            tasks.setdefault((ev["home"], ev["key"]), {}).setdefault(ev["task"], []).append(ev)
+            copies.setdefault(ev["key"], []).append(ev)
     drop = set()
-    for by_task in tasks.values():
-        if len(by_task) < 2:
+    for evs in copies.values():
+        relays = [e for e in evs if e["channel"]]
+        if not relays:
             continue
-        keep = min(by_task, key=lambda t: (not any(e.get("wait_s") is not None for e in by_task[t]),
-                                           t in CHANNEL_LOGS, min(e["at"] for e in by_task[t]), t))
-        drop.update(id(e) for t, evs in by_task.items() if t != keep for e in evs)
+        if len(relays) < len(evs):
+            drop.update(id(e) for e in relays)
+            continue
+        logs = {}
+        for e in relays:
+            logs.setdefault((e["home"], e["task"]), []).append(e)
+        keep = min(logs, key=lambda t: (not any(e.get("wait_s") is not None for e in logs[t]),
+                                        min(e["at"] for e in logs[t]), t))
+        drop.update(id(e) for t, group in logs.items() if t != keep for e in group)
     return [ev for ev in events if id(ev) not in drop]
 
 
@@ -808,11 +821,11 @@ def load_captains_log(source):
     try:
         state = json.loads(proc.stdout.decode("utf-8"))
     except ValueError:
-        raise RuntimeError("its answer is not JSON")
+        raise RuntimeError("unreadable (not JSON)")
     value = state.get("value") if isinstance(state, dict) else None
     cards = value.get("cards") if isinstance(value, dict) else None
     if not isinstance(cards, list):
-        raise RuntimeError("its answer holds no card list")
+        raise RuntimeError("unreadable (no card list)")
     return [c for c in cards if isinstance(c, dict)]
 
 
@@ -860,7 +873,7 @@ def wrong_cwd_events(scanned, homes):
     return out
 
 
-def all_events(scanned, homes, date, cards):
+def all_events(scanned, homes, date, cards, channels):
     events = []
     wrong_cwd_events(scanned, homes)
     for s in scanned["sessions"]:
@@ -868,7 +881,7 @@ def all_events(scanned, homes, date, cards):
         for ev in s["events"]:
             events.append(dict(ev, session=s["session"], machine=s["machine"], task=join.get("task"),
                                home=join.get("home")))
-    events.extend(status_events(homes, date))
+    events.extend(status_events(homes, date, channels))
     events.extend(card_events(cards, homes, date))
     events.sort(key=lambda e: (e.get("at") or 0, e["kind"],
                                e.get("session") or e.get("task") or e.get("card") or "", e["signature"]))
@@ -926,7 +939,7 @@ def group_findings(events, model):
             confidence = 3
         fix = propose_fix(cause, sub, model)
         fill = {"service": name or "the service", "tool": name or "a tool", "machine": machine}
-        tasks = sorted({e["task"] for e in evs if e.get("task") and e["task"] not in CHANNEL_LOGS})
+        tasks = sorted({e["task"] for e in evs if e.get("task") and not e.get("channel")})
         sessions = sorted({e["session"] for e in evs if e.get("session")})
         keys = sorted({"%s@%s" % (e["key"], iso_utc(e["at"])) for e in evs if e.get("key")})
         cards = sorted({e["card"] for e in evs if e.get("card")})
@@ -991,7 +1004,7 @@ def bottleneck(f, date):
         saved = "not measured: %d step(s) on %s with no recorded answer time" % (f["events"], date)
     return {
         "title": clip(f["title"], 90),
-        "tldr": clip(("Lee had to %s: %d time(s) on %s; agents waited %s." % (
+        "tldr": clip(("%s: " % f["name"] if f["name"] else "") + ("Lee had to %s: %d time(s) on %s; agents waited %s." % (
             f["lee_did"], f["lee_events"], date, human_span(f["wait_total_s"]))) if f["lee_step"] else (
             "Agents hit this %d time(s) on %s and worked around it." % (f["events"], date)), 180),
         "category": f["category"],
@@ -1079,8 +1092,8 @@ def coverage(scanned, homes, hosts, log):
             "sessions_analysed": len(scanned["sessions"]), "notes": notes}
 
 
-def summarise(scanned, homes, hosts, model, cards, log):
-    events = all_events(scanned, homes, scanned["date"], cards)
+def summarise(scanned, homes, hosts, model, cards, log, channels):
+    events = all_events(scanned, homes, scanned["date"], cards, channels)
     if log["state"] == "read":
         log = dict(log, cards=len(cards), card_only=sum(1 for e in events if e["kind"] == "card-only"))
     findings = group_findings(events, model)
@@ -1155,6 +1168,7 @@ def main(argv):
     parser.add_argument("--home", action="append", default=[])
     parser.add_argument("--hosts", default="")
     parser.add_argument("--captains-log")
+    parser.add_argument("--channel", action="append", default=[])
     parser.add_argument("--model", default="none")
     parser.add_argument("--now", type=int)
     args = parser.parse_args(argv)
@@ -1186,7 +1200,7 @@ def main(argv):
                 cards, log = load_captains_log(args.captains_log), {"state": "read"}
             except RuntimeError as exc:
                 log = {"state": "unreachable", "reason": str(exc)}
-        doc = summarise(scanned, homes, hosts, args.model, cards, log)
+        doc = summarise(scanned, homes, hosts, args.model, cards, log, CHANNEL_LOGS | set(args.channel))
     except (RuntimeError, ValueError) as exc:
         print("fm-officer-friction: %s" % exc, file=sys.stderr)
         return 1

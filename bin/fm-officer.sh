@@ -349,14 +349,19 @@ EOF
 
 role_triage() { role_archive fm-officer-triage.py "$1"; }  # <date>
 
-role_friction() {  # <date>
-  local log
+# role_friction <date>: each registered second mate's id names its parent
+# channel log, state/<mate-id>.status, in this home.
+role_friction() {
+  local -a args=(--now "$(now_epoch)")
+  local log line
   log=$(line_field "$OFFICER_LINE" captains-log || true)
-  if [ -n "$log" ]; then
-    role_archive fm-officer-friction.py "$1" --captains-log "$log" --now "$(now_epoch)"
-  else
-    role_archive fm-officer-friction.py "$1" --now "$(now_epoch)"
+  [ -z "$log" ] || args+=(--captains-log "$log")
+  if [ -f "$DATA/secondmates.md" ]; then
+    while IFS= read -r line; do
+      secondmate_registry_parse_line "$line" && args+=(--channel "$SECONDMATE_REGISTRY_ID")
+    done < "$DATA/secondmates.md"
   fi
+  role_archive fm-officer-friction.py "$1" "${args[@]}"
 }
 
 role_landing() {  # <date>
