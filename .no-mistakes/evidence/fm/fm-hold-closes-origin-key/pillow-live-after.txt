@@ -1,0 +1,41 @@
+### 21 Oct: worker raises the original key on the parent channel
+### hold the calls as backlog task ux-beautify-pillow-calls
+ux-beautify-pillow-calls
+--- channel after hold:
+needs-decision [at=1] [key=ux-beautify-pillow-calls]: three Pillow card calls
+needs-decision [key=captain-hold-ux-beautify-pillow-calls-1] [at=1792849898]: captain hold ux-beautify-pillow-calls: three Pillow card calls
+--- OPEN DECISIONS after hold:
+ux-beautify-pillow-calls	needs-decision	three Pillow card calls
+captain-hold-ux-beautify-pillow-calls-1	needs-decision	captain hold ux-beautify-pillow-calls: three Pillow card calls### Lee answers all three calls
+answered: ux-beautify-pillow-calls
+rc=0
+--- channel after answer:
+needs-decision [at=1] [key=ux-beautify-pillow-calls]: three Pillow card calls
+needs-decision [key=captain-hold-ux-beautify-pillow-calls-1] [at=1792849898]: captain hold ux-beautify-pillow-calls: three Pillow card calls
+resolved [key=captain-hold-ux-beautify-pillow-calls-1] [at=1792849900]: captain hold ux-beautify-pillow-calls: answered
+resolved [key=ux-beautify-pillow-calls] [at=1792849900]: captain hold ux-beautify-pillow-calls: answered
+--- OPEN DECISIONS after answer (empty = nothing re-asked):
+[end]
+
+### adversarial: call raised under key pillow-x, held as task ux-beautify with --origin-key, released
+ux-beautify
+released: ux-beautify
+rc=0
+--- OPEN DECISIONS (expect only bystander):
+bystander	needs-decision	unrelated call[end]
+### adversarial: invalid origin key is refused
+fm-captain-hold: origin-key must be a non-empty privacy-safe slug: Bad Key!
+rc=1
+### adversarial: re-answering does not duplicate the origin close
+rc=0
+resolved [key=ux-beautify-pillow-calls] lines: 1
+--- final channel:
+needs-decision [at=1] [key=ux-beautify-pillow-calls]: three Pillow card calls
+needs-decision [key=captain-hold-ux-beautify-pillow-calls-1] [at=1792849898]: captain hold ux-beautify-pillow-calls: three Pillow card calls
+resolved [key=captain-hold-ux-beautify-pillow-calls-1] [at=1792849900]: captain hold ux-beautify-pillow-calls: answered
+resolved [key=ux-beautify-pillow-calls] [at=1792849900]: captain hold ux-beautify-pillow-calls: answered
+needs-decision [at=2] [key=pillow-x]: call under a different id
+needs-decision [at=3] [key=bystander]: unrelated call
+needs-decision [key=captain-hold-ux-beautify-1] [at=1792849902]: captain hold ux-beautify: gated by pillow-x
+resolved [key=captain-hold-ux-beautify-1] [at=1792849903]: captain hold ux-beautify: released
+resolved [key=pillow-x] [at=1792849903]: captain hold ux-beautify: released
