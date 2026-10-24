@@ -21,7 +21,8 @@ An officer may:
 - write its own lane, `data/officers/<id>/`: dated findings, its digest marker, `runs.log`, and its `check-record.*` files;
 - print its one report line from its watcher check;
 - for a landing officer, unless its registry line says `writes: none`, correct what PropertyCompass2's release workflow (the routine Done writer) missed, through `linear-axi` `--dry-run` then `--verify`, at most `max-corrections` items a run:
-  set Done on an item whose every linked PR the landing-truth facts show merged and in production and that has no sub-issues, or move a Done item the facts name, with a linked PR merged and not in production, to its `reopen-state`;
+  set Done on an item whose every linked PR the landing-truth facts show merged and in production and that has no sub-issues, or move a Done item the facts name, with a linked PR merged that never reached main (`on_main` false) or any release, to its `reopen-state`; a Done item on main but not yet in production is release lag, reported and never written;
+  no Linear write is made when the facts' `generated_at` is missing or older than `max-facts-age` hours (default 36), and a `stale-facts` finding is raised instead;
   each correction first re-checks that Linear still shows the state the facts recorded, then writes an evidence comment quoting the landing-truth record it used, and is logged with that record in its findings.
 
 An officer may never:

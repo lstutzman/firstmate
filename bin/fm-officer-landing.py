@@ -8,13 +8,17 @@ Usage:
   fm-officer-landing.py run --facts <path|host:path|https-url> --date <YYYY-MM-DD>
                             --out <lane-dir> [--team PC] [--done-window 100]
                             [--writes corrections|none] [--max-corrections 10]
-                            [--reopen-state "In Progress"]
+                            [--reopen-state "In Progress"] [--max-facts-age 36]
+                            [--now <epoch>]
 
 Landing facts come from the fleet-app landing-truth job and are never
-re-collected here: one record per PR (repo, pr, head_sha, merged_sha,
-merged_at, on_staging, staging_deployed, in_production, production_release,
-linear_ids, linear_state, landed_via) under a top-level schema_version 1.
-This pass adds the officer's judgements from those facts plus Linear:
+re-collected here: a top-level schema_version 2 and a `records` object with
+one record per PR keyed "<repo>#<pr>" (repo, pr, head_sha, merged_sha,
+merged_at, on_staging, staging_deployed, on_main, main_promoted_at,
+in_production, production_release, linear_ids, linear_state, landed_via);
+each record's linear_ids point its Linear items to it. Any other schema
+version or layout fails the run. This pass adds the officer's judgements from
+those facts plus Linear:
 
   A1 false done      the item is Done, but a PR linked to it is merged and not
                      in production, or no landing fact names the item at all;
@@ -37,9 +41,14 @@ routine Done writer; this officer only corrects what it misses. With
 
   close   an item not Done whose every linked PR is merged and in production,
           and that has no sub-issues, moves to Done;
-  reopen  a Done item that a landing fact names, with a linked PR merged and
-          not in production, moves to --reopen-state (In Progress by default;
-          In Staging and Done are refused).
+  reopen  a Done item that a landing fact names, with a linked PR merged that
+          never reached main (on_main false) or any release, moves to
+          --reopen-state (In Progress by default; In Staging and Done are
+          refused). A Done item whose PR is on main but not yet in production
+          is release lag: it is reported, never written.
+
+No Linear write is made when the facts' generated_at is missing or older than
+--max-facts-age hours; a stale-facts finding is raised instead.
 
 Each correction re-checks that Linear still shows the state the facts
 recorded, writes an evidence comment quoting the landing-truth record it
@@ -54,12 +63,16 @@ Outputs <date>.json and <date>.md in --out and prints
 """
 
 import argparse
+import datetime
 import json
 import os
 import re
 import subprocess
 import sys
+import time
 
+FACT_FIELDS = ("repo", "pr", "merged_sha", "merged_at", "on_staging", "staging_deployed",
+               "on_main", "main_promoted_at", "in_production", "production_release", "landed_via")
 NOT_STARTED = {"Triage", "Backlog", "Todo", "In Progress"}
 CLOSED = {"Done", "Canceled", "Cancelled", "Duplicate"}
 ITEM_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
@@ -91,20 +104,19 @@ def load_facts(source):
         doc = json.loads(raw.decode("utf-8"))
     except ValueError:
         raise RuntimeError("landing facts are not JSON")
-    if not isinstance(doc, dict) or doc.get("schema_version") != 1:
-        raise RuntimeError("landing facts schema_version is not 1")
+    if not isinstance(doc, dict) or doc.get("schema_version") != 2:
+        raise RuntimeError("landing facts schema_version is not 2")
+    records = doc.get("records")
+    if not isinstance(records, dict):
+        raise RuntimeError("landing facts records is not an object keyed <repo>#<pr>")
+    for key, rec in records.items():
+        if not isinstance(rec, dict) or key != "%s#%s" % (rec.get("repo"), rec.get("pr")):
+            raise RuntimeError("landing facts record %s is not keyed by its <repo>#<pr>" % key)
     return doc
 
 
 def shell_quote(text):
     return "'" + text.replace("'", "'\\''") + "'"
-
-
-def fact_records(doc):
-    records = doc.get("records")
-    if records is None:
-        records = (doc.get("prs") or []) + (doc.get("items") or [])
-    return [r for r in records if isinstance(r, dict)]
 
 
 def linear(args):
@@ -131,16 +143,13 @@ def done_items(team, window):
 def judge(doc, done_listed, reopen_state="In Progress"):
     """Per-item landing view and findings; a pure function of its inputs."""
     items = {}
-    for rec in fact_records(doc):
+    for rec in doc["records"].values():
         ids = [i for i in rec.get("linear_ids") or [] if isinstance(i, str) and ITEM_RE.match(i)]
         for item in ids:
             entry = items.setdefault(item, {"item": item, "states": set(), "prs": []})
             if rec.get("linear_state"):
                 entry["states"].add(rec["linear_state"])
-            if rec.get("pr") is not None:
-                entry["prs"].append({k: rec.get(k) for k in (
-                    "repo", "pr", "merged_sha", "merged_at", "on_staging", "staging_deployed",
-                    "in_production", "production_release", "landed_via")})
+            entry["prs"].append({k: rec.get(k) for k in FACT_FIELDS})
     findings = []
     view = []
     for item in sorted(items):
@@ -156,13 +165,20 @@ def judge(doc, done_listed, reopen_state="In Progress"):
             findings.append({"class": "conflict", "item": item, "severity": "medium",
                              "summary": "landing facts disagree on its Linear state: %s" % ", ".join(states)})
         elif state == "Done":
-            not_prod = [p for p in merged if p.get("in_production") is not True]
-            if not_prod:
+            never = [p for p in merged if p.get("on_main") is False and not p.get("production_release")]
+            lag = [p for p in merged if p not in never and p.get("in_production") is not True]
+            if never:
                 record["class"] = "A1"
                 record["proposed_state"] = reopen_state
                 record["correction"] = "reopen"
                 findings.append({"class": "A1", "item": item, "severity": "high",
-                                 "summary": "Done, but %s merged and not in production" % pr_list(not_prod)})
+                                 "summary": "Done, but %s merged and never reached main or any release"
+                                 % pr_list(never)})
+            elif lag:
+                record["class"] = "A1"
+                findings.append({"class": "A1", "item": item, "severity": "low",
+                                 "summary": "Done, but %s not yet in production (release lag; reported only)"
+                                 % pr_list(lag)})
         elif state not in CLOSED and merged:
             if len(in_prod) == len(merged) == len(prs):
                 record["class"] = "B1"
@@ -196,14 +212,25 @@ def releases(prs):
     return "release " + ", ".join(found) if found else "production release not named"
 
 
-FACT_FIELDS = ("repo", "pr", "merged_sha", "merged_at", "on_staging", "staging_deployed",
-               "in_production", "production_release", "landed_via")
+def facts_age_problem(doc, max_hours, now):
+    """Why the facts are too old to write from, or None when they are fresh."""
+    stamp = doc.get("generated_at")
+    try:
+        made = datetime.datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        age = now - made.timestamp()
+    except (TypeError, ValueError):
+        return "landing facts generated_at is missing or unreadable (%s)" % json.dumps(stamp)
+    if made.tzinfo is None:
+        return "landing facts generated_at has no time zone (%s)" % stamp
+    if age > max_hours * 3600:
+        return "landing facts generated %s are older than %d hours" % (stamp, max_hours)
+    return None
 
 
 def evidence_comment(record, doc, action, to_state):
     why = ("every linked PR is merged and in production, but the release workflow did not set Done"
            if action == "close" else
-           "it is Done, but a linked PR is merged and not in production")
+           "it is Done, but a linked PR is merged and never reached main or any release")
     lines = ["Landing officer correction: moved to %s because %s." % (to_state, why), "",
              "Landing-truth record used (schema %s, generated %s, production %s, staging %s):" % (
                  doc.get("schema_version"), doc.get("generated_at"),
@@ -218,8 +245,9 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state):
 
     close:  an item not Done whose every linked PR is merged and in production
             (the release workflow, the routine Done writer, missed it);
-    reopen: a Done item a landing fact names with a linked PR merged and not
-            in production; it moves to reopen_state, never In Staging.
+    reopen: a Done item a landing fact names with a linked PR merged that never
+            reached main or any release; it moves to reopen_state, never In
+            Staging.
     """
     results = []
     for record in [r for r in view if r["correction"]][:max_corrections]:
@@ -259,7 +287,9 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state):
 
 def render_md(doc):
     lines = ["# Landing officer digest for %s" % doc["date"], ""]
-    lines.append("%d actionable finding(s); Linear writes: %s." % (doc["actionable"], doc["writes"]))
+    lines.append("%d actionable finding(s); Linear writes: %s%s." % (
+        doc["actionable"], doc["writes"],
+        " (none made: %s)" % doc["writes_blocked"] if doc["writes_blocked"] else ""))
     lines.append("Facts generated %s; production %s; staging %s." % (
         doc["facts"]["generated_at"], doc["facts"]["production_sha"], doc["facts"]["staging_sha"]))
     lines += ["", "## Counts", ""]
@@ -302,6 +332,8 @@ def main(argv):
     parser.add_argument("--writes", choices=["none", "corrections"], default="corrections")
     parser.add_argument("--max-corrections", type=int, default=10)
     parser.add_argument("--reopen-state", default="In Progress")
+    parser.add_argument("--max-facts-age", type=int, default=36)
+    parser.add_argument("--now", type=int)
     args = parser.parse_args(argv)
     if args.reopen_state in ("In Staging", "Done"):
         parser.error("--reopen-state may not be In Staging or Done")
@@ -309,8 +341,13 @@ def main(argv):
         facts = load_facts(args.facts)
         done_listed = done_items(args.team, args.done_window) if args.done_window > 0 else []
         view, findings = judge(facts, done_listed, args.reopen_state)
+        stale = facts_age_problem(facts, args.max_facts_age,
+                                  time.time() if args.now is None else args.now)
+        if stale:
+            findings.insert(0, {"class": "stale-facts", "item": "-", "severity": "high",
+                                "summary": stale + "; no Linear write made"})
         writes = correct_items(view, facts, args.out, args.date, args.max_corrections,
-                               args.reopen_state) if args.writes == "corrections" else []
+                               args.reopen_state) if args.writes == "corrections" and not stale else []
     except RuntimeError as exc:
         print("fm-officer-landing: %s" % exc, file=sys.stderr)
         return 1
@@ -327,6 +364,7 @@ def main(argv):
         "actionable": sum(1 for f in findings if f["severity"] in ("high", "medium")),
         "items": view,
         "writes_done": writes,
+        "writes_blocked": stale if args.writes == "corrections" else None,
     }
     write_if_changed(os.path.join(args.out, args.date + ".json"),
                      json.dumps(doc, sort_keys=True, indent=1, ensure_ascii=False) + "\n")

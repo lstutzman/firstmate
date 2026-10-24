@@ -3,12 +3,13 @@
 # bin/fm-officer.sh run with a landing-truth facts fixture of the fleet-app
 # job's documented shape and a fake linear-axi that records every call.
 #
-# Covers: A1 (Done, a linked PR merged but not in production; Done with no
-# fact naming it), B1 (in production but not Done; on staging but before In
+# Covers: A1 (Done, a linked PR never on main or in any release, reopened;
+# Done on main awaiting release, reported only; Done with no fact naming it), B1 (in production but not Done; on staging but before In
 # Staging), no Linear writes unless the registry turns them on, closing only
 # fully landed items with an evidence comment through --dry-run then --verify,
-# the sub-issue and changed-state guards, the per-run close cap, facts read
-# over ssh, and refusal of a facts file of another schema.
+# the sub-issue and changed-state guards, the per-run close cap, no write
+# from stale or undated facts, facts read over ssh, and refusal of a facts
+# file of another schema or layout.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -20,24 +21,27 @@ DATE=2026-10-23
 
 write_facts() {  # <file>
   cat > "$1" <<'JSON'
-{"schema_version": 1, "generated_at": "2026-10-23T23:40:00Z", "staging_sha": "aaaa1111", "production_sha": "bbbb2222",
- "records": [
-  {"repo": "lstutzman/PropertyCompass2", "pr": 101, "head_sha": "h101", "merged_sha": "m101", "merged_at": "2026-10-20T10:00:00Z",
-   "on_staging": true, "staging_deployed": true, "in_production": true, "production_release": "v1.71.0",
+{"schema_version": 2, "generated_at": "2026-10-23T23:40:00Z", "staging_sha": "aaaa1111", "production_sha": "bbbb2222",
+ "records": {
+  "lstutzman/PropertyCompass2#101": {"repo": "lstutzman/PropertyCompass2", "pr": 101, "head_sha": "h101", "merged_sha": "m101", "merged_at": "2026-10-20T10:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-20T15:00:00Z", "in_production": true, "production_release": "v1.71.0",
    "linear_ids": ["PC-1"], "linear_state": "In Staging", "landed_via": "pile-1020"},
-  {"repo": "lstutzman/PropertyCompass2", "pr": 102, "head_sha": "h102", "merged_sha": "m102", "merged_at": "2026-10-21T10:00:00Z",
-   "on_staging": true, "staging_deployed": true, "in_production": false, "production_release": null,
+  "lstutzman/PropertyCompass2#102": {"repo": "lstutzman/PropertyCompass2", "pr": 102, "head_sha": "h102", "merged_sha": "m102", "merged_at": "2026-10-21T10:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": false, "main_promoted_at": null, "in_production": false, "production_release": null,
    "linear_ids": ["PC-2"], "linear_state": "Done", "landed_via": "lone"},
-  {"repo": "lstutzman/PropertyCompass2", "pr": 103, "head_sha": "h103", "merged_sha": "m103", "merged_at": "2026-10-22T10:00:00Z",
-   "on_staging": true, "staging_deployed": false, "in_production": false, "production_release": null,
+  "lstutzman/PropertyCompass2#103": {"repo": "lstutzman/PropertyCompass2", "pr": 103, "head_sha": "h103", "merged_sha": "m103", "merged_at": "2026-10-22T10:00:00Z",
+   "on_staging": true, "staging_deployed": false, "on_main": false, "main_promoted_at": null, "in_production": false, "production_release": null,
    "linear_ids": ["PC-3"], "linear_state": "Backlog", "landed_via": "lone"},
-  {"repo": "lstutzman/PropertyCompass2", "pr": 104, "head_sha": "h104", "merged_sha": "m104", "merged_at": "2026-10-19T10:00:00Z",
-   "on_staging": true, "staging_deployed": true, "in_production": true, "production_release": "v1.70.2",
+  "lstutzman/PropertyCompass2#104": {"repo": "lstutzman/PropertyCompass2", "pr": 104, "head_sha": "h104", "merged_sha": "m104", "merged_at": "2026-10-19T10:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-19T15:00:00Z", "in_production": true, "production_release": "v1.70.2",
    "linear_ids": ["PC-4"], "linear_state": "Done", "landed_via": "lone"},
-  {"repo": "lstutzman/PropertyCompass2", "pr": 105, "head_sha": "h105", "merged_sha": "m105", "merged_at": "2026-10-19T11:00:00Z",
-   "on_staging": true, "staging_deployed": true, "in_production": true, "production_release": "v1.70.2",
-   "linear_ids": ["PC-5"], "linear_state": "In Progress", "landed_via": "lone"}
- ]}
+  "lstutzman/PropertyCompass2#105": {"repo": "lstutzman/PropertyCompass2", "pr": 105, "head_sha": "h105", "merged_sha": "m105", "merged_at": "2026-10-19T11:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-19T15:00:00Z", "in_production": true, "production_release": "v1.70.2",
+   "linear_ids": ["PC-5"], "linear_state": "In Progress", "landed_via": "lone"},
+  "lstutzman/PropertyCompass2#106": {"repo": "lstutzman/PropertyCompass2", "pr": 106, "head_sha": "h106", "merged_sha": "m106", "merged_at": "2026-10-23T10:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-23T15:17:00Z", "in_production": false, "production_release": null,
+   "linear_ids": ["PC-7"], "linear_state": "Done", "landed_via": "pile-1023"}
+ }}
 JSON
 }
 
@@ -82,8 +86,11 @@ make_world() {
   WORLD_HOME=$home
 }
 
-run_landing() {  # <home>
-  PATH="$FAKEBIN:$PATH" FM_HOME="$1" "$OFFICER" run landing --date "$DATE"
+# The facts were generated at 23:40Z; the run is at 06:30Z the next day.
+NOW=1792823400
+
+run_landing() {  # <home> [now]
+  PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW="${2:-$NOW}" FM_HOME="$1" "$OFFICER" run landing --date "$DATE"
 }
 
 finding() {  # <json> <item> -> class
@@ -96,7 +103,10 @@ test_classes_from_facts() {
   run_landing "$home" >/dev/null || fail "landing run must succeed"
   json="$home/data/officers/landing/$DATE.json"
   assert_equals B1 "$(finding "$json" PC-1)" "in production but In Staging is false not-done"
-  assert_equals A1 "$(finding "$json" PC-2)" "Done but not in production is false done"
+  assert_equals A1 "$(finding "$json" PC-2)" "Done but never on main or in any release is false done"
+  assert_equals A1 "$(finding "$json" PC-7)" "Done but on main and not yet in production is reported"
+  assert_equals low "$(jq -r '.findings[] | select(.item == "PC-7") | .severity' "$json")" "release lag is not actionable"
+  assert_equals null "$(jq -r '.items[] | select(.item == "PC-7") | .correction' "$json")" "release lag proposes no correction"
   assert_equals B1 "$(finding "$json" PC-3)" "on staging while Backlog is status lag"
   assert_equals "" "$(finding "$json" PC-4)" "Done and in production is consistent"
   assert_equals A1 "$(finding "$json" PC-9)" "Done with no landing fact is raised for a person"
@@ -126,7 +136,8 @@ test_closes_only_fully_landed_items_with_evidence() {
   assert_contains "$(grep '^issue update PC-1 ' "$LINEAR_LOG" | tail -n 1)" "--state Done --verify" "the close is verified"
   assert_no_grep "PC-5 --body-file" "$LINEAR_LOG" "an item with sub-issues is never closed"
   assert_equals skipped "$(jq -r '.writes_done[] | select(.item == "PC-5") | .action' "$json")" "the sub-issue skip is recorded"
-  assert_grep "issue update PC-2 --state In Progress --verify" "$LINEAR_LOG" "a Done item with no production evidence is reopened"
+  assert_grep "issue update PC-2 --state In Progress --verify" "$LINEAR_LOG" "a Done item whose PR never reached main or any release is reopened"
+  assert_no_grep "PC-7" "$LINEAR_LOG" "a Done item on main awaiting its release is never written"
   assert_grep "issue comment PC-2 --body-file" "$LINEAR_LOG" "the reopen is recorded on the item"
   assert_equals reopened "$(jq -r '.writes_done[] | select(.item == "PC-2") | .action' "$json")" "the reopen is logged"
   assert_equals 102 "$(jq -r '.writes_done[] | select(.item == "PC-2") | .record.prs[0].pr' "$json")" "the log names the landing-truth record used"
@@ -136,6 +147,27 @@ test_closes_only_fully_landed_items_with_evidence() {
   assert_no_grep "update PC-9" "$LINEAR_LOG" "a Done item no fact names is left to a person"
   assert_no_grep "update PC-4" "$LINEAR_LOG" "a consistent item is left alone"
   pass "fm-officer landing: corrections are on by default: close what the workflow missed, reopen false done, never In Staging"
+}
+
+test_stale_or_undated_facts_make_no_write() {
+  local home json
+  make_world stale; home=$WORLD_HOME
+  run_landing "$home" $((NOW + 36 * 3600)) >/dev/null || fail "a stale-facts run must still finish"
+  json="$home/data/officers/landing/$DATE.json"
+  assert_no_grep "issue comment" "$LINEAR_LOG" "facts older than 36 hours write no comment"
+  assert_no_grep "issue update" "$LINEAR_LOG" "facts older than 36 hours write no state"
+  assert_equals high "$(jq -r '.findings[] | select(.class == "stale-facts") | .severity' "$json")" "stale facts are an actionable finding"
+  assert_equals A1 "$(finding "$json" PC-2)" "stale facts are still judged and reported"
+  make_world fresh-limit; home=$WORLD_HOME
+  sed -i.bak 's/; model: none/; max-facts-age: 48; model: none/' "$home/data/officers.md"
+  run_landing "$home" $((NOW + 36 * 3600)) >/dev/null || fail "landing run must succeed"
+  assert_grep "issue update PC-2 --state In Progress --verify" "$LINEAR_LOG" "max-facts-age widens the limit"
+  make_world undated; home=$WORLD_HOME
+  jq 'del(.generated_at)' "$TMP_ROOT/undated/facts.json" > "$TMP_ROOT/undated/f" && mv "$TMP_ROOT/undated/f" "$TMP_ROOT/undated/facts.json"
+  run_landing "$home" >/dev/null || fail "an undated-facts run must still finish"
+  assert_no_grep "issue update" "$LINEAR_LOG" "facts with no generated_at write nothing"
+  assert_contains "$(cat "$home/data/officers/landing/$DATE.md")" "generated_at is missing" "the digest names why nothing was written"
+  pass "fm-officer landing: facts that are stale or undated make no Linear write and raise a finding"
 }
 
 test_changed_state_and_cap_stop_a_close() {
@@ -164,10 +196,18 @@ SH
   landing_registry "$home" "slarti:$TMP_ROOT/remote/facts.json" none
   run_landing "$home" >/dev/null || fail "facts read over ssh must succeed"
   assert_equals A1 "$(finding "$home/data/officers/landing/$DATE.json" PC-2)" "remote facts are judged the same"
-  printf '{"schema_version": 2, "records": []}\n' > "$TMP_ROOT/remote/facts.json"
+  printf '{"schema_version": 1, "records": {}}\n' > "$TMP_ROOT/remote/facts.json"
   out=$(run_landing "$home" 2>&1) && fail "another facts schema must fail the run"
-  assert_contains "$out" "schema_version is not 1" "the refusal names the schema"
-  pass "fm-officer landing: facts over ssh are judged alike; another schema is refused"
+  assert_contains "$out" "schema_version is not 2" "the refusal names the schema"
+  printf '{"schema_version": 2, "records": []}\n' > "$TMP_ROOT/remote/facts.json"
+  out=$(run_landing "$home" 2>&1) && fail "records that are not keyed must fail the run"
+  assert_contains "$out" "records is not an object" "the refusal names the layout"
+  printf '{"schema_version": 2, "prs": {}, "items": {}}\n' > "$TMP_ROOT/remote/facts.json"
+  out=$(run_landing "$home" 2>&1) && fail "another container must fail the run"
+  printf '{"schema_version": 2, "records": {"PC2#1": {"repo": "lstutzman/PropertyCompass2", "pr": 1}}}\n' > "$TMP_ROOT/remote/facts.json"
+  out=$(run_landing "$home" 2>&1) && fail "a record under another key must fail the run"
+  assert_contains "$out" "not keyed by its <repo>#<pr>" "the refusal names the key"
+  pass "fm-officer landing: facts over ssh are judged alike; another schema or layout is refused"
 }
 
 test_run_writes_only_its_lane() {
@@ -212,4 +252,5 @@ test_run_writes_only_its_lane
 test_no_linear_writes_by_default
 test_closes_only_fully_landed_items_with_evidence
 test_changed_state_and_cap_stop_a_close
+test_stale_or_undated_facts_make_no_write
 test_facts_over_ssh_and_schema_guard

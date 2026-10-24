@@ -173,7 +173,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-mail-check.sh`       | Standing received-mail poll: `arm` registers a watcher check that runs `fm-mail.sh poll` on the watcher cadence (new mail still wakes via the poll; the check's own line also wakes unless the poll is a proven no-op), `disarm` removes it |
 | `fm-officer.sh`          | The officer agent kind: register, retire, run, and health-check the role agents in `data/officers.md`; its watcher check starts each daily run and reports one line per actionable digest |
 | `fm-officer-triage.py`   | The triage officer's deterministic daily pass: joins archived sessions to firstmate tasks and outcomes and writes its findings |
-| `fm-officer-landing.py`  | The landing officer's daily pass: judges the fleet-app landing-truth facts against Linear (false done, false not-done) and closes fully landed items only when its registry line allows it |
+| `fm-officer-landing.py`  | The landing officer's daily pass: judges the fleet-app landing-truth facts against Linear (false done, false not-done) and, when its registry line allows it and the facts are fresh, closes fully landed items and reopens Done items whose PR never reached main or any release |
 | `fm-voice-relay.py`      | Hold the spoken conversation on this host, answer from the records, and hand real work to `fm-inbox.sh` ([voice-relay.md](voice-relay.md)) |
 | `fm-voice-client.py`     | The laptop end of the spoken interface: capture, playback, and turn timing over SSH; audio devices unverified |
 | `fm_voice_frame.py`      | The wire format both machines share, copied to the laptop beside the client          |

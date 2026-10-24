@@ -195,8 +195,8 @@ line_problem() {
         none|corrections) ;;
         *) printf 'officer %s: writes must be corrections or none\n' "$id"; return ;;
       esac
-      case "$(line_field "$line" max-corrections || echo 10)$(line_field "$line" done-window || echo 100)" in
-        ''|*[!0-9]*) printf 'officer %s: max-corrections and done-window must be whole numbers\n' "$id"; return ;;
+      case "$(line_field "$line" max-corrections || echo 10)$(line_field "$line" done-window || echo 100)$(line_field "$line" max-facts-age || echo 36)" in
+        ''|*[!0-9]*) printf 'officer %s: max-corrections, done-window, and max-facts-age must be whole numbers\n' "$id"; return ;;
       esac
       case "$(line_field "$line" reopen-state || echo 'In Progress')" in
         'In Staging'|Done) printf 'officer %s: reopen-state may not be In Staging or Done\n' "$id"; return ;;
@@ -344,7 +344,8 @@ role_landing() {  # <date>
     --writes "$(line_field "$OFFICER_LINE" writes || echo corrections)" \
     --done-window "$(line_field "$OFFICER_LINE" done-window || echo 100)" \
     --max-corrections "$(line_field "$OFFICER_LINE" max-corrections || echo 10)" \
-    --reopen-state "$(line_field "$OFFICER_LINE" reopen-state || echo 'In Progress')"
+    --reopen-state "$(line_field "$OFFICER_LINE" reopen-state || echo 'In Progress')" \
+    --max-facts-age "$(line_field "$OFFICER_LINE" max-facts-age || echo 36)" --now "$(now_epoch)"
 }
 
 action_run() {
