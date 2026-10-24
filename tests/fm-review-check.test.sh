@@ -105,8 +105,30 @@ test_secondmate_home_publishes_the_ready_line() {
   pass "fm-review-check: a secondmate home publishes the child's review-ready line to the parent channel"
 }
 
+test_ready_evidence_runs_and_is_recorded() {
+  local head
+  fixture evidence forge=external
+  head=$(git -C "$WT" rev-parse HEAD)
+  mkdir -p "$HOME_DIR/data" "$HOME_DIR/config/ready-evidence"
+  printf '%s\n' '- repo [direct-PR forge=external ready-evidence=pc] - fixture (added 2026-01-01)' > "$HOME_DIR/data/projects.md"
+  printf '%s\n' "printf '%s %s\\n' \"\$1\" \"\$2\" >> '$TMP_ROOT/evidence.log'" 'echo "no review marker"' 'exit 1' \
+    > "$HOME_DIR/config/ready-evidence/pc"
+  run_check t1 "$URL"
+  [ "$RC" -ne 0 ] || fail "a review whose ready evidence failed was recorded"
+  assert_contains "$OUT" "ready evidence pc refused $URL at $head: no review marker" "the refusal did not carry the evidence output"
+  assert_grep "$URL $head" "$TMP_ROOT/evidence.log" "ready evidence was not given the review URL and head"
+  assert_grep "ready_evidence=fail $head $URL" "$META" "the fail was not recorded"
+  assert_no_grep 'review=' "$META" "a refused review was still recorded"
+  sed -i.bak '$d' "$HOME_DIR/config/ready-evidence/pc"
+  run_check t1 "$URL"
+  expect_code 0 "$RC" "a review whose ready evidence passed was refused: $OUT"
+  assert_grep "ready_evidence=pass $head $URL" "$META" "the pass was not recorded"
+  pass "fm-review-check: runs a project's ready evidence on the review URL and head, records it, and refuses a fail"
+}
+
 test_records_one_review_and_no_watch
 test_refusals
 test_secondmate_home_publishes_the_ready_line
+test_ready_evidence_runs_and_is_recorded
 
 echo "# all fm-review-check tests passed"

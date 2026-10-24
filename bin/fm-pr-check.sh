@@ -3,7 +3,11 @@
 # exact pr_head=<sha> when available, then atomically arm a static merge poll.
 # Refuses when bin/fm-dod-lib.sh will not accept the named head as reachable
 # outside the worker's disposable copy; in no-mistakes mode a forge-reported
-# head is that named head and is already stored on the forge.
+# head is that named head and is already stored on the forge. Either way a
+# project's registered ready evidence (bin/fm-dod-lib.sh) runs here, its
+# verdict is recorded as ready_evidence= in the task metadata, and a fail
+# refuses - including on the merge-time re-record, so a merge is refused before
+# its forge call when the evidence no longer holds.
 # The watcher check source is byte-for-byte bin/fm-pr-poll.sh; task and PR data
 # live only in a private sidecar and are never interpolated into shell source.
 # A GitHub pull request URL, a GitLab merge request URL, and a Gerrit change URL
@@ -167,8 +171,17 @@ case "$PROVIDER:$MODE" in
   *:no-mistakes|*:) DONE_LINE="done: PR $URL checks green" ;;
   *) DONE_LINE="done: PR $URL" ;;
 esac
+# A forge-reported no-mistakes head is the named head and skips that gate.
 if { [ -z "$PR_HEAD" ] || ! fm_dod_forge_head_is_named_head "$MODE"; } \
-  && ! GATE_REASON=$(fm_dod_accept_ship_done "${KIND:-ship}" "$MODE" "$WT" "$PROJECT" "$DONE_LINE" "$STATE" "$ID" "$META"); then
+  && fm_dod_should_gate_ship_done "${KIND:-ship}" "$MODE" "$DONE_LINE" \
+  && ! GATE_REASON=$(fm_dod_accept_named_head "${KIND:-ship}" "$MODE" "$WT" "$PROJECT" "$DONE_LINE" "$STATE" "$ID" "$META"); then
+  echo "error: $GATE_REASON" >&2
+  exit 1
+fi
+# Registration is where a project's ready evidence runs; its recorded verdict
+# is what every later done gate reads (bin/fm-dod-lib.sh).
+if [ "${KIND:-ship}" = ship ] \
+  && ! GATE_REASON=$(fm_dod_ready_evidence_register "$META" "$MODE" "$WT" "$PROJECT" "$URL" "$PR_HEAD"); then
   echo "error: $GATE_REASON" >&2
   exit 1
 fi

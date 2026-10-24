@@ -45,6 +45,10 @@ cat > "$DATA/projects.md" <<'EOF'
 - admitted [direct-PR +yolo merger=slarti admission=pc2] - risky classes need the captain's word (added 2026-01-01)
 - admitted-blank [direct-PR admission=] - an empty admission binding (added 2026-01-01)
 - admitted-bad [direct-PR admission=../pc2] - an admission name that is not a config name (added 2026-01-01)
+- evidenced [direct-PR +yolo ready-evidence=pc-ready] - a named ready-evidence command set (added 2026-01-01)
+- evidenced-first [ready-evidence=pc-ready no-mistakes] - ready-evidence token first, order must not matter (added 2026-01-01)
+- evidenced-blank [direct-PR ready-evidence=] - an empty ready-evidence binding (added 2026-01-01)
+- evidenced-bad [direct-PR ready-evidence=../pc] - a ready-evidence name that is not a file name (added 2026-01-01)
 EOF
 
 run_mode() {
@@ -196,5 +200,28 @@ done
 out=$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --admission legacy 2>/dev/null); status=$?
 [ "$status" -eq 0 ] && [ -z "$out" ] || fail "an absent registry must print no admission (status $status, got '$out')"
 pass "fm-project-mode: admission=<name> binds beside other tokens, refuses a malformed name, and is empty when unset"
+
+run_evidence() {
+  FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --ready-evidence "$1" 2>/dev/null
+}
+[ "$(run_evidence evidenced)" = "pc-ready" ] || fail "ready-evidence=pc-ready did not resolve: $(run_evidence evidenced)"
+[ "$(run_mode evidenced)" = "direct-PR on" ] || fail "a ready-evidence token changed the two-word output: $(run_mode evidenced)"
+[ "$(run_evidence evidenced-first)" = "pc-ready" ] || fail "ready-evidence= placed before the mode did not resolve: $(run_evidence evidenced-first)"
+[ "$(run_mode evidenced-first)" = "no-mistakes off" ] || fail "ready-evidence= placed before the mode was read as the mode: $(run_mode evidenced-first)"
+err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" evidenced-first 2>&1 >/dev/null)
+[ -z "$err" ] || fail "a registered ready-evidence= warned: $err"
+pass "fm-project-mode: ready-evidence=<name> binds in any token order and leaves the default output unchanged"
+
+for name in evidenced-blank evidenced-bad; do
+  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --ready-evidence "$name" 2>/dev/null)
+  status=$?
+  [ "$status" -eq 3 ] || fail "a malformed ready-evidence for $name did not refuse (status $status, got '$out')"
+  [ -z "$out" ] || fail "a refused ready-evidence for $name still printed '$out'"
+done
+out=$(run_evidence legacy); status=$?
+[ "$status" -eq 0 ] && [ -z "$out" ] || fail "an entry with no ready-evidence token must print nothing (status $status, got '$out')"
+out=$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --ready-evidence legacy 2>/dev/null); status=$?
+[ "$status" -eq 0 ] && [ -z "$out" ] || fail "an absent registry must print no ready evidence (status $status, got '$out')"
+pass "fm-project-mode: a malformed ready-evidence binding is refused; none, or an absent registry, prints nothing"
 
 echo "# fm-project-mode.test.sh: all assertions passed"

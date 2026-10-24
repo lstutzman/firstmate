@@ -47,6 +47,27 @@
 # also hold the result of a passed run. These live reads are the one check at the ready
 # decision; a later rebase or patch set on the server does not revoke an armed
 # task's done. Teardown's landed-work test remains the complete discard gate.
+# Once the named head is accepted, a project registered with
+# ready-evidence=<n> (bin/fm-project-mode.sh owns the binding) must also have
+# passing ready evidence. Its command set is this home's
+# config/ready-evidence/<n>, run from the project clone as
+# `bash -e -o pipefail <file> <url> <head>`, so every command in it must
+# succeed, within FM_READY_EVIDENCE_TIMEOUT seconds (default 30). Only
+# registration runs it - bin/fm-pr-check.sh and bin/fm-review-check.sh through
+# fm_dod_ready_evidence_register - and records the verdict in the task's meta
+# as one ready_evidence= line bound to that URL and head. Every other gate read
+# (bin/fm-crew-state.sh, fleet snapshots, bin/fm-inactive-reconcile.sh) only
+# reads that record and never runs a command: a recorded pass for the done's
+# URL and head accepts, a recorded fail refuses with its recorded line, and no
+# record for that URL and head refuses as not yet checked. <url> is the done's
+# PR or review URL, or empty; <head> is the forge's pr_head for the task's
+# no-mistakes PR when known, otherwise the worker copy's HEAD. A failure,
+# timeout, missing file, missing clone, or unreadable binding is a fail. The
+# file lives in captain-private config rather than the worker's copy, because a
+# worker that can edit its own evidence check has no check. A local-only
+# project has no registration, so it must not register ready evidence. A
+# project with no token runs and records nothing and keeps the gate above
+# exactly.
 # The block opens with the fixed machine-readable "Delivery contract: mode=<mode>"
 # line that bin/fm-spawn.sh checks a ship brief against; a forge=gerrit block
 # appends " forge=gerrit shape=squash" to that line, and a forge=forgejo or
@@ -840,8 +861,152 @@ fm_dod_named_head_reachable_outside_worktree() {  # <worktree> <project> <mode> 
 # pr_head=, and the merge-notified marker; <meta> may be a captured copy
 # (bin/fm-fleet-snapshot.sh), so the marker is read from <state>.
 fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta>]
-  local kind=$1 mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit
-  fm_dod_should_gate_ship_done "$kind" "$mode" "$line" || return 0
+  local mode=$2 wt=$3 meta=${8:-} url pr_head=
+  fm_dod_should_gate_ship_done "$1" "$mode" "$5" || return 0
+  fm_dod_accept_named_head "$@" || return 1
+  url=$(fm_dod_ready_evidence_url "$5")
+  if [ -n "$url" ] && [ -n "$meta" ] && [ "$(fm_dod_meta_value "$meta" pr)" = "$url" ]; then
+    pr_head=$(fm_dod_meta_value "$meta" pr_head)
+  fi
+  fm_dod_ready_evidence_read "$4" "$url" "$(fm_dod_ready_evidence_head "$mode" "$wt" "$pr_head")" "$meta"
+}
+
+# The URL ready evidence is checked against: the done's PR or review URL, or empty.
+fm_dod_ready_evidence_url() {  # <line>
+  local note url
+  note=$(status_line_note "$1")
+  url=$(fm_dod_pr_url_from_done_note "$note") || url=$(fm_dod_review_url_from_done_note "$note") || url=
+  printf '%s\n' "$url"
+}
+
+# The head ready evidence is checked against: the forge's <pr-head> in
+# no-mistakes mode when known, otherwise the worker copy's HEAD, or empty.
+fm_dod_ready_evidence_head() {  # <mode> <worktree> [<pr-head>]
+  if [ -n "${3:-}" ] && fm_dod_forge_head_is_named_head "$1"; then
+    printf '%s\n' "$3"
+  elif [ -n "$2" ] && [ -d "$2" ]; then
+    git -C "$2" rev-parse --verify HEAD 2>/dev/null || true
+  fi
+}
+
+# <project>'s registered command-set name on stdout, empty when it registers
+# none; 1 with a one-line reason on stdout when the binding cannot be read.
+fm_dod_ready_evidence_binding() {  # <project>
+  local pname=${1%/} lib_dir name
+  pname=${pname##*/}
+  # No recorded project means no registry entry, so nothing is registered.
+  [ -n "$pname" ] || return 0
+  lib_dir=$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)
+  if ! name=$(FM_HOME=${FM_HOME:-} "$lib_dir/fm-project-mode.sh" --ready-evidence "$pname" 2>/dev/null); then
+    printf '%s\n' "the ready-evidence binding for $pname cannot be read (run bin/fm-project-mode.sh --ready-evidence $pname for the refusal)"
+    return 1
+  fi
+  printf '%s\n' "$name"
+}
+
+# Runs command set <name> for <url> at <head>: 0 and no output when it passes,
+# 1 with a one-line reason otherwise. Only fm_dod_ready_evidence_register calls it.
+fm_dod_ready_evidence_run() {  # <name> <project> <url> <head>
+  local name=$1 project=$2 url=$3 head=$4 file out rc secs=${FM_READY_EVIDENCE_TIMEOUT:-30} lib_dir
+  lib_dir=$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)
+  file="${FM_CONFIG_OVERRIDE:-${FM_HOME:-${FM_ROOT_OVERRIDE:-$lib_dir/..}}/config}/ready-evidence/$name"
+  if [ ! -f "$file" ]; then
+    printf '%s\n' "ready evidence $name is registered but $file is missing"
+    return 1
+  fi
+  if [ -z "$project" ] || [ ! -d "$project" ]; then
+    printf '%s\n' "ready evidence $name cannot run: the project clone ${project:-(none)} is missing"
+    return 1
+  fi
+  out=$(cd "$project" && fm_run_timed "$secs" bash -e -o pipefail "$file" "$url" "$head" 2>&1 </dev/null) && return 0
+  rc=$?
+  fm_timed_out "$rc" && out="timed out after ${secs}s"
+  out=$(printf '%s' "$out" | tr '\r\n\t' '   ' | cut -c1-500)
+  printf '%s\n' "ready evidence $name refused ${url:-(no URL)} at ${head:-(no head)}: ${out:-exit $rc}"
+  return 1
+}
+
+# Records the one `ready_evidence=<pass|fail> <head> <url> [<reason>]` line in
+# <meta> (an empty head or URL is `-`), before any pr= line because
+# fm_pr_metadata_identity_parse refuses unknown lines after it, atomically under
+# the meta lock; callers source bin/fm-wake-lib.sh for the lock.
+fm_dod_ready_evidence_record() {  # <meta> <pass|fail> <url> <head> [<reason>]
+  local meta=$1 rec lock tmp line placed=0
+  rec="ready_evidence=$2 ${4:--} ${3:--}${5:+ $5}"
+  lock=$(fm_meta_lock_path "$meta") || return 1
+  fm_lock_acquire_wait "$lock" || return 1
+  if [ ! -f "$meta" ] || [ -L "$meta" ] || ! tmp=$(mktemp "${meta%/*}/.fm-ready-meta.XXXXXX"); then
+    fm_lock_release "$lock" || true
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ready_evidence=*) continue ;;
+      pr=*) [ "$placed" = 1 ] || { printf '%s\n' "$rec"; placed=1; } ;;
+    esac
+    printf '%s\n' "$line"
+  done < "$meta" > "$tmp"
+  [ "$placed" = 1 ] || printf '%s\n' "$rec" >> "$tmp"
+  if ! chmod 0600 "$tmp" || ! mv -f -- "$tmp" "$meta"; then
+    rm -f -- "$tmp"
+    fm_lock_release "$lock" || true
+    return 1
+  fi
+  fm_lock_release "$lock"
+}
+
+# The registration half, for bin/fm-pr-check.sh and bin/fm-review-check.sh:
+# runs <project>'s command set for <url> at the named head and records the
+# verdict in <meta>. 0 when none is registered or it passed; 1 with a one-line
+# reason otherwise.
+fm_dod_ready_evidence_register() {  # <meta> <mode> <worktree> <project> <url> [<pr-head>]
+  local name head reason verdict=pass
+  if ! name=$(fm_dod_ready_evidence_binding "$4"); then
+    printf '%s\n' "$name"
+    return 1
+  fi
+  [ -n "$name" ] || return 0
+  head=$(fm_dod_ready_evidence_head "$2" "$3" "${6:-}")
+  reason=$(fm_dod_ready_evidence_run "$name" "$4" "$5" "$head") || verdict=fail
+  if ! fm_dod_ready_evidence_record "$1" "$verdict" "$5" "$head" "$reason"; then
+    printf '%s\n' "ready evidence $name ran but its result could not be recorded in the task metadata"
+    return 1
+  fi
+  [ "$verdict" = pass ] && return 0
+  printf '%s\n' "$reason"
+  return 1
+}
+
+# The read half, for every done gate: never runs the command set. 0 when
+# <project> registers none or <meta> records a pass for exactly <url> at
+# <head>; 1 with the recorded refusal for a recorded fail, or "not yet
+# checked" when no record matches that URL and head.
+fm_dod_ready_evidence_read() {  # <project> <url> <head> [<meta>]
+  local name rec='' verdict rhead rurl reason
+  if ! name=$(fm_dod_ready_evidence_binding "$1"); then
+    printf '%s\n' "$name"
+    return 1
+  fi
+  [ -n "$name" ] || return 0
+  [ -z "${4:-}" ] || rec=$(fm_dod_meta_value "$4" ready_evidence)
+  read -r verdict rhead rurl reason <<EOF
+$rec
+EOF
+  if [ -z "$3" ] || [ "$rhead" != "$3" ] || [ "$rurl" != "${2:--}" ]; then
+    printf '%s\n' "ready evidence $name not yet checked for ${2:-(no URL)} at ${3:-(no head)}; registering the PR runs it"
+    return 1
+  fi
+  case "$verdict" in
+    pass) return 0 ;;
+    fail) printf '%s\n' "${reason:-ready evidence $name refused ${2:-(no URL)} at $3}" ;;
+    *) printf '%s\n' "ready evidence $name not yet checked for ${2:-(no URL)} at $3; registering the PR runs it" ;;
+  esac
+  return 1
+}
+
+# The named-head half of fm_dod_accept_ship_done, for a done it gates.
+fm_dod_accept_named_head() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta>]
+  local mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit
   if [ -n "$meta" ] && [ "$(fm_dod_meta_value "$meta" forge)" = external ]; then
     fm_dod_accept_external_review_done "$wt" "$project" "$line" "$meta"
     return
