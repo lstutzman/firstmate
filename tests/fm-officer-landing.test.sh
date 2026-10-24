@@ -25,23 +25,29 @@ write_facts() {  # <file>
  "records": {
   "lstutzman/PropertyCompass2#101": {"repo": "lstutzman/PropertyCompass2", "pr": 101, "head_sha": "h101", "merged_sha": "m101", "merged_at": "2026-10-20T10:00:00Z",
    "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-20T15:00:00Z", "in_production": true, "production_release": "v1.71.0",
-   "linear_ids": ["PC-1"], "linear_state": "In Staging", "landed_via": "pile-1020"},
+   "linear_ids": ["PC-1"], "linear_state": {"PC-1": "In Staging"}, "landed_via": "pile-1020"},
   "lstutzman/PropertyCompass2#102": {"repo": "lstutzman/PropertyCompass2", "pr": 102, "head_sha": "h102", "merged_sha": "m102", "merged_at": "2026-10-21T10:00:00Z",
    "on_staging": true, "staging_deployed": true, "on_main": false, "main_promoted_at": null, "in_production": false, "production_release": null,
-   "linear_ids": ["PC-2"], "linear_state": "Done", "landed_via": "lone"},
+   "linear_ids": ["PC-2"], "linear_state": {"PC-2": "Done"}, "landed_via": "lone"},
   "lstutzman/PropertyCompass2#103": {"repo": "lstutzman/PropertyCompass2", "pr": 103, "head_sha": "h103", "merged_sha": "m103", "merged_at": "2026-10-22T10:00:00Z",
    "on_staging": true, "staging_deployed": false, "on_main": false, "main_promoted_at": null, "in_production": false, "production_release": null,
-   "linear_ids": ["PC-3"], "linear_state": "Backlog", "landed_via": "lone"},
+   "linear_ids": ["PC-3"], "linear_state": {"PC-3": "Backlog"}, "landed_via": "lone"},
   "lstutzman/PropertyCompass2#104": {"repo": "lstutzman/PropertyCompass2", "pr": 104, "head_sha": "h104", "merged_sha": "m104", "merged_at": "2026-10-19T10:00:00Z",
    "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-19T15:00:00Z", "in_production": true, "production_release": "v1.70.2",
-   "linear_ids": ["PC-4"], "linear_state": "Done", "landed_via": "lone"},
+   "linear_ids": ["PC-4"], "linear_state": {"PC-4": "Done"}, "landed_via": "lone"},
   "lstutzman/PropertyCompass2#105": {"repo": "lstutzman/PropertyCompass2", "pr": 105, "head_sha": "h105", "merged_sha": "m105", "merged_at": "2026-10-19T11:00:00Z",
    "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-19T15:00:00Z", "in_production": true, "production_release": "v1.70.2",
-   "linear_ids": ["PC-5"], "linear_state": "In Progress", "landed_via": "lone"},
+   "linear_ids": ["PC-5"], "linear_state": {"PC-5": "In Progress"}, "landed_via": "lone"},
   "lstutzman/PropertyCompass2#106": {"repo": "lstutzman/PropertyCompass2", "pr": 106, "head_sha": "h106", "merged_sha": "m106", "merged_at": "2026-10-23T10:00:00Z",
    "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-23T15:17:00Z", "in_production": false, "production_release": null,
-   "linear_ids": ["PC-7"], "linear_state": "Done", "landed_via": "pile-1023"}
- }}
+   "linear_ids": ["PC-7"], "linear_state": {"PC-7": "Done"}, "landed_via": "pile-1023"},
+  "lstutzman/PropertyCompass2#107": {"repo": "lstutzman/PropertyCompass2", "pr": 107, "head_sha": "h107", "merged_sha": "m107", "merged_at": "2026-10-18T10:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-18T15:00:00Z", "in_production": true, "production_release": "v1.70.1",
+   "linear_ids": ["PC-10", "PC-11"], "linear_state": {"PC-10": "Done", "PC-11": "In Review"}, "landed_via": "lone"}
+ },
+ "items": {"PC-1": ["lstutzman/PropertyCompass2#101"], "PC-2": ["lstutzman/PropertyCompass2#102"], "PC-3": ["lstutzman/PropertyCompass2#103"],
+  "PC-4": ["lstutzman/PropertyCompass2#104"], "PC-5": ["lstutzman/PropertyCompass2#105"], "PC-7": ["lstutzman/PropertyCompass2#106"],
+  "PC-10": ["lstutzman/PropertyCompass2#107"], "PC-11": ["lstutzman/PropertyCompass2#107"]}}
 JSON
 }
 
@@ -109,6 +115,8 @@ test_classes_from_facts() {
   assert_equals null "$(jq -r '.items[] | select(.item == "PC-7") | .correction' "$json")" "release lag proposes no correction"
   assert_equals B1 "$(finding "$json" PC-3)" "on staging while Backlog is status lag"
   assert_equals "" "$(finding "$json" PC-4)" "Done and in production is consistent"
+  assert_equals "" "$(finding "$json" PC-10)" "a PR's state for one of its ids is read for that id"
+  assert_equals B1 "$(finding "$json" PC-11)" "the same PR's other id keeps its own state"
   assert_equals A1 "$(finding "$json" PC-9)" "Done with no landing fact is raised for a person"
   assert_equals "In Progress" "$(jq -r '.items[] | select(.item == "PC-2") | .proposed_state' "$json")" "A1 proposes reopening to In Progress"
   assert_equals Done "$(jq -r '.items[] | select(.item == "PC-1") | .proposed_state' "$json")" "B1 in production proposes Done"
@@ -163,7 +171,7 @@ test_stale_or_undated_facts_make_no_write() {
   run_landing "$home" $((NOW + 36 * 3600)) >/dev/null || fail "landing run must succeed"
   assert_grep "issue update PC-2 --state In Progress --verify" "$LINEAR_LOG" "max-facts-age widens the limit"
   make_world undated; home=$WORLD_HOME
-  jq 'del(.generated_at)' "$TMP_ROOT/undated/facts.json" > "$TMP_ROOT/undated/f" && mv "$TMP_ROOT/undated/f" "$TMP_ROOT/undated/facts.json"
+  jq '.generated_at = null' "$TMP_ROOT/undated/facts.json" > "$TMP_ROOT/undated/f" && mv "$TMP_ROOT/undated/f" "$TMP_ROOT/undated/facts.json"
   run_landing "$home" >/dev/null || fail "an undated-facts run must still finish"
   assert_no_grep "issue update" "$LINEAR_LOG" "facts with no generated_at write nothing"
   assert_contains "$(cat "$home/data/officers/landing/$DATE.md")" "generated_at is missing" "the digest names why nothing was written"
@@ -196,17 +204,25 @@ SH
   landing_registry "$home" "slarti:$TMP_ROOT/remote/facts.json" none
   run_landing "$home" >/dev/null || fail "facts read over ssh must succeed"
   assert_equals A1 "$(finding "$home/data/officers/landing/$DATE.json" PC-2)" "remote facts are judged the same"
-  printf '{"schema_version": 1, "records": {}}\n' > "$TMP_ROOT/remote/facts.json"
+  cp "$TMP_ROOT/remote/facts.json" "$TMP_ROOT/remote/good.json"
+  printf '{"schema_version": 1, "records": {}, "items": {}}\n' > "$TMP_ROOT/remote/facts.json"
   out=$(run_landing "$home" 2>&1) && fail "another facts schema must fail the run"
   assert_contains "$out" "schema_version is not 2" "the refusal names the schema"
-  printf '{"schema_version": 2, "records": []}\n' > "$TMP_ROOT/remote/facts.json"
+  jq '.records = []' "$TMP_ROOT/remote/good.json" > "$TMP_ROOT/remote/facts.json"
   out=$(run_landing "$home" 2>&1) && fail "records that are not keyed must fail the run"
   assert_contains "$out" "records is not an object" "the refusal names the layout"
-  printf '{"schema_version": 2, "prs": {}, "items": {}}\n' > "$TMP_ROOT/remote/facts.json"
+  jq 'del(.items) | .prs = {}' "$TMP_ROOT/remote/good.json" > "$TMP_ROOT/remote/facts.json"
   out=$(run_landing "$home" 2>&1) && fail "another container must fail the run"
-  printf '{"schema_version": 2, "records": {"PC2#1": {"repo": "lstutzman/PropertyCompass2", "pr": 1}}}\n' > "$TMP_ROOT/remote/facts.json"
+  assert_contains "$out" "top-level keys are not exactly" "the refusal names the top-level keys"
+  jq '.records = {"PC2#1": .records["lstutzman/PropertyCompass2#101"]}' "$TMP_ROOT/remote/good.json" > "$TMP_ROOT/remote/facts.json"
   out=$(run_landing "$home" 2>&1) && fail "a record under another key must fail the run"
   assert_contains "$out" "not keyed by its <repo>#<pr>" "the refusal names the key"
+  jq '.records["lstutzman/PropertyCompass2#101"].linear_state = "In Staging"' "$TMP_ROOT/remote/good.json" > "$TMP_ROOT/remote/facts.json"
+  out=$(run_landing "$home" 2>&1) && fail "a v1 linear_state string must fail the run"
+  assert_contains "$out" "linear_state is not an object" "the refusal names linear_state"
+  jq '.items["PC-8"] = ["lstutzman/PropertyCompass2#999"]' "$TMP_ROOT/remote/good.json" > "$TMP_ROOT/remote/facts.json"
+  out=$(run_landing "$home" 2>&1) && fail "an item pointing at no record must fail the run"
+  assert_contains "$out" "item PC-8 does not list record keys" "the refusal names the item"
   pass "fm-officer landing: facts over ssh are judged alike; another schema or layout is refused"
 }
 

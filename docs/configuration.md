@@ -822,7 +822,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
 | `archive` | Triage only: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
 | `hosts` | Triage only, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
-| `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2, a `records` object keyed `<repo>#<pr>`; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
+| `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2 with exactly the top-level keys `schema_version`, `generated_at`, `staging_sha`, `production_sha`, `records` keyed `<repo>#<pr>`, and `items` mapping each Linear id to its record keys; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
 | `team` | Landing only, optional: the Linear team key whose Done items are listed; default `PC` |
 | `writes` | Landing only, optional: `corrections` (default) lets the officer correct what PropertyCompass2's release workflow, the routine Done writer, missed; `none` turns Linear writes off |
 | `max-corrections` | Landing only, optional: the most items one run may correct; default 10 |

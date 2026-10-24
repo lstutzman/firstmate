@@ -12,12 +12,13 @@ Usage:
                             [--now <epoch>]
 
 Landing facts come from the fleet-app landing-truth job and are never
-re-collected here: a top-level schema_version 2 and a `records` object with
-one record per PR keyed "<repo>#<pr>" (repo, pr, head_sha, merged_sha,
+re-collected here. Schema 2 has exactly the top-level keys schema_version,
+generated_at, staging_sha, production_sha, records, and items: `records`
+holds one record per PR keyed "<repo>#<pr>" (repo, pr, head_sha, merged_sha,
 merged_at, on_staging, staging_deployed, on_main, main_promoted_at,
-in_production, production_release, linear_ids, linear_state, landed_via);
-each record's linear_ids point its Linear items to it. Any other schema
-version or layout fails the run. This pass adds the officer's judgements from
+in_production, production_release, linear_ids, landed_via, and linear_state,
+an object keyed by Linear id), and `items` maps each Linear id to its record
+keys. Any other schema version or layout fails the run. This pass adds the officer's judgements from
 those facts plus Linear:
 
   A1 false done      the item is Done, but a PR linked to it is merged and not
@@ -75,7 +76,7 @@ FACT_FIELDS = ("repo", "pr", "merged_sha", "merged_at", "on_staging", "staging_d
                "on_main", "main_promoted_at", "in_production", "production_release", "landed_via")
 NOT_STARTED = {"Triage", "Backlog", "Todo", "In Progress"}
 CLOSED = {"Done", "Canceled", "Cancelled", "Duplicate"}
-ITEM_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+TOP_KEYS = {"schema_version", "generated_at", "staging_sha", "production_sha", "records", "items"}
 
 
 def load_facts(source):
@@ -106,12 +107,22 @@ def load_facts(source):
         raise RuntimeError("landing facts are not JSON")
     if not isinstance(doc, dict) or doc.get("schema_version") != 2:
         raise RuntimeError("landing facts schema_version is not 2")
-    records = doc.get("records")
+    if set(doc) != TOP_KEYS:
+        raise RuntimeError("landing facts top-level keys are not exactly %s" % ", ".join(sorted(TOP_KEYS)))
+    records = doc["records"]
     if not isinstance(records, dict):
         raise RuntimeError("landing facts records is not an object keyed <repo>#<pr>")
     for key, rec in records.items():
         if not isinstance(rec, dict) or key != "%s#%s" % (rec.get("repo"), rec.get("pr")):
             raise RuntimeError("landing facts record %s is not keyed by its <repo>#<pr>" % key)
+        if not isinstance(rec.get("linear_state"), dict):
+            raise RuntimeError("landing facts record %s linear_state is not an object keyed by Linear id" % key)
+    items = doc["items"]
+    if not isinstance(items, dict):
+        raise RuntimeError("landing facts items is not an object keyed by Linear id")
+    for item, keys in items.items():
+        if not isinstance(keys, list) or any(k not in records for k in keys):
+            raise RuntimeError("landing facts item %s does not list record keys present in records" % item)
     return doc
 
 
@@ -143,12 +154,12 @@ def done_items(team, window):
 def judge(doc, done_listed, reopen_state="In Progress"):
     """Per-item landing view and findings; a pure function of its inputs."""
     items = {}
-    for rec in doc["records"].values():
-        ids = [i for i in rec.get("linear_ids") or [] if isinstance(i, str) and ITEM_RE.match(i)]
-        for item in ids:
-            entry = items.setdefault(item, {"item": item, "states": set(), "prs": []})
-            if rec.get("linear_state"):
-                entry["states"].add(rec["linear_state"])
+    for item, keys in doc["items"].items():
+        entry = items.setdefault(item, {"item": item, "states": set(), "prs": []})
+        for key in keys:
+            rec = doc["records"][key]
+            if rec["linear_state"].get(item):
+                entry["states"].add(rec["linear_state"][item])
             entry["prs"].append({k: rec.get(k) for k in FACT_FIELDS})
     findings = []
     view = []
