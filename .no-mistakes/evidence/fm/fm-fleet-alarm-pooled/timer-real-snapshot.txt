@@ -1,0 +1,14 @@
+== T1 timer channel: carrying busy@x at 93%, idle@x at 100% not carrying -> Captain's Log card
+rc=0
+-- state/fleet-alarm.status (card source):
+needs-decision [at=1793054872] [key=fleet-alarm]: Carrying Claude account busy@x 7d 93% (resets 2026-10-30T10:00:00Z); Claude account pressure: idle@x 7d 100%, busy@x 7d 93%, spare@x 7d 10%; Carrying Claude accounts: busy@x
+
+== T2 real cpa-usage-axi (read-only, live quota data) through the alarm check, no secondmates
+rc=0 output: Claude quota unavailable; reading may be stale: ValueError: reader unavailable or timed out
+
+== T3 fm-fleet-snapshot.sh --json with a 300 KB status line and 90 open decisions with 6 KB text
+rc=0 elapsed=7.95s stdout_bytes=395270 stderr: 
+top-level keys: ['backlog', 'contributions', 'fm_home', 'generated', 'main_inventory', 'roots', 'schema', 'scout_reports', 'secondmate_current', 'secondmate_guidance', 'secondmate_landed', 'tasks']
+longest string field: .tasks[0].paths.status_log.last_event.note 4096 chars; ends with 'zzz [text truncated]'
+open decision keys retained: 90
+truncation markers: 93

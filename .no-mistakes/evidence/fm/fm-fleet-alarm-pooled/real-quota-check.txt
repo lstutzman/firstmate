@@ -1,0 +1,11 @@
+== T2 real cpa-usage-axi on slartibartfast via cpa-usage-host, through the alarm check (lab home, no secondmates)
+rc=0 elapsed=0.79s
+output: <silent: no alarm conditions on the live pool>
+-- persisted condition keys:
+[]
+== T2b live quota data, lab thresholds seven_day=0.01 pool_remaining=0.99 to force a card (account names redacted)
+rc=0
+Carrying Claude account <acct> 7d 16% (resets 2026-11-02T14:00Z)
+ Claude pool near empty
+ Claude account pressure: <acct> 7d 100%, <acct> 7d 100%, <acct> 7d 100%, <acct> 7d 16%
+ Carrying Claude accounts: <acct>

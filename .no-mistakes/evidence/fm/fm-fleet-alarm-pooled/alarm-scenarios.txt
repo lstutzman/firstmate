@@ -1,0 +1,52 @@
+== S1 idle Claude account at 100% weekly, carrying account at 30%, pool mean remaining 35%
+rc=0 output: <silent>
+
+== S2 carrying account a@x at 95% (b@x also carrying at 20%) -> carrying alarm names a@x
+rc=0 output: Carrying Claude account a@x 7d 95% (resets 2026-10-30T10:01:00Z); Claude account pressure: a@x 7d 95%, b@x 7d 20%; Carrying Claude accounts: a@x, b@x
+
+-- S2b same reading, reset time drifted one minute -> same condition, no repeat
+== S2b repeat
+rc=0 output: <silent>
+
+== S3 a@x at 95% but only failed traffic -> not carrying, no alarm
+rc=0 output: <silent>
+
+== S3b no successful Claude traffic, one stale reading (forces a card) -> card says none carrying
+rc=0 output: Claude quota reading stale: c@x; Claude account pressure: a@x 7d 95%, b@x 7d 20%, c@x 7d 50%; Carrying Claude accounts: none (no successful Claude traffic in last 60 minutes)
+
+== S4 pool mean remaining 10% exactly, no carrying (boundary) -> silent
+rc=0 output: <silent>
+
+== S4b pool mean remaining 8.5% -> pool alarm
+rc=0 output: Claude pool near empty; Claude account pressure: a@x 7d 95%, b@x 7d 88%; Carrying Claude accounts: none (no successful Claude traffic in last 60 minutes)
+
+== S4c carrying exactly 90%, pool exactly 10% remaining -> silent
+rc=0 output: <silent>
+
+== S5 unknown reading for b@x -> stale/unknown alarm retained
+rc=0 output: Claude quota reading unknown: b@x; Claude account pressure: a@x 7d 30%; Carrying Claude accounts: a@x
+
+== S6 idle mate silent 150 min -> no alarm
+rc=0 output: <silent>
+
+== S6b same mate with 2 in-flight -> silent-mate alarm
+rc=0 output: Secondmate holding work silent over 60 minutes: mate; Claude account pressure: a@x 7d 30%; Carrying Claude accounts: a@x
+
+== S6c mate holding work but spoke just now -> no alarm
+rc=0 output: <silent>
+
+== S7 zero home counts but unresolved needs-decision in main's status -> silent-mate alarm
+rc=0 output: Secondmate holding work silent over 60 minutes: mate; Claude account pressure: a@x 7d 30%; Carrying Claude accounts: a@x
+
+== S7b same decision resolved -> no alarm
+rc=0 output: <silent>
+
+== S8 mate summary 150 min old -> inventory unavailable (stale)
+rc=0 output: Secondmate work inventory unavailable: mate: cached home summary is stale or invalid; Claude account pressure: a@x 7d 30%; Carrying Claude accounts: a@x
+
+== S9 remote cached summary from a clock 5 s ahead -> fresh, no inventory error
+rc=0 output: <silent>
+
+== S9b same skewed summary holding work, no events -> silent alarm (not inventory error)
+rc=0 output: Secondmate holding work silent over 60 minutes: rmate; Claude account pressure: a@x 7d 30%; Carrying Claude accounts: a@x
+
