@@ -1,0 +1,16 @@
+=== S7 (fresh) inner reader failure reasons ===
+$ fm-fleet-alarm.py check   # healthy baseline (real fm-fleet-snapshot.sh, lab home)
+[exit 0]
+$ fm-fleet-alarm.py check   # quota reader exits 3
+Claude quota unavailable; reading may be stale: ValueError: reader unavailable or timed out
+[exit 0]
+$ fm-fleet-alarm.py check   # quota reader healthy again
+[exit 0]
+$ fm-fleet-alarm.py check   # snapshot lacks secondmate_current
+Secondmate work inventory unavailable: KeyError: 'secondmate_current'
+[exit 0]
+$ fm-fleet-alarm.py check   # snapshot reader exits 2
+Secondmate work inventory unavailable: ValueError: reader unavailable or timed out
+[exit 0]
+$ fm-fleet-alarm.py check   # healthy again (real snapshot)
+[exit 0]

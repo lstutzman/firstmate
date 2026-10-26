@@ -1,0 +1,61 @@
+=== S1 main-style commented cpa-usage-host ===
+# Quota reader host (dispatch resolver accepts comments)
+local
+$ fm-fleet-alarm.py check   # target commit
+acct@example.invalid 7d 91% (resets 2026-10-30T15:00Z); Claude pool near empty
+[exit 0]
+--- same input at base commit 9a963566 ---
+$ fm-fleet-alarm.py check   # base commit
+Fleet alarm configuration invalid
+[exit 0]
+
+=== S2 commented remote host routes through ssh ===
+$ fm-fleet-alarm.py check   # remote host
+Claude pool near empty
+[exit 0]
+ssh -o BatchMode=yes -o ConnectTimeout=3 -- slartibartfast cpa-usage-axi accounts
+cpa-usage-axi cpa-usage-axi accounts
+ssh -o BatchMode=yes -o ConnectTimeout=3 -- slartibartfast cpa-usage-axi check --five-hour off --seven-day 0.9
+cpa-usage-axi cpa-usage-axi check --five-hour off --seven-day 0.9
+
+=== S3 invalid host reports actual reason, not contents ===
+$ fm-fleet-alarm.py check   # invalid host
+Fleet alarm configuration invalid: invalid cpa-usage-host
+[exit 0]
+
+=== S4 other collect() ValueError reason surfaces (budget) ===
+$ fm-fleet-alarm.py check   # budget too large
+Fleet alarm configuration invalid: budget_seconds must fit inside FM_CHECK_TIMEOUT minus 5
+[exit 0]
+
+=== S5 reset-time drift: one condition ===
+$ fm-fleet-alarm.py check   # reset 15:00Z
+acct@example.invalid 7d 100% (resets 2026-10-30T15:00Z); Claude pool near empty
+[exit 0]
+$ fm-fleet-alarm.py check   # reset 14:59Z (drifted back)
+[exit 0]
+$ fm-fleet-alarm.py check   # reset 15:00Z again
+[exit 0]
+$ fm-fleet-alarm.py check   # next weekly window (must alert)
+acct@example.invalid 7d 100% (resets 2026-11-06T15:00Z)
+[exit 0]
+stored quota keys: ['quota:acct@example.invalid:2026-11-06T15:00:00+00:00']
+$ fm-fleet-alarm.py check   # clear
+[exit 0]
+$ fm-fleet-alarm.py check   # reset 05:59Z
+acct@example.invalid 7d 100% (resets 2026-10-27T05:59Z); Claude pool near empty
+[exit 0]
+$ fm-fleet-alarm.py check   # reset 06:00Z (drifted forward)
+[exit 0]
+$ fm-fleet-alarm.py check   # reset 05:31Z (same hour bucket)
+[exit 0]
+stored quota keys: ['quota:acct@example.invalid:2026-10-27T06:00:00+00:00']
+
+=== S6 missing accounts header names its cause ===
+$ fm-fleet-alarm.py check   # malformed accounts
+Claude quota unavailable; reading may be stale: ValueError: no accounts header in quota reading
+[exit 0]
+
+=== S7 inner reader failure reasons ===
+$ fm-fleet-alarm.py check   # quota reader exits 3
+[exit 0]
