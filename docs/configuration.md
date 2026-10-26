@@ -575,6 +575,60 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
 
+## Fleet quota and secondmate alarm (config/fleet-alarm.json)
+
+The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quota readings, and registered second mates holding work without recent communication.
+Idle second mates are healthy.
+It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reuses the fleet snapshot's validated local and remote home summaries.
+The pool threshold measures mean remaining weekly capacity across the reported Claude accounts; it is not a prediction of how long the pool can sustain a workload.
+A recent home-summary publication or parent-channel event counts as communication.
+Older home-summary producers without `counts.in_flight` use their active-worker, hold, and decision counts, which cannot identify a program with no active worker.
+Update second mates before relying on coverage of those programs.
+Missing or incomplete inventories produce an alert rather than a healthy verdict.
+
+`bin/fm-fleet-alarm.py` owns the configuration keys, defaults, command syntax, reader budget, deduplication receipts, and timer-file generation.
+`tests/fm-fleet-alarm.test.sh` exercises the alarm with offline quota and summary fixtures and the real fleet-ledger publisher.
+The alarm uses the custom-check contract on every primary tool; its independent timer runs the same check without starting another fleet supervisor.
+The two paths have separate delivery receipts so a regular check cannot suppress the timer's alert.
+The timer publishes keyed `needs-decision` status through the existing fleet activity ledger for Captain's Log readers, and publishes `resolved` when all conditions clear.
+That publication still requires a working machine, scheduler, ledger storage, and Captain's Log reader; it cannot alert during a machine outage.
+
+From the primary home's stable code directory, set `FM_HOME` to the primary home, then register the check:
+
+```sh
+export FM_HOME="$PWD"
+python3 bin/fm-fleet-alarm.py arm
+```
+
+To alert while the primary's monitor is stopped, turn on the fleet activity ledger and install one user timer.
+No command needs sudo.
+The generated timer captures the installation shell's `PATH` and the primary home; regenerate it after changing those paths.
+Existing scheduler files are never overwritten.
+
+```sh
+mkdir -p "$FM_HOME/config"
+touch "$FM_HOME/config/fleet-ledger"
+```
+
+On macOS:
+
+```sh
+python3 bin/fm-fleet-alarm.py timer-files darwin "$HOME/Library/LaunchAgents"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.firstmate.fleet-alarm.plist"
+```
+
+On Linux:
+
+```sh
+python3 bin/fm-fleet-alarm.py timer-files linux "$HOME/.config/systemd/user"
+systemctl --user daemon-reload
+systemctl --user enable --now firstmate-fleet-alarm.timer
+```
+
+To turn off independent alerts, run `launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.firstmate.fleet-alarm.plist"` on macOS or `systemctl --user disable --now firstmate-fleet-alarm.timer` on Linux.
+To turn off the registered check too, run `bash bin/fm-check-unregister.sh fleet-alarm` with the same `FM_HOME`.
+Neither action removes the alarm's history or turns off the ledger for other producers.
+
 ## Firstmate role (config/firstmate-role)
 
 The optional local, gitignored `config/firstmate-role` declares this home's relationship to the firstmate repository itself.
