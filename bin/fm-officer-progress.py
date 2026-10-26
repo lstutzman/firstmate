@@ -289,7 +289,7 @@ def linear_rows(team, home, requested, discovery, problems):
     clear = {r["identifier"] for r in unblocked}
     rows = {entry["identifier"]: linear_row(entry, home, clear) for entry in listed}
     pending = sorted(requested) if team_complete else []
-    for identifier in pending:
+    for position, identifier in enumerate(pending):
         if identifier in discovery.viewed:
             continue
         try:
@@ -307,9 +307,11 @@ def linear_rows(team, home, requested, discovery, problems):
             discovery.stats["hierarchy_items"] += 1
             pending.extend(child["identifier"] for child in children)
         except (RuntimeError, KeyError, TypeError) as exc:
-            skipped = [root for root in sorted(requested) if root != identifier and root not in discovery.viewed]
-            problems.append("Linear discovery: requested tree %s: %s%s" %
-                            (identifier, str(exc) if isinstance(exc, RuntimeError) else "malformed hierarchy data",
+            unread = set(pending[position + 1:]) - discovery.viewed - {identifier}
+            skipped = sorted(unread & set(requested))
+            problems.append("Linear discovery: %s %s: %s; %d queued hierarchy reads skipped%s" %
+                            ("requested tree" if identifier in requested else "requested-tree descendant", identifier,
+                             str(exc) if isinstance(exc, RuntimeError) else "malformed hierarchy data", len(unread),
                              "; requested roots not read: " + ", ".join(skipped) if skipped else ""))
             break
     return rows, clear
