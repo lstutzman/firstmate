@@ -104,7 +104,7 @@ assert_contains "$(run_alarm check)" 'reading stale' 'stale account snapshot'
 quota 0.2
 run_alarm check >/dev/null
 printf '%s\n' bad > "$HOME_FIX/accounts"
-assert_contains "$(run_alarm check)" 'quota unavailable' 'malformed data is unknown, not healthy'
+assert_contains "$(run_alarm check)" 'Claude quota unavailable; reading may be stale: ValueError: no accounts header in quota reading' 'malformed data is unknown, not healthy, and names its cause'
 quota 0.2
 run_alarm check >/dev/null
 pass 'pool exhaustion, stale readings and malformed data alert'

@@ -69,7 +69,9 @@ def settings():
 
 def accounts(text):
     lines = text.splitlines()
-    header = next(line for line in lines if line.startswith('accounts['))
+    header = next((line for line in lines if line.startswith('accounts[')), None)
+    if header is None:
+        raise ValueError('no accounts header in quota reading')
     fields = header.split('{', 1)[1].split('}', 1)[0].split(',')
     rows = list(csv.DictReader(io.StringIO('\n'.join(
         line.strip() for line in lines[lines.index(header) + 1:]
@@ -136,7 +138,7 @@ def collect(cfg):
             raise ValueError('no current Claude quota readings')
         if sum(1 - used for used in pool) / len(pool) <= cfg['pool_remaining']:
             findings['pool'] = 'Claude pool near empty'
-    except (ValueError, KeyError, StopIteration, OSError) as error:
+    except (ValueError, KeyError, OSError) as error:
         findings['quota-read'] = f'Claude quota unavailable; reading may be stale: {type(error).__name__}: {error}'
     try:
         snapshot = json.loads(read([BIN / 'fm-fleet-snapshot.sh', '--json']))
