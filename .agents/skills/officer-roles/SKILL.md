@@ -30,7 +30,7 @@ An officer may never:
 - drain, acknowledge, or otherwise touch the wake queue;
 - spawn, steer, interrupt, relaunch, merge, land, or clean up any worker or second mate;
 - answer, hold, or close a captain call, or edit Captain's Log cards;
-- write to a project, another home, or any record outside its lane, Linear aside as above, or post its findings to fleet-app or any other service (the fleet app pulls a friction officer's velocity findings file from its lane);
+- write to a project, another home, or any record outside its lane, Linear aside as above, or post its findings to fleet-app or any other service (the fleet app pulls a friction officer's velocity findings file and a progress officer's `progress-state.json` from its lane);
 - write In Staging, make any Linear change other than those two corrections, or file a Linear item;
 - collect landing facts itself: the fleet-app landing-truth job owns them, and the officer only judges them;
 - run crew of its own, or call a model in slice 1 (`model: none`).
