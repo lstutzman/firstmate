@@ -265,6 +265,18 @@ mv "$HOME_FIX/next-snapshot" "$HOME_FIX/snapshot"
 assert_contains "$(run_alarm check)" 'inventory incomplete' 'incomplete registry alerts'
 pass 'registry read failures cannot appear healthy'
 
+mate 0 0 0
+run_alarm check >/dev/null
+printf '%s\n' '{}' > "$HOME_FIX/snapshot"
+assert_contains "$(run_alarm check)" "Secondmate work inventory unavailable: KeyError: 'secondmate_current'" 'inventory failure names its cause'
+mate 0 0 0
+run_alarm check >/dev/null
+: > "$HOME_FIX/quota-fail"
+assert_contains "$(run_alarm check)" 'Claude quota unavailable; reading may be stale: ValueError: reader unavailable or timed out' 'quota failure names its cause'
+mv "$HOME_FIX/quota-fail" "$HOME_FIX/quota-fail-cleared"
+run_alarm check >/dev/null
+pass 'reader failures report the exception type and reason'
+
 cat > "$BIN_FIX/fm-check-register.sh" <<'SH'
 #!/usr/bin/env bash
 exec "$ROOT/bin/fm-check-register.sh" "$@"

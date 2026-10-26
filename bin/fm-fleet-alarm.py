@@ -136,8 +136,8 @@ def collect(cfg):
             raise ValueError('no current Claude quota readings')
         if sum(1 - used for used in pool) / len(pool) <= cfg['pool_remaining']:
             findings['pool'] = 'Claude pool near empty'
-    except (ValueError, KeyError, StopIteration, OSError):
-        findings['quota-read'] = 'Claude quota unavailable; reading may be stale'
+    except (ValueError, KeyError, StopIteration, OSError) as error:
+        findings['quota-read'] = f'Claude quota unavailable; reading may be stale: {type(error).__name__}: {error}'
     try:
         snapshot = json.loads(read([BIN / 'fm-fleet-snapshot.sh', '--json']))
         mates = snapshot['secondmate_current']
@@ -160,8 +160,8 @@ def collect(cfg):
             ages = [a for a in ages if isinstance(a, (int, float)) and a >= 0]
             if not ages or min(ages) > cfg['silent_minutes'] * 60:
                 findings['silent:' + mate['id']] = f"Secondmate holding work silent over {cfg['silent_minutes']:g} minutes: {mate['id']}"
-    except (ValueError, KeyError, TypeError, OSError):
-        findings['mate-read'] = 'Secondmate work inventory unavailable'
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
     return findings
 
 
