@@ -1,0 +1,10 @@
+### Scenario: second-mate home is read, owner_home is that home
+DIGEST 2026-10-28 1 data/officers/progress/2026-10-28.md
+rc=0
+## Ranked start requests
+
+- 1. sm-bug - Bug: second mate crash report (Linear: none; home: /tmp/fm-progress-world.fVGCLw/sm-home; class: bug; source: backlog): Unstarted work authorised by bug
+
+## Doing
+second-mate backlog unchanged
+second-mate state entries: 0

@@ -1,0 +1,48 @@
+### Scenario: Linear rate-limited (coverage gap) on 2026-10-26
+DIGEST 2026-10-26 3 data/officers/progress/2026-10-26.md
+rc=0
+## Ranked start requests
+
+- None.
+
+## Doing
+## Excluded
+
+- cve-bump - Fix CVE-2026-12345 in image lib (Linear: none; home: /tmp/fm-lab.5qv42W; class: cve; source: backlog): Start deferred because discovery coverage is incomplete
+- crash-fix - Fix reported crash on login (Linear: none; home: /tmp/fm-lab.5qv42W; class: bug; source: backlog): Start deferred because discovery coverage is incomplete
+
+## Unclassified
+
+- 1 open items have no recorded start class and are not listed.
+
+## Coverage
+
+- Linear discovery unavailable or incomplete
+fm-inbox lines in handoff: 0
+
+### Scenario: nothing authorised and nothing moving -> filler on 2026-10-27
+DIGEST 2026-10-27 1 data/officers/progress/2026-10-27.md
+rc=0
+## Filler proposal
+
+- bug sweep (source: standing-authority:filler): No authorised unstarted work or authorised work in flight; rotate daily discovery passes
+
+## Unclassified
+
+- 1 open items have no recorded start class and are not listed.
+
+## Coverage
+
+- All configured sources read.
+asking: [
+ {
+  "asked_at": "2026-10-26T16:57:05Z",
+  "key": "bug sweep",
+  "kind": "instruction",
+  "link": "https://github.com/lstutzman/firstmate",
+  "question": "Start an extra bug sweep",
+  "waiting_on": "firstmate"
+ }
+]
+Watching 0 work items; 0 outcomes recorded; 1 requests waiting on firstmate or Lee; 1 items outside the start classes; 0 coverage gaps. Showing up to 30 current items, 50 outcomes, and 30 requests.
+request-id progress-2026-10-27-65f90b15b89dbe4c

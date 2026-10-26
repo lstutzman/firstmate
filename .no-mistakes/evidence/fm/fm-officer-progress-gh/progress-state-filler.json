@@ -1,0 +1,19 @@
+{
+  "asking": [
+    {
+      "asked_at": "2026-10-26T16:57:05Z",
+      "key": "bug sweep",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start an extra bug sweep",
+      "waiting_on": "firstmate"
+    }
+  ],
+  "doing": [],
+  "done": [],
+  "officer": "progress",
+  "schema_version": 1,
+  "stale_after_minutes": 2880,
+  "summary": "Watching 0 work items; 0 outcomes recorded; 1 requests waiting on firstmate or Lee; 1 items outside the start classes; 0 coverage gaps. Showing up to 30 current items, 50 outcomes, and 30 requests.",
+  "written_at": "2026-10-26T16:57:05Z"
+}

@@ -1,0 +1,97 @@
+{
+  "asking": [
+    {
+      "asked_at": "2026-10-26T16:56:09Z",
+      "key": "cve-bump",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Fix CVE-2026-12345 in image lib",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T16:56:09Z",
+      "key": "PC-906",
+      "kind": "instruction",
+      "link": "https://linear.app/x/issue/PC-906",
+      "question": "Start authorised work: Bug: map pins vanish on zoom",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T16:56:09Z",
+      "key": "crash-fix",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Fix reported crash on login",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T16:56:09Z",
+      "key": "PC-902",
+      "kind": "instruction",
+      "link": "https://linear.app/x/issue/PC-902",
+      "question": "Start authorised work: Wire deal scoring queue",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T16:56:09Z",
+      "key": "legal-terms",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "File a Captain's Log card: Update legal terms wording; Lee decides the legal choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T16:56:09Z",
+      "key": "prod-drop",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "File a Captain's Log card: Bug: drop old production table; Outside automatic-start authority: drop",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T16:56:09Z",
+      "key": "PC-903",
+      "kind": "instruction",
+      "link": "https://linear.app/x/issue/PC-903",
+      "question": "File a Captain's Log card: Security: rotate session cookie flags; Outside automatic-start authority: rotate",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T16:56:09Z",
+      "key": "PC-905",
+      "kind": "instruction",
+      "link": "https://linear.app/x/issue/PC-905",
+      "question": "File a Captain's Log card: Pricing page copy refresh; Lee decides the pricing choice",
+      "waiting_on": "firstmate"
+    }
+  ],
+  "doing": [
+    {
+      "description": "Watching work: Security: harden auth cookies",
+      "id": "cookie-hardening",
+      "project": "project",
+      "source": "cve",
+      "started_at": "2026-10-26T16:56:09Z"
+    },
+    {
+      "description": "Watching work: Epic: deal scoring Lee asked for",
+      "id": "PC-900",
+      "link": "https://linear.app/x/issue/PC-900",
+      "source": "feature",
+      "started_at": "2026-10-26T16:56:09Z"
+    },
+    {
+      "description": "Watching work: Deal scoring child",
+      "id": "PC-901",
+      "link": "https://linear.app/x/issue/PC-901",
+      "source": "feature",
+      "started_at": "2026-10-26T16:56:09Z"
+    }
+  ],
+  "done": [],
+  "officer": "progress",
+  "schema_version": 1,
+  "stale_after_minutes": 2880,
+  "summary": "Watching 3 work items; 0 outcomes recorded; 8 requests waiting on firstmate or Lee; 2 items outside the start classes; 0 coverage gaps. Showing up to 30 current items, 50 outcomes, and 30 requests.",
+  "written_at": "2026-10-26T16:56:09Z"
+}

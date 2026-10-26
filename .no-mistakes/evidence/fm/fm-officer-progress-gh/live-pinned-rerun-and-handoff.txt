@@ -1,0 +1,25 @@
+DIGEST 2026-10-25 8 data/officers/progress/2026-10-25.md
+pinned-clock rerun: byte-identical (json, md, start-requests.sh, progress-state.json)
+== firstmate executes the handoff twice (idempotent inbox intake):
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793033806-LGcPv3","request_id":"progress-2026-10-25-3850f482d0ac8cb5","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.5qv
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793033806-NSck4h","request_id":"progress-2026-10-25-882599f9bf52f2c9","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.5qv
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793033806-zOwEM4","request_id":"progress-2026-10-25-bb363bb4a4e3b1b9","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.5qv
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793033806-PKROoT","request_id":"progress-2026-10-25-3155d4d96cf4de6f","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.5qv
+rc=0
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793033806-LGcPv3","request_id":"progress-2026-10-25-3850f482d0ac8cb5","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.5qv4
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793033806-NSck4h","request_id":"progress-2026-10-25-882599f9bf52f2c9","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.5qv4
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793033806-zOwEM4","request_id":"progress-2026-10-25-bb363bb4a4e3b1b9","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.5qv4
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793033806-PKROoT","request_id":"progress-2026-10-25-3155d4d96cf4de6f","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.5qv4
+rc=0
+/tmp/fm-lab.5qv42W/data:
+backlog.md
+officers
+officers.md
+
+/tmp/fm-lab.5qv42W/state:
+.wake-queue
+.wake-queue.seq
+.watcher-down
+inbox
+officer-progress.check-trust
+officer-progress.check.sh

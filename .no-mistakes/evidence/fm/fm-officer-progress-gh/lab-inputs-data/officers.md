@@ -1,0 +1,1 @@
+- progress - Finds authorised work to start (role: progress; cadence: daily 07:00; team: PC; repos: lstutzman/firstmate; requested: PC-900; model: none; added 2026-10-26)

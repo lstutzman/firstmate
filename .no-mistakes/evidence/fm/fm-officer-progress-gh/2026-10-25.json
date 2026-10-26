@@ -1,0 +1,311 @@
+{
+  "asks_for_lee": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.5qv42W/data/backlog.md: legal-terms"
+      ],
+      "execute": null,
+      "id": "legal-terms",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Lee decides the legal choice",
+      "tag_source": "backlog",
+      "title": "Update legal terms wording"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.5qv42W/data/backlog.md: prod-drop"
+      ],
+      "execute": null,
+      "id": "prod-drop",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Outside automatic-start authority: drop",
+      "tag_source": "backlog",
+      "title": "Bug: drop old production table"
+    },
+    {
+      "authorising_class": "security",
+      "evidence": [
+        "Linear PC-903"
+      ],
+      "execute": null,
+      "id": "PC-903",
+      "linear_id": "PC-903",
+      "linear_ids": [
+        "PC-903"
+      ],
+      "link": "https://linear.app/x/issue/PC-903",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Outside automatic-start authority: rotate",
+      "tag_source": "linear-title-prefix:Security",
+      "title": "Security: rotate session cookie flags"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Linear PC-905"
+      ],
+      "execute": null,
+      "id": "PC-905",
+      "linear_id": "PC-905",
+      "linear_ids": [
+        "PC-905"
+      ],
+      "link": "https://linear.app/x/issue/PC-905",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Lee decides the pricing choice",
+      "tag_source": "linear-free-text:requested-by",
+      "title": "Pricing page copy refresh"
+    }
+  ],
+  "coverage": [],
+  "date": "2026-10-25",
+  "doing": [
+    {
+      "authorising_class": "security",
+      "evidence": [
+        "/tmp/fm-lab.5qv42W/data/backlog.md: cookie-hardening"
+      ],
+      "execute": null,
+      "id": "cookie-hardening",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 0,
+      "project": "project",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "backlog",
+      "title": "Security: harden auth cookies"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Linear PC-900",
+        "Lee-requested root PC-900"
+      ],
+      "execute": null,
+      "id": "PC-900",
+      "linear_id": "PC-900",
+      "linear_ids": [
+        "PC-900"
+      ],
+      "link": "https://linear.app/x/issue/PC-900",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "requested-root:PC-900",
+      "title": "Epic: deal scoring Lee asked for"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Linear PC-901",
+        "Lee-requested root PC-900"
+      ],
+      "execute": null,
+      "id": "PC-901",
+      "linear_id": "PC-901",
+      "linear_ids": [
+        "PC-901"
+      ],
+      "link": "https://linear.app/x/issue/PC-901",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "requested-root:PC-900",
+      "title": "Deal scoring child"
+    }
+  ],
+  "done": [],
+  "excluded": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-907"
+      ],
+      "execute": null,
+      "id": "PC-907",
+      "linear_id": "PC-907",
+      "linear_ids": [
+        "PC-907"
+      ],
+      "link": "https://linear.app/x/issue/PC-907",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: blocked by migration"
+    }
+  ],
+  "filler": null,
+  "generated_at": "2026-10-26T16:56:09Z",
+  "schema_version": 1,
+  "source": "progress-officer",
+  "start_requests": [
+    {
+      "authorising_class": "cve",
+      "evidence": [
+        "/tmp/fm-lab.5qv42W/data/backlog.md: cve-bump"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5WEYP4MVR849KQ6PAT5E1CK/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-3850f482d0ac8cb5",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"cve\", \"evidence\": [\"/tmp/fm-lab.5qv42W/data/backlog.md: cve-bump\"], \"id\": \"cve-bump\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.5qv42W\", \"priority\": 0, \"project\": \"\", \"rank\": 1, \"reason\": \"Unstarted work authorised by cve\", \"tag_source\": \"backlog\", \"title\": \"Fix CVE-2026-12345 in image lib\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.5qv42W"
+        },
+        "request_id": "progress-2026-10-25-3850f482d0ac8cb5"
+      },
+      "id": "cve-bump",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 0,
+      "project": "",
+      "rank": 1,
+      "reason": "Unstarted work authorised by cve",
+      "tag_source": "backlog",
+      "title": "Fix CVE-2026-12345 in image lib"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-906"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5WEYP4MVR849KQ6PAT5E1CK/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-882599f9bf52f2c9",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-906\"], \"id\": \"PC-906\", \"linear_id\": \"PC-906\", \"linear_ids\": [\"PC-906\"], \"link\": \"https://linear.app/x/issue/PC-906\", \"owner_home\": \"/tmp/fm-lab.5qv42W\", \"priority\": 2, \"project\": \"\", \"rank\": 2, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: map pins vanish on zoom\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.5qv42W"
+        },
+        "request_id": "progress-2026-10-25-882599f9bf52f2c9"
+      },
+      "id": "PC-906",
+      "linear_id": "PC-906",
+      "linear_ids": [
+        "PC-906"
+      ],
+      "link": "https://linear.app/x/issue/PC-906",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 2,
+      "project": "",
+      "rank": 2,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: map pins vanish on zoom"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.5qv42W/data/backlog.md: crash-fix"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5WEYP4MVR849KQ6PAT5E1CK/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-bb363bb4a4e3b1b9",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"/tmp/fm-lab.5qv42W/data/backlog.md: crash-fix\"], \"id\": \"crash-fix\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.5qv42W\", \"priority\": 2, \"project\": \"\", \"rank\": 3, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"backlog\", \"title\": \"Fix reported crash on login\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.5qv42W"
+        },
+        "request_id": "progress-2026-10-25-bb363bb4a4e3b1b9"
+      },
+      "id": "crash-fix",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 2,
+      "project": "",
+      "rank": 3,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "backlog",
+      "title": "Fix reported crash on login"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Linear PC-902",
+        "Lee-requested root PC-900"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5WEYP4MVR849KQ6PAT5E1CK/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-3155d4d96cf4de6f",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Linear PC-902\", \"Lee-requested root PC-900\"], \"id\": \"PC-902\", \"linear_id\": \"PC-902\", \"linear_ids\": [\"PC-902\"], \"link\": \"https://linear.app/x/issue/PC-902\", \"owner_home\": \"/tmp/fm-lab.5qv42W\", \"priority\": 2, \"project\": \"\", \"rank\": 4, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"requested-root:PC-900\", \"title\": \"Wire deal scoring queue\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.5qv42W"
+        },
+        "request_id": "progress-2026-10-25-3155d4d96cf4de6f"
+      },
+      "id": "PC-902",
+      "linear_id": "PC-902",
+      "linear_ids": [
+        "PC-902"
+      ],
+      "link": "https://linear.app/x/issue/PC-902",
+      "owner_home": "/tmp/fm-lab.5qv42W",
+      "priority": 2,
+      "project": "",
+      "rank": 4,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "requested-root:PC-900",
+      "title": "Wire deal scoring queue"
+    }
+  ],
+  "unclassified": 2
+}

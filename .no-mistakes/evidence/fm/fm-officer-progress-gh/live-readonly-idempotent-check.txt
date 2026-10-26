@@ -1,0 +1,24 @@
+== officer made only read calls to Linear/GitHub:
+      1 issue list --team PC --all --max-items 10000 --fields stateType,priority,url,project --output json
+      1 issue list --team PC --unblocked --all --max-items 10000 --output json
+      8 issue view <id> --full --output json
+== backlog unchanged after run:
+identical
+== state dir after run (no task/inbox records created by officer):
+officer-progress.check-trust
+officer-progress.check.sh
+== rerun same date:
+DIGEST 2026-10-25 8 data/officers/progress/2026-10-25.md
+1,2c1,2
+< 75748d9c8db7a2028b2ffd1b5aa05f859f7726a2697e18703631cd9e833e5bbe  /tmp/fm-lab.5qv42W/data/officers/progress/2026-10-25.json
+< 55cf8cbaea0e71ca42f21b7797d8a49981097089a51e4781e72d294ef8958e35  /tmp/fm-lab.5qv42W/data/officers/progress/progress-state.json
+---
+> 065b99d8259d6b3f2435c0a236062bd0973b27d56f69a4a62400d4a36a557485  /tmp/fm-lab.5qv42W/data/officers/progress/2026-10-25.json
+> 5c3366bd57c7605beb151c3687b59ef5e6d2b8ffd811565e336f036e4e1f3284  /tmp/fm-lab.5qv42W/data/officers/progress/progress-state.json
+== check (watcher body) reports the digest once:
+officer progress: 2026-10-25: 8 actionable finding(s) in data/officers/progress/2026-10-25.md
+rc=0
+-- second check:
+rc=0
+1793033769 2026-10-25 ok 8
+1793033791 2026-10-25 ok 8

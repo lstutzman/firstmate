@@ -1,0 +1,19 @@
+$ fm-officer.sh list
+progress role=progress cadence="daily 07:00" check=absent
+rc=0
+$ fm-officer.sh register progress
+registered: officer progress (state/officer-progress.check.sh)
+rc=0
+$ fm-officer.sh run progress --date 2026-10-25
+DIGEST 2026-10-25 8 data/officers/progress/2026-10-25.md
+rc=0
+$ ls lane
+2026-10-25.json
+2026-10-25.md
+2026-10-25.start-requests.sh
+digest
+progress-state.json
+registered
+runs.log
+$ digest
+DIGEST 2026-10-25 8 data/officers/progress/2026-10-25.md
