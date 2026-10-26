@@ -132,6 +132,7 @@ def collect(cfg):
             alert = next((item for item in alerts if item.startswith(name + ' 7d ')), None)
             if alert:
                 reset = row['reset_7d']
+                # cpa-usage-axi's reset time drifts a minute between reads; key on the nearest hour.
                 try:
                     rounded = datetime.fromisoformat(reset.replace('Z', '+00:00')) + timedelta(minutes=30)
                     reset = rounded.replace(minute=0, second=0, microsecond=0).isoformat()
