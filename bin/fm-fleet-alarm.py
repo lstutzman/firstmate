@@ -175,7 +175,7 @@ done < "$2"
                 raise ValueError('invalid cached home summary')
             generated = summary['generated_epoch']
             if (type(generated) not in (int, float) or not math.isfinite(generated)
-                    or generated > time.time() or time.time() - generated >= cfg['stale_minutes'] * 60):
+                    or generated < 0 or max(0, time.time() - generated) >= cfg['stale_minutes'] * 60):
                 raise ValueError('cached home summary is stale or invalid')
             counts = summary['counts']
             work = [counts.get('in_flight', 0), counts['active_children'], counts['decisions_open'], counts['holds']]

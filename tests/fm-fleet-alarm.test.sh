@@ -128,6 +128,15 @@ key=hashlib.sha256(f'{name}\n{host}\n{remote}\n'.encode()).hexdigest()
 (cache/(key+'.json')).write_text(json.dumps(summary))
 PY_CACHE
 assert_contains "$(run_alarm check)" 'holding work silent' 'remote mate uses route-keyed cache without contacting the host'
+python3 - "$HOME_FIX" <<'PY_SKEW'
+from pathlib import Path
+import json,sys,time
+for path in (Path(sys.argv[1])/'state/secondmate-summary-cache').glob('*.json'):
+    value=json.loads(path.read_text())
+    value['generated_epoch']=int(time.time())+5
+    path.write_text(json.dumps(value))
+PY_SKEW
+assert_not_contains "$(run_alarm check)" 'inventory unavailable' 'a cached summary from a remote clock a few seconds ahead is fresh'
 python3 - "$HOME_FIX" <<'PY_CACHE'
 from pathlib import Path
 import json,sys
@@ -142,7 +151,7 @@ from pathlib import Path
 import json,sys,time
 home=Path(sys.argv[1])
 value=json.loads(next((home/'state/secondmate-summary-cache').glob('*.json')).read_text())
-value['generated_epoch']=int(time.time())
+value['generated_epoch']=int(time.time())+5
 (home/'remote-summary').write_text(json.dumps(value))
 PY_REMOTE
 mv "$HOME_FIX/state/secondmate-summary-cache" "$HOME_FIX/parent-cache-disabled"
