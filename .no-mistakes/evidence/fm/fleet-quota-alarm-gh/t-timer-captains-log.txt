@@ -1,0 +1,42 @@
+## T0 no lab watcher process running:
+0
+## T1 timer refuses without the fleet-ledger opt-in
+$ fm-fleet-alarm.py timer
+fleet-alarm: timer requires config/fleet-ledger for Captain's Log delivery
+[exit=1]
+## T2 timer with ledger on; alpha still 93% (the regular check already announced it)
+$ fm-fleet-alarm.py timer
+[exit=0]
+--- state/fleet-alarm.status:
+needs-decision [at=1793032590] [key=fleet-alarm]: alpha@example.invalid 7d 93% (resets 2026-10-29T16:34Z)
+--- ledger files:
+/tmp/fm-lab.RQ9gou/state/.fleet-alarm.fleet-ledger-offset
+/tmp/fm-lab.RQ9gou/state/.fleet-alarm.json
+/tmp/fm-lab.RQ9gou/state/fleet-alarm.status
+/tmp/fm-lab.RQ9gou/state/fleet-ledger.jsonl
+--- state/fleet-ledger.jsonl after T2:
+{"v":1,"ts":1793032590,"event":"task.status","task":"fleet-alarm","state":"needs-decision","key":"fleet-alarm","text":" alpha@example.invalid 7d 93% (resets 2026-10-29T16:34Z)"}
+## T3 timer rerun, same condition -> no duplicate card line
+$ fm-fleet-alarm.py timer
+[exit=0]
+1
+## T4 a regular check run does not consume the timer channel (new condition: pool)
+$ fm-fleet-alarm.py check
+alpha@example.invalid 7d 96% (resets 2026-10-29T16:36Z); beta@example.invalid 7d 90% (resets 2026-10-29T16:36Z); Claude pool near empty
+[exit=0]
+$ fm-fleet-alarm.py timer
+[exit=0]
+needs-decision [at=1793032600] [key=fleet-alarm]: alpha@example.invalid 7d 96% (resets 2026-10-29T16:36Z); beta@example.invalid 7d 90% (resets 2026-10-29T16:36Z); Claude pool near empty
+## T5 conditions clear -> timer publishes resolved
+$ fm-fleet-alarm.py timer
+[exit=0]
+$ fm-fleet-alarm.py timer
+[exit=0]
+--- state/fleet-alarm.status:
+needs-decision [at=1793032590] [key=fleet-alarm]: alpha@example.invalid 7d 93% (resets 2026-10-29T16:34Z)
+needs-decision [at=1793032600] [key=fleet-alarm]: alpha@example.invalid 7d 96% (resets 2026-10-29T16:36Z); beta@example.invalid 7d 90% (resets 2026-10-29T16:36Z); Claude pool near empty
+resolved [at=1793032600] [key=fleet-alarm]: Fleet alarm conditions cleared
+--- state/fleet-ledger.jsonl:
+{"v":1,"ts":1793032590,"event":"task.status","task":"fleet-alarm","state":"needs-decision","key":"fleet-alarm","text":" alpha@example.invalid 7d 93% (resets 2026-10-29T16:34Z)"}
+{"v":1,"ts":1793032600,"event":"task.status","task":"fleet-alarm","state":"needs-decision","key":"fleet-alarm","text":" alpha@example.invalid 7d 96% (resets 2026-10-29T16:36Z); beta@example.invalid 7d 90% (resets 2026-10-29T16:36Z); Claude pool near empty"}
+{"v":1,"ts":1793032600,"event":"task.status","task":"fleet-alarm","state":"resolved","key":"fleet-alarm","text":" Fleet alarm conditions cleared"}

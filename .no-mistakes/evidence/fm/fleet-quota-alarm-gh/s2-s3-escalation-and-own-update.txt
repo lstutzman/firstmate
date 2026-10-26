@@ -1,0 +1,13 @@
+## S2 adversarial: main appends a fresh no-reply escalation (fm-pending-reply-lib key) to the silent mate's status
+working [at=1793026947]: started long-build
+blocked [key=pending-reply-corr-9] [at=1793032413]: no reply to corr-9
+agent_age_seconds={"age_seconds":30,"agent_age_seconds":5496}
+(record cleared first so a fresh alert would be visible)
+$ fm-fleet-alarm.py check
+Secondmate holding work silent over 60 minutes: quiet-mate
+[exit=0]
+## S3 mate writes its own stamped update -> silence clears
+agent_age_seconds=21
+$ fm-fleet-alarm.py check
+[exit=0]
+{"conditions":{},"timer_open":false}

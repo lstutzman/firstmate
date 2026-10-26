@@ -1,0 +1,7 @@
+## S1 silent mate holding in-flight work (own last line 90m ago, spawned 2h ago); quota 20%/30%
+$ fm-fleet-alarm.py check
+Secondmate holding work silent over 60 minutes: quiet-mate
+[exit=0]
+## S1b rerun (dedupe)
+$ fm-fleet-alarm.py check
+[exit=0]

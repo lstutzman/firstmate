@@ -1,0 +1,42 @@
+## G1 linux timer files
+$ fm-fleet-alarm.py timer-files linux /tmp/fm-lab.RQ9gou/units
+[exit=0]
+--- firstmate-fleet-alarm.service
+[Service]
+Type=oneshot
+Environment="FM_HOME=/tmp/fm-lab.RQ9gou"
+Environment="PATH=<captured PATH>"
+ExecStart="/usr/bin/python3" "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5WEZF0YDNJKJGPJX8N3DSKV/bin/fm-fleet-alarm.py" "timer"
+--- firstmate-fleet-alarm.timer
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+[Install]
+WantedBy=timers.target
+## G1b systemd-analyze verify (read-only)
+[verify exit=0]
+## G1c overwrite refused
+$ fm-fleet-alarm.py timer-files linux /tmp/fm-lab.RQ9gou/units
+fleet-alarm: [Errno 17] File exists: '/tmp/fm-lab.RQ9gou/units/firstmate-fleet-alarm.service'
+[exit=1]
+## G2 darwin plist
+$ fm-fleet-alarm.py timer-files darwin /tmp/fm-lab.RQ9gou/la
+[exit=0]
+{
+ "EnvironmentVariables": {
+  "FM_HOME": "/tmp/fm-lab.RQ9gou",
+  "PATH": "<captured PATH>"
+ },
+ "Label": "com.firstmate.fleet-alarm",
+ "ProgramArguments": [
+  "/usr/bin/python3",
+  "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5WEZF0YDNJKJGPJX8N3DSKV/bin/fm-fleet-alarm.py",
+  "timer"
+ ],
+ "RunAtLoad": true,
+ "StartInterval": 300
+}
+## G3 run the generated service's ExecStart with its Environment, as systemd would (watcher stopped), new condition
+[exit=0]
+needs-decision [at=1793032613] [key=fleet-alarm]: Claude quota reading stale: alpha@example.invalid
+{"v":1,"ts":1793032613,"event":"task.status","task":"fleet-alarm","state":"needs-decision","key":"fleet-alarm","text":" Claude quota reading stale: alpha@example.invalid"}

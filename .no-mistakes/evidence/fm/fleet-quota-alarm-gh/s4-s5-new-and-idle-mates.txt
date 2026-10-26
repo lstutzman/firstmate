@@ -1,0 +1,13 @@
+## S4 adversarial: mate spawned 5 min ago, holding work, no status lines yet
+{"spawn_gen":"s1793032154.1.1","in_flight":1,"agent":null}
+$ fm-fleet-alarm.py check
+[exit=0]
+## S4b same mate, spawn 61 min ago, still no line
+$ fm-fleet-alarm.py check
+Secondmate holding work silent over 60 minutes: quiet-mate
+[exit=0]
+## S5 idle mate (nothing in flight), silent 2h -> healthy
+{"counts":{"in_flight":0,"active_children":0,"decisions_open":0,"holds":0,"queued":0,"landed":0,"endpoints":0},"agent":7201}
+$ fm-fleet-alarm.py check
+[exit=0]
+{"conditions":{},"timer_open":false}

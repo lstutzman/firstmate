@@ -1,0 +1,15 @@
+ok - weekly threshold uses tool check and deduplicates per reset window
+ok - pool exhaustion, stale readings and malformed data alert
+ok - in-flight and decision work alarm after 60 minutes of agent silence; agent communication clears
+ok - in-flight programs count even without an active worker
+ok - silence without an agent event is measured from spawn
+ok - independent timer delivery survives prior check receipt and deduplicates
+ok - read failures retain dedupe history and healthy timer reads close alerts
+ok - launchd and systemd timer files target the primary home
+ok - account alerts preserve healthy pool reserves and exclude other providers
+ok - one account without a reading does not blind the others
+ok - accounts without a reading for seven days are ignored and counted
+ok - configuration cannot exceed the registered check deadline
+ok - operator thresholds control quota, staleness and silence
+ok - registry read failures cannot appear healthy
+ok - arming uses the existing trust registration and refuses replacement

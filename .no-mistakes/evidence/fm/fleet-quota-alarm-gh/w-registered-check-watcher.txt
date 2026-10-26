@@ -1,0 +1,5 @@
+## W2 (retry 3, wake queue acknowledged) real watcher sweep; alpha at 93%
+[watch exit=0]
+--- watcher stdout:
+check: /tmp/fm-lab.RQ9gou/state/fleet-alarm.check.sh: alpha@example.invalid 7d 93% (resets 2026-10-29T16:34Z)
+--- watcher stderr (tail):

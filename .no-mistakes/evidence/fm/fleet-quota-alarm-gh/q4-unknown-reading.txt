@@ -1,0 +1,12 @@
+## Q4 (re-run from cleared state) account with no reading at all
+{"conditions":{},"timer_open":false}
+# accounts: alpha@example.invalid:none:5 beta@example.invalid:0.30:5
+accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  alpha@example.invalid,claude,,,,,,,0
+  beta@example.invalid,claude,0.20,2026-10-26T17:34Z,0.30,2026-10-29T16:34Z,2026-10-26T16:29Z,5,0
+$ fm-fleet-alarm.py check
+Claude quota reading unknown: alpha@example.invalid
+[exit=0]
+# accounts: alpha@example.invalid:0.20:5 beta@example.invalid:0.30:5
+$ fm-fleet-alarm.py check
+[exit=0]

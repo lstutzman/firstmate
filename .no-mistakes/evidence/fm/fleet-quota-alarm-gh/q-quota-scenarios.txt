@@ -1,0 +1,47 @@
+## Q1 one Claude account passes 90% of its 7-day window
+# accounts: alpha@example.invalid:0.91:5 beta@example.invalid:0.30:5
+$ fm-fleet-alarm.py check
+alpha@example.invalid 7d 91% (resets 2026-10-29T16:34Z)
+[exit=0]
+## Q1b same window, rerun -> deduplicated
+$ fm-fleet-alarm.py check
+[exit=0]
+## Q1c weekly reset rolls to a new window, still 91% -> rearms
+# accounts: alpha@example.invalid:0.91:5:6 beta@example.invalid:0.30:5
+$ fm-fleet-alarm.py check
+alpha@example.invalid 7d 91% (resets 2026-11-01T16:34Z)
+[exit=0]
+## Q1d boundary: 89% -> no alarm (clears)
+# accounts: alpha@example.invalid:0.89:5 beta@example.invalid:0.30:5
+$ fm-fleet-alarm.py check
+[exit=0]
+## Q2 pool near empty (mean remaining <= 10%)
+# accounts: alpha@example.invalid:0.95:5 beta@example.invalid:0.88:5
+$ fm-fleet-alarm.py check
+alpha@example.invalid 7d 95% (resets 2026-10-29T16:34Z); Claude pool near empty
+[exit=0]
+# accounts: alpha@example.invalid:0.20:5 beta@example.invalid:0.30:5
+## Q3 stale reading: alpha last observed 150 minutes ago
+# accounts: alpha@example.invalid:0.20:150 beta@example.invalid:0.30:5
+$ fm-fleet-alarm.py check
+Claude quota reading stale: alpha@example.invalid
+[exit=0]
+## Q4 account with no reading at all
+# accounts: alpha@example.invalid:none:5 beta@example.invalid:0.30:5
+$ fm-fleet-alarm.py check
+[exit=0]
+## Q5 retired account (no reading for 8 days): not stale, out of pool, counted once
+# accounts: alpha@example.invalid:0.99:11520 beta@example.invalid:0.30:5
+$ fm-fleet-alarm.py check
+1 ignored stale Claude accounts (no reading for 7 days)
+[exit=0]
+$ fm-fleet-alarm.py check
+[exit=0]
+## Q6 quota reader unavailable (usage DB missing)
+$ fm-fleet-alarm.py check
+Claude quota unavailable; reading may be stale
+[exit=0]
+# accounts: alpha@example.invalid:0.20:5 beta@example.invalid:0.30:5
+$ fm-fleet-alarm.py check
+[exit=0]
+(healthy again)
