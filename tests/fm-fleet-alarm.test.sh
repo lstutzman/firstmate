@@ -8,7 +8,7 @@ TMP_ROOT=$(fm_test_tmproot fm-fleet-alarm)
 HOME_FIX="$TMP_ROOT/home"
 BIN_FIX="$TMP_ROOT/bin"
 mkdir -p "$HOME_FIX/state" "$HOME_FIX/config" "$BIN_FIX"
-cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm-timeout-lib.sh" "$BIN_FIX/"
+cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-env-lib.sh" "$BIN_FIX/"
 cat > "$BIN_FIX/cpa-usage-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_HOME/quota-calls"
@@ -32,13 +32,15 @@ SH
 chmod +x "$BIN_FIX/"*.sh "$BIN_FIX/cpa-usage-axi"
 
 quota() {
-  local used=$1 age=${2:-1} reset=${3:-window1}
+  local used=$1 age=${2:-1} reset=${3:-window1} percent
+  percent=${used#0.}
+  [ "$used" != 1 ] || percent=100
   printf '%s\n' 'accounts[1]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:' \
     "  member@example.invalid,claude,0.2,,$used,$reset,,$age,0" > "$HOME_FIX/accounts"
   if [ "$used" = 0.2 ]; then
     : > "$HOME_FIX/threshold"
   else
-    printf '%s\n' "alert: member@example.invalid 7d ${used#0.}% (resets $reset)" > "$HOME_FIX/threshold"
+    printf '%s\n' "alert: member@example.invalid 7d $percent% (resets $reset)" > "$HOME_FIX/threshold"
   fi
 }
 # The watcher summary and main's own last line are always fresh here; only the
@@ -63,6 +65,24 @@ out=$(run_alarm check)
 [ -z "$out" ] || fail "idle mates and healthy quota must be silent: $out"
 pass 'idle secondmate never alarms, regardless of silence'
 
+printf '  # Quota reader host\n\n \t \n \tlocal \t\r\nignored-host\n' > "$HOME_FIX/config/cpa-usage-host"
+quota 0.91
+out=$(run_alarm check)
+assert_contains "$out" '7d 91%' 'commented host config reaches the quota reader'
+assert_not_contains "$out" 'configuration invalid' 'comments and whitespace are accepted'
+mv "$HOME_FIX/config/cpa-usage-host" "$HOME_FIX/host-config-cleared"
+quota 0.2
+run_alarm check >/dev/null
+pass 'host config uses the first non-comment non-blank line with surrounding whitespace trimmed'
+
+printf '%s\n' 'invalid host contents' > "$HOME_FIX/config/cpa-usage-host"
+out=$(run_alarm check)
+assert_contains "$out" 'Fleet alarm configuration invalid: invalid cpa-usage-host' 'collection error reason reaches output'
+assert_not_contains "$out" 'invalid host contents' 'invalid config contents are not exposed'
+mv "$HOME_FIX/config/cpa-usage-host" "$HOME_FIX/invalid-host-config-cleared"
+run_alarm check >/dev/null
+pass 'collection errors report the actual reason without echoing config contents'
+
 quota 0.91
 out=$(run_alarm check)
 assert_contains "$out" '7d 91%' 'account threshold'
@@ -78,6 +98,22 @@ pass 'weekly threshold uses tool check and deduplicates per reset window'
 
 quota 0.2
 run_alarm check >/dev/null
+quota 1 1 2026-10-30T15:00Z
+assert_contains "$(run_alarm check)" 'member@example.invalid 7d 100%' 'first exhausted account reading alerts'
+quota 1 1 2026-10-30T14:59Z
+[ -z "$(run_alarm check)" ] || fail 'one-minute backwards reset drift must not re-alert'
+quota 1 1 2026-11-06T14:59Z
+assert_contains "$(run_alarm check)" 'member@example.invalid 7d 100%' 'a different weekly reset window rearms'
+quota 0.2
+run_alarm check >/dev/null
+quota 1 1 2026-10-27T05:59Z
+assert_contains "$(run_alarm check)" 'member@example.invalid 7d 100%' 'first reading before the hour alerts'
+quota 1 1 2026-10-27T06:00Z
+[ -z "$(run_alarm check)" ] || fail 'one-minute forwards reset drift must not re-alert'
+pass 'minute-level reset drift deduplicates within the hour while new weekly windows rearm'
+
+quota 0.2
+run_alarm check >/dev/null
 quota 0.99
 assert_contains "$(run_alarm check)" 'pool near empty' 'pool threshold'
 quota 0.2 121
@@ -86,7 +122,7 @@ assert_contains "$(run_alarm check)" 'reading stale' 'stale account snapshot'
 quota 0.2
 run_alarm check >/dev/null
 printf '%s\n' bad > "$HOME_FIX/accounts"
-assert_contains "$(run_alarm check)" 'quota unavailable' 'malformed data is unknown, not healthy'
+assert_contains "$(run_alarm check)" 'Claude quota unavailable; reading may be stale: ValueError: no accounts header in quota reading' 'malformed data is unknown, not healthy, and names its cause'
 quota 0.2
 run_alarm check >/dev/null
 pass 'pool exhaustion, stale readings and malformed data alert'
@@ -246,6 +282,18 @@ jq '.secondmate_current.registry.complete=false' "$HOME_FIX/snapshot" > "$HOME_F
 mv "$HOME_FIX/next-snapshot" "$HOME_FIX/snapshot"
 assert_contains "$(run_alarm check)" 'inventory incomplete' 'incomplete registry alerts'
 pass 'registry read failures cannot appear healthy'
+
+mate 0 0 0
+run_alarm check >/dev/null
+printf '%s\n' '{}' > "$HOME_FIX/snapshot"
+assert_contains "$(run_alarm check)" "Secondmate work inventory unavailable: KeyError: 'secondmate_current'" 'inventory failure names its cause'
+mate 0 0 0
+run_alarm check >/dev/null
+: > "$HOME_FIX/quota-fail"
+assert_contains "$(run_alarm check)" 'Claude quota unavailable; reading may be stale: ValueError: reader unavailable or timed out' 'quota failure names its cause'
+mv "$HOME_FIX/quota-fail" "$HOME_FIX/quota-fail-cleared"
+run_alarm check >/dev/null
+pass 'reader failures report the exception type and reason'
 
 cat > "$BIN_FIX/fm-check-register.sh" <<'SH'
 #!/usr/bin/env bash

@@ -15,6 +15,7 @@ arm registers the private check shim. timer-files only writes scheduler files;
 it never loads or starts a scheduler. See docs/configuration.md for installation.
 """
 import csv
+from datetime import datetime, timedelta
 import fcntl
 import io
 import json
@@ -69,7 +70,9 @@ def settings():
 
 def accounts(text):
     lines = text.splitlines()
-    header = next(line for line in lines if line.startswith('accounts['))
+    header = next((line for line in lines if line.startswith('accounts[')), None)
+    if header is None:
+        raise ValueError('no accounts header in quota reading')
     fields = header.split('{', 1)[1].split('}', 1)[0].split(',')
     rows = list(csv.DictReader(io.StringIO('\n'.join(
         line.strip() for line in lines[lines.index(header) + 1:]
@@ -99,8 +102,8 @@ def collect(cfg):
             raise ValueError('reader budget exhausted')
         return run(argv, max(1, int(remaining / share)))
 
-    host_file = CONFIG / 'cpa-usage-host'
-    host = host_file.read_text().strip() if host_file.exists() else 'local'
+    host = read(['bash', '-c', '. "$1/fm-env-lib.sh"; fm_config_line "$2" cpa-usage-host',
+                 'fleet-alarm', BIN, CONFIG]).rstrip('\n') or 'local'
     if host == 'local' or host == os.uname().nodename.split('.')[0]:
         cpa = ['cpa-usage-axi']
     elif host and all(c.isalnum() or c in '.@_-' for c in host) and not host.startswith('-'):
@@ -128,7 +131,14 @@ def collect(cfg):
                 findings['stale:' + name] = f'Claude quota reading stale: {name}'
             alert = next((item for item in alerts if item.startswith(name + ' 7d ')), None)
             if alert:
-                key = 'quota:' + name + ':' + row['reset_7d']
+                reset = row['reset_7d']
+                # cpa-usage-axi's reset time drifts a minute between reads; key on the nearest hour.
+                try:
+                    rounded = datetime.fromisoformat(reset.replace('Z', '+00:00')) + timedelta(minutes=30)
+                    reset = rounded.replace(minute=0, second=0, microsecond=0).isoformat()
+                except ValueError:
+                    pass
+                key = 'quota:' + name + ':' + reset
                 findings[key] = alert
         if ignored:
             findings[f'ignored:{ignored}'] = f'{ignored} ignored stale Claude accounts (no reading for 7 days)'
@@ -136,8 +146,8 @@ def collect(cfg):
             raise ValueError('no current Claude quota readings')
         if sum(1 - used for used in pool) / len(pool) <= cfg['pool_remaining']:
             findings['pool'] = 'Claude pool near empty'
-    except (ValueError, KeyError, StopIteration, OSError):
-        findings['quota-read'] = 'Claude quota unavailable; reading may be stale'
+    except (ValueError, KeyError, OSError) as error:
+        findings['quota-read'] = f'Claude quota unavailable; reading may be stale: {type(error).__name__}: {error}'
     try:
         snapshot = json.loads(read([BIN / 'fm-fleet-snapshot.sh', '--json']))
         mates = snapshot['secondmate_current']
@@ -160,8 +170,8 @@ def collect(cfg):
             ages = [a for a in ages if isinstance(a, (int, float)) and a >= 0]
             if not ages or min(ages) > cfg['silent_minutes'] * 60:
                 findings['silent:' + mate['id']] = f"Secondmate holding work silent over {cfg['silent_minutes']:g} minutes: {mate['id']}"
-    except (ValueError, KeyError, TypeError, OSError):
-        findings['mate-read'] = 'Secondmate work inventory unavailable'
+    except (ValueError, KeyError, TypeError, OSError) as error:
+        findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
     return findings
 
 
@@ -178,8 +188,8 @@ def check(channel):
         timer_open = stored.get('timer_open', False)
         try:
             current = collect(settings())
-        except (ValueError, OSError):
-            current = {'config': 'Fleet alarm configuration invalid'}
+        except (ValueError, OSError) as error:
+            current = {'config': f'Fleet alarm configuration invalid: {error}'}
         fresh = {key: value for key, value in current.items()
                  if channel not in old.get(key, [])}
         # An unavailable reader does not prove that its previous alarms cleared.
