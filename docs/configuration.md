@@ -911,9 +911,11 @@ The triage and friction officers read this home and each local second mate home 
 The progress officer finds unstarted work and initiates it through executable requests firstmate runs under Lee's standing authority of 2026-10-26.
 It reads this home's and every registered local or remote second mate home's Markdown backlog and task status, Linear issues and their parents, and open PRs in `repos`.
 Remote home reads run the same read-only scanner over SSH.
-The complete team listing supplies each issue's state, priority, URL, and project; only open issues and the ancestors they reach are read one by one for their parent and full description, which avoids the 50-child limit of Linear's sub-issue view, so completed intermediate parents do not hide unstarted descendants.
+The cursor-paginated team listing supplies each issue's state, priority, URL, project, and available description; only requested-root subtrees receive full issue and child reads, retaining completed intermediate parents.
 Only identifiers that match the configured `team` key, such as `PC-123`, count as Linear links; other tokens of that shape, such as `CVE-2026-12345`, are ignored.
 Linear's unblocked listing supplies dependency exclusions.
+The dated JSON's `linear_coverage` records pages fetched, items seen, CLI requests, hierarchy reads, and rate-limit retries; the digest and run log print the same counts and specific failure causes.
+The progress script's header owns request, page, and backoff bounds, including the CLI's unpageable sub-issue limit.
 A missing home, failed read, capped Linear listing, or unsupported non-Markdown backlog is a coverage gap: the state still reports available evidence, but starts and filler wait for complete coverage.
 The pass reads current records; the common officer scheduler's date names the run rather than a historical snapshot.
 

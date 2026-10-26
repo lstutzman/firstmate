@@ -9,6 +9,14 @@ Usage: fm-officer-progress.py run --date YYYY-MM-DD --out <lane>
 Reads backlog rows and task status without changing them. Only this officer's
 lane receives dated JSON, Markdown, and the latest progress-state.json.
 The registry and state schema are documented in docs/configuration.md.
+Linear reads use 100-item cursor pages, at most 100 pages per listing and
+300 CLI requests total (including two retries per rate-limited request).
+Requests start at least 0.25 seconds apart; retries back off exponentially,
+honor numeric retry-after seconds, and stop rather than wait over 60 seconds.
+Hierarchy reads visit only configured requested roots and their descendants.
+A 50-child response is incomplete because linear-axi exposes no child cursor.
+Coverage counters include both team and unblocked listings, counting each
+returned entry; team_items and unblocked_items separate those passes.
 No model calls, dispatch, steering, Linear writes, or GitHub writes.
 """
 
@@ -141,52 +149,156 @@ def command(args, input_bytes=None):
     return proc.stdout.decode("utf-8")
 
 
-def linear(args):
-    doc = json.loads(command(["linear-axi", "issue"] + args + ["--output", "json"]))
-    if not isinstance(doc, dict) or not doc.get("ok") or not isinstance(doc.get("data"), dict):
-        raise RuntimeError("Linear read returned no successful data object")
-    return doc["data"]
+class LinearDiscovery:
+    """Bound every CLI request, including retries and requested-root reads."""
+
+    def __init__(self):
+        self.stats = {"pages_fetched": 0, "items_seen": 0, "requests": 0,
+                      "roots_visited": 0, "hierarchy_items": 0, "rate_limit_retries": 0,
+                      "team_items": 0, "unblocked_items": 0}
+        self.last_request = 0
+        self.stopped_reason = None
+
+    def read(self, args):
+        for attempt in range(3):
+            if self.stopped_reason:
+                raise RuntimeError(self.stopped_reason)
+            if self.stats["requests"] >= 300:
+                raise RuntimeError("request budget reached (300 requests)")
+            time.sleep(max(0, self.last_request + 0.25 - time.monotonic()))
+            self.stats["requests"] += 1
+            self.last_request = time.monotonic()
+            try:
+                proc = subprocess.run(["linear-axi", "issue"] + args + ["--output", "json"],
+                                      capture_output=True, timeout=120, check=False)
+            except subprocess.TimeoutExpired:
+                raise RuntimeError("timeout after 120 seconds") from None
+            except OSError:
+                raise RuntimeError("linear-axi could not be executed") from None
+            try:
+                doc = json.loads(proc.stdout)
+            except ValueError:
+                raise RuntimeError("invalid JSON response (exit %d)" % proc.returncode) from None
+            if not isinstance(doc, dict):
+                raise RuntimeError("response is not an object")
+            if proc.returncode or not doc.get("ok"):
+                error = doc.get("error") or {}
+                if not isinstance(error, dict):
+                    raise RuntimeError("malformed error object")
+                code = str(error.get("code", "UNKNOWN_ERROR"))
+                # Never echo external messages or stderr: they may contain credentials.
+                if not re.fullmatch(r"[A-Z_]{1,64}", code):
+                    code = "UNKNOWN_ERROR"
+                # Some CLI versions wrap SDK rate-limit errors as UNKNOWN.
+                if code == "UNKNOWN" and re.search(r"rate[ _-]*limit|too many requests",
+                                                    str(error.get("message", "")), re.I):
+                    code = "RATE_LIMITED"
+                delay = error.get("retryAfter", error.get("retryAfterSeconds"))
+                if not isinstance(delay, (int, float)) or isinstance(delay, bool) or delay < 0:
+                    delay = None
+                reason = "%s (exit %d)" % (code, proc.returncode)
+                if code == "RATE_LIMITED":
+                    reason += "; retry-after=" + (str(delay) + "s" if delay is not None else "not supplied")
+                    wait = max((2 ** attempt) if delay is not None else 30 * (2 ** attempt), delay or 0)
+                    if attempt < 2 and wait <= 60:
+                        self.stats["rate_limit_retries"] += 1
+                        time.sleep(wait)
+                        continue
+                    reason += "; retry budget exhausted" if attempt == 2 else "; exceeds 60s backoff budget"
+                    self.stopped_reason = reason
+                raise RuntimeError(reason)
+            if not isinstance(doc.get("data"), dict):
+                raise RuntimeError("response has no data object")
+            return doc["data"]
+
+    def listing(self, team, rows, unblocked=False):
+        cursors, cursor = set(), None
+        label = "unblocked listing" if unblocked else "team listing"
+        for _ in range(100):
+            args = ["list", "--team", team, "--limit", "100", "--all", "--max-items", "100",
+                    "--fields", "stateType,priority,url,project,description"]
+            if unblocked:
+                args.append("--unblocked")
+            if cursor:
+                args += ["--after", cursor]
+            try:
+                page = self.read(args)
+                entries = page["issues"]
+                if not isinstance(entries, list):
+                    raise RuntimeError("issues is not a list")
+                self.stats["pages_fetched"] += 1
+                self.stats["items_seen"] += len(entries)
+                rows.extend(entries)
+                self.stats["unblocked_items" if unblocked else "team_items"] += len(entries)
+                pagination = page.get("pagination")
+                if not isinstance(pagination, dict) or type(pagination.get("hasNextPage")) is not bool:
+                    raise RuntimeError("missing pagination metadata")
+                if not pagination.get("hasNextPage"):
+                    return rows
+                cursor = pagination.get("endCursor")
+                if not isinstance(cursor, str) or not cursor or cursor in cursors:
+                    raise RuntimeError("missing or repeated pagination cursor")
+                cursors.add(cursor)
+            except (RuntimeError, KeyError, TypeError) as exc:
+                raise RuntimeError(label + ": " + (str(exc) if isinstance(exc, RuntimeError)
+                                                   else "malformed page data")) from None
+        raise RuntimeError(label + ": page cap reached (100 pages)")
 
 
-def linear_rows(team, home):
-    listed = linear(["list", "--team", team, "--all", "--max-items", "10000",
-                     "--fields", "stateType,priority,url,project"])
-    if (listed.get("pagination") or {}).get("hasNextPage"):
-        raise RuntimeError("Linear issue list is incomplete (over 10000 items)")
-    unblocked = linear(["list", "--team", team, "--unblocked", "--all", "--max-items", "10000"])
-    if (unblocked.get("pagination") or {}).get("hasNextPage"):
-        raise RuntimeError("Linear unblocked list is incomplete")
-    clear = {r["identifier"] for r in unblocked["issues"]}
+def linear_rows(team, home, requested, discovery, problems):
+    listed, unblocked = [], []
+    for entries, is_unblocked in ((listed, False), (unblocked, True)):
+        try:
+            discovery.listing(team, entries, unblocked=is_unblocked)
+        except RuntimeError as exc:
+            problems.append("Linear discovery: " + str(exc))
+    clear = {r["identifier"] for r in unblocked}
 
     def linear_row(entry):
         text = entry["title"] + "\n" + (entry.get("description") or "")
         row = item(entry["identifier"], entry["title"], home, text,
                    {m[1].strip(): m[2].strip() for m in TAG.finditer(text)})
+        parent = LINEAR_ID.match(entry.get("parent") or "")
         row.update({"linear_id": entry["identifier"], "linear_ids": [entry["identifier"]],
                     "priority": entry.get("priority") or 0, "project": entry.get("project") or "",
-                    "link": entry.get("url") or "", "parent": None, "linear_only": True,
+                    "link": entry.get("url") or "", "parent": parent[0] if parent else None,
+                    "linear_only": True,
                     "state": str(entry.get("stateType") or entry["state"]).lower(),
                     "evidence": ["Linear " + entry["identifier"]]})
         row["linear_blocked"] = row["id"] not in clear and row["state"] in UNSTARTED
         return row
 
-    rows = {entry["identifier"]: linear_row(entry) for entry in listed["issues"]}
-    # Only open issues and the ancestors they reach need a parent read.
-    pending = [r["id"] for r in rows.values() if r["state"] not in FINISHED]
-    viewed = set()
+    rows = {entry["identifier"]: linear_row(entry) for entry in listed}
+    pending, viewed = sorted(requested), set()
     for identifier in pending:
         if identifier in viewed:
             continue
-        if len(viewed) >= 10000:
-            raise RuntimeError("Linear ancestor discovery exceeded 10000 items")
-        viewed.add(identifier)
-        detail = linear(["view", identifier, "--full"])["issue"]
-        row = rows.setdefault(identifier, linear_row(detail))
-        row["tags"] = linear_row(detail)["tags"]
-        parent = LINEAR_ID.match(detail.get("parent") or "")
-        row["parent"] = parent[0] if parent else None
-        if row["parent"]:
-            pending.append(row["parent"])
+        try:
+            detail = discovery.read(["view", identifier, "--full", "--sub-issues"])
+            entry = detail["issue"]
+            children = detail["subIssues"]
+            if not isinstance(children, list):
+                raise RuntimeError("subIssues is not a list")
+            # linear-axi fetches at most 50 children and exposes no continuation.
+            if len(children) >= 50 or (detail.get("pagination") or {}).get("hasNextPage"):
+                raise RuntimeError("sub-issues page cap reached (no supported cursor)")
+            viewed.add(identifier)
+            discovery.stats["roots_visited"] += int(identifier in requested)
+            discovery.stats["hierarchy_items"] += 1
+            parent = rows.get(identifier, {}).get("parent")
+            rows[identifier] = linear_row(entry)
+            if parent:
+                rows[identifier]["parent"] = parent
+            for child in children:
+                child_id = child["identifier"]
+                if child_id not in rows:
+                    raise RuntimeError("sub-issue absent from complete team listing")
+                rows[child_id]["parent"] = identifier
+                pending.append(child_id)
+        except (RuntimeError, KeyError, TypeError) as exc:
+            problems.append("Linear discovery: requested tree %s: %s" %
+                            (identifier, str(exc) if isinstance(exc, RuntimeError) else "malformed hierarchy data"))
+            break
     return list(rows.values())
 
 
@@ -540,6 +652,11 @@ def render_md(doc):
     lines.extend(["## Unclassified", "", "- %d open items have no recorded start class and are not listed."
                   % doc["unclassified"], ""])
     lines.extend(["## Coverage", ""] + ["- " + p for p in doc["coverage"]])
+    stats = doc["linear_coverage"]
+    lines.append("- Linear: %(pages_fetched)d pages, %(items_seen)d items seen, %(requests)d requests, "
+                 "%(team_items)d team items, %(unblocked_items)d unblocked items, "
+                 "%(roots_visited)d requested roots visited, %(hierarchy_items)d hierarchy items, "
+                 "%(rate_limit_retries)d rate-limit retries." % stats)
     if not doc["coverage"]:
         lines.append("- All configured sources read.")
     return "\n".join(lines) + "\n"
@@ -581,15 +698,25 @@ def main(argv):
             problems.extend(snapshot["problems"])
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
             problems.append("home records unavailable: " + home)
+    requested = set(filter(None, args.requested.split(",")))
+    for snapshot in snapshots:
+        for row in snapshot["rows"]:
+            if row["tags"].get("requested-by", "").lower() == "lee":
+                requested.update(i for i in row["linear_ids"]
+                                 if re.fullmatch(re.escape(args.team) + r"-\d+", i))
+    discovery = LinearDiscovery()
     try:
-        issues = linear_rows(args.team, args.home[0])
-    except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired):
-        problems.append("Linear discovery unavailable or incomplete")
+        issues = linear_rows(args.team, args.home[0], requested, discovery, problems)
+    except (KeyError, TypeError, ValueError):
+        problems.append("Linear discovery: malformed issue data")
+    except RuntimeError as exc:
+        problems.append("Linear discovery: " + str(exc))
     try:
         prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()])
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         problems.append("open PR discovery unavailable or incomplete")
     doc = judge(snapshots, issues, set(filter(None, args.requested.split(","))), prs, problems, args.team)
+    doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
     doc["generated_at"] = datetime.datetime.fromtimestamp(
@@ -612,6 +739,12 @@ def main(argv):
     write(page_path, page_state(doc, args.officer, previous, args.repos, args.captains_log, reported))
     with open(os.path.join(args.out, args.date + ".md"), "w", encoding="utf-8") as fh:
         fh.write(render_md(doc))
+    print("Linear coverage: %(pages_fetched)d pages, %(items_seen)d items seen, %(requests)d requests, "
+          "%(team_items)d team items, %(unblocked_items)d unblocked items, "
+          "%(roots_visited)d requested roots visited, %(hierarchy_items)d hierarchy items, "
+          "%(rate_limit_retries)d rate-limit retries." % discovery.stats)
+    for problem in problems:
+        print("Coverage gap: " + problem)
     print("DIGEST %s %d %s.md" % (
         args.date, len(doc["start_requests"]) + len(doc["asks_for_lee"]) + len(doc["coverage"])
         + int(doc["filler"] is not None), args.date))
