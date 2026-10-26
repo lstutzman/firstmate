@@ -54,7 +54,8 @@
 # finished run, and officers listed in a second mate home.
 #
 # Roles: triage (bin/fm-officer-triage.py), landing
-# (bin/fm-officer-landing.py), and friction (bin/fm-officer-friction.py); each
+# (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py), and
+# progress (bin/fm-officer-progress.py); each
 # role script's header owns its pass.
 #
 # Officers run in the primary home only: register, run, and check refuse in a
@@ -71,7 +72,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/officers.md"
-OFFICER_ROLES="triage landing friction"
+OFFICER_ROLES="triage landing friction progress"
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -185,6 +186,14 @@ line_problem() {
   [ "$model" = none ] \
     || { printf 'officer %s: model "%s" is not available yet; slice 1 officers use model: none\n' "$id" "$model"; return; }
   case "$role" in
+    progress)
+      [ -n "$(line_field "$line" repos || true)" ] \
+        || { printf 'officer %s: a progress officer needs repos: <owner/repo,...>\n' "$id"; return; }
+      if line_field "$line" captains-log >/dev/null; then
+        [[ "$(line_field "$line" captains-log)" == https://*/api/captains-log ]] \
+          || { printf 'officer %s: captains-log must be an https URL ending /api/captains-log\n' "$id"; return; }
+      fi
+      ;;
     triage|friction)
       line_field "$line" archive >/dev/null \
         || { printf 'officer %s: a %s officer needs archive: <dir> or <host>:<dir>\n' "$id" "$role"; return; }
@@ -372,6 +381,28 @@ role_landing() {  # <date>
     --max-corrections "$(line_field "$OFFICER_LINE" max-corrections || echo 10)" \
     --reopen-state "$(line_field "$OFFICER_LINE" reopen-state || echo 'In Progress')" \
     --max-facts-age "$(line_field "$OFFICER_LINE" max-facts-age || echo 36)" --now "$(now_epoch)"
+}
+
+role_progress() {  # <date>: current records, dated with the common cadence's run date.
+  local home line
+  local -a args=(run --date "$1" --out "$OFFICER_LANE" --now "$(now_epoch)"
+    --team "$(line_field "$OFFICER_LINE" team || echo PC)"
+    --repos "$(line_field "$OFFICER_LINE" repos || true)"
+    --officer "$OFFICER_ID" --captains-log "$(line_field "$OFFICER_LINE" captains-log || true)"
+    --requested "$(line_field "$OFFICER_LINE" requested || true)")
+  args+=(--home "$FM_HOME")
+  if [ -f "$DATA/secondmates.md" ]; then
+    while IFS= read -r line; do
+      secondmate_registry_parse_line "$line" || continue
+      if [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
+        args+=(--home "$SECONDMATE_REGISTRY_HOST:$SECONDMATE_REGISTRY_HOME")
+      else
+        home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
+        args+=(--home "$home")
+      fi
+    done < "$DATA/secondmates.md"
+  fi
+  python3 -I "$SCRIPT_DIR/fm-officer-progress.py" "${args[@]}"
 }
 
 action_run() {

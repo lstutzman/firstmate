@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fleet-app progress officer state v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "officer",
+    "written_at",
+    "doing",
+    "done",
+    "asking"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "officer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60,
+      "pattern": "^[^\r\n]+$"
+    },
+    "written_at": {
+      "$ref": "#/$defs/time"
+    },
+    "stale_after_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10080
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "pattern": "^[^\r\n]+$"
+    },
+    "doing": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "$ref": "#/$defs/doing"
+      }
+    },
+    "done": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "$ref": "#/$defs/done"
+      }
+    },
+    "asking": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/instruction"
+          },
+          {
+            "$ref": "#/$defs/captains_log"
+          }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "time": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "Z$"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[^\r\n]+$"
+    },
+    "link": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "format": "uri",
+      "pattern": "^https://[^\\s]+$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "pattern": "^[^\r\n]+$"
+    },
+    "doing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "started_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "link": {
+          "$ref": "#/$defs/link"
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "pattern": "^[^\r\n]+$"
+        },
+        "started_at": {
+          "$ref": "#/$defs/time"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "done": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "description",
+        "at",
+        "outcome"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "link": {
+          "$ref": "#/$defs/link"
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        },
+        "outcome": {
+          "enum": [
+            "ok",
+            "failed",
+            "skipped"
+          ]
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[^\r\n]+$"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      }
+    },
+    "instruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "kind",
+        "question",
+        "waiting_on",
+        "link"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "const": "instruction"
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[^\r\n]+$"
+        },
+        "waiting_on": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[^\r\n]+$"
+        },
+        "link": {
+          "$ref": "#/$defs/link"
+        },
+        "asked_at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "source": {
+      "enum": [
+        "cve",
+        "review",
+        "bug",
+        "feature",
+        "fleet",
+        "filler"
+      ]
+    },
+    "captains_log": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "kind",
+        "link"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "const": "captains_log"
+        },
+        "link": {
+          "$ref": "#/$defs/link"
+        },
+        "asked_at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    }
+  }
+}

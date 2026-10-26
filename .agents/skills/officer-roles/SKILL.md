@@ -17,8 +17,8 @@ It never acts on the fleet.
 
 An officer may:
 
-- read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, GitHub read-only, and, for a friction officer, the Captain's Log cards fleet-app serves at `GET /api/captains-log`;
-- write its own lane, `data/officers/<id>/`: dated findings (a friction officer's include its fleet-app velocity findings file), its digest marker, `runs.log`, and its `check-record.*` files;
+- read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, GitHub read-only, and, for a friction officer, the Captain's Log cards fleet-app serves at `GET /api/captains-log`; a progress officer also reads Linear and registered remote homes read-only;
+- write its own lane, `data/officers/<id>/`: dated findings (including the friction officer's velocity file and the progress officer's state and executable start requests), its digest marker, `runs.log`, and its `check-record.*` files;
 - print its one report line from its watcher check;
 - for a landing officer, unless its registry line says `writes: none`, correct what PropertyCompass2's release workflow (the routine Done writer) missed, through `linear-axi` `--dry-run` then `--verify`, at most `max-corrections` written items a run (skips do not count):
   set Done on an item whose every linked PR the landing-truth facts show merged and in production and that has no sub-issues, or move a Done item the facts name, with a linked PR merged that never reached main (`on_main` false) or any release, to its `reopen-state`; a Done item on main but not yet in production is release lag, reported and never written;
@@ -30,7 +30,7 @@ An officer may never:
 - drain, acknowledge, or otherwise touch the wake queue;
 - spawn, steer, interrupt, relaunch, merge, land, or clean up any worker or second mate;
 - answer, hold, or close a captain call, or edit Captain's Log cards;
-- write to a project, another home, or any record outside its lane, Linear aside as above, or post its findings to fleet-app or any other service (the fleet app pulls a friction officer's velocity findings file from its lane);
+- write to a project, another home, or any record outside its lane, Linear aside as above, or post its findings to fleet-app or any other service (the fleet app pulls a friction officer's velocity findings file and a progress officer's `progress-state.json` from its lane);
 - write In Staging, make any Linear change other than those two corrections, or file a Linear item;
 - collect landing facts itself: the fleet-app landing-truth job owns them, and the officer only judges them;
 - run crew of its own, or call a model in slice 1 (`model: none`).
@@ -48,9 +48,13 @@ Never hand-write the check script or its trust record.
 A `check:` wake from `state/officer-<id>.check.sh` reading `officer <id>: <date>: <n> actionable finding(s) in <path>` is one new digest.
 
 1. Read the digest file it names; the `.json` beside it holds every session fact behind each finding.
-2. Treat each finding as evidence, not authorization: it names what an officer saw, never a change to make.
+2. Treat ordinary findings as evidence, not authorization; progress start requests use the standing authority and execution contract in [Progress officer](../../../docs/configuration.md#progress-officer).
 3. Route work the evidence supports through ordinary intake; file a tracker item only under the captain's standing rules for findings, and hold a real captain call through `bin/fm-captain-hold.sh hold`.
 4. Do not re-wake the captain for a digest with nothing new; the check already stays silent on repeats and empty digests.
+
+For a progress digest, firstmate runs the adjacent `<date>.start-requests.sh` to enqueue the automatic starts, then processes those inbox notes through ordinary intake without another prioritization decision.
+Apply the linked contract's freshness and readiness checks first; route its `asks_for_lee` to Captain's Log cards through the ordinary hold path.
+The officer itself still never spawns or steers; executing the handoff and dispatching are firstmate's actions.
 
 A wake reading `officer <id>: <date>: run failed <n> time(s): <reason>` means the scheduled run gave up for that date.
 Fix the named cause, then rerun the date with `bin/fm-officer.sh run <id> --date <date>`.

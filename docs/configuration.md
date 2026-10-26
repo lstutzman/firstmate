@@ -875,14 +875,16 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | Field | Meaning |
 | --- | --- |
 | `<id>` | Lowercase letters, digits, and dashes, at most 40 characters; names the lane `data/officers/<id>/` and the check `state/officer-<id>.check.sh` |
-| `role` | `triage`, `landing`, or `friction` |
+| `role` | `triage`, `landing`, `friction`, or `progress` |
 | `cadence` | `daily HH:MM` in the home's local time; the run for yesterday's date starts at the first watcher check after that time |
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
 | `archive` | Triage and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
 | `hosts` | Triage and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
-| `captains-log` | Friction only, optional: the fleet-app Captain's Log endpoint, an `https://` URL ending `/api/captains-log`, read with one `GET`; a card asked that day that no status line accounts for is counted as a Lee step, and an unreachable endpoint is a coverage note while the run continues on status logs and the archive |
+| `captains-log` | Optional `https://` URL ending `/api/captains-log`: friction reads its cards with one `GET` and reports unreachable coverage; progress uses its corresponding `/captains-log` page URL to link existing held cards without copying their questions |
 | `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2 with exactly the top-level keys `schema_version`, `generated_at`, `staging_sha`, `production_sha`, `records` keyed `<repo>#<pr>`, and `items` mapping each Linear id to its record keys; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
-| `team` | Landing only, optional: the Linear team key whose Done items are listed; default `PC` |
+| `team` | Landing and progress, optional: the Linear team key to read; default `PC` |
+| `repos` | Progress only, required: comma-separated GitHub `owner/repo` names whose open PRs prevent duplicate starts |
+| `requested` | Progress only, optional: comma-separated Linear root identifiers for features or fleet work Lee has already requested; children inherit that recorded authority at any depth |
 | `writes` | Landing only, optional: `corrections` (default) lets the officer correct what PropertyCompass2's release workflow, the routine Done writer, missed; `none` turns Linear writes off |
 | `max-corrections` | Landing only, optional: the most items one run may correct; default 10. An item skipped on its re-check does not count, and a run re-checks at most five items per allowed correction |
 | `reopen-state` | Landing only, optional: the state a Done item moves to when its linked PR never reached main (`on_main` false) or any release; default `In Progress`; `In Staging` and `Done` are refused. A Done item on main but not yet in production is release lag and is only reported |
@@ -895,6 +897,7 @@ Example:
 - triage - Joins each day's archived sessions to firstmate tasks and outcomes (role: triage; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 - landing - Reconciles Linear against landing evidence (role: landing; cadence: daily 06:30; facts: slartibartfast:/home/lee/services/landing-truth/latest.json; team: PC; writes: corrections; model: none; added 2026-10-24)
 - friction - Finds what slowed agents down, above all waits on Lee, and proposes a fix for each (role: friction; cadence: daily 06:15; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
+- progress - Starts authorised unstarted work through firstmate (role: progress; cadence: daily 07:00; team: PC; repos: example/project; requested: PC-123; model: none; added 2026-10-26)
 ```
 
 After adding a line, run `bin/fm-officer.sh register <id>` to install and trust its watcher check; `bin/fm-officer.sh retire <id>` removes the check and the line and keeps the findings.
@@ -902,6 +905,112 @@ Session start runs `bin/fm-officer.sh ensure`, which prints one `OFFICER:` line 
 A second mate home never runs officers: `register` and `run` refuse there, and `ensure` reports any registry it finds.
 The friction officer also writes `<date>.velocity-findings.json`, a fleet-app velocity findings file (`FINDINGS_SCHEMA` schema version 1, source `friction-officer`) for the velocity audit page (`/runs/velocity-audit`); it never posts that file itself. The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
 The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets them resolve tasks that were already cleaned up.
+
+### Progress officer
+
+The progress officer finds unstarted work and initiates it through executable requests firstmate runs under Lee's standing authority of 2026-10-26.
+It reads this home's and every registered local or remote second mate home's Markdown backlog and task status, Linear issues and their parents, and open PRs in `repos`.
+Remote home reads run the same read-only scanner over SSH.
+The complete team listing supplies each issue's state, priority, URL, and project; only open issues and the ancestors they reach are read one by one for their parent and full description, which avoids the 50-child limit of Linear's sub-issue view, so completed intermediate parents do not hide unstarted descendants.
+Only identifiers that match the configured `team` key, such as `PC-123`, count as Linear links; other tokens of that shape, such as `CVE-2026-12345`, are ignored.
+Linear's unblocked listing supplies dependency exclusions.
+A missing home, failed read, capped Linear listing, or unsupported non-Markdown backlog is a coverage gap: the state still reports available evidence, but starts and filler wait for complete coverage.
+The pass reads current records; the common officer scheduler's date names the run rather than a historical snapshot.
+
+The deterministic classifier uses these authorizing classes, in this order:
+
+| Class | Recorded evidence |
+| --- | --- |
+| `security`, `cve` | `kind: security` or `kind: cve`, a title beginning `Security`, or a CVE identifier in the title |
+| `code-review`, `bug` | `kind: code-review` or `kind: bug`, or a title beginning `Code review finding`, `Code review fix`, or `Bug` |
+| `requested-feature`, `requested-fleet` | `kind: feature` or `kind: fleet` with `requested-by: Lee`; a Linear item named in `requested` or linked from such a backlog row, or its descendants, defaults to `requested-feature` unless its own recorded class is more specific |
+
+Backlog metadata uses the existing parenthesized tags, for example `(kind: bug)` and `(severity: high)`.
+The same tags in a Linear title or description, and the same title prefixes on a Linear title, classify a Linear-only item.
+Lee accepted this in the review decision of 2026-10-26: "restore classification of Linear items from their free-text tags (the (requested-by: Lee) and (kind: feature|fleet) tags and the Security/Bug/CVE title prefixes), so Linear-only items in those classes can start again, as Lee accepted."
+The accepted risk is that anyone with write access to the Linear team can make an item start automatically by writing those tags or prefixes, including a `requested-by: Lee` claim Lee never made.
+To keep such starts visible, every record carries `tag_source`, naming where its authority came from, and the digest prints it:
+
+| `tag_source` | Authority |
+| --- | --- |
+| `backlog` | A tag or title prefix on a backlog row this fleet wrote |
+| `task-meta` | The title in a task's `state/<id>.meta` file when the task has no backlog row; such tasks are already in flight and never start |
+| `linear-free-text:kind`, `linear-free-text:requested-by` | A tag in the Linear issue's title or description |
+| `linear-title-prefix:Security`, `linear-title-prefix:CVE`, `linear-title-prefix:Code review`, `linear-title-prefix:Bug` | The Linear title prefix, or a CVE identifier in the Linear title |
+| `requested-root:<id>` | The registered `requested` root the item descends from |
+| `standing-authority:filler` | The filler pass, in the dated JSON's `filler` object |
+
+Unclassified records carry `tag_source: null`.
+`requested` records an existing Lee request; registering a root never authorizes inventing a new feature.
+Within each class tier, Linear priority or backlog severity ranks urgent/critical, high, medium, low, then unspecified; identifiers and home names break ties.
+Open work with no recorded class is not listed and never becomes an ask; the run reports only its count, `unclassified`, and the digest prints that count on one line.
+An unclassified item whose title names a Lee choice is asked only while it is open and unstarted; in flight it is counted as unclassified, and once finished it is dropped.
+This slice uses `model: none` throughout.
+
+Held, blocked, already carded, in-flight, completed, or open-PR-linked work is excluded from starts.
+Unresolved keyed status calls remain open across later `working` lines.
+The same Linear identifier produces at most one start request across homes.
+Business, product, wording, legal, payments, and pricing matches in the item's own title go to `asks_for_lee`; for authorized work, automatic starts also exclude titles naming merges, production, credentials, data rewrites, destructive actions, and spending.
+Descriptions and ancestors are not matched, so ordinary bug text does not divert authorized work.
+These conservative word rules can overexclude a technical task; firstmate reconciles its evidence rather than widening authority automatically.
+For a queued local task, its backlog identifies the home; a Linear-only item defaults to the primary home until ordinary intake routes it by registered scope.
+
+When coverage is complete and no startable or in-flight work in the start classes remains, the officer rotates one extra bug sweep, code review, librarian pass, or ideation pass by run date.
+That filler request uses the same standing authority and firstmate intake as the ranked work.
+
+Each run writes `<date>.md`, `<date>.json`, `<date>.start-requests.sh`, and the stable `progress-state.json` in its findings lane.
+The dated JSON file contains the complete discovery report under [progress-run.schema.json](schemas/progress-run.schema.json), schema version 1, source `progress-officer`.
+
+| JSON field | Meaning |
+| --- | --- |
+| `schema_version`, `source` | `1` and `progress-officer` |
+| `date`, `generated_at` | Run date and actual UTC observation timestamp |
+| `doing`, `done` | Work in the start classes currently in flight, and work recorded completed or canceled; completed Linear-only history is not listed |
+| `start_requests` | Ranked authorized work waiting for firstmate to dispatch |
+| `asks_for_lee` | Business, product, wording, legal, payments, or pricing choices, and authorized work outside automatic-start authority, each with its reason; these become Captain's Log cards |
+| `excluded` | Evidence that prevents a new start, including existing cards and incomplete discovery |
+| `unclassified` | Count of open items with no recorded start class; they are not listed |
+| `filler` | The extra discovery pass, or `null` |
+| `coverage` | Read failures or unsupported inputs; an empty array means all configured sources were read |
+
+Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all linked `linear_ids`, nullable `authorising_class`, nullable `tag_source`, `reason`, `evidence`, numeric `priority` (0 means unspecified), nullable `rank`, and nullable `execute`.
+Optional `link`, `project`, `outcome`, and `captains_log_key` preserve source context for the page projection.
+Only start requests have a one-based `rank` and an `execute` object; filler also carries `execute`.
+The execution object contains `action: start`, `request_id`, `env.FM_HOME`, and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
+The adjacent shell handoff runs those same quoted argument arrays in rank order, followed by filler when present.
+The request identifier is stable for the same item and date, so retries replay the original inbox note; a later date may retry work still unstarted.
+
+Firstmate executes the handoff without another decision about whether to start authorized work.
+Before executing, check `generated_at`: rerun a digest older than 36 hours, and recheck current holds, open PRs, and work in flight before dispatching each request.
+Firstmate routes and dispatches through ordinary intake, including registered scope, capacity limits, quota routing, project delivery rules, and `fm-spawn.sh`; capacity or quota delays stay queued.
+Officer evidence never becomes a quotation attributed to Lee in a worker's intent.
+If Lee later stops requested work, keep its branch parked rather than discarding it.
+The officer writes only its findings lane and never executes the handoff itself.
+
+The fleet app pulls `progress-state.json` for a separate progress officer page; this does not replace Captain's Choice or Captain's Log.
+This file follows Slarti's page contract in [progress-state.schema.json](schemas/progress-state.schema.json); it contains no executable requests, ranks, or discovery details.
+Writes use a temporary file in the same directory and an atomic rename.
+Its top-level fields are:
+
+| Field | Meaning |
+| --- | --- |
+| `schema_version`, `officer` | `1` and the registered officer id |
+| `written_at` | Actual UTC observation time |
+| `stale_after_minutes` | Optional age limit; this daily officer emits 2880 minutes, matching its two-cadence health window |
+| `summary` | Optional one-line counts, including coverage gaps and the page's display bounds |
+| `doing` | At most 30 entries with `id`, `description`, `started_at`, and optional `link`, `project`, and `source` |
+| `done` | At most 50 entries, newest observation first; an outcome already in the previous dated run that has left the page is not added again; with `id`, `description`, `at`, `outcome` (`ok`, `failed`, or `skipped`), and optional `link`, `detail`, and `source` |
+| `asking` | At most 30 entries: `instruction` entries have `key`, `kind`, `question`, `waiting_on`, `link`, and optional `asked_at`; `captains_log` references carry only `key`, `kind`, and `link` |
+
+Page times describe when the officer first observed the work, outcome, or request, and persist across successive observations while the entry remains present.
+Descriptions say that the officer is watching or recording work rather than claiming it performed another worker's action.
+The optional `source` on `doing` and `done` maps security/CVE to `cve`, code-review to `review`, bug to `bug`, requested-feature to `feature`, requested-fleet to `fleet`, and filler to `filler`.
+Unknown sources omit that optional field.
+Waiting starts and filler appear as instructions with `waiting_on: firstmate`; new Lee choices ask firstmate to create a Captain's Log card.
+An existing captain-held backlog row links to its exact card key when `captains-log` is configured; the page repeats no question or answer from that card.
+Source links use the recorded HTTPS issue or PR URL, falling back to the configured repository when local-only work has no HTTPS record.
+The dated report retains all entries when the page's limits omit some.
+[`tests/fixtures/progress/state-v1.json`](../tests/fixtures/progress/state-v1.json) preserves Slarti's sample, and the progress officer tests check both that sample and actual output against the page schema.
 
 ## Harness support
 

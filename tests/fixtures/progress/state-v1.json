@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "officer": "progress",
+  "written_at": "2026-10-26T09:30:00Z",
+  "stale_after_minutes": 30,
+  "summary": "Watching 2 items; 1 question open, 1 decision on the Captain's Log",
+  "doing": [
+    {
+      "id": "fleet-progress-officer-page",
+      "description": "Waiting for the schema checkpoint on the progress officer page to come back from Deep Thought",
+      "link": "https://github.com/lstutzman/fleet-app/pull/67",
+      "started_at": "2026-10-26T08:50:00Z"
+    },
+    {
+      "id": "pc-3504",
+      "description": "Checking that the fleet rules rollout reached every machine",
+      "project": "skills",
+      "started_at": "2026-10-26T09:10:00Z"
+    }
+  ],
+  "done": [
+    {
+      "id": "nudge-pc-3583",
+      "description": "Nudged the stalled top-of-mind worker to commit its work",
+      "link": "https://github.com/lstutzman/fleet-app/pull/63",
+      "at": "2026-10-26T09:05:00Z",
+      "outcome": "ok"
+    },
+    {
+      "id": "restart-dt-worker",
+      "description": "Restarted the Deep Thought worker on the weekly digest",
+      "at": "2026-10-26T08:20:00Z",
+      "outcome": "failed",
+      "detail": "The worker did not report within 10 minutes; left for firstmate"
+    }
+  ],
+  "asking": [
+    {
+      "key": "pc-3504-rollout-order",
+      "kind": "instruction",
+      "question": "Roll the rules to the Mac mini before the MacBook, or both together?",
+      "waiting_on": "Lee",
+      "link": "https://github.com/lstutzman/skills/pull/12",
+      "asked_at": "2026-10-26T09:15:00Z"
+    },
+    {
+      "key": "nm-20261026-review",
+      "kind": "captains_log",
+      "link": "https://slartibartfast.tail299042.ts.net:8743/captains-log#nm-20261026-review",
+      "asked_at": "2026-10-26T09:20:00Z"
+    }
+  ]
+}
