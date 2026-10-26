@@ -942,7 +942,8 @@ test_open_decision_clears_on_keyed_resolution() {
   pass "durable fold clears a decision only on a keyed resolution"
 }
 
-# main's own keyed answer is not the second mate's communication.
+# main's own keyed answer and its no-reply escalations are not the second
+# mate's communication.
 test_parent_answer_does_not_reset_agent_event_age() {
   local home fakebin out now
   home=$(make_home agent-age)
@@ -964,13 +965,23 @@ test_parent_answer_does_not_reset_agent_event_age() {
     fm_wake_status_append_self_announced "$home/state" "$home/state/quiet-mate.status" \
       'resolved [key=race]: captain chose subscribe-then-reconcile'
   ) || [ "$?" = 1 ] || fail "parent close append failed"
+  # The no-reply escalation main writes when the mate stops answering
+  # (bin/fm-pending-reply-lib.sh), keyed by that library's own key function.
+  (
+    # shellcheck source=bin/fm-pending-reply-lib.sh
+    . "$ROOT/bin/fm-pending-reply-lib.sh"
+    printf 'blocked [key=%s] [at=%s]: no reply to corr-1\n' \
+      "$(fm_pending_reply_escalation_key corr-1)" "$((now - 10))" >> "$home/state/quiet-mate.status"
+  ) || fail "escalation fixture failed"
+  printf 'blocked [key=remote-reply-continuity-quiet-mate] [at=%s]: remote reply continuity broke\n' \
+    "$((now - 5))" >> "$home/state/quiet-mate.status"
   fakebin=$(make_fakebin "$home")
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_NOW_EPOCH="$now" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
     .secondmate_current.records[] | select(.id == "quiet-mate")
     | .parent_event.age_seconds < 100 and .parent_event.agent_age_seconds == 4000
-  ' >/dev/null || fail "parent answer must not count as the mate's event: $out"
-  pass "agent event age skips this home's own recorded appends"
+  ' >/dev/null || fail "parent answer and escalations must not count as the mate's event: $out"
+  pass "agent event age skips this home's own answers and no-reply escalations"
 }
 
 # A COMPLETED scout report must never be read as a pending decision. A scout that

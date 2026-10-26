@@ -359,14 +359,22 @@ crew_state_json() {  # <id> [<captured-meta>] [<captured-status>]
 
 # Age of the newest stamped line this home did not append itself. Ranges in
 # the home-appends ledger (fm_wake_status_append_self_announced) are this
-# home's own closes and hold transfers, so they never count as the task's
-# communication. Prints null when no such line exists.
+# home's own closes and hold transfers, and pending-reply and remote-reply
+# continuity escalations are this home's reports that the task stopped
+# answering, so none of them count as the task's communication. Prints null
+# when no such line exists.
 status_agent_event_age() {  # <observed-status-log> <contract-path>
   local log=$1 path=$2 start length line epoch
   [ -f "$log" ] || { printf 'null'; return 0; }
   while IFS=$(printf '\t') read -r start length; do
     line=$(LC_ALL=C tail -c "+$((start + 1))" "$log" | LC_ALL=C head -c "$length")
-    case "$line" in *[![:space:]]*) ;; *) continue ;; esac
+    case "$line" in
+      *[![:space:]]*) ;;
+      *) continue ;;
+    esac
+    case "$line" in
+      'blocked [key=pending-reply-'*|'blocked [key=remote-reply-continuity-'*) continue ;;
+    esac
     status_home_appends_covers "$path" "$start" "$((start + length + 1))" && continue
     epoch=$(status_line_at_epoch "$line") || continue
     [ "$epoch" -le "$SNAPSHOT_EPOCH" ] || continue
