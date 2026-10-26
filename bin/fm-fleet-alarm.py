@@ -15,6 +15,7 @@ arm registers the private check shim. timer-files only writes scheduler files;
 it never loads or starts a scheduler. See docs/configuration.md for installation.
 """
 import csv
+from datetime import datetime, timedelta
 import fcntl
 import io
 import json
@@ -130,7 +131,13 @@ def collect(cfg):
                 findings['stale:' + name] = f'Claude quota reading stale: {name}'
             alert = next((item for item in alerts if item.startswith(name + ' 7d ')), None)
             if alert:
-                key = 'quota:' + name + ':' + row['reset_7d']
+                reset = row['reset_7d']
+                try:
+                    rounded = datetime.fromisoformat(reset.replace('Z', '+00:00')) + timedelta(minutes=30)
+                    reset = rounded.replace(minute=0, second=0, microsecond=0).isoformat()
+                except ValueError:
+                    pass
+                key = 'quota:' + name + ':' + reset
                 findings[key] = alert
         if ignored:
             findings[f'ignored:{ignored}'] = f'{ignored} ignored stale Claude accounts (no reading for 7 days)'

@@ -32,13 +32,15 @@ SH
 chmod +x "$BIN_FIX/"*.sh "$BIN_FIX/cpa-usage-axi"
 
 quota() {
-  local used=$1 age=${2:-1} reset=${3:-window1}
+  local used=$1 age=${2:-1} reset=${3:-window1} percent
+  percent=${used#0.}
+  [ "$used" != 1 ] || percent=100
   printf '%s\n' 'accounts[1]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:' \
     "  member@example.invalid,claude,0.2,,$used,$reset,,$age,0" > "$HOME_FIX/accounts"
   if [ "$used" = 0.2 ]; then
     : > "$HOME_FIX/threshold"
   else
-    printf '%s\n' "alert: member@example.invalid 7d ${used#0.}% (resets $reset)" > "$HOME_FIX/threshold"
+    printf '%s\n' "alert: member@example.invalid 7d $percent% (resets $reset)" > "$HOME_FIX/threshold"
   fi
 }
 # The watcher summary and main's own last line are always fresh here; only the
@@ -93,6 +95,22 @@ run_alarm check >/dev/null
 quota 0.91
 assert_contains "$(run_alarm check)" '7d 91%' 'clear rearms threshold'
 pass 'weekly threshold uses tool check and deduplicates per reset window'
+
+quota 0.2
+run_alarm check >/dev/null
+quota 1 1 2026-10-30T15:00Z
+assert_contains "$(run_alarm check)" 'member@example.invalid 7d 100%' 'first exhausted account reading alerts'
+quota 1 1 2026-10-30T14:59Z
+[ -z "$(run_alarm check)" ] || fail 'one-minute backwards reset drift must not re-alert'
+quota 1 1 2026-11-06T14:59Z
+assert_contains "$(run_alarm check)" 'member@example.invalid 7d 100%' 'a different weekly reset window rearms'
+quota 0.2
+run_alarm check >/dev/null
+quota 1 1 2026-10-27T05:59Z
+assert_contains "$(run_alarm check)" 'member@example.invalid 7d 100%' 'first reading before the hour alerts'
+quota 1 1 2026-10-27T06:00Z
+[ -z "$(run_alarm check)" ] || fail 'one-minute forwards reset drift must not re-alert'
+pass 'minute-level reset drift deduplicates within the hour while new weekly windows rearm'
 
 quota 0.2
 run_alarm check >/dev/null
