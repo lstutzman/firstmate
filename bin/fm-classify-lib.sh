@@ -2391,8 +2391,8 @@ EOF
 # answering, so none of them count as the task's communication. Prints null
 # when no such line exists.
 status_agent_event_age() {  # <observed-status-log> <contract-path> <now-epoch>
-  local log=$1 path=$2 now=$3 ranges
-  [ -f "$log" ] || { printf 'null'; return 0; }
+  local status_log=$1 path=$2 now=$3 ranges
+  [ -f "$status_log" ] || { printf 'null'; return 0; }
   ranges=$(status_home_appends_ranges "$path") || ranges=
   # One pass: ledger ranges are ascending (status_home_appends_covers), so
   # merge them once and walk them alongside the lines; the stamp rule is
@@ -2426,7 +2426,7 @@ status_agent_event_age() {  # <observed-status-log> <contract-path> <now-epoch>
       age = now - value
     }
     END { printf "%s", age }
-  ' "$log"
+  ' "$status_log"
 }
 
 
