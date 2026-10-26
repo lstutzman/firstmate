@@ -218,7 +218,11 @@ out=$(run_alarm check)
 assert_contains "$out" '1 ignored stale Claude accounts' 'retired account is counted once'
 assert_not_contains "$out" 'retired@example.invalid' 'retired account raises no stale alarm'
 [ -z "$(run_alarm check)" ] || fail 'ignored-account note must deduplicate'
-sed -i 's/live@example.invalid,claude,0.1,,0.2,/live@example.invalid,claude,0.1,,0.95,/' "$HOME_FIX/accounts"
+cat > "$HOME_FIX/accounts" <<'ROWS'
+accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  live@example.invalid,claude,0.1,,0.95,window1,,1,0
+  retired@example.invalid,claude,0.1,,0.1,window1,,10080,0
+ROWS
 assert_contains "$(run_alarm check)" 'pool near empty' 'retired account is excluded from the pool mean'
 pass 'accounts without a reading for seven days are ignored and counted'
 
