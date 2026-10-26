@@ -976,6 +976,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 | `unclassified` | Count of open items with no recorded start class; they are not listed |
 | `filler` | The extra discovery pass, or `null` |
 | `coverage` | Read failures or unsupported inputs; an empty array means all configured sources were read |
+| `linear_coverage` | Linear discovery counts described under [Progress officer](#progress-officer) |
 
 Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all linked `linear_ids`, nullable `authorising_class`, nullable `tag_source`, `reason`, `evidence`, numeric `priority` (0 means unspecified), nullable `rank`, and nullable `execute`.
 Optional `link`, `project`, `outcome`, and `captains_log_key` preserve source context for the page projection.
