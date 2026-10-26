@@ -1,0 +1,49 @@
+# head b9cc6f1a, fake Linear returns RATE_LIMITED on every page after the first (real 30s+60s backoff)
+Linear coverage: 1 pages, 100 items seen, 4 requests, 100 team items, 0 unblocked items, 0 requested roots visited, 0 hierarchy items, 2 rate-limit retries, 0 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear discovery: team listing (triage): RATE_LIMITED (exit 1); retry budget exhausted
+Coverage gap: Linear discovery: team listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted
+Coverage gap: Linear discovery: team listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted
+Coverage gap: Linear discovery: team listing (started): RATE_LIMITED (exit 1); retry budget exhausted
+Coverage gap: Linear discovery: unblocked listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted
+Coverage gap: Linear discovery: unblocked listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted
+DIGEST 2026-10-26 6 data/officers/progress/2026-10-26.md
+--- calls
+issue list --team PC --state triage --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --output json
+issue list --team PC --state triage --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --after 100 --output json
+issue list --team PC --state triage --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --after 100 --output json
+issue list --team PC --state triage --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --after 100 --output json
+api GET /repos/lstutzman/PropertyCompass2/pulls?state=open&per_page=100 --paginate --full --jq .[] | "PRJSON " + tojson
+--- json
+{
+  "coverage": [
+    "Linear discovery: team listing (triage): RATE_LIMITED (exit 1); retry budget exhausted",
+    "Linear discovery: team listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted",
+    "Linear discovery: team listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted",
+    "Linear discovery: team listing (started): RATE_LIMITED (exit 1); retry budget exhausted",
+    "Linear discovery: unblocked listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted",
+    "Linear discovery: unblocked listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted"
+  ],
+  "linear_coverage": {
+    "descriptions_truncated": 0,
+    "hierarchy_items": 0,
+    "items_seen": 100,
+    "pages_fetched": 1,
+    "rate_limit_retries": 2,
+    "requests": 4,
+    "roots_visited": 0,
+    "team_items": 100,
+    "unblocked_items": 0,
+    "unverified_starts": 0
+  },
+  "starts": 0
+}
+--- digest coverage
+## Coverage
+
+- Linear discovery: team listing (triage): RATE_LIMITED (exit 1); retry budget exhausted
+- Linear discovery: team listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted
+- Linear discovery: team listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted
+- Linear discovery: team listing (started): RATE_LIMITED (exit 1); retry budget exhausted
+- Linear discovery: unblocked listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted
+- Linear discovery: unblocked listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted
+- Linear: 1 pages, 100 items seen, 4 requests, 100 team items, 0 unblocked items, 0 requested roots visited, 0 hierarchy items, 2 rate-limit retries, 0 listed descriptions truncated, 0 start candidates unverified.

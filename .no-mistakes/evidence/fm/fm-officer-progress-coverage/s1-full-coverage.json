@@ -1,0 +1,2054 @@
+{
+  "asks_for_lee": [],
+  "coverage": [],
+  "date": "2026-10-26",
+  "doing": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1015"
+      ],
+      "execute": null,
+      "id": "PC-1015",
+      "linear_id": "PC-1015",
+      "linear_ids": [
+        "PC-1015"
+      ],
+      "link": "https://linear.app/x/PC-1015",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1015"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1043"
+      ],
+      "execute": null,
+      "id": "PC-1043",
+      "linear_id": "PC-1043",
+      "linear_ids": [
+        "PC-1043"
+      ],
+      "link": "https://linear.app/x/PC-1043",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1043"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1071"
+      ],
+      "execute": null,
+      "id": "PC-1071",
+      "linear_id": "PC-1071",
+      "linear_ids": [
+        "PC-1071"
+      ],
+      "link": "https://linear.app/x/PC-1071",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1071"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1099"
+      ],
+      "execute": null,
+      "id": "PC-1099",
+      "linear_id": "PC-1099",
+      "linear_ids": [
+        "PC-1099"
+      ],
+      "link": "https://linear.app/x/PC-1099",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1099"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1127"
+      ],
+      "execute": null,
+      "id": "PC-1127",
+      "linear_id": "PC-1127",
+      "linear_ids": [
+        "PC-1127"
+      ],
+      "link": "https://linear.app/x/PC-1127",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1127"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1155"
+      ],
+      "execute": null,
+      "id": "PC-1155",
+      "linear_id": "PC-1155",
+      "linear_ids": [
+        "PC-1155"
+      ],
+      "link": "https://linear.app/x/PC-1155",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1155"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1183"
+      ],
+      "execute": null,
+      "id": "PC-1183",
+      "linear_id": "PC-1183",
+      "linear_ids": [
+        "PC-1183"
+      ],
+      "link": "https://linear.app/x/PC-1183",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1183"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1211"
+      ],
+      "execute": null,
+      "id": "PC-1211",
+      "linear_id": "PC-1211",
+      "linear_ids": [
+        "PC-1211"
+      ],
+      "link": "https://linear.app/x/PC-1211",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1211"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1239"
+      ],
+      "execute": null,
+      "id": "PC-1239",
+      "linear_id": "PC-1239",
+      "linear_ids": [
+        "PC-1239"
+      ],
+      "link": "https://linear.app/x/PC-1239",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1239"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1267"
+      ],
+      "execute": null,
+      "id": "PC-1267",
+      "linear_id": "PC-1267",
+      "linear_ids": [
+        "PC-1267"
+      ],
+      "link": "https://linear.app/x/PC-1267",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1267"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1295"
+      ],
+      "execute": null,
+      "id": "PC-1295",
+      "linear_id": "PC-1295",
+      "linear_ids": [
+        "PC-1295"
+      ],
+      "link": "https://linear.app/x/PC-1295",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1295"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1323"
+      ],
+      "execute": null,
+      "id": "PC-1323",
+      "linear_id": "PC-1323",
+      "linear_ids": [
+        "PC-1323"
+      ],
+      "link": "https://linear.app/x/PC-1323",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1323"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1351"
+      ],
+      "execute": null,
+      "id": "PC-1351",
+      "linear_id": "PC-1351",
+      "linear_ids": [
+        "PC-1351"
+      ],
+      "link": "https://linear.app/x/PC-1351",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1351"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1379"
+      ],
+      "execute": null,
+      "id": "PC-1379",
+      "linear_id": "PC-1379",
+      "linear_ids": [
+        "PC-1379"
+      ],
+      "link": "https://linear.app/x/PC-1379",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1379"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1407"
+      ],
+      "execute": null,
+      "id": "PC-1407",
+      "linear_id": "PC-1407",
+      "linear_ids": [
+        "PC-1407"
+      ],
+      "link": "https://linear.app/x/PC-1407",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1407"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1435"
+      ],
+      "execute": null,
+      "id": "PC-1435",
+      "linear_id": "PC-1435",
+      "linear_ids": [
+        "PC-1435"
+      ],
+      "link": "https://linear.app/x/PC-1435",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1435"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1463"
+      ],
+      "execute": null,
+      "id": "PC-1463",
+      "linear_id": "PC-1463",
+      "linear_ids": [
+        "PC-1463"
+      ],
+      "link": "https://linear.app/x/PC-1463",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1463"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1491"
+      ],
+      "execute": null,
+      "id": "PC-1491",
+      "linear_id": "PC-1491",
+      "linear_ids": [
+        "PC-1491"
+      ],
+      "link": "https://linear.app/x/PC-1491",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1491"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1519"
+      ],
+      "execute": null,
+      "id": "PC-1519",
+      "linear_id": "PC-1519",
+      "linear_ids": [
+        "PC-1519"
+      ],
+      "link": "https://linear.app/x/PC-1519",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1519"
+    }
+  ],
+  "done": [],
+  "excluded": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1008"
+      ],
+      "execute": null,
+      "id": "PC-1008",
+      "linear_id": "PC-1008",
+      "linear_ids": [
+        "PC-1008"
+      ],
+      "link": "https://linear.app/x/PC-1008",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1008"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1036"
+      ],
+      "execute": null,
+      "id": "PC-1036",
+      "linear_id": "PC-1036",
+      "linear_ids": [
+        "PC-1036"
+      ],
+      "link": "https://linear.app/x/PC-1036",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1036"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1064"
+      ],
+      "execute": null,
+      "id": "PC-1064",
+      "linear_id": "PC-1064",
+      "linear_ids": [
+        "PC-1064"
+      ],
+      "link": "https://linear.app/x/PC-1064",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1064"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1092"
+      ],
+      "execute": null,
+      "id": "PC-1092",
+      "linear_id": "PC-1092",
+      "linear_ids": [
+        "PC-1092"
+      ],
+      "link": "https://linear.app/x/PC-1092",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1092"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1120"
+      ],
+      "execute": null,
+      "id": "PC-1120",
+      "linear_id": "PC-1120",
+      "linear_ids": [
+        "PC-1120"
+      ],
+      "link": "https://linear.app/x/PC-1120",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1120"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1148"
+      ],
+      "execute": null,
+      "id": "PC-1148",
+      "linear_id": "PC-1148",
+      "linear_ids": [
+        "PC-1148"
+      ],
+      "link": "https://linear.app/x/PC-1148",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1148"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1176"
+      ],
+      "execute": null,
+      "id": "PC-1176",
+      "linear_id": "PC-1176",
+      "linear_ids": [
+        "PC-1176"
+      ],
+      "link": "https://linear.app/x/PC-1176",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1176"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1204"
+      ],
+      "execute": null,
+      "id": "PC-1204",
+      "linear_id": "PC-1204",
+      "linear_ids": [
+        "PC-1204"
+      ],
+      "link": "https://linear.app/x/PC-1204",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1204"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1232"
+      ],
+      "execute": null,
+      "id": "PC-1232",
+      "linear_id": "PC-1232",
+      "linear_ids": [
+        "PC-1232"
+      ],
+      "link": "https://linear.app/x/PC-1232",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1232"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1260"
+      ],
+      "execute": null,
+      "id": "PC-1260",
+      "linear_id": "PC-1260",
+      "linear_ids": [
+        "PC-1260"
+      ],
+      "link": "https://linear.app/x/PC-1260",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1260"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1288"
+      ],
+      "execute": null,
+      "id": "PC-1288",
+      "linear_id": "PC-1288",
+      "linear_ids": [
+        "PC-1288"
+      ],
+      "link": "https://linear.app/x/PC-1288",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1288"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1316"
+      ],
+      "execute": null,
+      "id": "PC-1316",
+      "linear_id": "PC-1316",
+      "linear_ids": [
+        "PC-1316"
+      ],
+      "link": "https://linear.app/x/PC-1316",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1316"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1344"
+      ],
+      "execute": null,
+      "id": "PC-1344",
+      "linear_id": "PC-1344",
+      "linear_ids": [
+        "PC-1344"
+      ],
+      "link": "https://linear.app/x/PC-1344",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1344"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1372"
+      ],
+      "execute": null,
+      "id": "PC-1372",
+      "linear_id": "PC-1372",
+      "linear_ids": [
+        "PC-1372"
+      ],
+      "link": "https://linear.app/x/PC-1372",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1372"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1400"
+      ],
+      "execute": null,
+      "id": "PC-1400",
+      "linear_id": "PC-1400",
+      "linear_ids": [
+        "PC-1400"
+      ],
+      "link": "https://linear.app/x/PC-1400",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1400"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1428"
+      ],
+      "execute": null,
+      "id": "PC-1428",
+      "linear_id": "PC-1428",
+      "linear_ids": [
+        "PC-1428"
+      ],
+      "link": "https://linear.app/x/PC-1428",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1428"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1456"
+      ],
+      "execute": null,
+      "id": "PC-1456",
+      "linear_id": "PC-1456",
+      "linear_ids": [
+        "PC-1456"
+      ],
+      "link": "https://linear.app/x/PC-1456",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1456"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1484"
+      ],
+      "execute": null,
+      "id": "PC-1484",
+      "linear_id": "PC-1484",
+      "linear_ids": [
+        "PC-1484"
+      ],
+      "link": "https://linear.app/x/PC-1484",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1484"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1512"
+      ],
+      "execute": null,
+      "id": "PC-1512",
+      "linear_id": "PC-1512",
+      "linear_ids": [
+        "PC-1512"
+      ],
+      "link": "https://linear.app/x/PC-1512",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1512"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1540"
+      ],
+      "execute": null,
+      "id": "PC-1540",
+      "linear_id": "PC-1540",
+      "linear_ids": [
+        "PC-1540"
+      ],
+      "link": "https://linear.app/x/PC-1540",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1540"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1085"
+      ],
+      "execute": null,
+      "id": "PC-1085",
+      "linear_id": "PC-1085",
+      "linear_ids": [
+        "PC-1085"
+      ],
+      "link": "https://linear.app/x/PC-1085",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1085"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1225"
+      ],
+      "execute": null,
+      "id": "PC-1225",
+      "linear_id": "PC-1225",
+      "linear_ids": [
+        "PC-1225"
+      ],
+      "link": "https://linear.app/x/PC-1225",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1225"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1365"
+      ],
+      "execute": null,
+      "id": "PC-1365",
+      "linear_id": "PC-1365",
+      "linear_ids": [
+        "PC-1365"
+      ],
+      "link": "https://linear.app/x/PC-1365",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1365"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1505"
+      ],
+      "execute": null,
+      "id": "PC-1505",
+      "linear_id": "PC-1505",
+      "linear_ids": [
+        "PC-1505"
+      ],
+      "link": "https://linear.app/x/PC-1505",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1505"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1050"
+      ],
+      "execute": null,
+      "id": "PC-1050",
+      "linear_id": "PC-1050",
+      "linear_ids": [
+        "PC-1050"
+      ],
+      "link": "https://linear.app/x/PC-1050",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1050"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1190"
+      ],
+      "execute": null,
+      "id": "PC-1190",
+      "linear_id": "PC-1190",
+      "linear_ids": [
+        "PC-1190"
+      ],
+      "link": "https://linear.app/x/PC-1190",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1190"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1330"
+      ],
+      "execute": null,
+      "id": "PC-1330",
+      "linear_id": "PC-1330",
+      "linear_ids": [
+        "PC-1330"
+      ],
+      "link": "https://linear.app/x/PC-1330",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1330"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1470"
+      ],
+      "execute": null,
+      "id": "PC-1470",
+      "linear_id": "PC-1470",
+      "linear_ids": [
+        "PC-1470"
+      ],
+      "link": "https://linear.app/x/PC-1470",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1470"
+    }
+  ],
+  "filler": null,
+  "generated_at": "2026-10-26T23:47:49Z",
+  "linear_coverage": {
+    "descriptions_truncated": 0,
+    "hierarchy_items": 6,
+    "items_seen": 757,
+    "pages_fetched": 12,
+    "rate_limit_retries": 0,
+    "requests": 49,
+    "roots_visited": 6,
+    "team_items": 541,
+    "unblocked_items": 216,
+    "unverified_starts": 0
+  },
+  "schema_version": 1,
+  "source": "progress-officer",
+  "start_requests": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1001"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-e30e0bad89db3cd3",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1001\"], \"id\": \"PC-1001\", \"linear_id\": \"PC-1001\", \"linear_ids\": [\"PC-1001\"], \"link\": \"https://linear.app/x/PC-1001\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 1, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1001\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-e30e0bad89db3cd3"
+      },
+      "id": "PC-1001",
+      "linear_id": "PC-1001",
+      "linear_ids": [
+        "PC-1001"
+      ],
+      "link": "https://linear.app/x/PC-1001",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 1,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1001"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1029"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-1f8745680f18c5a8",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1029\"], \"id\": \"PC-1029\", \"linear_id\": \"PC-1029\", \"linear_ids\": [\"PC-1029\"], \"link\": \"https://linear.app/x/PC-1029\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 2, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1029\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-1f8745680f18c5a8"
+      },
+      "id": "PC-1029",
+      "linear_id": "PC-1029",
+      "linear_ids": [
+        "PC-1029"
+      ],
+      "link": "https://linear.app/x/PC-1029",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 2,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1029"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1057"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-24eb5ec287370d5b",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1057\"], \"id\": \"PC-1057\", \"linear_id\": \"PC-1057\", \"linear_ids\": [\"PC-1057\"], \"link\": \"https://linear.app/x/PC-1057\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 3, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1057\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-24eb5ec287370d5b"
+      },
+      "id": "PC-1057",
+      "linear_id": "PC-1057",
+      "linear_ids": [
+        "PC-1057"
+      ],
+      "link": "https://linear.app/x/PC-1057",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 3,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1057"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1113"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-35801468de6f6cbe",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1113\"], \"id\": \"PC-1113\", \"linear_id\": \"PC-1113\", \"linear_ids\": [\"PC-1113\"], \"link\": \"https://linear.app/x/PC-1113\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 4, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1113\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-35801468de6f6cbe"
+      },
+      "id": "PC-1113",
+      "linear_id": "PC-1113",
+      "linear_ids": [
+        "PC-1113"
+      ],
+      "link": "https://linear.app/x/PC-1113",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 4,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1113"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1141"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-2ff15ae754268c59",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1141\"], \"id\": \"PC-1141\", \"linear_id\": \"PC-1141\", \"linear_ids\": [\"PC-1141\"], \"link\": \"https://linear.app/x/PC-1141\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 5, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1141\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-2ff15ae754268c59"
+      },
+      "id": "PC-1141",
+      "linear_id": "PC-1141",
+      "linear_ids": [
+        "PC-1141"
+      ],
+      "link": "https://linear.app/x/PC-1141",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 5,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1141"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1169"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-8451ceef19f445b1",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1169\"], \"id\": \"PC-1169\", \"linear_id\": \"PC-1169\", \"linear_ids\": [\"PC-1169\"], \"link\": \"https://linear.app/x/PC-1169\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 6, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1169\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-8451ceef19f445b1"
+      },
+      "id": "PC-1169",
+      "linear_id": "PC-1169",
+      "linear_ids": [
+        "PC-1169"
+      ],
+      "link": "https://linear.app/x/PC-1169",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 6,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1169"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1197"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-58cd7775732b726a",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1197\"], \"id\": \"PC-1197\", \"linear_id\": \"PC-1197\", \"linear_ids\": [\"PC-1197\"], \"link\": \"https://linear.app/x/PC-1197\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 7, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1197\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-58cd7775732b726a"
+      },
+      "id": "PC-1197",
+      "linear_id": "PC-1197",
+      "linear_ids": [
+        "PC-1197"
+      ],
+      "link": "https://linear.app/x/PC-1197",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 7,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1197"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1253"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-7089f8d61bf6dd9b",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1253\"], \"id\": \"PC-1253\", \"linear_id\": \"PC-1253\", \"linear_ids\": [\"PC-1253\"], \"link\": \"https://linear.app/x/PC-1253\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 8, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1253\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-7089f8d61bf6dd9b"
+      },
+      "id": "PC-1253",
+      "linear_id": "PC-1253",
+      "linear_ids": [
+        "PC-1253"
+      ],
+      "link": "https://linear.app/x/PC-1253",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 8,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1253"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1281"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-60e0453bdf4f6cb8",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1281\"], \"id\": \"PC-1281\", \"linear_id\": \"PC-1281\", \"linear_ids\": [\"PC-1281\"], \"link\": \"https://linear.app/x/PC-1281\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 9, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1281\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-60e0453bdf4f6cb8"
+      },
+      "id": "PC-1281",
+      "linear_id": "PC-1281",
+      "linear_ids": [
+        "PC-1281"
+      ],
+      "link": "https://linear.app/x/PC-1281",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 9,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1281"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1309"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-0d4f205c688000d4",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1309\"], \"id\": \"PC-1309\", \"linear_id\": \"PC-1309\", \"linear_ids\": [\"PC-1309\"], \"link\": \"https://linear.app/x/PC-1309\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 10, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1309\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-0d4f205c688000d4"
+      },
+      "id": "PC-1309",
+      "linear_id": "PC-1309",
+      "linear_ids": [
+        "PC-1309"
+      ],
+      "link": "https://linear.app/x/PC-1309",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 10,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1309"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1337"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-c2adf96b202e368e",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1337\"], \"id\": \"PC-1337\", \"linear_id\": \"PC-1337\", \"linear_ids\": [\"PC-1337\"], \"link\": \"https://linear.app/x/PC-1337\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 11, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1337\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-c2adf96b202e368e"
+      },
+      "id": "PC-1337",
+      "linear_id": "PC-1337",
+      "linear_ids": [
+        "PC-1337"
+      ],
+      "link": "https://linear.app/x/PC-1337",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 11,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1337"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1393"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-12712deb41421a24",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1393\"], \"id\": \"PC-1393\", \"linear_id\": \"PC-1393\", \"linear_ids\": [\"PC-1393\"], \"link\": \"https://linear.app/x/PC-1393\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 12, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1393\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-12712deb41421a24"
+      },
+      "id": "PC-1393",
+      "linear_id": "PC-1393",
+      "linear_ids": [
+        "PC-1393"
+      ],
+      "link": "https://linear.app/x/PC-1393",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 12,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1393"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1421"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-a513772f7dec5f25",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1421\"], \"id\": \"PC-1421\", \"linear_id\": \"PC-1421\", \"linear_ids\": [\"PC-1421\"], \"link\": \"https://linear.app/x/PC-1421\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 13, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1421\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-a513772f7dec5f25"
+      },
+      "id": "PC-1421",
+      "linear_id": "PC-1421",
+      "linear_ids": [
+        "PC-1421"
+      ],
+      "link": "https://linear.app/x/PC-1421",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 13,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1421"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1449"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-03b58d7f22450b9e",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1449\"], \"id\": \"PC-1449\", \"linear_id\": \"PC-1449\", \"linear_ids\": [\"PC-1449\"], \"link\": \"https://linear.app/x/PC-1449\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 14, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1449\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-03b58d7f22450b9e"
+      },
+      "id": "PC-1449",
+      "linear_id": "PC-1449",
+      "linear_ids": [
+        "PC-1449"
+      ],
+      "link": "https://linear.app/x/PC-1449",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 14,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1449"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1477"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-dc1a5ca2ffdf0fe3",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1477\"], \"id\": \"PC-1477\", \"linear_id\": \"PC-1477\", \"linear_ids\": [\"PC-1477\"], \"link\": \"https://linear.app/x/PC-1477\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 15, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1477\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-dc1a5ca2ffdf0fe3"
+      },
+      "id": "PC-1477",
+      "linear_id": "PC-1477",
+      "linear_ids": [
+        "PC-1477"
+      ],
+      "link": "https://linear.app/x/PC-1477",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 15,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1477"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1533"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-fc0abce81457486b",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1533\"], \"id\": \"PC-1533\", \"linear_id\": \"PC-1533\", \"linear_ids\": [\"PC-1533\"], \"link\": \"https://linear.app/x/PC-1533\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 1, \"project\": \"\", \"rank\": 16, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1533\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-fc0abce81457486b"
+      },
+      "id": "PC-1533",
+      "linear_id": "PC-1533",
+      "linear_ids": [
+        "PC-1533"
+      ],
+      "link": "https://linear.app/x/PC-1533",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 1,
+      "project": "",
+      "rank": 16,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1533"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1022"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-b65c3e5f602f3e64",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1022\"], \"id\": \"PC-1022\", \"linear_id\": \"PC-1022\", \"linear_ids\": [\"PC-1022\"], \"link\": \"https://linear.app/x/PC-1022\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 17, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1022\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-b65c3e5f602f3e64"
+      },
+      "id": "PC-1022",
+      "linear_id": "PC-1022",
+      "linear_ids": [
+        "PC-1022"
+      ],
+      "link": "https://linear.app/x/PC-1022",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 17,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1022"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1078"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-51cb5d7c8ec8a07e",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1078\"], \"id\": \"PC-1078\", \"linear_id\": \"PC-1078\", \"linear_ids\": [\"PC-1078\"], \"link\": \"https://linear.app/x/PC-1078\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 18, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1078\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-51cb5d7c8ec8a07e"
+      },
+      "id": "PC-1078",
+      "linear_id": "PC-1078",
+      "linear_ids": [
+        "PC-1078"
+      ],
+      "link": "https://linear.app/x/PC-1078",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 18,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1078"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1106"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-5bb5cca667ba60f1",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1106\"], \"id\": \"PC-1106\", \"linear_id\": \"PC-1106\", \"linear_ids\": [\"PC-1106\"], \"link\": \"https://linear.app/x/PC-1106\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 19, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1106\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-5bb5cca667ba60f1"
+      },
+      "id": "PC-1106",
+      "linear_id": "PC-1106",
+      "linear_ids": [
+        "PC-1106"
+      ],
+      "link": "https://linear.app/x/PC-1106",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 19,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1106"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1134"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-6a8eab2c34defb4e",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1134\"], \"id\": \"PC-1134\", \"linear_id\": \"PC-1134\", \"linear_ids\": [\"PC-1134\"], \"link\": \"https://linear.app/x/PC-1134\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 20, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1134\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-6a8eab2c34defb4e"
+      },
+      "id": "PC-1134",
+      "linear_id": "PC-1134",
+      "linear_ids": [
+        "PC-1134"
+      ],
+      "link": "https://linear.app/x/PC-1134",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 20,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1134"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1162"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-595e279928836c59",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1162\"], \"id\": \"PC-1162\", \"linear_id\": \"PC-1162\", \"linear_ids\": [\"PC-1162\"], \"link\": \"https://linear.app/x/PC-1162\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 21, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1162\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-595e279928836c59"
+      },
+      "id": "PC-1162",
+      "linear_id": "PC-1162",
+      "linear_ids": [
+        "PC-1162"
+      ],
+      "link": "https://linear.app/x/PC-1162",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 21,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1162"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1218"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-15d2281aa5aabe69",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1218\"], \"id\": \"PC-1218\", \"linear_id\": \"PC-1218\", \"linear_ids\": [\"PC-1218\"], \"link\": \"https://linear.app/x/PC-1218\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 22, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1218\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-15d2281aa5aabe69"
+      },
+      "id": "PC-1218",
+      "linear_id": "PC-1218",
+      "linear_ids": [
+        "PC-1218"
+      ],
+      "link": "https://linear.app/x/PC-1218",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 22,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1218"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1246"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-460d224f24cd31a4",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1246\"], \"id\": \"PC-1246\", \"linear_id\": \"PC-1246\", \"linear_ids\": [\"PC-1246\"], \"link\": \"https://linear.app/x/PC-1246\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 23, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1246\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-460d224f24cd31a4"
+      },
+      "id": "PC-1246",
+      "linear_id": "PC-1246",
+      "linear_ids": [
+        "PC-1246"
+      ],
+      "link": "https://linear.app/x/PC-1246",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 23,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1246"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1274"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-fcda534c4ebb128d",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1274\"], \"id\": \"PC-1274\", \"linear_id\": \"PC-1274\", \"linear_ids\": [\"PC-1274\"], \"link\": \"https://linear.app/x/PC-1274\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 24, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1274\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-fcda534c4ebb128d"
+      },
+      "id": "PC-1274",
+      "linear_id": "PC-1274",
+      "linear_ids": [
+        "PC-1274"
+      ],
+      "link": "https://linear.app/x/PC-1274",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 24,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1274"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1302"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-4972222b8be32c32",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1302\"], \"id\": \"PC-1302\", \"linear_id\": \"PC-1302\", \"linear_ids\": [\"PC-1302\"], \"link\": \"https://linear.app/x/PC-1302\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 25, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1302\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-4972222b8be32c32"
+      },
+      "id": "PC-1302",
+      "linear_id": "PC-1302",
+      "linear_ids": [
+        "PC-1302"
+      ],
+      "link": "https://linear.app/x/PC-1302",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 25,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1302"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1358"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-4e51c2267f490c3f",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1358\"], \"id\": \"PC-1358\", \"linear_id\": \"PC-1358\", \"linear_ids\": [\"PC-1358\"], \"link\": \"https://linear.app/x/PC-1358\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 26, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1358\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-4e51c2267f490c3f"
+      },
+      "id": "PC-1358",
+      "linear_id": "PC-1358",
+      "linear_ids": [
+        "PC-1358"
+      ],
+      "link": "https://linear.app/x/PC-1358",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 26,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1358"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1386"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-7918c2ac9336500a",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1386\"], \"id\": \"PC-1386\", \"linear_id\": \"PC-1386\", \"linear_ids\": [\"PC-1386\"], \"link\": \"https://linear.app/x/PC-1386\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 27, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1386\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-7918c2ac9336500a"
+      },
+      "id": "PC-1386",
+      "linear_id": "PC-1386",
+      "linear_ids": [
+        "PC-1386"
+      ],
+      "link": "https://linear.app/x/PC-1386",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 27,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1386"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1414"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-e8f3f457134cfd98",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1414\"], \"id\": \"PC-1414\", \"linear_id\": \"PC-1414\", \"linear_ids\": [\"PC-1414\"], \"link\": \"https://linear.app/x/PC-1414\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 28, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1414\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-e8f3f457134cfd98"
+      },
+      "id": "PC-1414",
+      "linear_id": "PC-1414",
+      "linear_ids": [
+        "PC-1414"
+      ],
+      "link": "https://linear.app/x/PC-1414",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 28,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1414"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1442"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-20292364112a9549",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1442\"], \"id\": \"PC-1442\", \"linear_id\": \"PC-1442\", \"linear_ids\": [\"PC-1442\"], \"link\": \"https://linear.app/x/PC-1442\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 29, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1442\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-20292364112a9549"
+      },
+      "id": "PC-1442",
+      "linear_id": "PC-1442",
+      "linear_ids": [
+        "PC-1442"
+      ],
+      "link": "https://linear.app/x/PC-1442",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 29,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1442"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1498"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-1375dc01ccd53c6f",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1498\"], \"id\": \"PC-1498\", \"linear_id\": \"PC-1498\", \"linear_ids\": [\"PC-1498\"], \"link\": \"https://linear.app/x/PC-1498\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 30, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1498\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-1375dc01ccd53c6f"
+      },
+      "id": "PC-1498",
+      "linear_id": "PC-1498",
+      "linear_ids": [
+        "PC-1498"
+      ],
+      "link": "https://linear.app/x/PC-1498",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 30,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1498"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-1526"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X87AVXE296EPHY7CA29J68/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-8f582bca43488a7e",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-1526\"], \"id\": \"PC-1526\", \"linear_id\": \"PC-1526\", \"linear_ids\": [\"PC-1526\"], \"link\": \"https://linear.app/x/PC-1526\", \"owner_home\": \"/tmp/fm-progress-lab.B76emo/home\", \"priority\": 2, \"project\": \"\", \"rank\": 31, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: crash 1526\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-progress-lab.B76emo/home"
+        },
+        "request_id": "progress-2026-10-26-8f582bca43488a7e"
+      },
+      "id": "PC-1526",
+      "linear_id": "PC-1526",
+      "linear_ids": [
+        "PC-1526"
+      ],
+      "link": "https://linear.app/x/PC-1526",
+      "owner_home": "/tmp/fm-progress-lab.B76emo/home",
+      "priority": 2,
+      "project": "",
+      "rank": 31,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: crash 1526"
+    }
+  ],
+  "unclassified": 463
+}

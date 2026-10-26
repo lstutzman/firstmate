@@ -1,0 +1,8 @@
+# base 69a6ca9b officer vs same fake Linear (541 open, 30-item default page)
+DIGEST 2026-10-26 1 data/officers/progress/2026-10-26.md
+--- calls
+issue list --team PC --all --max-items 10000 --fields stateType,priority,url,project --output json
+issue list --team PC --unblocked --all --max-items 10000 --output json
+api GET /repos/lstutzman/PropertyCompass2/pulls?state=open&per_page=100 --paginate --full --jq .[] | "PRJSON " + tojson
+--- json coverage/starts
+{"coverage":[],"starts":0}

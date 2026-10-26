@@ -1,0 +1,122 @@
+# 700 open, 350 unblocked Bug candidates; start-check budget exhausts at 300 requests
+Linear coverage: 12 pages, 1050 items seen, 300 requests, 700 team items, 350 unblocked items, 6 requested roots visited, 6 hierarchy items, 0 rate-limit retries, 0 listed descriptions truncated, 68 start candidates unverified.
+Coverage gap: Linear discovery: start check PC-1430: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1434: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1438: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1442: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1446: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1450: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1454: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1458: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1462: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1466: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1470: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1474: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1478: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1482: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1486: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1490: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1494: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1498: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1502: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1506: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1510: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1514: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1518: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1522: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1526: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1530: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1534: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1538: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1542: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1546: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1550: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1554: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1558: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1562: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1566: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1570: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1574: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1578: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1582: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1586: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1590: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1594: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1598: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1602: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1606: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1610: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1614: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1618: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1622: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1626: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1630: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1634: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1638: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1642: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1646: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1650: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1654: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1658: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1662: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1666: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1670: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1674: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1678: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1682: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1686: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1690: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1694: request budget reached (300 requests)
+Coverage gap: Linear discovery: start check PC-1698: request budget reached (300 requests)
+DIGEST 2026-10-26 350 data/officers/progress/2026-10-26.md
+--- json summary
+{
+  "linear_coverage": {
+    "descriptions_truncated": 0,
+    "hierarchy_items": 6,
+    "items_seen": 1050,
+    "pages_fetched": 12,
+    "rate_limit_retries": 0,
+    "requests": 300,
+    "roots_visited": 6,
+    "team_items": 700,
+    "unblocked_items": 350,
+    "unverified_starts": 68
+  },
+  "starts": 282,
+  "first": [
+    {
+      "id": "PC-1001",
+      "rank": 1,
+      "priority": 1
+    },
+    {
+      "id": "PC-1005",
+      "rank": 2,
+      "priority": 1
+    },
+    {
+      "id": "PC-1009",
+      "rank": 3,
+      "priority": 1
+    }
+  ],
+  "last": [
+    {
+      "id": "PC-1418",
+      "rank": 280,
+      "priority": 2
+    },
+    {
+      "id": "PC-1422",
+      "rank": 281,
+      "priority": 2
+    },
+    {
+      "id": "PC-1426",
+      "rank": 282,
+      "priority": 2
+    }
+  ],
+  "gaps": 68
+}

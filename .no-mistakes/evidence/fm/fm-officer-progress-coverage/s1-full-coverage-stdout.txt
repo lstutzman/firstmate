@@ -1,0 +1,2 @@
+Linear coverage: 12 pages, 757 items seen, 49 requests, 541 team items, 216 unblocked items, 6 requested roots visited, 6 hierarchy items, 0 rate-limit retries, 0 listed descriptions truncated, 0 start candidates unverified.
+DIGEST 2026-10-26 31 data/officers/progress/2026-10-26.md

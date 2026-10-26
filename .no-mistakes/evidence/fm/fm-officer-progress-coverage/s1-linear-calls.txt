@@ -1,0 +1,50 @@
+issue list --team PC --state triage --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --output json
+issue list --team PC --state triage --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --after 100 --output json
+issue list --team PC --state backlog --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --output json
+issue list --team PC --state backlog --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --after 100 --output json
+issue list --team PC --state unstarted --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --output json
+issue list --team PC --state unstarted --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --after 100 --output json
+issue list --team PC --state started --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --output json
+issue list --team PC --state started --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --after 100 --output json
+issue list --team PC --state backlog --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --unblocked --output json
+issue list --team PC --state backlog --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --unblocked --after 100 --output json
+issue list --team PC --state unstarted --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --unblocked --output json
+issue list --team PC --state unstarted --limit 100 --all --max-items 100 --fields stateType,priority,url,project,description --unblocked --after 100 --output json
+issue view PC-1892 --full --sub-issues --output json
+issue view PC-2460 --full --sub-issues --output json
+issue view PC-2461 --full --sub-issues --output json
+issue view PC-2462 --full --sub-issues --output json
+issue view PC-2700 --full --sub-issues --output json
+issue view PC-3756 --full --sub-issues --output json
+api GET /repos/lstutzman/PropertyCompass2/pulls?state=open&per_page=100 --paginate --full --jq .[] | "PRJSON " + tojson
+issue view PC-1001 --full --output json
+issue view PC-1029 --full --output json
+issue view PC-1057 --full --output json
+issue view PC-1113 --full --output json
+issue view PC-1141 --full --output json
+issue view PC-1169 --full --output json
+issue view PC-1197 --full --output json
+issue view PC-1253 --full --output json
+issue view PC-1281 --full --output json
+issue view PC-1309 --full --output json
+issue view PC-1337 --full --output json
+issue view PC-1393 --full --output json
+issue view PC-1421 --full --output json
+issue view PC-1449 --full --output json
+issue view PC-1477 --full --output json
+issue view PC-1533 --full --output json
+issue view PC-1022 --full --output json
+issue view PC-1078 --full --output json
+issue view PC-1106 --full --output json
+issue view PC-1134 --full --output json
+issue view PC-1162 --full --output json
+issue view PC-1218 --full --output json
+issue view PC-1246 --full --output json
+issue view PC-1274 --full --output json
+issue view PC-1302 --full --output json
+issue view PC-1358 --full --output json
+issue view PC-1386 --full --output json
+issue view PC-1414 --full --output json
+issue view PC-1442 --full --output json
+issue view PC-1498 --full --output json
+issue view PC-1526 --full --output json
