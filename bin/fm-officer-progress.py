@@ -9,18 +9,28 @@ Usage: fm-officer-progress.py run --date YYYY-MM-DD --out <lane>
 Reads backlog rows and task status without changing them. Only this officer's
 lane receives dated JSON, Markdown, and the latest progress-state.json.
 The registry and state schema are documented in docs/configuration.md.
-Linear reads use 100-item cursor pages, at most 100 pages per listing and
-300 CLI requests total (including two retries per rate-limited request).
-Requests start at least 0.25 seconds apart; retries back off exponentially,
-honor numeric retry-after seconds, and stop rather than wait over 60 seconds.
+Linear reads use 100-item cursor pages, at most 100 pages per listing. The team
+listing reads only open state types (triage, backlog, unstarted, started); the
+unblocked listing reads only backlog and unstarted, where dependencies matter.
+The 300-request budget bounds linear-axi invocations (including two retries per
+rate-limited request), not Linear API calls: linear-axi hydrates each listed
+issue's state, team, assignee, and project with separate API requests, so one
+100-item page costs about 300-400 API requests.
+Requests start at least 0.25 seconds apart; a rate-limited request is retried
+after 30 and then 60 seconds.
 Hierarchy reads visit only configured requested roots and their descendants.
 A 50-child response is incomplete because linear-axi exposes no child cursor.
+Only start candidates are read in full, with their parent chains, before they
+start; a failed read defers starts as a coverage gap. Listed descriptions are
+cut at 200 characters; descriptions_truncated counts listed issues so cut and
+left unread.
 Coverage counters include both team and unblocked listings, counting each
 returned entry; team_items and unblocked_items separate those passes.
 No model calls, dispatch, steering, Linear writes, or GitHub writes.
 """
 
 import argparse
+import copy
 import datetime
 import hashlib
 import json
@@ -42,6 +52,9 @@ RESTRICTED = re.compile(r"\b(merg(?:e|ing)|production|credentials?|rotat(?:e|ing
                         r"|destructive|delet(?:e|ing|ion)|drop(?:ping)?|force[- ]push|spend(?:ing)?|purchas\w*)\b", re.I)
 UNSTARTED = {"backlog", "todo", "to do", "queued", "unstarted"}
 FINISHED = {"done", "completed", "canceled", "cancelled", "duplicate"}
+OPEN_STATES = ("triage", "backlog", "unstarted", "started")
+BLOCKABLE_STATES = ("backlog", "unstarted")
+TRUNCATED = "\n... (truncated, "
 EVENT = re.compile(r"^([a-z-]+)\b([^:]*):\s*(.*)$")
 KEY = re.compile(r"\bkey=([^\]\s]+)")
 
@@ -155,7 +168,8 @@ class LinearDiscovery:
     def __init__(self):
         self.stats = {"pages_fetched": 0, "items_seen": 0, "requests": 0,
                       "roots_visited": 0, "hierarchy_items": 0, "rate_limit_retries": 0,
-                      "team_items": 0, "unblocked_items": 0}
+                      "team_items": 0, "unblocked_items": 0, "descriptions_truncated": 0}
+        self.viewed = set()
         self.last_request = 0
         self.stopped_reason = None
 
@@ -193,29 +207,24 @@ class LinearDiscovery:
                 if code == "UNKNOWN" and re.search(r"rate[ _-]*limit|too many requests",
                                                     str(error.get("message", "")), re.I):
                     code = "RATE_LIMITED"
-                delay = error.get("retryAfter", error.get("retryAfterSeconds"))
-                if not isinstance(delay, (int, float)) or isinstance(delay, bool) or delay < 0:
-                    delay = None
                 reason = "%s (exit %d)" % (code, proc.returncode)
                 if code == "RATE_LIMITED":
-                    reason += "; retry-after=" + (str(delay) + "s" if delay is not None else "not supplied")
-                    wait = max((2 ** attempt) if delay is not None else 30 * (2 ** attempt), delay or 0)
-                    if attempt < 2 and wait <= 60:
+                    if attempt < 2:
                         self.stats["rate_limit_retries"] += 1
-                        time.sleep(wait)
+                        time.sleep(30 * 2 ** attempt)
                         continue
-                    reason += "; retry budget exhausted" if attempt == 2 else "; exceeds 60s backoff budget"
+                    reason += "; retry budget exhausted"
                     self.stopped_reason = reason
                 raise RuntimeError(reason)
             if not isinstance(doc.get("data"), dict):
                 raise RuntimeError("response has no data object")
             return doc["data"]
 
-    def listing(self, team, rows, unblocked=False):
+    def listing(self, team, state, rows, unblocked=False):
         cursors, cursor = set(), None
-        label = "unblocked listing" if unblocked else "team listing"
+        label = "%s listing (%s)" % ("unblocked" if unblocked else "team", state)
         for _ in range(100):
-            args = ["list", "--team", team, "--limit", "100", "--all", "--max-items", "100",
+            args = ["list", "--team", team, "--state", state, "--limit", "100", "--all", "--max-items", "100",
                     "--fields", "stateType,priority,url,project,description"]
             if unblocked:
                 args.append("--unblocked")
@@ -245,33 +254,39 @@ class LinearDiscovery:
         raise RuntimeError(label + ": page cap reached (100 pages)")
 
 
+def linear_row(entry, home, clear, parent=None):
+    description = entry.get("description") or ""
+    text = entry["title"] + "\n" + description
+    row = item(entry["identifier"], entry["title"], home, text,
+               {m[1].strip(): m[2].strip() for m in TAG.finditer(text)})
+    row.update({"linear_id": entry["identifier"], "linear_ids": [entry["identifier"]],
+                "priority": entry.get("priority") or 0, "project": entry.get("project") or "",
+                "link": entry.get("url") or "", "parent": parent, "linear_only": True,
+                "description_truncated": TRUNCATED in description,
+                "state": str(entry.get("stateType") or entry["state"]).lower(),
+                "evidence": ["Linear " + entry["identifier"]]})
+    row["linear_blocked"] = row["id"] not in clear and row["state"] in UNSTARTED
+    return row
+
+
+def view_parent(entry):
+    parent = LINEAR_ID.match(entry.get("parent") or "")
+    return parent[0] if parent else None
+
+
 def linear_rows(team, home, requested, discovery, problems):
     listed, unblocked = [], []
-    for entries, is_unblocked in ((listed, False), (unblocked, True)):
-        try:
-            discovery.listing(team, entries, unblocked=is_unblocked)
-        except RuntimeError as exc:
-            problems.append("Linear discovery: " + str(exc))
+    for entries, is_unblocked, states in ((listed, False, OPEN_STATES), (unblocked, True, BLOCKABLE_STATES)):
+        for state in states:
+            try:
+                discovery.listing(team, state, entries, unblocked=is_unblocked)
+            except RuntimeError as exc:
+                problems.append("Linear discovery: " + str(exc))
     clear = {r["identifier"] for r in unblocked}
-
-    def linear_row(entry):
-        text = entry["title"] + "\n" + (entry.get("description") or "")
-        row = item(entry["identifier"], entry["title"], home, text,
-                   {m[1].strip(): m[2].strip() for m in TAG.finditer(text)})
-        parent = LINEAR_ID.match(entry.get("parent") or "")
-        row.update({"linear_id": entry["identifier"], "linear_ids": [entry["identifier"]],
-                    "priority": entry.get("priority") or 0, "project": entry.get("project") or "",
-                    "link": entry.get("url") or "", "parent": parent[0] if parent else None,
-                    "linear_only": True,
-                    "state": str(entry.get("stateType") or entry["state"]).lower(),
-                    "evidence": ["Linear " + entry["identifier"]]})
-        row["linear_blocked"] = row["id"] not in clear and row["state"] in UNSTARTED
-        return row
-
-    rows = {entry["identifier"]: linear_row(entry) for entry in listed}
-    pending, viewed = sorted(requested), set()
+    rows = {entry["identifier"]: linear_row(entry, home, clear) for entry in listed}
+    pending = sorted(requested)
     for identifier in pending:
-        if identifier in viewed:
+        if identifier in discovery.viewed:
             continue
         try:
             detail = discovery.read(["view", identifier, "--full", "--sub-issues"])
@@ -282,24 +297,34 @@ def linear_rows(team, home, requested, discovery, problems):
             # linear-axi fetches at most 50 children and exposes no continuation.
             if len(children) >= 50 or (detail.get("pagination") or {}).get("hasNextPage"):
                 raise RuntimeError("sub-issues page cap reached (no supported cursor)")
-            viewed.add(identifier)
+            rows[identifier] = linear_row(entry, home, clear, view_parent(entry))
+            discovery.viewed.add(identifier)
             discovery.stats["roots_visited"] += int(identifier in requested)
             discovery.stats["hierarchy_items"] += 1
-            parent = rows.get(identifier, {}).get("parent")
-            rows[identifier] = linear_row(entry)
-            if parent:
-                rows[identifier]["parent"] = parent
-            for child in children:
-                child_id = child["identifier"]
-                if child_id not in rows:
-                    raise RuntimeError("sub-issue absent from complete team listing")
-                rows[child_id]["parent"] = identifier
-                pending.append(child_id)
+            pending.extend(child["identifier"] for child in children)
         except (RuntimeError, KeyError, TypeError) as exc:
             problems.append("Linear discovery: requested tree %s: %s" %
                             (identifier, str(exc) if isinstance(exc, RuntimeError) else "malformed hierarchy data"))
             break
-    return list(rows.values())
+    return rows, clear
+
+
+def verify_starts(identifiers, rows, clear, home, discovery, problems):
+    """Read each start candidate's full description and parent chain before it starts."""
+    for identifier in identifiers:
+        seen = set()
+        while identifier and identifier not in seen:
+            seen.add(identifier)
+            if identifier not in discovery.viewed:
+                try:
+                    entry = discovery.read(["view", identifier, "--full"])["issue"]
+                    rows[identifier] = linear_row(entry, home, clear, view_parent(entry))
+                except (RuntimeError, KeyError, TypeError) as exc:
+                    problems.append("Linear discovery: start check %s: %s" %
+                                    (identifier, str(exc) if isinstance(exc, RuntimeError) else "malformed issue data"))
+                    return
+                discovery.viewed.add(identifier)
+            identifier = rows[identifier]["parent"]
 
 
 def load_home(source):
@@ -656,7 +681,8 @@ def render_md(doc):
     lines.append("- Linear: %(pages_fetched)d pages, %(items_seen)d items seen, %(requests)d requests, "
                  "%(team_items)d team items, %(unblocked_items)d unblocked items, "
                  "%(roots_visited)d requested roots visited, %(hierarchy_items)d hierarchy items, "
-                 "%(rate_limit_retries)d rate-limit retries." % stats)
+                 "%(rate_limit_retries)d rate-limit retries, "
+                 "%(descriptions_truncated)d listed descriptions truncated." % stats)
     if not doc["coverage"]:
         lines.append("- All configured sources read.")
     return "\n".join(lines) + "\n"
@@ -690,7 +716,7 @@ def main(argv):
     if not args.home or not args.out or not args.date:
         parser.error("run requires --home, --out, and --date")
     datetime.date.fromisoformat(args.date)
-    snapshots, issues, prs, problems = [], [], [], []
+    snapshots, prs, problems = [], [], []
     for home in args.home:
         try:
             snapshot = load_home(home)
@@ -705,8 +731,9 @@ def main(argv):
                 requested.update(i for i in row["linear_ids"]
                                  if re.fullmatch(re.escape(args.team) + r"-\d+", i))
     discovery = LinearDiscovery()
+    rows, clear = {}, set()
     try:
-        issues = linear_rows(args.team, args.home[0], requested, discovery, problems)
+        rows, clear = linear_rows(args.team, args.home[0], requested, discovery, problems)
     except (KeyError, TypeError, ValueError):
         problems.append("Linear discovery: malformed issue data")
     except RuntimeError as exc:
@@ -715,7 +742,18 @@ def main(argv):
         prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()])
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         problems.append("open PR discovery unavailable or incomplete")
-    doc = judge(snapshots, issues, set(filter(None, args.requested.split(","))), prs, problems, args.team)
+    configured = set(filter(None, args.requested.split(",")))
+    checked = set()
+    while not problems:
+        trial = judge(copy.deepcopy(snapshots), copy.deepcopy(list(rows.values())), set(configured),
+                      prs, [], args.team)
+        candidates = {i for row in trial["start_requests"] for i in row["linear_ids"]} - checked
+        if not candidates:
+            break
+        checked |= candidates
+        verify_starts(sorted(candidates), rows, clear, args.home[0], discovery, problems)
+    discovery.stats["descriptions_truncated"] = sum(r["description_truncated"] for r in rows.values())
+    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
@@ -742,7 +780,8 @@ def main(argv):
     print("Linear coverage: %(pages_fetched)d pages, %(items_seen)d items seen, %(requests)d requests, "
           "%(team_items)d team items, %(unblocked_items)d unblocked items, "
           "%(roots_visited)d requested roots visited, %(hierarchy_items)d hierarchy items, "
-          "%(rate_limit_retries)d rate-limit retries." % discovery.stats)
+          "%(rate_limit_retries)d rate-limit retries, "
+          "%(descriptions_truncated)d listed descriptions truncated." % discovery.stats)
     for problem in problems:
         print("Coverage gap: " + problem)
     print("DIGEST %s %d %s.md" % (

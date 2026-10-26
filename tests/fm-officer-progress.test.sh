@@ -26,45 +26,34 @@ make_world() {
 printf '%s\n' "$*" >> "$PROGRESS_WORLD/calls"
 case "$1 $2" in
   'issue list')
-    cursor=first
-    previous=
-    for arg in "$@"; do
-      [ "$previous" != --after ] || cursor=$arg
-      previous=$arg
-    done
-    if [ -f "$PROGRESS_WORLD/linear/page-cap" ]; then
-      case " $* " in
-        *' --unblocked '*) printf '{"ok":true,"data":{"issues":[],"pagination":{"hasNextPage":false}}}\n'; exit ;;
-      esac
-      python3 -I - "$cursor" <<'PYCAP'
-import json,sys
-n=0 if sys.argv[1]=='first' else int(sys.argv[1])
-print(json.dumps({'ok':True,'data':{'issues':[{'identifier':'PC-'+str(n+100),'title':'Bug: paged item','state':'Todo'}], 'pagination':{'hasNextPage':True,'endCursor':str(n+1)}}}))
-PYCAP
-      exit
-    fi
-    if [ -f "$PROGRESS_WORLD/linear/page-$cursor.json" ]; then
-      cat "$PROGRESS_WORLD/linear/page-$cursor.json"
-      exit
-    fi
-    case " $* " in
-      *' --unblocked '*)
-        if [ -f "$PROGRESS_WORLD/linear/unblocked.json" ]; then
-          python3 -I - "$PROGRESS_WORLD/linear/unblocked.json" <<'PYPAGE'
-import json,sys
-doc=json.load(open(sys.argv[1]))
-doc['data'].setdefault('pagination', {'hasNextPage':False})
+    python3 -I - "$PROGRESS_WORLD/linear" "$@" <<'PYLIST'
+import json, pathlib, sys
+root, args = pathlib.Path(sys.argv[1]), sys.argv[2:]
+def opt(flag, default=None):
+    return args[args.index(flag) + 1] if flag in args else default
+cursor, state, unblocked = opt('--after', 'first'), opt('--state'), '--unblocked' in args
+if (root / 'page-cap').exists():
+    n = 0 if cursor == 'first' else int(cursor)
+    issues = [] if unblocked or state != 'unstarted' else [
+        {'identifier': 'PC-' + str(n + 100), 'title': 'Bug: paged item', 'state': 'Todo'}]
+    print(json.dumps({'ok': True, 'data': {'issues': issues,
+                                           'pagination': {'hasNextPage': bool(issues), 'endCursor': str(n + 1)}}}))
+    sys.exit()
+page = root / ('page-%s.json' % cursor)
+if state != 'unstarted' or not page.exists():
+    page = root / ('unblocked.json' if unblocked and (root / 'unblocked.json').exists() else 'list.json')
+try:
+    doc = json.loads(page.read_text())
+except ValueError:
+    print(page.read_text())
+    sys.exit()
+types = {'Done': 'completed', 'In Progress': 'started', 'Backlog': 'backlog'}
+data = doc.get('data')
+if isinstance(data, dict) and isinstance(data.get('issues'), list):
+    data['issues'] = [i for i in data['issues'] if (i.get('stateType') or types.get(i.get('state'), 'unstarted')) == state]
+    data.setdefault('pagination', {'hasNextPage': False})
 print(json.dumps(doc))
-PYPAGE
-          exit
-        fi ;;
-    esac
-    python3 -I - "$PROGRESS_WORLD/linear/list.json" <<'PYPAGE'
-import json,sys
-doc=json.load(open(sys.argv[1]))
-doc['data'].setdefault('pagination', {'hasNextPage':False})
-print(json.dumps(doc))
-PYPAGE
+PYLIST
     ;;
   'issue view')
     python3 -I - "$PROGRESS_WORLD/linear" "$3" <<'PYFIX'
@@ -74,10 +63,11 @@ path = root / (ident + '.json')
 doc = json.loads(path.read_text()) if path.exists() else {'ok':True,'data':{'issue':{'identifier':ident,'title':'Requested root','state':'Done'}}}
 children = []
 for candidate in root.glob('PC-*.json'):
-    entry = json.loads(candidate.read_text())['data']['issue']
+    entry = json.loads(candidate.read_text()).get('data', {}).get('issue', {})
     if (entry.get('parent') or '').split(' ')[0] == ident:
         children.append(entry)
-doc['data'].setdefault('subIssues', children)
+if 'data' in doc:
+    doc['data'].setdefault('subIssues', children)
 print(json.dumps(doc))
 PYFIX
     ;;
@@ -115,26 +105,47 @@ PY
 test_linear_pagination() {
   make_world pagination
   printf '{"ok":true,"data":{"issues":[{"identifier":"PC-1","title":"Bug: first","state":"Todo"}],"pagination":{"hasNextPage":true,"endCursor":"second"}}}\n' > "$WORLD/linear/page-first.json"
-  printf '{"ok":true,"data":{"issues":[{"identifier":"PC-2","title":"Bug: second","state":"Todo"}],"pagination":{"hasNextPage":false,"endCursor":"last"}}}\n' > "$WORLD/linear/page-second.json"
+  printf '{"ok":true,"data":{"issues":[{"identifier":"PC-2","title":"Bug: second","state":"Todo"},{"identifier":"PC-3","title":"Tidy docs","state":"Todo"}],"pagination":{"hasNextPage":false,"endCursor":"last"}}}\n' > "$WORLD/linear/page-second.json"
   printf '{"ok":true,"data":{"issue":{"identifier":"PC-10","title":"Root","state":"Done"},"subIssues":[]}}\n' > "$WORLD/linear/PC-10.json"
+  printf '{"ok":true,"data":{"issue":{"identifier":"PC-1","title":"Bug: first","state":"Todo","parent":null}}}\n' > "$WORLD/linear/PC-1.json"
+  printf '{"ok":true,"data":{"issue":{"identifier":"PC-2","title":"Bug: second","state":"Todo","parent":null}}}\n' > "$WORLD/linear/PC-2.json"
   run_progress > "$WORLD/output" || fail 'paged discovery failed'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   assert_equals 'PC-1 PC-2' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" 'all team pages are classified'
-  assert_equals '4 4' "$(jq -r '.linear_coverage | "\(.pages_fetched) \(.items_seen)"' "$file")" 'both listing passes count pages and items'
-  assert_not_contains "$(cat "$WORLD/calls")" 'issue view PC-1 ' 'ordinary list items never cause view calls'
-  assert_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")" '4 pages' 'digest reports coverage counts'
-  assert_contains "$(cat "$WORLD/output")" '4 pages' 'run log reports coverage counts'
-  pass 'progress: paginates complete listings without per-item fan-out'
+  assert_equals '8 6' "$(jq -r '.linear_coverage | "\(.pages_fetched) \(.items_seen)"' "$file")" 'every state pass counts pages and items'
+  assert_contains "$(cat "$WORLD/calls")" '--state started' 'the team listing reads open states'
+  assert_not_contains "$(cat "$WORLD/calls")" '--state completed' 'completed issues are never listed'
+  assert_not_contains "$(cat "$WORLD/calls")" '--state canceled' 'canceled issues are never listed'
+  assert_not_contains "$(grep -e '--unblocked' "$WORLD/calls")" '--state started' 'the unblocked listing reads only unstarted states'
+  assert_contains "$(cat "$WORLD/calls")" 'issue view PC-1 --full' 'start candidates are read in full'
+  assert_not_contains "$(cat "$WORLD/calls")" 'issue view PC-3' 'ordinary list items never cause view calls'
+  assert_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")" '8 pages' 'digest reports coverage counts'
+  assert_contains "$(cat "$WORLD/output")" '8 pages' 'run log reports coverage counts'
+  pass 'progress: paginates open-state listings and reads only start candidates'
 }
 
 test_linear_rate_limit() {
   make_world rate-limit
   printf '{"ok":true,"data":{"issues":[{"identifier":"PC-1","title":"Bug: first","state":"Todo"}],"pagination":{"hasNextPage":true,"endCursor":"second"}}}\n' > "$WORLD/linear/page-first.json"
-  printf '{"ok":false,"error":{"code":"UNKNOWN","retryAfter":1,"message":"rate limit exceeded; never echo external secrets"}}\n' > "$WORLD/linear/page-second.json"
+  printf '{"ok":false,"error":{"code":"UNKNOWN","message":"rate limit exceeded; never echo external secrets"}}\n' > "$WORLD/linear/page-second.json"
+  local real_python
+  real_python=$(command -v python3)
+  # Record backoff instead of waiting it out; other python3 uses pass through.
+  cat > "$FAKEBIN/python3" <<SH
+#!/usr/bin/env bash
+case "\$2" in
+  *fm-officer-progress.py) exec "$real_python" -I -c 'import os, runpy, sys, time
+time.sleep = lambda s: s >= 1 and open(os.environ["PROGRESS_WORLD"] + "/sleeps", "a").write("%g\n" % s)
+sys.argv = sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name="__main__")' "\$@" ;;
+esac
+exec "$real_python" "\$@"
+SH
+  chmod +x "$FAKEBIN/python3"
   run_progress > "$WORLD/output" || fail 'rate limit must publish available evidence'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   assert_contains "$(jq -r '.coverage[]' "$file")" 'RATE_LIMITED' 'coverage names the actual failure'
-  assert_contains "$(jq -r '.coverage[]' "$file")" 'retry-after=1s' 'coverage names server backoff'
+  assert_equals '30 60' "$(paste -sd' ' "$WORLD/sleeps")" 'rate-limited requests back off 30 then 60 seconds'
   assert_contains "$(cat "$WORLD/output")" 'retry budget exhausted' 'run log transport includes the cause'
   assert_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")" 'RATE_LIMITED' 'digest includes cause'
   assert_not_contains "$(cat "$WORLD/output")" 'never echo' 'external messages stay private'
@@ -150,7 +161,7 @@ test_linear_page_cap() {
   run_progress > "$WORLD/output" || fail 'page cap must publish coverage'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   assert_contains "$(jq -r '.coverage[]' "$file")" 'page cap reached (100 pages)' 'cap has a specific cause'
-  assert_equals '101 100' "$(jq -r '.linear_coverage | "\(.pages_fetched) \(.team_items)"' "$file")" 'page cap retains exact progress'
+  assert_equals '105 100' "$(jq -r '.linear_coverage | "\(.pages_fetched) \(.team_items)"' "$file")" 'page cap retains exact progress'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'capped reads suppress automatic starts'
   assert_contains "$(cat "$WORLD/output")" 'page cap reached' 'cap reaches run log transport'
   pass 'progress: page cap names the bound and preserves progress'
@@ -168,6 +179,41 @@ PYCHILD
   assert_contains "$(jq -r '.coverage[]' "$file")" 'sub-issues page cap reached' 'unpageable child connection never claims complete coverage'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'incomplete hierarchy suppresses starts'
   pass 'progress: hidden CLI child limit is an explicit coverage gap'
+}
+
+test_start_candidate_checks() {
+  make_world start-checks
+  python3 -I - "$WORLD" <<'PY'
+import json, os, sys
+root = sys.argv[1]
+cut = '\n... (truncated, 400 chars total - use --full to see complete body)'
+spec = [('PC-30', 'Parent epic', None, '', ''),
+        ('PC-31', 'Bug: child of a blocked parent', 'PC-30', '', ''),
+        ('PC-32', 'Bug: held in the full text', None, 'Details' + cut, 'Details (hold: Lee decides)'),
+        ('PC-33', 'Tidy docs', None, 'Notes' + cut, 'Notes'),
+        ('PC-34', 'Bug: ready', None, '', '')]
+listed = []
+for ident, title, parent, short, full in spec:
+    doc = {'identifier':ident, 'title':title, 'state':'Todo', 'stateType':'unstarted', 'priority':0}
+    listed.append(dict(doc, description=short))
+    json.dump({'ok':True,'data':{'issue':dict(doc, parent=parent and parent + ' Parent title', description=full)}},
+              open(os.path.join(root,'linear',ident+'.json'),'w'))
+json.dump({'ok':True,'data':{'issues':listed}}, open(os.path.join(root,'linear','list.json'),'w'))
+json.dump({'ok':True,'data':{'issues':listed[1:]}}, open(os.path.join(root,'linear','unblocked.json'),'w'))
+PY
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  run_progress >/dev/null || fail 'start check run failed'
+  assert_equals 'PC-34' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" 'only fully checked candidates start'
+  assert_equals 'PC-31 PC-32' "$(jq -r '[.excluded[].id] | sort | join(" ")' "$file")" \
+    'a blocked parent and a hold after the listing cut both stop a start'
+  assert_contains "$(cat "$WORLD/calls")" 'issue view PC-30 --full' 'a candidate parent chain is read'
+  assert_not_contains "$(cat "$WORLD/calls")" 'issue view PC-33' 'non-candidates are never read'
+  assert_equals '1' "$(jq '.linear_coverage.descriptions_truncated' "$file")" 'unread cut descriptions are counted'
+  printf '{"ok":false,"error":{"code":"NOT_FOUND"}}\n' > "$WORLD/linear/PC-34.json"
+  run_progress >/dev/null || fail 'failed start check must publish coverage'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'start check PC-34: NOT_FOUND' 'a failed candidate read names its cause'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'a failed candidate read defers starts'
+  pass 'progress: start candidates are read in full with their parent chains'
 }
 
 test_backlog_discovery() {
@@ -294,7 +340,7 @@ test_filler_and_failure_coverage() {
   printf 'bad response\n' > "$WORLD/linear/list.json"
   run_progress >/dev/null || fail 'coverage gaps must still publish state'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'missing evidence never looks like an idle fleet'
-  assert_equals '2' "$(jq '.coverage | length' "$file")" 'both failed listing passes are reported'
+  assert_equals '6' "$(jq '.coverage | length' "$file")" 'every failed listing pass is reported'
   pass 'progress: proposes filler only with complete idle evidence'
 }
 
@@ -611,6 +657,7 @@ test_linear_pagination
 test_linear_rate_limit
 test_linear_page_cap
 test_linear_child_cap
+test_start_candidate_checks
 test_backlog_discovery
 test_linear_trees_and_exclusions
 test_filler_and_failure_coverage

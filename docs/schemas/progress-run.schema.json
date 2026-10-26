@@ -18,7 +18,7 @@
     "coverage": {"type": "array", "items": {"type": "string"}},
     "linear_coverage": {
       "type": "object", "additionalProperties": false,
-      "required": ["pages_fetched", "items_seen", "requests", "roots_visited", "hierarchy_items", "rate_limit_retries", "team_items", "unblocked_items"],
+      "required": ["pages_fetched", "items_seen", "requests", "roots_visited", "hierarchy_items", "rate_limit_retries", "team_items", "unblocked_items", "descriptions_truncated"],
       "properties": {
         "team_items": {"type": "integer", "minimum": 0},
         "unblocked_items": {"type": "integer", "minimum": 0},
@@ -27,7 +27,8 @@
         "requests": {"type": "integer", "minimum": 0},
         "roots_visited": {"type": "integer", "minimum": 0},
         "hierarchy_items": {"type": "integer", "minimum": 0},
-        "rate_limit_retries": {"type": "integer", "minimum": 0}
+        "rate_limit_retries": {"type": "integer", "minimum": 0},
+        "descriptions_truncated": {"type": "integer", "minimum": 0}
       }
     },
     "filler": {
