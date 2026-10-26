@@ -579,7 +579,9 @@ See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, 
 
 The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quota readings, and registered second mates holding work without recent communication.
 Idle second mates are healthy.
-It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reuses the fleet snapshot's validated local and remote home summaries.
+It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reads published home summaries for registered second mates without building a full fleet snapshot.
+Remote summary reads share the alarm deadline and fall back to the parent-side route-keyed cache.
+Missing, invalid, or stale home summaries produce an inventory alert; the configured stale-data threshold applies to summaries too.
 The quota alarm fires when mean remaining weekly capacity across non-stale Claude readings falls below the pool threshold, or a carrying account exceeds the weekly threshold.
 Every Claude account with successful Claude-model requests in the last 60 minutes is carrying; several accounts can qualify, and failed-only traffic does not qualify.
 The card names all carrying accounts and includes per-account weekly pressure as information; pressure alone on an idle account does not trigger an alarm.

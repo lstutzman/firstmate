@@ -7,8 +7,8 @@ set -eu
 TMP_ROOT=$(fm_test_tmproot fm-fleet-alarm)
 HOME_FIX="$TMP_ROOT/home"
 BIN_FIX="$TMP_ROOT/bin"
-mkdir -p "$HOME_FIX/state" "$HOME_FIX/config" "$BIN_FIX"
-cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-env-lib.sh" "$BIN_FIX/"
+mkdir -p "$HOME_FIX/state" "$HOME_FIX/config" "$HOME_FIX/data" "$TMP_ROOT/mate/state" "$BIN_FIX"
+cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-env-lib.sh" "$ROOT/bin/fm-classify-lib.sh" "$ROOT/bin/fm-secondmate-registry-lib.sh" "$BIN_FIX/"
 cat > "$BIN_FIX/cpa-usage-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_HOME/quota-calls"
@@ -19,10 +19,16 @@ else
   cat "$FM_HOME/accounts"
 fi
 SH
+# A full fleet snapshot is deliberately unavailable: the alarm must not call it.
 cat > "$BIN_FIX/fm-fleet-snapshot.sh" <<'SH'
 #!/usr/bin/env bash
-[ ! -f "$FM_HOME/mate-fail" ] || exit 1
-cat "$FM_HOME/snapshot"
+exit 99
+SH
+cat > "$BIN_FIX/fm-on.sh" <<'SH'
+#!/usr/bin/env bash
+[ ! -f "$FM_HOME/remote-slow" ] || sleep 10
+[ -f "$FM_HOME/remote-summary" ] || exit 1
+cat "$FM_HOME/remote-summary"
 SH
 # Exercise the real ledger publisher against the fixture home, without a watcher.
 cat > "$BIN_FIX/fm-fleet-ledger.sh" <<'SH'
@@ -41,14 +47,21 @@ quota() {
 # mate's own event age and its spawn time may prove it awake.
 mate() {
   local active=$1 decisions=$2 agent=$3 spawn=${4:-}
-  jq -n --argjson active "$active" --argjson decisions "$decisions" \
-    --argjson agent "$agent" --arg spawn "$spawn" \
-    '{secondmate_current:{registry:{complete:true},records:[{id:"mate",registered:true,
-      spawn_gen:(if $spawn == "" then null else $spawn end),
-      current:{state:"active_child_work"},
-      counts:{active_children:$active,decisions_open:$decisions,holds:0},
-      freshness:{age_seconds:0},parent_event:{age_seconds:0,agent_age_seconds:$agent}}],truncated:0}}' > "$HOME_FIX/snapshot"
+  printf -- '- mate - test domain (home: %s; scope: test; projects: alpha; added 2026-10-26)\n' "$TMP_ROOT/mate" > "$HOME_FIX/data/secondmates.md"
+  python3 - "$HOME_FIX" "$TMP_ROOT/mate" "$active" "$decisions" "$agent" "$spawn" <<'PY_MATE'
+from pathlib import Path
+import json,sys,time
+home,mate=map(Path,sys.argv[1:3])
+active,decisions=map(int,sys.argv[3:5])
+age=json.loads(sys.argv[5])
+now=int(time.time())
+summary=dict(schema='fm-secondmate-home-summary.v1',hold_classifier_schema='fm-captain-hold-buckets.v1',home=str(mate),generated_epoch=now,valid=True,counts=dict(in_flight=0,active_children=active,decisions_open=decisions,holds=0))
+(mate/'state/home-summary.json').write_text(json.dumps(summary))
+(home/'state/mate.status').write_text('working: no timestamp\n' if age is None else f'working [at={now-age}]: agent event\n')
+(home/'state/mate.meta').write_text('spawn_gen='+sys.argv[6]+'\n')
+PY_MATE
 }
+
 run_alarm() {
   ROOT="$ROOT" FM_HOME="$HOME_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" \
     python3 "$BIN_FIX/fm-fleet-alarm.py" "$@"
@@ -62,6 +75,101 @@ mate 0 0 9000
 out=$(run_alarm check)
 [ -z "$out" ] || fail "idle mates and healthy quota must be silent: $out"
 pass 'idle secondmate never alarms, regardless of silence'
+
+quota 0.9
+out=$(run_alarm check)
+[ -z "$out" ] || fail "exactly 90% carrying use and exactly 10% remaining are not past either threshold: $out"
+quota 0.2
+run_alarm check >/dev/null
+pass 'quota alarm thresholds are strict at the configured boundaries'
+
+mkdir -p "$HOME_FIX/data" "$TMP_ROOT/mate/state"
+printf -- '- mate - test domain (home: %s; scope: test; projects: alpha; added 2026-10-26)\n' "$TMP_ROOT/mate" > "$HOME_FIX/data/secondmates.md"
+python3 - "$HOME_FIX" "$TMP_ROOT/mate" <<'PY_STATUS'
+from pathlib import Path
+import json,sys,time
+home, mate = map(Path, sys.argv[1:])
+now=int(time.time())
+summary=dict(schema='fm-secondmate-home-summary.v1',hold_classifier_schema='fm-captain-hold-buckets.v1',home=str(mate),generated_epoch=now,valid=True,counts=dict(in_flight=1,active_children=0,decisions_open=0,holds=0))
+(mate/'state/home-summary.json').write_text(json.dumps(summary))
+with (home/'state/mate.status').open('w') as file:
+    for i in range(10000):
+        file.write(f'note [at={now-4000}]: ' + 'x'*512 + '\n')
+    file.write(f'working [at={now-3601}]: ' + 'z'*200000 + '\n')
+PY_STATUS
+SECONDS=0
+out=$(run_alarm check)
+[ "$SECONDS" -lt 24 ] || fail 'alarm exceeded its 24-second budget with large status history'
+assert_contains "$out" 'holding work silent' 'cached work inventory and actual agent events bypass fleet snapshot'
+assert_not_contains "$out" 'inventory unavailable' 'large status history is readable without a full decision fold'
+# Reset the alarm input for subsequent cases.
+mate 0 0 0
+pass 'cached summary reader completes inside budget with oversized status history'
+
+run_alarm check >/dev/null
+mate 1 0 3601
+bash -c '. "$1/bin/fm-wake-lib.sh"; . "$1/bin/fm-classify-lib.sh"; f="$2/state/mate.status"; before=$(_fm_status_file_size "$f"); printf "note [at=%s]: parent answer\n" "$(date +%s)" >> "$f"; status_home_appends_record "$f" "$before" "$(_fm_status_file_size "$f")"' fleet-alarm-test "$ROOT" "$HOME_FIX"
+printf 'blocked [key=pending-reply-test] [at=%s]: parent escalation\n' "$(date +%s)" >> "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'parent answer and continuity escalation cannot count as agent speech'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 3601
+python3 - "$HOME_FIX" "$TMP_ROOT/mate" <<'PY_CACHE'
+from pathlib import Path
+import hashlib,json,sys
+home,mate=map(Path,sys.argv[1:])
+name,host,remote='mate','unreachable.invalid','/remote/mate'
+(home/'data/secondmates.md').write_text(f'- {name} - test domain (host: {host}; root: /remote/code; home: {remote}; scope: test; projects: alpha; added 2026-10-26)\n')
+summary=json.loads((mate/'state/home-summary.json').read_text())
+summary['home']=remote
+cache=home/'state/secondmate-summary-cache'
+cache.mkdir(exist_ok=True)
+key=hashlib.sha256(f'{name}\n{host}\n{remote}\n'.encode()).hexdigest()
+(cache/(key+'.json')).write_text(json.dumps(summary))
+PY_CACHE
+assert_contains "$(run_alarm check)" 'holding work silent' 'remote mate uses route-keyed cache without contacting the host'
+python3 - "$HOME_FIX" <<'PY_CACHE'
+from pathlib import Path
+import json,sys
+for path in (Path(sys.argv[1])/'state/secondmate-summary-cache').glob('*.json'):
+    value=json.loads(path.read_text())
+    value['generated_epoch']-=121*60
+    path.write_text(json.dumps(value))
+PY_CACHE
+assert_contains "$(run_alarm check)" 'cached home summary is stale' 'stale inventory cannot appear healthy'
+python3 - "$HOME_FIX" <<'PY_REMOTE'
+from pathlib import Path
+import json,sys,time
+home=Path(sys.argv[1])
+value=json.loads(next((home/'state/secondmate-summary-cache').glob('*.json')).read_text())
+value['generated_epoch']=int(time.time())
+(home/'remote-summary').write_text(json.dumps(value))
+PY_REMOTE
+mv "$HOME_FIX/state/secondmate-summary-cache" "$HOME_FIX/parent-cache-disabled"
+# Clearing the prior read failure must not rearm the existing silence alarm.
+assert_not_contains "$(run_alarm check)" 'inventory unavailable' 'published remote summary is read even without a fresh parent copy'
+mv "$HOME_FIX/remote-summary" "$HOME_FIX/remote-summary-cleared"
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'cached remote inventory and parent-channel silence preserve source and freshness boundaries'
+
+# One slow remote must leave enough budget to evaluate another mate locally.
+mate 1 0 3601
+printf -- '- slow - test domain (host: unreachable.invalid; root: /remote/code; home: /remote/slow; scope: test; projects: alpha; added 2026-10-26)\n' > "$HOME_FIX/slow-registry"
+cat "$HOME_FIX/data/secondmates.md" >> "$HOME_FIX/slow-registry"
+mv "$HOME_FIX/slow-registry" "$HOME_FIX/data/secondmates.md"
+: > "$HOME_FIX/remote-slow"
+printf '%s\n' '{"budget_seconds":3}' > "$HOME_FIX/config/fleet-alarm.json"
+SECONDS=0
+out=$(run_alarm check)
+[ "$SECONDS" -lt 3 ] || fail 'slow remote starved the alarm budget'
+assert_contains "$out" 'holding work silent' 'local mate is checked despite a slow remote'
+assert_contains "$out" 'inventory unavailable: slow' 'unavailable remote remains visible'
+mv "$HOME_FIX/remote-slow" "$HOME_FIX/remote-slow-cleared"
+mv "$HOME_FIX/config/fleet-alarm.json" "$HOME_FIX/small-budget-cleared"
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'slow remote summary reads do not starve the silent-mate check'
 
 cat > "$HOME_FIX/accounts" <<'ROWS'
 accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
@@ -219,8 +327,8 @@ mate 0 0 3601
 [ -z "$(run_alarm check)" ] || fail 'idle must clear silent condition'
 pass 'in-flight and decision work alarm after 60 minutes of agent silence; agent communication clears'
 mate 0 0 3601
-jq '.secondmate_current.records[0].counts.in_flight=1' "$HOME_FIX/snapshot" > "$HOME_FIX/next-snapshot"
-mv "$HOME_FIX/next-snapshot" "$HOME_FIX/snapshot"
+jq '.counts.in_flight=1' "$TMP_ROOT/mate/state/home-summary.json" > "$HOME_FIX/next-snapshot"
+mv "$HOME_FIX/next-snapshot" "$TMP_ROOT/mate/state/home-summary.json"
 assert_contains "$(run_alarm check)" 'holding work silent' 'program in flight also counts as work'
 mate 0 0 0
 run_alarm check >/dev/null
@@ -358,15 +466,14 @@ assert_contains "$out" 'Carrying Claude account member@example.invalid' 'configu
 pass 'operator thresholds control quota, staleness and silence'
 
 mate 0 0 0
-jq '.secondmate_current.registry.complete=false' "$HOME_FIX/snapshot" > "$HOME_FIX/next-snapshot"
-mv "$HOME_FIX/next-snapshot" "$HOME_FIX/snapshot"
-assert_contains "$(run_alarm check)" 'inventory incomplete' 'incomplete registry alerts'
+printf '%s\n' '- malformed registry entry' > "$HOME_FIX/data/secondmates.md"
+assert_contains "$(run_alarm check)" 'inventory unavailable' 'malformed registry alerts'
 pass 'registry read failures cannot appear healthy'
 
 mate 0 0 0
 run_alarm check >/dev/null
-printf '%s\n' '{}' > "$HOME_FIX/snapshot"
-assert_contains "$(run_alarm check)" "Secondmate work inventory unavailable: KeyError: 'secondmate_current'" 'inventory failure names its cause'
+printf '%s\n' '{}' > "$TMP_ROOT/mate/state/home-summary.json"
+assert_contains "$(run_alarm check)" "Secondmate work inventory unavailable: mate: 'schema'" 'inventory failure names its cause'
 mate 0 0 0
 run_alarm check >/dev/null
 : > "$HOME_FIX/quota-fail"

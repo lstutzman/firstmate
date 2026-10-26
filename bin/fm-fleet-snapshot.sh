@@ -363,50 +363,6 @@ crew_state_json() {  # <id> [<captured-meta>] [<captured-status>]
      {state:$state,source:$source,detail:($detail | bounded),raw:($raw | bounded)}'
 }
 
-# Age of the newest stamped line this home did not append itself. Ranges in
-# the home-appends ledger (fm_wake_status_append_self_announced) are this
-# home's own closes and hold transfers, and pending-reply and remote-reply
-# continuity escalations are this home's reports that the task stopped
-# answering, so none of them count as the task's communication. Prints null
-# when no such line exists.
-status_agent_event_age() {  # <observed-status-log> <contract-path>
-  local log=$1 path=$2 ranges
-  [ -f "$log" ] || { printf 'null'; return 0; }
-  ranges=$(status_home_appends_ranges "$path") || ranges=
-  # One pass: ledger ranges are ascending (status_home_appends_covers), so
-  # merge them once and walk them alongside the lines; the stamp rule is
-  # _fm_status_at_epoch's.
-  LC_ALL=C awk -v ranges="$ranges" -v now="$SNAPSHOT_EPOCH" '
-    BEGIN {
-      n = 0
-      count = split(ranges, rows, "\n")
-      for (i = 1; i <= count; i++) {
-        if (split(rows[i], f, "\t") != 2) continue
-        if (n && f[1] + 0 <= hi[n]) { if (f[2] + 0 > hi[n]) hi[n] = f[2] + 0; continue }
-        lo[++n] = f[1] + 0; hi[n] = f[2] + 0
-      }
-      j = 1; offset = 0; age = "null"
-    }
-    {
-      start = offset; end = start + length($0) + 1; offset = end
-      if ($0 !~ /[^ \t\r\f\v]/) next
-      if (index($0, "blocked [key=pending-reply-") == 1 || index($0, "blocked [key=remote-reply-continuity-") == 1) next
-      while (j <= n && hi[j] <= start) j++
-      if (j <= n && lo[j] <= start && hi[j] >= end) next
-      colon = index($0, ":"); if (!colon) next
-      head = substr($0, 1, colon - 1)
-      at = index(head, "[at="); if (!at) next
-      rest = substr(head, at + 4)
-      close_at = index(rest, "]"); if (!close_at) next
-      value = substr(rest, 1, close_at - 1)
-      if (index(substr(rest, close_at + 1), "[at=")) next
-      if (value !~ /^[0-9]+$/ || value ~ /^0[0-9]/ || length(value) > 12) next
-      if (value + 0 > now + 0) next
-      age = now - value
-    }
-    END { printf "%s", age }
-  ' "$log"
-}
 
 status_event_json() {  # <observed-status-log> [<contract-path>]
   local log=$1 path=${2:-$1} present=0 raw='' verb='' note='' epoch=null age=null
@@ -1843,7 +1799,7 @@ secondmate_current_json() {  # <parent-tasks-json-file> <output-file>
     printf '%s' "$decisions" > "$decisions_file" || return 1
     event_age=$(printf '%s' "$task" | jq -r '.paths.status_log.last_event.age_seconds // "null"')
     agent_age=null
-    if [ -n "$status_file" ]; then agent_age=$(status_agent_event_age "$status_observation_file" "$status_file"); fi
+    if [ -n "$status_file" ]; then agent_age=$(status_agent_event_age "$status_observation_file" "$status_file" "$SNAPSHOT_EPOCH"); fi
     observed_epoch=$(file_mtime_epoch "$status_observation_file")
     observed_age=null
     if [ -n "$observed_epoch" ]; then

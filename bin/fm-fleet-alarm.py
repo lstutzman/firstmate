@@ -8,7 +8,9 @@ weekly capacity across non-stale Claude readings), silent_minutes
 (60), stale_minutes (120), and budget_seconds (24). cpa-usage-host selects local
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Both readers share FM_CHECK_TIMEOUT (default 30); budget must leave 5 seconds.
-The snapshot reader owns registered-home selection and remote ledger collection.
+Secondmate inventory reads published home summaries (bounded remote reads fall
+back to the parent cache); no full fleet snapshot runs here. Registry and summary inputs are bounded at 64/256 KiB.
+Parent-channel age uses the shared classifier, excluding parent appends.
 One alert per condition/reset window, rearmed on clear. check and timer share a
 locked record, but independent delivery receipts, so a check cannot consume the
 timer's Captain's Log notification. timer requires config/fleet-ledger enabled.
@@ -16,7 +18,9 @@ arm registers the private check shim. timer-files only writes scheduler files;
 it never loads or starts a scheduler. See docs/configuration.md for installation.
 """
 import csv
+import hashlib
 from datetime import datetime, timedelta
+from decimal import Decimal
 import fcntl
 import io
 import json
@@ -24,6 +28,7 @@ import math
 import os
 from pathlib import Path
 import plistlib
+import re
 import shlex
 import subprocess
 import sys
@@ -97,6 +102,98 @@ def accounts(text):
     return claude
 
 
+def read_json(path, limit=262144):
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('inventory is not a regular file')
+    with path.open() as file:
+        content = file.read(limit + 1)
+    if len(content.encode()) > limit:
+        raise ValueError('inventory exceeds byte limit')
+    return json.loads(content)
+
+
+def mate_findings(read, cfg):
+    findings = {}
+    registry = Path(os.environ.get('FM_DATA_OVERRIDE', HOME / 'data')) / 'secondmates.md'
+    if not registry.exists():
+        return findings
+    if registry.is_symlink() or not registry.is_file() or registry.stat().st_size > 65536:
+        raise ValueError('unsafe or oversized secondmate registry')
+    # The shared parser owns the registry grammar and the classifier owns which
+    # parent-channel events count as the secondmate speaking.
+    roster = read(['bash', '-c', r'''
+. "$1/fm-secondmate-registry-lib.sh"
+. "$1/fm-classify-lib.sh"
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in
+    "- "*)
+      secondmate_registry_parse_line "$line" || exit 1
+      id=$SECONDMATE_REGISTRY_ID
+      age=$(status_agent_event_age "$3/$id.status" "$3/$id.status" "$4") || exit 1
+      printf '%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age"
+      ;;
+  esac
+done < "$2"
+''', 'fleet-alarm', BIN, registry, STATE, str(int(time.time()))])
+    seen = set()
+    routes = list(csv.reader(io.StringIO(roster), delimiter='\t'))
+    for index, row in enumerate(routes):
+        name, host, home, age = row
+        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name) or name in seen or not Path(home).is_absolute():
+            raise ValueError('invalid or duplicate secondmate route')
+        seen.add(name)
+        if len(seen) > 40:
+            raise ValueError('secondmate inventory incomplete: too many records')
+        if host:
+            digest = hashlib.sha256(f'{name}\n{host}\n{home}\n'.encode()).hexdigest()
+            cache = Path(os.environ.get('FM_SNAPSHOT_CACHE_DIR', STATE / 'secondmate-summary-cache'))
+            path = cache / (digest + '.json')
+        else:
+            path = Path(home) / 'state/home-summary.json'
+        try:
+            if host:
+                try:
+                    summary = json.loads(read([BIN / 'fm-on.sh', name, 'fm-remote-file.sh',
+                                               'get', 'state/home-summary.json', '262144'],
+                                              len(routes) - index + 1))
+                except (ValueError, OSError):
+                    summary = read_json(path)
+            else:
+                summary = read_json(path)
+            if (summary['schema'] != 'fm-secondmate-home-summary.v1'
+                    or summary['hold_classifier_schema'] != 'fm-captain-hold-buckets.v1'
+                    or summary['home'] != home or summary['valid'] is not True):
+                raise ValueError('invalid cached home summary')
+            generated = summary['generated_epoch']
+            if (type(generated) not in (int, float) or not math.isfinite(generated)
+                    or generated > time.time() or time.time() - generated >= cfg['stale_minutes'] * 60):
+                raise ValueError('cached home summary is stale or invalid')
+            counts = summary['counts']
+            work = [counts.get('in_flight', 0), counts['active_children'], counts['decisions_open'], counts['holds']]
+            if any(type(n) is not int or n < 0 for n in work):
+                raise ValueError('invalid work counts')
+            if not any(work):
+                continue
+            ages = [] if age == 'null' else [float(age)]
+            meta = STATE / (name + '.meta')
+            if meta.exists():
+                if meta.stat().st_size > 65536 or meta.is_symlink():
+                    raise ValueError('unsafe or oversized task metadata')
+                spawn = ''
+                for line in meta.read_text().splitlines():
+                    if line.startswith('spawn_gen='):
+                        spawn = line.split('=', 1)[1]
+                match = re.match(r'^s([0-9]+)(?:\.|$)', spawn)
+                if match:
+                    ages.append(time.time() - int(match[1]))
+            ages = [a for a in ages if math.isfinite(a) and a >= 0]
+            if not ages or min(ages) > cfg['silent_minutes'] * 60:
+                findings['silent:' + name] = f"Secondmate holding work silent over {cfg['silent_minutes']:g} minutes: {name}"
+        except (ValueError, KeyError, TypeError, OSError) as error:
+            findings['mate-read:' + name] = f'Secondmate work inventory unavailable: {name}: {error}'
+    return findings
+
+
 def collect(cfg):
     findings = {}
     quota_info = ''
@@ -157,32 +254,13 @@ def collect(cfg):
                 findings[key] = f"Carrying Claude account {name} 7d {row['used_7d']:.0%} (resets {row['reset_7d']})"
         if ignored:
             findings[f'ignored:{ignored}'] = f'{ignored} ignored stale Claude accounts (no reading for 7 days)'
-        if pool and sum(1 - used for used in pool) / len(pool) < cfg['pool_remaining']:
+        # Compare decimal quota fractions so exactly 10% remaining is not below 10%.
+        if pool and sum(1 - Decimal(str(used)) for used in pool) / len(pool) < Decimal(str(cfg['pool_remaining'])):
             findings['pool'] = 'Claude pool near empty'
     except (ValueError, KeyError, OSError) as error:
         findings['quota-read'] = f'Claude quota unavailable; reading may be stale: {type(error).__name__}: {error}'
     try:
-        snapshot = json.loads(read([BIN / 'fm-fleet-snapshot.sh', '--json']))
-        mates = snapshot['secondmate_current']
-        if mates.get('truncated', 0) or mates.get('registry', {}).get('complete') is not True:
-            findings['mate-read'] = 'Secondmate work inventory incomplete'
-        for mate in mates['records']:
-            if mate.get('registered') is not True:
-                continue
-            counts = mate['counts']
-            holding = any(counts.get(k, 0) > 0 for k in ('in_flight', 'active_children', 'decisions_open', 'holds'))
-            holding = holding or bool(mate.get('parent_event', {}).get('open_decisions'))
-            if mate.get('current', {}).get('state') == 'unknown':
-                findings['mate-read:' + mate['id']] = f"Secondmate work inventory unavailable: {mate['id']}"
-            if not holding:
-                continue
-            ages = [mate.get('parent_event', {}).get('agent_age_seconds')]
-            spawn = str(mate.get('spawn_gen') or '')
-            if spawn.startswith('s') and spawn[1:].split('.', 1)[0].isdigit():
-                ages.append(time.time() - int(spawn[1:].split('.', 1)[0]))
-            ages = [a for a in ages if isinstance(a, (int, float)) and a >= 0]
-            if not ages or min(ages) > cfg['silent_minutes'] * 60:
-                findings['silent:' + mate['id']] = f"Secondmate holding work silent over {cfg['silent_minutes']:g} minutes: {mate['id']}"
+        findings.update(mate_findings(read, cfg))
     except (ValueError, KeyError, TypeError, OSError) as error:
         findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
     return findings, quota_info
