@@ -1,0 +1,38 @@
+=== S1: main's cpa-usage-host with a leading '#' comment, remote host ===
+# Quota reader host for this fleet member$
+slartibartfast$
+--- dispatch resolver's parser (fm_config_line) reads:
+slartibartfast
+--- fm-fleet-alarm.py check output:
+a@example.invalid 7d 93% (resets w1); Claude pool near empty
+[exit 0]
+--- reader calls:
+ssh -o BatchMode=yes -o ConnectTimeout=3 -- slartibartfast cpa-usage-axi accounts
+cpa accounts
+ssh -o BatchMode=yes -o ConnectTimeout=3 -- slartibartfast cpa-usage-axi check --five-hour off --seven-day 0.9
+cpa check --five-hour off --seven-day 0.9
+
+=== S2: comment + blank lines + 'local' ===
+a@example.invalid 7d 93% (resets w1); Claude pool near empty
+[exit 0]
+cpa accounts
+cpa check --five-hour off --seven-day 0.9
+
+=== S3: genuinely invalid host is still rejected, with reason, contents not echoed ===
+Fleet alarm configuration invalid: invalid cpa-usage-host
+[exit 0]
+--- reader calls (expect none):
+
+=== S4: other collect() ValueError (bad fleet-alarm.json) names its reason ===
+Fleet alarm configuration invalid: quota thresholds must be fractions
+[exit 0]
+
+=== S5: quota output without accounts header names cause (no dangling StopIteration) ===
+Claude quota unavailable; reading may be stale: ValueError: no accounts header in quota reading
+[exit 0]
+
+=== S6: absent cpa-usage-host -> local; real fm-fleet-snapshot.sh on empty lab home ===
+a@example.invalid 7d 93% (resets w1); Claude pool near empty
+[exit 0]
+cpa accounts
+cpa check --five-hour off --seven-day 0.9

@@ -1,0 +1,4 @@
+=== Baseline (base commit 9a963566) with the same commented cpa-usage-host ===
+Fleet alarm configuration invalid
+[exit 0]
+reader calls:
