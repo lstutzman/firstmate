@@ -13,8 +13,8 @@ cat > "$BIN_FIX/cpa-usage-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_HOME/quota-calls"
 [ ! -f "$FM_HOME/quota-fail" ] || exit 1
-if [ "$1" = check ]; then
-  cat "$FM_HOME/threshold"
+if [ "$1" = models ]; then
+  cat "$FM_HOME/models"
 else
   cat "$FM_HOME/accounts"
 fi
@@ -32,16 +32,10 @@ SH
 chmod +x "$BIN_FIX/"*.sh "$BIN_FIX/cpa-usage-axi"
 
 quota() {
-  local used=$1 age=${2:-1} reset=${3:-window1} percent
-  percent=${used#0.}
-  [ "$used" != 1 ] || percent=100
+  local used=$1 age=${2:-1} reset=${3:-window1}
   printf '%s\n' 'accounts[1]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:' \
     "  member@example.invalid,claude,0.2,,$used,$reset,,$age,0" > "$HOME_FIX/accounts"
-  if [ "$used" = 0.2 ]; then
-    : > "$HOME_FIX/threshold"
-  else
-    printf '%s\n' "alert: member@example.invalid 7d $percent% (resets $reset)" > "$HOME_FIX/threshold"
-  fi
+
 }
 # The watcher summary and main's own last line are always fresh here; only the
 # mate's own event age and its spawn time may prove it awake.
@@ -59,11 +53,90 @@ run_alarm() {
   ROOT="$ROOT" FM_HOME="$HOME_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" \
     python3 "$BIN_FIX/fm-fleet-alarm.py" "$@"
 }
+cat > "$HOME_FIX/models" <<'ROWS'
+models[1]{account,model,requests,failed}:
+  member@example.invalid,claude-opus-5-5,5,0
+ROWS
 quota 0.2
 mate 0 0 9000
 out=$(run_alarm check)
 [ -z "$out" ] || fail "idle mates and healthy quota must be silent: $out"
 pass 'idle secondmate never alarms, regardless of silence'
+
+cat > "$HOME_FIX/accounts" <<'ROWS'
+accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  exhausted@example.invalid,claude,0.1,,1.0,window1,,1,0
+  member@example.invalid,claude,0.1,,0.2,window1,,1,0
+ROWS
+out=$(run_alarm check)
+[ -z "$out" ] || fail "exhausted idle account with pool headroom must not alarm: $out"
+mate 1 0 3601
+out=$(run_alarm check)
+assert_contains "$out" 'exhausted@example.invalid 7d 100%' 'account pressure remains informational in card text'
+assert_contains "$out" 'Carrying Claude accounts: member@example.invalid' 'successful recent traffic identifies carrying account'
+mate 0 0 0
+quota 0.2
+run_alarm check >/dev/null
+pass 'idle exhausted account does not alarm while the pool has headroom'
+
+# Several carrying accounts: failed-only requests and other providers do not qualify.
+cat > "$HOME_FIX/accounts" <<'ROWS'
+accounts[3]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  first@example.invalid,claude,0.1,,0.91,window1,,1,0
+  second@example.invalid,claude,0.1,,0.92,window1,,1,0
+  failed@example.invalid,claude,0.1,,1.0,window1,,1,0
+ROWS
+cat > "$HOME_FIX/models" <<'ROWS'
+models[4]{account,model,requests,failed}:
+  first@example.invalid,claude-opus-5-5,5,0
+  second@example.invalid,claude-sonnet-5-5,5,4
+  failed@example.invalid,claude-opus-5-5,2,2
+  foreign@example.invalid,gpt-6.1-sol,5,0
+ROWS
+out=$(run_alarm check)
+assert_contains "$out" 'Carrying Claude account first@example.invalid 7d 91%' 'first carrying account alarms'
+assert_contains "$out" 'Carrying Claude account second@example.invalid 7d 92%' 'second carrying account alarms'
+assert_contains "$out" 'Carrying Claude accounts: first@example.invalid, second@example.invalid' 'all carrying accounts named'
+assert_not_contains "$out" 'Carrying Claude account failed@example.invalid' 'failed-only traffic does not carry'
+assert_not_contains "$out" 'foreign@example.invalid' 'other provider traffic does not carry'
+# Clear previous conditions before testing no carrying traffic.
+quota 0.2
+run_alarm check >/dev/null
+cat > "$HOME_FIX/models" <<'ROWS'
+models[1]{account,model,requests,failed}:
+  member@example.invalid,claude-opus-5-5,3,3
+ROWS
+quota 0.91
+out=$(run_alarm check)
+assert_contains "$out" 'pool near empty' 'pool alarms without a carrying account'
+assert_contains "$out" 'Carrying Claude accounts: none (no successful Claude traffic in last 60 minutes)' 'no carrying account explained'
+assert_not_contains "$out" 'Carrying Claude account member@example.invalid' 'failed-only traffic skips carrying condition'
+quota 0.2
+run_alarm check >/dev/null
+mate 1 0 3601
+out=$(run_alarm check)
+assert_contains "$out" 'holding work silent' 'silent-mate alarm survives no recent successful traffic'
+assert_contains "$out" 'Carrying Claude accounts: none' 'idle traffic status included in mate card'
+mate 0 0 0
+cat > "$HOME_FIX/models" <<'ROWS'
+models[1]{account,model,requests,failed}:
+  member@example.invalid,claude-opus-5-5,5,0
+ROWS
+quota 0.2
+run_alarm check >/dev/null
+pass 'one, several, and no carrying accounts use successful Claude traffic only'
+
+cat > "$HOME_FIX/accounts" <<'ROWS'
+accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  low@example.invalid,claude,0.1,,0.95,window1,,1,0
+  stale@example.invalid,claude,0.1,,0.0,window1,,121,0
+ROWS
+out=$(run_alarm check)
+assert_contains "$out" 'pool near empty' 'stale headroom cannot inflate live pool mean'
+assert_contains "$out" 'reading stale: stale@example.invalid' 'stale alarm retained'
+quota 0.2
+run_alarm check >/dev/null
+pass 'pool mean excludes stale readings'
 
 printf '  # Quota reader host\n\n \t \n \tlocal \t\r\nignored-host\n' > "$HOME_FIX/config/cpa-usage-host"
 quota 0.91
@@ -86,15 +159,17 @@ pass 'collection errors report the actual reason without echoing config contents
 quota 0.91
 out=$(run_alarm check)
 assert_contains "$out" '7d 91%' 'account threshold'
-assert_contains "$(cat "$HOME_FIX/quota-calls")" 'check --five-hour off --seven-day 0.9' 'tool owns threshold check'
+assert_contains "$(cat "$HOME_FIX/quota-calls")" 'models --hours 1 --limit 1000' 'carrying uses a bounded traffic window'
 [ -z "$(run_alarm check)" ] || fail 'threshold alert must deduplicate'
+quota 0.92
+[ -z "$(run_alarm check)" ] || fail 'changed pressure text must not re-fire an active condition'
 quota 0.91 1 window2
 assert_contains "$(run_alarm check)" 'window2' 'new reset window rearms'
 quota 0.2
 run_alarm check >/dev/null
 quota 0.91
 assert_contains "$(run_alarm check)" '7d 91%' 'clear rearms threshold'
-pass 'weekly threshold uses tool check and deduplicates per reset window'
+pass 'carrying threshold deduplicates per reset window'
 
 quota 0.2
 run_alarm check >/dev/null
@@ -188,7 +263,6 @@ accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,
   live@example.invalid,claude,0.1,,0.2,window1,,1,0
   retired@example.invalid,claude,0.1,,0.1,window1,,20000,0
 ROWS
-: > "$HOME_FIX/threshold"
 run_alarm timer
 [ "$(tail -n 1 "$HOME_FIX/state/fleet-ledger.jsonl" | grep -c resolved)" = 1 ] || fail 'ignored accounts must not keep the card open'
 before=$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")
@@ -219,12 +293,20 @@ accounts[3]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,
   reserve@example.invalid,claude,0.1,,0.2,window1,,1,0
   codex@example.invalid,codex,0.1,,0.99,window1,,1,0
 ROWS
-printf '%s\n' 'alert: busy@example.invalid 7d 95% (resets window1); codex@example.invalid/codex 7d 99%' > "$HOME_FIX/threshold"
+cat > "$HOME_FIX/models" <<'ROWS'
+models[2]{account,model,requests,failed}:
+  busy@example.invalid,claude-opus-5-5,5,0
+  codex@example.invalid,gpt-6.1-sol,5,0
+ROWS
 out=$(run_alarm check)
 assert_contains "$out" 'busy@example.invalid' 'every Claude account is checked'
 assert_not_contains "$out" 'codex@example.invalid' 'Codex account is outside Claude pool'
 assert_not_contains "$out" 'pool near empty' 'healthy reserve prevents pool alarm'
-pass 'account alerts preserve healthy pool reserves and exclude other providers'
+pass 'carrying account alerts preserve healthy pool reserves and exclude other providers'
+cat > "$HOME_FIX/models" <<'ROWS'
+models[1]{account,model,requests,failed}:
+  member@example.invalid,claude-opus-5-5,5,0
+ROWS
 quota 0.2
 run_alarm check >/dev/null
 
@@ -233,7 +315,6 @@ accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,
   busy@example.invalid,claude,0.1,,0.95,window1,,1,0
   new@example.invalid,claude,,,,,,,0
 ROWS
-printf '%s\n' 'alert: busy@example.invalid 7d 95% (resets window1)' > "$HOME_FIX/threshold"
 out=$(run_alarm check)
 assert_contains "$out" 'busy@example.invalid 7d 95%' 'a blank account cannot hide another account threshold'
 assert_contains "$out" 'reading unknown: new@example.invalid' 'blank reading is unknown'
@@ -249,7 +330,6 @@ accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,
   live@example.invalid,claude,0.1,,0.2,window1,,1,0
   retired@example.invalid,claude,0.1,,0.1,window1,,10080,0
 ROWS
-: > "$HOME_FIX/threshold"
 out=$(run_alarm check)
 assert_contains "$out" '1 ignored stale Claude accounts' 'retired account is counted once'
 assert_not_contains "$out" 'retired@example.invalid' 'retired account raises no stale alarm'
@@ -274,7 +354,7 @@ assert_contains "$out" 'reading stale' 'configured stale age'
 assert_not_contains "$out" 'holding work silent' 'configured silence age not yet reached'
 mate 1 0 61
 assert_contains "$(run_alarm check)" 'over 1 minutes' 'configured silence age'
-assert_contains "$(cat "$HOME_FIX/quota-calls")" '--seven-day 0.8' 'configured weekly threshold'
+assert_contains "$out" 'Carrying Claude account member@example.invalid' 'configured carrying threshold'
 pass 'operator thresholds control quota, staleness and silence'
 
 mate 0 0 0

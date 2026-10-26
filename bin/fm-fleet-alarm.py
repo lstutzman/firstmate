@@ -3,7 +3,8 @@
 
 Usage: fm-fleet-alarm.py check | timer | arm | timer-files <linux|darwin> <dir>
 FM_HOME selects the primary home. config/fleet-alarm.json accepts seven_day
-(default .9), pool_remaining (.1, mean remaining weekly capacity), silent_minutes
+(default .9, carrying-account threshold), pool_remaining (.1, mean remaining
+weekly capacity across non-stale Claude readings), silent_minutes
 (60), stale_minutes (120), and budget_seconds (24). cpa-usage-host selects local
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Both readers share FM_CHECK_TIMEOUT (default 30); budget must leave 5 seconds.
@@ -68,15 +69,19 @@ def settings():
     return values
 
 
-def accounts(text):
+def table(text, name):
     lines = text.splitlines()
-    header = next((line for line in lines if line.startswith('accounts[')), None)
+    header = next((line for line in lines if line.startswith(name + '[')), None)
     if header is None:
-        raise ValueError('no accounts header in quota reading')
+        raise ValueError('no ' + name + ' header in quota reading')
     fields = header.split('{', 1)[1].split('}', 1)[0].split(',')
-    rows = list(csv.DictReader(io.StringIO('\n'.join(
+    return list(csv.DictReader(io.StringIO('\n'.join(
         line.strip() for line in lines[lines.index(header) + 1:]
         if line.startswith('  '))), fieldnames=fields))
+
+
+def accounts(text):
+    rows = table(text, 'accounts')
     claude = [row for row in rows if row.get('provider') == 'claude']
     if not claude:
         raise ValueError('no Claude quota readings')
@@ -94,6 +99,7 @@ def accounts(text):
 
 def collect(cfg):
     findings = {}
+    quota_info = ''
     deadline = time.monotonic() + cfg['budget_seconds']
 
     def read(argv, share=1):
@@ -113,10 +119,19 @@ def collect(cfg):
         raise ValueError('invalid cpa-usage-host')
     try:
         rows = accounts(read([*cpa, 'accounts'], 3))
-        # The tool owns threshold evaluation, including reset rollover handling.
-        threshold = read([*cpa, 'check', '--five-hour', 'off', '--seven-day',
-                          str(cfg['seven_day'])], 2).strip()
-        alerts = threshold[len('alert: '):].split('; ') if threshold.startswith('alert: ') else []
+        traffic = table(read([*cpa, 'models', '--hours', '1', '--limit', '1000'], 2), 'models')
+        carrying = set()
+        for row in traffic:
+            requests, failed = int(row['requests']), int(row['failed'])
+            if not 0 <= failed <= requests:
+                raise ValueError('invalid traffic counts')
+            if row['model'].startswith('claude-') and requests > failed:
+                carrying.add(row['account'])
+        pressure = ', '.join(f"{row['account']} 7d {row['used_7d']:.0%}"
+                             for row in rows if row['used_7d'] is not None
+                             and (row['age_min'] is None or row['age_min'] < RETIRED_MINUTES))
+        carriers = ', '.join(sorted(carrying)) if carrying else 'none (no successful Claude traffic in last 60 minutes)'
+        quota_info = f'Claude account pressure: {pressure}; Carrying Claude accounts: {carriers}'
         pool, ignored = [], 0
         for row in rows:
             name = row['account']
@@ -126,11 +141,11 @@ def collect(cfg):
             if row['age_min'] >= RETIRED_MINUTES:
                 ignored += 1
                 continue
-            pool.append(row['used_7d'])
             if row['age_min'] >= cfg['stale_minutes']:
                 findings['stale:' + name] = f'Claude quota reading stale: {name}'
-            alert = next((item for item in alerts if item.startswith(name + ' 7d ')), None)
-            if alert:
+            else:
+                pool.append(row['used_7d'])
+            if name in carrying and row['used_7d'] > cfg['seven_day']:
                 reset = row['reset_7d']
                 # cpa-usage-axi's reset time drifts a minute between reads; key on the nearest hour.
                 try:
@@ -139,12 +154,10 @@ def collect(cfg):
                 except ValueError:
                     pass
                 key = 'quota:' + name + ':' + reset
-                findings[key] = alert
+                findings[key] = f"Carrying Claude account {name} 7d {row['used_7d']:.0%} (resets {row['reset_7d']})"
         if ignored:
             findings[f'ignored:{ignored}'] = f'{ignored} ignored stale Claude accounts (no reading for 7 days)'
-        if not pool:
-            raise ValueError('no current Claude quota readings')
-        if sum(1 - used for used in pool) / len(pool) <= cfg['pool_remaining']:
+        if pool and sum(1 - used for used in pool) / len(pool) < cfg['pool_remaining']:
             findings['pool'] = 'Claude pool near empty'
     except (ValueError, KeyError, OSError) as error:
         findings['quota-read'] = f'Claude quota unavailable; reading may be stale: {type(error).__name__}: {error}'
@@ -172,7 +185,7 @@ def collect(cfg):
                 findings['silent:' + mate['id']] = f"Secondmate holding work silent over {cfg['silent_minutes']:g} minutes: {mate['id']}"
     except (ValueError, KeyError, TypeError, OSError) as error:
         findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
-    return findings
+    return findings, quota_info
 
 
 def check(channel):
@@ -187,9 +200,10 @@ def check(channel):
         old = stored.get('conditions', {})
         timer_open = stored.get('timer_open', False)
         try:
-            current = collect(settings())
+            current, quota_info = collect(settings())
         except (ValueError, OSError) as error:
             current = {'config': f'Fleet alarm configuration invalid: {error}'}
+            quota_info = ''
         fresh = {key: value for key, value in current.items()
                  if channel not in old.get(key, [])}
         # An unavailable reader does not prove that its previous alarms cleared.
@@ -201,7 +215,10 @@ def check(channel):
         alarms = [key for key in current if not key.startswith('ignored:')]
         cleared = channel == 'timer' and not alarms and timer_open
         if (fresh if channel == 'check' else set(fresh) & set(alarms)) or cleared:
-            text = '; '.join((current if channel == 'timer' else fresh).values()).replace('\n', ' ')
+            details = list((current if channel == 'timer' else fresh).values())
+            if quota_info:
+                details.append(quota_info)
+            text = '; '.join(details).replace('\n', ' ')
             if channel == 'timer':
                 if not (CONFIG / 'fleet-ledger').exists():
                     raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
