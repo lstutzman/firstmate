@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Progress officer discovery run v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "date", "generated_at", "doing", "done", "start_requests", "asks_for_lee", "excluded", "filler", "coverage"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "source": {"const": "progress-officer"},
+    "date": {"type": "string"},
+    "generated_at": {"type": "string"},
+    "doing": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "done": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "start_requests": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "asks_for_lee": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "excluded": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "coverage": {"type": "array", "items": {"type": "string"}},
+    "filler": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["kind", "reason", "requires_firstmate", "execute"],
+      "properties": {
+        "kind": {"enum": ["bug sweep", "code review", "librarian pass", "ideation pass"]},
+        "reason": {"type": "string"},
+        "requires_firstmate": {"const": true},
+        "execute": {"$ref": "#/$defs/execute"}
+      }
+    }
+  },
+  "$defs": {
+    "execute": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["action", "env", "request_id", "argv"],
+      "properties": {
+        "action": {"const": "start"},
+        "env": {
+          "type": "object", "additionalProperties": false, "required": ["FM_HOME"],
+          "properties": {"FM_HOME": {"type": "string"}}
+        },
+        "request_id": {"type": "string"},
+        "argv": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "owner_home", "linear_id", "linear_ids", "authorising_class", "reason", "evidence", "priority", "rank", "execute"],
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "owner_home": {"type": "string"},
+        "linear_id": {"type": ["string", "null"]},
+        "linear_ids": {"type": "array", "items": {"type": "string"}},
+        "authorising_class": {"enum": ["security", "cve", "code-review", "bug", "requested-feature", "requested-fleet", null]},
+        "reason": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "priority": {"enum": [0, 1, 2, 3, 4]},
+        "rank": {"type": ["integer", "null"]},
+        "execute": {"$ref": "#/$defs/execute"},
+        "link": {"type": "string"},
+        "project": {"type": "string"},
+        "outcome": {"enum": ["ok", "failed", "skipped"]},
+        "captains_log_key": {"type": "string"}
+      }
+    }
+  }
+}
