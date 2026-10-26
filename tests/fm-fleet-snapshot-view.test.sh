@@ -944,6 +944,7 @@ test_open_decision_clears_on_keyed_resolution() {
 
 # main's own keyed answer and its no-reply escalations are not the second
 # mate's communication.
+# shellcheck disable=SC2031 # The subshells source libraries whose functions assign their own now/home; this test's locals are never reassigned.
 test_parent_answer_does_not_reset_agent_event_age() {
   local home fakebin out now
   home=$(make_home agent-age)
