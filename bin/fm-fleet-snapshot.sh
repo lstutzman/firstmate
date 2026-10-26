@@ -81,7 +81,8 @@
 #     failure reasons. Parent status and bounded terminal evidence are historical,
 #     untrusted supplements only and never override readable structured-home facts.
 #     parent_event carries age_seconds from the task's paths.status_log.last_event
-#     above. An unreadable-home fallback reports freshness.age_seconds from the
+#     above, and agent_age_seconds from the newest stamped line outside this
+#     home's own recorded appends (null when none). An unreadable-home fallback reports freshness.age_seconds from the
 #     observed status file's mtime instead: freshness is how fresh this snapshot's
 #     own observation is, never when a worker emitted the event.
 #     Each structured-home record carries active_children, decisions_open, holds,
@@ -354,6 +355,27 @@ crew_state_json() {  # <id> [<captured-meta>] [<captured-status>]
   esac
   jq -n --arg raw "$raw" --arg state "$state" --arg source "$source" --arg detail "$detail" \
     '{state:$state,source:$source,detail:$detail,raw:$raw}'
+}
+
+# Age of the newest stamped line this home did not append itself. Ranges in
+# the home-appends ledger (fm_wake_status_append_self_announced) are this
+# home's own closes and hold transfers, so they never count as the task's
+# communication. Prints null when no such line exists.
+status_agent_event_age() {  # <observed-status-log> <contract-path>
+  local log=$1 path=$2 start length line epoch
+  [ -f "$log" ] || { printf 'null'; return 0; }
+  while IFS=$(printf '\t') read -r start length; do
+    line=$(LC_ALL=C tail -c "+$((start + 1))" "$log" | LC_ALL=C head -c "$length")
+    case "$line" in *[![:space:]]*) ;; *) continue ;; esac
+    status_home_appends_covers "$path" "$start" "$((start + length + 1))" && continue
+    epoch=$(status_line_at_epoch "$line") || continue
+    [ "$epoch" -le "$SNAPSHOT_EPOCH" ] || continue
+    printf '%s' "$((SNAPSHOT_EPOCH - epoch))"
+    return 0
+  done <<EOF
+$(LC_ALL=C awk '{ s[NR] = (o + 0) "\t" length($0); o += length($0) + 1 } END { for (i = NR; i > 0; i--) print s[i] }' "$log")
+EOF
+  printf 'null'
 }
 
 status_event_json() {  # <observed-status-log> [<contract-path>]
@@ -1723,7 +1745,7 @@ parent_evidence_reconciliation_json() {  # <summary-json-file> <activities-json>
 
 secondmate_current_json() {  # <parent-tasks-json-file> <output-file>
   local tasks_file=$1 output_file=$2 registry_file union_file records_file rows total_registered total shown truncated
-  local row id home host remote registered registry_error task sampled_spawn_gen status_file status_observation_file event_raw event_note event_age observed_epoch observed_age
+  local row id home host remote registered registry_error task sampled_spawn_gen status_file status_observation_file event_raw event_note event_age agent_age observed_epoch observed_age
   local activity_scan activities decisions reconciliation provenance freshness reason summary_file summary_sampled summary_valid summary_invalidity state terminal terminal_contradiction contradiction
   local summary_source summary_age summary_observed summary_freshness cache_path collection_status collection_slot summary_index=0
   local seen_homes=''
@@ -1779,6 +1801,8 @@ secondmate_current_json() {  # <parent-tasks-json-file> <output-file>
     activities=$(printf '%s' "$activity_scan" | jq -c '.records')
     decisions=$(printf '%s' "$task" | jq -c '.hints.open_decisions // []')
     event_age=$(printf '%s' "$task" | jq -r '.paths.status_log.last_event.age_seconds // "null"')
+    agent_age=null
+    if [ -n "$status_file" ]; then agent_age=$(status_agent_event_age "$status_observation_file" "$status_file"); fi
     observed_epoch=$(file_mtime_epoch "$status_observation_file")
     observed_age=null
     if [ -n "$observed_epoch" ]; then
@@ -1882,7 +1906,7 @@ secondmate_current_json() {  # <parent-tasks-json-file> <output-file>
         --argjson registered "$registered" --slurpfile summary "$summary_file" --argjson summary_valid "$summary_valid" --argjson decisions "$decisions" \
         --argjson activities "$activities" --argjson activity_scan "$activity_scan" \
         --argjson reconciliation "$reconciliation" --argjson terminal "$terminal" --argjson contradiction "$contradiction" \
-        --arg event_raw "$event_raw" --arg event_note "$event_note" --argjson event_age "$event_age" '
+        --arg event_raw "$event_raw" --arg event_note "$event_note" --argjson event_age "$event_age" --argjson agent_age "$agent_age" '
         ($summary[0]) as $summary
         |
         {id:$id,home:$home,host:($host | if . == "" then null else . end),remote:$remote,registered:$registered,
@@ -1896,7 +1920,7 @@ secondmate_current_json() {  # <parent-tasks-json-file> <output-file>
          decisions_open:$summary.decisions_open,holds:$summary.holds,queued:$summary.queued,
          contributions:($summary.contributions // null),
          landed:$summary.landed,endpoints:$summary.endpoints,counts:$summary.counts,omitted:$summary.omitted,
-         parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan,reconciliation:$reconciliation},
+         parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,agent_age_seconds:$agent_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan,reconciliation:$reconciliation},
          terminal_evidence:$terminal,contradiction:$contradiction}' >> "$records_file" || return 1
     else
       if [ -n "$event_raw" ]; then
@@ -1916,7 +1940,7 @@ secondmate_current_json() {  # <parent-tasks-json-file> <output-file>
         --arg id "$id" --arg home "$home" --arg host "$host" --argjson remote "$remote" --arg reason "$reason" --arg observed "$SNAPSHOT_NOW" \
         --arg spawn_gen "$sampled_spawn_gen" \
         --arg provenance "$provenance" --arg freshness "$freshness" --arg event_raw "$event_raw" --arg event_note "$event_note" \
-        --argjson registered "$registered" --argjson event_age "$event_age" --argjson observed_age "$observed_age" --argjson activities "$activities" --argjson activity_scan "$activity_scan" \
+        --argjson registered "$registered" --argjson event_age "$event_age" --argjson agent_age "$agent_age" --argjson observed_age "$observed_age" --argjson activities "$activities" --argjson activity_scan "$activity_scan" \
         --argjson decisions "$decisions" --argjson terminal "$terminal" --slurpfile summary "$summary_file" --argjson summary_sampled "$summary_sampled" '
         ($summary[0]) as $summary
         |
@@ -1927,7 +1951,7 @@ secondmate_current_json() {  # <parent-tasks-json-file> <output-file>
          provenance:{selected:$provenance,structured_home:($home | if . == "" then null else . end),parent_event_role:"fallback-only-not-current"},
          freshness:{status:$freshness,observed_at:$observed,age_seconds:$observed_age},
          active_children:[],decisions_open:[],holds:[],queued:[],landed:[],endpoints:[],counts:{active_children:0,decisions_open:0,holds:0,queued:0,landed:0,endpoints:0},omitted:[],
-         parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan},
+         parent_event:{raw:$event_raw,note:$event_note,age_seconds:$event_age,agent_age_seconds:$agent_age,open_activities:$activities,open_decisions:$decisions,activity_scan:$activity_scan},
          terminal_evidence:$terminal,contradiction:false}' >> "$records_file" || return 1
     fi
   done <<EOF

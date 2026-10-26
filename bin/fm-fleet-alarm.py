@@ -153,8 +153,12 @@ def collect(cfg):
                 findings['mate-read:' + mate['id']] = f"Secondmate work inventory unavailable: {mate['id']}"
             if not holding:
                 continue
-            age = mate.get('parent_event', {}).get('age_seconds')
-            if not isinstance(age, (int, float)) or age < 0 or age > cfg['silent_minutes'] * 60:
+            ages = [mate.get('parent_event', {}).get('agent_age_seconds')]
+            spawn = str(mate.get('spawn_gen') or '')
+            if spawn.startswith('s') and spawn[1:].split('.', 1)[0].isdigit():
+                ages.append(time.time() - int(spawn[1:].split('.', 1)[0]))
+            ages = [a for a in ages if isinstance(a, (int, float)) and a >= 0]
+            if not ages or min(ages) > cfg['silent_minutes'] * 60:
                 findings['silent:' + mate['id']] = f"Secondmate holding work silent over {cfg['silent_minutes']:g} minutes: {mate['id']}"
     except (ValueError, KeyError, TypeError, OSError):
         findings['mate-read'] = 'Secondmate work inventory unavailable'

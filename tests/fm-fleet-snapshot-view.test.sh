@@ -942,6 +942,37 @@ test_open_decision_clears_on_keyed_resolution() {
   pass "durable fold clears a decision only on a keyed resolution"
 }
 
+# main's own keyed answer is not the second mate's communication.
+test_parent_answer_does_not_reset_agent_event_age() {
+  local home fakebin out now
+  home=$(make_home agent-age)
+  mkdir -p "$home/secondmate-home"
+  fm_write_meta "$home/state/quiet-mate.meta" \
+    "window=firstmate:fm-quiet-mate" \
+    "worktree=$home/secondmate-home" \
+    "project=$home/secondmate-home" \
+    "harness=codex" \
+    "kind=secondmate" \
+    "mode=secondmate" \
+    "home=$home/secondmate-home" \
+    "projects=alpha"
+  now=$(date +%s)
+  printf 'needs-decision [key=race] [at=%s]: pick an order\n' "$((now - 4000))" > "$home/state/quiet-mate.status"
+  (
+    # shellcheck source=bin/fm-wake-lib.sh
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_wake_status_append_self_announced "$home/state" "$home/state/quiet-mate.status" \
+      'resolved [key=race]: captain chose subscribe-then-reconcile'
+  ) || [ "$?" = 1 ] || fail "parent close append failed"
+  fakebin=$(make_fakebin "$home")
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_NOW_EPOCH="$now" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .secondmate_current.records[] | select(.id == "quiet-mate")
+    | .parent_event.age_seconds < 100 and .parent_event.agent_age_seconds == 4000
+  ' >/dev/null || fail "parent answer must not count as the mate's event: $out"
+  pass "agent event age skips this home's own recorded appends"
+}
+
 # A COMPLETED scout report must never be read as a pending decision. A scout that
 # raised a needs-decision and then finished (done) - its report delivered, its
 # decision either answered or captured in the report for the captain - must surface
@@ -1164,6 +1195,7 @@ test_open_decision_survives_later_unrelated_event
 test_secondmate_open_decision_survives_live_endpoint
 test_open_decision_transfers_to_captain_hold
 test_open_decision_clears_on_keyed_resolution
+test_parent_answer_does_not_reset_agent_event_age
 test_completed_scout_report_is_pointer_not_pending
 test_parked_scout_decision_stays_pending
 test_scout_reports_include_teardown_reports

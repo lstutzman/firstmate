@@ -581,7 +581,7 @@ The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quot
 Idle second mates are healthy.
 It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reuses the fleet snapshot's validated local and remote home summaries.
 The pool threshold measures mean remaining weekly capacity across the reported Claude accounts; it is not a prediction of how long the pool can sustain a workload.
-Only the second mate's own last parent-channel event counts as communication; the watcher republishes home summaries on its own, so a fresh summary does not prove the agent is awake.
+Silence is measured from the later of the second mate's spawn and its newest stamped parent-channel line that main did not append itself; main's own answers and hold transfers do not count, and the watcher republishes home summaries on its own, so a fresh summary does not prove the agent is awake.
 A Claude account with no reading is reported as unknown and left out of the pool mean.
 Accounts with no reading for seven days are treated as retired: they raise no stale alarm, stay out of the pool mean, and are reported once as a count of ignored accounts that does not keep the Captain's Log card open.
 Older home-summary producers without `counts.in_flight` use their active-worker, hold, and decision counts, which cannot identify a program with no active worker.

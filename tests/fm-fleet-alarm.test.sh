@@ -41,14 +41,17 @@ quota() {
     printf '%s\n' "alert: member@example.invalid 7d ${used#0.}% (resets $reset)" > "$HOME_FIX/threshold"
   fi
 }
+# The watcher summary and main's own last line are always fresh here; only the
+# mate's own event age and its spawn time may prove it awake.
 mate() {
-  local active=$1 decisions=$2 age=$3 parent=${4:-null}
+  local active=$1 decisions=$2 agent=$3 spawn=${4:-}
   jq -n --argjson active "$active" --argjson decisions "$decisions" \
-    --argjson age "$age" --argjson parent "$parent" \
+    --argjson agent "$agent" --arg spawn "$spawn" \
     '{secondmate_current:{registry:{complete:true},records:[{id:"mate",registered:true,
+      spawn_gen:(if $spawn == "" then null else $spawn end),
       current:{state:"active_child_work"},
       counts:{active_children:$active,decisions_open:$decisions,holds:0},
-      freshness:{age_seconds:$age},parent_event:{age_seconds:$parent}}],truncated:0}}' > "$HOME_FIX/snapshot"
+      freshness:{age_seconds:0},parent_event:{age_seconds:0,agent_age_seconds:$agent}}],truncated:0}}' > "$HOME_FIX/snapshot"
 }
 run_alarm() {
   ROOT="$ROOT" FM_HOME="$HOME_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" \
@@ -88,22 +91,22 @@ quota 0.2
 run_alarm check >/dev/null
 pass 'pool exhaustion, stale readings and malformed data alert'
 
+mate 1 0 3599
+[ -z "$(run_alarm check)" ] || fail 'a mate heard from 59 minutes ago is awake'
 mate 1 0 3601
 assert_contains "$(run_alarm check)" 'holding work silent' 'silent in-flight work'
 [ -z "$(run_alarm check)" ] || fail 'silent mate must deduplicate'
-mate 1 0 9000 1
-[ -z "$(run_alarm check)" ] || fail 'recent parent event proves communication'
-mate 0 0 0
-run_alarm check >/dev/null
-mate 1 0 1 3660
-assert_contains "$(run_alarm check)" 'holding work silent' 'watcher-published summary is not agent communication'
+mate 1 0 1
+[ -z "$(run_alarm check)" ] || fail 'recent agent event proves communication'
+mate 1 0 3660
+assert_contains "$(run_alarm check)" 'holding work silent' 'fresh summary and parent answer are not agent communication'
 mate 0 0 0
 run_alarm check >/dev/null
 mate 0 1 3601
 assert_contains "$(run_alarm check)" 'holding work silent' 'open decisions count as work'
 mate 0 0 3601
 [ -z "$(run_alarm check)" ] || fail 'idle must clear silent condition'
-pass 'in-flight and decision work alarm after 60 minutes; recent communication clears'
+pass 'in-flight and decision work alarm after 60 minutes of agent silence; agent communication clears'
 mate 0 0 3601
 jq '.secondmate_current.records[0].counts.in_flight=1' "$HOME_FIX/snapshot" > "$HOME_FIX/next-snapshot"
 mv "$HOME_FIX/next-snapshot" "$HOME_FIX/snapshot"
@@ -111,6 +114,16 @@ assert_contains "$(run_alarm check)" 'holding work silent' 'program in flight al
 mate 0 0 0
 run_alarm check >/dev/null
 pass 'in-flight programs count even without an active worker'
+now=$(date +%s)
+mate 1 0 null "s$((now - 300)).1.1"
+[ -z "$(run_alarm check)" ] || fail 'a mate spawned five minutes ago without an event is not silent'
+mate 1 0 9000 "s$((now - 300)).1.1"
+[ -z "$(run_alarm check)" ] || fail 'a relaunched mate gets a fresh silence window'
+mate 1 0 null "s$((now - 3700)).1.1"
+assert_contains "$(run_alarm check)" 'holding work silent' 'silence counts from spawn when the mate never reported'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'silence without an agent event is measured from spawn'
 
 
 mate 0 0 0
@@ -215,10 +228,12 @@ pass 'configuration cannot exceed the registered check deadline'
 
 printf '%s\n' '{"budget_seconds":20,"silent_minutes":1,"stale_minutes":2,"seven_day":0.8,"pool_remaining":0.05}' > "$HOME_FIX/config/fleet-alarm.json"
 quota 0.91 3
-mate 1 0 61
+mate 1 0 59
 out=$(run_alarm check)
 assert_contains "$out" 'reading stale' 'configured stale age'
-assert_contains "$out" 'over 1 minutes' 'configured silence age'
+assert_not_contains "$out" 'holding work silent' 'configured silence age not yet reached'
+mate 1 0 61
+assert_contains "$(run_alarm check)" 'over 1 minutes' 'configured silence age'
 assert_contains "$(cat "$HOME_FIX/quota-calls")" '--seven-day 0.8' 'configured weekly threshold'
 pass 'operator thresholds control quota, staleness and silence'
 
