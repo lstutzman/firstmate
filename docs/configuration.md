@@ -912,10 +912,10 @@ The progress officer finds unstarted work and initiates it through executable re
 It reads this home's and every registered local or remote second mate home's Markdown backlog and task status, Linear issues and their parents, and open PRs in `repos`.
 Remote home reads run the same read-only scanner over SSH.
 The cursor-paginated team listing reads open issues only (triage, backlog, unstarted, and started) and supplies each issue's state, priority, URL, project, and description, which the listing cuts at 200 characters.
-Only requested-root subtrees receive full issue and child reads, retaining completed intermediate parents; before any Linear-backed item starts, its full description and parent chain are read, and a failed read is a coverage gap that defers starts.
+Only requested-root subtrees receive full issue and child reads, retaining completed intermediate parents; before any Linear-backed item starts, its full description and parent chain are read in rank order, and a candidate whose read fails or exceeds the request budget is not started and is named as a coverage gap without deferring the candidates that were checked.
 Only identifiers that match the configured `team` key, such as `PC-123`, count as Linear links; other tokens of that shape, such as `CVE-2026-12345`, are ignored.
 Linear's unblocked listing, read for backlog and unstarted issues only, supplies dependency exclusions.
-The dated JSON's `linear_coverage` records pages fetched, items seen, CLI requests, hierarchy reads, rate-limit retries, and listed descriptions left truncated; the digest and run log print the same counts and specific failure causes.
+The dated JSON's `linear_coverage` records pages fetched, items seen, CLI requests, hierarchy reads, rate-limit retries, listed descriptions left truncated, and start candidates left unverified; the digest and run log print the same counts and specific failure causes.
 The request budget counts `linear-axi` invocations, not Linear API calls: the CLI fetches each listed issue's state, team, assignee, and project separately, so a 100-item page costs about 300 to 400 API requests.
 The progress script's header owns request, page, and backoff bounds, including the CLI's unpageable sub-issue limit.
 A missing home, failed read, capped Linear listing, or unsupported non-Markdown backlog is a coverage gap: the state still reports available evidence, but starts and filler wait for complete coverage.

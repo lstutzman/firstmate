@@ -20,8 +20,10 @@ Requests start at least 0.25 seconds apart; a rate-limited request is retried
 after 30 and then 60 seconds.
 Hierarchy reads visit only configured requested roots and their descendants.
 A 50-child response is incomplete because linear-axi exposes no child cursor.
-Only start candidates are read in full, with their parent chains, before they
-start; a failed read defers starts as a coverage gap. Listed descriptions are
+Only start candidates are read in full, with their parent chains, in rank order
+before they start; a candidate whose read fails or exceeds the request budget is
+not started and is named as a coverage gap, while checked candidates still
+start. Listed descriptions are
 cut at 200 characters; descriptions_truncated counts listed issues so cut and
 left unread.
 Coverage counters include both team and unblocked listings, counting each
@@ -168,7 +170,8 @@ class LinearDiscovery:
     def __init__(self):
         self.stats = {"pages_fetched": 0, "items_seen": 0, "requests": 0,
                       "roots_visited": 0, "hierarchy_items": 0, "rate_limit_retries": 0,
-                      "team_items": 0, "unblocked_items": 0, "descriptions_truncated": 0}
+                      "team_items": 0, "unblocked_items": 0, "descriptions_truncated": 0,
+                      "unverified_starts": 0}
         self.viewed = set()
         self.last_request = 0
         self.stopped_reason = None
@@ -309,22 +312,20 @@ def linear_rows(team, home, requested, discovery, problems):
     return rows, clear
 
 
-def verify_starts(identifiers, rows, clear, home, discovery, problems):
-    """Read each start candidate's full description and parent chain before it starts."""
-    for identifier in identifiers:
-        seen = set()
-        while identifier and identifier not in seen:
-            seen.add(identifier)
-            if identifier not in discovery.viewed:
-                try:
-                    entry = discovery.read(["view", identifier, "--full"])["issue"]
-                    rows[identifier] = linear_row(entry, home, clear, view_parent(entry))
-                except (RuntimeError, KeyError, TypeError) as exc:
-                    problems.append("Linear discovery: start check %s: %s" %
-                                    (identifier, str(exc) if isinstance(exc, RuntimeError) else "malformed issue data"))
-                    return
-                discovery.viewed.add(identifier)
-            identifier = rows[identifier]["parent"]
+def verify_start(identifier, rows, clear, home, discovery):
+    """Read a start candidate's full description and parent chain; return the failure, if any."""
+    seen = set()
+    while identifier and identifier not in seen:
+        seen.add(identifier)
+        if identifier not in discovery.viewed:
+            try:
+                entry = discovery.read(["view", identifier, "--full"])["issue"]
+                rows[identifier] = linear_row(entry, home, clear, view_parent(entry))
+            except (RuntimeError, KeyError, TypeError) as exc:
+                return str(exc) if isinstance(exc, RuntimeError) else "malformed issue data"
+            discovery.viewed.add(identifier)
+        identifier = rows[identifier]["parent"]
+    return None
 
 
 def load_home(source):
@@ -373,7 +374,7 @@ def classify(row):
     return None, None
 
 
-def judge(snapshots, issues, requested, prs, problems, team):
+def judge(snapshots, issues, requested, prs, problems, team, unchecked):
     doc = {"schema_version": 1, "source": "progress-officer", "doing": [], "done": [],
            "start_requests": [], "asks_for_lee": [], "excluded": [], "unclassified": 0,
            "filler": None, "coverage": problems}
@@ -471,6 +472,9 @@ def judge(snapshots, issues, requested, prs, problems, team):
         elif row["linear_ids"] and not any(i in by_linear for i in row["linear_ids"]):
             row["reason"] = "Linked Linear item was not found; firstmate must reconcile it"
             doc["excluded"].append(row)
+        elif any(i in unchecked for i in row["linear_ids"]):
+            row["reason"] = "Start check incomplete; firstmate must reconcile it"
+            doc["excluded"].append(row)
         else:
             row["reason"] = "Unstarted work authorised by " + row["authorising_class"]
             doc["start_requests"].append(row)
@@ -490,6 +494,7 @@ def judge(snapshots, issues, requested, prs, problems, team):
             row["reason"] = "Start deferred because discovery coverage is incomplete"
             doc["excluded"].append(row)
         doc["start_requests"] = []
+    doc["coverage"] = problems + ["Linear discovery: start check %s: %s" % gap for gap in sorted(unchecked.items())]
     for rank, row in enumerate(doc["start_requests"], 1):
         row["rank"] = rank
     for key in ("doing", "done", "start_requests", "asks_for_lee", "excluded"):
@@ -682,7 +687,8 @@ def render_md(doc):
                  "%(team_items)d team items, %(unblocked_items)d unblocked items, "
                  "%(roots_visited)d requested roots visited, %(hierarchy_items)d hierarchy items, "
                  "%(rate_limit_retries)d rate-limit retries, "
-                 "%(descriptions_truncated)d listed descriptions truncated." % stats)
+                 "%(descriptions_truncated)d listed descriptions truncated, "
+                 "%(unverified_starts)d start candidates unverified." % stats)
     if not doc["coverage"]:
         lines.append("- All configured sources read.")
     return "\n".join(lines) + "\n"
@@ -743,17 +749,22 @@ def main(argv):
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         problems.append("open PR discovery unavailable or incomplete")
     configured = set(filter(None, args.requested.split(",")))
-    checked = set()
+    checked, unchecked = set(), {}
     while not problems:
         trial = judge(copy.deepcopy(snapshots), copy.deepcopy(list(rows.values())), set(configured),
-                      prs, [], args.team)
-        candidates = {i for row in trial["start_requests"] for i in row["linear_ids"]} - checked
+                      prs, [], args.team, unchecked)
+        candidates = [i for row in trial["start_requests"] for i in row["linear_ids"] if i not in checked]
         if not candidates:
             break
-        checked |= candidates
-        verify_starts(sorted(candidates), rows, clear, args.home[0], discovery, problems)
+        for identifier in candidates:
+            if identifier not in checked:
+                checked.add(identifier)
+                failure = verify_start(identifier, rows, clear, args.home[0], discovery)
+                if failure:
+                    unchecked[identifier] = failure
     discovery.stats["descriptions_truncated"] = sum(r["description_truncated"] for r in rows.values())
-    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team)
+    discovery.stats["unverified_starts"] = len(unchecked)
+    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
@@ -781,8 +792,9 @@ def main(argv):
           "%(team_items)d team items, %(unblocked_items)d unblocked items, "
           "%(roots_visited)d requested roots visited, %(hierarchy_items)d hierarchy items, "
           "%(rate_limit_retries)d rate-limit retries, "
-          "%(descriptions_truncated)d listed descriptions truncated." % discovery.stats)
-    for problem in problems:
+          "%(descriptions_truncated)d listed descriptions truncated, "
+          "%(unverified_starts)d start candidates unverified." % discovery.stats)
+    for problem in doc["coverage"]:
         print("Coverage gap: " + problem)
     print("DIGEST %s %d %s.md" % (
         args.date, len(doc["start_requests"]) + len(doc["asks_for_lee"]) + len(doc["coverage"])

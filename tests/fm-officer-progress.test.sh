@@ -39,6 +39,11 @@ if (root / 'page-cap').exists():
     print(json.dumps({'ok': True, 'data': {'issues': issues,
                                            'pagination': {'hasNextPage': bool(issues), 'endCursor': str(n + 1)}}}))
     sys.exit()
+if (root / 'padding').exists() and not unblocked and state != 'unstarted':
+    n = 0 if cursor == 'first' else int(cursor)
+    more = n + 1 < int((root / 'padding').read_text())
+    print(json.dumps({'ok': True, 'data': {'issues': [], 'pagination': {'hasNextPage': more, 'endCursor': str(n + 1)}}}))
+    sys.exit()
 page = root / ('page-%s.json' % cursor)
 if state != 'unstarted' or not page.exists():
     page = root / ('unblocked.json' if unblocked and (root / 'unblocked.json').exists() else 'list.json')
@@ -87,6 +92,23 @@ SH
   chmod +x "$FAKEBIN/linear-axi" "$FAKEBIN/gh-axi"
 }
 
+stub_sleep() {
+  local real_python
+  real_python=$(command -v python3)
+  # Record backoff instead of waiting it out; other python3 uses pass through.
+  cat > "$FAKEBIN/python3" <<SH
+#!/usr/bin/env bash
+case "\$2" in
+  *fm-officer-progress.py) exec "$real_python" -I -c 'import os, runpy, sys, time
+time.sleep = lambda s: s >= 1 and open(os.environ["PROGRESS_WORLD"] + "/sleeps", "a").write("%g\n" % s)
+sys.argv = sys.argv[2:]
+runpy.run_path(sys.argv[0], run_name="__main__")' "\$@" ;;
+esac
+exec "$real_python" "\$@"
+SH
+  chmod +x "$FAKEBIN/python3"
+}
+
 run_progress() {
   PROGRESS_WORLD="$WORLD" PATH="$FAKEBIN:$PATH" FM_HOME="$WORLD_HOME" FM_OFFICER_NOW="$NOW" \
     bash "$OFFICER" run progress --date "$DATE"
@@ -128,20 +150,7 @@ test_linear_rate_limit() {
   make_world rate-limit
   printf '{"ok":true,"data":{"issues":[{"identifier":"PC-1","title":"Bug: first","state":"Todo"}],"pagination":{"hasNextPage":true,"endCursor":"second"}}}\n' > "$WORLD/linear/page-first.json"
   printf '{"ok":false,"error":{"code":"UNKNOWN","message":"rate limit exceeded; never echo external secrets"}}\n' > "$WORLD/linear/page-second.json"
-  local real_python
-  real_python=$(command -v python3)
-  # Record backoff instead of waiting it out; other python3 uses pass through.
-  cat > "$FAKEBIN/python3" <<SH
-#!/usr/bin/env bash
-case "\$2" in
-  *fm-officer-progress.py) exec "$real_python" -I -c 'import os, runpy, sys, time
-time.sleep = lambda s: s >= 1 and open(os.environ["PROGRESS_WORLD"] + "/sleeps", "a").write("%g\n" % s)
-sys.argv = sys.argv[2:]
-runpy.run_path(sys.argv[0], run_name="__main__")' "\$@" ;;
-esac
-exec "$real_python" "\$@"
-SH
-  chmod +x "$FAKEBIN/python3"
+  stub_sleep
   run_progress > "$WORLD/output" || fail 'rate limit must publish available evidence'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   assert_contains "$(jq -r '.coverage[]' "$file")" 'RATE_LIMITED' 'coverage names the actual failure'
@@ -212,8 +221,37 @@ PY
   printf '{"ok":false,"error":{"code":"NOT_FOUND"}}\n' > "$WORLD/linear/PC-34.json"
   run_progress >/dev/null || fail 'failed start check must publish coverage'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'start check PC-34: NOT_FOUND' 'a failed candidate read names its cause'
-  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'a failed candidate read defers starts'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'a candidate whose read failed is not started'
   pass 'progress: start candidates are read in full with their parent chains'
+}
+
+test_start_check_budget() {
+  make_world start-budget
+  stub_sleep
+  python3 -I - "$WORLD" <<'PY'
+import json, os, sys
+root = sys.argv[1]
+spec = [('PC-41', 'Security: first', 3), ('PC-42', 'Bug: second', 1), ('PC-43', 'Bug: third', 2)]
+listed = []
+for ident, title, priority in spec:
+    doc = {'identifier':ident, 'title':title, 'state':'Todo', 'stateType':'unstarted', 'priority':priority}
+    listed.append(doc)
+    json.dump({'ok':True,'data':{'issue':dict(doc, parent=None, description='')}},
+              open(os.path.join(root,'linear',ident+'.json'),'w'))
+json.dump({'ok':True,'data':{'issues':listed}}, open(os.path.join(root,'linear','list.json'),'w'))
+PY
+  # 3 padded team states x 98 pages + 1 unstarted page + 2 unblocked pages + 1 requested root = 298 of 300 requests.
+  printf '98\n' > "$WORLD/linear/padding"
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  run_progress > "$WORLD/output" || fail 'budget-limited start checks must publish state'
+  assert_equals 'PC-41 PC-42' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
+    'the two highest-ranked checked candidates still start'
+  assert_equals 'PC-43' "$(jq -r '[.excluded[].id] | join(" ")' "$file")" 'the unchecked candidate is not started'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'start check PC-43: request budget reached' 'the gap names the candidate and cause'
+  assert_equals '1 300' "$(jq -r '.linear_coverage | "\(.unverified_starts) \(.requests)"' "$file")" \
+    'unverified candidates are counted within the request budget'
+  assert_contains "$(cat "$WORLD/output")" 'Coverage gap: Linear discovery: start check PC-43' 'the run log names the gap'
+  pass 'progress: start checks run in rank order and an over-budget candidate alone is withheld'
 }
 
 test_backlog_discovery() {
@@ -658,6 +696,7 @@ test_linear_rate_limit
 test_linear_page_cap
 test_linear_child_cap
 test_start_candidate_checks
+test_start_check_budget
 test_backlog_discovery
 test_linear_trees_and_exclusions
 test_filler_and_failure_coverage
