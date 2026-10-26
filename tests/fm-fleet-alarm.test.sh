@@ -93,6 +93,12 @@ assert_contains "$(run_alarm check)" 'holding work silent' 'silent in-flight wor
 [ -z "$(run_alarm check)" ] || fail 'silent mate must deduplicate'
 mate 1 0 9000 1
 [ -z "$(run_alarm check)" ] || fail 'recent parent event proves communication'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 1 3660
+assert_contains "$(run_alarm check)" 'holding work silent' 'watcher-published summary is not agent communication'
+mate 0 0 0
+run_alarm check >/dev/null
 mate 0 1 3601
 assert_contains "$(run_alarm check)" 'holding work silent' 'open decisions count as work'
 mate 0 0 3601
@@ -126,6 +132,19 @@ quota 0.2
 run_alarm check >/dev/null
 run_alarm timer
 assert_contains "$(cat "$HOME_FIX/state/fleet-ledger.jsonl")" 'resolved' 'cleared timer alert closes its log decision'
+quota 0.99
+run_alarm timer
+cat > "$HOME_FIX/accounts" <<'ROWS'
+accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  live@example.invalid,claude,0.1,,0.2,window1,,1,0
+  retired@example.invalid,claude,0.1,,0.1,window1,,20000,0
+ROWS
+: > "$HOME_FIX/threshold"
+run_alarm timer
+[ "$(tail -n 1 "$HOME_FIX/state/fleet-ledger.jsonl" | grep -c resolved)" = 1 ] || fail 'ignored accounts must not keep the card open'
+before=$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")
+run_alarm timer
+[ "$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")" = "$before" ] || fail 'ignored accounts alone must not reopen the card'
 pass 'read failures retain dedupe history and healthy timer reads close alerts'
 
 
@@ -159,6 +178,36 @@ assert_not_contains "$out" 'pool near empty' 'healthy reserve prevents pool alar
 pass 'account alerts preserve healthy pool reserves and exclude other providers'
 quota 0.2
 run_alarm check >/dev/null
+
+cat > "$HOME_FIX/accounts" <<'ROWS'
+accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  busy@example.invalid,claude,0.1,,0.95,window1,,1,0
+  new@example.invalid,claude,,,,,,,0
+ROWS
+printf '%s\n' 'alert: busy@example.invalid 7d 95% (resets window1)' > "$HOME_FIX/threshold"
+out=$(run_alarm check)
+assert_contains "$out" 'busy@example.invalid 7d 95%' 'a blank account cannot hide another account threshold'
+assert_contains "$out" 'reading unknown: new@example.invalid' 'blank reading is unknown'
+assert_contains "$out" 'pool near empty' 'blank account is excluded from the pool mean'
+assert_not_contains "$out" 'quota unavailable' 'one blank row is not a failed read'
+pass 'one account without a reading does not blind the others'
+quota 0.2
+run_alarm check >/dev/null
+
+# 10080 minutes is seven days: the retired account is old enough to ignore.
+cat > "$HOME_FIX/accounts" <<'ROWS'
+accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:
+  live@example.invalid,claude,0.1,,0.2,window1,,1,0
+  retired@example.invalid,claude,0.1,,0.1,window1,,10080,0
+ROWS
+: > "$HOME_FIX/threshold"
+out=$(run_alarm check)
+assert_contains "$out" '1 ignored stale Claude accounts' 'retired account is counted once'
+assert_not_contains "$out" 'retired@example.invalid' 'retired account raises no stale alarm'
+[ -z "$(run_alarm check)" ] || fail 'ignored-account note must deduplicate'
+sed -i 's/live@example.invalid,claude,0.1,,0.2,/live@example.invalid,claude,0.1,,0.95,/' "$HOME_FIX/accounts"
+assert_contains "$(run_alarm check)" 'pool near empty' 'retired account is excluded from the pool mean'
+pass 'accounts without a reading for seven days are ignored and counted'
 
 printf '%s\n' '{"budget_seconds":999}' > "$HOME_FIX/config/fleet-alarm.json"
 assert_contains "$(run_alarm check)" 'configuration invalid' 'invalid timeout budget refused'

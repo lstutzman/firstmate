@@ -33,6 +33,7 @@ HOME = Path(os.environ.get('FM_HOME', BIN.parent)).resolve()
 STATE = Path(os.environ.get('FM_STATE_OVERRIDE', HOME / 'state'))
 CONFIG = Path(os.environ.get('FM_CONFIG_OVERRIDE', HOME / 'config'))
 ID = 'fleet-alarm'
+RETIRED_MINUTES = 7 * 24 * 60
 
 
 def run(argv, seconds):
@@ -78,7 +79,11 @@ def accounts(text):
         raise ValueError('no Claude quota readings')
     for row in claude:
         for field in ('used_7d', 'age_min'):
-            value = float(row[field])
+            if row[field] == '':
+                row[field] = None
+                continue
+            row[field] = float(row[field])
+            value = row[field]
             if not math.isfinite(value) or value < 0 or (field == 'used_7d' and value > 1):
                 raise ValueError('invalid quota reading')
     return claude
@@ -108,16 +113,28 @@ def collect(cfg):
         # The tool owns threshold evaluation, including reset rollover handling.
         threshold = read([*cpa, 'check', '--five-hour', 'off', '--seven-day',
                           str(cfg['seven_day'])], 2).strip()
+        alerts = threshold[len('alert: '):].split('; ') if threshold.startswith('alert: ') else []
+        pool, ignored = [], 0
         for row in rows:
             name = row['account']
-            if float(row['age_min']) >= cfg['stale_minutes']:
+            if row['age_min'] is None or row['used_7d'] is None:
+                findings['stale:' + name] = f'Claude quota reading unknown: {name}'
+                continue
+            if row['age_min'] >= RETIRED_MINUTES:
+                ignored += 1
+                continue
+            pool.append(row['used_7d'])
+            if row['age_min'] >= cfg['stale_minutes']:
                 findings['stale:' + name] = f'Claude quota reading stale: {name}'
-            alerts = threshold[len('alert: '):].split('; ') if threshold.startswith('alert: ') else []
             alert = next((item for item in alerts if item.startswith(name + ' 7d ')), None)
             if alert:
                 key = 'quota:' + name + ':' + row['reset_7d']
                 findings[key] = alert
-        if sum(1 - float(row['used_7d']) for row in rows) / len(rows) <= cfg['pool_remaining']:
+        if ignored:
+            findings[f'ignored:{ignored}'] = f'{ignored} ignored stale Claude accounts (no reading for 7 days)'
+        if not pool:
+            raise ValueError('no current Claude quota readings')
+        if sum(1 - used for used in pool) / len(pool) <= cfg['pool_remaining']:
             findings['pool'] = 'Claude pool near empty'
     except (ValueError, KeyError, StopIteration, OSError):
         findings['quota-read'] = 'Claude quota unavailable; reading may be stale'
@@ -136,10 +153,8 @@ def collect(cfg):
                 findings['mate-read:' + mate['id']] = f"Secondmate work inventory unavailable: {mate['id']}"
             if not holding:
                 continue
-            ages = [a for a in (mate.get('freshness', {}).get('age_seconds'),
-                               mate.get('parent_event', {}).get('age_seconds'))
-                    if isinstance(a, (int, float)) and a >= 0]
-            if not ages or min(ages) > cfg['silent_minutes'] * 60:
+            age = mate.get('parent_event', {}).get('age_seconds')
+            if not isinstance(age, (int, float)) or age < 0 or age > cfg['silent_minutes'] * 60:
                 findings['silent:' + mate['id']] = f"Secondmate holding work silent over {cfg['silent_minutes']:g} minutes: {mate['id']}"
     except (ValueError, KeyError, TypeError, OSError):
         findings['mate-read'] = 'Secondmate work inventory unavailable'
@@ -166,11 +181,12 @@ def check(channel):
         # An unavailable reader does not prove that its previous alarms cleared.
         preserved = {key: receipts for key, receipts in old.items()
                      if ('config' in current
-                         or ('quota-read' in current and key.startswith(('quota:', 'stale:', 'pool')))
+                         or ('quota-read' in current and key.startswith(('quota:', 'stale:', 'pool', 'ignored:')))
                          or ('mate-read' in current and key.startswith(('silent:', 'mate-read:')))
                          or (key.startswith('silent:') and 'mate-read:' + key[7:] in current))}
-        cleared = channel == 'timer' and not current and timer_open
-        if fresh or cleared:
+        alarms = [key for key in current if not key.startswith('ignored:')]
+        cleared = channel == 'timer' and not alarms and timer_open
+        if (fresh if channel == 'check' else set(fresh) & set(alarms)) or cleared:
             text = '; '.join((current if channel == 'timer' else fresh).values()).replace('\n', ' ')
             if channel == 'timer':
                 if not (CONFIG / 'fleet-ledger').exists():
