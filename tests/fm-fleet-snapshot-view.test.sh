@@ -982,6 +982,28 @@ test_parent_answer_does_not_reset_agent_event_age() {
     | .parent_event.age_seconds < 100 and .parent_event.agent_age_seconds == 4000
   ' >/dev/null || fail "parent answer and escalations must not count as the mate's event: $out"
   pass "agent event age skips this home's own answers and no-reply escalations"
+
+  # A long suffix of unstamped echoes and main-written escalations must still
+  # resolve to the mate's old stamped event, without one process per line.
+  local i real tool
+  for i in $(seq 1 3000); do
+    printf 'working: unstamped echo %s\n' "$i"
+    printf 'blocked [key=pending-reply-c%s] [at=%s]: no reply\n' "$i" "$((now - 1))"
+  done >> "$home/state/quiet-mate.status"
+  for tool in tail head; do
+    real=$(command -v "$tool")
+    printf '#!/usr/bin/env bash\nprintf x >> %q\nexec %q "$@"\n' "$home/tool-calls" "$real" > "$fakebin/$tool"
+    chmod +x "$fakebin/$tool"
+  done
+  : > "$home/tool-calls"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_NOW_EPOCH="$now" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e '
+    .secondmate_current.records[] | select(.id == "quiet-mate")
+    | .parent_event.agent_age_seconds == 4000
+  ' >/dev/null || fail "long nonqualifying suffix hid the mate's event: $out"
+  [ "$(wc -c < "$home/tool-calls")" -lt 500 ] \
+    || fail "agent event age scanned per line: $(wc -c < "$home/tool-calls") tail/head calls for 6000 lines"
+  pass "agent event age reads a long nonqualifying suffix in one pass"
 }
 
 # A COMPLETED scout report must never be read as a pending decision. A scout that

@@ -364,26 +364,42 @@ crew_state_json() {  # <id> [<captured-meta>] [<captured-status>]
 # answering, so none of them count as the task's communication. Prints null
 # when no such line exists.
 status_agent_event_age() {  # <observed-status-log> <contract-path>
-  local log=$1 path=$2 start length line epoch
+  local log=$1 path=$2 ranges
   [ -f "$log" ] || { printf 'null'; return 0; }
-  while IFS=$(printf '\t') read -r start length; do
-    line=$(LC_ALL=C tail -c "+$((start + 1))" "$log" | LC_ALL=C head -c "$length")
-    case "$line" in
-      *[![:space:]]*) ;;
-      *) continue ;;
-    esac
-    case "$line" in
-      'blocked [key=pending-reply-'*|'blocked [key=remote-reply-continuity-'*) continue ;;
-    esac
-    status_home_appends_covers "$path" "$start" "$((start + length + 1))" && continue
-    epoch=$(status_line_at_epoch "$line") || continue
-    [ "$epoch" -le "$SNAPSHOT_EPOCH" ] || continue
-    printf '%s' "$((SNAPSHOT_EPOCH - epoch))"
-    return 0
-  done <<EOF
-$(LC_ALL=C awk '{ s[NR] = (o + 0) "\t" length($0); o += length($0) + 1 } END { for (i = NR; i > 0; i--) print s[i] }' "$log")
-EOF
-  printf 'null'
+  ranges=$(status_home_appends_ranges "$path") || ranges=
+  # One pass: ledger ranges are ascending (status_home_appends_covers), so
+  # merge them once and walk them alongside the lines; the stamp rule is
+  # _fm_status_at_epoch's.
+  LC_ALL=C awk -v ranges="$ranges" -v now="$SNAPSHOT_EPOCH" '
+    BEGIN {
+      n = 0
+      count = split(ranges, rows, "\n")
+      for (i = 1; i <= count; i++) {
+        if (split(rows[i], f, "\t") != 2) continue
+        if (n && f[1] + 0 <= hi[n]) { if (f[2] + 0 > hi[n]) hi[n] = f[2] + 0; continue }
+        lo[++n] = f[1] + 0; hi[n] = f[2] + 0
+      }
+      j = 1; offset = 0; age = "null"
+    }
+    {
+      start = offset; end = start + length($0) + 1; offset = end
+      if ($0 !~ /[^ \t\r\f\v]/) next
+      if (index($0, "blocked [key=pending-reply-") == 1 || index($0, "blocked [key=remote-reply-continuity-") == 1) next
+      while (j <= n && hi[j] <= start) j++
+      if (j <= n && lo[j] <= start && hi[j] >= end) next
+      colon = index($0, ":"); if (!colon) next
+      head = substr($0, 1, colon - 1)
+      at = index(head, "[at="); if (!at) next
+      rest = substr(head, at + 4)
+      close_at = index(rest, "]"); if (!close_at) next
+      value = substr(rest, 1, close_at - 1)
+      if (index(substr(rest, close_at + 1), "[at=")) next
+      if (value !~ /^[0-9]+$/ || value ~ /^0[0-9]/ || length(value) > 12) next
+      if (value + 0 > now + 0) next
+      age = now - value
+    }
+    END { printf "%s", age }
+  ' "$log"
 }
 
 status_event_json() {  # <observed-status-log> [<contract-path>]
