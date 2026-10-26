@@ -312,7 +312,7 @@ family_for_basename() {
     fm-parent-channel-scan-exclusion.test.sh|\
     fm-supervision-events.test.sh|fm-turnend-guard.test.sh|fm-wake-daemon-lifecycle-e2e.test.sh|\
     fm-wake-drain-unread-status.test.sh|\
-    fm-tool-update-check.test.sh|\
+    fm-fleet-alarm.test.sh|fm-tool-update-check.test.sh|\
     fm-mail.test.sh|fm-mail-check.test.sh|\
     fm-turnend-foreign-owner-arm-fix.test.sh|\
     fm-wake-queue.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
@@ -1612,6 +1612,9 @@ families_for_changed_path() {
       printf '%s\n' secondmate
       printf '%s\n' watcher-wake-lock
       printf '%s\n' "__script__:fm-procevent-quota.test.sh"
+      ;;
+    bin/fm-fleet-alarm.py)
+      printf '%s\n' __script__:fm-fleet-alarm.test.sh
       ;;
     bin/fm-pr-*|bin/fm-merge-local.sh|bin/fm-teardown.sh|bin/fm-review-diff.sh|\
     bin/fm-x-*|bin/fm-check*|bin/fm-pipeline-spend.sh)

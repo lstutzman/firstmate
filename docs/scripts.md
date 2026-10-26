@@ -139,6 +139,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-check-unregister.sh` | Retire a custom watcher check and its trust binding by validated task id            |
 | `fm-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
 | `fm-tool-update-check.sh` | Report watched tooling with an update available, and updates installed but left inert by PATH order |
+| `fm-fleet-alarm.py`      | Opt-in custom check and independent timer that alarm on Claude weekly quota pressure and silent second mates holding work ([configuration](configuration.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)) |
 | `fm-startup-growth-check.sh` | Daily metadata-only growth check for startup memory and tracked startup/instruction surfaces |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated pull-request, merge-request, and Gerrit-change poll sidecars |

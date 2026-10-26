@@ -124,7 +124,8 @@ wait_for_ledger_generation() {  # <generated> [tenths]
 
 run_writer "$NOW_ONE" "$EPOCH_ONE" || fail "initial home-summary publication failed"
 jq -e --arg home "$HOME_DIR" --arg now "$NOW_ONE" --argjson epoch "$EPOCH_ONE" '
-  .schema == "fm-secondmate-home-summary.v1"
+  .counts.in_flight == 1
+  and .schema == "fm-secondmate-home-summary.v1"
   and .home == $home
   and .generated == $now
   and .generated_epoch == $epoch
