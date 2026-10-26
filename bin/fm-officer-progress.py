@@ -94,6 +94,7 @@ def scan_home(home):
             row = item(identifier, meta.get("title") or identifier, home,
                        " ".join(meta.values()))
             row["section"] = "in flight"
+            row["origin"] = "task-meta"
             row["evidence"] = [meta_path]
             rows.append(row)
             by_id[identifier] = row
@@ -220,17 +221,18 @@ def open_prs(repos):
 def classify(row):
     """Return (class, tag_source); Linear sources name the free text that authorised it."""
     linear_only = row.get("linear_only")
+    local = row.get("origin", "backlog")
     kind = row["tags"].get("kind", "").lower()
     text = row["title"].lower()
     if kind in ("security", "cve", "code-review", "bug"):
-        return kind, "linear-free-text:kind" if linear_only else "backlog"
+        return kind, "linear-free-text:kind" if linear_only else local
     for name, label, pattern in (("cve", "CVE", r".*\bcve-\d{4}-\d+\b"), ("security", "Security", r"security\b"),
                                  ("code-review", "Code review", r"code[- ]review (?:finding|fix)\b"),
                                  ("bug", "Bug", r"bug(?: report)?\b")):
         if re.match(pattern, text):
-            return name, "linear-title-prefix:" + label if linear_only else "backlog"
+            return name, "linear-title-prefix:" + label if linear_only else local
     if kind in ("feature", "fleet") and row["tags"].get("requested-by", "").lower() == "lee":
-        return "requested-" + kind, "linear-free-text:requested-by" if linear_only else "backlog"
+        return "requested-" + kind, "linear-free-text:requested-by" if linear_only else local
     return None, None
 
 

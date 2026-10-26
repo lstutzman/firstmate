@@ -934,6 +934,7 @@ To keep such starts visible, every record carries `tag_source`, naming where its
 | `tag_source` | Authority |
 | --- | --- |
 | `backlog` | A tag or title prefix on a backlog row this fleet wrote |
+| `task-meta` | The title in a task's `state/<id>.meta` file when the task has no backlog row; such tasks are already in flight and never start |
 | `linear-free-text:kind`, `linear-free-text:requested-by` | A tag in the Linear issue's title or description |
 | `linear-title-prefix:Security`, `linear-title-prefix:CVE`, `linear-title-prefix:Code review`, `linear-title-prefix:Bug` | The Linear title prefix, or a CVE identifier in the Linear title |
 | `requested-root:<id>` | The registered `requested` root the item descends from |

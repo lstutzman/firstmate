@@ -200,18 +200,18 @@ import json, os, sys
 root = sys.argv[1]
 spec = [('PC-5', 'Add export', '(kind: feature) (requested-by: Lee)'),
         ('PC-6', 'Add another export', ''),
-        ('PC-7', 'Product page redesign', ''),
-        ('PC-8', 'Billing export', '')]
+        ('PC-7', 'Product page redesign', '')]
 listed = []
 for ident, title, description in spec:
     doc = {'identifier':ident, 'title':title, 'priority':0,
-           'state': 'In Progress' if ident == 'PC-7' else 'Done' if ident == 'PC-8' else 'Todo',
-           'stateType': 'started' if ident == 'PC-7' else 'completed' if ident == 'PC-8' else 'unstarted'}
+           'state': 'In Progress' if ident == 'PC-7' else 'Todo',
+           'stateType': 'started' if ident == 'PC-7' else 'unstarted'}
     listed.append(doc)
     json.dump({'ok':True,'data':{'issue':dict(doc, parent=None, description=description)}},
               open(os.path.join(root,'linear',ident+'.json'),'w'))
 json.dump({'ok':True,'data':{'issues':listed}}, open(os.path.join(root,'linear','list.json'),'w'))
 PY
+  printf '## Done\n\n- [x] billing-export - Billing export\n' > "$WORLD_HOME/data/backlog.md"
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   run_progress >/dev/null || fail 'free-text Linear run failed'
   assert_equals 'PC-5' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
@@ -221,7 +221,7 @@ PY
   assert_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")" 'source: linear-free-text:requested-by' \
     'the digest shows where the authority came from'
   assert_equals '0' "$(jq '.doing + .done + .asks_for_lee | length' "$file")" \
-    'choice words alone never place moving or finished work in doing, done, or asks'
+    'choice words alone never place moving or finished Linear or backlog work in doing, done, or asks'
   assert_equals '2' "$(jq '.unclassified' "$file")" 'the untagged and moving choice items are counted'
   rm "$WORLD/linear/PC-5.json"
   jq '.data.issues |= map(select(.identifier != "PC-5"))' "$WORLD/linear/list.json" > "$WORLD/list.new"
@@ -229,6 +229,10 @@ PY
   run_progress >/dev/null || fail 'idle free-text Linear run failed'
   assert_equals 'standing-authority:filler' "$(jq -r '.filler // {} | .tag_source // "none"' "$file")" \
     'a moving choice item outside the start classes does not block filler'
+  printf 'kind=ship\ntitle=Bug: meta-only crash\n' > "$WORLD_HOME/state/meta-bug.meta"
+  run_progress >/dev/null || fail 'meta-only run failed'
+  assert_equals 'meta-bug task-meta' "$(jq -r '.doing[] | .id + " " + .tag_source' "$file")" \
+    'a task known only from its meta file is not labelled as backlog'
   pass 'progress: Linear free-text authority starts work and names its source'
 }
 
