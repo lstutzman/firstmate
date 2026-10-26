@@ -52,7 +52,7 @@ def item(identifier, title, home, text, tags=None):
     return {"id": identifier, "title": title, "owner_home": home,
             "linear_id": ids[0] if len(ids) == 1 else None,
             "linear_ids": ids, "authorising_class": None, "reason": "",
-            "evidence": [], "priority": 0, "rank": None, "execute": None, "tags": tags, "text": text}
+            "evidence": [], "priority": 0, "rank": None, "execute": None, "tags": tags}
 
 
 def scan_home(home):
@@ -148,39 +148,43 @@ def linear(args):
 
 
 def linear_rows(team, home):
-    listed = linear(["list", "--team", team, "--all", "--max-items", "10000"])
+    listed = linear(["list", "--team", team, "--all", "--max-items", "10000",
+                     "--fields", "stateType,priority,url,project"])
     if (listed.get("pagination") or {}).get("hasNextPage"):
         raise RuntimeError("Linear issue list is incomplete (over 10000 items)")
     unblocked = linear(["list", "--team", team, "--unblocked", "--all", "--max-items", "10000"])
     if (unblocked.get("pagination") or {}).get("hasNextPage"):
         raise RuntimeError("Linear unblocked list is incomplete")
     clear = {r["identifier"] for r in unblocked["issues"]}
-    rows, seen = [], set()
-    pending = [entry["identifier"] for entry in listed["issues"]]
+
+    def linear_row(entry):
+        # Linear text is not authority: no tags, description, or title prefixes are kept.
+        row = item(entry["identifier"], entry["title"], home, "")
+        row.update({"linear_id": entry["identifier"], "linear_ids": [entry["identifier"]],
+                    "priority": entry.get("priority") or 0, "project": entry.get("project") or "",
+                    "link": entry.get("url") or "", "parent": None, "linear_only": True,
+                    "state": str(entry.get("stateType") or entry["state"]).lower(),
+                    "evidence": ["Linear " + entry["identifier"]]})
+        row["linear_blocked"] = row["id"] not in clear and row["state"] in UNSTARTED
+        return row
+
+    rows = {entry["identifier"]: linear_row(entry) for entry in listed["issues"]}
+    # Only open issues and the ancestors they reach need a parent read.
+    pending = [r["id"] for r in rows.values() if r["state"] not in FINISHED]
+    viewed = set()
     for identifier in pending:
-        if identifier in seen:
+        if identifier in viewed:
             continue
-        if len(seen) >= 10000:
+        if len(viewed) >= 10000:
             raise RuntimeError("Linear ancestor discovery exceeded 10000 items")
-        seen.add(identifier)
-        detail = linear(["view", identifier, "--full"])["issue"]
-        row = item(detail["identifier"], detail["title"], home,
-                   detail["title"] + "\n" + (detail.get("description") or ""))
-        row["tags"] = {m[1].strip(): m[2].strip() for m in TAG.finditer(row["text"])}
-        row["linear_id"] = detail["identifier"]
-        row["linear_ids"] = [detail["identifier"]]
-        row["priority"] = detail.get("priority") or 0
-        row["project"] = detail.get("project") or ""
-        row["link"] = detail.get("url") or ""
-        row["state"] = str(detail.get("stateType") or detail["state"]).lower()
-        parent = LINEAR_ID.search(detail.get("parent") or "")
+        viewed.add(identifier)
+        detail = linear(["view", identifier])["issue"]
+        row = rows.setdefault(identifier, linear_row(detail))
+        parent = LINEAR_ID.match(detail.get("parent") or "")
         row["parent"] = parent[0] if parent else None
         if row["parent"]:
             pending.append(row["parent"])
-        row["linear_blocked"] = identifier not in clear and row["state"] in UNSTARTED
-        row["evidence"] = ["Linear " + detail["identifier"]]
-        rows.append(row)
-    return rows
+    return list(rows.values())
 
 
 def load_home(source):
@@ -212,6 +216,8 @@ def open_prs(repos):
 
 
 def classify(row):
+    if row.get("linear_only"):
+        return None
     kind = row["tags"].get("kind", "").lower()
     text = row["title"].lower()
     if kind in ("security", "cve", "code-review", "bug"):
@@ -229,13 +235,16 @@ def classify(row):
     return None
 
 
-def judge(snapshots, issues, requested, prs, problems):
+def judge(snapshots, issues, requested, prs, problems, team):
     doc = {"schema_version": 1, "source": "progress-officer", "doing": [], "done": [],
-           "start_requests": [], "asks_for_lee": [], "excluded": [], "filler": None,
-           "coverage": problems}
+           "start_requests": [], "asks_for_lee": [], "excluded": [], "unclassified": 0,
+           "filler": None, "coverage": problems}
+    team_id = re.compile(r"\b%s-\d+\b" % re.escape(team))
     rows = [row for snapshot in snapshots for row in snapshot["rows"]]
     linked = {}
     for row in rows:
+        row["linear_ids"] = [i for i in row["linear_ids"] if team_id.fullmatch(i)]
+        row["linear_id"] = row["linear_ids"][0] if len(row["linear_ids"]) == 1 else None
         for identifier in row["linear_ids"]:
             linked.setdefault(identifier, []).append(row)
             if row["tags"].get("requested-by", "").lower() == "lee":
@@ -248,21 +257,19 @@ def judge(snapshots, issues, requested, prs, problems):
             # parentage, and severity. Multiple homes are reconciled below.
             for copy in copies:
                 copy.update({k: v for k, v in row.items() if k in ("state", "parent", "priority", "linear_blocked")})
-                copy["text"] += "\n" + row["text"]
                 copy["evidence"] += row["evidence"]
-                copy["linear_class"] = classify(row)
                 copy["link"] = copy.get("link") or row["link"]
             by_linear[row["linear_id"]] = copies[0]
-        else:
+        elif row["state"] not in FINISHED:
             rows.append(row)
     pr_ids = set()
     pr_branches = set()
     for pr in prs:
-        pr_ids.update(LINEAR_ID.findall((pr.get("title") or "") + "\n" + (pr.get("body") or "")))
+        pr_ids.update(team_id.findall((pr.get("title") or "") + "\n" + (pr.get("body") or "")))
         if (pr.get("head") or {}).get("ref"):
             pr_branches.add(pr["head"]["ref"])
     # Evaluate ancestors iteratively: completed parents still carry the original
-    # request; a held parent or a Lee-choice parent stops inheritance.
+    # request; a held parent stops inheritance.
     def ancestry(row):
         chain, seen = [], set()
         while row and row["id"] not in seen:
@@ -273,15 +280,15 @@ def judge(snapshots, issues, requested, prs, problems):
 
     for row in rows:
         chain = ancestry(row)
-        authorised = classify(row) or row.get("linear_class")
+        authorised = classify(row)
         root = next((r for r in chain if r.get("linear_id") in requested), None)
         if root and not authorised:
             authorised = "requested-feature"
             row["evidence"].append("Lee-requested root " + root["linear_id"])
             row["owner_home"] = root["owner_home"]
         row["authorising_class"] = authorised
-        choice = next((CHOICES.search(r["text"]) for r in chain if CHOICES.search(r["text"])), None)
-        restricted = next((RESTRICTED.search(r["text"]) for r in chain if RESTRICTED.search(r["text"])), None)
+        choice = CHOICES.search(row["title"])
+        restricted = RESTRICTED.search(row["title"])
         held = any(any(k in r["tags"] for k in ("hold", "hold-kind", "blocked-by", "blocked", "deps"))
                    or r.get("open_calls") or r.get("linear_blocked") for r in chain)
         copies = [copy for ident in row["linear_ids"] for copy in linked.get(ident, [])]
@@ -289,7 +296,10 @@ def judge(snapshots, issues, requested, prs, problems):
                          or r.get("open_calls") or any(k in r["tags"] for k in ("hold", "hold-kind", "blocked-by")))
                          for r in copies)
         state = row.get("state", "")
-        if held:
+        finished = row.get("section") == "done" or state in FINISHED or row.get("latest") in ("done", "failed")
+        if not authorised and not choice and not row.get("captains_log_key"):
+            doc["unclassified"] += not finished
+        elif held:
             row["reason"] = "Already held, blocked, or carded; firstmate must reconcile it"
             doc["excluded"].append(row)
         elif row.get("section") == "in flight" or row.get("has_meta") or state == "started" or row.get("latest") in ("working", "paused"):
@@ -317,12 +327,9 @@ def judge(snapshots, issues, requested, prs, problems):
         elif row["linear_ids"] and not any(i in by_linear for i in row["linear_ids"]):
             row["reason"] = "Linked Linear item was not found; firstmate must reconcile it"
             doc["excluded"].append(row)
-        elif authorised:
+        else:
             row["reason"] = "Unstarted work authorised by " + row["authorising_class"]
             doc["start_requests"].append(row)
-        else:
-            row["reason"] = "No recorded authority to start this class"
-            doc["asks_for_lee"].append(row)
     doc["start_requests"].sort(key=lambda r: (CLASS_ORDER[r["authorising_class"]],
                                              r["priority"] or 5, r["id"], r["owner_home"]))
     seen = set()
@@ -420,8 +427,17 @@ def observed_time(value, fallback):
         return fallback
 
 
-def page_state(doc, officer, previous, repos, log_url):
-    """Fleet-app v1 projection; detailed execution stays in progress-run.json."""
+def stable_key(row):
+    value = row.get("linear_id") or row.get("id") or row.get("kind", "discovery")
+    # Preserve normal task and Linear ids; qualify colliding home-local ids.
+    return plain(value, 60) or "discovery"
+
+
+def page_state(doc, officer, previous, repos, log_url, reported):
+    """Fleet-app v1 projection; detailed execution stays in <date>.json.
+
+    reported holds the done keys of the previous dated run, or None on a first run;
+    outcomes already reported there and no longer on the page are not re-added."""
     now = doc["generated_at"]
     default_link = "https://github.com/" + repos.split(",")[0].strip()
     previous = previous if isinstance(previous, dict) and previous.get("officer") == officer else {}
@@ -433,11 +449,6 @@ def page_state(doc, officer, previous, repos, log_url):
     used = {"doing": set(), "done": set(), "asking": set()}
     sources = {"security": "cve", "cve": "cve", "code-review": "review", "bug": "bug",
                "requested-feature": "feature", "requested-fleet": "fleet", "filler": "filler"}
-
-    def stable_key(row):
-        value = row.get("linear_id") or row.get("id") or row.get("kind", "discovery")
-        # Preserve normal task and Linear ids; qualify colliding home-local ids.
-        return plain(value, 60) or "discovery"
 
     def unique(key, group, row):
         if key in used[group]:
@@ -464,6 +475,8 @@ def page_state(doc, officer, previous, repos, log_url):
             entry["project"] = plain(row["project"], 60)
         page["doing"].append(entry)
     for row in doc["done"]:
+        if reported is not None and stable_key(row) in reported and stable_key(row) not in old_done:
+            continue
         key = unique(stable_key(row), "done", row)
         entry = {"id": key, "description": plain("Recorded work outcome: " + row["title"], 200),
                  "at": observed_time(old_done.get(key, {}).get("at"), now), "outcome": row.get("outcome", "ok"),
@@ -494,8 +507,10 @@ def page_state(doc, officer, previous, repos, log_url):
     total_asks = len(page["asking"])
     page["asking"] = page["asking"][:30]
     page["summary"] = plain("Watching %d work items; %d outcomes recorded; %d requests waiting on firstmate or Lee; "
-                            "%d coverage gaps. Showing up to 30 current items, 50 outcomes, and 30 requests."
-                            % (len(doc["doing"]), len(doc["done"]), total_asks, len(doc["coverage"])), 300)
+                            "%d items outside the start classes; %d coverage gaps. "
+                            "Showing up to 30 current items, 50 outcomes, and 30 requests."
+                            % (len(doc["doing"]), len(doc["done"]), total_asks, doc["unclassified"],
+                               len(doc["coverage"])), 300)
     return page
 
 
@@ -514,6 +529,8 @@ def render_md(doc):
         lines.append("")
     if doc["filler"]:
         lines.extend(["## Filler proposal", "", "- " + doc["filler"]["kind"] + ": " + doc["filler"]["reason"], ""])
+    lines.extend(["## Unclassified", "", "- %d open items have no recorded start class and are not listed."
+                  % doc["unclassified"], ""])
     lines.extend(["## Coverage", ""] + ["- " + p for p in doc["coverage"]])
     if not doc["coverage"]:
         lines.append("- All configured sources read.")
@@ -564,21 +581,27 @@ def main(argv):
         prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()])
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         problems.append("open PR discovery unavailable or incomplete")
-    doc = judge(snapshots, issues, set(filter(None, args.requested.split(","))), prs, problems)
+    doc = judge(snapshots, issues, set(filter(None, args.requested.split(","))), prs, problems, args.team)
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
     doc["generated_at"] = datetime.datetime.fromtimestamp(
         args.now if args.now is not None else time.time(), datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     requests = executable_requests(doc, args.home[0])
     write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"), requests)
+    reported = None
+    runs = sorted(n for n in os.listdir(args.out) if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", n))
+    if runs:
+        try:
+            reported = {stable_key(r) for r in json.loads(read(os.path.join(args.out, runs[-1])))["done"]}
+        except (ValueError, KeyError, TypeError, AttributeError):
+            reported = None
     write(os.path.join(args.out, args.date + ".json"), doc)
-    write(os.path.join(args.out, args.date + ".progress-run.json"), doc)
     page_path = os.path.join(args.out, "progress-state.json")
     try:
         previous = json.loads(read(page_path))
     except ValueError:
         previous = {}
-    write(page_path, page_state(doc, args.officer, previous, args.repos, args.captains_log))
+    write(page_path, page_state(doc, args.officer, previous, args.repos, args.captains_log, reported))
     with open(os.path.join(args.out, args.date + ".md"), "w", encoding="utf-8") as fh:
         fh.write(render_md(doc))
     print("DIGEST %s %d %s.md" % (

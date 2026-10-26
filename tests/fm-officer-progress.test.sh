@@ -60,9 +60,9 @@ linear_item() {  # <id> <title>
   python3 -I - "$WORLD" "$1" "$2" <<'PY'
 import json, sys
 root, ident, title = sys.argv[1:]
-json.dump({'ok':True,'data':{'issues':[{'identifier':ident}]}},open(root+'/linear/list.json','w'))
-json.dump({'ok':True,'data':{'issue':{'identifier':ident,'title':title,'state':'Todo',
-          'stateType':'unstarted','priority':0,'parent':None,'description':''}}},open(root+'/linear/'+ident+'.json','w'))
+issue = {'identifier':ident,'title':title,'state':'Todo','stateType':'unstarted','priority':0}
+json.dump({'ok':True,'data':{'issues':[issue]}},open(root+'/linear/list.json','w'))
+json.dump({'ok':True,'data':{'issue':dict(issue,parent=None,description='')}},open(root+'/linear/'+ident+'.json','w'))
 PY
 }
 
@@ -77,6 +77,7 @@ test_backlog_discovery() {
 ## Queued
 
 - [ ] bug-one - Fix a reported crash (repo: project) (kind: bug) (linear: PC-1)
+- [ ] cve-fix - Fix CVE-2026-12345 (repo: project) (kind: cve)
 - [ ] feature-one - Add the requested export (repo: project) (kind: feature) (requested-by: Lee)
 - [ ] unasked - Add an unrequested feature (repo: project) (kind: feature)
 
@@ -86,12 +87,15 @@ test_backlog_discovery() {
 MD
   local out file
   out=$(run_progress) || fail "progress officer run failed: $out"
-  file="$WORLD_HOME/data/officers/progress/$DATE.progress-run.json"
-  assert_equals 'bug-one feature-one' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
-    'only authorised unstarted backlog work is requested'
-  assert_equals 'PC-1' "$(jq -r '.start_requests[0].linear_id' "$file")" 'Linear evidence is retained'
-  assert_equals "$WORLD_HOME" "$(jq -r '.start_requests[0].owner_home' "$file")" 'owning home is named'
-  assert_equals 'bug' "$(jq -r '.start_requests[0].authorising_class' "$file")" 'authority is explicit'
+  file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'cve-fix bug-one feature-one' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
+    'only authorised unstarted backlog work is requested, CVE first'
+  assert_equals 'null' "$(jq -r '.start_requests[0].linear_id' "$file")" 'a CVE identifier is not a Linear id'
+  assert_equals 'PC-1' "$(jq -r '.start_requests[1].linear_id' "$file")" 'Linear evidence is retained'
+  assert_equals "$WORLD_HOME" "$(jq -r '.start_requests[1].owner_home' "$file")" 'owning home is named'
+  assert_equals 'bug' "$(jq -r '.start_requests[1].authorising_class' "$file")" 'authority is explicit'
+  assert_equals '1' "$(jq '.unclassified' "$file")" 'an unrequested feature is counted, not asked'
+  assert_equals '0' "$(jq '.asks_for_lee | length' "$file")" 'missing authority alone is not a Lee ask'
   assert_equals 'busy' "$(jq -r '.doing[0].id' "$file")" 'moving work appears in doing'
   assert_equals 'finished' "$(jq -r '.done[0].id' "$file")" 'finished work appears in done'
   assert_contains "$out" "DIGEST $DATE" 'the existing digest protocol is retained'
@@ -116,14 +120,17 @@ spec = [
  ('PC-19', 'Security: token exposure', 'Todo', None, 2),
  ('PC-20', 'Bug: blocked by another issue', 'Todo', None, 1),
  ('PC-21', 'Implement pricing child', 'Todo', 'PC-13', 1),
+ ('PC-22', 'Old finished work', 'Done', None, 1),
 ]
-json.dump({'ok':True,'data':{'issues':[{'identifier':s[0]} for s in spec]}},
-          open(os.path.join(root,'linear','list.json'),'w'))
+listed = []
 for ident, title, state, parent, priority in spec:
     doc = {'identifier':ident, 'title':title, 'state':state, 'priority':priority,
-           'stateType': 'started' if state == 'In Progress' else 'completed' if state == 'Done' else 'unstarted',
-           'parent': parent + ' Parent title' if parent else None, 'description':''}
-    json.dump({'ok':True,'data':{'issue':doc}}, open(os.path.join(root,'linear',ident+'.json'),'w'))
+           'stateType': 'started' if state == 'In Progress' else 'completed' if state == 'Done' else 'unstarted'}
+    listed.append(doc)
+    json.dump({'ok':True,'data':{'issue':dict(doc, parent=parent + ' Parent title' if parent else None,
+                                              description='')}},
+              open(os.path.join(root,'linear',ident+'.json'),'w'))
+json.dump({'ok':True,'data':{'issues':listed}}, open(os.path.join(root,'linear','list.json'),'w'))
 json.dump([{'number':17,'title':'PC-17 fix crash','body':'Linear: PC-17',
             'html_url':'https://github.com/example/project/pull/17','head':{'ref':'fix-crash'}}],
           open(os.path.join(root,'prs.json'),'w'))
@@ -147,30 +154,36 @@ prs=json.load(open(path))
 prs.append({'title':'Fix a crash','body':'','head':{'ref':'fm/open-branch'}})
 json.dump(prs,open(path,'w'))
 PY
-  local file="$WORLD_HOME/data/officers/progress/$DATE.progress-run.json"
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   run_progress >/dev/null || fail 'linear discovery failed'
-  assert_equals 'PC-14 PC-19 PC-16 PC-15 PC-12' \
+  assert_equals 'PC-12' \
     "$(jq -r '[.start_requests[].linear_id] | join(" ")' "$file")" \
-    'security then review/bugs by severity then deeply nested requested work'
+    'Linear titles never authorise; deeply nested requested work starts'
+  assert_equals '5' "$(jq '.unclassified' "$file")" 'title-prefixed Linear-only items are counted, not started'
+  assert_equals 'PC-10' "$(jq -r '[.doing[].id] | join(" ")' "$file")" 'the requested root in progress is doing'
   assert_equals 'requested-feature' \
     "$(jq -r '.start_requests[] | select(.linear_id == "PC-12") | .authorising_class' "$file")" \
     'a leaf inherits the recorded root request across completed parents'
   assert_equals 'PC-13 PC-21 business legal payments product wording' \
     "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" 'choices need Lee, including descendants'
-  assert_equals 'PC-17 blocked-bug carded open-branch' \
+  assert_equals 'blocked-bug carded open-branch' \
     "$(jq -r '[.excluded[].id] | sort | join(" ")' "$file")" 'PRs, blocks, and existing cards exclude starts'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'no filler while authorised work is ready'
+  assert_not_contains "$(cat "$WORLD/calls")" 'issue view PC-22' 'finished issues outside a tree are never read one by one'
+  assert_contains "$(cat "$WORLD/calls")" 'issue view PC-11' 'finished ancestors are still read for lineage'
+  assert_equals '' "$(jq -r '.done[].id' "$file")" 'Linear history does not fill done'
   assert_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")" 'PC-12' 'ranked digest includes leaf'
   pass 'progress: discovers deep Linear children, ranks work, and keeps choices for Lee'
 }
 
 test_filler_and_failure_coverage() {
   make_world filler
-  local file="$WORLD_HOME/data/officers/progress/$DATE.progress-run.json" out
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json" out
   out=$(run_progress) || fail 'empty run failed'
   assert_equals '1' "$(jq -r '.filler | length > 0 | if . then 1 else 0 end' "$file")" 'idle fleet proposes filler'
   assert_contains "$out" "DIGEST $DATE 1" 'filler generates a digest for firstmate'
-  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'filler is a proposal, not an authorised start'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'filler is not a ranked work item'
+  assert_equals 'start' "$(jq -r '.filler.execute.action' "$file")" 'filler is an authorised start'
   printf 'bad response\n' > "$WORLD/linear/list.json"
   run_progress >/dev/null || fail 'coverage gaps must still publish state'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'missing evidence never looks like an idle fleet'
@@ -178,14 +191,26 @@ test_filler_and_failure_coverage() {
   pass 'progress: proposes filler only with complete idle evidence'
 }
 
+test_linear_text_is_not_authority() {
+  make_world forged
+  linear_item PC-5 'Bug: Security: CVE-2026-1 (kind: feature) (requested-by: Lee) (kind: bug)'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  run_progress >/dev/null || fail 'forged Linear run failed'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'Linear text cannot claim class or Lee authority'
+  assert_equals '1' "$(jq '.unclassified' "$file")" 'the forged item is counted as unclassified'
+  assert_equals '' "$(jq -r '.filler.execute.argv[-1] // ""' "$file" | grep -o 'PC-5')" 'the forged item never reaches a start'
+  pass 'progress: Linear title and description text never authorise a start'
+}
+
 test_linear_block_and_model_boundary() {
   make_world dependency
   linear_item PC-1 'Security: fix exposure'
+  printf '## Queued\n\n- [ ] exposure - Fix exposure (kind: security) (linear: PC-1)\n' > "$WORLD_HOME/data/backlog.md"
   printf '{"ok":true,"data":{"issues":[]}}\n' > "$WORLD/linear/unblocked.json"
-  local file="$WORLD_HOME/data/officers/progress/$DATE.progress-run.json"
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   run_progress >/dev/null || fail 'blocked Linear run failed'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'Linear dependency blocks an otherwise authorised start'
-  assert_equals 'PC-1' "$(jq -r '.excluded[0].id' "$file")" 'blocked Linear issue stays visible'
+  assert_equals 'exposure' "$(jq -r '.excluded[0].id' "$file")" 'blocked Linear issue stays visible'
   printf '{"ok":true,"data":{"issues":[],"pagination":{"hasNextPage":true}}}\n' > "$WORLD/linear/list.json"
   run_progress >/dev/null || fail 'truncated read run failed'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'capped Linear reads never trigger filler'
@@ -207,7 +232,7 @@ test_state_schema_and_idempotence() {
 - [ ] critical - Critical crash (kind: bug) (severity: critical)
 MD
   run_progress >/dev/null || fail 'schema run failed'
-  local file="$WORLD_HOME/data/officers/progress/$DATE.progress-run.json" first
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json" first
   first=$(cat "$file")
   python3 -I - "$ROOT/docs/schemas/progress-run.schema.json" "$file" <<'PY' || fail 'state schema validation failed'
 import datetime, json, sys
@@ -251,7 +276,7 @@ test_executable_start_requests() {
 - [ ] legal - Revise legal text (kind: feature) (requested-by: Lee)
 MD
   run_progress >/dev/null || fail 'executable request generation failed'
-  local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.progress-run.json" count
+  local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json" count
   assert_present "$lane/$DATE.start-requests.sh" 'firstmate receives an executable handoff'
   FM_HOME="$WORLD_HOME" bash "$lane/$DATE.start-requests.sh" > "$WORLD/executed" || fail 'start handoff failed'
   FM_HOME="$WORLD_HOME" bash "$lane/$DATE.start-requests.sh" > "$WORLD/repeated" || fail 'repeated handoff failed'
@@ -267,7 +292,7 @@ MD
 
 test_remote_home_and_missing_home() {
   make_world remote
-  local other="$WORLD/remote-home" file="$WORLD_HOME/data/officers/progress/$DATE.progress-run.json"
+  local other="$WORLD/remote-home" file="$WORLD_HOME/data/officers/progress/$DATE.json"
   officer_home "$other"
   printf '## Queued\n\n- [ ] remote-bug - Fix remote crash (kind: bug)\n' > "$other/data/backlog.md"
   printf -- '- remote - Remote fixtures (host: fixture; root: /fixture/root; home: %s; scope: fixtures; projects: project; added 2026-10-26)\n' \
@@ -371,13 +396,20 @@ PY
   NOW=$previous_now
   assert_equals "$first_started" "$(jq -r '.doing[0].started_at' "$file")" 'watch start remains the first observation'
   assert_equals "$first_asked" "$(jq -r '.asking[] | select(.key == "ready") | .asked_at' "$file")" 'waiting time survives repeat observations'
+  jq '.done = []' "$file" > "$file.new" && mv "$file.new" "$file"
+  printf -- '- [x] fresh - Fix new crash (kind: bug)\n' >> "$WORLD_HOME/data/backlog.md"
+  NOW=$((NOW + 120))
+  run_progress >/dev/null || fail 'third page observation failed'
+  NOW=$previous_now
+  assert_equals 'fresh' "$(jq -r '[.done[].id] | join(" ")' "$file")" \
+    'an outcome reported earlier and off the page does not return as new; a new outcome does'
   pass 'progress: fleet-app state matches the agreed schema and Slarti sample'
 }
 
 test_home_status_and_boundary() {
   make_world homes
   linear_item PC-91 'Bug: remote crash'
-  local other="$WORLD/other" file="$WORLD_HOME/data/officers/progress/$DATE.progress-run.json" before after
+  local other="$WORLD/other" file="$WORLD_HOME/data/officers/progress/$DATE.json" before after
   officer_home "$other"
   printf -- '- other - Owns fixtures (home: %s; scope: fixtures; projects: project; added 2026-10-26)\n' \
     "$other" > "$WORLD_HOME/data/secondmates.md"
@@ -440,6 +472,7 @@ test_backlog_discovery
 test_linear_trees_and_exclusions
 test_filler_and_failure_coverage
 test_home_status_and_boundary
+test_linear_text_is_not_authority
 test_linear_block_and_model_boundary
 test_state_schema_and_idempotence
 test_executable_start_requests

@@ -911,7 +911,8 @@ The triage and friction officers read this home and each local second mate home 
 The progress officer finds unstarted work and initiates it through executable requests firstmate runs under Lee's standing authority of 2026-10-26.
 It reads this home's and every registered local or remote second mate home's Markdown backlog and task status, Linear issues and their parents, and open PRs in `repos`.
 Remote home reads run the same read-only scanner over SSH.
-The complete team listing and individual parent reads avoid the 50-child limit of Linear's sub-issue view, so completed intermediate parents do not hide unstarted descendants.
+The complete team listing supplies each issue's state, priority, URL, and project; only open issues and the ancestors they reach are read one by one for their parent, which avoids the 50-child limit of Linear's sub-issue view, so completed intermediate parents do not hide unstarted descendants.
+Only identifiers that match the configured `team` key, such as `PC-123`, count as Linear links; other tokens of that shape, such as `CVE-2026-12345`, are ignored.
 Linear's unblocked listing supplies dependency exclusions.
 A missing home, failed read, capped Linear listing, or unsupported non-Markdown backlog is a coverage gap: the state still reports available evidence, but starts and filler wait for complete coverage.
 The pass reads current records; the common officer scheduler's date names the run rather than a historical snapshot.
@@ -920,38 +921,42 @@ The deterministic classifier uses these authorizing classes, in this order:
 
 | Class | Recorded evidence |
 | --- | --- |
-| `security`, `cve` | Backlog `kind: security` or `kind: cve`, a title beginning `Security`, or a CVE identifier in the title |
-| `code-review`, `bug` | Backlog `kind: code-review` or `kind: bug`, or a title beginning `Code review finding`, `Code review fix`, or `Bug` |
-| `requested-feature`, `requested-fleet` | `kind: feature` or `kind: fleet` with `requested-by: Lee`; a Linear item named in `requested`, or its descendants, defaults to `requested-feature` unless its own recorded class is more specific |
+| `security`, `cve` | Backlog `kind: security` or `kind: cve`, a backlog title beginning `Security`, or a CVE identifier in a backlog title |
+| `code-review`, `bug` | Backlog `kind: code-review` or `kind: bug`, or a backlog title beginning `Code review finding`, `Code review fix`, or `Bug` |
+| `requested-feature`, `requested-fleet` | Backlog `kind: feature` or `kind: fleet` with `requested-by: Lee`; a Linear item named in `requested` or linked from such a backlog row, or its descendants, defaults to `requested-feature` unless its own recorded class is more specific |
 
-Backlog metadata uses the existing parenthesized tags, for example `(kind: bug)` and `(severity: high)`.
-The same explicit tags may appear in a Linear title or description.
+Backlog metadata uses the existing parenthesized tags, for example `(kind: bug)` and `(severity: high)`; firstmate writes these rows, so they are structured records.
+Linear title and description text never sets a class or Lee's authority: anyone who can write an issue could otherwise start work.
+A Linear-only item starts only under a `requested` root or a linked backlog row.
+Linear labels and the issue's creator would be the structured Linear evidence for the security, CVE, and bug classes and for Lee's own requests, but `linear-axi` exposes neither in `issue list` or `issue view`, so this slice does not read them; until it can, such items need a backlog row or a `requested` root.
 `requested` records an existing Lee request; registering a root never authorizes inventing a new feature.
 Within each class tier, Linear priority or backlog severity ranks urgent/critical, high, medium, low, then unspecified; identifiers and home names break ties.
-Unclassified work goes to `asks_for_lee`, with the missing authority stated, rather than being guessed by a model.
+Open work with no recorded class is not listed and never becomes an ask; the run reports only its count, `unclassified`, and the digest prints that count on one line.
 This slice uses `model: none` throughout.
 
 Held, blocked, already carded, in-flight, completed, or open-PR-linked work is excluded from starts.
 Unresolved keyed status calls remain open across later `working` lines.
 The same Linear identifier produces at most one start request across homes.
-Business, product, wording, legal, payments, and pricing matches in the task or its ancestors go to `asks_for_lee`; automatic starts also exclude merges, production, credentials, data rewrites, destructive actions, and spending.
+Business, product, wording, legal, payments, and pricing matches in the item's own title go to `asks_for_lee`; for authorized work, automatic starts also exclude titles naming merges, production, credentials, data rewrites, destructive actions, and spending.
+Descriptions and ancestors are not matched, so ordinary bug text does not divert authorized work.
 These conservative word rules can overexclude a technical task; firstmate reconciles its evidence rather than widening authority automatically.
 For a queued local task, its backlog identifies the home; a Linear-only item defaults to the primary home until ordinary intake routes it by registered scope.
 
-When coverage is complete and no startable or in-flight work remains, the officer rotates one extra bug sweep, code review, librarian pass, or ideation pass by run date.
+When coverage is complete and no startable or in-flight work in the start classes remains, the officer rotates one extra bug sweep, code review, librarian pass, or ideation pass by run date.
 That filler request uses the same standing authority and firstmate intake as the ranked work.
 
-Each run writes `<date>.md`, `<date>.json`, `<date>.progress-run.json`, `<date>.start-requests.sh`, and the stable `progress-state.json` in its findings lane.
-The dated JSON files contain the complete discovery report under [progress-run.schema.json](schemas/progress-run.schema.json), schema version 1, source `progress-officer`.
+Each run writes `<date>.md`, `<date>.json`, `<date>.start-requests.sh`, and the stable `progress-state.json` in its findings lane.
+The dated JSON file contains the complete discovery report under [progress-run.schema.json](schemas/progress-run.schema.json), schema version 1, source `progress-officer`.
 
 | JSON field | Meaning |
 | --- | --- |
 | `schema_version`, `source` | `1` and `progress-officer` |
 | `date`, `generated_at` | Run date and actual UTC observation timestamp |
-| `doing`, `done` | Work currently in flight and work recorded completed or canceled |
+| `doing`, `done` | Work in the start classes currently in flight, and work recorded completed or canceled; completed Linear-only history is not listed |
 | `start_requests` | Ranked authorized work waiting for firstmate to dispatch |
-| `asks_for_lee` | Decisions or missing authority, each with its reason; these become Captain's Log cards |
+| `asks_for_lee` | Business, product, wording, legal, payments, or pricing choices, and authorized work outside automatic-start authority, each with its reason; these become Captain's Log cards |
 | `excluded` | Evidence that prevents a new start, including existing cards and incomplete discovery |
+| `unclassified` | Count of open items with no recorded start class; they are not listed |
 | `filler` | The extra discovery pass, or `null` |
 | `coverage` | Read failures or unsupported inputs; an empty array means all configured sources were read |
 
@@ -981,7 +986,7 @@ Its top-level fields are:
 | `stale_after_minutes` | Optional age limit; this daily officer emits 2880 minutes, matching its two-cadence health window |
 | `summary` | Optional one-line counts, including coverage gaps and the page's display bounds |
 | `doing` | At most 30 entries with `id`, `description`, `started_at`, and optional `link`, `project`, and `source` |
-| `done` | At most 50 entries, newest observation first, with `id`, `description`, `at`, `outcome` (`ok`, `failed`, or `skipped`), and optional `link`, `detail`, and `source` |
+| `done` | At most 50 entries, newest observation first; an outcome already in the previous dated run that has left the page is not added again; with `id`, `description`, `at`, `outcome` (`ok`, `failed`, or `skipped`), and optional `link`, `detail`, and `source` |
 | `asking` | At most 30 entries: `instruction` entries have `key`, `kind`, `question`, `waiting_on`, `link`, and optional `asked_at`; `captains_log` references carry only `key`, `kind`, and `link` |
 
 Page times describe when the officer first observed the work, outcome, or request, and persist across successive observations while the entry remains present.

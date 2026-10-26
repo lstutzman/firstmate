@@ -3,7 +3,7 @@
   "title": "Progress officer discovery run v1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "source", "date", "generated_at", "doing", "done", "start_requests", "asks_for_lee", "excluded", "filler", "coverage"],
+  "required": ["schema_version", "source", "date", "generated_at", "doing", "done", "start_requests", "asks_for_lee", "excluded", "unclassified", "filler", "coverage"],
   "properties": {
     "schema_version": {"const": 1},
     "source": {"const": "progress-officer"},
@@ -14,6 +14,7 @@
     "start_requests": {"type": "array", "items": {"$ref": "#/$defs/item"}},
     "asks_for_lee": {"type": "array", "items": {"$ref": "#/$defs/item"}},
     "excluded": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+    "unclassified": {"type": "integer", "minimum": 0},
     "coverage": {"type": "array", "items": {"type": "string"}},
     "filler": {
       "type": ["object", "null"],
