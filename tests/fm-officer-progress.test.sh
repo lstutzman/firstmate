@@ -173,6 +173,7 @@ test_linear_page_cap() {
   assert_equals '105 100' "$(jq -r '.linear_coverage | "\(.pages_fetched) \(.team_items)"' "$file")" 'page cap retains exact progress'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'capped reads suppress automatic starts'
   assert_contains "$(cat "$WORLD/output")" 'page cap reached' 'cap reaches run log transport'
+  assert_not_contains "$(cat "$WORLD/calls")" 'issue view' 'an incomplete team listing skips requested-tree reads'
   pass 'progress: page cap names the bound and preserves progress'
 }
 
@@ -183,9 +184,11 @@ import json,sys
 json.dump({'ok':True,'data':{'issue':{'identifier':'PC-10','title':'Root','state':'Todo'},
  'subIssues':[{'identifier':'PC-'+str(n)} for n in range(50)]}},open(sys.argv[1],'w'))
 PYCHILD
+  sed -i 's/requested: PC-10;/requested: PC-10,PC-11;/' "$WORLD_HOME/data/officers.md"
   run_progress > "$WORLD/output" || fail 'child cap must publish coverage'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   assert_contains "$(jq -r '.coverage[]' "$file")" 'sub-issues page cap reached' 'unpageable child connection never claims complete coverage'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'requested roots not read: PC-11' 'roots skipped after a tree failure are named'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'incomplete hierarchy suppresses starts'
   pass 'progress: hidden CLI child limit is an explicit coverage gap'
 }
@@ -231,7 +234,7 @@ test_start_check_budget() {
   python3 -I - "$WORLD" <<'PY'
 import json, os, sys
 root = sys.argv[1]
-spec = [('PC-41', 'Security: first', 3), ('PC-42', 'Bug: second', 1), ('PC-43', 'Bug: third', 2)]
+spec = [('PC-41', 'Bug: lowest ranked', 2), ('PC-42', 'Bug: second', 1), ('PC-43', 'Security: highest ranked', 3)]
 listed = []
 for ident, title, priority in spec:
     doc = {'identifier':ident, 'title':title, 'state':'Todo', 'stateType':'unstarted', 'priority':priority}
@@ -244,13 +247,13 @@ PY
   printf '98\n' > "$WORLD/linear/padding"
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   run_progress > "$WORLD/output" || fail 'budget-limited start checks must publish state'
-  assert_equals 'PC-41 PC-42' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
+  assert_equals 'PC-43 PC-42' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
     'the two highest-ranked checked candidates still start'
-  assert_equals 'PC-43' "$(jq -r '[.excluded[].id] | join(" ")' "$file")" 'the unchecked candidate is not started'
-  assert_contains "$(jq -r '.coverage[]' "$file")" 'start check PC-43: request budget reached' 'the gap names the candidate and cause'
+  assert_equals 'PC-41' "$(jq -r '[.excluded[].id] | join(" ")' "$file")" 'the lowest-ranked candidate is left unchecked'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'start check PC-41: request budget reached' 'the gap names the candidate and cause'
   assert_equals '1 300' "$(jq -r '.linear_coverage | "\(.unverified_starts) \(.requests)"' "$file")" \
     'unverified candidates are counted within the request budget'
-  assert_contains "$(cat "$WORLD/output")" 'Coverage gap: Linear discovery: start check PC-43' 'the run log names the gap'
+  assert_contains "$(cat "$WORLD/output")" 'Coverage gap: Linear discovery: start check PC-41' 'the run log names the gap'
   pass 'progress: start checks run in rank order and an over-budget candidate alone is withheld'
 }
 

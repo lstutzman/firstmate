@@ -278,16 +278,17 @@ def view_parent(entry):
 
 
 def linear_rows(team, home, requested, discovery, problems):
-    listed, unblocked = [], []
+    listed, unblocked, team_complete = [], [], True
     for entries, is_unblocked, states in ((listed, False, OPEN_STATES), (unblocked, True, BLOCKABLE_STATES)):
         for state in states:
             try:
                 discovery.listing(team, state, entries, unblocked=is_unblocked)
             except RuntimeError as exc:
                 problems.append("Linear discovery: " + str(exc))
+                team_complete = team_complete and is_unblocked
     clear = {r["identifier"] for r in unblocked}
     rows = {entry["identifier"]: linear_row(entry, home, clear) for entry in listed}
-    pending = sorted(requested)
+    pending = sorted(requested) if team_complete else []
     for identifier in pending:
         if identifier in discovery.viewed:
             continue
@@ -306,8 +307,10 @@ def linear_rows(team, home, requested, discovery, problems):
             discovery.stats["hierarchy_items"] += 1
             pending.extend(child["identifier"] for child in children)
         except (RuntimeError, KeyError, TypeError) as exc:
-            problems.append("Linear discovery: requested tree %s: %s" %
-                            (identifier, str(exc) if isinstance(exc, RuntimeError) else "malformed hierarchy data"))
+            skipped = [root for root in sorted(requested) if root != identifier and root not in discovery.viewed]
+            problems.append("Linear discovery: requested tree %s: %s%s" %
+                            (identifier, str(exc) if isinstance(exc, RuntimeError) else "malformed hierarchy data",
+                             "; requested roots not read: " + ", ".join(skipped) if skipped else ""))
             break
     return rows, clear
 
