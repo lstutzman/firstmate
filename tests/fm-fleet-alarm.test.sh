@@ -8,7 +8,7 @@ TMP_ROOT=$(fm_test_tmproot fm-fleet-alarm)
 HOME_FIX="$TMP_ROOT/home"
 BIN_FIX="$TMP_ROOT/bin"
 mkdir -p "$HOME_FIX/state" "$HOME_FIX/config" "$BIN_FIX"
-cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm-timeout-lib.sh" "$BIN_FIX/"
+cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-env-lib.sh" "$BIN_FIX/"
 cat > "$BIN_FIX/cpa-usage-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_HOME/quota-calls"
@@ -62,6 +62,24 @@ mate 0 0 9000
 out=$(run_alarm check)
 [ -z "$out" ] || fail "idle mates and healthy quota must be silent: $out"
 pass 'idle secondmate never alarms, regardless of silence'
+
+printf '  # Quota reader host\n\n \t \n \tlocal \t\r\nignored-host\n' > "$HOME_FIX/config/cpa-usage-host"
+quota 0.91
+out=$(run_alarm check)
+assert_contains "$out" '7d 91%' 'commented host config reaches the quota reader'
+assert_not_contains "$out" 'configuration invalid' 'comments and whitespace are accepted'
+mv "$HOME_FIX/config/cpa-usage-host" "$HOME_FIX/host-config-cleared"
+quota 0.2
+run_alarm check >/dev/null
+pass 'host config uses the first non-comment non-blank line with surrounding whitespace trimmed'
+
+printf '%s\n' 'invalid host contents' > "$HOME_FIX/config/cpa-usage-host"
+out=$(run_alarm check)
+assert_contains "$out" 'Fleet alarm configuration invalid: invalid cpa-usage-host' 'collection error reason reaches output'
+assert_not_contains "$out" 'invalid host contents' 'invalid config contents are not exposed'
+mv "$HOME_FIX/config/cpa-usage-host" "$HOME_FIX/invalid-host-config-cleared"
+run_alarm check >/dev/null
+pass 'collection errors report the actual reason without echoing config contents'
 
 quota 0.91
 out=$(run_alarm check)

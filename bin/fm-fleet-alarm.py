@@ -99,8 +99,8 @@ def collect(cfg):
             raise ValueError('reader budget exhausted')
         return run(argv, max(1, int(remaining / share)))
 
-    host_file = CONFIG / 'cpa-usage-host'
-    host = host_file.read_text().strip() if host_file.exists() else 'local'
+    host = read(['bash', '-c', '. "$1/fm-env-lib.sh"; fm_config_line "$2" cpa-usage-host',
+                 'fleet-alarm', BIN, CONFIG]).rstrip('\n') or 'local'
     if host == 'local' or host == os.uname().nodename.split('.')[0]:
         cpa = ['cpa-usage-axi']
     elif host and all(c.isalnum() or c in '.@_-' for c in host) and not host.startswith('-'):
@@ -178,8 +178,8 @@ def check(channel):
         timer_open = stored.get('timer_open', False)
         try:
             current = collect(settings())
-        except (ValueError, OSError):
-            current = {'config': 'Fleet alarm configuration invalid'}
+        except (ValueError, OSError) as error:
+            current = {'config': f'Fleet alarm configuration invalid: {error}'}
         fresh = {key: value for key, value in current.items()
                  if channel not in old.get(key, [])}
         # An unavailable reader does not prove that its previous alarms cleared.
