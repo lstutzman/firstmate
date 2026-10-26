@@ -158,8 +158,9 @@ def linear_rows(team, home):
     clear = {r["identifier"] for r in unblocked["issues"]}
 
     def linear_row(entry):
-        # Linear text is not authority: no tags, description, or title prefixes are kept.
-        row = item(entry["identifier"], entry["title"], home, "")
+        text = entry["title"] + "\n" + (entry.get("description") or "")
+        row = item(entry["identifier"], entry["title"], home, text,
+                   {m[1].strip(): m[2].strip() for m in TAG.finditer(text)})
         row.update({"linear_id": entry["identifier"], "linear_ids": [entry["identifier"]],
                     "priority": entry.get("priority") or 0, "project": entry.get("project") or "",
                     "link": entry.get("url") or "", "parent": None, "linear_only": True,
@@ -178,8 +179,9 @@ def linear_rows(team, home):
         if len(viewed) >= 10000:
             raise RuntimeError("Linear ancestor discovery exceeded 10000 items")
         viewed.add(identifier)
-        detail = linear(["view", identifier])["issue"]
+        detail = linear(["view", identifier, "--full"])["issue"]
         row = rows.setdefault(identifier, linear_row(detail))
+        row["tags"] = linear_row(detail)["tags"]
         parent = LINEAR_ID.match(detail.get("parent") or "")
         row["parent"] = parent[0] if parent else None
         if row["parent"]:
@@ -216,23 +218,20 @@ def open_prs(repos):
 
 
 def classify(row):
-    if row.get("linear_only"):
-        return None
+    """Return (class, tag_source); Linear sources name the free text that authorised it."""
+    linear_only = row.get("linear_only")
     kind = row["tags"].get("kind", "").lower()
     text = row["title"].lower()
     if kind in ("security", "cve", "code-review", "bug"):
-        return kind
-    if re.search(r"\bcve-\d{4}-\d+\b", text):
-        return "cve"
-    if re.match(r"security\b", text):
-        return "security"
-    if re.match(r"code[- ]review (?:finding|fix)\b", text):
-        return "code-review"
-    if re.match(r"bug(?: report)?\b", text):
-        return "bug"
+        return kind, "linear-free-text:kind" if linear_only else "backlog"
+    for name, label, pattern in (("cve", "CVE", r".*\bcve-\d{4}-\d+\b"), ("security", "Security", r"security\b"),
+                                 ("code-review", "Code review", r"code[- ]review (?:finding|fix)\b"),
+                                 ("bug", "Bug", r"bug(?: report)?\b")):
+        if re.match(pattern, text):
+            return name, "linear-title-prefix:" + label if linear_only else "backlog"
     if kind in ("feature", "fleet") and row["tags"].get("requested-by", "").lower() == "lee":
-        return "requested-" + kind
-    return None
+        return "requested-" + kind, "linear-free-text:requested-by" if linear_only else "backlog"
+    return None, None
 
 
 def judge(snapshots, issues, requested, prs, problems, team):
@@ -259,6 +258,7 @@ def judge(snapshots, issues, requested, prs, problems, team):
                 copy.update({k: v for k, v in row.items() if k in ("state", "parent", "priority", "linear_blocked")})
                 copy["evidence"] += row["evidence"]
                 copy["link"] = copy.get("link") or row["link"]
+                copy["linear_class"] = classify(row)
             by_linear[row["linear_id"]] = copies[0]
         elif row["state"] not in FINISHED:
             rows.append(row)
@@ -280,13 +280,16 @@ def judge(snapshots, issues, requested, prs, problems, team):
 
     for row in rows:
         chain = ancestry(row)
-        authorised = classify(row)
+        authorised, source = classify(row)
+        if not authorised:
+            authorised, source = row.get("linear_class") or (None, None)
         root = next((r for r in chain if r.get("linear_id") in requested), None)
         if root and not authorised:
-            authorised = "requested-feature"
+            authorised, source = "requested-feature", "requested-root:" + root["linear_id"]
             row["evidence"].append("Lee-requested root " + root["linear_id"])
             row["owner_home"] = root["owner_home"]
         row["authorising_class"] = authorised
+        row["tag_source"] = source
         choice = CHOICES.search(row["title"])
         restricted = RESTRICTED.search(row["title"])
         held = any(any(k in r["tags"] for k in ("hold", "hold-kind", "blocked-by", "blocked", "deps"))
@@ -297,12 +300,14 @@ def judge(snapshots, issues, requested, prs, problems, team):
                          for r in copies)
         state = row.get("state", "")
         finished = row.get("section") == "done" or state in FINISHED or row.get("latest") in ("done", "failed")
-        if not authorised and not choice and not row.get("captains_log_key"):
+        moving = (row.get("section") == "in flight" or row.get("has_meta") or state == "started"
+                  or row.get("latest") in ("working", "paused"))
+        if not authorised and not row.get("captains_log_key") and (not choice or finished or moving):
             doc["unclassified"] += not finished
         elif held:
             row["reason"] = "Already held, blocked, or carded; firstmate must reconcile it"
             doc["excluded"].append(row)
-        elif row.get("section") == "in flight" or row.get("has_meta") or state == "started" or row.get("latest") in ("working", "paused"):
+        elif moving:
             row["reason"] = "Already in flight"
             doc["doing"].append(row)
         elif row.get("section") == "done" or state in FINISHED:
@@ -352,7 +357,7 @@ def judge(snapshots, issues, requested, prs, problems, team):
         for row in doc[key]:
             for private in list(row):
                 if private not in ("id", "title", "owner_home", "linear_id", "linear_ids",
-                                   "authorising_class", "reason", "evidence", "priority", "rank", "execute"):
+                                   "authorising_class", "tag_source", "reason", "evidence", "priority", "rank", "execute"):
                     if private not in ("link", "project", "outcome", "captains_log_key"):
                         row.pop(private, None)
     return doc
@@ -364,7 +369,7 @@ def filler_for(doc, date):
     choices = ("bug sweep", "code review", "librarian pass", "ideation pass")
     return {"kind": choices[datetime.date.fromisoformat(date).toordinal() % len(choices)],
             "reason": "No authorised unstarted work or authorised work in flight; rotate daily discovery passes",
-            "requires_firstmate": True}
+            "tag_source": "standing-authority:filler", "requires_firstmate": True}
 
 
 def executable_requests(doc, home):
@@ -520,15 +525,16 @@ def render_md(doc):
                        ("done", "Done"), ("asks_for_lee", "Ask Lee"), ("excluded", "Excluded")):
         lines.extend(["## " + title, ""])
         for row in doc[key]:
-            lines.append("- %s%s - %s (Linear: %s; home: %s; class: %s): %s" % (
+            lines.append("- %s%s - %s (Linear: %s; home: %s; class: %s; source: %s): %s" % (
                 str(row["rank"]) + ". " if row["rank"] is not None else "", row["id"], row["title"],
                 row["linear_id"] or "none", row["owner_home"],
-                row["authorising_class"] or "unclassified", row["reason"]))
+                row["authorising_class"] or "unclassified", row["tag_source"] or "none", row["reason"]))
         if not doc[key]:
             lines.append("- None.")
         lines.append("")
     if doc["filler"]:
-        lines.extend(["## Filler proposal", "", "- " + doc["filler"]["kind"] + ": " + doc["filler"]["reason"], ""])
+        lines.extend(["## Filler proposal", "", "- " + doc["filler"]["kind"] + " (source: " + doc["filler"]["tag_source"] + "): "
+                      + doc["filler"]["reason"], ""])
     lines.extend(["## Unclassified", "", "- %d open items have no recorded start class and are not listed."
                   % doc["unclassified"], ""])
     lines.extend(["## Coverage", ""] + ["- " + p for p in doc["coverage"]])

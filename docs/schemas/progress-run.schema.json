@@ -19,10 +19,11 @@
     "filler": {
       "type": ["object", "null"],
       "additionalProperties": false,
-      "required": ["kind", "reason", "requires_firstmate", "execute"],
+      "required": ["kind", "reason", "tag_source", "requires_firstmate", "execute"],
       "properties": {
         "kind": {"enum": ["bug sweep", "code review", "librarian pass", "ideation pass"]},
         "reason": {"type": "string"},
+        "tag_source": {"const": "standing-authority:filler"},
         "requires_firstmate": {"const": true},
         "execute": {"$ref": "#/$defs/execute"}
       }
@@ -46,7 +47,7 @@
     "item": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "title", "owner_home", "linear_id", "linear_ids", "authorising_class", "reason", "evidence", "priority", "rank", "execute"],
+      "required": ["id", "title", "owner_home", "linear_id", "linear_ids", "authorising_class", "tag_source", "reason", "evidence", "priority", "rank", "execute"],
       "properties": {
         "id": {"type": "string"},
         "title": {"type": "string"},
@@ -54,6 +55,7 @@
         "linear_id": {"type": ["string", "null"]},
         "linear_ids": {"type": "array", "items": {"type": "string"}},
         "authorising_class": {"enum": ["security", "cve", "code-review", "bug", "requested-feature", "requested-fleet", null]},
+        "tag_source": {"type": ["string", "null"]},
         "reason": {"type": "string"},
         "evidence": {"type": "array", "items": {"type": "string"}},
         "priority": {"enum": [0, 1, 2, 3, 4]},

@@ -156,17 +156,19 @@ json.dump(prs,open(path,'w'))
 PY
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   run_progress >/dev/null || fail 'linear discovery failed'
-  assert_equals 'PC-12' \
+  assert_equals 'PC-14 PC-19 PC-16 PC-15 PC-12' \
     "$(jq -r '[.start_requests[].linear_id] | join(" ")' "$file")" \
-    'Linear titles never authorise; deeply nested requested work starts'
-  assert_equals '5' "$(jq '.unclassified' "$file")" 'title-prefixed Linear-only items are counted, not started'
+    'security then review/bugs by severity then deeply nested requested work'
+  assert_equals 'linear-title-prefix:CVE linear-title-prefix:Security linear-title-prefix:Code review linear-title-prefix:Bug requested-root:PC-10' \
+    "$(jq -r '[.start_requests[].tag_source] | join(" ")' "$file")" 'each start names the source of its authority'
+  assert_equals '0' "$(jq '.unclassified' "$file")" 'every open item in the tree is classified'
   assert_equals 'PC-10' "$(jq -r '[.doing[].id] | join(" ")' "$file")" 'the requested root in progress is doing'
   assert_equals 'requested-feature' \
     "$(jq -r '.start_requests[] | select(.linear_id == "PC-12") | .authorising_class' "$file")" \
     'a leaf inherits the recorded root request across completed parents'
   assert_equals 'PC-13 PC-21 business legal payments product wording' \
     "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" 'choices need Lee, including descendants'
-  assert_equals 'blocked-bug carded open-branch' \
+  assert_equals 'PC-17 blocked-bug carded open-branch' \
     "$(jq -r '[.excluded[].id] | sort | join(" ")' "$file")" 'PRs, blocks, and existing cards exclude starts'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'no filler while authorised work is ready'
   assert_not_contains "$(cat "$WORLD/calls")" 'issue view PC-22' 'finished issues outside a tree are never read one by one'
@@ -191,15 +193,43 @@ test_filler_and_failure_coverage() {
   pass 'progress: proposes filler only with complete idle evidence'
 }
 
-test_linear_text_is_not_authority() {
-  make_world forged
-  linear_item PC-5 'Bug: Security: CVE-2026-1 (kind: feature) (requested-by: Lee) (kind: bug)'
+test_linear_free_text_source() {
+  make_world freetext
+  python3 -I - "$WORLD" <<'PY'
+import json, os, sys
+root = sys.argv[1]
+spec = [('PC-5', 'Add export', '(kind: feature) (requested-by: Lee)'),
+        ('PC-6', 'Add another export', ''),
+        ('PC-7', 'Product page redesign', ''),
+        ('PC-8', 'Billing export', '')]
+listed = []
+for ident, title, description in spec:
+    doc = {'identifier':ident, 'title':title, 'priority':0,
+           'state': 'In Progress' if ident == 'PC-7' else 'Done' if ident == 'PC-8' else 'Todo',
+           'stateType': 'started' if ident == 'PC-7' else 'completed' if ident == 'PC-8' else 'unstarted'}
+    listed.append(doc)
+    json.dump({'ok':True,'data':{'issue':dict(doc, parent=None, description=description)}},
+              open(os.path.join(root,'linear',ident+'.json'),'w'))
+json.dump({'ok':True,'data':{'issues':listed}}, open(os.path.join(root,'linear','list.json'),'w'))
+PY
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
-  run_progress >/dev/null || fail 'forged Linear run failed'
-  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'Linear text cannot claim class or Lee authority'
-  assert_equals '1' "$(jq '.unclassified' "$file")" 'the forged item is counted as unclassified'
-  assert_equals '' "$(jq -r '.filler.execute.argv[-1] // ""' "$file" | grep -o 'PC-5')" 'the forged item never reaches a start'
-  pass 'progress: Linear title and description text never authorise a start'
+  run_progress >/dev/null || fail 'free-text Linear run failed'
+  assert_equals 'PC-5' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
+    'a free-text tagged Linear item starts and an untagged one does not'
+  assert_equals 'requested-feature linear-free-text:requested-by' \
+    "$(jq -r '.start_requests[0] | .authorising_class + " " + .tag_source' "$file")" 'the start names its free-text source'
+  assert_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")" 'source: linear-free-text:requested-by' \
+    'the digest shows where the authority came from'
+  assert_equals '0' "$(jq '.doing + .done + .asks_for_lee | length' "$file")" \
+    'choice words alone never place moving or finished work in doing, done, or asks'
+  assert_equals '2' "$(jq '.unclassified' "$file")" 'the untagged and moving choice items are counted'
+  rm "$WORLD/linear/PC-5.json"
+  jq '.data.issues |= map(select(.identifier != "PC-5"))' "$WORLD/linear/list.json" > "$WORLD/list.new"
+  mv "$WORLD/list.new" "$WORLD/linear/list.json"
+  run_progress >/dev/null || fail 'idle free-text Linear run failed'
+  assert_equals 'standing-authority:filler' "$(jq -r '.filler // {} | .tag_source // "none"' "$file")" \
+    'a moving choice item outside the start classes does not block filler'
+  pass 'progress: Linear free-text authority starts work and names its source'
 }
 
 test_linear_block_and_model_boundary() {
@@ -472,7 +502,7 @@ test_backlog_discovery
 test_linear_trees_and_exclusions
 test_filler_and_failure_coverage
 test_home_status_and_boundary
-test_linear_text_is_not_authority
+test_linear_free_text_source
 test_linear_block_and_model_boundary
 test_state_schema_and_idempotence
 test_executable_start_requests
