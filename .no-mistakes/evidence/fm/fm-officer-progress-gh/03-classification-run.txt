@@ -1,0 +1,37 @@
+$ fm-officer.sh run progress --date 2026-10-26   # fake linear-axi, real gh-axi (lstutzman/firstmate)
+DIGEST 2026-10-26 8 data/officers/progress/2026-10-26.md
+rc=0
+--- ranked start list
+1. sec-one linear=null home=/tmp/fm-lab.iMwxui class=security source=backlog :: Unstarted work authorised by security
+2. cve-fix linear=null home=/tmp/fm-lab.iMwxui class=cve source=backlog :: Unstarted work authorised by cve
+3. review-fix linear=null home=/tmp/fm-lab.iMwxui class=code-review source=backlog :: Unstarted work authorised by code-review
+4. PC-12 linear=PC-12 home=/tmp/fm-lab.iMwxui class=requested-feature source=requested-root:PC-10 :: Unstarted work authorised by requested-feature
+5. feat-asked linear=null home=/tmp/fm-lab.iMwxui class=requested-feature source=backlog :: Unstarted work authorised by requested-feature
+--- asks_for_lee
+pricing-q: Lee decides the pricing choice
+prod-bug: Outside automatic-start authority: delete
+PC-13: Lee decides the pricing choice
+--- doing
+busy-bug class=bug
+PC-10 class=requested-fleet
+--- done
+old-bug ok
+--- excluded
+fm-officer-progress-gh: Already held, blocked, carded, in flight, or covered by an open PR
+held-bug: Already held, blocked, or carded; firstmate must reconcile it
+PC-14: Already held, blocked, carded, in flight, or covered by an open PR
+PC-15: Already held, blocked, carded, in flight, or covered by an open PR
+PC-17: Already held, blocked, or carded; firstmate must reconcile it
+--- unclassified / coverage / filler
+{"unclassified":2,"coverage":[],"filler":null}
+--- linear-axi calls (reads only)
+issue list --team PC --all --max-items 10000 --fields stateType,priority,url,project --output json
+issue list --team PC --unblocked --all --max-items 10000 --output json
+issue view PC-10 --full --output json
+issue view PC-11 --full --output json
+issue view PC-12 --full --output json
+issue view PC-13 --full --output json
+issue view PC-14 --full --output json
+issue view PC-15 --full --output json
+issue view PC-16 --full --output json
+issue view PC-17 --full --output json

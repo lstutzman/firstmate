@@ -1,0 +1,18 @@
+$ fm-officer.sh run progress --date 2026-10-27   # Linear-only items renamed to PC-44/45/46 (not cited by any open PR)
+DIGEST 2026-10-27 10 data/officers/progress/2026-10-27.md
+rc=0
+--- ranked start list
+1. PC-44 linear=PC-44 class=security source=linear-title-prefix:Security
+2. sec-one linear=null class=security source=backlog
+3. cve-fix linear=null class=cve source=backlog
+4. PC-45 linear=PC-45 class=bug source=linear-free-text:kind
+5. review-fix linear=null class=code-review source=backlog
+6. PC-12 linear=PC-12 class=requested-feature source=requested-root:PC-10
+7. feat-asked linear=null class=requested-feature source=backlog
+--- unclassified count (PC-46 untagged, feat-unasked)
+2
+--- is PC-46 listed anywhere?
+--- digest lines
+- 1. PC-44 - Security: token appears in URL (Linear: PC-44; home: /tmp/fm-lab.iMwxui; class: security; source: linear-title-prefix:Security): Unstarted work authorised by security
+- 4. PC-45 - Image upload fails on large files (Linear: PC-45; home: /tmp/fm-lab.iMwxui; class: bug; source: linear-free-text:kind): Unstarted work authorised by bug
+- 6. PC-12 - Implement the grandchild leaf (Linear: PC-12; home: /tmp/fm-lab.iMwxui; class: requested-feature; source: requested-root:PC-10): Unstarted work authorised by requested-feature

@@ -1,0 +1,52 @@
+$ sha256sum backlog before/after (officer must not modify)
+780b192083e21432818c31d4dd5432b442abc49a8f63a28f17b6c7a20cdc88fb  /tmp/fm-lab.iMwxui/data/backlog.md
+$ bash 2026-10-27.start-requests.sh   # firstmate executes the handoff
+7
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793052221-WJY48O","request_id":"progress-2026-10-27-0b1ec95835473e77","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMw
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793052221-Pi8W0o","request_id":"progress-2026-10-27-bc23f1a378022d51","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMw
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793052221-guTNzO","request_id":"progress-2026-10-27-b953a37a975a778e","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMw
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793052221-RhYcm9","request_id":"progress-2026-10-27-71bc8f43b5ecb098","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMw
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793052222-YPiad2","request_id":"progress-2026-10-27-b0518f6ac3a22168","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMw
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793052222-5eWuhL","request_id":"progress-2026-10-27-b814f22a0c61b462","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMw
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793052222-88W2Ad","request_id":"progress-2026-10-27-5a98536d8b630f15","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMw
+rc=0
+$ second execution (idempotent request ids)
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793052221-WJY48O","request_id":"progress-2026-10-27-0b1ec95835473e77","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMwx
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793052221-Pi8W0o","request_id":"progress-2026-10-27-bc23f1a378022d51","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMwx
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793052221-guTNzO","request_id":"progress-2026-10-27-b953a37a975a778e","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMwx
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793052221-RhYcm9","request_id":"progress-2026-10-27-71bc8f43b5ecb098","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMwx
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793052222-YPiad2","request_id":"progress-2026-10-27-b0518f6ac3a22168","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMwx
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793052222-5eWuhL","request_id":"progress-2026-10-27-b814f22a0c61b462","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMwx
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793052222-88W2Ad","request_id":"progress-2026-10-27-5a98536d8b630f15","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.iMwx
+rc=0
+$ lab inbox contents
+$LAB/state/inbox/1793052222-88W2Ad.note
+$LAB/state/inbox/1793052222-5eWuhL.note
+$LAB/state/inbox/1793052222-YPiad2.note
+$LAB/state/inbox/1793052221-RhYcm9.note
+$LAB/state/inbox/1793052221-guTNzO.note
+$LAB/state/inbox/1793052221-Pi8W0o.note
+$LAB/state/inbox/1793052221-WJY48O.note
+$LAB/state/inbox/.announced/1793052222-88W2Ad
+$LAB/state/inbox/.announced/1793052222-5eWuhL
+$LAB/state/inbox/.announced/1793052222-YPiad2
+1793052221-guTNzO
+    Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dis
+    {"authorising_class": "cve", "evidence": ["/tmp/fm-lab.iMwxui/data/backlog.md: cve-fix"], "id": "cve-fix", "linear_id": null, "linear_ids": [], "link": "", "owner_home": "/tmp/fm-lab.iMwxui", "priority": 0, "project"
+1793052221-Pi8W0o
+    Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dis
+    {"authorising_class": "security", "evidence": ["/tmp/fm-lab.iMwxui/data/backlog.md: sec-one"], "id": "sec-one", "linear_id": null, "linear_ids": [], "link": "", "owner_home": "/tmp/fm-lab.iMwxui", "priority": 2, "pro
+1793052221-RhYcm9
+    Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dis
+    {"authorising_class": "bug", "evidence": ["Linear PC-45"], "id": "PC-45", "linear_id": "PC-45", "linear_ids": ["PC-45"], "link": "", "owner_home": "/tmp/fm-lab.iMwxui", "priority": 2, "project": "", "rank": 4, "reaso
+1793052221-WJY48O
+    Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dis
+    {"authorising_class": "security", "evidence": ["Linear PC-44"], "id": "PC-44", "linear_id": "PC-44", "linear_ids": ["PC-44"], "link": "", "owner_home": "/tmp/fm-lab.iMwxui", "priority": 2, "project": "", "rank": 1, "
+1793052222-5eWuhL
+    Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dis
+    {"authorising_class": "requested-feature", "evidence": ["Linear PC-12", "Lee-requested root PC-10"], "id": "PC-12", "linear_id": "PC-12", "linear_ids": ["PC-12"], "link": "", "owner_home": "/tmp/fm-lab.iMwxui", "prio
+1793052222-88W2Ad
+    Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dis
+    {"authorising_class": "requested-feature", "evidence": ["/tmp/fm-lab.iMwxui/data/backlog.md: feat-asked"], "id": "feat-asked", "linear_id": null, "linear_ids": [], "link": "", "owner_home": "/tmp/fm-lab.iMwxui", "pri
+1793052222-YPiad2
+    Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dis

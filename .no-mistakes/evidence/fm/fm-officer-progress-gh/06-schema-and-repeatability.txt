@@ -1,0 +1,16 @@
+$ backlog unchanged after runs + handoff?
+780b192083e21432818c31d4dd5432b442abc49a8f63a28f17b6c7a20cdc88fb  /tmp/fm-lab.iMwxui/data/backlog.md
+$ validate live outputs against docs/schemas
+progress-state.json vs progress-state.schema.json -> VALID
+2026-10-27.json vs progress-run.schema.json -> VALID
+$ fleet-app progress-state.json (summary + asking keys)
+{"schema_version":1,"officer":"progress","stale_after_minutes":2880,"summary":"Watching 2 work items; 1 outcomes recorded; 10 requests waiting on firstmate or Lee; 2 items outside the start classes; 0 coverage gaps. Showing up to 30 current items, 50 outcomes, and 30 requests.","doing":["busy-bug","PC-10"],"done":["old-bug"],"asking":["PC-44:firstmate","sec-one:firstmate","cve-fix:firstmate","PC-45:firstmate","review-fix:firstmate","PC-12:firstmate","feat-asked:firstmate","pricing-q:firstmate","prod-bug:firstmate","PC-13:firstmate"]}
+$ rerun same date with unchanged inputs -> byte-identical dated JSON?
+DIFFERENT
+$ two runs with FM_OFFICER_NOW pinned (clock is an input)
+ad8aec202e1dab6e34049864df272f24737debb1a3f05787b7380854fcd091eb  2026-10-27.json
+4cd567d8c4d13170128617de2170f4e84348ae137dadb29d18233bd07631e0e0  2026-10-27.md
+1afbdf847e491b1ade6644da83545ddd67311c48c2536ab8b0ff1f61ce6e9538  2026-10-27.start-requests.sh
+ad8aec202e1dab6e34049864df272f24737debb1a3f05787b7380854fcd091eb  2026-10-27.json
+4cd567d8c4d13170128617de2170f4e84348ae137dadb29d18233bd07631e0e0  2026-10-27.md
+1afbdf847e491b1ade6644da83545ddd67311c48c2536ab8b0ff1f61ce6e9538  2026-10-27.start-requests.sh

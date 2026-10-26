@@ -1,0 +1,397 @@
+{
+  "asks_for_lee": [
+    {
+      "authorising_class": null,
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: pricing-q"
+      ],
+      "execute": null,
+      "id": "pricing-q",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 0,
+      "project": "project",
+      "rank": null,
+      "reason": "Lee decides the pricing choice",
+      "tag_source": null,
+      "title": "Decide pricing tiers for the new plan"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: prod-bug"
+      ],
+      "execute": null,
+      "id": "prod-bug",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 0,
+      "project": "project",
+      "rank": null,
+      "reason": "Outside automatic-start authority: delete",
+      "tag_source": "backlog",
+      "title": "Bug: delete stale rows in production"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Linear PC-13",
+        "Lee-requested root PC-10"
+      ],
+      "execute": null,
+      "id": "PC-13",
+      "linear_id": "PC-13",
+      "linear_ids": [
+        "PC-13"
+      ],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Lee decides the pricing choice",
+      "tag_source": "requested-root:PC-10",
+      "title": "Choose pricing for the leaf"
+    }
+  ],
+  "coverage": [],
+  "date": "2026-10-26",
+  "doing": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: busy-bug"
+      ],
+      "execute": null,
+      "id": "busy-bug",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 0,
+      "project": "project",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "backlog",
+      "title": "Fix a bug already moving"
+    },
+    {
+      "authorising_class": "requested-fleet",
+      "evidence": [
+        "Linear PC-10"
+      ],
+      "execute": null,
+      "id": "PC-10",
+      "linear_id": "PC-10",
+      "linear_ids": [
+        "PC-10"
+      ],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "linear-free-text:requested-by",
+      "title": "Requested fleet tooling"
+    }
+  ],
+  "done": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: old-bug"
+      ],
+      "execute": null,
+      "id": "old-bug",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "outcome": "ok",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 0,
+      "project": "project",
+      "rank": null,
+      "reason": "Recorded completed or canceled",
+      "tag_source": "backlog",
+      "title": "Fix the old crash"
+    }
+  ],
+  "excluded": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: fm-officer-progress-gh"
+      ],
+      "execute": null,
+      "id": "fm-officer-progress-gh",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 0,
+      "project": "firstmate",
+      "rank": null,
+      "reason": "Already held, blocked, carded, in flight, or covered by an open PR",
+      "tag_source": "backlog",
+      "title": "Bug: progress officer branch already has a PR"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: held-bug"
+      ],
+      "execute": null,
+      "id": "held-bug",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 0,
+      "project": "project",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "backlog",
+      "title": "Bug: waiting on vendor"
+    },
+    {
+      "authorising_class": "security",
+      "evidence": [
+        "Linear PC-14"
+      ],
+      "execute": null,
+      "id": "PC-14",
+      "linear_id": "PC-14",
+      "linear_ids": [
+        "PC-14"
+      ],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, carded, in flight, or covered by an open PR",
+      "tag_source": "linear-title-prefix:Security",
+      "title": "Security: token appears in URL"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-15"
+      ],
+      "execute": null,
+      "id": "PC-15",
+      "linear_id": "PC-15",
+      "linear_ids": [
+        "PC-15"
+      ],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, carded, in flight, or covered by an open PR",
+      "tag_source": "linear-free-text:kind",
+      "title": "Image upload fails on large files"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-17"
+      ],
+      "execute": null,
+      "id": "PC-17",
+      "linear_id": "PC-17",
+      "linear_ids": [
+        "PC-17"
+      ],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 2,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: blocked by another issue"
+    }
+  ],
+  "filler": null,
+  "generated_at": "2026-10-26T22:03:16Z",
+  "schema_version": 1,
+  "source": "progress-officer",
+  "start_requests": [
+    {
+      "authorising_class": "security",
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: sec-one"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X3M5GESJJB8KAZQNW3KGA8/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-bc23f1a378022d51",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"security\", \"evidence\": [\"/tmp/fm-lab.iMwxui/data/backlog.md: sec-one\"], \"id\": \"sec-one\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.iMwxui\", \"priority\": 2, \"project\": \"project\", \"rank\": 1, \"reason\": \"Unstarted work authorised by security\", \"tag_source\": \"backlog\", \"title\": \"Security: session token leaks into logs\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.iMwxui"
+        },
+        "request_id": "progress-2026-10-26-bc23f1a378022d51"
+      },
+      "id": "sec-one",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 2,
+      "project": "project",
+      "rank": 1,
+      "reason": "Unstarted work authorised by security",
+      "tag_source": "backlog",
+      "title": "Security: session token leaks into logs"
+    },
+    {
+      "authorising_class": "cve",
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: cve-fix"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X3M5GESJJB8KAZQNW3KGA8/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-b953a37a975a778e",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"cve\", \"evidence\": [\"/tmp/fm-lab.iMwxui/data/backlog.md: cve-fix\"], \"id\": \"cve-fix\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.iMwxui\", \"priority\": 0, \"project\": \"project\", \"rank\": 2, \"reason\": \"Unstarted work authorised by cve\", \"tag_source\": \"backlog\", \"title\": \"Fix CVE-2026-12345 in the image library\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.iMwxui"
+        },
+        "request_id": "progress-2026-10-26-b953a37a975a778e"
+      },
+      "id": "cve-fix",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 0,
+      "project": "project",
+      "rank": 2,
+      "reason": "Unstarted work authorised by cve",
+      "tag_source": "backlog",
+      "title": "Fix CVE-2026-12345 in the image library"
+    },
+    {
+      "authorising_class": "code-review",
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: review-fix"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X3M5GESJJB8KAZQNW3KGA8/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-b0518f6ac3a22168",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"code-review\", \"evidence\": [\"/tmp/fm-lab.iMwxui/data/backlog.md: review-fix\"], \"id\": \"review-fix\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.iMwxui\", \"priority\": 0, \"project\": \"project\", \"rank\": 3, \"reason\": \"Unstarted work authorised by code-review\", \"tag_source\": \"backlog\", \"title\": \"Code review finding: missing bounds check\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.iMwxui"
+        },
+        "request_id": "progress-2026-10-26-b0518f6ac3a22168"
+      },
+      "id": "review-fix",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 0,
+      "project": "project",
+      "rank": 3,
+      "reason": "Unstarted work authorised by code-review",
+      "tag_source": "backlog",
+      "title": "Code review finding: missing bounds check"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Linear PC-12",
+        "Lee-requested root PC-10"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X3M5GESJJB8KAZQNW3KGA8/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-b814f22a0c61b462",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Linear PC-12\", \"Lee-requested root PC-10\"], \"id\": \"PC-12\", \"linear_id\": \"PC-12\", \"linear_ids\": [\"PC-12\"], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.iMwxui\", \"priority\": 2, \"project\": \"\", \"rank\": 4, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"requested-root:PC-10\", \"title\": \"Implement the grandchild leaf\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.iMwxui"
+        },
+        "request_id": "progress-2026-10-26-b814f22a0c61b462"
+      },
+      "id": "PC-12",
+      "linear_id": "PC-12",
+      "linear_ids": [
+        "PC-12"
+      ],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 2,
+      "project": "",
+      "rank": 4,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "requested-root:PC-10",
+      "title": "Implement the grandchild leaf"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "/tmp/fm-lab.iMwxui/data/backlog.md: feat-asked"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X3M5GESJJB8KAZQNW3KGA8/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-26-5a98536d8b630f15",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"/tmp/fm-lab.iMwxui/data/backlog.md: feat-asked\"], \"id\": \"feat-asked\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.iMwxui\", \"priority\": 0, \"project\": \"project\", \"rank\": 5, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"backlog\", \"title\": \"Add the requested CSV export\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.iMwxui"
+        },
+        "request_id": "progress-2026-10-26-5a98536d8b630f15"
+      },
+      "id": "feat-asked",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.iMwxui",
+      "priority": 0,
+      "project": "project",
+      "rank": 5,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "backlog",
+      "title": "Add the requested CSV export"
+    }
+  ],
+  "unclassified": 2
+}

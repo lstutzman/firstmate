@@ -1,0 +1,114 @@
+{
+  "asking": [
+    {
+      "asked_at": "2026-10-26T22:03:32Z",
+      "key": "PC-44",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Security: token appears in URL",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T22:03:16Z",
+      "key": "sec-one",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Security: session token leaks into logs",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T22:03:16Z",
+      "key": "cve-fix",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Fix CVE-2026-12345 in the image library",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T22:03:32Z",
+      "key": "PC-45",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Image upload fails on large files",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T22:03:16Z",
+      "key": "review-fix",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Code review finding: missing bounds check",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T22:03:16Z",
+      "key": "PC-12",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Implement the grandchild leaf",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T22:03:16Z",
+      "key": "feat-asked",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Add the requested CSV export",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T22:02:55Z",
+      "key": "pricing-q",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "File a Captain's Log card: Decide pricing tiers for the new plan; Lee decides the pricing choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T22:02:55Z",
+      "key": "prod-bug",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "File a Captain's Log card: Bug: delete stale rows in production; Outside automatic-start authority: delete",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T22:03:16Z",
+      "key": "PC-13",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "File a Captain's Log card: Choose pricing for the leaf; Lee decides the pricing choice",
+      "waiting_on": "firstmate"
+    }
+  ],
+  "doing": [
+    {
+      "description": "Watching work: Fix a bug already moving",
+      "id": "busy-bug",
+      "project": "project",
+      "source": "bug",
+      "started_at": "2026-10-26T22:02:55Z"
+    },
+    {
+      "description": "Watching work: Requested fleet tooling",
+      "id": "PC-10",
+      "source": "fleet",
+      "started_at": "2026-10-26T22:03:16Z"
+    }
+  ],
+  "done": [
+    {
+      "at": "2026-10-26T22:02:55Z",
+      "description": "Recorded work outcome: Fix the old crash",
+      "detail": "Recorded completed or canceled",
+      "id": "old-bug",
+      "outcome": "ok",
+      "source": "bug"
+    }
+  ],
+  "officer": "progress",
+  "schema_version": 1,
+  "stale_after_minutes": 2880,
+  "summary": "Watching 2 work items; 1 outcomes recorded; 10 requests waiting on firstmate or Lee; 2 items outside the start classes; 0 coverage gaps. Showing up to 30 current items, 50 outcomes, and 30 requests.",
+  "written_at": "2026-10-26T22:03:51Z"
+}

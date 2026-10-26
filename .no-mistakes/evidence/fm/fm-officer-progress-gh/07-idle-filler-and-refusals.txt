@@ -1,0 +1,20 @@
+$ idle home: no authorised unstarted work, nothing in flight
+DIGEST 2026-10-26 1 data/officers/progress/2026-10-26.md
+rc=0
+{"start_requests":0,"doing":0,"filler":{"execute":{"action":"start","argv":["/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5X3M5GESJJB8KAZQNW3KGA8/bin/fm-inbox.sh","note","--request-id","progress-2026-10-26-7d8d5b76b264dfc3","--json","--","Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"kind\": \"ideation pass\", \"reason\": \"No authorised unstarted work or authorised work in flight; rotate daily discovery passes\", \"requires_firstmate\": true, \"tag_source\": \"standing-authority:filler\"}"],"env":{"FM_HOME":"/tmp/fm-lab.iMwxui/idle-home"},"request_id":"progress-2026-10-26-7d8d5b76b264dfc3"},"kind":"ideation pass","reason":"No authorised unstarted work or authorised work in flight; rotate daily discovery passes","requires_firstmate":true,"tag_source":"standing-authority:filler"}}
+--- digest filler section
+## Filler proposal
+
+--- fleet-app asking
+[{"asked_at":"2026-10-26T22:04:16Z","key":"ideation pass","kind":"instruction","link":"https://github.com/lstutzman/firstmate","question":"Start an extra ideation pass","waiting_on":"firstmate"}]
+--- handoff
+{"kind": "ideation pass", "reason": "No authorised unstarted work or authorised work in flight; rotate daily discovery passes", "requires_firstmate": true, "tag_source": "standing-authority:filler"}'
+
+$ same idle home but Linear unavailable -> no filler
+DIGEST 2026-10-27 1 data/officers/progress/2026-10-27.md
+{"coverage":["Linear discovery unavailable or incomplete"],"filler":null}
+
+$ second-mate home refuses officer run
+fm-officer: officers run only in the primary home; this is a second mate home
+rc=3
+idle progress-state.json -> VALID

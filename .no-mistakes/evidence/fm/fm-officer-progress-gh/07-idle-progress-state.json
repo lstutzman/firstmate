@@ -1,0 +1,28 @@
+{
+  "asking": [
+    {
+      "asked_at": "2026-10-26T22:04:17Z",
+      "key": "coverage-0",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Restore discovery coverage: Linear discovery unavailable or incomplete",
+      "waiting_on": "firstmate"
+    }
+  ],
+  "doing": [],
+  "done": [
+    {
+      "at": "2026-10-26T22:04:16Z",
+      "description": "Recorded work outcome: Bug: fixed long ago",
+      "detail": "Recorded completed or canceled",
+      "id": "old",
+      "outcome": "ok",
+      "source": "bug"
+    }
+  ],
+  "officer": "progress",
+  "schema_version": 1,
+  "stale_after_minutes": 2880,
+  "summary": "Watching 0 work items; 1 outcomes recorded; 1 requests waiting on firstmate or Lee; 1 items outside the start classes; 1 coverage gaps. Showing up to 30 current items, 50 outcomes, and 30 requests.",
+  "written_at": "2026-10-26T22:04:17Z"
+}
