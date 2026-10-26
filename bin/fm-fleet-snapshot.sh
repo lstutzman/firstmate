@@ -1889,7 +1889,8 @@ secondmate_current_json() {  # <parent-tasks-json-file> <output-file>
       reconciliation=$(<"$reconciliation_file")
       contradiction=$(printf '%s' "$reconciliation" | jq -r '.contradiction')
       terminal_contradiction=$(printf '%s' "$reconciliation" | jq -r --arg note "$event_note" '
-        any(.activities[]; .verdict == "contradicts" and .summary == $note)')
+        def bounded: if length > 4096 then .[:4079] + " [text truncated]" else . end;
+        any(.activities[]; .verdict == "contradicts" and (.summary | bounded) == $note)')
       if [ "$terminal_contradiction" = true ]; then
         terminal=$(terminal_evidence_json "$task" "$event_note" true)
       else

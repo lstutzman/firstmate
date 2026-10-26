@@ -124,13 +124,22 @@ def mate_findings(read, cfg):
     roster = read(['bash', '-c', r'''
 . "$1/fm-secondmate-registry-lib.sh"
 . "$1/fm-classify-lib.sh"
+window=$(mktemp) || exit 1
+trap 'rm -f "$window"' EXIT
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
     "- "*)
       secondmate_registry_parse_line "$line" || exit 1
       id=$SECONDMATE_REGISTRY_ID
       age=$(status_agent_event_age "$3/$id.status" "$3/$id.status" "$4") || exit 1
-      printf '%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age"
+      : > "$window"
+      if [ -f "$3/$id.status" ] && [ ! -L "$3/$id.status" ]; then
+        size=$(LC_ALL=C wc -c < "$3/$id.status") || exit 1
+        LC_ALL=C tail -c 65536 "$3/$id.status" | LC_ALL=C awk -v cut=$((size > 65536)) 'NR > cut' \
+          | LC_ALL=C tail -n 200 > "$window" || exit 1
+      fi
+      open=$(status_open_decisions "$window" secondmate | LC_ALL=C awk -F '\t' '$2 == "needs-decision" || $2 == "blocked"' | LC_ALL=C wc -l | tr -d ' ')
+      printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open"
       ;;
   esac
 done < "$2"
@@ -138,7 +147,7 @@ done < "$2"
     seen = set()
     routes = list(csv.reader(io.StringIO(roster), delimiter='\t'))
     for index, row in enumerate(routes):
-        name, host, home, age = row
+        name, host, home, age, open_decisions = row
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name) or name in seen or not Path(home).is_absolute():
             raise ValueError('invalid or duplicate secondmate route')
         seen.add(name)
@@ -172,7 +181,7 @@ done < "$2"
             work = [counts.get('in_flight', 0), counts['active_children'], counts['decisions_open'], counts['holds']]
             if any(type(n) is not int or n < 0 for n in work):
                 raise ValueError('invalid work counts')
-            if not any(work):
+            if not any(work) and open_decisions == '0':
                 continue
             ages = [] if age == 'null' else [float(age)]
             meta = STATE / (name + '.meta')

@@ -399,6 +399,26 @@ test_domain_alpha_stale_parent_event_does_not_become_current_work() {
   pass "Domain Alpha structured state overrides a stale parent Phase 7 event"
 }
 
+test_oversized_parent_note_still_reaches_terminal_contradiction_check() {
+  local home mate fakebin canonical
+  home=$(make_home domain-alpha-long-note)
+  mate="$TMP_ROOT/domain-alpha-long-note-home"
+  write_domain_alpha_fixture "$home" "$mate"
+  printf 'working [key=phase7]: Phase 7 started %s\n' "$(head -c 5000 /dev/zero | tr '\0' x)" > "$home/state/domain-alpha.status"
+  fakebin=$(make_fakebin "$home"); : > "$home/net.log"
+  canonical=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+    FM_SNAPSHOT_NOW_EPOCH=1783792800 FM_SNAPSHOT_TERMINAL_LINES=2 FM_SNAPSHOT_TERMINAL_BYTES=64 \
+    NET_LOG="$home/net.log" FAKE_GH_FAIL=1 "$ROOT/bin/fm-fleet-snapshot.sh" --json)
+  printf '%s' "$canonical" | jq -e '
+    .secondmate_current.records[] | select(.id == "domain-alpha")
+    | (.parent_event.note | length) <= 4096
+      and (.parent_event.reconciliation.activities | any(.[]; .verdict == "contradicts" and (.summary | length) > 4096))
+      and .terminal_evidence.captured == true
+      and .terminal_evidence.reason == null
+  ' >/dev/null || fail "a capped parent note over 4096 characters skipped the terminal contradiction check: $(printf '%s' "$canonical" | jq -c '.secondmate_current.records[] | select(.id == "domain-alpha") | .terminal_evidence')"
+  pass "an oversized parent note still reaches the terminal contradiction check"
+}
+
 test_gnu_stat_uses_file_formats_without_bsd_fallback_pollution() {
   local home mate fakebin canonical stat_log
   home=$(make_home gnu-stat-parent)
@@ -3364,6 +3384,7 @@ test_large_local_snapshot_overlaps_local_reads_without_projection_drift
 test_remote_ledgers_share_one_concurrent_budget_and_fall_back_to_cache
 test_a_remote_home_without_any_ledger_is_explicitly_unreadable_without_remote_compute
 test_domain_alpha_stale_parent_event_does_not_become_current_work
+test_oversized_parent_note_still_reaches_terminal_contradiction_check
 test_gnu_stat_uses_file_formats_without_bsd_fallback_pollution
 test_parent_activity_evidence_is_bounded_and_disclosed
 test_active_child_overrides_old_parent_event

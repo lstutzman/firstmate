@@ -343,6 +343,28 @@ assert_contains "$(run_alarm check)" 'holding work silent' 'silence counts from 
 mate 0 0 0
 run_alarm check >/dev/null
 pass 'silence without an agent event is measured from spawn'
+now=$(date +%s)
+mate 0 0 3601
+printf '%s\n' "needs-decision [at=$((now - 4000))] [key=raised-to-main]: which way?" \
+  "working [at=$((now - 3601))]: agent event" > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' "a decision raised in main's channel counts as work"
+printf '%s\n' "resolved [at=$((now - 3700))] [key=raised-to-main]: answered" >> "$HOME_FIX/state/mate.status"
+[ -z "$(run_alarm check)" ] || fail "a resolved decision in main's channel is not work"
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+python3 - "$HOME_FIX/state/mate.status" "$now" <<'PY_OLD'
+import sys
+path, now = sys.argv[1], int(sys.argv[2])
+with open(path, 'w') as status:
+    status.write(f'blocked [at={now - 9000}] [key=ancient]: outside the window\n')
+    status.write(''.join(f'note [at={now - 8000}]: {"x" * 200} {i}\n' for i in range(400)))
+    status.write(f'working [at={now - 3601}]: agent event\n')
+PY_OLD
+[ -z "$(run_alarm check)" ] || fail "only a bounded tail of main's channel is folded"
+mate 0 0 0
+run_alarm check >/dev/null
+pass "open needs-decision and blocked lines in main's bounded channel tail count as work"
 
 
 mate 0 0 0
