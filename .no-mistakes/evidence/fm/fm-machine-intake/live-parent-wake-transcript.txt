@@ -1,0 +1,119 @@
+== parent wakes before any relay:
+== child: scan submits a notice; child watcher relays it
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793103220-37zIrz","request_id":"service:live-notice","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.1jqOXN/state/inbox/1793103220-37zIrz.note"}
+
+-- child wakes (first 3):
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+-- child wake queue:
+1	check	inbox:1793103220-37zIrz	check: machine service notice PC-3385 request=live-notice inbox=1793103220-37zIrz
+-- parent channel:
+done [key=machine-c8f96af229de1a36c976cbc1] [at=1793103221]: machine service notice source=nightly-scan item=PC-3385 severity=high request=live-notice reported: secret finding: gitleaks generic-api-key in api/settings.py
+== parent wakes after relay:
+signal: /tmp/fm-lab.IgBsuB/state/deepthought-lab.status
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+check: rearm-resurface
+--- (re-armed)
+-- parent wake queue:
+1	signal	deepthought-lab.status	signal: /tmp/fm-lab.IgBsuB/state/deepthought-lab.status
+2	signal	deepthought-lab.status	signal: /tmp/fm-lab.IgBsuB/state/deepthought-lab.status
+classifier: captain-relevant verb=done

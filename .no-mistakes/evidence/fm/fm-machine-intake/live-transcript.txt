@@ -1,0 +1,59 @@
+== S1: child watcher running; scan submits dispatch + notice + blocked through the CLI
+-- dispatch receipt:
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793102800-wzKorw","request_id":"service:scan-42-pc3385-dispatch","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.ksc5jF/state/inbox/1793102800-wzKorw.note"}
+ rc=0
+-- notice receipt:
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793102800-PersNP","request_id":"service:scan-42-pc3385-notice","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.ksc5jF/state/inbox/1793102800-PersNP.note"}
+ rc=0
+-- blocked receipt:
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793102800-XqKeWS","request_id":"service:scan-42-rotate","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.ksc5jF/state/inbox/1793102800-XqKeWS.note"}
+ rc=0
+-- child watcher exit=0 output:
+check: rearm-resurface
+-- parent channel (/tmp/fm-lab.RG336P/state/deepthought-lab.status):
+done [key=machine-16b71546c5c26c861ecbbc4c] [at=1793102815]: machine service notice source=nightly-scan item=PC-3385 severity=high request=scan-42-pc3385-notice reported: secret finding: gitleaks aws-access-token in src/config.ts; worker dispatch requested
+blocked [key=machine-secscan-rotate-aws] [at=1793102815]: machine service blocked source=nightly-scan item=PC-3385 severity=critical request=scan-42-rotate reported: secret needs rotation: aws-access-token in src/config.ts
+== S2: parent (main) watcher sees the relayed lines
+-- parent watcher exit=137 output:
+verb=done relevant :: done [key=machine-16b71546c5c26c861ecbbc4c] [at=1793102815]:...
+verb=blocked relevant :: blocked [key=machine-secscan-rotate-aws] [at=1793102815]: ma...
+== S3: re-run sends same request ids again -> no second record, no duplicate relay
+{"schema":"fm-inbox-note.v1","outcome":"replay","id":"1793102800-PersNP","request_id":"service:scan-42-pc3385-notice","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.ksc5jF/state/inbox/1793102800-PersNP.note"}
+
+pending notes: 3; channel lines: 2
+== S4: adversarial records refused, nothing saved
+fm-inbox service: invalid kind
+ rc=1
+fm-inbox service: invalid summary
+ rc=1
+fm-inbox service: unknown fields
+ rc=1
+fm-inbox service: invalid severity
+ rc=1
+fm-inbox service: invalid JSON
+ rc=1
+pending notes still: 3
+== S5: firstmate drains and acks; then broken route keeps a new blocker pending
+1793102800-PersNP
+    {"evidence_path":"/var/lib/secscan/run-42/finding.json","item_id":"PC-3385","kind":"notice","request_id":"scan-42-pc3385-notice","severity":"high","source":"nightly-scan","summary":"secret finding: gitleaks aws-access-token in src/config.ts; worker dispatch requested"}
+1793102800-wzKorw
+    {"evidence_path":"/var/lib/secscan/run-42/finding.json","item_id":"PC-3385","kind":"dispatch","request_id":"scan-42-pc3385-dispatch","severity":"high","source":"nightly-scan"}
+1793102800-XqKeWS
+    {"evidence_path":"/var/lib/secscan/run-42/finding.json","item_id":"PC-3385","key":"secsc
+acked 1793102800-PersNP
+acked 1793102800-XqKeWS
+acked 1793102800-wzKorw
+ack rc=0
+fm-inbox: service relay failed for 1793102838-xvKnMY.note (parent channel error 3)
+fm-inbox: service note 1793102838-xvKnMY remains pending until its parent relay succeeds
+ack-with-broken-route rc=1
+-- watcher#1:
+check: machine service relay failed; inspect bin/fm-inbox.sh drain
+fm-inbox: service relay failed for 1793102838-xvKnMY.note (parent channel error 3)
+-- watcher#2 (same episode, expect no relay-failed wake):
+1
+1
+-- after repair, channel tail:
+blocked [key=machine-secscan-two-failed] [at=1793102838]: machine service blocked source=nightly-scan item=PC-3385 severity=high request=scan-43-two-failed reported: two consecutive failed runs
+acked 1793102838-xvKnMY
+ack-after-repair rc=0
