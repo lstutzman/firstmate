@@ -292,6 +292,41 @@ MD
   pass 'progress: GitHub reads stop at the run deadline and publish the gap'
 }
 
+test_ancestor_asks_hold_only_routed_asks() {
+  make_world ancestor-asks
+  python3 -I - "$WORLD/linear" <<'PYFIX'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+spec = [('PC-10', 'Requested fleet tooling', 'started', None),
+        ('PC-24', 'Billing settings redesign', 'started', 'PC-10'),
+        ('PC-25', 'Add settings form', 'unstarted', 'PC-24'),
+        ('PC-26', 'Bug: billing rounding', 'unstarted', None),
+        ('PC-27', 'Bug: rounding test missing', 'unstarted', 'PC-26'),
+        ('PC-28', 'Choose pricing tier', 'unstarted', 'PC-10'),
+        ('PC-29', 'Implement tier screen', 'unstarted', 'PC-28')]
+issues = []
+for ident, title, state, parent in spec:
+    issue = dict(identifier=ident, title=title, state='Todo', stateType=state, priority=0)
+    issues.append(issue)
+    (root / (ident + '.json')).write_text(json.dumps(dict(ok=True, data=dict(
+        issue=dict(issue, parent=parent + ' Parent' if parent else None, description='')))))
+(root / 'list.json').write_text(json.dumps(dict(ok=True, data=dict(issues=issues))))
+PYFIX
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## Queued
+
+- [ ] rounding-test - Rounding test missing (kind: bug) (linear: PC-27)
+- [ ] rounding - Fix billing rounding (linear: PC-26)
+MD
+  run_progress > "$WORLD/output" || fail 'ancestor ask run failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'PC-25 PC-26 PC-27' "$(jq -r '[.start_requests[].linear_id] | sort | join(" ")' "$file")" \
+    'children of in-flight or startable ancestors start'
+  assert_equals 'PC-28' "$(jq -r '[.asks_for_lee[].linear_id] | join(" ")' "$file")" 'an unstarted pricing choice asks Lee'
+  assert_equals 'PC-29' "$(jq -r '[.excluded[].linear_id] | join(" ")' "$file")" 'only a child of a listed ask waits'
+  pass 'progress: descendants wait only for ancestors listed as Lee asks'
+}
+
 test_linear_rate_limit_recovers() {
   make_world rate-recovery
   stub_sleep
@@ -597,7 +632,8 @@ import json, os, sys
 root = sys.argv[1]
 spec = [('PC-5', 'Add export', '(kind: feature) (requested-by: Lee)'),
         ('PC-6', 'Add another export', ''),
-        ('PC-7', 'Product page redesign', '')]
+        ('PC-7', 'Product page redesign', ''),
+        ('PC-8', 'Fix production login timeout', '')]
 listed = []
 for ident, title, description in spec:
     doc = {'identifier':ident, 'title':title, 'priority':0,
@@ -619,7 +655,7 @@ PY
     'the digest shows where the authority came from'
   assert_equals '0' "$(jq '.doing + .done + .asks_for_lee | length' "$file")" \
     'choice words alone never place moving or finished Linear or backlog work in doing, done, or asks'
-  assert_equals '2' "$(jq '.unclassified' "$file")" 'the untagged and moving choice items are counted'
+  assert_equals '3' "$(jq '.unclassified' "$file")" 'untagged, moving choice, and restricted-word items are counted'
   rm "$WORLD/linear/PC-5.json"
   jq '.data.issues |= map(select(.identifier != "PC-5"))' "$WORLD/linear/list.json" > "$WORLD/list.new"
   mv "$WORLD/list.new" "$WORLD/linear/list.json"
@@ -901,6 +937,7 @@ PY
   pass 'progress: reads other homes and status without acting on them'
 }
 
+test_ancestor_asks_hold_only_routed_asks
 test_linear_rate_limit_recovers
 test_merge_ask_pr_state
 test_github_reads_respect_deadline

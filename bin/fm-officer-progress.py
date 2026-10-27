@@ -530,8 +530,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         row["authorising_class"] = authorised
         row["tag_source"] = source
         ask = lee_ask(row)
-        ancestor_ask = next((r for r in chain[1:] if r.get("state") not in FINISHED and r.get("section") != "done"
-                             and not r.get("finished_merge_ask") and lee_ask(r)), None)
+        choice = CHOICES.search(KNOWN_NAMES.sub("", lee_request_text(row)))
         held = any(any(k in r["tags"] for k in ("hold", "hold-kind", "blocked-by", "blocked", "deps"))
                    or r.get("open_calls") or r.get("linear_blocked") for r in chain)
         copies = [copy for ident in row["linear_ids"] for copy in linked.get(ident, [])]
@@ -542,7 +541,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         finished = row.get("section") == "done" or state in FINISHED or row.get("latest") in ("done", "failed")
         moving = (row.get("section") == "in flight" or row.get("has_meta") or state == "started"
                   or row.get("latest") in ("working", "paused"))
-        if not authorised and not row.get("captains_log_key") and (not ask or finished or moving):
+        if not authorised and not row.get("captains_log_key") and (not choice or finished or moving):
             doc["unclassified"] += not finished
         elif held:
             row["reason"] = "Already held, blocked, or carded; firstmate must reconcile it"
@@ -565,9 +564,6 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         elif ask:
             row["reason"] = ask
             doc["asks_for_lee"].append(row)
-        elif ancestor_ask:
-            row["reason"] = "Held until Lee answers the ancestor's ask: " + ancestor_ask["id"]
-            doc["excluded"].append(row)
         elif state and state not in UNSTARTED:
             row["reason"] = "Linear state is not unstarted: " + state
             doc["excluded"].append(row)
@@ -582,6 +578,15 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             doc["start_requests"].append(row)
         if row.get("closed_unmerged_pr") and any(doc[k] and doc[k][-1] is row for k in ("asks_for_lee", "excluded")):
             row["reason"] = "PR closed unmerged: check whether still needed"
+    asking = {id(r) for r in doc["asks_for_lee"]}
+    starts, doc["start_requests"] = doc["start_requests"], []
+    for row in starts:
+        ancestor = next((r for r in ancestry(row)[1:] if id(r) in asking), None)
+        if ancestor:
+            row["reason"] = "Held until Lee answers the ancestor's ask: " + ancestor["id"]
+            doc["excluded"].append(row)
+        else:
+            doc["start_requests"].append(row)
     doc["start_requests"].sort(key=lambda r: (CLASS_ORDER[r["authorising_class"]],
                                              r["priority"] or 5, r["id"], r["owner_home"]))
     seen = set()

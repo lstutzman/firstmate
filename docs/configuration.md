@@ -958,7 +958,7 @@ Unclassified records carry `tag_source: null`.
 `requested` records an existing Lee request; registering a root never authorizes inventing a new feature.
 Within each class tier, Linear priority or backlog severity ranks urgent/critical, high, medium, low, then unspecified; identifiers and home names break ties.
 Open work with no recorded class is not listed and never becomes an ask; the run reports only its count, `unclassified`, and the digest prints that count on one line.
-An unclassified item that explicitly asks Lee for a decision or action is asked only while it is open and unstarted; in flight it is counted as unclassified, and once finished it is dropped.
+An unclassified item whose title or explicit ask names a Lee choice is asked only while it is open and unstarted; restricted words alone leave it counted as unclassified; in flight it is counted as unclassified, and once finished it is dropped.
 This slice uses `model: none` throughout.
 
 Held, blocked, already carded, in-flight, completed, or open-PR-linked work is excluded from starts.
@@ -969,10 +969,10 @@ Only an explicit ask overrides that classification: an `Ask Lee:`, `Ask for Lee:
 Bulleted lines and Markdown headings or bold markers may wrap those prefixes.
 A bare `Decision:` line records a decision already made and is not an ask.
 Words in an old classifier reason, such as “Outside automatic-start authority: delete” or “Lee decides the legal choice,” do not constitute an ask.
-For requested-feature, requested-fleet, security, CVE, and unclassified items, whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title still go to `asks_for_lee`, excluding matches within known feature names such as Business Health.
+For requested-feature, requested-fleet, security, and CVE items, whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title still go to `asks_for_lee`, excluding matches within known feature names such as Business Health.
 Titles of those items naming merges, production, credentials, rotation, data rewrites, destructive actions, and spending are outside automatic-start authority and also go to `asks_for_lee`.
 Other explicit asks retain a generic decision-or-action reason.
-An item whose open ancestor has its own Lee ask is held in `excluded` until Lee answers; its recorded holds and dependencies also still exclude starts.
+A start whose ancestor is itself listed in `asks_for_lee` is held in `excluded` until Lee answers; an in-flight, held, or startable ancestor holds nothing; its recorded holds and dependencies also still exclude starts.
 Before publishing a merge-word ask or a direct merge request with a GitHub PR URL, the officer reads that PR through `gh-axi`, including PR URLs found in a local card's linked Linear description, and drops the item only when every referenced PR is merged.
 A PR closed without merging keeps the item listed with the reason “PR closed unmerged: check whether still needed”.
 An unreadable PR remains listed, and coverage names the failed PR read rather than treating it as closed.
