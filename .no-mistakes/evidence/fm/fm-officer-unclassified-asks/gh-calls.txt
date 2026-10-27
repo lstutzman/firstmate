@@ -1,0 +1,6 @@
+api GET /repos/lstutzman/firstmate/pulls?state=open&per_page=100 --paginate --full --jq .[] | "PRJSON " + tojson
+api GET /repos/lstutzman/firstmate/pulls/39 --jq "PRSTATE " + ({state: .state, merged: .merged} | tojson)
+api GET /repos/lstutzman/firstmate/pulls/13 --jq "PRSTATE " + ({state: .state, merged: .merged} | tojson)
+api GET /repos/cli/cli/pulls/14837 --jq "PRSTATE " + ({state: .state, merged: .merged} | tojson)
+api GET /repos/lstutzman/firstmate/pulls/999999 --jq "PRSTATE " + ({state: .state, merged: .merged} | tojson)
+api GET /repos/lstutzman/firstmate/pulls/11 --jq "PRSTATE " + ({state: .state, merged: .merged} | tojson)

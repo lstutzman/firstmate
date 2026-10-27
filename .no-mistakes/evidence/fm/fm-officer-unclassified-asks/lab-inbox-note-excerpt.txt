@@ -1,0 +1,7 @@
+id=1793116332-2G4qe1
+at=2026-10-27T15:52:12Z
+source=text
+announce_marker=1
+request_id=progress-2026-10-27-7fe9d978eb9e3f67
+--
+Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this au

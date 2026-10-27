@@ -1,0 +1,43 @@
+{
+  "start_requests": [],
+  "asks_for_lee": [
+    {
+      "id": "fleet-app-pr56-deploy",
+      "reason": "Lee decides the business choice"
+    },
+    {
+      "id": "pc-2186-nav-guards",
+      "reason": "Lee decides the pricing choice"
+    },
+    {
+      "id": "pc-2680-slice2",
+      "reason": "Lee decides the payments choice"
+    },
+    {
+      "id": "dated-citation",
+      "reason": "Lee decides the billing choice"
+    },
+    {
+      "id": "tiers",
+      "reason": "Lee decides the pricing choice"
+    },
+    {
+      "id": "slice2-open",
+      "reason": "Lee decides the payments choice"
+    },
+    {
+      "id": "slice2-closed",
+      "reason": "PR closed unmerged: check whether still needed"
+    },
+    {
+      "id": "slice2-unread",
+      "reason": "Lee decides the payments choice"
+    },
+    {
+      "id": "open-explicit",
+      "reason": "Lee decides the payments choice"
+    }
+  ],
+  "excluded": [],
+  "unclassified": 3
+}

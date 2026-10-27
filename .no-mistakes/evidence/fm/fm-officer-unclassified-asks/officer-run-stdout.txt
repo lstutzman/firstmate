@@ -1,0 +1,4 @@
+Linear coverage: 6 pages, 0 items seen, 6 requests, 0 team items, 0 unblocked items, 0 requested roots visited, 0 hierarchy items, 0 rate-limit retries, 0 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear labels not readable by linear-axi
+Coverage gap: GitHub merge-ask PR state unavailable: https://github.com/lstutzman/firstmate/pull/999999
+DIGEST 2026-10-27 7 data/officers/progress/2026-10-27.md

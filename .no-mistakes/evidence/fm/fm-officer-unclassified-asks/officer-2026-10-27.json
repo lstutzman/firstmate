@@ -1,0 +1,210 @@
+{
+  "asks_for_lee": [
+    {
+      "authorising_class": null,
+      "evidence": [
+        "/tmp/fm-lab.LWGgnA/data/backlog.md: real-choice"
+      ],
+      "execute": null,
+      "id": "real-choice",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.LWGgnA",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Explicit decision or action requested from Lee",
+      "tag_source": null,
+      "title": "Lee to choose the export format"
+    },
+    {
+      "authorising_class": null,
+      "evidence": [
+        "/tmp/fm-lab.LWGgnA/data/backlog.md: explicit-action"
+      ],
+      "execute": null,
+      "id": "explicit-action",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.LWGgnA",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Explicit decision or action requested from Lee",
+      "tag_source": null,
+      "title": "Ask Lee: review the export format"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "/tmp/fm-lab.LWGgnA/data/backlog.md: tiers"
+      ],
+      "execute": null,
+      "id": "tiers",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.LWGgnA",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Lee decides the pricing choice",
+      "tag_source": "backlog",
+      "title": "Change pricing tiers"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.LWGgnA/data/backlog.md: open-explicit"
+      ],
+      "execute": null,
+      "id": "open-explicit",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "https://github.com/lstutzman/firstmate/pull/11",
+      "owner_home": "/tmp/fm-lab.LWGgnA",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Lee decides the payments choice",
+      "tag_source": "backlog",
+      "title": "Ask Lee: Merge payments fix"
+    }
+  ],
+  "coverage": [
+    "Linear labels not readable by linear-axi",
+    "GitHub merge-ask PR state unavailable: https://github.com/lstutzman/firstmate/pull/999999"
+  ],
+  "date": "2026-10-27",
+  "doing": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.LWGgnA/data/backlog.md: PC-3449"
+      ],
+      "execute": null,
+      "id": "PC-3449",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.LWGgnA",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "backlog",
+      "title": "Fix billing rounding"
+    }
+  ],
+  "done": [],
+  "excluded": [
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "/tmp/fm-lab.LWGgnA/data/backlog.md: slice2-open"
+      ],
+      "execute": null,
+      "id": "slice2-open",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "https://github.com/lstutzman/firstmate/pull/13",
+      "owner_home": "/tmp/fm-lab.LWGgnA",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, carded, in flight, or covered by an open PR",
+      "tag_source": "backlog",
+      "title": "Trial controls; needs Lee's merge word for payments/trials"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "/tmp/fm-lab.LWGgnA/data/backlog.md: slice2-closed"
+      ],
+      "execute": null,
+      "id": "slice2-closed",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "https://github.com/cli/cli/pull/14837",
+      "owner_home": "/tmp/fm-lab.LWGgnA",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "PR closed unmerged: check whether still needed",
+      "tag_source": "backlog",
+      "title": "Trial controls; needs Lee's merge word for payments/trials"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "/tmp/fm-lab.LWGgnA/data/backlog.md: slice2-unread"
+      ],
+      "execute": null,
+      "id": "slice2-unread",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "https://github.com/lstutzman/firstmate/pull/999999",
+      "owner_home": "/tmp/fm-lab.LWGgnA",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, carded, in flight, or covered by an open PR",
+      "tag_source": "backlog",
+      "title": "Trial controls; needs Lee's merge word for payments/trials"
+    }
+  ],
+  "filler": null,
+  "generated_at": "2026-10-27T15:51:39Z",
+  "linear_coverage": {
+    "descriptions_truncated": 0,
+    "hierarchy_items": 0,
+    "items_seen": 0,
+    "pages_fetched": 6,
+    "rate_limit_retries": 0,
+    "requests": 6,
+    "roots_visited": 0,
+    "team_items": 0,
+    "unblocked_items": 0,
+    "unverified_starts": 0
+  },
+  "schema_version": 1,
+  "source": "progress-officer",
+  "start_requests": [
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "/tmp/fm-lab.LWGgnA/data/backlog.md: pc-2680-slice2"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5YZ2044H66CR9QQSNVDXAQJ/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-27-7fe9d978eb9e3f67",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"/tmp/fm-lab.LWGgnA/data/backlog.md: pc-2680-slice2\"], \"id\": \"pc-2680-slice2\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.LWGgnA\", \"priority\": 0, \"project\": \"\", \"rank\": 1, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"backlog\", \"title\": \"Trial controls; needs Lee's merge word for payments/trials\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.LWGgnA"
+        },
+        "request_id": "progress-2026-10-27-7fe9d978eb9e3f67"
+      },
+      "id": "pc-2680-slice2",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.LWGgnA",
+      "priority": 0,
+      "project": "",
+      "rank": 1,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "backlog",
+      "title": "Trial controls; needs Lee's merge word for payments/trials"
+    }
+  ],
+  "unclassified": 4
+}

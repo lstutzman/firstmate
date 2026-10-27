@@ -1,0 +1,1 @@
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1793116332-2G4qe1","request_id":"progress-2026-10-27-7fe9d978eb9e3f67","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/fm-lab.LWGgnA/state/inbox/1793116332-2G4qe1.note"}

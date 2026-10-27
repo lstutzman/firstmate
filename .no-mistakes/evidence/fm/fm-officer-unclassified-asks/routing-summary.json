@@ -1,0 +1,51 @@
+{
+  "start_requests": [
+    {
+      "id": "pc-2680-slice2",
+      "reason": "Unstarted work authorised by requested-feature"
+    }
+  ],
+  "asks_for_lee": [
+    {
+      "id": "real-choice",
+      "reason": "Explicit decision or action requested from Lee"
+    },
+    {
+      "id": "explicit-action",
+      "reason": "Explicit decision or action requested from Lee"
+    },
+    {
+      "id": "tiers",
+      "reason": "Lee decides the pricing choice"
+    },
+    {
+      "id": "open-explicit",
+      "reason": "Lee decides the payments choice"
+    }
+  ],
+  "excluded": [
+    {
+      "id": "slice2-open",
+      "reason": "Already held, blocked, carded, in flight, or covered by an open PR"
+    },
+    {
+      "id": "slice2-closed",
+      "reason": "PR closed unmerged: check whether still needed"
+    },
+    {
+      "id": "slice2-unread",
+      "reason": "Already held, blocked, carded, in flight, or covered by an open PR"
+    }
+  ],
+  "doing": [
+    {
+      "id": "PC-3449",
+      "reason": "Already in flight"
+    }
+  ],
+  "unclassified": 4,
+  "coverage": [
+    "Linear labels not readable by linear-axi",
+    "GitHub merge-ask PR state unavailable: https://github.com/lstutzman/firstmate/pull/999999"
+  ]
+}
