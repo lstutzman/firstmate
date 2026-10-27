@@ -225,6 +225,7 @@ PYFIX
 - [ ] fleet-app-pr56-deploy - Deploy /business-health; Lee decides the business choice
 - [ ] pc-2186-nav-guards - Navigation guards for pricing
 - [ ] pc-2680-slice2 - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee)
+- [ ] slice2-merged - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/example/project/pull/4400)
 - [ ] known-name - Business health dashboard
 - [ ] feature-path - Add /pricing navigation (kind: feature) (requested-by: Lee)
 - [ ] real-choice - Lee to choose the export format
@@ -237,6 +238,7 @@ PYFIX
 - [ ] dated-citation - Lee, 2026-10-14: approved the billing copy
 MD
   printf 'kind=ship\n' > "$WORLD_HOME/state/worker-choice.meta"
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4400.json"
   printf 'working [at=1]: started\n' > "$WORLD_HOME/state/recorded-start.status"
   run_progress >/dev/null || fail 'backlog ask classification failed'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
@@ -249,6 +251,9 @@ MD
   assert_contains "$(jq -r '.doing[].id' "$file")" 'PC-3449' 'the billing bug stays in flight'
   assert_contains "$(jq -r '.excluded[].id' "$file")" 'held-choice' 'existing captain holds remain held'
   assert_contains "$(jq -r '.start_requests[].id' "$file")" 'pc-2680-slice2' 'a merge-word note gates merging, not starting'
+  assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[], .excluded[]] | .[].id' "$file")" 'slice2-merged' \
+    'the same merge-note task with a merged PR is dropped, never restarted'
+  assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4400' 'a merge note still reads its PR state'
   pass 'progress: backlog asks require an actual request from Lee'
 }
 
