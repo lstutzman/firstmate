@@ -433,6 +433,7 @@ action_run() {
   n=$(printf '%s\n' "$digest" | awk '{print $3}')
   printf 'DIGEST %s %s data/officers/%s/%s.md\n' "$date" "$n" "$id" "$date" > "$OFFICER_LANE/digest"
   run_log "$date" ok "$n"
+  printf '%s\n' "$out" | grep -E '^(Linear coverage:|Coverage gap:)' || true
   cat "$OFFICER_LANE/digest"
 }
 
