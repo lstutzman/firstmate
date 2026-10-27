@@ -381,7 +381,7 @@ def classify(row):
     return None, None
 
 
-def judge(snapshots, issues, requested, prs, problems, team, unchecked):
+def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers):
     doc = {"schema_version": 1, "source": "progress-officer", "doing": [], "done": [],
            "start_requests": [], "asks_for_lee": [], "excluded": [], "unclassified": 0,
            "filler": None, "coverage": problems}
@@ -469,12 +469,10 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked):
             row["reason"] = "Recorded worker outcome; firstmate owns landing or retry"
             row["outcome"] = "failed" if row["latest"] == "failed" else "ok"
             doc["done"].append(row)
-        elif choice:
-            row["reason"] = "Lee decides the " + choice[1].lower() + " choice"
+        elif choice or restricted:
+            row["reason"] = ("Lee decides the " + choice[1].lower() + " choice" if choice
+                             else "Outside automatic-start authority: " + restricted[1].lower())
             doc["asks_for_lee"].append(row)
-        elif restricted:
-            row["reason"] = "Outside automatic-start authority: " + restricted[1].lower()
-            doc["excluded"].append(row)
         elif state and state not in UNSTARTED:
             row["reason"] = "Linear state is not unstarted: " + state
             doc["excluded"].append(row)
@@ -498,6 +496,12 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked):
         seen.add(key)
         unique.append(row)
     doc["start_requests"] = unique
+    if blockers:
+        for row in doc["start_requests"]:
+            row["reason"] = "Start deferred because the duplicate-start check is unavailable"
+            doc["excluded"].append(row)
+        doc["start_requests"] = []
+        problems = problems + ["Starts held: duplicate-start check unavailable: " + "; ".join(blockers)]
     doc["coverage"] = problems + ["Linear discovery: start check %s: %s" % gap for gap in sorted(unchecked.items())]
     for rank, row in enumerate(doc["start_requests"], 1):
         row["rank"] = rank
@@ -726,14 +730,14 @@ def main(argv):
     if not args.home or not args.out or not args.date:
         parser.error("run requires --home, --out, and --date")
     datetime.date.fromisoformat(args.date)
-    snapshots, prs, problems = [], [], ["Linear labels not readable by linear-axi"]
+    snapshots, prs, problems, blockers = [], [], [], []
     for home in args.home:
         try:
             snapshot = load_home(home)
             snapshots.append(snapshot)
-            problems.extend(snapshot["problems"])
+            blockers.extend(snapshot["problems"])
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
-            problems.append("home records unavailable: " + home)
+            blockers.append("home records unavailable: " + home)
     requested = set(filter(None, args.requested.split(",")))
     for snapshot in snapshots:
         for row in snapshot["rows"]:
@@ -751,12 +755,13 @@ def main(argv):
     try:
         prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()])
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
-        problems.append("open PR discovery unavailable or incomplete")
+        blockers.append("open PR discovery unavailable or incomplete")
+    problems = ["Linear labels not readable by linear-axi"] + blockers + problems
     configured = set(filter(None, args.requested.split(",")))
     checked, unchecked = set(), {}
-    while True:
+    while not blockers:
         trial = judge(copy.deepcopy(snapshots), copy.deepcopy(list(rows.values())), set(configured),
-                      prs, [], args.team, unchecked)
+                      prs, [], args.team, unchecked, [])
         candidates = [i for row in trial["start_requests"] for i in row["linear_ids"] if i not in checked]
         if not candidates:
             break
@@ -768,7 +773,7 @@ def main(argv):
                     unchecked[identifier] = failure
     discovery.stats["descriptions_truncated"] = sum(r["description_truncated"] for r in rows.values())
     discovery.stats["unverified_starts"] = len(unchecked)
-    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked)
+    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)

@@ -157,14 +157,24 @@ PYFIX
     'checked review and technical bugs start despite unrelated discovery gaps'
   assert_equals 'code-review linear-title-prefix:scheduled-review' \
     "$(jq -r '.start_requests[0] | .authorising_class + " " + .tag_source' "$file")" 'scheduled review prefix authorises review work'
-  assert_equals 'PC-63 PC-64 PC-67' "$(jq -r '[.excluded[].id] | sort | join(" ")' "$file")" \
-    'held, unreadable-parent, and restricted items never start'
-  assert_equals 'PC-66 PC-68' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
-    'only actual choice words outside known names ask for cards'
+  assert_equals 'PC-63 PC-64' "$(jq -r '[.excluded[].id] | sort | join(" ")' "$file")" \
+    'held and unreadable-parent items never start'
+  assert_equals 'PC-66 PC-67 PC-68' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
+    'choice words outside known names and restricted work ask for cards'
+  assert_contains "$(jq -r '.asking[].question' "$lane/progress-state.json")" \
+    "Needs a Captain's Log card: Bug: merge a fix; Outside automatic-start authority: merge" 'restricted work needs a card'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'start check PC-64: NOT_FOUND' 'unreadable candidate is named'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels not readable by linear-axi' 'missing label support is explicit'
   assert_contains "$(jq -r '.asking[].question' "$lane/progress-state.json")" "Needs a Captain's Log card:" 'choices name the needed card'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'partial coverage never proves idleness'
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKEBIN/gh-axi"
+  run_progress >/dev/null || fail 'PR discovery failure must still publish state'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'failed PR discovery starts nothing'
+  assert_contains "$(jq -r '.excluded[].id' "$file")" 'PC-61' 'checked work waits for PR evidence'
+  assert_contains "$(jq -r '.coverage[]' "$file")" \
+    'Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete' 'the held reason is named'
+  [ ! -s "$lane/$DATE.start-requests.sh" ] || ! grep -q 'PC-61' "$lane/$DATE.start-requests.sh" \
+    || fail 'failed PR discovery must not hand off a start'
   pass 'progress: checked items start with partial coverage and choices ask for cards'
 }
 
@@ -593,7 +603,9 @@ SH
   printf -- '- missing - Missing fixtures (home: %s; scope: fixtures; projects: project; added 2026-10-26)\n' \
     "$WORLD/missing" >> "$WORLD_HOME/data/secondmates.md"
   run_progress >/dev/null || fail 'missing-home report failed'
-  assert_equals 'remote-bug' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" 'an unreadable unrelated home does not suppress a checked item'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'an unreadable home leaves no duplicate-start check to pass'
+  assert_contains "$(jq -r '.excluded[].id' "$file")" 'remote-bug' 'checked work waits for every home'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held: duplicate-start check unavailable: home records unavailable' 'the held reason is named'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'an unreadable home never proves idleness'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'home records unavailable' 'missing local home is not skipped silently'
   pass 'progress: registered remote homes are read and unavailable homes are reported'

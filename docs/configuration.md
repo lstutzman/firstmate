@@ -925,7 +925,8 @@ Linear's unblocked listing, read for backlog and unstarted issues only, supplies
 The dated JSON's `linear_coverage` records pages fetched, items seen, CLI requests, hierarchy reads, rate-limit retries, listed descriptions left truncated, and start candidates left unverified; the digest and run log print the same counts and specific failure causes.
 The request budget counts `linear-axi` invocations, not Linear API calls: the CLI fetches each listed issue's state, team, assignee, and project separately, so a 100-item page costs about 300 to 400 API requests.
 The progress script's header owns request, page, and backoff bounds, including the CLI's unpageable sub-issue limit.
-A missing home, failed read, capped Linear listing, or unsupported non-Markdown backlog is a coverage gap: checked items still produce start requests, while items whose full description or parent checks fail remain excluded and are named in coverage.
+A capped or failed Linear read is a per-item coverage gap: checked items still produce start requests, while items whose full description or parent checks fail remain excluded and are named in coverage.
+A missing or unreadable registered home, an unsupported non-Markdown backlog, or failed open-PR discovery leaves the duplicate-start check unable to pass for any item, so that run emits no start requests and its coverage names the reason.
 Filler waits for complete coverage.
 The installed `linear-axi` cannot return or filter issue labels, so the officer reports `Linear labels not readable by linear-axi` rather than claiming label-based discovery is complete.
 The pass reads current records; the common officer scheduler's date names the run rather than a historical snapshot.
@@ -965,7 +966,7 @@ Unresolved keyed status calls remain open across later `working` lines.
 The same Linear identifier produces at most one start request across homes.
 Whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title go to `asks_for_lee`, excluding matches within known feature names such as Business Health.
 A separate choice word outside the name still requires a card.
-For authorized work, titles naming merges, production, credentials, data rewrites, destructive actions, and spending are excluded from automatic starts rather than added to `asks_for_lee`.
+Titles naming merges, production, credentials, data rewrites, destructive actions, and spending are outside automatic-start authority and also go to `asks_for_lee`.
 Descriptions and ancestors are not matched, so ordinary bug text does not divert authorized work.
 These conservative word rules can overexclude a technical task; firstmate reconciles its evidence rather than widening authority automatically.
 For a queued local task, its backlog identifies the home; a Linear-only item defaults to the primary home until ordinary intake routes it by registered scope.
@@ -982,7 +983,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 | `date`, `generated_at` | Run date and actual UTC observation timestamp |
 | `doing`, `done` | Work in the start classes currently in flight, and work recorded completed or canceled; completed Linear-only history is not listed |
 | `start_requests` | Ranked authorized work waiting for firstmate to dispatch |
-| `asks_for_lee` | Business, product, wording, legal, payments, billing, or pricing choices, each with its reason; these need Captain's Log cards |
+| `asks_for_lee` | Business, product, wording, legal, payments, billing, or pricing choices, and authorized work outside automatic-start authority, each with its reason; these need Captain's Log cards |
 | `excluded` | Evidence that prevents a new start, including existing cards and incomplete discovery |
 | `unclassified` | Count of open items with no recorded start class; they are not listed |
 | `filler` | The extra discovery pass, or `null` |
