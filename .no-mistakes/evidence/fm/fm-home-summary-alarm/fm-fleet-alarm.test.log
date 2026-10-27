@@ -1,0 +1,36 @@
+ok - idle secondmate never alarms, regardless of silence
+ok - partial child observations retain independently trustworthy work counts
+ok - inventory contradictions remain loud on reachable homes
+ok - offline laptops are not collected while reachable inventory failures alarm
+ok - quota alarm thresholds are strict at the configured boundaries
+ok - cached summary reader completes inside budget with oversized status history
+ok - cached remote inventory and parent-channel silence preserve source and freshness boundaries
+ok - slow remote summary reads do not starve the silent-mate check
+ok - idle exhausted account does not alarm while the pool has headroom
+ok - one, several, and no carrying accounts use successful Claude traffic only
+ok - pool mean excludes stale readings
+ok - host config uses the first non-comment non-blank line with surrounding whitespace trimmed
+ok - collection errors report the actual reason without echoing config contents
+ok - carrying threshold deduplicates per reset window
+ok - minute-level reset drift deduplicates within the hour while new weekly windows rearm
+ok - pool exhaustion, stale readings and malformed data alert
+ok - in-flight and decision work alarm after 60 minutes of agent silence; agent communication clears
+ok - in-flight programs count even without an active worker
+ok - silence without an agent event is measured from spawn
+ok - open needs-decision and blocked lines in main's bounded channel tail count as work
+ok - independent timer delivery survives prior check receipt and deduplicates
+ok - read failures retain dedupe history and healthy timer reads close alerts
+ok - launchd and systemd timer files target the primary home
+ok - carrying account alerts preserve healthy pool reserves and exclude other providers
+ok - one account without a reading does not blind the others
+ok - accounts without a reading for seven days are ignored and counted
+ok - configuration cannot exceed the registered check deadline
+ok - operator thresholds control quota, staleness and silence
+ok - registry read failures cannot appear healthy
+ok - reader failures report the exception type and reason
+ok - arming uses the existing trust registration and refuses replacement
+
+real	0m10.673s
+user	0m6.090s
+sys	0m4.173s
+exit=0

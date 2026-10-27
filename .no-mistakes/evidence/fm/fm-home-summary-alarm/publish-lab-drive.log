@@ -1,0 +1,14 @@
+### P1 fixture bounds (FM_SNAPSHOT_CREW_STATE_TIMEOUT=2, FM_HOME_SUMMARY_TIMEOUT=8), 1 stalled task
+Terminated                 env FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" FM_PROJECTS_OVERRIDE="$PROJECTS" "$SCRIPT_DIR/fm-fleet-snapshot.sh" --secondmate-home-summary > "$HOME_SUMMARY_TMP" 2> "$HOME_SUMMARY_ERR_TMP"
+fm-home-summary-refresh: refresh exceeded its 8-second deadline
+--- base small: exit=124 elapsed=8.0s
+no state/home-summary.json published
+--- head small: exit=0 elapsed=2.2s
+{"valid":false,"invalidity":"child_current_unavailable","counts":{"in_flight":1},"endpoints":[{"id":"task1","exists":null}]}
+### P2 unchanged production defaults (child bound 10s, publication deadline 60s), 3 stalled tasks
+Terminated                 env FM_ROOT_OVERRIDE="$FM_ROOT" FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" FM_PROJECTS_OVERRIDE="$PROJECTS" "$SCRIPT_DIR/fm-fleet-snapshot.sh" --secondmate-home-summary > "$HOME_SUMMARY_TMP" 2> "$HOME_SUMMARY_ERR_TMP"
+fm-home-summary-refresh: refresh exceeded its 60-second deadline
+--- base prod: exit=124 elapsed=60.0s
+no state/home-summary.json published
+--- head prod: exit=0 elapsed=10.2s
+{"valid":false,"invalidity":"child_current_unavailable","counts":{"in_flight":3},"endpoints":[{"id":"task1","exists":null},{"id":"task2","exists":null},{"id":"task3","exists":null}]}

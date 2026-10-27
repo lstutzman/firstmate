@@ -1,0 +1,39 @@
+
+### S1 relayed fault: slarti+deepthought publish real child_current_unavailable partial summary; gilligan offline (ssh exit 255), no cache
+--- base check:
+Secondmate work inventory unavailable: slarti: invalid cached home summary; Secondmate work inventory unavailable: deepthought: invalid cached home summary; Secondmate work inventory unavailable: gilligan: inventory is not a regular file; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+--- base record not_collected:
+"absent"
+--- head check:
+--- head record not_collected:
+{"gilligan":"remote summary not collected: inventory is not a regular file"}
+
+### S2 adversarial: gilligan reachable but remote command fails (exit 1)
+Secondmate work inventory unavailable: gilligan: remote summary reader failed with exit 1; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+
+### S3 adversarial: gilligan reachable, malformed document
+Secondmate work inventory unavailable: gilligan: 'schema'; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+
+### S4 adversarial: slarti publishes legacy incomplete inventory (valid:false, no in_flight, other invalidity)
+Secondmate work inventory unavailable: slarti: home inventory incomplete: in-flight backlog item has no child metadata: x; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+
+### S4b adversarial: partial kind but counts.in_flight missing (legacy) -> still alerts
+Secondmate work inventory unavailable: slarti: home inventory incomplete: child current state unavailable: pc-2276, pc-2865-followup, pc-3031-resume, pc-3034-redeem-coach, pc-3477, pc-3611, pc-3675, pc-3679, pc-3684, pc-3698, pc-3735, pc-3746, pc-3752, pc-3753, pc-3755, pc-3756, pc-956-city-copy-build, pc-nightly-race, skills-pkill-rollout, ta-ssh-retry-kex; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+
+### S4c adversarial: stale partial summary (generated 3h ago) -> alerts
+Secondmate work inventory unavailable: slarti: cached home summary is stale or invalid; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+
+### S4d partial summary still feeds silence: deepthought holds 25 in-flight with agent silent 2h
+Secondmate holding work silent over 60 minutes: deepthought; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+
+### S5 timer: quota opens card, quota recovers while gilligan offline with no receipt of its own -> card resolves
+ledger last: {"kind":null,"text":" Carrying Claude account member@example.invalid 7d 95% (resets window1); Claude pool near empty; Claude account pressure: member@example.invalid 7d 95%; Carryin"}
+ledger last: {"kind":null,"text":" Fleet alarm conditions cleared"}
+{"timer_open":false,"conditions":[],"not_collected":["gilligan"]}
+
+### S6 timer: gilligan has its own open mate-read receipt then goes offline -> card stays open, receipt kept, no re-alert on return
+opened: "{\"v\":1,\"ts\":1793097667,\"event\":\"task.status\",\"task\":\"fleet-alarm\",\"state\":\"needs-decision\",\"key\":\"fleet-alarm\",\"text\":\" Secondmate work inventory unavailable: gilligan: 'schema'; Claude account pressu"
+ledger lines before/after offline run: 1/1
+{"timer_open":true,"conditions":["mate-read:gilligan"],"not_collected":["gilligan"]}
+ledger lines after returning still malformed (no duplicate re-alert expected): 1
+after gilligan healthy: "{\"v\":1,\"ts\":1793097668,\"event\":\"task.status\",\"task\":\"fleet-alarm\",\"state\":\"resolved\",\"key\":\"fleet-alarm\",\"text\":\" Fleet alarm conditions cleared\"}"
