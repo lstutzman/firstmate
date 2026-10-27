@@ -581,7 +581,9 @@ The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quot
 Idle second mates are healthy.
 It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reads published home summaries for registered second mates without building a full fleet snapshot.
 Remote summary reads share the alarm deadline and fall back to the parent-side route-keyed cache.
-Missing, invalid, or stale home summaries produce an inventory alert; the configured stale-data threshold applies to summaries too.
+Missing, malformed, or stale home summaries from reachable homes produce an inventory alert; the configured stale-data threshold applies to summaries too.
+An unreachable home without usable cached inventory is recorded quietly as not collected, including an offline laptop.
+An incomplete child-liveness observation preserves the independently complete in-flight work count; other inventory contradictions still alert with their reason.
 The quota alarm fires when mean remaining weekly capacity across non-stale Claude readings falls below the pool threshold, or a carrying account exceeds the weekly threshold.
 Every Claude account with successful Claude-model requests in the last 60 minutes is carrying; several accounts can qualify, and failed-only traffic does not qualify.
 The card names all carrying accounts and includes per-account weekly pressure as information; pressure alone on an idle account does not trigger an alarm.
@@ -595,7 +597,7 @@ A Claude account with no reading is reported as unknown and left out of the pool
 Accounts with no reading for seven days are treated as retired: they raise no stale alarm, stay out of the pool mean, and are reported once as a count of ignored accounts that does not keep the Captain's Log card open.
 Older home-summary producers without `counts.in_flight` use their active-worker, hold, and decision counts, which cannot identify a program with no active worker.
 Update second mates before relying on coverage of those programs.
-Missing or incomplete inventories produce an alert rather than a healthy verdict.
+Not-collected homes preserve their own prior silence and inventory-failure receipts; only such a kept receipt stops the timer from resolving an open alarm.
 
 `bin/fm-fleet-alarm.py` owns the configuration keys, defaults, command syntax, reader budget, deduplication receipts, and timer-file generation.
 `tests/fm-fleet-alarm.test.sh` exercises the alarm with offline quota and summary fixtures and the real fleet-ledger publisher.
@@ -2837,7 +2839,7 @@ FM_HOME_SUMMARY_INTERVAL=300   # seconds before a live watcher refreshes this ho
 FM_HOME_SUMMARY_TIMEOUT=60     # seconds bounding the complete best-effort home-summary refresh, including lock acquisition, validation, atomic publication, and worker-side failure logging; invalid or zero values use 60
 FM_HOME_SUMMARY_ERROR_LOG_MAX_BYTES=65536   # approximate size cap for state/.home-summary-refresh.log before it is trimmed to the newest 200 lines; invalid or zero values use 65536
 FM_HOME_SUMMARY_FAILURE_REPORT=2   # recorded publication failures since the ledger's own last publication before session start reports a HOME_SUMMARY line; invalid or zero values use 2
-FM_SNAPSHOT_CREW_STATE_TIMEOUT=10   # seconds bounding each local per-task current-state read inside bin/fm-fleet-snapshot.sh; remote endpoint liveness is not probed on the snapshot path
+FM_SNAPSHOT_CREW_STATE_TIMEOUT=10   # seconds bounding local per-task current-state and endpoint reads inside bin/fm-fleet-snapshot.sh; remote endpoint liveness is not probed on the snapshot path
 FM_SNAPSHOT_LOCAL_READ_CONCURRENCY=8   # maximum local tasks whose current-state and endpoint observations are collected concurrently during snapshot composition
 FM_SNAPSHOT_BUDGET=5                # one total seconds budget for all concurrent remote home-ledger reads
 FM_SNAPSHOT_CACHE_DIR=$FM_HOME/state/secondmate-summary-cache   # private parent-side cache of successfully fetched remote home ledgers

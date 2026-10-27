@@ -269,7 +269,7 @@ schema, even when it contains no captain holds; older summaries are rejected. A
 home with neither a valid current ledger nor a valid current cached copy is
 reported unreadable with the reason; collection never computes a summary in
 that home.
-Each local per-task current-state read is bounded by FM_SNAPSHOT_CREW_STATE_TIMEOUT
+Each local per-task current-state and endpoint read is bounded by FM_SNAPSHOT_CREW_STATE_TIMEOUT
 (default 10 seconds); a read that hits the bound reports state unknown. Local task
 observations run concurrently, up to FM_SNAPSHOT_LOCAL_READ_CONCURRENCY (default 8).
 Remote secondmate endpoint liveness is not probed by this command.
@@ -322,7 +322,7 @@ last_nonempty_line() {  # <file>
   grep -v '^[[:space:]]*$' "$1" 2>/dev/null | tail -1
 }
 
-# A local crew-state read is bounded so one slow child cannot extend this
+# Local current-state and endpoint reads are bounded so one slow child cannot extend this
 # snapshot without limit. Remote secondmate endpoint liveness is never read here.
 # A local read that hits the bound folds to state unknown.
 crew_state_json() {  # <id> [<captured-meta>] [<captured-status>]
@@ -644,7 +644,7 @@ snapshot_task_generation_is_current() {  # <captured-meta> <id>
 prefetch_task_observations() {  # <meta> <id>
   local meta=$1 id=$2 remote_host current_file endpoint_file current_pid='' current_rc=0
   local status_log status_capture report_path report_capture
-  local kind backend target endpoint_exists=null agent_alive=not_checked generation_current=1
+  local kind backend target endpoint_observation endpoint_exists=null agent_alive=not_checked generation_current=1
   remote_host=$(meta_value "$meta" remote_host)
   current_file="$SNAPSHOT_TASK_DIR/$id.json"
   endpoint_file="$SNAPSHOT_TASK_DIR/$id.endpoint"
@@ -670,13 +670,22 @@ prefetch_task_observations() {  # <meta> <id>
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
     if [ -n "$target" ]; then
-      if fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then
-        endpoint_exists=true
+      # Endpoint APIs can stall independently of the bounded crew-state read.
+      # shellcheck disable=SC2016 # Positional arguments expand in the bounded child shell.
+      if endpoint_observation=$(fm_run_timed "$FM_SNAPSHOT_CREW_STATE_TIMEOUT" bash -c '
+        . "$1/fm-backend.sh"
+        exists=false
+        alive=not_checked
+        fm_backend_target_exists "$2" "$3" "$4" >/dev/null 2>&1 && exists=true
+        if [ "$5" = secondmate ]; then
+          alive=$(fm_backend_agent_alive "$2" "$3" 2>/dev/null || printf unknown)
+        fi
+        printf "%s %s\n" "$exists" "$alive"
+      ' snapshot-endpoint "$SCRIPT_DIR" "$backend" "$target" "fm-$id" "$kind"); then
+        read -r endpoint_exists agent_alive <<< "$endpoint_observation"
       else
-        endpoint_exists=false
-      fi
-      if [ "$kind" = secondmate ]; then
-        agent_alive=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || printf unknown)
+        endpoint_exists=null
+        agent_alive=unknown
       fi
     fi
   else
