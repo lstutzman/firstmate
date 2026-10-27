@@ -1,0 +1,11 @@
+Linear coverage: 1 pages, 100 items seen, 5 requests, 100 team items, 0 unblocked items, 0 requested roots visited, 0 hierarchy items, 3 rate-limit retries, 100 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear labels not readable by linear-axi
+Coverage gap: Linear discovery: team listing (triage): RATE_LIMITED (exit 1); Linear quota exhausted, discovery resumes after 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: team listing (backlog): RATE_LIMITED (exit 1); Linear quota exhausted, discovery resumes after 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: team listing (unstarted): RATE_LIMITED (exit 1); Linear quota exhausted, discovery resumes after 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: team listing (started): RATE_LIMITED (exit 1); Linear quota exhausted, discovery resumes after 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: unblocked listing (backlog): RATE_LIMITED (exit 1); Linear quota exhausted, discovery resumes after 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: unblocked listing (unstarted): RATE_LIMITED (exit 1); Linear quota exhausted, discovery resumes after 2026-10-27T14:01:37Z
+Coverage gap: Starts held: duplicate-start check unavailable: home records unavailable: /tmp/fm-lab.yVn6vh
+DIGEST 2026-10-27 9 2026-10-27.md
+rc=0 elapsed=218s

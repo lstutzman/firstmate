@@ -1,0 +1,16 @@
+== [head] start_requests
+PC-2857 class=code-review source=linear-title-prefix:scheduled-review rank=1
+PC-3763 class=code-review source=linear-title-prefix:scheduled-review rank=2
+== [head] asks_for_lee
+== [head] excluded
+== [head] coverage
+Linear labels not readable by linear-axi
+== [head] real Linear views
+issue view PC-2857 --full --output json
+issue view PC-3763 --full --output json
+== [head] handoff
+set -euo pipefail
+FM_HOME=/tmp/fm-ghlive.wWfNNh/home-review-todo2-head /home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5YJDG834GNAQGCM91XBW6QQ/bin/fm-inbox.sh note --request-id progress-2026-10-27-00b8209c2ad0b053 --json -- 'Progress officer automatic start under Lee'"'"'s recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:
+{"authorising_class": "code-review", "evidence": ["Linear PC-2857"], "id": "PC-2857", "linear_id": "PC-2857", "linear_ids": ["PC-2857"], "link": "https://linear.app/property-compass-uk/issue/PC-2857/scheduled-review-dealanalysismessageuserid-cascades-on-user-delete-so", "owner_home": "/tmp/fm-ghlive.wWfNNh/home-review-todo2-head", "priority": 3, "project": "Bug Burndown", "rank": 1, "reason": "Unstarted work authorised by code-review", "tag_source": "linear-title-prefix:scheduled-review", "title": "[scheduled-review] DealAnalysisMessage.UserId cascades on user delete, so removing an admin account silently deletes that admi..."}'
+FM_HOME=/tmp/fm-ghlive.wWfNNh/home-review-todo2-head /home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5YJDG834GNAQGCM91XBW6QQ/bin/fm-inbox.sh note --request-id progress-2026-10-27-5f8e21315a4c4b08 --json -- 'Progress officer automatic start under Lee'"'"'s recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:
+{"authorising_class": "code-review", "evidence": ["Linear PC-3763"], "id": "PC-3763", "linear_id": "PC-3763", "linear_ids": ["PC-3763"], "link": "https://linear.app/property-compass-uk/issue/PC-3763/scheduled-review-the-admin-visible-descriptions-of-ai-deal-review-and", "owner_home": "/tmp/fm-ghlive.wWfNNh/home-review-todo2-head", "priority": 3, "project": "Bug Burndown", "rank": 2, "reason": "Unstarted work authorised by code-review", "tag_source": "linear-title-prefix:scheduled-review", "title": "[scheduled-review] The admin-visible descriptions of ai-deal-review and ai-legal-pack-review (lines 178-184) still say they la..."}'

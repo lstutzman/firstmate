@@ -1,0 +1,12 @@
+== start_requests
+== asks_for_lee
+== excluded
+PC-2857: Linear state is not unstarted: triage
+PC-3763: Linear state is not unstarted: triage
+== coverage
+Linear labels not readable by linear-axi
+== real linear views
+== handoff
+#!/usr/bin/env bash
+# Firstmate executes this handoff; the officer only writes it.
+set -euo pipefail

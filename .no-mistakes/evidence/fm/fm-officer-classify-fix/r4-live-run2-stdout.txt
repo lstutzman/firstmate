@@ -1,0 +1,10 @@
+Linear coverage: 0 pages, 0 items seen, 0 requests, 0 team items, 0 unblocked items, 0 requested roots visited, 0 hierarchy items, 0 rate-limit retries, 0 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear labels not readable by linear-axi
+Coverage gap: Linear discovery: team listing (triage): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: team listing (backlog): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: team listing (unstarted): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: team listing (started): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: unblocked listing (backlog): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Coverage gap: Linear discovery: unblocked listing (unstarted): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+DIGEST 2026-10-27 13 2026-10-27.md
+rc=0 elapsed=4s

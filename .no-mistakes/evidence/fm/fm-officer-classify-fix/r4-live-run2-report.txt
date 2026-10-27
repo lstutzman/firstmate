@@ -1,0 +1,19 @@
+== start_requests
+bug-legal Unstarted work authorised by bug
+rev-delete Unstarted work authorised by code-review
+== asks_for_lee
+m4247: Outside automatic-start authority: merge
+bug-ask: Explicit decision or action requested from Lee
+sec-cred: Outside automatic-start authority: production
+feat-price: Lee decides the pricing choice
+== excluded (lab cards)
+m4130: PR closed unmerged: check whether still needed
+== coverage
+Linear labels not readable by linear-axi
+Linear discovery: team listing (triage): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Linear discovery: team listing (backlog): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Linear discovery: team listing (unstarted): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Linear discovery: team listing (started): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Linear discovery: unblocked listing (backlog): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+Linear discovery: unblocked listing (unstarted): Linear quota exhausted earlier; discovery skipped until 2026-10-27T14:01:37Z
+merged-PR cards anywhere in report: 

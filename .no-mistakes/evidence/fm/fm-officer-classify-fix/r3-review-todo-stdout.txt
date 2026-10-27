@@ -1,0 +1,4 @@
+Linear coverage: 5 pages, 2 items seen, 6 requests, 2 team items, 0 unblocked items, 0 requested roots visited, 0 hierarchy items, 0 rate-limit retries, 0 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear labels not readable by linear-axi
+Coverage gap: Linear discovery: unblocked listing (unstarted): invalid JSON response (exit 1)
+DIGEST 2026-10-27 2 2026-10-27.md

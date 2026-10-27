@@ -1,0 +1,6 @@
+[base] test_ancestor_asks_hold_only_routed_asks: not ok - children of in-flight or startable ancestors start (expected 'PC-25 PC-26 PC-27', got 'PC-25 PC-27 PC-29')
+[base] test_linear_rate_limit_recovers: not ok - run-wide backoff survives more than two rate limits (expected '3', got '2')
+[base] test_merge_ask_pr_state: not ok - merged PR merge asks disappear, including PRs named only in linked Linear text, while other asks remain (expected 'closed open unread', got 'closed linked merged open unread')
+[base] test_github_reads_respect_deadline: not ok - skipped PR state read is a named gap (missing: 'pull/4069 (run deadline reached)')
+[base] test_review_words_and_explicit_asks: not ok - review findings start when sensitive words describe code, old classifier reasons, or recorded decisions (expected 'PC-2857 PC-3763 PC-3766 PC-3767 PC-3769 PC-3770', got 'PC-3769 PC-3770')
+[base] test_partial_coverage_starts: not ok - checked review and technical bugs start despite unrelated discovery gaps (expected 'PC-61 PC-62 PC-68 PC-69', got 'PC-61 PC-62 PC-69')

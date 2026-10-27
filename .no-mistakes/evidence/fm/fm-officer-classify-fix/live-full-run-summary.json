@@ -1,0 +1,19 @@
+{
+  "coverage": [
+    "Linear labels not readable by linear-axi",
+    "Linear discovery: team listing (triage): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)",
+    "Linear discovery: team listing (backlog): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)",
+    "Linear discovery: team listing (unstarted): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)",
+    "Linear discovery: team listing (started): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)",
+    "Linear discovery: unblocked listing (backlog): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)",
+    "Linear discovery: unblocked listing (unstarted): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)",
+    "GitHub merge-ask PR state unavailable: https://github.com/lstutzman/PropertyCompass2/pull/4069",
+    "GitHub merge-ask PR state unavailable: https://github.com/lstutzman/PropertyCompass2/pull/4078",
+    "GitHub merge-ask PR state unavailable: https://github.com/lstutzman/PropertyCompass2/pull/4095",
+    "GitHub merge-ask PR state unavailable: https://github.com/lstutzman/PropertyCompass2/pull/4112",
+    "GitHub merge-ask PR state unavailable: https://github.com/lstutzman/PropertyCompass2/pull/4130"
+  ],
+  "unclassified": 211,
+  "starts": 0,
+  "asks": 4
+}

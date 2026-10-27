@@ -1,0 +1,26 @@
+ok - progress: descendants wait only for ancestors listed as Lee asks
+ok - progress: rate-limited pages recover within the run budget
+ok - progress: merge asks require a current open PR
+ok - progress: GitHub reads stop at the run deadline and publish the gap
+ok - progress: review findings start and explicit Lee asks remain asks
+ok - progress: checked items start with partial coverage and choices ask for cards
+ok - progress: paginates open-state listings and reads only start candidates
+ok - progress: an exhausted Linear quota defers discovery to a later run
+ok - progress: page cap names the bound and preserves progress
+ok - progress: hidden CLI child limit is an explicit coverage gap
+ok - progress: start candidates are read in full with their parent chains
+ok - progress: start checks run in rank order and an over-budget candidate alone is withheld
+ok - progress: discovers and separates backlog work
+ok - progress: discovers deep Linear children, ranks work, and keeps choices for Lee
+ok - progress: proposes filler only with complete idle evidence
+ok - progress: reads other homes and status without acting on them
+ok - progress: Linear free-text authority starts work and names its source
+ok - progress: Linear dependencies and partial reads suppress unsafe starts
+ok - progress: versioned state schema and repeatable output
+ok - progress: executable starts use the existing idempotent firstmate intake
+ok - progress: registered remote homes are read and unavailable homes are reported
+ok - progress: fleet-app state matches the agreed schema and Slarti sample
+
+real	1m19.604s
+user	0m11.043s
+sys	0m4.341s

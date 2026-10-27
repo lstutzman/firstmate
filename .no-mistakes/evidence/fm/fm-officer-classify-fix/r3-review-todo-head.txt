@@ -1,0 +1,11 @@
+== start_requests
+== asks_for_lee
+== excluded
+PC-2857 code-review linear-title-prefix:scheduled-review | Already held, blocked, or carded; firstmate must reconcile it
+PC-3763 code-review linear-title-prefix:scheduled-review | Already held, blocked, or carded; firstmate must reconcile it
+== keys ['asks_for_lee', 'coverage', 'date', 'doing', 'done', 'excluded', 'filler', 'generated_at', 'linear_coverage', 'schema_version', 'source', 'start_requests', 'unclassified']
+== linear-axi calls
+== handoff
+#!/usr/bin/env bash
+# Firstmate executes this handoff; the officer only writes it.
+set -euo pipefail

@@ -1,0 +1,21 @@
+== start_requests
+bug-legal [bug] Unstarted work authorised by bug
+rev-delete [code-review] Unstarted work authorised by code-review
+== asks_for_lee
+m4247: Outside automatic-start authority: merge
+bug-ask: Explicit decision or action requested from Lee
+sec-cred: Outside automatic-start authority: production
+feat-price: Lee decides the pricing choice
+== excluded (lab cards + PC-2857/3763)
+m4130: PR closed unmerged: check whether still needed
+== coverage
+Linear labels not readable by linear-axi
+Linear discovery: team listing (triage): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)
+Linear discovery: team listing (backlog): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)
+Linear discovery: team listing (unstarted): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)
+Linear discovery: team listing (started): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)
+Linear discovery: unblocked listing (backlog): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)
+Linear discovery: unblocked listing (unstarted): RATE_LIMITED (exit 1); rate-limit wait budget exhausted (600 seconds)
+== unclassified 0
+== linear_coverage
+{"descriptions_truncated":0,"hierarchy_items":0,"items_seen":0,"pages_fetched":0,"rate_limit_retries":6,"requests":7,"roots_visited":0,"team_items":0,"unblocked_items":0,"unverified_starts":0}
