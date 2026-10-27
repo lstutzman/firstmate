@@ -85,7 +85,7 @@ Inbox acknowledgment means delivery and handling of the request, not resolution 
 `tests/fm-teardown.test.sh` covers teardown delivering a child's final line and refusing when the channel cannot be written.
 `tests/fm-brief.test.sh` pins the charter's channel rule.
 `tests/fm-pending-reply.test.sh` covers helper-selected local routing, remote-channel classification, same-basename restatement before false escalation, readable wrong-home diagnostics, and the rule that arbitrary mate-home sightings never acknowledge a reply.
-`tests/fm-inbox-service.test.sh` covers service validation, replay, acknowledgment, local and remote upward relay, failed-relay retention, and arrival through the real watcher.
+`tests/fm-inbox-service.test.sh` covers service validation, replay, acknowledgment, local and remote upward relay, failed-relay retention, once-per-episode relay-failure wakes, and arrival through the real watcher.
 `tests/fm-parent-channel-scan-exclusion.test.sh` covers the home-shape-aware scan exclusion against real remote, main-home, and local-mate fixtures: the watcher signal scan, both heartbeat backstops, the fleet-wide folds, and the real `fm-wake-drain.sh` end to end.
 
 ## Live verification
