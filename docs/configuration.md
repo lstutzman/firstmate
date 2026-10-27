@@ -597,7 +597,7 @@ A Claude account with no reading is reported as unknown and left out of the pool
 Accounts with no reading for seven days are treated as retired: they raise no stale alarm, stay out of the pool mean, and are reported once as a count of ignored accounts that does not keep the Captain's Log card open.
 Older home-summary producers without `counts.in_flight` use their active-worker, hold, and decision counts, which cannot identify a program with no active worker.
 Update second mates before relying on coverage of those programs.
-Not-collected homes preserve prior silence-alarm receipts and cannot prove that an open alarm cleared.
+Not-collected homes preserve their own prior silence and inventory-failure receipts; only such a kept receipt stops the timer from resolving an open alarm.
 
 `bin/fm-fleet-alarm.py` owns the configuration keys, defaults, command syntax, reader budget, deduplication receipts, and timer-file generation.
 `tests/fm-fleet-alarm.test.sh` exercises the alarm with offline quota and summary fixtures and the real fleet-ledger publisher.

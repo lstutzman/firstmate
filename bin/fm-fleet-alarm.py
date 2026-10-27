@@ -330,10 +330,11 @@ def check(channel):
                      if ('config' in current
                          or ('quota-read' in current and key.startswith(('quota:', 'stale:', 'pool', 'ignored:')))
                          or ('mate-read' in current and key.startswith(('silent:', 'mate-read:')))
-                         or (key.startswith('silent:')
-                             and ('mate-read:' + key[7:] in current or key[7:] in not_collected)))}
+                         or (key.startswith('silent:') and 'mate-read:' + key[7:] in current)
+                         or (key.startswith(('silent:', 'mate-read:'))
+                             and key.split(':', 1)[1] in not_collected))}
         alarms = [key for key in current if not key.startswith('ignored:')]
-        cleared = channel == 'timer' and not alarms and timer_open and not not_collected
+        cleared = channel == 'timer' and not alarms and timer_open and not preserved
         if (fresh if channel == 'check' else set(fresh) & set(alarms)) or cleared:
             details = list((current if channel == 'timer' else fresh).values())
             if quota_info:

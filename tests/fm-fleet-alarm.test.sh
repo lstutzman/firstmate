@@ -460,15 +460,28 @@ mv "$HOME_FIX/quota-fail" "$HOME_FIX/quota-fail-cleared"
 [ -z "$(run_alarm check)" ] || fail 'unknown read must not rearm an uncleared threshold'
 quota 0.2
 run_alarm check >/dev/null
-before=$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")
 printf -- '- gilligan - laptop (host: macbook.invalid; root: /remote/code; home: /remote/gilligan; scope: test; projects: alpha; added 2026-10-26)\n' \
   > "$HOME_FIX/data/secondmates.md"
 run_alarm timer
+assert_contains "$(tail -n 1 "$HOME_FIX/state/fleet-ledger.jsonl")" 'resolved' 'quota timer alert clears while Gilligan is offline with no receipt of its own'
+quota 0.99
+printf '{}\n' > "$HOME_FIX/remote-summary"
+run_alarm timer
+assert_contains "$(tail -n 1 "$HOME_FIX/state/fleet-ledger.jsonl")" "inventory unavailable: gilligan: 'schema'" 'reachable Gilligan inventory failure reaches the timer'
+quota 0.2
+mv "$HOME_FIX/remote-summary" "$HOME_FIX/remote-summary-offline"
+before=$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")
+run_alarm timer
 [ "$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")" = "$before" ] \
-  || fail 'not-collected inventory incorrectly resolved an open timer alert'
+  || fail "an offline home's own open receipt incorrectly resolved the timer alert"
+mv "$HOME_FIX/remote-summary-offline" "$HOME_FIX/remote-summary"
+run_alarm timer
+[ "$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")" = "$before" ] \
+  || fail 'an inventory failure kept while offline re-alerted when the home returned'
+mv "$HOME_FIX/remote-summary" "$HOME_FIX/remote-summary-timer-cleared"
 mate 0 0 0
 run_alarm timer
-assert_contains "$(cat "$HOME_FIX/state/fleet-ledger.jsonl")" 'resolved' 'cleared timer alert closes its log decision'
+assert_contains "$(tail -n 1 "$HOME_FIX/state/fleet-ledger.jsonl")" 'resolved' 'cleared timer alert closes its log decision'
 quota 0.99
 run_alarm timer
 cat > "$HOME_FIX/accounts" <<'ROWS'
