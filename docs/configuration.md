@@ -927,6 +927,8 @@ Linear's unblocked listing, read for backlog and unstarted issues only, supplies
 The dated JSON's `linear_coverage` records pages fetched, items seen, CLI requests, hierarchy reads, rate-limit retries, listed descriptions left truncated, and start candidates left unverified; the digest and run log print the same counts and specific failure causes.
 The request budget counts `linear-axi` invocations, not Linear API calls: the CLI fetches each listed issue's state, team, assignee, and project separately, so a 100-item page costs about 300 to 400 API requests.
 The progress script's header owns request, page, and backoff bounds, including the CLI's unpageable sub-issue limit.
+`linear-axi` reports every Linear limit as `RATE_LIMITED` with no reset time, so after the short 30, 60, and 120 second backoff a fourth consecutive limit counts as the hourly quota exhausted: the run stops Linear reads at once, names the gap with a resume time one hour later, and records it in the lane's `linear-resume-after.json`.
+Later runs skip Linear discovery, naming that gap, until the resume time passes.
 A capped or failed Linear read is a per-item coverage gap: checked items still produce start requests, while items whose full description or parent checks fail remain excluded and are named in coverage.
 A missing or unreadable registered home, an unsupported non-Markdown backlog, or failed open-PR discovery leaves the duplicate-start check unable to pass for any item, so that run emits no start requests and its coverage names the reason.
 Filler waits for complete coverage.
@@ -960,23 +962,32 @@ Unclassified records carry `tag_source: null`.
 `requested` records an existing Lee request; registering a root never authorizes inventing a new feature.
 Within each class tier, Linear priority or backlog severity ranks urgent/critical, high, medium, low, then unspecified; identifiers and home names break ties.
 Open work with no recorded class is not listed and never becomes an ask; the run reports only its count, `unclassified`, and the digest prints that count on one line.
-An unclassified item whose title names a Lee choice is asked only while it is open and unstarted; in flight it is counted as unclassified, and once finished it is dropped.
+An unclassified item whose title or explicit ask names a Lee choice is asked only while it is open and unstarted; restricted words alone leave it counted as unclassified; in flight it is counted as unclassified, and once finished it is dropped.
 This slice uses `model: none` throughout.
 
 Held, blocked, already carded, in-flight, completed, or open-PR-linked work is excluded from starts.
 Unresolved keyed status calls remain open across later `working` lines.
 The same Linear identifier produces at most one start request across homes.
-Whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title go to `asks_for_lee`, excluding matches within known feature names such as Business Health.
-A separate choice word outside the name still requires a card.
-Titles naming merges, production, credentials, data rewrites, destructive actions, and spending are outside automatic-start authority and also go to `asks_for_lee`.
-Descriptions and ancestors are not matched, so ordinary bug text does not divert authorized work.
-These conservative word rules can overexclude a technical task; firstmate reconciles its evidence rather than widening authority automatically.
+Code-review findings and bugs start under their recorded class even when their titles or descriptions mention business, product, wording, legal, payments, billing, pricing, or restricted operations.
+Only an explicit ask overrides that classification: an `Ask Lee:`, `Ask for Lee:`, `Lee ask:`, `Decision for Lee:`, `Need Lee:`, or `Needs Lee:` line (a spaced ` - ` may replace the colon), or a `Needs Lee to ...` marker, identifies the decision or action Lee must take.
+Bulleted lines and Markdown headings or bold markers may wrap those prefixes.
+A bare `Decision:` line records a decision already made and is not an ask.
+Words in an old classifier reason, such as “Outside automatic-start authority: delete” or “Lee decides the legal choice,” do not constitute an ask.
+For requested-feature, requested-fleet, security, and CVE items, whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title still go to `asks_for_lee`, excluding matches within known feature names such as Business Health.
+Titles of those items naming merges, production, credentials, rotation, data rewrites, destructive actions, and spending are outside automatic-start authority and also go to `asks_for_lee`.
+Other explicit asks retain a generic decision-or-action reason.
+A start whose ancestor is itself listed in `asks_for_lee` is held in `excluded` until Lee answers; an in-flight, held, or startable ancestor holds nothing; its recorded holds and dependencies also still exclude starts.
+Before publishing a merge-word ask or a direct merge request with a GitHub PR URL, the officer reads that PR through `gh-axi`, including PR URLs found in a local card's linked Linear description, and drops the item only when every referenced PR is merged.
+A PR closed without merging keeps the item listed with the reason “PR closed unmerged: check whether still needed”.
+An unreadable PR remains listed, and coverage names the failed PR read rather than treating it as closed.
+Open-PR and merge-ask PR reads share the run deadline; once it has passed they are skipped and named as coverage gaps.
+This reconciliation changes only the officer's report, never the underlying task or Captain's Log card.
 For a queued local task, its backlog identifies the home; a Linear-only item defaults to the primary home until ordinary intake routes it by registered scope.
 
 When coverage is complete and no startable or in-flight work in the start classes remains, the officer rotates one extra bug sweep, code review, librarian pass, or ideation pass by run date.
 That filler request uses the same standing authority and firstmate intake as the ranked work.
 
-Each run writes `<date>.md`, `<date>.json`, `<date>.start-requests.sh`, and the stable `progress-state.json` in its findings lane.
+Each run writes `<date>.md`, `<date>.json`, `<date>.start-requests.sh`, and the stable `progress-state.json` in its findings lane. A run that exhausts the Linear quota also writes `linear-resume-after.json` there.
 The dated JSON file contains the complete discovery report under [progress-run.schema.json](schemas/progress-run.schema.json), schema version 1, source `progress-officer`.
 
 | JSON field | Meaning |
@@ -985,7 +996,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 | `date`, `generated_at` | Run date and actual UTC observation timestamp |
 | `doing`, `done` | Work in the start classes currently in flight, and work recorded completed or canceled; completed Linear-only history is not listed |
 | `start_requests` | Ranked authorized work waiting for firstmate to dispatch |
-| `asks_for_lee` | Business, product, wording, legal, payments, billing, or pricing choices, and authorized work outside automatic-start authority, each with its reason; these need Captain's Log cards |
+| `asks_for_lee` | Explicit asks of Lee, title-gated choices and work outside automatic-start authority, and merge asks whose PRs are not all merged, each with its reason; these need Captain's Log cards |
 | `excluded` | Evidence that prevents a new start, including existing cards and incomplete discovery |
 | `unclassified` | Count of open items with no recorded start class; they are not listed |
 | `filler` | The extra discovery pass, or `null` |

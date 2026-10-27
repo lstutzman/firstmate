@@ -12,12 +12,18 @@ The registry and state schema are documented in docs/configuration.md.
 Linear reads use 100-item cursor pages, at most 100 pages per listing. The team
 listing reads only open state types (triage, backlog, unstarted, started); the
 unblocked listing reads only backlog and unstarted, where dependencies matter.
-The 300-request budget bounds linear-axi invocations (including two retries per
+The 300-request budget bounds linear-axi invocations (including retries of each
 rate-limited request), not Linear API calls: linear-axi hydrates each listed
 issue's state, team, assignee, and project with separate API requests, so one
 100-item page costs about 300-400 API requests.
-Requests start at least 0.25 seconds apart; a rate-limited request is retried
-after 30 and then 60 seconds.
+Requests start at least 0.25 seconds apart. Rate limits back off 30, 60, then
+120 seconds; after a limit, requests retain a minimum interval of one tenth the
+backoff. linear-axi reports every limit as RATE_LIMITED with no reset time, so a
+fourth consecutive limit is taken as the hourly quota exhausted: discovery stops
+at once, records a resume time one hour later in the lane's
+linear-resume-after.json, and later runs skip Linear discovery until then.
+Linear and GitHub reads and waits respect FM_OFFICER_RUN_TIMEOUT (default 3600), reserving 30
+seconds for publication; exhaustion is a named coverage gap.
 Hierarchy reads visit only configured requested roots and their descendants.
 A 50-child response is incomplete because linear-axi exposes no child cursor.
 Only start candidates are read in full, with their parent chains, in rank order
@@ -157,8 +163,8 @@ def scan_home(home):
     return {"home": home, "rows": rows, "problems": problems}
 
 
-def command(args, input_bytes=None):
-    proc = subprocess.run(args, input=input_bytes, capture_output=True, timeout=120, check=False)
+def command(args, input_bytes=None, timeout=120):
+    proc = subprocess.run(args, input=input_bytes, capture_output=True, timeout=timeout, check=False)
     if proc.returncode:
         # External stderr may contain credentials; keep the failure structural.
         raise RuntimeError("%s read failed (exit %d)" % (args[0], proc.returncode))
@@ -168,7 +174,7 @@ def command(args, input_bytes=None):
 class LinearDiscovery:
     """Bound every CLI request, including retries and requested-root reads."""
 
-    def __init__(self):
+    def __init__(self, started, now):
         self.stats = {"pages_fetched": 0, "items_seen": 0, "requests": 0,
                       "roots_visited": 0, "hierarchy_items": 0, "rate_limit_retries": 0,
                       "team_items": 0, "unblocked_items": 0, "descriptions_truncated": 0,
@@ -176,21 +182,36 @@ class LinearDiscovery:
         self.viewed = set()
         self.last_request = 0
         self.stopped_reason = None
+        self.interval = 0.25
+        self.backoff = 30
+        self.limit_streak = 0
+        self.started, self.now = started, now
+        self.resume_after = None
+        try:
+            duration = max(1, int(os.environ.get("FM_OFFICER_RUN_TIMEOUT", "3600")))
+        except ValueError:
+            duration = 3600
+        self.deadline = started + max(0, duration - 30)
 
     def read(self, args):
-        for attempt in range(3):
+        while True:
             if self.stopped_reason:
                 raise RuntimeError(self.stopped_reason)
             if self.stats["requests"] >= 300:
                 raise RuntimeError("request budget reached (300 requests)")
-            time.sleep(max(0, self.last_request + 0.25 - time.monotonic()))
+            wait = max(0, self.last_request + self.interval - time.monotonic())
+            if time.monotonic() + wait >= self.deadline:
+                self.stopped_reason = "run deadline reached before Linear request"
+                raise RuntimeError(self.stopped_reason)
+            time.sleep(wait)
             self.stats["requests"] += 1
             self.last_request = time.monotonic()
+            timeout = min(120, self.deadline - time.monotonic())
             try:
                 proc = subprocess.run(["linear-axi", "issue"] + args + ["--output", "json"],
-                                      capture_output=True, timeout=120, check=False)
+                                      capture_output=True, timeout=timeout, check=False)
             except subprocess.TimeoutExpired:
-                raise RuntimeError("timeout after 120 seconds") from None
+                raise RuntimeError("timeout after %.0f seconds" % timeout) from None
             except OSError:
                 raise RuntimeError("linear-axi could not be executed") from None
             try:
@@ -213,13 +234,22 @@ class LinearDiscovery:
                     code = "RATE_LIMITED"
                 reason = "%s (exit %d)" % (code, proc.returncode)
                 if code == "RATE_LIMITED":
-                    if attempt < 2:
+                    if self.limit_streak >= 3:
+                        self.resume_after = int(self.now + time.monotonic() - self.started) + 3600
+                        self.stopped_reason = reason + "; Linear quota exhausted, discovery resumes after " + iso(
+                            self.resume_after)
+                    elif time.monotonic() + self.backoff >= self.deadline:
+                        self.stopped_reason = reason + "; run deadline reached before rate-limit retry"
+                    else:
                         self.stats["rate_limit_retries"] += 1
-                        time.sleep(30 * 2 ** attempt)
+                        self.limit_streak += 1
+                        time.sleep(self.backoff)
+                        self.interval = self.backoff / 10
+                        self.backoff = min(120, self.backoff * 2)
                         continue
-                    reason += "; retry budget exhausted"
-                    self.stopped_reason = reason
+                    reason = self.stopped_reason
                 raise RuntimeError(reason)
+            self.limit_streak = 0
             if not isinstance(doc.get("data"), dict):
                 raise RuntimeError("response has no data object")
             return doc["data"]
@@ -266,7 +296,7 @@ def linear_row(entry, home, clear, parent=None):
     row.update({"linear_id": entry["identifier"], "linear_ids": [entry["identifier"]],
                 "priority": entry.get("priority") or 0, "project": entry.get("project") or "",
                 "link": entry.get("url") or "", "parent": parent, "linear_only": True,
-                "description_truncated": TRUNCATED in description,
+                "description_truncated": TRUNCATED in description, "description": description,
                 "state": str(entry.get("stateType") or entry["state"]).lower(),
                 "evidence": ["Linear " + entry["identifier"]]})
     row["linear_blocked"] = row["id"] not in clear and row["state"] in UNSTARTED
@@ -348,18 +378,63 @@ def load_home(source):
     return doc
 
 
-def open_prs(repos):
+def iso(epoch):
+    return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def remaining(deadline):
+    left = min(120, deadline - time.monotonic())
+    if left <= 0:
+        raise RuntimeError("run deadline reached")
+    return left
+
+
+def open_prs(repos, deadline):
     prs = []
     for repo in repos:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
             raise RuntimeError("repos must contain comma-separated owner/repo names")
         raw = command(["gh-axi", "api", "GET", "/repos/" + repo + "/pulls?state=open&per_page=100",
-                       "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'])
+                       "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'], timeout=remaining(deadline))
         for line in raw.splitlines():
             if not line.startswith("PRJSON "):
                 raise RuntimeError("GitHub read returned an unexpected PR format")
             prs.append(json.loads(line[7:]))
     return prs
+
+
+def reconcile_merge_asks(rows, problems, deadline, linear):
+    """Mark merge asks whose PRs all merged, or any closed unmerged; local rows read linked Linear text."""
+    cache = {}
+    for row in rows:
+        description = row.get("description", "") + "".join(
+            "\n" + linear[i].get("description", "") for i in row["linear_ids"] if i in linear and linear[i] is not row)
+        hold = row["tags"].get("hold", "")
+        request = lee_request_text(dict(row, description=description)) + "\n" + hold
+        merge_ask = re.search(r"\bmerg(?:e|ing)(?:[- ]word)?\b", request, re.I)
+        urls = set(re.findall(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+\b",
+                              "\n".join((row["title"], description, hold, row.get("link", ""))))) if merge_ask else set()
+        states = []
+        for url in sorted(urls):
+            if url not in cache:
+                path = urllib.parse.urlsplit(url).path.split("/")
+                endpoint = "/repos/%s/%s/pulls/%s" % (path[1], path[2], path[4])
+                try:
+                    raw = command(["gh-axi", "api", "GET", endpoint, "--jq",
+                                   '"PRSTATE " + ({state: .state, merged: .merged} | tojson)'], timeout=remaining(deadline))
+                    if not raw.startswith("PRSTATE "):
+                        raise ValueError("unexpected PR state format")
+                    state = json.loads(raw[8:])
+                    if state.get("state") not in ("open", "closed") or type(state.get("merged")) is not bool:
+                        raise ValueError("invalid PR state")
+                    cache[url] = "merged" if state["merged"] else state["state"]
+                except (OSError, ValueError, AttributeError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                    cache[url] = None
+                    problems.append("GitHub merge-ask PR state unavailable: " + url
+                                    + (" (%s)" % exc if str(exc) == "run deadline reached" else ""))
+            states.append(cache[url])
+        row["finished_merge_ask"] = bool(states) and all(s == "merged" for s in states)
+        row["closed_unmerged_pr"] = "closed" in states
 
 
 def classify(row):
@@ -379,6 +454,35 @@ def classify(row):
     if kind in ("feature", "fleet") and row["tags"].get("requested-by", "").lower() == "lee":
         return "requested-" + kind, "linear-free-text:requested-by" if linear_only else local
     return None, None
+
+
+def lee_request_text(row):
+    """Select requested decisions/actions, never incidental finding vocabulary."""
+    title = re.sub(r"^(?:bug(?: report)?|security)\s*:\s*", "", row["title"], flags=re.I)
+    explicit = re.compile(r"^\s*(?:[-*]\s*)?(?:ask(?: for)? Lee|decision for Lee|Lee ask|needs? Lee)(?:\s*:\s*|\s+-\s+|\s+to\s+)(.+)", re.I)
+    asks = []
+    for line in (title + "\n" + row.get("description", "")).splitlines():
+        match = explicit.match(line.lstrip("# ").replace("**", ""))
+        if match:
+            asks.append(match[1])
+    # Review and bug titles describe findings; only explicit asks override them.
+    if (row.get("authorising_class") or classify(row)[0]) not in ("code-review", "bug"):
+        if CHOICES.search(KNOWN_NAMES.sub("", title)) or RESTRICTED.search(title):
+            asks.append(title)
+    return "\n".join(asks)
+
+
+def lee_ask(row):
+    text = lee_request_text(row)
+    choice = CHOICES.search(KNOWN_NAMES.sub("", text))
+    restricted = RESTRICTED.search(text)
+    if choice:
+        return "Lee decides the " + choice[1].lower() + " choice"
+    if restricted:
+        return "Outside automatic-start authority: " + restricted[1].lower()
+    if text:
+        return "Explicit decision or action requested from Lee"
+    return None
 
 
 def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers):
@@ -406,6 +510,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
                 copy["evidence"] += row["evidence"]
                 copy["link"] = copy.get("link") or row["link"]
                 copy["linear_class"] = classify(row)
+                copy["description"] = row.get("description", "")
             by_linear[row["linear_id"]] = copies[0]
         elif row["state"] not in FINISHED:
             rows.append(row)
@@ -426,6 +531,8 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         return chain
 
     for row in rows:
+        if row.get("finished_merge_ask"):
+            continue
         chain = ancestry(row)
         authorised, source = classify(row)
         if not authorised:
@@ -437,8 +544,8 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             row["owner_home"] = root["owner_home"]
         row["authorising_class"] = authorised
         row["tag_source"] = source
-        choice = CHOICES.search(KNOWN_NAMES.sub("", row["title"]))
-        restricted = RESTRICTED.search(row["title"])
+        ask = lee_ask(row)
+        choice = CHOICES.search(KNOWN_NAMES.sub("", lee_request_text(row)))
         held = any(any(k in r["tags"] for k in ("hold", "hold-kind", "blocked-by", "blocked", "deps"))
                    or r.get("open_calls") or r.get("linear_blocked") for r in chain)
         copies = [copy for ident in row["linear_ids"] for copy in linked.get(ident, [])]
@@ -469,9 +576,8 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             row["reason"] = "Recorded worker outcome; firstmate owns landing or retry"
             row["outcome"] = "failed" if row["latest"] == "failed" else "ok"
             doc["done"].append(row)
-        elif choice or restricted:
-            row["reason"] = ("Lee decides the " + choice[1].lower() + " choice" if choice
-                             else "Outside automatic-start authority: " + restricted[1].lower())
+        elif ask:
+            row["reason"] = ask
             doc["asks_for_lee"].append(row)
         elif state and state not in UNSTARTED:
             row["reason"] = "Linear state is not unstarted: " + state
@@ -484,6 +590,17 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             doc["excluded"].append(row)
         else:
             row["reason"] = "Unstarted work authorised by " + row["authorising_class"]
+            doc["start_requests"].append(row)
+        if row.get("closed_unmerged_pr") and any(doc[k] and doc[k][-1] is row for k in ("asks_for_lee", "excluded")):
+            row["reason"] = "PR closed unmerged: check whether still needed"
+    asking = {id(r) for r in doc["asks_for_lee"]}
+    starts, doc["start_requests"] = doc["start_requests"], []
+    for row in starts:
+        ancestor = next((r for r in ancestry(row)[1:] if id(r) in asking), None)
+        if ancestor:
+            row["reason"] = "Held until Lee answers the ancestor's ask: " + ancestor["id"]
+            doc["excluded"].append(row)
+        else:
             doc["start_requests"].append(row)
     doc["start_requests"].sort(key=lambda r: (CLASS_ORDER[r["authorising_class"]],
                                              r["priority"] or 5, r["id"], r["owner_home"]))
@@ -730,6 +847,7 @@ def main(argv):
     if not args.home or not args.out or not args.date:
         parser.error("run requires --home, --out, and --date")
     datetime.date.fromisoformat(args.date)
+    started = time.monotonic()
     snapshots, prs, problems, blockers = [], [], [], []
     for home in args.home:
         try:
@@ -744,7 +862,15 @@ def main(argv):
             if row["tags"].get("requested-by", "").lower() == "lee":
                 requested.update(i for i in row["linear_ids"]
                                  if re.fullmatch(re.escape(args.team) + r"-\d+", i))
-    discovery = LinearDiscovery()
+    now = args.now if args.now is not None else int(time.time())
+    discovery = LinearDiscovery(started, now)
+    resume_path = os.path.join(args.out, "linear-resume-after.json")
+    try:
+        resume_after = int(json.loads(read(resume_path) or "{}").get("resume_after", 0))
+    except (ValueError, TypeError, AttributeError):
+        resume_after = 0
+    if now < resume_after:
+        discovery.stopped_reason = "Linear quota exhausted earlier; discovery skipped until " + iso(resume_after)
     rows, clear = {}, set()
     try:
         rows, clear = linear_rows(args.team, args.home[0], requested, discovery, problems)
@@ -753,7 +879,7 @@ def main(argv):
     except RuntimeError as exc:
         problems.append("Linear discovery: " + str(exc))
     try:
-        prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()])
+        prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()], discovery.deadline)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         blockers.append("open PR discovery unavailable or incomplete")
     problems = ["Linear labels not readable by linear-axi"] + problems
@@ -771,14 +897,17 @@ def main(argv):
                 failure = verify_start(identifier, rows, clear, args.home[0], discovery)
                 if failure:
                     unchecked[identifier] = failure
+    if discovery.resume_after:
+        write(resume_path, {"resume_after": discovery.resume_after, "resume_after_utc": iso(discovery.resume_after)})
     discovery.stats["descriptions_truncated"] = sum(r["description_truncated"] for r in rows.values())
     discovery.stats["unverified_starts"] = len(unchecked)
+    reconcile_merge_asks([r for snapshot in snapshots for r in snapshot["rows"]] + list(rows.values()),
+                         problems, discovery.deadline, rows)
     doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
-    doc["generated_at"] = datetime.datetime.fromtimestamp(
-        args.now if args.now is not None else time.time(), datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    doc["generated_at"] = iso(now)
     requests = executable_requests(doc, args.home[0])
     write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"), requests)
     reported = None
