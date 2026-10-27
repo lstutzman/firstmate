@@ -227,6 +227,8 @@ PYFIX
 - [ ] pc-2680-slice2 - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee)
 - [ ] slice2-merged - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/example/project/pull/4400)
 - [ ] slice2-open - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/other/repo/pull/4401)
+- [ ] slice2-closed - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/other/repo/pull/4402)
+- [ ] slice2-unread - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/other/repo/pull/4403)
 - [ ] known-name - Business health dashboard
 - [ ] feature-path - Add /pricing navigation (kind: feature) (requested-by: Lee)
 - [ ] real-choice - Lee to choose the export format
@@ -241,6 +243,7 @@ MD
   printf 'kind=ship\n' > "$WORLD_HOME/state/worker-choice.meta"
   printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4400.json"
   printf '{"state":"open","merged":false}\n' > "$WORLD/pr-4401.json"
+  printf '{"state":"closed","merged":false}\n' > "$WORLD/pr-4402.json"
   printf 'working [at=1]: started\n' > "$WORLD_HOME/state/recorded-start.status"
   run_progress >/dev/null || fail 'backlog ask classification failed'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
@@ -259,6 +262,12 @@ MD
   assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[]] | .[].id' "$file")" 'slice2-open' \
     'the same merge-note task with an open PR in another repo never starts twice'
   assert_contains "$(jq -r '.excluded[].id' "$file")" 'slice2-open' 'an open merge-note PR excludes the start'
+  assert_equals 'PR closed unmerged: check whether still needed' \
+    "$(jq -r '.excluded[] | select(.id == "slice2-closed") | .reason' "$file")" 'a closed unmerged merge-note PR stays excluded for a check'
+  assert_contains "$(jq -r '.excluded[].id' "$file")" 'slice2-unread' 'an unreadable merge-note PR never authorises a start'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'pull/4403' 'the failed PR read is named in coverage'
+  assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[]] | .[].id' "$file")" 'slice2-closed' 'closed work is not restarted'
+  assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[]] | .[].id' "$file")" 'slice2-unread' 'unread work is not started'
   pass 'progress: backlog asks require an actual request from Lee'
 }
 
