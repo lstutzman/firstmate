@@ -1217,6 +1217,52 @@ EOF
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
 }
 
+test_snapshot_handles_large_status_fields() {
+  local home mate fakebin out
+  home=$(make_home large-status)
+  mate=$(make_home large-status-mate)
+  mkdir -p "$mate/bin"
+  printf '# Test secondmate\n' > "$mate/AGENTS.md"
+  printf 'large\n' > "$mate/.fm-secondmate-home"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$mate/data/backlog.md"
+  fm_write_meta "$home/state/large.meta" \
+    "remote_host=fixture.invalid" "remote_backend=tmux" \
+    "kind=secondmate" "home=$mate" "harness=codex"
+  python3 - "$home/state/large.status" <<'PY_STATUS'
+import sys
+with open(sys.argv[1], 'w') as file:
+    for i in range(90):
+        file.write(f'needs-decision [key=choice-{i}]: ' + 'x' * (200000 if i == 0 else 3000) + '\n')
+    file.write('working [at=100]: ' + 'z' * 200000 + '\n')
+PY_STATUS
+  fakebin=$(make_fakebin "$home")
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json) || fail 'snapshot must serialize oversized status fields'
+  printf '%s' "$out" | jq -e '
+    (.tasks[] | select(.id == "large")) as $t
+    | ($t.hints.open_decisions | length) == 90
+      and ($t.hints.open_decisions | all(.[]; (.summary | length) <= 4096))
+      and $t.hints.open_decisions[89].key == "choice-89"
+      and ($t.paths.status_log.last_event.raw | startswith("working [at=100]: "))
+      and ($t.paths.status_log.last_event.raw | length) <= 4096
+      and ($t.paths.status_log.last_event.note | length) <= 4096
+      and $t.hints.pending_decision == true
+      and (.secondmate_current.records[] | select(.id == "large")
+        | (.parent_event.open_decisions | length) == 90)
+  ' >/dev/null || fail 'bounded status text must preserve every open decision in task and mate views'
+  mkdir -p "$mate/state" "$mate/data" "$mate/config"
+  PATH="$fakebin:$PATH" FM_HOME="$mate" "$SNAPSHOT" --secondmate-home-summary > "$mate/state/home-summary.json" || fail 'make structured summary'
+  printf -- '- large - test domain (home: %s; scope: test; projects: alpha; added 2026-07-11)\n' "$mate" > "$home/data/secondmates.md"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json) || fail 'snapshot must reconcile large parent evidence'
+  printf '%s' "$out" | jq -e '
+    .secondmate_current.records[] | select(.id == "large")
+    | .provenance.summary_source == "local-ledger"
+      and (.parent_event.open_decisions | length) == 90
+      and (.parent_event.reconciliation.decisions | length) == 90
+  ' >/dev/null || fail "registered mate decision reconciliation: $(printf '%s' "$out" | jq -c '.secondmate_current.records[] | {id,provenance,current,decisions:(.parent_event.open_decisions | length),reconciled:(.parent_event.reconciliation.decisions | length)}')"
+  pass 'large status text and aggregated decisions serialize without argument limits'
+}
+
+test_snapshot_handles_large_status_fields
 test_empty_fleet_json
 test_fixture_snapshot_json
 test_home_summary_excludes_secondmate_from_child_inventory

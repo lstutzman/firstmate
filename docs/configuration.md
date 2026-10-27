@@ -579,8 +579,15 @@ See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, 
 
 The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quota readings, and registered second mates holding work without recent communication.
 Idle second mates are healthy.
-It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reuses the fleet snapshot's validated local and remote home summaries.
-The pool threshold measures mean remaining weekly capacity across the reported Claude accounts; it is not a prediction of how long the pool can sustain a workload.
+It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reads published home summaries for registered second mates without building a full fleet snapshot.
+Remote summary reads share the alarm deadline and fall back to the parent-side route-keyed cache.
+Missing, invalid, or stale home summaries produce an inventory alert; the configured stale-data threshold applies to summaries too.
+The quota alarm fires when mean remaining weekly capacity across non-stale Claude readings falls below the pool threshold, or a carrying account exceeds the weekly threshold.
+Every Claude account with successful Claude-model requests in the last 60 minutes is carrying; several accounts can qualify, and failed-only traffic does not qualify.
+The card names all carrying accounts and includes per-account weekly pressure as information; pressure alone on an idle account does not trigger an alarm.
+With no successful traffic in that window, the carrying condition is skipped and the card says so; the pool condition still applies.
+The quota reader does not expose enabled status, so the pool uses reading freshness rather than verified account enablement.
+Mean remaining capacity does not predict how long the pool can sustain a workload.
 Silence is measured from the later of the second mate's spawn and its newest stamped parent-channel line that main did not append itself; main's own answers, hold transfers, and no-reply or remote-reply continuity escalations do not count.
 The watcher republishes home summaries on its own, so a fresh summary does not prove the agent is awake.
 A spawn-failure line main writes at launch falls inside the spawn window; a legacy mate with no `spawn_gen` and no stamped line of its own alarms on the first check.

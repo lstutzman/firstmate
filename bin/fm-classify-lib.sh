@@ -2384,6 +2384,52 @@ $rest
 EOF
 }
 
+# Age of the newest stamped line this home did not append itself. Ranges in
+# the home-appends ledger (fm_wake_status_append_self_announced) are this
+# home's own closes and hold transfers, and pending-reply and remote-reply
+# continuity escalations are this home's reports that the task stopped
+# answering, so none of them count as the task's communication. Prints null
+# when no such line exists.
+status_agent_event_age() {  # <observed-status-log> <contract-path> <now-epoch>
+  local status_log=$1 path=$2 now=$3 ranges
+  [ -f "$status_log" ] || { printf 'null'; return 0; }
+  ranges=$(status_home_appends_ranges "$path") || ranges=
+  # One pass: ledger ranges are ascending (status_home_appends_covers), so
+  # merge them once and walk them alongside the lines; the stamp rule is
+  # _fm_status_at_epoch's.
+  LC_ALL=C awk -v ranges="$ranges" -v now="$now" '
+    BEGIN {
+      n = 0
+      count = split(ranges, rows, "\n")
+      for (i = 1; i <= count; i++) {
+        if (split(rows[i], f, "\t") != 2) continue
+        if (n && f[1] + 0 <= hi[n]) { if (f[2] + 0 > hi[n]) hi[n] = f[2] + 0; continue }
+        lo[++n] = f[1] + 0; hi[n] = f[2] + 0
+      }
+      j = 1; offset = 0; age = "null"
+    }
+    {
+      start = offset; end = start + length($0) + 1; offset = end
+      if ($0 !~ /[^ \t\r\f\v]/) next
+      if (index($0, "blocked [key=pending-reply-") == 1 || index($0, "blocked [key=remote-reply-continuity-") == 1) next
+      while (j <= n && hi[j] <= start) j++
+      if (j <= n && lo[j] <= start && hi[j] >= end) next
+      colon = index($0, ":"); if (!colon) next
+      head = substr($0, 1, colon - 1)
+      at = index(head, "[at="); if (!at) next
+      rest = substr(head, at + 4)
+      close_at = index(rest, "]"); if (!close_at) next
+      value = substr(rest, 1, close_at - 1)
+      if (index(substr(rest, close_at + 1), "[at=")) next
+      if (value !~ /^[0-9]+$/ || value ~ /^0[0-9]/ || length(value) > 12) next
+      if (value + 0 > now + 0) next
+      age = now - value
+    }
+    END { printf "%s", age }
+  ' "$status_log"
+}
+
+
 status_home_appends_covers() {  # <status-file> <start> <end>
   local start=$2 end=$3 range_start range_end
   case "$start:$end" in *[!0-9:]*) return 1 ;; esac
