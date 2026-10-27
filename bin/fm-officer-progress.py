@@ -408,8 +408,11 @@ def reconcile_merge_asks(rows, problems, deadline, linear):
                 path = urllib.parse.urlsplit(url).path.split("/")
                 endpoint = "/repos/%s/%s/pulls/%s" % (path[1], path[2], path[4])
                 try:
-                    state = json.loads(command(["gh-axi", "api", "GET", endpoint,
-                                                "--jq", '{state: .state, merged: .merged}'], timeout=remaining(deadline)))
+                    raw = command(["gh-axi", "api", "GET", endpoint, "--jq",
+                                   '"PRSTATE " + ({state: .state, merged: .merged} | tojson)'], timeout=remaining(deadline))
+                    if not raw.startswith("PRSTATE "):
+                        raise ValueError("unexpected PR state format")
+                    state = json.loads(raw[8:])
                     if state.get("state") not in ("open", "closed") or type(state.get("merged")) is not bool:
                         raise ValueError("invalid PR state")
                     cache[url] = "merged" if state["merged"] else state["state"]

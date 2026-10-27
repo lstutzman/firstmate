@@ -92,7 +92,10 @@ printf '%s\n' "$*" >> "$PROGRESS_WORLD/calls"
 case "$3" in
   */pulls/[0-9]*)
     number=${3##*/}
-    cat "$PROGRESS_WORLD/pr-$number.json" || exit 1
+    [ "$4" = --jq ] || exit 99
+    # Like gh-axi: a string result prints raw, an object prints as TOON key lines.
+    jq -r "$5"' | if type == "string" then . else to_entries[] | "\(.key): \(.value)" end' \
+      "$PROGRESS_WORLD/pr-$number.json" || exit 1
     exit ;;
 esac
 python3 -I - "$PROGRESS_WORLD/prs.json" <<'PY'
