@@ -1,0 +1,27 @@
+Disposable lab FM_HOME (bin/fm-lab-home.sh create), 4 ship tasks, status logs sized like main's: slarti 9091, deepthought 2815, gilligan 2766, clkeeper 2441 lines (17,113 total).
+
+## bin/fm-home-summary-refresh.sh (publishes fm-fleet-snapshot.sh --secondmate-home-summary)
+[eea2f0f4 change]
+0.39 s elapsed
+exit=0
+{"schema":"fm-secondmate-home-summary.v1","valid":false,"generated":"2026-10-27T15:51:44Z"}
+[8792be7a base]
+21.06 s elapsed
+exit=0
+{"schema":"fm-secondmate-home-summary.v1","valid":false,"generated":"2026-10-27T15:51:45Z"}
+normalized summaries (generated/age fields removed): IDENTICAL
+
+## bin/fm-fleet-snapshot.sh --json
+change: 0.37s  base: 22.0s
+tasks[].hints.open_decisions identical between base and change:
+{"id":"clkeeper","open_count":9}
+{"id":"deepthought","open_count":2}
+{"id":"gilligan","open_count":3}
+{"id":"slarti","open_count":24}
+
+## differential fuzz of status_open_decisions, base vs change: 60 random corpora x 4 kinds x 2 locales (en_GB.UTF-8, C) = 480 runs, 0 byte differences
+
+## new test run against the base library
+ok - only a colon-bearing or keyed line is a decision transition in the fold
+ok - a recorded line stays recorded across a later resolve
+not ok - 10,000-line fold exceeded its five-second budget or failed
