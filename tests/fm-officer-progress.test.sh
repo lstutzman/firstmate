@@ -52,6 +52,12 @@ try:
 except ValueError:
     print(page.read_text())
     sys.exit()
+if cursor == 'second' and state == 'unstarted' and (root / 'rate-left').exists():
+    remaining = int((root / 'rate-left').read_text())
+    if remaining:
+        (root / 'rate-left').write_text(str(remaining - 1))
+    else:
+        doc = {'ok': True, 'data': {'issues': [], 'pagination': {'hasNextPage': False}}}
 types = {'Done': 'completed', 'In Progress': 'started', 'Backlog': 'backlog'}
 data = doc.get('data')
 if isinstance(data, dict) and isinstance(data.get('issues'), list):
@@ -83,6 +89,12 @@ SH
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$PROGRESS_WORLD/calls"
 [ "$1 $2" = 'api GET' ] || exit 99
+case "$3" in
+  */pulls/[0-9]*)
+    number=${3##*/}
+    cat "$PROGRESS_WORLD/pr-$number.json" || exit 1
+    exit ;;
+esac
 python3 -I - "$PROGRESS_WORLD/prs.json" <<'PY'
 import json, sys
 for pr in json.load(open(sys.argv[1])):
@@ -100,7 +112,13 @@ stub_sleep() {
 #!/usr/bin/env bash
 case "\$2" in
   *fm-officer-progress.py) exec "$real_python" -I -c 'import os, runpy, sys, time
-time.sleep = lambda s: s >= 1 and open(os.environ["PROGRESS_WORLD"] + "/sleeps", "a").write("%g\n" % s)
+clock = [time.monotonic()]
+time.monotonic = lambda: clock[0]
+def wait(s):
+    if s < 0.1: return
+    clock[0] += s
+    if s >= 1: open(os.environ["PROGRESS_WORLD"] + "/sleeps", "a").write("%g\n" % s)
+time.sleep = wait
 sys.argv = sys.argv[2:]
 runpy.run_path(sys.argv[0], run_name="__main__")' "\$@" ;;
 esac
@@ -135,8 +153,8 @@ spec = [
     ('PC-62', 'Bug: business health crashes', None, ''),
     ('PC-63', 'Bug: hidden hold', None, '(hold: Lee decides)'),
     ('PC-64', 'Bug: unreadable parent', 'PC-65', ''),
-    ('PC-66', 'Bug: approve pricing', None, ''),
-    ('PC-67', 'Bug: merge a fix', None, ''),
+    ('PC-66', 'Bug: approve pricing', None, 'Ask Lee: approve pricing'),
+    ('PC-67', 'Bug: merge a fix', None, 'Decision for Lee: merge the fix'),
     ('PC-68', 'Bug: business health pricing decision', None, ''),
     ('PC-69', 'Bug: productize results', None, ''),
 ]
@@ -153,13 +171,13 @@ for ident, title, parent, description in spec:
 PYFIX
   run_progress > "$WORLD/output" || fail 'partial coverage run failed'
   local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json"
-  assert_equals 'PC-61 PC-62 PC-69' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
+  assert_equals 'PC-61 PC-62 PC-68 PC-69' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
     'checked review and technical bugs start despite unrelated discovery gaps'
   assert_equals 'code-review linear-title-prefix:scheduled-review' \
     "$(jq -r '.start_requests[0] | .authorising_class + " " + .tag_source' "$file")" 'scheduled review prefix authorises review work'
   assert_equals 'PC-63 PC-64' "$(jq -r '[.excluded[].id] | sort | join(" ")' "$file")" \
     'held and unreadable-parent items never start'
-  assert_equals 'PC-66 PC-67 PC-68' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
+  assert_equals 'PC-66 PC-67' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
     'choice words outside known names and restricted work ask for cards'
   assert_contains "$(jq -r '.asking[].question' "$lane/progress-state.json")" \
     "Needs a Captain's Log card: Bug: merge a fix; Outside automatic-start authority: merge" 'restricted work needs a card'
@@ -177,6 +195,89 @@ PYFIX
   [ ! -s "$lane/$DATE.start-requests.sh" ] || ! grep -q 'PC-61' "$lane/$DATE.start-requests.sh" \
     || fail 'failed PR discovery must not hand off a start'
   pass 'progress: checked items start with partial coverage and choices ask for cards'
+}
+
+test_review_words_and_explicit_asks() {
+  make_world review-words
+  stub_sleep
+  python3 -I - "$WORLD/linear" <<'PYFIX'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+spec = [
+    ('PC-2857', 'Code review finding: delete bypasses validation', 'Outside automatic-start authority: delete'),
+    ('PC-3763', '[scheduled-review] Legal billing error handling', 'Lee decides the legal choice'),
+    ('PC-3764', 'Bug: billing export fails', 'Ask Lee: approve pricing before work starts'),
+    ('PC-3765', 'Bug: credential parser fails', 'Needs Lee to rotate production credentials'),
+    ('PC-3766', 'Bug: delete action skips validation', 'Billing code drops the wrong row'),
+    ('PC-3767', '[scheduled-review] Merge-word classifier drops findings', 'Related closed PR: https://github.com/example/project/pull/4069'),
+]
+issues = []
+for ident, title, description in spec:
+    issue = dict(identifier=ident, title=title, state='Todo', stateType='unstarted', description=description)
+    if ident == 'PC-3767': issue['url'] = 'https://github.com/example/project/pull/4069'
+    issues.append(dict(issue, description=''))
+    (root / (ident + '.json')).write_text(json.dumps(dict(ok=True, data=dict(issue=issue))))
+(root / 'list.json').write_text(json.dumps(dict(ok=True, data=dict(issues=issues))))
+PYFIX
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4069.json"
+  run_progress > "$WORLD/output" || fail 'review word classification failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'PC-2857 PC-3763 PC-3766 PC-3767' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
+    'review findings start when sensitive words describe code or old classifier reasons'
+  assert_equals 'PC-3764 PC-3765' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
+    'explicit Lee asks in full descriptions retain approval boundaries'
+  assert_contains "$(cat "$WORLD/calls")" 'issue view PC-3764 --full' 'full candidate reads check explicit asks'
+  pass 'progress: review findings start and explicit Lee asks remain asks'
+}
+
+test_merge_ask_pr_state() {
+  make_world merge-state
+  stub_sleep
+  linear_item PC-4069 'Bug: payment retry fails'
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## Queued
+
+- [ ] merged - Merge payments fix (kind: captain) (hold: merge word) (hold-kind: captain) (pr: https://github.com/example/project/pull/4069) (linear: PC-4069)
+- [ ] closed - Merge legal fix (kind: captain) (hold: merge word) (hold-kind: captain) (pr: https://github.com/example/project/pull/4078)
+- [ ] open - Ask Lee: Merge payments fix (kind: bug) (pr: https://github.com/example/project/pull/4095)
+- [ ] unread - Merge billing fix (kind: captain) (hold: merge word) (hold-kind: captain) (pr: https://github.com/example/project/pull/4112)
+MD
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4069.json"
+  printf '{"state":"closed","merged":false}\n' > "$WORLD/pr-4078.json"
+  printf '{"state":"open","merged":false}\n' > "$WORLD/pr-4095.json"
+  run_progress > "$WORLD/output" || fail 'merge ask reconciliation failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'open unread' "$(jq -r '[.asks_for_lee[].id, .excluded[].id] | sort | join(" ")' "$file")" \
+    'merged and closed PR merge asks disappear while open and unread asks remain'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'pull/4112' 'failed PR state read is named in coverage'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'a closed merge ask never resurfaces as unchecked linked work'
+  assert_not_contains "$(jq -r '.asking[].key' "$WORLD_HOME/data/officers/progress/progress-state.json")" 'merged' 'merged PR card is absent from page'
+  assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4069' 'merge ask reads exact PR state'
+  pass 'progress: merge asks require a current open PR'
+}
+
+test_linear_rate_limit_recovers() {
+  make_world rate-recovery
+  stub_sleep
+  printf '{"ok":true,"data":{"issues":[],"pagination":{"hasNextPage":true,"endCursor":"second"}}}\n' > "$WORLD/linear/page-first.json"
+  printf '{"ok":false,"error":{"code":"RATE_LIMITED"}}\n' > "$WORLD/linear/page-second.json"
+  printf '3\n' > "$WORLD/linear/rate-left"
+  run_progress > "$WORLD/output" || fail 'rate-limited page recovery failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals '3' "$(jq '.linear_coverage.rate_limit_retries' "$file")" 'run-wide backoff survives more than two rate limits'
+  assert_equals '8' "$(jq '.linear_coverage.pages_fetched' "$file")" 'team and unblocked discovery finish after recovery'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'RATE_LIMITED' 'successful retry completes discovery'
+  assert_contains "$(cat "$WORLD/sleeps")" '120' 'repeated rate limits increase backoff'
+  assert_contains "$(cat "$WORLD/sleeps")" '12' 'remaining requests retain slower pacing'
+  make_world rate-deadline
+  stub_sleep
+  printf '{"ok":false,"error":{"code":"RATE_LIMITED"}}\n' > "$WORLD/linear/list.json"
+  FM_OFFICER_RUN_TIMEOUT=70 run_progress > "$WORLD/output" || fail 'rate-limit deadline reporting failed'
+  file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'run deadline reached before rate-limit retry' 'rate-limit waits preserve the run deadline'
+  assert_equals '1' "$(jq '.linear_coverage.rate_limit_retries' "$file")" 'no retry exceeds the remaining run time'
+  assert_equals '30' "$(paste -sd' ' "$WORLD/sleeps")" 'deadline stops backoff before another long wait'
+  pass 'progress: rate-limited pages recover within the run budget'
 }
 
 test_linear_pagination() {
@@ -209,11 +310,11 @@ test_linear_rate_limit() {
   run_progress > "$WORLD/output" || fail 'rate limit must publish available evidence'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   assert_contains "$(jq -r '.coverage[]' "$file")" 'RATE_LIMITED' 'coverage names the actual failure'
-  assert_equals '30 60' "$(paste -sd' ' "$WORLD/sleeps")" 'rate-limited requests back off 30 then 60 seconds'
-  assert_contains "$(cat "$WORLD/output")" 'retry budget exhausted' 'run log transport includes the cause'
+  assert_equals '30 60 120 120 120 120' "$(paste -sd' ' "$WORLD/sleeps")" 'rate-limited requests share a bounded run-wide backoff'
+  assert_contains "$(cat "$WORLD/output")" 'rate-limit wait budget exhausted' 'run log transport includes the cause'
   assert_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")" 'RATE_LIMITED' 'digest includes cause'
   assert_not_contains "$(cat "$WORLD/output")" 'never echo' 'external messages stay private'
-  assert_equals '2' "$(jq '.linear_coverage.rate_limit_retries' "$file")" 'exhausted retries stop further Linear requests'
+  assert_equals '6' "$(jq '.linear_coverage.rate_limit_retries' "$file")" 'exhausted retries stop further Linear requests'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'incomplete discovery suppresses automatic starts'
   assert_contains "$(jq -r '.excluded[].id' "$file")" 'PC-1' 'successfully fetched items are still classified'
   pass 'progress: rate limiting backs off and reports the precise incomplete read'
@@ -397,7 +498,7 @@ PY
 
 - [ ] carded - Bug: carded elsewhere (kind: bug) (linear: PC-18) (hold: Lee decides) (hold-kind: captain)
 - [ ] blocked-bug - Bug: blocked by another issue (kind: bug) (linear: PC-20) (blocked-by: dependency)
-- [ ] wording - Choose revised wording (kind: bug)
+- [ ] wording - Ask Lee: Choose revised wording (kind: bug)
 - [ ] legal - Change legal text (kind: security)
 - [ ] payments - Change payments behavior (kind: bug)
 - [ ] business - Make a business decision (kind: fleet) (requested-by: Lee)
@@ -413,17 +514,17 @@ json.dump(prs,open(path,'w'))
 PY
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   run_progress >/dev/null || fail 'linear discovery failed'
-  assert_equals 'PC-14 PC-19 PC-16 PC-15 PC-12' \
+  assert_equals 'PC-14 PC-19 PC-16 PC-15  PC-21 PC-12' \
     "$(jq -r '[.start_requests[].linear_id] | join(" ")' "$file")" \
     'security then review/bugs by severity then deeply nested requested work'
-  assert_equals 'linear-title-prefix:CVE linear-title-prefix:Security linear-title-prefix:Code review linear-title-prefix:Bug requested-root:PC-10' \
+  assert_equals 'linear-title-prefix:CVE linear-title-prefix:Security linear-title-prefix:Code review linear-title-prefix:Bug backlog requested-root:PC-10 requested-root:PC-10' \
     "$(jq -r '[.start_requests[].tag_source] | join(" ")' "$file")" 'each start names the source of its authority'
   assert_equals '0' "$(jq '.unclassified' "$file")" 'every open item in the tree is classified'
   assert_equals 'PC-10' "$(jq -r '[.doing[].id] | join(" ")' "$file")" 'the requested root in progress is doing'
   assert_equals 'requested-feature' \
     "$(jq -r '.start_requests[] | select(.linear_id == "PC-12") | .authorising_class' "$file")" \
     'a leaf inherits the recorded root request across completed parents'
-  assert_equals 'PC-13 PC-21 business legal payments product wording' \
+  assert_equals 'PC-13 business legal product wording' \
     "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" 'choices need Lee, including descendants'
   assert_equals 'PC-17 blocked-bug carded open-branch' \
     "$(jq -r '[.excluded[].id] | sort | join(" ")' "$file")" 'PRs, blocks, and existing cards exclude starts'
@@ -761,6 +862,9 @@ PY
   pass 'progress: reads other homes and status without acting on them'
 }
 
+test_linear_rate_limit_recovers
+test_merge_ask_pr_state
+test_review_words_and_explicit_asks
 test_partial_coverage_starts
 test_linear_pagination
 test_linear_rate_limit

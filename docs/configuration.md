@@ -958,17 +958,24 @@ Unclassified records carry `tag_source: null`.
 `requested` records an existing Lee request; registering a root never authorizes inventing a new feature.
 Within each class tier, Linear priority or backlog severity ranks urgent/critical, high, medium, low, then unspecified; identifiers and home names break ties.
 Open work with no recorded class is not listed and never becomes an ask; the run reports only its count, `unclassified`, and the digest prints that count on one line.
-An unclassified item whose title names a Lee choice is asked only while it is open and unstarted; in flight it is counted as unclassified, and once finished it is dropped.
+An unclassified item that explicitly asks Lee for a decision or action is asked only while it is open and unstarted; in flight it is counted as unclassified, and once finished it is dropped.
 This slice uses `model: none` throughout.
 
 Held, blocked, already carded, in-flight, completed, or open-PR-linked work is excluded from starts.
 Unresolved keyed status calls remain open across later `working` lines.
 The same Linear identifier produces at most one start request across homes.
-Whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title go to `asks_for_lee`, excluding matches within known feature names such as Business Health.
-A separate choice word outside the name still requires a card.
-Titles naming merges, production, credentials, data rewrites, destructive actions, and spending are outside automatic-start authority and also go to `asks_for_lee`.
-Descriptions and ancestors are not matched, so ordinary bug text does not divert authorized work.
-These conservative word rules can overexclude a technical task; firstmate reconciles its evidence rather than widening authority automatically.
+Code-review findings and bugs start under their recorded class even when their titles or descriptions mention business, product, wording, legal, payments, billing, pricing, or restricted operations.
+Only an explicit ask overrides that classification: an `Ask Lee:`, `Ask for Lee:`, `Lee ask:`, `Decision:`, `Decision for Lee:`, `Need Lee:`, or `Needs Lee:` line, or a `Needs Lee to ...` marker, identifies the decision or action Lee must take.
+Bulleted lines and Markdown headings or bold markers may wrap those prefixes.
+Words in an old classifier reason, such as “Outside automatic-start authority: delete” or “Lee decides the legal choice,” do not constitute an ask.
+For other classes, a title that directly requests choosing, deciding, approving, or making a decision, changing legal text or wording, merging, deploying, rotating, deleting, dropping, force-pushing, purchasing, or spending also identifies an ask.
+Within those requests, whole-word business, product, wording, legal, payments, billing, and pricing matches name the choice, excluding known feature names such as Business Health; restricted words name the operation outside automatic-start authority.
+Other explicit asks retain a generic decision-or-action reason.
+Production actions, credential changes, and payments merges requested from Lee remain asks; descriptions of defects in that code do not.
+Ancestors are not matched for choice words, while their recorded holds and dependencies still exclude starts.
+Before publishing a merge-word ask or a direct merge request with a GitHub PR URL, the officer reads that PR through `gh-axi` and drops the item when every referenced PR is merged or closed.
+An unreadable PR remains listed, and coverage names the failed PR read rather than treating it as closed.
+This reconciliation changes only the officer's report, never the underlying task or Captain's Log card.
 For a queued local task, its backlog identifies the home; a Linear-only item defaults to the primary home until ordinary intake routes it by registered scope.
 
 When coverage is complete and no startable or in-flight work in the start classes remains, the officer rotates one extra bug sweep, code review, librarian pass, or ideation pass by run date.
