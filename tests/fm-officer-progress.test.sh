@@ -210,6 +210,9 @@ spec = [
     ('PC-3765', 'Bug: credential parser fails', 'Needs Lee to rotate production credentials'),
     ('PC-3766', 'Bug: delete action skips validation', 'Billing code drops the wrong row'),
     ('PC-3767', '[scheduled-review] Merge-word classifier drops findings', 'Related closed PR: https://github.com/example/project/pull/4069'),
+    ('PC-3768', 'Security: leaked production credential must be rotated', ''),
+    ('PC-3769', 'Bug: stale cache', 'Decision: keep the old API, fix in follow-up'),
+    ('PC-3770', 'Bug: slow report', 'Decision-making notes: Lee chose option A on 20 Oct'),
 ]
 issues = []
 for ident, title, description in spec:
@@ -222,10 +225,12 @@ PYFIX
   printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4069.json"
   run_progress > "$WORLD/output" || fail 'review word classification failed'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
-  assert_equals 'PC-2857 PC-3763 PC-3766 PC-3767' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
-    'review findings start when sensitive words describe code or old classifier reasons'
-  assert_equals 'PC-3764 PC-3765' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
-    'explicit Lee asks in full descriptions retain approval boundaries'
+  assert_equals 'PC-2857 PC-3763 PC-3766 PC-3767 PC-3769 PC-3770' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
+    'review findings start when sensitive words describe code, old classifier reasons, or recorded decisions'
+  assert_equals 'PC-3764 PC-3765 PC-3768' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
+    'explicit Lee asks and restricted security titles retain approval boundaries'
+  assert_equals 'Outside automatic-start authority: production' \
+    "$(jq -r '.asks_for_lee[] | select(.id == "PC-3768") | .reason' "$file")" 'security titles keep the restricted-word gate'
   assert_contains "$(cat "$WORLD/calls")" 'issue view PC-3764 --full' 'full candidate reads check explicit asks'
   pass 'progress: review findings start and explicit Lee asks remain asks'
 }
@@ -233,7 +238,16 @@ PYFIX
 test_merge_ask_pr_state() {
   make_world merge-state
   stub_sleep
-  linear_item PC-4069 'Bug: payment retry fails'
+  python3 -I - "$WORLD/linear" <<'PYFIX'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+issues = [dict(identifier='PC-4069', title='Bug: payment retry fails', description=''),
+          dict(identifier='PC-4200', title='Pricing fix', description='Merge word needed: https://github.com/example/project/pull/4200')]
+for issue in issues:
+    issue.update(state='Todo', stateType='unstarted', priority=0)
+    (root / (issue['identifier'] + '.json')).write_text(json.dumps(dict(ok=True, data=dict(issue=dict(issue, parent=None)))))
+(root / 'list.json').write_text(json.dumps(dict(ok=True, data=dict(issues=issues))))
+PYFIX
   cat > "$WORLD_HOME/data/backlog.md" <<'MD'
 ## Queued
 
@@ -241,19 +255,41 @@ test_merge_ask_pr_state() {
 - [ ] closed - Merge legal fix (kind: captain) (hold: merge word) (hold-kind: captain) (pr: https://github.com/example/project/pull/4078)
 - [ ] open - Ask Lee: Merge payments fix (kind: bug) (pr: https://github.com/example/project/pull/4095)
 - [ ] unread - Merge billing fix (kind: captain) (hold: merge word) (hold-kind: captain) (pr: https://github.com/example/project/pull/4112)
+- [ ] linked - Merge pricing fix (kind: captain) (hold: merge word) (hold-kind: captain) (linear: PC-4200)
 MD
   printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4069.json"
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4200.json"
   printf '{"state":"closed","merged":false}\n' > "$WORLD/pr-4078.json"
   printf '{"state":"open","merged":false}\n' > "$WORLD/pr-4095.json"
   run_progress > "$WORLD/output" || fail 'merge ask reconciliation failed'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
-  assert_equals 'open unread' "$(jq -r '[.asks_for_lee[].id, .excluded[].id] | sort | join(" ")' "$file")" \
-    'merged and closed PR merge asks disappear while open and unread asks remain'
+  assert_equals 'closed open unread' "$(jq -r '[.asks_for_lee[].id, .excluded[].id] | sort | join(" ")' "$file")" \
+    'merged PR merge asks disappear, including PRs named only in linked Linear text, while other asks remain'
+  assert_equals 'PR closed unmerged: check whether still needed' \
+    "$(jq -r '[.asks_for_lee[], .excluded[]] | .[] | select(.id == "closed") | .reason' "$file")" 'closed unmerged PR asks are relabelled'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'pull/4112' 'failed PR state read is named in coverage'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'a closed merge ask never resurfaces as unchecked linked work'
   assert_not_contains "$(jq -r '.asking[].key' "$WORLD_HOME/data/officers/progress/progress-state.json")" 'merged' 'merged PR card is absent from page'
   assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4069' 'merge ask reads exact PR state'
   pass 'progress: merge asks require a current open PR'
+}
+
+test_github_reads_respect_deadline() {
+  make_world github-deadline
+  stub_sleep
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## Queued
+
+- [ ] merged - Merge payments fix (kind: captain) (hold: merge word) (hold-kind: captain) (pr: https://github.com/example/project/pull/4069)
+MD
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4069.json"
+  FM_OFFICER_RUN_TIMEOUT=30 run_progress > "$WORLD/output" || fail 'deadline-bounded GitHub reads failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'pull/4069 (run deadline reached)' 'skipped PR state read is a named gap'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'open PR discovery unavailable' 'skipped open PR listing is a named gap'
+  assert_not_contains "$(cat "$WORLD/calls" 2>/dev/null)" 'pulls' 'no GitHub read starts after the run deadline'
+  assert_equals 'merged' "$(jq -r '.excluded[].id' "$file")" 'an unchecked merge ask stays listed'
+  pass 'progress: GitHub reads stop at the run deadline and publish the gap'
 }
 
 test_linear_rate_limit_recovers() {
@@ -479,6 +515,7 @@ spec = [
  ('PC-20', 'Bug: blocked by another issue', 'Todo', None, 1),
  ('PC-21', 'Implement pricing child', 'Todo', 'PC-13', 1),
  ('PC-22', 'Old finished work', 'Done', None, 1),
+ ('PC-23', 'Implement the leaf screen', 'Todo', 'PC-13', 1),
 ]
 listed = []
 for ident, title, state, parent, priority in spec:
@@ -514,20 +551,22 @@ json.dump(prs,open(path,'w'))
 PY
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   run_progress >/dev/null || fail 'linear discovery failed'
-  assert_equals 'PC-14 PC-19 PC-16 PC-15  PC-21 PC-12' \
+  assert_equals 'PC-14 PC-19 PC-16 PC-15  PC-12' \
     "$(jq -r '[.start_requests[].linear_id] | join(" ")' "$file")" \
     'security then review/bugs by severity then deeply nested requested work'
-  assert_equals 'linear-title-prefix:CVE linear-title-prefix:Security linear-title-prefix:Code review linear-title-prefix:Bug backlog requested-root:PC-10 requested-root:PC-10' \
+  assert_equals 'linear-title-prefix:CVE linear-title-prefix:Security linear-title-prefix:Code review linear-title-prefix:Bug backlog requested-root:PC-10' \
     "$(jq -r '[.start_requests[].tag_source] | join(" ")' "$file")" 'each start names the source of its authority'
   assert_equals '0' "$(jq '.unclassified' "$file")" 'every open item in the tree is classified'
   assert_equals 'PC-10' "$(jq -r '[.doing[].id] | join(" ")' "$file")" 'the requested root in progress is doing'
   assert_equals 'requested-feature' \
     "$(jq -r '.start_requests[] | select(.linear_id == "PC-12") | .authorising_class' "$file")" \
     'a leaf inherits the recorded root request across completed parents'
-  assert_equals 'PC-13 business legal product wording' \
+  assert_equals 'PC-13 PC-21 business legal product wording' \
     "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" 'choices need Lee, including descendants'
-  assert_equals 'PC-17 blocked-bug carded open-branch' \
+  assert_equals 'PC-17 PC-23 blocked-bug carded open-branch' \
     "$(jq -r '[.excluded[].id] | sort | join(" ")' "$file")" 'PRs, blocks, and existing cards exclude starts'
+  assert_contains "$(jq -r '.excluded[] | select(.id == "PC-23") | .reason' "$file")" 'PC-13' \
+    "a descendant waits for its ancestor's open Lee ask"
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'no filler while authorised work is ready'
   assert_not_contains "$(cat "$WORLD/calls")" 'issue view PC-22' 'finished issues outside a tree are never read one by one'
   assert_contains "$(cat "$WORLD/calls")" 'issue view PC-11' 'finished ancestors are still read for lineage'
@@ -864,6 +903,7 @@ PY
 
 test_linear_rate_limit_recovers
 test_merge_ask_pr_state
+test_github_reads_respect_deadline
 test_review_words_and_explicit_asks
 test_partial_coverage_starts
 test_linear_pagination

@@ -965,16 +965,18 @@ Held, blocked, already carded, in-flight, completed, or open-PR-linked work is e
 Unresolved keyed status calls remain open across later `working` lines.
 The same Linear identifier produces at most one start request across homes.
 Code-review findings and bugs start under their recorded class even when their titles or descriptions mention business, product, wording, legal, payments, billing, pricing, or restricted operations.
-Only an explicit ask overrides that classification: an `Ask Lee:`, `Ask for Lee:`, `Lee ask:`, `Decision:`, `Decision for Lee:`, `Need Lee:`, or `Needs Lee:` line, or a `Needs Lee to ...` marker, identifies the decision or action Lee must take.
+Only an explicit ask overrides that classification: an `Ask Lee:`, `Ask for Lee:`, `Lee ask:`, `Decision for Lee:`, `Need Lee:`, or `Needs Lee:` line (a spaced ` - ` may replace the colon), or a `Needs Lee to ...` marker, identifies the decision or action Lee must take.
 Bulleted lines and Markdown headings or bold markers may wrap those prefixes.
+A bare `Decision:` line records a decision already made and is not an ask.
 Words in an old classifier reason, such as “Outside automatic-start authority: delete” or “Lee decides the legal choice,” do not constitute an ask.
-For other classes, a title that directly requests choosing, deciding, approving, or making a decision, changing legal text or wording, merging, deploying, rotating, deleting, dropping, force-pushing, purchasing, or spending also identifies an ask.
-Within those requests, whole-word business, product, wording, legal, payments, billing, and pricing matches name the choice, excluding known feature names such as Business Health; restricted words name the operation outside automatic-start authority.
+For requested-feature, requested-fleet, security, CVE, and unclassified items, whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title still go to `asks_for_lee`, excluding matches within known feature names such as Business Health.
+Titles of those items naming merges, production, credentials, rotation, data rewrites, destructive actions, and spending are outside automatic-start authority and also go to `asks_for_lee`.
 Other explicit asks retain a generic decision-or-action reason.
-Production actions, credential changes, and payments merges requested from Lee remain asks; descriptions of defects in that code do not.
-Ancestors are not matched for choice words, while their recorded holds and dependencies still exclude starts.
-Before publishing a merge-word ask or a direct merge request with a GitHub PR URL, the officer reads that PR through `gh-axi` and drops the item when every referenced PR is merged or closed.
+An item whose open ancestor has its own Lee ask is held in `excluded` until Lee answers; its recorded holds and dependencies also still exclude starts.
+Before publishing a merge-word ask or a direct merge request with a GitHub PR URL, the officer reads that PR through `gh-axi`, including PR URLs found in a local card's linked Linear description, and drops the item only when every referenced PR is merged.
+A PR closed without merging keeps the item listed with the reason “PR closed unmerged: check whether still needed”.
 An unreadable PR remains listed, and coverage names the failed PR read rather than treating it as closed.
+Open-PR and merge-ask PR reads share the run deadline; once it has passed they are skipped and named as coverage gaps.
 This reconciliation changes only the officer's report, never the underlying task or Captain's Log card.
 For a queued local task, its backlog identifies the home; a Linear-only item defaults to the primary home until ordinary intake routes it by registered scope.
 

@@ -19,7 +19,7 @@ issue's state, team, assignee, and project with separate API requests, so one
 Requests start at least 0.25 seconds apart. Rate limits back off 30, 60, then
 120 seconds (capped), sharing a 600-second backoff budget across the run.
 After a limit, requests retain a minimum interval of one tenth the backoff.
-Reads and waits respect FM_OFFICER_RUN_TIMEOUT (default 3600), reserving 30
+Linear and GitHub reads and waits respect FM_OFFICER_RUN_TIMEOUT (default 3600), reserving 30
 seconds for publication; exhaustion is a named coverage gap.
 Hierarchy reads visit only configured requested roots and their descendants.
 A 50-child response is incomplete because linear-axi exposes no child cursor.
@@ -160,8 +160,8 @@ def scan_home(home):
     return {"home": home, "rows": rows, "problems": problems}
 
 
-def command(args, input_bytes=None):
-    proc = subprocess.run(args, input=input_bytes, capture_output=True, timeout=120, check=False)
+def command(args, input_bytes=None, timeout=120):
+    proc = subprocess.run(args, input=input_bytes, capture_output=True, timeout=timeout, check=False)
     if proc.returncode:
         # External stderr may contain credentials; keep the failure structural.
         raise RuntimeError("%s read failed (exit %d)" % (args[0], proc.returncode))
@@ -201,11 +201,12 @@ class LinearDiscovery:
             time.sleep(wait)
             self.stats["requests"] += 1
             self.last_request = time.monotonic()
+            timeout = min(120, self.deadline - time.monotonic())
             try:
                 proc = subprocess.run(["linear-axi", "issue"] + args + ["--output", "json"],
-                                      capture_output=True, timeout=min(120, self.deadline - time.monotonic()), check=False)
+                                      capture_output=True, timeout=timeout, check=False)
             except subprocess.TimeoutExpired:
-                raise RuntimeError("timeout after 120 seconds") from None
+                raise RuntimeError("timeout after %.0f seconds" % timeout) from None
             except OSError:
                 raise RuntimeError("linear-axi could not be executed") from None
             try:
@@ -369,13 +370,20 @@ def load_home(source):
     return doc
 
 
-def open_prs(repos):
+def remaining(deadline):
+    left = min(120, deadline - time.monotonic())
+    if left <= 0:
+        raise RuntimeError("run deadline reached")
+    return left
+
+
+def open_prs(repos, deadline):
     prs = []
     for repo in repos:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
             raise RuntimeError("repos must contain comma-separated owner/repo names")
         raw = command(["gh-axi", "api", "GET", "/repos/" + repo + "/pulls?state=open&per_page=100",
-                       "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'])
+                       "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'], timeout=remaining(deadline))
         for line in raw.splitlines():
             if not line.startswith("PRJSON "):
                 raise RuntimeError("GitHub read returned an unexpected PR format")
@@ -383,29 +391,35 @@ def open_prs(repos):
     return prs
 
 
-def reconcile_merge_asks(rows, problems, cache):
+def reconcile_merge_asks(rows, problems, deadline, linear):
+    """Mark merge asks whose PRs all merged, or any closed unmerged; local rows read linked Linear text."""
+    cache = {}
     for row in rows:
-        text = row["title"] + "\n" + row.get("description", "") + "\n" + row["tags"].get("hold", "")
-        request = lee_request_text(row) + "\n" + row["tags"].get("hold", "")
+        description = row.get("description", "") + "".join(
+            "\n" + linear[i].get("description", "") for i in row["linear_ids"] if i in linear and linear[i] is not row)
+        hold = row["tags"].get("hold", "")
+        request = lee_request_text(dict(row, description=description)) + "\n" + hold
         merge_ask = re.search(r"\bmerg(?:e|ing)(?:[- ]word)?\b", request, re.I)
         urls = set(re.findall(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+\b",
-                              text + "\n" + row.get("link", ""))) if merge_ask else set()
-        finished = []
+                              "\n".join((row["title"], description, hold, row.get("link", ""))))) if merge_ask else set()
+        states = []
         for url in sorted(urls):
             if url not in cache:
                 path = urllib.parse.urlsplit(url).path.split("/")
                 endpoint = "/repos/%s/%s/pulls/%s" % (path[1], path[2], path[4])
                 try:
                     state = json.loads(command(["gh-axi", "api", "GET", endpoint,
-                                                "--jq", '{state: .state, merged: .merged}']))
+                                                "--jq", '{state: .state, merged: .merged}'], timeout=remaining(deadline)))
                     if state.get("state") not in ("open", "closed") or type(state.get("merged")) is not bool:
                         raise ValueError("invalid PR state")
-                    cache[url] = state["state"] == "closed" or state["merged"]
-                except (OSError, ValueError, AttributeError, RuntimeError, subprocess.TimeoutExpired):
-                    cache[url] = False
-                    problems.append("GitHub merge-ask PR state unavailable: " + url)
-            finished.append(cache[url])
-        row["finished_merge_ask"] = bool(finished) and all(finished)
+                    cache[url] = "merged" if state["merged"] else state["state"]
+                except (OSError, ValueError, AttributeError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                    cache[url] = None
+                    problems.append("GitHub merge-ask PR state unavailable: " + url
+                                    + (" (%s)" % exc if str(exc) == "run deadline reached" else ""))
+            states.append(cache[url])
+        row["finished_merge_ask"] = bool(states) and all(s == "merged" for s in states)
+        row["closed_unmerged_pr"] = "closed" in states
 
 
 def classify(row):
@@ -430,7 +444,7 @@ def classify(row):
 def lee_request_text(row):
     """Select requested decisions/actions, never incidental finding vocabulary."""
     title = re.sub(r"^(?:bug(?: report)?|security)\s*:\s*", "", row["title"], flags=re.I)
-    explicit = re.compile(r"^\s*(?:[-*]\s*)?(?:ask(?: for)? Lee|decision(?: for Lee)?|Lee ask|needs? Lee)(?:\s*[:\-]\s*|\s+to\s+)(.+)", re.I)
+    explicit = re.compile(r"^\s*(?:[-*]\s*)?(?:ask(?: for)? Lee|decision for Lee|Lee ask|needs? Lee)(?:\s*:\s*|\s+-\s+|\s+to\s+)(.+)", re.I)
     asks = []
     for line in (title + "\n" + row.get("description", "")).splitlines():
         match = explicit.match(line.lstrip("# ").replace("**", ""))
@@ -438,12 +452,7 @@ def lee_request_text(row):
             asks.append(match[1])
     # Review and bug titles describe findings; only explicit asks override them.
     if (row.get("authorising_class") or classify(row)[0]) not in ("code-review", "bug"):
-        if (re.match(r"(?:choose|decide|approve)\b|make\b.*\bdecision\b", title, re.I)
-                and (CHOICES.search(KNOWN_NAMES.sub("", title)) or RESTRICTED.search(title))):
-            asks.append(title)
-        elif re.match(r"(?:change|revise)\b.*\b(?:legal|wording)\b", title, re.I):
-            asks.append(title)
-        elif re.match(r"(?:merge|deploy|rotate|delete|drop|force[- ]push|purchase|spend)\b", title, re.I):
+        if CHOICES.search(KNOWN_NAMES.sub("", title)) or RESTRICTED.search(title):
             asks.append(title)
     return "\n".join(asks)
 
@@ -521,6 +530,8 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         row["authorising_class"] = authorised
         row["tag_source"] = source
         ask = lee_ask(row)
+        ancestor_ask = next((r for r in chain[1:] if r.get("state") not in FINISHED and r.get("section") != "done"
+                             and not r.get("finished_merge_ask") and lee_ask(r)), None)
         held = any(any(k in r["tags"] for k in ("hold", "hold-kind", "blocked-by", "blocked", "deps"))
                    or r.get("open_calls") or r.get("linear_blocked") for r in chain)
         copies = [copy for ident in row["linear_ids"] for copy in linked.get(ident, [])]
@@ -554,6 +565,9 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         elif ask:
             row["reason"] = ask
             doc["asks_for_lee"].append(row)
+        elif ancestor_ask:
+            row["reason"] = "Held until Lee answers the ancestor's ask: " + ancestor_ask["id"]
+            doc["excluded"].append(row)
         elif state and state not in UNSTARTED:
             row["reason"] = "Linear state is not unstarted: " + state
             doc["excluded"].append(row)
@@ -566,6 +580,8 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         else:
             row["reason"] = "Unstarted work authorised by " + row["authorising_class"]
             doc["start_requests"].append(row)
+        if row.get("closed_unmerged_pr") and any(doc[k] and doc[k][-1] is row for k in ("asks_for_lee", "excluded")):
+            row["reason"] = "PR closed unmerged: check whether still needed"
     doc["start_requests"].sort(key=lambda r: (CLASS_ORDER[r["authorising_class"]],
                                              r["priority"] or 5, r["id"], r["owner_home"]))
     seen = set()
@@ -835,7 +851,7 @@ def main(argv):
     except RuntimeError as exc:
         problems.append("Linear discovery: " + str(exc))
     try:
-        prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()])
+        prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()], discovery.deadline)
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         blockers.append("open PR discovery unavailable or incomplete")
     problems = ["Linear labels not readable by linear-axi"] + problems
@@ -855,10 +871,8 @@ def main(argv):
                     unchecked[identifier] = failure
     discovery.stats["descriptions_truncated"] = sum(r["description_truncated"] for r in rows.values())
     discovery.stats["unverified_starts"] = len(unchecked)
-    pr_states = {}
-    for snapshot in snapshots:
-        reconcile_merge_asks(snapshot["rows"], problems, pr_states)
-    reconcile_merge_asks(list(rows.values()), problems, pr_states)
+    reconcile_merge_asks([r for snapshot in snapshots for r in snapshot["rows"]] + list(rows.values()),
+                         problems, discovery.deadline, rows)
     doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
