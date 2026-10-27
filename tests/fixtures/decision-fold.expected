@@ -30,12 +30,14 @@ $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefa
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
 === failed terminals (unknown)
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== invalid bytes (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
 === colonless terminal (unknown)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === done terminals (unknown)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === final (unknown)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'
 === keyed opens (ship)
 $'alpha\tneeds-decision\tfirst choice\nbeta\tblocked\ttoken missing.'
 === repeated key moves last (ship)
@@ -68,8 +70,10 @@ $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefa
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
 === failed terminals (ship)
 .
+=== invalid bytes (ship)
+$'a\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
 === colonless terminal (ship)
-$'final\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'a\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === done terminals (ship)
 .
 === final (ship)
@@ -106,8 +110,10 @@ $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefa
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
 === failed terminals (scout)
 .
+=== invalid bytes (scout)
+$'a\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
 === colonless terminal (scout)
-$'final\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'a\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === done terminals (scout)
 .
 === final (scout)
@@ -144,9 +150,11 @@ $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefa
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
 === failed terminals (secondmate)
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== invalid bytes (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
 === colonless terminal (secondmate)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === done terminals (secondmate)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === final (secondmate)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'

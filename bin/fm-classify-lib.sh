@@ -1026,13 +1026,17 @@ status_open_decisions() {  # <status-file> [<kind>]
   FM_FOLD_RESERVED="${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT}" \
   awk '
     function trim_left(s) { sub(/^[[:space:]]+/, "", s); return s }
-    function head(s) { sub(/:.*/, "", s); return s }
+    function upto(s, c,    i) { i = index(s, c); return i ? substr(s, 1, i - 1) : s }
+    function head(s) { return upto(s, ":") }
+    function has_token(s, opener,    i) {
+      i = index(s, opener)
+      return i && index(substr(s, i + length(opener)), "]")
+    }
     function corr_token(s) {
       return length(s) == 21 && s ~ /^corr=[0-9A-Fa-f]+$/
     }
     function verb(s,    words, n, i, out) {
-      s = head(s)
-      sub(/\[.*/, "", s)
+      s = upto(head(s), "[")
       s = trim_left(s)
       sub(/[[:space:]]+$/, "", s)
       if (!index(s, "corr=")) return s
@@ -1063,7 +1067,7 @@ status_open_decisions() {  # <status-file> [<kind>]
     function epoch(s,    rest, value, finish) {
       if (!index(s, ":")) return ""
       s = head(s)
-      if (!match(s, /\[at=[^]]*\]/)) return ""
+      if (!has_token(s, "[at=")) return ""
       rest = substr(s, index(s, "[at=") + 4)
       finish = index(rest, "]")
       value = substr(rest, 1, finish - 1)
@@ -1119,7 +1123,7 @@ status_open_decisions() {  # <status-file> [<kind>]
           v != "failed" && v != resolve && v != held) next
       s = unstamped($0)
       has_colon = index(s, ":")
-      if (!has_colon && s !~ /\[key=[^]]*\]/) next
+      if (!has_colon && !has_token(s, "[key=")) next
       if (has_colon && (v == "done" || v == "failed") &&
           (kind == "ship" || kind == "scout")) {
         for (key in records) delete records[key]
@@ -1129,10 +1133,10 @@ status_open_decisions() {  # <status-file> [<kind>]
       h = head(s)
       note = has_colon ? trim_left(substr(s, has_colon + 1)) : s
       key = ""
-      if (h ~ /\[key=[^]]*\]/) {
+      if (has_token(h, "[key=")) {
         key = raw_key(h)
         if (!slug(key)) next
-      } else if (has_colon && note ~ /^\[key=[^]]*\]/) {
+      } else if (has_colon && index(note, "[key=") == 1 && has_token(note, "[key=")) {
         key = raw_key(note)
         if (!slug(key)) next
         note = trim_left(substr(note, length(key) + 7))
@@ -1180,7 +1184,7 @@ status_open_decisions() {  # <status-file> [<kind>]
         }
       }
     }
-  ' < "$f"
+  ' < "$f" 2>/dev/null
 }
 
 # Resolve the log's current declaration at one boundary for crew-state consumers.

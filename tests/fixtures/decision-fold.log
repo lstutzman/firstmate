@@ -60,6 +60,13 @@ needs-decision [at=1791843600]: at cutover
 === cutover
 failed [at=10:30]: terminal
 === failed terminals
+needs-decision [key=a]: café broken bytes
+blocked [at=1792000000] corr=0123456789abcdef: ÿþ x
+needs-decision [key=bé]: invalid byte in key
+blocked: [key=cé] invalid byte in note key
+needs-decisioné [key=d]: invalid byte in verb
+needs-decision [at=17920é00]: invalid byte in stamp
+=== invalid bytes
 needs-decision [key=final]: final open
 blocked [key=tail]: trailing spaces<SP><SP>
 done [key=final]
