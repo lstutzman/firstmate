@@ -124,6 +124,50 @@ json.dump({'ok':True,'data':{'issue':dict(issue,parent=None,description='')}},op
 PY
 }
 
+test_partial_coverage_starts() {
+  make_world partial-starts
+  stub_sleep
+  python3 -I - "$WORLD/linear" <<'PYFIX'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+spec = [
+    ('PC-61', '[scheduled-review] Check boundaries', None, ''),
+    ('PC-62', 'Bug: business health crashes', None, ''),
+    ('PC-63', 'Bug: hidden hold', None, '(hold: Lee decides)'),
+    ('PC-64', 'Bug: unreadable parent', 'PC-65', ''),
+    ('PC-66', 'Bug: approve pricing', None, ''),
+    ('PC-67', 'Bug: merge a fix', None, ''),
+    ('PC-68', 'Bug: business health pricing decision', None, ''),
+    ('PC-69', 'Bug: productize results', None, ''),
+]
+listed = []
+for ident, title, parent, description in spec:
+    issue = dict(identifier=ident, title=title, state='Todo', stateType='unstarted')
+    listed.append(issue)
+    (root / (ident + '.json')).write_text(json.dumps(dict(ok=True, data=dict(
+        issue=dict(issue, parent=parent, description=description)))))
+(root / 'list.json').write_text(json.dumps(dict(ok=True, data=dict(issues=listed))))
+(root / 'PC-65.json').write_text(json.dumps(dict(ok=False, error=dict(code='NOT_FOUND'))))
+# A separate requested tree fails, without invalidating checked candidates.
+(root / 'PC-10.json').write_text(json.dumps(dict(ok=False, error=dict(code='NOT_FOUND'))))
+PYFIX
+  run_progress > "$WORLD/output" || fail 'partial coverage run failed'
+  local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'PC-61 PC-62 PC-69' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
+    'checked review and technical bugs start despite unrelated discovery gaps'
+  assert_equals 'code-review linear-title-prefix:scheduled-review' \
+    "$(jq -r '.start_requests[0] | .authorising_class + " " + .tag_source' "$file")" 'scheduled review prefix authorises review work'
+  assert_equals 'PC-63 PC-64 PC-67' "$(jq -r '[.excluded[].id] | sort | join(" ")' "$file")" \
+    'held, unreadable-parent, and restricted items never start'
+  assert_equals 'PC-66 PC-68' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
+    'only actual choice words outside known names ask for cards'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'start check PC-64: NOT_FOUND' 'unreadable candidate is named'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels not readable by linear-axi' 'missing label support is explicit'
+  assert_contains "$(jq -r '.asking[].question' "$lane/progress-state.json")" "Needs a Captain's Log card:" 'choices name the needed card'
+  assert_equals 'null' "$(jq -r '.filler' "$file")" 'partial coverage never proves idleness'
+  pass 'progress: checked items start with partial coverage and choices ask for cards'
+}
+
 test_linear_pagination() {
   make_world pagination
   printf '{"ok":true,"data":{"issues":[{"identifier":"PC-1","title":"Bug: first","state":"Todo"}],"pagination":{"hasNextPage":true,"endCursor":"second"}}}\n' > "$WORLD/linear/page-first.json"
@@ -384,14 +428,14 @@ test_filler_and_failure_coverage() {
   make_world filler
   local file="$WORLD_HOME/data/officers/progress/$DATE.json" out
   out=$(run_progress) || fail 'empty run failed'
-  assert_equals '1' "$(jq -r '.filler | length > 0 | if . then 1 else 0 end' "$file")" 'idle fleet proposes filler'
-  assert_contains "$out" "DIGEST $DATE 1" 'filler generates a digest for firstmate'
-  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'filler is not a ranked work item'
-  assert_equals 'start' "$(jq -r '.filler.execute.action' "$file")" 'filler is an authorised start'
+  assert_equals 'null' "$(jq -r '.filler' "$file")" 'unreadable labels cannot prove an idle fleet'
+  assert_contains "$out" "DIGEST $DATE 1" 'the label gap generates a digest for firstmate'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'idle evidence creates no ranked work item'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels not readable by linear-axi' 'idle evidence names missing label support'
   printf 'bad response\n' > "$WORLD/linear/list.json"
   run_progress >/dev/null || fail 'coverage gaps must still publish state'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'missing evidence never looks like an idle fleet'
-  assert_equals '6' "$(jq '.coverage | length' "$file")" 'every failed listing pass is reported'
+  assert_equals '7' "$(jq '.coverage | length' "$file")" 'every failed listing pass and the label gap are reported'
   pass 'progress: proposes filler only with complete idle evidence'
 }
 
@@ -429,8 +473,8 @@ PY
   jq '.data.issues |= map(select(.identifier != "PC-5"))' "$WORLD/linear/list.json" > "$WORLD/list.new"
   mv "$WORLD/list.new" "$WORLD/linear/list.json"
   run_progress >/dev/null || fail 'idle free-text Linear run failed'
-  assert_equals 'standing-authority:filler' "$(jq -r '.filler // {} | .tag_source // "none"' "$file")" \
-    'a moving choice item outside the start classes does not block filler'
+  assert_equals '0' "$(jq '.asks_for_lee | length' "$file")" 'moving choice work never becomes a new card'
+  assert_equals 'null' "$(jq -r '.filler' "$file")" 'missing label support still prevents filler'
   printf 'kind=ship\ntitle=Bug: meta-only crash\n' > "$WORLD_HOME/state/meta-bug.meta"
   run_progress >/dev/null || fail 'meta-only run failed'
   assert_equals 'meta-bug task-meta' "$(jq -r '.doing[] | .id + " " + .tag_source' "$file")" \
@@ -549,7 +593,7 @@ SH
   printf -- '- missing - Missing fixtures (home: %s; scope: fixtures; projects: project; added 2026-10-26)\n' \
     "$WORLD/missing" >> "$WORLD_HOME/data/secondmates.md"
   run_progress >/dev/null || fail 'missing-home report failed'
-  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'unreadable registered homes suppress duplicate starts'
+  assert_equals 'remote-bug' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" 'an unreadable unrelated home does not suppress a checked item'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'an unreadable home never proves idleness'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'home records unavailable' 'missing local home is not skipped silently'
   pass 'progress: registered remote homes are read and unavailable homes are reported'
@@ -704,6 +748,7 @@ PY
   pass 'progress: reads other homes and status without acting on them'
 }
 
+test_partial_coverage_starts
 test_linear_pagination
 test_linear_rate_limit
 test_linear_page_cap

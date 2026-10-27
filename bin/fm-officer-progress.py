@@ -49,6 +49,7 @@ ROW = re.compile(r"^- \[([ xX])\] ([\w.-]+)\s*(?: - |: )(.+)$")
 TAG = re.compile(r"\(([^():]+):\s*([^()]*)\)")
 CLASS_ORDER = {"security": 0, "cve": 0, "code-review": 1, "bug": 1,
                "requested-feature": 2, "requested-fleet": 2}
+KNOWN_NAMES = re.compile(r"\bbusiness health\b", re.I)
 CHOICES = re.compile(r"\b(business|product|wording|legal|payments?|billing|pricing)\b", re.I)
 RESTRICTED = re.compile(r"\b(merg(?:e|ing)|production|credentials?|rotat(?:e|ing|ion)|data[- ]rewrit\w*"
                         r"|destructive|delet(?:e|ing|ion)|drop(?:ping)?|force[- ]push|spend(?:ing)?|purchas\w*)\b", re.I)
@@ -370,6 +371,7 @@ def classify(row):
     if kind in ("security", "cve", "code-review", "bug"):
         return kind, "linear-free-text:kind" if linear_only else local
     for name, label, pattern in (("cve", "CVE", r".*\bcve-\d{4}-\d+\b"), ("security", "Security", r"security\b"),
+                                 ("code-review", "scheduled-review", r"\[scheduled-review\]"),
                                  ("code-review", "Code review", r"code[- ]review (?:finding|fix)\b"),
                                  ("bug", "Bug", r"bug(?: report)?\b")):
         if re.match(pattern, text):
@@ -435,7 +437,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked):
             row["owner_home"] = root["owner_home"]
         row["authorising_class"] = authorised
         row["tag_source"] = source
-        choice = CHOICES.search(row["title"])
+        choice = CHOICES.search(KNOWN_NAMES.sub("", row["title"]))
         restricted = RESTRICTED.search(row["title"])
         held = any(any(k in r["tags"] for k in ("hold", "hold-kind", "blocked-by", "blocked", "deps"))
                    or r.get("open_calls") or r.get("linear_blocked") for r in chain)
@@ -467,10 +469,12 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked):
             row["reason"] = "Recorded worker outcome; firstmate owns landing or retry"
             row["outcome"] = "failed" if row["latest"] == "failed" else "ok"
             doc["done"].append(row)
-        elif choice or restricted:
-            row["reason"] = ("Lee decides the " + choice[1].lower() + " choice" if choice
-                             else "Outside automatic-start authority: " + restricted[1].lower())
+        elif choice:
+            row["reason"] = "Lee decides the " + choice[1].lower() + " choice"
             doc["asks_for_lee"].append(row)
+        elif restricted:
+            row["reason"] = "Outside automatic-start authority: " + restricted[1].lower()
+            doc["excluded"].append(row)
         elif state and state not in UNSTARTED:
             row["reason"] = "Linear state is not unstarted: " + state
             doc["excluded"].append(row)
@@ -494,11 +498,6 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked):
         seen.add(key)
         unique.append(row)
     doc["start_requests"] = unique
-    if problems:
-        for row in doc["start_requests"]:
-            row["reason"] = "Start deferred because discovery coverage is incomplete"
-            doc["excluded"].append(row)
-        doc["start_requests"] = []
     doc["coverage"] = problems + ["Linear discovery: start check %s: %s" % gap for gap in sorted(unchecked.items())]
     for rank, row in enumerate(doc["start_requests"], 1):
         row["rank"] = rank
@@ -647,7 +646,7 @@ def page_state(doc, officer, previous, repos, log_url, reported):
     if doc["filler"]:
         page["asking"].append(instruction(doc["filler"], "Start an extra " + doc["filler"]["kind"]))
     for row in doc["asks_for_lee"]:
-        page["asking"].append(instruction(row, "File a Captain's Log card: " + row["title"] + "; " + row["reason"]))
+        page["asking"].append(instruction(row, "Needs a Captain's Log card: " + row["title"] + "; " + row["reason"]))
     log_base = https_url(log_url)
     if log_base:
         log_base = log_base.removesuffix("/api/captains-log").rstrip("/") + "/captains-log"
@@ -727,7 +726,7 @@ def main(argv):
     if not args.home or not args.out or not args.date:
         parser.error("run requires --home, --out, and --date")
     datetime.date.fromisoformat(args.date)
-    snapshots, prs, problems = [], [], []
+    snapshots, prs, problems = [], [], ["Linear labels not readable by linear-axi"]
     for home in args.home:
         try:
             snapshot = load_home(home)
@@ -755,7 +754,7 @@ def main(argv):
         problems.append("open PR discovery unavailable or incomplete")
     configured = set(filter(None, args.requested.split(",")))
     checked, unchecked = set(), {}
-    while not problems:
+    while True:
         trial = judge(copy.deepcopy(snapshots), copy.deepcopy(list(rows.values())), set(configured),
                       prs, [], args.team, unchecked)
         candidates = [i for row in trial["start_requests"] for i in row["linear_ids"] if i not in checked]

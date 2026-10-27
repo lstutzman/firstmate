@@ -925,7 +925,9 @@ Linear's unblocked listing, read for backlog and unstarted issues only, supplies
 The dated JSON's `linear_coverage` records pages fetched, items seen, CLI requests, hierarchy reads, rate-limit retries, listed descriptions left truncated, and start candidates left unverified; the digest and run log print the same counts and specific failure causes.
 The request budget counts `linear-axi` invocations, not Linear API calls: the CLI fetches each listed issue's state, team, assignee, and project separately, so a 100-item page costs about 300 to 400 API requests.
 The progress script's header owns request, page, and backoff bounds, including the CLI's unpageable sub-issue limit.
-A missing home, failed read, capped Linear listing, or unsupported non-Markdown backlog is a coverage gap: the state still reports available evidence, but starts and filler wait for complete coverage.
+A missing home, failed read, capped Linear listing, or unsupported non-Markdown backlog is a coverage gap: checked items still produce start requests, while items whose full description or parent checks fail remain excluded and are named in coverage.
+Filler waits for complete coverage.
+The installed `linear-axi` cannot return or filter issue labels, so the officer reports `Linear labels not readable by linear-axi` rather than claiming label-based discovery is complete.
 The pass reads current records; the common officer scheduler's date names the run rather than a historical snapshot.
 
 The deterministic classifier uses these authorizing classes, in this order:
@@ -933,7 +935,7 @@ The deterministic classifier uses these authorizing classes, in this order:
 | Class | Recorded evidence |
 | --- | --- |
 | `security`, `cve` | `kind: security` or `kind: cve`, a title beginning `Security`, or a CVE identifier in the title |
-| `code-review`, `bug` | `kind: code-review` or `kind: bug`, or a title beginning `Code review finding`, `Code review fix`, or `Bug` |
+| `code-review`, `bug` | `kind: code-review` or `kind: bug`, or a title beginning `[scheduled-review]`, `Code review finding`, `Code review fix`, or `Bug` |
 | `requested-feature`, `requested-fleet` | `kind: feature` or `kind: fleet` with `requested-by: Lee`; a Linear item named in `requested` or linked from such a backlog row, or its descendants, defaults to `requested-feature` unless its own recorded class is more specific |
 
 Backlog metadata uses the existing parenthesized tags, for example `(kind: bug)` and `(severity: high)`.
@@ -947,7 +949,7 @@ To keep such starts visible, every record carries `tag_source`, naming where its
 | `backlog` | A tag or title prefix on a backlog row this fleet wrote |
 | `task-meta` | The title in a task's `state/<id>.meta` file when the task has no backlog row; such tasks are already in flight and never start |
 | `linear-free-text:kind`, `linear-free-text:requested-by` | A tag in the Linear issue's title or description |
-| `linear-title-prefix:Security`, `linear-title-prefix:CVE`, `linear-title-prefix:Code review`, `linear-title-prefix:Bug` | The Linear title prefix, or a CVE identifier in the Linear title |
+| `linear-title-prefix:Security`, `linear-title-prefix:CVE`, `linear-title-prefix:Code review`, `linear-title-prefix:Bug`, `linear-title-prefix:scheduled-review` | The Linear title prefix, or a CVE identifier in the Linear title |
 | `requested-root:<id>` | The registered `requested` root the item descends from |
 | `standing-authority:filler` | The filler pass, in the dated JSON's `filler` object |
 
@@ -961,7 +963,9 @@ This slice uses `model: none` throughout.
 Held, blocked, already carded, in-flight, completed, or open-PR-linked work is excluded from starts.
 Unresolved keyed status calls remain open across later `working` lines.
 The same Linear identifier produces at most one start request across homes.
-Business, product, wording, legal, payments, and pricing matches in the item's own title go to `asks_for_lee`; for authorized work, automatic starts also exclude titles naming merges, production, credentials, data rewrites, destructive actions, and spending.
+Whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title go to `asks_for_lee`, excluding matches within known feature names such as Business Health.
+A separate choice word outside the name still requires a card.
+For authorized work, titles naming merges, production, credentials, data rewrites, destructive actions, and spending are excluded from automatic starts rather than added to `asks_for_lee`.
 Descriptions and ancestors are not matched, so ordinary bug text does not divert authorized work.
 These conservative word rules can overexclude a technical task; firstmate reconciles its evidence rather than widening authority automatically.
 For a queued local task, its backlog identifies the home; a Linear-only item defaults to the primary home until ordinary intake routes it by registered scope.
@@ -978,7 +982,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 | `date`, `generated_at` | Run date and actual UTC observation timestamp |
 | `doing`, `done` | Work in the start classes currently in flight, and work recorded completed or canceled; completed Linear-only history is not listed |
 | `start_requests` | Ranked authorized work waiting for firstmate to dispatch |
-| `asks_for_lee` | Business, product, wording, legal, payments, or pricing choices, and authorized work outside automatic-start authority, each with its reason; these become Captain's Log cards |
+| `asks_for_lee` | Business, product, wording, legal, payments, billing, or pricing choices, each with its reason; these need Captain's Log cards |
 | `excluded` | Evidence that prevents a new start, including existing cards and incomplete discovery |
 | `unclassified` | Count of open items with no recorded start class; they are not listed |
 | `filler` | The extra discovery pass, or `null` |
@@ -1018,7 +1022,7 @@ Page times describe when the officer first observed the work, outcome, or reques
 Descriptions say that the officer is watching or recording work rather than claiming it performed another worker's action.
 The optional `source` on `doing` and `done` maps security/CVE to `cve`, code-review to `review`, bug to `bug`, requested-feature to `feature`, requested-fleet to `fleet`, and filler to `filler`.
 Unknown sources omit that optional field.
-Waiting starts and filler appear as instructions with `waiting_on: firstmate`; new Lee choices ask firstmate to create a Captain's Log card.
+Waiting starts and filler appear as instructions with `waiting_on: firstmate`; new Lee choices say `Needs a Captain's Log card`.
 An existing captain-held backlog row links to its exact card key when `captains-log` is configured; the page repeats no question or answer from that card.
 Source links use the recorded HTTPS issue or PR URL, falling back to the configured repository when local-only work has no HTTPS record.
 The dated report retains all entries when the page's limits omit some.
