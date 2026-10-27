@@ -55,7 +55,7 @@ ROW = re.compile(r"^- \[([ xX])\] ([\w.-]+)\s*(?: - |: )(.+)$")
 TAG = re.compile(r"\(([^():]+):\s*([^()]*)\)")
 CLASS_ORDER = {"security": 0, "cve": 0, "code-review": 1, "bug": 1,
                "requested-feature": 2, "requested-fleet": 2}
-KNOWN_NAMES = re.compile(r"\bbusiness health\b", re.I)
+KNOWN_NAMES = re.compile(r"\bbusiness[- ]health\b", re.I)
 CHOICES = re.compile(r"\b(business|product|wording|legal|payments?|billing|pricing)\b", re.I)
 RESTRICTED = re.compile(r"\b(merg(?:e|ing)|production|credentials?|rotat(?:e|ing|ion)|data[- ]rewrit\w*"
                         r"|destructive|delet(?:e|ing|ion)|drop(?:ping)?|force[- ]push|spend(?:ing)?|purchas\w*)\b", re.I)
@@ -460,14 +460,20 @@ def lee_request_text(row):
     """Select requested decisions/actions, never incidental finding vocabulary."""
     title = re.sub(r"^(?:bug(?: report)?|security)\s*:\s*", "", row["title"], flags=re.I)
     explicit = re.compile(r"^\s*(?:[-*]\s*)?(?:ask(?: for)? Lee|decision for Lee|Lee ask|needs? Lee)(?:\s*:\s*|\s+-\s+|\s+to\s+)(.+)", re.I)
+    imperative = re.compile(r"^Lee(?:,?\s+(?:to|must|should)|,)\s+(.+)", re.I)
     asks = []
     for line in (title + "\n" + row.get("description", "")).splitlines():
-        match = explicit.match(line.lstrip("# ").replace("**", ""))
+        line = line.lstrip("# ").replace("**", "")
+        match = explicit.match(line) or imperative.match(line)
         if match:
             asks.append(match[1])
-    # Review and bug titles describe findings; only explicit asks override them.
-    if (row.get("authorising_class") or classify(row)[0]) not in ("code-review", "bug"):
-        if CHOICES.search(KNOWN_NAMES.sub("", title)) or RESTRICTED.search(title):
+    # Local backlog and unclassified titles need an actual request, not a topic.
+    kind = row.get("authorising_class") or classify(row)[0]
+    if kind and kind not in ("code-review", "bug"):
+        choice_title = KNOWN_NAMES.sub("", re.sub(r"(?<!\w)/[^\s;,)]+", "", title))
+        if (not row.get("section") or kind in ("security", "cve")) and CHOICES.search(choice_title):
+            asks.append(title)
+        elif RESTRICTED.search(title):
             asks.append(title)
     return "\n".join(asks)
 
@@ -545,7 +551,6 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         row["authorising_class"] = authorised
         row["tag_source"] = source
         ask = lee_ask(row)
-        choice = CHOICES.search(KNOWN_NAMES.sub("", lee_request_text(row)))
         held = any(any(k in r["tags"] for k in ("hold", "hold-kind", "blocked-by", "blocked", "deps"))
                    or r.get("open_calls") or r.get("linear_blocked") for r in chain)
         copies = [copy for ident in row["linear_ids"] for copy in linked.get(ident, [])]
@@ -556,7 +561,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         finished = row.get("section") == "done" or state in FINISHED or row.get("latest") in ("done", "failed")
         moving = (row.get("section") == "in flight" or row.get("has_meta") or state == "started"
                   or row.get("latest") in ("working", "paused"))
-        if not authorised and not row.get("captains_log_key") and (not choice or finished or moving):
+        if not authorised and not row.get("captains_log_key") and (not ask or finished or moving):
             doc["unclassified"] += not finished
         elif held:
             row["reason"] = "Already held, blocked, or carded; firstmate must reconcile it"
@@ -568,7 +573,8 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             row["reason"] = "Recorded completed or canceled"
             row["outcome"] = "skipped" if state in ("canceled", "cancelled", "duplicate") else "ok"
             doc["done"].append(row)
-        elif (other_busy or pr_ids.intersection(row["linear_ids"])
+        elif (other_busy or (ask and re.search(r"https://github\.com/[^/]+/[^/]+/pull/\d+\b", row.get("link", "")))
+              or pr_ids.intersection(row["linear_ids"])
               or any(branch == row["id"] or branch.endswith("/" + row["id"]) for branch in pr_branches)):
             row["reason"] = "Already held, blocked, carded, in flight, or covered by an open PR"
             doc["excluded"].append(row)
@@ -576,6 +582,10 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             row["reason"] = "Recorded worker outcome; firstmate owns landing or retry"
             row["outcome"] = "failed" if row["latest"] == "failed" else "ok"
             doc["done"].append(row)
+        elif (row.get("section") and authorised not in ("security", "cve")
+              and re.search(r"\b(?:needs? Lee['’]s merge word|merge[- ]word (?:needed|required))\b", row["title"], re.I)):
+            row["reason"] = "Merge approval required; firstmate owns landing"
+            doc["excluded"].append(row)
         elif ask:
             row["reason"] = ask
             doc["asks_for_lee"].append(row)

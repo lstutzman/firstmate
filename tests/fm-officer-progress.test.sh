@@ -200,6 +200,41 @@ PYFIX
   pass 'progress: checked items start with partial coverage and choices ask for cards'
 }
 
+test_backlog_asks_require_a_request() {
+  make_world backlog-asks
+  stub_sleep
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] PC-3449 - Fix billing rounding (kind: bug)
+
+## Queued
+
+- [ ] fleet-app-pr56-deploy - Deploy /business-health; Lee decides the business choice
+- [ ] pc-2186-nav-guards - Navigation guards for pricing
+- [ ] pc-2680-slice2 - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee)
+- [ ] known-name - Business health dashboard
+- [ ] feature-path - Add /pricing navigation (kind: feature) (requested-by: Lee)
+- [ ] real-choice - Lee to choose the export format
+- [ ] explicit-action - Ask Lee: review the export format
+- [ ] security-merge-note - Rotate production credentials; needs Lee's merge word (kind: security)
+- [ ] held-choice - Export format (hold-kind: captain) (hold: Lee to choose format)
+- [ ] worker-choice - Lee to choose pricing (kind: feature) (requested-by: Lee)
+- [ ] recorded-start - Lee to choose pricing (kind: feature) (requested-by: Lee)
+- [ ] pr-choice - Lee to choose pricing (kind: feature) (requested-by: Lee) (pr: https://github.com/example/project/pull/80)
+MD
+  printf 'kind=ship\n' > "$WORLD_HOME/state/worker-choice.meta"
+  printf 'working [at=1]: started\n' > "$WORLD_HOME/state/recorded-start.status"
+  run_progress >/dev/null || fail 'backlog ask classification failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'explicit-action real-choice security-merge-note' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
+    'only actual Lee requests become asks; names, notes, merge gates, and started work do not'
+  assert_contains "$(jq -r '.doing[].id' "$file")" 'PC-3449' 'the billing bug stays in flight'
+  assert_contains "$(jq -r '.excluded[].id' "$file")" 'held-choice' 'existing captain holds remain held'
+  assert_not_contains "$(jq -r '.start_requests[].id' "$file")" 'pc-2680-slice2' 'a merge-word note remains outside automatic starts'
+  pass 'progress: backlog asks require an actual request from Lee'
+}
+
 test_review_words_and_explicit_asks() {
   make_world review-words
   stub_sleep
@@ -592,8 +627,8 @@ PY
 - [ ] wording - Ask Lee: Choose revised wording (kind: bug)
 - [ ] legal - Change legal text (kind: security)
 - [ ] payments - Change payments behavior (kind: bug)
-- [ ] business - Make a business decision (kind: fleet) (requested-by: Lee)
-- [ ] product - Make a product decision (kind: feature) (requested-by: Lee)
+- [ ] business - Lee to make a business decision (kind: fleet) (requested-by: Lee)
+- [ ] product - Lee to make a product decision (kind: feature) (requested-by: Lee)
 - [ ] open-branch - Fix a crash with an existing PR (kind: bug)
 MD
   python3 -I - "$WORLD/prs.json" <<'PY'
@@ -759,7 +794,7 @@ test_executable_start_requests() {
 ## Queued
 
 - [ ] safe - Fix a crash $(touch injected) (kind: bug)
-- [ ] legal - Revise legal text (kind: feature) (requested-by: Lee)
+- [ ] legal - Ask Lee: Revise legal text (kind: feature) (requested-by: Lee)
 MD
   run_progress >/dev/null || fail 'executable request generation failed'
   local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json" count
@@ -956,6 +991,7 @@ PY
   pass 'progress: reads other homes and status without acting on them'
 }
 
+test_backlog_asks_require_a_request
 test_ancestor_asks_hold_only_routed_asks
 test_linear_rate_limit_recovers
 test_merge_ask_pr_state
