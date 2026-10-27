@@ -980,7 +980,7 @@ Titles of those items naming merges, production, credentials, rotation, data rew
 A note such as `needs Lee's merge word for payments/trials` gates merging, not starting: it creates no ask, and otherwise eligible work starts.
 Other explicit asks retain a generic decision-or-action reason.
 A start whose ancestor is itself listed in `asks_for_lee` is held in `excluded` until Lee answers; an in-flight, held, or startable ancestor holds nothing; its recorded holds and dependencies also still exclude starts.
-Before publishing a merge-word ask or a direct merge request with a GitHub PR URL, the officer reads that PR through `gh-axi`, including PR URLs found in a local card's linked Linear description, and drops the item only when every referenced PR is merged.
+Before publishing a merge-word ask or a direct merge request with a GitHub PR URL, the officer reads that PR through `gh-axi`, including PR URLs found in a local card's linked Linear description, and drops the item only when every referenced PR is merged; this holds whether the item's class comes from its own tags, its linked Linear issue, or a requested root.
 A PR closed without merging keeps the item listed with the reason “PR closed unmerged: check whether still needed”.
 An unreadable PR remains listed, and coverage names the failed PR read rather than treating it as closed.
 Open-PR and merge-ask PR reads share the run deadline; once it has passed they are skipped and named as coverage gaps.

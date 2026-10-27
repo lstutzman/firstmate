@@ -330,6 +330,42 @@ MD
   pass 'progress: merge asks require a current open PR'
 }
 
+test_merged_pr_asks_follow_effective_class() {
+  make_world merged-effective-class
+  stub_sleep
+  python3 -I - "$WORLD/linear" <<'PYFIX'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+spec = [('PC-10', 'Requested rollout', 'started', None, ''),
+        ('PC-95', 'Merge pricing rollout', 'unstarted', None,
+         '(kind: feature) (requested-by: Lee)\nRollout PR: https://github.com/example/project/pull/4300'),
+        ('PC-97', 'Merge pricing rollout', 'unstarted', 'PC-10', 'Rollout PR: https://github.com/example/project/pull/4301'),
+        ('PC-98', 'Merge pricing follow-up', 'unstarted', 'PC-10', 'Follow-up PR: https://github.com/example/project/pull/4302')]
+issues = []
+for ident, title, state, parent, description in spec:
+    issue = dict(identifier=ident, title=title, state='Todo', stateType=state, priority=0, description=description)
+    issues.append(issue)
+    (root / (ident + '.json')).write_text(json.dumps(dict(ok=True, data=dict(
+        issue=dict(issue, parent=parent + ' Parent' if parent else None)))))
+(root / 'list.json').write_text(json.dumps(dict(ok=True, data=dict(issues=issues))))
+PYFIX
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## Queued
+
+- [ ] rollout - Merge pricing rollout (linear: PC-95)
+MD
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4300.json"
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4301.json"
+  printf '{"state":"open","merged":false}\n' > "$WORLD/pr-4302.json"
+  run_progress > "$WORLD/output" || fail 'effective-class merge reconciliation failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'PC-98' "$(jq -r '[.asks_for_lee[].id] | join(" ")' "$file")" \
+    'merged PRs drop asks classified through linked Linear text or a requested root; an open PR still asks'
+  assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4300' 'a linked Linear class reads the PR'
+  assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4301' 'a requested-root child reads the PR'
+  pass 'progress: merged-PR drops follow the class judge applies'
+}
+
 test_github_reads_respect_deadline() {
   make_world github-deadline
   stub_sleep
@@ -1013,6 +1049,7 @@ test_backlog_asks_require_a_request
 test_ancestor_asks_hold_only_routed_asks
 test_linear_rate_limit_recovers
 test_merge_ask_pr_state
+test_merged_pr_asks_follow_effective_class
 test_github_reads_respect_deadline
 test_review_words_and_explicit_asks
 test_partial_coverage_starts

@@ -411,7 +411,10 @@ def reconcile_merge_asks(rows, problems, deadline, linear):
         description = row.get("description", "") + "".join(
             "\n" + linear[i].get("description", "") for i in row["linear_ids"] if i in linear and linear[i] is not row)
         hold = row["tags"].get("hold", "")
-        request = lee_request_text(dict(row, description=description)) + "\n" + hold
+        kind = next(filter(None, [classify(row)[0]] + [classify(linear[i])[0] for i in row["linear_ids"]
+                                                        if i in linear and linear[i] is not row]), None)
+        title = "" if kind in ("code-review", "bug") else MERGE_NOTE.sub("", row["title"])
+        request = lee_request_text(dict(row, description=description)) + "\n" + hold + "\n" + title
         merge_ask = re.search(r"\bmerg(?:e|ing)(?:[- ]word)?\b", request, re.I)
         urls = set(re.findall(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+\b",
                               "\n".join((row["title"], description, hold, row.get("link", ""))))) if merge_ask else set()
