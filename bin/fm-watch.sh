@@ -122,6 +122,9 @@
 #   check: inactive-outcome bounded poll-loop reconciliation found a suspicious
 #                          inactive terminal outcome that still lacks its durable
 #                          upstream receipt
+#   check: machine service relay failed
+#                          a pending service request could not reach its parent
+#                          channel; bin/fm-inbox.sh drain shows the request
 #   check: secondmate wake-loop stalled: mate=<id> row=<seq> idle=<seconds>s
 #                          an actionable row in an endpoint-recorded local
 #                          secondmate home's durable wake queue did not advance
@@ -2844,6 +2847,16 @@ while :; do
   # whose owner is gone. It is a no-op with nothing registered.
   if [ -d "$STATE/procevent" ]; then
     FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-procevent.sh" reconcile >/dev/null 2>&1 || true
+  fi
+  # Machine services share the captain inbox; relay through its owner before
+  # queue recovery can surface their check wake.
+  if [ -d "$STATE/inbox" ]; then
+    if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+      "$SCRIPT_DIR/fm-inbox.sh" service-reconcile; then
+      service_reason="check: machine service relay failed; inspect bin/fm-inbox.sh drain"
+      fm_wake_append check machine-service-relay "$service_reason" || exit 1
+      wake "$service_reason"
+    fi
   fi
   # Then deliver any queued-but-unsurfaced result, including one a runner
   # published while this watcher was between cycles.
