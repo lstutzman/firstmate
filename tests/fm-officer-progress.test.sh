@@ -203,6 +203,18 @@ PYFIX
 test_backlog_asks_require_a_request() {
   make_world backlog-asks
   stub_sleep
+  python3 -I - "$WORLD/linear" <<'PYFIX'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+spec = [('PC-90', 'Change pricing tiers', '(kind: feature) (requested-by: Lee)'),
+        ('PC-91', 'Export copy', 'Lee, 2026-10-14: approved the billing copy')]
+issues = []
+for ident, title, description in spec:
+    issue = dict(identifier=ident, title=title, state='Todo', stateType='unstarted', priority=0, description=description)
+    issues.append(issue)
+    (root / (ident + '.json')).write_text(json.dumps(dict(ok=True, data=dict(issue=dict(issue, parent=None)))))
+(root / 'list.json').write_text(json.dumps(dict(ok=True, data=dict(issues=issues))))
+PYFIX
   cat > "$WORLD_HOME/data/backlog.md" <<'MD'
 ## In flight
 
@@ -221,17 +233,22 @@ test_backlog_asks_require_a_request() {
 - [ ] held-choice - Export format (hold-kind: captain) (hold: Lee to choose format)
 - [ ] worker-choice - Lee to choose pricing (kind: feature) (requested-by: Lee)
 - [ ] recorded-start - Lee to choose pricing (kind: feature) (requested-by: Lee)
-- [ ] pr-choice - Lee to choose pricing (kind: feature) (requested-by: Lee) (pr: https://github.com/example/project/pull/80)
+- [ ] tiers - Change pricing tiers (kind: feature) (requested-by: Lee)
+- [ ] dated-citation - Lee, 2026-10-14: approved the billing copy
 MD
   printf 'kind=ship\n' > "$WORLD_HOME/state/worker-choice.meta"
   printf 'working [at=1]: started\n' > "$WORLD_HOME/state/recorded-start.status"
   run_progress >/dev/null || fail 'backlog ask classification failed'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
-  assert_equals 'explicit-action real-choice security-merge-note' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
-    'only actual Lee requests become asks; names, notes, merge gates, and started work do not'
+  assert_equals 'PC-90 explicit-action real-choice security-merge-note tiers' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
+    'only actual Lee requests and classified choices become asks; names, notes, citations, and started work do not'
+  assert_equals 'Lee decides the pricing choice|Lee decides the pricing choice' \
+    "$(jq -r '[.asks_for_lee[] | select(.id == "PC-90" or .id == "tiers") | .reason] | join("|")' "$file")" \
+    'a classified choice routes the same from Linear and the backlog'
+  assert_equals '5' "$(jq '.unclassified' "$file")" 'loose words and dated Lee citations leave unclassified work counted'
   assert_contains "$(jq -r '.doing[].id' "$file")" 'PC-3449' 'the billing bug stays in flight'
   assert_contains "$(jq -r '.excluded[].id' "$file")" 'held-choice' 'existing captain holds remain held'
-  assert_not_contains "$(jq -r '.start_requests[].id' "$file")" 'pc-2680-slice2' 'a merge-word note remains outside automatic starts'
+  assert_contains "$(jq -r '.start_requests[].id' "$file")" 'pc-2680-slice2' 'a merge-word note gates merging, not starting'
   pass 'progress: backlog asks require an actual request from Lee'
 }
 
@@ -301,6 +318,7 @@ MD
   printf '{"state":"open","merged":false}\n' > "$WORLD/pr-4095.json"
   run_progress > "$WORLD/output" || fail 'merge ask reconciliation failed'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_contains "$(jq -r '.asks_for_lee[].id' "$file")" 'open' 'an explicit merge ask on an open PR reaches Lee'
   assert_equals 'closed open unread' "$(jq -r '[.asks_for_lee[].id, .excluded[].id] | sort | join(" ")' "$file")" \
     'merged PR merge asks disappear, including PRs named only in linked Linear text, while other asks remain'
   assert_equals 'PR closed unmerged: check whether still needed' \
@@ -627,8 +645,8 @@ PY
 - [ ] wording - Ask Lee: Choose revised wording (kind: bug)
 - [ ] legal - Change legal text (kind: security)
 - [ ] payments - Change payments behavior (kind: bug)
-- [ ] business - Lee to make a business decision (kind: fleet) (requested-by: Lee)
-- [ ] product - Lee to make a product decision (kind: feature) (requested-by: Lee)
+- [ ] business - Make a business decision (kind: fleet) (requested-by: Lee)
+- [ ] product - Make a product decision (kind: feature) (requested-by: Lee)
 - [ ] open-branch - Fix a crash with an existing PR (kind: bug)
 MD
   python3 -I - "$WORLD/prs.json" <<'PY'
@@ -794,7 +812,7 @@ test_executable_start_requests() {
 ## Queued
 
 - [ ] safe - Fix a crash $(touch injected) (kind: bug)
-- [ ] legal - Ask Lee: Revise legal text (kind: feature) (requested-by: Lee)
+- [ ] legal - Revise legal text (kind: feature) (requested-by: Lee)
 MD
   run_progress >/dev/null || fail 'executable request generation failed'
   local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json" count

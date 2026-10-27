@@ -962,9 +962,9 @@ Unclassified records carry `tag_source: null`.
 `requested` records an existing Lee request; registering a root never authorizes inventing a new feature.
 Within each class tier, Linear priority or backlog severity ranks urgent/critical, high, medium, low, then unspecified; identifiers and home names break ties.
 Open work with no recorded class is counted as `unclassified` unless it explicitly requests a decision or action from Lee while open and unstarted.
-For unclassified and backlog items, topic words in titles, paths, feature names such as Business Health or `/business-health`, and descriptive notes never constitute a Lee request.
-An imperative addressed to Lee, such as `Lee to choose the export format`, is an explicit request; an existing captain hold remains held.
-In-flight work, recorded starts, and PR-linked requests never become new asks for their own wording; finished unclassified work is dropped.
+For unclassified items, topic words in titles, paths, feature names such as Business Health or `/business-health`, and descriptive notes never constitute a Lee request.
+An imperative addressed to Lee, such as `Lee to choose the export format`, is an explicit request; a dated citation such as `Lee, 2026-10-14: approved the copy` is not, and an existing captain hold remains held.
+In-flight work and recorded starts never become new asks for their own wording; finished unclassified work is dropped.
 This slice uses `model: none` throughout.
 
 Held, blocked, already carded, in-flight, completed, or open-PR-linked work is excluded from starts.
@@ -975,9 +975,9 @@ Only an explicit ask overrides that classification: an `Ask Lee:`, `Ask for Lee:
 Bulleted lines and Markdown headings or bold markers may wrap those prefixes.
 A bare `Decision:` line records a decision already made and is not an ask.
 Words in an old classifier reason, such as “Outside automatic-start authority: delete” or “Lee decides the legal choice,” do not constitute an ask.
-For classified Linear-only requested-feature and requested-fleet items, and security and CVE items, whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title still go to `asks_for_lee`, excluding matches within known feature names and slash paths.
+For requested-feature, requested-fleet, security, and CVE items, whether recorded in Linear or the backlog, whole-word business, product, wording, legal, payments, billing, and pricing matches in the item's own title still go to `asks_for_lee`, excluding matches within known feature names and slash paths.
 Titles of those items naming merges, production, credentials, rotation, data rewrites, destructive actions, and spending are outside automatic-start authority and also go to `asks_for_lee`.
-A backlog note such as `needs Lee's merge word for payments/trials` is excluded as a merge approval requirement, rather than creating a business choice.
+A note such as `needs Lee's merge word for payments/trials` gates merging, not starting: it creates no ask, and otherwise eligible work starts.
 Other explicit asks retain a generic decision-or-action reason.
 A start whose ancestor is itself listed in `asks_for_lee` is held in `excluded` until Lee answers; an in-flight, held, or startable ancestor holds nothing; its recorded holds and dependencies also still exclude starts.
 Before publishing a merge-word ask or a direct merge request with a GitHub PR URL, the officer reads that PR through `gh-axi`, including PR URLs found in a local card's linked Linear description, and drops the item only when every referenced PR is merged.
