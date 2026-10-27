@@ -384,14 +384,30 @@ test_linear_rate_limit() {
   run_progress > "$WORLD/output" || fail 'rate limit must publish available evidence'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   assert_contains "$(jq -r '.coverage[]' "$file")" 'RATE_LIMITED' 'coverage names the actual failure'
-  assert_equals '30 60 120 120 120 120' "$(paste -sd' ' "$WORLD/sleeps")" 'rate-limited requests share a bounded run-wide backoff'
-  assert_contains "$(cat "$WORLD/output")" 'rate-limit wait budget exhausted' 'run log transport includes the cause'
+  assert_equals '30 60 120' "$(paste -sd' ' "$WORLD/sleeps")" 'a limit that outlasts the short backoff is not waited on further'
+  assert_contains "$(cat "$WORLD/output")" 'Linear quota exhausted, discovery resumes after' 'run log transport includes the cause'
   assert_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")" 'RATE_LIMITED' 'digest includes cause'
   assert_not_contains "$(cat "$WORLD/output")" 'never echo' 'external messages stay private'
-  assert_equals '6' "$(jq '.linear_coverage.rate_limit_retries' "$file")" 'exhausted retries stop further Linear requests'
+  assert_equals '3' "$(jq '.linear_coverage.rate_limit_retries' "$file")" 'an exhausted quota stops further Linear requests'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'incomplete discovery suppresses automatic starts'
   assert_contains "$(jq -r '.excluded[].id' "$file")" 'PC-1' 'successfully fetched items are still classified'
-  pass 'progress: rate limiting backs off and reports the precise incomplete read'
+  # The quota is hourly: resume one hour after the limit, never inside this run.
+  local resume lane="$WORLD_HOME/data/officers/progress"
+  resume=$(jq '.resume_after' "$lane/linear-resume-after.json")
+  [ "$resume" -ge $((NOW + 3600 + 210)) ] && [ "$resume" -le $((NOW + 3600 + 300)) ] \
+    || fail "resume time is one hour after the exhausting limit (got $resume)"
+  assert_contains "$(jq -r '.coverage[]' "$file")" "$(date -u -d "@$resume" +%Y-%m-%dT%H:%M:%SZ)" 'coverage names the resume time'
+  : > "$WORLD/calls"
+  NOW=$((NOW + 1800)) run_progress > "$WORLD/output" || fail 'run inside the quota window failed'
+  assert_not_contains "$(cat "$WORLD/calls")" 'issue list' 'runs before the resume time skip Linear discovery'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Linear quota exhausted earlier; discovery skipped until' 'the skipped discovery is a named gap'
+  printf '{"ok":true,"data":{"issues":[],"pagination":{"hasNextPage":false}}}\n' > "$WORLD/linear/page-second.json"
+  : > "$WORLD/calls"
+  NOW=$((resume + 1)) run_progress > "$WORLD/output" || fail 'run after the quota window failed'
+  assert_contains "$(cat "$WORLD/calls")" 'issue list' 'discovery resumes after the resume time'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'RATE_LIMITED' 'resumed discovery completes'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'quota exhausted' 'no quota gap once the window has passed'
+  pass 'progress: an exhausted Linear quota defers discovery to a later run'
 }
 
 test_linear_page_cap() {

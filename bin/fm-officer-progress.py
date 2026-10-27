@@ -17,8 +17,11 @@ rate-limited request), not Linear API calls: linear-axi hydrates each listed
 issue's state, team, assignee, and project with separate API requests, so one
 100-item page costs about 300-400 API requests.
 Requests start at least 0.25 seconds apart. Rate limits back off 30, 60, then
-120 seconds (capped), sharing a 600-second backoff budget across the run.
-After a limit, requests retain a minimum interval of one tenth the backoff.
+120 seconds; after a limit, requests retain a minimum interval of one tenth the
+backoff. linear-axi reports every limit as RATE_LIMITED with no reset time, so a
+fourth consecutive limit is taken as the hourly quota exhausted: discovery stops
+at once, records a resume time one hour later in the lane's
+linear-resume-after.json, and later runs skip Linear discovery until then.
 Linear and GitHub reads and waits respect FM_OFFICER_RUN_TIMEOUT (default 3600), reserving 30
 seconds for publication; exhaustion is a named coverage gap.
 Hierarchy reads visit only configured requested roots and their descendants.
@@ -171,7 +174,7 @@ def command(args, input_bytes=None, timeout=120):
 class LinearDiscovery:
     """Bound every CLI request, including retries and requested-root reads."""
 
-    def __init__(self, started):
+    def __init__(self, started, now):
         self.stats = {"pages_fetched": 0, "items_seen": 0, "requests": 0,
                       "roots_visited": 0, "hierarchy_items": 0, "rate_limit_retries": 0,
                       "team_items": 0, "unblocked_items": 0, "descriptions_truncated": 0,
@@ -181,7 +184,9 @@ class LinearDiscovery:
         self.stopped_reason = None
         self.interval = 0.25
         self.backoff = 30
-        self.backoff_waited = 0
+        self.limit_streak = 0
+        self.started, self.now = started, now
+        self.resume_after = None
         try:
             duration = max(1, int(os.environ.get("FM_OFFICER_RUN_TIMEOUT", "3600")))
         except ValueError:
@@ -229,19 +234,22 @@ class LinearDiscovery:
                     code = "RATE_LIMITED"
                 reason = "%s (exit %d)" % (code, proc.returncode)
                 if code == "RATE_LIMITED":
-                    if self.backoff_waited + self.backoff > 600:
-                        self.stopped_reason = reason + "; rate-limit wait budget exhausted (600 seconds)"
+                    if self.limit_streak >= 3:
+                        self.resume_after = int(self.now + time.monotonic() - self.started) + 3600
+                        self.stopped_reason = reason + "; Linear quota exhausted, discovery resumes after " + iso(
+                            self.resume_after)
                     elif time.monotonic() + self.backoff >= self.deadline:
                         self.stopped_reason = reason + "; run deadline reached before rate-limit retry"
                     else:
                         self.stats["rate_limit_retries"] += 1
+                        self.limit_streak += 1
                         time.sleep(self.backoff)
-                        self.backoff_waited += self.backoff
                         self.interval = self.backoff / 10
                         self.backoff = min(120, self.backoff * 2)
                         continue
                     reason = self.stopped_reason
                 raise RuntimeError(reason)
+            self.limit_streak = 0
             if not isinstance(doc.get("data"), dict):
                 raise RuntimeError("response has no data object")
             return doc["data"]
@@ -368,6 +376,10 @@ def load_home(source):
     for row in doc["rows"]:
         row["owner_home"] = source
     return doc
+
+
+def iso(epoch):
+    return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def remaining(deadline):
@@ -850,7 +862,15 @@ def main(argv):
             if row["tags"].get("requested-by", "").lower() == "lee":
                 requested.update(i for i in row["linear_ids"]
                                  if re.fullmatch(re.escape(args.team) + r"-\d+", i))
-    discovery = LinearDiscovery(started)
+    now = args.now if args.now is not None else int(time.time())
+    discovery = LinearDiscovery(started, now)
+    resume_path = os.path.join(args.out, "linear-resume-after.json")
+    try:
+        resume_after = int(json.loads(read(resume_path) or "{}").get("resume_after", 0))
+    except (ValueError, TypeError, AttributeError):
+        resume_after = 0
+    if now < resume_after:
+        discovery.stopped_reason = "Linear quota exhausted earlier; discovery skipped until " + iso(resume_after)
     rows, clear = {}, set()
     try:
         rows, clear = linear_rows(args.team, args.home[0], requested, discovery, problems)
@@ -877,6 +897,8 @@ def main(argv):
                 failure = verify_start(identifier, rows, clear, args.home[0], discovery)
                 if failure:
                     unchecked[identifier] = failure
+    if discovery.resume_after:
+        write(resume_path, {"resume_after": discovery.resume_after, "resume_after_utc": iso(discovery.resume_after)})
     discovery.stats["descriptions_truncated"] = sum(r["description_truncated"] for r in rows.values())
     discovery.stats["unverified_starts"] = len(unchecked)
     reconcile_merge_asks([r for snapshot in snapshots for r in snapshot["rows"]] + list(rows.values()),
@@ -885,8 +907,7 @@ def main(argv):
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
-    doc["generated_at"] = datetime.datetime.fromtimestamp(
-        args.now if args.now is not None else time.time(), datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    doc["generated_at"] = iso(now)
     requests = executable_requests(doc, args.home[0])
     write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"), requests)
     reported = None

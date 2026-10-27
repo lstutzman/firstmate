@@ -925,6 +925,8 @@ Linear's unblocked listing, read for backlog and unstarted issues only, supplies
 The dated JSON's `linear_coverage` records pages fetched, items seen, CLI requests, hierarchy reads, rate-limit retries, listed descriptions left truncated, and start candidates left unverified; the digest and run log print the same counts and specific failure causes.
 The request budget counts `linear-axi` invocations, not Linear API calls: the CLI fetches each listed issue's state, team, assignee, and project separately, so a 100-item page costs about 300 to 400 API requests.
 The progress script's header owns request, page, and backoff bounds, including the CLI's unpageable sub-issue limit.
+`linear-axi` reports every Linear limit as `RATE_LIMITED` with no reset time, so after the short 30, 60, and 120 second backoff a fourth consecutive limit counts as the hourly quota exhausted: the run stops Linear reads at once, names the gap with a resume time one hour later, and records it in the lane's `linear-resume-after.json`.
+Later runs skip Linear discovery, naming that gap, until the resume time passes.
 A capped or failed Linear read is a per-item coverage gap: checked items still produce start requests, while items whose full description or parent checks fail remain excluded and are named in coverage.
 A missing or unreadable registered home, an unsupported non-Markdown backlog, or failed open-PR discovery leaves the duplicate-start check unable to pass for any item, so that run emits no start requests and its coverage names the reason.
 Filler waits for complete coverage.
@@ -983,7 +985,7 @@ For a queued local task, its backlog identifies the home; a Linear-only item def
 When coverage is complete and no startable or in-flight work in the start classes remains, the officer rotates one extra bug sweep, code review, librarian pass, or ideation pass by run date.
 That filler request uses the same standing authority and firstmate intake as the ranked work.
 
-Each run writes `<date>.md`, `<date>.json`, `<date>.start-requests.sh`, and the stable `progress-state.json` in its findings lane.
+Each run writes `<date>.md`, `<date>.json`, `<date>.start-requests.sh`, and the stable `progress-state.json` in its findings lane. A run that exhausts the Linear quota also writes `linear-resume-after.json` there.
 The dated JSON file contains the complete discovery report under [progress-run.schema.json](schemas/progress-run.schema.json), schema version 1, source `progress-officer`.
 
 | JSON field | Meaning |
