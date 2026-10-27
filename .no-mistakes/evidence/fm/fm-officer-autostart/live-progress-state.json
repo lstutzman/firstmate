@@ -1,0 +1,163 @@
+{
+  "asking": [
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-3763",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-3763/scheduled-review-the-admin-visible-descriptions-of-ai-deal-review-and",
+      "question": "Needs a Captain's Log card: [scheduled-review] The admin-visible descriptions of ai-deal-review and ai-legal-pack-review (lines 178-184) still say they la...; Lee decides the legal choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-3755",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-3755/account-validation-follow-up-consent-headers-photo-variants-and",
+      "question": "Needs a Captain's Log card: Account validation follow-up: consent headers, photo variants, and billing error messages; Lee decides the billing choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-3713",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-3713/propertydata-pricing-code-comment-per-credit-rate-and-cost-doc-still",
+      "question": "Needs a Captain's Log card: PropertyData pricing: code comment, per-credit rate and cost doc still describe the 2,000-credit plan; the live plan is 5,000 credits; Lee decides the pricing choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-3639",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-3639/scheduled-review-the-comment-at-lines-100-101-still-says-production-is",
+      "question": "Needs a Captain's Log card: [scheduled-review] The comment at lines 100-101 still says production 'is digest unless its own variable or an explicit dispat...; Outside automatic-start authority: production",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-3571",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-3571/backup-and-staging-secret-hygiene-probe-key-as-a-key-vault-reference",
+      "question": "Needs a Captain's Log card: Backup and staging secret hygiene: probe key as a Key Vault reference; correct the prune script's key wording; Lee decides the wording choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-3449",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-3449/member-removal-can-cancel-billing-and-then-fail-on-a-restricting",
+      "question": "Needs a Captain's Log card: Member removal can cancel billing and then fail on a restricting foreign key; Lee decides the billing choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-3234",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-3234/nightly-e2e-explore-statesspects-explore-states-research-a-bedroom",
+      "question": "Needs a Captain's Log card: Nightly E2E: explore-states.spec.ts › Explore states: Research › a bedroom pricing answer with no buckets says there is no data; Lee decides the pricing choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-3007",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-3007/store-legal-packs-in-an-eu-jurisdiction-r2-bucket",
+      "question": "Needs a Captain's Log card: Store legal packs in an EU-jurisdiction R2 bucket; Lee decides the legal choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-2996",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-2996/scheduled-review-the-names-the-plans-as-pricing-does-check-requires",
+      "question": "Needs a Captain's Log card: [scheduled-review] The 'names the plans as Pricing does' check requires the Deal Finder, saved-searches and watchlist help cop...; Lee decides the pricing choice",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-2860",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-2860/scheduled-review-directoryreviewrevieweruserid-uses",
+      "question": "Needs a Captain's Log card: [scheduled-review] DirectoryReview.ReviewerUserId uses DeleteBehavior.Restrict and RemoveMemberAsync does not delete or detach...; Outside automatic-start authority: delete",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-2857",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-2857/scheduled-review-dealanalysismessageuserid-cascades-on-user-delete-so",
+      "question": "Needs a Captain's Log card: [scheduled-review] DealAnalysisMessage.UserId cascades on user delete, so removing an admin account silently deletes that admi...; Outside automatic-start authority: delete",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-2811",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-2811/scheduled-review-the-duplicated-clearsavedanalyses-issues-the-same",
+      "question": "Needs a Captain's Log card: [scheduled-review] The duplicated clearSavedAnalyses issues the same token-less cookie-authenticated DELETE requests, which th...; Outside automatic-start authority: delete",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "PC-2810",
+      "kind": "instruction",
+      "link": "https://linear.app/property-compass-uk/issue/PC-2810/scheduled-review-clearsavedanalyses-sends-cookie-authenticated-delete",
+      "question": "Needs a Captain's Log card: [scheduled-review] clearSavedAnalyses sends cookie-authenticated DELETE /api/v1/calculators/{id} through page.request with no ...; Outside automatic-start authority: delete",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "coverage-0",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Restore discovery coverage: Linear labels not readable by linear-axi",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "coverage-1",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Restore discovery coverage: Linear discovery: team listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "coverage-2",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Restore discovery coverage: Linear discovery: team listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "coverage-3",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Restore discovery coverage: Linear discovery: team listing (started): RATE_LIMITED (exit 1); retry budget exhausted",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "coverage-4",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Restore discovery coverage: Linear discovery: unblocked listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-27T10:14:03Z",
+      "key": "coverage-5",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Restore discovery coverage: Linear discovery: unblocked listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted",
+      "waiting_on": "firstmate"
+    }
+  ],
+  "doing": [],
+  "done": [],
+  "officer": "progress",
+  "schema_version": 1,
+  "stale_after_minutes": 2880,
+  "summary": "Watching 0 work items; 0 outcomes recorded; 19 requests waiting on firstmate or Lee; 640 items outside the start classes; 6 coverage gaps. Showing up to 30 current items, 50 outcomes, and 30 requests.",
+  "written_at": "2026-10-27T10:14:03Z"
+}

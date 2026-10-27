@@ -1,0 +1,61 @@
+=== RUN 1: partial Linear coverage, PR discovery OK ===
+Linear coverage: 6 pages, 16 items seen, 11 requests, 8 team items, 8 unblocked items, 1 requested roots visited, 1 hierarchy items, 0 rate-limit retries, 0 listed descriptions truncated, 1 start candidates unverified.
+Coverage gap: Linear labels not readable by linear-axi
+Coverage gap: Linear discovery: start check PC-205: NOT_FOUND (exit 0)
+DIGEST 2026-10-25 7 data/officers/progress/2026-10-25.md
+exit=0
+--- start_requests
+1 PC-201 class=code-review src=linear-title-prefix:scheduled-review  [scheduled-review] Audit session boundaries
+2 PC-203 class=bug src=linear-title-prefix:Bug  Bug: Business Health tile shows NaN
+--- asks_for_lee
+PC-202 Security: rotate leaked credential -> Outside automatic-start authority: rotate
+PC-204 Bug: Business Health wording for empty state -> Lee decides the wording choice
+PC-208 Decide pricing tiers -> Lee decides the pricing choice
+--- excluded
+PC-205 Bug: parent read fails -> Start check incomplete; firstmate must reconcile it
+PC-206 Bug: already has an open PR -> Already held, blocked, carded, in flight, or covered by an open PR
+--- coverage
+Linear labels not readable by linear-axi
+Linear discovery: start check PC-205: NOT_FOUND (exit 0)
+--- page asking (progress-state.json)
+[firstmate] Start authorised work: [scheduled-review] Audit session boundaries
+[firstmate] Start authorised work: Bug: Business Health tile shows NaN
+[firstmate] Needs a Captain's Log card: Security: rotate leaked credential; Outside automatic-start authority: rotate
+[firstmate] Needs a Captain's Log card: Bug: Business Health wording for empty state; Lee decides the wording choice
+[firstmate] Needs a Captain's Log card: Decide pricing tiers; Lee decides the pricing choice
+[firstmate] Restore discovery coverage: Linear labels not readable by linear-axi
+[firstmate] Restore discovery coverage: Linear discovery: start check PC-205: NOT_FOUND (exit 0)
+--- handoff script
+2026-10-25.json
+2026-10-25.md
+2026-10-25.start-requests.sh
+digest
+progress-state.json
+runs.log
+#!/usr/bin/env bash
+# Firstmate executes this handoff; the officer only writes it.
+set -euo pipefail
+FM_HOME=/tmp/fm-officer-progress.fGqNyp/manual/home /home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5YCK1458QJZPGKTYYH4AERM/bin/fm-inbox.sh note --request-id progress-2026-10-25-8cad02aed4430fe8 --json -- 'Progress officer automatic start under Lee'"'"'s recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:
+{"authorising_class": "code-review", "evidence": ["Linear PC-201"], "id": "PC-201", "linear_id": "PC-201", "linear_ids": ["PC-201"], "link": "", "owner_home": "/tmp/fm-officer-progress.fGqNyp/manual/home", "priority": 0, "project": "", "rank": 1, "reason": "Unstarted work authorised by code-review", "tag_source": "linear-title-prefix:scheduled-review", "title": "[scheduled-review] Audit session boundaries"}'
+FM_HOME=/tmp/fm-officer-progress.fGqNyp/manual/home /home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M5YCK1458QJZPGKTYYH4AERM/bin/fm-inbox.sh note --request-id progress-2026-10-25-7abebc33078bb4e7 --json -- 'Progress officer automatic start under Lee'"'"'s recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:
+{"authorising_class": "bug", "evidence": ["Linear PC-203"], "id": "PC-203", "linear_id": "PC-203", "linear_ids": ["PC-203"], "link": "", "owner_home": "/tmp/fm-officer-progress.fGqNyp/manual/home", "priority": 0, "project": "", "rank": 2, "reason": "Unstarted work authorised by bug", "tag_source": "linear-title-prefix:Bug", "title": "Bug: Business Health tile shows NaN"}'
+
+=== RUN 2: open-PR discovery fails ===
+exit=0
+start_requests: 0
+Linear labels not readable by linear-axi
+Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete
+page asks:
+[firstmate] Needs a Captain's Log card: Security: rotate leaked credential; Outside automatic-start authority: rotate
+[firstmate] Needs a Captain's Log card: Bug: Business Health wording for empty state; Lee decides the wording choice
+[firstmate] Needs a Captain's Log card: Decide pricing tiers; Lee decides the pricing choice
+[firstmate] Restore discovery coverage: Linear labels not readable by linear-axi
+[firstmate] Restore discovery coverage: Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete
+handoff:
+0
+
+=== RUN 3: PR OK, registered home unreadable ===
+exit=0
+start_requests: 0
+Linear labels not readable by linear-axi
+Starts held: duplicate-start check unavailable: home records unavailable: /tmp/fm-officer-progress.fGqNyp/manual/missing

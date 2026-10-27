@@ -1,0 +1,8 @@
+Linear coverage: 9 pages, 893 items seen, 12 requests, 893 team items, 0 unblocked items, 0 requested roots visited, 0 hierarchy items, 2 rate-limit retries, 892 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear labels not readable by linear-axi
+Coverage gap: Linear discovery: team listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted
+Coverage gap: Linear discovery: team listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted
+Coverage gap: Linear discovery: team listing (started): RATE_LIMITED (exit 1); retry budget exhausted
+Coverage gap: Linear discovery: unblocked listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted
+Coverage gap: Linear discovery: unblocked listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted
+DIGEST 2026-10-27 19 data/officers/progress/2026-10-27.md

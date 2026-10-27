@@ -1,0 +1,67 @@
+{
+  "starts": [],
+  "asks": [
+    {
+      "id": "PC-3763",
+      "reason": "Lee decides the legal choice"
+    },
+    {
+      "id": "PC-3755",
+      "reason": "Lee decides the billing choice"
+    },
+    {
+      "id": "PC-3713",
+      "reason": "Lee decides the pricing choice"
+    },
+    {
+      "id": "PC-3639",
+      "reason": "Outside automatic-start authority: production"
+    },
+    {
+      "id": "PC-3571",
+      "reason": "Lee decides the wording choice"
+    },
+    {
+      "id": "PC-3449",
+      "reason": "Lee decides the billing choice"
+    },
+    {
+      "id": "PC-3234",
+      "reason": "Lee decides the pricing choice"
+    },
+    {
+      "id": "PC-3007",
+      "reason": "Lee decides the legal choice"
+    },
+    {
+      "id": "PC-2996",
+      "reason": "Lee decides the pricing choice"
+    },
+    {
+      "id": "PC-2860",
+      "reason": "Outside automatic-start authority: delete"
+    },
+    {
+      "id": "PC-2857",
+      "reason": "Outside automatic-start authority: delete"
+    },
+    {
+      "id": "PC-2811",
+      "reason": "Outside automatic-start authority: delete"
+    },
+    {
+      "id": "PC-2810",
+      "reason": "Outside automatic-start authority: delete"
+    }
+  ],
+  "excluded": 240,
+  "unclassified": 640,
+  "coverage": [
+    "Linear labels not readable by linear-axi",
+    "Linear discovery: team listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted",
+    "Linear discovery: team listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted",
+    "Linear discovery: team listing (started): RATE_LIMITED (exit 1); retry budget exhausted",
+    "Linear discovery: unblocked listing (backlog): RATE_LIMITED (exit 1); retry budget exhausted",
+    "Linear discovery: unblocked listing (unstarted): RATE_LIMITED (exit 1); retry budget exhausted"
+  ]
+}
