@@ -756,7 +756,7 @@ def main(argv):
         prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()])
     except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
         blockers.append("open PR discovery unavailable or incomplete")
-    problems = ["Linear labels not readable by linear-axi"] + blockers + problems
+    problems = ["Linear labels not readable by linear-axi"] + problems
     configured = set(filter(None, args.requested.split(",")))
     checked, unchecked = set(), {}
     while not blockers:

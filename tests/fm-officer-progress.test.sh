@@ -173,6 +173,7 @@ PYFIX
   assert_contains "$(jq -r '.excluded[].id' "$file")" 'PC-61' 'checked work waits for PR evidence'
   assert_contains "$(jq -r '.coverage[]' "$file")" \
     'Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete' 'the held reason is named'
+  assert_equals '1' "$(jq '[.coverage[] | select(contains("open PR discovery"))] | length' "$file")" 'the held reason is named once'
   [ ! -s "$lane/$DATE.start-requests.sh" ] || ! grep -q 'PC-61' "$lane/$DATE.start-requests.sh" \
     || fail 'failed PR discovery must not hand off a start'
   pass 'progress: checked items start with partial coverage and choices ask for cards'
