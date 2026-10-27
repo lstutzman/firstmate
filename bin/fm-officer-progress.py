@@ -439,6 +439,7 @@ def reconcile_merge_asks(rows, problems, deadline, linear):
             states.append(cache[url])
         row["finished_merge_ask"] = bool(states) and all(s == "merged" for s in states)
         row["closed_unmerged_pr"] = "closed" in states
+        row["open_merge_pr"] = "open" in states
 
 
 def classify(row):
@@ -578,7 +579,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             row["reason"] = "Recorded completed or canceled"
             row["outcome"] = "skipped" if state in ("canceled", "cancelled", "duplicate") else "ok"
             doc["done"].append(row)
-        elif (other_busy or pr_ids.intersection(row["linear_ids"])
+        elif (other_busy or (row.get("open_merge_pr") and not ask) or pr_ids.intersection(row["linear_ids"])
               or any(branch == row["id"] or branch.endswith("/" + row["id"]) for branch in pr_branches)):
             row["reason"] = "Already held, blocked, carded, in flight, or covered by an open PR"
             doc["excluded"].append(row)

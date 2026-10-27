@@ -226,6 +226,7 @@ PYFIX
 - [ ] pc-2186-nav-guards - Navigation guards for pricing
 - [ ] pc-2680-slice2 - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee)
 - [ ] slice2-merged - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/example/project/pull/4400)
+- [ ] slice2-open - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/other/repo/pull/4401)
 - [ ] known-name - Business health dashboard
 - [ ] feature-path - Add /pricing navigation (kind: feature) (requested-by: Lee)
 - [ ] real-choice - Lee to choose the export format
@@ -239,6 +240,7 @@ PYFIX
 MD
   printf 'kind=ship\n' > "$WORLD_HOME/state/worker-choice.meta"
   printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4400.json"
+  printf '{"state":"open","merged":false}\n' > "$WORLD/pr-4401.json"
   printf 'working [at=1]: started\n' > "$WORLD_HOME/state/recorded-start.status"
   run_progress >/dev/null || fail 'backlog ask classification failed'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
@@ -254,6 +256,9 @@ MD
   assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[], .excluded[]] | .[].id' "$file")" 'slice2-merged' \
     'the same merge-note task with a merged PR is dropped, never restarted'
   assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4400' 'a merge note still reads its PR state'
+  assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[]] | .[].id' "$file")" 'slice2-open' \
+    'the same merge-note task with an open PR in another repo never starts twice'
+  assert_contains "$(jq -r '.excluded[].id' "$file")" 'slice2-open' 'an open merge-note PR excludes the start'
   pass 'progress: backlog asks require an actual request from Lee'
 }
 
