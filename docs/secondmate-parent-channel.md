@@ -51,12 +51,14 @@ Handle each pending record according to its kind:
 
 - `dispatch`: Resolve the named item and its evidence, confirm the source's applicable authorization, then use the normal task lifecycle to dispatch or route the work.
   The intake and watcher never spawn a worker or assert that work has started.
-- `notice`: The watcher relays an information-only `working [key=machine-<key>]: machine service notice ...` line through `fm-parent-channel-lib.sh`.
-  Main reads its identifiers and evidence pointer as information, without creating a decision card from the notice.
+- `notice`: The watcher relays a `done [key=machine-<key>]: machine service notice ...` line through `fm-parent-channel-lib.sh`.
+  The `done` verb wakes main, which records an information-only Captain's Log entry without creating a decision card from the notice.
 - `blocked`: The watcher relays `blocked [key=machine-<key>]: machine service blocked ...` through the same parent-channel owner.
   Main handles the named problem under the existing keyed-blocker procedure.
 
-Each relay includes the source, item, severity, request ID, and evidence path, with no free-text payload.
+Each relay includes the source, item, severity, and request ID, followed by `reported: <summary>` when the record has a summary.
+The summary is the sender's own report, so a relay says work started only when the sender said so; the intake itself never asserts it.
+The evidence path is local to the submitting home and stays out of the relay.
 An explicit record key supplies `<key>`; otherwise the first 24 hexadecimal characters of the request ID's SHA-256 supply a stable event key.
 The `machine-` prefix separates service keys from other parent-channel publishers.
 Relay retries use the channel owner's time-insensitive append-once contract, so a restart or acknowledgment retry does not duplicate the same event.

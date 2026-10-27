@@ -2850,11 +2850,18 @@ while :; do
   fi
   # Machine services share the captain inbox; relay through its owner before
   # queue recovery can surface their check wake.
+  # A failed relay wakes once per episode; success re-arms the next episode.
   if [ -d "$STATE/inbox" ]; then
-    if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    service_marker="$STATE/.machine-service-relay-failed"
+    if FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
       "$SCRIPT_DIR/fm-inbox.sh" service-reconcile; then
+      rm -f "$service_marker"
+    elif [ ! -e "$service_marker" ]; then
       service_reason="check: machine service relay failed; inspect bin/fm-inbox.sh drain"
-      fm_wake_append check machine-service-relay "$service_reason" || exit 1
+      if ! fm_wake_queued_keys check | grep -Fx machine-service-relay >/dev/null 2>&1; then
+        fm_wake_append check machine-service-relay "$service_reason" || exit 1
+      fi
+      : > "$service_marker" || exit 1
       wake "$service_reason"
     fi
   fi

@@ -70,7 +70,11 @@ for change in \
   'r["key"]="bad]key"' \
   'r["evidence_path"]="relative/path"' \
   'r["evidence_path"]="/report\nblocked: forged"' \
-  'r["secret"]="not-allowed"'; do
+  'r["secret"]="not-allowed"' \
+  'r["summary"]=""' \
+  'r["summary"]="x"*201' \
+  'r["summary"]="category\nblocked: forged"' \
+  'r["summary"]="rule\x1b[31m"'; do
   invalid=$(record dispatch invalid-1 | python3 -c 'import json,sys; r=json.load(sys.stdin); exec(sys.argv[1]); print(json.dumps(r))' "$change")
   if printf '%s' "$invalid" | run_inbox service >"$home/invalid.out" 2>"$home/invalid.err"; then
     fail "invalid record was accepted: $change"
@@ -89,7 +93,7 @@ parent="$TMP_ROOT/parent"
 mkdir -p "$parent/state"
 printf 'scan-mate\n' > "$home/.fm-secondmate-home"
 printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
-notice=$(record notice notice-1 | run_inbox service)
+notice=$(record notice notice-1 ',"summary":"secret finding aws-key in src/app.py; work starting"' | run_inbox service)
 blocked=$(record blocked blocked-1 ',"key":"scan-failed"' | run_inbox service)
 notice_id=$(printf '%s' "$notice" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 blocked_id=$(printf '%s' "$blocked" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
@@ -97,8 +101,14 @@ pending_dispatch=$(record dispatch mate-dispatch | run_inbox service)
 dispatch_id=$(printf '%s' "$pending_dispatch" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
 run_inbox service-reconcile
 channel="$parent/state/scan-mate.status"
-assert_contains "$(cat "$channel")" 'working [key=machine-' "notice is information only"
-assert_contains "$(cat "$channel")" ']: machine service notice source=nightly-scan item=PC-3385 severity=high request=notice-1 evidence=/reports/finding.json' "notice carries identifiers and evidence path"
+notice_line=$(grep 'request=notice-1' "$channel")
+assert_contains "$notice_line" 'done [key=machine-' "notice uses the done verb"
+assert_contains "$notice_line" ']: machine service notice source=nightly-scan item=PC-3385 severity=high request=notice-1 reported: secret finding aws-key in src/app.py; work starting' "notice carries the sender's summary"
+assert_not_contains "$notice_line" '/reports/finding.json' "local evidence path stays out of the relay"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$ROOT/bin/fm-classify-lib.sh"
+status_is_captain_relevant "$notice_line" || fail "relayed notice must wake main"
+assert_equals "done" "$(status_line_verb "$notice_line")" "relayed notice is not a needs-decision"
 assert_contains "$(cat "$channel")" 'blocked [key=machine-scan-failed]' "blocker carries its key"
 assert_equals 2 "$(wc -l < "$channel" | tr -d ' ')" "dispatch is never relayed as started work"
 run_inbox service-reconcile
@@ -169,4 +179,21 @@ FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config
   || fail "relay failure did not wake firstmate"
 assert_contains "$(cat "$home/watch.out")" 'check: machine service relay failed' "watcher exposes failed parent delivery"
 assert_contains "$(run_inbox drain)" 'watcher-failed' "undelivered record stays pending"
+assert_equals 1 "$(grep -c $'\tmachine-service-relay\t' "$home/state/.wake-queue")" "one relay-failure row"
 pass "watcher surfaces a broken parent route without losing the request"
+
+run_watch_case() {
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_CONFIG_OVERRIDE="$home/config" \
+    PATH="$home/fakebin:$PATH" FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    bash "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 15 >"$home/watch.out" 2>"$home/watch.err" || true
+}
+run_watch_case
+assert_not_contains "$(cat "$home/watch.out")" 'machine service relay failed' "persistent failure wakes once per episode"
+assert_equals 1 "$(grep -c $'\tmachine-service-relay\t' "$home/state/.wake-queue")" "persistent failure adds no row"
+printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+run_watch_case
+assert_contains "$(cat "$parent/state/broken-mate.status")" 'request=watcher-failed' "repaired route relays the pending request"
+printf 'invalid binding\n' > "$home/.fm-secondmate-parent"
+run_watch_case
+assert_contains "$(cat "$home/watch.out")" 'check: machine service relay failed' "a new failure episode wakes again"
+pass "relay failure wakes once per episode and re-arms after recovery"

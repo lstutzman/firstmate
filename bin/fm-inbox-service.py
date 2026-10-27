@@ -29,7 +29,7 @@ def read_record():
     required = {"kind", "source", "item_id", "severity", "evidence_path", "request_id"}
     if not isinstance(record, dict) or not required <= record.keys():
         raise ValueError("missing required fields")
-    if record.keys() - required - {"key"}:
+    if record.keys() - required - {"key", "summary"}:
         raise ValueError("unknown fields")
     if any(not isinstance(value, str) for value in record.values()):
         raise ValueError("fields must be strings")
@@ -40,6 +40,8 @@ def read_record():
     for name in ("source", "item_id", "request_id", "key"):
         if name in record and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}", record[name]):
             raise ValueError("invalid " + name)
+    if "summary" in record and not (0 < len(record["summary"]) <= 200 and record["summary"].isprintable()):
+        raise ValueError("invalid summary")
     path = record["evidence_path"]
     if not path.startswith("/") or len(path) > 1024 or any(ord(c) < 32 or ord(c) > 126 for c in path):
         raise ValueError("invalid evidence_path")
@@ -61,10 +63,11 @@ def main():
         if record["kind"] == "dispatch":
             return
         key = record.get("key") or hashlib.sha256(record["request_id"].encode()).hexdigest()[:24]
-        verb = "blocked" if record["kind"] == "blocked" else "working"
+        verb = "blocked" if record["kind"] == "blocked" else "done"
+        reported = f" reported: {record['summary']}" if "summary" in record else ""
         print(f"{verb} [key=machine-{key}]: machine service {record['kind']} "
               f"source={record['source']} item={record['item_id']} severity={record['severity']} "
-              f"request={record['request_id']} evidence={record['evidence_path']}")
+              f"request={record['request_id']}{reported}")
 
 
 if __name__ == "__main__":

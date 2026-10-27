@@ -2784,10 +2784,11 @@ The object has these fields:
 | `evidence_path` | Absolute local path of at most 1024 printable ASCII characters, retained without reading the file. |
 | `request_id` | Identifier unique across this home's machine-service requests, including different sources and kinds. |
 | `key` | Optional problem key for upward relay. |
+| `summary` | Optional non-secret description of at most 200 printable characters on one line, such as the finding category, rule ID, and file path, and whether the sender started work. |
 
 Identifiers and keys contain 1-96 characters: an initial ASCII letter or digit, followed by ASCII letters, digits, `.`, `_`, or `-`.
-Every value is a string; unknown fields, duplicate fields, invalid values, and objects longer than 8192 characters are refused before saving.
-Records carry only identifiers and evidence paths: never include secret values, credentials, finding text, or evidence contents, even inside a filename or identifier.
+Every value is a string; unknown fields, duplicate fields, invalid values, a summary containing newlines or control characters, and objects longer than 8192 characters are refused before saving.
+Never include secret values, credentials, matched secret text, or evidence contents in any field, including the summary, a filename, or an identifier.
 The submitting service is responsible for that restriction; field validation does not detect secrets.
 This is a local trusted-producer interface, not an authenticated remote API or a grant of dispatch authority.
 
