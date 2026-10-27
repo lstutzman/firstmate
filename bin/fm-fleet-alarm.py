@@ -9,7 +9,11 @@ weekly capacity across non-stale Claude readings), silent_minutes
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Both readers share FM_CHECK_TIMEOUT (default 30); budget must leave 5 seconds.
 Secondmate inventory reads published home summaries (bounded remote reads fall
-back to the parent cache); no full fleet snapshot runs here. Registry and summary inputs are bounded at 64/256 KiB.
+back to the parent cache); no full fleet snapshot runs here. Unreachable homes
+without usable cached inventory are recorded quietly as not_collected.
+Partial child observations retain independently complete in-flight counts;
+other incomplete inventories alert with their reason.
+Registry and summary inputs are bounded at 64/256 KiB.
 Parent-channel age uses the shared classifier, excluding parent appends.
 One alert per condition/reset window, rearmed on clear. check and timer share a
 locked record, but independent delivery receipts, so a check cannot consume the
@@ -43,6 +47,12 @@ ID = 'fleet-alarm'
 RETIRED_MINUTES = 7 * 24 * 60
 
 
+class ReaderUnavailable(ValueError):
+    def __init__(self, returncode):
+        super().__init__('reader unavailable or timed out')
+        self.returncode = returncode
+
+
 def run(argv, seconds):
     # Reuse the repository's process-tree timeout implementation on all platforms.
     result = subprocess.run(
@@ -51,7 +61,7 @@ def run(argv, seconds):
         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         text=True, check=False)
     if result.returncode:
-        raise ValueError('reader unavailable or timed out')
+        raise ReaderUnavailable(result.returncode)
     return result.stdout
 
 
@@ -112,7 +122,7 @@ def read_json(path, limit=262144):
     return json.loads(content)
 
 
-def mate_findings(read, cfg):
+def mate_findings(read, cfg, not_collected):
     findings = {}
     registry = Path(os.environ.get('FM_DATA_OVERRIDE', HOME / 'data')) / 'secondmates.md'
     if not registry.exists():
@@ -159,28 +169,45 @@ done < "$2"
             path = cache / (digest + '.json')
         else:
             path = Path(home) / 'state/home-summary.json'
+        remote_unavailable = False
         try:
             if host:
                 try:
                     summary = json.loads(read([BIN / 'fm-on.sh', name, 'fm-remote-file.sh',
                                                'get', 'state/home-summary.json', '262144'],
                                               len(routes) - index + 1))
-                except (ValueError, OSError):
+                except ReaderUnavailable as error:
+                    remote_unavailable = error.returncode in (124, 137, 255)
+                    if not remote_unavailable:
+                        raise ValueError(f'remote summary reader failed with exit {error.returncode}') from error
                     summary = read_json(path)
             else:
                 summary = read_json(path)
             if (summary['schema'] != 'fm-secondmate-home-summary.v1'
                     or summary['hold_classifier_schema'] != 'fm-captain-hold-buckets.v1'
-                    or summary['home'] != home or summary['valid'] is not True):
+                    or summary['home'] != home or type(summary['valid']) is not bool):
                 raise ValueError('invalid cached home summary')
             generated = summary['generated_epoch']
             if (type(generated) not in (int, float) or not math.isfinite(generated)
                     or generated < 0 or max(0, time.time() - generated) >= cfg['stale_minutes'] * 60):
                 raise ValueError('cached home summary is stale or invalid')
             counts = summary['counts']
+            if not isinstance(counts, dict):
+                raise ValueError('invalid work counts')
             work = [counts.get('in_flight', 0), counts['active_children'], counts['decisions_open'], counts['holds']]
             if any(type(n) is not int or n < 0 for n in work):
                 raise ValueError('invalid work counts')
+            invalidity = summary.get('invalidity')
+            partial_counts = (isinstance(invalidity, dict)
+                              and invalidity.get('kind') == 'child_current_unavailable'
+                              and 'in_flight' in counts)
+            if not summary['valid'] and not partial_counts:
+                reason = summary.get('reason')
+                if not isinstance(reason, str) or not reason.strip():
+                    reason = 'no completeness reason supplied'
+                raise ValueError('home inventory incomplete: ' + reason[:500])
+            # The fallback is usable; later local metadata errors must still alert.
+            remote_unavailable = False
             if not any(work) and open_decisions == '0':
                 continue
             ages = [] if age == 'null' else [float(age)]
@@ -199,12 +226,16 @@ done < "$2"
             if not ages or min(ages) > cfg['silent_minutes'] * 60:
                 findings['silent:' + name] = f"Secondmate holding work silent over {cfg['silent_minutes']:g} minutes: {name}"
         except (ValueError, KeyError, TypeError, OSError) as error:
-            findings['mate-read:' + name] = f'Secondmate work inventory unavailable: {name}: {error}'
+            if remote_unavailable:
+                not_collected[name] = f'remote summary not collected: {error}'
+            else:
+                findings['mate-read:' + name] = f'Secondmate work inventory unavailable: {name}: {error}'
     return findings
 
 
 def collect(cfg):
     findings = {}
+    not_collected = {}
     quota_info = ''
     deadline = time.monotonic() + cfg['budget_seconds']
 
@@ -269,10 +300,10 @@ def collect(cfg):
     except (ValueError, KeyError, OSError) as error:
         findings['quota-read'] = f'Claude quota unavailable; reading may be stale: {type(error).__name__}: {error}'
     try:
-        findings.update(mate_findings(read, cfg))
+        findings.update(mate_findings(read, cfg, not_collected))
     except (ValueError, KeyError, TypeError, OSError) as error:
         findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
-    return findings, quota_info
+    return findings, quota_info, not_collected
 
 
 def check(channel):
@@ -287,10 +318,11 @@ def check(channel):
         old = stored.get('conditions', {})
         timer_open = stored.get('timer_open', False)
         try:
-            current, quota_info = collect(settings())
+            current, quota_info, not_collected = collect(settings())
         except (ValueError, OSError) as error:
             current = {'config': f'Fleet alarm configuration invalid: {error}'}
             quota_info = ''
+            not_collected = {}
         fresh = {key: value for key, value in current.items()
                  if channel not in old.get(key, [])}
         # An unavailable reader does not prove that its previous alarms cleared.
@@ -298,9 +330,10 @@ def check(channel):
                      if ('config' in current
                          or ('quota-read' in current and key.startswith(('quota:', 'stale:', 'pool', 'ignored:')))
                          or ('mate-read' in current and key.startswith(('silent:', 'mate-read:')))
-                         or (key.startswith('silent:') and 'mate-read:' + key[7:] in current))}
+                         or (key.startswith('silent:')
+                             and ('mate-read:' + key[7:] in current or key[7:] in not_collected)))}
         alarms = [key for key in current if not key.startswith('ignored:')]
-        cleared = channel == 'timer' and not alarms and timer_open
+        cleared = channel == 'timer' and not alarms and timer_open and not not_collected
         if (fresh if channel == 'check' else set(fresh) & set(alarms)) or cleared:
             details = list((current if channel == 'timer' else fresh).values())
             if quota_info:
@@ -322,7 +355,8 @@ def check(channel):
                for key in current}
         new.update(preserved)
         with tempfile.NamedTemporaryFile(mode='w', dir=STATE, prefix='.fleet-alarm-', delete=False) as file:
-            json.dump({'conditions': new, 'timer_open': timer_open}, file)
+            json.dump({'conditions': new, 'timer_open': timer_open,
+                       'not_collected': not_collected}, file)
             temporary = file.name
         os.replace(temporary, record)
 

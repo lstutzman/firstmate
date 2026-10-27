@@ -46,7 +46,10 @@ command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 cat > "$FAKEBIN/tmux" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}" in
-  display-message) printf '%%1\n' ;;
+  display-message)
+    [ "${FM_TEST_ENDPOINT_STALL:-0}" != 1 ] || sleep 60
+    printf '%%1\n'
+    ;;
   capture-pane) printf 'fixture pane\n> \n' ;;
 esac
 exit 0
@@ -60,6 +63,30 @@ fi
 exit 0
 SH
 chmod +x "$FAKEBIN/tmux" "$FAKEBIN/no-mistakes"
+
+# The endpoint observation shares the child bound with current-state reads.
+# A stalled local runtime must still allow a fresh, explicitly partial ledger.
+ENDPOINT_HOME="$TMP_ROOT/endpoint-home"
+mkdir -p "$ENDPOINT_HOME/state" "$ENDPOINT_HOME/data" "$ENDPOINT_HOME/config" \
+  "$ENDPOINT_HOME/projects/task"
+printf '## In flight\n- [ ] endpoint-task - Observe a stalled endpoint (repo: firstmate) (kind: ship)\n\n## Queued\n\n## Done\n' \
+  > "$ENDPOINT_HOME/data/backlog.md"
+fm_write_meta "$ENDPOINT_HOME/state/endpoint-task.meta" \
+  "window=fmtest:fm-endpoint-task" "worktree=$ENDPOINT_HOME/projects/task" \
+  "project=firstmate" "harness=claude" "kind=ship" "mode=direct-PR"
+endpoint_started=$(date +%s)
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$ENDPOINT_HOME" \
+  FM_TEST_ENDPOINT_STALL=1 FM_SNAPSHOT_CREW_STATE_TIMEOUT=2 \
+  FM_HOME_SUMMARY_TIMEOUT=8 "$WRITER" --best-effort
+[ -f "$ENDPOINT_HOME/state/home-summary.json" ] \
+  || fail "a stalled local endpoint prevented publication: $(cat "$ENDPOINT_HOME/state/.home-summary-refresh.log" 2>/dev/null)"
+jq -e '.valid == false and .invalidity.kind == "child_current_unavailable"
+  and any(.endpoints[]; .id == "endpoint-task" and .endpoint.exists == null)' \
+  "$ENDPOINT_HOME/state/home-summary.json" >/dev/null \
+  || fail "a timed-out endpoint observation did not remain explicitly unknown"
+endpoint_elapsed=$(( $(date +%s) - endpoint_started ))
+[ "$endpoint_elapsed" -lt 8 ] || fail "endpoint observation consumed the publication deadline"
+pass "stalled local endpoint publishes partial inventory in ${endpoint_elapsed}s within the child deadline"
 
 mkdir -p "$HOME_DIR/state" "$HOME_DIR/data" "$HOME_DIR/config" \
   "$HOME_DIR/projects/task" "$HOME_DIR/bin"

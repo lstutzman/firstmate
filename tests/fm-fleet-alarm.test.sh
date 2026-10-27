@@ -27,7 +27,8 @@ SH
 cat > "$BIN_FIX/fm-on.sh" <<'SH'
 #!/usr/bin/env bash
 [ ! -f "$FM_HOME/remote-slow" ] || sleep 10
-[ -f "$FM_HOME/remote-summary" ] || exit 1
+[ ! -f "$FM_HOME/remote-refused" ] || exit 1
+[ -f "$FM_HOME/remote-summary" ] || exit 255
 cat "$FM_HOME/remote-summary"
 SH
 # Exercise the real ledger publisher against the fixture home, without a watcher.
@@ -76,6 +77,55 @@ out=$(run_alarm check)
 [ -z "$out" ] || fail "idle mates and healthy quota must be silent: $out"
 pass 'idle secondmate never alarms, regardless of silence'
 
+# Child liveness can be unknown while the structured in-flight count is complete.
+python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_PARTIAL'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1])
+value=json.loads(path.read_text())
+value.update(valid=False, state='unknown',
+             invalidity=dict(kind='child_current_unavailable', ids=['worker']),
+             reason='child current state unavailable: worker')
+value['counts']['in_flight']=1
+path.write_text(json.dumps(value))
+PY_PARTIAL
+out=$(run_alarm check)
+assert_contains "$out" 'holding work silent' 'partial observations retain the independent in-flight work signal'
+assert_not_contains "$out" 'inventory unavailable' 'unknown child liveness does not invalidate structured work counts'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'partial child observations retain independently trustworthy work counts'
+
+python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_CONTRADICTION'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1])
+value=json.loads(path.read_text())
+value.update(valid=False, invalidity=dict(kind='orphan_in_flight'),
+             reason='in-flight backlog item has no child metadata: worker')
+path.write_text(json.dumps(value))
+PY_CONTRADICTION
+assert_contains "$(run_alarm check)" 'home inventory incomplete: in-flight backlog item has no child metadata: worker' 'reachable inventory contradictions retain their actual diagnostic'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'inventory contradictions remain loud on reachable homes'
+
+# An offline laptop has no collected inventory, rather than a broken document.
+printf -- '- gilligan - laptop (host: macbook.invalid; root: /remote/code; home: /remote/gilligan; scope: test; projects: alpha; added 2026-10-26)\n' \
+  > "$HOME_FIX/data/secondmates.md"
+out=$(run_alarm check)
+assert_not_contains "$out" 'inventory unavailable' 'offline Gilligan without a cache does not alarm'
+jq -e '.not_collected.gilligan | startswith("remote summary not collected:")' \
+  "$HOME_FIX/state/.fleet-alarm.json" >/dev/null \
+  || fail 'offline Gilligan must remain visible as not collected'
+# A reachable laptop returning a malformed document must still alarm.
+printf '{}\n' > "$HOME_FIX/remote-summary"
+assert_contains "$(run_alarm check)" "inventory unavailable: gilligan: 'schema'" 'reachable Gilligan with a malformed inventory alarms'
+mv "$HOME_FIX/remote-summary" "$HOME_FIX/offline-summary-cleared"
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'offline laptops are not collected while reachable inventory failures alarm'
+
 quota 0.9
 out=$(run_alarm check)
 [ -z "$out" ] || fail "exactly 90% carrying use and exactly 10% remaining are not past either threshold: $out"
@@ -122,12 +172,18 @@ name,host,remote='mate','unreachable.invalid','/remote/mate'
 (home/'data/secondmates.md').write_text(f'- {name} - test domain (host: {host}; root: /remote/code; home: {remote}; scope: test; projects: alpha; added 2026-10-26)\n')
 summary=json.loads((mate/'state/home-summary.json').read_text())
 summary['home']=remote
+summary.update(valid=False, invalidity=dict(kind='child_current_unavailable'),
+               reason='child current state unavailable: worker')
+summary['counts'].update(in_flight=1, active_children=0)
 cache=home/'state/secondmate-summary-cache'
 cache.mkdir(exist_ok=True)
 key=hashlib.sha256(f'{name}\n{host}\n{remote}\n'.encode()).hexdigest()
 (cache/(key+'.json')).write_text(json.dumps(summary))
 PY_CACHE
 assert_contains "$(run_alarm check)" 'holding work silent' 'remote mate uses route-keyed cache without contacting the host'
+: > "$HOME_FIX/remote-refused"
+assert_contains "$(run_alarm check)" 'remote summary reader failed with exit 1' 'a reachable command failure cannot be hidden by a usable cache'
+mv "$HOME_FIX/remote-refused" "$HOME_FIX/remote-refused-cleared"
 python3 - "$HOME_FIX" <<'PY_SKEW'
 from pathlib import Path
 import json,sys,time
@@ -145,7 +201,16 @@ for path in (Path(sys.argv[1])/'state/secondmate-summary-cache').glob('*.json'):
     value['generated_epoch']-=121*60
     path.write_text(json.dumps(value))
 PY_CACHE
-assert_contains "$(run_alarm check)" 'cached home summary is stale' 'stale inventory cannot appear healthy'
+assert_not_contains "$(run_alarm check)" 'inventory unavailable' 'offline home with only a stale cache is not collected'
+jq -e '.not_collected.mate | contains("stale")' "$HOME_FIX/state/.fleet-alarm.json" >/dev/null \
+  || fail 'offline stale cache was not recorded as not collected'
+python3 - "$HOME_FIX" <<'PY_STALE_REMOTE'
+from pathlib import Path
+import sys
+home=Path(sys.argv[1])
+(home/'remote-summary').write_text(next((home/'state/secondmate-summary-cache').glob('*.json')).read_text())
+PY_STALE_REMOTE
+assert_contains "$(run_alarm check)" 'cached home summary is stale' 'stale inventory from a reachable home still alarms'
 python3 - "$HOME_FIX" <<'PY_REMOTE'
 from pathlib import Path
 import json,sys,time
@@ -173,7 +238,9 @@ SECONDS=0
 out=$(run_alarm check)
 [ "$SECONDS" -lt 3 ] || fail 'slow remote starved the alarm budget'
 assert_contains "$out" 'holding work silent' 'local mate is checked despite a slow remote'
-assert_contains "$out" 'inventory unavailable: slow' 'unavailable remote remains visible'
+assert_not_contains "$out" 'inventory unavailable: slow' 'a remote collection timeout without a cache does not alarm'
+jq -e '.not_collected.slow != null' "$HOME_FIX/state/.fleet-alarm.json" >/dev/null \
+  || fail 'timed-out remote collection was not recorded'
 mv "$HOME_FIX/remote-slow" "$HOME_FIX/remote-slow-cleared"
 mv "$HOME_FIX/config/fleet-alarm.json" "$HOME_FIX/small-budget-cleared"
 mate 0 0 0
@@ -393,6 +460,13 @@ mv "$HOME_FIX/quota-fail" "$HOME_FIX/quota-fail-cleared"
 [ -z "$(run_alarm check)" ] || fail 'unknown read must not rearm an uncleared threshold'
 quota 0.2
 run_alarm check >/dev/null
+before=$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")
+printf -- '- gilligan - laptop (host: macbook.invalid; root: /remote/code; home: /remote/gilligan; scope: test; projects: alpha; added 2026-10-26)\n' \
+  > "$HOME_FIX/data/secondmates.md"
+run_alarm timer
+[ "$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")" = "$before" ] \
+  || fail 'not-collected inventory incorrectly resolved an open timer alert'
+mate 0 0 0
 run_alarm timer
 assert_contains "$(cat "$HOME_FIX/state/fleet-ledger.jsonl")" 'resolved' 'cleared timer alert closes its log decision'
 quota 0.99
@@ -508,7 +582,7 @@ assert_contains "$(run_alarm check)" "Secondmate work inventory unavailable: mat
 mate 0 0 0
 run_alarm check >/dev/null
 : > "$HOME_FIX/quota-fail"
-assert_contains "$(run_alarm check)" 'Claude quota unavailable; reading may be stale: ValueError: reader unavailable or timed out' 'quota failure names its cause'
+assert_contains "$(run_alarm check)" 'Claude quota unavailable; reading may be stale: ReaderUnavailable: reader unavailable or timed out' 'quota failure names its cause'
 mv "$HOME_FIX/quota-fail" "$HOME_FIX/quota-fail-cleared"
 run_alarm check >/dev/null
 pass 'reader failures report the exception type and reason'
