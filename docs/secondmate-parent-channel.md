@@ -30,6 +30,7 @@ Every captain-facing outcome that leaves durable evidence in the mate home is pu
 | Child leaving the home | its final ledger line | `bin/fm-teardown.sh`, which refuses to remove the child while that line is undelivered |
 | Child ended silently | terminal current state with a silent ledger | the existing inactive-outcome scan in `bin/fm-inactive-reconcile.sh` |
 | Answer to a marked request | a correlated line guarded by the pending-reply record | `bin/fm-secondmate-report.sh`, which resolves the parent channel from the mate home; the pending-reply guard repairs a line stranded in the local mate's same-basename status file before recovery or escalation |
+| Machine-service notice or blocker | a pending typed inbox record | `bin/fm-inbox.sh service-reconcile`, on the watcher poll or before inbox acknowledgment |
 | An outcome that exists only in the mate's reasoning | none | the charter and the `AGENTS.md` carve-outs only |
 
 The ledger delivery reads files, plus a local git reachability check on a ship `done:` with no delivery record yet (`bin/fm-dod-lib.sh`): it calls no harness, no forge, and no current-state reader, so it is identical for every harness and runtime backend.
@@ -41,6 +42,33 @@ Other correlated mate-home status lines remain wrong-home evidence, while a remo
 The mate home's own status scans treat that remote channel the same way: `status_scan_parent_channel_exclude` in `bin/fm-classify-lib.sh` resolves the outbound path through the same `bin/fm-parent-channel-lib.sh` binding, and the watcher's signal scan and heartbeat backstop, the away-mode daemon's catch-all scan, and the fleet-wide folds skip exactly that resolved path, never a file name.
 The remote reply adapter already mirrors every channel line into the parent home, so folding the channel again here would only spin spurious wakes and a phantom `parent-replies` task, while a `parent-replies.status` in a main home or in a local mate is an ordinary task log that keeps folding and waking.
 A missed-reply escalation includes the complete first sighting path and line number in readable shell-escaped form.
+
+## Machine-service handling
+
+On a `check: machine service` notification, drain the wake queue first, then read `bin/fm-inbox.sh drain`.
+The [configuration reference](configuration.md#machine-service-intake-stateinbox) owns the record schema and durability contract.
+Handle each pending record according to its kind:
+
+- `dispatch`: Resolve the named item and its evidence, confirm the source's applicable authorization, then use the normal task lifecycle to dispatch or route the work.
+  The intake and watcher never spawn a worker or assert that work has started.
+- `notice`: The watcher relays a `done [key=machine-<key>]: machine service notice ...` line through `fm-parent-channel-lib.sh`.
+  The `done` verb wakes main, which records an information-only Captain's Log entry without creating a decision card from the notice.
+- `blocked`: The watcher relays `blocked [key=machine-<key>]: machine service blocked ...` through the same parent-channel owner.
+  Main handles the named problem under the existing keyed-blocker procedure.
+
+Each relay includes the source, item, severity, and request ID, followed by `reported: <summary>` when the record has a summary.
+The summary is the sender's own report, so a relay says work started only when the sender said so; the intake itself never asserts it.
+The evidence path is local to the submitting home and stays out of the relay.
+An explicit record key supplies `<key>`; otherwise the first 24 hexadecimal characters of the request ID's SHA-256 supply a stable event key.
+The `machine-` prefix separates service keys from other parent-channel publishers.
+Relay retries use the channel owner's time-insensitive append-once contract, so a restart or acknowledgment retry does not duplicate the same event.
+Separate request IDs with the same explicit key remain separate events under that problem key.
+In a main home, which has no upward channel, firstmate handles all three kinds locally.
+
+After handling a request, acknowledge its inbox ID with `bin/fm-inbox.sh drain --ack <id>`; acknowledging the wake queue alone does not acknowledge the request.
+Relay leaves the local request pending, and acknowledgment of a notice or blocker in a secondmate home refuses until its parent relay succeeds.
+A missing or invalid parent binding or an unwritable channel keeps the request pending and produces a check notification for firstmate to repair the route.
+Inbox acknowledgment means delivery and handling of the request, not resolution of an upward blocker; the existing keyed resolution procedure still applies.
 
 ## What is deliberately not built
 
@@ -57,6 +85,7 @@ A missed-reply escalation includes the complete first sighting path and line num
 `tests/fm-teardown.test.sh` covers teardown delivering a child's final line and refusing when the channel cannot be written.
 `tests/fm-brief.test.sh` pins the charter's channel rule.
 `tests/fm-pending-reply.test.sh` covers helper-selected local routing, remote-channel classification, same-basename restatement before false escalation, readable wrong-home diagnostics, and the rule that arbitrary mate-home sightings never acknowledge a reply.
+`tests/fm-inbox-service.test.sh` covers service validation, replay, acknowledgment, local and remote upward relay, failed-relay retention, once-per-episode relay-failure wakes, and arrival through the real watcher.
 `tests/fm-parent-channel-scan-exclusion.test.sh` covers the home-shape-aware scan exclusion against real remote, main-home, and local-mate fixtures: the watcher signal scan, both heartbeat backstops, the fleet-wide folds, and the real `fm-wake-drain.sh` end to end.
 
 ## Live verification

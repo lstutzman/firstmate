@@ -31,6 +31,16 @@
 #   fm-inbox.sh ask  <question>...
 #   fm-inbox.sh list
 #   fm-inbox.sh drain [--ack <id>...]
+#   fm-inbox.sh service               (validated JSON record on stdin)
+#   fm-inbox.sh service-reconcile     (watcher repair and parent relay)
+#
+# `service` queues a machine-service record in this same inbox, with the same
+# receipt, request-id reservation, wake and acknowledgment lifecycle as notes.
+# docs/configuration.md owns its schema; docs/secondmate-parent-channel.md owns
+# handling. It never starts work or reads the evidence file. `service-reconcile`
+# repairs announcement and relays notice/blocked records through the parent
+# channel before they can be acknowledged. Both commands are local and make no
+# model call. Service request ids use the reserved `service:` namespace.
 #
 # `note --request-id` is the idempotent capture path: a repeat of the same
 # request id returns the original note instead of creating a second one, and
@@ -337,14 +347,19 @@ PY
 # Returns 2 without waking when the note is no longer pending: firstmate has
 # already acknowledged it, so a wake would only spend a turn on an empty inbox.
 announce_note() {  # <id> <summary>
-  local id=$1 summary=$2 lib="$FM_ROOT/bin/fm-wake-lib.sh" status=0
+  local id=$1 summary=$2 lib="$FM_ROOT/bin/fm-wake-lib.sh" status=0 reason
+  [ -f "$INBOX/$id.note" ] || return 2
   if note_announced "$id"; then
     return 0
   fi
-  [ -f "$INBOX/$id.note" ] || return 2
   if [ ! -r "$lib" ]; then
     printf 'fm-inbox: note saved but NOT announced (missing %s)\n' "$lib" >&2
     return 1
+  fi
+  reason="check: captain inbox note $id - $summary"
+  if service_note "$INBOX/$id.note"; then
+    reason=$(read_note_body "$INBOX/$id.note" | service_record wake) || return 1
+    reason="$reason inbox=$id"
   fi
   load_wake_lib || return 1
   fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" || return 1
@@ -356,7 +371,7 @@ announce_note() {  # <id> <summary>
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     return 2
   fi
-  if fm_wake_append_locked check "inbox:$id" "check: captain inbox note $id - $summary"; then
+  if fm_wake_append_locked check "inbox:$id" "$reason"; then
     mark_announced "$id"
   else
     status=1
@@ -482,6 +497,7 @@ cmd_note() {
         request_id=$2
         valid_request_id "$request_id" \
           || die "invalid request id (use 1-128 characters: A-Za-z0-9._:-)"
+        case "$request_id" in service:*) die "service: request ids are reserved" ;; esac
         shift 2
         ;;
       --) shift; break ;;
@@ -499,6 +515,60 @@ cmd_note() {
     body="$*"
   fi
   queue_note text "$body" "" "$request_id" "$json"
+}
+
+service_record() {  # <render-command>; JSON on stdin
+  need_python
+  python3 "$SELF_DIR/fm-inbox-service.py" "$1"
+}
+
+service_note() {  # <note-path>
+  [ -f "$1" ] && grep -qx 'service_schema=fm-inbox-service.v1' < <(sed '/^--$/q' "$1")
+}
+
+cmd_service() {
+  [ "$#" -eq 0 ] || die "usage: fm-inbox.sh service (JSON on stdin)"
+  local body request_id rc=0
+  body=$(service_record validate) || return 1
+  request_id=$(printf '%s' "$body" | service_record request-id) || return 1
+  load_wake_lib || die "cannot load inbox locks"
+  mkdir -p "$INBOX"
+  fm_lock_acquire_wait "$INBOX/.service.lock" || die "cannot lock service inbox"
+  queue_note machine-service "$body" 'service_schema=fm-inbox-service.v1' "$request_id" 1 || rc=$?
+  fm_lock_release "$INBOX/.service.lock"
+  return "$rc"
+}
+
+relay_service_note() {  # <note-path>; caller holds .service.lock
+  local path=$1 line rc=0
+  service_note "$path" || return 0
+  line=$(read_note_body "$path" | service_record relay) || return 1
+  [ -n "$line" ] || return 0
+  # shellcheck source=bin/fm-parent-channel-lib.sh
+  . "$SELF_DIR/fm-parent-channel-lib.sh"
+  fm_parent_channel_report "$FM_HOME" "$STATE" "$line" || rc=$?
+  # A main home has no upward channel; firstmate handles its local request.
+  [ "$rc" -eq 0 ] || [ "$rc" -eq 1 ] || {
+    printf 'fm-inbox: service relay failed for %s (parent channel error %s)\n' "${path##*/}" "$rc" >&2
+    return 1
+  }
+}
+
+cmd_service_reconcile() {
+  [ "$#" -eq 0 ] || die "usage: fm-inbox.sh service-reconcile"
+  [ -d "$INBOX" ] || return 0
+  local path id rc=0
+  load_wake_lib || return 1
+  fm_lock_acquire_wait "$INBOX/.service.lock" || return 1
+  for path in "$INBOX"/*.note; do
+    service_note "$path" || continue
+    id=${path##*/}; id=${id%.note}
+    if ! relay_service_note "$path" || ! announce_note "$id" machine-service; then
+      rc=1
+    fi
+  done
+  fm_lock_release "$INBOX/.service.lock"
+  return "$rc"
 }
 
 cmd_announce() {
@@ -1122,13 +1192,24 @@ cmd_drain() {
     [ "$#" -gt 0 ] || die "usage: fm-inbox.sh drain --ack <id>..."
     # Account for every id before moving any, so one bad id (or a whole list
     # passed as a single argument) acks nothing and fails naming it.
-    local id
+    local id service_ack=0
     for id in "$@"; do
       valid_note_id "$id" || die "invalid note id: '$id' (pass one id per argument)"
       [ -f "$INBOX/$id.note" ] || [ -f "$INBOX/handled/$id.note" ] \
         || die "no pending or handled note with id: $id"
+      if service_note "$INBOX/$id.note"; then service_ack=1; fi
     done
     mkdir -p "$INBOX/handled"
+    if [ "$service_ack" -eq 1 ]; then
+      load_wake_lib || die "cannot load inbox locks"
+      fm_lock_acquire_wait "$INBOX/.service.lock" || die "cannot lock service inbox"
+      for id in "$@"; do
+        if ! relay_service_note "$INBOX/$id.note"; then
+          fm_lock_release "$INBOX/.service.lock"
+          die "service note $id remains pending until its parent relay succeeds"
+        fi
+      done
+    fi
     for id in "$@"; do
       if [ -f "$INBOX/$id.note" ]; then
         mv "$INBOX/$id.note" "$INBOX/handled/$id.note"
@@ -1137,6 +1218,7 @@ cmd_drain() {
         printf 'already-acked %s\n' "$id"
       fi
     done
+    if [ "$service_ack" -eq 1 ]; then fm_lock_release "$INBOX/.service.lock"; fi
     return 0
   fi
   cmd_list
@@ -1146,6 +1228,8 @@ cmd_drain() {
 # ---------------------------------------------------------------- dispatch
 
 case "${1:-}" in
+  service) shift; cmd_service "$@" ;;
+  service-reconcile) shift; cmd_service_reconcile "$@" ;;
   note)     shift; cmd_note "$@" ;;
   announce) shift; cmd_announce "$@" ;;
   reply)    shift; cmd_reply "$@" ;;
