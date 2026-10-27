@@ -1316,8 +1316,9 @@ EOF
 # contradiction between the two records - see fm-captain-hold.sh's `diverged`.
 #
 # Semantics are not re-derived here: every candidate line goes through the same
-# _fm_decision_fold_line rule the two folds use, and the reported verb is read
-# off the transitions that rule produces.
+# _fm_decision_fold_line rule the incremental fold uses (and the whole-file awk
+# fold mirrors), and the reported verb is read off the transitions that rule
+# produces.
 #
 # One `grep` pre-selects those candidates so the bash fold below costs the log's
 # TRANSITIONS rather than its whole lifetime length - status files are only ever
@@ -1394,8 +1395,8 @@ status_scan_parent_channel_exclude() {  # <state>
 # Fleet-wide wrapper around status_open_decisions: scans every task's status
 # log under <state> and prefixes each still-open decision with its owning task
 # id, so a per-wake or per-session surface can print the consolidated open set
-# without re-walking the fold itself. A thin directory scan only - the fold
-# above remains the ONE place the open/resolved semantics are decided. Prints
+# without re-walking the fold itself. A thin directory scan only - it never
+# decides open/resolved semantics itself; status_open_decisions does. Prints
 # one "<task>\t<key>\t<verb>\t<note>" line per open decision, in glob (task id)
 # order; prints nothing when none are open.
 scan_open_decisions() {  # <state>
@@ -1427,9 +1428,10 @@ EOF
 # below are the bounded-cost siblings used for that per-drain path: each call
 # reads only the bytes appended to a status file since its own last call (a
 # persisted per-file byte cursor) and folds just those new lines into a
-# persisted running open-set, via the exact same _fm_decision_fold_line rule
-# status_open_decisions uses - so the two strategies can never disagree on what
-# is open. Cost is bounded by NEW appends since the last drain, not by the
+# persisted running open-set, via the per-line _fm_decision_fold_line rule
+# that status_open_decisions' awk fold mirrors (tests/fm-classify-decision-key.test.sh
+# pins the awk fold to this rule's captured output) - so the two strategies
+# agree on what is open. Cost is bounded by NEW appends since the last drain, not by the
 # status file's total lifetime size.
 #
 # Correctness invariant (unchanged from the whole-file fold): cursor advancement,
