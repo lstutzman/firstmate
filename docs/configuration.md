@@ -918,8 +918,17 @@ The triage and friction officers read this home and each local second mate home 
 ### Progress officer
 
 The progress officer finds unstarted work and initiates it through executable requests firstmate runs under Lee's standing authority of 2026-10-26.
-It reads this home's and every registered local or remote second mate home's Markdown backlog and task status, Linear issues and their parents, and open PRs in `repos`.
+It reads this home's and every registered local or remote second mate home's Markdown backlog and task status, Linear issues and their parents, open PRs in `repos`, and the fleet app's Top of Mind asks.
 Remote home reads run the same read-only scanner over SSH.
+Each run reads Top of Mind once over HTTPS; the progress script's header owns endpoint selection and timeout.
+A fetch or payload failure adds a `Top of Mind coverage-incomplete` entry and contributes no asks from that source; the officer never reuses cached asks or blocks other discovery on that failure.
+Every `not-started` ask and every `under-way` or `waiting` ask is checked against current home records and open PRs.
+A waiting ask is listed with the reason `waiting (Top of Mind status)` and is never automatically started.
+A not-started or under-way ask with no recorded work in flight becomes a start candidate under the existing classes and exclusions; a matching task, Linear identifier, work title, or link joins the ask to that work instead of creating another start, and a matching Linear issue joins the ask to every home record that links that issue.
+Team Linear identifiers named anywhere in a fresh ask are read as requested-root subtrees for that run.
+The digest's Top of Mind section lists each ask's start request or its reason for waiting, including the held task, active task or PR, other owner home, or completed or unknown work.
+Matched work keeps its own owner home and disposition.
+Unmatched work naming a scanned home, by path or directory name, is attributed to that home; unmatched work naming any other home is listed with that home's name for routing rather than started.
 The cursor-paginated team listing reads open issues only (triage, backlog, unstarted, and started) and supplies each issue's state, priority, URL, project, and description, which the listing cuts at 200 characters.
 Only requested-root subtrees receive full issue and child reads, retaining completed intermediate parents; before any Linear-backed item starts, its full description and parent chain are read in rank order, and a candidate whose read fails or exceeds the request budget is not started and is named as a coverage gap without deferring the candidates that were checked.
 Only identifiers that match the configured `team` key, such as `PC-123`, count as Linear links; other tokens of that shape, such as `CVE-2026-12345`, are ignored.
@@ -941,7 +950,7 @@ The deterministic classifier uses these authorizing classes, in this order:
 | --- | --- |
 | `security`, `cve` | `kind: security` or `kind: cve`, a title beginning `Security`, or a CVE identifier in the title |
 | `code-review`, `bug` | `kind: code-review` or `kind: bug`, or a title beginning `[scheduled-review]`, `Code review finding`, `Code review fix`, or `Bug` |
-| `requested-feature`, `requested-fleet` | `kind: feature` or `kind: fleet` with `requested-by: Lee`; a Linear item named in `requested` or linked from such a backlog row, or its descendants, defaults to `requested-feature` unless its own recorded class is more specific |
+| `requested-feature`, `requested-fleet` | A Top of Mind ask defaults to `requested-feature` unless its matching work has a more specific class; `kind: feature` or `kind: fleet` with `requested-by: Lee`; a Linear item named in `requested` or linked from such a backlog row, or its descendants, defaults to `requested-feature` unless its own recorded class is more specific |
 
 Backlog metadata uses the existing parenthesized tags, for example `(kind: bug)` and `(severity: high)`.
 The same tags in a Linear title or description, and the same title prefixes on a Linear title, classify a Linear-only item.
@@ -952,6 +961,7 @@ To keep such starts visible, every record carries `tag_source`, naming where its
 | `tag_source` | Authority |
 | --- | --- |
 | `backlog` | A tag or title prefix on a backlog row this fleet wrote |
+| `top-of-mind` | A fresh Top of Mind ask that supplies the requested-feature authority |
 | `task-meta` | The title in a task's `state/<id>.meta` file when the task has no backlog row; such tasks are already in flight and never start |
 | `linear-free-text:kind`, `linear-free-text:requested-by` | A tag in the Linear issue's title or description |
 | `linear-title-prefix:Security`, `linear-title-prefix:CVE`, `linear-title-prefix:Code review`, `linear-title-prefix:Bug`, `linear-title-prefix:scheduled-review` | The Linear title prefix, or a CVE identifier in the Linear title |
@@ -1004,6 +1014,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 | `unclassified` | Count of open items with no recorded start class; they are not listed |
 | `filler` | The extra discovery pass, or `null` |
 | `coverage` | Read failures or unsupported inputs; an empty array means all configured sources were read |
+| `top_of_mind` | One line per fresh Top of Mind ask: the ask and its start request or the reason it is listed instead |
 | `linear_coverage` | Linear discovery counts described under [Progress officer](#progress-officer) |
 
 Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all linked `linear_ids`, nullable `authorising_class`, nullable `tag_source`, `reason`, `evidence`, numeric `priority` (0 means unspecified), nullable `rank`, and nullable `execute`.

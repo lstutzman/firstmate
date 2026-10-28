@@ -16,6 +16,7 @@
     "excluded": {"type": "array", "items": {"$ref": "#/$defs/item"}},
     "unclassified": {"type": "integer", "minimum": 0},
     "coverage": {"type": "array", "items": {"type": "string"}},
+    "top_of_mind": {"type": "array", "items": {"type": "string"}},
     "linear_coverage": {
       "type": "object", "additionalProperties": false,
       "required": ["pages_fetched", "items_seen", "requests", "roots_visited", "hierarchy_items", "rate_limit_retries", "team_items", "unblocked_items", "descriptions_truncated", "unverified_starts"],
