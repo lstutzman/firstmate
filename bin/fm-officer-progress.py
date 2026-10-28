@@ -30,7 +30,8 @@ at once, records a resume time one hour later in the lane's
 linear-resume-after.json, and later runs skip Linear discovery until then.
 Linear and GitHub reads and waits respect FM_OFFICER_RUN_TIMEOUT (default 3600), reserving 30
 seconds for publication; exhaustion is a named coverage gap.
-Hierarchy reads visit only configured requested roots and their descendants.
+Hierarchy reads visit only requested roots (configured, linked from Lee-requested
+backlog rows, or named in a Top of Mind ask) and their descendants.
 A 50-child response is incomplete because linear-axi exposes no child cursor.
 Only start candidates are read in full, with their parent chains, in rank order
 before they start; a candidate whose read fails or exceeds the request budget is
