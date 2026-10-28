@@ -1097,6 +1097,7 @@ test_top_of_mind_dispositions() {
 ## Queued
 
 - [ ] held - Fix held crash (kind: bug) (hold: Lee decides) (hold-kind: captain)
+- [ ] blocked - Fix blocked crash (kind: bug) (blocked-by: running)
 - [ ] running - Fix running crash (kind: bug)
 - [ ] linked - Fix linked crash (kind: bug) (linear: PC-90)
 MD
@@ -1110,6 +1111,7 @@ JSON
   cat > "$WORLD/top-of-mind.json" <<'JSON'
 {"rows":[
  {"id":"held-ask","words":"Fix held crash","status":"not-started","work":[],"links":[]},
+ {"id":"blocked-ask","words":"Fix blocked crash","status":"not-started","work":[],"links":[]},
  {"id":"running-ask","words":"Fix running crash","status":"not-started","work":[],"links":[]},
  {"id":"pr-ask","words":"Fix PR crash","status":"waiting","work":[],"links":[{"url":"https://github.com/example/project/pull/12"}]},
  {"id":"linked-ask","words":"Fix linked crash","status":"not-started","work":[],"links":[{"url":"https://linear.app/example/issue/PC-90"}]},
@@ -1127,6 +1129,8 @@ JSON
   digest=$(cat "$lane/$DATE.md")
   assert_equals 'linked stalled' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'backlog and Linear duplicates start once; stalled asks become candidates'
   assert_contains "$digest" 'held-ask - Fix held crash: Waiting on Lee: held' 'existing holds explain the wait'
+  assert_contains "$digest" 'blocked-ask - Fix blocked crash: Already held, blocked, or carded' 'dependency blocks keep their own reason'
+  assert_not_contains "$digest" 'blocked-ask - Fix blocked crash: Waiting on Lee' 'dependency blocks never claim to wait on Lee'
   assert_contains "$digest" 'running-ask - Fix running crash: Already in flight: running' 'a live task prevents a second start'
   assert_contains "$digest" 'pr-ask - Fix PR crash: Already in flight: https://github.com/example/project/pull/12' 'open PRs prevent a second start'
   assert_contains "$digest" 'remote - Repair remote report: Owned by another home: slarti' 'other home ownership is named'

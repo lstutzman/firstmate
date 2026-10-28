@@ -675,7 +675,8 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             doc["unclassified"] += not finished
         elif held:
             row["reason"] = "Already held, blocked, or carded; firstmate must reconcile it"
-            category[id(row)] = "Waiting on Lee"
+            if any(r["tags"].get("hold-kind") == "captain" or r.get("open_calls") for r in chain):
+                category[id(row)] = "Waiting on Lee"
             doc["excluded"].append(row)
         elif moving:
             row["reason"] = "Already in flight"
