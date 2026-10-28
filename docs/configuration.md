@@ -10,11 +10,55 @@ Start with the directory layout, then use the setting reference for the behavior
 | Firstmate's code, private files, or project location | [FM_HOME](#fm_home) and [operational home layout](#operational-home-layout-and-state) |
 | Task windows and worker tools | [Runtime backend](#runtime-backend-configbackend--fm_backend) and [harness support](#harness-support) |
 | Worker permissions, accounts, or environment | [Claude permission mode](#claude-permission-mode-configclaude-permission-mode), [worker account pin](#worker-account-pin-configclaude-account-configpi-account), [worker tool exclusions](#worker-tool-exclusions-configcrew-exclude-tools), [worker launch environment](#worker-launch-environment-configlaunch-env-allowlist), and its [Orca environment source](#orca-environment-source-configlaunch-env-tmux-session) |
+| Dependency installs before a new worker starts | [Worker dependency setup](#worker-dependency-setup-configspawn-setup) |
 | Backlog, preferences, and memory | [Backlog backend](#backlog-backend-taskstoml--configbacklog-backend), [captain preferences](#captain-preferences-datacaptainmd--datacaptain-sharedmd), [external memory tiers](#external-memory-tiers-memory-layering-section), and [startup memory budget](#startup-memory-budget-configstartup-memory-budget) |
 | Supervision and presentation | [Pi supervision branch](#pi-supervision-branch), [supervision host](#supervision-host-configsupervision-host), and [Calm preference](#calm-preference-configcalm) |
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Role agents that report on the fleet | [Officers](#officers-dataofficersmd) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
+
+## Worker dependency setup (`config/spawn-setup/<project>/`)
+
+To install dependencies before a new worker starts, add shell scripts to the effective home's `config/spawn-setup/<project>/` directory, where `<project>` is the project directory's basename.
+`FM_CONFIG_OVERRIDE` selects a different config root when set.
+This configuration is private and opt-in; without it, spawn behavior is unchanged.
+
+| File | Effect |
+| --- | --- |
+| `<step>.sh` | Run this step with Bash, in filename order, starting in the isolated task copy. |
+| `<step>.off` | Skip this step when this file exists. |
+| `off` | Skip every step for this project when this file exists. |
+
+Use trusted dependency-install commands only, keep their project writes inside the task copy, and never use `sudo`.
+Setup uses the spawning process's environment and does not require executable script permissions.
+Keep credentials out of the scripts and their output, because output is saved to the task's logs.
+Fresh ship and scout launches run setup after the isolated copy is validated, its base is prepared, and the task record is published, before the worker starts, on every supported worker tool and runtime backend.
+Setup runs after the home-wide task-set lock and the shared Treehouse project lock are released, so other spawns and slot returns are not held up by a long install; the task's own record lock stays held until launch.
+Relaunches and persistent secondmates do not run setup.
+Each enabled step runs independently with its own fixed 600-second deadline; a failed step does not skip later steps or prevent the worker from launching.
+Output and the result go to `state/<task-id>.setup/<step>.log`.
+A failure or timeout adds the step name and log path to the worker's private launch instructions, telling it to rerun the install inside its copy before testing.
+[`bin/fm-spawn-setup.sh`](../bin/fm-spawn-setup.sh) owns execution and reporting; [`tests/fm-spawn-setup.test.sh`](../tests/fm-spawn-setup.test.sh) exercises the spawn integration.
+
+For PropertyCompass2, create `config/spawn-setup/PropertyCompass2/10-npm.sh` locally with:
+
+```bash
+set -e
+cd src/PropertyCompass.Web/client
+npm ci
+```
+
+Create `config/spawn-setup/PropertyCompass2/20-dotnet.sh` locally with:
+
+```bash
+set -e
+source scripts/dev-env.sh
+export DOTNET_ROOT
+dotnet restore PropertyCompass.sln
+```
+
+Use `20-dotnet.off` to disable only restore, or `off` to disable all PropertyCompass2 setup.
+These examples describe local configuration; no private project setup is included in the repository.
 
 ## FM_HOME
 
