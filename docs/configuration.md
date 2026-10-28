@@ -25,17 +25,16 @@ This configuration is private and opt-in; without it, spawn behavior is unchange
 | File | Effect |
 | --- | --- |
 | `<step>.sh` | Run this step with Bash, in filename order, starting in the isolated task copy. |
-| `<step>.timeout` | Set this step's timeout in whole seconds, from 1 through 3600; the default is 600. |
 | `<step>.off` | Skip this step when this file exists. |
 | `off` | Skip every step for this project when this file exists. |
 
 Use trusted dependency-install commands only, keep their project writes inside the task copy, and never use `sudo`.
 Setup uses the spawning process's environment and does not require executable script permissions.
 Keep credentials out of the scripts and their output, because output is saved to the task's logs.
-Fresh ship and scout launches run setup after the isolated copy is validated and its base is prepared, before the worker starts, on every supported worker tool and runtime backend.
+Fresh ship and scout launches run setup after the isolated copy is validated, its base is prepared, and the task record is published, before the worker starts, on every supported worker tool and runtime backend.
+Setup runs after the home-wide task-set lock and the shared Treehouse project lock are released, so other spawns and slot returns are not held up by a long install; the task's own record lock stays held until launch.
 Relaunches and persistent secondmates do not run setup.
-Each enabled step runs independently with its own deadline; a failed step does not skip later steps or prevent the worker from launching.
-An invalid timeout skips that step and reports a failure rather than running it without a bound.
+Each enabled step runs independently with its own fixed 600-second deadline; a failed step does not skip later steps or prevent the worker from launching.
 Output and the result go to `state/<task-id>.setup/<step>.log`.
 A failure or timeout adds the step name and log path to the worker's private launch instructions, telling it to rerun the install inside its copy before testing.
 [`bin/fm-spawn-setup.sh`](../bin/fm-spawn-setup.sh) owns execution and reporting; [`tests/fm-spawn-setup.test.sh`](../tests/fm-spawn-setup.test.sh) exercises the spawn integration.
@@ -57,7 +56,7 @@ export DOTNET_ROOT
 dotnet restore PropertyCompass.sln
 ```
 
-Use `20-dotnet.timeout` to allow a longer restore, `20-dotnet.off` to disable only restore, or `off` to disable all PropertyCompass2 setup.
+Use `20-dotnet.off` to disable only restore, or `off` to disable all PropertyCompass2 setup.
 These examples describe local configuration; no private project setup is included in the repository.
 
 ## FM_HOME

@@ -17,14 +17,15 @@ TMPDIR=/tmp bash bin/fm-test-run.sh tests/fm-spawn-setup.test.sh tests/fm-spawn-
 Observed output:
 
 ```text
-ok - setup timeout is enforced and worker still launches (4s total spawn)
-FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=27393
+ok - each step is bounded at the fixed 600-second deadline and a timeout is reported
+ok - a long setup does not block another spawn in the same home and project
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=31939
 ```
 
-The regression checks unchanged behavior without configuration, task-copy working directory, individual and project-wide switches, continued launch after a failed command, enforced timeout, and rejection of an invalid timeout.
-The timeout case uses a 1-second bound and requires the entire spawn to finish within 20 seconds.
+The regression checks unchanged behavior without configuration, task-copy working directory, individual and project-wide switches, continued launch after a failed command, the fixed 600-second bound and its timeout report, and a second spawn in the same home and project launching while the first spawn's setup is still running.
+The timeout case runs the setup helper against a fake `timeout` executable that records the requested bound and reports it as hit, so it does not wait for the real deadline.
 These checks exercise local setup and launch instruction delivery, without downloading packages or starting a model session.
-The integration in `bin/fm-spawn.sh` runs after copy validation at the shared pre-launch point for every worker tool and backend; it does not depend on vendor output or backend-specific delivery.
+The integration in `bin/fm-spawn.sh` runs after copy validation and after the shared task-set and Treehouse project locks are released, at the shared pre-launch point for every worker tool and backend; it does not depend on vendor output or backend-specific delivery.
 Persistent secondmates and relaunches bypass setup by design.
 This regression does not establish live package installation or live operation of each worker tool and backend.
 

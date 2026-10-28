@@ -11,6 +11,7 @@ config=$1
 copy=$2
 logs=$3
 brief=$4
+seconds=600
 [ -d "$config" ] && [ ! -e "$config/off" ] || exit 0
 config=$(cd "$config" && pwd -P) || exit 1
 report_failure() {
@@ -26,18 +27,6 @@ for script in "$config"/*.sh; do
     continue
   fi
   log="$logs/$step.log"
-  seconds=600
-  if [ -f "$config/$step.timeout" ]; then
-    seconds=$(cat "$config/$step.timeout")
-  fi
-  case "$seconds" in
-    ''|*[!0-9]*|0*) seconds=invalid ;;
-  esac
-  if [ "$seconds" = invalid ] || [ "${#seconds}" -gt 4 ] || [ "$seconds" -gt 3600 ]; then
-    printf 'Invalid timeout: use an integer from 1 through 3600 seconds.\n' > "$log"
-    report_failure "$step failed (invalid timeout)" "$log"
-    continue
-  fi
   result=0
   (cd "$copy" && fm_run_timed "$seconds" bash "$script") > "$log" 2>&1 || result=$?
   if [ "$result" -eq 0 ]; then
