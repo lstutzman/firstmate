@@ -132,6 +132,35 @@ status_event() {  # <json> <task> <key|null> <jq-path>
     "[.events[] | select(.kind == \"status-wait\" and .task == \$t and ((.key // \"null\") == \$k))][0] | $4" "$1"
 }
 
+test_merge_word_is_not_a_missing_tool() {
+  local home json
+  local DATE=2026-10-26 T=1793033657 NOW=1793077200
+  home=$(make_world merge-word)
+  cat > "$home/state/slarti.status" <<'EOF'
+needs-decision [key=fleet-app-pr67-merge] [at=1793033657]: For a Lee merge-word card (fleet-app needs his word on every PR). New progress-officer page: https://github.com/lstutzman/fleet-app/pull/67. It is a read-only page, separate from Captain's Choice and the Captain's Log, showing what the progress officer is doing, has done, and is asking for, plus its one-line summary and the file's age (stale or failed states are shown plainly). Captain's Log decisions appear only as links to the Log. It includes a pull job that reads the officer's JSON file (format agreed with Deep Thought) and the fleet-app route behind it. No-mistakes review passed and the fleet-app suite passes; there is no CI on
+resolved [key=fleet-app-pr67-merge] [at=1793035197]: Lee approved the merge
+EOF
+  run_officer "$home" >/dev/null || fail "merge-word fixture run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals "1540" "$(status_event "$json" slarti fleet-app-pr67-merge '.wait_s')" \
+    "the original merge-word wait is read and measured, not silently dropped"
+  assert_equals 0 "$(jq '[.events[] | select(.task == "slarti" and .cause == "missing-tool")] | length' "$json")" \
+    "the original merge approval is not classified as a missing tool"
+  assert_equals 0 "$(jq '[.findings[] | select(.carded and (.evidence.tasks | index("slarti")))] | length' "$json")" \
+    "the original merge approval produces no friction card"
+
+  cat > "$home/state/missing-tool.status" <<EOF
+blocked [at=$T] [key=missing-tool]: openjdk is not installed; Lee needs to install the missing tool
+resolved [at=$((T + 1540))] [key=missing-tool]: Lee installed openjdk
+EOF
+  run_officer "$home" >/dev/null || fail "missing-tool fixture run must succeed"
+  assert_equals "missing-tool" "$(status_event "$json" missing-tool missing-tool '.cause')" \
+    "a genuine missing tool retains its cause"
+  assert_equals "true" "$(finding "$json" missing-tool tool '.carded')" \
+    "a genuine missing-tool wait still produces a card"
+  pass "fm-officer friction: merge approval is not a missing tool; genuine missing tools still card"
+}
+
 test_status_waits_and_root_causes() {
   local home out json mate
   home=$(make_world status)
@@ -404,6 +433,7 @@ test_registry_and_unharvested_day() {
   pass "fm-officer friction: the registry needs an archive, and a missing day fails the run"
 }
 
+test_merge_word_is_not_a_missing_tool
 test_status_waits_and_root_causes
 test_transcript_lee_steps_and_refusals
 test_velocity_findings_file
