@@ -399,11 +399,12 @@ def classify(text, rules=RULES):
     for cause, sub, pattern in rules:
         candidate = text or ""
         if cause == "missing-tool" and rules is RULES:
-            if re.search(r"merge[- ]word|Lee'?s (?:word|go|approval|sign-?off)|needs? Lee'?s", candidate, re.I):
-                continue
             candidate = re.sub(
                 r"\b(?:service|unit|update) (?:is |was )?not installed\b",
                 lambda m: " " * len(m.group(0)), candidate, flags=re.I)
+            if (re.search(r"merge[- ]word|Lee'?s (?:word|go|approval|sign-?off)|needs? Lee'?s", candidate, re.I)
+                    and not re.search(r"command not found|no such command", candidate, re.I)):
+                continue
         m = pattern.search(candidate)
         if m:
             return cause, sub, m.start()

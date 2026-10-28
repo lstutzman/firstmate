@@ -161,11 +161,17 @@ EOF
 needs-decision [at=$T] [key=approval]: Needs Lee's approval for the release; a tool is not installed in the future image
 resolved [at=$((T + 1540))] [key=approval]: Lee approved the release
 EOF
+  cat > "$home/state/jq.status" <<EOF
+blocked [at=$T] [key=jq]: jq: command not found; needs Lee's go to brew install jq
+resolved [at=$((T + 1540))] [key=jq]: Lee installed jq
+EOF
   run_officer "$home" >/dev/null || fail "missing-tool fixture run must succeed"
   assert_equals 0 "$(jq '[.events[] | select((.task == "service" or .task == "approval") and .cause == "missing-tool")] | length' "$json")" \
     "an unshipped service and an approval wait are not missing agent tools"
   assert_equals "missing-tool" "$(status_event "$json" missing-tool missing-tool '.cause')" \
     "a genuine missing tool retains its cause"
+  assert_equals "missing-tool" "$(status_event "$json" jq jq '.cause')" \
+    "a command-not-found tool that also waits on Lee's go is still a missing tool"
   assert_equals "true" "$(finding "$json" missing-tool tool '.carded')" \
     "a genuine missing-tool wait still produces a card"
   pass "fm-officer friction: merge approval is not a missing tool; genuine missing tools still card"
