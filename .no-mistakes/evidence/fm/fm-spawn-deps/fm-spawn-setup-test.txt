@@ -1,0 +1,12 @@
+FM_TEST_BEGIN 2026-10-28T13:12:52Z tests/fm-spawn-setup.test.sh family=backend-dispatch expected_gate_skip=none
+ok - no config leaves spawn unchanged
+ok - configured setup runs in task copy with logged output
+ok - individual off switch skips its step
+ok - failed install is logged and reported while spawn succeeds
+ok - each step is bounded at the fixed 600-second deadline and a timeout is reported
+ok - a long setup does not block another spawn in the same home and project
+ok - project off switch skips all setup
+FM_TEST_END 2026-10-28T13:13:12Z tests/fm-spawn-setup.test.sh exit=0 duration_ms=19314 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=19346
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=19314 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-spawn-setup.test.sh duration_ms=19314

@@ -1,0 +1,127 @@
+LAB=/tmp/fm-lab.GohiXq
+=== Scenario 1: fresh spawn installs deps (npm ci) in the task copy; failing step reported, worker still launches
+notice: live1 ships mode=local-only while the standing posture for depproj is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+
+Spawn dependency setup: 20-restore failed (exit 3). Rerun this install inside the task copy before testing. Log: /tmp/fm-lab.GohiXq/state/live1.setup/20-restore.log
+spawned live1 harness=sh kind=ship mode=local-only yolo=off window=primary:fm-live1 worktree=/tmp/fm-lab.GohiXq/treehouse/.treehouse/depproj-414b6b/1/depproj
+rc=0
+worktree=/tmp/fm-lab.GohiXq/treehouse/.treehouse/depproj-414b6b/1/depproj
+--- worker-saw.txt (what the worker found at start):
+leftpad-lab
+--- node_modules in source project? 
+ls: cannot access '/tmp/fm-lab.GohiXq/work/depproj/node_modules': No such file or directory
+--- state/live1.setup:
+10-npm.log
+20-restore.log
+--- 10-npm.log:
+
+added 1 package in 95ms
+    ok
+
+Setup 10-npm passed.
+--- 20-restore.log:
+restore: package source unreachable
+
+Setup 20-restore failed: exit 3.
+--- launch-brief tail:
+## Firstmate spec
+Verify dependency setup.
+
+Spawn dependency setup: 20-restore failed (exit 3). Rerun this install inside the task copy before testing. Log: /tmp/fm-lab.GohiXq/state/live1.setup/20-restore.log
+
+=== Scenario 2: per-step off switch (20-restore.off) skips only that step
+spawned live2 harness=sh kind=ship mode=local-only yolo=off window=primary:fm-live2 worktree=/tmp/fm-lab.GohiXq/treehouse/.treehouse/depproj-414b6b/2/depproj
+rc=0
+10-npm.log
+0
+
+=== Scenario 3: long setup does not block a second spawn of the same project
+first spawn setup entered: yes
+second spawn finished while first setup still blocked (release absent=yes); s3 done yet=0
+0
+spawned live4 harness=sh kind=ship mode=local-only yolo=off window=primary:fm-live4 worktree=/tmp/fm-lab.GohiXq/treehouse/.treehouse/depproj-414b6b/4/depproj
+rc=0
+spawned live3 harness=sh kind=ship mode=local-only yolo=off window=primary:fm-live3 worktree=/tmp/fm-lab.GohiXq/treehouse/.treehouse/depproj-414b6b/3/depproj
+rc=0
+
+=== Scenario 4: project-wide off switch skips all setup
+spawned live5 harness=sh kind=ship mode=local-only yolo=off window=primary:fm-live5 worktree=/tmp/fm-lab.GohiXq/treehouse/.treehouse/depproj-414b6b/5/depproj
+rc=0
+no live5.setup state dir: setup skipped
+=== teardown
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/sendemail-validate': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/pre-auto-gc': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/post-rewrite': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/pre-push': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/post-merge': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/post-checkout': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/pre-rebase': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/post-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/prepare-commit-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/pre-merge-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/pre-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/post-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/pre-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/applypatch-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live5.git-hooks/commit-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/sendemail-validate': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/pre-auto-gc': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/post-rewrite': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/pre-push': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/post-merge': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/post-checkout': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/pre-rebase': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/post-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/prepare-commit-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/pre-merge-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/pre-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/post-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/pre-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/applypatch-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live4.git-hooks/commit-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/sendemail-validate': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/pre-auto-gc': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/post-rewrite': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/pre-push': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/post-merge': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/post-checkout': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/pre-rebase': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/post-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/prepare-commit-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/pre-merge-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/pre-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/post-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/pre-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/applypatch-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live3.git-hooks/commit-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/sendemail-validate': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/pre-auto-gc': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/post-rewrite': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/pre-push': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/post-merge': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/post-checkout': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/pre-rebase': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/post-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/prepare-commit-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/pre-merge-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/pre-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/post-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/pre-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/applypatch-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live2.git-hooks/commit-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/sendemail-validate': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/pre-auto-gc': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/post-rewrite': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/pre-push': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/post-merge': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/post-checkout': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/pre-rebase': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/post-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/prepare-commit-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/pre-merge-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/pre-commit': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/post-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/pre-applypatch': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/applypatch-msg': Permission denied
+rm: cannot remove '/tmp/fm-lab.GohiXq/state/live1.git-hooks/commit-msg': Permission denied
+lab removed: no
