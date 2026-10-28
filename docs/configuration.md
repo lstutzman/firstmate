@@ -923,10 +923,11 @@ Remote home reads run the same read-only scanner over SSH.
 Each run reads Top of Mind once over HTTPS; the progress script's header owns endpoint selection and timeout.
 A fetch or payload failure adds a `Top of Mind coverage-incomplete` entry and contributes no asks from that source; the officer never reuses cached asks or blocks other discovery on that failure.
 Every `not-started` ask and every `under-way` or `waiting` ask is checked against current home records and open PRs.
-A waiting ask is listed as waiting on Lee and is never automatically started.
-A not-started or under-way ask with no recorded work in flight becomes a start candidate under the existing classes and exclusions; a matching task, Linear identifier, work title, or link joins the ask to that work instead of creating another start.
+A waiting ask is listed with the reason `waiting (Top of Mind status)` and is never automatically started.
+A not-started or under-way ask with no recorded work in flight becomes a start candidate under the existing classes and exclusions; a matching task, Linear identifier, work title, or link joins the ask to that work instead of creating another start, and a matching Linear issue joins the ask to every home record that links that issue.
 The digest's Top of Mind section lists each ask's start request or its reason for waiting, including the held task, active task or PR, other owner home, or completed or unknown work.
-Unmatched work owned by another home is listed with that home's name for routing rather than started in the primary home.
+Matched work keeps its own owner home and disposition.
+Unmatched work naming a scanned home, by path or directory name, is attributed to that home; unmatched work naming any other home is listed with that home's name for routing rather than started.
 The cursor-paginated team listing reads open issues only (triage, backlog, unstarted, and started) and supplies each issue's state, priority, URL, project, and description, which the listing cuts at 200 characters.
 Only requested-root subtrees receive full issue and child reads, retaining completed intermediate parents; before any Linear-backed item starts, its full description and parent chain are read in rank order, and a candidate whose read fails or exceeds the request budget is not started and is named as a coverage gap without deferring the candidates that were checked.
 Only identifiers that match the configured `team` key, such as `PC-123`, count as Linear links; other tokens of that shape, such as `CVE-2026-12345`, are ignored.
@@ -1012,6 +1013,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 | `unclassified` | Count of open items with no recorded start class; they are not listed |
 | `filler` | The extra discovery pass, or `null` |
 | `coverage` | Read failures or unsupported inputs; an empty array means all configured sources were read |
+| `top_of_mind` | One line per fresh Top of Mind ask: the ask and its start request or the reason it is listed instead |
 | `linear_coverage` | Linear discovery counts described under [Progress officer](#progress-officer) |
 
 Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all linked `linear_ids`, nullable `authorising_class`, nullable `tag_source`, `reason`, `evidence`, numeric `priority` (0 means unspecified), nullable `rank`, and nullable `execute`.

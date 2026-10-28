@@ -1131,10 +1131,51 @@ JSON
   assert_contains "$digest" 'pr-ask - Fix PR crash: Already in flight: https://github.com/example/project/pull/12' 'open PRs prevent a second start'
   assert_contains "$digest" 'remote - Repair remote report: Owned by another home: slarti' 'other home ownership is named'
   assert_contains "$digest" 'remote-linear - Repair remote logs: Owned by another home: slarti' 'a Linear match retains the Top of Mind owner'
-  assert_contains "$digest" 'waiting-stalled - Repair missing export: Waiting on Lee: Top of Mind is waiting' 'waiting asks are listed without starting'
+  assert_contains "$digest" 'waiting-stalled - Repair missing export: waiting (Top of Mind status)' 'waiting asks are listed without starting'
   assert_contains "$digest" 'legal - Choose legal wording: Waiting on Lee:' 'restricted choices retain existing authority rules'
   assert_not_contains "$digest" 'finished - Already finished' 'done asks do not restart'
   pass 'progress: Top of Mind holds, ownership, stalled asks, and duplicate prevention'
+}
+
+test_top_of_mind_matched_dispositions() {
+  make_world top-matched
+  local other="$WORLD/deepthought" file="$WORLD_HOME/data/officers/progress/$DATE.json" digest
+  officer_home "$other"
+  printf -- '- deepthought - Builds fixtures (home: %s; scope: fixtures; projects: project; added 2026-10-26)\n' \
+    "$other" > "$WORLD_HOME/data/secondmates.md"
+  printf '## Queued\n\n- [ ] deep-bug - Fix deep crash (kind: bug)\n' > "$other/data/backlog.md"
+  printf '## Queued\n\n- [ ] issue-row - Fix issue row crash (kind: bug) (linear: PC-95)\n' > "$WORLD_HOME/data/backlog.md"
+  python3 -I - "$WORLD" <<'PY'
+import json, sys
+root = sys.argv[1]
+issues = [{'identifier':'PC-95','title':'Bug: issue-only crash','state':'Todo','stateType':'unstarted','priority':0},
+          {'identifier':'PC-96','title':'Code review finding: triage crash','state':'Triage','stateType':'triage','priority':0}]
+json.dump({'ok':True,'data':{'issues':issues}},open(root+'/linear/list.json','w'))
+for issue in issues:
+    json.dump({'ok':True,'data':{'issue':dict(issue,parent=None,description='')}},open(root+'/linear/'+issue['identifier']+'.json','w'))
+PY
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[
+ {"id":"deep-ask","words":"Fix deep crash","status":"not-started","work":[{"home":"deepthought","status":"not-started"}],"links":[]},
+ {"id":"new-deep-ask","words":"Repair deep report","status":"not-started","work":[{"home":"deepthought","status":"not-started"}],"links":[]},
+ {"id":"issue-ask","words":"Bug: issue-only crash","status":"waiting","work":[],"links":[]},
+ {"id":"triage-ask","words":"Fix triage crash","status":"not-started","work":[],"links":[{"url":"https://linear.app/example/issue/PC-96"}]}
+]}
+JSON
+  run_progress >/dev/null || fail 'matched Top of Mind run failed'
+  digest=$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")
+  assert_equals "deep-bug $other|new-deep-ask $other" \
+    "$(jq -r '[.start_requests[] | .id + " " + .owner_home] | sort | join("|")' "$file")" \
+    'asks naming a scanned second mate home start there'
+  assert_not_contains "$digest" 'Owned by another home' 'a scanned home is not routed elsewhere'
+  assert_not_contains "$(jq -r '.start_requests[].id' "$file")" 'issue-row' 'a waiting ask matched through Linear never starts the linking row'
+  assert_contains "$digest" 'issue-ask - Bug: issue-only crash: waiting (Top of Mind status)' 'the Linear match keeps the waiting reason'
+  assert_contains "$digest" 'triage-ask - Fix triage crash: Linear state is not unstarted: triage' 'triage asks show their actual reason'
+  assert_not_contains "$digest" 'Done/unknown' 'asks that are not done are never labelled done'
+  assert_equals "$(jq -r '.top_of_mind[] | "- " + .' "$file")" \
+    "$(sed -n '/^## Top of Mind$/,/^## Ranked/p' "$WORLD_HOME/data/officers/progress/$DATE.md" | grep '^- ')" \
+    'the digest lists the JSON dispositions'
+  pass 'progress: matched Top of Mind asks keep owner homes and actual reasons'
 }
 
 test_top_of_mind_failure() {
@@ -1164,6 +1205,7 @@ JSON
 
 test_top_of_mind_start
 test_top_of_mind_dispositions
+test_top_of_mind_matched_dispositions
 test_top_of_mind_failure
 test_backlog_asks_require_a_request
 test_ancestor_asks_hold_only_routed_asks

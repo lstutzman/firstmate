@@ -534,29 +534,35 @@ def read_top_of_mind(url):
     return [r for r in rows if r["status"] != "done"]
 
 
-def top_of_mind_items(asks, rows, issues, prs, home):
+def top_of_mind_items(asks, rows, issues, prs, homes):
     """Attach asks to existing work before classification, never enqueue a second copy."""
+    scanned = {"main": homes[0], "skipper": homes[0]}
+    for path in reversed(homes):
+        scanned.update({path: path, os.path.basename(path.split(":", 1)[-1].rstrip("/")): path})
     extra = []
     for ask in asks:
         work = ask["work"]
         owners = sorted({w["home"] for w in work if w.get("status") != "done"})
-        aliases = {home, os.path.basename(home.rstrip("/")), "main", "skipper"}
-        others = [owner for owner in owners if owner not in aliases]
+        others = [owner for owner in owners if owner not in scanned]
         links = [link["url"] for entry in [ask] + work for link in entry.get("links", [])]
         text = "\n".join([ask["words"]] + [str(w.get("title", "")) for w in work] + links)
         identifiers = set(LINEAR_ID.findall(text))
         titles = {TAG.sub("", title).strip().casefold()
                   for title in [ask["words"]] + [str(w.get("title", "")) for w in work]}
-        matches = [r for r in rows + issues + extra if r["id"] == ask["id"]
-                   or identifiers.intersection(r["linear_ids"])
-                   or TAG.sub("", r["title"]).strip().casefold() in titles
-                   or (r.get("link") and r["link"] in links)
-                   or any(url.endswith("/captains-log#" + r["id"]) for url in links)]
-        # Prefer home records: judge already joins their linked Linear copies.
-        local_ids = {i for r in matches if r in rows for i in r["linear_ids"]}
-        matches = [r for r in matches if r in rows or not local_ids.intersection(r["linear_ids"])]
+        found = [r for r in rows + issues + extra if r["id"] == ask["id"]
+                 or identifiers.intersection(r["linear_ids"])
+                 or TAG.sub("", r["title"]).strip().casefold() in titles
+                 or (r.get("link") and r["link"] in links)
+                 or any(url.endswith("/captains-log#" + r["id"]) for url in links)]
+        # Judge merges a Linear issue into the home records that link it.
+        matches = []
+        for match in found:
+            local = [r for r in rows if r is match or (match.get("linear_only") and match["linear_id"] in r["linear_ids"])]
+            matches += [r for r in local or [match] if not any(r is m for m in matches)]
+        owned = any(any(r is m for m in rows) for r in matches)
         if not matches:
-            row = item(ask["id"], ask["words"], home, text)
+            owner = scanned.get(owners[0], homes[0]) if owners and not others else homes[0]
+            row = item(ask["id"], ask["words"], owner, text)
             row.update(section="queued", origin="top-of-mind")
             if work and all(w.get("status") == "done" for w in work):
                 row["top_reason"] = "Done/unknown: linked work is recorded done"
@@ -577,10 +583,10 @@ def top_of_mind_items(asks, rows, issues, prs, home):
             if matching_prs:
                 row["top_reason"] = "Already in flight: " + (matching_prs[0].get("html_url")
                                                             or matching_prs[0].get("title") or row["id"])
-            elif others:
+            elif others and not owned:
                 row["top_reason"] = "Owned by another home: " + ", ".join(others)
             elif ask["status"] == "waiting":
-                row["top_reason"] = "Waiting on Lee: Top of Mind is waiting"
+                row["top_reason"] = "waiting (Top of Mind status)"
             elif any("/captains-log#" in url for url in links) and row.get("section") != "done":
                 row["top_reason"] = "Waiting on Lee: linked Captain's Log card"
     return extra
@@ -592,8 +598,9 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
            "filler": None, "coverage": problems}
     team_id = re.compile(r"\b%s-\d+\b" % re.escape(team))
     rows = [row for snapshot in snapshots for row in snapshot["rows"]]
-    home = snapshots[0]["home"] if snapshots else "unknown"
-    rows += top_of_mind_items(top_of_mind, rows, issues, prs, home)
+    homes = [snapshot["home"] for snapshot in snapshots] or ["unknown"]
+    rows += top_of_mind_items(top_of_mind, rows, issues, prs, homes)
+    category = {}
     linked = {}
     for row in rows:
         row["linear_ids"] = [i for i in row["linear_ids"] if team_id.fullmatch(i)]
@@ -668,9 +675,11 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             doc["unclassified"] += not finished
         elif held:
             row["reason"] = "Already held, blocked, or carded; firstmate must reconcile it"
+            category[id(row)] = "Waiting on Lee"
             doc["excluded"].append(row)
         elif moving:
             row["reason"] = "Already in flight"
+            category[id(row)] = "Already in flight"
             doc["doing"].append(row)
         elif row.get("section") == "done" or state in FINISHED:
             row["reason"] = "Recorded completed or canceled"
@@ -686,6 +695,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             doc["done"].append(row)
         elif ask:
             row["reason"] = ask
+            category[id(row)] = "Waiting on Lee"
             doc["asks_for_lee"].append(row)
         elif state and state not in UNSTARTED:
             row["reason"] = "Linear state is not unstarted: " + state
@@ -701,12 +711,14 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             doc["start_requests"].append(row)
         if row.get("closed_unmerged_pr") and any(doc[k] and doc[k][-1] is row for k in ("asks_for_lee", "excluded")):
             row["reason"] = "PR closed unmerged: check whether still needed"
+            category.pop(id(row), None)
     asking = {id(r) for r in doc["asks_for_lee"]}
     starts, doc["start_requests"] = doc["start_requests"], []
     for row in starts:
         ancestor = next((r for r in ancestry(row)[1:] if id(r) in asking), None)
         if ancestor:
             row["reason"] = "Held until Lee answers the ancestor's ask: " + ancestor["id"]
+            category[id(row)] = "Waiting on Lee"
             doc["excluded"].append(row)
         else:
             doc["start_requests"].append(row)
@@ -730,6 +742,14 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
     doc["coverage"] = problems + ["Linear discovery: start check %s: %s" % gap for gap in sorted(unchecked.items())]
     for rank, row in enumerate(doc["start_requests"], 1):
         row["rank"] = rank
+    doc["top_of_mind"] = []
+    for key in ("start_requests", "doing", "done", "asks_for_lee", "excluded"):
+        for row in doc[key]:
+            label = category.get(id(row))
+            reason = row["reason"] if not label else label + ": " + row["id"] + (
+                "" if row["reason"] == label else "; " + row["reason"])
+            doc["top_of_mind"] += [e.removeprefix("Top of Mind: ") + ": " + reason
+                                   for e in row["evidence"] if e.startswith("Top of Mind: ")]
     for key in ("doing", "done", "start_requests", "asks_for_lee", "excluded"):
         for row in doc[key]:
             for private in list(row):
@@ -898,18 +918,7 @@ def page_state(doc, officer, previous, repos, log_url, reported):
 
 def render_md(doc):
     lines = ["# Progress officer digest for " + doc["date"], "", "## Top of Mind", ""]
-    for group in ("start_requests", "doing", "done", "asks_for_lee", "excluded"):
-        for row in doc[group]:
-            for evidence in row["evidence"]:
-                if evidence.startswith("Top of Mind: "):
-                    reason = row["reason"]
-                    if group == "doing":
-                        reason = "Already in flight: " + row["id"]
-                    elif group == "asks_for_lee" or "held, blocked, or carded" in reason:
-                        reason = "Waiting on Lee: " + row["id"] + "; " + reason
-                    elif group == "excluded" and not reason.startswith(("Waiting on Lee", "Owned by", "Already in flight", "Done/unknown")):
-                        reason = "Done/unknown: " + reason
-                    lines.append("- " + evidence.removeprefix("Top of Mind: ") + ": " + reason)
+    lines += ["- " + line for line in doc["top_of_mind"]]
     if lines[-1] == "":
         lines.append("- None; see Coverage for any source failure.")
     lines.append("")
