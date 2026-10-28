@@ -17,6 +17,8 @@ make_world() {
   officer_home "$WORLD_HOME"
   FAKEBIN=$(fm_fakebin "$WORLD")
   mkdir -p "$WORLD/linear"
+  printf '{"rows":[]}\n' > "$WORLD/top-of-mind.json"
+  stub_python
   printf -- '- progress - Finds authorised work to start (role: progress; cadence: daily 07:00; team: PC; repos: example/project; requested: PC-10; model: none; added 2026-10-26)\n' > "$WORLD_HOME/data/officers.md"
   printf '## In flight\n\n## Queued\n\n## Done\n' > "$WORLD_HOME/data/backlog.md"
   printf '{"ok":true,"data":{"issues":[]}}\n' > "$WORLD/linear/list.json"
@@ -107,27 +109,38 @@ SH
   chmod +x "$FAKEBIN/linear-axi" "$FAKEBIN/gh-axi"
 }
 
-stub_sleep() {
+stub_python() {
   local real_python
   real_python=$(command -v python3)
-  # Record backoff instead of waiting it out; other python3 uses pass through.
   cat > "$FAKEBIN/python3" <<SH
 #!/usr/bin/env bash
 case "\$2" in
-  *fm-officer-progress.py) exec "$real_python" -I -c 'import os, runpy, sys, time
-clock = [time.monotonic()]
-time.monotonic = lambda: clock[0]
-def wait(s):
-    if s < 0.1: return
-    clock[0] += s
-    if s >= 1: open(os.environ["PROGRESS_WORLD"] + "/sleeps", "a").write("%g\n" % s)
-time.sleep = wait
+  *fm-officer-progress.py) exec "$real_python" -I -c '
+import io, json, os, pathlib, runpy, sys, time, urllib.request
+root = pathlib.Path(os.environ["PROGRESS_WORLD"])
+def fetch(url, timeout):
+    with (root / "fetches").open("a") as log: log.write(str(url) + " " + str(timeout) + "\n")
+    if (root / "fetch-failure").exists(): raise OSError("fixture unavailable")
+    return io.BytesIO((root / "top-of-mind.json").read_bytes())
+urllib.request.urlopen = fetch
+if (root / "stub-sleep").exists():
+    clock = [time.monotonic()]
+    time.monotonic = lambda: clock[0]
+    def wait(s):
+        if s < 0.1: return
+        clock[0] += s
+        if s >= 1: (root / "sleeps").open("a").write("%g\n" % s)
+    time.sleep = wait
 sys.argv = sys.argv[2:]
 runpy.run_path(sys.argv[0], run_name="__main__")' "\$@" ;;
 esac
 exec "$real_python" "\$@"
 SH
   chmod +x "$FAKEBIN/python3"
+}
+
+stub_sleep() {
+  touch "$WORLD/stub-sleep"
 }
 
 run_progress() {
@@ -1064,6 +1077,93 @@ PY
   pass 'progress: reads other homes and status without acting on them'
 }
 
+test_top_of_mind_start() {
+  make_world top-start
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[{"id":"repair-export","words":"Fix the export crash","status":"not-started","work":[],"links":[],"priority":2}]}
+JSON
+  run_progress >/dev/null || fail 'Top of Mind run failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'repair-export' "$(jq -r '.start_requests[0].id' "$file")" 'a startable Top of Mind ask becomes a request'
+  assert_equals 'start' "$(jq -r '.start_requests[0].execute.action' "$file")" 'Top of Mind uses the existing executable handoff'
+  assert_equals '1' "$(wc -l < "$WORLD/fetches" | tr -d ' ')" 'Top of Mind is read once'
+  pass 'progress: Top of Mind start requests'
+}
+
+test_top_of_mind_dispositions() {
+  make_world top-dispositions
+  stub_sleep
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## Queued
+
+- [ ] held - Fix held crash (kind: bug) (hold: Lee decides) (hold-kind: captain)
+- [ ] running - Fix running crash (kind: bug)
+- [ ] linked - Fix linked crash (kind: bug) (linear: PC-90)
+MD
+  printf 'kind=ship\n' > "$WORLD_HOME/state/running.meta"
+  printf 'working [at=1]: running\n' > "$WORLD_HOME/state/running.status"
+  linear_item PC-90 'Bug: linked crash'
+  printf '%s\n' '{"ok":true,"data":{"issue":{"identifier":"PC-92","title":"Repair remote logs","state":"Todo","stateType":"unstarted"}}}' > "$WORLD/linear/PC-92.json"
+  cat > "$WORLD/prs.json" <<'JSON'
+[{"title":"Fix PR crash","html_url":"https://github.com/example/project/pull/12","head":{"ref":"fm/pr-crash"}}]
+JSON
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[
+ {"id":"held-ask","words":"Fix held crash","status":"not-started","work":[],"links":[]},
+ {"id":"running-ask","words":"Fix running crash","status":"not-started","work":[],"links":[]},
+ {"id":"pr-ask","words":"Fix PR crash","status":"waiting","work":[],"links":[{"url":"https://github.com/example/project/pull/12"}]},
+ {"id":"linked-ask","words":"Fix linked crash","status":"not-started","work":[],"links":[{"url":"https://linear.app/example/issue/PC-90"}]},
+ {"id":"stalled","words":"Repair missing report","status":"under-way","work":[{"home":"main","title":"Repair missing report","status":"under-way","priority":1}],"links":[]},
+ {"id":"stalled-again","words":"Repair missing report","status":"not-started","work":[],"links":[]},
+ {"id":"waiting-stalled","words":"Repair missing export","status":"waiting","work":[],"links":[]},
+ {"id":"remote","words":"Repair remote report","status":"not-started","work":[{"home":"slarti","status":"not-started"}],"links":[]},
+ {"id":"remote-linear","words":"Repair remote logs","status":"not-started","work":[{"home":"slarti","status":"not-started"}],"links":[{"url":"https://linear.app/example/issue/PC-92"}]},
+ {"id":"legal","words":"Choose legal wording","status":"not-started","work":[],"links":[]},
+ {"id":"finished","words":"Already finished","status":"done","work":[],"links":[]}
+]}
+JSON
+  run_progress >/dev/null || fail 'Top of Mind disposition run failed'
+  local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json" digest
+  digest=$(cat "$lane/$DATE.md")
+  assert_equals 'linked stalled waiting-stalled' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'backlog and Linear duplicates start once; stalled asks become candidates'
+  assert_contains "$digest" 'held-ask - Fix held crash: Waiting on Lee: held' 'existing holds explain the wait'
+  assert_contains "$digest" 'running-ask - Fix running crash: Already in flight: running' 'a live task prevents a second start'
+  assert_contains "$digest" 'pr-ask - Fix PR crash: Already in flight: https://github.com/example/project/pull/12' 'open PRs prevent a second start'
+  assert_contains "$digest" 'remote - Repair remote report: Owned by another home: slarti' 'other home ownership is named'
+  assert_contains "$digest" 'remote-linear - Repair remote logs: Owned by another home: slarti' 'a Linear match retains the Top of Mind owner'
+  assert_contains "$digest" 'legal - Choose legal wording: Waiting on Lee:' 'restricted choices retain existing authority rules'
+  assert_not_contains "$digest" 'finished - Already finished' 'done asks do not restart'
+  pass 'progress: Top of Mind holds, ownership, stalled asks, and duplicate prevention'
+}
+
+test_top_of_mind_failure() {
+  make_world top-failure
+  stub_sleep
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[{"id":"fresh","words":"Repair report","status":"not-started","work":[]}]}
+JSON
+  run_progress >/dev/null || fail 'initial Top of Mind run failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'fresh' "$(jq -r '.start_requests[0].id' "$file")" 'initial source starts'
+  touch "$WORLD/fetch-failure"
+  run_progress >/dev/null || fail 'failed fetch should still publish a digest'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'failed fetch never reuses stale candidates'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Top of Mind coverage-incomplete' 'fetch failure names incomplete coverage'
+  printf '## Queued\n\n- [ ] independent - Fix independent crash (kind: bug)\n' > "$WORLD_HOME/data/backlog.md"
+  run_progress >/dev/null || fail 'independent work run failed'
+  assert_equals 'independent' "$(jq -r '.start_requests[0].id' "$file")" 'failed Top of Mind does not block other sources'
+  mv "$WORLD/fetch-failure" "$WORLD/fetch-failure.saved"
+  printf '{"rows":[{"id":"valid","words":"Repair valid report","status":"not-started","work":[]},{"id":"bad"}]}\n' > "$WORLD/top-of-mind.json"
+  run_progress >/dev/null || fail 'malformed Top of Mind should still publish'
+  assert_equals 'independent' "$(jq -r '.start_requests[0].id' "$file")" 'malformed payload starts nothing from a partially parsed source'
+  assert_equals '1' "$(jq '.start_requests | length' "$file")" 'other work continues after parse failure'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Top of Mind coverage-incomplete' 'parse failure names incomplete coverage'
+  pass 'progress: Top of Mind failure never reuses stale data or blocks other discovery'
+}
+
+test_top_of_mind_start
+test_top_of_mind_dispositions
+test_top_of_mind_failure
 test_backlog_asks_require_a_request
 test_ancestor_asks_hold_only_routed_asks
 test_linear_rate_limit_recovers

@@ -4,8 +4,15 @@
 Usage: fm-officer-progress.py run --date YYYY-MM-DD --out <lane>
          --home <dir|host:/dir> [--home ...] [--team PC]
          [--repos owner/repo,...] [--requested PC-1,...] [--now <epoch>]
+         [--top-of-mind <https-url>]
        fm-officer-progress.py scan --home <dir>
 
+Reads Top of Mind once per run with a five-second HTTPS timeout, from the
+configured captains-log origin's /api/top-of-mind endpoint, or the fleet endpoint
+https://slartibartfast.tail299042.ts.net:8743/api/top-of-mind when no origin is
+configured. --top-of-mind overrides that endpoint for direct invocation.
+A failed fetch or malformed payload reports coverage-incomplete and contributes
+no candidates; backlog and Linear discovery still proceed without cached asks.
 Reads backlog rows and task status without changing them. Only this officer's
 lane receives dated JSON, Markdown, and the latest progress-state.json.
 The registry and state schema are documented in docs/configuration.md.
@@ -41,6 +48,7 @@ import argparse
 import copy
 import datetime
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -49,6 +57,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import urllib.request
 
 LINEAR_ID = re.compile(r"\b[A-Z][A-Z0-9]*-\d+\b")
 ROW = re.compile(r"^- \[([ xX])\] ([\w.-]+)\s*(?: - |: )(.+)$")
@@ -457,7 +466,8 @@ def classify(row):
         if re.match(pattern, text):
             return name, "linear-title-prefix:" + label if linear_only else local
     if kind in ("feature", "fleet") and row["tags"].get("requested-by", "").lower() == "lee":
-        return "requested-" + kind, "linear-free-text:requested-by" if linear_only else local
+        return "requested-" + kind, (local if local == "top-of-mind" else
+                                     "linear-free-text:requested-by" if linear_only else local)
     return None, None
 
 
@@ -497,12 +507,92 @@ def lee_ask(row):
     return None
 
 
-def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers):
+def read_top_of_mind(url):
+    """Read one fresh payload; reject the whole source if any candidate is malformed."""
+    if not https_url(url):
+        raise ValueError("Top of Mind requires HTTPS")
+    with urllib.request.urlopen(url, timeout=5) as response:
+        payload = json.load(response)
+    if not isinstance(payload, dict) or not isinstance(payload.get("rows"), list):
+        raise ValueError("invalid Top of Mind rows")
+    rows = payload["rows"]
+    for row in rows:
+        if (not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]
+                or not isinstance(row.get("words"), str) or not row["words"]
+                or row.get("status") not in ("not-started", "under-way", "waiting", "done")
+                or not isinstance(row.get("work"), list)):
+            raise ValueError("invalid Top of Mind row")
+        for work in row["work"]:
+            if not isinstance(work, dict) or not isinstance(work.get("home"), str):
+                raise ValueError("invalid Top of Mind work")
+        for entry in [row] + row["work"]:
+            if type(entry.get("priority", 0)) is not int or entry.get("priority", 0) not in range(5):
+                raise ValueError("invalid Top of Mind priority")
+            links = entry.get("links", [])
+            if not isinstance(links, list) or any(not isinstance(link, dict)
+                                                or not isinstance(link.get("url"), str) for link in links):
+                raise ValueError("invalid Top of Mind links")
+    return [r for r in rows if r["status"] != "done"]
+
+
+def top_of_mind_items(asks, rows, issues, prs, home):
+    """Attach asks to existing work before classification, never enqueue a second copy."""
+    extra = []
+    for ask in asks:
+        work = ask["work"]
+        owners = sorted({w["home"] for w in work if w.get("status") != "done"})
+        aliases = {home, os.path.basename(home.rstrip("/")), "main", "skipper"}
+        others = [owner for owner in owners if owner not in aliases]
+        links = [link["url"] for entry in [ask] + work for link in entry.get("links", [])]
+        text = "\n".join([ask["words"]] + [str(w.get("title", "")) for w in work] + links)
+        identifiers = set(LINEAR_ID.findall(text))
+        titles = {TAG.sub("", title).strip().casefold()
+                  for title in [ask["words"]] + [str(w.get("title", "")) for w in work]}
+        matches = [r for r in rows + issues + extra if r["id"] == ask["id"]
+                   or identifiers.intersection(r["linear_ids"])
+                   or TAG.sub("", r["title"]).strip().casefold() in titles
+                   or (r.get("link") and r["link"] in links)
+                   or any(url.endswith("/captains-log#" + r["id"]) for url in links)]
+        # Prefer home records: judge already joins their linked Linear copies.
+        local_ids = {i for r in matches if r in rows for i in r["linear_ids"]}
+        matches = [r for r in matches if r in rows or not local_ids.intersection(r["linear_ids"])]
+        if not matches:
+            row = item(ask["id"], ask["words"], home, text)
+            row.update(section="queued", origin="top-of-mind")
+            if work and all(w.get("status") == "done" for w in work):
+                row["top_reason"] = "Done/unknown: linked work is recorded done"
+            row["priority"] = ask.get("priority", 0) or next(
+                (w["priority"] for w in work if w.get("priority")), 0)
+            row["link"] = next(iter(links), "")
+            extra.append(row)
+            matches = [row]
+        for row in matches:
+            row["evidence"].append("Top of Mind: " + ask["id"] + " - " + ask["words"])
+            if not classify(row)[0]:
+                row["origin"] = "top-of-mind"
+                row["tags"] = dict(row["tags"], kind="feature", **{"requested-by": "Lee"})
+            matching_prs = [pr for pr in prs if pr.get("html_url") in links
+                            or set(LINEAR_ID.findall((pr.get("title") or "") + "\n" + (pr.get("body") or "")))
+                            .intersection(row["linear_ids"])
+                            or (pr.get("head") or {}).get("ref", "").endswith("/" + row["id"])]
+            if matching_prs:
+                row["top_reason"] = "Already in flight: " + (matching_prs[0].get("html_url")
+                                                            or matching_prs[0].get("title") or row["id"])
+            elif others:
+                row["top_reason"] = "Owned by another home: " + ", ".join(others)
+            elif any("/captains-log#" in url for url in links) and row.get("section") != "done":
+                row["top_reason"] = "Waiting on Lee: linked Captain's Log card"
+    return extra
+
+
+def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers, top_of_mind=()):
     doc = {"schema_version": 1, "source": "progress-officer", "doing": [], "done": [],
            "start_requests": [], "asks_for_lee": [], "excluded": [], "unclassified": 0,
            "filler": None, "coverage": problems}
     team_id = re.compile(r"\b%s-\d+\b" % re.escape(team))
     rows = [row for snapshot in snapshots for row in snapshot["rows"]]
+    home = snapshots[0]["home"] if snapshots else "unknown"
+    rows += top_of_mind_items(top_of_mind, rows, issues, prs, home)
     linked = {}
     for row in rows:
         row["linear_ids"] = [i for i in row["linear_ids"] if team_id.fullmatch(i)]
@@ -524,7 +614,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
                 copy["linear_class"] = classify(row)
                 copy["description"] = row.get("description", "")
             by_linear[row["linear_id"]] = copies[0]
-        elif row["state"] not in FINISHED:
+        elif row["state"] not in FINISHED or any(e.startswith("Top of Mind: ") for e in row["evidence"]):
             rows.append(row)
     pr_ids = set()
     pr_branches = set()
@@ -544,6 +634,9 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
 
     for row in rows:
         if row.get("finished_merge_ask"):
+            if any(e.startswith("Top of Mind: ") for e in row["evidence"]):
+                row["reason"] = "Done/unknown: linked merge request is completed"
+                doc["excluded"].append(row)
             continue
         chain = ancestry(row)
         authorised, source = classify(row)
@@ -567,7 +660,10 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         finished = row.get("section") == "done" or state in FINISHED or row.get("latest") in ("done", "failed")
         moving = (row.get("section") == "in flight" or row.get("has_meta") or state == "started"
                   or row.get("latest") in ("working", "paused"))
-        if not authorised and not row.get("captains_log_key") and (not ask or finished or moving):
+        if row.get("top_reason"):
+            row["reason"] = row["top_reason"]
+            doc["excluded"].append(row)
+        elif not authorised and not row.get("captains_log_key") and (not ask or finished or moving):
             doc["unclassified"] += not finished
         elif held:
             row["reason"] = "Already held, blocked, or carded; firstmate must reconcile it"
@@ -800,7 +896,22 @@ def page_state(doc, officer, previous, repos, log_url, reported):
 
 
 def render_md(doc):
-    lines = ["# Progress officer digest for " + doc["date"], ""]
+    lines = ["# Progress officer digest for " + doc["date"], "", "## Top of Mind", ""]
+    for group in ("start_requests", "doing", "done", "asks_for_lee", "excluded"):
+        for row in doc[group]:
+            for evidence in row["evidence"]:
+                if evidence.startswith("Top of Mind: "):
+                    reason = row["reason"]
+                    if group == "doing":
+                        reason = "Already in flight: " + row["id"]
+                    elif group == "asks_for_lee" or "held, blocked, or carded" in reason:
+                        reason = "Waiting on Lee: " + row["id"] + "; " + reason
+                    elif group == "excluded" and not reason.startswith(("Waiting on Lee", "Owned by", "Already in flight", "Done/unknown")):
+                        reason = "Done/unknown: " + reason
+                    lines.append("- " + evidence.removeprefix("Top of Mind: ") + ": " + reason)
+    if lines[-1] == "":
+        lines.append("- None; see Coverage for any source failure.")
+    lines.append("")
     for key, title in (("start_requests", "Ranked start requests"), ("doing", "Doing"),
                        ("done", "Done"), ("asks_for_lee", "Ask Lee"), ("excluded", "Excluded")):
         lines.extend(["## " + title, ""])
@@ -850,6 +961,7 @@ def main(argv):
     parser.add_argument("--requested", default="")
     parser.add_argument("--officer", default="progress")
     parser.add_argument("--captains-log", default="")
+    parser.add_argument("--top-of-mind", default="")
     parser.add_argument("--now", type=int, default=None)
     args = parser.parse_args(argv)
     if args.action == "scan":
@@ -867,7 +979,16 @@ def main(argv):
             blockers.extend(snapshot["problems"])
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
             blockers.append("home records unavailable: " + home)
+    top_url = args.top_of_mind or (args.captains_log.removesuffix("/api/captains-log") + "/api/top-of-mind"
+                                   if args.captains_log else "https://slartibartfast.tail299042.ts.net:8743/api/top-of-mind")
+    top_of_mind = []
+    try:
+        top_of_mind = read_top_of_mind(top_url)
+    except (OSError, ValueError, TypeError, http.client.HTTPException):
+        problems.append("Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed")
     requested = set(filter(None, args.requested.split(",")))
+    requested.update(i for ask in top_of_mind for i in LINEAR_ID.findall(json.dumps(ask))
+                     if re.fullmatch(re.escape(args.team) + r"-\d+", i))
     for snapshot in snapshots:
         for row in snapshot["rows"]:
             if row["tags"].get("requested-by", "").lower() == "lee":
@@ -898,7 +1019,7 @@ def main(argv):
     checked, unchecked = set(), {}
     while not blockers:
         trial = judge(copy.deepcopy(snapshots), copy.deepcopy(list(rows.values())), set(configured),
-                      prs, [], args.team, unchecked, [])
+                      prs, [], args.team, unchecked, [], top_of_mind)
         candidates = [i for row in trial["start_requests"] for i in row["linear_ids"] if i not in checked]
         if not candidates:
             break
@@ -914,7 +1035,7 @@ def main(argv):
     discovery.stats["unverified_starts"] = len(unchecked)
     reconcile_merge_asks([r for snapshot in snapshots for r in snapshot["rows"]] + list(rows.values()),
                          problems, discovery.deadline, rows)
-    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers)
+    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers, top_of_mind)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
