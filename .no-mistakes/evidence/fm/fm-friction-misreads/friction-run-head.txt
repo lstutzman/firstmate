@@ -1,0 +1,13 @@
+$ FM_HOME=<lab> bin/fm-officer.sh run friction --date 2026-10-26   # tree: head
+DIGEST 2026-10-26 1 data/officers/friction/2026-10-26.md
+rc=0
+
+== status-wait events (task, key, cause/sub, wait_s) ==
+jq	jq	missing-tool/tool	1540
+missing-tool	missing-tool	missing-tool/tool	1540
+slarti	fleet-app-pr67-merge	decision/decision	1540
+
+== carded findings (cause/sub, tasks) ==
+missing-tool/tool	jq,missing-tool
+
+== velocity findings file titles/evidence ==

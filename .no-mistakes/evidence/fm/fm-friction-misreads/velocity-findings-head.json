@@ -1,0 +1,51 @@
+{
+ "bottlenecks": [
+  {
+   "category": "tooling",
+   "confidence": 5,
+   "effort": "S",
+   "evidence": "2 event(s) on 2026-10-26; tasks jq, missing-tool; status jq@2026-10-26T16:54:17Z, missing-tool@2026-10-26T16:54:17Z; e.g. jq: command not found; needs Lee's go to brew install jq",
+   "impact": "Removes 2 Lee step(s) and 51 min of agent waiting seen on 2026-10-26.",
+   "improvement": "Add a tool to fixturehost's bootstrap and its doctor check, so it is present before the next session.",
+   "owner": "fixturehost home",
+   "severity": 3,
+   "time_saved": "about 51 min a day: 2 measured wait(s) on 2026-10-26 totalling 51 min, from ask to answer",
+   "title": "A tool agents need is missing",
+   "tldr": "Lee had to install a tool by hand: 2 time(s) on 2026-10-26; agents waited 51 min."
+  }
+ ],
+ "cost_usd": 0,
+ "evidence": [
+  {
+   "detail": "0 session(s) analysed; harvester last ran 2026-10-27T01:00:00+00:00",
+   "name": "session archive",
+   "state": "read"
+  },
+  {
+   "detail": "3 task log(s); fleet ledger absent",
+   "name": "status logs fixturehost",
+   "state": "read"
+  },
+  {
+   "detail": "Not read: the registry line sets no captains-log URL; counted from status logs only.",
+   "name": "Captain's Log",
+   "state": "missing"
+  }
+ ],
+ "generated_at": "2026-10-27T05:00:00Z",
+ "notes": [
+  "Home fixturehost keeps no fleet ledger, so status lines of tasks already cleaned up there are not read.",
+  "No archived sessions from expected host alpha.",
+  "No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.",
+  "A worker that resumed in the wrong directory is found only while its task record survives."
+ ],
+ "outcome": "ok",
+ "run_id": "friction-20261026",
+ "schema_version": 1,
+ "source": "friction-officer",
+ "summary": "3 friction event(s), 3 naming Lee; 2 finding(s), 1 carded.",
+ "window": {
+  "from": "2026-10-26T00:00:00Z",
+  "to": "2026-10-27T00:00:00Z"
+ }
+}
