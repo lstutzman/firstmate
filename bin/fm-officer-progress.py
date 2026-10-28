@@ -4,13 +4,12 @@
 Usage: fm-officer-progress.py run --date YYYY-MM-DD --out <lane>
          --home <dir|host:/dir> [--home ...] [--team PC]
          [--repos owner/repo,...] [--requested PC-1,...] [--now <epoch>]
-         [--top-of-mind <https-url>]
        fm-officer-progress.py scan --home <dir>
 
 Reads Top of Mind once per run with a five-second HTTPS timeout, from the
 configured captains-log origin's /api/top-of-mind endpoint, or the fleet endpoint
 https://slartibartfast.tail299042.ts.net:8743/api/top-of-mind when no origin is
-configured. --top-of-mind overrides that endpoint for direct invocation.
+configured.
 A failed fetch or malformed payload reports coverage-incomplete and contributes
 no candidates; backlog and Linear discovery still proceed without cached asks.
 Reads backlog rows and task status without changing them. Only this officer's
@@ -580,6 +579,8 @@ def top_of_mind_items(asks, rows, issues, prs, home):
                                                             or matching_prs[0].get("title") or row["id"])
             elif others:
                 row["top_reason"] = "Owned by another home: " + ", ".join(others)
+            elif ask["status"] == "waiting":
+                row["top_reason"] = "Waiting on Lee: Top of Mind is waiting"
             elif any("/captains-log#" in url for url in links) and row.get("section") != "done":
                 row["top_reason"] = "Waiting on Lee: linked Captain's Log card"
     return extra
@@ -961,7 +962,6 @@ def main(argv):
     parser.add_argument("--requested", default="")
     parser.add_argument("--officer", default="progress")
     parser.add_argument("--captains-log", default="")
-    parser.add_argument("--top-of-mind", default="")
     parser.add_argument("--now", type=int, default=None)
     args = parser.parse_args(argv)
     if args.action == "scan":
@@ -979,7 +979,7 @@ def main(argv):
             blockers.extend(snapshot["problems"])
         except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
             blockers.append("home records unavailable: " + home)
-    top_url = args.top_of_mind or (args.captains_log.removesuffix("/api/captains-log") + "/api/top-of-mind"
+    top_url = (args.captains_log.removesuffix("/api/captains-log") + "/api/top-of-mind"
                                    if args.captains_log else "https://slartibartfast.tail299042.ts.net:8743/api/top-of-mind")
     top_of_mind = []
     try:

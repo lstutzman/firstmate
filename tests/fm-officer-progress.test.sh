@@ -1125,12 +1125,13 @@ JSON
   run_progress >/dev/null || fail 'Top of Mind disposition run failed'
   local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json" digest
   digest=$(cat "$lane/$DATE.md")
-  assert_equals 'linked stalled waiting-stalled' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'backlog and Linear duplicates start once; stalled asks become candidates'
+  assert_equals 'linked stalled' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'backlog and Linear duplicates start once; stalled asks become candidates'
   assert_contains "$digest" 'held-ask - Fix held crash: Waiting on Lee: held' 'existing holds explain the wait'
   assert_contains "$digest" 'running-ask - Fix running crash: Already in flight: running' 'a live task prevents a second start'
   assert_contains "$digest" 'pr-ask - Fix PR crash: Already in flight: https://github.com/example/project/pull/12' 'open PRs prevent a second start'
   assert_contains "$digest" 'remote - Repair remote report: Owned by another home: slarti' 'other home ownership is named'
   assert_contains "$digest" 'remote-linear - Repair remote logs: Owned by another home: slarti' 'a Linear match retains the Top of Mind owner'
+  assert_contains "$digest" 'waiting-stalled - Repair missing export: Waiting on Lee: Top of Mind is waiting' 'waiting asks are listed without starting'
   assert_contains "$digest" 'legal - Choose legal wording: Waiting on Lee:' 'restricted choices retain existing authority rules'
   assert_not_contains "$digest" 'finished - Already finished' 'done asks do not restart'
   pass 'progress: Top of Mind holds, ownership, stalled asks, and duplicate prevention'

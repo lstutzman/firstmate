@@ -923,7 +923,8 @@ Remote home reads run the same read-only scanner over SSH.
 Each run reads Top of Mind once over HTTPS; the progress script's header owns endpoint selection and timeout.
 A fetch or payload failure adds a `Top of Mind coverage-incomplete` entry and contributes no asks from that source; the officer never reuses cached asks or blocks other discovery on that failure.
 Every `not-started` ask and every `under-way` or `waiting` ask is checked against current home records and open PRs.
-An ask with no recorded work in flight becomes a start candidate under the existing classes and exclusions; a matching task, Linear identifier, work title, or link joins the ask to that work instead of creating another start.
+A waiting ask is listed as waiting on Lee and is never automatically started.
+A not-started or under-way ask with no recorded work in flight becomes a start candidate under the existing classes and exclusions; a matching task, Linear identifier, work title, or link joins the ask to that work instead of creating another start.
 The digest's Top of Mind section lists each ask's start request or its reason for waiting, including the held task, active task or PR, other owner home, or completed or unknown work.
 Unmatched work owned by another home is listed with that home's name for routing rather than started in the primary home.
 The cursor-paginated team listing reads open issues only (triage, backlog, unstarted, and started) and supplies each issue's state, priority, URL, project, and description, which the listing cuts at 200 characters.
