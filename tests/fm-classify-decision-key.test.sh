@@ -694,3 +694,60 @@ test_recorded_line_stays_recorded_across_a_resolve() {
 }
 
 test_recorded_line_stays_recorded_across_a_resolve
+
+# Frozen before the single-pass implementation, including every checkpoint so
+# later closes cannot hide a difference in an earlier open set. Every prefix
+# ends without a newline to cover a final unterminated declaration too.
+# Quote snapshots to preserve whitespace in the fixture; a sentinel preserves
+# trailing newlines across command substitution. <SP> encodes an input space.
+test_whole_fold_matches_captured_stream() {
+  local dir kind line
+  dir=$(case_dir captured-stream)
+  {
+    for kind in unknown ship scout secondmate; do
+      : > "$dir/$kind.status"
+      while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+          '=== '*)
+            printf '%s (%s)\n' "$line" "$kind"
+            printf '%q\n' "$(status_open_decisions "$dir/$kind.status" "$kind"; printf .)"
+            ;;
+          *) printf '\n%s' "${line//'<SP>'/' '}" >> "$dir/$kind.status" ;;
+        esac
+      done < "$ROOT/tests/fixtures/decision-fold.log"
+      printf '=== final (%s)\n' "$kind"
+      printf '%q\n' "$(status_open_decisions "$dir/$kind.status" "$kind"; printf .)"
+    done
+  } > "$dir/actual"
+  cmp "$ROOT/tests/fixtures/decision-fold.expected" "$dir/actual" \
+    || fail "whole-file fold changed the captured stream bytes"
+  pass "whole-file fold matches pre-optimization bytes at every corpus checkpoint"
+}
+
+test_whole_fold_ten_thousand_lines() {
+  local dir started elapsed
+  dir=$(case_dir ten-thousand)
+  awk 'BEGIN {
+    for (i = 1; i <= 10000; i++) {
+      if (i % 4 == 0) print "blocked [at=1792000000] [key=perf]: repeated blocker"
+      else if (i % 4 == 1) print "resolved [key=perf]: answered"
+      else print "working [at=1792000000]: ordinary progress"
+    }
+  }' > "$dir/large.status"
+  cat > "$dir/fold.sh" <<'SH'
+. "$1"
+status_open_decisions "$2"
+SH
+  started=$SECONDS
+  fm_run_timed 5 bash "$dir/fold.sh" \
+    "$ROOT/bin/fm-classify-lib.sh" "$dir/large.status" > "$dir/actual" \
+    || fail "10,000-line fold exceeded its five-second budget or failed"
+  elapsed=$((SECONDS - started))
+  printf 'perf\tblocked\trepeated blocker' > "$dir/expected"
+  cmp "$dir/expected" "$dir/actual" \
+    || fail "10,000-line fold lost the final blocker"
+  pass "10,000-line whole-file fold completed within five seconds (${elapsed}s)"
+}
+
+test_whole_fold_ten_thousand_lines
+test_whole_fold_matches_captured_stream

@@ -881,10 +881,9 @@ EOF
 # Fold ONE status line into an existing "<key>\t<verb>\t<note>\n"-per-line open
 # set, applying the same needs-decision/blocked-opens, resolved/captain-held-closes
 # rule status_open_decisions documents above. Pure text transform, no file I/O.
-# This is the ONE place the per-line open/resolved rule is written; both the
-# whole-file fold (status_open_decisions) and the incremental cursor-backed fold
-# (status_open_decisions_incremental) below call this instead of re-deriving the
-# rule, so the two consumption strategies can never drift apart on semantics.
+# The incremental cursor-backed fold uses this per-line transform. The
+# whole-file awk fold below implements the same grammar without a subprocess
+# per line; tests/fm-classify-decision-key.test.sh pins their equivalence.
 # Reserved decision-key namespaces, and the rule that makes them mean something.
 #
 # A key like `pending-reply-<id>` names a decision that one library raises and is
@@ -1015,20 +1014,177 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
 # subprocess read, which exists for that function's much narrower payload-driven
 # path resolution rather than this directory-local glob.
 status_open_decisions() {  # <status-file> [<kind>]
-  local f=$1 kind=${2:-} line resolve held open='' verb
+  local f=$1 kind=${2:-}
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   kind=$(_fm_status_kind "$f" "$kind")
-  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
-  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
-  while IFS= read -r line || [ -n "$line" ]; do
-    status_line_verb "$line" verb
-    case "$verb" in
-      needs-decision|blocked|done|failed|"$resolve"|"$held")
-        open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind")
-        ;;
-    esac
-  done < "$f"
-  printf '%s' "$open"
+  # Environment transport preserves literal backslashes in configured vocabulary;
+  # awk -v assignments would interpret them as escapes.
+  FM_FOLD_KIND="$kind" \
+  FM_FOLD_RESOLVE="${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}" \
+  FM_FOLD_HELD="${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}" \
+  FM_FOLD_CUTOVER="${FM_CLASSIFY_UNKEYED_CUTOVER:-$FM_CLASSIFY_UNKEYED_CUTOVER_DEFAULT}" \
+  FM_FOLD_RESERVED="${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT}" \
+  awk '
+    function trim_left(s) { sub(/^[[:space:]]+/, "", s); return s }
+    function upto(s, c,    i) { i = index(s, c); return i ? substr(s, 1, i - 1) : s }
+    function head(s) { return upto(s, ":") }
+    function has_token(s, opener,    i) {
+      i = index(s, opener)
+      return i && index(substr(s, i + length(opener)), "]")
+    }
+    function corr_token(s) {
+      return length(s) == 21 && s ~ /^corr=[0-9A-Fa-f]+$/
+    }
+    function verb(s,    words, n, i, out) {
+      s = upto(head(s), "[")
+      s = trim_left(s)
+      sub(/[[:space:]]+$/, "", s)
+      if (!index(s, "corr=")) return s
+      n = split(s, words, /[[:space:]]+/)
+      out = words[1]
+      for (i = 2; i <= n; i++)
+        if (!corr_token(words[i])) out = out " " words[i]
+      return out
+    }
+    function unstamped(s,    keep, start, before, rest, finish) {
+      keep = ""
+      while ((start = index(s, "[at="))) {
+        rest = substr(s, start + 4)
+        finish = index(rest, "]")
+        before = substr(s, 1, start - 1)
+        if (!finish || index(before, ":")) break
+        sub(/ $/, "", before)
+        keep = keep before
+        s = substr(rest, finish + 1)
+      }
+      return keep s
+    }
+    function raw_key(s) {
+      s = substr(s, index(s, "[key=") + 5)
+      return substr(s, 1, index(s, "]") - 1)
+    }
+    function slug(s) { return s ~ /^[A-Za-z0-9._-]+$/ }
+    function epoch(s,    rest, value, finish) {
+      if (!index(s, ":")) return ""
+      s = head(s)
+      if (!has_token(s, "[at=")) return ""
+      rest = substr(s, index(s, "[at=") + 4)
+      finish = index(rest, "]")
+      value = substr(rest, 1, finish - 1)
+      if (index(substr(rest, finish + 1), "[at=")) return ""
+      if (value !~ /^[0-9]+$/ || value ~ /^0[0-9]/ || length(value) > 12) return ""
+      return value
+    }
+    function correlation(s,    words, n, i, word) {
+      s = head(s)
+      gsub(/\]/, "] ", s)
+      gsub(/\[/, " ", s)
+      s = trim_left(s)
+      n = split(s, words, /[[:space:]]+/)
+      for (i = 1; i <= n; i++) {
+        word = words[i]
+        sub(/\]$/, "", word)
+        if (corr_token(word)) return substr(word, 6)
+      }
+      return ""
+    }
+    function synthetic(key,    rest, dash) {
+      if (substr(key, 1, 2) != "u-") return 0
+      rest = substr(key, 3)
+      dash = index(rest, "-")
+      if (dash) {
+        if (!corr_token("corr=" substr(rest, dash + 1))) return 0
+        rest = substr(rest, 1, dash - 1)
+      }
+      return rest ~ /^[0-9]+$/
+    }
+    function allowed(key, note,    i, prefix) {
+      for (i = 1; i <= reserved_count; i++) {
+        prefix = reserved[i]
+        if (index(key, prefix) == 1)
+          return index(note, prefix) == 1 && index(substr(note, length(prefix) + 1), ":") > 0
+      }
+      return 1
+    }
+    BEGIN {
+      kind = ENVIRON["FM_FOLD_KIND"]
+      resolve = ENVIRON["FM_FOLD_RESOLVE"]
+      held = ENVIRON["FM_FOLD_HELD"]
+      cutover = ENVIRON["FM_FOLD_CUTOVER"]
+      prefixes = trim_left(ENVIRON["FM_FOLD_RESERVED"])
+      sub(/[[:space:]]+$/, "", prefixes)
+      reserved_count = split(prefixes, reserved, /[[:space:]]+/)
+    }
+    {
+      # Bash read ignores NUL bytes, including in a final unterminated line.
+      gsub(/\000/, "", $0)
+      v = verb($0)
+      if (v != "needs-decision" && v != "blocked" && v != "done" &&
+          v != "failed" && v != resolve && v != held) next
+      s = unstamped($0)
+      has_colon = index(s, ":")
+      if (!has_colon && !has_token(s, "[key=")) next
+      if (has_colon && (v == "done" || v == "failed") &&
+          (kind == "ship" || kind == "scout")) {
+        for (key in records) delete records[key]
+        next
+      }
+      if (v != "needs-decision" && v != "blocked" && v != resolve && v != held) next
+      h = head(s)
+      note = has_colon ? trim_left(substr(s, has_colon + 1)) : s
+      key = ""
+      if (has_token(h, "[key=")) {
+        key = raw_key(h)
+        if (!slug(key)) next
+      } else if (has_colon && index(note, "[key=") == 1 && has_token(note, "[key=")) {
+        key = raw_key(note)
+        if (!slug(key)) next
+        note = trim_left(substr(note, length(key) + 7))
+      }
+      unkeyed = key == ""
+      if (unkeyed) {
+        stamp = epoch($0)
+        key = "default"
+        if (stamp != "" && stamp + 0 >= cutover + 0) {
+          corr = correlation(s)
+          key = "u-" stamp (corr == "" ? "" : "-" corr)
+        }
+      }
+      if (!allowed(key, note)) next
+      if (v == "needs-decision" || v == "blocked") {
+        order[++serial] = key
+        records[key] = serial
+        values[key] = key "\t" v "\t" note
+      } else {
+        if (unkeyed && !(key in records)) {
+          corr = correlation(s)
+          count = 0
+          target = ""
+          for (candidate in records) {
+            if (corr != "") {
+              if (!synthetic(candidate) ||
+                  substr(candidate, length(candidate) - length(corr)) != "-" corr) continue
+            } else if (candidate != "default" && !synthetic(candidate)) continue
+            target = candidate
+            count++
+          }
+          if (count != 1) next
+          key = target
+        }
+        delete records[key]
+      }
+    }
+    END {
+      sep = ""
+      for (i = 1; i <= serial; i++) {
+        key = order[i]
+        if ((key in records) && records[key] == i) {
+          printf "%s%s", sep, values[key]
+          sep = "\n"
+        }
+      }
+    }
+  ' < "$f" 2>/dev/null
 }
 
 # Resolve the log's current declaration at one boundary for crew-state consumers.
@@ -1160,8 +1316,9 @@ EOF
 # contradiction between the two records - see fm-captain-hold.sh's `diverged`.
 #
 # Semantics are not re-derived here: every candidate line goes through the same
-# _fm_decision_fold_line rule the two folds use, and the reported verb is read
-# off the transitions that rule produces.
+# _fm_decision_fold_line rule the incremental fold uses (and the whole-file awk
+# fold mirrors), and the reported verb is read off the transitions that rule
+# produces.
 #
 # One `grep` pre-selects those candidates so the bash fold below costs the log's
 # TRANSITIONS rather than its whole lifetime length - status files are only ever
@@ -1238,8 +1395,8 @@ status_scan_parent_channel_exclude() {  # <state>
 # Fleet-wide wrapper around status_open_decisions: scans every task's status
 # log under <state> and prefixes each still-open decision with its owning task
 # id, so a per-wake or per-session surface can print the consolidated open set
-# without re-walking the fold itself. A thin directory scan only - the fold
-# above remains the ONE place the open/resolved semantics are decided. Prints
+# without re-walking the fold itself. A thin directory scan only - it never
+# decides open/resolved semantics itself; status_open_decisions does. Prints
 # one "<task>\t<key>\t<verb>\t<note>" line per open decision, in glob (task id)
 # order; prints nothing when none are open.
 scan_open_decisions() {  # <state>
@@ -1271,9 +1428,10 @@ EOF
 # below are the bounded-cost siblings used for that per-drain path: each call
 # reads only the bytes appended to a status file since its own last call (a
 # persisted per-file byte cursor) and folds just those new lines into a
-# persisted running open-set, via the exact same _fm_decision_fold_line rule
-# status_open_decisions uses - so the two strategies can never disagree on what
-# is open. Cost is bounded by NEW appends since the last drain, not by the
+# persisted running open-set, via the per-line _fm_decision_fold_line rule
+# that status_open_decisions' awk fold mirrors (tests/fm-classify-decision-key.test.sh
+# pins the awk fold to this rule's captured output) - so the two strategies
+# agree on what is open. Cost is bounded by NEW appends since the last drain, not by the
 # status file's total lifetime size.
 #
 # Correctness invariant (unchanged from the whole-file fold): cursor advancement,

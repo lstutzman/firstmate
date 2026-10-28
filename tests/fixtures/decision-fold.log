@@ -1,0 +1,76 @@
+working [at=1792000000]: setup
+needs-decision [key=alpha]: first choice
+blocked: [key=beta] token missing
+=== keyed opens
+resolved: [key=alpha] chosen
+blocked [key=beta]: token still missing
+needs-decision [key=gamma]: another choice
+=== repeated key moves last
+captain-held [key=beta]: filed
+resolved [key=missing]: irrelevant
+=== held closes
+needs-decision [key=bad key]: malformed
+blocked [key=]: empty
+needs-decision prose: not a verb
+needs-decision
+blocked [at=10:30]
+resolved [key=gamma
+=== malformed lines
+needs-decision [at=10:30] [key=time]: readable stamp
+blocked [at=<epoch>] [key=placeholder]: placeholder
+resolved [at=10:31]: [key=time] closed
+=== stamp stripping
+needs-decision [key=multi]: [key=note] retained
+blocked [key=alpha] [key=second]: first key wins
+needs-decision: [key=bad key] note token invalid
+=== note handling
+resolved [key=multi]
+resolved [key=alpha]
+=== colonless keys
+needs-decision [key=pending-reply-abc]: unrelated
+blocked [key=pending-reply-abc]: pending-reply-missed: owner
+resolved [key=pending-reply-abc]: unrelated
+=== reserved owner guards
+captain-held [key=pending-reply-abc]: pending-reply-held: filed
+needs-decision corr=0123456789abcdef [key=corr]: correlated
+resolved [corr=0123456789ABCDEF] [key=corr]: close
+=== correlation tokens
+needs-decision corr=bad: ignored
+blocked extra corr=0123456789abcdef: ignored
+needs-decision [at=1792000000] [corr=0123456789abcdef]: synthetic one
+needs-decision [at=1792000001] corr=fedcba9876543210: synthetic two
+=== synthetic opens
+resolved [at=1792000002] corr=0123456789abcdef: close correlated
+resolved [at=1792000003]: ambiguous keyless close
+=== unique unkeyed fallback
+resolved [at=1792000004] [corr=fedcba9876543210]: close correlated two
+resolved: close legacy
+=== unkeyed cleanup
+blocked [at=1792000010]: one
+blocked [at=1792000011]: two
+resolved [at=1792000010]: exact synthetic key
+=== exact synthetic close
+resolved [at=1792000012]: single unkeyed fallback
+needs-decision [at=01792000000]: leading zero
+needs-decision [at=1234567890123]: too long
+needs-decision [at=1792000013] [at=1792000014]: duplicate
+=== invalid epochs
+needs-decision [at=1791843599]: before cutover
+needs-decision [at=1791843600]: at cutover
+=== cutover
+failed [at=10:30]: terminal
+=== failed terminals
+needs-decision [key=a]: café broken bytes
+blocked [at=1792000000] corr=0123456789abcdef: ÿþ x
+needs-decision [key=bé]: invalid byte in key
+blocked: [key=cé] invalid byte in note key
+needs-decisioné [key=d]: invalid byte in verb
+needs-decision [at=17920é00]: invalid byte in stamp
+=== invalid bytes
+needs-decision [key=final]: final open
+blocked [key=tail]: trailing spaces<SP><SP>
+done [key=final]
+=== colonless terminal
+ done [at=1792000020]: completed
+=== done terminals
+needs-decision [key=last]: unterminated last line

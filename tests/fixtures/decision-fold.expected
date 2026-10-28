@@ -1,0 +1,160 @@
+=== keyed opens (unknown)
+$'alpha\tneeds-decision\tfirst choice\nbeta\tblocked\ttoken missing.'
+=== repeated key moves last (unknown)
+$'beta\tblocked\ttoken still missing\ngamma\tneeds-decision\tanother choice.'
+=== held closes (unknown)
+$'gamma\tneeds-decision\tanother choice.'
+=== malformed lines (unknown)
+$'gamma\tneeds-decision\tanother choice.'
+=== stamp stripping (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== note handling (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nmulti\tneeds-decision\t[key=note] retained\nalpha\tblocked\tfirst key wins.'
+=== colonless keys (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== reserved owner guards (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\npending-reply-abc\tblocked\tpending-reply-missed: owner.'
+=== correlation tokens (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== synthetic opens (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1792000000-0123456789abcdef\tneeds-decision\tsynthetic one\nu-1792000001-fedcba9876543210\tneeds-decision\tsynthetic two.'
+=== unique unkeyed fallback (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== unkeyed cleanup (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== exact synthetic close (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1792000011\tblocked\ttwo.'
+=== invalid epochs (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tduplicate.'
+=== cutover (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== failed terminals (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== invalid bytes (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
+=== colonless terminal (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+=== done terminals (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+=== final (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'
+=== keyed opens (ship)
+$'alpha\tneeds-decision\tfirst choice\nbeta\tblocked\ttoken missing.'
+=== repeated key moves last (ship)
+$'beta\tblocked\ttoken still missing\ngamma\tneeds-decision\tanother choice.'
+=== held closes (ship)
+$'gamma\tneeds-decision\tanother choice.'
+=== malformed lines (ship)
+$'gamma\tneeds-decision\tanother choice.'
+=== stamp stripping (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== note handling (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nmulti\tneeds-decision\t[key=note] retained\nalpha\tblocked\tfirst key wins.'
+=== colonless keys (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== reserved owner guards (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\npending-reply-abc\tblocked\tpending-reply-missed: owner.'
+=== correlation tokens (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== synthetic opens (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1792000000-0123456789abcdef\tneeds-decision\tsynthetic one\nu-1792000001-fedcba9876543210\tneeds-decision\tsynthetic two.'
+=== unique unkeyed fallback (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== unkeyed cleanup (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== exact synthetic close (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1792000011\tblocked\ttwo.'
+=== invalid epochs (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tduplicate.'
+=== cutover (ship)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== failed terminals (ship)
+.
+=== invalid bytes (ship)
+$'a\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
+=== colonless terminal (ship)
+$'a\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+=== done terminals (ship)
+.
+=== final (ship)
+$'last\tneeds-decision\tunterminated last line.'
+=== keyed opens (scout)
+$'alpha\tneeds-decision\tfirst choice\nbeta\tblocked\ttoken missing.'
+=== repeated key moves last (scout)
+$'beta\tblocked\ttoken still missing\ngamma\tneeds-decision\tanother choice.'
+=== held closes (scout)
+$'gamma\tneeds-decision\tanother choice.'
+=== malformed lines (scout)
+$'gamma\tneeds-decision\tanother choice.'
+=== stamp stripping (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== note handling (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nmulti\tneeds-decision\t[key=note] retained\nalpha\tblocked\tfirst key wins.'
+=== colonless keys (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== reserved owner guards (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\npending-reply-abc\tblocked\tpending-reply-missed: owner.'
+=== correlation tokens (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== synthetic opens (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1792000000-0123456789abcdef\tneeds-decision\tsynthetic one\nu-1792000001-fedcba9876543210\tneeds-decision\tsynthetic two.'
+=== unique unkeyed fallback (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== unkeyed cleanup (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== exact synthetic close (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1792000011\tblocked\ttwo.'
+=== invalid epochs (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tduplicate.'
+=== cutover (scout)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== failed terminals (scout)
+.
+=== invalid bytes (scout)
+$'a\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
+=== colonless terminal (scout)
+$'a\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+=== done terminals (scout)
+.
+=== final (scout)
+$'last\tneeds-decision\tunterminated last line.'
+=== keyed opens (secondmate)
+$'alpha\tneeds-decision\tfirst choice\nbeta\tblocked\ttoken missing.'
+=== repeated key moves last (secondmate)
+$'beta\tblocked\ttoken still missing\ngamma\tneeds-decision\tanother choice.'
+=== held closes (secondmate)
+$'gamma\tneeds-decision\tanother choice.'
+=== malformed lines (secondmate)
+$'gamma\tneeds-decision\tanother choice.'
+=== stamp stripping (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== note handling (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nmulti\tneeds-decision\t[key=note] retained\nalpha\tblocked\tfirst key wins.'
+=== colonless keys (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== reserved owner guards (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\npending-reply-abc\tblocked\tpending-reply-missed: owner.'
+=== correlation tokens (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== synthetic opens (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1792000000-0123456789abcdef\tneeds-decision\tsynthetic one\nu-1792000001-fedcba9876543210\tneeds-decision\tsynthetic two.'
+=== unique unkeyed fallback (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== unkeyed cleanup (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder.'
+=== exact synthetic close (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1792000011\tblocked\ttwo.'
+=== invalid epochs (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tduplicate.'
+=== cutover (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== failed terminals (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== invalid bytes (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
+=== colonless terminal (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+=== done terminals (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+=== final (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'
