@@ -53,6 +53,9 @@
 #   base_branch= in state/<id>.meta, which a relaunch reuses and later review and
 #   cleanup read; it is refused on secondmates and relaunches, and without it
 #   nothing changes.
+#   Fresh ship/scout copies run optional project dependency setup before launch;
+#   docs/configuration.md owns config/spawn-setup. Failures reach the worker
+#   through the private launch brief and never prevent launch.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope
 #   first in the private launch-brief overlay, including the exact task-owned
 #   steering inbox. This never rewrites a project's instruction files or a
@@ -4922,6 +4925,13 @@ fi
 # tab's original project directory.
 spawn_enter_recorded_worktree
 spawn_assert_agent_worktree
+
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+  bash "$FM_ROOT/bin/fm-spawn-setup.sh" \
+    "$CONFIG/spawn-setup/$(basename "$PROJ_ABS")" "$WT" "$STATE/$ID.setup" "$BRIEF" || {
+    printf '\nSpawn dependency setup could not complete. Rerun dependency installs inside the task copy before testing.\n' >> "$BRIEF"
+  }
+fi
 
 # Pre-register Claude's workspace trust for the directory this launch starts in,
 # at the first point that directory is known and before any per-task state is

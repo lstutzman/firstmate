@@ -6,6 +6,28 @@ This record contains reusable version-scoped evidence for active runtime guarant
 The backend guides own current setup, safety boundaries, and limitations.
 Exact task chronology, branch names, temporary homes, local paths, process ids, thread ids, and delivery transcripts remain in private reports or PR evidence.
 
+## Dependency setup before worker launch
+
+Verified on 2026-10-28 with Bash 5.3.9 on Linux using synthetic projects, real isolated Git copies, and a fake tmux endpoint:
+
+```sh
+TMPDIR=/tmp bash bin/fm-test-run.sh tests/fm-spawn-setup.test.sh tests/fm-spawn-worktree-settle.test.sh
+```
+
+Observed output:
+
+```text
+ok - setup timeout is enforced and worker still launches (4s total spawn)
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=27393
+```
+
+The regression checks unchanged behavior without configuration, task-copy working directory, individual and project-wide switches, continued launch after a failed command, enforced timeout, and rejection of an invalid timeout.
+The timeout case uses a 1-second bound and requires the entire spawn to finish within 20 seconds.
+These checks exercise local setup and launch instruction delivery, without downloading packages or starting a model session.
+The integration in `bin/fm-spawn.sh` runs after copy validation at the shared pre-launch point for every worker tool and backend; it does not depend on vendor output or backend-specific delivery.
+Persistent secondmates and relaunches bypass setup by design.
+This regression does not establish live package installation or live operation of each worker tool and backend.
+
 ## Harness detection precedence
 
 Firstmate's own harness comes from two kinds of evidence, and `bin/fm-harness.sh` owns how they combine: an environment marker names its harness, and the nearest harness process in the parent chain proves who owns the process tree.
