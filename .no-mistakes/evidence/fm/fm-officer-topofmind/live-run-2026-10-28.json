@@ -1,0 +1,327 @@
+{
+  "asks_for_lee": [
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-legal - Choose legal wording for terms page"
+      ],
+      "execute": null,
+      "id": "tom-legal",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 0,
+      "rank": null,
+      "reason": "Lee decides the legal choice",
+      "tag_source": "top-of-mind",
+      "title": "Choose legal wording for terms page"
+    }
+  ],
+  "coverage": [
+    "Linear labels not readable by linear-axi"
+  ],
+  "date": "2026-10-28",
+  "doing": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.Kgriek/home/data/backlog.md: running-task",
+        "Top of Mind: tom-running - Fix upload timeout"
+      ],
+      "execute": null,
+      "id": "running-task",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Already in flight",
+      "tag_source": "backlog",
+      "title": "Fix upload timeout"
+    }
+  ],
+  "done": [],
+  "excluded": [
+    {
+      "authorising_class": "bug",
+      "captains_log_key": "held-task",
+      "evidence": [
+        "/tmp/fm-lab.Kgriek/home/data/backlog.md: held-task",
+        "Top of Mind: tom-held - Fix pricing banner"
+      ],
+      "execute": null,
+      "id": "held-task",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "backlog",
+      "title": "Fix pricing banner"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.Kgriek/home/data/backlog.md: dep-task",
+        "Top of Mind: tom-dep - Fix export header"
+      ],
+      "execute": null,
+      "id": "dep-task",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Already held, blocked, or carded; firstmate must reconcile it",
+      "tag_source": "backlog",
+      "title": "Fix export header"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-waiting - Repair the onboarding checklist"
+      ],
+      "execute": null,
+      "id": "tom-waiting",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 0,
+      "rank": null,
+      "reason": "waiting (Top of Mind status)",
+      "tag_source": "top-of-mind",
+      "title": "Repair the onboarding checklist"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-pr - Fix map tiles"
+      ],
+      "execute": null,
+      "id": "tom-pr",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "https://github.com/example/project/pull/77",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 0,
+      "rank": null,
+      "reason": "Already in flight: https://github.com/example/project/pull/77",
+      "tag_source": "top-of-mind",
+      "title": "Fix map tiles"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-slarti - Repair release dashboard"
+      ],
+      "execute": null,
+      "id": "tom-slarti",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 0,
+      "rank": null,
+      "reason": "Owned by another home: slarti",
+      "tag_source": "top-of-mind",
+      "title": "Repair release dashboard"
+    },
+    {
+      "authorising_class": "code-review",
+      "evidence": [
+        "Linear PC-3779",
+        "Top of Mind: tom-triage - Check search null"
+      ],
+      "execute": null,
+      "id": "PC-3779",
+      "linear_id": "PC-3779",
+      "linear_ids": [
+        "PC-3779"
+      ],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 0,
+      "project": "",
+      "rank": null,
+      "reason": "Linear state is not unstarted: triage",
+      "tag_source": "linear-title-prefix:Code review",
+      "title": "Code review finding: unchecked null in search"
+    }
+  ],
+  "filler": null,
+  "generated_at": "2026-10-28T07:00:00Z",
+  "linear_coverage": {
+    "descriptions_truncated": 0,
+    "hierarchy_items": 2,
+    "items_seen": 3,
+    "pages_fetched": 6,
+    "rate_limit_retries": 0,
+    "requests": 8,
+    "roots_visited": 2,
+    "team_items": 2,
+    "unblocked_items": 1,
+    "unverified_starts": 0
+  },
+  "schema_version": 1,
+  "source": "progress-officer",
+  "start_requests": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-501",
+        "Top of Mind: tom-linear - Invoice total wrong"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M61B8RD7YF2JT6VQM48A1A5X/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-28-9b4fe4285afc96b6",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-501\", \"Top of Mind: tom-linear - Invoice total wrong\"], \"id\": \"PC-501\", \"linear_id\": \"PC-501\", \"linear_ids\": [\"PC-501\"], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.Kgriek/home\", \"priority\": 2, \"project\": \"\", \"rank\": 1, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: invoice total wrong\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.Kgriek/home"
+        },
+        "request_id": "progress-2026-10-28-9b4fe4285afc96b6"
+      },
+      "id": "PC-501",
+      "linear_id": "PC-501",
+      "linear_ids": [
+        "PC-501"
+      ],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 2,
+      "project": "",
+      "rank": 1,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: invoice total wrong"
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "/tmp/fm-lab.Kgriek/deepthought/data/backlog.md: deep-bug",
+        "Top of Mind: tom-deep - Fix deep crash"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M61B8RD7YF2JT6VQM48A1A5X/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-28-1f439ecd7be48de1",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"/tmp/fm-lab.Kgriek/deepthought/data/backlog.md: deep-bug\", \"Top of Mind: tom-deep - Fix deep crash\"], \"id\": \"deep-bug\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.Kgriek/deepthought\", \"priority\": 0, \"project\": \"\", \"rank\": 2, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"backlog\", \"title\": \"Fix deep crash\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.Kgriek/home"
+        },
+        "request_id": "progress-2026-10-28-1f439ecd7be48de1"
+      },
+      "id": "deep-bug",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/deepthought",
+      "priority": 0,
+      "project": "",
+      "rank": 2,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "backlog",
+      "title": "Fix deep crash"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-stalled - Repair weekly report email"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M61B8RD7YF2JT6VQM48A1A5X/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-28-3363e9a7137a178b",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: tom-stalled - Repair weekly report email\"], \"id\": \"tom-stalled\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.Kgriek/home\", \"priority\": 1, \"rank\": 3, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Repair weekly report email\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.Kgriek/home"
+        },
+        "request_id": "progress-2026-10-28-3363e9a7137a178b"
+      },
+      "id": "tom-stalled",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 1,
+      "rank": 3,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Repair weekly report email"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-new - Fix the CSV export crash"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "/home/lee/.no-mistakes/worktrees/4e1bb7649f99/01M61B8RD7YF2JT6VQM48A1A5X/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-28-588abeba71ebe6bb",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: tom-new - Fix the CSV export crash\"], \"id\": \"tom-new\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-lab.Kgriek/home\", \"priority\": 2, \"rank\": 4, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Fix the CSV export crash\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-lab.Kgriek/home"
+        },
+        "request_id": "progress-2026-10-28-588abeba71ebe6bb"
+      },
+      "id": "tom-new",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-lab.Kgriek/home",
+      "priority": 2,
+      "rank": 4,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Fix the CSV export crash"
+    }
+  ],
+  "top_of_mind": [
+    "tom-linear - Invoice total wrong: Unstarted work authorised by bug",
+    "tom-deep - Fix deep crash: Unstarted work authorised by bug",
+    "tom-stalled - Repair weekly report email: Unstarted work authorised by requested-feature",
+    "tom-new - Fix the CSV export crash: Unstarted work authorised by requested-feature",
+    "tom-running - Fix upload timeout: Already in flight: running-task",
+    "tom-legal - Choose legal wording for terms page: Waiting on Lee: tom-legal; Lee decides the legal choice",
+    "tom-held - Fix pricing banner: Waiting on Lee: held-task; Already held, blocked, or carded; firstmate must reconcile it",
+    "tom-dep - Fix export header: Already held, blocked, or carded; firstmate must reconcile it",
+    "tom-waiting - Repair the onboarding checklist: waiting (Top of Mind status)",
+    "tom-pr - Fix map tiles: Already in flight: https://github.com/example/project/pull/77",
+    "tom-slarti - Repair release dashboard: Owned by another home: slarti",
+    "tom-triage - Check search null: Linear state is not unstarted: triage"
+  ],
+  "unclassified": 0
+}

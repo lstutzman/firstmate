@@ -1,0 +1,23 @@
+== server mode: 500
+exit=0
+HTTPS requests: 1
+starts: PC-501 deep-bug
+top_of_mind entries: 0
+ToM coverage: Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed
+== server mode: malformed
+exit=0
+HTTPS requests: 1
+starts: PC-501 deep-bug
+top_of_mind entries: 0
+ToM coverage: Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed
+== untrusted certificate
+exit=0
+starts: PC-501 deep-bug
+top_of_mind entries: 0
+ToM coverage: Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed
+== recovered: valid payload again
+exit=0
+HTTPS requests: 1
+starts: PC-501 deep-bug tom-stalled tom-new
+top_of_mind entries: 12
+ToM coverage: 
