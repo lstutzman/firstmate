@@ -137,7 +137,7 @@ test_merge_word_is_not_a_missing_tool() {
   local DATE=2026-10-26 T=1793033657 NOW=1793077200
   home=$(make_world merge-word)
   cat > "$home/state/slarti.status" <<'EOF'
-needs-decision [key=fleet-app-pr67-merge] [at=1793033657]: For a Lee merge-word card (fleet-app needs his word on every PR). New progress-officer page: https://github.com/lstutzman/fleet-app/pull/67. It is a read-only page, separate from Captain's Choice and the Captain's Log, showing what the progress officer is doing, has done, and is asking for, plus its one-line summary and the file's age (stale or failed states are shown plainly). Captain's Log decisions appear only as links to the Log. It includes a pull job that reads the officer's JSON file (format agreed with Deep Thought) and the fleet-app route behind it. No-mistakes review passed and the fleet-app suite passes; there is no CI on
+needs-decision [key=fleet-app-pr67-merge] [at=1793033657]: For a Lee merge-word card (fleet-app needs his word on every PR). New progress-officer page: https://github.com/lstutzman/fleet-app/pull/67. It is a read-only page, separate from Captain's Choice and the Captain's Log, showing what the progress officer is doing, has done, and is asking for, plus its one-line summary and the file's age (stale or failed states are shown plainly). Captain's Log decisions appear only as links to the Log. It includes a pull job that reads the officer's JSON file (format agreed with Deep Thought) and the fleet-app route behind it. No-mistakes review passed and the fleet-app suite passes; there is no CI on the repo. Not yet proven: the pull service is not installed and no real officer file exists yet (Deep Thought is building the officer). Decision 1: (a) merge, and Slarti installs the pull unit and checks it against the first real file (recommended); (b) hold until the officer writes its first file.
 resolved [key=fleet-app-pr67-merge] [at=1793035197]: Lee approved the merge
 EOF
   run_officer "$home" >/dev/null || fail "merge-word fixture run must succeed"
@@ -153,7 +153,17 @@ EOF
 blocked [at=$T] [key=missing-tool]: openjdk is not installed; Lee needs to install the missing tool
 resolved [at=$((T + 1540))] [key=missing-tool]: Lee installed openjdk
 EOF
+  cat > "$home/state/service.status" <<EOF
+needs-decision [at=$T] [key=service]: The pull service is not installed; Slarti installs the pull unit after the release
+resolved [at=$((T + 1540))] [key=service]: release approved
+EOF
+  cat > "$home/state/approval.status" <<EOF
+needs-decision [at=$T] [key=approval]: Needs Lee's approval for the release; a tool is not installed in the future image
+resolved [at=$((T + 1540))] [key=approval]: Lee approved the release
+EOF
   run_officer "$home" >/dev/null || fail "missing-tool fixture run must succeed"
+  assert_equals 0 "$(jq '[.events[] | select((.task == "service" or .task == "approval") and .cause == "missing-tool")] | length' "$json")" \
+    "an unshipped service and an approval wait are not missing agent tools"
   assert_equals "missing-tool" "$(status_event "$json" missing-tool missing-tool '.cause')" \
     "a genuine missing tool retains its cause"
   assert_equals "true" "$(finding "$json" missing-tool tool '.carded')" \
