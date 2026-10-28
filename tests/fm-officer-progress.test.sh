@@ -200,6 +200,77 @@ PYFIX
   pass 'progress: checked items start with partial coverage and choices ask for cards'
 }
 
+test_backlog_asks_require_a_request() {
+  make_world backlog-asks
+  stub_sleep
+  python3 -I - "$WORLD/linear" <<'PYFIX'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+spec = [('PC-90', 'Change pricing tiers', '(kind: feature) (requested-by: Lee)'),
+        ('PC-91', 'Export copy', 'Lee, 2026-10-14: approved the billing copy')]
+issues = []
+for ident, title, description in spec:
+    issue = dict(identifier=ident, title=title, state='Todo', stateType='unstarted', priority=0, description=description)
+    issues.append(issue)
+    (root / (ident + '.json')).write_text(json.dumps(dict(ok=True, data=dict(issue=dict(issue, parent=None)))))
+(root / 'list.json').write_text(json.dumps(dict(ok=True, data=dict(issues=issues))))
+PYFIX
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] PC-3449 - Fix billing rounding (kind: bug)
+
+## Queued
+
+- [ ] fleet-app-pr56-deploy - Deploy /business-health; Lee decides the business choice
+- [ ] pc-2186-nav-guards - Navigation guards for pricing
+- [ ] pc-2680-slice2 - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee)
+- [ ] slice2-merged - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/example/project/pull/4400)
+- [ ] slice2-open - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/other/repo/pull/4401)
+- [ ] slice2-closed - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/other/repo/pull/4402)
+- [ ] slice2-unread - Trial controls; needs Lee's merge word for payments/trials (kind: feature) (requested-by: Lee) (pr: https://github.com/other/repo/pull/4403)
+- [ ] known-name - Business health dashboard
+- [ ] feature-path - Add /pricing navigation (kind: feature) (requested-by: Lee)
+- [ ] real-choice - Lee to choose the export format
+- [ ] explicit-action - Ask Lee: review the export format
+- [ ] security-merge-note - Rotate production credentials; needs Lee's merge word (kind: security)
+- [ ] held-choice - Export format (hold-kind: captain) (hold: Lee to choose format)
+- [ ] worker-choice - Lee to choose pricing (kind: feature) (requested-by: Lee)
+- [ ] recorded-start - Lee to choose pricing (kind: feature) (requested-by: Lee)
+- [ ] tiers - Change pricing tiers (kind: feature) (requested-by: Lee)
+- [ ] dated-citation - Lee, 2026-10-14: approved the billing copy
+MD
+  printf 'kind=ship\n' > "$WORLD_HOME/state/worker-choice.meta"
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4400.json"
+  printf '{"state":"open","merged":false}\n' > "$WORLD/pr-4401.json"
+  printf '{"state":"closed","merged":false}\n' > "$WORLD/pr-4402.json"
+  printf 'working [at=1]: started\n' > "$WORLD_HOME/state/recorded-start.status"
+  run_progress >/dev/null || fail 'backlog ask classification failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'PC-90 explicit-action real-choice security-merge-note tiers' "$(jq -r '[.asks_for_lee[].id] | sort | join(" ")' "$file")" \
+    'only actual Lee requests and classified choices become asks; names, notes, citations, and started work do not'
+  assert_equals 'Lee decides the pricing choice|Lee decides the pricing choice' \
+    "$(jq -r '[.asks_for_lee[] | select(.id == "PC-90" or .id == "tiers") | .reason] | join("|")' "$file")" \
+    'a classified choice routes the same from Linear and the backlog'
+  assert_equals '5' "$(jq '.unclassified' "$file")" 'loose words and dated Lee citations leave unclassified work counted'
+  assert_contains "$(jq -r '.doing[].id' "$file")" 'PC-3449' 'the billing bug stays in flight'
+  assert_contains "$(jq -r '.excluded[].id' "$file")" 'held-choice' 'existing captain holds remain held'
+  assert_contains "$(jq -r '.start_requests[].id' "$file")" 'pc-2680-slice2' 'a merge-word note gates merging, not starting'
+  assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[], .excluded[]] | .[].id' "$file")" 'slice2-merged' \
+    'the same merge-note task with a merged PR is dropped, never restarted'
+  assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4400' 'a merge note still reads its PR state'
+  assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[]] | .[].id' "$file")" 'slice2-open' \
+    'the same merge-note task with an open PR in another repo never starts twice'
+  assert_contains "$(jq -r '.excluded[].id' "$file")" 'slice2-open' 'an open merge-note PR excludes the start'
+  assert_equals 'PR closed unmerged: check whether still needed' \
+    "$(jq -r '.excluded[] | select(.id == "slice2-closed") | .reason' "$file")" 'a closed unmerged merge-note PR stays excluded for a check'
+  assert_contains "$(jq -r '.excluded[].id' "$file")" 'slice2-unread' 'an unreadable merge-note PR never authorises a start'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'pull/4403' 'the failed PR read is named in coverage'
+  assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[]] | .[].id' "$file")" 'slice2-closed' 'closed work is not restarted'
+  assert_not_contains "$(jq -r '[.start_requests[], .asks_for_lee[]] | .[].id' "$file")" 'slice2-unread' 'unread work is not started'
+  pass 'progress: backlog asks require an actual request from Lee'
+}
+
 test_review_words_and_explicit_asks() {
   make_world review-words
   stub_sleep
@@ -266,6 +337,7 @@ MD
   printf '{"state":"open","merged":false}\n' > "$WORLD/pr-4095.json"
   run_progress > "$WORLD/output" || fail 'merge ask reconciliation failed'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_contains "$(jq -r '.asks_for_lee[].id' "$file")" 'open' 'an explicit merge ask on an open PR reaches Lee'
   assert_equals 'closed open unread' "$(jq -r '[.asks_for_lee[].id, .excluded[].id] | sort | join(" ")' "$file")" \
     'merged PR merge asks disappear, including PRs named only in linked Linear text, while other asks remain'
   assert_equals 'PR closed unmerged: check whether still needed' \
@@ -275,6 +347,42 @@ MD
   assert_not_contains "$(jq -r '.asking[].key' "$WORLD_HOME/data/officers/progress/progress-state.json")" 'merged' 'merged PR card is absent from page'
   assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4069' 'merge ask reads exact PR state'
   pass 'progress: merge asks require a current open PR'
+}
+
+test_merged_pr_asks_follow_effective_class() {
+  make_world merged-effective-class
+  stub_sleep
+  python3 -I - "$WORLD/linear" <<'PYFIX'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+spec = [('PC-10', 'Requested rollout', 'started', None, ''),
+        ('PC-95', 'Merge pricing rollout', 'unstarted', None,
+         '(kind: feature) (requested-by: Lee)\nRollout PR: https://github.com/example/project/pull/4300'),
+        ('PC-97', 'Merge pricing rollout', 'unstarted', 'PC-10', 'Rollout PR: https://github.com/example/project/pull/4301'),
+        ('PC-98', 'Merge pricing follow-up', 'unstarted', 'PC-10', 'Follow-up PR: https://github.com/example/project/pull/4302')]
+issues = []
+for ident, title, state, parent, description in spec:
+    issue = dict(identifier=ident, title=title, state='Todo', stateType=state, priority=0, description=description)
+    issues.append(issue)
+    (root / (ident + '.json')).write_text(json.dumps(dict(ok=True, data=dict(
+        issue=dict(issue, parent=parent + ' Parent' if parent else None)))))
+(root / 'list.json').write_text(json.dumps(dict(ok=True, data=dict(issues=issues))))
+PYFIX
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## Queued
+
+- [ ] rollout - Merge pricing rollout (linear: PC-95)
+MD
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4300.json"
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4301.json"
+  printf '{"state":"open","merged":false}\n' > "$WORLD/pr-4302.json"
+  run_progress > "$WORLD/output" || fail 'effective-class merge reconciliation failed'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'PC-98' "$(jq -r '[.asks_for_lee[].id] | join(" ")' "$file")" \
+    'merged PRs drop asks classified through linked Linear text or a requested root; an open PR still asks'
+  assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4300' 'a linked Linear class reads the PR'
+  assert_contains "$(cat "$WORLD/calls")" '/repos/example/project/pulls/4301' 'a requested-root child reads the PR'
+  pass 'progress: merged-PR drops follow the class judge applies'
 }
 
 test_github_reads_respect_deadline() {
@@ -956,9 +1064,11 @@ PY
   pass 'progress: reads other homes and status without acting on them'
 }
 
+test_backlog_asks_require_a_request
 test_ancestor_asks_hold_only_routed_asks
 test_linear_rate_limit_recovers
 test_merge_ask_pr_state
+test_merged_pr_asks_follow_effective_class
 test_github_reads_respect_deadline
 test_review_words_and_explicit_asks
 test_partial_coverage_starts
