@@ -1398,6 +1398,8 @@ housekeeping() {  # <state>
         if [ -n "$last" ] && captain_owed_wait "$last"; then
           if [ "$answered" -eq 1 ]; then
             reason="captain-held ${age}s (the held decision was answered or released, resume the work): $win"
+          elif status_is_keyed_decision "$last"; then
+            reason="needs-decision ${age}s (awaiting an answer, answer the decision or hold it for the captain): $win"
           else
             reason="captain-held ${age}s (awaiting the captain, answer the held decision or release the hold): $win"
           fi

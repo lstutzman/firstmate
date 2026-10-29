@@ -3129,6 +3129,40 @@ test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict() {
   pass "a declared wait is not wedge-escalated by a working verdict, while an elapsed declaration and an undeclared lane both keep the unchanged ladder"
 }
 
+# An open keyed needs-decision is the worker's own declaration that it stopped to
+# be answered, so a run-step working verdict on its idle pane must not climb the
+# wedge ladder, in a home that never armed config/wedge-defer-parked-gate. The
+# line is captain-relevant, so it reaches the timer through the overridden
+# terminal branch (the fixture pre-arms that timer). An unkeyed needs-decision on
+# the same lane keeps the unchanged ladder.
+test_wedge_threshold_defers_to_an_open_keyed_decision() {
+  local dir state fakebin out capture window key n
+  local working='state: working · source: run-step · ci running'
+
+  dir=$(wedge_threshold_fixture keyed-decision-working 'needs-decision [key=route]: which route' 0 10)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+  n=1
+  while [ "$n" -le 3 ]; do
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "an open keyed needs-decision wedge-escalated at threshold $n: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "an open keyed needs-decision queued a wedge wake: $(cat "$state/.wake-queue")"
+  [ ! -e "$state/.wedge-escalations-$key" ] \
+    || fail "an open keyed needs-decision counted $(cat "$state/.wedge-escalations-$key") wedge escalation(s)"
+
+  dir=$(wedge_threshold_fixture unkeyed-decision-working 'needs-decision: which route' 0 10)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "an unkeyed needs-decision stopped wedge-escalating: $(cat "$out")"
+  grep -F "possible wedge, escalation 1" "$out" >/dev/null \
+    || fail "an unkeyed needs-decision lost the unchanged wedge wording: $(cat "$out")"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the unkeyed escalation"
+  pass "an open keyed needs-decision is never wedge-escalated without the parked-gate opt-in, while an unkeyed one keeps the ladder"
+}
+
 # `fm-send --resolve-key default` answers a keyless decision by appending a
 # stated default-key resolved line after whatever the worker wrote last. When
 # that is a keyless pause the worker is still waiting, so the answer must not
@@ -6961,6 +6995,7 @@ test_absorbed_replacement_wait_does_not_inherit_the_old_throttle
 test_live_declared_wait_churn_honors_the_resurface_throttle
 test_live_paused_until_controls_recheck_time
 test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict
+test_wedge_threshold_defers_to_an_open_keyed_decision
 test_wedge_threshold_keeps_a_wait_past_a_default_key_answer
 test_wedge_threshold_recheck_names_the_captain_for_a_held_lane
 test_wedge_threshold_defers_to_a_backlog_captain_hold

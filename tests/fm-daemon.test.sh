@@ -3520,6 +3520,16 @@ test_captain_held_rechecks_daily_not_every_four_hours() {
   pass "a captain hold rechecks on the daily cadence, not the four-hour pause bound"
 }
 
+test_open_keyed_decision_recheck_names_the_decision() {
+  captain_wait_case kd-daily 'needs-decision [key=route]: which route' 90000
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "awaiting an answer, answer the decision or hold it for the captain" \
+    || fail "an open keyed needs-decision recheck did not name the decision: $(cat "$state/.subsuper-escalations" 2>/dev/null || true)"
+  escalated "release the hold" && fail "an open keyed needs-decision was told to release a hold it never had"
+  pass "an open keyed needs-decision rechecks daily, worded as the decision it is"
+}
+
 test_ordinary_pause_keeps_the_four_hour_bound() {
   captain_wait_case pause-four-hour 'paused: holding for the upstream tool release' 20000
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
@@ -3632,6 +3642,7 @@ test_open_keyed_needs_decision_is_a_declared_wait() {
 
 test_captain_held_rechecks_daily_not_every_four_hours
 test_ordinary_pause_keeps_the_four_hour_bound
+test_open_keyed_decision_recheck_names_the_decision
 test_captain_held_until_moves_the_recheck
 test_captain_held_rechecks_when_answered
 test_captain_hold_answer_probe_is_throttled

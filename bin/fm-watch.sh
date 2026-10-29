@@ -8,10 +8,15 @@
 # config/turnend-churn-absorb lets a bare turn-end also use bounded pane churn
 # since the previous poll. Every other no-verb wake surfaces, so a crew
 # that finishes (or stops and waits) is never silently swallowed. A declared wait,
-# a paused: external wait, a verified captain-held transfer, or an open keyed
-# needs-decision that is the latest event (status_wait_line), is the
+# either a paused: external wait or a verified captain-held transfer, is the
 # separate idle absorb case and re-surfaces only on its long bounded cadence,
 # although its initial no-verb status signal still surfaces in normal mode.
+# An open keyed needs-decision that is the latest event (status_wait_line) is a
+# declared wait too, without the config/wedge-defer-parked-gate opt-in that
+# governs only the unkeyed parked-gate case: it is never wedge-escalated
+# (wedge_wait_evidence), and a secondmate, a busy pane past its turn bound, or a
+# dead agent takes the bounded cadence for it. A live idle ordinary crew still
+# surfaces it as the captain-relevant line it is, once per new pane hash.
 # That cadence is hours long and condition-aware: a paused: line naming
 # `until <UTC ISO 8601>` is rechecked when that time passes, but a declared time
 # beyond FM_PAUSE_RESURFACE_SECS cannot extend the ordinary recheck cadence, and
@@ -1243,8 +1248,9 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # The evidence that a quiet pane is a BOUNDED WAIT rather than a wedge suspect,
 # read at the one moment it decides anything: when an escalation is about to
 # fire. Two records answer it, and they are independent: the worker's own status
-# line - a declared `paused:` external wait, or a verified `captain-held`
-# transfer - and, when that line explains nothing, the crew's authoritative
+# line - a declared `paused:` external wait, a verified `captain-held`
+# transfer, or an open keyed `needs-decision` it stopped on (status_wait_line,
+# which needs no config/wedge-defer-parked-gate opt-in) - and, when that line explains nothing, the crew's authoritative
 # current state. Between them sits the backlog record of the same captain hold
 # (task_captain_call_open), which a worker's line never shows once firstmate
 # hands the call to the captain; it is read only here, at the threshold. That
@@ -1322,7 +1328,7 @@ wedge_wait_evidence() {  # <task> -> one wait_record on stdout
   local task=$1 last until statusf run
   [ -n "$task" ] || return 1
   statusf="$STATE/$task.status"
-  last=$(status_declared_wait_line "$statusf")
+  last=$(status_wait_line "$statusf")
   if status_is_captain_held "$last"; then
     wait_record 'captain-held' 'awaiting the captain - verified hold transfer' \
       captain 'answer the held decision or release the hold' "$statusf"
@@ -1332,6 +1338,11 @@ wedge_wait_evidence() {  # <task> -> one wait_record on stdout
     && { ! until=$(status_paused_until "$last") || [ "$(date +%s)" -lt "$until" ]; }; then
     wait_record 'declared wait' 'awaiting external' \
       external 'confirm the wait still holds' "$statusf"
+    return 0
+  fi
+  if status_is_keyed_decision "$last"; then
+    wait_record 'open keyed decision' 'awaiting an answer' \
+      supervisor 'answer the decision or hold it for the captain' "$statusf"
     return 0
   fi
   if task_captain_call_open "$task"; then
