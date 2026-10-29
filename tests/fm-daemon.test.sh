@@ -3520,14 +3520,33 @@ test_captain_held_rechecks_daily_not_every_four_hours() {
   pass "a captain hold rechecks on the daily cadence, not the four-hour pause bound"
 }
 
+# An open keyed needs-decision is owed by the supervisor, not the captain: it keeps
+# the four-hour FM_PAUSE_RESURFACE_SECS recheck (not the daily captain cadence),
+# worded as the decision it is, and an away record does not silence it.
 test_open_keyed_decision_recheck_names_the_decision() {
-  captain_wait_case kd-daily 'needs-decision [key=route]: which route' 90000
+  captain_wait_case kd-four-hour 'needs-decision [key=route]: which route' 3600
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "awaiting an answer" && fail "an open keyed needs-decision re-surfaced inside the four-hour bound"
+  echo $(( $(date +%s) - 20000 )) > "$state/.subsuper-paused-$key"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
     FM_STATE_OVERRIDE="$state" housekeeping "$state"
   escalated "awaiting an answer, answer the decision or hold it for the captain" \
-    || fail "an open keyed needs-decision recheck did not name the decision: $(cat "$state/.subsuper-escalations" 2>/dev/null || true)"
+    || fail "an open keyed needs-decision was not rechecked after four hours, worded as the decision: $(cat "$state/.subsuper-escalations" 2>/dev/null || true)"
   escalated "release the hold" && fail "an open keyed needs-decision was told to release a hold it never had"
-  pass "an open keyed needs-decision rechecks daily, worded as the decision it is"
+  pass "an open keyed needs-decision rechecks on the four-hour bound, worded as the decision it is"
+}
+
+test_open_keyed_decision_rechecks_while_away() {
+  captain_wait_case kd-away 'needs-decision [key=route]: which route' 20000
+  FM_HOME="$(dirname "$state")" FM_STATE_OVERRIDE="$state" FM_AFK_MODE=away "$ROOT/bin/fm-afk-contract.sh" enter --words 'fixture words' >/dev/null 2>&1 \
+    || fail "fixture: could not record the away posture"
+  [ "$(FM_HOME="$(dirname "$state")" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-afk-contract.sh" mode)" = away ] || fail "fixture: the record is not away"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "awaiting an answer" \
+    || fail "an away record silenced an open keyed needs-decision the supervisor owes: $(cat "$state/.subsuper-escalations" 2>/dev/null || true)"
+  pass "an away record does not silence an open keyed needs-decision"
 }
 
 test_ordinary_pause_keeps_the_four_hour_bound() {
@@ -3643,6 +3662,7 @@ test_open_keyed_needs_decision_is_a_declared_wait() {
 test_captain_held_rechecks_daily_not_every_four_hours
 test_ordinary_pause_keeps_the_four_hour_bound
 test_open_keyed_decision_recheck_names_the_decision
+test_open_keyed_decision_rechecks_while_away
 test_captain_held_until_moves_the_recheck
 test_captain_held_rechecks_when_answered
 test_captain_hold_answer_probe_is_throttled

@@ -56,8 +56,10 @@
 #     fm-classify-lib.sh's combined predicate - instead gets its own longer
 #     PAUSE_RESURFACE_SECS recheck, never a wedge escalation, whether its pane
 #     reads idle or busy; only a status append that stops declaring the wait
-#     ends that routing. A wait the captain owes - a captain-held transfer or
-#     an open keyed needs-decision that is the latest event - takes the longer
+#     ends that routing. An open keyed needs-decision that is the latest event
+#     is a declared wait owed by the supervisor: it takes that same cadence,
+#     worded as the decision it is, and is rechecked in away mode too. A
+#     captain-held transfer is owed by the captain and takes the longer
 #     CAPTAIN_HELD_RESURFACE_SECS recheck instead (default one day), at its
 #     `until` time when it names one, or at once when fm-captain-hold.sh
 #     reports every captain task a transfer is tracked by answered or
@@ -114,9 +116,8 @@
 #                                   `until` time cannot extend this bound, and a
 #                                   captain-held transfer is never rechecked
 #                                   while an away record exists
-#          FM_CAPTAIN_HELD_RESURFACE_SECS  the same for a wait the captain owes
-#                                   (a captain-held transfer or an open keyed
-#                                   needs-decision) (default 86400, one day); an
+#          FM_CAPTAIN_HELD_RESURFACE_SECS  the same for a captain-held
+#                                   transfer (default 86400, one day); an
 #                                   `until` time moves its recheck to that time,
 #                                   and answering or releasing every captain
 #                                   task a transfer is tracked by
@@ -573,13 +574,6 @@ stale_dialog_name() {  # <stale-detail>
   name=${name%)}
   [ -n "$name" ] || return 1
   printf '%s' "$name"
-}
-
-# 0 when a declared wait is owed by the captain, not by an external dependency: a
-# verified captain-held transfer or an open keyed needs-decision. These take the
-# longer FM_CAPTAIN_HELD_RESURFACE_SECS cadence.
-captain_owed_wait() {  # <status-line>
-  status_is_captain_held "$1" || status_is_keyed_decision "$1"
 }
 
 # 0 once, when every captain task a captain-held transfer is `tracked by` was
@@ -1364,7 +1358,7 @@ housekeeping() {  # <state>
     bounded_until=0
     wait_secs=$pause_secs
     answered=0
-    if captain_owed_wait "$last"; then
+    if status_is_captain_held "$last"; then
       wait_secs=$captain_secs
       if fm_afk_contract_away_present "$state"; then
         continue
@@ -1395,11 +1389,9 @@ housekeeping() {  # <state>
       2) rm -f "$marker" ;;
       *)
         last=$(status_wait_line "$state/$task.status")
-        if [ -n "$last" ] && captain_owed_wait "$last"; then
+        if [ -n "$last" ] && status_is_captain_held "$last"; then
           if [ "$answered" -eq 1 ]; then
             reason="captain-held ${age}s (the held decision was answered or released, resume the work): $win"
-          elif status_is_keyed_decision "$last"; then
-            reason="needs-decision ${age}s (awaiting an answer, answer the decision or hold it for the captain): $win"
           else
             reason="captain-held ${age}s (awaiting the captain, answer the held decision or release the hold): $win"
           fi
@@ -1410,6 +1402,10 @@ housekeeping() {  # <state>
             elif [ -n "$until" ] && [ "$now" -ge "$until" ]; then
               printf '%s\n' "$until" > "$due"
             fi
+          fi
+        elif [ -n "$last" ] && status_is_keyed_decision "$last"; then
+          if escalate_add "$state" "needs-decision ${age}s (awaiting an answer, answer the decision or hold it for the captain): $win"; then
+            _now > "$marker"
           fi
         elif [ -n "$last" ] && status_is_paused "$last"; then
           if [ "$bounded_until" -eq 1 ]; then

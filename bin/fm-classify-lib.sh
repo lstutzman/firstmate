@@ -30,7 +30,9 @@
 # A declared wait is a paused: line, a verified captain-held transfer
 # (status_declared_wait_line), or an open keyed needs-decision that is the latest
 # event (status_wait_line, which both supervisors read); the away-mode daemon
-# takes the last two on the longer FM_CAPTAIN_HELD_RESURFACE_SECS cadence.
+# takes only a captain-held transfer on the longer FM_CAPTAIN_HELD_RESURFACE_SECS
+# cadence, and an open keyed needs-decision, owed by the supervisor, on
+# FM_PAUSE_RESURFACE_SECS.
 # There are four documented exceptions. The absorb classification
 # (crew_absorb_class and its working/paused wrappers) is NOT a pure status-file
 # read: it reuses bin/fm-crew-state.sh, which may make a bounded no-mistakes call,
@@ -127,9 +129,8 @@ FM_CLASSIFY_PAUSED_VERB_DEFAULT='paused'
 # shellcheck disable=SC2034 # Read by the watcher and daemon (fm-watch.sh, fm-supervise-daemon.sh), not this lib.
 FM_PAUSE_RESURFACE_SECS_DEFAULT=14400
 
-# A wait the captain owes - a verified captain-held transfer, or an open keyed
-# needs-decision - is rechecked on its own, much longer cadence: the supervisor
-# cannot clear it, so a four-hour recheck only cost a turn to re-declare it. One
+# A wait the captain owes - a verified captain-held transfer - is rechecked on its
+# own, much longer cadence: the supervisor cannot clear it, so a four-hour recheck only cost a turn to re-declare it. One
 # day by default; the daemon also rechecks at once when the held task is answered
 # or released, and at a declared `until` time. FM_CAPTAIN_HELD_RESURFACE_SECS
 # overrides it.
