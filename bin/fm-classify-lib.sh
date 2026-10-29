@@ -28,9 +28,9 @@
 # from byte 0, preferring a bounded duplicate over a lost event.
 #
 # A declared wait is a paused: line, a verified captain-held transfer
-# (status_declared_wait_line), or, for the away-mode daemon only, an open keyed
-# needs-decision that is the latest event (status_wait_line); the daemon takes the
-# last two on the longer FM_CAPTAIN_HELD_RESURFACE_SECS cadence.
+# (status_declared_wait_line), or an open keyed needs-decision that is the latest
+# event (status_wait_line, which both supervisors read); the away-mode daemon
+# takes the last two on the longer FM_CAPTAIN_HELD_RESURFACE_SECS cadence.
 # There are four documented exceptions. The absorb classification
 # (crew_absorb_class and its working/paused wrappers) is NOT a pure status-file
 # read: it reuses bin/fm-crew-state.sh, which may make a bounded no-mistakes call,
@@ -399,8 +399,8 @@ status_declared_wait_line() {  # <status-file>
 # not a wedge. It counts only while it is the latest event and its key has no
 # matching resolved line (status_open_decisions owns "open"); an unkeyed
 # needs-decision keeps today's behaviour. Kept apart from
-# status_declared_wait_line so the watcher, which reads that line as paused or
-# captain-held only, is unchanged. Prints the line, or nothing.
+# status_declared_wait_line, whose callers read that line as paused or
+# captain-held only; status_wait_line joins the two. Prints the line, or nothing.
 status_open_keyed_decision_line() {  # <status-file>
   local f=$1 last verb key
   last=$(last_status_line "$f")

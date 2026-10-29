@@ -60,9 +60,10 @@
 #     an open keyed needs-decision that is the latest event - takes the longer
 #     CAPTAIN_HELD_RESURFACE_SECS recheck instead (default one day), at its
 #     `until` time when it names one, or at once when fm-captain-hold.sh
-#     reports the held task answered or released. It is not rechecked at all
-#     while an away record (state/.afk-contract, never quiet mode's) exists:
-#     nobody is there to answer it, and the return brief lists it.
+#     reports every captain task a transfer is tracked by answered or
+#     released. It is not rechecked at all while an away record
+#     (state/.afk-contract, never quiet mode's) exists: nobody is there to
+#     answer it, and the return brief lists it.
 #     Crewmates are autonomous, so a delayed stale response does not stall a
 #     healthy crewmate's own progress.
 #     Buffered escalation delivery also has a max-defer alarm: if a digest stays
@@ -117,8 +118,11 @@
 #                                   (a captain-held transfer or an open keyed
 #                                   needs-decision) (default 86400, one day); an
 #                                   `until` time moves its recheck to that time,
-#                                   and answering or releasing the held task
+#                                   and answering or releasing every captain
+#                                   task a transfer is tracked by
 #                                   (bin/fm-captain-hold.sh) rechecks it at once
+#          FM_CAPTAIN_HOLD_PROBE_SECS  minimum seconds between those answer
+#                                   probes for one held wait (default 300)
 #          FM_ESCALATE_BATCH_SECS   buffer window for batched escalation
 #                                   digests; 0 = flush immediately (default 90)
 #          FM_HEARTBEAT_SCAN_SECS   cadence for the catch-all status scan
@@ -225,6 +229,7 @@ INJECT_SKIP_DEFAULT="heartbeat"
 STALE_ESCALATE_SECS_DEFAULT=240
 ESCALATE_BATCH_SECS_DEFAULT=90
 HEARTBEAT_SCAN_SECS_DEFAULT=300
+CAPTAIN_HOLD_PROBE_SECS_DEFAULT=300
 HOUSEKEEPING_TICK_DEFAULT=15
 # Max time a buffered escalation may sit undelivered before the daemon retries
 # the normal flush path and, if that cannot confirm a submit, raises a loud wedge
@@ -577,17 +582,29 @@ captain_owed_wait() {  # <status-line>
   status_is_captain_held "$1" || status_is_keyed_decision "$1"
 }
 
-# 0 once, when the backlog task a captain wait names was answered or released
-# since the wait was declared. fm-captain-hold.sh open exits 1 for a row that is no
-# longer an open captain call; 0 (still open), 2 (cannot tell) and 3 (no such row)
-# all keep the wait on its cadence, so only a proven answer rechecks early. The
-# answered marker keeps one answer to one recheck and is cleared with the wait.
-captain_hold_answered() {  # <task> <state>
-  local task=$1 state=$2 rc=0
-  [ ! -e "$state/.subsuper-answered-$(_stale_key "$task")" ] || return 1
-  "${FM_CAPTAIN_HOLD_BIN:-$FM_DAEMON_DIR/fm-captain-hold.sh}" \
-    open "$task" --distinguish-absent >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 1 ]
+# 0 once, when every captain task a captain-held transfer is `tracked by` was
+# answered or released since the wait was declared. fm-captain-hold.sh open exits 1
+# for a row that is no longer an open captain call; 0 (still open), 2 (cannot tell)
+# and 3 (no such row) all keep the wait on its cadence, so only a proven answer of
+# every held task rechecks early. An open keyed needs-decision holds no backlog
+# task, and its own resolved line already ends that wait, so it is never probed.
+# The probe runs at most once per FM_CAPTAIN_HOLD_PROBE_SECS per wait, and the
+# answered marker keeps one answer to one recheck; both are cleared with the wait.
+captain_hold_answered() {  # <task> <state> <status-line>
+  local key ids id rc
+  status_is_captain_held "$3" || return 1
+  key=$(_stale_key "$1")
+  [ ! -e "$2/.subsuper-answered-$key" ] || return 1
+  [ "$(_file_age "$2/.subsuper-answer-probe-$key")" -ge "${FM_CAPTAIN_HOLD_PROBE_SECS:-$CAPTAIN_HOLD_PROBE_SECS_DEFAULT}" ] || return 1
+  : > "$2/.subsuper-answer-probe-$key"
+  ids=$(printf '%s\n' "$3" | sed -n 's/.*[[:space:]]tracked by[[:space:]]\{1,\}\([^[:space:]]*\).*/\1/p')
+  [ -n "$ids" ] || return 1
+  for id in ${ids//,/ }; do
+    rc=0
+    "${FM_CAPTAIN_HOLD_BIN:-$FM_DAEMON_DIR/fm-captain-hold.sh}" \
+      open "$id" --distinguish-absent >/dev/null 2>&1 || rc=$?
+    [ "$rc" -eq 1 ] || return 1
+  done
 }
 
 # Pause marker: state/.subsuper-paused-<key> holds the epoch a declared wait (a
@@ -607,7 +624,7 @@ pause_marker_record() {  # <window> <state> - create if absent
 pause_marker_remove() {  # <window> <state>
   local win=$1 state=$2 key
   key=$(_stale_key "$(window_to_task "$win" "$state")")
-  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-answered-$key"
+  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-answered-$key" "$state/.subsuper-answer-probe-$key"
 }
 
 clear_pause_tracking() {  # <window> <state>
@@ -615,7 +632,7 @@ clear_pause_tracking() {  # <window> <state>
   task=$(window_to_task "$win" "$state")
   key=$(_stale_key "$task")
   watcher_key=$(_stale_key "$win")
-  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-answered-$key" "$state/.subsuper-stale-$key" \
+  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-answered-$key" "$state/.subsuper-answer-probe-$key" "$state/.subsuper-stale-$key" \
     "$state/.subsuper-dialog-$key" \
     "$state/.paused-$watcher_key" "$state/.paused-rechecked-$watcher_key" "$state/.paused-resurfaced-$watcher_key" \
     "$state/.stale-$watcher_key" "$state/.stale-since-$watcher_key" "$state/.wedge-escalations-$watcher_key" \
@@ -1352,7 +1369,7 @@ housekeeping() {  # <state>
       if fm_afk_contract_away_present "$state"; then
         continue
       fi
-      captain_hold_answered "$task" "$state" && answered=1
+      captain_hold_answered "$task" "$state" "$last" && answered=1
     fi
     if [ "$answered" -eq 1 ]; then
       :

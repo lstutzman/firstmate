@@ -4357,6 +4357,55 @@ test_secondmate_captain_held_resurfaces_in_normal_mode() {
   pass "a captain-held secondmate re-surfaces on the bounded normal-mode cadence"
 }
 
+# An open keyed needs-decision that is the mate's latest event is a declared wait
+# too (status_wait_line): the mate stopped on purpose to be answered, so it takes
+# the bounded re-surface naming the answer it awaits, never a wedge. A resolved
+# keyed decision and an unkeyed one keep the ordinary mate suppression, exactly
+# as before.
+secondmate_decision_case() {  # <name> <status-text> -> sets dir state fakebin out window
+  local name=$1 statusf key back
+  dir=$(make_case "$name"); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; statusf="$state/$name.status"; window="test:fm-$name"
+  printf 'idle awaiting an answer\n' > "$dir/pane.txt"
+  printf 'window=%s\nkind=secondmate\n' "$window" > "$state/$name.meta"
+  printf '%b' "$2" > "$statusf"
+  back=$(( $(date +%s) - 500 ))
+  if [ "$(uname)" = Darwin ]; then touch -mt "$(date -r "$back" '+%Y%m%d%H%M.%S')" "$statusf"
+  else touch -m -d "@$back" "$statusf"; fi
+  printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-${name}_status"
+  key=$(printf '%s' "$window" | tr '.:/' '___')
+  printf '%s' "$(hash_text "idle awaiting an answer")" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+}
+
+secondmate_decision_watch() {
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+    FM_FAKE_CREW_STATE='state: unknown · source: none · no current-state source available' \
+    FM_PAUSE_RESURFACE_SECS=240 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+}
+
+test_secondmate_open_keyed_decision_resurfaces_as_a_declared_wait() {
+  local dir state fakebin out window pid status n=0
+  secondmate_decision_case mate-keyed-open 'needs-decision [key=route]: which route\n'
+  secondmate_decision_watch; pid=$!
+  wait_for_exit "$pid" 100 || { reap "$pid"; fail "an open keyed needs-decision on a mate never re-surfaced"; }
+  grep -F "stale: $window" "$out" >/dev/null || fail "an open keyed needs-decision did not emit a stale recheck: $(cat "$out")"
+  grep -F "awaiting an answer" "$out" >/dev/null || fail "the recheck did not name the open decision: $(cat "$out")"
+  grep -F "awaiting external" "$out" >/dev/null && fail "an open keyed needs-decision was rechecked as an external wait"
+  grep -F "possible wedge" "$out" >/dev/null && fail "an open keyed needs-decision was mislabeled a wedge"
+  for status in 'needs-decision [key=route]: which route\nresolved [key=route]: answered: A\n' 'needs-decision: which route\n'; do
+    n=$((n + 1))
+    secondmate_decision_case "mate-decision-control-$n" "$status"
+    secondmate_decision_watch; pid=$!
+    wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "a resolved or unkeyed needs-decision mate surfaced as a wait: $(cat "$out")"; }
+    reap "$pid"
+    [ ! -s "$out" ] || fail "a resolved or unkeyed needs-decision mate printed a wake reason: $(cat "$out")"
+  done
+  pass "an open keyed needs-decision mate takes the declared-wait recheck; resolved and unkeyed keep suppression"
+}
+
 test_secondmate_nonpaused_stale_remains_suppressed() {
   local dir state fakebin out capture_file statusf window key pane_hash sig pid
   dir=$(make_case secondmate-stale-suppressed); state="$dir/state"; fakebin="$dir/fakebin"
@@ -5201,6 +5250,46 @@ test_busy_declared_pause_is_rechecked_not_wedge_escalated() {
   wait_for_exit "$pid" 100 || { reap "$pid"; fail "a lifted pause on an over-age busy pane no longer wedge-escalates"; }
   grep -F "possible wedge" "$out" >/dev/null || fail "the restored busy-turn escalation did not flag a possible wedge: $(cat "$out")"
   pass "a busy pane under a declared pause is rechecked on the long cadence, and lifting the pause restores the wedge escalation"
+}
+
+# A busy pane past the turn-age bound whose latest event is an open keyed
+# needs-decision takes the declared-wait cadence, not the wedge timer; an unkeyed
+# needs-decision on the same pane still starts the wedge timer.
+test_busy_open_keyed_decision_is_not_wedge_timed() {
+  local dir state fakebin out capture_file window key pid statusf status
+  for status in keyed unkeyed; do
+    dir=$(make_case "busy-$status-decision"); state="$dir/state"; fakebin="$dir/fakebin"
+    out="$dir/watch.out"; capture_file="$dir/pane.txt"; window="test:fm-decider"
+    statusf="$state/decider.status"
+    printf 'Working... (7200.4s) waiting' > "$capture_file"
+    printf 'window=%s\nkind=scout\nharness=pi\n' "$window" > "$state/decider.meta"
+    record_pi_busy "$state" decider
+    if [ "$status" = keyed ]; then
+      printf 'needs-decision [key=route]: which route\n' > "$statusf"
+    else
+      printf 'needs-decision: which route\n' > "$statusf"
+    fi
+    printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-decider_status"
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    touch -t 200001010000 "$state/decider.meta"
+    PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+      FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
+      FM_FAKE_CREW_STATE='state: working · source: pane · harness busy (pi-ext)' \
+      FM_BUSY_TURN_MAX_SECS=1 FM_STALE_ESCALATE_SECS=999 FM_PAUSE_RESURFACE_SECS=999 \
+      FM_POLL=1 FM_SIGNAL_GRACE=1 \
+      FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+    pid=$!
+    wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "a busy $status needs-decision pane surfaced early: $(cat "$out")"; }
+    reap "$pid"
+    if [ "$status" = keyed ]; then
+      [ -e "$state/.paused-$key" ] || fail "a busy open keyed needs-decision did not take the declared-wait cadence"
+      [ ! -e "$state/.stale-since-$key" ] || fail "a busy open keyed needs-decision started the wedge timer"
+    else
+      [ -s "$state/.stale-since-$key" ] || fail "a busy unkeyed needs-decision no longer starts the wedge timer"
+      [ ! -e "$state/.paused-$key" ] || fail "a busy unkeyed needs-decision took the declared-wait cadence"
+    fi
+  done
+  pass "a busy pane under an open keyed needs-decision is not wedge-timed; an unkeyed one still is"
 }
 
 # --- declared pause + busy pane + AWAY MODE: the bound must hand off, not decorate
@@ -6861,6 +6950,7 @@ test_busy_pane_native_progress_resets_age
 test_busy_pane_repeated_escalation_reaches_demand_deep_inspection
 test_busy_pane_default_turn_age_bound_is_3600s
 test_busy_declared_pause_is_rechecked_not_wedge_escalated
+test_busy_open_keyed_decision_is_not_wedge_timed
 test_afk_busy_declared_pause_hands_off_plain_stale
 test_afk_busy_declared_pause_ticking_pane_hands_off_once
 test_nonterminal_stale_not_working_surfaced
@@ -6884,6 +6974,7 @@ test_failed_wake_append_does_not_arm_the_captain_hold_throttle
 test_reheld_captain_call_starts_its_own_resurface_window
 test_secondmate_paused_resurfaces_in_normal_mode
 test_secondmate_captain_held_resurfaces_in_normal_mode
+test_secondmate_open_keyed_decision_resurfaces_as_a_declared_wait
 test_secondmate_nonpaused_stale_remains_suppressed
 test_secondmate_unpause_clears_pause_tracking
 test_nonterminal_stale_pause_transitions_reclassify_unchanged_hash
