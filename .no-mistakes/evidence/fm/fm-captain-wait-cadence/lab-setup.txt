@@ -1,0 +1,16 @@
+t0=2026-10-29T10:19:11Z until=2026-10-29T10:24Z
+== cha.status
+working: started
+captain-held [key=plan]: tracked by cap-c
+== chd.status
+working: started
+captain-held [key=route]: tracked by cap-d
+== chu.status
+working: started
+captain-held [key=cost]: tracked by cap-e until 2026-10-29T10:24Z
+== kd.status
+working: started
+needs-decision [key=route]: which route should the migration take
+== pz.status
+working: started
+paused: holding for the upstream tool release

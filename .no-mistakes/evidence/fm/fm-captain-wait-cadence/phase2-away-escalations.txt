@@ -1,0 +1,13 @@
+# Phase 2: away record entered 10:24:10Z (fm-afk-contract.sh enter, mode=away); window ends 10:26:42Z. Captain-held p3 was due ~10:25:5x, p7 ~10:25:5x.
+     1	needs-decision 30s (awaiting an answer, answer the decision or hold it for the captain): fm-lab-cadence-3378555-6315:w1:p5
+     2	paused 30s (awaiting external, recheck whether the wait still holds): fm-lab-cadence-3378555-6315:w1:p4
+     3	needs-decision 30s (awaiting an answer, answer the decision or hold it for the captain): fm-lab-cadence-3378555-6315:w1:p5
+     4	paused 30s (awaiting external, recheck whether the wait still holds): fm-lab-cadence-3378555-6315:w1:p4
+     5	needs-decision 30s (awaiting an answer, answer the decision or hold it for the captain): fm-lab-cadence-3378555-6315:w1:p5
+     6	paused 30s (awaiting external, recheck whether the wait still holds): fm-lab-cadence-3378555-6315:w1:p4
+     7	needs-decision 30s (awaiting an answer, answer the decision or hold it for the captain): fm-lab-cadence-3378555-6315:w1:p5
+     8	paused 30s (awaiting external, recheck whether the wait still holds): fm-lab-cadence-3378555-6315:w1:p4
+     9	needs-decision 31s (awaiting an answer, answer the decision or hold it for the captain): fm-lab-cadence-3378555-6315:w1:p5
+    10	paused 31s (awaiting external, recheck whether the wait still holds): fm-lab-cadence-3378555-6315:w1:p4
+    11	needs-decision 31s (awaiting an answer, answer the decision or hold it for the captain): fm-lab-cadence-3378555-6315:w1:p5
+    12	paused 31s (awaiting external, recheck whether the wait still holds): fm-lab-cadence-3378555-6315:w1:p4
