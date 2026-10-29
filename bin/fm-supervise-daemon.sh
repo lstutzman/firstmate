@@ -61,7 +61,7 @@
 #     worded as the decision it is, and is rechecked in away mode too. A
 #     captain-held transfer is owed by the captain and takes the longer
 #     CAPTAIN_HELD_RESURFACE_SECS recheck instead (default one day), at its
-#     `until` time when it names one, or at once when fm-captain-hold.sh
+#     `until` time when it names one (even past that day), or at once when fm-captain-hold.sh
 #     reports every captain task a transfer is tracked by answered or
 #     released. It is not rechecked at all while an away record
 #     (state/.afk-contract, never quiet mode's) exists: nobody is there to
@@ -119,6 +119,7 @@
 #          FM_CAPTAIN_HELD_RESURFACE_SECS  the same for a captain-held
 #                                   transfer (default 86400, one day); an
 #                                   `until` time moves its recheck to that time,
+#                                   earlier or later than this bound,
 #                                   and answering or releasing every captain
 #                                   task a transfer is tracked by
 #                                   (bin/fm-captain-hold.sh) rechecks it at once
@@ -1368,7 +1369,7 @@ housekeeping() {  # <state>
     if [ "$answered" -eq 1 ]; then
       :
     elif until=$(status_paused_until "$last" || status_captain_held_until "$last"); then
-      if [ "$now" -lt "$until" ] && [ "$age" -lt "$wait_secs" ]; then
+      if [ "$now" -lt "$until" ] && { [ "$age" -lt "$wait_secs" ] || status_is_captain_held "$last"; }; then
         continue
       elif [ "$now" -lt "$until" ]; then
         bounded_until=1
@@ -1392,6 +1393,8 @@ housekeeping() {  # <state>
         if [ -n "$last" ] && status_is_captain_held "$last"; then
           if [ "$answered" -eq 1 ]; then
             reason="captain-held ${age}s (the held decision was answered or released, resume the work): $win"
+          elif [ -n "$until" ] && [ "$now" -ge "$until" ]; then
+            reason="captain-held ${age}s (awaiting the captain, the declared time has passed; answer the held decision or release the hold): $win"
           else
             reason="captain-held ${age}s (awaiting the captain, answer the held decision or release the hold): $win"
           fi

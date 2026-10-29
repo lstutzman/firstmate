@@ -3569,6 +3569,24 @@ test_captain_held_until_moves_the_recheck() {
   pass "an until time sets the captain-hold recheck"
 }
 
+utc_iso_at() {  # <epoch>
+  date -u -r "$1" +%Y-%m-%dT%H:%MZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%MZ
+}
+
+# An until time past the daily cadence extends it: a hold the captain said waits
+# three days is not rechecked each day before then, only once the time passes.
+test_captain_held_until_extends_past_the_daily_cadence() {
+  captain_wait_case ch-until-3d "captain-held [key=route]: tracked by task-x until $(utc_iso_at $(( $(date +%s) + 259200 )))" 90000
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "awaiting the captain" && fail "a captain hold re-surfaced after a day despite an until time three days out"
+  captain_wait_case ch-until-3d-reached "captain-held [key=route]: tracked by task-x until $(utc_iso_at $(( $(date +%s) - 120 )))" 259300
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "the declared time has passed" || fail "a captain hold was not rechecked once its until time passed: $(cat "$state/.subsuper-escalations" 2>/dev/null || true)"
+  pass "an until time past the daily cadence holds the captain-hold recheck until then"
+}
+
 # The answer probe reads the captain tasks a transfer is `tracked by`, never the
 # origin crew task: fm-captain-hold.sh complete writes `tracked by <keys>`, a
 # comma list of separate captain-task ids, and the crew's own row is never a
@@ -3664,6 +3682,7 @@ test_ordinary_pause_keeps_the_four_hour_bound
 test_open_keyed_decision_recheck_names_the_decision
 test_open_keyed_decision_rechecks_while_away
 test_captain_held_until_moves_the_recheck
+test_captain_held_until_extends_past_the_daily_cadence
 test_captain_held_rechecks_when_answered
 test_captain_hold_answer_probe_is_throttled
 test_keyed_decision_wait_is_never_probed
