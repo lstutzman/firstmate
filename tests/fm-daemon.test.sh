@@ -3608,7 +3608,7 @@ SH
 
 test_captain_held_rechecks_when_answered() {
   captain_wait_case ch-answered 'captain-held [key=route]: tracked by cap-route,cap-cost' 100
-  FM_TEST_ANSWERED= FM_CAPTAIN_HOLD_PROBE_SECS=0 PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+  FM_TEST_ANSWERED='' FM_CAPTAIN_HOLD_PROBE_SECS=0 PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
     FM_STATE_OVERRIDE="$state" FM_CAPTAIN_HOLD_BIN="$(hold_open_stub)" housekeeping "$state"
   escalated "awaiting the captain" && fail "a hold whose captain tasks are all still open rechecked early"
   escalated "was answered" && fail "the crew task's own non-hold row read as an answered hold"
@@ -3629,7 +3629,7 @@ test_captain_hold_answer_probe_is_throttled() {
   local log="$TMP_ROOT/probe-throttle.log"
   captain_wait_case ch-throttle 'captain-held [key=route]: tracked by cap-slow' 100
   : > "$log"
-  FM_TEST_PROBE_LOG="$log" FM_TEST_ANSWERED= PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+  FM_TEST_PROBE_LOG="$log" FM_TEST_ANSWERED='' PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
     FM_STATE_OVERRIDE="$state" FM_CAPTAIN_HOLD_BIN="$(hold_open_stub)" housekeeping "$state"
   FM_TEST_PROBE_LOG="$log" FM_TEST_ANSWERED=cap-slow PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
     FM_STATE_OVERRIDE="$state" FM_CAPTAIN_HOLD_BIN="$(hold_open_stub)" housekeeping "$state"
