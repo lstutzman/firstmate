@@ -27,6 +27,10 @@
 # A missing, malformed, identity-mismatched, or past-end classified position reads
 # from byte 0, preferring a bounded duplicate over a lost event.
 #
+# A declared wait is a paused: line, a verified captain-held transfer
+# (status_declared_wait_line), or, for the away-mode daemon only, an open keyed
+# needs-decision that is the latest event (status_wait_line); the daemon takes the
+# last two on the longer FM_CAPTAIN_HELD_RESURFACE_SECS cadence.
 # There are four documented exceptions. The absorb classification
 # (crew_absorb_class and its working/paused wrappers) is NOT a pure status-file
 # read: it reuses bin/fm-crew-state.sh, which may make a bounded no-mistakes call,
@@ -122,6 +126,15 @@ FM_CLASSIFY_PAUSED_VERB_DEFAULT='paused'
 # while the away-posture record exists (bin/fm-watch.sh owns that rule).
 # shellcheck disable=SC2034 # Read by the watcher and daemon (fm-watch.sh, fm-supervise-daemon.sh), not this lib.
 FM_PAUSE_RESURFACE_SECS_DEFAULT=14400
+
+# A wait the captain owes - a verified captain-held transfer, or an open keyed
+# needs-decision - is rechecked on its own, much longer cadence: the supervisor
+# cannot clear it, so a four-hour recheck only cost a turn to re-declare it. One
+# day by default; the daemon also rechecks at once when the held task is answered
+# or released, and at a declared `until` time. FM_CAPTAIN_HELD_RESURFACE_SECS
+# overrides it.
+# shellcheck disable=SC2034 # Read by the daemon (fm-supervise-daemon.sh), not this lib.
+FM_CAPTAIN_HELD_RESURFACE_SECS_DEFAULT=86400
 
 # fm_utc_iso_to_epoch <YYYY-MM-DDTHH:MM[:SS]Z>: the one portable UTC ISO 8601
 # reader shared by the declared-wait vocabulary and the away-posture record
@@ -381,6 +394,48 @@ status_declared_wait_line() {  # <status-file>
     || _fm_status_declared_wait_scan "$resolve" "$legacy_re" < "$f" || :
 }
 
+# An open KEYED needs-decision is a declared wait too, for wedge and staleness
+# classification: the worker stopped on purpose to be answered, so its idle pane is
+# not a wedge. It counts only while it is the latest event and its key has no
+# matching resolved line (status_open_decisions owns "open"); an unkeyed
+# needs-decision keeps today's behaviour. Kept apart from
+# status_declared_wait_line so the watcher, which reads that line as paused or
+# captain-held only, is unchanged. Prints the line, or nothing.
+status_open_keyed_decision_line() {  # <status-file>
+  local f=$1 last verb key
+  last=$(last_status_line "$f")
+  status_line_verb "$last" verb
+  [ "$verb" = needs-decision ] || return 0
+  key=$(_fm_decision_key "$last" "") || return 0
+  [ -n "$key" ] || return 0
+  status_open_decisions "$f" | awk -F'\t' -v k="$key" '$1 == k { found = 1 } END { exit !found }' || return 0
+  printf '%s\n' "$last"
+}
+
+# 0 if a status line is a keyed needs-decision. A pure read of the line; the caller
+# established that it is open (status_open_keyed_decision_line).
+status_is_keyed_decision() {  # <status-line>
+  local line=$1 verb key
+  status_line_verb "$line" verb
+  [ "$verb" = needs-decision ] || return 1
+  key=$(_fm_decision_key "$line" "") || return 1
+  [ -n "$key" ]
+}
+
+# The declared wait for wedge and staleness classification: the status file's
+# declared wait line, else its open keyed needs-decision line.
+status_wait_line() {  # <status-file>
+  local line
+  line=$(status_declared_wait_line "$1")
+  [ -n "$line" ] || line=$(status_open_keyed_decision_line "$1")
+  printf '%s' "$line"
+}
+
+# 0 if the line is a wait status_wait_line can return.
+status_is_wait_line() {  # <status-line>
+  status_is_paused_or_captain_held "$1" || status_is_keyed_decision "$1"
+}
+
 # Walk the status lines on stdin back from the newest event past resolved lines
 # to the first other event, and print it when it is a pause none of those
 # resolved lines share a phase key with. Returns 1 when every event is a
@@ -423,8 +478,20 @@ _fm_status_declared_wait_scan() {  # <resolve-verb> <legacy-captain-re>
 # or the time is malformed, so a bad token falls back to the cadence rather than
 # silencing the wait.
 status_paused_until() {  # <status-line> -> epoch on stdout
+  status_is_paused "$1" || return 1
+  _fm_status_until_epoch "$1"
+}
+
+# The same declared time on a captain-held transfer line, so the daemon rechecks
+# a hold at the time its note names. Separate from status_paused_until because the
+# watcher reads that one as a pause-only fact.
+status_captain_held_until() {  # <status-line> -> epoch on stdout
+  status_is_captain_held "$1" || return 1
+  _fm_status_until_epoch "$1"
+}
+
+_fm_status_until_epoch() {  # <status-line> -> epoch on stdout
   local line=$1 token
-  status_is_paused "$line" || return 1
   token=$(printf '%s' "$line" \
     | sed -n 's/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]Z\).*/\1/p; s/.*[[:space:]][Uu][Nn][Tt][Ii][Ll][[:space:]]\{1,\}\([0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\).*/\1/p' \
     | head -1)

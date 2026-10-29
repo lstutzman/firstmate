@@ -1188,7 +1188,7 @@ test_housekeeping_captain_held_resurfaces_and_resets() {
   key=$(printf '%s' "held-w11h" | tr ':/.' '___')
   echo $(( $(date +%s) - 5000 )) > "$state/.subsuper-paused-$key"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
-    FM_STATE_OVERRIDE="$state" FM_PAUSE_RESURFACE_SECS=240 housekeeping "$state"
+    FM_STATE_OVERRIDE="$state" FM_CAPTAIN_HELD_RESURFACE_SECS=240 housekeeping "$state"
   grep -F "awaiting the captain" "$state/.subsuper-escalations" >/dev/null 2>&1 || fail "a captain hold was silenced entirely instead of re-surfacing as a captain-owned recheck: $(cat "$state/.subsuper-escalations" 2>/dev/null || true)"
   grep -F "awaiting external" "$state/.subsuper-escalations" >/dev/null 2>&1 && fail "a captain hold was re-surfaced as an external wait, hiding that the captain is the blocker"
   grep -F "possible wedge" "$state/.subsuper-escalations" >/dev/null 2>&1 && fail "a captain hold was re-surfaced as a possible wedge"
@@ -1216,7 +1216,7 @@ test_housekeeping_captain_held_silenced_only_by_an_away_record() {
       || fail "fixture: could not record the $mode posture"
     [ "$(FM_HOME="$dir" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-afk-contract.sh" mode)" = "$mode" ] || fail "fixture: the record is not $mode"
     PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
-      FM_STATE_OVERRIDE="$state" FM_PAUSE_RESURFACE_SECS=240 housekeeping "$state"
+      FM_STATE_OVERRIDE="$state" FM_CAPTAIN_HELD_RESURFACE_SECS=240 housekeeping "$state"
     if [ "$mode" = away ]; then
       ! grep -F "awaiting the captain" "$state/.subsuper-escalations" >/dev/null 2>&1 \
         || fail "a captain hold was rechecked while the away record exists: $(cat "$state/.subsuper-escalations")"
@@ -1298,7 +1298,7 @@ test_housekeeping_busy_declared_wait_matures_its_window() {
     echo $(( $(date +%s) - 100 )) > "$state/.subsuper-paused-$key"
     for tick in 1 2 3; do
       PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
-        FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 FM_PAUSE_RESURFACE_SECS=3600 \
+        FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 FM_PAUSE_RESURFACE_SECS=3600 FM_CAPTAIN_HELD_RESURFACE_SECS=3600 \
         housekeeping "$state"
       [ -e "$state/.subsuper-paused-$key" ] \
         || fail "$case_name busy declared wait lost its marker on tick $tick inside the window"
@@ -1313,7 +1313,7 @@ test_housekeeping_busy_declared_wait_matures_its_window() {
     # and the window reset so the next one repeats rather than firing once.
     echo $(( $(date +%s) - 5000 )) > "$state/.subsuper-paused-$key"
     PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
-      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 FM_PAUSE_RESURFACE_SECS=3600 \
+      FM_STATE_OVERRIDE="$state" FM_ESCALATE_BATCH_SECS=999999 FM_PAUSE_RESURFACE_SECS=3600 FM_CAPTAIN_HELD_RESURFACE_SECS=3600 \
       housekeeping "$state"
     escalations=0
     [ -s "$state/.subsuper-escalations" ] \
@@ -3488,3 +3488,108 @@ test_dialog_name_survives_away_self_handle
 test_seen_terminal_dialog_stale_clears_like_a_plain_stale
 test_dialog_name_joins_unseen_status_escalation
 test_dialog_name_after_demand_deep_inspection_still_escalates
+
+# A wait the captain owes takes its own, daily cadence: the four-hour pause bound
+# only cost a turn to re-declare a wait nobody but the captain can clear, while an
+# ordinary external pause keeps the four-hour bound.
+# Sets $state, $key, $win and $fakebin for a status line and a marker age.
+captain_wait_case() {  # <name> <status-line> <marker-age-secs>
+  local name=$1 dir
+  dir=$(make_supercase "$name")
+  state="$dir/state"; fakebin="$dir/fakebin"
+  win="sess:fm-$name"; pane="$dir/pane.txt"
+  printf '%s\n' "$2" > "$state/$name.status"
+  printf 'idle prompt $\n' > "$pane"
+  key=$(printf '%s' "$name" | tr ':/.' '___')
+  echo $(( $(date +%s) - $3 )) > "$state/.subsuper-paused-$key"
+}
+
+escalated() {  # <needle> -> 0 when the digest holds it
+  grep -F -- "$1" "$state/.subsuper-escalations" >/dev/null 2>&1
+}
+
+test_captain_held_rechecks_daily_not_every_four_hours() {
+  captain_wait_case ch-daily 'captain-held [key=route]: tracked by task-decision-route' 20000
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "awaiting the captain" && fail "a captain hold re-surfaced inside its daily cadence"
+  echo $(( $(date +%s) - 90000 )) > "$state/.subsuper-paused-$key"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "awaiting the captain" || fail "a captain hold was not rechecked after a day"
+  pass "a captain hold rechecks on the daily cadence, not the four-hour pause bound"
+}
+
+test_ordinary_pause_keeps_the_four_hour_bound() {
+  captain_wait_case pause-four-hour 'paused: holding for the upstream tool release' 20000
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "awaiting external" || fail "an ordinary pause lost its four-hour recheck"
+  pass "an ordinary paused wait still re-surfaces on the four-hour bound"
+}
+
+test_captain_held_until_moves_the_recheck() {
+  captain_wait_case ch-until-past 'captain-held [key=route]: tracked by task-x until 2020-01-01T00:00Z' 100
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "awaiting the captain" || fail "a reached until time did not move the captain-hold recheck"
+  captain_wait_case ch-until-future 'captain-held [key=route]: tracked by task-x until 2999-01-01T00:00Z' 20000
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" housekeeping "$state"
+  escalated "awaiting the captain" && fail "a captain hold re-surfaced before its declared until time"
+  pass "an until time sets the captain-hold recheck"
+}
+
+test_captain_held_rechecks_when_answered() {
+  local bin rc
+  captain_wait_case ch-answered 'captain-held [key=route]: tracked by ch-answered' 100
+  bin="$TMP_ROOT/hold-open-answered"
+  cat > "$bin" <<'SH'
+#!/usr/bin/env bash
+exit "${FM_TEST_HOLD_RC:-0}"
+SH
+  chmod +x "$bin"
+  for rc in 0 2 3; do
+    FM_TEST_HOLD_RC=$rc PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+      FM_STATE_OVERRIDE="$state" FM_CAPTAIN_HOLD_BIN="$bin" housekeeping "$state"
+    escalated "awaiting the captain" && fail "open exit $rc (still held, unreadable or absent) rechecked early"
+  done
+  FM_TEST_HOLD_RC=1 PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" FM_CAPTAIN_HOLD_BIN="$bin" housekeeping "$state"
+  escalated "was answered or released" || fail "an answered hold did not recheck at once"
+  : > "$state/.subsuper-escalations"
+  FM_TEST_HOLD_RC=1 PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CAPTURE="$pane" \
+    FM_STATE_OVERRIDE="$state" FM_CAPTAIN_HOLD_BIN="$bin" housekeeping "$state"
+  escalated "was answered" && fail "one answer rechecked more than once"
+  pass "an answered or released hold rechecks once, at once"
+}
+
+test_open_keyed_needs_decision_is_a_declared_wait() {
+  local dir state out task
+  dir=$(make_supercase keyed-decision-wait)
+  state="$dir/state"
+  task=kd-w1
+  printf 'needs-decision [key=route]: which route\n' > "$state/$task.status"
+  seen_through "$state" "$task"
+  out=$(FM_STATE_OVERRIDE="$state" classify_stale "sess:fm-$task" "$state")
+  case "$out" in pause\|*) ;; *) fail "an open keyed needs-decision did not classify as a declared wait: $out" ;; esac
+  printf 'needs-decision [key=route]: which route\nresolved [key=route]: answered: A\n' > "$state/$task.status"
+  seen_through "$state" "$task"
+  out=$(FM_STATE_OVERRIDE="$state" classify_stale "sess:fm-$task" "$state")
+  case "$out" in pause\|*) fail "a resolved keyed needs-decision stayed a declared wait: $out" ;; esac
+  printf 'needs-decision: which route\n' > "$state/$task.status"
+  seen_through "$state" "$task"
+  out=$(FM_STATE_OVERRIDE="$state" classify_stale "sess:fm-$task" "$state")
+  case "$out" in pause\|*) fail "an unkeyed needs-decision became a declared wait: $out" ;; esac
+  printf 'needs-decision [key=route]: which route\nworking: carrying on\n' > "$state/$task.status"
+  seen_through "$state" "$task"
+  out=$(FM_STATE_OVERRIDE="$state" classify_stale "sess:fm-$task" "$state")
+  case "$out" in pause\|*) fail "a needs-decision the worker moved past stayed a declared wait: $out" ;; esac
+  pass "only an open keyed needs-decision that is the latest event counts as a declared wait"
+}
+
+test_captain_held_rechecks_daily_not_every_four_hours
+test_ordinary_pause_keeps_the_four_hour_bound
+test_captain_held_until_moves_the_recheck
+test_captain_held_rechecks_when_answered
+test_open_keyed_needs_decision_is_a_declared_wait

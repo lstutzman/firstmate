@@ -56,9 +56,13 @@
 #     fm-classify-lib.sh's combined predicate - instead gets its own longer
 #     PAUSE_RESURFACE_SECS recheck, never a wedge escalation, whether its pane
 #     reads idle or busy; only a status append that stops declaring the wait
-#     ends that routing. A captain-held transfer is not rechecked at all while
-#     an away record (state/.afk-contract, never quiet mode's) exists: nobody
-#     is there to answer it, and the return brief lists it.
+#     ends that routing. A wait the captain owes - a captain-held transfer or
+#     an open keyed needs-decision that is the latest event - takes the longer
+#     CAPTAIN_HELD_RESURFACE_SECS recheck instead (default one day), at its
+#     `until` time when it names one, or at once when fm-captain-hold.sh
+#     reports the held task answered or released. It is not rechecked at all
+#     while an away record (state/.afk-contract, never quiet mode's) exists:
+#     nobody is there to answer it, and the return brief lists it.
 #     Crewmates are autonomous, so a delayed stale response does not stall a
 #     healthy crewmate's own progress.
 #     Buffered escalation delivery also has a max-defer alarm: if a digest stays
@@ -109,6 +113,12 @@
 #                                   `until` time cannot extend this bound, and a
 #                                   captain-held transfer is never rechecked
 #                                   while an away record exists
+#          FM_CAPTAIN_HELD_RESURFACE_SECS  the same for a wait the captain owes
+#                                   (a captain-held transfer or an open keyed
+#                                   needs-decision) (default 86400, one day); an
+#                                   `until` time moves its recheck to that time,
+#                                   and answering or releasing the held task
+#                                   (bin/fm-captain-hold.sh) rechecks it at once
 #          FM_ESCALATE_BATCH_SECS   buffer window for batched escalation
 #                                   digests; 0 = flush immediately (default 90)
 #          FM_HEARTBEAT_SCAN_SECS   cadence for the catch-all status scan
@@ -442,8 +452,8 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     printf 'escalate|stale + actionable status: %s' "$event"
     return
   fi
-  declared=$(status_declared_wait_line "$state/$task.status")
-  if [ -n "$declared" ] && status_is_paused_or_captain_held "$declared"; then
+  declared=$(status_wait_line "$state/$task.status")
+  if [ -n "$declared" ] && status_is_wait_line "$declared"; then
     # A DECLARED external-wait pause or a verified captain-held transfer
     # (fm-classify-lib.sh owns which declarations qualify): an idle pane is
     # EXPECTED, so this is not a wedge. The caller records a pause marker (long
@@ -560,6 +570,26 @@ stale_dialog_name() {  # <stale-detail>
   printf '%s' "$name"
 }
 
+# 0 when a declared wait is owed by the captain, not by an external dependency: a
+# verified captain-held transfer or an open keyed needs-decision. These take the
+# longer FM_CAPTAIN_HELD_RESURFACE_SECS cadence.
+captain_owed_wait() {  # <status-line>
+  status_is_captain_held "$1" || status_is_keyed_decision "$1"
+}
+
+# 0 once, when the backlog task a captain wait names was answered or released
+# since the wait was declared. fm-captain-hold.sh open exits 1 for a row that is no
+# longer an open captain call; 0 (still open), 2 (cannot tell) and 3 (no such row)
+# all keep the wait on its cadence, so only a proven answer rechecks early. The
+# answered marker keeps one answer to one recheck and is cleared with the wait.
+captain_hold_answered() {  # <task> <state>
+  local task=$1 state=$2 rc=0
+  [ ! -e "$state/.subsuper-answered-$(_stale_key "$task")" ] || return 1
+  "${FM_CAPTAIN_HOLD_BIN:-$FM_DAEMON_DIR/fm-captain-hold.sh}" \
+    open "$task" --distinguish-absent >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 1 ]
+}
+
 # Pause marker: state/.subsuper-paused-<key> holds the epoch a declared wait (a
 # paused: external wait or a verified captain-held transfer) was first observed
 # declared, whether its pane read idle or busy. Housekeeping ages it against
@@ -577,7 +607,7 @@ pause_marker_record() {  # <window> <state> - create if absent
 pause_marker_remove() {  # <window> <state>
   local win=$1 state=$2 key
   key=$(_stale_key "$(window_to_task "$win" "$state")")
-  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key"
+  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-answered-$key"
 }
 
 clear_pause_tracking() {  # <window> <state>
@@ -585,7 +615,7 @@ clear_pause_tracking() {  # <window> <state>
   task=$(window_to_task "$win" "$state")
   key=$(_stale_key "$task")
   watcher_key=$(_stale_key "$win")
-  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-stale-$key" \
+  rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-answered-$key" "$state/.subsuper-stale-$key" \
     "$state/.subsuper-dialog-$key" \
     "$state/.paused-$watcher_key" "$state/.paused-rechecked-$watcher_key" "$state/.paused-resurfaced-$watcher_key" \
     "$state/.stale-$watcher_key" "$state/.stale-since-$watcher_key" "$state/.wedge-escalations-$watcher_key" \
@@ -599,7 +629,7 @@ reconcile_pause_tracking() {  # <window> <state> <last-status-line>
   key=$(_stale_key "$task")
   marker="$state/.subsuper-paused-$key"
   watcher_key=$(_stale_key "$win")
-  if status_is_paused_or_captain_held "$last"; then
+  if status_is_wait_line "$last"; then
     stale_marker_remove "$win" "$state"
     pause_marker_record "$win" "$state"
   elif [ -e "$marker" ] || [ -e "$state/.paused-$watcher_key" ]; then
@@ -616,8 +646,8 @@ migrate_watcher_pause_markers() {  # <state>
     task=$(basename "$meta"); task=${task%.meta}
     key=$(_stale_key "$task")
     watcher_key=$(_stale_key "$win")
-    last=$(status_declared_wait_line "$state/$task.status")
-    if status_is_paused_or_captain_held "$last" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$watcher_key" ]; then
+    last=$(status_wait_line "$state/$task.status")
+    if status_is_wait_line "$last" || [ -e "$state/.subsuper-paused-$key" ] || [ -e "$state/.paused-$watcher_key" ]; then
       reconcile_pause_tracking "$win" "$state" "$last"
     fi
   done
@@ -630,7 +660,7 @@ sync_pause_markers_from_signal() {  # <state> <signal files>
   for f in "${files[@]}"; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || continue
-    last=$(status_declared_wait_line "$f")
+    last=$(status_wait_line "$f")
     task=$(basename "$f"); task=${task%.status}
     win=$(window_for_task "$task" "$state" 2>/dev/null || true)
     [ -n "$win" ] || continue
@@ -1208,7 +1238,7 @@ _oldest_line_age() {  # <buf> -> seconds since the oldest buffered item first ar
 #  3) heartbeat scan: every HEARTBEAT_SCAN_SECS, run the catch-all status scan in
 #     the block below and escalate what it finds; that block owns its file set.
 housekeeping() {  # <state>
-  local state=$1 now due f key task win marker age last max_defer oldest pause_secs marker_epoch until bounded_until pause_reason dialog_name persisted
+  local state=$1 now due f key task win marker age last max_defer oldest pause_secs captain_secs wait_secs answered reason marker_epoch until bounded_until pause_reason dialog_name persisted
   now=$(_now)
   migrate_watcher_pause_markers "$state"
 
@@ -1254,8 +1284,8 @@ housekeeping() {  # <state>
       rm -f "$marker" "$state/.subsuper-dialog-$key"; continue
     fi
     task=$(window_to_task "$win" "$state")
-    last=$(status_declared_wait_line "$state/$task.status")
-    if [ -n "$last" ] && status_is_paused_or_captain_held "$last"; then
+    last=$(status_wait_line "$state/$task.status")
+    if [ -n "$last" ] && status_is_wait_line "$last"; then
       reconcile_pause_tracking "$win" "$state" "$last"
       continue
     fi
@@ -1280,7 +1310,7 @@ housekeeping() {  # <state>
   done
 
   # (2b) pause re-surface recheck. A declared wait is waiting, not wedged (fm-classify-lib.sh's
-  # status_is_paused_or_captain_held owns which declarations qualify), so it is
+  # status_is_wait_line owns which declarations qualify), so it is
   # rechecked on a much longer cadence than a wedge (PAUSE_RESURFACE_SECS) and never
   # escalated as one - but it MUST re-surface, so neither a forgotten pause nor a
   # forgotten captain hold can rot invisibly. Past the window: gone -> drop; still
@@ -1295,6 +1325,7 @@ housekeeping() {  # <state>
   # authority, and the loop head above already drops the marker the moment that line
   # stops declaring the wait.
   pause_secs=${FM_PAUSE_RESURFACE_SECS:-$FM_PAUSE_RESURFACE_SECS_DEFAULT}
+  captain_secs=${FM_CAPTAIN_HELD_RESURFACE_SECS:-$FM_CAPTAIN_HELD_RESURFACE_SECS_DEFAULT}
   for marker in "$state"/.subsuper-paused-*; do
     [ -e "$marker" ] || continue
     key="${marker##*.subsuper-paused-}"
@@ -1303,8 +1334,8 @@ housekeeping() {  # <state>
       rm -f "$marker"; continue
     fi
     task=$(window_to_task "$win" "$state")
-    last=$(status_declared_wait_line "$state/$task.status")
-    if [ -z "$last" ] || ! status_is_paused_or_captain_held "$last"; then
+    last=$(status_wait_line "$state/$task.status")
+    if [ -z "$last" ] || ! status_is_wait_line "$last"; then
       reconcile_pause_tracking "$win" "$state" "$last"
       continue
     fi
@@ -1314,19 +1345,27 @@ housekeeping() {  # <state>
     due="$state/.subsuper-pause-until-due-$key"
     until=
     bounded_until=0
-    if status_is_captain_held "$last" && fm_afk_contract_away_present "$state"; then
-      continue
+    wait_secs=$pause_secs
+    answered=0
+    if captain_owed_wait "$last"; then
+      wait_secs=$captain_secs
+      if fm_afk_contract_away_present "$state"; then
+        continue
+      fi
+      captain_hold_answered "$task" "$state" && answered=1
     fi
-    if until=$(status_paused_until "$last"); then
-      if [ "$now" -lt "$until" ] && [ "$age" -lt "$pause_secs" ]; then
+    if [ "$answered" -eq 1 ]; then
+      :
+    elif until=$(status_paused_until "$last" || status_captain_held_until "$last"); then
+      if [ "$now" -lt "$until" ] && [ "$age" -lt "$wait_secs" ]; then
         continue
       elif [ "$now" -lt "$until" ]; then
         bounded_until=1
       elif [ "$(cat "$due" 2>/dev/null || true)" = "$until" ]; then
-        [ "$age" -ge "$pause_secs" ] || continue
+        [ "$age" -ge "$wait_secs" ] || continue
       fi
     else
-      [ "$age" -ge "$pause_secs" ] || continue
+      [ "$age" -ge "$wait_secs" ] || continue
     fi
     # Endpoint-readability probe only: exit code 2 means the capture failed, so the
     # endpoint is gone and there is nothing left to re-surface. The busy/idle verdict
@@ -1338,10 +1377,20 @@ housekeeping() {  # <state>
     case "$?" in
       2) rm -f "$marker" ;;
       *)
-        last=$(status_declared_wait_line "$state/$task.status")
-        if [ -n "$last" ] && status_is_captain_held "$last"; then
-          if escalate_add "$state" "captain-held ${age}s (awaiting the captain, answer the held decision or release the hold): $win"; then
+        last=$(status_wait_line "$state/$task.status")
+        if [ -n "$last" ] && captain_owed_wait "$last"; then
+          if [ "$answered" -eq 1 ]; then
+            reason="captain-held ${age}s (the held decision was answered or released, resume the work): $win"
+          else
+            reason="captain-held ${age}s (awaiting the captain, answer the held decision or release the hold): $win"
+          fi
+          if escalate_add "$state" "$reason"; then
             _now > "$marker"
+            if [ "$answered" -eq 1 ]; then
+              _now > "$state/.subsuper-answered-$key"
+            elif [ -n "$until" ] && [ "$now" -ge "$until" ]; then
+              printf '%s\n' "$until" > "$due"
+            fi
           fi
         elif [ -n "$last" ] && status_is_paused "$last"; then
           if [ "$bounded_until" -eq 1 ]; then
@@ -1637,8 +1686,8 @@ handle_wake() {  # <reason> <state>
                 pause) : ;;
                 *) case "$stale_detail" in
                      idle\ *s,\ possible\ wedge,\ escalation\ *)
-                       last=$(status_declared_wait_line "$state/$task.status")
-                       status_is_paused_or_captain_held "$last" \
+                       last=$(status_wait_line "$state/$task.status")
+                       status_is_wait_line "$last" \
                          || decision="escalate|${reason#stale: }"
                        ;;
                    esac ;;
@@ -1661,7 +1710,7 @@ handle_wake() {  # <reason> <state>
   [ "$kind" = signal ] && sync_pause_markers_from_signal "$state" "$arg"
   if [ "$kind" = stale ] && [ "$action" = escalate ]; then
     task=$(window_to_task "$arg" "$state")
-    last=$(status_declared_wait_line "$state/$task.status")
+    last=$(status_wait_line "$state/$task.status")
     reconcile_pause_tracking "$arg" "$state" "$last"
   fi
   case "$action" in
