@@ -1207,7 +1207,25 @@ JSON
   pass 'progress: Top of Mind failure never reuses stale data or blocks other discovery'
 }
 
+test_top_of_mind_kind() {
+  make_world top-kind
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[{"id":"pillow","words":"Still waiting for permission from Pillow Partners","status":"not-started","kind":"statement","work":[]},
+{"id":"promo","words":"any promotion-blocking test should be deemed as serious as just about anything","status":"not-started","kind":"ask","work":[]},
+{"id":"legacy","words":"Fix the legacy export crash","status":"not-started","work":[]}]}
+JSON
+  run_progress >/dev/null || fail 'kind run failed'
+  assert_equals 'legacy promo' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'asks and rows without kind start; statements do not'
+  printf '{"rows":[{"id":"bad","words":"Repair report","status":"not-started","kind":"maybe","work":[]}]}\n' > "$WORLD/top-of-mind.json"
+  run_progress >/dev/null || fail 'invalid kind run failed'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'an invalid kind rejects the source'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Top of Mind coverage-incomplete' 'invalid kind names incomplete coverage'
+  pass 'progress: only Top of Mind asks start work'
+}
+
 test_top_of_mind_start
+test_top_of_mind_kind
 test_top_of_mind_dispositions
 test_top_of_mind_matched_dispositions
 test_top_of_mind_failure

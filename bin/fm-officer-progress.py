@@ -520,7 +520,8 @@ def read_top_of_mind(url):
         if (not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]
                 or not isinstance(row.get("words"), str) or not row["words"]
                 or row.get("status") not in ("not-started", "under-way", "waiting", "done")
-                or not isinstance(row.get("work"), list)):
+                or not isinstance(row.get("work"), list)
+                or row.get("kind", "ask") not in ("ask", "statement")):
             raise ValueError("invalid Top of Mind row")
         for work in row["work"]:
             if not isinstance(work, dict) or not isinstance(work.get("home"), str):
@@ -562,6 +563,8 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
             matches += [r for r in local or [match] if not any(r is m for m in matches)]
         owned = any(any(r is m for m in rows) for r in matches)
         if not matches:
+            if ask.get("kind") == "statement":
+                continue  # a statement is evidence only; it never becomes new work
             owner = scanned.get(owners[0], homes[0]) if owners and not others else homes[0]
             row = item(ask["id"], ask["words"], owner, text)
             row.update(section="queued", origin="top-of-mind")
