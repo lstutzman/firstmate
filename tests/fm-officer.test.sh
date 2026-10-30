@@ -136,8 +136,9 @@ test_same_day_manual_run_does_not_block_the_next_scheduled_run() {
   officer "$home" check triage >/dev/null || fail "check must exit 0"
   wait_for_attempts "$home" 2
   assert_equals 2 "$(grep -c " $DATE ok" "$home/data/officers/triage/runs.log")" "the next morning's check runs $DATE again despite the manual run"
-  officer "$home" check triage >/dev/null || fail "check must exit 0"
-  assert_equals 2 "$(grep -c " $DATE " "$home/data/officers/triage/runs.log")" "a run finished since the cadence time is not repeated"
+  mv "$home/data/officers/triage/run-output.log" "$home/data/officers/triage/run-output.first.log"
+  FM_OFFICER_RETRY_SECS=0 officer "$home" check triage >/dev/null || fail "check must exit 0"
+  assert_absent "$home/data/officers/triage/run-output.log" "a run finished since the cadence time is not repeated"
   pass "fm-officer: a same-day manual run does not block the next day's scheduled run"
 }
 
@@ -147,9 +148,8 @@ test_manual_run_after_the_cadence_time_is_not_repeated() {
   officer "$home" register triage >/dev/null || fail "register must succeed"
   # 06:30 on the check's day, after the 06:00 cadence time.
   FM_OFFICER_NOW=$((NOW - 1800)) FM_HOME="$home" "$OFFICER" run triage --date "$DATE" >/dev/null || fail "manual run must succeed"
-  officer "$home" check triage >/dev/null || fail "check must exit 0"
-  sleep 1
-  assert_equals 1 "$(grep -c " $DATE " "$home/data/officers/triage/runs.log")" "a manual run since the cadence time satisfies the schedule"
+  FM_OFFICER_RETRY_SECS=0 officer "$home" check triage >/dev/null || fail "check must exit 0"
+  assert_absent "$home/data/officers/triage/run-output.log" "a manual run since the cadence time satisfies the schedule"
   pass "fm-officer: a manual run since the cadence time is not repeated"
 }
 

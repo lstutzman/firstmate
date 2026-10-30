@@ -486,7 +486,7 @@ action_check() {
   cadence=$(line_field "$OFFICER_LINE" cadence)
   at=${cadence#daily }
   date=$(epoch_fmt "$((now - 86400))" %Y-%m-%d)
-  # shortcut: today's cadence time is taken as now minus the seconds since midnight, an hour off across a DST change.
+  # shortcut: today's cadence time is taken as now minus the seconds since midnight, an hour off when a DST change falls between the cadence time and now.
   hms=$(epoch_fmt "$now" '%H %M %S')
   since=$(awk -v n="$now" -v a="$at" -v t="$hms" 'BEGIN {split(t, h, " "); split(a, c, ":"); print n - (h[1] * 3600 + h[2] * 60 + h[3]) + c[1] * 3600 + c[2] * 60}')
   max=${FM_OFFICER_ATTEMPTS:-3}
