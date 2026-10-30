@@ -29,8 +29,9 @@
 #
 # check is the body of the watcher check. It is fast and never contacts
 # another host:
-#   - once the cadence time has passed and the target date has no finished run,
-#     it starts `run <id> --scheduled` detached in its own session (the watcher
+#   - once the cadence time has passed and the target date has no run finished
+#     since that cadence time (a same-day manual run, logged earlier, does not
+#     count), it starts `run <id> --scheduled` detached in its own session (the watcher
 #     stops the check's process group when the check returns); a failed date is
 #     retried after FM_OFFICER_RETRY_SECS (default 3600), FM_OFFICER_ATTEMPTS
 #     (default 3) times in all, and each run is bounded by
@@ -459,9 +460,12 @@ os.read(r, 1)
 ' "$log" "$@"
 }
 
-# attempts <date> / last_attempt <date>: from the lane's runs.log.
-attempts() { awk -v d="$1" '$2 == d && $3 == "failed" {n++} END {print n + 0}' "$OFFICER_LANE/runs.log" 2>/dev/null || echo 0; }
-finished() { awk -v d="$1" '$2 == d && $3 == "ok" {f=1} END {exit !f}' "$OFFICER_LANE/runs.log" 2>/dev/null; }
+# attempts <date> <since> / finished <date> <since> / last_attempt <date>: from the lane's runs.log.
+# Both count only lines logged at or after <since>, the epoch of the cadence
+# time that made the date due, so a run logged before it (a same-day manual run)
+# never satisfies or exhausts the next scheduled run.
+attempts() { awk -v d="$1" -v s="$2" '$2 == d && $3 == "failed" && $1 >= s {n++} END {print n + 0}' "$OFFICER_LANE/runs.log" 2>/dev/null || echo 0; }
+finished() { awk -v d="$1" -v s="$2" '$2 == d && $3 == "ok" && $1 >= s {f=1} END {exit !f}' "$OFFICER_LANE/runs.log" 2>/dev/null; }
 last_attempt() { awk -v d="$1" '$2 == d {t=$1} END {print t + 0}' "$OFFICER_LANE/runs.log" 2>/dev/null || echo 0; }
 
 runs_for() { cat "$OFFICER_LANE/runs.log" 2>/dev/null | awk -v d="$1" '$2 == d {n++} END {print n + 0}'; }
@@ -473,7 +477,7 @@ report_once() {  # <digest|failure> <line>
 }
 
 action_check() {
-  local id=$1 now cadence at date tries max retry digest n path reason
+  local id=$1 now cadence at date since tries max retry digest n path reason hms
   secondmate_home && return 0
   ( load_officer "$id" ) >/dev/null 2>&1 || return 0
   load_officer "$id"
@@ -482,10 +486,13 @@ action_check() {
   cadence=$(line_field "$OFFICER_LINE" cadence)
   at=${cadence#daily }
   date=$(epoch_fmt "$((now - 86400))" %Y-%m-%d)
+  # shortcut: today's cadence time is taken as now minus the seconds since midnight, an hour off when a DST change falls between the cadence time and now.
+  hms=$(epoch_fmt "$now" '%H %M %S')
+  since=$(awk -v n="$now" -v a="$at" -v t="$hms" 'BEGIN {split(t, h, " "); split(a, c, ":"); print n - (h[1] * 3600 + h[2] * 60 + h[3]) + c[1] * 3600 + c[2] * 60}')
   max=${FM_OFFICER_ATTEMPTS:-3}
   retry=${FM_OFFICER_RETRY_SECS:-3600}
-  tries=$(attempts "$date")
-  if ! [ "$(epoch_fmt "$now" %H:%M)" \< "$at" ] && ! finished "$date" && ! lock_held \
+  tries=$(attempts "$date" "$since")
+  if ! [ "$(epoch_fmt "$now" %H:%M)" \< "$at" ] && ! finished "$date" "$since" && ! lock_held \
     && [ "$tries" -lt "$max" ] && [ $((now - $(last_attempt "$date"))) -ge "$retry" ]; then
     detach "$OFFICER_LANE/run-output.log" \
       bash "$SCRIPT_DIR/fm-officer.sh" __timed-run "$id" "$date" >/dev/null 2>&1 || true
@@ -498,8 +505,8 @@ action_check() {
       report_once digest "officer $id: ${BASH_REMATCH[1]}: $n actionable finding(s) in $path"
     fi
   fi
-  tries=$(attempts "$date")
-  if ! finished "$date" && ! lock_held && [ "$tries" -ge "$max" ]; then
+  tries=$(attempts "$date" "$since")
+  if ! finished "$date" "$since" && ! lock_held && [ "$tries" -ge "$max" ]; then
     reason=$(awk -v d="$date" '$2 == d && $3 == "failed" {$1=$2=$3=""; r=$0} END {print r}' \
       "$OFFICER_LANE/runs.log" 2>/dev/null | sed 's/^ *//')
     report_once failure "officer $id: $date: run failed $tries time(s): $reason"

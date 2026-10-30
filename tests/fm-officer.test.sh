@@ -126,6 +126,33 @@ test_scheduled_run_starts_from_the_check_and_reports() {
   pass "fm-officer: the check starts a due run detached, and reports it once finished"
 }
 
+test_same_day_manual_run_does_not_block_the_next_scheduled_run() {
+  local home
+  home=$(make_world manualday empty_spec)
+  officer "$home" register triage >/dev/null || fail "register must succeed"
+  # A manual run for $DATE at 18:00 that same day, the evening before the check.
+  FM_OFFICER_NOW=$((NOW - 46800)) FM_HOME="$home" "$OFFICER" run triage --date "$DATE" >/dev/null || fail "manual run must succeed"
+  assert_equals 1 "$(grep -c " $DATE ok" "$home/data/officers/triage/runs.log")" "one manual run is logged"
+  officer "$home" check triage >/dev/null || fail "check must exit 0"
+  wait_for_attempts "$home" 2
+  assert_equals 2 "$(grep -c " $DATE ok" "$home/data/officers/triage/runs.log")" "the next morning's check runs $DATE again despite the manual run"
+  mv "$home/data/officers/triage/run-output.log" "$home/data/officers/triage/run-output.first.log"
+  FM_OFFICER_RETRY_SECS=0 officer "$home" check triage >/dev/null || fail "check must exit 0"
+  assert_absent "$home/data/officers/triage/run-output.log" "a run finished since the cadence time is not repeated"
+  pass "fm-officer: a same-day manual run does not block the next day's scheduled run"
+}
+
+test_manual_run_after_the_cadence_time_is_not_repeated() {
+  local home
+  home=$(make_world manuallate empty_spec)
+  officer "$home" register triage >/dev/null || fail "register must succeed"
+  # 06:30 on the check's day, after the 06:00 cadence time.
+  FM_OFFICER_NOW=$((NOW - 1800)) FM_HOME="$home" "$OFFICER" run triage --date "$DATE" >/dev/null || fail "manual run must succeed"
+  FM_OFFICER_RETRY_SECS=0 officer "$home" check triage >/dev/null || fail "check must exit 0"
+  assert_absent "$home/data/officers/triage/run-output.log" "a manual run since the cadence time satisfies the schedule"
+  pass "fm-officer: a manual run since the cadence time is not repeated"
+}
+
 test_unreachable_host_is_silent_until_attempts_run_out() {
   local home fakebin out i
   home=$(make_world unreachable empty_spec)
@@ -311,6 +338,8 @@ test_register_and_retire
 test_check_reports_each_new_actionable_digest_once
 test_check_is_silent_for_an_empty_digest
 test_scheduled_run_starts_from_the_check_and_reports
+test_same_day_manual_run_does_not_block_the_next_scheduled_run
+test_manual_run_after_the_cadence_time_is_not_repeated
 test_unreachable_host_is_silent_until_attempts_run_out
 test_late_harvester_is_retried_then_reported
 test_failure_after_a_reported_digest_is_reported_once
