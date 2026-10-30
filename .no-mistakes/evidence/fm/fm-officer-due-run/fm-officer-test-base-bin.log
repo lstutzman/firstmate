@@ -1,0 +1,5 @@
+ok - fm-officer: register installs a trusted check; retire removes it and keeps findings
+ok - fm-officer: check prints one line for a new actionable digest and none on repeat
+ok - fm-officer: check is silent for a digest with nothing actionable
+ok - fm-officer: the check starts a due run detached, and reports it once finished
+not ok - attempt 2 never finished

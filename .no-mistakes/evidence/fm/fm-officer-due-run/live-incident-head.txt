@@ -1,0 +1,16 @@
+== [head] Scenario A: incident replay — manual run for 2026-10-29 at 29 Oct 18:35Z, watcher check at 30 Oct 05:59Z then 07:00Z
+  manual run done
+  runs.log after manual run:
+    1793298947 2026-10-29 ok 1
+officer triage: 2026-10-29: 1 actionable finding(s) in data/officers/triage/2026-10-29.md
+  after 05:59 check, runs logged for 2026-10-29: 1 (expect 1: before cadence)
+  after 07:00 check, runs.log:
+    1793298947 2026-10-29 ok 1
+    1793343600 2026-10-29 ok 1
+  scheduled run-output.log present: yes
+  next check output: 
+== [head] Scenario B: adversarial — manual run at 30 Oct 06:30Z (after cadence), check at 07:00Z with retry gate off
+officer triage: 2026-10-29: 1 actionable finding(s) in data/officers/triage/2026-10-29.md
+  runs logged for 2026-10-29: 1 (expect 1); run started: no
+== [head] Scenario C: scheduled run is not repeated by later checks the same morning (retry gate off)
+  runs logged for 2026-10-29: 2 (expect 2); new run started: no
