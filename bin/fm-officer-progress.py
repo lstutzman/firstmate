@@ -577,7 +577,7 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
             matches = [row]
         for row in matches:
             row["evidence"].append("Top of Mind: " + ask["id"] + " - " + ask["words"])
-            if not classify(row)[0]:
+            if ask.get("kind") != "statement" and not classify(row)[0]:
                 row["origin"] = "top-of-mind"
                 row["tags"] = dict(row["tags"], kind="feature", **{"requested-by": "Lee"})
             matching_prs = [pr for pr in prs if pr.get("html_url") in links
@@ -1001,7 +1001,8 @@ def main(argv):
     except (OSError, ValueError, TypeError, http.client.HTTPException):
         problems.append("Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed")
     requested = set(filter(None, args.requested.split(",")))
-    requested.update(i for ask in top_of_mind for i in LINEAR_ID.findall(json.dumps(ask))
+    requested.update(i for ask in top_of_mind if ask.get("kind") != "statement"
+                     for i in LINEAR_ID.findall(json.dumps(ask))
                      if re.fullmatch(re.escape(args.team) + r"-\d+", i))
     for snapshot in snapshots:
         for row in snapshot["rows"]:

@@ -1221,6 +1221,21 @@ JSON
   run_progress >/dev/null || fail 'invalid kind run failed'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'an invalid kind rejects the source'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'Top of Mind coverage-incomplete' 'invalid kind names incomplete coverage'
+  printf '## Queued\n\n- [ ] pillow-row - Pillow Partners integration\n' > "$WORLD_HOME/data/backlog.md"
+  python3 -I - "$WORLD" <<'PY'
+import json, sys
+root = sys.argv[1]
+issue = {'identifier':'PC-97','title':'Integrate Pillow feed','state':'Todo','stateType':'unstarted','priority':0}
+json.dump({'ok':True,'data':{'issues':[issue]}},open(root+'/linear/list.json','w'))
+json.dump({'ok':True,'data':{'issue':dict(issue,parent=None,description='')}},open(root+'/linear/PC-97.json','w'))
+PY
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[{"id":"pillow","words":"Still waiting for permission from Pillow Partners","status":"not-started","kind":"statement",
+ "work":[{"home":"main","title":"Pillow Partners integration","status":"not-started"}],"links":[{"url":"https://linear.app/example/issue/PC-97"}]}]}
+JSON
+  run_progress >/dev/null || fail 'matched statement run failed'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'a matched statement lends no authority to existing work'
+  assert_equals '2' "$(jq '.unclassified' "$file")" 'work a statement names stays unauthorised'
   pass 'progress: only Top of Mind asks start work'
 }
 
