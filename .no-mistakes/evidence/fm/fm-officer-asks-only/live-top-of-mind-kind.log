@@ -1,0 +1,68 @@
+- progress - Finds authorised work to start (role: progress; cadence: daily 07:00; team: PC; repos: example/project; requested: PC-10; captains-log: https://localhost:34557/api/captains-log; model: none; added 2026-10-26)
+===== S1: mixed kinds (statement / ask / no kind)
+officer exit=0
+--- served /api/top-of-mind:
+{"rows":[{"id":"pillow","words":"Still waiting for permission from Pillow Partners","status":"not-started","kind":"statement","work":[]},
+{"id":"promo","words":"any promotion-blocking test should be deemed as serious as just about anything","status":"not-started","kind":"ask","work":[]},
+{"id":"legacy","words":"Fix the legacy export crash","status":"not-started","work":[]}]}
+--- start_requests:
+[{"id":"legacy","origin":null,"why":null},{"id":"promo","origin":null,"why":null}]
+--- coverage:
+Linear labels not readable by linear-axi
+--- top_of_mind digest:
+legacy - Fix the legacy export crash: Unstarted work authorised by requested-feature
+promo - any promotion-blocking test should be deemed as serious as just about anything: Unstarted work authorised by requested-feature
+--- unclassified: 0
+===== S2: invalid kind rejects the whole source
+officer exit=0
+--- served /api/top-of-mind:
+{"rows":[{"id":"bad","words":"Repair report","status":"not-started","kind":"maybe","work":[]},{"id":"ok","words":"Fix the ok thing","status":"not-started","kind":"ask","work":[]}]}
+--- start_requests:
+[]
+--- coverage:
+Linear labels not readable by linear-axi
+Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed
+--- top_of_mind digest:
+--- unclassified: 0
+===== S3: statement matching existing unauthorised work (backlog row + Linear PC-97)
+officer exit=0
+--- served /api/top-of-mind:
+{"rows":[{"id":"pillow","words":"Still waiting for permission from Pillow Partners","status":"not-started","kind":"statement",
+ "work":[{"home":"main","title":"Pillow Partners integration","status":"not-started"}],"links":[{"url":"https://linear.app/example/issue/PC-97"}]}]}
+--- start_requests:
+[]
+--- coverage:
+Linear labels not readable by linear-axi
+--- top_of_mind digest:
+--- unclassified: 2
+--- rows carrying Top of Mind evidence (all sections):
+[]
+===== S3b control: same match as an ask lends authority
+officer exit=0
+--- served /api/top-of-mind:
+{"rows":[{"id":"pillow","words":"Still waiting for permission from Pillow Partners","status":"not-started","kind":"ask",
+ "work":[{"home":"main","title":"Pillow Partners integration","status":"not-started"}],"links":[{"url":"https://linear.app/example/issue/PC-97"}]}]}
+--- start_requests:
+[{"id":"PC-97","origin":null,"why":null},{"id":"pillow-row","origin":null,"why":null}]
+--- coverage:
+Linear labels not readable by linear-axi
+--- top_of_mind digest:
+pillow - Still waiting for permission from Pillow Partners: Unstarted work authorised by requested-feature
+pillow - Still waiting for permission from Pillow Partners: Unstarted work authorised by requested-feature
+--- unclassified: 0
+===== S4: statement matching already-authorised work attaches as evidence only
+officer exit=0
+--- served /api/top-of-mind:
+{"rows":[{"id":"crashnote","words":"The export crash is hurting Dawn's demos","status":"not-started","kind":"statement",
+ "work":[],"links":[{"url":"https://linear.app/example/issue/PC-98"}]}]}
+--- start_requests:
+[{"id":"PC-98","origin":null,"why":null}]
+--- coverage:
+Linear labels not readable by linear-axi
+--- top_of_mind digest:
+crashnote - The export crash is hurting Dawn's demos: Unstarted work authorised by bug
+--- unclassified: 0
+--- rows carrying Top of Mind evidence (all sections):
+[{"id":"PC-98","evidence":["Linear PC-98","Top of Mind: crashnote - The export crash is hurting Dawn's demos"],"tags":null}]
+--- server requests:
+5
