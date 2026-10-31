@@ -49,7 +49,8 @@ Repeated asks are a fourth kind of event. Lee's typed messages in the last
 --days days (default 7), from the archive's interactive and worker sessions
 and never a worker's launch brief, which quotes him, are cut into sentences
 (a long dictated run-on into clauses) that give an instruction (keep, make
-sure, always, never, don't, should, must, ...). Two instructions on different
+sure, always, never, don't, should, must, ...). The instruction words
+themselves are not content words. Two instructions on different
 days are the same instruction when they share at least three content words
 and at least 70% of the shorter one's words, or when both ask for upkeep (one
 concept for keep, update, current, date, fresh, maintain, look, check, review,
@@ -667,8 +668,9 @@ def session_events(records, machine):
 INSTRUCTION_RE = re.compile(
     r"\b(?:keep|make sure|always|never|don'?t|do not|should|shouldn'?t|need(?:s)? to|must|remember|stop|"
     r"have to|has to|supposed to|ought to)\b", re.I)
-# Words that carry no instruction, plus the fillers of dictated speech.
-FILLER = frozenset("""a about all also am an and any are as at be been being but by can could did do does for from
+# Words that carry no instruction, the instruction markers themselves, and the fillers of dictated speech.
+FILLER = frozenset("""make sure need needs should shouldnt must dont always never remember stop ought supposed please
+a about all also am an and any are as at be been being but by can could did do does for from
 got had has have he her him his how i if in into is it its just like me more my no not of on one only or our out
 so some than that the their them then there these they this those to too us was we were what when which who will
 with would yeah um uh er you your youre ive id im thats there""".split())

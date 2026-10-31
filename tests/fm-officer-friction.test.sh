@@ -654,6 +654,20 @@ EOF
   run_officer "$home" >/dev/null || fail "negative run must succeed"
   assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
     "an instruction about the same log that asks for no upkeep is a different instruction"
+  cat > "$TMP_ROOT/paraphrase/m1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "m-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Make sure you check the logs on staging."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/m3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "m-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "Make sure to update the changelog."}}]}]}
+EOF
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/m1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/m3.json"
+  run_officer "$home" >/dev/null || fail "make-sure run must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "two upkeep asks on different topics that share only their instruction words are different instructions"
   pass "fm-officer friction: paraphrased upkeep asks on three days are one finding; a non-upkeep ask about the log is not"
 }
 

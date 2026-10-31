@@ -998,6 +998,7 @@ An unreachable app is a finding, not a failed run.
 The friction officer also compares Lee's typed instructions across the last `ask-days` days of the session archive (interactive and worker sessions, never a worker's launch brief, which quotes him).
 It sees only what the archive holds: a message Lee gave somewhere that is not archived as a Claude Code transcript is not counted.
 An instruction given on two or more days, one of them the run's day, becomes a `repeat-ask` finding with Lee's scrubbed sentence for each day, so a repeat becomes automatic work instead of Lee repeating himself.
+Instruction words such as make sure, need, should, always, never and please are not content words.
 Two instructions are the same when they share at least three content words and at least 70% of the shorter one's words.
 They are also the same when both ask for upkeep and share at least two other content words: keep, update, current, date, fresh, maintain, look, looking, check, review, watch, track, monitor and stale all count as one upkeep word.
 So "keep the captain's log up to date" and "make sure the captain's log keeper is looking at all pages" are one instruction, while "make sure the captain's log renders on mobile" asks for no upkeep and is not.

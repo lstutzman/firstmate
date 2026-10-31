@@ -131,7 +131,7 @@ test_findings_of_every_kind() {
     "only the card the standing rule matches is flagged, and the invalid rule does not abort the pass"
   assert_contains "$(cat "$home/data/officers/page-check/$KEY.md")" "standing rule(s) broken have an invalid regex" \
     "an invalid rule is reported as a coverage note"
-  assert_equals "stale-card:Captain's Log:answered-shown stale-card:Captain's Log:old-ask stale-card:Captain's Log:pr-card:ex/repo#7 stale-card:Captain's Log:snoozed-old stale-card:Captain's Log:task-k-k2-$(printf 'task-k\0k2' | sha256sum | cut -c1-10)" \
+  assert_equals "stale-card:Captain's Log:answered-shown:answered stale-card:Captain's Log:old-ask:unanswered stale-card:Captain's Log:pr-card:ex/repo#7 stale-card:Captain's Log:snoozed-old:snooze stale-card:Captain's Log:task-k-k2-$(printf 'task-k\0k2' | sha256sum | cut -c1-10):resolved" \
     "$(ids "$json" stale-card)" "stale cards: answered, unanswered for days, a merged PR (not the open one), snooze ended, resolved elsewhere"
   assert_equals "shown-after-done:Captain's Log:bosun-ep shown-after-done:Captain's Log:task-k-k1-$(printf 'task-k\0k1' | sha256sum | cut -c1-10)" \
     "$(ids "$json" shown-after-done)" "a card re-raised after its status line resolved, and one the app records closed"

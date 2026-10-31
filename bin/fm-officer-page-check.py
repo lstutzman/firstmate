@@ -226,17 +226,17 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
                                        time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(asked))),
                                    "cl-keeper: close the card; fix the source that re-raises it"))
             else:
-                out.append(finding("stale-card", page, cid, title, "its status line was resolved elsewhere",
+                out.append(finding("stale-card", page, cid + ":resolved", title, "its status line was resolved elsewhere",
                                    "cl-keeper: close the card"))
         until = friction.epoch_of(c.get("until"))
         if c.get("state") == "snoozed" and until is not None and until < now:
-            out.append(finding("stale-card", page, cid, title, "snooze ended %d day(s) ago" % ((now - until) // 86400),
+            out.append(finding("stale-card", page, cid + ":snooze", title, "snooze ended %d day(s) ago" % ((now - until) // 86400),
                                "cl-keeper: re-ask or close"))
         elif c.get("state") == "asked" and asked is not None and now - asked > stale_days * 86400 and not c.get("pinned"):
-            out.append(finding("stale-card", page, cid, title, "unanswered for %d day(s)" % ((now - asked) // 86400),
+            out.append(finding("stale-card", page, cid + ":unanswered", title, "unanswered for %d day(s)" % ((now - asked) // 86400),
                                "cl-keeper: close or re-word"))
         if c.get("state") == "asked" and c.get("answer"):
-            out.append(finding("stale-card", page, cid, title, "already answered but still shown", "cl-keeper: close"))
+            out.append(finding("stale-card", page, cid + ":answered", title, "already answered but still shown", "cl-keeper: close"))
         for repo, number in PR_RE.findall(text):
             state = pr_state(repo, number, cache, budget)
             if state in ("merged", "closed"):
