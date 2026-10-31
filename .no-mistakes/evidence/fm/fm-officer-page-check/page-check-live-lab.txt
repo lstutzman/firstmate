@@ -1,0 +1,59 @@
+## LAB=/tmp/fm-lab.kwtA02 app=https://localhost:34244 (self-signed, trusted via CURL_CA_BUNDLE)
+$ fm-officer.sh list
+page-check role=pagecheck cadence="every 2h" check=absent
+$ fm-officer.sh register page-check
+registered: officer page-check (state/officer-page-check.check.sh)
+rc=0
+-rw------- 1 lee lee  84 Oct 31 13:50 officer-page-check.check-trust
+-rwx------ 1 lee lee 283 Oct 31 13:50 officer-page-check.check.sh
+$ fm-officer.sh check page-check   (first: starts the scheduled slot run)
+rc=0
+$ cat runs.log
+1793454620 2026-10-31T12 ok 9
+$ fm-officer.sh check page-check   (second: reports the digest one-liner)
+officer page-check: 2026-10-31T12: 9 actionable finding(s) in data/officers/page-check/2026-10-31T12.md
+rc=0
+$ fm-officer.sh check page-check   (third: repeat stays silent)
+rc=0
+$ fm-officer.sh ensure
+rc=0
+## digest 2026-10-31T12.md
+# Page check 2026-10-31T12
+
+9 open finding(s), 9 new.
+
+- NEW [page-old] Bosun - results: Bosun: not updated for 30 hour(s) (evidence: normal gap is 26 hour(s); last publish 2026-10-30 07:50Z) -> page owner: fix the feed
+- NEW [page-old] Feature ideation - ideation: Feature ideation: not updated for 72 hour(s) (evidence: normal gap is 36 hour(s); last publish 2026-10-28 13:50Z) -> page owner: fix the feed
+- NEW [page-old] Runs - triage-daily: Triage daily is failing (evidence: officer triage: health failing, next due 2026-10-31T14:50:19Z) -> page owner: fix the job
+- NEW [shown-after-done] Captain's Log - bosun-ep: Bosun asks about an episode (evidence: the app's own record for this card is closed but the page shows it asked) -> cl-keeper: close the card; fix the source that re-raises it
+- NEW [stale-card] Captain's Log - answered: Sign off the copy? (evidence: already answered but still shown) -> cl-keeper: close
+- NEW [stale-card] Captain's Log - merged-pr:lstutzman/firstmate#48: Merge https:<token> ? (evidence: names lstutzman/firstmate#48, which is merged) -> cl-keeper: close or correct
+- NEW [stale-card] Captain's Log - old-ask: Which colour for the banner? (evidence: unanswered for 10 day(s)) -> cl-keeper: close or re-word
+- NEW [standing-rule] Captain's Log - bosun-cleanup:routine-cleanup: Bosun: approve 475 delete approvals for stale branches and old backups? (evidence: standing rule routine-cleanup settles it: routine clean-up of branches, logs and backups needs no approval (Lee, 2026-10-31 13:07:58Z)) -> cl-keeper: close the card citing the rule
+- NEW [standing-rule] Captain's Log - staging-flag:staging-flags-on: Turn the new export flag on in staging? (evidence: standing rule staging-flags-on settles it: every new flag starts ON in staging (Lee, 2026-10-22)) -> cl-keeper: close the card citing the rule
+$ manual re-run same slot (nothing new)
+DIGEST 2026-10-31T12 0 data/officers/page-check/2026-10-31T12.md
+rc=0
+## server access log (methods seen)
+     44 GET
+## --- adversarial: /api/runs answers [] and /api/progress-officer gives a word for its gap
+DIGEST 2026-10-31T12 2 data/officers/page-check/2026-10-31T12.md
+rc=0
+- NEW [page-old] Progress officer - progress-officer: Progress officer: unreadable (evidence: GET /api/progress-officer was unreadable) -> page owner: restore the page's feed
+- NEW [page-old] Runs - runs: Runs: unreadable (evidence: GET /api/runs was unreadable) -> page owner: restore the page's feed
+## --- adversarial: rules file with only prose
+DIGEST 2026-10-31T12 0 data/officers/page-check/2026-10-31T12.md
+rc=0
+Coverage: no standing-rule lines in /tmp/fm-lab.kwtA02/data/captain-shared.md; the standing-rule check covers nothing
+## --- adversarial: app down (server killed)
+DIGEST 2026-10-31T12 6 data/officers/page-check/2026-10-31T12.md
+rc=0
+- [page-old] Bosun - results: Bosun: unreachable (evidence: GET /api/runs/bosun-maintenance/results was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Business health - business-health: Business health: unreachable (evidence: GET /api/business-health was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Captain's Log - captains-log: Captain's Log: unreachable (evidence: GET /api/captains-log was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Cost and cycle time - cost-cycle: Cost and cycle time: unreachable (evidence: GET /api/cost-cycle was unreachable) -> page owner: restore the page's feed
+1793454622 2026-10-31T12 ok 2
+1793454623 2026-10-31T12 ok 0
+1793454623 2026-10-31T12 ok 6
+## files written in lab outside lane/state
+./data/captain-shared.md

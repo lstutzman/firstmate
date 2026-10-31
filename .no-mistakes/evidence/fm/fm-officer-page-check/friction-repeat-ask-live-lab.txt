@@ -1,0 +1,37 @@
+$ fm-officer.sh run friction --date 2026-10-31   (archive days 22, 30, 31 Oct; ask-days 10)
+DIGEST 2026-10-31 1 data/officers/friction/2026-10-31.md
+rc=0
+## repeat-ask findings (json)
+[
+  {
+    "topic": null,
+    "asks": [
+      {
+        "date": "2026-10-22",
+        "quote": "Please keep the captain's log up to date.",
+        "session": "alpha:s22"
+      },
+      {
+        "date": "2026-10-30",
+        "quote": "I just want to make sure that the captain's log, uh, keeper agent is looking at all pages and not just certain ones.",
+        "session": "alpha:s30"
+      },
+      {
+        "date": "2026-10-31",
+        "quote": "I'm constantly having to come back and say, hey, keep the captain's log up to date.",
+        "session": "alpha:s31"
+      }
+    ],
+    "carded": true
+  }
+]
+## digest lines
+19:- Root cause: repeat-ask (instruction), captain log upkeep; severity 3, confidence 3; carded.
+20:- What Lee had to do: repeat an instruction he has already given; 1 of 1 event(s) named Lee.
+25:- Asked 2026-10-22 (alpha:s22): "Please keep the captain's log up to date."
+26:- Asked 2026-10-30 (alpha:s30): "I just want to make sure that the captain's log, uh, keeper agent is looking at all pages and not just certain ones."
+27:- Asked 2026-10-31 (alpha:s31): "I'm constantly having to come back and say, hey, keep the captain's log up to date."
+## --- negative: 30 Oct says only "keep the captain log up to date", 31 Oct says only "make sure the captain log renders on mobile"
+DIGEST 2026-10-31 0 data/officers/friction/2026-10-31.md
+rc=0
+repeat-ask findings: 0
