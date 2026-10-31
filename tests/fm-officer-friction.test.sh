@@ -304,19 +304,29 @@ assert len(d["evidence"]) <= 12 and all(set(e) == {"name", "state", "detail"} an
                                          and e["state"] in ("read", "missing") for e in d["evidence"])
 limits = {"title": 90, "tldr": 180, "evidence": 400, "improvement": 400, "impact": 250, "owner": 60, "time_saved": 200}
 cats = {"waiting", "rework", "tooling", "review", "environment", "coordination", "cost", "other"}
-assert 1 <= len(d["bottlenecks"]) <= 5, len(d["bottlenecks"])
+assert 1 <= len(d["bottlenecks"]) <= 25, len(d["bottlenecks"])
 for b in d["bottlenecks"]:
     assert set(b) == set(limits) | {"category", "severity", "confidence", "effort"}, sorted(b)
     for k, n in limits.items():
         assert 1 <= len(b[k]) <= n, (k, len(b[k]))
     assert b["category"] in cats and b["effort"] in ("S", "M", "L")
-    assert 3 <= b["severity"] <= 5 and 3 <= b["confidence"] <= 5, (b["title"], b["severity"], b["confidence"])
+    assert 1 <= b["severity"] <= 5 and 1 <= b["confidence"] <= 5, (b["title"], b["severity"], b["confidence"])
     assert not re.search(r"\d", b["title"]), b["title"]
 PY
   assert_equals "An agent token lacks a scope, so Lee widens it" \
     "$(jq -r '[.bottlenecks[] | select(.tldr | startswith("Cloudflare: "))][0].title' "$vel")" \
     "a status-backed Lee step clears the card bar, with the service named in its tldr, not its title"
   assert_no_grep "pick (a) the short wording" "$vel" "a product decision never becomes a card"
+  assert_equals "$(jq '[.findings[] | select(.title and .fix and .cause != "decision")] | length' \
+    "$home/data/officers/friction/$DATE.json")" "$(jq '.bottlenecks | length' "$vel")" \
+    "every finding with a title and a fix is written, not just the top five or those over the card bar"
+  assert_equals 0 "$(jq '[.bottlenecks[] | select(.title == null or .improvement == null)] | length' "$vel")" \
+    "no written finding lacks a title or a fix"
+  assert_equals "Waits on Lee carry no recorded cause" \
+    "$(python3 -I -c 'import importlib.machinery as m,sys; x = m.SourceFileLoader("o", sys.argv[1]).load_module(); print(x.propose_fix("other", "other", "none")[0])' "$ROOT/bin/fm-officer-friction.py")" \
+    "an unclassified wait still gets a title and a fix"
+  assert_grep "have no rule-named fix and are not in the fleet-app findings file: decision/decision" \
+    "$home/data/officers/friction/$DATE.md" "a finding with no fix is named in the digest, not dropped silently"
   pass "fm-officer friction: the velocity findings file has fleet-app's shape and limits"
 }
 
