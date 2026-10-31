@@ -62,8 +62,10 @@ service or tool, and writes into --out:
   <date>.md                      the digest;
   <date>.velocity-findings.json  the fleet-app velocity findings file
                                  (FINDINGS_SCHEMA schema_version 1, source
-                                 friction-officer) holding the top MAX_CARDS
-                                 findings that clear the card bar. Its
+                                 friction-officer) holding up to MAX_CARDS
+                                 findings that carry a title and a fix, the
+                                 card bar's ones first (never a product
+                                 decision, which is Lee's to make). Its
                                  generated_at is --now, the one clock field,
                                  because the page treats a file older than a
                                  day as not posted.
@@ -116,7 +118,7 @@ triage = _triage()
 SCORER = "friction-deterministic-v1"
 MIN_SEVERITY = 3
 MIN_CONFIDENCE = 3
-MAX_CARDS = 5
+MAX_CARDS = 25  # fleet-app's stored cap on bottlenecks
 
 # Status logs that relay other tasks' lines rather than belong to a task: a
 # second mate's parent channel (docs/secondmate-parent-channel.md), here and,
@@ -346,6 +348,12 @@ FIXES = {
         "run a command or script by hand",
         "Make every Lee-step ask name why the agent cannot run it (sudo, credential, policy or tool), so the"
         " cause can be removed; then remove it, starting with the most repeated.",
+        "main (firstmate)", "S"),
+    ("other", "other"): (
+        "Blocked steps carry no recorded cause",
+        "answer an ask whose reason no rule recognised",
+        "Make every blocked or needs-decision line say why the agent cannot go on (policy, credential, sudo, tool"
+        " or decision), so the next run can group it and name its fix; then remove the most repeated cause.",
         "main (firstmate)", "S"),
     ("policy", "approval"): (
         "Routine steps wait on Lee's explicit word",
@@ -1019,7 +1027,9 @@ def bottleneck(f, date):
 
 def velocity_doc(doc, now):
     start, end = day_bounds(doc["date"])
-    cards = [bottleneck(f, doc["date"]) for f in doc["findings"] if f["carded"]][:MAX_CARDS]
+    # findings are sorted carded first, so the cap drops the least important
+    cards = [bottleneck(f, doc["date"]) for f in doc["findings"]
+             if f["title"] and f["fix"] and (f["cause"], f["sub"]) not in NOT_CARDED][:MAX_CARDS]
     cov = doc["coverage"]
     notes = [clip(n, 400) for n in cov["notes"]][:12]
     evidence = [{"name": "session archive", "state": "read", "detail": clip(
@@ -1048,7 +1058,7 @@ def velocity_doc(doc, now):
         "outcome": "ok" if doc["events"] else "no-data",
         "summary": clip("%d friction event(s), %d naming Lee; %d finding(s), %d carded." % (
             len(doc["events"]), sum(1 for e in doc["events"] if e["lee"]), len(doc["findings"]),
-            len(cards)), 300),
+            sum(1 for f in doc["findings"] if f["carded"])), 300),
         "notes": notes,
         "cost_usd": 0,
         "evidence": evidence[:12],

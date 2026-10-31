@@ -286,6 +286,10 @@ test_transcript_lee_steps_and_refusals() {
 test_velocity_findings_file() {
   local home vel
   home=$(make_world velocity)
+  cat > "$home/state/task-ci.status" <<EOF
+blocked [at=$T]: waiting for the upstream build cache to warm
+resolved [at=$((T + 300))]: the cache warmed
+EOF
   run_officer "$home" >/dev/null || fail "run must succeed"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
   assert_present "$vel" "the velocity findings file is written"
@@ -304,19 +308,27 @@ assert len(d["evidence"]) <= 12 and all(set(e) == {"name", "state", "detail"} an
                                          and e["state"] in ("read", "missing") for e in d["evidence"])
 limits = {"title": 90, "tldr": 180, "evidence": 400, "improvement": 400, "impact": 250, "owner": 60, "time_saved": 200}
 cats = {"waiting", "rework", "tooling", "review", "environment", "coordination", "cost", "other"}
-assert 1 <= len(d["bottlenecks"]) <= 5, len(d["bottlenecks"])
+assert 1 <= len(d["bottlenecks"]) <= 25, len(d["bottlenecks"])
 for b in d["bottlenecks"]:
     assert set(b) == set(limits) | {"category", "severity", "confidence", "effort"}, sorted(b)
     for k, n in limits.items():
         assert 1 <= len(b[k]) <= n, (k, len(b[k]))
     assert b["category"] in cats and b["effort"] in ("S", "M", "L")
-    assert 3 <= b["severity"] <= 5 and 3 <= b["confidence"] <= 5, (b["title"], b["severity"], b["confidence"])
+    assert 1 <= b["severity"] <= 5 and 1 <= b["confidence"] <= 5, (b["title"], b["severity"], b["confidence"])
     assert not re.search(r"\d", b["title"]), b["title"]
 PY
   assert_equals "An agent token lacks a scope, so Lee widens it" \
     "$(jq -r '[.bottlenecks[] | select(.tldr | startswith("Cloudflare: "))][0].title' "$vel")" \
     "a status-backed Lee step clears the card bar, with the service named in its tldr, not its title"
   assert_no_grep "pick (a) the short wording" "$vel" "a product decision never becomes a card"
+  assert_equals 13 "$(jq '.bottlenecks | length' "$vel")" \
+    "all 13 fixed findings are written (8 over the card bar, 4 below it, 1 unclassified), not the top five; the product decision is not"
+  assert_equals "Agents hit this 1 time(s) on $DATE and worked around it. false" \
+    "$(jq -r '[.bottlenecks[] | select(.evidence | contains("task-ci"))][0] | "\(.tldr) \(.title | test("Lee"))"' "$vel")" \
+    "an unclassified agent-side block is written with a title that does not claim a wait on Lee"
+  assert_equals true \
+    "$(jq '[.bottlenecks[] | select(.evidence | contains("task-ci"))][0].improvement | length > 0' "$vel")" \
+    "an unclassified block still carries a fix"
   pass "fm-officer friction: the velocity findings file has fleet-app's shape and limits"
 }
 
