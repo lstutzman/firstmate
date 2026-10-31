@@ -2,7 +2,7 @@
 # fm-officer.sh - the officer agent kind: registry, schedule, health, report.
 #
 # An officer is a role agent owned by the primary home. It reads fleet records
-# on its own daily cadence, writes only its findings lane data/officers/<id>/,
+# on its own cadence (daily at a time, or every N hours), writes only its findings lane data/officers/<id>/,
 # and reports one line to its first mate. It never acts on the fleet. The
 # officer-roles skill owns the authority list and digest handling;
 # docs/configuration.md "Officers (data/officers.md)" owns the registry schema.
@@ -20,26 +20,34 @@
 # fm-check-register.sh, and stamps the lane's registered record. retire
 # unregisters that check and removes the registry line; findings stay.
 #
-# run executes the officer's role pass for one date (default: yesterday in the
-# home's local time) under the lane's .run.lock, and appends one line to the
-# lane's runs.log: "<epoch> <date> ok <n-actionable>" or
-# "<epoch> <date> failed <reason>". On success the lane's digest file holds
-# "DIGEST <date> <n-actionable> <path>". Re-running a date rewrites that
-# date's findings, byte-identical when its inputs are unchanged.
+# Cadence is `daily HH:MM` or `every Nh` (N from 1 to 24). This script owns
+# the grammar: cadence_period and slot_of below. A daily officer's run key is a
+# date (default yesterday in the home's local time). An interval officer's run
+# key is its slot, `YYYY-MM-DDTHH`: slots start at local midnight and repeat
+# every N hours until the next midnight, each is due from its start, and a
+# scheduled run reads current records (a new date restarts the slots).
+#
+# run executes the officer's role pass for one run key under the lane's
+# .run.lock, and appends one line to the lane's runs.log:
+# "<epoch> <key> ok <n-actionable>" or "<epoch> <key> failed <reason>". On
+# success the lane's digest file holds "DIGEST <key> <n-actionable> <path>".
+# Re-running a key rewrites that key's findings, byte-identical when its
+# inputs are unchanged.
 #
 # check is the body of the watcher check. It is fast and never contacts
 # another host:
-#   - once the cadence time has passed and the target date has no run finished
-#     since that cadence time (a same-day manual run, logged earlier, does not
-#     count), it starts `run <id> --scheduled` detached in its own session (the watcher
+#   - once the cadence time has passed (an interval officer's slot start) and
+#     the run key has no run finished since that time (a same-day manual run,
+#     logged earlier, does not count), it starts `run <id> --scheduled` detached in its own session (the watcher
 #     stops the check's process group when the check returns); a failed date is
 #     retried after FM_OFFICER_RETRY_SECS (default 3600), FM_OFFICER_ATTEMPTS
 #     (default 3) times in all, and each run is bounded by
 #     FM_OFFICER_RUN_TIMEOUT seconds (default 3600);
-#   - it prints "officer <id>: <date>: <n> actionable finding(s) in <path>"
+#   - it prints "officer <id>: <key>: <n> actionable finding(s) in <path>"
 #     once for each new digest with n > 0, and nothing for a repeat or an
-#     empty digest;
-#   - it prints "officer <id>: <date>: run failed <n> time(s): <reason>" once,
+#     empty digest (a role that runs often counts only findings it has not
+#     already reported, so its n is 0 while nothing is new);
+#   - it prints "officer <id>: <key>: run failed <n> time(s): <reason>" once,
 #     after the last allowed attempt fails;
 #   - every other condition, including an unreachable archive host, is silent
 #     with exit 0; ensure reports lasting gaps at session start.
@@ -51,13 +59,13 @@
 # ensure (run by bin/fm-bootstrap.sh) prints one "OFFICER: ..." line per
 # actionable gap and nothing when every officer is healthy: a malformed
 # registry line, an unregistered or out-of-date check, a model other than
-# none, no finished run within two cadences of registration or of the last
-# finished run, and officers listed in a second mate home.
+# none, no finished run within two cadence periods of registration or of the
+# last finished run, and officers listed in a second mate home.
 #
 # Roles: triage (bin/fm-officer-triage.py), landing
-# (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py), and
-# progress (bin/fm-officer-progress.py); each
-# role script's header owns its pass.
+# (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py),
+# progress (bin/fm-officer-progress.py), and pagecheck
+# (bin/fm-officer-page-check.py); each role script's header owns its pass.
 #
 # Officers run in the primary home only: register, run, and check refuse in a
 # home carrying .fm-secondmate-home.
@@ -73,7 +81,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/officers.md"
-OFFICER_ROLES="triage landing friction progress"
+OFFICER_ROLES="triage landing friction progress pagecheck"
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -90,7 +98,7 @@ Usage:
   fm-officer.sh list                         list registered officers
   fm-officer.sh register <id>                install and trust the officer's watcher check
   fm-officer.sh retire <id>                  remove the check and the registry line; findings stay
-  fm-officer.sh run <id> [--date YYYY-MM-DD] run the officer's pass for one date (default yesterday)
+  fm-officer.sh run <id> [--date KEY]        run the officer's pass for one run key (a date, or an interval officer's YYYY-MM-DDTHH slot; default yesterday or the current slot)
   fm-officer.sh check <id>                   watcher check: start a due run, report a new digest
   fm-officer.sh ensure                       session-start health: one OFFICER: line per gap
 See docs/configuration.md "Officers (data/officers.md)" for the registry schema.
@@ -115,6 +123,28 @@ epoch_fmt() {
 }
 
 secondmate_home() { [ -e "$FM_HOME/.fm-secondmate-home" ]; }
+
+CADENCE_RE='^(daily ([01][0-9]|2[0-3]):[0-5][0-9]|every ([1-9]|1[0-9]|2[0-4])h)$'
+RUN_KEY_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$'
+
+# cadence_period <cadence>: seconds between runs.
+cadence_period() {
+  case "$1" in
+    every*) local n=${1#every }; printf '%s\n' "$(( ${n%h} * 3600 ))" ;;
+    *) printf '86400\n' ;;
+  esac
+}
+
+# slot_of <cadence> <now>: sets SLOT_KEY and SLOT_SINCE, the run key and start epoch of the
+# interval slot holding <now>. Callers use it for `every Nh` cadences only.
+slot_of() {
+  local period secs hms
+  period=$(cadence_period "$1")
+  hms=$(epoch_fmt "$2" '%H %M %S')
+  secs=$(awk -v t="$hms" 'BEGIN {split(t, h, " "); print h[1] * 3600 + h[2] * 60 + h[3]}')
+  SLOT_SINCE=$(( $2 - secs + secs / period * period ))
+  SLOT_KEY=$(epoch_fmt "$SLOT_SINCE" %Y-%m-%dT%H)
+}
 
 require_primary() {
   secondmate_home && die "officers run only in the primary home; this is a second mate home" 3
@@ -181,8 +211,8 @@ line_problem() {
     *) printf 'officer %s: unknown role "%s" (known: %s)\n' "$id" "$role" "$OFFICER_ROLES"; return ;;
   esac
   cadence=$(line_field "$line" cadence || true)
-  [[ "$cadence" =~ ^daily\ ([01][0-9]|2[0-3]):[0-5][0-9]$ ]] \
-    || { printf 'officer %s: cadence must be "daily HH:MM", got "%s"\n' "$id" "$cadence"; return; }
+  [[ "$cadence" =~ $CADENCE_RE ]] \
+    || { printf 'officer %s: cadence must be "daily HH:MM" or "every Nh" (N from 1 to 24), got "%s"\n' "$id" "$cadence"; return; }
   model=$(line_field "$line" model || true)
   [ "$model" = none ] \
     || { printf 'officer %s: model "%s" is not available yet; slice 1 officers use model: none\n' "$id" "$model"; return; }
@@ -198,10 +228,20 @@ line_problem() {
     triage|friction)
       line_field "$line" archive >/dev/null \
         || { printf 'officer %s: a %s officer needs archive: <dir> or <host>:<dir>\n' "$id" "$role"; return; }
+      case "$(line_field "$line" ask-days || echo 7)" in
+        ''|*[!0-9]*|0) printf 'officer %s: ask-days must be a whole number of days, at least 1\n' "$id"; return ;;
+      esac
       if line_field "$line" captains-log >/dev/null; then
         [ "$role" = friction ] && [[ "$(line_field "$line" captains-log)" == https://* ]] \
           || { printf 'officer %s: captains-log must be an https URL on a friction officer\n' "$id"; return; }
       fi
+      ;;
+    pagecheck)
+      [[ "$(line_field "$line" app || true)" == https://* ]] \
+        || { printf 'officer %s: a pagecheck officer needs app: <https URL of the fleet app>\n' "$id"; return; }
+      case "$(line_field "$line" stale-days || echo 7)$(line_field "$line" remind-hours || echo 24)" in
+        ''|*[!0-9]*) printf 'officer %s: stale-days and remind-hours must be whole numbers\n' "$id"; return ;;
+      esac
       ;;
     landing)
       line_field "$line" facts >/dev/null \
@@ -371,7 +411,25 @@ role_friction() {
       secondmate_registry_parse_line "$line" && args+=(--channel "$SECONDMATE_REGISTRY_ID")
     done < "$DATA/secondmates.md"
   fi
+  args+=(--days "$(line_field "$OFFICER_LINE" ask-days || echo 7)")
   role_archive fm-officer-friction.py "$1" "${args[@]}"
+}
+
+# role_pagecheck <key>: reads the fleet app's pages (GET only) and this home's records; the standing
+# rules default to this home's data/captain-shared.md.
+role_pagecheck() {
+  local home
+  local -a args=(run --key "$1" --out "$OFFICER_LANE" --now "$(now_epoch)"
+    --app "$(line_field "$OFFICER_LINE" app)"
+    --rules "$(line_field "$OFFICER_LINE" rules || echo "$DATA/captain-shared.md")"
+    --stale-days "$(line_field "$OFFICER_LINE" stale-days || echo 7)"
+    --remind-hours "$(line_field "$OFFICER_LINE" remind-hours || echo 24)")
+  while IFS= read -r home; do
+    [ -n "$home" ] && args+=(--home "$home")
+  done <<EOF
+$(readable_homes)
+EOF
+  python3 -I "$SCRIPT_DIR/fm-officer-page-check.py" "${args[@]}"
 }
 
 role_landing() {  # <date>
@@ -418,14 +476,21 @@ action_run() {
   done
   require_primary
   load_officer "$id"
-  [ -n "$date" ] || date=$(epoch_fmt "$(( $(now_epoch) - 86400 ))" %Y-%m-%d)
-  [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || die "--date must be YYYY-MM-DD" 2
+  if [ -z "$date" ]; then
+    if [[ "$(line_field "$OFFICER_LINE" cadence)" == every* ]]; then
+      slot_of "$(line_field "$OFFICER_LINE" cadence)" "$(now_epoch)"
+      date=$SLOT_KEY
+    else
+      date=$(epoch_fmt "$(( $(now_epoch) - 86400 ))" %Y-%m-%d)
+    fi
+  fi
+  [[ "$date" =~ $RUN_KEY_RE ]] || die "--date must be YYYY-MM-DD, or YYYY-MM-DDTHH for an interval officer" 2
   mkdir -p "$OFFICER_LANE" || die "cannot create $OFFICER_LANE"
   lock_acquire || die "officer $id already has a run in progress"
   trap lock_release EXIT
   rc=0
   out=$("role_$(line_field "$OFFICER_LINE" role)" "$date" 2>"$OFFICER_LANE/.run.err") || rc=$?
-  digest=$(printf '%s\n' "$out" | grep -E '^DIGEST [0-9-]{10} [0-9]+ ' | tail -n 1)
+  digest=$(printf '%s\n' "$out" | grep -E '^DIGEST [0-9T-]{10,13} [0-9]+ ' | tail -n 1)
   if [ "$rc" -ne 0 ] || [ -z "$digest" ]; then
     reason=$(grep -v '^[[:space:]]*$' "$OFFICER_LANE/.run.err" 2>/dev/null | tail -n 1 | cut -c1-200)
     run_log "$date" failed "${reason:-role pass exited $rc}"
@@ -484,11 +549,18 @@ action_check() {
   mkdir -p "$OFFICER_LANE" 2>/dev/null || return 0
   now=$(now_epoch)
   cadence=$(line_field "$OFFICER_LINE" cadence)
-  at=${cadence#daily }
-  date=$(epoch_fmt "$((now - 86400))" %Y-%m-%d)
-  # shortcut: today's cadence time is taken as now minus the seconds since midnight, an hour off when a DST change falls between the cadence time and now.
-  hms=$(epoch_fmt "$now" '%H %M %S')
-  since=$(awk -v n="$now" -v a="$at" -v t="$hms" 'BEGIN {split(t, h, " "); split(a, c, ":"); print n - (h[1] * 3600 + h[2] * 60 + h[3]) + c[1] * 3600 + c[2] * 60}')
+  if [[ "$cadence" == every* ]]; then
+    slot_of "$cadence" "$now"
+    date=$SLOT_KEY
+    since=$SLOT_SINCE
+    at=00:00
+  else
+    at=${cadence#daily }
+    date=$(epoch_fmt "$((now - 86400))" %Y-%m-%d)
+    # shortcut: today's cadence time is taken as now minus the seconds since midnight, an hour off when a DST change falls between the cadence time and now.
+    hms=$(epoch_fmt "$now" '%H %M %S')
+    since=$(awk -v n="$now" -v a="$at" -v t="$hms" 'BEGIN {split(t, h, " "); split(a, c, ":"); print n - (h[1] * 3600 + h[2] * 60 + h[3]) + c[1] * 3600 + c[2] * 60}')
+  fi
   max=${FM_OFFICER_ATTEMPTS:-3}
   retry=${FM_OFFICER_RETRY_SECS:-3600}
   tries=$(attempts "$date" "$since")
@@ -498,7 +570,7 @@ action_check() {
       bash "$SCRIPT_DIR/fm-officer.sh" __timed-run "$id" "$date" >/dev/null 2>&1 || true
   fi
   digest=$(cat "$OFFICER_LANE/digest" 2>/dev/null || true)
-  if [[ "$digest" =~ ^DIGEST\ ([0-9-]{10})\ ([0-9]+)\ (.+)$ ]]; then
+  if [[ "$digest" =~ ^DIGEST\ ([0-9T-]{10,13})\ ([0-9]+)\ (.+)$ ]]; then
     n=${BASH_REMATCH[2]}
     path=${BASH_REMATCH[3]}
     if [ "$n" -gt 0 ]; then
@@ -526,7 +598,7 @@ action_timed_run() {  # <id> <date>: the detached scheduled run, bounded.
 }
 
 action_ensure() {
-  local line problem id registered last_ok now span shim_want
+  local line problem id registered last_ok now span shim_want cadence
   [ -f "$REGISTRY" ] || return 0
   if secondmate_home; then
     if [ -n "$(registry_lines)" ]; then
@@ -559,9 +631,10 @@ action_ensure() {
     last_ok=$(awk '$3 == "ok" {t=$1} END {print t + 0}' "$OFFICER_LANE/runs.log" 2>/dev/null || echo 0)
     [ "$last_ok" -gt "$registered" ] && span=$last_ok || span=$registered
     case "$span" in ''|*[!0-9]*) span=$now ;; esac
-    if [ $((now - span)) -gt $((2 * 86400)) ]; then
+    cadence=$(line_field "$line" cadence)
+    if [ $((now - span)) -gt $((2 * $(cadence_period "$cadence"))) ]; then
       if [ "$last_ok" -gt 0 ]; then
-        echo "OFFICER: officer $id: no finished run since $(epoch_fmt "$last_ok" '%Y-%m-%d %H:%M') (cadence daily) - see data/officers/$id/runs.log"
+        echo "OFFICER: officer $id: no finished run since $(epoch_fmt "$last_ok" '%Y-%m-%d %H:%M') (cadence $cadence) - see data/officers/$id/runs.log"
       else
         echo "OFFICER: officer $id: no finished run since it was registered $(epoch_fmt "$registered" '%Y-%m-%d') - see data/officers/$id/runs.log"
       fi

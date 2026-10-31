@@ -567,6 +567,47 @@ SH
   pass "fm-officer friction: Captain's Log cards are read once, read-only, and an unreachable log is a coverage gap"
 }
 
+test_repeated_lee_asks_across_days() {
+  local home archive json md out
+  home="$TMP_ROOT/repeat/fixturehost"
+  archive="$TMP_ROOT/repeat/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  cat > "$TMP_ROOT/repeat/day1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "lee-day1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-22T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date. Thanks."}},
+  {"type": "user", "timestamp": "2026-10-22T09:05:00.000Z", "message": {"content": "Run the unit tests for the parser now."}}]}]}
+EOF
+  cat > "$TMP_ROOT/repeat/day2.json" <<'EOF'
+{"sessions": [
+ {"machine": "alpha", "id": "lee-day2", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:00:00.000Z", "message": {"content": "I'm constantly having to say, um, keep the captain's log up to date, you know."}},
+  {"type": "user", "timestamp": "2026-10-23T09:10:00.000Z", "message": {"content": "Never push straight to the shared database branch."}}]},
+ {"machine": "alpha", "id": "worker-day2", "first_prompt": "Firstmate operational input waiting: read the brief", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:20:00.000Z", "message": {"content": "Never push straight to the shared database branch, a brief quoting Lee."}}]}]}
+EOF
+  officer_archive "$archive" 2026-10-22 "$TMP_ROOT/repeat/day1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/repeat/day2.json"
+  friction_registry "$home" "$archive"
+  out=$(run_officer "$home") || fail "run must succeed: $out"
+  json="$home/data/officers/friction/$DATE.json"
+  md="$home/data/officers/friction/$DATE.md"
+  assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "one instruction given on two days is one finding; a single-day or worker-brief sentence is not"
+  assert_equals "2026-10-22 2026-10-23" "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks | map(.date) | join(" ")' "$json")" \
+    "the finding names each day the instruction was given"
+  assert_contains "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks[0].quote' "$json")" "keep the captain's log up to date" \
+    "the finding quotes Lee's words"
+  assert_equals true "$(jq '[.findings[] | select(.cause == "repeat-ask")][0].carded' "$json")" "a repeated ask clears the card bar"
+  assert_grep 'Asked 2026-10-22 (alpha:lee-day1): "Please keep the captain' "$md" "the digest quotes each day's ask"
+  sed -i.bak 's/model: none/model: none; ask-days: 1/' "$home/data/officers.md"
+  run_officer "$home" >/dev/null || fail "run with ask-days 1 must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" "a one-day window finds no repeat"
+  sed -i.bak 's/ask-days: 1/ask-days: 0/' "$home/data/officers.md"
+  assert_contains "$(run_officer "$home" 2>&1)" "ask-days must be a whole number" "a zero window is refused"
+  pass "fm-officer friction: the same Lee instruction on two days is one finding with quotes and dates"
+}
+
 test_registry_and_unharvested_day() {
   local home out
   home=$(make_world registry)
@@ -590,4 +631,5 @@ test_rerun_digest_is_byte_identical
 test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh
 test_captains_log_cards_read_only
+test_repeated_lee_asks_across_days
 test_registry_and_unharvested_day

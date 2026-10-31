@@ -177,6 +177,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-officer-friction.py` | The friction officer's deterministic daily pass: finds waits on Lee and other agent friction in status logs and the session archive, groups them by root cause with a proposed fix and owner, and writes its findings and a fleet-app velocity findings file |
 | `fm-officer-landing.py`  | The landing officer's daily pass: judges the fleet-app landing-truth facts against Linear (false done, false not-done) and, when its registry line allows it and the facts are fresh, closes fully landed items and reopens Done items whose PR never reached main or any release |
 | `fm-officer-progress.py` | Finds authorized unstarted work, ranks executable requests for firstmate, and writes the fleet-app progress state; [Progress officer](configuration.md#progress-officer) owns classification and execution |
+| `fm-officer-page-check.py` | The page-check officer's timed pass: reads every fleet-app page and flags cards a standing rule settles, stale cards, cards shown after they were settled, and pages older than their normal gap |
 | `fm-voice-relay.py`      | Hold the spoken conversation on this host, answer from the records, and hand real work to `fm-inbox.sh` ([voice-relay.md](voice-relay.md)) |
 | `fm-voice-client.py`     | The laptop end of the spoken interface: capture, playback, and turn timing over SSH; audio devices unverified |
 | `fm_voice_frame.py`      | The wire format both machines share, copied to the laptop beside the client          |

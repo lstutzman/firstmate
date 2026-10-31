@@ -9,7 +9,7 @@ metadata:
 # Officer roles
 
 An officer is a role agent owned by the primary home.
-It reads fleet records on its own daily cadence, writes only its findings lane, and reports one line to its first mate.
+It reads fleet records on its own cadence (daily, or every N hours), writes only its findings lane, and reports one line to its first mate.
 It never acts on the fleet.
 [`docs/configuration.md`](../../../docs/configuration.md) "Officers (data/officers.md)" owns the registry schema, and `bin/fm-officer.sh`'s header owns the mechanics.
 
@@ -17,8 +17,8 @@ It never acts on the fleet.
 
 An officer may:
 
-- read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, GitHub read-only, and, for a friction officer, the Captain's Log cards and tap replies fleet-app serves at `GET /api/captains-log` and `GET /api/captains-log/replies`; a progress officer also reads Linear and registered remote homes read-only;
-- write its own lane, `data/officers/<id>/`: dated findings (including the friction officer's velocity file and the progress officer's state and executable start requests), its digest marker, `runs.log`, and its `check-record.*` files;
+- read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, GitHub read-only, and, for a friction officer, the Captain's Log cards and tap replies fleet-app serves at `GET /api/captains-log` and `GET /api/captains-log/replies`; a progress officer also reads Linear and registered remote homes read-only; a page-check officer reads each fleet-app page's `GET` endpoint, this home's status logs, the standing rules in `data/captain-shared.md`, and a card's PR through `gh pr view`, all read-only;
+- write its own lane, `data/officers/<id>/`: dated findings (including the friction officer's velocity file, the progress officer's state and executable start requests, and the page-check officer's `state.json`), its digest marker, `runs.log`, and its `check-record.*` files;
 - print its one report line from its watcher check;
 - for a landing officer, unless its registry line says `writes: none`, correct what PropertyCompass2's release workflow (the routine Done writer) missed, through `linear-axi` `--dry-run` then `--verify`, at most `max-corrections` written items a run (skips do not count):
   set Done on an item whose every linked PR the landing-truth facts show merged and in production and that has no sub-issues, or move a Done item the facts name, with a linked PR merged that never reached main (`on_main` false) or any release, to its `reopen-state`; a Done item on main but not yet in production is release lag, reported and never written;
@@ -55,6 +55,9 @@ A `check:` wake from `state/officer-<id>.check.sh` reading `officer <id>: <date>
 For a progress digest, firstmate runs the adjacent `<date>.start-requests.sh` to enqueue the automatic starts, then processes those inbox notes through ordinary intake without another prioritization decision.
 Apply the linked contract's freshness and readiness checks first; route its `asks_for_lee` to Captain's Log cards through the ordinary hold path.
 The officer itself still never spawns or steers; executing the handoff and dispatching are firstmate's actions.
+
+For a page-check digest, route each finding by its `route` line: cl-keeper closes or corrects the named card, and a page owner fixes a stale or failing page; the officer itself never edits a card or a page.
+Read the friction digest's `repeat-ask` findings as a standing request: make the instruction automatic work, then tell Lee once.
 
 A wake reading `officer <id>: <date>: run failed <n> time(s): <reason>` means the scheduled run gave up for that date.
 Fix the named cause, then rerun the date with `bin/fm-officer.sh run <id> --date <date>`.
