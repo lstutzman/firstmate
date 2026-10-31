@@ -46,15 +46,15 @@ wait for Lee to do. One day's friction events come from three sources:
                the pass continues on the other two sources.
 
 Repeated asks are a fourth kind of event. Lee's typed messages in the last
---days days (default 7; the archive's interactive sessions only, never a
-worker's launch brief, which quotes him) are cut into sentences that give an
-instruction (keep, make sure, always, never, don't, should, must, ...). Two
-instructions on different days that share at least three content words and
-at least 70% of the shorter one's words are the same instruction; a group
-spanning two or more days, one of them the run's day, becomes a repeat-ask
-event whose evidence is each day's scrubbed quote. The fix is to make the
-instruction automatic work (a scheduled check, a hook, or a standing rule)
-so Lee stops giving it.
+--days days (default 7), from the archive's interactive and worker sessions
+and never a worker's launch brief, which quotes him, are cut into sentences
+(a long dictated run-on into clauses) that give an instruction (keep, make
+sure, always, never, don't, should, must, ...). Two instructions on different
+days that share at least three content words and at least 70% of the shorter
+one's words are the same instruction. A group spanning two or more days, one
+of them the run's day, becomes a repeat-ask event whose evidence is each day's
+scrubbed quote. The fix is to make the instruction automatic work (a scheduled
+check, a hook, or a standing rule) so Lee stops giving it.
 
 Re-running a day with unchanged inputs rewrites identical digest bytes; the
 one environment input is this host's name, which counts as the home's own
@@ -677,17 +677,33 @@ def ask_tokens(sentence):
     return frozenset(w[:-1] if len(w) > 4 and w.endswith("s") else w for w in words if w not in FILLER and len(w) > 1)
 
 
-def lee_instructions(records):
-    """Instruction sentences Lee typed in one transcript: (epoch, sentence) in record order."""
+def lee_clauses(text):
+    """Sentences of a typed message; a long run-on of dictated speech is cut into clauses."""
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+        if len(sentence) > MAX_ASK_LEN:
+            yield from re.split(r",\s+|;\s+|\s+(?:and|but|so)\s+", sentence)
+        else:
+            yield sentence
+
+
+def lee_instructions(records, worker):
+    """Instruction clauses Lee typed in one transcript: (epoch, clause) in record order.
+    A worker session's first prompt is firstmate's launch brief, which quotes Lee, so it is skipped."""
     out = []
+    skip = worker
     for rec in records:
         text = user_text(rec) if rec.get("type") == "user" else None
-        if text is None or MACHINE_PROMPT_RE.match(text) or BASH_INPUT_RE.match(text.strip()) or len(text) > 4000:
+        if text is None:
             continue
-        for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
-            sentence = sentence.strip()
-            if 12 <= len(sentence) <= MAX_ASK_LEN and INSTRUCTION_RE.search(sentence) and len(ask_tokens(sentence)) >= ASK_MIN_SHARED:
-                out.append((epoch_of(rec.get("timestamp")), sentence))
+        if skip:
+            skip = False
+            continue
+        if MACHINE_PROMPT_RE.match(text) or BASH_INPUT_RE.match(text.strip()) or len(text) > 6000:
+            continue
+        for clause in lee_clauses(text):
+            clause = clause.strip()
+            if 12 <= len(clause) <= MAX_ASK_LEN and INSTRUCTION_RE.search(clause) and len(ask_tokens(clause)) >= ASK_MIN_SHARED:
+                out.append((epoch_of(rec.get("timestamp")), clause))
     return out
 
 
@@ -703,10 +719,11 @@ def scan_asks(archive, date, days):
                 continue
             folder = os.path.join(archive, entry.get("folder") or "")
             index = triage.load_json(os.path.join(folder, "index.json")) or {}
-            if triage.classify(index.get("first_prompt") or "") != "other":
+            kind = triage.classify(index.get("first_prompt") or "")
+            if kind not in ("other", "worker"):
                 continue
             records = records_of(os.path.join(folder, "transcript.jsonl.gz"))
-            for at, sentence in lee_instructions(records or []):
+            for at, sentence in lee_instructions(records or [], kind == "worker"):
                 out.append({"date": day, "at": at, "session": "%s:%s" % (entry.get("machine"), entry.get("session_id") or entry.get("name")),
                             "text": scrub(sentence, MAX_ASK_LEN)})
     return sorted(out, key=lambda a: (a["date"], a["at"] or 0, a["session"], a["text"]))

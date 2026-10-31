@@ -581,7 +581,7 @@ EOF
   cat > "$TMP_ROOT/repeat/day2.json" <<'EOF'
 {"sessions": [
  {"machine": "alpha", "id": "lee-day2", "first_prompt": "hello", "calls": [], "raw": [
-  {"type": "user", "timestamp": "2026-10-23T09:00:00.000Z", "message": {"content": "I'm constantly having to say, um, keep the captain's log up to date, you know."}},
+  {"type": "user", "timestamp": "2026-10-23T09:00:00.000Z", "message": {"content": "I keep coming back to this and honestly I see it all the time, um, we spend a lot of time on pages and cards that nobody has looked at for days and nobody owns, and I am constantly having to come back to the same chat window and say, hey, keep the captain's log up to date, you know, every single page of it, because it should really be on a time schedule."}},
   {"type": "user", "timestamp": "2026-10-23T09:10:00.000Z", "message": {"content": "Never push straight to the shared database branch."}}]},
  {"machine": "alpha", "id": "worker-day2", "first_prompt": "Firstmate operational input waiting: read the brief", "calls": [], "raw": [
   {"type": "user", "timestamp": "2026-10-23T09:20:00.000Z", "message": {"content": "Never push straight to the shared database branch, a brief quoting Lee."}}]}]}

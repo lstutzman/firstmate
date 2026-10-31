@@ -81,16 +81,16 @@ url=\${@: -1}
 f="$dir/\$(printf '%s' "\${url#https://app.test}" | tr '/?=' '___')"
 if [ -f "\$f" ]; then cat "\$f"; printf '\n200'; else printf '\n404'; fi
 SH
-  cat > "$fakebin/gh" <<SH
+  cat > "$fakebin/gh-axi" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$fakebin/gh.calls"
-case "\$*" in
-  "pr view 7 --repo ex/repo --json state") echo '{"state":"MERGED"}' ;;
-  "pr view 8 --repo ex/repo --json state") echo '{"state":"OPEN"}' ;;
+case "\$2 \$3" in
+  "GET /repos/ex/repo/pulls/7") echo 'PRSTATE {"state":"closed","merged":true}' ;;
+  "GET /repos/ex/repo/pulls/8") echo 'PRSTATE {"state":"open","merged":false}' ;;
   *) exit 1 ;;
 esac
 SH
-  chmod +x "$fakebin/curl" "$fakebin/gh"
+  chmod +x "$fakebin/curl" "$fakebin/gh-axi"
   printf '%s\n' "$home"
 }
 
@@ -174,7 +174,7 @@ test_scheduled_slot_and_read_only_boundary() {
   assert_not_contains "$calls" "-X" "no request carries a method override"
   assert_not_contains "$calls" "--data" "no request carries a body"
   assert_not_contains "$calls" "PUT" "no request writes"
-  assert_not_contains "$(cat "$TMP_ROOT/slot/fakebin/gh.calls")" "merge" "the forge is only read"
+  assert_equals "" "$(grep -v '^api GET ' "$TMP_ROOT/slot/fakebin/gh.calls" || true)" "the forge is only read with GET requests"
   assert_equals "" "$(cd "$home" && find . -path ./data/officers/page-check -prune -o -newer "$home/data/officers.md" -type f -print | grep -v '^./state/' || true)" \
     "nothing outside the lane is written"
   pass "fm-officer page-check: a scheduled run takes the slot key and only reads"

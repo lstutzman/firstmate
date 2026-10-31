@@ -973,7 +973,7 @@ The triage and friction officers read this home and each local second mate home 
 The page-check officer keeps the fleet app's pages current without Lee asking.
 It is a role of its own rather than part of the friction officer because it reads live pages every few hours, while the friction officer needs a harvested archive day and so can only run once a day; the friction officer still owns Lee's repeated asks (below).
 `bin/fm-officer-page-check.py`'s header owns the checks and the table of pages with their normal gaps.
-It only reads: one `GET` per page through `curl`, this home's status logs, and `gh pr view` for a PR a card names.
+It only reads: one `GET` per page through `curl`, this home's status logs, and `gh-axi api GET` for the state of a PR a card names.
 
 Its findings are one of four kinds, each naming the page and the object so firstmate can route the fix:
 
@@ -994,7 +994,8 @@ An unreachable app is a finding, not a failed run.
 
 ### Repeated asks (friction officer)
 
-The friction officer also compares Lee's typed instructions across the last `ask-days` days of the session archive, interactive sessions only, never a worker's launch brief.
+The friction officer also compares Lee's typed instructions across the last `ask-days` days of the session archive (interactive and worker sessions, never a worker's launch brief, which quotes him).
+It sees only what the archive holds: a message Lee gave somewhere that is not archived as a Claude Code transcript is not counted.
 An instruction given on two or more days, one of them the run's day, becomes a `repeat-ask` finding with Lee's scrubbed sentence for each day, so a repeat becomes automatic work instead of Lee repeating himself.
 Two instructions are the same when they share at least three content words and at least 70% of the shorter one's words.
 Session text stays on the machines that already hold it and is never sent to a model or service.

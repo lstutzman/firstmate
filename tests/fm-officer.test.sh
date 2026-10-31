@@ -319,6 +319,44 @@ test_interval_cadence_runs_once_per_slot() {
   pass "fm-officer: an interval cadence runs once per slot and ensure uses the interval"
 }
 
+wait_for_failures() {  # <home> <key> <count>: until the lane has logged that many failed attempts for the slot.
+  local i=0
+  until [ "$(grep -c " $2 failed" "$1/data/officers/page-check/runs.log" 2>/dev/null || true)" -ge "$3" ] 2>/dev/null \
+    && [ ! -d "$1/data/officers/page-check/.run.lock" ]; do
+    i=$((i + 1))
+    [ "$i" -lt 300 ] || fail "failed attempt $3 for $2 was never logged"
+    sleep 0.1
+  done
+}
+
+test_interval_failure_is_reported_once_across_slots() {
+  local home fakebin base out n key=2026-10-24T06 next=2026-10-24T08
+  home="$TMP_ROOT/intfail/home"
+  officer_home "$home"
+  fakebin=$(fm_fakebin "$TMP_ROOT/intfail")
+  printf '#!/usr/bin/env bash\nprintf "\\n404"\n' > "$fakebin/curl"
+  chmod +x "$fakebin/curl"
+  printf -- '- page-check - Checks pages (role: pagecheck; cadence: every 2h; app: https://app.test; model: none; added 2026-10-24)\n' > "$home/data/officers.md"
+  PATH="$fakebin:$PATH" FM_OFFICER_NOW=$NOW FM_HOME="$home" "$OFFICER" register page-check >/dev/null || fail "register must succeed"
+  # A directory where the lane keeps state.json makes every run fail.
+  mkdir -p "$home/data/officers/page-check/state.json"
+  base=$((NOW - 3600))   # 06:00, the start of the slot
+  for n in 1 2 3; do
+    out=$(PATH="$fakebin:$PATH" FM_OFFICER_RETRY_SECS=1800 FM_OFFICER_NOW=$((base + (n - 1) * 1800)) FM_HOME="$home" "$OFFICER" check page-check)
+    assert_equals "" "$out" "attempt $n is silent"
+    wait_for_failures "$home" "$key" "$n"
+  done
+  out=$(PATH="$fakebin:$PATH" FM_OFFICER_RETRY_SECS=1800 FM_OFFICER_NOW=$((base + 5400)) FM_HOME="$home" "$OFFICER" check page-check)
+  assert_contains "$out" "officer page-check: $key: run failed 3 time(s)" "an interval officer reports its failure after the last attempt in the slot"
+  for n in 1 2 3; do
+    PATH="$fakebin:$PATH" FM_OFFICER_RETRY_SECS=1800 FM_OFFICER_NOW=$((base + 7200 + (n - 1) * 1800)) FM_HOME="$home" "$OFFICER" check page-check >/dev/null
+    wait_for_failures "$home" "$next" "$n"
+  done
+  out=$(PATH="$fakebin:$PATH" FM_OFFICER_RETRY_SECS=1800 FM_OFFICER_NOW=$((base + 7200 + 5400)) FM_HOME="$home" "$OFFICER" check page-check)
+  assert_equals "" "$out" "the same failure in the next slot is not reported again"
+  pass "fm-officer: a failing interval officer reports once, even though attempts reset each slot"
+}
+
 test_secondmate_home_runs_no_officers() {
   local home out rc
   home=$(make_world secondmate empty_spec)
@@ -387,5 +425,6 @@ test_failure_after_a_reported_digest_is_reported_once
 test_timed_out_run_counts_as_an_attempt
 test_ensure_reports_gaps_and_is_silent_when_healthy
 test_interval_cadence_runs_once_per_slot
+test_interval_failure_is_reported_once_across_slots
 test_secondmate_home_runs_no_officers
 test_run_writes_only_its_lane_and_acts_on_no_fleet

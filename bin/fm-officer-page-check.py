@@ -23,7 +23,7 @@ card, a page owner fixes a page). It acts on nothing itself.
                  words. Other lines of the file are ignored.
   stale-card     a shown card that is past its snooze date, unanswered for
                  --stale-days, already answered, names a merged or closed PR
-                 (read with `gh pr view`, at most MAX_PR_LOOKUPS a run), or
+                 (read with `gh-axi api GET`, at most MAX_PR_LOOKUPS a run), or
                  whose keyed status line a later `resolved` line settled.
   shown-after-done  a card shown although its record is settled: its status
                  line was resolved before the card was (re)raised, or the app's
@@ -165,12 +165,15 @@ def pr_state(repo, number, cache, budget):
         if budget[0] <= 0:
             return None
         budget[0] -= 1
-        proc = subprocess.run(["gh", "pr", "view", number, "--repo", repo, "--json", "state"],
+        proc = subprocess.run(["gh-axi", "api", "GET", "/repos/%s/pulls/%s" % (repo, number), "--jq",
+                               '"PRSTATE " + ({state: .state, merged: .merged} | tojson)'],
                               capture_output=True, check=False)
+        out = proc.stdout.decode("utf-8", "replace").strip()
         try:
-            cache[key] = json.loads(proc.stdout.decode("utf-8")).get("state") if proc.returncode == 0 else None
+            got = json.loads(out[8:]) if proc.returncode == 0 and out.startswith("PRSTATE ") else {}
         except ValueError:
-            cache[key] = None
+            got = {}
+        cache[key] = ("merged" if got.get("merged") else got.get("state")) if got.get("state") in ("open", "closed") else None
     return cache[key]
 
 
@@ -183,8 +186,8 @@ def finding(kind, page, ref, title, evidence, route):
             "evidence": evidence, "route": route}
 
 
-def card_findings(log, rules, settled, known_closed, now, stale_days):
-    out, cache, budget = [], {}, [MAX_PR_LOOKUPS]
+def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
+    out, cache, budget, unread = [], {}, [MAX_PR_LOOKUPS], set()
     page = "Captain's Log"
     shown = [c for c in log.get("cards") or [] if isinstance(c, dict) and c.get("state") in ("asked", "snoozed")]
     shown += [dict(s, id="top10-%s" % s.get("id")) for s in log.get("suggestions") or []
@@ -226,9 +229,13 @@ def card_findings(log, rules, settled, known_closed, now, stale_days):
             out.append(finding("stale-card", page, cid, title, "already answered but still shown", "cl-keeper: close"))
         for repo, number in PR_RE.findall(text):
             state = pr_state(repo, number, cache, budget)
-            if state in ("MERGED", "CLOSED"):
+            if state in ("merged", "closed"):
                 out.append(finding("stale-card", page, "%s:%s#%s" % (cid, repo, number), title,
-                                   "names %s#%s, which is %s" % (repo, number, state.lower()), "cl-keeper: close or correct"))
+                                   "names %s#%s, which is %s" % (repo, number, state), "cl-keeper: close or correct"))
+            elif state is None:
+                unread.add("%s#%s" % (repo, number))
+    if unread:
+        coverage.append("PR state unreadable (budget %d lookups a run) for %s" % (MAX_PR_LOOKUPS, ", ".join(sorted(unread)[:8])))
     return out
 
 
@@ -298,7 +305,7 @@ def run(args):
             else:
                 coverage.append("card record for source %s was %s" % (source, fstate))
         findings += card_findings(doc if isinstance(doc, dict) else {}, rules, settled_by_status(args.home), known_closed,
-                                  now, args.stale_days)
+                                  now, args.stale_days, coverage)
     findings.sort(key=lambda f: f["id"])
     seen_path = os.path.join(args.out, "state.json")
     try:

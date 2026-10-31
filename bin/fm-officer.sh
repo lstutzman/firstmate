@@ -32,7 +32,8 @@
 # "<epoch> <key> ok <n-actionable>" or "<epoch> <key> failed <reason>". On
 # success the lane's digest file holds "DIGEST <key> <n-actionable> <path>".
 # Re-running a key rewrites that key's findings, byte-identical when its
-# inputs are unchanged.
+# inputs are unchanged (a role that remembers what it already reported, as
+# pagecheck does, also differs in which findings it marks new).
 #
 # check is the body of the watcher check. It is fast and never contacts
 # another host:
@@ -535,14 +536,18 @@ last_attempt() { awk -v d="$1" '$2 == d {t=$1} END {print t + 0}' "$OFFICER_LANE
 
 runs_for() { cat "$OFFICER_LANE/runs.log" 2>/dev/null | awk -v d="$1" '$2 == d {n++} END {print n + 0}'; }
 
-report_once() {  # <digest|failure> <line>
-  [ "$(cat "$OFFICER_LANE/check-record.$1" 2>/dev/null)" = "$2" ] && return 0
-  printf '%s\n' "$2" > "$OFFICER_LANE/check-record.$1" || return 0
+# report_once <digest|failure> <line> [stamp]: prints the line unless its stamp (default the line)
+# is the last one reported; an interval officer's failure stamp leaves out the slot, so one
+# persistent failure is reported once, not every slot.
+report_once() {
+  local stamp=${3:-$2}
+  [ "$(cat "$OFFICER_LANE/check-record.$1" 2>/dev/null)" = "$stamp" ] && return 0
+  printf '%s\n' "$stamp" > "$OFFICER_LANE/check-record.$1" || return 0
   printf '%s\n' "$2"
 }
 
 action_check() {
-  local id=$1 now cadence at date since tries max retry digest n path reason hms
+  local id=$1 now cadence at date since tries max retry digest n path reason hms fit stamp
   secondmate_home && return 0
   ( load_officer "$id" ) >/dev/null 2>&1 || return 0
   load_officer "$id"
@@ -563,6 +568,12 @@ action_check() {
   fi
   max=${FM_OFFICER_ATTEMPTS:-3}
   retry=${FM_OFFICER_RETRY_SECS:-3600}
+  if [[ "$cadence" == every* ]]; then
+    # Attempts count within one slot, so no more can be made than retries fit in it.
+    fit=$(( ($(cadence_period "$cadence") + ${retry:-3600} - 1) / ${retry:-3600} ))
+    [ "$max" -le "$fit" ] || max=$fit
+    ! finished "$date" "$since" || rm -f "$OFFICER_LANE/check-record.failure"
+  fi
   tries=$(attempts "$date" "$since")
   if ! [ "$(epoch_fmt "$now" %H:%M)" \< "$at" ] && ! finished "$date" "$since" && ! lock_held \
     && [ "$tries" -lt "$max" ] && [ $((now - $(last_attempt "$date"))) -ge "$retry" ]; then
@@ -581,7 +592,9 @@ action_check() {
   if ! finished "$date" "$since" && ! lock_held && [ "$tries" -ge "$max" ]; then
     reason=$(awk -v d="$date" '$2 == d && $3 == "failed" {$1=$2=$3=""; r=$0} END {print r}' \
       "$OFFICER_LANE/runs.log" 2>/dev/null | sed 's/^ *//')
-    report_once failure "officer $id: $date: run failed $tries time(s): $reason"
+    stamp=
+    [[ "$cadence" == every* ]] && stamp="run failed $tries time(s): $reason"
+    report_once failure "officer $id: $date: run failed $tries time(s): $reason" "$stamp"
   fi
   return 0
 }
