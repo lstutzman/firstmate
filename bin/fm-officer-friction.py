@@ -88,9 +88,11 @@ the matched refusal class, never transcript prose.
 A finding's id is a slug of its cause, sub and name alone, so it is the same
 every night (at most 54 characters, which fleet-app's tap card needs). Its state
 is read-only: settled when a line in a home's data/captain-shared.md that says
-"standing rule" or "standing exception" names the id (alone or as friction-<id>),
-names the title, or fits the finding's category (SETTLED_BY, which for a finding
-about one tool, hook or service also needs its name); else started when a Start
+"standing rule" or "standing exception" names the id (alone or as friction-<id>)
+or its category key written "settles: <cause>/<sub>" (for example "settles:
+policy/merge-word"; a finding about one tool, hook or service also needs the
+line to name it, or the key to carry it as "settles: <cause>/<sub>/<name>");
+no looser wording settles anything; else started when a Start
 fix tap for it sits in a home's state/inbox (the note fleet-app's shim files,
 "Captain's Log reply [friction-<id>]: Start fix: <title>") or in
 <captains-log>/replies?since=<30 days ago>, or a data/backlog.md line or a task's branch= names it
@@ -1039,39 +1041,24 @@ MAX_NOTE_BYTES = 65536
 REPLY_DAYS = 30
 
 
-# A standing-rule line settles a finding by its category: the line must match its (cause, sub) pattern and,
-# for a finding about one tool, hook or service, name it. Lee writes standing rules as patterns, not ids.
-SETTLED_BY = {
-    ("policy", "merge-word"): r"merge word",
-    ("policy", "approval"): r"approv|\bword\b|\bgo\b",
-    ("policy", "credential-approval"): r"credential|secret",
-    ("credential", "create-denied"): r"creat\w*.{0,40}(?:secret|credential|item)",
-    ("credential", "scope"): r"scopes?\b",
-    ("credential", "login"): r"sign(?:ed)?[- ]?in|log(?:in|ged)",
-    ("credential", "missing"): r"credential|secret|token",
-    ("credential", "console-step"): r"console|dashboard|portal",
-    ("credential", "ssh-key"): r"ssh key|authorized_keys",
-    ("credential", "lee-session"): r"signed-in session|op run",
-    ("sudo", "sudo"): r"sudo",
-    ("guard-hook", "secret-hook"): r"secret.{0,20}hook|hook.{0,40}(?:startup|secret)",
-    ("guard-hook", "gate-edit"): r"allow_gate_edit|gate",
-    ("guard-hook", "refused"): r"hook|guard",
-    ("guard-hook", "other"): r"hook|guard",
-    ("service-limit", "rate-limit"): r"rate[- ]?limit",
-    ("missing-tool", "tool"): r"missing tool|install",
-    ("environment", "wrong-cwd"): r"cwd|directory|worktree",
-    ("environment", "ssh-to-self"): r"\bssh\b",
-    ("lee-command", "run"): r"by hand|lee runs",
-}
-SETTLED_BY = {k: re.compile(v) for k, v in SETTLED_BY.items()}
+SETTLES_RE = re.compile(r"settles:\s*([a-z0-9-]+)/([a-z0-9-]+)(?:/([^\s,;)]+))?")
 
 
 def settles(line, f, rx):
-    """Whether a lowercased standing-rule line covers a finding: it names the id or the title, or fits the category."""
-    if rx.search(line) or (f["title"] and f["title"].split(": ")[0].lower() in line):
+    """Whether a lowercased standing-rule line covers a finding: it names the id, or its key as settles: <cause>/<sub>.
+
+    For a finding about one tool, hook or service the key also needs its name: settles: <cause>/<sub>/<name>,
+    or the name elsewhere on the line.
+    """
+    if rx.search(line):
         return True
-    pattern = SETTLED_BY.get((f["cause"], f["sub"]))
-    return bool(pattern and pattern.search(line) and (not f["name"] or f["name"].lower() in line))
+    name = (f["name"] or "").lower()
+    for cause, sub, named in SETTLES_RE.findall(line):
+        if (cause, sub) != (f["cause"], f["sub"]):
+            continue
+        if named.rstrip(".") == name if named else (not name or name in line):
+            return True
+    return False
 
 
 def id_re(finding_id):
@@ -1145,7 +1132,7 @@ def load_replies(captains_log, now):
 def finding_states(findings, homes, replies):
     """{finding id: (state, link)}: open, started (a tap, task or pull request names it) or settled.
 
-    A standing-rule line in a home's data/captain-shared.md that names the finding id settles it, and wins
+    A standing-rule line in a home's data/captain-shared.md that names the finding id or key settles it, and wins
     over a start. Started comes from a Start fix tap in a home's inbox or in the replies, or a backlog
     line or task branch that names the id; its link is the first pull request or https URL found there.
     """
@@ -1402,7 +1389,7 @@ def main(argv):
         triage.join_sessions(scanned, homes)
         triage.classify_mates(scanned, homes)
         hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
-        cards, log, replies = [], {"state": "not-set"}, []
+        cards, log, replies, replies_gap = [], {"state": "not-set"}, [], None
         if args.captains_log:
             try:
                 cards, log = load_captains_log(args.captains_log), {"state": "read"}
@@ -1410,9 +1397,13 @@ def main(argv):
                 log = {"state": "unreachable", "reason": str(exc)}
             try:
                 replies = load_replies(args.captains_log, now)
-            except RuntimeError:
-                pass  # taps are one input to a finding's state; the inbox and task records still count
+            except RuntimeError as exc:
+                replies_gap = exc
         doc = summarise(scanned, homes, hosts, args.model, cards, log, CHANNEL_LOGS | set(args.channel))
+        if replies_gap:
+            doc["coverage"]["notes"].append(
+                "The Captain's Log replies are %s, so Start fix taps seen only there are not counted; states come"
+                " from inboxes, the backlog and task records." % replies_gap)
     except (RuntimeError, ValueError) as exc:
         print("fm-officer-friction: %s" % exc, file=sys.stderr)
         return 1

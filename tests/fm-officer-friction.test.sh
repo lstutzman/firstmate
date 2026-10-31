@@ -376,8 +376,15 @@ test_velocity_ids_counts_and_states() {
   printf 'Standing rule: the missing tools are settled (friction-missing-tool-tool-slopwatch).\nNote: lee-command-run is not a standing line.\n' \
     > "$home/data/captain-shared.md"
   printf 'Standing exception: ssh keys are now installed on every host.\n' >> "$home/data/captain-shared.md"
-  printf 'Standing rule: Cloudflare token scopes are widened once, with the full list, and kept.\n' >> "$home/data/captain-shared.md"
+  printf 'Standing rule: Cloudflare token scopes are widened once, with the full list, and kept (settles: credential/scope/cloudflare).\n' \
+    >> "$home/data/captain-shared.md"
+  printf 'Standing rule: Lee-step ssh lines run locally on their own host (settles: environment/ssh-to-self).\n' >> "$home/data/captain-shared.md"
+  printf 'Standing rule: a missing tool is installed when first asked for (settles: missing-tool/tool).\n' >> "$home/data/captain-shared.md"
   printf 'Standing rule: image generation goes through Codex, never the paid API.\n' >> "$home/data/captain-shared.md"
+  cat >> "$home/data/captain-shared.md" <<'EOF2'
+- Standing rule: every code change, and anything like it (PRs, config, migrations, fixes found during other work), must go through a Linear item. Append to an existing open item when the change belongs to it; otherwise create a new one before the work starts. The PR references the item.
+- Standing rule, widened 2026-10-31 (Lee, main chat, 13:07:58Z): "old branches and logs and backups and stuff that we no longer need. That's supposed to be deleted. I'm not supposed to even be bothered with that question." Never card routine clean-up for Lee. Delete old branches, task copies, worktrees, logs and backups that are no longer needed. "No longer needed" still means no unique unlanded work: an unmerged branch goes only when its PR is closed or merged, and never while a live worktree or open PR uses it. The friction officer answers a Bosun "should we delete this?" with this rule. Fleet rules §6 still lists deletion as needing approval.
+EOF2
   FM_HOME="$home" FM_OFFICER_NOW="$NOW" "$OFFICER" run friction --date "$DATE" >/dev/null || fail "run with records must succeed"
   state_of() { jq -r --arg i "$1" '[.bottlenecks[] | select(.id == $i)][0] | "\(.state) \(.link // "-")"' "$vel"; }
   assert_equals "started -" "$(state_of sudo-sudo)" "a Start fix tap in the inbox starts a finding, with no link to give"
@@ -386,9 +393,15 @@ test_velocity_ids_counts_and_states() {
     "a backlog task that names the finding starts it, linked to the pull request its status log names"
   assert_equals "settled -" "$(state_of missing-tool-tool-slopwatch)" "a standing-rule line that names the id settles it"
   assert_equals "settled -" "$(state_of credential-scope-cloudflare)" \
-    "a standing-rule line settles a finding by its category and the service it names, not only by id"
+    "a standing-rule line settles a finding by its key with the service named, settles: <cause>/<sub>/<name>"
+  assert_equals "settled -" "$(state_of environment-ssh-to-self)" \
+    "a standing-rule line settles a finding about no one tool by its key, settles: <cause>/<sub>"
   assert_equals "open -" "$(state_of missing-tool-tool-openjdk)" \
-    "a category line that does not name the finding's tool settles nothing"
+    "a key line that does not name the finding's tool settles nothing"
+  assert_equals "open -" "$(state_of credential-ssh-key)" "standing wording about ssh keys with no id or key settles nothing"
+  assert_equals "open - open - started -" \
+    "$(state_of environment-wrong-cwd) $(state_of guard-hook-refused-pre-bash-secret-exposure-py) $(state_of sudo-sudo)" \
+    "the Linear and clean-up standing rules (go, approval, worktrees) settle nothing"
   assert_equals "open -" "$(state_of lee-command-run)" "a line that names the id without saying standing rule settles nothing"
 
   # Replies the Captain's Log serves (beside the cards) also start a finding, and carry the answer's link.
@@ -406,6 +419,20 @@ SH
   PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "run with replies must succeed"
   assert_equals "started https://github.com/o/r/pull/9" "$(state_of guard-hook-secret-hook)" \
     "a Start fix reply on the finding's tap card starts it, linked to the answer's pull request"
+  assert_equals "0" "$(jq '[.notes[] | select(contains("replies"))] | length' "$vel")" "replies that were read leave no gap note"
+
+  # An unreadable replies fetch is a coverage note, and the run still succeeds on the other records.
+  cat > "$fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  */replies\?since=20*) printf 'not json\n' ;;
+  *) printf '%s\n' '{"value":{"cards":[]}}' ;;
+esac
+SH
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "a run whose replies are unreadable must still succeed"
+  assert_equals "1" "$(jq '[.notes[] | select(contains("replies are unreadable (not JSON)"))] | length' "$vel")" \
+    "an unreadable replies fetch is named in the velocity file's notes"
+  assert_equals "open -" "$(state_of guard-hook-secret-hook)" "with the replies unread, a finding started only there is open"
   pass "fm-officer friction: findings carry stable ids, event counts and a read-only state"
 }
 
