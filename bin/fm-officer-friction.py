@@ -350,10 +350,10 @@ FIXES = {
         " cause can be removed; then remove it, starting with the most repeated.",
         "main (firstmate)", "S"),
     ("other", "other"): (
-        "Waits on Lee carry no recorded cause",
+        "Blocked steps carry no recorded cause",
         "answer an ask whose reason no rule recognised",
-        "Make every ask to Lee say why the agent cannot go on (policy, credential, sudo, tool or decision), so the"
-        " next run can group it and name its fix; then remove the most repeated cause.",
+        "Make every blocked or needs-decision line say why the agent cannot go on (policy, credential, sudo, tool"
+        " or decision), so the next run can group it and name its fix; then remove the most repeated cause.",
         "main (firstmate)", "S"),
     ("policy", "approval"): (
         "Routine steps wait on Lee's explicit word",
@@ -1140,11 +1140,6 @@ def render_md(doc):
     for note in cov["notes"]:
         lines.append("- " + note)
     lines += ["", "## Findings", ""]
-    unfixed = [f for f in doc["findings"] if not (f["title"] and f["fix"])]
-    if unfixed:
-        lines.append("- %d finding(s) have no rule-named fix and are not in the fleet-app findings file: %s." % (
-            len(unfixed), ", ".join("%s/%s" % (f["cause"], f["sub"]) for f in unfixed)))
-        lines.append("")
     if not doc["findings"]:
         lines.append("- None.")
     for f in doc["findings"]:

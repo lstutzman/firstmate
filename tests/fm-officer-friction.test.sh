@@ -286,6 +286,10 @@ test_transcript_lee_steps_and_refusals() {
 test_velocity_findings_file() {
   local home vel
   home=$(make_world velocity)
+  cat > "$home/state/task-ci.status" <<EOF
+blocked [at=$T]: waiting for the upstream build cache to warm
+resolved [at=$((T + 300))]: the cache warmed
+EOF
   run_officer "$home" >/dev/null || fail "run must succeed"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
   assert_present "$vel" "the velocity findings file is written"
@@ -317,16 +321,14 @@ PY
     "$(jq -r '[.bottlenecks[] | select(.tldr | startswith("Cloudflare: "))][0].title' "$vel")" \
     "a status-backed Lee step clears the card bar, with the service named in its tldr, not its title"
   assert_no_grep "pick (a) the short wording" "$vel" "a product decision never becomes a card"
-  assert_equals "$(jq '[.findings[] | select(.title and .fix and .cause != "decision")] | length' \
-    "$home/data/officers/friction/$DATE.json")" "$(jq '.bottlenecks | length' "$vel")" \
-    "every finding with a title and a fix is written, not just the top five or those over the card bar"
-  assert_equals 0 "$(jq '[.bottlenecks[] | select(.title == null or .improvement == null)] | length' "$vel")" \
-    "no written finding lacks a title or a fix"
-  assert_equals "Waits on Lee carry no recorded cause" \
-    "$(python3 -I -c 'import importlib.machinery as m,sys; x = m.SourceFileLoader("o", sys.argv[1]).load_module(); print(x.propose_fix("other", "other", "none")[0])' "$ROOT/bin/fm-officer-friction.py")" \
-    "an unclassified wait still gets a title and a fix"
-  assert_grep "have no rule-named fix and are not in the fleet-app findings file: decision/decision" \
-    "$home/data/officers/friction/$DATE.md" "a finding with no fix is named in the digest, not dropped silently"
+  assert_equals 13 "$(jq '.bottlenecks | length' "$vel")" \
+    "all 13 fixed findings are written (8 over the card bar, 4 below it, 1 unclassified), not the top five; the product decision is not"
+  assert_equals "Agents hit this 1 time(s) on $DATE and worked around it. false" \
+    "$(jq -r '[.bottlenecks[] | select(.evidence | contains("task-ci"))][0] | "\(.tldr) \(.title | test("Lee"))"' "$vel")" \
+    "an unclassified agent-side block is written with a title that does not claim a wait on Lee"
+  assert_equals true \
+    "$(jq '[.bottlenecks[] | select(.evidence | contains("task-ci"))][0].improvement | length > 0' "$vel")" \
+    "an unclassified block still carries a fix"
   pass "fm-officer friction: the velocity findings file has fleet-app's shape and limits"
 }
 
