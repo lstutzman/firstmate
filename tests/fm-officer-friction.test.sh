@@ -375,16 +375,17 @@ test_velocity_ids_counts_and_states() {
   printf 'done [at=1]: PR https://github.com/o/r/pull/7 checks green\n' > "$home/state/fix-approval.status"
   printf 'Standing rule: the missing tools are settled (friction-missing-tool-tool-slopwatch).\nNote: lee-command-run is not a standing line.\n' \
     > "$home/data/captain-shared.md"
-  printf 'Standing exception: ssh keys are now installed on every host.\n' >> "$home/data/captain-shared.md"
-  printf 'Standing rule: Cloudflare token scopes are widened once, with the full list, and kept (settles: credential/scope/cloudflare).\n' \
-    >> "$home/data/captain-shared.md"
-  printf 'Standing rule: Lee-step ssh lines run locally on their own host (settles: environment/ssh-to-self).\n' >> "$home/data/captain-shared.md"
-  printf 'Standing rule: a missing tool is installed when first asked for (settles: missing-tool/tool).\n' >> "$home/data/captain-shared.md"
-  printf 'Standing rule: image generation goes through Codex, never the paid API.\n' >> "$home/data/captain-shared.md"
-  cat >> "$home/data/captain-shared.md" <<'EOF2'
+  {
+    printf 'Standing exception: ssh keys are now installed on every host.\n'
+    printf 'Standing rule: Cloudflare token scopes are widened once, with the full list, and kept (settles: credential/scope/cloudflare).\n'
+    printf 'Standing rule: Lee-step ssh lines run locally on their own host (settles: environment/ssh-to-self).\n'
+    printf 'Standing rule: a missing tool is installed when first asked for (settles: missing-tool/tool).\n'
+    printf 'Standing rule: image generation goes through Codex, never the paid API.\n'
+    cat <<'EOF2'
 - Standing rule: every code change, and anything like it (PRs, config, migrations, fixes found during other work), must go through a Linear item. Append to an existing open item when the change belongs to it; otherwise create a new one before the work starts. The PR references the item.
 - Standing rule, widened 2026-10-31 (Lee, main chat, 13:07:58Z): "old branches and logs and backups and stuff that we no longer need. That's supposed to be deleted. I'm not supposed to even be bothered with that question." Never card routine clean-up for Lee. Delete old branches, task copies, worktrees, logs and backups that are no longer needed. "No longer needed" still means no unique unlanded work: an unmerged branch goes only when its PR is closed or merged, and never while a live worktree or open PR uses it. The friction officer answers a Bosun "should we delete this?" with this rule. Fleet rules §6 still lists deletion as needing approval.
 EOF2
+  } >> "$home/data/captain-shared.md"
   FM_HOME="$home" FM_OFFICER_NOW="$NOW" "$OFFICER" run friction --date "$DATE" >/dev/null || fail "run with records must succeed"
   state_of() { jq -r --arg i "$1" '[.bottlenecks[] | select(.id == $i)][0] | "\(.state) \(.link // "-")"' "$vel"; }
   assert_equals "started -" "$(state_of sudo-sudo)" "a Start fix tap in the inbox starts a finding, with no link to give"
