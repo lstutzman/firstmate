@@ -1,0 +1,107 @@
+== run 1: real captain-shared.md copy (no settles: lines) ==
+DIGEST 2026-10-23 8 data/officers/friction/2026-10-23.md
+{
+  "totals": {
+    "events": 18,
+    "findings": 13
+  },
+  "n": 12,
+  "states": [
+    {
+      "id": "environment-ssh-to-self",
+      "events": 3,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "sudo-sudo",
+      "events": 3,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "credential-scope-cloudflare",
+      "events": 1,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "policy-credential-approval",
+      "events": 1,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "guard-hook-secret-hook",
+      "events": 1,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "lee-command-run",
+      "events": 2,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "credential-ssh-key",
+      "events": 1,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "missing-tool-tool-openjdk",
+      "events": 1,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "environment-wrong-cwd",
+      "events": 1,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "guard-hook-refused-pre-bash-secret-exposure-py",
+      "events": 1,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "missing-tool-tool-slopwatch",
+      "events": 1,
+      "state": "open",
+      "link": null
+    },
+    {
+      "id": "service-limit-rate-limit-1password",
+      "events": 1,
+      "state": "open",
+      "link": null
+    }
+  ]
+}
+== run 2: add 'Standing rule: ... (settles: policy/approval)' and 'settles: sudo/sudo' ==
+DIGEST 2026-10-23 8 data/officers/friction/2026-10-23.md
+{"id":"environment-ssh-to-self","events":3,"state":"open"}
+{"id":"sudo-sudo","events":3,"state":"settled"}
+{"id":"credential-scope-cloudflare","events":1,"state":"open"}
+{"id":"policy-credential-approval","events":1,"state":"open"}
+{"id":"guard-hook-secret-hook","events":1,"state":"open"}
+{"id":"lee-command-run","events":2,"state":"open"}
+{"id":"credential-ssh-key","events":1,"state":"open"}
+{"id":"missing-tool-tool-openjdk","events":1,"state":"settled"}
+{"id":"environment-wrong-cwd","events":1,"state":"open"}
+{"id":"guard-hook-refused-pre-bash-secret-exposure-py","events":1,"state":"open"}
+{"id":"missing-tool-tool-slopwatch","events":1,"state":"open"}
+{"id":"service-limit-rate-limit-1password","events":1,"state":"open"}
+== run 3: Captain's Log replies endpoint returns non-JSON ==
+#!/usr/bin/env bash
+case "$*" in */replies\?since=20*) echo "<html>502</html>";; *) echo "{"value":{"cards":[]}}";; esac
+DIGEST 2026-10-23 8 data/officers/friction/2026-10-23.md
+exit=0
+[
+  "The Captain's Log is unreadable (not JSON), so Lee steps seen only as cards are not counted; findings come from status logs and the archive.",
+  "A worker that resumed in the wrong directory is found only while its task record survives.",
+  "The Captain's Log replies are unreadable (not JSON), so Start fix taps seen only there are not counted; states come from inboxes, the backlog and task records."
+]
