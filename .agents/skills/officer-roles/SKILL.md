@@ -17,7 +17,7 @@ It never acts on the fleet.
 
 An officer may:
 
-- read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, GitHub read-only, and, for a friction officer, the Captain's Log cards fleet-app serves at `GET /api/captains-log`; a progress officer also reads Linear and registered remote homes read-only;
+- read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, GitHub read-only, and, for a friction officer, the Captain's Log cards and tap replies fleet-app serves at `GET /api/captains-log` and `GET /api/captains-log/replies`; a progress officer also reads Linear and registered remote homes read-only;
 - write its own lane, `data/officers/<id>/`: dated findings (including the friction officer's velocity file and the progress officer's state and executable start requests), its digest marker, `runs.log`, and its `check-record.*` files;
 - print its one report line from its watcher check;
 - for a landing officer, unless its registry line says `writes: none`, correct what PropertyCompass2's release workflow (the routine Done writer) missed, through `linear-axi` `--dry-run` then `--verify`, at most `max-corrections` written items a run (skips do not count):

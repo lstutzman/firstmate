@@ -9,7 +9,8 @@
 # decisions kept off the cards, transcript Lee steps (typed commands, asks
 # measured to Lee's next message, ssh to the session's own host), line-anchored
 # agent-side refusals, a worker resumed outside its worktree, the fleet-app
-# velocity findings file and its limits, byte-identical digests on re-run, the
+# velocity findings file and its limits, per-finding ids, event counts and
+# read-only states (open, started, settled), byte-identical digests on re-run, the
 # boundary (no network, no writes outside the lane), a remote archive,
 # Captain's Log cards no status line accounts for (and an unreachable log),
 # and the registry refusing a friction line with no archive.
@@ -297,7 +298,7 @@ EOF
 import json, re, sys
 d = json.load(open(sys.argv[1]))
 top = {"schema_version", "source", "run_id", "generated_at", "window", "outcome", "summary", "notes",
-       "cost_usd", "evidence", "bottlenecks"}
+       "cost_usd", "evidence", "bottlenecks", "totals"}
 assert set(d) == top, sorted(set(d) ^ top)
 assert d["schema_version"] == 1 and d["source"] == "friction-officer" and d["outcome"] == "ok"
 assert re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", d["run_id"]), d["run_id"]
@@ -309,8 +310,11 @@ assert len(d["evidence"]) <= 12 and all(set(e) == {"name", "state", "detail"} an
 limits = {"title": 90, "tldr": 180, "evidence": 400, "improvement": 400, "impact": 250, "owner": 60, "time_saved": 200}
 cats = {"waiting", "rework", "tooling", "review", "environment", "coordination", "cost", "other"}
 assert 1 <= len(d["bottlenecks"]) <= 25, len(d["bottlenecks"])
+assert set(d["totals"]) == {"events", "findings"} and d["totals"]["events"] >= d["totals"]["findings"] >= 1
 for b in d["bottlenecks"]:
-    assert set(b) == set(limits) | {"category", "severity", "confidence", "effort"}, sorted(b)
+    assert set(b) == set(limits) | {"category", "severity", "confidence", "effort", "id", "events", "state"}, sorted(b)
+    assert re.fullmatch(r"[a-z0-9][a-z0-9-]{0,53}", b["id"]), b["id"]
+    assert isinstance(b["events"], int) and b["events"] >= 1 and b["state"] in ("open", "started", "settled")
     for k, n in limits.items():
         assert 1 <= len(b[k]) <= n, (k, len(b[k]))
     assert b["category"] in cats and b["effort"] in ("S", "M", "L")
@@ -330,6 +334,121 @@ PY
     "$(jq '[.bottlenecks[] | select(.evidence | contains("task-ci"))][0].improvement | length > 0' "$vel")" \
     "an unclassified block still carries a fix"
   pass "fm-officer friction: the velocity findings file has fleet-app's shape and limits"
+}
+
+test_velocity_ids_counts_and_states() {
+  local home vel json fakebin ids
+  home=$(make_world states)
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  json="$home/data/officers/friction/$DATE.json"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  assert_equals "$(jq '.events | length' "$json")" "$(jq .totals.events "$vel")" \
+    "the roll-up counts every event of the day, not only those on a written finding"
+  assert_equals "$(jq '.findings | length' "$json")" "$(jq .totals.findings "$vel")" "the roll-up counts every finding of the day"
+  assert_equals "$(jq '[.findings[] | select(.title and .fix and .sub != "decision")] | map({key: .id, value: .events}) | from_entries' "$json" | jq -S .)" \
+    "$(jq -S '[.bottlenecks[] | {key: .id, value: .events}] | from_entries' "$vel")" \
+    "each written finding carries the event count of the group it stands for, keyed by its id"
+  assert_equals "" "$(jq -r '[.bottlenecks[] | select(.state != "open" or has("link"))] | map(.id) | join(",")' "$vel")" \
+    "with no tap, task or rule naming a finding every state is open with no link"
+  ids=$(jq -c '[.bottlenecks[] | .id] | sort' "$vel")
+  assert_equals "$(jq '.bottlenecks | length' "$vel")" "$(jq 'unique | length' <<<"$ids")" "ids are unique within a run"
+
+  # The id depends on the finding alone: another night, another count, a different clock - the same id.
+  printf 'needs-decision [at=%s] [key=cf-more]: Cloudflare refuses the agent token again; Lee needs to widen it\n' "$((T + 100))" \
+    >> "$home/state/task-cf.status"
+  FM_HOME="$home" FM_OFFICER_NOW=$((NOW + 86400)) "$OFFICER" run friction --date "$DATE" >/dev/null || fail "second run must succeed"
+  assert_equals "" "$(jq -r '[.bottlenecks[].title] | group_by(.) | map(select(length > 1) | .[0]) | join(";")' "$vel")" \
+    "no two findings in one run share a title"
+  assert_equals "A tool agents need is missing: openjdk" \
+    "$(jq -r '[.bottlenecks[] | select(.id == "missing-tool-tool-openjdk")][0].title' "$vel")" \
+    "findings that would share a title name their subject, here the tool"
+  assert_equals "$ids" "$(jq -c '[.bottlenecks[] | .id] | sort' "$vel")" "a finding keeps its id when its events and the run time change"
+  assert_equals "true" "$(jq '[.bottlenecks[] | select(.id == "credential-scope-cloudflare")][0].events > 1' "$vel")" \
+    "the count follows the events"
+
+  # A tap in a home's inbox, a backlog line, and a pull request URL start findings; a standing-rule line settles one.
+  mkdir -p "$home/state/inbox/handled"
+  printf "id=1-x\nat=2026-10-24T06:30:00Z\n--\nCaptain's Log reply [friction-sudo-sudo]: Start fix: Agents hand Lee sudo steps to run by hand\n" > "$home/state/inbox/handled/1-x.note"
+  printf "id=2-x\nat=2026-10-24T06:31:00Z\n--\nCaptain's Log reply [friction-guard-hook-secret-hook]: Not now: Secret-exposure hook blocks safe shell-file edits\n" > "$home/state/inbox/handled/2-x.note"
+  printf '## In flight\n- [ ] fix-approval - fix policy-credential-approval (kind: ship)\n- [ ] other - fix credential-scope (kind: ship)\n' \
+    > "$home/data/backlog.md"
+  printf 'done [at=1]: PR https://github.com/o/r/pull/7 checks green\n' > "$home/state/fix-approval.status"
+  printf 'Standing rule: the missing tools are settled (friction-missing-tool-tool-slopwatch).\nNote: lee-command-run is not a standing line.\n' \
+    > "$home/data/captain-shared.md"
+  {
+    printf 'Standing exception: ssh keys are now installed on every host.\n'
+    printf 'Standing rule: Cloudflare token scopes are widened once, with the full list, and kept (settles: credential/scope/cloudflare).\n'
+    printf 'Standing rule: Lee-step ssh lines run locally on their own host (settles: environment/ssh-to-self).\n'
+    printf 'Standing rule: a missing tool is installed when first asked for (settles: missing-tool/tool).\n'
+    printf 'Standing rule: image generation goes through Codex, never the paid API.\n'
+    cat <<'EOF2'
+- Standing rule: every code change, and anything like it (PRs, config, migrations, fixes found during other work), must go through a Linear item. Append to an existing open item when the change belongs to it; otherwise create a new one before the work starts. The PR references the item.
+- Standing rule, widened 2026-10-31 (Lee, main chat, 13:07:58Z): "old branches and logs and backups and stuff that we no longer need. That's supposed to be deleted. I'm not supposed to even be bothered with that question." Never card routine clean-up for Lee. Delete old branches, task copies, worktrees, logs and backups that are no longer needed. "No longer needed" still means no unique unlanded work: an unmerged branch goes only when its PR is closed or merged, and never while a live worktree or open PR uses it. The friction officer answers a Bosun "should we delete this?" with this rule. Fleet rules §6 still lists deletion as needing approval.
+EOF2
+  } >> "$home/data/captain-shared.md"
+  FM_HOME="$home" FM_OFFICER_NOW="$NOW" "$OFFICER" run friction --date "$DATE" >/dev/null || fail "run with records must succeed"
+  state_of() { jq -r --arg i "$1" '[.bottlenecks[] | select(.id == $i)][0] | "\(.state) \(.link // "-")"' "$vel"; }
+  assert_equals "started -" "$(state_of sudo-sudo)" "a Start fix tap in the inbox starts a finding, with no link to give"
+  assert_equals "open -" "$(state_of guard-hook-secret-hook)" "a Not now tap leaves a finding open"
+  assert_equals "started https://github.com/o/r/pull/7" "$(state_of policy-credential-approval)" \
+    "a backlog task that names the finding starts it, linked to the pull request its status log names"
+  assert_equals "settled -" "$(state_of missing-tool-tool-slopwatch)" "a standing-rule line that names the id settles it"
+  assert_equals "settled -" "$(state_of credential-scope-cloudflare)" \
+    "a standing-rule line settles a finding by its key with the service named, settles: <cause>/<sub>/<name>"
+  assert_equals "settled -" "$(state_of environment-ssh-to-self)" \
+    "a standing-rule line settles a finding about no one tool by its key, settles: <cause>/<sub>"
+  assert_equals "open -" "$(state_of missing-tool-tool-openjdk)" \
+    "a key line that does not name the finding's tool settles nothing"
+  assert_equals "open -" "$(state_of credential-ssh-key)" "standing wording about ssh keys with no id or key settles nothing"
+  assert_equals "open - open - started -" \
+    "$(state_of environment-wrong-cwd) $(state_of guard-hook-refused-pre-bash-secret-exposure-py) $(state_of sudo-sudo)" \
+    "the Linear and clean-up standing rules (go, approval, worktrees) settle nothing"
+  assert_equals "open -" "$(state_of lee-command-run)" "a line that names the id without saying standing rule settles nothing"
+
+  # Replies the Captain's Log serves (beside the cards) also start a finding, and carry the answer's link.
+  fakebin=$(fm_fakebin "$TMP_ROOT/states")
+  cat > "$fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  */replies\?since=20*) printf '%s\n' '{"name":"captains-log","value":{"replies":[{"card":"friction-guard-hook-secret-hook","text":"Start fix: A service CLI is not signed in for agents","answer":{"text":"started https://github.com/o/r/pull/9","at":"2026-10-24T05:30:00Z"}}]}}' ;;
+  *) printf '%s\n' '{"value":{"cards":[]}}' ;;
+esac
+SH
+  chmod +x "$fakebin/curl"
+  printf -- '- friction - Finds friction (role: friction; cadence: daily 06:15; archive: %s; captains-log: https://fleet.test/api/captains-log; model: none; added 2026-10-24)\n' \
+    "$TMP_ROOT/states/archive" > "$home/data/officers.md"
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "run with replies must succeed"
+  assert_equals "started https://github.com/o/r/pull/9" "$(state_of guard-hook-secret-hook)" \
+    "a Start fix reply on the finding's tap card starts it, linked to the answer's pull request"
+  assert_equals "0" "$(jq '[.notes[] | select(contains("replies"))] | length' "$vel")" "replies that were read leave no gap note"
+
+  # An unreadable replies fetch is a coverage note, and the run still succeeds on the other records.
+  cat > "$fakebin/curl" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  */replies\?since=20*) printf 'not json\n' ;;
+  *) printf '%s\n' '{"value":{"cards":[]}}' ;;
+esac
+SH
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "a run whose replies are unreadable must still succeed"
+  assert_equals "1" "$(jq '[.notes[] | select(contains("replies are unreadable (not JSON)"))] | length' "$vel")" \
+    "an unreadable replies fetch is named in the velocity file's notes"
+  assert_equals "open -" "$(state_of guard-hook-secret-hook)" "with the replies unread, a finding started only there is open"
+  pass "fm-officer friction: findings carry stable ids, event counts and a read-only state"
+}
+
+test_long_ids_are_hashed_within_the_limit() {
+  local home vel tool
+  home=$(make_world longid)
+  tool=$(printf 'a%.0s' $(seq 1 60))
+  jq --arg t "/bin/bash: line 4: $tool: command not found" \
+    '.sessions[1].calls += [["Bash", {"command": "x"}, $t, true]]' "$TMP_ROOT/longid/spec.json" > "$TMP_ROOT/longid/spec2.json"
+  officer_archive "$TMP_ROOT/longid/archive" "$DATE" "$TMP_ROOT/longid/spec2.json"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  assert_equals "54" "$(jq -r '[.bottlenecks[] | .id | select(startswith("missing-tool-tool-aaaa"))][0] | length' "$vel")" \
+    "a name too long for fleet-app's tap card is cut and ended with a hash, to exactly the limit"
+  pass "fm-officer friction: a long finding id is hashed to fleet-app's limit"
 }
 
 test_rerun_digest_is_byte_identical() {
@@ -465,6 +584,8 @@ test_merge_word_is_not_a_missing_tool
 test_status_waits_and_root_causes
 test_transcript_lee_steps_and_refusals
 test_velocity_findings_file
+test_velocity_ids_counts_and_states
+test_long_ids_are_hashed_within_the_limit
 test_rerun_digest_is_byte_identical
 test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh

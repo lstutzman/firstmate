@@ -65,7 +65,10 @@ service or tool, and writes into --out:
                                  friction-officer) holding up to MAX_CARDS
                                  findings that carry a title and a fix, the
                                  card bar's ones first (never a product
-                                 decision, which is Lee's to make). Its
+                                 decision, which is Lee's to make), each with
+                                 a stable id, its event count, and its state
+                                 (see below), plus totals of every event and
+                                 finding of the day. Its
                                  generated_at is --now, the one clock field,
                                  because the page treats a file older than a
                                  day as not posted.
@@ -81,6 +84,20 @@ the root cause, a proposed fix that removes the step, an owner, and evidence
 (task ids, status keys and times, session ids). Quoted evidence is one
 scrubbed line: a status text excerpt with tokens redacted, a command head, or
 the matched refusal class, never transcript prose.
+
+A finding's id is a slug of its cause, sub and name alone, so it is the same
+every night (at most 54 characters, which fleet-app's tap card needs). Its state
+is read-only: settled when a line in a home's data/captain-shared.md that says
+"standing rule" or "standing exception" names the id (alone or as friction-<id>)
+or its category key written "settles: <cause>/<sub>" (for example "settles:
+policy/merge-word"; a finding about one tool, hook or service also needs the
+line to name it, or the key to carry it as "settles: <cause>/<sub>/<name>");
+no looser wording settles anything; else started when a Start
+fix tap for it sits in a home's state/inbox (the note fleet-app's shim files,
+"Captain's Log reply [friction-<id>]: Start fix: <title>") or in
+<captains-log>/replies?since=<30 days ago>, or a data/backlog.md line or a task's branch= names it
+(its link is the first pull request or https URL those hold); else open. The
+state is as of the run's generated_at.
 
 The proposed fix comes from the FIXES table. A group no rule names gets no
 card; propose_fix() is the seam where a later slice may ask a small model,
@@ -119,6 +136,7 @@ SCORER = "friction-deterministic-v1"
 MIN_SEVERITY = 3
 MIN_CONFIDENCE = 3
 MAX_CARDS = 25  # fleet-app's stored cap on bottlenecks
+ID_MAX = 54  # fleet-app's stored finding id cap: its tap card friction-<id> must fit a 64-character card id
 
 # Status logs that relay other tasks' lines rather than belong to a task: a
 # second mate's parent channel (docs/secondmate-parent-channel.md), here and,
@@ -972,9 +990,37 @@ def group_findings(events, model):
             finding.update(title=title, lee_did=lee_did if lee else "nothing directly (agent-side friction)",
                            fix=improvement, owner=owner, effort=effort)
         findings.append(finding)
+    name_shared_titles(findings)
+    assign_ids(findings)
     findings.sort(key=lambda f: (not f["carded"], -(f["severity"] * f["confidence"]), -f["events"],
                                  f["cause"], f["sub"], f["name"] or ""))
     return findings
+
+
+def name_shared_titles(findings):
+    """Two findings of one run never share a title: a shared one gets its subject (the tool, hook, host or service)."""
+    shared = {t for t, n in _count(f["title"] for f in findings if f["title"]).items() if n > 1}
+    for f in findings:
+        if f["title"] in shared and f["name"]:
+            room = 90 - len(f["title"]) - 2
+            f["title"] = "%s: %s" % (f["title"], clip(f["name"], max(room, 8)))
+
+
+def assign_ids(findings):
+    """A stable slug per finding, from its cause, sub and name alone, so it is the same every night.
+
+    fleet-app keeps the slug within ID_MAX characters (its tap card is friction-<id>). A slug that is
+    too long, or that another finding in the same run also reduces to, ends in a hash of the full key.
+    """
+    keys = [(f["cause"], f["sub"], f["name"] or "") for f in findings]
+    slugs = [re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", "-".join(p for p in k if p).lower())).strip("-") or "finding"
+             for k in keys]
+    seen = _count(slugs)
+    for f, key, slug in zip(findings, keys, slugs):
+        if len(slug) > ID_MAX or seen[slug] > 1:
+            digest = hashlib.sha256("\0".join(key).encode("utf-8")).hexdigest()[:8]
+            slug = "%s-%s" % (slug[:ID_MAX - 9].strip("-"), digest)
+        f["id"] = slug
 
 
 def _count(items):
@@ -987,6 +1033,140 @@ def _count(items):
 def clip(text, limit):
     text = re.sub(r"\s+", " ", text).strip()
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+STANDING_RE = re.compile(r"standing (?:rule|exception)", re.I)
+PULL_URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
+TASK_LINE_RE = re.compile(r"^\s*- \[[ xX]\] ([\w.-]+)")
+MAX_NOTE_BYTES = 65536
+REPLY_DAYS = 30
+
+
+SETTLES_RE = re.compile(r"settles:\s*([a-z0-9-]+)/([a-z0-9-]+)(?:/([^\s,;)]+))?")
+
+
+def settles(line, f, rx):
+    """Whether a lowercased standing-rule line covers a finding: it names the id, or its key as settles: <cause>/<sub>.
+
+    For a finding about one tool, hook or service the key also needs its name: settles: <cause>/<sub>/<name>,
+    or the name elsewhere on the line.
+    """
+    if rx.search(line):
+        return True
+    name = (f["name"] or "").lower()
+    for cause, sub, named in SETTLES_RE.findall(line):
+        if (cause, sub) != (f["cause"], f["sub"]):
+            continue
+        if named.rstrip(".") == name if named else (not name or name in line):
+            return True
+    return False
+
+
+def id_re(finding_id):
+    """The finding id as a whole token, alone or as a tap card friction-<id>."""
+    return re.compile(r"(?<![a-z0-9-])(?:friction-)?%s(?![a-z0-9-])" % re.escape(finding_id))
+
+
+def read_lines(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            return fh.read(4 * 1024 * 1024).splitlines()
+    except OSError:
+        return []
+
+
+def inbox_notes(home):
+    """The text of every note in a home's inbox, waiting or handled; read-only."""
+    inbox = os.path.join(home.path, "state", "inbox")
+    out = []
+    for folder in (inbox, os.path.join(inbox, "handled")):
+        try:
+            names = sorted(os.listdir(folder))
+        except OSError:
+            continue
+        for name in names:
+            path = os.path.join(folder, name)
+            try:
+                if name.endswith(".note") and os.path.getsize(path) <= MAX_NOTE_BYTES:
+                    out.append("\n".join(read_lines(path)))
+            except OSError:
+                continue
+    return out
+
+
+def task_link(home, task):
+    """The newest pull request URL a task's status log names, or None."""
+    for line in reversed(read_lines(os.path.join(home.path, "state", task + ".status"))):
+        m = PULL_URL_RE.search(line)
+        if m:
+            return m.group(0)
+    return None
+
+
+def load_replies(captains_log, now):
+    """The tap replies fleet-app serves beside the cards, GET <captains-log>/replies?since=<30 days ago>.
+
+    Read-only and best effort; the 30 days reach past the page's own 3-day window, so a tap stays a start.
+    """
+    since = iso_utc(now - REPLY_DAYS * 86400)
+    proc = subprocess.run(["curl", "-fsS", "--max-time", "30", "%s/replies?since=%s" % (captains_log.rstrip("/"), since)],
+                          capture_output=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError("unreachable (curl exit %d)" % proc.returncode)
+    try:
+        body = json.loads(proc.stdout.decode("utf-8"))
+    except ValueError:
+        raise RuntimeError("unreadable (not JSON)")
+    found = []
+
+    def walk(node):
+        if isinstance(node, list):
+            found.extend(x for x in node if isinstance(x, dict) and isinstance(x.get("card"), str))
+        elif isinstance(node, dict):
+            for value in node.values():
+                if isinstance(value, (list, dict)):
+                    walk(value)
+    walk(body)
+    return found
+
+
+def finding_states(findings, homes, replies):
+    """{finding id: (state, link)}: open, started (a tap, task or pull request names it) or settled.
+
+    A standing-rule line in a home's data/captain-shared.md that names the finding id or key settles it, and wins
+    over a start. Started comes from a Start fix tap in a home's inbox or in the replies, or a backlog
+    line or task branch that names the id; its link is the first pull request or https URL found there.
+    """
+    notes = [t.lower() for h in homes for t in inbox_notes(h)]
+    shared = [l.lower() for h in homes for l in read_lines(os.path.join(h.path, "data", "captain-shared.md"))
+              if STANDING_RE.search(l)]
+    backlog = [(h, l) for h in homes for l in read_lines(os.path.join(h.path, "data", "backlog.md"))]
+    out = {}
+    for f in findings:
+        rx = id_re(f["id"])
+        if any(settles(l, f, rx) for l in shared):
+            out[f["id"]] = ("settled", None)
+            continue
+        hits = []  # one entry per start found: its link, or None
+        tap = re.compile(r"captain's log reply \[friction-%s\]: start fix" % re.escape(f["id"]))
+        for note in notes:
+            if tap.search(note):
+                hits.append(None)
+        for reply in replies:
+            if reply["card"] == "friction-" + f["id"] and str(reply.get("text") or "").lower().startswith("start fix"):
+                urls = re.findall(r"https://[^\s\"\\]+", json.dumps(reply.get("answer") or ""))
+                hits.append(urls[0].rstrip(".,)") if urls else None)
+        for home, line in backlog:
+            if rx.search(line.lower()):
+                m = TASK_LINE_RE.match(line)
+                url = URL_RE.search(line)
+                hits.append(url.group(0).rstrip(".,)") if url else (task_link(home, m.group(1)) if m else None))
+        for home in homes:
+            for task, meta in sorted(home.metas.items()):
+                if rx.search((meta.get("branch") or "").lower()):
+                    hits.append(task_link(home, task))
+        link = next((u for u in hits if u and u.startswith("https://") and len(u) <= 300), None)
+        out[f["id"]] = ("started" if hits else "open", link)
+    return out
 
 
 def bottleneck(f, date):
@@ -1022,14 +1202,21 @@ def bottleneck(f, date):
         "effort": f["effort"],
         "owner": clip(f["owner"], 60),
         "time_saved": clip(saved, 200),
+        "id": f["id"],
+        "events": f["events"],
     }
 
 
-def velocity_doc(doc, now):
+def velocity_doc(doc, now, states=None):
     start, end = day_bounds(doc["date"])
     # findings are sorted carded first, so the cap drops the least important
     cards = [bottleneck(f, doc["date"]) for f in doc["findings"]
              if f["title"] and f["fix"] and (f["cause"], f["sub"]) not in NOT_CARDED][:MAX_CARDS]
+    for card in cards:
+        state, link = (states or {}).get(card["id"], ("open", None))
+        card["state"] = state
+        if link:
+            card["link"] = link
     cov = doc["coverage"]
     notes = [clip(n, 400) for n in cov["notes"]][:12]
     evidence = [{"name": "session archive", "state": "read", "detail": clip(
@@ -1063,6 +1250,7 @@ def velocity_doc(doc, now):
         "cost_usd": 0,
         "evidence": evidence[:12],
         "bottlenecks": cards,
+        "totals": {"events": len(doc["events"]), "findings": len(doc["findings"])},
     }
 
 
@@ -1201,21 +1389,30 @@ def main(argv):
         triage.join_sessions(scanned, homes)
         triage.classify_mates(scanned, homes)
         hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
-        cards, log = [], {"state": "not-set"}
+        cards, log, replies, replies_gap = [], {"state": "not-set"}, [], None
         if args.captains_log:
             try:
                 cards, log = load_captains_log(args.captains_log), {"state": "read"}
             except RuntimeError as exc:
                 log = {"state": "unreachable", "reason": str(exc)}
+            try:
+                replies = load_replies(args.captains_log, now)
+            except RuntimeError as exc:
+                replies_gap = exc
         doc = summarise(scanned, homes, hosts, args.model, cards, log, CHANNEL_LOGS | set(args.channel))
+        if replies_gap:
+            doc["coverage"]["notes"].append(
+                "The Captain's Log replies are %s, so Start fix taps seen only there are not counted; states come"
+                " from inboxes, the backlog and task records." % replies_gap)
     except (RuntimeError, ValueError) as exc:
         print("fm-officer-friction: %s" % exc, file=sys.stderr)
         return 1
+    states = finding_states(doc["findings"], homes, replies)
     triage.write_if_changed(os.path.join(args.out, args.date + ".json"),
                             json.dumps(doc, sort_keys=True, indent=1, ensure_ascii=False) + "\n")
     triage.write_if_changed(os.path.join(args.out, args.date + ".md"), render_md(doc))
     triage.write_if_changed(os.path.join(args.out, args.date + ".velocity-findings.json"),
-                            json.dumps(velocity_doc(doc, now), sort_keys=True, indent=1,
+                            json.dumps(velocity_doc(doc, now, states), sort_keys=True, indent=1,
                                        ensure_ascii=False) + "\n")
     print("DIGEST %s %d %s.md" % (args.date, doc["actionable"], args.date))
     return 0

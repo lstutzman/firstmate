@@ -933,7 +933,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
 | `archive` | Triage and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
 | `hosts` | Triage and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
-| `captains-log` | Optional `https://` URL ending `/api/captains-log`: friction reads its cards with one `GET` and reports unreachable coverage; progress uses its corresponding `/captains-log` page URL to link existing held cards without copying their questions |
+| `captains-log` | Optional `https://` URL ending `/api/captains-log`: friction reads its cards with one `GET`, and its tap replies with one `GET <url>/replies`, and reports either unreachable as a coverage gap; progress uses its corresponding `/captains-log` page URL to link existing held cards without copying their questions |
 | `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2 with exactly the top-level keys `schema_version`, `generated_at`, `staging_sha`, `production_sha`, `records` keyed `<repo>#<pr>`, and `items` mapping each Linear id to its record keys; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
 | `team` | Landing and progress, optional: the Linear team key to read; default `PC` |
 | `repos` | Progress only, required: comma-separated GitHub `owner/repo` names whose open PRs prevent duplicate starts |
@@ -956,7 +956,10 @@ Example:
 After adding a line, run `bin/fm-officer.sh register <id>` to install and trust its watcher check; `bin/fm-officer.sh retire <id>` removes the check and the line and keeps the findings.
 Session start runs `bin/fm-officer.sh ensure`, which prints one `OFFICER:` line per gap.
 A second mate home never runs officers: `register` and `run` refuse there, and `ensure` reports any registry it finds.
-The friction officer also writes `<date>.velocity-findings.json`, a fleet-app velocity findings file (`FINDINGS_SCHEMA` schema version 1, source `friction-officer`) for the velocity audit page (`/runs/velocity-audit`); it never posts that file itself. The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
+The friction officer also writes `<date>.velocity-findings.json`, a fleet-app velocity findings file (`FINDINGS_SCHEMA` schema version 1, source `friction-officer`) for the velocity audit page (`/runs/velocity-audit`); it never posts that file itself.
+Each finding in it carries a stable `id`, its `events` count and a read-only `state` (`open`, `started` with a `link`, or `settled`), and the file carries `totals` of the day's events and findings; `bin/fm-officer-friction.py`'s header owns how the state is read.
+A line in a home's `data/captain-shared.md` that says "standing rule" or "standing exception" settles a finding only when it names the finding's `id` (alone or as `friction-<id>`) or its key written `settles: <cause>/<sub>`, for example `settles: policy/merge-word`; a finding about one tool, hook or service also needs the line to name it, or the key written `settles: <cause>/<sub>/<name>`. No looser wording settles a finding.
+The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
 The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets them resolve tasks that were already cleaned up.
 
 ### Progress officer
