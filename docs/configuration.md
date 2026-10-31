@@ -916,22 +916,27 @@ A local standalone-clone home cannot receive a primary-local commit through that
 
 ## Officers (data/officers.md)
 
-An officer is a role agent the primary home owns: it reads fleet records on its own daily cadence, writes only its findings lane, and reports one line to its first mate.
+An officer is a role agent the primary home owns: it reads fleet records on its own cadence, writes only its findings lane, and reports one line to its first mate.
 The `officer-roles` skill owns what an officer may and may never do and how its report is handled; `bin/fm-officer.sh`'s header owns the mechanics.
 
 Officers live locally in the primary home's `data/officers.md`, one line per officer:
 
 ```text
-- <id> - <role sentence> (role: <role>; cadence: daily HH:MM; model: none; <role fields>; added YYYY-MM-DD)
+- <id> - <role sentence> (role: <role>; cadence: daily HH:MM | every Nh; model: none; <role fields>; added YYYY-MM-DD)
 ```
 
 | Field | Meaning |
 | --- | --- |
 | `<id>` | Lowercase letters, digits, and dashes, at most 40 characters; names the lane `data/officers/<id>/` and the check `state/officer-<id>.check.sh` |
-| `role` | `triage`, `landing`, `friction`, or `progress` |
-| `cadence` | `daily HH:MM` in the home's local time; the run for yesterday's date starts at the first watcher check after that time |
+| `role` | `triage`, `landing`, `friction`, `progress`, or `pagecheck` |
+| `cadence` | `daily HH:MM` in the home's local time: the run for yesterday's date starts at the first watcher check after that time. Or `every Nh` (N from 1 to 24): the run key is the slot `YYYY-MM-DDTHH`, slots start at local midnight and repeat every N hours until the next midnight, and the first watcher check in a slot starts that slot's run on current records. `bin/fm-officer.sh` owns the grammar; `ensure` allows two of the officer's own periods between finished runs |
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
 | `archive` | Triage and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
+| `ask-days` | Friction, optional: how many days of Lee's typed messages the repeated-ask finding compares; default 7 |
+| `app` | Pagecheck only, required: the fleet app's `https://` base URL, read with `GET` only |
+| `rules` | Pagecheck only, optional: the file holding the standing rules (see [Page-check officer](#page-check-officer)); default this home's `data/captain-shared.md` |
+| `stale-days` | Pagecheck only, optional: days a card may stay asked and unanswered before it is stale; default 7 |
+| `remind-hours` | Pagecheck only, optional: hours before an unfixed finding is counted as new again; default 24 |
 | `hosts` | Triage and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
 | `captains-log` | Optional `https://` URL ending `/api/captains-log`: friction reads its cards with one `GET`, and its tap replies with one `GET <url>/replies`, and reports either unreachable as a coverage gap; progress uses its corresponding `/captains-log` page URL to link existing held cards without copying their questions |
 | `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2 with exactly the top-level keys `schema_version`, `generated_at`, `staging_sha`, `production_sha`, `records` keyed `<repo>#<pr>`, and `items` mapping each Linear id to its record keys; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
@@ -951,6 +956,7 @@ Example:
 - landing - Reconciles Linear against landing evidence (role: landing; cadence: daily 06:30; facts: slartibartfast:/home/lee/services/landing-truth/latest.json; team: PC; writes: corrections; model: none; added 2026-10-24)
 - friction - Finds what slowed agents down, above all waits on Lee, and proposes a fix for each (role: friction; cadence: daily 06:15; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 - progress - Starts authorised unstarted work through firstmate (role: progress; cadence: daily 07:00; team: PC; repos: example/project; requested: PC-123; model: none; added 2026-10-26)
+- page-check - Checks every fleet-app page for cards a standing rule settles, stale cards, cards shown after they were settled, and old pages (role: pagecheck; cadence: every 2h; app: https://fleet.example.ts.net; model: none; added 2026-10-31)
 ```
 
 After adding a line, run `bin/fm-officer.sh register <id>` to install and trust its watcher check; `bin/fm-officer.sh retire <id>` removes the check and the line and keeps the findings.
@@ -961,6 +967,43 @@ Each finding in it carries a stable `id`, its `events` count and a read-only `st
 A line in a home's `data/captain-shared.md` that says "standing rule" or "standing exception" settles a finding only when it names the finding's `id` (alone or as `friction-<id>`) or its key written `settles: <cause>/<sub>`, for example `settles: policy/merge-word`; a finding about one tool, hook or service also needs the line to name it, or the key written `settles: <cause>/<sub>/<name>`. No looser wording settles a finding.
 The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
 The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets them resolve tasks that were already cleaned up.
+
+### Page-check officer
+
+The page-check officer keeps the fleet app's pages current without Lee asking.
+It is a role of its own rather than part of the friction officer because it reads live pages every few hours, while the friction officer needs a harvested archive day and so can only run once a day; the friction officer still owns Lee's repeated asks (below).
+`bin/fm-officer-page-check.py`'s header owns the checks and the table of pages with their normal gaps.
+It only reads: one `GET` per page through `curl`, this home's status logs, and `gh-axi api GET` for the state of a PR a card names.
+
+Its findings are one of four kinds, each naming the page and the object so firstmate can route the fix:
+
+| Kind | Meaning | Routed to |
+| --- | --- | --- |
+| `standing-rule` | A card Lee is shown that a standing rule already settles | cl-keeper closes it citing the rule |
+| `stale-card` | A shown card that is past its snooze date, unanswered for `stale-days`, already answered, naming a merged or closed PR, or settled by a later `resolved` status line | cl-keeper closes or corrects it |
+| `shown-after-done` | A card shown although its record is settled: a status line resolved before the card was raised again, or the app's own card record for the Bosun source is closed | cl-keeper closes it; the source that re-raised it is fixed |
+| `page-old` | A page older than its normal gap (Bosun's results: 26 hours), never published, unreachable or unreadable (including JSON of an unexpected shape), or a live Runs job whose health is failing | the page's owner fixes the feed |
+
+Standing rules are lines in the `rules` file of the form `- standing-rule <id> /<regex>/ - <rule text>`; the case-insensitive regex is matched against a card's words, and every other line of the file is ignored.
+A rule becomes a check by adding one such line next to its prose in `data/captain-shared.md`.
+A rules file with no such line is a coverage note in the digest, because the `standing-rule` check then covers nothing.
+
+The run keeps `state.json` in its lane, when each finding was last reported.
+Its digest line counts only findings not reported in the last `remind-hours`, so an unchanged page set is silent every slot while a finding nobody fixed returns daily.
+The digest file lists every open finding, the new ones marked.
+An unreachable app is a finding, not a failed run.
+
+### Repeated asks (friction officer)
+
+The friction officer also compares Lee's typed instructions across the last `ask-days` days of the session archive (interactive and worker sessions, never a worker's launch brief, which quotes him).
+It sees only what the archive holds: a message Lee gave somewhere that is not archived as a Claude Code transcript is not counted.
+Each instruction is dated by its own message time in the archive's timezone, not by the day whose manifest lists the session, and a session listed on several days is read once, so one long chat holding asks on different days counts each ask on the day Lee gave it.
+An instruction given on two or more days, one of them the run's day, becomes a `repeat-ask` finding with Lee's scrubbed sentence for each day, so a repeat becomes automatic work instead of Lee repeating himself.
+Instruction words such as make sure, need, should, always, never and please are not content words, and neither are the "up" of "up to date" or common dictated-speech words such as want, know, think, really, hey, okay, actually, thing and stuff.
+Two instructions are the same when they share at least three content words and at least 70% of the shorter one's words.
+They are also the same when both ask for upkeep and share at least two other content words: keep, update, current, date, fresh, maintain, look, check, review, watch, track, monitor and stale, and their -ed and -ing forms, all count as one upkeep word.
+So "keep the captain's log up to date" and "make sure the captain's log keeper is looking at all pages" are one instruction, while "make sure the captain's log renders on mobile" asks for no upkeep and is not.
+Session text stays on the machines that already hold it and is never sent to a model or service.
 
 ### Progress officer
 

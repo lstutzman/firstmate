@@ -9,7 +9,7 @@ Usage:
   fm-officer-friction.py run --archive <dir|host:dir> --date <YYYY-MM-DD>
                              --out <lane-dir> [--home <dir>]... [--hosts a,b]
                              [--captains-log <https-url>] [--channel <mate-id>]...
-                             [--model none] [--now <epoch>]
+                             [--days <n>] [--model none] [--now <epoch>]
 
 Friction is anything that slowed an agent down, above all a step it had to
 wait for Lee to do. One day's friction events come from three sources:
@@ -44,6 +44,25 @@ wait for Lee to do. One day's friction events come from three sources:
                is a Lee step the status logs missed, measured to its answer.
                An unreachable endpoint is a coverage gap in the digest, and
                the pass continues on the other two sources.
+
+Repeated asks are a fourth kind of event. Lee's typed messages in the last
+--days days (default 7), from the archive's interactive and worker sessions
+and never a worker's launch brief, which quotes him, are cut into sentences
+(a long dictated run-on into clauses) that give an instruction (keep, make
+sure, always, never, don't, should, must, ...). The instruction words
+themselves and common dictated-speech words are not content words. Two instructions on different
+days are the same instruction when they share at least three content words
+and at least 70% of the shorter one's words, or when both ask for upkeep (one
+concept for keep, update, current, date, fresh, maintain, look, check, review,
+watch, track, monitor, stale, and their -ed and -ing forms) and share at least two other content words, so
+"keep the captain's log up to date" and "make sure the captain's log keeper is
+looking at all pages" match while "make sure the captain's log renders" does
+not. Each instruction is dated by its own message time in the archive's
+timezone, and a session listed on several days is read once. A group spanning
+two or more days, one
+of them the run's day, becomes a repeat-ask event whose evidence is each day's
+scrubbed quote. The fix is to make the instruction automatic work (a scheduled
+check, a hook, or a standing rule) so Lee stops giving it.
 
 Re-running a day with unchanged inputs rewrites identical digest bytes; the
 one environment input is this host's name, which counts as the home's own
@@ -82,8 +101,9 @@ velocity file anywhere: the fleet app pulls it from the lane.
 Each finding states what Lee had to do, how often, how long agents waited,
 the root cause, a proposed fix that removes the step, an owner, and evidence
 (task ids, status keys and times, session ids). Quoted evidence is one
-scrubbed line: a status text excerpt with tokens redacted, a command head, or
-the matched refusal class, never transcript prose.
+scrubbed line: a status text excerpt with tokens redacted, a command head, the
+matched refusal class, or, for a repeated ask, Lee's own sentence per day. No
+other transcript prose is kept, and nothing is sent to a model or service.
 
 A finding's id is a slug of its cause, sub and name alone, so it is the same
 every night (at most 54 characters, which fleet-app's tap card needs). Its state
@@ -117,6 +137,7 @@ import socket
 import subprocess
 import sys
 import time
+import zoneinfo
 
 
 def _triage():
@@ -248,7 +269,7 @@ COMMAND_RULES = [
 
 CATEGORY = {"guard-hook": "tooling", "missing-tool": "tooling", "credential": "waiting", "sudo": "waiting",
             "policy": "waiting", "decision": "waiting", "environment": "environment",
-            "service-limit": "environment", "lee-command": "waiting", "other": "other"}
+            "service-limit": "environment", "lee-command": "waiting", "repeat-ask": "waiting", "other": "other"}
 
 # (cause, sub) -> title, what Lee had to do, the fix, owner, effort.
 # {service}, {tool} and {machine} are filled from the group, never in a title, so a
@@ -372,6 +393,12 @@ FIXES = {
         "answer an ask whose reason no rule recognised",
         "Make every blocked or needs-decision line say why the agent cannot go on (policy, credential, sudo, tool"
         " or decision), so the next run can group it and name its fix; then remove the most repeated cause.",
+        "main (firstmate)", "S"),
+    ("repeat-ask", "instruction"): (
+        "Lee gives the same instruction on several days",
+        "repeat an instruction he has already given",
+        "Turn the instruction into automatic work: a scheduled officer check, a hook, or a standing rule in"
+        " captain-shared.md that firstmate applies without being told, and say so to Lee once.",
         "main (firstmate)", "S"),
     ("policy", "approval"): (
         "Routine steps wait on Lee's explicit word",
@@ -641,11 +668,148 @@ def session_events(records, machine):
     return events
 
 
-def scan(archive, date):
+INSTRUCTION_RE = re.compile(
+    r"\b(?:keep|make sure|always|never|don'?t|do not|should|shouldn'?t|need(?:s)? to|must|remember|stop|"
+    r"have to|has to|supposed to|ought to)\b", re.I)
+# Words that carry no instruction, the instruction markers themselves, and the fillers of dictated speech.
+FILLER = frozenset("""make sure need needs should shouldnt must dont always never remember stop ought supposed please up
+a about all also am an and any are as at be been being but by can could did do does for from
+got had has have he her him his how i if in into is it its just like me more my no not of on one only or our out
+so some than that the their them then there these they this those to too us was we were what when which who will
+with would yeah um uh er you your youre ive id im thats there
+want know think going gonna wanna get getting go really hey say come back constantly having lets okay ok yes thanks
+maybe actually basically kind sort lot bit way thing things stuff time""".split())
+ASK_MIN_SHARED = 3
+ASK_MIN_OVERLAP = 0.7
+UPKEEP = "upkeep"
+UPKEEP_WORDS = frozenset("keep update current date fresh maintain look check review watch track monitor stale".split())
+ASK_MIN_SHARED_UPKEEP = 2
+MAX_ASK_LEN = 300
+
+
+def ask_tokens(sentence):
+    words = re.findall(r"[a-z]+", sentence.lower().replace("'", ""))
+    stems = (w[:-1] if len(w) > 4 and w.endswith("s") else w for w in words if w not in FILLER and len(w) > 1)
+    return frozenset(UPKEEP if is_upkeep(w) else w for w in stems)
+
+
+def is_upkeep(word):
+    if word.endswith("ing"):
+        return word[:-3] in UPKEEP_WORDS or word[:-3] + "e" in UPKEEP_WORDS
+    if word.endswith("ed"):
+        return word[:-2] in UPKEEP_WORDS or word[:-1] in UPKEEP_WORDS
+    return word in UPKEEP_WORDS
+
+
+def same_ask(a, b):
+    shared = a & b
+    if len(shared) >= ASK_MIN_SHARED and len(shared) >= ASK_MIN_OVERLAP * min(len(a), len(b)):
+        return True
+    return UPKEEP in shared and len(shared - {UPKEEP}) >= ASK_MIN_SHARED_UPKEEP
+
+
+def lee_clauses(text):
+    """Sentences of a typed message; a long run-on of dictated speech is cut into clauses."""
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+        if len(sentence) > MAX_ASK_LEN:
+            yield from re.split(r",\s+|;\s+|\s+(?:and|but|so)\s+", sentence)
+        else:
+            yield sentence
+
+
+def lee_instructions(records, worker):
+    """Instruction clauses Lee typed in one transcript: (epoch, clause) in record order.
+    A worker session's first prompt is firstmate's launch brief, which quotes Lee, so it is skipped."""
+    out = []
+    skip = worker
+    for rec in records:
+        text = user_text(rec) if rec.get("type") == "user" else None
+        if text is None:
+            continue
+        if skip:
+            skip = False
+            continue
+        if MACHINE_PROMPT_RE.match(text) or BASH_INPUT_RE.match(text.strip()) or len(text) > 6000:
+            continue
+        for clause in lee_clauses(text):
+            clause = clause.strip()
+            if 12 <= len(clause) <= MAX_ASK_LEN and INSTRUCTION_RE.search(clause) and len(ask_tokens(clause)) >= ASK_MIN_SHARED:
+                out.append((epoch_of(rec.get("timestamp")), clause))
+    return out
+
+
+def scan_asks(archive, date, days):
+    """Lee's instruction sentences over the `days` days ending at <date>, from interactive and worker sessions."""
+    out, seen = [], set()
+    end = datetime.date.fromisoformat(date)
+    window = {(end - datetime.timedelta(days=back)).isoformat() for back in range(days)}
+    for day in sorted(window, reverse=True):
+        manifest = triage.load_json(os.path.join(archive, "by-date", day, "manifest.json"))
+        try:
+            tz = zoneinfo.ZoneInfo((manifest or {}).get("timezone") or "UTC")
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+            tz = datetime.timezone.utc
+        for entry in (manifest or {}).get("sessions") or []:
+            if entry.get("harness") != "claude-code":
+                continue
+            folder = os.path.join(archive, entry.get("folder") or "")
+            index = triage.load_json(os.path.join(folder, "index.json")) or {}
+            kind = triage.classify(index.get("first_prompt") or "")
+            if kind not in ("other", "worker"):
+                continue
+            records = records_of(os.path.join(folder, "transcript.jsonl.gz"))
+            session = "%s:%s" % (entry.get("machine"), entry.get("session_id") or entry.get("name"))
+            for at, sentence in lee_instructions(records or [], kind == "worker"):
+                said = datetime.datetime.fromtimestamp(at, tz).date().isoformat() if at is not None else day
+                if said not in window or (session, at, sentence) in seen:
+                    continue
+                seen.add((session, at, sentence))
+                out.append({"date": said, "at": at, "session": session, "text": scrub(sentence, MAX_ASK_LEN)})
+    return sorted(out, key=lambda a: (a["date"], a["at"] or 0, a["session"], a["text"]))
+
+
+def repeat_ask_events(asks, date):
+    """One event per instruction Lee gave on two or more days, when one of them is <date>."""
+    toks = [ask_tokens(a["text"]) for a in asks]
+    parent = list(range(len(asks)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i in range(len(asks)):
+        for j in range(i + 1, len(asks)):
+            if asks[i]["date"] != asks[j]["date"] and same_ask(toks[i], toks[j]):
+                parent[find(j)] = find(i)
+    groups = {}
+    for i in range(len(asks)):
+        groups.setdefault(find(i), []).append(i)
+    events = []
+    for members in groups.values():
+        days = sorted({asks[i]["date"] for i in members})
+        if len(days) < 2 or date not in days:
+            continue
+        common = frozenset.intersection(*(toks[i] for i in members))
+        first = {}
+        for i in members:
+            first.setdefault(asks[i]["date"], asks[i])
+        topic = " ".join(sorted(common)[:6]) or " ".join(sorted(toks[members[0]])[:6])
+        quotes = [{"date": d, "session": first[d]["session"], "quote": first[d]["text"]} for d in days]
+        events.append({"kind": "repeat-ask", "at": max(a["at"] or 0 for a in (asks[i] for i in members)) or None,
+                       "cause": "repeat-ask", "sub": "instruction", "lee": True, "service": None, "tool": None,
+                       "signature": "%d days: %s" % (len(days), quotes[-1]["quote"]), "topic": topic, "asks": quotes,
+                       "wait_s": None, "measured_by": None})
+    return sorted(events, key=lambda e: (e["topic"], e["signature"]))
+
+
+def scan(archive, date, days=1):
     """Per-session friction facts for one archive day; reads only the archive."""
     manifest = triage.load_json(os.path.join(archive, "by-date", date, "manifest.json"))
     out = {"date": date, "manifest": manifest is not None, "sessions": [], "not_analysed": {},
-           "not_collected": {}, "harvester_last_run": triage.harvester_last_run(archive)}
+           "not_collected": {}, "harvester_last_run": triage.harvester_last_run(archive),
+           "lee_asks": scan_asks(archive, date, days)}
     if manifest is None:
         return out
     out["not_collected"] = manifest.get("not_collected") or {}
@@ -687,10 +851,10 @@ def remote_program():
     return (prelude + friction_src).encode("utf-8")
 
 
-def remote_scan(host, archive, date):
+def remote_scan(host, archive, date, days):
     proc = subprocess.run(
         ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", host,
-         "python3 -I - scan --archive %s --date %s" % (triage.shell_quote(archive), date)],
+         "python3 -I - scan --archive %s --date %s --days %d" % (triage.shell_quote(archive), date, days)],
         input=remote_program(), capture_output=True, check=False)
     if proc.returncode != 0:
         raise RuntimeError("archive host %s unreachable or scan failed (ssh exit %d)"
@@ -906,6 +1070,7 @@ def all_events(scanned, homes, date, cards, channels):
                                home=join.get("home")))
     events.extend(status_events(homes, date, channels))
     events.extend(card_events(cards, homes, date))
+    events.extend(repeat_ask_events(scanned.get("lee_asks") or [], date))
     events.sort(key=lambda e: (e.get("at") or 0, e["kind"],
                                e.get("session") or e.get("task") or e.get("card") or "", e["signature"]))
     return events
@@ -935,7 +1100,9 @@ def place(home_or_machine):
 def group_findings(events, model):
     groups = {}
     for ev in events:
-        if ev["cause"] == "missing-tool" or ev["sub"] == "refused":
+        if ev["cause"] == "repeat-ask":
+            name = ev["topic"]
+        elif ev["cause"] == "missing-tool" or ev["sub"] == "refused":
             name = ev["tool"]
         else:
             name = ev.get("service") if ev["cause"] in ("credential", "service-limit") else None
@@ -982,7 +1149,8 @@ def group_findings(events, model):
             "owner": None, "title": None, "lee_did": None, "fix": None, "effort": None,
             "category": CATEGORY.get(cause, "other"),
             "evidence": {"tasks": tasks, "sessions": sessions, "status_keys": keys, "cards": cards,
-                         "example": sorted(e["signature"] for e in evs)[0]},
+                         "example": sorted(e["signature"] for e in evs)[0],
+                         "asks": [a for e in evs for a in e.get("asks") or []]},
             "where": dict(sorted(places.items())),
         }
         if fix:
@@ -1182,6 +1350,8 @@ def bottleneck(f, date):
         parts.append("sessions " + ", ".join(s.split(":")[0] + ":" + s.split(":")[-1][:8]
                                              for s in ev["sessions"][:3]))
     parts.append("e.g. " + ev["example"])
+    if ev["asks"]:
+        parts.append("asked " + "; ".join('%s "%s"' % (a["date"], clip(a["quote"], 60)) for a in ev["asks"][:4]))
     if f["wait_total_s"] is not None:
         saved = "about %s a day: %d measured wait(s) on %s totalling %s, from ask to answer" % (
             human_span(f["wait_total_s"]), f["waits_measured"], date, human_span(f["wait_total_s"]))
@@ -1350,6 +1520,8 @@ def render_md(doc):
             ", ".join(ev["tasks"]) or "none", ", ".join(ev["status_keys"]) or "none",
             ", ".join(ev["cards"]) or "none",
             ", ".join(ev["sessions"][:6]) or "none", ev["example"].replace("`", "'")))
+        for a in ev["asks"]:
+            lines.append("- Asked %s (%s): \"%s\"" % (a["date"], a["session"], a["quote"].replace("`", "'")))
         lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
 
@@ -1364,13 +1536,14 @@ def main(argv):
     parser.add_argument("--hosts", default="")
     parser.add_argument("--captains-log")
     parser.add_argument("--channel", action="append", default=[])
+    parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--model", default="none")
     parser.add_argument("--now", type=int)
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date):
         parser.error("--date must be YYYY-MM-DD")
     if args.action == "scan":
-        json.dump(scan(args.archive, args.date), sys.stdout, sort_keys=True)
+        json.dump(scan(args.archive, args.date, args.days), sys.stdout, sort_keys=True)
         sys.stdout.write("\n")
         return 0
     if not args.out:
@@ -1381,9 +1554,9 @@ def main(argv):
         if args.model != "none":
             raise RuntimeError("model-written fixes are not available in slice 1 (model: %s)" % args.model)
         if remote:
-            scanned = remote_scan(remote.group(1), remote.group(2), args.date)
+            scanned = remote_scan(remote.group(1), remote.group(2), args.date, args.days)
         else:
-            scanned = scan(args.archive, args.date)
+            scanned = scan(args.archive, args.date, args.days)
         triage.require_harvested(scanned)
         homes = [triage.Home(h) for h in args.home]
         triage.join_sessions(scanned, homes)

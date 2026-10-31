@@ -278,6 +278,85 @@ test_ensure_reports_gaps_and_is_silent_when_healthy() {
   pass "fm-officer: ensure prints OFFICER: lines for each gap and nothing when healthy"
 }
 
+wait_for_key() {  # <home> <key>: until the scheduled run has logged an attempt for the slot.
+  local i=0
+  until grep -q " $2 " "$1/data/officers/page-check/runs.log" 2>/dev/null && [ ! -d "$1/data/officers/page-check/.run.lock" ]; do
+    i=$((i + 1))
+    [ "$i" -lt 300 ] || fail "the scheduled run for $2 never finished"
+    sleep 0.1
+  done
+}
+
+test_interval_cadence_runs_once_per_slot() {
+  local home fakebin out c slot_a=2026-10-24T06 slot_b=2026-10-24T08
+  home="$TMP_ROOT/interval/home"
+  officer_home "$home"
+  fakebin=$(fm_fakebin "$TMP_ROOT/interval")
+  printf '#!/usr/bin/env bash\nprintf "\\n404"\n' > "$fakebin/curl"
+  chmod +x "$fakebin/curl"
+  officer_pagecheck_line() { printf -- '- page-check - Checks pages (role: pagecheck; cadence: %s; app: https://app.test; rules: %s/none; model: none; added 2026-10-24)\n' "$1" "$TMP_ROOT" > "$home/data/officers.md"; }
+  for c in "every 0h" "every 25h" "every 2 hours"; do
+    officer_pagecheck_line "$c"
+    FM_HOME="$home" "$OFFICER" run page-check --date "$slot_a" >/dev/null 2>&1 && fail "cadence '$c' must be refused"
+  done
+  officer_pagecheck_line "every 2h"
+  PATH="$fakebin:$PATH" FM_OFFICER_NOW=$NOW FM_HOME="$home" "$OFFICER" register page-check >/dev/null || fail "register must succeed"
+  # NOW is 07:00 UTC, inside the slot that began at 06:00.
+  PATH="$fakebin:$PATH" FM_OFFICER_NOW=$NOW FM_HOME="$home" "$OFFICER" check page-check >/dev/null || fail "check must exit 0"
+  wait_for_key "$home" "$slot_a"
+  assert_grep "$slot_a ok" "$home/data/officers/page-check/runs.log" "the first check in a slot starts that slot's run, keyed by the slot"
+  out=$(PATH="$fakebin:$PATH" FM_OFFICER_NOW=$NOW FM_HOME="$home" "$OFFICER" check page-check)
+  assert_contains "$out" "officer page-check: $slot_a: " "the next check reports the slot's digest"
+  out=$(PATH="$fakebin:$PATH" FM_OFFICER_NOW=$((NOW + 1800)) FM_HOME="$home" "$OFFICER" check page-check)
+  assert_equals "" "$out" "a repeat within the slot is silent"
+  assert_equals 1 "$(grep -c " $slot_a " "$home/data/officers/page-check/runs.log")" "a finished slot is not run again"
+  PATH="$fakebin:$PATH" FM_OFFICER_NOW=$((NOW + 3600)) FM_HOME="$home" "$OFFICER" check page-check >/dev/null || fail "check must exit 0"
+  wait_for_key "$home" "$slot_b"
+  assert_grep "$slot_b ok" "$home/data/officers/page-check/runs.log" "the next slot starts its own run two hours after the last slot began"
+  assert_equals "" "$(FM_OFFICER_NOW=$((NOW + 3600)) FM_HOME="$home" "$OFFICER" ensure)" "an interval officer with a run in the last two periods is healthy"
+  assert_contains "$(FM_OFFICER_NOW=$((NOW + 3600 + 5 * 3600)) FM_HOME="$home" "$OFFICER" ensure)" "(cadence every 2h)" \
+    "ensure judges an interval officer against two of its own periods"
+  pass "fm-officer: an interval cadence runs once per slot and ensure uses the interval"
+}
+
+wait_for_failures() {  # <home> <key> <count>: until the lane has logged that many failed attempts for the slot.
+  local i=0
+  until [ "$(grep -c " $2 failed" "$1/data/officers/page-check/runs.log" 2>/dev/null || true)" -ge "$3" ] 2>/dev/null \
+    && [ ! -d "$1/data/officers/page-check/.run.lock" ]; do
+    i=$((i + 1))
+    [ "$i" -lt 300 ] || fail "failed attempt $3 for $2 was never logged"
+    sleep 0.1
+  done
+}
+
+test_interval_failure_is_reported_once_across_slots() {
+  local home fakebin base out n key=2026-10-24T06 next=2026-10-24T08
+  home="$TMP_ROOT/intfail/home"
+  officer_home "$home"
+  fakebin=$(fm_fakebin "$TMP_ROOT/intfail")
+  printf '#!/usr/bin/env bash\nprintf "\\n404"\n' > "$fakebin/curl"
+  chmod +x "$fakebin/curl"
+  printf -- '- page-check - Checks pages (role: pagecheck; cadence: every 2h; app: https://app.test; model: none; added 2026-10-24)\n' > "$home/data/officers.md"
+  PATH="$fakebin:$PATH" FM_OFFICER_NOW=$NOW FM_HOME="$home" "$OFFICER" register page-check >/dev/null || fail "register must succeed"
+  # A directory where the lane keeps state.json makes every run fail.
+  mkdir -p "$home/data/officers/page-check/state.json"
+  base=$((NOW - 3600))   # 06:00, the start of the slot
+  for n in 1 2 3; do
+    out=$(PATH="$fakebin:$PATH" FM_OFFICER_RETRY_SECS=1800 FM_OFFICER_NOW=$((base + (n - 1) * 1800)) FM_HOME="$home" "$OFFICER" check page-check)
+    assert_equals "" "$out" "attempt $n is silent"
+    wait_for_failures "$home" "$key" "$n"
+  done
+  out=$(PATH="$fakebin:$PATH" FM_OFFICER_RETRY_SECS=1800 FM_OFFICER_NOW=$((base + 5400)) FM_HOME="$home" "$OFFICER" check page-check)
+  assert_contains "$out" "officer page-check: $key: run failed 3 time(s)" "an interval officer reports its failure after the last attempt in the slot"
+  for n in 1 2 3; do
+    PATH="$fakebin:$PATH" FM_OFFICER_RETRY_SECS=1800 FM_OFFICER_NOW=$((base + 7200 + (n - 1) * 1800)) FM_HOME="$home" "$OFFICER" check page-check >/dev/null
+    wait_for_failures "$home" "$next" "$n"
+  done
+  out=$(PATH="$fakebin:$PATH" FM_OFFICER_RETRY_SECS=1800 FM_OFFICER_NOW=$((base + 7200 + 5400)) FM_HOME="$home" "$OFFICER" check page-check)
+  assert_equals "" "$out" "the same failure in the next slot is not reported again"
+  pass "fm-officer: a failing interval officer reports once, even though attempts reset each slot"
+}
+
 test_secondmate_home_runs_no_officers() {
   local home out rc
   home=$(make_world secondmate empty_spec)
@@ -345,5 +424,7 @@ test_late_harvester_is_retried_then_reported
 test_failure_after_a_reported_digest_is_reported_once
 test_timed_out_run_counts_as_an_attempt
 test_ensure_reports_gaps_and_is_silent_when_healthy
+test_interval_cadence_runs_once_per_slot
+test_interval_failure_is_reported_once_across_slots
 test_secondmate_home_runs_no_officers
 test_run_writes_only_its_lane_and_acts_on_no_fleet

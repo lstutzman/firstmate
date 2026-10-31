@@ -567,6 +567,183 @@ SH
   pass "fm-officer friction: Captain's Log cards are read once, read-only, and an unreachable log is a coverage gap"
 }
 
+test_repeated_lee_asks_across_days() {
+  local home archive json md out
+  home="$TMP_ROOT/repeat/fixturehost"
+  archive="$TMP_ROOT/repeat/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  cat > "$TMP_ROOT/repeat/day1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "lee-day1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-22T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date. Thanks."}},
+  {"type": "user", "timestamp": "2026-10-22T09:05:00.000Z", "message": {"content": "Run the unit tests for the parser now."}}]}]}
+EOF
+  cat > "$TMP_ROOT/repeat/day2.json" <<'EOF'
+{"sessions": [
+ {"machine": "alpha", "id": "lee-day2", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:00:00.000Z", "message": {"content": "I keep coming back to this and honestly I see it all the time, um, we spend a lot of time on pages and cards that nobody has looked at for days and nobody owns, and I am constantly having to come back to the same chat window and say, hey, keep the captain's log up to date, you know, every single page of it, because it should really be on a time schedule."}},
+  {"type": "user", "timestamp": "2026-10-23T09:10:00.000Z", "message": {"content": "Never push straight to the shared database branch."}}]},
+ {"machine": "alpha", "id": "worker-day2", "first_prompt": "Firstmate operational input waiting: read the brief", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:20:00.000Z", "message": {"content": "Never push straight to the shared database branch, a brief quoting Lee."}}]}]}
+EOF
+  officer_archive "$archive" 2026-10-22 "$TMP_ROOT/repeat/day1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/repeat/day2.json"
+  friction_registry "$home" "$archive"
+  out=$(run_officer "$home") || fail "run must succeed: $out"
+  json="$home/data/officers/friction/$DATE.json"
+  md="$home/data/officers/friction/$DATE.md"
+  assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "one instruction given on two days is one finding; a single-day or worker-brief sentence is not"
+  assert_equals "2026-10-22 2026-10-23" "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks | map(.date) | join(" ")' "$json")" \
+    "the finding names each day the instruction was given"
+  assert_contains "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks[0].quote' "$json")" "keep the captain's log up to date" \
+    "the finding quotes Lee's words"
+  assert_equals true "$(jq '[.findings[] | select(.cause == "repeat-ask")][0].carded' "$json")" "a repeated ask clears the card bar"
+  assert_grep 'Asked 2026-10-22 (alpha:lee-day1): "Please keep the captain' "$md" "the digest quotes each day's ask"
+  sed -i.bak 's/model: none/model: none; ask-days: 1/' "$home/data/officers.md"
+  run_officer "$home" >/dev/null || fail "run with ask-days 1 must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" "a one-day window finds no repeat"
+  sed -i.bak 's/ask-days: 1/ask-days: 0/' "$home/data/officers.md"
+  assert_contains "$(run_officer "$home" 2>&1)" "ask-days must be a whole number" "a zero window is refused"
+  pass "fm-officer friction: the same Lee instruction on two days is one finding with quotes and dates"
+}
+
+test_long_session_asks_dated_by_message() {
+  local home archive json
+  home="$TMP_ROOT/longsession/fixturehost"
+  archive="$TMP_ROOT/longsession/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  cat > "$TMP_ROOT/longsession/once.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "main-chat", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date."}}]}]}
+EOF
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/longsession/once.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/longsession/once.json"
+  friction_registry "$home" "$archive"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "one ask in a session listed on two days is not a repeat"
+  cat > "$TMP_ROOT/longsession/twice.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "main-chat", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date."}},
+  {"type": "user", "timestamp": "2026-10-23T09:00:00.000Z", "message": {"content": "Hey, keep the captain's log up to date, again."}}]}]}
+EOF
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/longsession/twice.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/longsession/twice.json"
+  run_officer "$home" >/dev/null || fail "two-ask run must succeed"
+  assert_equals "2026-10-21 Please keep the captain's log up to date.|$DATE Hey, keep the captain's log up to date, again." \
+    "$(jq -r '[.findings[] | select(.cause == "repeat-ask")] | map(.evidence.asks | map(.date + " " + .quote) | join("|")) | join(";")' "$json")" \
+    "one session listed on two days gives one finding, each ask on the day Lee gave it"
+  pass "fm-officer friction: asks are dated by their message time and a session listed on two days is read once"
+}
+
+test_paraphrased_upkeep_asks_cluster() {
+  local home archive json
+  home="$TMP_ROOT/paraphrase/fixturehost"
+  archive="$TMP_ROOT/paraphrase/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  cat > "$TMP_ROOT/paraphrase/d1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "p-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/d2.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "p-d2", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-22T09:00:00.000Z", "message": {"content": "I just want to make sure that the captain's log, uh, keeper agent is looking at all pages and not just certain ones."}},
+  {"type": "user", "timestamp": "2026-10-22T09:30:00.000Z", "message": {"content": "Make sure the captain's log renders on mobile."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/d3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "p-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:00:00.000Z", "message": {"content": "I'm constantly having to come back and say, hey, keep the captain's log up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/n1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "n-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/n3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "n-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "Make sure the captain's log renders on mobile."}}]}]}
+EOF
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/d1.json"
+  officer_archive "$archive" 2026-10-22 "$TMP_ROOT/paraphrase/d2.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/d3.json"
+  friction_registry "$home" "$archive"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "three paraphrases of one upkeep instruction are one finding"
+  assert_equals "2026-10-21 2026-10-22 2026-10-23" \
+    "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks | map(.date) | join(" ")' "$json")" \
+    "the finding names each of the three days"
+  assert_contains "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks[1].quote' "$json")" "keeper agent is looking at all pages" \
+    "the paraphrase on the middle day is the quote for that day"
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/n1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/n3.json"
+  run_officer "$home" >/dev/null || fail "negative run must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "an instruction about the same log that asks for no upkeep is a different instruction"
+  cat > "$TMP_ROOT/paraphrase/m1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "m-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Make sure you check the logs on staging."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/m3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "m-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "Make sure to update the changelog."}}]}]}
+EOF
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/m1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/m3.json"
+  run_officer "$home" >/dev/null || fail "make-sure run must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "two upkeep asks on different topics that share only their instruction words are different instructions"
+  cat > "$TMP_ROOT/paraphrase/u1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "u-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Keep the PR body up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/u3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "u-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "Make sure the PR title is up to date."}}]}]}
+EOF
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/u1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/u3.json"
+  run_officer "$home" >/dev/null || fail "up-to-date run must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "two up-to-date asks that share one noun are different instructions"
+  cat > "$TMP_ROOT/paraphrase/w1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "w-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "I want you to keep the Bosun page up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/w3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "w-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "I want to make sure the velocity page is current."}}]}]}
+EOF
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/w1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/w3.json"
+  run_officer "$home" >/dev/null || fail "want run must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "two asks about different pages that share only dictated-speech words are different instructions"
+  cat > "$TMP_ROOT/paraphrase/i1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "i-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Keep the captain's log updated."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/i3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "i-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "You need to keep checking the captain's log."}}]}]}
+EOF
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/i1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/i3.json"
+  run_officer "$home" >/dev/null || fail "inflected run must succeed"
+  assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "updated and checking count as the upkeep word, so the two log asks are one instruction"
+  pass "fm-officer friction: paraphrased upkeep asks on three days are one finding; a non-upkeep ask about the log is not"
+}
+
 test_registry_and_unharvested_day() {
   local home out
   home=$(make_world registry)
@@ -590,4 +767,7 @@ test_rerun_digest_is_byte_identical
 test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh
 test_captains_log_cards_read_only
+test_repeated_lee_asks_across_days
+test_long_session_asks_dated_by_message
+test_paraphrased_upkeep_asks_cluster
 test_registry_and_unharvested_day
