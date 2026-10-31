@@ -152,15 +152,17 @@ append() {
 
 # The status-line grammar belongs to bin/fm-classify-lib.sh; this only projects it.
 append_status() { # <task> <status-line>
-  local task=$1 line=$2 verb key text
+  local task=$1 line=$2 verb key cause text
   status_line_verb "$line" verb
   case "$verb" in [a-z]*) case "$verb" in *[!a-z-]*) verb='' ;; esac ;; *) verb='' ;; esac
   key=$(_fm_decision_key "$line" 2>/dev/null) || key=''
   [ "$key" != default ] || key=''
+  cause=$(status_line_cause "$line")
+  [ "$cause" != unstated ] || cause=''
   text=${line#*:}
   append task.status "$task" \
-    "{state: (\$state | n), key: (\$key | n), text: \$text[0:$TEXT_MAX_CHARS]}" \
-    --arg state "$verb" --arg key "$key" --arg text "$text"
+    "{state: (\$state | n), key: (\$key | n), text: \$text[0:$TEXT_MAX_CHARS]} + (if \$cause == \"\" then {} else {cause: \$cause} end)" \
+    --arg state "$verb" --arg key "$key" --arg cause "$cause" --arg text "$text"
 }
 
 capture_task() { # <task>; caller holds the lock

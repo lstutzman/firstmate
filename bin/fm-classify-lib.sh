@@ -836,6 +836,27 @@ _fm_decision_key() {  # <status-line> [<keyless>] -> key slug, or <keyless> (def
   _fm_decision_slug_ok "$k" || return 1
   printf '%s' "$k"
 }
+# Cause grammar: a blocked or needs-decision line states why the agent cannot go
+# on as an OPTIONAL "[cause=<cause>]" token beside "[at=...]" and "[key=...]"
+# before the first colon. The closed set is policy (a rule or approval reserved
+# to a human), credential, sudo, tool, decision and external (a service, machine
+# or agent being waited on). The tag is metadata only: it never changes how a
+# line opens or closes a decision. A line with no tag, or a value outside the
+# set, reads as "unstated", never an error, so older workers and other homes
+# keep working. bin/fm-brief.sh tells workers to write it.
+status_line_cause() {  # <status-line> -> policy|credential|sudo|tool|decision|external|unstated
+  local unstamped head
+  _fm_status_unstamped "$1" unstamped
+  head=${unstamped%%:*}
+  case "$head" in
+    *\[cause=*\]*) head=${head#*\[cause=}; head=${head%%\]*} ;;
+    *) head='' ;;
+  esac
+  case "$head" in
+    policy|credential|sudo|tool|decision|external) printf '%s' "$head" ;;
+    *) printf unstated ;;
+  esac
+}
 # Unkeyed lines stamped at or after this epoch take synthetic keys (see the key
 # grammar above). FM_CLASSIFY_UNKEYED_CUTOVER overrides it.
 FM_CLASSIFY_UNKEYED_CUTOVER_DEFAULT=1791843600

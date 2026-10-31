@@ -26,8 +26,12 @@ wait for Lee to do. One day's friction events come from three sources:
                again; a re-asked chain whose lines hand Lee `ssh ... <host> '`
                for the home's own host is ssh-to-self. Any other line whose
                text names an environment cause (a session restored in the
-               wrong directory) is a report with no wait.
-  archive      each claude-code session of the archive day: a <bash-input>
+               wrong directory) is a report with no wait. A line's text rules
+               classify it first; a line they leave unclassified joins the group
+               of its stated [cause=...] tag (policy, credential, sudo, tool,
+               decision, external), and each finding tallies its lines by stated
+               cause, with untagged ones as unstated.
+  archive     each claude-code session of the archive day: a <bash-input>
                record is a command Lee ran himself (ssh to the session's own
                host is flagged); an assistant text block asking Lee to run or
                do something is an ask, collapsed per session and command and
@@ -146,6 +150,13 @@ LEE_RE = re.compile(r"\b(Lee|captain|Captain)\b")
 STATUS_RE = re.compile(r"^([a-z][a-z-]*)\b([^:]*):\s?(.*)$")
 AT_RE = re.compile(r"(?:^|[\s\[])at=(\d+)\b")
 KEY_RE = re.compile(r"(?:^|[\s\[])key=([^\]\s]+)")
+CAUSE_RE = re.compile(r"(?:^|[\s\[])cause=([^\]\s]+)")
+# The causes a worker may state on a blocked or needs-decision line (bin/fm-classify-lib.sh
+# status_line_cause owns the vocabulary) and the friction group each joins when no text rule
+# recognised the line; anything else reads as unstated.
+STATED_CAUSES = {"policy": ("policy", "approval"), "credential": ("credential", "missing"),
+                 "sudo": ("sudo", "sudo"), "tool": ("missing-tool", "tool"),
+                 "decision": ("decision", "decision"), "external": ("environment", "external")}
 URL_RE = re.compile(r"https?://\S+")
 CORR_RE = re.compile(r"\bcorr=[0-9a-f]+\s*")
 SSH_HOST_RE = re.compile(r"\bssh (?:-\w+ )*(?:[\w.-]+@)?([\w.-]+) '")
@@ -367,11 +378,18 @@ FIXES = {
         "Make every Lee-step ask name why the agent cannot run it (sudo, credential, policy or tool), so the"
         " cause can be removed; then remove it, starting with the most repeated.",
         "main (firstmate)", "S"),
+    ("environment", "external"): (
+        "Agents block on a service, machine or agent they cannot reach",
+        "nothing directly; the line says the agent waits on something outside the task",
+        "Name the dependency and when it should recover in the line, and let firstmate re-check it on a timer"
+        " instead of holding the task; fix the dependency's own outage or access if it repeats.",
+        "main (firstmate)", "S"),
     ("other", "other"): (
         "Blocked steps carry no recorded cause",
         "answer an ask whose reason no rule recognised",
-        "Make every blocked or needs-decision line say why the agent cannot go on (policy, credential, sudo, tool"
-        " or decision), so the next run can group it and name its fix; then remove the most repeated cause.",
+        "Workers now tag blocked and needs-decision lines with [cause=policy|credential|sudo|tool|decision|"
+        "external]; find the tasks and homes this group's evidence names that still write untagged lines, update"
+        " their briefs, then remove the most repeated cause.",
         "main (firstmate)", "S"),
     ("policy", "approval"): (
         "Routine steps wait on Lee's explicit word",
@@ -699,14 +717,16 @@ def remote_scan(host, archive, date):
 
 
 def parse_status_line(line):
-    """(state, key, at, text) of one status line, or None."""
+    """(state, key, at, text, stated cause or None) of one status line, or None."""
     m = STATUS_RE.match(line.strip())
     if not m:
         return None
     markers = m.group(2)
     at = AT_RE.search(markers)
     key = KEY_RE.search(markers)
-    return m.group(1), key.group(1) if key else None, int(at.group(1)) if at else None, m.group(3)
+    cause = CAUSE_RE.search(markers)
+    cause = cause.group(1) if cause and cause.group(1) in STATED_CAUSES else None
+    return m.group(1), key.group(1) if key else None, int(at.group(1)) if at else None, m.group(3), cause
 
 
 def status_streams(home):
@@ -729,9 +749,10 @@ def status_streams(home):
         for line in lines:
             parsed = parse_status_line(line)
             if parsed and parsed[2] is not None:
-                state_word, key, at, text = parsed
+                state_word, key, at, text, cause = parsed
                 streams.setdefault(task, []).append(
-                    {"state": state_word, "key": key, "at": at, "text": text, "source": "status"})
+                    {"state": state_word, "key": key, "at": at, "text": text, "source": "status",
+                     "stated": cause})
     for task, events in sorted(home.ledger.items()):
         seen = {(e["state"], e["key"], e["text"].strip()) for e in streams.get(task, [])}
         for rec in events:
@@ -743,7 +764,8 @@ def status_streams(home):
             seen.add(item)
             streams.setdefault(task, []).append(
                 {"state": rec.get("state"), "key": rec.get("key"), "at": rec["ts"],
-                 "text": (rec.get("text") or "").strip(), "source": "ledger"})
+                 "text": (rec.get("text") or "").strip(), "source": "ledger",
+                 "stated": rec.get("cause") if rec.get("cause") in STATED_CAUSES else None})
     for events in streams.values():
         events.sort(key=lambda e: e["at"])
     return streams
@@ -752,6 +774,11 @@ def status_streams(home):
 def host_names(home):
     """Names the home's own machine answers to: its directory name and this host's short name."""
     return {place(home.path), socket.gethostname().split(".")[0]}
+
+
+def waits_stated(ev):
+    """True when a blocked or needs-decision line states one of the known causes."""
+    return ev["state"] in ("needs-decision", "blocked") and ev.get("stated") in STATED_CAUSES
 
 
 def status_events(homes, date, channels):
@@ -768,6 +795,8 @@ def status_events(homes, date, channels):
                     continue
                 text = clean(ev["text"])
                 cause, sub, pos = classify(text)
+                if waits_stated(ev) and (cause, sub) == ("other", "other"):
+                    cause, sub = STATED_CAUSES[ev["stated"]]
                 names_lee = bool(LEE_RE.search(text))
                 waits = ev["state"] in ("needs-decision", "blocked") or (ev["state"] == "paused" and names_lee)
                 if not waits and cause != "environment":
@@ -795,7 +824,8 @@ def status_events(homes, date, channels):
                     "wait_s": max(0, answer["at"] - ev["at"]) if answer else None,
                     "measured_by": measured_by, "answered_by": answered_by,
                     "lee": names_lee or answered_by == "lee",
-                    "cause": cause, "sub": sub, "service": service_of(text, pos), "tool": None,
+                    "cause": cause, "sub": sub, "stated": ev.get("stated") if waits else None,
+                    "service": service_of(text, pos), "tool": None,
                     "signature": scrub(text), "_chain": chain, "_own": own,
                 })
     # A Lee step asked again because an ssh line to the home's own machine did not take.
@@ -978,6 +1008,8 @@ def group_findings(events, model):
             "open": sum(1 for e in evs if (e["kind"] == "card-only" or e["kind"] == "status-wait"
                                            and not e["reask"]) and e.get("wait_s") is None),
             "reasks": sum(1 for e in evs if e.get("reask")),
+            "stated_causes": dict(sorted(_count(e.get("stated") or "unstated"
+                                                for e in evs if e["kind"] == "status-wait").items())),
             "severity": severity, "confidence": confidence, "carded": carded,
             "owner": None, "title": None, "lee_did": None, "fix": None, "effort": None,
             "category": CATEGORY.get(cause, "other"),

@@ -118,6 +118,9 @@
 # "blocked:": pause for a known wait expected to clear on its own, including
 # the worker's own background work, pipeline or long command; blocked when
 # firstmate must act. The first-sight alert remains; repeats use the long cadence.
+# Every scaffold also has blocked and needs-decision lines state a [cause=<cause>]
+# tag (policy, credential, sudo, tool, decision, external); bin/fm-classify-lib.sh
+# status_line_cause owns that vocabulary and its fallback to "unstated".
 # Emission-time syntax and legacy unknown-time handling are owned by
 # bin/fm-classify-lib.sh; each scaffold renders the stamp as a literal <epoch>
 # placeholder the worker replaces with a numeric Unix time as it appends, so a
@@ -182,6 +185,13 @@ IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    When you know when the wait clears, include \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) for a recheck at that time; for your own background job or command with a timeout, that time is its start plus its timeout, rounded up to the minute.
    Follow the resolution rule below when the wait clears, then resume the task.
    Use \`blocked:\` when you are stuck and need help.
+EOF
+
+# Every blocked and needs-decision line states why the agent cannot go on; the
+# vocabulary and its parser are owned by status_line_cause in bin/fm-classify-lib.sh.
+IFS= read -r -d '' CAUSE_INSTRUCTIONS <<EOF || true
+   Every \`blocked\` and \`needs-decision\` line also states why you cannot go on, as a \`[cause=<cause>]\` tag before the colon, next to the stamp: \`policy\` (a rule or approval reserved to a human), \`credential\` (a login, token or secret you lack), \`sudo\` (needs root), \`tool\` (a tool is missing or broken), \`decision\` (a product or design choice), or \`external\` (a service, machine or other agent you wait on).
+   Pick the one that fits best, for example \`blocked [at=<epoch>] [cause=sudo]: {why}\`; a line without it still works but is recorded as unstated.
 EOF
 
 resolve_directory_input() {
@@ -563,7 +573,7 @@ Report only true captain-relevant outcomes or a declared external wait by append
    \`$STATUS_APPEND\`
 States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
 Substitute \`<epoch>\` with the current Unix time in seconds - run \`date +%s\` and write the number it printed; a stamp that is not plain digits records no time at all.
-Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own, naming when it clears with \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) when you know; use \`blocked:\` when you are stuck and need firstmate to act.
+Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own, naming when it clears with \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) when you know; use \`blocked:\` when you are stuck and need firstmate to act, with a \`[cause=<cause>]\` tag before the colon saying why (policy, credential, sudo, tool, decision or external; a missing tag is recorded as unstated).
 Use this only for material phase changes, a captain decision, a real blocker, a failure, work ready for review, or work you landed.
 Work you landed includes a merge you performed yourself under standing merge authority and one the captain merged on the forge: under that authority nothing is ever \"ready for review\", so a landed merge that goes unreported reaches the captain as silence.
 This is also how you return the answer to a marked from-firstmate request above.
@@ -581,7 +591,7 @@ You are persistent by default. Do not exit just because your queue is empty.
 On startup and restart, run normal firstmate bootstrap and recovery through \`bin/fm-session-start.sh\` for your own home, but only to RECONCILE work that is already yours: in-flight crewmates, tracked backlog items, and durable watches recorded in this home.
 When you have no assigned or in-flight work after that reconciliation, go idle and wait silently for the main firstmate to route you a task.
 An empty queue is a healthy resting state, not a cue to invent work: never spawn a survey, audit, or any self-directed "find work" task on your own initiative.
-If this charter cannot be carried out, append \`blocked [at=<epoch>]: {why}\` or \`failed [at=<epoch>]: {why}\` to the main status file and stop.
+If this charter cannot be carried out, append \`blocked [at=<epoch>] [cause=<cause>]: {why}\` or \`failed [at=<epoch>]: {why}\` to the main status file and stop.
 EOF
 if [ "$SECONDMATE_CHARTER" = "{TASK}" ]; then
   echo "scaffolded: $BRIEF (secondmate charter; replace {TASK})"
@@ -649,7 +659,7 @@ IFS= read -r -d '' SHARED_INFRA_RULE <<'EOF' || true
      updating it kills other lanes' in-flight pipeline runs; only firstmate manages the daemon.
      Before you append `blocked:` about the pipeline, run `no-mistakes daemon status` and
      `no-mistakes axi status`. If the daemon socket refuses connections or is missing, append
-     `blocked [at=<epoch>]: {the daemon error}` and stop even when the local run record still says running or
+     `blocked [at=<epoch>] [cause=tool]: {the daemon error}` and stop even when the local run record still says running or
      fixing, because that record can be stale after the daemon exits. A run record failed with a
      daemon error is also a real block.
      Only after ruling out socket refusal, if the run is still running or fixing, reattach and keep
@@ -665,7 +675,7 @@ IFS= read -r -d '' SHARED_INFRA_RULE <<'EOF' || true
      backend, and `git worktree add|remove|move|prune`. A slot that looks unused is not evidence
      that it is free, and returning your own worktree is firstmate's job at cleanup, not yours.
    If you genuinely need a second checkout, another slot, or the daemon touched, append
-   `blocked [at=<epoch>]: {what you need}` and stop; firstmate arranges it.
+   `blocked [at=<epoch>] [cause=external]: {what you need}` and stop; firstmate arranges it.
 EOF
 SHARED_INFRA_RULE=${SHARED_INFRA_RULE%$'\n'}
 
@@ -710,9 +720,10 @@ The report is the only thing that survives, so anything worth keeping must be in
    https:// URL exactly as the forge printed it, never a bare number such as "PR 108"; firstmate
    copies that URL from your line rather than assembling one.
 $CREWMATE_PAUSE_INSTRUCTIONS
-5. If you hit the same obstacle twice, append \`blocked [at=<epoch>]: {why}\` and stop; firstmate will help.
+5. If you hit the same obstacle twice, append \`blocked [at=<epoch>] [cause=<cause>]: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
-   append \`needs-decision [at=<epoch>]: {summary of options}\` and stop. Firstmate will reply with the decision.
+   append \`needs-decision [at=<epoch>] [cause=decision]: {summary of options}\` and stop. Firstmate will reply with the decision.
+$CAUSE_INSTRUCTIONS
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved [at=<epoch>]: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 $SHARED_INFRA_RULE
@@ -765,7 +776,7 @@ $SETUP_BASE
 
 **Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a treehouse pool path or an Orca-managed worktree, not the primary checkout firstmate operates from.
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.
-If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked [at=<epoch>]: launched in primary checkout, not an isolated worktree\` to the status file and stop.
+If the top-level path is the primary checkout or not the worktree you were launched in, STOP - do not branch or commit here - append \`blocked [at=<epoch>] [cause=tool]: launched in primary checkout, not an isolated worktree\` to the status file and stop.
 
 1. First action: create your branch: \`git checkout -b $BRANCH_Q --\`$SETUP2
 
@@ -789,9 +800,10 @@ $RULE1
    A mid-task \`working:\` line (including setup complete) is nonterminal: do not end the
    turn after it; continue the same stage until a defined \`done:\` gate under Definition of done.
 $CREWMATE_PAUSE_INSTRUCTIONS
-5. If you hit the same obstacle twice, append \`blocked [at=<epoch>]: {why}\` and stop; firstmate will help.
+5. If you hit the same obstacle twice, append \`blocked [at=<epoch>] [cause=<cause>]: {why}\` and stop; firstmate will help.
 6. If a decision belongs above the implementation worker (product choices, destructive actions),
-   append \`needs-decision [at=<epoch>]: {summary of options}\` and stop. Firstmate will reply with the decision.
+   append \`needs-decision [at=<epoch>] [cause=decision]: {summary of options}\` and stop. Firstmate will reply with the decision.
+$CAUSE_INSTRUCTIONS
 $ASK_USER_BLOCK
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved [at=<epoch>]: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.

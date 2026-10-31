@@ -247,6 +247,45 @@ EOF
   pass "fm-officer friction: status-log waits on Lee are detected, measured, and grouped by root cause"
 }
 
+test_stated_causes_group_blocked_lines() {
+  local home out json
+  home=$(make_world stated)
+  cat > "$home/state/task-st.status" <<EOF
+blocked [at=$T] [cause=credential] [key=st-cred]: the upstream widget API refuses our login
+resolved [key=st-cred] [at=$((T + 1200))]: Lee supplied it
+blocked [at=$T] [cause=external] [key=st-ext]: waiting for the vendor to restore the service
+resolved [key=st-ext] [at=$((T + 600))]: it came back
+blocked [at=$T] [cause=bogus] [key=st-bogus]: reason nobody can classify
+blocked [at=$T] [key=st-none]: another reason nobody can classify
+blocked [at=$T] [cause=policy] [key=st-text]: the licence install needs sudo on the gate host
+EOF
+  printf '%s\n' \
+    "{\"v\":1,\"ts\":$T,\"event\":\"task.status\",\"task\":\"gone2\",\"state\":\"blocked\",\"key\":\"led-tool\",\"cause\":\"tool\",\"text\":\" the widget builder is unavailable\"}" \
+    "{\"v\":1,\"ts\":$((T + 300)),\"event\":\"task.status\",\"task\":\"gone2\",\"state\":\"resolved\",\"key\":\"led-tool\",\"text\":\" fixed\"}" \
+    >> "$home/state/fleet-ledger.jsonl"
+  out=$(run_officer "$home") || fail "friction run must succeed: $out"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals "credential missing 1200 credential" \
+    "$(status_event "$json" task-st st-cred '"\(.cause) \(.sub) \(.wait_s) \(.stated)"')" \
+    "a stated credential cause groups a line no text rule recognised"
+  assert_equals "environment external 600" "$(status_event "$json" task-st st-ext '"\(.cause) \(.sub) \(.wait_s)"')" \
+    "a stated external cause groups with the other environment waits"
+  assert_equals "other other null" "$(status_event "$json" task-st st-bogus '"\(.cause) \(.sub) \(.stated)"')" \
+    "an unknown cause value reads as unstated"
+  assert_equals "other other null" "$(status_event "$json" task-st st-none '"\(.cause) \(.sub) \(.stated)"')" \
+    "a line with no cause tag still works and stays unstated"
+  assert_equals "sudo sudo policy" "$(status_event "$json" task-st st-text '"\(.cause) \(.sub) \(.stated)"')" \
+    "a text rule that recognises the line wins over the stated cause"
+  assert_equals "missing-tool tool 300 ledger" \
+    "$(status_event "$json" gone2 led-tool '"\(.cause) \(.sub) \(.wait_s) \(.source)"')" \
+    "a stated cause is read from the fleet ledger record"
+  assert_equals '{"unstated":2}' "$(finding "$json" other other '.stated_causes | tojson')" \
+    "the unclassified finding counts its unstated lines"
+  assert_equals '{"external":1}' "$(finding "$json" environment external '.stated_causes | tojson')" \
+    "a finding tallies its lines by stated cause"
+  pass "fm-officer friction: blocked lines group by their stated cause, and lines without one stay unstated"
+}
+
 test_transcript_lee_steps_and_refusals() {
   local home json md
   home=$(make_world transcript)
@@ -582,6 +621,7 @@ test_registry_and_unharvested_day() {
 
 test_merge_word_is_not_a_missing_tool
 test_status_waits_and_root_causes
+test_stated_causes_group_blocked_lines
 test_transcript_lee_steps_and_refusals
 test_velocity_findings_file
 test_velocity_ids_counts_and_states

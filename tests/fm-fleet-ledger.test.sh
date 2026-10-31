@@ -71,6 +71,7 @@ run_lifecycle() {
     printf 'working [at=1790000000]: setup done\n'
     printf 'needs-decision [key=pick-one]: choose "a"\\b or c\n'
     printf 'resolved: [key=pick-one]  chose a\n'
+    printf 'blocked [at=1790000001] [cause=sudo] [key=need-root]: needs root\n'
     printf 'partial line without its newline'
   } >> "$HOME_DIR/state/$TASK.status"
   out=$(in_home env FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
@@ -104,6 +105,7 @@ test_flag_on_records_the_task_lifecycle() {
 ["task.status","$TASK","working",null," setup done"]
 ["task.status","$TASK","needs-decision","pick-one"," choose \"a\"\\\\b or c"]
 ["task.status","$TASK","resolved","pick-one"," [key=pick-one]  chose a"]
+["task.status","$TASK","blocked","need-root"," needs root","sudo"]
 ["task.status","$TASK",null,null,"partial line without its newline finished"]
 ["task.status","$TASK","done",null," ready in branch"]
 ["task.merged","$TASK","local"]
