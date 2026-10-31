@@ -739,7 +739,7 @@ def lee_instructions(records, worker):
 
 
 def scan_asks(archive, date, days):
-    """Lee's instruction sentences over the `days` days ending at <date>, from interactive sessions only."""
+    """Lee's instruction sentences over the `days` days ending at <date>, from interactive and worker sessions."""
     out, seen = [], set()
     end = datetime.date.fromisoformat(date)
     window = {(end - datetime.timedelta(days=back)).isoformat() for back in range(days)}
