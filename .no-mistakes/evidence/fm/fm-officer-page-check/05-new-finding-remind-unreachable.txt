@@ -1,0 +1,25 @@
+# a new Bosun clean-up card appears; /api/runs returns [] (deploy blip)
+$ FM_OFFICER_NOW=1793472284 fm-officer.sh check page-check   # T18 slot
+officer page-check: 2026-10-31T18: 2 actionable finding(s) in data/officers/page-check/2026-10-31T18.md
+exit=0
+1793472284 2026-10-31T18 ok 2
+$ NEW lines in T18 digest:
+- NEW [page-old] Runs - runs: Runs: unreadable (evidence: GET /api/runs was unreadable) -> page owner: restore the page's feed
+- NEW [standing-rule] Captain's Log - bosun-prune:routine-cleanup: Bosun: prune 12 old logs? (evidence: standing rule routine-cleanup settles it: routine clean-up needs no approval (Lee, 2026-10-31 13:07:58Z)) -> cl-keeper: close the card citing the rule
+$ FM_OFFICER_NOW=1793551484 run (remind window passed, slot 2026-11-01T16)
+DIGEST 2026-11-01T16 12 data/officers/page-check/2026-11-01T16.md
+exit=0
+# app goes down
+DIGEST 2026-10-31T20 4 data/officers/page-check/2026-10-31T20.md
+exit=0
+1793457892 2026-10-31T20 ok 4
+- [page-old] Bosun - results: Bosun: unreachable (evidence: GET /api/runs/bosun-maintenance/results was unreachable) -> page owner: restore the page's feed
+- [page-old] Business health - business-health: Business health: unreachable (evidence: GET /api/business-health was unreachable) -> page owner: restore the page's feed
+- [page-old] Captain's Log - captains-log: Captain's Log: unreachable (evidence: GET /api/captains-log was unreachable) -> page owner: restore the page's feed
+- [page-old] Cost and cycle time - cost-cycle: Cost and cycle time: unreachable (evidence: GET /api/cost-cycle was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Feature ideation - ideation: Feature ideation: unreachable (evidence: GET /api/ideation was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Home - health: Home: app unreachable (evidence: GET /api/health was unreachable) -> page owner: restore the app
+- NEW [page-old] Progress officer - progress-officer: Progress officer: unreachable (evidence: GET /api/progress-officer was unreachable) -> page owner: restore the page's feed
+- [page-old] Runs - runs: Runs: unreachable (evidence: GET /api/runs was unreachable) -> page owner: restore the page's feed
+- [page-old] Top of Mind - top-of-mind: Top of Mind: unreachable (evidence: GET /api/top-of-mind was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Velocity audit - velocity-audit: Velocity audit: unreachable (evidence: GET /api/velocity-audit was unreachable) -> page owner: restore the page's feed

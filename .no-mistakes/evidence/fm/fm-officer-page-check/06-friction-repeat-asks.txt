@@ -1,0 +1,87 @@
+$ fm-officer.sh run friction --date 2026-10-31
+DIGEST 2026-10-31 1 data/officers/friction/2026-10-31.md
+exit=0
+$ repeat-ask findings
+[
+  {
+    "carded": true,
+    "category": "waiting",
+    "cause": "repeat-ask",
+    "confidence": 3,
+    "effort": "S",
+    "events": 1,
+    "evidence": {
+      "asks": [
+        {
+          "date": "2026-10-22",
+          "quote": "Please keep the captain's log up to date.",
+          "session": "slartibartfast:d22"
+        },
+        {
+          "date": "2026-10-30",
+          "quote": "I just want to make sure that the captain's log, uh, keeper agent is looking at all pages and not just certain ones.",
+          "session": "slartibartfast:d30"
+        },
+        {
+          "date": "2026-10-31",
+          "quote": "I'm constantly having to come back and say, hey, keep the captain's log up to date.",
+          "session": "slartibartfast:d31"
+        }
+      ],
+      "cards": [],
+      "example": "3 days: I'm constantly having to come back and say, hey, keep the captain's log up to date.",
+      "sessions": [],
+      "status_keys": [],
+      "tasks": []
+    },
+    "fix": "Turn the instruction into automatic work: a scheduled officer check, a hook, or a standing rule in captain-shared.md that firstmate applies without being told, and say so to Lee once.",
+    "kinds": {
+      "repeat-ask": 1
+    },
+    "lee_did": "repeat an instruction he has already given",
+    "lee_events": 1,
+    "lee_step": true,
+    "name": "captain log upkeep",
+    "open": 0,
+    "owner": "main (firstmate)",
+    "reasks": 0,
+    "severity": 3,
+    "sub": "instruction",
+    "title": "Lee gives the same instruction on several days",
+    "wait_max_s": null,
+    "wait_median_s": null,
+    "wait_total_s": null,
+    "waits_measured": 0,
+    "where": {
+      "unknown": 1
+    }
+  }
+]
+$ digest
+# Friction officer digest for 2026-10-31
+
+1 actionable finding(s) (severity and confidence of at least 3); scorer friction-deterministic-v1.
+1 friction event(s), 1 naming Lee.
+
+## Coverage
+
+- Hosts present: slartibartfast (expected: slartibartfast).
+- Sessions analysed: 1; archive harvester last ran 2026-11-01T01:00:00+00:00.
+- Home fm-lab.OguDBo: 0 status log(s), fleet ledger absent.
+- Home fm-lab.OguDBo keeps no fleet ledger, so status lines of tasks already cleaned up there are not read.
+- No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.
+- A worker that resumed in the wrong directory is found only while its task record survives.
+
+## Findings
+
+### Lee gives the same instruction on several days
+
+- Root cause: repeat-ask (instruction), captain log upkeep; severity 3, confidence 3; carded.
+- What Lee had to do: repeat an instruction he has already given; 1 of 1 event(s) named Lee.
+- Waits: 0 measured, total not measured, median not measured, longest not measured; 0 still open; 0 re-ask(s).
+- Proposed fix: Turn the instruction into automatic work: a scheduled officer check, a hook, or a standing rule in captain-shared.md that firstmate applies without being told, and say so to Lee once.
+- Owner: main (firstmate); effort S.
+- Evidence: tasks none; status none; cards none; sessions none; e.g. `3 days: I'm constantly having to come back and say, hey, keep the captain's log up to date.`.
+- Asked 2026-10-22 (slartibartfast:d22): "Please keep the captain's log up to date."
+- Asked 2026-10-30 (slartibartfast:d30): "I just want to make sure that the captain's log, uh, keeper agent is looking at all pages and not just certain ones."
+- Asked 2026-10-31 (slartibartfast:d31): "I'm constantly having to come back and say, hey, keep the captain's log up to date."

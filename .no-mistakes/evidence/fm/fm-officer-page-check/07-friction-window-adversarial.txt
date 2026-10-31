@@ -1,0 +1,10 @@
+$ ask-days: 1 -> only 2026-10-31 in the window
+DIGEST 2026-10-31 0 data/officers/friction/2026-10-31.md
+exit=0
+repeat-ask findings: 0
+$ ask-days: 0 (invalid)
+fm-officer: officer friction: ask-days must be a whole number of days, at least 1
+exit=2
+$ fm-officer.sh ensure
+OFFICER: officer friction: ask-days must be a whole number of days, at least 1
+exit=0

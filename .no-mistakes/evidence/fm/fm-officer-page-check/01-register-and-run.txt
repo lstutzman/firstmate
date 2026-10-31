@@ -1,0 +1,17 @@
+$ fm-officer.sh register page-check
+registered: officer page-check (state/officer-page-check.check.sh)
+exit=0
+$ fm-officer.sh list
+page-check role=pagecheck cadence="every 2h" check=registered
+$ fm-officer.sh run page-check
+DIGEST 2026-10-31T14 11 data/officers/page-check/2026-10-31T14.md
+exit=0
+$ tail runs.log
+1793457833 2026-10-31T14 ok 11
+$ ls lane
+2026-10-31T14.json
+2026-10-31T14.md
+digest
+registered
+runs.log
+state.json

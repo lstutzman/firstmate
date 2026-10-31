@@ -1,0 +1,27 @@
+$ fm-officer.sh check page-check   # 1st check after the manual run
+officer page-check: 2026-10-31T14: 11 actionable finding(s) in data/officers/page-check/2026-10-31T14.md
+exit=0
+$ fm-officer.sh check page-check   # 2nd check, same digest
+exit=0
+$ fm-officer.sh run page-check     # rerun same slot, unchanged pages
+DIGEST 2026-10-31T14 0 data/officers/page-check/2026-10-31T14.md
+exit=0
+$ FM_OFFICER_NOW=1793465053 fm-officer.sh check page-check   # next 2h slot
+exit=0
+$ runs.log
+1793457833 2026-10-31T14 ok 11
+1793457853 2026-10-31T14 ok 0
+1793465053 2026-10-31T16 ok 0
+$ FM_OFFICER_NOW=1793465053 fm-officer.sh check page-check   # after the scheduled run
+exit=0
+$ ls lane
+2026-10-31T14.json
+2026-10-31T14.md
+2026-10-31T16.json
+2026-10-31T16.md
+check-record.digest
+digest
+registered
+run-output.log
+runs.log
+state.json
