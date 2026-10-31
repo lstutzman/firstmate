@@ -12,7 +12,7 @@
 #   fm-officer.sh list
 #   fm-officer.sh register <id>
 #   fm-officer.sh retire <id>
-#   fm-officer.sh run <id> [--date YYYY-MM-DD] [--scheduled]
+#   fm-officer.sh run <id> [--date KEY] [--scheduled]
 #   fm-officer.sh check <id>
 #   fm-officer.sh ensure
 #

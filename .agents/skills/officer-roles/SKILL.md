@@ -59,8 +59,8 @@ The officer itself still never spawns or steers; executing the handoff and dispa
 For a page-check digest, route each finding by its `route` line: cl-keeper closes or corrects the named card, and a page owner fixes a stale or failing page; the officer itself never edits a card or a page.
 Read the friction digest's `repeat-ask` findings as a standing request: make the instruction automatic work, then tell Lee once.
 
-A wake reading `officer <id>: <date>: run failed <n> time(s): <reason>` means the scheduled run gave up for that date.
-Fix the named cause, then rerun the date with `bin/fm-officer.sh run <id> --date <date>`.
+A wake reading `officer <id>: <key>: run failed <n> time(s): <reason>` means the scheduled run gave up for that run key (a date, or an interval officer's `YYYY-MM-DDTHH` slot).
+Fix the named cause, then rerun it with `bin/fm-officer.sh run <id> --date <key>`.
 
 ## Session-start OFFICER lines
 
