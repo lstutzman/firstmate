@@ -57,7 +57,9 @@ concept for keep, update, current, date, fresh, maintain, look, check, review,
 watch, track, monitor, stale, and their -ed and -ing forms) and share at least two other content words, so
 "keep the captain's log up to date" and "make sure the captain's log keeper is
 looking at all pages" match while "make sure the captain's log renders" does
-not. A group spanning two or more days, one
+not. Each instruction is dated by its own message time in the archive's
+timezone, and a session listed on several days is read once. A group spanning
+two or more days, one
 of them the run's day, becomes a repeat-ask event whose evidence is each day's
 scrubbed quote. The fix is to make the instruction automatic work (a scheduled
 check, a hook, or a standing rule) so Lee stops giving it.
@@ -135,6 +137,7 @@ import socket
 import subprocess
 import sys
 import time
+import zoneinfo
 
 
 def _triage():
@@ -737,11 +740,15 @@ def lee_instructions(records, worker):
 
 def scan_asks(archive, date, days):
     """Lee's instruction sentences over the `days` days ending at <date>, from interactive sessions only."""
-    out = []
+    out, seen = [], set()
     end = datetime.date.fromisoformat(date)
-    for back in range(days):
-        day = (end - datetime.timedelta(days=back)).isoformat()
+    window = {(end - datetime.timedelta(days=back)).isoformat() for back in range(days)}
+    for day in sorted(window, reverse=True):
         manifest = triage.load_json(os.path.join(archive, "by-date", day, "manifest.json"))
+        try:
+            tz = zoneinfo.ZoneInfo((manifest or {}).get("timezone") or "UTC")
+        except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+            tz = datetime.timezone.utc
         for entry in (manifest or {}).get("sessions") or []:
             if entry.get("harness") != "claude-code":
                 continue
@@ -751,9 +758,13 @@ def scan_asks(archive, date, days):
             if kind not in ("other", "worker"):
                 continue
             records = records_of(os.path.join(folder, "transcript.jsonl.gz"))
+            session = "%s:%s" % (entry.get("machine"), entry.get("session_id") or entry.get("name"))
             for at, sentence in lee_instructions(records or [], kind == "worker"):
-                out.append({"date": day, "at": at, "session": "%s:%s" % (entry.get("machine"), entry.get("session_id") or entry.get("name")),
-                            "text": scrub(sentence, MAX_ASK_LEN)})
+                said = datetime.datetime.fromtimestamp(at, tz).date().isoformat() if at is not None else day
+                if said not in window or (session, at, sentence) in seen:
+                    continue
+                seen.add((session, at, sentence))
+                out.append({"date": said, "at": at, "session": session, "text": scrub(sentence, MAX_ASK_LEN)})
     return sorted(out, key=lambda a: (a["date"], a["at"] or 0, a["session"], a["text"]))
 
 

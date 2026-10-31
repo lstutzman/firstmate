@@ -997,6 +997,7 @@ An unreachable app is a finding, not a failed run.
 
 The friction officer also compares Lee's typed instructions across the last `ask-days` days of the session archive (interactive and worker sessions, never a worker's launch brief, which quotes him).
 It sees only what the archive holds: a message Lee gave somewhere that is not archived as a Claude Code transcript is not counted.
+Each instruction is dated by its own message time in the archive's timezone, not by the day whose manifest lists the session, and a session listed on several days is read once, so one long chat holding asks on different days counts each ask on the day Lee gave it.
 An instruction given on two or more days, one of them the run's day, becomes a `repeat-ask` finding with Lee's scrubbed sentence for each day, so a repeat becomes automatic work instead of Lee repeating himself.
 Instruction words such as make sure, need, should, always, never and please are not content words, and neither are the "up" of "up to date" or common dictated-speech words such as want, know, think, really, hey, okay, actually, thing and stuff.
 Two instructions are the same when they share at least three content words and at least 70% of the shorter one's words.

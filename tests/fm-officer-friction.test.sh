@@ -608,6 +608,37 @@ EOF
   pass "fm-officer friction: the same Lee instruction on two days is one finding with quotes and dates"
 }
 
+test_long_session_asks_dated_by_message() {
+  local home archive json
+  home="$TMP_ROOT/longsession/fixturehost"
+  archive="$TMP_ROOT/longsession/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  cat > "$TMP_ROOT/longsession/once.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "main-chat", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date."}}]}]}
+EOF
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/longsession/once.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/longsession/once.json"
+  friction_registry "$home" "$archive"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "one ask in a session listed on two days is not a repeat"
+  cat > "$TMP_ROOT/longsession/twice.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "main-chat", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date."}},
+  {"type": "user", "timestamp": "2026-10-23T09:00:00.000Z", "message": {"content": "Hey, keep the captain's log up to date, again."}}]}]}
+EOF
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/longsession/twice.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/longsession/twice.json"
+  run_officer "$home" >/dev/null || fail "two-ask run must succeed"
+  assert_equals "2026-10-21 Please keep the captain's log up to date.|$DATE Hey, keep the captain's log up to date, again." \
+    "$(jq -r '[.findings[] | select(.cause == "repeat-ask")] | map(.evidence.asks | map(.date + " " + .quote) | join("|")) | join(";")' "$json")" \
+    "one session listed on two days gives one finding, each ask on the day Lee gave it"
+  pass "fm-officer friction: asks are dated by their message time and a session listed on two days is read once"
+}
+
 test_paraphrased_upkeep_asks_cluster() {
   local home archive json
   home="$TMP_ROOT/paraphrase/fixturehost"
@@ -737,5 +768,6 @@ test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh
 test_captains_log_cards_read_only
 test_repeated_lee_asks_across_days
+test_long_session_asks_dated_by_message
 test_paraphrased_upkeep_asks_cluster
 test_registry_and_unharvested_day
