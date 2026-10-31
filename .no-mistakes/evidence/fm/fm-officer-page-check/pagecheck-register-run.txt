@@ -1,0 +1,11 @@
+$ fm-officer.sh list
+page-check role=pagecheck cadence="every 2h" check=absent
+rc=0
+$ fm-officer.sh register page-check
+registered: officer page-check (state/officer-page-check.check.sh)
+rc=0
+officer-page-check.check-trust
+officer-page-check.check.sh
+$ fm-officer.sh run page-check
+DIGEST 2026-10-31T14 11 data/officers/page-check/2026-10-31T14.md
+rc=0

@@ -1,0 +1,7 @@
+# /api/runs returns [], progress stale_after_minutes is a string, Log cards include non-dict entries, rules file has prose only
+$ fm-officer.sh run page-check --date 2026-10-31T18
+DIGEST 2026-10-31T18 2 data/officers/page-check/2026-10-31T18.md
+rc=0
+Coverage: no standing-rule lines in /tmp/fm-lab.WZW9TK/data/captain-shared.md; the standing-rule check covers nothing
+- NEW [page-old] Progress officer - progress-officer: Progress officer: unreadable (evidence: GET /api/progress-officer was unreadable) -> page owner: restore the page's feed
+- NEW [page-old] Runs - runs: Runs: unreadable (evidence: GET /api/runs was unreadable) -> page owner: restore the page's feed

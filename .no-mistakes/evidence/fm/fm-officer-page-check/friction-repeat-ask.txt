@@ -1,0 +1,36 @@
+$ fm-officer.sh run friction --date 2026-10-31
+DIGEST 2026-10-31 1 data/officers/friction/2026-10-31.md
+rc=0
+$ jq repeat-ask findings
+[
+  {
+    "topic": "Lee gives the same instruction on several days",
+    "carded": true,
+    "asks": [
+      {
+        "date": "2026-10-22",
+        "quote": "Please keep the captain's log up to date.",
+        "session": "mac-mini:main-chat"
+      },
+      {
+        "date": "2026-10-30",
+        "quote": "I just want to make sure that the captain's log, uh, keeper agent is looking at all pages and not just certain ones.",
+        "session": "macbook:chat-1030"
+      },
+      {
+        "date": "2026-10-31",
+        "quote": "I'm constantly having to come back and say, hey, keep the captain's log up to date.",
+        "session": "mac-mini:main-chat"
+      }
+    ]
+  }
+]
+$ digest lines
+25-- Evidence: tasks none; status none; cards none; sessions none; e.g. `3 days: I'm constantly having to come back and say, hey, keep the captain's log up to date.`.
+26:- Asked 2026-10-22 (mac-mini:main-chat): "Please keep the captain's log up to date."
+27:- Asked 2026-10-30 (macbook:chat-1030): "I just want to make sure that the captain's log, uh, keeper agent is looking at all pages and not just certain ones."
+28:- Asked 2026-10-31 (mac-mini:main-chat): "I'm constantly having to come back and say, hey, keep the captain's log up to date."
+29-
+30-### decision / decision (no rule names a fix)
+31-
+32-- Root cause: decision (decision); severity 4, confidence 5; not carded.

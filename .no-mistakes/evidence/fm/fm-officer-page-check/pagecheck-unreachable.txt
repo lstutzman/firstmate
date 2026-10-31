@@ -1,0 +1,19 @@
+# fleet app stopped (nothing listening on 18443)
+$ fm-officer.sh run page-check --date 2026-10-31T20
+DIGEST 2026-10-31T20 5 data/officers/page-check/2026-10-31T20.md
+rc=0
+# Page check 2026-10-31T20
+
+10 open finding(s), 5 new.
+
+- [page-old] Bosun - results: Bosun: unreachable (evidence: GET /api/runs/bosun-maintenance/results was unreachable) -> page owner: restore the page's feed
+- [page-old] Business health - business-health: Business health: unreachable (evidence: GET /api/business-health was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Captain's Log - captains-log: Captain's Log: unreachable (evidence: GET /api/captains-log was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Cost and cycle time - cost-cycle: Cost and cycle time: unreachable (evidence: GET /api/cost-cycle was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Feature ideation - ideation: Feature ideation: unreachable (evidence: GET /api/ideation was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Home - health: Home: app unreachable (evidence: GET /api/health was unreachable) -> page owner: restore the app
+- [page-old] Progress officer - progress-officer: Progress officer: unreachable (evidence: GET /api/progress-officer was unreachable) -> page owner: restore the page's feed
+- [page-old] Runs - runs: Runs: unreachable (evidence: GET /api/runs was unreachable) -> page owner: restore the page's feed
+- NEW [page-old] Top of Mind - top-of-mind: Top of Mind: unreachable (evidence: GET /api/top-of-mind was unreachable) -> page owner: restore the page's feed
+- [page-old] Velocity audit - velocity-audit: Velocity audit: unreachable (evidence: GET /api/velocity-audit was unreachable) -> page owner: restore the page's feed
+1793460367 2026-10-31T20 ok 5

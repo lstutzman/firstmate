@@ -1,0 +1,18 @@
+$ fm-officer.sh register page-http
+fm-officer: officer page-http: a pagecheck officer needs app: <https URL of the fleet app>
+rc=2
+$ fm-officer.sh register page-bad
+fm-officer: officer page-bad: cadence must be "daily HH:MM" or "every Nh" (N from 1 to 24), got "every 25h"
+rc=2
+$ fm-officer.sh list
+page-check role=pagecheck cadence="every 2h" check=registered
+friction role=friction cadence="daily 06:15" check=absent
+page-http role=pagecheck cadence="every 2h" check=absent
+page-bad role=pagecheck cadence="every 25h" check=absent
+$ fm-officer.sh ensure
+OFFICER: officer friction: its watcher check is not registered - run bin/fm-officer.sh register friction
+OFFICER: officer page-http: a pagecheck officer needs app: <https URL of the fleet app>
+OFFICER: officer page-bad: cadence must be "daily HH:MM" or "every Nh" (N from 1 to 24), got "every 25h"
+rc=0
+$ non-GET requests the app received:
+0
