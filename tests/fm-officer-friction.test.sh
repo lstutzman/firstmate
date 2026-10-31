@@ -368,22 +368,27 @@ test_velocity_ids_counts_and_states() {
 
   # A tap in a home's inbox, a backlog line, and a pull request URL start findings; a standing-rule line settles one.
   mkdir -p "$home/state/inbox/handled"
-  printf 'id=1-x\nat=2026-10-24T06:30:00Z\n--\nStart fix: friction-sudo-sudo\n' > "$home/state/inbox/handled/1-x.note"
-  printf 'id=2-x\nat=2026-10-24T06:31:00Z\n--\nNot now: friction-guard-hook-secret-hook\n' > "$home/state/inbox/handled/2-x.note"
+  printf "id=1-x\nat=2026-10-24T06:30:00Z\n--\nCaptain's Log reply [friction-sudo-sudo]: Start fix: Agents hand Lee sudo steps to run by hand\n" > "$home/state/inbox/handled/1-x.note"
+  printf "id=2-x\nat=2026-10-24T06:31:00Z\n--\nCaptain's Log reply [friction-guard-hook-secret-hook]: Not now: Secret-exposure hook blocks safe shell-file edits\n" > "$home/state/inbox/handled/2-x.note"
   printf '## In flight\n- [ ] fix-approval - fix policy-credential-approval (kind: ship)\n- [ ] other - fix credential-scope (kind: ship)\n' \
     > "$home/data/backlog.md"
   printf 'done [at=1]: PR https://github.com/o/r/pull/7 checks green\n' > "$home/state/fix-approval.status"
   printf 'Standing rule: the missing tools are settled (friction-missing-tool-tool-slopwatch).\nNote: lee-command-run is not a standing line.\n' \
     > "$home/data/captain-shared.md"
-  printf 'Standing exception: ssh keys are now installed (credential-ssh-key).\n' >> "$home/data/captain-shared.md"
+  printf 'Standing exception: ssh keys are now installed on every host.\n' >> "$home/data/captain-shared.md"
+  printf 'Standing rule: Cloudflare token scopes are widened once, with the full list, and kept.\n' >> "$home/data/captain-shared.md"
+  printf 'Standing rule: image generation goes through Codex, never the paid API.\n' >> "$home/data/captain-shared.md"
   FM_HOME="$home" FM_OFFICER_NOW="$NOW" "$OFFICER" run friction --date "$DATE" >/dev/null || fail "run with records must succeed"
   state_of() { jq -r --arg i "$1" '[.bottlenecks[] | select(.id == $i)][0] | "\(.state) \(.link // "-")"' "$vel"; }
   assert_equals "started -" "$(state_of sudo-sudo)" "a Start fix tap in the inbox starts a finding, with no link to give"
   assert_equals "open -" "$(state_of guard-hook-secret-hook)" "a Not now tap leaves a finding open"
   assert_equals "started https://github.com/o/r/pull/7" "$(state_of policy-credential-approval)" \
     "a backlog task that names the finding starts it, linked to the pull request its status log names"
-  assert_equals "open -" "$(state_of credential-scope-cloudflare)" "an id that only shares a prefix with a backlog name is not a match"
   assert_equals "settled -" "$(state_of missing-tool-tool-slopwatch)" "a standing-rule line that names the id settles it"
+  assert_equals "settled -" "$(state_of credential-scope-cloudflare)" \
+    "a standing-rule line settles a finding by its category and the service it names, not only by id"
+  assert_equals "open -" "$(state_of missing-tool-tool-openjdk)" \
+    "a category line that does not name the finding's tool settles nothing"
   assert_equals "open -" "$(state_of lee-command-run)" "a line that names the id without saying standing rule settles nothing"
 
   # Replies the Captain's Log serves (beside the cards) also start a finding, and carry the answer's link.
@@ -391,7 +396,7 @@ test_velocity_ids_counts_and_states() {
   cat > "$fakebin/curl" <<'SH'
 #!/usr/bin/env bash
 case "$*" in
-  */replies) printf '%s\n' '{"name":"captains-log","value":{"replies":[{"card":"friction-guard-hook-secret-hook","text":"Start fix: A service CLI is not signed in for agents","answer":{"text":"started https://github.com/o/r/pull/9","at":"2026-10-24T05:30:00Z"}}]}}' ;;
+  */replies\?since=20*) printf '%s\n' '{"name":"captains-log","value":{"replies":[{"card":"friction-guard-hook-secret-hook","text":"Start fix: A service CLI is not signed in for agents","answer":{"text":"started https://github.com/o/r/pull/9","at":"2026-10-24T05:30:00Z"}}]}}' ;;
   *) printf '%s\n' '{"value":{"cards":[]}}' ;;
 esac
 SH

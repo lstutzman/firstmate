@@ -88,9 +88,12 @@ the matched refusal class, never transcript prose.
 A finding's id is a slug of its cause, sub and name alone, so it is the same
 every night (at most 54 characters, which fleet-app's tap card needs). Its state
 is read-only: settled when a line in a home's data/captain-shared.md that says
-"standing rule" or "standing exception" names the id (alone or as friction-<id>);
-else started when a Start fix tap for it sits in a home's state/inbox or in
-<captains-log>/replies, or a data/backlog.md line or a task's branch= names it
+"standing rule" or "standing exception" names the id (alone or as friction-<id>),
+names the title, or fits the finding's category (SETTLED_BY, which for a finding
+about one tool, hook or service also needs its name); else started when a Start
+fix tap for it sits in a home's state/inbox (the note fleet-app's shim files,
+"Captain's Log reply [friction-<id>]: Start fix: <title>") or in
+<captains-log>/replies?since=<30 days ago>, or a data/backlog.md line or a task's branch= names it
 (its link is the first pull request or https URL those hold); else open. The
 state is as of the run's generated_at.
 
@@ -1033,6 +1036,42 @@ STANDING_RE = re.compile(r"standing (?:rule|exception)", re.I)
 PULL_URL_RE = re.compile(r"https://github\.com/[\w.-]+/[\w.-]+/pull/\d+")
 TASK_LINE_RE = re.compile(r"^\s*- \[[ xX]\] ([\w.-]+)")
 MAX_NOTE_BYTES = 65536
+REPLY_DAYS = 30
+
+
+# A standing-rule line settles a finding by its category: the line must match its (cause, sub) pattern and,
+# for a finding about one tool, hook or service, name it. Lee writes standing rules as patterns, not ids.
+SETTLED_BY = {
+    ("policy", "merge-word"): r"merge word",
+    ("policy", "approval"): r"approv|\bword\b|\bgo\b",
+    ("policy", "credential-approval"): r"credential|secret",
+    ("credential", "create-denied"): r"creat\w*.{0,40}(?:secret|credential|item)",
+    ("credential", "scope"): r"scopes?\b",
+    ("credential", "login"): r"sign(?:ed)?[- ]?in|log(?:in|ged)",
+    ("credential", "missing"): r"credential|secret|token",
+    ("credential", "console-step"): r"console|dashboard|portal",
+    ("credential", "ssh-key"): r"ssh key|authorized_keys",
+    ("credential", "lee-session"): r"signed-in session|op run",
+    ("sudo", "sudo"): r"sudo",
+    ("guard-hook", "secret-hook"): r"secret.{0,20}hook|hook.{0,40}(?:startup|secret)",
+    ("guard-hook", "gate-edit"): r"allow_gate_edit|gate",
+    ("guard-hook", "refused"): r"hook|guard",
+    ("guard-hook", "other"): r"hook|guard",
+    ("service-limit", "rate-limit"): r"rate[- ]?limit",
+    ("missing-tool", "tool"): r"missing tool|install",
+    ("environment", "wrong-cwd"): r"cwd|directory|worktree",
+    ("environment", "ssh-to-self"): r"\bssh\b",
+    ("lee-command", "run"): r"by hand|lee runs",
+}
+SETTLED_BY = {k: re.compile(v) for k, v in SETTLED_BY.items()}
+
+
+def settles(line, f, rx):
+    """Whether a lowercased standing-rule line covers a finding: it names the id or the title, or fits the category."""
+    if rx.search(line) or (f["title"] and f["title"].split(": ")[0].lower() in line):
+        return True
+    pattern = SETTLED_BY.get((f["cause"], f["sub"]))
+    return bool(pattern and pattern.search(line) and (not f["name"] or f["name"].lower() in line))
 
 
 def id_re(finding_id):
@@ -1076,9 +1115,13 @@ def task_link(home, task):
     return None
 
 
-def load_replies(captains_log):
-    """The tap replies fleet-app serves beside the cards, GET <captains-log>/replies; read-only, best effort."""
-    proc = subprocess.run(["curl", "-fsS", "--max-time", "30", captains_log.rstrip("/") + "/replies"],
+def load_replies(captains_log, now):
+    """The tap replies fleet-app serves beside the cards, GET <captains-log>/replies?since=<30 days ago>.
+
+    Read-only and best effort; the 30 days reach past the page's own 3-day window, so a tap stays a start.
+    """
+    since = iso_utc(now - REPLY_DAYS * 86400)
+    proc = subprocess.run(["curl", "-fsS", "--max-time", "30", "%s/replies?since=%s" % (captains_log.rstrip("/"), since)],
                           capture_output=True, check=False)
     if proc.returncode != 0:
         raise RuntimeError("unreachable (curl exit %d)" % proc.returncode)
@@ -1106,19 +1149,20 @@ def finding_states(findings, homes, replies):
     over a start. Started comes from a Start fix tap in a home's inbox or in the replies, or a backlog
     line or task branch that names the id; its link is the first pull request or https URL found there.
     """
-    notes = [t.lower() for h in homes for t in inbox_notes(h) if "start fix" in t.lower()]
+    notes = [t.lower() for h in homes for t in inbox_notes(h)]
     shared = [l.lower() for h in homes for l in read_lines(os.path.join(h.path, "data", "captain-shared.md"))
               if STANDING_RE.search(l)]
     backlog = [(h, l) for h in homes for l in read_lines(os.path.join(h.path, "data", "backlog.md"))]
     out = {}
     for f in findings:
         rx = id_re(f["id"])
-        if any(rx.search(l) for l in shared):
+        if any(settles(l, f, rx) for l in shared):
             out[f["id"]] = ("settled", None)
             continue
         hits = []  # one entry per start found: its link, or None
+        tap = re.compile(r"captain's log reply \[friction-%s\]: start fix" % re.escape(f["id"]))
         for note in notes:
-            if rx.search(note):
+            if tap.search(note):
                 hits.append(None)
         for reply in replies:
             if reply["card"] == "friction-" + f["id"] and str(reply.get("text") or "").lower().startswith("start fix"):
@@ -1365,7 +1409,7 @@ def main(argv):
             except RuntimeError as exc:
                 log = {"state": "unreachable", "reason": str(exc)}
             try:
-                replies = load_replies(args.captains_log)
+                replies = load_replies(args.captains_log, now)
             except RuntimeError:
                 pass  # taps are one input to a finding's state; the inbox and task records still count
         doc = summarise(scanned, homes, hosts, args.model, cards, log, CHANNEL_LOGS | set(args.channel))
