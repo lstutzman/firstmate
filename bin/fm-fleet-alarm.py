@@ -352,7 +352,8 @@ def check(channel):
                  if channel not in old.get(key, [])}
         # An unavailable reader does not prove that its previous alarms cleared.
         preserved = {key: receipts for key, receipts in old.items()
-                     if ('config' in raw
+                     if ((key in raw and key not in current)
+                         or 'config' in raw
                          or ('quota-read' in raw and key.startswith(('quota:', 'stale:', 'pool', 'ignored:')))
                          or ('mate-read' in raw and key.startswith(('silent:', 'mate-read:')))
                          or (key.startswith('silent:') and 'mate-read:' + key[7:] in raw)

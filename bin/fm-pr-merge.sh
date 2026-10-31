@@ -641,7 +641,7 @@ if [ -n "$MERGE_PROJECT" ]; then
       [ -n "$MERGE_SELF" ] || MERGE_SELF=main
     fi
     if [ "$MERGE_SELF" != "$MERGE_MERGER" ]; then
-      MERGE_HANDOFF_LINE=$(status_stamp_line "needs-decision [key=merge-handoff-${URL##*/}]: [handoff=$MERGE_MERGER] $URL is ready to merge")
+      MERGE_HANDOFF_LINE=$(status_stamp_line "needs-decision [key=merge-handoff-${URL##*/}] [cause=external]: [handoff=$MERGE_MERGER] $URL is ready to merge")
       MERGE_HANDOFF_RC=0
       MERGE_HANDOFF_DEST=$(fm_parent_channel_destination "$FM_HOME" "$STATE") || MERGE_HANDOFF_RC=$?
       echo "error: PR merge refused: $(basename "$MERGE_PROJECT") is merged only by home $MERGE_MERGER, and this home is $MERGE_SELF; hand the PR to that home instead:" >&2

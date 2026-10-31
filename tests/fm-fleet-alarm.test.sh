@@ -637,6 +637,10 @@ assert_contains "$(run_alarm check)" "Secondmate work inventory unavailable: mat
 [ -z "$(run_alarm check)" ] || fail 'a persistent inventory failure alarms once'
 pass 'an inventory failure that persists still alarms once'
 
+run_alarm timer
+[ -z "$(run_alarm check)" ] || fail 'a timer poll that holds the finding back must keep the check receipt'
+pass 'a held-back poll on one channel keeps the receipts of another'
+
 # The timer line names its cause, and a timer poll counts separately from check polls.
 : > "$HOME_FIX/config/fleet-ledger"
 run_alarm timer
