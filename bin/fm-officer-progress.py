@@ -520,7 +520,8 @@ def read_top_of_mind(url):
         if (not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]
                 or not isinstance(row.get("words"), str) or not row["words"]
                 or row.get("status") not in ("not-started", "under-way", "waiting", "done")
-                or not isinstance(row.get("work"), list)):
+                or not isinstance(row.get("work"), list)
+                or row.get("kind", "ask") not in ("ask", "statement")):
             raise ValueError("invalid Top of Mind row")
         for work in row["work"]:
             if not isinstance(work, dict) or not isinstance(work.get("home"), str):
@@ -562,6 +563,8 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
             matches += [r for r in local or [match] if not any(r is m for m in matches)]
         owned = any(any(r is m for m in rows) for r in matches)
         if not matches:
+            if ask.get("kind") == "statement":
+                continue  # a statement is evidence only; it never becomes new work
             owner = scanned.get(owners[0], homes[0]) if owners and not others else homes[0]
             row = item(ask["id"], ask["words"], owner, text)
             row.update(section="queued", origin="top-of-mind")
@@ -574,7 +577,7 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
             matches = [row]
         for row in matches:
             row["evidence"].append("Top of Mind: " + ask["id"] + " - " + ask["words"])
-            if not classify(row)[0]:
+            if ask.get("kind") != "statement" and not classify(row)[0]:
                 row["origin"] = "top-of-mind"
                 row["tags"] = dict(row["tags"], kind="feature", **{"requested-by": "Lee"})
             matching_prs = [pr for pr in prs if pr.get("html_url") in links
@@ -998,7 +1001,8 @@ def main(argv):
     except (OSError, ValueError, TypeError, http.client.HTTPException):
         problems.append("Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed")
     requested = set(filter(None, args.requested.split(",")))
-    requested.update(i for ask in top_of_mind for i in LINEAR_ID.findall(json.dumps(ask))
+    requested.update(i for ask in top_of_mind if ask.get("kind") != "statement"
+                     for i in LINEAR_ID.findall(json.dumps(ask))
                      if re.fullmatch(re.escape(args.team) + r"-\d+", i))
     for snapshot in snapshots:
         for row in snapshot["rows"]:

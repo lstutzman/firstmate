@@ -966,6 +966,8 @@ It reads this home's and every registered local or remote second mate home's Mar
 Remote home reads run the same read-only scanner over SSH.
 Each run reads Top of Mind once over HTTPS; the progress script's header owns endpoint selection and timeout.
 A fetch or payload failure adds a `Top of Mind coverage-incomplete` entry and contributes no asks from that source; the officer never reuses cached asks or blocks other discovery on that failure.
+Each row's `kind` is `ask` or `statement`; a row without `kind` is an ask, and any other value fails payload validation.
+A statement never becomes a start candidate, supplies no `requested-feature` authority, and names no requested roots; it only adds evidence to work it matches.
 Every `not-started` ask and every `under-way` or `waiting` ask is checked against current home records and open PRs.
 A waiting ask is listed with the reason `waiting (Top of Mind status)` and is never automatically started.
 A not-started or under-way ask with no recorded work in flight becomes a start candidate under the existing classes and exclusions; a matching task, Linear identifier, work title, or link joins the ask to that work instead of creating another start, and a matching Linear issue joins the ask to every home record that links that issue.
@@ -1005,7 +1007,7 @@ To keep such starts visible, every record carries `tag_source`, naming where its
 | `tag_source` | Authority |
 | --- | --- |
 | `backlog` | A tag or title prefix on a backlog row this fleet wrote |
-| `top-of-mind` | A fresh Top of Mind ask that supplies the requested-feature authority |
+| `top-of-mind` | A fresh Top of Mind ask, never a statement, that supplies the requested-feature authority |
 | `task-meta` | The title in a task's `state/<id>.meta` file when the task has no backlog row; such tasks are already in flight and never start |
 | `linear-free-text:kind`, `linear-free-text:requested-by` | A tag in the Linear issue's title or description |
 | `linear-title-prefix:Security`, `linear-title-prefix:CVE`, `linear-title-prefix:Code review`, `linear-title-prefix:Bug`, `linear-title-prefix:scheduled-review` | The Linear title prefix, or a CVE identifier in the Linear title |
