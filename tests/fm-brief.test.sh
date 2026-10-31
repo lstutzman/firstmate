@@ -584,7 +584,7 @@ test_ask_user_escalation_format() {
   assert_grep "write only the ask-user findings, verbatim and unparaphrased (id, severity, file, line, description, authority)" "$brief" \
     "ship rule 6 must limit the verbatim axi slice to ask-user findings"
   # shellcheck disable=SC2016  # single quotes are deliberate: backticks and the key/findings/file tokens must stay literal
-  assert_grep 'needs-decision [at=<epoch>] [key=nm-<run>-<step>]: ask-user findings=<id1>,<id2>,... file='"$home/data/$id/nm-<run>-findings.txt" "$brief" \
+  assert_grep 'needs-decision [at=<epoch>] [cause=decision] [key=nm-<run>-<step>]: ask-user findings=<id1>,<id2>,... file='"$home/data/$id/nm-<run>-findings.txt" "$brief" \
     "ship rule 6 must render the exact needs-decision ask-user status line"
   assert_grep "$home/data/$id/nm-<run>-findings.txt" "$brief" \
     "ship rule 6 must point the snapshot file under this task's own data directory"
@@ -1560,7 +1560,7 @@ test_crewmate_scaffolds_forbid_pool_administration() {
     assert_grep "sibling slot" "$brief" \
       "$mode ship brief did not forbid writing into a sibling slot"
     # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
-    assert_grep 'blocked [at=<epoch>]: {what you need}' "$brief" \
+    assert_grep 'blocked [at=<epoch>] [cause=external]: {what you need}' "$brief" \
       "$mode ship brief gave the prohibition no exit for a genuine second-checkout need"
   done
 
@@ -1569,7 +1569,7 @@ test_crewmate_scaffolds_forbid_pool_administration() {
   brief="$home/data/brief-pool-scout/brief.md"
   assert_grep "worktree pool" "$brief" "scout brief did not name the shared worktree pool"
   # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
-  assert_grep 'blocked [at=<epoch>]: {what you need}' "$brief" "scout brief gave the prohibition no exit"
+  assert_grep 'blocked [at=<epoch>] [cause=external]: {what you need}' "$brief" "scout brief gave the prohibition no exit"
 
   # One shared string, not two copies: the emitted rule must be byte-identical
   # across the ship and scout scaffolds so a later edit cannot fix one and miss
@@ -1583,7 +1583,7 @@ test_crewmate_scaffolds_forbid_pool_administration() {
   # The daemon half of the rule survived the fold.
   assert_grep "no-mistakes" "$brief" "scout brief lost the shared no-mistakes daemon rule"
   # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
-  assert_grep 'blocked [at=<epoch>]: {the daemon error}' "$brief" \
+  assert_grep 'blocked [at=<epoch>] [cause=tool]: {the daemon error}' "$brief" \
     "scout brief lost the daemon-error reporting instruction"
 
   # A secondmate runs its own home and legitimately allocates and returns slots

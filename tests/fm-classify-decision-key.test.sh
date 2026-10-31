@@ -724,6 +724,28 @@ test_whole_fold_matches_captured_stream() {
   pass "whole-file fold matches pre-optimization bytes at every corpus checkpoint"
 }
 
+test_status_line_cause() {
+  local line want
+  while IFS='|' read -r want line; do
+    assert_equals "$want" "$(status_line_cause "$line")" "cause of: $line"
+  done <<'CASES'
+sudo|blocked [at=1790000000] [cause=sudo]: needs root
+policy|needs-decision [cause=policy] [key=k] [at=1790000000]: rule
+unstated|needs-decision: [key=k] [cause=decision] after the colon is prose
+unstated|needs-decision: [cause=decision] a note-head tag is prose
+tool|blocked [at=10:30] [cause=tool]: readable stamp keeps its colon out of the head
+external|blocked corr=0123456789abcdef [cause=external]: waiting on a service
+unstated|blocked [at=1790000000]: no cause tag
+unstated|blocked [at=1790000000] [cause=whatever]: unknown value
+unstated|blocked [at=1790000000] [cause=]: empty value
+unstated|blocked without any colon
+CASES
+  assert_equals "needs-decision" "$(status_line_verb 'needs-decision [at=1] [cause=policy] [key=k]: x')" \
+    "a cause tag does not change the verb"
+  assert_equals "k" "$(_fm_decision_key 'needs-decision [cause=policy] [key=k]: x')" "a cause tag does not change the key"
+  pass "status_line_cause reads the stated cause and falls back to unstated"
+}
+
 test_whole_fold_ten_thousand_lines() {
   local dir started elapsed
   dir=$(case_dir ten-thousand)
@@ -751,3 +773,4 @@ SH
 
 test_whole_fold_ten_thousand_lines
 test_whole_fold_matches_captured_stream
+test_status_line_cause

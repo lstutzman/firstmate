@@ -5,14 +5,19 @@ Usage: fm-fleet-alarm.py check | timer | arm | timer-files <linux|darwin> <dir>
 FM_HOME selects the primary home. config/fleet-alarm.json accepts seven_day
 (default .9, carrying-account threshold), pool_remaining (.1, mean remaining
 weekly capacity across non-stale Claude readings), silent_minutes
-(60), stale_minutes (120), and budget_seconds (24). cpa-usage-host selects local
+(60), stale_minutes (120), persist_polls (2), and budget_seconds (24). cpa-usage-host selects local
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Both readers share FM_CHECK_TIMEOUT (default 30); budget must leave 5 seconds.
 Secondmate inventory reads published home summaries (bounded remote reads fall
 back to the parent cache); no full fleet snapshot runs here. Unreachable homes
 without usable cached inventory are recorded quietly as not_collected.
 Partial child observations retain independently complete in-flight counts;
-other incomplete inventories alert with their reason.
+other incomplete inventories alert with their reason, but only after the same
+inventory finding appears in persist_polls consecutive polls of a channel, so
+an item missing on one poll and back on the next raises nothing.
+The timer's needs-decision line carries a [cause=...] tag (bin/fm-classify-lib.sh
+status_line_cause owns the vocabulary): decision for quota pressure, external
+for a silent secondmate, tool for an unreadable reader or inventory.
 Registry and summary inputs are bounded at 64/256 KiB.
 Parent-channel age uses the shared classifier, excluding parent appends.
 One alert per condition/reset window, rearmed on clear. check and timer share a
@@ -44,6 +49,17 @@ HOME = Path(os.environ.get('FM_HOME', BIN.parent)).resolve()
 STATE = Path(os.environ.get('FM_STATE_OVERRIDE', HOME / 'state'))
 CONFIG = Path(os.environ.get('FM_CONFIG_OVERRIDE', HOME / 'config'))
 ID = 'fleet-alarm'
+# First matching prefix of a current alarm names the cause on the timer's needs-decision line.
+CAUSES = (('quota:', 'decision'), ('pool', 'decision'), ('silent:', 'external'), ('stale:', 'tool'),
+          ('quota-read', 'tool'), ('mate-read', 'tool'), ('config', 'tool'))
+
+
+def cause_of(alarms):
+    return next((cause for prefix, cause in CAUSES if any(key.startswith(prefix) for key in alarms)), 'tool')
+
+
+def is_inventory(key):
+    return key == 'mate-read' or key.startswith('mate-read:')
 RETIRED_MINUTES = 7 * 24 * 60
 
 
@@ -67,7 +83,7 @@ def run(argv, seconds):
 
 def settings():
     values = dict(seven_day=.9, pool_remaining=.1, silent_minutes=60,
-                  stale_minutes=120, budget_seconds=24)
+                  stale_minutes=120, persist_polls=2, budget_seconds=24)
     path = CONFIG / 'fleet-alarm.json'
     if path.exists():
         supplied = json.loads(path.read_text())
@@ -318,19 +334,29 @@ def check(channel):
         old = stored.get('conditions', {})
         timer_open = stored.get('timer_open', False)
         try:
-            current, quota_info, not_collected = collect(settings())
+            cfg = settings()
+            raw, quota_info, not_collected = collect(cfg)
         except (ValueError, OSError) as error:
-            current = {'config': f'Fleet alarm configuration invalid: {error}'}
+            cfg = {'persist_polls': 1}
+            raw = {'config': f'Fleet alarm configuration invalid: {error}'}
             quota_info = ''
             not_collected = {}
+        # An inventory finding must persist across consecutive polls of this channel before it
+        # alarms; the count resets as soon as the finding is absent from a poll.
+        suspect = {key: n + 1 for key, n in stored.get('suspect', {}).get(channel, {}).items()
+                   if key in raw}
+        suspect.update({key: 1 for key in raw if is_inventory(key) and key not in suspect})
+        current = {key: value for key, value in raw.items()
+                   if not is_inventory(key) or suspect[key] >= cfg['persist_polls']}
         fresh = {key: value for key, value in current.items()
                  if channel not in old.get(key, [])}
         # An unavailable reader does not prove that its previous alarms cleared.
         preserved = {key: receipts for key, receipts in old.items()
-                     if ('config' in current
-                         or ('quota-read' in current and key.startswith(('quota:', 'stale:', 'pool', 'ignored:')))
-                         or ('mate-read' in current and key.startswith(('silent:', 'mate-read:')))
-                         or (key.startswith('silent:') and 'mate-read:' + key[7:] in current)
+                     if ((key in raw and key not in current)
+                         or 'config' in raw
+                         or ('quota-read' in raw and key.startswith(('quota:', 'stale:', 'pool', 'ignored:')))
+                         or ('mate-read' in raw and key.startswith(('silent:', 'mate-read:')))
+                         or (key.startswith('silent:') and 'mate-read:' + key[7:] in raw)
                          or (key.startswith(('silent:', 'mate-read:'))
                              and key.split(':', 1)[1] in not_collected))}
         alarms = [key for key in current if not key.startswith('ignored:')]
@@ -345,8 +371,9 @@ def check(channel):
                     raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
                 with (STATE / 'fleet-alarm.status').open('a') as status:
                     verb = 'resolved' if cleared else 'needs-decision'
+                    tag = '' if cleared else f' [cause={cause_of(alarms)}]'
                     text = 'Fleet alarm conditions cleared' if cleared else text
-                    status.write(f'{verb} [at={int(time.time())}] [key=fleet-alarm]: {text}\n')
+                    status.write(f'{verb} [at={int(time.time())}]{tag} [key=fleet-alarm]: {text}\n')
                 run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG,
                      STATE / 'fleet-alarm.status'], 3)
                 timer_open = not cleared
@@ -356,8 +383,8 @@ def check(channel):
                for key in current}
         new.update(preserved)
         with tempfile.NamedTemporaryFile(mode='w', dir=STATE, prefix='.fleet-alarm-', delete=False) as file:
-            json.dump({'conditions': new, 'timer_open': timer_open,
-                       'not_collected': not_collected}, file)
+            json.dump({'conditions': new, 'timer_open': timer_open, 'not_collected': not_collected,
+                       'suspect': {**stored.get('suspect', {}), channel: suspect}}, file)
             temporary = file.name
         os.replace(temporary, record)
 

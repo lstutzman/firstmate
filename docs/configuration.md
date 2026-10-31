@@ -628,6 +628,8 @@ Remote summary reads share the alarm deadline and fall back to the parent-side r
 Missing, malformed, or stale home summaries from reachable homes produce an inventory alert; the configured stale-data threshold applies to summaries too.
 An unreachable home without usable cached inventory is recorded quietly as not collected, including an offline laptop.
 An incomplete child-liveness observation preserves the independently complete in-flight work count; other inventory contradictions still alert with their reason.
+An inventory alert waits until the same finding appears in `persist_polls` consecutive polls of a channel (default 2), so an item that is missing on one poll and present on the next raises nothing.
+The timer's `needs-decision` line carries a `[cause=...]` tag, `decision` for quota pressure, `external` for a silent second mate and `tool` for an unreadable reader or inventory, so the friction officer groups it with other blocked lines.
 The quota alarm fires when mean remaining weekly capacity across non-stale Claude readings falls below the pool threshold, or a carrying account exceeds the weekly threshold.
 Every Claude account with successful Claude-model requests in the last 60 minutes is carrying; several accounts can qualify, and failed-only traffic does not qualify.
 The card names all carrying accounts and includes per-account weekly pressure as information; pressure alone on an idle account does not trigger an alarm.

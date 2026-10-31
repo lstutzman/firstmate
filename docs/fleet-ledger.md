@@ -30,7 +30,7 @@ Readers must ignore members and events they do not recognize, so later versions 
 | Event              | Extra members                                  | Written when |
 | ------------------ | ---------------------------------------------- | ------------ |
 | `task.dispatched`  | `kind`, `project`, `harness`, `model`          | A new worker or second mate is launched. A relaunch of an existing task is not recorded. |
-| `task.status`      | `state`, `key`, `text`                         | A complete, nonblank line in the task's status log is captured. |
+| `task.status`      | `state`, `key`, `text`, `cause` (when stated)  | A complete, nonblank line in the task's status log is captured. |
 | `task.pr_ready`    | `pr`                                           | Firstmate records the task's PR as ready for review. |
 | `task.merged`      | `via` (`"pr"` or `"local"`), plus `pr` when `via` is `"pr"` | The task's PR merge is recorded, or its local-only branch landed. |
 | `task.cleaned_up`  | none                                           | The task's worker and local copy were removed. |
@@ -42,6 +42,7 @@ It is written each time firstmate records a PR for the task, so registering a re
 
 `task.status` members: `state` is the status line's leading word, such as `working`, `needs-decision`, `blocked`, `paused`, `done`, `failed`, or `resolved`, or `null` when the line has none.
 `key` is the line's `[key=...]` decision key, or `null`.
+`cause` is the line's `[cause=...]` tag (`policy`, `credential`, `sudo`, `tool`, `decision` or `external`) and is absent when the line states none.
 `text` is the status line after its first colon, verbatim, capped at 2000 characters; if the line has no colon, it is the whole line.
 
 Example:

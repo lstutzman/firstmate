@@ -71,6 +71,9 @@ cat > "$HOME_FIX/models" <<'ROWS'
 models[1]{account,model,requests,failed}:
   member@example.invalid,claude-opus-5-5,5,0
 ROWS
+# Most fixtures below test one poll, so inventory findings alarm at once here;
+# the race and persistence cases near the end restore the default of two polls.
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
 quota 0.2
 mate 0 0 9000
 out=$(run_alarm check)
@@ -233,7 +236,7 @@ printf -- '- slow - test domain (host: unreachable.invalid; root: /remote/code; 
 cat "$HOME_FIX/data/secondmates.md" >> "$HOME_FIX/slow-registry"
 mv "$HOME_FIX/slow-registry" "$HOME_FIX/data/secondmates.md"
 : > "$HOME_FIX/remote-slow"
-printf '%s\n' '{"budget_seconds":3}' > "$HOME_FIX/config/fleet-alarm.json"
+printf '%s\n' '{"budget_seconds":3,"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
 SECONDS=0
 out=$(run_alarm check)
 [ "$SECONDS" -lt 3 ] || fail 'slow remote starved the alarm budget'
@@ -242,7 +245,7 @@ assert_not_contains "$out" 'inventory unavailable: slow' 'a remote collection ti
 jq -e '.not_collected.slow != null' "$HOME_FIX/state/.fleet-alarm.json" >/dev/null \
   || fail 'timed-out remote collection was not recorded'
 mv "$HOME_FIX/remote-slow" "$HOME_FIX/remote-slow-cleared"
-mv "$HOME_FIX/config/fleet-alarm.json" "$HOME_FIX/small-budget-cleared"
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
 mate 0 0 0
 run_alarm check >/dev/null
 pass 'slow remote summary reads do not starve the silent-mate check'
@@ -449,6 +452,8 @@ run_alarm check >/dev/null
 : > "$HOME_FIX/config/fleet-ledger"
 [ -z "$(run_alarm timer)" ] || fail 'timer publishes through ledger without stdout'
 assert_contains "$(cat "$HOME_FIX/state/fleet-ledger.jsonl")" 'needs-decision' 'timer publishes without a watcher'
+jq -e -s 'map(select(.state == "needs-decision")) | length > 0 and all(.[]; .cause == "decision")' \
+  "$HOME_FIX/state/fleet-ledger.jsonl" >/dev/null || fail 'a quota alarm line must state cause decision'
 before=$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")
 run_alarm timer
 [ "$(wc -l < "$HOME_FIX/state/fleet-ledger.jsonl")" = "$before" ] || fail 'timer must deduplicate'
@@ -572,7 +577,7 @@ printf '%s\n' '{"budget_seconds":999}' > "$HOME_FIX/config/fleet-alarm.json"
 assert_contains "$(run_alarm check)" 'configuration invalid' 'invalid timeout budget refused'
 pass 'configuration cannot exceed the registered check deadline'
 
-printf '%s\n' '{"budget_seconds":20,"silent_minutes":1,"stale_minutes":2,"seven_day":0.8,"pool_remaining":0.05}' > "$HOME_FIX/config/fleet-alarm.json"
+printf '%s\n' '{"budget_seconds":20,"silent_minutes":1,"stale_minutes":2,"seven_day":0.8,"pool_remaining":0.05,"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
 quota 0.91 3
 mate 1 0 59
 out=$(run_alarm check)
@@ -609,3 +614,41 @@ assert_contains "$(run_alarm arm)" 'registered: state/fleet-alarm.check.sh' 'che
 [ -x "$HOME_FIX/state/fleet-alarm.check.sh" ] || fail 'shim must be executable'
 if run_alarm arm >/dev/null 2>&1; then fail 'arming cannot overwrite an existing check'; fi
 pass 'arming uses the existing trust registration and refuses replacement'
+
+# Inventory races: the default asks for two consecutive polls before alarming.
+rm -f "$HOME_FIX/config/fleet-alarm.json" "$HOME_FIX/state/.fleet-alarm.json" "$HOME_FIX/remote-summary"
+rm -f "$HOME_FIX/state/fleet-alarm.status" "$HOME_FIX/state/fleet-ledger.jsonl"
+quota 0.2
+mate 0 0 0
+run_alarm check >/dev/null
+printf '%s\n' '{}' > "$TMP_ROOT/mate/state/home-summary.json"
+[ -z "$(run_alarm check)" ] || fail 'an inventory finding seen on one poll must not alarm'
+mate 0 0 0
+[ -z "$(run_alarm check)" ] || fail 'a recovered inventory must stay silent'
+printf '%s\n' '{}' > "$TMP_ROOT/mate/state/home-summary.json"
+[ -z "$(run_alarm check)" ] || fail 'the count must restart after the finding cleared'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'a transient inventory race raises nothing'
+
+printf '%s\n' '{}' > "$TMP_ROOT/mate/state/home-summary.json"
+[ -z "$(run_alarm check)" ] || fail 'first poll of a real inventory failure is held back'
+assert_contains "$(run_alarm check)" "Secondmate work inventory unavailable: mate: 'schema'" 'a persistent inventory failure alarms on the second poll'
+[ -z "$(run_alarm check)" ] || fail 'a persistent inventory failure alarms once'
+pass 'an inventory failure that persists still alarms once'
+
+run_alarm timer
+[ -z "$(run_alarm check)" ] || fail 'a timer poll that holds the finding back must keep the check receipt'
+pass 'a held-back poll on one channel keeps the receipts of another'
+
+# The timer line names its cause, and a timer poll counts separately from check polls.
+: > "$HOME_FIX/config/fleet-ledger"
+run_alarm timer
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^needs-decision \[at=[0-9]*\] \[cause=tool\] \[key=fleet-alarm\]: ' \
+  || fail "an unreadable inventory alarm must state cause tool: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
+mate 0 0 0
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail 'the cleared line carries no cause'
+pass 'the timer states a cause on its needs-decision line'
