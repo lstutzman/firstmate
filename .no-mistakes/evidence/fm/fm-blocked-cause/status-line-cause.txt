@@ -1,0 +1,13 @@
+sudo        <= blocked [at=1793462605] [cause=sudo]: needs root
+decision    <= needs-decision [at=1793462605] [cause=decision] [key=pick]: a or b
+external    <= needs-decision [key=merge-handoff-12] [cause=external]: [handoff=slarti] url ready
+unstated    <= blocked [at=1793462605]: no tag
+unstated    <= blocked [at=1793462605] [cause=bogus]: unknown value
+unstated    <= blocked [at=1793462605] [cause=SUDO]: wrong case
+unstated    <= blocked [at=1793462605]: text mentions [cause=sudo] after the colon
+unstated    <= blocked: [cause=policy] after colon unstamped
+needs-decision [key=merge-handoff-12] [cause=external] [at=1793462629]: [handoff=slarti] https://x/pull/12 is ready to merge
+key=merge-handoff-12 cause=external
+verb=
+key2=nm-r1-review
+verb=[needs-decision]

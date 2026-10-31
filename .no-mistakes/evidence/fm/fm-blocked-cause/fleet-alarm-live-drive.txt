@@ -1,0 +1,16 @@
+## baseline timer
+## race: one bad poll on timer, recovery
+/tmp/tmp.OoCKvq5ohb/drive.sh: line 80: /tmp/fm-fleet-alarm.lQj4P2/home/state/fleet-alarm.status: No such file or directory
+status lines after 1 bad timer poll: 0
+/tmp/tmp.OoCKvq5ohb/drive.sh: line 82: /tmp/fm-fleet-alarm.lQj4P2/home/state/fleet-alarm.status: No such file or directory
+status lines after recovery: 0
+## persistent: timer twice
+--- status file:
+needs-decision [at=1793462605] [cause=tool] [key=fleet-alarm]: Secondmate work inventory unavailable: mate: 'schema'; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+## mirror: check poll held back (count1), then timer again
+check out: []
+needs-decision lines: 1
+--- ledger records:
+{"event":"task.status","state":"needs-decision","key":"fleet-alarm","cause":"tool"}
+## quota pressure with persist default
+needs-decision [at=1793462605] [cause=decision] [key=fleet-alarm]: Carrying Claude account member@example.invalid 7d 95% (resets window1); Claude pool near empty; Claude account pressure: member@example.invalid 7d 95%; Carrying Claude accounts: member@example.invalid
