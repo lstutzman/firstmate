@@ -668,6 +668,20 @@ EOF
   run_officer "$home" >/dev/null || fail "make-sure run must succeed"
   assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
     "two upkeep asks on different topics that share only their instruction words are different instructions"
+  cat > "$TMP_ROOT/paraphrase/u1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "u-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Keep the PR body up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/u3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "u-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "Make sure the PR title is up to date."}}]}]}
+EOF
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/u1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/u3.json"
+  run_officer "$home" >/dev/null || fail "up-to-date run must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "two up-to-date asks that share one noun are different instructions"
   pass "fm-officer friction: paraphrased upkeep asks on three days are one finding; a non-upkeep ask about the log is not"
 }
 
