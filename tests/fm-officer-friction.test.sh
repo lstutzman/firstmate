@@ -608,6 +608,55 @@ EOF
   pass "fm-officer friction: the same Lee instruction on two days is one finding with quotes and dates"
 }
 
+test_paraphrased_upkeep_asks_cluster() {
+  local home archive json
+  home="$TMP_ROOT/paraphrase/fixturehost"
+  archive="$TMP_ROOT/paraphrase/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  cat > "$TMP_ROOT/paraphrase/d1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "p-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/d2.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "p-d2", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-22T09:00:00.000Z", "message": {"content": "I just want to make sure that the captain's log, uh, keeper agent is looking at all pages and not just certain ones."}},
+  {"type": "user", "timestamp": "2026-10-22T09:30:00.000Z", "message": {"content": "Make sure the captain's log renders on mobile."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/d3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "p-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:00:00.000Z", "message": {"content": "I'm constantly having to come back and say, hey, keep the captain's log up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/n1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "n-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Please keep the captain's log up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/n3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "n-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "Make sure the captain's log renders on mobile."}}]}]}
+EOF
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/d1.json"
+  officer_archive "$archive" 2026-10-22 "$TMP_ROOT/paraphrase/d2.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/d3.json"
+  friction_registry "$home" "$archive"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "three paraphrases of one upkeep instruction are one finding"
+  assert_equals "2026-10-21 2026-10-22 2026-10-23" \
+    "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks | map(.date) | join(" ")' "$json")" \
+    "the finding names each of the three days"
+  assert_contains "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks[1].quote' "$json")" "keeper agent is looking at all pages" \
+    "the paraphrase on the middle day is the quote for that day"
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/n1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/n3.json"
+  run_officer "$home" >/dev/null || fail "negative run must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "an instruction about the same log that asks for no upkeep is a different instruction"
+  pass "fm-officer friction: paraphrased upkeep asks on three days are one finding; a non-upkeep ask about the log is not"
+}
+
 test_registry_and_unharvested_day() {
   local home out
   home=$(make_world registry)
@@ -632,4 +681,5 @@ test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh
 test_captains_log_cards_read_only
 test_repeated_lee_asks_across_days
+test_paraphrased_upkeep_asks_cluster
 test_registry_and_unharvested_day

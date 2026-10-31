@@ -20,7 +20,8 @@ card, a page owner fixes a page). It acts on nothing itself.
                  data/captain-shared.md) of the form
                      - standing-rule <id> /<regex>/ - <rule text>
                  whose case-insensitive regex is matched against the card's
-                 words. Other lines of the file are ignored.
+                 words. Other lines of the file are ignored; a file with no
+                 rule line is a coverage note, since the check then covers nothing.
   stale-card     a shown card that is past its snooze date, unanswered for
                  --stale-days, already answered, names a merged or closed PR
                  (read with `gh-axi api GET`, at most MAX_PR_LOOKUPS a run), or
@@ -32,7 +33,8 @@ card, a page owner fixes a page). It acts on nothing itself.
                  page still shows it asked.
   page-old       a page whose newest publish is older than its normal cadence
                  allows (PAGES), a job on the Runs page that is failing, or a
-                 page that is unreachable, unreadable or never published.
+                 page that is unreachable, unreadable or never published. A
+                 page whose JSON is not the expected shape is unreadable.
 
 The pass reads current records, so --key (the scheduler's slot) only names the
 run. It writes into --out: <key>.json (every open finding), <key>.md (the
@@ -69,6 +71,7 @@ PAGES = {
                                                  "sources.usage.observed_at"), 3),
     "Feature ideation": ("/api/ideation", ("value.generated_at", "generated_at"), 36),
     "Business health": ("/api/business-health", ("value.generated_at", "generated_at"), 36),
+    "Bosun": ("/api/runs/bosun-maintenance/results", ("runs[].run.startedAt",), 26),
 }
 
 
@@ -88,7 +91,7 @@ triage = friction.triage
 
 
 def fetch(app, path):
-    """(state, json): state is read, missing (404), unreachable or unreadable."""
+    """(state, json): state is read (a JSON object), missing (404), unreachable or unreadable."""
     proc = subprocess.run(["curl", "-sS", "--max-time", "30", "-w", "\n%{http_code}", app.rstrip("/") + path],
                           capture_output=True, check=False)
     if proc.returncode != 0:
@@ -97,12 +100,18 @@ def fetch(app, path):
     if code == "404":
         return "missing", None
     try:
-        return ("read", json.loads(body)) if code == "200" else ("unreadable", None)
+        doc = json.loads(body) if code == "200" else None
     except ValueError:
-        return "unreadable", None
+        doc = None
+    return ("read", doc) if isinstance(doc, dict) else ("unreadable", None)
 
 
 WHY = {"missing": "never published", "unreachable": "unreachable", "unreadable": "unreadable"}
+
+
+def items(doc, key):
+    value = doc.get(key)
+    return [v for v in value if isinstance(v, dict)] if isinstance(value, list) else []
 
 
 def pick(doc, dotted):
@@ -133,15 +142,17 @@ def load_rules(path):
         with open(path, encoding="utf-8", errors="replace") as fh:
             text = fh.read()
     except OSError:
-        return [], "standing rules file %s is unreadable" % path
+        return [], ["standing rules file %s is unreadable" % path]
     rules, bad = [], []
     for rid, pattern, rule_text in RULE_RE.findall(text):
         try:
             rules.append((rid, re.compile(pattern, re.I), rule_text))
         except re.error:
             bad.append(rid)
-    note = "standing rule(s) %s have an invalid regex" % ", ".join(bad) if bad else None
-    return rules, note
+    notes = ["standing rule(s) %s have an invalid regex" % ", ".join(bad)] if bad else []
+    if not rules:
+        notes.append("no standing-rule lines in %s; the standing-rule check covers nothing" % path)
+    return rules, notes
 
 
 def settled_by_status(homes):
@@ -189,11 +200,10 @@ def finding(kind, page, ref, title, evidence, route):
 def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
     out, cache, budget, unread = [], {}, [MAX_PR_LOOKUPS], set()
     page = "Captain's Log"
-    shown = [c for c in log.get("cards") or [] if isinstance(c, dict) and c.get("state") in ("asked", "snoozed")]
-    shown += [dict(s, id="top10-%s" % s.get("id")) for s in log.get("suggestions") or []
-              if isinstance(s, dict) and s.get("state") == "suggested"]
-    shown += [dict(c, id="choice-%s" % c.get("id")) for c in log.get("choice") or []
-              if isinstance(c, dict) and c.get("ask") and c.get("status") != "landed"]
+    shown = [c for c in items(log, "cards") if c.get("state") in ("asked", "snoozed")]
+    shown += [dict(s, id="top10-%s" % s.get("id")) for s in items(log, "suggestions") if s.get("state") == "suggested"]
+    shown += [dict(c, id="choice-%s" % c.get("id")) for c in items(log, "choice")
+              if c.get("ask") and c.get("status") != "landed"]
     for c in shown:
         cid, title = str(c.get("id")), c.get("question") or c.get("title") or ""
         text = words(c)
@@ -243,17 +253,20 @@ def page_findings(app, now):
     out, docs = [], {}
     for page, (path, keys, max_hours) in sorted(PAGES.items()):
         state, doc = fetch(app, path)
-        docs[page] = doc
+        limit = max_hours
+        if state == "read" and page == "Progress officer":
+            mins = pick(doc, "state.stale_after_minutes") + pick(doc, "value.state.stale_after_minutes")
+            if mins and (isinstance(mins[0], bool) or not isinstance(mins[0], (int, float))):
+                state = "unreadable"
+            elif mins:
+                limit = mins[0] / 60.0
+        docs[page] = doc if state == "read" else None
         ref = path.rsplit("/", 1)[-1]
         if state != "read":
             out.append(finding("page-old", page, ref, "%s: %s" % (page, WHY[state]),
                                "GET %s was %s" % (path, state), "page owner: restore the page's feed"))
             continue
         at = newest(doc, keys)
-        limit = max_hours
-        if page == "Progress officer":
-            mins = pick(doc, "state.stale_after_minutes") + pick(doc, "value.state.stale_after_minutes")
-            limit = mins[0] / 60.0 if mins else limit
         if at is None:
             out.append(finding("page-old", page, ref, "%s: no publish time" % page,
                                "GET %s carries none of %s" % (path, ", ".join(keys)), "page owner: add a publish time"))
@@ -267,8 +280,8 @@ def page_findings(app, now):
         out.append(finding("page-old", "Runs", "runs", "Runs: %s" % WHY[state], "GET /api/runs was %s" % state,
                            "page owner: restore the page's feed"))
     else:
-        for job in runs.get("jobs") or []:
-            if isinstance(job, dict) and job.get("state") == "live" and job.get("health") == "failing":
+        for job in items(runs, "jobs"):
+            if job.get("state") == "live" and job.get("health") == "failing":
                 out.append(finding("page-old", "Runs", str(job.get("id")), "%s is failing" % (job.get("label") or job.get("id")),
                                    "officer %s: health failing, next due %s" % (job.get("officer"), job.get("nextDueAt")),
                                    "page owner: fix the job"))
@@ -291,17 +304,16 @@ def render_md(key, findings, new_ids, coverage):
 
 def run(args):
     now = args.now if args.now is not None else int(time.time())
-    rules, note = load_rules(args.rules) if args.rules else ([], "no standing rules file")
-    coverage = [note] if note else []
-    findings, _ = page_findings(args.app, now)
-    state, log = fetch(args.app, "/api/captains-log")
-    if state == "read":
-        doc = log.get("value") if isinstance(log, dict) else None
+    rules, coverage = load_rules(args.rules) if args.rules else ([], ["no standing rules file"])
+    findings, docs = page_findings(args.app, now)
+    log = docs["Captain's Log"]
+    if log is not None:
+        doc = log.get("value")
         known_closed = set()
         for source in FACTS_SOURCES:
             fstate, facts = fetch(args.app, "/api/captains-log/facts?source=" + source)
             if fstate == "read":
-                known_closed |= {c.get("id") for c in facts.get("cards") or [] if c.get("lifecycle") == "closed"}
+                known_closed |= {c.get("id") for c in items(facts, "cards") if c.get("lifecycle") == "closed"}
             else:
                 coverage.append("card record for source %s was %s" % (source, fstate))
         findings += card_findings(doc if isinstance(doc, dict) else {}, rules, settled_by_status(args.home), known_closed,

@@ -50,8 +50,13 @@ Repeated asks are a fourth kind of event. Lee's typed messages in the last
 and never a worker's launch brief, which quotes him, are cut into sentences
 (a long dictated run-on into clauses) that give an instruction (keep, make
 sure, always, never, don't, should, must, ...). Two instructions on different
-days that share at least three content words and at least 70% of the shorter
-one's words are the same instruction. A group spanning two or more days, one
+days are the same instruction when they share at least three content words
+and at least 70% of the shorter one's words, or when both ask for upkeep (one
+concept for keep, update, current, date, fresh, maintain, look, check, review,
+watch, track, monitor, stale) and share at least two other content words, so
+"keep the captain's log up to date" and "make sure the captain's log keeper is
+looking at all pages" match while "make sure the captain's log renders" does
+not. A group spanning two or more days, one
 of them the run's day, becomes a repeat-ask event whose evidence is each day's
 scrubbed quote. The fix is to make the instruction automatic work (a scheduled
 check, a hook, or a standing rule) so Lee stops giving it.
@@ -669,12 +674,23 @@ so some than that the their them then there these they this those to too us was 
 with would yeah um uh er you your youre ive id im thats there""".split())
 ASK_MIN_SHARED = 3
 ASK_MIN_OVERLAP = 0.7
+UPKEEP = "upkeep"
+UPKEEP_WORDS = frozenset("keep update current date fresh maintain look looking check review watch track monitor stale".split())
+ASK_MIN_SHARED_UPKEEP = 2
 MAX_ASK_LEN = 300
 
 
 def ask_tokens(sentence):
     words = re.findall(r"[a-z]+", sentence.lower().replace("'", ""))
-    return frozenset(w[:-1] if len(w) > 4 and w.endswith("s") else w for w in words if w not in FILLER and len(w) > 1)
+    stems = (w[:-1] if len(w) > 4 and w.endswith("s") else w for w in words if w not in FILLER and len(w) > 1)
+    return frozenset(UPKEEP if w in UPKEEP_WORDS else w for w in stems)
+
+
+def same_ask(a, b):
+    shared = a & b
+    if len(shared) >= ASK_MIN_SHARED and len(shared) >= ASK_MIN_OVERLAP * min(len(a), len(b)):
+        return True
+    return UPKEEP in shared and len(shared - {UPKEEP}) >= ASK_MIN_SHARED_UPKEEP
 
 
 def lee_clauses(text):
@@ -742,9 +758,7 @@ def repeat_ask_events(asks, date):
 
     for i in range(len(asks)):
         for j in range(i + 1, len(asks)):
-            shared = len(toks[i] & toks[j])
-            if asks[i]["date"] != asks[j]["date"] and shared >= ASK_MIN_SHARED \
-                    and shared >= ASK_MIN_OVERLAP * min(len(toks[i]), len(toks[j])):
+            if asks[i]["date"] != asks[j]["date"] and same_ask(toks[i], toks[j]):
                 parent[find(j)] = find(i)
     groups = {}
     for i in range(len(asks)):

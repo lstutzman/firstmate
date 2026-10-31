@@ -982,10 +982,11 @@ Its findings are one of four kinds, each naming the page and the object so first
 | `standing-rule` | A card Lee is shown that a standing rule already settles | cl-keeper closes it citing the rule |
 | `stale-card` | A shown card that is past its snooze date, unanswered for `stale-days`, already answered, naming a merged or closed PR, or settled by a later `resolved` status line | cl-keeper closes or corrects it |
 | `shown-after-done` | A card shown although its record is settled: a status line resolved before the card was raised again, or the app's own card record for the Bosun source is closed | cl-keeper closes it; the source that re-raised it is fixed |
-| `page-old` | A page older than its normal gap, never published, unreachable or unreadable, or a live Runs job whose health is failing | the page's owner fixes the feed |
+| `page-old` | A page older than its normal gap (Bosun's results: 26 hours), never published, unreachable or unreadable (including JSON of an unexpected shape), or a live Runs job whose health is failing | the page's owner fixes the feed |
 
 Standing rules are lines in the `rules` file of the form `- standing-rule <id> /<regex>/ - <rule text>`; the case-insensitive regex is matched against a card's words, and every other line of the file is ignored.
 A rule becomes a check by adding one such line next to its prose in `data/captain-shared.md`.
+A rules file with no such line is a coverage note in the digest, because the `standing-rule` check then covers nothing.
 
 The run keeps `state.json` in its lane, when each finding was last reported.
 Its digest line counts only findings not reported in the last `remind-hours`, so an unchanged page set is silent every slot while a finding nobody fixed returns daily.
@@ -998,6 +999,8 @@ The friction officer also compares Lee's typed instructions across the last `ask
 It sees only what the archive holds: a message Lee gave somewhere that is not archived as a Claude Code transcript is not counted.
 An instruction given on two or more days, one of them the run's day, becomes a `repeat-ask` finding with Lee's scrubbed sentence for each day, so a repeat becomes automatic work instead of Lee repeating himself.
 Two instructions are the same when they share at least three content words and at least 70% of the shorter one's words.
+They are also the same when both ask for upkeep and share at least two other content words: keep, update, current, date, fresh, maintain, look, looking, check, review, watch, track, monitor and stale all count as one upkeep word.
+So "keep the captain's log up to date" and "make sure the captain's log keeper is looking at all pages" are one instruction, while "make sure the captain's log renders on mobile" asks for no upkeep and is not.
 Session text stays on the machines that already hold it and is never sent to a model or service.
 
 ### Progress officer

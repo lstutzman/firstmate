@@ -6,7 +6,9 @@
 # standing rule settles, stale cards of every sort including a PR the forge
 # says is merged, a card shown after its record was settled by a status line
 # or by the app's own card record, pages older than their normal cadence,
-# unpublished pages and failing jobs), the new-finding count that keeps an
+# unpublished pages and failing jobs, Bosun's results page past its 26-hour
+# gap), a rules file with no rule line as a coverage note, JSON of an
+# unexpected shape as an unreadable page rather than a crash, the new-finding count that keeps an
 # unchanged page set quiet until the reminder window passes, an unreachable
 # app as a finding rather than a failed run, the interval slot key the
 # scheduler gives a run, and the read-only boundary (GET only, no write
@@ -47,6 +49,7 @@ write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
   jq -n '{value: {generated_at: "2026-10-29T06:00:00Z"}}' > "$d/_api_business-health"
   jq -n '{jobs: [{id: "ok-job", state: "live", health: "working"}, {id: "bad-job", label: "Bad job", officer: "bosun", state: "live", health: "failing", nextDueAt: "2026-11-01T00:00:00Z"}, {id: "gone", state: "retired", health: "failing"}]}' > "$d/_api_runs"
   jq -n '{status: "ok"}' > "$d/_api_health"
+  jq -n '{runs: [{run: {startedAt: "2026-10-29T04:37:00Z"}}, {run: {startedAt: "2026-10-31T04:37:00Z"}}]}' > "$d/_api_runs_bosun-maintenance_results"
   # _api_velocity-audit is absent: the page was never published (404).
 }
 
@@ -138,6 +141,29 @@ test_findings_of_every_kind() {
   pass "fm-officer page-check: each finding kind is raised for the right object"
 }
 
+test_bosun_rules_and_unexpected_shapes() {
+  local home d out json md
+  home=$(make_world shapes)
+  d="$TMP_ROOT/shapes/pages"
+  jq -n '{runs: [{run: {startedAt: "2026-10-30T12:00:00Z"}}, {run: {startedAt: "2026-10-29T04:37:00Z"}}]}' > "$d/_api_runs_bosun-maintenance_results"
+  jq -n '[]' > "$d/_api_runs"
+  jq -n '{value: {state: {written_at: "2026-10-31T14:00:00Z", stale_after_minutes: "soon"}}}' > "$d/_api_progress-officer"
+  jq -n '{source: "bosun", cards: ["bosun-ep", 3, {id: "bosun-ep", lifecycle: "closed"}]}' > "$d/_api_captains-log_facts_source_bosun"
+  jq '.value.suggestions = "none" | .value.choice = [1, "x"]' "$d/_api_captains-log" > "$d/log.tmp" && mv "$d/log.tmp" "$d/_api_captains-log"
+  printf '# Shared\nRoutine clean-up needs no approval (Lee, 2026-10-31).\n' > "$home/data/captain-shared.md"
+  out=$(officer shapes run page-check --date "$KEY") || fail "unexpected JSON shapes must not fail the run: $out"
+  json="$home/data/officers/page-check/$KEY.json"
+  md="$home/data/officers/page-check/$KEY.md"
+  assert_equals "page-old:Bosun:results page-old:Business health:business-health page-old:Progress officer:progress-officer page-old:Runs:runs page-old:Velocity audit:velocity-audit" \
+    "$(ids "$json" page-old)" "Bosun's newest result is 26.5 hours old, a list for Runs and a word for the gap are unreadable pages"
+  assert_contains "$(cat "$md")" "Runs: unreadable" "the Runs page that answered a list is named unreadable"
+  assert_contains "$(cat "$md")" "shown-after-done] Captain's Log - bosun-ep" "a closed card record among malformed entries is still read"
+  assert_contains "$(cat "$md")" "Coverage: no standing-rule lines in $home/data/captain-shared.md" \
+    "a rules file with only prose is a coverage note, not a silent empty check"
+  assert_equals "" "$(ids "$json" standing-rule)" "no rule line means no standing-rule finding"
+  pass "fm-officer page-check: Bosun's page gap, an empty rules file and unexpected JSON shapes are findings or notes, not crashes"
+}
+
 test_unchanged_pages_stay_quiet_until_the_reminder() {
   local home first later
   home=$(make_world quiet)
@@ -174,6 +200,7 @@ test_scheduled_slot_and_read_only_boundary() {
   assert_not_contains "$calls" "-X" "no request carries a method override"
   assert_not_contains "$calls" "--data" "no request carries a body"
   assert_not_contains "$calls" "PUT" "no request writes"
+  assert_equals 1 "$(grep -c '/api/captains-log$' "$TMP_ROOT/slot/fakebin/curl.calls")" "the Captain's Log is fetched once a run"
   assert_equals "" "$(grep -v '^api GET ' "$TMP_ROOT/slot/fakebin/gh.calls" || true)" "the forge is only read with GET requests"
   assert_equals "" "$(cd "$home" && find . -path ./data/officers/page-check -prune -o -newer "$home/data/officers.md" -type f -print | grep -v '^./state/' || true)" \
     "nothing outside the lane is written"
@@ -182,6 +209,7 @@ test_scheduled_slot_and_read_only_boundary() {
 
 test_registry_needs_an_https_app
 test_findings_of_every_kind
+test_bosun_rules_and_unexpected_shapes
 test_unchanged_pages_stay_quiet_until_the_reminder
 test_unreachable_app_is_a_finding_not_a_failed_run
 test_scheduled_slot_and_read_only_boundary
