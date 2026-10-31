@@ -682,6 +682,34 @@ EOF
   run_officer "$home" >/dev/null || fail "up-to-date run must succeed"
   assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
     "two up-to-date asks that share one noun are different instructions"
+  cat > "$TMP_ROOT/paraphrase/w1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "w-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "I want you to keep the Bosun page up to date."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/w3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "w-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "I want to make sure the velocity page is current."}}]}]}
+EOF
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/w1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/w3.json"
+  run_officer "$home" >/dev/null || fail "want run must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "two asks about different pages that share only dictated-speech words are different instructions"
+  cat > "$TMP_ROOT/paraphrase/i1.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "i-d1", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-21T09:00:00.000Z", "message": {"content": "Keep the captain's log updated."}}]}]}
+EOF
+  cat > "$TMP_ROOT/paraphrase/i3.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "i-d3", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-23T09:30:00.000Z", "message": {"content": "You need to keep checking the captain's log."}}]}]}
+EOF
+  rm -rf "$archive"
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/paraphrase/i1.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/paraphrase/i3.json"
+  run_officer "$home" >/dev/null || fail "inflected run must succeed"
+  assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "updated and checking count as the upkeep word, so the two log asks are one instruction"
   pass "fm-officer friction: paraphrased upkeep asks on three days are one finding; a non-upkeep ask about the log is not"
 }
 

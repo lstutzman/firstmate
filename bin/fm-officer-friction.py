@@ -50,11 +50,11 @@ Repeated asks are a fourth kind of event. Lee's typed messages in the last
 and never a worker's launch brief, which quotes him, are cut into sentences
 (a long dictated run-on into clauses) that give an instruction (keep, make
 sure, always, never, don't, should, must, ...). The instruction words
-themselves are not content words. Two instructions on different
+themselves and common dictated-speech words are not content words. Two instructions on different
 days are the same instruction when they share at least three content words
 and at least 70% of the shorter one's words, or when both ask for upkeep (one
 concept for keep, update, current, date, fresh, maintain, look, check, review,
-watch, track, monitor, stale) and share at least two other content words, so
+watch, track, monitor, stale, and their -ed and -ing forms) and share at least two other content words, so
 "keep the captain's log up to date" and "make sure the captain's log keeper is
 looking at all pages" match while "make sure the captain's log renders" does
 not. A group spanning two or more days, one
@@ -673,11 +673,13 @@ FILLER = frozenset("""make sure need needs should shouldnt must dont always neve
 a about all also am an and any are as at be been being but by can could did do does for from
 got had has have he her him his how i if in into is it its just like me more my no not of on one only or our out
 so some than that the their them then there these they this those to too us was we were what when which who will
-with would yeah um uh er you your youre ive id im thats there""".split())
+with would yeah um uh er you your youre ive id im thats there
+want know think going gonna wanna get getting go really hey say come back constantly having lets okay ok yes thanks
+maybe actually basically kind sort lot bit way thing things stuff time""".split())
 ASK_MIN_SHARED = 3
 ASK_MIN_OVERLAP = 0.7
 UPKEEP = "upkeep"
-UPKEEP_WORDS = frozenset("keep update current date fresh maintain look looking check review watch track monitor stale".split())
+UPKEEP_WORDS = frozenset("keep update current date fresh maintain look check review watch track monitor stale".split())
 ASK_MIN_SHARED_UPKEEP = 2
 MAX_ASK_LEN = 300
 
@@ -685,7 +687,15 @@ MAX_ASK_LEN = 300
 def ask_tokens(sentence):
     words = re.findall(r"[a-z]+", sentence.lower().replace("'", ""))
     stems = (w[:-1] if len(w) > 4 and w.endswith("s") else w for w in words if w not in FILLER and len(w) > 1)
-    return frozenset(UPKEEP if w in UPKEEP_WORDS else w for w in stems)
+    return frozenset(UPKEEP if is_upkeep(w) else w for w in stems)
+
+
+def is_upkeep(word):
+    if word.endswith("ing"):
+        return word[:-3] in UPKEEP_WORDS or word[:-3] + "e" in UPKEEP_WORDS
+    if word.endswith("ed"):
+        return word[:-2] in UPKEEP_WORDS or word[:-1] in UPKEEP_WORDS
+    return word in UPKEEP_WORDS
 
 
 def same_ask(a, b):
