@@ -985,10 +985,20 @@ def group_findings(events, model):
             finding.update(title=title, lee_did=lee_did if lee else "nothing directly (agent-side friction)",
                            fix=improvement, owner=owner, effort=effort)
         findings.append(finding)
+    name_shared_titles(findings)
     assign_ids(findings)
     findings.sort(key=lambda f: (not f["carded"], -(f["severity"] * f["confidence"]), -f["events"],
                                  f["cause"], f["sub"], f["name"] or ""))
     return findings
+
+
+def name_shared_titles(findings):
+    """Two findings of one run never share a title: a shared one gets its subject (the tool, hook, host or service)."""
+    shared = {t for t, n in _count(f["title"] for f in findings if f["title"]).items() if n > 1}
+    for f in findings:
+        if f["title"] in shared and f["name"]:
+            room = 90 - len(f["title"]) - 2
+            f["title"] = "%s: %s" % (f["title"], clip(f["name"], max(room, 8)))
 
 
 def assign_ids(findings):

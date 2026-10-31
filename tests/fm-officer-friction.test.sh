@@ -357,6 +357,11 @@ test_velocity_ids_counts_and_states() {
   printf 'needs-decision [at=%s] [key=cf-more]: Cloudflare refuses the agent token again; Lee needs to widen it\n' "$((T + 100))" \
     >> "$home/state/task-cf.status"
   FM_HOME="$home" FM_OFFICER_NOW=$((NOW + 86400)) "$OFFICER" run friction --date "$DATE" >/dev/null || fail "second run must succeed"
+  assert_equals "" "$(jq -r '[.bottlenecks[].title] | group_by(.) | map(select(length > 1) | .[0]) | join(";")' "$vel")" \
+    "no two findings in one run share a title"
+  assert_equals "A tool agents need is missing: openjdk" \
+    "$(jq -r '[.bottlenecks[] | select(.id == "missing-tool-tool-openjdk")][0].title' "$vel")" \
+    "findings that would share a title name their subject, here the tool"
   assert_equals "$ids" "$(jq -c '[.bottlenecks[] | .id] | sort' "$vel")" "a finding keeps its id when its events and the run time change"
   assert_equals "true" "$(jq '[.bottlenecks[] | select(.id == "credential-scope-cloudflare")][0].events > 1' "$vel")" \
     "the count follows the events"
