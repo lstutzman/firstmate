@@ -1,0 +1,23 @@
+== head partition (sums under NEW measured hints | under that rev's own hints)
+shard 1: n=1 new_hint_ms=1351380 own_hint_ms=1351380
+shard 2: n=28 new_hint_ms=1229304 own_hint_ms=1229304
+shard 3: n=29 new_hint_ms=1229306 own_hint_ms=1229306
+shard 4: n=29 new_hint_ms=1229311 own_hint_ms=1229311
+shard 5: n=29 new_hint_ms=1229304 own_hint_ms=1229304
+shard 6: n=29 new_hint_ms=1229310 own_hint_ms=1229310
+shard 7: n=29 new_hint_ms=1229311 own_hint_ms=1229311
+shard 8: n=29 new_hint_ms=1229310 own_hint_ms=1229310
+shard 9: n=31 new_hint_ms=1229325 own_hint_ms=1229325
+lane total=234 union=234 unique=234 diff_vs_lane=0
+== base partition (sums under NEW measured hints | under that rev's own hints)
+shard 1: n=16 new_hint_ms=1467457 own_hint_ms=1177147
+shard 2: n=25 new_hint_ms=943089 own_hint_ms=1042193
+shard 3: n=25 new_hint_ms=854450 own_hint_ms=1042147
+shard 4: n=28 new_hint_ms=1235217 own_hint_ms=1042192
+shard 5: n=28 new_hint_ms=1097230 own_hint_ms=1042191
+shard 6: n=27 new_hint_ms=1645859 own_hint_ms=1042147
+shard 7: n=27 new_hint_ms=1265997 own_hint_ms=997147
+shard 8: n=29 new_hint_ms=1279954 own_hint_ms=1042180
+shard 9: n=29 new_hint_ms=1396608 own_hint_ms=997169
+lane total=234 union=234 unique=234 diff_vs_lane=0
+== windows hint head: tests/fm-pi-windows-shell-invocation.test.sh 5121  session-start: tests/fm-session-start.test.sh 346612
