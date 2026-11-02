@@ -428,6 +428,9 @@ FIXES = {
 }
 # Groups reported in the digest but never carded: a product or design choice is Lee's to make.
 NOT_CARDED = {("decision", "decision")}
+# Tools the fleet no longer uses: a miss is still counted, but never becomes an "install it" fix or card.
+# Retiring another tool is a one-line change here.
+RETIRED_TOOLS = {"railway"}
 
 
 def iso_utc(epoch):
@@ -1158,7 +1161,7 @@ def group_findings(events, model):
             confidence = 4
         else:
             confidence = 3
-        fix = propose_fix(cause, sub, model)
+        fix = None if cause == "missing-tool" and name in RETIRED_TOOLS else propose_fix(cause, sub, model)
         fill = {"service": name or "the service", "tool": name or "a tool", "machine": machine}
         tasks = sorted({e["task"] for e in evs if e.get("task") and not e.get("channel")})
         sessions = sorted({e["session"] for e in evs if e.get("session")})
