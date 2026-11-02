@@ -1646,7 +1646,7 @@ test_crewmate_scaffolds_teach_captain_steps_waits_and_resume_check() {
   mkdir -p "$home/data"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-lee-step alpha --mode no-mistakes >/dev/null 2>&1 \
     || fail "fm-brief.sh ship exited non-zero"
-  id=brief-lee-step
+  id="brief-lee-step"
   brief="$home/data/$id/brief.md"
   assert_grep "$ROOT/bin/fm-lee-step.sh" "$brief" "ship brief did not name the captain-step renderer"
   assert_grep 'physical' "$brief" "ship brief did not offer the physical cause"
