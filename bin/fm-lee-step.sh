@@ -5,15 +5,14 @@
 # Usage: fm-lee-step.sh --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]
 #
 # Prints two lines: a label line naming the cause and the host, then the
-# command to paste. The command is `bash <script> [arg...]` when the captain's
-# session already runs on <host>, and `ssh -t <host> 'bash <script> [arg...]'`
-# only from another machine, because ssh to the machine one is already on has
-# no key and the step stalls.
+# command to paste. The command is `bash <script> [arg...]` only when
+# config/lee-step-host is set and names <host>, because ssh to the machine one
+# is already on has no key and the step stalls; otherwise it is
+# `ssh -t <host> 'bash <script> [arg...]'`, which works from any machine.
 #
-# The session's own host is the first non-blank line of config/home-host (the
-# machine this home's captain session runs on), else this machine's short host
-# name, the same fallback config/cpa-usage-host uses. A <host> of the form
-# user@name is compared by its name, case-insensitively.
+# config/lee-step-host's first non-blank line names the machine the captain
+# reads Lee steps on (main's session), never the machine this script runs on.
+# A <host> of the form user@name is compared by its name, case-insensitively.
 #
 # Every step must state --cause, the reason no agent can do it: sudo (needs
 # root), credential (a login, token or secret the agent lacks), policy (a rule
@@ -48,8 +47,7 @@ esac
 
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
-own=$(fm_config_line "$CONFIG" home-host)
-[ -n "$own" ] || own=$(hostname -s 2>/dev/null || hostname 2>/dev/null || true)
+own=$(fm_config_line "$CONFIG" lee-step-host)
 target=$(lower "${host#*@}")
 
 cmd='bash'

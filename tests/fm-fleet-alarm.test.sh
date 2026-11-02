@@ -674,3 +674,18 @@ run_alarm timer
 tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
   || fail 'the external wait must still resolve when the secondmate speaks again'
 pass 'a silent secondmate is a paused external wait with a recheck time'
+
+# A silent secondmate next to a tool alarm is still a question: the stale reading needs firstmate.
+quota 0.2 3601
+mate 1 0 3601
+run_alarm timer
+last=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+case "$last" in
+  'needs-decision [at='*'] [cause=tool] [key=fleet-alarm]: '*'reading stale'*) ;;
+  *) fail "a silent mate plus a stale reading must stay a needs-decision with cause tool: $last" ;;
+esac
+assert_not_contains "$last" 'expected back' 'a tool alarm carries no external-wait suffix'
+quota 0.2
+mate 0 0 0
+run_alarm timer
+pass 'a silent secondmate with a tool alarm in one poll stays a needs-decision'

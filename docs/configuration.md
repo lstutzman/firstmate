@@ -619,12 +619,12 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
 
-## Captain-step host (config/home-host)
+## Lee-step host (config/lee-step-host)
 
-The optional local, gitignored `config/home-host` names, on its first non-blank line not beginning with `#`, the machine this home's captain session runs on.
+The optional local, gitignored `config/lee-step-host` names, on its first non-blank line not beginning with `#`, the machine the captain reads Lee steps on (main's session), not the machine the worker or script runs on.
 `bin/fm-lee-step.sh` compares the target host of a command the captain must run by hand with it, case-insensitively and ignoring a `user@` prefix or domain suffix.
-It prints `bash <script>` when they match and `ssh -t <host> '...'` only from another machine, because ssh to the machine one is already on has no key.
-Without the file it falls back to this machine's own short host name.
+It prints `bash <script>` only when the file is set and they match, because ssh to the machine one is already on has no key.
+Otherwise, including when the file is absent, it prints `ssh -t <host> '...'`, which works from any machine, so a step is never shown as a local command on the wrong machine.
 Every step also names why no agent can run it, `--cause sudo|credential|policy|tool|physical`, the same values a `blocked` or `needs-decision` line carries as `[cause=...]`.
 `bin/fm-worktree-assert.sh <task-id>` is the matching check for a worker session restored after a restart: it refuses, naming the exact directory, unless the current directory is the worktree the task record names.
 

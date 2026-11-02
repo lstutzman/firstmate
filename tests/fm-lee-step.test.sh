@@ -14,14 +14,14 @@ STEP="$ROOT/bin/fm-lee-step.sh"
 
 step() { FM_HOME="$HOME_FIX" "$STEP" "$@"; }
 
-# Host-aware: the configured home host wins over this machine's own name.
-printf '# the machine the captain session runs on\nSlartibartfast\n' > "$HOME_FIX/config/home-host"
+# Host-aware: the configured Lee-step host is the reader's machine.
+printf '# the machine the captain reads Lee steps on\nSlartibartfast\n' > "$HOME_FIX/config/lee-step-host"
 out=$(step --cause sudo slartibartfast /x/swap.sh c2)
 assert_contains "$out" '[cause=sudo]' 'the step states why no agent can run it'
 assert_contains "$out" $'\nbash /x/swap.sh c2' 'a session already on the target host gets a plain bash line'
 assert_not_contains "$out" 'ssh' 'no ssh to the machine the session is already on'
 out=$(step --cause credential lee@SLARTIBARTFAST.local /x/a.sh)
-assert_contains "$out" $'\nbash /x/a.sh' 'user@host and a domain suffix still match the home host, case-insensitively'
+assert_contains "$out" $'\nbash /x/a.sh' 'user@host and a domain suffix still match the Lee-step host, case-insensitively'
 out=$(step --cause policy deepthought /x/swap.sh "it's here")
 want_ssh="ssh -t deepthought 'bash /x/swap.sh it\\'\\''s\\ here'"
 assert_contains "$out" "$want_ssh" 'another machine gets one ssh -t line with the remote command single-quoted'
@@ -29,10 +29,13 @@ assert_contains "$out" "$want_ssh" 'another machine gets one ssh -t line with th
 remote=$(printf '%s\n' "$out" | sed -n '2p')
 [ "$(eval "set -- ${remote#ssh -t deepthought }; printf '%s' \"\$1\"")" = "bash /x/swap.sh it\\'s\\ here" ] \
   || fail "the ssh remote command must survive one more shell parse: $remote"
-# Without config/home-host the machine's own short name is the signal.
-rm -f "$HOME_FIX/config/home-host"
+# Without config/lee-step-host the reader's machine is unknown, so every step is ssh,
+# even one naming the machine this script runs on.
+rm -f "$HOME_FIX/config/lee-step-host"
 self=$(hostname -s)
-assert_contains "$(step --cause tool "$self" /x/a.sh)" $'\nbash /x/a.sh' "with no config/home-host the machine's own name decides"
+out=$(step --cause tool "$self" /x/a.sh)
+assert_contains "$out" "ssh -t $self 'bash /x/a.sh'" 'with no config/lee-step-host every step is an ssh line'
+assert_not_contains "$out" $'\nbash /x/a.sh' 'with no config/lee-step-host the script host never decides'
 pass 'lee steps are host-aware'
 
 # The cause is required and closed.

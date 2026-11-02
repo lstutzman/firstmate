@@ -371,10 +371,10 @@ def check(channel):
                 if not (CONFIG / 'fleet-ledger').exists():
                     raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
                 with (STATE / 'fleet-alarm.status').open('a') as status:
-                    cause = cause_of(alarms)
-                    # An external wait (a silent secondmate) is a declared wait, not a question for
+                    # An external wait (only silent secondmates) is a declared wait, not a question for
                     # the captain: name the dependency, when it should recover, and recheck then.
-                    wait = not cleared and cause == 'external'
+                    wait = not cleared and all(key.startswith('silent:') for key in alarms)
+                    cause = cause_of(alarms if wait else [key for key in alarms if not key.startswith('silent:')])
                     verb = 'resolved' if cleared else 'paused' if wait else 'needs-decision'
                     tag = '' if cleared else f' [cause={cause}]'
                     text = 'Fleet alarm conditions cleared' if cleared else text
