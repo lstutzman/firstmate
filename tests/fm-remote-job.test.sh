@@ -431,8 +431,19 @@ NEW_WORKER_PID=$(cat "$STATE_ROOT/worker.pid")
 pass "worker identity binds the canonical configured code root"
 
 CRASHED_WORKER_PID=$NEW_WORKER_PID
-kill -KILL "$CRASHED_WORKER_PID"
-wait "$CRASHED_WORKER_PID" 2>/dev/null || true
+# Crash the whole worker tree at once. Killing only the serving child leaves its
+# heartbeat loop free to refresh worker.ready after the fixture backdates it, and
+# its restart supervisor free to clean up or reclaim the lock, so ensure could
+# see a fresh heartbeat and return before any worker replaced the staged pid.
+CRASHED_WORKER_PGID=$(fm_remote_job_worker_process_group "$CRASHED_WORKER_PID") \
+  || fail "the crashed-worker fixture could not resolve its isolated process group"
+kill -KILL -- "-$CRASHED_WORKER_PGID"
+for _ in $(seq 1 50); do
+  kill -0 -- "-$CRASHED_WORKER_PGID" 2>/dev/null || break
+  sleep 0.1
+done
+! kill -0 -- "-$CRASHED_WORKER_PGID" 2>/dev/null \
+  || fail "the crashed-worker fixture left its worker group alive"
 assert_present "$STATE_ROOT/worker.lock" "an unclean exit did not retain the worker ownership lock"
 sleep 20 &
 OTHER_PID=$!
