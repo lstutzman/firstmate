@@ -657,18 +657,18 @@ pass 'the timer states a cause on its needs-decision line'
 # when it should recover and an `until` recheck, instead of asking the captain a question.
 mate 1 0 3601
 run_alarm timer
-last=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
-case "$last" in
+paused_line=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+case "$paused_line" in
   'paused [at='*'] [cause=external] [key=fleet-alarm]: '*'silent over'*'mate'*'expected back'*' until 20'*Z) ;;
-  *) fail "a silent secondmate must be a paused external wait with a recheck time: $last" ;;
+  *) fail "a silent secondmate must be a paused external wait with a recheck time: $paused_line" ;;
 esac
 (
   # shellcheck source=bin/fm-classify-lib.sh
   . "$ROOT/bin/fm-classify-lib.sh"
-  [ "$(status_line_cause "$last")" = external ] || exit 1
-  until_epoch=$(status_paused_until "$last") || exit 1
+  [ "$(status_line_cause "$paused_line")" = external ] || exit 1
+  until_epoch=$(status_paused_until "$paused_line") || exit 1
   [ "$until_epoch" -gt "$(date +%s)" ]
-) || fail "the paused wait line must read as an external cause with a future recheck time: $last"
+) || fail "the paused wait line must read as an external cause with a future recheck time: $paused_line"
 mate 0 0 0
 run_alarm timer
 tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
