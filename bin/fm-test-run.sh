@@ -815,7 +815,7 @@ tests/fm-pi-codex-native.test.sh 79
 tests/fm-pi-primary-live-e2e.test.sh 114
 tests/fm-pi-seeded-home-trust-live-e2e.test.sh 2240
 tests/fm-pi-watch-extension.test.sh 64579
-tests/fm-pi-windows-shell-invocation.test.sh 140
+tests/fm-pi-windows-shell-invocation.test.sh 5121
 tests/fm-pipeline-spend.test.sh 1730
 tests/fm-pr-check-security.test.sh 352123
 tests/fm-pr-merge-stack.test.sh 67080
