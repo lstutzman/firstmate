@@ -712,3 +712,46 @@ run_alarm timer
 mate 0 0 0
 run_alarm timer
 pass 'a tool question that gives way to an external wait is resolved first'
+
+# A tool question that loses its tool alarm while the same mate stays silent becomes the wait.
+quota 0.2 3601
+mate 1 0 3601
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^needs-decision \[at=[0-9]*\] \[cause=tool\] ' \
+  || fail "a silent mate plus a stale reading must open a tool question: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
+quota 0.2
+mate 1 0 3602
+run_alarm timer
+tail -n 2 "$HOME_FIX/state/fleet-alarm.status" > "$TMP_ROOT/last-two"
+sed -n 1p "$TMP_ROOT/last-two" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail "the outdated tool question must be resolved when only the silent mate remains: $(cat "$TMP_ROOT/last-two")"
+sed -n 2p "$TMP_ROOT/last-two" | grep -q '^paused \[at=[0-9]*\] \[cause=external\] \[key=fleet-alarm\]: .*silent over' \
+  || fail "the remaining silent mate must become the paused wait: $(cat "$TMP_ROOT/last-two")"
+pass 'a tool question left with only a silent mate becomes the external wait'
+
+# A declared wait whose recheck time passes with the mate still silent reaches the captain once.
+python3 - "$HOME_FIX/state/.fleet-alarm.json" <<'PY_BACKDATE'
+import json, sys, time
+path = sys.argv[1]
+record = json.load(open(path))
+record['wait'] = {'since': time.time() - 7200, 'until': time.time() - 60}
+json.dump(record, open(path, 'w'))
+PY_BACKDATE
+mate 1 0 3603
+run_alarm timer
+last=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+case "$last" in
+  'needs-decision [at='*'] [cause=external] [key=fleet-alarm]: '*'silent over'*'down since 20'*'(120 minutes)'*'expected back by 20'*) ;;
+  *) fail "an expired wait must become one needs-decision naming the outage and expected recovery: $last" ;;
+esac
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+mate 1 0 3604
+run_alarm timer
+run_alarm timer
+[ "$(wc -l < "$HOME_FIX/state/fleet-alarm.status")" -eq "$before" ] \
+  || fail "the expired wait must be raised once, not on every poll: $(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status")"
+mate 0 0 0
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail 'the expired wait must resolve when the secondmate speaks again'
+pass 'an external wait past its recheck time reaches the captain once and resolves on recovery'

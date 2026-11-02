@@ -640,6 +640,8 @@ An incomplete child-liveness observation preserves the independently complete in
 An inventory alert waits until the same finding appears in `persist_polls` consecutive polls of a channel (default 2), so an item that is missing on one poll and present on the next raises nothing.
 The timer's `needs-decision` line carries a `[cause=...]` tag, `decision` for quota pressure and `tool` for an unreadable reader or inventory, so the friction officer groups it with other blocked lines.
 A silent second mate is an external wait, not a question for the captain: the timer appends a `paused` line tagged `[cause=external]` that names the second mate, says it is expected back when it reports again, and carries an `until` recheck time `stale_minutes` ahead, so firstmate rechecks it then instead of holding the task.
+If the second mate is still silent when that time passes, the next timer poll re-emits the wait once as `needs-decision [cause=external]`, naming the second mate, how long it has been down and the recovery it was expected by, so it reaches the captain; later polls do not repeat it, and it resolves when the condition clears.
+A question line that loses every alarm except silent second mates is resolved and replaced by the paused wait.
 The quota alarm fires when mean remaining weekly capacity across non-stale Claude readings falls below the pool threshold, or a carrying account exceeds the weekly threshold.
 Every Claude account with successful Claude-model requests in the last 60 minutes is carrying; several accounts can qualify, and failed-only traffic does not qualify.
 The card names all carrying accounts and includes per-account weekly pressure as information; pressure alone on an idle account does not trigger an alarm.

@@ -18,7 +18,10 @@ an item missing on one poll and back on the next raises nothing.
 The timer's needs-decision line carries a [cause=...] tag (bin/fm-classify-lib.sh
 status_line_cause owns the vocabulary): decision for quota pressure, tool for an
 unreadable reader or inventory. A silent secondmate is external: a paused wait line
-naming the secondmate and an `until` recheck time stale_minutes ahead, never a question.
+naming the secondmate and an `until` recheck time stale_minutes ahead, not a question.
+A wait still silent at its recheck time is re-emitted once, on the next timer poll, as
+needs-decision [cause=external] naming the secondmate, how long it has been down and
+the recovery it was expected by; it resolves when the condition clears.
 Registry and summary inputs are bounded at 64/256 KiB.
 Parent-channel age uses the shared classifier, excluding parent appends.
 One alert per condition/reset window, rearmed on clear. check and timer share a
@@ -362,7 +365,19 @@ def check(channel):
                              and key.split(':', 1)[1] in not_collected))}
         alarms = [key for key in current if not key.startswith('ignored:')]
         cleared = channel == 'timer' and not alarms and timer_open and not preserved
-        if (fresh if channel == 'check' else set(fresh) & set(alarms)) or cleared:
+        now = time.time()
+        timer_state = stored.get('timer_state', 'question' if timer_open else None)
+        wait_record = stored.get('wait')
+        all_silent = bool(alarms) and all(key.startswith('silent:') for key in alarms)
+        if channel == 'timer':
+            if not any(key.startswith('silent:') for key in [*alarms, *preserved]):
+                wait_record = None
+            elif all_silent and wait_record is None:
+                wait_record = {'since': now, 'until': now + cfg.get('stale_minutes', 120) * 60}
+        expired = (channel == 'timer' and all_silent and timer_state != 'expired'
+                   and wait_record is not None and now >= wait_record['until'])
+        regroup = channel == 'timer' and all_silent and timer_state == 'question'
+        if (fresh if channel == 'check' else set(fresh) & set(alarms)) or cleared or expired or regroup:
             details = list((current if channel == 'timer' else fresh).values())
             if quota_info:
                 details.append(quota_info)
@@ -371,22 +386,33 @@ def check(channel):
                 if not (CONFIG / 'fleet-ledger').exists():
                     raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
                 status_path = STATE / 'fleet-alarm.status'
-                lines = status_path.read_text().splitlines() if status_path.exists() else []
-                card_open = timer_open and bool(lines) and lines[-1].startswith('needs-decision ')
+                stamp = f'[at={int(now)}]'
                 with status_path.open('a') as status:
-                    # An external wait (only silent secondmates) is a declared wait, not a question for
-                    # the captain: name the dependency, when it should recover, and recheck then.
-                    wait = not cleared and all(key.startswith('silent:') for key in alarms)
-                    cause = cause_of(alarms if wait else [key for key in alarms if not key.startswith('silent:')])
-                    verb = 'resolved' if cleared else 'paused' if wait else 'needs-decision'
-                    tag = '' if cleared else f' [cause={cause}]'
-                    text = 'Fleet alarm conditions cleared' if cleared else text
-                    if wait:
-                        recheck = time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(time.time() + cfg.get('stale_minutes', 120) * 60))
-                        text += f'; expected back when the secondmate reports again; until {recheck}'
-                        if card_open:
-                            status.write(f'resolved [at={int(time.time())}] [key=fleet-alarm]: Fleet alarm question superseded by an external wait\n')
-                    status.write(f'{verb} [at={int(time.time())}]{tag} [key=fleet-alarm]: {text}\n')
+                    # Alarms that are all silent secondmates are an external wait, not a question for
+                    # the captain: name the dependency, when it should recover, and recheck then. A wait
+                    # still silent at its recheck time becomes one needs-decision [cause=external].
+                    if cleared:
+                        status.write(f'resolved {stamp} [key=fleet-alarm]: Fleet alarm conditions cleared\n')
+                        timer_state = None
+                    elif all_silent:
+                        since = time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(wait_record['since']))
+                        until = time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(wait_record['until']))
+                        if expired or timer_state == 'expired':
+                            minutes = int((now - wait_record['since']) // 60)
+                            status.write(f'needs-decision {stamp} [cause=external] [key=fleet-alarm]: {text}; '
+                                         f'down since {since} ({minutes} minutes); was expected back by {until} '
+                                         'when the secondmate reported again\n')
+                            timer_state = 'expired'
+                        else:
+                            if timer_state == 'question':
+                                status.write(f'resolved {stamp} [key=fleet-alarm]: Fleet alarm question superseded by an external wait\n')
+                            status.write(f'paused {stamp} [cause=external] [key=fleet-alarm]: {text}; '
+                                         f'expected back when the secondmate reports again; until {until}\n')
+                            timer_state = 'wait'
+                    else:
+                        cause = cause_of([key for key in alarms if not key.startswith('silent:')])
+                        status.write(f'needs-decision {stamp} [cause={cause}] [key=fleet-alarm]: {text}\n')
+                        timer_state = 'question'
                 run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG, status_path], 3)
                 timer_open = not cleared
             else:
@@ -395,7 +421,8 @@ def check(channel):
                for key in current}
         new.update(preserved)
         with tempfile.NamedTemporaryFile(mode='w', dir=STATE, prefix='.fleet-alarm-', delete=False) as file:
-            json.dump({'conditions': new, 'timer_open': timer_open, 'not_collected': not_collected,
+            json.dump({'conditions': new, 'timer_open': timer_open, 'timer_state': timer_state,
+                       'wait': wait_record, 'not_collected': not_collected,
                        'suspect': {**stored.get('suspect', {}), channel: suspect}}, file)
             temporary = file.name
         os.replace(temporary, record)
