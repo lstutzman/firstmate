@@ -1,0 +1,73 @@
+{
+ "bottlenecks": [
+  {
+   "category": "tooling",
+   "confidence": 4,
+   "effort": "S",
+   "events": 4,
+   "evidence": "4 event(s) on 2026-10-23; sessions deepthought:s-mate, deepthought:s-worker; e.g. brew install railway",
+   "id": "missing-tool-tool-railway",
+   "impact": "Removes 1 Lee step(s) and not measured of agent waiting seen on 2026-10-23.",
+   "improvement": "Add railway to deepthought's bootstrap and its doctor check, so it is present before the next session.",
+   "owner": "deepthought home",
+   "severity": 4,
+   "state": "open",
+   "time_saved": "not measured: 4 step(s) on 2026-10-23 with no recorded answer time",
+   "title": "A tool agents need is missing: railway",
+   "tldr": "railway: Lee had to install a tool by hand: 1 time(s) on 2026-10-23; agents waited not measured."
+  },
+  {
+   "category": "tooling",
+   "confidence": 3,
+   "effort": "S",
+   "events": 3,
+   "evidence": "3 event(s) on 2026-10-23; sessions deepthought:s-worker; e.g. slopwatch: command not found",
+   "id": "missing-tool-tool-slopwatch",
+   "impact": "Removes 0 Lee step(s) and not measured of agent waiting seen on 2026-10-23.",
+   "improvement": "Add slopwatch to deepthought's bootstrap and its doctor check, so it is present before the next session.",
+   "owner": "deepthought home",
+   "severity": 3,
+   "state": "open",
+   "time_saved": "not measured: 3 step(s) on 2026-10-23 with no recorded answer time",
+   "title": "A tool agents need is missing: slopwatch",
+   "tldr": "Agents hit this 3 time(s) on 2026-10-23 and worked around it."
+  }
+ ],
+ "cost_usd": 0,
+ "evidence": [
+  {
+   "detail": "2 session(s) analysed; harvester last ran 2026-10-24T01:00:00+00:00",
+   "name": "session archive",
+   "state": "read"
+  },
+  {
+   "detail": "0 task log(s); fleet ledger absent",
+   "name": "status logs deepthought",
+   "state": "read"
+  },
+  {
+   "detail": "Not read: the registry line sets no captains-log URL; counted from status logs only.",
+   "name": "Captain's Log",
+   "state": "missing"
+  }
+ ],
+ "generated_at": "2026-10-24T05:00:00Z",
+ "notes": [
+  "Home deepthought keeps no fleet ledger, so status lines of tasks already cleaned up there are not read.",
+  "No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.",
+  "A worker that resumed in the wrong directory is found only while its task record survives."
+ ],
+ "outcome": "ok",
+ "run_id": "friction-20261023",
+ "schema_version": 1,
+ "source": "friction-officer",
+ "summary": "7 friction event(s), 1 naming Lee; 2 finding(s), 2 carded.",
+ "totals": {
+  "events": 7,
+  "findings": 2
+ },
+ "window": {
+  "from": "2026-10-23T00:00:00Z",
+  "to": "2026-10-24T00:00:00Z"
+ }
+}

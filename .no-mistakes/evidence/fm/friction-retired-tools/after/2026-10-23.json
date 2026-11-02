@@ -1,0 +1,218 @@
+{
+ "actionable": 1,
+ "coverage": {
+  "captains_log": {
+   "state": "not-set"
+  },
+  "harvester_last_run": "2026-10-24T01:00:00+00:00",
+  "homes": [
+   {
+    "ledger": false,
+    "path": "/tmp/tmp.vjqv09Yj2Q/deepthought",
+    "status_logs": 0
+   }
+  ],
+  "hosts_expected": [
+   "deepthought"
+  ],
+  "hosts_present": [
+   "deepthought"
+  ],
+  "notes": [
+   "Home deepthought keeps no fleet ledger, so status lines of tasks already cleaned up there are not read.",
+   "No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.",
+   "A worker that resumed in the wrong directory is found only while its task record survives."
+  ],
+  "sessions_analysed": 2
+ },
+ "date": "2026-10-23",
+ "events": [
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-worker",
+   "signature": "railway: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "railway"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-worker",
+   "signature": "railway: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "railway"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-worker",
+   "signature": "railway: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "railway"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-worker",
+   "signature": "slopwatch: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "slopwatch"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-worker",
+   "signature": "slopwatch: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "slopwatch"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-worker",
+   "signature": "slopwatch: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "slopwatch"
+  },
+  {
+   "at": 1792750200,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "lee-command",
+   "lee": true,
+   "machine": "deepthought",
+   "service": null,
+   "session": "deepthought:s-mate",
+   "signature": "brew install railway",
+   "sub": "tool",
+   "task": null,
+   "tool": "railway"
+  }
+ ],
+ "findings": [
+  {
+   "carded": true,
+   "category": "tooling",
+   "cause": "missing-tool",
+   "confidence": 3,
+   "effort": "S",
+   "events": 3,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "slopwatch: command not found",
+    "sessions": [
+     "deepthought:s-worker"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Add slopwatch to deepthought's bootstrap and its doctor check, so it is present before the next session.",
+   "id": "missing-tool-tool-slopwatch",
+   "kinds": {
+    "agent-hit": 3
+   },
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "name": "slopwatch",
+   "open": 0,
+   "owner": "deepthought home",
+   "reasks": 0,
+   "severity": 3,
+   "stated_causes": {},
+   "sub": "tool",
+   "title": "A tool agents need is missing",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "deepthought": 3
+   }
+  },
+  {
+   "carded": false,
+   "category": "tooling",
+   "cause": "missing-tool",
+   "confidence": 4,
+   "effort": null,
+   "events": 4,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "brew install railway",
+    "sessions": [
+     "deepthought:s-mate",
+     "deepthought:s-worker"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": null,
+   "id": "missing-tool-tool-railway",
+   "kinds": {
+    "agent-hit": 3,
+    "lee-command": 1
+   },
+   "lee_did": null,
+   "lee_events": 1,
+   "lee_step": true,
+   "name": "railway",
+   "open": 0,
+   "owner": null,
+   "reasks": 0,
+   "severity": 4,
+   "stated_causes": {},
+   "sub": "tool",
+   "title": null,
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "deepthought": 4
+   }
+  }
+ ],
+ "model": "none",
+ "officer_role": "friction",
+ "scorer": "friction-deterministic-v1"
+}
