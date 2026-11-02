@@ -21,7 +21,8 @@ unreadable reader or inventory. A silent secondmate is external: a paused wait l
 naming the secondmate and an `until` recheck time stale_minutes ahead, not a question.
 A wait still silent at its recheck time is re-emitted once, on the next timer poll, as
 needs-decision [cause=external] naming the secondmate, how long it has been down and
-the recovery it was expected by; it resolves when the condition clears.
+the recovery it was expected by, even when its home is unreadable by then; it
+resolves when the condition clears.
 Registry and summary inputs are bounded at 64/256 KiB.
 Parent-channel age uses the shared classifier, excluding parent appends.
 One alert per condition/reset window, rearmed on clear. check and timer share a
@@ -368,9 +369,11 @@ def check(channel):
         now = time.time()
         timer_state = stored.get('timer_state', 'question' if timer_open else None)
         wait_record = stored.get('wait')
-        all_silent = bool(alarms) and all(key.startswith('silent:') for key in alarms)
+        held_silent = [key for key in preserved if key.startswith('silent:') and key not in current]
+        holding = alarms + held_silent
+        all_silent = bool(holding) and all(key.startswith('silent:') for key in holding)
         if channel == 'timer':
-            if not any(key.startswith('silent:') for key in [*alarms, *preserved]):
+            if not any(key.startswith('silent:') for key in holding):
                 wait_record = None
             elif all_silent and wait_record is None:
                 wait_record = {'since': now, 'until': now + cfg.get('stale_minutes', 120) * 60}
@@ -379,6 +382,9 @@ def check(channel):
         regroup = channel == 'timer' and all_silent and timer_state == 'question'
         if (fresh if channel == 'check' else set(fresh) & set(alarms)) or cleared or expired or regroup:
             details = list((current if channel == 'timer' else fresh).values())
+            if channel == 'timer':
+                details += [f'Secondmate holding work silent, inventory not currently readable: {key[7:]}'
+                            for key in held_silent]
             if quota_info:
                 details.append(quota_info)
             text = '; '.join(details).replace('\n', ' ')

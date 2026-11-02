@@ -755,3 +755,44 @@ run_alarm timer
 tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
   || fail 'the expired wait must resolve when the secondmate speaks again'
 pass 'an external wait past its recheck time reaches the captain once and resolves on recovery'
+
+# A silent mate whose home then goes unreachable still reaches the captain at the recheck time.
+mate 1 0 3601
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^paused \[at=[0-9]*\] \[cause=external\] ' \
+  || fail "a silent mate must open a paused wait: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
+python3 - "$HOME_FIX" "$TMP_ROOT/mate" <<'PY_OFFLINE'
+from pathlib import Path
+import hashlib, json, sys, time
+home, mate = map(Path, sys.argv[1:])
+name, host, remote = 'mate', 'unreachable.invalid', '/remote/mate'
+(home/'data/secondmates.md').write_text(f'- {name} - test domain (host: {host}; root: /remote/code; home: {remote}; scope: test; projects: alpha; added 2026-10-26)\n')
+summary = json.loads((mate/'state/home-summary.json').read_text())
+summary['home'] = remote
+summary['generated_epoch'] -= 121 * 60
+cache = home/'state/secondmate-summary-cache'
+cache.mkdir(exist_ok=True)
+key = hashlib.sha256(f'{name}\n{host}\n{remote}\n'.encode()).hexdigest()
+(cache/(key + '.json')).write_text(json.dumps(summary))
+path = home/'state/.fleet-alarm.json'
+record = json.loads(path.read_text())
+record['wait'] = {'since': time.time() - 7200, 'until': time.time() - 60}
+path.write_text(json.dumps(record))
+PY_OFFLINE
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+run_alarm timer
+jq -e '.not_collected.mate != null' "$HOME_FIX/state/.fleet-alarm.json" >/dev/null \
+  || fail 'the offline home must be recorded as not collected'
+last=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+case "$last" in
+  'needs-decision [at='*'] [cause=external] [key=fleet-alarm]: '*'silent'*'mate'*'down since 20'*) ;;
+  *) fail "a silent mate on an unreachable home must still escalate at its recheck time: $last" ;;
+esac
+run_alarm timer
+[ "$(wc -l < "$HOME_FIX/state/fleet-alarm.status")" -eq "$((before + 1))" ] \
+  || fail "the escalation of an unreachable silent mate must be written once: $(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status")"
+mate 0 0 0
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail 'the escalated wait must resolve when the secondmate is readable and speaks again'
+pass 'a silent mate whose home goes unreachable still escalates at its recheck time'
