@@ -26,7 +26,7 @@ PROMOTE="$ROOT/bin/fm-promote.sh"
 SESSION_START="$ROOT/bin/fm-session-start.sh"
 TMP_ROOT=$(fm_test_tmproot fm-public-followup)
 PF_TEST_NOW=1787539200
-PF_TEST_LOCK_HOLDER=
+PF_TEST_CHILDREN=()
 
 write_promotion_brief() {  # <home> <id>
   local home=$1 id=$2
@@ -41,23 +41,78 @@ Verify promotion preserves the behavior under test.
 EOF
 }
 
-# The remote-route cases drive the real remote job worker, which outlives the
-# command that staged its job. Stop it before the shared fixture cleanup runs,
-# and keep that cleanup (tests/lib.sh owns it) rather than replacing the trap.
-pf_test_cleanup() {
-  local pid_file="${REMOTE_FIXTURE_JOBS:-$TMP_ROOT/remote-jobs}/worker.pid" pid
-  if [ -n "$PF_TEST_LOCK_HOLDER" ]; then
-    kill "$PF_TEST_LOCK_HOLDER" 2>/dev/null || true
-    wait "$PF_TEST_LOCK_HOLDER" 2>/dev/null || true
-    PF_TEST_LOCK_HOLDER=
-  fi
-  if [ -f "$pid_file" ]; then
-    pid=$(cat "$pid_file" 2>/dev/null) || pid=
-    [ -z "$pid" ] || kill "$pid" 2>/dev/null || true
-  fi
-  fm_test_cleanup
+# Background children this file starts directly. Each is reaped through
+# pf_wait_child, which forgets it; teardown stops whatever a failed case left.
+pf_track_child() {  # <pid>
+  PF_TEST_CHILDREN+=("$1")
 }
-trap pf_test_cleanup EXIT
+
+pf_wait_child() {  # <pid> <label> <grace-seconds> [log...]
+  local pid=$1 rc=0 kept=() child
+  fm_test_bounded_wait "$@" || rc=$?
+  for child in ${PF_TEST_CHILDREN[@]+"${PF_TEST_CHILDREN[@]}"}; do
+    [ "$child" = "$pid" ] || kept+=("$child")
+  done
+  PF_TEST_CHILDREN=(${kept[@]+"${kept[@]}"})
+  return "$rc"
+}
+
+# Every live process whose command line names this run's private temp root. The
+# root reaches awk through the environment so the scan never matches itself.
+pf_root_processes() {
+  [ -n "$TMP_ROOT" ] || return 0
+  ps -Aww -o pid= -o pgid= -o stat= -o command= 2>/dev/null \
+    | PF_SCAN_ROOT="$TMP_ROOT" awk 'index($0, ENVIRON["PF_SCAN_ROOT"]) && $3 !~ /Z/'
+}
+
+# The remote-route cases drive the real remote job worker, which runs detached
+# in its own process group and outlives the command that staged its job.
+# worker.pid records only the serving child, and a TERM to that child returns at
+# once while the worker spends about a second (longer under load) shutting down,
+# recreating and writing remote-jobs/ as it goes. Removing the temp root inside
+# that window races the worker, which is how the cleanup failed with the root
+# "not empty". Stop the whole tree of every process naming the root, then
+# require all of them to be gone before anything is removed.
+pf_stop_root_processes() {
+  local survivors deadline log
+  survivors=$(pf_root_processes)
+  [ -n "$survivors" ] || return 0
+  # shellcheck disable=SC2046 # One pid per word.
+  bash -c '. "$1"; shift; for pid; do fm_remote_job_stop_worker_tree "$pid" || true; done' _ \
+    "$ROOT/bin/fm-remote-job-lib.sh" $(printf '%s\n' "$survivors" | awk '{print $1}')
+  deadline=$((SECONDS + 15))
+  while survivors=$(pf_root_processes) && [ -n "$survivors" ]; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      {
+        printf 'not ok - processes still use %s 15s after they were stopped:\n%s\n' \
+          "$TMP_ROOT" "$survivors"
+        for log in "${REMOTE_FIXTURE_JOBS:-$TMP_ROOT/remote-jobs}"/logs/*.log; do
+          [ -f "$log" ] || continue
+          printf -- '--- %s\n' "$log"
+          tail -n 40 "$log" 2>/dev/null || true
+        done
+      } >&2
+      printf '%s\n' "$survivors" | while read -r pid _; do kill -KILL "$pid" 2>/dev/null || true; done
+      return 1
+    fi
+    /bin/sleep 0.1
+  done
+}
+
+# Stop everything this file started before the shared fixture cleanup
+# (tests/lib.sh owns it) removes the temp root, and fail the file when that
+# cannot be proven.
+pf_test_cleanup() {
+  local child rc=0
+  for child in ${PF_TEST_CHILDREN[@]+"${PF_TEST_CHILDREN[@]}"}; do
+    fm_test_stop_child "$child"
+  done
+  PF_TEST_CHILDREN=()
+  pf_stop_root_processes || rc=1
+  fm_test_cleanup
+  return "$rc"
+}
+trap 'pf_test_cleanup || exit 1' EXIT
 trap 'pf_test_cleanup; exit 130' INT
 trap 'pf_test_cleanup; exit 143' TERM
 
@@ -849,6 +904,7 @@ SH
     FM_TEST_PUBLISH_RELEASE="$release" \
     "$ROOT/bin/fm-home-seed.sh" mate "$child" --no-projects > "$manifest_out" 2>&1 &
   seed_pid=$!
+  pf_track_child "$seed_pid"
   wait_count=0
   while [ ! -f "$entered" ]; do
     kill -0 "$seed_pid" 2>/dev/null \
@@ -861,7 +917,8 @@ SH
   assert_absent "$child/.fm-secondmate-home" \
     "the local identity marker must remain absent until durable parent publication completes"
   touch "$release"
-  wait "$seed_pid" || fail "local seeding failed after publishing durable parent state: $(cat "$manifest_out")"
+  pf_wait_child "$seed_pid" "local seeding" 60 "$manifest_out" \
+    || fail "local seeding failed after publishing durable parent state: $(cat "$manifest_out")"
   assert_present "$child/.fm-secondmate-home" \
     "local seeding must publish its identity marker as the completion point"
   pass "local seeding publishes durable parent state before its identity marker"
@@ -1498,7 +1555,7 @@ test_typed_records_exclude_raw_public_material() {
 # --- 10. delivery does not close the public loop --------------------------------
 
 test_dropped_baton_now_surfaces_open_loop() {
-  local parent child log
+  local parent child log out
   parent=$(make_home baton-parent)
   child="$TMP_ROOT/baton-child"
   FM_SECONDMATE_CHARTER='Baton repro charter.' FM_HOME="$parent" \
@@ -1517,7 +1574,8 @@ test_dropped_baton_now_surfaces_open_loop() {
     --outcome report-ready --deliverable report_path=data/pi-rearm-loop-repro-s1/report.md \
     --outcome-text 'Reproduced the loop. A bounded fix is scoped and waiting on you, captain.' >/dev/null \
     || fail "emit failed"
-  FAKE_CURL_LOG="$log" run_pf "$parent" consume | grep -q '^ready ' || fail "consume not ready"
+  out=$(FAKE_CURL_LOG="$log" run_pf "$parent" consume) || fail "consume failed: $out"
+  grep -q '^ready ' <<< "$out" || fail "consume not ready: $out"
   FAKE_CURL_LOG="$log" run_pf "$parent" deliver public-final-pi-rearm-repro >/dev/null || fail "deliver failed"
   [ "$(followup_posts "$log")" = 1 ] || fail "expected exactly one closing post"
   assert_present "$parent/state/public-followup/registry/public-final-pi-rearm-repro" \
@@ -1621,8 +1679,8 @@ SH
     --source-home main --work-id ship-b --generation 1 \
     --outcome pr-merged --deliverable pr_url=https://github.com/example/repo/pull/99 \
     --outcome-text 'Shipped: the Pi recovery loop is fixed.' >/dev/null || fail "follow-on emit failed"
-  FAKE_CURL_LOG="$log" run_pf "$parent" consume | grep -q '^ready public-final-b ' \
-    || fail "follow-on consume not ready"
+  out=$(FAKE_CURL_LOG="$log" run_pf "$parent" consume) || fail "follow-on consume failed: $out"
+  grep -q '^ready public-final-b ' <<< "$out" || fail "follow-on consume not ready: $out"
   FAKE_CURL_LOG="$log" run_pf "$parent" deliver public-final-b >/dev/null || fail "follow-on deliver failed"
   posts=$(followup_posts "$log")
   [ "$posts" = 2 ] || fail "expected exactly two posts in the same thread, got $posts"
@@ -1705,12 +1763,14 @@ test_rechain_claims_delivered_source_once() {
     --from public-final-claim-a --work-home main --work-id ship-claim-b \
     --expected pr-merged > "$home/rechain-b.out" 2>&1 &
   pid_b=$!
+  pf_track_child "$pid_b"
   FMX_NOW_OVERRIDE=1787539200 run_pf "$home" rechain public-final-claim-c \
     --from public-final-claim-a --work-home main --work-id ship-claim-c \
     --expected pr-merged > "$home/rechain-c.out" 2>&1 &
   pid_c=$!
-  wait "$pid_b" || rc_b=$?
-  wait "$pid_c" || rc_c=$?
+  pf_track_child "$pid_c"
+  pf_wait_child "$pid_b" "concurrent rechain b" 60 "$home/rechain-b.out" || rc_b=$?
+  pf_wait_child "$pid_c" "concurrent rechain c" 60 "$home/rechain-c.out" || rc_c=$?
 
   if [ "$rc_b" -eq 0 ]; then
     [ "$rc_c" -ne 0 ] || fail "two concurrent rechains must not both claim one source"
@@ -2058,6 +2118,7 @@ test_pending_skips_concurrent_retirement() {
     fm_pf_registry_lock_release "$FM_RACE_HOME/state" pf-race
   ' &
   locker_pid=$!
+  pf_track_child "$locker_pid"
   for _ in $(seq 1 100); do [ -e "$home/lock-ready" ] && break; sleep 0.02; done
   [ -e "$home/lock-ready" ] || fail "race locker did not start"
 
@@ -2075,11 +2136,12 @@ SH
   REAL_TASKS_AXI="$real_tasks" PENDING_LISTED="$home/pending-listed" \
     run_pf "$home" pending > "$home/pending-race.out" 2>&1 &
   pending_pid=$!
+  pf_track_child "$pending_pid"
   for _ in $(seq 1 100); do [ -e "$home/pending-listed" ] && break; sleep 0.02; done
   [ -e "$home/pending-listed" ] || fail "pending did not snapshot the backlog"
   : > "$home/release-lock"
-  wait "$locker_pid" || fail "race retirement failed"
-  wait "$pending_pid" || rc=$?
+  pf_wait_child "$locker_pid" "race retirement" 60 || fail "race retirement failed"
+  pf_wait_child "$pending_pid" "racing pending" 60 "$home/pending-race.out" || rc=$?
   [ "$rc" -eq 0 ] || fail "pending aborted on concurrent retirement: $(cat "$home/pending-race.out")"
   assert_grep 'unresolved pf-race-other ' "$home/pending-race.out" \
     "pending must continue surfacing unrelated loops after concurrent retirement: $(cat "$home/pending-race.out")"
@@ -2094,8 +2156,8 @@ test_retire_reason_closes_the_open_loop() {
   emit_terminal "$home" "$home" pf-retire main work-retire >/dev/null || fail "emit failed"
   FAKE_CURL_LOG="$log" run_pf "$home" consume >/dev/null || fail "consume failed"
   FAKE_CURL_LOG="$log" run_pf "$home" deliver pf-retire >/dev/null || fail "deliver failed"
-  run_pf "$home" pending | grep -q '^open-loop pf-retire ' \
-    || fail "pending must show the delivered open loop"
+  out=$(run_pf "$home" pending) || fail "pending failed: $out"
+  grep -q '^open-loop pf-retire ' <<< "$out" || fail "pending must show the delivered open loop: $out"
   expect_failure "retire without --reason must refuse" run_pf "$home" retire pf-retire
   assert_contains "$EXPECT_OUT" "--reason" "the refusal must name the required reason"
   assert_present "$home/state/public-followup/registry/pf-retire" \
@@ -2755,7 +2817,7 @@ test_remote_retire_refuses_unacquirable_lock_without_hanging() {
   # the acquire can never succeed and only a bound can end the wait.
   sleep 300 &
   holder=$!
-  PF_TEST_LOCK_HOLDER=$holder
+  pf_track_child "$holder"
   lock="$remote/state/.meta-work-lock.lock"
   mkdir -p "$lock"
   printf '%s\n' "$holder" > "$lock/pid"
@@ -2765,8 +2827,7 @@ test_remote_retire_refuses_unacquirable_lock_without_hanging() {
   EXPECT_OUT=$(run_pf_remote_timed 30 "$home" retire pf-remote-lock --reason "lock held" --force 2>&1) || rc=$?
   elapsed=$(( $(date +%s) - started ))
   kill "$holder" 2>/dev/null || true
-  wait "$holder" 2>/dev/null || true
-  PF_TEST_LOCK_HOLDER=
+  pf_wait_child "$holder" "metadata lock holder after TERM" 10 || true
   rm -rf "$lock"
 
   [ "$rc" -ne 124 ] \
