@@ -29,7 +29,7 @@ wait for Lee to do. One day's friction events come from three sources:
                wrong directory) is a report with no wait. A line's text rules
                classify it first; a line they leave unclassified joins the group
                of its stated [cause=...] tag (policy, credential, sudo, tool,
-               decision, external), and each finding tallies its lines by stated
+               decision, physical, external), and each finding tallies its lines by stated
                cause, with untagged ones as unstated.
   archive     each claude-code session of the archive day: a <bash-input>
                record is a command Lee ran himself (ssh to the session's own
@@ -177,7 +177,8 @@ CAUSE_RE = re.compile(r"(?:^|[\s\[])cause=([^\]\s]+)")
 # recognised the line; anything else reads as unstated.
 STATED_CAUSES = {"policy": ("policy", "approval"), "credential": ("credential", "missing"),
                  "sudo": ("sudo", "sudo"), "tool": ("missing-tool", "tool"),
-                 "decision": ("decision", "decision"), "external": ("environment", "external")}
+                 "decision": ("decision", "decision"), "external": ("environment", "external"),
+                 "physical": ("lee-command", "run")}
 URL_RE = re.compile(r"https?://\S+")
 CORR_RE = re.compile(r"\bcorr=[0-9a-f]+\s*")
 SSH_HOST_RE = re.compile(r"\bssh (?:-\w+ )*(?:[\w.-]+@)?([\w.-]+) '")

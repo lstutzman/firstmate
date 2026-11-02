@@ -42,7 +42,7 @@ It is written each time firstmate records a PR for the task, so registering a re
 
 `task.status` members: `state` is the status line's leading word, such as `working`, `needs-decision`, `blocked`, `paused`, `done`, `failed`, or `resolved`, or `null` when the line has none.
 `key` is the line's `[key=...]` decision key, or `null`.
-`cause` is the line's `[cause=...]` tag (`policy`, `credential`, `sudo`, `tool`, `decision` or `external`) and is absent when the line states none.
+`cause` is the line's `[cause=...]` tag (`policy`, `credential`, `sudo`, `tool`, `decision`, `physical` or `external`) and is absent when the line states none.
 `text` is the status line after its first colon, verbatim, capped at 2000 characters; if the line has no colon, it is the whole line.
 
 Example:

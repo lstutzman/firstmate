@@ -1637,3 +1637,28 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+
+# The scaffold teaches the captain-step renderer, the physical cause, the external-wait pause and
+# the resume directory check, with this home's own script paths.
+test_crewmate_scaffolds_teach_captain_steps_waits_and_resume_check() {
+  local home id brief
+  home="$TMP_ROOT/lee-step-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-lee-step alpha --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship exited non-zero"
+  id="brief-lee-step"
+  brief="$home/data/$id/brief.md"
+  assert_grep "$ROOT/bin/fm-lee-step.sh" "$brief" "ship brief did not name the captain-step renderer"
+  assert_grep 'physical' "$brief" "ship brief did not offer the physical cause"
+  # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
+  assert_grep 'paused [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until' "$brief" \
+    "ship brief did not turn an unreachable dependency into a timed wait"
+  assert_grep "'$ROOT/bin/fm-worktree-assert.sh' $id" "$brief" "ship brief did not name the resume directory check"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-lee-step-scout alpha --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh --scout exited non-zero"
+  brief="$home/data/brief-lee-step-scout/brief.md"
+  assert_grep "'$ROOT/bin/fm-worktree-assert.sh' brief-lee-step-scout" "$brief" "scout brief did not name the resume directory check"
+  pass "fm-brief.sh: scaffolds teach captain steps, external waits and the resume directory check"
+}
+
+test_crewmate_scaffolds_teach_captain_steps_waits_and_resume_check

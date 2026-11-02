@@ -839,12 +839,13 @@ _fm_decision_key() {  # <status-line> [<keyless>] -> key slug, or <keyless> (def
 # Cause grammar: a blocked or needs-decision line states why the agent cannot go
 # on as an OPTIONAL "[cause=<cause>]" token beside "[at=...]" and "[key=...]"
 # before the first colon. The closed set is policy (a rule or approval reserved
-# to a human), credential, sudo, tool, decision and external (a service, machine
-# or agent being waited on). The tag is metadata only: it never changes how a
+# to a human), credential, sudo, tool, decision, physical (a person at a machine
+# or device) and external (a service, machine or agent being waited on). A
+# paused line for an external wait carries the same tag. The tag is metadata only: it never changes how a
 # line opens or closes a decision. A line with no tag, or a value outside the
 # set, reads as "unstated", never an error, so older workers and other homes
 # keep working. bin/fm-brief.sh tells workers to write it.
-status_line_cause() {  # <status-line> -> policy|credential|sudo|tool|decision|external|unstated
+status_line_cause() {  # <status-line> -> policy|credential|sudo|tool|decision|physical|external|unstated
   local unstamped head
   _fm_status_unstamped "$1" unstamped
   head=${unstamped%%:*}
@@ -853,7 +854,7 @@ status_line_cause() {  # <status-line> -> policy|credential|sudo|tool|decision|e
     *) head='' ;;
   esac
   case "$head" in
-    policy|credential|sudo|tool|decision|external) printf '%s' "$head" ;;
+    policy|credential|sudo|tool|decision|physical|external) printf '%s' "$head" ;;
     *) printf unstated ;;
   esac
 }

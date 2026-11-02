@@ -652,3 +652,147 @@ run_alarm timer
 tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
   || fail 'the cleared line carries no cause'
 pass 'the timer states a cause on its needs-decision line'
+
+# A silent secondmate is an external wait: the timer declares a pause that names the secondmate,
+# when it should recover and an `until` recheck, instead of asking the captain a question.
+mate 1 0 3601
+run_alarm timer
+paused_line=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+case "$paused_line" in
+  'paused [at='*'] [cause=external] [key=fleet-alarm]: '*'silent over'*'mate'*'expected back'*' until 20'*Z) ;;
+  *) fail "a silent secondmate must be a paused external wait with a recheck time: $paused_line" ;;
+esac
+(
+  # shellcheck source=bin/fm-classify-lib.sh
+  . "$ROOT/bin/fm-classify-lib.sh"
+  [ "$(status_line_cause "$paused_line")" = external ] || exit 1
+  until_epoch=$(status_paused_until "$paused_line") || exit 1
+  [ "$until_epoch" -gt "$(date +%s)" ]
+) || fail "the paused wait line must read as an external cause with a future recheck time: $paused_line"
+mate 0 0 0
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail 'the external wait must still resolve when the secondmate speaks again'
+pass 'a silent secondmate is a paused external wait with a recheck time'
+
+# A silent secondmate next to a tool alarm is still a question: the stale reading needs firstmate.
+quota 0.2 3601
+mate 1 0 3601
+run_alarm timer
+last=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+case "$last" in
+  'needs-decision [at='*'] [cause=tool] [key=fleet-alarm]: '*'reading stale'*) ;;
+  *) fail "a silent mate plus a stale reading must stay a needs-decision with cause tool: $last" ;;
+esac
+assert_not_contains "$last" 'expected back' 'a tool alarm carries no external-wait suffix'
+quota 0.2
+mate 0 0 0
+run_alarm timer
+pass 'a silent secondmate with a tool alarm in one poll stays a needs-decision'
+
+# A tool alarm that gives way to a silent mate alone closes its question before the wait.
+quota 0.2 3601
+mate 0 0 0
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^needs-decision \[at=[0-9]*\] \[cause=tool\] \[key=fleet-alarm\]: .*reading stale' \
+  || fail "a stale reading alone must open a tool question: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
+quota 0.2
+mate 1 0 3601
+run_alarm timer
+tail -n 2 "$HOME_FIX/state/fleet-alarm.status" > "$TMP_ROOT/last-two"
+sed -n 1p "$TMP_ROOT/last-two" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail "the open tool question must be resolved before the wait: $(cat "$TMP_ROOT/last-two")"
+sed -n 2p "$TMP_ROOT/last-two" | grep -q '^paused \[at=[0-9]*\] \[cause=external\] \[key=fleet-alarm\]: ' \
+  || fail "the silent mate must then be a paused external wait: $(cat "$TMP_ROOT/last-two")"
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+mate 1 0 3602
+run_alarm timer
+[ "$(grep -c '^resolved' <(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status"))" -eq 0 ] \
+  || fail 'a wait that is already declared writes no further resolved line'
+mate 0 0 0
+run_alarm timer
+pass 'a tool question that gives way to an external wait is resolved first'
+
+# A tool question that loses its tool alarm while the same mate stays silent becomes the wait.
+quota 0.2 3601
+mate 1 0 3601
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^needs-decision \[at=[0-9]*\] \[cause=tool\] ' \
+  || fail "a silent mate plus a stale reading must open a tool question: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
+quota 0.2
+mate 1 0 3602
+run_alarm timer
+tail -n 2 "$HOME_FIX/state/fleet-alarm.status" > "$TMP_ROOT/last-two"
+sed -n 1p "$TMP_ROOT/last-two" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail "the outdated tool question must be resolved when only the silent mate remains: $(cat "$TMP_ROOT/last-two")"
+sed -n 2p "$TMP_ROOT/last-two" | grep -q '^paused \[at=[0-9]*\] \[cause=external\] \[key=fleet-alarm\]: .*silent over' \
+  || fail "the remaining silent mate must become the paused wait: $(cat "$TMP_ROOT/last-two")"
+pass 'a tool question left with only a silent mate becomes the external wait'
+
+# A declared wait whose recheck time passes with the mate still silent reaches the captain once.
+python3 - "$HOME_FIX/state/.fleet-alarm.json" <<'PY_BACKDATE'
+import json, sys, time
+path = sys.argv[1]
+record = json.load(open(path))
+record['wait'] = {'since': time.time() - 7200, 'until': time.time() - 60}
+json.dump(record, open(path, 'w'))
+PY_BACKDATE
+mate 1 0 3603
+run_alarm timer
+last=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+case "$last" in
+  'needs-decision [at='*'] [cause=external] [key=fleet-alarm]: '*'silent over'*'down since 20'*'(120 minutes)'*'expected back by 20'*) ;;
+  *) fail "an expired wait must become one needs-decision naming the outage and expected recovery: $last" ;;
+esac
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+mate 1 0 3604
+run_alarm timer
+run_alarm timer
+[ "$(wc -l < "$HOME_FIX/state/fleet-alarm.status")" -eq "$before" ] \
+  || fail "the expired wait must be raised once, not on every poll: $(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status")"
+mate 0 0 0
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail 'the expired wait must resolve when the secondmate speaks again'
+pass 'an external wait past its recheck time reaches the captain once and resolves on recovery'
+
+# A silent mate whose home then goes unreachable still reaches the captain at the recheck time.
+mate 1 0 3601
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^paused \[at=[0-9]*\] \[cause=external\] ' \
+  || fail "a silent mate must open a paused wait: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
+python3 - "$HOME_FIX" "$TMP_ROOT/mate" <<'PY_OFFLINE'
+from pathlib import Path
+import hashlib, json, sys, time
+home, mate = map(Path, sys.argv[1:])
+name, host, remote = 'mate', 'unreachable.invalid', '/remote/mate'
+(home/'data/secondmates.md').write_text(f'- {name} - test domain (host: {host}; root: /remote/code; home: {remote}; scope: test; projects: alpha; added 2026-10-26)\n')
+summary = json.loads((mate/'state/home-summary.json').read_text())
+summary['home'] = remote
+summary['generated_epoch'] -= 121 * 60
+cache = home/'state/secondmate-summary-cache'
+cache.mkdir(exist_ok=True)
+key = hashlib.sha256(f'{name}\n{host}\n{remote}\n'.encode()).hexdigest()
+(cache/(key + '.json')).write_text(json.dumps(summary))
+path = home/'state/.fleet-alarm.json'
+record = json.loads(path.read_text())
+record['wait'] = {'since': time.time() - 7200, 'until': time.time() - 60}
+path.write_text(json.dumps(record))
+PY_OFFLINE
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+run_alarm timer
+jq -e '.not_collected.mate != null' "$HOME_FIX/state/.fleet-alarm.json" >/dev/null \
+  || fail 'the offline home must be recorded as not collected'
+last=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+case "$last" in
+  'needs-decision [at='*'] [cause=external] [key=fleet-alarm]: '*'silent'*'mate'*'down since 20'*) ;;
+  *) fail "a silent mate on an unreachable home must still escalate at its recheck time: $last" ;;
+esac
+run_alarm timer
+[ "$(wc -l < "$HOME_FIX/state/fleet-alarm.status")" -eq "$((before + 1))" ] \
+  || fail "the escalation of an unreachable silent mate must be written once: $(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status")"
+mate 0 0 0
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail 'the escalated wait must resolve when the secondmate is readable and speaks again'
+pass 'a silent mate whose home goes unreachable still escalates at its recheck time'
