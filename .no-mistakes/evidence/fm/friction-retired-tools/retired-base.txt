@@ -1,0 +1,19 @@
+### base
+officer exit=0
+== findings for railway / zzztool (json) ==
+{"id":"missing-tool-tool-railway","cause":"missing-tool","sub":"tool","name":"railway","events":6,"lee_events":3,"severity":4,"carded":true,"title":"A tool agents need is missing: railway","fix":"Add railway to alpha's bootstrap and its doctor check, so it is present before the next session."}
+{"id":"missing-tool-tool-zzztool","cause":"missing-tool","sub":"tool","name":"zzztool","events":3,"lee_events":0,"severity":3,"carded":true,"title":"A tool agents need is missing: zzztool","fix":"Add zzztool to alpha's bootstrap and its doctor check, so it is present before the next session."}
+== velocity cards mentioning railway / zzztool ==
+[{"id":"missing-tool-tool-railway","improvement":"Add railway to alpha's bootstrap and its doctor check, so it is present before the next session."},{"id":"missing-tool-tool-zzztool","improvement":"Add zzztool to alpha's bootstrap and its doctor check, so it is present before the next session."}]
+== digest lines mentioning railway ==
+52:### A tool agents need is missing: railway
+53-
+54:- Root cause: missing-tool (tool), railway; severity 4, confidence 4; carded.
+55-- What Lee had to do: install a tool by hand; 3 of 6 event(s) named Lee.
+56-- Waits: 0 measured, total not measured, median not measured, longest not measured; 0 still open; 0 re-ask(s).
+57:- Proposed fix: Add railway to alpha's bootstrap and its doctor check, so it is present before the next session.
+58-- Owner: alpha home; effort S.
+59:- Evidence: tasks task-wt; status none; cards none; sessions alpha:s-mate, alpha:s-worker; e.g. `brew install railway`.
+60-
+61-### Secret-exposure hook blocks safe shell-file edits, so Lee makes them
+62-

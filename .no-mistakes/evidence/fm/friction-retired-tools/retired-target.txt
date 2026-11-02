@@ -1,0 +1,19 @@
+### target
+officer exit=0
+== findings for railway / zzztool (json) ==
+{"id":"missing-tool-tool-zzztool","cause":"missing-tool","sub":"tool","name":"zzztool","events":3,"lee_events":0,"severity":3,"carded":true,"title":"A tool agents need is missing: zzztool","fix":"Add zzztool to alpha's bootstrap and its doctor check, so it is present before the next session."}
+{"id":"missing-tool-tool-railway","cause":"missing-tool","sub":"tool","name":"railway","events":6,"lee_events":3,"severity":4,"carded":false,"title":null,"fix":null}
+== velocity cards mentioning railway / zzztool ==
+[{"id":"missing-tool-tool-zzztool","improvement":"Add zzztool to alpha's bootstrap and its doctor check, so it is present before the next session."}]
+== digest lines mentioning railway ==
+97:### missing-tool / tool / railway (no rule names a fix)
+98-
+99:- Root cause: missing-tool (tool), railway; severity 4, confidence 4; not carded.
+100-- What Lee had to do: not stated; 3 of 6 event(s) named Lee.
+101-- Waits: 0 measured, total not measured, median not measured, longest not measured; 0 still open; 0 re-ask(s).
+102-- Proposed fix: none yet; the model seam is off (model: none).
+--
+104:- Evidence: tasks task-wt; status none; cards none; sessions alpha:s-mate, alpha:s-worker; e.g. `brew install railway`.
+105-
+106-### decision / decision (no rule names a fix)
+107-
