@@ -124,7 +124,9 @@ fix tap for it sits in a home's state/inbox (the note fleet-app's shim files,
 state is as of the run's generated_at.
 
 The proposed fix comes from the FIXES table. A group no rule names gets no
-card; propose_fix() is the seam where a later slice may ask a small model,
+card, and neither does a missing tool in RETIRED_TOOLS (its events are still
+counted, but the fleet no longer uses it, so installing it is never proposed);
+propose_fix() is the seam where a later slice may ask a small model,
 and slice 1 accepts only --model none.
 """
 
