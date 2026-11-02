@@ -370,7 +370,10 @@ def check(channel):
             if channel == 'timer':
                 if not (CONFIG / 'fleet-ledger').exists():
                     raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
-                with (STATE / 'fleet-alarm.status').open('a') as status:
+                status_path = STATE / 'fleet-alarm.status'
+                lines = status_path.read_text().splitlines() if status_path.exists() else []
+                card_open = timer_open and bool(lines) and lines[-1].startswith('needs-decision ')
+                with status_path.open('a') as status:
                     # An external wait (only silent secondmates) is a declared wait, not a question for
                     # the captain: name the dependency, when it should recover, and recheck then.
                     wait = not cleared and all(key.startswith('silent:') for key in alarms)
@@ -381,9 +384,10 @@ def check(channel):
                     if wait:
                         recheck = time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(time.time() + cfg.get('stale_minutes', 120) * 60))
                         text += f'; expected back when the secondmate reports again; until {recheck}'
+                        if card_open:
+                            status.write(f'resolved [at={int(time.time())}] [key=fleet-alarm]: Fleet alarm question superseded by an external wait\n')
                     status.write(f'{verb} [at={int(time.time())}]{tag} [key=fleet-alarm]: {text}\n')
-                run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG,
-                     STATE / 'fleet-alarm.status'], 3)
+                run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG, status_path], 3)
                 timer_open = not cleared
             else:
                 print(text)

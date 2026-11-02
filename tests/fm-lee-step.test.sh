@@ -24,7 +24,7 @@ out=$(step --cause credential lee@SLARTIBARTFAST.local /x/a.sh)
 assert_contains "$out" $'\nbash /x/a.sh' 'user@host and a domain suffix still match the Lee-step host, case-insensitively'
 out=$(step --cause policy deepthought /x/swap.sh "it's here")
 want_ssh="ssh -t deepthought 'bash /x/swap.sh it\\'\\''s\\ here'"
-assert_contains "$out" "$want_ssh" 'another machine gets one ssh -t line with the remote command single-quoted'
+assert_contains "$out" "$want_ssh" 'a host other than the Lee-step host gets one ssh -t line with the remote command single-quoted'
 # The ssh line round-trips: a shell parses the remote command back to the original words.
 remote=$(printf '%s\n' "$out" | sed -n '2p')
 [ "$(eval "set -- ${remote#ssh -t deepthought }; printf '%s' \"\$1\"")" = "bash /x/swap.sh it\\'s\\ here" ] \

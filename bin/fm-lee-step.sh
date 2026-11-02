@@ -58,5 +58,5 @@ done
 if [ -n "$own" ] && [ "$(lower "${own%%.*}")" = "${target%%.*}" ]; then
   printf 'Lee step [cause=%s], run on %s (your session is already there):\n%s\n' "$cause" "$host" "$cmd"
 else
-  printf 'Lee step [cause=%s], run from another machine:\nssh -t %s %s\n' "$cause" "$host" "'${cmd//\'/\'\\\'\'}'"
+  printf 'Lee step [cause=%s], run from any machine:\nssh -t %s %s\n' "$cause" "$host" "'${cmd//\'/\'\\\'\'}'"
 fi

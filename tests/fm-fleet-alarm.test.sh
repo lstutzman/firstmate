@@ -689,3 +689,26 @@ quota 0.2
 mate 0 0 0
 run_alarm timer
 pass 'a silent secondmate with a tool alarm in one poll stays a needs-decision'
+
+# A tool alarm that gives way to a silent mate alone closes its question before the wait.
+quota 0.2 3601
+mate 0 0 0
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^needs-decision \[at=[0-9]*\] \[cause=tool\] \[key=fleet-alarm\]: .*reading stale' \
+  || fail "a stale reading alone must open a tool question: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
+quota 0.2
+mate 1 0 3601
+run_alarm timer
+tail -n 2 "$HOME_FIX/state/fleet-alarm.status" > "$TMP_ROOT/last-two"
+sed -n 1p "$TMP_ROOT/last-two" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail "the open tool question must be resolved before the wait: $(cat "$TMP_ROOT/last-two")"
+sed -n 2p "$TMP_ROOT/last-two" | grep -q '^paused \[at=[0-9]*\] \[cause=external\] \[key=fleet-alarm\]: ' \
+  || fail "the silent mate must then be a paused external wait: $(cat "$TMP_ROOT/last-two")"
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+mate 1 0 3602
+run_alarm timer
+[ "$(grep -c '^resolved' <(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status"))" -eq 0 ] \
+  || fail 'a wait that is already declared writes no further resolved line'
+mate 0 0 0
+run_alarm timer
+pass 'a tool question that gives way to an external wait is resolved first'
