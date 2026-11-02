@@ -9,6 +9,9 @@ Balance hints come from serial runs of the real lanes on `ubuntu-24.04`.
 The concurrent isolation proof in [fm-test-isolation-proof.md](fm-test-isolation-proof.md) establishes concurrency safety, not serial CI duration.
 Local timings are not interchangeable with CI timings: platform and machine load can affect each script differently and change their relative weights.
 
+The portable serial hint table was refreshed again on 2026-11-02 from eight green Ubuntu CI runs on `lstutzman/firstmate` (41056282922, 41207534722, 41207547671, 41210211924, 41211333584, 41214986542, 41218007432, 41220570713).
+The packing budget moved from 1200000 to 1400000 ms because `tests/fm-watch-triage.test.sh` alone now runs 1174-1351 s.
+
 Both hint tables were refreshed on 2026-09-30 from five Ubuntu CI runs: [36583881812](https://github.com/kunchenguid/firstmate/actions/runs/36583881812), [36658498535](https://github.com/kunchenguid/firstmate/actions/runs/36658498535), [36663947738](https://github.com/kunchenguid/firstmate/actions/runs/36663947738), [36664663190](https://github.com/kunchenguid/firstmate/actions/runs/36664663190), and [36669175457](https://github.com/kunchenguid/firstmate/actions/runs/36669175457).
 Use the slowest successful `duration_ms` per script across their uploaded portable timing artifacts and completed `FM_TEST_END` log markers, with the two version/platform exceptions below.
 All artifact records were cross-checked against the corresponding job's markers.
