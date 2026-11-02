@@ -136,10 +136,24 @@ worker_start_heartbeat() { # <account-home>
   WORKER_HEARTBEAT_PID=$!
 }
 
+# A TERM that reaches the heartbeat before its newly forked shell has reset the
+# signal handlers it inherited is dropped. The heartbeat then keeps running for
+# as long as this process's lock verifies, and that lock is released only after
+# this returns, so a single TERM followed by an unbounded wait can deadlock the
+# shutdown forever. Re-send TERM until the heartbeat exits and escalate to KILL
+# after a bound. The heartbeat is an unreaped child, so its pid cannot be reused
+# before the final wait.
 worker_stop_heartbeat() {
-  local pid=${WORKER_HEARTBEAT_PID:-}
+  local pid=${WORKER_HEARTBEAT_PID:-} tries=0 state
   [ -n "$pid" ] || return 0
-  kill -TERM "$pid" 2>/dev/null || true
+  while [ "$tries" -lt 60 ]; do
+    kill -TERM "$pid" 2>/dev/null || break
+    state=$(/bin/ps -o state= -p "$pid" 2>/dev/null) || break
+    case "$state" in ''|*Z*) break ;; esac
+    tries=$((tries + 1))
+    sleep 0.05
+  done
+  [ "$tries" -lt 60 ] || kill -KILL "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   WORKER_HEARTBEAT_PID=
 }
