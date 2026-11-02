@@ -490,6 +490,30 @@ test_long_ids_are_hashed_within_the_limit() {
   pass "fm-officer friction: a long finding id is hashed to fleet-app's limit"
 }
 
+test_retired_tool_gets_no_install_proposal() {
+  local home json vel
+  home=$(make_world retired)
+  jq '.sessions[1].calls += [range(3) as $i | "railway", "zzztool" | ["Bash", {"command": "x"}, "/bin/bash: line 4: \(.): command not found", true]]' \
+    "$TMP_ROOT/retired/spec.json" > "$TMP_ROOT/retired/spec2.json"
+  officer_archive "$TMP_ROOT/retired/archive" "$DATE" "$TMP_ROOT/retired/spec2.json"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  assert_equals "3" "$(jq '[.findings[] | select(.name == "railway")][0].events' "$json")" \
+    "a retired tool's miss is still counted"
+  assert_equals "false" "$(jq '[.findings[] | select(.name == "railway")][0].carded' "$json")" \
+    "a retired tool's miss is not carded"
+  assert_equals "null" "$(jq '[.findings[] | select(.name == "railway")][0].fix' "$json")" \
+    "a retired tool's miss gets no install proposal"
+  assert_equals "0" "$(jq '[.bottlenecks[] | select(.id | contains("railway"))] | length' "$vel")" \
+    "a retired tool's miss produces no velocity card"
+  assert_equals "true" "$(jq '[.findings[] | select(.name == "zzztool")][0].carded' "$json")" \
+    "another missing tool still produces a card"
+  assert_equals "1" "$(jq '[.bottlenecks[] | select(.id | contains("zzztool"))] | length' "$vel")" \
+    "another missing tool still produces a velocity card"
+  pass "fm-officer friction: a retired tool gets no install proposal; other tools still do"
+}
+
 test_rerun_digest_is_byte_identical() {
   local home first
   home=$(make_world idem)
@@ -803,6 +827,7 @@ test_transcript_lee_steps_and_refusals
 test_velocity_findings_file
 test_velocity_ids_counts_and_states
 test_long_ids_are_hashed_within_the_limit
+test_retired_tool_gets_no_install_proposal
 test_rerun_digest_is_byte_identical
 test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh
