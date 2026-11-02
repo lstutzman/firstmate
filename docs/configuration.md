@@ -619,6 +619,15 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
 
+## Captain-step host (config/home-host)
+
+The optional local, gitignored `config/home-host` names, on its first non-blank line not beginning with `#`, the machine this home's captain session runs on.
+`bin/fm-lee-step.sh` compares the target host of a command the captain must run by hand with it, case-insensitively and ignoring a `user@` prefix or domain suffix.
+It prints `bash <script>` when they match and `ssh -t <host> '...'` only from another machine, because ssh to the machine one is already on has no key.
+Without the file it falls back to this machine's own short host name.
+Every step also names why no agent can run it, `--cause sudo|credential|policy|tool|physical`, the same values a `blocked` or `needs-decision` line carries as `[cause=...]`.
+`bin/fm-worktree-assert.sh <task-id>` is the matching check for a worker session restored after a restart: it refuses, naming the exact directory, unless the current directory is the worktree the task record names.
+
 ## Fleet quota and secondmate alarm (config/fleet-alarm.json)
 
 The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quota readings, and registered second mates holding work without recent communication.
@@ -629,7 +638,8 @@ Missing, malformed, or stale home summaries from reachable homes produce an inve
 An unreachable home without usable cached inventory is recorded quietly as not collected, including an offline laptop.
 An incomplete child-liveness observation preserves the independently complete in-flight work count; other inventory contradictions still alert with their reason.
 An inventory alert waits until the same finding appears in `persist_polls` consecutive polls of a channel (default 2), so an item that is missing on one poll and present on the next raises nothing.
-The timer's `needs-decision` line carries a `[cause=...]` tag, `decision` for quota pressure, `external` for a silent second mate and `tool` for an unreadable reader or inventory, so the friction officer groups it with other blocked lines.
+The timer's `needs-decision` line carries a `[cause=...]` tag, `decision` for quota pressure and `tool` for an unreadable reader or inventory, so the friction officer groups it with other blocked lines.
+A silent second mate is an external wait, not a question for the captain: the timer appends a `paused` line tagged `[cause=external]` that names the second mate, says it is expected back when it reports again, and carries an `until` recheck time `stale_minutes` ahead, so firstmate rechecks it then instead of holding the task.
 The quota alarm fires when mean remaining weekly capacity across non-stale Claude readings falls below the pool threshold, or a carrying account exceeds the weekly threshold.
 Every Claude account with successful Claude-model requests in the last 60 minutes is carrying; several accounts can qualify, and failed-only traffic does not qualify.
 The card names all carrying accounts and includes per-account weekly pressure as information; pressure alone on an idle account does not trigger an alarm.

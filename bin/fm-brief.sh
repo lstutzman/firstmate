@@ -119,7 +119,7 @@
 # the worker's own background work, pipeline or long command; blocked when
 # firstmate must act. The first-sight alert remains; repeats use the long cadence.
 # Every scaffold also has blocked and needs-decision lines state a [cause=<cause>]
-# tag (policy, credential, sudo, tool, decision, external); bin/fm-classify-lib.sh
+# tag (policy, credential, sudo, tool, decision, physical, external); bin/fm-classify-lib.sh
 # status_line_cause owns that vocabulary and its fallback to "unstated".
 # Emission-time syntax and legacy unknown-time handling are owned by
 # bin/fm-classify-lib.sh; each scaffold renders the stamp as a literal <epoch>
@@ -185,13 +185,6 @@ IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    When you know when the wait clears, include \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) for a recheck at that time; for your own background job or command with a timeout, that time is its start plus its timeout, rounded up to the minute.
    Follow the resolution rule below when the wait clears, then resume the task.
    Use \`blocked:\` when you are stuck and need help.
-EOF
-
-# Every blocked and needs-decision line states why the agent cannot go on; the
-# vocabulary and its parser are owned by status_line_cause in bin/fm-classify-lib.sh.
-IFS= read -r -d '' CAUSE_INSTRUCTIONS <<EOF || true
-   Every \`blocked\` and \`needs-decision\` line also states why you cannot go on, as a \`[cause=<cause>]\` tag before the colon, next to the stamp: \`policy\` (a rule or approval reserved to a human), \`credential\` (a login, token or secret you lack), \`sudo\` (needs root), \`tool\` (a tool is missing or broken), \`decision\` (a product or design choice), or \`external\` (a service, machine or other agent you wait on).
-   Pick the one that fits best, for example \`blocked [at=<epoch>] [cause=sudo]: {why}\`; a line without it still works but is recorded as unstated.
 EOF
 
 resolve_directory_input() {
@@ -458,6 +451,17 @@ STATUS_FILE=$(shell_quote "$STATE/$ID.status")
 STATUS_APPEND="echo \"{state} [at=<epoch>]: {one short line}\" >> $STATUS_FILE && { [ ! -e $(shell_quote "$CONFIG/fleet-ledger") ] || $(shell_quote "$FM_ROOT/bin/fm-fleet-ledger.sh") appended $(shell_quote "$CONFIG") $STATUS_FILE >/dev/null 2>&1 || true; }"
 INBOX_DIR=$(shell_quote "$STATE/$ID.inbox")
 INBOX_TAKE=$(shell_quote "$FM_ROOT/bin/fm-task-inbox.sh")
+LEE_STEP=$(shell_quote "$FM_ROOT/bin/fm-lee-step.sh")
+WT_ASSERT=$(shell_quote "$FM_ROOT/bin/fm-worktree-assert.sh")
+
+# Every blocked and needs-decision line states why the agent cannot go on; the
+# vocabulary and its parser are owned by status_line_cause in bin/fm-classify-lib.sh.
+IFS= read -r -d '' CAUSE_INSTRUCTIONS <<EOF || true
+   Every \`blocked\` and \`needs-decision\` line also states why you cannot go on, as a \`[cause=<cause>]\` tag before the colon, next to the stamp: \`policy\` (a rule or approval reserved to a human), \`credential\` (a login, token or secret you lack), \`sudo\` (needs root), \`tool\` (a tool is missing or broken), \`decision\` (a product or design choice), \`physical\` (needs a person at a machine or device), or \`external\` (a service, machine or other agent you wait on).
+   Pick the one that fits best, for example \`blocked [at=<epoch>] [cause=sudo]: {why}\`; a line without it still works but is recorded as unstated.
+   A service, machine or agent that is merely unreachable is a wait, not a block: append \`paused [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until <YYYY-MM-DDTHH:MMZ>\` and firstmate rechecks it then. Use \`blocked\` for it only when firstmate must act.
+   When the captain must run a command by hand, print it with \`$LEE_STEP --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]\`, which picks \`bash <script>\` or \`ssh -t <host> ...\` for where the captain's session runs, and put its output and the same cause tag in your line.
+EOF
 
 # The receive-and-ack half of the steering-inbox contract, included in every
 # scaffold kind. The record format, doorbell line, and re-ring ladder are
@@ -574,7 +578,9 @@ Report only true captain-relevant outcomes or a declared external wait by append
 States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
 Substitute \`<epoch>\` with the current Unix time in seconds - run \`date +%s\` and write the number it printed; a stamp that is not plain digits records no time at all.
 Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own, naming when it clears with \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) when you know; use \`blocked:\` when you are stuck and need firstmate to act.
-Give every \`blocked\` and \`needs-decision\` line a \`[cause=<cause>]\` tag before the colon saying why you cannot go on (policy, credential, sudo, tool, decision or external; a missing tag is recorded as unstated).
+Give every \`blocked\` and \`needs-decision\` line a \`[cause=<cause>]\` tag before the colon saying why you cannot go on (policy, credential, sudo, tool, decision, physical or external; a missing tag is recorded as unstated).
+A service, machine or agent that is merely unreachable is a wait: declare it with \`$PAUSED_VERB [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until <YYYY-MM-DDTHH:MMZ>\` rather than \`blocked\`.
+When the captain must run a command by hand, print it with \`$LEE_STEP --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]\`, which picks \`bash <script>\` or \`ssh -t <host> ...\` for where the captain's session runs, and carry the same cause tag on the line asking for it.
 Use this only for material phase changes, a captain decision, a real blocker, a failure, work ready for review, or work you landed.
 Work you landed includes a merge you performed yourself under standing merge authority and one the captain merged on the forge: under that authority nothing is ever \"ready for review\", so a landed merge that goes unreported reaches the captain as silence.
 This is also how you return the answer to a marked from-firstmate request above.
@@ -686,6 +692,8 @@ Base branch: $BASE_BRANCH"
 else
   SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch."
 fi
+SETUP_BASE+="
+After any restart or resume of this session, before other work, run \`$WT_ASSERT $ID\`; if it exits non-zero it prints the exact directory you belong in, so \`cd\` there and rerun it before continuing."
 
 if [ "$KIND" = scout ]; then
 if "$SCRIPT_DIR/fm-bootstrap.sh" lavish-compatible >/dev/null 2>&1; then

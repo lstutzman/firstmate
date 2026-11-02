@@ -652,3 +652,25 @@ run_alarm timer
 tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
   || fail 'the cleared line carries no cause'
 pass 'the timer states a cause on its needs-decision line'
+
+# A silent secondmate is an external wait: the timer declares a pause that names the secondmate,
+# when it should recover and an `until` recheck, instead of asking the captain a question.
+mate 1 0 3601
+run_alarm timer
+last=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+case "$last" in
+  'paused [at='*'] [cause=external] [key=fleet-alarm]: '*'silent over'*'mate'*'expected back'*' until 20'*Z) ;;
+  *) fail "a silent secondmate must be a paused external wait with a recheck time: $last" ;;
+esac
+(
+  # shellcheck source=bin/fm-classify-lib.sh
+  . "$ROOT/bin/fm-classify-lib.sh"
+  [ "$(status_line_cause "$last")" = external ] || exit 1
+  until_epoch=$(status_paused_until "$last") || exit 1
+  [ "$until_epoch" -gt "$(date +%s)" ]
+) || fail "the paused wait line must read as an external cause with a future recheck time: $last"
+mate 0 0 0
+run_alarm timer
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
+  || fail 'the external wait must still resolve when the secondmate speaks again'
+pass 'a silent secondmate is a paused external wait with a recheck time'

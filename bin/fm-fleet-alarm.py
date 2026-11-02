@@ -16,8 +16,9 @@ other incomplete inventories alert with their reason, but only after the same
 inventory finding appears in persist_polls consecutive polls of a channel, so
 an item missing on one poll and back on the next raises nothing.
 The timer's needs-decision line carries a [cause=...] tag (bin/fm-classify-lib.sh
-status_line_cause owns the vocabulary): decision for quota pressure, external
-for a silent secondmate, tool for an unreadable reader or inventory.
+status_line_cause owns the vocabulary): decision for quota pressure, tool for an
+unreadable reader or inventory. A silent secondmate is external: a paused wait line
+naming the secondmate and an `until` recheck time stale_minutes ahead, never a question.
 Registry and summary inputs are bounded at 64/256 KiB.
 Parent-channel age uses the shared classifier, excluding parent appends.
 One alert per condition/reset window, rearmed on clear. check and timer share a
@@ -370,9 +371,16 @@ def check(channel):
                 if not (CONFIG / 'fleet-ledger').exists():
                     raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
                 with (STATE / 'fleet-alarm.status').open('a') as status:
-                    verb = 'resolved' if cleared else 'needs-decision'
-                    tag = '' if cleared else f' [cause={cause_of(alarms)}]'
+                    cause = cause_of(alarms)
+                    # An external wait (a silent secondmate) is a declared wait, not a question for
+                    # the captain: name the dependency, when it should recover, and recheck then.
+                    wait = not cleared and cause == 'external'
+                    verb = 'resolved' if cleared else 'paused' if wait else 'needs-decision'
+                    tag = '' if cleared else f' [cause={cause}]'
                     text = 'Fleet alarm conditions cleared' if cleared else text
+                    if wait:
+                        recheck = time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(time.time() + cfg.get('stale_minutes', 120) * 60))
+                        text += f'; expected back when the secondmate reports again; until {recheck}'
                     status.write(f'{verb} [at={int(time.time())}]{tag} [key=fleet-alarm]: {text}\n')
                 run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG,
                      STATE / 'fleet-alarm.status'], 3)
