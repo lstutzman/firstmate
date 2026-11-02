@@ -1,0 +1,13 @@
+-- budget=1200000
+fm-test-run: coverage guard: largest portable serial shard packs 1351380ms above the 1200000ms target
+fm-test-run: refresh CI hints and rebalance or add shards; do not raise the job timeout: docs/fm-test-portable-shards.md
+exit=1
+-- budget=1351379
+fm-test-run: coverage guard: largest portable serial shard packs 1351380ms above the 1351379ms target
+fm-test-run: refresh CI hints and rebalance or add shards; do not raise the job timeout: docs/fm-test-portable-shards.md
+exit=1
+-- budget=1351380
+FM_TEST_COVERAGE ok total=274 parallel=24 parallel_max_ms=665545 parallel_imbalance_ms=2 parallel_unhinted=0 serial=234 serial_shards=9 serial_unhinted=0 serial_max_ms=1351380 serial_budget_ms=1351380 herdr=16
+exit=0
+-- base 885c59b8 runner coverage:
+FM_TEST_COVERAGE ok total=274 parallel=24 parallel_max_ms=665545 parallel_imbalance_ms=2 parallel_unhinted=0 serial=234 serial_shards=9 serial_unhinted=26 serial_max_ms=1177193 serial_budget_ms=1200000 herdr=16
