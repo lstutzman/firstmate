@@ -367,6 +367,65 @@ if [ "${FM_TEST_SKIP_ORPHAN_REAP:-0}" != 1 ]; then
   fm_test_reap_orphans
 fi
 
+# --- bounded child waits ----------------------------------------------------
+#
+# Every wait on a background child is bounded, and a timeout fails with a
+# diagnostic rather than hanging the shard. Never signal a newly forked subshell
+# of the test shell to stop it: a TERM that lands before the subshell resets the
+# traps it inherited is either dropped or runs the suite's TERM and EXIT traps
+# inside the subshell, which tears the fixture down under the running test. The
+# helpers poll with /bin/sleep so a fixture's recording sleep on PATH never
+# counts them.
+
+# True once <pid>, a child of this shell, has exited (a zombie or gone).
+fm_test_child_exited() { # <pid>
+  local state
+  state=$(ps -o state= -p "$1" 2>/dev/null) || return 0
+  case "$state" in ''|*Z*) return 0 ;; esac
+  return 1
+}
+
+# Reap child <pid> within <grace> seconds and return its exit status. A child
+# still running at the bound is killed and the test fails with the process and
+# its direct children plus the tail of each named log. The killed child is left
+# unreaped so its pid cannot be reused before teardown reaps it.
+fm_test_bounded_wait() { # <pid> <label> <grace-seconds> [log...]
+  local pid=$1 label=$2 grace=$3 deadline log
+  shift 3
+  deadline=$((SECONDS + grace))
+  until fm_test_child_exited "$pid"; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      {
+        printf 'bounded wait diagnostics: pid %s (%s) and its children:\n' "$pid" "$label"
+        ps -A -o pid= -o ppid= -o pgid= -o stat= -o command= 2>/dev/null \
+          | awk -v p="$pid" '$1 == p || $2 == p' || true
+        for log in "$@"; do
+          printf -- '--- %s\n' "$log"
+          tail -n 40 "$log" 2>/dev/null || true
+        done
+      } >&2
+      kill -KILL "$pid" 2>/dev/null || true
+      fail "bounded wait timed out: pid $pid ($label) still running after ${grace}s"
+    fi
+    /bin/sleep 0.05
+  done
+  wait "$pid" 2>/dev/null
+}
+
+# Teardown for child <pid>: TERM it (again, in case a TERM was dropped), KILL
+# it after about two seconds, and reap it. Never fails and never blocks longer.
+fm_test_stop_child() { # <pid>
+  local pid=$1 tries=0
+  [ -n "$pid" ] || return 0
+  while [ "$tries" -lt 40 ] && ! fm_test_child_exited "$pid"; do
+    kill -TERM "$pid" 2>/dev/null || true
+    tries=$((tries + 1))
+    /bin/sleep 0.05
+  done
+  kill -KILL "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
 # --- live-capability gate ---------------------------------------------------
 #
 # fm_live_gate <policy> <vars> [tool ...]

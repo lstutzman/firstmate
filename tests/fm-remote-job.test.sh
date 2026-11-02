@@ -32,62 +32,9 @@ HELD_HEARTBEAT_PID=
 HELD_HEARTBEAT_START=
 mkdir -p "$REMOTE_ROOT/bin" "$REMOTE_HOME" "$ACCOUNT_HOME" "$RUNTIME_BIN"
 
-# Every wait on a background process in this file is bounded, and a timeout
-# fails with a diagnostic rather than hanging the shard. Never signal a newly
-# forked subshell of this shell to stop it: a TERM that lands before the
-# subshell resets the traps it inherited is either dropped or runs this file's
-# TERM and EXIT traps inside the subshell, which tears the fixture down under
-# the running test. The helpers poll with /bin/sleep so the cadence fixtures'
-# recording sleep on PATH never counts them.
-
-# True once <pid>, a child of this shell, has exited (a zombie or gone).
-child_exited() { # <pid>
-  local state
-  state=$(ps -o state= -p "$1" 2>/dev/null) || return 0
-  case "$state" in ''|*Z*) return 0 ;; esac
-  return 1
-}
-
-# Reap child <pid> within <grace> seconds and return its exit status. A child
-# still running at the bound is killed and the test fails with the process and
-# its direct children plus the tail of each named log. The killed child is left
-# unreaped so its pid cannot be reused before teardown reaps it.
-bounded_wait() { # <pid> <label> <grace-seconds> [log...]
-  local pid=$1 label=$2 grace=$3 deadline log
-  shift 3
-  deadline=$((SECONDS + grace))
-  until child_exited "$pid"; do
-    if [ "$SECONDS" -ge "$deadline" ]; then
-      {
-        printf 'bounded wait diagnostics: pid %s (%s) and its children:\n' "$pid" "$label"
-        ps -A -o pid= -o ppid= -o pgid= -o stat= -o command= 2>/dev/null \
-          | awk -v p="$pid" '$1 == p || $2 == p' || true
-        for log in "$@"; do
-          printf -- '--- %s\n' "$log"
-          tail -n 40 "$log" 2>/dev/null || true
-        done
-      } >&2
-      kill -KILL "$pid" 2>/dev/null || true
-      fail "bounded wait timed out: pid $pid ($label) still running after ${grace}s"
-    fi
-    /bin/sleep 0.05
-  done
-  wait "$pid" 2>/dev/null
-}
-
-# Teardown for child <pid>: TERM it (again, in case a TERM was dropped), KILL
-# it after about two seconds, and reap it. Never fails and never blocks longer.
-stop_child() { # <pid>
-  local pid=$1 tries=0
-  [ -n "$pid" ] || return 0
-  while [ "$tries" -lt 40 ] && ! child_exited "$pid"; do
-    kill -TERM "$pid" 2>/dev/null || true
-    tries=$((tries + 1))
-    /bin/sleep 0.05
-  done
-  kill -KILL "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-}
+# Every wait on a background process in this file is bounded through
+# tests/lib.sh's child helpers, and a timeout fails with a diagnostic rather
+# than hanging the shard.
 
 # worker.pid records the serving child, not its restart supervisor, so stopping
 # that pid alone leaves the supervisor to respawn - the leak
@@ -97,7 +44,7 @@ cleanup_remote_job_fixture() {
   for child in "$OTHER_PID" "$RECOVERY_WORKER_PID" "$REPEAT_WORKER_PID" "$RESTART_SUPERVISOR_PID" \
     "$LOST_TERM_PID" "$REPLACEMENT_OWNER_PID" "$QUIET_WORKER_PID" "$SCAN_LANE_PID" \
     "$STALL_WORKER_PID" "$STALL_REPLACEMENT_PID" "$HEARTBEAT_WORKER_PID"; do
-    stop_child "$child"
+    fm_test_stop_child "$child"
   done
   # The held heartbeat is a grandchild, so confirm its identity before KILL.
   if [ -n "$HELD_HEARTBEAT_PID" ] \
@@ -180,7 +127,7 @@ printf '%s\n' "$1" >> "$FM_POLL_SLEEP_LOG"
 exec /bin/sleep "$@"
 SH
   chmod +x "$poll_dir/bin/sleep"
-  trap 'stop_child "$pid"' EXIT
+  trap 'fm_test_stop_child "$pid"' EXIT
   unset FM_REMOTE_JOB_POLL_SECONDS FM_REMOTE_JOB_ACTIVE_POLL_SECONDS
   # shellcheck disable=SC2030 # The legacy override is local to this cadence fixture.
   [ -z "$legacy" ] || export FM_REMOTE_JOB_POLL_SECONDS="$legacy"
@@ -209,7 +156,7 @@ SH
   ) &
   pid=$!
   fm_remote_job_wait "$ACCOUNT_HOME" "$FM_REMOTE_JOB_ID" || fail "$FM_REMOTE_JOB_ERROR"
-  bounded_wait "$pid" "$label result producer" 15 || fail "$label result producer failed"
+  fm_test_bounded_wait "$pid" "$label result producer" 15 || fail "$label result producer failed"
   pid=''
   [ "$FM_REMOTE_JOB_EXIT" -eq 0 ] || fail "$label result consumer lost the exit status"
   grep -qx "$expected" "$FM_POLL_SLEEP_LOG" || fail "$label consumer never sampled at $expected seconds"
@@ -220,7 +167,7 @@ SH
     fm-delay-job.sh 0.8 "$poll_dir/ran" </dev/null >/dev/null || fail "$FM_REMOTE_JOB_ERROR"
   HOME="$ACCOUNT_HOME" "$BASH" "$REMOTE_ROOT/bin/fm-remote-job-worker.sh" --lane "$FM_REMOTE_JOB_ID" &
   pid=$!
-  bounded_wait "$pid" "$label command lane" 30 || fail "$label command lane failed"
+  fm_test_bounded_wait "$pid" "$label command lane" 30 || fail "$label command lane failed"
   pid=''
   [ -e "$poll_dir/ran" ] || fail "$label lane did not execute its command"
   [ "$(fm_remote_job_read_state "$FM_REMOTE_JOB_JOBS/$FM_REMOTE_JOB_ID")" = 'done' ] || fail "$label lane did not publish completion"
@@ -239,7 +186,7 @@ SH
   grep -qx 1 "$FM_POLL_SLEEP_LOG" || fail "$label dispatcher never reached its one-second quiet wait"
   [ "$(grep -cx "$dispatch" "$FM_POLL_SLEEP_LOG")" -eq 4 ] || fail "$label dispatcher did not limit its fast burst to four $dispatch-second waits"
   kill -TERM "$pid" || fail "$label dispatcher stopped unexpectedly"
-  bounded_wait "$pid" "$label dispatcher after TERM" 30 "$poll_dir/worker.log" || true
+  fm_test_bounded_wait "$pid" "$label dispatcher after TERM" 30 "$poll_dir/worker.log" || true
   pid=''
   pass "$label: result and command samples use $expected seconds; dispatcher uses four $dispatch-second waits then one second"
 )
@@ -255,7 +202,7 @@ lane_interpreter_case() (
   local interp="$TMP_ROOT/lane-interp/bash" lane_dir="$TMP_ROOT/lane-interp" pid='' i lane_pid lane_command=''
   mkdir -p "$lane_dir"
   ln -s "$BASH" "$interp"
-  trap 'stop_child "$pid"' EXIT
+  trap 'fm_test_stop_child "$pid"' EXIT
   # shellcheck disable=SC2031 # Each fixture owns its subshell's environment.
   export FM_REMOTE_JOB_STATE_ROOT="$lane_dir/state" FM_ROOT_OVERRIDE="$REMOTE_ROOT"
   # shellcheck disable=SC2030,SC2031 # Each fixture owns its subshell's bounds.
@@ -278,7 +225,7 @@ lane_interpreter_case() (
     *) fail "the command lane did not keep the worker's interpreter: $lane_command" ;;
   esac
   kill -TERM "$pid" || fail 'the worker stopped unexpectedly'
-  bounded_wait "$pid" "lane interpreter worker after TERM" 30 "$lane_dir/worker.log" || true
+  fm_test_bounded_wait "$pid" "lane interpreter worker after TERM" 30 "$lane_dir/worker.log" || true
   pid=''
   pass 'a command lane runs under the interpreter that started the worker'
 )
@@ -516,7 +463,7 @@ NEW_WORKER_PID=$(cat "$STATE_ROOT/worker.pid")
 fm_remote_job_worker_identity_matches "$REMOTE_ROOT" "$ACCOUNT_HOME" \
   || fail "stale ownership recovery did not start the current worker"
 kill "$OTHER_PID" 2>/dev/null || true
-bounded_wait "$OTHER_PID" "unrelated sleep after TERM" 10 || true
+fm_test_bounded_wait "$OTHER_PID" "unrelated sleep after TERM" 10 || true
 OTHER_PID=
 pass "stale ownership is reclaimed without signaling a reused pid"
 
@@ -815,7 +762,7 @@ sleep 20 &
 QUARANTINED_PROCESS_PID=$!
 sleep 0.01 &
 QUARANTINE_OWNER_PID=$!
-bounded_wait "$QUARANTINE_OWNER_PID" "quarantine owner sleep" 10 || true
+fm_test_bounded_wait "$QUARANTINE_OWNER_PID" "quarantine owner sleep" 10 || true
 printf '%s\n' "$QUARANTINE_OWNER_PID" > "$RECOVERY_STATE/worker.lock/pid"
 printf 'stale\n' > "$RECOVERY_STATE/worker.lock/start"
 printf 'stale\n' > "$RECOVERY_STATE/worker.lock/command"
@@ -854,10 +801,10 @@ assert_absent "$RECOVERY_STATE/worker.lock/quarantine" "recovered worker retaine
 kill -0 "$QUARANTINED_PROCESS_PID" 2>/dev/null \
   || fail "worker recovery signalled a process whose supervisor identity did not match"
 kill -TERM "$RECOVERY_WORKER_PID"
-bounded_wait "$RECOVERY_WORKER_PID" "recovery worker after TERM" 15 "$TMP_ROOT/recovery-worker.err" || true
+fm_test_bounded_wait "$RECOVERY_WORKER_PID" "recovery worker after TERM" 15 "$TMP_ROOT/recovery-worker.err" || true
 RECOVERY_WORKER_PID=
 kill "$QUARANTINED_PROCESS_PID" 2>/dev/null || true
-bounded_wait "$QUARANTINED_PROCESS_PID" "quarantined sleep after TERM" 10 || true
+fm_test_bounded_wait "$QUARANTINED_PROCESS_PID" "quarantined sleep after TERM" 10 || true
 pass "quarantine recovery refuses unverifiable supervisors and ignores reused pids"
 
 # A replacement stops a Linux worker by signalling its whole isolated group, and
@@ -924,7 +871,7 @@ done
 assert_present "$REPEAT_STATE/worker.ready" \
   "the worker after a repeatedly signalled shutdown never reported ready"
 kill -TERM "$REPEAT_WORKER_PID"
-bounded_wait "$REPEAT_WORKER_PID" "worker after a repeatedly signalled shutdown, after TERM" 15 \
+fm_test_bounded_wait "$REPEAT_WORKER_PID" "worker after a repeatedly signalled shutdown, after TERM" 15 \
   "$TMP_ROOT/repeat-signal.err" || true
 REPEAT_WORKER_PID=
 pass "a repeatedly signalled shutdown still releases ownership for the next worker"
@@ -958,7 +905,7 @@ HELD_HEARTBEAT_START=$(fm_remote_job_process_start "$HELD_HEARTBEAT_PID") \
   || fail "the heartbeat fixture could not record the heartbeat's identity"
 kill -STOP "$HELD_HEARTBEAT_PID"
 kill -TERM "$HEARTBEAT_WORKER_PID"
-bounded_wait "$HEARTBEAT_WORKER_PID" "worker whose heartbeat cannot act on TERM" 20 \
+fm_test_bounded_wait "$HEARTBEAT_WORKER_PID" "worker whose heartbeat cannot act on TERM" 20 \
   "$TMP_ROOT/heartbeat-worker.err" || true
 HEARTBEAT_WORKER_PID=
 assert_absent "$HEARTBEAT_STATE/worker.lock" \
@@ -1580,7 +1527,7 @@ done
   || fail "a same-home queued command did not preempt the running poll"
 [ "$(cat "$SCAN_STATE/jobs/$SCAN_POLL_ID/exit")" -eq "$FM_REMOTE_JOB_PREEMPTED_EXIT" ] \
   || fail "the preempted poll did not publish the preemption exit"
-bounded_wait "$SCAN_LANE_PID" "preempted scan lane" 30 "$TMP_ROOT/scan-lane.err" || true
+fm_test_bounded_wait "$SCAN_LANE_PID" "preempted scan lane" 30 "$TMP_ROOT/scan-lane.err" || true
 SCAN_LANE_PID=
 pass "a same-home queued command still preempts the poll through the builtin scan"
 
@@ -1614,7 +1561,7 @@ done
   || fail "a queued poll with a multibyte argv past the byte bound did not preempt"
 [ "$(cat "$SCAN_STATE/jobs/$SCAN_BOUND_POLL_ID/exit")" -eq "$FM_REMOTE_JOB_PREEMPTED_EXIT" ] \
   || fail "the byte-bound preemption did not publish the preemption exit"
-bounded_wait "$SCAN_LANE_PID" "byte-bound preempted scan lane" 30 "$TMP_ROOT/scan-bound-lane.err" || true
+fm_test_bounded_wait "$SCAN_LANE_PID" "byte-bound preempted scan lane" 30 "$TMP_ROOT/scan-bound-lane.err" || true
 SCAN_LANE_PID=
 pass "the lane scan bounds argv in bytes, not characters, in a UTF-8 locale"
 
