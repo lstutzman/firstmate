@@ -1,0 +1,58 @@
+[
+  {
+    "id": "environment-ssh-to-self",
+    "title": "Lee-step ssh lines target the machine they run on"
+  },
+  {
+    "id": "sudo-sudo",
+    "title": "Agents hand Lee sudo steps to run by hand"
+  },
+  {
+    "id": "credential-scope-cloudflare",
+    "title": "An agent token lacks a scope, so Lee widens it"
+  },
+  {
+    "id": "policy-credential-approval",
+    "title": "New staging credentials wait on Lee's per-credential word"
+  },
+  {
+    "id": "guard-hook-secret-hook",
+    "title": "Secret-exposure hook blocks safe shell-file edits, so Lee makes them"
+  },
+  {
+    "id": "lee-command-run",
+    "title": "Lee runs commands by hand with no recorded reason"
+  },
+  {
+    "id": "credential-ssh-key",
+    "title": "Agents lack an ssh key for a fleet host"
+  },
+  {
+    "id": "missing-tool-tool-openjdk",
+    "title": "A tool agents need is missing: openjdk"
+  },
+  {
+    "id": "missing-tool-tool-railway-eddf3c2d",
+    "title": "A tool agents need is missing: Railway"
+  },
+  {
+    "id": "missing-tool-tool-zzztool",
+    "title": "A tool agents need is missing: zzztool"
+  },
+  {
+    "id": "environment-wrong-cwd",
+    "title": "Worker sessions resume in the wrong directory after a restart"
+  },
+  {
+    "id": "guard-hook-refused-pre-bash-secret-exposure-py",
+    "title": "Hook refusals slow agents down"
+  },
+  {
+    "id": "missing-tool-tool-slopwatch",
+    "title": "A tool agents need is missing: slopwatch"
+  },
+  {
+    "id": "service-limit-rate-limit-1password",
+    "title": "Service rate limits stall agents until the limit resets"
+  }
+]

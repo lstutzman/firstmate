@@ -1,0 +1,32 @@
+[
+  {
+    "name": "openjdk",
+    "events": 1,
+    "carded": true,
+    "fix": "Add openjdk to alpha's bootstrap and its doctor check, so it is present before the next session."
+  },
+  {
+    "name": "Railway",
+    "events": 3,
+    "carded": true,
+    "fix": "Add Railway to alpha's bootstrap and its doctor check, so it is present before the next session."
+  },
+  {
+    "name": "zzztool",
+    "events": 3,
+    "carded": true,
+    "fix": "Add zzztool to alpha's bootstrap and its doctor check, so it is present before the next session."
+  },
+  {
+    "name": "railway",
+    "events": 3,
+    "carded": false,
+    "fix": null
+  },
+  {
+    "name": "slopwatch",
+    "events": 1,
+    "carded": false,
+    "fix": "Add slopwatch to alpha's bootstrap and its doctor check, so it is present before the next session."
+  }
+]
