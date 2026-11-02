@@ -735,6 +735,24 @@ sleep 3
 assert_absent "$QUARANTINE_SIDE_EFFECT" "the quarantined command mutated after explicit termination"
 pass "failed shutdown quarantines ownership against replacement workers"
 
+# Reap a background child with a bound. After the grace the child is killed and
+# the test fails with the PID, the wait and the elapsed time, so a stuck process
+# produces a fast explained failure instead of a silent hang of the whole shard.
+bounded_wait() {
+  local pid=$1 label=$2 grace=$3 mark start rc
+  mark="$TMP_ROOT/bounded-wait.$pid"
+  rm -f -- "$mark"
+  start=$SECONDS
+  ( sleep "$grace"; : > "$mark"; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  local dog=$!
+  wait "$pid" 2>/dev/null || true
+  kill "$dog" 2>/dev/null || true
+  wait "$dog" 2>/dev/null || true
+  rc=0
+  [ ! -e "$mark" ] || rc=1
+  [ "$rc" -eq 0 ] || fail "bounded wait timed out: pid $pid ($label) still running after $((SECONDS - start))s, killed after ${grace}s grace"
+}
+
 RECOVERY_HOME="$TMP_ROOT/recovery-account"
 RECOVERY_STATE="$TMP_ROOT/recovery-jobs"
 RECOVERY_JOB="$RECOVERY_STATE/jobs/job-quarantine"
@@ -746,7 +764,7 @@ sleep 20 &
 QUARANTINED_PROCESS_PID=$!
 sleep 0.01 &
 QUARANTINE_OWNER_PID=$!
-wait "$QUARANTINE_OWNER_PID" 2>/dev/null || true
+bounded_wait "$QUARANTINE_OWNER_PID" "quarantine owner sleep" 10
 printf '%s\n' "$QUARANTINE_OWNER_PID" > "$RECOVERY_STATE/worker.lock/pid"
 printf 'stale\n' > "$RECOVERY_STATE/worker.lock/start"
 printf 'stale\n' > "$RECOVERY_STATE/worker.lock/command"
@@ -785,10 +803,10 @@ assert_absent "$RECOVERY_STATE/worker.lock/quarantine" "recovered worker retaine
 kill -0 "$QUARANTINED_PROCESS_PID" 2>/dev/null \
   || fail "worker recovery signalled a process whose supervisor identity did not match"
 kill -TERM "$RECOVERY_WORKER_PID"
-wait "$RECOVERY_WORKER_PID" 2>/dev/null || true
+bounded_wait "$RECOVERY_WORKER_PID" "recovery worker after TERM" 15
 RECOVERY_WORKER_PID=
 kill "$QUARANTINED_PROCESS_PID" 2>/dev/null || true
-wait "$QUARANTINED_PROCESS_PID" 2>/dev/null || true
+bounded_wait "$QUARANTINED_PROCESS_PID" "quarantined sleep after TERM" 10
 pass "quarantine recovery refuses unverifiable supervisors and ignores reused pids"
 
 # A replacement stops a Linux worker by signalling its whole isolated group, and
