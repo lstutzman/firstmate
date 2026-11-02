@@ -1,0 +1,15 @@
+### brief lines added by this change
+17:After any restart or resume of this session, before other work, run `'{run-worktree}/bin/fm-worktree-assert.sh' lab-ship`; if it exits non-zero it prints the exact directory you belong in, so `cd` there and rerun it before continuing.
+58:   Every `blocked` and `needs-decision` line also states why you cannot go on, as a `[cause=<cause>]` tag before the colon, next to the stamp: `policy` (a rule or approval reserved to a human), `credential` (a login, token or secret you lack), `sudo` (needs root), `tool` (a tool is missing or broken), `decision` (a product or design choice), `physical` (needs a person at a machine or device), or `external` (a service, machine or other agent you wait on).
+60:   A service, machine or agent that is merely unreachable is a wait, not a block: append `paused [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until <YYYY-MM-DDTHH:MMZ>` and firstmate rechecks it then. Use `blocked` for it only when firstmate must act.
+61:   When the captain must run a command by hand, print it with `'{run-worktree}/bin/fm-lee-step.sh' --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]`, which picks `bash <script>` or `ssh -t <host> ...` for where the captain's session runs, and put its output and the same cause tag in your line.
+### execute the resume check exactly as the brief renders it, from a wrong dir (no task record yet -> 2)
+cmd: '{run-worktree}/bin/fm-worktree-assert.sh' lab-ship
+error: no task record /tmp/fm-lab.z2yB5P/state/lab-ship.meta
+exit=2
+### classifier reads the cause tags the brief teaches
+external   <- paused [at=1762091000] [cause=external]: deepthought unreachable, expected back 14:00Z; until 2026-11-02T14:00Z
+physical   <- blocked [at=1762091000] [cause=physical]: needs Lee at the mac mini
+sudo       <- blocked [at=1762091000] [cause=sudo]: needs root
+unstated   <- blocked [at=1762091000]: no tag
+unstated   <- blocked [cause=bogus]: x

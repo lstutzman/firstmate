@@ -1,0 +1,4 @@
+ok - lee steps are host-aware
+ok - every lee step must name a closed-set cause
+ok - the cause vocabulary reads physical and paused external waits
+ok - a resume outside the recorded worktree refuses with the expected directory

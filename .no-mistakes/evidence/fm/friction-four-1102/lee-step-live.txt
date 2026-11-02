@@ -1,0 +1,26 @@
+### lee-step with no config/lee-step-host (default ssh)
+Lee step [cause=sudo], run from any machine:
+ssh -t slartibartfast 'bash /opt/fix.sh it\'\''s\ arg'
+exit=0
+### generated ssh line evaluated by a shell: argv the remote bash would receive
+remote cmd: bash /opt/fix.sh it\'s\ arg
+  argv: [bash]
+  argv: [/opt/fix.sh]
+  argv: [it's arg]
+### config/lee-step-host=slartibartfast, target lee@Slartibartfast.tail.ts.net
+Lee step [cause=credential], run on lee@Slartibartfast.tail.ts.net (your session is already there):
+bash /opt/fix.sh a
+exit=0
+### same config, target deepthought (another machine)
+Lee step [cause=tool], run from any machine:
+ssh -t deepthought 'bash /opt/fix.sh'
+exit=0
+### adversarial: missing cause
+usage: fm-lee-step.sh --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]
+exit=2
+### adversarial: cause outside closed set
+error: --cause must be one of sudo, credential, policy, tool, physical (got 'because'): say why no agent can run this step
+exit=2
+### adversarial: host injection
+error: 'h;rm -rf x' is not a host name
+exit=2

@@ -1,0 +1,24 @@
+### resumed in the recorded worktree
+exit=0
+### resumed in a subdirectory of it
+exit=0
+### resumed in another directory (e.g. home after --resume)
+error: this session is in '/tmp/fm-lab.z2yB5P/elsewhere', not task demo-task's worktree; refusing to continue outside the copy holding its work. cd -- '{run-worktree}'
+exit=1
+### adversarial: sibling dir sharing the prefix
+error: this session is in '{run-worktree}', not task demo-task's worktree; refusing to continue outside the copy holding its work. cd -- '{run-worktree}'
+exit=1
+### adversarial: symlink into worktree
+exit=0
+### missing record
+error: no task record /tmp/fm-lab.z2yB5P/state/nope.meta
+exit=2
+### record without worktree=
+error: task nowt's record names no worktree
+exit=2
+### recorded worktree deleted
+error: task gonewt's recorded worktree '/tmp/fm-lab.z2yB5P/gone' is missing
+exit=2
+### path traversal id
+error: '../x' is not a task id
+exit=2

@@ -1,0 +1,18 @@
+needs-decision [at=1793630268] [cause=tool] [key=fleet-alarm]: Secondmate work inventory unavailable: mate: 'schema'; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+resolved [at=1793630268] [key=fleet-alarm]: Fleet alarm conditions cleared
+paused [at=1793630268] [cause=external] [key=fleet-alarm]: Secondmate holding work silent over 60 minutes: mate; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid; expected back when the secondmate reports again; until 2026-11-02T16:37Z
+resolved [at=1793630269] [key=fleet-alarm]: Fleet alarm conditions cleared
+needs-decision [at=1793630269] [cause=tool] [key=fleet-alarm]: Claude quota reading stale: member@example.invalid; Secondmate holding work silent over 60 minutes: mate; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+resolved [at=1793630269] [key=fleet-alarm]: Fleet alarm conditions cleared
+needs-decision [at=1793630269] [cause=tool] [key=fleet-alarm]: Claude quota reading stale: member@example.invalid; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+resolved [at=1793630269] [key=fleet-alarm]: Fleet alarm question superseded by an external wait
+paused [at=1793630269] [cause=external] [key=fleet-alarm]: Secondmate holding work silent over 60 minutes: mate; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid; expected back when the secondmate reports again; until 2026-11-02T16:37Z
+resolved [at=1793630270] [key=fleet-alarm]: Fleet alarm conditions cleared
+needs-decision [at=1793630270] [cause=tool] [key=fleet-alarm]: Claude quota reading stale: member@example.invalid; Secondmate holding work silent over 60 minutes: mate; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid
+resolved [at=1793630270] [key=fleet-alarm]: Fleet alarm question superseded by an external wait
+paused [at=1793630270] [cause=external] [key=fleet-alarm]: Secondmate holding work silent over 60 minutes: mate; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid; expected back when the secondmate reports again; until 2026-11-02T16:37Z
+needs-decision [at=1793630270] [cause=external] [key=fleet-alarm]: Secondmate holding work silent over 60 minutes: mate; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid; down since 2026-11-02T12:37Z (120 minutes); was expected back by 2026-11-02T14:36Z when the secondmate reported again
+resolved [at=1793630271] [key=fleet-alarm]: Fleet alarm conditions cleared
+paused [at=1793630271] [cause=external] [key=fleet-alarm]: Secondmate holding work silent over 60 minutes: mate; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid; expected back when the secondmate reports again; until 2026-11-02T16:37Z
+needs-decision [at=1793630271] [cause=external] [key=fleet-alarm]: Secondmate holding work silent, inventory not currently readable: mate; Claude account pressure: member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid; down since 2026-11-02T12:37Z (120 minutes); was expected back by 2026-11-02T14:36Z when the secondmate reported again
+resolved [at=1793630271] [key=fleet-alarm]: Fleet alarm conditions cleared
