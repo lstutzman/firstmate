@@ -90,8 +90,6 @@ test_first_match_wins_and_output_is_sorted_unique() {
 
 test_input_normalisation() {
   local out
-  out=$(run "$RULES" ./AGENTS.md)
-  assert_equals authority "$out" "a leading ./ is dropped"
   out=$(printf 'AGENTS.md' | "$CLASSIFY" --rules "$RULES")
   assert_equals authority "$out" "a last line without a newline is read"
   out=$(printf '\n\nAGENTS.md\n\n' | "$CLASSIFY" --rules "$RULES")

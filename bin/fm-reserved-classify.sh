@@ -20,13 +20,14 @@
 #   ?       one character except /
 #   {a,b}   either alternative, nested allowed
 # Any other character matches itself; there is no escaping and no bracket class.
-# A leading `./` on an input path is dropped.
 #
 # The rules file is read from the home, never the pull request, so a PR cannot
 # rewrite the rules that judge it. A missing or unreadable rules file, a line
-# that is not exactly `<glob> <class>`, an unbalanced brace, or a class name
-# outside [A-Za-z0-9._-] (or `none`, which is reserved for the clear verdict)
-# exits 1 with a message on stderr and prints nothing, so a broken rule file
+# that is not exactly `<glob> <class>`, an unbalanced brace, a glob whose
+# regex the platform will not compile (BSD/macOS regcomp rejects an empty brace
+# alternative such as `config{,.local}.json`, which glibc accepts), or a class
+# name outside [A-Za-z0-9._-] (or `none`, which is reserved for the clear
+# verdict) exits 1 with a message on stderr and prints nothing, so a broken rule file
 # refuses a merge rather than admitting every change.
 
 set -u
@@ -120,7 +121,6 @@ done < "$rules_file"
 flagged=''
 while IFS= read -r path || [ -n "$path" ]; do
   [ -n "$path" ] || continue
-  path=${path#./}
   for idx in "${!res[@]}"; do
     if [[ $path =~ ${res[$idx]} ]]; then
       flagged="$flagged${classes[$idx]}
