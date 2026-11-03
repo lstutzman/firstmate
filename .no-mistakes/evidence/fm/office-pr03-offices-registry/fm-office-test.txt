@@ -1,0 +1,20 @@
+ok - a healthy registry prints nothing from ensure and ok from list
+ok - an absent data/offices.md means no offices
+ok - ensure reports: host not allowed: macbook
+ok - ensure reports: unknown role "wizard"
+ok - ensure reports: wip must be
+ok - ensure reports: tick must be
+ok - ensure reports: auto-merge-classes must be none
+ok - ensure reports: lane:nope is not a registered officer
+ok - ensure reports: not a registered second mate
+ok - ensure reports: does not include the second mate host
+ok - ensure reports: .fm-office marker missing
+ok - ensure reports: lacks the "# Office authority" heading
+ok - ensure reports: dispatch project PropertyCompass2 is not in
+ok - ensure reports: merge project firstmate has no admission=
+ok - ensure reports: merge-via project PropertyCompass2 lacks merger=slarti
+ok - ensure reports: merge project skills is not in dispatch
+ok - ensure reports: merge-via project firstmate overlaps merge
+ok - ensure reports: malformed registry line
+ok - list shows the gap count per office
+ok - ensure is read-only

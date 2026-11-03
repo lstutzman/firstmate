@@ -1,0 +1,54 @@
+### lab home: $LAB (host: slartibartfast)
+
+### 1. no data/offices.md -> list and ensure print nothing
+$ fm-office.sh list
+(exit 0)
+$ fm-office.sh ensure
+(exit 0)
+
+### 2. registry with one healthy local office (nav), one broken local office (qm), a healthy remote office (remo), an unregistered office (ghost) and a malformed line
+# Offices
+
+- nav - Drive progress (role: navigator; runs-on: slartibartfast; dispatch: PropertyCompass2; merge: none; merge-via: PropertyCompass2=slarti; auto-merge-classes: none; wip: 2; tick: every 2h; sources: tick,lane:progress; added 2026-11-04)
+- qm - Fleet self-improvement (role: quartermaster; runs-on: slartibartfast,macbook; dispatch: firstmate; merge: firstmate,skills; merge-via: none; auto-merge-classes: docs; wip: 12; tick: every 25h; sources: tick,lane:ghost,bogus; added 2026-11-04)
+- remo - Remote office (role: navigator; runs-on: deepthought; dispatch: firstmate; merge: none; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 24h; sources: tick; added 2026-11-04)
+- ghost - Unregistered (role: wizard; runs-on: slartibartfast; dispatch: x; merge: none; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 1h; sources: tick; added 2026-11-04)
+- this line is broken
+
+$ fm-office.sh list
+nav navigator ok
+qm quartermaster gaps:10
+remo navigator ok
+ghost wizard gaps:2
+? ? gaps:1
+(exit 0)
+
+$ fm-office.sh ensure
+OFFICE: office qm: wip must be a number from 1 to 9, got "12"
+OFFICE: office qm: tick must be "every Nh" (N from 1 to 24), got "every 25h"
+OFFICE: office qm: auto-merge-classes must be none, got "docs"
+OFFICE: office qm: source lane:ghost is not a registered officer
+OFFICE: office qm: source "bogus" must be tick, lane:<officer-id> or lane:<officer-id>:high
+OFFICE: office qm: host not allowed: macbook (new scheduled roles run on slartibartfast or deepthought only)
+OFFICE: office qm: merge project skills is not in dispatch
+OFFICE: office qm: charter lacks the "# Office authority" heading ($LAB/offices/qm/data/charter.md)
+OFFICE: office qm: merge project firstmate has no admission= in $LAB/offices/qm/data/projects.md
+OFFICE: office qm: merge project skills has no admission= in $LAB/offices/qm/data/projects.md
+OFFICE: office ghost: unknown role "wizard" (known: navigator quartermaster)
+OFFICE: office ghost: not a registered second mate in data/secondmates.md
+OFFICE: office ?: malformed registry line: - this line is broken
+(exit 0)
+
+### 3. read-only: file checksums identical after list+ensure: yes
+
+### 4. usage and bad subcommand
+Usage:
+  fm-office.sh list      list registered offices and their state
+  fm-office.sh ensure    session-start health: one OFFICE: line per gap
+See docs/configuration.md "Offices (data/offices.md)" for the registry schema.
+(exit 0)
+Usage:
+  fm-office.sh list      list registered offices and their state
+  fm-office.sh ensure    session-start health: one OFFICE: line per gap
+See docs/configuration.md "Offices (data/offices.md)" for the registry schema.
+(exit 2)

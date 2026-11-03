@@ -1,0 +1,21 @@
+### bootstrap digest, broken registry (real bin/fm-bootstrap.sh, FM_HOME=$LAB)
+MISSING: tmux (install: brew install tmux  # or the platform's package manager)
+OFFICER: officer progress: model "" is not available yet; slice 1 officers use model: none
+OFFICE: office qm: wip must be a number from 1 to 9, got "12"
+OFFICE: office qm: tick must be "every Nh" (N from 1 to 24), got "every 25h"
+OFFICE: office qm: auto-merge-classes must be none, got "docs"
+OFFICE: office qm: source lane:ghost is not a registered officer
+OFFICE: office qm: source "bogus" must be tick, lane:<officer-id> or lane:<officer-id>:high
+OFFICE: office qm: host not allowed: macbook (new scheduled roles run on slartibartfast or deepthought only)
+OFFICE: office qm: merge project skills is not in dispatch
+OFFICE: office qm: charter lacks the "# Office authority" heading ($LAB/offices/qm/data/charter.md)
+OFFICE: office qm: merge project firstmate has no admission= in $LAB/offices/qm/data/projects.md
+OFFICE: office qm: merge project skills has no admission= in $LAB/offices/qm/data/projects.md
+OFFICE: office ghost: unknown role "wizard" (known: navigator quartermaster)
+OFFICE: office ghost: not a registered second mate in data/secondmates.md
+OFFICE: office ?: malformed registry line: - this line is broken
+
+### registry reduced to the healthy nav and remo offices; bootstrap again
+MISSING: tmux (install: brew install tmux  # or the platform's package manager)
+OFFICER: officer progress: model "" is not available yet; slice 1 officers use model: none
+OFFICE lines: 0
