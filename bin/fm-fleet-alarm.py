@@ -153,17 +153,17 @@ def read_json(path, limit=262144):
 
 
 def parked_on_captain_holds(summary, counts):
-    # Healthy idle: nothing is working and every in-flight item waits on the captain or is a
-    # parked child, so the mate has nothing to say until a hold clears. A live worker (silent or
+    # Healthy idle: nothing is working and every in-flight item waits on a live captain hold or is
+    # a parked child, so the mate has nothing to say until a hold clears. A live worker (silent or
     # looping), un-held in-flight work, or an unproven inventory never qualifies.
     if not summary['valid'] or counts['active_children'] != 0:
         return False
-    queued, holds = summary.get('queued'), summary.get('holds', [])
-    if not isinstance(queued, list) or not isinstance(holds, list):
+    held, decisions, holds = counts.get('held_in_flight'), summary.get('decisions_open'), summary.get('holds')
+    if type(held) is not int or not isinstance(decisions, list) or not isinstance(holds, list):
         return False
-    captain = sum(1 for row in queued if isinstance(row, dict) and row.get('captain_actionable') is True)
+    captain = any(isinstance(row, dict) and row.get('verb') == 'captain-hold' for row in decisions)
     parked = sum(1 for row in holds if isinstance(row, dict) and row.get('source') == 'child-state')
-    return captain > 0 and counts.get('in_flight', 0) <= captain + parked
+    return captain and counts.get('in_flight', 0) <= held + parked
 
 
 def mate_findings(read, cfg, not_collected):
@@ -394,7 +394,8 @@ def check(channel):
                    if not is_inventory(key) or suspect[key] >= cfg['persist_polls']}
         # A finding that stops being eased alerts again, so forget its receipts.
         for key in set(stored.get('eased', [])) - eased:
-            old.pop(key, None)
+            if key in current:
+                old.pop(key, None)
         fresh = {key: value for key, value in current.items()
                  if channel not in old.get(key, [])}
         # An eased finding that already alarmed on this channel stays quiet until it is no longer eased.

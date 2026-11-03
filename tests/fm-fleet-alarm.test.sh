@@ -359,14 +359,19 @@ assert_contains "$(run_alarm check)" '7d 91%' 'clear rearms threshold'
 pass 'carrying threshold deduplicates per reset window'
 
 # A mate parked only on captain holds is healthy idle; real silent work still alarms.
-set_mate_work() { # in_flight active captain_holds child_parked
+set_mate_work() { # in_flight active captain_holds child_parked [held_in_flight|none]
   python3 - "$TMP_ROOT/mate/state/home-summary.json" "$@" <<'PY_WORK'
 from pathlib import Path
 import json,sys
 path=Path(sys.argv[1])
 in_flight,active,captain,parked=map(int,sys.argv[2:6])
+held=sys.argv[6] if len(sys.argv) > 6 else str(captain)
 value=json.loads(path.read_text())
 value['counts'].update(in_flight=in_flight,active_children=active,decisions_open=captain,holds=parked)
+value['counts'].pop('held_in_flight',None)
+if held != 'none':
+    value['counts']['held_in_flight']=int(held)
+value['decisions_open']=[dict(id=f'held-{n}',key=f'held-{n}',verb='captain-hold',source='backlog') for n in range(captain)]
 value['queued']=[dict(id=f'held-{n}',captain_actionable=True,hold_kind='captain') for n in range(captain)]
 value['holds']=[dict(id=f'child-{n}',source='child-state') for n in range(parked)]
 path.write_text(json.dumps(value))
@@ -375,10 +380,22 @@ PY_WORK
 mate 0 0 3601
 set_mate_work 2 0 2 0
 [ -z "$(run_alarm check)" ] || fail 'a mate parked only on captain holds is healthy idle'
-set_mate_work 1 0 1 1
+set_mate_work 1 0 1 1 0
 [ -z "$(run_alarm check)" ] || fail 'captain holds plus a parked child is still healthy idle'
+set_mate_work 0 0 3 0 0
+[ -z "$(run_alarm check)" ] || fail 'queued captain holds with nothing in flight are healthy idle'
 set_mate_work 3 0 2 0
 assert_contains "$(run_alarm check)" 'holding work silent' 'un-held in-flight work beside captain holds still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_work 1 0 1 0 0
+assert_contains "$(run_alarm check)" 'holding work silent' 'an in-flight program beside a queued captain hold on another item still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_work 2 0 2 0 none
+assert_contains "$(run_alarm check)" 'holding work silent' 'a summary without held_in_flight is never treated as parked'
 mate 0 0 0
 run_alarm check >/dev/null
 mate 1 0 3601
@@ -436,6 +453,11 @@ pool_quota 0.91 0.8 "$soon"
 assert_contains "$(run_alarm check)" 'Carrying Claude account member@example.invalid' 'tight pool re-alerts an eased carrying account'
 pool_quota 0.91 0.0 "$soon"
 [ -z "$(run_alarm check)" ] || fail 'eased again after headroom returns'
+# A failed quota read does not prove an eased alarm cleared.
+touch "$HOME_FIX/quota-fail"
+run_alarm check >/dev/null
+rm -f "$HOME_FIX/quota-fail"
+[ -z "$(run_alarm check)" ] || fail 'an eased carrying alarm stays quiet after a failed quota read'
 # A reset beyond the window is never eased.
 pool_quota 0.2 0.0 "$far"
 run_alarm check >/dev/null
