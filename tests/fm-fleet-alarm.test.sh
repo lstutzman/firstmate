@@ -425,6 +425,12 @@ edit_mate_summary "value['holds'][0]['state']='blocked'; value['decisions_open']
 assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked child with an open status decision still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_work 2 0 20 1 1
+edit_mate_summary "value['counts']['decisions_open']=21; value['omitted']=[dict(surface='decisions_open',count=1)]"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a truncated decision list that may hide a child question still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
 mate 1 0 3601
 set_mate_work 2 1 2 0
 assert_contains "$(run_alarm check)" 'holding work silent' 'a silent live worker beside captain holds still alarms'

@@ -27,7 +27,7 @@ resolves when the condition clears.
 A secondmate parked only on open captain holds is healthy idle and is never silent: its home
 summary is valid, it has no active child, no child is asking it an open question, and every
 in-flight item is a captain-actionable hold or a parked or paused child. Any live worker, blocked
-child, un-held in-flight work or unreadable inventory still alarms.
+child, un-held in-flight work, truncated decision list or unreadable inventory still alarms.
 A carrying-account finding alarms once. While its weekly reset is within carrying_reset_hours
 and mean remaining weekly capacity across non-stale readings stays above carrying_pool_floor,
 later polls neither repeat it nor list it on other alarms. It re-alerts when either condition
@@ -164,7 +164,7 @@ def parked_on_captain_holds(summary, counts):
     if type(held) is not int or not isinstance(decisions, list) or not isinstance(holds, list):
         return False
     rows = [row for row in decisions if isinstance(row, dict)]
-    if any(row.get('source') == 'status' for row in rows):
+    if counts['decisions_open'] > len(decisions) or any(row.get('source') == 'status' for row in rows):
         return False
     captain = any(row.get('verb') == 'captain-hold' for row in rows)
     parked = sum(1 for row in holds if isinstance(row, dict) and row.get('source') == 'child-state'
