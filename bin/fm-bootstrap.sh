@@ -23,6 +23,7 @@
 #                 "SECONDMATE_LIVENESS: secondmate <id>: skipped: <reason>|respawn failed after <cause>: <reason>",
 #                 "SECONDMATE_HANDOFF: secondmate <id>: pending delivery: <n> item(s)",
 #                 "OFFICER: <gap>" (bin/fm-officer.sh ensure owns the cases),
+#                 "OFFICE: office <id>: <gap>" (bin/fm-office.sh ensure owns the cases),
 #                 "FMX: X mode on ..." or "FMX: X mode off ...".
 #          When a RUNNING secondmate home is fast-forwarded, its target is
 #          firstmate's own current default-branch commit. A local worktree uses
@@ -1497,6 +1498,8 @@ detect_local_config() {
   detect_home_summary_publication
   FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-officer.sh" ensure 2>/dev/null || true
+  FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
+    "$SCRIPT_DIR/fm-office.sh" ensure 2>/dev/null || true
 }
 
 # Shadow-backlog check. When this home's data directory is not the code root's,
