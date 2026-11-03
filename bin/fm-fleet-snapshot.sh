@@ -88,7 +88,10 @@
 #     observed status file's mtime instead: freshness is how fresh this snapshot's
 #     own observation is, never when a worker emitted the event.
 #     Each structured-home record carries active_children, decisions_open, holds,
-#     queued, landed, endpoints, counts, and omitted. provenance.summary_source
+#     queued, landed, endpoints, counts, and omitted. counts.held_in_flight is the
+#     untruncated number of in-flight items waiting on a live captain hold. A
+#     child-state holds row also carries the child's state (parked, paused or blocked).
+#     provenance.summary_source
 #     distinguishes "local-ledger", "remote-ledger", and "remote-ledger-cache";
 #     freshness is "cached" only for the cache source, and observed_at/age_seconds
 #     come from the selected summary's generation. Every successfully sampled home also carries
@@ -1098,7 +1101,8 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
            | select(($work.hold_reason != null and $work.hold_kind != null) | not)
            | {id,title:((.backlog.title // .id) | trunc(90)),blocked_by:null,
               blocked_by_ids:[],unresolved_blocker_ids:[],
-              reason:((.current_state.detail // .current_state.state) | trunc(120)),source:"child-state"} ]) as $holds_all
+              reason:((.current_state.detail // .current_state.state) | trunc(120)),source:"child-state",
+              state:.current_state.state} ]) as $holds_all
     | ($backlog.present == true
        and ($unstructured_current | length) == 0
        and ($unknown_children | length) == 0
@@ -1157,6 +1161,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
           endpoint:(.endpoint + {target:((.endpoint.target // null) | if . == null then null else trunc(240) end)})}][:$child_n]),
         counts:{
           in_flight:($owned_in_flight | length),
+          held_in_flight:([ $owned_in_flight[] | select(.current_role == "held" and .captain_actionable == true) ] | length),
           active_children:($active_all | length),
           decisions_open:($decisions_all | length),
           holds:($holds_all | length),
