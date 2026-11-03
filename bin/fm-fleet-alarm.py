@@ -5,7 +5,8 @@ Usage: fm-fleet-alarm.py check | timer | arm | timer-files <linux|darwin> <dir>
 FM_HOME selects the primary home. config/fleet-alarm.json accepts seven_day
 (default .9, carrying-account threshold), pool_remaining (.1, mean remaining
 weekly capacity across non-stale Claude readings), silent_minutes
-(60), stale_minutes (120), persist_polls (2), and budget_seconds (24). cpa-usage-host selects local
+(60), stale_minutes (120), persist_polls (2), budget_seconds (24), carrying_reset_hours (6),
+and carrying_pool_floor (.4). cpa-usage-host selects local
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Both readers share FM_CHECK_TIMEOUT (default 30); budget must leave 5 seconds.
 Secondmate inventory reads published home summaries (bounded remote reads fall
@@ -23,6 +24,13 @@ A wait still silent at its recheck time is re-emitted once, on the next timer po
 needs-decision [cause=external] naming the secondmate, how long it has been down and
 the recovery it was expected by, even when its home is unreadable by then; it
 resolves when the condition clears.
+A secondmate parked only on open captain holds is healthy idle and is never silent: its home
+summary is valid, it has no active child, and every in-flight item is a captain-actionable hold
+or a parked child. Any live worker, un-held in-flight work or unreadable inventory still alarms.
+A carrying-account finding alarms once. While its weekly reset is within carrying_reset_hours
+and mean remaining weekly capacity across non-stale readings stays above carrying_pool_floor,
+later polls neither repeat it nor list it on other alarms. It re-alerts when either condition
+stops holding, and the pool-near-empty alarm is unaffected.
 Registry and summary inputs are bounded at 64/256 KiB.
 Parent-channel age uses the shared classifier, excluding parent appends.
 One alert per condition/reset window, rearmed on clear. check and timer share a
@@ -88,7 +96,8 @@ def run(argv, seconds):
 
 def settings():
     values = dict(seven_day=.9, pool_remaining=.1, silent_minutes=60,
-                  stale_minutes=120, persist_polls=2, budget_seconds=24)
+                  stale_minutes=120, persist_polls=2, budget_seconds=24,
+                  carrying_reset_hours=6, carrying_pool_floor=.4)
     path = CONFIG / 'fleet-alarm.json'
     if path.exists():
         supplied = json.loads(path.read_text())
@@ -98,7 +107,7 @@ def settings():
     for key, value in values.items():
         if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
             raise ValueError('invalid fleet-alarm configuration')
-        if key in ('seven_day', 'pool_remaining') and value > 1:
+        if key in ('seven_day', 'pool_remaining', 'carrying_pool_floor') and value > 1:
             raise ValueError('quota thresholds must be fractions')
     if values['budget_seconds'] > float(os.environ.get('FM_CHECK_TIMEOUT', 30)) - 5:
         raise ValueError('budget_seconds must fit inside FM_CHECK_TIMEOUT minus 5')
@@ -141,6 +150,20 @@ def read_json(path, limit=262144):
     if len(content.encode()) > limit:
         raise ValueError('inventory exceeds byte limit')
     return json.loads(content)
+
+
+def parked_on_captain_holds(summary, counts):
+    # Healthy idle: nothing is working and every in-flight item waits on the captain or is a
+    # parked child, so the mate has nothing to say until a hold clears. A live worker (silent or
+    # looping), un-held in-flight work, or an unproven inventory never qualifies.
+    if not summary['valid'] or counts['active_children'] != 0:
+        return False
+    queued, holds = summary.get('queued'), summary.get('holds', [])
+    if not isinstance(queued, list) or not isinstance(holds, list):
+        return False
+    captain = sum(1 for row in queued if isinstance(row, dict) and row.get('captain_actionable') is True)
+    parked = sum(1 for row in holds if isinstance(row, dict) and row.get('source') == 'child-state')
+    return captain > 0 and counts.get('in_flight', 0) <= captain + parked
 
 
 def mate_findings(read, cfg, not_collected):
@@ -231,6 +254,8 @@ done < "$2"
             remote_unavailable = False
             if not any(work) and open_decisions == '0':
                 continue
+            if parked_on_captain_holds(summary, counts):
+                continue
             ages = [] if age == 'null' else [float(age)]
             meta = STATE / (name + '.meta')
             if meta.exists():
@@ -257,6 +282,7 @@ done < "$2"
 def collect(cfg):
     findings = {}
     not_collected = {}
+    eased = set()
     quota_info = ''
     deadline = time.monotonic() + cfg['budget_seconds']
 
@@ -290,7 +316,7 @@ def collect(cfg):
                              and (row['age_min'] is None or row['age_min'] < RETIRED_MINUTES))
         carriers = ', '.join(sorted(carrying)) if carrying else 'none (no successful Claude traffic in last 60 minutes)'
         quota_info = f'Claude account pressure: {pressure}; Carrying Claude accounts: {carriers}'
-        pool, ignored = [], 0
+        pool, ignored, carrying_keys = [], 0, {}
         for row in rows:
             name = row['account']
             if row['age_min'] is None or row['used_7d'] is None:
@@ -313,6 +339,18 @@ def collect(cfg):
                     pass
                 key = 'quota:' + name + ':' + reset
                 findings[key] = f"Carrying Claude account {name} 7d {row['used_7d']:.0%} (resets {row['reset_7d']})"
+                carrying_keys[key] = row['reset_7d']
+        # A carrying account about to reset while the pool has ample headroom is not worth repeating.
+        if pool and carrying_keys:
+            remaining = sum(1 - Decimal(str(used)) for used in pool) / len(pool)
+            if remaining > Decimal(str(cfg['carrying_pool_floor'])):
+                for key, reset in carrying_keys.items():
+                    try:
+                        due = datetime.fromisoformat(reset.replace('Z', '+00:00')).timestamp() - time.time()
+                    except ValueError:
+                        continue
+                    if 0 <= due <= cfg['carrying_reset_hours'] * 3600:
+                        eased.add(key)
         if ignored:
             findings[f'ignored:{ignored}'] = f'{ignored} ignored stale Claude accounts (no reading for 7 days)'
         # Compare decimal quota fractions so exactly 10% remaining is not below 10%.
@@ -324,7 +362,7 @@ def collect(cfg):
         findings.update(mate_findings(read, cfg, not_collected))
     except (ValueError, KeyError, TypeError, OSError) as error:
         findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
-    return findings, quota_info, not_collected
+    return findings, quota_info, not_collected, eased
 
 
 def check(channel):
@@ -340,12 +378,13 @@ def check(channel):
         timer_open = stored.get('timer_open', False)
         try:
             cfg = settings()
-            raw, quota_info, not_collected = collect(cfg)
+            raw, quota_info, not_collected, eased = collect(cfg)
         except (ValueError, OSError) as error:
             cfg = {'persist_polls': 1}
             raw = {'config': f'Fleet alarm configuration invalid: {error}'}
             quota_info = ''
             not_collected = {}
+            eased = set()
         # An inventory finding must persist across consecutive polls of this channel before it
         # alarms; the count resets as soon as the finding is absent from a poll.
         suspect = {key: n + 1 for key, n in stored.get('suspect', {}).get(channel, {}).items()
@@ -353,8 +392,13 @@ def check(channel):
         suspect.update({key: 1 for key in raw if is_inventory(key) and key not in suspect})
         current = {key: value for key, value in raw.items()
                    if not is_inventory(key) or suspect[key] >= cfg['persist_polls']}
+        # A finding that stops being eased alerts again, so forget its receipts.
+        for key in set(stored.get('eased', [])) - eased:
+            old.pop(key, None)
         fresh = {key: value for key, value in current.items()
                  if channel not in old.get(key, [])}
+        # An eased finding that already alarmed on this channel stays quiet until it is no longer eased.
+        quiet = {key for key in eased if key in current and channel in old.get(key, [])}
         # An unavailable reader does not prove that its previous alarms cleared.
         preserved = {key: receipts for key, receipts in old.items()
                      if ((key in raw and key not in current)
@@ -364,7 +408,7 @@ def check(channel):
                          or (key.startswith('silent:') and 'mate-read:' + key[7:] in raw)
                          or (key.startswith(('silent:', 'mate-read:'))
                              and key.split(':', 1)[1] in not_collected))}
-        alarms = [key for key in current if not key.startswith('ignored:')]
+        alarms = [key for key in current if not key.startswith('ignored:') and key not in quiet]
         cleared = channel == 'timer' and not alarms and timer_open and not preserved
         now = time.time()
         timer_state = stored.get('timer_state', 'question' if timer_open else None)
@@ -381,7 +425,8 @@ def check(channel):
                    and wait_record is not None and now >= wait_record['until'])
         regroup = channel == 'timer' and all_silent and timer_state == 'question'
         if (fresh if channel == 'check' else set(fresh) & set(alarms)) or cleared or expired or regroup:
-            details = list((current if channel == 'timer' else fresh).values())
+            details = [value for key, value in (current if channel == 'timer' else fresh).items()
+                       if key not in quiet]
             if channel == 'timer':
                 details += [f'Secondmate holding work silent, inventory not currently readable: {key[7:]}'
                             for key in held_silent]
@@ -428,7 +473,7 @@ def check(channel):
         new.update(preserved)
         with tempfile.NamedTemporaryFile(mode='w', dir=STATE, prefix='.fleet-alarm-', delete=False) as file:
             json.dump({'conditions': new, 'timer_open': timer_open, 'timer_state': timer_state,
-                       'wait': wait_record, 'not_collected': not_collected,
+                       'wait': wait_record, 'not_collected': not_collected, 'eased': sorted(eased),
                        'suspect': {**stored.get('suspect', {}), channel: suspect}}, file)
             temporary = file.name
         os.replace(temporary, record)

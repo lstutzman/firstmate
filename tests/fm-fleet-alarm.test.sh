@@ -358,6 +358,94 @@ quota 0.91
 assert_contains "$(run_alarm check)" '7d 91%' 'clear rearms threshold'
 pass 'carrying threshold deduplicates per reset window'
 
+# A mate parked only on captain holds is healthy idle; real silent work still alarms.
+set_mate_work() { # in_flight active captain_holds child_parked
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$@" <<'PY_WORK'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1])
+in_flight,active,captain,parked=map(int,sys.argv[2:6])
+value=json.loads(path.read_text())
+value['counts'].update(in_flight=in_flight,active_children=active,decisions_open=captain,holds=parked)
+value['queued']=[dict(id=f'held-{n}',captain_actionable=True,hold_kind='captain') for n in range(captain)]
+value['holds']=[dict(id=f'child-{n}',source='child-state') for n in range(parked)]
+path.write_text(json.dumps(value))
+PY_WORK
+}
+mate 0 0 3601
+set_mate_work 2 0 2 0
+[ -z "$(run_alarm check)" ] || fail 'a mate parked only on captain holds is healthy idle'
+set_mate_work 1 0 1 1
+[ -z "$(run_alarm check)" ] || fail 'captain holds plus a parked child is still healthy idle'
+set_mate_work 3 0 2 0
+assert_contains "$(run_alarm check)" 'holding work silent' 'un-held in-flight work beside captain holds still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 3601
+set_mate_work 2 1 2 0
+assert_contains "$(run_alarm check)" 'holding work silent' 'a silent live worker beside captain holds still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_work 1 0 1 0
+python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_INVALID'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1]); value=json.loads(path.read_text())
+value.update(valid=False, invalidity=dict(kind='child_current_unavailable', ids=['worker']), reason='child current state unavailable: worker')
+path.write_text(json.dumps(value))
+PY_INVALID
+assert_contains "$(run_alarm check)" 'holding work silent' 'unknown child liveness never counts as parked on captain holds'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'captain-held mates are healthy idle while stuck or un-held work still alarms'
+
+# Carrying-account repeats are suppressed while the reset is near and the pool has headroom.
+soon=$(date -u -d '+2 hours' +%Y-%m-%dT%H:%M:%SZ)
+far=$(date -u -d '+30 hours' +%Y-%m-%dT%H:%M:%SZ)
+pool_quota() { # carrying_used other_used carrying_reset
+  printf '%s\n' 'accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:' \
+    "  member@example.invalid,claude,0.2,,$1,$3,,1,0" \
+    "  other@example.invalid,claude,0.0,,$2,$3,,1,0" > "$HOME_FIX/accounts"
+}
+cat > "$HOME_FIX/models" <<'ROWS'
+models[1]{account,model,requests,failed}:
+  member@example.invalid,claude-opus-5-5,5,0
+ROWS
+pool_quota 0.2 0.0 "$soon"
+run_alarm check >/dev/null
+pool_quota 0.91 0.0 "$soon"
+assert_contains "$(run_alarm check)" 'Carrying Claude account member@example.invalid 7d 91%' 'first carrying firing is visible'
+[ -z "$(run_alarm check)" ] || fail 'check channel must not repeat'
+# The timer channel must neither repeat it nor list it beside another alarm.
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+touch "$HOME_FIX/config/fleet-ledger"
+run_alarm timer
+assert_contains "$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")" 'Carrying Claude account member@example.invalid' 'timer reports the first firing once'
+lines=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+run_alarm timer
+mate 1 0 3601
+run_alarm timer
+assert_not_contains "$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")" 'Carrying Claude account member@example.invalid 7d' 'eased carrying finding is not listed on other alarms'
+assert_contains "$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")" 'holding work silent' 'a real silent mate still alarms beside an eased carrying account'
+[ "$(wc -l < "$HOME_FIX/state/fleet-alarm.status")" -gt "$lines" ] || fail 'silent mate must write its line'
+mate 0 0 0
+run_alarm timer
+# Tight pooled headroom re-alerts the same account and reset window.
+pool_quota 0.91 0.8 "$soon"
+assert_contains "$(run_alarm check)" 'Carrying Claude account member@example.invalid' 'tight pool re-alerts an eased carrying account'
+pool_quota 0.91 0.0 "$soon"
+[ -z "$(run_alarm check)" ] || fail 'eased again after headroom returns'
+# A reset beyond the window is never eased.
+pool_quota 0.2 0.0 "$far"
+run_alarm check >/dev/null
+pool_quota 0.91 0.0 "$far"
+assert_contains "$(run_alarm check)" 'Carrying Claude account member@example.invalid' 'a distant reset is not eased'
+pool_quota 0.2 0.0 window1
+run_alarm check >/dev/null
+rm -f "$HOME_FIX/config/fleet-ledger" "$HOME_FIX/state/fleet-alarm.status"
+pass 'eased carrying alarms stay quiet while headroom is ample and re-alert when it tightens'
+
 quota 0.2
 run_alarm check >/dev/null
 quota 1 1 2026-10-30T15:00Z
