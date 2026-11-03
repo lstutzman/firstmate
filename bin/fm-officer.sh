@@ -92,6 +92,8 @@ OFFICER_ROLES="triage landing friction progress pagecheck"
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/fm-registry-line-lib.sh
+. "$SCRIPT_DIR/fm-registry-line-lib.sh"
 
 usage() {
   cat <<'EOF'
@@ -118,34 +120,7 @@ now_epoch() {
   esac
 }
 
-# epoch_fmt <epoch> <format>: local-time strftime on GNU and BSD date.
-epoch_fmt() {
-  date -d "@$1" "+$2" 2>/dev/null || date -r "$1" "+$2"
-}
-
 secondmate_home() { [ -e "$FM_HOME/.fm-secondmate-home" ]; }
-
-CADENCE_RE='^(daily ([01][0-9]|2[0-3]):[0-5][0-9]|every ([1-9]|1[0-9]|2[0-4])h)$'
-RUN_KEY_RE='^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2})?$'
-
-# cadence_period <cadence>: seconds between runs.
-cadence_period() {
-  case "$1" in
-    every*) local n=${1#every }; printf '%s\n' "$(( ${n%h} * 3600 ))" ;;
-    *) printf '86400\n' ;;
-  esac
-}
-
-# slot_of <cadence> <now>: sets SLOT_KEY and SLOT_SINCE, the run key and start epoch of the
-# interval slot holding <now>. Callers use it for `every Nh` cadences only.
-slot_of() {
-  local period secs hms
-  period=$(cadence_period "$1")
-  hms=$(epoch_fmt "$2" '%H %M %S')
-  secs=$(awk -v t="$hms" 'BEGIN {split(t, h, " "); print h[1] * 3600 + h[2] * 60 + h[3]}')
-  SLOT_SINCE=$(( $2 - secs + secs / period * period ))
-  SLOT_KEY=$(epoch_fmt "$SLOT_SINCE" %Y-%m-%dT%H)
-}
 
 require_primary() {
   secondmate_home && die "officers run only in the primary home; this is a second mate home" 3
@@ -157,18 +132,10 @@ officer_id_valid() {
   [ "${#1}" -le 40 ]
 }
 
-# Registry lines: "- <id> - <role sentence> (<key>: <value>; ...; added YYYY-MM-DD)".
-OFFICER_LINE_RE='^- ([a-z0-9-]+) - (.+) \((.*);[[:space:]]*added[[:space:]]+([0-9]{4}-[0-9]{2}-[0-9]{2})\)[[:space:]]*$'
-
-registry_lines() {
-  [ -f "$REGISTRY" ] || return 0
-  grep -E '^- ' "$REGISTRY" || true
-}
-
 officer_line() {  # <id>
   local line
   while IFS= read -r line; do
-    [[ "$line" =~ $OFFICER_LINE_RE ]] || continue
+    [[ "$line" =~ $REGISTRY_LINE_RE ]] || continue
     [ "${BASH_REMATCH[1]}" = "$1" ] && { printf '%s\n' "$line"; return 0; }
   done <<EOF
 $(registry_lines)
@@ -176,31 +143,10 @@ EOF
   return 1
 }
 
-# line_field <line> <key>: the value of one "key: value" field.
-line_field() {
-  local fields part key
-  [[ "$1" =~ $OFFICER_LINE_RE ]] || return 1
-  fields=${BASH_REMATCH[3]}
-  while IFS= read -r part; do
-    part=${part#"${part%%[![:space:]]*}"}
-    part=${part%"${part##*[![:space:]]}"}
-    key=${part%%:*}
-    if [ "$key" = "$2" ] && [ "$key" != "$part" ]; then
-      part=${part#*:}
-      part=${part#"${part%%[![:space:]]*}"}
-      printf '%s\n' "$part"
-      return 0
-    fi
-  done <<EOF
-$(printf '%s\n' "$fields" | tr ';' '\n')
-EOF
-  return 1
-}
-
 # line_problem <line>: prints why a registry line is unusable, or nothing.
 line_problem() {
   local line=$1 id role cadence model
-  if ! [[ "$line" =~ $OFFICER_LINE_RE ]]; then
+  if ! [[ "$line" =~ $REGISTRY_LINE_RE ]]; then
     printf 'malformed registry line: %s\n' "$(printf '%s' "$line" | cut -c1-80)"
     return
   fi
@@ -287,7 +233,7 @@ action_list() {
   local line id
   while IFS= read -r line; do
     [ -n "$line" ] || continue
-    if [[ "$line" =~ $OFFICER_LINE_RE ]]; then
+    if [[ "$line" =~ $REGISTRY_LINE_RE ]]; then
       id=${BASH_REMATCH[1]}
       printf '%s role=%s cadence="%s" check=%s\n' "$id" "$(line_field "$line" role || true)" \
         "$(line_field "$line" cadence || true)" \
@@ -627,7 +573,7 @@ action_ensure() {
       echo "OFFICER: $problem"
       continue
     fi
-    [[ "$line" =~ $OFFICER_LINE_RE ]]
+    [[ "$line" =~ $REGISTRY_LINE_RE ]]
     id=${BASH_REMATCH[1]}
     OFFICER_ID=$id
     OFFICER_LANE="$DATA/officers/$id"
