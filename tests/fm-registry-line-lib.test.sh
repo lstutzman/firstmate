@@ -40,11 +40,9 @@ test_line_regex_splits_id_and_added_date() {
 test_registry_lines_lists_only_entries() {
   local file="$TMP_ROOT/reg.md"
   printf '# Officers\n\n%s\nnote\n- second - y (a: b; added 2026-10-24)\n' "$LINE" > "$file"
-  assert_equals 2 "$(registry_lines "$file" | wc -l | tr -d ' ')" "entry count"
   REGISTRY="$file"
-  assert_equals 2 "$(registry_lines | wc -l | tr -d ' ')" "default registry"
-  assert_equals "" "$(registry_lines "$TMP_ROOT/absent.md")" "absent file"
-  pass 'registry_lines prints the "- " entries of the file or of $REGISTRY'
+  assert_equals 2 "$(registry_lines | wc -l | tr -d ' ')" "entry count"
+  pass 'registry_lines prints the "- " entries of $REGISTRY'
 }
 
 test_cadence_grammar_and_period() {

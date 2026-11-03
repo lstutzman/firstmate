@@ -38,10 +38,9 @@ slot_of() {
 # Registry lines: "- <id> - <role sentence> (<key>: <value>; ...; added YYYY-MM-DD)".
 REGISTRY_LINE_RE='^- ([a-z0-9-]+) - (.+) \((.*);[[:space:]]*added[[:space:]]+([0-9]{4}-[0-9]{2}-[0-9]{2})\)[[:space:]]*$'
 
-registry_lines() {  # [file]: the registry file, default $REGISTRY.
-  local file=${1:-${REGISTRY:-}}
-  [ -f "$file" ] || return 0
-  grep -E '^- ' "$file" || true
+registry_lines() {
+  [ -f "$REGISTRY" ] || return 0
+  grep -E '^- ' "$REGISTRY" || true
 }
 
 # line_field <line> <key>: the value of one "key: value" field.
