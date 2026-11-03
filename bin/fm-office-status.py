@@ -6,9 +6,10 @@ Called by `fm-office.sh status`; docs/configuration.md "Office status
 the mechanics.
 
 Reads <data>/backlog.md and <state>/<task>.meta in one office home and writes
-only <data>/office-status.json, atomically (temp file in the same directory,
-then rename). It prints nothing and exits 0 on success; a failure prints one
-line to stderr and exits 1 without touching the projection.
+only <data>/office-status.json and <state>/office-status.seen.json (the first
+time each done item was seen), each atomically (temp file in the same
+directory, then rename). It prints nothing and exits 0 on success; a failure
+prints one line to stderr and exits 1 without touching the projection.
 
 Usage:
   fm-office-status.py --office <id> --data <dir> --state <dir>
@@ -25,6 +26,7 @@ from datetime import datetime, timedelta, timezone
 SCHEMA_VERSION = 1
 NEXT_LIMIT = 10
 DONE_WINDOW = timedelta(hours=24)
+SEEN_KEEP = timedelta(days=7)
 TITLE_LIMIT = 200
 
 ROW_RE = re.compile(r"^- \[( |x)\] ([A-Za-z0-9._-]+) - (.*)$")
@@ -130,8 +132,18 @@ def parse_iso(text):
         return None
 
 
-def build_cards(rows, state_dir, now):
+def load_seen(path):
+    seen = {}
+    for key, value in (load_json(path) or {}).items():
+        stamp = parse_iso(value)
+        if stamp is not None:
+            seen[key] = stamp
+    return seen
+
+
+def build_cards(rows, state_dir, now, seen):
     working, queued, done = [], [], []
+    oldest_fresh_day = (now - timedelta(days=1)).strftime("%Y-%m-%d")
     for row in rows:
         card = {"id": row["id"], "title": clean_title(row["head"])}
         if row["lane"] == "working":
@@ -150,11 +162,13 @@ def build_cards(rows, state_dir, now):
             card["waiting"] = "Lee" if hold and hold.group(1).strip() == "captain" else ""
             queued.append(card)
         else:
-            _, day = row_date(row)
-            if day is None:
-                continue
-            done_at = date_midnight(day)
-            if now - done_at >= DONE_WINDOW:
+            done_at = seen.get(row["id"])
+            if done_at is None:
+                _, day = row_date(row)
+                if day is None or day < oldest_fresh_day:
+                    continue
+                done_at = seen[row["id"]] = now
+            if now - done_at > DONE_WINDOW:
                 continue
             card["state"] = "done"
             card["link"] = first_url(row)
@@ -170,6 +184,7 @@ def comparable(document):
 
 def write_atomic(path, document):
     directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
     handle, temp = tempfile.mkstemp(prefix=".office-status.", suffix=".tmp", dir=directory)
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as out:
@@ -206,14 +221,24 @@ def main():
         sys.stderr.write("office-status: cannot read backlog.md: %s\n" % err)
         return 1
 
+    seen_path = os.path.join(args.state, "office-status.seen.json")
+    seen = load_seen(seen_path)
+    loaded = dict(seen)
     previous = load_json(out_path)
     document = {
         "schema_version": SCHEMA_VERSION,
         "office": args.office,
         "title": args.office[:1].upper() + args.office[1:],
         "written_at": iso(now),
-        "cards": build_cards(rows, args.state, now),
+        "cards": build_cards(rows, args.state, now, seen),
     }
+    seen = {key: stamp for key, stamp in seen.items() if now - stamp <= SEEN_KEEP}
+    if seen != loaded:
+        try:
+            write_atomic(seen_path, {key: iso(stamp) for key, stamp in sorted(seen.items())})
+        except OSError as err:
+            sys.stderr.write("office-status: cannot write %s: %s\n" % (seen_path, err))
+            return 1
     if previous and comparable(previous) == comparable(document):
         written = parse_iso(previous.get("written_at"))
         if written is not None and timedelta(0) <= now - written < timedelta(seconds=args.refresh_secs):

@@ -38,8 +38,9 @@
 # fleet app's Status page; docs/configuration.md "Office status
 # (data/office-status.json)" owns the schema and lane rules, and
 # bin/fm-office-status.py owns the mechanics. It reads only data/backlog.md and
-# state/*.meta, writes only that one file (atomically), prints nothing on
-# success, and does nothing outside an office home (no .fm-office marker).
+# state/*.meta, writes only data/office-status.json and
+# state/office-status.seen.json (each atomically), prints nothing on success,
+# and does nothing outside an office home (no .fm-office marker).
 #
 # arm-status (run once in an office home) writes state/office-status.check.sh,
 # a shim that exports this home as FM_HOME and execs "fm-office.sh status", and

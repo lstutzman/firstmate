@@ -165,44 +165,66 @@ test_status_next_lane() {
   pass 'status lists the first 10 queued items in order and marks a captain hold as waiting on Lee'
 }
 
+seen() { jq -c . "$1/navigator/state/office-status.seen.json"; }
+
 test_status_done_window() {
   local w
   w=$(status_world st-done)
   status "$w"
-  assert_equals '{"id":"d-today","title":"Finished today","state":"done","link":"https://github.com/lstutzman/PropertyCompass2/pull/4690","done_at":"2026-11-04T00:00:00Z"}' "$(card "$w" d-today)" "done today"
-  assert_equals "" "$(card "$w" d-yesterday)" "item closed yesterday dropped"
-  assert_equals "" "$(card "$w" d-old)" "item closed days ago dropped"
-  pass 'status shows a done item closed today (UTC) and drops ones closed on an earlier day'
+  assert_equals '{"id":"d-today","title":"Finished today","state":"done","link":"https://github.com/lstutzman/PropertyCompass2/pull/4690","done_at":"2026-11-04T10:05:00Z"}' "$(card "$w" d-today)" "done today, stamped at first sight"
+  assert_equals '{"id":"d-yesterday","title":"Finished yesterday","state":"done","link":"","done_at":"2026-11-04T10:05:00Z"}' "$(card "$w" d-yesterday)" "dated yesterday, first seen now"
+  assert_equals "" "$(card "$w" d-old)" "dated before yesterday"
+  assert_equals '{"d-today":"2026-11-04T10:05:00Z","d-yesterday":"2026-11-04T10:05:00Z"}' "$(seen "$w")" "seen stamps"
+  pass 'status stamps done items dated today or yesterday at first sight and never shows older ones'
 }
 
-test_status_done_close_day_boundary() {
+test_status_done_shows_24_hours_from_first_sight() {
+  local w first last gone want
+  for first in 1793782800 1793835600; do # 2026-11-04T09:00:00Z, 2026-11-04T23:40:00Z
+    case $first in
+      1793782800) want=2026-11-04T09:00:00Z last=1793869140 gone=1793869260 ;; # 2026-11-05T08:59Z, 09:01Z
+      *) want=2026-11-04T23:40:00Z last=1793921940 gone=1793922060 ;;           # 2026-11-05T23:39Z, 23:41Z
+    esac
+    w=$(status_world "st-24h-$first")
+    status "$w" "$first"
+    assert_contains "$(card "$w" d-today)" "\"done_at\":\"$want\"" "first sight at $want"
+    status "$w" "$last"
+    assert_contains "$(card "$w" d-today)" "\"done_at\":\"$want\"" "23h59m after $want"
+    status "$w" "$gone"
+    assert_equals "" "$(card "$w" d-today)" "24h01m after $want"
+    status "$w" $((gone + 600))
+    assert_equals "" "$(card "$w" d-today)" "a later run after $want"
+    rm "$w/navigator/data/office-status.json"
+    status "$w" $((gone + 1200))
+    assert_equals "" "$(card "$w" d-today)" "a run after the projection was deleted ($want)"
+  done
+  pass 'a done card shows for 24 hours from its own first sight and never comes back'
+}
+
+test_status_seen_file_loss_keeps_old_items_out() {
   local w
-  w=$(status_world st-boundary)
-  status "$w" 1793833200 # 2026-11-04T23:00:00Z
-  assert_contains "$(card "$w" d-today)" '"done_at":"2026-11-04T00:00:00Z"' "23:00 on the close day"
-  status "$w" 1793836799 # 2026-11-04T23:59:59Z
-  assert_contains "$(card "$w" d-today)" '"state":"done"' "last second of the close day"
-  status "$w" 1793836800 # 2026-11-05T00:00:00Z
-  assert_equals "" "$(card "$w" d-today)" "00:00 the next day"
-  pass 'a done card shows through its close day and is gone from 00:00 UTC the next day'
+  w=$(status_world st-seen-lost)
+  mkdir -p "$w/navigator/state"
+  printf 'not json\n' > "$w/navigator/state/office-status.seen.json"
+  status "$w"
+  assert_equals "" "$(card "$w" d-old)" "corrupt seen file"
+  rm "$w/navigator/state/office-status.seen.json"
+  status "$w" $((NOW + 60))
+  assert_equals "" "$(card "$w" d-old)" "deleted seen file"
+  assert_equals "null" "$(jq '."d-old"' "$w/navigator/state/office-status.seen.json")" "old item never stamped"
+  pass 'a corrupt or missing seen file does not bring back an item dated before yesterday'
 }
 
-test_status_done_cards_survive_reruns() {
-  local w first
-  w=$(status_world st-rerun)
-  done_cards() { jq -c '[.cards[] | select(.state == "done")]' "$w/navigator/data/office-status.json"; }
+test_status_prunes_old_stamps() {
+  local w
+  w=$(status_world st-prune)
   status "$w"
-  first=$(done_cards)
-  assert_contains "$first" '"id":"d-today"' "first run"
-  status "$w" $((NOW + 3600))
-  assert_equals "$first" "$(done_cards)" "second run"
-  rm "$w/navigator/data/office-status.json"
-  status "$w" $((NOW + 7200))
-  assert_equals "$first" "$(done_cards)" "run after the previous file was deleted"
-  printf 'not json\n' > "$w/navigator/data/office-status.json"
-  status "$w" $((NOW + 7300))
-  assert_equals "$first" "$(done_cards)" "run after the previous file was corrupted"
-  pass 'done cards are the same on a rerun and after the previous file is deleted or corrupt'
+  status "$w" 1794305100 # 2026-11-10T10:05:00Z, six days later
+  assert_equals '{"d-today":"2026-11-04T10:05:00Z","d-yesterday":"2026-11-04T10:05:00Z"}' "$(seen "$w")" "stamps within 7 days kept"
+  status "$w" 1794391560 # 2026-11-11T10:06:00Z, seven days and a minute later
+  assert_equals '{}' "$(seen "$w")" "stamps older than 7 days pruned"
+  assert_equals "" "$(card "$w" d-today)" "pruned item not shown again"
+  pass 'status prunes seen stamps older than 7 days'
 }
 
 test_status_skips_unchanged_write() {
@@ -224,12 +246,13 @@ test_status_skips_unchanged_write() {
 test_status_writes_only_its_file() {
   local w before after
   w=$(status_world st-only)
-  before=$(find "$w" -type f ! -name office-status.json -exec cksum {} + | sort)
+  before=$(find "$w" -type f ! -name office-status.json ! -name office-status.seen.json -exec cksum {} + | sort)
   status "$w"
-  after=$(find "$w" -type f ! -name office-status.json -exec cksum {} + | sort)
-  assert_equals "$before" "$after" "files other than office-status.json"
-  assert_equals "" "$(find "$w/navigator/data" -name '.office-status.*')" "temp files left behind"
-  pass 'status writes only data/office-status.json'
+  after=$(find "$w" -type f ! -name office-status.json ! -name office-status.seen.json -exec cksum {} + | sort)
+  assert_equals "$before" "$after" "files other than office-status.json and office-status.seen.json"
+  [ -f "$w/navigator/state/office-status.seen.json" ] || fail "seen file not written"
+  assert_equals "" "$(find "$w/navigator" -name '.office-status.*')" "temp files left behind"
+  pass 'status writes only data/office-status.json and state/office-status.seen.json'
 }
 
 test_status_outside_an_office_does_nothing() {
@@ -304,8 +327,9 @@ test_ensure_changes_nothing
 test_status_working_lane
 test_status_next_lane
 test_status_done_window
-test_status_done_close_day_boundary
-test_status_done_cards_survive_reruns
+test_status_done_shows_24_hours_from_first_sight
+test_status_seen_file_loss_keeps_old_items_out
+test_status_prunes_old_stamps
 test_status_skips_unchanged_write
 test_status_writes_only_its_file
 test_status_outside_an_office_does_nothing

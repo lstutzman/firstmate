@@ -1199,7 +1199,7 @@ An absent `data/offices.md` means no offices.
 ### Office status (data/office-status.json)
 
 `bin/fm-office.sh status` runs inside an office home and projects that home's own work onto `data/office-status.json`, the file the fleet app's Status page pulls.
-It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only that one file, prints nothing on success, and does nothing in a home without a `.fm-office` marker.
+It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only `data/office-status.json` and `state/office-status.seen.json`, prints nothing on success, and does nothing in a home without a `.fm-office` marker.
 `bin/fm-office-status.py` owns the mechanics.
 
 ```json
@@ -1211,7 +1211,7 @@ It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only 
   "cards": [
     { "id": "pc-4701-fix", "title": "...", "state": "working", "link": "https://github.com/...", "since": "2026-11-03T00:00:00Z" },
     { "id": "pc-4712", "title": "...", "state": "next", "link": "", "waiting": "Lee" },
-    { "id": "pc-4690-fix", "title": "...", "state": "done", "link": "https://github.com/...", "done_at": "2026-11-04T00:00:00Z" }
+    { "id": "pc-4690-fix", "title": "...", "state": "done", "link": "https://github.com/...", "done_at": "2026-11-04T09:40:00Z" }
   ]
 }
 ```
@@ -1220,17 +1220,18 @@ It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only 
 | --- | --- | --- |
 | `working` | Every `## In flight` item | `link` is the task's `pr=` from its meta record, else the first `https://` URL in the row; `since` is the row's `since` date at 00:00 UTC |
 | `next` | The first 10 `## Queued` items, in backlog order | `link` is the first `https://` URL in the row, or empty; `waiting` is `"Lee"` when the row carries `hold-kind: captain`, else empty |
-| `done` | `## Done` items whose `merged` or `done` date is today (UTC) | `done_at` is that date at 00:00 UTC |
+| `done` | `## Done` items first seen done within the last 24 hours | `link` is the first `https://` URL in the row, or empty; `done_at` is the time the status check first saw the item done, not its completion time |
 
 `office` is the `.fm-office` marker and `title` is that id with its first letter capitalized.
 `title` on a card is the row text without its trailing `(key: value)` groups and URL, cut to 200 characters.
 Cards are ordered working, then next, then done (newest first).
 
-The done window is a fixed 24 hours from `done_at`.
-The backlog records only a date for a finished item, so a done card shows for the rest of its close day (UTC) and is omitted from 00:00 UTC the next day, which the page shows as a finished card leaving.
-The cards depend only on the backlog, the task records and the clock, so a rerun, or a run after the previous file was deleted or corrupted, gives the same cards.
+The backlog records only a date (`merged` or `done`) for a finished item, so the check keeps the time it first saw each done item in `state/office-status.seen.json`, a JSON object of item id to UTC time, replaced atomically.
+A done card shows while that first-seen time is at most 24 hours old, then leaves, which the page shows as a finished card leaving.
+The stamp outlives the card, so a later run never brings an expired card back, even after `data/office-status.json` is deleted; stamps older than 7 days are pruned.
+An item with no stamp is stamped and shown only when its recorded date is today or yesterday (UTC); an item dated before yesterday is treated as expired and never stamped, so a missing or corrupt seen file, which is read as empty, cannot bring old items back.
 
-The file is replaced atomically (temp file in `data/`, then rename).
+The projection is replaced atomically (temp file in `data/`, then rename).
 A run whose cards match the existing file leaves it alone unless its `written_at` is older than `FM_OFFICE_STATUS_REFRESH_SECS` (default 900), so a quiet office still reports in well inside the reader's 30-minute staleness limit.
 A failure prints one line to stderr, exits 1 and leaves the previous file in place.
 `FM_OFFICE_NOW` pins the clock for tests.
