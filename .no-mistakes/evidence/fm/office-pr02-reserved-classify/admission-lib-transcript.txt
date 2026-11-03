@@ -1,0 +1,8 @@
+== S3 admission lib: flagged path ==
+flagged=[authority]
+== S3b admission lib: clear path -> empty flagged ==
+flagged=[]
+== S4 admission lib: missing rules file refuses ==
+REFUSED: the classifier '{run-worktree}/bin/fm-reserved-classify.sh --rules /tmp/tmp.QlDxwYtXFW/missing.rules' in /tmp/tmp.QlDxwYtXFW/proj failed with status 1: fm-reserved-classify: the rules file /tmp/tmp.QlDxwYtXFW/missing.rules is missing or unreadable
+== S4b admission lib: class not declared in classes= refuses ==
+REFUSED: the classifier '{run-worktree}/bin/fm-reserved-classify.sh --rules /tmp/tmp.QlDxwYtXFW/r.rules' in /tmp/tmp.QlDxwYtXFW/proj printed docs-only, which the admission config declares in neither classes= nor clear=

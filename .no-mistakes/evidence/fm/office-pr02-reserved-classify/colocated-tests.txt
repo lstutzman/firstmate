@@ -1,0 +1,9 @@
+ok - no matching rule prints none
+ok - exact, star and brace globs
+ok - double star, slash and literal-dot rules
+ok - first match wins; output sorted and unique
+ok - input normalisation
+ok - regex metacharacters stay literal
+ok - broken rules files refuse
+ok - usage errors and help
+ok - meets the admission classifier contract

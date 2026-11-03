@@ -1,0 +1,27 @@
+== S5 adversarial broken rules ==
+-- rule: [docs/**]
+exit=1 stdout=[] stderr=fm-reserved-classify: /tmp/tmp.QlDxwYtXFW/bad.rules line 1 is not '<glob> <class>': docs/**
+-- rule: [docs/** a b]
+exit=1 stdout=[] stderr=fm-reserved-classify: /tmp/tmp.QlDxwYtXFW/bad.rules line 1 is not '<glob> <class>': docs/** a b
+-- rule: [a/{b,c authority]
+exit=1 stdout=[] stderr=fm-reserved-classify: /tmp/tmp.QlDxwYtXFW/bad.rules line 1 has an invalid glob: a/{b,c
+-- rule: [a/b} authority]
+exit=1 stdout=[] stderr=fm-reserved-classify: /tmp/tmp.QlDxwYtXFW/bad.rules line 1 has an invalid glob: a/b}
+-- rule: [a/** none]
+exit=1 stdout=[] stderr=fm-reserved-classify: /tmp/tmp.QlDxwYtXFW/bad.rules line 1 has an invalid class name: none
+-- rule: [a/** .hidden]
+exit=1 stdout=[] stderr=fm-reserved-classify: /tmp/tmp.QlDxwYtXFW/bad.rules line 1 has an invalid class name: .hidden
+-- rule: [a/** bad/class]
+exit=1 stdout=[] stderr=fm-reserved-classify: /tmp/tmp.QlDxwYtXFW/bad.rules line 1 has an invalid class name: bad/class
+-- rule: [a/{,x} authority]
+exit=0 stdout=[none] stderr=
+-- no --rules
+fm-reserved-classify: usage: fm-reserved-classify.sh --rules <rules-file> < paths
+exit=1
+-- unknown arg
+fm-reserved-classify: unknown argument: --bogus
+exit=1
+-- rules is a directory
+fm-reserved-classify: the rules file /tmp/tmp.QlDxwYtXFW is missing or unreadable
+exit=1
+authority

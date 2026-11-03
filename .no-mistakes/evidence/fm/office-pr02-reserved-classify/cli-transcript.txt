@@ -1,0 +1,30 @@
+== rules ==
+# fleet rules
+bin/fm-pr-merge.sh authority
+docs/** docs-only
+**/*.secret credentials
+config/{prod,live}/** production
+src/?.sh authority
+src/** code
+== S1 contract: mixed paths ==
+authority
+code
+credentials
+docs-only
+production
+exit=0
+== S1b unmatched only ==
+none
+exit=0
+== S1c empty stdin ==
+none
+exit=0
+== S2 first match wins (docs/x.secret) ==
+docs-only
+exit=0
+== S2b src/ab.sh (? one char -> falls to src/** code), bin/sub/fm-pr-merge.sh (none) ==
+code
+exit=0
+== S2c case sensitive DOCS/a; config/staging/x ==
+none
+exit=0
