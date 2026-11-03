@@ -948,7 +948,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | --- | --- |
 | `<id>` | Lowercase letters, digits, and dashes, at most 40 characters; names the lane `data/officers/<id>/` and the check `state/officer-<id>.check.sh` |
 | `role` | `triage`, `landing`, `friction`, `progress`, or `pagecheck` |
-| `cadence` | `daily HH:MM` in the home's local time: the run for yesterday's date starts at the first watcher check after that time. Or `every Nh` (N from 1 to 24): the run key is the slot `YYYY-MM-DDTHH`, slots start at local midnight and repeat every N hours until the next midnight, and the first watcher check in a slot starts that slot's run on current records. `bin/fm-officer.sh` owns the grammar; `ensure` allows two of the officer's own periods between finished runs |
+| `cadence` | `daily HH:MM` in the home's local time: the run for yesterday's date starts at the first watcher check after that time. Or `every Nh` (N from 1 to 24): the run key is the slot `YYYY-MM-DDTHH`, slots start at local midnight and repeat every N hours until the next midnight, and the first watcher check in a slot starts that slot's run on current records. `bin/fm-registry-line-lib.sh` owns the grammar; `ensure` allows two of the officer's own periods between finished runs |
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
 | `archive` | Triage and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
 | `ask-days` | Friction, optional: how many days of Lee's typed messages the repeated-ask finding compares; default 7 |
