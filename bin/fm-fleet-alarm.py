@@ -25,8 +25,9 @@ needs-decision [cause=external] naming the secondmate, how long it has been down
 the recovery it was expected by, even when its home is unreadable by then; it
 resolves when the condition clears.
 A secondmate parked only on open captain holds is healthy idle and is never silent: its home
-summary is valid, it has no active child, and every in-flight item is a captain-actionable hold
-or a parked child. Any live worker, un-held in-flight work or unreadable inventory still alarms.
+summary is valid, it has no active child, no child is asking it an open question, and every
+in-flight item is a captain-actionable hold or a parked or paused child. Any live worker, blocked
+child, un-held in-flight work or unreadable inventory still alarms.
 A carrying-account finding alarms once. While its weekly reset is within carrying_reset_hours
 and mean remaining weekly capacity across non-stale readings stays above carrying_pool_floor,
 later polls neither repeat it nor list it on other alarms. It re-alerts when either condition
@@ -153,16 +154,21 @@ def read_json(path, limit=262144):
 
 
 def parked_on_captain_holds(summary, counts):
-    # Healthy idle: nothing is working and every in-flight item waits on a live captain hold or is
-    # a parked child, so the mate has nothing to say until a hold clears. A live worker (silent or
-    # looping), un-held in-flight work, or an unproven inventory never qualifies.
+    # Healthy idle: nothing is working, no child is asking the mate a question, and every in-flight
+    # item waits on a live captain hold or is a parked or paused child, so the mate has nothing to
+    # say until a hold clears. A live worker (silent or looping), a blocked child, un-held in-flight
+    # work, or an unproven inventory never qualifies.
     if not summary['valid'] or counts['active_children'] != 0:
         return False
     held, decisions, holds = counts.get('held_in_flight'), summary.get('decisions_open'), summary.get('holds')
     if type(held) is not int or not isinstance(decisions, list) or not isinstance(holds, list):
         return False
-    captain = any(isinstance(row, dict) and row.get('verb') == 'captain-hold' for row in decisions)
-    parked = sum(1 for row in holds if isinstance(row, dict) and row.get('source') == 'child-state')
+    rows = [row for row in decisions if isinstance(row, dict)]
+    if any(row.get('source') == 'status' for row in rows):
+        return False
+    captain = any(row.get('verb') == 'captain-hold' for row in rows)
+    parked = sum(1 for row in holds if isinstance(row, dict) and row.get('source') == 'child-state'
+                 and row.get('state') in ('parked', 'paused'))
     return captain and counts.get('in_flight', 0) <= held + parked
 
 

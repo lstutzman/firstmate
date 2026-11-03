@@ -373,7 +373,7 @@ if held != 'none':
     value['counts']['held_in_flight']=int(held)
 value['decisions_open']=[dict(id=f'held-{n}',key=f'held-{n}',verb='captain-hold',source='backlog') for n in range(captain)]
 value['queued']=[dict(id=f'held-{n}',captain_actionable=True,hold_kind='captain') for n in range(captain)]
-value['holds']=[dict(id=f'child-{n}',source='child-state') for n in range(parked)]
+value['holds']=[dict(id=f'child-{n}',source='child-state',state='parked') for n in range(parked)]
 path.write_text(json.dumps(value))
 PY_WORK
 }
@@ -396,6 +396,33 @@ run_alarm check >/dev/null
 mate 0 0 3601
 set_mate_work 2 0 2 0 none
 assert_contains "$(run_alarm check)" 'holding work silent' 'a summary without held_in_flight is never treated as parked'
+mate 0 0 0
+run_alarm check >/dev/null
+edit_mate_summary() { # python statements over value
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" <<'PY_EDIT'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1]); value=json.loads(path.read_text())
+exec(sys.argv[2])
+path.write_text(json.dumps(value))
+PY_EDIT
+}
+mate 0 0 3601
+set_mate_work 2 0 1 1 1
+edit_mate_summary "value['holds'][0]['state']='blocked'"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked child beside a captain hold still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_work 2 0 1 1 1
+edit_mate_summary "value['decisions_open'].append(dict(id='child-0',key='child-0',verb='needs-decision',source='status'))"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a child asking its mate an open question still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_work 2 0 1 1 1
+edit_mate_summary "value['holds'][0]['state']='blocked'; value['decisions_open'].append(dict(id='child-0',key='child-0',verb='blocked',source='status'))"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked child with an open status decision still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
 mate 1 0 3601
