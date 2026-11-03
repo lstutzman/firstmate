@@ -1,0 +1,7 @@
+ok - line_field reads each key: value field
+ok - line_field fails for a missing key and for a malformed line
+ok - the line regex splits the id and added date and rejects bad lines
+ok - registry_lines prints the "- " entries of $REGISTRY
+ok - the cadence grammar and period match the documented values
+ok - slot_of returns the slot holding the moment
+exit=0

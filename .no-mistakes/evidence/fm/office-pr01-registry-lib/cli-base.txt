@@ -1,0 +1,24 @@
+$ fm-officer.sh list
+friction role=friction cadence="every 4h" check=absent
+triage role=triage cadence="daily 06:00" check=absent
+badcad role=triage cadence="hourly" check=absent
+unkrole role=wizard cadence="every 25h" check=absent
+exit=0
+$ fm-officer.sh ensure
+OFFICER: officer friction: model "" is not available yet; slice 1 officers use model: none
+OFFICER: officer triage: model "" is not available yet; slice 1 officers use model: none
+OFFICER: officer badcad: cadence must be "daily HH:MM" or "every Nh" (N from 1 to 24), got "hourly"
+OFFICER: malformed registry line: - Bad_ID - bad id (role: triage; cadence: daily 06:00; added 2026-10-21)
+OFFICER: malformed registry line: - noadded - no date (role: triage; cadence: daily 06:00)
+OFFICER: officer unkrole: unknown role "wizard" (known: triage landing friction progress pagecheck)
+exit=0
+$ fm-officer.sh check friction
+exit=0
+$ fm-officer.sh check triage
+exit=0
+$ fm-officer.sh register badcad
+fm-officer: officer badcad: cadence must be "daily HH:MM" or "every Nh" (N from 1 to 24), got "hourly"
+exit=2
+$ fm-officer.sh retire nosuch
+retired: officer nosuch (findings kept in data/officers/nosuch/)
+exit=0
