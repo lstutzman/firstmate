@@ -110,6 +110,9 @@ while IFS= read -r line || [ -n "$line" ]; do
     none|.*|*[!A-Za-z0-9._-]*) die "$rules_file line $lineno has an invalid class name: $class" ;;
   esac
   re=$(glob_to_ere "$glob") || die "$rules_file line $lineno has an invalid glob: $glob"
+  rc=0
+  [[ '' =~ $re ]] || rc=$?
+  [ "$rc" -ne 2 ] || die "$rules_file line $lineno has an invalid glob: $glob"
   res+=("$re")
   classes+=("$class")
 done < "$rules_file"
