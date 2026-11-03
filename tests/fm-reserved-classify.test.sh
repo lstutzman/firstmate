@@ -168,7 +168,7 @@ EOF
   fm_admission_classify "$home/project" "$paths" || fail "flagged diff classifies: $FM_ADMISSION_ERROR"
   assert_equals $'authority\nproduction' "$FM_ADMISSION_FLAGGED" "flagged classes reach the admission library"
   printf '%s\n' "x.txt undeclared" > "$TMP_ROOT/undeclared.rules"
-  sed -i "s|$RULES|$TMP_ROOT/undeclared.rules|" "$cfg"
+  sed -i.bak "s|$RULES|$TMP_ROOT/undeclared.rules|" "$cfg" && rm -f "$cfg.bak"
   fm_admission_load "$cfg" || fail "second config loads"
   printf 'x.txt\n' > "$paths"
   if fm_admission_classify "$home/project" "$paths"; then
