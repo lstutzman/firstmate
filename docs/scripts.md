@@ -175,7 +175,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-mail.py`             | The IMAP/SMTP engine behind `fm-mail.sh` |
 | `fm-mail-check.sh`       | Standing received-mail poll: `arm` registers a watcher check that runs `fm-mail.sh poll` on the watcher cadence (new mail still wakes via the poll; the check's own line also wakes unless the poll is a proven no-op), `disarm` removes it |
 | `fm-officer.sh`          | The officer agent kind: register, retire, run, and health-check the role agents in `data/officers.md`; its watcher check starts each daily run and reports one line per actionable digest |
-| `fm-office.sh`           | The office registry: list the offices in `data/offices.md` and, at session start, report one `OFFICE:` line per gap; read-only |
+| `fm-office.sh`           | The office registry: list the offices in `data/offices.md`, at session start report one `OFFICE:` line per gap, and (`status`) write an office home's `data/office-status.json` |
+| `fm-office-status.py`    | Projects an office home's backlog and task records onto `data/office-status.json` (working, next, done cards); [Office status](configuration.md#office-status-dataoffice-statusjson) owns the schema |
 | `fm-registry-line-lib.sh` | Single owner of the registry line grammar `fm-officer.sh` and `fm-office.sh` source: the line regex, field reader, and cadence and slot helpers |
 | `fm-officer-triage.py`   | The triage officer's deterministic daily pass: joins archived sessions to firstmate tasks and outcomes and writes its findings |
 | `fm-officer-friction.py` | The friction officer's deterministic daily pass: finds waits on Lee and other agent friction in status logs and the session archive, groups them by root cause with a proposed fix and owner, and writes its findings and a fleet-app velocity findings file |

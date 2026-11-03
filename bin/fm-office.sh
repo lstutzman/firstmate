@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# fm-office.sh - the office registry: list offices and report gaps. Read-only.
+# fm-office.sh - the office registry: list offices and report gaps, and project
+# an office home's work onto its status file.
 #
 # An office is a second mate that runs a standing role mandate (navigator or
 # quartermaster) instead of idling. docs/configuration.md "Offices
@@ -8,6 +9,9 @@
 # Usage:
 #   fm-office.sh list
 #   fm-office.sh ensure
+#   fm-office.sh status
+#
+# list and ensure only read. status is the only command that writes.
 #
 # list prints one line per registry entry: "<id> <role> <state>", where state
 # is "ok" or "gaps:<n>".
@@ -23,17 +27,29 @@
 # lane that is not a registered officer, or a merge-via project that does not
 # carry merger=<home> in the office home's data/projects.md. A remote
 # office's home is not readable from here, so its file checks are skipped.
-# The authority record, wake-source checks and status file belong to later
-# changes and are not checked here.
+# The authority record and wake-source checks belong to later changes and are
+# not checked here.
 #
-# Environment: FM_HOME, FM_DATA_OVERRIDE as the other bin/ scripts do.
-# FM_OFFICE_HOST names this host for tests (default: hostname -s).
+# status (run inside an office home, as its silent watcher check) projects that
+# home's backlog and in-flight task records onto data/office-status.json for the
+# fleet app's Status page; docs/configuration.md "Office status
+# (data/office-status.json)" owns the schema and lane rules, and
+# bin/fm-office-status.py owns the mechanics. It reads only data/backlog.md and
+# state/*.meta, writes only that one file (atomically), prints nothing on
+# success, and does nothing outside an office home (no .fm-office marker).
+#
+# Environment: FM_HOME, FM_DATA_OVERRIDE, FM_STATE_OVERRIDE as the other bin/
+# scripts do. FM_OFFICE_HOST names this host for tests (default: hostname -s).
+# FM_OFFICE_NOW (epoch seconds) pins the clock for tests.
+# FM_OFFICE_DONE_WINDOW_HOURS (default 24) and FM_OFFICE_STATUS_REFRESH_SECS
+# (default 900) tune status.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/offices.md"
 OFFICE_ROLES="navigator quartermaster"
 
@@ -47,6 +63,7 @@ usage() {
 Usage:
   fm-office.sh list      list registered offices and their state
   fm-office.sh ensure    session-start health: one OFFICE: line per gap
+  fm-office.sh status    write data/office-status.json for this office home (silent)
 See docs/configuration.md "Offices (data/offices.md)" for the registry schema.
 EOF
 }
@@ -188,9 +205,21 @@ EOF
   return 0
 }
 
+cmd_status() {
+  local id args
+  id=$(cat "$FM_HOME/.fm-office" 2>/dev/null) || return 0
+  [[ "$id" =~ ^[a-z0-9-]+$ ]] || { echo "office-status: .fm-office in $FM_HOME is not an office id" >&2; return 1; }
+  args=(--office "$id" --data "$DATA" --state "$STATE"
+    --done-window-hours "${FM_OFFICE_DONE_WINDOW_HOURS:-24}"
+    --refresh-secs "${FM_OFFICE_STATUS_REFRESH_SECS:-900}")
+  [ -n "${FM_OFFICE_NOW:-}" ] && args+=(--now "$FM_OFFICE_NOW")
+  python3 -I "$SCRIPT_DIR/fm-office-status.py" "${args[@]}"
+}
+
 case "${1:-}" in
   list) cmd_list ;;
   ensure) cmd_ensure ;;
+  status) cmd_status ;;
   -h|--help|help|'') usage ;;
   *) usage >&2; exit 2 ;;
 esac

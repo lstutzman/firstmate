@@ -110,8 +110,145 @@ test_ensure_changes_nothing() {
   pass 'ensure is read-only'
 }
 
+# --- status: the office-status.json projection --------------------------------
+NOW=1793786700 # 2026-11-04T10:05:00Z
+
+status() { FM_HOME="$1/navigator" FM_OFFICE_NOW="${2:-$NOW}" bash "$OFFICE" status; }
+card() { jq -c --arg id "$2" '.cards[] | select(.id == $id)' "$1/navigator/data/office-status.json"; }
+
+# status_world <name>: the healthy world plus a navigator backlog with two in-flight,
+# twelve queued (one held for Lee) and three done items.
+status_world() {
+  local w i
+  w=$(make_world "$1")
+  mkdir -p "$w/navigator/state"
+  {
+    printf '## In flight\n'
+    printf -- '- [ ] pc-4701-fix - Fix the thing (repo: PropertyCompass2) (kind: ship) (since 2026-11-03)\n  Main corr abc.\n'
+    printf -- '- [ ] pc-4702-body - Body link (repo: PropertyCompass2) (kind: ship) (since 2026-11-04)\n  PR https://github.com/lstutzman/PropertyCompass2/pull/4702 is open.\n'
+    printf '\n## Queued\n'
+    printf -- '- [ ] q-held - Needs Lee (repo: PropertyCompass2) (kind: task) (since 2026-11-01) (hold: fm-hold-v1:abc) (hold-kind: captain)\n'
+    for i in 1 2 3 4 5 6 7 8 9 10 11; do
+      printf -- '- [ ] q-%s - Queued item %s https://linear.app/x/issue/PC-47%s (repo: PropertyCompass2) (kind: task) (since 2026-11-01)\n' "$i" "$i" "$i"
+    done
+    printf '\n## Done\n'
+    printf -- '- [x] d-today - Finished today https://github.com/lstutzman/PropertyCompass2/pull/4690 (repo: PropertyCompass2) (kind: ship) (merged 2026-11-04)\n'
+    printf -- '- [x] d-old - Finished long ago (repo: PropertyCompass2) (kind: ship) (merged 2026-11-01)\n'
+    printf -- '- [x] d-yesterday - Finished yesterday (repo: PropertyCompass2) (kind: ship) (done 2026-11-03)\n'
+  } > "$w/navigator/data/backlog.md"
+  printf 'pr=https://github.com/lstutzman/PropertyCompass2/pull/4701\nkind=ship\n' > "$w/navigator/state/pc-4701-fix.meta"
+  printf '%s\n' "$w"
+}
+
+test_status_working_lane() {
+  local w out
+  w=$(status_world st-working)
+  out=$(status "$w" 2>&1)
+  assert_equals "" "$out" "status output"
+  assert_equals "navigator Navigator 1" "$(jq -r '[.office, .title, .schema_version] | join(" ")' "$w/navigator/data/office-status.json")" "header"
+  assert_equals "2026-11-04T10:05:00Z" "$(jq -r .written_at "$w/navigator/data/office-status.json")" "written_at"
+  assert_equals '{"id":"pc-4701-fix","title":"Fix the thing","state":"working","link":"https://github.com/lstutzman/PropertyCompass2/pull/4701","since":"2026-11-03T00:00:00Z"}' "$(card "$w" pc-4701-fix)" "meta pr= link wins"
+  assert_contains "$(card "$w" pc-4702-body)" '"link":"https://github.com/lstutzman/PropertyCompass2/pull/4702"' "body link"
+  pass 'status lists every in-flight item as working, linking the task pr= or the row URL'
+}
+
+test_status_next_lane() {
+  local w
+  w=$(status_world st-next)
+  status "$w"
+  assert_equals "10" "$(jq '[.cards[] | select(.state == "next")] | length' "$w/navigator/data/office-status.json")" "next cap"
+  assert_equals "q-held q-1 q-2" "$(jq -r '[.cards[] | select(.state == "next") | .id][:3] | join(" ")' "$w/navigator/data/office-status.json")" "next order"
+  assert_equals '{"id":"q-held","title":"Needs Lee","state":"next","link":"","waiting":"Lee"}' "$(card "$w" q-held)" "held for Lee"
+  assert_equals '{"id":"q-1","title":"Queued item 1","state":"next","link":"https://linear.app/x/issue/PC-471","waiting":""}' "$(card "$w" q-1)" "url stripped from title and kept as link"
+  assert_equals "" "$(card "$w" q-10)" "eleventh queued item left out"
+  pass 'status lists the first 10 queued items in order and marks a captain hold as waiting on Lee'
+}
+
+test_status_done_window() {
+  local w
+  w=$(status_world st-done)
+  status "$w"
+  assert_equals '{"id":"d-today","title":"Finished today","state":"done","link":"https://github.com/lstutzman/PropertyCompass2/pull/4690","done_at":"2026-11-04T10:05:00Z"}' "$(card "$w" d-today)" "done today"
+  assert_equals "" "$(card "$w" d-old)" "older done item dropped"
+  assert_equals "" "$(card "$w" d-yesterday)" "date-only item from an earlier day is not shown on first sight"
+  pass 'status keeps a done item stamped today and drops older ones'
+}
+
+test_status_done_expires_after_window() {
+  local w
+  w=$(status_world st-expire)
+  status "$w"
+  status "$w" $((NOW + 23 * 3600)) # 09:05 next day, 23h after first sight
+  assert_contains "$(card "$w" d-today)" '"done_at":"2026-11-04T10:05:00Z"' "done_at carried forward"
+  status "$w" $((NOW + 25 * 3600))
+  assert_equals "" "$(card "$w" d-today)" "done card after 25h"
+  pass 'status carries the first-seen done time forward and drops the card after 24 hours'
+}
+
+test_status_done_window_setting() {
+  local w
+  w=$(status_world st-window)
+  status "$w"
+  FM_HOME="$w/navigator" FM_OFFICE_NOW=$((NOW + 3 * 3600)) FM_OFFICE_DONE_WINDOW_HOURS=2 bash "$OFFICE" status
+  assert_equals "" "$(card "$w" d-today)" "done card after 3h with a 2h window"
+  pass 'FM_OFFICE_DONE_WINDOW_HOURS shortens the done window'
+}
+
+test_status_skips_unchanged_write() {
+  local w ino
+  w=$(status_world st-same)
+  status "$w"
+  ino=$(ls -i "$w/navigator/data/office-status.json")
+  status "$w" $((NOW + 300))
+  assert_equals "$ino" "$(ls -i "$w/navigator/data/office-status.json")" "file replaced although nothing changed"
+  assert_equals "2026-11-04T10:05:00Z" "$(jq -r .written_at "$w/navigator/data/office-status.json")" "written_at untouched"
+  status "$w" $((NOW + 1000))
+  assert_equals "2026-11-04T10:21:40Z" "$(jq -r .written_at "$w/navigator/data/office-status.json")" "heartbeat refresh"
+  printf -- '- [ ] q-new - New item (repo: PropertyCompass2) (kind: task) (since 2026-11-04)\n' >> "$w/navigator/data/backlog.md"
+  status "$w" $((NOW + 1060))
+  assert_equals "2026-11-04T10:22:40Z" "$(jq -r .written_at "$w/navigator/data/office-status.json")" "rewrite on change"
+  pass 'status rewrites only on a change or after the refresh interval'
+}
+
+test_status_writes_only_its_file() {
+  local w before after
+  w=$(status_world st-only)
+  before=$(find "$w" -type f ! -name office-status.json -exec cksum {} + | sort)
+  status "$w"
+  after=$(find "$w" -type f ! -name office-status.json -exec cksum {} + | sort)
+  assert_equals "$before" "$after" "files other than office-status.json"
+  assert_equals "" "$(find "$w/navigator/data" -name '.office-status.*')" "temp files left behind"
+  pass 'status writes only data/office-status.json'
+}
+
+test_status_outside_an_office_does_nothing() {
+  local w
+  w=$(status_world st-plain)
+  rm "$w/navigator/.fm-office"
+  assert_equals "" "$(status "$w" 2>&1)" "output"
+  assert_absent "$w/navigator/data/office-status.json"
+  pass 'status does nothing in a home with no .fm-office marker'
+}
+
+test_status_without_a_backlog_is_empty() {
+  local w
+  w=$(make_world st-empty)
+  status "$w"
+  assert_equals "[]" "$(jq -c .cards "$w/navigator/data/office-status.json")" "cards"
+  pass 'status writes an empty card list when the office has no backlog'
+}
+
 test_healthy_registry_prints_nothing
 test_absent_registry_means_no_offices
 test_gaps
 test_list_counts_gaps
 test_ensure_changes_nothing
+test_status_working_lane
+test_status_next_lane
+test_status_done_window
+test_status_done_expires_after_window
+test_status_done_window_setting
+test_status_skips_unchanged_write
+test_status_writes_only_its_file
+test_status_outside_an_office_does_nothing
+test_status_without_a_backlog_is_empty

@@ -1194,7 +1194,46 @@ A local office home also carries a `.fm-office` marker holding the office id and
 `bin/fm-office.sh list` prints each office and its gap count.
 Session start runs `bin/fm-office.sh ensure`, which prints one `OFFICE:` line per gap and nothing when the registry and the homes agree.
 An absent `data/offices.md` means no offices.
-The command only reads: it seeds, publishes, spawns and grants nothing.
+`list` and `ensure` only read: they seed, publish, spawn and grant nothing.
+
+### Office status (data/office-status.json)
+
+`bin/fm-office.sh status` runs inside an office home and projects that home's own work onto `data/office-status.json`, the file the fleet app's Status page pulls.
+It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only that one file, prints nothing on success, and does nothing in a home without a `.fm-office` marker.
+`bin/fm-office-status.py` owns the mechanics.
+
+```json
+{
+  "schema_version": 1,
+  "office": "navigator",
+  "title": "Navigator",
+  "written_at": "2026-11-04T10:05:00Z",
+  "cards": [
+    { "id": "pc-4701-fix", "title": "...", "state": "working", "link": "https://github.com/...", "since": "2026-11-03T00:00:00Z" },
+    { "id": "pc-4712", "title": "...", "state": "next", "link": "", "waiting": "Lee" },
+    { "id": "pc-4690-fix", "title": "...", "state": "done", "link": "https://github.com/...", "done_at": "2026-11-04T09:40:00Z" }
+  ]
+}
+```
+
+| Lane | Source in the office home | Rule |
+| --- | --- | --- |
+| `working` | Every `## In flight` item | `link` is the task's `pr=` from its meta record, else the first `https://` URL in the row; `since` is the row's `since` date at 00:00 UTC |
+| `next` | The first 10 `## Queued` items, in backlog order | `link` is the first `https://` URL in the row, or empty; `waiting` is `"Lee"` when the row carries `hold-kind: captain`, else empty |
+| `done` | `## Done` items finished within the done window | `done_at` is the time the status check first saw the item done, carried forward on later runs |
+
+`office` is the `.fm-office` marker and `title` is that id with its first letter capitalized.
+`title` on a card is the row text without its trailing `(key: value)` groups and URL, cut to 200 characters.
+Cards are ordered working, then next, then done (newest first).
+
+The done window is 24 hours, set with `FM_OFFICE_DONE_WINDOW_HOURS`.
+The backlog records only a date for a finished item, so the check stamps an item done at its first sight when the recorded date is today (UTC) and at that date's 00:00 UTC otherwise, then carries the stamp forward; an item the check never saw before its date passed is therefore left off the page.
+A card past the window is omitted, which the page shows as a finished card leaving.
+
+The file is replaced atomically (temp file in `data/`, then rename).
+A run whose cards match the existing file leaves it alone unless its `written_at` is older than `FM_OFFICE_STATUS_REFRESH_SECS` (default 900), so a quiet office still reports in well inside the reader's 30-minute staleness limit.
+A failure prints one line to stderr, exits 1 and leaves the previous file in place.
+`FM_OFFICE_NOW` pins the clock for tests.
 
 ## Harness support
 
