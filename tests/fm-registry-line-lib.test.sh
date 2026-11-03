@@ -42,7 +42,7 @@ test_registry_lines_lists_only_entries() {
   printf '# Officers\n\n%s\nnote\n- second - y (a: b; added 2026-10-24)\n' "$LINE" > "$file"
   REGISTRY="$file"
   assert_equals 2 "$(registry_lines | wc -l | tr -d ' ')" "entry count"
-  pass 'registry_lines prints the "- " entries of $REGISTRY'
+  pass 'registry_lines prints the "- " entries of the REGISTRY file'
 }
 
 test_cadence_grammar_and_period() {
