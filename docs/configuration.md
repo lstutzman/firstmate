@@ -1167,6 +1167,35 @@ Source links use the recorded HTTPS issue or PR URL, falling back to the configu
 The dated report retains all entries when the page's limits omit some.
 [`tests/fixtures/progress/state-v1.json`](../tests/fixtures/progress/state-v1.json) preserves Slarti's sample, and the progress officer tests check both that sample and actual output against the page schema.
 
+## Offices (data/offices.md)
+
+An office is a second mate that runs a standing role mandate instead of idling.
+`bin/fm-office.sh`'s header owns the mechanics; this section owns the registry schema.
+Offices live in the primary home's `data/offices.md`, one line per office, in the same line family as [Officers](#officers-dataofficersmd), whose grammar `bin/fm-registry-line-lib.sh` owns:
+
+```text
+- <id> - <one-sentence mandate> (role: <role>; runs-on: <hosts>; dispatch: <projects>; merge: none | <projects>; merge-via: none | <project>=<home>,...; auto-merge-classes: none; wip: 1-9; tick: every Nh; sources: <sources>; added YYYY-MM-DD)
+```
+
+| Field | Meaning |
+| --- | --- |
+| `<id>` | The id of a second mate registered in `data/secondmates.md`; the office's home is that mate's home |
+| `role` | `navigator` or `quartermaster` |
+| `runs-on` | Comma-separated hosts; the second mate's `host:` (or this host, for a local route) must be in it, and `macbook` is refused |
+| `dispatch` | Comma-separated project names; each must be listed in the office home's `data/projects.md` |
+| `merge` | `none`, or the projects the office merges: a subset of `dispatch`, each carrying `admission=<name>` in the office home's `data/projects.md` |
+| `merge-via` | `<project>=<home>` pairs for projects another home merges: a subset of `dispatch`, disjoint from `merge`, each carrying `merger=<home>` in the office home's `data/projects.md` |
+| `auto-merge-classes` | Must be `none`; no class auto-merges yet |
+| `wip` | The most live tasks the office may run at once, 1 to 9 |
+| `tick` | `every Nh` (N from 1 to 24) |
+| `sources` | Comma-separated `tick`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
+
+A local office home also carries a `.fm-office` marker holding the office id and a `data/charter.md` with a `# Office authority` heading.
+`bin/fm-office.sh list` prints each office and its gap count.
+Session start runs `bin/fm-office.sh ensure`, which prints one `OFFICE:` line per gap and nothing when the registry and the homes agree.
+An absent `data/offices.md` means no offices.
+The command only reads: it seeds, publishes, spawns and grants nothing.
+
 ## Harness support
 
 claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, and omp are empirically verified for crewmate and secondmate launches; gemini is verified for crewmate and scout launches only, and [README requirements](../README.md#requirements) own the set supported for the primary session.

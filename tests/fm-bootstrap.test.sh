@@ -898,6 +898,21 @@ test_routine_bootstrap_confirmations_are_silent() {
   pass "bootstrap keeps routine tasks-axi, harness, dispatch, and already-live liveness confirmations silent"
 }
 
+test_bootstrap_reports_office_gaps() {
+  local fixture root home fakebin out
+  fixture=$(make_routine_bootstrap_fixture "$TMP_ROOT/office-gap")
+  root=${fixture%%|*}
+  fixture=${fixture#*|}
+  home=${fixture%%|*}
+  fakebin=${fixture#*|}
+  mkdir -p "$home/data"
+  printf -- '- navigator - Drive progress (role: navigator; runs-on: slartibartfast; dispatch: PropertyCompass2; merge: none; merge-via: none; auto-merge-classes: none; wip: 2; tick: every 2h; sources: tick; added 2026-11-04)\n' > "$home/data/offices.md"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_BACKEND=tmux FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 bash "$ROOT/bin/fm-bootstrap.sh")
+  assert_contains "$out" "OFFICE: office navigator: not a registered second mate" "bootstrap OFFICE line"
+  pass "bootstrap prints an OFFICE: line for an office the second mate registry does not know"
+}
+
 test_routine_bootstrap_contract_runs_under_system_bash() {
   local out
   [ -x /bin/bash ] || { pass "bootstrap routine contract skipped without /bin/bash"; return; }
@@ -1315,6 +1330,7 @@ test_fleet_sync_timeout_empty_override_uses_default
 test_fleet_sync_timeout_is_computed_before_launch
 test_routine_bootstrap_confirmations_are_silent
 test_routine_bootstrap_contract_runs_under_system_bash
+test_bootstrap_reports_office_gaps
 test_network_phase_partitions_the_run
 test_network_sweeps_recheck_lock_ownership
 test_network_phases_record_per_step_elapsed_times
