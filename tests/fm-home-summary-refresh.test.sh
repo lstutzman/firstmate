@@ -1111,3 +1111,23 @@ case "$report_out" in
     ;;
 esac
 pass "repeated publication failure is reported at session start until it clears"
+
+HELD_HOME="$TMP_ROOT/held-home"
+mkdir -p "$HELD_HOME/data" "$HELD_HOME/state" "$HELD_HOME/config"
+cat > "$HELD_HOME/data/backlog.md" <<'BACKLOG'
+## In flight
+- [ ] live-held - Decide the live route (repo: firstmate) (kind: ship) (since 2026-08-27) (hold: choose route) (hold-kind: captain)
+- [ ] dated-held - Decide the later route (repo: firstmate) (kind: ship) (since 2026-08-27) (hold: choose later) (hold-kind: captain) (hold-until: 2026-12-01)
+- [ ] drive-program - Drive the program (repo: firstmate) (kind: program) (since 2026-08-27)
+
+## Queued
+- [ ] queued-held - Decide a queued route (repo: firstmate) (kind: ship) (since 2026-08-27) (hold: pick) (hold-kind: captain)
+
+## Done
+BACKLOG
+held_out=$(PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HELD_HOME" \
+  FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+  "$SNAPSHOT" --secondmate-home-summary) || fail "held-home summary failed"
+printf '%s\n' "$held_out" | jq -e '.counts.in_flight == 3 and .counts.held_in_flight == 1' >/dev/null \
+  || fail "held_in_flight must count only in-flight items on a live captain hold: $(printf '%s' "$held_out" | jq -c .counts)"
+pass "held_in_flight counts in-flight items waiting on a live captain hold"

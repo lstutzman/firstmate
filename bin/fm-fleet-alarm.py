@@ -474,7 +474,7 @@ def check(channel):
         new.update(preserved)
         with tempfile.NamedTemporaryFile(mode='w', dir=STATE, prefix='.fleet-alarm-', delete=False) as file:
             json.dump({'conditions': new, 'timer_open': timer_open, 'timer_state': timer_state,
-                       'wait': wait_record, 'not_collected': not_collected, 'eased': sorted(eased),
+                       'wait': wait_record, 'not_collected': not_collected, 'eased': sorted(eased | {key for key in stored.get('eased', []) if key not in current and key in preserved}),
                        'suspect': {**stored.get('suspect', {}), channel: suspect}}, file)
             temporary = file.name
         os.replace(temporary, record)

@@ -458,6 +458,13 @@ touch "$HOME_FIX/quota-fail"
 run_alarm check >/dev/null
 rm -f "$HOME_FIX/quota-fail"
 [ -z "$(run_alarm check)" ] || fail 'an eased carrying alarm stays quiet after a failed quota read'
+touch "$HOME_FIX/quota-fail"
+run_alarm check >/dev/null
+rm -f "$HOME_FIX/quota-fail"
+pool_quota 0.91 0.8 "$soon"
+assert_contains "$(run_alarm check)" 'Carrying Claude account member@example.invalid' 'a pool that tightens after a failed quota read re-alerts'
+pool_quota 0.91 0.0 "$soon"
+run_alarm check >/dev/null
 # A reset beyond the window is never eased.
 pool_quota 0.2 0.0 "$far"
 run_alarm check >/dev/null
