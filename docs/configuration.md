@@ -950,6 +950,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `role` | `triage`, `landing`, `friction`, `progress`, or `pagecheck` |
 | `cadence` | `daily HH:MM` in the home's local time: the run for yesterday's date starts at the first watcher check after that time. Or `every Nh` (N from 1 to 24): the run key is the slot `YYYY-MM-DDTHH`, slots start at local midnight and repeat every N hours until the next midnight, and the first watcher check in a slot starts that slot's run on current records. `bin/fm-registry-line-lib.sh` owns the grammar; `ensure` allows two of the officer's own periods between finished runs |
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
+| `consumer` | Optional comma-separated `main` and office ids, default `main`; each office id must be listed in `data/offices.md`. The check prints the `officer <id>: ... actionable finding(s)` digest line, which wakes main, only when `main` is listed, so an office that reads the digest through its own [wake source](#offices-dataofficesmd) can take it from main; the failure line is always printed |
 | `archive` | Triage and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
 | `ask-days` | Friction, optional: how many days of Lee's typed messages the repeated-ask finding compares; default 7 |
 | `app` | Pagecheck only, required: the fleet app's `https://` base URL, read with `GET` only |
@@ -1189,6 +1190,10 @@ Offices live in the primary home's `data/offices.md`, one line per office, in th
 | `wip` | The most live tasks the office may run at once, 1 to 9 |
 | `tick` | `every Nh` (N from 1 to 24) |
 | `sources` | Comma-separated `tick`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
+
+Each source is a watcher check in the office home's own `state/`, so it wakes the office and never main.
+`bin/fm-office.sh register-sources`, run in the office home, installs and trusts one `state/office-<source>.check.sh` per listed source, and `bin/fm-office.sh check <source>` is its body; the script's header owns what each prints and when it stays silent.
+`tick` fires once per slot of the office's `tick` cadence when a place under `wip` is free and work could start; `lane:<officer-id>` fires once per new digest of that officer in the parent home; `lane:<officer-id>:high` fires only for findings the digest's `.json` marks high or critical.
 
 A local office home also carries a `.fm-office` marker holding the office id and a `data/charter.md` with a `# Office authority` heading.
 `bin/fm-office.sh list` prints each office and its gap count.

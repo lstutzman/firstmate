@@ -63,6 +63,14 @@
 # none, no finished run within two cadence periods of registration or of the
 # last finished run, and officers listed in a second mate home.
 #
+# consumer: is an optional registry field, a comma list of `main` and office ids
+# (default `main`). The "officer <id>: ... actionable finding(s)" digest line is
+# printed in the primary home only when `main` is listed, so an officer whose
+# digest an office consumes can stop waking main; each office id must be a line in
+# data/offices.md, and an office reads the digest through its own lane source
+# (bin/fm-office.sh). The failure line is always printed, because a broken officer
+# is main's to fix.
+#
 # Roles: triage (bin/fm-officer-triage.py), landing
 # (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py),
 # progress (bin/fm-officer-progress.py), and pagecheck
@@ -145,7 +153,7 @@ EOF
 
 # line_problem <line>: prints why a registry line is unusable, or nothing.
 line_problem() {
-  local line=$1 id role cadence model
+  local line=$1 id role cadence model consumer c
   if ! [[ "$line" =~ $REGISTRY_LINE_RE ]]; then
     printf 'malformed registry line: %s\n' "$(printf '%s' "$line" | cut -c1-80)"
     return
@@ -160,6 +168,15 @@ line_problem() {
   cadence=$(line_field "$line" cadence || true)
   [[ "$cadence" =~ $CADENCE_RE ]] \
     || { printf 'officer %s: cadence must be "daily HH:MM" or "every Nh" (N from 1 to 24), got "%s"\n' "$id" "$cadence"; return; }
+  if consumer=$(line_field "$line" consumer); then
+    for c in ${consumer//,/ }; do
+      [ "$c" = main ] && continue
+      grep -Eq "^- $c - " "$DATA/offices.md" 2>/dev/null \
+        || { printf 'officer %s: consumer "%s" is not main or an office in data/offices.md\n' "$id" "$c"; return; }
+    done
+    [ -n "${consumer//[, ]/}" ] \
+      || { printf 'officer %s: consumer must name main or an office\n' "$id"; return; }
+  fi
   model=$(line_field "$line" model || true)
   [ "$model" = none ] \
     || { printf 'officer %s: model "%s" is not available yet; slice 1 officers use model: none\n' "$id" "$model"; return; }
@@ -492,6 +509,14 @@ report_once() {
   printf '%s\n' "$2"
 }
 
+# consumer_includes_main: true unless the loaded officer's consumer: field omits main.
+consumer_includes_main() {
+  local consumer
+  consumer=$(line_field "$OFFICER_LINE" consumer) || return 0
+  case ",${consumer// /}," in *,main,*) return 0 ;; esac
+  return 1
+}
+
 action_check() {
   local id=$1 now cadence at date since tries max retry digest n path reason hms fit stamp
   secondmate_home && return 0
@@ -530,7 +555,7 @@ action_check() {
   if [[ "$digest" =~ ^DIGEST\ ([0-9T-]{10,13})\ ([0-9]+)\ (.+)$ ]]; then
     n=${BASH_REMATCH[2]}
     path=${BASH_REMATCH[3]}
-    if [ "$n" -gt 0 ]; then
+    if [ "$n" -gt 0 ] && consumer_includes_main; then
       report_once digest "officer $id: ${BASH_REMATCH[1]}: $n actionable finding(s) in $path"
     fi
   fi

@@ -319,6 +319,187 @@ test_arm_status_refuses_outside_an_office() {
   pass 'arm-status and disarm-status refuse in a home with no .fm-office marker'
 }
 
+# ---- wake sources: register-sources and check ----
+
+SRC_NOW=1793700000   # a fixed instant; TZ=UTC below
+export TZ=UTC
+SLOT=$(date -u -d "@$SRC_NOW" +%Y-%m-%dT%H 2>/dev/null || date -u -r "$SRC_NOW" +%Y-%m-%dT%H)
+
+# source_world <name>: make_world plus the parent binding every office home carries.
+source_world() {
+  local w
+  w=$(make_world "$1")
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$w" > "$w/navigator/.fm-secondmate-parent"
+  mkdir -p "$w/navigator/state" "$w/data/officers/progress" "$w/data/officers/surgeon"
+  sed -i.bak 's/sources: tick,lane:progress;/sources: tick,lane:progress,lane:surgeon:high;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  printf -- '- surgeon - z (role: triage; cadence: daily 06:00; added 2026-10-24)\n' >> "$w/data/officers.md"
+  printf '%s\n' "$w"
+}
+
+# nav_check <world> <source>: the office's check, run as its shim would.
+nav_check() { FM_OFFICE_NOW=$SRC_NOW FM_HOME="$1/navigator" bash "$OFFICE" check "$2"; }
+
+put_backlog() {  # <world> <queued lines...>
+  local w=$1
+  shift
+  { printf '## In flight\n\n## Queued\n'; printf '%s\n' "$@"; printf '\n## Done\n'; } > "$w/navigator/data/backlog.md"
+}
+
+put_digest() {  # <world> <officer> <key> <n>
+  printf 'DIGEST %s %s data/officers/%s/%s.md\n' "$3" "$4" "$2" "$3" > "$1/data/officers/$2/digest"
+}
+
+test_register_sources_installs_trusted_shims() {
+  local w out
+  w=$(source_world reg)
+  out=$(FM_HOME="$w/navigator" bash "$OFFICE" register-sources) || fail "register-sources must succeed: $out"
+  assert_contains "$out" "registered: office source tick (state/office-tick.check.sh)" "tick registered"
+  assert_contains "$out" "state/office-lane-progress.check.sh" "lane registered"
+  assert_contains "$out" "state/office-lane-surgeon-high.check.sh" "high lane registered"
+  assert_present "$w/navigator/state/office-tick.check-trust" "the shim is trusted"
+  assert_contains "$(cat "$w/navigator/state/office-lane-progress.check.sh")" "fm-office.sh check lane:progress" "the shim runs the lane check"
+  assert_contains "$(cat "$w/navigator/state/office-lane-surgeon-high.check.sh")" "fm-office.sh check lane:surgeon:high" "the shim runs the high check"
+  assert_contains "$(cat "$w/navigator/state/office-tick.check.sh")" "FM_HOME=$(cd "$w/navigator" && pwd -P)" "the shim points at the office's own home"
+  assert_absent "$w/state/office-tick.check.sh" "nothing is registered in the parent"
+  before=$(find "$w/navigator/state" -type f -exec cksum {} + | sort)
+  FM_HOME="$w/navigator" bash "$OFFICE" register-sources >/dev/null || fail "second register-sources must succeed"
+  assert_equals "$before" "$(find "$w/navigator/state" -type f -exec cksum {} + | sort)" "re-registering is idempotent"
+  # a source dropped from the registry line is unregistered
+  sed -i.bak 's/sources: tick,lane:progress,lane:surgeon:high;/sources: tick;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  out=$(FM_HOME="$w/navigator" bash "$OFFICE" register-sources) || fail "register-sources after edit must succeed"
+  assert_contains "$out" "unregistered: state/office-lane-progress.check.sh" "a dropped source is unregistered"
+  assert_absent "$w/navigator/state/office-lane-progress.check.sh" "its shim is gone"
+  assert_absent "$w/navigator/state/office-lane-progress.check-trust" "its trust is gone"
+  assert_present "$w/navigator/state/office-tick.check.sh" "listed sources stay"
+  out=$(FM_HOME="$w" FM_DATA_OVERRIDE="$w/data" bash "$OFFICE" register-sources 2>&1) && fail "register-sources must refuse a non-office home"
+  assert_contains "$out" "only in an office home" "the refusal says why"
+  pass 'register-sources installs trusted per-source shims, idempotently, and drops unlisted ones'
+}
+
+test_register_sources_keeps_the_status_check() {
+  local w
+  w=$(source_world keepstatus)
+  arm "$w" || fail "arm-status must succeed"
+  FM_HOME="$w/navigator" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must succeed"
+  check_registered "$w" || fail "register-sources unregistered the status check"
+  assert_present "$w/navigator/state/office-status.check.sh" "the status check stays"
+  pass 'register-sources leaves the armed status check registered'
+}
+
+test_shim_runs_through_the_watcher_trust_path() {
+  local w out
+  w=$(source_world shim)
+  FM_HOME="$w/navigator" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must succeed"
+  put_backlog "$w" '- [ ] job-a - Do a thing (repo: PropertyCompass2) (kind: ship)'
+  out=$(FM_OFFICE_NOW=$SRC_NOW bash "$w/navigator/state/office-tick.check.sh") || fail "shim must exit 0"
+  assert_contains "$out" "office navigator: tick $SLOT: 2 of 2 places free, 1 queued" "the shim prints the tick line"
+  pass 'a registered shim runs the check with the office home'
+}
+
+test_tick_prints_once_per_slot_and_only_when_work_could_start() {
+  local w out
+  w=$(source_world tick)
+  assert_equals "" "$(nav_check "$w" tick)" "nothing queued and no digest: silent"
+  put_backlog "$w" '- [ ] held-1 - Held (repo: x) (kind: captain) (hold: captain choice) (hold-kind: captain)' '- [ ] blocked-1 - Blocked blocked-by: other - why (repo: x)'
+  assert_equals "" "$(nav_check "$w" tick)" "held and blocked items do not count as queued"
+  put_backlog "$w" '- [ ] job-a - A (repo: x) (kind: ship)' '- [ ] job-b - B (repo: x) (kind: ship)' '- [ ] held-1 - Held (repo: x) (hold: c)'
+  out=$(nav_check "$w" tick)
+  assert_equals "office navigator: tick $SLOT: 2 of 2 places free, 2 queued" "$out" "tick line"
+  assert_equals "" "$(nav_check "$w" tick)" "the slot was already reported"
+  out=$(FM_OFFICE_NOW=$((SRC_NOW + 7200)) FM_HOME="$w/navigator" bash "$OFFICE" check tick)
+  assert_contains "$out" "tick " "the next slot reports again"
+  assert_contains "$out" "2 queued" "next slot count"
+  pass 'tick prints once per slot, counts only unheld unblocked queued items, and is silent with nothing to start'
+}
+
+test_tick_is_silent_when_places_are_full() {
+  local w
+  w=$(source_world full)
+  put_backlog "$w" '- [ ] job-a - A (repo: x) (kind: ship)'
+  printf 'kind=ship\nproject=x\n' > "$w/navigator/state/t1.meta"
+  printf 'kind=scout\nproject=x\n' > "$w/navigator/state/t2.meta"
+  assert_equals "" "$(nav_check "$w" tick)" "both places taken: silent"
+  rm "$w/navigator/state/t2.meta"
+  assert_contains "$(nav_check "$w" tick)" "1 of 2 places free, 1 queued" "one place free"
+  printf 'kind=secondmate\n' > "$w/navigator/state/m1.meta"
+  rm -f "$w/navigator/data/office/tick.seen"
+  assert_contains "$(nav_check "$w" tick)" "1 of 2 places free" "a second mate record holds no place"
+  pass 'tick counts live ship and scout records against wip and is silent when none is free'
+}
+
+test_tick_counts_unread_lane_digests() {
+  local w out
+  w=$(source_world tickdigest)
+  put_digest "$w" progress 2026-11-04 3
+  out=$(nav_check "$w" tick)
+  assert_equals "office navigator: tick $SLOT: 2 of 2 places free, 0 queued, 1 unread digest(s)" "$out" "an unread digest lets the tick fire"
+  nav_check "$w" lane:progress >/dev/null
+  rm -f "$w/navigator/data/office/tick.seen"
+  assert_equals "" "$(nav_check "$w" tick)" "a reported digest no longer counts as unread"
+  pass 'tick fires for an unread lane digest even with nothing queued'
+}
+
+test_lane_check_reports_each_new_digest_once() {
+  local w out
+  w=$(source_world lane)
+  assert_equals "" "$(nav_check "$w" lane:progress)" "no digest file: silent"
+  put_digest "$w" progress 2026-11-04 0
+  assert_equals "" "$(nav_check "$w" lane:progress)" "an empty digest: silent"
+  put_digest "$w" progress 2026-11-04 4
+  out=$(nav_check "$w" lane:progress)
+  assert_equals "office navigator: progress digest 2026-11-04: 4 finding(s) in $w/data/officers/progress/2026-11-04.md" "$out" "lane line"
+  assert_equals "" "$(nav_check "$w" lane:progress)" "a repeat: silent"
+  put_digest "$w" progress 2026-11-05 1
+  assert_contains "$(nav_check "$w" lane:progress)" "digest 2026-11-05: 1 finding(s)" "a new digest reports"
+  pass 'a lane check prints once per new digest and ignores repeats and empty digests'
+}
+
+test_lane_check_is_silent_when_it_cannot_read() {
+  local w
+  w=$(source_world unreadable)
+  put_digest "$w" progress 2026-11-04 4
+  printf 'schema=fm-secondmate-parent.v1\nroute=remote\nparent_host=elsewhere\n' > "$w/navigator/.fm-secondmate-parent"
+  assert_equals "" "$(nav_check "$w" lane:progress)" "a remote parent: silent"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$w" > "$w/navigator/.fm-secondmate-parent"
+  chmod 000 "$w/data/officers/progress/digest"
+  [ -r "$w/data/officers/progress/digest" ] || assert_equals "" "$(nav_check "$w" lane:progress)" "an unreadable file: silent"
+  chmod 644 "$w/data/officers/progress/digest"
+  assert_equals "" "$(nav_check "$w" lane:nope)" "an unregistered source: silent"
+  rm "$w/navigator/.fm-secondmate-parent"
+  assert_equals "" "$(nav_check "$w" lane:progress)" "no parent binding: silent"
+  assert_equals "" "$(FM_OFFICE_NOW=$SRC_NOW FM_HOME="$w" bash "$OFFICE" check lane:progress)" "a non-office home: silent"
+  pass 'checks are silent for a remote parent, an unreadable file, an unregistered source and a non-office home'
+}
+
+test_high_lane_counts_only_high_severity() {
+  local w out
+  w=$(source_world high)
+  put_digest "$w" surgeon 2026-11-04 3
+  printf '{"findings": [{"severity": "low"}, {"severity": 2}, {"severity": 3}]}\n' > "$w/data/officers/surgeon/2026-11-04.json"
+  assert_equals "" "$(nav_check "$w" lane:surgeon:high)" "no high finding: silent"
+  printf '{"findings": [{"severity": "high"}, {"severity": 5}, {"severity": "low"}]}\n' > "$w/data/officers/surgeon/2026-11-04.json"
+  out=$(nav_check "$w" lane:surgeon:high)
+  assert_equals "office navigator: surgeon digest 2026-11-04: 2 high-severity finding(s) in $w/data/officers/surgeon/2026-11-04.md" "$out" "high line"
+  assert_equals "" "$(nav_check "$w" lane:surgeon:high)" "no new high finding: silent"
+  printf '{"findings": [{"severity": "critical"}, {"severity": 4}, {"severity": "high"}]}\n' > "$w/data/officers/surgeon/2026-11-04.json"
+  assert_contains "$(nav_check "$w" lane:surgeon:high)" "3 high-severity finding(s)" "a larger count reports again"
+  printf 'not json\n' > "$w/data/officers/surgeon/2026-11-04.json"
+  assert_equals "" "$(nav_check "$w" lane:surgeon:high)" "an unparseable json: silent"
+  pass 'the high lane counts only high or critical findings and reports a new count once'
+}
+
+test_sources_changes_nothing_in_the_parent() {
+  local w before after
+  w=$(source_world parentro)
+  put_digest "$w" progress 2026-11-04 4
+  before=$(find "$w" -path "$w/navigator" -prune -o -type f -exec cksum {} + | sort)
+  nav_check "$w" lane:progress >/dev/null
+  nav_check "$w" tick >/dev/null
+  after=$(find "$w" -path "$w/navigator" -prune -o -type f -exec cksum {} + | sort)
+  assert_equals "$before" "$after" "parent files after the checks"
+  pass 'source checks read the parent and write only in the office home'
+}
+
 test_healthy_registry_prints_nothing
 test_absent_registry_means_no_offices
 test_gaps
@@ -337,3 +518,13 @@ test_status_without_a_backlog_is_empty
 test_arm_status_registers_a_silent_check
 test_disarm_status_retires_the_check
 test_arm_status_refuses_outside_an_office
+test_register_sources_installs_trusted_shims
+test_register_sources_keeps_the_status_check
+test_shim_runs_through_the_watcher_trust_path
+test_tick_prints_once_per_slot_and_only_when_work_could_start
+test_tick_is_silent_when_places_are_full
+test_tick_counts_unread_lane_digests
+test_lane_check_reports_each_new_digest_once
+test_lane_check_is_silent_when_it_cannot_read
+test_high_lane_counts_only_high_severity
+test_sources_changes_nothing_in_the_parent

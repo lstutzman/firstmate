@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# fm-office.sh - the office registry: list offices and report gaps, and project
-# an office home's work onto its status file.
+# fm-office.sh - the office registry, wake sources and status: list offices,
+# report gaps, run an office's own wake-source checks, and project an office
+# home's work onto its status file.
 #
 # An office is a second mate that runs a standing role mandate (navigator or
 # quartermaster) instead of idling. docs/configuration.md "Offices
@@ -12,6 +13,8 @@
 #   fm-office.sh status
 #   fm-office.sh arm-status
 #   fm-office.sh disarm-status
+#   fm-office.sh register-sources
+#   fm-office.sh check <source>
 #
 # list and ensure only read. status writes data/office-status.json; arm-status
 # and disarm-status write only the status check and its trust binding.
@@ -30,8 +33,7 @@
 # lane that is not a registered officer, or a merge-via project that does not
 # carry merger=<home> in the office home's data/projects.md. A remote
 # office's home is not readable from here, so its file checks are skipped.
-# The authority record and wake-source checks belong to later changes and are
-# not checked here.
+# The authority record belongs to a later change and is not checked here.
 #
 # status (run inside an office home, as its silent watcher check) projects that
 # home's backlog and in-flight task records onto data/office-status.json for the
@@ -48,8 +50,36 @@
 # it again rewrites the same bytes. disarm-status retires the check through
 # bin/fm-check-unregister.sh. Both refuse outside an office home.
 #
-# Environment: FM_HOME, FM_DATA_OVERRIDE, FM_STATE_OVERRIDE as the other bin/
-# scripts do. FM_OFFICE_HOST names this host for tests (default: hostname -s).
+# register-sources runs in an office home (one carrying .fm-office). It reads
+# the office's registry line from the parent's data/offices.md, writes one
+# shim state/office-<source>.check.sh for each source in its sources: field
+# (tick -> office-tick, lane:progress -> office-lane-progress,
+# lane:surgeon:high -> office-lane-surgeon-high), and binds each with
+# fm-check-register.sh. Each shim exports FM_HOME for the office home and
+# execs "fm-office.sh check <source>". It is idempotent, and it unregisters an
+# office-tick or office-lane-* shim whose source is no longer listed. The office's own
+# watcher sweeps state/*.check.sh, so a source wakes the office and never main.
+#
+# check <source> is the body of a source check. It is fast, contacts no other
+# host, always exits 0, and prints one line at most:
+#   tick             "office <id>: tick <YYYY-MM-DDTHH>: <n> of <wip> places free, <q> queued"
+#                    once per slot of the registry line's tick: cadence, when a
+#                    place is free (live ship and scout task records < wip) and
+#                    work could start: an unheld, unblocked Queued item in
+#                    data/backlog.md, or an unread lane digest. Silent otherwise.
+#   lane:<officer>   "office <id>: <officer> digest <key>: <n> finding(s) in <path>"
+#                    once per new digest with n > 0, read from the parent's
+#                    data/officers/<officer>/digest (a local parent route only).
+#   lane:<officer>:high
+#                    "office <id>: <officer> digest <key>: <n> high-severity finding(s) in <path>"
+#                    once per new count of findings in the digest's .json whose
+#                    severity is "high" or "critical", or a number of 4 or more.
+# The seen-records are data/office/tick.seen and data/office/lane-<officer>[-high].seen
+# in the office home. A remote parent, an unreadable file, an unregistered
+# source or a home that is not an office is silent.
+#
+# Environment: FM_HOME, FM_DATA_OVERRIDE, FM_STATE_OVERRIDE as the other bin/ scripts do.
+# FM_OFFICE_HOST names this host for tests (default: hostname -s).
 # FM_OFFICE_NOW (epoch seconds) pins the clock for tests.
 # FM_OFFICE_STATUS_REFRESH_SECS (default 900) tunes status.
 set -u
@@ -70,6 +100,10 @@ STATUS_CHECK="$STATE/$STATUS_CHECK_ID.check.sh"
 . "$SCRIPT_DIR/fm-registry-line-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-check-lib.sh
+. "$SCRIPT_DIR/fm-check-lib.sh"
+# shellcheck source=bin/fm-secondmate-parent-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
 
 usage() {
   cat <<'EOF'
@@ -79,6 +113,8 @@ Usage:
   fm-office.sh status    write data/office-status.json for this office home (silent)
   fm-office.sh arm-status     register status as this office home's silent watcher check
   fm-office.sh disarm-status  retire that check
+  fm-office.sh register-sources    (office home) install and trust the office's wake-source checks
+  fm-office.sh check <source>      (watcher check) report a new tick or lane digest
 See docs/configuration.md "Offices (data/offices.md)" for the registry schema.
 EOF
 }
@@ -267,12 +303,217 @@ cmd_disarm_status() {
   fi
 }
 
+die() {
+  printf 'fm-office: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+now_epoch() {
+  case "${FM_OFFICE_NOW:-}" in
+    ''|*[!0-9]*) date +%s ;;
+    *) printf '%s\n' "$FM_OFFICE_NOW" ;;
+  esac
+}
+
+# source_check_id <source>: the watcher check id of a source, e.g. lane:surgeon:high -> office-lane-surgeon-high.
+source_check_id() {
+  printf 'office-%s\n' "${1//:/-}"
+}
+
+# office_context: sets OFFICE_ID, OFFICE_PARENT (the local parent home) and OFFICE_LINE
+# (this office's line in the parent's data/offices.md); returns 1 when any is unavailable.
+office_context() {
+  local line
+  OFFICE_ID=$(cat "$FM_HOME/.fm-office" 2>/dev/null) || return 1
+  [[ "$OFFICE_ID" =~ ^[a-z0-9-]+$ ]] || return 1
+  fm_secondmate_parent_record_parse "$FM_HOME/.fm-secondmate-parent" || return 1
+  [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
+  OFFICE_PARENT=$FM_SECONDMATE_PARENT_HOME
+  OFFICE_LINE=
+  while IFS= read -r line; do
+    [[ "$line" =~ $REGISTRY_LINE_RE ]] || continue
+    [ "${BASH_REMATCH[1]}" = "$OFFICE_ID" ] && { OFFICE_LINE=$line; break; }
+  done <<EOF
+$(REGISTRY="$OFFICE_PARENT/data/offices.md" registry_lines)
+EOF
+  [ -n "$OFFICE_LINE" ]
+}
+
+cmd_register_sources() {
+  local sources src id shim want tmp device home keep=' ' f
+  [ -e "$FM_HOME/.fm-office" ] || die "register-sources runs only in an office home (no .fm-office marker in $FM_HOME)" 3
+  office_context || die "cannot read this office's line in the parent's data/offices.md" 3
+  sources=$(line_field "$OFFICE_LINE" sources || true)
+  [ -n "$sources" ] || die "the office line lists no sources" 3
+  home=$(CDPATH='' cd -- "$FM_HOME" 2>/dev/null && pwd -P) || die "cannot resolve FM_HOME $FM_HOME"
+  mkdir -p "$STATE" || die "cannot create $STATE"
+  [ -d "$STATE" ] && [ ! -L "$STATE" ] || die "state directory is unavailable"
+  device=$(fm_pr_file_device "$STATE") || die "state directory is unavailable"
+  for src in ${sources//,/ }; do
+    case "$src" in
+      tick|lane:*) ;;
+      *) die "unknown source $src" 3 ;;
+    esac
+    id=$(source_check_id "$src")
+    fm_pr_task_id_valid "$id" || die "invalid source $src"
+    shim="$STATE/$id.check.sh"
+    want=$(printf '%s\n' \
+      '#!/usr/bin/env bash' \
+      "# Auto-generated by fm-office.sh register-sources - office source check; re-run register-sources to repair." \
+      "export FM_HOME=$(printf '%q' "$home")" \
+      "exec $(printf '%q' "$SCRIPT_DIR/fm-office.sh") check $(printf '%q' "$src")")
+    fm_pr_regular_destination_on_device_or_absent "$shim" "$device" || die "refusing to replace $shim"
+    tmp=$(umask 077; mktemp "$STATE/.fm-office-check.XXXXXX") || die "cannot write $shim"
+    if ! printf '%s\n' "$want" > "$tmp" || ! chmod 0700 "$tmp" || ! mv -f -- "$tmp" "$shim"; then
+      rm -f -- "$tmp"
+      die "cannot write $shim"
+    fi
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-check-register.sh" "$id" >/dev/null \
+      || die "could not register $shim"
+    keep="$keep$id "
+    printf 'registered: office source %s (state/%s.check.sh)\n' "$src" "$id"
+  done
+  for f in "$STATE"/office-tick.check.sh "$STATE"/office-lane-*.check.sh; do
+    [ -e "$f" ] || continue
+    id=$(basename "$f" .check.sh)
+    case "$keep" in *" $id "*) continue ;; esac
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-check-unregister.sh" "$id" >/dev/null \
+      || die "could not unregister state/$id.check.sh"
+    printf 'unregistered: state/%s.check.sh (no longer a listed source)\n' "$id"
+  done
+}
+
+# seen_once <name> <stamp> <line>: prints the line unless the stamp is the last one reported.
+seen_once() {
+  local rec="$DATA/office/$1.seen"
+  [ "$(cat "$rec" 2>/dev/null)" = "$2" ] && return 0
+  mkdir -p "$DATA/office" 2>/dev/null && printf '%s\n' "$2" > "$rec" 2>/dev/null || return 0
+  printf '%s\n' "$3"
+}
+
+# lane_digest <officer>: sets LANE_KEY, LANE_N and LANE_PATH (an absolute path) from the parent's digest file.
+lane_digest() {
+  local digest
+  digest=$(cat "$OFFICE_PARENT/data/officers/$1/digest" 2>/dev/null) || return 1
+  [[ "$digest" =~ ^DIGEST\ ([0-9T-]{10,13})\ ([0-9]+)\ (.+)$ ]] || return 1
+  LANE_KEY=${BASH_REMATCH[1]}
+  LANE_N=${BASH_REMATCH[2]}
+  LANE_PATH=${BASH_REMATCH[3]}
+  case "$LANE_PATH" in /*) ;; *) LANE_PATH="$OFFICE_PARENT/$LANE_PATH" ;; esac
+  case "$LANE_PATH" in *..*) return 1 ;; esac
+  return 0
+}
+
+# high_findings <digest .md path>: the number of high or critical findings in the sibling .json.
+high_findings() {
+  python3 -I -c '
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        doc = json.load(f)
+    items = doc.get("findings", []) if isinstance(doc, dict) else doc
+    n = 0
+    for it in items:
+        sev = it.get("severity") if isinstance(it, dict) else None
+        if isinstance(sev, str) and sev.strip().lower() in ("high", "critical"):
+            n += 1
+        elif isinstance(sev, int) and not isinstance(sev, bool) and sev >= 4:
+            n += 1
+    print(n)
+except Exception:
+    print(0)
+' "${1%.md}.json" 2>/dev/null || echo 0
+}
+
+# count_live: this home's ship and scout task records.
+count_live() {
+  local meta kind n=0
+  for meta in "$STATE"/*.meta; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    kind=$(sed -n 's/^kind=//p' "$meta" 2>/dev/null | tail -n 1)
+    case "$kind" in ship|scout) n=$((n + 1)) ;; esac
+  done
+  printf '%s\n' "$n"
+}
+
+# count_queued: unheld, unblocked items in the backlog's Queued section.
+count_queued() {
+  awk '
+    /^## / { inq = ($0 == "## Queued"); next }
+    inq && /^- \[ \] / && $0 !~ /\(hold: / && $0 !~ /blocked-by:/ { n++ }
+    END { print n + 0 }
+  ' "$DATA/backlog.md" 2>/dev/null || echo 0
+}
+
+# unread_lanes: how many of the office's lane sources have a digest it has not yet reported.
+unread_lanes() {
+  local src officer n=0 seen
+  for src in ${1//,/ }; do
+    case "$src" in lane:*:high) continue ;; lane:*) ;; *) continue ;; esac
+    officer=${src#lane:}
+    lane_digest "$officer" || continue
+    [ "$LANE_N" -gt 0 ] || continue
+    seen=$(cat "$DATA/office/lane-$officer.seen" 2>/dev/null || true)
+    [ "$seen" = "$LANE_KEY $LANE_N $LANE_PATH" ] || n=$((n + 1))
+  done
+  printf '%s\n' "$n"
+}
+
+check_tick() {
+  local cadence wip live free queued unread sources line
+  cadence=$(line_field "$OFFICE_LINE" tick || true)
+  wip=$(line_field "$OFFICE_LINE" wip || true)
+  [[ "$cadence" =~ ^every\ ([1-9]|1[0-9]|2[0-4])h$ ]] && [[ "$wip" =~ ^[1-9]$ ]] || return 0
+  slot_of "$cadence" "$(now_epoch)"
+  live=$(count_live)
+  free=$((wip - live))
+  [ "$free" -gt 0 ] || return 0
+  queued=$(count_queued)
+  sources=$(line_field "$OFFICE_LINE" sources || true)
+  unread=$(unread_lanes "$sources")
+  [ "$queued" -gt 0 ] || [ "$unread" -gt 0 ] || return 0
+  line="office $OFFICE_ID: tick $SLOT_KEY: $free of $wip places free, $queued queued"
+  [ "$unread" -eq 0 ] || line="$line, $unread unread digest(s)"
+  seen_once tick "$SLOT_KEY" "$line"
+}
+
+check_lane() {  # <officer> <high:0|1>
+  local officer=$1 high=$2 n
+  lane_digest "$officer" || return 0
+  if [ "$high" = 1 ]; then
+    n=$(high_findings "$LANE_PATH")
+    [ "$n" -gt 0 ] || return 0
+    seen_once "lane-$officer-high" "$LANE_KEY $n" \
+      "office $OFFICE_ID: $officer digest $LANE_KEY: $n high-severity finding(s) in $LANE_PATH"
+  else
+    [ "$LANE_N" -gt 0 ] || return 0
+    seen_once "lane-$officer" "$LANE_KEY $LANE_N $LANE_PATH" \
+      "office $OFFICE_ID: $officer digest $LANE_KEY: $LANE_N finding(s) in $LANE_PATH"
+  fi
+}
+
+cmd_check() {
+  local src=$1 sources officer
+  [ -e "$FM_HOME/.fm-office" ] || return 0
+  office_context || return 0
+  sources=$(line_field "$OFFICE_LINE" sources || true)
+  case ",$sources," in *",$src,"*) ;; *) return 0 ;; esac
+  case "$src" in
+    tick) check_tick ;;
+    lane:*:high) officer=${src#lane:}; check_lane "${officer%:high}" 1 ;;
+    lane:*) check_lane "${src#lane:}" 0 ;;
+  esac
+  return 0
+}
+
 case "${1:-}" in
   list) cmd_list ;;
   ensure) cmd_ensure ;;
   status) cmd_status ;;
   arm-status) cmd_arm_status ;;
   disarm-status) cmd_disarm_status ;;
+  register-sources) [ "$#" -eq 1 ] || { usage >&2; exit 2; }; cmd_register_sources ;;
+  check) [ "$#" -eq 2 ] || { usage >&2; exit 2; }; cmd_check "$2" ;;
   -h|--help|help|'') usage ;;
   *) usage >&2; exit 2 ;;
 esac
