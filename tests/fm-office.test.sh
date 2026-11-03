@@ -52,6 +52,13 @@ test_absent_registry_means_no_offices() {
   pass 'an absent data/offices.md means no offices'
 }
 
+# edit_file <file> <cmd...>: rewrite <file> through <cmd>, portable across GNU and BSD.
+edit_file() {
+  local f=$1
+  shift
+  "$@" "$f" > "$f.new" && mv "$f.new" "$f"
+}
+
 # gap_case <name> <expected substring> <mutation command run in $w>
 gap_case() {
   local name=$1 expect=$2 w out
@@ -64,21 +71,21 @@ gap_case() {
 }
 
 test_gaps() {
-  gap_case macbook 'host not allowed: macbook' "sed -i 's/runs-on: slartibartfast; dispatch: Property/runs-on: macbook; dispatch: Property/' data/offices.md"
-  gap_case role 'unknown role "wizard"' "sed -i 's/role: navigator/role: wizard/' data/offices.md"
-  gap_case wip 'wip must be' "sed -i 's/wip: 2; tick: every 2h/wip: 0; tick: every 2h/' data/offices.md"
-  gap_case tick 'tick must be' "sed -i 's/tick: every 2h/tick: hourly/' data/offices.md"
-  gap_case auto 'auto-merge-classes must be none' "sed -i '0,/auto-merge-classes: none/s//auto-merge-classes: docs/' data/offices.md"
-  gap_case lane 'lane:nope is not a registered officer' "sed -i 's/lane:progress/lane:nope/' data/offices.md"
+  gap_case macbook 'host not allowed: macbook' "edit_file data/offices.md sed 's/runs-on: slartibartfast; dispatch: Property/runs-on: macbook; dispatch: Property/'"
+  gap_case role 'unknown role "wizard"' "edit_file data/offices.md sed 's/role: navigator/role: wizard/'"
+  gap_case wip 'wip must be' "edit_file data/offices.md sed 's/wip: 2; tick: every 2h/wip: 0; tick: every 2h/'"
+  gap_case tick 'tick must be' "edit_file data/offices.md sed 's/tick: every 2h/tick: hourly/'"
+  gap_case auto 'auto-merge-classes must be none' "edit_file data/offices.md awk '!d && sub(/auto-merge-classes: none/, \"auto-merge-classes: docs\") { d = 1 } 1'"
+  gap_case lane 'lane:nope is not a registered officer' "edit_file data/offices.md sed 's/lane:progress/lane:nope/'"
   gap_case notmate 'not a registered second mate' ": > data/secondmates.md"
-  gap_case hostmismatch 'does not include the second mate host' "sed -i 's/(home:/(host: deepthought; root: \\/r; home:/' data/secondmates.md"
+  gap_case hostmismatch 'does not include the second mate host' "edit_file data/secondmates.md sed 's/(home:/(host: deepthought; root: \\/r; home:/'"
   gap_case marker '.fm-office marker missing' "rm navigator/.fm-office"
   gap_case charter 'lacks the "# Office authority" heading' "printf '# Charter\n' > navigator/data/charter.md"
   gap_case project 'dispatch project PropertyCompass2 is not in' ": > navigator/data/projects.md"
-  gap_case admission 'merge project firstmate has no admission=' "sed -i 's/ admission=fm//' quartermaster/data/projects.md"
-  gap_case merger 'merge-via project PropertyCompass2 lacks merger=slarti' "sed -i 's/ merger=slarti//' navigator/data/projects.md"
-  gap_case subset 'merge project skills is not in dispatch' "sed -i 's/dispatch: firstmate,skills/dispatch: firstmate/' data/offices.md"
-  gap_case overlap 'merge-via project firstmate overlaps merge' "sed -i 's/merge-via: none/merge-via: firstmate=slarti/' data/offices.md"
+  gap_case admission 'merge project firstmate has no admission=' "edit_file quartermaster/data/projects.md sed 's/ admission=fm//'"
+  gap_case merger 'merge-via project PropertyCompass2 lacks merger=slarti' "edit_file navigator/data/projects.md sed 's/ merger=slarti//'"
+  gap_case subset 'merge project skills is not in dispatch' "edit_file data/offices.md sed 's/dispatch: firstmate,skills/dispatch: firstmate/'"
+  gap_case overlap 'merge-via project firstmate overlaps merge' "edit_file data/offices.md sed 's/merge-via: none/merge-via: firstmate=slarti/'"
   gap_case malformed 'malformed registry line' "printf -- '- broken line\n' >> data/offices.md"
 }
 
