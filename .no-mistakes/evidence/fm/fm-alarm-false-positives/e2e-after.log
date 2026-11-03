@@ -1,0 +1,17 @@
+=== AFTER (target 8ec0aa04) ===
+--- S1/S2: gilligan parked only on captain holds (silent 90 min), marley 91% resets in 3h, misterrobot 0% ---
+  [producer] counts: {"in_flight":2,"held_in_flight":2,"active_children":0,"decisions_open":2,"holds":2,"queued":2,"landed":0,"endpoints":0} valid=true
+  poll 1: status lines=1
+  poll 2: status lines=2
+  poll 3: status lines=2
+  poll 4: status lines=2
+  status file:
+    | needs-decision [at=1793674429] [cause=decision] [key=fleet-alarm]: Carrying Claude account marleycrittendom@gmail.com 7d 91% (resets 2026-11-03T05:53:49Z); Claude account pressure: marleycrittendom@gmail.com 7d 91%, misterrobot@propertycompass.co.uk 7d 0%; Carrying Claude accounts: marleycrittendom@gmail.com
+    | resolved [at=1793674429] [key=fleet-alarm]: Fleet alarm conditions cleared
+--- S3 adversarial: pool tightens (misterrobot 85%) -> must re-alert ---
+  lines 2 -> 3
+    | needs-decision [at=1793674429] [cause=decision] [key=fleet-alarm]: Carrying Claude account marleycrittendom@gmail.com 7d 91% (resets 2026-11-03T05:53:49Z); Claude account pressure: marleycrittendom@gmail.com 7d 91%, misterrobot@propertycompass.co.uk 7d 85%; Carrying Claude accounts: marleycrittendom@gmail.com
+--- S4 adversarial: gilligan gains an un-held in-flight item while silent -> must alarm ---
+  [producer] counts: {"in_flight":2,"held_in_flight":1,"active_children":0,"decisions_open":1,"holds":1,"queued":1,"landed":0,"endpoints":0} valid=true
+  lines 4 -> 5
+    | paused [at=1793674429] [cause=external] [key=fleet-alarm]: Secondmate holding work silent over 60 minutes: gilligan; Claude account pressure: marleycrittendom@gmail.com 7d 91%, misterrobot@propertycompass.co.uk 7d 0%; Carrying Claude accounts: marleycrittendom@gmail.com; expected back when the secondmate reports again; until 2026-11-03T04:53Z
