@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fm-registry-line-lib.sh - the shared grammar of the registry line family.
 #
-# data/officers.md and data/offices.md hold lines of the form
+# data/officers.md holds lines of the form
 #   - <id> - <sentence> (<key>: <value>; ...; added YYYY-MM-DD)
 # This library owns that line's regex, the field reader, and the cadence and
 # slot helpers ("daily HH:MM" or "every Nh") that registered agents run on.

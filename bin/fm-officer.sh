@@ -20,8 +20,8 @@
 # fm-check-register.sh, and stamps the lane's registered record. retire
 # unregisters that check and removes the registry line; findings stay.
 #
-# Cadence is `daily HH:MM` or `every Nh` (N from 1 to 24). This script owns
-# the grammar: cadence_period and slot_of below. A daily officer's run key is a
+# Cadence is `daily HH:MM` or `every Nh` (N from 1 to 24). The grammar lives
+# in fm-registry-line-lib.sh: cadence_period and slot_of. A daily officer's run key is a
 # date (default yesterday in the home's local time). An interval officer's run
 # key is its slot, `YYYY-MM-DDTHH`: slots start at local midnight and repeat
 # every N hours until the next midnight, each is due from its start, and a
