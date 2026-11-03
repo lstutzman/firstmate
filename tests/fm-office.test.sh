@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-office.sh: list and ensure over data/offices.md,
-# checked against a fixture primary home and a local office home.
+# status over an office home's backlog, and arm-status / disarm-status for its
+# silent watcher check, against a fixture primary home and local office homes.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -168,30 +169,40 @@ test_status_done_window() {
   local w
   w=$(status_world st-done)
   status "$w"
-  assert_equals '{"id":"d-today","title":"Finished today","state":"done","link":"https://github.com/lstutzman/PropertyCompass2/pull/4690","done_at":"2026-11-04T10:05:00Z"}' "$(card "$w" d-today)" "done today"
-  assert_equals "" "$(card "$w" d-old)" "older done item dropped"
-  assert_equals "" "$(card "$w" d-yesterday)" "date-only item from an earlier day is not shown on first sight"
-  pass 'status keeps a done item stamped today and drops older ones'
+  assert_equals '{"id":"d-today","title":"Finished today","state":"done","link":"https://github.com/lstutzman/PropertyCompass2/pull/4690","done_at":"2026-11-04T00:00:00Z"}' "$(card "$w" d-today)" "done today"
+  assert_equals "" "$(card "$w" d-yesterday)" "item closed yesterday dropped"
+  assert_equals "" "$(card "$w" d-old)" "item closed days ago dropped"
+  pass 'status shows a done item closed today (UTC) and drops ones closed on an earlier day'
 }
 
-test_status_done_expires_after_window() {
+test_status_done_close_day_boundary() {
   local w
-  w=$(status_world st-expire)
-  status "$w"
-  status "$w" $((NOW + 23 * 3600)) # 09:05 next day, 23h after first sight
-  assert_contains "$(card "$w" d-today)" '"done_at":"2026-11-04T10:05:00Z"' "done_at carried forward"
-  status "$w" $((NOW + 25 * 3600))
-  assert_equals "" "$(card "$w" d-today)" "done card after 25h"
-  pass 'status carries the first-seen done time forward and drops the card after 24 hours'
+  w=$(status_world st-boundary)
+  status "$w" 1793833200 # 2026-11-04T23:00:00Z
+  assert_contains "$(card "$w" d-today)" '"done_at":"2026-11-04T00:00:00Z"' "23:00 on the close day"
+  status "$w" 1793836799 # 2026-11-04T23:59:59Z
+  assert_contains "$(card "$w" d-today)" '"state":"done"' "last second of the close day"
+  status "$w" 1793836800 # 2026-11-05T00:00:00Z
+  assert_equals "" "$(card "$w" d-today)" "00:00 the next day"
+  pass 'a done card shows through its close day and is gone from 00:00 UTC the next day'
 }
 
-test_status_done_window_setting() {
-  local w
-  w=$(status_world st-window)
+test_status_done_cards_survive_reruns() {
+  local w first
+  w=$(status_world st-rerun)
+  done_cards() { jq -c '[.cards[] | select(.state == "done")]' "$w/navigator/data/office-status.json"; }
   status "$w"
-  FM_HOME="$w/navigator" FM_OFFICE_NOW=$((NOW + 3 * 3600)) FM_OFFICE_DONE_WINDOW_HOURS=2 bash "$OFFICE" status
-  assert_equals "" "$(card "$w" d-today)" "done card after 3h with a 2h window"
-  pass 'FM_OFFICE_DONE_WINDOW_HOURS shortens the done window'
+  first=$(done_cards)
+  assert_contains "$first" '"id":"d-today"' "first run"
+  status "$w" $((NOW + 3600))
+  assert_equals "$first" "$(done_cards)" "second run"
+  rm "$w/navigator/data/office-status.json"
+  status "$w" $((NOW + 7200))
+  assert_equals "$first" "$(done_cards)" "run after the previous file was deleted"
+  printf 'not json\n' > "$w/navigator/data/office-status.json"
+  status "$w" $((NOW + 7300))
+  assert_equals "$first" "$(done_cards)" "run after the previous file was corrupted"
+  pass 'done cards are the same on a rerun and after the previous file is deleted or corrupt'
 }
 
 test_status_skips_unchanged_write() {
@@ -238,6 +249,53 @@ test_status_without_a_backlog_is_empty() {
   pass 'status writes an empty card list when the office has no backlog'
 }
 
+# --- arm-status / disarm-status: the silent status check -----------------------
+arm() { FM_HOME="$1/navigator" bash "$OFFICE" "${2:-arm-status}"; }
+check_registered() {
+  (. "$ROOT/bin/fm-pr-lib.sh" && . "$ROOT/bin/fm-check-lib.sh" && fm_custom_check_registered "$1/navigator/state" office-status)
+}
+
+test_arm_status_registers_a_silent_check() {
+  local w shim out before
+  w=$(status_world arm)
+  out=$(arm "$w" 2>&1)
+  assert_equals "" "$out" "arm output"
+  shim="$w/navigator/state/office-status.check.sh"
+  [ -x "$shim" ] || fail "check is not executable"
+  assert_equals "700" "$(stat -c %a "$shim" 2>/dev/null || stat -f %Lp "$shim")" "check mode"
+  check_registered "$w" || fail "check is not bound by its trust file"
+  before=$(cksum "$shim" "$w/navigator/state/office-status.check-trust")
+  arm "$w"
+  assert_equals "$before" "$(cksum "$shim" "$w/navigator/state/office-status.check-trust")" "second arm"
+  out=$(cd / && env -u FM_HOME "$shim" 2>&1)
+  assert_equals "" "$out" "check output"
+  assert_equals "navigator" "$(jq -r .office "$w/navigator/data/office-status.json")" "check wrote the projection"
+  pass 'arm-status writes and binds a check that runs status silently, and arming twice changes nothing'
+}
+
+test_disarm_status_retires_the_check() {
+  local w
+  w=$(status_world disarm)
+  arm "$w"
+  arm "$w" disarm-status
+  assert_absent "$w/navigator/state/office-status.check.sh"
+  assert_absent "$w/navigator/state/office-status.check-trust"
+  arm "$w" disarm-status || fail "disarming an unarmed office failed"
+  pass 'disarm-status removes the check and its trust file'
+}
+
+test_arm_status_refuses_outside_an_office() {
+  local w err cmd
+  w=$(status_world arm-plain)
+  rm "$w/navigator/.fm-office"
+  for cmd in arm-status disarm-status; do
+    if err=$(arm "$w" "$cmd" 2>&1 >/dev/null); then fail "$cmd succeeded outside an office home"; fi
+    assert_contains "$err" "no .fm-office marker" "$cmd stderr"
+  done
+  assert_absent "$w/navigator/state/office-status.check.sh"
+  pass 'arm-status and disarm-status refuse in a home with no .fm-office marker'
+}
+
 test_healthy_registry_prints_nothing
 test_absent_registry_means_no_offices
 test_gaps
@@ -246,9 +304,12 @@ test_ensure_changes_nothing
 test_status_working_lane
 test_status_next_lane
 test_status_done_window
-test_status_done_expires_after_window
-test_status_done_window_setting
+test_status_done_close_day_boundary
+test_status_done_cards_survive_reruns
 test_status_skips_unchanged_write
 test_status_writes_only_its_file
 test_status_outside_an_office_does_nothing
 test_status_without_a_backlog_is_empty
+test_arm_status_registers_a_silent_check
+test_disarm_status_retires_the_check
+test_arm_status_refuses_outside_an_office

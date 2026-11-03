@@ -12,8 +12,7 @@ line to stderr and exits 1 without touching the projection.
 
 Usage:
   fm-office-status.py --office <id> --data <dir> --state <dir>
-                      [--now <epoch>] [--done-window-hours <n>]
-                      [--refresh-secs <n>]
+                      [--now <epoch>] [--refresh-secs <n>]
 """
 import argparse
 import json
@@ -25,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 
 SCHEMA_VERSION = 1
 NEXT_LIMIT = 10
+DONE_WINDOW = timedelta(hours=24)
 TITLE_LIMIT = 200
 
 ROW_RE = re.compile(r"^- \[( |x)\] ([A-Za-z0-9._-]+) - (.*)$")
@@ -123,16 +123,6 @@ def load_json(path):
     return value if isinstance(value, dict) else None
 
 
-def previous_done_times(previous):
-    times = {}
-    if not previous:
-        return times
-    for card in previous.get("cards", []):
-        if isinstance(card, dict) and card.get("state") == "done" and card.get("done_at"):
-            times[card.get("id")] = card["done_at"]
-    return times
-
-
 def parse_iso(text):
     try:
         return datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -140,10 +130,8 @@ def parse_iso(text):
         return None
 
 
-def build_cards(rows, state_dir, now, window, previous):
+def build_cards(rows, state_dir, now):
     working, queued, done = [], [], []
-    seen_done = previous_done_times(previous)
-    today = now.strftime("%Y-%m-%d")
     for row in rows:
         card = {"id": row["id"], "title": clean_title(row["head"])}
         if row["lane"] == "working":
@@ -162,15 +150,11 @@ def build_cards(rows, state_dir, now, window, previous):
             card["waiting"] = "Lee" if hold and hold.group(1).strip() == "captain" else ""
             queued.append(card)
         else:
-            # The backlog records only a date for a finished item, so the first
-            # sweep that sees it stamps the time and later sweeps carry it on.
-            done_at = parse_iso(seen_done.get(row["id"]))
-            if done_at is None:
-                _, day = row_date(row)
-                if day is None:
-                    continue
-                done_at = now if day == today else date_midnight(day)
-            if now - done_at > window:
+            _, day = row_date(row)
+            if day is None:
+                continue
+            done_at = date_midnight(day)
+            if now - done_at >= DONE_WINDOW:
                 continue
             card["state"] = "done"
             card["link"] = first_url(row)
@@ -207,7 +191,6 @@ def main():
     parser.add_argument("--data", required=True)
     parser.add_argument("--state", required=True)
     parser.add_argument("--now", type=int)
-    parser.add_argument("--done-window-hours", type=float, default=24)
     parser.add_argument("--refresh-secs", type=int, default=900)
     args = parser.parse_args()
 
@@ -229,7 +212,7 @@ def main():
         "office": args.office,
         "title": args.office[:1].upper() + args.office[1:],
         "written_at": iso(now),
-        "cards": build_cards(rows, args.state, now, timedelta(hours=args.done_window_hours), previous),
+        "cards": build_cards(rows, args.state, now),
     }
     if previous and comparable(previous) == comparable(document):
         written = parse_iso(previous.get("written_at"))
