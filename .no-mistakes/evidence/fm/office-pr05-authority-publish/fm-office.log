@@ -1,0 +1,53 @@
+ok - a healthy registry prints nothing from ensure and ok from list
+ok - an absent data/offices.md means no offices
+ok - ensure reports: host not allowed: macbook
+ok - ensure reports: unknown role "wizard"
+ok - ensure reports: wip must be
+ok - ensure reports: tick must be
+ok - ensure reports: auto-merge-classes must be none
+ok - ensure reports: lane:nope is not a registered officer
+ok - ensure reports: not a registered second mate
+ok - ensure reports: does not include the second mate host
+ok - ensure reports: source lane:progress is not registered in
+ok - ensure reports: source tick is not registered in
+ok - ensure reports: .fm-office marker missing
+ok - ensure reports: lacks the "# Office authority" heading
+ok - ensure reports: dispatch project PropertyCompass2 is not in
+ok - ensure reports: merge project firstmate has no admission=
+ok - ensure reports: merge-via project PropertyCompass2 lacks merger=slarti
+ok - ensure reports: merge project skills is not in dispatch
+ok - ensure reports: merge-via project firstmate overlaps merge
+ok - ensure reports: malformed registry line
+ok - list shows the gap count per office
+ok - ensure is read-only
+ok - publish writes each office only its own line, and a plain second mate gets no file and no receipt
+ok - an office refuses another office's record, and a record with no receipt
+ok - publish follows an edited line, ensure reports the stale record, and a removed line revokes
+ok - a local record edit refuses until republished, and an office-local admission edit stays reported
+ok - a publish that cannot pin admission writes nothing and leaves the office with no authority
+ok - publish refuses an unregistered id, a mismatched home, a second-mate home, and a remote route
+ok - the remote push carries an office its record with a receipt, and sends a remote office that merges an absence
+ok - status lists every in-flight item as working, linking the task pr= or the row URL
+ok - status lists the first 10 queued items in order and marks a captain hold as waiting on Lee
+ok - status stamps done items dated today or yesterday at first sight and never shows older ones
+ok - a done card shows for 24 hours from its own first sight and never comes back
+ok - a corrupt or missing seen file does not bring back an item dated before yesterday
+ok - status prunes seen stamps older than 7 days
+ok - status rewrites only on a change or after the refresh interval
+ok - status writes only data/office-status.json and state/office-status.seen.json
+ok - status does nothing in a home with no .fm-office marker
+ok - status writes an empty card list when the office has no backlog
+ok - arm-status writes and binds a check that runs status silently, and arming twice changes nothing
+ok - disarm-status removes the check and its trust file
+ok - arm-status and disarm-status refuse in a home with no .fm-office marker
+ok - register-sources installs trusted per-source shims, idempotently, and drops unlisted ones
+ok - register-sources leaves the armed status check registered
+ok - a registered shim runs the check with the office home
+ok - tick prints once per slot, counts only unheld unblocked queued items, and is silent with nothing to start
+ok - tick counts live ship and scout records against wip and is silent when none is free
+ok - tick fires for an unread lane digest even with nothing queued
+ok - a lane check prints once per new digest and ignores repeats and empty digests
+ok - a lane check finds its source in a sources list with spaces after the commas
+ok - checks are silent for a remote parent, an unreadable file, an unregistered source and a non-office home
+ok - the high lane counts only high or critical findings and reports a new count once
+ok - source checks read the parent and write only in the office home

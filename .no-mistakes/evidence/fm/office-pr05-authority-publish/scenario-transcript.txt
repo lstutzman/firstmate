@@ -1,0 +1,80 @@
+== S1 publish each office; plain mate gets nothing ==
+office navigator: pushed
+  [rc=0]
+office quartermaster: pushed
+  [rc=0]
+office slarti: unchanged
+  [rc=0]
+-- navigator config/office-authority:
+fm-office-authority-v1
+id=navigator
+dispatch=PropertyCompass2
+merge=none
+merge-via=PropertyCompass2=slarti
+auto-merge-classes=none
+wip=2
+admission-sha256=
+-- quartermaster config/office-authority:
+fm-office-authority-v1
+id=quartermaster
+dispatch=firstmate,skills
+merge=firstmate,skills
+merge-via=none
+auto-merge-classes=none
+wip=2
+admission-sha256=firstmate:af96d0c654b1b1b257039448c1177402db8a94f08b1264cb45a9e4991b852886,skills:7a52a07d81f2337f76b9d29bb81299d072896421ec99b7821c4abca8657d1f47
+-- receipt present: /tmp/fm-lab.bLKWo7/navigator/config/.fm-inherit-office-authority.generation
+-- slarti config: (empty means no record, no receipt)
+-- ensure after publish (documented --rules path inside config/admission):
+OFFICE: office navigator: source tick is not registered in /tmp/fm-lab.bLKWo7/navigator/state (run bin/fm-office.sh register-sources there)
+OFFICE: office quartermaster: source tick is not registered in /tmp/fm-lab.bLKWo7/quartermaster/state (run bin/fm-office.sh register-sources there)
+  [ensure rc=0]
+== S2 office spawn gate reads the published record ==
+-- navigator spawning a second mate (record loaded, mandate refuses):
+error: spawn refused: office navigator never creates or relaunches a second mate
+-- slarti (plain mate, not an office) spawning a second mate:
+error: no firstmate home supplied or registered for rogue
+== S3 adversarial: delete one office signal ==
+error: spawn refused: /tmp/fm-lab.bLKWo7/navigator/data/charter.md has the "# Office authority" heading but this home has no .fm-office marker; the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+error: spawn refused: this home has an .fm-office marker but /tmp/fm-lab.bLKWo7/navigator/data/charter.md lacks the "# Office authority" heading; the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+== S4 adversarial: tamper with or drop the record ==
+error: spawn refused: office navigator's authority record is unproven: the inherited office authority record diverges from the receipt; the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+OFFICE: office navigator: source tick is not registered in /tmp/fm-lab.bLKWo7/navigator/state (run bin/fm-office.sh register-sources there)
+OFFICE: office navigator: authority record is unproven (the inherited office authority record diverges from the receipt); run bin/fm-office.sh publish navigator
+OFFICE: office quartermaster: source tick is not registered in /tmp/fm-lab.bLKWo7/quartermaster/state (run bin/fm-office.sh register-sources there)
+  [ensure rc=0]
+office navigator: pushed
+  [rc=0]
+error: spawn refused: office navigator has no published authority record (/tmp/fm-lab.bLKWo7/navigator/config/office-authority with its receipt); the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+== S5 registry change: ensure reports stale, publish fixes, removal revokes ==
+OFFICE: office navigator: source tick is not registered in /tmp/fm-lab.bLKWo7/navigator/state (run bin/fm-office.sh register-sources there)
+OFFICE: office navigator: authority record is stale against data/offices.md or the master admission config; run bin/fm-office.sh publish navigator
+OFFICE: office quartermaster: source tick is not registered in /tmp/fm-lab.bLKWo7/quartermaster/state (run bin/fm-office.sh register-sources there)
+  [ensure rc=0]
+office navigator: pushed
+  [rc=0]
+wip=3
+OFFICE: office navigator: source tick is not registered in /tmp/fm-lab.bLKWo7/navigator/state (run bin/fm-office.sh register-sources there)
+OFFICE: office quartermaster: source tick is not registered in /tmp/fm-lab.bLKWo7/quartermaster/state (run bin/fm-office.sh register-sources there)
+  [ensure rc=0]
+office navigator: pushed - mirrored primary absence
+  [rc=0]
+-- record after revocation: cat: /tmp/fm-lab.bLKWo7/navigator/config/office-authority: No such file or directory
+error: spawn refused: the main home published no authority for office navigator; the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+== S6 office-local admission edit is reported and not blessed by republish ==
+OFFICE: office quartermaster: source tick is not registered in /tmp/fm-lab.bLKWo7/quartermaster/state (run bin/fm-office.sh register-sources there)
+  [ensure rc=0]
+office quartermaster: unchanged
+  [rc=0]
+OFFICE: office quartermaster: source tick is not registered in /tmp/fm-lab.bLKWo7/quartermaster/state (run bin/fm-office.sh register-sources there)
+  [ensure rc=0]
+OFFICE: office quartermaster: source tick is not registered in /tmp/fm-lab.bLKWo7/quartermaster/state (run bin/fm-office.sh register-sources there)
+  [ensure rc=0]
+== S7 refusals of publish itself ==
+office-publish: nobody is not a registered second mate in /tmp/fm-lab.bLKWo7/main/data/secondmates.md
+  [rc=1]
+office-publish: only the main home publishes office authority, and /tmp/fm-lab.bLKWo7/quartermaster is a second-mate home
+  [rc=1]
+office quartermaster: error - cannot publish office quartermaster's authority record: the main home's master admission config /tmp/fm-lab.bLKWo7/main/config/admission/sk or a rules file it names cannot be read
+  [rc=1]
+-- quartermaster receipt after failed publish: sed: can't read /tmp/fm-lab.bLKWo7/quartermaster/config/.fm-inherit-office-authority.generation: No such file or directory

@@ -1,0 +1,24 @@
+== S6b quartermaster republished; master vs office digest with absolute --rules inside config/admission ==
+office quartermaster: unchanged
+  [rc=0]
+main digest:   af96d0c654b1b1b257039448c1177402db8a94f08b1264cb45a9e4991b852886
+office digest: af96d0c654b1b1b257039448c1177402db8a94f08b1264cb45a9e4991b852886
+-- ensure (no authority gaps expected):
+-- edit the office-local config the classifier reads (classes widened):
+OFFICE: office quartermaster: admission config fm in /tmp/fm-lab.bLKWo7/quartermaster/config differs from the master copy its record pins, so its merges of firstmate are refused; copy it again from /tmp/fm-lab.bLKWo7/main/config/admission
+office quartermaster: unchanged
+  [rc=0]
+-- after republish (must still report):
+OFFICE: office quartermaster: admission config fm in /tmp/fm-lab.bLKWo7/quartermaster/config differs from the master copy its record pins, so its merges of firstmate are refused; copy it again from /tmp/fm-lab.bLKWo7/main/config/admission
+-- implicit sibling .rules variant (no --rules arg):
+office quartermaster: pushed
+  [rc=0]
+-- office-local sk.rules edited:
+OFFICE: office quartermaster: admission config sk in /tmp/fm-lab.bLKWo7/quartermaster/config differs from the master copy its record pins, so its merges of skills are refused; copy it again from /tmp/fm-lab.bLKWo7/main/config/admission
+-- restored:
+== S8 fm-config-push.sh convergence publishes the record ==
+OFFICE: office quartermaster: authority record is stale against data/offices.md or the master admission config; run bin/fm-office.sh publish quartermaster
+secondmate quartermaster (/tmp/fm-lab.bLKWo7/quartermaster): skipped - unsafe home: not a firstmate home (missing AGENTS.md)
+-- quartermaster wip now: wip=2
+OFFICE: office quartermaster: authority record is stale against data/offices.md or the master admission config; run bin/fm-office.sh publish quartermaster
+[end]

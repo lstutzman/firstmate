@@ -1,0 +1,25 @@
+== S8 retry 2: fm-config-push.sh with offices.md wip changed to 1 ==
+config-push: /tmp/fm-lab.bLKWo7/main -> live secondmate homes
+secondmate quartermaster (/tmp/fm-lab.bLKWo7/quartermaster):
+  crew-dispatch.json: unchanged
+  dispatch-never-send: unchanged
+  typesafe-base-url: unchanged
+  typesafe-model: unchanged
+  typesafe-token-file: unchanged
+  crew-harness: unchanged
+  backlog-backend: unchanged
+  backend: unchanged
+  herdr-presentation-spaces: unchanged
+  startup-memory-budget: unchanged
+  trace-context: unchanged - session-scoped
+  launch-env-allowlist: unchanged
+  claude-permission-mode: unchanged
+  lavish-axi-host: unchanged
+  keep-ai-trailers: unchanged
+  supervision-host-off: unchanged
+  firstmate-role: unchanged
+  cpa-usage-host: unchanged
+push rc=1
+-- quartermaster wip now: wip=1
+-- ensure:
+[end]
