@@ -1,0 +1,101 @@
+{
+  "at": "2026-11-04T12:47:18Z",
+  "value": {
+    "updated": "2026-11-04T12:47:18Z",
+    "cards": [
+      {
+        "id": "deploy-index-pc-4046",
+        "band": "now",
+        "question": "Deploy the PC-4046 index to production? It shipped in https://github.com/lstutzman/PropertyCompass2/pull/4777",
+        "advice": "go",
+        "replies": [
+          "go"
+        ],
+        "asked": "2026-11-04T10:47:18Z",
+        "state": "asked"
+      },
+      {
+        "id": "merge-word-4777",
+        "band": "now",
+        "question": "Merge word for https://github.com/lstutzman/PropertyCompass2/pull/4777?",
+        "advice": "yes",
+        "replies": [
+          "yes"
+        ],
+        "asked": "2026-11-04T10:47:18Z",
+        "state": "asked"
+      },
+      {
+        "id": "deploy-closed-13",
+        "band": "now",
+        "question": "Deploy https://github.com/lstutzman/firstmate/pull/13 to production?",
+        "advice": "go",
+        "replies": [
+          "go"
+        ],
+        "asked": "2026-11-04T10:47:18Z",
+        "state": "asked"
+      },
+      {
+        "id": "navigator-pc-category-word-1104-9e9dc42cdb",
+        "band": "now",
+        "question": "Which category word for PC-1104?",
+        "advice": "a",
+        "replies": [
+          "a",
+          "b"
+        ],
+        "asked": "2026-11-04T10:47:18Z",
+        "state": "asked"
+      },
+      {
+        "id": "navigator-reconcile-k-51bfb96ba3",
+        "band": "now",
+        "question": "Reconciled hold: which option?",
+        "advice": "a",
+        "replies": [
+          "a"
+        ],
+        "asked": "2026-11-04T10:47:18Z",
+        "state": "asked"
+      },
+      {
+        "id": "navigator-answered-k-20a26d9b61",
+        "band": "now",
+        "question": "Answered decision still shown",
+        "advice": "a",
+        "replies": [
+          "a"
+        ],
+        "asked": "2026-11-04T10:47:18Z",
+        "state": "asked"
+      },
+      {
+        "id": "navigator-released-k-64c6da9674",
+        "band": "now",
+        "question": "Released hold still shown",
+        "advice": "a",
+        "replies": [
+          "a"
+        ],
+        "asked": "2026-11-04T10:47:18Z",
+        "state": "asked"
+      },
+      {
+        "id": "navigator-answerfield-k-a9ea494cb3",
+        "band": "now",
+        "question": "Card carries its answer",
+        "advice": "a",
+        "replies": [
+          "a"
+        ],
+        "asked": "2026-11-04T10:47:18Z",
+        "state": "asked",
+        "answer": {
+          "text": "b",
+          "at": "2026-11-04T12:47:18Z"
+        }
+      }
+    ]
+  }
+}

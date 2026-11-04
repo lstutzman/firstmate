@@ -1,0 +1,48 @@
+## status log in disposable home
+needs-decision [at=1793790438] [key=pc-category-word-1104]: category word
+resolved [key=pc-category-word-1104] [at=1793790738]: decision-sweep: PR landed
+needs-decision [at=1793790438] [key=reconcile-k]: hold
+resolved [key=reconcile-k] [at=1793790738]: captain hold reconcile-k: reconciled
+needs-decision [at=1793790438] [key=answered-k]: d
+resolved [key=answered-k] [at=1793790738]: answered: Lee chose B
+needs-decision [at=1793790438] [key=released-k]: d
+resolved [key=released-k] [at=1793790738]: captain hold released-k: released
+needs-decision [at=1793790438] [key=answerfield-k]: d
+resolved [key=answerfield-k] [at=1793790738]: decision-sweep: PR landed
+
+## cards
+deploy-index-pc-4046: Deploy the PC-4046 index to production? It shipped in https://github.com/lstutzman/PropertyCompass2/pull/4777 answer=-
+merge-word-4777: Merge word for https://github.com/lstutzman/PropertyCompass2/pull/4777? answer=-
+deploy-closed-13: Deploy https://github.com/lstutzman/firstmate/pull/13 to production? answer=-
+navigator-pc-category-word-1104-9e9dc42cdb: Which category word for PC-1104? answer=-
+navigator-reconcile-k-51bfb96ba3: Reconciled hold: which option? answer=-
+navigator-answered-k-20a26d9b61: Answered decision still shown answer=-
+navigator-released-k-64c6da9674: Released hold still shown answer=-
+navigator-answerfield-k-a9ea494cb3: Card carries its answer answer=b
+
+## TARGET 797ab8fd
+DIGEST 2026-11-04T12 6 data/officers/page-check/2026-11-04T12.md
+exit=0
+--- findings (kind id evidence)
+jq: error (at /tmp/fm-pagecheck-live.RKMFNi/home/data/officers/page-check/state.json:8): Cannot iterate over null (null)
+stale-card  stale-card:Captain's Log:deploy-closed-13:lstutzman/firstmate#13  | names lstutzman/firstmate#13, which is closed
+stale-card  stale-card:Captain's Log:merge-word-4777:lstutzman/PropertyCompass2#4777  | names lstutzman/PropertyCompass2#4777, which is merged
+stale-card  stale-card:Captain's Log:navigator-answered-k-20a26d9b61:resolved  | its status line was resolved elsewhere
+stale-card  stale-card:Captain's Log:navigator-answerfield-k-a9ea494cb3:answered  | already answered but still shown
+stale-card  stale-card:Captain's Log:navigator-answerfield-k-a9ea494cb3:resolved  | its status line was resolved elsewhere
+stale-card  stale-card:Captain's Log:navigator-released-k-64c6da9674:resolved  | its status line was resolved elsewhere
+
+## BASE 85560502 (before change)
+DIGEST 2026-11-04T12 9 data/officers/page-check/2026-11-04T12.md
+exit=0
+--- findings (kind id evidence)
+jq: error (at /tmp/fm-pagecheck-live.RKMFNi/home/data/officers/page-check/state.json:11): Cannot iterate over null (null)
+stale-card  stale-card:Captain's Log:deploy-closed-13:lstutzman/firstmate#13  | names lstutzman/firstmate#13, which is closed
+stale-card  stale-card:Captain's Log:deploy-index-pc-4046:lstutzman/PropertyCompass2#4777  | names lstutzman/PropertyCompass2#4777, which is merged
+stale-card  stale-card:Captain's Log:merge-word-4777:lstutzman/PropertyCompass2#4777  | names lstutzman/PropertyCompass2#4777, which is merged
+stale-card  stale-card:Captain's Log:navigator-answered-k-20a26d9b61:resolved  | its status line was resolved elsewhere
+stale-card  stale-card:Captain's Log:navigator-answerfield-k-a9ea494cb3:answered  | already answered but still shown
+stale-card  stale-card:Captain's Log:navigator-answerfield-k-a9ea494cb3:resolved  | its status line was resolved elsewhere
+stale-card  stale-card:Captain's Log:navigator-pc-category-word-1104-9e9dc42cdb:resolved  | its status line was resolved elsewhere
+stale-card  stale-card:Captain's Log:navigator-reconcile-k-51bfb96ba3:resolved  | its status line was resolved elsewhere
+stale-card  stale-card:Captain's Log:navigator-released-k-64c6da9674:resolved  | its status line was resolved elsewhere

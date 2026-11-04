@@ -1,0 +1,7 @@
+## real GitHub PR states (read-only gh-axi GET)
+PC2#4777: PRSTATE {"merged":true,"state":"closed"}
+PC2#13: error: "gh: Not Found (HTTP 404)"
+code: NOT_FOUND
+## run at target commit
+DIGEST 2026-11-04T12 5 data/officers/page-check/2026-11-04T12.md
+exit=0
