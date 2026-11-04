@@ -1001,7 +1001,7 @@ The Ship's Surgeon is the triage pass plus intake.
 Its digest keeps the session join's findings under `archive_findings` and puts the intake findings in `findings`, so a `severity: high` there, which the `lane:surgeon:high` [wake source](#offices-dataofficesmd) counts, means a high intake finding and never an archive coverage gap.
 Intake reads the fleet app with `GET` only: `/api/runs`, the latest result of each live nightly E2E or code-review job, and `/api/sweeper-results`.
 A red nightly E2E finding is high only when its run's `sha` is the current staging tip, and medium for an older run; an unreadable tip or a result with no `sha` rates it medium and adds a coverage gap.
-The bug sweeper's payload carries no production-source marker, so there is deliberately no production-error rule, and severity is never guessed from a bug's text.
+The bug sweeper's payload carries no production-source marker, so the production-error-class rule is deliberately absent until the sweeper sends an environment field, and severity is never guessed from a bug's text.
 A finding the source already put in Linear is `tracked` and never filed again.
 A real finding whose source gave no key has no stable fingerprint, so it is reported and never filed.
 With `writes: linear`, the Surgeon files each real, untracked finding in team PC and nothing else: it never edits, comments on, closes or deletes an item.

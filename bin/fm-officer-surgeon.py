@@ -31,9 +31,10 @@ Each finding is classified with the tables below and no model:
                         fixed-live, noise: won't fix; fixed-staging-only:
                         needs a decision. Severity P1/critical/high: high;
                         P2/medium: medium; else low. The sweeper payload
-                        carries no production-source marker, so there is
-                        deliberately no production rule (no guessing from text)
-                        until it does.
+                        carries no production-source marker, so the
+                        production-error-class rule is deliberately absent
+                        (never guessed from text) until the sweeper sends an
+                        environment field.
 
 A won't-fix finding is always low. A finding the source already put in Linear
 (an `issue` on the nightly failure, a filing on the review finding, a Linear item
