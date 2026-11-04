@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-office.sh: list and ensure over data/offices.md,
-# checked against a fixture primary home and a local office home.
+# status over an office home's backlog, and arm-status / disarm-status for its
+# silent watcher check, against a fixture primary home and local office homes.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -110,8 +111,229 @@ test_ensure_changes_nothing() {
   pass 'ensure is read-only'
 }
 
+# --- status: the office-status.json projection --------------------------------
+NOW=1793786700 # 2026-11-04T10:05:00Z
+
+status() { FM_HOME="$1/navigator" FM_OFFICE_NOW="${2:-$NOW}" bash "$OFFICE" status; }
+card() { jq -c --arg id "$2" '.cards[] | select(.id == $id)' "$1/navigator/data/office-status.json"; }
+
+# status_world <name>: the healthy world plus a navigator backlog with two in-flight,
+# twelve queued (one held for Lee) and three done items.
+status_world() {
+  local w i
+  w=$(make_world "$1")
+  mkdir -p "$w/navigator/state"
+  {
+    printf '## In flight\n'
+    printf -- '- [ ] pc-4701-fix - Fix the thing (repo: PropertyCompass2) (kind: ship) (since 2026-11-03)\n  Main corr abc.\n'
+    printf -- '- [ ] pc-4702-body - Body link (repo: PropertyCompass2) (kind: ship) (since 2026-11-04)\n  PR https://github.com/lstutzman/PropertyCompass2/pull/4702 is open.\n'
+    printf '\n## Queued\n'
+    printf -- '- [ ] q-held - Needs Lee (repo: PropertyCompass2) (kind: task) (since 2026-11-01) (hold: fm-hold-v1:abc) (hold-kind: captain)\n'
+    for i in 1 2 3 4 5 6 7 8 9 10 11; do
+      printf -- '- [ ] q-%s - Queued item %s https://linear.app/x/issue/PC-47%s (repo: PropertyCompass2) (kind: task) (since 2026-11-01)\n' "$i" "$i" "$i"
+    done
+    printf '\n## Done\n'
+    printf -- '- [x] d-today - Finished today https://github.com/lstutzman/PropertyCompass2/pull/4690 (repo: PropertyCompass2) (kind: ship) (merged 2026-11-04)\n'
+    printf -- '- [x] d-old - Finished long ago (repo: PropertyCompass2) (kind: ship) (merged 2026-11-01)\n'
+    printf -- '- [x] d-yesterday - Finished yesterday (repo: PropertyCompass2) (kind: ship) (done 2026-11-03)\n'
+  } > "$w/navigator/data/backlog.md"
+  printf 'pr=https://github.com/lstutzman/PropertyCompass2/pull/4701\nkind=ship\n' > "$w/navigator/state/pc-4701-fix.meta"
+  printf '%s\n' "$w"
+}
+
+test_status_working_lane() {
+  local w out
+  w=$(status_world st-working)
+  out=$(status "$w" 2>&1)
+  assert_equals "" "$out" "status output"
+  assert_equals "navigator Navigator 1" "$(jq -r '[.office, .title, .schema_version] | join(" ")' "$w/navigator/data/office-status.json")" "header"
+  assert_equals "2026-11-04T10:05:00Z" "$(jq -r .written_at "$w/navigator/data/office-status.json")" "written_at"
+  assert_equals '{"id":"pc-4701-fix","title":"Fix the thing","state":"working","link":"https://github.com/lstutzman/PropertyCompass2/pull/4701","since":"2026-11-03T00:00:00Z"}' "$(card "$w" pc-4701-fix)" "meta pr= link wins"
+  assert_contains "$(card "$w" pc-4702-body)" '"link":"https://github.com/lstutzman/PropertyCompass2/pull/4702"' "body link"
+  pass 'status lists every in-flight item as working, linking the task pr= or the row URL'
+}
+
+test_status_next_lane() {
+  local w
+  w=$(status_world st-next)
+  status "$w"
+  assert_equals "10" "$(jq '[.cards[] | select(.state == "next")] | length' "$w/navigator/data/office-status.json")" "next cap"
+  assert_equals "q-held q-1 q-2" "$(jq -r '[.cards[] | select(.state == "next") | .id][:3] | join(" ")' "$w/navigator/data/office-status.json")" "next order"
+  assert_equals '{"id":"q-held","title":"Needs Lee","state":"next","link":"","waiting":"Lee"}' "$(card "$w" q-held)" "held for Lee"
+  assert_equals '{"id":"q-1","title":"Queued item 1","state":"next","link":"https://linear.app/x/issue/PC-471","waiting":""}' "$(card "$w" q-1)" "url stripped from title and kept as link"
+  assert_equals "" "$(card "$w" q-10)" "eleventh queued item left out"
+  pass 'status lists the first 10 queued items in order and marks a captain hold as waiting on Lee'
+}
+
+seen() { jq -c . "$1/navigator/state/office-status.seen.json"; }
+
+test_status_done_window() {
+  local w
+  w=$(status_world st-done)
+  status "$w"
+  assert_equals '{"id":"d-today","title":"Finished today","state":"done","link":"https://github.com/lstutzman/PropertyCompass2/pull/4690","done_at":"2026-11-04T10:05:00Z"}' "$(card "$w" d-today)" "done today, stamped at first sight"
+  assert_equals '{"id":"d-yesterday","title":"Finished yesterday","state":"done","link":"","done_at":"2026-11-04T10:05:00Z"}' "$(card "$w" d-yesterday)" "dated yesterday, first seen now"
+  assert_equals "" "$(card "$w" d-old)" "dated before yesterday"
+  assert_equals '{"d-today":"2026-11-04T10:05:00Z","d-yesterday":"2026-11-04T10:05:00Z"}' "$(seen "$w")" "seen stamps"
+  pass 'status stamps done items dated today or yesterday at first sight and never shows older ones'
+}
+
+test_status_done_shows_24_hours_from_first_sight() {
+  local w first last gone want
+  for first in 1793782800 1793835600; do # 2026-11-04T09:00:00Z, 2026-11-04T23:40:00Z
+    case $first in
+      1793782800) want=2026-11-04T09:00:00Z last=1793869140 gone=1793869260 ;; # 2026-11-05T08:59Z, 09:01Z
+      *) want=2026-11-04T23:40:00Z last=1793921940 gone=1793922060 ;;           # 2026-11-05T23:39Z, 23:41Z
+    esac
+    w=$(status_world "st-24h-$first")
+    status "$w" "$first"
+    assert_contains "$(card "$w" d-today)" "\"done_at\":\"$want\"" "first sight at $want"
+    status "$w" "$last"
+    assert_contains "$(card "$w" d-today)" "\"done_at\":\"$want\"" "23h59m after $want"
+    status "$w" "$gone"
+    assert_equals "" "$(card "$w" d-today)" "24h01m after $want"
+    status "$w" $((gone + 600))
+    assert_equals "" "$(card "$w" d-today)" "a later run after $want"
+    rm "$w/navigator/data/office-status.json"
+    status "$w" $((gone + 1200))
+    assert_equals "" "$(card "$w" d-today)" "a run after the projection was deleted ($want)"
+  done
+  pass 'a done card shows for 24 hours from its own first sight and never comes back'
+}
+
+test_status_seen_file_loss_keeps_old_items_out() {
+  local w
+  w=$(status_world st-seen-lost)
+  mkdir -p "$w/navigator/state"
+  printf 'not json\n' > "$w/navigator/state/office-status.seen.json"
+  status "$w"
+  assert_equals "" "$(card "$w" d-old)" "corrupt seen file"
+  rm "$w/navigator/state/office-status.seen.json"
+  status "$w" $((NOW + 60))
+  assert_equals "" "$(card "$w" d-old)" "deleted seen file"
+  assert_equals "null" "$(jq '."d-old"' "$w/navigator/state/office-status.seen.json")" "old item never stamped"
+  pass 'a corrupt or missing seen file does not bring back an item dated before yesterday'
+}
+
+test_status_prunes_old_stamps() {
+  local w
+  w=$(status_world st-prune)
+  status "$w"
+  status "$w" 1794305100 # 2026-11-10T10:05:00Z, six days later
+  assert_equals '{"d-today":"2026-11-04T10:05:00Z","d-yesterday":"2026-11-04T10:05:00Z"}' "$(seen "$w")" "stamps within 7 days kept"
+  status "$w" 1794391560 # 2026-11-11T10:06:00Z, seven days and a minute later
+  assert_equals '{}' "$(seen "$w")" "stamps older than 7 days pruned"
+  assert_equals "" "$(card "$w" d-today)" "pruned item not shown again"
+  pass 'status prunes seen stamps older than 7 days'
+}
+
+test_status_skips_unchanged_write() {
+  local w ino
+  w=$(status_world st-same)
+  status "$w"
+  ino=$(ls -i "$w/navigator/data/office-status.json")
+  status "$w" $((NOW + 300))
+  assert_equals "$ino" "$(ls -i "$w/navigator/data/office-status.json")" "file replaced although nothing changed"
+  assert_equals "2026-11-04T10:05:00Z" "$(jq -r .written_at "$w/navigator/data/office-status.json")" "written_at untouched"
+  status "$w" $((NOW + 1000))
+  assert_equals "2026-11-04T10:21:40Z" "$(jq -r .written_at "$w/navigator/data/office-status.json")" "heartbeat refresh"
+  printf -- '- [ ] q-new - New item (repo: PropertyCompass2) (kind: task) (since 2026-11-04)\n' >> "$w/navigator/data/backlog.md"
+  status "$w" $((NOW + 1060))
+  assert_equals "2026-11-04T10:22:40Z" "$(jq -r .written_at "$w/navigator/data/office-status.json")" "rewrite on change"
+  pass 'status rewrites only on a change or after the refresh interval'
+}
+
+test_status_writes_only_its_file() {
+  local w before after
+  w=$(status_world st-only)
+  before=$(find "$w" -type f ! -name office-status.json ! -name office-status.seen.json -exec cksum {} + | sort)
+  status "$w"
+  after=$(find "$w" -type f ! -name office-status.json ! -name office-status.seen.json -exec cksum {} + | sort)
+  assert_equals "$before" "$after" "files other than office-status.json and office-status.seen.json"
+  [ -f "$w/navigator/state/office-status.seen.json" ] || fail "seen file not written"
+  assert_equals "" "$(find "$w/navigator" -name '.office-status.*')" "temp files left behind"
+  pass 'status writes only data/office-status.json and state/office-status.seen.json'
+}
+
+test_status_outside_an_office_does_nothing() {
+  local w
+  w=$(status_world st-plain)
+  rm "$w/navigator/.fm-office"
+  assert_equals "" "$(status "$w" 2>&1)" "output"
+  assert_absent "$w/navigator/data/office-status.json"
+  pass 'status does nothing in a home with no .fm-office marker'
+}
+
+test_status_without_a_backlog_is_empty() {
+  local w
+  w=$(make_world st-empty)
+  status "$w"
+  assert_equals "[]" "$(jq -c .cards "$w/navigator/data/office-status.json")" "cards"
+  pass 'status writes an empty card list when the office has no backlog'
+}
+
+# --- arm-status / disarm-status: the silent status check -----------------------
+arm() { FM_HOME="$1/navigator" bash "$OFFICE" "${2:-arm-status}"; }
+check_registered() {
+  (. "$ROOT/bin/fm-pr-lib.sh" && . "$ROOT/bin/fm-check-lib.sh" && fm_custom_check_registered "$1/navigator/state" office-status)
+}
+
+test_arm_status_registers_a_silent_check() {
+  local w shim out before
+  w=$(status_world arm)
+  out=$(arm "$w" 2>&1)
+  assert_equals "" "$out" "arm output"
+  shim="$w/navigator/state/office-status.check.sh"
+  [ -x "$shim" ] || fail "check is not executable"
+  assert_equals "700" "$(stat -c %a "$shim" 2>/dev/null || stat -f %Lp "$shim")" "check mode"
+  check_registered "$w" || fail "check is not bound by its trust file"
+  before=$(cksum "$shim" "$w/navigator/state/office-status.check-trust")
+  arm "$w"
+  assert_equals "$before" "$(cksum "$shim" "$w/navigator/state/office-status.check-trust")" "second arm"
+  out=$(cd / && env -u FM_HOME "$shim" 2>&1)
+  assert_equals "" "$out" "check output"
+  assert_equals "navigator" "$(jq -r .office "$w/navigator/data/office-status.json")" "check wrote the projection"
+  pass 'arm-status writes and binds a check that runs status silently, and arming twice changes nothing'
+}
+
+test_disarm_status_retires_the_check() {
+  local w
+  w=$(status_world disarm)
+  arm "$w"
+  arm "$w" disarm-status
+  assert_absent "$w/navigator/state/office-status.check.sh"
+  assert_absent "$w/navigator/state/office-status.check-trust"
+  arm "$w" disarm-status || fail "disarming an unarmed office failed"
+  pass 'disarm-status removes the check and its trust file'
+}
+
+test_arm_status_refuses_outside_an_office() {
+  local w err cmd
+  w=$(status_world arm-plain)
+  rm "$w/navigator/.fm-office"
+  for cmd in arm-status disarm-status; do
+    if err=$(arm "$w" "$cmd" 2>&1 >/dev/null); then fail "$cmd succeeded outside an office home"; fi
+    assert_contains "$err" "no .fm-office marker" "$cmd stderr"
+  done
+  assert_absent "$w/navigator/state/office-status.check.sh"
+  pass 'arm-status and disarm-status refuse in a home with no .fm-office marker'
+}
+
 test_healthy_registry_prints_nothing
 test_absent_registry_means_no_offices
 test_gaps
 test_list_counts_gaps
 test_ensure_changes_nothing
+test_status_working_lane
+test_status_next_lane
+test_status_done_window
+test_status_done_shows_24_hours_from_first_sight
+test_status_seen_file_loss_keeps_old_items_out
+test_status_prunes_old_stamps
+test_status_skips_unchanged_write
+test_status_writes_only_its_file
+test_status_outside_an_office_does_nothing
+test_status_without_a_backlog_is_empty
+test_arm_status_registers_a_silent_check
+test_disarm_status_retires_the_check
+test_arm_status_refuses_outside_an_office

@@ -62,6 +62,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   officers.md        officer registry, primary home only; schema in docs/configuration.md "Officers (data/officers.md)"
   officers/<id>/     an officer's write lane: dated findings, digest marker, runs.log, check-record.*; written only by bin/fm-officer.sh and its role pass
   offices.md         office registry, primary home only; schema in docs/configuration.md "Offices (data/offices.md)"
+  office-status.json an office home's Working / Next / Done projection for the fleet app, written only by bin/fm-office.sh status; schema in docs/configuration.md "Office status (data/office-status.json)"
   <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
   pipeline-spend.jsonl  optional per-task no-mistakes pipeline spend, written only when config/pipeline-spend is present; bin/fm-pipeline-spend.sh owns the schema
@@ -99,6 +100,7 @@ state/               runtime records and signals; gitignored
   x-watch.check.sh   generated Relay poll shim; present only when opted in (section 14)
   tool-updates.check.sh  generated watched-tool update poll shim and its .check-trust binding; present only after bin/fm-tool-update-check.sh arm; its report record .tool-updates is what keeps one pending update from being reported on every poll
   officer-<id>.check.sh  generated officer check shim and its .check-trust binding; present only after bin/fm-officer.sh register <id>
+  office-status.check.sh office-status.seen.json  generated office status check shim (with its .check-trust binding; present only after bin/fm-office.sh arm-status) and the first-seen times of done items; bin/fm-office.sh status owns both (docs/configuration.md "Office status (data/office-status.json)")
   mail.check.sh      generated received-mail poll shim and its .check-trust binding; present only after bin/fm-mail-check.sh arm; report record .mail-check (mail schema: docs/configuration.md "Mail plane")
   .mail-seen .mail-woken .mail-retry .mail-retry-pos .mail-turn .mail-seen.lock  mail-plane poll cursor, emission journal, transient-fetch retry set, retry-scan position, contended-slot turn flag, and overlapping-poll lock; written only by bin/fm-mail.sh (mail schema: docs/configuration.md "Mail plane")
   startup-growth.check.sh  generated daily startup-growth poll shim and its .check-trust binding; present only after bin/fm-startup-growth-check.sh arm; its record .startup-growth-check holds the daily gate, the per-file growth baselines, and the last reported finding set, so removing it re-baselines growth silently and repeats a standing finding such as a budget overrun once (docs/configuration.md "Daily startup growth check")
