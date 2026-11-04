@@ -47,6 +47,8 @@ Never hand-write the check script or its trust record.
 ## Handling an officer wake
 
 A `check:` wake from `state/officer-<id>.check.sh` reading `officer <id>: <date>: <n> actionable finding(s) in <path>` is one new digest.
+The officer's `consumer:` field decides who that digest wakes: main only when `main` is listed, and each listed office through its own `lane:<id>` source, which that office handles under `office-roles`; the failure line always wakes main.
+Main leaves a digest it is not a consumer of to that office.
 
 1. Read the digest file it names; the `.json` beside it holds every session fact behind each finding.
 2. Treat ordinary findings as evidence, not authorization; progress start requests use the standing authority and execution contract in [Progress officer](../../../docs/configuration.md#progress-officer).

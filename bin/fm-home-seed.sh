@@ -26,6 +26,37 @@
 #       when no filled charter brief exists. Set FM_SECONDMATE_SCOPE='<scope>'
 #       to override the registry routing scope. Otherwise the registry summary
 #       and scope are derived from the filled charter brief.
+#   fm-home-seed.sh <id> <home|-> {<project>...|--no-projects} --office <id>
+#       Seed <home> as an office: a second mate that runs a standing role
+#       mandate (docs/configuration.md "Offices (data/offices.md)"). <id> must
+#       equal the secondmate id and name exactly one line in this home's
+#       data/offices.md with an office role (a reserved role is refused), whose
+#       runs-on lists this host (FM_OFFICE_HOST, default hostname -s) and never
+#       macbook, and whose every dispatch project is in the seeded project list.
+#       It refuses a home that already carries .fm-secondmate-home without
+#       .fm-office, and an id already registered in data/secondmates.md to a
+#       home without .fm-office, so a plain second mate never becomes an office
+#       by re-seeding; re-seeding an existing office is allowed. The charter brief
+#       must carry the "# Office authority" heading (bin/fm-brief.sh --office
+#       writes it, and a missing brief is scaffolded with that flag). Inside the
+#       same transaction as the ordinary seed it then:
+#         - writes merger=<home> on each merge-via project's line and
+#           admission=<project> on each merge project's line in the office home's
+#           data/projects.md, adding a bracket to a legacy line that has none;
+#         - copies the main home's master admission config
+#           config/admission/<project>, and config/admission/<project>.rules when
+#           it exists, into the office home's config/admission/; a master whose
+#           command= names a --rules path other than
+#           <office home>/config/admission/<project>.rules is refused, so the
+#           classifier the office runs reads only the copy made here;
+#         - writes the .fm-office marker before the .fm-secondmate-home marker.
+#       After the seed commits it runs bin/fm-office.sh register-sources in the
+#       office home. A failure there leaves a valid office home whose source
+#       checks are missing: the seed exits 1 naming that repair, and
+#       bin/fm-office.sh ensure reports the gap until it is run. Publishing the
+#       authority record (bin/fm-office.sh publish) and launching the office stay
+#       separate steps. A seed without --office refuses a home that carries
+#       .fm-office, so re-seeding never drops an office's charter heading.
 #   fm-home-seed.sh validate
 #       Refuse records that operational consumers cannot parse, unavailable or
 #       unsafe registry files when present, non-absolute or unresolvable homes,
@@ -38,7 +69,9 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 REG="$DATA/secondmates.md"
+OFFICE_MARKER=".fm-office"
 SUB_HOME_MARKER=".fm-secondmate-home"
 SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
@@ -49,9 +82,11 @@ SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 . "$SCRIPT_DIR/fm-secondmate-charter-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$SCRIPT_DIR/fm-office-authority-lib.sh"
 
 usage() {
-  echo "usage: fm-home-seed.sh <id> <home|-> {<project>...|--no-projects}" >&2
+  echo "usage: fm-home-seed.sh <id> <home|-> {<project>...|--no-projects} [--office <id>]" >&2
   echo "       fm-home-seed.sh validate" >&2
 }
 
@@ -287,7 +322,7 @@ validate_operational_dirs() {
 validate_seed_leaf_files() {
   local home=$1 label path abs_home abs_path
   abs_home=$(resolved_path "$home")
-  for label in "data/projects.md" "data/charter.md" "$SUB_HOME_MARKER" "$SUB_HOME_PARENT_MARKER"; do
+  for label in "data/projects.md" "data/charter.md" "$SUB_HOME_MARKER" "$SUB_HOME_PARENT_MARKER" "$OFFICE_MARKER"; do
     path="$home/$label"
     if [ -L "$path" ]; then
       echo "error: secondmate leaf file must not be a symlink: $path" >&2
@@ -667,6 +702,7 @@ seed_rollback() {
         restore_seed_file "$SEED_PARENT_MARKER_EXISTED" "$SEED_BACKUP_DIR/parent-marker" "$SEED_HOME/$SUB_HOME_PARENT_MARKER"
         restore_seed_file "$SEED_CHARTER_EXISTED" "$SEED_BACKUP_DIR/charter.md" "$SEED_HOME/data/charter.md"
         restore_seed_file "$SEED_SUB_REG_EXISTED" "$SEED_BACKUP_DIR/sub-projects.md" "$SEED_HOME/data/projects.md"
+        seed_office_restore
       fi
     fi
   fi
@@ -837,20 +873,184 @@ refuse_projectful_projectless_charter() {
   return 1
 }
 
+# Office seeding (--office). OFFICE_LINE is set by validate_office_line.
+OFFICE_LINE=
+OFFICE_DISPATCH=
+OFFICE_MERGE=
+OFFICE_MERGE_VIA=
+
+validate_office_line() {  # <id> <project>...
+  local id=$1 rc=0 role runs_on host pair p
+  shift
+  OFFICE_LINE=$(REGISTRY="$DATA/offices.md" registry_line_for_id "$id") || rc=$?
+  case $rc in
+    0) ;;
+    2) echo "error: $DATA/offices.md has more than one line for office $id" >&2; return 1 ;;
+    *) echo "error: $DATA/offices.md has no line for office $id; add it before seeding the office" >&2; return 1 ;;
+  esac
+  [[ "$OFFICE_LINE" =~ $REGISTRY_LINE_RE ]] || { echo "error: the line for office $id in $DATA/offices.md is malformed" >&2; return 1; }
+  role=$(line_field "$OFFICE_LINE" role || true)
+  fm_office_role_check "$role" || { echo "error: office $id: $FM_OFFICE_ERROR" >&2; return 1; }
+  runs_on=$(line_field "$OFFICE_LINE" runs-on || true)
+  host=${FM_OFFICE_HOST:-$(hostname -s)}
+  if fm_office_in macbook "$runs_on" || [ "$host" = macbook ]; then
+    echo "error: office $id may not run on macbook; new scheduled roles run on slartibartfast or deepthought only" >&2
+    return 1
+  fi
+  fm_office_in "$host" "$runs_on" || { echo "error: office $id runs on $runs_on, not this host $host" >&2; return 1; }
+  OFFICE_DISPATCH=$(line_field "$OFFICE_LINE" dispatch || true)
+  OFFICE_MERGE=$(line_field "$OFFICE_LINE" merge || true)
+  OFFICE_MERGE_VIA=$(line_field "$OFFICE_LINE" merge-via || true)
+  [ "$OFFICE_MERGE" != none ] || OFFICE_MERGE=
+  [ "$OFFICE_MERGE_VIA" != none ] || OFFICE_MERGE_VIA=
+  [ -n "$OFFICE_DISPATCH" ] || { echo "error: office $id dispatches no project" >&2; return 1; }
+  for p in ${OFFICE_DISPATCH//,/ }; do
+    printf '%s\n' "$@" | grep -Fxq -- "$p" \
+      || { echo "error: office $id dispatches $p, which is not in the seeded project list" >&2; return 1; }
+  done
+  for p in ${OFFICE_MERGE//,/ }; do
+    fm_office_in "$p" "$OFFICE_DISPATCH" || { echo "error: office $id merges $p, which it does not dispatch" >&2; return 1; }
+    case "$p" in .*) false ;; *) fm_office_name_ok "$p" ;; esac || { echo "error: office $id merges $p, which is not a usable admission config name" >&2; return 1; }
+  done
+  for pair in ${OFFICE_MERGE_VIA//,/ }; do
+    p=${pair%%=*}
+    if [[ "$pair" != *=?* ]] || ! fm_office_name_ok "${pair#*=}"; then
+      echo "error: office $id merge-via entry '$pair' must be <project>=<home>" >&2
+      return 1
+    fi
+    fm_office_in "$p" "$OFFICE_DISPATCH" || { echo "error: office $id hands $p to another merger, but does not dispatch it" >&2; return 1; }
+  done
+}
+
+# refuse_plain_secondmate_as_office <id> <home>: a registered plain second mate
+# never becomes an office by re-seeding.
+refuse_plain_secondmate_as_office() {
+  local id=$1 home=$2
+  if [ -e "$home/$SUB_HOME_MARKER" ] && [ ! -e "$home/$OFFICE_MARKER" ]; then
+    echo "error: $home is already a plain second mate; an office is seeded into a new home, never converted from one" >&2
+    return 1
+  fi
+  if secondmate_registry_line_for_id "$REG" "$id" 2>/dev/null && [ ! -e "$home/$OFFICE_MARKER" ]; then
+    echo "error: $id is already registered as a plain second mate; an office is seeded into a new home, never converted from one" >&2
+    return 1
+  fi
+}
+
+# validate_office_admission <home>: each merge project's master admission config
+# exists, and any --rules path it names is the copy this seed makes.
+validate_office_admission() {
+  local home=$1 p master line i f
+  local -a words=()
+  for p in ${OFFICE_MERGE//,/ }; do
+    master="$CONFIG/admission/$p"
+    [ -f "$master" ] && [ ! -L "$master" ] && [ -r "$master" ] \
+      || { echo "error: office merge project $p has no master admission config at $master" >&2; return 1; }
+    line=$(grep -m 1 '^command=' "$master") || line=
+    read -r -a words <<< "${line#command=}"
+    for ((i = 0; i < ${#words[@]}; i++)); do
+      [ "${words[$i]}" = --rules ] || continue
+      f=${words[$((i + 1))]:-}
+      [ "$f" = "$home/config/admission/$p.rules" ] \
+        || { echo "error: master admission config $master names --rules $f; an office's classifier must read $home/config/admission/$p.rules, the copy this seed makes" >&2; return 1; }
+    done
+    if [ -e "$CONFIG/admission/$p.rules" ] || [ -L "$CONFIG/admission/$p.rules" ]; then
+      [ -f "$CONFIG/admission/$p.rules" ] && [ ! -L "$CONFIG/admission/$p.rules" ] && [ -r "$CONFIG/admission/$p.rules" ] \
+        || { echo "error: master admission rules $CONFIG/admission/$p.rules is not a readable regular file" >&2; return 1; }
+    fi
+  done
+}
+
+# seed_office_backup <path>: remember <path>'s current content for rollback.
+seed_office_backup() {
+  local path=$1 n
+  n=$(wc -l < "$SEED_OFFICE_TARGETS" | tr -d ' ')
+  if [ -f "$path" ]; then
+    cp "$path" "$SEED_BACKUP_DIR/office-$n"
+    printf '1\t%s\n' "$path" >> "$SEED_OFFICE_TARGETS"
+  else
+    printf '0\t%s\n' "$path" >> "$SEED_OFFICE_TARGETS"
+  fi
+}
+
+seed_office_restore() {
+  local n=0 existed path
+  [ -n "${SEED_OFFICE_TARGETS:-}" ] && [ -f "$SEED_OFFICE_TARGETS" ] || return 0
+  while IFS=$'\t' read -r existed path; do
+    restore_seed_file "$existed" "$SEED_BACKUP_DIR/office-$n" "$path"
+    n=$((n + 1))
+  done < "$SEED_OFFICE_TARGETS"
+}
+
+# set_project_token <projects.md> <project> <key> <value>: sets one bracket
+# token on the project's line, replacing any earlier value for that key; a
+# legacy line with no bracket gets one carrying its default no-mistakes mode.
+set_project_token() {
+  local file=$1 project=$2 key=$3 value=$4 tmp
+  tmp="$file.tmp.$$"
+  awk -v n="$project" -v key="$key" -v tok="$key=$value" "$REGISTRY_ROW_IS_AWK"'
+    row_is(n) {
+      prefix = "- " n
+      after = substr($0, length(prefix) + 1)
+      if (substr(after, 1, 2) == " [" && index(after, "]") > 0) {
+        close_at = index(after, "]")
+        k = split(substr(after, 3, close_at - 3), words, " ")
+        inner = ""
+        for (i = 1; i <= k; i++) if (index(words[i], key "=") != 1) inner = inner (inner == "" ? "" : " ") words[i]
+        print prefix " [" inner (inner == "" ? "" : " ") tok "]" substr(after, close_at + 1)
+      } else {
+        print prefix " [no-mistakes " tok "]" after
+      }
+      next
+    }
+    { print }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
+seed_office_files() {  # <id> <home>
+  local id=$1 home=$2 p pair
+  mkdir -p "$home/config/admission" || return 1
+  for pair in ${OFFICE_MERGE_VIA//,/ }; do
+    set_project_token "$home/data/projects.md" "${pair%%=*}" merger "${pair#*=}" || return 1
+  done
+  for p in ${OFFICE_MERGE//,/ }; do
+    set_project_token "$home/data/projects.md" "$p" admission "$p" || return 1
+    seed_office_backup "$home/config/admission/$p" || return 1
+    cp "$CONFIG/admission/$p" "$home/config/admission/$p" || return 1
+    if [ -f "$CONFIG/admission/$p.rules" ]; then
+      seed_office_backup "$home/config/admission/$p.rules" || return 1
+      cp "$CONFIG/admission/$p.rules" "$home/config/admission/$p.rules" || return 1
+    fi
+  done
+  seed_office_backup "$home/$OFFICE_MARKER" || return 1
+  printf '%s\n' "$id" > "$home/$OFFICE_MARKER.tmp.$$" || return 1
+  mv -f -- "$home/$OFFICE_MARKER.tmp.$$" "$home/$OFFICE_MARKER"
+}
+
 seed_home() {
   local id=$1 requested_home=$2 requested_abs home projects_csv project project_dst charter_summary charter_scope
-  local no_projects=0 arg
+  local no_projects=0 arg office='' office_set=0 want_office=0
   local filtered=()
   shift 2
   # A deliberate --no-projects signal (anywhere in the project position) seeds a
   # project-less home; an accidental omission with no signal still fails loudly.
+  # --office <id> may appear anywhere in that position too.
   for arg in "$@"; do
-    if [ "$arg" = "--no-projects" ]; then
+    if [ "$want_office" = 1 ]; then
+      office=$arg; office_set=1; want_office=0
+    elif [ "$arg" = "--no-projects" ]; then
       no_projects=1
+    elif [ "$arg" = "--office" ]; then
+      want_office=1
+    elif [ "${arg#--office=}" != "$arg" ]; then
+      office=${arg#--office=}; office_set=1
     else
       filtered+=("$arg")
     fi
   done
+  [ "$want_office" = 0 ] || { echo "error: --office requires the office id" >&2; return 1; }
+  if [ "$office_set" = 1 ]; then
+    [ "$office" = "$id" ] || { echo "error: --office must name the secondmate being seeded: an office id equals its secondmate id (got '$office' for '$id')" >&2; return 1; }
+  fi
   if [ "${#filtered[@]}" -gt 0 ]; then
     set -- "${filtered[@]}"
   else
@@ -872,6 +1072,9 @@ seed_home() {
   for project in "$@"; do
     validate_seed_project "$project"
   done
+  if [ "$office_set" = 1 ]; then
+    validate_office_line "$id" "$@" || return 1
+  fi
 
   SEED_ROLLBACK_ACTIVE=1
   SEED_COMMITTED=0
@@ -883,6 +1086,8 @@ seed_home() {
   SEED_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-home-seed.XXXXXX")
   SEED_CREATED_PROJECTS_FILE="$SEED_BACKUP_DIR/created-projects"
   : > "$SEED_CREATED_PROJECTS_FILE"
+  SEED_OFFICE_TARGETS="$SEED_BACKUP_DIR/office-targets"
+  : > "$SEED_OFFICE_TARGETS"
   SEED_PARENT_REG_EXISTED=0
   SEED_PARENT_BRIEF="$DATA/$id/brief.md"
   SEED_PARENT_BRIEF_CREATED=0
@@ -914,6 +1119,13 @@ seed_home() {
   validate_operational_dirs "$home" || return 1
   validate_seed_leaf_files "$home" || return 1
   validate_existing_parent_binding "$home" || return 1
+  if [ "$office_set" = 1 ]; then
+    refuse_plain_secondmate_as_office "$id" "$home" || return 1
+    validate_office_admission "$home" || return 1
+  elif [ -e "$home/$OFFICE_MARKER" ]; then
+    echo "error: $home is an office; re-seed it with --office $id so its charter keeps the office authority heading" >&2
+    return 1
+  fi
   if [ "$no_projects" -eq 1 ]; then
     refuse_populated_projectless_home "$home" || return 1
     if [ -f "$SEED_PARENT_BRIEF" ]; then
@@ -940,17 +1152,23 @@ seed_home() {
   SEED_HOME_BACKED_UP=1
 
   if [ ! -f "$SEED_PARENT_BRIEF" ]; then
-    [ -n "${FM_SECONDMATE_CHARTER:-}" ] || {
+    [ -n "${FM_SECONDMATE_CHARTER:-}" ] || [ "$office_set" = 1 ] || {
       echo "error: no filled secondmate charter brief at $SEED_PARENT_BRIEF; set FM_SECONDMATE_CHARTER or scaffold one and replace {TASK}" >&2
       return 1
     }
     [ -d "$DATA/$id" ] || SEED_PARENT_BRIEF_DIR_CREATED=1
+    local office_args=()
+    [ "$office_set" = 0 ] || office_args=(--office "$id")
     if [ "$no_projects" -eq 1 ]; then
-      "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate --no-projects
+      "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate ${office_args[@]+"${office_args[@]}"} --no-projects
     else
-      "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate "$@"
+      "$FM_ROOT/bin/fm-brief.sh" "$id" --secondmate ${office_args[@]+"${office_args[@]}"} "$@"
     fi
     SEED_PARENT_BRIEF_CREATED=1
+  fi
+  if [ "$office_set" = 1 ] && ! grep -q '^# Office authority' "$SEED_PARENT_BRIEF"; then
+    echo "error: charter brief at $SEED_PARENT_BRIEF has no \"# Office authority\" heading; re-scaffold it with fm-brief.sh $id --secondmate --office $id before seeding an office" >&2
+    return 1
   fi
   if grep -F '{TASK}' "$SEED_PARENT_BRIEF" >/dev/null 2>&1; then
     echo "error: secondmate charter brief at $SEED_PARENT_BRIEF still contains {TASK}; fill it before seeding" >&2
@@ -983,6 +1201,9 @@ seed_home() {
   done
 
   cp "$SEED_PARENT_BRIEF" "$home/data/charter.md"
+  if [ "$office_set" = 1 ]; then
+    seed_office_files "$id" "$home" || { echo "error: could not write office $id's files into $home" >&2; return 1; }
+  fi
 
   projects_csv=$(join_projects "$@")
   # Durable record of this home's route to its parent, written once here next
@@ -1005,6 +1226,13 @@ seed_home() {
   trap - EXIT
   rm -rf -- "$SEED_BACKUP_DIR"
   printf 'home=%s\n' "$home"
+  if [ "$office_set" = 1 ]; then
+    FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_DATA_OVERRIDE='' FM_STATE_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+      "$FM_ROOT/bin/fm-office.sh" register-sources || {
+      echo "error: office $id is seeded, but its source checks did not register; run FM_HOME=$home $FM_ROOT/bin/fm-office.sh register-sources" >&2
+      return 1
+    }
+  fi
 }
 
 case "${1:-}" in

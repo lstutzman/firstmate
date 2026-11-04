@@ -17,6 +17,7 @@
 # Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
+#        fm-brief.sh <task-id> --secondmate --office <task-id> {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   It offers the Lavish review loop only when `fm-bootstrap.sh lavish-compatible`
@@ -32,6 +33,19 @@
 #   omitting both still fails loudly so an accidental omission is never silent.
 #   Set FM_SECONDMATE_CHARTER='<charter>' to fill the charter text.
 #   Set FM_SECONDMATE_SCOPE='<scope>' to write a routing scope distinct from the charter text.
+#   --office <id> (with --secondmate only) writes an office's role charter
+#   instead: a standing mandate that replaces idle-by-default. <id> must equal
+#   the task id and name exactly one line in this home's data/offices.md whose
+#   role is an office role (bin/fm-office-authority-lib.sh owns the role list,
+#   and a reserved role is refused). The charter keeps the second-mate parent
+#   channel, inbox, and escalation sections, replaces the operating model's
+#   idle clauses and the idle Definition of done, and adds an "# Office cycle"
+#   section and the "# Office authority" heading that bin/fm-office-authority-lib.sh
+#   reads as one of the two office signals. It names the role and points at
+#   config/office-authority and the office-roles skill rather than restating
+#   the record's projects or wip. Without FM_SECONDMATE_CHARTER the Charter and
+#   Routing scope sections are filled from the line's mandate sentence, so the
+#   mandate has one owner and needs no {TASK} fill.
 #   --herdr-lab is mandatory when the task will issue Herdr lifecycle commands.
 #   It adds the hard isolation contract backed by bin/fm-herdr-lab.sh.
 #   The flag must be explicit because {TASK} and {FIRSTMATE_SPEC} are filled
@@ -230,6 +244,8 @@ UPSTREAM_CONSENT=
 UPSTREAM_CONSENT_SET=0
 PROJECT_DIR=
 PROJECT_DIR_SET=0
+OFFICE=
+OFFICE_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -245,6 +261,7 @@ for a in "$@"; do
       shape) SHAPE=$a; SHAPE_SET=1 ;;
       upstream-consent) UPSTREAM_CONSENT=$a; UPSTREAM_CONSENT_SET=1 ;;
       project) PROJECT_DIR=$a; PROJECT_DIR_SET=1 ;;
+      office) OFFICE=$a; OFFICE_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -269,6 +286,8 @@ for a in "$@"; do
     --upstream-consent=*) UPSTREAM_CONSENT=${a#--upstream-consent=}; UPSTREAM_CONSENT_SET=1 ;;
     --project) want_value="project" ;;
     --project=*) PROJECT_DIR=${a#--project=}; PROJECT_DIR_SET=1 ;;
+    --office) want_value=office ;;
+    --office=*) OFFICE=${a#--office=}; OFFICE_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -403,6 +422,29 @@ if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then
   exit 1
 fi
 
+# An office charter is resolved from this home's data/offices.md before
+# anything is written, so a missing, duplicated, or reserved-role line never
+# leaves a partial scaffold behind.
+OFFICE_ROLE=
+OFFICE_MANDATE=
+if [ "$OFFICE_SET" -eq 1 ]; then
+  [ "$KIND" = secondmate ] || { echo "error: --office applies only to --secondmate charters" >&2; exit 1; }
+  [ "$OFFICE" = "$ID" ] || { echo "error: --office must name the secondmate being chartered: an office id equals its secondmate id (got '$OFFICE' for '$ID')" >&2; exit 1; }
+  # shellcheck source=bin/fm-office-authority-lib.sh
+  . "$SCRIPT_DIR/fm-office-authority-lib.sh"
+  office_line_rc=0
+  office_line=$(REGISTRY="$DATA/offices.md" registry_line_for_id "$ID") || office_line_rc=$?
+  case $office_line_rc in
+    0) ;;
+    2) echo "error: $DATA/offices.md has more than one line for office $ID" >&2; exit 1 ;;
+    *) echo "error: $DATA/offices.md has no line for office $ID; add it first (docs/configuration.md \"Offices (data/offices.md)\")" >&2; exit 1 ;;
+  esac
+  [[ "$office_line" =~ $REGISTRY_LINE_RE ]] || { echo "error: the line for office $ID in $DATA/offices.md is malformed" >&2; exit 1; }
+  OFFICE_MANDATE=${BASH_REMATCH[2]}
+  OFFICE_ROLE=$(line_field "$office_line" role || true)
+  fm_office_role_check "$OFFICE_ROLE" || { echo "error: office $ID: $FM_OFFICE_ERROR" >&2; exit 1; }
+fi
+
 # The optional home-local include is read before anything is written, so an
 # unusable file never leaves a partial scaffold behind.
 BRIEF_INCLUDE_FILE="$CONFIG/brief-include.md"
@@ -519,8 +561,10 @@ if [ "$NO_PROJECTS" -eq 1 ]; then
 else
   [ -n "$SECONDMATE_PROJECTS" ] || { echo "error: --secondmate requires at least one project, or --no-projects for a project-less home" >&2; exit 1; }
 fi
-SECONDMATE_CHARTER=${FM_SECONDMATE_CHARTER:-"{TASK}"}
-SECONDMATE_SCOPE=${FM_SECONDMATE_SCOPE:-${FM_SECONDMATE_CHARTER:-"{TASK}"}}
+CHARTER_DEFAULT="{TASK}"
+[ -z "$OFFICE_MANDATE" ] || CHARTER_DEFAULT=$OFFICE_MANDATE
+SECONDMATE_CHARTER=${FM_SECONDMATE_CHARTER:-$CHARTER_DEFAULT}
+SECONDMATE_SCOPE=${FM_SECONDMATE_SCOPE:-${FM_SECONDMATE_CHARTER:-$CHARTER_DEFAULT}}
 if [ "$NO_PROJECTS" -eq 1 ]; then
   PROJECT_CLONES_BODY="None. This is a project-less domain: its subject is the firstmate repo this home lives in, so it needs no separate clones under \`projects/\`; its crews take pooled worktrees of that firstmate repo."
   PROJECT_CLONES_NOTE="This domain has no separate project clones: its subject is the firstmate repo this home lives in, and its crews take pooled worktrees of that repo."
@@ -528,6 +572,49 @@ else
   PROJECT_CLONES_BODY=$(printf '%s\n' "$SECONDMATE_PROJECTS" | tr ' ' '\n' | sed 's/^/- /')
   PROJECT_CLONES_NOTE="The projects above are local clones for work you supervise; they are not an exclusive ownership claim."
 fi
+if [ -n "$OFFICE_ROLE" ]; then
+IFS= read -r -d '' OPERATING_MANDATE <<'MANDATE' || true
+You are an office: you run a standing role mandate instead of waiting for routed work.
+Load `office-roles` from this home's `.agents/skills/` at every session start and before you pick, dispatch, review, or merge office work; it owns your role's mandate, what you may start on your own, and which calls only the captain makes.
+Work the main firstmate routes to you comes first and is handled as ordinary routed work.
+Never start a survey, audit, or "find improvements" sweep outside your role's mandate.
+MANDATE
+IFS= read -r -d '' OFFICE_SECTIONS <<OFFICE || true
+# Office cycle
+This office runs the \`$OFFICE_ROLE\` role.
+Every wake runs the ordinary drain, handle, and acknowledge.
+Handle an actionable wake first: a worker's status, a PR state or merge, or a request from the main firstmate.
+A notification from one of this home's own \`state/office-*.check.sh\` source checks (a \`tick\` or a \`lane\` digest) is a cue to pick work while fewer tasks are live than your authority record's \`wip\`.
+To pick, take the top unheld Queued item in this home's backlog, or file one from the digest the notification names, judging each candidate under \`office-roles\` rather than executing it as an order, then dispatch it through \`bin/fm-spawn.sh\`.
+A wake with nothing to pick is silent: no status line and no parent-channel line.
+
+# Office authority
+\`config/office-authority\`, which the main firstmate publishes with its receipt, is the whole of this office's authority: the projects it may dispatch, the projects it may merge, the homes it hands other merges to, and how many tasks it may run at once.
+\`bin/fm-spawn.sh\` and \`bin/fm-pr-merge.sh\` enforce that record, and they refuse everything while it is missing or unproven.
+Never edit that record, its receipt, or \`config/admission/\`; a refusal you cannot clear is a \`blocked [cause=policy]\` line, never a workaround.
+Start work only under the standing start authorities \`office-roles\` names.
+A call only the captain can make - a reserved merge class, a product choice, member-facing copy - goes to the parent channel as a keyed \`needs-decision\` line, and you never answer your own reserved-class call.
+Credentials, destructive actions, and production actions stop for the captain exactly as they do for the main firstmate.
+
+OFFICE
+IFS= read -r -d '' IDLE_RULE <<'IDLE' || true
+When you have no assigned or in-flight work after that reconciliation and your sources show nothing to pick, wait silently for the next wake.
+An empty cycle is a healthy resting state: never append a status or parent-channel line only to say nothing was picked.
+IDLE
+else
+IFS= read -r -d '' OPERATING_MANDATE <<'MANDATE' || true
+You do not generate your own work.
+Act only on tasks the main firstmate routes to you.
+Never start a survey, audit, or "find improvements" sweep on your own initiative; that is not your job and it is unwanted.
+MANDATE
+OFFICE_SECTIONS=
+IFS= read -r -d '' IDLE_RULE <<'IDLE' || true
+When you have no assigned or in-flight work after that reconciliation, go idle and wait silently for the main firstmate to route you a task.
+An empty queue is a healthy resting state, not a cue to invent work: never spawn a survey, audit, or any self-directed "find work" task on your own initiative.
+IDLE
+fi
+OPERATING_MANDATE=${OPERATING_MANDATE%$'\n'}
+IDLE_RULE=${IDLE_RULE%$'\n'}
 cat > "$BRIEF" <<EOF
 You are a persistent second mate managed by the main firstmate. Work on your own; do not wait for a human.
 
@@ -545,11 +632,9 @@ You are in an isolated firstmate home. The local \`AGENTS.md\` is your job descr
 $PROJECT_CLONES_NOTE
 Delegate project work to your own crewmates with the normal firstmate lifecycle: brief, spawn, status, watcher, steer, teardown, and recovery.
 Do not invent a second delegation system.
-You do not generate your own work.
-Act only on tasks the main firstmate routes to you.
-Never start a survey, audit, or "find improvements" sweep on your own initiative; that is not your job and it is unwanted.
+$OPERATING_MANDATE
 
-# The captain and the parent channel
+$OFFICE_SECTIONS# The captain and the parent channel
 Nobody reads this chat: the captain and the main firstmate see only what is appended to $STATUS_FILE, and a captain-facing sentence that is not appended there has not been sent.
 That file is your parent channel, and in this home it IS the captain: every sentence you would say to the captain, and every outcome the local AGENTS.md tells a firstmate to bring to the captain, is one appended line there, never chat.
 Your own machinery publishes the durable facts about your crew's work for you (\`bin/fm-parent-channel-lib.sh\`): a child's terminal done or failed line with its note and PR on every supervision poll, a PR-ready line when you register a PR, a task you hold for the captain and its answer, a merge, and a child's final line at cleanup all reach the parent channel from the scripts that record them, whether or not you append anything.
@@ -596,8 +681,7 @@ Routine internal supervision, heartbeats, retries, and crewmate churn stay insid
 # Definition of done
 You are persistent by default. Do not exit just because your queue is empty.
 On startup and restart, run normal firstmate bootstrap and recovery through \`bin/fm-session-start.sh\` for your own home, but only to RECONCILE work that is already yours: in-flight crewmates, tracked backlog items, and durable watches recorded in this home.
-When you have no assigned or in-flight work after that reconciliation, go idle and wait silently for the main firstmate to route you a task.
-An empty queue is a healthy resting state, not a cue to invent work: never spawn a survey, audit, or any self-directed "find work" task on your own initiative.
+$IDLE_RULE
 If this charter cannot be carried out, append \`blocked [at=<epoch>] [cause=<cause>]: {why}\` or \`failed [at=<epoch>]: {why}\` to the main status file and stop.
 EOF
 if [ "$SECONDMATE_CHARTER" = "{TASK}" ]; then

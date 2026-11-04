@@ -63,3 +63,19 @@ $(printf '%s\n' "$fields" | tr ';' '\n')
 EOF
   return 1
 }
+
+# registry_line_for_id <id>: prints the one line of $REGISTRY whose id is <id>.
+# Returns 1 when no line names it and 2 when more than one does.
+registry_line_for_id() {
+  local line match='' n=0
+  while IFS= read -r line; do
+    case "$line" in "- $1 - "*) ;; *) continue ;; esac
+    n=$((n + 1))
+    match=$line
+  done <<LINES
+$(registry_lines)
+LINES
+  [ "$n" -gt 0 ] || return 1
+  [ "$n" -eq 1 ] || return 2
+  printf '%s\n' "$match"
+}

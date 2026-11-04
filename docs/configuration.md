@@ -1201,7 +1201,7 @@ Offices live in the primary home's `data/offices.md`, one line per office, in th
 | Field | Meaning |
 | --- | --- |
 | `<id>` | The id of a second mate registered in `data/secondmates.md`; the office's home is that mate's home |
-| `role` | `navigator` or `quartermaster` |
+| `role` | `navigator` or `quartermaster`; `alchemist` and `librarian` are reserved placeholders with no charter or authority, so a line naming them is refused |
 | `runs-on` | Comma-separated hosts; the second mate's `host:` (or this host, for a local route) must be in it, and `macbook` is refused |
 | `dispatch` | Comma-separated project names; each must be listed in the office home's `data/projects.md` |
 | `merge` | `none`, or the projects the office merges: a subset of `dispatch`, each carrying `admission=<name>` in the office home's `data/projects.md` |
@@ -1216,6 +1216,8 @@ Each source is a watcher check in the office home's own `state/`, so it wakes th
 `tick` fires once per slot of the office's `tick` cadence when a place under `wip` is free and work could start; `lane:<officer-id>` fires once per new digest of that officer in the parent home; `lane:<officer-id>:high` fires only for findings the digest's `.json` marks high or critical.
 
 A local office home also carries a `.fm-office` marker holding the office id and a `data/charter.md` with a `# Office authority` heading.
+`bin/fm-brief.sh <id> --secondmate --office <id>` writes that role charter, a standing mandate that replaces the second mate's idle-by-default clauses, and `bin/fm-home-seed.sh ... --office <id>` seeds the home with the marker, the merge tokens and admission copies its line needs, and its source checks; each script's header owns its checks and refusals, and the `office-roles` skill owns each role's mandate.
+[Office provisioning](office-provisioning.md) gives the ordered steps that create the offices.
 `bin/fm-office.sh list` prints each office and its gap count.
 Session start runs `bin/fm-office.sh ensure`, which prints one `OFFICE:` line per gap and nothing when the registry and the homes agree.
 An absent `data/offices.md` means no offices.
