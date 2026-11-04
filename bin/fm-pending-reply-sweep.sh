@@ -140,12 +140,13 @@ for rec in "$STATE"/pending-replies/*; do
   fi
 
   reason=none
+  delivered=$(fm_pending_reply_get "$rec" delivered_epoch)
   prs=$(fm_pending_reply_get "$rec" request_prs)
   summary=$(fm_pending_reply_get "$rec" request_summary)
   [ -n "$prs" ] || prs=$(printf '%s\n' "$summary" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true)
   if grep -qaF -- "$(fm_pending_reply_corr_token "$corr")" "$parent_status" 2>/dev/null; then
     reason='corr-line-unmatched'
-  elif [ -z "$(fm_pending_reply_get "$rec" delivered_epoch)" ]; then
+  elif [ -z "$delivered" ]; then
     reason=undelivered
   elif [ -n "$prs" ]; then
     reason='prs'
@@ -153,7 +154,9 @@ for rec in "$STATE"/pending-replies/*; do
   [ -z "$prs" ] || prs=" prs=$(pr_states "$prs")"
 
   if [ "$APPLY" -eq 0 ] || ! listed "$key"; then
-    REVIEW_OUT="$REVIEW_OUT$line verdict=review reason=$reason$prs request=${summary:0:160}"$'\n'
+    note=''
+    [ -n "$delivered" ] || note=' not-closable: its owner may still resend under the same correlation, so --apply --key refuses it;'
+    REVIEW_OUT="$REVIEW_OUT$line verdict=review reason=$reason$prs$note request=${summary:0:160}"$'\n'
     review=$((review + 1))
     continue
   fi
@@ -162,7 +165,7 @@ for rec in "$STATE"/pending-replies/*; do
     refuse "$key" "its parent status $parent_status is outside $STATE"
     continue
   fi
-  if [ -z "$(fm_pending_reply_get "$rec" delivered_epoch)" ]; then
+  if [ -z "$delivered" ]; then
     refuse "$key" "delivery was never confirmed"
     continue
   fi
