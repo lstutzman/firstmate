@@ -1152,7 +1152,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all linked `linear_ids`, nullable `authorising_class`, nullable `tag_source`, `reason`, `evidence`, numeric `priority` (0 means unspecified), nullable `rank`, and nullable `execute`.
 Optional `link`, `project`, `outcome`, and `captains_log_key` preserve source context for the page projection.
 Only start requests have a one-based `rank` and an `execute` object; filler also carries `execute`.
-The execution object contains `action: start`, `request_id`, `env.FM_HOME`, and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
+The execution object contains `action: start`, `request_id`, `env.FM_HOME` (this home, or the [`start-home`](#officers-dataofficersmd) office whose `dispatch:` list holds the project), and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
 The adjacent shell handoff runs those same quoted argument arrays in rank order, followed by filler when present.
 The request identifier is stable for the same item and date, so retries replay the original inbox note; a later date may retry work still unstarted.
 
