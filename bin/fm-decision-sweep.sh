@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fm-decision-sweep.sh - close open needs-decision lines whose PRs have all landed.
 #
-# Usage: FM_HOME=<home> fm-decision-sweep.sh [--apply]
+# Usage: FM_HOME=<home> fm-decision-sweep.sh [--apply [--key <key>[,<key>...]]...]
 #
 # Resolved decisions linger in a home's status logs as needs-decision lines no
 # one reconciled, so the OPEN DECISIONS fold keeps listing them. This sweep
@@ -12,26 +12,29 @@
 # A candidate names one or more full GitHub PR URLs
 # (https://github.com/<owner>/<repo>/pull/<n>) in its note; bare "#123" or
 # "PR 123" text is never matched. Each named PR is read through `gh pr view`.
-# A candidate is settled only when both hold:
-#   - its key names a PR-subject ask: it starts merge-handoff-, or one of its
-#     hyphen-separated parts is merge, merged, pr, land, landing, review, word
-#     or admit;
-#   - EVERY named PR reads MERGED. A CLOSED-unmerged PR settles nothing, since
-#     it may still need a reopen-or-abandon call.
-# Verdicts: settled; open (a named PR is open); unreadable (a PR could not be
-# read: network, auth, rate limit); manual (any other candidate, such as a
-# release or go ask that only mentions a PR, or a merge ask whose PR closed
-# unmerged, or an unkeyed line); truncated. Only settled is ever closed.
-# Never swept, whatever the PRs say:
-#   - keys starting captain-hold- or pending-reply-: those close only through
-#     bin/fm-captain-hold.sh answer and the pending-reply owner;
-#   - decisions naming no PR URL;
-#   - a note cut by the status-line cap (ending " [truncated]"), because the
-#     cut may have shortened or dropped a PR URL.
+# The sweep never guesses what a free-text ask wants. Verdicts:
+#   settled    key is merge-handoff-<n> (written by bin/fm-pr-merge.sh with the
+#              PR as its subject), the note names exactly one PR URL, its
+#              number is <n>, and that PR is MERGED;
+#   review     every named PR is MERGED but the line is not a matching
+#              merge-handoff; listed under its own heading with the start of
+#              its note, for a reader to judge;
+#   open       a named PR is still open;
+#   manual     a named PR is CLOSED unmerged (it may still need a
+#              reopen-or-abandon call);
+#   unreadable a PR could not be read (network, auth, rate limit);
+#   truncated  the note was cut by the status-line cap (ends " [truncated]"),
+#              so a PR URL may be shortened or missing; never looked up.
+# Never candidates: keys starting captain-hold- or pending-reply- (those close
+# only through bin/fm-captain-hold.sh answer and the pending-reply owner), and
+# decisions naming no PR URL.
 #
-# Default is a dry run: one line per candidate plus totals, nothing changed.
-# --apply appends, for each settled candidate only, one line to the same
-# status file:
+# Default is a dry run: one line per candidate, the review list, and totals;
+# nothing changed. --apply closes every settled candidate. --key (repeatable,
+# or a comma list; needs --apply) also closes exactly the listed keys, each
+# only if it is still an open candidate whose verdict is review at apply time;
+# any other listed key is refused with its reason and makes the exit status 1.
+# Each close appends one line to the decision's status file:
 #   resolved [key=<key>] [at=<epoch>]: decision-sweep: <pr url> merged <mergedAt>
 # (several PRs are joined with "; "), stamped and
 # announced by fm_wake_status_append_self_announced, then recorded in the fleet
@@ -40,19 +43,25 @@
 # that is still open is reported and makes the exit status 1.
 #
 # Environment: FM_HOME (required), FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE.
-# Exit: 0 done, 1 a close did not take effect, 2 usage or setup error.
+# Exit: 0 done, 1 a close did not take effect or a --key was refused,
+# 2 usage or setup error.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-APPLY=0
-case "${1:-}" in
-  '') ;;
-  --apply) APPLY=1 ;;
-  -h | --help) sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
-  *) echo "usage: FM_HOME=<home> fm-decision-sweep.sh [--apply]" >&2; exit 2 ;;
-esac
-[ "$#" -le 1 ] || { echo "usage: FM_HOME=<home> fm-decision-sweep.sh [--apply]" >&2; exit 2; }
+usage() { echo "usage: FM_HOME=<home> fm-decision-sweep.sh [--apply [--key <key>[,<key>...]]...]" >&2; exit 2; }
+APPLY=0 KEYS=''
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --apply) APPLY=1 ;;
+    --key) [ "$#" -ge 2 ] && [ -n "$2" ] || usage; KEYS="$KEYS,$2"; shift ;;
+    -h | --help) sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
+    *) usage ;;
+  esac
+  shift
+done
+KEYS="$KEYS,"
+[ "$KEYS" = , ] || [ "$APPLY" -eq 1 ] || usage
 
 if [ -z "${FM_HOME:-}" ] || [ ! -d "$FM_HOME" ]; then
   echo "error: FM_HOME must name an existing firstmate home" >&2
@@ -73,10 +82,13 @@ PR_URL_RE='https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+'
 PR_CACHE=''  # newline-separated "<url> <state> <date>" or "<url> unreadable"
 CLOSE_MAX=$((FM_LINE_CAP_DEFAULT - $(status_stamp_width)))
 
-pr_subject_key() {  # <key>
-  case "$1" in merge-handoff-*) return 0 ;; esac
-  case "-$1-" in *-merge-* | *-merged-* | *-pr-* | *-land-* | *-landing-* | *-review-* | *-word-* | *-admit-*) return 0 ;; esac
-  return 1
+listed() { case "$KEYS" in *",$1,"*) return 0 ;; esac; return 1; }
+HANDLED=,
+refused=0
+refuse() {  # <key> <reason>
+  HANDLED="$HANDLED$1,"
+  echo "error: --key '$1' refused: $2" >&2
+  refused=$((refused + 1))
 }
 
 # Print "<STATE> <date>" for one PR, or "unreadable". Cached per URL for the run.
@@ -96,7 +108,8 @@ pr_state() {  # <pr-url>
   printf '%s\n' "$hit"
 }
 
-total=0 settled=0 open=0 manual=0 unreadable=0 truncated=0 skipped_reserved=0 skipped_no_pr=0 failed=0
+total=0 settled=0 keyed=0 review=0 open=0 manual=0 unreadable=0 truncated=0 skipped_reserved=0 skipped_no_pr=0 failed=0
+REVIEW_OUT=''
 
 for f in "$STATE"/*.status; do
   [ -f "$f" ] || continue
@@ -105,40 +118,71 @@ for f in "$STATE"/*.status; do
   close_lines=() close_keys=()
   while IFS=$'\t' read -r key verb note; do
     [ "$verb" = needs-decision ] || continue
-    case "$key" in captain-hold-* | pending-reply-*) skipped_reserved=$((skipped_reserved + 1)); continue ;; esac
+    case "$key" in
+      captain-hold-* | pending-reply-*)
+        skipped_reserved=$((skipped_reserved + 1))
+        ! listed "$key" || refuse "$key" "reserved key"
+        continue
+        ;;
+    esac
     urls=$(printf '%s\n' "$note" | grep -oE "$PR_URL_RE" | awk '!seen[$0]++' || true)
-    [ -n "$urls" ] || { skipped_no_pr=$((skipped_no_pr + 1)); continue; }
+    if [ -z "$urls" ]; then
+      skipped_no_pr=$((skipped_no_pr + 1))
+      ! listed "$key" || refuse "$key" "names no PR URL"
+      continue
+    fi
     total=$((total + 1))
     base=${f##*/}
     case "$note" in
       *' [truncated]')
         truncated=$((truncated + 1))
         echo "home=$FM_HOME file=$base key=$key verdict=truncated prs=$(printf '%s' "$urls" | tr '\n' ',')"
+        ! listed "$key" || refuse "$key" "note is truncated"
         continue
         ;;
     esac
-    verdict=settled prs='' note_out=''
+    verdict=merged prs='' note_out=''
     while IFS= read -r url; do
       s=$(pr_state "$url")
       prs="$prs${prs:+,}$url=${s%% *}"
       case "$s" in
         unreadable) verdict=unreadable ;;
         OPEN*) [ "$verdict" = unreadable ] || verdict=open ;;
+        CLOSED*) [ "$verdict" != merged ] || verdict=manual ;;
         MERGED*) note_out="$note_out${note_out:+; }$url merged ${s#* }" ;;
-        CLOSED*) [ "$verdict" != settled ] || verdict=manual ;;
       esac
     done <<EOF
 $urls
 EOF
-    pr_subject_key "$key" || verdict=manual
-    echo "home=$FM_HOME file=$base key=$key verdict=$verdict prs=$prs"
+    if [ "$verdict" = merged ]; then
+      verdict=review
+      [ "$key" != "merge-handoff-${urls##*/}" ] || [ "$urls" != "${urls%%$'\n'*}" ] || verdict=settled
+    fi
+    line="home=$FM_HOME file=$base key=$key verdict=$verdict prs=$prs"
+    if [ "$verdict" = review ]; then
+      if [ "$APPLY" -eq 1 ] && listed "$key"; then
+        HANDLED="$HANDLED$key,"
+        verdict=keyed
+        echo "${line/verdict=review/verdict=closed-by-key}"
+      else
+        REVIEW_OUT="$REVIEW_OUT$line note=${note:0:160}"$'\n'
+      fi
+    else
+      echo "$line"
+      if [ "$verdict" = settled ]; then
+        HANDLED="$HANDLED$key,"
+      elif listed "$key"; then
+        refuse "$key" "verdict is $verdict ($prs)"
+      fi
+    fi
     case "$verdict" in
-      settled)
-        settled=$((settled + 1))
+      settled | keyed)
+        if [ "$verdict" = settled ]; then settled=$((settled + 1)); else keyed=$((keyed + 1)); fi
         fm_cap_line_var "resolved [key=$key]: decision-sweep: $note_out" "$CLOSE_MAX"
         close_lines+=("$FM_LINE_CAP_LINE")
         close_keys+=("$key")
         ;;
+      review) review=$((review + 1)) ;;
       open) open=$((open + 1)) ;;
       unreadable) unreadable=$((unreadable + 1)) ;;
       manual) manual=$((manual + 1)) ;;
@@ -168,7 +212,17 @@ EOF
   done
 done
 
+IFS=, read -r -a listed_keys <<<"${KEYS#,}"
+for key in ${listed_keys[@]+"${listed_keys[@]}"}; do
+  [ -n "$key" ] || continue
+  case "$HANDLED" in *",$key,"*) ;; *) refuse "$key" "not an open needs-decision" ;; esac
+done
+
+if [ -n "$REVIEW_OUT" ]; then
+  echo "review: every named PR merged, but the ask is free text; read each and close with --apply --key <key>"
+  printf '%s' "$REVIEW_OUT"
+fi
 mode=dry-run
 [ "$APPLY" -eq 0 ] || mode=apply
-echo "totals mode=$mode candidates=$total settled=$settled still-open=$open manual=$manual unreadable=$unreadable truncated=$truncated skipped-reserved-key=$skipped_reserved skipped-no-pr-url=$skipped_no_pr failed-to-close=$failed"
-[ "$failed" -eq 0 ]
+echo "totals mode=$mode candidates=$total settled=$settled closed-by-key=$keyed review=$review still-open=$open manual=$manual unreadable=$unreadable truncated=$truncated skipped-reserved-key=$skipped_reserved skipped-no-pr-url=$skipped_no_pr refused-key=$refused failed-to-close=$failed"
+[ "$failed" -eq 0 ] && [ "$refused" -eq 0 ]
