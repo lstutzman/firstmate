@@ -60,3 +60,15 @@ fake limit2 99 128 'fatal: Could not read from remote repository.'
 fm_git_retry "$T/limit2" >/dev/null 2>&1
 [ "$(calls limit2)" = 2 ] && pass "FM_GIT_RETRY_ATTEMPTS is honored" || fail "attempts override"
 
+
+FM_GIT_RETRY_ATTEMPTS=3
+fake errexit_once 1 255 'ssh: connect to host github.com port 22: Connection reset'
+err=$( (set -e; fm_git_retry "$T/errexit_once" >/dev/null; echo after-call >&2) 2>&1 ); rc=$?
+[ "$rc" -eq 0 ] && [ "$(calls errexit_once)" = 2 ] && case $err in *fm-git-retry:*after-call*) true ;; *) false ;; esac \
+  && pass "a bare call under set -e still retries and the script continues" || fail "set -e bare call (rc=$rc calls=$(calls errexit_once))"
+
+fake errexit_always 99 128 'fatal: Could not read from remote repository.'
+err=$( (set -e; fm_git_retry "$T/errexit_always" >/dev/null; echo after-call >&2) 2>&1 ); rc=$?
+[ "$rc" -eq 128 ] && [ "$(calls errexit_always)" = 3 ] && case $err in *'Could not read from remote'*) true ;; *) false ;; esac \
+  && case $err in *after-call*) false ;; *) true ;; esac \
+  && pass "a bare failing call under set -e retries, prints git's stderr and then exits" || fail "set -e bare failure (rc=$rc calls=$(calls errexit_always))"

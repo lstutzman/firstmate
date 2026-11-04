@@ -33,7 +33,7 @@ fm_git_retry() { # <command...>
   # shellcheck disable=SC2206 # word splitting of the delay list is intended
   delays=($FM_GIT_RETRY_DELAYS)
   while :; do
-    "$@" 2>"$err"; rc=$?
+    rc=0; "$@" 2>"$err" || rc=$?
     if [ "$rc" -eq 0 ] || [ "$attempt" -ge "$FM_GIT_RETRY_ATTEMPTS" ] \
       || ! fm_git_retry_is_ssh_failure "$rc" "$err"; then
       cat "$err" >&2
