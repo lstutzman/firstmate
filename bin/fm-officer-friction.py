@@ -257,7 +257,7 @@ RULES = [
         r"|\b(?:missing|lacks?|insufficient|required|without)\b.{0,20}\bscopes?\b.{0,30}%(cred)s"
         r"|%(cred)s.{0,30}\bno\b(?: [\w-]+){0,2} scopes?\b|%(cred)s.{0,30}\bscopes? (?:is |are )?too narrow"
         r"|widen(?:ed|ing)? (?:the )?(?:\w+ )?token"
-        % {"svc": SERVICE_NAMES, "cred": r"(?<![\w-])(?:token|key|grant)s?\b"}, re.I)),
+        % {"svc": SERVICE_NAMES, "cred": r"(?<![^\W_]|-)(?:token|key|grant)s?(?![^\W_])"}, re.I)),
     ("credential", "login", re.compile(
         r"not logged in|not currently signed in|op signin|auth login|az login|sign[- ]in required|gh auth", re.I)),
     ("credential", "missing", re.compile(

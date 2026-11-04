@@ -201,6 +201,7 @@ test_token_scope_needs_a_token_permission_failure() {
     "cf-kv-write|k12|Cloudflare API 403 on KV write|credential scope Cloudflare"
     "kv-narrow|k13|token scope too narrow for KV|credential scope null"
     "kv-none|k14|the token has no KV scope|credential scope null"
+    "cf-env-token|k20|CLOUDFLARE_API_TOKEN lacks the KV scope|credential scope Cloudflare"
     "op-signin|k15|op signin needed before the Cloudflare deploy|credential login 1Password"
     "op-signed-out|k16|not currently signed in to 1Password; the GitHub deploy waits|credential login 1Password"
   )
