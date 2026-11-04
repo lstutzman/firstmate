@@ -226,6 +226,66 @@ SH
   chmod +x "$fakebin/tmux"
 }
 
+# fm_test_fake_tmux_relaunch <fakebin>
+# Models just enough pane lifecycle for bin/fm-spawn.sh --relaunch and
+# bin/fm-control.sh relaunch: state lives in files under $FM_FAKE_DIR (command,
+# cwd, windows, literal, keys). The harness exit command leaves a bare shell
+# behind, and the launch literal starts the harness again. Also installs a no-op
+# sleep so the transaction does not wait.
+fm_test_fake_tmux_relaunch() {
+  local fakebin=$1
+  mkdir -p "$fakebin"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+D=$FM_FAKE_DIR
+case "${1:-}" in
+  send-keys)
+    shift
+    literal=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) literal=1; shift ;;
+        *) break ;;
+      esac
+    done
+    payload=${1:-}
+    if [ "$literal" = 1 ]; then
+      case "$payload" in
+        ". '"*"'")
+          staged=${payload#". '"}
+          staged=${staged%"'"}
+          [ ! -f "$staged" ] || payload=$(cat "$staged")
+          ;;
+      esac
+      printf '%s\n' "$payload" >> "$D/literal"
+      case "$payload" in
+        /exit|/quit) printf 'zsh' > "$D/command" ;;
+        *'encode launch-brief'*) printf 'codex' > "$D/command" ;;
+      esac
+    else
+      printf '%s\n' "$payload" >> "$D/keys"
+    fi
+    exit 0 ;;
+  display-message)
+    for a in "$@"; do
+      case "$a" in
+        *cursor_y*) printf '1\n'; exit 0 ;;
+        *pane_current_command*) cat "$D/command"; printf '\n'; exit 0 ;;
+        *pane_current_path*) cat "$D/cwd"; printf '\n'; exit 0 ;;
+      esac
+    done
+    printf 'fakepane\n'; exit 0 ;;
+  capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
+  list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/tmux"
+  fm_test_fake_sleep_noop "$fakebin"
+}
+
 # fm_test_fake_ssh <fakebin> [name]
 # Records argv to FM_SSH_LOG, consumes stdin, exits FM_FAKE_SSH_RC (default 0).
 # Default name is fake-ssh so tests can point FM_SSH_BIN at it without
