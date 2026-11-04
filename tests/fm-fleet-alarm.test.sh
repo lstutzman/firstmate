@@ -259,8 +259,8 @@ out=$(run_alarm check)
 [ -z "$out" ] || fail "exhausted idle account with pool headroom must not alarm: $out"
 mate 1 0 3601
 out=$(run_alarm check)
-assert_contains "$out" 'exhausted@example.invalid 7d 100%' 'account pressure remains informational in card text'
-assert_contains "$out" 'Carrying Claude accounts: member@example.invalid' 'successful recent traffic identifies carrying account'
+assert_contains "$out" 'holding work silent' 'silent mate alarms'
+case "$out" in *'7d 100%'*|*'account pressure'*|*'Carrying Claude accounts'*) fail "a non-quota alarm must not carry per-account quota text: $out" ;; esac
 mate 0 0 0
 quota 0.2
 run_alarm check >/dev/null
@@ -303,7 +303,7 @@ run_alarm check >/dev/null
 mate 1 0 3601
 out=$(run_alarm check)
 assert_contains "$out" 'holding work silent' 'silent-mate alarm survives no recent successful traffic'
-assert_contains "$out" 'Carrying Claude accounts: none' 'idle traffic status included in mate card'
+assert_not_contains "$out" 'Carrying Claude accounts' 'a silent-mate alarm carries no quota context'
 mate 0 0 0
 cat > "$HOME_FIX/models" <<'ROWS'
 models[1]{account,model,requests,failed}:
@@ -384,18 +384,10 @@ set_mate_work 1 0 1 1 0
 [ -z "$(run_alarm check)" ] || fail 'captain holds plus a parked child is still healthy idle'
 set_mate_work 0 0 3 0 0
 [ -z "$(run_alarm check)" ] || fail 'queued captain holds with nothing in flight are healthy idle'
-set_mate_work 3 0 2 0
-assert_contains "$(run_alarm check)" 'holding work silent' 'un-held in-flight work beside captain holds still alarms'
-mate 0 0 0
-run_alarm check >/dev/null
-mate 0 0 3601
-set_mate_work 1 0 1 0 0
-assert_contains "$(run_alarm check)" 'holding work silent' 'an in-flight program beside a queued captain hold on another item still alarms'
-mate 0 0 0
-run_alarm check >/dev/null
-mate 0 0 3601
-set_mate_work 2 0 2 0 none
-assert_contains "$(run_alarm check)" 'holding work silent' 'a summary without held_in_flight is never treated as parked'
+set_mate_work 3 0 2 0 0
+[ -z "$(run_alarm check)" ] || fail 'in-flight work beside an open captain decision is healthy waiting'
+set_mate_work 3 0 0 0
+assert_contains "$(run_alarm check)" 'holding work silent' 'in-flight work with no open captain decision still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
 edit_mate_summary() { # python statements over value
@@ -407,12 +399,6 @@ exec(sys.argv[2])
 path.write_text(json.dumps(value))
 PY_EDIT
 }
-mate 0 0 3601
-set_mate_work 2 0 1 1 1
-edit_mate_summary "value['holds'][0]['state']='blocked'"
-assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked child beside a captain hold still alarms'
-mate 0 0 0
-run_alarm check >/dev/null
 mate 0 0 3601
 set_mate_work 2 0 1 1 1
 edit_mate_summary "value['decisions_open'].append(dict(id='child-0',key='child-0',verb='needs-decision',source='status'))"
@@ -436,16 +422,45 @@ set_mate_work 2 1 2 0
 assert_contains "$(run_alarm check)" 'holding work silent' 'a silent live worker beside captain holds still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
-mate 0 0 3601
-set_mate_work 1 0 1 0
-python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_INVALID'
+# Deep Thought's home summary at 2026-11-04T06:19Z, trimmed to the fields the alarm reads.
+dt_summary() {
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_DT'
 from pathlib import Path
 import json,sys
 path=Path(sys.argv[1]); value=json.loads(path.read_text())
-value.update(valid=False, invalidity=dict(kind='child_current_unavailable', ids=['worker']), reason='child current state unavailable: worker')
+value.update(valid=False,
+             invalidity=dict(kind='child_current_unavailable', ids=['pc-23-override-delete', 'pc-23-override-restack']),
+             reason='child current state unavailable: pc-23-override-delete, pc-23-override-restack',
+             counts=dict(in_flight=10, held_in_flight=0, active_children=0, decisions_open=3, holds=0, endpoints=10),
+             decisions_open=[dict(id=item, key=item, verb='captain-hold', source='backlog')
+                             for item in ('licensed-listings-next-step', 'pc-4557-restack-word', 'dt-reboot-stranded-sessions')],
+             holds=[])
 path.write_text(json.dumps(value))
-PY_INVALID
-assert_contains "$(run_alarm check)" 'holding work silent' 'unknown child liveness never counts as parked on captain holds'
+PY_DT
+}
+mate 0 0 3601
+dt_summary
+[ -z "$(run_alarm check)" ] || fail 'Deep Thought waiting on open captain decisions is healthy, not silent'
+edit_mate_summary "value['counts']['active_children']=1"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a live worker beside captain decisions still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+dt_summary
+edit_mate_summary "value['counts']['decisions_open']=4; value['decisions_open'].append(dict(id='pc-23-override-delete',key='pc-23-override-delete',verb='needs-decision',source='status'))"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a status-source ask beside captain decisions still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+dt_summary
+edit_mate_summary "[row.update(verb='needs-decision') for row in value['decisions_open']]"
+assert_contains "$(run_alarm check)" 'holding work silent' 'in-flight work with no captain-hold row still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+dt_summary
+edit_mate_summary "value['invalidity']['kind']='summary_truncated'; value['reason']='summary truncated'"
+assert_contains "$(run_alarm check)" 'home inventory incomplete: summary truncated' 'another invalidity kind still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
 pass 'captain-held mates are healthy idle while stuck or un-held work still alarms'
@@ -477,6 +492,8 @@ run_alarm timer
 mate 1 0 3601
 run_alarm timer
 assert_not_contains "$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")" 'Carrying Claude account member@example.invalid 7d' 'eased carrying finding is not listed on other alarms'
+assert_not_contains "$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")" 'Claude quota context' 'an eased carrying finding does not add quota context to other alarms'
+assert_not_contains "$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")" '7d 91%' 'a non-quota card carries no per-account percent'
 assert_contains "$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")" 'holding work silent' 'a real silent mate still alarms beside an eased carrying account'
 [ "$(wc -l < "$HOME_FIX/state/fleet-alarm.status")" -gt "$lines" ] || fail 'silent mate must write its line'
 mate 0 0 0

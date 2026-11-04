@@ -24,10 +24,15 @@ A wait still silent at its recheck time is re-emitted once, on the next timer po
 needs-decision [cause=external] naming the secondmate, how long it has been down and
 the recovery it was expected by, even when its home is unreadable by then; it
 resolves when the condition clears.
-A secondmate parked only on open captain holds is healthy idle and is never silent: its home
-summary is valid, it has no active child, no child is asking it an open question, and every
-in-flight item is a captain-actionable hold or a parked or paused child. Any live worker, blocked
-child, un-held in-flight work, truncated decision list or unreadable inventory still alarms.
+A secondmate waiting on an open captain decision is healthy waiting and is never silent: it has
+no active child, no open decision row has source status (no child is asking it anything), its
+decision list is complete and holds at least one captain-hold row, and its summary is valid or its
+only invalidity is kind child_current_unavailable. Its in-flight count need not be covered by held
+or parked work then. A live worker, any status-source ask, a truncated decision list, any other
+invalidity kind, or in-flight work with no open captain decision still alarms.
+The Claude quota context line (every account's 7d use and carrying accounts) is appended only to
+cards whose alarms include a quota alarm (quota:, stale:, pool, ignored:, quota-read); on other
+alarms it is left off.
 A carrying-account finding alarms once. While its weekly reset is within carrying_reset_hours
 and mean remaining weekly capacity across non-stale readings stays above carrying_pool_floor,
 later polls neither repeat it nor list it on other alarms. It re-alerts when either condition
@@ -153,23 +158,19 @@ def read_json(path, limit=262144):
     return json.loads(content)
 
 
-def parked_on_captain_holds(summary, counts):
-    # Healthy idle: nothing is working, no child is asking the mate a question, and every in-flight
-    # item waits on a live captain hold or is a parked or paused child, so the mate has nothing to
-    # say until a hold clears. A live worker (silent or looping), a blocked child, un-held in-flight
-    # work, or an unproven inventory never qualifies.
-    if not summary['valid'] or counts['active_children'] != 0:
+def waiting_on_captain(summary, counts):
+    # Nothing is working, no child is asking the mate anything, and the complete decision list
+    # shows a filed captain decision, so the mate has nothing to say until Lee answers.
+    invalidity = summary.get('invalidity')
+    partial = isinstance(invalidity, dict) and invalidity.get('kind') == 'child_current_unavailable'
+    if not (summary['valid'] or partial) or counts['active_children'] != 0:
         return False
-    held, decisions, holds = counts.get('held_in_flight'), summary.get('decisions_open'), summary.get('holds')
-    if type(held) is not int or not isinstance(decisions, list) or not isinstance(holds, list):
+    decisions = summary.get('decisions_open')
+    if not isinstance(decisions, list) or counts['decisions_open'] > len(decisions):
         return False
     rows = [row for row in decisions if isinstance(row, dict)]
-    if counts['decisions_open'] > len(decisions) or any(row.get('source') == 'status' for row in rows):
-        return False
-    captain = any(row.get('verb') == 'captain-hold' for row in rows)
-    parked = sum(1 for row in holds if isinstance(row, dict) and row.get('source') == 'child-state'
-                 and row.get('state') in ('parked', 'paused'))
-    return captain and counts.get('in_flight', 0) <= held + parked
+    return (not any(row.get('source') == 'status' for row in rows)
+            and any(row.get('verb') == 'captain-hold' for row in rows))
 
 
 def mate_findings(read, cfg, not_collected):
@@ -260,7 +261,7 @@ done < "$2"
             remote_unavailable = False
             if not any(work) and open_decisions == '0':
                 continue
-            if parked_on_captain_holds(summary, counts):
+            if waiting_on_captain(summary, counts):
                 continue
             ages = [] if age == 'null' else [float(age)]
             meta = STATE / (name + '.meta')
@@ -321,7 +322,7 @@ def collect(cfg):
                              for row in rows if row['used_7d'] is not None
                              and (row['age_min'] is None or row['age_min'] < RETIRED_MINUTES))
         carriers = ', '.join(sorted(carrying)) if carrying else 'none (no successful Claude traffic in last 60 minutes)'
-        quota_info = f'Claude account pressure: {pressure}; Carrying Claude accounts: {carriers}'
+        quota_info = f'Claude quota context (not an alarm): {pressure}; Carrying Claude accounts: {carriers}'
         pool, ignored, carrying_keys = [], 0, {}
         for row in rows:
             name = row['account']
@@ -432,12 +433,13 @@ def check(channel):
                    and wait_record is not None and now >= wait_record['until'])
         regroup = channel == 'timer' and all_silent and timer_state == 'question'
         if (fresh if channel == 'check' else set(fresh) & set(alarms)) or cleared or expired or regroup:
-            details = [value for key, value in (current if channel == 'timer' else fresh).items()
-                       if key not in quiet]
+            shown = [key for key in (current if channel == 'timer' else fresh) if key not in quiet]
+            details = [raw[key] for key in shown]
             if channel == 'timer':
                 details += [f'Secondmate holding work silent, inventory not currently readable: {key[7:]}'
                             for key in held_silent]
-            if quota_info:
+            if quota_info and any(key.startswith(('quota:', 'stale:', 'pool', 'ignored:', 'quota-read'))
+                                  for key in shown):
                 details.append(quota_info)
             text = '; '.join(details).replace('\n', ' ')
             if channel == 'timer':

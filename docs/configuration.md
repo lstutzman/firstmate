@@ -632,8 +632,8 @@ Every step also names why no agent can run it, `--cause sudo|credential|policy|t
 
 The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quota readings, and registered second mates holding work without recent communication.
 Idle second mates are healthy.
-A second mate parked only on open captain holds, with no live worker and no un-held in-flight work, is also healthy idle: those holds are already on the Captain's Log.
-The alarm counts every in-flight item against the home summary's `counts.held_in_flight` (in-flight items waiting on a live captain hold) plus children whose state is parked or paused; a blocked child, an open status-sourced decision (a child asking its own second mate), a truncated `decisions_open` list, or a summary without `counts.held_in_flight` is never treated as parked.
+A second mate waiting on an open captain decision is also healthy: with no active child and at least one captain-hold row in its open decisions, it is not silent, whatever its in-flight count, because that decision is already on the Captain's Log.
+An open status-sourced decision (a child asking its own second mate), a truncated `decisions_open` list, or an invalid summary still alarms; a summary whose only invalidity is unavailable child liveness (`child_current_unavailable`) still qualifies.
 It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reads published home summaries for registered second mates without building a full fleet snapshot.
 Remote summary reads share the alarm deadline and fall back to the parent-side route-keyed cache.
 Missing, malformed, or stale home summaries from reachable homes produce an inventory alert; the configured stale-data threshold applies to summaries too.
@@ -649,7 +649,7 @@ The quota alarm fires when mean remaining weekly capacity across non-stale Claud
 A carrying-account finding alarms once, and stays quiet while its weekly reset is within `carrying_reset_hours` (default 6) and mean remaining weekly capacity stays above `carrying_pool_floor` (default 0.4).
 It alerts again when either condition stops holding; the pool-near-empty alarm is unaffected.
 Every Claude account with successful Claude-model requests in the last 60 minutes is carrying; several accounts can qualify, and failed-only traffic does not qualify.
-The card names all carrying accounts and includes per-account weekly pressure as information; pressure alone on an idle account does not trigger an alarm.
+A card that carries a quota alarm ends with a `Claude quota context (not an alarm)` line naming every account's weekly use and all carrying accounts; cards for other alarms, such as a silent second mate, leave it off, and pressure alone on an idle account does not trigger an alarm.
 With no successful traffic in that window, the carrying condition is skipped and the card says so; the pool condition still applies.
 The quota reader does not expose enabled status, so the pool uses reading freshness rather than verified account enablement.
 Mean remaining capacity does not predict how long the pool can sustain a workload.
