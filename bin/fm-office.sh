@@ -497,7 +497,7 @@ cmd_check() {
   [ -e "$FM_HOME/.fm-office" ] || return 0
   office_context || return 0
   sources=$(line_field "$OFFICE_LINE" sources || true)
-  case ",$sources," in *",$src,"*) ;; *) return 0 ;; esac
+  case ",${sources// /}," in *",$src,"*) ;; *) return 0 ;; esac
   case "$src" in
     tick) check_tick ;;
     lane:*:high) officer=${src#lane:}; check_lane "${officer%:high}" 1 ;;

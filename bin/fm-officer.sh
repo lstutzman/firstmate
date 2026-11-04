@@ -68,8 +68,10 @@
 # printed in the primary home only when `main` is listed, so an officer whose
 # digest an office consumes can stop waking main; each office id must be a local
 # office in data/offices.md whose sources: field lists lane:<officer-id>, the lane
-# source that reads every digest (bin/fm-office.sh). The failure line is always printed, because a broken officer
-# is main's to fix.
+# source that reads every digest (bin/fm-office.sh). register refuses and ensure
+# reports a consumer that misses this, and the check then wakes main for the
+# digest as if main were listed. The failure line is always printed, because a
+# broken officer is main's to fix.
 #
 # Roles: triage (bin/fm-officer-triage.py), landing
 # (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py),
@@ -153,8 +155,7 @@ EOF
 
 # line_problem <line>: prints why a registry line is unusable, or nothing.
 line_problem() {
-  local line=$1 id role cadence model consumer c office
-  local -a consumers=()
+  local line=$1 id role cadence model consumer
   if ! [[ "$line" =~ $REGISTRY_LINE_RE ]]; then
     printf 'malformed registry line: %s\n' "$(printf '%s' "$line" | cut -c1-80)"
     return
@@ -172,22 +173,6 @@ line_problem() {
   if consumer=$(line_field "$line" consumer); then
     [ -n "${consumer//[, ]/}" ] \
       || { printf 'officer %s: consumer must name main or an office\n' "$id"; return; }
-    IFS=', ' read -ra consumers <<<"$consumer"
-    for c in "${consumers[@]}"; do
-      [ "$c" = main ] && continue
-      office=
-      [[ "$c" =~ ^[a-z0-9-]+$ ]] && office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
-      [ -n "$office" ] \
-        || { printf 'officer %s: consumer "%s" is not main or an office in data/offices.md\n' "$id" "$c"; return; }
-      case ",$(line_field "$office" sources | tr -d ' ')," in
-        *",lane:$id,"*) ;;
-        *) printf 'officer %s: consumer office %s does not list sources: lane:%s, so it never reads this digest\n' "$id" "$c" "$id"; return ;;
-      esac
-      if secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" && [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
-        printf 'officer %s: consumer office %s is remote, and a remote office cannot read this digest\n' "$id" "$c"
-        return
-      fi
-    done
   fi
   model=$(line_field "$line" model || true)
   [ "$model" = none ] \
@@ -236,6 +221,33 @@ line_problem() {
   esac
 }
 
+# consumer_problem <line>: prints why a valid line's consumer: list misses an
+# office that reads its digest, or nothing.
+consumer_problem() {
+  local line=$1 id consumer c office
+  local -a consumers=()
+  [[ "$line" =~ $REGISTRY_LINE_RE ]] || return 0
+  id=${BASH_REMATCH[1]}
+  consumer=$(line_field "$line" consumer) || return 0
+  [ -n "${consumer//[, ]/}" ] || return 0
+  IFS=', ' read -ra consumers <<<"$consumer"
+  for c in "${consumers[@]}"; do
+    [ "$c" = main ] && continue
+    office=
+    [[ "$c" =~ ^[a-z0-9-]+$ ]] && office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
+    [ -n "$office" ] \
+      || { printf 'officer %s: consumer "%s" is not main or an office in data/offices.md\n' "$id" "$c"; return; }
+    case ",$(line_field "$office" sources | tr -d ' ')," in
+      *",lane:$id,"*) ;;
+      *) printf 'officer %s: consumer office %s does not list sources: lane:%s, so it never reads this digest\n' "$id" "$c" "$id"; return ;;
+    esac
+    if secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" && [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
+      printf 'officer %s: consumer office %s is remote, and a remote office cannot read this digest\n' "$id" "$c"
+      return
+    fi
+  done
+}
+
 # load_officer <id>: sets OFFICER_LINE and OFFICER_LANE or dies.
 load_officer() {
   local problem
@@ -274,9 +286,11 @@ EOF
 }
 
 action_register() {
-  local want device tmp
+  local want device tmp problem
   require_primary
   load_officer "$1"
+  problem=$(consumer_problem "$OFFICER_LINE")
+  [ -z "$problem" ] || die "$problem" 2
   mkdir -p "$STATE" "$OFFICER_LANE" || die "cannot create $OFFICER_LANE"
   want=$(shim_content) || die "cannot resolve FM_HOME $FM_HOME"
   [ -d "$STATE" ] && [ ! -L "$STATE" ] || die "state directory is unavailable"
@@ -521,10 +535,12 @@ report_once() {
   printf '%s\n' "$2"
 }
 
-# consumer_includes_main: true unless the loaded officer's consumer: field omits main.
+# consumer_includes_main: true unless the loaded officer's consumer: field omits
+# main and every office it names reads the digest.
 consumer_includes_main() {
   local consumer
   consumer=$(line_field "$OFFICER_LINE" consumer) || return 0
+  [ -z "$(consumer_problem "$OFFICER_LINE")" ] || return 0
   case ",${consumer// /}," in *,main,*) return 0 ;; esac
   return 1
 }
@@ -610,6 +626,8 @@ action_ensure() {
       echo "OFFICER: $problem"
       continue
     fi
+    problem=$(consumer_problem "$line")
+    [ -z "$problem" ] || echo "OFFICER: $problem"
     [[ "$line" =~ $REGISTRY_LINE_RE ]]
     id=${BASH_REMATCH[1]}
     OFFICER_ID=$id

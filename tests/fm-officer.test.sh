@@ -478,6 +478,21 @@ test_consumer_office_must_read_the_digest() {
   pass "fm-officer: a consumer office must read the digest through its own lane source"
 }
 
+test_broken_consumer_falls_back_to_waking_main() {
+  local home out
+  home=$(make_world consumer-broken empty_spec)
+  printf -- '- navigator - nav (role: navigator; sources: tick,lane:triage; added 2026-11-04)\n' > "$home/data/offices.md"
+  sed -i.bak 's/model: none;/model: none; consumer: navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
+  officer "$home" register triage >/dev/null || fail "register must accept a navigator consumer"
+  printf -- '- navigator - nav (role: navigator; sources: tick; added 2026-11-04)\n' > "$home/data/offices.md"
+  officer "$home" run triage --date "$DATE" >/dev/null || fail "a broken consumer must not stop the officer running"
+  out=$(officer "$home" check triage) || fail "check must exit 0"
+  assert_contains "$out" "officer triage: $DATE: " "a consumer office that no longer reads the digest leaves main as the reader"
+  out=$(officer "$home" ensure)
+  assert_contains "$out" 'consumer office navigator does not list sources: lane:triage' "ensure still reports the broken consumer"
+  pass "fm-officer: a consumer that cannot read the digest falls back to waking main"
+}
+
 test_failure_line_reaches_main_whatever_the_consumer() {
   local home out
   home=$(make_world consumer-fail late_spec)
@@ -508,4 +523,5 @@ test_run_writes_only_its_lane_and_acts_on_no_fleet
 test_consumer_decides_whether_main_is_woken
 test_unknown_consumer_is_a_registry_problem
 test_consumer_office_must_read_the_digest
+test_broken_consumer_falls_back_to_waking_main
 test_failure_line_reaches_main_whatever_the_consumer

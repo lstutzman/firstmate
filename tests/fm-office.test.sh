@@ -454,6 +454,15 @@ test_lane_check_reports_each_new_digest_once() {
   pass 'a lane check prints once per new digest and ignores repeats and empty digests'
 }
 
+test_lane_check_reads_a_spaced_sources_list() {
+  local w
+  w=$(source_world spaced)
+  sed -i.bak 's/sources: tick,lane:progress,/sources: tick, lane:progress, /' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  put_digest "$w" progress 2026-11-04 2
+  assert_contains "$(nav_check "$w" lane:progress)" "progress digest 2026-11-04: 2 finding(s)" "a source listed after a comma and space still reports"
+  pass 'a lane check finds its source in a sources list with spaces after the commas'
+}
+
 test_lane_check_is_silent_when_it_cannot_read() {
   local w
   w=$(source_world unreadable)
@@ -525,6 +534,7 @@ test_tick_prints_once_per_slot_and_only_when_work_could_start
 test_tick_is_silent_when_places_are_full
 test_tick_counts_unread_lane_digests
 test_lane_check_reports_each_new_digest_once
+test_lane_check_reads_a_spaced_sources_list
 test_lane_check_is_silent_when_it_cannot_read
 test_high_lane_counts_only_high_severity
 test_sources_changes_nothing_in_the_parent
