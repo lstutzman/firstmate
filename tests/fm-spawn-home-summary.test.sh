@@ -7,7 +7,7 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-spawn-home-summary)
 command -v tasks-axi >/dev/null 2>&1 || { pass 'skipped (tasks-axi is not installed)'; exit 0; }
-id=summary-after-commit
+id='summary-after-commit'
 home="$TMP_ROOT/home"
 proj="$TMP_ROOT/project"
 wt="$TMP_ROOT/wt"
