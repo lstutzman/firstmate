@@ -1,0 +1,19 @@
+tmux on PATH: no
+== lab home: /tmp/fm-lab.conurQ (marked: 1) ; wait-no-turns present
+fm-send request rc=0
+corr=72d4cbcc120dca54 phase=awaiting_report delivered=1000
+inbox records after request: 1
+second corr=cfdb272a7630ccf2
+-- mate status log:
+   needs-decision [key=ask-a]: merge or wait?
+   needs-decision [key=ask-b]: which host?
+== tick at t=1200 (past 60s grace, before 1000s hold bound)
+phase=awaiting_report recovery_attempted= inbox+0
+== ticks at t=2100 (past hold bound)
+phase=escalated held_lines=1 inbox+0
+second phase=escalated held_lines=1
+-- final mate status log tail:
+   needs-decision [key=ask-a]: merge or wait?
+   needs-decision [key=ask-b]: which host?
+   blocked [key=pending-reply-72d4cbcc120dca54] [at=1793820965]: pending-reply-held: task=hibit pending-reply-id=72d4cbcc120dca54 request=status of phase 7, please report no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
+   blocked [key=pending-reply-cfdb272a7630ccf2] [at=1793820965]: pending-reply-held: task=hibit pending-reply-id=cfdb272a7630ccf2 request=second ask no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked

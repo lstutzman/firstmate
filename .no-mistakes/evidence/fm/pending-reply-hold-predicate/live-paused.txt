@@ -1,0 +1,18 @@
+tmux on PATH: no
+== lab home: /tmp/fm-lab.nRGhmB (marked: 1) ; wait-no-turns present
+fm-send request rc=0
+corr=49fa674f575e709b phase=awaiting_report delivered=1000
+inbox records after request: 1
+-- mate status log:
+   needs-decision [key=ask-a]: merge or wait?
+   needs-decision [key=ask-b]: which host?
+   paused [at=1001]: waiting on the MacBook
+== tick at t=1200 (past 60s grace, before 1000s hold bound)
+phase=awaiting_report recovery_attempted= inbox+0
+== ticks at t=2100 (past hold bound)
+phase=escalated held_lines=1 inbox+0
+-- final mate status log tail:
+   needs-decision [key=ask-a]: merge or wait?
+   needs-decision [key=ask-b]: which host?
+   paused [at=1001]: waiting on the MacBook
+   blocked [key=pending-reply-49fa674f575e709b] [at=1793820959]: pending-reply-held: task=hibit pending-reply-id=49fa674f575e709b request=status of phase 7, please report no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked

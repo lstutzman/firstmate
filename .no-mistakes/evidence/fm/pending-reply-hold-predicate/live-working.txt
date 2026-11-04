@@ -1,0 +1,18 @@
+~/.no-mistakes/evidence/01M6KY8M9F1MG2SWSBCPYTFKYY/live-drive.sh: line 15: tmux: command not found
+== lab home: /tmp/fm-lab.6UeVxV (marked: 1) ; wait-no-turns present
+fm-send request rc=0
+corr=50ed984f3438797a phase=awaiting_report delivered=1000
+inbox records after request: 1
+-- mate status log:
+   needs-decision [key=ask-a]: merge or wait?
+   needs-decision [key=ask-b]: which host?
+   working [at=1001]: back on the build
+== tick at t=1200 (past 60s grace, before 1000s hold bound)
+phase=recovery_sent recovery_attempted=1200 inbox+1
+-- repost body delivered to mate inbox:
+   [fm-from-firstmate]⁣corr=50ed984f3438797a REPOST REQUIRED: previous marked request had no correlated parent report. Reply on the parent status channel including corr=50ed984f3438797a. Original request: status of phase 7, please report== ticks at t=2100 (past hold bound)
+phase=recovery_sent held_lines=0 inbox+1
+-- final mate status log tail:
+   needs-decision [key=ask-a]: merge or wait?
+   needs-decision [key=ask-b]: which host?
+   working [at=1001]: back on the build
