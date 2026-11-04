@@ -45,6 +45,14 @@ A product choice is never a standing start; it goes to the captain as below.
 Until the progress officer addresses start requests to an office's own home, an office never runs a `<date>.start-requests.sh` whose `FM_HOME` is not its own home, because that file enqueues into the main home.
 In that interval the main firstmate consumes the progress digest and routes in-scope starts to the office as ordinary routed work.
 
+## Capturing officer-finding outcomes
+
+When the office decides on an officer finding, or its fix ships or is rejected, capture the outcome to the declared memory tier before reporting, following that tier's declared etiquette (docs/configuration.md "External memory tiers").
+Store a choice and its rationale as a `decision` memory, and a recurring error pattern with `mistake_note_add`.
+Tag each with this home, `officer:<id>` and the project; a correction supersedes with `memory_update` versioned, never an in-place edit or delete.
+A harness that cannot reach the MCP gets firstmate capture on its behalf from the office's report (`AGENTS.md` section 6).
+The officers stay model-free and write only their own lane; this step belongs to the office.
+
 ## Calls the office does not make
 
 A genuinely new call - one no standing rule or recorded answer settles - goes to the judge once one is deployed, and until then to the captain; the office never decides it itself.
