@@ -471,17 +471,20 @@ test_consumer_office_must_read_the_digest() {
   nav_office "$home" tick,lane:progress
   sed -i.bak 's/model: none;/model: none; consumer: navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
   out=$(officer "$home" ensure)
-  assert_contains "$out" 'consumer office navigator does not list sources: lane:triage' "an office without the lane source is reported"
+  assert_contains "$out" 'consumer office navigator does not list sources: lane:triage (or lane:triage:high)' "an office without the lane source is reported"
   out=$(officer "$home" register triage 2>&1) && fail "register must refuse a consumer office that never reads the digest"
 
   nav_office "$home" lane:triage:high
   out=$(officer "$home" ensure)
-  assert_contains "$out" 'consumer office navigator does not list sources: lane:triage' "a high-only lane drops findings and is reported"
+  case "$out" in *navigator*) fail "a lane:triage:high source with its registered check must be accepted: $out" ;; esac
+  rm -f "$home/../navigator/state/office-lane-triage-high.check.sh"
+  out=$(officer "$home" ensure)
+  assert_contains "$out" 'consumer office navigator has no registered office-lane-triage-high check' "a :high source whose check is not registered is reported"
 
   nav_office "$home" lane:triage
   rm -f "$home/../navigator/state/office-lane-triage.check.sh"
   out=$(officer "$home" ensure)
-  assert_contains "$out" 'consumer office navigator has no registered lane:triage check' "a lane source whose check is not registered is reported"
+  assert_contains "$out" 'consumer office navigator has no registered office-lane-triage check' "a lane source whose check is not registered is reported"
 
   printf -- '- navigator - nav (host: deepthought; root: /r; home: /r/navigator; scope: office; projects: PropertyCompass2; added 2026-11-04)\n' > "$home/data/secondmates.md"
   out=$(officer "$home" ensure)

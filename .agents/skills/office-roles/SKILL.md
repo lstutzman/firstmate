@@ -57,6 +57,7 @@ An office never answers its own reserved-class call: it records the captain's wo
 
 Merge only through `bin/fm-pr-merge.sh`; its office checks are the boundary, so a refusal is reported, never worked around.
 An office never merges a change to the files that define its own authority, which its admission classifier flags as `authority`.
+The merge wrapper refuses such a PR, and `bin/fm-backlog-handoff.sh` cannot move an in-flight office task to main (it moves only Queued items from main to a second mate), so the PR waits, held for the captain, until the captain defines its route; do not invent one.
 After a merge the office performed itself, append the landed outcome with the PR's full URL to the parent channel.
 
 ## Main-home duties
