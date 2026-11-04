@@ -346,8 +346,10 @@ sync_project() {
 
   if ! fetch_with_packed_refs_lock_guard; then
     reason="fetch failed"
-    if [ -n "$FETCH_OUTPUT" ]; then
-      reason="$reason: $(first_line "$FETCH_OUTPUT")"
+    # Name git's own error, not fm_git_retry's retry notices.
+    git_output=$(printf '%s\n' "$FETCH_OUTPUT" | grep -v '^fm-git-retry: ' || true)
+    if [ -n "$git_output" ]; then
+      reason="$reason: $(first_line "$git_output")"
     fi
     echo "$label: skipped: $reason"
     return 0
