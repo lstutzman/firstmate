@@ -684,7 +684,7 @@ This prevents closing the workspace's last tab before a replacement exists.
 Herdr saves a pane at its creation cwd and resumes the agent there, and a shell that later changes directory never changes it.
 So a fresh Herdr ship or scout spawn leases its Treehouse slot from the spawn process (`treehouse get --lease --lease-holder <task>`) and creates the pane in that worktree, rather than typing `treehouse get` into a pane created in the project clone.
 A restored worker then resumes in its own worktree, not in the clone whose parent home `CLAUDE.md` would make Claude Code ask to approve an external import.
-The spawn returns that lease only if it fails before the pane exists; after that, teardown returns it like any other.
+The spawn returns that lease only if it fails before the task record is published, and only after closing its own pane; after that, teardown returns it like any other.
 Workers spawned before this change keep the cwd they were created with until they are respawned or reclaimed.
 Relaunch, secondmate, and the other backends keep their current flow.
 

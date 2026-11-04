@@ -254,7 +254,8 @@ SH
 # make_spawn_herdr_fake <fakebin>: a stateful `herdr` that logs every call to
 # $FM_FAKE_HERDR_STATE/calls.log and remembers the cwd each tab/workspace was
 # created with, which is what its pane reads report. FM_FAKE_HERDR_TAB_FAIL=1
-# fails `tab create`; FM_FAKE_HERDR_FG_CWD overrides the reported cwd.
+# fails `tab create`; FM_FAKE_HERDR_CLOSE_FAIL=1 makes `pane close` fail and
+# leave the pane; FM_FAKE_HERDR_FG_CWD overrides the reported cwd.
 make_spawn_herdr_fake() {
   local fakebin=$1
   cat > "$fakebin/herdr" <<'SH'
@@ -290,6 +291,7 @@ case "$1 ${2:-}" in
     w=$(opt --workspace); touch "$st/tabs.$w"
     jq -Rn --arg w "$w" '[inputs | split("|")[0] | {pane_id: "\(.).p", tab_id: ., workspace_id: $w}] | {result: {panes: .}}' < "$st/tabs.$w" ;;
   "pane close")
+    [ "${FM_FAKE_HERDR_CLOSE_FAIL:-0}" = 1 ] && exit 1
     tab=${3%.p}; for f in "$st"/tabs.*; do grep -v "^$tab|\?" "$f" > "$f.new"; mv "$f.new" "$f"; done; echo '{"result":{}}' ;;
   "pane get")
     cwd=${FM_FAKE_HERDR_FG_CWD:-$(cat "$st/cwd.$3" 2>/dev/null)}
@@ -396,7 +398,7 @@ test_herdr_spawn_creates_a_projected_pane_in_the_leased_worktree() {
   pass "a projected Herdr spawn creates its workspace and tab inside the leased worktree"
 }
 
-test_herdr_spawn_returns_the_lease_only_before_the_pane_exists() {
+test_herdr_spawn_returns_the_lease_only_before_the_record_is_published() {
   local rec id out status
   # The tab cannot be created: the lease taken just before must go back.
   id=herdr-lease-tabfail-z7
@@ -408,8 +410,8 @@ test_herdr_spawn_returns_the_lease_only_before_the_pane_exists() {
   assert_grep "return --force $SLOT_DIR" "$TREEHOUSE_LOG" "the lease was not returned after the tab failed"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a failed spawn published a task record"
 
-  # The pane comes up outside the worktree: the launch assertion refuses after
-  # the pane exists, so the lease is kept and the spawn says how to free it.
+  # The pane comes up outside the worktree: the launch assertion refuses before
+  # any record or launch, so the spawn closes its own pane, then returns the lease.
   id=herdr-lease-wrongcwd-z8
   rec=$(make_herdr_case herdr-lease-wrongcwd "$id")
   read_herdr_case "$rec"
@@ -417,9 +419,20 @@ test_herdr_spawn_returns_the_lease_only_before_the_pane_exists() {
   status=$?
   [ "$status" -ne 0 ] || fail "spawn launched a worker whose pane was outside its worktree"$'\n'"$out"
   assert_contains "$out" "not its recorded worktree" "the refusal did not name the cwd mismatch"
-  assert_no_grep "return" "$TREEHOUSE_LOG" "a lease was returned after its pane existed"
-  assert_contains "$out" "stays durably leased to $id" "the kept lease was not reported"
+  assert_grep "pane close w1.t2.p" "$HERDR_LOG" "the spawn did not close its own pane"
+  assert_grep "return --force $SLOT_DIR" "$TREEHOUSE_LOG" "the lease was not returned after a pre-launch refusal"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn published a task record"
+
+  # The same refusal, but the pane will not close: the lease must stay.
+  id=herdr-lease-closefail-z13
+  rec=$(make_herdr_case herdr-lease-closefail "$id")
+  read_herdr_case "$rec"
+  out=$(FM_FAKE_HERDR_CLOSE_FAIL=1 FM_FAKE_HERDR_FG_CWD="$PROJ_DIR" run_herdr_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn launched a worker whose pane was outside its worktree"$'\n'"$out"
+  assert_grep "pane close w1.t2.p" "$HERDR_LOG" "the spawn did not try to close its own pane"
+  assert_no_grep "return" "$TREEHOUSE_LOG" "the lease was returned though the pane could not be closed"
+  assert_contains "$out" "could not be confirmed closed" "the kept lease and open pane were not reported"
 
   # No lease is taken at all: nothing to return, no pane created.
   id=herdr-lease-getfail-z9
@@ -430,7 +443,7 @@ test_herdr_spawn_returns_the_lease_only_before_the_pane_exists() {
   [ "$status" -ne 0 ] || fail "spawn succeeded though treehouse could not lease a slot"$'\n'"$out"
   assert_no_grep "return" "$TREEHOUSE_LOG" "a lease that was never taken was returned"
   assert_no_grep "tab create" "$HERDR_LOG" "a pane was created though no worktree was leased"
-  pass "a Herdr spawn returns its early lease only when it fails before its pane exists"
+  pass "a Herdr spawn closes its own pane and returns its lease only when it fails before its record"
 }
 
 # The worker is launched and the record published, then the backlog commit
@@ -460,6 +473,7 @@ SH
   assert_contains "$out" "could not be moved to In flight" "the spawn did not fail at the backlog commit"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the commit rollback did not remove the provisional record"
   assert_no_grep "return" "$TREEHOUSE_LOG" "the lease was returned after the worker was launched"
+  assert_no_grep "pane close w1.t2.p" "$HERDR_LOG" "the launched worker's pane was closed by the abort"
   pass "a Herdr spawn keeps its lease when the commit rollback removes the record after launch"
 }
 
@@ -478,6 +492,7 @@ test_herdr_spawn_keeps_a_slot_leased_back_to_its_holder() {
   assert_contains "$out" "now durably leased to that task" "the slot was not leased back to its holder"
   assert_grep "lease 1 --lease-holder $holder" "$TREEHOUSE_LOG" "no lease named the holder"
   assert_no_grep "return" "$TREEHOUSE_LOG" "the slot leased back to its holder was returned"
+  assert_no_grep "pane close w1.t2.p" "$HERDR_LOG" "the refused spawn closed a pane in the holder's slot"
   assert_not_contains "$out" "stays durably leased to $id" "the abort claimed the holder's slot for the refused task"
   assert_grep "task=$holder" "$CASE_DIR/pool/1/.fm-slot-owner" "the holder's claim was replaced"
   pass "a Herdr spawn refused on a recorded slot leaves it leased to its holder"
@@ -501,7 +516,7 @@ test_tmux_spawn_still_takes_its_slot_through_the_pane() {
 
 test_herdr_spawn_creates_the_pane_in_the_leased_worktree
 test_herdr_spawn_creates_a_projected_pane_in_the_leased_worktree
-test_herdr_spawn_returns_the_lease_only_before_the_pane_exists
+test_herdr_spawn_returns_the_lease_only_before_the_record_is_published
 test_herdr_spawn_keeps_the_lease_when_the_commit_rollback_removes_the_record
 test_herdr_spawn_keeps_a_slot_leased_back_to_its_holder
 test_tmux_spawn_still_takes_its_slot_through_the_pane
