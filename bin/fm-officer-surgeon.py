@@ -54,7 +54,8 @@ team PC, highest severity first, at most --max-creates attempts a run:
      filed only when one of the first three hits, read with `issue view`, has the
      marker in its description;
   3. `issue create --dry-run`, then `--verify`, with exactly one Type (Bug), one
-     Source and one area label. A failed verify is logged and never retried.
+     Source and one area label. A failed verify is never retried; if the fingerprint
+     search then finds the item, it counts as created (and is ledgered), else it is logged failed.
 It never edits, comments on, closes or deletes an item. One RATE_LIMITED answer
 stops every Linear call in the run, writes linear-resume-after.json (one hour on)
 and reports the rest as not filed; later runs skip Linear until then.
@@ -307,7 +308,8 @@ def description(f, date):
              "Epic: not assigned; whoever triages this picks one.", "",
              "Severity: %s. Source job: %s." % (f["severity"], f["job"])]
     lines += ["%s: %s" % (k, text(v, 300)) for k, v in sorted(f["evidence"].items()) if v not in (None, "")]
-    return "\n".join(lines) + "\nsurgeon-fp:%s\n" % f["fingerprint"]
+    # No trailing newline: Linear trims it, and `create --verify` then reports a mismatch on a good create.
+    return "\n".join(lines) + "\nsurgeon-fp:%s" % f["fingerprint"]
 
 
 def issue_id(data):
@@ -392,8 +394,19 @@ def file_findings(findings, args, date, out):
                 create += ["--label", label]
             linear(create + ["--dry-run"])
             attempts += 1
-            ledger[f["fingerprint"]] = issue_id(linear(create + ["--verify"]))
-            f["filing"] = {"action": "created", "issue": ledger[f["fingerprint"]]}
+            try:
+                ledger[f["fingerprint"]] = issue_id(linear(create + ["--verify"]))
+                f["filing"] = {"action": "created", "issue": ledger[f["fingerprint"]]}
+            except LinearError as exc:
+                if exc.code == "RATE_LIMITED":
+                    raise
+                # --verify writes before it reads back, so the item may exist; a created item is never
+                # reported failed or left out of the ledger.
+                found = existing_issue(f["fingerprint"], args.team)
+                if not found:
+                    raise
+                ledger[f["fingerprint"]] = found
+                f["filing"] = {"action": "created", "issue": found, "verify": str(exc)}
         except LinearError as exc:
             f["filing"] = {"action": "failed", "reason": str(exc)}
             if exc.code == "RATE_LIMITED":

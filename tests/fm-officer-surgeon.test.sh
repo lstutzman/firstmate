@@ -98,7 +98,17 @@ case "\$1 \$2" in
         [ -f "\$d/ratelimit.verify" ] && { err RATE_LIMITED "wait"; exit 1; }
         [ -f "\$d/verify.fail" ] && { err VERIFY_FAILED "not readable back"; exit 1; }
         n=\$(( \$(cat "\$d/created" 2>/dev/null || echo 100) + 1 )); echo "\$n" > "\$d/created"
-        for a in "\$@"; do [ "\$prev" = "--body-file" ] && cat "\$a" >> "\$d/bodies"; prev=\$a; done
+        for a in "\$@"; do
+          if [ "\$prev" = "--body-file" ]; then
+            cat "\$a" >> "\$d/bodies"
+            # Linear trims a trailing newline, so verify then mismatches, as on the real PC-4041..4045 creates.
+            [ -n "\$(tail -c1 "\$a")" ] || mismatch=1
+            [ -f "\$d/verify.mismatch" ] && mismatch=1
+            [ -n "\${mismatch:-}" ] && grep -o 'surgeon-fp:[0-9a-f]*' "\$a" | cut -d: -f2 | tr -d '\n' >> "\$d/exists.txt"
+          fi
+          prev=\$a
+        done
+        [ -n "\${mismatch:-}" ] && { err UNKNOWN "Write verification did not match intended state"; exit 1; }
         echo '{"ok":true,"data":{"issue":{"identifier":"PC-'"\$n"'"}}}' ;;
       *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
     esac ;;
@@ -259,6 +269,7 @@ test_files_real_untracked_findings() {
   assert_equals 5 "$(grep -c '^issue create .*--dry-run' "$LINEAR_LOG")" "each create is dry-run first"
   assert_equals 1 "$(grep -c '^label list --team PC' "$LINEAR_LOG")" "labels are looked up once, in team PC"
   assert_equals created "$(row "$json" nightly fp-a .filing.action)" "the failure is filed"
+  assert_equals "" "$(row "$json" nightly fp-a '.filing.verify // ""')" "a correct create verifies clean, with no trailing-newline mismatch"
   assert_equals "" "$(row "$json" nightly fp-c '.filing // "" | tostring | select(. != "")')" "a tracked failure is not filed"
   assert_equals "" "$(row "$json" sweeper b6 '.filing // "" | tostring | select(. != "")')" "a bug the sweeper filed is not filed again"
   assert_equals "" "$(row "$json" nightly fp-d '.filing // "" | tostring | select(. != "")')" "a finding needing a decision is not filed"
@@ -323,6 +334,18 @@ test_failed_verify_is_not_retried() {
   assert_contains "$(row "$json" nightly fp-a .filing.reason)" "VERIFY_FAILED" "with its cause"
   assert_equals "[]" "$(jq -c '[.writes_done[] | select(.action == "created")]' "$json")" "nothing is recorded as created"
   pass "fm-officer surgeon: a failed verify is logged and not retried"
+}
+
+test_created_item_with_verify_mismatch_is_ledgered() {
+  local home json
+  make_world mismatch "${LINEAR_ON}max-creates: 1; "; home=$WORLD_HOME
+  touch "$LDIR/verify.mismatch"
+  run_surgeon "$home" >/dev/null || fail "a verify mismatch must not fail the run"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "created PC-55" "$(row "$json" nightly fp-a '[.filing.action,.filing.issue]|join(" ")')" "a created item is not reported failed"
+  assert_contains "$(row "$json" nightly fp-a .filing.verify)" "did not match" "the mismatch is kept"
+  assert_equals "PC-55" "$(jq -r --arg fp "$(fp nightly nightly-e2e fp-a)" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")" "its fingerprint is in the ledger"
+  pass "fm-officer surgeon: a created item whose verify mismatches is still ledgered"
 }
 
 test_label_lookup_failure_reports_instead_of_filing() {
@@ -404,6 +427,7 @@ test_files_real_untracked_findings
 test_fingerprint_search_skips_create
 test_max_creates_cap
 test_failed_verify_is_not_retried
+test_created_item_with_verify_mismatch_is_ledgered
 test_label_lookup_failure_reports_instead_of_filing
 test_rate_limit_stops_linear_for_the_run_and_later_runs
 test_unreachable_app_is_a_coverage_gap
