@@ -319,6 +319,10 @@
 #   itself a linked worktree of the project repository still launches. A pane
 #   that never reaches an isolated worktree refuses at the end of that wait,
 #   naming the last path seen and why it was rejected.
+#   A fresh Herdr ship or scout is the exception: this process leases the slot
+#   itself (`treehouse get --lease`) before the pane exists and creates the pane
+#   in that worktree, because Herdr restores a pane at its creation cwd. The
+#   lease is returned if the spawn fails before the task record is published.
 #   A Treehouse pool slot that any task record on this machine still names is
 #   refused, naming that task; otherwise the slot is claimed and, just before
 #   the task record is published, durably leased in place under the task id, so
@@ -1453,6 +1457,8 @@ SPAWN_TREEHOUSE_PROJECT_LOCK=
 SPAWN_TREEHOUSE_PROJECT_LOCK_HELD=0
 SPAWN_SLOT_CLAIMED=0
 SPAWN_SLOT_LEASED=0
+SPAWN_HERDR_LEASED=0
+SPAWN_PANE_CWD=
 RELAUNCH_REPLACEMENT_PENDING=0
 RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
@@ -1638,6 +1644,17 @@ spawn_abort_cleanup() {
       fm_treehouse_slot_owner_release "$WT" "$ID" || true
     else
       echo "warning: leaving task $ID's slot claim on $WT in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it" >&2
+    fi
+  fi
+  # A Herdr spawn leases its slot before the pane exists; with no task record
+  # nothing else will ever return it. The pane is closed or idle and the copy
+  # holds no work yet, so the return here is safe. (A projected pane was already
+  # closed above; a flat pane's shell dies with the return.)
+  if [ "$SPAWN_HERDR_LEASED" = 1 ] && [ -n "${WT:-}" ] &&
+    [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
+    SPAWN_HERDR_LEASED=0
+    if ! (cd -- "$PROJ_ABS" && treehouse return --force "$WT") >/dev/null 2>&1; then
+      echo "warning: task $ID's Treehouse pool slot $WT stays durably leased to $ID with no task record; once its window is closed, free it with: treehouse return $(shell_quote "$WT")" >&2
     fi
   fi
   # The durable lease is not released here: `treehouse return` would kill what
@@ -4219,6 +4236,28 @@ EOF
     WT_TARGET=$T
   fi
 else
+  # Herdr saves a pane at its creation cwd and restores the agent there, and a
+  # nested `treehouse get` shell never moves that cwd. So a fresh Herdr ship or
+  # scout takes its slot from this process, durably leased to the task under
+  # the project lock held since capacity admission, and its pane is created in
+  # the leased worktree; nothing is typed into the pane to acquire it.
+  SPAWN_PANE_CWD=$PROJ_ABS
+  if [ "$BACKEND" = herdr ] && [ "$KIND" != secondmate ]; then
+    # Before `get` can hand out and reset a slot, lease each slot this home's
+    # records still name and claim, so a copy taken before spawns leased their
+    # slots is never given to this spawn.
+    if ! fm_treehouse_lease_recorded_slots "$PROJ_ABS" "$STATE"/*.meta; then
+      echo "error: could not durably lease the Treehouse pool slots this home's task records still name ($FM_TREEHOUSE_SLOT_LEASE_ERROR); refusing to allocate a slot that could be one of them" >&2
+      exit 1
+    fi
+    if ! WT=$(cd -- "$PROJ_ABS" && treehouse get --lease --lease-holder "$ID") || [ -z "$WT" ]; then
+      WT=
+      echo "error: treehouse get --lease did not lease a worktree for task $ID (spawning project '$PROJ_ABS')" >&2
+      exit 1
+    fi
+    SPAWN_HERDR_LEASED=1
+    SPAWN_PANE_CWD=$WT
+  fi
   case "$BACKEND" in
   tmux)
     SES=$(fm_backend_tmux_container_ensure)
@@ -4293,7 +4332,7 @@ else
           FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_projection_reclaim_task \
             "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" "$HERDR_LABEL_HOME" \
             "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" "$HERDR_RECOVERY_PANE_ID" \
-            "$HERDR_PARENT_LABEL" "$W" "$PROJ_ABS"
+            "$HERDR_PARENT_LABEL" "$W" "$SPAWN_PANE_CWD"
           HERDR_RECLAIM_STATUS=$?
           set -e
           case "$HERDR_RECLAIM_STATUS" in
@@ -4351,7 +4390,7 @@ else
             HERDR_PROJECTION_ABORT_JOURNAL_TOKEN=$HERDR_PROJECTION_ID
             HERDR_PROJECTION_LABEL=$(fm_backend_herdr_projection_workspace_label "$ID" "$HERDR_PROJECTION_ID")
             if ! FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_projection_create_task \
-              "$PROJ_ABS" "$HERDR_PROJECTION_LABEL" "$W"; then
+              "$SPAWN_PANE_CWD" "$HERDR_PROJECTION_LABEL" "$W"; then
               if [ "${FM_BACKEND_HERDR_PROJECTION_CLEANUP_SAFE:-0}" = 1 ]; then
                 HERDR_PROJECTION_ABORT_CLEANUP=1
                 HERDR_PROJECTION_ABORT_SESSION=$FM_BACKEND_HERDR_PROJECTION_SESSION
@@ -4404,7 +4443,7 @@ else
       HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_CONTAINER_RAW#*$'\t'}
       HERDR_SES=${CONTAINER%%:*}
       HERDR_WORKSPACE_ID=${CONTAINER#*:}
-      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$PROJ_ABS" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
+      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$SPAWN_PANE_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
@@ -4514,10 +4553,11 @@ spawn_send_key() { # <target> <key>
 }
 
 # Enter the exact copy recorded for this task immediately before trust setup and
-# launch. Herdr restores a pane's shell cwd from its durable tab layout, so a
-# treehouse subshell's foreground cwd is not enough to keep a later pane restart
-# out of the primary checkout. The same explicit cd gives every backend one
-# launch boundary and makes a dropped or ignored cwd change a refusal.
+# launch. This gives every backend one launch boundary and makes a dropped or
+# ignored cwd change a refusal. It does not decide where a Herdr restart resumes
+# the worker: Herdr restores a pane at its creation cwd, and this cd only moves a
+# shell (the nested `treehouse get` one, which never reaches that cwd). A Herdr
+# ship or scout therefore creates its pane in the leased worktree instead.
 spawn_enter_recorded_worktree() {
   [ "$KIND" = secondmate ] && return 0
   spawn_send_text_line "$WT_TARGET" "cd -- $(shell_quote "$WT")" || {
@@ -4879,70 +4919,75 @@ elif [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   fi
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  # Under the project lock, before `treehouse get` can hand out and reset a
-  # slot, lease each slot this home's records still name and claim, so a copy
-  # taken before spawns leased their slots is never given to this spawn.
-  if ! fm_treehouse_lease_recorded_slots "$PROJ_ABS" "$STATE"/*.meta; then
-    echo "error: could not durably lease the Treehouse pool slots this home's task records still name ($FM_TREEHOUSE_SLOT_LEASE_ERROR); refusing to allocate a slot that could be one of them; inspect window $T" >&2
-    exit 1
-  fi
-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
-
-  # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
-  # Target the stable window id, not the name: if the name is ever lost (e.g. an
-  # automatic-rename slips through), display-message -t <bad-name> falls back to the
-  # active client's window, which would misread firstmate's OWN pane path as the
-  # worktree and tangle a hook into the primary checkout. The window id never lies.
-  # The project comparison is physical: spawn_worktree_isolated screens each
-  # read against PROJ_ABS_REAL, not PROJ_ABS, because a symlinked project prefix
-  # would otherwise make the pane's OS-level cwd read differ from PROJ_ABS on
-  # the very first poll, before the pane has actually moved.
-  #
-  # A single read that already looks isolated is not proof the pane settled
-  # there: on some tmux/WSL setups a brand-new window's pane_current_path
-  # transiently reports an unrelated stale path (seen live as another real git
-  # checkout entirely) before the shell catches up with treehouse get's cd. That
-  # stale path passes spawn_worktree_isolated too (it resolves to a real,
-  # distinct worktree top-level), so accepting it on one read alone silently
-  # records the wrong worktree= in state/<id>.meta. Require two consecutive
-  # reads to agree on the same isolated path before accepting it; a mismatch
-  # just becomes the new candidate rather than resetting the wait, so a pane
-  # that is already settled by the first real read only costs the one existing
-  # inter-poll sleep as confirmation, not a whole extra cycle on top.
-  #
-  # Every candidate is screened with the isolation guard's own predicate, so a
-  # read of the project itself or of the repository primary checkout is treated
-  # as the transient it is and the wait continues, instead of being adopted and
-  # then refused by the guard.
-  # A candidate the screen rejects is never adopted, so a host where the pane
-  # never reaches an isolated worktree spends the whole window before refusing.
-  # That wait is deliberate - telling a transient apart from a terminal
-  # misconfiguration would need machinery this path does not want - so the
-  # refusal has to be self-explaining instead: carry the last path seen and the
-  # reason it was rejected, and report both at the deadline.
-  candidate=""
-  last_seen=""
-  last_reason="the pane reported no path"
-  for _ in $(seq 1 60); do
-    p=$(spawn_current_path "$WT_TARGET" || true)
-    [ -z "$p" ] || last_seen="$p"
-    if [ -n "$p" ] && spawn_worktree_isolated "$p"; then
-      p_real=$(real_path_or_raw "$p")
-      last_reason="it is an isolated worktree, but no second read agreed with it"
-      if [ -n "$candidate" ] && [ "$p_real" = "$candidate" ]; then
-        WT="$p"
-        break
-      fi
-      candidate="$p_real"
-    else
-      candidate=""
-      [ -z "$p" ] || last_reason=$SPAWN_WT_REASON
+  # A Herdr spawn already leased its slot and created the pane inside it, so
+  # there is no pane shell to type into or wait on; the checks after this block
+  # still run on the leased path.
+  if [ "$SPAWN_HERDR_LEASED" != 1 ]; then
+    # Under the project lock, before `treehouse get` can hand out and reset a
+    # slot, lease each slot this home's records still name and claim, so a copy
+    # taken before spawns leased their slots is never given to this spawn.
+    if ! fm_treehouse_lease_recorded_slots "$PROJ_ABS" "$STATE"/*.meta; then
+      echo "error: could not durably lease the Treehouse pool slots this home's task records still name ($FM_TREEHOUSE_SLOT_LEASE_ERROR); refusing to allocate a slot that could be one of them; inspect window $T" >&2
+      exit 1
     fi
-    sleep 1
-  done
-  if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter an isolated worktree within 60s (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); inspect window $T" >&2
-    exit 1
+    spawn_send_text_line "$WT_TARGET" 'treehouse get'
+
+    # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
+    # Target the stable window id, not the name: if the name is ever lost (e.g. an
+    # automatic-rename slips through), display-message -t <bad-name> falls back to the
+    # active client's window, which would misread firstmate's OWN pane path as the
+    # worktree and tangle a hook into the primary checkout. The window id never lies.
+    # The project comparison is physical: spawn_worktree_isolated screens each
+    # read against PROJ_ABS_REAL, not PROJ_ABS, because a symlinked project prefix
+    # would otherwise make the pane's OS-level cwd read differ from PROJ_ABS on
+    # the very first poll, before the pane has actually moved.
+    #
+    # A single read that already looks isolated is not proof the pane settled
+    # there: on some tmux/WSL setups a brand-new window's pane_current_path
+    # transiently reports an unrelated stale path (seen live as another real git
+    # checkout entirely) before the shell catches up with treehouse get's cd. That
+    # stale path passes spawn_worktree_isolated too (it resolves to a real,
+    # distinct worktree top-level), so accepting it on one read alone silently
+    # records the wrong worktree= in state/<id>.meta. Require two consecutive
+    # reads to agree on the same isolated path before accepting it; a mismatch
+    # just becomes the new candidate rather than resetting the wait, so a pane
+    # that is already settled by the first real read only costs the one existing
+    # inter-poll sleep as confirmation, not a whole extra cycle on top.
+    #
+    # Every candidate is screened with the isolation guard's own predicate, so a
+    # read of the project itself or of the repository primary checkout is treated
+    # as the transient it is and the wait continues, instead of being adopted and
+    # then refused by the guard.
+    # A candidate the screen rejects is never adopted, so a host where the pane
+    # never reaches an isolated worktree spends the whole window before refusing.
+    # That wait is deliberate - telling a transient apart from a terminal
+    # misconfiguration would need machinery this path does not want - so the
+    # refusal has to be self-explaining instead: carry the last path seen and the
+    # reason it was rejected, and report both at the deadline.
+    candidate=""
+    last_seen=""
+    last_reason="the pane reported no path"
+    for _ in $(seq 1 60); do
+      p=$(spawn_current_path "$WT_TARGET" || true)
+      [ -z "$p" ] || last_seen="$p"
+      if [ -n "$p" ] && spawn_worktree_isolated "$p"; then
+        p_real=$(real_path_or_raw "$p")
+        last_reason="it is an isolated worktree, but no second read agreed with it"
+        if [ -n "$candidate" ] && [ "$p_real" = "$candidate" ]; then
+          WT="$p"
+          break
+        fi
+        candidate="$p_real"
+      else
+        candidate=""
+        [ -z "$p" ] || last_reason=$SPAWN_WT_REASON
+      fi
+      sleep 1
+    done
+    if [ -z "$WT" ]; then
+      echo "error: treehouse get did not enter an isolated worktree within 60s (last seen '${last_seen:-none}': $last_reason; spawning project '$PROJ_ABS'); inspect window $T" >&2
+      exit 1
+    fi
   fi
 
   validate_spawn_worktree "treehouse get" "$T"
@@ -4993,9 +5038,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
 fi
 
 # Re-assert the durable task copy after either treehouse acquisition or endpoint
-# adoption. This also updates Herdr's restored pane shell before any harness is
-# started, so a later host restart inherits the task worktree rather than the
-# tab's original project directory.
+# adoption, before any harness is started.
 spawn_enter_recorded_worktree
 spawn_assert_agent_worktree
 
@@ -5756,7 +5799,7 @@ if [ "$RELAUNCH" -eq 0 ]; then
   # relaunch, or a host restart - until bin/fm-teardown.sh's `treehouse return`
   # releases it. Taken this late, under the project lock, so only a failure
   # from here on can leave a leased slot without a record.
-  if [ "$SPAWN_SLOT_CLAIMED" = 1 ]; then
+  if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ "$SPAWN_HERDR_LEASED" != 1 ]; then
     if ! fm_treehouse_slot_lease "$PROJ_ABS" "$WT" "$ID"; then
       echo "error: could not durably lease Treehouse pool slot $WT for task $ID (${FM_TREEHOUSE_SLOT_LEASE_ERROR:-no diagnostic}); without the lease Treehouse hands the slot to the next spawn once nothing runs in it, so the worker is not launched (treehouse 3.0.0 or later is required); inspect window $T" >&2
       exit 1
