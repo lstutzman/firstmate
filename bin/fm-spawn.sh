@@ -5809,8 +5809,7 @@ if [ "$RELAUNCH" -eq 0 ]; then
   # relaunch, or a host restart - until bin/fm-teardown.sh's `treehouse return`
   # releases it. Taken this late, under the project lock, so only a failure
   # from here on can leave a leased slot without a record.
-  [ "$SPAWN_HERDR_LEASED" != 1 ] || SPAWN_SLOT_LEASED=1
-  if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ "$SPAWN_SLOT_LEASED" != 1 ]; then
+  if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ "$SPAWN_HERDR_LEASED" != 1 ]; then
     if ! fm_treehouse_slot_lease "$PROJ_ABS" "$WT" "$ID"; then
       echo "error: could not durably lease Treehouse pool slot $WT for task $ID (${FM_TREEHOUSE_SLOT_LEASE_ERROR:-no diagnostic}); without the lease Treehouse hands the slot to the next spawn once nothing runs in it, so the worker is not launched (treehouse 3.0.0 or later is required); inspect window $T" >&2
       exit 1
@@ -5821,6 +5820,7 @@ if [ "$RELAUNCH" -eq 0 ]; then
     echo "error: task record for $ID could not be published ($FM_BACKLOG_TRANSITION_ERROR)" >&2
     exit 1
   fi
+  [ "$SPAWN_HERDR_LEASED" != 1 ] || SPAWN_SLOT_LEASED=1
   SPAWN_META_TMP=
 fi
 

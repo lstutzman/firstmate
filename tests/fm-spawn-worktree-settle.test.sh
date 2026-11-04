@@ -446,6 +446,32 @@ test_herdr_spawn_returns_the_lease_only_before_the_record_is_published() {
   pass "a Herdr spawn closes its own pane and returns its lease only when it fails before its record"
 }
 
+# Publishing the task record itself fails: no record and no launch exist yet,
+# so the spawn closes its own pane and returns the lease.
+test_herdr_spawn_returns_the_lease_when_the_record_publish_fails() {
+  local rec id out status real_mv
+  id=herdr-lease-publishfail-z14
+  rec=$(make_herdr_case herdr-lease-publishfail "$id")
+  read_herdr_case "$rec"
+  real_mv=$(command -v mv) || fail "mv not found"
+  cat > "$FAKEBIN_DIR/mv" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  [ "\$a" = "$HOME_DIR/state/$id.meta" ] && exit 1
+done
+exec "$real_mv" "\$@"
+SH
+  chmod +x "$FAKEBIN_DIR/mv"
+  out=$(run_herdr_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn succeeded though its task record could not be published"$'\n'"$out"
+  assert_contains "$out" "could not be published" "the spawn did not fail at record publication"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a failed publication left a task record"
+  assert_grep "pane close w1.t2.p" "$HERDR_LOG" "the spawn did not close its own pane"
+  assert_grep "return --force $SLOT_DIR" "$TREEHOUSE_LOG" "the lease was not returned after the publish failed"
+  pass "a Herdr spawn whose record publish fails closes its own pane and returns its lease"
+}
+
 # The worker is launched and the record published, then the backlog commit
 # fails and its rollback removes the record: the worker may be running in the
 # slot, so the lease must stay.
@@ -517,6 +543,7 @@ test_tmux_spawn_still_takes_its_slot_through_the_pane() {
 test_herdr_spawn_creates_the_pane_in_the_leased_worktree
 test_herdr_spawn_creates_a_projected_pane_in_the_leased_worktree
 test_herdr_spawn_returns_the_lease_only_before_the_record_is_published
+test_herdr_spawn_returns_the_lease_when_the_record_publish_fails
 test_herdr_spawn_keeps_the_lease_when_the_commit_rollback_removes_the_record
 test_herdr_spawn_keeps_a_slot_leased_back_to_its_holder
 test_tmux_spawn_still_takes_its_slot_through_the_pane
