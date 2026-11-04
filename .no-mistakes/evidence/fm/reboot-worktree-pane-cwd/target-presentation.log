@@ -1,0 +1,15 @@
+== product root: {run-worktree}  session: fm-lab-rctgp-2907919-10228  presentation: on
+spawn exit=0
+project clone      : /tmp/fm-restore-cwd.U9c97I/home/projects/scratch
+recorded worktree  : ~/.treehouse/scratch-772676/1/scratch
+lease holder       : 
+pane creation cwd  : ~/.treehouse/scratch-772676/1/scratch
+-- restarting the lab Herdr session (host-reboot stand-in)
+restored pane cwd  : ~/.treehouse/scratch-772676/1/scratch
+restored fg cwd    : ~/.treehouse/scratch-772676/1/scratch
+RESULT: restored pane resumes in the task worktree
+-- teardown
+teardown exit=0
+scratch: already current
+teardown rc1 complete (window fm-lab-rctgp-2907919-10228:w1:p2, worktree ~/.treehouse/scratch-772676/1/scratch)
+Backlog: rc1 just finished (this home keeps no markdown backlog at /tmp/fm-restore-cwd.U9c97I/home/data/backlog.md). Update /tmp/fm-restore-cwd.U9c97I/home/data/backlog.md - move rc1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.

@@ -1,0 +1,16 @@
+== product root: {run-worktree}  session: fm-lab-rctgt-3121416-16755  presentation: off
+spawn exit=0
+project clone      : /tmp/fm-restore-cwd.O68YnU/home/projects/scratch
+recorded worktree  : ~/.treehouse/scratch-bb8586/1/scratch
+treehouse slot     : {"name":"1","path":"~/.treehouse/scratch-bb8586/1/scratch","created_at":"2026-11-04T11:26:55.041317723Z","leased":true,"lease_id":"f183697f04221173d7f9935b265de730","lease_holder":"rc1","leased_at":"2026-11-04T11:26:55.050316503Z","seed_inventory_known":true}
+pane creation cwd  : ~/.treehouse/scratch-bb8586/1/scratch
+-- restarting the lab Herdr session (host-reboot stand-in)
+restored pane cwd  : ~/.treehouse/scratch-bb8586/1/scratch
+restored fg cwd    : ~/.treehouse/scratch-bb8586/1/scratch
+RESULT: restored pane resumes in the task worktree
+-- teardown
+teardown exit=0
+scratch: already current
+teardown rc1 complete (window fm-lab-rctgt-3121416-16755:w1:p2, worktree ~/.treehouse/scratch-bb8586/1/scratch)
+Backlog: rc1 just finished (this home keeps no markdown backlog at /tmp/fm-restore-cwd.O68YnU/home/data/backlog.md). Update /tmp/fm-restore-cwd.O68YnU/home/data/backlog.md - move rc1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+slot after teardown: {"name":"1","path":"~/.treehouse/scratch-bb8586/1/scratch","created_at":"2026-11-04T11:26:55.041317723Z","seed_inventory_known":true}
