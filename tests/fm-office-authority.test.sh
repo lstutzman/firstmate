@@ -168,6 +168,17 @@ test_admission_digest_follows_rules_argument() {
   pass "the admission digest pins the --rules file the classifier reads and refuses a relative or missing one"
 }
 
+test_admission_digest_matches_a_byte_identical_office_copy() {
+  local main="$TMP_ROOT/digest-main" office="$TMP_ROOT/digest-office"
+  mkdir -p "$main/admission" "$office/admission"
+  printf 'bin/** authority\n' > "$main/admission/firstmate.rules"
+  printf 'command=/x/fm-reserved-classify.sh --rules %s\nclasses=authority\n' "$main/admission/firstmate.rules" > "$main/admission/firstmate"
+  cp "$main/admission/firstmate" "$main/admission/firstmate.rules" "$office/admission/"
+  digest() { bash -c '. "$1"; fm_office_admission_digest "$2" firstmate' _ "$LIB" "$1"; }
+  assert_equals "$(digest "$main")" "$(digest "$office")" "a byte-identical office copy whose --rules names the main home's admission dir"
+  pass "the admission digest of a byte-identical office copy matches the master's"
+}
+
 test_live_tasks() {
   local s="$TMP_ROOT/live-state" out
   mkdir -p "$s"
@@ -180,6 +191,74 @@ test_live_tasks() {
   pass "live tasks count every ship and scout but this one and any second mate"
 }
 
+NAV_LINE='- navigator - Drive progress (role: navigator; runs-on: slartibartfast; dispatch: PropertyCompass2; merge: none; merge-via: PropertyCompass2=slarti; auto-merge-classes: none; wip: 2; tick: every 2h; sources: tick; added 2026-11-04)'
+
+# payload <main> <dest-id> <dest-home>: "<rc>|<record or ABSENT>|<error>" from
+# fm_office_inherit_payload against the main home <main>.
+payload() {
+  bash -c '. "$1"; out="$2/staged"; rc=0
+    fm_office_inherit_payload "$2/config" "$2/data" "$3" "$4" "$out" || rc=$?
+    if [ -f "$out" ]; then rec=$(cat "$out"); else rec=ABSENT; fi
+    printf "%s|%s|%s\n" "$rc" "$rec" "$FM_OFFICE_ERROR"' _ "$LIB" "$1" "$2" "$3"
+}
+
+payload_main() {  # <name>: a main home registering navigator, with a local office home
+  local m="$TMP_ROOT/$1"
+  mkdir -p "$m/data" "$m/config"
+  printf '# Offices\n\n%s\n' "$NAV_LINE" > "$m/data/offices.md"
+  fm_write_office_home "$m/navigator" navigator
+  printf '%s\n' "$m"
+}
+
+test_payload_resolves_only_the_destination() {
+  local m out
+  m=$(payload_main payload-only)
+  out=$(payload "$m" navigator "$m/navigator")
+  assert_contains "$out" "0|fm-office-authority-v1"$'\n'"id=navigator"$'\n'"dispatch=PropertyCompass2" "navigator's record"
+  assert_equals "0|ABSENT|" "$(payload "$m" slarti "$m/navigator")" "another second mate"
+  assert_equals "0|ABSENT|" "$(payload "$m" "" "$m/navigator")" "no destination id"
+  assert_contains "$(payload "$m" navigator "")" "0|fm-office-authority-v1" "a remote route reads the registry alone"
+  rm "$m/navigator/.fm-office"
+  assert_equals "0|ABSENT|" "$(payload "$m" navigator "$m/navigator")" "a home with no office marker"
+  rm "$m/data/offices.md"
+  assert_equals "0|ABSENT|" "$(payload "$m" navigator "$m/navigator")" "no registry"
+  pass "the payload is the destination's own line, and an absence for every other home"
+}
+
+test_payload_errors() {
+  local m
+  m=$(payload_main payload-err)
+  printf '%s\n' "$NAV_LINE" >> "$m/data/offices.md"
+  assert_contains "$(payload "$m" navigator "$m/navigator")" "1|ABSENT|cannot publish office navigator's authority record: $m/data/offices.md has 2 lines for it" "duplicate line"
+  printf '# Offices\n\n- navigator - broken\n' > "$m/data/offices.md"
+  assert_contains "$(payload "$m" navigator "$m/navigator")" "1|ABSENT|" "malformed line"
+  printf '# Offices\n\n%s\n' "${NAV_LINE/auto-merge-classes: none/auto-merge-classes: docs}" > "$m/data/offices.md"
+  assert_contains "$(payload "$m" navigator "$m/navigator")" "auto-merge-classes must be none" "an auto-merge class"
+  printf '# Offices\n\n%s\n' "${NAV_LINE/wip: 2; /}" > "$m/data/offices.md"
+  assert_contains "$(payload "$m" navigator "$m/navigator")" "has no wip: field" "a missing field"
+  printf '# Offices\n\n%s\n' "${NAV_LINE/merge: none/merge: PropertyCompass2}" > "$m/data/offices.md"
+  assert_contains "$(payload "$m" navigator "$m/navigator")" "has no admission= in" "a merge project with no admission binding"
+  assert_contains "$(payload "$m" navigator "")" "cannot be pinned on a remote route" "a remote office that merges"
+  pass "a duplicate, malformed, or unpinnable line publishes nothing and says why"
+}
+
+test_propagation_publishes_per_destination() {
+  local m plain out
+  m=$(payload_main propagate)
+  plain="$TMP_ROOT/propagate-plain"
+  mkdir -p "$plain/config" "$plain/data"
+  printf 'slarti\n' > "$plain/.fm-secondmate-home"
+  out=$(bash -c '. "$1/bin/fm-config-inherit-lib.sh"
+    propagate_secondmate_inheritance "$2" "$2/navigator" "$2/config" "$2/data" navigator || exit 1
+    propagate_secondmate_inheritance "$2" "$3" "$2/config" "$2/data" slarti || exit 1
+    propagate_secondmate_inheritance "$2" "$3" "$2/config" "$2/data" || exit 1' _ "$ROOT" "$m" "$plain" 2>&1) \
+    || fail "propagation failed: $out"
+  assert_equals "0|navigator|" "$(resolve "$m/navigator")" "the office after propagation"
+  assert_absent "$plain/config/office-authority"
+  assert_absent "$plain/config/.fm-inherit-office-authority.generation"
+  pass "every convergence point publishes an office its own record and leaves a plain second mate untouched"
+}
+
 test_homes_that_are_not_offices
 test_inconsistent_signals_refuse
 test_unpublished_or_unproven_record_refuses
@@ -187,4 +266,8 @@ test_valid_record_loads
 test_malformed_record_refuses
 test_admission_digest
 test_admission_digest_follows_rules_argument
+test_admission_digest_matches_a_byte_identical_office_copy
 test_live_tasks
+test_payload_resolves_only_the_destination
+test_payload_errors
+test_propagation_publishes_per_destination

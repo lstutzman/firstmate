@@ -10,14 +10,16 @@
 # Usage:
 #   fm-office.sh list
 #   fm-office.sh ensure
+#   fm-office.sh publish <id>
 #   fm-office.sh status
 #   fm-office.sh arm-status
 #   fm-office.sh disarm-status
 #   fm-office.sh register-sources
 #   fm-office.sh check <source>
 #
-# list and ensure only read. status writes data/office-status.json; arm-status
-# and disarm-status write only the status check and its trust binding.
+# list and ensure only read. publish writes only one office's authority record
+# and its receipt. status writes data/office-status.json; arm-status and
+# disarm-status write only the status check and its trust binding.
 #
 # list prints one line per registry entry: "<id> <role> <state>", where state
 # is "ok" or "gaps:<n>".
@@ -32,9 +34,26 @@
 # office home's data/projects.md, a merge project without admission=, a source
 # lane that is not a registered officer, a listed source whose check is not
 # registered and trusted in a local office home's state/, or a merge-via
-# project that does not carry merger=<home> in the office home's data/projects.md. A remote
-# office's home is not readable from here, so its file checks are skipped.
-# The authority record belongs to a later change and is not checked here.
+# project that does not carry merger=<home> in the office home's
+# data/projects.md. For a local office it also reports an authority record
+# that cannot be built, is unpublished or unproven, or is stale against
+# data/offices.md and the main home's master admission configs, and an
+# office-local admission config that differs from the master its record pins.
+# A remote office's home is not readable from here, so its file checks are
+# skipped.
+#
+# publish <id> (run in the main home) pushes that one office's authority record
+# into its home now: config/office-authority and its receipt
+# config/.fm-inherit-office-authority.generation, through the same
+# inherited-config propagation and per-home lock that bin/fm-config-push.sh
+# uses, restricted to that item. bin/fm-office-authority-lib.sh owns what the
+# record holds and when a home receives an absence instead. <id> must be a
+# second mate registered in data/secondmates.md on a local route, whose home's
+# .fm-secondmate-home names it; a remote office receives its record from the
+# ordinary remote inheritance push. publish refuses in a second-mate home. It
+# prints one line, "office <id>: <pushed|unchanged|error> [reason]", and exits
+# non-zero on an error. Every convergence point (secondmate spawn, the
+# bootstrap secondmate sweep, bin/fm-config-push.sh) publishes the same record.
 #
 # status (run inside an office home, as its silent watcher check) projects that
 # home's backlog and in-flight task records onto data/office-status.json for the
@@ -90,6 +109,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 REGISTRY="$DATA/offices.md"
 OFFICE_ROLES="navigator quartermaster"
 STATUS_CHECK_ID=office-status
@@ -105,12 +125,15 @@ STATUS_CHECK="$STATE/$STATUS_CHECK_ID.check.sh"
 . "$SCRIPT_DIR/fm-check-lib.sh"
 # shellcheck source=bin/fm-secondmate-parent-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$SCRIPT_DIR/fm-office-authority-lib.sh"
 
 usage() {
   cat <<'EOF'
 Usage:
   fm-office.sh list      list registered offices and their state
   fm-office.sh ensure    session-start health: one OFFICE: line per gap
+  fm-office.sh publish <id>   push that office's authority record into its home now
   fm-office.sh status    write data/office-status.json for this office home (silent)
   fm-office.sh arm-status     register status as this office home's silent watcher check
   fm-office.sh disarm-status  retire that check
@@ -123,20 +146,6 @@ EOF
 in_list() {  # <item> <comma list>
   case ",$2," in *",$1,"*) return 0 ;; esac
   return 1
-}
-
-# project_token <projects.md> <project> <key>: the value of a key=value token, or nothing.
-project_token() {
-  local line tok
-  [ -f "$1" ] || return 0
-  while IFS= read -r line; do
-    [[ "$line" =~ ^-\ ([^\ ]+)\ \[([^]]*)\] ]] || continue
-    [ "${BASH_REMATCH[1]}" = "$2" ] || continue
-    for tok in ${BASH_REMATCH[2]}; do
-      case "$tok" in "$3="*) printf '%s\n' "${tok#*=}"; return 0 ;; esac
-    done
-    return 0
-  done < "$1"
 }
 
 project_listed() {  # <projects.md> <project>
@@ -205,7 +214,11 @@ office_problems() {
     || { printf 'not a registered second mate in data/secondmates.md\n'; return; }
   host=${SECONDMATE_REGISTRY_HOST:-${FM_OFFICE_HOST:-$(hostname -s)}}
   in_list "$host" "$runs_on" || printf 'runs-on %s does not include the second mate host %s\n' "$runs_on" "$host"
-  [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] && return
+  if [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
+    [ -z "$merge" ] || [ "$merge" = none ] \
+      || printf 'it merges %s, and its admission config cannot be pinned on a remote route, so its authority record cannot be published\n' "$merge"
+    return
+  fi
   home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
   [ -d "$home" ] || { printf 'office home %s is missing\n' "$home"; return; }
   [ "$(cat "$home/.fm-office" 2>/dev/null)" = "$id" ] || printf '.fm-office marker missing or not "%s" in %s\n' "$id" "$home"
@@ -221,16 +234,45 @@ office_problems() {
   done
   if [ -n "$merge" ] && [ "$merge" != none ]; then
     for p in ${merge//,/ }; do
-      [ -n "$(project_token "$projects_md" "$p" admission)" ] || printf 'merge project %s has no admission= in %s\n' "$p" "$projects_md"
+      [ -n "$(fm_office_project_token "$projects_md" "$p" admission)" ] || printf 'merge project %s has no admission= in %s\n' "$p" "$projects_md"
     done
   fi
   if [ -n "$via" ] && [ "$via" != none ]; then
     for pair in ${via//,/ }; do
       p=${pair%%=*}
-      [ "$(project_token "$projects_md" "$p" merger)" = "${pair#*=}" ] \
+      [ "$(fm_office_project_token "$projects_md" "$p" merger)" = "${pair#*=}" ] \
         || printf 'merge-via project %s lacks merger=%s in %s\n' "$p" "${pair#*=}" "$projects_md"
     done
   fi
+  authority_problems "$id" "$home"
+}
+
+# authority_problems <id> <home>: the authority-record gaps of one local office.
+authority_problems() {
+  local id=$1 home=$2 stage rec=$2/config/office-authority receipt=$2/config/.fm-inherit-office-authority.generation
+  local sha entry p name digest
+  stage=$(mktemp -d "${TMPDIR:-/tmp}/fm-office-ensure.XXXXXX") || { printf 'cannot stage its authority record to compare\n'; return; }
+  if ! fm_office_inherit_payload "$CONFIG" "$DATA" "$id" "$home" "$stage/record"; then
+    printf '%s\n' "$FM_OFFICE_ERROR"
+  elif [ ! -f "$stage/record" ]; then
+    :
+  elif ! fm_role_inherit_check "$rec" "$receipt" "office authority record" "authority record"; then
+    printf 'authority record is unproven (%s); run bin/fm-office.sh publish %s\n' "$FM_ROLE_DIAG" "$id"
+  elif [ "$(sed -n 4p "$receipt")" = absent ]; then
+    printf 'authority record is not published; run bin/fm-office.sh publish %s\n' "$id"
+  elif ! cmp -s "$stage/record" "$rec"; then
+    printf 'authority record is stale against data/offices.md or the master admission config; run bin/fm-office.sh publish %s\n' "$id"
+  else
+    sha=$(sed -n 's/^admission-sha256=//p' "$rec")
+    for entry in ${sha//,/ }; do
+      p=${entry%%:*}
+      name=$(fm_office_project_token "$home/data/projects.md" "$p" admission)
+      digest=$(fm_office_admission_digest "$home/config" "$name") || digest=
+      [ "$entry" = "$p:$digest" ] \
+        || printf 'admission config %s in %s/config differs from the master copy its record pins, so its merges of %s are refused; copy it again from %s/admission\n' "$name" "$home" "$p" "$CONFIG"
+    done
+  fi
+  rm -rf "$stage"
 }
 
 cmd_list() {
@@ -269,6 +311,39 @@ cmd_status() {
     --refresh-secs "${FM_OFFICE_STATUS_REFRESH_SECS:-900}")
   [ -n "${FM_OFFICE_NOW:-}" ] && args+=(--now "$FM_OFFICE_NOW")
   python3 -I "$SCRIPT_DIR/fm-office-status.py" "${args[@]}"
+}
+
+publish_die() { echo "office-publish: $1" >&2; exit 1; }
+
+cmd_publish() {
+  local id=${1:-} home lock report status reason rc=0
+  [ "$#" -eq 1 ] && [[ "$id" =~ ^[a-z0-9-]+$ ]] || publish_die "usage: fm-office.sh publish <id>"
+  [ ! -e "$FM_HOME/.fm-secondmate-home" ] && [ ! -L "$FM_HOME/.fm-secondmate-home" ] \
+    || publish_die "only the main home publishes office authority, and $FM_HOME is a second-mate home"
+  secondmate_registry_line_for_id "$DATA/secondmates.md" "$id" \
+    || publish_die "$id is not a registered second mate in $DATA/secondmates.md"
+  [ "$SECONDMATE_REGISTRY_REMOTE" != 1 ] \
+    || publish_die "second mate $id is on a remote route; bin/fm-config-push.sh publishes its record with the rest of its inherited config"
+  home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
+  home=$(CDPATH='' cd -- "$home" 2>/dev/null && pwd -P) || publish_die "second mate $id's home $SECONDMATE_REGISTRY_HOME is missing"
+  [ -f "$home/.fm-secondmate-home" ] && [ ! -L "$home/.fm-secondmate-home" ] \
+    && [ "$(tr -d '[:space:]' < "$home/.fm-secondmate-home")" = "$id" ] \
+    || publish_die "$home is not the seeded home of second mate $id (its .fm-secondmate-home does not name $id)"
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  # shellcheck source=bin/fm-config-inherit-lib.sh
+  . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
+  lock=$(fm_config_inherit_lock_path "$home") || publish_die "cannot resolve $home's inheritance lock"
+  mkdir -p "$home/state" || publish_die "cannot create $home/state"
+  fm_lock_acquire_wait "$lock" || publish_die "cannot acquire $home's inheritance lock"
+  report=$(mktemp "${TMPDIR:-/tmp}/fm-office-publish.XXXXXX") || { fm_lock_release "$lock"; publish_die "cannot create a report file"; }
+  FM_INHERITABLE_CONFIG=office-authority FM_CONFIG_INHERIT_REPORT=$report \
+    propagate_inheritable_config "$CONFIG" "$home/config" "$FM_HOME" "$id" "$DATA" 2>/dev/null || rc=1
+  fm_lock_release "$lock" || true
+  IFS=$'\t' read -r _ status reason < "$report" || status=error
+  rm -f "$report"
+  printf 'office %s: %s%s\n' "$id" "${status:-error}" "${reason:+ - $reason}"
+  [ "$rc" -eq 0 ] && [ "$status" != error ]
 }
 
 status_die() { echo "office-status: $1" >&2; exit 1; }
@@ -514,6 +589,7 @@ cmd_check() {
 case "${1:-}" in
   list) cmd_list ;;
   ensure) cmd_ensure ;;
+  publish) shift; cmd_publish "$@" ;;
   status) cmd_status ;;
   arm-status) cmd_arm_status ;;
   disarm-status) cmd_disarm_status ;;

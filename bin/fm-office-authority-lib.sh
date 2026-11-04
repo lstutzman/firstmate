@@ -19,7 +19,8 @@
 # is inconsistent and refuses every spawn and merge.
 #
 # Authority record: config/office-authority in the office home, published by
-# the main home (a later change adds the publisher). It is trusted only while
+# the main home through the inherited-config push (bin/fm-config-inherit-lib.sh,
+# and bin/fm-office.sh publish for one office now). It is trusted only while
 # config/.fm-inherit-office-authority.generation proves its exact bytes, using
 # the same receipt as the inherited role grant (bin/fm-role-lib.sh,
 # fm_role_inherit_check). A missing, unproven, or malformed record, or a receipt
@@ -41,15 +42,28 @@
 # that project's registry entry names in this home.
 #
 # Admission digest: for admission config <name>, the sha256 of the lines
-# "<sha256 of file>  <path>\n" for config/admission/<name> (path
-# admission/<name>) and then for each rules file its classifier reads: every
-# file named by a "--rules <path>" argument on the config's command= line, in
-# order, which must be an absolute path to a readable regular file; or, when
-# command= has no --rules argument, config/admission/<name>.rules if it exists
-# (the conventional path-rule file of bin/fm-reserved-classify.sh). A rules
-# file under config/admission/ is listed as admission/<file>, any other by its
-# absolute path. It lets an office's merge notice a local edit to its own
-# classifier config or rules.
+# "<sha256 of file>\n" for config/admission/<name> and then for each rules file
+# its classifier reads: every file named by a "--rules <path>" argument on the
+# config's command= line, in order, which must be an absolute path to a
+# readable regular file; or, when command= has no --rules argument,
+# config/admission/<name>.rules if it exists (the conventional path-rule file
+# of bin/fm-reserved-classify.sh). Only contents are listed, never paths, so a
+# byte-identical copy in another home digests the same; the config's own bytes
+# already carry each --rules path. It lets an office's merge notice a local
+# edit to its own classifier config or rules.
+#
+# Publishing: fm_office_inherit_payload builds one destination's record from
+# the main home's data/offices.md, so every other home receives an absence.
+# A destination gets a record only when exactly one registry line names its
+# id and, on a local route, its home's .fm-office marker names that id too; no
+# line, no registry, or no marker is an absence. A malformed line, or a merge
+# project whose admission config cannot be pinned, is an error and publishes
+# nothing. The record copies the line's dispatch, merge, merge-via,
+# auto-merge-classes and wip, and pins admission-sha256 from the main home's
+# master copy config/admission/<name>, where <name> is the admission= token of
+# that project in the office home's data/projects.md; a remote route cannot
+# read that registry, so a remote office that merges cannot be published. The
+# built record must pass the same grammar check the office applies on load.
 #
 # Public functions:
 #   fm_office_detect <home> <data-dir>
@@ -64,19 +78,36 @@
 #       prints the digest above, or returns 1 when config/admission/<name> or a
 #       rules file it names is missing or unreadable, or a --rules path is not
 #       absolute.
+#   fm_office_authority_parse <file> <office-id>
+#       the grammar check alone, with no receipt: 0 with the FM_OFFICE_*
+#       authority variables set, or 1 with FM_OFFICE_ERROR.
+#   fm_office_inherit_payload <src-config> <src-data> <dest-id> <dest-home> <out-file>
+#       writes <dest-id>'s record to <out-file>, or leaves it absent; returns 1
+#       with FM_OFFICE_ERROR on an error. <dest-home> is empty on a remote route.
+#   fm_office_project_token <projects.md> <project> <key>
+#       prints a key=value token of one data/projects.md line, or nothing.
 #   fm_office_in <item> <comma-list>
 #   fm_office_live_tasks <state-dir> <own-id>
 #       sets FM_OFFICE_LIVE and FM_OFFICE_LIVE_IDS to this home's task records
 #       other than <own-id> and any secondmate, or returns 1 with
 #       FM_OFFICE_ERROR when a record cannot be read.
 #
-# Every FM_OFFICE_* authority variable is set only by fm_office_authority_load,
-# so in a home that is not an office they stay empty.
+# Every FM_OFFICE_* authority variable is set only by fm_office_authority_load
+# and fm_office_authority_parse, so in a home that is not an office they stay
+# empty.
 
 # Every FM_OFFICE_* result is read by the sourcing script, not here.
 # shellcheck disable=SC2034
+
+# Sourcing it again (bin/fm-config-inherit-lib.sh sources it too) must never
+# reset an authority already loaded, so only the first source runs.
+[ -z "${FM_OFFICE_AUTHORITY_LIB_SOURCED:-}" ] || return 0
+FM_OFFICE_AUTHORITY_LIB_SOURCED=1
+
 # shellcheck source=bin/fm-role-lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-role-lib.sh"
+# shellcheck source=bin/fm-registry-line-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-registry-line-lib.sh"
 
 FM_OFFICE_ID=
 FM_OFFICE_DISPATCH=
@@ -89,7 +120,7 @@ FM_OFFICE_DETECT_ID=
 FM_OFFICE_ERROR=
 FM_OFFICE_LIVE=0
 FM_OFFICE_LIVE_IDS=
-FM_OFFICE_REPAIR="the main home reports and repairs this with bin/fm-office.sh ensure"
+FM_OFFICE_REPAIR="the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>"
 
 fm_office_in() {  # <item> <comma-list>
   case ",$2," in *",$1,"*) return 0 ;; esac
@@ -164,10 +195,7 @@ fm_office_admission_digest() {  # <config-dir> <name>
     [ -f "$f" ] && [ ! -L "$f" ] && [ -r "$f" ] || return 1
     sum=$(fm_role_sha256_stdin < "$f")
     [ -n "$sum" ] || return 1
-    case "$f" in
-      "$dir"/*) f=admission/${f#"$dir"/} ;;
-    esac
-    listing="$listing$sum  $f
+    listing="$listing$sum
 "
   done
   printf '%s' "$listing" | fm_role_sha256_stdin
@@ -175,7 +203,6 @@ fm_office_admission_digest() {  # <config-dir> <name>
 
 fm_office_authority_load() {  # <config-dir> <office-id>
   local file=$1/office-authority receipt=$1/.fm-inherit-office-authority.generation want=$2
-  local line key value seen='' first=1 p pair id='' dispatch='' merge='' via='' auto='' wip='' sha='' entry
   FM_OFFICE_ID=
   FM_OFFICE_DISPATCH=
   FM_OFFICE_MERGE=
@@ -196,6 +223,13 @@ fm_office_authority_load() {  # <config-dir> <office-id>
     FM_OFFICE_ERROR="the main home published no authority for office $want; $FM_OFFICE_REPAIR"
     return 1
   fi
+  fm_office_authority_parse "$file" "$want"
+}
+
+fm_office_authority_parse() {  # <file> <office-id>
+  local file=$1 want=$2
+  local line key value seen='' first=1 p pair id='' dispatch='' merge='' via='' auto='' wip='' sha='' entry
+  FM_OFFICE_ERROR=
   while IFS= read -r line || [ -n "$line" ]; do
     if [ "$first" = 1 ]; then
       first=0
@@ -274,6 +308,79 @@ fm_office_authority_load() {  # <config-dir> <office-id>
   FM_OFFICE_WIP=$wip
   FM_OFFICE_ADMISSION_SHA256=$sha
   return 0
+}
+
+fm_office_project_token() {  # <projects.md> <project> <key>
+  local line tok
+  [ -f "$1" ] || return 0
+  while IFS= read -r line; do
+    [[ "$line" =~ ^-\ ([^\ ]+)\ \[([^]]*)\] ]] || continue
+    [ "${BASH_REMATCH[1]}" = "$2" ] || continue
+    for tok in ${BASH_REMATCH[2]}; do
+      case "$tok" in "$3="*) printf '%s\n' "${tok#*=}"; return 0 ;; esac
+    done
+    return 0
+  done < "$1"
+}
+
+# fm_office_payload_fail <reason>: the publisher's refusal, reading the
+# caller's $want and $tmp.
+fm_office_payload_fail() {
+  # shellcheck disable=SC2154 # want and tmp are the calling publisher's locals.
+  [ -z "$tmp" ] || rm -f "$tmp"
+  FM_OFFICE_ERROR="cannot publish office $want's authority record: $1"
+  return 1
+}
+
+fm_office_inherit_payload() {  # <src-config-dir> <src-data-dir> <dest-id> <dest-home> <out-file>
+  local config=$1 REGISTRY=$2/offices.md want=$3 home=$4 out=$5 line match='' n=0 key p name digest tmp=''
+  local dispatch merge via auto wip sha=''
+  FM_OFFICE_ERROR=
+  rm -f "$out" || { FM_OFFICE_ERROR="cannot clear the staged authority record $out"; return 1; }
+  [ -n "$want" ] || return 0
+  [ -e "$REGISTRY" ] || [ -L "$REGISTRY" ] || return 0
+  [ -f "$REGISTRY" ] && [ -r "$REGISTRY" ] || fm_office_payload_fail "$REGISTRY cannot be read" || return 1
+  while IFS= read -r line; do
+    case "$line" in "- $want "*) ;; *) continue ;; esac
+    n=$((n + 1))
+    match=$line
+  done <<EOF
+$(registry_lines)
+EOF
+  [ "$n" -gt 0 ] || return 0
+  [ "$n" -eq 1 ] || fm_office_payload_fail "$REGISTRY has $n lines for it" || return 1
+  if [ -n "$home" ]; then
+    [ -f "$home/.fm-office" ] && [ ! -L "$home/.fm-office" ] && [ "$(tr -d '[:space:]' < "$home/.fm-office")" = "$want" ] || return 0
+  fi
+  [[ "$match" =~ $REGISTRY_LINE_RE ]] || fm_office_payload_fail "its line in $REGISTRY is malformed" || return 1
+  for key in dispatch merge merge-via auto-merge-classes wip; do
+    line_field "$match" "$key" >/dev/null || fm_office_payload_fail "its line in $REGISTRY has no $key: field" || return 1
+  done
+  dispatch=$(line_field "$match" dispatch)
+  merge=$(line_field "$match" merge)
+  via=$(line_field "$match" merge-via)
+  auto=$(line_field "$match" auto-merge-classes)
+  wip=$(line_field "$match" wip)
+  if [ -n "$merge" ] && [ "$merge" != none ]; then
+    [ -n "$home" ] || fm_office_payload_fail "it merges $merge, and its admission config cannot be pinned on a remote route" || return 1
+    for p in ${merge//,/ }; do
+      name=$(fm_office_project_token "$home/data/projects.md" "$p" admission)
+      [ -n "$name" ] || fm_office_payload_fail "merge project $p has no admission= in $home/data/projects.md" || return 1
+      fm_office_name_ok "$name" || fm_office_payload_fail "merge project $p names admission config '$name', which is not a name" || return 1
+      digest=$(fm_office_admission_digest "$config" "$name") \
+        || fm_office_payload_fail "the main home's master admission config $config/admission/$name or a rules file it names cannot be read" || return 1
+      sha="${sha:+$sha,}$p:$digest"
+    done
+  fi
+  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-office-authority.XXXXXX") || fm_office_payload_fail "cannot stage the record" || return 1
+  printf '%s\n' fm-office-authority-v1 "id=$want" "dispatch=$dispatch" "merge=$merge" "merge-via=$via" \
+    "auto-merge-classes=$auto" "wip=$wip" "admission-sha256=$sha" > "$tmp" \
+    || fm_office_payload_fail "cannot stage the record" || return 1
+  if ! FM_OFFICE_ERROR=$(fm_office_authority_parse "$tmp" "$want" >/dev/null || { printf '%s' "$FM_OFFICE_ERROR"; exit 1; }); then
+    fm_office_payload_fail "its line in $REGISTRY does not make a valid record (${FM_OFFICE_ERROR%%; the main home*})"
+    return 1
+  fi
+  mv -f "$tmp" "$out" || fm_office_payload_fail "cannot stage the record" || return 1
 }
 
 fm_office_resolve() {  # <home> <data-dir> <config-dir>
