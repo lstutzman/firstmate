@@ -60,6 +60,8 @@ bin/fm-home-seed.sh authority
 bin/fm-office*.{sh,py} authority
 bin/fm-officer*.{sh,py} authority
 bin/fm-registry-line-lib.sh authority
+bin/fm-project-mode.sh authority
+bin/fm-pr-lib.sh authority
 bin/fm-admission-lib.sh authority
 bin/fm-reserved-classify.sh authority
 bin/fm-merge-*.sh authority

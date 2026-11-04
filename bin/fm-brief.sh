@@ -442,16 +442,7 @@ if [ "$OFFICE_SET" -eq 1 ]; then
   [[ "$office_line" =~ $REGISTRY_LINE_RE ]] || { echo "error: the line for office $ID in $DATA/offices.md is malformed" >&2; exit 1; }
   OFFICE_MANDATE=${BASH_REMATCH[2]}
   OFFICE_ROLE=$(line_field "$office_line" role || true)
-  case " $FM_OFFICE_ROLES " in
-    *" $OFFICE_ROLE "*) ;;
-    *)
-      case " $FM_OFFICE_RESERVED_ROLES " in
-        *" $OFFICE_ROLE "*) echo "error: office role '$OFFICE_ROLE' is reserved: it has no charter or authority yet" >&2 ;;
-        *) echo "error: office $ID has unknown role '$OFFICE_ROLE' (known: $FM_OFFICE_ROLES)" >&2 ;;
-      esac
-      exit 1
-      ;;
-  esac
+  fm_office_role_check "$OFFICE_ROLE" || { echo "error: office $ID: $FM_OFFICE_ERROR" >&2; exit 1; }
 fi
 
 # The optional home-local include is read before anything is written, so an

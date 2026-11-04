@@ -879,11 +879,6 @@ OFFICE_DISPATCH=
 OFFICE_MERGE=
 OFFICE_MERGE_VIA=
 
-office_list_has() {  # <item> <comma list, or none>
-  case ",$2," in *",$1,"*) return 0 ;; esac
-  return 1
-}
-
 validate_office_line() {  # <id> <project>...
   local id=$1 rc=0 role runs_on host pair p
   shift
@@ -895,23 +890,14 @@ validate_office_line() {  # <id> <project>...
   esac
   [[ "$OFFICE_LINE" =~ $REGISTRY_LINE_RE ]] || { echo "error: the line for office $id in $DATA/offices.md is malformed" >&2; return 1; }
   role=$(line_field "$OFFICE_LINE" role || true)
-  case " $FM_OFFICE_ROLES " in
-    *" $role "*) ;;
-    *)
-      case " $FM_OFFICE_RESERVED_ROLES " in
-        *" $role "*) echo "error: office role '$role' is reserved: it has no charter or authority yet" >&2 ;;
-        *) echo "error: office $id has unknown role '$role' (known: $FM_OFFICE_ROLES)" >&2 ;;
-      esac
-      return 1
-      ;;
-  esac
+  fm_office_role_check "$role" || { echo "error: office $id: $FM_OFFICE_ERROR" >&2; return 1; }
   runs_on=$(line_field "$OFFICE_LINE" runs-on || true)
   host=${FM_OFFICE_HOST:-$(hostname -s)}
-  if office_list_has macbook "$runs_on" || [ "$host" = macbook ]; then
+  if fm_office_in macbook "$runs_on" || [ "$host" = macbook ]; then
     echo "error: office $id may not run on macbook; new scheduled roles run on slartibartfast or deepthought only" >&2
     return 1
   fi
-  office_list_has "$host" "$runs_on" || { echo "error: office $id runs on $runs_on, not this host $host" >&2; return 1; }
+  fm_office_in "$host" "$runs_on" || { echo "error: office $id runs on $runs_on, not this host $host" >&2; return 1; }
   OFFICE_DISPATCH=$(line_field "$OFFICE_LINE" dispatch || true)
   OFFICE_MERGE=$(line_field "$OFFICE_LINE" merge || true)
   OFFICE_MERGE_VIA=$(line_field "$OFFICE_LINE" merge-via || true)
@@ -923,7 +909,7 @@ validate_office_line() {  # <id> <project>...
       || { echo "error: office $id dispatches $p, which is not in the seeded project list" >&2; return 1; }
   done
   for p in ${OFFICE_MERGE//,/ }; do
-    office_list_has "$p" "$OFFICE_DISPATCH" || { echo "error: office $id merges $p, which it does not dispatch" >&2; return 1; }
+    fm_office_in "$p" "$OFFICE_DISPATCH" || { echo "error: office $id merges $p, which it does not dispatch" >&2; return 1; }
     case "$p" in .*) false ;; *) fm_office_name_ok "$p" ;; esac || { echo "error: office $id merges $p, which is not a usable admission config name" >&2; return 1; }
   done
   for pair in ${OFFICE_MERGE_VIA//,/ }; do
@@ -932,7 +918,7 @@ validate_office_line() {  # <id> <project>...
       echo "error: office $id merge-via entry '$pair' must be <project>=<home>" >&2
       return 1
     fi
-    office_list_has "$p" "$OFFICE_DISPATCH" || { echo "error: office $id hands $p to another merger, but does not dispatch it" >&2; return 1; }
+    fm_office_in "$p" "$OFFICE_DISPATCH" || { echo "error: office $id hands $p to another merger, but does not dispatch it" >&2; return 1; }
   done
 }
 

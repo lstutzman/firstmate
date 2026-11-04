@@ -161,15 +161,7 @@ office_problems() {
   id=${BASH_REMATCH[1]}
 
   role=$(line_field "$line" role || true)
-  case " $FM_OFFICE_ROLES " in
-    *" $role "*) ;;
-    *)
-      case " $FM_OFFICE_RESERVED_ROLES " in
-        *" $role "*) printf 'role "%s" is reserved: it has no charter or authority yet\n' "$role" ;;
-        *) printf 'unknown role "%s" (known: %s)\n' "$role" "$FM_OFFICE_ROLES" ;;
-      esac
-      ;;
-  esac
+  fm_office_role_check "$role" || printf '%s\n' "$FM_OFFICE_ERROR"
   v=$(line_field "$line" wip || true)
   [[ "$v" =~ ^[1-9]$ ]] || printf 'wip must be a number from 1 to 9, got "%s"\n' "$v"
   v=$(line_field "$line" tick || true)
