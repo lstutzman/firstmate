@@ -502,7 +502,7 @@ test_escalation_grace_measures_from_recovery_turn_completion() {
     || fail "the cause-tagged escalation must still be recognised"
   # An escalation written before the cause tag existed is still recognised and
   # is not re-posted as a new episode when the escalation retries.
-  sed -i 's/ \[cause=external\]//' "$state/hibit.status"
+  sed -i.bak 's/ \[cause=external\]//' "$state/hibit.status" && rm -f "$state/hibit.status.bak"
   grep -qF 'cause=' "$state/hibit.status" && fail "legacy fixture still carries a cause"
   [ -n "$(fm_pending_reply_escalation_line "$state/hibit.status" "$(fm_pending_reply_path "$state" "$corr")" "$corr")" ] \
     || fail "a legacy untagged escalation must still be recognised"

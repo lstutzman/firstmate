@@ -255,11 +255,21 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
 PARENT_HOLD_PUBLISHED=0
 publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [<cause>]
-  local id=$1 occurrence=$2 verb=$3 note=$4 cause=${5:-} rc=0 tag=''
+  local id=$1 occurrence=$2 verb=$3 note=$4 cause=${5:-} rc=0 tag='' head body destination prior
   PARENT_HOLD_PUBLISHED=0
   [ -z "$cause" ] || tag=" [cause=$cause]"
-  fm_parent_channel_report "$FM_HOME" "$STATE" \
-    "$verb [key=captain-hold-$id-$occurrence]$tag: captain hold $id: $(fm_parent_channel_clean_note "$note")" || rc=$?
+  head="$verb [key=captain-hold-$id-$occurrence]"
+  body=": captain hold $id: $(fm_parent_channel_clean_note "$note")"
+  if destination=$(fm_parent_channel_destination "$FM_HOME" "$STATE"); then
+    for prior in '' policy credential sudo tool decision physical external; do
+      [ -z "$prior" ] || prior=" [cause=$prior]"
+      if status_event_recorded "$destination" "$head$prior$body"; then
+        PARENT_HOLD_PUBLISHED=1
+        return 0
+      fi
+    done
+  fi
+  fm_parent_channel_report "$FM_HOME" "$STATE" "$head$tag$body" || rc=$?
   case "$rc" in
     0|1) PARENT_HOLD_PUBLISHED=1 ;;
     *) printf 'actionable: task %s is held for the captain in this home but that did not reach the parent channel (rc=%s)\n' "$id" "$rc" >&2 ;;

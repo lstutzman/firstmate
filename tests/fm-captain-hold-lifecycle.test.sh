@@ -1518,6 +1518,16 @@ EOF
     || fail "status_line_cause did not read back the written cause: $cause_line"
   [ "$(bash -c '. "$1/bin/fm-classify-lib.sh"; status_line_cause "$2"' _ "$ROOT" "$(grep -F 'captain-hold-mate-call-2' "$channel")")" = decision ] \
     || fail "a hold without --cause did not default to decision"
+  run_captain "$mate" hold cause-call --reason "cleanup approval" >/dev/null \
+    || fail "re-hold with a different cause failed"
+  [ "$(grep -c 'captain-hold-cause-call-1' "$channel")" = 1 ] \
+    || fail "a re-hold with a different cause duplicated the parent decision: $(cat "$channel")"
+  sed -i.bak 's/\(captain-hold-mate-call-2\]\) \[cause=decision\]/\1/' "$channel" && rm -f "$channel.bak"
+  grep -F 'captain-hold-mate-call-2' "$channel" | grep -qF 'cause=' && fail "legacy hold fixture still carries a cause"
+  run_captain "$mate" hold mate-call --reason "second release choice" >/dev/null \
+    || fail "re-hold of a legacy untagged hold failed"
+  [ "$(grep -c 'captain-hold-mate-call-2' "$channel")" = 1 ] \
+    || fail "a re-hold duplicated a legacy untagged parent decision: $(cat "$channel")"
   printf 'ship it\n' > "$decision"
   run_captain "$mate" answer mate-call --decision-file "$decision" >/dev/null \
     || fail "mate close answer failed"
