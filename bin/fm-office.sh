@@ -27,7 +27,7 @@
 # ensure (run by bin/fm-bootstrap.sh) prints one "OFFICE: office <id>: <gap>"
 # line per mismatch between data/offices.md and the fleet, and nothing when
 # they agree. An absent data/offices.md means no offices. A gap is a malformed
-# line, an unknown role, a bad value for a key, a runs-on host that is not
+# line, an unknown or reserved role, a bad value for a key, a runs-on host that is not
 # allowed or not the registered second mate's host, an id that is not a
 # registered second mate, a missing .fm-office marker or "# Office authority"
 # charter heading in a local office home, a dispatch project missing from the
@@ -111,7 +111,6 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 REGISTRY="$DATA/offices.md"
-OFFICE_ROLES="navigator quartermaster"
 STATUS_CHECK_ID=office-status
 STATUS_CHECK="$STATE/$STATUS_CHECK_ID.check.sh"
 
@@ -162,9 +161,14 @@ office_problems() {
   id=${BASH_REMATCH[1]}
 
   role=$(line_field "$line" role || true)
-  case " $OFFICE_ROLES " in
+  case " $FM_OFFICE_ROLES " in
     *" $role "*) ;;
-    *) printf 'unknown role "%s" (known: %s)\n' "$role" "$OFFICE_ROLES" ;;
+    *)
+      case " $FM_OFFICE_RESERVED_ROLES " in
+        *" $role "*) printf 'role "%s" is reserved: it has no charter or authority yet\n' "$role" ;;
+        *) printf 'unknown role "%s" (known: %s)\n' "$role" "$FM_OFFICE_ROLES" ;;
+      esac
+      ;;
   esac
   v=$(line_field "$line" wip || true)
   [[ "$v" =~ ^[1-9]$ ]] || printf 'wip must be a number from 1 to 9, got "%s"\n' "$v"

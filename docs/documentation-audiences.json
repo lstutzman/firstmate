@@ -413,6 +413,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/office-provisioning.md",
+      "audience": "operator-example"
+    },
+    {
       "path": "docs/remote-secondmates.md",
       "audience": "operator-current"
     },
@@ -582,6 +586,10 @@
     },
     {
       "path": ".agents/skills/officer-roles/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/office-roles/SKILL.md",
       "audience": "agent-runtime"
     },
     {

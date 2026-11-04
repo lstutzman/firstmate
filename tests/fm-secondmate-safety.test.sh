@@ -2995,6 +2995,169 @@ test_secondmate_charter_brief_is_idle_by_default() {
   pass "secondmate charter brief is idle by default and does not self-initiate work"
 }
 
+# office_seed_main <name>: a main home with project alpha (direct-PR, +yolo) and
+# beta (legacy line, no bracket), and an offices registry naming nav (hands
+# alpha to slarti) and qm (merges alpha). The office homes are $w/nav and $w/qm.
+office_seed_main() {
+  local w="$TMP_ROOT/$1"
+  mkdir -p "$w/main/projects" "$w/main/data" "$w/main/state" "$w/main/config/admission"
+  fm_git_init_commit "$w/main/projects/alpha"
+  fm_git_add_origin "$w/main/projects/alpha" "$TMP_ROOT/remotes/$1-alpha.git"
+  fm_git_init_commit "$w/main/projects/beta"
+  fm_git_add_origin "$w/main/projects/beta" "$TMP_ROOT/remotes/$1-beta.git"
+  cat > "$w/main/data/projects.md" <<EOF
+- alpha [direct-PR +yolo] - alpha project (added 2026-06-22)
+- beta - beta project (added 2026-06-22)
+EOF
+  cat > "$w/main/data/offices.md" <<EOF
+# Offices
+
+- nav - Drive alpha forward progress (role: navigator; runs-on: slartibartfast; dispatch: alpha; merge: none; merge-via: alpha=slarti; auto-merge-classes: none; wip: 2; tick: every 2h; sources: tick; added 2026-11-04)
+- qm - Drive fleet self-improvement (role: quartermaster; runs-on: slartibartfast,deepthought; dispatch: alpha,beta; merge: alpha,beta; merge-via: none; auto-merge-classes: none; wip: 2; tick: every 4h; sources: tick; added 2026-11-04)
+- alch - Later office (role: alchemist; runs-on: slartibartfast; dispatch: alpha; merge: none; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 4h; sources: tick; added 2026-11-04)
+- mac - Laptop office (role: navigator; runs-on: macbook,slartibartfast; dispatch: alpha; merge: none; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 4h; sources: tick; added 2026-11-04)
+EOF
+  printf 'command=%s --rules %s\nclasses=authority\nclear=none\n' "$ROOT/bin/fm-reserved-classify.sh" "$w/qm/config/admission/alpha.rules" > "$w/main/config/admission/alpha"
+  printf 'AGENTS.md authority\n' > "$w/main/config/admission/alpha.rules"
+  printf 'command=%s --rules %s\nclasses=authority\nclear=none\n' "$ROOT/bin/fm-reserved-classify.sh" "$w/qm/config/admission/beta.rules" > "$w/main/config/admission/beta"
+  printf 'bin/** authority\n' > "$w/main/config/admission/beta.rules"
+  printf '%s\n' "$w"
+}
+
+test_office_charter_replaces_idle_by_default() {
+  local w brief
+  w=$(office_seed_main office-charter)
+  FM_HOME="$w/main" "$ROOT/bin/fm-brief.sh" nav --secondmate --office nav alpha >/dev/null \
+    || fail "office charter scaffold failed"
+  brief="$w/main/data/nav/brief.md"
+  assert_grep '# Office authority' "$brief" "office charter lacks the office authority heading"
+  assert_grep '# Office cycle' "$brief" "office charter lacks the office cycle"
+  assert_grep "runs the \`navigator\` role" "$brief" "office charter does not name its role"
+  assert_grep 'Drive alpha forward progress' "$brief" "office charter did not take its mandate from the registry line"
+  assert_grep 'A wake with nothing to pick is silent' "$brief" "office charter does not keep an empty cycle silent"
+  assert_grep 'never answer your own reserved-class call' "$brief" "office charter lets the office answer its own reserved-class call"
+  assert_no_grep 'Act only on tasks the main firstmate routes to you' "$brief" "office charter kept the idle-by-default restriction"
+  assert_no_grep 'go idle and wait silently for the main firstmate' "$brief" "office charter kept the idle Definition of done"
+  assert_no_grep '{TASK}' "$brief" "office charter left a placeholder to fill"
+  assert_grep 'only to RECONCILE work that is already yours' "$brief" "office charter dropped the startup reconciliation scope"
+  if FM_HOME="$w/main" "$ROOT/bin/fm-brief.sh" alch --secondmate --office alch alpha >/dev/null 2>&1; then
+    fail "a reserved office role was chartered"
+  fi
+  assert_absent "$w/main/data/alch/brief.md" "a refused office charter still wrote a file"
+  if FM_HOME="$w/main" "$ROOT/bin/fm-brief.sh" other --secondmate --office nav alpha >/dev/null 2>&1; then
+    fail "an office charter was written for a secondmate id other than the office id"
+  fi
+  pass "office charter replaces idle-by-default with the role mandate, and refuses reserved roles and mismatched ids"
+}
+
+test_office_seed_end_to_end() {
+  local w out
+  w=$(office_seed_main office-seed)
+  out=$(FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha --office nav) \
+    || fail "navigator office seed failed: $out"
+  assert_equals "nav" "$(cat "$w/nav/.fm-office")" "office marker"
+  assert_grep '# Office authority' "$w/nav/data/charter.md" "seeded charter lacks the office authority heading"
+  assert_grep '- alpha [direct-PR +yolo merger=slarti] - alpha project' "$w/nav/data/projects.md" "merge-via project lacks merger="
+  assert_present "$w/nav/state/office-tick.check.sh" "seed did not register the office's tick source"
+  assert_grep '- nav - ' "$w/main/data/secondmates.md" "office not registered as a second mate"
+  out=$(bash -c '. "$1"; rc=0; fm_office_detect "$2" "$2/data" || rc=$?; echo "$rc"' _ "$ROOT/bin/fm-office-authority-lib.sh" "$w/nav")
+  assert_equals 0 "$out" "a seeded office is detected as an office"
+
+  out=$(FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" qm "$w/qm" alpha beta --office qm) \
+    || fail "quartermaster office seed failed: $out"
+  assert_grep '- alpha [direct-PR +yolo admission=alpha] - ' "$w/qm/data/projects.md" "merge project lacks admission="
+  assert_grep '- beta [no-mistakes admission=beta] - beta project' "$w/qm/data/projects.md" "legacy line did not gain a bracket"
+  cmp -s "$w/main/config/admission/alpha" "$w/qm/config/admission/alpha" || fail "admission config not copied"
+  cmp -s "$w/main/config/admission/alpha.rules" "$w/qm/config/admission/alpha.rules" || fail "admission rules not copied"
+  for id in nav qm; do
+    FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-office.sh" publish "$id" >/dev/null \
+      || fail "publish $id failed after an office seed"
+  done
+  out=$(FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-office.sh" ensure)
+  assert_contains "$out" 'office alch: role "alchemist" is reserved' "ensure did not run over the registry"
+  assert_not_contains "$out" 'office nav:' "ensure gaps for the seeded and published navigator"
+  assert_not_contains "$out" 'office qm:' "ensure gaps for the seeded and published quartermaster"
+
+  # Re-seeding an existing office is allowed and converges.
+  FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha --office nav >/dev/null \
+    || fail "re-seeding an existing office was refused"
+  assert_equals 1 "$(grep -c 'merger=slarti' "$w/nav/data/projects.md")" "re-seed duplicated the merger token"
+  if FM_HOME="$w/main" FM_SECONDMATE_CHARTER='plain' "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha >/dev/null 2>&1; then
+    fail "a plain re-seed of an office home was accepted"
+  fi
+  assert_grep '# Office authority' "$w/nav/data/charter.md" "a refused plain re-seed dropped the office charter heading"
+  pass "office seed writes the marker, charter, registry tokens, admission copies and sources, and publish then ensure is clean"
+}
+
+test_office_seed_rolls_back_office_files() {
+  local w before
+  w=$(office_seed_main office-rollback)
+  git clone --quiet "$ROOT" "$w/qm" || fail "could not prepare an existing home"
+  FM_HOME="$w/main" "$ROOT/bin/fm-brief.sh" qm --secondmate --office qm alpha beta >/dev/null || fail "charter scaffold failed"
+  before=$(cd "$w/qm" && find . -path ./.git -prune -o -type f -print | sort)
+  chmod 555 "$w/main/data"
+  if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" qm "$w/qm" alpha beta --office qm >/dev/null 2>"$w/err"; then
+    chmod 755 "$w/main/data"
+    fail "seed succeeded although the registry could not be written"
+  fi
+  chmod 755 "$w/main/data"
+  assert_grep 'secondmates.md' "$w/err" "the seed failed before it wrote the office files, so nothing was rolled back"
+  assert_absent "$w/qm/.fm-office" "rollback left the office marker"
+  assert_absent "$w/qm/config/admission/alpha" "rollback left a copied admission config"
+  assert_equals "$before" "$(cd "$w/qm" && find . -path ./.git -prune -o -path ./projects -prune -o -type f -print | sort)" "files in the existing home after rollback"
+  pass "a failed office seed rolls back the marker and the copied admission files"
+}
+
+test_office_seed_refusals() {
+  local w err
+  w=$(office_seed_main office-refuse)
+  err="$TMP_ROOT/office-refuse.err"
+  FM_HOME="$w/main" FM_SECONDMATE_CHARTER='plain alpha work' "$ROOT/bin/fm-home-seed.sh" plain "$w/plain" alpha >/dev/null \
+    || fail "plain seed failed"
+  cp "$w/main/data/offices.md" "$w/offices.bak"
+  sed 's/^- nav - /- plain - /' "$w/offices.bak" > "$w/main/data/offices.md"
+  if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" plain "$w/plain" alpha --office plain >/dev/null 2>"$err"; then
+    fail "a plain second mate was converted into an office"
+  fi
+  assert_grep 'already a plain second mate' "$err" "plain conversion refusal did not explain itself"
+  assert_absent "$w/plain/.fm-office" "a refused conversion left an office marker"
+  cp "$w/offices.bak" "$w/main/data/offices.md"
+
+  if FM_HOME="$w/main" FM_OFFICE_HOST=macbook "$ROOT/bin/fm-home-seed.sh" mac "$w/mac" alpha --office mac >/dev/null 2>"$err"; then
+    fail "an office was seeded with macbook in runs-on"
+  fi
+  assert_grep 'may not run on macbook' "$err" "macbook refusal did not explain itself"
+  if FM_HOME="$w/main" FM_OFFICE_HOST=deepthought "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha --office nav >/dev/null 2>"$err"; then
+    fail "an office was seeded on a host its runs-on does not list"
+  fi
+  if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" qm "$w/qm" alpha --office qm >/dev/null 2>"$err"; then
+    fail "an office was seeded without every dispatch project"
+  fi
+  assert_grep 'not in the seeded project list' "$err" "dispatch refusal did not explain itself"
+  if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" alch "$w/alch" alpha --office alch >/dev/null 2>"$err"; then
+    fail "an office with a reserved role was seeded"
+  fi
+  if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha --office qm >/dev/null 2>"$err"; then
+    fail "--office naming another id was accepted"
+  fi
+  printf 'command=%s --rules /elsewhere/alpha.rules\nclasses=authority\n' "$ROOT/bin/fm-reserved-classify.sh" > "$w/main/config/admission/alpha"
+  if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" qm "$w/qm" alpha beta --office qm >/dev/null 2>"$err"; then
+    fail "an office was seeded with a classifier reading rules outside the office home"
+  fi
+  assert_grep 'must read' "$err" "--rules refusal did not explain itself"
+  mkdir -p "$w/main/data/nav"
+  printf '# Charter\nnav\n\n# Routing scope\nnav\n' > "$w/main/data/nav/brief.md"
+  if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha --office nav >/dev/null 2>"$err"; then
+    fail "an office was seeded from a charter without the office authority heading"
+  fi
+  assert_grep 'Office authority' "$err" "plain-charter refusal did not explain itself"
+  for id in mac nav qm alch; do
+    assert_absent "$w/$id/.fm-office" "refused office seed of $id left a marker"
+    assert_no_grep "- $id - " "$w/main/data/secondmates.md" "refused office seed of $id registered it"
+  done
+  pass "office seed refuses plain second mates, macbook and unlisted hosts, missing dispatch, reserved roles, foreign rules and plain charters"
+}
+
 test_backlog_handoff_aborts_safely() {
   # The happy move (verbatim into the Queued section, out-of-scope left alone,
   # idempotent re-run) is asserted in the lifecycle e2e. Here: every refusal path
@@ -3193,5 +3356,9 @@ test_secondmate_force_teardown_refuses_unregistered_child_worktree
 test_secondmate_teardown_path_boundary_matrix
 test_secondmate_idle_pane_is_not_stale
 test_secondmate_charter_brief_is_idle_by_default
+test_office_charter_replaces_idle_by_default
+test_office_seed_end_to_end
+test_office_seed_rolls_back_office_files
+test_office_seed_refusals
 test_backlog_handoff_aborts_safely
 test_backlog_handoff_refuses_done_items_and_non_secondmate_homes

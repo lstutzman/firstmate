@@ -66,6 +66,8 @@ Provision a local persistent home and registry entry after the charter is filled
 bin/fm-home-seed.sh <id> <home|-> {<project>...|--no-projects}
 ```
 
+An office is seeded with `--office <id>` on both `bin/fm-brief.sh` and `bin/fm-home-seed.sh`; load `office-roles`, and follow [`docs/office-provisioning.md`](../../../docs/office-provisioning.md) for the whole provisioning order.
+
 Provision a whole remote home through its configured SSH host with:
 
 ```sh

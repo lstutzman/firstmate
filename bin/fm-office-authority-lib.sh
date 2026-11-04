@@ -65,6 +65,10 @@
 # read that registry, so a remote office that merges cannot be published. The
 # built record must pass the same grammar check the office applies on load.
 #
+# FM_OFFICE_ROLES names the roles an office may take, and
+# FM_OFFICE_RESERVED_ROLES the role names held for later offices; a reserved
+# role has no charter and no authority, so a line naming it is refused.
+#
 # Public functions:
 #   fm_office_detect <home> <data-dir>
 #       0 an office (sets FM_OFFICE_DETECT_ID), 1 not an office, 2 inconsistent
@@ -120,6 +124,10 @@ FM_OFFICE_DETECT_ID=
 FM_OFFICE_ERROR=
 FM_OFFICE_LIVE=0
 FM_OFFICE_LIVE_IDS=
+# The office roles with a charter, and the role names held for later offices
+# that have neither a charter nor any authority yet.
+FM_OFFICE_ROLES="navigator quartermaster"
+FM_OFFICE_RESERVED_ROLES="alchemist librarian"
 FM_OFFICE_REPAIR="the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>"
 
 fm_office_in() {  # <item> <comma-list>
