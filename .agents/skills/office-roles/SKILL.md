@@ -50,7 +50,7 @@ In that interval the main firstmate consumes the progress digest and routes in-s
 A genuinely new call - one no standing rule or recorded answer settles - goes to the judge once one is deployed, and until then to the captain; the office never decides it itself.
 
 Only the captain decides a reserved merge class (payments or billing, legal text, a data-rewriting migration, a protected gate file edit that loosens a check, a production action), a product choice, member-facing copy, a credential, a destructive action, or a production change.
-For each such call, hold the task in this home with `bin/fm-captain-hold.sh hold`, then append one keyed `needs-decision [at=<epoch>] [cause=<policy|decision>] [key=<slug>]: ...` line to the parent channel; a reserved merge class uses `key=admit-<pr>-<class>`, and the main firstmate puts each call on the Captain's Log.
+For each such call, hold the task in this home with `bin/fm-captain-hold.sh hold` (`--cause policy` for a reserved-class call), then append one keyed `needs-decision [at=<epoch>] [cause=<policy|decision>] [key=<slug>]: ...` line to the parent channel; a reserved merge class uses `key=admit-<pr>-<class>`, and the main firstmate puts each call on the Captain's Log.
 An office never answers its own reserved-class call: it records the captain's words with `bin/fm-captain-hold.sh answer` only after the main firstmate relays them with that key, and only then merges.
 
 ## Merging

@@ -21,7 +21,8 @@
 #
 # Usage:
 #   fm-captain-hold.sh hold <task-id> --reason <reason> \
-#     [--title <title>] [--repo <repo>] [--origin <origin-id>] [--origin-key <key>] [--until YYYY-MM-DD]
+#     [--title <title>] [--repo <repo>] [--origin <origin-id>] [--origin-key <key>] [--until YYYY-MM-DD] \
+#     [--cause <policy|credential|sudo|tool|decision|physical|external>]   (why the ask exists; default decision)
 #   fm-captain-hold.sh answer <task-id> --decision-file <path|-> [--release]   (- reads stdin)
 #   fm-captain-hold.sh answers [<legacy-origin> | --any-origin] --source <provenance>   (keyed answers on stdin)
 #   fm-captain-hold.sh reconcile-requests --source-id <source-id> --source <provenance>   (task ids on stdin)
@@ -253,11 +254,12 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-parent-channel-lib.sh"
 
 PARENT_HOLD_PUBLISHED=0
-publish_parent_hold() {  # <task-id> <occurrence> <verb> <note>
-  local id=$1 occurrence=$2 verb=$3 note=$4 rc=0
+publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [<cause>]
+  local id=$1 occurrence=$2 verb=$3 note=$4 cause=${5:-} rc=0 tag=''
   PARENT_HOLD_PUBLISHED=0
+  [ -z "$cause" ] || tag=" [cause=$cause]"
   fm_parent_channel_report "$FM_HOME" "$STATE" \
-    "$verb [key=captain-hold-$id-$occurrence]: captain hold $id: $(fm_parent_channel_clean_note "$note")" || rc=$?
+    "$verb [key=captain-hold-$id-$occurrence]$tag: captain hold $id: $(fm_parent_channel_clean_note "$note")" || rc=$?
   case "$rc" in
     0|1) PARENT_HOLD_PUBLISHED=1 ;;
     *) printf 'actionable: task %s is held for the captain in this home but that did not reach the parent channel (rc=%s)\n' "$id" "$rc" >&2 ;;
@@ -943,7 +945,7 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origi
 
 command_hold() {
   local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind hold_set occurrence
-  local origin_key='' existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason previous_origin='' hold_status=0
+  local cause=decision origin_key='' existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason previous_origin='' hold_status=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -954,11 +956,15 @@ command_hold() {
       --origin) shift; origin=${1:-} ;;
       --origin-key) shift; origin_key=${1:-} ;;
       --until) shift; until=${1:-} ;;
+      --cause) shift; cause=${1:-} ;;
       *) usage >&2; exit 2 ;;
     esac
     shift
   done
   validate_slug task-id "$id"
+  # status_line_cause owns the vocabulary; a value it cannot read back is unknown.
+  [ "$(status_line_cause "needs-decision [cause=$cause]:")" = "$cause" ] \
+    || fail "--cause must be one of policy, credential, sudo, tool, decision, physical, external: $cause"
   [ -n "$reason" ] || fail "reason must not be empty"
   # bin/fm-hold-reason-lib.sh owns the storage constraint and reversible encoding.
   stored_reason=$(fm_hold_reason_encode "$reason") || fail "could not encode the hold reason"
@@ -1055,7 +1061,7 @@ command_hold() {
       && printf '%s\n' "$origin_key" > "$(origin_key_path "$id" "$occurrence")"; } \
       || fail "could not record the origin key for $id"
   fi
-  publish_parent_hold "$id" "$occurrence" needs-decision "$reason"
+  publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$cause"
   printf '%s\n' "$id"
 }
 

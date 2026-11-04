@@ -1195,6 +1195,14 @@ fm_pending_reply_escalation_payload() {  # <record-path> <kind>
   printf '%s: task=%s pending-reply-id=%s request=%s' "$token" "$task_id" "$corr" "$summary"
 }
 
+# Cause tag each escalation kind carries (vocabulary: status_line_cause in
+# bin/fm-classify-lib.sh). held is waiting on the mate's own open decision, so
+# decision; delivery-unknown, recovery-delivery and missed are all waiting on
+# another agent (its inbox or its report), so external.
+fm_pending_reply_escalation_cause() {  # <kind>
+  case "$1" in held) printf decision ;; *) printf external ;; esac
+}
+
 # The escalation line this library published for <corr_id>, or empty. A legacy
 # unkeyed escalation is matched and closed under the shared default key while
 # that exact escalation remains open. If an unrelated decision has since taken
@@ -1212,6 +1220,7 @@ fm_pending_reply_escalation_line() {  # <status-file> <record-path> <corr_id>
       case "$untimed" in
         "blocked [key=$own_key]: $payload"|"blocked: $payload") found=$line; break ;;
         "blocked [key=$own_key]: $payload "*|"blocked: $payload "*) found=$line; break ;;
+        "blocked [key=$own_key] [cause="*"]: $payload"|"blocked [key=$own_key] [cause="*"]: $payload "*) found=$line; break ;;
       esac
     done
   done < <(grep -aF -- "pending-reply-id=$corr" "$status_file" 2>/dev/null)
@@ -1315,7 +1324,7 @@ fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
 _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   local state=$1 corr=$2
   local rec phase completed now payload parent_status line kind first display
-  local delivered task_id meta sm_home remote_host grace age key new_episode
+  local delivered task_id meta sm_home remote_host grace age key new_episode legacy_line
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   phase=$(fm_pending_reply_get "$rec" phase)
@@ -1395,7 +1404,8 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   [ -n "$parent_status" ] || return 1
   mkdir -p "$(dirname "$parent_status")" 2>/dev/null || return 1
   key=$(fm_pending_reply_escalation_key "$corr")
-  line="blocked [key=$key]: $payload"
+  legacy_line="blocked [key=$key]: $payload"
+  line="blocked [key=$key] [cause=$(fm_pending_reply_escalation_cause "$kind")]: $payload"
   # A record that already escalated reaches here again only after a reset, so
   # a closed decision means the operator settled the earlier episode and this
   # loss is a new one. While the decision is open the identical line is a retry.
@@ -1406,7 +1416,8 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
       *) new_episode=0 ;;
     esac
   fi
-  if [ "$new_episode" -eq 0 ] || ! status_event_recorded "$parent_status" "$line"; then
+  # An identical untagged line written before the cause tag existed is the same retry.
+  if [ "$new_episode" -eq 0 ] || { ! status_event_recorded "$parent_status" "$line" && ! status_event_recorded "$parent_status" "$legacy_line"; }; then
     printf '%s\n' "$(status_stamp_line "$line")" >> "$parent_status" 2>/dev/null || return 1
   fi
   now=$(fm_pending_reply_now)
