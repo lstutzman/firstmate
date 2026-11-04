@@ -2130,8 +2130,8 @@ test_same_kind_escalation_reopens_after_operator_close() {
 # fold reads each byte of the log once however many records ask (the fold's own
 # read probe reports what each call folded), and the resolve scan tests only the
 # lines that hold a record's own token.
-test_tick_folds_each_log_at_most_once_per_record() (
-  local home state corr rec i n=10 lines=3000 probe line_count whole_count tests_run
+test_tick_folds_each_log_once_however_many_records_are_open() (
+  local home state corr rec i n=10 lines=3000 probe line_count whole_count folded size tests_run
   home=$(setup_parent tick-cost)
   state="$home/state"
   mkdir -p "$home/config"
@@ -2175,16 +2175,24 @@ test_tick_folds_each_log_at_most_once_per_record() (
   fm_pending_reply_line_resolves() { printf x >> "$line_count"; _orig_fm_pending_reply_line_resolves "$@"; }
   export FM_PENDING_REPLY_NOW=1100
   fm_pending_reply_tick "$state"
+  size=$(wc -c < "$state/hibit.status" | tr -d ' ')
+  folded=$(awk -F'\t' '{ total += $2 } END { print total + 0 }' "$probe")
   tests_run=$(wc -c < "$line_count" | tr -d ' ')
-  [ "$(wc -c < "$whole_count" | tr -d ' ')" -le "$n" ] \
-    || fail "the poll ran the whole-log fold more than once per record"
+  [ "$folded" -gt 0 ] || fail "the first poll must have built the open-decision cursor"
+  [ "$folded" -le "$size" ] \
+    || fail "the poll folded $folded bytes of a $size byte log for $n records; the log must be folded once"
+  [ "$(wc -c < "$whole_count" | tr -d ' ')" = 0 ] \
+    || fail "the poll must not run the whole-log fold for any record"
   [ "$tests_run" -le "$n" ] \
     || fail "the poll tested $tests_run lines for $n records; only lines holding a record's token may be tested"
+  : > "$probe"
+  fm_pending_reply_tick "$state"
+  [ ! -s "$probe" ] || fail "an unchanged log must not be folded again on the next poll"
   for rec in "$state"/pending-replies/*; do
     [ "$(fm_pending_reply_get "$rec" phase)" = awaiting_report ] \
       || fail "a held record must stay unattempted, got $(fm_pending_reply_get "$rec" phase)"
   done
-  pass "a poll over $n held records folds the log at most once per record and tests only token lines"
+  pass "a poll over $n held records folds the log once and tests only token lines"
 )
 
 # A request whose recovery repost the wait-no-turns hold keeps back is flagged
@@ -2336,6 +2344,29 @@ test_waiting_mate_is_held_and_escalates_once() (
   pass "a paused, captain-held or open keyed-decision mate is held and escalates once as held"
 )
 
+# A held escalation is written into the mate's own log. It must not end the
+# wait it reports, or the mate's next record past the bound gets the repost.
+test_one_held_escalation_keeps_the_next_record_held() (
+  local home state corr second
+  hold_fixture hold-two 1000
+  home=$HOLD_HOME
+  corr=$HOLD_CORR
+  state="$home/state"
+  second=$(fm_pending_reply_create "$home" "$state" hibit "second ask")
+  fm_pending_reply_mark_delivered "$state" "$second"
+  fm_pending_reply_observe_busy "$state" "$second" busy
+  fm_pending_reply_observe_busy "$state" "$second" idle
+  export FM_PENDING_REPLY_NOW=2000
+  fm_pending_reply_tick "$state"
+  fm_pending_reply_tick "$state"
+  [ ! -s "$HOLD_HOOK_LOG" ] || fail "a mate still waiting must not be reposted, got: $(cat "$HOLD_HOOK_LOG")"
+  [ "$(phase_of "$state" "$corr")" = escalated ] || fail "the first record must escalate as held"
+  [ "$(phase_of "$state" "$second")" = escalated ] || fail "the second record must escalate as held too"
+  [ "$(held_lines "$state" "$corr")" = 1 ] || fail "expected one held escalation for the first record"
+  [ "$(held_lines "$state" "$second")" = 1 ] || fail "expected one held escalation for the second record"
+  pass "one record's held escalation does not end the wait that holds the next one"
+)
+
 # Make the fold's <suffix> temp file unwritable: a directory in its place fails
 # the open, a link to /dev/full fails the write the way a full disk does.
 block_fold_file() {  # <status-file> <suffix> <dir|full>
@@ -2456,12 +2487,13 @@ test_remote_parent_replies_is_not_wrong_home
 test_local_parent_replies_is_wrong_home_evidence
 test_escalated_undelivered_correlation_stays_retryable
 test_same_kind_escalation_reopens_after_operator_close
-test_tick_folds_each_log_at_most_once_per_record || exit 1
+test_tick_folds_each_log_once_however_many_records_are_open || exit 1
 test_hold_bound_leaves_a_younger_hold_alone || exit 1
 test_hold_bound_escalates_once_and_survives_restart || exit 1
 test_hold_escalation_closes_when_the_report_arrives || exit 1
 test_working_mate_with_open_decisions_gets_the_repost || exit 1
 test_waiting_mate_is_held_and_escalates_once || exit 1
+test_one_held_escalation_keeps_the_next_record_held || exit 1
 test_hold_survives_an_unwritable_open_decision_cursor || exit 1
 test_drain_scan_keeps_the_trusted_set_when_the_span_cannot_be_written || exit 1
 test_hold_bound_without_the_flag_or_the_hold_does_not_escalate || exit 1

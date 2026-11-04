@@ -1304,7 +1304,8 @@ EOF
 # it keeps working, so the task is not waiting on any of them. Pending-reply
 # recovery and a fire-and-forget retry ring consult this set and leave a task
 # alone while it is non-empty.
-# Folds with the cursor-backed status_open_decisions_incremental: the watcher
+# status_open_decisions_cached is the unfiltered set; it folds with the
+# cursor-backed status_open_decisions_incremental: the watcher
 # asks this once per open pending-reply record every poll, and the whole-file
 # fold re-reads and forks per line of a log that only ever grows. That fold
 # answers from its persisted cursor, which it can only keep current by writing
@@ -1315,8 +1316,8 @@ EOF
 # reason, such as an unwritable or full state directory) this answers from the
 # read-only whole-file status_open_decisions, so whether a task is held never
 # depends on a write succeeding.
-status_own_open_decisions() {  # <status-file>
-  local f=$1 open cf cursor='' size ident expected line prefix
+status_open_decisions_cached() {  # <status-file>
+  local f=$1 open cf cursor='' size ident expected
   open=$(status_open_decisions_incremental "$f") || open=''
   cf=$(_fm_open_decisions_cursor_path "$f")
   if [ -f "$cf" ] && [ ! -L "$cf" ]; then
@@ -1330,6 +1331,12 @@ status_own_open_decisions() {  # <status-file>
   if [ -z "$cursor" ] || [ -z "$size" ] || [ -z "$ident" ] || [ "$cursor" != "$expected" ]; then
     open=$(status_open_decisions "$f")
   fi
+  [ -z "$open" ] || printf '%s\n' "$open"
+}
+
+status_own_open_decisions() {  # <status-file>
+  local open line prefix
+  open=$(status_open_decisions_cached "$1")
   [ -n "$open" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} remote-reply-continuity- captain-hold-; do

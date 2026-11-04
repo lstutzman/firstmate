@@ -989,6 +989,43 @@ fm_pending_reply_hold_escalation_due() {  # <completed-epoch> <now-epoch>
   [ $(($2 - $1)) -ge "$bound" ]
 }
 
+# status_wait_line for the wait-no-turns hold, read without the lines supervisors
+# write into the mate's log under their reserved keys (this library's
+# escalations, the remote-reply continuity blocker), so one record's held
+# escalation never ends the wait the next record is held on. The open-key check
+# uses the cursor-backed fold: this runs once per open record every poll.
+fm_pending_reply_mate_wait_line() {  # <status-file>
+  local f=$1 re='' p window last verb key resolve legacy_re
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  for p in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} remote-reply-continuity-; do
+    re="$re${re:+|}$p"
+  done
+  re="\\[key=($re)"
+  window=$(tail -n "$FM_CLASSIFY_EVENT_WINDOW_LINES" "$f" 2>/dev/null | grep -avE -- "$re")
+  if ! last=$(printf '%s\n' "$window" | _fm_status_event_scan); then
+    window=$(grep -avE -- "$re" "$f")
+    last=$(printf '%s\n' "$window" | _fm_status_event_scan) || :
+  fi
+  last=${last##*$'\n'}
+  if status_is_paused_or_captain_held "$last"; then
+    printf '%s\n' "$last"
+    return 0
+  fi
+  status_line_verb "$last" verb
+  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  if [ "$verb" = "$resolve" ]; then
+    legacy_re="^[[:space:]]*(${FM_CAPTAIN_RE:-$FM_CLASSIFY_CAPTAIN_RE_DEFAULT})"
+    printf '%s\n' "$window" | _fm_status_declared_wait_scan "$resolve" "$legacy_re" \
+      || grep -avE -- "$re" "$f" | _fm_status_declared_wait_scan "$resolve" "$legacy_re" || :
+    return 0
+  fi
+  [ "$verb" = needs-decision ] || return 0
+  key=$(_fm_decision_key "$last" "") || return 0
+  [ -n "$key" ] || return 0
+  _fm_open_set_has "$(status_open_decisions_cached "$f")" "$key" || return 0
+  printf '%s\n' "$last"
+}
+
 # Deliver the recovery message once. Caller must hold phase awaiting_report with
 # turn completed and grace elapsed. Uses FM_PENDING_REPLY_SEND_HOOK when set
 # (tests), otherwise invokes fm-send with FM_PENDING_REPLY_EXISTING_CORR so a
@@ -1029,7 +1066,7 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   # moves it out of awaiting_report so the held repost is not re-checked on
   # every later poll; before the bound the mate is simply left alone.
   if [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ]; then
-    if [ -n "$(status_wait_line "$state/$task_id.status")" ]; then
+    if [ -n "$(fm_pending_reply_mate_wait_line "$state/$task_id.status")" ]; then
       if fm_pending_reply_hold_escalation_due "$completed" "$now"; then
         fm_pending_reply_maybe_escalate "$state" "$corr" held 2>/dev/null || true
       fi
@@ -1421,7 +1458,7 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
       [ -n "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || return 1
       fm_pending_reply_hold_escalation_due "$completed" "$(fm_pending_reply_now)" || return 1
       [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ] || return 1
-      [ -n "$(status_wait_line "$state/$(fm_pending_reply_get "$rec" task_id).status")" ] || return 1
+      [ -n "$(fm_pending_reply_mate_wait_line "$state/$(fm_pending_reply_get "$rec" task_id).status")" ] || return 1
       fm_pending_reply_missing_report_is_evidence "$state" \
         "$(fm_pending_reply_get "$rec" task_id)" "$completed" || return 1
       ;;
