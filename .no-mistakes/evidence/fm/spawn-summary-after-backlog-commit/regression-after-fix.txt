@@ -1,0 +1,2 @@
+ok - spawn republishes a valid home summary after the In flight transition
+exit=0

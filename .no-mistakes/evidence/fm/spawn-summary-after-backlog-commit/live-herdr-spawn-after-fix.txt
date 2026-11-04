@@ -1,0 +1,60 @@
+== backlog before spawn
+# Backlog
+
+## In flight
+
+## Queued
+- [ ] live-summary-probe - live probe for live-summary-probe (kind: ship) (since 2026-11-04)
+
+## Done
+== spawn rc=0
+warning: /tmp/fm-live-sum.5yaxmY/home/data/live-summary-probe/launch-brief.md records no ship branch; defaulting to legacy branch fm/live-summary-probe
+warning: /tmp/fm-live-sum.5yaxmY/home/data/live-summary-probe/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned live-summary-probe harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-sumlive-1736436:w1:p2 worktree=~/.treehouse/proj-1bef82/1/proj
+== meta
+kind=ship
+backend=herdr
+herdr_pane_id=w1:p2
+== backlog after spawn
+# Backlog
+
+## In flight
+- [ ] live-summary-probe - live probe for live-summary-probe (kind: ship) (since 2026-11-04)
+
+## Queued
+## Done
+== published summary (immediately after spawn returns, no other refresh)
+{
+  "valid": false,
+  "reason": "child current state unavailable: live-summary-probe",
+  "invalidity": {
+    "kind": "child_current_unavailable",
+    "ids": [
+      "live-summary-probe"
+    ]
+  },
+  "state": "unknown",
+  "counts": {
+    "in_flight": 1,
+    "held_in_flight": 0,
+    "active_children": 0,
+    "decisions_open": 0,
+    "holds": 0,
+    "queued": 0,
+    "landed": 0,
+    "endpoints": 1
+  },
+  "active": []
+}
+== second poll 3s later (alarm persistence re-read, nothing else refreshed)
+{
+  "valid": false,
+  "reason": "child current state unavailable: live-summary-probe",
+  "generated": "2026-11-04T21:29:22Z"
+}
+== fresh recompute for comparison
+{
+  "valid": false,
+  "reason": "child current state unavailable: live-summary-probe",
+  "generated": "2026-11-04T21:29:25Z"
+}

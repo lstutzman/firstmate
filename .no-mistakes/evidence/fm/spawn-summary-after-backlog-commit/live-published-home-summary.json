@@ -1,0 +1,66 @@
+{
+  "schema": "fm-secondmate-home-summary.v1",
+  "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "generated": "2026-11-04T21:29:22Z",
+  "generated_epoch": 1793827762,
+  "home": "/tmp/fm-live-sum.5yaxmY/home",
+  "valid": false,
+  "reason": "child current state unavailable: live-summary-probe",
+  "invalidity": {
+    "kind": "child_current_unavailable",
+    "ids": [
+      "live-summary-probe"
+    ]
+  },
+  "state": "unknown",
+  "active_children": [],
+  "decisions_open": [],
+  "holds": [],
+  "queued": [],
+  "landed": [],
+  "endpoints": [
+    {
+      "id": "live-summary-probe",
+      "state": "unknown",
+      "source": "pane",
+      "endpoint": {
+        "target": "fm-lab-sumlive-1736436:w1:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T21:29:22Z",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "counts": {
+    "in_flight": 1,
+    "held_in_flight": 0,
+    "active_children": 0,
+    "decisions_open": 0,
+    "holds": 0,
+    "queued": 0,
+    "landed": 0,
+    "endpoints": 1
+  },
+  "omitted": []
+}

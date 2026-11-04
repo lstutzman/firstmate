@@ -1,0 +1,6 @@
+### summary published by FIXED spawn
+poll 1 rc=0 output: <none>
+poll 2 rc=0 output: <none>
+### summary published by BASE spawn
+poll 1 rc=0 output: <none>
+poll 2 rc=0 output: Secondmate work inventory unavailable: mate: home inventory incomplete: live child state has no in-flight backlog item: live-summary-probe=unknown

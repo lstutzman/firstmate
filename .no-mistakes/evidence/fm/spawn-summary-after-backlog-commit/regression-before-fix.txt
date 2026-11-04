@@ -1,0 +1,85 @@
+not ok - summary still carries the unowned-child reason: {
+  "schema": "fm-secondmate-home-summary.v1",
+  "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "generated": "2026-11-04T21:28:32Z",
+  "generated_epoch": 1793827712,
+  "home": "/tmp/fm-spawn-home-summary.ArrAyb/home",
+  "valid": false,
+  "reason": "live child state has no in-flight backlog item: summary-after-commit=working",
+  "invalidity": {
+    "kind": "unowned_current",
+    "ids": [
+      "summary-after-commit"
+    ]
+  },
+  "state": "no_active_work",
+  "active_children": [],
+  "decisions_open": [],
+  "holds": [],
+  "queued": [
+    {
+      "id": "summary-after-commit",
+      "title": "item for summary-after-commit",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 0,
+      "captain_actionable": false,
+      "repo": null,
+      "kind": "ship",
+      "since": "2026-11-04"
+    }
+  ],
+  "landed": [],
+  "endpoints": [
+    {
+      "id": "summary-after-commit",
+      "state": "working",
+      "source": "pane",
+      "endpoint": {
+        "target": "firstmate:fm-summary-after-commit",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T21:28:32Z",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "counts": {
+    "in_flight": 0,
+    "held_in_flight": 0,
+    "active_children": 0,
+    "decisions_open": 0,
+    "holds": 0,
+    "queued": 1,
+    "landed": 0,
+    "endpoints": 1
+  },
+  "omitted": []
+}
+exit=1

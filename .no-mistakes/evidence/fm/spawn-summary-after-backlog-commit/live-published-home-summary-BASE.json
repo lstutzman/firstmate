@@ -1,0 +1,84 @@
+{
+  "schema": "fm-secondmate-home-summary.v1",
+  "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "generated": "2026-11-04T21:29:53Z",
+  "generated_epoch": 1793827793,
+  "home": "/tmp/fm-live-sum.xYa5bt/home",
+  "valid": false,
+  "reason": "live child state has no in-flight backlog item: live-summary-probe=unknown",
+  "invalidity": {
+    "kind": "unowned_current",
+    "ids": [
+      "live-summary-probe"
+    ]
+  },
+  "state": "unknown",
+  "active_children": [],
+  "decisions_open": [],
+  "holds": [],
+  "queued": [
+    {
+      "id": "live-summary-probe",
+      "title": "live probe for live-summary-probe",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 0,
+      "captain_actionable": false,
+      "repo": null,
+      "kind": "ship",
+      "since": "2026-11-04"
+    }
+  ],
+  "landed": [],
+  "endpoints": [
+    {
+      "id": "live-summary-probe",
+      "state": "unknown",
+      "source": "pane",
+      "endpoint": {
+        "target": "fm-lab-sumlive-1809022:w1:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T21:29:53Z",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "counts": {
+    "in_flight": 0,
+    "held_in_flight": 0,
+    "active_children": 0,
+    "decisions_open": 0,
+    "holds": 0,
+    "queued": 1,
+    "landed": 0,
+    "endpoints": 1
+  },
+  "omitted": []
+}
