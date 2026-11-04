@@ -144,12 +144,13 @@ test_findings_of_every_kind() {
 }
 
 test_live_decisions_are_not_stale() {
-  local home json k3 k4 k5 pages
+  local home json k3 k4 k5 k6 pages
   home=$(make_world live)
   pages="$TMP_ROOT/live/pages"
   k3="task-k-k3-$(printf 'task-k\0k3' | sha256sum | cut -c1-10)"
   k4="task-k-k4-$(printf 'task-k\0k4' | sha256sum | cut -c1-10)"
   k5="task-k-k5-$(printf 'task-k\0k5' | sha256sum | cut -c1-10)"
+  k6="task-k-k6-$(printf 'task-k\0k6' | sha256sum | cut -c1-10)"
   cat >> "$home/state/task-k.status" <<STATUS
 needs-decision [at=$((E - 600))] [key=k3]: category word
 resolved [key=k3] [at=$((E + 60))]: decision-sweep: PR landed
@@ -157,25 +158,30 @@ needs-decision [at=$((E - 600))] [key=k4]: category word
 resolved [key=k4] [at=$((E + 60))]: captain hold k4: answered
 needs-decision [at=$((E - 600))] [key=k5]: category word
 resolved [key=k5] [at=$((E + 60))]: captain hold k5: released
+needs-decision [at=$((E - 600))] [key=k6]: category word
+resolved [key=k6] [at=$((E + 60))]: captain hold k6: reconciled
 STATUS
-  jq --arg k3 "$k3" --arg k4 "$k4" --arg k5 "$k5" '.value.cards += [
+  jq --arg k3 "$k3" --arg k4 "$k4" --arg k5 "$k5" --arg k6 "$k6" '.value.cards += [
     {id: "deploy-index", band: "now", question: "Deploy the index to production? https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "mentions-merge", band: "now", question: "Deploy the index to production now that the merge landed? https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "deploy-index-pc-1", band: "now", question: "Go for the index? https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "typed-deploy", kind: "deploy", band: "now", question: "Index is ready https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "merge-word", band: "now", question: "Merge word for https://github.com/ex/repo/pull/9 to production?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "typed-merge", kind: "merge", band: "now", question: "Deploy ok https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "closed-deploy", band: "now", question: "Deploy https://github.com/ex/repo/pull/10 to production?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: $k3, band: "now", question: "Which category word?", advice: "a", replies: ["a"], asked: "2026-10-31T08:00:00Z", state: "asked"},
     {id: $k4, band: "now", question: "Which category word?", advice: "a", replies: ["a"], asked: "2026-10-31T08:00:00Z", state: "asked"},
-    {id: $k5, band: "now", question: "Which category word?", advice: "a", replies: ["a"], asked: "2026-10-31T08:00:00Z", state: "asked"}]' \
+    {id: $k5, band: "now", question: "Which category word?", advice: "a", replies: ["a"], asked: "2026-10-31T08:00:00Z", state: "asked"},
+    {id: $k6, band: "now", question: "Which category word?", advice: "a", replies: ["a"], asked: "2026-10-31T08:00:00Z", state: "asked"}]' \
     "$pages/_api_captains-log" > "$pages/log.tmp" && mv "$pages/log.tmp" "$pages/_api_captains-log"
   officer live run page-check --date "$KEY" >/dev/null || fail "run must succeed"
   json="$home/data/officers/page-check/$KEY.json"
   assert_equals "closed-deploy:ex/repo#10 merge-word:ex/repo#9 typed-merge:ex/repo#9" \
     "$(jq -r '[.findings[] | select(.kind == "stale-card" and (.id | test(":ex/repo#(9|10)$"))) | .id | sub("^stale-card:Captain.s Log:"; "")] | sort | join(" ")' "$json")" \
     "a merged PR stales a merge-word card but not a production/apply card, typed or worded; a closed-unmerged PR still flags"
-  assert_equals "$k4:resolved" \
-    "$(jq -r --arg a "$k3" --arg b "$k4" --arg c "$k5" '[.findings[] | select(.kind == "stale-card" and (.id | test("(" + $a + "|" + $b + "|" + $c + "):resolved$"))) | .id | sub("^stale-card:Captain.s Log:"; "")] | sort | join(" ")' "$json")" \
-    "only a resolved line written by a captain answer stales a card, not a routing sweep or a release"
+  assert_equals "$(printf '%s\n' "$k4:resolved" "$k5:resolved" | sort | paste -sd' ')" \
+    "$(jq -r --arg a "$k3" --arg b "$k4" --arg c "$k5" --arg d "$k6" '[.findings[] | select(.kind == "stale-card" and (.id | test("(" + $a + "|" + $b + "|" + $c + "|" + $d + "):resolved$"))) | .id | sub("^stale-card:Captain.s Log:"; "")] | sort | join(" ")' "$json")" \
+    "a captain answer or release stales a card, not a routing sweep or a reconcile"
   pass "fm-officer page-check: an open production action and an unanswered decision are not stale"
 }
 
