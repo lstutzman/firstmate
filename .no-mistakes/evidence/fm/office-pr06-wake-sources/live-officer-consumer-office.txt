@@ -1,0 +1,16 @@
+$ FM_HOME=$LAB fm-officer.sh register triage   (consumer: navigator; navigator sources list lane:triage)
+registered: officer triage (state/officer-triage.check.sh)
+rc=0
+$ FM_HOME=$LAB fm-officer.sh ensure | grep triage
+OFFICER: officer surgeon: a triage officer needs archive: <dir> or <host>:<dir>
+(no triage line = healthy)
+$ FM_HOME=$LAB/navigator fm-office.sh register-sources
+registered: office source tick (state/office-tick.check.sh)
+registered: office source lane:progress (state/office-lane-progress.check.sh)
+registered: office source lane:surgeon:high (state/office-lane-surgeon-high.check.sh)
+registered: office source lane:triage (state/office-lane-triage.check.sh)
+== PRIMARY watcher, consumer office valid (expect no officer digest wake; timeout rc=124)
+Terminated                 sleep "$POLL"
+rc=124
+digest: DIGEST 2026-11-03 1 data/officers/triage/2026-11-03.md
+runs.log: 1793751239 2026-11-03 ok 1

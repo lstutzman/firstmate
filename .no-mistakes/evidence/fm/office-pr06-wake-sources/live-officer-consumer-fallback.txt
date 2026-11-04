@@ -1,0 +1,16 @@
+== OFFICE watcher (expect lane:triage wake)
+check: /tmp/fm-lab.Dl9CTa/navigator/state/office-lane-triage.check.sh: office navigator: triage digest 2026-11-03: 1 finding(s) in /tmp/fm-lab.Dl9CTa/data/officers/triage/2026-11-03.md
+rc=0
+== break: remove lane:triage from navigator sources
+sources: tick, lane:progress, lane:surgeon:high
+$ fm-officer.sh ensure | grep "officer triage"
+OFFICER: officer triage: consumer office navigator does not list sources: lane:triage, so it never reads this digest
+== PRIMARY watcher, broken consumer (expect officer triage digest wake for main)
+check: rearm-resurface
+rc=0
+$ register triage with the broken consumer (expect refusal)
+fm-officer: officer triage: consumer office navigator does not list sources: lane:triage, so it never reads this digest
+rc=2
+== PRIMARY watcher re-run after ack, broken consumer (expect officer triage digest wake for main)
+check: /tmp/fm-lab.Dl9CTa/state/officer-triage.check.sh: officer triage: 2026-11-03: 1 actionable finding(s) in data/officers/triage/2026-11-03.md
+rc=0

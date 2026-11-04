@@ -1,0 +1,21 @@
+== sweep 1: new progress digest (3 findings) in parent
+check: /tmp/fm-lab.Dl9CTa/navigator/state/office-lane-progress.check.sh: office navigator: progress digest 2026-11-04: 3 finding(s) in /tmp/fm-lab.Dl9CTa/data/officers/progress/2026-11-04.md
+rc=0
+parent state/ after sweep 1: (empty)
+== sweep 2: same progress digest, nothing queued (expect no check wake; timeout rc=124)
+Terminated                 sleep "$POLL"
+rc=124
+== sweep 3: one unheld queued item
+check: /tmp/fm-lab.Dl9CTa/navigator/state/office-tick.check.sh: office navigator: tick 2026-11-04T00: 2 of 2 places free, 1 queued
+rc=0
+== sweep 4: surgeon digest with 2 high-severity of 3
+check: /tmp/fm-lab.Dl9CTa/navigator/state/office-lane-surgeon-high.check.sh: office navigator: surgeon digest 2026-11-04: 2 high-severity finding(s) in /tmp/fm-lab.Dl9CTa/data/officers/surgeon/2026-11-04.md
+rc=0
+== sweep 5: repeat, nothing new (expect timeout rc=124)
+Terminated                 sleep "$POLL"
+rc=124
+== parent home state/ (main not woken):
+== office seen records:
+lane-progress.seen: 2026-11-04 3 /tmp/fm-lab.Dl9CTa/data/officers/progress/2026-11-04.md
+lane-surgeon-high.seen: 2026-11-04 2
+tick.seen: 2026-11-04T00
