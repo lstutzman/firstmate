@@ -265,6 +265,7 @@ class LinearError(RuntimeError):
     def __init__(self, code, message):
         super().__init__("%s: %s" % (code, message))
         self.code = code
+        self.message = message
 
 
 def linear(args):
@@ -404,11 +405,16 @@ def file_findings(findings, args, date, out):
                 # --verify writes before it reads back, so the item may exist; a created item is never
                 # reported failed or left out of the ledger.
                 found = None
-                for wait in VERIFY_SEARCH_WAITS:
-                    time.sleep(wait)
-                    found = existing_issue(f["fingerprint"], args.team)
-                    if found:
-                        break
+                try:
+                    for wait in VERIFY_SEARCH_WAITS:
+                        time.sleep(wait)
+                        found = existing_issue(f["fingerprint"], args.team)
+                        if found:
+                            break
+                except LinearError as search_exc:
+                    if search_exc.code == "RATE_LIMITED":
+                        raise
+                    raise LinearError(exc.code, "%s (then fingerprint search failed: %s)" % (exc.message, search_exc))
                 if not found:
                     raise
                 ledger[f["fingerprint"]] = found
@@ -435,8 +441,9 @@ def render_md(doc, archive_md):
     lines += ["", "## Intake findings", ""]
     for f in doc["findings"]:
         filing = f["filing"] or {}
-        tail = " [tracked %s]" % f["tracked"] if f["tracked"] else " [%s%s]" % (
-            filing.get("action", "not filed"), " " + filing["issue"] if filing.get("issue") else "") if f["class"] == "real" else ""
+        tail = " [tracked %s]" % f["tracked"] if f["tracked"] else " [%s%s%s]" % (
+            filing.get("action", "not filed"), " " + filing["issue"] if filing.get("issue") else "",
+            ", verify mismatch" if filing.get("verify") else "") if f["class"] == "real" else ""
         lines.append("- [%s] %s %s/%s: %s%s" % (f["severity"], f["class"], f["source"], f["job"], f["summary"], tail))
     if not doc["findings"]:
         lines.append("- None.")

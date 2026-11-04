@@ -68,6 +68,7 @@ write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
 
 # fake_linear <fakebin> <dir> <log>: linear-axi from files in <dir>:
 # labels.fail / ratelimit.labels (label list), ratelimit.search, verify.fail, ratelimit.verify,
+# search.down.after.verify (searches fail once a verify has failed),
 # labels.txt (one label per line), exists.txt (fingerprints that search finds),
 # search.lag (how many searches miss an existing item first, as Linear's index lags a write).
 fake_linear() {
@@ -85,6 +86,7 @@ case "\$1 \$2" in
     echo ']}}' ;;
   "issue search")
     [ -f "\$d/ratelimit.search" ] && { err RATE_LIMITED "wait"; exit 1; }
+    [ -f "\$d/search.down" ] && { err UNKNOWN "search down"; exit 1; }
     # Linear's search is fuzzy: it always returns an unrelated issue, and the real one only when it exists.
     lag=\$(cat "\$d/search.lag" 2>/dev/null || echo 0)
     if grep -qF -- "\${3#surgeon-fp:}" "\$d/exists.txt" 2>/dev/null && [ "\$lag" -gt 0 ]; then
@@ -101,7 +103,7 @@ case "\$1 \$2" in
     case " \$* " in
       *" --verify "*)
         [ -f "\$d/ratelimit.verify" ] && { err RATE_LIMITED "wait"; exit 1; }
-        [ -f "\$d/verify.fail" ] && { err VERIFY_FAILED "not readable back"; exit 1; }
+        [ -f "\$d/verify.fail" ] && { [ -f "\$d/search.down.after.verify" ] && touch "\$d/search.down"; err VERIFY_FAILED "not readable back"; exit 1; }
         n=\$(( \$(cat "\$d/created" 2>/dev/null || echo 100) + 1 )); echo "\$n" > "\$d/created"
         for a in "\$@"; do
           if [ "\$prev" = "--body-file" ]; then
@@ -341,6 +343,18 @@ test_failed_verify_is_not_retried() {
   pass "fm-officer surgeon: a failed verify is logged and not retried"
 }
 
+test_failed_fallback_search_keeps_the_verify_error() {
+  local home json
+  make_world searchdown "${LINEAR_ON}max-creates: 1; "; home=$WORLD_HOME
+  touch "$LDIR/verify.fail" "$LDIR/search.down.after.verify"
+  run_surgeon "$home" >/dev/null || fail "a failed fallback search must not fail the run"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals failed "$(row "$json" nightly fp-a .filing.action)" "the finding is reported failed"
+  assert_contains "$(row "$json" nightly fp-a .filing.reason)" "VERIFY_FAILED: not readable back" "the verify error stays the reason"
+  assert_contains "$(row "$json" nightly fp-a .filing.reason)" "search down" "and the search error follows it"
+  pass "fm-officer surgeon: a failed fallback search keeps the verify error as the reason"
+}
+
 test_created_item_with_verify_mismatch_is_ledgered() {
   local home json
   make_world mismatch "${LINEAR_ON}max-creates: 1; "; home=$WORLD_HOME
@@ -349,6 +363,7 @@ test_created_item_with_verify_mismatch_is_ledgered() {
   json="$home/data/officers/surgeon/$DATE.json"
   assert_equals "created PC-55" "$(row "$json" nightly fp-a '[.filing.action,.filing.issue]|join(" ")')" "a created item is not reported failed"
   assert_contains "$(row "$json" nightly fp-a .filing.verify)" "did not match" "the mismatch is kept"
+  assert_contains "$(cat "$home/data/officers/surgeon/$DATE.md")" "[created PC-55, verify mismatch]" "the digest shows the mismatch"
   assert_equals "PC-55" "$(jq -r --arg fp "$(fp nightly nightly-e2e fp-a)" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")" "its fingerprint is in the ledger"
   pass "fm-officer surgeon: a created item whose verify mismatches is still ledgered"
 }
@@ -445,6 +460,7 @@ test_files_real_untracked_findings
 test_fingerprint_search_skips_create
 test_max_creates_cap
 test_failed_verify_is_not_retried
+test_failed_fallback_search_keeps_the_verify_error
 test_created_item_with_verify_mismatch_is_ledgered
 test_verify_mismatch_waits_for_search_to_catch_up
 test_label_lookup_failure_reports_instead_of_filing
