@@ -255,19 +255,22 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
 PARENT_HOLD_PUBLISHED=0
 publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [<cause>]
-  local id=$1 occurrence=$2 verb=$3 note=$4 cause=${5:-} rc=0 tag='' head body destination prior
+  local id=$1 occurrence=$2 verb=$3 note=$4 cause=${5:-} rc=0 tag='' head body destination line untimed rest
   PARENT_HOLD_PUBLISHED=0
   [ -z "$cause" ] || tag=" [cause=$cause]"
   head="$verb [key=captain-hold-$id-$occurrence]"
   body=": captain hold $id: $(fm_parent_channel_clean_note "$note")"
-  if destination=$(fm_parent_channel_destination "$FM_HOME" "$STATE"); then
-    for prior in '' policy credential sudo tool decision physical external; do
-      [ -z "$prior" ] || prior=" [cause=$prior]"
-      if status_event_recorded "$destination" "$head$prior$body"; then
+  if destination=$(fm_parent_channel_destination "$FM_HOME" "$STATE") && [ -f "$destination" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      _fm_status_untimed "$line" untimed
+      rest=${untimed#"$head [cause="}
+      [ "$rest" = "$untimed" ] || rest=${rest#*\]}
+      [ "$rest" = "$untimed" ] && rest=${untimed#"$head"}
+      if [ "$rest" = "$body" ]; then
         PARENT_HOLD_PUBLISHED=1
         return 0
       fi
-    done
+    done < "$destination"
   fi
   fm_parent_channel_report "$FM_HOME" "$STATE" "$head$tag$body" || rc=$?
   case "$rc" in
