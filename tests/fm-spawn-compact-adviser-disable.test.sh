@@ -229,9 +229,10 @@ test_launch_exports_task_inbox() {
 #
 # bin/fm-control.sh relaunch stops the agent and rebuilds the launch through
 # bin/fm-spawn.sh --relaunch, so this drives the operator-facing verb rather
-# than the rebuild alone. The stub below models just enough pane lifecycle for
-# that transaction: the harness exit command leaves a bare shell behind, and the
-# launch literal starts the harness again.
+# than the rebuild alone. The stub (fm_test_fake_tmux_relaunch in
+# tests/fixtures.sh) models just enough pane lifecycle for that transaction: the
+# harness exit command leaves a bare shell behind, and the launch literal starts
+# the harness again.
 make_relaunch_stub() {  # <case-dir>
   fm_test_fake_tmux_relaunch "$1/fakebin"
 }
