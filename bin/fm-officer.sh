@@ -74,7 +74,13 @@
 # digest as if main were listed. The failure line is always printed, because a
 # broken officer is main's to fix.
 #
-# Roles: triage (bin/fm-officer-triage.py), landing
+# start-home: is an optional progress field, a comma list of office ids. Each must
+# pass the same office checks as consumer: (a local office that reads the progress
+# digest), because the start requests for that office's projects (its dispatch:
+# field) are then written into that office's inbox instead of main's.
+#
+# Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
+# triage pass plus Linear intake), landing
 # (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py),
 # progress (bin/fm-officer-progress.py), and pagecheck
 # (bin/fm-officer-page-check.py); each role script's header owns its pass.
@@ -93,7 +99,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/officers.md"
-OFFICER_ROLES="triage landing friction progress pagecheck"
+OFFICER_ROLES="triage surgeon landing friction progress pagecheck"
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -187,7 +193,7 @@ line_problem() {
           || { printf 'officer %s: captains-log must be an https URL ending /api/captains-log\n' "$id"; return; }
       fi
       ;;
-    triage|friction)
+    triage|friction|surgeon)
       line_field "$line" archive >/dev/null \
         || { printf 'officer %s: a %s officer needs archive: <dir> or <host>:<dir>\n' "$id" "$role"; return; }
       case "$(line_field "$line" ask-days || echo 7)" in
@@ -197,6 +203,7 @@ line_problem() {
         [ "$role" = friction ] && [[ "$(line_field "$line" captains-log)" == https://* ]] \
           || { printf 'officer %s: captains-log must be an https URL on a friction officer\n' "$id"; return; }
       fi
+      [ "$role" != surgeon ] || surgeon_problem "$line" "$id"
       ;;
     pagecheck)
       [[ "$(line_field "$line" app || true)" == https://* ]] \
@@ -222,32 +229,73 @@ line_problem() {
   esac
 }
 
-# consumer_problem <line>: prints why a valid line's consumer: list misses an
+# surgeon_problem <line> <id>: prints why a surgeon line is unusable, or nothing.
+surgeon_problem() {
+  local line=$1 id=$2 writes
+  [[ "$(line_field "$line" app || true)" == https://* ]] \
+    || { printf 'officer %s: a surgeon officer needs app: <https URL of the fleet app>\n' "$id"; return; }
+  writes=$(line_field "$line" writes || echo none)
+  case "$writes" in none|linear) ;; *) printf 'officer %s: writes must be linear or none\n' "$id"; return ;; esac
+  case "$(line_field "$line" max-creates || echo 5)" in
+    ''|*[!0-9]*|0) printf 'officer %s: max-creates must be a whole number, at least 1\n' "$id"; return ;;
+  esac
+  [ "$writes" = linear ] || return 0
+  [ "$(line_field "$line" team || echo PC)" = PC ] \
+    || { printf 'officer %s: a surgeon files into team PC only\n' "$id"; return; }
+  [ -n "$(line_field "$line" area || true)" ] \
+    || { printf 'officer %s: writes: linear needs area: <the team PC area label every item carries>\n' "$id"; return; }
+}
+
+# office_read_problem <officer-id> <office> <field>: prints why <office>, named in the registry
+# <field>, cannot read this officer's digest, or nothing.
+office_read_problem() {
+  local id=$1 c=$2 field=$3 office
+  office=
+  [[ "$c" =~ ^[a-z0-9-]+$ ]] && office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
+  [ -n "$office" ] \
+    || { printf 'officer %s: %s "%s" is not main or an office in data/offices.md\n' "$id" "$field" "$c"; return; }
+  case ",$(line_field "$office" sources | tr -d ' ')," in
+    *",lane:$id,"*) ;;
+    *) printf 'officer %s: %s office %s does not list sources: lane:%s, so it never reads this digest\n' "$id" "$field" "$c" "$id"; return ;;
+  esac
+  secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" \
+    || { printf 'officer %s: %s office %s is not a registered second mate in data/secondmates.md\n' "$id" "$field" "$c"; return; }
+  [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] \
+    && { printf 'officer %s: %s office %s is remote, and a remote office cannot read this digest\n' "$id" "$field" "$c"; return; }
+  fm_custom_check_registered "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}/state" "office-lane-$id" \
+    || { printf 'officer %s: %s office %s has no registered lane:%s check (run bin/fm-office.sh register-sources in its home)\n' "$id" "$field" "$c" "$id"; return; }
+}
+
+# consumer_problem <line>: prints why a valid line's consumer: or start-home: list misses an
 # office that reads its digest, or nothing.
 consumer_problem() {
-  local line=$1 id consumer c office
-  local -a consumers=()
+  local line=$1 id c problem
+  local -a offices=()
   [[ "$line" =~ $REGISTRY_LINE_RE ]] || return 0
   id=${BASH_REMATCH[1]}
-  consumer=$(line_field "$line" consumer) || return 0
-  [ -n "${consumer//[, ]/}" ] || return 0
-  IFS=', ' read -ra consumers <<<"$consumer"
-  for c in "${consumers[@]}"; do
+  IFS=', ' read -ra offices <<<"$(line_field "$line" consumer || true)"
+  for c in "${offices[@]}"; do
     [ "$c" = main ] && continue
-    office=
-    [[ "$c" =~ ^[a-z0-9-]+$ ]] && office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
-    [ -n "$office" ] \
-      || { printf 'officer %s: consumer "%s" is not main or an office in data/offices.md\n' "$id" "$c"; return; }
-    case ",$(line_field "$office" sources | tr -d ' ')," in
-      *",lane:$id,"*) ;;
-      *) printf 'officer %s: consumer office %s does not list sources: lane:%s, so it never reads this digest\n' "$id" "$c" "$id"; return ;;
-    esac
-    secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" \
-      || { printf 'officer %s: consumer office %s is not a registered second mate in data/secondmates.md\n' "$id" "$c"; return; }
-    [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] \
-      && { printf 'officer %s: consumer office %s is remote, and a remote office cannot read this digest\n' "$id" "$c"; return; }
-    fm_custom_check_registered "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}/state" "office-lane-$id" \
-      || { printf 'officer %s: consumer office %s has no registered lane:%s check (run bin/fm-office.sh register-sources in its home)\n' "$id" "$c" "$id"; return; }
+    problem=$(office_read_problem "$id" "$c" consumer)
+    [ -z "$problem" ] || { printf '%s\n' "$problem"; return; }
+  done
+  offices=()
+  IFS=', ' read -ra offices <<<"$(line_field "$line" start-home || true)"
+  for c in "${offices[@]}"; do
+    problem=$(office_read_problem "$id" "$c" start-home)
+    [ -z "$problem" ] || { printf '%s\n' "$problem"; return; }
+  done
+}
+
+# start_homes: one "<home>=<dispatch projects>" per start-home: office of the loaded officer.
+start_homes() {
+  local c office
+  local -a offices=()
+  IFS=', ' read -ra offices <<<"$(line_field "$OFFICER_LINE" start-home || true)"
+  for c in "${offices[@]}"; do
+    office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
+    secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" || continue
+    printf '%s=%s\n' "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}" "$(line_field "$office" dispatch | tr -d ' ')"
   done
 }
 
@@ -392,6 +440,16 @@ EOF
 
 role_triage() { role_archive fm-officer-triage.py "$1"; }  # <date>
 
+# role_surgeon <date>: the triage pass, then intake from the fleet app (GET only) and, only
+# when the line says writes: linear, Linear items.
+role_surgeon() {
+  role_archive fm-officer-surgeon.py "$1" --now "$(now_epoch)" \
+    --app "$(line_field "$OFFICER_LINE" app)" --team "$(line_field "$OFFICER_LINE" team || echo PC)" \
+    --writes "$(line_field "$OFFICER_LINE" writes || echo none)" \
+    --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 5)" \
+    --area "$(line_field "$OFFICER_LINE" area || true)"
+}
+
 # role_friction <date>: each registered second mate's id names its parent
 # channel log, state/<mate-id>.status, in this home.
 role_friction() {
@@ -443,6 +501,11 @@ role_progress() {  # <date>: current records, dated with the common cadence's ru
     --officer "$OFFICER_ID" --captains-log "$(line_field "$OFFICER_LINE" captains-log || true)"
     --requested "$(line_field "$OFFICER_LINE" requested || true)")
   args+=(--home "$FM_HOME")
+  while IFS= read -r line; do
+    [ -n "$line" ] && args+=(--start-home "$line")
+  done <<EOF
+$(start_homes)
+EOF
   if [ -f "$DATA/secondmates.md" ]; then
     while IFS= read -r line; do
       secondmate_registry_parse_line "$line" || continue

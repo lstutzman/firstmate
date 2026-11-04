@@ -521,6 +521,24 @@ test_failure_line_reaches_main_whatever_the_consumer() {
   pass "fm-officer: the failure line is printed even when main is not a consumer"
 }
 
+test_start_home_office_must_read_the_progress_digest() {
+  local home out
+  home=$(make_world start-home empty_spec)
+  printf -- '- progress - starts work (role: progress; cadence: daily 07:00; repos: ex/repo; start-home: ghost; model: none; added 2026-11-04)\n' > "$home/data/officers.md"
+  out=$(officer "$home" ensure)
+  assert_contains "$out" 'start-home "ghost" is not main or an office' "an unknown start-home office is reported"
+  nav_office "$home" tick
+  sed -i.bak 's/start-home: ghost/start-home: navigator/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
+  out=$(officer "$home" ensure)
+  assert_contains "$out" 'start-home office navigator does not list sources: lane:progress' "an office that never reads the progress digest cannot run its requests"
+  out=$(officer "$home" register progress 2>&1) && fail "register must refuse a start-home office that never reads the digest"
+  nav_office "$home" tick,lane:progress
+  officer "$home" register progress >/dev/null || fail "register must accept a start-home office that reads the digest"
+  assert_equals "" "$(officer "$home" ensure)" "a start-home office with the lane source is a valid line"
+  pass "fm-officer: a start-home office must read the progress digest through its own lane source"
+}
+
+
 test_register_and_retire
 test_check_reports_each_new_actionable_digest_once
 test_check_is_silent_for_an_empty_digest
@@ -541,3 +559,4 @@ test_unknown_consumer_is_a_registry_problem
 test_consumer_office_must_read_the_digest
 test_broken_consumer_falls_back_to_waking_main
 test_failure_line_reaches_main_whatever_the_consumer
+test_start_home_office_must_read_the_progress_digest

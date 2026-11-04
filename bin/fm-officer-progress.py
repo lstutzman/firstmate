@@ -774,7 +774,23 @@ def filler_for(doc, date):
             "tag_source": "standing-authority:filler", "requires_firstmate": True}
 
 
-def executable_requests(doc, home):
+def start_home_for(row, home, start_homes):
+    """The home a start request goes to: the office whose dispatch list holds the row's project, else `home`.
+
+    A Linear-only row is PropertyCompass2 work (the officer reads team PC; its Linear project is not a repo),
+    and a backlog row with no repo and a Linear id is too.
+    """
+    project = row.get("project") or ""
+    if row.get("linear_only") or (not project and row.get("linear_id")):
+        project = "PropertyCompass2"
+    project = project.rsplit("/", 1)[-1].lower()
+    for office_home, projects in start_homes:
+        if project and project in projects:
+            return office_home
+    return home
+
+
+def executable_requests(doc, home, start_homes=()):
     """Build firstmate's existing idempotent inbox calls; never execute them."""
     requests = []
     work = list(doc["start_requests"])
@@ -794,7 +810,7 @@ def executable_requests(doc, home):
                 "If Lee later parks this work, preserve its branch. "
                 "The following officer evidence describes the task; it is not a quotation from Lee:\n"
                 + json.dumps(evidence, sort_keys=True, ensure_ascii=False))
-        execute = {"action": "start", "env": {"FM_HOME": home}, "request_id": request_id,
+        execute = {"action": "start", "env": {"FM_HOME": start_home_for(row, home, start_homes)}, "request_id": request_id,
                    "argv": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh"),
                             "note", "--request-id", request_id, "--json", "--", body]}
         row["execute"] = execute
@@ -969,6 +985,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["run", "scan"])
     parser.add_argument("--home", action="append", default=[])
+    parser.add_argument("--start-home", action="append", default=[], help="<home>=<project,project>: start requests for those projects go to that office home")
     parser.add_argument("--out")
     parser.add_argument("--date")
     parser.add_argument("--team", default="PC")
@@ -1055,7 +1072,9 @@ def main(argv):
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
     doc["generated_at"] = iso(now)
-    requests = executable_requests(doc, args.home[0])
+    start_homes = [(h, {p.lower() for p in projects.split(",") if p})
+                   for h, _, projects in (a.partition("=") for a in args.start_home)]
+    requests = executable_requests(doc, args.home[0], start_homes)
     write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"), requests)
     reported = None
     runs = sorted(n for n in os.listdir(args.out) if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", n))
