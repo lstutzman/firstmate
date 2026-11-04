@@ -250,13 +250,14 @@ RULES = [
         r"(?:create|write|save)|create items|item create", re.I)),
     ("credential", "scope", re.compile(
         r"authentication error|code 10000|insufficient (?:permission|privilege)s?"
-        r"|(?<![\w-])(?:403|forbidden)(?![\w-]).{0,60}(?:token|credential|api key|service account|%s)"
-        r"|(?:token|credential|api key|service account|%s).{0,60}(?<![\w-])(?:403|forbidden)(?![\w-])"
+        r"|(?<![\w-])(?:403|forbidden)(?![\w-]).{0,60}(?:token|credential|api key|service account|%(svc)s)"
+        r"|(?:token|credential|api key|service account|%(svc)s).{0,60}(?<![\w-])(?:403|forbidden)(?![\w-])"
         r"|refus\w*\b.{0,60}token|token.{0,40}refus|do not have permission to perform"
-        r"|(?:token|key|grant)s?(?: \w+){0,3} (?:lacks?|missing|without|needs?|requires?|refused|denied)\b.{0,30}\bscopes?\b"
-        r"|\b(?:missing|lacks?|insufficient|required|without)\b.{0,20}\bscopes?\b.{0,30}(?:token|key|grant)"
-        r"|(?:token|key|grant)s?.{0,30}\bno\b(?: [\w-]+){0,2} scopes?\b|\bscopes? (?:is |are )?too narrow"
-        r"|widen(?:ed|ing)? (?:the )?(?:\w+ )?token" % ((SERVICE_NAMES,) * 2), re.I)),
+        r"|%(cred)s(?: \w+){0,3} (?:lacks?|missing|without|needs?|requires?|refused|denied)\b.{0,30}\bscopes?\b"
+        r"|\b(?:missing|lacks?|insufficient|required|without)\b.{0,20}\bscopes?\b.{0,30}%(cred)s"
+        r"|%(cred)s.{0,30}\bno\b(?: [\w-]+){0,2} scopes?\b|%(cred)s.{0,30}\bscopes? (?:is |are )?too narrow"
+        r"|widen(?:ed|ing)? (?:the )?(?:\w+ )?token"
+        % {"svc": SERVICE_NAMES, "cred": r"(?<![\w-])(?:token|key|grant)s?\b"}, re.I)),
     ("credential", "login", re.compile(
         r"not logged in|not currently signed in|op signin|auth login|az login|sign[- ]in required|gh auth", re.I)),
     ("credential", "missing", re.compile(
