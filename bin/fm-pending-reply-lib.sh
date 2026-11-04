@@ -1022,13 +1022,14 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   task_id=$(fm_pending_reply_get "$rec" task_id)
   # A remote mate's report may exist and simply not have been mirrored yet.
   fm_pending_reply_missing_report_is_evidence "$state" "$task_id" "$completed" || return 1
-  # config/wait-no-turns: a mate waiting on its own open decision or blocker
-  # is never poked. The recovery stays unattempted until the answer lands.
+  # config/wait-no-turns: a mate actually waiting (its latest event a declared
+  # pause, a captain hold or an open keyed decision) is never poked; a mate
+  # that merely carries open decisions while it keeps working is. The recovery stays unattempted until the answer lands.
   # Past the hold bound the record escalates once instead of waiting on, which
   # moves it out of awaiting_report so the held repost is not re-checked on
   # every later poll; before the bound the mate is simply left alone.
   if [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ]; then
-    if [ -n "$(status_own_open_decisions "$state/$task_id.status")" ]; then
+    if [ -n "$(status_wait_line "$state/$task_id.status")" ]; then
       if fm_pending_reply_hold_escalation_due "$completed" "$now"; then
         fm_pending_reply_maybe_escalate "$state" "$corr" held 2>/dev/null || true
       fi
@@ -1420,7 +1421,7 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
       [ -n "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || return 1
       fm_pending_reply_hold_escalation_due "$completed" "$(fm_pending_reply_now)" || return 1
       [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ] || return 1
-      [ -n "$(status_own_open_decisions "$state/$(fm_pending_reply_get "$rec" task_id).status")" ] || return 1
+      [ -n "$(status_wait_line "$state/$(fm_pending_reply_get "$rec" task_id).status")" ] || return 1
       fm_pending_reply_missing_report_is_evidence "$state" \
         "$(fm_pending_reply_get "$rec" task_id)" "$completed" || return 1
       ;;
