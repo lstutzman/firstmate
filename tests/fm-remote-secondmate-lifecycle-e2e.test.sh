@@ -980,12 +980,12 @@ FM_FAKE_SSH_MODE=inherit-block remote_env "$ROOT/bin/fm-spawn.sh" ios --secondma
   > "$TMP_ROOT/spawn-concurrent.out" 2>&1 &
 spawn_concurrent=$!
 spawn_inherit_wait=0
-# Earlier inherited files traverse the worker before captain-shared.md, so give
-# a loaded portable runner 30 seconds to reach this deliberately blocked write.
+# Earlier inherited files traverse the worker before captain-shared.md, so allow
+# a 120-second loaded-runner bound (6000 x 0.02 s); the wait ends as soon as the write is entered.
 while [ ! -f "$TMP_ROOT/inherit.entered" ]; do
   kill -0 "$spawn_concurrent" 2>/dev/null || fail "remote spawn exited before its blocked inheritance write"
   spawn_inherit_wait=$((spawn_inherit_wait + 1))
-  [ "$spawn_inherit_wait" -le 1500 ] || fail "remote spawn never reached its blocked inheritance write"
+  [ "$spawn_inherit_wait" -le 6000 ] || fail "remote spawn never reached its blocked inheritance write"
   sleep 0.02
 done
 cat > "$PARENT/data/captain-shared.md" <<'EOF'
@@ -1094,9 +1094,9 @@ inherit_wait=0
 while [ ! -f "$TMP_ROOT/inherit.entered" ]; do
   kill -0 "$config_first" 2>/dev/null || fail "first inheritance transaction exited before its blocked write"
   inherit_wait=$((inherit_wait + 1))
-  # Match the earlier spawn/inheritance wait: a loaded portable runner can
+  # Match the earlier spawn/inheritance wait (120-second ceiling): a loaded portable runner can
   # spend several seconds in the remote entrypoint before reaching this write.
-  [ "$inherit_wait" -le 1500 ] || fail "first inheritance transaction never reached its blocked write"
+  [ "$inherit_wait" -le 6000 ] || fail "first inheritance transaction never reached its blocked write"
   sleep 0.02
 done
 cat > "$PARENT/data/captain-shared.md" <<'EOF'
