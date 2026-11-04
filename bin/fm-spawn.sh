@@ -221,6 +221,17 @@
 #   cannot be read prints one `warning:` line and launches. --landing-exempt
 #   marks a ship as a fix or landing work that is never held for lag, and is
 #   refused on --scout and --secondmate spawns, which are never held for it.
+#   Office authority: in an office home (bin/fm-office-authority-lib.sh owns
+#   detection and the authority record) every spawn is refused when the home's
+#   office signals disagree or its published authority record is missing or
+#   unproven, and a --secondmate spawn or relaunch and --upstream-consent are
+#   always refused. Just before capacity admission, a ship or scout whose
+#   project is not in the record's dispatch= is refused, as is a --yolo on ship
+#   whose project is in neither merge= nor merge-via=; a fresh spawn that finds
+#   the office's wip= live tasks already running is deferred exactly like a
+#   capacity deferral, and a fresh office spawn records office=<id> in its task
+#   metadata. These checks only refuse; a home that is not an office never runs
+#   them and its records are unchanged.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -1105,6 +1116,28 @@ else
       exit 1
     }
   fi
+fi
+
+# Office authority (bin/fm-office-authority-lib.sh owns detection and the
+# record). In an office home every spawn first needs a consistent office and a
+# proven authority record; an office never creates second mates and never
+# grants itself upstream consent. The project-dependent checks follow once the
+# project is known. A home that is not an office skips all of them.
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$SCRIPT_DIR/fm-office-authority-lib.sh"
+if ! fm_office_resolve "$FM_HOME" "$DATA" "$CONFIG"; then
+  echo "error: spawn refused: $FM_OFFICE_ERROR" >&2
+  exit 1
+fi
+if [ -n "$FM_OFFICE_ID" ]; then
+  [ "$KIND" != secondmate ] || {
+    echo "error: spawn refused: office $FM_OFFICE_ID never creates or relaunches a second mate" >&2
+    exit 1
+  }
+  [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || {
+    echo "error: spawn refused: office $FM_OFFICE_ID cannot grant itself --upstream-consent; the inherited firstmate-role grant governs firstmate publication" >&2
+    exit 1
+  }
 fi
 
 spawn_remote_secondmate() {
@@ -2192,6 +2225,12 @@ else
   ARG3=${POS[2]:-}
 fi
 [ -z "$HARNESS_ARG" ] || ARG3=$HARNESS_ARG
+# An office never relaunches a second mate either; refused here, before the
+# second-mate launch path below can touch its home.
+if [ -n "$FM_OFFICE_ID" ] && [ "$KIND" = secondmate ]; then
+  echo "error: spawn refused: office $FM_OFFICE_ID never creates or relaunches a second mate" >&2
+  exit 1
+fi
 
 shell_quote() {
   printf "'"
@@ -3403,6 +3442,39 @@ else
   PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
   WT=""
   BRIEF="$DATA/$ID/brief.md"
+fi
+# Office authority, project-dependent part: the project must be in the office's
+# dispatch=, a yolo-on ship's project must be one it merges or hands to a
+# merger, and a fresh spawn past the office's wip= live tasks is deferred like
+# a capacity deferral (exit 75, nothing created, item still queued). It runs
+# under the task-set lock a fresh spawn already holds, so two spawns in this
+# home cannot both take the last place. A relaunch keeps its place and
+# re-checks only what the record now allows.
+if [ -n "$FM_OFFICE_ID" ]; then
+  SPAWN_OFFICE_PROJECT=$(basename "$PROJ_ABS")
+  fm_office_in "$SPAWN_OFFICE_PROJECT" "$FM_OFFICE_DISPATCH" || {
+    echo "error: spawn refused: office $FM_OFFICE_ID dispatches only to $FM_OFFICE_DISPATCH (its authority record's dispatch=), not $SPAWN_OFFICE_PROJECT" >&2
+    exit 1
+  }
+  if [ "$KIND" = ship ] && [ "$YOLO" = on ] && ! fm_office_in "$SPAWN_OFFICE_PROJECT" "$FM_OFFICE_MERGE"; then
+    case ",$FM_OFFICE_MERGE_VIA," in
+      *",$SPAWN_OFFICE_PROJECT="*) ;;
+      *)
+        echo "error: spawn refused: office $FM_OFFICE_ID may spawn a --yolo on ship only for a project it merges or hands to a merger, and $SPAWN_OFFICE_PROJECT is in neither its merge= nor its merge-via=" >&2
+        exit 1
+        ;;
+    esac
+  fi
+  if [ "$RELAUNCH" -eq 0 ]; then
+    fm_office_live_tasks "$STATE" "$ID" || {
+      echo "error: spawn refused: $FM_OFFICE_ERROR" >&2
+      exit 1
+    }
+    if [ "$FM_OFFICE_LIVE" -ge "$FM_OFFICE_WIP" ]; then
+      echo "deferred: office $FM_OFFICE_ID runs at most $FM_OFFICE_WIP task(s) at once (its authority record's wip=) and $FM_OFFICE_LIVE are live ($FM_OFFICE_LIVE_IDS); task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up" >&2
+      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+    fi
+  fi
 fi
 # Project capacity admission (bin/fm-project-capacity-lib.sh owns the
 # declaration, what holds a place, and why this is race-safe). A fresh worker
@@ -5623,6 +5695,9 @@ preserve_relaunch_meta() {
   echo "tasktmp=$TASK_TMP"
   [ -z "$BASE_BRANCH" ] || echo "base_branch=$BASE_BRANCH"
   [ -z "$UPSTREAM_CONSENT" ] || echo "upstream_consent=$UPSTREAM_CONSENT"
+  # Written only by an office's fresh spawn, so every other record stays
+  # byte-identical; a relaunch keeps the original line.
+  [ "$RELAUNCH" -eq 1 ] || [ -z "$FM_OFFICE_ID" ] || echo "office=$FM_OFFICE_ID"
   # Read by bin/fm-dod-lib.sh's ready-report gate; absent on every other forge.
   [ "$EXTERNAL_REVIEW" = 0 ] || echo "forge=external"
   [ -z "$EXTERNAL_BACKUP_REMOTE" ] || echo "backup_remote=$EXTERNAL_BACKUP_REMOTE"

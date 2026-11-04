@@ -921,6 +921,190 @@ assert_not_merged() {  # <case_dir> <label>
   ! grep -q '^pr merge' "$1/gh.log" || fail "$2: gh merged the pull request"
 }
 
+# Office authority (bin/fm-office-authority-lib.sh): an office home merges only
+# what its published authority record names, and every other home merges
+# exactly as before. make_office_case builds a healthy office "mate-x" whose
+# record lets it merge the fixture project through the admission fixture above,
+# with a classifier verdict of <verdict>; the task was spawned by the office
+# with yolo on. Extra record lines replace the default line with the same key.
+OFFICE_PR=https://github.com/example/repo/pull/9
+make_office_case() {  # <name> <verdict> [record-line...]; echoes the case dir
+  local name=$1 verdict=$2 case_dir digest kv key
+  shift 2
+  case_dir=$(make_home_case "$name" remote)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_admission "$case_dir" "$verdict"
+  digest=$(bash -c '. "$1"; fm_office_admission_digest "$2" risky' _ "$ROOT/bin/fm-office-authority-lib.sh" "$case_dir/home/config")
+  local -a rec=(id=mate-x dispatch=project merge=project merge-via=none auto-merge-classes=none wip=2 "admission-sha256=project:$digest")
+  for kv in "$@"; do
+    key=${kv%%=*}
+    local -a kept=()
+    local old
+    for old in "${rec[@]}"; do [ "${old%%=*}" = "$key" ] || kept+=("$old"); done
+    rec=("${kept[@]}" "$kv")
+  done
+  fm_write_office_home "$case_dir/home" mate-x "${rec[@]}"
+  printf '%s\n' yolo=on office=mate-x >> "$case_dir/state/task-x1.meta"
+  printf '%s\n' "$case_dir"
+}
+
+run_office_merge() {  # <case_dir> [merge args]...; sets RC
+  local case_dir=$1
+  shift
+  set +e
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" task-x1 "$OFFICE_PR" "$@" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  RC=$?
+  set -e
+}
+
+assert_office_refused_before_forge() {  # <case_dir> <label> <stderr-fragment>
+  [ "$RC" -ne 0 ] || fail "$2: the office merged"
+  assert_grep "$3" "$1/stderr" "$2: the refusal did not give the office reason"
+  [ ! -s "$1/gh.log" ] || fail "$2: gh ran before the office refusal"
+  [ ! -s "$1/gh-axi.log" ] || fail "$2: gh-axi ran before the office refusal"
+}
+
+test_non_office_homes_merge_as_before_with_a_stray_record() {
+  local case_dir
+  case_dir=$(make_case office-stray-main)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_admission "$case_dir" 'code docs'
+  printf '%s\n' fm-office-authority-v1 id=main dispatch=none > "$case_dir/home/config/office-authority"
+  run_admission_merge "$case_dir"
+  expect_code 0 "$RC" "office-stray-main: a main home with a stray authority record should merge"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+
+  case_dir=$(make_home_case office-stray-mate remote)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_admission "$case_dir" 'code docs'
+  printf '# Charter\n\nIdle by default.\n' > "$case_dir/home/data/charter.md"
+  printf '%s\n' fm-office-authority-v1 id=mate-x dispatch=none > "$case_dir/home/config/office-authority"
+  run_office_merge "$case_dir"
+  expect_code 0 "$RC" "office-stray-mate: a plain second mate with a stray authority record should merge"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+  assert_no_grep 'authority record' "$case_dir/stderr" "office-stray-mate: a plain second mate's merge mentioned an office authority record"
+  pass "a main home and a plain second mate merge exactly as before, even with a stray authority record"
+}
+
+test_office_merges_inside_its_record() {
+  local case_dir
+  case_dir=$(make_office_case office-merges 'code docs')
+  run_office_merge "$case_dir"
+  expect_code 0 "$RC" "office-merges: a green merge inside the office's record should merge"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --squash
+  pass "an office merges a green PR its authority record covers"
+}
+
+test_office_refuses_outside_its_record() {
+  local case_dir label
+  case_dir=$(make_office_case office-no-record 'code docs')
+  fm_write_office_home "$case_dir/home" mate-x
+  rm -f "$case_dir/home/config/office-authority" "$case_dir/home/config/.fm-inherit-office-authority.generation"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-no-record 'no published authority record'
+  assert_grep 'bin/fm-office.sh ensure' "$case_dir/stderr" "office-no-record: the refusal did not name the repair"
+
+  case_dir=$(make_office_case office-stale 'code docs')
+  printf 'wip=9\n' >> "$case_dir/home/config/office-authority"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-stale 'diverges from the receipt'
+
+  case_dir=$(make_office_case office-no-sm-marker 'code docs')
+  mv "$case_dir/home/.fm-secondmate-home" "$case_dir/home/.gone"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-no-sm-marker 'not a seeded second mate'
+
+  case_dir=$(make_office_case office-no-heading 'code docs')
+  printf '# Charter\n' > "$case_dir/home/data/charter.md"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-no-heading 'lacks the "# Office authority" heading'
+
+  case_dir=$(make_office_case office-no-marker 'code docs')
+  rm -f "$case_dir/home/.fm-office"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-no-marker 'no .fm-office marker'
+
+  for label in attended-override allow-red allow-missing; do
+    case_dir=$(make_office_case "office-$label" 'code docs')
+    case "$label" in
+      attended-override) run_office_merge "$case_dir" --attended-override ;;
+      *) run_office_merge "$case_dir" "--$label" ci ;;
+    esac
+    assert_office_refused_before_forge "$case_dir" "office-$label" "is never an attended captain, so --$label is refused"
+  done
+
+  case_dir=$(make_office_case office-stack 'code docs')
+  printf '%s\n' window=fm-task-x2 "worktree=$case_dir/wt" "project=$case_dir/project" kind=ship yolo=on office=mate-x \
+    > "$case_dir/state/task-x2.meta"
+  set +e
+  FM_TEST_HOME="$case_dir/home" run_pr_merge "$case_dir" --stack deadbeefcafefeed0000000000000000deadbeef \
+    task-x1 "$OFFICE_PR" --member task-x2 https://github.com/example/repo/pull/8 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  RC=$?
+  set -e
+  assert_office_refused_before_forge "$case_dir" office-stack 'never merges a stack'
+
+  case_dir=$(make_office_case office-not-in-merge 'code docs' merge=none admission-sha256=)
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-not-in-merge 'may merge only no project'
+
+  case_dir=$(make_office_case office-yolo-off 'code docs')
+  sed -i.bak 's/^yolo=on$/yolo=off/' "$case_dir/state/task-x1.meta"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-yolo-off 'merges only a task spawned with yolo on'
+
+  case_dir=$(make_office_case office-other-task 'code docs')
+  sed -i.bak 's/^office=mate-x$/office=navigator/' "$case_dir/state/task-x1.meta"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-other-task 'merges only a task it spawned itself'
+
+  case_dir=$(make_office_case office-no-admission 'code docs')
+  printf '%s\n' '## Projects' '- project [no-mistakes +yolo] - fixture (added 2026-01-01)' > "$case_dir/home/data/projects.md"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-no-admission 'merges only a project with a reserved-class classifier'
+
+  case_dir=$(make_office_case office-admission-edited 'code docs')
+  printf '# edited after publish\n' >> "$case_dir/home/config/admission/risky"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-admission-edited 'changed since the main home published'
+
+  case_dir=$(make_office_case office-rules-added 'code docs')
+  printf 'bin/** authority\n' > "$case_dir/home/config/admission/risky.rules"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-rules-added 'changed since the main home published'
+  pass "an office refuses, before any forge call, every merge its authority record does not cover"
+}
+
+# A flagged class refuses in an office exactly as it does anywhere else: no
+# class auto-merges, so the office gets the same hold and answer commands.
+test_office_flagged_class_refuses_like_any_home() {
+  local case_dir
+  case_dir=$(make_office_case office-flagged 'code payments')
+  run_office_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "office-flagged: an office merged a flagged class"
+  assert_not_merged "$case_dir" office-flagged
+  assert_grep 'hold task-x1-admit-9-payments' "$case_dir/stderr" "office-flagged: the refusal did not name the hold"
+  assert_grep 'answer task-x1-admit-9-payments' "$case_dir/stderr" "office-flagged: the refusal did not name the answer"
+  pass "an office's flagged class refuses with the same hold and answer commands as any home"
+}
+
+# A project the office hands to a merger stops at the existing merger= handoff.
+test_office_merge_via_ends_at_the_merger_handoff() {
+  local case_dir
+  case_dir=$(make_office_case office-merge-via 'code docs' merge=none admission-sha256= merge-via=project=slarti)
+  register_merger "$case_dir" slarti
+  run_office_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "office-merge-via: the office merged a project another home merges"
+  assert_grep 'is merged only by home slarti, and this home is mate-x' "$case_dir/stderr" \
+    "office-merge-via: the refusal was not the merger handoff"
+  [ ! -s "$case_dir/gh.log" ] || fail "office-merge-via: gh ran before the handoff"
+  pass "an office's merge-via project ends at the existing merger handoff"
+}
+
 test_admission_refuses_a_flagged_class_until_the_captain_answers() {
   local case_dir hold_cmd
   case_dir=$(make_case admission-flagged)
@@ -4847,6 +5031,11 @@ test_no_merger_field_keeps_every_home_merging
 test_malformed_merger_field_refuses
 test_admission_refuses_a_flagged_class_until_the_captain_answers
 test_admission_answer_does_not_carry_to_another_pr
+test_non_office_homes_merge_as_before_with_a_stray_record
+test_office_merges_inside_its_record
+test_office_refuses_outside_its_record
+test_office_flagged_class_refuses_like_any_home
+test_office_merge_via_ends_at_the_merger_handoff
 test_admission_merges_when_no_configured_class_is_flagged
 test_admission_refuses_when_classification_cannot_be_trusted
 test_admission_refuses_outside_github

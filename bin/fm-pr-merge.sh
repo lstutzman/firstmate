@@ -150,6 +150,16 @@
 # and neither yolo, --attended-override, nor the away posture skips the check.
 # A project with no admission token merges exactly as before.
 #
+# In an office home (bin/fm-office-authority-lib.sh owns detection and the
+# authority record), a merge is also refused, after the merger-home check and
+# before any forge command, when the home's office signals disagree or its
+# published authority record is missing or unproven; for a stack, for
+# --attended-override, --allow-red, or --allow-missing; for a project not in the
+# record's merge=; for a task whose record lacks yolo=on or names another
+# office=; for a project with no admission= binding; and when that admission
+# config or its rules no longer match the record's admission-sha256. These
+# checks only refuse, and a home that is not an office never runs them.
+#
 # Before either forge merge, the task's existing per-task control lock
 # serializes the captain-hold check through the forge command. A still-held or
 # unreadable row refuses before that command, so a captain approval must be
@@ -655,6 +665,36 @@ if [ -n "$MERGE_PROJECT" ]; then
   fi
 fi
 
+# Office authority: in an office home (bin/fm-office-authority-lib.sh owns
+# detection and the record), a merge is refused unless the office's published
+# authority names this project in merge=, the task was spawned by this office
+# with yolo on, and no captain-only override or stack is asked for. It only
+# refuses; a home that is not an office skips it entirely. merge-via projects
+# already stopped at the merger= handoff above.
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$SCRIPT_DIR/fm-office-authority-lib.sh"
+if ! fm_office_resolve "$FM_HOME" "${FM_DATA_OVERRIDE:-$FM_HOME/data}" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; then
+  echo "error: PR merge refused: $FM_OFFICE_ERROR" >&2
+  exit 1
+fi
+if [ -n "$FM_OFFICE_ID" ]; then
+  office_refuse() {
+    echo "error: PR merge refused: office $FM_OFFICE_ID $1" >&2
+    exit 1
+  }
+  [ "$STACK_MODE" = false ] || office_refuse "never merges a stack; stack merges are attended-only"
+  [ "$ATTENDED_OVERRIDE" = false ] || office_refuse "is never an attended captain, so --attended-override is refused"
+  [ "${#ALLOW_RED[@]}" -eq 0 ] || office_refuse "is never an attended captain, so --allow-red is refused"
+  [ "${#ALLOW_MISSING[@]}" -eq 0 ] || office_refuse "is never an attended captain, so --allow-missing is refused"
+  MERGE_OFFICE_PROJECT=$(basename "${MERGE_PROJECT:-}")
+  { [ -n "$MERGE_PROJECT" ] && fm_office_in "$MERGE_OFFICE_PROJECT" "$FM_OFFICE_MERGE"; } \
+    || office_refuse "may merge only ${FM_OFFICE_MERGE:-no project} (its authority record's merge=), not ${MERGE_OFFICE_PROJECT:-a task with no recorded project}"
+  [ "$(sed -n 's/^yolo=//p' "$META" | head -n 1)" = on ] \
+    || office_refuse "merges only a task spawned with yolo on, and task $ID was not"
+  [ "$(sed -n 's/^office=//p' "$META" | head -n 1)" = "$FM_OFFICE_ID" ] \
+    || office_refuse "merges only a task it spawned itself, and task $ID's record does not name office=$FM_OFFICE_ID"
+fi
+
 # Admission: read and validate the project's admission binding and config
 # before any forge command, so a broken opt-in refuses instead of merging.
 MERGE_ADMISSION=
@@ -673,6 +713,18 @@ if [ -n "$MERGE_PROJECT" ]; then
       exit 1
     fi
   fi
+fi
+# An office merges only a project its own reserved-class classifier judges,
+# and only with the classifier config and rules its authority record pinned.
+if [ -n "$FM_OFFICE_ID" ]; then
+  [ -n "$MERGE_ADMISSION" ] \
+    || office_refuse "merges only a project with a reserved-class classifier, and $MERGE_OFFICE_PROJECT has no admission= in this home's data/projects.md"
+  MERGE_OFFICE_DIGEST=$(fm_office_admission_digest "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$MERGE_ADMISSION") \
+    || office_refuse "cannot read the admission config $MERGE_ADMISSION to check it against its authority record"
+  case ",$FM_OFFICE_ADMISSION_SHA256," in
+    *",$MERGE_OFFICE_PROJECT:$MERGE_OFFICE_DIGEST,"*) ;;
+    *) office_refuse "found admission config $MERGE_ADMISSION or its rules changed since the main home published its authority record (admission-sha256); $FM_OFFICE_REPAIR" ;;
+  esac
 fi
 
 MERGE_CONTROL_LOCK=
