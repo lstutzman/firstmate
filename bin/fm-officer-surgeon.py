@@ -55,7 +55,7 @@ team PC, highest severity first, at most --max-creates attempts a run:
      marker in its description;
   3. `issue create --dry-run`, then `--verify`, with exactly one Type (Bug), one
      Source and one area label. A failed verify is never retried; if the fingerprint
-     search then finds the item, it counts as created (and is ledgered), else it is logged failed.
+     search finds the item within a few seconds, it counts as created (and is ledgered), else it is logged failed.
 It never edits, comments on, closes or deletes an item. One RATE_LIMITED answer
 stops every Linear call in the run, writes linear-resume-after.json (one hour on)
 and reports the rest as not filed; later runs skip Linear until then.
@@ -104,6 +104,7 @@ PRIORITY = {"high": "2", "medium": "3", "low": "3"}
 RANK = {"high": 0, "medium": 1, "low": 2}
 CANDIDATES_PER_CREATE = 5
 EXISTING_VIEWS = 3
+VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
 RESUME_FILE = "linear-resume-after.json"
 LEDGER_FILE = "filed-fingerprints.json"
 STAGING_REPO = "git@github.com:lstutzman/PropertyCompass2.git"
@@ -402,7 +403,12 @@ def file_findings(findings, args, date, out):
                     raise
                 # --verify writes before it reads back, so the item may exist; a created item is never
                 # reported failed or left out of the ledger.
-                found = existing_issue(f["fingerprint"], args.team)
+                found = None
+                for wait in VERIFY_SEARCH_WAITS:
+                    time.sleep(wait)
+                    found = existing_issue(f["fingerprint"], args.team)
+                    if found:
+                        break
                 if not found:
                     raise
                 ledger[f["fingerprint"]] = found

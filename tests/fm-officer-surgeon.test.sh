@@ -68,7 +68,8 @@ write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
 
 # fake_linear <fakebin> <dir> <log>: linear-axi from files in <dir>:
 # labels.fail / ratelimit.labels (label list), ratelimit.search, verify.fail, ratelimit.verify,
-# labels.txt (one label per line), exists.txt (fingerprints that search finds).
+# labels.txt (one label per line), exists.txt (fingerprints that search finds),
+# search.lag (how many searches miss an existing item first, as Linear's index lags a write).
 fake_linear() {
   cat > "$1/linear-axi" <<SH
 #!/usr/bin/env bash
@@ -85,7 +86,11 @@ case "\$1 \$2" in
   "issue search")
     [ -f "\$d/ratelimit.search" ] && { err RATE_LIMITED "wait"; exit 1; }
     # Linear's search is fuzzy: it always returns an unrelated issue, and the real one only when it exists.
-    if grep -qF -- "\${3#surgeon-fp:}" "\$d/exists.txt" 2>/dev/null; then
+    lag=\$(cat "\$d/search.lag" 2>/dev/null || echo 0)
+    if grep -qF -- "\${3#surgeon-fp:}" "\$d/exists.txt" 2>/dev/null && [ "\$lag" -gt 0 ]; then
+      echo \$((lag - 1)) > "\$d/search.lag"
+      echo '{"ok":true,"data":{"issues":[{"identifier":"PC-9"}]}}'
+    elif grep -qF -- "\${3#surgeon-fp:}" "\$d/exists.txt" 2>/dev/null; then
       echo '{"ok":true,"data":{"issues":[{"identifier":"PC-9"},{"identifier":"PC-55"}]}}'
     else echo '{"ok":true,"data":{"issues":[{"identifier":"PC-9"}]}}'; fi ;;
   "issue view")
@@ -348,6 +353,19 @@ test_created_item_with_verify_mismatch_is_ledgered() {
   pass "fm-officer surgeon: a created item whose verify mismatches is still ledgered"
 }
 
+test_verify_mismatch_waits_for_search_to_catch_up() {
+  local home json
+  make_world lag "${LINEAR_ON}max-creates: 1; "; home=$WORLD_HOME
+  touch "$LDIR/verify.mismatch"
+  echo 2 > "$LDIR/search.lag"
+  run_surgeon "$home" >/dev/null || fail "a lagging search must not fail the run"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "created PC-55" "$(row "$json" nightly fp-a '[.filing.action,.filing.issue]|join(" ")')" "an item the search finds late is reported created"
+  assert_equals "PC-55" "$(jq -r --arg fp "$(fp nightly nightly-e2e fp-a)" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")" "and ledgered"
+  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "the create is not retried"
+  pass "fm-officer surgeon: a verify mismatch waits briefly for the search to find the item"
+}
+
 test_label_lookup_failure_reports_instead_of_filing() {
   local home json
   make_world labels "$LINEAR_ON"; home=$WORLD_HOME
@@ -428,6 +446,7 @@ test_fingerprint_search_skips_create
 test_max_creates_cap
 test_failed_verify_is_not_retried
 test_created_item_with_verify_mismatch_is_ledgered
+test_verify_mismatch_waits_for_search_to_catch_up
 test_label_lookup_failure_reports_instead_of_filing
 test_rate_limit_stops_linear_for_the_run_and_later_runs
 test_unreachable_app_is_a_coverage_gap
