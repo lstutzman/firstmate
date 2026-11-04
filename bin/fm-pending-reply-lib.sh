@@ -13,8 +13,8 @@
 # the marker and answer only in its visible conversation. The parent must notice
 # the missing correlated report without scraping that conversation, send exactly
 # one automatic recovery request asking for a repost through the parent channel
-# (held back, when config/wait-no-turns is present, while the mate waits on its
-# own open decision or blocker), and
+# (held back, when config/wait-no-turns is present, while the mate is actually
+# waiting: see fm_pending_reply_mate_wait_line), and
 # escalate once if the recovery turn also completes without a correlated
 # report. A repost held back that way for longer than a bound (see
 # FM_PENDING_REPLY_HOLD_ESCALATE_SECS) is escalated once instead of being
