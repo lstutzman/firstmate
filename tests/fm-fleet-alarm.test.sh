@@ -259,8 +259,8 @@ out=$(run_alarm check)
 [ -z "$out" ] || fail "exhausted idle account with pool headroom must not alarm: $out"
 mate 1 0 3601
 out=$(run_alarm check)
-assert_contains "$out" 'exhausted@example.invalid 7d 100%' 'account pressure remains informational in card text'
-assert_contains "$out" 'Carrying Claude accounts: member@example.invalid' 'successful recent traffic identifies carrying account'
+assert_contains "$out" 'holding work silent' 'silent mate alarms'
+case "$out" in *'7d 100%'*|*'account pressure'*|*'Carrying Claude accounts'*) fail "a non-quota alarm must not carry per-account quota text: $out" ;; esac
 mate 0 0 0
 quota 0.2
 run_alarm check >/dev/null
@@ -303,7 +303,7 @@ run_alarm check >/dev/null
 mate 1 0 3601
 out=$(run_alarm check)
 assert_contains "$out" 'holding work silent' 'silent-mate alarm survives no recent successful traffic'
-assert_contains "$out" 'Carrying Claude accounts: none' 'idle traffic status included in mate card'
+assert_not_contains "$out" 'Carrying Claude accounts' 'a silent-mate alarm carries no quota context'
 mate 0 0 0
 cat > "$HOME_FIX/models" <<'ROWS'
 models[1]{account,model,requests,failed}:
@@ -446,6 +446,17 @@ value.update(valid=False, invalidity=dict(kind='child_current_unavailable', ids=
 path.write_text(json.dumps(value))
 PY_INVALID
 assert_contains "$(run_alarm check)" 'holding work silent' 'unknown child liveness never counts as parked on captain holds'
+mate 0 0 0
+run_alarm check >/dev/null
+# A status decision covered by a captain hold is the held work's own call; an uncovered one still alarms.
+mate 0 0 3601
+set_mate_work 2 0 1 1 1
+edit_mate_summary "value['decisions_open'].append(dict(id='held-0',key='held-0',verb='needs-decision',source='status'))"
+[ -z "$(run_alarm check)" ] || fail 'a status decision covered by a captain hold by id is healthy waiting'
+edit_mate_summary "value['decisions_open'][-1].update(id='child-9',key='captain-hold-held-0-1')"
+[ -z "$(run_alarm check)" ] || fail 'a status decision keyed captain-hold-<id>-<n> is healthy waiting'
+edit_mate_summary "value['decisions_open'][-1].update(id='child-9',key='captain-hold-held-00-1')"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a status decision for a different hold id still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
 pass 'captain-held mates are healthy idle while stuck or un-held work still alarms'

@@ -26,8 +26,12 @@ the recovery it was expected by, even when its home is unreadable by then; it
 resolves when the condition clears.
 A secondmate parked only on open captain holds is healthy idle and is never silent: its home
 summary is valid, it has no active child, no child is asking it an open question, and every
-in-flight item is a captain-actionable hold or a parked or paused child. Any live worker, blocked
-child, un-held in-flight work, truncated decision list or unreadable inventory still alarms.
+in-flight item is a captain-actionable hold or a parked or paused child. An open status decision
+that a captain hold covers (same id or key, or captain-hold-<id>-<n>) is that hold's own call, not a
+child question. Any live worker, blocked child, un-held in-flight work, uncovered child question,
+truncated decision list or unreadable inventory still alarms.
+The Claude quota context line (every account's 7d use and carrying accounts) is appended only to
+quota alarms (quota:, pool, quota-read); on other alarms it is left off.
 A carrying-account finding alarms once. While its weekly reset is within carrying_reset_hours
 and mean remaining weekly capacity across non-stale readings stays above carrying_pool_floor,
 later polls neither repeat it nor list it on other alarms. It re-alerts when either condition
@@ -164,7 +168,16 @@ def parked_on_captain_holds(summary, counts):
     if type(held) is not int or not isinstance(decisions, list) or not isinstance(holds, list):
         return False
     rows = [row for row in decisions if isinstance(row, dict)]
-    if counts['decisions_open'] > len(decisions) or any(row.get('source') == 'status' for row in rows):
+    if counts['decisions_open'] > len(decisions):
+        return False
+    # A status decision is the held work's own filed call when a captain hold covers its id or key
+    # (the hold's parent line is key captain-hold-<id>-<n>); any other one is a child asking the mate.
+    covered = {name for row in rows if row.get('verb') == 'captain-hold' for name in (row.get('id'), row.get('key'))}
+    def is_covered(row):
+        key = str(row.get('key'))
+        return (row.get('id') in covered or key in covered
+                or any(re.fullmatch(f'captain-hold-{re.escape(str(name))}-[0-9]+', key) for name in covered))
+    if any(row.get('source') == 'status' and not is_covered(row) for row in rows):
         return False
     captain = any(row.get('verb') == 'captain-hold' for row in rows)
     parked = sum(1 for row in holds if isinstance(row, dict) and row.get('source') == 'child-state'
@@ -321,7 +334,7 @@ def collect(cfg):
                              for row in rows if row['used_7d'] is not None
                              and (row['age_min'] is None or row['age_min'] < RETIRED_MINUTES))
         carriers = ', '.join(sorted(carrying)) if carrying else 'none (no successful Claude traffic in last 60 minutes)'
-        quota_info = f'Claude account pressure: {pressure}; Carrying Claude accounts: {carriers}'
+        quota_info = f'Claude quota context (not an alarm): {pressure}; Carrying Claude accounts: {carriers}'
         pool, ignored, carrying_keys = [], 0, {}
         for row in rows:
             name = row['account']
@@ -437,7 +450,8 @@ def check(channel):
             if channel == 'timer':
                 details += [f'Secondmate holding work silent, inventory not currently readable: {key[7:]}'
                             for key in held_silent]
-            if quota_info:
+            # Quota context rides only on quota alarms; on any other alarm it reads as pressure.
+            if quota_info and any(key.startswith(('quota:', 'pool', 'quota-read')) for key in current):
                 details.append(quota_info)
             text = '; '.join(details).replace('\n', ' ')
             if channel == 'timer':
