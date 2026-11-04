@@ -13,8 +13,8 @@
 # the marker and answer only in its visible conversation. The parent must notice
 # the missing correlated report without scraping that conversation, send exactly
 # one automatic recovery request asking for a repost through the parent channel
-# (held back, when config/wait-no-turns is present, while the mate waits on its
-# own open decision or blocker), and
+# (held back, when config/wait-no-turns is present, while the mate is actually
+# waiting: see fm_pending_reply_mate_wait_line), and
 # escalate once if the recovery turn also completes without a correlated
 # report. A repost held back that way for longer than a bound (see
 # FM_PENDING_REPLY_HOLD_ESCALATE_SECS) is escalated once instead of being
@@ -989,6 +989,17 @@ fm_pending_reply_hold_escalation_due() {  # <completed-epoch> <now-epoch>
   [ $(($2 - $1)) -ge "$bound" ]
 }
 
+# status_wait_line for the wait-no-turns hold, read without the lines supervisors
+# write into the mate's log under their reserved keys (this library's
+# escalations, the remote-reply continuity blocker), so one record's held
+# escalation never ends the wait the next record is held on. The open-key check
+# uses the cursor-backed fold: this runs once per open record every poll.
+fm_pending_reply_mate_wait_line() {  # <status-file>
+  status_wait_line "$1" \
+    "${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} remote-reply-continuity-" \
+    status_open_decisions_cached
+}
+
 # Deliver the recovery message once. Caller must hold phase awaiting_report with
 # turn completed and grace elapsed. Uses FM_PENDING_REPLY_SEND_HOOK when set
 # (tests), otherwise invokes fm-send with FM_PENDING_REPLY_EXISTING_CORR so a
@@ -1022,13 +1033,14 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   task_id=$(fm_pending_reply_get "$rec" task_id)
   # A remote mate's report may exist and simply not have been mirrored yet.
   fm_pending_reply_missing_report_is_evidence "$state" "$task_id" "$completed" || return 1
-  # config/wait-no-turns: a mate waiting on its own open decision or blocker
-  # is never poked. The recovery stays unattempted until the answer lands.
+  # config/wait-no-turns: a mate actually waiting (its latest event a declared
+  # pause, a captain hold or an open keyed decision) is never poked; a mate
+  # that merely carries open decisions while it keeps working is. The recovery stays unattempted until the answer lands.
   # Past the hold bound the record escalates once instead of waiting on, which
   # moves it out of awaiting_report so the held repost is not re-checked on
   # every later poll; before the bound the mate is simply left alone.
   if [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ]; then
-    if [ -n "$(status_own_open_decisions "$state/$task_id.status")" ]; then
+    if [ -n "$(fm_pending_reply_mate_wait_line "$state/$task_id.status")" ]; then
       if fm_pending_reply_hold_escalation_due "$completed" "$now"; then
         fm_pending_reply_maybe_escalate "$state" "$corr" held 2>/dev/null || true
       fi
@@ -1420,7 +1432,7 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
       [ -n "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || return 1
       fm_pending_reply_hold_escalation_due "$completed" "$(fm_pending_reply_now)" || return 1
       [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ] || return 1
-      [ -n "$(status_own_open_decisions "$state/$(fm_pending_reply_get "$rec" task_id).status")" ] || return 1
+      [ -n "$(fm_pending_reply_mate_wait_line "$state/$(fm_pending_reply_get "$rec" task_id).status")" ] || return 1
       fm_pending_reply_missing_report_is_evidence "$state" \
         "$(fm_pending_reply_get "$rec" task_id)" "$completed" || return 1
       ;;
