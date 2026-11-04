@@ -1,0 +1,6 @@
+ok - an office relaunches a task inside its authority record and keeps its office= line
+ok - an office relaunch keeps its place and is never deferred by wip=
+ok - a home that is not an office relaunches exactly as before, even with a stray record
+ok - an office relaunch refuses whatever its authority record does not cover, and launches nothing
+# all fm-office-relaunch tests passed
+rc=0
