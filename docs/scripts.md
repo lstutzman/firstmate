@@ -32,6 +32,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | [`fm-backlog-handoff.sh`](../bin/fm-backlog-handoff.sh) | Move queued backlog items into a secondmate home; its header owns route-specific wake outcomes and retries |
 | `fm-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
 | `fm-captain-hold.sh`     | Hold tasks for the captain, record the captain's answers, gate investigation completion, and report record divergence between the status log and the backlog |
+| [`fm-pending-reply-sweep.sh`](../bin/fm-pending-reply-sweep.sh) | Dry-run by default; with `--apply`, settle an escalated pending-reply record whose escalation decision is already closed in its parent status log; every still-open escalation is listed for `review` with its reason and closes only when named with `--apply --key <key>` and its delivery was confirmed; other phases, unproven, undelivered-closed and backlog-handoff-named records are never closed; its header owns the rules |
 | [`fm-decision-sweep.sh`](../bin/fm-decision-sweep.sh) | Dry-run by default; with `--apply`, mark an open `merge-handoff-<n>` decision resolved once PR `<n>`, the one PR URL it names, is merged; other decisions whose named PRs all merged are listed for `review` and close only when named with `--apply --key <key>`; closed-unmerged, open, unreadable and `[truncated]` decisions, `captain-hold-` and `pending-reply-` keys, and decisions without a PR URL are never closed; its header owns the rules |
 | `fm-decision-hold.sh`    | One-release compatibility shim mapping the retired decision commands onto fm-captain-hold.sh |
 | `fm-brief.sh`            | Scaffold ship (explicit `--mode`, plus the project's registered `--forge`), scout, secondmate-charter, office role-charter (`--office`), and Herdr-lab briefs, with Captain's intent and Firstmate spec subsections on ship/scout |
@@ -99,7 +100,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-watch-checkpoint.sh` | Run one bounded foreground watcher checkpoint for Codex-style supervision            |
 | `fm-watch.sh`            | Singleton-safe watcher: absorb benign wakes, detect stalled local-secondmate wake queues, and exit on actionable ones |
 | `fm-inactive-reconcile.sh` | Reconcile long-inactive direct crewmate terminal outcomes without forge access |
-| `fm-retention.sh`        | Daily archive pass: handled process-event sequences older than 72 h are copied into `state/archive/` and their results emptied |
+| `fm-retention.sh`        | Daily archive pass: handled process-event sequences older than 72 h are copied into `state/archive/` and their results emptied; settled resolved pending-reply records older than 7 days are archived there and removed; its header owns the rules |
 | `fm-afk-contract.sh`     | Own the away-or-quiet record's posture, schema, entry, read-back, archive, and cross-subsystem authority lock |
 | `fm-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
 | `fm-afk-launch.sh`       | Own away/quiet entry (same-turn record write, then read-back), exit, rollback, and any backend terminal lifecycle |

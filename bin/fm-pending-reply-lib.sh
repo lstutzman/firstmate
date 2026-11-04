@@ -39,6 +39,9 @@
 #   parent_status=          absolute path of parent state/<task_id>.status
 #   parent_status_scan_signature=
 #   request_summary=        short sanitized summary (no secrets by design)
+#   request_prs=            comma-separated GitHub PR URLs named anywhere in
+#                           the full request text (the summary is truncated),
+#                           empty when none; evidence for bin/fm-pending-reply-sweep.sh
 #   created_epoch=          when the expectation was created
 #   delivered_epoch=        when the marked request was confirmed delivered
 #                           (empty until delivery; delivery never resolves)
@@ -66,7 +69,8 @@
 #                           escalation was closed again (see the escalation
 #                           lifecycle note below); empty until then
 #   resolved_epoch=
-#   resolved_via=           status | document | helper | empty
+#   resolved_via=           status | document | helper | operator-resolve-key |
+#                           sweep | empty
 #   wrong_home_hits=        count of corr sightings under the secondmate home
 #   wrong_home_first_sighting= encoded path:line identity of the first sighting
 #   wrong_home_sightings=   comma-separated encoded path:line identities
@@ -91,6 +95,9 @@
 # fm-send --resolve-key (bin/fm-send.sh header): it must speak the close note
 # owned below (fm_pending_reply_resolved_note), because a bare answered: note is
 # not a reserved-key transition and would leave the decision open.
+# A close made outside the record that way (or by bin/fm-pending-reply-sweep.sh)
+# settles the record too, through fm_pending_reply_settle_closed_escalation;
+# otherwise it would stay escalated and be re-checked on every poll.
 #
 # Retryable undelivered escalation: a delivery-unknown escalation reports that
 # the request may never have reached the mate, so the request stays the owner's
@@ -151,6 +158,7 @@ _FM_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/n
 
 FM_PENDING_REPLY_SCHEMA='fm-pending-reply.v1'
 FM_PENDING_REPLY_CORR_RE='corr=[A-Fa-f0-9]{16}'
+FM_PENDING_REPLY_PR_URL_RE='https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+'
 FM_PENDING_REPLY_GRACE_DEFAULT=120
 FM_PENDING_REPLY_HOLD_ESCALATE_DEFAULT=86400
 
@@ -337,7 +345,7 @@ fm_pending_reply_embed_corr() {  # <message> <corr_id> <result-var>
 # Does not deliver anything. Fails if parent paths cannot be prepared.
 fm_pending_reply_create() {  # <parent-home> <state-dir> <task_id> <request-text>
   local parent_home=$1 state=$2 task_id=$3 request_text=$4
-  local dir rec corr now summary status_path tmp
+  local dir rec corr now summary status_path tmp request_prs
   [ -n "$parent_home" ] && [ -n "$state" ] && [ -n "$task_id" ] || return 2
   dir=$(fm_pending_reply_dir "$state")
   mkdir -p "$dir" || return 1
@@ -353,6 +361,7 @@ fm_pending_reply_create() {  # <parent-home> <state-dir> <task_id> <request-text
   fi
   now=$(fm_pending_reply_now)
   summary=$(fm_pending_reply_summarize "$request_text")
+  request_prs=$(printf '%s\n' "$request_text" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true)
   status_path="$state/${task_id}.status"
   # Prefer absolute parent_status when parent_home/state resolve.
   case "$status_path" in
@@ -372,6 +381,7 @@ parent_home=$parent_home
 parent_status=$status_path
 parent_status_scan_signature=
 request_summary=$summary
+request_prs=$request_prs
 created_epoch=$now
 delivered_epoch=
 phase=awaiting_report
@@ -1286,6 +1296,81 @@ EOF
   fi
   now=$(fm_pending_reply_now)
   fm_pending_reply_set "$rec" escalation_closed_epoch "$now"
+}
+
+# 0 when a live bin/fm-backlog-handoff.sh receiver-wake marker names <corr_id>:
+# that owner still needs the record to exist exactly as it is.
+fm_pending_reply_wake_marker_names() {  # <state-dir> <corr_id>
+  grep -qsF -- "$2" "$1"/.backlog-handoff-*.wake-pending
+}
+
+# The latest line in <status-file> that closed the escalation decision of
+# <corr_id> in this library's vocabulary (fm_pending_reply_resolved_note), or empty.
+fm_pending_reply_escalation_close_line() {  # <status-file> <corr_id>
+  local key line found=''
+  key=$(fm_pending_reply_escalation_key "$2")
+  while IFS= read -r line; do
+    [ "$(status_line_verb "$line")" = resolved ] || continue
+    [ "$(_fm_decision_key "$line" "")" = "$key" ] || continue
+    case "$(status_line_note "$line")" in pending-reply-resolved:*) found=$line ;; esac
+  done < <(grep -aF -- "[key=$key]" "$1" 2>/dev/null)
+  printf '%s' "$found"
+}
+
+# 0, printing the close line, when escalated record <corr_id> is provably settled
+# outside the record - by an operator fm-send --resolve-key, or by
+# bin/fm-pending-reply-sweep.sh. The proof is both facts at once: a close line
+# for the record's own key in its parent status
+# (fm_pending_reply_escalation_close_line), and that key absent from the
+# open-decision fold. Any other record - another phase, a decision still open,
+# no such close, one a backlog-handoff wake still names, or one never confirmed
+# delivered (that request stays its owner's to resend; see the retryable
+# undelivered escalation note above) - returns 1. Read-only.
+fm_pending_reply_closed_escalation_line() {  # <state-dir> <corr_id>
+  local state=$1 corr=$2 rec parent_status close
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ -f "$rec" ] || return 1
+  [ "$(fm_pending_reply_get "$rec" phase)" = escalated ] || return 1
+  [ -n "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || return 1
+  ! fm_pending_reply_wake_marker_names "$state" "$corr" || return 1
+  parent_status=$(fm_pending_reply_get "$rec" parent_status)
+  [ -n "$parent_status" ] || return 1
+  close=$(fm_pending_reply_escalation_close_line "$parent_status" "$corr")
+  [ -n "$close" ] || return 1
+  case $'\n'"$(status_open_decisions "$parent_status")" in
+    *$'\n'"$(fm_pending_reply_escalation_key "$corr")"$'\t'*) return 1 ;;
+  esac
+  printf '%s' "$close"
+}
+
+# Settle an escalated record that fm_pending_reply_closed_escalation_line proves
+# settled, so the watcher stops re-checking it every poll. Returns 0 only when
+# this call settled the record.
+fm_pending_reply_settle_closed_escalation() {  # <state-dir> <corr_id> <via>
+  # Lock handling as in fm_pending_reply_try_resolve.
+  local state=$1 corr=$2 lock rc=0
+  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+  STATE=$state
+  lock="$state/.pending-reply-$corr.lock"
+  # Deliberately undirected: bin/fm-wake-lib.sh is expanded once at the
+  # fm_pending_reply_try_resolve site.
+  . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
+  fm_lock_acquire_wait "$lock" || return 1
+  _fm_pending_reply_settle_closed_escalation_locked "$@" || rc=$?
+  fm_lock_release "$lock"
+  return "$rc"
+}
+
+_fm_pending_reply_settle_closed_escalation_locked() {  # <state-dir> <corr_id> <via>
+  local state=$1 corr=$2 via=$3 rec close at
+  close=$(fm_pending_reply_closed_escalation_line "$state" "$corr") || return 1
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  at=$(status_line_at_epoch "$close") || at=$(fm_pending_reply_now)
+  # phase is written last, so a failed write leaves a record the sweep retries.
+  fm_pending_reply_set "$rec" resolved_epoch "$at" || return 1
+  fm_pending_reply_set "$rec" resolved_via "$via" || return 1
+  fm_pending_reply_set "$rec" escalation_closed_epoch "$at" || return 1
+  fm_pending_reply_set "$rec" phase resolved
 }
 
 # Escalate once after a missed recovery report or failed delivery outcome.

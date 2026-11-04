@@ -9,6 +9,9 @@
 #   3. The pass runs at most once a day, --force overrides, and a failed
 #      archive removes nothing
 #   4. The per-pass bound drains a larger backlog over several passes
+#   5. A resolved pending-reply record past the bound, never escalated or with
+#      its escalation closed, is archived with its delivery marker and removed;
+#      every other record stays, and a second pass changes nothing
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -138,7 +141,56 @@ test_pass_is_bounded_per_run() (
   pass "a larger backlog drains over several bounded passes"
 )
 
+# One pending-reply record; extra key=value args override (last line wins).
+add_record() {  # <home> <corr> <phase> <resolved-epoch> [key=value...]
+  local dir="$1/state/pending-replies" corr=$2
+  mkdir -p "$dir"
+  {
+    printf 'schema=fm-pending-reply.v1\ncorr_id=%s\ntask_id=mate\nphase=%s\n' "$corr" "$3"
+    printf 'escalated_epoch=\nescalation_closed_epoch=\nresolved_epoch=%s\n' "$4"
+    shift 4
+    printf '%s\n' "$@"
+  } > "$dir/$corr"
+}
+
+# FM_RETENTION_NOW=2000000, so 2000000 - 604800 = 1395200 is the 7-day bound.
+test_pending_reply_prune_archives_only_settled_old_records() (
+  local home out dir corr
+  home=$(new_home pending-replies)
+  dir="$home/state/pending-replies"
+  add_record "$home" b000000000000001 resolved 1000000
+  printf 'confirmed=1\n' > "$dir/.delivery-confirmed-b000000000000001"
+  add_record "$home" b000000000000002 resolved 1000000 escalated_epoch=900000 escalation_closed_epoch=1000000
+  add_record "$home" b000000000000003 resolved 1900000
+  add_record "$home" b000000000000004 resolved 1000000 escalated_epoch=900000
+  add_record "$home" b000000000000005 escalated '' escalated_epoch=900000
+  add_record "$home" b000000000000006 awaiting_report ''
+  add_record "$home" b000000000000007 resolved 1000000
+  printf 'pending:b000000000000007\n' > "$home/state/.backlog-handoff-mate.wake-pending"
+  out=$(run_retention "$home" --force) || fail "retention failed: $out"
+  assert_contains "$out" "pending-replies archived 2 record(s)" "two settled old records are archived"
+  for corr in b000000000000001 b000000000000002; do
+    [ ! -e "$dir/$corr" ] || fail "settled old record $corr must leave the live store"
+    tar -tzf "$home/state/archive"/pending-replies-*.tar.gz | grep -qx "$corr" || fail "archive must hold $corr"
+  done
+  [ ! -e "$dir/.delivery-confirmed-b000000000000001" ] || fail "its delivery marker leaves with the record"
+  tar -tzf "$home/state/archive"/pending-replies-*.tar.gz | grep -qx '.delivery-confirmed-b000000000000001' \
+    || fail "the archive must hold the delivery marker"
+  [ -f "$dir/b000000000000003" ] || fail "a record resolved within the bound must stay"
+  [ -f "$dir/b000000000000004" ] || fail "a resolved record with an unclosed escalation must stay"
+  [ -f "$dir/b000000000000005" ] || fail "an escalated record must never be touched"
+  [ -f "$dir/b000000000000006" ] || fail "an awaiting record must never be touched"
+  [ -f "$dir/b000000000000007" ] || fail "a record a backlog-handoff wake names must stay"
+  # shellcheck source=bin/fm-pending-reply-lib.sh
+  . "$ROOT/bin/fm-pending-reply-lib.sh"
+  ! fm_pending_reply_corr_reusable "$home/state" b000000000000001 mate || fail "a pruned correlation must not be reusable"
+  out=$(run_retention "$home" --force) || fail "second pass failed: $out"
+  [ "$(archive_count "$home" pending-replies)" = 1 ] || fail "an idempotent pass must not archive again"
+  pass "settled resolved records past the bound are archived and removed; every other record stays"
+)
+
 test_procevent_archive_truncates_old_handled_sequences || exit 1
+test_pending_reply_prune_archives_only_settled_old_records || exit 1
 test_archived_sequences_are_not_reallocated || exit 1
 test_cadence_and_failed_archive || exit 1
 test_pass_is_bounded_per_run || exit 1
