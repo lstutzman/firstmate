@@ -40,10 +40,15 @@
 # that project's registry entry names in this home.
 #
 # Admission digest: for admission config <name>, the sha256 of the lines
-# "<sha256 of file>  admission/<file>\n" for config/admission/<name> and then,
-# when it exists, config/admission/<name>.rules (the conventional path-rule file
-# a bin/fm-reserved-classify.sh classifier reads). It lets an office's merge
-# notice a local edit to its own classifier config or rules.
+# "<sha256 of file>  <path>\n" for config/admission/<name> (path
+# admission/<name>) and then for each rules file its classifier reads: every
+# file named by a "--rules <path>" argument on the config's command= line, in
+# order, which must be an absolute path to a readable regular file; or, when
+# command= has no --rules argument, config/admission/<name>.rules if it exists
+# (the conventional path-rule file of bin/fm-reserved-classify.sh). A rules
+# file under config/admission/ is listed as admission/<file>, any other by its
+# absolute path. It lets an office's merge notice a local edit to its own
+# classifier config or rules.
 #
 # Public functions:
 #   fm_office_detect <home> <data-dir>
@@ -55,8 +60,9 @@
 #       detect, then load: 0 with FM_OFFICE_ID empty (not an office) or set (an
 #       office with its authority loaded), or 1 with FM_OFFICE_ERROR (refuse).
 #   fm_office_admission_digest <config-dir> <name>
-#       prints the digest above, or returns 1 when config/admission/<name> is
-#       missing or unreadable.
+#       prints the digest above, or returns 1 when config/admission/<name> or a
+#       rules file it names is missing or unreadable, or a --rules path is not
+#       absolute.
 #   fm_office_in <item> <comma-list>
 #   fm_office_live_tasks <state-dir> <own-id>
 #       sets FM_OFFICE_LIVE and FM_OFFICE_LIVE_IDS to this home's task records
@@ -139,16 +145,28 @@ fm_office_detect() {  # <home> <data-dir>
 }
 
 fm_office_admission_digest() {  # <config-dir> <name>
-  local dir=$1/admission name=$2 f sum listing=
-  for f in "$name" "$name.rules"; do
-    if [ ! -e "$dir/$f" ] && [ ! -L "$dir/$f" ]; then
-      [ "$f" = "$name" ] && return 1
-      continue
-    fi
-    [ -f "$dir/$f" ] && [ ! -L "$dir/$f" ] && [ -r "$dir/$f" ] || return 1
-    sum=$(fm_role_sha256_stdin < "$dir/$f")
+  local dir=$1/admission name=$2 f line sum listing='' words i
+  local -a files=()
+  [ -f "$dir/$name" ] && [ ! -L "$dir/$name" ] && [ -r "$dir/$name" ] || return 1
+  files=("$dir/$name")
+  line=$(grep -m 1 '^command=' "$dir/$name") || line=
+  read -r -a words <<< "${line#command=}"
+  for ((i = 0; i < ${#words[@]}; i++)); do
+    [ "${words[$i]}" = --rules ] || continue
+    f=${words[$((i + 1))]:-}
+    case "$f" in /*) files+=("$f") ;; *) return 1 ;; esac
+  done
+  if [ "${#files[@]}" -eq 1 ] && { [ -e "$dir/$name.rules" ] || [ -L "$dir/$name.rules" ]; }; then
+    files+=("$dir/$name.rules")
+  fi
+  for f in "${files[@]}"; do
+    [ -f "$f" ] && [ ! -L "$f" ] && [ -r "$f" ] || return 1
+    sum=$(fm_role_sha256_stdin < "$f")
     [ -n "$sum" ] || return 1
-    listing="$listing$sum  admission/$f
+    case "$f" in
+      "$dir"/*) f=admission/${f#"$dir"/} ;;
+    esac
+    listing="$listing$sum  $f
 "
   done
   printf '%s' "$listing" | fm_role_sha256_stdin

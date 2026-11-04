@@ -147,6 +147,27 @@ test_admission_digest() {
   pass "the admission digest covers the config and its rules file"
 }
 
+test_admission_digest_follows_rules_argument() {
+  local c="$TMP_ROOT/digest-rules" a b
+  mkdir -p "$c/admission" "$c/elsewhere"
+  digest() { bash -c '. "$1"; fm_office_admission_digest "$2" "$3"' _ "$LIB" "$c" "$1"; }
+  printf 'bin/** authority\n' > "$c/elsewhere/fleet.rules"
+  printf 'command=/x/fm-reserved-classify.sh --rules %s\nclasses=authority\n' "$c/elsewhere/fleet.rules" > "$c/admission/fleet-app"
+  a=$(digest fleet-app) || fail "a config naming an absolute --rules file produced no digest"
+  printf 'AGENTS.md authority\n' > "$c/elsewhere/fleet.rules"
+  b=$(digest fleet-app)
+  assert_not_equals "$a" "$b" "editing the --rules file outside the conventional name changes the digest"
+  printf 'unrelated authority\n' > "$c/admission/fleet-app.rules"
+  assert_equals "$b" "$(digest fleet-app)" "with --rules, the conventional rules file is not what is pinned"
+  printf 'command=/x/fm-reserved-classify.sh --rules elsewhere/fleet.rules\nclasses=authority\n' > "$c/admission/rel"
+  digest rel >/dev/null && fail "a relative --rules path produced a digest"
+  printf 'command=/x/fm-reserved-classify.sh --rules %s\nclasses=authority\n' "$c/elsewhere/missing.rules" > "$c/admission/gone"
+  digest gone >/dev/null && fail "a missing --rules file produced a digest"
+  printf 'command=/x/fm-reserved-classify.sh --rules\nclasses=authority\n' > "$c/admission/bare"
+  digest bare >/dev/null && fail "a --rules with no path produced a digest"
+  pass "the admission digest pins the --rules file the classifier reads and refuses a relative or missing one"
+}
+
 test_live_tasks() {
   local s="$TMP_ROOT/live-state" out
   mkdir -p "$s"
@@ -165,4 +186,5 @@ test_unpublished_or_unproven_record_refuses
 test_valid_record_loads
 test_malformed_record_refuses
 test_admission_digest
+test_admission_digest_follows_rules_argument
 test_live_tasks
