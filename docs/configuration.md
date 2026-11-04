@@ -1196,6 +1196,10 @@ Session start runs `bin/fm-office.sh ensure`, which prints one `OFFICE:` line pe
 An absent `data/offices.md` means no offices.
 `list` and `ensure` only read: they seed, publish, spawn and grant nothing.
 
+An office acts only inside the authority record the main home publishes into it as `config/office-authority`, proven by the receipt `config/.fm-inherit-office-authority.generation`; `bin/fm-office-authority-lib.sh`'s header owns the record grammar, the receipt rule, and the admission digest.
+In an office home, `bin/fm-spawn.sh` and `bin/fm-pr-merge.sh` refuse whatever that record does not cover, and refuse everything when the record is missing or unproven or the home's office signals disagree; their headers own each check.
+These checks only refuse, and a home that is not an office never runs them.
+
 ### Office status (data/office-status.json)
 
 `bin/fm-office.sh status` runs inside an office home and projects that home's own work onto `data/office-status.json`, the file the fleet app's Status page pulls.
@@ -1241,10 +1245,6 @@ It writes `state/office-status.check.sh` (mode 0700, a shim that exports the hom
 Running it again rewrites the same bytes.
 `bin/fm-office.sh disarm-status` retires the check through `bin/fm-check-unregister.sh office-status`.
 Both refuse, with one stderr line and exit 1, in a home without a `.fm-office` marker.
-
-An office acts only inside the authority record the main home publishes into it as `config/office-authority`, proven by the receipt `config/.fm-inherit-office-authority.generation`; `bin/fm-office-authority-lib.sh`'s header owns the record grammar, the receipt rule, and the admission digest.
-In an office home, `bin/fm-spawn.sh` and `bin/fm-pr-merge.sh` refuse whatever that record does not cover, and refuse everything when the record is missing or unproven or the home's office signals disagree; their headers own each check.
-These checks only refuse, and a home that is not an office never runs them.
 
 ## Harness support
 
