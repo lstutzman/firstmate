@@ -17,13 +17,12 @@
 # docs/captain-hold-lifecycle.md owns the accepted merge-to-cleanup residual.
 #
 # In an office home (bin/fm-office-authority-lib.sh owns detection and the
-# authority record), a local landing is also refused, before the task record is
-# read, when the home's office signals disagree or its published authority
-# record is missing or unproven; and, once the record is read, for a project not
-# in the record's merge=, and for a task whose record lacks yolo=on or names
-# another office=. These checks only refuse, and a home that is not an office
-# never runs them. This entrypoint runs no reserved-class classifier, so an
-# office local landing is bounded by merge= alone.
+# authority record), an office never lands locally: an office merges only green
+# PRs its reserved-class classifier admits, and a local landing has neither, so
+# the parent home lands local-only work. The refusal comes before the task
+# record is read; a home whose office signals disagree or whose published
+# authority record is missing or unproven reports that reason instead. These
+# checks only refuse, and a home that is not an office never runs them.
 # Usage: fm-merge-local.sh <task-id>
 set -eu
 
@@ -60,14 +59,16 @@ META="$STATE/$ID.meta"
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_lease_forbid_branch "local-only landing (fm-merge-local)"
 
-# Office authority: an office home may land locally only inside its published
-# authority record, so resolve it before the task record is read. The project
-# checks follow once the project is known. A home that is not an office skips
-# all of it.
+# Office authority: an office home never lands locally, so refuse before the
+# task record is read. A home that is not an office skips all of it.
 # shellcheck source=bin/fm-office-authority-lib.sh
 . "$SCRIPT_DIR/fm-office-authority-lib.sh"
 if ! fm_office_resolve "$FM_HOME" "${FM_DATA_OVERRIDE:-$FM_HOME/data}" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; then
   echo "error: local merge refused: $FM_OFFICE_ERROR" >&2
+  exit 1
+fi
+if [ -n "$FM_OFFICE_ID" ]; then
+  echo "error: local merge refused: office $FM_OFFICE_ID never lands local-only work; its parent home lands it" >&2
   exit 1
 fi
 
@@ -97,23 +98,6 @@ fi
 PROJ=$(grep '^project=' "$META" | cut -d= -f2-)
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ "$MODE" = local-only ] || { echo "error: task $ID is mode=$MODE, not local-only; merge PR tasks with bin/fm-pr-merge.sh <id> <PR url> after approval" >&2; exit 1; }
-
-# Office authority, project-dependent part: an office lands only a project its
-# record names in merge=, for a task it spawned itself with yolo on, since an
-# office is never the attended captain who would otherwise release the hold.
-if [ -n "$FM_OFFICE_ID" ]; then
-  office_refuse() {
-    echo "error: local merge refused: office $FM_OFFICE_ID $1" >&2
-    exit 1
-  }
-  LAND_OFFICE_PROJECT=$(basename "$PROJ")
-  { [ -n "$LAND_OFFICE_PROJECT" ] && fm_office_in "$LAND_OFFICE_PROJECT" "$FM_OFFICE_MERGE"; } \
-    || office_refuse "may merge only ${FM_OFFICE_MERGE:-no project} (its authority record's merge=), not ${LAND_OFFICE_PROJECT:-a task with no recorded project}"
-  [ "$(sed -n 's/^yolo=//p' "$META" | head -n 1)" = on ] \
-    || office_refuse "merges only a task spawned with yolo on, and task $ID was not"
-  [ "$(sed -n 's/^office=//p' "$META" | head -n 1)" = "$FM_OFFICE_ID" ] \
-    || office_refuse "merges only a task it spawned itself, and task $ID's record does not name office=$FM_OFFICE_ID"
-fi
 
 default_branch() {
   local ref branch

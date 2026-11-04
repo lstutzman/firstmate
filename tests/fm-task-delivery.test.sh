@@ -501,11 +501,11 @@ EOF
   pass "fm-merge-local: a registry change cannot redirect an in-flight local-only task"
 }
 
-# Office authority (bin/fm-office-authority-lib.sh): an office home lands a
-# local-only task only inside its published authority record. Each case builds
-# a home, a project clone "proj" and a task whose ship branch fast-forwards, so
-# a refusal is judged by the default branch not moving, and a home that is not
-# an office is judged against the same fixture merging as before.
+# Office authority (bin/fm-office-authority-lib.sh): an office home never lands
+# a local-only task; its parent home does. Each case builds a home, a project
+# clone "proj" and a task whose ship branch fast-forwards, so a refusal is
+# judged by the default branch not moving, and a home that is not an office is
+# judged against the same fixture merging as before.
 # make_office_local_case <name> [record-line...]: echoes "<home>|<proj>|<id>";
 # record lines replace the default line with their key. The home is the office
 # "mate-x", which merges proj, and the task was spawned by it with yolo on.
@@ -592,17 +592,11 @@ break_yolo() { sed -i.bak 's/^yolo=on$/yolo=off/' "$1/state/$OFFICE_LOCAL_ID.met
 break_foreign() { sed -i.bak 's/^office=.*/office=navigator/' "$1/state/$OFFICE_LOCAL_ID.meta"; }
 break_unowned() { sed -i.bak '/^office=/d' "$1/state/$OFFICE_LOCAL_ID.meta"; }
 
-test_local_merge_office_lands_inside_its_record() {
-  local rec proj
-  rec=$(make_office_local_case office-local-lands)
-  IFS='|' read -r _ proj _ <<EOF
-$rec
-EOF
-  run_office_local_merge "$rec"
-  expect_code 0 "$RC" "an office landing a project its record merges was refused: $OUT"
-  assert_contains "$OUT" "merged fm/$OFFICE_LOCAL_ID into local" "the office landing did not report the merge"
-  [ -f "$proj/change" ] || fail "the office landing did not fast-forward the default branch"
-  pass "fm-merge-local: an office lands a local-only task its authority record covers"
+OFFICE_LOCAL_NEVER="office mate-x never lands local-only work; its parent home lands it"
+
+test_local_merge_office_never_lands_inside_its_record() {
+  BREAK='' office_local_refuses office-local-healthy "healthy record that merges proj" "$OFFICE_LOCAL_NEVER"
+  pass "fm-merge-local: an office is refused a local landing even inside its authority record"
 }
 
 test_local_merge_non_office_homes_land_as_before() {
@@ -640,15 +634,15 @@ test_local_merge_office_refuses_outside_its_record() {
   BREAK=break_heading office_local_refuses office-local-no-heading "marker without heading" 'lacks the "# Office authority" heading'
   BREAK=break_marker office_local_refuses office-local-no-marker "heading without marker" "no .fm-office marker"
   BREAK=break_charter office_local_refuses office-local-bad-charter "unreadable charter" "cannot be read"
-  BREAK='' office_local_refuses office-local-other-project "project not in merge=" "may merge only other" \
+  BREAK='' office_local_refuses office-local-other-project "project not in merge=" "$OFFICE_LOCAL_NEVER" \
     dispatch=proj,other merge=other admission-sha256=other:0000000000000000000000000000000000000000000000000000000000000000
-  BREAK='' office_local_refuses office-local-merge-none "merge=none" "may merge only no project" merge=none admission-sha256=
-  BREAK='' office_local_refuses office-local-via "project handed to another merger" "may merge only no project" \
+  BREAK='' office_local_refuses office-local-merge-none "merge=none" "$OFFICE_LOCAL_NEVER" merge=none admission-sha256=
+  BREAK='' office_local_refuses office-local-via "project handed to another merger" "$OFFICE_LOCAL_NEVER" \
     merge=none merge-via=proj=slarti admission-sha256=
-  BREAK=break_yolo office_local_refuses office-local-no-yolo "yolo off" "merges only a task spawned with yolo on"
-  BREAK=break_foreign office_local_refuses office-local-foreign "another office's task" "does not name office=mate-x"
-  BREAK=break_unowned office_local_refuses office-local-unowned "task with no office=" "does not name office=mate-x"
-  pass "fm-merge-local: an office refuses every landing its authority record does not cover"
+  BREAK=break_yolo office_local_refuses office-local-no-yolo "yolo off" "$OFFICE_LOCAL_NEVER"
+  BREAK=break_foreign office_local_refuses office-local-foreign "another office's task" "$OFFICE_LOCAL_NEVER"
+  BREAK=break_unowned office_local_refuses office-local-unowned "task with no office=" "$OFFICE_LOCAL_NEVER"
+  pass "fm-merge-local: an office refuses every local landing, giving the record's own reason when it is broken"
 }
 
 # A registered name may contain spaces, and the lookup must match the whole
@@ -1858,7 +1852,7 @@ test_promotion_delivers_the_real_definition_of_done
 test_promotion_persists_the_selected_ship_branch
 test_promotion_branch_command_is_shell_safe
 test_local_merge_uses_the_recorded_ship_branch
-test_local_merge_office_lands_inside_its_record
+test_local_merge_office_never_lands_inside_its_record
 test_local_merge_non_office_homes_land_as_before
 test_local_merge_office_refuses_outside_its_record
 test_project_mode_matches_whole_multiword_names
