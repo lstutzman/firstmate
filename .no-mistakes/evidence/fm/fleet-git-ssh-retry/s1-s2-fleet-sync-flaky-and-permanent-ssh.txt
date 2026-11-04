@@ -1,0 +1,16 @@
+## S1: fm-fleet-sync.sh alpha; fake ssh refuses the key on the first 2 connections (default backoff 2s, 5s)
+before: origin main 1506e6b, clone main 5988aa2
+alpha: synced 5988aa2..1506e6b
+exit=0  elapsed=9s
+14:19:44 connection 1: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+14:19:46 connection 2: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+14:19:51 connection 3: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+after:  origin main 1506e6b, clone main 1506e6b
+
+## S2: fm-fleet-sync.sh alpha; fake ssh refuses every connection
+alpha: skipped: fetch failed: git@github.com: Permission denied (publickey).
+exit=0  elapsed=8s
+14:19:53 connection 1: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+14:19:55 connection 2: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+14:20:00 connection 3: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+after:  origin main 540deb4, clone main (unchanged) 1506e6b

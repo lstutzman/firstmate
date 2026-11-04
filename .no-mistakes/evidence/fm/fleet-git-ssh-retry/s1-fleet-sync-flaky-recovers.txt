@@ -1,0 +1,10 @@
+### Scenario 1: fm-fleet-sync.sh, GitHub refuses the key on the first 2 ssh connections
+$ fm-fleet-sync.sh notes   (local head 62686ce, remote head dc0189f)
+notes: synced 62686ce..dc0189f
+exit=0
+ssh connections attempted: 4
+call 1: -G -o SendEnv=GIT_PROTOCOL git@github.com
+call 2: git@github.com git-upload-pack 'org/notes.git'
+call 3: -G -o SendEnv=GIT_PROTOCOL git@github.com
+call 4: git@github.com git-upload-pack 'org/notes.git'
+local head after sync: dc0189f

@@ -1,0 +1,32 @@
+## S3: fm-review-diff.sh t1 --stat (set -eu script, bare top-level fetch); fake ssh refuses the first 2 connections
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-git-retry: ssh connection failed (attempt 1/3); retrying in 2s
+fm-git-retry: ssh connection failed (attempt 2/3); retrying in 5s
+diff base: origin/main
+ f | 1 +
+ 1 file changed, 1 insertion(+)
+exit=0  elapsed=9s
+14:20:15 connection 1: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+14:20:17 connection 2: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+14:20:22 connection 3: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+worktree origin/main now 9230858, origin main 9230858
+
+## S3b: same, fake ssh refuses every connection (git error must be visible, nonzero exit)
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+fm-git-retry: ssh connection failed (attempt 1/3); retrying in 0s
+fm-git-retry: ssh connection failed (attempt 2/3); retrying in 0s
+git@github.com: Permission denied (publickey).
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+exit=128
+14:20:24 connection 1: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+14:20:24 connection 2: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'
+14:20:24 connection 3: -o SendEnv=GIT_PROTOCOL fakehost git-upload-pack '/tmp/fm-retry-lab.8LhPgX/origin.git'

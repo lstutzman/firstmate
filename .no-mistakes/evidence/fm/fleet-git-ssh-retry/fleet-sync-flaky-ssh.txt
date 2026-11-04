@@ -1,0 +1,28 @@
+## S0 baseline (base commit 8556050, no retry): one refusal
+$ /tmp/tmp.yEM43TpaG2/base/bin/fm-fleet-sync.sh base0   [refusals queued: 1; local dc0189f, remote b22bb2e]
+base0: skipped: fetch failed: git@github.com: Permission denied (publickey).
+exit=0  elapsed=0s
+ssh connections: 1
+  call 1: -o SendEnv=GIT_PROTOCOL git@github.com git-upload-pack 'org/notes.git'
+local head after: dc0189f
+
+## S1 change: two refusals then GitHub accepts
+$ {run-worktree}/bin/fm-fleet-sync.sh s1   [refusals queued: 2; local b22bb2e, remote 7298abf]
+s1: synced b22bb2e..7298abf
+exit=0  elapsed=3s
+ssh connections: 3
+  call 1: -o SendEnv=GIT_PROTOCOL git@github.com git-upload-pack 'org/notes.git'
+  call 2: -o SendEnv=GIT_PROTOCOL git@github.com git-upload-pack 'org/notes.git'
+  call 3: -o SendEnv=GIT_PROTOCOL git@github.com git-upload-pack 'org/notes.git'
+local head after: 7298abf
+
+## S2 change: GitHub refuses on every connection (bounded: 3 attempts)
+$ {run-worktree}/bin/fm-fleet-sync.sh s2   [refusals queued: 99; local 7298abf, remote 933380d]
+s2: skipped: fetch failed: fm-git-retry: ssh connection failed (attempt 1/3); retrying in 1s
+exit=0  elapsed=3s
+ssh connections: 3
+  call 1: -o SendEnv=GIT_PROTOCOL git@github.com git-upload-pack 'org/notes.git'
+  call 2: -o SendEnv=GIT_PROTOCOL git@github.com git-upload-pack 'org/notes.git'
+  call 3: -o SendEnv=GIT_PROTOCOL git@github.com git-upload-pack 'org/notes.git'
+local head after: 7298abf
+

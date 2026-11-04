@@ -1,0 +1,10 @@
+ok - ssh failure is retried and then succeeds
+ok - publickey denial is retried
+ok - exit 255 is retried
+ok - push rejection is not retried and its stderr and status survive
+ok - missing ref is not retried
+ok - attempt limit holds (3 tries) and the last status is returned
+ok - FM_GIT_RETRY_ATTEMPTS is honored
+ok - a bare call under set -e still retries and the script continues
+ok - a bare failing call under set -e retries, prints git's stderr and then exits
+exit=0
