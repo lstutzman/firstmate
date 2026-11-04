@@ -250,10 +250,11 @@ surgeon_problem() {
     || { printf 'officer %s: writes: linear needs area: <the team PC area label every item carries>\n' "$id"; return; }
 }
 
-# office_read_problem <officer-id> <office> <field>: prints why <office>, named in the registry
-# <field>, cannot read this officer's digest, or nothing.
+# office_read_problem <officer-id> <office> <field> [main]: prints why <office>, named in the registry
+# <field>, cannot read this officer's digest, or nothing. A consumer office may read only the
+# :high lane when main, given as the fourth argument, also reads the digest.
 office_read_problem() {
-  local id=$1 c=$2 field=$3 office
+  local id=$1 c=$2 field=$3 main_reads=${4:-} office
   office=
   [[ "$c" =~ ^[a-z0-9-]+$ ]] && office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
   [ -n "$office" ] \
@@ -262,7 +263,10 @@ office_read_problem() {
   srcs=",$(line_field "$office" sources | tr -d ' '),"
   case "$srcs" in
     *",lane:$id,"*) ;;
-    *",lane:$id:high,"*) check=office-lane-$id-high ;;
+    *",lane:$id:high,"*)
+      [ "$field" = consumer ] && [ "$main_reads" != main ] \
+        && { printf 'officer %s: consumer office %s lists only sources: lane:%s:high, which drops the other findings unless main is also a consumer\n' "$id" "$c" "$id"; return; }
+      check=office-lane-$id-high ;;
     *) printf 'officer %s: %s office %s does not list sources: lane:%s (or lane:%s:high), so it never reads this digest\n' "$id" "$field" "$c" "$id" "$id"; return ;;
   esac
   secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" \
@@ -276,14 +280,15 @@ office_read_problem() {
 # consumer_problem <line>: prints why a valid line's consumer: or start-home: list misses an
 # office that reads its digest, or nothing.
 consumer_problem() {
-  local line=$1 id c problem
+  local line=$1 id c problem main_reads=
   local -a offices=()
   [[ "$line" =~ $REGISTRY_LINE_RE ]] || return 0
   id=${BASH_REMATCH[1]}
   IFS=', ' read -ra offices <<<"$(line_field "$line" consumer || true)"
+  for c in "${offices[@]}"; do [ "$c" = main ] && main_reads=main; done
   for c in "${offices[@]}"; do
     [ "$c" = main ] && continue
-    problem=$(office_read_problem "$id" "$c" consumer)
+    problem=$(office_read_problem "$id" "$c" consumer "$main_reads")
     [ -z "$problem" ] || { printf '%s\n' "$problem"; return; }
   done
   offices=()
