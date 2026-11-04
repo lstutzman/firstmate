@@ -344,6 +344,31 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
   fm_backend_herdr_presentation_default_supported "$state_dir"
 }
 
+# fm_backend_herdr_office_label: the bare, capitalised role name ("Quartermaster")
+# an office's workspace carries instead of "2ndmate-<id>". The home is an office
+# only when it holds an .fm-office marker naming the same id as its
+# .fm-secondmate-home marker. The role is the one the parent's data/offices.md
+# registers for that id (the parent home is named by .fm-secondmate-parent), so
+# a new office role follows with no list to extend; an unreadable registry falls
+# back to the office id, which is the role for every office seeded so far.
+# Prints nothing for a non-office home. Any word that is not a plain name is
+# ignored so a damaged record can never put odd text in a workspace label.
+fm_backend_herdr_office_label() {  # <secondmate-id>
+  local id=$1 office parent registry role
+  [ -f "$FM_HOME/.fm-office" ] || return 0
+  office=$(tr -d '[:space:]' < "$FM_HOME/.fm-office" 2>/dev/null) || return 0
+  [ -n "$office" ] && [ "$office" = "$id" ] || return 0
+  role=$id
+  parent=$(sed -n 's/^parent_home=//p' "$FM_HOME/.fm-secondmate-parent" 2>/dev/null | head -n 1)
+  registry=$parent/data/offices.md
+  if [ -n "$parent" ] && [ -r "$registry" ]; then
+    role=$(grep -F -- "- $id - " "$registry" 2>/dev/null | head -n 1 | sed -n 's/.*(role: *\([A-Za-z0-9._-]*\);.*/\1/p')
+    [ -n "$role" ] || role=$id
+  fi
+  case "$role" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
+  printf '%s' "$role" | awk '{print toupper(substr($0,1,1)) substr($0,2)}' | tr -d '\n'
+}
+
 # fm_backend_herdr_workspace_label: the per-firstmate-HOME herdr workspace
 # label (docs/herdr-backend.md "Default task container shape"). The PRIMARY home (no
 # secondmate marker) resolves to the constant "firstmate", byte-identical to
@@ -358,10 +383,15 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
 # when the PRIMARY spawns that secondmate (its own process's FM_HOME still
 # names the primary at that point) - see fm-spawn.sh's herdr case arm.
 fm_backend_herdr_workspace_label() {
-  local marker="$FM_HOME/$FM_BACKEND_HERDR_SECONDMATE_MARKER" id
+  local marker="$FM_HOME/$FM_BACKEND_HERDR_SECONDMATE_MARKER" id office
   if [ -f "$marker" ]; then
     id=$(tr -d '[:space:]' < "$marker" 2>/dev/null)
     if [ -n "$id" ]; then
+      office=$(fm_backend_herdr_office_label "$id")
+      if [ -n "$office" ]; then
+        printf '%s' "$office"
+        return 0
+      fi
       printf '2ndmate-%s' "$id"
       return 0
     fi
@@ -1516,7 +1546,7 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
       end;
     def is_top_level_parent:
       (.label | type) == "string"
-      and ((.label == "firstmate") or (.label | test("^2ndmate-[^/]+$")));
+      and ((.label == "firstmate") or (.label | test("^2ndmate-[^/]+$")) or (.label | test("^[A-Z][A-Za-z0-9._-]*$")));
     def is_new_child:
       (.label | type) == "string"
       and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));

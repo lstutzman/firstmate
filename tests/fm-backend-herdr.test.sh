@@ -364,6 +364,36 @@ test_workspace_label_secondmate_marker_trims_whitespace() {
   pass "fm_backend_herdr_workspace_label: trims whitespace around the marker's secondmate id"
 }
 
+test_workspace_label_office_home_uses_bare_registered_role() {
+  local parent home out
+  parent="$TMP_ROOT/office-parent"; mkdir -p "$parent/data"
+  printf -- '- qm-office - Run the fleet. (role: quartermaster; runs-on: slartibartfast; wip: 3; added 2026-11-04)\n- nav - Lead. (role: navigator; runs-on: slartibartfast; added 2026-11-04)\n' > "$parent/data/offices.md"
+  home="$TMP_ROOT/office-home"; mkdir -p "$home"
+  printf 'qm-office\n' > "$home/.fm-secondmate-home"
+  printf 'qm-office\n' > "$home/.fm-office"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "Quartermaster" ] || fail "an office home should resolve to its capitalised registered role, got '$out'"
+  # No registry to read: the office id stands in for the role.
+  rm -f "$home/.fm-secondmate-parent"
+  printf 'alchemist\n' > "$home/.fm-secondmate-home"; printf 'alchemist\n' > "$home/.fm-office"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "Alchemist" ] || fail "an office with no readable registry should use its id, got '$out'"
+  pass "fm_backend_herdr_workspace_label: an office home resolves to the bare capitalised role"
+}
+
+test_workspace_label_non_office_secondmate_keeps_2ndmate_label() {
+  local home out
+  home="$TMP_ROOT/plain-sm-with-mismatched-office"; mkdir -p "$home"
+  printf 'plain-sm\n' > "$home/.fm-secondmate-home"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "2ndmate-plain-sm" ] || fail "a non-office second mate must keep '2ndmate-<id>', got '$out'"
+  printf 'someone-else\n' > "$home/.fm-office"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "2ndmate-plain-sm" ] || fail "an .fm-office marker naming another id is not an office, got '$out'"
+  pass "fm_backend_herdr_workspace_label: a non-office second mate keeps '2ndmate-<id>'"
+}
+
 test_workspace_label_empty_marker_falls_back_to_primary() {
   local home
   home="$TMP_ROOT/secondmate-home-empty"; mkdir -p "$home"
@@ -5900,6 +5930,8 @@ test_version_check_refuses_missing_herdr
 test_workspace_label_primary_home_no_marker
 test_workspace_label_secondmate_home_uses_marker_id
 test_workspace_label_secondmate_marker_trims_whitespace
+test_workspace_label_office_home_uses_bare_registered_role
+test_workspace_label_non_office_secondmate_keeps_2ndmate_label
 test_workspace_label_empty_marker_falls_back_to_primary
 test_workspace_label_different_secondmates_get_different_labels
 test_cli_helper_sets_env_and_appends_trailing_session_flag
