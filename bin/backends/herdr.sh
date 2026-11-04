@@ -93,6 +93,12 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 # shellcheck source=bin/fm-agent-process-lib.sh
 . "$FM_BACKEND_HERDR_ROOT/bin/fm-agent-process-lib.sh"
 
+# Office detection, the office role names, and the registry line grammar an
+# office home's workspace label is read from (bin/fm-office-authority-lib.sh,
+# which sources bin/fm-registry-line-lib.sh).
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$FM_BACKEND_HERDR_ROOT/bin/fm-office-authority-lib.sh"
+
 FM_BACKEND_HERDR_MIN_PROTOCOL=14
 # events.subscribe (the native pane.agent_status_changed push stream) and its
 # subscription_event schema first shipped at protocol 16 (verified: herdr
@@ -344,29 +350,42 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
   fm_backend_herdr_presentation_default_supported "$state_dir"
 }
 
+# fm_backend_herdr_capitalise: <word> with its first letter upper-cased.
+fm_backend_herdr_capitalise() {  # <word>
+  printf '%s' "$1" | awk '{print toupper(substr($0,1,1)) substr($0,2)}' | tr -d '\n'
+}
+
 # fm_backend_herdr_office_label: the bare, capitalised role name ("Quartermaster")
-# an office's workspace carries instead of "2ndmate-<id>". The home is an office
-# only when it holds an .fm-office marker naming the same id as its
-# .fm-secondmate-home marker. The role is the one the parent's data/offices.md
-# registers for that id (the parent home is named by .fm-secondmate-parent), so
-# a new office role follows with no list to extend; an unreadable registry falls
+# an office's workspace carries instead of "2ndmate-<id>". Whether the home is
+# an office is fm_office_detect's call. The role is the one the parent's
+# data/offices.md registers for that id (the parent home is named by
+# .fm-secondmate-parent), read with the shared registry line grammar, so a new
+# office role follows with no list to extend; an unreadable registry falls
 # back to the office id, which is the role for every office seeded so far.
-# Prints nothing for a non-office home. Any word that is not a plain name is
+# Prints nothing for a non-office home. A role that is not a plain name is
 # ignored so a damaged record can never put odd text in a workspace label.
 fm_backend_herdr_office_label() {  # <secondmate-id>
-  local id=$1 office parent registry role
-  [ -f "$FM_HOME/.fm-office" ] || return 0
-  office=$(tr -d '[:space:]' < "$FM_HOME/.fm-office" 2>/dev/null) || return 0
-  [ -n "$office" ] && [ "$office" = "$id" ] || return 0
+  local id=$1 parent line role
+  fm_office_detect "$FM_HOME" "$FM_HOME/data" >/dev/null 2>&1 || return 0
+  [ "$FM_OFFICE_DETECT_ID" = "$id" ] || return 0
   role=$id
   parent=$(sed -n 's/^parent_home=//p' "$FM_HOME/.fm-secondmate-parent" 2>/dev/null | head -n 1)
-  registry=$parent/data/offices.md
-  if [ -n "$parent" ] && [ -r "$registry" ]; then
-    role=$(grep -F -- "- $id - " "$registry" 2>/dev/null | head -n 1 | sed -n 's/.*(role: *\([A-Za-z0-9._-]*\);.*/\1/p')
-    [ -n "$role" ] || role=$id
+  if [ -n "$parent" ] && line=$(REGISTRY="$parent/data/offices.md" registry_line_for_id "$id" 2>/dev/null); then
+    role=$(line_field "$line" role) || role=$id
   fi
-  case "$role" in ''|*[!A-Za-z0-9._-]*) return 0 ;; esac
-  printf '%s' "$role" | awk '{print toupper(substr($0,1,1)) substr($0,2)}' | tr -d '\n'
+  fm_office_name_ok "$role" || return 0
+  fm_backend_herdr_capitalise "$role"
+}
+
+# fm_backend_herdr_office_role_labels: every capitalised office role name, one
+# per line, from the office role list and the role names held for later
+# offices - the labels an office home's workspace can carry.
+fm_backend_herdr_office_role_labels() {
+  local role
+  for role in $FM_OFFICE_ROLES $FM_OFFICE_RESERVED_ROLES; do
+    fm_backend_herdr_capitalise "$role"
+    printf '\n'
+  done
 }
 
 # fm_backend_herdr_workspace_label: the per-firstmate-HOME herdr workspace
@@ -375,7 +394,11 @@ fm_backend_herdr_office_label() {  # <secondmate-id>
 # every pre-existing task's recorded label - no forced migration. A SECONDMATE
 # home resolves to "2ndmate-<secondmate-id>", so its tasks land in their own
 # workspace, obviously distinguishable from the primary's (and from every
-# other secondmate's) in herdr's spaces sidebar. Read fresh from FM_HOME on
+# other secondmate's) in herdr's spaces sidebar. An OFFICE home (a secondmate
+# running a standing role) resolves instead to its bare capitalised role name,
+# "Quartermaster" or "Navigator" (fm_backend_herdr_office_label); a workspace
+# it still holds under its legacy "2ndmate-<id>" label is renamed in place by
+# fm_backend_herdr_workspace_migrate_legacy. Read fresh from FM_HOME on
 # every call rather than cached at source time: FM_HOME is the home's own
 # durable identity, not env plumbing threaded through a call chain, so the
 # label is automatically stable across every respawn/recovery for the life of
@@ -397,6 +420,17 @@ fm_backend_herdr_workspace_label() {
     fi
   fi
   printf 'firstmate'
+}
+
+# fm_backend_herdr_workspace_legacy_label: the "2ndmate-<id>" label an office
+# home's workspace carried before offices took their bare role name; empty for
+# every other home, whose label never changed.
+fm_backend_herdr_workspace_legacy_label() {
+  local marker="$FM_HOME/$FM_BACKEND_HERDR_SECONDMATE_MARKER" id
+  [ -f "$marker" ] || return 0
+  id=$(tr -d '[:space:]' < "$marker" 2>/dev/null) || return 0
+  [ -n "$id" ] && [ -n "$(fm_backend_herdr_office_label "$id")" ] || return 0
+  printf '2ndmate-%s' "$id"
 }
 
 # fm_backend_herdr_flat_workers_workspace_label: the per-home workspace label a
@@ -1506,7 +1540,10 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # returned by THIS projected create immediately after its owning parent's
 # contiguous child block and before the next parent.
 #
-# <parent-label> is the owning FM_HOME label (firstmate or 2ndmate-<id>).
+# <parent-label> is the owning FM_HOME label (firstmate, 2ndmate-<id>, or an
+# office's bare role name such as Quartermaster). Another top-level parent in
+# the layout is recognised by those same labels; a personal workspace such as
+# "Notes" is not one.
 # Optional <parent-workspace-id> is that parent's EXACT id, which the caller
 # already resolved from the launching agent's own herdr identity. When given it
 # anchors the owning parent by id, so two workspaces sharing the home label no
@@ -1528,7 +1565,7 @@ fm_backend_herdr_pane_idle_shell_sample() {  # <session> <pane-id>
 # After a successful move, every pre-existing workspace id sequence excluding
 # the new id must be byte-identical to the pre-move sequence.
 fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspace-id> <parent-label> [<parent-workspace-id>]
-  local session=$1 created=$2 parent=$3 parent_ws=${4:-} list analysis current desired socket mover response move_status focus_before move_capable
+  local session=$1 created=$2 parent=$3 parent_ws=${4:-} list analysis current desired socket mover response move_status focus_before move_capable office_labels
   local before_existing after_existing
   [ -n "$parent" ] || {
     echo "warning: herdr presentation ordering missing owning parent label; leaving worker in Herdr's current order" >&2
@@ -1538,7 +1575,8 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
     echo "warning: herdr presentation ordering could not list workspaces; leaving worker in Herdr's current order" >&2
     return 0
   }
-  analysis=$(printf '%s' "$list" | jq -c --arg created "$created" --arg parent "$parent" --arg parent_ws "$parent_ws" '
+  office_labels=$(fm_backend_herdr_office_role_labels)
+  analysis=$(printf '%s' "$list" | jq -c --arg created "$created" --arg parent "$parent" --arg parent_ws "$parent_ws" --arg office_labels "$office_labels" '
     def is_parent:
       if ($parent_ws | length) > 0
       then .workspace_id == $parent_ws
@@ -1546,7 +1584,7 @@ fm_backend_herdr_projection_order_best_effort() {  # <session> <created-workspac
       end;
     def is_top_level_parent:
       (.label | type) == "string"
-      and ((.label == "firstmate") or (.label | test("^2ndmate-[^/]+$")) or (.label | test("^[A-Z][A-Za-z0-9._-]*$")));
+      and ((.label == "firstmate") or (.label | test("^2ndmate-[^/]+$")) or (.label as $l | $office_labels | split("\n") | any(. == $l)));
     def is_new_child:
       (.label | type) == "string"
       and (.label | test("^└ .+ · p:[A-Za-z0-9_-]{22}$"));
@@ -1755,6 +1793,36 @@ fm_backend_herdr_workspace_find_all() {  # <session> [<label>]
 # exactly the defect fm_backend_herdr_workspace_ensure now refuses.
 fm_backend_herdr_workspace_find() {  # <session>
   fm_backend_herdr_workspace_find_all "$1" | head -1
+}
+
+# fm_backend_herdr_workspace_migrate_legacy: rename an office home's
+# workspaces still carrying the legacy "2ndmate-<id>" label (and its
+# "2ndmate-<id> workers" flat workspace) in place to the bare-role label, so a
+# live office keeps its workspace and workers instead of gaining a second,
+# newly labeled one. A pair is renamed only when exactly one workspace holds
+# the legacy label and none holds the new one, so it is idempotent and never
+# picks between duplicates. A no-op for every non-office home, and with no
+# herdr call at all there.
+fm_backend_herdr_workspace_migrate_legacy() {  # <session>
+  local session=$1 legacy label list pair old new wsid
+  legacy=$(fm_backend_herdr_workspace_legacy_label)
+  [ -n "$legacy" ] || return 0
+  label=$(fm_backend_herdr_workspace_label)
+  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
+  for pair in "$legacy"$'\t'"$label" "$legacy workers"$'\t'"$label workers"; do
+    old=${pair%%$'\t'*}
+    new=${pair#*$'\t'}
+    wsid=$(printf '%s' "$list" | jq -r --arg old "$old" --arg new "$new" '
+      (.result.workspaces // []) as $spaces
+      | select(([$spaces[] | select(.label == $new)] | length) == 0)
+      | [$spaces[] | select(.label == $old) | .workspace_id]
+      | select(length == 1)
+      | .[0]
+    ' 2>/dev/null)
+    [ -n "$wsid" ] || continue
+    fm_backend_herdr_cli "$session" workspace rename "$wsid" "$new" >/dev/null 2>&1 \
+      || echo "warning: could not rename herdr workspace $wsid from '$old' to '$new'" >&2
+  done
 }
 
 # fm_backend_herdr_launcher_identity: the EXACT herdr workspace that the
@@ -2019,6 +2087,7 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   local session=$1 cwd=$2 relationship=${3:-launcher-home} wsid out label matches count status
   FM_BACKEND_HERDR_WS_ID=""
   FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
+  fm_backend_herdr_workspace_migrate_legacy "$session"
   label=$(fm_backend_herdr_workspace_label)
   if [ "$relationship" = launcher-home ] || [ "$relationship" = flat-workers ]; then
     fm_backend_herdr_launcher_identity "$session" && status=0 || status=$?
@@ -2842,7 +2911,7 @@ fm_backend_herdr_projection_reclaim_rollback() {  # <session> <new-pane>
 # post-mutation uncertainty that must refuse the launch.
 fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <parent-label> <task-label> <cwd>
   local session=$1 journal=$2 id=$3 home=$4 meta_workspace=$5 meta_tab=$6 meta_pane=$7
-  local parent_label=$8 task_label=$9 cwd=${10} canonical_home state focus_before active_tab out new_tab new_pane info close_status
+  local parent_label=$8 task_label=$9 cwd=${10} canonical_home state focus_before active_tab out new_tab new_pane info close_status legacy_label
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=""
   FM_BACKEND_HERDR_PROJECTION_PANE_ID=""
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
@@ -2854,12 +2923,14 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     echo "warning: herdr presentation home for $id could not be resolved exactly; spawning flat" >&2
     return 2
   }
+  legacy_label=$(fm_backend_herdr_workspace_legacy_label)
   if [ "$FM_BACKEND_HERDR_JOURNAL_HOME" != "$canonical_home" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" != "$session" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" != "$meta_workspace" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" != "$meta_tab" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" != "$meta_pane" ] \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$parent_label" ] \
+     || { [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$parent_label" ] \
+          && { [ -z "$legacy_label" ] || [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$legacy_label" ]; }; } \
      || [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" != "$task_label" ]; then
     echo "warning: herdr presentation binding for $id does not match its exact home, endpoint, or parent; spawning flat" >&2
     return 2

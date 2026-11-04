@@ -4283,6 +4283,7 @@ else
             exit 1
           }
         fi
+        fm_backend_herdr_workspace_migrate_legacy "$HERDR_SES"
         if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then
           herdr_projection_existing_meta_allows_flat "$STATE/$ID.meta" || exit 1
         fi
@@ -4325,6 +4326,7 @@ else
           ! fm_backend_herdr_presentation_default_supported "$STATE" "$HERDR_SES"; then
           HERDR_LAUNCHER_RELATIONSHIP=launcher-home
         elif spawn_herdr_presentation_order_lock_acquire "$HERDR_SES"; then
+          fm_backend_herdr_workspace_migrate_legacy "$HERDR_SES"
           # The projected child is placed and bound UNDER this launcher's exact
           # parent workspace. Its own herdr pane identity names that workspace
           # directly; the label lookup is only the fallback for a launcher with

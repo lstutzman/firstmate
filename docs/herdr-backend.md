@@ -103,6 +103,7 @@ When the launcher has no Herdr workspace to inherit, the adapter maintains one d
 | --- | --- |
 | Primary | `firstmate` |
 | Secondmate | `2ndmate-<secondmate-id>`, derived from its validated `.fm-secondmate-home` marker |
+| Office | Its bare capitalised role name, such as `Quartermaster` or `Navigator`, read from the parent home's `data/offices.md` line for the office id |
 
 A secondmate launched by the primary receives a narrowly scoped home override during container creation.
 
@@ -147,8 +148,12 @@ Firstmate running outside Herdr entirely has no launcher workspace to inherit, s
 That path needs the home label to identify exactly one workspace.
 Two workspaces sharing it are an unresolvable placement and refuse rather than adopting either.
 
-Avoid naming a personal workspace `firstmate` or `2ndmate-<id>` for that reason.
+Avoid naming a personal workspace `firstmate`, `2ndmate-<id>`, or an office role name such as `Quartermaster` or `Navigator` for that reason.
 Also avoid it because the adapter cannot distinguish that label collision from its own container.
+
+An office workspace still labeled `2ndmate-<id>`, and its `2ndmate-<id> workers` workspace, is renamed in place to the role label the next time that office's workspace is looked up, so a live office keeps its workspace and workers.
+The rename happens only when exactly one workspace holds the old label and none holds the new one.
+A projected worker journaled under the old parent label still reclaims its workspace.
 
 An older secondmate workspace using `firstmate-<id>` is not migrated automatically.
 Rename it manually before expecting new tasks or recovery to use it.
