@@ -1,0 +1,62 @@
+== G1: an office with no published record refuses every spawn
+
+$ fm-spawn.sh ship firstmate (quartermaster, never published)
+error: spawn refused: office quartermaster has no published authority record (/tmp/fm-office-gates.Tqdafw/quartermaster/config/office-authority with its receipt); the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+
+$ publish quartermaster
+office quartermaster: pushed
+[exit 0]
+
+$ publish navigator
+office navigator: pushed
+[exit 0]
+
+$ publish plain
+office plain: unchanged
+[exit 0]
+
+$ ls -a plain/config
+.
+..
+admission
+== G2: published record: office-local admission edit (implicit sibling rules) is reported
+
+$ ensure
+OFFICE: office quartermaster: admission config fm in /tmp/fm-office-gates.Tqdafw/quartermaster/config differs from the master copy its record pins, so its merges of firstmate are refused; copy it again from /tmp/fm-office-gates.Tqdafw/main/config/admission
+[exit 0]
+
+$ ensure after restoring the master copy
+[exit 0]
+== G3: deleting one office signal refuses instead of falling back
+
+$ fm-spawn.sh (.fm-office deleted)
+error: spawn refused: /tmp/fm-office-gates.Tqdafw/quartermaster/data/charter.md has the "# Office authority" heading but this home has no .fm-office marker; the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+
+$ fm-spawn.sh (charter heading deleted)
+error: spawn refused: this home has an .fm-office marker but /tmp/fm-office-gates.Tqdafw/quartermaster/data/charter.md lacks the "# Office authority" heading; the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+== G4: missing receipt and a record copied from another office refuse
+
+$ fm-spawn.sh (receipt deleted)
+error: spawn refused: office quartermaster has no published authority record (/tmp/fm-office-gates.Tqdafw/quartermaster/config/office-authority with its receipt); the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+
+$ fm-spawn.sh in navigator holding quartermaster's record
+error: spawn refused: office navigator's authority record is unproven: the inherited office authority record diverges from the receipt; the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+== G5: a proven record enforces dispatch= and never creates a second mate
+
+$ fm-spawn.sh in quartermaster for an undispatched project
+error: spawn refused: office quartermaster dispatches only to firstmate (its authority record's dispatch=), not proj
+
+$ fm-spawn.sh secondmate from quartermaster
+error: spawn refused: office quartermaster never creates or relaunches a second mate
+== G6: removing the office line revokes
+
+$ publish navigator
+office navigator: pushed - mirrored primary absence
+[exit 0]
+
+$ fm-spawn.sh in navigator after revocation
+error: spawn refused: the main home published no authority for office navigator; the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>
+== G7: plain second mate behaves as before (no office gate)
+
+$ fm-spawn.sh in plain home (no office signals)
+{run-worktree}/bin/fm-spawn.sh: line 3442: cd: /tmp/fm-office-gates.Tqdafw/nosuchproject: No such file or directory

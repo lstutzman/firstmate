@@ -1,0 +1,16 @@
+ok - a main home and a plain second mate are not offices, even with a stray record
+ok - every inconsistent combination of office signals refuses
+ok - a missing, unproven, or absent authority record refuses
+ok - a published, proven record loads the office's authority
+ok - a malformed record refuses, including any auto-merge class
+ok - the admission digest covers the config and its rules file
+ok - the admission digest pins the --rules file the classifier reads and refuses a relative or missing one
+ok - the admission digest of a byte-identical office copy matches the master's
+ok - live tasks count every ship and scout but this one and any second mate
+ok - the payload is the destination's own line, and an absence for every other home
+ok - a duplicate, malformed, or unpinnable line publishes nothing and says why
+ok - every convergence point publishes an office its own record and leaves a plain second mate untouched
+
+real	0m1.471s
+user	0m0.960s
+sys	0m0.620s

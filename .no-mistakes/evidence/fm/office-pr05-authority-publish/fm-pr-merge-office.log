@@ -1,0 +1,9 @@
+ok - a main home and a plain second mate merge exactly as before, even with a stray authority record
+ok - an office merges a green PR its authority record covers
+ok - an office refuses, before any forge call, every merge its authority record does not cover
+ok - an office's flagged class refuses with the same hold and answer commands as any home
+ok - an office's merge-via project ends at the existing merger handoff
+
+real	0m8.590s
+user	0m4.628s
+sys	0m4.490s

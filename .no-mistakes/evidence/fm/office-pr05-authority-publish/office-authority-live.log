@@ -1,0 +1,107 @@
+== S0: before publishing, ensure reports unpublished records
+
+$ fm-office.sh ensure
+OFFICE: office navigator: authority record is unproven (inheritance receipt is missing or unsafe); run bin/fm-office.sh publish navigator
+OFFICE: office quartermaster: authority record is unproven (inheritance receipt is missing or unsafe); run bin/fm-office.sh publish quartermaster
+[exit 0]
+== S1: publish each office its own record; plain second mate gets nothing
+
+$ fm-office.sh publish navigator
+office navigator: pushed
+[exit 0]
+
+$ fm-office.sh publish quartermaster
+office quartermaster: pushed
+[exit 0]
+
+$ fm-office.sh publish slarti (plain second mate)
+office slarti: unchanged
+[exit 0]
+
+$ cat navigator/config/office-authority
+fm-office-authority-v1
+id=navigator
+dispatch=PropertyCompass2
+merge=none
+merge-via=PropertyCompass2=slarti
+auto-merge-classes=none
+wip=2
+admission-sha256=
+
+$ cat quartermaster/config/office-authority
+fm-office-authority-v1
+id=quartermaster
+dispatch=firstmate
+merge=firstmate
+merge-via=none
+auto-merge-classes=none
+wip=2
+admission-sha256=firstmate:e03aae6fc6328f60810ac3190ccdb13d00197c5a6639d0477bc1b602392d8f92
+
+$ cat quartermaster/config/.fm-inherit-office-authority.generation
+1
+212
+4edc7e1a52c798a7693ef1a1c0ea7fdfe5536f9daabacad65e1bf8fc5c687eaf
+put
+
+$ ls -a slarti/config
+.
+..
+
+$ fm-office.sh ensure (byte-identical office copy with absolute --rules inside master config/admission)
+[exit 0]
+
+$ fm-office.sh publish navigator (again)
+office navigator: unchanged
+[exit 0]
+== S2: publish refusals
+
+$ publish nobody
+office-publish: nobody is not a registered second mate in /tmp/fm-office-live.XL0wWv/data/secondmates.md
+[exit 1]
+
+$ publish from inside a second-mate home
+office-publish: only the main home publishes office authority, and /tmp/fm-office-live.XL0wWv/quartermaster is a second-mate home
+[exit 1]
+== S3: office merge gate refuses after the office edits its own admission rules
+
+$ fm-pr-merge.sh t1 (office-local rules edit)
+error: invalid PR merge request
+
+$ fm-office.sh ensure
+[exit 0]
+== S4: missing receipt / deleted signal refuse (spawn and merge)
+
+$ fm-pr-merge.sh t1 (receipt deleted)
+error: invalid PR merge request
+
+$ fm-spawn.sh ship firstmate t2 brief (receipt deleted)
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+
+$ fm-spawn.sh (.fm-office marker deleted, charter heading kept)
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+
+$ fm-pr-merge.sh t1 (charter heading deleted, marker kept)
+error: invalid PR merge request
+== S5: forged record copied into another office refuses; a registry change makes it stale; removal revokes
+
+$ fm-spawn.sh in navigator with quartermaster's record
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+office navigator: pushed
+[exit 0]
+
+$ ensure after editing navigator's wip
+OFFICE: office navigator: authority record is stale against data/offices.md or the master admission config; run bin/fm-office.sh publish navigator
+[exit 0]
+
+$ publish navigator
+office navigator: pushed
+[exit 0]
+wip=3
+
+$ publish navigator after its line is removed
+office navigator: pushed - mirrored primary absence
+[exit 0]
+
+$ fm-spawn.sh in navigator after revocation
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
