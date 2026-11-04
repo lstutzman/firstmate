@@ -44,6 +44,18 @@ make_world() {
   printf '%s\n' "$home"
 }
 
+# nav_office <home> <sources>: a local navigator office of <home> listing <sources>,
+# with its wake-source checks registered the way its home would register them.
+nav_office() {
+  local home=$1 nav="$1/../navigator"
+  mkdir -p "$nav/data"
+  printf 'navigator\n' > "$nav/.fm-office"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$home" > "$nav/.fm-secondmate-parent"
+  printf -- '- navigator - nav (home: %s; scope: office; projects: none; added 2026-11-04)\n' "$nav" > "$home/data/secondmates.md"
+  printf -- '- navigator - nav (role: navigator; sources: %s; added 2026-11-04)\n' "$2" > "$home/data/offices.md"
+  FM_HOME="$nav" "$ROOT/bin/fm-office.sh" register-sources >/dev/null || fail "register-sources must succeed in the navigator home"
+}
+
 officer() {  # <home> <args...>
   local home=$1
   shift
@@ -422,7 +434,7 @@ test_consumer_decides_whether_main_is_woken() {
   assert_contains "$out" "officer triage: $DATE: " "no consumer: still wakes main"
 
   home=$(make_world consumer-main empty_spec)
-  printf -- '- navigator - nav (role: navigator; sources: tick,lane:triage; added 2026-11-04)\n' > "$home/data/offices.md"
+  nav_office "$home" tick,lane:triage
   sed -i.bak 's/model: none;/model: none; consumer: main,navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
   officer "$home" register triage >/dev/null || fail "register must accept a main,navigator consumer"
   assert_equals "" "$(officer "$home" ensure)" "consumer: main,navigator is a valid line"
@@ -431,7 +443,7 @@ test_consumer_decides_whether_main_is_woken() {
   assert_contains "$out" "officer triage: $DATE: " "consumer naming main still wakes main"
 
   home=$(make_world consumer-office empty_spec)
-  printf -- '- navigator - nav (role: navigator; sources: tick,lane:triage; added 2026-11-04)\n' > "$home/data/offices.md"
+  nav_office "$home" tick,lane:triage
   sed -i.bak 's/model: none;/model: none; consumer: navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
   officer "$home" register triage >/dev/null || fail "register must accept a navigator consumer"
   assert_equals "" "$(officer "$home" ensure)" "consumer: navigator is a valid line"
@@ -456,17 +468,21 @@ test_unknown_consumer_is_a_registry_problem() {
 test_consumer_office_must_read_the_digest() {
   local home out
   home=$(make_world consumer-nolane empty_spec)
-  printf -- '- navigator - nav (role: navigator; sources: tick,lane:progress; added 2026-11-04)\n' > "$home/data/offices.md"
+  nav_office "$home" tick,lane:progress
   sed -i.bak 's/model: none;/model: none; consumer: navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
   out=$(officer "$home" ensure)
   assert_contains "$out" 'consumer office navigator does not list sources: lane:triage' "an office without the lane source is reported"
   out=$(officer "$home" register triage 2>&1) && fail "register must refuse a consumer office that never reads the digest"
 
-  printf -- '- navigator - nav (role: navigator; sources: lane:triage:high; added 2026-11-04)\n' > "$home/data/offices.md"
+  nav_office "$home" lane:triage:high
   out=$(officer "$home" ensure)
   assert_contains "$out" 'consumer office navigator does not list sources: lane:triage' "a high-only lane drops findings and is reported"
 
-  printf -- '- navigator - nav (role: navigator; sources: lane:triage; added 2026-11-04)\n' > "$home/data/offices.md"
+  nav_office "$home" lane:triage
+  rm -f "$home/../navigator/state/office-lane-triage.check.sh"
+  out=$(officer "$home" ensure)
+  assert_contains "$out" 'consumer office navigator has no registered lane:triage check' "a lane source whose check is not registered is reported"
+
   printf -- '- navigator - nav (host: deepthought; root: /r; home: /r/navigator; scope: office; projects: PropertyCompass2; added 2026-11-04)\n' > "$home/data/secondmates.md"
   out=$(officer "$home" ensure)
   assert_contains "$out" 'consumer office navigator is remote' "a remote consumer office is reported"
@@ -481,10 +497,10 @@ test_consumer_office_must_read_the_digest() {
 test_broken_consumer_falls_back_to_waking_main() {
   local home out
   home=$(make_world consumer-broken empty_spec)
-  printf -- '- navigator - nav (role: navigator; sources: tick,lane:triage; added 2026-11-04)\n' > "$home/data/offices.md"
+  nav_office "$home" tick,lane:triage
   sed -i.bak 's/model: none;/model: none; consumer: navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
   officer "$home" register triage >/dev/null || fail "register must accept a navigator consumer"
-  printf -- '- navigator - nav (role: navigator; sources: tick; added 2026-11-04)\n' > "$home/data/offices.md"
+  nav_office "$home" tick
   officer "$home" run triage --date "$DATE" >/dev/null || fail "a broken consumer must not stop the officer running"
   out=$(officer "$home" check triage) || fail "check must exit 0"
   assert_contains "$out" "officer triage: $DATE: " "a consumer office that no longer reads the digest leaves main as the reader"
@@ -496,7 +512,7 @@ test_broken_consumer_falls_back_to_waking_main() {
 test_failure_line_reaches_main_whatever_the_consumer() {
   local home out
   home=$(make_world consumer-fail late_spec)
-  printf -- '- navigator - nav (role: navigator; sources: tick,lane:triage; added 2026-11-04)\n' > "$home/data/offices.md"
+  nav_office "$home" tick,lane:triage
   sed -i.bak 's/model: none;/model: none; consumer: navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
   out=$(FM_OFFICER_RETRY_SECS=0 FM_OFFICER_ATTEMPTS=1 officer "$home" check triage) || fail "check must exit 0"
   wait_for_attempts "$home" 1

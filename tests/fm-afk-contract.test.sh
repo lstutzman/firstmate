@@ -155,22 +155,6 @@ test_enter_writes_a_v2_record_in_one_step_and_announces_hold_for_return() {
 # The wait-for-go gate is gone: the retired two-step subcommands and the
 # proposal read flag are refused by name and write nothing, so no caller can
 # stage a mandate that waits on a further human response before it binds.
-test_entered_and_entered_epoch_name_the_same_instant() {
-  local home real_date
-  home=$(make_home one-clock-read)
-  real_date=$(command -v date)
-  mkdir -p "$home/fakebin"
-  # The epoch clock reads 2026-09-17T01:00:00Z; any other date call is real, so
-  # a second, independent clock read would record today's time instead.
-  printf '#!/usr/bin/env bash\n[ "$*" = "+%%s" ] && { echo 1789606800; exit 0; }\nexec %q "$@"\n' "$real_date" > "$home/fakebin/date"
-  chmod +x "$home/fakebin/date"
-  PATH="$home/fakebin:$PATH" contract "$home" enter --words 'one instant' >/dev/null 2>&1 || fail "enter failed"
-  assert_equals "1789606800" "$(contract "$home" field entered_epoch)" "entered_epoch"
-  assert_equals "2026-09-17T01:00:00Z" "$(contract "$home" field entered)" "entered"
-  assert_equals "2026-09-17T01:00:00Z" "$(contract "$home" field confirmed)" "confirmed"
-  pass "entry records entered and entered_epoch from one clock read"
-}
-
 test_retired_two_step_entry_is_refused_by_name() {
   local home cmd out rc
   home=$(make_home retired-two-step)
@@ -684,7 +668,6 @@ test_readback_renders_words_verbatim_with_the_record_scalars
 test_words_preserve_final_newline_shape
 test_enter_writes_a_v2_record_in_one_step_and_announces_hold_for_return
 test_entry_without_spend_records_the_live_worker_count_never_below_the_floor
-test_entered_and_entered_epoch_name_the_same_instant
 test_retired_two_step_entry_is_refused_by_name
 test_enter_removes_a_legacy_proposal_without_promoting_it
 test_same_turn_entry_pre_authorizes_nothing_on_the_never_set

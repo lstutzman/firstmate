@@ -28,6 +28,10 @@ make_world() {
   printf -- '- firstmate [no-mistakes admission=fm] - fm (added 2026-10-02)\n- skills [no-mistakes admission=sk] - skills (added 2026-10-02)\n' > "$w/quartermaster/data/projects.md"
   printf -- '- progress - x (role: progress; cadence: daily 07:00; added 2026-10-26)\n- friction - y (role: friction; cadence: daily 06:15; added 2026-10-24)\n' > "$w/data/officers.md"
   printf '# Offices\n\n%s\n%s\n' "$NAV" "$QM" > "$w/data/offices.md"
+  for id in navigator quartermaster; do
+    printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$w" > "$w/$id/.fm-secondmate-parent"
+    FM_HOME="$w/$id" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must succeed in $id"
+  done
   printf '%s\n' "$w"
 }
 
@@ -80,6 +84,8 @@ test_gaps() {
   gap_case lane 'lane:nope is not a registered officer' "edit_file data/offices.md sed 's/lane:progress/lane:nope/'"
   gap_case notmate 'not a registered second mate' ": > data/secondmates.md"
   gap_case hostmismatch 'does not include the second mate host' "edit_file data/secondmates.md sed 's/(home:/(host: deepthought; root: \\/r; home:/'"
+  gap_case unregistered 'source lane:progress is not registered in' "rm navigator/state/office-lane-progress.check.sh"
+  gap_case untrusted 'source tick is not registered in' "printf 'echo x\n' >> navigator/state/office-tick.check.sh"
   gap_case marker '.fm-office marker missing' "rm navigator/.fm-office"
   gap_case charter 'lacks the "# Office authority" heading' "printf '# Charter\n' > navigator/data/charter.md"
   gap_case project 'dispatch project PropertyCompass2 is not in' ": > navigator/data/projects.md"
@@ -329,7 +335,6 @@ SLOT=$(date -u -d "@$SRC_NOW" +%Y-%m-%dT%H 2>/dev/null || date -u -r "$SRC_NOW" 
 source_world() {
   local w
   w=$(make_world "$1")
-  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$w" > "$w/navigator/.fm-secondmate-parent"
   mkdir -p "$w/navigator/state" "$w/data/officers/progress" "$w/data/officers/surgeon"
   sed -i.bak 's/sources: tick,lane:progress;/sources: tick,lane:progress,lane:surgeon:high;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
   printf -- '- surgeon - z (role: triage; cadence: daily 06:00; added 2026-10-24)\n' >> "$w/data/officers.md"

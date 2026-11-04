@@ -68,7 +68,8 @@
 # printed in the primary home only when `main` is listed, so an officer whose
 # digest an office consumes can stop waking main; each office id must be a local
 # office in data/offices.md whose sources: field lists lane:<officer-id>, the lane
-# source that reads every digest (bin/fm-office.sh). register refuses and ensure
+# source that reads every digest, and whose home has that source's check
+# registered and trusted (bin/fm-office.sh register-sources). register refuses and ensure
 # reports a consumer that misses this, and the check then wakes main for the
 # digest as if main were listed. The failure line is always printed, because a
 # broken officer is main's to fix.
@@ -241,10 +242,12 @@ consumer_problem() {
       *",lane:$id,"*) ;;
       *) printf 'officer %s: consumer office %s does not list sources: lane:%s, so it never reads this digest\n' "$id" "$c" "$id"; return ;;
     esac
-    if secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" && [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
-      printf 'officer %s: consumer office %s is remote, and a remote office cannot read this digest\n' "$id" "$c"
-      return
-    fi
+    secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" \
+      || { printf 'officer %s: consumer office %s is not a registered second mate in data/secondmates.md\n' "$id" "$c"; return; }
+    [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] \
+      && { printf 'officer %s: consumer office %s is remote, and a remote office cannot read this digest\n' "$id" "$c"; return; }
+    fm_custom_check_registered "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}/state" "office-lane-$id" \
+      || { printf 'officer %s: consumer office %s has no registered lane:%s check (run bin/fm-office.sh register-sources in its home)\n' "$id" "$c" "$id"; return; }
   done
 }
 

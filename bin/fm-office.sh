@@ -30,8 +30,9 @@
 # registered second mate, a missing .fm-office marker or "# Office authority"
 # charter heading in a local office home, a dispatch project missing from the
 # office home's data/projects.md, a merge project without admission=, a source
-# lane that is not a registered officer, or a merge-via project that does not
-# carry merger=<home> in the office home's data/projects.md. A remote
+# lane that is not a registered officer, a listed source whose check is not
+# registered and trusted in a local office home's state/, or a merge-via
+# project that does not carry merger=<home> in the office home's data/projects.md. A remote
 # office's home is not readable from here, so its file checks are skipped.
 # The authority record belongs to a later change and is not checked here.
 #
@@ -210,6 +211,10 @@ office_problems() {
   [ "$(cat "$home/.fm-office" 2>/dev/null)" = "$id" ] || printf '.fm-office marker missing or not "%s" in %s\n' "$id" "$home"
   grep -q '^# Office authority' "$home/data/charter.md" 2>/dev/null \
     || printf 'charter lacks the "# Office authority" heading (%s/data/charter.md)\n' "$home"
+  for p in ${v//,/ }; do
+    fm_custom_check_registered "$home/state" "$(source_check_id "$p")" \
+      || printf 'source %s is not registered in %s/state (run bin/fm-office.sh register-sources there)\n' "$p" "$home"
+  done
   projects_md="$home/data/projects.md"
   for p in ${dispatch//,/ }; do
     project_listed "$projects_md" "$p" || printf 'dispatch project %s is not in %s\n' "$p" "$projects_md"
