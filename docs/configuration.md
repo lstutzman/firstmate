@@ -2000,6 +2000,17 @@ A missing or malformed config, a classifier that fails or prints an empty or und
 A project with no `admission=` token merges exactly as before, and like `merger=` the token is read from the merging home's own registry, which is not inherited.
 `bin/fm-admission-lib.sh` owns the config format and classifier contract, `bin/fm-pr-merge.sh`'s header owns the merge-time check, and `bin/fm-project-mode.sh --admission <name>` reads the binding back.
 
+### Path-rule classifier (bin/fm-reserved-classify.sh)
+
+A project with no diff classifier of its own can use `bin/fm-reserved-classify.sh --rules <rules-file>` as its `command=`, for example `command=/path/to/bin/fm-reserved-classify.sh --rules /path/to/config/admission/firstmate.rules`.
+The rules file is a LOCAL file in this home with one `<glob> <class>` rule per line; `#` comments and blank lines are ignored.
+For each changed path the first matching rule decides its class, and a path matching no rule is clear.
+The classifier prints the flagged classes sorted and one per line, or `none` when nothing is flagged, so `clear=none` and a `classes=` line naming every class the rules use complete the admission config.
+Globs match the whole path and are case sensitive: `*` and `?` stay inside one path segment, `**` crosses segments (and `**/` also matches no directory), and `{a,b}` offers alternatives.
+A rules file that is missing, has a line that is not exactly `<glob> <class>`, has an unbalanced brace, has a glob the platform's regex engine will not compile (BSD/macOS rejects an empty brace alternative such as `config{,.local}.json`, which glibc accepts), or names a class outside `[A-Za-z0-9._-]` (or `none`) makes the classifier exit 1 with nothing printed, so the merge is refused rather than admitted.
+A path rule sees only paths, never content, so it cannot tell a data-rewriting change from an additive one; such classes stay with the captain.
+`bin/fm-reserved-classify.sh`'s header owns the glob syntax and the refusal rules.
+
 ## Ready evidence (data/projects.md ready-evidence= token, config/ready-evidence/)
 
 A project entry may name a ready-evidence command set with `ready-evidence=<name>`, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti ready-evidence=pc-ready] - ...`.
