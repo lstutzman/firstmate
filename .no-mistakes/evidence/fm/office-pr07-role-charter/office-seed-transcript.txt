@@ -1,0 +1,85 @@
+$ FM_OFFICE_HOST=slartibartfast fm-home-seed.sh navigator <homes>/navigator alpha --office navigator
+Note: switching to '5c2b2e4d88e8607c173412fb9a78579013c7625c'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+warning: remote HEAD refers to nonexistent ref, unable to checkout
+home=<homes>/navigator
+registered: office source tick (state/office-tick.check.sh)
+rc=0
+--- .fm-office: navigator
+--- office home data/projects.md:
+- alpha [direct-PR +yolo merger=slarti] - alpha project (added 2026-06-22)
+--- office source checks:
+office-tick.check-trust
+office-tick.check.sh
+--- charter headings:
+# Office cycle
+# Office authority
+--- main registry:
+- navigator - Drive alpha forward progress from Top of Mind (home: <homes>/navigator; scope: Drive alpha forward progress from Top of Mind; projects: alpha; added 2026-11-04)
+
+$ fm-home-seed.sh navigator ... alpha   (plain re-seed of an office home)
+error: <homes>/navigator is an office; re-seed it with --office navigator so its charter keeps the office authority heading
+rc=1
+$ re-seed office with --office (converges)
+rc=0 merger tokens: 1
+
+$ FM_OFFICE_HOST=deepthought ... --office navigator   (host not in runs-on)
+error: office navigator runs on slartibartfast, not this host deepthought
+rc=1
+$ FM_OFFICE_HOST=macbook ...   (macbook)
+error: office navigator may not run on macbook; new scheduled roles run on slartibartfast or deepthought only
+rc=1
+
+$ seed plainmate as a plain second mate (an offices.md line for it exists), then re-seed it with --office
+Note: switching to '5c2b2e4d88e8607c173412fb9a78579013c7625c'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+warning: remote HEAD refers to nonexistent ref, unable to checkout
+plain seed rc=0
+error: <homes>/plainmate is already a plain second mate; an office is seeded into a new home, never converted from one
+rc=1
+plainmate .fm-office present? no
+
+$ fm-office.sh ensure
+OFFICE: office navigator: authority record is unproven (inheritance receipt is missing or unsafe); run bin/fm-office.sh publish navigator
+OFFICE: office librarian: role "librarian" is reserved: it has no charter or authority yet
+OFFICE: office librarian: not a registered second mate in data/secondmates.md
+OFFICE: office plainmate: .fm-office marker missing or not "plainmate" in <homes>/plainmate
+OFFICE: office plainmate: charter lacks the "# Office authority" heading (<homes>/plainmate/data/charter.md)
+OFFICE: office plainmate: source tick is not registered in <homes>/plainmate/state (run bin/fm-office.sh register-sources there)
+OFFICE: office plainmate: merge-via project alpha lacks merger=slarti in <homes>/plainmate/data/projects.md
+rc=0
+$ fm-office.sh publish navigator
+office navigator: pushed
+rc=0
+$ fm-office.sh ensure | grep "office navigator"
+(no gap lines for navigator)

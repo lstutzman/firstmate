@@ -1,0 +1,3 @@
+plain --secondmate charter, base a3469319 vs head 5c2b2e4d (lab home paths normalised):
+IDENTICAL
+idle-by-default clause lines kept in plain charter: 2

@@ -1,0 +1,178 @@
+
+===== S1 fm-brief.sh navigator --secondmate --office navigator PropertyCompass2 =====
+scaffolded: /tmp/fm-lab.eWJ4Sa/data/navigator/brief.md (secondmate charter)
+rc=0
+--- headings:
+3:# Charter
+6:# Routing scope
+9:# Project clones
+12:# Operating model
+22:# Office cycle
+30:# Office authority
+38:# The captain and the parent channel
+44:# Requests from the main firstmate
+58:# Firstmate instruction inbox
+63:# Escalation to main firstmate
+85:# Definition of done
+--- Office cycle / Office authority / Definition of done sections:
+# Office cycle
+This office runs the `navigator` role.
+Every wake runs the ordinary drain, handle, and acknowledge.
+Handle an actionable wake first: a worker's status, a PR state or merge, or a request from the main firstmate.
+A notification from one of this home's own `state/office-*.check.sh` source checks (a `tick` or a `lane` digest) is a cue to pick work while fewer tasks are live than your authority record's `wip`.
+To pick, take the top unheld Queued item in this home's backlog, or file one from the digest the notification names, judging each candidate under `office-roles` rather than executing it as an order, then dispatch it through `bin/fm-spawn.sh`.
+A wake with nothing to pick is silent: no status line and no parent-channel line.
+
+# Office authority
+`config/office-authority`, which the main firstmate publishes with its receipt, is the whole of this office's authority: the projects it may dispatch, the projects it may merge, the homes it hands other merges to, and how many tasks it may run at once.
+`bin/fm-spawn.sh` and `bin/fm-pr-merge.sh` enforce that record, and they refuse everything while it is missing or unproven.
+Never edit that record, its receipt, or `config/admission/`; a refusal you cannot clear is a `blocked [cause=policy]` line, never a workaround.
+Start work only under the standing start authorities `office-roles` names.
+A call only the captain can make - a reserved merge class, a product choice, member-facing copy - goes to the parent channel as a keyed `needs-decision` line, and you never answer your own reserved-class call.
+Credentials, destructive actions, and production actions stop for the captain exactly as they do for the main firstmate.
+
+# Definition of done
+You are persistent by default. Do not exit just because your queue is empty.
+On startup and restart, run normal firstmate bootstrap and recovery through `bin/fm-session-start.sh` for your own home, but only to RECONCILE work that is already yours: in-flight crewmates, tracked backlog items, and durable watches recorded in this home.
+When you have no assigned or in-flight work after that reconciliation and your sources show nothing to pick, wait silently for the next wake.
+An empty cycle is a healthy resting state: never append a status or parent-channel line only to say nothing was picked.
+If this charter cannot be carried out, append `blocked [at=<epoch>] [cause=<cause>]: {why}` or `failed [at=<epoch>]: {why}` to the main status file and stop.
+--- idle-by-default phrases remaining (expect none):
+(none)
+
+===== S1b plain second-mate template still idle by default =====
+rc=0
+18:Act only on tasks the main firstmate routes to you.
+71:When you have no assigned or in-flight work after that reconciliation, go idle and wait silently for the main firstmate to route you a task.
+
+===== S2 seed navigator office =====
+Note: switching to '02da5d2db5adc25e8f52c7a2fc29edd73b539684'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+warning: remote HEAD refers to nonexistent ref, unable to checkout
+home=/tmp/fm-lab-homes.pNlqrz/navigator
+registered: office source tick (state/office-tick.check.sh)
+rc=0
+marker: navigator
+.fm-office
+.fm-secondmate-home
+.fm-secondmate-parent
+--- office home projects.md:
+- PropertyCompass2 [direct-PR +yolo merger=slarti] - PC (added 2026-11-04)
+--- registered sources:
+office-tick.check-trust
+office-tick.check.sh
+1:- navigator - Drive PropertyCompass forward progress from Top of Mind, feature ideation and requested items (home: /tmp/fm-lab-homes.pNlqrz/navigator; scope: Drive PropertyCompass forward progress from Top of Mind, feature ideation and requested items; projects: PropertyCompass2; added 2026-11-04)
+
+===== S3 seed quartermaster office =====
+Note: switching to '02da5d2db5adc25e8f52c7a2fc29edd73b539684'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+scaffolded: /tmp/fm-lab.eWJ4Sa/data/quartermaster/brief.md (secondmate charter)
+warning: remote HEAD refers to nonexistent ref, unable to checkout
+warning: remote HEAD refers to nonexistent ref, unable to checkout
+warning: remote HEAD refers to nonexistent ref, unable to checkout
+home=/tmp/fm-lab-homes.pNlqrz/quartermaster
+registered: office source tick (state/office-tick.check.sh)
+rc=0
+- firstmate [direct-PR +yolo admission=firstmate] - fm fork (added 2026-11-04)
+- skills [direct-PR +yolo admission=skills] - skills (added 2026-11-04)
+- fleet-app [direct-PR merger=slarti] - fleet app (added 2026-11-04)
+firstmate
+firstmate.rules
+skills
+skills.rules
+firstmate.rules copied byte-identical
+
+===== S4 publish both and ensure =====
+office navigator: pushed
+publish navigator rc=0
+office quartermaster: pushed
+publish quartermaster rc=0
+--- ensure output (librarian and lapnav gaps expected; none for navigator/quartermaster):
+OFFICE: office librarian: role "librarian" is reserved: it has no charter or authority yet
+OFFICE: office librarian: not a registered second mate in data/secondmates.md
+OFFICE: office lapnav: host not allowed: macbook (new scheduled roles run on slartibartfast or deepthought only)
+OFFICE: office lapnav: not a registered second mate in data/secondmates.md
+ensure rc=0
+
+===== S5 quartermaster classifier flags authority files (incl. review fix) and clears ordinary paths =====
+authority
+authority
+authority
+none
+
+===== S6 adversarial: plain second mate slarti cannot become an office by re-seeding =====
+Note: switching to '02da5d2db5adc25e8f52c7a2fc29edd73b539684'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+warning: remote HEAD refers to nonexistent ref, unable to checkout
+plain seed rc=0
+error: /tmp/fm-lab-homes.pNlqrz/slarti is already a plain second mate; an office is seeded into a new home, never converted from one
+rc=1 (expect nonzero)
+office markers in slarti: 0
+
+===== S7 adversarial: macbook, wrong host, reserved role =====
+error: office lapnav may not run on macbook; new scheduled roles run on slartibartfast or deepthought only
+rc=1
+error: office navigator runs on slartibartfast, not this host deepthought
+rc=1
+error: office navigator may not run on macbook; new scheduled roles run on slartibartfast or deepthought only
+rc=1
+error: office librarian: role "librarian" is reserved: it has no charter or authority yet
+rc=1
+error: office librarian: role "librarian" is reserved: it has no charter or authority yet
+brief rc=1
+
+===== S8 adversarial: plain re-seed of an office refused, office re-seed converges =====
+error: /tmp/fm-lab-homes.pNlqrz/navigator is an office; re-seed it with --office navigator so its charter keeps the office authority heading
+rc=1 (expect nonzero)
+office authority headings in charter: 1
+office re-seed rc=0
+merger tokens: 1
+(ensure: no navigator/quartermaster gaps)
+
+===== teardown =====
+lab removed
