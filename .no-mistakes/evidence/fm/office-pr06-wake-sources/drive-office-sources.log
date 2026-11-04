@@ -1,0 +1,51 @@
+=== S1 register-sources (sources with a space after a comma) ===
+registered: office source tick (state/office-tick.check.sh)
+registered: office source lane:triage (state/office-lane-triage.check.sh)
+registered: office source lane:triage:high (state/office-lane-triage-high.check.sh)
+rc=0
+office-lane-triage-high.check-trust
+office-lane-triage-high.check.sh
+office-lane-triage.check-trust
+office-lane-triage.check.sh
+office-tick.check-trust
+office-tick.check.sh
+--- fm-office ensure in primary (expect no OFFICE: lines)
+rc=0
+--- fm-officer register/ensure triage with consumer: navigator
+registered: officer triage (state/officer-triage.check.sh)
+rc=0
+ensure rc=0
+=== S2 officer run writes digest; main check stays silent ===
+run rc=0
+DIGEST 2026-10-23 1 data/officers/triage/2026-10-23.md
+main check output: []
+=== S3 office watcher sweep wakes the office with the lane digest ===
+check: /tmp/fm-lab.i1NLuv/navigator/state/office-lane-triage.check.sh: office navigator: triage digest 2026-10-23: 1 finding(s) in /tmp/fm-lab.i1NLuv/primary/data/officers/triage/2026-10-23.md
+[watcher rc=0]
+--- second sweep of same digest (expect no lane line repeat)
+Terminated                 sleep "$POLL"
+[watcher rc=124]
+=== S4 high lane: write a high-severity finding into the digest .json ===
+office navigator: triage digest 2026-10-23: 2 high-severity finding(s) in /tmp/fm-lab.i1NLuv/primary/data/officers/triage/2026-10-23.md
+rc=0
+repeat rc=0 (silent expected)
+=== S5 tick via shim with queued backlog ===
+office navigator: tick 2026-10-24T06: 2 of 2 places free, 1 queued
+rc=0
+full places rc=0 (silent expected)
+=== S6 adversarial: office drops lane:triage -> main is woken again, ensure reports ===
+registered: office source tick (state/office-tick.check.sh)
+unregistered: state/office-lane-triage-high.check.sh (no longer a listed source)
+unregistered: state/office-lane-triage.check.sh (no longer a listed source)
+main check output: [officer triage: 2026-10-23: 1 actionable finding(s) in data/officers/triage/2026-10-23.md]
+OFFICER: officer triage: consumer office navigator does not list sources: lane:triage, so it never reads this digest
+--- lane check with source no longer listed (silent expected)
+rc=0
+=== S7 adversarial: tampered shim is untrusted -> ensure gap, watcher rejects, consumer falls back ===
+OFFICE: office navigator: source lane:triage is not registered in /tmp/fm-lab.i1NLuv/navigator/state (run bin/fm-office.sh register-sources there)
+OFFICER: officer triage: consumer office navigator has no registered lane:triage check (run bin/fm-office.sh register-sources in its home)
+check: /tmp/fm-lab.i1NLuv/navigator/state/office-tick.check.sh: office navigator: tick 2026-11-04T00: 2 of 2 places free, 1 queued
+[watcher rc=0]
+=== S8 register refuses consumer office that is remote ===
+fm-officer: officer triage: consumer office navigator is remote, and a remote office cannot read this digest
+register rc=2 (nonzero expected)
