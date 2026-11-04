@@ -2998,9 +2998,12 @@ test_secondmate_charter_brief_is_idle_by_default() {
 # office_seed_main <name>: a main home with project alpha (direct-PR, +yolo) and
 # beta (legacy line, no bracket), and an offices registry naming nav (hands
 # alpha to slarti) and qm (merges alpha). The office homes are $w/nav and $w/qm.
+# Seeding beta (no-mistakes mode) runs no-mistakes init, so a seeding test puts
+# the fake at $w/fakebin first on its PATH.
 office_seed_main() {
   local w="$TMP_ROOT/$1"
   mkdir -p "$w/main/projects" "$w/main/data" "$w/main/state" "$w/main/config/admission"
+  make_fake_no_mistakes "$w" >/dev/null
   fm_git_init_commit "$w/main/projects/alpha"
   fm_git_add_origin "$w/main/projects/alpha" "$TMP_ROOT/remotes/$1-alpha.git"
   fm_git_init_commit "$w/main/projects/beta"
@@ -3053,6 +3056,7 @@ test_office_charter_replaces_idle_by_default() {
 test_office_seed_end_to_end() {
   local w out
   w=$(office_seed_main office-seed)
+  local PATH="$w/fakebin:$PATH"
   out=$(FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha --office nav) \
     || fail "navigator office seed failed: $out"
   assert_equals "nav" "$(cat "$w/nav/.fm-office")" "office marker"
@@ -3092,6 +3096,7 @@ test_office_seed_end_to_end() {
 test_office_seed_rolls_back_office_files() {
   local w before
   w=$(office_seed_main office-rollback)
+  local PATH="$w/fakebin:$PATH"
   git clone --quiet "$ROOT" "$w/qm" || fail "could not prepare an existing home"
   FM_HOME="$w/main" "$ROOT/bin/fm-brief.sh" qm --secondmate --office qm alpha beta >/dev/null || fail "charter scaffold failed"
   before=$(cd "$w/qm" && find . -path ./.git -prune -o -type f -print | sort)
@@ -3111,6 +3116,7 @@ test_office_seed_rolls_back_office_files() {
 test_office_seed_refusals() {
   local w err
   w=$(office_seed_main office-refuse)
+  local PATH="$w/fakebin:$PATH"
   err="$TMP_ROOT/office-refuse.err"
   FM_HOME="$w/main" FM_SECONDMATE_CHARTER='plain alpha work' "$ROOT/bin/fm-home-seed.sh" plain "$w/plain" alpha >/dev/null \
     || fail "plain seed failed"
