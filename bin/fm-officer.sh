@@ -229,6 +229,8 @@ line_problem() {
   esac
 }
 
+SURGEON_STAGING_REPO=git@github.com:lstutzman/PropertyCompass2.git
+
 # surgeon_problem <line> <id>: prints why a surgeon line is unusable, or nothing.
 surgeon_problem() {
   local line=$1 id=$2 writes
@@ -239,6 +241,8 @@ surgeon_problem() {
   case "$(line_field "$line" max-creates || echo 5)" in
     ''|*[!0-9]*|0) printf 'officer %s: max-creates must be a whole number, at least 1\n' "$id"; return ;;
   esac
+  [ -n "$(line_field "$line" staging-repo || echo "$SURGEON_STAGING_REPO")" ] \
+    || { printf 'officer %s: staging-repo must name the git remote whose staging branch is the tip\n' "$id"; return; }
   [ "$writes" = linear ] || return 0
   [ "$(line_field "$line" team || echo PC)" = PC ] \
     || { printf 'officer %s: a surgeon files into team PC only\n' "$id"; return; }
@@ -293,6 +297,7 @@ start_homes() {
   local -a offices=()
   IFS=', ' read -ra offices <<<"$(line_field "$OFFICER_LINE" start-home || true)"
   for c in "${offices[@]}"; do
+    [ -z "$(office_read_problem "$OFFICER_ID" "$c" start-home)" ] || continue
     office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
     secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" || continue
     printf '%s=%s\n' "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}" "$(line_field "$office" dispatch | tr -d ' ')"
@@ -447,7 +452,8 @@ role_surgeon() {
     --app "$(line_field "$OFFICER_LINE" app)" --team "$(line_field "$OFFICER_LINE" team || echo PC)" \
     --writes "$(line_field "$OFFICER_LINE" writes || echo none)" \
     --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 5)" \
-    --area "$(line_field "$OFFICER_LINE" area || true)"
+    --area "$(line_field "$OFFICER_LINE" area || true)" \
+    --staging-repo "$(line_field "$OFFICER_LINE" staging-repo || echo "$SURGEON_STAGING_REPO")"
 }
 
 # role_friction <date>: each registered second mate's id names its parent

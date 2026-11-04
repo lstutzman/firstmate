@@ -972,6 +972,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `writes` (surgeon) | Surgeon, optional: `none` (default) files nothing; `linear` files Linear items as described under [Surgeon](#surgeon) |
 | `max-creates` | Surgeon, optional: the most items one run attempts to create; default 5. A failed create counts only once its dry run passed |
 | `area` | Surgeon, required with `writes: linear`: the one team PC area label every item carries; a label missing from team PC means the finding is reported and not filed |
+| `staging-repo` | Surgeon, optional: the git remote whose `refs/heads/staging` is the staging tip, read with `git ls-remote`; default `git@github.com:lstutzman/PropertyCompass2.git`, and an empty value is refused |
 
 Example:
 
@@ -999,7 +1000,10 @@ The Ship's Surgeon is the triage pass plus intake.
 `bin/fm-officer-surgeon.py`'s header owns the classification tables, severity rules and Linear steps; `bin/fm-officer-triage.py` stays because the friction pass imports it.
 Its digest keeps the session join's findings under `archive_findings` and puts the intake findings in `findings`, so a `severity: high` there, which the `lane:surgeon:high` [wake source](#offices-dataofficesmd) counts, means a high intake finding and never an archive coverage gap.
 Intake reads the fleet app with `GET` only: `/api/runs`, the latest result of each live nightly E2E or code-review job, and `/api/sweeper-results`.
+A red nightly E2E finding is high only when its run's `sha` is the current staging tip, and medium for an older run; an unreadable tip or a result with no `sha` rates it medium and adds a coverage gap.
+The bug sweeper's payload carries no production-source marker, so there is deliberately no production-error rule, and severity is never guessed from a bug's text.
 A finding the source already put in Linear is `tracked` and never filed again.
+A real finding whose source gave no key has no stable fingerprint, so it is reported and never filed.
 With `writes: linear`, the Surgeon files each real, untracked finding in team PC and nothing else: it never edits, comments on, closes or deletes an item.
 Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`), the registry's one area label, and `surgeon-fp:<sha256>` in its description, which a search for the fingerprint (and the lane's `filed-fingerprints.json`) checks first.
 One rate-limit answer from Linear stops the run's Linear calls and writes `linear-resume-after.json` in the lane; runs before that time make no Linear call.

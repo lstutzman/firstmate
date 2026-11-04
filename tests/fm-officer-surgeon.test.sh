@@ -4,8 +4,9 @@
 # fake linear-axi that logs every call.
 #
 # Covers: the registry (app, writes, max-creates, and for writes: linear the
-# team and area), the classification and severity tables for nightly E2E,
-# nightly review and sweeper findings, tracked findings never filed again,
+# team and area, and a non-empty staging-repo), the classification and
+# severity tables for nightly E2E (high only on the staging tip), nightly
+# review and sweeper findings, key-less findings never filed, tracked findings never filed again,
 # high severity in the digest json, no Linear call at all with writes: none,
 # the fingerprint search and the lane ledger skipping a create, the
 # max-creates cap, --dry-run before --verify with exactly one Type, Source and
@@ -23,6 +24,8 @@ OFFICER="$ROOT/bin/fm-officer.sh"
 TMP_ROOT=$(fm_test_tmproot fm-officer-surgeon)
 DATE=2026-10-23
 NOW=1792823400
+TIP=0123456789abcdef0123456789abcdef01234567
+REAL_GIT=$(command -v git)
 export TZ=UTC
 
 write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
@@ -33,7 +36,7 @@ write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
     {id: "nightly-review", state: "live", results: {kind: "review"}, latest: {runId: "R2"}},
     {id: "bosun", state: "live", results: {kind: "maintenance"}, lastDone: {runId: "R9"}},
     {id: "plain", state: "live", latest: {runId: "R8"}}]}' > "$d/_api_runs"
-  jq -n '{run: {}, result: {}, shared: {status: "failed", findings: [
+  jq -n --arg sha "${TIP^^}" '{run: {}, result: {sha: $sha, status: "RED"}, shared: {status: "failed", findings: [
     {key: "fp-a", title: "checkout pays", cause: "timed out", severity: "high", where: "a.spec.ts", issue: null,
      classification: "regression", rerun: "failed (3 s)", release_blocking: true},
     {key: "fp-b", title: "flaky one", cause: "slow", severity: "high", issue: null, classification: "flaky", rerun: "passed (4 s)"},
@@ -45,8 +48,9 @@ write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
     {id: "f1", severity: "critical", file: "A.cs", summary: "SQL built from input"},
     {id: "f2", severity: "high", file: "B.cs", summary: "unchecked null"},
     {id: "f3", severity: "low", file: "C.cs", summary: "naming"},
-    {id: "f4", severity: "medium", file: "D.cs", summary: "dead branch"}],
-    filings: {filed: [{finding: "f2", issue: "PC-80"}], digested: [], commented: [], failed: null, filing_error: false}}}' \
+    {id: "f4", severity: "medium", file: "D.cs", summary: "dead branch"},
+    {severity: "critical", file: "E.cs", summary: "no id given"}],
+    filings: {filed: [{finding: "f2", issue: "PC-80"}, {finding: "", issue: "PC-81"}], digested: [], commented: [], failed: null, filing_error: false}}}' \
     > "$d/_api_runs_nightly-review_results_R2"
   jq -n '{runs: [], latestPlan: null, latest: {run: {run_id: "sweep-20261023T0417Z", intake: {bugs: [
     {fp: "b1", title: "Crash on save", disposition: "new", severity: "P1", occurrences: 4, cause: "null ref"},
@@ -54,7 +58,10 @@ write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
     {fp: "b3", title: "Odd screen", disposition: "unclear", severity: "P2"},
     {fp: "b4", title: "Old regression", disposition: "regressed", severity: "P3", duplicate_of: "PC-5"},
     {fp: "b5", title: "Wrong total", disposition: "new", severity: "P2"},
-    {fp: "b6", title: "Filed already", disposition: "new", severity: "P1"}],
+    {fp: "b6", title: "Filed already", disposition: "new", severity: "P1"},
+    {fp: "b7", title: "production checkout error", notes: "seen in production logs", disposition: "unclear", severity: "low"},
+    {fp: "b8", title: "Fixed on staging", disposition: "fixed-staging-only", severity: "medium"},
+    {title: "No fingerprint", disposition: "new", severity: "low"}],
     linear: {filed: [{id: "PC-90", fp: "b6"}], updated: [], cancelled: [], dismissed: [], failures: []}}}}}' \
     > "$d/_api_sweeper-results"
 }
@@ -132,6 +139,15 @@ f="$TMP_ROOT/$name/pages/\$(printf '%s' "\${url#https://app.test}" | tr '/?=' '_
 if [ -f "\$f" ]; then cat "\$f"; printf '\n200'; else printf '\n404'; fi
 SH
   chmod +x "$FAKEBIN/curl"
+  printf '%s\n' "$TIP" > "$TMP_ROOT/$name/staging-tip"
+  cat > "$FAKEBIN/git" <<SH
+#!/usr/bin/env bash
+[ "\$1" = ls-remote ] || exec "$REAL_GIT" "\$@"
+printf '%s\n' "\$*" >> "$TMP_ROOT/$name/git.calls"
+[ -f "$TMP_ROOT/$name/staging-tip" ] || exit 128
+printf '%s\trefs/heads/staging\n' "\$(cat "$TMP_ROOT/$name/staging-tip")"
+SH
+  chmod +x "$FAKEBIN/git"
   WORLD_HOME=$home
 }
 
@@ -166,6 +182,9 @@ test_registry_rules() {
   surgeon_registry "$home" "$TMP_ROOT/registry/archive" "max-creates: 0; "
   out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$home" "$OFFICER" run surgeon --date "$DATE" 2>&1) && fail "max-creates 0 must be refused"
   assert_contains "$out" "max-creates must be a whole number" "max-creates is at least 1"
+  surgeon_registry "$home" "$TMP_ROOT/registry/archive" "staging-repo: ; "
+  out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$home" "$OFFICER" run surgeon --date "$DATE" 2>&1) && fail "an empty staging-repo must be refused"
+  assert_contains "$out" "staging-repo must name" "staging-repo is not empty"
   pass "fm-officer surgeon: the registry line is validated"
 }
 
@@ -174,7 +193,9 @@ test_classification_and_severity() {
   make_world classes; home=$WORLD_HOME
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals "real high" "$(row "$json" nightly fp-a '[.class,.severity]|join(" ")')" "a red night's failure is real and high"
+  assert_equals "real high" "$(row "$json" nightly fp-a '[.class,.severity]|join(" ")')" "a red night's failure on the staging tip is real and high"
+  assert_equals "$TIP $TIP" "$(row "$json" nightly fp-a '[.evidence.sha,.evidence.staging_tip]|join(" ")')" "the run sha and the tip are evidence"
+  assert_equals "ls-remote git@github.com:lstutzman/PropertyCompass2.git refs/heads/staging" "$(cat "$TMP_ROOT/classes/git.calls")" "the tip is read once from the default staging repo"
   assert_equals "wont-fix low" "$(row "$json" nightly fp-b '[.class,.severity]|join(" ")')" "a flaky class is won't fix and low"
   assert_equals "wont-fix low" "$(row "$json" nightly fp-e '[.class,.severity]|join(" ")')" "a rerun that passed alone is won't fix"
   assert_equals "needs-decision high" "$(row "$json" nightly fp-d '[.class,.severity]|join(" ")')" "an intended change needs a decision"
@@ -188,6 +209,9 @@ test_classification_and_severity() {
   assert_equals "needs-decision medium" "$(row "$json" sweeper b3 '[.class,.severity]|join(" ")')" "an unclear bug needs a decision"
   assert_equals PC-5 "$(row "$json" sweeper b4 .tracked)" "a duplicate_of bug is tracked"
   assert_equals PC-90 "$(row "$json" sweeper b6 .tracked)" "a bug the sweeper filed is tracked"
+  assert_equals "needs-decision low" "$(row "$json" sweeper b7 '[.class,.severity]|join(" ")')" "a low bug whose text says production stays low"
+  assert_equals "needs-decision medium" "$(row "$json" sweeper b8 '[.class,.severity]|join(" ")')" "fixed-staging-only needs a decision"
+  assert_equals "real high null" "$(row "$json" review "" '[.class,.severity,(.tracked|tostring)]|join(" ")')" "an empty filing key never marks a key-less finding tracked"
   assert_equals "" "$(jq -r '[.findings[] | select(.source == "review" and .key == "x")] | join("")' "$json")" "no stray findings"
   assert_equals true "$(jq -r '[.findings[] | select(.severity == "high")] | length > 0' "$json")" "high severity is in the digest json"
   assert_equals sha "$(row "$json" nightly fp-a '.fingerprint|if (.|length)==64 then "sha" else "bad" end')" "each finding carries a sha256 fingerprint"
@@ -196,6 +220,22 @@ test_classification_and_severity() {
   [ ! -s "$LINEAR_LOG" ] || fail "writes none must make no Linear call: $(cat "$LINEAR_LOG")"
   assert_not_contains "$(cat "$TMP_ROOT/classes/curl.calls")" "-X" "the app is read with GET only"
   pass "fm-officer surgeon: findings are classified and rated from the app's results with no Linear call"
+}
+
+test_staging_tip_rates_the_night() {
+  local home json out
+  make_world tip; home=$WORLD_HOME
+  printf 'fedcba9876543210fedcba9876543210fedcba98\n' > "$TMP_ROOT/tip/staging-tip"
+  out=$(run_surgeon "$home") || fail "surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "real medium" "$(row "$json" nightly fp-a '[.class,.severity]|join(" ")')" "a red night on an older sha is medium"
+  assert_equals "wont-fix low" "$(row "$json" nightly fp-b '[.class,.severity]|join(" ")')" "won't fix stays low"
+  assert_not_contains "$out" "staging tip unreadable" "a readable tip is no coverage gap"
+  rm -f "$TMP_ROOT/tip/staging-tip"
+  out=$(run_surgeon "$home") || fail "an unreadable tip must not fail the run"
+  assert_equals "real medium" "$(row "$json" nightly fp-a '[.class,.severity]|join(" ")')" "an unreadable tip rates the night medium"
+  assert_contains "$out" "Coverage gap: staging tip unreadable" "and is reported as a coverage gap"
+  pass "fm-officer surgeon: a red night is high only on the staging tip"
 }
 
 test_rerun_is_byte_identical() {
@@ -228,6 +268,8 @@ test_files_real_untracked_findings() {
   assert_contains "$bodies" "surgeon-fp:$(fp nightly nightly-e2e fp-a)" "the description carries the fingerprint"
   assert_contains "$bodies" "Epic:" "the description names its epic"
   assert_contains "$bodies" "What it is for" "the description says what it is for"
+  assert_equals "not-filed source gave no stable key" "$(row "$json" sweeper "" '[.filing.action,.filing.reason]|join(" ")')" "a key-less sweeper bug is reported, not filed"
+  assert_equals "not-filed source gave no stable key" "$(row "$json" review "" '[.filing.action,.filing.reason]|join(" ")')" "a key-less review finding is reported, not filed"
   assert_not_contains "$(cat "$LINEAR_LOG")" "issue update" "nothing is edited"
   assert_not_contains "$(cat "$LINEAR_LOG")" "issue close" "nothing is closed"
   assert_not_contains "$(cat "$LINEAR_LOG")" "comment" "nothing is commented"
@@ -354,6 +396,7 @@ test_register_surgeon_and_retire_triage_keeps_findings() {
 
 test_registry_rules
 test_classification_and_severity
+test_staging_tip_rates_the_night
 test_rerun_is_byte_identical
 test_files_real_untracked_findings
 test_fingerprint_search_skips_create

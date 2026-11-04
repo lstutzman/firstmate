@@ -924,6 +924,9 @@ MD
   assert_equals "FM_HOME=$nav" "$(request_home "$file" pc-crash)" 'the PropertyCompass2 request goes to the navigator'
   assert_equals "FM_HOME=$WORLD_HOME" "$(request_home "$file" fm-crash)" 'a project no office dispatches stays with this home'
   assert_equals "$nav" "$(jq -r '.start_requests[] | select(.id == "pc-crash") | .execute.env.FM_HOME' "$lane/$DATE.json")" 'the digest records where each request was sent'
+  printf -- '- navigator - nav (role: navigator; dispatch: PropertyCompass2; sources: tick; added 2026-11-04)\n' > "$WORLD_HOME/data/offices.md"
+  run_progress >/dev/null || fail 'a run whose start-home office stopped reading the lane must succeed'
+  assert_equals "FM_HOME=$WORLD_HOME" "$(request_home "$file" pc-crash)" 'an office that no longer reads lane:progress gets no requests, so they stay with this home'
   pass 'progress: start-home sends each request to the office that dispatches its project'
 }
 

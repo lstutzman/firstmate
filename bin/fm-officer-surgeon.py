@@ -9,7 +9,7 @@ Usage:
   fm-officer-surgeon.py run --archive <dir|host:dir> --date <YYYY-MM-DD> --out <lane-dir>
                             --app <https url> [--home <dir>]... [--hosts a,b] [--model none]
                             [--team PC] [--writes none|linear] [--max-creates 5]
-                            [--area <label>] [--now <epoch>]
+                            [--area <label>] [--staging-repo <git remote>] [--now <epoch>]
 
 Pass 1 is bin/fm-officer-triage.py's session join, unchanged (that script stays: the
 friction pass imports it by path); its findings are kept under `archive_findings`.
@@ -19,18 +19,27 @@ Each finding is classified with the tables below and no model:
 
   nightly E2E failure   real, unless its triage class names flaky/load/host/infra or
                         its rerun alone passed (won't fix); needs a decision when the
-                        class names product/spec/intended. Severity: high (the
-                        night is red on the staging tip).
+                        class names product/spec/intended. Severity: high when
+                        the run's `result.sha` is the staging tip (`git ls-remote
+                        <--staging-repo> refs/heads/staging`, 30 s at most),
+                        medium for an older run; with no sha or no readable tip,
+                        medium and a `Coverage gap:` line.
   nightly review        critical, high, medium: real at severity high, medium, low;
                         a low finding is won't fix.
   sweeper bug           disposition new/regressed: real; unclear/idea or any
                         unknown disposition: needs a decision; duplicate,
-                        fixed-live, noise: won't fix. Severity P1/critical/high:
-                        high; P2/medium: medium; else low.
+                        fixed-live, noise: won't fix; fixed-staging-only:
+                        needs a decision. Severity P1/critical/high: high;
+                        P2/medium: medium; else low. The sweeper payload
+                        carries no production-source marker, so there is
+                        deliberately no production rule (no guessing from text)
+                        until it does.
 
 A won't-fix finding is always low. A finding the source already put in Linear
 (an `issue` on the nightly failure, a filing on the review finding, a Linear item
 or `duplicate_of` on the sweeper bug) is `tracked`: reported, never filed again.
+A real finding whose source gave no key has no stable fingerprint, so it is
+reported and never filed.
 `findings` holds the intake findings, so the `severity: high` the office lane
 source reads means a high intake finding, not an archive coverage gap.
 
@@ -82,7 +91,7 @@ triage = _triage()
 NOISE_WORDS = ("flaky", "load", "host", "infra")
 DECISION_WORDS = ("product", "spec", "intended")
 SWEEP_REAL = ("new", "regressed")
-SWEEP_DECISION = ("unclear", "idea")
+SWEEP_DECISION = ("unclear", "idea", "fixed-staging-only")
 SWEEP_NOISE = ("duplicate", "fixed-live", "noise")
 SWEEP_HIGH = ("p1", "critical", "high")
 SWEEP_MEDIUM = ("p2", "medium")
@@ -95,6 +104,18 @@ CANDIDATES_PER_CREATE = 5
 EXISTING_VIEWS = 3
 RESUME_FILE = "linear-resume-after.json"
 LEDGER_FILE = "filed-fingerprints.json"
+STAGING_REPO = "git@github.com:lstutzman/PropertyCompass2.git"
+
+
+def staging_tip(repo):
+    """The lowercase sha of <repo>'s staging branch, or None when it cannot be read."""
+    try:
+        proc = subprocess.run(["git", "ls-remote", repo, "refs/heads/staging"], capture_output=True, check=False,
+                              timeout=30, stdin=subprocess.DEVNULL, env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    sha = proc.stdout.decode("utf-8", "replace").split("\t", 1)[0].strip().lower() if proc.returncode == 0 else ""
+    return sha if re.fullmatch(r"[0-9a-f]{7,40}", sha) else None
 
 
 def fetch(app, path):
@@ -133,10 +154,13 @@ def finding(source, job, key, title, summary, klass, severity, tracked, evidence
             "fingerprint": fingerprint(source, job, key), "evidence": evidence, "filing": None}
 
 
-def judge_nightly(job, detail):
+def judge_nightly(job, detail, tip):
     shared = detail.get("shared")
     if not isinstance(shared, dict) or shared.get("status") != "failed":
         return []
+    result = detail.get("result") if isinstance(detail.get("result"), dict) else {}
+    sha = text(result.get("sha"), 64).lower()
+    level = "high" if sha and tip and (sha.startswith(tip) or tip.startswith(sha)) else "medium"
     out = []
     for f in dicts(shared.get("findings")):
         label = (text(f.get("classification")) or "").lower()
@@ -148,10 +172,11 @@ def judge_nightly(job, detail):
         else:
             klass = "real"
         evidence = {"where": text(f.get("where")), "cause": text(f.get("cause")), "classification": f.get("classification"),
-                    "rerun": f.get("rerun"), "release_blocking": f.get("release_blocking"), "run": job["run"]}
+                    "rerun": f.get("rerun"), "release_blocking": f.get("release_blocking"), "run": job["run"],
+                    "sha": sha or None, "staging_tip": tip}
         out.append(finding("nightly", job["id"], text(f.get("key"), 100), f.get("title"),
                            "%s: %s" % (text(f.get("title"), 100), text(f.get("cause"), 120)), klass,
-                           "high", text(f.get("issue")) or None, evidence))
+                           level, text(f.get("issue")) or None, evidence))
     return out
 
 
@@ -161,7 +186,7 @@ def judge_review(job, detail):
         return []
     filings = result.get("filings") if isinstance(result.get("filings"), dict) else {}
     filed = {text(x.get("finding"), 100): text(x.get("issue"), 20)
-             for k in ("filed", "digested", "commented") for x in dicts(filings.get(k))}
+             for k in ("filed", "digested", "commented") for x in dicts(filings.get(k)) if text(x.get("finding"))}
     out = []
     for f in dicts(result.get("findings")):
         severity = REVIEW_SEVERITY.get(f.get("severity"))
@@ -197,9 +222,9 @@ def judge_sweeper(doc):
     return out
 
 
-def intake(app):
+def intake(app, staging_repo):
     """(findings, coverage gaps) from the fleet app; every read is a GET."""
-    findings, gaps = [], []
+    findings, gaps, tip = [], [], False
     state, runs = fetch(app, "/api/runs")
     if state != "read":
         gaps.append("fleet app /api/runs %s" % state)
@@ -213,7 +238,17 @@ def intake(app):
         if state != "read":
             gaps.append("fleet app result of %s %s" % (ref["id"], state))
             continue
-        findings += judge_nightly(ref, detail) if kind == "e2e" else judge_review(ref, detail)
+        if kind == "review":
+            findings += judge_review(ref, detail)
+            continue
+        if tip is False:
+            tip = staging_tip(staging_repo)
+        found = judge_nightly(ref, detail, tip)
+        if found and not tip:
+            gaps.append("staging tip unreadable from %s, so %s is rated medium" % (staging_repo, ref["id"]))
+        elif found and not found[0]["evidence"]["sha"]:
+            gaps.append("result of %s has no sha, so it is rated medium" % ref["id"])
+        findings += found
     state, sweeps = fetch(app, "/api/sweeper-results")
     if state != "read":
         gaps.append("fleet app /api/sweeper-results %s" % state)
@@ -319,7 +354,9 @@ def file_findings(findings, args, date, out):
         return summary_rows(todo), reason
 
     for f in todo:
-        if f["fingerprint"] in ledger:
+        if not f["key"]:
+            f["filing"] = {"action": "not-filed", "reason": "source gave no stable key"}
+        elif f["fingerprint"] in ledger:
             f["filing"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}
     if stopped:
         return stop(stopped)
@@ -400,10 +437,13 @@ def main(argv):
     parser.add_argument("--writes", choices=["none", "linear"], default="none")
     parser.add_argument("--max-creates", type=int, default=5)
     parser.add_argument("--area", default="")
+    parser.add_argument("--staging-repo", default=STAGING_REPO)
     parser.add_argument("--now", type=int)
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date):
         parser.error("--date must be YYYY-MM-DD")
+    if not args.staging_repo:
+        parser.error("--staging-repo must not be empty")
     if args.writes == "linear" and (args.team != "PC" or not args.area or args.max_creates < 1):
         parser.error("--writes linear needs --team PC, --area and --max-creates of at least 1")
     args.now = int(time.time()) if args.now is None else args.now
@@ -422,7 +462,7 @@ def main(argv):
     hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
     doc = triage.summarise(scanned, homes, hosts, args.model)
     archive_md = triage.render_md(doc)
-    findings, gaps = intake(args.app)
+    findings, gaps = intake(args.app, args.staging_repo)
     writes, blocked = file_findings(findings, args, args.date, args.out) if args.writes == "linear" else ([], None)
     classes = {}
     for f in findings:
