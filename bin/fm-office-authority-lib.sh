@@ -96,13 +96,14 @@
 # and fm_office_authority_parse, so in a home that is not an office they stay
 # empty.
 
+# Every FM_OFFICE_* result is read by the sourcing script, not here.
+# shellcheck disable=SC2034
+
 # Sourcing it again (bin/fm-config-inherit-lib.sh sources it too) must never
 # reset an authority already loaded, so only the first source runs.
 [ -z "${FM_OFFICE_AUTHORITY_LIB_SOURCED:-}" ] || return 0
 FM_OFFICE_AUTHORITY_LIB_SOURCED=1
 
-# Every FM_OFFICE_* result is read by the sourcing script, not here.
-# shellcheck disable=SC2034
 # shellcheck source=bin/fm-role-lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-role-lib.sh"
 # shellcheck source=bin/fm-registry-line-lib.sh
