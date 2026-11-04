@@ -168,6 +168,17 @@ test_admission_digest_follows_rules_argument() {
   pass "the admission digest pins the --rules file the classifier reads and refuses a relative or missing one"
 }
 
+test_admission_digest_matches_a_byte_identical_office_copy() {
+  local main="$TMP_ROOT/digest-main" office="$TMP_ROOT/digest-office"
+  mkdir -p "$main/admission" "$office/admission"
+  printf 'bin/** authority\n' > "$main/admission/firstmate.rules"
+  printf 'command=/x/fm-reserved-classify.sh --rules %s\nclasses=authority\n' "$main/admission/firstmate.rules" > "$main/admission/firstmate"
+  cp "$main/admission/firstmate" "$main/admission/firstmate.rules" "$office/admission/"
+  digest() { bash -c '. "$1"; fm_office_admission_digest "$2" firstmate' _ "$LIB" "$1"; }
+  assert_equals "$(digest "$main")" "$(digest "$office")" "a byte-identical office copy whose --rules names the main home's admission dir"
+  pass "the admission digest of a byte-identical office copy matches the master's"
+}
+
 test_live_tasks() {
   local s="$TMP_ROOT/live-state" out
   mkdir -p "$s"
@@ -255,6 +266,7 @@ test_valid_record_loads
 test_malformed_record_refuses
 test_admission_digest
 test_admission_digest_follows_rules_argument
+test_admission_digest_matches_a_byte_identical_office_copy
 test_live_tasks
 test_payload_resolves_only_the_destination
 test_payload_errors

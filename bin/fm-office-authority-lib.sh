@@ -42,15 +42,15 @@
 # that project's registry entry names in this home.
 #
 # Admission digest: for admission config <name>, the sha256 of the lines
-# "<sha256 of file>  <path>\n" for config/admission/<name> (path
-# admission/<name>) and then for each rules file its classifier reads: every
-# file named by a "--rules <path>" argument on the config's command= line, in
-# order, which must be an absolute path to a readable regular file; or, when
-# command= has no --rules argument, config/admission/<name>.rules if it exists
-# (the conventional path-rule file of bin/fm-reserved-classify.sh). A rules
-# file under config/admission/ is listed as admission/<file>, any other by its
-# absolute path. It lets an office's merge notice a local edit to its own
-# classifier config or rules.
+# "<sha256 of file>\n" for config/admission/<name> and then for each rules file
+# its classifier reads: every file named by a "--rules <path>" argument on the
+# config's command= line, in order, which must be an absolute path to a
+# readable regular file; or, when command= has no --rules argument,
+# config/admission/<name>.rules if it exists (the conventional path-rule file
+# of bin/fm-reserved-classify.sh). Only contents are listed, never paths, so a
+# byte-identical copy in another home digests the same; the config's own bytes
+# already carry each --rules path. It lets an office's merge notice a local
+# edit to its own classifier config or rules.
 #
 # Publishing: fm_office_inherit_payload builds one destination's record from
 # the main home's data/offices.md, so every other home receives an absence.
@@ -194,10 +194,7 @@ fm_office_admission_digest() {  # <config-dir> <name>
     [ -f "$f" ] && [ ! -L "$f" ] && [ -r "$f" ] || return 1
     sum=$(fm_role_sha256_stdin < "$f")
     [ -n "$sum" ] || return 1
-    case "$f" in
-      "$dir"/*) f=admission/${f#"$dir"/} ;;
-    esac
-    listing="$listing$sum  $f
+    listing="$listing$sum
 "
   done
   printf '%s' "$listing" | fm_role_sha256_stdin
