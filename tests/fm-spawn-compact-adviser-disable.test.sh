@@ -229,65 +229,12 @@ test_launch_exports_task_inbox() {
 #
 # bin/fm-control.sh relaunch stops the agent and rebuilds the launch through
 # bin/fm-spawn.sh --relaunch, so this drives the operator-facing verb rather
-# than the rebuild alone. The stub below models just enough pane lifecycle for
-# that transaction: the harness exit command leaves a bare shell behind, and the
-# launch literal starts the harness again.
+# than the rebuild alone. The stub (fm_test_fake_tmux_relaunch in
+# tests/fixtures.sh) models just enough pane lifecycle for that transaction: the
+# harness exit command leaves a bare shell behind, and the launch literal starts
+# the harness again.
 make_relaunch_stub() {  # <case-dir>
-  local fb="$1/fakebin"
-  mkdir -p "$fb"
-  cat > "$fb/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-D=$FM_FAKE_DIR
-case "${1:-}" in
-  send-keys)
-    shift
-    literal=0
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        -t) shift 2 ;;
-        -l) literal=1; shift ;;
-        *) break ;;
-      esac
-    done
-    payload=${1:-}
-    if [ "$literal" = 1 ]; then
-      case "$payload" in
-        ". '"*"'")
-          staged=${payload#". '"}
-          staged=${staged%"'"}
-          [ ! -f "$staged" ] || payload=$(cat "$staged")
-          ;;
-      esac
-      printf '%s\n' "$payload" >> "$D/literal"
-      case "$payload" in
-        /exit|/quit) printf 'zsh' > "$D/command" ;;
-        *'encode launch-brief'*) printf 'codex' > "$D/command" ;;
-      esac
-    else
-      printf '%s\n' "$payload" >> "$D/keys"
-    fi
-    exit 0 ;;
-  display-message)
-    for a in "$@"; do
-      case "$a" in
-        *cursor_y*) printf '1\n'; exit 0 ;;
-        *pane_current_command*) cat "$D/command"; printf '\n'; exit 0 ;;
-        *pane_current_path*) cat "$D/cwd"; printf '\n'; exit 0 ;;
-      esac
-    done
-    printf 'fakepane\n'; exit 0 ;;
-  capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
-  list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
-esac
-exit 0
-SH
-  chmod +x "$fb/tmux"
-  cat > "$fb/sleep" <<'SH'
-#!/usr/bin/env bash
-exit 0
-SH
-  chmod +x "$fb/sleep"
+  fm_test_fake_tmux_relaunch "$1/fakebin"
 }
 
 test_relaunch_rebuilds_the_switch() {

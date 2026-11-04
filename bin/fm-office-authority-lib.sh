@@ -2,11 +2,12 @@
 # fm-office-authority-lib.sh - is this home an office, and what may it do.
 #
 # Sourced, never executed. An office is a second mate that runs a standing role
-# mandate (docs/configuration.md "Offices (data/offices.md)"). bin/fm-spawn.sh
-# and bin/fm-pr-merge.sh call fm_office_resolve and, in an office, refuse what
-# the office's authority record does not cover. Outside an office nothing here
-# changes what either script does. This library grants nothing: every result is
-# either "not an office" or a narrower set of allowed actions.
+# mandate (docs/configuration.md "Offices (data/offices.md)"). bin/fm-spawn.sh,
+# bin/fm-pr-merge.sh and bin/fm-merge-local.sh call fm_office_resolve and, in an
+# office, refuse what the office's authority record does not cover. Outside an
+# office nothing here changes what any of them does. This library grants
+# nothing: every result is either "not an office" or a narrower set of allowed
+# actions.
 #
 # Detection reads two independent local signals, so deleting one makes the home
 # refuse rather than fall back to plain second-mate behaviour:

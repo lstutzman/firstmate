@@ -501,6 +501,150 @@ EOF
   pass "fm-merge-local: a registry change cannot redirect an in-flight local-only task"
 }
 
+# Office authority (bin/fm-office-authority-lib.sh): an office home never lands
+# a local-only task; its parent home does. Each case builds a home, a project
+# clone "proj" and a task whose ship branch fast-forwards, so a refusal is
+# judged by the default branch not moving, and a home that is not an office is
+# judged against the same fixture merging as before.
+# make_office_local_case <name> [record-line...]: echoes "<home>|<proj>|<id>";
+# record lines replace the default line with their key. The home is the office
+# "mate-x", which merges proj, and the task was spawned by it with yolo on.
+OFFICE_LOCAL_ID=office-local-a1
+
+make_office_local_case() {
+  local name=$1 home proj id=$OFFICE_LOCAL_ID kv key old
+  shift
+  local -a rec=(id=mate-x dispatch=proj merge=proj merge-via=none auto-merge-classes=none wip=2
+    admission-sha256=proj:0000000000000000000000000000000000000000000000000000000000000000)
+  for kv in "$@"; do
+    key=${kv%%=*}
+    local -a kept=()
+    for old in "${rec[@]}"; do [ "${old%%=*}" = "$key" ] || kept+=("$old"); done
+    rec=("${kept[@]}" "$kv")
+  done
+  home="$TMP_ROOT/$name/home"
+  proj="$TMP_ROOT/$name/proj"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$proj"
+  git -C "$proj" init -q || fail "could not initialize office local-merge fixture"
+  git -C "$proj" config user.email test@example.com
+  git -C "$proj" config user.name test
+  printf 'base\n' > "$proj/base"
+  git -C "$proj" add base || fail "could not stage office local-merge base"
+  git -C "$proj" commit -qm base || fail "could not commit office local-merge base"
+  git -C "$proj" checkout -qb "fm/$id" || fail "could not create office local-merge ship branch"
+  printf 'change\n' > "$proj/change"
+  git -C "$proj" add change || fail "could not stage office local-merge change"
+  git -C "$proj" commit -qm change || fail "could not commit office local-merge change"
+  git -C "$proj" checkout -q - || fail "could not restore office local-merge default branch"
+  printf 'project=%s\nmode=local-only\nbranch=fm/%s\nyolo=on\noffice=mate-x\n' "$proj" "$id" > "$home/state/$id.meta"
+  fm_write_office_home "$home" mate-x "${rec[@]}"
+  printf '%s\n' "$home|$proj|$id"
+}
+
+# office_local_home <case-record>: the home of a make_office_local_case record.
+office_local_home() {
+  local home
+  IFS='|' read -r home _ _ <<EOF
+$1
+EOF
+  printf '%s\n' "$home"
+}
+
+# run_office_local_merge <case-record>: lands the case's task; sets OUT and RC.
+run_office_local_merge() {
+  local home
+  home=$(office_local_home "$1")
+  RC=0
+  OUT=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$MERGE_LOCAL" "$OFFICE_LOCAL_ID" 2>&1) || RC=$?
+}
+
+# assert_office_local_refused <case-record> <label> <fragment>: the landing
+# failed with the office reason and the default branch did not move.
+assert_office_local_refused() {
+  local proj
+  IFS='|' read -r _ proj _ <<EOF
+$1
+EOF
+  [ "$RC" -ne 0 ] || fail "$2: the office landed the task: $OUT"
+  assert_contains "$OUT" "$3" "$2: the refusal did not give the office reason"
+  assert_contains "$OUT" "local merge refused" "$2: the refusal was not the landing's own"
+  [ ! -e "$proj/change" ] || fail "$2: a refused office landing still moved the default branch"
+}
+
+# office_local_refuses <name> <label> <fragment> [record-line...]: builds a
+# healthy office case with the record lines applied, runs <breaker> on its
+# home when one is set, and expects the refusal.
+office_local_refuses() {
+  local name=$1 label=$2 fragment=$3 rec
+  shift 3
+  rec=$(make_office_local_case "$name" "$@")
+  [ -z "${BREAK:-}" ] || "$BREAK" "$(office_local_home "$rec")"
+  run_office_local_merge "$rec"
+  assert_office_local_refused "$rec" "$label" "$fragment"
+}
+
+break_unpublish() { rm -f "$1/config/office-authority" "$1/config/.fm-inherit-office-authority.generation"; }
+break_edit_record() { printf 'wip=9\n' >> "$1/config/office-authority"; }
+break_heading() { printf '# Charter\n' > "$1/data/charter.md"; }
+break_marker() { rm -f "$1/.fm-office"; }
+break_charter() { rm -f "$1/data/charter.md"; mkdir "$1/data/charter.md"; }
+break_yolo() { sed -i.bak 's/^yolo=on$/yolo=off/' "$1/state/$OFFICE_LOCAL_ID.meta"; }
+break_foreign() { sed -i.bak 's/^office=.*/office=navigator/' "$1/state/$OFFICE_LOCAL_ID.meta"; }
+break_unowned() { sed -i.bak '/^office=/d' "$1/state/$OFFICE_LOCAL_ID.meta"; }
+
+OFFICE_LOCAL_NEVER="office mate-x never lands local-only work; its parent home lands it"
+
+test_local_merge_office_never_lands_inside_its_record() {
+  BREAK='' office_local_refuses office-local-healthy "healthy record that merges proj" "$OFFICE_LOCAL_NEVER"
+  pass "fm-merge-local: an office is refused a local landing even inside its authority record"
+}
+
+test_local_merge_non_office_homes_land_as_before() {
+  local rec home proj
+  # A main home that has never heard of offices.
+  rec=$(make_office_local_case office-local-main)
+  IFS='|' read -r home proj _ <<EOF
+$rec
+EOF
+  rm -f "$home/.fm-office" "$home/.fm-secondmate-home" "$home/config/office-authority" \
+    "$home/config/.fm-inherit-office-authority.generation"
+  printf '# Charter\n' > "$home/data/charter.md"
+  run_office_local_merge "$rec"
+  expect_code 0 "$RC" "a plain home was refused a local landing: $OUT"
+  [ -f "$proj/change" ] || fail "a plain home's local landing did not fast-forward"
+  # A plain second mate holding a stray authority record that would refuse it.
+  rec=$(make_office_local_case office-local-stray merge=none admission-sha256=)
+  IFS='|' read -r home proj _ <<EOF
+$rec
+EOF
+  rm -f "$home/.fm-office"
+  printf '# Charter\n' > "$home/data/charter.md"
+  sed -i.bak '/^office=/d;/^yolo=/d' "$home/state/$OFFICE_LOCAL_ID.meta"
+  run_office_local_merge "$rec"
+  expect_code 0 "$RC" "a plain second mate with a stray authority record was refused: $OUT"
+  assert_not_contains "$OUT" "authority record" "a plain second mate's landing mentioned an office authority record"
+  [ -f "$proj/change" ] || fail "a plain second mate's local landing did not fast-forward"
+  pass "fm-merge-local: a home that is not an office lands exactly as before, even with a stray record"
+}
+
+test_local_merge_office_refuses_outside_its_record() {
+  BREAK=break_unpublish office_local_refuses office-local-unpublished "unpublished record" "no published authority record"
+  assert_contains "$OUT" "bin/fm-office.sh ensure" "unpublished record: the refusal did not name the repair"
+  BREAK=break_edit_record office_local_refuses office-local-stale "record edited after publish" "diverges from the receipt"
+  BREAK=break_heading office_local_refuses office-local-no-heading "marker without heading" 'lacks the "# Office authority" heading'
+  BREAK=break_marker office_local_refuses office-local-no-marker "heading without marker" "no .fm-office marker"
+  BREAK=break_charter office_local_refuses office-local-bad-charter "unreadable charter" "cannot be read"
+  BREAK='' office_local_refuses office-local-other-project "project not in merge=" "$OFFICE_LOCAL_NEVER" \
+    dispatch=proj,other merge=other admission-sha256=other:0000000000000000000000000000000000000000000000000000000000000000
+  BREAK='' office_local_refuses office-local-merge-none "merge=none" "$OFFICE_LOCAL_NEVER" merge=none admission-sha256=
+  BREAK='' office_local_refuses office-local-via "project handed to another merger" "$OFFICE_LOCAL_NEVER" \
+    merge=none merge-via=proj=slarti admission-sha256=
+  BREAK=break_yolo office_local_refuses office-local-no-yolo "yolo off" "$OFFICE_LOCAL_NEVER"
+  BREAK=break_foreign office_local_refuses office-local-foreign "another office's task" "$OFFICE_LOCAL_NEVER"
+  BREAK=break_unowned office_local_refuses office-local-unowned "task with no office=" "$OFFICE_LOCAL_NEVER"
+  pass "fm-merge-local: an office refuses every local landing, giving the record's own reason when it is broken"
+}
+
 # A registered name may contain spaces, and the lookup must match the whole
 # name rather than only its first whitespace-delimited token (issue #1977).
 # The longer "foo bar" row is listed before the "foo" row so a leading-prefix
@@ -1708,6 +1852,9 @@ test_promotion_delivers_the_real_definition_of_done
 test_promotion_persists_the_selected_ship_branch
 test_promotion_branch_command_is_shell_safe
 test_local_merge_uses_the_recorded_ship_branch
+test_local_merge_office_never_lands_inside_its_record
+test_local_merge_non_office_homes_land_as_before
+test_local_merge_office_refuses_outside_its_record
 test_project_mode_matches_whole_multiword_names
 test_project_mode_maps_the_conditional_policy
 test_project_mode_binds_the_forge_orthogonally

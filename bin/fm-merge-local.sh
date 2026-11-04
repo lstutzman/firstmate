@@ -15,6 +15,14 @@
 # merge, so a captain approval must be recorded as an `answer --release` before
 # this entrypoint is invoked. The lock ends when the fast-forward returns;
 # docs/captain-hold-lifecycle.md owns the accepted merge-to-cleanup residual.
+#
+# In an office home (bin/fm-office-authority-lib.sh owns detection and the
+# authority record), an office never lands locally: an office merges only green
+# PRs its reserved-class classifier admits, and a local landing has neither, so
+# the parent home lands local-only work. The refusal comes before the task
+# record is read; a home whose office signals disagree or whose published
+# authority record is missing or unproven reports that reason instead. These
+# checks only refuse, and a home that is not an office never runs them.
 # Usage: fm-merge-local.sh <task-id>
 set -eu
 
@@ -50,6 +58,19 @@ META="$STATE/$ID.meta"
 # shellcheck source=bin/fm-lease-lib.sh
 . "$SCRIPT_DIR/fm-lease-lib.sh"
 fm_lease_forbid_branch "local-only landing (fm-merge-local)"
+
+# Office authority: an office home never lands locally, so refuse before the
+# task record is read. A home that is not an office skips all of it.
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$SCRIPT_DIR/fm-office-authority-lib.sh"
+if ! fm_office_resolve "$FM_HOME" "${FM_DATA_OVERRIDE:-$FM_HOME/data}" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; then
+  echo "error: local merge refused: $FM_OFFICE_ERROR" >&2
+  exit 1
+fi
+if [ -n "$FM_OFFICE_ID" ]; then
+  echo "error: local merge refused: office $FM_OFFICE_ID never lands local-only work; its parent home lands it" >&2
+  exit 1
+fi
 
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
 if ! fm_backlog_meta_spawn_gen_optional "$META" "$STATE"; then

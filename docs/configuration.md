@@ -1203,6 +1203,7 @@ An absent `data/offices.md` means no offices.
 
 An office acts only inside the authority record the main home publishes into it as `config/office-authority`, proven by the receipt `config/.fm-inherit-office-authority.generation`; `bin/fm-office-authority-lib.sh`'s header owns the record grammar, the receipt rule, and the admission digest.
 In an office home, `bin/fm-spawn.sh` and `bin/fm-pr-merge.sh` refuse whatever that record does not cover, and refuse everything when the record is missing or unproven or the home's office signals disagree; their headers own each check.
+An office never lands locally: `bin/fm-merge-local.sh` refuses every local landing in an office home, and the parent home lands local-only work.
 These checks only refuse, and a home that is not an office never runs them.
 
 ### Office status (data/office-status.json)
