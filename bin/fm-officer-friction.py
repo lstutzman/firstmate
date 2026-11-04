@@ -226,6 +226,8 @@ SERVICES = [
     ("Auth0", re.compile(r"\bauth0\b", re.I)),
 ]
 
+OP_FAILURE_RE = re.compile(r"do not have permission to perform|service[- ]account", re.I)
+
 # Root-cause rules for status text and asks: (cause, sub, pattern); first match wins.
 RULES = [
     ("guard-hook", "secret-hook", re.compile(
@@ -246,9 +248,12 @@ RULES = [
         r"(?:can'?t|cannot|not permitted to|no permission to|do not have permission to).{0,60}"
         r"(?:create|write|save)|create items|item create", re.I)),
     ("credential", "scope", re.compile(
-        r"authentication error|code 10000|insufficient (?:permission|privilege)s?|forbidden|\b403\b"
-        r"|refuses? (?:the |its )?(?:agents?'? )?(?:\w+ )?token|token.{0,40}refus"
-        r"|(?:token|key|grant)s?.{0,30}\bscopes?\b|\bscopes?\b.{0,30}(?:token|key)"
+        r"authentication error|code 10000|insufficient (?:permission|privilege)s?"
+        r"|(?<![\w-])(?:403|forbidden)(?![\w-]).{0,60}(?:token|credential|api key|service account)"
+        r"|(?:token|credential|api key|service account).{0,60}(?<![\w-])(?:403|forbidden)(?![\w-])"
+        r"|refus\w*\b.{0,60}token|token.{0,40}refus|do not have permission to perform"
+        r"|(?:token|key|grant)s?(?: \w+){0,3} (?:lacks?|missing|without|needs?|requires?|refused|denied)\b.{0,30}\bscopes?\b"
+        r"|\b(?:missing|lacks?|insufficient|required|without)\b.{0,20}\bscopes?\b.{0,30}(?:token|key|grant)"
         r"|widen(?:ed|ing)? (?:the )?(?:\w+ )?token", re.I)),
     ("credential", "login", re.compile(
         r"not logged in|not currently signed in|op signin|auth login|az login|sign[- ]in required|gh auth", re.I)),
@@ -491,7 +496,12 @@ def classify(text, rules=RULES):
 def service_of(text, near=0):
     """The service named closest to position `near`, or None."""
     best = None
+    # 1Password named only as the store of a token is not the failing provider.
+    stored_only = not OP_FAILURE_RE.search(text or "")
     for name, pattern in SERVICES:
+        if name == "1Password" and stored_only and any(
+                p.search(text or "") for n, p in SERVICES if n != "1Password"):
+            continue
         for m in pattern.finditer(text or ""):
             distance = abs(m.start() - near)
             if best is None or distance < best[0]:
