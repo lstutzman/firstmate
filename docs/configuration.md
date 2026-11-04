@@ -1201,7 +1201,9 @@ Session start runs `bin/fm-office.sh ensure`, which prints one `OFFICE:` line pe
 An absent `data/offices.md` means no offices.
 `list` and `ensure` only read: they seed, publish, spawn and grant nothing.
 
-An office acts only inside the authority record the main home publishes into it as `config/office-authority`, proven by the receipt `config/.fm-inherit-office-authority.generation`; `bin/fm-office-authority-lib.sh`'s header owns the record grammar, the receipt rule, and the admission digest.
+An office acts only inside the authority record the main home publishes into it as `config/office-authority`, proven by the receipt `config/.fm-inherit-office-authority.generation`; `bin/fm-office-authority-lib.sh`'s header owns the record grammar, the receipt rule, the admission digest, and which home receives which record.
+The main home builds each destination's record from that destination's own line, so every other second mate receives an absence and a plain second mate gains no file; every inheritance push (a second-mate spawn, the bootstrap sweep, `bin/fm-config-push.sh`) publishes it, and `bin/fm-office.sh publish <id>` publishes one local office's record now.
+The record pins each merge project's admission config from the main home's master copy in `config/admission/`, so republishing never blesses an edit made in the office home.
 In an office home, `bin/fm-spawn.sh` and `bin/fm-pr-merge.sh` refuse whatever that record does not cover, and refuse everything when the record is missing or unproven or the home's office signals disagree; their headers own each check.
 An office never lands locally: `bin/fm-merge-local.sh` refuses every local landing in an office home, and the parent home lands local-only work.
 These checks only refuse, and a home that is not an office never runs them.

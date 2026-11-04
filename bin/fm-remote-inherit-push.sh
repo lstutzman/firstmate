@@ -61,6 +61,12 @@ while IFS= read -r rel; do
       source="$TMP/firstmate-role.resolved"
       fm_role_inherit_payload "$FM_HOME" "$CONFIG" "$source" || die "cannot resolve the primary role"
       ;;
+    config/office-authority)
+      # A remote home cannot be read from here, so the record is published
+      # from data/offices.md alone (bin/fm-office-authority-lib.sh).
+      source="$TMP/office-authority.resolved"
+      fm_office_inherit_payload "$CONFIG" "$DATA" "$ID" "" "$source" || die "$FM_OFFICE_ERROR"
+      ;;
     config/*) source="$CONFIG/${rel#config/}" ;;
     data/*) source="$DATA/${rel#data/}" ;;
   esac

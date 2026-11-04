@@ -575,7 +575,7 @@ secondmate_sync() {
       continue
     }
     if FM_CONFIG_INHERIT_REPORT="$report" FM_CONFIG_INHERIT_LIVE=1 \
-      propagate_secondmate_inheritance "$FM_HOME" "$home_real" "$CONFIG" "$DATA"; then
+      propagate_secondmate_inheritance "$FM_HOME" "$home_real" "$CONFIG" "$DATA" "$id"; then
       :
     else
       echo "SECONDMATE_SYNC: secondmate $id: skipped: inheritance failed"

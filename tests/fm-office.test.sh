@@ -14,12 +14,15 @@ export FM_OFFICE_HOST=slartibartfast
 NAV='- navigator - Drive progress (role: navigator; runs-on: slartibartfast; dispatch: PropertyCompass2; merge: none; merge-via: PropertyCompass2=slarti; auto-merge-classes: none; wip: 2; tick: every 2h; sources: tick,lane:progress; added 2026-11-04)'
 QM='- quartermaster - Drive fleet self-improvement (role: quartermaster; runs-on: slartibartfast; dispatch: firstmate,skills; merge: firstmate,skills; merge-via: none; auto-merge-classes: none; wip: 2; tick: every 4h; sources: tick,lane:friction; added 2026-11-04)'
 
-# make_world <name>: a primary home with both offices registered and healthy.
+# make_world <name>: a primary home with both offices registered, their
+# admission configs copied from the main home's master copies, and each
+# office's authority record published.
 make_world() {
-  local w="$TMP_ROOT/$1" id
-  mkdir -p "$w/data"
+  local w="$TMP_ROOT/$1" id name
+  mkdir -p "$w/data" "$w/config/admission"
   for id in navigator quartermaster; do
-    mkdir -p "$w/$id/data"
+    mkdir -p "$w/$id/data" "$w/$id/config/admission"
+    printf '%s\n' "$id" > "$w/$id/.fm-secondmate-home"
     printf '%s\n' "$id" > "$w/$id/.fm-office"
     printf '# Charter\n\n# Office authority\n' > "$w/$id/data/charter.md"
     printf -- '- %s - office (home: %s/%s; scope: office; projects: none; added 2026-11-04)\n' "$id" "$w" "$id" >> "$w/data/secondmates.md"
@@ -28,11 +31,28 @@ make_world() {
   printf -- '- firstmate [no-mistakes admission=fm] - fm (added 2026-10-02)\n- skills [no-mistakes admission=sk] - skills (added 2026-10-02)\n' > "$w/quartermaster/data/projects.md"
   printf -- '- progress - x (role: progress; cadence: daily 07:00; added 2026-10-26)\n- friction - y (role: friction; cadence: daily 06:15; added 2026-10-24)\n' > "$w/data/officers.md"
   printf '# Offices\n\n%s\n%s\n' "$NAV" "$QM" > "$w/data/offices.md"
+  for name in fm sk; do
+    printf 'command=fm-reserved-classify.sh\nclasses=authority\nclear=none\n' > "$w/config/admission/$name"
+    printf 'AGENTS.md authority\n' > "$w/config/admission/$name.rules"
+    cp "$w/config/admission/$name" "$w/config/admission/$name.rules" "$w/quartermaster/config/admission/"
+  done
   for id in navigator quartermaster; do
     printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$w" > "$w/$id/.fm-secondmate-parent"
     FM_HOME="$w/$id" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must succeed in $id"
+    publish "$w" "$id" >/dev/null || fail "make_world $1: could not publish $id"
   done
   printf '%s\n' "$w"
+}
+
+publish() {  # <world> <id>
+  FM_HOME="$1" FM_DATA_OVERRIDE="$1/data" FM_CONFIG_OVERRIDE="$1/config" FM_STATE_OVERRIDE="$1/state" \
+    bash "$OFFICE" publish "$2"
+}
+
+# resolve <office-home>: "<rc>|<office-id>|<error>" from the gate's own resolver.
+resolve() {
+  bash -c '. "$1"; rc=0; fm_office_resolve "$2" "$2/data" "$2/config" || rc=$?; printf "%s|%s|%s\n" "$rc" "$FM_OFFICE_ID" "$FM_OFFICE_ERROR"' \
+    _ "$ROOT/bin/fm-office-authority-lib.sh" "$1"
 }
 
 ensure() { FM_HOME="$1" FM_DATA_OVERRIDE="$1/data" bash "$OFFICE" ensure; }
@@ -115,6 +135,152 @@ test_ensure_changes_nothing() {
   after=$(find "$w" -type f -exec cksum {} + | sort)
   assert_equals "$before" "$after" "files after ensure"
   pass 'ensure is read-only'
+}
+
+# --- publish: each office's authority record ----------------------------------
+
+# add_plain_mate <world>: register slarti, a plain second mate, with its home.
+add_plain_mate() {
+  mkdir -p "$1/slarti/data" "$1/slarti/config"
+  printf 'slarti\n' > "$1/slarti/.fm-secondmate-home"
+  printf -- '- slarti - plain (home: %s/slarti; scope: plain; projects: none; added 2026-11-04)\n' "$1" >> "$1/data/secondmates.md"
+}
+
+test_publish_reaches_only_the_named_office() {
+  local w out
+  w=$(make_world pub-each)
+  assert_equals "fm-office-authority-v1
+id=navigator
+dispatch=PropertyCompass2
+merge=none
+merge-via=PropertyCompass2=slarti
+auto-merge-classes=none
+wip=2
+admission-sha256=" "$(cat "$w/navigator/config/office-authority")" "navigator's record"
+  assert_contains "$(cat "$w/quartermaster/config/office-authority")" "id=quartermaster" "quartermaster's record names it"
+  assert_contains "$(cat "$w/quartermaster/config/office-authority")" "admission-sha256=firstmate:" "quartermaster pins its admission"
+  assert_equals "0|navigator|" "$(resolve "$w/navigator")" "navigator's gate"
+  assert_equals "0|quartermaster|" "$(resolve "$w/quartermaster")" "quartermaster's gate"
+  add_plain_mate "$w"
+  out=$(publish "$w" slarti)
+  assert_equals "office slarti: unchanged" "$out" "a plain second mate receives nothing"
+  assert_absent "$w/slarti/config/office-authority"
+  assert_absent "$w/slarti/config/.fm-inherit-office-authority.generation"
+  pass 'publish writes each office only its own line, and a plain second mate gets no file and no receipt'
+}
+
+test_record_copied_to_another_office_refuses() {
+  local w
+  w=$(make_world pub-copy)
+  cp "$w/navigator/config/office-authority" "$w/navigator/config/.fm-inherit-office-authority.generation" "$w/quartermaster/config/"
+  assert_contains "$(resolve "$w/quartermaster")" "id=navigator is not this office (quartermaster)" "a copied record"
+  rm "$w/quartermaster/config/.fm-inherit-office-authority.generation"
+  assert_contains "$(resolve "$w/quartermaster")" "no published authority record" "a record with no receipt"
+  pass "an office refuses another office's record, and a record with no receipt"
+}
+
+test_publish_follows_registry_changes() {
+  local w out
+  w=$(make_world pub-change)
+  edit_file "$w/data/offices.md" sed 's/wip: 2; tick: every 2h/wip: 3; tick: every 2h/'
+  out=$(ensure "$w")
+  assert_contains "$out" "OFFICE: office navigator: authority record is stale" "ensure sees a changed line"
+  assert_contains "$out" "run bin/fm-office.sh publish navigator" "ensure names the repair"
+  assert_equals "office navigator: pushed" "$(publish "$w" navigator)" "republish"
+  assert_contains "$(cat "$w/navigator/config/office-authority")" "wip=3" "republished record"
+  assert_equals "" "$(ensure "$w")" "ensure after republish"
+  assert_equals "office navigator: unchanged" "$(publish "$w" navigator)" "publish again"
+  edit_file "$w/data/offices.md" grep -v '^- navigator '
+  assert_equals "office navigator: pushed - mirrored primary absence" "$(publish "$w" navigator)" "revoke"
+  assert_absent "$w/navigator/config/office-authority"
+  assert_contains "$(resolve "$w/navigator")" "published no authority" "the gate after revocation"
+  pass 'publish follows an edited line, ensure reports the stale record, and a removed line revokes'
+}
+
+test_local_edits_refuse_until_republished() {
+  local w out
+  w=$(make_world pub-tamper)
+  edit_file "$w/navigator/config/office-authority" sed 's/^wip=2$/wip=9/'
+  assert_contains "$(ensure "$w")" "OFFICE: office navigator: authority record is unproven" "ensure sees the edit"
+  assert_contains "$(resolve "$w/navigator")" "diverges from the receipt" "the gate refuses the edit"
+  publish "$w" navigator >/dev/null
+  assert_equals "0|navigator|" "$(resolve "$w/navigator")" "the gate after republish"
+  printf 'bin/** none\n' >> "$w/quartermaster/config/admission/fm.rules"
+  out=$(ensure "$w")
+  assert_contains "$out" "admission config fm in $w/quartermaster/config differs from the master copy" "ensure sees an office-local admission edit"
+  publish "$w" quartermaster >/dev/null
+  assert_contains "$(ensure "$w")" "admission config fm in" "republishing does not bless an office-local admission edit"
+  pass 'a local record edit refuses until republished, and an office-local admission edit stays reported'
+}
+
+test_publish_errors_leave_no_authority() {
+  local w out
+  w=$(make_world pub-error)
+  mv "$w/config/admission/sk" "$w/config/admission/sk.gone"
+  if out=$(publish "$w" quartermaster 2>&1); then fail "publish succeeded without the master admission config"; fi
+  assert_contains "$out" "office quartermaster: error - cannot publish office quartermaster's authority record: the main home's master admission config" "publish error"
+  assert_absent "$w/quartermaster/config/.fm-inherit-office-authority.generation"
+  assert_contains "$(resolve "$w/quartermaster")" "no published authority record" "the gate after a failed publish"
+  assert_contains "$(ensure "$w")" "OFFICE: office quartermaster: cannot publish" "ensure reports it"
+  pass 'a publish that cannot pin admission writes nothing and leaves the office with no authority'
+}
+
+test_publish_refusals() {
+  local w err
+  w=$(make_world pub-refuse)
+  if err=$(publish "$w" nobody 2>&1); then fail "publish accepted an unregistered id"; fi
+  assert_contains "$err" "nobody is not a registered second mate" "unregistered id"
+  printf 'quartermaster\n' > "$w/navigator/.fm-secondmate-home"
+  if err=$(publish "$w" navigator 2>&1); then fail "publish accepted a home seeded for another mate"; fi
+  assert_contains "$err" "is not the seeded home of second mate navigator" "home mismatch"
+  if err=$(FM_HOME="$w/quartermaster" FM_DATA_OVERRIDE="$w/data" bash "$OFFICE" publish quartermaster 2>&1); then
+    fail "publish ran in a second-mate home"
+  fi
+  assert_contains "$err" "only the main home publishes office authority" "second-mate home"
+  edit_file "$w/data/secondmates.md" sed 's/^- quartermaster - office (home:/- quartermaster - office (host: deepthought; root: \/r; home:/'
+  if err=$(publish "$w" quartermaster 2>&1); then fail "publish accepted a remote route"; fi
+  assert_contains "$err" "is on a remote route" "remote route"
+  pass 'publish refuses an unregistered id, a mismatched home, a second-mate home, and a remote route'
+}
+
+test_remote_push_carries_the_record() {
+  local w dest fake out gen=1
+  w=$(make_world pub-remote)
+  dest="$w/remote-nav"
+  fake="$w/fakebin"
+  mkdir -p "$dest/config" "$dest/state" "$fake"
+  printf -- '- navigator - office (host: inherit-host; root: %s; home: %s; scope: office; projects: none; added 2026-11-04)\n' "$ROOT" "$dest" > "$w/data/secondmates.md"
+  cat > "$fake/inherit-ssh" <<'SH'
+#!/usr/bin/env bash
+set -eu
+while [ "$#" -gt 0 ]; do
+  case "$1" in -o) shift 2 ;; --) shift; break ;; *) exit 90 ;; esac
+done
+remote_root=$(printf '%s' "$4" | base64 --decode)
+remote_home=$(printf '%s' "$5" | base64 --decode)
+args=()
+while IFS= read -r -d '' arg; do args+=("$arg"); done < <(printf '%s' "$6" | base64 --decode)
+[ "${args[0]}" = fm-remote-inherit.sh ] || exit 92
+FM_HOME="$remote_home" FM_STATE_OVERRIDE="$remote_home/state" exec "$remote_root/bin/${args[0]}" "${args[@]:1}"
+SH
+  chmod +x "$fake/inherit-ssh"
+  out=$(FM_HOME="$w" FM_ROOT_OVERRIDE="$ROOT" FM_CONFIG_OVERRIDE="$w/config" FM_DATA_OVERRIDE="$w/data" \
+    FM_INHERITABLE_CONFIG=office-authority FM_SSH_BIN="$fake/inherit-ssh" \
+    "$ROOT/bin/fm-remote-inherit-push.sh" navigator "$gen" 2>&1) || fail "remote push failed: $out"
+  assert_equals "$(cat "$w/navigator/config/office-authority")" "$(cat "$dest/config/office-authority")" "the remote record"
+  printf 'navigator\n' > "$dest/.fm-secondmate-home"
+  printf 'navigator\n' > "$dest/.fm-office"
+  mkdir -p "$dest/data"
+  printf '# Office authority\n' > "$dest/data/charter.md"
+  assert_equals "0|navigator|" "$(resolve "$dest")" "the remote office's gate"
+  edit_file "$w/data/secondmates.md" sed 's/^- navigator /- quartermaster /'
+  if out=$(FM_HOME="$w" FM_ROOT_OVERRIDE="$ROOT" FM_CONFIG_OVERRIDE="$w/config" FM_DATA_OVERRIDE="$w/data" \
+    FM_INHERITABLE_CONFIG=office-authority FM_SSH_BIN="$fake/inherit-ssh" \
+    "$ROOT/bin/fm-remote-inherit-push.sh" quartermaster 2 2>&1); then
+    fail "a remote office that merges was published"
+  fi
+  assert_contains "$out" "cannot be pinned on a remote route" "remote merge office"
+  pass 'the remote push carries an office its record with a receipt, and refuses a remote office that merges'
 }
 
 # --- status: the office-status.json projection --------------------------------
@@ -334,7 +500,7 @@ SLOT=$(date -u -d "@$SRC_NOW" +%Y-%m-%dT%H 2>/dev/null || date -u -r "$SRC_NOW" 
 # source_world <name>: make_world plus the parent binding every office home carries.
 source_world() {
   local w
-  w=$(make_world "$1")
+  w=$(make_world "src-$1")
   mkdir -p "$w/navigator/state" "$w/data/officers/progress" "$w/data/officers/surgeon"
   sed -i.bak 's/sources: tick,lane:progress;/sources: tick,lane:progress,lane:surgeon:high;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
   printf -- '- surgeon - z (role: triage; cadence: daily 06:00; added 2026-10-24)\n' >> "$w/data/officers.md"
@@ -519,6 +685,13 @@ test_absent_registry_means_no_offices
 test_gaps
 test_list_counts_gaps
 test_ensure_changes_nothing
+test_publish_reaches_only_the_named_office
+test_record_copied_to_another_office_refuses
+test_publish_follows_registry_changes
+test_local_edits_refuse_until_republished
+test_publish_errors_leave_no_authority
+test_publish_refusals
+test_remote_push_carries_the_record
 test_status_working_lane
 test_status_next_lane
 test_status_done_window

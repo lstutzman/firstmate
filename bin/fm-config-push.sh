@@ -222,7 +222,7 @@ while IFS='|' read -r id home _window meta; do
   }
   reports="$reports $report"
   if FM_CONFIG_INHERIT_REPORT="$report" FM_CONFIG_INHERIT_LIVE=1 \
-    propagate_secondmate_inheritance "$FM_HOME" "$home_real" "$CONFIG" "$DATA"; then
+    propagate_secondmate_inheritance "$FM_HOME" "$home_real" "$CONFIG" "$DATA" "$id"; then
     :
   else
     errors=1

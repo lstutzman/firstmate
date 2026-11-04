@@ -86,6 +86,8 @@
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-startup-memory-budget-lib.sh"
 # shellcheck source=bin/fm-role-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-role-lib.sh"
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-office-authority-lib.sh"
 
 # The one shared data file in this inheritance contract. There is deliberately
 # no shared learnings file.
@@ -96,7 +98,7 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send typesafe-base-url typesafe-model typesafe-token-file crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off firstmate-role cpa-usage-host brief-include.md}"
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send typesafe-base-url typesafe-model typesafe-token-file crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context launch-env-allowlist claude-permission-mode lavish-axi-host keep-ai-trailers supervision-host-off firstmate-role cpa-usage-host brief-include.md office-authority}"
 
 # The one inherited item composed from a primary base plus the home's own lines
 # (see the header) instead of copied whole.
@@ -115,6 +117,15 @@ FM_BRIEF_INCLUDE_FILE="brief-include.md"
 # it in propagate_secondmate_inheritance, and a failed propagation removes it
 # rather than leaving a stale proof. bin/fm-role-lib.sh owns how the grant and
 # receipt are interpreted.
+#
+# office-authority carries the same receipt, but its payload is computed per
+# destination: fm_office_inherit_payload (bin/fm-office-authority-lib.sh, which
+# owns the record and when a destination receives one) resolves only the
+# destination's own office line, so every other secondmate receives an absence
+# and a plain secondmate that never held a record gains no file and no receipt.
+# The destination id comes from the caller's registry or task record, never
+# from the destination home; with no id the payload is an absence.
+FM_RECEIPT_INHERITABLE_CONFIG="firstmate-role office-authority"
 
 # Items whose value is a home-SESSION enablement decision rather than durable
 # local configuration. They are inherited at the launch convergence point, where
@@ -250,38 +261,39 @@ destination_allows_inherited_item() {
 # do not affect the exit code. Returns non-zero only when a real propagation
 # error, such as copy or remove failure, occurs.
 record_inheritable_config_result() {
-  local item=$1 status=$2 reason=${3:-}
-  if [ "$item" = firstmate-role ] && [ -n "${FM_INHERIT_DEST_CONFIG:-}" ]; then
-    # The inherited role grant is provable only through its receipt: write it
-    # for converged outcomes that produced a destination state (a copied grant
-    # or a mirrored absence), and drop it for every outcome that wrote nothing,
-    # so a stale positive proof never outlives the propagation that failed to
-    # prove the parent's current value. An unchanged outcome with no
+  local item=$1 status=$2 reason=${3:-} receipt
+  if fm_config_inherit_item_has_receipt "$item" && [ -n "${FM_INHERIT_DEST_CONFIG:-}" ]; then
+    # A receipt-bearing item is provable only through its receipt: write it
+    # for converged outcomes that produced a destination state (a copied
+    # payload or a mirrored absence), and drop it for every outcome that wrote
+    # nothing, so a stale positive proof never outlives the propagation that
+    # failed to prove the parent's current value. An unchanged outcome with no
     # destination file is a no-op state - no receipt is written and none needs
     # to exist.
+    receipt="$FM_INHERIT_DEST_CONFIG/.fm-inherit-$item.generation"
     case $status in
     pushed)
-      if ! fm_inherit_role_receipt_commit "$FM_INHERIT_DEST_CONFIG"; then
+      if ! fm_inherit_receipt_commit "$receipt" "$FM_INHERIT_DEST_CONFIG/$item"; then
         status=error
-        reason="could not commit the role inheritance receipt"
-        warn_inheritable_config_error "$item" "$FM_INHERIT_DEST_CONFIG/firstmate-role" "$reason"
-        FM_INHERIT_ROLE_RECEIPT_FAILED=1
+        reason="could not commit the $item inheritance receipt"
+        warn_inheritable_config_error "$item" "$FM_INHERIT_DEST_CONFIG/$item" "$reason"
+        FM_INHERIT_RECEIPT_FAILED=1
       fi
       ;;
     unchanged)
-      if [ -f "$FM_INHERIT_DEST_CONFIG/firstmate-role" ] && [ ! -L "$FM_INHERIT_DEST_CONFIG/firstmate-role" ]; then
-        if ! fm_inherit_role_receipt_commit "$FM_INHERIT_DEST_CONFIG"; then
+      if [ -f "$FM_INHERIT_DEST_CONFIG/$item" ] && [ ! -L "$FM_INHERIT_DEST_CONFIG/$item" ]; then
+        if ! fm_inherit_receipt_commit "$receipt" "$FM_INHERIT_DEST_CONFIG/$item"; then
           status=error
-          reason="could not commit the role inheritance receipt"
-          warn_inheritable_config_error "$item" "$FM_INHERIT_DEST_CONFIG/firstmate-role" "$reason"
-          FM_INHERIT_ROLE_RECEIPT_FAILED=1
+          reason="could not commit the $item inheritance receipt"
+          warn_inheritable_config_error "$item" "$FM_INHERIT_DEST_CONFIG/$item" "$reason"
+          FM_INHERIT_RECEIPT_FAILED=1
         fi
       else
-        rm -f "$FM_INHERIT_DEST_CONFIG/.fm-inherit-firstmate-role.generation" 2>/dev/null || true
+        rm -f "$receipt" 2>/dev/null || true
       fi
       ;;
     *)
-      rm -f "$FM_INHERIT_DEST_CONFIG/.fm-inherit-firstmate-role.generation" 2>/dev/null || true
+      rm -f "$receipt" 2>/dev/null || true
       ;;
     esac
   fi
@@ -289,21 +301,21 @@ record_inheritable_config_result() {
   printf '%s\t%s\t%s\n' "$item" "$status" "$reason" >> "$FM_CONFIG_INHERIT_REPORT" 2>/dev/null || true
 }
 
-# fm_inherit_role_receipt_commit <dest-config-dir> - commit the post-propagation
-# proof of the role item's destination state in the same 4-line record the
-# remote receiver's generation file carries: <generation> <bytes> <sha256>
-# <put|absent>. The generation continues the receipt's own sequence (prior
-# value + 1, or 1), so a local commit never outpaces the remote route's
-# monotonic counter with an unrelated clock value and later remote pushes are
-# not refused as superseded. Written atomically at mode 0600 like the
-# receiver's own commit_generation, so a torn or world-readable proof can
-# never land.
-fm_inherit_role_receipt_commit() {
-  fm_inherit_receipt_commit "$1/.fm-inherit-firstmate-role.generation" "$1/firstmate-role"
+# True when <item> carries a proof-of-state receipt (see the header).
+fm_config_inherit_item_has_receipt() {  # <item>
+  case " $FM_RECEIPT_INHERITABLE_CONFIG " in *" $1 "*) return 0 ;; esac
+  return 1
 }
 
-# fm_inherit_receipt_commit <receipt> <payload> - the shared writer behind the
-# record above: <payload> present is a put of its bytes, absent an absent record.
+# fm_inherit_receipt_commit <receipt> <payload> - commit the post-propagation
+# proof of a receipt-bearing item's destination state in the same 4-line record
+# the remote receiver's generation file carries: <generation> <bytes> <sha256>
+# <put|absent>; <payload> present is a put of its bytes, absent an absent
+# record. The generation continues the receipt's own sequence (prior value + 1,
+# or 1), so a local commit never outpaces the remote route's monotonic counter
+# with an unrelated clock value and later remote pushes are not refused as
+# superseded. Written atomically at mode 0600 like the receiver's own
+# commit_generation, so a torn or world-readable proof can never land.
 fm_inherit_receipt_commit() {
   local receipt=$1 dest=$2 dest_config gen bytes sha cmd tmp prior_gen
   dest_config=${receipt%/*}
@@ -792,28 +804,28 @@ propagate_shared_captain_preferences() {
   return "$rc"
 }
 
-propagate_secondmate_inheritance() {
-  local src_home=$1 dest_home=$2 src_config=${3:-} src_data=${4:-} rc
+propagate_secondmate_inheritance() {  # <src-home> <dest-home> [src-config] [src-data] [dest-id]
+  local src_home=$1 dest_home=$2 src_config=${3:-} src_data=${4:-} dest_id=${5:-} rc
   [ -n "$src_home" ] || return 1
   [ -n "$dest_home" ] || return 1
   [ -n "$src_config" ] || src_config="$src_home/config"
   [ -n "$src_data" ] || src_data="$src_home/data"
   rc=0
-  propagate_inheritable_config "$src_config" "$dest_home/config" "$src_home" || rc=1
+  propagate_inheritable_config "$src_config" "$dest_home/config" "$src_home" "$dest_id" "$src_data" || rc=1
   propagate_shared_captain_preferences "$src_data" "$dest_home/data" || rc=1
   return "$rc"
 }
 
-propagate_inheritable_config() {
-  local src_config=$1 dest_config=$2 src_home=${3:-${1%/*}} item src dest source_present reason rc
+propagate_inheritable_config() {  # <src-config> <dest-config> [src-home] [dest-id] [src-data]
+  local src_config=$1 dest_config=$2 src_home=${3:-${1%/*}} dest_id=${4:-} src_data=${5:-} item src dest source_present reason rc
   local prior_dest_config=${FM_INHERIT_DEST_CONFIG-} role_stage=
   [ -n "$src_config" ] || return 1
   [ -n "$dest_config" ] || return 1
   rc=0
-  # Dest dir the per-item outcome recorder uses for firstmate-role receipt
+  # Dest dir the per-item outcome recorder uses for receipt
   # bookkeeping; restored on return so nested callers keep their own.
   FM_INHERIT_DEST_CONFIG=$dest_config
-  FM_INHERIT_ROLE_RECEIPT_FAILED=
+  FM_INHERIT_RECEIPT_FAILED=
   for item in $FM_INHERITABLE_CONFIG; do
     case "$item" in
       ''|/*|.|..|../*|*/../*|*/..)
@@ -829,10 +841,21 @@ propagate_inheritable_config() {
     src="$src_config/$item"
     dest="$dest_config/$item"
     if [ "$item" = firstmate-role ]; then
-      if ! role_stage=$(mktemp -d "${TMPDIR:-/tmp}/fm-inherit-role.XXXXXX" 2>/dev/null) ||
+      if ! { [ -n "$role_stage" ] || role_stage=$(mktemp -d "${TMPDIR:-/tmp}/fm-inherit-role.XXXXXX" 2>/dev/null); } ||
         ! fm_role_inherit_payload "$src_home" "$src_config" "$role_stage/$item"; then
         reason="cannot resolve the primary role"
         warn_inheritable_config_error "$item" "$src" "$reason"
+        record_inheritable_config_result "$item" error "$reason"
+        rc=1
+        continue
+      fi
+      src="$role_stage/$item"
+    fi
+    if [ "$item" = office-authority ]; then
+      if ! { [ -n "$role_stage" ] || role_stage=$(mktemp -d "${TMPDIR:-/tmp}/fm-inherit-role.XXXXXX" 2>/dev/null); } ||
+        ! fm_office_inherit_payload "$src_config" "${src_data:-$src_home/data}" "$dest_id" "${dest_config%/*}" "$role_stage/$item"; then
+        reason=${FM_OFFICE_ERROR:-"cannot stage the office authority record"}
+        warn_inheritable_config_error "$item" "$dest" "$reason"
         record_inheritable_config_result "$item" error "$reason"
         rc=1
         continue
@@ -937,7 +960,7 @@ propagate_inheritable_config() {
   done
   FM_INHERIT_DEST_CONFIG=$prior_dest_config
   [ -z "$role_stage" ] || rm -rf "$role_stage"
-  [ -z "${FM_INHERIT_ROLE_RECEIPT_FAILED:-}" ] || rc=1
+  [ -z "${FM_INHERIT_RECEIPT_FAILED:-}" ] || rc=1
   return "$rc"
 }
 
