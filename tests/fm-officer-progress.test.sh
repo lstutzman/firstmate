@@ -897,6 +897,39 @@ MD
   pass 'progress: executable starts use the existing idempotent firstmate intake'
 }
 
+request_home() {  # <handoff file> <task id>: the FM_HOME the task's start request is addressed to.
+  awk -v id="\"id\": \"$2\"" '/^FM_HOME=/ {home = $1} index($0, id) {print home}' "$1"
+}
+
+test_start_home_routes_requests_by_project() {
+  make_world starthome
+  local nav="$WORLD/navigator" lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh"
+  officer_home "$nav"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$nav/data/backlog.md"
+  printf 'navigator\n' > "$nav/.fm-office"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$WORLD_HOME" > "$nav/.fm-secondmate-parent"
+  printf -- '- navigator - nav (home: %s; scope: office; projects: PropertyCompass2; added 2026-11-04)\n' "$nav" > "$WORLD_HOME/data/secondmates.md"
+  printf -- '- navigator - nav (role: navigator; dispatch: PropertyCompass2; sources: tick,lane:progress; added 2026-11-04)\n' > "$WORLD_HOME/data/offices.md"
+  FM_HOME="$nav" "$ROOT/bin/fm-office.sh" register-sources >/dev/null || fail 'register-sources must succeed in the navigator home'
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## Queued
+
+- [ ] pc-crash - Fix a PropertyCompass crash (kind: bug) (repo: PropertyCompass2)
+- [ ] fm-crash - Fix a firstmate crash (kind: bug) (repo: firstmate)
+MD
+  run_progress >/dev/null || fail 'a run without start-home must succeed'
+  assert_equals "FM_HOME=$WORLD_HOME FM_HOME=$WORLD_HOME" "$(request_home "$file" pc-crash) $(request_home "$file" fm-crash)" 'without start-home every request goes to this home'
+  sed -i 's/model: none;/start-home: navigator; model: none;/' "$WORLD_HOME/data/officers.md"
+  run_progress >/dev/null || fail 'a run with start-home must succeed'
+  assert_equals "FM_HOME=$nav" "$(request_home "$file" pc-crash)" 'the PropertyCompass2 request goes to the navigator'
+  assert_equals "FM_HOME=$WORLD_HOME" "$(request_home "$file" fm-crash)" 'a project no office dispatches stays with this home'
+  assert_equals "$nav" "$(jq -r '.start_requests[] | select(.id == "pc-crash") | .execute.env.FM_HOME' "$lane/$DATE.json")" 'the digest records where each request was sent'
+  printf -- '- navigator - nav (role: navigator; dispatch: PropertyCompass2; sources: tick; added 2026-11-04)\n' > "$WORLD_HOME/data/offices.md"
+  run_progress >/dev/null || fail 'a run whose start-home office stopped reading the lane must succeed'
+  assert_equals "FM_HOME=$WORLD_HOME" "$(request_home "$file" pc-crash)" 'an office that no longer reads lane:progress gets no requests, so they stay with this home'
+  pass 'progress: start-home sends each request to the office that dispatches its project'
+}
+
 test_remote_home_and_missing_home() {
   make_world remote
   local other="$WORLD/remote-home" file="$WORLD_HOME/data/officers/progress/$DATE.json"
@@ -1239,6 +1272,7 @@ JSON
   pass 'progress: only Top of Mind asks start work'
 }
 
+test_start_home_routes_requests_by_project
 test_top_of_mind_start
 test_top_of_mind_kind
 test_top_of_mind_dispositions

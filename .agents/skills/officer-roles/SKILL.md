@@ -17,9 +17,10 @@ It never acts on the fleet.
 
 An officer may:
 
-- read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, GitHub read-only, and, for a friction officer, the Captain's Log cards and tap replies fleet-app serves at `GET /api/captains-log` and `GET /api/captains-log/replies`; a progress officer also reads Linear and registered remote homes read-only; a page-check officer reads each fleet-app page's `GET` endpoint, this home's status logs, the standing rules in `data/captain-shared.md`, and a card's PR state through `gh-axi api GET`, all read-only;
+- read fleet records: this home's and local second mate homes' `state/` status logs, meta, and fleet ledger, `data/<id>/` reports, the backlog, the session archive, GitHub read-only, and, for a friction officer, the Captain's Log cards and tap replies fleet-app serves at `GET /api/captains-log` and `GET /api/captains-log/replies`; a progress officer also reads Linear and registered remote homes read-only; a surgeon officer also reads the fleet app's `GET /api/runs`, each live nightly job's latest result and `GET /api/sweeper-results`; a page-check officer reads each fleet-app page's `GET` endpoint, this home's status logs, the standing rules in `data/captain-shared.md`, and a card's PR state through `gh-axi api GET`, all read-only;
 - write its own lane, `data/officers/<id>/`: dated findings (including the friction officer's velocity file, the progress officer's state and executable start requests, and the page-check officer's `state.json`), its digest marker, `runs.log`, and its `check-record.*` files;
 - print its one report line from its watcher check;
+- for a surgeon officer, only when its registry line says `writes: linear`, file Linear items in team PC from nightly runs, bug-sweep results and test runs: `linear-axi` `--dry-run` then `--verify`, at most `max-creates` attempts a run (default 5), exactly one Type (Bug), one Source and one area label looked up in team PC, and a `surgeon-fp:<sha256>` fingerprint in the description that it searches for first so a finding is never filed twice; a failed label lookup reports the finding instead, and one rate-limit answer stops every Linear call in the run;
 - for a landing officer, unless its registry line says `writes: none`, correct what PropertyCompass2's release workflow (the routine Done writer) missed, through `linear-axi` `--dry-run` then `--verify`, at most `max-corrections` written items a run (skips do not count):
   set Done on an item whose every linked PR the landing-truth facts show merged and in production and that has no sub-issues, or move a Done item the facts name, with a linked PR merged that never reached main (`on_main` false) or any release, to its `reopen-state`; a Done item on main but not yet in production is release lag, reported and never written;
   no Linear write is made when the facts name no `production_sha` or their `generated_at` is missing or older than `max-facts-age` hours (default 36), and a `stale-facts` finding is raised instead;
@@ -31,7 +32,7 @@ An officer may never:
 - spawn, steer, interrupt, relaunch, merge, land, or clean up any worker or second mate;
 - answer, hold, or close a captain call, or edit Captain's Log cards;
 - write to a project, another home, or any record outside its lane, Linear aside as above, or post its findings to fleet-app or any other service (the fleet app pulls a friction officer's velocity findings file and a progress officer's `progress-state.json` from its lane);
-- write In Staging, make any Linear change other than those two corrections, or file a Linear item;
+- write In Staging, or make any Linear change other than the landing officer's two corrections and the surgeon's creates above (it never edits, comments on, closes or deletes an item);
 - collect landing facts itself: the fleet-app landing-truth job owns them, and the officer only judges them;
 - run crew of its own, or call a model in slice 1 (`model: none`).
 
@@ -51,6 +52,9 @@ A `check:` wake from `state/officer-<id>.check.sh` reading `officer <id>: <date>
 2. Treat ordinary findings as evidence, not authorization; progress start requests use the standing authority and execution contract in [Progress officer](../../../docs/configuration.md#progress-officer).
 3. Route work the evidence supports through ordinary intake; file a tracker item only under the captain's standing rules for findings, and hold a real captain call through `bin/fm-captain-hold.sh hold`.
 4. Do not re-wake the captain for a digest with nothing new; the check already stays silent on repeats and empty digests.
+
+An officer's digest line reaches main only when its registry `consumer:` field lists `main` (the default), and reaches an office through that office's `lane:<officer-id>` wake source; the failure line always reaches main.
+A surgeon digest's `findings` are intake findings (real, won't fix, or needs a decision, with `tracked` and `filing` fields), and its `archive_findings` are the session join's.
 
 For a progress digest, firstmate runs the adjacent `<date>.start-requests.sh` to enqueue the automatic starts, then processes those inbox notes through ordinary intake without another prioritization decision.
 Apply the linked contract's freshness and readiness checks first; route its `asks_for_lee` to Captain's Log cards through the ordinary hold path.

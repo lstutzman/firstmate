@@ -947,33 +947,39 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | Field | Meaning |
 | --- | --- |
 | `<id>` | Lowercase letters, digits, and dashes, at most 40 characters; names the lane `data/officers/<id>/` and the check `state/officer-<id>.check.sh` |
-| `role` | `triage`, `landing`, `friction`, `progress`, or `pagecheck` |
+| `role` | `triage`, `surgeon`, `landing`, `friction`, `progress`, or `pagecheck` |
 | `cadence` | `daily HH:MM` in the home's local time: the run for yesterday's date starts at the first watcher check after that time. Or `every Nh` (N from 1 to 24): the run key is the slot `YYYY-MM-DDTHH`, slots start at local midnight and repeat every N hours until the next midnight, and the first watcher check in a slot starts that slot's run on current records. `bin/fm-registry-line-lib.sh` owns the grammar; `ensure` allows two of the officer's own periods between finished runs |
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
 | `consumer` | Optional comma-separated `main` and office ids, default `main`; each office id must be a local office in `data/offices.md` whose `sources` lists `lane:<officer-id>` (a `:high`-only lane would drop the other findings) and whose home has that check registered by `bin/fm-office.sh register-sources`; `register` refuses and `ensure` reports a consumer that misses this, and the check then wakes main as if main were listed. The check prints the `officer <id>: ... actionable finding(s)` digest line, which wakes main, only when `main` is listed, so an office that reads the digest through its own [wake source](#offices-dataofficesmd) can take it from main; the failure line is always printed |
-| `archive` | Triage and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
+| `archive` | Triage, surgeon and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
 | `ask-days` | Friction, optional: how many days of Lee's typed messages the repeated-ask finding compares; default 7 |
-| `app` | Pagecheck only, required: the fleet app's `https://` base URL, read with `GET` only |
+| `app` | Pagecheck and surgeon, required: the fleet app's `https://` base URL, read with `GET` only |
 | `rules` | Pagecheck only, optional: the file holding the standing rules (see [Page-check officer](#page-check-officer)); default this home's `data/captain-shared.md` |
 | `stale-days` | Pagecheck only, optional: days a card may stay asked and unanswered before it is stale; default 7 |
 | `remind-hours` | Pagecheck only, optional: hours before an unfixed finding is counted as new again; default 24 |
-| `hosts` | Triage and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
+| `hosts` | Triage, surgeon and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
 | `captains-log` | Optional `https://` URL ending `/api/captains-log`: friction reads its cards with one `GET`, and its tap replies with one `GET <url>/replies`, and reports either unreachable as a coverage gap; progress uses its corresponding `/captains-log` page URL to link existing held cards without copying their questions |
 | `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2 with exactly the top-level keys `schema_version`, `generated_at`, `staging_sha`, `production_sha`, `records` keyed `<repo>#<pr>`, and `items` mapping each Linear id to its record keys; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
-| `team` | Landing and progress, optional: the Linear team key to read; default `PC` |
+| `team` | Landing, progress and surgeon, optional: the Linear team key to read (a surgeon that writes must use `PC`); default `PC` |
 | `repos` | Progress only, required: comma-separated GitHub `owner/repo` names whose open PRs prevent duplicate starts |
 | `requested` | Progress only, optional: comma-separated Linear root identifiers for features or fleet work Lee has already requested; children inherit that recorded authority at any depth |
-| `writes` | Landing only, optional: `corrections` (default) lets the officer correct what PropertyCompass2's release workflow, the routine Done writer, missed; `none` turns Linear writes off |
+| `writes` | Landing, optional: `corrections` (default) lets the officer correct what PropertyCompass2's release workflow, the routine Done writer, missed; `none` turns Linear writes off |
 | `max-corrections` | Landing only, optional: the most items one run may correct; default 10. An item skipped on its re-check does not count, and a run re-checks at most five items per allowed correction |
 | `reopen-state` | Landing only, optional: the state a Done item moves to when its linked PR never reached main (`on_main` false) or any release; default `In Progress`; `In Staging` and `Done` are refused. A Done item on main but not yet in production is release lag and is only reported |
 | `max-facts-age` | Landing only, optional: the oldest facts, in hours since their `generated_at`, the officer writes to Linear from; default 36. Older or missing `generated_at`, or facts with no `production_sha`, make no Linear write and raise a `stale-facts` finding |
 | `done-window` | Landing only, optional: how many Linear Done items one run lists, in one paged read, to find Done items no landing fact names; default 100, and 0 skips that read |
+| `start-home` | Progress, optional: comma-separated office ids. Each must pass the same checks as a `consumer` office, because the office runs the start requests for its projects; a request whose project is in that office's `dispatch:` list (a Linear item in the team, or a backlog row with only a Linear id, counts as PropertyCompass2) is written to that office's inbox instead of this home's |
+| `writes` (surgeon) | Surgeon, optional: `none` (default) files nothing; `linear` files Linear items as described under [Surgeon](#surgeon) |
+| `max-creates` | Surgeon, optional: the most items one run attempts to create; default 5. A failed create counts only once its dry run passed |
+| `area` | Surgeon, required with `writes: linear`: the one team PC area label every item carries; a label missing from team PC means the finding is reported and not filed |
+| `staging-repo` | Surgeon, optional: the git remote whose `refs/heads/staging` is the staging tip, read with `git ls-remote`; default `git@github.com:lstutzman/PropertyCompass2.git`, and an empty value is refused |
 
 Example:
 
 ```text
 - triage - Joins each day's archived sessions to firstmate tasks and outcomes (role: triage; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 - landing - Reconciles Linear against landing evidence (role: landing; cadence: daily 06:30; facts: slartibartfast:/home/lee/services/landing-truth/latest.json; team: PC; writes: corrections; model: none; added 2026-10-24)
+- surgeon - Joins archived sessions to tasks, then reads the nightly runs and the bug sweeper and files untracked real findings in Linear (role: surgeon; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,deepthought; app: https://fleet.example.ts.net; team: PC; writes: linear; max-creates: 5; area: Runtime; consumer: main,navigator; model: none; added 2026-11-04)
 - friction - Finds what slowed agents down, above all waits on Lee, and proposes a fix for each (role: friction; cadence: daily 06:15; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 - progress - Starts authorised unstarted work through firstmate (role: progress; cadence: daily 07:00; team: PC; repos: example/project; requested: PC-123; model: none; added 2026-10-26)
 - page-check - Checks every fleet-app page for cards a standing rule settles, stale cards, cards shown after they were settled, and old pages (role: pagecheck; cadence: every 2h; app: https://fleet.example.ts.net; model: none; added 2026-10-31)
@@ -987,6 +993,20 @@ Each finding in it carries a stable `id`, its `events` count and a read-only `st
 A line in a home's `data/captain-shared.md` that says "standing rule" or "standing exception" settles a finding only when it names the finding's `id` (alone or as `friction-<id>`) or its key written `settles: <cause>/<sub>`, for example `settles: policy/merge-word`; a finding about one tool, hook or service also needs the line to name it, or the key written `settles: <cause>/<sub>/<name>`. No looser wording settles a finding.
 The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
 The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets them resolve tasks that were already cleaned up.
+
+### Surgeon
+
+The Ship's Surgeon is the triage pass plus intake.
+`bin/fm-officer-surgeon.py`'s header owns the classification tables, severity rules and Linear steps; `bin/fm-officer-triage.py` stays because the friction pass imports it.
+Its digest keeps the session join's findings under `archive_findings` and puts the intake findings in `findings`, so a `severity: high` there, which the `lane:surgeon:high` [wake source](#offices-dataofficesmd) counts, means a high intake finding and never an archive coverage gap.
+Intake reads the fleet app with `GET` only: `/api/runs`, the latest result of each live nightly E2E or code-review job, and `/api/sweeper-results`.
+A red nightly E2E finding is high only when its run's `sha` is the current staging tip, and medium for an older run; an unreadable tip or a result with no `sha` rates it medium and adds a coverage gap.
+The bug sweeper's payload carries no production-source marker, so the production-error-class rule is deliberately absent until the sweeper sends an environment field, and severity is never guessed from a bug's text.
+A finding the source already put in Linear is `tracked` and never filed again.
+A real finding whose source gave no key has no stable fingerprint, so it is reported and never filed.
+With `writes: linear`, the Surgeon files each real, untracked finding in team PC and nothing else: it never edits, comments on, closes or deletes an item.
+Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`), the registry's one area label, and `surgeon-fp:<sha256>` in its description, which a search for the fingerprint (and the lane's `filed-fingerprints.json`) checks first.
+One rate-limit answer from Linear stops the run's Linear calls and writes `linear-resume-after.json` in the lane; runs before that time make no Linear call.
 
 ### Page-check officer
 
@@ -1132,7 +1152,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all linked `linear_ids`, nullable `authorising_class`, nullable `tag_source`, `reason`, `evidence`, numeric `priority` (0 means unspecified), nullable `rank`, and nullable `execute`.
 Optional `link`, `project`, `outcome`, and `captains_log_key` preserve source context for the page projection.
 Only start requests have a one-based `rank` and an `execute` object; filler also carries `execute`.
-The execution object contains `action: start`, `request_id`, `env.FM_HOME`, and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
+The execution object contains `action: start`, `request_id`, `env.FM_HOME` (this home, or the [`start-home`](#officers-dataofficersmd) office whose `dispatch:` list holds the project), and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
 The adjacent shell handoff runs those same quoted argument arrays in rank order, followed by filler when present.
 The request identifier is stable for the same item and date, so retries replay the original inbox note; a later date may retry work still unstarted.
 
