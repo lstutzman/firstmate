@@ -66,9 +66,9 @@
 # consumer: is an optional registry field, a comma list of `main` and office ids
 # (default `main`). The "officer <id>: ... actionable finding(s)" digest line is
 # printed in the primary home only when `main` is listed, so an officer whose
-# digest an office consumes can stop waking main; each office id must be a line in
-# data/offices.md, and an office reads the digest through its own lane source
-# (bin/fm-office.sh). The failure line is always printed, because a broken officer
+# digest an office consumes can stop waking main; each office id must be a local
+# office in data/offices.md whose sources: field lists lane:<officer-id>, the lane
+# source that reads every digest (bin/fm-office.sh). The failure line is always printed, because a broken officer
 # is main's to fix.
 #
 # Roles: triage (bin/fm-officer-triage.py), landing
@@ -153,7 +153,8 @@ EOF
 
 # line_problem <line>: prints why a registry line is unusable, or nothing.
 line_problem() {
-  local line=$1 id role cadence model consumer c
+  local line=$1 id role cadence model consumer c office
+  local -a consumers=()
   if ! [[ "$line" =~ $REGISTRY_LINE_RE ]]; then
     printf 'malformed registry line: %s\n' "$(printf '%s' "$line" | cut -c1-80)"
     return
@@ -169,13 +170,24 @@ line_problem() {
   [[ "$cadence" =~ $CADENCE_RE ]] \
     || { printf 'officer %s: cadence must be "daily HH:MM" or "every Nh" (N from 1 to 24), got "%s"\n' "$id" "$cadence"; return; }
   if consumer=$(line_field "$line" consumer); then
-    for c in ${consumer//,/ }; do
-      [ "$c" = main ] && continue
-      grep -Eq "^- $c - " "$DATA/offices.md" 2>/dev/null \
-        || { printf 'officer %s: consumer "%s" is not main or an office in data/offices.md\n' "$id" "$c"; return; }
-    done
     [ -n "${consumer//[, ]/}" ] \
       || { printf 'officer %s: consumer must name main or an office\n' "$id"; return; }
+    IFS=', ' read -ra consumers <<<"$consumer"
+    for c in "${consumers[@]}"; do
+      [ "$c" = main ] && continue
+      office=
+      [[ "$c" =~ ^[a-z0-9-]+$ ]] && office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
+      [ -n "$office" ] \
+        || { printf 'officer %s: consumer "%s" is not main or an office in data/offices.md\n' "$id" "$c"; return; }
+      case ",$(line_field "$office" sources | tr -d ' ')," in
+        *",lane:$id,"*) ;;
+        *) printf 'officer %s: consumer office %s does not list sources: lane:%s, so it never reads this digest\n' "$id" "$c" "$id"; return ;;
+      esac
+      if secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" && [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
+        printf 'officer %s: consumer office %s is remote, and a remote office cannot read this digest\n' "$id" "$c"
+        return
+      fi
+    done
   fi
   model=$(line_field "$line" model || true)
   [ "$model" = none ] \
