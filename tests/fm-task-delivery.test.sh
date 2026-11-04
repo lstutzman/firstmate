@@ -583,11 +583,11 @@ office_local_refuses() {
   assert_office_local_refused "$rec" "$label" "$fragment"
 }
 
-break_unpublish() { /usr/bin/trash "$1/config/office-authority" "$1/config/.fm-inherit-office-authority.generation"; }
+break_unpublish() { rm -f "$1/config/office-authority" "$1/config/.fm-inherit-office-authority.generation"; }
 break_edit_record() { printf 'wip=9\n' >> "$1/config/office-authority"; }
 break_heading() { printf '# Charter\n' > "$1/data/charter.md"; }
-break_marker() { /usr/bin/trash "$1/.fm-office"; }
-break_charter() { /usr/bin/trash "$1/data/charter.md"; mkdir "$1/data/charter.md"; }
+break_marker() { rm -f "$1/.fm-office"; }
+break_charter() { rm -f "$1/data/charter.md"; mkdir "$1/data/charter.md"; }
 break_yolo() { sed -i.bak 's/^yolo=on$/yolo=off/' "$1/state/$OFFICE_LOCAL_ID.meta"; }
 break_foreign() { sed -i.bak 's/^office=.*/office=navigator/' "$1/state/$OFFICE_LOCAL_ID.meta"; }
 break_unowned() { sed -i.bak '/^office=/d' "$1/state/$OFFICE_LOCAL_ID.meta"; }
@@ -606,7 +606,7 @@ test_local_merge_non_office_homes_land_as_before() {
   IFS='|' read -r home proj _ <<EOF
 $rec
 EOF
-  /usr/bin/trash "$home/.fm-office" "$home/.fm-secondmate-home" "$home/config/office-authority" \
+  rm -f "$home/.fm-office" "$home/.fm-secondmate-home" "$home/config/office-authority" \
     "$home/config/.fm-inherit-office-authority.generation"
   printf '# Charter\n' > "$home/data/charter.md"
   run_office_local_merge "$rec"
@@ -617,7 +617,7 @@ EOF
   IFS='|' read -r home proj _ <<EOF
 $rec
 EOF
-  /usr/bin/trash "$home/.fm-office"
+  rm -f "$home/.fm-office"
   printf '# Charter\n' > "$home/data/charter.md"
   sed -i.bak '/^office=/d;/^yolo=/d' "$home/state/$OFFICE_LOCAL_ID.meta"
   run_office_local_merge "$rec"

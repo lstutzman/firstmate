@@ -100,7 +100,7 @@ refuse_case() {
   expect_refused "$case_dir" "$label" "$fragment"
 }
 
-break_unpublish() { /usr/bin/trash "$1/config/office-authority" "$1/config/.fm-inherit-office-authority.generation"; }
+break_unpublish() { rm -f "$1/config/office-authority" "$1/config/.fm-inherit-office-authority.generation"; }
 break_heading() { printf '# Charter\n' > "$1/data/charter.md"; }
 break_secondmate_kind() { sed -i.bak 's/^kind=ship$/kind=secondmate/' "$1/state/$ID.meta"; }
 
@@ -134,7 +134,7 @@ test_non_office_relaunches_as_before() {
   local case_dir
   # A plain second mate holding a stray record that would refuse this task.
   case_dir=$(make_case stray dispatch=none merge=none admission-sha256=)
-  /usr/bin/trash "$case_dir/home/.fm-office"
+  rm -f "$case_dir/home/.fm-office"
   printf '# Charter\n' > "$case_dir/home/data/charter.md"
   sed -i.bak '/^office=/d' "$case_dir/home/state/$ID.meta"
   relaunch "$case_dir"
