@@ -343,12 +343,14 @@ fm_role_sha256_stdin() {
   fi
 }
 
-# fm_role_inherit_check <role-file> <receipt> - 0 when the receipt is well
-# formed and proves the destination's current state (a put whose bytes hash to
-# the recorded payload, or a recorded absent with no destination file).
-# FM_ROLE_DIAG names the narrow failure.
+# fm_role_inherit_check <role-file> <receipt> [<noun> <file-noun>] - 0 when the
+# receipt is well formed and proves the destination's current state (a put
+# whose bytes hash to the recorded payload, or a recorded absent with no
+# destination file). FM_ROLE_DIAG names the narrow failure; <noun> and
+# <file-noun> (default "role grant" and "role file") name the inherited item in
+# it, so bin/fm-office-authority-lib.sh can check its own record the same way.
 fm_role_inherit_check() {
-  local role_file=$1 receipt=$2 gen bytes sha cmd have
+  local role_file=$1 receipt=$2 noun=${3:-role grant} file_noun=${4:-role file} gen bytes sha cmd have
   if [ -L "$receipt" ] || [ ! -f "$receipt" ]; then
     FM_ROLE_DIAG="inheritance receipt is missing or unsafe"
     return 1
@@ -392,23 +394,23 @@ fm_role_inherit_check() {
       return 1
     fi
     if [ -e "$role_file" ] || [ -L "$role_file" ]; then
-      FM_ROLE_DIAG="the parent recorded no role grant, but a local role file exists and cannot be verified"
+      FM_ROLE_DIAG="the parent recorded no $noun, but a local $file_noun exists and cannot be verified"
       return 1
     fi
     return 0
   fi
   if [ -L "$role_file" ] || [ ! -f "$role_file" ]; then
-    FM_ROLE_DIAG="the inherited role grant is missing or unsafe"
+    FM_ROLE_DIAG="the inherited $noun is missing or unsafe"
     return 1
   fi
   have=$(wc -c <"$role_file" 2>/dev/null | tr -d '[:space:]')
   if [ "$have" != "$bytes" ]; then
-    FM_ROLE_DIAG="the inherited role grant diverges from the receipt"
+    FM_ROLE_DIAG="the inherited $noun diverges from the receipt"
     return 1
   fi
   have=$(fm_role_sha256_stdin <"$role_file")
   if [ "$have" != "$sha" ]; then
-    FM_ROLE_DIAG="the inherited role grant diverges from the receipt"
+    FM_ROLE_DIAG="the inherited $noun diverges from the receipt"
     return 1
   fi
   return 0

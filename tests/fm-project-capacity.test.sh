@@ -926,6 +926,112 @@ test_batch_reports_a_landing_lag_deferral() {
   pass "a batch reports a landing-lag deferral as deferred, not failed"
 }
 
+# --- office authority ----------------------------------------------------------
+# An office home (bin/fm-office-authority-lib.sh) spawns only inside its
+# published authority record, and defers past its wip= exactly like a capacity
+# deferral. Each case's home is the office "navigator", which dispatches to
+# the fixture project and hands its merges to slarti.
+make_office() {  # <home> [record-line...] (each replaces the default line with its key)
+  local home=$1 kv key old
+  shift
+  local -a rec=(id=navigator dispatch=project merge=none merge-via=project=slarti auto-merge-classes=none wip=2 admission-sha256=)
+  for kv in "$@"; do
+    key=${kv%%=*}
+    local -a kept=()
+    for old in "${rec[@]}"; do [ "${old%%=*}" = "$key" ] || kept+=("$old"); done
+    rec=("${kept[@]}" "$kv")
+  done
+  fm_write_office_home "$home" navigator "${rec[@]}"
+}
+
+office_refused() {  # <case-dir> <id> <rc> <out> <fragment> <label>
+  local case_dir=$1 home=$1/home
+  [ "$3" -ne 0 ] && [ "$3" -ne "$DEFER_EXIT" ] || fail "$6: expected a refusal, got exit $3: $4"
+  assert_contains "$4" "$5" "$6: the refusal did not give the office reason"
+  assert_absent "$home/state/$2.meta" "$6: a refused office spawn published a task record"
+}
+
+test_office_spawns_inside_its_record() {
+  local case_dir home out rc=0
+  case_dir=$(make_case office-admits task-c)
+  home="$case_dir/home"
+  make_office "$home"
+  out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-c)" task-c "$case_dir/project" --mode no-mistakes --yolo on) || rc=$?
+  expect_code 0 "$rc" "an office spawn inside its record was refused: $out"
+  assert_contains "$out" "spawned task-c" "an office spawn inside its record did not launch"
+  grep -qx 'office=navigator' "$home/state/task-c.meta" || fail "an office spawn did not record office=navigator"
+  pass "an office spawns inside its authority record and records office=<id>"
+}
+
+test_non_office_spawn_records_no_office() {
+  local case_dir home out rc=0
+  case_dir=$(make_case office-stray-mate task-c)
+  home="$case_dir/home"
+  printf 'navigator\n' > "$home/.fm-secondmate-home"
+  printf '%s\n' fm-office-authority-v1 id=navigator dispatch=none > "$home/config/office-authority"
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a plain second mate with a stray authority record refused a spawn: $out"
+  assert_contains "$out" "spawned task-c" "a plain second mate with a stray record did not launch"
+  ! grep -q '^office=' "$home/state/task-c.meta" || fail "a plain second mate's task record gained office="
+  pass "a home that is not an office spawns as before, even with a stray authority record"
+}
+
+test_office_refuses_spawns_outside_its_record() {
+  local case_dir home out rc
+  case_dir=$(make_case office-unpublished task-c)
+  make_office "$case_dir/home"
+  rm -f "$case_dir/home/config/office-authority" "$case_dir/home/config/.fm-inherit-office-authority.generation"
+  rc=0; out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  office_refused "$case_dir" task-c "$rc" "$out" "no published authority record" "unpublished record"
+  assert_contains "$out" "bin/fm-office.sh ensure" "unpublished record: the refusal did not name the repair"
+
+  case_dir=$(make_case office-inconsistent task-c)
+  make_office "$case_dir/home"
+  printf '# Charter\n' > "$case_dir/home/data/charter.md"
+  rc=0; out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  office_refused "$case_dir" task-c "$rc" "$out" 'lacks the "# Office authority" heading' "marker without heading"
+
+  case_dir=$(make_case office-dispatch task-c)
+  make_office "$case_dir/home"
+  rc=0; out=$(run_spawn "$case_dir" "$case_dir/home" "$case_dir/unused" task-c "$case_dir/other-project" --mode no-mistakes --yolo off) || rc=$?
+  office_refused "$case_dir" task-c "$rc" "$out" "dispatches only to project" "project not in dispatch"
+  rc=0; out=$(run_spawn "$case_dir" "$case_dir/home" "$case_dir/unused" task-c "$case_dir/other-project" --scout) || rc=$?
+  office_refused "$case_dir" task-c "$rc" "$out" "dispatches only to project" "scout project not in dispatch"
+
+  case_dir=$(make_case office-yolo task-c)
+  make_office "$case_dir/home" dispatch=project,other-project
+  rc=0; out=$(run_spawn "$case_dir" "$case_dir/home" "$case_dir/unused" task-c "$case_dir/other-project" --mode no-mistakes --yolo on) || rc=$?
+  office_refused "$case_dir" task-c "$rc" "$out" "is in neither its merge= nor its merge-via=" "yolo on outside merge"
+
+  case_dir=$(make_case office-consent task-c)
+  make_office "$case_dir/home"
+  rc=0; out=$(run_spawn "$case_dir" "$case_dir/home" "$case_dir/unused" task-c "$case_dir/project" --mode no-mistakes --yolo on --upstream-consent github.com/example/repo) || rc=$?
+  office_refused "$case_dir" task-c "$rc" "$out" "cannot grant itself --upstream-consent" "upstream consent"
+
+  case_dir=$(make_case office-secondmate)
+  make_office "$case_dir/home"
+  mkdir -p "$case_dir/mate"
+  rc=0; out=$(run_spawn "$case_dir" "$case_dir/home" "$case_dir/unused" mate-y "$case_dir/mate" --secondmate) || rc=$?
+  office_refused "$case_dir" mate-y "$rc" "$out" "never creates or relaunches a second mate" "secondmate spawn"
+  pass "an office refuses every spawn its authority record does not cover"
+}
+
+test_office_wip_defers_without_leaving_anything_behind() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case office-wip task-c)
+  home="$case_dir/home"
+  make_office "$home" wip=1
+  write_live "$home" live-a "$case_dir/other-project"
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "an office spawn past its wip was not deferred: $out"
+  assert_contains "$out" "deferred: office navigator runs at most 1 task(s) at once (its authority record's wip=) and 1 are live (live-a)" \
+    "the office deferral did not name its wip and live tasks"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  pass "an office spawn past its wip is deferred before anything exists"
+}
+
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_exhausted_capacity_defers_without_leaving_anything_behind
@@ -955,3 +1061,7 @@ test_blocked_ready_pr_does_not_hold_a_spawn
 test_unreadable_backlog_does_not_hide_a_known_lag
 test_timed_out_backlog_read_lets_the_spawn_launch
 test_batch_reports_a_landing_lag_deferral
+test_office_spawns_inside_its_record
+test_non_office_spawn_records_no_office
+test_office_refuses_spawns_outside_its_record
+test_office_wip_defers_without_leaving_anything_behind

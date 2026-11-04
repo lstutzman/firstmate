@@ -863,6 +863,24 @@ fm_write_secondmate_meta() {
     "projects=$projects"
 }
 
+# fm_write_office_home <home> <id> [record-line...]: make <home> an office
+# (bin/fm-office-authority-lib.sh): both markers, the charter heading, and,
+# when record lines are given, config/office-authority holding the version line
+# and those lines, proven by a receipt committed the way the main home's
+# publish does. With no record lines nothing is published.
+fm_write_office_home() {
+  local home=$1 id=$2
+  shift 2
+  mkdir -p "$home/data" "$home/config"
+  printf '%s\n' "$id" > "$home/.fm-secondmate-home"
+  printf '%s\n' "$id" > "$home/.fm-office"
+  printf '# Charter\n\n# Office authority\n' > "$home/data/charter.md"
+  [ "$#" -gt 0 ] || return 0
+  printf '%s\n' fm-office-authority-v1 "$@" > "$home/config/office-authority"
+  bash -c '. "$1/bin/fm-config-inherit-lib.sh" && fm_inherit_receipt_commit "$2/.fm-inherit-office-authority.generation" "$2/office-authority"' \
+    _ "$ROOT" "$home/config" || fail "could not commit the office authority receipt in $home"
+}
+
 # --- common assertions ------------------------------------------------------
 
 # assert_equals <expected> <actual> <msg>
