@@ -1,0 +1,11 @@
+$ FM_HOME=$LAB bin/fm-decision-sweep.sh   # dry run
+home=$LAB file=sweep-lab.status key=merge-handoff-70 verdict=settled prs=https://github.com/lstutzman/firstmate/pull/70=MERGED
+home=$LAB file=sweep-lab.status key=merge-handoff-73 verdict=open prs=https://github.com/lstutzman/firstmate/pull/73=OPEN
+home=$LAB file=sweep-lab.status key=merge-handoff-13 verdict=manual prs=https://github.com/lstutzman/firstmate/pull/13=CLOSED
+home=$LAB file=sweep-lab.status key=pc2701-merge verdict=truncated prs=https://github.com/lstutzman/firstmate/pull/70
+review: every named PR merged, but the ask is free text; read each and close with --apply --key <key>
+home=$LAB file=sweep-lab.status key=release-1720-go verdict=review prs=https://github.com/lstutzman/firstmate/pull/70=MERGED note=https://github.com/lstutzman/firstmate/pull/70 merged to main; go for production deploy?
+home=$LAB file=sweep-lab.status key=fm-sdlc-landing-truth verdict=review prs=https://github.com/lstutzman/firstmate/pull/68=MERGED note=PR 1 (https://github.com/lstutzman/firstmate/pull/68) is merged; options (a) or (b)?
+home=$LAB file=sweep-lab.status key=merge-handoff-67 verdict=review prs=https://github.com/lstutzman/firstmate/pull/70=MERGED note=[handoff=slarti] https://github.com/lstutzman/firstmate/pull/70 is ready to merge
+totals mode=dry-run candidates=7 settled=1 closed-by-key=0 review=3 still-open=1 manual=1 unreadable=0 truncated=1 skipped-reserved-key=1 skipped-no-pr-url=1 refused-key=0 failed-to-close=0
+exit=0

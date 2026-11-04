@@ -1,0 +1,10 @@
+ok - dry run reports settled, review, open, manual, unreadable and skipped decisions
+ok - dry run changes nothing
+ok - --key needs --apply
+ok - apply closes only settled decisions and re-apply is a no-op
+ok - --apply --key closes exactly the listed review decisions
+ok - --key refuses decisions that are not review
+ok - a handoff closes only once its PR lands
+ok - unkeyed decisions close only when listed
+ok - a note cut by the line cap is never settled
+ok - fleet ledger hook runs when config/fleet-ledger exists

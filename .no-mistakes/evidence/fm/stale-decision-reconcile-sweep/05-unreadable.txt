@@ -1,0 +1,4 @@
+$ FM_HOME=$LAB bin/fm-decision-sweep.sh --apply   # PR 999999 does not exist
+home=$LAB file=sweep-lab.status key=merge-handoff-999999 verdict=unreadable prs=https://github.com/lstutzman/firstmate/pull/999999=unreadable
+totals mode=apply candidates=6 settled=0 closed-by-key=0 review=2 still-open=1 manual=1 unreadable=1 truncated=1 skipped-reserved-key=1 skipped-no-pr-url=1 refused-key=0 failed-to-close=0
+needs-decision [at=1790000010] [key=merge-handoff-999999]: [handoff=slarti] https://github.com/lstutzman/firstmate/pull/999999 is ready to merge

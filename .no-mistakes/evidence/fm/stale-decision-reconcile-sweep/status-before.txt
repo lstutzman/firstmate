@@ -1,0 +1,9 @@
+needs-decision [at=1790000001] [key=merge-handoff-70]: [handoff=slarti] https://github.com/lstutzman/firstmate/pull/70 is ready to merge
+needs-decision [at=1790000002] [key=release-1720-go]: https://github.com/lstutzman/firstmate/pull/70 merged to main; go for production deploy?
+needs-decision [at=1790000003] [key=fm-sdlc-landing-truth]: PR 1 (https://github.com/lstutzman/firstmate/pull/68) is merged; options (a) or (b)?
+needs-decision [at=1790000004] [key=merge-handoff-73]: [handoff=slarti] https://github.com/lstutzman/firstmate/pull/73 is ready to merge
+needs-decision [at=1790000005] [key=merge-handoff-13]: [handoff=slarti] https://github.com/lstutzman/firstmate/pull/13 is ready to merge
+needs-decision [at=1790000006] [key=pc2701-merge]: merge https://github.com/lstutzman/firstmate/pull/70 and https://github.com/lstutzman/fi [truncated]
+needs-decision [at=1790000007] [key=captain-hold-x]: hold on https://github.com/lstutzman/firstmate/pull/70
+needs-decision [at=1790000008] [key=sdlc-g14-gate-flag]: gate-edit ask, no PR yet
+needs-decision [at=1790000009] [key=merge-handoff-67]: [handoff=slarti] https://github.com/lstutzman/firstmate/pull/70 is ready to merge

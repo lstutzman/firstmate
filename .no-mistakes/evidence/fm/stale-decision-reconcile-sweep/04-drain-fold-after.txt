@@ -1,0 +1,9 @@
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+sweep-lab [key=release-1720-go] needs-decision: https://github.com/lstutzman/firstmate/pull/70 merged to main; go for production deploy?
+sweep-lab [key=merge-handoff-73] needs-decision: [handoff=slarti] https://github.com/lstutzman/firstmate/pull/73 is ready to merge
+sweep-lab [key=merge-handoff-13] needs-decision: [handoff=slarti] https://github.com/lstutzman/firstmate/pull/13 is ready to merge
+sweep-lab [key=pc2701-merge] needs-decision: merge https://github.com/lstutzman/firstmate/pull/70 and https://github.com/lstutzman/fi [truncated]
+sweep-lab [key=captain-hold-x] needs-decision: hold on https://github.com/lstutzman/firstmate/pull/70
+sweep-lab [key=sdlc-g14-gate-flag] needs-decision: gate-edit ask, no PR yet
+sweep-lab [key=merge-handoff-67] needs-decision: [handoff=slarti] https://github.com/lstutzman/firstmate/pull/70 is ready to merge
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
