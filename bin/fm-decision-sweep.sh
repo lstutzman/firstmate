@@ -11,23 +11,29 @@
 #
 # A candidate names one or more full GitHub PR URLs
 # (https://github.com/<owner>/<repo>/pull/<n>) in its note; bare "#123" or
-# "PR 123" text is never matched. It is settled only when EVERY named PR reads
-# MERGED or CLOSED through `gh pr view`. A PR that cannot be read (network,
-# auth, rate limit) leaves the decision open and is reported as unreadable.
+# "PR 123" text is never matched. Each named PR is read through `gh pr view`.
+# A candidate is settled only when both hold:
+#   - its key names a PR-subject ask: it starts merge-handoff-, or one of its
+#     hyphen-separated parts is merge, merged, pr, land, landing, review, word
+#     or admit;
+#   - EVERY named PR reads MERGED. A CLOSED-unmerged PR settles nothing, since
+#     it may still need a reopen-or-abandon call.
+# Verdicts: settled; open (a named PR is open); unreadable (a PR could not be
+# read: network, auth, rate limit); manual (any other candidate, such as a
+# release or go ask that only mentions a PR, or a merge ask whose PR closed
+# unmerged, or an unkeyed line); truncated. Only settled is ever closed.
 # Never swept, whatever the PRs say:
 #   - keys starting captain-hold- or pending-reply-: those close only through
 #     bin/fm-captain-hold.sh answer and the pending-reply owner;
 #   - decisions naming no PR URL;
-#   - a note cut by the status-line cap right after a PR URL, because the URL
-#     may be shorter than the one written.
-# Unkeyed lines are swept like keyed ones: a resolved line carrying the
-# fold's own key (default, or u-<epoch>[-<corr>]) closes them.
+#   - a note cut by the status-line cap (ending " [truncated]"), because the
+#     cut may have shortened or dropped a PR URL.
 #
 # Default is a dry run: one line per candidate plus totals, nothing changed.
 # --apply appends, for each settled candidate only, one line to the same
 # status file:
 #   resolved [key=<key>] [at=<epoch>]: decision-sweep: <pr url> merged <mergedAt>
-# (or "closed <closedAt>"; several PRs are joined with "; "), stamped and
+# (several PRs are joined with "; "), stamped and
 # announced by fm_wake_status_append_self_announced, then recorded in the fleet
 # ledger when config/fleet-ledger exists. A closed key leaves the fold, so a
 # re-run finds nothing to do. After the append the fold is read again, and a key
@@ -67,6 +73,12 @@ PR_URL_RE='https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+'
 PR_CACHE=''  # newline-separated "<url> <state> <date>" or "<url> unreadable"
 CLOSE_MAX=$((FM_LINE_CAP_DEFAULT - $(status_stamp_width)))
 
+pr_subject_key() {  # <key>
+  case "$1" in merge-handoff-*) return 0 ;; esac
+  case "-$1-" in *-merge-* | *-merged-* | *-pr-* | *-land-* | *-landing-* | *-review-* | *-word-* | *-admit-*) return 0 ;; esac
+  return 1
+}
+
 # Print "<STATE> <date>" for one PR, or "unreadable". Cached per URL for the run.
 pr_state() {  # <pr-url>
   local url=$1 json state hit
@@ -84,7 +96,7 @@ pr_state() {  # <pr-url>
   printf '%s\n' "$hit"
 }
 
-total=0 settled=0 open=0 unreadable=0 truncated=0 skipped_reserved=0 skipped_no_pr=0 failed=0
+total=0 settled=0 open=0 manual=0 unreadable=0 truncated=0 skipped_reserved=0 skipped_no_pr=0 failed=0
 
 for f in "$STATE"/*.status; do
   [ -f "$f" ] || continue
@@ -100,11 +112,9 @@ for f in "$STATE"/*.status; do
     base=${f##*/}
     case "$note" in
       *' [truncated]')
-        if [[ ${note% \[truncated\]} =~ /pull/[0-9]+$ ]]; then
-          truncated=$((truncated + 1))
-          echo "home=$FM_HOME file=$base key=$key verdict=truncated prs=$(printf '%s' "$urls" | tr '\n' ',')"
-          continue
-        fi
+        truncated=$((truncated + 1))
+        echo "home=$FM_HOME file=$base key=$key verdict=truncated prs=$(printf '%s' "$urls" | tr '\n' ',')"
+        continue
         ;;
     esac
     verdict=settled prs='' note_out=''
@@ -115,11 +125,12 @@ for f in "$STATE"/*.status; do
         unreadable) verdict=unreadable ;;
         OPEN*) [ "$verdict" = unreadable ] || verdict=open ;;
         MERGED*) note_out="$note_out${note_out:+; }$url merged ${s#* }" ;;
-        CLOSED*) note_out="$note_out${note_out:+; }$url closed ${s#* }" ;;
+        CLOSED*) [ "$verdict" != settled ] || verdict=manual ;;
       esac
     done <<EOF
 $urls
 EOF
+    pr_subject_key "$key" || verdict=manual
     echo "home=$FM_HOME file=$base key=$key verdict=$verdict prs=$prs"
     case "$verdict" in
       settled)
@@ -130,6 +141,7 @@ EOF
         ;;
       open) open=$((open + 1)) ;;
       unreadable) unreadable=$((unreadable + 1)) ;;
+      manual) manual=$((manual + 1)) ;;
     esac
   done <<EOF
 $decisions
@@ -158,5 +170,5 @@ done
 
 mode=dry-run
 [ "$APPLY" -eq 0 ] || mode=apply
-echo "totals mode=$mode candidates=$total settled=$settled still-open=$open unreadable=$unreadable truncated=$truncated skipped-reserved-key=$skipped_reserved skipped-no-pr-url=$skipped_no_pr failed-to-close=$failed"
+echo "totals mode=$mode candidates=$total settled=$settled still-open=$open manual=$manual unreadable=$unreadable truncated=$truncated skipped-reserved-key=$skipped_reserved skipped-no-pr-url=$skipped_no_pr failed-to-close=$failed"
 [ "$failed" -eq 0 ]
