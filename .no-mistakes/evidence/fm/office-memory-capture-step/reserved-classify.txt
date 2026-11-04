@@ -1,0 +1,3 @@
+$ git diff --name-only bd723d57 58a517ed | bin/fm-reserved-classify.sh --rules <office rules>
+authority
+exit=0
