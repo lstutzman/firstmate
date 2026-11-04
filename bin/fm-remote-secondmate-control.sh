@@ -372,7 +372,7 @@ import_home_commit() { # <home> <commit>
     return 0
   fi
   if git -C "$home" remote get-url origin >/dev/null 2>&1 \
-    && git -C "$home" fetch --quiet --no-tags -- origin "$commit" 2>/dev/null \
+    && fm_git_retry git -C "$home" fetch --quiet --no-tags -- origin "$commit" 2>/dev/null \
     && git -C "$home" cat-file -e "$commit^{commit}" 2>/dev/null; then
     return 0
   fi
