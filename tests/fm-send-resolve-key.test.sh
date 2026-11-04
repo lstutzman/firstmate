@@ -929,6 +929,9 @@ test_remote_reserved_pending_reply_key_closes_locally() {
   key="pending-reply-$corr"
   printf 'blocked [key=%s]: pending-reply-missed: task=rsm pending-reply-id=%s request=ship it\n' \
     "$key" "$corr" > "$home/state/rsm.status"
+  mkdir -p "$home/state/pending-replies"
+  printf 'corr_id=%s\ntask_id=rsm\nparent_status=%s\nphase=escalated\ndelivered_epoch=1789999990\nescalated_epoch=1790000000\n' \
+    "$corr" "$home/state/rsm.status" > "$home/state/pending-replies/$corr"
 
   : > "$log"
   env PATH="$fb:$PATH" \
@@ -943,7 +946,40 @@ test_remote_reserved_pending_reply_key_closes_locally() {
   if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
     fail "the remote reserved pending-reply decision still lists as open: $out"
   fi
+  rec="$home/state/pending-replies/$corr"
+  if ! { grep -qx 'phase=resolved' "$rec" && grep -qx 'resolved_via=operator-resolve-key' "$rec" \
+    && grep -qE '^escalation_closed_epoch=[0-9]+$' "$rec"; }; then
+    fail "the operator close must also settle the escalated record: $(cat "$rec")"
+  fi
+  grep -lx "answered_keys=$key" "$home/state/pending-replies"/* | grep -qv "/$corr\$" \
+    || fail "the answer's own new expectation must record the key it answered"
   pass "fm-send --resolve-key: a remote secondmate reserved-key close is the same local ledger append"
+}
+
+# A record reset to awaiting_report after a delivery-unknown escalation keeps
+# its decision open; closing that decision must not settle the record, because
+# only a correlated report settles a reset request.
+test_resolve_key_leaves_awaiting_record_alone() {
+  local dir fb log home ssh_log rc key corr rec
+  dir="$TMP_ROOT/remote-awaiting"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"; ssh_log="$dir/ssh.log"; : > "$ssh_log"
+  home=$(setup_remote_home remote-awaiting)
+  corr=d448ea86afa4bf68
+  key="pending-reply-$corr"
+  printf 'blocked [key=%s]: pending-reply-delivery-unknown: task=rsm pending-reply-id=%s request=ship it\n' \
+    "$key" "$corr" > "$home/state/rsm.status"
+  mkdir -p "$home/state/pending-replies"
+  rec="$home/state/pending-replies/$corr"
+  printf 'corr_id=%s\ntask_id=rsm\nparent_status=%s\nphase=awaiting_report\nescalated_epoch=1790000000\n' \
+    "$corr" "$home/state/rsm.status" > "$rec"
+  : > "$log"
+  env PATH="$fb:$PATH" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
+    FM_SSH_BIN="$fb/fake-ssh" FM_SSH_LOG="$ssh_log" FM_FAKE_SSH_RC=0 \
+    "$SEND" rsm --resolve-key "$key" "closing the old hold" >/dev/null 2>&1; rc=$?
+  expect_code 0 "$rc" "closing the decision of a reset record should succeed"
+  grep -qx 'phase=awaiting_report' "$rec" || fail "an awaiting record must not be settled by a decision close: $(cat "$rec")"
+  pass "fm-send --resolve-key: a reset awaiting record keeps waiting for its correlated report"
 }
 
 # The decision-answer partition (bin/fm-send.sh header "Answering a decision"):
@@ -1035,4 +1071,5 @@ test_long_decision_key_refuses_before_send
 test_stamped_close_line_stays_within_the_status_line_cap
 test_failed_close_recovery_command_is_shell_safe
 test_remote_reserved_pending_reply_key_closes_locally
+test_resolve_key_leaves_awaiting_record_alone
 test_decision_answer_partition_relocates_under_the_record

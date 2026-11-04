@@ -145,6 +145,26 @@ latest_record_body() {  # <home> <task>
 
 # --- tests ------------------------------------------------------------------
 
+test_create_records_request_prs_and_answered_keys() {
+  local home state corr rec
+  home=$(setup_parent request-fields)
+  state="$home/state"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" \
+    "merge https://github.com/o/r/pull/7 then https://github.com/o/r/pull/9; see https://github.com/o/r/pull/7 again" \
+    "merge-handoff-7 captain-hold-x")
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ "$(fm_pending_reply_get "$rec" request_prs)" = "https://github.com/o/r/pull/7,https://github.com/o/r/pull/9" ] \
+    || fail "request_prs must hold each PR URL once, in order: $(fm_pending_reply_get "$rec" request_prs)"
+  [ "$(fm_pending_reply_get "$rec" answered_keys)" = "merge-handoff-7,captain-hold-x" ] \
+    || fail "answered_keys must hold the answered keys: $(fm_pending_reply_get "$rec" answered_keys)"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "no links here")
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  if ! { grep -qx 'request_prs=' "$rec" && grep -qx 'answered_keys=' "$rec"; }; then
+    fail "a request with no PRs and no answered keys records both fields empty"
+  fi
+  pass "a new expectation records the PR URLs and answered keys of its full request"
+}
+
 test_normal_correlated_reply_resolves_once() {
   local home state corr status rec
   home=$(setup_parent resolve-once)
@@ -2411,5 +2431,7 @@ test_hold_escalation_closes_when_the_report_arrives || exit 1
 test_hold_survives_an_unwritable_open_decision_cursor || exit 1
 test_drain_scan_keeps_the_trusted_set_when_the_span_cannot_be_written || exit 1
 test_hold_bound_without_the_flag_or_the_hold_does_not_escalate || exit 1
+
+test_create_records_request_prs_and_answered_keys || exit 1
 
 printf 'ok - all pending-reply tests passed\n'

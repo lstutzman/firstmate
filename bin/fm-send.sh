@@ -167,7 +167,9 @@
 # a note the guard will accept, or the structural key would be lost to the
 # status-line cap, it refuses before sending and names the cause rather than
 # exiting 0 on a silent no-op. After a delivered close it also
-# re-folds and fails loudly if the named key is still open. On the inbox plane
+# re-folds and fails loudly if the named key is still open. A closed
+# pending-reply-* key also settles its delivered escalated record
+# (fm_pending_reply_settle_closed_escalation). On the inbox plane
 # the close happens at ENQUEUE time, because enqueue is durable delivery to
 # the task's record; the worker reading the answer late is covered by the
 # acknowledgement re-ring ladder. On the typed plane it still waits for the
@@ -807,6 +809,13 @@ fm_send_close_resolved_keys() { # <answer-text>
     esac
     i=$((i + 1))
   done
+  # A closed pending-reply decision also settles its record; a failure here
+  # leaves the record for bin/fm-pending-reply-sweep.sh.
+  for k in $RESOLVE_STATUS_KEYS; do
+    case "$k" in
+    pending-reply-*) fm_pending_reply_settle_closed_escalation "$STATE" "${k#pending-reply-}" operator-resolve-key || true ;;
+    esac
+  done
 }
 
 # Feed the answered captain-held tasks to the ONE keyed-answer intake, as keyed
@@ -918,7 +927,7 @@ else
         echo "error: cannot create pending-reply expectation without a resolvable secondmate task id" >&2
         exit 1
       fi
-      PENDING_REPLY_CORR=$(fm_pending_reply_create "$FM_HOME" "$STATE" "$TARGET_TASK_ID" "$MESSAGE") ||
+      PENDING_REPLY_CORR=$(fm_pending_reply_create "$FM_HOME" "$STATE" "$TARGET_TASK_ID" "$MESSAGE" "$RESOLVE_KEYS") ||
         {
           echo "error: failed to create parent pending-reply expectation for $TARGET_TASK_ID" >&2
           exit 1
