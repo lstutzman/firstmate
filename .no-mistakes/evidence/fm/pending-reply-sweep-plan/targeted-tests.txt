@@ -1,0 +1,24 @@
+== tests/fm-pending-reply-sweep.test.sh
+ok - --apply --key closes exactly the named review records
+ok - --key refuses unproven, other-phase, and unknown records
+ok - --key refuses an undelivered record and writes nothing
+ok - --key never writes into a status log outside this home
+exit=0
+== tests/fm-retention.test.sh
+ok - a capture after archiving takes a fresh sequence number
+ok - the pass runs once a day, honours --force, and a failed archive loses nothing
+ok - a larger backlog drains over several bounded passes
+ok - all retention tests passed
+exit=0
+== tests/fm-send-resolve-key.test.sh
+ok - fm-send --resolve-key: failed-close recovery commands safely quote operator text and paths
+ok - fm-send --resolve-key: a remote secondmate reserved-key close is the same local ledger append
+ok - fm-send --resolve-key: a reset awaiting record keeps waiting for its correlated report
+ok - fm-send --resolve-key: a decision answer refuses the attended branch before sending, a blocked: key stays steering, and the away-posture record relocates the answer
+exit=0
+== tests/fm-pending-reply.test.sh
+ok - the drain scan lists the trusted set when the fold cannot stage its span
+ok - only a record the hold actually keeps back takes the hold escalation
+ok - a new expectation records the PR URLs of its full request
+ok - all pending-reply tests passed
+exit=0

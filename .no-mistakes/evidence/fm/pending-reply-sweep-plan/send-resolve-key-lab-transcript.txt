@@ -1,0 +1,20 @@
+before: phase=escalated
+blocked [key=pending-reply-0d125bac32086cbd] [at=1793807701]: pending-reply-recovery-delivery-failed: task=mate pending-reply-id=0d125bac32086cbd request=please ack the plan
+sweep before:
+totals mode=dry-run escalated=1 settled=0 closed-by-key=0 review=1 unproven=0 other-phase=0 refused-key=0 failed=0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.78igDA
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-send: doorbell did not reach sess:fm-mate; the steer is durably recorded at /tmp/fm-lab.78igDA/state/mate.inbox/001.msg and the watcher will re-ring
+fm-send exit=0
+after: phase=resolved resolved_via=operator-resolve-key
+resolved [key=pending-reply-0d125bac32086cbd] [at=1793807702]: pending-reply-resolved: task=mate pending-reply-id=0d125bac32086cbd via=operator-resolve-key ack, this was already answered
+inbox records: 2
+sweep after:
+totals mode=dry-run escalated=0 settled=0 closed-by-key=0 review=0 unproven=0 other-phase=1 refused-key=0 failed=0
+lab removed

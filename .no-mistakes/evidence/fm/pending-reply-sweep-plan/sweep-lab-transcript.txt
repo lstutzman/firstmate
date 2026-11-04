@@ -1,0 +1,77 @@
+== lab home: /tmp/fm-lab.VZynsU
+record 62eee41e2c466098 phase=escalated delivered=1793807548
+record 8cfa1b8f8afc3fb0 phase=escalated delivered=1793807548
+record 0a1efe361052a351 phase=escalated delivered=
+record afc984804280a212 phase=escalated delivered=1793807548
+== slarti.status
+blocked [key=pending-reply-62eee41e2c466098] [at=1793807548]: pending-reply-recovery-delivery-failed: task=slarti pending-reply-id=62eee41e2c466098 request=merge https://github.com/o/r/pull/1 please
+blocked [key=pending-reply-8cfa1b8f8afc3fb0] [at=1793807548]: pending-reply-recovery-delivery-failed: task=slarti pending-reply-id=8cfa1b8f8afc3fb0 request=please review the plan and reply
+resolved [key=pending-reply-62eee41e2c466098] [at=1793807549]: pending-reply-resolved: task=slarti pending-reply-id=62eee41e2c466098 via=operator-resolve-key ack
+== cl-keeper.status
+blocked [key=pending-reply-0a1efe361052a351] [at=1793807548]: pending-reply-recovery-delivery-failed: task=cl-keeper pending-reply-id=0a1efe361052a351 request=file the board card
+
+### S1 dry run
+home=/tmp/fm-lab.VZynsU task=slarti key=pending-reply-62eee41e2c466098 verdict=settled via=operator-resolve-key
+home=/tmp/fm-lab.VZynsU task=cl-keeper key=pending-reply-afc984804280a212 verdict=unproven
+review: the escalation is still open and nothing proves the request was answered; read each and close with --apply --key <key>
+home=/tmp/fm-lab.VZynsU task=cl-keeper key=pending-reply-0a1efe361052a351 verdict=review reason=undelivered not-closable: its owner may still resend under the same correlation, so --apply --key refuses it; request=file the board card
+home=/tmp/fm-lab.VZynsU task=slarti key=pending-reply-8cfa1b8f8afc3fb0 verdict=review reason=none request=please review the plan and reply
+totals mode=dry-run escalated=4 settled=1 closed-by-key=0 review=2 unproven=1 other-phase=0 refused-key=0 failed=0
+exit=0
+S1 home unchanged by dry run: YES
+
+### S2 --apply (no keys)
+home=/tmp/fm-lab.VZynsU task=slarti key=pending-reply-62eee41e2c466098 verdict=settled via=operator-resolve-key
+home=/tmp/fm-lab.VZynsU task=cl-keeper key=pending-reply-afc984804280a212 verdict=unproven
+review: the escalation is still open and nothing proves the request was answered; read each and close with --apply --key <key>
+home=/tmp/fm-lab.VZynsU task=cl-keeper key=pending-reply-0a1efe361052a351 verdict=review reason=undelivered not-closable: its owner may still resend under the same correlation, so --apply --key refuses it; request=file the board card
+home=/tmp/fm-lab.VZynsU task=slarti key=pending-reply-8cfa1b8f8afc3fb0 verdict=review reason=none request=please review the plan and reply
+totals mode=apply escalated=4 settled=1 closed-by-key=0 review=2 unproven=1 other-phase=0 refused-key=0 failed=0
+exit=0
+opclosed phase=resolved via=operator-resolve-key
+open phase=escalated
+
+### S4 adversarial --apply --key on undelivered, unproven, unknown
+error: --key 'pending-reply-0a1efe361052a351' refused: delivery was never confirmed
+home=/tmp/fm-lab.VZynsU task=cl-keeper key=pending-reply-afc984804280a212 verdict=unproven
+error: --key 'pending-reply-afc984804280a212' refused: verdict is unproven
+error: --key 'pending-reply-0000000000000000' refused: not an escalated pending-reply record
+review: the escalation is still open and nothing proves the request was answered; read each and close with --apply --key <key>
+home=/tmp/fm-lab.VZynsU task=slarti key=pending-reply-8cfa1b8f8afc3fb0 verdict=review reason=none request=please review the plan and reply
+totals mode=apply escalated=3 settled=0 closed-by-key=0 review=1 unproven=1 other-phase=1 refused-key=3 failed=0
+exit=1
+S4 cl-keeper.status unchanged: YES
+undel phase=escalated unproven phase=escalated
+
+### S3 --apply --key on delivered open review record
+home=/tmp/fm-lab.VZynsU task=slarti key=pending-reply-8cfa1b8f8afc3fb0 verdict=closed-by-key
+home=/tmp/fm-lab.VZynsU task=cl-keeper key=pending-reply-afc984804280a212 verdict=unproven
+review: the escalation is still open and nothing proves the request was answered; read each and close with --apply --key <key>
+home=/tmp/fm-lab.VZynsU task=cl-keeper key=pending-reply-0a1efe361052a351 verdict=review reason=undelivered not-closable: its owner may still resend under the same correlation, so --apply --key refuses it; request=file the board card
+totals mode=apply escalated=3 settled=0 closed-by-key=1 review=1 unproven=1 other-phase=1 refused-key=0 failed=0
+exit=0
+open phase=resolved via=sweep
+slarti open decisions: []
+resolved [key=pending-reply-8cfa1b8f8afc3fb0] [at=1793807549]: pending-reply-resolved: task=slarti pending-reply-id=8cfa1b8f8afc3fb0 via=sweep
+
+### S5 dry run after: totals
+totals mode=dry-run escalated=2 settled=0 closed-by-key=0 review=1 unproven=1 other-phase=2 refused-key=0 failed=0
+
+### S6 retention long tail: 3000 old resolved, 5 young resolved, 1 marker-named, + escalated kept
+records before: 3011
+retention: pending-replies archived 3002 record(s) to /tmp/fm-lab.VZynsU/state/archive/pending-replies-2026-11-04.tar.gz
+exit=0
+~/.no-mistakes/evidence/01M6KKPXP49ZKGEP9W4RJ0QBEE/drive-sweep-lab.sh: line 60: bc: command not found
+elapsed=s
+records after: 9
+removed 62eee41e2c466098
+removed 8cfa1b8f8afc3fb0
+kept 0a1efe361052a351
+kept afc984804280a212
+kept d000000000000001
+kept e000000000000001
+kept c000000000000001
+archive=/tmp/fm-lab.VZynsU/state/archive/pending-replies-2026-11-04.tar.gz entries=3002
+
+### teardown
+lab removed
