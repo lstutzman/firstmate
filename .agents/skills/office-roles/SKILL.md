@@ -24,7 +24,7 @@ It reads the friction officer's and the page-check officer's digests, dispatches
 fleet-app pull requests go to Slarti, which merges and deploys them.
 A friction `repeat-ask` finding is a standing request: make the instruction automatic work, then tell the captain once through the parent channel.
 
-Both run on slartibartfast or Deep Thought only, never the MacBook, and run at most `wip` tasks at once (Navigator 2, Quartermaster 2), on a tick every 2 hours and every 4 hours respectively.
+Both run on slartibartfast or Deep Thought only, never the MacBook, and run at most `wip` tasks at once on the `tick` cadence their registry lines set.
 
 `alchemist` and `librarian` are reserved role names: registry placeholders with no charter and no authority, which chartering, seeding, and `bin/fm-office.sh ensure` refuse until their own design lands.
 
@@ -61,5 +61,7 @@ After a merge the office performed itself, append the landed outcome with the PR
 
 ## Main-home duties
 
-Provision an office only through [`docs/office-provisioning.md`](../../../docs/office-provisioning.md), and republish its authority with `bin/fm-office.sh publish <id>` after every edit of its `data/offices.md` line or its master admission config.
+Provision an office only through [`docs/office-provisioning.md`](../../../docs/office-provisioning.md).
+After editing an office's `data/offices.md` line, republish its authority with `bin/fm-office.sh publish <id>`.
+After editing a master admission config or rules file in `config/admission/`, re-run that office's `bin/fm-home-seed.sh ... --office <id>`, which copies both into the office home, and then publish, because the published pin reads the office's own copy of the rules.
 Route in-scope work to an office the same way as to any second mate, and relay each captain answer to an office's keyed call with `bin/fm-send.sh --resolve-key`.
