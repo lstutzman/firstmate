@@ -30,8 +30,7 @@ card, a page owner fixes a page). It acts on nothing itself.
                  * A merged PR alone does not stale a card that asks for a
                    production action on it (deploy, production, roll out):
                    that action is still open. The card's question, title and
-                   id (except a status-keyed `task-...` id, which embeds the
-                   task name) are read for PRODUCTION_RE unless they ask for a
+                   id are read for PRODUCTION_RE unless they ask for a
                    merge (MERGE_RE: a merge-word card is stale once its PR
                    merged; merely mentioning the merge is not asking).
                    A closed-unmerged PR still flags.
@@ -215,8 +214,7 @@ def words(card):
 
 def open_production_action(card):
     """True when the card asks for a production action, which a merged PR does not close."""
-    cid = str(card.get("id") or "")
-    head = [str(card.get(k) or "") for k in ("question", "title")] + ([] if cid.startswith("task-") else [cid])
+    head = [str(card.get(k) or "") for k in ("id", "question", "title")]
     return any(PRODUCTION_RE.search(h) for h in head) and not any(MERGE_RE.search(h) for h in head)
 
 
