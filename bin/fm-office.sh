@@ -214,7 +214,11 @@ office_problems() {
     || { printf 'not a registered second mate in data/secondmates.md\n'; return; }
   host=${SECONDMATE_REGISTRY_HOST:-${FM_OFFICE_HOST:-$(hostname -s)}}
   in_list "$host" "$runs_on" || printf 'runs-on %s does not include the second mate host %s\n' "$runs_on" "$host"
-  [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] && return
+  if [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
+    [ -z "$merge" ] || [ "$merge" = none ] \
+      || printf 'it merges %s, and its admission config cannot be pinned on a remote route, so its authority record cannot be published\n' "$merge"
+    return
+  fi
   home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
   [ -d "$home" ] || { printf 'office home %s is missing\n' "$home"; return; }
   [ "$(cat "$home/.fm-office" 2>/dev/null)" = "$id" ] || printf '.fm-office marker missing or not "%s" in %s\n' "$id" "$home"

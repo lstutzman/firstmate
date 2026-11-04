@@ -42,6 +42,7 @@ trap 'rm -rf -- "$TMP"' EXIT
 EMPTY="$TMP/empty"
 : > "$EMPTY"
 EMPTY_HASH=$(sha256_file "$EMPTY") || die "cannot hash empty inheritance payload"
+FAILED=
 
 ITEMS=$(fm_config_inherit_items)
 while IFS= read -r rel; do
@@ -65,7 +66,11 @@ while IFS= read -r rel; do
       # A remote home cannot be read from here, so the record is published
       # from data/offices.md alone (bin/fm-office-authority-lib.sh).
       source="$TMP/office-authority.resolved"
-      fm_office_inherit_payload "$CONFIG" "$DATA" "$ID" "" "$source" || die "$FM_OFFICE_ERROR"
+      if ! fm_office_inherit_payload "$CONFIG" "$DATA" "$ID" "" "$source"; then
+        printf 'error: %s: %s\n' "$rel" "$FM_OFFICE_ERROR" >&2
+        FAILED=1
+        rm -f -- "$source"
+      fi
       ;;
     config/*) source="$CONFIG/${rel#config/}" ;;
     data/*) source="$DATA/${rel#data/}" ;;
@@ -94,3 +99,4 @@ while IFS= read -r rel; do
 done <<EOF
 $ITEMS
 EOF
+[ -z "$FAILED" ]

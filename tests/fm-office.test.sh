@@ -279,8 +279,13 @@ SH
     "$ROOT/bin/fm-remote-inherit-push.sh" quartermaster 2 2>&1); then
     fail "a remote office that merges was published"
   fi
+  assert_contains "$out" "error: config/office-authority: " "remote merge office error line"
   assert_contains "$out" "cannot be pinned on a remote route" "remote merge office"
-  pass 'the remote push carries an office its record with a receipt, and refuses a remote office that merges'
+  assert_contains "$out" "data/captain-shared.md" "the items after the record still go"
+  assert_absent "$dest/config/office-authority"
+  edit_file "$w/data/secondmates.md" sed 's/host: inherit-host/host: slartibartfast/'
+  assert_contains "$(ensure "$w")" "OFFICE: office quartermaster: it merges" "ensure names the unpublishable remote record"
+  pass 'the remote push carries an office its record with a receipt, and sends a remote office that merges an absence'
 }
 
 # --- status: the office-status.json projection --------------------------------
