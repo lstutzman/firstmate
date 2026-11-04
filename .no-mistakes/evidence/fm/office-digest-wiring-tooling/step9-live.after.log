@@ -1,0 +1,91 @@
+registered: office source tick (state/office-tick.check.sh)
+registered: office source tick (state/office-tick.check.sh)
+registered: office source lane:friction (state/office-lane-friction.check.sh)
+registered: office source lane:page-check (state/office-lane-page-check.check.sh)
+registered: officer progress (state/officer-progress.check.sh)
+== pre-step-9 offices.md:
+  sources: tick; added 2026-11-04)
+  sources: tick,lane:friction,lane:page-check; added 2026-11-04)
+== step 9 block, run verbatim from docs/office-provisioning.md:
+  | FM_HOME=$MAIN bin/fm-officer.sh register surgeon
+  | FM_HOME=$MAIN bin/fm-officer.sh retire triage
+  | sed -i.bak '/^- navigator - /s/sources: tick;/sources: tick,lane:progress,lane:surgeon:high;/' "$MAIN/data/offices.md"
+  | FM_HOME=$NAV_HOME bin/fm-office.sh register-sources
+  | sed -i.bak '/^- quartermaster - /s/sources: tick,lane:friction,lane:page-check;/sources: tick,lane:friction,lane:page-check,lane:progress;/' "$MAIN/data/offices.md"
+  | FM_HOME=$QM_HOME bin/fm-office.sh register-sources
+  | sed -i.bak -e '/^- progress - /s/; added /; consumer: navigator; start-home: navigator,quartermaster; added /' \
+  |   -e '/^- surgeon - /s/; added /; consumer: main,navigator; added /' "$MAIN/data/officers.md"
+  | FM_HOME=$MAIN bin/fm-officer.sh register progress
+  | FM_HOME=$MAIN bin/fm-officer.sh register surgeon
+  | FM_HOME=$MAIN bin/fm-office.sh ensure
+    + FM_HOME=/tmp/fm-step9.IFa63O/main
+    + bin/fm-officer.sh register surgeon
+    registered: officer surgeon (state/officer-surgeon.check.sh)
+    + FM_HOME=/tmp/fm-step9.IFa63O/main
+    + bin/fm-officer.sh retire triage
+    retired: officer triage (findings kept in data/officers/triage/)
+    + sed -i.bak '/^- navigator - /s/sources: tick;/sources: tick,lane:progress,lane:surgeon:high;/' /tmp/fm-step9.IFa63O/main/data/offices.md
+    + FM_HOME=/tmp/fm-step9.IFa63O/navigator
+    + bin/fm-office.sh register-sources
+    registered: office source tick (state/office-tick.check.sh)
+    registered: office source lane:progress (state/office-lane-progress.check.sh)
+    registered: office source lane:surgeon:high (state/office-lane-surgeon-high.check.sh)
+    + sed -i.bak '/^- quartermaster - /s/sources: tick,lane:friction,lane:page-check;/sources: tick,lane:friction,lane:page-check,lane:progress;/' /tmp/fm-step9.IFa63O/main/data/offices.md
+    + FM_HOME=/tmp/fm-step9.IFa63O/quartermaster
+    + bin/fm-office.sh register-sources
+    registered: office source tick (state/office-tick.check.sh)
+    registered: office source lane:friction (state/office-lane-friction.check.sh)
+    registered: office source lane:page-check (state/office-lane-page-check.check.sh)
+    registered: office source lane:progress (state/office-lane-progress.check.sh)
+    + sed -i.bak -e '/^- progress - /s/; added /; consumer: navigator; start-home: navigator,quartermaster; added /' -e '/^- surgeon - /s/; added /; consumer: main,navigator; added /' /tmp/fm-step9.IFa63O/main/data/officers.md
+    + FM_HOME=/tmp/fm-step9.IFa63O/main
+    + bin/fm-officer.sh register progress
+    registered: officer progress (state/officer-progress.check.sh)
+    + FM_HOME=/tmp/fm-step9.IFa63O/main
+    + bin/fm-officer.sh register surgeon
+    registered: officer surgeon (state/officer-surgeon.check.sh)
+    + FM_HOME=/tmp/fm-step9.IFa63O/main
+    + bin/fm-office.sh ensure
+    OFFICE: office navigator: charter lacks the "# Office authority" heading (/tmp/fm-step9.IFa63O/navigator/data/charter.md)
+    OFFICE: office navigator: dispatch project PropertyCompass2 is not in /tmp/fm-step9.IFa63O/navigator/data/projects.md
+    OFFICE: office navigator: merge-via project PropertyCompass2 lacks merger=slarti in /tmp/fm-step9.IFa63O/navigator/data/projects.md
+    OFFICE: office navigator: authority record is unproven (inheritance receipt is missing or unsafe); run bin/fm-office.sh publish navigator
+    OFFICE: office quartermaster: source lane:friction is not a registered officer
+    OFFICE: office quartermaster: source lane:page-check is not a registered officer
+    OFFICE: office quartermaster: charter lacks the "# Office authority" heading (/tmp/fm-step9.IFa63O/quartermaster/data/charter.md)
+    OFFICE: office quartermaster: dispatch project firstmate is not in /tmp/fm-step9.IFa63O/quartermaster/data/projects.md
+    OFFICE: office quartermaster: dispatch project skills is not in /tmp/fm-step9.IFa63O/quartermaster/data/projects.md
+    OFFICE: office quartermaster: dispatch project fleet-app is not in /tmp/fm-step9.IFa63O/quartermaster/data/projects.md
+    OFFICE: office quartermaster: merge project firstmate has no admission= in /tmp/fm-step9.IFa63O/quartermaster/data/projects.md
+    OFFICE: office quartermaster: merge project skills has no admission= in /tmp/fm-step9.IFa63O/quartermaster/data/projects.md
+    OFFICE: office quartermaster: merge-via project fleet-app lacks merger=slarti in /tmp/fm-step9.IFa63O/quartermaster/data/projects.md
+    OFFICE: office quartermaster: cannot publish office quartermaster's authority record: merge project firstmate has no admission= in /tmp/fm-step9.IFa63O/quartermaster/data/projects.md
+    block exit rc=0
+== post-step-9 records:
+  sources: tick,lane:progress,lane:surgeon:high; added 2026-11-04)
+  sources: tick,lane:friction,lane:page-check,lane:progress; added 2026-11-04)
+  consumer: navigator
+  start-home: navigator,quartermaster
+  consumer: main,navigator
+  /tmp/fm-step9.IFa63O/navigator/state:
+  office-lane-progress.check-trust
+  office-lane-progress.check.sh
+  office-lane-surgeon-high.check-trust
+  office-lane-surgeon-high.check.sh
+  /tmp/fm-step9.IFa63O/quartermaster/state:
+  office-lane-friction.check-trust
+  office-lane-friction.check.sh
+  office-lane-page-check.check-trust
+  office-lane-page-check.check.sh
+  office-lane-progress.check-trust
+  office-lane-progress.check.sh
+== office ensure lines naming lane:progress/lane:surgeon (expect none):
+== fm-officer.sh ensure (officer gaps):
+  (end, 0 consumer/start-home gaps)
+== adversarial: surgeon consumer navigator only (no main) with lane:surgeon:high:
+fm-officer: officer surgeon: consumer office navigator lists only sources: lane:surgeon:high, which drops the other findings unless main is also a consumer
+    register exit=2
+  OFFICER: officer surgeon: consumer office navigator lists only sources: lane:surgeon:high, which drops the other findings unless main is also a consumer
+== adversarial: quartermaster without lane:progress (start-home navigator,quartermaster):
+fm-officer: officer progress: start-home office quartermaster does not list sources: lane:progress (or lane:progress:high), so it never reads this digest
+    register exit=2
