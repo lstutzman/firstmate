@@ -179,44 +179,39 @@ EOF
 }
 
 test_token_scope_needs_a_token_permission_failure() {
-  local home json task key
+  local home json row task text want
   local DATE=2026-10-26 T=1793033657 NOW=1793077200
   home=$(make_world token-scope)
-  # false positives: feature scope, merge words, a leak thread, 403 inside a task key
-  for row in \
-    "dealscoring-scale-scope|Which scope for the scale: (a) per deal (b) per run" \
-    "pc-2769-runs-scope|Decide the scope of runs: (a) all (b) last 30 days" \
-    "skills-pr71-merge|Lee merge word needed for the token skill PR" \
-    "pc-3417-merge-word|Lee merge word for the access token PR" \
-    "staging-bypass-token-leak|A staging bypass token appeared in output; Lee rotates it" \
-    "captain-hold-pc-sdk-10-0-403|Pick (a) or (b) for the SDK 10.0 upgrade"; do
-    task=${row%%|*}
-    printf 'needs-decision [at=%s] [key=%s]: %s\n' "$T" "$task" "${row#*|}" > "$home/state/$task.status"
+  # task|key|text|expected "cause sub service"
+  local rows=(
+    "dealscoring-scale-scope|k1|dealscoring scale scope: per-key or per-token (a) or (b)|decision decision null"
+    "pc-2769-runs-scope|k2|pc-2769 runs scope: which key range, (a) last 30 days or (b) all|decision decision null"
+    "skills-pr71-merge|k3|skills PR 71 needs Lee's merge word; it edits the token scopes doc|policy merge-word null"
+    "pc-3417-merge-word|k4|pc-3417 merge word for the token scope PR|policy merge-word null"
+    "staging-bypass-token-leak|k5|Staging bypass token leak: rotate the token (scope: staging)|other other null"
+    "captain-hold-pc-sdk-10-0-403|k6|captain-hold-pc-sdk-10-0-403: pick (a) or (b)|decision decision null"
+    "pc-3279-cf-token-still-refused|k7|Cloudflare still refuses the agents' CLOUDFLARE_API_TOKEN for KV; the token is stored in 1Password|credential scope Cloudflare"
+    "gilligan-pc3182-access-token|k8|Cloudflare access token for gilligan-pc3182: stored in 1Password, Cloudflare Access returns forbidden|credential scope Cloudflare"
+    "op-denied|k9|(3) You do not have permission to perform this on the 1Password service account|credential scope 1Password"
+    "gh-push|k10|GitHub returns 403 Forbidden on push|credential scope GitHub"
+    "linear-api|k11|Linear API returns 403|credential scope Linear"
+    "cf-kv-write|k12|Cloudflare API 403 on KV write|credential scope Cloudflare"
+    "kv-narrow|k13|token scope too narrow for KV|credential scope null"
+    "kv-none|k14|the token has no KV scope|credential scope null"
+    "op-signin|k15|op signin needed before the Cloudflare deploy|credential login 1Password"
+    "op-signed-out|k16|not currently signed in to 1Password; the GitHub deploy waits|credential login 1Password"
+  )
+  for row in "${rows[@]}"; do
+    IFS='|' read -r task key text want <<<"$row"
+    printf 'blocked [at=%s] [key=%s]: %s\n' "$T" "$key" "$text" > "$home/state/$task.status"
   done
-  # real failures: Cloudflare named beside a 1Password mention, and a 1Password permission error
-  printf 'needs-decision [at=%s] [key=cf]: Cloudflare still refuses the agents'"'"' CLOUDFLARE_API_TOKEN for KV; the token is stored in 1Password\n' "$T" \
-    > "$home/state/pc-3279-cf-token-still-refused.status"
-  printf 'blocked [at=%s] [key=deck]: Cloudflare returns 403 for the agent token\n' "$T" \
-    > "$home/state/gilligan-expo-deck-cloudflare.status"
-  printf 'blocked [at=%s] [key=op]: (3) You do not have permission to perform this on the 1Password service account\n' "$T" \
-    > "$home/state/op-denied.status"
   run_officer "$home" >/dev/null || fail "token-scope fixture run must succeed"
   json="$home/data/officers/friction/$DATE.json"
-  for task in dealscoring-scale-scope pc-2769-runs-scope skills-pr71-merge pc-3417-merge-word \
-      staging-bypass-token-leak captain-hold-pc-sdk-10-0-403; do
-    key=$(jq -r --arg t "$task" '[.events[] | select(.task == $t)][0] | "\(.cause) \(.sub)"' "$json")
-    assert_equals "true" "$([ "$key" != "credential scope" ] && echo true || echo false)" \
-      "$task is not a token-scope failure (got: $key)"
+  for row in "${rows[@]}"; do
+    IFS='|' read -r task key text want <<<"$row"
+    assert_equals "$want" "$(status_event "$json" "$task" "$key" '"\(.cause) \(.sub) \(.service)"')" \
+      "$task: $text"
   done
-  assert_equals "credential scope Cloudflare" \
-    "$(status_event "$json" pc-3279-cf-token-still-refused cf '"\(.cause) \(.sub) \(.service)"')" \
-    "a Cloudflare refusal that also mentions 1Password is labelled Cloudflare"
-  assert_equals "credential scope Cloudflare" \
-    "$(status_event "$json" gilligan-expo-deck-cloudflare deck '"\(.cause) \(.sub) \(.service)"')" \
-    "a 403 tied to the agent token is a Cloudflare scope failure"
-  assert_equals "credential scope 1Password" \
-    "$(status_event "$json" op-denied op '"\(.cause) \(.sub) \(.service)"')" \
-    "a 1Password permission error stays a 1Password scope failure"
   pass "fm-officer friction: the token-scope finding needs a token permission failure"
 }
 

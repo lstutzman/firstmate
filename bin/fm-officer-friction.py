@@ -226,6 +226,7 @@ SERVICES = [
     ("Auth0", re.compile(r"\bauth0\b", re.I)),
 ]
 
+SERVICE_NAMES = "|".join(p.pattern for _, p in SERVICES)
 OP_FAILURE_RE = re.compile(r"do not have permission to perform|service[- ]account", re.I)
 
 # Root-cause rules for status text and asks: (cause, sub, pattern); first match wins.
@@ -249,12 +250,13 @@ RULES = [
         r"(?:create|write|save)|create items|item create", re.I)),
     ("credential", "scope", re.compile(
         r"authentication error|code 10000|insufficient (?:permission|privilege)s?"
-        r"|(?<![\w-])(?:403|forbidden)(?![\w-]).{0,60}(?:token|credential|api key|service account)"
-        r"|(?:token|credential|api key|service account).{0,60}(?<![\w-])(?:403|forbidden)(?![\w-])"
+        r"|(?<![\w-])(?:403|forbidden)(?![\w-]).{0,60}(?:token|credential|api key|service account|%s)"
+        r"|(?:token|credential|api key|service account|%s).{0,60}(?<![\w-])(?:403|forbidden)(?![\w-])"
         r"|refus\w*\b.{0,60}token|token.{0,40}refus|do not have permission to perform"
         r"|(?:token|key|grant)s?(?: \w+){0,3} (?:lacks?|missing|without|needs?|requires?|refused|denied)\b.{0,30}\bscopes?\b"
         r"|\b(?:missing|lacks?|insufficient|required|without)\b.{0,20}\bscopes?\b.{0,30}(?:token|key|grant)"
-        r"|widen(?:ed|ing)? (?:the )?(?:\w+ )?token", re.I)),
+        r"|(?:token|key|grant)s?.{0,30}\bno\b(?: [\w-]+){0,2} scopes?\b|\bscopes? (?:is |are )?too narrow"
+        r"|widen(?:ed|ing)? (?:the )?(?:\w+ )?token" % ((SERVICE_NAMES,) * 2), re.I)),
     ("credential", "login", re.compile(
         r"not logged in|not currently signed in|op signin|auth login|az login|sign[- ]in required|gh auth", re.I)),
     ("credential", "missing", re.compile(
@@ -493,11 +495,11 @@ def classify(text, rules=RULES):
     return "other", "other", 0
 
 
-def service_of(text, near=0):
+def service_of(text, near=0, scope=False):
     """The service named closest to position `near`, or None."""
     best = None
     # 1Password named only as the store of a token is not the failing provider.
-    stored_only = not OP_FAILURE_RE.search(text or "")
+    stored_only = scope and not OP_FAILURE_RE.search(text or "")
     for name, pattern in SERVICES:
         if name == "1Password" and stored_only and any(
                 p.search(text or "") for n, p in SERVICES if n != "1Password"):
@@ -661,7 +663,8 @@ def session_events(records, machine):
                     m = INSTALL_RE.search(command)
                     tool = m.group(1) if m else None
                 events.append({"kind": "lee-command", "at": at, "cause": cause, "sub": sub, "lee": True,
-                               "service": service_of(command), "tool": tool, "signature": sig})
+                               "service": service_of(command, 0, (cause, sub) == ("credential", "scope")),
+                               "tool": tool, "signature": sig})
             continue
         if not isinstance(content, list):
             continue
@@ -686,7 +689,8 @@ def session_events(records, machine):
                 if cause in ("other", "decision"):
                     cause, sub = classify_command(sig) if sig != "..." else ("lee-command", "run")
                 ask = {"kind": "lee-ask", "at": at, "last_at": at, "count": 1, "cause": cause, "sub": sub,
-                       "lee": True, "service": service_of(line, pos), "tool": None, "signature": sig,
+                       "lee": True, "service": service_of(line, pos, (cause, sub) == ("credential", "scope")),
+                       "tool": None, "signature": sig,
                        "answered_at": None, "wait_s": None}
                 asks[sig] = ask
                 events.append(ask)
@@ -1005,7 +1009,7 @@ def status_events(homes, date, channels):
                     "measured_by": measured_by, "answered_by": answered_by,
                     "lee": names_lee or answered_by == "lee",
                     "cause": cause, "sub": sub, "stated": ev.get("stated") if waits else None,
-                    "service": service_of(text, pos), "tool": None,
+                    "service": service_of(text, pos, (cause, sub) == ("credential", "scope")), "tool": None,
                     "signature": scrub(text), "_chain": chain, "_own": own,
                 })
     # A Lee step asked again because an ssh line to the home's own machine did not take.
@@ -1080,7 +1084,7 @@ def card_events(cards, homes, date):
         answer = card.get("answer") if isinstance(card.get("answer"), dict) else {}
         answered_at = epoch_of(answer.get("at"))
         out.append({"kind": "card-only", "at": at, "card": card.get("id"), "cause": cause, "sub": sub,
-                    "lee": True, "service": service_of(text, pos), "tool": None,
+                    "lee": True, "service": service_of(text, pos, (cause, sub) == ("credential", "scope")), "tool": None,
                     "signature": scrub(card.get("question") or ""), "answered_at": answered_at,
                     "wait_s": max(0, answered_at - at) if answered_at is not None else None,
                     "measured_by": "card-answer" if answered_at is not None else None})
