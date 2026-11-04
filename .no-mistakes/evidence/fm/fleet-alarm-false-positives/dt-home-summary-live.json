@@ -1,0 +1,949 @@
+{
+  "schema": "fm-secondmate-home-summary.v1",
+  "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+  "contributions": {
+    "known": 508,
+    "checked": 501,
+    "counts": {
+      "captain": 1,
+      "fleet": 13,
+      "maintainer": 0,
+      "nobody": 494
+    },
+    "unmeasured": 0,
+    "complete": false,
+    "proven_clear": false,
+    "stale_verdicts": 0,
+    "missing_verdicts": 6,
+    "unreadable_records": 0,
+    "valid_until": 1793771699,
+    "captain": [
+      {
+        "task": "pc-3449-stripe-after-commit",
+        "url": "https://github.com/lstutzman/PropertyCompass2/pull/4742",
+        "kind": "pr",
+        "head": "d51d982e24ad8403efb9b8ea88bdb2765a369646",
+        "reason": "checks green; merge approval needed",
+        "hold": null,
+        "verdict_freshness": null,
+        "verdict_head": null,
+        "verdict_source": null,
+        "checked_at": "2026-11-04T06:18:43Z"
+      }
+    ],
+    "captain_omitted": 0
+  },
+  "generated": "2026-11-04T06:25:01Z",
+  "generated_epoch": 1793773501,
+  "home": "~/fm-homes/deepthought",
+  "valid": false,
+  "reason": "child current state unavailable: pc-23-override-delete, pc-23-override-restack",
+  "invalidity": {
+    "kind": "child_current_unavailable",
+    "ids": [
+      "pc-23-override-delete",
+      "pc-23-override-restack"
+    ]
+  },
+  "state": "unknown",
+  "active_children": [],
+  "decisions_open": [
+    {
+      "id": "licensed-listings-next-step",
+      "key": "licensed-listings-next-step",
+      "verb": "captain-hold",
+      "summary": "Licensed listings: choose enquiries and feed pilot",
+      "reason": "Report data/research-licensed-listings/report.md. Rightmove Data Services sells analytics, not listings (Lee was right). Options: (a) Lee enquires with Zoopla/H…",
+      "hold_until": null,
+      "hold_bucket": "live",
+      "hold_age_days": 4,
+      "source": "backlog"
+    },
+    {
+      "id": "pc-4557-restack-word",
+      "key": "pc-4557-restack-word",
+      "verb": "captain-hold",
+      "summary": "Lee's word again on restacked PR 4557 (PC-3869 payments) at 027dd6185e",
+      "reason": "PR https://github.com/lstutzman/PropertyCompass2/pull/4557 restacked to 027dd6185e; conflict resolution changed one StripeService.cs line (ended-trial BillingIn…",
+      "hold_until": null,
+      "hold_bucket": "live",
+      "hold_age_days": 2,
+      "source": "backlog"
+    },
+    {
+      "id": "dt-reboot-stranded-sessions",
+      "key": "dt-reboot-stranded-sessions",
+      "verb": "captain-hold",
+      "summary": "Deep Thought reboot 4 Nov ~04:01Z: 10 worker sessions restored in the primary clone, frozen at the external-imports prompt",
+      "reason": "Lee's call on the 10 sessions stranded in the primary clone after the 4 Nov reboot (key dt-reboot-stranded-sessions): (a) end them (recommended), (b) leave froz…",
+      "hold_until": null,
+      "hold_bucket": "live",
+      "hold_age_days": 0,
+      "source": "backlog"
+    }
+  ],
+  "holds": [
+    {
+      "id": "pc-2463",
+      "title": "PC-2463: wire staging to the existing AI pilot Azure set-up (after PC-2466 gateway and PC-…",
+      "blocked_by": "pc-2464",
+      "blocked_by_ids": [
+        "pc-2464"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-2464"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2567",
+      "title": "PC-2567: AI photo condition report (Lee's pick: newest model, quick grade first)",
+      "blocked_by": "pc-2464,pc-2469",
+      "blocked_by_ids": [
+        "pc-2464",
+        "pc-2469"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-2464",
+        "pc-2469"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2470",
+      "title": "PC-2470: buying AI credits (Lee's pick: one release, refunds before first sale)",
+      "blocked_by": "pc-2464,pc-2469",
+      "blocked_by_ids": [
+        "pc-2464",
+        "pc-2469"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-2464",
+        "pc-2469"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "fm-officer-self-improvement",
+      "title": "Firstmate fork: the self-improvement officer (fourth officer): per-PR time and cost from s…",
+      "blocked_by": "fm-officer-friction",
+      "blocked_by_ids": [
+        "fm-officer-friction"
+      ],
+      "unresolved_blocker_ids": [
+        "fm-officer-friction"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2356-scale-staging",
+      "title": "PC-2356 (Gilligan handback): scale deal-scoring consumers from durable queue depth, STAGIN…",
+      "blocked_by": "pc-3835",
+      "blocked_by_ids": [
+        "pc-3835"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3835"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2232-drop-refund",
+      "title": "PC-2232 follow-up (Gilligan handback): drop the empty legacy mentorship_refund_outbox tabl…",
+      "blocked_by": "pc-3835",
+      "blocked_by_ids": [
+        "pc-3835"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3835"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2737",
+      "title": "PC-2737 (Gilligan handback): Proximity 2/4 listing and area display; follow the Linear spe…",
+      "blocked_by": "pc-3835",
+      "blocked_by_ids": [
+        "pc-3835"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3835"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2738",
+      "title": "PC-2738 (Gilligan handback): Proximity 3/4 Deal Finder filter and sort; follow the Linear …",
+      "blocked_by": "pc-3835",
+      "blocked_by_ids": [
+        "pc-3835"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3835"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2740",
+      "title": "PC-2740 (Gilligan handback): Proximity 4/4 investor-profile preference; follow the Linear …",
+      "blocked_by": "pc-3835",
+      "blocked_by_ids": [
+        "pc-3835"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3835"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2749",
+      "title": "PC-2749 (Gilligan handback): Relist 3/5 resolver, PriceDropPct, listing detail line; follo…",
+      "blocked_by": "pc-3835",
+      "blocked_by_ids": [
+        "pc-3835"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3835"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2750",
+      "title": "PC-2750 (Gilligan handback): Relist 4/5 off-market card and watchlist chip; follow the Lin…",
+      "blocked_by": "pc-3835",
+      "blocked_by_ids": [
+        "pc-3835"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3835"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2751",
+      "title": "PC-2751 (Gilligan handback): Relist 5/5 Deal Finder filter and Relisted lower alert; follo…",
+      "blocked_by": "pc-3835",
+      "blocked_by_ids": [
+        "pc-3835"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3835"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2731-ogl-scout",
+      "title": "PC-2731 (Gilligan handback): read-only scout inventorying Open Government Licence data sou…",
+      "blocked_by": "pc-3835",
+      "blocked_by_ids": [
+        "pc-3835"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3835"
+      ],
+      "reason": "blocked",
+      "source": "backlog"
+    },
+    {
+      "id": "dt-3090-bench",
+      "title": "Deep Thought: read-only 5-minute PyTorch BF16 and FP16 matmul benchmark, FP32 accumulate, …",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "reason": "Low priority: run after the release blockers, in a quiet window with local-jev and TabbyAPI idle",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-3715-bounds",
+      "title": "PC-3715 follow-up: bound ExternalApiRetentionSettings retention days to 1-90, fail start-u…",
+      "blocked_by": "pc-3715-retention",
+      "blocked_by_ids": [
+        "pc-3715-retention"
+      ],
+      "unresolved_blocker_ids": [
+        "pc-3715-retention"
+      ],
+      "reason": "Behind the release blockers; dispatch after PR 4426 lands",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2258-q2",
+      "title": "PC-2258 UX-audit Q2 (after Q1 PR 4352, merged): seeded show journeys, primary actions and …",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "reason": "PR https://github.com/lstutzman/PropertyCompass2/pull/4361 is open and with the merger; its copy was cleaned 29 Oct for …",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2276",
+      "title": "PC-2276 Calendar dates shift by a day: first slice (Top 10 Go 26 Oct)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "reason": "PR https://github.com/lstutzman/PropertyCompass2/pull/4227 is open and with the merger; its copy was cleaned 29 Oct for …",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2473",
+      "title": "PC-2473 support AI-credit ledger and grants (payments) (Top 10 Go)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "reason": "PR https://github.com/lstutzman/PropertyCompass2/pull/4261 is open and with the merger; its copy was cleaned 29 Oct for …",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2567-ai-sweep",
+      "title": "PC-2567: draft the privacy-page line for photo reports (for Lee's card) and add a sweep of…",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "reason": "PR https://github.com/lstutzman/PropertyCompass2/pull/4399 is open and with the merger; its copy was cleaned 29 Oct for …",
+      "source": "backlog"
+    },
+    {
+      "id": "pc-2567-f3",
+      "title": "PC-2567 F3: saved AI photo report, member ownership, own-read, erasure and export, stacked…",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "reason": "PR https://github.com/lstutzman/PropertyCompass2/pull/4360 restacked 30 Oct to head 8cc453af2c and with the merger; no L…",
+      "source": "backlog"
+    }
+  ],
+  "queued": [
+    {
+      "id": "verify-pc4022-nightly",
+      "title": "After the next staging deploy: confirm the nightly recent-sales-map.spec.ts wide-view test passes (PC-4022 fix, PR 4766 …",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 0,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "task",
+      "since": "2026-11-04"
+    },
+    {
+      "id": "dt-landing-state-1104",
+      "title": "Open landing state 4 Nov: PR heads with Slarti and what each waits on",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 0,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "note",
+      "since": "2026-11-04"
+    },
+    {
+      "id": "pc-357-auction-lease-fields",
+      "title": "PC-357 follow-up: fold structured guide-price and lease fields into the Auction and Short lease keyword tags (before the…",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-357-saved-search-chips",
+      "title": "PC-357 follow-up: saved Explore searches keep their keyword chips (a column on the saved search), so their alerts honour…",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-1395-epc-upgrade-cost",
+      "title": "PC-1395: EPC upgrade cost from the home's own EPC certificate (flag-off)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-884-members-map",
+      "title": "PC-884: members map, counts only, no profile links (flag-off; GDPR read advised, not a gate)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-1254-tenanted-block-calc",
+      "title": "PC-1254: tenanted block calculator as its own strategy, not folded into PC-1902 (flag-off)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-320-portfolio-checkup",
+      "title": "PC-320: portfolio check-up, rules only, no AI charge (flag-off)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-3262-comps-to-end-value",
+      "title": "PC-3262: 'Use as end value' on Comparables opens Flip/BRR prefilled with the ticked comps' median",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-home-screen-app",
+      "title": "Home screen app: web app manifest only (name, icons, full screen), no service worker; file Linear first",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-2371-portfolio-value-history",
+      "title": "PC-2371: monthly append-only portfolio value snapshot per property and total, read API, no UI",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-1175-remember-last-search",
+      "title": "PC-1175: restore last Explore filters and last Calculator strategy (browser storage only)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-2900-sourced-deals-board",
+      "title": "PC-2900: sourced deals board per Lee's 16 Oct plan; PC-499 sourcer compliance checklist must exist first (L)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-24-glossary-synonyms",
+      "title": "PC-24: glossary other names and related-term links, search by other names (after PC-23 rewrite)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-1346-asking-vs-sold-gap",
+      "title": "PC-1346: listing line asking per sq ft vs similar sold per sq ft and the gap, sortable in Deal Finder; own data only",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "fsm-mentorship-session",
+      "title": "FSM slice 2: MentorshipSession to an explicit hierarchical Stateless machine, bypass writers folded, refund sub-machine …",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-1760-broker-directory",
+      "title": "PC-1760: verified broker directory (FRN + register check at admin approval), no ranking, lead passing or commission",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-1764-locale-foundation",
+      "title": "PC-1764: locale foundation, no visible member change (resolver, formatters, i18n library + en-GB catalog, warn lint), 2-…",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-find-similar",
+      "title": "PC-4012: Find similar on a portfolio property, opens Deal Finder with its district and strategy preset",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    },
+    {
+      "id": "pc-cert-expiry",
+      "title": "PC-4013: certificate expiry reminder email and dashboard warning (gas, electrical, EPC)",
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "unresolved_blocker_ids": [],
+      "blocked_reason": null,
+      "hold_reason": null,
+      "hold_kind": null,
+      "hold_until": null,
+      "hold_bucket": null,
+      "hold_age_days": 1,
+      "captain_actionable": false,
+      "repo": "PropertyCompass2",
+      "kind": "ship",
+      "since": "2026-11-03"
+    }
+  ],
+  "landed": [
+    {
+      "id": "stack-b-ai",
+      "title": "Landing stack B (AI chain): 4662 -> 4678 -> 4757",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": null,
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "verb": "done",
+        "date": "2026-11-04"
+      }
+    },
+    {
+      "id": "stack-a-remerge",
+      "title": "Stack A re-merge: 4739 conflicts with staging after the 3-4 Nov landings; merge staging into 4739 and carry up 4709 -> 4…",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": null,
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "date": "2026-11-04",
+        "verb": "done"
+      }
+    },
+    {
+      "id": "pc-504-nightly-red",
+      "title": "Nightly red: recent-sales-map.spec.ts 'a view wider than one square degree asks for nothing and says to zoom in' failed …",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": "https://github.com/lstutzman/PropertyCompass2/pull/4766",
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "date": "2026-11-04",
+        "verb": "merged"
+      }
+    },
+    {
+      "id": "pc-417-ai-negotiation-notes",
+      "title": "PC-417: AI negotiation notes, built flag-off; credit price per run is Lee's call before switch-on (M)",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": "https://github.com/lstutzman/PropertyCompass2/pull/4757",
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "date": "2026-11-04",
+        "verb": "merged"
+      }
+    },
+    {
+      "id": "pc-2462-slice2",
+      "title": "PC-2462 AI deal review, second PR: PC-2508 evidence packet and PC-2509 generator, stacked on PR 4662, staging only (Lee …",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": "https://github.com/lstutzman/PropertyCompass2/pull/4678",
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "verb": "merged",
+        "date": "2026-11-04"
+      }
+    },
+    {
+      "id": "pc-2462-ai-deal-review",
+      "title": "PC-2462 AI deal review first slice: PC-2507, PC-2510, PC-2511 with a fake reviewer, then PC-2508, PC-2509; staging only …",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": "https://github.com/lstutzman/PropertyCompass2/pull/4662",
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "date": "2026-11-04",
+        "verb": "merged"
+      }
+    },
+    {
+      "id": "pc-1397-tax-year-export",
+      "title": "PC-1397: tax-year property income export CSV/PDF mapped to SA105, marked estimates; wording to Lee; due before 31 Jan (L…",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": "https://github.com/lstutzman/PropertyCompass2/pull/4715",
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "verb": "merged",
+        "date": "2026-11-04"
+      }
+    },
+    {
+      "id": "stack-c-words",
+      "title": "Landing stack C: 4715 -> 4718 -> 4755 -> 4752",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": null,
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "date": "2026-11-03",
+        "verb": "done"
+      }
+    },
+    {
+      "id": "stack-a-land",
+      "title": "Landing stack A: 4739 -> 4709 -> 4211 -> 4380 (no Lee word needed)",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": null,
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "verb": "done",
+        "date": "2026-11-03"
+      }
+    },
+    {
+      "id": "pc-504-sold-price-map",
+      "title": "PC-504: recent-sales layer on the Explore map (12 months, by postcode, clustered, request size limit) (Lee Go 2 Nov)",
+      "kind": "ship",
+      "hold_kind": null,
+      "pr_url": "https://github.com/lstutzman/PropertyCompass2/pull/4713",
+      "report_path": null,
+      "local_note": null,
+      "completion": {
+        "verb": "merged",
+        "date": "2026-11-03"
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "pc-1480-hmo-concentration",
+      "state": "paused",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fm-remote:wK3:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "pc-1481-article4-immediate",
+      "state": "paused",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fm-remote:wJQ:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "pc-2071-drop-columns",
+      "state": "paused",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fm-remote:wJR:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "pc-23-override-delete",
+      "state": "unknown",
+      "source": "pane",
+      "endpoint": {
+        "target": "fm-remote:wGX:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "pc-23-override-restack",
+      "state": "unknown",
+      "source": "pane",
+      "endpoint": {
+        "target": "fm-remote:wHA:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "pc-3449-stripe-after-commit",
+      "state": "paused",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fm-remote:wJV:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "pc-3912-long-held-owner",
+      "state": "paused",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fm-remote:wJX:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "pc-3913-recalculate-analysis",
+      "state": "paused",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fm-remote:wJF:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "pc-3941-resweep",
+      "state": "paused",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fm-remote:wJW:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "pc-3956-membership-refund-window",
+      "state": "paused",
+      "source": "status-log",
+      "endpoint": {
+        "target": "fm-remote:wHN:p2",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-04T06:25:01Z",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "counts": {
+    "in_flight": 10,
+    "held_in_flight": 0,
+    "active_children": 0,
+    "decisions_open": 3,
+    "holds": 59,
+    "queued": 144,
+    "landed": 10,
+    "endpoints": 10
+  },
+  "omitted": [
+    {
+      "surface": "queued",
+      "count": 124
+    }
+  ]
+}

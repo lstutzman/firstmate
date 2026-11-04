@@ -1,0 +1,22 @@
+## Quota (synthetic accounts lee/lst/marley/robot; lee+marley carrying), real DT summary unchanged (healthy waiting)
+Q1 reported shape 56/3/17/0:
+  exit=0 output: <none>
+Q2 carrying account at 95% (adversarial):
+  exit=0 output: Carrying Claude account lee@x.invalid 7d 95% (resets 2026-11-09T15:00Z); Claude quota context (not an alarm): lee@x.invalid 7d 95%, lst@x.invalid 7d 3%, marley@x.invalid 7d 17%, robot@x.invalid 7d 0%; Carrying Claude accounts: lee@x.invalid, marley@x.invalid
+Q3 pool near empty 95/96/97/92 (adversarial):
+  exit=0 output: Carrying Claude account lee@x.invalid 7d 95% (resets 2026-11-09T15:00Z); Carrying Claude account marley@x.invalid 7d 97% (resets 2026-11-10T06:00Z); Claude pool near empty; Claude quota context (not an alarm): lee@x.invalid 7d 95%, lst@x.invalid 7d 96%, marley@x.invalid 7d 97%, robot@x.invalid 7d 92%; Carrying Claude accounts: lee@x.invalid, marley@x.invalid
+## Deep Thought waiting on captain (quota healthy 56/3/17/0), no mate status => silent
+D1 real DT summary (10 in flight, 3 captain-hold incl dt-reboot-stranded-sessions, child_current_unavailable):
+  exit=0 output: <none>
+D2 adversarial: one live worker (active_children=1):
+  exit=0 output: Secondmate holding work silent over 60 minutes: deepthought
+D3 adversarial: a child status-source blocked ask beside the holds:
+  exit=0 output: Secondmate holding work silent over 60 minutes: deepthought
+D4 adversarial: no captain-hold row (decisions are needs-decision):
+  exit=0 output: Secondmate holding work silent over 60 minutes: deepthought
+D5 adversarial: truncated decision list (count 5 > 3 rows):
+  exit=0 output: Secondmate holding work silent over 60 minutes: deepthought
+D6 adversarial: other invalidity kind (orphan_in_flight):
+  exit=0 output: Secondmate work inventory unavailable: deepthought: home inventory incomplete: child current state unavailable: pc-23-override-delete, pc-23-override-restack
+D7 adversarial: silent mate + carrying 95% => quota context appears only with the quota alarm:
+  exit=0 output: Carrying Claude account lee@x.invalid 7d 95% (resets 2026-11-09T15:00Z); Secondmate holding work silent over 60 minutes: deepthought; Claude quota context (not an alarm): lee@x.invalid 7d 95%, lst@x.invalid 7d 3%, marley@x.invalid 7d 17%, robot@x.invalid 7d 0%; Carrying Claude accounts: lee@x.invalid, marley@x.invalid

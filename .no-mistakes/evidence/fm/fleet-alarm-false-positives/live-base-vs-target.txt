@@ -1,0 +1,10 @@
+=== S1+S2 live (base fm-on.sh delegates to the unchanged tracked fm-on.sh): real cpa-usage-axi accounts + real Deep Thought home-summary via fm-on.sh; no deepthought status line in lab => silent >60m ===
+--- base (0d9e007) check
+Secondmate holding work silent over 60 minutes: deepthought; Claude account pressure: lee@propertycompass.co.uk 7d 56%, lstutzman@gmail.com 7d 4%, marleycrittendom@gmail.com 7d 17%, misterrobot@propertycompass.co.uk 7d 0%; Carrying Claude accounts: lee@propertycompass.co.uk, marleycrittendom@gmail.com
+[exit 0]
+record:
+{"silent:deepthought":["check"]}
+--- target (edcfb90) check
+[exit 0]
+record:
+{}
