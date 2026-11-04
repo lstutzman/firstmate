@@ -42,8 +42,6 @@
 #   request_prs=            comma-separated GitHub PR URLs named anywhere in
 #                           the full request text (the summary is truncated),
 #                           empty when none; evidence for bin/fm-pending-reply-sweep.sh
-#   answered_keys=          comma-separated --resolve-key decision keys the
-#                           request answered, empty when it answered none
 #   created_epoch=          when the expectation was created
 #   delivered_epoch=        when the marked request was confirmed delivered
 #                           (empty until delivery; delivery never resolves)
@@ -345,8 +343,8 @@ fm_pending_reply_embed_corr() {  # <message> <corr_id> <result-var>
 
 # Create a durable pending-reply expectation. Prints corr_id on success.
 # Does not deliver anything. Fails if parent paths cannot be prepared.
-fm_pending_reply_create() {  # <parent-home> <state-dir> <task_id> <request-text> [answered-keys]
-  local parent_home=$1 state=$2 task_id=$3 request_text=$4 answered_keys=${5-}
+fm_pending_reply_create() {  # <parent-home> <state-dir> <task_id> <request-text>
+  local parent_home=$1 state=$2 task_id=$3 request_text=$4
   local dir rec corr now summary status_path tmp request_prs
   [ -n "$parent_home" ] && [ -n "$state" ] && [ -n "$task_id" ] || return 2
   dir=$(fm_pending_reply_dir "$state")
@@ -364,7 +362,6 @@ fm_pending_reply_create() {  # <parent-home> <state-dir> <task_id> <request-text
   now=$(fm_pending_reply_now)
   summary=$(fm_pending_reply_summarize "$request_text")
   request_prs=$(printf '%s\n' "$request_text" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true)
-  answered_keys=$(printf '%s' "$answered_keys" | tr -s ' \t\r\n' ',' | sed 's/^,//; s/,$//')
   status_path="$state/${task_id}.status"
   # Prefer absolute parent_status when parent_home/state resolve.
   case "$status_path" in
@@ -385,7 +382,6 @@ parent_status=$status_path
 parent_status_scan_signature=
 request_summary=$summary
 request_prs=$request_prs
-answered_keys=$answered_keys
 created_epoch=$now
 delivered_epoch=
 phase=awaiting_report

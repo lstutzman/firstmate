@@ -30,8 +30,8 @@
 # nothing changed. --apply settles every settled record (phase=resolved,
 # resolved_via from its close line). --key (repeatable, or a comma list; needs
 # --apply) also closes exactly the listed pending-reply-<corr> keys, each only if
-# it is still a review record at apply time and its parent status log lies in
-# this home's state directory; any other listed key is refused with its reason
+# it is still a review record at apply time, its delivery was confirmed, and
+# its parent status log lies in this home's state directory; any other listed key is refused with its reason
 # and makes the exit status 1. A keyed close appends one line to the record's
 # parent status log, never a message to the mate (a sent message would open a
 # new reply expectation):
@@ -160,6 +160,10 @@ for rec in "$STATE"/pending-replies/*; do
   HANDLED="$HANDLED$key,"
   if ! [ "${parent_status%/*}" -ef "$STATE" ]; then
     refuse "$key" "its parent status $parent_status is outside $STATE"
+    continue
+  fi
+  if [ -z "$(fm_pending_reply_get "$rec" delivered_epoch)" ]; then
+    refuse "$key" "delivery was never confirmed"
     continue
   fi
   fm_cap_line_var "resolved [key=$key]: $(fm_pending_reply_resolved_note "$task" "$corr" sweep)" "$CLOSE_MAX"

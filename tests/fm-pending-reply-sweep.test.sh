@@ -169,6 +169,19 @@ test_key_refuses_everything_else() {
   pass "--key refuses unproven, other-phase, and unknown records"
 }
 
+test_key_refuses_undelivered() {
+  local h out rc status_before
+  h=$(mkhome undelivered)
+  status_before=$(cksum < "$h/state/t.status")
+  out=$(sweep "$h" --apply --key "pending-reply-$C_UNDELIVERED" 2>&1); rc=$?
+  expect_code 1 "$rc" "a key whose delivery was never confirmed is refused"
+  assert_contains "$out" "--key 'pending-reply-$C_UNDELIVERED' refused: delivery was never confirmed" "the refusal names the reason"
+  [ "$(cksum < "$h/state/t.status")" = "$status_before" ] || fail "a refused undelivered key wrote to the status log"
+  [ "$(field "$h" "$C_UNDELIVERED" phase)" = escalated ] || fail "a refused undelivered record must stay escalated"
+  case " $(open_keys "$h") " in *" pending-reply-$C_UNDELIVERED "*) ;; *) fail "the undelivered key must stay open" ;; esac
+  pass "--key refuses an undelivered record and writes nothing"
+}
+
 test_key_refuses_status_outside_home() {
   local h other out rc
   h=$(mkhome outside)
@@ -188,4 +201,5 @@ test_key_needs_apply
 test_apply_settles_only_settled_and_is_idempotent
 test_key_closes_review_records
 test_key_refuses_everything_else
+test_key_refuses_undelivered
 test_key_refuses_status_outside_home

@@ -951,8 +951,6 @@ test_remote_reserved_pending_reply_key_closes_locally() {
     && grep -qE '^escalation_closed_epoch=[0-9]+$' "$rec"; }; then
     fail "the operator close must also settle the escalated record: $(cat "$rec")"
   fi
-  grep -lx "answered_keys=$key" "$home/state/pending-replies"/* | grep -qv "/$corr\$" \
-    || fail "the answer's own new expectation must record the key it answered"
   pass "fm-send --resolve-key: a remote secondmate reserved-key close is the same local ledger append"
 }
 
