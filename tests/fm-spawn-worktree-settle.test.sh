@@ -396,7 +396,7 @@ test_herdr_spawn_creates_a_projected_pane_in_the_leased_worktree() {
   pass "a projected Herdr spawn creates its workspace and tab inside the leased worktree"
 }
 
-test_herdr_spawn_returns_the_lease_when_it_fails_before_the_record() {
+test_herdr_spawn_returns_the_lease_only_before_the_pane_exists() {
   local rec id out status
   # The tab cannot be created: the lease taken just before must go back.
   id=herdr-lease-tabfail-z7
@@ -408,8 +408,8 @@ test_herdr_spawn_returns_the_lease_when_it_fails_before_the_record() {
   assert_grep "return --force $SLOT_DIR" "$TREEHOUSE_LOG" "the lease was not returned after the tab failed"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a failed spawn published a task record"
 
-  # The pane comes up outside the worktree: the launch assertion refuses, after
-  # the lease and the pane exist, and the lease must still go back.
+  # The pane comes up outside the worktree: the launch assertion refuses after
+  # the pane exists, so the lease is kept and the spawn says how to free it.
   id=herdr-lease-wrongcwd-z8
   rec=$(make_herdr_case herdr-lease-wrongcwd "$id")
   read_herdr_case "$rec"
@@ -417,7 +417,8 @@ test_herdr_spawn_returns_the_lease_when_it_fails_before_the_record() {
   status=$?
   [ "$status" -ne 0 ] || fail "spawn launched a worker whose pane was outside its worktree"$'\n'"$out"
   assert_contains "$out" "not its recorded worktree" "the refusal did not name the cwd mismatch"
-  assert_grep "return --force $SLOT_DIR" "$TREEHOUSE_LOG" "the lease was not returned after the launch assertion refused"
+  assert_no_grep "return" "$TREEHOUSE_LOG" "a lease was returned after its pane existed"
+  assert_contains "$out" "stays durably leased to $id" "the kept lease was not reported"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn published a task record"
 
   # No lease is taken at all: nothing to return, no pane created.
@@ -429,7 +430,57 @@ test_herdr_spawn_returns_the_lease_when_it_fails_before_the_record() {
   [ "$status" -ne 0 ] || fail "spawn succeeded though treehouse could not lease a slot"$'\n'"$out"
   assert_no_grep "return" "$TREEHOUSE_LOG" "a lease that was never taken was returned"
   assert_no_grep "tab create" "$HERDR_LOG" "a pane was created though no worktree was leased"
-  pass "a Herdr spawn returns its early lease when it fails before the task record is published"
+  pass "a Herdr spawn returns its early lease only when it fails before its pane exists"
+}
+
+# The worker is launched and the record published, then the backlog commit
+# fails and its rollback removes the record: the worker may be running in the
+# slot, so the lease must stay.
+test_herdr_spawn_keeps_the_lease_when_the_commit_rollback_removes_the_record() {
+  local rec id out status real_axi
+  real_axi=$(command -v tasks-axi) || { pass "skipped Herdr commit-rollback lease case (tasks-axi is not installed)"; return 0; }
+  id=herdr-lease-rollback-z11
+  rec=$(make_herdr_case herdr-lease-rollback "$id")
+  read_herdr_case "$rec"
+  printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' > "$HOME_DIR/data/backlog.md"
+  printf 'backend = "markdown"\n\n[markdown]\npath = "data/backlog.md"\n' > "$HOME_DIR/.tasks.toml"
+  "$real_axi" add "$id" "item for $id" --kind ship --file "$HOME_DIR/data/backlog.md" >/dev/null
+  cat > "$FAKEBIN_DIR/tasks-axi" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = start ]; then
+  echo 'error: "backlog is unwritable"' >&2
+  exit 1
+fi
+exec "$real_axi" "\$@"
+SH
+  chmod +x "$FAKEBIN_DIR/tasks-axi"
+  out=$(run_herdr_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "a spawn whose backlog commit failed reported success"$'\n'"$out"
+  assert_contains "$out" "could not be moved to In flight" "the spawn did not fail at the backlog commit"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the commit rollback did not remove the provisional record"
+  assert_no_grep "return" "$TREEHOUSE_LOG" "the lease was returned after the worker was launched"
+  pass "a Herdr spawn keeps its lease when the commit rollback removes the record after launch"
+}
+
+# Treehouse hands the spawn a slot another task's record still names: the slot
+# is leased back to that holder and must not then be returned by the abort.
+test_herdr_spawn_keeps_a_slot_leased_back_to_its_holder() {
+  local rec id out status holder=herdr-lease-holder-a1
+  id=herdr-lease-collide-z12
+  rec=$(make_herdr_case herdr-lease-collide "$id")
+  read_herdr_case "$rec"
+  printf 'worktree=%s\nproject=%s\n' "$SLOT_DIR" "$PROJ_DIR" > "$HOME_DIR/state/$holder.meta"
+  printf 'task=%s\nhome=%s\n' "$holder" "$HOME_DIR" > "$CASE_DIR/pool/1/.fm-slot-owner"
+  out=$(run_herdr_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn shared one slot between two tasks"$'\n'"$out"
+  assert_contains "$out" "now durably leased to that task" "the slot was not leased back to its holder"
+  assert_grep "lease 1 --lease-holder $holder" "$TREEHOUSE_LOG" "no lease named the holder"
+  assert_no_grep "return" "$TREEHOUSE_LOG" "the slot leased back to its holder was returned"
+  assert_not_contains "$out" "stays durably leased to $id" "the abort claimed the holder's slot for the refused task"
+  assert_grep "task=$holder" "$CASE_DIR/pool/1/.fm-slot-owner" "the holder's claim was replaced"
+  pass "a Herdr spawn refused on a recorded slot leaves it leased to its holder"
 }
 
 test_tmux_spawn_still_takes_its_slot_through_the_pane() {
@@ -450,7 +501,9 @@ test_tmux_spawn_still_takes_its_slot_through_the_pane() {
 
 test_herdr_spawn_creates_the_pane_in_the_leased_worktree
 test_herdr_spawn_creates_a_projected_pane_in_the_leased_worktree
-test_herdr_spawn_returns_the_lease_when_it_fails_before_the_record
+test_herdr_spawn_returns_the_lease_only_before_the_pane_exists
+test_herdr_spawn_keeps_the_lease_when_the_commit_rollback_removes_the_record
+test_herdr_spawn_keeps_a_slot_leased_back_to_its_holder
 test_tmux_spawn_still_takes_its_slot_through_the_pane
 
 echo "# all fm-spawn-worktree-settle tests passed"

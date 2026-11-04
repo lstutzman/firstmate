@@ -322,7 +322,8 @@
 #   A fresh Herdr ship or scout is the exception: this process leases the slot
 #   itself (`treehouse get --lease`) before the pane exists and creates the pane
 #   in that worktree, because Herdr restores a pane at its creation cwd. The
-#   lease is returned if the spawn fails before the task record is published.
+#   lease is returned only if the spawn fails before that pane exists; from
+#   then on it is kept like any other lease, for teardown to return.
 #   A Treehouse pool slot that any task record on this machine still names is
 #   refused, naming that task; otherwise the slot is claimed and, just before
 #   the task record is published, durably leased in place under the task id, so
@@ -1646,11 +1647,11 @@ spawn_abort_cleanup() {
       echo "warning: leaving task $ID's slot claim on $WT in place; the Treehouse project lock is no longer held, so the next spawn's claim replaces it" >&2
     fi
   fi
-  # A Herdr spawn leases its slot before the pane exists; with no task record
-  # nothing else will ever return it. The pane is closed or idle and the copy
-  # holds no work yet, so the return here is safe. (A projected pane was already
-  # closed above; a flat pane's shell dies with the return.)
-  if [ "$SPAWN_HERDR_LEASED" = 1 ] && [ -n "${WT:-}" ] &&
+  # A Herdr spawn leases its slot before its pane exists. Until the pane is
+  # created nothing can run in the copy, so a failure in that window returns
+  # the lease; once the pane exists the lease counts as SPAWN_SLOT_LEASED and
+  # is kept like any other.
+  if [ "$SPAWN_HERDR_LEASED" = 1 ] && [ "$SPAWN_SLOT_LEASED" != 1 ] && [ -n "${WT:-}" ] &&
     [ ! -e "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ]; then
     SPAWN_HERDR_LEASED=0
     if ! (cd -- "$PROJ_ABS" && treehouse return --force "$WT") >/dev/null 2>&1; then
@@ -4448,6 +4449,7 @@ else
 $HERDR_TASK_IDS
 EOF
     fi
+    [ "$SPAWN_HERDR_LEASED" != 1 ] || SPAWN_SLOT_LEASED=1
     if [ -z "$HERDR_TAB_ID" ] || [ -z "$HERDR_PANE_ID" ]; then
       echo "error: herdr did not return a tab/pane id for $W" >&2
       exit 1
@@ -5024,6 +5026,8 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
         [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] &&
         fm_treehouse_slot_lease "$PROJ_ABS" "$WT" "$FM_TREEHOUSE_SLOT_HOLDER_ID"; then
         spawn_leased_back="; the slot is now durably leased to that task, so the next spawn is given another one"
+        SPAWN_HERDR_LEASED=0
+        SPAWN_SLOT_LEASED=0
       fi
       echo "error: Treehouse handed task $ID pool slot $WT, which $FM_TREEHOUSE_SLOT_HOLDERS still names as its worktree; refusing to share one copy between two tasks$spawn_leased_back. Reconcile the holder (bin/fm-crew-state.sh <id>) and free the slot only through its bin/fm-teardown.sh; inspect window $T" >&2
       exit 1
@@ -5801,7 +5805,7 @@ if [ "$RELAUNCH" -eq 0 ]; then
   # relaunch, or a host restart - until bin/fm-teardown.sh's `treehouse return`
   # releases it. Taken this late, under the project lock, so only a failure
   # from here on can leave a leased slot without a record.
-  if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ "$SPAWN_HERDR_LEASED" != 1 ]; then
+  if [ "$SPAWN_SLOT_CLAIMED" = 1 ] && [ "$SPAWN_SLOT_LEASED" != 1 ]; then
     if ! fm_treehouse_slot_lease "$PROJ_ABS" "$WT" "$ID"; then
       echo "error: could not durably lease Treehouse pool slot $WT for task $ID (${FM_TREEHOUSE_SLOT_LEASE_ERROR:-no diagnostic}); without the lease Treehouse hands the slot to the next spawn once nothing runs in it, so the worker is not launched (treehouse 3.0.0 or later is required); inspect window $T" >&2
       exit 1
