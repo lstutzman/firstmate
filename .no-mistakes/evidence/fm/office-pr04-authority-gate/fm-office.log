@@ -1,0 +1,33 @@
+ok - a healthy registry prints nothing from ensure and ok from list
+ok - an absent data/offices.md means no offices
+ok - ensure reports: host not allowed: macbook
+ok - ensure reports: unknown role "wizard"
+ok - ensure reports: wip must be
+ok - ensure reports: tick must be
+ok - ensure reports: auto-merge-classes must be none
+ok - ensure reports: lane:nope is not a registered officer
+ok - ensure reports: not a registered second mate
+ok - ensure reports: does not include the second mate host
+ok - ensure reports: .fm-office marker missing
+ok - ensure reports: lacks the "# Office authority" heading
+ok - ensure reports: dispatch project PropertyCompass2 is not in
+ok - ensure reports: merge project firstmate has no admission=
+ok - ensure reports: merge-via project PropertyCompass2 lacks merger=slarti
+ok - ensure reports: merge project skills is not in dispatch
+ok - ensure reports: merge-via project firstmate overlaps merge
+ok - ensure reports: malformed registry line
+ok - list shows the gap count per office
+ok - ensure is read-only
+ok - status lists every in-flight item as working, linking the task pr= or the row URL
+ok - status lists the first 10 queued items in order and marks a captain hold as waiting on Lee
+ok - status stamps done items dated today or yesterday at first sight and never shows older ones
+ok - a done card shows for 24 hours from its own first sight and never comes back
+ok - a corrupt or missing seen file does not bring back an item dated before yesterday
+ok - status prunes seen stamps older than 7 days
+ok - status rewrites only on a change or after the refresh interval
+ok - status writes only data/office-status.json and state/office-status.seen.json
+ok - status does nothing in a home with no .fm-office marker
+ok - status writes an empty card list when the office has no backlog
+ok - arm-status writes and binds a check that runs status silently, and arming twice changes nothing
+ok - disarm-status removes the check and its trust file
+ok - arm-status and disarm-status refuse in a home with no .fm-office marker

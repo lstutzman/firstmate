@@ -1,0 +1,8 @@
+ok - a main home and a plain second mate are not offices, even with a stray record
+ok - every inconsistent combination of office signals refuses
+ok - a missing, unproven, or absent authority record refuses
+ok - a published, proven record loads the office's authority
+ok - a malformed record refuses, including any auto-merge class
+ok - the admission digest covers the config and its rules file
+ok - the admission digest pins the --rules file the classifier reads and refuses a relative or missing one
+ok - live tasks count every ship and scout but this one and any second mate

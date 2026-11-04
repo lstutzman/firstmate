@@ -1,0 +1,9 @@
+### office home, no published authority record
+error: PR merge refused: office navigator has no published authority record (/tmp/fm-office-man.jXPV/config/office-authority with its receipt); the main home reports and repairs this with bin/fm-office.sh ensure
+exit=1
+### same, with --allow-red
+error: --allow-red requires a check name
+exit=2
+### .fm-office marker deleted (charter heading remains)
+error: PR merge refused: /tmp/fm-office-man.jXPV/data/charter.md has the "# Office authority" heading but this home has no .fm-office marker; the main home reports and repairs this with bin/fm-office.sh ensure
+exit=1

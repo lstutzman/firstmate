@@ -1,0 +1,7 @@
+ok - no config leaves spawn unchanged
+ok - configured setup runs in task copy with logged output
+ok - individual off switch skips its step
+ok - failed install is logged and reported while spawn succeeds
+ok - each step is bounded at the fixed 600-second deadline and a timeout is reported
+ok - a long setup does not block another spawn in the same home and project
+ok - project off switch skips all setup
