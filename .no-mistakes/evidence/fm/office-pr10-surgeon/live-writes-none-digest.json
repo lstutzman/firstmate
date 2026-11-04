@@ -1,0 +1,443 @@
+{
+ "actionable": 12,
+ "archive_findings": [
+  {
+   "kind": "coverage",
+   "severity": "high",
+   "summary": "no archived sessions from expected host alpha"
+  }
+ ],
+ "coverage": {
+  "harvester_last_run": "2026-10-24T01:00:00+00:00",
+  "homes_read": [
+   "/tmp/fm-surgeon-live.Gi1bUl/home"
+  ],
+  "hosts_expected": [
+   "alpha"
+  ],
+  "hosts_present": [],
+  "not_collected": {},
+  "sessions": 0,
+  "sessions_analysed": 0,
+  "workers_unresolved": 0
+ },
+ "date": "2026-10-23",
+ "findings": [
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "timed out",
+    "classification": "regression",
+    "release_blocking": true,
+    "rerun": "failed (3 s)",
+    "run": "R1",
+    "sha": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "staging_tip": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "where": "a.spec.ts"
+   },
+   "filing": null,
+   "fingerprint": "dcf269d33f013ea1fce5dc8eb2f193f3bd4afebc7b133d178c749c35678de0ab",
+   "job": "nightly-e2e",
+   "key": "fp-a",
+   "kind": "intake",
+   "severity": "high",
+   "source": "nightly",
+   "summary": "checkout pays: timed out",
+   "title": "checkout pays",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "x",
+    "classification": null,
+    "release_blocking": null,
+    "rerun": null,
+    "run": "R1",
+    "sha": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "staging_tip": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "where": ""
+   },
+   "filing": null,
+   "fingerprint": "25e5c966c13dfff3b7cd9f3b1d788c926650cd5bc4b90f539c04901777b19d88",
+   "job": "nightly-e2e",
+   "key": "fp-c",
+   "kind": "intake",
+   "severity": "high",
+   "source": "nightly",
+   "summary": "tracked failure: x",
+   "title": "tracked failure",
+   "tracked": "PC-77"
+  },
+  {
+   "class": "needs-decision",
+   "evidence": {
+    "cause": "text differs",
+    "classification": "intended change",
+    "release_blocking": null,
+    "rerun": null,
+    "run": "R1",
+    "sha": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "staging_tip": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "where": ""
+   },
+   "filing": null,
+   "fingerprint": "b9a29f64a3d6bb1a4536bff89333ed7d75b84e2a7d81751f98f69deb45d8453b",
+   "job": "nightly-e2e",
+   "key": "fp-d",
+   "kind": "intake",
+   "severity": "high",
+   "source": "nightly",
+   "summary": "copy changed: text differs",
+   "title": "copy changed",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "category": null,
+    "file": "E.cs",
+    "reviewer_severity": "critical",
+    "run": "R2"
+   },
+   "filing": null,
+   "fingerprint": "d911dc60de946bb35bca21c25d2c07969b4f9c6cb9489341181ce94d01312fef",
+   "job": "nightly-review",
+   "key": "",
+   "kind": "intake",
+   "severity": "high",
+   "source": "review",
+   "summary": "no id given (E.cs)",
+   "title": "no id given",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "category": null,
+    "file": "A.cs",
+    "reviewer_severity": "critical",
+    "run": "R2"
+   },
+   "filing": null,
+   "fingerprint": "18266dcfcc837bb6b9f1027f8a3617cfc911b2b453506d48aede94cab84f6330",
+   "job": "nightly-review",
+   "key": "f1",
+   "kind": "intake",
+   "severity": "high",
+   "source": "review",
+   "summary": "SQL built from input (A.cs)",
+   "title": "SQL built from input",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "null ref",
+    "disposition": "new",
+    "occurrences": 4,
+    "run": "sweep-20261023T0417Z",
+    "severity": "P1"
+   },
+   "filing": null,
+   "fingerprint": "27992d2ba37e9dad236c9921cf9b0013c421a5964b8c1c4d2302bf062cec56f6",
+   "job": "pc-sweeper-intake",
+   "key": "b1",
+   "kind": "intake",
+   "severity": "high",
+   "source": "sweeper",
+   "summary": "Crash on save (new, P1)",
+   "title": "Crash on save",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "",
+    "disposition": "new",
+    "occurrences": null,
+    "run": "sweep-20261023T0417Z",
+    "severity": "P1"
+   },
+   "filing": null,
+   "fingerprint": "74ab23810cc9f64e0be8d31fa369991442798af0e6d1f80744559e9ceffdd34c",
+   "job": "pc-sweeper-intake",
+   "key": "b6",
+   "kind": "intake",
+   "severity": "high",
+   "source": "sweeper",
+   "summary": "Filed already (new, P1)",
+   "title": "Filed already",
+   "tracked": "PC-90"
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "category": null,
+    "file": "B.cs",
+    "reviewer_severity": "high",
+    "run": "R2"
+   },
+   "filing": null,
+   "fingerprint": "3cc0f1ddd08a711438f6f804172e7691dea545f057650e00fecaa7a394d61bd3",
+   "job": "nightly-review",
+   "key": "f2",
+   "kind": "intake",
+   "severity": "medium",
+   "source": "review",
+   "summary": "unchecked null (B.cs)",
+   "title": "unchecked null",
+   "tracked": "PC-80"
+  },
+  {
+   "class": "needs-decision",
+   "evidence": {
+    "cause": "",
+    "disposition": "unclear",
+    "occurrences": null,
+    "run": "sweep-20261023T0417Z",
+    "severity": "P2"
+   },
+   "filing": null,
+   "fingerprint": "c1a127207effeeaa11fb8a0a2929a4b9abe01d75ba06fff813aca6f6878b9d99",
+   "job": "pc-sweeper-intake",
+   "key": "b3",
+   "kind": "intake",
+   "severity": "medium",
+   "source": "sweeper",
+   "summary": "Odd screen (unclear, P2)",
+   "title": "Odd screen",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "",
+    "disposition": "new",
+    "occurrences": null,
+    "run": "sweep-20261023T0417Z",
+    "severity": "P2"
+   },
+   "filing": null,
+   "fingerprint": "7ba712bb5700a6ad2b5a57bfe3392dcb7ae504198c0614e710f5fe7ecaf5f326",
+   "job": "pc-sweeper-intake",
+   "key": "b5",
+   "kind": "intake",
+   "severity": "medium",
+   "source": "sweeper",
+   "summary": "Wrong total (new, P2)",
+   "title": "Wrong total",
+   "tracked": null
+  },
+  {
+   "class": "needs-decision",
+   "evidence": {
+    "cause": "",
+    "disposition": "fixed-staging-only",
+    "occurrences": null,
+    "run": "sweep-20261023T0417Z",
+    "severity": "medium"
+   },
+   "filing": null,
+   "fingerprint": "505975a291b98a64d45cb0fa0e31901f06e748b15a802a839a7c9c6b91db5f13",
+   "job": "pc-sweeper-intake",
+   "key": "b8",
+   "kind": "intake",
+   "severity": "medium",
+   "source": "sweeper",
+   "summary": "Fixed on staging (fixed-staging-only, medium)",
+   "title": "Fixed on staging",
+   "tracked": null
+  },
+  {
+   "class": "wont-fix",
+   "evidence": {
+    "cause": "slow",
+    "classification": "flaky",
+    "release_blocking": null,
+    "rerun": "passed (4 s)",
+    "run": "R1",
+    "sha": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "staging_tip": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "where": ""
+   },
+   "filing": null,
+   "fingerprint": "c8271ffa553520ecadff719903b3fbb9c175ebb21afecf3b386ba5d25a216d12",
+   "job": "nightly-e2e",
+   "key": "fp-b",
+   "kind": "intake",
+   "severity": "low",
+   "source": "nightly",
+   "summary": "flaky one: slow",
+   "title": "flaky one",
+   "tracked": null
+  },
+  {
+   "class": "wont-fix",
+   "evidence": {
+    "cause": "x",
+    "classification": null,
+    "release_blocking": null,
+    "rerun": "passed (1 s)",
+    "run": "R1",
+    "sha": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "staging_tip": "23d33e9e5284e1ccb12483fd901040c7b3501954",
+    "where": ""
+   },
+   "filing": null,
+   "fingerprint": "91a74f757ffabdfbf773e2e07fb53bb49c5761176cd2648715744bcf1d9c9978",
+   "job": "nightly-e2e",
+   "key": "fp-e",
+   "kind": "intake",
+   "severity": "low",
+   "source": "nightly",
+   "summary": "load failure: x",
+   "title": "load failure",
+   "tracked": null
+  },
+  {
+   "class": "wont-fix",
+   "evidence": {
+    "category": null,
+    "file": "C.cs",
+    "reviewer_severity": "low",
+    "run": "R2"
+   },
+   "filing": null,
+   "fingerprint": "98bad5e92c20952a8f0eb952a99c00aaf8bd2972aed5e38bbe874922498dabd5",
+   "job": "nightly-review",
+   "key": "f3",
+   "kind": "intake",
+   "severity": "low",
+   "source": "review",
+   "summary": "naming (C.cs)",
+   "title": "naming",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "category": null,
+    "file": "D.cs",
+    "reviewer_severity": "medium",
+    "run": "R2"
+   },
+   "filing": null,
+   "fingerprint": "9c8d5fb8b4e9542f66bf9680a5162a01544331ece6e56e28d233a1e630cab95c",
+   "job": "nightly-review",
+   "key": "f4",
+   "kind": "intake",
+   "severity": "low",
+   "source": "review",
+   "summary": "dead branch (D.cs)",
+   "title": "dead branch",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "",
+    "disposition": "new",
+    "occurrences": null,
+    "run": "sweep-20261023T0417Z",
+    "severity": "low"
+   },
+   "filing": null,
+   "fingerprint": "890cd85c97aa580e2a4579eedb818fc25b052cd904f8a583832979011cace62d",
+   "job": "pc-sweeper-intake",
+   "key": "",
+   "kind": "intake",
+   "severity": "low",
+   "source": "sweeper",
+   "summary": "No fingerprint (new, low)",
+   "title": "No fingerprint",
+   "tracked": null
+  },
+  {
+   "class": "wont-fix",
+   "evidence": {
+    "cause": "",
+    "disposition": "duplicate",
+    "occurrences": null,
+    "run": "sweep-20261023T0417Z",
+    "severity": "P1"
+   },
+   "filing": null,
+   "fingerprint": "900e1e9c70d3750601dbbfaa54b3903c030608343cd9a2c10745b46a6855bb9e",
+   "job": "pc-sweeper-intake",
+   "key": "b2",
+   "kind": "intake",
+   "severity": "low",
+   "source": "sweeper",
+   "summary": "Same crash again (duplicate, P1)",
+   "title": "Same crash again",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "",
+    "disposition": "regressed",
+    "occurrences": null,
+    "run": "sweep-20261023T0417Z",
+    "severity": "P3"
+   },
+   "filing": null,
+   "fingerprint": "92b02b53aaf1570d62d6b397f1d7e5b3eb95a1e48601ff0bacaf4e4201d039a5",
+   "job": "pc-sweeper-intake",
+   "key": "b4",
+   "kind": "intake",
+   "severity": "low",
+   "source": "sweeper",
+   "summary": "Old regression (regressed, P3)",
+   "title": "Old regression",
+   "tracked": "PC-5"
+  },
+  {
+   "class": "needs-decision",
+   "evidence": {
+    "cause": "",
+    "disposition": "unclear",
+    "occurrences": null,
+    "run": "sweep-20261023T0417Z",
+    "severity": "low"
+   },
+   "filing": null,
+   "fingerprint": "6b7266ecd0d9660a6d2e7eb5318872cb82142305f720f54dfd1ee7375b46f1f9",
+   "job": "pc-sweeper-intake",
+   "key": "b7",
+   "kind": "intake",
+   "severity": "low",
+   "source": "sweeper",
+   "summary": "production checkout error (unclear, low)",
+   "title": "production checkout error",
+   "tracked": null
+  }
+ ],
+ "intake": {
+  "classes": {
+   "needs-decision": 4,
+   "real": 11,
+   "wont-fix": 4
+  },
+  "gaps": []
+ },
+ "model": "none",
+ "officer_role": "surgeon",
+ "pipeline_runs": [],
+ "scorer": "deterministic-v1",
+ "session_mix": {},
+ "sessions": [],
+ "task_records": [],
+ "top_errors": [],
+ "wasted_turns": {},
+ "workers": {
+  "cost_usd": 0,
+  "count": 0,
+  "join_via": {},
+  "outcomes": {}
+ },
+ "writes": "none",
+ "writes_blocked": null,
+ "writes_done": []
+}

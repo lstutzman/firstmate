@@ -1,0 +1,4 @@
+GET /api/runs
+GET /api/runs/nightly-e2e/results/R1
+GET /api/runs/nightly-review/results/R2
+GET /api/sweeper-results

@@ -1,0 +1,37 @@
+=== verify fails
+DIGEST 2026-10-23 12 data/officers/surgeon/2026-10-23.md
+exit=0
+verify calls: 5
+dry-run calls: 5
+checkout pays -> dry-run
+checkout pays -> verify
+SQL built from input -> dry-run
+SQL built from input -> verify
+Crash on save -> dry-run
+Crash on save -> verify
+Wrong total -> dry-run
+Wrong total -> verify
+dead branch -> dry-run
+dead branch -> verify
+["failed","VERIFY_FAILED: not readable back","checkout pays"]
+["not-filed","source gave no stable key","no id given"]
+["failed","VERIFY_FAILED: not readable back","SQL built from input"]
+["failed","VERIFY_FAILED: not readable back","Crash on save"]
+["failed","VERIFY_FAILED: not readable back","Wrong total"]
+["failed","VERIFY_FAILED: not readable back","dead branch"]
+["not-filed","source gave no stable key","No fingerprint"]
+=== label lookup: area label missing from team PC
+DIGEST 2026-10-23 12 data/officers/surgeon/2026-10-23.md
+exit=0
+linear calls:
+label list --team PC --limit 250 --output json
+      5 ["not-filed","label(s) not found in team PC: Runtime"]
+      2 ["not-filed","source gave no stable key"]
+=== label list call fails
+Coverage gap: label lookup failed: VALIDATION_ERROR: no labels
+DIGEST 2026-10-23 12 data/officers/surgeon/2026-10-23.md
+exit=0
+label list --team PC --limit 250 --output json
+      5 ["not-filed","label lookup failed: VALIDATION_ERROR: no labels"]
+      2 ["not-filed","source gave no stable key"]
+label lookup failed: VALIDATION_ERROR: no labels

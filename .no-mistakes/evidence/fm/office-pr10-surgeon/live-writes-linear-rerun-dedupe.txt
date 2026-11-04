@@ -1,0 +1,23 @@
+DIGEST 2026-10-23 12 data/officers/surgeon/2026-10-23.md
+exit=0
+--- linear-axi calls:
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:27992d2ba37e9dad236c9921cf9b0013c421a5964b8c1c4d2302bf062cec56f6 --team PC --limit 5 --output json
+issue view PC-9 --output json
+issue view PC-55 --output json
+issue search surgeon-fp:7ba712bb5700a6ad2b5a57bfe3392dcb7ae504198c0614e710f5fe7ecaf5f326 --team PC --limit 5 --output json
+issue view PC-9 --output json
+issue create --team PC --title Wrong total --body-file <tmp> --priority 3 --label Bug --label bug-sweep --label Runtime --dry-run --output json
+issue create --team PC --title Wrong total --body-file <tmp> --priority 3 --label Bug --label bug-sweep --label Runtime --verify --output json
+issue search surgeon-fp:9c8d5fb8b4e9542f66bf9680a5162a01544331ece6e56e28d233a1e630cab95c --team PC --limit 5 --output json
+issue view PC-9 --output json
+issue create --team PC --title dead branch --body-file <tmp> --priority 3 --label Bug --label scheduled-review --label Runtime --dry-run --output json
+issue create --team PC --title dead branch --body-file <tmp> --priority 3 --label Bug --label scheduled-review --label Runtime --verify --output json
+--- writes_done:
+["exists","PC-101","checkout pays"]
+["not-filed","source gave no stable key","no id given"]
+["exists","PC-102","SQL built from input"]
+["exists","PC-55","Crash on save"]
+["created","PC-103","Wrong total"]
+["created","PC-104","dead branch"]
+["not-filed","source gave no stable key","No fingerprint"]

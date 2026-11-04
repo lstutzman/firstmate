@@ -1,0 +1,22 @@
+$ fm-officer.sh run surgeon  (writes: none)
+DIGEST 2026-10-23 7 data/officers/surgeon/2026-10-23.md
+exit 0
+--- linear-axi calls:
+(none)
+--- fleet app access log (method path):
+GET /api/runs
+GET /api/runs/nightly-e2e/results/R1
+GET /api/runs/nightly-review/results/R2
+GET /api/sweeper-results
+--- findings:
+{"source":"nightly","key":"e1","class":"real","severity":"high","tracked":null,"filed":null}
+{"source":"nightly","key":"e3","class":"real","severity":"high","tracked":"PC-77","filed":null}
+{"source":"review","key":"r1","class":"real","severity":"high","tracked":null,"filed":null}
+{"source":"sweeper","key":"","class":"real","severity":"high","tracked":null,"filed":null}
+{"source":"sweeper","key":"s1","class":"real","severity":"high","tracked":null,"filed":null}
+{"source":"sweeper","key":"s2","class":"real","severity":"medium","tracked":null,"filed":null}
+{"source":"nightly","key":"e2","class":"wont-fix","severity":"low","tracked":null,"filed":null}
+{"source":"review","key":"r2","class":"wont-fix","severity":"low","tracked":null,"filed":null}
+{"source":"sweeper","key":"s3","class":"wont-fix","severity":"low","tracked":null,"filed":null}
+{"source":"sweeper","key":"s4","class":"needs-decision","severity":"low","tracked":null,"filed":null}
+{"source":"sweeper","key":"s5","class":"real","severity":"low","tracked":null,"filed":null}

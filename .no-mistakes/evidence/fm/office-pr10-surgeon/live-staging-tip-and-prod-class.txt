@@ -1,0 +1,8 @@
+$ staging tip advanced to 00d3a66cd97a1853a90360ade10c69ce62f005a0; nightly run sha still 7ee13bcf0165cadc30bc4f5cd4b66e100021f609
+DIGEST 2026-10-23 7 data/officers/surgeon/2026-10-23.md
+{"key":"e1","class":"real","severity":"medium","sha":"7ee13bcf0165cadc30bc4f5cd4b66e100021f609","tip":"00d3a66cd97a1853a90360ade10c69ce62f005a0"}
+{"key":"e3","class":"real","severity":"medium","sha":"7ee13bcf0165cadc30bc4f5cd4b66e100021f609","tip":"00d3a66cd97a1853a90360ade10c69ce62f005a0"}
+{"key":"e2","class":"wont-fix","severity":"low","sha":"7ee13bcf0165cadc30bc4f5cd4b66e100021f609","tip":"00d3a66cd97a1853a90360ade10c69ce62f005a0"}
+
+$ sweeper bug s5 marked environment=production, class=production-error, severity P3:
+{"key":"s5","class":"real","severity":"low","title":"production 500 on /checkout"}

@@ -1,0 +1,7 @@
+ok - fm-officer triage: classifies sessions, joins tasks three ways, resolves outcomes
+ok - fm-officer triage: re-running the same day is byte-identical
+ok - fm-officer triage: coverage names a missing expected host
+ok - fm-officer triage: rule violations and error signatures carry no transcript excerpt or token
+ok - fm-officer triage: a missing or unfinished archive day fails the run so it is retried
+ok - fm-officer triage: a host:dir archive is scanned over ssh; unreachable fails the run
+ok - fm-officer triage: slice 1 refuses model scoring

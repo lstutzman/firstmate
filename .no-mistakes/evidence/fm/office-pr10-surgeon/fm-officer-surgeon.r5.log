@@ -1,0 +1,13 @@
+ok - fm-officer surgeon: the registry line is validated
+ok - fm-officer surgeon: findings are classified and rated from the app's results with no Linear call
+ok - fm-officer surgeon: a red night is high only on the staging tip
+ok - fm-officer surgeon: a rerun is byte-identical
+ok - fm-officer surgeon: real untracked findings are filed with one Type, Source and area label
+ok - fm-officer surgeon: a fingerprint already filed is never created again
+ok - fm-officer surgeon: the max-creates cap holds and the rest are reported
+ok - fm-officer surgeon: a failed verify is logged and not retried
+ok - fm-officer surgeon: a failed or incomplete label lookup reports the finding instead of filing
+ok - fm-officer surgeon: a rate limit stops Linear for the run and pauses later runs
+ok - fm-officer surgeon: an unreachable app is a coverage gap, not a failed run
+ok - fm-officer surgeon: register surgeon, then retire triage, keeps triage's findings
+rc=0

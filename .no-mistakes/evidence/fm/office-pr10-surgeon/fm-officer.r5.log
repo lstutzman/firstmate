@@ -1,0 +1,22 @@
+ok - fm-officer: register installs a trusted check; retire removes it and keeps findings
+ok - fm-officer: check prints one line for a new actionable digest and none on repeat
+ok - fm-officer: check is silent for a digest with nothing actionable
+ok - fm-officer: the check starts a due run detached, and reports it once finished
+ok - fm-officer: a same-day manual run does not block the next day's scheduled run
+ok - fm-officer: a manual run since the cadence time is not repeated
+ok - fm-officer: an unreachable archive host stays silent until its attempts run out
+ok - fm-officer: a late harvester is retried, then reported as a failed run once attempts run out
+ok - fm-officer: a failure after a reported digest is reported once and neither line repeats
+ok - fm-officer: a scheduled run that times out counts as a failed attempt
+ok - fm-officer: ensure prints OFFICER: lines for each gap and nothing when healthy
+ok - fm-officer: an interval cadence runs once per slot and ensure uses the interval
+ok - fm-officer: a failing interval officer reports once, even though attempts reset each slot
+ok - fm-officer: a second mate home refuses to register or run officers
+ok - fm-officer: a run writes only its findings lane and acts on nothing in the fleet
+ok - fm-officer: consumer: decides whether main is woken; absent keeps today's behaviour
+ok - fm-officer: an unknown consumer is a line problem
+ok - fm-officer: a consumer office must read the digest through its own lane source
+ok - fm-officer: a consumer that cannot read the digest falls back to waking main
+ok - fm-officer: the failure line is printed even when main is not a consumer
+ok - fm-officer: a start-home office must read the progress digest through its own lane source
+rc=0

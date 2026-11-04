@@ -1,0 +1,34 @@
+$ fm-officer.sh run surgeon  (writes: linear; max-creates: 2; r1 fingerprint already in Linear)
+DIGEST 2026-10-23 7 data/officers/surgeon/2026-10-23.md
+exit 0
+--- linear-axi calls in order:
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:20f84f0a3ff014156192b36932fd541115923e814317bcf53dab188f0b543d5d --team PC --limit 5 --output json
+issue create --team PC --title checkout pays --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-20f84f0a3ff0.md --priority 2 --label Bug --label scheduled-review --label Runtime --dry-run --output json
+issue create --team PC --title checkout pays --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-20f84f0a3ff0.md --priority 2 --label Bug --label scheduled-review --label Runtime --verify --output json
+issue search surgeon-fp:5b045b7be83e1f6f928773aa7c6b75a31092974fa817e856d8310d9bd1e3c547 --team PC --limit 5 --output json
+issue view PC-55 --output json
+issue search surgeon-fp:b47cdd602d42c95c91a1e70f917ed6ef0faf5790540f860ac390d61e035ebebf --team PC --limit 5 --output json
+issue create --team PC --title Crash on save --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-b47cdd602d42.md --priority 2 --label Bug --label bug-sweep --label Runtime --dry-run --output json
+issue create --team PC --title Crash on save --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-b47cdd602d42.md --priority 2 --label Bug --label bug-sweep --label Runtime --verify --output json
+--- findings:
+{"source":"nightly","key":"e1","class":"real","severity":"high","tracked":null,"filing":{"action":"created","issue":"PC-201"}}
+{"source":"nightly","key":"e3","class":"real","severity":"high","tracked":"PC-77","filing":null}
+{"source":"review","key":"r1","class":"real","severity":"high","tracked":null,"filing":{"action":"exists","issue":"PC-55"}}
+{"source":"sweeper","key":"","class":"real","severity":"high","tracked":null,"filing":{"action":"not-filed","reason":"source gave no stable key"}}
+{"source":"sweeper","key":"s1","class":"real","severity":"high","tracked":null,"filing":{"action":"created","issue":"PC-202"}}
+{"source":"sweeper","key":"s2","class":"real","severity":"medium","tracked":null,"filing":{"action":"not-filed","reason":"over max-creates for this run"}}
+{"source":"nightly","key":"e2","class":"wont-fix","severity":"low","tracked":null,"filing":null}
+{"source":"review","key":"r2","class":"wont-fix","severity":"low","tracked":null,"filing":null}
+{"source":"sweeper","key":"s3","class":"wont-fix","severity":"low","tracked":null,"filing":null}
+{"source":"sweeper","key":"s4","class":"needs-decision","severity":"low","tracked":null,"filing":null}
+{"source":"sweeper","key":"s5","class":"real","severity":"low","tracked":null,"filing":{"action":"not-filed","reason":"over max-creates for this run"}}
+--- writes_done / writes_blocked:
+[{"action":"created","fingerprint":"20f84f0a3ff014156192b36932fd541115923e814317bcf53dab188f0b543d5d","issue":"PC-201","severity":"high","source":"nightly","title":"checkout pays"},{"action":"exists","fingerprint":"5b045b7be83e1f6f928773aa7c6b75a31092974fa817e856d8310d9bd1e3c547","issue":"PC-55","severity":"high","source":"review","title":"SQL from input"},{"action":"not-filed","fingerprint":"890cd85c97aa580e2a4579eedb818fc25b052cd904f8a583832979011cace62d","reason":"source gave no stable key","severity":"high","source":"sweeper","title":"keyless"},{"action":"created","fingerprint":"b47cdd602d42c95c91a1e70f917ed6ef0faf5790540f860ac390d61e035ebebf","issue":"PC-202","severity":"high","source":"sweeper","title":"Crash on save"},{"action":"not-filed","fingerprint":"60bc7750c45e13fedd9155ec800a1fac5e194f9f9be6e099b9c8d1a16af12563","reason":"over max-creates for this run","severity":"medium","source":"sweeper","title":"Wrong total"},{"action":"not-filed","fingerprint":"2de9c268461a96b96ea6ef829ad7a65f3a70b562e9f501412b752f694d0aa9be","reason":"over max-creates for this run","severity":"low","source":"sweeper","title":"production 500 on /checkout"}]
+null
+--- lane files:
+2026-10-23.json
+2026-10-23.md
+digest
+filed-fingerprints.json
+runs.log

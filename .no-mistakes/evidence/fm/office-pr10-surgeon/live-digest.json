@@ -1,0 +1,217 @@
+{
+ "actionable": 5,
+ "archive_findings": [
+  {
+   "kind": "coverage",
+   "severity": "high",
+   "summary": "no archived sessions from expected host alpha"
+  }
+ ],
+ "coverage": {
+  "harvester_last_run": "2026-11-05T01:00:00+00:00",
+  "homes_read": [
+   "/tmp/fm-surg-live.B7izW1/home"
+  ],
+  "hosts_expected": [
+   "alpha"
+  ],
+  "hosts_present": [],
+  "not_collected": {},
+  "sessions": 0,
+  "sessions_analysed": 0,
+  "workers_unresolved": 0
+ },
+ "date": "2026-11-04",
+ "findings": [
+  {
+   "class": "real",
+   "evidence": {
+    "category": null,
+    "file": "A.cs",
+    "reviewer_severity": "critical",
+    "run": "R2"
+   },
+   "filing": null,
+   "fingerprint": "18266dcfcc837bb6b9f1027f8a3617cfc911b2b453506d48aede94cab84f6330",
+   "job": "nightly-review",
+   "key": "f1",
+   "kind": "intake",
+   "severity": "high",
+   "source": "review",
+   "summary": "SQL from input (A.cs)",
+   "title": "SQL from input",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "",
+    "disposition": "new",
+    "occurrences": null,
+    "run": "sweep-1",
+    "severity": "P1"
+   },
+   "filing": null,
+   "fingerprint": "27992d2ba37e9dad236c9921cf9b0013c421a5964b8c1c4d2302bf062cec56f6",
+   "job": "pc-sweeper-intake",
+   "key": "b1",
+   "kind": "intake",
+   "severity": "high",
+   "source": "sweeper",
+   "summary": "Crash on save (new, P1)",
+   "title": "Crash on save",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "timed out",
+    "classification": "regression",
+    "release_blocking": null,
+    "rerun": "failed",
+    "run": "R1",
+    "sha": "deadbeef",
+    "staging_tip": "c5f93ad16e6d7925805d05d136d8964efb7238fe",
+    "where": ""
+   },
+   "filing": null,
+   "fingerprint": "dcf269d33f013ea1fce5dc8eb2f193f3bd4afebc7b133d178c749c35678de0ab",
+   "job": "nightly-e2e",
+   "key": "fp-a",
+   "kind": "intake",
+   "severity": "medium",
+   "source": "nightly",
+   "summary": "checkout pays: timed out",
+   "title": "checkout pays",
+   "tracked": null
+  },
+  {
+   "class": "needs-decision",
+   "evidence": {
+    "cause": "",
+    "disposition": "unclear",
+    "occurrences": null,
+    "run": "sweep-1",
+    "severity": "P2"
+   },
+   "filing": null,
+   "fingerprint": "c1a127207effeeaa11fb8a0a2929a4b9abe01d75ba06fff813aca6f6878b9d99",
+   "job": "pc-sweeper-intake",
+   "key": "b3",
+   "kind": "intake",
+   "severity": "medium",
+   "source": "sweeper",
+   "summary": "Odd screen (unclear, P2)",
+   "title": "Odd screen",
+   "tracked": null
+  },
+  {
+   "class": "wont-fix",
+   "evidence": {
+    "cause": "slow",
+    "classification": "flaky",
+    "release_blocking": null,
+    "rerun": "passed (4 s)",
+    "run": "R1",
+    "sha": "deadbeef",
+    "staging_tip": "c5f93ad16e6d7925805d05d136d8964efb7238fe",
+    "where": ""
+   },
+   "filing": null,
+   "fingerprint": "c8271ffa553520ecadff719903b3fbb9c175ebb21afecf3b386ba5d25a216d12",
+   "job": "nightly-e2e",
+   "key": "fp-b",
+   "kind": "intake",
+   "severity": "low",
+   "source": "nightly",
+   "summary": "flaky one: slow",
+   "title": "flaky one",
+   "tracked": null
+  },
+  {
+   "class": "wont-fix",
+   "evidence": {
+    "category": null,
+    "file": "C.cs",
+    "reviewer_severity": "low",
+    "run": "R2"
+   },
+   "filing": null,
+   "fingerprint": "98bad5e92c20952a8f0eb952a99c00aaf8bd2972aed5e38bbe874922498dabd5",
+   "job": "nightly-review",
+   "key": "f3",
+   "kind": "intake",
+   "severity": "low",
+   "source": "review",
+   "summary": "naming (C.cs)",
+   "title": "naming",
+   "tracked": null
+  },
+  {
+   "class": "wont-fix",
+   "evidence": {
+    "cause": "",
+    "disposition": "duplicate",
+    "occurrences": null,
+    "run": "sweep-1",
+    "severity": "P1"
+   },
+   "filing": null,
+   "fingerprint": "900e1e9c70d3750601dbbfaa54b3903c030608343cd9a2c10745b46a6855bb9e",
+   "job": "pc-sweeper-intake",
+   "key": "b2",
+   "kind": "intake",
+   "severity": "low",
+   "source": "sweeper",
+   "summary": "dup (duplicate, P1)",
+   "title": "dup",
+   "tracked": null
+  },
+  {
+   "class": "real",
+   "evidence": {
+    "cause": "",
+    "disposition": "new",
+    "occurrences": null,
+    "run": "sweep-1",
+    "severity": "P3"
+   },
+   "filing": null,
+   "fingerprint": "a4063a2ecd4f972f7394d89a5c8d8e033ee35b1eb7430d9c686139cdc67cf085",
+   "job": "pc-sweeper-intake",
+   "key": "b9",
+   "kind": "intake",
+   "severity": "low",
+   "source": "sweeper",
+   "summary": "production checkout 500 (new, P3)",
+   "title": "production checkout 500",
+   "tracked": null
+  }
+ ],
+ "intake": {
+  "classes": {
+   "needs-decision": 1,
+   "real": 4,
+   "wont-fix": 3
+  },
+  "gaps": []
+ },
+ "model": "none",
+ "officer_role": "surgeon",
+ "pipeline_runs": [],
+ "scorer": "deterministic-v1",
+ "session_mix": {},
+ "sessions": [],
+ "task_records": [],
+ "top_errors": [],
+ "wasted_turns": {},
+ "workers": {
+  "cost_usd": 0,
+  "count": 0,
+  "join_via": {},
+  "outcomes": {}
+ },
+ "writes": "none",
+ "writes_blocked": null,
+ "writes_done": []
+}

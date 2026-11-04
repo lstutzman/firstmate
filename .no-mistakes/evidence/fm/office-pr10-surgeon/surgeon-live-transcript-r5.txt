@@ -1,0 +1,104 @@
+=== S1/S2: writes none ===
+DIGEST 2026-10-23 9 data/officers/surgeon/2026-10-23.md
+exit=0
+nightly/nightly-e2e fp-a class=real sev=high filing=null
+nightly/nightly-e2e fp-d class=needs-decision sev=high filing=null
+review/nightly-review f1 class=real sev=high filing=null
+sweeper/pc-sweeper-intake b1 class=real sev=high filing=null
+nightly/nightly-old fp-o class=real sev=medium filing=null
+sweeper/pc-sweeper-intake  class=real sev=medium filing=null
+sweeper/pc-sweeper-intake b3 class=needs-decision sev=medium filing=null
+sweeper/pc-sweeper-intake b5 class=real sev=medium filing=null
+nightly/nightly-e2e fp-b class=wont-fix sev=low filing=null
+review/nightly-review f3 class=wont-fix sev=low filing=null
+sweeper/pc-sweeper-intake b2 class=wont-fix sev=low filing=null
+sweeper/pc-sweeper-intake b7 class=real sev=low filing=null
+linear calls with writes none: 0
+HTTP methods seen:       5 GET 
+=== severity: high in digest json ===
+["fp-a","fp-d","f1","b1"]
+=== S3: writes linear, max-creates 1 ===
+DIGEST 2026-10-23 9 data/officers/surgeon/2026-10-23.md
+exit=0
+fp-a sev=high filing={"action":"created","issue":"PC-501"}
+f1 sev=high filing={"action":"not-filed","reason":"over max-creates for this run"}
+b1 sev=high filing={"action":"not-filed","reason":"over max-creates for this run"}
+fp-o sev=medium filing={"action":"not-filed","reason":"over max-creates for this run"}
+ sev=medium filing={"action":"not-filed","reason":"source gave no stable key"}
+b5 sev=medium filing={"action":"not-filed","reason":"over max-creates for this run"}
+b7 sev=low filing={"action":"not-filed","reason":"over max-creates for this run"}
+--- linear calls in order:
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:dcf269d33f013ea1fce5dc8eb2f193f3bd4afebc7b133d178c749c35678de0ab --team PC --limit 5 --output json
+issue create --team PC --title checkout pays --body-file /tmp/surg-live/w.zYld/home/data/officers/surgeon/.surgeon-2026-10-23-dcf269d33f01.md --priority 2 --lab
+issue create --team PC --title checkout pays --body-file /tmp/surg-live/w.zYld/home/data/officers/surgeon/.surgeon-2026-10-23-dcf269d33f01.md --priority 2 --lab
+=== S4: verify fails, not retried ===
+exit=0
+fp-a filing={"action":"failed","reason":"VERIFY_FAILED: no"}
+f1 filing={"action":"not-filed","reason":"over max-creates for this run"}
+b1 filing={"action":"not-filed","reason":"over max-creates for this run"}
+fp-o filing={"action":"not-filed","reason":"over max-creates for this run"}
+ filing={"action":"not-filed","reason":"source gave no stable key"}
+b5 filing={"action":"not-filed","reason":"over max-creates for this run"}
+b7 filing={"action":"not-filed","reason":"over max-creates for this run"}
+verify calls: 1
+1
+=== S5: label lookup fails ===
+Coverage gap: label lookup failed: VALIDATION_ERROR: x
+DIGEST 2026-10-23 9 data/officers/surgeon/2026-10-23.md
+exit=0
+fp-a filing={"action":"not-filed","reason":"label lookup failed: VALIDATION_ERROR: x"}
+f1 filing={"action":"not-filed","reason":"label lookup failed: VALIDATION_ERROR: x"}
+b1 filing={"action":"not-filed","reason":"label lookup failed: VALIDATION_ERROR: x"}
+fp-o filing={"action":"not-filed","reason":"label lookup failed: VALIDATION_ERROR: x"}
+ filing={"action":"not-filed","reason":"source gave no stable key"}
+b5 filing={"action":"not-filed","reason":"label lookup failed: VALIDATION_ERROR: x"}
+b7 filing={"action":"not-filed","reason":"label lookup failed: VALIDATION_ERROR: x"}
+create calls: 0
+=== S6: second run skips already-filed fingerprint (lane ledger) ===
+exit=0
+fp-a filing={"action":"exists","issue":"PC-501"}
+f1 filing={"action":"exists","issue":"PC-501"}
+b1 filing={"action":"exists","issue":"PC-501"}
+fp-o filing={"action":"exists","issue":"PC-501"}
+ filing={"action":"not-filed","reason":"source gave no stable key"}
+b5 filing={"action":"exists","issue":"PC-501"}
+b7 filing={"action":"created","issue":"PC-501"}
+create calls on rerun: 2
+=== S7: production only in free text is not rated high ===
+b7 title/notes say production, P3 -> class=real sev=low
+=== S7b: keyless finding ===
+[{"title":"keyless bug","class":"real","filing":{"action":"not-filed","reason":"source gave no stable key"}}]
+[{"class":"real","evidence":{"cause":"","disposition":"new","occurrences":null,"run":"sweep-1","severity":"P2"},"filing":{"action":"not-filed","reason":"source gave no stable key"},"fingerprint":"890cd85c97aa580e2a4579eedb818fc25b052cd904f8a583832979011cace62d","job":"pc-sweeper-intake","key":"","kind":"intake","severity":"medium","source":"sweeper","summary":"keyless bug (new, P2)","title":"keyless bug","tracked":null}]
+=== S9: fingerprint already in Linear (search hit) skips create ===
+exit=0
+fp-a filing={"action":"failed","reason":"UNKNOWN: no"}
+f1 filing={"action":"created","issue":"PC-501"}
+b1 filing={"action":"not-filed","reason":"over max-creates for this run"}
+fp-o filing={"action":"not-filed","reason":"over max-creates for this run"}
+ filing={"action":"not-filed","reason":"source gave no stable key"}
+b5 filing={"action":"not-filed","reason":"over max-creates for this run"}
+b7 filing={"action":"not-filed","reason":"over max-creates for this run"}
+--- calls:
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:dcf269d33f013ea1fce5dc8eb2f193f3bd4afebc7b133d178c749c35678de0ab --team PC --limit 5 --output js
+issue view PC-777 --output json
+issue search surgeon-fp:18266dcfcc837bb6b9f1027f8a3617cfc911b2b453506d48aede94cab84f6330 --team PC --limit 5 --output js
+issue create --team PC --title SQL from input --body-file /tmp/surg-live/w.zYld/home/data/officers/surgeon/.surgeon-2026
+issue create --team PC --title SQL from input --body-file /tmp/surg-live/w.zYld/home/data/officers/surgeon/.surgeon-2026
+=== S8: register surgeon, retire triage ===
+registered: officer triage (state/officer-triage.check.sh)
+triage run exit=0
+registered: officer surgeon (state/officer-surgeon.check.sh)
+retired: officer triage (findings kept in data/officers/triage/)
+registry now:
+- surgeon - Triage plus intake (role: surgeon; cadence: dail
+2026-10-23.json
+2026-10-23.md
+digest
+runs.log
+officer-surgeon.check-trust
+officer-surgeon.check.sh
+DIGEST 2026-10-23 9 data/officers/surgeon/2026-10-23.md
+{"role":"surgeon","archive_findings":1}
+officer surgeon: 2026-10-23: 9 actionable finding(s) in data/officers/surgeon/2026-10-23.md

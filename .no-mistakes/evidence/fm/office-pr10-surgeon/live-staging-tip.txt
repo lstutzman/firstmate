@@ -1,0 +1,18 @@
+staging tip now: 5899ef0ac1a8dccea7f43d67f156711e0f4e29ef	refs/heads/staging
+nightly run sha: 23d33e9e5284e1ccb12483fd901040c7b3501954
+DIGEST 2026-10-23 12 data/officers/surgeon/2026-10-23.md
+exit=0
+["fp-a","real","medium"]
+["fp-c","real","medium"]
+["fp-d","needs-decision","medium"]
+["fp-b","wont-fix","low"]
+["fp-e","wont-fix","low"]
+=== staging remote unreadable
+Coverage gap: staging tip unreadable from /tmp/fm-surgeon-live.Gi1bUl/no-such.git, so nightly-e2e is rated medium
+DIGEST 2026-10-23 12 data/officers/surgeon/2026-10-23.md
+exit=0
+["fp-a","medium"]
+["fp-c","medium"]
+["fp-d","medium"]
+["fp-b","low"]
+["fp-e","low"]

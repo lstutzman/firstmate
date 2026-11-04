@@ -1,0 +1,17 @@
+exit=0
+fp-a filing={"action":"exists","issue":"PC-777"}
+f1 filing={"action":"created","issue":"PC-501"}
+b1 filing={"action":"not-filed","reason":"over max-creates for this run"}
+fp-o filing={"action":"not-filed","reason":"over max-creates for this run"}
+ filing={"action":"not-filed","reason":"source gave no stable key"}
+b5 filing={"action":"not-filed","reason":"over max-creates for this run"}
+b7 filing={"action":"not-filed","reason":"over max-creates for this run"}
+--- linear calls in order:
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:dcf269d33f013ea1fce5dc8eb2f193f3bd4afebc7b133d178c749c35678de0ab --team PC --limit 5 -
+issue view PC-777 --output json
+issue search surgeon-fp:18266dcfcc837bb6b9f1027f8a3617cfc911b2b453506d48aede94cab84f6330 --team PC --limit 5 -
+issue view PC-778 --output json
+issue create --team PC --title SQL from input --body-file /tmp/surg-live/w.m8F2/home/data/officers/surgeon/.su
+issue create --team PC --title SQL from input --body-file /tmp/surg-live/w.m8F2/home/data/officers/surgeon/.su
+--- lane log of creates:

@@ -1,0 +1,54 @@
+$ second run, same lane (ledger)
+DIGEST 2026-10-23 7 data/officers/surgeon/2026-10-23.md
+--- linear-axi creates this run:
+4
+{"key":"e1","filing":{"action":"exists","issue":"PC-201"}}
+{"key":"s1","filing":{"action":"exists","issue":"PC-202"}}
+
+$ fresh lane, verify fails (max-creates 2)
+DIGEST 2026-10-23 7 data/officers/surgeon/2026-10-23.md
+--- linear-axi calls:
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:20f84f0a3ff014156192b36932fd541115923e814317bcf53dab188f0b543d5d --team PC --limit 5 --output json
+issue create --team PC --title checkout pays --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-20f84f0a3ff0.md --priority 2 --label Bug --label scheduled-review --label Runtime --dry-run --output json
+issue create --team PC --title checkout pays --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-20f84f0a3ff0.md --priority 2 --label Bug --label scheduled-review --label Runtime --verify --output json
+issue search surgeon-fp:5b045b7be83e1f6f928773aa7c6b75a31092974fa817e856d8310d9bd1e3c547 --team PC --limit 5 --output json
+issue create --team PC --title SQL from input --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-5b045b7be83e.md --priority 2 --label Bug --label scheduled-review --label Runtime --dry-run --output json
+issue create --team PC --title SQL from input --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-5b045b7be83e.md --priority 2 --label Bug --label scheduled-review --label Runtime --verify --output json
+{"key":"e1","filing":{"action":"failed","reason":"VERIFY_FAILED: no"}}
+{"key":"r1","filing":{"action":"failed","reason":"VERIFY_FAILED: no"}}
+{"key":"","filing":{"action":"not-filed","reason":"source gave no stable key"}}
+{"key":"s1","filing":{"action":"not-filed","reason":"over max-creates for this run"}}
+{"key":"s2","filing":{"action":"not-filed","reason":"over max-creates for this run"}}
+{"key":"s5","filing":{"action":"not-filed","reason":"over max-creates for this run"}}
+--- runs.log:
+1793763022 2026-10-23 ok 7
+
+$ fresh lane, label lookup fails
+Coverage gap: label lookup failed: X: no
+DIGEST 2026-10-23 7 data/officers/surgeon/2026-10-23.md
+--- linear-axi calls:
+label list --team PC --limit 250 --output json
+{"key":"e1","filing":{"action":"not-filed","reason":"label lookup failed: X: no"}}
+{"key":"r1","filing":{"action":"not-filed","reason":"label lookup failed: X: no"}}
+{"key":"","filing":{"action":"not-filed","reason":"source gave no stable key"}}
+{"key":"s1","filing":{"action":"not-filed","reason":"label lookup failed: X: no"}}
+{"key":"s2","filing":{"action":"not-filed","reason":"label lookup failed: X: no"}}
+{"key":"s5","filing":{"action":"not-filed","reason":"label lookup failed: X: no"}}
+
+$ fresh lane, label scheduled-review missing in team PC
+DIGEST 2026-10-23 7 data/officers/surgeon/2026-10-23.md
+--- linear-axi calls:
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:b47cdd602d42c95c91a1e70f917ed6ef0faf5790540f860ac390d61e035ebebf --team PC --limit 5 --output json
+issue create --team PC --title Crash on save --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-b47cdd602d42.md --priority 2 --label Bug --label bug-sweep --label Runtime --dry-run --output json
+issue create --team PC --title Crash on save --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-b47cdd602d42.md --priority 2 --label Bug --label bug-sweep --label Runtime --verify --output json
+issue search surgeon-fp:60bc7750c45e13fedd9155ec800a1fac5e194f9f9be6e099b9c8d1a16af12563 --team PC --limit 5 --output json
+issue create --team PC --title Wrong total --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-60bc7750c45e.md --priority 3 --label Bug --label bug-sweep --label Runtime --dry-run --output json
+issue create --team PC --title Wrong total --body-file /tmp/surglive/w.YsdN/home/data/officers/surgeon/.surgeon-2026-10-23-60bc7750c45e.md --priority 3 --label Bug --label bug-sweep --label Runtime --verify --output json
+{"key":"e1","filing":{"action":"not-filed","reason":"label(s) not found in team PC: scheduled-review"}}
+{"key":"r1","filing":{"action":"not-filed","reason":"label(s) not found in team PC: scheduled-review"}}
+{"key":"","filing":{"action":"not-filed","reason":"source gave no stable key"}}
+{"key":"s1","filing":{"action":"created","issue":"PC-205"}}
+{"key":"s2","filing":{"action":"created","issue":"PC-206"}}
+{"key":"s5","filing":{"action":"not-filed","reason":"over max-creates for this run"}}
