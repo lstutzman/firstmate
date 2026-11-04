@@ -28,13 +28,12 @@ card, a page owner fixes a page). It acts on nothing itself.
                  whose keyed status line a later `resolved` line settled.
                  Two live-decision exceptions keep this from false-flagging:
                  * A merged PR alone does not stale a card that asks for a
-                   production or apply action on it (deploy, release, roll
-                   out, apply, migration): that action is still open. The
-                   card's own `kind`/`category`/`type` field decides first
-                   (PRODUCTION_KINDS, MERGE_KINDS); without one, the id,
-                   question and title are read for PRODUCTION_RE unless they
-                   ask for a merge (MERGE_RE: a merge-word card is stale once
-                   its PR merged; merely mentioning the merge is not asking).
+                   production action on it (deploy, production, roll out):
+                   that action is still open. The card's question, title and
+                   id (except a status-keyed `task-...` id, which embeds the
+                   task name) are read for PRODUCTION_RE unless they ask for a
+                   merge (MERGE_RE: a merge-word card is stale once its PR
+                   merged; merely mentioning the merge is not asking).
                    A closed-unmerged PR still flags.
                  * A `resolved` line alone does not stale a card unless the
                    captain answered. Evidence is a card `answer`, or a
@@ -74,11 +73,8 @@ import time
 MAX_PR_LOOKUPS = 40
 FACTS_SOURCES = ("bosun",)
 PR_RE = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)")
-# A card names a production/apply action when its kind/category/type is one of
-# PRODUCTION_KINDS, else when its id, question or title matches PRODUCTION_RE and does not ask for a merge.
-PRODUCTION_KINDS = ("deploy", "apply", "production", "release", "migration", "rollout")
-MERGE_KINDS = ("merge", "merge-word", "merge-ask")
-PRODUCTION_RE = re.compile(r"\b(production|prod|deploy\w*|release|roll(?:ed)?[ -]?out|apply|applied|migrations?)\b", re.I)
+# A card names a production action when its question, title or own id matches PRODUCTION_RE and does not ask for a merge.
+PRODUCTION_RE = re.compile(r"\b(production|deploy\w*|roll(?:ed|s|ing)?[ -]?out)\b", re.I)
 MERGE_RE = re.compile(r"\bmerge[ -]words?\b|^merge\s|\bmerge (?:this|it|the PR|PR)\b", re.I)
 # A resolved status line written by an answer, as opposed to a routing or reconcile acknowledgement.
 ANSWER_RE = re.compile(r"^(?:answered:|captain hold \S+: (?:answered|released))", re.I)
@@ -218,14 +214,9 @@ def words(card):
 
 
 def open_production_action(card):
-    """True when the card asks for a production or apply action, which a merged PR does not close."""
-    for field in ("kind", "category", "type"):
-        value = str(card.get(field) or "").lower()
-        if value in MERGE_KINDS:
-            return False
-        if value in PRODUCTION_KINDS:
-            return True
-    head = [str(card.get(k) or "") for k in ("id", "question", "title")]
+    """True when the card asks for a production action, which a merged PR does not close."""
+    cid = str(card.get("id") or "")
+    head = [str(card.get(k) or "") for k in ("question", "title")] + ([] if cid.startswith("task-") else [cid])
     return any(PRODUCTION_RE.search(h) for h in head) and not any(MERGE_RE.search(h) for h in head)
 
 
