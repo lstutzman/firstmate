@@ -4990,7 +4990,9 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     fi
   fi
 
-  validate_spawn_worktree "treehouse get" "$T"
+  spawn_wt_source="treehouse get"
+  [ "$SPAWN_HERDR_LEASED" != 1 ] || spawn_wt_source="treehouse get --lease"
+  validate_spawn_worktree "$spawn_wt_source" "$T"
 
   # Claim the pool slot for this task. The interactive `treehouse get` sent to
   # the pane above records only a process reservation, so until the durable

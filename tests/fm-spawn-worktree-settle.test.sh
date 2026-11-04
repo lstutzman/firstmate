@@ -268,18 +268,36 @@ case "$1 ${2:-}" in
   "status --json")
     printf '{"client":{"version":"%s","protocol":%s},"server":{"running":true,"compatible":true}}\n' \
       "${FM_FAKE_HERDR_VERSION:-0.7.1}" "${FM_FAKE_HERDR_PROTOCOL:-14}" ;;
-  "workspace list") echo '{"result":{"workspaces":[]}}' ;;
+  "session list")
+    printf '{"sessions":[{"name":"%s","running":true,"socket_path":"%s/herdr.sock"}]}\n' "${HERDR_SESSION:-x}" "$st" ;;
+  "workspace list")
+    # One line per workspace: id|label. The focused one is the first.
+    touch "$st/ws.list"
+    jq -Rn --slurpfile _ /dev/null '[inputs | split("|") | {workspace_id: .[0], label: .[1]}]' < "$st/ws.list" \
+      | jq --arg st "$st" 'to_entries | map(.value + {focused: (.key == 0)}) | map(. + {active_tab_id: "\(.workspace_id).t1"}) | {result: {workspaces: .}}' ;;
   "workspace create")
     w=w$(next w); t=$w.t$(next t); p=$t.p; opt --cwd > "$st/cwd.$p"
+    printf '%s|%s\n' "$w" "$(opt --label)" >> "$st/ws.list"; printf '%s\n' "$t" >> "$st/tabs.$w"
     printf '{"result":{"workspace":{"workspace_id":"%s"},"tab":{"tab_id":"%s"},"root_pane":{"pane_id":"%s"}}}\n' "$w" "$t" "$p" ;;
-  "tab list") echo '{"result":{"tabs":[]}}' ;;
+  "tab list")
+    w=$(opt --workspace); touch "$st/tabs.$w"
+    jq -Rn --arg st "$st" '[inputs | split("|") | {tab_id: .[0], label: (if (.[0] | endswith(".t1")) then "1" else (.[1] // "") end), focused: false}] | if length > 0 then .[0].focused = true else . end | {result: {tabs: .}}' < "$st/tabs.$w" ;;
   "tab create")
     [ "${FM_FAKE_HERDR_TAB_FAIL:-0}" = 1 ] && exit 1
-    w=$(opt --workspace); t=$w.t$(next t); p=$t.p; opt --cwd > "$st/cwd.$p"
+    w=$(opt --workspace); t=$w.t$(next t); p=$t.p; opt --cwd > "$st/cwd.$p"; printf '%s|%s\n' "$t" "$(opt --label)" >> "$st/tabs.$w"
     printf '{"result":{"tab":{"tab_id":"%s"},"root_pane":{"pane_id":"%s"}}}\n' "$t" "$p" ;;
+  "pane list")
+    w=$(opt --workspace); touch "$st/tabs.$w"
+    jq -Rn --arg w "$w" '[inputs | split("|")[0] | {pane_id: "\(.).p", tab_id: ., workspace_id: $w}] | {result: {panes: .}}' < "$st/tabs.$w" ;;
+  "pane close")
+    tab=${3%.p}; for f in "$st"/tabs.*; do grep -v "^$tab|\?" "$f" > "$f.new"; mv "$f.new" "$f"; done; echo '{"result":{}}' ;;
   "pane get")
     cwd=${FM_FAKE_HERDR_FG_CWD:-$(cat "$st/cwd.$3" 2>/dev/null)}
-    printf '{"result":{"pane":{"pane_id":"%s","cwd":"%s","foreground_cwd":"%s"}}}\n' "$3" "$cwd" "$cwd" ;;
+    tab=${3%.p}
+    if ! grep -q "^$tab|\?" "$st/tabs.${tab%%.*}" 2>/dev/null; then
+      echo '{"error":{"code":"pane_not_found","message":"pane not found"}}'; exit 1
+    fi
+    printf '{"result":{"pane":{"pane_id":"%s","tab_id":"%s","workspace_id":"%s","cwd":"%s","foreground_cwd":"%s"}}}\n' "$3" "$tab" "${tab%%.*}" "$cwd" "$cwd" ;;
   *) echo '{"result":{}}' ;;
 esac
 SH
@@ -355,6 +373,29 @@ test_herdr_spawn_creates_the_pane_in_the_leased_worktree() {
   pass "a Herdr spawn leases its slot first and creates the tab inside it"
 }
 
+test_herdr_spawn_creates_a_projected_pane_in_the_leased_worktree() {
+  local rec id out status
+  id=herdr-lease-projected-z6
+  rec=$(make_herdr_case herdr-lease-projected "$id")
+  read_herdr_case "$rec"
+  printf 'on\n' > "$HOME_DIR/config/herdr-presentation-spaces"
+  # The launcher's own parent workspace, focused, carrying the home's label.
+  printf 'w0|firstmate\n' > "$CASE_DIR/herdr-state/ws.list"
+  printf 'w0.t1|\n' > "$CASE_DIR/herdr-state/tabs.w0"
+
+  out=$(FM_FAKE_HERDR_VERSION=0.9.1 FM_FAKE_HERDR_PROTOCOL=22 run_herdr_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "a projected Herdr spawn should succeed"$'\n'"$out"
+  assert_not_contains "$out" "without projection" "the spawn fell back to the flat layout"
+  assert_grep "workspace create --cwd $SLOT_DIR " "$HERDR_LOG" \
+    "the projected workspace was not created in the leased worktree"
+  assert_grep "--cwd $SLOT_DIR --label fm-$id" "$HERDR_LOG" \
+    "the projected task tab was not created in the leased worktree"
+  assert_no_grep "--cwd $PROJ_DIR" "$HERDR_LOG" "a projected pane was created in the project clone"
+  assert_no_grep "treehouse get" "$HERDR_LOG" "treehouse get was typed into the projected pane"
+  pass "a projected Herdr spawn creates its workspace and tab inside the leased worktree"
+}
+
 test_herdr_spawn_returns_the_lease_when_it_fails_before_the_record() {
   local rec id out status
   # The tab cannot be created: the lease taken just before must go back.
@@ -408,6 +449,7 @@ test_tmux_spawn_still_takes_its_slot_through_the_pane() {
 }
 
 test_herdr_spawn_creates_the_pane_in_the_leased_worktree
+test_herdr_spawn_creates_a_projected_pane_in_the_leased_worktree
 test_herdr_spawn_returns_the_lease_when_it_fails_before_the_record
 test_tmux_spawn_still_takes_its_slot_through_the_pane
 
