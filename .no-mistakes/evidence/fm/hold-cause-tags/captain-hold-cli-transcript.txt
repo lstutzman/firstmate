@@ -1,0 +1,21 @@
+$ fm-captain-hold.sh hold release-call --reason "release choice pending"   # no --cause
+release-call
+rc=0
+$ fm-captain-hold.sh hold creds-call --reason "needs staging key" --cause credential
+creds-call
+rc=0
+$ fm-captain-hold.sh hold bad-call --reason "x" --cause bogus   # adversarial: unknown cause
+fm-captain-hold: --cause must be one of policy, credential, sudo, tool, decision, physical, external: bogus
+rc=1
+$ fm-captain-hold.sh hold creds-call --reason "needs staging key"   # re-hold, different (default) cause
+creds-call
+rc=0
+--- simulate a legacy untagged hold line, then re-hold release-call
+release-call
+rc=0
+--- parent channel:
+needs-decision [key=captain-hold-release-call-1] [at=1793773731]: captain hold release-call: release choice pending
+needs-decision [key=captain-hold-creds-call-1] [cause=credential] [at=1793773732]: captain hold creds-call: needs staging key
+--- status_line_cause readback per line (fm-classify-lib.sh):
+unstated  <=  needs-decision [key=captain-hold-release-call-1] [at=1793773731]
+credential  <=  needs-decision [key=captain-hold-creds-call-1] [cause=credential] [at=1793773732]

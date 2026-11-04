@@ -1,0 +1,10 @@
+== missed-report escalation (kind=missed)
+escalate rc=0
+blocked [key=pending-reply-05a6ae7a4ca4531e] [cause=external] [at=1793773758]: pending-reply-missed: task=hibit pending-reply-id=05a6ae7a4ca4531e request=please report status
+status_line_cause => external
+-- legacy: strip tag, reset phase, retry escalation
+retry rc=0
+blocked lines for this id: 1
+== held escalation (kind=held, wait-no-turns)
+blocked [key=pending-reply-b0a2173970f6d753] [cause=decision] [at=1793773758]: pending-reply-held: task=hibit pending-reply-id=b0a2173970f6d753 request=relayed ask no repost sent: the mate holds an open decision of its own and config/wait-no-turns keeps it from being poked
+status_line_cause => decision
