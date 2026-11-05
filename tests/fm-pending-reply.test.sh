@@ -511,6 +511,20 @@ test_escalation_grace_measures_from_recovery_turn_completion() {
   esac
   escalations=$(grep -Fc "blocked [key=pending-reply-$corr]" "$state/hibit.status")
   [ "$escalations" = 1 ] || fail "missed recovery should publish exactly one escalation, got $escalations"
+  [ "$(bash -c '. "$1/bin/fm-classify-lib.sh"; status_line_cause "$2"' _ "$ROOT" "$status_line")" = external ] \
+    || fail "missed escalation should carry cause=external: $status_line"
+  [ -n "$(fm_pending_reply_escalation_line "$state/hibit.status" "$(fm_pending_reply_path "$state" "$corr")" "$corr")" ] \
+    || fail "the cause-tagged escalation must still be recognised"
+  # An escalation written before the cause tag existed is still recognised and
+  # is not re-posted as a new episode when the escalation retries.
+  sed -i.bak 's/ \[cause=external\]//' "$state/hibit.status" && rm -f "$state/hibit.status.bak"
+  grep -qF 'cause=' "$state/hibit.status" && fail "legacy fixture still carries a cause"
+  [ -n "$(fm_pending_reply_escalation_line "$state/hibit.status" "$(fm_pending_reply_path "$state" "$corr")" "$corr")" ] \
+    || fail "a legacy untagged escalation must still be recognised"
+  fm_pending_reply_set "$(fm_pending_reply_path "$state" "$corr")" phase recovery_sent
+  fm_pending_reply_maybe_escalate "$state" "$corr" || fail "retried escalation failed"
+  [ "$(grep -Fc "blocked [key=pending-reply-$corr]" "$state/hibit.status")" = 1 ] \
+    || fail "a legacy escalation was re-posted as a new episode"
 
   export FM_PENDING_REPLY_GRACE_SECS=0
   pass "missed-report escalation grace is measured from the recovery turn's completion"
