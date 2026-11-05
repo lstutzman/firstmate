@@ -1,0 +1,48 @@
+$ fm-pr-check.sh adopt-87 https://github.com/lstutzman/firstmate/pull/87   # no record yet
+error: task metadata is unavailable
+exit=1
+$ fm-pr-merge.sh adopt-87 https://github.com/lstutzman/firstmate/pull/87   # no record yet
+error: task metadata is unavailable
+exit=1
+
+$ fm-pr-adopt.sh adopt-87 https://github.com/lstutzman/firstmate/pull/87 --mode no-mistakes --yolo on
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/adopt-87.check.sh
+adopted: adopt-87 https://github.com/lstutzman/firstmate/pull/87 project=firstmate mode=no-mistakes yolo=on
+exit=0
+
+--- /tmp/fm-lab.zf53jY/state/adopt-87.meta
+worktree=/tmp/fm-lab.zf53jY/state/adopt-87.adopted-no-copy
+project=/tmp/fm-lab.zf53jY/projects/firstmate
+kind=ship
+mode=no-mistakes
+yolo=on
+adopted=1
+adopted_at=1793867472
+pr_at=1793867474
+pr=https://github.com/lstutzman/firstmate/pull/87
+pr_head=2b9e3f9cf12bcebf9fa3a7276777c83ccf8083c2
+--- live head from GitHub: 2b9e3f9cf12bcebf9fa3a7276777c83ccf8083c2
+--- backlog
+## In flight
+- [ ] adopt-87 - Adopt https://github.com/lstutzman/firstmate/pull/87 (repo: firstmate) (kind: ship) (since 2026-11-05)
+
+## Queued
+
+## Done
+--- state dir
+.
+..
+.guard-watcher-stale-banner
+adopt-87.check.sh
+adopt-87.meta
+adopt-87.pr-poll
+adopt-87.pr-poll-registration
+contributions.check-trust
+contributions.check.sh

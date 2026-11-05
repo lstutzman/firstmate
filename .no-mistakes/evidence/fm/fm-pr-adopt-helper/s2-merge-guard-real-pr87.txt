@@ -1,0 +1,17 @@
+$ fm-pr-merge.sh adopt-87 https://github.com/lstutzman/firstmate/pull/87   # lab gh: reads go to GitHub, writes blocked
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/adopt-87.check.sh
+verified: https://github.com/lstutzman/firstmate/pull/87 is open and mergeable, with every unwaived required check reported and every unwaived check green at head 2b9e3f9cf12bcebf9fa3a7276777c83ccf8083c2
+lab: gh write blocked
+error: GitHub merge outcome was not successful: state=OPEN, merged=false, isInMergeQueue=false
+exit=1
+--- gh calls made
+pr view https://github.com/lstutzman/firstmate/pull/87 --json headRefOid -q .headRefOid
+pr view https://github.com/lstutzman/firstmate/pull/87 --json state,isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName,statusCheckRollup
+api repos/lstutzman/firstmate/branches/main
+api --paginate repos/lstutzman/firstmate/rules/branches/main
+pr merge 87 --repo lstutzman/firstmate --match-head-commit 2b9e3f9cf12bcebf9fa3a7276777c83ccf8083c2 --squash
+BLOCKED-WRITE: pr merge 87 --repo lstutzman/firstmate --match-head-commit 2b9e3f9cf12bcebf9fa3a7276777c83ccf8083c2 --squash
+api graphql -f query=query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){state merged isInMergeQueue baseRefName}}} -F owner=lstutzman -F repo=firstmate -F number=87 --jq .data.repository.pullRequest | "state=" + (.state // ""), "merged=" + (.merged | tostring), "queued=" + (.isInMergeQueue | tostring), "base=" + (.baseRefName // "")
+api --paginate repos/lstutzman/firstmate/rules/branches/main --jq .[] | select(.type == "merge_queue") | "merge_method=" + (.parameters.merge_method // "")
+--- PR 87 after: OPEN

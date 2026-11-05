@@ -1,0 +1,7 @@
+ok - an adopted PR merges under fm-pr-merge.sh's guards and its record tears down with no copy touched
+ok - fm-pr-merge.sh still refuses a red adopted PR, and merges it once green
+ok - adopt refuses a task id whose record already exists and leaves it unchanged
+ok - adopt refuses a PR that is not open
+ok - adopt refuses a PR whose repository is not the project's origin
+ok - adopt refuses a project that is not registered
+ok - adopt needs explicit --mode and --yolo and never records yolo on past a project's registered posture

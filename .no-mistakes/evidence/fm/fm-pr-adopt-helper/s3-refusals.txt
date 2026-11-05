@@ -1,0 +1,37 @@
+
+$ fm-pr-adopt.sh adopt-85 https://github.com/lstutzman/firstmate/pull/85 --mode no-mistakes --yolo on
+error: adopt refused: https://github.com/lstutzman/firstmate/pull/85 is MERGED, not open
+exit=1
+
+$ fm-pr-adopt.sh adopt-87 https://github.com/lstutzman/firstmate/pull/87 --mode no-mistakes --yolo on
+error: adopt refused: task adopt-87 already has a record at /tmp/fm-lab.zf53jY/state/adopt-87.meta
+exit=1
+existing record unchanged: yes
+
+$ fm-pr-adopt.sh adopt-x https://github.com/lstutzman/skills/pull/1 --mode no-mistakes --yolo on --project /tmp/fm-lab.zf53jY/projects/firstmate
+error: adopt refused: https://github.com/lstutzman/skills/pull/1 is in github.com/lstutzman/skills, but project firstmate's origin is github.com/lstutzman/firstmate
+exit=1
+
+$ fm-pr-adopt.sh adopt-88 https://github.com/lstutzman/firstmate/pull/88 --mode direct-PR --yolo off
+error: adopt refused: --mode must be no-mistakes: an adopted record has no worker copy, so only a PR whose forge head is its named head can be recorded
+exit=1
+
+$ fm-pr-adopt.sh adopt-88 https://github.com/lstutzman/firstmate/pull/88 --mode no-mistakes
+usage: fm-pr-adopt.sh <task-id> <pr-url> --mode no-mistakes --yolo <on|off> [--project <dir>]
+exit=2
+
+$ fm-pr-adopt.sh adopt-88 https://github.com/lstutzman/firstmate/pull/88 --mode no-mistakes --yolo on
+error: adopt refused: --yolo on asked for firstmate, whose registered posture is 'no-mistakes off', not +yolo
+exit=1
+
+$ fm-pr-adopt.sh adopt-88 https://github.com/lstutzman/firstmate/pull/88 --mode no-mistakes --yolo off
+error: adopt refused: project firstmate is not registered in /tmp/fm-lab.zf53jY/data/projects.md
+exit=1
+
+--- state dir after refusals
+adopt-87.check.sh
+adopt-87.meta
+adopt-87.pr-poll
+adopt-87.pr-poll-registration
+contributions.check-trust
+contributions.check.sh
