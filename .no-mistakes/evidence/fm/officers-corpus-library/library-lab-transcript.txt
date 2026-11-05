@@ -1,0 +1,59 @@
+=== L1 register + run on the 2026-10-31 audit
+$ fm-officer.sh register library
+registered: officer library (state/officer-library.check.sh)
+[exit 0]
+$ fm-officer.sh run library --date 2026-11-01
+DIGEST 2026-11-01 5 data/officers/library/2026-11-01.md
+[exit 0]
+# Library officer digest for 2026-11-01
+
+5 new item(s) to act on. Audit run: 2026-10-31.
+
+- Audit run 2026-10-31: outcome ok; decisions 1, findings 5.
+
+## Needs Lee (3)
+
+- NEW [high] decisions $LAB/runs/2026-10-31/report.md: 1 decision(s) for Lee (the audit's decisions for Lee). Proposed: one Captain's Log card for the run
+- NEW [low] conflict docs/adr/1.md: ADR contradicts rules (a conflict is never settled by rewriting requirements). Proposed: Propose a successor note.
+- NEW [low] cruft old.sh: Old script (the disposition says deletion). Proposed: Propose deletion.
+
+## Safe to ship (1)
+
+- NEW [low] readme README.md: README count wrong (a docs change one PR can ship). Proposed: Correct the count to 12.
+
+## Code work (1)
+
+- NEW [low] unneeded-code src/a.py: Dead helper (code work, not a docs change). Proposed: Remove in its own brief.
+
+## On hold (1)
+
+- [low] misplaced docs/x.md: Loose doc (nothing to ship yet). Proposed: Unresolved. Read both next run.
+=== L2 next day, same audit: nothing new
+$ fm-officer.sh run library --date 2026-11-02
+DIGEST 2026-11-02 0 data/officers/library/2026-11-02.md
+[exit 0]
+=== L3 audit folder unreadable: coverage gap, run ok
+$ fm-officer.sh run library --date 2026-11-03
+Coverage gap: library: no audit run folder under $LAB/runs
+DIGEST 2026-11-03 0 data/officers/library/2026-11-03.md
+[exit 0]
+=== L4 new audit 2026-11-07: the held item is now 'Move it to docs/guides.' (safe); only it is new
+$ fm-officer.sh run library --date 2026-11-07
+DIGEST 2026-11-07 2 data/officers/library/2026-11-07.md
+[exit 0]
+# Library officer digest for 2026-11-07
+2 new item(s) to act on. Audit run: 2026-11-07.
+- Audit run 2026-11-07: outcome ok; decisions 1, findings 5.
+## Needs Lee (3)
+- NEW [high] decisions $LAB/runs/2026-11-07/report.md: 1 decision(s) for Lee (the audit's decisions for Lee). Proposed: one Captain's Log card for the run
+- [low] conflict docs/adr/1.md: ADR contradicts rules (a conflict is never settled by rewriting requirements). Proposed: Propose a successor note.
+- [low] cruft old.sh: Old script (the disposition says deletion). Proposed: Propose deletion.
+## Safe to ship (2)
+- [low] readme README.md: README count wrong (a docs change one PR can ship). Proposed: Correct the count to 12.
+- NEW [low] misplaced docs/x.md: Loose doc (a docs change one PR can ship). Proposed: Move it to docs/guides.
+## Code work (1)
+- [low] unneeded-code src/a.py: Dead helper (code work, not a docs change). Proposed: Remove in its own brief.
+## On hold (0)
+- None.
+=== L5 lane-only writes
+only the library lane (and the officer's state check) written

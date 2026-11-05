@@ -1,0 +1,9 @@
+ok - fm-officer corpus: a healthy corpus reads every source over ssh and reports nothing
+ok - fm-officer corpus: each finding class is found from counts alone
+ok - fm-officer corpus: an archive gap is a finding only after two Bosun nights
+ok - fm-officer corpus: a finding is reported once, reruns are identical, and a recurrence is new
+ok - fm-officer corpus: an unreachable or missing source keeps its findings reported
+ok - fm-officer corpus: a harvest total of 0 is not reported as missing counts
+ok - fm-officer corpus: unreachable hosts and missing files are coverage gaps
+ok - fm-officer corpus: a run writes only its lane
+ok - fm-officer corpus: the registry line needs archive:

@@ -1,0 +1,93 @@
+=== S1 corpus: register, run 2026-11-04 (all inputs read through host:path probes)
+$ fm-officer.sh {run-worktree}/bin/fm-officer.sh register corpus
+registered: officer corpus (state/officer-corpus.check.sh)
+[exit 0]
+$ fm-officer.sh {run-worktree}/bin/fm-officer.sh run corpus --date 2026-11-04
+DIGEST 2026-11-04 2 data/officers/corpus/2026-11-04.md
+[exit 0]
+# Corpus officer digest for 2026-11-04
+
+2 new finding(s) of 2 open. Counts, timestamps and names only; no transcript, corpus row or memory record was read.
+
+## Findings
+
+- NEW [medium] not-collected slartibartfast/pi: slartibartfast/pi was not collected in the last 2 or more runs (newest finished 2026-11-05T07:09:00+00:00)
+- NEW [medium] prep-stale local-jev-prep: the local-jev prep store last finished 2026-11-03T00:00:00+00:00, more than 36 hours ago
+
+## Corpus
+
+- Ingester: outcome ok; archived 2, unchanged 50, withheld 0, errors 0, sources_ok 10, sources_not_collected 1, hosts_offline 1.
+- Hosts offline in the newest ingester run: macbook.
+- Memory harvest: outcome ok; listed 0, total 0, written 0.
+- Bosun deepthought (2026-11-05): archive holds 7 of 10 session logs; 0 pending, 3 missing, 0 out of date, 0 withheld.
+- Bosun slartibartfast (2026-11-05): archive holds 7 of 10 session logs; 0 pending, 3 missing, 0 out of date, 0 withheld.
+- Prep store: finished 2026-11-03T00:00:00+00:00, 5 rows.
+- Weekly retrain: newest run 20261031 started 2026-10-31T21:00:00+00:00, status promoted.
+- Judge: 0 evaluation results, newest None.
+=== S2 counts only: private text in inputs never reaches the lane
+no PRIVATE text in lane
+=== S3 next night 2026-11-05: same Bosun date again -> archive gap is a second night only if Bosun date moves
+$ fm-officer.sh {run-worktree}/bin/fm-officer.sh run corpus --date 2026-11-05
+DIGEST 2026-11-05 2 data/officers/corpus/2026-11-05.md
+[exit 0]
+- NEW [high] archive-gap deepthought: deepthought: the archive misses or holds an out-of-date copy of 3 session logs on 2026-11-06, and of 3 on 2026-11-05
+- NEW [high] archive-gap slartibartfast: slartibartfast: the archive misses or holds an out-of-date copy of 3 session logs on 2026-11-06, and of 3 on 2026-11-05
+- [medium] not-collected slartibartfast/pi: slartibartfast/pi was not collected in the last 2 or more runs (newest finished 2026-11-05T07:09:00+00:00)
+- [medium] prep-stale local-jev-prep: the local-jev prep store last finished 2026-11-03T00:00:00+00:00, more than 36 hours ago
+- Ingester: outcome ok; archived 2, unchanged 50, withheld 0, errors 0, sources_ok 10, sources_not_collected 1, hosts_offline 1.
+- Hosts offline in the newest ingester run: macbook.
+- Memory harvest: outcome ok; listed 0, total 0, written 0.
+- Bosun deepthought (2026-11-06): archive holds 7 of 10 session logs; 0 pending, 3 missing, 0 out of date, 0 withheld.
+- Bosun slartibartfast (2026-11-06): archive holds 7 of 10 session logs; 0 pending, 3 missing, 0 out of date, 0 withheld.
+- Prep store: finished 2026-11-03T00:00:00+00:00, 5 rows.
+- Weekly retrain: newest run 20261031 started 2026-10-31T21:00:00+00:00, status promoted.
+- Judge: 0 evaluation results, newest None.
+=== S4 deepthought unreachable 2026-11-06: coverage gap, run ok, ledger kept
+$ fm-officer.sh {run-worktree}/bin/fm-officer.sh run corpus --date 2026-11-06
+Coverage gap: corpus: the ingester's last result is on a host that could not be reached (deepthought:$LAB/world/corpus/transcript-archive)
+Coverage gap: corpus: the memory harvest's last result is on a host that could not be reached (deepthought:$LAB/world/corpus/memory-harvest/last-result.json)
+Coverage gap: corpus: the Bosun result on deepthought is on a host that could not be reached (deepthought:~/services/bosun-maintenance/last-result.json)
+Coverage gap: corpus: the weekly retrain history is on a host that could not be reached (deepthought:Documents/GitHub/local-jev/results/weekly/history.jsonl)
+Coverage gap: corpus: the judge's results folder is on a host that could not be reached (deepthought:Documents/GitHub/local-jev/results/judge)
+DIGEST 2026-11-06 0 data/officers/corpus/2026-11-06.md
+[exit 0]
+--- reported.json:
+{
+ "38c6c5e345d49c722fce6d01c91b198f93788708e5543949d6c313c657bfce05": {
+  "key": "2026-11-05",
+  "source": "bosun:slartibartfast"
+ },
+ "649c0dde5ee5773dc58425c10a885640f6aff7f8e0336afa340476451fc1d0ea": {
+  "key": "2026-11-04",
+  "source": "prep"
+ },
+ "e1bb3c655875dbe924823b17a1fa4f7a1a64f27e5c281ef100671f9f776b9aea": {
+  "key": "2026-11-04",
+  "source": "ingest"
+ },
+ "ffbd701708ab79044c266d53c2798d17446e9067b71cc1a1d264458d4bfd6ec9": {
+  "key": "2026-11-05",
+  "source": "bosun:deepthought"
+ }
+}
+
+=== S5 deepthought back 2026-11-07: open findings are not re-reported as new
+$ fm-officer.sh {run-worktree}/bin/fm-officer.sh run corpus --date 2026-11-07
+DIGEST 2026-11-07 0 data/officers/corpus/2026-11-07.md
+[exit 0]
+0 new finding(s) of 4 open. Counts, timestamps and names only; no transcript, corpus row or memory record was read.
+- Ingester: outcome ok; archived 2, unchanged 50, withheld 0, errors 0, sources_ok 10, sources_not_collected 1, hosts_offline 1.
+- Hosts offline in the newest ingester run: macbook.
+- Memory harvest: outcome ok; listed 0, total 0, written 0.
+- Bosun deepthought (2026-11-06): archive holds 7 of 10 session logs; 0 pending, 3 missing, 0 out of date, 0 withheld.
+- Bosun slartibartfast (2026-11-06): archive holds 7 of 10 session logs; 0 pending, 3 missing, 0 out of date, 0 withheld.
+- Prep store: finished 2026-11-03T00:00:00+00:00, 5 rows.
+- Weekly retrain: newest run 20261031 started 2026-10-31T21:00:00+00:00, status promoted.
+- Judge: 0 evaluation results, newest None.
+=== S6 re-run 2026-11-07 unchanged: byte-identical
+/tmp/a.3025431 data/officers/corpus/2026-11-07.json differ: byte 18, line 2
+=== S7 writes only its lane
+only data/officers/corpus written
+=== S6 note: the first S6 re-run used --now 2026-11-09T04:53Z, a later clock than the first 2026-11-07 run (2026-11-08T08:15Z).
+    That is a changed input: the 2026-10-31 retrain is then more than 8 days old, so retrain-missed became a real new finding. That is correct behaviour, not a determinism bug.
+=== S6 (corrected) re-run 2026-11-07 twice with the same --now 1794199999: cmp -> identical-now

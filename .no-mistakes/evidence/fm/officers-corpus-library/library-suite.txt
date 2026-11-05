@@ -1,0 +1,6 @@
+ok - fm-officer library: each audit finding lands in one bucket
+ok - fm-officer library: a finding is reported once and reruns are identical
+ok - fm-officer library: an on-hold item is reported when it moves to a counted bucket
+ok - fm-officer library: an unreadable audit leaves the reported-once ledger alone
+ok - fm-officer library: missing and old audit runs are coverage gaps
+ok - fm-officer library: a run writes only its lane
