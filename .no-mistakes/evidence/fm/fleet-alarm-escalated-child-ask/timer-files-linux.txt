@@ -1,0 +1,10 @@
+[Service]
+Type=oneshot
+Environment="FM_HOME={run-worktree}"
+Environment="PATH=~/.local/bin:~/.dotnet:~/.dotnet/tools:~/.cargo/bin:~/.bun/bin:~/.local/bin:~/bin:~/.local/bin:~/.dotnet:~/.dotnet/tools:~/.cargo/bin:~/.bun/bin:~/.nvm/versions/node/v24.22.1/bin:~/.local/bin:~/.dotnet:~/.dotnet/tools:~/.cargo/bin:~/.bun/bin:~/.local/bin:~/go/bin:~/.cargo/bin:~/bin:/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin:/snap/bin:~/.local/share/lee-plugins/lee-mods/bin"
+ExecStart="/usr/bin/python3" "{run-worktree}/bin/fm-fleet-alarm.py" "timer"
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+[Install]
+WantedBy=timers.target
