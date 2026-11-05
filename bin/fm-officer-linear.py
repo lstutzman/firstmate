@@ -560,12 +560,24 @@ class Filer:
         today.update(count=count, last=self.date)
         return count
 
+    def item_labels(self, f, label_set):
+        """(labels, reason not to file or None): label_set's Type and Source; fleet work always takes area:fleet."""
+        wanted, missing = label_set(f)
+        if is_fleet(owning_project(self.officer, f["project"])):
+            missing = [m for m in missing if m in wanted[:2]]
+            wanted = wanted[:2] + [FLEET_AREA]
+        elif FLEET_AREA in wanted:
+            return wanted, "%s is only for fleet work" % FLEET_AREA
+        if missing:
+            return wanted, "label(s) not found in team %s: %s" % (self.team, ", ".join(missing))
+        return wanted, None
+
     # one finding, one item
     def recur(self, f, old, label_set, describe, priority=None):
         """A finding whose item a person closed: never reopened; a new item names the old one."""
-        wanted, missing = label_set(f)
-        if missing or self.over_cap():
-            reason = "label(s) not found in team %s: %s" % (self.team, ", ".join(missing)) if missing else "over max-creates for this run"
+        wanted, reason = self.item_labels(f, label_set)
+        if reason or self.over_cap():
+            reason = reason or "over max-creates for this run"
             f["filing"] = {"action": "not-filed", "reason": "%s is closed; %s" % (old, reason)}
             return
         self.ledger.pop(f["fingerprint"], None)
@@ -589,9 +601,9 @@ class Filer:
         label_set(f) -> (labels, missing labels); describe(f, near=None, recurrence=None) -> the item body.
         RATE_LIMITED and CALL_BUDGET are raised to the caller after the finding is marked failed.
         """
-        wanted, missing = label_set(f)
-        if missing:
-            f["filing"] = {"action": "not-filed", "reason": "label(s) not found in team %s: %s" % (self.team, ", ".join(missing))}
+        wanted, reason = self.item_labels(f, label_set)
+        if reason:
+            f["filing"] = {"action": "not-filed", "reason": reason}
             return
         if self.over_cap():
             f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run"}
@@ -657,16 +669,19 @@ def owning_project(officer, project):
     return project or officer.project
 
 
+def is_fleet_project(project):
+    """The Fleet project itself: fleet work that names no repository."""
+    return repo_key(project) == FLEET_PROJECT.lower()
+
+
 def is_fleet(project):
-    """Fleet work: the Fleet project itself or a fleet repository; its items go in the Fleet project."""
-    key = repo_key(project)
-    return key == FLEET_PROJECT.lower() or key in FLEET_REPOS
+    """Fleet work: the Fleet project itself or a fleet repository; its items go in the Fleet project with area:fleet."""
+    return is_fleet_project(project) or repo_key(project) in FLEET_REPOS
 
 
 def office_home(project, main_home, start_homes):
     """The start-home office that dispatches the project (any fleet repository for Fleet), else the main home."""
-    key = repo_key(project)
-    wanted = set(FLEET_REPOS) if key == FLEET_PROJECT.lower() else {key}
+    wanted = set(FLEET_REPOS) if is_fleet_project(project) else {repo_key(project)}
     return next((o.home for o in start_homes if wanted & o.projects), main_home)
 
 
@@ -800,7 +815,7 @@ def pattern_outputs(officer, store, rubric, date, main_home, start_homes):
             pc = repo_key(p["project"]) == DEFAULT_PROJECT.lower()
             groups.setdefault(DEFAULT_PROJECT if pc else p["project"], []).append((pid, p))
         for project, items in groups.items():
-            fleet = project == FLEET_PROJECT
+            fleet = is_fleet_project(project)
             target = ("%s in %s" % (PATTERN_TARGET, project) if project == DEFAULT_PROJECT else
                       "the review guidance of the fleet repository it came from" if fleet else "the review guidance in %s" % project)
             row = {"kind": "pattern-memory", "project": project, "linear_only": fleet, "rank": 0,

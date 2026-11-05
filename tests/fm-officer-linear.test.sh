@@ -114,7 +114,7 @@ def find(key, title, severity="medium", location="", cause="", project="", found
     return f
 
 def labels(f):
-    return ["Bug", "scan", "area:fleet"], []
+    return ["Bug", "scan", "triage"], []
 
 def describe(f, near=None, recurrence=None):
     lines = ["Filed by the Fixture Officer.", officer.found_line(1, date, date)]
@@ -171,7 +171,9 @@ elif scenario == "fleet":
     g = find("fleet-2", "Skill manifest sync loses entries", project="skills")
     fl, lin = filer()
     run(fl, [g])
-    res = {"filing": f["filing"], "repo_filing": g["filing"]}
+    h = find("fleet-3", "Calculator total wrong", project="PropertyCompass2")
+    fl.file_single(h, lambda f: (["Bug", "scan", "area:fleet"], []), describe)
+    res = {"filing": f["filing"], "repo_filing": g["filing"], "pc_filing": h["filing"]}
 elif scenario == "fleet-labels":
     res = [lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[0], lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[1]]
 elif scenario == "closed":
@@ -335,6 +337,8 @@ test_fleet_findings_take_the_fleet_project_and_label() {
   assert_equals '["Bug","scan","area:fleet"]' "$(issue PC-101 '.labels' | jq -c .)" "one Type, one Source, area:fleet"
   assert_equals Fleet "$(issue PC-101 .project)" "a Fleet officer's item is in the Fleet project with no Filer argument"
   assert_equals Fleet "$(issue "$(jq -r '.repo_filing.issue' <<<"$out")" .project)" "a PropertyCompass2 officer's finding naming a fleet repository is filed in the Fleet project too"
+  assert_equals '["Bug","scan","area:fleet"]' "$(issue "$(jq -r '.repo_filing.issue' <<<"$out")" '.labels' | jq -c .)" "with area:fleet in place of the label_set's own area"
+  assert_equals "not-filed area:fleet is only for fleet work" "$(jq -r '.pc_filing | [.action, .reason] | join(" ")' <<<"$out")" "a PropertyCompass2 finding labelled area:fleet is not filed"
   assert_equals '[["Bug","scan","area:fleet"],[]]' "$(drive fleet-labels | jq -c .)" "fleet_labels names one Type, one Source and area:fleet, and any missing label"
   assert_equals 3 "$(issue PC-101 .priority)" "medium is Linear priority 3"
   assert_contains "$(grep '^issue create' "$LDIR/calls" | sed -n 1p)" "--dry-run" "the dry run comes first"

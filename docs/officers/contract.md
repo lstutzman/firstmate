@@ -23,7 +23,8 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
 - Every Linear write is `--dry-run` and then `--verify`.
   A failed verify is never retried blindly; the fingerprint search decides whether the item exists.
 - Each item has one Type, one Source (the officer's own Source label) and one area label.
-  A fleet finding goes in the Fleet project with the `area:fleet` label.
+  A fleet finding (the officer's project is `Fleet`, or the finding names firstmate, skills or fleet-app) goes in the Fleet project, and the library sets its area label to `area:fleet` whatever the officer's own labels say; `area:fleet` on any other finding stops it being filed.
+  The officer's own label lookup does not cover `area:fleet`; if team PC lacked it, Linear's dry run would refuse the item and the digest would report it failed.
   An officer never creates a label; a missing label means the finding is reported and not filed.
 - An officer filing under this contract never closes or deletes an item, and never changes the state, priority, labels, assignee or title of one that exists.
   The only text it edits is the Found line (and an officer's own cluster list).
