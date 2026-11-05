@@ -94,7 +94,9 @@ read live (read-only git and gh on the host):
 A copy that would be answered delete is first checked with a read-only
 `GIT_OPTIONAL_LOCKS=0 git status --porcelain` on its host: any modified,
 staged or untracked entry makes it keep (unique unlanded work), and a failed
-read leaves it unsettled.
+read leaves it unsettled. Like the Bosun's own rule c check (fleet-app
+src/bosun/cleanup.ts), it does not pass --ignored, so "uncommitted or
+untracked" excludes git-ignored files.
 
 A pull request, tip or HEAD that cannot be read is no answer, and so is an
 origin/HEAD that cannot be read when no pull request decides the item. A
@@ -1064,7 +1066,8 @@ def bosun_decide(entry, facts):
             return None, "its working state (git status) could not be read now"
         if facts["dirty"]:
             verdict, why_rule = "keep", "unique unlanded work is never deleted"
-            fact = "git status --porcelain lists uncommitted or untracked work in it, read live"
+            fact = ("git status --porcelain lists uncommitted or untracked work in it, read live "
+                    "(git-ignored files excluded, as in the Bosun's rule c check, fleet-app src/bosun/cleanup.ts)")
     return {"kind": kind, "item": item, "sha": sha, "verdict": verdict, "rule": rule % why_rule, "fact": fact}, None
 
 
