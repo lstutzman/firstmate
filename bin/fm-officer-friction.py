@@ -837,10 +837,13 @@ def session_events(records, machine):
                 body = triage.result_text(block)
                 for hit, pattern in HIT_PATTERNS:
                     m = pattern.search(body)
-                    if m:
-                        if hit == "missing-tool" and not plausible_tool(
-                                m.group(1), commands.get(block.get("tool_use_id")), bodies):
+                    if m and hit == "missing-tool":
+                        command = commands.get(block.get("tool_use_id"))
+                        m = next((x for x in pattern.finditer(body)
+                                  if plausible_tool(x.group(1), command, bodies)), None)
+                        if m is None:
                             break
+                    if m:
                         events.append(dict(hit_event(hit, m), at=at))
                         break
     return events

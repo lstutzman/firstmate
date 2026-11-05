@@ -760,6 +760,7 @@ test_noise_is_not_a_finding() {
 {"sessions": [{"machine": "alpha", "id": "noise-$d", "first_prompt": "hello", "calls": [
   ["Write", {"file_path": "/t.sh", "content": "fail() { echo no; }\nrun_office_local_merge() { :; }"}, "ok", false],
   ["Bash", {"command": "fail now"}, "/bin/bash: line 2: fail: command not found", true],
+  ["Bash", {"command": "bash /t.sh"}, "bash: line 1: fail: command not found\nbash: line 2: yq: command not found", true],
   ["Bash", {"command": "run_office_local_merge x"}, "/bin/bash: line 2: run_office_local_merge: command not found", true],
   ["Bash", {"command": "cat <<'E'\nofficer: hi\nE"}, "/bin/bash: line 3: officer: command not found", true],
   ["Bash", {"command": "jq .properties.offer_amount f"}, "/bin/bash: line 1: properties.offer_amount: command not found", true],
@@ -780,8 +781,8 @@ EOF
   json="$home/data/officers/friction/$DATE.json"
   assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
     "only the typed instruction repeats; guidance wrapped into it and origin-less records beside stamped ones are not asks"
-  assert_equals "bc,jq,open" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
-    "a shell function, a heredoc label and a dotted field are not missing tools; bc, a heredoc run as shell and a JS method name still are"
+  assert_equals "bc,jq,open,yq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
+    "a shell function, a heredoc label and a dotted field are not missing tools; bc, a heredoc run as shell, a JS method name and a miss after a noise line still are"
   pass "fm-officer friction: injected guidance and non-installable names are classifier noise"
 }
 
