@@ -938,6 +938,9 @@ JSON
  {"id":"cp-sed","words":"cp ~/.zshenv ~/.zshenv.bak-allowgate && sed -i \"\" 's/a/b/' ~/.zshenv","status":"not-started","work":[],"links":[]},
  {"id":"csv","words":"Add CSV export.","status":"not-started","work":[],"links":[]},
  {"id":"curl","words":"curl timeouts in importer","status":"not-started","work":[],"links":[]},
+ {"id":"quoted","words":"make \"Save draft\" work offline","status":"not-started","work":[],"links":[]},
+ {"id":"retries","words":"make retries > 3 configurable","status":"not-started","work":[],"links":[]},
+ {"id":"redirect","words":"cat x > /tmp/y","status":"not-started","work":[],"links":[]},
  {"id":"cache","words":"Repair the cache!","status":"not-started","work":[],"links":[]},
  {"id":"dup-b","words":"Fix the importer crash!","status":"not-started","work":[],"links":[]},
  {"id":"pr-dup","words":"Fix the upload crash.","status":"not-started","work":[],"links":[]},
@@ -947,7 +950,7 @@ JSON
 JSON
   run_progress >/dev/null || fail 'filter run failed'
   digest=$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")
-  assert_equals 'PC-10 curl dup-a real release-ship same-title tidy-a tidy-b tom-later' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" \
+  assert_equals 'PC-10 curl dup-a quoted real release-ship retries same-title tidy-a tidy-b tom-later' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" \
     'real work, including a fleet record that shares a title, a command word used as prose, a release mention in a task, and a command-like Linear title, survives the filter'
   assert_equals 'Duplicate of start request tom-later' "$(jq -r '.excluded[] | select(.id == "csv") | .reason' "$file")" 'an ask restating a fleet start that sorts after it is dropped, and the fleet row starts'
   assert_contains "$digest" 'release - same release as PR N' 'a dropped release note is listed'
@@ -956,6 +959,7 @@ JSON
   assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "shell") | .reason' "$file")" 'a pasted Top of Mind command is dropped'
   assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "cmd") | .reason' "$file")" 'a pasted assignment command is dropped'
   assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "cp-sed") | .reason' "$file")" 'a pasted command chain is dropped'
+  assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "redirect") | .reason' "$file")" 'a pasted redirect to a path is dropped'
   assert_equals 'Duplicate of start request dup-a' "$(jq -r '.excluded[] | select(.id == "dup-b") | .reason' "$file")" 'an ask restating a start is dropped'
   assert_equals 'Duplicate of queued, in-flight, or open-PR work: https://github.com/example/project/pull/7' "$(jq -r '.excluded[] | select(.id == "pr-dup") | .reason' "$file")" 'work an open PR already covers is dropped'
   assert_equals 'Duplicate of queued, in-flight, or open-PR work: flying' "$(jq -r '.excluded[] | select(.id == "cache") | .reason' "$file")" 'work already in flight is dropped'

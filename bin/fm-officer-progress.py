@@ -81,7 +81,7 @@ KEY = re.compile(r"\bkey=([^\]\s]+)")
 SHELL = re.compile(r"^\$\s|^(?:sudo\s+)?(?:sudo|cp|mv|sed|awk|grep|chmod|chown|mkdir|scp|rsync|curl|wget|lvextend"
                    r"|systemctl|apt(?:-get)?|export|cd|cat|echo|source|kill|make|touch|ls|rm|ln|git|gh|ssh|npm|npx"
                    r"|dotnet|az|brew|pip3?|python3?|bash|node|op)\s+"
-                   r"(?:[-~/$\"']|\.{1,2}/|\.[a-z]|[A-Za-z_]\w*=|.*\s(?:\||&&|>>?)\s)")
+                   r"(?:[-~/]|\.{1,2}/|\.[a-z]|[A-Za-z_]\w*=|.*\s(?:&&\s|\|\s*[a-z]|>>?\s*(?:[~/]|\.{1,2}/)))")
 RELEASE_NOTE = re.compile(r"^(?:\w+\s*:\s*)?same release as (?:pr\s*)?#?(?:\d+|n)[.!]*$", re.I)
 MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
 DATE = r"(?:\d{4}-\d{2}-\d{2}|(?:\d{1,2}\s+)?%s(?:\s+\d{1,2})?,?\s+\d{4}|%s\s+\d{1,2})" % (MONTH, MONTH)
