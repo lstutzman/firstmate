@@ -1104,7 +1104,7 @@ test_office_routed_class_hands_off_and_is_pinned() {
   [ "$RC" -ne 0 ] || fail "office-routed: an office merged a routed class"
   assert_not_merged "$case_dir" office-routed
   assert_grep 'hand the PR to home slarti' "$case_dir/stderr" "office-routed: the refusal did not hand off"
-  assert_grep 'merge-handoff-9-payments' "$case_dir/stderr" "office-routed: the handoff line was not printed"
+  assert_grep 'key=merge-handoff-9' "$case_dir/stderr" "office-routed: the handoff line was not printed"
   assert_no_grep 'admit-9-payments' "$case_dir/stderr" "office-routed: the office was offered the captain hold"
 
   case_dir=$(ADMISSION_EXTRA='route.payments=handoff:mate-x' make_office_case office-routed-self 'code payments')
@@ -1225,7 +1225,7 @@ test_admission_routed_class_hands_off_instead_of_merging() {
   bash -c "$(tail -n 1 "$case_dir/stderr")" || fail "admission-routed: the printed handoff command did not run"
   bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2"' _ "$ROOT" \
     "$case_dir/parent/state/gilligan.status" > "$case_dir/open-decisions"
-  assert_grep $'merge-handoff-9-payments\tneeds-decision\t[handoff=slarti] https://github.com/example/repo/pull/9 is ready to merge once a fresh reviewer who did not write it records on the PR that its payments change loosens no check' \
+  assert_grep $'merge-handoff-9\tneeds-decision\t[handoff=slarti] https://github.com/example/repo/pull/9 is ready to merge once a fresh reviewer who did not write it records on the PR that its payments change loosens no check' \
     "$case_dir/open-decisions" "admission-routed: the handoff did not open a keyed decision naming the PR, the class, and the review"
 
   # A captain answer on the would-be hold does not admit a routed class.
@@ -1248,6 +1248,14 @@ test_admission_routed_class_hands_off_instead_of_merging() {
   assert_grep 'handoff=slarti' "$case_dir/stderr" "admission-routed: the routed class lost its handoff"
   assert_grep 'hold task-x1-admit-9-legal-text' "$case_dir/stderr" "admission-routed: the unrouted class lost its hold"
   assert_grep 'answer task-x1-admit-9-legal-text' "$case_dir/stderr" "admission-routed: the unrouted class lost its answer"
+
+  # Routes to two homes cannot both merge one PR, so neither is handed it.
+  printf '%s\n' 'route.legal-text=handoff:navigator' >> "$case_dir/home/config/admission/risky"
+  run_admission_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "admission-routed: a PR routed to two homes merged"
+  assert_not_merged "$case_dir" admission-routed
+  assert_grep 'more than one home (navigator slarti)' "$case_dir/stderr" "admission-routed: the two-home refusal was not stated"
+  assert_no_grep 'handoff=' "$case_dir/stderr" "admission-routed: a PR routed to two homes was handed off"
   pass "fm-pr-merge hands a routed class to its merger home and keeps the captain hold for an unrouted class"
 }
 

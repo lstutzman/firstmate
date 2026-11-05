@@ -1758,17 +1758,22 @@ require_admission_answers() {  # <verified-head>
     esac
   done <<< "$flagged"
   [ -n "$missing" ] || [ -n "$routed" ] || return 0
-  for class in $routed; do
-    home=${class#*:}
-    class=${class%%:*}
-    if [ "$home" = "$MERGE_SELF" ]; then
+  if [ -n "$routed" ]; then
+    # One PR has one merger, and the handoff key merge-handoff-<pr> is what
+    # bin/fm-decision-sweep.sh settles once the PR merges.
+    home=$(printf '%s\n' $routed | sed 's/^[^:]*://' | LC_ALL=C sort -u)
+    class=$(printf '%s\n' $routed | sed 's/:.*//' | tr '\n' ' ')
+    class=${class% }
+    if [ "$home" != "${home%%$'\n'*}" ]; then
+      echo "error: PR merge refused: $URL changes $class, which its admission config hands to more than one home ($(printf '%s' "$home" | tr '\n' ' ')); one PR has one merger" >&2
+    elif [ "$home" = "$MERGE_SELF" ]; then
       echo "error: PR merge refused: $URL changes $class, which its admission config hands to home $home, and this home is $home; a routed class is never merged by this script" >&2
-      continue
+    else
+      echo "error: PR merge refused: $URL changes $class, which is never merged from this home; hand the PR to home $home, which merges it only after a fresh reviewer who did not write it records on the PR that it loosens no check:" >&2
+      print_merge_handoff "$home" \
+        "$(status_stamp_line "needs-decision [key=merge-handoff-$PR_NUMBER] [cause=external]: [handoff=$home] $URL is ready to merge once a fresh reviewer who did not write it records on the PR that its $class change loosens no check; a change that loosens one goes to the captain")"
     fi
-    echo "error: PR merge refused: $URL changes $class, which is never merged from this home; hand the PR to home $home, which merges it only after a fresh reviewer who did not write it records on the PR that it loosens no check:" >&2
-    print_merge_handoff "$home" \
-      "$(status_stamp_line "needs-decision [key=merge-handoff-$PR_NUMBER-$class] [cause=external]: [handoff=$home] $URL is ready to merge once a fresh reviewer who did not write it records on the PR that its $class change loosens no check; a change that loosens one goes to the captain")"
-  done
+  fi
   [ -n "$missing" ] || return 1
   echo "error: PR merge refused: $URL changes${missing}, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:" >&2
   for class in $missing; do
