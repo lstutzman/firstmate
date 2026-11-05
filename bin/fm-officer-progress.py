@@ -765,34 +765,23 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             doc["start_requests"].append(row)
     doc["start_requests"].sort(key=lambda r: (CLASS_ORDER[r["authorising_class"]],
                                              r["priority"] or 5, r["id"], r["owner_home"]))
-    candidates = {id(r) for r in doc["start_requests"]}
-    busy = {title_key(r["title"]): r["id"] for r in rows if id(r) not in candidates and r.get("section") != "done"
-            and r.get("state", "") not in FINISHED and r.get("latest") not in ("done", "failed")}
-    busy.update((title_key(pr.get("title") or ""), pr.get("html_url") or "an open PR") for pr in prs)
-    busy.pop("", None)
+    pr_titles = {title_key(pr.get("title") or ""): pr.get("html_url") or "an open PR" for pr in prs}
+    pr_titles.pop("", None)
     seen = {}
     unique = []
-    order = {id(r): n for n, r in enumerate(doc["start_requests"])}
-    # Fleet records carry their own identity and claim their titles first; only rows created
-    # from a Top of Mind ask match by title, so an ask restating a fleet start drops whatever the sort order.
-    def from_ask(row):
-        return any(e.startswith("Top of Mind: ") for e in row["evidence"][:1])
-    for row in sorted(doc["start_requests"], key=from_ask):
+    for row in doc["start_requests"]:
+        key = row["linear_id"] or (row["owner_home"], row["id"])
         title = title_key(row["title"])
-        free_text = from_ask(row)
-        keys = [k for k in (row["linear_id"] or (row["owner_home"], row["id"]), title if free_text else "") if k]
-        earlier = next((seen[k] for k in keys if k in seen), None)
+        from_ask = any(e.startswith("Top of Mind: ") for e in row["evidence"][:1])
         reason = non_work(row["title"]) or (
-            "Duplicate of start request " + earlier if earlier else
-            "Duplicate of queued, in-flight, or open-PR work: " + busy[title] if free_text and title in busy else None)
+            "Duplicate of start request " + seen[key] if key in seen else
+            "Duplicate of open-PR work: " + pr_titles[title] if from_ask and title in pr_titles else None)
         if reason:
             row["reason"] = reason
             doc["excluded"].append(row)
             continue
-        for k in filter(None, keys + [title]):
-            seen.setdefault(k, row["id"])
+        seen[key] = row["id"]
         unique.append(row)
-    unique.sort(key=lambda r: order[id(r)])
     doc["start_requests"] = unique
     if blockers:
         for row in doc["start_requests"]:

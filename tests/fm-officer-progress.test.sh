@@ -966,7 +966,7 @@ JSON
   assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "cp-sed") | .reason' "$file")" 'a pasted command chain is dropped'
   assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "redirect") | .reason' "$file")" 'a pasted redirect to a path is dropped'
   assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'dup-b - Fix the importer crash!: Unstarted work authorised by bug' 'an ask restating a start joins it instead of starting again'
-  assert_equals 'Duplicate of queued, in-flight, or open-PR work: https://github.com/example/project/pull/7' "$(jq -r '.excluded[] | select(.id == "pr-dup") | .reason' "$file")" 'work an open PR already covers is dropped'
+  assert_equals 'Duplicate of open-PR work: https://github.com/example/project/pull/7' "$(jq -r '.excluded[] | select(.id == "pr-dup") | .reason' "$file")" 'work an open PR already covers is dropped'
   assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'cache - Repair the cache!: Already in flight: flying' 'an ask for work already in flight joins it and never starts'
   assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'stamp - Last updated: November 2026: Not a work item: a date or status stamp' 'the Top of Mind section reports each dropped ask'
   assert_not_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh")" 'lvextend' 'no dropped item reaches the handoff'
