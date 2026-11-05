@@ -20,8 +20,8 @@ how it finds things. This file owns the mechanics every officer shares:
               Every write is `--dry-run` then `--verify`. A failed verify is never retried; the fingerprint search then
               decides whether the item exists. An item a person closed (completed or canceled) is never reopened,
               edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`).
-              An item gets exactly one Type, one Source and one area label; a fleet officer's
-              (Officer project Fleet) items go in the Fleet project, with the area:fleet label (fleet_labels). The library never creates a label and never closes
+              An item gets exactly one Type, one Source and one area label; fleet work
+              (is_fleet: a finding's repository, else its Officer's project) goes in the Fleet project, with the area:fleet label (fleet_labels). The library never creates a label and never closes
               or deletes an item.
   budget      Linear counts every linear-axi call against the officer's registry `max-linear-calls`, and Filer stops
               creating at its `max-creates`; whatever is left is reported by not_filed_lines() and filed by the next run
@@ -477,14 +477,14 @@ class Filer:
             fh.write(body)
         return path
 
-    def create(self, fp, title, body, labels, priority):
+    def create(self, fp, title, body, labels, priority, project=""):
         """(issue, created, verify error): a new item; the caller has already searched for the fingerprint."""
         path = self._write_body(fp, body)
         try:
             cmd = ["issue", "create", "--team", self.team, "--title", title, "--body-file", path, "--priority", priority]
             for label in labels:
                 cmd += ["--label", label]
-            if self.officer.project == FLEET_PROJECT:
+            if is_fleet(owning_project(self.officer, project)):
                 cmd += ["--project", FLEET_PROJECT]
             self.lin(cmd + ["--dry-run"])
             self.creates += 1
@@ -572,7 +572,7 @@ class Filer:
         recurrence = recurrence_line(old, self.view_issue(old))
         f["filing"] = {"action": "failed", "reason": "recurrence of closed %s not filed" % old}
         ident, created, verify = self.create(f["fingerprint"], f["title"], describe(f, recurrence=recurrence), wanted,
-                                             priority or PRIORITY[f["severity"]])
+                                             priority or PRIORITY[f["severity"]], f["project"])
         self.ledger[f["fingerprint"]] = ident
         self.found.setdefault("issues", {})[ident] = {"count": 1, "last": self.date}
         f["filing"] = {"action": "created" if created else "exists", "issue": ident, "recurrence_of": old}
@@ -615,7 +615,7 @@ class Filer:
                     self.bumps.append(f)
                     return
             ident, created, verify = self.create(f["fingerprint"], f["title"], describe(f, near=near), wanted,
-                                                 priority or PRIORITY[f["severity"]])
+                                                 priority or PRIORITY[f["severity"]], f["project"])
             self.ledger[f["fingerprint"]] = ident
             self.found.setdefault("issues", {})[ident] = {"count": 1, "last": self.date} if created else self.found.get("issues", {}).get(ident, {})
             f["filing"] = {"action": "created" if created else "exists", "issue": ident}
@@ -655,6 +655,12 @@ def repo_key(project):
 def owning_project(officer, project):
     """The finding's own repository, else the officer's project (PropertyCompass2, or Fleet for a fleet officer)."""
     return project or officer.project
+
+
+def is_fleet(project):
+    """Fleet work: the Fleet project itself or a fleet repository; its items go in the Fleet project."""
+    key = repo_key(project)
+    return key == FLEET_PROJECT.lower() or key in FLEET_REPOS
 
 
 def office_home(project, main_home, start_homes):

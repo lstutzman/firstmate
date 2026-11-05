@@ -167,7 +167,11 @@ elif scenario == "fleet":
     f = find("fleet-1", "Bosun backup stale")
     fl, lin = filer()
     run(fl, [f])
-    res = {"filing": f["filing"]}
+    officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",))
+    g = find("fleet-2", "Skill manifest sync loses entries", project="skills")
+    fl, lin = filer()
+    run(fl, [g])
+    res = {"filing": f["filing"], "repo_filing": g["filing"]}
 elif scenario == "fleet-labels":
     res = [lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[0], lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[1]]
 elif scenario == "closed":
@@ -219,7 +223,8 @@ elif scenario in ("fleet-start", "fleet-nowrite"):
            "body": starts[0]["execute"]["argv"][-1] if starts else None,
            "patterns": [{"home": r["execute"]["env"]["FM_HOME"], "project": r["project"], "target": r["target"], "body": r["execute"]["argv"][-1],
                          "lines": [p["line"] for p in r["patterns"]]} for r in pats],
-           "captures": sorted(c["tags"][1] for c in captures)}
+           "captures": sorted(c["tags"][1] for c in captures),
+           "filed": {v["title"]: v["project"] for v in json.load(open(os.path.join(os.environ["LDIR"], "issues.json"))).values()}}
 print(json.dumps(res))
 PY
 }
@@ -329,6 +334,7 @@ test_fleet_findings_take_the_fleet_project_and_label() {
   assert_equals created "$(jq -r '.filing.action' <<<"$out")" "the fleet finding is filed"
   assert_equals '["Bug","scan","area:fleet"]' "$(issue PC-101 '.labels' | jq -c .)" "one Type, one Source, area:fleet"
   assert_equals Fleet "$(issue PC-101 .project)" "a Fleet officer's item is in the Fleet project with no Filer argument"
+  assert_equals Fleet "$(issue "$(jq -r '.repo_filing.issue' <<<"$out")" .project)" "a PropertyCompass2 officer's finding naming a fleet repository is filed in the Fleet project too"
   assert_equals '[["Bug","scan","area:fleet"],[]]' "$(drive fleet-labels | jq -c .)" "fleet_labels names one Type, one Source and area:fleet, and any missing label"
   assert_equals 3 "$(issue PC-101 .priority)" "medium is Linear priority 3"
   assert_contains "$(grep '^issue create' "$LDIR/calls" | sed -n 1p)" "--dry-run" "the dry run comes first"
@@ -354,6 +360,7 @@ test_fleet_finding_starts_and_patterns_go_to_the_quartermaster() {
   assert_equals '["/home/qm","",true]' "$(jq -c '.starts["Bosun backup check crashes"]' <<<"$out")" "a Fleet item naming no repository keeps no repository, is Linear-only, and starts with the Quartermaster"
   assert_equals '["/home/qm","skills",false]' "$(jq -c '.starts["Skill sync drops manifest entries"]' <<<"$out")" "a finding naming a fleet repository keeps it and starts with the Quartermaster"
   assert_equals '["/home/nav","PropertyCompass2",false]' "$(jq -c '.starts["Null reference when saving"]' <<<"$out")" "a PropertyCompass2 finding still goes to the Navigator"
+  assert_equals '{"Bosun backup check crashes":"Fleet","Skill sync drops manifest entries":"Fleet","Null reference when saving":null}' "$(jq -c '.filed' <<<"$out")" "fleet work is filed in the Fleet project; a PropertyCompass2 finding under a Fleet officer is not"
   assert_contains "$(jq -r '.body' <<<"$out")" "word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z)." "only Lee's words are inside the quotation marks"
   assert_equals '[["/home/qm","Fleet"],["/home/nav","PropertyCompass2"],["/home/qm","skills"]]' "$(jq -c '.patterns | sort_by(.project) | map([.home, .project])' <<<"$out")" "fleet patterns go to the Quartermaster, a PropertyCompass2 one to the Navigator"
   assert_equals "Anti-pattern: Bosun backup check crashes. Safe form: not stated by the source; see the linked item" "$(jq -r '.patterns[] | select(.project == "Fleet") | .lines | join("|")' <<<"$out")" "the Fleet request carries only the Fleet pattern"
