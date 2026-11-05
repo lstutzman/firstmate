@@ -1,0 +1,31 @@
+Linear coverage: 6 pages, 0 items seen, 7 requests, 0 team items, 0 unblocked items, 1 requested roots visited, 1 hierarchy items, 0 rate-limit retries, 0 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear labels not readable by linear-axi
+DIGEST 2026-10-25 8 data/officers/progress/2026-10-25.md
+officer run exit=0
+=== routing (id -> FM_HOME | unrouted) ===
+tom-both	home	ambiguous: a project name in the text names 2 offices (firstmate, propertycompass2)
+tom-fix-tap	quartermaster	-
+tom-jev-app	home	local-jev unsure: main at 0.45, below 0.7
+tom-jev-fleet	quartermaster	-
+tom-link-pc	navigator	-
+tom-name-fm	quartermaster	-
+=== main handoff script lines ===
+FM_HOME=home {run-worktree}/bin/fm-inbox.sh note --request-id progress-2026-10-25-6d698bd38747bf4d --j
+FM_HOME=home {run-worktree}/bin/fm-inbox.sh note --request-id progress-2026-10-25-05cf9976162b6886 --j
+=== digest unrouted lines ===
+15:- 1. tom-both - Align PropertyCompass2 with firstmate naming (Linear: none; home: /tmp/fm-officer-progress.v3tc4l/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: ambiguous: a project name in the text names 2 offices (firstmate, propertycompass2)
+17:- 3. tom-jev-app - The rightmove listing photos load slowly on the deal page; look at the database queries and indexes (Linear: none; home: /tmp/fm-officer-progress.v3tc4l/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev unsure: main at 0.45, below 0.7
+=== navigator lane check ===
+office navigator: progress digest 2026-10-25: 8 finding(s) in /tmp/fm-officer-progress.v3tc4l/live/home/data/officers/progress/2026-10-25.md; 1 start request(s) delivered to this office's inbox
+--- navigator inbox notes ---
+1793901032-TV3dmr.note
+"title": "Tidy the listings page"
+=== quartermaster lane check ===
+office quartermaster: progress digest 2026-10-25: 8 finding(s) in /tmp/fm-officer-progress.v3tc4l/live/home/data/officers/progress/2026-10-25.md; 3 start request(s) delivered to this office's inbox
+--- quartermaster inbox notes ---
+1793901032-jB1Uqw.note
+1793901032-l9sef5.note
+1793901032-uZhCwF.note
+"title": "Make sure the second mates are awake and that each nightly run page shows actionable results"
+"title": "Start fix: officers wait too long for approvals"
+"title": "The firstmate wake queue needs a tidy"

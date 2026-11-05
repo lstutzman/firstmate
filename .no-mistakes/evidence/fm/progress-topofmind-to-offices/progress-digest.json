@@ -1,0 +1,253 @@
+{
+  "asks_for_lee": [
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-jev-lee - Approve the new subscription pricing tier for members"
+      ],
+      "execute": null,
+      "id": "tom-jev-lee",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.v3tc4l/live/home",
+      "priority": 0,
+      "rank": null,
+      "reason": "Lee decides the pricing choice",
+      "tag_source": "top-of-mind",
+      "title": "Approve the new subscription pricing tier for members"
+    }
+  ],
+  "coverage": [
+    "Linear labels not readable by linear-axi"
+  ],
+  "date": "2026-10-25",
+  "doing": [],
+  "done": [],
+  "excluded": [],
+  "filler": null,
+  "generated_at": "2026-10-26T06:00:00Z",
+  "linear_coverage": {
+    "descriptions_truncated": 0,
+    "hierarchy_items": 1,
+    "items_seen": 0,
+    "pages_fetched": 6,
+    "rate_limit_retries": 0,
+    "requests": 7,
+    "roots_visited": 1,
+    "team_items": 0,
+    "unblocked_items": 0,
+    "unverified_starts": 0
+  },
+  "schema_version": 1,
+  "source": "progress-officer",
+  "start_requests": [
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-both - Align PropertyCompass2 with firstmate naming"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-6d698bd38747bf4d",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: tom-both - Align PropertyCompass2 with firstmate naming\"], \"id\": \"tom-both\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.v3tc4l/live/home\", \"priority\": 0, \"rank\": 1, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Align PropertyCompass2 with firstmate naming\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.v3tc4l/live/home"
+        },
+        "request_id": "progress-2026-10-25-6d698bd38747bf4d"
+      },
+      "id": "tom-both",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.v3tc4l/live/home",
+      "priority": 0,
+      "rank": 1,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Align PropertyCompass2 with firstmate naming",
+      "unrouted": "ambiguous: a project name in the text names 2 offices (firstmate, propertycompass2)"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-fix-tap - Start fix: officers wait too long for approvals"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-a9d0dbd012937de5",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: tom-fix-tap - Start fix: officers wait too long for approvals\"], \"id\": \"tom-fix-tap\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.v3tc4l/live/home\", \"priority\": 0, \"rank\": 2, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Start fix: officers wait too long for approvals\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.v3tc4l/live/quartermaster"
+        },
+        "request_id": "progress-2026-10-25-a9d0dbd012937de5"
+      },
+      "id": "tom-fix-tap",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.v3tc4l/live/home",
+      "priority": 0,
+      "rank": 2,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Start fix: officers wait too long for approvals"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-jev-app - The rightmove listing photos load slowly on the deal page; look at the database queries and indexes"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-05cf9976162b6886",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: tom-jev-app - The rightmove listing photos load slowly on the deal page; look at the database queries and indexes\"], \"id\": \"tom-jev-app\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.v3tc4l/live/home\", \"priority\": 0, \"rank\": 3, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"The rightmove listing photos load slowly on the deal page; look at the database queries and indexes\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.v3tc4l/live/home"
+        },
+        "request_id": "progress-2026-10-25-05cf9976162b6886"
+      },
+      "id": "tom-jev-app",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.v3tc4l/live/home",
+      "priority": 0,
+      "rank": 3,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "The rightmove listing photos load slowly on the deal page; look at the database queries and indexes",
+      "unrouted": "local-jev unsure: main at 0.45, below 0.7"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-jev-fleet - Make sure the second mates are awake and that each nightly run page shows actionable results"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-d4a36c7d11869f79",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: tom-jev-fleet - Make sure the second mates are awake and that each nightly run page shows actionable results\"], \"id\": \"tom-jev-fleet\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.v3tc4l/live/home\", \"priority\": 0, \"rank\": 4, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Make sure the second mates are awake and that each nightly run page shows actionable results\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.v3tc4l/live/quartermaster"
+        },
+        "request_id": "progress-2026-10-25-d4a36c7d11869f79"
+      },
+      "id": "tom-jev-fleet",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.v3tc4l/live/home",
+      "priority": 0,
+      "rank": 4,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Make sure the second mates are awake and that each nightly run page shows actionable results"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-link-pc - Tidy the listings page"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-e67188c5538846e5",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: tom-link-pc - Tidy the listings page\"], \"id\": \"tom-link-pc\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"https://github.com/lstutzman/PropertyCompass2/pull/5\", \"links\": [\"https://github.com/lstutzman/PropertyCompass2/pull/5\"], \"owner_home\": \"/tmp/fm-officer-progress.v3tc4l/live/home\", \"priority\": 0, \"rank\": 5, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Tidy the listings page\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.v3tc4l/live/navigator"
+        },
+        "request_id": "progress-2026-10-25-e67188c5538846e5"
+      },
+      "id": "tom-link-pc",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "https://github.com/lstutzman/PropertyCompass2/pull/5",
+      "links": [
+        "https://github.com/lstutzman/PropertyCompass2/pull/5"
+      ],
+      "owner_home": "/tmp/fm-officer-progress.v3tc4l/live/home",
+      "priority": 0,
+      "rank": 5,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Tidy the listings page"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: tom-name-fm - The firstmate wake queue needs a tidy"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-17441bbfa8117ed6",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: tom-name-fm - The firstmate wake queue needs a tidy\"], \"id\": \"tom-name-fm\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.v3tc4l/live/home\", \"priority\": 0, \"rank\": 6, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"The firstmate wake queue needs a tidy\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.v3tc4l/live/quartermaster"
+        },
+        "request_id": "progress-2026-10-25-17441bbfa8117ed6"
+      },
+      "id": "tom-name-fm",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.v3tc4l/live/home",
+      "priority": 0,
+      "rank": 6,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "The firstmate wake queue needs a tidy"
+    }
+  ],
+  "top_of_mind": [
+    "tom-both - Align PropertyCompass2 with firstmate naming: Unstarted work authorised by requested-feature",
+    "tom-fix-tap - Start fix: officers wait too long for approvals: Unstarted work authorised by requested-feature",
+    "tom-jev-app - The rightmove listing photos load slowly on the deal page; look at the database queries and indexes: Unstarted work authorised by requested-feature",
+    "tom-jev-fleet - Make sure the second mates are awake and that each nightly run page shows actionable results: Unstarted work authorised by requested-feature",
+    "tom-link-pc - Tidy the listings page: Unstarted work authorised by requested-feature",
+    "tom-name-fm - The firstmate wake queue needs a tidy: Unstarted work authorised by requested-feature",
+    "tom-jev-lee - Approve the new subscription pricing tier for members: Waiting on Lee: tom-jev-lee; Lee decides the pricing choice"
+  ],
+  "unclassified": 0
+}
