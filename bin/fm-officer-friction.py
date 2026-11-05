@@ -80,17 +80,23 @@ written before the split) is counted and not answered. The officer answers a
 `rule-settles` item only from fleet rules section 6 and the captain-shared
 clean-up rule, with no model: a branch item and a copy item whose branch is
 unmerged and whose pull request the Bosun could not read are answered from the
-branch's pull requests read live (read-only git and gh on the host):
+branch's pull requests and `git merge-base --is-ancestor <sha> origin/HEAD`,
+read live (read-only git and gh on the host):
 
   open pull request                       keep    (never while one uses it)
   pull request merged or closed at the
   tip (branch) or at HEAD (copy)          delete  (unmerged-branch rule, rule c)
+  tip or HEAD an ancestor of origin/HEAD  delete  (content already on the
+                                                   default branch)
   anything else                           keep    (unique unlanded work is
                                                    never deleted)
 
-A pull request, tip or HEAD that cannot be read is no answer. Every other
-item (an old scratch file, a log folder, a copy whose state the officer does
-not read, a session log or transcript, which is always kept) is unsettled.
+A pull request, tip or HEAD that cannot be read is no answer, and so is an
+origin/HEAD that cannot be read when no pull request decides the item. A
+session log or transcript is answered keep (fleet rules section 6: always
+kept, because it is training data), never delete. Every other item (an old
+scratch file, a log folder, a copy whose state the officer does not read) is
+unsettled.
 Answers go to <out>/bosun-answers.json, never into the velocity file, which
 fleet-app pulls and would show them as velocity findings:
 
@@ -924,12 +930,13 @@ def remote_scan(host, archive, date, days):
 
 BOSUN_RESULT = "~/services/bosun-maintenance/last-result.json"
 HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
-# Session logs and transcripts are always kept (fleet rules section 6), so no item under them is ever answered.
+# Session logs and transcripts are always kept (fleet rules section 6), so an item under them is only ever answered keep.
 SESSION_LOG_RE = re.compile(r"\.jsonl(?:\.gz)?$|/\.(?:claude|codex|pi|omp|kimi)(?:/|$)|/transcript-archive(?:/|$)|/herdr(?:/|$)")
 BRANCH_ITEM_RE = re.compile(r"^(/.+) (\S+) \((local|remote)\)$")
 COPY_BRANCH_RE = re.compile(r"^branch (\S+) is not merged and its pull request is missing or unreadable$")
 BRANCH_RULE = "fleet rules section 6, unmerged-branch rule (%s)"
 COPY_RULE = "fleet rules section 6, rule c (%s)"
+SESSION_LOG_RULE = "fleet rules section 6 (Agent session logs and transcripts are always kept, because they are training data)"
 
 
 def _read(cmd, cwd):
@@ -939,6 +946,18 @@ def _read(cmd, cwd):
     except (OSError, subprocess.SubprocessError):
         return None
     return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def _on_default(sha, cwd):
+    """True when sha is an ancestor of origin/HEAD, False when it is not, None when that cannot be read."""
+    if not sha:
+        return None
+    try:
+        proc = subprocess.run(["git", "merge-base", "--is-ancestor", sha, "origin/HEAD"], cwd=cwd,
+                              capture_output=True, timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {0: True, 1: False}.get(proc.returncode)
 
 
 def _pull_requests(cwd, branch):
@@ -958,10 +977,12 @@ def bosun_probe(entry):
     if m and os.path.isdir(m.group(1)):
         repo, branch, where = m.groups()
         ref = ("refs/heads/" if where == "local" else "refs/remotes/origin/") + branch
-        return {"sha": _read(["git", "rev-parse", "--verify", "-q", ref], repo), "prs": _pull_requests(repo, branch)}
+        sha = _read(["git", "rev-parse", "--verify", "-q", ref], repo)
+        return {"sha": sha, "prs": _pull_requests(repo, branch), "on_default": _on_default(sha, repo)}
     m = COPY_BRANCH_RE.match(why) if kind == "copy" else None
     if m and os.path.isdir(item):
-        return {"sha": _read(["git", "rev-parse", "HEAD"], item), "prs": _pull_requests(item, m.group(1))}
+        sha = _read(["git", "rev-parse", "HEAD"], item)
+        return {"sha": sha, "prs": _pull_requests(item, m.group(1)), "on_default": _on_default(sha, item)}
     return None
 
 
@@ -995,7 +1016,8 @@ def bosun_decide(entry, facts):
     """(answer, None) for one rule-settles item, or (None, why it is unsettled)."""
     kind, item, why = entry["kind"], entry["item"], entry["why"]
     if SESSION_LOG_RE.search(item):
-        return None, "a session log or transcript is always kept, so it is never answered"
+        return {"kind": kind, "item": item, "verdict": "keep", "rule": SESSION_LOG_RULE,
+                "fact": "its path is a session log or transcript"}, None
     if kind == "branch" and BRANCH_ITEM_RE.match(item):
         rule = BRANCH_RULE
     elif kind == "copy" and COPY_BRANCH_RE.match(why):
@@ -1015,11 +1037,16 @@ def bosun_decide(entry, facts):
     elif ended:
         verdict, why_rule = "delete", "pull request merged or closed"
         fact = "pull request %s %s at %s, read live" % (ended.get("url"), ended["state"].lower(), short)
-        if rule is COPY_RULE:
-            fact += "; the Bosun reached this check only after finding no uncommitted or unpushed work"
+    elif facts.get("on_default") is None:
+        return None, "whether it is on the default branch could not be read now"
+    elif facts["on_default"]:
+        verdict, why_rule = "delete", "content already on the default branch"
+        fact = "%s is an ancestor of origin/HEAD, read live" % short
     else:
         verdict, why_rule = "keep", "unique unlanded work is never deleted"
-        fact = "no pull request ended at %s (%d found, read live); its content on the default branch was not checked" % (short, len(prs))
+        fact = "no pull request ended at %s (%d found, read live) and it is not an ancestor of origin/HEAD" % (short, len(prs))
+    if verdict == "delete" and rule is COPY_RULE:
+        fact += "; the Bosun reached this check only after finding no uncommitted or unpushed work"
     return {"kind": kind, "item": item, "verdict": verdict, "rule": rule % why_rule, "fact": fact}, None
 
 
