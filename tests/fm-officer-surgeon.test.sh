@@ -110,13 +110,17 @@ case "\$1 \$2" in
     case " \$* " in *" --verify "*) echo "COMMENT \$3" >> "\$d/comments" ;; esac
     echo '{"ok":true,"data":{"dryRun":true}}' ;;
   "issue view")
+    # The real view: state and stateType, and a description cut to 500 characters unless --full.
     st=\$(cat "\$d/state.\$3" 2>/dev/null || echo Todo)
-    meta='"state":"'"\$st"'"'; [ "\$st" = Done ] && meta="\$meta"',"completedAt":"2026-10-24T09:00:00.000Z"'
+    case "\$st" in Done) ty=completed ;; Canceled) ty=canceled ;; *) ty=unstarted ;; esac
+    meta='"state":"'"\$st"'","stateType":"'"\$ty"'"'
     if [ "\$3" = PC-9 ] && [ -f "\$d/pc9.desc" ]; then
-      echo '{"ok":true,"data":{"issue":{"identifier":"PC-9",'"\$meta"',"title":"Older report","description":"'"\$(cat "\$d/pc9.desc")"'"}}}'
+      title='"title":"Older report",'; desc=\$(cat "\$d/pc9.desc")
     elif [ "\$3" = PC-55 ]; then
-      echo '{"ok":true,"data":{"issue":{"identifier":"PC-55",'"\$meta"',"description":"Filed earlier. surgeon-fp:'"\$(tr -d '\n' < "\$d/exists.txt")"'"}}}'
-    else echo '{"ok":true,"data":{"issue":{"identifier":"'"\$3"'",'"\$meta"',"description":"unrelated"}}}'; fi ;;
+      title=''; desc="Filed earlier. surgeon-fp:\$(tr -d '\n' < "\$d/exists.txt")"
+    else title=''; desc=unrelated; fi
+    case " \$* " in *" --full "*) ;; *) [ \${#desc} -gt 500 ] && { desc=\${desc:0:500}; desc="\${desc%\\\\}\\\\n... (truncated, use --full)"; } ;; esac
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"\$3"'",'"\$meta"','"\$title"'"description":"'"\$desc"'"}}}' ;;
   "issue relation")
     case " \$* " in *" --verify "*) echo "RELATION \$4 \$5 \$6" >> "\$d/relations" ;; esac
     echo '{"ok":true,"data":{"dryRun":true}}' ;;
@@ -566,6 +570,21 @@ test_low_review_findings_are_clustered_and_ticked_off() {
   run_surgeon "$home" >/dev/null || fail "third run must succeed"
   assert_equals "infra/bicep" "$(jq -r --arg fp "$(fp review nightly-review c7)" '.clusters | to_entries[] | select(.value.members[$fp]) | .value.key' "$home/data/officers/surgeon/review-state.json")" "a new finding in an already-listed file joins that file's cluster even when the counts now split the group"
   assert_equals "infra/bicep/m" "$(jq -r --arg fp "$(fp review nightly-review n0)" '.clusters | to_entries[] | select(.value.members[$fp]) | .value.key' "$home/data/officers/surgeon/review-state.json")" "while files new to the group follow the split"
+  # A person closes the infra/bicep item: it is never updated again; a new finding files a new item naming it.
+  local cfp old
+  cfp=$(fp review cluster infra/bicep)
+  old=$(jq -r --arg fp "$cfp" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")
+  echo Done > "$LDIR/state.$old"
+  : > "$LINEAR_LOG"; : > "$LDIR/bodies"
+  jq '.result.findings += [{"id":"c8","severity":"medium","file":"infra/bicep/a.bicep","summary":"third finding in a.bicep"}]' \
+    "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2" > "$TMP_ROOT/clusters/r2.json"
+  mv "$TMP_ROOT/clusters/r2.json" "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2"
+  run_surgeon "$home" >/dev/null || fail "run after the cluster item was closed"
+  assert_equals 0 "$(grep -c "^issue update $old" "$LINEAR_LOG")" "a closed cluster item is never updated"
+  assert_contains "$(grep '^issue create .*--verify' "$LINEAR_LOG")" "Code review findings: infra bicep" "a new cluster item is filed"
+  assert_contains "$(cat "$LDIR/bodies")" "Recurrence of $old (closed as Done)." "naming the closed one"
+  assert_equals "$old" "$(row "$json" review c8 .filing.recurrence_of)" "and the finding says so"
+  assert_not_contains "$(jq -r --arg fp "$cfp" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")" "$old" "the ledger points at the new item"
   pass "fm-officer surgeon: low review findings are clustered by component, updated in place and ticked off"
 }
 
@@ -573,7 +592,7 @@ test_duplicates_bump_the_found_count_through_local_jev() {
   local home json
   make_world dup "${LINEAR_ON}jev: $TMP_ROOT/dup/jev.py; "; home=$WORLD_HOME
   fake_jev "$TMP_ROOT/dup/jev.py"
-  printf 'Older report.\\nFound: 1 times (first 2026-10-01, last 2026-10-01, by surgeon)' > "$LDIR/pc9.desc"
+  printf 'Older report.\\n%s\\nFound: 1 times (first 2026-10-01, last 2026-10-01, by surgeon)\\nTail evidence kept' "$(printf 'evidence %.0s' $(seq 1 70))" > "$LDIR/pc9.desc"
   set_pages dup '[]' '[
     {"fp":"d1","title":"Save crashes duplicate-me","disposition":"new","severity":"P2"},
     {"fp":"d2","title":"Odd total near-me","disposition":"new","severity":"P2"},
@@ -586,6 +605,8 @@ test_duplicates_bump_the_found_count_through_local_jev() {
   assert_contains "$(cat "$LDIR/bodies")" "Near match (not treated as the same issue): PC-9" "in its description"
   assert_equals 2 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "only the two that are not duplicates are created"
   assert_contains "$(cat "$LDIR/updates")" "Found: 2 times (first 2026-10-01, last $DATE, by surgeon)" "the duplicate bumps the one Found line in place"
+  assert_contains "$(cat "$LDIR/updates")" "Tail evidence kept" "a description over 500 characters is read in full, so the rest of it survives the bump"
+  assert_not_contains "$(cat "$LDIR/updates")" "truncated" "and no truncation hint is written back"
   assert_contains "$(grep '^issue update PC-9' "$LINEAR_LOG" | head -1)" "--dry-run" "dry-run first"
   assert_equals 1 "$(wc -l < "$LDIR/comments" | tr -d ' ')" "one comment on that day's first sighting"
   assert_equals 2 "$(row "$json" sweeper d1 .found)" "the finding carries its found count"
@@ -689,7 +710,7 @@ test_invalid_nightly_e2e_is_a_top_severity_promotion_blocker() {
   json="$home/data/officers/surgeon/$DATE3.json"
   assert_equals 0 "$(grep -c '^issue update PC-101' "$LINEAR_LOG")" "a closed item is never bumped or reopened"
   assert_equals "created PC-102 PC-101" "$(row "$json" nightly e2e-invalid '[.filing.action,.filing.issue,.filing.recurrence_of]|join(" ")')" "a recurrence files a new item"
-  assert_contains "$(cat "$LDIR/bodies")" "Recurrence of PC-101 (closed 2026-10-24)." "that names the closed one"
+  assert_contains "$(cat "$LDIR/bodies")" "Recurrence of PC-101 (closed as Done)." "that names the closed one"
   assert_contains "$(cat "$LDIR/bodies")" "Found: 1 times (first $DATE3, last $DATE3, by surgeon)" "with its own Found line"
   assert_contains "$(grep '^issue create .*--verify' "$LINEAR_LOG")" "--priority 1" "still urgent and promotion-blocking"
   assert_equals "RELATION PC-102 --related PC-101" "$(cat "$LDIR/relations")" "and is linked to it as related"
@@ -849,6 +870,7 @@ test_reserved_classes_match_the_action_not_the_word() {
     {"fp":"r3","title":"API key logged in plaintext","disposition":"new","severity":"P1"},
     {"fp":"r4","title":"Reword the wording shown to members on the pricing page","disposition":"new","severity":"P1"},
     {"fp":"r5","title":"Rotate the staging API key used by the mailer","disposition":"new","severity":"P1"},
+    {"fp":"r12","title":"Rotate SendGrid API key","disposition":"new","severity":"P1"},
     {"fp":"r6","title":"Password reset token never expires","disposition":"new","severity":"P1"},
     {"fp":"r7","title":"Reset token not invalidated after use","disposition":"new","severity":"P1"},
     {"fp":"r8","title":"Creates API key with predictable RNG","disposition":"new","severity":"P1"},
@@ -859,7 +881,7 @@ test_reserved_classes_match_the_action_not_the_word() {
   json="$home/data/officers/surgeon/$DATE.json"
   assert_equals "API key logged in plaintext|Creates API key with predictable RNG|Endpoint deletes records belonging to other users|Password reset token never expires|Reset token not invalidated after use|UpdateAsync updates rows without tenant filter|User-facing text not HTML-encoded (XSS)|password hash compared with ==|shallow copy of list mutates cache" \
     "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding") | .title] | sort | join("|")' "$json")" "security and code bugs that only mention a key, a token, rows or text start"
-  assert_equals "credentials member-copy" "$(jq -r '[.held[] | .class] | sort | join(" ")' "$json")" "a member wording change and a key rotation are held"
+  assert_equals "credentials credentials member-copy" "$(jq -r '[.held[] | .class] | sort | join(" ")' "$json")" "a member wording change and key rotations, with or without an article, are held"
   assert_equals 1 "$(jq '.asks_for_lee | length' "$json")" "with one keyed needs-decision"
   pass "fm-officer surgeon: reserved classes match the action they ask for, so real security bugs start"
 }

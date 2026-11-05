@@ -190,7 +190,7 @@ RESERVED = collections.OrderedDict([
     ("product", re.compile(r"\b(product (decision|change)s?|(change|raise|lower|set|move)[a-z]* (the )?(prices?|pricing|plan limits?|paywall))\b", re.I)),
     ("member-copy", re.compile(r"\b(change|update|reword|rewrite|edit|replace)[a-z]*\b.{0,40}?\b(wording|copy|text|microcopy)\b.{0,40}?"
                                r"\b(shown to|seen by|visible to|for) (members|users|customers)\b", re.I)),
-    ("credentials", re.compile(r"\b(create|rotate|revoke|reset|regenerate|reissue) (the|a|an|our|this|that|new)\b.{0,30}?\b(credentials?|secrets?|"
+    ("credentials", re.compile(r"\b((rotate|revoke|regenerate|reissue)|(create|reset) (the|a|an|our|this|that|new))\b.{0,30}?\b(credentials?|secrets?|"
                                r"api[- ]?keys?|tokens?|(access|account|storage|signing|private|ssh|encryption) keys?|"
                                r"(database|db|admin|service account) passwords?|connection strings?)\b", re.I)),
     ("production-actions", re.compile(r"\b((deploy|restart|promot|releas)[a-z]* (it |this )?to (production|prod)|production (deploy|restart|promotion)s?|"
@@ -648,7 +648,7 @@ def description(f, date, near=None, recurrence=None):
     if f.get("special") == "e2e-invalid":
         lines.append("Promotion-blocking: yes. No nightly E2E result can be read until this run is valid again.")
     if recurrence:
-        lines.append("Recurrence of %s (closed %s)." % recurrence)
+        lines.append(recurrence)
     if near:
         lines.append("Near match (not treated as the same issue): %s, local-jev %.2f." % near)
     lines += ["%s: %s" % (k, text(v, 300)) for k, v in sorted(f["evidence"].items()) if v not in (None, "")]
@@ -675,16 +675,17 @@ def issue_id(data):
 
 
 def is_closed(issue):
-    return text(issue.get("state")) in CLOSED_STATES
+    kind = text(issue.get("stateType")).lower()
+    return kind in ("completed", "canceled") if kind else text(issue.get("state")) in CLOSED_STATES
 
 
-def closed_on(issue):
-    return text(issue.get("completedAt") or issue.get("canceledAt") or issue.get("updatedAt"), 10) or "date not given"
+def recurrence_line(old, issue):
+    return "Recurrence of %s (closed as %s)." % (old, text(issue.get("state"), 40) or "closed")
 
 
 def view_issue(ident, cache):
     if ident not in cache:
-        issue = linear(["issue", "view", ident]).get("issue")
+        issue = linear(["issue", "view", ident, "--full"]).get("issue")
         cache[ident] = issue if isinstance(issue, dict) else {}
     return cache[ident]
 
@@ -695,20 +696,17 @@ def search_hits(query, team, limit):
 
 
 def existing_issue(fp, team, cache):
-    """The Linear item whose description carries the fingerprint, or None.
+    """The open Linear item whose description carries the fingerprint, or None (a closed one is never reused).
 
     Linear's search is fuzzy and returns no descriptions, so a hit counts only once its
     description holds the marker; the first EXISTING_VIEWS hits are read (once a run each).
     """
     marker = "surgeon-fp:" + fp
-    closed = None
     for ident in search_hits(marker, team, 5)[:EXISTING_VIEWS]:
         issue = view_issue(ident, cache)
-        if ident and marker in str(issue.get("description") or ""):
-            if not is_closed(issue):
-                return ident
-            closed = closed or ident
-    return closed
+        if ident and marker in str(issue.get("description") or "") and not is_closed(issue):
+            return ident
+    return None
 
 
 class Jev:
@@ -984,7 +982,7 @@ def file_findings(findings, args, date, out, state, found, jev):
             f["filing"] = {"action": "not-filed", "reason": "%s is closed; %s" % (old, reason)}
             return
         ledger.pop(f["fingerprint"], None)
-        recurrence = (old, closed_on(view_issue(old, filer.cache)))
+        recurrence = recurrence_line(old, view_issue(old, filer.cache))
         f["filing"] = {"action": "failed", "reason": "recurrence of closed %s not filed" % old}
         ident, created, verify = filer.create(f["fingerprint"], f["title"], description(f, date, recurrence=recurrence), wanted, PRIORITY[f["severity"]])
         ledger[f["fingerprint"]] = ident
@@ -993,13 +991,20 @@ def file_findings(findings, args, date, out, state, found, jev):
         f["issue_hint"] = ident
         if verify:
             f["filing"]["verify"] = verify
+        error = relate(ident, old)
+        if error:
+            f["filing"]["relation_error"] = error
+
+    def relate(ident, old):
+        """Links a recurrence to the closed item it repeats; the error text, or None."""
         try:
             linear(["issue", "relation", "add", ident, "--related", old, "--dry-run"])
             linear(["issue", "relation", "add", ident, "--related", old, "--verify"])
         except LinearError as exc:
             if exc.code in ("RATE_LIMITED", "CALL_BUDGET"):
                 raise
-            f["filing"]["relation_error"] = str(exc)
+            return str(exc)
+        return None
 
     order = [("single", f) for f in singles if not f["filing"] and RANK[f["severity"]] <= RANK["medium"]]
     order += [("cluster", c) for c in plan if c["action"]]
@@ -1054,7 +1059,11 @@ def file_findings(findings, args, date, out, state, found, jev):
                         for f in c["findings"]:
                             f["filing"] = {"action": "not-filed", "reason": reason}
                         continue
-                    action, ident = c["action"], ledger.get(c["fp"])
+                    action, ident, old, body = c["action"], ledger.get(c["fp"]), None, c["body"]
+                    if ident and is_closed(view_issue(ident, filer.cache)):
+                        old, ident, action = ident, None, "create"
+                        head, _, tail = body.rpartition("\nsurgeon-fp:")
+                        body = "%s\n%s\nsurgeon-fp:%s" % (head, recurrence_line(old, view_issue(old, filer.cache)), tail)
                     if not ident and over_cap():
                         for f in c["findings"]:
                             f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run"}
@@ -1063,13 +1072,18 @@ def file_findings(findings, args, date, out, state, found, jev):
                         ident = existing_issue(c["fp"], args.team, filer.cache)
                         action = "update" if ident else "create"
                     if action == "create":
-                        ident, _, _ = filer.create(c["fp"], title + " (%s)" % c["key"], c["body"], wanted, "3")
+                        ident, _, _ = filer.create(c["fp"], title + " (%s)" % c["key"], body, wanted, "3")
                     else:
-                        filer.update_body(ident, c["fp"], c["body"])
+                        filer.update_body(ident, c["fp"], body)
                     ledger[c["fp"]] = ident
                     state["clusters"][c["fp"]] = {"key": c["key"], "members": c["members"], "sha": c["sha"]}
+                    error = relate(ident, old) if old else None
                     for f in c["findings"]:
                         f["filing"] = {"action": "clustered", "issue": ident, "cluster": c["key"]}
+                        if old:
+                            f["filing"]["recurrence_of"] = old
+                        if error:
+                            f["filing"]["relation_error"] = error
                 except LinearError as exc:
                     for f in c["findings"]:
                         f["filing"] = f["filing"] or {"action": "failed", "reason": str(exc)}
