@@ -54,7 +54,8 @@ team PC, highest severity first, at most --max-creates attempts a run:
      filed only when one of the first three hits, read with `issue view`, has the
      marker in its description;
   3. `issue create --dry-run`, then `--verify`, with exactly one Type (Bug), one
-     Source and one area label. A failed verify is logged and never retried.
+     Source and one area label. A failed verify is never retried; if the fingerprint
+     search finds the item within a few seconds, it counts as created (and is ledgered), else it is logged failed.
 It never edits, comments on, closes or deletes an item. One RATE_LIMITED answer
 stops every Linear call in the run, writes linear-resume-after.json (one hour on)
 and reports the rest as not filed; later runs skip Linear until then.
@@ -103,6 +104,7 @@ PRIORITY = {"high": "2", "medium": "3", "low": "3"}
 RANK = {"high": 0, "medium": 1, "low": 2}
 CANDIDATES_PER_CREATE = 5
 EXISTING_VIEWS = 3
+VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
 RESUME_FILE = "linear-resume-after.json"
 LEDGER_FILE = "filed-fingerprints.json"
 STAGING_REPO = "git@github.com:lstutzman/PropertyCompass2.git"
@@ -263,6 +265,7 @@ class LinearError(RuntimeError):
     def __init__(self, code, message):
         super().__init__("%s: %s" % (code, message))
         self.code = code
+        self.message = message
 
 
 def linear(args):
@@ -307,7 +310,8 @@ def description(f, date):
              "Epic: not assigned; whoever triages this picks one.", "",
              "Severity: %s. Source job: %s." % (f["severity"], f["job"])]
     lines += ["%s: %s" % (k, text(v, 300)) for k, v in sorted(f["evidence"].items()) if v not in (None, "")]
-    return "\n".join(lines) + "\nsurgeon-fp:%s\n" % f["fingerprint"]
+    # No trailing newline: Linear trims it, and `create --verify` then reports a mismatch on a good create.
+    return "\n".join(lines) + "\nsurgeon-fp:%s" % f["fingerprint"]
 
 
 def issue_id(data):
@@ -392,8 +396,29 @@ def file_findings(findings, args, date, out):
                 create += ["--label", label]
             linear(create + ["--dry-run"])
             attempts += 1
-            ledger[f["fingerprint"]] = issue_id(linear(create + ["--verify"]))
-            f["filing"] = {"action": "created", "issue": ledger[f["fingerprint"]]}
+            try:
+                ledger[f["fingerprint"]] = issue_id(linear(create + ["--verify"]))
+                f["filing"] = {"action": "created", "issue": ledger[f["fingerprint"]]}
+            except LinearError as exc:
+                if exc.code == "RATE_LIMITED":
+                    raise
+                # --verify writes before it reads back, so the item may exist; a created item is never
+                # reported failed or left out of the ledger.
+                found = None
+                try:
+                    for wait in VERIFY_SEARCH_WAITS:
+                        time.sleep(wait)
+                        found = existing_issue(f["fingerprint"], args.team)
+                        if found:
+                            break
+                except LinearError as search_exc:
+                    if search_exc.code == "RATE_LIMITED":
+                        raise
+                    raise LinearError(exc.code, "%s (then fingerprint search failed: %s)" % (exc.message, search_exc))
+                if not found:
+                    raise
+                ledger[f["fingerprint"]] = found
+                f["filing"] = {"action": "created", "issue": found, "verify": str(exc)}
         except LinearError as exc:
             f["filing"] = {"action": "failed", "reason": str(exc)}
             if exc.code == "RATE_LIMITED":
@@ -416,8 +441,9 @@ def render_md(doc, archive_md):
     lines += ["", "## Intake findings", ""]
     for f in doc["findings"]:
         filing = f["filing"] or {}
-        tail = " [tracked %s]" % f["tracked"] if f["tracked"] else " [%s%s]" % (
-            filing.get("action", "not filed"), " " + filing["issue"] if filing.get("issue") else "") if f["class"] == "real" else ""
+        tail = " [tracked %s]" % f["tracked"] if f["tracked"] else " [%s%s%s]" % (
+            filing.get("action", "not filed"), " " + filing["issue"] if filing.get("issue") else "",
+            ", verify mismatch" if filing.get("verify") else "") if f["class"] == "real" else ""
         lines.append("- [%s] %s %s/%s: %s%s" % (f["severity"], f["class"], f["source"], f["job"], f["summary"], tail))
     if not doc["findings"]:
         lines.append("- None.")
