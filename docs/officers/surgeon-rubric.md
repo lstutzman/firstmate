@@ -38,7 +38,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   A medium or higher finding gets its own Linear item.
 - Low code-review findings are clustered by component, one Linear item per cluster, with each finding's file and fingerprint listed inside as a tick box.
   A new finding updates its cluster's item, and a finding on the reviewer's resolved list is ticked off.
-- The cluster rule: group by the first 2 directory parts of the finding's file, split a group of more than 25 findings one level deeper, fold subgroups of fewer than 10 back into "(parent) (other)", and fold any group still under 3 findings into "(first part) (misc)".
+- The cluster rule: group by the first 2 directory parts of the finding's file, split a group of more than 25 findings one level deeper (again while a subgroup still has more than 25), fold subgroups of fewer than 10 back into "(parent) (other)", and fold any group still under 3 findings into "(first part) (misc)".
   The code keeps these four numbers as named constants.
   The path decides the group, and the counts only decide where it splits or folds.
   A finding keeps its cluster once assigned, so the same file keeps landing in the same item as findings come and go.

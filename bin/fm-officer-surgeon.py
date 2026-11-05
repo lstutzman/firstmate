@@ -64,7 +64,7 @@ team PC, highest score first:
   2. medium or higher findings, and every non-review finding, each get their own
      item. Low review findings are clustered, one item per component: the group of
      the first CLUSTER_PARTS directory parts of the file, split one level deeper
-     when a group passes CLUSTER_SPLIT_OVER findings, subgroups under
+     (again while a subgroup still passes it) when a group passes CLUSTER_SPLIT_OVER findings, subgroups under
      CLUSTER_MIN_SUBGROUP folded into "<parent> (other)", groups under
      CLUSTER_MIN_GROUP folded into "<first part> (misc)". A finding keeps its
      cluster once assigned (review-state.json), so the key stays stable. The item
@@ -512,22 +512,45 @@ def base_group(location):
 
 
 def cluster_keys(locations):
-    """{location: cluster key}: the path decides the group, the counts only split or fold it."""
-    groups = collections.Counter(base_group(l) for l in locations)
-    deeper = collections.Counter("/".join(path_dirs(l)[:CLUSTER_PARTS + 1]) for l in locations if l and len(path_dirs(l)) > CLUSTER_PARTS)
-    raw = {}
-    for loc in set(locations):
-        group = base_group(loc)
-        key = group
-        if groups[group] > CLUSTER_SPLIT_OVER and loc and len(path_dirs(loc)) > CLUSTER_PARTS:
-            sub = "/".join(path_dirs(loc)[:CLUSTER_PARTS + 1])
-            key = sub if deeper[sub] >= CLUSTER_MIN_SUBGROUP else group + " (other)"
-        elif groups[group] > CLUSTER_SPLIT_OVER:
-            key = group + " (other)"
-        raw[loc] = key
-    sizes = collections.Counter(raw[l] for l in locations)
+    """{location: cluster key}: the path decides the group, the counts only split or fold it.
+
+    A group over CLUSTER_SPLIT_OVER findings splits one level deeper, again while a subgroup is still over
+    it; subgroups under CLUSTER_MIN_SUBGROUP (and files with no deeper directory) fold into "<parent> (other)";
+    a cluster still under CLUSTER_MIN_GROUP folds into "<first part> (misc)".
+    """
+    weight = collections.Counter(locations)
+    state = {}
+    for loc in weight:
+        state[loc] = ["(no file)" if not loc else "/".join(path_dirs(loc)[:CLUSTER_PARTS]) or "(root)", CLUSTER_PARTS, False]
+    progressed = True
+    while progressed:
+        progressed = False
+        groups = collections.defaultdict(list)
+        for loc, (key, level, done) in state.items():
+            if not done:
+                groups[(key, level)].append(loc)
+        for (key, level), locs in groups.items():
+            if sum(weight[l] for l in locs) <= CLUSTER_SPLIT_OVER or not any(len(path_dirs(l)) > level for l in locs):
+                for l in locs:
+                    state[l][2] = True
+                continue
+            sub = collections.Counter()
+            for l in locs:
+                dirs = path_dirs(l)
+                if len(dirs) > level:
+                    sub["/".join(dirs[:level + 1])] += weight[l]
+            for l in locs:
+                dirs = path_dirs(l)
+                if len(dirs) > level and sub["/".join(dirs[:level + 1])] >= CLUSTER_MIN_SUBGROUP:
+                    state[l][0], state[l][1] = "/".join(dirs[:level + 1]), level + 1
+                else:
+                    state[l][0], state[l][2] = key + " (other)", True
+            progressed = True
+    sizes = collections.Counter()
+    for loc, (key, _, _) in state.items():
+        sizes[key] += weight[loc]
     return {loc: (key if sizes[key] >= CLUSTER_MIN_GROUP or key in ("(no file)", "(root)")
-                  else (key.split("/")[0].replace(" (other)", "") + " (misc)")) for loc, key in raw.items()}
+                  else key.split("/")[0].replace(" (other)", "") + " (misc)") for loc, (key, _, _) in state.items()}
 
 
 def plain_words(key):
