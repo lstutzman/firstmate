@@ -156,7 +156,7 @@ test_reported_once_rerun_identical_and_recurrence() {
 test_coverage_gaps_never_fail_the_run() {
   local out
   make_world gaps
-  sed -i 's/hosts: slartibartfast,deepthought/hosts: slartibartfast,deepthought,ghost/' "$HOME_DIR/data/officers.md"
+  sed -i.bak 's/hosts: slartibartfast,deepthought/hosts: slartibartfast,deepthought,ghost/' "$HOME_DIR/data/officers.md"
   mv "$W/corpus/memory-harvest/last-result.json" "$W/harvest.moved"
   printf '{"date": "2026-11-05", "counts": {}}\n' > "$W/hosts/deepthought/services/bosun-maintenance/last-result.json"
   out=$(run_corpus) || fail "a run with gaps must succeed: $out"
@@ -179,7 +179,7 @@ test_run_writes_only_its_lane() {
 
 test_registry_needs_archive() {
   make_world registry
-  sed -i 's/archive: [^;]*; //' "$HOME_DIR/data/officers.md"
+  sed -i.bak 's/archive: [^;]*; //' "$HOME_DIR/data/officers.md"
   assert_contains "$(FM_HOME="$HOME_DIR" "$OFFICER" ensure)" "OFFICER: officer corpus: a corpus officer needs archive:" "ensure reports a corpus line with no archive"
   pass "fm-officer corpus: the registry line needs archive:"
 }

@@ -103,13 +103,13 @@ test_reported_once_and_identical_rerun() {
 test_coverage_gaps_never_fail_the_run() {
   local out
   make_world gaps
-  sed -i 's/"outcome": "ok"/"outcome": "partial"/' "$RUNS/2026-10-31/result.json"
+  sed -i.bak 's/"outcome": "ok"/"outcome": "partial"/' "$RUNS/2026-10-31/result.json"
   mv "$RUNS/2026-10-31/findings.json" "$RUNS/2026-10-31/findings.moved"
   out=$(run_library 2026-11-10 $((NOW + 10 * 86400))) || fail "a run with gaps must succeed: $out"
   assert_contains "$out" "Coverage gap: library: audit run 2026-10-31 has no readable findings.json" "a missing findings file is a gap"
   assert_contains "$out" "Coverage gap: library: audit run 2026-10-31 outcome is partial" "a partial audit is noted"
   assert_contains "$out" "Coverage gap: library: the newest audit run, 2026-10-31, is more than 8 days old" "an old audit is noted"
-  sed -i "s|audit: [^;]*;|audit: $TMP_ROOT/gaps/none;|" "$HOME_DIR/data/officers.md"
+  sed -i.bak "s|audit: [^;]*;|audit: $TMP_ROOT/gaps/none;|" "$HOME_DIR/data/officers.md"
   out=$(run_library 2026-11-11) || fail "a run with no audit folder must succeed: $out"
   assert_contains "$out" "Coverage gap: library: no audit run folder under $TMP_ROOT/gaps/none" "no run folder is a gap"
   assert_contains "$out" "DIGEST 2026-11-11 0 " "a gap is not a finding"
