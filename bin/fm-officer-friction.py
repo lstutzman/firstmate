@@ -653,16 +653,31 @@ INJECTED_FLAGS = ("isMeta", "isSidechain", "isCompactSummary", "isVisibleInTrans
                   "toolUseResult", "sourceToolUseID", "sourceToolAssistantUUID")
 
 
-def typed_text(rec):
+# Blocks Claude Code and its hooks wrap around guidance they add to a user-role record.
+INJECTED_BLOCK_RE = re.compile(
+    r"<(system-reminder|task-notification|command-[\w-]+|local-command-[\w-]+|user-prompt-submit-hook"
+    r"|hook-[\w-]+|available-deferred-tools|new-diagnostics|ide_[\w]+)\b[^>]*>.*?(?:</\1>|\Z)", re.S)
+
+
+def typed_text(rec, stamped=False):
     """user_text, but only for a record Lee typed: never a peer or agent message, hook context,
-    tool result or sub-agent prompt. Claude Code stamps typed text origin.kind == "human"; a record
-    without an origin (older versions) counts unless another marker flags it."""
+    tool result, sub-agent prompt, or guidance the harness wrapped into the message. Claude Code stamps
+    typed text origin.kind == "human"; a record without an origin counts only in a transcript where no
+    record carries one (older versions), and unless another marker flags it. `stamped` says the
+    transcript's records carry origins."""
     if any(rec.get(flag) for flag in INJECTED_FLAGS):
         return None
+    if rec.get("userType") not in (None, "external"):
+        return None
     origin = rec.get("origin")
+    if origin is None and stamped:
+        return None
     if origin is not None and (not isinstance(origin, dict) or origin.get("kind") != "human"):
         return None
-    return user_text(rec)
+    text = user_text(rec)
+    if text is None:
+        return None
+    return INJECTED_BLOCK_RE.sub("\n", text)
 
 
 def classify_command(command, machine=None, after=""):
@@ -717,9 +732,55 @@ def hit_event(hit, m):
             "service": service, "tool": tool, "signature": sig}
 
 
+HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\b", re.S)
+STATEMENT_SPLIT_RE = re.compile(r"\n|;|&&|\|\|?|\$\(|`|\(|\{|\bthen\b|\bdo\b|\belse\b")
+
+
+def tool_inputs(records):
+    """Every Bash command and written file body of one transcript, by tool_use id (id None: all joined)."""
+    by_id, bodies = {}, []
+    for rec in records:
+        content = (rec.get("message") or {}).get("content")
+        if rec.get("type") != "assistant" or not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                inp = block.get("input") or {}
+                text = "\n".join(str(v) for v in inp.values() if isinstance(v, str))
+                by_id[block.get("id")] = inp.get("command") if isinstance(inp.get("command"), str) else None
+                bodies.append(text)
+    return by_id, "\n".join(bodies)
+
+
+def plausible_tool(name, command, bodies):
+    """Whether `name` from a "command not found" line is an installable command a person could add:
+    not a dotted field name, not a shell function the session itself defined (a test helper, a function
+    used outside its script), and, when the command that ran is known, one it ran as a command word
+    rather than a label or prose inside a heredoc (a command that only names it indirectly stays real)."""
+    if re.fullmatch(r"[A-Za-z_]+(?:\.[A-Za-z_]+)+", name):
+        return False
+    esc = re.escape(name)
+    if re.search(r"(?m)^\s*(?:function\s+%s\b|%s\s*\(\s*\))" % (esc, esc), bodies or ""):
+        return False
+    if command is None or name not in command:
+        return True    # reached through a script the command ran: a real miss
+    code = HEREDOC_RE.sub("\n", command)
+    for statement in STATEMENT_SPLIT_RE.split(code):
+        words = statement.strip().lstrip("!").split()
+        while words and re.fullmatch(r"\w+=\S*", words[0]):
+            words = words[1:]
+        if words and words[0] in (name, name + ";") and not words[0].endswith(":"):
+            return True
+        if words and words[0] in ("sudo", "exec", "time", "command", "env", "xargs", "nohup") \
+                and name in words[1:2]:
+            return True
+    return False
+
+
 def session_events(records, machine):
     """Friction events in one transcript, in record order."""
     events = []
+    commands, bodies = tool_inputs(records)
     asks = {}
     pending = []    # asks waiting for Lee's next typed message
     for n, rec in enumerate(records):
@@ -781,6 +842,9 @@ def session_events(records, machine):
                 for hit, pattern in HIT_PATTERNS:
                     m = pattern.search(body)
                     if m:
+                        if hit == "missing-tool" and not plausible_tool(
+                                m.group(1), commands.get(block.get("tool_use_id")), bodies):
+                            break
                         events.append(dict(hit_event(hit, m), at=at))
                         break
     return events
@@ -840,12 +904,13 @@ def lee_instructions(records, worker):
     A worker session's first prompt is firstmate's launch brief, which quotes Lee, so it is skipped."""
     out = []
     skip = worker
+    stamped = any(isinstance(rec.get("origin"), dict) for rec in records)
     for rec in records:
         first = user_text(rec) if rec.get("type") == "user" else None
         if first is not None and skip:
             skip = False
             continue
-        text = typed_text(rec) if first is not None else None
+        text = typed_text(rec, stamped) if first is not None else None
         if text is None:
             continue
         if MACHINE_PROMPT_RE.match(text) or BASH_INPUT_RE.match(text.strip()) or len(text) > 6000:
