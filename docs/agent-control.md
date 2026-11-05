@@ -52,7 +52,17 @@ The clear is refused before anything is sent when the recorded backend cannot de
 
 `exit` reads the composer's state before typing the exit command and requires the exact `empty` verdict; a `pending` verdict refuses by naming the pending text, and any other verdict (`unknown`, `pending-unproven`, or an unreadable read) refuses as not proven empty, matching the fail-safe contract every other consumer that can overwrite composer input follows.
 `exit` also refuses, naming the dialog as `blocked on a prompt`, when the screen shows a recognised dialog that a further Enter would answer, whether the dialog was open before the exit command was typed or the submitting Enter opened it; it sends no Escape and chooses no option, so closing the dialog is left to the operator.
+For the background-task exit picker only, the refusal names `--stop-background`.
 A stopped agent whose pane still shows the dialog text is not refused.
+
+**`exit --stop-background`** is the explicit opt-in for closing a *finished* agent that is parked on Claude's "Background work is running" picker, where a background shell or task would otherwise stall the close.
+With the flag, once the screen is that picker and its selected row is "Exit and stop tasks", `exit` confirms it with one Enter, which stops the agent's background tasks along with the agent, and then proves the agent gone the same way an ordinary exit does; a stop reports `stopped background-tasks=stopped`.
+The flag answers the picker whether it was already open or the typed exit command opened it, including a picker that renders after the submit returned.
+It re-reads the viewport and re-runs the recorded picker match immediately before the Enter, so a different selected row, a screen that changed, or any other dialog is still refused, with no Escape and no option typed.
+It applies to `exit` only, is refused on any other verb, and `relaunch` never passes it because a relaunch replaces live work.
+Without the flag nothing changes: `exit` refuses and names the flag.
+Use it only when the work is finished; stopping the tasks is its whole effect.
+`bin/fm-teardown.sh` does not use `exit` (it closes the endpoint itself once its landed-work test passes), so the flag is for a supervisor closing a finished agent through the control plane.
 [`fm_composer_blocking_dialog`](../bin/fm-composer-lib.sh) owns the recognised set, which today is only Claude's background-task exit picker; [its verification record](verification/runtime-backends.md#claude-background-task-exit-picker) lists the dialogs that are not covered.
 
 **Teardown and discard are not verbs and will not become verbs.**

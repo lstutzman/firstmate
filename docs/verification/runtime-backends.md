@@ -1438,6 +1438,13 @@ That watcher and away-daemon reporting is covered by fakes in `tests/fm-watch-tr
 No recorded screen was available for a model-downgrade confirmation, an MCP approval, or a Claude exit confirmation other than this picker, so those dialogs are not covered.
 Refusing an Enter that would confirm a dialog restores an existing safety path, so it is not gated behind a flag.
 
+Re-measured on Claude Code 2.1.318 (2026-11-05, scout `mod-exit-background-scout`): the picker structure is unchanged.
+Heading `Background work is running`, then `The following will stop when you exit:` and one row per task (`shell · sleep 731.5`), then the rows `❯ 1. Exit and stop tasks`, `2. Move to background and exit`, `3. Stay`, and the footer `Enter to confirm · Esc to cancel`.
+Pressing `1` then Enter, or Enter alone on the selected first row, ended the agent and its background shell.
+`bin/fm-control.sh <id> exit --stop-background` is the opt-in that sends that one Enter, and only while the first row is the selected row.
+A Herdr lab run on the same build (real Claude Code, a live `sleep 733` background shell, `/exit` typed by hand) exited at once with no picker and the shell gone, so the picker did not reproduce there; why is unconfirmed (a stop-on-exit mod or setting active on that seat is the likely cause, not checked).
+The flag's Enter path is therefore covered by `tests/fm-control.test.sh` fakes built on the recorded screen, not by a live Herdr measurement.
+
 ### Prune and respawn
 
 The real label-collision reproduction is owned by:
