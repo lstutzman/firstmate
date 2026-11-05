@@ -6,7 +6,7 @@ FM_HOME selects the primary home. config/fleet-alarm.json accepts seven_day
 (default .9, carrying-account threshold), pool_remaining (.1, mean remaining
 weekly capacity across non-stale Claude readings), silent_minutes
 (60), stale_minutes (120), persist_polls (2), budget_seconds (24), carrying_reset_hours (6),
-and carrying_pool_floor (.4). cpa-usage-host selects local
+carrying_pool_floor (.4), and working_ceiling_multiple (6). cpa-usage-host selects local
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Both readers share FM_CHECK_TIMEOUT (default 30); budget must leave 5 seconds.
 Secondmate inventory reads published home summaries (bounded remote reads fall
@@ -24,11 +24,16 @@ A wait still silent at its recheck time is re-emitted once, on the next timer po
 needs-decision [cause=external] naming the secondmate, how long it has been down and
 the recovery it was expected by, even when its home is unreadable by then; it
 resolves when the condition clears.
-A secondmate waiting on an open captain decision is healthy waiting and is never silent: it has
-no active child, no open decision row has source status (no child is asking it anything), its
+A secondmate whose own latest line is `working`, or `paused` with no `until` time, younger than
+working_ceiling_multiple (6) times silent_minutes, or `paused` with an `until` time less than
+silent_minutes past, while it holds work (in flight, an active child or a parked child), has asked main
+nothing open, and has no status-source ask and a complete decision list, is working a long task and
+is not silent either.
+A secondmate waiting on an open captain decision is healthy waiting and is never silent: no
+open decision row has source status (no child is asking it anything), its
 decision list is complete and holds at least one captain-hold row, and its summary is valid or its
 only invalidity is kind child_current_unavailable. Its in-flight count need not be covered by held
-or parked work then. A live worker, any status-source ask, a truncated decision list, any other
+or parked work then, and a live worker beside the hold does not change that. Any status-source ask, a truncated decision list, any other
 invalidity kind, or in-flight work with no open captain decision still alarms.
 The Claude quota context line (every account's 7d use and carrying accounts) is appended only to
 cards whose alarms include a quota alarm (quota:, stale:, pool, ignored:, quota-read); on other
@@ -103,7 +108,8 @@ def run(argv, seconds):
 def settings():
     values = dict(seven_day=.9, pool_remaining=.1, silent_minutes=60,
                   stale_minutes=120, persist_polls=2, budget_seconds=24,
-                  carrying_reset_hours=6, carrying_pool_floor=.4)
+                  carrying_reset_hours=6, carrying_pool_floor=.4,
+                  working_ceiling_multiple=6)
     path = CONFIG / 'fleet-alarm.json'
     if path.exists():
         supplied = json.loads(path.read_text())
@@ -158,19 +164,38 @@ def read_json(path, limit=262144):
     return json.loads(content)
 
 
+def child_asking(summary, counts):
+    # A child asking its second mate (a status-source row), or a decision list too short to tell.
+    decisions = summary.get('decisions_open', [])
+    if not isinstance(decisions, list) or counts['decisions_open'] > len(decisions):
+        return True
+    return any(isinstance(row, dict) and row.get('source') == 'status' for row in decisions)
+
+
 def waiting_on_captain(summary, counts):
-    # Nothing is working, no child is asking the mate anything, and the complete decision list
-    # shows a filed captain decision, so the mate has nothing to say until Lee answers.
+    # No child is asking the mate anything and the complete decision list shows a filed captain
+    # decision, so the mate has nothing to say until Lee answers. A live worker beside the hold
+    # (usually working on or paused behind it) does not change that.
     invalidity = summary.get('invalidity')
     partial = isinstance(invalidity, dict) and invalidity.get('kind') == 'child_current_unavailable'
-    if not (summary['valid'] or partial) or counts['active_children'] != 0:
+    if not (summary['valid'] or partial) or child_asking(summary, counts):
         return False
-    decisions = summary.get('decisions_open')
-    if not isinstance(decisions, list) or counts['decisions_open'] > len(decisions):
+    return any(isinstance(row, dict) and row.get('verb') == 'captain-hold' for row in summary.get('decisions_open', []))
+
+
+def working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg):
+    # The mate's own latest line says it is working, or paused for work it still holds, and
+    # nobody is waiting on it: a long task that reports sparingly, not a mate gone quiet. A
+    # declared pause is quiet again once its clearing time is more than the silence window
+    # past; any other line once it is older than working_ceiling_multiple silence windows.
+    if last_verb not in ('working', 'paused') or open_decisions != '0' or child_asking(summary, counts):
         return False
-    rows = [row for row in decisions if isinstance(row, dict)]
-    return (not any(row.get('source') == 'status' for row in rows)
-            and any(row.get('verb') == 'captain-hold' for row in rows))
+    if not (counts.get('in_flight', 0) or counts['active_children'] or counts['holds']):
+        return False
+    window = cfg['silent_minutes'] * 60
+    if paused_until:
+        return time.time() <= int(paused_until) + window
+    return age != 'null' and float(age) < cfg['working_ceiling_multiple'] * window
 
 
 def mate_findings(read, cfg, not_collected):
@@ -199,8 +224,12 @@ while IFS= read -r line || [ -n "$line" ]; do
         LC_ALL=C tail -c 65536 "$3/$id.status" | LC_ALL=C awk -v cut=$((size > 65536)) 'NR > cut' \
           | LC_ALL=C tail -n 200 > "$window" || exit 1
       fi
+      line=$(status_agent_event_line "$3/$id.status" "$3/$id.status" "$4") || exit 1
+      verb=$(status_line_verb "$line")
+      case "$verb" in working|paused) ;; *) verb=other ;; esac
+      until=$(status_paused_until "$line" || true)
       open=$(status_open_decisions "$window" secondmate | LC_ALL=C awk -F '\t' '$2 == "needs-decision" || $2 == "blocked"' | LC_ALL=C wc -l | tr -d ' ')
-      printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until"
       ;;
   esac
 done < "$2"
@@ -208,7 +237,7 @@ done < "$2"
     seen = set()
     routes = list(csv.reader(io.StringIO(roster), delimiter='\t'))
     for index, row in enumerate(routes):
-        name, host, home, age, open_decisions = row
+        name, host, home, age, open_decisions, last_verb, paused_until = row
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name) or name in seen or not Path(home).is_absolute():
             raise ValueError('invalid or duplicate secondmate route')
         seen.add(name)
@@ -262,6 +291,8 @@ done < "$2"
             if not any(work) and open_decisions == '0':
                 continue
             if waiting_on_captain(summary, counts):
+                continue
+            if working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg):
                 continue
             ages = [] if age == 'null' else [float(age)]
             meta = STATE / (name + '.meta')
