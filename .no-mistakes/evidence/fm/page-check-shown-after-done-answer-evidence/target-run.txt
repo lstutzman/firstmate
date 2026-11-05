@@ -1,0 +1,10 @@
+=== TARGET 208fd19b: fm-officer.sh run page-check ===
+DIGEST 2026-10-31T14 15 data/officers/page-check/2026-10-31T14.md
+exit=0
+--- Captain's Log card findings ---
+shown-after-done	shown-after-done:Captain's Log:<ans>	
+shown-after-done	shown-after-done:Captain's Log:<cardans>	
+shown-after-done	shown-after-done:Captain's Log:<holdans>	
+shown-after-done	shown-after-done:Captain's Log:<holdrel>	
+stale-card	stale-card:Captain's Log:<ansbefore>:resolved	
+stale-card	stale-card:Captain's Log:<cardans>:answered	
