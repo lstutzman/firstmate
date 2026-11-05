@@ -60,7 +60,8 @@ Finding classes, each with a fingerprint:
 A finding is reported once: reported.json maps each open fingerprint to the
 run key that first reported it, a finding counts as new only at that key, and
 a fingerprint that clears is dropped, so a recurrence after a fix is new
-again. Re-running a key on unchanged inputs writes identical bytes: no output
+again. A fingerprint whose input was a coverage gap this run is kept, not
+cleared, so an outage does not re-report it. Re-running a key on unchanged inputs writes identical bytes: no output
 holds the clock, only source timestamps and thresholds.
 
 Outputs <date>.json and <date>.md in --out, prints one `Coverage gap:` line
@@ -237,9 +238,9 @@ def fingerprint(*parts):
     return hashlib.sha256("\0".join(("corpus",) + parts).encode("utf-8")).hexdigest()
 
 
-def finding(klass, subject, severity, summary):
+def finding(source, klass, subject, severity, summary):
     return {"class": klass, "subject": subject, "severity": severity, "summary": summary,
-            "fingerprint": fingerprint(klass, subject)}
+            "source": source, "fingerprint": fingerprint(klass, subject)}
 
 
 def stamp(value):
@@ -257,16 +258,19 @@ def gap(read, what):
 
 
 def judge(facts, nights, now):
-    """(findings, coverage, notes, nights) from the probe results; nights is the updated nights.json."""
-    findings, coverage, notes = [], [], []
+    """(findings, coverage, notes, nights, unread) from the probe results; nights is the updated
+    nights.json, and unread names each finding source this run could not judge."""
+    findings, coverage, notes, unread = [], [], [], set()
     ingest = facts["ingest"]
     if ingest["state"] != "read":
+        unread.add("ingest")
         coverage.append(gap(ingest, "the ingester's last result"))
     else:
         c = ingest["counts"]
         notes.append("Ingester: outcome %s; %s." % (ingest["outcome"], ", ".join("%s %d" % (k, c[k]) for k in INGEST_COUNTS if k in c)))
         runs = ingest["runs"]
         if not runs:
+            unread.add("ingest")
             coverage.append("the ingester's runs.jsonl beside %s has no readable runs" % ingest["where"])
         else:
             latest = runs[-1]
@@ -277,13 +281,15 @@ def judge(facts, nights, now):
                         break
                     streak += 1
                 if streak >= 2:
-                    findings.append(finding("not-collected", source, "medium",
+                    findings.append(finding("ingest", "not-collected", source, "medium",
                                             "%s was not collected in the last %d%s runs (newest finished %s)" % (
                                                 source, streak, " or more" if streak == len(runs) else "",
                                                 latest["finished"])))
             if latest["offline"]:
                 notes.append("Hosts offline in the newest ingester run: %s." % ", ".join(latest["offline"]))
     harvest = facts["harvest"]
+    if harvest["state"] != "read":
+        unread.update(("harvest", "harvest-counts"))
     if harvest["state"] == "missing":
         coverage.append("the memory harvest has no result yet (%s); the harvest job has not shipped" % harvest["where"])
     elif harvest["state"] != "read":
@@ -292,21 +298,24 @@ def judge(facts, nights, now):
         c = harvest["counts"]
         notes.append("Memory harvest: outcome %s; %s." % (harvest["outcome"], ", ".join("%s %d" % (k, c[k]) for k in HARVEST_COUNTS if k in c)))
         if harvest["outcome"] == "failed":
-            findings.append(finding("harvest-failed", "memory-harvest", "high", "the memory harvest's last run failed"))
-        if "listed" in c and c.get("total"):
-            if abs(c["listed"] - c["total"]) > DRIFT * c["total"]:
-                findings.append(finding("harvest-drift", "memory-harvest", "medium",
+            findings.append(finding("harvest", "harvest-failed", "memory-harvest", "high", "the memory harvest's last run failed"))
+        if "listed" in c and "total" in c:
+            if c["total"] and abs(c["listed"] - c["total"]) > DRIFT * c["total"]:
+                findings.append(finding("harvest-counts", "harvest-drift", "memory-harvest", "medium",
                                         "the memory harvest listed %d records against the tier's %d, more than 1%% apart" % (
                                             c["listed"], c["total"])))
         else:
+            unread.add("harvest-counts")
             coverage.append("the memory harvest's result names no listed and total counts")
     for name in sorted(k for k in facts if k.startswith("bosun:")):
         host, read = name[len("bosun:"):], facts[name]
         if read["state"] != "read":
+            unread.add(name)
             coverage.append(gap(read, "the Bosun result on %s" % host))
             continue
         archive = read["archive"]
         if archive is None or not archive["reached"] or not read["date"]:
+            unread.add(name)
             coverage.append("the Bosun result on %s (%s) %s" % (host, read["date"], "has no archive section" if archive is None
                                                                   else "says the archive could not be read" if not archive["reached"]
                                                                   else "has no date"))
@@ -320,21 +329,24 @@ def judge(facts, nights, now):
             archive.get("missing"), archive.get("mismatched"), archive.get("withheld")))
         last_two = sorted(nights[host].items())[-2:]
         if len(last_two) == 2 and last_two[1][0] == read["date"] and all(n > 0 for _, n in last_two):
-            findings.append(finding("archive-gap", host, "high",
+            findings.append(finding(name, "archive-gap", host, "high",
                                     "%s: the archive misses or holds an out-of-date copy of %d session logs on %s, and of %d on %s" % (
                                         host, last_two[1][1], last_two[1][0], last_two[0][1], last_two[0][0])))
     prep = facts["prep"]
     if prep["state"] != "read":
+        unread.add("prep")
         coverage.append(gap(prep, "the local-jev prep store's ready.json"))
     elif stamp(prep["finished"]) is None:
+        unread.add("prep")
         coverage.append("the local-jev prep store's ready.json has no readable finished time (%s)" % prep["where"])
     else:
         notes.append("Prep store: finished %s, %s rows." % (prep["finished"], prep["rows"]))
         if now - stamp(prep["finished"]) > PREP_HOURS * 3600:
-            findings.append(finding("prep-stale", "local-jev-prep", "medium",
+            findings.append(finding("prep", "prep-stale", "local-jev-prep", "medium",
                                     "the local-jev prep store last finished %s, more than %d hours ago" % (prep["finished"], PREP_HOURS)))
     weekly = facts["weekly"]
     if weekly["state"] != "read":
+        unread.add("weekly")
         coverage.append(gap(weekly, "the weekly retrain history"))
     else:
         rec = weekly["newest"]
@@ -342,11 +354,11 @@ def judge(facts, nights, now):
         if rec:
             notes.append("Weekly retrain: newest run %s started %s, status %s." % (rec["run"], rec["started"], rec["status"]))
         if started is None or now - started > RETRAIN_DAYS * 86400:
-            findings.append(finding("retrain-missed", "weekly:%s:missed" % (rec or {}).get("run"), "medium",
+            findings.append(finding("weekly", "retrain-missed", "weekly:%s:missed" % (rec or {}).get("run"), "medium",
                                     "no weekly retrain started in the last %d days (newest: %s)" % (
                                         RETRAIN_DAYS, "run %s, started %s" % (rec["run"], rec["started"]) if rec else "none")))
         elif rec["status"] == "failed":
-            findings.append(finding("retrain-missed", "weekly:%s:failed" % rec["run"], "medium",
+            findings.append(finding("weekly", "retrain-missed", "weekly:%s:failed" % rec["run"], "medium",
                                     "the weekly retrain %s, started %s, failed" % (rec["run"], rec["started"])))
     judge_read = facts["judge"]
     if judge_read["state"] != "read":
@@ -355,7 +367,7 @@ def judge(facts, nights, now):
         notes.append("Judge: %d evaluation results, newest %s." % (judge_read["count"], judge_read["newest"]))
     rank = {"high": 0, "medium": 1, "low": 2}
     findings.sort(key=lambda f: (rank[f["severity"]], f["class"], f["subject"]))
-    return findings, coverage, notes, nights
+    return findings, coverage, notes, nights, unread
 
 
 # ---- the lane's records, shared with fm-officer-library.py.
@@ -382,14 +394,17 @@ def read_json(path, default):
         return default
 
 
-def mark_new(out, key, findings):
-    """Sets each finding's `new` from the lane's reported.json and rewrites it; returns the count of new ones."""
+def mark_new(out, key, findings, unread):
+    """Sets each finding's `new` from the lane's reported.json and rewrites it; returns the count of new ones.
+
+    reported.json maps a fingerprint to the key that first reported it and the finding's source; an
+    entry whose source is in `unread` was not judged this run, so it is kept rather than cleared."""
     path = os.path.join(out, "reported.json")
-    ledger = read_json(path, {})
-    kept = {}
+    ledger = {fp: e for fp, e in read_json(path, {}).items() if isinstance(e, dict)}
+    kept = {fp: e for fp, e in ledger.items() if e.get("source") in unread}
     for f in findings:
-        kept[f["fingerprint"]] = ledger.get(f["fingerprint"], key)
-        f["new"] = kept[f["fingerprint"]] == key
+        kept[f["fingerprint"]] = {"key": ledger.get(f["fingerprint"], {}).get("key", key), "source": f["source"]}
+        f["new"] = kept[f["fingerprint"]]["key"] == key
     write_if_changed(path, json.dumps(kept, sort_keys=True, indent=1) + "\n")
     return sum(1 for f in findings if f["new"])
 
@@ -424,9 +439,9 @@ def run(args):
     facts = gather(items)
     os.makedirs(args.out, exist_ok=True)
     nights_path = os.path.join(args.out, "nights.json")
-    findings, coverage, notes, nights = judge(facts, read_json(nights_path, {}), now)
+    findings, coverage, notes, nights, unread = judge(facts, read_json(nights_path, {}), now)
     write_if_changed(nights_path, json.dumps(nights, sort_keys=True, indent=1) + "\n")
-    new = mark_new(args.out, args.date, findings)
+    new = mark_new(args.out, args.date, findings, unread)
     doc = {"officer_role": "corpus", "date": args.date, "actionable": new, "findings": findings,
            "coverage": coverage, "notes": notes, "facts": facts}
     write_if_changed(os.path.join(args.out, args.date + ".json"),

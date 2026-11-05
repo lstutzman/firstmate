@@ -100,6 +100,33 @@ test_reported_once_and_identical_rerun() {
   pass "fm-officer library: a finding is reported once and reruns are identical"
 }
 
+test_hold_item_counts_once_it_can_ship() {
+  local out
+  make_world promote
+  run_library >/dev/null || fail "first run must succeed"
+  write_run "$RUNS/2026-11-07" ok 0
+  printf '[%s]\n' "$(finding misplaced scripts/ops/brief.md "Brief among scripts" "Propose moving it to docs/runbooks.")" > "$RUNS/2026-11-07/findings.json"
+  out=$(run_library 2026-11-07 $((NOW + 7 * 86400))) || fail "next audit must succeed"
+  assert_equals safe "$(bucket_of scripts/ops/brief.md 2026-11-07)" "the finding is now safe to ship"
+  assert_contains "$out" "DIGEST 2026-11-07 1 " "an item on hold last week is new once it can ship"
+  pass "fm-officer library: an on-hold item is reported when it moves to a counted bucket"
+}
+
+test_unreadable_audit_keeps_the_ledger() {
+  local out
+  make_world outage
+  run_library >/dev/null || fail "first run must succeed"
+  mv "$RUNS/2026-10-31/findings.json" "$RUNS/2026-10-31/findings.moved"
+  run_library 2026-11-02 >/dev/null || fail "a run with no findings file must succeed"
+  sed -i.bak "s|audit: [^;]*;|audit: $TMP_ROOT/outage/none;|" "$HOME_DIR/data/officers.md"
+  run_library 2026-11-03 >/dev/null || fail "a run with no audit folder must succeed"
+  sed -i.bak "s|audit: [^;]*;|audit: $RUNS;|" "$HOME_DIR/data/officers.md"
+  mv "$RUNS/2026-10-31/findings.moved" "$RUNS/2026-10-31/findings.json"
+  out=$(run_library 2026-11-04) || fail "a run with the audit back must succeed"
+  assert_contains "$out" "DIGEST 2026-11-04 0 " "findings are not reported again after runs that could not read them"
+  pass "fm-officer library: an unreadable audit leaves the reported-once ledger alone"
+}
+
 test_coverage_gaps_never_fail_the_run() {
   local out
   make_world gaps
@@ -128,5 +155,7 @@ test_run_writes_only_its_lane() {
 
 test_buckets
 test_reported_once_and_identical_rerun
+test_hold_item_counts_once_it_can_ship
+test_unreadable_audit_keeps_the_ledger
 test_coverage_gaps_never_fail_the_run
 test_run_writes_only_its_lane

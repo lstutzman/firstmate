@@ -153,6 +153,39 @@ test_reported_once_rerun_identical_and_recurrence() {
   pass "fm-officer corpus: a finding is reported once, reruns are identical, and a recurrence is new"
 }
 
+test_unreachable_source_is_not_reported_again() {
+  local prep
+  make_world outage
+  prep="$W/hosts/slartibartfast/Documents/GitHub/local-jev/data/prep/ready.json"
+  bosun "$W/hosts/deepthought" 2026-11-04 2 0
+  run_corpus 2026-11-03 >/dev/null || fail "night one must succeed"
+  printf '{"finished": "2026-11-03T08:00:00+00:00", "rows": 9}\n' > "$prep"
+  bosun "$W/hosts/deepthought" 2026-11-05 2 0
+  run_corpus >/dev/null || fail "night two must succeed"
+  assert_equals "archive-gap deepthought,prep-stale local-jev-prep" "$(classes)" "both findings are open"
+  assert_equals 2 "$(new_count)" "both are new on their first run"
+  mv "$prep" "$W/prep.moved"
+  mv "$W/hosts/deepthought" "$W/deepthought.away"
+  run_corpus 2026-11-05 $((NOW + 3600)) >/dev/null || fail "a run with the sources away must succeed"
+  assert_equals "" "$(classes 2026-11-05)" "nothing is judged from a source that could not be read"
+  mv "$W/prep.moved" "$prep"
+  mv "$W/deepthought.away" "$W/hosts/deepthought"
+  run_corpus 2026-11-06 $((NOW + 7200)) >/dev/null || fail "a run with the sources back must succeed"
+  assert_equals "archive-gap deepthought,prep-stale local-jev-prep" "$(classes 2026-11-06)" "the unfixed findings are open again"
+  assert_equals 0 "$(new_count 2026-11-06)" "a finding is not reported again after a run that could not read its source"
+  pass "fm-officer corpus: an unreachable or missing source keeps its findings reported"
+}
+
+test_harvest_zero_total_is_not_missing_counts() {
+  local out
+  make_world zero
+  printf '{"outcome": "ok", "counts": {"listed": 0, "total": 0}}\n' > "$W/corpus/memory-harvest/last-result.json"
+  out=$(run_corpus) || fail "a run with an empty tier must succeed: $out"
+  assert_not_contains "$out" "names no listed and total counts" "a total of 0 is a count, not a missing one"
+  assert_contains "$out" "DIGEST $DATE 0 " "an empty tier is not a drift finding"
+  pass "fm-officer corpus: a harvest total of 0 is not reported as missing counts"
+}
+
 test_coverage_gaps_never_fail_the_run() {
   local out
   make_world gaps
@@ -188,6 +221,8 @@ test_healthy_corpus_has_no_findings
 test_each_finding_class
 test_archive_gap_needs_two_nights
 test_reported_once_rerun_identical_and_recurrence
+test_unreachable_source_is_not_reported_again
+test_harvest_zero_total_is_not_missing_counts
 test_coverage_gaps_never_fail_the_run
 test_run_writes_only_its_lane
 test_registry_needs_archive

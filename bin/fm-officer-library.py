@@ -37,7 +37,10 @@ item naming the report beside the run's result.
 
 A finding is reported once (fm-officer-corpus.py's reported.json rule): its
 fingerprint hashes kind, path and title. The digest line counts new code,
-needs-lee and safe items; hold items are listed and never counted. A missing
+needs-lee and safe items; hold items are listed, never counted and never
+recorded, so one that later moves to a counted bucket is new then. When the
+audit folder, result or findings file cannot be read, the ledger entries
+from that input are kept, so an outage does not re-report them. A missing
 run, result or findings file is a coverage gap, a failed or partial outcome or
 a run older than AUDIT_DAYS days is a coverage note, and none of them fails the
 run. Re-running a key on unchanged inputs writes identical bytes.
@@ -113,14 +116,16 @@ def load(path):
 
 
 def judge(run_dir, date, now):
-    """(items, coverage, notes) for one audit run folder."""
-    coverage, notes, items = [], [], []
+    """(items, coverage, notes, unread) for one audit run folder."""
+    coverage, notes, items, unread = [], [], [], set()
     result = load(os.path.join(run_dir, "result.json"))
     raw = load(os.path.join(run_dir, "findings.json"))
     if not isinstance(result, dict):
+        unread.add("result")
         coverage.append("audit run %s has no readable result.json" % date)
         result = {}
     if not isinstance(raw, list):
+        unread.add("findings")
         coverage.append("audit run %s has no readable findings.json" % date)
         raw = []
     counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
@@ -138,18 +143,18 @@ def judge(run_dir, date, now):
             continue
         f = {k: text(f.get(k), 300) for k in ("kind", "severity", "title", "path", "evidence", "disposition")}
         b, why = bucket(f)
-        items.append(dict(f, bucket=b, why=why, fingerprint=hashlib.sha256(
+        items.append(dict(f, bucket=b, why=why, source="findings", fingerprint=hashlib.sha256(
             "\0".join(("library", f["kind"], f["path"], f["title"])).encode("utf-8")).hexdigest()))
     decisions = counts.get("decisions")
     if isinstance(decisions, int) and decisions > 0:
         items.append({"kind": "decisions", "severity": "high", "title": "%d decision(s) for Lee" % decisions,
                       "path": os.path.join(run_dir, "report.md"), "evidence": "", "disposition": "one Captain's Log card for the run",
-                      "bucket": "needs-lee", "why": "the audit's decisions for Lee",
+                      "bucket": "needs-lee", "why": "the audit's decisions for Lee", "source": "result",
                       "fingerprint": hashlib.sha256(("library\0decisions\0" + date).encode("utf-8")).hexdigest()})
     order = {b: n for n, b in enumerate(COUNTED + ("hold",))}
     rank = {"high": 0, "medium": 1, "low": 2}
     items.sort(key=lambda i: (order[i["bucket"]], rank.get(i["severity"], 3), i["path"], i["title"]))
-    return items, coverage, notes
+    return items, coverage, notes, unread
 
 
 def render_md(doc):
@@ -162,7 +167,7 @@ def render_md(doc):
         lines += ["", "## %s (%d)" % (heads[b], len(found)), ""]
         for i in found:
             lines.append("- %s[%s] %s %s: %s (%s). Proposed: %s" % (
-                "NEW " if i["new"] and b != "hold" else "", i["severity"], i["kind"], i["path"], i["title"], i["why"], i["disposition"]))
+                "NEW " if i["new"] else "", i["severity"], i["kind"], i["path"], i["title"], i["why"], i["disposition"]))
         if not found:
             lines.append("- None.")
     if doc["coverage"]:
@@ -178,12 +183,13 @@ def run(args):
         runs = []
     latest = runs[-1] if runs else None
     if latest:
-        items, coverage, notes = judge(os.path.join(args.audit, latest), latest, now)
+        items, coverage, notes, unread = judge(os.path.join(args.audit, latest), latest, now)
     else:
-        items, coverage, notes = [], ["no audit run folder under %s" % args.audit], []
+        items, coverage, notes, unread = [], ["no audit run folder under %s" % args.audit], [], {"findings", "result"}
     os.makedirs(args.out, exist_ok=True)
-    corpus.mark_new(args.out, args.date, items)
-    new = sum(1 for i in items if i["new"] and i["bucket"] in COUNTED)
+    for i in items:
+        i["new"] = False
+    new = corpus.mark_new(args.out, args.date, [i for i in items if i["bucket"] in COUNTED], unread)
     doc = {"officer_role": "library", "date": args.date, "run": latest, "actionable": new,
            "counts": {b: sum(1 for i in items if i["bucket"] == b) for b in COUNTED + ("hold",)},
            "items": items, "findings": [i for i in items if i["bucket"] in COUNTED],
