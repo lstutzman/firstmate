@@ -1,0 +1,107 @@
+registered: office source tick (state/office-tick.check.sh)
+registered: office source lane:progress (state/office-lane-progress.check.sh)
+registered: office source tick (state/office-tick.check.sh)
+registered: office source lane:progress (state/office-lane-progress.check.sh)
+== officers.md
+- progress - Finds authorised work to start (role: progress; cadence: daily 07:00; team: PC; repos: example/project; requested: PC-10; start-home: navigator,quartermaster; model: none; added 2026-10-26)
+== offices.md
+- navigator - nav (role: navigator; dispatch: PropertyCompass2; sources: tick,lane:progress; added 2026-11-04)
+- quartermaster - qm (role: quartermaster; dispatch: firstmate,fleet-app,skills; sources: tick,lane:progress; added 2026-11-04)
+== progress officer run
+Linear coverage: 6 pages, 0 items seen, 7 requests, 0 team items, 0 unblocked items, 1 requested roots visited, 1 hierarchy items, 0 rate-limit retries, 0 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear labels not readable by linear-axi
+DIGEST 2026-11-05 8 data/officers/progress/2026-11-05.md
+exit=0
+== start_requests (id, class, addressed FM_HOME)
+1 fa-cve security -> quartermaster
+2 fm-crash bug -> quartermaster
+3 misc bug -> home
+4 pc-crash bug -> navigator
+5 pc-refactor code-review -> navigator
+6 lee-ask requested-feature -> home
+== excluded (id: reason)
+release: Not a work item: a release note
+stamp: Not a work item: a date or status stamp
+shell: Not a work item: a shell command
+== asks_for_lee
+price-ask: Lee decides the pricing choice
+== main shell handoff FM_HOME targets
+      2 home
+== navigator registered lane:progress watcher check (state/office-lane-progress.check.sh)
+office-lane-progress.check-trust
+office-lane-progress.check.sh
+office-tick.check-trust
+office-tick.check.sh
+office navigator: progress digest 2026-11-05: 8 finding(s) in /tmp/fm-live-progress.wbttWW/fleet/home/data/officers/progress/2026-11-05.md; 2 start request(s) delivered to this office's inbox
+exit=0
+-- navigator second check (must be silent)
+exit=0
+-- navigator inbox
+  note: pc-crash - Fix a PropertyCompass crash
+  note: pc-refactor - Refactor the deal importer
+== quartermaster registered lane:progress watcher check (state/office-lane-progress.check.sh)
+office-lane-progress.check-trust
+office-lane-progress.check.sh
+office-tick.check-trust
+office-tick.check.sh
+office quartermaster: progress digest 2026-11-05: 8 finding(s) in /tmp/fm-live-progress.wbttWW/fleet/home/data/officers/progress/2026-11-05.md; 2 start request(s) delivered to this office's inbox
+exit=0
+-- quartermaster second check (must be silent)
+exit=0
+-- quartermaster inbox
+  note: fa-cve - Patch the CVE in fleet-app
+  note: fm-crash - Fix a firstmate crash
+== main runs its own handoff
+exit=0
+  note: lee-ask - Add CSV export to the fleet app
+  note: misc - Fix a crash in an unregistered repo
+== raw receipt sample (navigator)
+{"schema":"fm-inbox-receipts.v1","home":"fleet/navigator","generated":"2026-11-05T16:27:25Z","pending":[{"id":"1793896044-udHvBi","at":"2026-11-05T16:27:24Z","source":"text","request_id":"progress-2026-11-05-c8fc638864ca77af","body":"Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, prici
+== digest markdown
+# Progress officer digest for 2026-11-05
+
+## Top of Mind
+
+- dup - Fix a firstmate crash.: Unstarted work authorised by bug
+- lee-ask - Add CSV export to the fleet app: Unstarted work authorised by requested-feature
+- cache - Repair the cache: Already in flight: flying
+- price-ask - Raise the subscription pricing to 20 pounds: Waiting on Lee: price-ask; Lee decides the pricing choice
+- release - same release as PR 4593: Not a work item: a release note
+- stamp - Last updated: November 2026: Not a work item: a date or status stamp
+- shell - sudo lvextend -r -L +300g ubuntu-vg/ubuntu-lv: Not a work item: a shell command
+
+## Ranked start requests
+
+- 1. fa-cve - Patch the CVE in fleet-app (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: security; source: backlog): Unstarted work authorised by security
+- 2. fm-crash - Fix a firstmate crash (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: bug; source: backlog): Unstarted work authorised by bug
+- 3. misc - Fix a crash in an unregistered repo (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: bug; source: backlog): Unstarted work authorised by bug
+- 4. pc-crash - Fix a PropertyCompass crash (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: bug; source: backlog): Unstarted work authorised by bug
+- 5. pc-refactor - Refactor the deal importer (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: code-review; source: backlog): Unstarted work authorised by code-review
+- 6. lee-ask - Add CSV export to the fleet app (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature
+
+## Doing
+
+- flying - Repair the cache (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: requested-feature; source: top-of-mind): Already in flight
+
+## Done
+
+- None.
+
+## Ask Lee
+
+- price-ask - Raise the subscription pricing to 20 pounds (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: requested-feature; source: top-of-mind): Lee decides the pricing choice
+
+## Excluded
+
+- release - same release as PR 4593 (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: unclassified; source: none): Not a work item: a release note
+- stamp - Last updated: November 2026 (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: unclassified; source: none): Not a work item: a date or status stamp
+- shell - sudo lvextend -r -L +300g ubuntu-vg/ubuntu-lv (Linear: none; home: /tmp/fm-live-progress.wbttWW/fleet/home; class: unclassified; source: none): Not a work item: a shell command
+
+## Unclassified
+
+- 1 open items have no recorded start class and are not listed.
+
+## Coverage
+
+- Linear labels not readable by linear-axi
+- Linear: 6 pages, 0 items seen, 7 requests, 0 team items, 0 unblocked items, 1 requested roots visited, 1 hierarchy items, 0 rate-limit retries, 0 listed descriptions truncated, 0 start candidates unverified.
