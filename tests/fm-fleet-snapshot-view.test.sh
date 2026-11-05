@@ -1217,8 +1217,8 @@ EOF
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
 }
 
-# A done child is waiting on merge only with a meta PR and an armed, registered
-# merge-poll check; every weaker case still flags terminal_in_flight.
+# A done child is waiting on merge only with a meta PR and the merge poll
+# fm-pr-check.sh arms for it; every weaker case still flags terminal_in_flight.
 test_home_summary_done_child_with_pr_is_waiting_on_merge() {
   local home fakebin out
   local pr_url=https://github.com/example/alpha/pull/4619
@@ -1254,30 +1254,38 @@ EOF
   }
   record_claude_idle "$home/state" pr-ship
 
-  # Meta PR without an armed check still flags.
+  # Meta PR without an armed merge poll still flags.
   write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"
   printf 'done: PR %s checks green\n' "$pr_url" > "$home/state/pr-ship.status"
-  assert_terminal "done child with a meta PR but no armed check must still produce terminal_in_flight"
+  assert_terminal "done child with a meta PR but no armed merge poll must still produce terminal_in_flight"
 
-  # Arm and register the merge-poll check the way fm-pr-check.sh and fm-check-register.sh do.
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$home/state/pr-ship.check.sh"
-  chmod 700 "$home/state/pr-ship.check.sh"
-  FM_HOME="$home" "$ROOT/bin/fm-check-register.sh" pr-ship >/dev/null \
-    || fail "fixture check registration failed"
+  # Arm the merge poll through the product path that records a ready PR.
+  cat > "$fakebin/gh" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *headRefOid*) printf '%s\\n' "$pr_head" ;;
+  *isDraft*) printf '{"isDraft":false}\\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/gh"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-pr-check.sh" pr-ship "$pr_url" 2>&1) \
+    || fail "fixture PR registration failed: $out"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
   printf '%s' "$out" | jq -e --arg pr "$pr_url" '
     .valid == true
       and .invalidity.kind == null
       and .counts.waiting_on_merge == 1
       and .waiting_on_merge == [{id:"pr-ship",pr:$pr}]
-  ' >/dev/null || fail "done child with a meta PR and an armed check must be valid and waiting on merge: $out"
+  ' >/dev/null || fail "done child with a meta PR and an armed merge poll must be valid and waiting on merge: $out"
 
-  # A check whose bytes changed after registration is not registered.
-  printf '#!/usr/bin/env bash\nexit 1\n' > "$home/state/pr-ship.check.sh"
-  assert_terminal "done child whose check bytes changed after registration must still produce terminal_in_flight"
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$home/state/pr-ship.check.sh"
+  # A poll check the watcher would refuse is not an armed poll.
+  cp "$home/state/pr-ship.check.sh" "$TMP_ROOT/pr-ship.check.sh.armed"
+  printf '\n' >> "$home/state/pr-ship.check.sh"
+  assert_terminal "done child whose merge poll check was altered must still produce terminal_in_flight"
+  cat "$TMP_ROOT/pr-ship.check.sh.armed" > "$home/state/pr-ship.check.sh"
 
-  # A PR URL only in the status log does not qualify, even with an armed check.
+  # A PR URL only in the status log does not qualify, even with an armed poll.
   write_pr_ship_meta
   printf 'working: opened PR %s\ndone: complete\n' "$pr_url" > "$home/state/pr-ship.status"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
@@ -1290,12 +1298,12 @@ EOF
   printf 'done: complete\n' > "$home/state/pr-ship.status"
   assert_terminal "done child with no PR must still produce terminal_in_flight"
 
-  # A failed child flags even with a meta PR and an armed check.
+  # A failed child flags even with a meta PR and an armed poll.
   write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"
   printf 'failed: stopped\n' > "$home/state/pr-ship.status"
   assert_terminal "failed child with a PR must still produce terminal_in_flight"
   unset -f write_pr_ship_meta assert_terminal
-  pass "home-summary treats a done child as waiting on merge only with a meta PR and an armed check"
+  pass "home-summary treats a done child as waiting on merge only with a meta PR and an armed merge poll"
 }
 
 test_snapshot_handles_large_status_fields() {

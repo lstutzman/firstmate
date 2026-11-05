@@ -238,9 +238,7 @@ esac
 # shellcheck source=bin/fm-hold-reason-lib.sh
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
-. "$SCRIPT_DIR/fm-pr-lib.sh"
-# shellcheck source=bin/fm-check-lib.sh
-. "$SCRIPT_DIR/fm-check-lib.sh"  # fm_custom_check_registered: the armed merge-poll check
+. "$SCRIPT_DIR/fm-pr-lib.sh"  # fm_pr_poll_artifacts_valid: the armed merge poll
 
 usage() {
   cat <<'EOF'
@@ -262,12 +260,12 @@ kind=secondmate meta records are not child inventory for unowned_current or
 terminal_in_flight; they never have backlog rows.
 A done child is waiting on merge, not terminal_in_flight, only when its meta
 records pr= (pr.source is "meta"; a PR URL found only in the status log does not
-count) and a merge-poll check is armed and registered for it (state/<id>.check.sh
-bound by fm-check-register.sh, shown as pr.merge_check_armed). The armed check
-wakes the supervisor when the PR merges or closes, so the child cannot sit
+count) and the merge poll fm-pr-check.sh arms for that same PR is live and valid
+(state/<id>.check.sh, <id>.pr-poll and <id>.pr-poll-registration as the watcher
+validates them, shown as pr.merge_check_armed). The armed poll wakes the supervisor when the PR merges or closes, so the child cannot sit
 unnoticed. Such a child is listed in waiting_on_merge and counted in
 counts.waiting_on_merge; no forge read is made. A failed child, or a done child
-without both a meta PR and an armed check, still invalidates the inventory.
+without both a meta PR and an armed poll for it, still invalidates the inventory.
 Its invalidity object names the normalized failure kind and affected ids.
 Actionable tasks-axi captain holds appear as decisions_open and stay visible in
 queued with hold_reason, hold_kind, hold_until,
@@ -824,7 +822,8 @@ task_json_lines() {
       pr_source=absent
     fi
     merge_check_armed=0
-    if [ "$pr_source" = meta ] && fm_custom_check_registered "$STATE" "$id"; then
+    if [ "$pr_source" = meta ] && fm_pr_poll_artifacts_valid "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh" \
+      && [ "$FM_PR_DATA_URL" = "$pr" ]; then
       merge_check_armed=1
     fi
 
