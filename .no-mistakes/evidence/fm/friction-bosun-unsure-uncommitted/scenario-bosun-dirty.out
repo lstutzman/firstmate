@@ -1,0 +1,84 @@
+######## base
+officer exit=0
+== bosun-answers.json
+clean	delete	fleet rules section 6, rule c (content already on the default branch)	3363d23 is an ancestor of origin/HEAD, read live; the Bosun reached this check only after finding no uncommitted or unpushed work
+ignored-only	delete	fleet rules section 6, rule c (content already on the default branch)	3363d23 is an ancestor of origin/HEAD, read live; the Bosun reached this check only after finding no uncommitted or unpushed work
+staged	delete	fleet rules section 6, rule c (content already on the default branch)	3363d23 is an ancestor of origin/HEAD, read live; the Bosun reached this check only after finding no uncommitted or unpushed work
+untracked	delete	fleet rules section 6, rule c (content already on the default branch)	3363d23 is an ancestor of origin/HEAD, read live; the Bosun reached this check only after finding no uncommitted or unpushed work
+== digest Bosun section
+- Bosun host downhost unreachable or its last result unreadable (ssh exit 255), so its unsure items are not answered.
+
+## Bosun unsure items
+
+- okhost (result of 2026-10-24): 4 unsure; 4 answered, 0 unreadable (the Bosun retries them), 0 without a bucket, 0 unsettled.
+
+## Findings
+
+### Lee-step ssh lines target the machine they run on
+
+- Root cause: environment (ssh-to-self); severity 5, confidence 5; carded.
+- What Lee had to do: run an ssh -t <host> line inside a session on that same host, where ssh to itself has no key; 3 of 3 event(s) named Lee.
+- Waits: 1 measured, total 2.0 h, median 2.0 h, longest 2.0 h; 0 still open; 1 re-ask(s).
+- Proposed fix: Make Lee-step one-liners host-aware: print `bash <script>` when the session already runs on the target host and `ssh -t <host> ...` only from another machine, or install a loopback key.
+- Owner: main (firstmate); effort S.
+- Evidence: tasks task-swap; status swap-c2@2026-10-23T10:00:00Z, swap-c2@2026-10-23T10:30:00Z; cards none; sessions alpha:s-mate; e.g. `arm 2 done. Lee, please run: ssh -t fixturehost 'bash /x/swap.sh c2' -- it should end with OK. Options: (a) run it now; (b) skip`.
+
+### Agents hand Lee sudo steps to run by hand
+
+- Root cause: sudo (sudo); severity 4, confidence 5; carded.
+- What Lee had to do: run a sudo command or script by hand; 2 of 3 event(s) named Lee.
+- Waits: 2 measured, total 55 min, median 40 min, longest 40 min; 0 still open; 0 re-ask(s).
+- Proposed fix: Install a root-owned script for the step with a NOPASSWD sudoers rule naming that exact path (or a systemd unit the agent may start), approved once by Lee, so the agent runs it itself.
+- Owner: fixturehost home (Lee approves the sudoers rule); effort M.
+- Evidence: tasks gone, task-lic, task-wt; status fleet-sudo@2026-10-23T10:00:00Z; cards none; sessions alpha:s-worker; e.g. `sudo: a terminal is required`.
+
+### An agent token lacks a scope, so Lee widens it
+
+- Root cause: credential (scope), Cloudflare; severity 4, confidence 5; carded.
+- What Lee had to do: widen or roll a Cloudflare token for the agents; 1 of 1 event(s) named Lee.
+== velocity file mentions of downhost/Bosun: 1
+== velocity coverage notes:
+["No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.","A worker that resumed in the wrong directory is found only while its task record survives.","Bosun host downhost unreachable or its last result unreadable (ssh exit 255), so its unsure items are not answered."]
+== clean index mtime before=1793861997.225 after=1793861997.225; index.lock present: 0
+######## target
+officer exit=0
+== bosun-answers.json
+clean	delete	fleet rules section 6, rule c (content already on the default branch)	5a207d6 is an ancestor of origin/HEAD, read live
+ignored-only	delete	fleet rules section 6, rule c (content already on the default branch)	5a207d6 is an ancestor of origin/HEAD, read live
+staged	keep	fleet rules section 6, rule c (unique unlanded work is never deleted)	git status --porcelain lists uncommitted or untracked work in it, read live (git-ignored files excluded, as in the Bosun's rule c check, fleet-app src/bosun/cleanup.ts)
+untracked	keep	fleet rules section 6, rule c (unique unlanded work is never deleted)	git status --porcelain lists uncommitted or untracked work in it, read live (git-ignored files excluded, as in the Bosun's rule c check, fleet-app src/bosun/cleanup.ts)
+== digest Bosun section
+## Bosun unsure items
+
+- okhost (result of 2026-10-24): 4 unsure; 4 answered, 0 unreadable (the Bosun retries them), 0 without a bucket, 0 unsettled.
+- Bosun host downhost unreachable or its last result unreadable (ssh exit 255), so its unsure items are not answered.
+
+## Findings
+
+### Lee-step ssh lines target the machine they run on
+
+- Root cause: environment (ssh-to-self); severity 5, confidence 5; carded.
+- What Lee had to do: run an ssh -t <host> line inside a session on that same host, where ssh to itself has no key; 3 of 3 event(s) named Lee.
+- Waits: 1 measured, total 2.0 h, median 2.0 h, longest 2.0 h; 0 still open; 1 re-ask(s).
+- Proposed fix: Make Lee-step one-liners host-aware: print `bash <script>` when the session already runs on the target host and `ssh -t <host> ...` only from another machine, or install a loopback key.
+- Owner: main (firstmate); effort S.
+- Evidence: tasks task-swap; status swap-c2@2026-10-23T10:00:00Z, swap-c2@2026-10-23T10:30:00Z; cards none; sessions alpha:s-mate; e.g. `arm 2 done. Lee, please run: ssh -t fixturehost 'bash /x/swap.sh c2' -- it should end with OK. Options: (a) run it now; (b) skip`.
+
+### Agents hand Lee sudo steps to run by hand
+
+- Root cause: sudo (sudo); severity 4, confidence 5; carded.
+- What Lee had to do: run a sudo command or script by hand; 2 of 3 event(s) named Lee.
+- Waits: 2 measured, total 55 min, median 40 min, longest 40 min; 0 still open; 0 re-ask(s).
+- Proposed fix: Install a root-owned script for the step with a NOPASSWD sudoers rule naming that exact path (or a systemd unit the agent may start), approved once by Lee, so the agent runs it itself.
+- Owner: fixturehost home (Lee approves the sudoers rule); effort M.
+- Evidence: tasks gone, task-lic, task-wt; status fleet-sudo@2026-10-23T10:00:00Z; cards none; sessions alpha:s-worker; e.g. `sudo: a terminal is required`.
+
+### An agent token lacks a scope, so Lee widens it
+
+- Root cause: credential (scope), Cloudflare; severity 4, confidence 5; carded.
+- What Lee had to do: widen or roll a Cloudflare token for the agents; 1 of 1 event(s) named Lee.
+- Waits: 1 measured, total 1.0 h, median 1.0 h, longest 1.0 h; 0 still open; 0 re-ask(s).
+== velocity file mentions of downhost/Bosun: 0
+== velocity coverage notes:
+["No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.","A worker that resumed in the wrong directory is found only while its task record survives."]
+== clean index mtime before=1793861998.225 after=1793861998.225; index.lock present: 0
