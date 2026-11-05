@@ -1,0 +1,40 @@
+
+changes and commit them, and you can discard any commits you make in this
+
+
+
+Or undo this operation with:
+
+
+
+registered: office source upstream (state/office-upstream.check.sh)
+== A1 black-hole upstream, contiguous hourly attempts (as the watcher would make them)
+  hour  0: rc=0 ms=8073 out=[]
+  hour  1: rc=0 ms=8110 out=[]
+  hour  2: rc=0 ms=8096 out=[]
+  hour  3: rc=0 ms=8210 out=[]
+  hour  4: rc=0 ms=8288 out=[]
+  hour  5: rc=0 ms=8157 out=[]
+  hour  6: rc=0 ms=8084 out=[]
+  hour  7: rc=0 ms=8109 out=[]
+  hour  8: rc=0 ms=8085 out=[]
+  hour  9: rc=0 ms=8079 out=[]
+  hour 10: rc=0 ms=8079 out=[]
+  hour 11: rc=0 ms=8072 out=[]
+  hour 12: rc=0 ms=8084 out=[]
+  hour 13: rc=0 ms=8090 out=[]
+  hour 14: rc=0 ms=8082 out=[]
+  hour 15: rc=0 ms=8079 out=[]
+  hour 16: rc=0 ms=8076 out=[]
+  hour 17: rc=0 ms=8074 out=[]
+  hour 18: rc=0 ms=8085 out=[]
+  hour 19: rc=0 ms=8068 out=[]
+  hour 20: rc=0 ms=8071 out=[]
+  hour 21: rc=0 ms=8067 out=[]
+  hour 22: rc=0 ms=8069 out=[]
+  hour 23: rc=0 ms=8064 out=[]
+  hour 24:
+rc=0 ms=51 out=[office quartermaster: upstream check of https://10.255.255.1/firstmate.git against origin/main failing since 2026-11-05; check the remote and fork-ref in config/firstmate-upstream]
+  hour 25 (already reported this streak):
+rc=0 ms=8059 out=[]
+  fail record: 1793912225 reported

@@ -1,0 +1,41 @@
+Note: switching to 'e08cebd99a2164ecb3da1277095dc5752ceefcfa'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+registered: office source upstream (state/office-upstream.check.sh)
+== N1 real GitHub upstream kunchenguid/firstmate vs real fork origin/main (fresh clone of this branch)
+rc=0 ms=3134 out=[office quartermaster: upstream 5f2b81bca..b77b66cb9: 209 new commit(s) not in origin/main; newest: fix: sync record exports with empty overrides and hidden state files (#8188) | fix: wait for busy-state locks to reach the stale threshold (#8177) | fix(bin): canonicalize Windows drive-letter herdr socket paths before identity c]
+records: seen=b77b66cb999876c4db19da36b9af5baaacdd52e5 day=2026-11-05 fail=
+cross-check (independent): upstream head=b77b66cb9  count=209
+== N1b rerun same day: silent
+rc=0 ms=33 out=[]
+== A1 black-hole upstream (TCP never answers): each attempt bounded under 30s, silent <24h, reported once at 24h
+rc=0 ms=8044 out=[]
+  hour 1 (fast path, attempt record only):
+rc=0 ms=8060 out=[]
+  hour 12 (fast path, attempt record only):
+rc=0 ms=8069 out=[]
+  hour 23 (fast path, attempt record only):
+rc=0 ms=8064 out=[]
+  hour 24:
+rc=0 ms=8078 out=[]
+  hour 25 (already reported this streak):
+rc=0 ms=8091 out=[]
+== A2 watcher kills an attempt (timeout 2s against black hole), then 24h later still reports
+killed rc=124
+  fail record after kill: 1793912109
+  hour 24 (every attempt killed):
+rc=0 ms=98 out=[office quartermaster: upstream check of https://10.255.255.1/firstmate.git against origin/main failing since 2026-11-05; check the remote and fork-ref in config/firstmate-upstream]
