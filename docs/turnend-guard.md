@@ -212,6 +212,7 @@ A healthy watcher's beacon can therefore legitimately age up to `FM_POLL` second
 A cycle also runs steps that wait on something else: the custom `*.check.sh` sweep, the pending-reply observations and the secondmate liveness probes.
 Each of those steps is individually bounded, and the live cycle touches the beacon again after every one of them, so a long run of slow steps never reads as a dead watcher.
 A custom check is bounded by `FM_CHECK_TIMEOUT`.
+The pending-reply wrong-home scan reads each secondmate child status log only past a remembered byte offset and touches the beacon between files (`fm_pending_reply_detect_wrong_home` in `bin/fm-pending-reply-lib.sh`), so a large long-lived log never freezes the beat.
 A remote poll is bounded by `FM_WATCH_REMOTE_BUDGET` (default 30 seconds, `fm_watcher_remote_poll` in `bin/fm-timeout-lib.sh`), and one that hits the bound reads as an unreachable host, a coverage gap in the triage log and never evidence of death.
 The touch always comes from the watcher's own shell, never from a side process, so a frozen or stopped watcher still goes stale.
 
