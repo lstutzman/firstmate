@@ -18,7 +18,8 @@
 #                                    ledger line, on every watcher poll, plus
 #                                    the silent-ledger inactive-outcome fallback
 #   - bin/fm-pr-check.sh             a registered PR-ready line carrying the
-#                                    canonical URL
+#                                    canonical URL, and the merge handoff of a
+#                                    project another home merges
 #   - bin/fm-captain-hold.sh         a task held for the captain and its answer
 #   - bin/fm-merge-outcome-lib.sh    a merged PR
 #   - bin/fm-teardown.sh             the child's final ledger line, refusing to
@@ -152,19 +153,34 @@ fm_parent_channel_clean_note() {  # <text>
   printf '%s' "$1" | LC_ALL=C tr '\t\r\n' '   ' | cut -c1-1200
 }
 
-# Append <line> once, using fm-classify-lib.sh's retry contract. Time-insensitive:
-# the caller declaring a new event is the one that stamps it.
-fm_parent_channel_append_once() {  # <path> <line>
+# Append <line> even when an identical line is already there, for a caller
+# whose own record proves the event is new. The caller stamps it.
+fm_parent_channel_append() {  # <path> <line>
   local path=$1 line=$2
   if [ -e "$path" ] || [ -L "$path" ]; then
     [ -f "$path" ] && [ ! -L "$path" ] || return 1
   else
     mkdir -p "$(dirname "$path")" || return 1
   fi
-  if status_event_recorded "$path" "$line"; then
+  printf '%s\n' "$line" >> "$path"
+}
+
+# Append <line> once, using fm-classify-lib.sh's retry contract. Time-insensitive:
+# the caller declaring a new event is the one that stamps it.
+fm_parent_channel_append_once() {  # <path> <line>
+  local path=$1 line=$2
+  if [ -f "$path" ] && [ ! -L "$path" ] && status_event_recorded "$path" "$line"; then
     return 0
   fi
-  printf '%s\n' "$line" >> "$path"
+  fm_parent_channel_append "$path" "$line"
+}
+
+# The unstamped line that hands <pr-url> to merger home <home>: the same line
+# bin/fm-pr-merge.sh prints on its merger refusal, which
+# tests/fm-pr-merge.test.sh pins byte-identical to this builder.
+fm_merge_handoff_line() {  # <home> <pr-url>
+  printf 'needs-decision [key=merge-handoff-%s] [cause=external]: [handoff=%s] %s is ready to merge' \
+    "${2##*/}" "$1" "$2"
 }
 
 # Publish one parent-facing line from <home>. See the return codes above.
