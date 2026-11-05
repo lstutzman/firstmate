@@ -197,24 +197,26 @@ elif scenario == "starts":
            "sev": sorted(rub.start_severities), "min": str(rub.min_score),
            "next_day": [[s["title"] for s in again[0]], again[1], again[2]],
            "body": starts[0]["execute"]["argv"][-1] if starts else None}
-elif scenario == "fleet-start":
+elif scenario in ("fleet-start", "fleet-nowrite"):
     offices = [lib.progress.parse_office("/home/nav=propertycompass2=navigator"), lib.progress.parse_office("/home/qm=firstmate,skills=quartermaster")]
+    officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), pattern_sources=("scan",), project="Fleet")
     fleet = find("f", "Bosun backup check crashes", "high")
-    fl, lin = filer(project="Fleet")
-    run(fl, [fleet])
-    pc = find("p", "Null reference when saving", "high")
-    pc["filing"] = {"action": "created", "issue": "PC-300"}
-    fs = [fleet, pc]
+    skills = find("s", "Skill sync drops manifest entries", "high", project="skills")
+    pc = find("p", "Null reference when saving", "high", project="PropertyCompass2")
+    fs = [fleet, skills, pc]
+    if scenario == "fleet-start":
+        fl, lin = filer(project="Fleet")
+        run(fl, fs)
     for f in fs:
         f["score"] = lib.score_of(f)
     rub = lib.load_rubric(rubric_file, officer)
-    starts, held, asks = lib.plan_starts(officer, fs, rub, date, "linear", "/home/main", offices, {})
+    starts, held, asks = lib.plan_starts(officer, fs, rub, date, "linear" if scenario == "fleet-start" else "none", "/home/main", offices, {})
     store = {}
     lib.update_patterns(officer, store, fs, lib.Jev(os.path.join(W, "jev.py")), date)
     pats, captures, lint = lib.pattern_outputs(officer, store, rub, date, "/home/main", offices)
-    res = {"starts": {s["title"]: s["execute"]["env"]["FM_HOME"] for s in starts}, "project": fleet["project"],
-           "body": starts[0]["execute"]["argv"][-1],
-           "patterns": [{"home": r["execute"]["env"]["FM_HOME"], "target": r["target"], "body": r["execute"]["argv"][-1],
+    res = {"starts": {s["title"]: [s["execute"]["env"]["FM_HOME"], s["project"], s["linear_only"]] for s in starts},
+           "body": starts[0]["execute"]["argv"][-1] if starts else None,
+           "patterns": [{"home": r["execute"]["env"]["FM_HOME"], "project": r["project"], "target": r["target"], "body": r["execute"]["argv"][-1],
                          "lines": [p["line"] for p in r["patterns"]]} for r in pats],
            "captures": sorted(c["tags"][1] for c in captures)}
 print(json.dumps(res))
@@ -332,9 +334,7 @@ test_fleet_findings_take_the_fleet_project_and_label() {
   pass "fm-officer-linear: a fleet finding goes to the Fleet project with area:fleet, dry-run then verify"
 }
 
-test_fleet_finding_starts_and_patterns_go_to_the_quartermaster() {
-  local out
-  world fleet-start '{}'
+fleet_rubric() {
   cat > "$W/fixture-rubric.md" <<'EOF'
 # Fixture rubric
 
@@ -342,17 +342,35 @@ test_fleet_finding_starts_and_patterns_go_to_the_quartermaster() {
 
 - start-severities: high, critical
 EOF
+}
+
+test_fleet_finding_starts_and_patterns_go_to_the_quartermaster() {
+  local out
+  world fleet-start '{}'
+  fleet_rubric
   out=$(drive fleet-start) || fail "driver must succeed"
-  assert_equals firstmate "$(jq -r '.project' <<<"$out")" "a finding filed in the Fleet project takes the fleet repository"
-  assert_equals /home/qm "$(jq -r '.starts["Bosun backup check crashes"]' <<<"$out")" "its start request goes to the Quartermaster's home"
-  assert_equals /home/nav "$(jq -r '.starts["Null reference when saving"]' <<<"$out")" "a PropertyCompass2 finding still goes to the Navigator"
+  assert_equals '["/home/qm","",true]' "$(jq -c '.starts["Bosun backup check crashes"]' <<<"$out")" "a Fleet item naming no repository keeps no repository, is Linear-only, and starts with the Quartermaster"
+  assert_equals '["/home/qm","skills",false]' "$(jq -c '.starts["Skill sync drops manifest entries"]' <<<"$out")" "a finding naming a fleet repository keeps it and starts with the Quartermaster"
+  assert_equals '["/home/nav","PropertyCompass2",false]' "$(jq -c '.starts["Null reference when saving"]' <<<"$out")" "a PropertyCompass2 finding still goes to the Navigator"
   assert_contains "$(jq -r '.body' <<<"$out")" "word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z)." "only Lee's words are inside the quotation marks"
-  assert_equals '["/home/qm","/home/nav"]' "$(jq -c '[.patterns[].home]' <<<"$out")" "a fleet pattern goes to the Quartermaster, a PropertyCompass2 one to the Navigator"
-  assert_equals "Anti-pattern: Bosun backup check crashes. Safe form: not stated by the source; see the linked item" "$(jq -r '.patterns[0].lines | join("|")' <<<"$out")" "the fleet request carries only the fleet pattern"
-  assert_not_contains "$(jq -r '.patterns[0].target + .patterns[0].body' <<<"$out")" "quality-patterns.md" "a fleet pattern never goes to PropertyCompass2's quality-patterns.md"
-  assert_contains "$(jq -r '.patterns[1].target' <<<"$out")" ".agents/skills/sdlc-review/references/quality-patterns.md in PropertyCompass2" "a PropertyCompass2 pattern still targets quality-patterns.md"
-  assert_equals '["project:PropertyCompass2","project:firstmate"]' "$(jq -c '.captures' <<<"$out")" "both patterns go to the memory tier tagged with their project"
-  pass "fm-officer-linear: a Fleet-project finding and its pattern go to the Quartermaster; PropertyCompass2 work keeps the Navigator"
+  assert_equals '[["/home/qm","Fleet"],["/home/nav","PropertyCompass2"],["/home/qm","skills"]]' "$(jq -c '.patterns | sort_by(.project) | map([.home, .project])' <<<"$out")" "fleet patterns go to the Quartermaster, a PropertyCompass2 one to the Navigator"
+  assert_equals "Anti-pattern: Bosun backup check crashes. Safe form: not stated by the source; see the linked item" "$(jq -r '.patterns[] | select(.project == "Fleet") | .lines | join("|")' <<<"$out")" "the Fleet request carries only the Fleet pattern"
+  assert_not_contains "$(jq -r '.patterns | map(select(.project != "PropertyCompass2") | .target + .body) | join(" ")' <<<"$out")" "quality-patterns.md" "a fleet pattern never goes to PropertyCompass2's quality-patterns.md"
+  assert_not_contains "$(jq -r '.patterns[] | select(.project == "Fleet") | .body' <<<"$out")" "firstmate" "no repository is invented for a Fleet item"
+  assert_contains "$(jq -r '.patterns[] | select(.project == "PropertyCompass2") | .target' <<<"$out")" ".agents/skills/sdlc-review/references/quality-patterns.md in PropertyCompass2" "a PropertyCompass2 pattern still targets quality-patterns.md"
+  assert_equals '["project:Fleet","project:PropertyCompass2","project:skills"]' "$(jq -c '.captures' <<<"$out")" "each pattern goes to the memory tier tagged with its own project"
+  pass "fm-officer-linear: Fleet and fleet-repository findings and their patterns go to the Quartermaster; PropertyCompass2 work keeps the Navigator"
+}
+
+test_fleet_patterns_route_without_linear_writes() {
+  local out
+  world fleet-nowrite '{}'
+  fleet_rubric
+  out=$(drive fleet-nowrite) || fail "driver must succeed"
+  assert_equals 0 "$(wc -l < "$LDIR/calls" | tr -d ' ')" "no Linear call is made"
+  assert_equals '[["/home/qm","Fleet"],["/home/nav","PropertyCompass2"],["/home/qm","skills"]]' "$(jq -c '.patterns | sort_by(.project) | map([.home, .project])' <<<"$out")" "without filing, a fleet pattern still goes to the Quartermaster"
+  assert_not_contains "$(jq -r '.patterns | map(select(.project != "PropertyCompass2") | .target + .body) | join(" ")' <<<"$out")" "quality-patterns.md" "and never to PropertyCompass2's quality-patterns.md"
+  pass "fm-officer-linear: with --writes none a fleet officer's patterns still go to the Quartermaster"
 }
 
 test_closed_item_is_never_touched() {
@@ -387,5 +405,6 @@ test_cap_overflow_is_listed_and_budget_stops_the_run
 test_reserved_class_becomes_one_keyed_needs_decision
 test_fleet_findings_take_the_fleet_project_and_label
 test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
+test_fleet_patterns_route_without_linear_writes
 test_closed_item_is_never_touched
 test_no_call_closes_or_deletes

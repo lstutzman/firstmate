@@ -44,7 +44,8 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
 
 - A finding starts only when it is real, untracked and filed, its source and severity are ones the rubric admits, its score reaches the rubric's minimum (never below 4), and it matches no reserved class.
 - The start request uses the progress officer's start-request path, so the owning office's own check delivers it: the Navigator for PropertyCompass2, the Quartermaster for fleet repositories.
-  A finding filed in the Fleet project, or one naming a fleet repository, goes to the Quartermaster; a finding that names no repository belongs to the officer's own project, PropertyCompass2 unless the officer declares another.
+  A finding that names no repository belongs to the officer's own project: PropertyCompass2 unless the officer declares `Fleet`.
+  A Fleet finding with no repository is never given one; it stays a Linear-only item and goes to the Quartermaster, as does a finding naming firstmate, skills or fleet-app.
   An item is started or held once; a later day never asks for it again.
 - The reserved classes are fixed in the library and always hold, whatever a rubric says.
   A finding that matches one is still filed, and the run's digest carries one keyed `needs-decision` line (`<officer-id>-holds-<date>`) naming them.
@@ -72,7 +73,7 @@ For a bug or code-review finding, the specific bad pattern is remembered so it i
 - Patterns are deduped like findings (normalised title, then local-jev above 0.85), and a repeat raises the pattern's count.
 - A new pattern leaves in three ways: a batched start request, the digest for capture to the memory tier tagged `pattern` and the project, and, for a mechanical pattern, a proposed analyzer or lint rule.
   A PropertyCompass2 pattern's request goes to the Navigator to append the lines to PropertyCompass2's `.agents/skills/sdlc-review/references/quality-patterns.md` through a normal PR.
-  A pattern from fleet code never goes to that file: its request goes to the Quartermaster, to add the lines to that repository's review guidance or a check through a normal PR.
+  A pattern from fleet code never goes to that file: its request goes to the Quartermaster, to add the lines to the review guidance of the repository it came from, or a check, through a normal PR; it is tagged with the named repository, or `Fleet` when none is named.
   The officer never writes either repository itself.
 
 ## The rubric file
@@ -96,7 +97,7 @@ A missing or unreadable rubric means nothing starts by itself, and the run says 
 An officer adopts it in one change:
 
 - add its `docs/officers/<id>-rubric.md`, using the headings above;
-- load `bin/fm-officer-linear.py`, declare an `Officer` with its id, label, rubric file and allowed sources, and file through `Filer`;
+- load `bin/fm-officer-linear.py`, declare an `Officer` with its id, label, rubric file, allowed sources and project (`Fleet` for a fleet officer), and file through `Filer`;
 - add `writes: linear`, `max-creates`, `max-linear-calls` and `start-home` to its registry line ([Officers](../configuration.md#officers-dataofficersmd)), and have `bin/fm-officer.sh` pass them to its script as it does for the Surgeon;
 - make sure its Source label exists in team PC, and use the Fleet project and `area:fleet` for fleet findings;
 - prove it with tests that run the officer through `bin/fm-officer.sh` against a fake `linear-axi`, as `tests/fm-officer-surgeon.test.sh` does.

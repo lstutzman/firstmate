@@ -34,8 +34,9 @@ how it finds things. This file owns the mechanics every officer shares:
               becomes a start request on the progress officer's path (execute_for), addressed to the --start-home office whose
               projects name the finding's project, else the main home (navigator for PropertyCompass2, quartermaster for fleet repositories); one
               matching a reserved class becomes one keyed needs-decision line (asks_for_lee). A finding is handled once.
-              A finding that names no repository belongs to the Officer's project (PropertyCompass2 by default); one filed
-              in the Fleet project takes the fleet repository (FLEET_REPO), so it goes to the quartermaster.
+              A finding that names no repository belongs to the Officer's project (owning_project: PropertyCompass2 by
+              default, Fleet for a fleet officer); a Fleet item names no repository and goes to the office that dispatches
+              the fleet repositories (FLEET_REPOS), the quartermaster.
   patterns    update_patterns() / pattern_outputs(): one anti-pattern line per bug or code-review finding, deduped by
               normalised title then local-jev, handed on as one batched start request per repository (PropertyCompass2's to
               the navigator for its quality-patterns.md, fleet code's to the office that dispatches that repository),
@@ -100,7 +101,7 @@ FLEET_PROJECT = "Fleet"
 FLEET_AREA = "area:fleet"
 BUILTIN_START_SEVERITIES = ("medium", "high", "critical")
 RATE_OR_BUDGET = ("RATE_LIMITED", "CALL_BUDGET")
-FLEET_REPO = "firstmate"
+FLEET_REPOS = ("firstmate", "skills", "fleet-app")
 DEFAULT_START_WORD = "Each officer should have a different rubric for what they find as work and decide to start"
 DEFAULT_START_SOURCE = "Lee, main chat 2026-11-05T17:59:01Z"
 
@@ -588,8 +589,6 @@ class Filer:
         label_set(f) -> (labels, missing labels); describe(f, near=None, recurrence=None) -> the item body.
         RATE_LIMITED and CALL_BUDGET are raised to the caller after the finding is marked failed.
         """
-        if self.project == FLEET_PROJECT and not f["project"]:
-            f["project"] = FLEET_REPO
         wanted, missing = label_set(f)
         if missing:
             f["filing"] = {"action": "not-filed", "reason": "label(s) not found in team %s: %s" % (self.team, ", ".join(missing))}
@@ -653,6 +652,18 @@ def repo_key(project):
     return project.rsplit("/", 1)[-1].lower()
 
 
+def owning_project(officer, project):
+    """The finding's own repository, else the officer's project (PropertyCompass2, or Fleet for a fleet officer)."""
+    return project or officer.project
+
+
+def office_home(project, main_home, start_homes):
+    """The start-home office that dispatches the project (any fleet repository for Fleet), else the main home."""
+    key = repo_key(project)
+    wanted = set(FLEET_REPOS) if key == FLEET_PROJECT.lower() else {key}
+    return next((o.home for o in start_homes if wanted & o.projects), main_home)
+
+
 def start_body(officer, row, what):
     evidence = {k: v for k, v in row.items() if k not in ("execute",)}
     return ("%s automatic start under its rubric (%s), on Lee's recorded "
@@ -669,8 +680,7 @@ def start_body(officer, row, what):
 def execute_for(officer, row, rid, what, main_home, start_homes):
     """The idempotent fm-inbox.sh call that hands a start request to the owning office's home."""
     body = start_body(officer, row, what)
-    project = repo_key(row.get("project") or officer.project)
-    home = next((o.home for o in start_homes if project in o.projects), main_home)
+    home = office_home(owning_project(officer, row.get("project")), main_home, start_homes)
     return {"action": "start", "env": {"FM_HOME": home}, "request_id": rid,
             "argv": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh"),
                      "note", "--request-id", rid, "--json", "--", body]}
@@ -758,7 +768,7 @@ def update_patterns(officer, store, findings, jev, date):
             entry["count"] += 1
             entry["last"] = date
         else:
-            entry = {"title": f["title"], "line": line, "count": 1, "first": date, "last": date, "project": f["project"] or officer.project,
+            entry = {"title": f["title"], "line": line, "count": 1, "first": date, "last": date, "project": owning_project(officer, f["project"]),
                      "source": f["source"], "reported": None, "captured": None, "mechanical": bool(MECHANICAL.search(f["title"]))}
             patterns[pid] = entry
             new.append(pid)
@@ -784,8 +794,10 @@ def pattern_outputs(officer, store, rubric, date, main_home, start_homes):
             pc = repo_key(p["project"]) == DEFAULT_PROJECT.lower()
             groups.setdefault(DEFAULT_PROJECT if pc else p["project"], []).append((pid, p))
         for project, items in groups.items():
-            target = "%s in %s" % (PATTERN_TARGET, project) if project == DEFAULT_PROJECT else "the review guidance in %s" % project
-            row = {"kind": "pattern-memory", "project": project, "linear_only": False, "rank": 0,
+            fleet = project == FLEET_PROJECT
+            target = ("%s in %s" % (PATTERN_TARGET, project) if project == DEFAULT_PROJECT else
+                      "the review guidance of the fleet repository it came from" if fleet else "the review guidance in %s" % project)
+            row = {"kind": "pattern-memory", "project": project, "linear_only": fleet, "rank": 0,
                    "target": target, "patterns": [{"id": pid, "line": p["line"], "count": p["count"]} for pid, p in items]}
             rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256(("patterns:" + ",".join(pid for pid, _ in items)).encode("utf-8")).hexdigest()[:16])
             if project == DEFAULT_PROJECT:
@@ -793,7 +805,7 @@ def pattern_outputs(officer, store, rubric, date, main_home, start_homes):
                     target, officer.short, project)
             else:
                 what = ("Keep these new bad-pattern lines (anti-pattern and safe form), found in %s code, from being repeated: add them to %s "
-                        "or a check through a normal PR; the %s never writes %s itself." % (project, target, officer.short, project))
+                        "or a check through a normal PR; the %s never writes that repository itself." % (project, target, officer.short))
             row["execute"] = execute_for(officer, row, rid, what, main_home, start_homes)
             requests.append(row)
         for _, p in pending:
