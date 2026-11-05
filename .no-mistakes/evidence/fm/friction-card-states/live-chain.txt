@@ -1,0 +1,47 @@
+== live chain: bin/fm-officer.sh run friction -> quartermaster office lane -> read-back
+- friction - Finds what slowed agents down, above all waits on Lee (role: friction; start-home: quartermaster; cadence: daily 06:15; archive: /tmp/fm-officer-friction.VP5nVh/live/archive; hosts: alpha; model: none; added 2026-10-24)
+-- run 1 (wrapper):
+DIGEST 2026-10-23 8 data/officers/friction/2026-10-23.md
+exit=0
+-- start requests (id, FM_HOME):
+1 environment-ssh-to-self -> /tmp/fm-officer-friction.VP5nVh/live/quartermaster
+2 lee-command-run -> /tmp/fm-officer-friction.VP5nVh/live/quartermaster
+3 missing-tool-tool-openjdk -> /tmp/fm-officer-friction.VP5nVh/live/quartermaster
+-- cards (id state actions):
+environment-ssh-to-self started-by-default ["object"]
+sudo-sudo open ["start-fix"]
+credential-scope-cloudflare open ["start-fix"]
+policy-credential-approval open ["start-fix"]
+guard-hook-secret-hook open ["start-fix"]
+lee-command-run started-by-default ["object"]
+credential-ssh-key open ["start-fix"]
+missing-tool-tool-openjdk started-by-default ["object"]
+environment-wrong-cwd open ["start-fix"]
+guard-hook-refused-pre-bash-secret-exposure-py open ["start-fix"]
+missing-tool-tool-slopwatch open ["start-fix"]
+service-limit-rate-limit-1password open ["start-fix"]
+-- this home's shell handoff fm-inbox lines: 0
+-- quartermaster lane check (real fm-office.sh):
+office quartermaster: friction digest 2026-10-23: 8 finding(s) in /tmp/fm-officer-friction.VP5nVh/live/fixturehost/data/officers/friction/2026-10-23.md; 3 start request(s) delivered to this office's inbox
+exit=0
+-- quartermaster inbox notes:
+Friction officer automatic start under fleet rules section 2, 'Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'. 
+Friction officer automatic start under fleet rules section 2, 'Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'. 
+Friction officer automatic start under fleet rules section 2, 'Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'. 
+-- run 2 (wrapper) after delivery:
+exit=0
+-- start requests now: 0
+environment-ssh-to-self started reopen=true ["reopen"]
+sudo-sudo open reopen=false ["start-fix"]
+credential-scope-cloudflare open reopen=false ["start-fix"]
+policy-credential-approval open reopen=false ["start-fix"]
+guard-hook-secret-hook open reopen=false ["start-fix"]
+lee-command-run started reopen=true ["reopen"]
+credential-ssh-key open reopen=false ["start-fix"]
+missing-tool-tool-openjdk started reopen=true ["reopen"]
+environment-wrong-cwd open reopen=false ["start-fix"]
+guard-hook-refused-pre-bash-secret-exposure-py open reopen=false ["start-fix"]
+missing-tool-tool-slopwatch open reopen=false ["start-fix"]
+service-limit-rate-limit-1password open reopen=false ["start-fix"]
+-- second lane check (no re-delivery expected):
+exit=0; notes=3

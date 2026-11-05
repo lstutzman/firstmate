@@ -1,0 +1,9 @@
+exit=0
+-- agent-hit missing-tool events:
+agent-hit tool=officer sig=officer: command not found
+agent-hit tool=slopwatch sig=slopwatch: command not found
+lee-command tool=openjdk sig=brew install
+-- missing-tool findings:
+missing-tool-tool-openjdk carded=true state=started-by-default
+missing-tool-tool-officer carded=false state=open
+missing-tool-tool-slopwatch carded=false state=open
