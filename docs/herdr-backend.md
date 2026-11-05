@@ -19,6 +19,7 @@ Herdr provides the terminal session while Treehouse continues to provide task wo
 | Why a command ran on a different `herdr` client | [Client selection](#client-selection) |
 | Where task tabs appear and how to watch them | [Watching and task containers](#watching-and-task-containers) |
 | The one-task workspaces, their setting, and their cleanup | [Presentation spaces](#presentation-spaces) |
+| The captain's bare Terminal workspace and the one-agent-per-workspace check | [Terminal workspace and agent placement](#terminal-workspace-and-agent-placement) |
 | Why a seeded default tab is or is not closed | [Default-tab prune safety](#default-tab-prune-safety) |
 | What task metadata records for a Herdr endpoint | [Endpoint metadata](#endpoint-metadata) |
 | How text and keys reach a worker and how delivery is confirmed | [Current transport behavior](#current-transport-behavior) and [Composer and injection safety](#composer-and-injection-safety) |
@@ -505,6 +506,20 @@ Any of these preserves the candidate and lets session startup continue with at m
 [`verification/runtime-backends.md`](verification/runtime-backends.md#workspace-removal-focus-safety) owns the active versioned evidence for the focus-flash test.
 [`verification/runtime-backends.md`](verification/runtime-backends.md#attached-foreground-viewer) owns the active versioned evidence and the re-run trigger for the attached-viewer test.
 
+## Terminal workspace and agent placement
+
+Every machine keeps exactly one Herdr workspace labelled `Terminal`: a bare shell at the home directory with one tab and one pane, which belongs to the captain and never hosts an agent.
+Every agent runs alone in its own workspace, never in an extra tab or pane of another workspace.
+`bin/fm-herdr-terminal-check.sh` enforces both at locked session start, in the BOOTSTRAP section of the digest, and prints one `herdr-terminal:` line per finding; a healthy machine prints nothing.
+
+- When the session has no workspace labelled exactly `Terminal`, the check creates one without taking focus and runs nothing in it.
+- When several carry that label, or the single one holds an agent or more than one tab or pane, the check reports it and changes nothing.
+- Each agent that Herdr itself recognizes (`herdr agent list`) and that shares a workspace with another agent, or whose workspace has an extra tab or pane, gets one finding line; the home reports these to main.
+- The check never closes, moves, kills, or renames a workspace, tab, pane, or process, and never starts a Herdr server.
+- Only the primary home runs it: a home marked by `.fm-secondmate-home` (every secondmate and office) and a home whose backend is not Herdr print nothing, so no second home can race the creation.
+
+`tests/fm-herdr-terminal-check-e2e.test.sh` covers creation, an existing Terminal, a secondmate home, duplicate Terminals, and the flagged placements in a guarded non-default named lab.
+
 ## Default-tab prune safety
 
 `herdr workspace create` seeds one default tab.
@@ -888,6 +903,7 @@ tests/fm-backend-herdr-eventwait-smoke.test.sh
 tests/fm-control-herdr-smoke.test.sh
 tests/fm-herdr-session-cleanup.test.sh
 tests/fm-herdr-session-cleanup-e2e.test.sh
+tests/fm-herdr-terminal-check-e2e.test.sh
 tests/fm-herdr-attached-viewer-live-e2e.test.sh
 tests/fm-afk-inject-herdr-e2e.test.sh
 tests/fm-afk-pi-herdr-return-e2e.test.sh
