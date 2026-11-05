@@ -1,0 +1,170 @@
+
+=== corpus: registry without archive is refused
+$ {run-worktree}/bin/fm-officer.sh register corpus
+fm-officer: officer corpus: a corpus officer needs archive: <dir> or <host>:<dir> (the folder holding transcript-archive/)
+[exit 2]
+
+=== corpus: register + run day 1
+$ {run-worktree}/bin/fm-officer.sh register corpus
+registered: officer corpus (state/officer-corpus.check.sh)
+[exit 0]
+$ {run-worktree}/bin/fm-officer.sh run corpus --date 2026-11-04
+Coverage gap: corpus: the Bosun result on localhost is on a host that could not be reached (localhost:~/services/bosun-maintenance/last-result.json)
+DIGEST 2026-11-04 3 data/officers/corpus/2026-11-04.md
+[exit 0]
+# Corpus officer digest for 2026-11-04
+
+3 new finding(s) of 3 open. Counts, timestamps and names only; no transcript, corpus row or memory record was read.
+
+## Findings
+
+- NEW [medium] not-collected a/codex: a/codex was not collected in the last 2 runs (newest finished 2026-11-05T07:08:54+00:00)
+- NEW [medium] prep-stale local-jev-prep: the local-jev prep store last finished 2026-11-03T06:00:00+00:00, more than 36 hours ago
+- NEW [medium] retrain-missed weekly:20261017:missed: no weekly retrain started in the last 8 days (newest: run 20261017, started 2026-10-17T21:00:00+00:00)
+
+## Corpus
+
+- Ingester: outcome ok; archived 3, unchanged 9, withheld 0, errors 0, sources_ok 4, sources_not_collected 1, hosts_offline 1.
+- Hosts offline in the newest ingester run: macbook.
+- Memory harvest: outcome ok; listed 0, total 0, written 0.
+- Prep store: finished 2026-11-03T06:00:00+00:00, 12 rows.
+- Weekly retrain: newest run 20261017 started 2026-10-17T21:00:00+00:00, status promoted.
+- Judge: 1 evaluation results, newest eval-judge-20261017-r1.json.
+
+## Coverage gaps
+
+- the Bosun result on localhost is on a host that could not be reached (localhost:~/services/bosun-maintenance/last-result.json)
+
+=== corpus: watcher check output
+officer-corpus.check-trust
+officer-corpus.check.sh
+officer corpus: 2026-11-04: 3 actionable finding(s) in data/officers/corpus/2026-11-04.md
+[check exit 0]
+
+=== corpus: session text never in lane
+no session text in lane
+
+=== corpus: day 2 same findings -> 0 new (reported once)
+$ {run-worktree}/bin/fm-officer.sh run corpus --date 2026-11-05
+Coverage gap: corpus: the Bosun result on localhost is on a host that could not be reached (localhost:~/services/bosun-maintenance/last-result.json)
+DIGEST 2026-11-05 0 data/officers/corpus/2026-11-05.md
+[exit 0]
+
+=== corpus: day 3 prep file unreadable (gap) -> prep-stale kept, not re-reported on day 4
+$ {run-worktree}/bin/fm-officer.sh run corpus --date 2026-11-06
+Coverage gap: corpus: the Bosun result on localhost is on a host that could not be reached (localhost:~/services/bosun-maintenance/last-result.json)
+Coverage gap: corpus: the local-jev prep store's ready.json is missing (/tmp/fm-lab-officers.M3vh80/local-jev/data/prep/ready.json)
+DIGEST 2026-11-06 0 data/officers/corpus/2026-11-06.md
+[exit 0]
+["19e4ac5a992529ea13da78fcf6d17674c3ccea850cebac4c256333d4da92f9b5","649c0dde5ee5773dc58425c10a885640f6aff7f8e0336afa340476451fc1d0ea","ff0f3cd906b7f026005038319e81ac1ddf44e27ffec5b8743b6e08657e64019e"]
+$ {run-worktree}/bin/fm-officer.sh run corpus --date 2026-11-07
+Coverage gap: corpus: the Bosun result on localhost is on a host that could not be reached (localhost:~/services/bosun-maintenance/last-result.json)
+DIGEST 2026-11-07 0 data/officers/corpus/2026-11-07.md
+[exit 0]
+
+=== corpus: fix prep then break again -> new again
+$ {run-worktree}/bin/fm-officer.sh run corpus --date 2026-11-08
+Coverage gap: corpus: the Bosun result on localhost is on a host that could not be reached (localhost:~/services/bosun-maintenance/last-result.json)
+DIGEST 2026-11-08 0 data/officers/corpus/2026-11-08.md
+[exit 0]
+DIGEST 2026-11-09 1 data/officers/corpus/2026-11-09.md
+
+=== corpus: rerun same key byte-identical
+IDENTICAL
+
+=== library: register + run
+$ {run-worktree}/bin/fm-officer.sh register library
+registered: officer library (state/officer-library.check.sh)
+[exit 0]
+$ {run-worktree}/bin/fm-officer.sh run library --date 2026-11-01
+DIGEST 2026-11-01 4 data/officers/library/2026-11-01.md
+[exit 0]
+# Library officer digest for 2026-11-01
+
+4 new item(s) to act on. Audit run: 2026-10-31.
+
+- Audit run 2026-10-31: outcome ok; decisions 2, findings 4.
+
+## Needs Lee (2)
+
+- NEW [high] decisions /tmp/fm-lab-officers.M3vh80/runs/2026-10-31/report.md: 2 decision(s) for Lee (the audit's decisions for Lee). Proposed: one Captain's Log card for the run
+- NEW [low] cruft old.sh: Old script (the disposition says deletion). Proposed: Propose deletion.
+
+## Safe to ship (1)
+
+- NEW [low] readme README.md: Count stale (a docs change one PR can ship). Proposed: Correct the README count.
+
+## Code work (1)
+
+- NEW [low] unneeded-code a.py: Dup (code work, not a docs change). Proposed: Merge them.
+
+## On hold (1)
+
+- [low] misplaced docs/b.md: Loose doc (nothing to ship yet). Proposed: Unresolved. Read both next run.
+
+=== library: watcher check
+officer library: 2026-11-01: 4 actionable finding(s) in data/officers/library/2026-11-01.md
+[check exit 0]
+
+=== library: next week hold item becomes safe -> counted as new
+$ {run-worktree}/bin/fm-officer.sh run library --date 2026-11-08
+DIGEST 2026-11-08 2 data/officers/library/2026-11-08.md
+[exit 0]
+[{"path":"/tmp/fm-lab-officers.M3vh80/runs/2026-11-07/report.md","bucket":"needs-lee","new":true},{"path":"README.md","bucket":"safe","new":false},{"path":"docs/b.md","bucket":"safe","new":true}]
+
+=== library: audit folder unreadable -> ledger kept, no re-report
+$ {run-worktree}/bin/fm-officer.sh run library --date 2026-11-09
+Coverage gap: library: no audit run folder under /tmp/fm-lab-officers.M3vh80/runs
+DIGEST 2026-11-09 0 data/officers/library/2026-11-09.md
+[exit 0]
+ledger unchanged
+$ {run-worktree}/bin/fm-officer.sh run library --date 2026-11-10
+DIGEST 2026-11-10 0 data/officers/library/2026-11-10.md
+[exit 0]
+
+=== lane-only writes
+LAB/home/data/officers.md
+LAB/home/data/officers/corpus/.run.err
+LAB/home/data/officers/corpus/2026-11-04.json
+LAB/home/data/officers/corpus/2026-11-04.md
+LAB/home/data/officers/corpus/2026-11-05.json
+LAB/home/data/officers/corpus/2026-11-05.md
+LAB/home/data/officers/corpus/2026-11-06.json
+LAB/home/data/officers/corpus/2026-11-06.md
+LAB/home/data/officers/corpus/2026-11-07.json
+LAB/home/data/officers/corpus/2026-11-07.md
+LAB/home/data/officers/corpus/2026-11-08.json
+LAB/home/data/officers/corpus/2026-11-08.md
+LAB/home/data/officers/corpus/2026-11-09.json
+LAB/home/data/officers/corpus/2026-11-09.md
+LAB/home/data/officers/corpus/check-record.digest
+LAB/home/data/officers/corpus/digest
+LAB/home/data/officers/corpus/nights.json
+LAB/home/data/officers/corpus/registered
+LAB/home/data/officers/corpus/reported.json
+LAB/home/data/officers/corpus/runs.log
+LAB/home/data/officers/library/.run.err
+LAB/home/data/officers/library/2026-11-01.json
+LAB/home/data/officers/library/2026-11-01.md
+LAB/home/data/officers/library/2026-11-08.json
+LAB/home/data/officers/library/2026-11-08.md
+LAB/home/data/officers/library/2026-11-09.json
+LAB/home/data/officers/library/2026-11-09.md
+LAB/home/data/officers/library/2026-11-10.json
+LAB/home/data/officers/library/2026-11-10.md
+LAB/home/data/officers/library/check-record.digest
+LAB/home/data/officers/library/digest
+LAB/home/data/officers/library/registered
+LAB/home/data/officers/library/reported.json
+LAB/home/data/officers/library/runs.log
+LAB/home/state/officer-corpus.check-trust
+LAB/home/state/officer-corpus.check.sh
+LAB/home/state/officer-library.check-trust
+LAB/home/state/officer-library.check.sh
+LAB/local-jev/data/prep/ready.json
+LAB/rep.before
+LAB/runs/2026-10-31/findings.json
+LAB/runs/2026-10-31/result.json
+LAB/runs/2026-11-07/findings.json
+LAB/runs/2026-11-07/result.json
+lab removed
