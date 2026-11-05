@@ -1068,6 +1068,10 @@ test_ship_and_scout_teach_validation_round_pause() {
       "$kind brief did not teach workers to declare their validation-round wait before holding it"
     assert_grep "append \`paused:\` once just before its first blocking command, then stay in the command" "$brief" \
       "$kind brief's Waiting section does not declare the validation round once and then hold it"
+    assert_grep "A step you can perform yourself (a merge, a marker, opening a PR) is finished in the same turn" "$brief" \
+      "$kind brief does not forbid declaring a self-performable step as a paused wait"
+    assert_no_grep "an external condition expected to clear on its own" "$brief" \
+      "$kind brief still allows a paused wait on any external condition"
     assert_no_grep "is not a \`paused:\` wait" "$brief" \
       "$kind brief still tells workers never to declare a wait they hold in a command"
     assert_grep "your own validation round" "$brief" \

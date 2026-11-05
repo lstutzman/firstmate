@@ -129,9 +129,13 @@
 # a spawn-time and firstmate-side input only (AGENTS.md section 7).
 # Every scaffold's status protocol distinguishes the configured
 # declared-external-wait verb (FM_CLASSIFY_PAUSED_VERB, default "paused") from
-# "blocked:": pause for a known wait expected to clear on its own, including
-# the worker's own background work, pipeline or long command; blocked when
-# firstmate must act. The first-sight alert remains; repeats use the long cadence.
+# "blocked:"; blocked when firstmate must act. Crewmate and scout briefs pause
+# only for a condition the worker cannot advance itself (a running gate or CI
+# run, a deploy, another owner's PR head, a captain decision, an unreachable
+# service, machine or agent, or its own live background job, pipeline or long
+# command), never for a step it can perform itself; a secondmate charter pauses
+# for a known external wait expected to clear on its own. The first-sight alert
+# remains; repeats use the long cadence.
 # Every scaffold also has blocked and needs-decision lines state a [cause=<cause>]
 # tag (policy, credential, sudo, tool, decision, physical, external); bin/fm-classify-lib.sh
 # status_line_cause owns that vocabulary and its fallback to "unstated".
@@ -191,10 +195,11 @@ esac
 . "$SCRIPT_DIR/fm-role-lib.sh"
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
-   Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - when deliberately waiting for work or an external condition expected to clear on its own, including your own validation round.
+   Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - only when waiting on a condition you cannot advance yourself: a running gate or CI run, a deploy, another owner's PR head, a captain decision, an unreachable service, machine or agent, or your own background job, pipeline run or validation round that is actually live.
    Before ending your turn with your own background shell or monitor still running, or before waiting on your own pipeline run or a long foreground command, append \`$PAUSED_VERB [at=<epoch>]: {job and completion condition}\` to the status file.
    Name what you are waiting for and what will let you resume; do not repeat the declaration on every poll.
    Do not declare active implementation or reasoning as a wait.
+   A step you can perform yourself (a merge, a marker, opening a PR) is finished in the same turn; never declare it as a wait, and never end a turn on a bare "in progress" claim with nothing running and nothing named that will wake you.
    Firstmate may still raise one first-sight alert; the declared wait then uses the existing long recheck cadence instead of repeated possible-wedge alarms.
    When you know when the wait clears, include \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) for a recheck at that time; for your own background job or command with a timeout, that time is its start plus its timeout, rounded up to the minute.
    Follow the resolution rule below when the wait clears, then resume the task.
