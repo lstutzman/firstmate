@@ -427,6 +427,30 @@ PY_IDLE
 [ -z "$(run_alarm check)" ] || fail 'a mate with no held work is idle, not silent'
 mate 0 0 0
 run_alarm check >/dev/null
+# The working ceiling defaults to 6 silence windows: 6 hours at the default 60 minutes.
+MATE_LINE=working mate 1 0 19800
+[ -z "$(run_alarm check)" ] || fail 'a working line five and a half hours old is still a long task'
+MATE_LINE=working mate 1 0 22200
+assert_contains "$(run_alarm check)" 'holding work silent' 'a working line past the six-hour ceiling still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+MATE_LINE=working mate 1 0 7200
+edit_mate_summary "value['counts']['decisions_open']=1; value['decisions_open']=[dict(id='ask',key='ask',verb='needs-decision',source='status')]"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a working mate with a child asking it something still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+MATE_LINE=working mate 1 0 7200
+edit_mate_summary "value['counts']['decisions_open']=2; value['decisions_open']=[]"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a working mate with a truncated decision list still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 7200
+printf 'working\tx [at=%s]: agent event\n' "$(($(date +%s) - 7200))" > "$HOME_FIX/state/mate.status"
+out=$(run_alarm check)
+assert_contains "$out" 'holding work silent' 'a tab inside the latest line verb is just another verb'
+case "$out" in *'inventory unavailable'*) fail "a tab inside the latest line verb must not break the roster: $out" ;; esac
+mate 0 0 0
+run_alarm check >/dev/null
 pass 'a mate working or paused on in-progress work is healthy; a quiet or long-expired one still alarms'
 
 mate 0 0 3601
