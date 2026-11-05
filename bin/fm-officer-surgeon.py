@@ -171,6 +171,7 @@ START_MIN_SCORE = 4.0
 PATTERN_BATCH = 40
 EXISTING_VIEWS = 3
 VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
+CLOSED_STATES = ("Done", "Canceled", "Cancelled", "Duplicate")
 RESUME_FILE = "linear-resume-after.json"
 LEDGER_FILE = "filed-fingerprints.json"
 STATE_FILE = "review-state.json"
@@ -187,14 +188,14 @@ RESERVED = collections.OrderedDict([
     ("payments-billing", re.compile(r"\b(payments?|billing|invoices?|refunds?|stripe|direct debit)\b", re.I)),
     ("legal", re.compile(r"\b(terms (of|and) (service|use)|privacy policy|legal text|cookie banner|gdpr|licen[cs]e text)\b", re.I)),
     ("product", re.compile(r"\b(product (decision|change)s?|(change|raise|lower|set|move)[a-z]* (the )?(prices?|pricing|plan limits?|paywall))\b", re.I)),
-    ("member-copy", re.compile(r"\b((change|update|reword|rewrite|edit|replace)[a-z]*\b.{0,40}?\b(wording|copy|text|microcopy)\b.{0,40}?"
-                               r"\b(shown to|seen by|visible to|for) (members|users|customers)|(member|user|customer)-facing (copy|wording|text))\b", re.I)),
-    ("credentials", re.compile(r"\b(creat|rotat|revok|reset|regenerat|reissu)[a-z]*\b.{0,30}?\b(credentials?|secrets?|api[- ]?keys?|tokens?|"
-                               r"(access|account|storage|signing|private|ssh|encryption) keys?|(database|db|admin|service account) passwords?|"
-                               r"connection strings?)\b|\b(credential|secret|key|token) rotation\b", re.I)),
+    ("member-copy", re.compile(r"\b(change|update|reword|rewrite|edit|replace)[a-z]*\b.{0,40}?\b(wording|copy|text|microcopy)\b.{0,40}?"
+                               r"\b(shown to|seen by|visible to|for) (members|users|customers)\b", re.I)),
+    ("credentials", re.compile(r"\b(create|rotate|revoke|reset|regenerate|reissue) (the|a|an|our|this|that|new)\b.{0,30}?\b(credentials?|secrets?|"
+                               r"api[- ]?keys?|tokens?|(access|account|storage|signing|private|ssh|encryption) keys?|"
+                               r"(database|db|admin|service account) passwords?|connection strings?)\b", re.I)),
     ("production-actions", re.compile(r"\b((deploy|restart|promot|releas)[a-z]* (it |this )?to (production|prod)|production (deploy|restart|promotion)s?|"
                                       r"(change|update|edit|set|scale|write)[a-z]* (to )?(the )?(production|prod) (database|data|config|configuration|settings?))\b", re.I)),
-    ("data-rewriting", re.compile(r"\b(drop (table|column)|rename (column|table)|data[- ]rewriting|(delete|update|rewrite)[a-z]* (existing )?(rows|records)|"
+    ("data-rewriting", re.compile(r"\b(drop (table|column)|rename (column|table)|data[- ]rewriting|(migration|backfill|script)\b.{0,40}?\b(delet|updat|rewrit)[a-z]* (all |the )?existing (rows|records|data)|"
                                   r"truncate table|remov[a-z]* (an )?enum value)\b", re.I)),
 ])
 BUILTIN_START_SEVERITIES = ("medium", "high", "critical")
@@ -639,13 +640,15 @@ def found_line(count, first, last):
     return "Found: %d times (first %s, last %s, by surgeon)" % (count, first, last)
 
 
-def description(f, date, near=None):
+def description(f, date, near=None, recurrence=None):
     lines = ["Filed by the Ship's Surgeon from the %s %s results." % (date, SOURCE_NAME[f["source"]]),
              "What it is for: a finding no Linear item tracked yet, so it is not lost.",
              "Epic: not assigned; whoever triages this picks one.", "",
              "Severity: %s. Source job: %s." % (f["severity"], f["job"]), found_line(1, date, date)]
     if f.get("special") == "e2e-invalid":
         lines.append("Promotion-blocking: yes. No nightly E2E result can be read until this run is valid again.")
+    if recurrence:
+        lines.append("Recurrence of %s (closed %s)." % recurrence)
     if near:
         lines.append("Near match (not treated as the same issue): %s, local-jev %.2f." % near)
     lines += ["%s: %s" % (k, text(v, 300)) for k, v in sorted(f["evidence"].items()) if v not in (None, "")]
@@ -671,6 +674,14 @@ def issue_id(data):
     return text(issue.get("identifier"), 20) or "unknown"
 
 
+def is_closed(issue):
+    return text(issue.get("state")) in CLOSED_STATES
+
+
+def closed_on(issue):
+    return text(issue.get("completedAt") or issue.get("canceledAt") or issue.get("updatedAt"), 10) or "date not given"
+
+
 def view_issue(ident, cache):
     if ident not in cache:
         issue = linear(["issue", "view", ident]).get("issue")
@@ -690,10 +701,14 @@ def existing_issue(fp, team, cache):
     description holds the marker; the first EXISTING_VIEWS hits are read (once a run each).
     """
     marker = "surgeon-fp:" + fp
+    closed = None
     for ident in search_hits(marker, team, 5)[:EXISTING_VIEWS]:
-        if ident and marker in str(view_issue(ident, cache).get("description") or ""):
-            return ident
-    return None
+        issue = view_issue(ident, cache)
+        if ident and marker in str(issue.get("description") or ""):
+            if not is_closed(issue):
+                return ident
+            closed = closed or ident
+    return closed
 
 
 class Jev:
@@ -882,11 +897,13 @@ class Filer:
         self.cache.pop(ident, None)
 
     def bump(self, ident, f):
-        """The first sighting of the day: the Found line up by one, plus one comment."""
+        """The first sighting of the day: the Found line up by one, plus one comment; None when the item is closed."""
         today = self.found.setdefault("issues", {}).setdefault(ident, {})
         if today.get("last") == self.date:
             return today.get("count", 1)
         issue = view_issue(ident, self.cache)
+        if is_closed(issue):
+            return None
         desc = str(issue.get("description") or "")
         match = FOUND_RE.search(desc)
         if match and match.group(3) == self.date:
@@ -958,6 +975,31 @@ def file_findings(findings, args, date, out, state, found, jev):
 
     def over_cap():
         return filer.creates >= args.max_creates
+
+    def recur(f, old):
+        """A finding whose item a person closed: never reopened; a new item names the old one."""
+        wanted, missing = label_set(f, f["location"], f["title"] + " " + f["summary"])
+        if missing or over_cap():
+            reason = "label(s) not found in team %s: %s" % (args.team, ", ".join(missing)) if missing else "over max-creates for this run"
+            f["filing"] = {"action": "not-filed", "reason": "%s is closed; %s" % (old, reason)}
+            return
+        ledger.pop(f["fingerprint"], None)
+        recurrence = (old, closed_on(view_issue(old, filer.cache)))
+        f["filing"] = {"action": "failed", "reason": "recurrence of closed %s not filed" % old}
+        ident, created, verify = filer.create(f["fingerprint"], f["title"], description(f, date, recurrence=recurrence), wanted, PRIORITY[f["severity"]])
+        ledger[f["fingerprint"]] = ident
+        found.setdefault("issues", {})[ident] = {"count": 1, "last": date}
+        f["filing"] = {"action": "created" if created else "exists", "issue": ident, "recurrence_of": old}
+        f["issue_hint"] = ident
+        if verify:
+            f["filing"]["verify"] = verify
+        try:
+            linear(["issue", "relation", "add", ident, "--related", old, "--dry-run"])
+            linear(["issue", "relation", "add", ident, "--related", old, "--verify"])
+        except LinearError as exc:
+            if exc.code in ("RATE_LIMITED", "CALL_BUDGET"):
+                raise
+            f["filing"]["relation_error"] = str(exc)
 
     order = [("single", f) for f in singles if not f["filing"] and RANK[f["severity"]] <= RANK["medium"]]
     order += [("cluster", c) for c in plan if c["action"]]
@@ -1037,6 +1079,9 @@ def file_findings(findings, args, date, out, state, found, jev):
             ident = f["filing"]["issue"]
             try:
                 count = filer.bump(ident, f)
+                if count is None:
+                    recur(f, ident)
+                    continue
                 f["filing"]["found"] = count
                 f["issue_hint"] = ident
             except LinearError as exc:
@@ -1086,7 +1131,7 @@ def plan_starts(findings, rubric, date, writes, main_home, start_homes, handled)
     it handled. A finding whose Found count has lifted its score to the minimum (a medium at found 3)
     starts like a new finding, which is how the found count reaches the start decision.
     """
-    starts, held = [], []
+    starts, held, seen = [], [], set()
     sources = rubric.start_sources if rubric.loaded else set(BUILTIN_START_SOURCES)
     severities = rubric.start_severities if rubric.loaded else set(BUILTIN_START_SEVERITIES)
     for f in findings:
@@ -1097,14 +1142,18 @@ def plan_starts(findings, rubric, date, writes, main_home, start_homes, handled)
         issue = filing.get("issue")
         if writes == "linear" and (filing.get("action") not in ("created", "exists", "duplicate") or not issue):
             continue
+        if issue and issue in seen:
+            continue
         fresh = writes != "linear" or handled.get(issue) in (None, date)
         reserved = reserved_class(f)
         if reserved and fresh:
             held.append({"fingerprint": f["fingerprint"], "title": f["title"], "class": reserved, "severity": f["severity"], "issue": filing.get("issue")})
             if issue:
                 handled[issue] = date
+                seen.add(issue)
         elif fresh and issue and rubric.loaded:
             handled[issue] = date
+            seen.add(issue)
             row = {"kind": "surgeon-finding", "title": f["title"], "severity": f["severity"], "score": f["score"], "found": f["found"],
                    "source": f["source"], "fingerprint": f["fingerprint"], "issue": issue, "linear_id": issue,
                    "project": f["project"], "linear_only": not f["project"], "reason": "Real %s finding admitted by the rubric" % f["severity"]}

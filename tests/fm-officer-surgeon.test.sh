@@ -110,11 +110,16 @@ case "\$1 \$2" in
     case " \$* " in *" --verify "*) echo "COMMENT \$3" >> "\$d/comments" ;; esac
     echo '{"ok":true,"data":{"dryRun":true}}' ;;
   "issue view")
+    st=\$(cat "\$d/state.\$3" 2>/dev/null || echo Todo)
+    meta='"state":"'"\$st"'"'; [ "\$st" = Done ] && meta="\$meta"',"completedAt":"2026-10-24T09:00:00.000Z"'
     if [ "\$3" = PC-9 ] && [ -f "\$d/pc9.desc" ]; then
-      echo '{"ok":true,"data":{"issue":{"identifier":"PC-9","title":"Older report","description":"'"\$(cat "\$d/pc9.desc")"'"}}}'
+      echo '{"ok":true,"data":{"issue":{"identifier":"PC-9",'"\$meta"',"title":"Older report","description":"'"\$(cat "\$d/pc9.desc")"'"}}}'
     elif [ "\$3" = PC-55 ]; then
-      echo '{"ok":true,"data":{"issue":{"identifier":"PC-55","description":"Filed earlier. surgeon-fp:'"\$(tr -d '\n' < "\$d/exists.txt")"'"}}}'
-    else echo '{"ok":true,"data":{"issue":{"identifier":"'"\$3"'","description":"unrelated"}}}'; fi ;;
+      echo '{"ok":true,"data":{"issue":{"identifier":"PC-55",'"\$meta"',"description":"Filed earlier. surgeon-fp:'"\$(tr -d '\n' < "\$d/exists.txt")"'"}}}'
+    else echo '{"ok":true,"data":{"issue":{"identifier":"'"\$3"'",'"\$meta"',"description":"unrelated"}}}'; fi ;;
+  "issue relation")
+    case " \$* " in *" --verify "*) echo "RELATION \$4 \$5 \$6" >> "\$d/relations" ;; esac
+    echo '{"ok":true,"data":{"dryRun":true}}' ;;
   "issue create")
     case " \$* " in
       *" --verify "*)
@@ -191,9 +196,11 @@ run_surgeon() {  # <home> [now]
 }
 
 DATE2=2026-10-24
-run_surgeon_next_day() {  # <home> <world>: a run on DATE2, a day later, against the same lane.
-  officer_archive "$TMP_ROOT/$2/archive" "$DATE2" "$TMP_ROOT/$2/spec.json"
-  PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW=$((NOW + 86400)) FM_HOME="$1" "$OFFICER" run surgeon --date "$DATE2"
+DATE3=2026-10-25
+run_surgeon_next_day() {  # <home> <world> [date days-later]: a run on DATE2 (or the given day) against the same lane.
+  local day=${3:-$DATE2} later=${4:-1}
+  officer_archive "$TMP_ROOT/$2/archive" "$day" "$TMP_ROOT/$2/spec.json"
+  PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW=$((NOW + 86400 * later)) FM_HOME="$1" "$OFFICER" run surgeon --date "$day"
 }
 
 fp() { printf '%s\0%s\0%s' "$1" "$2" "$3" | sha256sum | cut -d' ' -f1; }
@@ -676,6 +683,17 @@ test_invalid_nightly_e2e_is_a_top_severity_promotion_blocker() {
   run_surgeon_next_day "$home" invalid >/dev/null || fail "next-day run"
   assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "a second invalid day files no new item"
   assert_contains "$(sed -n '/^UPDATE PC-101$/,$p' "$LDIR/updates")" "Found: 2 times" "it bumps the Found line on the same item, recording the outage length"
+  echo Done > "$LDIR/state.PC-101"
+  : > "$LINEAR_LOG"; : > "$LDIR/bodies"
+  run_surgeon_next_day "$home" invalid "$DATE3" 2 >/dev/null || fail "run after the item was closed"
+  json="$home/data/officers/surgeon/$DATE3.json"
+  assert_equals 0 "$(grep -c '^issue update PC-101' "$LINEAR_LOG")" "a closed item is never bumped or reopened"
+  assert_equals "created PC-102 PC-101" "$(row "$json" nightly e2e-invalid '[.filing.action,.filing.issue,.filing.recurrence_of]|join(" ")')" "a recurrence files a new item"
+  assert_contains "$(cat "$LDIR/bodies")" "Recurrence of PC-101 (closed 2026-10-24)." "that names the closed one"
+  assert_contains "$(cat "$LDIR/bodies")" "Found: 1 times (first $DATE3, last $DATE3, by surgeon)" "with its own Found line"
+  assert_contains "$(grep '^issue create .*--verify' "$LINEAR_LOG")" "--priority 1" "still urgent and promotion-blocking"
+  assert_equals "RELATION PC-102 --related PC-101" "$(cat "$LDIR/relations")" "and is linked to it as related"
+  assert_equals PC-102 "$(jq -r --arg fp "$(row "$json" nightly e2e-invalid .fingerprint)" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")" "the old ledger entry is retired"
   set_pages invalid '[]' '[]' 'null'
   jq -n '{run: {}, result: null, shared: null}' > "$TMP_ROOT/invalid/pages/_api_runs_nightly-e2e_results_R1"
   assert_contains "$(run_surgeon "$home")" "Coverage gap: no E2E input" "an empty E2E result is a named gap, never a silent absence"
@@ -830,14 +848,37 @@ test_reserved_classes_match_the_action_not_the_word() {
     {"fp":"r2","title":"password hash compared with ==","disposition":"new","severity":"P1"},
     {"fp":"r3","title":"API key logged in plaintext","disposition":"new","severity":"P1"},
     {"fp":"r4","title":"Reword the wording shown to members on the pricing page","disposition":"new","severity":"P1"},
-    {"fp":"r5","title":"Rotate the staging API key used by the mailer","disposition":"new","severity":"P1"}]'
+    {"fp":"r5","title":"Rotate the staging API key used by the mailer","disposition":"new","severity":"P1"},
+    {"fp":"r6","title":"Password reset token never expires","disposition":"new","severity":"P1"},
+    {"fp":"r7","title":"Reset token not invalidated after use","disposition":"new","severity":"P1"},
+    {"fp":"r8","title":"Creates API key with predictable RNG","disposition":"new","severity":"P1"},
+    {"fp":"r9","title":"Endpoint deletes records belonging to other users","disposition":"new","severity":"P1"},
+    {"fp":"r10","title":"UpdateAsync updates rows without tenant filter","disposition":"new","severity":"P1"},
+    {"fp":"r11","title":"User-facing text not HTML-encoded (XSS)","disposition":"new","severity":"P1"}]'
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals "API key logged in plaintext|password hash compared with ==|shallow copy of list mutates cache" \
-    "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding") | .title] | sort | join("|")' "$json")" "a copy, a password hash and a logged key are code fixes that start"
+  assert_equals "API key logged in plaintext|Creates API key with predictable RNG|Endpoint deletes records belonging to other users|Password reset token never expires|Reset token not invalidated after use|UpdateAsync updates rows without tenant filter|User-facing text not HTML-encoded (XSS)|password hash compared with ==|shallow copy of list mutates cache" \
+    "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding") | .title] | sort | join("|")' "$json")" "security and code bugs that only mention a key, a token, rows or text start"
   assert_equals "credentials member-copy" "$(jq -r '[.held[] | .class] | sort | join(" ")' "$json")" "a member wording change and a key rotation are held"
   assert_equals 1 "$(jq '.asks_for_lee | length' "$json")" "with one keyed needs-decision"
   pass "fm-officer surgeon: reserved classes match the action they ask for, so real security bugs start"
+}
+
+test_one_item_gets_one_start_request_a_run() {
+  local home json
+  make_world samestart "${LINEAR_ON}jev: $TMP_ROOT/samestart/jev.py; "; home=$WORLD_HOME
+  fake_jev "$TMP_ROOT/samestart/jev.py"
+  printf 'Older report.\\nFound: 1 times (first 2026-10-01, last 2026-10-01, by surgeon)' > "$LDIR/pc9.desc"
+  set_pages samestart '[]' '[
+    {"fp":"m1","title":"Save crashes duplicate-me","disposition":"new","severity":"P1"},
+    {"fp":"m2","title":"Save fails duplicate-me again","disposition":"new","severity":"P1"}]'
+  run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "PC-9 PC-9" "$(row "$json" sweeper m1 .filing.issue) $(row "$json" sweeper m2 .filing.issue)" "both findings are duplicates of PC-9"
+  assert_equals 1 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding" and .issue == "PC-9")] | length' "$json")" "and PC-9 gets one start request"
+  run_surgeon "$home" >/dev/null || fail "same-day rerun"
+  assert_equals 1 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding" and .issue == "PC-9")] | length' "$json")" "which a same-day rerun repeats"
+  pass "fm-officer surgeon: an item gets one start request a run, however many findings map to it"
 }
 
 test_registry_rules
@@ -872,3 +913,4 @@ test_start_home_reaches_the_surgeon_through_the_registry
 test_nightly_area_tries_feature_labels_before_testing
 test_unreadable_rubric_leaves_items_to_start_later
 test_reserved_classes_match_the_action_not_the_word
+test_one_item_gets_one_start_request_a_run

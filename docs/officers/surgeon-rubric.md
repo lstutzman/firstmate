@@ -59,6 +59,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   Below that the finding is filed new and the near match is noted in it.
   Without local-jev, only the fingerprint decides, and the digest says so.
 - A duplicate raises the existing item's one machine-maintained line, `Found: N times (first <date>, last <date>, by surgeon)`, in place.
+  The Surgeon never reopens an item a person closed: when the existing item is Done or Canceled, the finding is a recurrence, so a new item is filed with its own Found line, the line `Recurrence of <old id> (closed <date>)` and a related link to the old item, and the ledger points at the new one.
   It adds one comment, on the item's first sighting of the day, and never a second the same day.
 - A finding already on its own cluster's list is not a new sighting.
 - The found count is a priority lever: score = severity weight x log2(1 + found), with weights critical 8, high 4, medium 2, low 1.
@@ -99,10 +100,10 @@ Each class is matched by the action it asks for, not by a word appearing anywher
 - Payments or billing: any payments, billing, invoice, refund or Stripe work.
 - Legal text: terms, privacy policy, cookie banner, licence text.
 - Product decisions: a product decision, or changing prices, pricing, plan limits or the paywall.
-- Member-facing copy: changing, updating or rewording the wording, copy or text shown to members (or member-facing copy).
-- Credentials: creating, rotating, revoking or resetting a secret, API key, token or service password.
+- Member-facing copy: a request to change, update or reword the wording, copy or text shown to members.
+- Credentials: a request to create, rotate, revoke or reset a named secret, API key, token or service password ("rotate the staging API key"); a bug in token or key handling is a code fix and starts.
 - Production actions: deploying, restarting or promoting to production, or changing production data, config or settings.
-- Data-rewriting changes: dropping or renaming a table or column, updating or deleting existing rows, removing an enum value.
+- Data-rewriting changes: dropping or renaming a table or column, a migration, backfill or script that updates or deletes existing rows, removing an enum value; an endpoint bug that deletes or updates rows is a code fix and starts.
 
 ## Settings the code reads
 
