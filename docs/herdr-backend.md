@@ -173,7 +173,7 @@ Closing its last tab can remove the workspace, and the next spawn recreates it.
 Each new crewmate or scout is placed in a disposable one-task workspace by default, on Herdr 0.8.0 and newer.
 This section calls that one-task workspace the projection.
 A home that turned the projection off, or an unconfigured home below that release, uses the ordinary flat layout described under [Watching and task containers](#watching-and-task-containers).
-When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task tab goes to that home's own workers workspace (`firstmate workers` or `2ndmate-<id> workers`) instead of the launcher's workspace.
+When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task tab goes to that home's own workers workspace (`firstmate workers`, `2ndmate-<id> workers`, or an office's `<Role> workers`, such as `Quartermaster workers`) instead of the launcher's workspace.
 That workspace is created unfocused on first use, found again by its exact label, and reused while it has task tabs; a claimed launcher identity is still validated first.
 If concurrent fallbacks created more than one, the first in Herdr's workspace list is used rather than refusing, because that workspace carries no identity.
 
