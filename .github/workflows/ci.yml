@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # fm/** covers PRs stacked on another ship branch (the fm/ default prefix).
+    branches: [main, 'fm/**']
 
 permissions:
   contents: read
