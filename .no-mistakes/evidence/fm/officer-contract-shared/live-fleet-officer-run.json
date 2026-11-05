@@ -1,0 +1,193 @@
+{
+ "filings": {
+  "dup": {
+   "action": "duplicate",
+   "issue": "PC-500",
+   "confidence": 0.99,
+   "found": 2
+  },
+  "pay": {
+   "action": "created",
+   "issue": "PC-901"
+  },
+  "new": {
+   "action": "created",
+   "issue": "PC-902"
+  },
+  "pc": {
+   "action": "created",
+   "issue": "PC-903"
+  },
+  "b00": {
+   "action": "created",
+   "issue": "PC-904"
+  },
+  "b01": {
+   "action": "created",
+   "issue": "PC-905"
+  },
+  "b02": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  },
+  "b03": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  },
+  "b04": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  },
+  "b05": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  },
+  "b06": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  },
+  "b07": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  },
+  "b08": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  },
+  "b09": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  },
+  "b10": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  },
+  "b11": {
+   "action": "not-filed",
+   "reason": "over max-creates for this run"
+  }
+ },
+ "not_filed": [
+  "Not filed (over max-creates for this run): 10, highest score first: Distinct volume finding charlie (medium, score 2.0); Distinct volume finding delta (medium, score 2.0); Distinct volume finding echo (medium, score 2.0); Distinct volume finding foxtrot (medium, score 2.0); Distinct volume finding golf (medium, score 2.0)"
+ ],
+ "jev_gap": null,
+ "jev_calls": 3,
+ "starts": [
+  [
+   "Bosun crashes checking backups if backup dir does not exist",
+   "~",
+   "",
+   true
+  ],
+  [
+   "Ghostty pane title drops unicode",
+   "~",
+   "",
+   true
+  ],
+  [
+   "Null reference when saving deal notes",
+   "~",
+   "PropertyCompass2",
+   false
+  ]
+ ],
+ "held": [
+  [
+   "Update the payment refund flow for direct debit",
+   "payments-billing"
+  ]
+ ],
+ "asks": [
+  {
+   "key": "live-holds-2026-11-05",
+   "findings": [
+    {
+     "fingerprint": "f7bb01e29a7f41ef44695c9b01c19d2d4f65bc60cd4daa63a81d9e920104c60e",
+     "title": "Update the payment refund flow for direct debit",
+     "class": "payments-billing",
+     "severity": "critical",
+     "issue": "PC-901"
+    }
+   ],
+   "line": "needs-decision [key=live-holds-2026-11-05]: 1 finding(s) held for Lee, they match a reserved class: Update the payment refund flow for direct debit (payments-billing)"
+  }
+ ],
+ "rubric_gaps": [
+  "rubric start-severities names bogus, which the code does not admit; ignored"
+ ],
+ "issues": {
+  "PC-500": {
+   "title": "Bosun backup check crashes when backup directory missing",
+   "state": "Todo",
+   "priority": "2",
+   "labels": [
+    "Bug",
+    "scan",
+    "area:fleet"
+   ],
+   "project": "Fleet",
+   "description": "Older report.\nFound: 2 times (first 2026-11-01, last 2026-11-05, by live)\nlive-fp:0000"
+  },
+  "PC-901": {
+   "title": "Update the payment refund flow for direct debit",
+   "description": "Filed by Live.\nFound: 1 times (first 2026-11-05, last 2026-11-05, by live)\nlive-fp:f7bb01e29a7f41ef44695c9b01c19d2d4f65bc60cd4daa63a81d9e920104c60e",
+   "state": "Todo",
+   "priority": "1",
+   "labels": [
+    "Bug",
+    "scan",
+    "area:fleet"
+   ],
+   "project": "Fleet"
+  },
+  "PC-902": {
+   "title": "Ghostty pane title drops unicode",
+   "description": "Filed by Live.\nFound: 1 times (first 2026-11-05, last 2026-11-05, by live)\nlive-fp:278cbf4163bd9d0a74d5edbf16d2be6883f5972ce09b3f813cf0edc27cc1a4a1",
+   "state": "Todo",
+   "priority": "2",
+   "labels": [
+    "Bug",
+    "scan",
+    "area:fleet"
+   ],
+   "project": "Fleet"
+  },
+  "PC-903": {
+   "title": "Null reference when saving deal notes",
+   "description": "Filed by Live.\nFound: 1 times (first 2026-11-05, last 2026-11-05, by live)\nlive-fp:de084e8e8c90f9c100f9ff534cb61448389bad0bd21dc70115fc9dab74d46985",
+   "state": "Todo",
+   "priority": "2",
+   "labels": [
+    "Bug",
+    "scan",
+    "area:infra"
+   ],
+   "project": null
+  },
+  "PC-904": {
+   "title": "Distinct volume finding alpha",
+   "description": "Filed by Live.\nFound: 1 times (first 2026-11-05, last 2026-11-05, by live)\nlive-fp:d659e7c27da00618b5aac2d5f25292234ca7b75ee765e2c014e41cde0b9fe099",
+   "state": "Todo",
+   "priority": "3",
+   "labels": [
+    "Bug",
+    "scan",
+    "area:fleet"
+   ],
+   "project": "Fleet"
+  },
+  "PC-905": {
+   "title": "Distinct volume finding bravo",
+   "description": "Filed by Live.\nFound: 1 times (first 2026-11-05, last 2026-11-05, by live)\nlive-fp:11992463a16d845651c8cf1bb6fe97c2bc50d19ecfc0d48bfa8d1e10bc196091",
+   "state": "Todo",
+   "priority": "3",
+   "labels": [
+    "Bug",
+    "scan",
+    "area:fleet"
+   ],
+   "project": "Fleet"
+  }
+ }
+}

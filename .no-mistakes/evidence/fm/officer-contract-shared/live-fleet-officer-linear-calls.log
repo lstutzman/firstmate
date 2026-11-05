@@ -1,0 +1,28 @@
+issue search live-fp:625b742b8dd2b1089c1d93f7e674c441b56ad8b84218a49160f1e6952fbe7a1a --team PC --limit 5
+issue search Bosun crashes checking backups if backup dir does not exist --team PC --limit 5
+issue view PC-500 --full
+issue search live-fp:f7bb01e29a7f41ef44695c9b01c19d2d4f65bc60cd4daa63a81d9e920104c60e --team PC --limit 5
+issue search Update the payment refund flow for direct debit --team PC --limit 5
+issue create --team PC --title Update the payment refund flow for direct debit --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-f7bb01e29a7f.md --priority 1 --label Bug --label scan --label area:fleet --project Fleet --dry-run
+issue create --team PC --title Update the payment refund flow for direct debit --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-f7bb01e29a7f.md --priority 1 --label Bug --label scan --label area:fleet --project Fleet --verify
+issue search live-fp:278cbf4163bd9d0a74d5edbf16d2be6883f5972ce09b3f813cf0edc27cc1a4a1 --team PC --limit 5
+issue search Ghostty pane title drops unicode --team PC --limit 5
+issue create --team PC --title Ghostty pane title drops unicode --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-278cbf4163bd.md --priority 2 --label Bug --label scan --label area:fleet --project Fleet --dry-run
+issue create --team PC --title Ghostty pane title drops unicode --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-278cbf4163bd.md --priority 2 --label Bug --label scan --label area:fleet --project Fleet --verify
+issue search live-fp:de084e8e8c90f9c100f9ff534cb61448389bad0bd21dc70115fc9dab74d46985 --team PC --limit 5
+issue search Null reference when saving deal notes --team PC --limit 5
+issue create --team PC --title Null reference when saving deal notes --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-de084e8e8c90.md --priority 2 --label Bug --label scan --label area:infra --dry-run
+issue create --team PC --title Null reference when saving deal notes --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-de084e8e8c90.md --priority 2 --label Bug --label scan --label area:infra --verify
+issue search live-fp:d659e7c27da00618b5aac2d5f25292234ca7b75ee765e2c014e41cde0b9fe099 --team PC --limit 5
+issue search Distinct volume finding alpha --team PC --limit 5
+issue create --team PC --title Distinct volume finding alpha --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-d659e7c27da0.md --priority 3 --label Bug --label scan --label area:fleet --project Fleet --dry-run
+issue create --team PC --title Distinct volume finding alpha --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-d659e7c27da0.md --priority 3 --label Bug --label scan --label area:fleet --project Fleet --verify
+issue search live-fp:11992463a16d845651c8cf1bb6fe97c2bc50d19ecfc0d48bfa8d1e10bc196091 --team PC --limit 5
+issue search Distinct volume finding bravo --team PC --limit 5
+issue view PC-904 --full
+issue create --team PC --title Distinct volume finding bravo --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-11992463a16d.md --priority 3 --label Bug --label scan --label area:fleet --project Fleet --dry-run
+issue create --team PC --title Distinct volume finding bravo --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-11992463a16d.md --priority 3 --label Bug --label scan --label area:fleet --project Fleet --verify
+issue update PC-500 --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-625b742b8dd2.md --dry-run
+issue update PC-500 --body-file /tmp/fm-officer-live.9bWILZ/out/.live-2026-11-05-625b742b8dd2.md --verify
+issue comment PC-500 --body Seen again on 2026-11-05 by the Live Officer (found 2 times). --dry-run
+issue comment PC-500 --body Seen again on 2026-11-05 by the Live Officer (found 2 times). --verify
