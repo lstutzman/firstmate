@@ -40,6 +40,8 @@
 SUB_HOME_MARKER="${SUB_HOME_MARKER:-.fm-secondmate-home}"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/fm-git-retry-lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-git-retry-lib.sh"
 
 # --- helpers ---------------------------------------------------------------
 
@@ -215,7 +217,7 @@ fetch_once() {
       *" $common "*) return 0 ;;
     esac
   fi
-  if git -C "$dir" fetch origin --prune --quiet 2>/dev/null; then
+  if fm_git_retry git -C "$dir" fetch origin --prune --quiet 2>/dev/null; then
     [ -n "$common" ] && FETCHED="$FETCHED $common"
     return 0
   fi

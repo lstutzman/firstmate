@@ -3953,7 +3953,7 @@ freshen_spawn_worktree_base() { # <worktree> [<base-branch>]
     }
     return 0
   fi
-  if ! git -C "$worktree" fetch --quiet origin; then
+  if ! fm_git_retry git -C "$worktree" fetch --quiet origin; then
     echo "error: could not fetch origin for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
     return 1
   fi
@@ -3970,7 +3970,7 @@ freshen_spawn_worktree_base() { # <worktree> [<base-branch>]
     }
   fi
   target="origin/$default"
-  if ! git -C "$worktree" fetch --quiet origin "+refs/heads/$default:refs/remotes/origin/$default"; then
+  if ! fm_git_retry git -C "$worktree" fetch --quiet origin "+refs/heads/$default:refs/remotes/origin/$default"; then
     echo "error: could not fetch '$target' for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
     return 1
   fi
