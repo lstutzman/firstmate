@@ -16,11 +16,5 @@ ok - real herdr E2E: relaunch of e2eqm reuses its recorded pane
 ok - real herdr E2E: relaunching an office renames its earlier fm-<id> tab to its role name in place
 ok - real herdr E2E: list_live from the primary's own context sees exactly the tasks the primary recorded
 ok - real herdr E2E: list_live from the secondmate's own context sees only tasks in the secondmate's own workspace (both its own tab and its crewmate's)
-not ok - fm-teardown.sh failed for the primary-shaped crewmate cm1
-REFUSED: cannot resolve the shared Treehouse project lock for /tmp/fm-herdr-e2e.p9yCRT/scratch-project-1; nothing was changed
-fm-herdr-lab: missing fleet-state tripwire for 'fm-lab-herdr-e2e-741888'; refusing destructive calls
-
-real	0m37.035s
-user	0m6.908s
-sys	0m7.756s
-exit=1
+ok - real herdr E2E: tearing down cm1 closes only its own tab - the secondmate's and cm2's tabs survive untouched
+ok - real herdr E2E: tearing down cm2 closes only its own tab - the secondmate's own tab (same workspace) survives untouched
