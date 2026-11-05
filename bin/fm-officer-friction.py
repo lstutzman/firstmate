@@ -732,8 +732,12 @@ def hit_event(hit, m):
             "service": service, "tool": tool, "signature": sig}
 
 
+SHELL_SHEBANG_RE = re.compile(r"#!\S*(?:/|\s)(?:ba)?sh\b")
+
+
 def tool_inputs(records):
-    """Every Bash command and written file body of one transcript, by tool_use id (id None: all joined)."""
+    """Every Bash command of one transcript by tool_use id, and its shell code joined: the commands and
+    the bodies written or edited into shell files (.sh, .bash or a sh/bash shebang)."""
     by_id, bodies = {}, []
     for rec in records:
         content = (rec.get("message") or {}).get("content")
@@ -742,9 +746,14 @@ def tool_inputs(records):
         for block in content:
             if isinstance(block, dict) and block.get("type") == "tool_use":
                 inp = block.get("input") or {}
-                text = "\n".join(str(v) for v in inp.values() if isinstance(v, str))
-                by_id[block.get("id")] = inp.get("command") if isinstance(inp.get("command"), str) else None
-                bodies.append(text)
+                command = inp.get("command") if isinstance(inp.get("command"), str) else None
+                by_id[block.get("id")] = command
+                texts = [v for k, v in inp.items() if k in ("content", "new_string") and isinstance(v, str)]
+                if command is not None:
+                    bodies.append(command)
+                elif str(inp.get("file_path") or "").endswith((".sh", ".bash")) \
+                        or any(SHELL_SHEBANG_RE.match(t) for t in texts):
+                    bodies.extend(texts)
     return by_id, "\n".join(bodies)
 
 
