@@ -129,10 +129,12 @@
 # a spawn-time and firstmate-side input only (AGENTS.md section 7).
 # Every scaffold's status protocol distinguishes the configured
 # declared-external-wait verb (FM_CLASSIFY_PAUSED_VERB, default "paused") from
-# "blocked:": pause only for a condition the worker cannot advance itself (a
-# running gate or CI run, a deploy, another owner's PR head, a captain decision,
-# or its own live background job, pipeline or long command), never for a step
-# it can perform itself; blocked when firstmate must act. The first-sight alert
+# "blocked:"; blocked when firstmate must act. Crewmate and scout briefs pause
+# only for a condition the worker cannot advance itself (a running gate or CI
+# run, a deploy, another owner's PR head, a captain decision, an unreachable
+# service, machine or agent, or its own live background job, pipeline or long
+# command), never for a step it can perform itself; a secondmate charter pauses
+# for a known external wait expected to clear on its own. The first-sight alert
 # remains; repeats use the long cadence.
 # Every scaffold also has blocked and needs-decision lines state a [cause=<cause>]
 # tag (policy, credential, sudo, tool, decision, physical, external); bin/fm-classify-lib.sh
@@ -193,7 +195,7 @@ esac
 . "$SCRIPT_DIR/fm-role-lib.sh"
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
-   Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - only when waiting on a condition you cannot advance yourself: a running gate or CI run, a deploy, another owner's PR head, a captain decision, or your own background job, pipeline run or validation round that is actually live.
+   Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - only when waiting on a condition you cannot advance yourself: a running gate or CI run, a deploy, another owner's PR head, a captain decision, an unreachable service, machine or agent, or your own background job, pipeline run or validation round that is actually live.
    Before ending your turn with your own background shell or monitor still running, or before waiting on your own pipeline run or a long foreground command, append \`$PAUSED_VERB [at=<epoch>]: {job and completion condition}\` to the status file.
    Name what you are waiting for and what will let you resume; do not repeat the declaration on every poll.
    Do not declare active implementation or reasoning as a wait.
