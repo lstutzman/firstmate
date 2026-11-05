@@ -484,7 +484,7 @@ class Filer:
             cmd = ["issue", "create", "--team", self.team, "--title", title, "--body-file", path, "--priority", priority]
             for label in labels:
                 cmd += ["--label", label]
-            if is_fleet(owning_project(self.officer, project)):
+            if fleet_work(self.officer, project):
                 cmd += ["--project", FLEET_PROJECT]
             self.lin(cmd + ["--dry-run"])
             self.creates += 1
@@ -563,7 +563,7 @@ class Filer:
     def item_labels(self, f, label_set):
         """(labels, reason not to file or None): label_set's Type and Source; fleet work always takes area:fleet."""
         wanted, missing = label_set(f)
-        if is_fleet(owning_project(self.officer, f["project"])):
+        if fleet_work(self.officer, f["project"]):
             missing = [m for m in missing if m in wanted[:2]]
             wanted = wanted[:2] + [FLEET_AREA]
         elif FLEET_AREA in wanted:
@@ -677,6 +677,11 @@ def is_fleet_project(project):
 def is_fleet(project):
     """Fleet work: the Fleet project itself or a fleet repository; its items go in the Fleet project with area:fleet."""
     return is_fleet_project(project) or repo_key(project) in FLEET_REPOS
+
+
+def fleet_work(officer, project):
+    """Whether a finding (its repository, else the officer's project) is fleet work: Fleet project and area:fleet."""
+    return is_fleet(owning_project(officer, project))
 
 
 def office_home(project, main_home, start_homes):

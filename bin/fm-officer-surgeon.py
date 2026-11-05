@@ -454,7 +454,12 @@ def description(f, date, near=None, recurrence=None):
     return "\n".join(lines) + "\nsurgeon-fp:%s" % f["fingerprint"]
 
 
-def cluster_body(key, members, recurrence=None):
+def cluster_fp(key, project=""):
+    """A PropertyCompass2 cluster's fingerprint is its key's; a Fleet cluster with the same key is a different item."""
+    return fingerprint("review", "cluster-fleet" if project else "cluster", key)
+
+
+def cluster_body(key, members, recurrence=None, project=""):
     open_n = sum(1 for m in members.values() if m["state"] == "open")
     lines = ["Filed by the Ship's Surgeon from the %s results." % SOURCE_NAME["review"],
              "What it is for: the lower-severity code-review findings in %s, kept in one item so one change can work them together and none is lost." % plain_words(key),
@@ -464,7 +469,7 @@ def cluster_body(key, members, recurrence=None):
         lines.append("- [%s] surgeon-fp:%s %s (%s)" % ("x" if m["state"] == "fixed" else " ", fp, m["title"], m["file"] or "no file"))
     if recurrence:
         lines.append(recurrence)
-    return "\n".join(lines) + "\nsurgeon-fp:%s" % fingerprint("review", "cluster", key)
+    return "\n".join(lines) + "\nsurgeon-fp:%s" % cluster_fp(key, project)
 
 def update_review_state(state, findings, resolved, date):
     """Tracks every real review finding (open or fixed) for the burn-down and the cluster ticks."""
@@ -486,24 +491,31 @@ def burn_down(state, date):
 
 
 def plan_clusters(clustered, state, ledger):
-    """The cluster items to make or refresh: [{key, fp, members, body, sha, action, findings}]."""
+    """The cluster items to make or refresh: [{key, fp, project, members, body, sha, action, findings}].
+
+    Fleet findings (lib.fleet_work) cluster apart from PropertyCompass2 ones, so no item mixes the two.
+    """
     clusters = state.setdefault("clusters", {})
+    project_of = {id(f): lib.FLEET_PROJECT if lib.fleet_work(OFFICER, f["project"]) else "" for f in clustered}
     assigned = {m: cfp for cfp, c in clusters.items() for m in c["members"]}
-    keys = cluster_keys([f["location"] for f in clustered])
-    desired = {cfp: {"key": c["key"], "members": {m: dict(v) for m, v in c["members"].items()}, "findings": [],
-                     "recurrence": c.get("recurrence")} for cfp, c in clusters.items()}
+    keys = {p: cluster_keys([f["location"] for f in clustered if project_of[id(f)] == p]) for p in set(project_of.values())}
+    desired = {cfp: {"key": c["key"], "project": c.get("project", ""), "members": {m: dict(v) for m, v in c["members"].items()},
+                     "findings": [], "recurrence": c.get("recurrence")} for cfp, c in clusters.items()}
     # A file keeps its cluster: a new finding in a file already listed joins that item, whatever the counts now say.
     by_file = {}
     for cfp, c in sorted(clusters.items()):
         for member in c["members"].values():
             if member["file"]:
-                by_file.setdefault(member["file"], cfp)
+                by_file.setdefault((c.get("project", ""), member["file"]), cfp)
     for f in clustered:
-        cfp = assigned.get(f["fingerprint"]) or by_file.get(f["location"])
+        project = project_of[id(f)]
+        cfp = assigned.get(f["fingerprint"])
+        if cfp is None or desired[cfp]["project"] != project:
+            cfp = by_file.get((project, f["location"]))
         if cfp is None:
-            key = keys[f["location"]]
-            cfp = fingerprint("review", "cluster", key)
-            desired.setdefault(cfp, {"key": key, "members": {}, "findings": [], "recurrence": None})
+            key = keys[project][f["location"]]
+            cfp = cluster_fp(key, project)
+            desired.setdefault(cfp, {"key": key, "project": project, "members": {}, "findings": [], "recurrence": None})
         member = desired[cfp]["members"].setdefault(f["fingerprint"], {"title": f["title"], "file": f["location"], "state": "open"})
         member["title"], member["file"] = f["title"], f["location"]
         desired[cfp]["findings"].append(f)
@@ -513,13 +525,13 @@ def plan_clusters(clustered, state, ledger):
         for m, member in c["members"].items():
             if review.get(m, {}).get("state") == "fixed":
                 member["state"] = "fixed"
-        body = cluster_body(c["key"], c["members"], c["recurrence"])
+        body = cluster_body(c["key"], c["members"], c["recurrence"], c["project"])
         sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
         known = clusters.get(cfp)
         action = None if known and known.get("sha") == sha and cfp in ledger else "update" if cfp in ledger else "create"
         if not c["members"] or (not c["findings"] and action == "create"):
             continue
-        plan.append({"key": c["key"], "fp": cfp, "members": c["members"], "body": body, "sha": sha,
+        plan.append({"key": c["key"], "fp": cfp, "project": c["project"], "members": c["members"], "body": body, "sha": sha,
                      "action": action, "findings": c["findings"], "recurrence": c["recurrence"]})
     return plan
 
@@ -597,11 +609,11 @@ def file_findings(findings, args, date, out, state, found, jev):
                 filer.file_single(item, label_set, describe)
             else:
                 c = item
-                wanted, missing = label_set({"source": "review"}, c["key"], c["key"])
+                wanted, reason = filer.item_labels({"source": "review", "project": c["project"]},
+                                                   lambda f, key=c["key"]: label_set(f, key, key))
                 title = "Code review findings: %s" % plain_words(c["key"])
                 try:
-                    if missing:
-                        reason = "label(s) not found in team %s: %s" % (args.team, ", ".join(missing))
+                    if reason:
                         for f in c["findings"]:
                             f["filing"] = {"action": "not-filed", "reason": reason}
                         continue
@@ -619,14 +631,16 @@ def file_findings(findings, args, date, out, state, found, jev):
                     recurrence, body, sha = c["recurrence"], c["body"], c["sha"]
                     if old:
                         recurrence = lib.recurrence_line(old, filer.view_issue(old))
-                        body = cluster_body(c["key"], c["members"], recurrence)
+                        body = cluster_body(c["key"], c["members"], recurrence, c["project"])
                         sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
                     if action == "create":
-                        ident, _, _ = filer.create(c["fp"], title + " (%s)" % c["key"], body, wanted, "3")
+                        ident, _, _ = filer.create(c["fp"], title + " (%s)" % c["key"], body, wanted, "3", c["project"])
                     else:
                         filer.update_body(ident, c["fp"], body)
                     ledger[c["fp"]] = ident
                     state["clusters"][c["fp"]] = {"key": c["key"], "members": c["members"], "sha": sha, "recurrence": recurrence}
+                    if c["project"]:
+                        state["clusters"][c["fp"]]["project"] = c["project"]
                     error = filer.relate(ident, old) if old else None
                     for f in c["findings"]:
                         f["filing"] = {"action": "clustered", "issue": ident, "cluster": c["key"]}

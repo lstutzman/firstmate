@@ -204,6 +204,28 @@ elif scenario == "starts":
            "sev": sorted(rub.start_severities), "min": str(rub.min_score),
            "next_day": [[s["title"] for s in again[0]], again[1], again[2]],
            "body": starts[0]["execute"]["argv"][-1] if starts else None}
+elif scenario == "surgeon-clusters":
+    import argparse, hashlib
+    sspec = importlib.util.spec_from_file_location("surgeon", os.path.join(os.path.dirname(os.environ["LIB"]), "fm-officer-surgeon.py"))
+    surgeon = importlib.util.module_from_spec(sspec)
+    sspec.loader.exec_module(surgeon)
+    def low(key, location, project=""):
+        return surgeon.lib.make_finding("review", "nightly-review", key, "Review note " + key, "summary " + key, "real", "low", None, {},
+                                        location=location, project=project)
+    fs = [low("p%d" % i, "infra/bicep/main%d.bicep" % i) for i in range(3)]
+    fs += [low("f%d" % i, "infra/bicep/main%d.bicep" % i, "lstutzman/firstmate") for i in range(3)]
+    state = {}
+    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100)
+    surgeon.file_findings(fs, args, date, W, state, {}, surgeon.lib.Jev(os.path.join(W, "jev.py")))
+    issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
+    def marker(job, key):
+        return hashlib.sha256(("review\0%s\0%s" % (job, key)).encode("utf-8")).hexdigest()
+    res = {"filings": {f["key"]: [f["filing"]["action"], f["filing"].get("issue"), f["filing"].get("reason")] for f in fs},
+           "items": {i: {"title": v["title"], "labels": v["labels"], "project": v["project"], "tail": v["description"].rsplit("\n", 1)[-1]}
+                     for i, v in issues.items()},
+           "clusters": {c["key"] + "|" + c.get("project", ""): sorted(c) for c in state["clusters"].values()},
+           "markers": {k: marker(j, k) for k, j in (("infra/bicep", "cluster"),)}}
+    res["markers"]["fleet"] = marker("cluster-fleet", "infra/bicep")
 elif scenario in ("fleet-start", "fleet-nowrite"):
     offices = [lib.progress.parse_office("/home/nav=propertycompass2=navigator"), lib.progress.parse_office("/home/qm=firstmate,skills=quartermaster")]
     officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), pattern_sources=("scan",), project="Fleet")
@@ -386,6 +408,27 @@ test_fleet_patterns_route_without_linear_writes() {
   pass "fm-officer-linear: with --writes none a fleet officer's patterns still go to the Quartermaster"
 }
 
+test_surgeon_clusters_split_fleet_from_propertycompass2() {
+  local out pc fleet
+  world surgeon-clusters '{}'
+  printf 'scheduled-review\n' >> "$LDIR/labels"
+  out=$(drive surgeon-clusters) || fail "driver must succeed"
+  pc=$(jq -r '.filings.p0[1]' <<<"$out"); fleet=$(jq -r '.filings.f0[1]' <<<"$out")
+  assert_equals "clustered clustered clustered" "$(jq -r '[.filings.p0, .filings.p1, .filings.p2] | map(.[0]) | join(" ")' <<<"$out")" "PropertyCompass2 low review findings are clustered"
+  assert_equals 1 "$(jq -r --arg i "$pc" '[.filings | to_entries[] | select(.value[1] == $i)] | length / 3' <<<"$out")" "all three PropertyCompass2 findings share one item"
+  assert_equals "clustered clustered clustered" "$(jq -r '[.filings.f0, .filings.f1, .filings.f2] | map(.[0]) | join(" ")' <<<"$out")" "fleet-repository low findings are clustered too, not filed singly"
+  assert_not_contains "$pc" "$fleet" "a fleet finding in the same path never joins the PropertyCompass2 cluster"
+  assert_equals 2 "$(jq '.items | length' <<<"$out")" "two cluster items, one per side"
+  assert_equals '{"title":"Code review findings: infra bicep (infra/bicep)","labels":["Bug","scheduled-review","triage"],"project":null}' \
+    "$(jq -c --arg i "$pc" '.items[$i] | {title, labels, project}' <<<"$out")" "the PropertyCompass2 cluster keeps its title, its own area label and no Linear project"
+  assert_equals "surgeon-fp:$(jq -r '.markers["infra/bicep"]' <<<"$out")" "$(jq -r --arg i "$pc" '.items[$i].tail' <<<"$out")" "and its fingerprint is sha256(review, cluster, key), as before"
+  assert_equals '["key","members","recurrence","sha"]' "$(jq -c '.clusters["infra/bicep|"]' <<<"$out")" "its saved state has no project field"
+  assert_equals '{"labels":["Bug","scheduled-review","area:fleet"],"project":"Fleet"}' \
+    "$(jq -c --arg i "$fleet" '.items[$i] | {labels, project}' <<<"$out")" "the fleet cluster is in the Fleet project with area:fleet"
+  assert_equals "surgeon-fp:$(jq -r '.markers.fleet' <<<"$out")" "$(jq -r --arg i "$fleet" '.items[$i].tail' <<<"$out")" "with its own fingerprint"
+  pass "fm-officer-linear: the Surgeon clusters fleet low findings apart, in the Fleet project with area:fleet; PropertyCompass2 clusters are unchanged"
+}
+
 test_closed_item_is_never_touched() {
   local out before
   world closed "$(jq -n --arg fp "$(printf '%s\0%s\0%s' scan job old | sha256sum | cut -d' ' -f1)" \
@@ -419,5 +462,6 @@ test_reserved_class_becomes_one_keyed_needs_decision
 test_fleet_findings_take_the_fleet_project_and_label
 test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
 test_fleet_patterns_route_without_linear_writes
+test_surgeon_clusters_split_fleet_from_propertycompass2
 test_closed_item_is_never_touched
 test_no_call_closes_or_deletes
