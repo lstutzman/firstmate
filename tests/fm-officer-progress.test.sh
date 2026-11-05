@@ -1013,16 +1013,21 @@ test_start_home_routes_project_less_asks_by_scope() {
   cat > "$WORLD/local-jev.py" <<'PY'
 import os, sys
 text = sys.stdin.read()
-open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "jev-calls"), "a").write(text + "\n")
-options = [a.split("=", 1)[0] for a in sys.argv[sys.argv.index("-o") :] if "=" in a]
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "jev-calls"), "a").write(sys.argv[1] + ": " + text + "\n")
+options = [a.split("=", 1)[0] for a in sys.argv if "=" in a and not a.startswith("-")]
 if "DOWN" in text:
     sys.exit(3)
 if "GARBAGE" in text:
     print("not json")
     sys.exit(0)
-label, confidence = "main", 0.9
+if sys.argv[1] == "noul":
+    print('{"type":"noul","noul":%s}' % (0.91 if "LEEASK" in text else 0.1))
+    sys.exit(0)
+if "main" in options:
+    sys.exit(4)
+label, confidence = "quartermaster", 0.3
 for mark, wanted, conf in (("HIGHNAV", "navigator", 0.91), ("HIGHQM", "quartermaster", 0.88),
-                           ("LOWQM", "quartermaster", 0.55), ("HIGHMAIN", "main", 0.93)):
+                           ("LOWQM", "quartermaster", 0.55)):
     if mark in text and wanted in options:
         label, confidence = wanted, conf
 print('{"type":"choice","choice":"%s","confidence":%s}' % (label, confidence))
@@ -1070,7 +1075,7 @@ PY
  {"id":"jev-nav","words":"HIGHNAV tidy the search","status":"not-started","work":[],"links":[]},
  {"id":"jev-qm","words":"HIGHQM tidy the queue","status":"not-started","work":[],"links":[]},
  {"id":"jev-low","words":"LOWQM maybe tidy the queue","status":"not-started","work":[],"links":[]},
- {"id":"jev-main","words":"HIGHMAIN what is the plan","status":"not-started","work":[],"links":[]}
+ {"id":"jev-main","words":"HIGHQM LEEASK approve it","status":"not-started","work":[],"links":[]}
 ]}
 JSON
   run_progress >/dev/null || fail 'a run with two start-home offices must succeed'
@@ -1094,8 +1099,8 @@ JSON
   done
   assert_contains "$(jq -r '.start_requests[] | select(.id == "both") | .unrouted' "$file")" 'ambiguous' 'an ask that fits two offices is reported as ambiguous'
   assert_contains "$(jq -r '.start_requests[] | select(.id == "jev-low") | .unrouted' "$file")" 'local-jev unsure: quartermaster at 0.55' 'a low-confidence label stays with this home and names the confidence'
-  assert_contains "$(jq -r '.start_requests[] | select(.id == "jev-main") | .unrouted' "$file")" 'local-jev placed it with main (0.93)' 'a main label stays with this home'
-  assert_contains "$(jq -r '.start_requests[] | select(.id == "bare") | .unrouted' "$file")" 'local-jev placed it with main' 'an ask with no evidence goes to local-jev and is reported'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "jev-main") | .unrouted' "$file")" 'a constraint, answer or decision for Lee (0.91)' 'a confident office pick still stays with main when the ask is for Lee himself'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "bare") | .unrouted' "$file")" 'local-jev unsure' 'an ask with no evidence goes to local-jev and is reported'
   assert_equals '' "$(grep -c ' - ' "$WORLD/jev-calls" | grep -v '^0$')" 'local-jev is sent only the ask words, never record ids'
   assert_not_contains "$(cat "$WORLD/jev-calls")" 'Top of Mind' 'no Top of Mind record text goes to local-jev'
   assert_not_contains "$(cat "$WORLD/jev-calls")" 'listings page' 'an ask the evidence placed is never sent to local-jev'

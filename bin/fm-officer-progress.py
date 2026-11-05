@@ -884,27 +884,24 @@ ROLE_SCOPES = {
     "quartermaster": "Work on the agent fleet itself: agents, second mates, officers, firstmate, skills, the fleet app, "
                      "its run pages, machines, session logs, or process improvement.",
 }
-ROLE_EXAMPLES = {
-    "navigator": ("borrow how propalt talks about their data",
-                  "if a single instance is using the entire db, look at queries and indexes",
-                  "find all the implicit state machines in my app"),
-    "quartermaster": ("make sure 2ndmates are awake", "agents run it without you watching",
-                      "each nightly run page should show actionable results"),
-    "main": ("allow the rightmove photos to be graded (all or nothing)",
-             "approve creating the staging Azure resources", "Member-visible text for Lee"),
-}
-MAIN_SCOPE = ("Only a decision or approval Lee must make himself (product, pricing, legal, payments, spending), "
-              "a question for Lee, or something that is neither app nor fleet work.")
+# local-jev `noul` on whether an ask is not a start at all: a constraint, an answer, an approval or a decision.
+NOT_A_START = ("Which is this?",
+               "A constraint ('not ready yet'), an answer or permission given to agents, an approval, a decision, "
+               "or information; nothing new is asked of an agent",
+               "A request for an agent to investigate, build, fix, check or change something")
 
 
 class LocalJev:
-    """Labels an ask with the office that should start it, through the local-jev skill's jev.py.
+    """Places an ask with an office through the local-jev skill's jev.py, or leaves it with main.
 
-    The labels are the registered offices' roles plus "main"; only the ask's words are sent. Any failure,
-    including a timeout or an unreadable answer, is remembered so the rest of the run stays with `home`.
+    A `choice` over the registered offices' roles (no main option) picks the office; the pick must reach MINIMUM.
+    A `noul` check then asks whether the ask is a constraint, answer, approval or decision rather than a request for
+    work, and at FOR_LEE_MINIMUM or more it stays with main. Only the ask's words are sent. Any failure, including a
+    timeout or an unreadable answer, is remembered so the rest of the run stays with `home`.
     """
-    QUESTION = "Which office should start this work, or is it for main?"
+    QUESTION = "Which office should start this work?"
     MINIMUM = 0.7
+    FOR_LEE_MINIMUM = 0.85
 
     def __init__(self, offices, script=None):
         self.script = script or os.environ.get("FM_LOCAL_JEV") or os.path.expanduser("~/.claude/skills/local-jev/jev.py")
@@ -912,33 +909,34 @@ class LocalJev:
         self.down = None if len(self.offices) == len(offices) else "two offices share a role"
 
     def options(self):
-        labels = {role: "%s Projects: %s." % (ROLE_SCOPES.get(role, o.mandate), ", ".join(sorted(o.projects)))
-                  for role, o in self.offices.items()}
-        labels["main"] = MAIN_SCOPE
-        return {label: text + " Examples: " + "; ".join("'%s'" % e for e in ROLE_EXAMPLES.get(label, ())) + "."
-                if label in ROLE_EXAMPLES else text for label, text in labels.items()}
+        return {role: "%s Projects: %s." % (ROLE_SCOPES.get(role, o.mandate), ", ".join(sorted(o.projects)))
+                for role, o in self.offices.items()}
+
+    def ask(self, text, *args):
+        run = subprocess.run([sys.executable, "-I", self.script, *args, "--state-file", "-"],
+                             input=text, capture_output=True, text=True, timeout=20, check=False)
+        if run.returncode:
+            raise RuntimeError("exit %d" % run.returncode)
+        return json.loads(run.stdout)
 
     def place(self, text):
         if self.down:
             return None, "local-jev unavailable: " + self.down
-        argv = [sys.executable, "-I", self.script, "choice", self.QUESTION, "--state-file", "-"]
-        for label, description in self.options().items():
-            argv += ["-o", label + "=" + description]
         try:
-            run = subprocess.run(argv, input=text, capture_output=True, text=True, timeout=20, check=False)
-            if run.returncode:
-                raise RuntimeError("exit %d" % run.returncode)
-            answer = json.loads(run.stdout)
+            options = self.options()
+            answer = self.ask(text, "choice", self.QUESTION, *[a for k, v in options.items() for a in ("-o", k + "=" + v)])
             label, confidence = answer["choice"], float(answer["confidence"])
-            if label not in self.options():
+            if label not in options:
                 raise ValueError("unknown label")
+            if confidence < self.MINIMUM:
+                return None, "local-jev unsure: %s at %.2f, below %.1f" % (label, confidence, self.MINIMUM)
+            question, true, false = NOT_A_START
+            for_lee = float(self.ask(text, "noul", question, "--true", true, "--false", false)["noul"])
         except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
             self.down = type(exc).__name__ + (": " + str(exc) if str(exc) else "")
             return None, "local-jev unavailable: " + self.down
-        if confidence < self.MINIMUM:
-            return None, "local-jev unsure: %s at %.2f, below %.1f" % (label, confidence, self.MINIMUM)
-        if label == "main":
-            return None, "local-jev placed it with main (%.2f)" % confidence
+        if for_lee >= self.FOR_LEE_MINIMUM:
+            return None, "local-jev says it is not a request for work but a constraint, answer or decision for Lee (%.2f); %s was %.2f" % (for_lee, label, confidence)
         return self.offices[label].home, None
 
 
