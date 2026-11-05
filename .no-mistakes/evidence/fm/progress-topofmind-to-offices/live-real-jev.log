@@ -1,0 +1,20 @@
+== routing (real local-jev) ==
+calc	navigator	-
+constraint	main	local-jev unsure: quartermaster at 0.09, below 0.7
+fmword	quartermaster	-
+holiday	main	local-jev unsure: navigator at 0.36, below 0.7
+officers	quartermaster	-
+pclink	navigator	-
+photos	navigator	-
+price	main	local-jev unsure: navigator at 0.64, below 0.7
+sessionlogs	main	local-jev says it fits no office scope (0.48, below 0.5); quartermaster was 1.00
+tea	main	local-jev unsure: quartermaster at 0.53, below 0.7
+== excluded: 0  total requests: 10
+== digest unrouted lines ==
+- 2. constraint - Pillow Partners is not ready yet, do not start on it (Linear: none; home: /tmp/fm-officer-progress.HHRsoz/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev unsure: quartermaster at 0.09, below 0.7
+- 4. holiday - Research holiday flights for March (Linear: none; home: /tmp/fm-officer-progress.HHRsoz/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev unsure: navigator at 0.36, below 0.7
+- 8. price - Change the premium membership price to £12 (Linear: none; home: /tmp/fm-officer-progress.HHRsoz/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev unsure: navigator at 0.64, below 0.7
+- 9. sessionlogs - Check that every agent session log reaches the transcript archive (Linear: none; home: /tmp/fm-officer-progress.HHRsoz/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev says it fits no office scope (0.48, below 0.5); quartermaster was 1.00
+- 10. tea - Make the tea better (Linear: none; home: /tmp/fm-officer-progress.HHRsoz/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev unsure: quartermaster at 0.53, below 0.7
+== handoff FM_HOME lines ==
+5
