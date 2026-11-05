@@ -1,0 +1,38 @@
+=== BEFORE arming (done child, PR only in status line; the old false-positive state)
+refresh exit 0
+{"valid":true,"invalidity":{"kind":null,"ids":[]},"counts":{"in_flight":1,"waiting_on_merge":0},"waiting_on_merge":[]}
+alarm exit 0
+alarm output: Secondmate holding work silent over 60 minutes: mate
+=== meta pr= recorded, merge poll NOT armed (adversarial)
+refresh exit 0
+{"valid":false,"invalidity":{"kind":"terminal_in_flight","ids":["dependabot-4619"]},"counts":{"in_flight":1,"waiting_on_merge":0},"waiting_on_merge":[]}
+alarm exit 0
+alarm output: Secondmate work inventory unavailable: mate: home inventory incomplete: in-flight backlog item has terminal child state: dependabot-4619=done
+--- arming via real bin/fm-pr-check.sh
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+armed: state/dependabot-4619.check.sh
+contributions.check.sh
+dependabot-4619.check.sh
+dependabot-4619.pr-poll
+dependabot-4619.pr-poll-registration
+=== AFTER fm-pr-check.sh armed the merge poll (intent: healthy waiting, no alarm)
+refresh exit 0
+{"valid":true,"invalidity":{"kind":null,"ids":[]},"counts":{"in_flight":1,"waiting_on_merge":1},"waiting_on_merge":[{"id":"dependabot-4619","pr":"https://github.com/example/alpha/pull/4619"}]}
+alarm exit 0
+alarm output: <none>
+=== tampered poll check (adversarial: watcher would refuse it)
+refresh exit 0
+{"valid":false,"invalidity":{"kind":"terminal_in_flight","ids":["dependabot-4619"]},"counts":{"in_flight":1,"waiting_on_merge":0},"waiting_on_merge":[]}
+alarm exit 0
+alarm output: Secondmate work inventory unavailable: mate: home inventory incomplete: in-flight backlog item has terminal child state: dependabot-4619=done
+=== failed child with meta PR + armed poll (adversarial)
+refresh exit 0
+{"valid":false,"invalidity":{"kind":"terminal_in_flight","ids":["dependabot-4619"]},"counts":{"in_flight":1,"waiting_on_merge":0},"waiting_on_merge":[]}
+alarm exit 0
+alarm output: Secondmate work inventory unavailable: mate: home inventory incomplete: in-flight backlog item has terminal child state: dependabot-4619=failed
+=== waiting child plus another in-flight item with no child (other drift still surfaces)
+refresh exit 0
+{"valid":false,"invalidity":{"kind":"orphan_in_flight","ids":["other-work"]},"counts":{"in_flight":2,"waiting_on_merge":1},"waiting_on_merge":[{"id":"dependabot-4619","pr":"https://github.com/example/alpha/pull/4619"}]}
+alarm exit 0
+alarm output: Secondmate work inventory unavailable: mate: home inventory incomplete: in-flight backlog item has no child metadata: other-work
