@@ -733,7 +733,6 @@ def hit_event(hit, m):
 
 
 HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\b", re.S)
-STATEMENT_SPLIT_RE = re.compile(r"\n|;|&&|\|\|?|\$\(|`|\(|\{|\bthen\b|\bdo\b|\belse\b")
 
 
 def tool_inputs(records):
@@ -755,26 +754,17 @@ def tool_inputs(records):
 def plausible_tool(name, command, bodies):
     """Whether `name` from a "command not found" line is an installable command a person could add:
     not a dotted field name, not a shell function the session itself defined (a test helper, a function
-    used outside its script), and, when the command that ran is known, one it ran as a command word
-    rather than a label or prose inside a heredoc (a command that only names it indirectly stays real)."""
+    used outside its script), and not a word the command that ran held only as a `name:` label or as
+    prose inside a heredoc (a command that never names it reached it through a script: a real miss)."""
     if re.fullmatch(r"[A-Za-z_]+(?:\.[A-Za-z_]+)+", name):
         return False
     esc = re.escape(name)
     if re.search(r"(?m)^\s*(?:function\s+%s\b|%s\s*\(\s*\))" % (esc, esc), bodies or ""):
         return False
-    if command is None or name not in command:
-        return True    # reached through a script the command ran: a real miss
-    code = HEREDOC_RE.sub("\n", command)
-    for statement in STATEMENT_SPLIT_RE.split(code):
-        words = statement.strip().lstrip("!").split()
-        while words and re.fullmatch(r"\w+=\S*", words[0]):
-            words = words[1:]
-        if words and words[0] in (name, name + ";") and not words[0].endswith(":"):
-            return True
-        if words and words[0] in ("sudo", "exec", "time", "command", "env", "xargs", "nohup") \
-                and name in words[1:2]:
-            return True
-    return False
+    word = r"(?<![\w.-])%s(?![\w.-])" % esc
+    if command is None or not re.search(word, command):
+        return True
+    return re.search(word + "(?!:)", HEREDOC_RE.sub("\n", command)) is not None
 
 
 def session_events(records, machine):
