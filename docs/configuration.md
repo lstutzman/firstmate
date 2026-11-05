@@ -1020,7 +1020,8 @@ The triage and friction officers read this home and each local second mate home 
 ### Surgeon
 
 The Ship's Surgeon is the triage pass plus intake.
-`bin/fm-officer-surgeon.py`'s header owns the classification tables, severity rules and Linear steps, and [`docs/officers/surgeon-rubric.md`](officers/surgeon-rubric.md) owns what counts as work, how it is scored, what starts and what holds for Lee; `bin/fm-officer-triage.py` stays because the friction pass imports it.
+It files, dedupes, scores and starts through the shared library `bin/fm-officer-linear.py`, whose contract every officer follows: [`docs/officers/contract.md`](officers/contract.md) owns it.
+`bin/fm-officer-surgeon.py`'s header owns the classification tables and severity rules, `bin/fm-officer-linear.py`'s header owns the Linear steps, and [`docs/officers/surgeon-rubric.md`](officers/surgeon-rubric.md) owns what counts as work, how it is scored, what starts and what holds for Lee; `bin/fm-officer-triage.py` stays because the friction pass imports it.
 Its digest keeps the session join's findings under `archive_findings` and puts the intake findings in `findings`, so a `severity: high` (or `critical`) there, which the `lane:surgeon:high` [wake source](#offices-dataofficesmd) counts, means a high intake finding and never an archive coverage gap.
 Intake reads the fleet app with `GET` only: `/api/runs`, the latest result of each live nightly E2E or code-review job, and `/api/sweeper-results`.
 A red nightly E2E finding is high only when its run's `sha` is the current staging tip, and medium for an older run; an unreadable tip or a result with no `sha` rates it medium and adds a coverage gap.
