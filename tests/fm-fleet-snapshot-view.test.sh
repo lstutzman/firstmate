@@ -1217,9 +1217,12 @@ EOF
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
 }
 
-# A done child with a recorded PR is healthy waiting on merge; failed and done-without-PR still flag.
+# A done child is waiting on merge only with a meta PR and an armed, registered
+# merge-poll check; every weaker case still flags terminal_in_flight.
 test_home_summary_done_child_with_pr_is_waiting_on_merge() {
   local home fakebin out
+  local pr_url=https://github.com/example/alpha/pull/4619
+  local pr_head=0123456789abcdef0123456789abcdef01234567
   home=$(make_home summary-waiting-on-merge)
   mkdir -p "$home/projects/waiting"
   fakebin=$(make_fakebin "$home")
@@ -1231,59 +1234,68 @@ test_home_summary_done_child_with_pr_is_waiting_on_merge() {
 
 ## Done
 EOF
-  fm_write_meta "$home/state/pr-ship.meta" \
-    "window=firstmate:fm-pr-ship" \
-    "worktree=$home/projects/waiting" \
-    "project=alpha" \
-    "harness=claude" \
-    "kind=ship" \
-    "mode=no-mistakes" \
-    "pr=https://github.com/example/alpha/pull/4619" \
-    "pr_head=0123456789abcdef0123456789abcdef01234567"
+  write_pr_ship_meta() {
+    fm_write_meta "$home/state/pr-ship.meta" \
+      "window=firstmate:fm-pr-ship" \
+      "worktree=$home/projects/waiting" \
+      "project=alpha" \
+      "harness=claude" \
+      "kind=ship" \
+      "mode=no-mistakes" \
+      "$@"
+  }
+  assert_terminal() {
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+    printf '%s' "$out" | jq -e '
+      .valid == false
+        and .invalidity == {kind:"terminal_in_flight",ids:["pr-ship"]}
+        and .counts.waiting_on_merge == 0
+    ' >/dev/null || fail "$1: $out"
+  }
   record_claude_idle "$home/state" pr-ship
-  printf 'done: PR https://github.com/example/alpha/pull/4619 checks green\n' > "$home/state/pr-ship.status"
+
+  # Meta PR without an armed check still flags.
+  write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"
+  printf 'done: PR %s checks green\n' "$pr_url" > "$home/state/pr-ship.status"
+  assert_terminal "done child with a meta PR but no armed check must still produce terminal_in_flight"
+
+  # Arm and register the merge-poll check the way fm-pr-check.sh and fm-check-register.sh do.
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$home/state/pr-ship.check.sh"
+  chmod 700 "$home/state/pr-ship.check.sh"
+  FM_HOME="$home" "$ROOT/bin/fm-check-register.sh" pr-ship >/dev/null \
+    || fail "fixture check registration failed"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
-  printf '%s' "$out" | jq -e '
+  printf '%s' "$out" | jq -e --arg pr "$pr_url" '
     .valid == true
       and .invalidity.kind == null
       and .counts.waiting_on_merge == 1
-      and .waiting_on_merge == [{id:"pr-ship",pr:"https://github.com/example/alpha/pull/4619"}]
-  ' >/dev/null || fail "done child with a recorded PR must be valid and waiting on merge: $out"
+      and .waiting_on_merge == [{id:"pr-ship",pr:$pr}]
+  ' >/dev/null || fail "done child with a meta PR and an armed check must be valid and waiting on merge: $out"
 
-  # Same child without a recorded PR flags exactly as before.
-  fm_write_meta "$home/state/pr-ship.meta" \
-    "window=firstmate:fm-pr-ship" \
-    "worktree=$home/projects/waiting" \
-    "project=alpha" \
-    "harness=claude" \
-    "kind=ship" \
-    "mode=no-mistakes"
+  # A check whose bytes changed after registration is not registered.
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$home/state/pr-ship.check.sh"
+  assert_terminal "done child whose check bytes changed after registration must still produce terminal_in_flight"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$home/state/pr-ship.check.sh"
+
+  # A PR URL only in the status log does not qualify, even with an armed check.
+  write_pr_ship_meta
+  printf 'working: opened PR %s\ndone: complete\n' "$pr_url" > "$home/state/pr-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e --arg pr "$pr_url" '
+    .tasks[] | select(.id == "pr-ship") | .pr.url == $pr and .pr.source == "status_event"
+  ' >/dev/null || fail "fixture must record the PR from the status log only: $out"
+  assert_terminal "done child with a status-line PR only must still produce terminal_in_flight"
+
+  # No PR at all still flags.
   printf 'done: complete\n' > "$home/state/pr-ship.status"
-  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
-  printf '%s' "$out" | jq -e '
-    .valid == false
-      and .invalidity == {kind:"terminal_in_flight",ids:["pr-ship"]}
-      and .counts.waiting_on_merge == 0
-  ' >/dev/null || fail "done child with no PR must still produce terminal_in_flight: $out"
+  assert_terminal "done child with no PR must still produce terminal_in_flight"
 
-  # A failed child flags even when a PR is recorded.
-  fm_write_meta "$home/state/pr-ship.meta" \
-    "window=firstmate:fm-pr-ship" \
-    "worktree=$home/projects/waiting" \
-    "project=alpha" \
-    "harness=claude" \
-    "kind=ship" \
-    "mode=no-mistakes" \
-    "pr=https://github.com/example/alpha/pull/4619" \
-    "pr_head=0123456789abcdef0123456789abcdef01234567"
+  # A failed child flags even with a meta PR and an armed check.
+  write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"
   printf 'failed: stopped\n' > "$home/state/pr-ship.status"
-  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
-  printf '%s' "$out" | jq -e '
-    .valid == false
-      and .invalidity == {kind:"terminal_in_flight",ids:["pr-ship"]}
-      and .counts.waiting_on_merge == 0
-  ' >/dev/null || fail "failed child with a PR must still produce terminal_in_flight: $out"
-  pass "home-summary treats a done child with a recorded PR as waiting on merge"
+  assert_terminal "failed child with a PR must still produce terminal_in_flight"
+  unset -f write_pr_ship_meta assert_terminal
+  pass "home-summary treats a done child as waiting on merge only with a meta PR and an armed check"
 }
 
 test_snapshot_handles_large_status_fields() {

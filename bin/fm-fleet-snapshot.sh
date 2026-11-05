@@ -237,6 +237,10 @@ esac
 . "$SCRIPT_DIR/fm-merge-authority-lib.sh"
 # shellcheck source=bin/fm-hold-reason-lib.sh
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
+# shellcheck source=bin/fm-pr-lib.sh
+. "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-check-lib.sh
+. "$SCRIPT_DIR/fm-check-lib.sh"  # fm_custom_check_registered: the armed merge-poll check
 
 usage() {
   cat <<'EOF'
@@ -256,11 +260,14 @@ aggregation, includes generated_epoch for freshness arithmetic, and marks
 inventory contradictions or unavailable child state invalid.
 kind=secondmate meta records are not child inventory for unowned_current or
 terminal_in_flight; they never have backlog rows.
-A done child with a recorded PR (pr= in meta or a status-line PR URL) is waiting
-on merge, not terminal_in_flight: it is listed in waiting_on_merge and counted in
-counts.waiting_on_merge. No forge read is made; a recorded PR counts as waiting
-until the merge teardown removes the child. A failed child, or a done child with
-no recorded PR, still invalidates the inventory.
+A done child is waiting on merge, not terminal_in_flight, only when its meta
+records pr= (pr.source is "meta"; a PR URL found only in the status log does not
+count) and a merge-poll check is armed and registered for it (state/<id>.check.sh
+bound by fm-check-register.sh, shown as pr.merge_check_armed). The armed check
+wakes the supervisor when the PR merges or closes, so the child cannot sit
+unnoticed. Such a child is listed in waiting_on_merge and counted in
+counts.waiting_on_merge; no forge read is made. A failed child, or a done child
+without both a meta PR and an armed check, still invalidates the inventory.
 Its invalidity object names the normalized failure kind and affected ids.
 Actionable tasks-axi captain holds appear as decisions_open and stay visible in
 queued with hold_reason, hold_kind, hold_until,
@@ -774,7 +781,7 @@ task_json_lines() {
   local meta original_meta id kind harness mode yolo project worktree home projects spawn_gen backend target status_log report_path
   local remote_host remote_root current_file endpoint_file observation_line index=0
   local pr pr_source endpoint_exists agent_alive meta_json report_json worktree_json home_json
-  local event_file decisions_file
+  local event_file decisions_file merge_check_armed
   local current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
 
@@ -815,6 +822,10 @@ task_json_lines() {
     fi
     if [ -z "$pr" ]; then
       pr_source=absent
+    fi
+    merge_check_armed=0
+    if [ "$pr_source" = meta ] && fm_custom_check_registered "$STATE" "$id"; then
+      merge_check_armed=1
     fi
 
     current_file="$SNAPSHOT_TASK_DIR/$id.json"
@@ -914,6 +925,7 @@ task_json_lines() {
       --argjson pending_decision "$(bool_json "$pending_decision")" \
       --argjson blocked_event "$(bool_json "$blocked_event")" \
       --argjson report_present "$(bool_json "$report_present")" \
+      --argjson merge_check_armed "$(bool_json "$merge_check_armed")" \
       '($current_state[0]) as $current_state
        | ($status_log[0]) as $status_log
        | ($open_decisions[0]) as $open_decisions
@@ -942,7 +954,7 @@ task_json_lines() {
                   elif $agent_alive == "alive" or $agent_alive == "dead" then $agent_alive
                   else "unknown" end),
           observed_at:$observed_at,freshness:"fresh"},
-        pr:{url:($pr | if . == "" then null else . end),source:$pr_source,head:($pr_head | if . == "" then null else . end)},
+        pr:{url:($pr | if . == "" then null else . end),source:$pr_source,head:($pr_head | if . == "" then null else . end),merge_check_armed:$merge_check_armed},
         hints:{
           pending_decision:$pending_decision,
           blocked_event:$blocked_event,
@@ -1060,12 +1072,12 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | $tasks[]
          | select(.kind != "secondmate")
          | select(.id == $work.id and (.current_state.state == "done" or .current_state.state == "failed"))
-         | select((.current_state.state == "done" and .pr.url != null) | not)
+         | select((.current_state.state == "done" and .pr.source == "meta" and .pr.merge_check_armed == true) | not)
          | {id,state:.current_state.state} ]) as $terminal_in_flight
     | ([ $owned_in_flight[] as $work
          | $tasks[]
          | select(.kind != "secondmate")
-         | select(.id == $work.id and .current_state.state == "done" and .pr.url != null)
+         | select(.id == $work.id and .current_state.state == "done" and .pr.source == "meta" and .pr.merge_check_armed == true)
          | {id,pr:(.pr.url | trunc(500))} ]) as $waiting_on_merge
     | ([if $backlog.present != true then
           {kind:"missing_backlog",ids:[],reason:"missing structured backlog"}
