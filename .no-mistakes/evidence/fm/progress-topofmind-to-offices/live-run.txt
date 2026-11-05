@@ -1,0 +1,46 @@
+run exit 0
+== routing (id -> home | unrouted)
+constraint -> home | local-jev unsure: navigator at 0.30, below 0.7
+fix-tap -> quartermaster | -
+fleet-work -> quartermaster | -
+named-pricing -> home | local-jev says it changes pricing, legal text, payments or spending, which Lee decides (0.97)
+out-of-scope -> home | local-jev says it fits no office scope (0.02, below 0.2); quartermaster was 0.72
+pc-link -> navigator | -
+pc-product -> navigator | -
+pricing -> home | local-jev unsure: navigator at 0.27, below 0.7
+== Markdown digest unrouted lines
+- 1. constraint - The calendar export is not ready yet, do not start it (Linear: none; home: /tmp/fm-officer-progress.GPIDfc/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev unsure: navigator at 0.30, below 0.7
+- 4. named-pricing - Raise the PropertyCompass2 annual plan price to £99 (Linear: none; home: /tmp/fm-officer-progress.GPIDfc/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev says it changes pricing, legal text, payments or spending, which Lee decides (0.97)
+- 5. out-of-scope - Book a dentist appointment for next week (Linear: none; home: /tmp/fm-officer-progress.GPIDfc/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev says it fits no office scope (0.02, below 0.2); quartermaster was 0.72
+- 8. pricing - Change the premium subscription price to £12 a month (Linear: none; home: /tmp/fm-officer-progress.GPIDfc/live/home; class: requested-feature; source: top-of-mind): Unstarted work authorised by requested-feature; unrouted, stays with this home: local-jev unsure: navigator at 0.27, below 0.7
+== navigator lane check
+office navigator: progress digest 2026-10-25: 9 finding(s) in /tmp/fm-officer-progress.GPIDfc/live/home/data/officers/progress/2026-10-25.md; 2 start request(s) delivered to this office's inbox
+== navigator inbox: matches per ask
+  property search results      1
+  duplicate Linear items       0
+  re-file the same finding     0
+  Tidy the listings            1
+  dentist                      0
+  premium subscription         0
+  calendar export              0
+  annual plan price            0
+== quartermaster lane check
+office quartermaster: progress digest 2026-10-25: 9 finding(s) in /tmp/fm-officer-progress.GPIDfc/live/home/data/officers/progress/2026-10-25.md; 2 start request(s) delivered to this office's inbox
+== quartermaster inbox: matches per ask
+  property search results      0
+  duplicate Linear items       1
+  re-file the same finding     1
+  Tidy the listings            0
+  dentist                      0
+  premium subscription         0
+  calendar export              0
+  annual plan price            0
+== main home inbox: matches per ask
+  property search results      0
+  duplicate Linear items       0
+  re-file the same finding     0
+  Tidy the listings            0
+  dentist                      0
+  premium subscription         0
+  calendar export              0
+  annual plan price            0

@@ -1,0 +1,302 @@
+{
+  "asks_for_lee": [],
+  "coverage": [
+    "Linear labels not readable by linear-axi"
+  ],
+  "date": "2026-10-25",
+  "doing": [],
+  "done": [],
+  "excluded": [],
+  "filler": null,
+  "generated_at": "2026-10-26T06:00:00Z",
+  "linear_coverage": {
+    "descriptions_truncated": 0,
+    "hierarchy_items": 1,
+    "items_seen": 0,
+    "pages_fetched": 6,
+    "rate_limit_retries": 0,
+    "requests": 7,
+    "roots_visited": 1,
+    "team_items": 0,
+    "unblocked_items": 0,
+    "unverified_starts": 0
+  },
+  "schema_version": 1,
+  "source": "progress-officer",
+  "start_requests": [
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: constraint - The calendar export is not ready yet, do not start it"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-8ac9b653dad24176",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: constraint - The calendar export is not ready yet, do not start it\"], \"id\": \"constraint\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.GPIDfc/live/home\", \"priority\": 0, \"rank\": 1, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"The calendar export is not ready yet, do not start it\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.GPIDfc/live/home"
+        },
+        "request_id": "progress-2026-10-25-8ac9b653dad24176"
+      },
+      "id": "constraint",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.GPIDfc/live/home",
+      "priority": 0,
+      "rank": 1,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "The calendar export is not ready yet, do not start it",
+      "unrouted": "local-jev unsure: navigator at 0.30, below 0.7"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: fix-tap - Start fix: officers re-file the same finding every day"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-d5559d3b00c506a7",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: fix-tap - Start fix: officers re-file the same finding every day\"], \"id\": \"fix-tap\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.GPIDfc/live/home\", \"priority\": 0, \"rank\": 2, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Start fix: officers re-file the same finding every day\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.GPIDfc/live/quartermaster"
+        },
+        "request_id": "progress-2026-10-25-d5559d3b00c506a7"
+      },
+      "id": "fix-tap",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.GPIDfc/live/home",
+      "priority": 0,
+      "rank": 2,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Start fix: officers re-file the same finding every day"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: fleet-work - The officers keep filing duplicate Linear items; make them search before filing"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-0153ca022ffee0a0",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: fleet-work - The officers keep filing duplicate Linear items; make them search before filing\"], \"id\": \"fleet-work\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.GPIDfc/live/home\", \"priority\": 0, \"rank\": 3, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"The officers keep filing duplicate Linear items; make them search before filing\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.GPIDfc/live/quartermaster"
+        },
+        "request_id": "progress-2026-10-25-0153ca022ffee0a0"
+      },
+      "id": "fleet-work",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.GPIDfc/live/home",
+      "priority": 0,
+      "rank": 3,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "The officers keep filing duplicate Linear items; make them search before filing"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: named-pricing - Raise the PropertyCompass2 annual plan price to £99"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-7487e8366f7b4806",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: named-pricing - Raise the PropertyCompass2 annual plan price to £99\"], \"id\": \"named-pricing\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.GPIDfc/live/home\", \"priority\": 0, \"rank\": 4, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Raise the PropertyCompass2 annual plan price to £99\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.GPIDfc/live/home"
+        },
+        "request_id": "progress-2026-10-25-7487e8366f7b4806"
+      },
+      "id": "named-pricing",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.GPIDfc/live/home",
+      "priority": 0,
+      "rank": 4,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Raise the PropertyCompass2 annual plan price to £99",
+      "unrouted": "local-jev says it changes pricing, legal text, payments or spending, which Lee decides (0.97)"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: out-of-scope - Book a dentist appointment for next week"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-6e75fffbb63d094b",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: out-of-scope - Book a dentist appointment for next week\"], \"id\": \"out-of-scope\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.GPIDfc/live/home\", \"priority\": 0, \"rank\": 5, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Book a dentist appointment for next week\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.GPIDfc/live/home"
+        },
+        "request_id": "progress-2026-10-25-6e75fffbb63d094b"
+      },
+      "id": "out-of-scope",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.GPIDfc/live/home",
+      "priority": 0,
+      "rank": 5,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Book a dentist appointment for next week",
+      "unrouted": "local-jev says it fits no office scope (0.02, below 0.2); quartermaster was 0.72"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: pc-link - Tidy the listings page"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-7fe2a39cf91b2530",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: pc-link - Tidy the listings page\"], \"id\": \"pc-link\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"https://github.com/lstutzman/PropertyCompass2/pull/5\", \"links\": [\"https://github.com/lstutzman/PropertyCompass2/pull/5\"], \"owner_home\": \"/tmp/fm-officer-progress.GPIDfc/live/home\", \"priority\": 0, \"rank\": 6, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Tidy the listings page\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.GPIDfc/live/navigator"
+        },
+        "request_id": "progress-2026-10-25-7fe2a39cf91b2530"
+      },
+      "id": "pc-link",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "https://github.com/lstutzman/PropertyCompass2/pull/5",
+      "links": [
+        "https://github.com/lstutzman/PropertyCompass2/pull/5"
+      ],
+      "owner_home": "/tmp/fm-officer-progress.GPIDfc/live/home",
+      "priority": 0,
+      "rank": 6,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Tidy the listings page"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: pc-product - Members say the property search results page loads slowly; speed it up"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-eb08fc6e69bbbadd",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: pc-product - Members say the property search results page loads slowly; speed it up\"], \"id\": \"pc-product\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.GPIDfc/live/home\", \"priority\": 0, \"rank\": 7, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Members say the property search results page loads slowly; speed it up\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.GPIDfc/live/navigator"
+        },
+        "request_id": "progress-2026-10-25-eb08fc6e69bbbadd"
+      },
+      "id": "pc-product",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.GPIDfc/live/home",
+      "priority": 0,
+      "rank": 7,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Members say the property search results page loads slowly; speed it up"
+    },
+    {
+      "authorising_class": "requested-feature",
+      "evidence": [
+        "Top of Mind: pricing - Change the premium subscription price to £12 a month"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-24b79e7344fcab29",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"requested-feature\", \"evidence\": [\"Top of Mind: pricing - Change the premium subscription price to £12 a month\"], \"id\": \"pricing\", \"linear_id\": null, \"linear_ids\": [], \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.GPIDfc/live/home\", \"priority\": 0, \"rank\": 8, \"reason\": \"Unstarted work authorised by requested-feature\", \"tag_source\": \"top-of-mind\", \"title\": \"Change the premium subscription price to £12 a month\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.GPIDfc/live/home"
+        },
+        "request_id": "progress-2026-10-25-24b79e7344fcab29"
+      },
+      "id": "pricing",
+      "linear_id": null,
+      "linear_ids": [],
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.GPIDfc/live/home",
+      "priority": 0,
+      "rank": 8,
+      "reason": "Unstarted work authorised by requested-feature",
+      "tag_source": "top-of-mind",
+      "title": "Change the premium subscription price to £12 a month",
+      "unrouted": "local-jev unsure: navigator at 0.27, below 0.7"
+    }
+  ],
+  "top_of_mind": [
+    "constraint - The calendar export is not ready yet, do not start it: Unstarted work authorised by requested-feature",
+    "fix-tap - Start fix: officers re-file the same finding every day: Unstarted work authorised by requested-feature",
+    "fleet-work - The officers keep filing duplicate Linear items; make them search before filing: Unstarted work authorised by requested-feature",
+    "named-pricing - Raise the PropertyCompass2 annual plan price to £99: Unstarted work authorised by requested-feature",
+    "out-of-scope - Book a dentist appointment for next week: Unstarted work authorised by requested-feature",
+    "pc-link - Tidy the listings page: Unstarted work authorised by requested-feature",
+    "pc-product - Members say the property search results page loads slowly; speed it up: Unstarted work authorised by requested-feature",
+    "pricing - Change the premium subscription price to £12 a month: Unstarted work authorised by requested-feature"
+  ],
+  "unclassified": 0
+}
