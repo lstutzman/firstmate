@@ -1,0 +1,60 @@
+lab session: fm-lab-fm-cwdprobe-1167-29944 (herdr herdr 0.9.5)
+== S: fresh Herdr ship spawn, presentation spaces=off ==
+  meta worktree=~/.treehouse/project-75a71d/1/project pane=w1:p2
+  treehouse calls:
+    get --lease --lease-holder probe-off
+  PASS: spawn process leased the slot itself (treehouse get --lease --lease-holder probe-off)
+  herdr create calls:
+    workspace create --cwd /tmp/fm-cwdprobe.2lQg8B/project --label firstmate --no-focus --session fm-lab-fm-cwdprobe-1167-29944
+    tab create --workspace w1 --cwd ~/.treehouse/project-75a71d/1/project --label fm-probe-off --no-focus --session fm-lab-fm-cwdprobe-1167-29944
+  PASS: pane created with --cwd = leased worktree
+  PASS: no 'treehouse get' typed into the pane
+  PASS: live pane get reports cwd = leased worktree
+  treehouse status line:
+    1     leased       ~/.treehouse/project-75a71d/1/project  (detached)  (held by probe-off)
+                       bash (3676), sh (10626), sleep (10628)
+== S: fresh Herdr ship spawn, presentation spaces=on ==
+  meta worktree=~/.treehouse/project-75a71d/2/project pane=w2:p2
+  treehouse calls:
+    status --json
+    get --lease --lease-holder probe-on
+  PASS: spawn process leased the slot itself (treehouse get --lease --lease-holder probe-on)
+  herdr create calls:
+    workspace create --cwd ~/.treehouse/project-75a71d/2/project --label └ probe-on · p:lNoxCtuyO-4vxneaCsj_-A --no-focus --session fm-lab-fm-cwdprobe-1167-29944
+    tab create --workspace w2 --cwd ~/.treehouse/project-75a71d/2/project --label fm-probe-on --no-focus --session fm-lab-fm-cwdprobe-1167-29944
+  PASS: pane created with --cwd = leased worktree
+  PASS: no 'treehouse get' typed into the pane
+  PASS: live pane get reports cwd = leased worktree
+  treehouse status line:
+                       bash (3676), sh (10626), sleep (10628)
+    2     leased       ~/.treehouse/project-75a71d/2/project  (detached)  (held by probe-on)
+== S: lab Herdr restart restores each worker pane in its own worktree ==
+  PASS: restored pane w1:p2 for probe-off resumes in its leased worktree
+  PASS: restored pane w2:p2 for probe-on resumes in its leased worktree
+    {"pane_id":"w1:p2","cwd":"~/.treehouse/project-75a71d/1/project","foreground_cwd":"~/.treehouse/project-75a71d/1/project"}
+    {"pane_id":"w2:p2","cwd":"~/.treehouse/project-75a71d/2/project","foreground_cwd":"~/.treehouse/project-75a71d/2/project"}
+== S: teardown returns the lease ==
+  PASS: teardown probe-off ok
+  PASS: teardown probe-on ok
+    base  staging  (repository default)
+    1     available    ~/.treehouse/project-75a71d/1/project  (detached)
+    2     available    ~/.treehouse/project-75a71d/2/project  (detached)
+== S(adversarial): spawn that fails after its pane exists, before its record, closes the pane and returns the lease ==
+  spawn exited nonzero as expected; last stderr:
+    
+    Please make sure you have the correct access rights
+    and the repository exists.
+    error: could not fetch origin for pooled worktree '~/.treehouse/project-75a71d/1/project'; refusing to launch from a potentially stale base
+  treehouse calls:
+    get --lease --lease-holder probe-abort
+    return --force ~/.treehouse/project-75a71d/1/project
+  herdr create: tab create --workspace w3 --cwd ~/.treehouse/project-75a71d/1/project --label fm-probe-abort --no-focus --session fm-lab-fm-cwdprobe-1167-29944
+  PASS: no task record published
+  herdr close calls: 2
+  PASS: abort closed its own pane
+  PASS: abort returned its lease
+  PASS: no fm-probe-abort tab remains in the lab session
+    base  staging  (repository default)
+    🌳 No worktrees in pool.
+RESULT=0
+teardown: lab session fm-lab-fm-cwdprobe-1167-29944 removed, tripwire intact

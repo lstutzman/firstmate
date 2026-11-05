@@ -1,0 +1,13 @@
+ok - a single transient stale pane_current_path read is not accepted as the worktree
+ok - an already-settled pane confirms on the next read, not a whole extra cycle
+ok - a transient primary-checkout pane read is not accepted as the worktree
+ok - a pane stuck on the primary checkout fails loudly at the deadline
+ok - a Herdr spawn leases its slot first and creates the tab inside it
+ok - a projected Herdr spawn creates its workspace and tab inside the leased worktree
+ok - a Herdr spawn closes its own pane and returns its lease only when it fails before its record
+ok - a Herdr spawn whose record publish fails closes its own pane and returns its lease
+ok - a Herdr spawn keeps its lease when the commit rollback removes the record after launch
+ok - a Herdr spawn refused on a recorded slot leaves it leased to its holder
+ok - tmux spawns keep their pane-driven treehouse get
+# all fm-spawn-worktree-settle tests passed
+exit=0
