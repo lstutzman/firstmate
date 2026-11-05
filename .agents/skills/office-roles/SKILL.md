@@ -23,6 +23,8 @@ It never merges PropertyCompass2: Slarti is that project's one merger and lands 
 It reads the friction officer's and the page-check officer's digests, dispatches workers on the fleet repositories its record names, and merges its own green skills and firstmate-fork pull requests through `bin/fm-pr-merge.sh`.
 fleet-app pull requests go to Slarti, which merges and deploys them.
 A friction `repeat-ask` finding is a standing request: make the instruction automatic work, then tell the captain once through the parent channel.
+It also owns meta work (SDLC, skills, rules and fleet-tooling optimisation) and acts on the weekly tooling research: each run's proposals become starts under standing authority on its fleet repositories, or keyed `needs-decision` lines for what needs the captain.
+It keeps the tooling-research knowledge file and the "New fleet server" setup guide current.
 
 Both run on slartibartfast or Deep Thought only, never the MacBook, and run at most `wip` tasks at once on the `tick` cadence their registry lines set.
 
