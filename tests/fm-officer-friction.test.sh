@@ -13,6 +13,9 @@
 # read-only states (open, started, settled), byte-identical digests on re-run, the
 # boundary (no network, no writes outside the lane), a remote archive,
 # Captain's Log cards no status line accounts for (and an unreachable log),
+# the bosun-unsure class (answers from live pull request facts into
+# bosun-answers.json only, unreadable and unbucketed items skipped, unsettled
+# items in the digest, an unreachable host as a coverage gap),
 # and the registry refusing a friction line with no archive.
 set -u
 
@@ -820,6 +823,81 @@ test_registry_and_unharvested_day() {
   pass "fm-officer friction: the registry needs an archive, and a missing day fails the run"
 }
 
+test_bosun_unsure_class() {
+  local home w fakebin repo copy sha_m sha_o sha_u sha_c ans md before
+  w="$TMP_ROOT/bosun"
+  home=$(make_world bosun)
+  sed -i 's/; added /; bosun-hosts: okhost,downhost; added /' "$home/data/officers.md"
+  repo="$w/repo"
+  copy="$w/copy"
+  for d in "$repo" "$copy"; do
+    mkdir -p "$d"
+    git -C "$d" init -q
+    git -C "$d" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
+  done
+  sha_m=$(git -C "$repo" rev-parse HEAD)
+  git -C "$repo" update-ref refs/remotes/origin/merged-b "$sha_m"
+  git -C "$repo" branch open-b
+  git -C "$repo" branch unique-b
+  git -C "$repo" branch blind-b
+  sha_c=$(git -C "$copy" rev-parse HEAD)
+  mkdir -p "$w/gh" "$w/home/services/bosun-maintenance"
+  printf '[{"number":7,"state":"MERGED","headRefOid":"%s","url":"https://x/pull/7"}]' "$sha_m" > "$w/gh/merged-b.json"
+  printf '[{"number":8,"state":"OPEN","headRefOid":"%s","url":"https://x/pull/8"}]' "$sha_m" > "$w/gh/open-b.json"
+  printf '[]' > "$w/gh/unique-b.json"
+  printf '[{"number":9,"state":"CLOSED","headRefOid":"%s","url":"https://x/pull/9"}]' "$sha_c" > "$w/gh/task-x.json"
+  jq -n --arg repo "$repo" --arg copy "$copy" --arg why "branch task-x is not merged and its pull request is missing or unreadable" '
+    {date: "2026-10-24", unsure: [
+      {kind: "branch", item: ($repo + " merged-b (remote)"), why: "x", bucket: "rule-settles"},
+      {kind: "branch", item: ($repo + " open-b (local)"), why: "x", bucket: "rule-settles"},
+      {kind: "branch", item: ($repo + " unique-b (local)"), why: "x", bucket: "rule-settles"},
+      {kind: "branch", item: ($repo + " blind-b (local)"), why: "x", bucket: "rule-settles"},
+      {kind: "copy", item: $copy, why: $why, bucket: "rule-settles"},
+      {kind: "copy", item: "/slots/unreadable", why: "git status failed", bucket: "unreadable"},
+      {kind: "copy", item: "/slots/old-shape", why: "git status failed"},
+      {kind: "file", item: "/scratch/lint.txt", why: "an old file in a scratch folder; no rule says to delete or keep it", bucket: "rule-settles"},
+      {kind: "log", item: "/home/lee/.claude/projects/x/s.jsonl", why: "a log", bucket: "rule-settles"}]}' \
+    > "$w/home/services/bosun-maintenance/last-result.json"
+  fakebin=$(fm_fakebin "$w")
+  cat > "$fakebin/ssh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$fakebin/ssh.calls"
+while [ "\$#" -gt 0 ]; do case "\$1" in -o) shift 2 ;; *) break ;; esac; done
+[ "\$1" = okhost ] || exit 255
+shift
+HOME="$w/home" exec bash -c "\$*"
+SH
+  cat > "$fakebin/gh" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do case "\$a" in --head=*) f="$w/gh/\${a#--head=}.json" ;; esac; done
+[ -f "\$f" ] && cat "\$f"
+SH
+  chmod +x "$fakebin/ssh" "$fakebin/gh"
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "a run with Bosun hosts must succeed, one of them unreachable"
+  ans="$home/data/officers/friction/bosun-answers.json"
+  md="$home/data/officers/friction/$DATE.md"
+  verdict() { jq -r --arg i "$1" '[.answers[] | select(.item | contains($i)) | .verdict] | join(",")' "$ans"; }
+  assert_equals "delete" "$(verdict merged-b)" "a branch whose pull request merged at its tip is deletable"
+  assert_equals "keep" "$(verdict open-b)" "a branch with an open pull request is kept"
+  assert_equals "keep" "$(verdict unique-b)" "a branch no pull request ended at is unique work, kept"
+  assert_equals "delete" "$(verdict "$copy")" "a copy whose branch's pull request closed at HEAD is deletable"
+  assert_equals "4" "$(jq ".answers | length" "$ans")" "only the four settled items are answered"
+  assert_contains "$(jq -r '[.answers[] | select(.item | contains("merged-b"))][0] | "\(.host) \(.result_date) \(.rule) | \(.fact)"' "$ans")" \
+    "okhost 2026-10-24 fleet rules section 6, unmerged-branch rule (pull request merged or closed) | pull request https://x/pull/7 merged at ${sha_m:0:7}, read live" \
+    "an answer names its host, rule and the fact it read"
+  assert_contains "$(<"$md")" "okhost (result of 2026-10-24): 9 unsure; 4 answered, 1 unreadable (the Bosun retries them), 1 without a bucket, 3 unsettled." "the digest counts each bucket"
+  assert_contains "$(<"$md")" "blind-b (local)\`: its commit or pull requests could not be read now" "an unreadable pull request is listed unsettled"
+  assert_contains "$(<"$md")" "/scratch/lint.txt\`: no rule settles it" "an old scratch file is listed for the Quartermaster"
+  assert_contains "$(<"$md")" "a session log or transcript is always kept" "a session log is never answered"
+  assert_contains "$(<"$md")" "Bosun host downhost unreachable" "an unreachable host is a coverage gap"
+  assert_not_contains "$(<"$md")" "/slots/unreadable" "an unreadable item is neither answered nor listed"
+  assert_equals "0" "$(grep -c 'merged-b' "$home/data/officers/friction/$DATE.velocity-findings.json")" "answers never reach the velocity file"
+  before=$(cksum "$ans" "$md")
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "re-run must succeed"
+  assert_equals "$before" "$(cksum "$ans" "$md")" "a re-run with unchanged inputs writes identical bytes"
+  pass "fm-officer friction: the bosun-unsure class answers settled items into bosun-answers.json"
+}
+
 test_merge_word_is_not_a_missing_tool
 test_status_waits_and_root_causes
 test_stated_causes_group_blocked_lines
@@ -836,3 +914,4 @@ test_repeated_lee_asks_across_days
 test_long_session_asks_dated_by_message
 test_paraphrased_upkeep_asks_cluster
 test_registry_and_unharvested_day
+test_bosun_unsure_class

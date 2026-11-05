@@ -960,6 +960,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `stale-days` | Pagecheck only, optional: days a card may stay asked and unanswered before it is stale; default 7 |
 | `remind-hours` | Pagecheck only, optional: hours before an unfixed finding is counted as new again; default 24 |
 | `hosts` | Triage, surgeon and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
+| `bosun-hosts` | Friction, optional: comma-separated hosts whose Bosun `last-result.json` the `bosun-unsure` class reads over `ssh -o BatchMode=yes`; unset turns the class off |
 | `captains-log` | Optional `https://` URL ending `/api/captains-log`: friction reads its cards with one `GET`, and its tap replies with one `GET <url>/replies`, and reports either unreachable as a coverage gap; progress uses its corresponding `/captains-log` page URL to link existing held cards without copying their questions |
 | `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2 with exactly the top-level keys `schema_version`, `generated_at`, `staging_sha`, `production_sha`, `records` keyed `<repo>#<pr>`, and `items` mapping each Linear id to its record keys; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
 | `team` | Landing, progress and surgeon, optional: the Linear team key to read (a surgeon that writes must use `PC`); default `PC` |
@@ -994,6 +995,9 @@ The friction officer also writes `<date>.velocity-findings.json`, a fleet-app ve
 Each finding in it carries a stable `id`, its `events` count and a read-only `state` (`open`, `started` with a `link`, or `settled`), and the file carries `totals` of the day's events and findings; `bin/fm-officer-friction.py`'s header owns how the state is read.
 A line in a home's `data/captain-shared.md` that says "standing rule" or "standing exception" settles a finding only when it names the finding's `id` (alone or as `friction-<id>`) or its key written `settles: <cause>/<sub>`, for example `settles: policy/merge-word`; a finding about one tool, hook or service also needs the line to name it, or the key written `settles: <cause>/<sub>/<name>`. No looser wording settles a finding.
 The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
+With `bosun-hosts` set, the friction officer also runs the `bosun-unsure` class: it answers the Bosun's `rule-settles` unsure items from fleet rules section 6 and writes the answers to `bosun-answers.json` in its lane, never into the velocity file, which fleet-app pulls.
+It lists the items no rule settles in its digest for the Quartermaster and reports an unreachable host as a coverage gap; `bin/fm-officer-friction.py`'s header owns the answer shape and rules.
+The Bosun reading `bosun-answers.json` is a fleet-app follow-up.
 The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets them resolve tasks that were already cleaned up.
 
 ### Surgeon
