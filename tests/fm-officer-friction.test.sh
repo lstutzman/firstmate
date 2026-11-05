@@ -923,6 +923,20 @@ test_bosun_unsure_class() {
     git -C "$w/$d" update-ref refs/remotes/origin/main HEAD
     git -C "$w/$d" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
   done
+  # Pooled Treehouse slots (<pool>/<n>) hold their checkout one level down; the Bosun lists the slot, not the checkout.
+  for d in pool/1/co pool/4/co; do
+    mkdir -p "$w/$d"
+    git -C "$w/$d" init -q
+    echo one > "$w/$d/tracked.txt"
+    git -C "$w/$d" add tracked.txt
+    git -C "$w/$d" -c user.name=t -c user.email=t@t commit -q -m pooled
+    git -C "$w/$d" update-ref refs/remotes/origin/main HEAD
+    git -C "$w/$d" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+  done
+  echo work > "$w/pool/4/co/new.txt"
+  mkdir -p "$w/pool/2" "$w/pool/3"
+  cp -r "$w/pool/1/co" "$w/pool/3/a"
+  cp -r "$w/pool/1/co" "$w/pool/3/b"
   echo work > "$w/copy-untracked/new.txt"
   echo two > "$w/copy-modified/tracked.txt"
   echo garbage > "$w/copy-nostatus/.git/index"
@@ -939,6 +953,7 @@ test_bosun_unsure_class() {
   printf '[{"number":7,"state":"MERGED","headRefOid":"%s","url":"https://x/pull/7"}]' "$sha_m" > "$w/gh/merged-b.json"
   printf '[{"number":8,"state":"OPEN","headRefOid":"%s","url":"https://x/pull/8"}]' "$sha_m" > "$w/gh/open-b.json"
   printf '[{"number":6,"state":"MERGED","headRefOid":"%s","url":"https://x/pull/6"}]' "$sha_m" > "$w/gh/unique-b.json"
+  for b in task-pool1 task-pool2 task-pool3 task-pool4; do printf '[]' > "$w/gh/$b.json"; done
   for b in landed-b nohead-b task-landed task-unique task-nohead task-untracked task-modified task-nostatus; do printf '[]' > "$w/gh/$b.json"; done
   printf '[{"number":9,"state":"CLOSED","headRefOid":"%s","url":"https://x/pull/9"}]' "$(git -C "$copy" rev-parse HEAD)" > "$w/gh/task-x.json"
   printf '[{"number":5,"state":"CLOSED","headRefOid":"%s","url":"https://x/pull/5"}]' "$(git -C "$w/main/.claude/worktrees/wt" rev-parse HEAD)" > "$w/gh/task-wt.json"
@@ -962,6 +977,10 @@ test_bosun_unsure_class() {
       {kind: "copy", item: ($w + "/copy-untracked"), why: copy_why("task-untracked"), bucket: "rule-settles"},
       {kind: "copy", item: ($w + "/copy-modified"), why: copy_why("task-modified"), bucket: "rule-settles"},
       {kind: "copy", item: ($w + "/copy-nostatus"), why: copy_why("task-nostatus"), bucket: "rule-settles"},
+      {kind: "copy", item: ($w + "/pool/1"), why: copy_why("task-pool1"), bucket: "rule-settles"},
+      {kind: "copy", item: ($w + "/pool/2"), why: copy_why("task-pool2"), bucket: "rule-settles"},
+      {kind: "copy", item: ($w + "/pool/3"), why: copy_why("task-pool3"), bucket: "rule-settles"},
+      {kind: "copy", item: ($w + "/pool/4"), why: copy_why("task-pool4"), bucket: "rule-settles"},
       {kind: "copy", item: "/slots/unreadable", why: "git status failed", bucket: "unreadable"},
       {kind: "copy", item: "/slots/old-shape", why: "git status failed"},
       {kind: "file", item: "/scratch/lint.txt", why: "an old file in a scratch folder; no rule says to delete or keep it", bucket: "rule-settles"},
@@ -1021,11 +1040,17 @@ SH
   assert_contains "$(jq -r '[.answers[] | select(.item | contains("copy-modified"))][0].fact' "$ans")" "uncommitted or untracked work" "a dirty copy's keep names the git status read"
   assert_equals "0" "$(jq '[.answers[] | select(.fact | contains("finding no uncommitted"))] | length' "$ans")" "no answer claims a check the officer did not do"
   assert_equals "" "$(verdict copy-nostatus)" "a copy whose git status cannot be read is not answered"
-  assert_equals "11" "$(jq ".answers | length" "$ans")" "only the eleven settled items are answered"
+  assert_equals "delete" "$(verdict pool/1)" "a pooled slot is answered against the checkout inside it"
+  assert_equals "$w/pool/1" "$(jq -r '[.answers[] | select(.item | endswith("pool/1"))][0].item' "$ans")" "a pooled answer names the slot exactly as the Bosun listed it"
+  assert_equals "$(git -C "$w/pool/1/co" rev-parse HEAD)" "$(jq -r '[.answers[] | select(.item | endswith("pool/1"))][0].sha' "$ans")" "a pooled answer carries the checkout's HEAD"
+  assert_equals "keep" "$(verdict pool/4)" "a pooled checkout with untracked work is kept, never deleted"
+  assert_equals "" "$(verdict pool/2)" "a slot with no checkout is not answered"
+  assert_equals "" "$(verdict pool/3)" "a slot with two checkouts is not answered"
+  assert_equals "13" "$(jq ".answers | length" "$ans")" "only the thirteen settled items are answered"
   assert_contains "$(jq -r '[.answers[] | select(.item | contains("merged-b"))][0] | "\(.host) \(.result_date) \(.rule) | \(.fact)"' "$ans")" \
     "okhost 2026-10-24 fleet rules section 6, unmerged-branch rule (pull request merged or closed) | pull request https://x/pull/7 merged at ${sha_m:0:7}, read live" \
     "an answer names its host, rule and the fact it read"
-  assert_contains "$(<"$md")" "okhost (result of 2026-10-24): 20 unsure; 11 answered, 1 unreadable (the Bosun retries them), 1 without a bucket, 7 unsettled." "the digest counts each bucket"
+  assert_contains "$(<"$md")" "okhost (result of 2026-10-24): 24 unsure; 13 answered, 1 unreadable (the Bosun retries them), 1 without a bucket, 9 unsettled." "the digest counts each bucket"
   assert_contains "$(<"$md")" "blind-b (local)\`: its commit or pull requests could not be read now" "an unreadable pull request is listed unsettled"
   assert_contains "$(<"$md")" "/scratch/lint.txt\`: no rule settles it" "an old scratch file is listed for the Quartermaster"
   assert_contains "$(<"$md")" "nohead-b (local)\`: whether it is on the default branch could not be read now" "a branch with no origin/HEAD is listed unsettled"
@@ -1034,6 +1059,8 @@ SH
   assert_contains "$(<"$md")" ".claude/worktrees/dirty\`: no rule settles it" "a .claude worktree copy with another why is listed unsettled"
   assert_contains "$(<"$md")" "gone-b (local)\`: its commit or pull requests could not be read now" "a branch with no readable sha is listed unsettled"
   assert_contains "$(<"$md")" "copy-nostatus\`: its working state (git status) could not be read now" "a copy whose git status failed is listed unsettled"
+  assert_contains "$(<"$md")" "pool/2\`: its commit or pull requests could not be read now" "an empty slot is listed unsettled"
+  assert_contains "$(<"$md")" "pool/3\`: its commit or pull requests could not be read now" "a slot with two checkouts is listed unsettled"
   assert_contains "$(<"$md")" "Bosun host downhost unreachable" "an unreachable host is a coverage gap in the digest"
   assert_equals "0" "$(grep -c 'downhost' "$home/data/officers/friction/$DATE.velocity-findings.json")" "the host-gap note never reaches the velocity file"
   assert_not_contains "$(<"$md")" "/slots/unreadable" "an unreadable item is neither answered nor listed"
