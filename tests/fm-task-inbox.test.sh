@@ -466,24 +466,113 @@ test_idempotent_write_follows_concurrent_ack() {
     || fail "race fixture write failed"
   result=$(FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
-    eval "$(declare -f fm_task_inbox_body | sed "1s/fm_task_inbox_body/_original_fm_task_inbox_body/")"
-    fm_task_inbox_body() {
-      candidate=$1
-      case "$candidate" in
+    eval "$(declare -f _fm_task_inbox_read_into | sed "1s/_fm_task_inbox_read_into/_original_read_into/")"
+    _fm_task_inbox_read_into() {
+      case "$1" in
         */handled/*) ;;
-        *) mv "$candidate" "${candidate%/*}/handled/" || return 1
-           candidate="${candidate%/*}/handled/${candidate##*/}" ;;
+        *) mv "$1" "${1%/*}/handled/" || return 1 ;;
       esac
-      _original_fm_task_inbox_body "$candidate"
+      _original_read_into "$@"
     }
     fm_task_inbox_write_idempotent "$2" t1 "$3"
-  ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state" "$text") \
+  ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state" "$text" 2>"$state/race.err") \
     || fail "idempotent enqueue failed while acknowledgement moved its candidate"
   [ "$result" = "$state/t1.inbox/handled/${rec##*/}" ] \
     || fail "dedup did not follow the concurrently acknowledged record: $result"
+  [ ! -s "$state/race.err" ] || fail "a record vanishing mid-dedup leaked stderr: $(cat "$state/race.err")"
   count=$(find "$state/t1.inbox" -name '*.msg' | wc -l | tr -d ' ')
   [ "$count" = 1 ] || fail "acknowledgement racing dedup created a duplicate record"
   pass "inbox: idempotent enqueue follows a record concurrently moved to handled"
+}
+
+test_idempotent_write_follows_ack_after_match() {
+  local state rec result count text
+  state="$TMP_ROOT/idem-ack-after-read/state"; mkdir -p "$state"
+  text="acknowledge after dedup read"
+  rec=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "$text") \
+    || fail "ack-after-read fixture write failed"
+  result=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    eval "$(declare -f _fm_task_inbox_read_into | sed "1s/_fm_task_inbox_read_into/_original_read_into/")"
+    _fm_task_inbox_read_into() {
+      _original_read_into "$@" || return 1
+      case "$1" in
+        */handled/*) ;;
+        *) mv "$1" "${1%/*}/handled/" || return 1 ;;
+      esac
+    }
+    fm_task_inbox_write_idempotent "$2" t1 "$3"
+  ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state" "$text") \
+    || fail "idempotent enqueue failed when acknowledgement followed its read"
+  [ "$result" = "$state/t1.inbox/handled/${rec##*/}" ] \
+    || fail "dedup reported a record acknowledged after its read at the root path: $result"
+  count=$(find "$state/t1.inbox" -name '*.msg' | wc -l | tr -d ' ')
+  [ "$count" = 1 ] || fail "acknowledgement after the dedup read created a duplicate record"
+  pass "inbox: idempotent enqueue reports a record acknowledged after its read at the handled path"
+}
+
+# Fixture: <count> acknowledged records 001..<count> in handled/, bodies "old steer N".
+seed_handled_history() {  # <state> <task> <count>
+  local dir="$1/$2.inbox/handled" i
+  mkdir -p "$dir"
+  for i in $(seq 1 "$3"); do
+    printf 'schema=fm-task-inbox.v1\nat=2026-01-01T00:00:00Z\n--\nold steer %s' "$i" > "$(printf '%s/%03d.msg' "$dir" "$i")"
+  done
+}
+
+test_idempotent_write_is_fast_with_long_handled_history() {
+  local state rec start elapsed again
+  state="$TMP_ROOT/idem-long/state"; mkdir -p "$state"
+  seed_handled_history "$state" t1 4000
+  start=$(date +%s%N)
+  rec=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "fresh steer corr=abc")     || fail "idempotent write into a 4000-record history failed"
+  elapsed=$(( ($(date +%s%N) - start) / 1000000 ))
+  [ "$elapsed" -lt 2000 ] || fail "idempotent write took ${elapsed}ms with 4000 handled records"
+  [ "$rec" = "$state/t1.inbox/4001.msg" ] || fail "sequence must continue after the history, got $rec"
+  # The recovery resend of that recent request still lands on its record.
+  again=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "fresh steer corr=abc")     || fail "resend failed"
+  [ "$again" = "$rec" ] || fail "recovery resend must land on the existing record, got $again"
+  pass "inbox: an idempotent write into 4000 handled records takes ${elapsed}ms and still dedups a resend"
+}
+
+test_idempotent_dedup_is_bounded_to_recent_window() {
+  local state r_recent r_old
+  state="$TMP_ROOT/idem-window/state"; mkdir -p "$state"
+  seed_handled_history "$state" t1 50
+  r_recent=$(FM_TASK_INBOX_DEDUP_WINDOW=10 FM_TASK_INBOX_HANDLED_KEEP=1000 inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "old steer 45")     || fail "recent write failed"
+  [ "$r_recent" = "$state/t1.inbox/handled/045.msg" ] || fail "a body inside the window should dedup, got $r_recent"
+  r_old=$(FM_TASK_INBOX_DEDUP_WINDOW=10 FM_TASK_INBOX_HANDLED_KEEP=1000 inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "old steer 5")     || fail "old write failed"
+  [ "$r_old" = "$state/t1.inbox/051.msg" ] || fail "a body outside the window should enqueue anew, got $r_old"
+  pass "inbox: the idempotent dedup compares only the newest window of records"
+}
+
+test_idempotent_fire_and_forget_never_matches_normal() {
+  local state r1 r2 r3 r4
+  state="$TMP_ROOT/idem-ff/state"; mkdir -p "$state"
+  r1=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "same text" fire-and-forget) || fail "ff write failed"
+  r2=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "same text") || fail "normal write failed"
+  [ "$r1" != "$r2" ] || fail "a normal write must not match a fire-and-forget record"
+  r3=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "same text" fire-and-forget) || fail "ff resend failed"
+  r4=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "same text") || fail "normal resend failed"
+  [ "$r3" = "$r1" ] && [ "$r4" = "$r2" ] || fail "each mode must resend onto its own record ($r3 $r4)"
+  pass "inbox: fire-and-forget and normal records never dedup onto each other"
+}
+
+test_handled_retention_archives_old_records_only() {
+  local state inbox rec n
+  state="$TMP_ROOT/retention/state"; mkdir -p "$state"
+  inbox="$state/t1.inbox"
+  seed_handled_history "$state" t1 40
+  printf 'schema=fm-task-inbox.v1\nat=2026-01-01T00:00:00Z\n--\nstill pending' > "$inbox/041.msg"
+  rec=$(FM_TASK_INBOX_HANDLED_KEEP=10 inbox_lib "$state" fm_task_inbox_write "$state" t1 "newest")     || fail "write with retention failed"
+  [ "$rec" = "$inbox/042.msg" ] || fail "sequence must stay monotonic across retention, got $rec"
+  n=$(find "$inbox/handled" -name '*.msg' | wc -l | tr -d ' ')
+  [ "$n" = 9 ] || fail "handled/ should keep the 9 records within 10 sequences of the newest (041), found $n"
+  n=$(find "$inbox/archive" -name '*.msg' | wc -l | tr -d ' ')
+  [ "$n" = 31 ] || fail "31 old records should be archived, not deleted, found $n"
+  [ -f "$inbox/archive/001.msg" ] && [ -f "$inbox/handled/040.msg" ] || fail "oldest archived, newest handled kept"
+  [ -f "$inbox/041.msg" ] || fail "an unhandled record must never be archived"
+  pass "inbox: retention moves old handled records to archive/ and never touches unhandled ones"
 }
 
 test_handled_mv_dedups_by_sequence() {
@@ -1217,6 +1306,11 @@ test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_follows_concurrent_ack
+test_idempotent_write_follows_ack_after_match
+test_idempotent_write_is_fast_with_long_handled_history
+test_idempotent_dedup_is_bounded_to_recent_window
+test_idempotent_fire_and_forget_never_matches_normal
+test_handled_retention_archives_old_records_only
 test_handled_mv_dedups_by_sequence
 test_concurrent_writers_never_clobber
 test_writer_retries_after_a_vanished_lock_collision

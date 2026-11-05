@@ -490,7 +490,7 @@ The `fm-send.sh` header owns the setting's default and validation contract.
 Either outcome preserves this ordinary reply-bearing request's pending-reply expectation for the record that may have landed.
 
 If delivery remains unconfirmed, only the exact `FM_PENDING_REPLY_EXISTING_CORR=<id>` resend command printed by `fm-send` is safe to run later.
-That command preserves the request body and lets the remote enqueue deduplicate onto the same record.
+That command preserves the request body and lets the remote enqueue deduplicate onto the same record, as long as the record is still among the inbox's newest `FM_TASK_INBOX_DEDUP_WINDOW` sequences (`bin/fm-task-inbox-lib.sh` owns the window).
 A plain rerun mints a different correlation and is not idempotent.
 When deduplication finds that the worker already moved the matching record into `handled/`, the resend exits successfully without ringing the doorbell again.
 
