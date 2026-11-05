@@ -1,0 +1,22 @@
+== ship-brief
+34:   States: working, needs-decision, blocked, paused, done, failed.
+38:   needs-decision/blocked/paused/done/failed states. No step-by-step FYI progress lines;
+45:   Use `paused: {why}` - distinct from `blocked:` - only when waiting on a condition you cannot advance yourself: a running gate or CI run, a deploy, another owner's PR head, a captain decision, an unreachable service, machine or agent, or your own background job, pipeline run or validation round that is actually live.
+46:   Before ending your turn with your own background shell or monitor still running, or before waiting on your own pipeline run or a long foreground command, append `paused [at=<epoch>]: {job and completion condition}` to the status file.
+49:   A step you can perform yourself (a merge, a marker, opening a PR) is finished in the same turn; never declare it as a wait, and never end a turn on a bare "in progress" claim with nothing running and nothing named that will wake you.
+61:   A service, machine or agent that is merely unreachable is a wait, not a block: append `paused [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until <YYYY-MM-DDTHH:MMZ>` and firstmate rechecks it then. Use `blocked` for it only when firstmate must act.
+102:A wait your shell can watch this way needs no `paused:` line, except your own pipeline run, a long foreground command, or your own validation round, which you declare once just before its blocking hold: append `paused:` once just before its first blocking command, then stay in the command, and never append it again as you reissue that command.
+154:If you deliberately keep the PR a draft, append `paused [at=<epoch>]: {why the draft is held}` instead of done.
+== scout-brief
+28:   States: working, needs-decision, blocked, paused, done, failed.
+31:   would act on and the needs-decision/blocked/paused/done/failed states. No step-by-step
+36:   Use `paused: {why}` - distinct from `blocked:` - only when waiting on a condition you cannot advance yourself: a running gate or CI run, a deploy, another owner's PR head, a captain decision, an unreachable service, machine or agent, or your own background job, pipeline run or validation round that is actually live.
+37:   Before ending your turn with your own background shell or monitor still running, or before waiting on your own pipeline run or a long foreground command, append `paused [at=<epoch>]: {job and completion condition}` to the status file.
+40:   A step you can perform yourself (a merge, a marker, opening a PR) is finished in the same turn; never declare it as a wait, and never end a turn on a bare "in progress" claim with nothing running and nothing named that will wake you.
+52:   A service, machine or agent that is merely unreachable is a wait, not a block: append `paused [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until <YYYY-MM-DDTHH:MMZ>` and firstmate rechecks it then. Use `blocked` for it only when firstmate must act.
+90:A wait your shell can watch this way needs no `paused:` line, except your own pipeline run, a long foreground command, or your own validation round, which you declare once just before its blocking hold: append `paused:` once just before its first blocking command, then stay in the command, and never append it again as you reissue that command.
+== secondmate-charter
+51:States: working, needs-decision, blocked, paused, done, failed.
+53:Use `paused: {why}` (distinct from `blocked:`) only when your domain is deliberately idling on a known external wait you expect to clear on its own, naming when it clears with `until <YYYY-MM-DDTHH:MMZ>` (UTC) when you know; use `blocked:` when you are stuck and need firstmate to act.
+55:A service, machine or agent that is merely unreachable is a wait: declare it with `paused [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until <YYYY-MM-DDTHH:MMZ>` rather than `blocked`.
+63:If its first reportable event is `working [key=<work-slug>]: {material phase}`, use the same key on its later `paused`, `done`, `failed`, `needs-decision`, or `blocked` event so the earlier working phase is superseded.

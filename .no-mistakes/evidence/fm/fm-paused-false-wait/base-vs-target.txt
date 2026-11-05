@@ -1,0 +1,8 @@
+== BASE 2c31d9a4 ship brief pause rule
+45:   Use `paused: {why}` - distinct from `blocked:` - when deliberately waiting for work or an external condition expected to clear on its own, including your own validation round.
+== TARGET 65f49e6e ship brief pause rule
+45:   Use `paused: {why}` - distinct from `blocked:` - only when waiting on a condition you cannot advance yourself: a running gate or CI run, a deploy, another owner's PR head, a captain decision, an unreachable service, machine or agent, or your own background job, pipeline run or validation round that is actually live.
+49:   A step you can perform yourself (a merge, a marker, opening a PR) is finished in the same turn; never declare it as a wait, and never end a turn on a bare "in progress" claim with nothing running and nothing named that will wake you.
+== custom verb FM_CLASSIFY_PAUSED_VERB=waiting
+45:   Use `waiting: {why}` - distinct from `blocked:` - only when waiting on a condition you cannot advance yourself: a running gate or CI run, a deploy, another owner's PR head, a captain decision, an unreachable service, machine or agent, or your own background job, pipeline run or validation round that is actually live.
+49:   A step you can perform yourself (a merge, a marker, opening a PR) is finished in the same turn; never declare it as a wait, and never end a turn on a bare "in progress" claim with nothing running and nothing named that will wake you.
