@@ -118,9 +118,12 @@
 #                    once an hour and, after a success, once per UTC day. It is the one
 #                    source that contacts another host (git ls-remote, then a bounded fetch
 #                    into refs/fm-upstream-check/head of this code root, only for a head not
-#                    yet reported). It is silent when upstream has nothing the fork lacks,
+#                    yet reported; the network calls together stay under the watcher's 30s
+#                    check limit). It is silent when upstream has nothing the fork lacks,
 #                    and on a failed attempt until failures span 24 hours, when it reports
-#                    "upstream <src> unreachable since <date>" once per failure streak.
+#                    "upstream <src> unreachable since <date>" once per failure streak. An
+#                    attempt counts as failed until it succeeds, so a killed attempt or a
+#                    fork-ref that does not resolve counts too.
 #                    <old> is the merge base. Records: data/office/upstream.seen (last
 #                    head reported or found empty), upstream.day (last successful UTC
 #                    day), upstream.try (last attempt) and upstream.fail (first failure
@@ -664,7 +667,7 @@ bounded() {
   if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"; else "$@"; fi
 }
 
-# upstream_fail <src>: records a failed attempt; reports once when failures span 24 hours.
+# upstream_fail <src>: marks an attempt as failed until it succeeds; reports once when failures span 24 hours.
 upstream_fail() {
   local rec="$DATA/office/upstream.fail" first now
   now=$(now_epoch)
@@ -680,7 +683,7 @@ upstream_fail() {
 }
 
 check_upstream() {
-  local cfg="$CONFIG/firstmate-upstream" src branch fork now day last head forkref base n subjects
+  local cfg="$CONFIG/firstmate-upstream" src branch fork now day last fail head forkref base n subjects
   local rec="$DATA/office" ref=refs/fm-upstream-check/head
   [ -r "$cfg" ] || return 0
   read -r src branch fork < <(grep -Ev '^[[:space:]]*(#|$)' "$cfg" | head -n 1) || true
@@ -694,15 +697,16 @@ check_upstream() {
   last=$(cat "$rec/upstream.try" 2>/dev/null || true)
   case "$last" in ''|*[!0-9]*) ;; *) [ $((now - last)) -ge 3600 ] || return 0 ;; esac
   printf '%s\n' "$now" > "$rec/upstream.try" 2>/dev/null || return 0
-  head=$(bounded 30 git -C "$FM_ROOT" ls-remote "$src" "refs/heads/$branch" 2>/dev/null | awk 'NR==1{print $1}')
-  if ! [[ "$head" =~ ^[0-9a-f]{40}$ ]]; then upstream_fail "$src"; return 0; fi
-  case "$forkref" in */*) bounded 60 git -C "$FM_ROOT" fetch --quiet --no-tags "${forkref%%/*}" "${forkref#*/}" >/dev/null 2>&1 || true ;; esac
+  fail=$(upstream_fail "$src")
+  [ -z "$fail" ] || { printf '%s\n' "$fail"; return 0; }
+  head=$(bounded 8 git -C "$FM_ROOT" ls-remote "$src" "refs/heads/$branch" 2>/dev/null | awk 'NR==1{print $1}')
+  [[ "$head" =~ ^[0-9a-f]{40}$ ]] || return 0
+  case "$forkref" in */*) bounded 5 git -C "$FM_ROOT" fetch --quiet --no-tags "${forkref%%/*}" "${forkref#*/}" >/dev/null 2>&1 || true ;; esac
   if [ "$(cat "$rec/upstream.seen" 2>/dev/null)" = "$head" ]; then
     rm -f "$rec/upstream.fail"; printf '%s\n' "$day" > "$rec/upstream.day" 2>/dev/null; return 0
   fi
   git -C "$FM_ROOT" rev-parse -q --verify "$forkref^{commit}" >/dev/null 2>&1 || return 0
-  bounded 120 git -C "$FM_ROOT" fetch --quiet --no-tags "$src" "+refs/heads/$branch:$ref" >/dev/null 2>&1 \
-    || { upstream_fail "$src"; return 0; }
+  bounded 12 git -C "$FM_ROOT" fetch --quiet --no-tags "$src" "+refs/heads/$branch:$ref" >/dev/null 2>&1 || return 0
   rm -f "$rec/upstream.fail"
   printf '%s\n' "$day" > "$rec/upstream.day" 2>/dev/null
   printf '%s\n' "$head" > "$rec/upstream.seen" 2>/dev/null

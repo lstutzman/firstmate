@@ -582,6 +582,20 @@ test_upstream_failure_reports_only_when_persistent() {
   pass 'the upstream source reports a persistent fetch failure once'
 }
 
+test_upstream_unresolved_fork_ref_reports_when_persistent() {
+  local w up
+  w=$(upstream_world upforkref)
+  up="$w/up-work"
+  printf '%s main nosuch/main\n' "$up" > "$w/navigator/config/firstmate-upstream"
+  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "first unresolved fork-ref: silent"
+  assert_equals "" "$(up_check "$w" $((SRC_NOW + 7200)))" "inside 24 hours: silent"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 90000)))" "unreachable since" "an unresolved fork-ref spanning a day reports"
+  printf '%s main origin/main\n' "$up" > "$w/navigator/config/firstmate-upstream"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 100000)))" "2 new commit(s)" "a fixed fork-ref checks normally"
+  [ ! -e "$w/navigator/data/office/upstream.fail" ] || fail "a success must clear the failure streak"
+  pass 'the upstream source reports an unresolved fork-ref once failures span a day'
+}
+
 test_upstream_without_config_is_silent() {
   local w
   w=$(upstream_world upnone)
@@ -864,6 +878,7 @@ test_arm_status_refuses_outside_an_office
 test_upstream_wakes_once_per_new_head
 test_upstream_is_daily_and_silent_when_nothing_new
 test_upstream_failure_reports_only_when_persistent
+test_upstream_unresolved_fork_ref_reports_when_persistent
 test_upstream_without_config_is_silent
 test_register_sources_installs_trusted_shims
 test_register_sources_keeps_the_status_check
