@@ -1723,6 +1723,7 @@ fm_pending_reply_tick() {  # <state-dir>
   local state=$1 dir rec corr task_id phase delivered meta backend target label busy sm_home harness remote_host
   local observation observation_task found i
   local -a observation_tasks=() observation_values=() records=() selected=()
+  command -v fm_watcher_remote_poll >/dev/null 2>&1 || . "$_FM_PENDING_REPLY_LIB_DIR/fm-timeout-lib.sh"
   dir=$(fm_pending_reply_dir "$state")
   [ -d "$dir" ] || return 0
   for rec in "$dir"/*; do
@@ -1741,6 +1742,7 @@ fm_pending_reply_tick() {  # <state-dir>
     selected+=("$rec")
   done < <(_fm_pending_reply_select_needing_work ${records[@]+"${records[@]}"})
   for rec in ${selected[@]+"${selected[@]}"}; do
+    fm_watcher_cycle_beat
     corr=$(fm_pending_reply_get "$rec" corr_id)
     [ -n "$corr" ] || corr=$(basename "$rec")
     task_id=$(fm_pending_reply_get "$rec" task_id)
@@ -1826,8 +1828,9 @@ fm_pending_reply_tick() {  # <state-dir>
         done
         if [ "$found" = 0 ]; then
           if [ -n "$remote_host" ]; then
-            observation=$("$_FM_PENDING_REPLY_LIB_DIR/fm-on.sh" "$task_id" \
+            observation=$(fm_watcher_remote_poll "$_FM_PENDING_REPLY_LIB_DIR/fm-on.sh" "$task_id" \
               fm-remote-secondmate-control.sh observe "$task_id" < /dev/null 2>/dev/null || printf 'unknown')
+            fm_watcher_cycle_beat
             case "$observation" in busy|idle|fallback-idle|unknown) ;; *) observation=unknown ;; esac
           else
             observation=$(fm_pending_reply_backend_observation "$backend" "$target" "$label" "$harness")

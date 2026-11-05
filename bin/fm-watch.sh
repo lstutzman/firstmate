@@ -1146,6 +1146,7 @@ secondmate_liveness_tick() {
       fi
     fi
     fm_secondmate_liveness_unlock "$id"
+    fm_watcher_beat
     if [ -n "$err" ]; then
       echo "watcher: secondmate $id liveness: $err" >&2
       triage_log "secondmate $id liveness error: $err" || true
@@ -2551,6 +2552,10 @@ fi
 EVICTED_PID=
 EVICTED_BEAT_AGE=
 BEAT="$STATE/.last-watcher-beat"
+# Touched by the live cycle itself, here once per loop and between the remote
+# polls and relaunches a cycle waits on (fm_watcher_cycle_beat in
+# bin/fm-timeout-lib.sh), so a slow step never reads as a dead watcher.
+fm_watcher_beat() { touch "$BEAT"; }
 while ! fm_lock_try_acquire "$WATCH_LOCK"; do
   if [ -n "${FM_LOCK_HELD_PID:-}" ]; then
     if [ -e "$BEAT" ]; then
@@ -2809,7 +2814,7 @@ while :; do
 
   # Liveness beacon for fm-guard.sh: a fresh mtime here means a watcher is
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
-  touch "$STATE/.last-watcher-beat"
+  fm_watcher_beat
 
   # Opt-in fleet activity ledger (docs/fleet-ledger.md): pick up newly appended
   # status lines before this cycle can exit on a wake. Off costs one file test.
@@ -2914,6 +2919,9 @@ while :; do
     contribution_check_output=
     for c in "$STATE"/*.check.sh; do
       [ -e "$c" ] || continue
+      # Each check may use its whole CHECK_TIMEOUT; with many checks the sweep
+      # outlasts the beacon grace, so the live loop beats between them.
+      fm_watcher_beat
       is_pr_poll=0
       if [ "$(basename "$c")" = x-watch.check.sh ]; then
         if fmx_poll_shim_valid "$c" "$FM_HOME" "$FM_ROOT" \

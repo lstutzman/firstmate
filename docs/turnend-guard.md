@@ -209,6 +209,12 @@ With `state/.afk` absent the daemon lock proves nothing and the strict watcher p
 `bin/fm-watch.sh` touches `state/.last-watcher-beat` once per cycle, immediately before its terminal wait (`event_wait_or_sleep`) as well as at the top of the next cycle.
 A healthy watcher's beacon can therefore legitimately age up to `FM_POLL` seconds between touches.
 
+A cycle also runs steps that wait on something else: the custom `*.check.sh` sweep, the pending-reply observations and the secondmate liveness probes.
+Each of those steps is individually bounded, and the live cycle touches the beacon again after every one of them, so a long run of slow steps never reads as a dead watcher.
+A custom check is bounded by `FM_CHECK_TIMEOUT`.
+A remote poll is bounded by `FM_WATCH_REMOTE_BUDGET` (default 30 seconds, `fm_watcher_remote_poll` in `bin/fm-timeout-lib.sh`), and one that hits the bound reads as an unreachable host, a coverage gap in the triage log and never evidence of death.
+The touch always comes from the watcher's own shell, never from a side process, so a frozen or stopped watcher still goes stale.
+
 A fixed 300-second grace default stops correctly bounding staleness once a home's `FM_POLL` reaches or exceeds it.
 A perfectly healthy watcher mid-wait would then read stale at the edge of every full poll cycle by definition.
 That is exactly what a long-poll home (`FM_POLL=300`) hit against the Claude Stop-hook auto-arm (`bin/fm-claude-stop-autoarm.sh`).
