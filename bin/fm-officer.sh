@@ -82,8 +82,9 @@
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
 # (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py),
-# progress (bin/fm-officer-progress.py), and pagecheck
-# (bin/fm-officer-page-check.py); each role script's header owns its pass.
+# progress (bin/fm-officer-progress.py), pagecheck
+# (bin/fm-officer-page-check.py), corpus (bin/fm-officer-corpus.py), and library
+# (bin/fm-officer-library.py); each role script's header owns its pass.
 #
 # Officers run in the primary home only: register, run, and check refuse in a
 # home carrying .fm-secondmate-home.
@@ -99,7 +100,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/officers.md"
-OFFICER_ROLES="triage surgeon landing friction progress pagecheck"
+OFFICER_ROLES="triage surgeon landing friction progress pagecheck corpus library"
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
@@ -192,6 +193,10 @@ line_problem() {
         [[ "$(line_field "$line" captains-log)" == https://*/api/captains-log ]] \
           || { printf 'officer %s: captains-log must be an https URL ending /api/captains-log\n' "$id"; return; }
       fi
+      ;;
+    corpus)
+      [ -n "$(line_field "$line" archive || true)" ] \
+        || { printf 'officer %s: a corpus officer needs archive: <dir> or <host>:<dir> (the folder holding transcript-archive/)\n' "$id"; return; }
       ;;
     triage|friction|surgeon)
       line_field "$line" archive >/dev/null \
@@ -507,6 +512,21 @@ role_landing() {  # <date>
     --max-corrections "$(line_field "$OFFICER_LINE" max-corrections || echo 10)" \
     --reopen-state "$(line_field "$OFFICER_LINE" reopen-state || echo 'In Progress')" \
     --max-facts-age "$(line_field "$OFFICER_LINE" max-facts-age || echo 36)" --now "$(now_epoch)"
+}
+
+role_corpus() {  # <date>: counts only, read on each host by the script itself.
+  local field
+  local -a args=(run --archive "$(line_field "$OFFICER_LINE" archive)" --date "$1" --out "$OFFICER_LANE"
+    --hosts "$(line_field "$OFFICER_LINE" hosts || true)" --now "$(now_epoch)")
+  for field in harvest prep local-jev; do
+    if line_field "$OFFICER_LINE" "$field" >/dev/null; then args+=("--$field" "$(line_field "$OFFICER_LINE" "$field")"); fi
+  done
+  python3 -I "$SCRIPT_DIR/fm-officer-corpus.py" "${args[@]}"
+}
+
+role_library() {  # <date>: the newest librarian audit run, read from the job's run folders.
+  python3 -I "$SCRIPT_DIR/fm-officer-library.py" run --date "$1" --out "$OFFICER_LANE" --now "$(now_epoch)" \
+    --audit "$(line_field "$OFFICER_LINE" audit || echo "$HOME/fm-homes/slarti/data/librarian-audit/runs")"
 }
 
 role_progress() {  # <date>: current records, dated with the common cadence's run date.
