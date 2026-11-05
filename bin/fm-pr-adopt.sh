@@ -159,7 +159,7 @@ rm -f -- "$TMP"
 
 if ! FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL"; then
   rm -f -- "$META"
-  refuse "bin/fm-pr-check.sh did not register $URL (its error is above); the record was removed"
+  refuse "bin/fm-pr-check.sh did not register $URL (its error is above); the record was removed and backlog item $ID is kept for a rerun"
 fi
 grep -q '^pr_head=' "$META" || echo "warn: GitHub did not report a head for $URL; fm-pr-merge.sh reads it live" >&2
 echo "adopted: $ID $URL project=$PROJ_NAME mode=$MODE yolo=$YOLO"

@@ -526,6 +526,7 @@ Task meta records `backend=` only for a non-default backend; an absent `backend=
 
 - An adopted task, written by `bin/fm-pr-adopt.sh <task-id> <pr-url> --mode no-mistakes --yolo <on|off> [--project <dir>]` for an open GitHub PR that has no task record in this home, records only `worktree=` (a path under `state/` that never exists), `project=`, `kind=ship`, `mode=`, `yolo=`, `adopted=1`, and `adopted_at=`, then `bin/fm-pr-check.sh` adds `pr=` and `pr_head=` from the forge.
   It has no window, endpoint, branch, incarnation, or `office=`, so `bin/fm-pr-merge.sh` decides its merge under every unchanged guard, an office home refuses it, and `bin/fm-teardown.sh` cleans it as a windowless record; the script's header owns the field inventory and its refusals.
+  Until that cleanup, `bin/fm-crew-state.sh` reads it as state unknown with its worktree gone, which is expected rather than a stopped worker.
 
 ### Task selectors
 
