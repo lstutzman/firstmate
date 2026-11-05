@@ -1,0 +1,6 @@
+ok - wrong-home reports are detected but do not silently acknowledge
+ok - wrong-home scan of a 1 MB child log reads only the appended bytes
+ok - wrong-home scan restarts a rotated or truncated child log from its start
+ok - wrong-home scan holds a partial last line until it completes
+ok - wrong-home scan beats between child logs
+ok - wrong-home scan cursor is removed when the request resolves

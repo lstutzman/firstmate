@@ -1,0 +1,17 @@
+[target] child log 1077894 bytes, 11000 lines; corr=66894e85e6824785
+[target] cycle 1: tick 0.536s, big-log bytes read=1077894, beats this cycle=5, phase=awaiting_report, wrong_home_hits=0, first_sighting=
+[target] cycle 2: tick 0.482s, big-log bytes read=64, beats this cycle=5, phase=awaiting_report, wrong_home_hits=1, first_sighting=<LAB>/sm-home/state/pc-land-1024.status:11001
+[target] cycle 3: tick 0.397s, big-log bytes read=40, beats this cycle=5, phase=awaiting_report, wrong_home_hits=1, first_sighting=<LAB>/sm-home/state/pc-land-1024.status:11001
+[target] cycle 4: tick 0.394s, big-log bytes read=40, beats this cycle=5, phase=awaiting_report, wrong_home_hits=1, first_sighting=<LAB>/sm-home/state/pc-land-1024.status:11001
+[target] cursor files: 1
+[target] cursor rows:
+[target] after correlated parent report: phase=resolved, cursor files left: 0
+rc=0
+[base] child log 1077894 bytes, 11000 lines; corr=2a977dca0e75aa58
+[base] cycle 1: tick 8.650s, big-log bytes read=n/a(no probe), beats this cycle=1, phase=awaiting_report, wrong_home_hits=0, first_sighting=
+[base] cycle 2: tick 8.671s, big-log bytes read=n/a(no probe), beats this cycle=1, phase=awaiting_report, wrong_home_hits=1, first_sighting=<LAB>/sm-home/state/pc-land-1024.status:11001
+[base] cycle 3: tick 7.832s, big-log bytes read=n/a(no probe), beats this cycle=1, phase=awaiting_report, wrong_home_hits=1, first_sighting=<LAB>/sm-home/state/pc-land-1024.status:11001
+[base] cycle 4: tick 7.891s, big-log bytes read=n/a(no probe), beats this cycle=1, phase=awaiting_report, wrong_home_hits=1, first_sighting=<LAB>/sm-home/state/pc-land-1024.status:11001
+[base] cursor files: 0
+[base] after correlated parent report: phase=resolved, cursor files left: 0
+rc=0
