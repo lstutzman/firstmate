@@ -578,7 +578,7 @@ try:
     doc = json.loads(raw)
 except (OSError, ValueError):
     sys.exit()
-if not isinstance(doc, dict) or doc.get("source") != "progress-officer":
+if not isinstance(doc, dict) or doc.get("source") not in ("progress-officer", "surgeon-officer"):
     sys.exit()
 home = os.path.realpath(home)
 requests = sorted((r for r in doc.get("start_requests") or [] if isinstance(r, dict)),
@@ -611,7 +611,7 @@ for n, execute in enumerate(mine, 1):
     rid, argv = execute.get("request_id"), execute.get("argv")
     # Run this office's own intake with the recorded arguments, never a program named in the file.
     ok = (execute.get("action") == "start" and isinstance(rid, str)
-          and re.fullmatch(r"progress-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", rid) and isinstance(argv, list)
+          and re.fullmatch(r"(?:progress|surgeon)-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", rid) and isinstance(argv, list)
           and len(argv) == 7 and all(isinstance(a, str) for a in argv)
           and os.path.basename(argv[0]) == "fm-inbox.sh" and argv[1:6] == ["note", "--request-id", rid, "--json", "--"])
     if ok:

@@ -245,16 +245,17 @@ surgeon_problem() {
     || { printf 'officer %s: a surgeon officer needs app: <https URL of the fleet app>\n' "$id"; return; }
   writes=$(line_field "$line" writes || echo none)
   case "$writes" in none|linear) ;; *) printf 'officer %s: writes must be linear or none\n' "$id"; return ;; esac
-  case "$(line_field "$line" max-creates || echo 5)" in
+  case "$(line_field "$line" max-creates || echo 100)" in
     ''|*[!0-9]*|0) printf 'officer %s: max-creates must be a whole number, at least 1\n' "$id"; return ;;
+  esac
+  case "$(line_field "$line" max-linear-calls || echo 450)" in
+    ''|*[!0-9]*|0) printf 'officer %s: max-linear-calls must be a whole number, at least 1\n' "$id"; return ;;
   esac
   [ -n "$(line_field "$line" staging-repo || echo "$SURGEON_STAGING_REPO")" ] \
     || { printf 'officer %s: staging-repo must name the git remote whose staging branch is the tip\n' "$id"; return; }
   [ "$writes" = linear ] || return 0
   [ "$(line_field "$line" team || echo PC)" = PC ] \
     || { printf 'officer %s: a surgeon files into team PC only\n' "$id"; return; }
-  [ -n "$(line_field "$line" area || true)" ] \
-    || { printf 'officer %s: writes: linear needs area: <the team PC area label every item carries>\n' "$id"; return; }
 }
 
 # office_read_problem <officer-id> <office> <field> [main]: prints why <office>, named in the registry
@@ -463,12 +464,24 @@ role_triage() { role_archive fm-officer-triage.py "$1"; }  # <date>
 # role_surgeon <date>: the triage pass, then intake from the fleet app (GET only) and, only
 # when the line says writes: linear, Linear items.
 role_surgeon() {
+  local line
+  local -a extra=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && extra+=(--start-home "$line")
+  done <<START_HOMES
+$(start_homes)
+START_HOMES
+  [ -z "$(line_field "$OFFICER_LINE" rubric || true)" ] || extra+=(--rubric "$(line_field "$OFFICER_LINE" rubric)")
   role_archive fm-officer-surgeon.py "$1" --now "$(now_epoch)" \
     --app "$(line_field "$OFFICER_LINE" app)" --team "$(line_field "$OFFICER_LINE" team || echo PC)" \
     --writes "$(line_field "$OFFICER_LINE" writes || echo none)" \
-    --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 5)" \
-    --area "$(line_field "$OFFICER_LINE" area || true)" \
-    --staging-repo "$(line_field "$OFFICER_LINE" staging-repo || echo "$SURGEON_STAGING_REPO")"
+    --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)" \
+    --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)" \
+    --triage-label "$(line_field "$OFFICER_LINE" triage-label || echo triage)" \
+    --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")" \
+    --fm-home "$FM_HOME" \
+    --staging-repo "$(line_field "$OFFICER_LINE" staging-repo || echo "$SURGEON_STAGING_REPO")" \
+    ${extra[@]+"${extra[@]}"}
 }
 
 # role_friction <date>: each registered second mate's id names its parent

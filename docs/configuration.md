@@ -980,10 +980,14 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `reopen-state` | Landing only, optional: the state a Done item moves to when its linked PR never reached main (`on_main` false) or any release; default `In Progress`; `In Staging` and `Done` are refused. A Done item on main but not yet in production is release lag and is only reported |
 | `max-facts-age` | Landing only, optional: the oldest facts, in hours since their `generated_at`, the officer writes to Linear from; default 36. Older or missing `generated_at`, or facts with no `production_sha`, make no Linear write and raise a `stale-facts` finding |
 | `done-window` | Landing only, optional: how many Linear Done items one run lists, in one paged read, to find Done items no landing fact names; default 100, and 0 skips that read |
-| `start-home` | Progress, optional: comma-separated office ids. Each must pass the same checks as a `consumer` office, because the office's own lane check delivers the start requests for its projects, except that a `lane:<officer-id>:high` source needs no `main` consumer, since that check delivers them either way; a request whose project is in that office's `dispatch:` list (a Linear item in the team, or a backlog row with only a Linear id, counts as PropertyCompass2) is addressed to that office's home instead of this one. An office that fails those checks gets no requests, so its projects' requests stay with this home |
+| `start-home` | Progress and surgeon, optional: comma-separated office ids. Each must pass the same checks as a `consumer` office, because the office's own lane check delivers the start requests for its projects, except that a `lane:<officer-id>:high` source needs no `main` consumer, since that check delivers them either way; a request whose project is in that office's `dispatch:` list (a Linear item in the team, or a backlog row with only a Linear id, counts as PropertyCompass2) is addressed to that office's home instead of this one. An office that fails those checks gets no requests, so its projects' requests stay with this home |
 | `writes` (surgeon) | Surgeon, optional: `none` (default) files nothing; `linear` files Linear items as described under [Surgeon](#surgeon) |
-| `max-creates` | Surgeon, optional: the most items one run attempts to create; default 5. A failed create counts only once its dry run passed |
-| `area` | Surgeon, required with `writes: linear`: the one team PC area label every item carries; a label missing from team PC means the finding is reported and not filed |
+| `max-creates` | Surgeon, optional: the most new items one run attempts to create (clusters included, updates and found-count edits not); default 100. A failed create counts only once its dry run passed |
+| `max-linear-calls` | Surgeon, optional: the most `linear-axi` calls one run makes; default 450. The run stops its Linear work there, names what is left, and the next run continues; it is not a rate-limit pause |
+| `triage-label` | Surgeon, optional: the team PC label an item gets when no area label fits its file path or component; default `triage`. A label missing from team PC means the finding is reported and not filed |
+| `jev` | Surgeon, optional: the local-jev helper used for duplicate checks; default `~/.claude/skills/local-jev/jev.py`. Without it only the fingerprint decides |
+| `rubric` | Surgeon, optional: the rubric file; default `docs/officers/surgeon-rubric.md` |
+| `area` | Surgeon, no longer used: accepted and ignored, because each item's area label now comes from its finding |
 | `staging-repo` | Surgeon, optional: the git remote whose `refs/heads/staging` is the staging tip, read with `git ls-remote`; default `git@github.com:lstutzman/PropertyCompass2.git`, and an empty value is refused |
 
 Example:
@@ -991,7 +995,7 @@ Example:
 ```text
 - triage - Joins each day's archived sessions to firstmate tasks and outcomes (role: triage; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 - landing - Reconciles Linear against landing evidence (role: landing; cadence: daily 06:30; facts: slartibartfast:/home/lee/services/landing-truth/latest.json; team: PC; writes: corrections; model: none; added 2026-10-24)
-- surgeon - Joins archived sessions to tasks, then reads the nightly runs and the bug sweeper and files untracked real findings in Linear (role: surgeon; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,deepthought; app: https://fleet.example.ts.net; team: PC; writes: linear; max-creates: 5; area: ci-cd; consumer: main,navigator; model: none; added 2026-11-04)
+- surgeon - Joins archived sessions to tasks, then reads the nightly runs and the bug sweeper and files untracked real findings in Linear (role: surgeon; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,deepthought; app: https://fleet.example.ts.net; team: PC; writes: linear; max-creates: 100; max-linear-calls: 450; consumer: main,navigator; start-home: navigator,quartermaster; model: none; added 2026-11-04)
 - friction - Finds what slowed agents down, above all waits on Lee, and proposes a fix for each (role: friction; cadence: daily 06:15; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 - progress - Starts authorised unstarted work through firstmate (role: progress; cadence: daily 07:00; team: PC; repos: example/project; requested: PC-123; model: none; added 2026-10-26)
 - page-check - Checks every fleet-app page for cards a standing rule settles, stale cards, cards shown after they were settled, and old pages (role: pagecheck; cadence: every 2h; app: https://fleet.example.ts.net; model: none; added 2026-10-31)
@@ -1016,16 +1020,23 @@ The triage and friction officers read this home and each local second mate home 
 ### Surgeon
 
 The Ship's Surgeon is the triage pass plus intake.
-`bin/fm-officer-surgeon.py`'s header owns the classification tables, severity rules and Linear steps; `bin/fm-officer-triage.py` stays because the friction pass imports it.
-Its digest keeps the session join's findings under `archive_findings` and puts the intake findings in `findings`, so a `severity: high` there, which the `lane:surgeon:high` [wake source](#offices-dataofficesmd) counts, means a high intake finding and never an archive coverage gap.
+`bin/fm-officer-surgeon.py`'s header owns the classification tables, severity rules and Linear steps, and [`docs/officers/surgeon-rubric.md`](officers/surgeon-rubric.md) owns what counts as work, how it is scored, what starts and what holds for Lee; `bin/fm-officer-triage.py` stays because the friction pass imports it.
+Its digest keeps the session join's findings under `archive_findings` and puts the intake findings in `findings`, so a `severity: high` (or `critical`) there, which the `lane:surgeon:high` [wake source](#offices-dataofficesmd) counts, means a high intake finding and never an archive coverage gap.
 Intake reads the fleet app with `GET` only: `/api/runs`, the latest result of each live nightly E2E or code-review job, and `/api/sweeper-results`.
 A red nightly E2E finding is high only when its run's `sha` is the current staging tip, and medium for an older run; an unreadable tip or a result with no `sha` rates it medium and adds a coverage gap.
-The bug sweeper's payload carries no production-source marker, so the production-error-class rule is deliberately absent until the sweeper sends an environment field, and severity is never guessed from a bug's text.
+An invalid nightly E2E run (the run itself broke) is one critical, promotion-blocking finding a day.
+A sweeper bug whose `environment` is production moves up one severity step; the payload is never read for the word, so a bug with no `environment` field gets no bump.
 A finding the source already put in Linear is `tracked` and never filed again.
-A real finding whose source gave no key has no stable fingerprint, so it is reported and never filed.
-With `writes: linear`, the Surgeon files each real, untracked finding in team PC and nothing else: it never edits, comments on, closes or deletes an item.
-Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`), the registry's one area label, and `surgeon-fp:<sha256>` in its description, which a search for the fingerprint (and the lane's `filed-fingerprints.json`) checks first.
+A real finding whose source gave no key is fingerprinted from its normalised title plus location.
+With `writes: linear`, the Surgeon files each real, untracked finding in team PC: medium or higher findings one item each, low review findings one item per component cluster.
+Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`), one area label derived from the finding (the `triage-label` when none fits), and `surgeon-fp:<sha256>` in its description, which a search for the fingerprint (and the lane's `filed-fingerprints.json`) checks first; a text search then asks local-jev whether a candidate is the same issue, above 0.85.
+A duplicate raises the existing item's `Found: N times (first <date>, last <date>, by surgeon)` line in place and adds at most one comment a day.
+It never closes or deletes an item, and a cluster item or its own Found line is the only text it edits.
+Every Linear call is counted against `max-linear-calls`.
 One rate-limit answer from Linear stops the run's Linear calls and writes `linear-resume-after.json` in the lane; runs before that time make no Linear call.
+The lane also keeps `review-state.json` (cluster membership, the weekly burn-down), `found.json` and `patterns.json`.
+The digest adds a weekly burn-down line (open, new and fixed reviewer findings), the start requests, one keyed needs-decision line for findings held in a reserved class, and the bad patterns found.
+Real critical and high findings the rubric admits are written as `start_requests` in the dated JSON, the same shape the progress officer uses, so `start-home:` offices deliver their own and this home's go in the adjacent `<date>.start-requests.sh`.
 
 ### Corpus officer
 
