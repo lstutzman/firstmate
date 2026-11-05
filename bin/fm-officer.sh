@@ -79,8 +79,8 @@
 # digest), because the start requests for that office's projects (its dispatch:
 # field) are then addressed to that office's home, and that office's lane check
 # delivers them into its own inbox (bin/fm-office.sh check); main's shell handoff
-# keeps only main's requests. A request with no project is placed by its source,
-# its evidence, and then local-jev (bin/fm-officer-progress.py).
+# keeps only main's requests. A request with no project is placed by its evidence,
+# its source, and then local-jev (bin/fm-officer-progress.py).
 #
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing

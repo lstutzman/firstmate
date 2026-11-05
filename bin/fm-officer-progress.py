@@ -849,8 +849,9 @@ def ask_text(row):
 def scope_route(row, offices, team, jev=None):
     """The office home a project-less row's own evidence names, else the reason it is unrouted.
 
-    Evidence is tried in order and the first rung that names any office decides: the repository of a linked
-    GitHub URL, a Linear id in the run's team (PropertyCompass2), then a project name in the ask's words.
+    Rungs are tried in order and the first that names any office decides: the repository of a linked GitHub URL,
+    a project name in the ask's words, a Linear id in the run's team (PropertyCompass2), then the ask's source
+    (a Captain's Log "Start fix:" tap goes to the office with the quartermaster role).
     A rung that names two offices is ambiguous, never a guess. When none names an office, local-jev labels the ask.
     """
     text = ask_text(row)
@@ -858,10 +859,12 @@ def scope_route(row, offices, team, jev=None):
     named = set(words) | {a + b for a, b in zip(words, words[1:])}
     repos = {alnum(m[1].removesuffix(".git")) for m in GITHUB_REPO.findall(" ".join([row.get("link", ""), *row.get("links", []), text]))}
     linear = {"propertycompass2"} if any(i.partition("-")[0] == team for i in row["linear_ids"]) else set()
+    title = row["title"].lstrip()
     rungs = (("a linked repository", lambda o: {n for n in map(alnum, o.projects) if n in repos}),
-             ("a Linear id in team " + team, lambda o: {n for n in map(alnum, o.projects) if n in linear}),
              ("a project name in the text", lambda o: {n for n in map(alnum, o.projects)
-                                                       if n in named or n.rstrip("0123456789") in named}))
+                                                       if n in named or n.rstrip("0123456789") in named}),
+             ("a Linear id in team " + team, lambda o: {n for n in map(alnum, o.projects) if n in linear}),
+             ("its source", lambda o: {role for mark, role in SOURCE_ROLES if o.role == role and mark.match(title)}))
     for label, match in rungs:
         hits = {o.home: found for o in offices if (found := match(o))}
         if len(hits) == 1:
@@ -871,7 +874,7 @@ def scope_route(row, offices, team, jev=None):
                 label, len(hits), ", ".join(sorted(n for names in hits.values() for n in names)))
     if jev:
         return jev.place(text)
-    return None, "no linked repository, team Linear id or project name matches an office"
+    return None, "no linked repository, project name, team Linear id or source matches an office"
 
 
 # What each office role works on, in words local-jev can tell apart; a role not listed falls back to its registry mandate.
@@ -943,9 +946,8 @@ def start_home_for(row, home, offices, team="PC", jev=None):
     """(home, unrouted reason) for a start request: the office whose dispatch list holds the row's project.
 
     A Linear-only row is PropertyCompass2 work (the officer reads team PC; its Linear project is not a repo).
-    A row with no project is placed by its source (a Captain's Log "Start fix:" tap is a velocity or friction
-    finding, which the office with the quartermaster role owns) and then by scope_route (evidence, then local-jev). One that fits no single
-    office stays with `home` and is reported as unrouted, but only when offices are configured to route to at all.
+    A row with no project is placed by scope_route. One that fits no single office stays with `home` and is
+    reported as unrouted, but only when offices are configured to route to at all.
     A named project that no office dispatches stays with `home`, as it always has.
     """
     project = "PropertyCompass2" if row.get("linear_only") else row.get("project") or ""
@@ -954,10 +956,6 @@ def start_home_for(row, home, offices, team="PC", jev=None):
         return next((o.home for o in offices if project in o.projects), home), None
     if row.get("requires_firstmate") or not offices:
         return home, None
-    for mark, role in SOURCE_ROLES:
-        owners = [o for o in offices if o.role == role]
-        if mark.match(row["title"].lstrip()) and len(owners) == 1:
-            return owners[0].home, None
     office_home, why = scope_route(row, offices, team, jev)
     return office_home or home, why
 
