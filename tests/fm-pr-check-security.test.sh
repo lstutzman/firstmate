@@ -978,7 +978,8 @@ test_ready_time_is_recorded_once_per_pr() {
 test_ready_pr_is_handed_to_its_merger_once_per_head() {
   local dir replies url=https://github.com/o/r/pull/41 head2=1111111111111111111111111111111111111111
   local tasks_path
-  tasks_path=$(dirname "$(command -v tasks-axi)") || fail "these cases read captain holds through tasks-axi, which was not found"
+  tasks_path=$(command -v tasks-axi) || fail "these cases read captain holds through tasks-axi, which was not found"
+  tasks_path=$(dirname "$tasks_path")
   dir=$(make_case merger-handoff)
   write_task_meta "$dir"
   seed_secondmate_home "$dir"
@@ -1013,7 +1014,14 @@ test_ready_pr_is_handed_to_its_merger_once_per_head() {
   FM_TEST_GH_HEAD=0000000000000000000000000000000000000002 BASE_PATH="$BASE_PATH:$tasks_path" \
     run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 || fail "merger-handoff: the merger home failed to register"
   [ "$(handoffs)" -eq 2 ] || fail "merger-handoff: the merger home handed the PR to itself"
-  printf '%s\n' mate-x > "$dir/home/.fm-secondmate-home"
+  # A home with no parent puts the handoff on the task's own status instead.
+  rm -f "$dir/home/.fm-secondmate-home" "$dir/home/.fm-secondmate-parent"
+  FM_TEST_GH_HEAD=0000000000000000000000000000000000000004 BASE_PATH="$BASE_PATH:$tasks_path" \
+    run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 || fail "merger-handoff: a home with no parent failed to register"
+  [ "$(handoffs)" -eq 2 ] || fail "merger-handoff: a home with no parent wrote to the parent channel"
+  [ "$(grep -c 'merge-handoff-41' "$dir/home/state/task-a.status" 2>/dev/null || true)" -eq 1 ] \
+    || fail "merger-handoff: a home with no parent did not hand off on the task's own status"
+  seed_secondmate_home "$dir"
 
   FM_HOME="$dir/home" PATH="$PATH:$tasks_path" "$ROOT/bin/fm-captain-hold.sh" hold task-a \
     --title 'Held task' --reason 'waits on the captain' >/dev/null 2>&1 || fail "merger-handoff: could not hold the task"
