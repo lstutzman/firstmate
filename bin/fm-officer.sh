@@ -74,7 +74,7 @@
 # digest as if main were listed. The failure line is always printed, because a
 # broken officer is main's to fix.
 #
-# start-home: is an optional progress and friction field, a comma list of office ids. Each must
+# start-home: is an optional progress, surgeon and friction field, a comma list of office ids. Each must
 # pass the same office checks as consumer: (a local office that reads the progress
 # digest), because the start requests for that office's projects (its dispatch:
 # field) are then addressed to that office's home, and that office's lane check
