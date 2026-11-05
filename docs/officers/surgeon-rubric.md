@@ -29,7 +29,8 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - A won't-fix finding is always low.
 - Linear priority follows severity: critical is Urgent, high is High, medium and low are Medium.
 - An invalid nightly E2E run is critical and promotion-blocking.
-  It is filed once a day, it shows as a high finding in the digest, and it never starts by itself because the usual fix (resetting an account's keys) is a credential action.
+  One item per job carries the whole outage: each day the run stays invalid bumps that item's Found count, so the count records how long it lasted, and a same-day rerun adds nothing.
+  It shows as a high finding in the digest, and it never starts by itself because the usual fix (resetting an account's keys) is a credential action.
   A missing E2E input is never silent: it is either this item or a named coverage gap.
 
 ## Where findings are filed
@@ -44,6 +45,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   A finding keeps its cluster once assigned, so the same file keeps landing in the same item as findings come and go.
 - Each item has one Type, one Source and one area label.
   The area label comes from the finding's file path or component, and falls back to the triage label when nothing fits.
+  A nightly E2E failure's path is always a spec file, so for it the feature labels (calculators, deal-finder, authentication, api and so on) are tried first, on the spec path and then the finding's words, and `testing` is only its fallback.
   The Surgeon never creates a label.
 - A finding with no source key is fingerprinted from its normalised title and location (digits dropped), so it is filed like any other.
 - Linear calls are counted.
@@ -60,8 +62,9 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   It adds one comment, on the item's first sighting of the day, and never a second the same day.
 - A finding already on its own cluster's list is not a new sighting.
 - The found count is a priority lever: score = severity weight x log2(1 + found), with weights critical 8, high 4, medium 2, low 1.
-  The score orders what is filed and started, and the digest shows it.
-  A start also needs a score of at least the minimum below.
+  The score orders what is filed and started (highest first), and the digest shows it.
+  A start also needs a score of at least the minimum below, 4.
+  A high or critical finding reaches it on first sight (4 and 8 at found 1); a medium finding reaches it at found 3 (2 x log2 4), and a low one never starts.
 - A duplicate whose found count lifts its score to that minimum starts the existing item, the same as a new finding.
   An item is started or held once, and the Surgeon records it, so no later day asks for it again.
 
@@ -78,34 +81,37 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 
 ## What starts by itself
 
-- A real, untracked critical or high finding from the nightly E2E, the code review or the bug sweeper starts on its own once its Linear item exists and its score reaches the minimum.
+- A real, untracked critical, high or medium finding from the nightly E2E, the code review or the bug sweeper starts on its own once its Linear item exists and its score reaches the minimum.
+  Critical and high start on first sight; medium starts once it has been found 3 times.
 - PropertyCompass2 findings go to the Navigator.
   Findings in a fleet repository go to the Quartermaster.
   Both use the same start path as the progress officer, so each office's own check delivers its requests.
 - Nothing else starts.
-  Medium and low findings, clusters and invalid E2E runs only get filed.
+  Medium findings seen fewer than 3 times, low findings, clusters and invalid E2E runs only get filed.
+- A real security bug starts like any other at its severity, as the fleet rule wants high and critical security fixes started at once: a password hash compared with `==` or an API key logged in plaintext is a code fix, not a credential action.
 
 ## What only files, and holds for Lee
 
 These classes never start, whatever the severity.
 A finding that matches one is still filed, and the digest carries one keyed needs-decision line for the run that names it.
+Each class is matched by the action it asks for, not by a word appearing anywhere, so a shallow copy or a password hash bug still starts.
 
-- Payments or billing.
-- Legal text.
-- Product decisions.
-- Member-facing copy.
-- Credentials.
-- Production actions.
-- Data-rewriting changes.
+- Payments or billing: any payments, billing, invoice, refund or Stripe work.
+- Legal text: terms, privacy policy, cookie banner, licence text.
+- Product decisions: a product decision, or changing prices, pricing, plan limits or the paywall.
+- Member-facing copy: changing, updating or rewording the wording, copy or text shown to members (or member-facing copy).
+- Credentials: creating, rotating, revoking or resetting a secret, API key, token or service password.
+- Production actions: deploying, restarting or promoting to production, or changing production data, config or settings.
+- Data-rewriting changes: dropping or renaming a table or column, updating or deleting existing rows, removing an enum value.
 
 ## Settings the code reads
 
 These lines can narrow the code's allowances and nothing else.
 A value the code does not allow is ignored and named as a coverage gap.
-`start-min-score` can be raised above 4 (a single high finding) and never lowered, and `pattern-memory: off` turns the pattern requests off.
+`start-min-score` can be raised above 4 (a single high finding, or a medium one found 3 times) and never lowered, and `pattern-memory: off` turns the pattern requests off.
 A missing rubric means nothing starts, and the run says so.
 
-- start-severities: high, critical
+- start-severities: medium, high, critical
 - start-sources: nightly, review, sweeper
 - start-min-score: 4
 - pattern-memory: on

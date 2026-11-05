@@ -29,7 +29,9 @@ Each finding is classified with the tables below and no model:
                         medium and a `Coverage gap:` line.
   nightly E2E invalid   a run whose shared or result status is invalid/skipped (or
                         invalid: true) is itself work: one real, critical,
-                        promotion-blocking finding per day, never starts by itself.
+                        promotion-blocking item per job while the run stays
+                        invalid (each day bumps its Found line), never starts
+                        by itself.
   nightly review        critical, high, medium: real at severity high, medium, low;
                         a low finding is won't fix. Ids in the result's `resolved`
                         list (or findings whose status is resolved/fixed) are fixed,
@@ -59,7 +61,8 @@ team PC, highest score first:
   1. one `label list --team PC`; Bug, the Source label (scheduled-review for the
      nightly E2E and review, bug-sweep for the sweeper) and one area label must all
      exist there. The area label comes from the finding's file path or component
-     (AREA_RULES); with no fit it is --triage-label; a label missing from team PC
+     (AREA_RULES; a nightly E2E failure tries the feature rules on its spec path and words
+     before `testing`); with no fit it is --triage-label; a label missing from team PC
      means the finding is reported and not filed. The Surgeon never creates a label.
   2. medium or higher findings, and every non-review finding, each get their own
      item. Low review findings are clustered, one item per component: the group of
@@ -89,9 +92,10 @@ new items a run. One RATE_LIMITED answer stops every Linear call in the run, wri
 linear-resume-after.json (one hour on) and reports the rest as not filed; later runs
 skip Linear until then. Nothing is dropped silently: the digest names what was not filed.
 
-Start requests: a real, untracked, newly filed finding whose severity and source the
-rubric admits, whose score reaches the rubric's minimum, and that matches no reserved
-class becomes a start request on the progress officer's path (start-requests.sh for this
+Start requests: a real, untracked, filed finding whose severity (medium, high, critical)
+and source the rubric admits, whose score reaches the rubric's minimum (so a medium
+finding starts once it is found 3 times), and that matches no reserved class (each anchored
+to its action, e.g. rotating a credential, rewording member-facing text) becomes a start request on the progress officer's path (start-requests.sh for this
 home, `execute` entries for each --start-home office); the reserved classes become one
 keyed needs-decision line (asks_for_lee). The rubric can only narrow.
 
@@ -182,13 +186,18 @@ DEFAULT_PROJECT = "PropertyCompass2"
 RESERVED = collections.OrderedDict([
     ("payments-billing", re.compile(r"\b(payments?|billing|invoices?|refunds?|stripe|direct debit)\b", re.I)),
     ("legal", re.compile(r"\b(terms (of|and) (service|use)|privacy policy|legal text|cookie banner|gdpr|licen[cs]e text)\b", re.I)),
-    ("product", re.compile(r"\b(product decision|pricing|paywall|plan limits?)\b", re.I)),
-    ("member-copy", re.compile(r"\b(copy|wording|microcopy|member-facing|user-facing text)\b", re.I)),
-    ("credentials", re.compile(r"\b(credentials?|secrets?|api[- ]?keys?|passwords?|private key|token rotation)\b", re.I)),
-    ("production-actions", re.compile(r"\b(production (deploy|restart|database|data|config|setting)s?|prod (deploy|restart)|deploy to production)\b", re.I)),
-    ("data-rewriting", re.compile(r"\b(drop (table|column)|rename (column|table)|data[- ]rewriting|backfill|delete (rows|records)|truncate table)\b", re.I)),
+    ("product", re.compile(r"\b(product (decision|change)s?|(change|raise|lower|set|move)[a-z]* (the )?(prices?|pricing|plan limits?|paywall))\b", re.I)),
+    ("member-copy", re.compile(r"\b((change|update|reword|rewrite|edit|replace)[a-z]*\b.{0,40}?\b(wording|copy|text|microcopy)\b.{0,40}?"
+                               r"\b(shown to|seen by|visible to|for) (members|users|customers)|(member|user|customer)-facing (copy|wording|text))\b", re.I)),
+    ("credentials", re.compile(r"\b(creat|rotat|revok|reset|regenerat|reissu)[a-z]*\b.{0,30}?\b(credentials?|secrets?|api[- ]?keys?|tokens?|"
+                               r"(access|account|storage|signing|private|ssh|encryption) keys?|(database|db|admin|service account) passwords?|"
+                               r"connection strings?)\b|\b(credential|secret|key|token) rotation\b", re.I)),
+    ("production-actions", re.compile(r"\b((deploy|restart|promot|releas)[a-z]* (it |this )?to (production|prod)|production (deploy|restart|promotion)s?|"
+                                      r"(change|update|edit|set|scale|write)[a-z]* (to )?(the )?(production|prod) (database|data|config|configuration|settings?))\b", re.I)),
+    ("data-rewriting", re.compile(r"\b(drop (table|column)|rename (column|table)|data[- ]rewriting|(delete|update|rewrite)[a-z]* (existing )?(rows|records)|"
+                                  r"truncate table|remov[a-z]* (an )?enum value)\b", re.I)),
 ])
-BUILTIN_START_SEVERITIES = ("high", "critical")
+BUILTIN_START_SEVERITIES = ("medium", "high", "critical")
 BUILTIN_START_SOURCES = ("nightly", "review", "sweeper")
 
 # Area labels from a finding's file path (first match whose label exists in team PC wins).
@@ -375,7 +384,7 @@ def judge_sweeper(doc):
     return out
 
 
-def intake(app, staging_repo, date):
+def intake(app, staging_repo):
     """(findings, coverage gaps, fingerprints the reviewer marked resolved); every read is a GET."""
     findings, gaps, resolved, tip = [], [], [], False
     state, runs = fetch(app, "/api/runs")
@@ -399,7 +408,7 @@ def intake(app, staging_repo, date):
         reason = e2e_invalid(detail)
         if reason:
             findings.append(finding(
-                "nightly", ref["id"], "e2e-invalid:" + date, "Nightly E2E run invalid: promotion blocked (%s)" % date,
+                "nightly", ref["id"], "e2e-invalid", "Nightly E2E run invalid: promotion blocked",
                 "Nightly E2E run %s is invalid, not a test failure: %s" % (ref["run"], reason), "real", "critical", None,
                 {"promotion_blocking": "yes", "invalid_reason": reason, "run": ref["run"]}, location="e2e nightly",
                 special="e2e-invalid"))
@@ -484,18 +493,27 @@ def reserved_class(f):
 
 # ---- area, clusters ---------------------------------------------------------------------
 
-def area_for(location, words, names, fallback):
-    """The area label for a finding: from its path, else its words, else the fallback; None if the label is absent."""
+def area_for(location, words, names, fallback, feature_first=False):
+    """The area label for a finding: from its path, else its words, else the fallback; None if the label is absent.
+
+    With feature_first (nightly E2E failures, whose path is always a spec file) the feature rules are tried on
+    the path and then the words before `testing`, which is only their fallback.
+    """
     loc = location.lower().replace("\\", "/")
-    for label, rx in AREA_RULES:
-        if label in names and loc and rx.search(loc):
-            return label
-    if not loc:
-        lowered = words.lower()
-        for label, rx in AREA_RULES:
-            if label in TEXT_AREA_LABELS and label in names and rx.search(lowered):
+    lowered = words.lower()
+
+    def first(rules, haystack, words_only=False):
+        for label, rx in rules:
+            if label in names and haystack and (not words_only or label in TEXT_AREA_LABELS) and rx.search(haystack):
                 return label
-    return fallback if fallback.lower() in names else None
+        return None
+
+    if feature_first:
+        feature = [r for r in AREA_RULES if r[0] != "testing"]
+        hit = first(feature, loc) or first(feature, lowered, True) or first(AREA_RULES, loc)
+    else:
+        hit = first(AREA_RULES, loc) or (None if loc else first(AREA_RULES, lowered, True))
+    return hit or (fallback if fallback.lower() in names else None)
 
 
 def path_dirs(location):
@@ -933,7 +951,7 @@ def file_findings(findings, args, date, out, state, found, jev):
     names = {text(l.get("name")).lower() for l in dicts(labels.get("labels"))}
 
     def label_set(f, location, words):
-        area = area_for(location, words, names, args.triage_label)
+        area = area_for(location, words, names, args.triage_label, f["source"] == "nightly" and not f.get("special"))
         wanted = ["Bug", SOURCE_LABEL[f["source"]], area or args.triage_label]
         missing = [w for w in wanted if w.lower() not in names]
         return wanted, missing
@@ -1064,9 +1082,9 @@ def plan_starts(findings, rubric, date, writes, main_home, start_homes, handled)
     """(start requests, held findings, asks for Lee): the rubric admits, the reserved classes hold.
 
     An item is handled (started or held) once; `handled` maps its Linear id to the date, so a same-day
-    rerun repeats the same request and a later day never asks twice. A duplicate whose Found count has
-    lifted its score to the minimum starts like a new finding, which is how the found count reaches the
-    start decision.
+    rerun repeats the same request and a later day never asks twice. Only an emitted start or hold marks
+    it handled. A finding whose Found count has lifted its score to the minimum (a medium at found 3)
+    starts like a new finding, which is how the found count reaches the start decision.
     """
     starts, held = [], []
     sources = rubric.start_sources if rubric.loaded else set(BUILTIN_START_SOURCES)
@@ -1081,11 +1099,12 @@ def plan_starts(findings, rubric, date, writes, main_home, start_homes, handled)
             continue
         fresh = writes != "linear" or handled.get(issue) in (None, date)
         reserved = reserved_class(f)
-        if fresh and issue:
-            handled[issue] = date
         if reserved and fresh:
             held.append({"fingerprint": f["fingerprint"], "title": f["title"], "class": reserved, "severity": f["severity"], "issue": filing.get("issue")})
+            if issue:
+                handled[issue] = date
         elif fresh and issue and rubric.loaded:
+            handled[issue] = date
             row = {"kind": "surgeon-finding", "title": f["title"], "severity": f["severity"], "score": f["score"], "found": f["found"],
                    "source": f["source"], "fingerprint": f["fingerprint"], "issue": issue, "linear_id": issue,
                    "project": f["project"], "linear_only": not f["project"], "reason": "Real %s finding admitted by the rubric" % f["severity"]}
@@ -1252,7 +1271,7 @@ def main(argv):
     hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
     doc = triage.summarise(scanned, homes, hosts, args.model)
     archive_md = triage.render_md(doc)
-    findings, gaps, resolved = intake(args.app, args.staging_repo, args.date)
+    findings, gaps, resolved = intake(args.app, args.staging_repo)
     rubric = load_rubric(args.rubric)
     jev = Jev(args.jev)
     out = args.out

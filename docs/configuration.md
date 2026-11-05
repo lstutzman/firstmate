@@ -1024,7 +1024,7 @@ The Ship's Surgeon is the triage pass plus intake.
 Its digest keeps the session join's findings under `archive_findings` and puts the intake findings in `findings`, so a `severity: high` (or `critical`) there, which the `lane:surgeon:high` [wake source](#offices-dataofficesmd) counts, means a high intake finding and never an archive coverage gap.
 Intake reads the fleet app with `GET` only: `/api/runs`, the latest result of each live nightly E2E or code-review job, and `/api/sweeper-results`.
 A red nightly E2E finding is high only when its run's `sha` is the current staging tip, and medium for an older run; an unreadable tip or a result with no `sha` rates it medium and adds a coverage gap.
-An invalid nightly E2E run (the run itself broke) is one critical, promotion-blocking finding a day.
+An invalid nightly E2E run (the run itself broke) is one critical, promotion-blocking item per job while it stays invalid; each day bumps its Found line.
 A sweeper bug whose `environment` is production moves up one severity step; the payload is never read for the word, so a bug with no `environment` field gets no bump.
 A finding the source already put in Linear is `tracked` and never filed again.
 A real finding whose source gave no key is fingerprinted from its normalised title plus location.
@@ -1036,7 +1036,7 @@ Every Linear call is counted against `max-linear-calls`.
 One rate-limit answer from Linear stops the run's Linear calls and writes `linear-resume-after.json` in the lane; runs before that time make no Linear call.
 The lane also keeps `review-state.json` (cluster membership, the weekly burn-down), `found.json` and `patterns.json`.
 The digest adds a weekly burn-down line (open, new and fixed reviewer findings), the start requests, one keyed needs-decision line for findings held in a reserved class, and the bad patterns found.
-Real critical and high findings the rubric admits are written as `start_requests` in the dated JSON, the same shape the progress officer uses, so `start-home:` offices deliver their own and this home's go in the adjacent `<date>.start-requests.sh`.
+Real critical and high findings, and medium findings found at least 3 times, that the rubric admits are written as `start_requests` in the dated JSON, the same shape the progress officer uses, so `start-home:` offices deliver their own and this home's go in the adjacent `<date>.start-requests.sh`.
 
 ### Corpus officer
 

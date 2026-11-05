@@ -190,6 +190,12 @@ run_surgeon() {  # <home> [now]
   PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW="${2:-$NOW}" FM_HOME="$1" "$OFFICER" run surgeon --date "$DATE"
 }
 
+DATE2=2026-10-24
+run_surgeon_next_day() {  # <home> <world>: a run on DATE2, a day later, against the same lane.
+  officer_archive "$TMP_ROOT/$2/archive" "$DATE2" "$TMP_ROOT/$2/spec.json"
+  PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW=$((NOW + 86400)) FM_HOME="$1" "$OFFICER" run surgeon --date "$DATE2"
+}
+
 fp() { printf '%s\0%s\0%s' "$1" "$2" "$3" | sha256sum | cut -d' ' -f1; }
 
 LINEAR_ON="writes: linear; team: PC; "
@@ -577,6 +583,7 @@ test_duplicates_bump_the_found_count_through_local_jev() {
   assert_equals 1 "$(wc -l < "$LDIR/comments" | tr -d ' ')" "one comment on that day's first sighting"
   assert_equals 2 "$(row "$json" sweeper d1 .found)" "the finding carries its found count"
   assert_equals 3.17 "$(row "$json" sweeper d1 .score)" "and the score is weight (medium 2) x log2(1 + found 2)"
+  assert_equals 0 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding")] | length' "$json")" "a medium finding found twice is under the start minimum of 4"
   : > "$LINEAR_LOG"
   run_surgeon "$home" >/dev/null || fail "same-day rerun"
   assert_equals 0 "$(grep -c '^issue update\|^issue comment' "$LINEAR_LOG")" "the same day never bumps twice and adds no second comment"
@@ -587,12 +594,14 @@ test_found_count_lifts_a_duplicate_into_the_start_decision() {
   local home json
   make_world foundstart "${LINEAR_ON}jev: $TMP_ROOT/foundstart/jev.py; "; home=$WORLD_HOME
   fake_jev "$TMP_ROOT/foundstart/jev.py"
-  printf 'Older report, never started.\\nFound: 1 times (first 2026-10-01, last 2026-10-01, by surgeon)' > "$LDIR/pc9.desc"
-  set_pages foundstart '[]' '[{"fp":"f1","title":"Crash on save duplicate-me","disposition":"new","severity":"P1"}]'
+  printf 'Older report, never started.\\nFound: 2 times (first 2026-10-01, last 2026-10-20, by surgeon)' > "$LDIR/pc9.desc"
+  set_pages foundstart '[]' '[{"fp":"f1","title":"Crash on save duplicate-me","disposition":"new","severity":"P2"}]'
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals "duplicate 2" "$(row "$json" sweeper f1 '[.filing.action,(.found|tostring)]|join(" ")')" "a duplicate of an older item has found count 2"
+  assert_equals "duplicate 3 medium" "$(row "$json" sweeper f1 '[.filing.action,(.found|tostring),.severity]|join(" ")')" "a medium duplicate seen on a third day has found count 3"
+  assert_equals true "$(row "$json" sweeper f1 ".score == 4")" "so its score is 2 x log2(4)"
   assert_equals PC-9 "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding")][0].issue' "$json")" "its score reaches the minimum, so the existing item starts"
+  assert_equals 1 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding")] | length' "$json")" "once"
   assert_equals "$DATE" "$(jq -r '.handled["PC-9"]' "$home/data/officers/surgeon/review-state.json")" "and the item is recorded as handled"
   run_surgeon "$home" >/dev/null || fail "same-day rerun"
   assert_equals PC-9 "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding")][0].issue' "$json")" "a same-day rerun repeats the same request"
@@ -655,7 +664,7 @@ test_invalid_nightly_e2e_is_a_top_severity_promotion_blocker() {
   set_pages invalid '[]' '[]' '{"status":"invalid","reason":"account reached its limit","findings":[]}'
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals "real critical" "$(row "$json" nightly "e2e-invalid:$DATE" '[.class,.severity]|join(" ")')" "an invalid run is a real, critical finding"
+  assert_equals "real critical" "$(row "$json" nightly e2e-invalid '[.class,.severity]|join(" ")')" "an invalid run is a real, critical finding"
   assert_equals 1 "$(grep -c '^issue create .*promotion blocked.*--verify' "$LINEAR_LOG")" "one Linear item"
   assert_contains "$(grep '^issue create' "$LINEAR_LOG" | head -1)" "--priority 1" "at the top priority"
   assert_contains "$(cat "$LDIR/bodies")" "Promotion-blocking: yes" "marked promotion-blocking"
@@ -663,7 +672,10 @@ test_invalid_nightly_e2e_is_a_top_severity_promotion_blocker() {
   assert_equals 0 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding")] | length' "$json")" "it never starts by itself"
   : > "$LINEAR_LOG"
   run_surgeon "$home" >/dev/null || fail "rerun"
-  assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "it is deduped per day"
+  assert_equals 0 "$(grep -c '^issue create\|^issue update\|^issue comment' "$LINEAR_LOG")" "a same-day rerun adds nothing"
+  run_surgeon_next_day "$home" invalid >/dev/null || fail "next-day run"
+  assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "a second invalid day files no new item"
+  assert_contains "$(sed -n '/^UPDATE PC-101$/,$p' "$LDIR/updates")" "Found: 2 times" "it bumps the Found line on the same item, recording the outage length"
   set_pages invalid '[]' '[]' 'null'
   jq -n '{run: {}, result: null, shared: null}' > "$TMP_ROOT/invalid/pages/_api_runs_nightly-e2e_results_R1"
   assert_contains "$(run_surgeon "$home")" "Coverage gap: no E2E input" "an empty E2E result is a named gap, never a silent absence"
@@ -688,11 +700,11 @@ test_start_requests_follow_the_rubric_and_hold_reserved_classes() {
   assert_equals 2 "$(grep -c 'fm-inbox.sh' "$home/data/officers/surgeon/$DATE.start-requests.sh")" "and the hand-off script carries this home's requests (the start and the pattern batch)"
   assert_equals 0 "$(jq '[.start_requests[] | select(.title == "Wrong total")] | length' "$json")" "a medium finding only files"
   # A rubric can only narrow: asking for more is ignored and named.
-  printf '## Settings the code reads\n- start-severities: medium, high\n- start-sources: sweeper, invented\n- hold-classes: legal\n' > "$TMP_ROOT/starts/rubric.md"
+  printf '## Settings the code reads\n- start-severities: low, high\n- start-sources: sweeper, invented\n- hold-classes: legal\n' > "$TMP_ROOT/starts/rubric.md"
   surgeon_registry "$home" "$TMP_ROOT/starts/archive" "${LINEAR_ON}rubric: $TMP_ROOT/starts/rubric.md; "
   rm -f "$home/data/officers/surgeon/"*.json "$home/data/officers/surgeon/"*.md
   out=$(run_surgeon "$home") || fail "narrow rubric run"
-  assert_contains "$out" "names medium, which the code does not admit" "a rubric cannot admit medium"
+  assert_contains "$out" "names low, which the code does not admit" "a rubric cannot admit low"
   assert_contains "$out" "names invented" "or an unknown source"
   assert_contains "$out" "omits payments-billing" "and cannot drop a reserved class"
   assert_equals "payments-billing" "$(jq -r '.held[0].class' "$home/data/officers/surgeon/$DATE.json")" "which is held anyway"
@@ -784,6 +796,50 @@ test_start_requests_route_by_project_to_the_owning_office() {
   pass "fm-officer surgeon: start requests go to the office whose dispatch list holds the project"
 }
 
+test_nightly_area_tries_feature_labels_before_testing() {
+  local home
+  make_world e2earea "$LINEAR_ON"; home=$WORLD_HOME
+  set_pages e2earea '[]' '[]' '{"status":"failed","findings":[
+    {"key":"n1","title":"stamp duty total wrong","cause":"expected 1200","where":"tests/e2e/calculators/stamp-duty.spec.ts","classification":"regression"},
+    {"key":"n2","title":"home page loads","cause":"timed out","where":"tests/e2e/smoke.spec.ts","classification":"regression"}]}'
+  run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
+  assert_contains "$(grep '^issue create .*stamp duty total wrong.*--verify' "$LINEAR_LOG")" "--label calculators" "a calculators spec gets the calculators label, not testing"
+  assert_contains "$(grep '^issue create .*home page loads.*--verify' "$LINEAR_LOG")" "--label testing" "a plain spec with no feature word falls back to testing"
+  pass "fm-officer surgeon: a nightly E2E failure tries the feature labels before testing"
+}
+
+test_unreadable_rubric_leaves_items_to_start_later() {
+  local home json
+  make_world laterstart "${LINEAR_ON}rubric: $TMP_ROOT/laterstart/missing.md; "; home=$WORLD_HOME
+  set_pages laterstart '[]' '[{"fp":"l1","title":"Crash on save","disposition":"new","severity":"P1"}]'
+  run_surgeon "$home" >/dev/null || fail "missing rubric run"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals created "$(row "$json" sweeper l1 .filing.action)" "the high finding is filed"
+  assert_equals 0 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding")] | length' "$json")" "but nothing starts without a rubric"
+  surgeon_registry "$home" "$TMP_ROOT/laterstart/archive" "$LINEAR_ON"
+  run_surgeon_next_day "$home" laterstart >/dev/null || fail "next-day run with the rubric back"
+  assert_equals PC-101 "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding")][0].issue' "$home/data/officers/surgeon/$DATE2.json")" "a later run with a good rubric starts the item"
+  pass "fm-officer surgeon: an unreadable rubric marks nothing handled, so the item starts later"
+}
+
+test_reserved_classes_match_the_action_not_the_word() {
+  local home json
+  make_world reserved "$LINEAR_ON"; home=$WORLD_HOME
+  set_pages reserved '[]' '[
+    {"fp":"r1","title":"shallow copy of list mutates cache","disposition":"new","severity":"P1"},
+    {"fp":"r2","title":"password hash compared with ==","disposition":"new","severity":"P1"},
+    {"fp":"r3","title":"API key logged in plaintext","disposition":"new","severity":"P1"},
+    {"fp":"r4","title":"Reword the wording shown to members on the pricing page","disposition":"new","severity":"P1"},
+    {"fp":"r5","title":"Rotate the staging API key used by the mailer","disposition":"new","severity":"P1"}]'
+  run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "API key logged in plaintext|password hash compared with ==|shallow copy of list mutates cache" \
+    "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding") | .title] | sort | join("|")' "$json")" "a copy, a password hash and a logged key are code fixes that start"
+  assert_equals "credentials member-copy" "$(jq -r '[.held[] | .class] | sort | join(" ")' "$json")" "a member wording change and a key rotation are held"
+  assert_equals 1 "$(jq '.asks_for_lee | length' "$json")" "with one keyed needs-decision"
+  pass "fm-officer surgeon: reserved classes match the action they ask for, so real security bugs start"
+}
+
 test_registry_rules
 test_classification_and_severity
 test_staging_tip_rates_the_night
@@ -813,3 +869,6 @@ test_cluster_split_and_fold_constants
 test_start_requests_route_by_project_to_the_owning_office
 test_found_count_lifts_a_duplicate_into_the_start_decision
 test_start_home_reaches_the_surgeon_through_the_registry
+test_nightly_area_tries_feature_labels_before_testing
+test_unreadable_rubric_leaves_items_to_start_later
+test_reserved_classes_match_the_action_not_the_word
