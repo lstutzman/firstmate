@@ -1,0 +1,5 @@
+$ FM_HOME=<lab> claude -p '<question>'
+Q: You are an agent in an office home. Load the office-roles skill from .agents/skills/office-roles/SKILL.md (read only; change nothing). Question from main: which office owns meta work (keeping our SDLC, skills, rules and fleet tooling optimal) and acting on the weekly tooling research? Reply on one line: the office name, then the exact sentence from the skill that says so.
+
+Quartermaster — "It also owns meta work (SDLC, skills, rules and fleet-tooling optimisation) and acts on the weekly tooling research." (`.agents/skills/office-roles/SKILL.md:26`)
+exit=0

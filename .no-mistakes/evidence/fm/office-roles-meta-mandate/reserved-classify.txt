@@ -1,0 +1,3 @@
+$ git diff --name-only c7af7cc4 346dd872 | bin/fm-reserved-classify.sh --rules <docs/office-provisioning.md firstmate.rules>
+authority
+exit=0
