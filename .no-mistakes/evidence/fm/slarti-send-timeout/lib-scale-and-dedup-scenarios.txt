@@ -1,0 +1,14 @@
+Synthetic Slarti-sized inbox: 3,588 handled records, about 15 MB. Each command below is one fm_task_inbox_write_idempotent call, timed.
+BASE 5ef32809  new steer: rc=0 ms=28107 rec=slarti.inbox/3589.msg   (just under the 30 s FM_SEND_REMOTE_BUDGET before ssh, doorbell and locks)
+NEW  54e96777  new steer: rc=0 ms=365   rec=slarti.inbox/3589.msg
+NEW  recovery resend, same body: rc=0 ms=137 rec=slarti.inbox/3589.msg   (dedup, no new record)
+NEW  second distinct steer:      rc=0 ms=177 rec=slarti.inbox/3590.msg
+     after the write: handled=499, archive=3089 (3090..3588 kept; archived records moved, not deleted)
+worker acks 3589, then resend:           rec=slarti.inbox/handled/3589.msg  (handled path, so no doorbell rings)
+fire-and-forget with the same body as normal 3590: rec=3591.msg  (the two delivery modes never match)
+fire-and-forget resend:                  rec=3591.msg
+multi-line body with an inner "--" and trailing newlines, written then resent: 3592 then 3592
+same body with one trailing newline fewer: 3593 (distinct)
+unhandled 3000.msg planted with KEEP=5:  3000.msg stays in the root (unhandled records never archived)
+everything acked, then write with KEEP=5: 3595 (no sequence reissued)
+resend of a body older than the dedup window (WINDOW=3): enqueues 3596 (the documented bound)

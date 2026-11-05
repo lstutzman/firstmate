@@ -1,0 +1,16 @@
+remote inbox: 3588 handled, 15M
+FM_SEND_REMOTE_BUDGET default in effect (unset): unset
+--- send 1: rc=0 elapsed=4s ssh_attempts=1
+  stderr: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  stderr: ●  WATCHER DOWN - SUPERVISION IS OFF
+  stderr: ●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+  stderr: ●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+  stderr: ●  This is a supervision warning only; the requested message WILL still be sent.
+  stderr: ●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+  stderr: ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  stderr: notice: doorbell not typed because the agent in fm-remote:p1 has exited; the steer is durably recorded at /tmp/fm-send-remote-delivery.e3dKQU/scale-rhome/state/parent-route/rsm.inbox/3589.msg for recovery
+  unhandled records now: 3589.msg 
+  archive=3088 handled=500
+--- send 2 (ssh 255 after real leg, auto-retry): rc=1 elapsed=3s ssh_attempts=2
+  records carrying 'second relay': 1
+  unhandled records now: 3590.msg 3589.msg 
