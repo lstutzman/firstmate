@@ -315,16 +315,16 @@ esac
 
 # Hand the ready PR straight to the project's merger home, so its landing never
 # waits on the parent noticing the ready line above. The line is the one
-# bin/fm-pr-merge.sh prints on its merger refusal; it goes on the parent
-# channel in a secondmate home and on the task's own status in a home with no
-# parent. state/<id>.merge-handoff records the last PR and head handed off, so
-# re-registering the same head is silent and a new head is announced once; it
-# is written after the append, so an interrupted run announces again rather
-# than never. A project this home merges, an admission-bound project, a task
-# held for the captain, and the merge-time re-record (fm-pr-merge.sh prints
-# its own handoff) hand nothing off.
+# bin/fm-pr-merge.sh prints on its merger refusal, delivered the same way: on
+# the parent channel in a secondmate home, and straight to fm-<merger> with
+# bin/fm-send.sh in a home with no parent. state/<id>.merge-handoff records the
+# last PR and head handed off, so re-registering the same head is silent and a
+# new head is announced once; it is written only after a successful delivery,
+# so an interrupted run announces again rather than never. A project this home
+# merges, a task held for the captain, and the merge-time re-record
+# (fm-pr-merge.sh prints its own handoff) hand nothing off.
 pr_check_merge_handoff() {
-  local name merger self admission rc=0 record sent line dest tmp
+  local name merger self rc=0 record sent line dest tmp
   [ "${KIND:-ship}" = ship ] && [ "${FM_PR_CHECK_MERGE:-}" != 1 ] && [ -n "$PROJECT" ] || return 0
   name=$(basename "$PROJECT")
   merger=$("$SCRIPT_DIR/fm-project-mode.sh" --merger "$name" 2>/dev/null) \
@@ -337,8 +337,6 @@ pr_check_merge_handoff() {
     *) printf 'actionable: PR %s is registered but the identity marker of this home is unusable, so it was not handed to home %s\n' "$URL" "$merger" >&2; return 0 ;;
   esac
   [ "$merger" != "$self" ] || return 0
-  admission=$("$SCRIPT_DIR/fm-project-mode.sh" --admission "$name" 2>/dev/null) || admission=unreadable
-  [ -z "$admission" ] || return 0
   rc=0
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-captain-hold.sh" open "$ID" --distinguish-absent >/dev/null 2>&1 || rc=$?
@@ -355,8 +353,11 @@ pr_check_merge_handoff() {
   line=$(status_stamp_line "$(fm_merge_handoff_line "$merger" "$URL")")
   rc=0
   dest=$(fm_parent_channel_destination "$FM_HOME" "$STATE") || rc=$?
-  [ "$rc" -ne 1 ] || { dest="$STATE/$ID.status"; rc=0; }
-  if [ "$rc" -ne 0 ] || ! fm_parent_channel_append "$dest" "$line"; then
+  case "$rc" in
+    0) fm_parent_channel_append "$dest" "$line" || rc=4 ;;
+    1) rc=0; "$FM_ROOT/bin/fm-send.sh" "fm-$merger" "$line" >/dev/null 2>&1 || rc=4 ;;
+  esac
+  if [ "$rc" -ne 0 ]; then
     printf 'actionable: PR %s is registered but its handoff to home %s could not be written; report this line by hand: %s\n' "$URL" "$merger" "$line" >&2
     return 0
   fi

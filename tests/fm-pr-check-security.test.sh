@@ -1014,20 +1014,51 @@ test_ready_pr_is_handed_to_its_merger_once_per_head() {
   FM_TEST_GH_HEAD=0000000000000000000000000000000000000002 BASE_PATH="$BASE_PATH:$tasks_path" \
     run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 || fail "merger-handoff: the merger home failed to register"
   [ "$(handoffs)" -eq 2 ] || fail "merger-handoff: the merger home handed the PR to itself"
-  # A home with no parent puts the handoff on the task's own status instead.
+  # A home with no parent sends the handoff straight to the merger with
+  # fm-send.sh, as fm-pr-merge.sh's refusal does, and leaves the task's own
+  # status alone. A failed send leaves no record, so the next run sends again.
   rm -f "$dir/home/.fm-secondmate-home" "$dir/home/.fm-secondmate-parent"
-  FM_TEST_GH_HEAD=0000000000000000000000000000000000000004 BASE_PATH="$BASE_PATH:$tasks_path" \
-    run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 || fail "merger-handoff: a home with no parent failed to register"
+  cat > "$dir/root/bin/fm-send.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$#" "$@" >> "$FM_TEST_SEND_LOG"
+exit "${FM_TEST_SEND_RC:-0}"
+SH
+  chmod +x "$dir/root/bin/fm-send.sh"
+  FM_TEST_SEND_RC=1 FM_TEST_SEND_LOG="$dir/send.log" FM_TEST_GH_HEAD=0000000000000000000000000000000000000004 \
+    BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/err" \
+    || fail "merger-handoff: a home with no parent failed to register when the send failed"
+  assert_grep 'could not be written' "$dir/err" "merger-handoff: a failed send to the merger was not reported"
+  rm -f "$dir/send.log"
+  FM_TEST_SEND_LOG="$dir/send.log" FM_TEST_GH_HEAD=0000000000000000000000000000000000000004 \
+    BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 \
+    || fail "merger-handoff: a home with no parent failed to register"
   [ "$(handoffs)" -eq 2 ] || fail "merger-handoff: a home with no parent wrote to the parent channel"
-  [ "$(grep -c 'merge-handoff-41' "$dir/home/state/task-a.status" 2>/dev/null || true)" -eq 1 ] \
-    || fail "merger-handoff: a home with no parent did not hand off on the task's own status"
+  [ "$(sed -n 1p "$dir/send.log")" = 2 ] && [ "$(sed -n 2p "$dir/send.log")" = fm-slarti ] \
+    || fail "merger-handoff: a home with no parent did not send to fm-slarti: $(cat "$dir/send.log" 2>/dev/null)"
+  case "$(sed -n 3p "$dir/send.log")" in
+    "needs-decision [key=merge-handoff-41] [cause=external] [at="*"]: [handoff=slarti] $url is ready to merge") ;;
+    *) false ;;
+  esac \
+    || fail "merger-handoff: a home with no parent sent the wrong handoff line: $(cat "$dir/send.log")"
+  ! grep -qsF 'merge-handoff-41' "$dir/home/state/task-a.status" \
+    || fail "merger-handoff: a home with no parent wrote the handoff to the task's own status"
+  FM_TEST_SEND_LOG="$dir/send.log" FM_TEST_GH_HEAD=0000000000000000000000000000000000000004 \
+    BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 \
+    || fail "merger-handoff: a home with no parent failed to re-register"
+  [ "$(wc -l < "$dir/send.log")" -eq 3 ] || fail "merger-handoff: a home with no parent sent the same head twice"
   seed_secondmate_home "$dir"
+
+  # An admission-bound project is handed off like any other.
+  printf '%s\n' '- project [no-mistakes +yolo merger=slarti admission=pc-review] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+  FM_TEST_GH_HEAD=0000000000000000000000000000000000000005 BASE_PATH="$BASE_PATH:$tasks_path" \
+    run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/err" || fail "merger-handoff: registering an admission-bound project failed: $(cat "$dir/err")"
+  [ "$(handoffs)" -eq 3 ] || fail "merger-handoff: an admission-bound project was not handed off: $(cat "$dir/err")"
 
   FM_HOME="$dir/home" PATH="$PATH:$tasks_path" "$ROOT/bin/fm-captain-hold.sh" hold task-a \
     --title 'Held task' --reason 'waits on the captain' >/dev/null 2>&1 || fail "merger-handoff: could not hold the task"
   FM_TEST_GH_HEAD=0000000000000000000000000000000000000003 BASE_PATH="$BASE_PATH:$tasks_path" \
     run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/err" || fail "merger-handoff: registering a held task failed"
-  [ "$(handoffs)" -eq 2 ] || fail "merger-handoff: a task held for the captain was handed off"
+  [ "$(handoffs)" -eq 3 ] || fail "merger-handoff: a task held for the captain was handed off"
   # The hold itself skipped it, not an unreadable hold record.
   assert_no_grep 'cannot be read' "$dir/err" "merger-handoff: the captain hold could not be read: $(cat "$dir/err")"
   pass "fm-pr-check hands a ready PR to its project's merger home once per head, and never with no merger, from the merger, or while held"
