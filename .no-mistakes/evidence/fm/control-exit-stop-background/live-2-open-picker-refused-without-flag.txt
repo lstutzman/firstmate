@@ -1,0 +1,32 @@
+== picker on screen before ==
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Background work is running
+  The following will stop when you exit:
+
+  shell · Sleep for 948 seconds in background
+
+  ❯ 1. Exit and stop tasks
+    2. Move to background and exit
+    3. Stay
+
+  Enter to confirm · Esc to cancel
+
+$ fm-control.sh sb1 exit   (no flag)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fmsb.KVw39E/home
+error: task sb1 is blocked on a prompt: Claude background-task exit picker. Refusing to type Enter into it. To close a finished agent anyway, rerun with --stop-background, which confirms 'Exit and stop tasks' and so stops its background tasks.
+rc=1
+
+== screen after refusal ==
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Background work is running
+  The following will stop when you exit:
+
+  shell · Sleep for 948 seconds in background
+
+  ❯ 1. Exit and stop tasks
+    2. Move to background and exit
+    3. Stay
+
+  Enter to confirm · Esc to cancel
+== background sleep after refusal ==
+2825152 sleep 948

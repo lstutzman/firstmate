@@ -1,0 +1,32 @@
+== picker with row 2 selected ==
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Background work is running
+  The following will stop when you exit:
+
+  shell · Wait 949 seconds in background
+
+    1. Exit and stop tasks
+  ❯ 2. Move to background and exit
+    3. Stay
+
+  Enter to confirm · Esc to cancel
+
+$ fm-control.sh sb1 exit --stop-background
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fmsb.KVw39E/home
+error: task sb1's composer visibly holds pending text; refusing to type the /exit exit command because it would concatenate onto that text. Clear or submit the pending text, then retry 'exit'
+rc=1
+
+== screen after ==
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Background work is running
+  The following will stop when you exit:
+
+  shell · Wait 949 seconds in background
+
+    1. Exit and stop tasks
+  ❯ 2. Move to background and exit
+    3. Stay
+
+  Enter to confirm · Esc to cancel
+== background sleep after ==
+2963412 sleep 949

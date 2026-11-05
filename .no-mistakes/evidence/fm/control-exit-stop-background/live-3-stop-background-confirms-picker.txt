@@ -1,0 +1,31 @@
+== background sleep before ==
+2825152 sleep 948
+
+$ fm-control.sh sb1 exit --stop-background
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fmsb.KVw39E/home
+stopped background-tasks=stopped sb1 harness=claude backend=herdr endpoint=fm-lab-stopbg-2579483-9102:w1:p1 worktree=/tmp/fmsb.KVw39E/wt
+rc=0
+
+== screen after ==
+Resume this session with:
+claude --resume ad4f2a70-8acd-4f9e-b13f-f0174b2272fb
+lee@slartibartfast:/tmp/fmsb.KVw39E/wt$ CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude -
+-dangerously-skip-permissions
+
+Resume this session with:
+claude --dangerously-skip-permissions --resume 3c1d79ec-6c04-428c-a6ac-ec02d8f009f3
+lee@slartibartfast:/tmp/fmsb.KVw39E/wt$
+== background sleep after ==
+(gone)
+== claude processes in lab worktree ==
+(none)
+
+$ fm-control.sh sb1 exit --stop-background   (again, idempotent)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fmsb.KVw39E/home
+already-stopped sb1 harness=claude backend=herdr endpoint=fm-lab-stopbg-2579483-9102:w1:p1 worktree=/tmp/fmsb.KVw39E/wt
+rc=0
+
+$ fm-control.sh sb1 interrupt --stop-background
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fmsb.KVw39E/home
+error: --stop-background applies to 'exit' only
+rc=1

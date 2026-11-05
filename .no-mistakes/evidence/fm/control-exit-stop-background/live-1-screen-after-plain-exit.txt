@@ -1,0 +1,6 @@
+lee@slartibartfast:/tmp/fmsb.KVw39E/wt$ CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude -
+-dangerously-skip-permissions --settings '{"feedbackDrafts":"off"}'
+
+Resume this session with:
+claude --resume ad4f2a70-8acd-4f9e-b13f-f0174b2272fb
+lee@slartibartfast:/tmp/fmsb.KVw39E/wt$

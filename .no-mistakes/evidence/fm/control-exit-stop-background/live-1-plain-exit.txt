@@ -1,0 +1,4 @@
+$ fm-control.sh sb1 exit
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fmsb.KVw39E/home
+stopped sb1 harness=claude backend=herdr endpoint=fm-lab-stopbg-2579483-9102:w1:p1 worktree=/tmp/fmsb.KVw39E/wt
+rc=0
