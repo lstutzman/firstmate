@@ -1,0 +1,341 @@
+{
+ "actionable": 1,
+ "coverage": {
+  "captains_log": {
+   "state": "not-set"
+  },
+  "harvester_last_run": "2026-11-05T01:00:00+00:00",
+  "homes": [
+   {
+    "ledger": false,
+    "path": "/tmp/fric-live.JAHBeV/run2-head/home/fixturehost",
+    "status_logs": 0
+   }
+  ],
+  "hosts_expected": [
+   "alpha"
+  ],
+  "hosts_present": [
+   "alpha"
+  ],
+  "notes": [
+   "Home fixturehost keeps no fleet ledger, so status lines of tasks already cleaned up there are not read.",
+   "No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.",
+   "A worker that resumed in the wrong directory is found only while its task record survives."
+  ],
+  "sessions_analysed": 1
+ },
+ "date": "2026-11-04",
+ "events": [
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:live-04",
+   "signature": "gh: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "gh"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:live-04",
+   "signature": "hyperfine: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "hyperfine"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:live-04",
+   "signature": "rg: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "rg"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:live-04",
+   "signature": "shellcheck: command not found",
+   "sub": "tool",
+   "task": null,
+   "tool": "shellcheck"
+  },
+  {
+   "asks": [
+    {
+     "date": "2026-11-02",
+     "quote": "Make sure you always rebase the release branch before tagging it.",
+     "session": "alpha:live-02"
+    },
+    {
+     "date": "2026-11-03",
+     "quote": "Make sure you always rebase the release branch before tagging it.",
+     "session": "alpha:live-03"
+    },
+    {
+     "date": "2026-11-04",
+     "quote": "Make sure you always rebase the release branch before tagging it.",
+     "session": "alpha:live-04"
+    }
+   ],
+   "at": 1793786400,
+   "cause": "repeat-ask",
+   "kind": "repeat-ask",
+   "lee": true,
+   "measured_by": null,
+   "service": null,
+   "signature": "3 days: Make sure you always rebase the release branch before tagging it.",
+   "sub": "instruction",
+   "tool": null,
+   "topic": "before branch rebase release tagging",
+   "wait_s": null
+  }
+ ],
+ "findings": [
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "repeat-ask",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [
+     {
+      "date": "2026-11-02",
+      "quote": "Make sure you always rebase the release branch before tagging it.",
+      "session": "alpha:live-02"
+     },
+     {
+      "date": "2026-11-03",
+      "quote": "Make sure you always rebase the release branch before tagging it.",
+      "session": "alpha:live-03"
+     },
+     {
+      "date": "2026-11-04",
+      "quote": "Make sure you always rebase the release branch before tagging it.",
+      "session": "alpha:live-04"
+     }
+    ],
+    "cards": [],
+    "example": "3 days: Make sure you always rebase the release branch before tagging it.",
+    "sessions": [],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Turn the instruction into automatic work: a scheduled officer check, a hook, or a standing rule in captain-shared.md that firstmate applies without being told, and say so to Lee once.",
+   "id": "repeat-ask-instruction-before-branch-rebase-r-26679d53",
+   "kinds": {
+    "repeat-ask": 1
+   },
+   "lee_did": "repeat an instruction he has already given",
+   "lee_events": 1,
+   "lee_step": true,
+   "name": "before branch rebase release tagging",
+   "open": 0,
+   "owner": "main (firstmate)",
+   "reasks": 0,
+   "severity": 3,
+   "stated_causes": {},
+   "sub": "instruction",
+   "title": "Lee gives the same instruction on several days",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "unknown": 1
+   }
+  },
+  {
+   "carded": false,
+   "category": "tooling",
+   "cause": "missing-tool",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "gh: command not found",
+    "sessions": [
+     "alpha:live-04"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Add gh to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "id": "missing-tool-tool-gh",
+   "kinds": {
+    "agent-hit": 1
+   },
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "name": "gh",
+   "open": 0,
+   "owner": "alpha home",
+   "reasks": 0,
+   "severity": 2,
+   "stated_causes": {},
+   "sub": "tool",
+   "title": "A tool agents need is missing: gh",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  },
+  {
+   "carded": false,
+   "category": "tooling",
+   "cause": "missing-tool",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "hyperfine: command not found",
+    "sessions": [
+     "alpha:live-04"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Add hyperfine to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "id": "missing-tool-tool-hyperfine",
+   "kinds": {
+    "agent-hit": 1
+   },
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "name": "hyperfine",
+   "open": 0,
+   "owner": "alpha home",
+   "reasks": 0,
+   "severity": 2,
+   "stated_causes": {},
+   "sub": "tool",
+   "title": "A tool agents need is missing: hyperfine",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  },
+  {
+   "carded": false,
+   "category": "tooling",
+   "cause": "missing-tool",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "rg: command not found",
+    "sessions": [
+     "alpha:live-04"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Add rg to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "id": "missing-tool-tool-rg",
+   "kinds": {
+    "agent-hit": 1
+   },
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "name": "rg",
+   "open": 0,
+   "owner": "alpha home",
+   "reasks": 0,
+   "severity": 2,
+   "stated_causes": {},
+   "sub": "tool",
+   "title": "A tool agents need is missing: rg",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  },
+  {
+   "carded": false,
+   "category": "tooling",
+   "cause": "missing-tool",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "shellcheck: command not found",
+    "sessions": [
+     "alpha:live-04"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Add shellcheck to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "id": "missing-tool-tool-shellcheck",
+   "kinds": {
+    "agent-hit": 1
+   },
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "name": "shellcheck",
+   "open": 0,
+   "owner": "alpha home",
+   "reasks": 0,
+   "severity": 2,
+   "stated_causes": {},
+   "sub": "tool",
+   "title": "A tool agents need is missing: shellcheck",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  }
+ ],
+ "model": "none",
+ "officer_role": "friction",
+ "scorer": "friction-deterministic-v1"
+}

@@ -1,0 +1,121 @@
+{
+ "bottlenecks": [
+  {
+   "category": "waiting",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": "1 event(s) on 2026-11-04; e.g. 3 days: Make sure you always rebase the release branch before tagging it.; asked 2026-11-02 \"Make sure you always rebase the release branch before taggi…\"; 2026-11-03 \"Make sure you always rebase the release branch before taggi…\"; 2026-11-04 \"Make sure you always rebase the release branch before taggi…\"",
+   "id": "repeat-ask-instruction-before-branch-rebase-r-26679d53",
+   "impact": "Removes 1 Lee step(s) and not measured of agent waiting seen on 2026-11-04.",
+   "improvement": "Turn the instruction into automatic work: a scheduled officer check, a hook, or a standing rule in captain-shared.md that firstmate applies without being told, and say so to Lee once.",
+   "owner": "main (firstmate)",
+   "severity": 3,
+   "state": "open",
+   "time_saved": "not measured: 1 step(s) on 2026-11-04 with no recorded answer time",
+   "title": "Lee gives the same instruction on several days",
+   "tldr": "before branch rebase release tagging: Lee had to repeat an instruction he has already given: 1 time(s) on 2026-11-04; agents waited not measured."
+  },
+  {
+   "category": "tooling",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": "1 event(s) on 2026-11-04; sessions alpha:live-04; e.g. gh: command not found",
+   "id": "missing-tool-tool-gh",
+   "impact": "Removes 0 Lee step(s) and not measured of agent waiting seen on 2026-11-04.",
+   "improvement": "Add gh to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "owner": "alpha home",
+   "severity": 2,
+   "state": "open",
+   "time_saved": "not measured: 1 step(s) on 2026-11-04 with no recorded answer time",
+   "title": "A tool agents need is missing: gh",
+   "tldr": "Agents hit this 1 time(s) on 2026-11-04 and worked around it."
+  },
+  {
+   "category": "tooling",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": "1 event(s) on 2026-11-04; sessions alpha:live-04; e.g. hyperfine: command not found",
+   "id": "missing-tool-tool-hyperfine",
+   "impact": "Removes 0 Lee step(s) and not measured of agent waiting seen on 2026-11-04.",
+   "improvement": "Add hyperfine to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "owner": "alpha home",
+   "severity": 2,
+   "state": "open",
+   "time_saved": "not measured: 1 step(s) on 2026-11-04 with no recorded answer time",
+   "title": "A tool agents need is missing: hyperfine",
+   "tldr": "Agents hit this 1 time(s) on 2026-11-04 and worked around it."
+  },
+  {
+   "category": "tooling",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": "1 event(s) on 2026-11-04; sessions alpha:live-04; e.g. rg: command not found",
+   "id": "missing-tool-tool-rg",
+   "impact": "Removes 0 Lee step(s) and not measured of agent waiting seen on 2026-11-04.",
+   "improvement": "Add rg to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "owner": "alpha home",
+   "severity": 2,
+   "state": "open",
+   "time_saved": "not measured: 1 step(s) on 2026-11-04 with no recorded answer time",
+   "title": "A tool agents need is missing: rg",
+   "tldr": "Agents hit this 1 time(s) on 2026-11-04 and worked around it."
+  },
+  {
+   "category": "tooling",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": "1 event(s) on 2026-11-04; sessions alpha:live-04; e.g. shellcheck: command not found",
+   "id": "missing-tool-tool-shellcheck",
+   "impact": "Removes 0 Lee step(s) and not measured of agent waiting seen on 2026-11-04.",
+   "improvement": "Add shellcheck to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "owner": "alpha home",
+   "severity": 2,
+   "state": "open",
+   "time_saved": "not measured: 1 step(s) on 2026-11-04 with no recorded answer time",
+   "title": "A tool agents need is missing: shellcheck",
+   "tldr": "Agents hit this 1 time(s) on 2026-11-04 and worked around it."
+  }
+ ],
+ "cost_usd": 0,
+ "evidence": [
+  {
+   "detail": "1 session(s) analysed; harvester last ran 2026-11-05T01:00:00+00:00",
+   "name": "session archive",
+   "state": "read"
+  },
+  {
+   "detail": "0 task log(s); fleet ledger absent",
+   "name": "status logs fixturehost",
+   "state": "read"
+  },
+  {
+   "detail": "Not read: the registry line sets no captains-log URL; counted from status logs only.",
+   "name": "Captain's Log",
+   "state": "missing"
+  }
+ ],
+ "generated_at": "2026-11-05T05:00:00Z",
+ "notes": [
+  "Home fixturehost keeps no fleet ledger, so status lines of tasks already cleaned up there are not read.",
+  "No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.",
+  "A worker that resumed in the wrong directory is found only while its task record survives."
+ ],
+ "outcome": "ok",
+ "run_id": "friction-20261104",
+ "schema_version": 1,
+ "source": "friction-officer",
+ "summary": "5 friction event(s), 1 naming Lee; 5 finding(s), 1 carded.",
+ "totals": {
+  "events": 5,
+  "findings": 5
+ },
+ "window": {
+  "from": "2026-11-04T00:00:00Z",
+  "to": "2026-11-05T00:00:00Z"
+ }
+}
