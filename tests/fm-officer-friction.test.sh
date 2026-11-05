@@ -1222,6 +1222,12 @@ test_fixed_reported_again_and_settled_states() {
     "an unmerged task opened after a merged fix reads as started with its own task and link"
   assert_equals "0" "$(jq '[.start_requests[] | select(.id == "lee-command-run")] | length' "$json")" \
     "and no duplicate start is requested while it is in flight"
+
+  # A backlog line naming no task or pull request cannot merge, so after a merged fix it is no start.
+  printf -- '- [x] fix-jdk2 - fix missing-tool-tool-openjdk again https://github.com/o/r/pull/31\n  - also covers friction-missing-tool-tool-openjdk hook text\n' >> "$home/data/backlog.md"
+  run_officer "$home" >/dev/null || fail "run with a task-less sub-bullet must succeed"
+  assert_equals 'fixed []' "$(state_of missing-tool-tool-openjdk '"\(.state) \(.actions | tojson)"')" \
+    "a task-less sub-bullet under a merged task line leaves the finding fixed, not started with a reopen"
   pass "fm-officer friction: fixed, reported-again and settled findings carry their link, merge, rule and actions"
 }
 

@@ -1774,7 +1774,8 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=()):
                 url = URL_RE.search(line)
                 task = m.group(1) if m else None
                 hits.append({"link": url.group(0).rstrip(".,)") if url else (task_link(home, task) if task else None),
-                             "task": task, "at": None, "tracked": True})
+                             "task": task, "at": None,
+                             "tracked": bool(task or (url and PULL_URL_RE.match(url.group(0))))})
         for home in homes:
             for task, meta in sorted(home.metas.items()):
                 if rx.search((meta.get("branch") or "").lower()):
