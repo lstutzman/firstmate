@@ -144,7 +144,7 @@ stub_sleep() {
 }
 
 run_progress() {
-  PROGRESS_WORLD="$WORLD" PATH="$FAKEBIN:$PATH" FM_HOME="$WORLD_HOME" FM_OFFICER_NOW="$NOW" \
+  FM_LOCAL_JEV="$WORLD/local-jev.py" PROGRESS_WORLD="$WORLD" PATH="$FAKEBIN:$PATH" FM_HOME="$WORLD_HOME" FM_OFFICER_NOW="$NOW" \
     bash "$OFFICER" run progress --date "$DATE"
 }
 
@@ -1008,6 +1008,140 @@ MD
   pass 'progress: start-home sends each request to the office that dispatches its project'
 }
 
+test_start_home_routes_project_less_asks_by_scope() {
+  make_world scope
+  cat > "$WORLD/local-jev.py" <<'PY'
+import os, sys
+text = sys.stdin.read()
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "jev-calls"), "a").write(sys.argv[1] + " [" + sys.argv[2] + "]: " + text + "\n")
+options = [a.split("=", 1)[0] for a in sys.argv if "=" in a and not a.startswith("-")]
+if "DOWN" in text:
+    sys.exit(3)
+if "GARBAGE" in text:
+    print("not json")
+    sys.exit(0)
+if sys.argv[1] == "noul":
+    question = sys.argv[2]
+    if "agent fleet" in question:
+        value = 0.05 if "tea" in text or "holiday" in text else (0.25 if "LOWSCOPE" in text else 0.6)
+    elif "pricing, legal text" in question:
+        value = 0.93 if "price" in text else 0.02
+    else:
+        value = 0.91 if "LEEASK" in text else 0.1
+    print('{"type":"noul","noul":%s}' % value)
+    sys.exit(0)
+if "main" in options:
+    sys.exit(4)
+label, confidence = "quartermaster", 0.3
+for mark, wanted, conf in (("HIGHNAV", "navigator", 0.91), ("HIGHQM", "quartermaster", 0.88),
+                           ("LOWQM", "quartermaster", 0.55), ("holiday", "quartermaster", 0.8),
+                           ("tea", "navigator", 0.76), ("price", "navigator", 0.9)):
+    if mark in text and wanted in options:
+        label, confidence = wanted, conf
+print('{"type":"choice","choice":"%s","confidence":%s}' % (label, confidence))
+PY
+  : > "$WORLD/jev-calls"
+  local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json" office dir
+  : > "$WORLD_HOME/data/secondmates.md"
+  : > "$WORLD_HOME/data/offices.md"
+  for office in navigator:PropertyCompass2 quartermaster:firstmate,skills,fleet-app; do
+    dir="$WORLD/${office%%:*}"
+    officer_home "$dir"
+    printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
+    printf '%s\n' "${office%%:*}" > "$dir/.fm-office"
+    printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$WORLD_HOME" > "$dir/.fm-secondmate-parent"
+    printf -- '- %s - office (home: %s; scope: office; projects: %s; added 2026-11-04)\n' "${office%%:*}" "$dir" "${office#*:}" >> "$WORLD_HOME/data/secondmates.md"
+    printf -- '- %s - Works the %s mandate (role: %s; dispatch: %s; sources: tick,lane:progress; added 2026-11-04)\n' "${office%%:*}" "${office%%:*}" "${office%%:*}" "${office#*:}" >> "$WORLD_HOME/data/offices.md"
+    FM_HOME="$dir" "$ROOT/bin/fm-office.sh" register-sources >/dev/null || fail "register-sources must succeed in the ${office%%:*} home"
+  done
+  sed -i 's/model: none;/start-home: navigator,quartermaster; model: none;/' "$WORLD_HOME/data/officers.md"
+  printf '## Queued\n\n- [ ] linked - Repair the linked report (kind: bug) (linear: PC-90)\n' > "$WORLD_HOME/data/backlog.md"
+  linear_item PC-3504 'Fleet rules'
+  cp "$WORLD/linear/list.json" "$WORLD/fleet-rules.json"
+  linear_item PC-91 'Search revamp ranking'
+  jq '.data.issues[0].project = "Search revamp"' "$WORLD/linear/list.json" > "$WORLD/linear-project.json"
+  jq '.data.issue.project = "Search revamp"' "$WORLD/linear/PC-91.json" > "$WORLD/linear-project-issue.json"
+  mv "$WORLD/linear-project-issue.json" "$WORLD/linear/PC-91.json"
+  linear_item PC-90 'Bug: linked report'
+  jq -s '.[0].data.issues += .[1].data.issues + .[2].data.issues | .[0]' "$WORLD/linear/list.json" "$WORLD/fleet-rules.json" "$WORLD/linear-project.json" > "$WORLD/list.json.new"
+  mv "$WORLD/list.json.new" "$WORLD/linear/list.json"
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[
+ {"id":"rules","words":"Finish the fleet rules PC-3504 in the skills repo","status":"not-started","work":[],"links":[]},
+ {"id":"ranked","words":"Get PC-91 done","status":"not-started","work":[],"links":[]},
+ {"id":"pc-link","words":"Tidy the listings page","status":"not-started","work":[],"links":[{"url":"https://github.com/lstutzman/PropertyCompass2/pull/5"}]},
+ {"id":"skills-link","words":"Tidy the guides","status":"not-started","work":[],"links":[{"url":"https://github.com/lstutzman/skills/issues/3"}]},
+ {"id":"app-link","words":"Tidy the dashboard","status":"not-started","work":[],"links":[{"url":"https://github.com/lstutzman/fleet-app"}]},
+ {"id":"fm-text","words":"The firstmate wake queue needs a tidy","status":"not-started","work":[],"links":[]},
+ {"id":"pc-text","words":"Property Compass needs faster search","status":"not-started","work":[],"links":[]},
+ {"id":"link-first","words":"Tidy the pile and Property Compass","status":"not-started","work":[],"links":[{"url":"https://github.com/lstutzman/firstmate/pull/9"}]},
+ {"id":"both","words":"Align PropertyCompass2 with firstmate naming","status":"not-started","work":[],"links":[]},
+ {"id":"other-repo","words":"Try the new toy","status":"not-started","work":[],"links":[{"url":"https://github.com/example/toy"}]},
+ {"id":"bare","words":"Make the tea better","status":"not-started","work":[],"links":[]},
+ {"id":"fix-tap","words":"Start fix: Make the tea better","status":"not-started","work":[],"links":[]},
+ {"id":"fix-tap-pc","words":"Start fix: Property Compass tea is slow","status":"not-started","work":[],"links":[]},
+ {"id":"jev-nav","words":"HIGHNAV tidy the search","status":"not-started","work":[],"links":[]},
+ {"id":"jev-qm","words":"HIGHQM tidy the queue","status":"not-started","work":[],"links":[]},
+ {"id":"jev-low","words":"LOWQM maybe tidy the queue","status":"not-started","work":[],"links":[]},
+ {"id":"jev-main","words":"HIGHQM LEEASK approve it","status":"not-started","work":[],"links":[]},
+ {"id":"holiday","words":"Research holiday flights for March","status":"not-started","work":[],"links":[]},
+ {"id":"price","words":"Change the premium price to £12","status":"not-started","work":[],"links":[]},
+ {"id":"low-scope","words":"HIGHQM LOWSCOPE tidy the queue","status":"not-started","work":[],"links":[]},
+ {"id":"pc-price","words":"Raise the PropertyCompass2 annual plan price","status":"not-started","work":[],"links":[]},
+ {"id":"pc-hold","words":"PropertyCompass2 calendar export is not ready yet, LEEASK hold it","status":"not-started","work":[],"links":[]},
+ {"id":"fix-lee","words":"Start fix: LEEASK sort the wake queue","status":"not-started","work":[],"links":[]},
+ {"id":"fix-price","words":"Start fix: set the trial price lower","status":"not-started","work":[],"links":[]}
+]}
+JSON
+  run_progress >/dev/null || fail 'a run with two start-home offices must succeed'
+  routed() { jq -r --arg id "$1" '.start_requests[] | select(.id == $id) | .execute.env.FM_HOME' "$file"; }
+  local nav="$WORLD/navigator" qm="$WORLD/quartermaster" id
+  assert_equals "$nav" "$(routed pc-link)" 'a PropertyCompass2 link goes to the PropertyCompass2 office'
+  assert_equals "$qm" "$(routed skills-link)" 'a skills link goes to the fleet office'
+  assert_equals "$qm" "$(routed app-link)" 'a fleet-app link goes to the fleet office'
+  assert_equals "$nav" "$(routed linked)" 'a PC Linear id goes to the PropertyCompass2 office'
+  assert_equals "$qm" "$(routed fm-text)" 'a project name in the words goes to the office that dispatches it'
+  assert_equals "$nav" "$(routed pc-text)" 'a spaced project name in the words matches'
+  assert_equals "$qm" "$(routed link-first)" 'a linked repository outranks a project name in the words'
+  assert_equals "$qm" "$(routed fix-tap)" 'a Start fix tap goes to the office with the quartermaster role'
+  assert_equals "$nav" "$(routed fix-tap-pc)" 'a Start fix tap that names a project goes to that project office'
+  assert_equals "$qm" "$(routed PC-3504)" 'a project name in an ask outranks the team Linear id it joins'
+  assert_equals "$nav" "$(routed PC-91)" 'an ask joined to a Linear item in a Linear project goes by its team Linear id'
+  assert_equals "$nav" "$(routed jev-nav)" 'a confident local-jev label routes to that office'
+  assert_equals "$qm" "$(routed low-scope)" 'a scope score above the low bar still routes'
+  assert_equals "$qm" "$(routed jev-qm)" 'a confident local-jev label routes to the fleet office'
+  assert_equals "$qm" "$(routed fix-lee)" 'a Start fix tap is never held as a constraint, since the captain started it'
+  for id in both other-repo bare jev-low jev-main holiday price pc-price pc-hold fix-price; do
+    assert_equals "FM_HOME=$WORLD_HOME" "$(request_home "$lane/$DATE.start-requests.sh" "$id")" "$id stays with this home"
+  done
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "both") | .unrouted' "$file")" 'ambiguous' 'an ask that fits two offices is reported as ambiguous'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "jev-low") | .unrouted' "$file")" 'local-jev unsure: quartermaster at 0.55' 'a low-confidence label stays with this home and names the confidence'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "jev-main") | .unrouted' "$file")" 'a constraint, answer or decision for Lee, not a request for work (0.91)' 'a confident office pick still stays with main when the ask is for Lee himself'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "bare") | .unrouted' "$file")" 'fits no office scope (0.05' 'an ask that is neither app nor fleet work stays with this home even after a confident office pick'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "holiday") | .unrouted' "$file")" 'fits no office scope (0.05' 'an out-of-scope request for work stays with this home and is reported'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "price") | .unrouted' "$file")" 'changes pricing, legal text, payments or spending, which Lee decides (0.93)' 'a pricing change is held for Lee even when it is app work'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "pc-price") | .unrouted' "$file")" 'changes pricing, legal text, payments or spending, which Lee decides (0.93)' 'a pricing change that names a project is held for Lee'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "pc-hold") | .unrouted' "$file")" 'a constraint, answer or decision for Lee, not a request for work (0.91)' 'a constraint that names a project is not started'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "fix-price") | .unrouted' "$file")" 'changes pricing, legal text, payments or spending, which Lee decides (0.93)' 'a pricing Start fix tap is held for Lee'
+  assert_equals '' "$(grep -c ' - ' "$WORLD/jev-calls" | grep -v '^0$')" 'local-jev is sent only the ask words, never record ids'
+  assert_not_contains "$(cat "$WORLD/jev-calls")" 'Top of Mind' 'no Top of Mind record text goes to local-jev'
+  assert_not_contains "$(grep -E '^(choice|noul \[Does this concern)' "$WORLD/jev-calls")" 'listings page' 'an ask the evidence placed is never sent to the office or scope questions'
+  assert_not_contains "$(grep -E '^(choice|noul \[Does this concern)' "$WORLD/jev-calls")" 'Start fix' 'an ask its source placed is never sent to the office or scope questions'
+  assert_contains "$(grep '^noul \[Is this a change to pricing' "$WORLD/jev-calls")" 'listings page' 'an ask the evidence placed still gets the pricing check'
+  assert_not_contains "$(grep '^noul \[Which is this' "$WORLD/jev-calls")" 'Start fix' 'a Start fix tap skips the not-a-start check'
+  assert_equals 'null' "$(jq -r '.start_requests[] | select(.id == "pc-link") | .unrouted' "$file")" 'a routed ask carries no unrouted reason'
+  assert_contains "$(cat "$lane/$DATE.md")" 'unrouted, stays with this home: ambiguous' 'the Markdown digest lists the unrouted ask'
+  assert_equals '25' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all twenty-four asks and the backlog row become addressed requests'
+  assert_equals '0' "$(jq '.excluded | length' "$file")" 'no ask is dropped'
+  printf '{"rows":[{"id":"d1","words":"DOWN first ask","status":"not-started","work":[],"links":[]},{"id":"d2","words":"DOWN second ask","status":"not-started","work":[],"links":[]},{"id":"d3","words":"GARBAGE third ask","status":"not-started","work":[],"links":[]},{"id":"d4","words":"DOWN tidy the PropertyCompass2 export","status":"not-started","work":[],"links":[]}]}\n' > "$WORLD/top-of-mind.json"
+  : > "$WORLD/jev-calls"
+  run_progress >/dev/null || fail 'an unreachable local-jev must never fail the run'
+  assert_equals '1' "$(grep -cE 'DOWN|GARBAGE' "$WORLD/jev-calls")" 'after local-jev fails the run stops asking it'
+  assert_equals 'local-jev unavailable' "$(jq -r '[.start_requests[] | select(.id | test("^d[1-4]$")) | .unrouted[:21]] | unique[0]' "$file")" 'an unreachable local-jev leaves the asks with this home and says why'
+  assert_equals '4 4' "$(jq -r '[.start_requests[] | select(.id | test("^d[1-4]$"))] | "\(length) \([.[] | select(.execute.env.FM_HOME == "'"$WORLD_HOME"'")] | length)"' "$file")" 'every ask is still addressed to this home'
+  pass 'progress: project-less asks route to the office their own evidence names, else stay with this home and are reported'
+}
+
 test_remote_home_and_missing_home() {
   make_world remote
   local other="$WORLD/remote-home" file="$WORLD_HOME/data/officers/progress/$DATE.json"
@@ -1379,5 +1513,6 @@ test_linear_free_text_source
 test_linear_block_and_model_boundary
 test_state_schema_and_idempotence
 test_executable_start_requests
+test_start_home_routes_project_less_asks_by_scope
 test_remote_home_and_missing_home
 test_fleet_app_page_schema

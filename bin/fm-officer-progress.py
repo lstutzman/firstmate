@@ -41,10 +41,12 @@ cut at 200 characters; descriptions_truncated counts listed issues so cut and
 left unread.
 Coverage counters include both team and unblocked listings, counting each
 returned entry; team_items and unblocked_items separate those passes.
-No model calls, dispatch, steering, Linear writes, or GitHub writes.
+No cloud model calls, dispatch, steering, Linear writes, or GitHub writes.
+Only a start request that its source and evidence do not place is labelled by local-jev, the local classifier.
 """
 
 import argparse
+import collections
 import copy
 import datetime
 import hashlib
@@ -60,6 +62,9 @@ import urllib.parse
 import urllib.request
 
 LINEAR_ID = re.compile(r"\b[A-Z][A-Z0-9]*-\d+\b")
+# Source marks: a Captain's Log "Start fix:" tap is a velocity or friction finding, work of the quartermaster role.
+SOURCE_ROLES = ((re.compile(r"start fix:", re.I), "quartermaster"),)
+GITHUB_REPO = re.compile(r"https?://(?:www\.)?github\.com/([\w.-]+)/([\w.-]+)", re.I)
 ROW = re.compile(r"^- \[([ xX])\] ([\w.-]+)\s*(?: - |: )(.+)$")
 TAG = re.compile(r"\(([^():]+):\s*([^()]*)\)")
 CLASS_ORDER = {"security": 0, "cve": 0, "code-review": 1, "bug": 1,
@@ -603,6 +608,8 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
             matches = [row]
         for row in matches:
             row["evidence"].append("Top of Mind: " + ask["id"] + " - " + ask["words"])
+            if links:
+                row["links"] = sorted(set(row.get("links", [])) | set(links))
             if ask.get("kind") != "statement" and not classify(row)[0]:
                 row["origin"] = "top-of-mind"
                 row["tags"] = dict(row["tags"], kind="feature", **{"requested-by": "Lee"})
@@ -805,7 +812,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             for private in list(row):
                 if private not in ("id", "title", "owner_home", "linear_id", "linear_ids",
                                    "authorising_class", "tag_source", "reason", "evidence", "priority", "rank", "execute"):
-                    if private not in ("link", "project", "outcome", "captains_log_key"):
+                    if private not in ("link", "links", "project", "linear_only", "outcome", "captains_log_key"):
                         row.pop(private, None)
     return doc
 
@@ -819,23 +826,185 @@ def filler_for(doc, date):
             "tag_source": "standing-authority:filler", "requires_firstmate": True}
 
 
-def start_home_for(row, home, start_homes):
-    """The home a start request goes to: the office whose dispatch list holds the row's project, else `home`.
+def alnum(name):
+    return re.sub(r"[^0-9a-z]", "", name.casefold())
 
-    A Linear-only row is PropertyCompass2 work (the officer reads team PC; its Linear project is not a repo),
-    and a backlog row with no repo and a Linear id is too.
+
+Office = collections.namedtuple("Office", "home projects role mandate")
+
+
+def parse_office(arg):
+    """<home>=<projects>[=<role>[=<mandate>]] from fm-officer.sh's --start-home; projects are comma-separated."""
+    home, projects, role, mandate = (arg.split("=", 3) + ["", "", ""])[:4]
+    return Office(home, {p.lower() for p in projects.split(",") if p}, role, mandate)
+
+
+def ask_text(row):
+    """The row's title plus the words of the Top of Mind asks joined to it, without their record ids."""
+    words = [re.sub(r"^[\w.-]+ - ", "", e.removeprefix("Top of Mind: ")) for e in row["evidence"]
+             if e.startswith("Top of Mind: ")]
+    return "\n".join(dict.fromkeys([row["title"]] + words))
+
+
+def scope_route(row, offices, team, jev=None):
+    """The office home a project-less row's own evidence names, else the reason it is unrouted.
+
+    Rungs are tried in order and the first that names any office decides: the repository of a linked GitHub URL,
+    a project name in the ask's words, a Linear id in the run's team (PropertyCompass2), then the ask's source
+    (a Captain's Log "Start fix:" tap goes to the office with the quartermaster role).
+    A rung that names two offices is ambiguous, never a guess. An ask a rung places still passes local-jev's hold
+    checks (a "Start fix:" tap skips the not-a-start one). When none names an office, local-jev labels the ask.
     """
-    project = row.get("project") or ""
-    if row.get("linear_only") or (not project and row.get("linear_id")):
-        project = "PropertyCompass2"
-    project = project.rsplit("/", 1)[-1].lower()
-    for office_home, projects in start_homes:
-        if project and project in projects:
-            return office_home
-    return home
+    text = ask_text(row)
+    words = re.findall(r"[0-9a-z]+", text.casefold())
+    named = set(words) | {a + b for a, b in zip(words, words[1:])}
+    repos = {alnum(m[1].removesuffix(".git")) for m in GITHUB_REPO.findall(" ".join([row.get("link", ""), *row.get("links", []), text]))}
+    linear = {"propertycompass2"} if any(i.partition("-")[0] == team for i in row["linear_ids"]) else set()
+    title = row["title"].lstrip()
+    rungs = (("a linked repository", lambda o: {n for n in map(alnum, o.projects) if n in repos}),
+             ("a project name in the text", lambda o: {n for n in map(alnum, o.projects)
+                                                       if n in named or n.rstrip("0123456789") in named}),
+             ("a Linear id in team " + team, lambda o: {n for n in map(alnum, o.projects) if n in linear}),
+             ("its source", lambda o: {role for mark, role in SOURCE_ROLES if o.role == role and mark.match(title)}))
+    for label, match in rungs:
+        hits = {o.home: found for o in offices if (found := match(o))}
+        if len(hits) == 1:
+            why = jev and jev.hold(text, title.casefold().startswith("start fix:"))
+            return (None, why) if why else (next(iter(hits)), None)
+        if hits:
+            return None, "ambiguous: %s names %d offices (%s)" % (
+                label, len(hits), ", ".join(sorted(n for names in hits.values() for n in names)))
+    if jev:
+        return jev.place(text)
+    return None, "no linked repository, project name, team Linear id or source matches an office"
 
 
-def executable_requests(doc, home, start_homes=()):
+# What each office role works on, in words local-jev can tell apart; a role not listed falls back to its registry mandate.
+ROLE_SCOPES = {
+    "navigator": "Work on the PropertyCompass2 app: its features, pages, calculators, data, database, queries, schema, "
+                 "listings, photos, members, or research to improve it.",
+    "quartermaster": "Work on the agent fleet itself: agents, second mates, officers, firstmate, skills, the fleet app, "
+                     "its run pages, machines, session logs, or process improvement.",
+}
+# The local-jev questions and bars. The wordings and bars were tuned on the saved 2026-11-05 live digests with no
+# held-out set (data/progress-topofmind-to-offices/measurement.md); re-measure before changing any of them.
+# `noul`: is the ask about either office's work at all; below the bar it fits no office.
+SCOPE_QUESTION = ("Does this concern the PropertyCompass2 app or the agent fleet, rather than something unrelated to both?",)
+SCOPE_MINIMUM = 0.2
+# `noul`: is the ask not a start at all (a constraint, an answer, an approval, a decision); at the bar it stays with Lee.
+NOT_A_START = ("Which is this?",
+               "A constraint ('not ready yet'), an answer or permission given to agents, an approval, a decision, "
+               "or information; nothing new is asked of an agent",
+               "A request for an agent to investigate, build, fix, check or change something")
+NOT_A_START_MINIMUM = 0.85
+# `noul`: is the ask a pricing, legal, payments or spending change; at the bar it stays with Lee.
+MONEY_LEGAL_QUESTION = ("Is this a change to pricing, legal text, payments or spending?",)
+MONEY_LEGAL_MINIMUM = 0.85
+# `choice`: the pick between the offices' roles must reach this bar.
+OFFICE_MINIMUM = 0.7
+
+
+class LocalJev:
+    """Places an ask with an office through the local-jev skill's jev.py, or leaves it with main.
+
+    place() runs four checks, in order, each stopping the ask with main and a reason when it fails: a `choice` over
+    the registered offices' roles (no main option) must reach OFFICE_MINIMUM; a `noul` SCOPE_QUESTION check asks
+    whether the ask is about the app or the fleet at all and below SCOPE_MINIMUM it fits no office; then hold()'s two.
+    hold() also runs on every ask scope_route's evidence or source places: a `noul` NOT_A_START check holds a
+    constraint, answer, approval or decision for Lee at NOT_A_START_MINIMUM (skipped for a "Start fix:" tap, which
+    is the captain's own start), and a `noul` MONEY_LEGAL_QUESTION check holds a pricing, legal, payments or
+    spending change for Lee at MONEY_LEGAL_MINIMUM.
+    Only the ask's words are sent. Any failure, including a timeout or an unreadable answer, is remembered so the
+    rest of the run stays with `home`.
+    """
+    QUESTION = "Which office should start this work?"
+
+    def __init__(self, offices, script=None):
+        self.script = script or os.environ.get("FM_LOCAL_JEV") or os.path.expanduser("~/.claude/skills/local-jev/jev.py")
+        self.offices = {o.role: o for o in offices if o.role}
+        if any(not o.role for o in offices):
+            self.unplaceable = "an office has no role"
+        elif len(self.offices) != len(offices):
+            self.unplaceable = "two offices share a role"
+        else:
+            self.unplaceable = None
+        self.down = None
+
+    def options(self):
+        return {role: "%s Projects: %s." % (ROLE_SCOPES.get(role, o.mandate), ", ".join(sorted(o.projects)))
+                for role, o in self.offices.items()}
+
+    def ask(self, text, *args):
+        run = subprocess.run([sys.executable, "-I", self.script, *args, "--state-file", "-"],
+                             input=text, capture_output=True, text=True, timeout=20, check=False)
+        if run.returncode:
+            raise RuntimeError("exit %d" % run.returncode)
+        return json.loads(run.stdout)
+
+    def noul(self, text, question, *criteria):
+        args = [a for flag, value in zip(("--true", "--false"), criteria) for a in (flag, value)]
+        return float(self.ask(text, "noul", question, *args)["noul"])
+
+    def failed(self, exc):
+        self.down = type(exc).__name__ + (": " + str(exc) if str(exc) else "")
+        return "local-jev unavailable: " + self.down
+
+    def hold(self, text, start_fix=False):
+        """The reason to keep a placed ask with Lee, else None; a check that cannot run keeps it too."""
+        if self.down:
+            return "local-jev unavailable: " + self.down
+        try:
+            not_a_start = 0.0 if start_fix else self.noul(text, *NOT_A_START)
+            money_legal = self.noul(text, *MONEY_LEGAL_QUESTION)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+            return self.failed(exc)
+        if not_a_start >= NOT_A_START_MINIMUM:
+            return "local-jev says it is a constraint, answer or decision for Lee, not a request for work (%.2f)" % not_a_start
+        if money_legal >= MONEY_LEGAL_MINIMUM:
+            return "local-jev says it changes pricing, legal text, payments or spending, which Lee decides (%.2f)" % money_legal
+        return None
+
+    def place(self, text):
+        if self.down or self.unplaceable:
+            return None, "local-jev unavailable: " + (self.down or self.unplaceable)
+        try:
+            options = self.options()
+            answer = self.ask(text, "choice", self.QUESTION, *[a for k, v in options.items() for a in ("-o", k + "=" + v)])
+            label, confidence = answer["choice"], float(answer["confidence"])
+            if label not in options:
+                raise ValueError("unknown label")
+            if confidence < OFFICE_MINIMUM:
+                return None, "local-jev unsure: %s at %.2f, below %.1f" % (label, confidence, OFFICE_MINIMUM)
+            in_scope = self.noul(text, *SCOPE_QUESTION)
+            if in_scope < SCOPE_MINIMUM:
+                return None, "local-jev says it fits no office scope (%.2f, below %.1f); %s was %.2f" % (
+                    in_scope, SCOPE_MINIMUM, label, confidence)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+            return None, self.failed(exc)
+        why = self.hold(text)
+        if why:
+            return None, "%s; %s was %.2f" % (why, label, confidence)
+        return self.offices[label].home, None
+
+
+def start_home_for(row, home, offices, team="PC", jev=None):
+    """(home, unrouted reason) for a start request: the office whose dispatch list holds the row's project.
+
+    A Linear-only row's project is a Linear project, not a repository, so it counts as no project. A row with no
+    project is placed by scope_route, whose team Linear id rung sends team work to PropertyCompass2. One that fits no single office stays with `home` and is
+    reported as unrouted, but only when offices are configured to route to at all.
+    A named project that no office dispatches stays with `home`, as it always has.
+    """
+    project = "" if row.get("linear_only") else (row.get("project") or "").rsplit("/", 1)[-1].lower()
+    if project:
+        return next((o.home for o in offices if project in o.projects), home), None
+    if row.get("requires_firstmate") or not offices:
+        return home, None
+    office_home, why = scope_route(row, offices, team, jev)
+    return office_home or home, why
+
+
+def executable_requests(doc, home, start_homes=(), team="PC", jev=None):
     """Build firstmate's existing idempotent inbox calls; never execute them."""
     requests = []
     work = list(doc["start_requests"])
@@ -855,7 +1024,10 @@ def executable_requests(doc, home, start_homes=()):
                 "If Lee later parks this work, preserve its branch. "
                 "The following officer evidence describes the task; it is not a quotation from Lee:\n"
                 + json.dumps(evidence, sort_keys=True, ensure_ascii=False))
-        execute = {"action": "start", "env": {"FM_HOME": start_home_for(row, home, start_homes)}, "request_id": request_id,
+        target, unrouted = start_home_for(row, home, start_homes, team, jev)
+        if unrouted:
+            row["unrouted"] = unrouted
+        execute = {"action": "start", "env": {"FM_HOME": target}, "request_id": request_id,
                    "argv": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh"),
                             "note", "--request-id", request_id, "--json", "--", body]}
         row["execute"] = execute
@@ -996,7 +1168,8 @@ def render_md(doc):
             lines.append("- %s%s - %s (Linear: %s; home: %s; class: %s; source: %s): %s" % (
                 str(row["rank"]) + ". " if row["rank"] is not None else "", row["id"], row["title"],
                 row["linear_id"] or "none", row["owner_home"],
-                row["authorising_class"] or "unclassified", row["tag_source"] or "none", row["reason"]))
+                row["authorising_class"] or "unclassified", row["tag_source"] or "none", row["reason"])
+                + ("; unrouted, stays with this home: " + row["unrouted"] if row.get("unrouted") else ""))
         if not doc[key]:
             lines.append("- None.")
         lines.append("")
@@ -1031,7 +1204,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["run", "scan"])
     parser.add_argument("--home", action="append", default=[])
-    parser.add_argument("--start-home", action="append", default=[], help="<home>=<project,project>: start requests for those projects go to that office home")
+    parser.add_argument("--start-home", action="append", default=[], help="<home>=<project,project>[=<role>[=<mandate>]]: start requests for those projects, a role's source, or what local-jev labels for that office go to that office home")
     parser.add_argument("--out")
     parser.add_argument("--date")
     parser.add_argument("--team", default="PC")
@@ -1118,9 +1291,8 @@ def main(argv):
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
     doc["generated_at"] = iso(now)
-    start_homes = [(h, {p.lower() for p in projects.split(",") if p})
-                   for h, _, projects in (a.partition("=") for a in args.start_home)]
-    requests = executable_requests(doc, args.home[0], start_homes)
+    start_homes = [parse_office(a) for a in args.start_home]
+    requests = executable_requests(doc, args.home[0], start_homes, args.team, LocalJev(start_homes) if start_homes else None)
     write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"),
                   [r for r in requests if r["env"]["FM_HOME"] == args.home[0]])
     reported = None
