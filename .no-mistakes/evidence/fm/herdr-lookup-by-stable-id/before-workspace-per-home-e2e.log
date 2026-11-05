@@ -1,0 +1,13 @@
+ok - real herdr E2E: a primary-shaped home spawns a crewmate on the herdr backend
+ok - real herdr E2E: the primary-shaped home's crewmate landed in the 'firstmate' workspace
+ok - real herdr E2E: the primary spawns a --secondmate task on the herdr backend
+ok - real herdr E2E: a --secondmate spawn by the PRIMARY lands in the SECONDMATE's own labeled workspace, distinct from the primary's
+ok - real herdr E2E: a crewmate spawns successfully FROM a secondmate-shaped home's own fm-spawn.sh process
+ok - real herdr E2E: a crewmate spawned FROM the secondmate-shaped home lands in the secondmate's OWN workspace - falls out of per-home resolution, no glue needed
+not ok - an office's own tab should carry its bare role name, got 'fm-e2eqm'
+fm-herdr-lab: missing fleet-state tripwire for 'fm-lab-herdr-e2e-762878'; refusing destructive calls
+
+real	0m18.006s
+user	0m2.580s
+sys	0m2.524s
+exit=1

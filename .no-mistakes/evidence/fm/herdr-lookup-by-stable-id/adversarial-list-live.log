@@ -1,0 +1,13 @@
+office advqm: pane=w1:p2 tab=w1:t2 label=Navigator
+ok - office tab shows bare role name Navigator
+decoy tab=w1:t3 pane=w1:p3 (workspace w1)
+list_live with decoy:
+fm-lab-herdr-adv-848038:w1:p2	fm-advqm
+ok - list_live finds the office by its recorded pane and ignores a decoy tab titled fm-advqm
+list_live with mismatched ghost record:
+fm-lab-herdr-adv-848038:w1:p2	fm-advqm
+ok - list_live rejects a record whose recorded pane is no longer in its recorded tab
+ok - list_live ignores a record naming another Herdr session
+list_live '' -> rc=1: error: herdr list_live needs a session name
+ok - list_live refuses an empty session name
+exit=0
