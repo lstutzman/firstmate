@@ -1217,6 +1217,95 @@ EOF
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
 }
 
+# A done child is waiting on merge only with a meta PR and the merge poll
+# fm-pr-check.sh arms for it; every weaker case still flags terminal_in_flight.
+test_home_summary_done_child_with_pr_is_waiting_on_merge() {
+  local home fakebin out
+  local pr_url=https://github.com/example/alpha/pull/4619
+  local pr_head=0123456789abcdef0123456789abcdef01234567
+  home=$(make_home summary-waiting-on-merge)
+  mkdir -p "$home/projects/waiting"
+  fakebin=$(make_fakebin "$home")
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] pr-ship - Done child awaiting merge (repo: alpha) (kind: ship) (since 2026-07-11)
+
+## Queued
+
+## Done
+EOF
+  write_pr_ship_meta() {
+    fm_write_meta "$home/state/pr-ship.meta" \
+      "window=firstmate:fm-pr-ship" \
+      "worktree=$home/projects/waiting" \
+      "project=alpha" \
+      "harness=claude" \
+      "kind=ship" \
+      "mode=no-mistakes" \
+      "$@"
+  }
+  assert_terminal() {
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+    printf '%s' "$out" | jq -e '
+      .valid == false
+        and .invalidity == {kind:"terminal_in_flight",ids:["pr-ship"]}
+        and .counts.waiting_on_merge == 0
+    ' >/dev/null || fail "$1: $out"
+  }
+  record_claude_idle "$home/state" pr-ship
+
+  # Meta PR without an armed merge poll still flags.
+  write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"
+  printf 'done: PR %s checks green\n' "$pr_url" > "$home/state/pr-ship.status"
+  assert_terminal "done child with a meta PR but no armed merge poll must still produce terminal_in_flight"
+
+  # Arm the merge poll through the product path that records a ready PR.
+  cat > "$fakebin/gh" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *headRefOid*) printf '%s\\n' "$pr_head" ;;
+  *isDraft*) printf '{"isDraft":false}\\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/gh"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-pr-check.sh" pr-ship "$pr_url" 2>&1) \
+    || fail "fixture PR registration failed: $out"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e --arg pr "$pr_url" '
+    .valid == true
+      and .invalidity.kind == null
+      and .counts.waiting_on_merge == 1
+      and .waiting_on_merge == [{id:"pr-ship",pr:$pr}]
+  ' >/dev/null || fail "done child with a meta PR and an armed merge poll must be valid and waiting on merge: $out"
+
+  # A poll check the watcher would refuse is not an armed poll.
+  cp "$home/state/pr-ship.check.sh" "$TMP_ROOT/pr-ship.check.sh.armed"
+  printf '\n' >> "$home/state/pr-ship.check.sh"
+  assert_terminal "done child whose merge poll check was altered must still produce terminal_in_flight"
+  cat "$TMP_ROOT/pr-ship.check.sh.armed" > "$home/state/pr-ship.check.sh"
+
+  # A PR URL only in the status log does not qualify, even with an armed poll.
+  write_pr_ship_meta
+  printf 'working: opened PR %s\ndone: complete\n' "$pr_url" > "$home/state/pr-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e --arg pr "$pr_url" '
+    .tasks[] | select(.id == "pr-ship") | .pr.url == $pr and .pr.source == "status_event"
+  ' >/dev/null || fail "fixture must record the PR from the status log only: $out"
+  assert_terminal "done child with a status-line PR only must still produce terminal_in_flight"
+
+  # No PR at all still flags.
+  printf 'done: complete\n' > "$home/state/pr-ship.status"
+  assert_terminal "done child with no PR must still produce terminal_in_flight"
+
+  # A failed child flags even with a meta PR and an armed poll.
+  write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"
+  printf 'failed: stopped\n' > "$home/state/pr-ship.status"
+  assert_terminal "failed child with a PR must still produce terminal_in_flight"
+  unset -f write_pr_ship_meta assert_terminal
+  pass "home-summary treats a done child as waiting on merge only with a meta PR and an armed merge poll"
+}
+
 test_snapshot_handles_large_status_fields() {
   local home mate fakebin out
   home=$(make_home large-status)
@@ -1266,6 +1355,7 @@ test_snapshot_handles_large_status_fields
 test_empty_fleet_json
 test_fixture_snapshot_json
 test_home_summary_excludes_secondmate_from_child_inventory
+test_home_summary_done_child_with_pr_is_waiting_on_merge
 test_undated_captain_hold_phrasing_and_aging
 test_hold_buckets_are_total_and_text_blind
 test_main_inventory_orphan_and_unstructured_disclosure

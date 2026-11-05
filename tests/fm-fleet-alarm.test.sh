@@ -114,6 +114,31 @@ mate 0 0 0
 run_alarm check >/dev/null
 pass 'inventory contradictions remain loud on reachable homes'
 
+# A valid summary whose only in-flight work is done children waiting on merge is healthy.
+mate 0 0 9000
+python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_WAITING'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1])
+value=json.loads(path.read_text())
+value['counts'].update(in_flight=1, waiting_on_merge=1)
+path.write_text(json.dumps(value))
+PY_WAITING
+out=$(run_alarm check)
+[ -z "$out" ] || fail "a done child waiting on merge must not alarm: $out"
+python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_WAITING_MORE'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1])
+value=json.loads(path.read_text())
+value['counts'].update(in_flight=2, waiting_on_merge=1)
+path.write_text(json.dumps(value))
+PY_WAITING_MORE
+assert_contains "$(run_alarm check)" 'holding work silent' 'other in-flight work beside a waiting child still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'done children waiting on merge are healthy waiting'
+
 # An offline laptop has no collected inventory, rather than a broken document.
 printf -- '- gilligan - laptop (host: macbook.invalid; root: /remote/code; home: /remote/gilligan; scope: test; projects: alpha; added 2026-10-26)\n' \
   > "$HOME_FIX/data/secondmates.md"
