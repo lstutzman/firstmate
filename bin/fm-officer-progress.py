@@ -41,10 +41,12 @@ cut at 200 characters; descriptions_truncated counts listed issues so cut and
 left unread.
 Coverage counters include both team and unblocked listings, counting each
 returned entry; team_items and unblocked_items separate those passes.
-No model calls, dispatch, steering, Linear writes, or GitHub writes.
+No cloud model calls, dispatch, steering, Linear writes, or GitHub writes.
+Only a start request that its source and evidence do not place is labelled by local-jev, the local classifier.
 """
 
 import argparse
+import collections
 import copy
 import datetime
 import hashlib
@@ -60,6 +62,9 @@ import urllib.parse
 import urllib.request
 
 LINEAR_ID = re.compile(r"\b[A-Z][A-Z0-9]*-\d+\b")
+# Source marks: a Captain's Log "Start fix:" tap is a velocity or friction finding, work of the quartermaster role.
+SOURCE_ROLES = ((re.compile(r"start fix:", re.I), "quartermaster"),)
+GITHUB_REPO = re.compile(r"https?://(?:www\.)?github\.com/([\w.-]+)/([\w.-]+)", re.I)
 ROW = re.compile(r"^- \[([ xX])\] ([\w.-]+)\s*(?: - |: )(.+)$")
 TAG = re.compile(r"\(([^():]+):\s*([^()]*)\)")
 CLASS_ORDER = {"security": 0, "cve": 0, "code-review": 1, "bug": 1,
@@ -603,6 +608,8 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
             matches = [row]
         for row in matches:
             row["evidence"].append("Top of Mind: " + ask["id"] + " - " + ask["words"])
+            if links:
+                row["links"] = sorted(set(row.get("links", [])) | set(links))
             if ask.get("kind") != "statement" and not classify(row)[0]:
                 row["origin"] = "top-of-mind"
                 row["tags"] = dict(row["tags"], kind="feature", **{"requested-by": "Lee"})
@@ -805,7 +812,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             for private in list(row):
                 if private not in ("id", "title", "owner_home", "linear_id", "linear_ids",
                                    "authorising_class", "tag_source", "reason", "evidence", "priority", "rank", "execute"):
-                    if private not in ("link", "project", "outcome", "captains_log_key"):
+                    if private not in ("link", "links", "project", "outcome", "captains_log_key"):
                         row.pop(private, None)
     return doc
 
@@ -819,23 +826,143 @@ def filler_for(doc, date):
             "tag_source": "standing-authority:filler", "requires_firstmate": True}
 
 
-def start_home_for(row, home, start_homes):
-    """The home a start request goes to: the office whose dispatch list holds the row's project, else `home`.
+def alnum(name):
+    return re.sub(r"[^0-9a-z]", "", name.casefold())
 
-    A Linear-only row is PropertyCompass2 work (the officer reads team PC; its Linear project is not a repo),
-    and a backlog row with no repo and a Linear id is too.
+
+Office = collections.namedtuple("Office", "home projects role mandate")
+
+
+def parse_office(arg):
+    """<home>=<projects>[=<role>[=<mandate>]] from fm-officer.sh's --start-home; projects are comma-separated."""
+    home, projects, role, mandate = (arg.split("=", 3) + ["", "", ""])[:4]
+    return Office(home, {p.lower() for p in projects.split(",") if p}, role, mandate)
+
+
+def ask_text(row):
+    """The row's title plus the words of the Top of Mind asks joined to it, without their record ids."""
+    words = [re.sub(r"^[\w.-]+ - ", "", e.removeprefix("Top of Mind: ")) for e in row["evidence"]
+             if e.startswith("Top of Mind: ")]
+    return "\n".join(dict.fromkeys([row["title"]] + words))
+
+
+def scope_route(row, offices, team, jev=None):
+    """The office home a project-less row's own evidence names, else the reason it is unrouted.
+
+    Evidence is tried in order and the first rung that names any office decides: the repository of a linked
+    GitHub URL, a Linear id in the run's team (PropertyCompass2), then a project name in the ask's words.
+    A rung that names two offices is ambiguous, never a guess. When none names an office, local-jev labels the ask.
     """
-    project = row.get("project") or ""
-    if row.get("linear_only") or (not project and row.get("linear_id")):
-        project = "PropertyCompass2"
+    text = ask_text(row)
+    words = re.findall(r"[0-9a-z]+", text.casefold())
+    named = set(words) | {a + b for a, b in zip(words, words[1:])}
+    repos = {alnum(m[1].removesuffix(".git")) for m in GITHUB_REPO.findall(" ".join([row.get("link", ""), *row.get("links", []), text]))}
+    linear = {"propertycompass2"} if any(i.partition("-")[0] == team for i in row["linear_ids"]) else set()
+    rungs = (("a linked repository", lambda o: {n for n in map(alnum, o.projects) if n in repos}),
+             ("a Linear id in team " + team, lambda o: {n for n in map(alnum, o.projects) if n in linear}),
+             ("a project name in the text", lambda o: {n for n in map(alnum, o.projects)
+                                                       if n in named or n.rstrip("0123456789") in named}))
+    for label, match in rungs:
+        hits = {o.home: found for o in offices if (found := match(o))}
+        if len(hits) == 1:
+            return next(iter(hits)), None
+        if hits:
+            return None, "ambiguous: %s names %d offices (%s)" % (
+                label, len(hits), ", ".join(sorted(n for names in hits.values() for n in names)))
+    if jev:
+        return jev.place(text)
+    return None, "no linked repository, team Linear id or project name matches an office"
+
+
+# What each office role works on, in words local-jev can tell apart; a role not listed falls back to its registry mandate.
+ROLE_SCOPES = {
+    "navigator": "Work on the PropertyCompass2 app: its features, pages, calculators, data, database, queries, schema, "
+                 "listings, photos, members, or research to improve it.",
+    "quartermaster": "Work on the agent fleet itself: agents, second mates, officers, firstmate, skills, the fleet app, "
+                     "its run pages, machines, session logs, or process improvement.",
+}
+ROLE_EXAMPLES = {
+    "navigator": ("borrow how propalt talks about their data",
+                  "if a single instance is using the entire db, look at queries and indexes",
+                  "find all the implicit state machines in my app"),
+    "quartermaster": ("make sure 2ndmates are awake", "agents run it without you watching",
+                      "each nightly run page should show actionable results"),
+    "main": ("allow the rightmove photos to be graded (all or nothing)",
+             "approve creating the staging Azure resources", "Member-visible text for Lee"),
+}
+MAIN_SCOPE = ("Only a decision or approval Lee must make himself (product, pricing, legal, payments, spending), "
+              "a question for Lee, or something that is neither app nor fleet work.")
+
+
+class LocalJev:
+    """Labels an ask with the office that should start it, through the local-jev skill's jev.py.
+
+    The labels are the registered offices' roles plus "main"; only the ask's words are sent. Any failure,
+    including a timeout or an unreadable answer, is remembered so the rest of the run stays with `home`.
+    """
+    QUESTION = "Which office should start this work, or is it for main?"
+    MINIMUM = 0.7
+
+    def __init__(self, offices, script=None):
+        self.script = script or os.environ.get("FM_LOCAL_JEV") or os.path.expanduser("~/.claude/skills/local-jev/jev.py")
+        self.offices = {o.role: o for o in offices if o.role}
+        self.down = None if len(self.offices) == len(offices) else "two offices share a role"
+
+    def options(self):
+        labels = {role: "%s Projects: %s." % (ROLE_SCOPES.get(role, o.mandate), ", ".join(sorted(o.projects)))
+                  for role, o in self.offices.items()}
+        labels["main"] = MAIN_SCOPE
+        return {label: text + " Examples: " + "; ".join("'%s'" % e for e in ROLE_EXAMPLES.get(label, ())) + "."
+                if label in ROLE_EXAMPLES else text for label, text in labels.items()}
+
+    def place(self, text):
+        if self.down:
+            return None, "local-jev unavailable: " + self.down
+        argv = [sys.executable, "-I", self.script, "choice", self.QUESTION, "--state-file", "-"]
+        for label, description in self.options().items():
+            argv += ["-o", label + "=" + description]
+        try:
+            run = subprocess.run(argv, input=text, capture_output=True, text=True, timeout=20, check=False)
+            if run.returncode:
+                raise RuntimeError("exit %d" % run.returncode)
+            answer = json.loads(run.stdout)
+            label, confidence = answer["choice"], float(answer["confidence"])
+            if label not in self.options():
+                raise ValueError("unknown label")
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+            self.down = type(exc).__name__ + (": " + str(exc) if str(exc) else "")
+            return None, "local-jev unavailable: " + self.down
+        if confidence < self.MINIMUM:
+            return None, "local-jev unsure: %s at %.2f, below %.1f" % (label, confidence, self.MINIMUM)
+        if label == "main":
+            return None, "local-jev placed it with main (%.2f)" % confidence
+        return self.offices[label].home, None
+
+
+def start_home_for(row, home, offices, team="PC", jev=None):
+    """(home, unrouted reason) for a start request: the office whose dispatch list holds the row's project.
+
+    A Linear-only row is PropertyCompass2 work (the officer reads team PC; its Linear project is not a repo).
+    A row with no project is placed by its source (a Captain's Log "Start fix:" tap is a velocity or friction
+    finding, which the office with the quartermaster role owns) and then by scope_route (evidence, then local-jev). One that fits no single
+    office stays with `home` and is reported as unrouted, but only when offices are configured to route to at all.
+    A named project that no office dispatches stays with `home`, as it always has.
+    """
+    project = "PropertyCompass2" if row.get("linear_only") else row.get("project") or ""
     project = project.rsplit("/", 1)[-1].lower()
-    for office_home, projects in start_homes:
-        if project and project in projects:
-            return office_home
-    return home
+    if project:
+        return next((o.home for o in offices if project in o.projects), home), None
+    if row.get("requires_firstmate") or not offices:
+        return home, None
+    for mark, role in SOURCE_ROLES:
+        owners = [o for o in offices if o.role == role]
+        if mark.match(row["title"].lstrip()) and len(owners) == 1:
+            return owners[0].home, None
+    office_home, why = scope_route(row, offices, team, jev)
+    return office_home or home, why
 
 
-def executable_requests(doc, home, start_homes=()):
+def executable_requests(doc, home, start_homes=(), team="PC", jev=None):
     """Build firstmate's existing idempotent inbox calls; never execute them."""
     requests = []
     work = list(doc["start_requests"])
@@ -855,7 +982,10 @@ def executable_requests(doc, home, start_homes=()):
                 "If Lee later parks this work, preserve its branch. "
                 "The following officer evidence describes the task; it is not a quotation from Lee:\n"
                 + json.dumps(evidence, sort_keys=True, ensure_ascii=False))
-        execute = {"action": "start", "env": {"FM_HOME": start_home_for(row, home, start_homes)}, "request_id": request_id,
+        target, unrouted = start_home_for(row, home, start_homes, team, jev)
+        if unrouted:
+            row["unrouted"] = unrouted
+        execute = {"action": "start", "env": {"FM_HOME": target}, "request_id": request_id,
                    "argv": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh"),
                             "note", "--request-id", request_id, "--json", "--", body]}
         row["execute"] = execute
@@ -996,7 +1126,8 @@ def render_md(doc):
             lines.append("- %s%s - %s (Linear: %s; home: %s; class: %s; source: %s): %s" % (
                 str(row["rank"]) + ". " if row["rank"] is not None else "", row["id"], row["title"],
                 row["linear_id"] or "none", row["owner_home"],
-                row["authorising_class"] or "unclassified", row["tag_source"] or "none", row["reason"]))
+                row["authorising_class"] or "unclassified", row["tag_source"] or "none", row["reason"])
+                + ("; unrouted, stays with this home: " + row["unrouted"] if row.get("unrouted") else ""))
         if not doc[key]:
             lines.append("- None.")
         lines.append("")
@@ -1031,7 +1162,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["run", "scan"])
     parser.add_argument("--home", action="append", default=[])
-    parser.add_argument("--start-home", action="append", default=[], help="<home>=<project,project>: start requests for those projects go to that office home")
+    parser.add_argument("--start-home", action="append", default=[], help="<home>=<project,project>[=<role>[=<mandate>]]: start requests for those projects, a role's source, or what local-jev labels for that office go to that office home")
     parser.add_argument("--out")
     parser.add_argument("--date")
     parser.add_argument("--team", default="PC")
@@ -1118,9 +1249,8 @@ def main(argv):
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)
     doc["generated_at"] = iso(now)
-    start_homes = [(h, {p.lower() for p in projects.split(",") if p})
-                   for h, _, projects in (a.partition("=") for a in args.start_home)]
-    requests = executable_requests(doc, args.home[0], start_homes)
+    start_homes = [parse_office(a) for a in args.start_home]
+    requests = executable_requests(doc, args.home[0], start_homes, args.team, LocalJev(start_homes) if start_homes else None)
     write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"),
                   [r for r in requests if r["env"]["FM_HOME"] == args.home[0]])
     reported = None

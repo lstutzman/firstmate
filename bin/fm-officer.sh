@@ -79,7 +79,8 @@
 # digest), because the start requests for that office's projects (its dispatch:
 # field) are then addressed to that office's home, and that office's lane check
 # delivers them into its own inbox (bin/fm-office.sh check); main's shell handoff
-# keeps only main's requests.
+# keeps only main's requests. A request with no project is placed by its source,
+# its evidence, and then local-jev (bin/fm-officer-progress.py).
 #
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
@@ -307,7 +308,7 @@ consumer_problem() {
   done
 }
 
-# start_homes: one "<home>=<dispatch projects>" per start-home: office of the loaded officer.
+# start_homes: one "<home>=<dispatch projects>=<role>=<mandate>" per start-home: office of the loaded officer.
 start_homes() {
   local c office
   local -a offices=()
@@ -316,7 +317,9 @@ start_homes() {
     [ -z "$(office_read_problem "$OFFICER_ID" "$c" start-home)" ] || continue
     office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
     secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" || continue
-    printf '%s=%s\n' "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}" "$(line_field "$office" dispatch | tr -d ' ')"
+    [[ "$office" =~ $REGISTRY_LINE_RE ]] || continue
+    printf '%s=%s=%s=%s\n' "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}" "$(line_field "$office" dispatch | tr -d ' ')" \
+      "$(line_field "$office" role || true)" "${BASH_REMATCH[2]}"
   done
 }
 
