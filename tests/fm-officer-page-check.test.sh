@@ -26,11 +26,12 @@ E=1793437200            # 2026-10-31T09:00:00Z
 export TZ=UTC
 
 write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
-  local d=$1 k1 k2
+  local d=$1 k1 k2 k3
   k1="task-k-k1-$(printf 'task-k\0k1' | sha256sum | cut -c1-10)"
   k2="task-k-k2-$(printf 'task-k\0k2' | sha256sum | cut -c1-10)"
+  k3="task-k-k3-$(printf 'task-k\0k3' | sha256sum | cut -c1-10)"
   mkdir -p "$d"
-  jq -n --arg k1 "$k1" --arg k2 "$k2" '{at: "2026-10-31T14:00:00Z", value: {updated: "2026-10-31T14:00:00Z", cards: [
+  jq -n --arg k1 "$k1" --arg k2 "$k2" --arg k3 "$k3" '{at: "2026-10-31T14:00:00Z", value: {updated: "2026-10-31T14:00:00Z", cards: [
     {id: "fine", band: "now", question: "Pick the logo", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "cleanup", band: "now", question: "Approve deleting 475 stale branches?", advice: "yes", replies: ["yes"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "old-ask", band: "now", question: "Which colour?", advice: "a", replies: ["a"], asked: "2026-10-20T12:00:00Z", state: "asked"},
@@ -39,6 +40,7 @@ write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
     {id: "answered-shown", band: "now", question: "Sign off?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked", answer: {text: "yes", at: "2026-10-31T13:00:00Z"}},
     {id: $k1, band: "now", question: "Which key?", advice: "a", replies: ["a"], asked: "2026-10-31T10:00:00Z", state: "asked"},
     {id: $k2, band: "now", question: "Which mode?", advice: "a", replies: ["a"], asked: "2026-10-31T08:00:00Z", state: "asked"},
+    {id: $k3, band: "now", question: "Which size?", advice: "a", replies: ["a"], asked: "2026-10-31T10:00:00Z", state: "asked"},
     {id: "bosun-ep", band: "now", question: "Bosun asks about an episode", advice: "a", replies: ["a"], asked: "2026-10-31T05:40:00Z", reasked: "2026-10-31T05:40:00Z", state: "asked"},
     {id: "done-card", band: "now", question: "Already answered", advice: "a", replies: ["a"], asked: "2026-10-20T12:00:00Z", state: "answered", answer: {text: "x", at: "2026-10-21T12:00:00Z"}}]}}' > "$d/_api_captains-log"
   jq -n '{source: "bosun", cards: [{id: "bosun-ep", lifecycle: "closed"}, {id: "other", lifecycle: "open"}]}' > "$d/_api_captains-log_facts_source_bosun"
@@ -63,9 +65,11 @@ make_world() {
   write_pages "$dir"
   cat > "$home/state/task-k.status" <<EOF
 needs-decision [at=$((E - 600))] [key=k1]: pick a key
-resolved [key=k1] [at=$((E + 60))]: Lee chose
+resolved [key=k1] [at=$((E + 60))]: answered: Lee chose
 needs-decision [at=$((E - 600))] [key=k2]: pick a mode
 resolved [key=k2] [at=$((E + 60))]: answered: Lee chose
+needs-decision [at=$((E - 600))] [key=k3]: pick a size
+resolved [key=k3] [at=$((E + 60))]: decision-sweep
 EOF
   cat > "$home/data/captain-shared.md" <<'EOF'
 # Shared
@@ -136,7 +140,7 @@ test_findings_of_every_kind() {
   assert_equals "stale-card:Captain's Log:answered-shown:answered stale-card:Captain's Log:old-ask:unanswered stale-card:Captain's Log:pr-card:ex/repo#7 stale-card:Captain's Log:snoozed-old:snooze stale-card:Captain's Log:task-k-k2-$(printf 'task-k\0k2' | sha256sum | cut -c1-10):resolved" \
     "$(ids "$json" stale-card)" "stale cards: answered, unanswered for days, a merged PR (not the open one), snooze ended, resolved elsewhere"
   assert_equals "shown-after-done:Captain's Log:bosun-ep shown-after-done:Captain's Log:task-k-k1-$(printf 'task-k\0k1' | sha256sum | cut -c1-10)" \
-    "$(ids "$json" shown-after-done)" "a card re-raised after its status line resolved, and one the app records closed"
+    "$(ids "$json" shown-after-done)" "a card re-raised after an answered status line, and one the app records closed; a routing-only resolve (k3) is not flagged"
   assert_equals "page-old:Business health:business-health page-old:Runs:bad-job page-old:Velocity audit:velocity-audit" \
     "$(ids "$json" page-old)" "an old page, a failing live job (not the retired one), and a page never published"
   assert_equals "$(jq '.findings | length' "$json")" "$(jq '.new | length' "$json")" "every first-seen finding is new"

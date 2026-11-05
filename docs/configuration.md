@@ -1057,7 +1057,7 @@ Its findings are one of four kinds, each naming the page and the object so first
 | --- | --- | --- |
 | `standing-rule` | A card Lee is shown that a standing rule already settles | cl-keeper closes it citing the rule |
 | `stale-card` | A shown card that is past its snooze date, unanswered for `stale-days`, already answered, naming a merged or closed PR, or settled by a later `resolved` status line; a card whose production or activation action is still open or whose captain has not answered is not stale (the script header owns both exceptions) | cl-keeper closes or corrects it |
-| `shown-after-done` | A card shown although its record is settled: a status line resolved before the card was raised again, or the app's own card record for the Bosun source is closed | cl-keeper closes it; the source that re-raised it is fixed |
+| `shown-after-done` | A card shown although its record is settled: a status line resolved by a captain answer before the card was raised again (a routing resolve does not count), or the app's own card record for the Bosun source is closed | cl-keeper closes it; the source that re-raised it is fixed |
 | `page-old` | A page older than its normal gap (Bosun's results: 26 hours), never published, unreachable or unreadable (including JSON of an unexpected shape), or a live Runs job whose health is failing | the page's owner fixes the feed |
 
 Standing rules are lines in the `rules` file of the form `- standing-rule <id> /<regex>/ - <rule text>`; the case-insensitive regex is matched against a card's words, and every other line of the file is ignored.

@@ -47,7 +47,9 @@ card, a page owner fixes a page). It acts on nothing itself.
                    routing or reconcile acknowledgement (decision-sweep,
                    pending-reply, reconciled) is not evidence.
   shown-after-done  a card shown although its record is settled: its status
-                 line was resolved before the card was (re)raised, or the app's
+                 line was resolved by a captain answer before the card was (re)raised
+                 (same evidence as stale-card; a routing resolve does not
+                 count), or the app's
                  own card record for a facts source (GET
                  /api/captains-log/facts?source=bosun) is closed while the
                  page still shows it asked.
@@ -255,13 +257,14 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
                                "the app's own record for this card is closed but the page shows it %s" % c.get("state"),
                                "cl-keeper: close the card; fix the source that re-raises it"))
         elif done_at is not None:
-            if asked is not None and asked > done_at:
+            answered = c.get("answer") or ANSWER_RE.match(done_text.strip())
+            if asked is not None and asked > done_at and answered:
                 out.append(finding("shown-after-done", page, cid, title,
                                    "status line resolved at %s, re-raised at %s" % (
                                        time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(done_at)),
                                        time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(asked))),
                                    "cl-keeper: close the card; fix the source that re-raises it"))
-            elif c.get("answer") or ANSWER_RE.match(done_text.strip()):
+            elif answered:
                 out.append(finding("stale-card", page, cid + ":resolved", title, "its status line was resolved elsewhere",
                                    "cl-keeper: close the card"))
         until = friction.epoch_of(c.get("until"))
