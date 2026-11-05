@@ -1,0 +1,54 @@
+=== A. Quartermaster parked on open captain-hold with a live worker, last line 2h old
+--- base (bd723d57):
+Secondmate holding work silent over 60 minutes: quartermaster
+--- change (5b88a201):
+<no alarm>
+
+=== B. Navigator on long task: latest line working, 2h old, 1 in flight
+--- base (bd723d57):
+Secondmate holding work silent over 60 minutes: quartermaster
+--- change (5b88a201):
+<no alarm>
+
+=== C. latest line paused (no until), 2h old, active child
+--- base (bd723d57):
+Secondmate holding work silent over 60 minutes: quartermaster
+--- change (5b88a201):
+<no alarm>
+
+=== D. adversarial: latest line done, in flight held, 2h silent -> must alarm
+--- base (bd723d57):
+Secondmate holding work silent over 60 minutes: quartermaster
+--- change (5b88a201):
+Secondmate holding work silent over 60 minutes: quartermaster
+
+=== E. adversarial: working but a child asks the mate (status-source) -> must alarm
+--- base (bd723d57):
+Secondmate holding work silent over 60 minutes: quartermaster
+--- change (5b88a201):
+Secondmate holding work silent over 60 minutes: quartermaster
+
+=== F. adversarial: working line 6h10m old, past ceiling -> must alarm
+--- base (bd723d57):
+Secondmate holding work silent over 60 minutes: quartermaster
+--- change (5b88a201):
+Secondmate holding work silent over 60 minutes: quartermaster
+
+=== G. adversarial: paused until 2h ago (past window) -> must alarm
+--- base (bd723d57):
+Secondmate holding work silent over 60 minutes: quartermaster
+--- change (5b88a201):
+Secondmate holding work silent over 60 minutes: quartermaster
+
+=== H. adversarial: tab inside verb -> treated as other verb, alarms, roster intact
+--- base (bd723d57):
+Secondmate holding work silent over 60 minutes: quartermaster
+--- change (5b88a201):
+Secondmate holding work silent over 60 minutes: quartermaster
+
+=== I. idle mate (no held work) -> no alarm
+--- base (bd723d57):
+<no alarm>
+--- change (5b88a201):
+<no alarm>
+
