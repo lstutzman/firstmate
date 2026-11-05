@@ -23,6 +23,7 @@ Every captain-facing outcome that leaves durable evidence in the mate home is pu
 | Outcome | Durable evidence in the mate home | Published by |
 |---|---|---|
 | Ship child PR ready | the child's `done:` PR ready line, whose accepted spellings the publisher below owns; `pr=` in the child's record once registered | `bin/fm-inactive-reconcile.sh` on the next poll with the child's line; `bin/fm-pr-check.sh` at registration with the canonical URL |
+| Ship child PR ready for a project another home merges | the registered `pr=` and the project's `merger=<home>` binding | `bin/fm-pr-check.sh` at registration, with the `[handoff=<home>]` merge-handoff line, once per PR and head |
 | Scout child findings | the child's `done:` line plus `data/<child>/report.md` | `bin/fm-inactive-reconcile.sh` on the next poll, with the report pointer |
 | Child failed | the child's `failed:` line | `bin/fm-inactive-reconcile.sh` on the next poll |
 | Child decision escalated to the captain | the task held for the captain in the mate backlog | `bin/fm-captain-hold.sh hold`, and its answer by `answer` |

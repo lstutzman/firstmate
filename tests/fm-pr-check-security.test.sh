@@ -971,6 +971,60 @@ test_ready_time_is_recorded_once_per_pr() {
   pass "fm-pr-check records a PR's ready time once, keeps it on a repeat, and restarts it for a different PR"
 }
 
+# A ship PR registered in a home that does not merge its project hands the PR
+# to the project's merger home on the parent channel: one keyed handoff per PR
+# and head, none when the project has no merger, and none for a task held for
+# the captain. Tasks-axi backs the captain-hold read, as in a real home.
+test_ready_pr_is_handed_to_its_merger_once_per_head() {
+  local dir replies url=https://github.com/o/r/pull/41 head2=1111111111111111111111111111111111111111
+  local tasks_path
+  tasks_path=$(dirname "$(command -v tasks-axi)") || fail "these cases read captain holds through tasks-axi, which was not found"
+  dir=$(make_case merger-handoff)
+  write_task_meta "$dir"
+  seed_secondmate_home "$dir"
+  fm_test_tasks_toml "$dir/home/.tasks.toml"
+  printf '%s\n' '## In flight' '' '## Queued' '' '## Done' > "$dir/home/data/backlog.md"
+  replies="$dir/home/state/parent-replies.status"
+  handoffs() { grep -c 'merge-handoff-41' "$replies" 2>/dev/null || true; }
+
+  printf '%s\n' '- project [no-mistakes +yolo] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+  BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/err" \
+    || fail "merger-handoff: registering without a merger failed: $(cat "$dir/err")"
+  [ "$(handoffs)" -eq 0 ] || fail "merger-handoff: a project with no merger handed its PR off"
+
+  printf '%s\n' '- project [no-mistakes +yolo merger=slarti] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+  BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/err" \
+    || fail "merger-handoff: registering a merger=slarti project failed: $(cat "$dir/err")"
+  [ "$(handoffs)" -eq 1 ] || fail "merger-handoff: expected one handoff line, got: $(cat "$replies")"
+  bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2"' _ "$ROOT" "$replies" > "$dir/open"
+  assert_grep $'merge-handoff-41\tneeds-decision\t[handoff=slarti] '"$url"' is ready to merge' "$dir/open" \
+    "merger-handoff: the handoff did not open a keyed decision for the merger"
+
+  BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 \
+    || fail "merger-handoff: re-registering the same head failed"
+  [ "$(handoffs)" -eq 1 ] || fail "merger-handoff: re-registering the same head handed it off again"
+
+  FM_TEST_GH_HEAD=$head2 BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 \
+    || fail "merger-handoff: registering a new head failed"
+  [ "$(handoffs)" -eq 2 ] || fail "merger-handoff: a new head was not announced once: $(cat "$replies")"
+
+  # The merger home itself hands nothing to itself.
+  printf '%s\n' slarti > "$dir/home/.fm-secondmate-home"
+  FM_TEST_GH_HEAD=0000000000000000000000000000000000000002 BASE_PATH="$BASE_PATH:$tasks_path" \
+    run_check_entry "$dir" task-a "$url" >/dev/null 2>&1 || fail "merger-handoff: the merger home failed to register"
+  [ "$(handoffs)" -eq 2 ] || fail "merger-handoff: the merger home handed the PR to itself"
+  printf '%s\n' mate-x > "$dir/home/.fm-secondmate-home"
+
+  FM_HOME="$dir/home" PATH="$PATH:$tasks_path" "$ROOT/bin/fm-captain-hold.sh" hold task-a \
+    --title 'Held task' --reason 'waits on the captain' >/dev/null 2>&1 || fail "merger-handoff: could not hold the task"
+  FM_TEST_GH_HEAD=0000000000000000000000000000000000000003 BASE_PATH="$BASE_PATH:$tasks_path" \
+    run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/err" || fail "merger-handoff: registering a held task failed"
+  [ "$(handoffs)" -eq 2 ] || fail "merger-handoff: a task held for the captain was handed off"
+  # The hold itself skipped it, not an unreadable hold record.
+  assert_no_grep 'cannot be read' "$dir/err" "merger-handoff: the captain hold could not be read: $(cat "$dir/err")"
+  pass "fm-pr-check hands a ready PR to its project's merger home once per head, and never with no merger, from the merger, or while held"
+}
+
 run_watcher_bounded() {
   local home=$1 fakebin=$2 check_interval=${FM_TEST_CHECK_INTERVAL:-0} watch_root=${FM_TEST_WATCH_ROOT:-$ROOT}
   local check_timeout_env=(-u FM_CHECK_TIMEOUT)
@@ -3706,6 +3760,7 @@ test_ready_evidence_gates_registration_on_the_forge_head
 test_direct_pr_unpushed_commit_refuses_registration
 test_valid_recording_and_merge_derivation
 test_ready_time_is_recorded_once_per_pr
+test_ready_pr_is_handed_to_its_merger_once_per_head
 test_rejected_metacharacter_bytes_are_inert
 test_static_poll_contract
 test_atomic_interruption_leaves_no_partial_artifact

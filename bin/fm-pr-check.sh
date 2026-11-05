@@ -24,6 +24,9 @@
 # The recorded pr= also frees the task's place in a declared project capacity,
 # and pr_at=<epoch>, the time this PR was first recorded, is the ready age that
 # landing-lag admission reads (bin/fm-project-capacity-lib.sh).
+# A ship task whose project another home merges (merger=<home>,
+# bin/fm-project-mode.sh) also hands its PR to that home here, once per PR and
+# head; pr_check_merge_handoff below owns the rules.
 # Usage: fm-pr-check.sh <task-id> <pr-url>
 set -eu
 
@@ -309,4 +312,57 @@ case "$READY_RC" in
   0|1) ;;
   *) printf 'actionable: PR %s is registered but its ready line did not reach the parent channel (rc=%s)\n' "$URL" "$READY_RC" >&2 ;;
 esac
+
+# Hand the ready PR straight to the project's merger home, so its landing never
+# waits on the parent noticing the ready line above. The line is the one
+# bin/fm-pr-merge.sh prints on its merger refusal; it goes on the parent
+# channel in a secondmate home and on the task's own status in a home with no
+# parent. state/<id>.merge-handoff records the last PR and head handed off, so
+# re-registering the same head is silent and a new head is announced once; it
+# is written after the append, so an interrupted run announces again rather
+# than never. A project this home merges, an admission-bound project, a task
+# held for the captain, and the merge-time re-record (fm-pr-merge.sh prints
+# its own handoff) hand nothing off.
+pr_check_merge_handoff() {
+  local name merger self admission rc=0 record sent line dest tmp
+  [ "${KIND:-ship}" = ship ] && [ "${FM_PR_CHECK_MERGE:-}" != 1 ] && [ -n "$PROJECT" ] || return 0
+  name=$(basename "$PROJECT")
+  merger=$("$SCRIPT_DIR/fm-project-mode.sh" --merger "$name" 2>/dev/null) \
+    || { printf 'actionable: PR %s is registered but the merger binding for %s cannot be read, so it was not handed to its merger\n' "$URL" "$name" >&2; return 0; }
+  [ -n "$merger" ] || return 0
+  self=$(fm_parent_channel_home_id "$FM_HOME") || rc=$?
+  case "$rc" in
+    0) ;;
+    1) self=main ;;
+    *) printf 'actionable: PR %s is registered but the identity marker of this home is unusable, so it was not handed to home %s\n' "$URL" "$merger" >&2; return 0 ;;
+  esac
+  [ "$merger" != "$self" ] || return 0
+  admission=$("$SCRIPT_DIR/fm-project-mode.sh" --admission "$name" 2>/dev/null) || admission=unreadable
+  [ -z "$admission" ] || return 0
+  rc=0
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-captain-hold.sh" open "$ID" --distinguish-absent >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+    1|3) ;;
+    0) return 0 ;;
+    *) printf 'actionable: PR %s is registered but whether task %s is held for the captain cannot be read, so it was not handed to home %s\n' "$URL" "$ID" "$merger" >&2; return 0 ;;
+  esac
+  record="$STATE/$ID.merge-handoff"
+  sent="$URL $PR_HEAD"
+  if [ -f "$record" ] && [ ! -L "$record" ] && [ "$(cat "$record")" = "$sent" ]; then
+    return 0
+  fi
+  line=$(status_stamp_line "$(fm_merge_handoff_line "$merger" "$URL")")
+  rc=0
+  dest=$(fm_parent_channel_destination "$FM_HOME" "$STATE") || rc=$?
+  [ "$rc" -ne 1 ] || { dest="$STATE/$ID.status"; rc=0; }
+  if [ "$rc" -ne 0 ] || ! fm_parent_channel_append "$dest" "$line"; then
+    printf 'actionable: PR %s is registered but its handoff to home %s could not be written; report this line by hand: %s\n' "$URL" "$merger" "$line" >&2
+    return 0
+  fi
+  tmp=$(mktemp "$STATE/.fm-merge-handoff.XXXXXX") && printf '%s\n' "$sent" > "$tmp" && mv -f -- "$tmp" "$record" \
+    || printf 'actionable: PR %s was handed to home %s but the handoff record could not be written, so the next registration announces it again\n' "$URL" "$merger" >&2
+  printf 'handed off: %s to home %s\n' "$URL" "$merger"
+}
+pr_check_merge_handoff
 printf 'armed: state/%s.check.sh\n' "$ID"
