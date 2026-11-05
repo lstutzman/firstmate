@@ -39,7 +39,8 @@ wait for Lee to do. One day's friction events come from three sources:
                measured to the next message Lee typed; a tool result whose
                line starts with a guard refusal, a sudo prompt, an ssh key
                refusal, a 1Password refusal, a not-signed-in CLI, or
-               `command not found` is agent-side friction. A worker session
+               `command not found` is agent-side friction; a not-found name
+               that is no installable tool (plausible_tool) is skipped. A worker session
                whose cwd is outside the worktree its task record names started
                in the wrong directory.
   captain's log with --captains-log, the cards fleet-app serves at GET

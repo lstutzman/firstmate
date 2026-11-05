@@ -1083,7 +1083,7 @@ An unreachable app is a finding, not a failed run.
 ### Repeated asks (friction officer)
 
 The friction officer also compares Lee's typed instructions across the last `ask-days` days of the session archive (interactive and worker sessions, never a worker's launch brief, which quotes him).
-Only text Lee typed counts: a user-role record the harness injected, such as a peer or agent message, hook context, a tool result, a sub-agent prompt or a compaction summary, is skipped, so Claude Code's own built-in text is never read as Lee repeating himself; `typed_text` in `bin/fm-officer-friction.py` owns the exact markers.
+Only text Lee typed counts: a user-role record the harness injected, such as a peer or agent message, hook context, a tool result, a sub-agent prompt or a compaction summary, is skipped, as is guidance the harness wraps into a typed message (such as a `<system-reminder>` block), so Claude Code's own built-in text is never read as Lee repeating himself; `typed_text` in `bin/fm-officer-friction.py` owns the exact markers.
 It sees only what the archive holds: a message Lee gave somewhere that is not archived as a Claude Code transcript is not counted.
 Each instruction is dated by its own message time in the archive's timezone, not by the day whose manifest lists the session, and a session listed on several days is read once, so one long chat holding asks on different days counts each ask on the day Lee gave it.
 An instruction given on two or more days, one of them the run's day, becomes a `repeat-ask` finding with Lee's scrubbed sentence for each day, so a repeat becomes automatic work instead of Lee repeating himself.
