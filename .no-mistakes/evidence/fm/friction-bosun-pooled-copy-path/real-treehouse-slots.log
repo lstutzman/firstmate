@@ -1,0 +1,27 @@
+officer exit=0
+--- bosun-answers.json
+[
+  {
+    "fact": "pull request https://github.com/lstutzman/firstmate/pull/97 is open, read live",
+    "host": "okhost",
+    "item": "~/.treehouse/firstmate-9760ff/1",
+    "kind": "copy",
+    "result_date": "2026-11-05",
+    "rule": "fleet rules section 6, rule c (never while an open pull request uses it)",
+    "sha": "dccd745a6798e26817f178cb50e2a4227abe929f",
+    "verdict": "keep"
+  },
+  {
+    "fact": "5434db3 is an ancestor of origin/HEAD, read live",
+    "host": "okhost",
+    "item": "~/.treehouse/firstmate-9760ff/3",
+    "kind": "copy",
+    "result_date": "2026-11-05",
+    "rule": "fleet rules section 6, rule c (content already on the default branch)",
+    "sha": "5434db3ad4764586bc18a363751fc73bb1eb3886",
+    "verdict": "delete"
+  }
+]
+--- digest bosun lines
+- okhost (result of 2026-11-05): 3 unsure; 2 answered, 0 unreadable (the Bosun retries them), 0 without a bucket, 1 unsettled.
+- okhost copy `~/.treehouse/local-jev-5bd410/2`: its commit or pull requests could not be read now
