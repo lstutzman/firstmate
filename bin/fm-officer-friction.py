@@ -93,20 +93,25 @@ read live (read-only git and gh on the host):
 
 A pull request, tip or HEAD that cannot be read is no answer, and so is an
 origin/HEAD that cannot be read when no pull request decides the item. A
-session log or transcript is answered keep (fleet rules section 6: always
-kept, because it is training data), never delete. Every other item (an old
-scratch file, a log folder, a copy whose state the officer does not read) is
-unsettled.
+session log or transcript that is not such a branch or copy item is answered
+keep (fleet rules section 6: always kept, because it is training data), never
+delete. Every other item (an old scratch file, a log folder, a copy whose
+state the officer does not read, a branch or copy whose tip or HEAD is not a
+full 40-character sha) is unsettled.
 Answers go to <out>/bosun-answers.json, never into the velocity file, which
 fleet-app pulls and would show them as velocity findings:
 
   {"schema_version": 1, "source": "friction-officer", "date": <run date>,
-   "answers": [{"host", "result_date", "kind", "item",
+   "answers": [{"host", "result_date", "kind", "item", "sha",
                 "verdict": "delete"|"keep", "rule", "fact"}, ...]}
 
-sorted by host, kind and item, one entry per item. A `delete` is the rule's
-permission only: the Bosun reads the file the next night and still applies
-its own checks (live worktrees, open pull requests, remote ownership). The
+sorted by host, kind and item, one entry per item. `sha` is the full commit
+the answer was decided on (a branch's tip, a copy's HEAD, read live) and is
+present on branch and copy answers only; a session-log keep has none. A
+`delete` is the rule's permission only: the Bosun reads the file the next
+night, must refuse an answer whose `sha` no longer matches the tip or HEAD it
+finds, and must itself re-check live worktrees, open pull requests, unpushed
+work and remote ownership before it deletes anything. The
 digest lists each unsettled item for the Quartermaster, never for Lee, and an
 unreachable host is a coverage gap. The officer never deletes anything.
 
@@ -929,8 +934,9 @@ def remote_scan(host, archive, date, days):
 
 
 BOSUN_RESULT = "~/services/bosun-maintenance/last-result.json"
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
-# Session logs and transcripts are always kept (fleet rules section 6), so an item under them is only ever answered keep.
+# Session logs and transcripts are always kept (fleet rules section 6): a non-branch item under them is only ever answered keep.
 SESSION_LOG_RE = re.compile(r"\.jsonl(?:\.gz)?$|/\.(?:claude|codex|pi|omp|kimi)(?:/|$)|/transcript-archive(?:/|$)|/herdr(?:/|$)")
 BRANCH_ITEM_RE = re.compile(r"^(/.+) (\S+) \((local|remote)\)$")
 COPY_BRANCH_RE = re.compile(r"^branch (\S+) is not merged and its pull request is missing or unreadable$")
@@ -1015,18 +1021,18 @@ def remote_bosun(host):
 def bosun_decide(entry, facts):
     """(answer, None) for one rule-settles item, or (None, why it is unsettled)."""
     kind, item, why = entry["kind"], entry["item"], entry["why"]
-    if SESSION_LOG_RE.search(item):
-        return {"kind": kind, "item": item, "verdict": "keep", "rule": SESSION_LOG_RULE,
-                "fact": "its path is a session log or transcript"}, None
     if kind == "branch" and BRANCH_ITEM_RE.match(item):
         rule = BRANCH_RULE
     elif kind == "copy" and COPY_BRANCH_RE.match(why):
         rule = COPY_RULE
+    elif kind != "branch" and SESSION_LOG_RE.search(item):
+        return {"kind": kind, "item": item, "verdict": "keep", "rule": SESSION_LOG_RULE,
+                "fact": "its path is a session log or transcript"}, None
     else:
         return None, "no rule settles it from facts the officer reads: " + why
     sha = (facts or {}).get("sha")
     prs = (facts or {}).get("prs")
-    if not sha or not isinstance(prs, list):
+    if not (isinstance(sha, str) and SHA_RE.match(sha)) or not isinstance(prs, list):
         return None, "its commit or pull requests could not be read now"
     short = sha[:7]
     opened = next((p for p in prs if isinstance(p, dict) and p.get("state") == "OPEN"), None)
@@ -1047,7 +1053,7 @@ def bosun_decide(entry, facts):
         fact = "no pull request ended at %s (%d found, read live) and it is not an ancestor of origin/HEAD" % (short, len(prs))
     if verdict == "delete" and rule is COPY_RULE:
         fact += "; the Bosun reached this check only after finding no uncommitted or unpushed work"
-    return {"kind": kind, "item": item, "verdict": verdict, "rule": rule % why_rule, "fact": fact}, None
+    return {"kind": kind, "item": item, "sha": sha, "verdict": verdict, "rule": rule % why_rule, "fact": fact}, None
 
 
 def bosun_section(hosts):

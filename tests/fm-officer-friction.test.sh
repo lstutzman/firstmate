@@ -832,7 +832,7 @@ test_bosun_unsure_class() {
   repo="$w/repo"
   bare="$w/bare"
   copy="$w/copy"
-  for d in "$repo" "$bare" "$copy" "$w/copy-landed" "$w/copy-unique" "$w/copy-nohead"; do
+  for d in "$repo" "$bare" "$copy" "$w/copy-landed" "$w/copy-unique" "$w/copy-nohead" "$w/main/.claude/worktrees/wt"; do
     mkdir -p "$d"
     git -C "$d" init -q
     git -C "$d" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
@@ -856,6 +856,8 @@ test_bosun_unsure_class() {
   printf '[{"number":6,"state":"MERGED","headRefOid":"%s","url":"https://x/pull/6"}]' "$sha_m" > "$w/gh/unique-b.json"
   for b in landed-b nohead-b task-landed task-unique task-nohead; do printf '[]' > "$w/gh/$b.json"; done
   printf '[{"number":9,"state":"CLOSED","headRefOid":"%s","url":"https://x/pull/9"}]' "$(git -C "$copy" rev-parse HEAD)" > "$w/gh/task-x.json"
+  printf '[{"number":5,"state":"CLOSED","headRefOid":"%s","url":"https://x/pull/5"}]' "$(git -C "$w/main/.claude/worktrees/wt" rev-parse HEAD)" > "$w/gh/task-wt.json"
+  printf '[]' > "$w/gh/gone-b.json"
   jq -n --arg repo "$repo" --arg bare "$bare" --arg w "$w" --arg copy "$copy" --arg why "branch task-x is not merged and its pull request is missing or unreadable" '
     def copy_why(b): "branch " + b + " is not merged and its pull request is missing or unreadable";
     {date: "2026-10-24", unsure: [
@@ -865,6 +867,8 @@ test_bosun_unsure_class() {
       {kind: "branch", item: ($repo + " landed-b (local)"), why: "x", bucket: "rule-settles"},
       {kind: "branch", item: ($repo + " blind-b (local)"), why: "x", bucket: "rule-settles"},
       {kind: "branch", item: ($bare + " nohead-b (local)"), why: "x", bucket: "rule-settles"},
+      {kind: "branch", item: ($repo + " gone-b (local)"), why: "x", bucket: "rule-settles"},
+      {kind: "copy", item: ($w + "/main/.claude/worktrees/wt"), why: copy_why("task-wt"), bucket: "rule-settles"},
       {kind: "copy", item: $copy, why: $why, bucket: "rule-settles"},
       {kind: "copy", item: ($w + "/copy-landed"), why: copy_why("task-landed"), bucket: "rule-settles"},
       {kind: "copy", item: ($w + "/copy-unique"), why: copy_why("task-unique"), bucket: "rule-settles"},
@@ -910,16 +914,27 @@ SH
   assert_equals "keep" "$(verdict s.jsonl)" "a session log is answered keep"
   assert_equals "fleet rules section 6 (Agent session logs and transcripts are always kept, because they are training data)" \
     "$(jq -r '[.answers[] | select(.item | contains("s.jsonl"))][0].rule' "$ans")" "a session log's keep cites the training-data rule"
-  assert_equals "8" "$(jq ".answers | length" "$ans")" "only the eight settled items are answered"
+  assert_equals "delete" "$(verdict .claude/worktrees/wt)" "a copy under .claude/worktrees whose pull request closed at HEAD is answered by rule c"
+  assert_equals "fleet rules section 6, rule c (pull request merged or closed)" \
+    "$(jq -r '[.answers[] | select(.item | contains(".claude/worktrees/wt"))][0].rule' "$ans")" "a .claude worktree copy is not taken for a session log"
+  assert_equals "$(git -C "$w/main/.claude/worktrees/wt" rev-parse HEAD)" \
+    "$(jq -r '[.answers[] | select(.item | contains(".claude/worktrees/wt"))][0].sha' "$ans")" "a copy answer carries its full HEAD sha"
+  assert_equals "$sha_u" "$(jq -r '[.answers[] | select(.item | contains("unique-b"))][0].sha' "$ans")" "a branch answer carries its full tip sha"
+  assert_equals "0" "$(jq '[.answers[] | select(.kind == "branch" or .kind == "copy") | select((.sha // "") | test("^[0-9a-f]{40}$") | not)] | length' "$ans")" \
+    "every branch and copy answer carries a full sha"
+  assert_equals "null" "$(jq -r '[.answers[] | select(.item | contains("s.jsonl"))][0].sha' "$ans")" "a session-log keep carries no sha"
+  assert_equals "" "$(verdict gone-b)" "a branch whose tip cannot be read is not answered"
+  assert_equals "9" "$(jq ".answers | length" "$ans")" "only the nine settled items are answered"
   assert_contains "$(jq -r '[.answers[] | select(.item | contains("merged-b"))][0] | "\(.host) \(.result_date) \(.rule) | \(.fact)"' "$ans")" \
     "okhost 2026-10-24 fleet rules section 6, unmerged-branch rule (pull request merged or closed) | pull request https://x/pull/7 merged at ${sha_m:0:7}, read live" \
     "an answer names its host, rule and the fact it read"
-  assert_contains "$(<"$md")" "okhost (result of 2026-10-24): 14 unsure; 8 answered, 1 unreadable (the Bosun retries them), 1 without a bucket, 4 unsettled." "the digest counts each bucket"
+  assert_contains "$(<"$md")" "okhost (result of 2026-10-24): 16 unsure; 9 answered, 1 unreadable (the Bosun retries them), 1 without a bucket, 5 unsettled." "the digest counts each bucket"
   assert_contains "$(<"$md")" "blind-b (local)\`: its commit or pull requests could not be read now" "an unreadable pull request is listed unsettled"
   assert_contains "$(<"$md")" "/scratch/lint.txt\`: no rule settles it" "an old scratch file is listed for the Quartermaster"
   assert_contains "$(<"$md")" "nohead-b (local)\`: whether it is on the default branch could not be read now" "a branch with no origin/HEAD is listed unsettled"
   assert_contains "$(<"$md")" "copy-nohead\`: whether it is on the default branch could not be read now" "a copy with no origin/HEAD is listed unsettled"
   assert_not_contains "$(<"$md")" "s.jsonl" "a session log is not listed unsettled"
+  assert_contains "$(<"$md")" "gone-b (local)\`: its commit or pull requests could not be read now" "a branch with no readable sha is listed unsettled"
   assert_contains "$(<"$md")" "Bosun host downhost unreachable" "an unreachable host is a coverage gap"
   assert_not_contains "$(<"$md")" "/slots/unreadable" "an unreadable item is neither answered nor listed"
   assert_equals "0" "$(grep -c 'merged-b' "$home/data/officers/friction/$DATE.velocity-findings.json")" "answers never reach the velocity file"
