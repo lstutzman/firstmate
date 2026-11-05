@@ -28,7 +28,8 @@ card, a page owner fixes a page). It acts on nothing itself.
                  whose keyed status line a later `resolved` line settled.
                  Two live-decision exceptions keep this from false-flagging:
                  * A merged PR alone does not stale a card that asks for a
-                   production action on it (deploy, production, roll out):
+                   production action on it (deploy, production, roll out, activate, go live,
+                   install, enable, run):
                    that action is still open. The card's question, title and
                    id are read for PRODUCTION_RE unless they ask for a
                    merge (MERGE_RE: a merge-word card is stale once its PR
@@ -72,8 +73,8 @@ import time
 MAX_PR_LOOKUPS = 40
 FACTS_SOURCES = ("bosun",)
 PR_RE = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)")
-# A card names a production action when its question, title or own id matches PRODUCTION_RE and does not ask for a merge.
-PRODUCTION_RE = re.compile(r"\b(production|deploy\w*|roll(?:ed|s|ing)?[ -]?out)\b", re.I)
+# A card names a production or go-live action (deploy, activate, install, enable, run) when its question, title or own id matches PRODUCTION_RE and does not ask for a merge.
+PRODUCTION_RE = re.compile(r"\b(production|deploy\w*|roll(?:ed|s|ing)?[ -]?out|activat\w*|go[ -]?live|install\w*|enabl\w*|run)\b", re.I)
 MERGE_RE = re.compile(r"\bmerge[ -]words?\b|^merge\s|\bmerge (?:this|it|the PR|PR)\b", re.I)
 # A resolved status line written by an answer, as opposed to a routing or reconcile acknowledgement.
 ANSWER_RE = re.compile(r"^(?:answered:|captain hold \S+: (?:answered|released))", re.I)
