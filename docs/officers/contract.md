@@ -25,7 +25,7 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
 - Each item has one Type, one Source (the officer's own Source label) and one area label.
   A fleet finding goes in the Fleet project with the `area:fleet` label.
   An officer never creates a label; a missing label means the finding is reported and not filed.
-- An officer never closes or deletes an item, and never changes the state, priority, labels, assignee or title of one that exists.
+- An officer filing under this contract never closes or deletes an item, and never changes the state, priority, labels, assignee or title of one that exists.
   The only text it edits is the Found line (and an officer's own cluster list).
   An item a person closed is never reopened: a repeat finding files a new item that says `Recurrence of <id>` and links the old one.
 - The registry line sets the per-run create cap (`max-creates`) and the Linear call budget (`max-linear-calls`).
@@ -38,7 +38,7 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
 - The found count is a priority lever.
   The score is the severity weight (critical 8, high 4, medium 2, low 1) multiplied by log2(1 + found), and it orders what is filed and what starts.
   The digest shows each finding's found count and score.
-- The progress officer triages officer-filed items (priority, owning office) before it starts them.
+- The progress officer will triage officer-filed items (priority, owning office) before it starts them; until it does, the severity-derived priority above stands.
 
 ## Start
 

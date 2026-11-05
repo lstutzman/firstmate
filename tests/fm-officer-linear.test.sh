@@ -167,6 +167,8 @@ elif scenario == "fleet":
     fl, lin = filer(project="Fleet")
     run(fl, [f])
     res = {"filing": f["filing"]}
+elif scenario == "fleet-labels":
+    res = [lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[0], lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[1]]
 elif scenario == "closed":
     f = find("old", "Previously closed finding")
     fl, lin = filer()
@@ -303,6 +305,7 @@ test_fleet_findings_take_the_fleet_project_and_label() {
   assert_equals created "$(jq -r '.filing.action' <<<"$out")" "the fleet finding is filed"
   assert_equals '["Bug","scan","area:fleet"]' "$(issue PC-101 '.labels' | jq -c .)" "one Type, one Source, area:fleet"
   assert_equals Fleet "$(issue PC-101 .project)" "in the Fleet project"
+  assert_equals '[["Bug","scan","area:fleet"],[]]' "$(drive fleet-labels | jq -c .)" "fleet_labels names one Type, one Source and area:fleet, and any missing label"
   assert_equals 3 "$(issue PC-101 .priority)" "medium is Linear priority 3"
   assert_contains "$(grep '^issue create' "$LDIR/calls" | sed -n 1p)" "--dry-run" "the dry run comes first"
   assert_contains "$(grep '^issue create' "$LDIR/calls" | sed -n 2p)" "--verify" "then the verify"

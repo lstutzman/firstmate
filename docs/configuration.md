@@ -1030,9 +1030,8 @@ A sweeper bug whose `environment` is production moves up one severity step; the 
 A finding the source already put in Linear is `tracked` and never filed again.
 A real finding whose source gave no key is fingerprinted from its normalised title plus location.
 With `writes: linear`, the Surgeon files each real, untracked finding in team PC: medium or higher findings one item each, low review findings one item per component cluster.
-Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`), one area label derived from the finding (the `triage-label` when none fits), and `surgeon-fp:<sha256>` in its description, which a search for the fingerprint (and the lane's `filed-fingerprints.json`) checks first; a text search then asks local-jev whether a candidate is the same issue, above 0.85.
-A duplicate raises the existing item's `Found: N times (first <date>, last <date>, by surgeon)` line in place and adds at most one comment a day; a duplicate of a closed (completed or canceled) item, single or cluster, is never reopened or edited but filed as a new item that names the old one (`Recurrence of <id> (closed as <state>)`) and links it as related.
-It never closes or deletes an item, and a cluster item or its own Found line is the only text it edits.
+Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`) and one area label derived from the finding (the `triage-label` when none fits).
+Fingerprinting, duplicate detection, the `Found:` line, recurrences of closed items and what the Surgeon never touches are the shared [filing rules](officers/contract.md#file); its own cluster items are the only text it edits besides the Found line.
 Every Linear call is counted against `max-linear-calls`.
 One rate-limit answer from Linear stops the run's Linear calls and writes `linear-resume-after.json` in the lane; runs before that time make no Linear call.
 The lane also keeps `review-state.json` (cluster membership, the weekly burn-down), `found.json` and `patterns.json`.
