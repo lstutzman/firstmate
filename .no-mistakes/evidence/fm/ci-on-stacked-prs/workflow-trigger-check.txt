@@ -1,0 +1,16 @@
+.github/workflows/ci.yml pull_request.branches = ['main', 'fm/**'] types = None
+  base main -> True
+  base fm/office-workspace-bare-role-name -> True
+  base fm/friction-bosun-unsure-class -> True
+  base fm/a/b -> True
+  base feature/x -> False
+  base staging -> False
+  jobs: ['lint', 'test-coverage', 'tests-portable-parallel-1', 'tests-portable-parallel-2', 'tests-portable-serial', 'tests-herdr', 'tests-timing-aggregate', 'macos-stock-bash', 'invariants']
+.github/workflows/no-mistakes-required.yml pull_request.branches = ['main', 'fm/**'] types = ['opened', 'edited', 'synchronize', 'reopened']
+  base main -> True
+  base fm/office-workspace-bare-role-name -> True
+  base fm/friction-bosun-unsure-class -> True
+  base fm/a/b -> True
+  base feature/x -> False
+  base staging -> False
+  jobs: ['check']
