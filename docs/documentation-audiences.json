@@ -333,6 +333,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/officers/contract.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/officers/surgeon-rubric.md",
       "audience": "operator-current"
     },
