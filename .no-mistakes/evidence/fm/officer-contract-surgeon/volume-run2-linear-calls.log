@@ -1,0 +1,162 @@
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:383d9681668e05d76cb3f1db045fd349de8e27c48444611c8873de7d8a65c711 --team PC --limit 5 --output json
+issue view PC-9 --full --output json
+issue search Nightly E2E run invalid: promotion blocked --team PC --limit 5 --output json
+issue create --team PC --title Nightly E2E run invalid: promotion blocked --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-383d9681668e.md --priority 1 --label Bug --label scheduled-review --label testing --dry-run --output json
+issue create --team PC --title Nightly E2E run invalid: promotion blocked --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-383d9681668e.md --priority 1 --label Bug --label scheduled-review --label testing --verify --output json
+issue search surgeon-fp:f641fa78bad26127292b7d7d528477acb9dda4efae07ae67fbf2eb50a8b6b6f2 --team PC --limit 5 --output json
+issue search SQL built from user input in order search --team PC --limit 5 --output json
+issue create --team PC --title SQL built from user input in order search --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-f641fa78bad2.md --priority 2 --label Bug --label scheduled-review --label api --dry-run --output json
+issue create --team PC --title SQL built from user input in order search --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-f641fa78bad2.md --priority 2 --label Bug --label scheduled-review --label api --verify --output json
+issue search surgeon-fp:b47cdd602d42c95c91a1e70f917ed6ef0faf5790540f860ac390d61e035ebebf --team PC --limit 5 --output json
+issue search Crash on save --team PC --limit 5 --output json
+issue create --team PC --title Crash on save --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-b47cdd602d42.md --priority 2 --label Bug --label bug-sweep --label triage --dry-run --output json
+issue create --team PC --title Crash on save --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-b47cdd602d42.md --priority 2 --label Bug --label bug-sweep --label triage --verify --output json
+issue search surgeon-fp:60bc7750c45e13fedd9155ec800a1fac5e194f9f9be6e099b9c8d1a16af12563 --team PC --limit 5 --output json
+issue search Stripe payment fails for annual plan --team PC --limit 5 --output json
+issue create --team PC --title Stripe payment fails for annual plan --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-60bc7750c45e.md --priority 2 --label Bug --label bug-sweep --label billing --dry-run --output json
+issue create --team PC --title Stripe payment fails for annual plan --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-60bc7750c45e.md --priority 2 --label Bug --label bug-sweep --label billing --verify --output json
+issue search surgeon-fp:24027118a5c09cab0c5b0b97aa0b065c2ad3bc8ed34ece0e89151efef7bab63a --team PC --limit 5 --output json
+issue search medium finding 0 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 0 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-24027118a5c0.md --priority 3 --label Bug --label scheduled-review --label api --dry-run --output json
+issue create --team PC --title medium finding 0 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-24027118a5c0.md --priority 3 --label Bug --label scheduled-review --label api --verify --output json
+issue search surgeon-fp:f3c84b1a4f6f1ef20a3f62eccbea381c8a8d2dd00e95f5b6f8436e852a70b532 --team PC --limit 5 --output json
+issue search medium finding 1 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 1 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-f3c84b1a4f6f.md --priority 3 --label Bug --label scheduled-review --label api --dry-run --output json
+issue create --team PC --title medium finding 1 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-f3c84b1a4f6f.md --priority 3 --label Bug --label scheduled-review --label api --verify --output json
+issue search surgeon-fp:2c40e25969561ff0f79222943cacf82e588df803380a27d01f6092d17f94f508 --team PC --limit 5 --output json
+issue search medium finding 10 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 10 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-2c40e2596956.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title medium finding 10 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-2c40e2596956.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:0d084c56c4c96ae2b040fd1bf31aaa81191231e6fb9dff35767d5c134b0e16d7 --team PC --limit 5 --output json
+issue search medium finding 11 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 11 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-0d084c56c4c9.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title medium finding 11 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-0d084c56c4c9.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:18ee770a1653f9f0b253c583b96e581e64baecba5e030ce4b5450f294e66d294 --team PC --limit 5 --output json
+issue search medium finding 12 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 12 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-18ee770a1653.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title medium finding 12 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-18ee770a1653.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:c6ba807fddf26368a0deb64ce5a5bf68510a4892a9980d05a1211963be428e30 --team PC --limit 5 --output json
+issue search medium finding 13 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 13 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-c6ba807fddf2.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title medium finding 13 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-c6ba807fddf2.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:a412aece954588896e6290ff78cbed8b5b85a2b7fc9af1d7c228ca2b414524ce --team PC --limit 5 --output json
+issue search medium finding 14 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 14 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-a412aece9545.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title medium finding 14 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-a412aece9545.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:e0f6de74c6de501f9a6acfdb2bb5127d4b91ce502ca917d0801827f7428d0f5d --team PC --limit 5 --output json
+issue search medium finding 15 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 15 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-e0f6de74c6de.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title medium finding 15 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-e0f6de74c6de.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:3ab5f211ebbf6650801e24ba173b2cf3ec8af2f68525fcc29e773093164d7dfb --team PC --limit 5 --output json
+issue search medium finding 16 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 16 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-3ab5f211ebbf.md --priority 3 --label Bug --label scheduled-review --label testing --dry-run --output json
+issue create --team PC --title medium finding 16 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-3ab5f211ebbf.md --priority 3 --label Bug --label scheduled-review --label testing --verify --output json
+issue search surgeon-fp:fc7df3a4f3784563b60fd0cf8c5713ac337117a75629f4e614c85f3c7e358b6a --team PC --limit 5 --output json
+issue search medium finding 17 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 17 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-fc7df3a4f378.md --priority 3 --label Bug --label scheduled-review --label api --dry-run --output json
+issue create --team PC --title medium finding 17 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-fc7df3a4f378.md --priority 3 --label Bug --label scheduled-review --label api --verify --output json
+issue search surgeon-fp:956cf47bf18c3ea537a0ef88045310b5f7b945e6a0ba5077b12936f1547ef11e --team PC --limit 5 --output json
+issue search medium finding 18 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 18 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-956cf47bf18c.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title medium finding 18 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-956cf47bf18c.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:012efabb58592800528cd9ac3eb54d8abd53f1eedae8831ed4ec2a6fbdd88457 --team PC --limit 5 --output json
+issue search medium finding 2 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 2 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-012efabb5859.md --priority 3 --label Bug --label scheduled-review --label ui-ux --dry-run --output json
+issue create --team PC --title medium finding 2 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-012efabb5859.md --priority 3 --label Bug --label scheduled-review --label ui-ux --verify --output json
+issue search surgeon-fp:8a7e7394ed497b4976a800084236fecf62a24f3939c3a73336f3d67953f1ac6a --team PC --limit 5 --output json
+issue search medium finding 3 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 3 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-8a7e7394ed49.md --priority 3 --label Bug --label scheduled-review --label ui-ux --dry-run --output json
+issue create --team PC --title medium finding 3 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-8a7e7394ed49.md --priority 3 --label Bug --label scheduled-review --label ui-ux --verify --output json
+issue search surgeon-fp:433bc9c34866e2d4823c826b2cdaa055ab086c921d9c6865c24c62e7531fb9ab --team PC --limit 5 --output json
+issue search medium finding 4 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 4 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-433bc9c34866.md --priority 3 --label Bug --label scheduled-review --label infrastructure --dry-run --output json
+issue create --team PC --title medium finding 4 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-433bc9c34866.md --priority 3 --label Bug --label scheduled-review --label infrastructure --verify --output json
+issue search surgeon-fp:b73dda024fc3cb21c7de19e10a83a70c6517871fdd4d49d8710194df8263e904 --team PC --limit 5 --output json
+issue search medium finding 5 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 5 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-b73dda024fc3.md --priority 3 --label Bug --label scheduled-review --label calculators --dry-run --output json
+issue create --team PC --title medium finding 5 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-b73dda024fc3.md --priority 3 --label Bug --label scheduled-review --label calculators --verify --output json
+issue search surgeon-fp:b0fba28f39d977a81ef8fc4b8c9c4a021f4231ccbf62af8f4a4c3b118154b69b --team PC --limit 5 --output json
+issue search medium finding 6 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 6 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-b0fba28f39d9.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title medium finding 6 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-b0fba28f39d9.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:4aeed386615d4f0885e56eecd315caf8012b9096bcc2877ee3875dd40a16dd29 --team PC --limit 5 --output json
+issue search medium finding 7 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 7 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-4aeed386615d.md --priority 3 --label Bug --label scheduled-review --label authentication --dry-run --output json
+issue create --team PC --title medium finding 7 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-4aeed386615d.md --priority 3 --label Bug --label scheduled-review --label authentication --verify --output json
+issue search surgeon-fp:1a27abf7f9b13d60ef4af5bd87da222b4033cf7d61411507f572246b0e9da9f2 --team PC --limit 5 --output json
+issue search medium finding 8 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 8 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-1a27abf7f9b1.md --priority 3 --label Bug --label scheduled-review --label billing --dry-run --output json
+issue create --team PC --title medium finding 8 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-1a27abf7f9b1.md --priority 3 --label Bug --label scheduled-review --label billing --verify --output json
+issue search surgeon-fp:ef417a5c0e561a6e825f144942bbd7136e3e51bd2a2d2c065a97f8c33d519ca9 --team PC --limit 5 --output json
+issue search medium finding 9 --team PC --limit 5 --output json
+issue create --team PC --title medium finding 9 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-ef417a5c0e56.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title medium finding 9 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-ef417a5c0e56.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:cd7283656a6b70d3daf90820650594c2be7c2a25abd553e9caa2783df3e37906 --team PC --limit 5 --output json
+issue search Map tile 404 at 51.2,0.1 (run 8812) --team PC --limit 5 --output json
+issue create --team PC --title Map tile 404 at 51.2,0.1 (run 8812) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-cd7283656a6b.md --priority 3 --label Bug --label bug-sweep --label triage --dry-run --output json
+issue create --team PC --title Map tile 404 at 51.2,0.1 (run 8812) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-cd7283656a6b.md --priority 3 --label Bug --label bug-sweep --label triage --verify --output json
+issue search surgeon-fp:5bb533f8f84c7233d9456bdab3eb14276a323058640c68bfb22d08a305a9136c --team PC --limit 5 --output json
+issue search Checkout total wrong --team PC --limit 5 --output json
+issue create --team PC --title Checkout total wrong --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-5bb533f8f84c.md --priority 3 --label Bug --label bug-sweep --label triage --dry-run --output json
+issue create --team PC --title Checkout total wrong --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-5bb533f8f84c.md --priority 3 --label Bug --label bug-sweep --label triage --verify --output json
+issue search surgeon-fp:e228f2f98cea9c78cead7c47c8d517d17f8440b33545501a5a44b42799223c47 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Admin Ui (Admin/Ui) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-e228f2f98cea.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Admin Ui (Admin/Ui) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-e228f2f98cea.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:f9223f00751998be983ca1a3db74f7648de000bc05667be6d321e41f366ee0e3 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Api Controllers (Api/Controllers) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-f9223f007519.md --priority 3 --label Bug --label scheduled-review --label api --dry-run --output json
+issue create --team PC --title Code review findings: Api Controllers (Api/Controllers) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-f9223f007519.md --priority 3 --label Bug --label scheduled-review --label api --verify --output json
+issue search surgeon-fp:885d6b869b2f9abb235f167d21f3dc7851b9a3ca6699bf9cb6e50ec965c8a827 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Api Dto (Api/Dto) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-885d6b869b2f.md --priority 3 --label Bug --label scheduled-review --label api --dry-run --output json
+issue create --team PC --title Code review findings: Api Dto (Api/Dto) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-885d6b869b2f.md --priority 3 --label Bug --label scheduled-review --label api --verify --output json
+issue search surgeon-fp:c147eb54341194923573d6049ef9acfda1665887c8aadb8aa527d50de6f02cd9 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Api Services (Api/Services) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-c147eb543411.md --priority 3 --label Bug --label scheduled-review --label api --dry-run --output json
+issue create --team PC --title Code review findings: Api Services (Api/Services) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-c147eb543411.md --priority 3 --label Bug --label scheduled-review --label api --verify --output json
+issue search surgeon-fp:d5e9b54337fc68fdd57df24fbe53e1ccf98a602f08a38ec2542e78d6bdcdfe4b --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Auth Handlers (Auth/Handlers) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-d5e9b54337fc.md --priority 3 --label Bug --label scheduled-review --label authentication --dry-run --output json
+issue create --team PC --title Code review findings: Auth Handlers (Auth/Handlers) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-d5e9b54337fc.md --priority 3 --label Bug --label scheduled-review --label authentication --verify --output json
+issue search surgeon-fp:f3c9839bb0e9cc12d5d4b4606014d7f7b3ec8420e4414ce92f7262c04aa20f0c --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Billing Stripe (Billing/Stripe) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-f3c9839bb0e9.md --priority 3 --label Bug --label scheduled-review --label billing --dry-run --output json
+issue create --team PC --title Code review findings: Billing Stripe (Billing/Stripe) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-f3c9839bb0e9.md --priority 3 --label Bug --label scheduled-review --label billing --verify --output json
+issue search surgeon-fp:8fea3ee8e5903d962ccf7e16361f39d4d337c0bd8e3f2ca59d9125f3b1789e85 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Calc Engine (Calc/Engine) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-8fea3ee8e590.md --priority 3 --label Bug --label scheduled-review --label calculators --dry-run --output json
+issue create --team PC --title Code review findings: Calc Engine (Calc/Engine) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-8fea3ee8e590.md --priority 3 --label Bug --label scheduled-review --label calculators --verify --output json
+issue search surgeon-fp:747e3c0f773fb3a4bbc90efbfd7d29a5c221a585ea70642e7548e01818a82215 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Data Migrations (Data/Migrations) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-747e3c0f773f.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Data Migrations (Data/Migrations) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-747e3c0f773f.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:567c91eeca023ae9202c501a9f0be2e1df0fb6fc8ed8d2415af965714993509f --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Data Repos (Data/Repos) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-567c91eeca02.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Data Repos (Data/Repos) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-567c91eeca02.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:aaff2c69cedfe2661fc00c4af25a86c60e5445350335e7802a362e792a504ba7 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Geo Lookup (Geo/Lookup) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-aaff2c69cedf.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Geo Lookup (Geo/Lookup) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-aaff2c69cedf.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:42d38c4f7bb4c5942211fcd9fcf7f49bc946e63d14ff895f0275b11252d04dca --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Jobs Workers (Jobs/Workers) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-42d38c4f7bb4.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Jobs Workers (Jobs/Workers) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-42d38c4f7bb4.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:3ba59a78cb3ddd37eb1869eb8520926e8972be515c1dde6b9c76dca798a56904 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Mail Templates (Mail/Templates) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-3ba59a78cb3d.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Mail Templates (Mail/Templates) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-3ba59a78cb3d.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:0cfd58a5f67bef1e6e4f7b00ec6a67d3af2a50cad1863a6819369c4142153ad8 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Reports Pdf (Reports/Pdf) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-0cfd58a5f67b.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Reports Pdf (Reports/Pdf) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-0cfd58a5f67b.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:aae37744c9e09eeb92761539d529dff8c4e1850b0cd69599682b4d59ceb937b4 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Search Index (Search/Index) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-aae37744c9e0.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Search Index (Search/Index) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-aae37744c9e0.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:88097fc07ace6cdf14fb61e4c81862b6a02028627d534838f3230e31290b8052 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Shared Utils (Shared/Utils) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-88097fc07ace.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Shared Utils (Shared/Utils) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-88097fc07ace.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:a2e428bdba7983ce68cbb57eb9296b3ffe65b0c1227b03942f55cba3e012a574 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Tests Helpers (Tests/Helpers) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-a2e428bdba79.md --priority 3 --label Bug --label scheduled-review --label testing --dry-run --output json
+issue create --team PC --title Code review findings: Tests Helpers (Tests/Helpers) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-a2e428bdba79.md --priority 3 --label Bug --label scheduled-review --label testing --verify --output json
+issue search surgeon-fp:12a984ff62a2fe91145214f00bd793f1493426cc631caa0392fc4d32a688d08f --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Web src components (Web/src/components) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-12a984ff62a2.md --priority 3 --label Bug --label scheduled-review --label ui-ux --dry-run --output json
+issue create --team PC --title Code review findings: Web src components (Web/src/components) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-12a984ff62a2.md --priority 3 --label Bug --label scheduled-review --label ui-ux --verify --output json
+issue search surgeon-fp:78bc605e31e3e5d1ed31fa801242f7dbdd9773e6cd2e30c6ce8e3d20fb10de66 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Web src hooks (Web/src/hooks) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-78bc605e31e3.md --priority 3 --label Bug --label scheduled-review --label triage --dry-run --output json
+issue create --team PC --title Code review findings: Web src hooks (Web/src/hooks) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-78bc605e31e3.md --priority 3 --label Bug --label scheduled-review --label triage --verify --output json
+issue search surgeon-fp:0cf175e7af57847c42097a679198efe6815f760d2e166e31eaf53901b444df47 --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: Web src pages (Web/src/pages) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-0cf175e7af57.md --priority 3 --label Bug --label scheduled-review --label ui-ux --dry-run --output json
+issue create --team PC --title Code review findings: Web src pages (Web/src/pages) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-0cf175e7af57.md --priority 3 --label Bug --label scheduled-review --label ui-ux --verify --output json
+issue search surgeon-fp:19018c8e4cfb8c60d4e1ad0d8c257c7b6d4844c08e85dfc090e8ef9b0b12e02e --team PC --limit 5 --output json
+issue create --team PC --title Code review findings: infra bicep (infra/bicep) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-19018c8e4cfb.md --priority 3 --label Bug --label scheduled-review --label infrastructure --dry-run --output json
+issue create --team PC --title Code review findings: infra bicep (infra/bicep) --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-23-19018c8e4cfb.md --priority 3 --label Bug --label scheduled-review --label infrastructure --verify --output json

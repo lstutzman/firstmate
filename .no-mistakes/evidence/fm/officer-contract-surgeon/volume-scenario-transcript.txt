@@ -1,0 +1,48 @@
+rc=0
+creates verified: 45
+total linear calls logged: 162
+{
+  "linear_calls": 162,
+  "linear_call_budget": 450,
+  "burn_down": {
+    "fixed": 0,
+    "new": 474,
+    "open": 474,
+    "week": "2026-W43"
+  }
+}
+review filing actions:
+clustered=454 created=20
+unfiled real findings:
+0
+area labels used:
+     45 --label Bug
+      7 --label api
+      2 --label authentication
+      3 --label billing
+      4 --label bug-sweep
+      2 --label calculators
+      2 --label infrastructure
+     41 --label scheduled-review
+      3 --label testing
+     22 --label triage
+      4 --label ui-ux
+invalid e2e:
+{"class":"real","severity":"critical","filing":{"action":"created","issue":"PC-101"}}
+--priority 1
+production bump:
+{"severity":"medium","title":"Checkout total wrong"}
+keyless:
+{"key":"","fingerprint":"cd7283656a6b70d3daf90820650594c2be7c2a25abd553e9caa2783df3e37906","filing":{"action":"created","issue":"PC-124"}}
+starts:
+{"kind":"surgeon-finding","title":"SQL built from user input in order search"}
+{"kind":"surgeon-finding","title":"Crash on save"}
+{"kind":"pattern-memory","title":null}
+held:
+{"class":"payments-billing","title":"Stripe payment fails for annual plan"}
+[{"findings":[{"class":"payments-billing","fingerprint":"60bc7750c45e13fedd9155ec800a1fac5e194f9f9be6e099b9c8d1a16af12563","issue":"PC-104","severity":"high","title":"Stripe payment fails for annual plan"}],"key":"surgeon-holds-2026-10-23","line":"needs-decision [key=surgeon-holds-2026-10-23]: 1 finding(s) held for Lee, they match a reserved class: Stripe payment fails for annual plan (payments-billing)"}]
+day2 rc=0
+day2 creates: 0  updates: 23
+{"title":"Map tile 404 at 52.9,1.4 (run 9001)","filing":{"action":"exists","found":2,"issue":"PC-124"}}
+{"title":"duplicate-me crash on save","filing":{"action":"duplicate","confidence":0.91,"found":2,"issue":"PC-9"}}
+     23 Found: 2 times (first 2026-10-24, last 2026-10-24, by surgeon)

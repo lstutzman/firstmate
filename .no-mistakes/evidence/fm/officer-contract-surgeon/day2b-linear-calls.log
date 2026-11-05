@@ -1,0 +1,118 @@
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:78360f34b4a7aef926020c7aceff3cfbc262db139bfd04821482d4e306b0c985 --team PC --limit 5 --output json
+issue view PC-9 --full --output json
+issue search duplicate-me crash on save --team PC --limit 5 --output json
+issue view PC-101 --full --output json
+issue update PC-101 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-383d9681668e.md --dry-run --output json
+issue update PC-101 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-383d9681668e.md --verify --output json
+issue comment PC-101 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-101 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-102 --full --output json
+issue update PC-102 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-f641fa78bad2.md --dry-run --output json
+issue update PC-102 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-f641fa78bad2.md --verify --output json
+issue comment PC-102 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-102 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-105 --full --output json
+issue update PC-105 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-24027118a5c0.md --dry-run --output json
+issue update PC-105 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-24027118a5c0.md --verify --output json
+issue comment PC-105 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-105 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-106 --full --output json
+issue update PC-106 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-f3c84b1a4f6f.md --dry-run --output json
+issue update PC-106 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-f3c84b1a4f6f.md --verify --output json
+issue comment PC-106 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-106 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-107 --full --output json
+issue update PC-107 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-2c40e2596956.md --dry-run --output json
+issue update PC-107 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-2c40e2596956.md --verify --output json
+issue comment PC-107 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-107 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-108 --full --output json
+issue update PC-108 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-0d084c56c4c9.md --dry-run --output json
+issue update PC-108 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-0d084c56c4c9.md --verify --output json
+issue comment PC-108 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-108 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-109 --full --output json
+issue update PC-109 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-18ee770a1653.md --dry-run --output json
+issue update PC-109 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-18ee770a1653.md --verify --output json
+issue comment PC-109 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-109 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-110 --full --output json
+issue update PC-110 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-c6ba807fddf2.md --dry-run --output json
+issue update PC-110 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-c6ba807fddf2.md --verify --output json
+issue comment PC-110 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-110 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-111 --full --output json
+issue update PC-111 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-a412aece9545.md --dry-run --output json
+issue update PC-111 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-a412aece9545.md --verify --output json
+issue comment PC-111 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-111 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-112 --full --output json
+issue update PC-112 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-e0f6de74c6de.md --dry-run --output json
+issue update PC-112 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-e0f6de74c6de.md --verify --output json
+issue comment PC-112 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-112 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-113 --full --output json
+issue update PC-113 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-3ab5f211ebbf.md --dry-run --output json
+issue update PC-113 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-3ab5f211ebbf.md --verify --output json
+issue comment PC-113 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-113 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-114 --full --output json
+issue update PC-114 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-fc7df3a4f378.md --dry-run --output json
+issue update PC-114 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-fc7df3a4f378.md --verify --output json
+issue comment PC-114 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-114 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-115 --full --output json
+issue update PC-115 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-956cf47bf18c.md --dry-run --output json
+issue update PC-115 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-956cf47bf18c.md --verify --output json
+issue comment PC-115 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-115 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-116 --full --output json
+issue update PC-116 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-012efabb5859.md --dry-run --output json
+issue update PC-116 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-012efabb5859.md --verify --output json
+issue comment PC-116 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-116 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-117 --full --output json
+issue update PC-117 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-8a7e7394ed49.md --dry-run --output json
+issue update PC-117 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-8a7e7394ed49.md --verify --output json
+issue comment PC-117 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-117 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-118 --full --output json
+issue update PC-118 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-433bc9c34866.md --dry-run --output json
+issue update PC-118 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-433bc9c34866.md --verify --output json
+issue comment PC-118 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-118 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-119 --full --output json
+issue update PC-119 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-b73dda024fc3.md --dry-run --output json
+issue update PC-119 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-b73dda024fc3.md --verify --output json
+issue comment PC-119 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-119 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-120 --full --output json
+issue update PC-120 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-b0fba28f39d9.md --dry-run --output json
+issue update PC-120 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-b0fba28f39d9.md --verify --output json
+issue comment PC-120 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-120 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-121 --full --output json
+issue update PC-121 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-4aeed386615d.md --dry-run --output json
+issue update PC-121 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-4aeed386615d.md --verify --output json
+issue comment PC-121 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-121 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-122 --full --output json
+issue update PC-122 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-1a27abf7f9b1.md --dry-run --output json
+issue update PC-122 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-1a27abf7f9b1.md --verify --output json
+issue comment PC-122 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-122 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-123 --full --output json
+issue update PC-123 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-ef417a5c0e56.md --dry-run --output json
+issue update PC-123 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-ef417a5c0e56.md --verify --output json
+issue comment PC-123 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-123 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-124 --full --output json
+issue update PC-124 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-cd7283656a6b.md --dry-run --output json
+issue update PC-124 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-cd7283656a6b.md --verify --output json
+issue comment PC-124 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-124 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue update PC-9 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-78360f34b4a7.md --dry-run --output json
+issue update PC-9 --body-file /tmp/fm-officer-surgeon.s34xe6/vol/home/data/officers/surgeon/.surgeon-2026-10-24-78360f34b4a7.md --verify --output json
+issue comment PC-9 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-9 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json

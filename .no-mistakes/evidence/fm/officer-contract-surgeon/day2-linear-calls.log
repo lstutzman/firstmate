@@ -1,0 +1,23 @@
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:78360f34b4a7aef926020c7aceff3cfbc262db139bfd04821482d4e306b0c985 --team PC --limit 5 --output json
+issue view PC-9 --full --output json
+issue search duplicate-me crash on save --team PC --limit 5 --output json
+issue view PC-101 --full --output json
+issue update PC-101 --body-file /tmp/fm-officer-surgeon.r5UHRz/vol/home/data/officers/surgeon/.surgeon-2026-10-24-383d9681668e.md --dry-run --output json
+issue update PC-101 --body-file /tmp/fm-officer-surgeon.r5UHRz/vol/home/data/officers/surgeon/.surgeon-2026-10-24-383d9681668e.md --verify --output json
+issue comment PC-101 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-101 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-104 --full --output json
+issue update PC-104 --body-file /tmp/fm-officer-surgeon.r5UHRz/vol/home/data/officers/surgeon/.surgeon-2026-10-24-f641fa78bad2.md --dry-run --output json
+issue update PC-104 --body-file /tmp/fm-officer-surgeon.r5UHRz/vol/home/data/officers/surgeon/.surgeon-2026-10-24-f641fa78bad2.md --verify --output json
+issue comment PC-104 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-104 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue view PC-105 --full --output json
+issue update PC-105 --body-file /tmp/fm-officer-surgeon.r5UHRz/vol/home/data/officers/surgeon/.surgeon-2026-10-24-cd7283656a6b.md --dry-run --output json
+issue update PC-105 --body-file /tmp/fm-officer-surgeon.r5UHRz/vol/home/data/officers/surgeon/.surgeon-2026-10-24-cd7283656a6b.md --verify --output json
+issue comment PC-105 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-105 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+issue update PC-9 --body-file /tmp/fm-officer-surgeon.r5UHRz/vol/home/data/officers/surgeon/.surgeon-2026-10-24-78360f34b4a7.md --dry-run --output json
+issue update PC-9 --body-file /tmp/fm-officer-surgeon.r5UHRz/vol/home/data/officers/surgeon/.surgeon-2026-10-24-78360f34b4a7.md --verify --output json
+issue comment PC-9 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-9 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
