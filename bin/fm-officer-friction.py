@@ -91,6 +91,13 @@ read live (read-only git and gh on the host):
   anything else                           keep    (unique unlanded work is
                                                    never deleted)
 
+A copy item names a pooled Treehouse slot (`<pool>/<n>`) as often as a checkout.
+The officer reads the checkout as the Bosun does (fleet-app src/bosun/cleanup.ts
+checkoutOf): the copy itself when it has a `.git`, else its single child that
+has one. The sha, status and pull requests come from that checkout, and the
+answer still names the item as the Bosun listed it. A copy with no checkout,
+several, or an unreadable folder is unsettled.
+
 A copy that would be answered delete is first checked with a read-only
 `GIT_OPTIONAL_LOCKS=0 git status --porcelain` on its host: any modified,
 staged or untracked entry makes it keep (unique unlanded work), and a failed
@@ -1017,6 +1024,18 @@ def _pull_requests(cwd, branch):
     return prs if isinstance(prs, list) else None
 
 
+def _checkout_of(copy):
+    """The git checkout of a copy, as the Bosun resolves it (fleet-app src/bosun/cleanup.ts checkoutOf): the copy itself
+    when it has a .git, else its single child that has one; None when there are none, several, or the copy cannot be listed."""
+    if os.path.exists(os.path.join(copy, ".git")):
+        return copy
+    try:
+        found = [p for p in (os.path.join(copy, n) for n in sorted(os.listdir(copy))) if os.path.exists(os.path.join(p, ".git"))]
+    except OSError:
+        return None
+    return found[0] if len(found) == 1 else None
+
+
 def bosun_probe(entry):
     """The live facts one rule-settles item needs, read on the host with read-only git and gh."""
     kind, item, why = entry["kind"], entry["item"], entry["why"]
@@ -1027,10 +1046,11 @@ def bosun_probe(entry):
         sha = _read(["git", "rev-parse", "--verify", "-q", ref], repo)
         return {"sha": sha, "prs": _pull_requests(repo, branch), "on_default": _on_default(sha, repo)}
     m = COPY_BRANCH_RE.match(why) if kind == "copy" else None
-    if m and os.path.isdir(item):
-        sha = _read(["git", "rev-parse", "HEAD"], item)
-        status = _read(["git", "status", "--porcelain"], item, dict(os.environ, GIT_OPTIONAL_LOCKS="0"))
-        return {"sha": sha, "prs": _pull_requests(item, m.group(1)), "on_default": _on_default(sha, item),
+    root = _checkout_of(item) if m and os.path.isdir(item) else None
+    if root:
+        sha = _read(["git", "rev-parse", "HEAD"], root)
+        status = _read(["git", "status", "--porcelain"], root, dict(os.environ, GIT_OPTIONAL_LOCKS="0"))
+        return {"sha": sha, "prs": _pull_requests(root, m.group(1)), "on_default": _on_default(sha, root),
                 "dirty": None if status is None else bool(status)}
     return None
 
