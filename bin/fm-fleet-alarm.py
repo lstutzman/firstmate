@@ -37,7 +37,9 @@ decision list is complete and holds at least one captain-hold row, and its summa
 only invalidity is kind child_current_unavailable. Its in-flight count need not be covered by held
 or parked work then, and a live worker beside the hold does not change that. Any status-source ask
 on a task with no captain-hold row of the same id, a truncated decision list, any other
-invalidity kind, or in-flight work with no open captain decision still alarms.
+invalidity kind, or in-flight work with no open captain decision still alarms. A child ask on a
+task the mate holds for the captain is suppressed for as long as that hold is open, including a
+later, unrelated ask from the same child.
 The Claude quota context line (every account's 7d use and carrying accounts) is appended only to
 cards whose alarms include a quota alarm (quota:, stale:, pool, ignored:, quota-read); on other
 alarms it is left off.
