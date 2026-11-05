@@ -82,6 +82,7 @@
         "links": {"type": "array", "items": {"type": "string"}},
         "unrouted": {"type": "string"},
         "project": {"type": "string"},
+        "linear_only": {"type": "boolean"},
         "outcome": {"enum": ["ok", "failed", "skipped"]},
         "captains_log_key": {"type": "string"}
       }

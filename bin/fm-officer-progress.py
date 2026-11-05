@@ -812,7 +812,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             for private in list(row):
                 if private not in ("id", "title", "owner_home", "linear_id", "linear_ids",
                                    "authorising_class", "tag_source", "reason", "evidence", "priority", "rank", "execute"):
-                    if private not in ("link", "links", "project", "outcome", "captains_log_key"):
+                    if private not in ("link", "links", "project", "linear_only", "outcome", "captains_log_key"):
                         row.pop(private, None)
     return doc
 
@@ -945,12 +945,12 @@ class LocalJev:
 def start_home_for(row, home, offices, team="PC", jev=None):
     """(home, unrouted reason) for a start request: the office whose dispatch list holds the row's project.
 
-    A row with no project, a Linear-only row included, is placed by scope_route, whose team Linear id rung sends
-    team work to PropertyCompass2. One that fits no single office stays with `home` and is
+    A Linear-only row's project is a Linear project, not a repository, so it counts as no project. A row with no
+    project is placed by scope_route, whose team Linear id rung sends team work to PropertyCompass2. One that fits no single office stays with `home` and is
     reported as unrouted, but only when offices are configured to route to at all.
     A named project that no office dispatches stays with `home`, as it always has.
     """
-    project = (row.get("project") or "").rsplit("/", 1)[-1].lower()
+    project = "" if row.get("linear_only") else (row.get("project") or "").rsplit("/", 1)[-1].lower()
     if project:
         return next((o.home for o in offices if project in o.projects), home), None
     if row.get("requires_firstmate") or not offices:

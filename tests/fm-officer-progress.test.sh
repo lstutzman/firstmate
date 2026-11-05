@@ -1045,12 +1045,17 @@ PY
   printf '## Queued\n\n- [ ] linked - Repair the linked report (kind: bug) (linear: PC-90)\n' > "$WORLD_HOME/data/backlog.md"
   linear_item PC-3504 'Fleet rules'
   cp "$WORLD/linear/list.json" "$WORLD/fleet-rules.json"
+  linear_item PC-91 'Search revamp ranking'
+  jq '.data.issues[0].project = "Search revamp"' "$WORLD/linear/list.json" > "$WORLD/linear-project.json"
+  jq '.data.issue.project = "Search revamp"' "$WORLD/linear/PC-91.json" > "$WORLD/linear-project-issue.json"
+  mv "$WORLD/linear-project-issue.json" "$WORLD/linear/PC-91.json"
   linear_item PC-90 'Bug: linked report'
-  jq -s '.[0].data.issues += .[1].data.issues | .[0]' "$WORLD/linear/list.json" "$WORLD/fleet-rules.json" > "$WORLD/list.json.new"
+  jq -s '.[0].data.issues += .[1].data.issues + .[2].data.issues | .[0]' "$WORLD/linear/list.json" "$WORLD/fleet-rules.json" "$WORLD/linear-project.json" > "$WORLD/list.json.new"
   mv "$WORLD/list.json.new" "$WORLD/linear/list.json"
   cat > "$WORLD/top-of-mind.json" <<'JSON'
 {"rows":[
  {"id":"rules","words":"Finish the fleet rules PC-3504 in the skills repo","status":"not-started","work":[],"links":[]},
+ {"id":"ranked","words":"Get PC-91 done","status":"not-started","work":[],"links":[]},
  {"id":"pc-link","words":"Tidy the listings page","status":"not-started","work":[],"links":[{"url":"https://github.com/lstutzman/PropertyCompass2/pull/5"}]},
  {"id":"skills-link","words":"Tidy the guides","status":"not-started","work":[],"links":[{"url":"https://github.com/lstutzman/skills/issues/3"}]},
  {"id":"app-link","words":"Tidy the dashboard","status":"not-started","work":[],"links":[{"url":"https://github.com/lstutzman/fleet-app"}]},
@@ -1081,6 +1086,7 @@ JSON
   assert_equals "$qm" "$(routed fix-tap)" 'a Start fix tap goes to the office with the quartermaster role'
   assert_equals "$nav" "$(routed fix-tap-pc)" 'a Start fix tap that names a project goes to that project office'
   assert_equals "$qm" "$(routed PC-3504)" 'a project name in an ask outranks the team Linear id it joins'
+  assert_equals "$nav" "$(routed PC-91)" 'an ask joined to a Linear item in a Linear project goes by its team Linear id'
   assert_equals "$nav" "$(routed jev-nav)" 'a confident local-jev label routes to that office'
   assert_equals "$qm" "$(routed jev-qm)" 'a confident local-jev label routes to the fleet office'
   for id in both other-repo bare jev-low jev-main; do
@@ -1096,7 +1102,7 @@ JSON
   assert_not_contains "$(cat "$WORLD/jev-calls")" 'Start fix' 'an ask its source placed is never sent to local-jev'
   assert_equals 'null' "$(jq -r '.start_requests[] | select(.id == "pc-link") | .unrouted' "$file")" 'a routed ask carries no unrouted reason'
   assert_contains "$(cat "$lane/$DATE.md")" 'unrouted, stays with this home: ambiguous' 'the Markdown digest lists the unrouted ask'
-  assert_equals '17' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all sixteen asks and the backlog row become addressed requests'
+  assert_equals '18' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all seventeen asks and the backlog row become addressed requests'
   assert_equals '0' "$(jq '.excluded | length' "$file")" 'no ask is dropped'
   printf '{"rows":[{"id":"d1","words":"DOWN first ask","status":"not-started","work":[],"links":[]},{"id":"d2","words":"DOWN second ask","status":"not-started","work":[],"links":[]},{"id":"d3","words":"GARBAGE third ask","status":"not-started","work":[],"links":[]}]}\n' > "$WORLD/top-of-mind.json"
   : > "$WORLD/jev-calls"
