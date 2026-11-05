@@ -884,32 +884,36 @@ ROLE_SCOPES = {
     "quartermaster": "Work on the agent fleet itself: agents, second mates, officers, firstmate, skills, the fleet app, "
                      "its run pages, machines, session logs, or process improvement.",
 }
-# local-jev `noul` on whether an ask is work for either office at all.
-IN_SCOPE = ("Is this a request for work on the PropertyCompass2 app or on the agent fleet "
-            "(agents, officers, firstmate, skills, fleet app, machines)?",)
-# local-jev `noul` on whether an ask is not a start at all: a constraint, an answer, an approval, a decision, or a
-# pricing, legal, payments or spending change, all of which stay with Lee.
+# The local-jev questions and bars. The wordings and bars were tuned on the saved 2026-11-05 live digests with no
+# held-out set (data/progress-topofmind-to-offices/measurement.md); re-measure before changing any of them.
+# `noul`: is the ask about either office's work at all; below the bar it fits no office.
+SCOPE_QUESTION = ("Does this concern the PropertyCompass2 app or the agent fleet, rather than something unrelated to both?",)
+SCOPE_MINIMUM = 0.2
+# `noul`: is the ask not a start at all (a constraint, an answer, an approval, a decision); at the bar it stays with Lee.
 NOT_A_START = ("Which is this?",
                "A constraint ('not ready yet'), an answer or permission given to agents, an approval, a decision, "
-               "information, or a change to pricing, legal text, payments or spending; nothing an agent may start alone",
-               "A request for an agent to investigate, build, fix, check or change something, other than pricing, "
-               "legal text, payments or spending")
+               "or information; nothing new is asked of an agent",
+               "A request for an agent to investigate, build, fix, check or change something")
+NOT_A_START_MINIMUM = 0.85
+# `noul`: is the ask a pricing, legal, payments or spending change; at the bar it stays with Lee.
+MONEY_LEGAL_QUESTION = ("Is this a change to pricing, legal text, payments or spending?",)
+MONEY_LEGAL_MINIMUM = 0.85
+# `choice`: the pick between the offices' roles must reach this bar.
+OFFICE_MINIMUM = 0.7
 
 
 class LocalJev:
     """Places an ask with an office through the local-jev skill's jev.py, or leaves it with main.
 
-    Three checks, in order: a `choice` over the registered offices' roles (no main option) picks the office, and the
-    pick must reach MINIMUM; a `noul` IN_SCOPE check asks whether the ask is app or fleet work at all, and below
-    SCOPE_MINIMUM it stays with main as fitting no office; a `noul` NOT_A_START check asks whether it is a constraint,
-    answer, approval, decision, or pricing, legal, payments or spending change for Lee, and at FOR_LEE_MINIMUM or more
-    it stays with main. Only the ask's words are sent. Any failure, including a timeout or an unreadable answer, is
-    remembered so the rest of the run stays with `home`.
+    Four checks, in order, each stopping the ask with main and a reason when it fails: a `choice` over the
+    registered offices' roles (no main option) must reach OFFICE_MINIMUM; a `noul` SCOPE_QUESTION check asks
+    whether the ask is about the app or the fleet at all and below SCOPE_MINIMUM it fits no office; a `noul`
+    NOT_A_START check holds a constraint, answer, approval or decision for Lee at NOT_A_START_MINIMUM; a `noul`
+    MONEY_LEGAL_QUESTION check holds a pricing, legal, payments or spending change for Lee at MONEY_LEGAL_MINIMUM.
+    Only the ask's words are sent. Any failure, including a timeout or an unreadable answer, is remembered so the
+    rest of the run stays with `home`.
     """
     QUESTION = "Which office should start this work?"
-    MINIMUM = 0.7
-    SCOPE_MINIMUM = 0.5
-    FOR_LEE_MINIMUM = 0.85
 
     def __init__(self, offices, script=None):
         self.script = script or os.environ.get("FM_LOCAL_JEV") or os.path.expanduser("~/.claude/skills/local-jev/jev.py")
@@ -932,6 +936,10 @@ class LocalJev:
             raise RuntimeError("exit %d" % run.returncode)
         return json.loads(run.stdout)
 
+    def noul(self, text, question, *criteria):
+        args = [a for flag, value in zip(("--true", "--false"), criteria) for a in (flag, value)]
+        return float(self.ask(text, "noul", question, *args)["noul"])
+
     def place(self, text):
         if self.down:
             return None, "local-jev unavailable: " + self.down
@@ -941,19 +949,23 @@ class LocalJev:
             label, confidence = answer["choice"], float(answer["confidence"])
             if label not in options:
                 raise ValueError("unknown label")
-            if confidence < self.MINIMUM:
-                return None, "local-jev unsure: %s at %.2f, below %.1f" % (label, confidence, self.MINIMUM)
-            in_scope = float(self.ask(text, "noul", *IN_SCOPE)["noul"])
-            if in_scope < self.SCOPE_MINIMUM:
+            if confidence < OFFICE_MINIMUM:
+                return None, "local-jev unsure: %s at %.2f, below %.1f" % (label, confidence, OFFICE_MINIMUM)
+            in_scope = self.noul(text, *SCOPE_QUESTION)
+            if in_scope < SCOPE_MINIMUM:
                 return None, "local-jev says it fits no office scope (%.2f, below %.1f); %s was %.2f" % (
-                    in_scope, self.SCOPE_MINIMUM, label, confidence)
-            question, true, false = NOT_A_START
-            for_lee = float(self.ask(text, "noul", question, "--true", true, "--false", false)["noul"])
+                    in_scope, SCOPE_MINIMUM, label, confidence)
+            not_a_start = self.noul(text, *NOT_A_START)
+            money_legal = self.noul(text, *MONEY_LEGAL_QUESTION)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
             self.down = type(exc).__name__ + (": " + str(exc) if str(exc) else "")
             return None, "local-jev unavailable: " + self.down
-        if for_lee >= self.FOR_LEE_MINIMUM:
-            return None, "local-jev says it is not a request for work but a constraint, answer or decision for Lee (%.2f); %s was %.2f" % (for_lee, label, confidence)
+        if not_a_start >= NOT_A_START_MINIMUM:
+            return None, "local-jev says it is a constraint, answer or decision for Lee, not a request for work (%.2f); %s was %.2f" % (
+                not_a_start, label, confidence)
+        if money_legal >= MONEY_LEGAL_MINIMUM:
+            return None, "local-jev says it changes pricing, legal text, payments or spending, which Lee decides (%.2f); %s was %.2f" % (
+                money_legal, label, confidence)
         return self.offices[label].home, None
 
 
