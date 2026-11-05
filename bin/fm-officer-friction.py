@@ -641,6 +641,23 @@ def user_text(rec):
     return None
 
 
+# Record fields that mark a user-role record as harness-injected rather than typed by Lee.
+INJECTED_FLAGS = ("isMeta", "isSidechain", "isCompactSummary", "isVisibleInTranscriptOnly",
+                  "toolUseResult", "sourceToolUseID", "sourceToolAssistantUUID")
+
+
+def typed_text(rec):
+    """user_text, but only for a record Lee typed: never a peer or agent message, hook context,
+    tool result or sub-agent prompt. Claude Code stamps typed text origin.kind == "human"; a record
+    without an origin (older versions) counts unless another marker flags it."""
+    if any(rec.get(flag) for flag in INJECTED_FLAGS):
+        return None
+    origin = rec.get("origin")
+    if origin is not None and (not isinstance(origin, dict) or origin.get("kind") != "human"):
+        return None
+    return user_text(rec)
+
+
 def classify_command(command, machine=None, after=""):
     """(cause, sub) of a command Lee typed on `machine`; `after` is its shell output."""
     _, host = command_signature(command)
@@ -817,11 +834,12 @@ def lee_instructions(records, worker):
     out = []
     skip = worker
     for rec in records:
-        text = user_text(rec) if rec.get("type") == "user" else None
-        if text is None:
-            continue
-        if skip:
+        first = user_text(rec) if rec.get("type") == "user" else None
+        if first is not None and skip:
             skip = False
+            continue
+        text = typed_text(rec) if first is not None else None
+        if text is None:
             continue
         if MACHINE_PROMPT_RE.match(text) or BASH_INPUT_RE.match(text.strip()) or len(text) > 6000:
             continue
