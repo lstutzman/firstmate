@@ -917,6 +917,7 @@ test_non_work_and_duplicates_are_dropped_and_reported() {
 - [ ] tidy-b - Tidy the logs
 - [ ] tom-later - Add CSV export (kind: feature) (requested-by: Lee)
 - [ ] release-ship - Ship glossary same release as PR 4593 (kind: bug)
+- [ ] json - Add JSON export
 
 ## Done
 MD
@@ -937,6 +938,7 @@ JSON
  {"id":"cmd","words":"export PATH=<set> gh auth login -h github.com","status":"not-started","work":[],"links":[]},
  {"id":"cp-sed","words":"cp ~/.zshenv ~/.zshenv.bak-allowgate && sed -i \"\" 's/a/b/' ~/.zshenv","status":"not-started","work":[],"links":[]},
  {"id":"csv","words":"Add CSV export.","status":"not-started","work":[],"links":[]},
+ {"id":"json-ask","words":"Add JSON export.","status":"not-started","work":[],"links":[]},
  {"id":"curl","words":"curl timeouts in importer","status":"not-started","work":[],"links":[]},
  {"id":"quoted","words":"make \"Save draft\" work offline","status":"not-started","work":[],"links":[]},
  {"id":"retries","words":"make retries > 3 configurable","status":"not-started","work":[],"links":[]},
@@ -950,9 +952,12 @@ JSON
 JSON
   run_progress >/dev/null || fail 'filter run failed'
   digest=$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")
-  assert_equals 'PC-10 curl dup-a quoted real release-ship retries same-title tidy-a tidy-b tom-later' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" \
+  assert_equals 'PC-10 curl dup-a json quoted real release-ship retries same-title tidy-a tidy-b tom-later' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" \
     'real work, including a fleet record that shares a title, a command word used as prose, a release mention in a task, and a command-like Linear title, survives the filter'
-  assert_equals 'Duplicate of start request tom-later' "$(jq -r '.excluded[] | select(.id == "csv") | .reason' "$file")" 'an ask restating a fleet start that sorts after it is dropped, and the fleet row starts'
+  assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'csv - Add CSV export.: Unstarted work authorised by requested-feature' 'an ask restating a fleet row up to punctuation joins it, even when the ask sorts first'
+  assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'json-ask - Add JSON export.: Unstarted work authorised by requested-feature' 'an ask joins an unclassified backlog row that differs only by punctuation'
+  assert_equals 'requested-feature' "$(jq -r '.start_requests[] | select(.id == "json") | .authorising_class' "$file")" 'the joined unclassified backlog row starts as Lee-requested work'
+  assert_equals '' "$(jq -r '.excluded[] | select(.id == "csv" or .id == "json-ask" or .id == "dup-b" or .id == "cache") | .id' "$file")" 'no ask that joins existing work is dropped as a separate duplicate'
   assert_contains "$digest" 'release - same release as PR N' 'a dropped release note is listed'
   assert_equals 'Not a work item: a release note' "$(jq -r '.excluded[] | select(.id == "release") | .reason' "$file")" 'a release note is dropped with its reason'
   assert_equals 'Not a work item: a date or status stamp' "$(jq -r '.excluded[] | select(.id == "stamp") | .reason' "$file")" 'a status stamp is dropped with its reason'
@@ -960,9 +965,9 @@ JSON
   assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "cmd") | .reason' "$file")" 'a pasted assignment command is dropped'
   assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "cp-sed") | .reason' "$file")" 'a pasted command chain is dropped'
   assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "redirect") | .reason' "$file")" 'a pasted redirect to a path is dropped'
-  assert_equals 'Duplicate of start request dup-a' "$(jq -r '.excluded[] | select(.id == "dup-b") | .reason' "$file")" 'an ask restating a start is dropped'
+  assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'dup-b - Fix the importer crash!: Unstarted work authorised by bug' 'an ask restating a start joins it instead of starting again'
   assert_equals 'Duplicate of queued, in-flight, or open-PR work: https://github.com/example/project/pull/7' "$(jq -r '.excluded[] | select(.id == "pr-dup") | .reason' "$file")" 'work an open PR already covers is dropped'
-  assert_equals 'Duplicate of queued, in-flight, or open-PR work: flying' "$(jq -r '.excluded[] | select(.id == "cache") | .reason' "$file")" 'work already in flight is dropped'
+  assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'cache - Repair the cache!: Already in flight: flying' 'an ask for work already in flight joins it and never starts'
   assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'stamp - Last updated: November 2026: Not a work item: a date or status stamp' 'the Top of Mind section reports each dropped ask'
   assert_not_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh")" 'lvextend' 'no dropped item reaches the handoff'
   pass 'progress: non-work and duplicate candidates are dropped before handoff and reported with a reason'

@@ -576,11 +576,10 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
         links = [link["url"] for entry in [ask] + work for link in entry.get("links", [])]
         text = "\n".join([ask["words"]] + [str(w.get("title", "")) for w in work] + links)
         identifiers = set(LINEAR_ID.findall(text))
-        titles = {TAG.sub("", title).strip().casefold()
-                  for title in [ask["words"]] + [str(w.get("title", "")) for w in work]}
+        titles = {title_key(title) for title in [ask["words"]] + [str(w.get("title", "")) for w in work]} - {""}
         found = [r for r in rows + issues + extra if r["id"] == ask["id"]
                  or identifiers.intersection(r["linear_ids"])
-                 or TAG.sub("", r["title"]).strip().casefold() in titles
+                 or title_key(r["title"]) in titles
                  or (r.get("link") and r["link"] in links)
                  or any(url.endswith("/captains-log#" + r["id"]) for url in links)]
         # Judge merges a Linear issue into the home records that link it.

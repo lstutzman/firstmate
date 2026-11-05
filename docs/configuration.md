@@ -1092,7 +1092,7 @@ Each row's `kind` is `ask` or `statement`; a row without `kind` is an ask, and a
 A statement never becomes a start candidate, supplies no `requested-feature` authority, and names no requested roots; it only adds evidence to work it matches.
 Every `not-started` ask and every `under-way` or `waiting` ask is checked against current home records and open PRs.
 A waiting ask is listed with the reason `waiting (Top of Mind status)` and is never automatically started.
-A not-started or under-way ask with no recorded work in flight becomes a start candidate under the existing classes and exclusions; a matching task, Linear identifier, work title, or link joins the ask to that work instead of creating another start, and a matching Linear issue joins the ask to every home record that links that issue.
+A not-started or under-way ask with no recorded work in flight becomes a start candidate under the existing classes and exclusions; a matching task, Linear identifier, work title (ignoring punctuation and case), or link joins the ask to that work instead of creating another start, and a matching Linear issue joins the ask to every home record that links that issue.
 Team Linear identifiers named anywhere in a fresh ask are read as requested-root subtrees for that run.
 The digest's Top of Mind section lists each ask's start request or its reason for waiting, including the held task, active task or PR, other owner home, or completed or unknown work.
 Matched work keeps its own owner home and disposition.
