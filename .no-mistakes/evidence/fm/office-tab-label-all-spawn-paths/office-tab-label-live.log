@@ -1,0 +1,48 @@
+== S1 projection path: fresh spawns in an office home with presentation on
+spawn qmoff (first) rc=0
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/qmoff/launch-brief.md records no ship branch; defaulting to legacy branch fm/qmoff
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/qmoff/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawn wk1 (first) rc=0
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/wk1/launch-brief.md records no ship branch; defaulting to legacy branch fm/wk1
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/wk1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+  qmoff: tab=w2:t2 tab_label='Quartermaster' workspace='└ qmoff · p:1K67gq19aG-uEs0ysDDyuw' journal_task_label='Quartermaster'
+PASS: projection: qmoff tab label is 'Quartermaster'
+PASS: projection: qmoff journal task_label is 'Quartermaster'
+  wk1: tab=w3:t2 tab_label='fm-wk1' workspace='└ wk1 · p:DeqwYJOcv1E-NUnQfXTx2A' journal_task_label='fm-wk1'
+PASS: projection: wk1 tab label is 'fm-wk1'
+PASS: projection: wk1 journal task_label is 'fm-wk1'
+== S2 reclaim path: restart session (husk panes), respawn same ids
+spawn qmoff (reclaim1) rc=0
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/qmoff/launch-brief.md records no ship branch; defaulting to legacy branch fm/qmoff
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/qmoff/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+  stderr: warning: quarantined herdr presentation for qmoff is dead or agent-free; exact bound reclaim may proceed, otherwise spawning flat
+spawn wk1 (reclaim1) rc=0
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/wk1/launch-brief.md records no ship branch; defaulting to legacy branch fm/wk1
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/wk1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+  stderr: warning: quarantined herdr presentation for wk1 is dead or agent-free; exact bound reclaim may proceed, otherwise spawning flat
+PASS: reclaim: office reused its projected workspace w2 with a new pane (real reclaim, not flat)
+  qmoff: tab=w2:t3 tab_label='Quartermaster' workspace='└ qmoff · p:1K67gq19aG-uEs0ysDDyuw' journal_task_label='Quartermaster'
+PASS: reclaim: qmoff tab label is 'Quartermaster'
+PASS: reclaim: qmoff journal task_label is 'Quartermaster'
+  wk1: tab=w3:t3 tab_label='fm-wk1' workspace='└ wk1 · p:DeqwYJOcv1E-NUnQfXTx2A' journal_task_label='fm-wk1'
+PASS: reclaim: wk1 tab label is 'fm-wk1'
+PASS: reclaim: wk1 journal task_label is 'fm-wk1'
+== S3 legacy journal: office tab and journal carry fm-qmoff from before the change; reclaim migrates
+  seeded legacy: tab_label='fm-qmoff' journal_task_label='fm-qmoff'
+spawn qmoff (legacy) rc=0
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/qmoff/launch-brief.md records no ship branch; defaulting to legacy branch fm/qmoff
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/qmoff/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+  stderr: warning: quarantined herdr presentation for qmoff is dead or agent-free; exact bound reclaim may proceed, otherwise spawning flat
+PASS: legacy: reclaimed the same projected workspace
+  qmoff: tab=w2:t4 tab_label='Quartermaster' workspace='└ qmoff · p:1K67gq19aG-uEs0ysDDyuw' journal_task_label='Quartermaster'
+PASS: legacy-migrate: qmoff tab label is 'Quartermaster'
+PASS: legacy-migrate: qmoff journal task_label is 'Quartermaster'
+== S4 adversarial: a worker journal forged with the office role label must not be honoured
+spawn wk1 (forged) rc=1
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/wk1/launch-brief.md records no ship branch; defaulting to legacy branch fm/wk1
+  stderr: warning: /tmp/fm-office-tab-live.47tOqB/office/data/wk1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+  stderr: error: malformed herdr presentation journal for wk1; refusing duplicate launch
+  rc=1 tabs before=[{"tab_id":"w3:t3","label":"fm-wk1"}] after=[{"tab_id":"w3:t3","label":"fm-wk1"}] all_tab_labels=1,Quartermaster,fm-wk1,
+PASS: adversarial: forged worker journal refused as malformed; no tab was created or relabelled with the role name
+RESULT rc=0
+TEARDOWN: lab fm-lab-office-tab-2500387-12636 removed, default session tripwire intact

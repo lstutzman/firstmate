@@ -1,0 +1,15 @@
+== S1 projection path: fresh spawns in an office home with presentation on
+spawn qmoff (first) rc=0
+  stderr: warning: /tmp/fm-office-tab-live.gGYy3k/office/data/qmoff/launch-brief.md records no ship branch; defaulting to legacy branch fm/qmoff
+  stderr: warning: /tmp/fm-office-tab-live.gGYy3k/office/data/qmoff/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+  stderr: warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+spawn wk1 (first) rc=0
+  stderr: warning: /tmp/fm-office-tab-live.gGYy3k/office/data/wk1/launch-brief.md records no ship branch; defaulting to legacy branch fm/wk1
+  stderr: warning: /tmp/fm-office-tab-live.gGYy3k/office/data/wk1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+  stderr: warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+  qmoff: tab=w1:t2 tab_label='Quartermaster' workspace='Quartermaster workers' journal_task_label=''
+FAIL: projection: qmoff is not in a projected presentation workspace ('Quartermaster workers')
+  wk1: tab=w1:t3 tab_label='fm-wk1' workspace='Quartermaster workers' journal_task_label=''
+FAIL: projection: wk1 is not in a projected presentation workspace ('Quartermaster workers')
+S1 failed; stopping
+TEARDOWN: lab fm-lab-office-tab-2355504-1831 removed, default session tripwire intact
