@@ -42,6 +42,10 @@
 #      hold bound is escalated once, durably, and a restart does not repeat it;
 #      the hold still holds when the open-decision fold cannot write its files,
 #      including on a full disk, while the drain scan keeps its trusted set
+#  21. The wrong-home scan reads a child log from a remembered byte offset: a 1 MB
+#      log costs only the bytes appended since, a rotated or truncated log is read
+#      from its start once, a partial last line is held until it completes
+#      without being lost or counted twice, and the watcher beats between logs
 # The hold tests run in subshells that set the clock and the config location.
 # shellcheck disable=SC2030,SC2031
 set -u
@@ -1199,6 +1203,141 @@ test_wrong_home_detected_not_acknowledged() {
     fail "wrong-home status must not resolve via parent path"
   fi
   pass "wrong-home reports are detected but do not silently acknowledge"
+}
+
+# Bytes the wrong-home scan read from <file> on its <n>th call since the probe
+# was cleared (1-based), taken from the scan's test-only read probe.
+probe_bytes() {  # <probe-log> <file> <n>
+  awk -F'\t' -v f="$2" -v n="$3" '$1 == f { if (++seen == n) { print $2; exit } }' "$1"
+}
+
+new_wrong_home_fixture() {  # <name> -> prints "<state> <sm_home> <corr>"
+  local home state sm_home corr
+  home=$(setup_parent "$1")
+  state="$home/state"
+  sm_home="$TMP_ROOT/sm-$1-$RANDOM"
+  mkdir -p "$sm_home/state"
+  export FM_PENDING_REPLY_NOW=8000
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "report to parent")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  printf '%s %s %s\n' "$state" "$sm_home" "$corr"
+}
+
+test_wrong_home_scan_reads_only_new_bytes() {
+  local state sm_home corr rec log probe first second appended size lines display tail_line
+  read -r state sm_home corr <<EOF
+$(new_wrong_home_fixture offset-big)
+EOF
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  log="$sm_home/state/child.status"
+  probe="$TMP_ROOT/probe-big-$RANDOM"
+  # About 1 MB of routine status lines, none naming the request.
+  awk 'BEGIN { for (i = 1; i <= 11000; i++) printf "working [at=%d]: routine progress line number %d padded out to a realistic width ......\n", 1788000000 + i, i }' > "$log"
+  size=$(wc -c < "$log" | tr -d ' ')
+  lines=$(wc -l < "$log" | tr -d ' ')
+  [ "$size" -ge 900000 ] || fail "fixture log should be about 1 MB, got $size bytes"
+  : > "$probe"
+  FM_PENDING_REPLY_SCAN_PROBE="$probe" fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" \
+    || fail "first scan should succeed"
+  first=$(probe_bytes "$probe" "$log" 1)
+  [ "$first" = "$size" ] || fail "first scan should read the whole $size byte log once, read ${first:-nothing}"
+  [ "$(fm_pending_reply_get "$rec" wrong_home_hits)" = 0 ] || fail "no sighting expected yet"
+  appended=$(printf 'done [corr=%s]: stranded after a long log\n' "$corr")
+  printf '%s\n' "$appended" >> "$log"
+  : > "$probe"
+  FM_PENDING_REPLY_SCAN_PROBE="$probe" fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" \
+    || fail "second scan should succeed"
+  second=$(probe_bytes "$probe" "$log" 1)
+  [ "$second" = "$((${#appended} + 1))" ] \
+    || fail "an append of $((${#appended} + 1)) bytes must cost only those bytes, read ${second:-nothing} of $size"
+  [ "$(fm_pending_reply_get "$rec" wrong_home_hits)" = 1 ] || fail "the appended report should count once"
+  display=$(fm_pending_reply_sighting_display "$(fm_pending_reply_get "$rec" wrong_home_first_sighting)") \
+    || fail "the sighting should decode"
+  [ "${display##*:}" = "$((lines + 1))" ] \
+    || fail "the sighting line number must count from the file start ($((lines + 1))), got ${display##*:}"
+  tail_line='working [at=1788999999]: routine tail without the token'
+  printf '%s\n' "$tail_line" >> "$log"
+  : > "$probe"
+  FM_PENDING_REPLY_SCAN_PROBE="$probe" fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" \
+    || fail "third scan should succeed"
+  [ "$(probe_bytes "$probe" "$log" 1)" = "$((${#tail_line} + 1))" ] \
+    || fail "a routine append should read only its own bytes"
+  [ "$(fm_pending_reply_get "$rec" wrong_home_hits)" = 1 ] || fail "a routine append must not add a hit"
+  pass "wrong-home scan of a 1 MB child log reads only the appended bytes"
+}
+
+test_wrong_home_scan_handles_rotation_and_truncation() {
+  local state sm_home corr rec log probe new_size
+  read -r state sm_home corr <<EOF
+$(new_wrong_home_fixture offset-rotate)
+EOF
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  log="$sm_home/state/child.status"
+  probe="$TMP_ROOT/probe-rot-$RANDOM"
+  : > "$probe"
+  printf 'working: one\nworking: two\ndone [corr=%s]: first stranded report\n' "$corr" > "$log"
+  FM_PENDING_REPLY_SCAN_PROBE="$probe" fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" || fail "scan 1"
+  [ "$(fm_pending_reply_get "$rec" wrong_home_hits)" = 1 ] || fail "first report should count"
+  # Rotation: a different file takes the name (new inode) and is larger than the offset.
+  printf 'working: a\nworking: b\nworking: c\nworking: d\nworking: e\nworking: f\ndone [corr=%s]: after rotation\n' "$corr" > "$log.new"
+  mv -f "$log.new" "$log"
+  new_size=$(wc -c < "$log" | tr -d ' ')
+  : > "$probe"
+  FM_PENDING_REPLY_SCAN_PROBE="$probe" fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" || fail "scan 2"
+  [ "$(probe_bytes "$probe" "$log" 1)" = "$new_size" ] \
+    || fail "a replaced log must be read from its start, read $(probe_bytes "$probe" "$log" 1) of $new_size"
+  [ "$(fm_pending_reply_get "$rec" wrong_home_hits)" = 2 ] || fail "report in the rotated log should count"
+  # Truncation in place (same inode): shorter than the remembered offset.
+  printf 'x\ndone [corr=%s]: after truncation\n' "$corr" > "$log"
+  new_size=$(wc -c < "$log" | tr -d ' ')
+  : > "$probe"
+  FM_PENDING_REPLY_SCAN_PROBE="$probe" fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" || fail "scan 3"
+  [ "$(probe_bytes "$probe" "$log" 1)" = "$new_size" ] || fail "a truncated log must be read from its start"
+  [ "$(fm_pending_reply_get "$rec" wrong_home_hits)" = 3 ] || fail "report after truncation should count"
+  pass "wrong-home scan restarts a rotated or truncated child log from its start"
+}
+
+test_wrong_home_scan_holds_a_partial_last_line() {
+  local state sm_home corr rec log probe
+  read -r state sm_home corr <<EOF
+$(new_wrong_home_fixture offset-partial)
+EOF
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  log="$sm_home/state/child.status"
+  probe="$TMP_ROOT/probe-partial-$RANDOM"
+  : > "$probe"
+  printf 'working: whole line\n' > "$log"
+  printf 'done [corr=%s]: half writ' "$corr" >> "$log"
+  FM_PENDING_REPLY_SCAN_PROBE="$probe" fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" || fail "scan 1"
+  [ "$(fm_pending_reply_get "$rec" wrong_home_hits)" = 0 ] \
+    || fail "a line without its newline is still being written and must not count yet"
+  printf 'ten\n' >> "$log"
+  FM_PENDING_REPLY_SCAN_PROBE="$probe" fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" || fail "scan 2"
+  [ "$(fm_pending_reply_get "$rec" wrong_home_hits)" = 1 ] || fail "the completed line should count exactly once"
+  printf 'working: next\n' >> "$log"
+  FM_PENDING_REPLY_SCAN_PROBE="$probe" fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" || fail "scan 3"
+  [ "$(fm_pending_reply_get "$rec" wrong_home_hits)" = 1 ] || fail "the completed line must not count twice"
+  [ "$(probe_bytes "$probe" "$log" 3)" = "$(printf 'working: next\n' | wc -c | tr -d ' ')" ] \
+    || fail "after completion the third scan should read only the new line"
+  pass "wrong-home scan holds a partial last line until it completes"
+}
+
+test_wrong_home_scan_beats_between_logs() {
+  local state sm_home corr beats i
+  read -r state sm_home corr <<EOF
+$(new_wrong_home_fixture offset-beat)
+EOF
+  beats="$TMP_ROOT/beats-$RANDOM"
+  : > "$beats"
+  for i in a b c; do printf 'working: %s\n' "$i" > "$sm_home/state/$i.status"; done
+  (
+    # shellcheck disable=SC2329 # Called by the scan through the watcher's beat hook.
+    fm_watcher_beat() { echo beat >> "$beats"; }
+    fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home"
+  ) || fail "scan should succeed"
+  [ "$(wc -l < "$beats" | tr -d ' ')" -ge 3 ] \
+    || fail "the watcher must beat at least once per child log, beat $(wc -l < "$beats" | tr -d ' ') times for 3 logs"
+  pass "wrong-home scan beats between child logs"
 }
 
 test_unmarked_captain_input_creates_no_expectation() {
@@ -2479,6 +2618,10 @@ test_unrelated_and_stale_corr_cannot_resolve
 test_another_mates_echo_cannot_resolve
 test_restart_preserves_expectation_and_parent_destination
 test_wrong_home_detected_not_acknowledged
+test_wrong_home_scan_reads_only_new_bytes
+test_wrong_home_scan_handles_rotation_and_truncation
+test_wrong_home_scan_holds_a_partial_last_line
+test_wrong_home_scan_beats_between_logs
 test_unmarked_captain_input_creates_no_expectation
 test_fm_send_marked_secondmate_creates_pending_and_embeds_corr
 test_document_pointer_resolves
