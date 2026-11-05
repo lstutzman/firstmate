@@ -213,10 +213,9 @@ fm_watcher_cycle_beat() {
 }
 
 fm_watcher_remote_poll() {  # <command...>
-  local budget=${FM_WATCH_REMOTE_BUDGET:-30} rc=0
+  local budget=${FM_WATCH_REMOTE_BUDGET:-30}
   case "$budget" in ''|*[!0-9]*|0) budget=30 ;; esac
-  fm_run_timed "$budget" "$@" || rc=$?
-  return "$rc"
+  fm_run_timed "$budget" "$@"
 }
 
 fm_timed_out() {  # <status>
