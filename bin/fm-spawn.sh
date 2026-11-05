@@ -6430,6 +6430,10 @@ if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
 fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
+# The earlier refresh ran before the item moved to In flight, so republish now;
+# otherwise the summary reads "live child state has no in-flight backlog item"
+# until some later event refreshes it.
+"$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"
