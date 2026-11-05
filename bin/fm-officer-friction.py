@@ -732,9 +732,6 @@ def hit_event(hit, m):
             "service": service, "tool": tool, "signature": sig}
 
 
-HEREDOC_RE = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\b", re.S)
-
-
 def tool_inputs(records):
     """Every Bash command and written file body of one transcript, by tool_use id (id None: all joined)."""
     by_id, bodies = {}, []
@@ -754,8 +751,8 @@ def tool_inputs(records):
 def plausible_tool(name, command, bodies):
     """Whether `name` from a "command not found" line is an installable command a person could add:
     not a dotted field name, not a shell function the session itself defined (a test helper, a function
-    used outside its script), and not a word the command that ran held only as a `name:` label or as
-    prose inside a heredoc (a command that never names it reached it through a script: a real miss)."""
+    used outside its script), and not a word the command that ran held only as a `name:` label
+    (a command that never names it reached it through a script: a real miss)."""
     if re.fullmatch(r"[A-Za-z_]+(?:\.[A-Za-z_]+)+", name):
         return False
     esc = re.escape(name)
@@ -764,7 +761,7 @@ def plausible_tool(name, command, bodies):
     word = r"(?<![\w.-])%s(?![\w.-])" % esc
     if command is None or not re.search(word, command):
         return True
-    return re.search(word + "(?!:)", HEREDOC_RE.sub("\n", command)) is not None
+    return re.search(word + "(?!:)", command) is not None
 
 
 def session_events(records, machine):
