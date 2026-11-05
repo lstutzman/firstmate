@@ -1309,6 +1309,9 @@ It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only 
     { "id": "pc-4701-fix", "title": "...", "state": "working", "link": "https://github.com/...", "since": "2026-11-03T00:00:00Z" },
     { "id": "pc-4712", "title": "...", "state": "next", "link": "", "waiting": "Lee" },
     { "id": "pc-4690-fix", "title": "...", "state": "done", "link": "https://github.com/...", "done_at": "2026-11-04T09:40:00Z" }
+  ],
+  "decisions": [
+    { "date": "2026-11-05", "source": "10-article research, rank 8", "finding": "...", "call": "Needs Lee: ...", "action": "Asked Lee, key alert-wakes-agent" }
   ]
 }
 ```
@@ -1322,6 +1325,12 @@ It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only 
 `office` is the `.fm-office` marker and `title` is that id with its first letter capitalized.
 `title` on a card is the row text without its trailing `(key: value)` groups and URL, cut to 200 characters.
 Cards are ordered working, then next, then done (newest first).
+
+`decisions` lists the findings the office judged important, projected from the home's `data/office-decisions.md`, so they show on the Status page and not only in notes.
+That file holds a markdown table with the columns `Date | Source | Finding | Call | Action`; the header, separator and any line that is not a five-cell row with an ISO `YYYY-MM-DD` date and a non-empty finding and call are skipped, and an absent or unreadable file gives an empty list.
+Each object carries its five cells as plain text (a link in a cell stays as written), ordered newest date first (rows of the same date newest line first) and capped at 20.
+The key was added to schema version 1; readers that ignore unknown keys are unaffected.
+Filing a decision stays with the office; this projection only reads the file.
 
 The backlog records only a date (`merged` or `done`) for a finished item, so the check keeps the time it first saw each done item in `state/office-status.seen.json`, a JSON object of item id to UTC time, replaced atomically.
 A done card shows while that first-seen time is at most 24 hours old, then leaves, which the page shows as a finished card leaving.
