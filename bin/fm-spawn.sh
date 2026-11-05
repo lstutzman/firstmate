@@ -4132,6 +4132,11 @@ if [ "$RELAUNCH" -eq 1 ]; then
     T=$RELAUNCH_TARGET
     WT_TARGET=$T
     SES=${T%%:*}
+    # An office tab an earlier release labeled fm-<id> takes its role name
+    # here, because a relaunch keeps the same tab.
+    if [ "$BACKEND" = herdr ] && [ "$KIND" = secondmate ]; then
+      FM_HOME="$WT" fm_backend_herdr_task_label_migrate "$HERDR_SES" "$HERDR_TAB_ID" "$ID"
+    fi
   else
     # The recorded endpoint is authoritatively gone, so there is nothing to
     # adopt: create ONE fresh endpoint for the same task, opened directly in the
@@ -4406,7 +4411,10 @@ else
       HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_CONTAINER_RAW#*$'\t'}
       HERDR_SES=${CONTAINER%%:*}
       HERDR_WORKSPACE_ID=${CONTAINER#*:}
-      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$PROJ_ABS" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
+      # An office's own tab shows its role name; fm-<id> stays the earlier
+      # label create_task still treats as this task's tab.
+      HERDR_TAB_LABEL=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_task_label "$ID")
+      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$PROJ_ABS" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W") || exit 1
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF

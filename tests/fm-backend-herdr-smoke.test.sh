@@ -338,7 +338,7 @@ fi
 fm_backend_herdr_kill "$TARGET" || fail "kill on an already-dead target must stay best-effort (never fail)"
 pass "real herdr: kill removes the pane and is idempotent/best-effort"
 
-# --- list_live (label-based recovery discovery) ------------------------------
+# --- list_live (fm-<id> label fallback for a tab with no herdr record) --------
 
 # Real firstmate spawns always re-run container_ensure immediately before
 # create_task (bin/fm-spawn.sh), never reusing a container reference from an
@@ -359,7 +359,7 @@ EOF
 live=$(fm_backend_herdr_list_live "$SESSION")
 assert_contains_local() { case "$1" in *"$2"*) : ;; *) fail "$3"$'\n'"--- got ---"$'\n'"$1" ;; esac; }
 assert_contains_local "$live" "$LABEL2" "list_live did not report the freshly created task tab by label"
-pass "real herdr: list_live discovers a live task tab by fm-<id> label"
+pass "real herdr: list_live discovers an unrecorded live task tab by its fm-<id> label"
 
 fm_backend_herdr_kill "$SESSION:$PANE_ID2"
 
