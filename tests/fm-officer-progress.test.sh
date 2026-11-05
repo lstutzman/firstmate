@@ -1020,14 +1020,18 @@ if "DOWN" in text:
 if "GARBAGE" in text:
     print("not json")
     sys.exit(0)
+if sys.argv[1] == "noul" and "agent fleet" in sys.argv[2]:
+    print('{"type":"noul","noul":%s}' % (0.12 if "tea" in text or "holiday" in text else 0.86))
+    sys.exit(0)
 if sys.argv[1] == "noul":
-    print('{"type":"noul","noul":%s}' % (0.91 if "LEEASK" in text else 0.1))
+    print('{"type":"noul","noul":%s}' % (0.91 if "LEEASK" in text or "price" in text else 0.1))
     sys.exit(0)
 if "main" in options:
     sys.exit(4)
 label, confidence = "quartermaster", 0.3
 for mark, wanted, conf in (("HIGHNAV", "navigator", 0.91), ("HIGHQM", "quartermaster", 0.88),
-                           ("LOWQM", "quartermaster", 0.55)):
+                           ("LOWQM", "quartermaster", 0.55), ("holiday", "quartermaster", 0.8),
+                           ("tea", "navigator", 0.76), ("price", "navigator", 0.9)):
     if mark in text and wanted in options:
         label, confidence = wanted, conf
 print('{"type":"choice","choice":"%s","confidence":%s}' % (label, confidence))
@@ -1075,7 +1079,9 @@ PY
  {"id":"jev-nav","words":"HIGHNAV tidy the search","status":"not-started","work":[],"links":[]},
  {"id":"jev-qm","words":"HIGHQM tidy the queue","status":"not-started","work":[],"links":[]},
  {"id":"jev-low","words":"LOWQM maybe tidy the queue","status":"not-started","work":[],"links":[]},
- {"id":"jev-main","words":"HIGHQM LEEASK approve it","status":"not-started","work":[],"links":[]}
+ {"id":"jev-main","words":"HIGHQM LEEASK approve it","status":"not-started","work":[],"links":[]},
+ {"id":"holiday","words":"Research holiday flights for March","status":"not-started","work":[],"links":[]},
+ {"id":"price","words":"Change the premium price to £12","status":"not-started","work":[],"links":[]}
 ]}
 JSON
   run_progress >/dev/null || fail 'a run with two start-home offices must succeed'
@@ -1094,20 +1100,22 @@ JSON
   assert_equals "$nav" "$(routed PC-91)" 'an ask joined to a Linear item in a Linear project goes by its team Linear id'
   assert_equals "$nav" "$(routed jev-nav)" 'a confident local-jev label routes to that office'
   assert_equals "$qm" "$(routed jev-qm)" 'a confident local-jev label routes to the fleet office'
-  for id in both other-repo bare jev-low jev-main; do
+  for id in both other-repo bare jev-low jev-main holiday price; do
     assert_equals "FM_HOME=$WORLD_HOME" "$(request_home "$lane/$DATE.start-requests.sh" "$id")" "$id stays with this home"
   done
   assert_contains "$(jq -r '.start_requests[] | select(.id == "both") | .unrouted' "$file")" 'ambiguous' 'an ask that fits two offices is reported as ambiguous'
   assert_contains "$(jq -r '.start_requests[] | select(.id == "jev-low") | .unrouted' "$file")" 'local-jev unsure: quartermaster at 0.55' 'a low-confidence label stays with this home and names the confidence'
   assert_contains "$(jq -r '.start_requests[] | select(.id == "jev-main") | .unrouted' "$file")" 'a constraint, answer or decision for Lee (0.91)' 'a confident office pick still stays with main when the ask is for Lee himself'
-  assert_contains "$(jq -r '.start_requests[] | select(.id == "bare") | .unrouted' "$file")" 'local-jev unsure' 'an ask with no evidence goes to local-jev and is reported'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "bare") | .unrouted' "$file")" 'fits no office scope (0.12' 'an ask that is neither app nor fleet work stays with this home even after a confident office pick'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "holiday") | .unrouted' "$file")" 'fits no office scope (0.12' 'an out-of-scope request for work stays with this home and is reported'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "price") | .unrouted' "$file")" 'for Lee (0.91)' 'a pricing change is held for Lee even when it is app work'
   assert_equals '' "$(grep -c ' - ' "$WORLD/jev-calls" | grep -v '^0$')" 'local-jev is sent only the ask words, never record ids'
   assert_not_contains "$(cat "$WORLD/jev-calls")" 'Top of Mind' 'no Top of Mind record text goes to local-jev'
   assert_not_contains "$(cat "$WORLD/jev-calls")" 'listings page' 'an ask the evidence placed is never sent to local-jev'
   assert_not_contains "$(cat "$WORLD/jev-calls")" 'Start fix' 'an ask its source placed is never sent to local-jev'
   assert_equals 'null' "$(jq -r '.start_requests[] | select(.id == "pc-link") | .unrouted' "$file")" 'a routed ask carries no unrouted reason'
   assert_contains "$(cat "$lane/$DATE.md")" 'unrouted, stays with this home: ambiguous' 'the Markdown digest lists the unrouted ask'
-  assert_equals '18' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all seventeen asks and the backlog row become addressed requests'
+  assert_equals '20' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all nineteen asks and the backlog row become addressed requests'
   assert_equals '0' "$(jq '.excluded | length' "$file")" 'no ask is dropped'
   printf '{"rows":[{"id":"d1","words":"DOWN first ask","status":"not-started","work":[],"links":[]},{"id":"d2","words":"DOWN second ask","status":"not-started","work":[],"links":[]},{"id":"d3","words":"GARBAGE third ask","status":"not-started","work":[],"links":[]}]}\n' > "$WORLD/top-of-mind.json"
   : > "$WORLD/jev-calls"

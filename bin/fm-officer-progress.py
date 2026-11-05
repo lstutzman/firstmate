@@ -884,29 +884,42 @@ ROLE_SCOPES = {
     "quartermaster": "Work on the agent fleet itself: agents, second mates, officers, firstmate, skills, the fleet app, "
                      "its run pages, machines, session logs, or process improvement.",
 }
-# local-jev `noul` on whether an ask is not a start at all: a constraint, an answer, an approval or a decision.
+# local-jev `noul` on whether an ask is work for either office at all.
+IN_SCOPE = ("Is this a request for work on the PropertyCompass2 app or on the agent fleet "
+            "(agents, officers, firstmate, skills, fleet app, machines)?",)
+# local-jev `noul` on whether an ask is not a start at all: a constraint, an answer, an approval, a decision, or a
+# pricing, legal, payments or spending change, all of which stay with Lee.
 NOT_A_START = ("Which is this?",
                "A constraint ('not ready yet'), an answer or permission given to agents, an approval, a decision, "
-               "or information; nothing new is asked of an agent",
-               "A request for an agent to investigate, build, fix, check or change something")
+               "information, or a change to pricing, legal text, payments or spending; nothing an agent may start alone",
+               "A request for an agent to investigate, build, fix, check or change something, other than pricing, "
+               "legal text, payments or spending")
 
 
 class LocalJev:
     """Places an ask with an office through the local-jev skill's jev.py, or leaves it with main.
 
-    A `choice` over the registered offices' roles (no main option) picks the office; the pick must reach MINIMUM.
-    A `noul` check then asks whether the ask is a constraint, answer, approval or decision rather than a request for
-    work, and at FOR_LEE_MINIMUM or more it stays with main. Only the ask's words are sent. Any failure, including a
-    timeout or an unreadable answer, is remembered so the rest of the run stays with `home`.
+    Three checks, in order: a `choice` over the registered offices' roles (no main option) picks the office, and the
+    pick must reach MINIMUM; a `noul` IN_SCOPE check asks whether the ask is app or fleet work at all, and below
+    SCOPE_MINIMUM it stays with main as fitting no office; a `noul` NOT_A_START check asks whether it is a constraint,
+    answer, approval, decision, or pricing, legal, payments or spending change for Lee, and at FOR_LEE_MINIMUM or more
+    it stays with main. Only the ask's words are sent. Any failure, including a timeout or an unreadable answer, is
+    remembered so the rest of the run stays with `home`.
     """
     QUESTION = "Which office should start this work?"
     MINIMUM = 0.7
+    SCOPE_MINIMUM = 0.5
     FOR_LEE_MINIMUM = 0.85
 
     def __init__(self, offices, script=None):
         self.script = script or os.environ.get("FM_LOCAL_JEV") or os.path.expanduser("~/.claude/skills/local-jev/jev.py")
         self.offices = {o.role: o for o in offices if o.role}
-        self.down = None if len(self.offices) == len(offices) else "two offices share a role"
+        if any(not o.role for o in offices):
+            self.down = "an office has no role"
+        elif len(self.offices) != len(offices):
+            self.down = "two offices share a role"
+        else:
+            self.down = None
 
     def options(self):
         return {role: "%s Projects: %s." % (ROLE_SCOPES.get(role, o.mandate), ", ".join(sorted(o.projects)))
@@ -930,6 +943,10 @@ class LocalJev:
                 raise ValueError("unknown label")
             if confidence < self.MINIMUM:
                 return None, "local-jev unsure: %s at %.2f, below %.1f" % (label, confidence, self.MINIMUM)
+            in_scope = float(self.ask(text, "noul", *IN_SCOPE)["noul"])
+            if in_scope < self.SCOPE_MINIMUM:
+                return None, "local-jev says it fits no office scope (%.2f, below %.1f); %s was %.2f" % (
+                    in_scope, self.SCOPE_MINIMUM, label, confidence)
             question, true, false = NOT_A_START
             for_lee = float(self.ask(text, "noul", question, "--true", true, "--false", false)["noul"])
         except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
