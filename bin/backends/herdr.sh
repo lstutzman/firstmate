@@ -50,11 +50,10 @@
 # function has no herdr-specific logic; it just returns meta's window=
 # verbatim).
 #
-# Authoritative task recovery/orphan discovery (ids may not deterministically match live state
-# after a server restart in a differently-configured session; see the
-# verification doc) uses LABEL matching (fm-<id> tab labels), never trusts a
-# stored pane id blindly: fm_backend_herdr_list_live. The presentation journal
-# is deliberately excluded from that path.
+# Task recovery/orphan discovery (fm_backend_herdr_list_live) finds a task by
+# the herdr ids its record holds, verified live, never by a tab's display label;
+# fm-<id> labels are only the fallback for a tab with no such record. The
+# presentation journal is deliberately excluded from that path.
 #
 # Requires: herdr (CLI + socket), jq (JSON parsing). Bootstrap detects these
 # through fm_backend_required_tools only when herdr is the resolved backend;
@@ -245,6 +244,7 @@ fm_backend_herdr_presentation_release_supported() {  # [<session>]
   local session=${1:-} status running client_protocol client_version client_verdict=0
   local server_protocol server_version server_verdict=0
   FM_BACKEND_HERDR_PRESENTATION_RELEASE="an unreadable release"
+  fm_backend_herdr_session_arg_given "$#" "$session" presentation_release_supported || return 2
   command -v herdr >/dev/null 2>&1 || return 2
   command -v jq >/dev/null 2>&1 || return 2
   [ -n "$session" ] || session=$(fm_backend_herdr_session)
@@ -322,8 +322,8 @@ fm_backend_herdr_presentation_floor_warn() {  # <state-dir> <verdict>
 # compose the applicable release verdict and the shared warning contract for
 # one unconfigured home.
 fm_backend_herdr_presentation_default_supported() {  # <state-dir> [<session>]
-  local state_dir=${1:-} session=${2:-} verdict=0
-  fm_backend_herdr_presentation_release_supported "$session" || verdict=$?
+  local state_dir=${1:-} verdict=0
+  fm_backend_herdr_presentation_release_supported "${@:2:1}" || verdict=$?
   [ "$verdict" -eq 0 ] && return 0
   fm_backend_herdr_presentation_floor_warn "$state_dir" "$verdict"
   return 1
@@ -375,6 +375,17 @@ fm_backend_herdr_office_label() {  # <secondmate-id>
   fi
   fm_office_name_ok "$role" || return 0
   fm_backend_herdr_capitalise "$role"
+}
+
+# fm_backend_herdr_task_label: the herdr tab label for task <id> launched into
+# this FM_HOME. An office's own session (the task id is the office id) shows
+# its bare role name, the same as its workspace; every other task keeps
+# fm-<id>. A label is display only: nothing finds a task by it once metadata
+# records its herdr ids (fm_backend_herdr_list_live).
+fm_backend_herdr_task_label() {  # <task-id>
+  local office
+  office=$(fm_backend_herdr_office_label "$1")
+  printf '%s' "${office:-fm-$1}"
 }
 
 # fm_backend_herdr_office_role_labels: every capitalised office role name, one
@@ -456,7 +467,11 @@ fm_backend_herdr_flat_workers_workspace_label() {
 # fm_backend_herdr_version_check, which is intentionally session-independent
 # (reads only .client.* fields).
 fm_backend_herdr_cli() {  # <session> <herdr-subcommand-and-args...>
-  local session=$1 rc=0 err failed_bin selected_bin client_bin=herdr
+  local session=${1:-} rc=0 err failed_bin selected_bin client_bin=herdr
+  [ -n "$session" ] || {
+    echo "error: herdr call refused: empty session name (it would reach the live default session)" >&2
+    return 1
+  }
   shift
   if [ "${FM_BACKEND_HERDR_CLIENT_SESSION:-}" = "$session" ]; then
     client_bin=$(fm_backend_herdr_bin)
@@ -615,6 +630,17 @@ fm_backend_herdr_version_check() {
 # cleanup; tests/herdr-test-safety.sh documents and guards that path.
 fm_backend_herdr_session() {
   printf '%s' "${HERDR_SESSION:-default}"
+}
+
+# fm_backend_herdr_session_arg_given: refuse a session parameter that a caller
+# passed but left empty. Leaving the parameter out still means the ambient
+# session (fm_backend_herdr_session); passing an empty one is a caller bug that
+# would otherwise land on the live default session.
+fm_backend_herdr_session_arg_given() {  # <argc> <session> <function> [<position>]
+  [ "$1" -lt "${4:-1}" ] || [ -n "$2" ] || {
+    echo "error: herdr $3 was passed an empty session name; refusing rather than using the ambient session" >&2
+    return 1
+  }
 }
 
 # fm_backend_herdr_projection_id: generate a compact 128-bit base64url token.
@@ -2152,6 +2178,7 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
 # guard compare the pinned value with itself and pass vacuously.
 fm_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace> [<launcher-relationship>] [<session>]
   local cwd=${1:-$PWD} relationship=${2:-launcher-home} session=${3:-} label status
+  fm_backend_herdr_session_arg_given "$#" "$session" container_ensure 3 || return 1
   fm_backend_herdr_version_check || return 1
   [ -n "$session" ] || session=$(fm_backend_herdr_session)
   fm_backend_herdr_server_ensure "$session" || return 1
@@ -2621,13 +2648,19 @@ fm_backend_herdr_agent_alive() {  # <target>
 # fm_backend_herdr_workspace_prune_seeded_default_tab for the incident and
 # the safety argument). An ADOPTED workspace's caller always passes an empty
 # 4th arg, so this function never even queries for a prune candidate in that
-# case. Echoes "<tab_id> <pane_id>" on success.
-fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_tab_id>
-  local container=$1 label=$2 cwd=$3 seeded_tab_id=${4:-} session wsid list dup_tabs dup dup_pane dup_tab_ids out tab_id pane_id remaining_dup_tabs
+# case.
+# <earlier_label> (5th arg, may be empty) is the label the same task carried
+# before its label changed (fm-<id> for an office now shown by its role name).
+# A tab under either label counts as the same task's tab, so a live earlier
+# session still refuses a duplicate and an earlier husk is still replaced.
+# Echoes "<tab_id> <pane_id>" on success.
+fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_tab_id> [<earlier_label>]
+  local container=$1 label=$2 cwd=$3 seeded_tab_id=${4:-} earlier=${5:-} session wsid list dup_tabs dup dup_pane dup_tab_ids out tab_id pane_id remaining_dup_tabs
   session=${container%%:*}
   wsid=${container#*:}
+  [ -n "$earlier" ] || earlier=$label
   list=$(fm_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || return 1
-  dup_tabs=$(printf '%s' "$list" | jq -r --arg want "$label" 'if (.result.tabs | type) == "array" then .result.tabs[] | select(.label == $want) | .tab_id else error("missing result.tabs") end' 2>/dev/null) || {
+  dup_tabs=$(printf '%s' "$list" | jq -r --arg want "$label" --arg earlier "$earlier" 'if (.result.tabs | type) == "array" then .result.tabs[] | select(.label == $want or .label == $earlier) | .tab_id else error("missing result.tabs") end' 2>/dev/null) || {
     echo "error: could not parse herdr tab list output for workspace $wsid (session $session)" >&2
     return 1
   }
@@ -2637,7 +2670,7 @@ fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_ta
       [ -n "$dup" ] || continue
       dup_pane=$(fm_backend_herdr_pane_for_tab "$session" "$wsid" "$dup")
       if [ -z "$dup_pane" ] || ! fm_backend_herdr_tab_is_husk "$session" "$dup_pane"; then
-        echo "error: herdr tab '$label' already exists in workspace $wsid (session $session)" >&2
+        echo "error: herdr tab $dup for '$label' already exists in workspace $wsid (session $session)" >&2
         return 1
       fi
       dup_tab_ids="${dup_tab_ids}${dup}"$'\n'
@@ -2668,8 +2701,8 @@ EOF
       echo "error: could not parse herdr tab list output for workspace $wsid (session $session)" >&2
       return 1
     fi
-    remaining_dup_tabs=$(printf '%s' "$list" | jq -r --arg want "$label" --arg replacement "$tab_id" \
-      '.result.tabs[]? | select(.label == $want and .tab_id != $replacement) | .tab_id' 2>/dev/null)
+    remaining_dup_tabs=$(printf '%s' "$list" | jq -r --arg want "$label" --arg earlier "$earlier" --arg replacement "$tab_id" \
+      '.result.tabs[]? | select((.label == $want or .label == $earlier) and .tab_id != $replacement) | .tab_id' 2>/dev/null)
     remaining_dup_tabs=${remaining_dup_tabs//$'\n'/ }
     if [ -n "$remaining_dup_tabs" ]; then
       echo "error: failed to remove preexisting herdr tab(s) $remaining_dup_tabs for label '$label' in workspace $wsid (session $session)" >&2
@@ -3938,27 +3971,57 @@ EOF
   return 1
 }
 
-# fm_backend_herdr_list_live: recovery/orphan discovery. Lists every tab whose
-# label looks like a firstmate task window (fm-<id>) in <session>'s, THIS
-# HOME'S OWN workspace (fm_backend_herdr_workspace_label - never another
-# home's), by LABEL - never by trusting a stored pane id, since ids are not
-# guaranteed stable across every server lifecycle (see herdr-verification-p2.md
-# "ID stability"). A caller running as a given home (e.g. a secondmate
-# recovering its own in-flight work) naturally scopes to that home's own
-# workspace because FM_HOME already names it - no glue needed, unlike the
-# primary-spawns-a-secondmate path in fm-spawn.sh. Read-only: a session/
-# workspace that does not exist yet simply lists nothing. One
-# "<session>:<pane_id>\t<label>" line per live task tab.
+# fm_backend_herdr_record_value: the single non-empty <key>= value in one task
+# record, or nonzero when it is absent, empty, or repeated.
+fm_backend_herdr_record_value() {  # <meta-file> <key>
+  awk -v k="$2" 'index($0, k "=") == 1 { n++; v = substr($0, length(k) + 2) }
+    END { if (n == 1 && v != "") print v; else exit 1 }' "$1" 2>/dev/null
+}
+
+# fm_backend_herdr_list_live: recovery/orphan discovery for THIS home's own
+# direct reports in <session>, found by the ids their records hold, never by a
+# tab's display label (an office's tab shows its role name, not fm-<id>).
+# Primary source: every herdr record in this home's state dir whose
+# herdr_session is <session>, listed only while Herdr confirms the recorded pane
+# still sits in the recorded tab and workspace, so a reused pane id elsewhere
+# never matches. Herdr keeps workspace, tab, and pane ids across a server
+# restart (docs/herdr-backend.md "Husks after a server restart"), so the same
+# record binds again after a restore with no extra field.
+# Fallback for a mixed fleet: an fm-<id> tab in this home's own workspace
+# (fm_backend_herdr_workspace_label - never another home's) whose id has no
+# record holding herdr ids is still listed by that label, which covers an
+# orphan and a task recorded before ids were kept. Read-only. One
+# "<session>:<pane_id>\tfm-<id>" line per live task; the second field is the
+# task's selector, not its display title.
 fm_backend_herdr_list_live() {  # <session>
-  local session=$1 wsid tabs tab_id label pane_id
+  local session=$1 state meta id rec_session ws tab pane got claimed=' ' wsid tabs tab_id label
+  [ -n "$session" ] || { echo "error: herdr list_live needs a session name" >&2; return 1; }
+  state=${FM_STATE_OVERRIDE:-$FM_HOME/state}
+  for meta in "$state"/*.meta; do
+    [ -f "$meta" ] || continue
+    [ "$(fm_backend_herdr_record_value "$meta" backend)" = herdr ] || continue
+    id=${meta##*/}
+    id=${id%.meta}
+    rec_session=$(fm_backend_herdr_record_value "$meta" herdr_session) || continue
+    ws=$(fm_backend_herdr_record_value "$meta" herdr_workspace_id) || continue
+    tab=$(fm_backend_herdr_record_value "$meta" herdr_tab_id) || continue
+    pane=$(fm_backend_herdr_record_value "$meta" herdr_pane_id) || continue
+    claimed="${claimed}fm-$id "
+    [ "$rec_session" = "$session" ] || continue
+    got=$(fm_backend_herdr_cli "$session" pane get "$pane" 2>/dev/null \
+      | jq -r '.result.pane | "\(.tab_id)\t\(.workspace_id)"' 2>/dev/null) || continue
+    [ "$got" = "$tab"$'\t'"$ws" ] || continue
+    printf '%s:%s\tfm-%s\n' "$session" "$pane" "$id"
+  done
   wsid=$(fm_backend_herdr_workspace_find "$session") || return 0
   [ -n "$wsid" ] || return 0
   tabs=$(fm_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || return 0
   while IFS=$'\t' read -r tab_id label; do
     [ -n "$tab_id" ] || continue
-    pane_id=$(fm_backend_herdr_pane_for_tab "$session" "$wsid" "$tab_id") || continue
-    [ -n "$pane_id" ] || continue
-    printf '%s:%s\t%s\n' "$session" "$pane_id" "$label"
+    case "$claimed" in *" $label "*) continue ;; esac
+    pane=$(fm_backend_herdr_pane_for_tab "$session" "$wsid" "$tab_id") || continue
+    [ -n "$pane" ] || continue
+    printf '%s:%s\t%s\n' "$session" "$pane" "$label"
   done < <(printf '%s' "$tabs" | jq -r '.result.tabs[]? | select(.label | startswith("fm-")) | "\(.tab_id)\t\(.label)"' 2>/dev/null)
 }
 

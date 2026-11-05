@@ -107,6 +107,9 @@ When the launcher has no Herdr workspace to inherit, the adapter maintains one d
 
 A secondmate launched by the primary receives a narrowly scoped home override during container creation.
 
+Each task tab is labeled `fm-<id>`, except an office's own session, whose tab carries the same bare role name as its workspace.
+A tab label is display only: no lookup depends on it once a task's record holds its Herdr ids.
+
 ### Watching tasks
 
 Attach to the selected named Herdr session and switch to the relevant home workspace to watch its task tabs.
@@ -160,7 +163,10 @@ Rename it manually before expecting new tasks or recovery to use it.
 
 ### Recovery and existing tasks
 
-Recovery and list-live still scan the first workspace matching the home label, because they address panes they already recorded rather than choosing where new work goes.
+Recovery and list-live find a home's tasks by the Herdr session, workspace, tab, and pane ids in that home's own task records, never by a tab label.
+A record is listed only while Herdr reports its recorded pane in the recorded tab and workspace, so a reused pane id elsewhere never matches.
+A primary therefore lists the secondmates and offices it spawned, whose records it holds, and never a secondmate's own workers.
+An `fm-<id>` tab in the first workspace matching the home label is still listed by that label only when no record for that id holds Herdr ids, which covers an orphan and a task recorded before ids were kept.
 The one recovery that does place new work is the control plane's reclaim of a destroyed endpoint.
 It mints a replacement tab through this section's ordinary placement rules, or in the workers workspace for a home with presentation spaces on, while pinning the herdr session the task's record names ([`agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
 
@@ -524,7 +530,7 @@ herdr_pane_id=<pane-id>
 
 A Herdr pane id contains a colon, so the adapter splits `window=` on the first colon only.
 The recorded pane is the operational fast path.
-Workspace and tab ids support verification and cleanup but are not inferred from mutable labels during normal operation.
+Workspace and tab ids support verification, cleanup, and list-live discovery, and are never inferred from mutable labels during normal operation.
 
 ## Current transport behavior
 
@@ -533,6 +539,8 @@ Workspace and tab ids support verification and cleanup but are not inferred from
 The adapter starts and polls a named server before workspace, tab, pane, or agent calls.
 Every Herdr invocation goes through `fm_backend_herdr_cli`, which sets the environment and passes an explicit trailing `--session <name>`.
 An environment variable alone is not reliable when another Herdr server is running.
+An empty session name is refused before any Herdr call, by `fm_backend_herdr_cli` and by every adapter function that takes an optional session, rather than reaching the live default session.
+Leaving that optional session out still selects the ambient `HERDR_SESSION`, or `default`.
 
 When the selected named server is not running, the adapter launches it without these inherited values:
 
@@ -683,6 +691,9 @@ A restored same-labeled tab with a missing pane or no registered agent is a husk
 
 Create replaces only a confidently dead or no-agent husk, creates the replacement before closing the old tab, and refuses live or unknown states.
 This prevents closing the workspace's last tab before a replacement exists.
+An office tab still labeled `fm-<id>` from before offices took their role name counts as that office's tab, so a live one still refuses a second session and a husk is still replaced.
+
+Because the ids survive a restart, a task's record finds its restored tab again with no extra identifier.
 
 ### Stale agent registrations
 

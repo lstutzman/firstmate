@@ -3858,6 +3858,120 @@ test_list_live_scoped_to_this_homes_workspace_only() {
   pass "fm_backend_herdr_list_live: scoped to this home's own workspace, never a sibling home's"
 }
 
+# --- lookup by recorded ids, office tab label, empty-session guard ----------
+
+test_task_label_office_own_tab_uses_role() {
+  local parent home out
+  parent="$TMP_ROOT/task-label-parent"; mkdir -p "$parent/data"
+  printf -- '- qm-office - Run the fleet. (role: quartermaster; added 2026-11-05)\n' > "$parent/data/offices.md"
+  home="$TMP_ROOT/task-label-office"
+  make_office_home "$home" qm-office "$parent"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_task_label qm-office' "$ROOT" )
+  [ "$out" = Quartermaster ] || fail "an office's own tab should carry its bare role name, got '$out'"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_task_label wk7' "$ROOT" )
+  [ "$out" = fm-wk7 ] || fail "a worker spawned from an office home should keep fm-<id>, got '$out'"
+  mkdir -p "$TMP_ROOT/task-label-primary"
+  out=$( FM_HOME="$TMP_ROOT/task-label-primary" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_task_label qm-office' "$ROOT" )
+  [ "$out" = fm-qm-office ] || fail "a non-office home's task should keep fm-<id>, got '$out'"
+  pass "fm_backend_herdr_task_label: an office's own tab is its role name; every other task keeps fm-<id>"
+}
+
+test_create_task_earlier_label_live_refuses() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/earlier-live"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t2","label":"fm-quartermaster","workspace_id":"w1"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"panes":[{"pane_id":"w1:p2","tab_id":"w1:t2"}]}}\n' > "$resp/2.out"
+  printf '{"result":{"pane":{"pane_id":"w1:p2"}}}\n' > "$resp/3.out"
+  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/4.out"
+  printf '%s\n' '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p2","shell_pid":4242,"foreground_process_group_id":4243,"foreground_processes":[{"pid":4243,"name":"node","argv0":"pi"}]}}}' > "$resp/5.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 Quartermaster /tmp/proj "" fm-quartermaster' "$ROOT" 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "a live office session still under its earlier fm-<id> label must refuse a second one"
+  assert_contains "$out" "already exists" "create_task did not report the earlier-labeled live tab"
+  assert_not_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''create' "create_task must not start a second office session beside a live earlier one"
+  pass "fm_backend_herdr_create_task: a live tab under the task's earlier fm-<id> label still refuses a duplicate"
+}
+
+test_create_task_earlier_label_husk_replaced() {
+  local dir log resp fb out tab pane
+  dir="$TMP_ROOT/earlier-husk"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t2","label":"fm-quartermaster","workspace_id":"w1"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"panes":[{"pane_id":"w1:p2","tab_id":"w1:t2"}]}}\n' > "$resp/2.out"
+  printf '{"error":{"code":"pane_not_found","message":"pane w1:p2 not found"}}\n' > "$resp/3.out"
+  printf '{"result":{"tab":{"tab_id":"w1:t3"},"root_pane":{"pane_id":"w1:p3"}}}\n' > "$resp/4.out"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t3","label":"Quartermaster","workspace_id":"w1"}]}}\n' > "$resp/6.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 Quartermaster /tmp/proj "" fm-quartermaster' "$ROOT" ) \
+    || fail "an earlier-labeled husk should be replaced, not refused"
+  read -r tab pane <<EOF
+$out
+EOF
+  [ "$tab $pane" = "w1:t3 w1:p3" ] || fail "create_task should echo the new tab/pane ids, got '$out'"
+  assert_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''create'$'\x1f''--workspace'$'\x1f''w1'$'\x1f''--cwd'$'\x1f''/tmp/proj'$'\x1f''--label'$'\x1f''Quartermaster' \
+    "the replacement tab should carry the role label"
+  assert_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''close'$'\x1f''w1:t2' "the earlier-labeled husk was not closed"
+  pass "fm_backend_herdr_create_task: an earlier fm-<id> husk is replaced by a tab under the new label"
+}
+
+test_list_live_finds_tasks_by_recorded_ids() {
+  local dir log resp fb out home rec
+  dir="$TMP_ROOT/list-live-ids"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$TMP_ROOT/list-live-ids-home"; mkdir -p "$home/state"
+  rec() {  # <id> <session> <ws> <tab> <pane>
+    printf 'window=%s:%s\nbackend=herdr\nherdr_session=%s\nherdr_workspace_id=%s\nherdr_tab_id=%s\nherdr_pane_id=%s\n' \
+      "$2" "$5" "$2" "$3" "$4" "$5" > "$home/state/$1.meta"
+  }
+  rec moved fmtest w1 w1:t9 w1:p9
+  rec office fmtest w5 w5:t1 w5:p1
+  rec other elsewhere w1 w1:t4 w1:p4
+  # Records are read in name order: moved, office, then other (another session, no call).
+  # 1: moved's recorded pane id now sits in a different tab - never a match.
+  printf '{"result":{"pane":{"pane_id":"w1:p9","tab_id":"w1:t3","workspace_id":"w1"}}}\n' > "$resp/1.out"
+  # 2: office's pane is exactly where its record says, under its role label.
+  printf '{"result":{"pane":{"pane_id":"w5:p1","tab_id":"w5:t1","workspace_id":"w5"}}}\n' > "$resp/2.out"
+  # 3-5: the label fallback in this home's own workspace.
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w5","label":"Quartermaster"}]}}\n' > "$resp/3.out"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t4","label":"fm-other"},{"tab_id":"w1:t5","label":"fm-orphan"},{"tab_id":"w1:t6","label":"notes"}]}}\n' > "$resp/4.out"
+  printf '{"result":{"panes":[{"pane_id":"w1:p5","tab_id":"w1:t5"}]}}\n' > "$resp/5.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HOME="$home" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_list_live fmtest' "$ROOT" )
+  [ "$out" = $'fmtest:w5:p1\tfm-office\nfmtest:w1:p5\tfm-orphan' ] \
+    || fail "list_live should list the recorded task wherever its tab is and whatever it is labelled, plus only unrecorded fm-<id> tabs by label, got:"$'\n'"$out"
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''get'$'\x1f''w5:p1' "list_live did not verify the recorded pane live"
+  pass "fm_backend_herdr_list_live: finds tasks by recorded ids verified live, never by title once ids are recorded"
+}
+
+test_empty_session_refused_before_any_herdr_call() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/empty-session"; mkdir -p "$dir/responses" "$dir/state"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  fb=$(make_herdr_fakebin "$dir")
+  run_empty() {  # <shell snippet>
+    PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest FM_T_STATE="$dir/state" \
+      bash -c '. "$0/bin/backends/herdr.sh"; '"$1" "$ROOT" 2>&1
+  }
+  out=$(run_empty 'fm_backend_herdr_container_ensure /tmp launcher-home ""'); status=$?
+  [ "$status" -ne 0 ] || fail "container_ensure must refuse an explicitly empty session"
+  assert_contains "$out" "empty session name" "container_ensure did not name the empty session"
+  out=$(run_empty 'fm_backend_herdr_cli "" workspace list'); status=$?
+  [ "$status" -ne 0 ] || fail "fm_backend_herdr_cli must refuse an empty session"
+  out=$(run_empty 'fm_backend_herdr_presentation_release_supported ""'); status=$?
+  expect_code 2 "$status" "release_supported with an empty session must be indeterminate"$'\n'"$out"
+  # shellcheck disable=SC2016 # FM_T_STATE expands in the child shell.
+  out=$(run_empty 'fm_backend_herdr_presentation_default_supported "$FM_T_STATE" ""'); status=$?
+  [ "$status" -ne 0 ] || fail "default_supported must not report support for an empty session"
+  out=$(run_empty 'fm_backend_herdr_list_live ""'); status=$?
+  [ "$status" -ne 0 ] || fail "list_live must refuse an empty session"
+  [ ! -s "$log" ] || fail "an empty session must be refused before any herdr call, but herdr ran:"$'\n'"$(cat "$log")"
+  # Leaving the session out still means the ambient one.
+  run_empty 'fm_backend_herdr_container_ensure /tmp launcher-home' >/dev/null
+  assert_contains "$(cat "$log")" $'\x1f''--session'$'\x1f''fmtest' "an omitted session should still resolve to the ambient HERDR_SESSION"
+  pass "herdr adapter: an explicitly empty session name refuses before any herdr call; an omitted one stays ambient"
+}
+
 # --- target parsing, key normalization ---------------------------------------
 
 test_parse_target() {
@@ -6178,6 +6292,11 @@ test_projection_order_office_role_is_a_parent_but_a_personal_space_is_not
 test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk
 test_workspace_find_matches_only_this_homes_own_label
 test_list_live_scoped_to_this_homes_workspace_only
+test_task_label_office_own_tab_uses_role
+test_create_task_earlier_label_live_refuses
+test_create_task_earlier_label_husk_replaced
+test_list_live_finds_tasks_by_recorded_ids
+test_empty_session_refused_before_any_herdr_call
 test_parse_target
 test_normalize_key
 test_capture_calls_pane_read
