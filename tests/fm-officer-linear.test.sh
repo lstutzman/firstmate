@@ -122,10 +122,10 @@ def describe(f, near=None, recurrence=None):
     if near: lines.append("Near match (not treated as the same issue): %s, local-jev %.2f." % near)
     return "\n".join(lines) + "\nfixture-fp:%s" % f["fingerprint"]
 
-def filer(max_creates=100, budget=450, project=None):
+def filer(max_creates=100, budget=450):
     lin = lib.Linear(budget)
     ledger, found = {}, {}
-    return lib.Filer(officer, lin, "PC", date, W, ledger, found, lib.Jev(os.path.join(W, "jev.py")), max_creates, project), lin
+    return lib.Filer(officer, lin, "PC", date, W, ledger, found, lib.Jev(os.path.join(W, "jev.py")), max_creates), lin
 
 def run(fl, findings):
     for f in findings:
@@ -163,8 +163,9 @@ elif scenario == "budget":
     except lib.LinearError as exc:
         res = {"raised": exc.code, "filings": [(f["filing"] or {}).get("action") for f in items]}
 elif scenario == "fleet":
+    officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), project="Fleet")
     f = find("fleet-1", "Bosun backup stale")
-    fl, lin = filer(project="Fleet")
+    fl, lin = filer()
     run(fl, [f])
     res = {"filing": f["filing"]}
 elif scenario == "fleet-labels":
@@ -205,7 +206,7 @@ elif scenario in ("fleet-start", "fleet-nowrite"):
     pc = find("p", "Null reference when saving", "high", project="PropertyCompass2")
     fs = [fleet, skills, pc]
     if scenario == "fleet-start":
-        fl, lin = filer(project="Fleet")
+        fl, lin = filer()
         run(fl, fs)
     for f in fs:
         f["score"] = lib.score_of(f)
@@ -248,6 +249,7 @@ test_dedupe_exact_and_near_match() {
   assert_equals created "$(jq -r '.filings.e.action' <<<"$out")" "an unrelated finding is created"
   assert_contains "$(issue PC-106 .description)" "Near match (not treated as the same issue): PC-52, local-jev 0.60" "the near match is in the new item"
   assert_equals 3 "$(grep -c '^issue create .*--verify' "$LDIR/calls")" "only the three that are not duplicates are created"
+  assert_not_contains "$(calls)" "--project" "a PropertyCompass2 officer files into no Linear project"
   pass "fm-officer-linear: an exact fingerprint and a local-jev match above 0.85 are duplicates, a lower near match is filed new and noted"
 }
 
@@ -326,7 +328,7 @@ test_fleet_findings_take_the_fleet_project_and_label() {
   out=$(drive fleet) || fail "driver must succeed"
   assert_equals created "$(jq -r '.filing.action' <<<"$out")" "the fleet finding is filed"
   assert_equals '["Bug","scan","area:fleet"]' "$(issue PC-101 '.labels' | jq -c .)" "one Type, one Source, area:fleet"
-  assert_equals Fleet "$(issue PC-101 .project)" "in the Fleet project"
+  assert_equals Fleet "$(issue PC-101 .project)" "a Fleet officer's item is in the Fleet project with no Filer argument"
   assert_equals '[["Bug","scan","area:fleet"],[]]' "$(drive fleet-labels | jq -c .)" "fleet_labels names one Type, one Source and area:fleet, and any missing label"
   assert_equals 3 "$(issue PC-101 .priority)" "medium is Linear priority 3"
   assert_contains "$(grep '^issue create' "$LDIR/calls" | sed -n 1p)" "--dry-run" "the dry run comes first"

@@ -20,8 +20,8 @@ how it finds things. This file owns the mechanics every officer shares:
               Every write is `--dry-run` then `--verify`. A failed verify is never retried; the fingerprint search then
               decides whether the item exists. An item a person closed (completed or canceled) is never reopened,
               edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`).
-              An item gets exactly one Type, one Source and one area label; a fleet finding takes the Fleet
-              project and the area:fleet label (fleet_labels). The library never creates a label and never closes
+              An item gets exactly one Type, one Source and one area label; a fleet officer's
+              (Officer project Fleet) items go in the Fleet project, with the area:fleet label (fleet_labels). The library never creates a label and never closes
               or deletes an item.
   budget      Linear counts every linear-axi call against the officer's registry `max-linear-calls`, and Filer stops
               creating at its `max-creates`; whatever is left is reported by not_filed_lines() and filed by the next run
@@ -419,9 +419,9 @@ def not_filed_lines(findings):
 class Filer:
     """Files findings in one team under the contract; one per officer run (the cache lasts a run)."""
 
-    def __init__(self, officer, lin, team, date, out, ledger, found, jev, max_creates, project=None):
+    def __init__(self, officer, lin, team, date, out, ledger, found, jev, max_creates):
         self.officer, self.lin, self.team, self.date, self.out = officer, lin, team, date, out
-        self.ledger, self.found, self.jev, self.max_creates, self.project = ledger, found, jev, max_creates, project
+        self.ledger, self.found, self.jev, self.max_creates = ledger, found, jev, max_creates
         self.cache, self.creates, self.bumps = {}, 0, []
 
     def over_cap(self):
@@ -477,15 +477,15 @@ class Filer:
             fh.write(body)
         return path
 
-    def create(self, fp, title, body, labels, priority, project=None):
+    def create(self, fp, title, body, labels, priority):
         """(issue, created, verify error): a new item; the caller has already searched for the fingerprint."""
         path = self._write_body(fp, body)
         try:
             cmd = ["issue", "create", "--team", self.team, "--title", title, "--body-file", path, "--priority", priority]
             for label in labels:
                 cmd += ["--label", label]
-            if project or self.project:
-                cmd += ["--project", project or self.project]
+            if self.officer.project == FLEET_PROJECT:
+                cmd += ["--project", FLEET_PROJECT]
             self.lin(cmd + ["--dry-run"])
             self.creates += 1
             try:

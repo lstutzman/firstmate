@@ -97,7 +97,7 @@ A missing or unreadable rubric means nothing starts by itself, and the run says 
 An officer adopts it in one change:
 
 - add its `docs/officers/<id>-rubric.md`, using the headings above;
-- load `bin/fm-officer-linear.py`, declare an `Officer` with its id, label, rubric file, allowed sources and project (`Fleet` for a fleet officer), and file through `Filer`;
+- load `bin/fm-officer-linear.py`, declare an `Officer` with its id, label, rubric file, allowed sources and project, and file through `Filer`; the project is the one setting for both filing and routing: `Fleet` files every item in the Fleet project and sends its starts and patterns to the Quartermaster;
 - add `writes: linear`, `max-creates`, `max-linear-calls` and `start-home` to its registry line ([Officers](../configuration.md#officers-dataofficersmd)), and have `bin/fm-officer.sh` pass them to its script as it does for the Surgeon;
-- make sure its Source label exists in team PC, and use the Fleet project and `area:fleet` for fleet findings;
+- make sure its Source label exists in team PC, and use `area:fleet` for fleet findings;
 - prove it with tests that run the officer through `bin/fm-officer.sh` against a fake `linear-axi`, as `tests/fm-officer-surgeon.test.sh` does.
