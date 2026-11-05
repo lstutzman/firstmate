@@ -1,0 +1,6 @@
+stale-card:Captain's Log:approve-mentions-run:ex/repo#9
+stale-card:Captain's Log:closed-golive:ex/repo#10
+stale-card:Captain's Log:merge-then-install:ex/repo#9
+stale-card:Captain's Log:pc-504:ex/repo#9
+stale-card:Captain's Log:pc-reinstall:ex/repo#9
+stale-card:Captain's Log:x-installer:ex/repo#9

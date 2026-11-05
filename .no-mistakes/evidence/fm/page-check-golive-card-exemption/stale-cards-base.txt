@@ -1,0 +1,11 @@
+stale-card:Captain's Log:approve-mentions-run:ex/repo#9
+stale-card:Captain's Log:closed-golive:ex/repo#10
+stale-card:Captain's Log:cron-card:ex/repo#9
+stale-card:Captain's Log:enable-flag:ex/repo#9
+stale-card:Captain's Log:mem-infra-v4-install:ex/repo#9
+stale-card:Captain's Log:merge-then-install:ex/repo#9
+stale-card:Captain's Log:pc-504:ex/repo#9
+stale-card:Captain's Log:pc-reinstall:ex/repo#9
+stale-card:Captain's Log:run-steps:ex/repo#9
+stale-card:Captain's Log:skills-118-token-scope-probe-golive:ex/repo#9
+stale-card:Captain's Log:x-installer:ex/repo#9
