@@ -10,7 +10,8 @@ Usage:
                              --out <lane-dir> [--home <dir>]... [--hosts a,b]
                              [--captains-log <https-url>] [--channel <mate-id>]...
                              [--days <n>] [--model none] [--now <epoch>]
-                             [--bosun-hosts a,b]
+                             [--bosun-hosts a,b] [--fm-home <dir>]
+                             [--start-home <home>=<projects>[=<role>[=<mandate>]]]...
 
 Friction is anything that slowed an agent down, above all a step it had to
 wait for Lee to do. One day's friction events come from three sources:
@@ -141,9 +142,11 @@ triage officer does, reads the status logs, classifies each event's root
 cause by the first matching rule in RULES, groups events by cause and
 service or tool, and writes into --out:
 
-  <date>.json                    every event and finding (no wall-clock stamps,
-                                 so a re-run with unchanged inputs rewrites
-                                 identical bytes);
+  <date>.json                    every event and finding, each with its state, and
+                                 the start_requests (no wall-clock stamps: its
+                                 generated_at is the end of the digest's day, so
+                                 a re-run with unchanged inputs rewrites
+                                 identical bytes; source friction-officer);
   <date>.md                      the digest;
   <date>.velocity-findings.json  the fleet-app velocity findings file
                                  (FINDINGS_SCHEMA schema_version 1, source
@@ -172,18 +175,54 @@ matched refusal class, or, for a repeated ask, Lee's own sentence per day. No
 other transcript prose is kept, and nothing is sent to a model or service.
 
 A finding's id is a slug of its cause, sub and name alone, so it is the same
-every night (at most 54 characters, which fleet-app's tap card needs). Its state
-is read-only: settled when a line in a home's data/captain-shared.md that says
-"standing rule" or "standing exception" names the id (alone or as friction-<id>)
-or its category key written "settles: <cause>/<sub>" (for example "settles:
-policy/merge-word"; a finding about one tool, hook or service also needs the
-line to name it, or the key to carry it as "settles: <cause>/<sub>/<name>");
-no looser wording settles anything; else started when a Start
-fix tap for it sits in a home's state/inbox (the note fleet-app's shim files,
-"Captain's Log reply [friction-<id>]: Start fix: <title>") or in
-<captains-log>/replies?since=<30 days ago>, or a data/backlog.md line or a task's branch= names it
-(its link is the first pull request or https URL those hold); else open. The
-state is as of the run's generated_at.
+every night (at most 54 characters, which fleet-app's tap card needs). Its
+state is read-only and as of the run's day, one of:
+
+  settled             a line in a home's data/captain-shared.md that says
+                      "standing rule" or "standing exception" names the id
+                      (alone or as friction-<id>) or its category key written
+                      "settles: <cause>/<sub>" (for example "settles:
+                      policy/merge-word"; a finding about one tool, hook or
+                      service also needs the line to name it, or the key to
+                      carry it as "settles: <cause>/<sub>/<name>"); no looser
+                      wording settles anything. The card quotes the line as
+                      `rule` {text, source};
+  started             a Start fix tap for it sits in a home's state/inbox (the
+                      note fleet-app's shim files, "Captain's Log reply
+                      [friction-<id>]: Start fix: <title>") or in
+                      <captains-log>/replies?since=<30 days ago>, or a
+                      started-by-default note, or a data/backlog.md line or a
+                      task's branch= names it, and its fix has not merged. The
+                      card carries `link` (the first pull request or https URL
+                      those hold) and `task` (the backlog line's or branch's),
+                      or `reopen` true when it has neither;
+  fixed               the started fix merged (a task.merged record in a home's
+                      fleet ledger, by its task or pull request) and the
+                      finding has no event after the merge. The card carries
+                      `fixed` {link, merged_at};
+  reported-again      the fix merged and the finding has an event after the
+                      merge (the newest stamped event, else the start of the
+                      run's day) and no start newer than the merge;
+  started-by-default  the fix is standing work (see below) and nothing started
+                      it, or it was reported again after a merged fix;
+  open                anything else.
+
+Standing work (STANDING_START) is a finding in a card-bar group whose fix fleet
+rules section 2 already starts ("Velocity findings go ahead by default: an
+agent starts the fix unless Lee objects within a day"); credentials, approvals,
+sudoers rules, the gate-edit and secret hooks, and product decisions are
+reserved and stay open for Lee. Each such finding gets a start request in the
+digest's `start_requests` (and, for this home, a <date>.start-requests.sh
+handoff), the same fm-inbox.sh note call the progress officer writes, addressed
+to the --start-home office whose role is quartermaster, else to --fm-home; an
+office's lane check delivers it (bin/fm-office.sh). The note carries a marker
+line, so a delivered request reads back as started. An `Object` tap on the
+finding's card (a note or reply "Object") keeps it from starting by default.
+Without --fm-home nothing can be addressed, so no finding is started by default.
+Each card carries `actions`: open and reported-again offer start-fix, a
+started-by-default card offers object, a started card with no link or task
+offers reopen, and the rest offer none, so a standing-work card never offers a
+bare Start fix. docs/configuration.md "Officers" lists the card fields.
 
 The proposed fix comes from the FIXES table. A group no rule names gets no
 card, and neither does a missing tool in RETIRED_TOOLS (its events are still
@@ -220,6 +259,18 @@ def _triage():
 
 
 triage = _triage()
+
+
+def _progress():
+    """The progress officer's module, loaded only where start requests are written (never on the archive host)."""
+    mod = sys.modules.get("fm_officer_progress")
+    if mod is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-officer-progress.py")
+        spec = importlib.util.spec_from_file_location("fm_officer_progress", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["fm_officer_progress"] = mod
+    return mod
 
 SCORER = "friction-deterministic-v1"
 MIN_SEVERITY = 3
@@ -503,6 +554,19 @@ NOT_CARDED = {("decision", "decision")}
 # Tools the fleet no longer uses: a miss is still counted, but never becomes an "install it" fix or card.
 # Retiring another tool is a one-line change here.
 RETIRED_TOOLS = {"railway"}
+# Groups whose fix is standing work: fleet rules section 2 ("Velocity findings go ahead by default: an agent starts
+# the fix unless Lee objects within a day"), with the reserved classes of section 8 left out. A finding in one of
+# these groups that clears the card bar is started by default and carries an Object action, never a bare Start fix.
+# Everything else (credentials, secrets, approvals and merge words, sudoers rules, the gate-edit and secret-exposure
+# hooks, product decisions) grants new authority or touches a reserved class, so it stays Lee's to start.
+STANDING_START = {
+    ("guard-hook", "refused"), ("guard-hook", "other"), ("service-limit", "rate-limit"), ("missing-tool", "tool"),
+    ("environment", "ssh-to-self"), ("environment", "wrong-cwd"), ("environment", "external"),
+    ("lee-command", "run"), ("repeat-ask", "instruction"), ("other", "other"),
+}
+# The actions the page may draw for each state; a standing-work finding is never offered a bare Start fix.
+STATE_ACTIONS = {"open": ["start-fix"], "reported-again": ["start-fix"], "started-by-default": ["object"],
+                 "started": [], "fixed": [], "settled": []}
 
 
 def iso_utc(epoch):
@@ -1454,6 +1518,7 @@ def group_findings(events, model):
             "stated_causes": dict(sorted(_count(e.get("stated") or "unstated"
                                                 for e in evs if e["kind"] == "status-wait").items())),
             "severity": severity, "confidence": confidence, "carded": carded,
+            "last_seen_at": max((e["at"] for e in evs if e.get("at")), default=None),
             "owner": None, "title": None, "lee_did": None, "fix": None, "effort": None,
             "category": CATEGORY.get(cause, "other"),
             "evidence": {"tasks": tasks, "sessions": sessions, "status_keys": keys, "cards": cards,
@@ -1605,43 +1670,138 @@ def load_replies(captains_log, now):
     return found
 
 
-def finding_states(findings, homes, replies):
-    """{finding id: (state, link)}: open, started (a tap, task or pull request names it) or settled.
+def default_start_marker(finding_id):
+    """The note body line a started-by-default request carries; finding_states reads it back as a start."""
+    return "Friction finding [friction-%s]: started by default" % finding_id
 
-    A standing-rule line in a home's data/captain-shared.md that names the finding id or key settles it, and wins
-    over a start. Started comes from a Start fix tap in a home's inbox or in the replies, or a backlog
-    line or task branch that names the id; its link is the first pull request or https URL found there.
+
+def merge_index(homes):
+    """({pull request URL: newest merge epoch}, {task: newest merge epoch}) from the homes' fleet ledgers."""
+    by_pr, by_task = {}, {}
+    for home in homes:
+        for task, records in home.ledger.items():
+            for rec in records:
+                if rec.get("event") != "task.merged" or not isinstance(rec.get("ts"), int):
+                    continue
+                by_task[task] = max(by_task.get(task, 0), rec["ts"])
+                if isinstance(rec.get("pr"), str):
+                    by_pr[rec["pr"]] = max(by_pr.get(rec["pr"], 0), rec["ts"])
+    return by_pr, by_task
+
+
+def https_link(url):
+    return url if url and url.startswith("https://") and len(url) <= 300 else None
+
+
+def note_at(text):
+    m = re.search(r"^at=(\S+)$", text, re.M)
+    return epoch_of(m.group(1)) if m else None
+
+
+def settled_by(f, rx, homes):
+    """The first standing-rule line of a home's data/captain-shared.md that covers the finding, quoted with its source."""
+    for home in homes:
+        path = os.path.join(home.path, "data", "captain-shared.md")
+        for number, line in enumerate(read_lines(path), 1):
+            if STANDING_RE.search(line) and settles(line.lower(), f, rx):
+                return {"text": clip(line.strip().lstrip("-* ").strip(), 300),
+                        "source": clip("%s data/captain-shared.md line %d" % (place(home.path), number), 120)}
+    return None
+
+
+def finding_states(findings, homes, replies, date="1970-01-01", eligible=()):
+    """{finding id: state record}: what the velocity page draws for each finding, as of the run.
+
+    A record holds state (one of STATES), link (a pull request or https URL), task (the task that holds the fix),
+    reopen (a started finding that names neither), rule ({text, source} of the standing-rule line, for settled),
+    fixed ({link, merged_at}, for fixed and reported-again), generation (the merged fix link a later start follows)
+    and actions (STATE_ACTIONS). Order of precedence:
+
+      settled           a standing-rule line in a home's data/captain-shared.md names the finding id or key;
+      started           a Start fix tap (in a home's state/inbox or the Captain's Log replies), a started-by-default
+                        note, a data/backlog.md line or a task's branch= names it, and that fix has not merged. Its
+                        link is the first pull request or https URL those hold, its task the backlog line's or branch's
+                        task; with neither, reopen is true;
+      fixed             the started fix merged (a task.merged record in a fleet ledger, by the task or its pull request)
+                        and the finding was not seen again after the merge;
+      reported-again    the fix merged and the finding has an event after the merge (last_seen_at; the start of the run's
+                        day when the finding carries no stamped event), with no newer start;
+      started-by-default  the finding is in `eligible` (a carded standing-work group; see STANDING_START), nothing
+                        started it (or it was reported again after a merged fix), and Lee did not Object;
+      open              anything else.
+
+    A start is current unless it merged, or a merge is known and the start is no newer than it (a start with no
+    stamp is then older). An `Object` tap (inbox note or reply) on a finding keeps it from starting by default.
     """
-    notes = [t.lower() for h in homes for t in inbox_notes(h)]
-    shared = [l.lower() for h in homes for l in read_lines(os.path.join(h.path, "data", "captain-shared.md"))
-              if STANDING_RE.search(l)]
+    day_start, _ = day_bounds(date)
+    notes = [(t.lower(), note_at(t)) for h in homes for t in inbox_notes(h)]
     backlog = [(h, l) for h in homes for l in read_lines(os.path.join(h.path, "data", "backlog.md"))]
+    by_pr, by_task = merge_index(homes)
     out = {}
     for f in findings:
         rx = id_re(f["id"])
-        if any(settles(l, f, rx) for l in shared):
-            out[f["id"]] = ("settled", None)
+        rule = settled_by(f, rx, homes)
+        if rule:
+            out[f["id"]] = {"state": "settled", "link": None, "task": None, "reopen": False, "rule": rule,
+                            "fixed": None, "generation": None, "actions": STATE_ACTIONS["settled"]}
             continue
-        hits = []  # one entry per start found: its link, or None
-        tap = re.compile(r"captain's log reply \[friction-%s\]: start fix" % re.escape(f["id"]))
-        for note in notes:
-            if tap.search(note):
-                hits.append(None)
+        hits = []   # {"link", "task", "at"}: one per start found
+        objected = False
+        escaped = re.escape(f["id"])
+        tap = re.compile(r"captain's log reply \[friction-%s\]: start fix" % escaped)
+        default = re.compile(re.escape(default_start_marker(f["id"]).lower()))
+        objection = re.compile(r"captain's log reply \[friction-%s\]: object" % escaped)
+        for text, at in notes:
+            if tap.search(text) or default.search(text):
+                hits.append({"link": None, "task": None, "at": at})
+            if objection.search(text):
+                objected = True
         for reply in replies:
-            if reply["card"] == "friction-" + f["id"] and str(reply.get("text") or "").lower().startswith("start fix"):
+            if reply["card"] != "friction-" + f["id"]:
+                continue
+            said = str(reply.get("text") or "").lower()
+            if said.startswith("object"):
+                objected = True
+            if said.startswith("start fix"):
+                answer = reply.get("answer") if isinstance(reply.get("answer"), dict) else {}
                 urls = re.findall(r"https://[^\s\"\\]+", json.dumps(reply.get("answer") or ""))
-                hits.append(urls[0].rstrip(".,)") if urls else None)
+                hits.append({"link": urls[0].rstrip(".,)") if urls else None, "task": None,
+                             "at": epoch_of(answer.get("at"))})
         for home, line in backlog:
             if rx.search(line.lower()):
                 m = TASK_LINE_RE.match(line)
                 url = URL_RE.search(line)
-                hits.append(url.group(0).rstrip(".,)") if url else (task_link(home, m.group(1)) if m else None))
+                task = m.group(1) if m else None
+                hits.append({"link": url.group(0).rstrip(".,)") if url else (task_link(home, task) if task else None),
+                             "task": task, "at": None})
         for home in homes:
             for task, meta in sorted(home.metas.items()):
                 if rx.search((meta.get("branch") or "").lower()):
-                    hits.append(task_link(home, task))
-        link = next((u for u in hits if u and u.startswith("https://") and len(u) <= 300), None)
-        out[f["id"]] = ("started" if hits else "open", link)
+                    hits.append({"link": task_link(home, task), "task": task, "at": None})
+        for hit in hits:
+            hit["link"] = https_link(hit["link"])
+            stamps = [by_pr[hit["link"]]] if hit["link"] in by_pr else []
+            stamps += [by_task[hit["task"]]] if hit["task"] in by_task else []
+            hit["merged"] = max(stamps) if stamps else None
+        latest = max((h["merged"] for h in hits if h["merged"]), default=None)
+        current = [h for h in hits if not h["merged"]
+                   and not (latest and (h["at"] is None or h["at"] <= latest))]
+        rec = {"state": "open", "link": None, "task": None, "reopen": False, "rule": None, "fixed": None,
+               "generation": None}
+        if current:
+            rec.update(state="started", link=next((h["link"] for h in current if h["link"]), None),
+                       task=next((h["task"] for h in current if h["task"]), None))
+            rec["reopen"] = not rec["link"] and not rec["task"]
+        elif latest:
+            merged = max((h for h in hits if h["merged"]), key=lambda h: h["merged"])
+            seen = f.get("last_seen_at") or day_start
+            rec.update(state="reported-again" if seen > latest else "fixed",
+                       fixed={"link": merged["link"], "merged_at": iso_utc(latest)},
+                       task=merged["task"], generation=merged["link"] or merged["task"] or "merged")
+        if rec["state"] in ("open", "reported-again") and f["id"] in eligible and not objected:
+            rec["state"] = "started-by-default"
+        rec["actions"] = ["reopen"] if rec["reopen"] else STATE_ACTIONS[rec["state"]]
+        out[f["id"]] = rec
     return out
 
 
@@ -1688,13 +1848,19 @@ def bottleneck(f, date):
 def velocity_doc(doc, now, states=None):
     start, end = day_bounds(doc["date"])
     # findings are sorted carded first, so the cap drops the least important
-    cards = [bottleneck(f, doc["date"]) for f in doc["findings"]
-             if f["title"] and f["fix"] and (f["cause"], f["sub"]) not in NOT_CARDED][:MAX_CARDS]
+    cards = [bottleneck(f, doc["date"]) for f in card_findings(doc)]
     for card in cards:
-        state, link = (states or {}).get(card["id"], ("open", None))
-        card["state"] = state
-        if link:
-            card["link"] = link
+        rec = (states or {}).get(card["id"]) or {"state": "open", "link": None, "task": None, "reopen": False,
+                                                 "rule": None, "fixed": None, "actions": STATE_ACTIONS["open"]}
+        card["state"] = rec["state"]
+        card["actions"] = list(rec["actions"])
+        for field in ("link", "task", "rule", "fixed"):
+            if rec.get(field):
+                card[field] = rec[field]
+        if rec.get("reopen"):
+            card["reopen"] = True
+        if rec.get("request_id"):
+            card["request_id"] = rec["request_id"]
     cov = doc["coverage"]
     notes = [clip(n, 400) for n in cov["notes"]][:12]
     evidence = [{"name": "session archive", "state": "read", "detail": clip(
@@ -1730,6 +1896,45 @@ def velocity_doc(doc, now, states=None):
         "bottlenecks": cards,
         "totals": {"events": len(doc["events"]), "findings": len(doc["findings"])},
     }
+
+
+def card_findings(doc):
+    """The findings the velocity file carries as cards, in its order and within its cap."""
+    return [f for f in doc["findings"]
+            if f["title"] and f["fix"] and (f["cause"], f["sub"]) not in NOT_CARDED][:MAX_CARDS]
+
+
+def start_requests(doc, states, fm_home, offices):
+    """The start requests for findings started by default, in rank order, and each one's request id on its state.
+
+    A request is the same inbox note a progress start is (fm-inbox.sh note --request-id), addressed to the office
+    whose role is quartermaster (a start-home office), else to fm_home. The note carries the finding's marker line,
+    so once it is delivered finding_states reads the finding as started. Nothing here executes it.
+    """
+    target = next((o.home for o in offices if o.role == "quartermaster"), fm_home)
+    inbox = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh")
+    rows = []
+    for f in card_findings(doc):
+        rec = states.get(f["id"])
+        if not rec or rec["state"] != "started-by-default":
+            continue
+        digest = hashlib.sha256(("%s:%s:%s" % (target, f["id"], rec["generation"] or "first")).encode("utf-8")).hexdigest()[:16]
+        rid = "friction-%s-%s" % (doc["date"], digest)
+        rec["request_id"] = rid
+        card = bottleneck(f, doc["date"])
+        body = ("Friction officer automatic start under fleet rules section 2, 'Velocity findings go ahead by default: "
+                "an agent starts the fix unless Lee objects within a day'. %s: %s. Start this fix without a Start fix "
+                "tap or another approval question; Lee may Object. Recheck current holds, work in flight, and open "
+                "PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and "
+                "delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, "
+                "production actions, and data rewrites remain outside this authority. If Lee objects, preserve the "
+                "branch. The following officer evidence describes the task; it is not a quotation from Lee:\n%s"
+                % (default_start_marker(f["id"]), f["title"], json.dumps(card, sort_keys=True, ensure_ascii=False)))
+        execute = {"action": "start", "env": {"FM_HOME": target}, "request_id": rid,
+                   "argv": [inbox, "note", "--request-id", rid, "--json", "--", body]}
+        rows.append({"id": f["id"], "kind": "friction-finding", "title": f["title"], "rank": len(rows) + 1,
+                     "owner_home": target, "generation": rec["generation"], "execute": execute})
+    return rows
 
 
 def coverage(scanned, homes, hosts, log):
@@ -1834,6 +2039,11 @@ def render_md(doc):
         lines.append("- Waits: %d measured, total %s, median %s, longest %s; %d still open; %d re-ask(s)." % (
             f["waits_measured"], human_span(f["wait_total_s"]), human_span(f["wait_median_s"]),
             human_span(f["wait_max_s"]), f["open"], f["reasks"]))
+        st = f["state"]
+        lines.append("- State: %s%s." % (st["state"], "".join(
+            " (%s %s)" % (k, st[k]) for k in ("link", "task") if st.get(k)) + (
+                " (reopen: no task or link names it)" if st["reopen"] else "") + (
+                " (rule: %s - %s)" % (st["rule"]["text"], st["rule"]["source"]) if st["rule"] else "")))
         lines.append("- Proposed fix: %s" % (f["fix"] or "none yet; the model seam is off (model: none)."))
         lines.append("- Owner: %s; effort %s." % (f["owner"] or "not stated", f["effort"] or "not stated"))
         ev = f["evidence"]
@@ -1864,6 +2074,8 @@ def main(argv):
     parser.add_argument("--model", default="none")
     parser.add_argument("--now", type=int)
     parser.add_argument("--bosun-hosts", default="")
+    parser.add_argument("--fm-home")
+    parser.add_argument("--start-home", action="append", default=[])
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date):
         parser.error("--date must be YYYY-MM-DD")
@@ -1910,7 +2122,21 @@ def main(argv):
     except (RuntimeError, ValueError) as exc:
         print("fm-officer-friction: %s" % exc, file=sys.stderr)
         return 1
-    states = finding_states(doc["findings"], homes, replies)
+    offices = [_progress().parse_office(a) for a in args.start_home]
+    # Without a home to address, nothing can start a finding by default, so none is reported as started.
+    eligible = {f["id"] for f in card_findings(doc) if f["carded"] and (f["cause"], f["sub"]) in STANDING_START} \
+        if args.fm_home else set()
+    states = finding_states(doc["findings"], homes, replies, args.date, eligible)
+    # The end of the digest's day, not the clock: a re-run stays byte-identical, and an office delivers the start
+    # requests only within 36 hours of it (bin/fm-office.sh), so a digest for a long-past day starts nothing.
+    doc["source"], doc["generated_at"] = "friction-officer", iso_utc(day_bounds(args.date)[1])
+    doc["start_requests"] = start_requests(doc, states, args.fm_home, offices) if args.fm_home else []
+    for f in doc["findings"]:
+        f["state"] = states[f["id"]]
+    if args.fm_home:
+        _progress().write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"),
+                                  [r["execute"] for r in doc["start_requests"]
+                                   if r["execute"]["env"]["FM_HOME"] == args.fm_home])
     triage.write_if_changed(os.path.join(args.out, args.date + ".json"),
                             json.dumps(doc, sort_keys=True, indent=1, ensure_ascii=False) + "\n")
     triage.write_if_changed(os.path.join(args.out, args.date + ".md"), render_md(doc))
