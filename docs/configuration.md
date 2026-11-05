@@ -2089,6 +2089,27 @@ For each flagged class the merge is refused until task `<task-id>-admit-<pr-numb
 An answer is bound to its PR and to the classes it was given for, not to a head: a later push that flags no new class keeps it, while a different PR or a newly flagged class needs the captain's word again.
 The answer is the captain's words: as with any captain hold, firstmate merges only when those words say yes.
 A missing or malformed config, a classifier that fails or prints an empty or undeclared verdict, an unreadable or incomplete changed-file list, and a forge other than GitHub all refuse the merge rather than skipping the check, and neither `yolo`, `--attended-override`, nor the away posture skips it.
+An optional `route.<class>=handoff:<home>` line hands a flagged class to merger home `<home>` instead of the captain: the merge is refused even with a captain answer, and in place of the `hold` and `answer` commands the refusal prints the `[handoff=<home>]` merger-handoff line, keyed `merge-handoff-<pr-number>` so `bin/fm-decision-sweep.sh` settles it once the PR merges, telling that home to merge only after a fresh reviewer who did not write the change records on the PR that it loosens no check (a change that loosens one goes to the captain); routed classes that name more than one home refuse with no handoff, because one PR has one merger.
+The routed class must be one of `classes=`, a route naming the `authority` class is a config error that refuses every merge, and a route naming the merging home itself refuses with no handoff, so a route never admits or merges anything in its own home.
+A class with no route keeps the captain-answer path above, and in an office the route is pinned by the same `admission-sha256` as the rest of the config.
+For example, a `config/admission/transcript-archive` (and `local-jev`, the same with its own rules file) for the planned Alchemist office, whose role name is still reserved, hands the scan gate to Slarti and keeps deploy and unit changes with the captain:
+
+```
+command=/path/to/bin/fm-reserved-classify.sh --rules /path/to/config/admission/transcript-archive.rules
+classes=authority scan-gate
+clear=none
+route.scan-gate=handoff:slarti
+```
+
+```
+**/scrub.py scan-gate
+**/archive.py scan-gate
+**/private-projects.json scan-gate
+**/pii_gate.py scan-gate
+deploy/** authority
+systemd/** authority
+```
+
 A project with no `admission=` token merges exactly as before, and like `merger=` the token is read from the merging home's own registry, which is not inherited.
 `bin/fm-admission-lib.sh` owns the config format and classifier contract, `bin/fm-pr-merge.sh`'s header owns the merge-time check, and `bin/fm-project-mode.sh --admission <name>` reads the binding back.
 

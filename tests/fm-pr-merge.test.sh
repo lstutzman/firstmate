@@ -879,7 +879,8 @@ test_malformed_merger_field_refuses() {
 # changed files. The classifier runs in the home's project copy, reads the
 # changed paths on stdin, and prints class words; config/admission/<config>
 # names it and the classes that need the captain's word.
-# Args: case_dir classifier-output [registry-tokens]
+# Args: case_dir classifier-output [registry-tokens]; ADMISSION_EXTRA, when
+# set, is one more config line.
 register_admission() {
   local case_dir=$1 output=$2 tokens=${3:-no-mistakes +yolo}
   printf '%s\n' '## Projects' \
@@ -890,6 +891,7 @@ register_admission() {
     'command=./classify.sh --risk --stdin' \
     'classes=payments legal-text data-rewriting-migration' \
     'clear=code docs' \
+    ${ADMISSION_EXTRA:+"$ADMISSION_EXTRA"} \
     > "$case_dir/home/config/admission/risky"
   printf '%s\n' "$output" > "$case_dir/classifier-output"
   cat > "$case_dir/project/classify.sh" <<SH
@@ -1092,6 +1094,34 @@ test_office_flagged_class_refuses_like_any_home() {
   pass "an office's flagged class refuses with the same hold and answer commands as any home"
 }
 
+# An office reads a route only from the config its authority record pins: a
+# pinned route hands off, a route naming the office itself never merges, and a
+# route added after publishing refuses like any other edit.
+test_office_routed_class_hands_off_and_is_pinned() {
+  local case_dir
+  case_dir=$(ADMISSION_EXTRA='route.payments=handoff:slarti' make_office_case office-routed 'code payments')
+  run_office_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "office-routed: an office merged a routed class"
+  assert_not_merged "$case_dir" office-routed
+  assert_grep 'hand the PR to home slarti' "$case_dir/stderr" "office-routed: the refusal did not hand off"
+  assert_grep 'key=merge-handoff-9' "$case_dir/stderr" "office-routed: the handoff line was not printed"
+  assert_no_grep 'admit-9-payments' "$case_dir/stderr" "office-routed: the office was offered the captain hold"
+
+  case_dir=$(ADMISSION_EXTRA='route.payments=handoff:mate-x' make_office_case office-routed-self 'code payments')
+  run_office_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "office-routed-self: a route naming the office let it merge"
+  assert_not_merged "$case_dir" office-routed-self
+  assert_grep 'this home is mate-x; a routed class is never merged' "$case_dir/stderr" \
+    "office-routed-self: the self-route refusal was not stated"
+  assert_no_grep 'handoff=' "$case_dir/stderr" "office-routed-self: the office handed off to itself"
+
+  case_dir=$(make_office_case office-route-added 'code payments')
+  printf '%s\n' 'route.payments=handoff:slarti' >> "$case_dir/home/config/admission/risky"
+  run_office_merge "$case_dir"
+  assert_office_refused_before_forge "$case_dir" office-route-added 'changed since the main home published'
+  pass "an office hands a pinned routed class off, never to itself, and refuses an unpinned route"
+}
+
 # A project the office hands to a merger stops at the existing merger= handoff.
 test_office_merge_via_ends_at_the_merger_handoff() {
   local case_dir
@@ -1175,6 +1205,85 @@ test_admission_refuses_a_flagged_class_until_the_captain_answers() {
 
 # An answer belongs to the PR it was given for: the same task's other PR needs
 # its own word, even for the same class.
+# A routed class (route.<class>=handoff:<home>) is never admitted here, not
+# even by a captain answer: the refusal prints the merger handoff instead of
+# the hold commands, while an unrouted class keeps the captain-hold path.
+test_admission_routed_class_hands_off_instead_of_merging() {
+  local case_dir
+  case_dir=$(make_case admission-routed)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  ADMISSION_EXTRA='route.payments=handoff:slarti' register_admission "$case_dir" 'code payments'
+  printf '%s\n' gilligan > "$case_dir/home/.fm-secondmate-home"
+  mkdir -p "$case_dir/parent/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$case_dir/parent" \
+    > "$case_dir/home/.fm-secondmate-parent"
+  run_admission_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "admission-routed: a routed class merged"
+  assert_not_merged "$case_dir" admission-routed
+  assert_no_grep 'admit-9-payments' "$case_dir/stderr" "admission-routed: a routed class was offered the captain hold"
+  bash -c "$(tail -n 1 "$case_dir/stderr")" || fail "admission-routed: the printed handoff command did not run"
+  bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2"' _ "$ROOT" \
+    "$case_dir/parent/state/gilligan.status" > "$case_dir/open-decisions"
+  assert_grep $'merge-handoff-9\tneeds-decision\t[handoff=slarti] https://github.com/example/repo/pull/9 is ready to merge once a fresh reviewer who did not write it records on the PR that its payments change loosens no check' \
+    "$case_dir/open-decisions" "admission-routed: the handoff did not open a keyed decision naming the PR, the class, and the review"
+
+  # A captain answer on the would-be hold does not admit a routed class.
+  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" hold \
+    task-x1-admit-9-payments --title 'Admit https://github.com/example/repo/pull/9: payments' \
+    --reason r --repo project >/dev/null || fail "admission-routed: could not hold the class"
+  printf 'yes, merge it\n' > "$case_dir/captain-words"
+  FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" answer \
+    task-x1-admit-9-payments --decision-file "$case_dir/captain-words" >/dev/null \
+    || fail "admission-routed: could not answer the class"
+  run_admission_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "admission-routed: a captain answer admitted a routed class"
+  assert_not_merged "$case_dir" admission-routed
+
+  # An unrouted class flagged beside it still gets the hold and answer commands.
+  printf '%s\n' 'payments legal-text' > "$case_dir/classifier-output"
+  run_admission_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "admission-routed: an unrouted class merged"
+  assert_not_merged "$case_dir" admission-routed
+  assert_grep 'handoff=slarti' "$case_dir/stderr" "admission-routed: the routed class lost its handoff"
+  assert_grep 'hold task-x1-admit-9-legal-text' "$case_dir/stderr" "admission-routed: the unrouted class lost its hold"
+  assert_grep 'answer task-x1-admit-9-legal-text' "$case_dir/stderr" "admission-routed: the unrouted class lost its answer"
+
+  # Routes to two homes cannot both merge one PR, so neither is handed it.
+  printf '%s\n' 'route.legal-text=handoff:navigator' >> "$case_dir/home/config/admission/risky"
+  run_admission_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "admission-routed: a PR routed to two homes merged"
+  assert_not_merged "$case_dir" admission-routed
+  assert_grep 'more than one home (navigator slarti)' "$case_dir/stderr" "admission-routed: the two-home refusal was not stated"
+  assert_no_grep 'handoff=' "$case_dir/stderr" "admission-routed: a PR routed to two homes was handed off"
+  pass "fm-pr-merge hands a routed class to its merger home and keeps the captain hold for an unrouted class"
+}
+
+# A route the config cannot honour refuses every merge before any forge call:
+# the authority class is never routed, and a route names a configured class
+# and a home.
+test_admission_refuses_a_route_it_cannot_honour() {
+  local case_dir label extra want
+  for label in authority unknown-class no-handoff bad-home; do
+    case "$label" in
+      authority) extra='route.authority=handoff:slarti' want='routes the authority class' ;;
+      unknown-class) extra='route.scan-gate=handoff:slarti' want='routes scan-gate, which is not one of its classes=' ;;
+      no-handoff) extra='route.payments=slarti' want='not route.<class>=handoff:<home>' ;;
+      bad-home) extra='route.payments=handoff:../x' want='not route.<class>=handoff:<home>' ;;
+    esac
+    case_dir=$(make_case "admission-route-$label")
+    add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+    : > "$case_dir/gh-axi.log"
+    ADMISSION_EXTRA=$extra register_admission "$case_dir" 'code'
+    [ "$label" != authority ] || sed -i.bak 's/^classes=.*/classes=authority payments/' "$case_dir/home/config/admission/risky"
+    run_admission_merge "$case_dir"
+    [ "$RC" -ne 0 ] || fail "admission-route-$label: the merge ran on a route it cannot honour"
+    assert_grep "$want" "$case_dir/stderr" "admission-route-$label: the refusal did not name the bad route"
+    [ ! -s "$case_dir/gh.log" ] || fail "admission-route-$label: gh ran before the refusal"
+  done
+  pass "fm-pr-merge refuses an authority route or a malformed route as a config error"
+}
+
 test_admission_answer_does_not_carry_to_another_pr() {
   local case_dir
   case_dir=$(make_case admission-other-pr)
@@ -5031,10 +5140,13 @@ test_no_merger_field_keeps_every_home_merging
 test_malformed_merger_field_refuses
 test_admission_refuses_a_flagged_class_until_the_captain_answers
 test_admission_answer_does_not_carry_to_another_pr
+test_admission_routed_class_hands_off_instead_of_merging
+test_admission_refuses_a_route_it_cannot_honour
 test_non_office_homes_merge_as_before_with_a_stray_record
 test_office_merges_inside_its_record
 test_office_refuses_outside_its_record
 test_office_flagged_class_refuses_like_any_home
+test_office_routed_class_hands_off_and_is_pinned
 test_office_merge_via_ends_at_the_merger_handoff
 test_admission_merges_when_no_configured_class_is_flagged
 test_admission_refuses_when_classification_cannot_be_trusted

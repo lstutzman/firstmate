@@ -148,6 +148,13 @@
 # released captain hold, firstmate runs the merge only on a yes. A missing or
 # malformed config, a classifier that fails, and a non-GitHub forge all refuse,
 # and neither yolo, --attended-override, nor the away posture skips the check.
+# A flagged class the config routes (route.<class>=handoff:<home>) is never
+# admitted here, not even by a captain answer: the refusal prints the merger
+# handoff line instead of the hold commands, telling home <home> to merge only
+# after a fresh non-author reviewer records on the PR that it loosens no check.
+# A route naming this home itself refuses with no handoff. In an office the
+# route is read from the same config its authority record's admission-sha256
+# pins, so an edited route refuses like any other edit.
 # A project with no admission token merges exactly as before.
 #
 # In an office home (bin/fm-office-authority-lib.sh owns detection and the
@@ -639,29 +646,32 @@ MERGE_EXPECTED_SPAWN_GEN=$FM_BACKLOG_META_SPAWN_GEN
 # than falling back to every home merging. A stack is checked through its top
 # task, because every member is already proven to be the same repository.
 MERGE_PROJECT=$(sed -n 's/^project=//p' "$META" | head -n 1)
+MERGE_SELF=main
+if [ -f "$FM_HOME/.fm-secondmate-home" ] && [ ! -L "$FM_HOME/.fm-secondmate-home" ]; then
+  MERGE_SELF=$(tr -d '[:space:]' < "$FM_HOME/.fm-secondmate-home")
+  [ -n "$MERGE_SELF" ] || MERGE_SELF=main
+fi
+# Prints the command that hands <status-line> to merger home <home>: through
+# this home's parent channel, or straight to the merger from a main home.
+print_merge_handoff() {  # <home> <status-line>
+  local rc=0 dest
+  dest=$(fm_parent_channel_destination "$FM_HOME" "$STATE") || rc=$?
+  case "$rc" in
+    0) printf 'printf %%s\\\\n %q >> %q\n' "$2" "$dest" >&2 ;;
+    1) printf '%q fm-%s %q\n' "$SCRIPT_DIR/fm-send.sh" "$1" "$2" >&2 ;;
+    *) echo "error: this home's parent channel cannot be resolved, so report '$2' to the captain by hand" >&2 ;;
+  esac
+}
 if [ -n "$MERGE_PROJECT" ]; then
   if ! MERGE_MERGER=$("$SCRIPT_DIR/fm-project-mode.sh" --merger "$(basename "$MERGE_PROJECT")" 2>/dev/null); then
     echo "error: PR merge refused: the merger binding for $(basename "$MERGE_PROJECT") cannot be read (run bin/fm-project-mode.sh --merger $(basename "$MERGE_PROJECT") for the refusal)" >&2
     exit 1
   fi
-  if [ -n "$MERGE_MERGER" ]; then
-    MERGE_SELF=main
-    if [ -f "$FM_HOME/.fm-secondmate-home" ] && [ ! -L "$FM_HOME/.fm-secondmate-home" ]; then
-      MERGE_SELF=$(tr -d '[:space:]' < "$FM_HOME/.fm-secondmate-home")
-      [ -n "$MERGE_SELF" ] || MERGE_SELF=main
-    fi
-    if [ "$MERGE_SELF" != "$MERGE_MERGER" ]; then
-      MERGE_HANDOFF_LINE=$(status_stamp_line "needs-decision [key=merge-handoff-${URL##*/}] [cause=external]: [handoff=$MERGE_MERGER] $URL is ready to merge")
-      MERGE_HANDOFF_RC=0
-      MERGE_HANDOFF_DEST=$(fm_parent_channel_destination "$FM_HOME" "$STATE") || MERGE_HANDOFF_RC=$?
-      echo "error: PR merge refused: $(basename "$MERGE_PROJECT") is merged only by home $MERGE_MERGER, and this home is $MERGE_SELF; hand the PR to that home instead:" >&2
-      case "$MERGE_HANDOFF_RC" in
-        0) printf 'printf %%s\\\\n %q >> %q\n' "$MERGE_HANDOFF_LINE" "$MERGE_HANDOFF_DEST" >&2 ;;
-        1) printf '%q fm-%s %q\n' "$SCRIPT_DIR/fm-send.sh" "$MERGE_MERGER" "$MERGE_HANDOFF_LINE" >&2 ;;
-        *) echo "error: this home's parent channel cannot be resolved, so report '$MERGE_HANDOFF_LINE' to the captain by hand" >&2 ;;
-      esac
-      exit 1
-    fi
+  if [ -n "$MERGE_MERGER" ] && [ "$MERGE_SELF" != "$MERGE_MERGER" ]; then
+    echo "error: PR merge refused: $(basename "$MERGE_PROJECT") is merged only by home $MERGE_MERGER, and this home is $MERGE_SELF; hand the PR to that home instead:" >&2
+    print_merge_handoff "$MERGE_MERGER" \
+      "$(status_stamp_line "needs-decision [key=merge-handoff-${URL##*/}] [cause=external]: [handoff=$MERGE_MERGER] $URL is ready to merge")"
+    exit 1
   fi
 fi
 
@@ -1692,7 +1702,7 @@ require_released_captain_hold() {
 # the header owns the contract. Reads the changed files, then the head again,
 # so the list is the verified head's.
 require_admission_answers() {  # <verified-head>
-  local head=$1 paths files listed pull live_head changed class flagged missing='' rc call
+  local head=$1 paths files listed pull live_head changed class flagged missing='' routed='' rc call home
   [ -n "$MERGE_ADMISSION" ] || return 0
   paths=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-admission.XXXXXX") || return 1
   # --paginate prints one JSON array per page; jq reads them as one stream.
@@ -1729,6 +1739,11 @@ require_admission_answers() {  # <verified-head>
   flagged=$FM_ADMISSION_FLAGGED
   while IFS= read -r class; do
     [ -n "$class" ] || continue
+    home=$(fm_admission_route "$class")
+    if [ -n "$home" ]; then
+      routed="$routed $class:$home"
+      continue
+    fi
     rc=0
     call="$ID-admit-$PR_NUMBER-$class"
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
@@ -1742,7 +1757,24 @@ require_admission_answers() {  # <verified-head>
         ;;
     esac
   done <<< "$flagged"
-  [ -n "$missing" ] || return 0
+  [ -n "$missing" ] || [ -n "$routed" ] || return 0
+  if [ -n "$routed" ]; then
+    # One PR has one merger, and the handoff key merge-handoff-<pr> is what
+    # bin/fm-decision-sweep.sh settles once the PR merges.
+    home=$(tr ' ' '\n' <<< "${routed# }" | sed 's/^[^:]*://' | LC_ALL=C sort -u)
+    class=$(tr ' ' '\n' <<< "${routed# }" | sed 's/:.*//' | tr '\n' ' ')
+    class=${class% }
+    if [ "$home" != "${home%%$'\n'*}" ]; then
+      echo "error: PR merge refused: $URL changes $class, which its admission config hands to more than one home ($(printf '%s' "$home" | tr '\n' ' ')); one PR has one merger" >&2
+    elif [ "$home" = "$MERGE_SELF" ]; then
+      echo "error: PR merge refused: $URL changes $class, which its admission config hands to home $home, and this home is $home; a routed class is never merged by this script" >&2
+    else
+      echo "error: PR merge refused: $URL changes $class, which is never merged from this home; hand the PR to home $home, which merges it only after a fresh reviewer who did not write it records on the PR that it loosens no check:" >&2
+      print_merge_handoff "$home" \
+        "$(status_stamp_line "needs-decision [key=merge-handoff-$PR_NUMBER] [cause=external]: [handoff=$home] $URL is ready to merge once a fresh reviewer who did not write it records on the PR that its $class change loosens no check; a change that loosens one goes to the captain")"
+    fi
+  fi
+  [ -n "$missing" ] || return 1
   echo "error: PR merge refused: $URL changes${missing}, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:" >&2
   for class in $missing; do
     printf 'FM_HOME=%q %q hold %q --title %q --reason %q --repo %q\n' \
