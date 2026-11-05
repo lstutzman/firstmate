@@ -544,6 +544,13 @@ upstream_world() {
   printf '%s\n' "$w"
 }
 
+up_hourly() {  # <world> <start-epoch> <hours> <label>: hourly failing attempts, all silent
+  local i
+  for ((i = 0; i <= $3; i++)); do
+    assert_equals "" "$(up_check "$1" $(($2 + i * 3600)))" "$4: silent at hour $i"
+  done
+}
+
 up_check() {  # <world> <epoch>
   FM_OFFICE_NOW=$2 FM_ROOT_OVERRIDE="$1/fork-root" FM_HOME="$1/navigator" bash "$OFFICE" check upstream
 }
@@ -575,10 +582,9 @@ test_upstream_failure_reports_only_when_persistent() {
   local w
   w=$(upstream_world upfail)
   printf '%s/nowhere main origin/main\n' "$w" > "$w/navigator/config/firstmate-upstream"
-  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "first failure: silent"
-  assert_equals "" "$(up_check "$w" $((SRC_NOW + 7200)))" "a failure inside 24 hours: silent"
-  assert_contains "$(up_check "$w" $((SRC_NOW + 90000)))" "unreachable since" "a failure spanning a day reports"
-  assert_equals "" "$(up_check "$w" $((SRC_NOW + 100000)))" "reported once per streak"
+  up_hourly "$w" "$SRC_NOW" 23 "a failure inside 24 hours"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 86400)))" "failing since" "a failure spanning a day reports"
+  assert_equals "" "$(up_check "$w" $((SRC_NOW + 90000)))" "reported once per streak"
   pass 'the upstream source reports a persistent fetch failure once'
 }
 
@@ -587,13 +593,22 @@ test_upstream_unresolved_fork_ref_reports_when_persistent() {
   w=$(upstream_world upforkref)
   up="$w/up-work"
   printf '%s main nosuch/main\n' "$up" > "$w/navigator/config/firstmate-upstream"
-  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "first unresolved fork-ref: silent"
-  assert_equals "" "$(up_check "$w" $((SRC_NOW + 7200)))" "inside 24 hours: silent"
-  assert_contains "$(up_check "$w" $((SRC_NOW + 90000)))" "unreachable since" "an unresolved fork-ref spanning a day reports"
+  up_hourly "$w" "$SRC_NOW" 23 "an unresolved fork-ref inside 24 hours"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 86400)))" "against nosuch/main failing since" "an unresolved fork-ref spanning a day reports"
   printf '%s main origin/main\n' "$up" > "$w/navigator/config/firstmate-upstream"
-  assert_contains "$(up_check "$w" $((SRC_NOW + 100000)))" "2 new commit(s)" "a fixed fork-ref checks normally"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 90000)))" "2 new commit(s)" "a fixed fork-ref checks normally"
   [ ! -e "$w/navigator/data/office/upstream.fail" ] || fail "a success must clear the failure streak"
   pass 'the upstream source reports an unresolved fork-ref once failures span a day'
+}
+
+test_upstream_gap_in_attempts_starts_a_new_streak() {
+  local w
+  w=$(upstream_world upgap)
+  printf '%s/nowhere main origin/main\n' "$w" > "$w/navigator/config/firstmate-upstream"
+  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "first failure: silent"
+  up_hourly "$w" $((SRC_NOW + 108000)) 23 "after a 30-hour pause, a new streak"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 108000 + 86400)))" "failing since" "the new streak reports once it spans a day"
+  pass 'a pause in upstream attempts starts a new failure streak instead of reporting at once'
 }
 
 test_upstream_without_config_is_silent() {
@@ -879,6 +894,7 @@ test_upstream_wakes_once_per_new_head
 test_upstream_is_daily_and_silent_when_nothing_new
 test_upstream_failure_reports_only_when_persistent
 test_upstream_unresolved_fork_ref_reports_when_persistent
+test_upstream_gap_in_attempts_starts_a_new_streak
 test_upstream_without_config_is_silent
 test_register_sources_installs_trusted_shims
 test_register_sources_keeps_the_status_check

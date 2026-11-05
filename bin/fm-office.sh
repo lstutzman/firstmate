@@ -121,9 +121,10 @@
 #                    yet reported; the network calls together stay under the watcher's 30s
 #                    check limit). It is silent when upstream has nothing the fork lacks,
 #                    and on a failed attempt until failures span 24 hours, when it reports
-#                    "upstream <src> unreachable since <date>" once per failure streak. An
-#                    attempt counts as failed until it succeeds, so a killed attempt or a
-#                    fork-ref that does not resolve counts too.
+#                    "upstream check of <src> against <fork-ref> failing since <date>; ..."
+#                    once per failure streak. An attempt counts as failed until it succeeds,
+#                    so a killed attempt or a fork-ref that does not resolve counts too; a
+#                    gap of more than 2 hours since the last attempt starts a new streak.
 #                    <old> is the merge base. Records: data/office/upstream.seen (last
 #                    head reported or found empty), upstream.day (last successful UTC
 #                    day), upstream.try (last attempt) and upstream.fail (first failure
@@ -667,7 +668,7 @@ bounded() {
   if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"; else "$@"; fi
 }
 
-# upstream_fail <src>: marks an attempt as failed until it succeeds; reports once when failures span 24 hours.
+# upstream_fail <src> <fork-ref>: marks an attempt as failed until it succeeds; reports once when failures span 24 hours.
 upstream_fail() {
   local rec="$DATA/office/upstream.fail" first now
   now=$(now_epoch)
@@ -678,8 +679,8 @@ upstream_fail() {
   esac
   [ $((now - first)) -ge 86400 ] || return 0
   printf '%s reported\n' "$first" > "$rec" 2>/dev/null || return 0
-  printf 'office %s: upstream %s unreachable since %s\n' "$OFFICE_ID" "$1" \
-    "$(date -u -d "@$first" +%Y-%m-%d 2>/dev/null || date -u -r "$first" +%Y-%m-%d)"
+  printf 'office %s: upstream check of %s against %s failing since %s; check the remote and fork-ref in config/firstmate-upstream\n' \
+    "$OFFICE_ID" "$1" "$2" "$(date -u -d "@$first" +%Y-%m-%d 2>/dev/null || date -u -r "$first" +%Y-%m-%d)"
 }
 
 check_upstream() {
@@ -695,9 +696,13 @@ check_upstream() {
   [ "$(cat "$rec/upstream.day" 2>/dev/null)" = "$day" ] && return 0
   mkdir -p "$rec" 2>/dev/null || return 0
   last=$(cat "$rec/upstream.try" 2>/dev/null || true)
-  case "$last" in ''|*[!0-9]*) ;; *) [ $((now - last)) -ge 3600 ] || return 0 ;; esac
+  case "$last" in
+    ''|*[!0-9]*) rm -f "$rec/upstream.fail" ;;
+    *) [ $((now - last)) -ge 3600 ] || return 0
+       [ $((now - last)) -le 7200 ] || rm -f "$rec/upstream.fail" ;;
+  esac
   printf '%s\n' "$now" > "$rec/upstream.try" 2>/dev/null || return 0
-  fail=$(upstream_fail "$src")
+  fail=$(upstream_fail "$src" "$forkref")
   [ -z "$fail" ] || { printf '%s\n' "$fail"; return 0; }
   head=$(bounded 8 git -C "$FM_ROOT" ls-remote "$src" "refs/heads/$branch" 2>/dev/null | awk 'NR==1{print $1}')
   [[ "$head" =~ ^[0-9a-f]{40}$ ]] || return 0
