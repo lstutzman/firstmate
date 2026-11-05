@@ -302,8 +302,23 @@ else
       || fail "$id's steering inbox does not hold the steer that was sent"
     pass "real herdr E2E: fm-send steers $id into its own durable inbox through its record"
 
+    # The stand-in codex the relaunch starts goes on the pane's PATH in the same
+    # line that starts the first stand-in, while the shell is at its prompt.
+    # A line typed just after the stand-in is killed can reach the pane before
+    # bash reads input again and arrive mangled.
+    fakebin="$TMP_ROOT/fakebin-$id"
+    mkdir -p "$fakebin/agent"
+    ln -s "$STANDIN_BIN" "$fakebin/agent/codex"
+    cat > "$fakebin/codex" <<EOF
+#!/usr/bin/env bash
+herdr pane report-agent '$pane' --source fm-e2e --agent fm-e2e-agent --state idle --session '$SESSION' >/dev/null 2>&1
+exec '$fakebin/agent/codex' 900
+EOF
+    chmod +x "$fakebin/codex"
+    printf -v fakebin_q '%q' "$fakebin"
+
     awk -F= '$1 == "harness" {$0="harness=claude"} {print}' "$meta" > "$meta.tmp" && mv "$meta.tmp" "$meta"
-    fm_backend_herdr_send_text_line "$SESSION:$pane" "$CLAUDE_Q 900" \
+    fm_backend_herdr_send_text_line "$SESSION:$pane" "export PATH=$fakebin_q:\$PATH; $CLAUDE_Q 900" \
       || fail "could not start the stand-in agent in $id's pane"
     wait_process_state "$pane" agent || fail "the stand-in agent in $id's pane is not seen as an agent"
     herdr pane report-agent "$pane" --source fm-e2e --agent fm-e2e-agent --state idle \
@@ -319,19 +334,6 @@ else
     assert_contains_local "$out" "endpoint=$SESSION:$pane" "exit of $id read an endpoint other than its recorded pane"
     pass "real herdr E2E: exit finds $id's recorded pane stopped"
 
-    fakebin="$TMP_ROOT/fakebin-$id"
-    mkdir -p "$fakebin/agent"
-    ln -s "$STANDIN_BIN" "$fakebin/agent/codex"
-    cat > "$fakebin/codex" <<EOF
-#!/usr/bin/env bash
-herdr pane report-agent '$pane' --source fm-e2e --agent fm-e2e-agent --state idle --session '$SESSION' >/dev/null 2>&1
-exec '$fakebin/agent/codex' 900
-EOF
-    chmod +x "$fakebin/codex"
-    printf -v fakebin_q '%q' "$fakebin"
-    fm_backend_herdr_send_text_line "$SESSION:$pane" "export PATH=$fakebin_q:\$PATH; clear" \
-      || fail "could not put the stand-in codex on $id's pane PATH"
-    sleep 0.5
     out=$(run_control "$home" "$id" relaunch --harness codex --note "e2e relaunch of $id") \
       || fail "relaunch of $id failed: $out"
     assert_contains_local "$out" "relaunched $id harness=codex" "relaunch of $id did not report the codex replacement"
