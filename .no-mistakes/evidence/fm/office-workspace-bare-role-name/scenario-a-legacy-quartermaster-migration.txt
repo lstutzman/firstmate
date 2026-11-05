@@ -1,0 +1,12 @@
+## Scenario A: live Quartermaster office with legacy 2ndmate-quartermaster workspaces (lab session fm-lab-officelbl-460823-3048)
+before:
+[{"workspace_id":"w1","label":"2ndmate-quartermaster"},{"workspace_id":"w2","label":"2ndmate-quartermaster workers"}]
+$ ROOT=$PWD drive.sh fm-lab-officelbl-460823-3048 <quartermaster office home> other-home
+label=Quartermaster
+w1ensure_rc=0 ws=w1
+after:
+[{"workspace_id":"w1","label":"Quartermaster"},{"workspace_id":"w2","label":"Quartermaster workers"}]
+second call (idempotent):
+label=Quartermaster
+w1ensure_rc=0 ws=w1
+[{"workspace_id":"w1","label":"Quartermaster"},{"workspace_id":"w2","label":"Quartermaster workers"}]

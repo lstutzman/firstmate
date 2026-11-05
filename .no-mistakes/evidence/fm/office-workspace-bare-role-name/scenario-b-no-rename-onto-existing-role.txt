@@ -1,0 +1,7 @@
+## Scenario B (adversarial): Navigator office where both 'Navigator' and legacy '2ndmate-navigator' exist, plus personal 'Notes'
+before:
+[{"workspace_id":"w1","label":"Quartermaster"},{"workspace_id":"w2","label":"Quartermaster workers"},{"workspace_id":"w3","label":"Navigator"},{"workspace_id":"w4","label":"2ndmate-navigator"},{"workspace_id":"w5","label":"Notes"}]
+label=Navigator
+w3ensure_rc=0 ws=w3
+after:
+[{"workspace_id":"w1","label":"Quartermaster"},{"workspace_id":"w2","label":"Quartermaster workers"},{"workspace_id":"w3","label":"Navigator"},{"workspace_id":"w4","label":"2ndmate-navigator"},{"workspace_id":"w5","label":"Notes"}]

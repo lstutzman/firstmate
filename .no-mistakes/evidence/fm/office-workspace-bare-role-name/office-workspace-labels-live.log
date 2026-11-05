@@ -1,0 +1,19 @@
+=== S1: live legacy Quartermaster office workspaces are renamed in place
+before: [{"id":"w1","label":"2ndmate-quartermaster"},{"id":"w2","label":"2ndmate-quartermaster workers"},{"id":"w3","label":"2ndmate-plain-sm"}]
+ensure(qm): default:w1F3	 rc=0
+after:  [{"id":"w1","label":"2ndmate-quartermaster"},{"id":"w2","label":"2ndmate-quartermaster workers"},{"id":"w3","label":"2ndmate-plain-sm"}]
+ensure(qm) again: default:w1F3	 rc=0
+after2: [{"id":"w1","label":"2ndmate-quartermaster"},{"id":"w2","label":"2ndmate-quartermaster workers"},{"id":"w3","label":"2ndmate-plain-sm"}]
+=== S2: new Navigator office (role field not first, id != role) gets bare 'Navigator'
+ensure(nav): default:w1GH	w1GH:t1 rc=0
+after:  [{"id":"w1","label":"2ndmate-quartermaster"},{"id":"w2","label":"2ndmate-quartermaster workers"},{"id":"w3","label":"2ndmate-plain-sm"}]
+=== S3: plain second mate keeps 2ndmate-<id>; primary keeps firstmate
+ensure(plain): default:w1GJ	w1GJ:t1 rc=0
+ensure(primary): default:w1GK	w1GK:t1 rc=0
+after:  [{"id":"w1","label":"2ndmate-quartermaster"},{"id":"w2","label":"2ndmate-quartermaster workers"},{"id":"w3","label":"2ndmate-plain-sm"}]
+=== S4 adversarial: Alchemist has both role and legacy workspaces -> no rename
+ensure(alc): default:w1GM	w1GM:t1 rc=0
+after:  [{"id":"w1","label":"2ndmate-quartermaster"},{"id":"w2","label":"2ndmate-quartermaster workers"},{"id":"w3","label":"2ndmate-plain-sm"},{"id":"w4","label":"Alchemist"},{"id":"w5","label":"2ndmate-alchemist"}]
+=== S5 adversarial: two legacy 2ndmate-librarian workspaces -> neither renamed
+ensure(lib): default:w1GN	w1GN:t1 rc=0
+after:  [{"id":"w1","label":"2ndmate-quartermaster"},{"id":"w2","label":"2ndmate-quartermaster workers"},{"id":"w3","label":"2ndmate-plain-sm"},{"id":"w4","label":"Alchemist"},{"id":"w5","label":"2ndmate-alchemist"},{"id":"w6","label":"2ndmate-librarian"},{"id":"w7","label":"2ndmate-librarian"}]

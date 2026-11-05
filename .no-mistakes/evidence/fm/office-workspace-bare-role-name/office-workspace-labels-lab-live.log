@@ -1,0 +1,22 @@
+=== S0 guard: plain home ensure lands in lab
+ensure(plain): fm-lab-officews3-214068-24662:w1	w1:t1 rc=0
+lab: [{"id":"w1","label":"2ndmate-plain-sm"}]
+=== S1: live legacy Quartermaster office workspaces are renamed in place
+before: [{"id":"w1","label":"2ndmate-plain-sm"},{"id":"w2","label":"2ndmate-quartermaster"},{"id":"w3","label":"2ndmate-quartermaster workers"}]
+ensure(qm): fm-lab-officews3-214068-24662:w2	 rc=0
+after:  [{"id":"w1","label":"2ndmate-plain-sm"},{"id":"w2","label":"Quartermaster"},{"id":"w3","label":"Quartermaster workers"}]
+ensure(qm) again: fm-lab-officews3-214068-24662:w2	 rc=0
+after2: [{"id":"w1","label":"2ndmate-plain-sm"},{"id":"w2","label":"Quartermaster"},{"id":"w3","label":"Quartermaster workers"}]
+=== S2: new Navigator office (role field not first, id != role) gets bare 'Navigator'
+ensure(nav): fm-lab-officews3-214068-24662:w4	w4:t1 rc=0
+after:  [{"id":"w1","label":"2ndmate-plain-sm"},{"id":"w2","label":"Quartermaster"},{"id":"w3","label":"Quartermaster workers"},{"id":"w4","label":"Navigator"}]
+=== S3: plain second mate keeps 2ndmate-<id>; primary keeps firstmate
+ensure(plain): fm-lab-officews3-214068-24662:w1	 rc=0
+ensure(primary): fm-lab-officews3-214068-24662:w5	w5:t1 rc=0
+after:  [{"id":"w1","label":"2ndmate-plain-sm"},{"id":"w2","label":"Quartermaster"},{"id":"w3","label":"Quartermaster workers"},{"id":"w4","label":"Navigator"},{"id":"w5","label":"firstmate"}]
+=== S4 adversarial: Alchemist has both role and legacy workspaces -> no rename
+ensure(alc): fm-lab-officews3-214068-24662:w6	 rc=0
+after:  [{"id":"w1","label":"2ndmate-plain-sm"},{"id":"w2","label":"Quartermaster"},{"id":"w3","label":"Quartermaster workers"},{"id":"w4","label":"Navigator"},{"id":"w5","label":"firstmate"},{"id":"w6","label":"Alchemist"},{"id":"w7","label":"2ndmate-alchemist"}]
+=== S5 adversarial: two legacy 2ndmate-librarian workspaces -> neither renamed
+ensure(lib): fm-lab-officews3-214068-24662:wA	wA:t1 rc=0
+after:  [{"id":"w1","label":"2ndmate-plain-sm"},{"id":"w2","label":"Quartermaster"},{"id":"w3","label":"Quartermaster workers"},{"id":"w4","label":"Navigator"},{"id":"w5","label":"firstmate"},{"id":"w6","label":"Alchemist"},{"id":"w7","label":"2ndmate-alchemist"},{"id":"w8","label":"2ndmate-librarian"},{"id":"w9","label":"2ndmate-librarian"},{"id":"wA","label":"Librarian"}]

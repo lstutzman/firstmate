@@ -1,0 +1,16 @@
+## Scenario C: new offices (Alchemist, Librarian, Bosun) with no prior workspace
+label=Alchemist
+w6ensure_rc=0 ws=w6
+label=Librarian
+w7ensure_rc=0 ws=w7
+label=Bosun
+w8ensure_rc=0 ws=w8
+after:
+[{"workspace_id":"w1","label":"Quartermaster"},{"workspace_id":"w2","label":"Quartermaster workers"},{"workspace_id":"w3","label":"Navigator"},{"workspace_id":"w4","label":"2ndmate-navigator"},{"workspace_id":"w5","label":"Notes"},{"workspace_id":"w6","label":"Alchemist"},{"workspace_id":"w7","label":"Librarian"},{"workspace_id":"w8","label":"Bosun"}]
+## Scenario D: non-office second mate and primary keep their labels
+label=2ndmate-plain-sm
+w9ensure_rc=0 ws=w9
+label=firstmate
+wAensure_rc=0 ws=wA
+after:
+[{"workspace_id":"w1","label":"Quartermaster"},{"workspace_id":"w2","label":"Quartermaster workers"},{"workspace_id":"w3","label":"Navigator"},{"workspace_id":"w4","label":"2ndmate-navigator"},{"workspace_id":"w5","label":"Notes"},{"workspace_id":"w6","label":"Alchemist"},{"workspace_id":"w7","label":"Librarian"},{"workspace_id":"w8","label":"Bosun"},{"workspace_id":"w9","label":"2ndmate-plain-sm"},{"workspace_id":"wA","label":"firstmate"}]
