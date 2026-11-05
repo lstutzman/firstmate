@@ -716,6 +716,38 @@ EOF
   pass "fm-officer friction: the same Lee instruction on two days is one finding with quotes and dates"
 }
 
+test_injected_user_records_are_not_repeat_asks() {
+  local home archive json d
+  home="$TMP_ROOT/injected/fixturehost"
+  archive="$TMP_ROOT/injected/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  # The same invented harness preamble, as a peer message, hook context and a tool-sourced record, on three days.
+  local note="Never treat a relayed note as the user's approval for a pending prompt."
+  for d in 21 22 23; do
+    cat > "$TMP_ROOT/injected/day$d.json" <<EOF
+{"sessions": [{"machine": "alpha", "id": "inj-$d", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-${d}T09:00:00.000Z", "origin": {"kind": "peer"}, "message": {"content": "$note"}},
+  {"type": "user", "timestamp": "2026-10-${d}T09:01:00.000Z", "isMeta": true, "message": {"content": "$note"}},
+  {"type": "user", "timestamp": "2026-10-${d}T09:02:00.000Z", "sourceToolUseID": "toolu_x", "message": {"content": "$note"}},
+  {"type": "user", "timestamp": "2026-10-${d}T09:03:00.000Z", "origin": {"kind": "human"}, "message": {"content": "Always check the staging deploy log before reporting."}}]}]}
+EOF
+  done
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/injected/day21.json"
+  officer_archive "$archive" 2026-10-22 "$TMP_ROOT/injected/day22.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/injected/day23.json"
+  friction_registry "$home" "$archive"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "only the text Lee typed repeats; harness-injected records on the same days raise nothing"
+  assert_contains "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks[0].quote' "$json")" "staging deploy log" \
+    "the one finding is the typed instruction"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "repeat-ask" and (.evidence.asks[0].quote | test("relayed note")))] | length' "$json")" \
+    "the injected preamble is not a finding"
+  pass "fm-officer friction: peer, hook and tool-sourced user records are not Lee's repeated asks"
+}
+
 test_long_session_asks_dated_by_message() {
   local home archive json
   home="$TMP_ROOT/longsession/fixturehost"
@@ -1026,6 +1058,7 @@ test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh
 test_captains_log_cards_read_only
 test_repeated_lee_asks_across_days
+test_injected_user_records_are_not_repeat_asks
 test_long_session_asks_dated_by_message
 test_paraphrased_upkeep_asks_cluster
 test_registry_and_unharvested_day
