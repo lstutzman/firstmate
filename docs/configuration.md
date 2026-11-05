@@ -636,6 +636,7 @@ Every step also names why no agent can run it, `--cause sudo|credential|policy|t
 
 The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quota readings, and registered second mates holding work without recent communication.
 Idle second mates are healthy.
+In-flight work whose child is done with a PR waiting on merge (`counts.waiting_on_merge` in the home summary; `bin/fm-fleet-snapshot.sh`'s header owns when a child qualifies) is not held work, so it neither invalidates the inventory nor makes its second mate silent.
 A second mate waiting on an open captain decision is also healthy: with at least one captain-hold row in its open decisions, it is not silent, whatever its in-flight count and even with a live worker beside the hold, because that decision is already on the Captain's Log.
 A second mate whose own latest line is `working` or `paused`, while it holds work and has no open question to main, is on a long task that reports sparingly and is not silent either: a `paused` line with an `until` time counts until that time is more than the silence window (`silent_minutes`, default 60) past, and any other such line counts while it is younger than `working_ceiling_multiple` (default 6) silence windows, so 6 hours by default.
 The alarm stays for a mate that holds work with no open captain hold and a latest line that is anything else, a declared pause whose clearing time is long past, or a `working` or open-ended `paused` line older than that ceiling.
