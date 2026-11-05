@@ -103,6 +103,7 @@ When the launcher has no Herdr workspace to inherit, the adapter maintains one d
 | --- | --- |
 | Primary | `firstmate` |
 | Secondmate | `2ndmate-<secondmate-id>`, derived from its validated `.fm-secondmate-home` marker |
+| Office | Its bare capitalised role name, such as `Quartermaster` or `Navigator`, read from the parent home's `data/offices.md` line for the office id |
 
 A secondmate launched by the primary receives a narrowly scoped home override during container creation.
 
@@ -147,8 +148,12 @@ Firstmate running outside Herdr entirely has no launcher workspace to inherit, s
 That path needs the home label to identify exactly one workspace.
 Two workspaces sharing it are an unresolvable placement and refuse rather than adopting either.
 
-Avoid naming a personal workspace `firstmate` or `2ndmate-<id>` for that reason.
+Avoid naming a personal workspace `firstmate`, `2ndmate-<id>`, or an office role name such as `Quartermaster` or `Navigator` for that reason.
 Also avoid it because the adapter cannot distinguish that label collision from its own container.
+
+An office workspace still labeled `2ndmate-<id>`, and its `2ndmate-<id> workers` workspace, is renamed in place to the role label the next time that office's workspace is looked up, so a live office keeps its workspace and workers.
+The rename happens only when exactly one workspace holds the old label and none holds the new one.
+A projected worker journaled under the old parent label still reclaims its workspace.
 
 An older secondmate workspace using `firstmate-<id>` is not migrated automatically.
 Rename it manually before expecting new tasks or recovery to use it.
@@ -168,7 +173,7 @@ Closing its last tab can remove the workspace, and the next spawn recreates it.
 Each new crewmate or scout is placed in a disposable one-task workspace by default, on Herdr 0.8.0 and newer.
 This section calls that one-task workspace the projection.
 A home that turned the projection off, or an unconfigured home below that release, uses the ordinary flat layout described under [Watching and task containers](#watching-and-task-containers).
-When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task tab goes to that home's own workers workspace (`firstmate workers` or `2ndmate-<id> workers`) instead of the launcher's workspace.
+When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task tab goes to that home's own workers workspace (`firstmate workers`, `2ndmate-<id> workers`, or an office's `<Role> workers`, such as `Quartermaster workers`) instead of the launcher's workspace.
 That workspace is created unfocused on first use, found again by its exact label, and reused while it has task tabs; a claimed launcher identity is still validated first.
 If concurrent fallbacks created more than one, the first in Herdr's workspace list is used rather than refusing, because that workspace carries no identity.
 
