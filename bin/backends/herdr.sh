@@ -785,9 +785,12 @@ fm_backend_herdr_projection_journal_snapshot() {  # <journal> <task-id>
     && [ -n "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" ] \
     && [ -n "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" ] || return 1
   expected_label=$(fm_backend_herdr_projection_workspace_label "$id" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID")
-  expected_task_label="fm-$id"
+  # A journal written before an office's tab took its role name still carries
+  # fm-<id>, so both labels stay valid.
+  expected_task_label=$(fm_backend_herdr_task_label "$id")
   [ "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" = "$expected_label" ] \
-    && [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" = "$expected_task_label" ]
+    && { [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" = "fm-$id" ] \
+         || [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" = "$expected_task_label" ]; }
 }
 
 # fm_backend_herdr_projection_journal_token: validate and read either journal
@@ -845,9 +848,10 @@ fm_backend_herdr_projection_journal_bind() {  # <journal> <task-id> <home> <sess
 }
 
 # fm_backend_herdr_projection_journal_replace_endpoint: atomically advance one
-# exact version 2 binding after its old husk was replaced successfully.
-fm_backend_herdr_projection_journal_replace_endpoint() {  # <journal> <task-id> <old-tab> <old-pane> <new-tab> <new-pane>
-  local journal=$1 id=$2 old_tab=$3 old_pane=$4 new_tab=$5 new_pane=$6
+# exact version 2 binding after its old husk was replaced successfully, under
+# the label its replacement tab carries.
+fm_backend_herdr_projection_journal_replace_endpoint() {  # <journal> <task-id> <old-tab> <old-pane> <new-tab> <new-pane> <new-task-label>
+  local journal=$1 id=$2 old_tab=$3 old_pane=$4 new_tab=$5 new_pane=$6 new_task_label=$7
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
   [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ] \
     && [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$old_tab" ] \
@@ -857,7 +861,7 @@ fm_backend_herdr_projection_journal_replace_endpoint() {  # <journal> <task-id> 
     "$FM_BACKEND_HERDR_JOURNAL_HOME" "$FM_BACKEND_HERDR_JOURNAL_SESSION" \
     "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" "$new_tab" "$new_pane" \
     "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" \
-    "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL"
+    "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$new_task_label"
 }
 
 # fm_backend_herdr_projection_concise_task_label: strip redundant owner
@@ -2728,8 +2732,8 @@ EOF
 }
 
 # fm_backend_herdr_projection_create_task: create one disposable presentation
-# workspace and its normal fm-<id> task tab without looking up, adopting, or
-# reusing any existing workspace.
+# workspace and its task tab under <task-label> without looking up, adopting,
+# or reusing any existing workspace.
 # The caller must atomically publish the projection journal first.
 # This function sets exact response-derived globals and prints nothing:
 #   FM_BACKEND_HERDR_PROJECTION_SESSION
@@ -2978,16 +2982,18 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
      || [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" != "$meta_tab" ] \
      || [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" != "$meta_pane" ] \
      || { [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$parent_label" ] \
-          && { [ -z "$legacy_label" ] || [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$legacy_label" ]; }; } \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" != "$task_label" ]; then
+          && { [ -z "$legacy_label" ] || [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$legacy_label" ]; }; }; then
     echo "warning: herdr presentation binding for $id does not match its exact home, endpoint, or parent; spawning flat" >&2
     return 2
   fi
+  # The old husk carries the label its journal recorded, which can be an
+  # office's earlier fm-<id>; the replacement tab and the journal advanced
+  # with it take <task-label>.
   if ! fm_backend_herdr_projection_live_binding_matches \
     "$session" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
     "$meta_workspace" "$meta_tab" "$meta_pane" \
     "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$parent_label" \
-    "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$task_label"; then
+    "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL"; then
     echo "warning: herdr presentation binding for $id has an ambiguous, renamed, foreign, or non-nested live shape; spawning flat" >&2
     return 2
   fi
@@ -3092,7 +3098,7 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     return 2
   fi
   if ! fm_backend_herdr_projection_journal_replace_endpoint \
-    "$journal" "$id" "$meta_tab" "$meta_pane" "$new_tab" "$new_pane"; then
+    "$journal" "$id" "$meta_tab" "$meta_pane" "$new_tab" "$new_pane" "$task_label"; then
     fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
     echo "warning: herdr presentation reclaim for $id could not publish its replacement binding; spawning flat" >&2
     return 2

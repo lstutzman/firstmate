@@ -107,8 +107,8 @@ When the launcher has no Herdr workspace to inherit, the adapter maintains one d
 
 A secondmate launched by the primary receives a narrowly scoped home override during container creation.
 
-Each task tab is labeled `fm-<id>`, except an office's own session in a flat workspace, whose tab carries the same bare role name as its workspace.
-A projected task tab and a tab minted by a destroyed-endpoint reclaim keep `fm-<id>`, including an office's.
+Each task tab is labeled `fm-<id>`, except an office's own session, whose tab carries the same bare role name as its workspace on every path that creates it: the flat create, the destroyed-endpoint reclaim, and the presentation projection.
+A projection journal written before that still records `fm-<id>` and stays valid; its reclaim checks the old tab under that label, then gives the replacement tab and the journal the role name.
 A tab label is display only: no lookup depends on it once a task's record holds its Herdr ids.
 
 ### Watching tasks
@@ -281,7 +281,7 @@ It falls back to a unique home-label lookup only for a Firstmate outside Herdr.
 Projected children are never collapsed back into that parent.
 The parent is the placement and ordering reference the projection is bound under.
 
-The normal `fm-<id>` task tab is created in the exact new workspace returned by Herdr.
+The task tab, under its label from [Watching and task containers](#watching-and-task-containers), is created in the exact new workspace returned by Herdr.
 Only the exact seeded default tab returned by the same workspace-create response can be pruned.
 Before and after create, prune, order, abort cleanup, and normal cleanup, Firstmate verifies exact workspace, tab, pane, and active-focus ids.
 An ambiguous response grants no mutation or cleanup authority.
