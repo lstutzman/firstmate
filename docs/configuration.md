@@ -1001,7 +1001,8 @@ A line in a home's `data/captain-shared.md` that says "standing rule" or "standi
 The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
 With `bosun-hosts` set, the friction officer also runs the `bosun-unsure` class: it answers the Bosun's `rule-settles` unsure items from fleet rules section 6 and writes the answers to `bosun-answers.json` in its lane, never into the velocity file, which fleet-app pulls.
 A file or log item that is a session log or transcript is answered keep, never delete; a branch or copy item is never treated as one. It lists the items no rule settles in its digest for the Quartermaster and reports an unreachable host as a coverage gap; `bin/fm-officer-friction.py`'s header owns the answer shape and rules.
-Each branch or copy answer carries the full `sha` it was decided on; the Bosun must refuse an answer whose `sha` no longer matches the tip or HEAD it finds, and re-check live worktrees, open pull requests and unpushed work itself before a delete (the script header owns the contract).
+Each branch or copy answer carries the full `sha` it was decided on; the Bosun must refuse an answer whose `sha` no longer matches the tip or HEAD it finds, and re-check live worktrees, open pull requests, unpushed work and uncommitted or untracked work itself before a delete (the script header owns the contract).
+The officer itself reads a copy's `git status --porcelain` before it answers delete, and keeps any copy with uncommitted or untracked work.
 The Bosun reading `bosun-answers.json` is a fleet-app follow-up.
 The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets them resolve tasks that were already cleaned up.
 

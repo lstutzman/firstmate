@@ -91,6 +91,11 @@ read live (read-only git and gh on the host):
   anything else                           keep    (unique unlanded work is
                                                    never deleted)
 
+A copy that would be answered delete is first checked with a read-only
+`GIT_OPTIONAL_LOCKS=0 git status --porcelain` on its host: any modified,
+staged or untracked entry makes it keep (unique unlanded work), and a failed
+read leaves it unsettled.
+
 A pull request, tip or HEAD that cannot be read is no answer, and so is an
 origin/HEAD that cannot be read when no pull request decides the item. A
 file or log item that is a session log or transcript (never a branch or a
@@ -111,9 +116,10 @@ present on branch and copy answers only; a session-log keep has none. A
 `delete` is the rule's permission only: the Bosun reads the file the next
 night, must refuse an answer whose `sha` no longer matches the tip or HEAD it
 finds, and must itself re-check live worktrees, open pull requests, unpushed
-work and remote ownership before it deletes anything. The
-digest lists each unsettled item for the Quartermaster, never for Lee, and an
-unreachable host is a coverage gap. The officer never deletes anything.
+work, uncommitted or untracked work and remote ownership before it deletes
+anything. The digest lists each unsettled item for the Quartermaster, never
+for Lee, and an unreachable host is a coverage gap there, never a note in the
+velocity file. The officer never deletes anything.
 
 Re-running a day with unchanged inputs rewrites identical digest bytes; the
 one environment input is this host's name, which counts as the home's own
@@ -945,10 +951,10 @@ COPY_RULE = "fleet rules section 6, rule c (%s)"
 SESSION_LOG_RULE = "fleet rules section 6 (Agent session logs and transcripts are always kept, because they are training data)"
 
 
-def _read(cmd, cwd):
+def _read(cmd, cwd, env=None):
     """stdout of a read-only command, or None when it fails."""
     try:
-        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=60, check=False)
+        proc = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=60, check=False)
     except (OSError, subprocess.SubprocessError):
         return None
     return proc.stdout.strip() if proc.returncode == 0 else None
@@ -988,7 +994,9 @@ def bosun_probe(entry):
     m = COPY_BRANCH_RE.match(why) if kind == "copy" else None
     if m and os.path.isdir(item):
         sha = _read(["git", "rev-parse", "HEAD"], item)
-        return {"sha": sha, "prs": _pull_requests(item, m.group(1)), "on_default": _on_default(sha, item)}
+        status = _read(["git", "status", "--porcelain"], item, dict(os.environ, GIT_OPTIONAL_LOCKS="0"))
+        return {"sha": sha, "prs": _pull_requests(item, m.group(1)), "on_default": _on_default(sha, item),
+                "dirty": None if status is None else bool(status)}
     return None
 
 
@@ -1052,7 +1060,11 @@ def bosun_decide(entry, facts):
         verdict, why_rule = "keep", "unique unlanded work is never deleted"
         fact = "no pull request ended at %s (%d found, read live) and it is not an ancestor of origin/HEAD" % (short, len(prs))
     if verdict == "delete" and rule is COPY_RULE:
-        fact += "; the Bosun reached this check only after finding no uncommitted or unpushed work"
+        if facts.get("dirty") is None:
+            return None, "its working state (git status) could not be read now"
+        if facts["dirty"]:
+            verdict, why_rule = "keep", "unique unlanded work is never deleted"
+            fact = "git status --porcelain lists uncommitted or untracked work in it, read live"
     return {"kind": kind, "item": item, "sha": sha, "verdict": verdict, "rule": rule % why_rule, "fact": fact}, None
 
 
@@ -1744,6 +1756,8 @@ def render_md(doc):
             lines.append("- %s (result of %s): %d unsure; %d answered, %d unreadable (the Bosun retries them), %d without a bucket,"
                          " %d unsettled." % (row["host"], row["result_date"] or "unknown date", row["unsure"], row["answered"],
                                              row["unreadable"], row["no_bucket"], row["unsettled"]))
+        for gap in bosun["gaps"]:
+            lines.append("- " + gap)
         if bosun["unsettled"]:
             lines += ["", "Unsettled, for the Quartermaster (no rule settles them from facts the officer reads):", ""]
             for u in bosun["unsettled"]:
@@ -1833,7 +1847,6 @@ def main(argv):
         doc = summarise(scanned, homes, hosts, args.model, cards, log, CHANNEL_LOGS | set(args.channel))
         if bosun_hosts:
             doc["bosun"] = bosun_section(bosun_hosts)
-            doc["coverage"]["notes"] += doc["bosun"]["gaps"]
         if replies_gap:
             doc["coverage"]["notes"].append(
                 "The Captain's Log replies are %s, so Start fix taps seen only there are not counted; states come"
