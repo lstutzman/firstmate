@@ -1340,6 +1340,22 @@ EOF
   pass "wrong-home scan beats between child logs"
 }
 
+test_wrong_home_scan_cursor_removed_on_resolve() {
+  local state sm_home corr cursors
+  read -r state sm_home corr <<EOF
+$(new_wrong_home_fixture offset-resolve)
+EOF
+  printf 'working: routine\n' > "$sm_home/state/child.status"
+  fm_pending_reply_detect_wrong_home "$state" "$corr" "$sm_home" || fail "scan should succeed"
+  cursors=$(find "$state" -maxdepth 1 -name ".pending-reply-wrong-home-$corr*" | wc -l | tr -d ' ')
+  [ "$cursors" = 1 ] || fail "the scan should leave one cursor for the open request, found $cursors"
+  printf 'done [corr=%s]: reported home\n' "$corr" > "$state/hibit.status"
+  fm_pending_reply_try_resolve "$state" "$corr" || fail "correlated status should resolve"
+  cursors=$(find "$state" -maxdepth 1 -name ".pending-reply-wrong-home-$corr*" | wc -l | tr -d ' ')
+  [ "$cursors" = 0 ] || fail "a resolved request must not keep its wrong-home cursor, found $cursors"
+  pass "wrong-home scan cursor is removed when the request resolves"
+}
+
 test_unmarked_captain_input_creates_no_expectation() {
   local dir fb log home rc pending_count
   dir="$TMP_ROOT/unmarked"; mkdir -p "$dir"
@@ -2622,6 +2638,7 @@ test_wrong_home_scan_reads_only_new_bytes
 test_wrong_home_scan_handles_rotation_and_truncation
 test_wrong_home_scan_holds_a_partial_last_line
 test_wrong_home_scan_beats_between_logs
+test_wrong_home_scan_cursor_removed_on_resolve
 test_unmarked_captain_input_creates_no_expectation
 test_fm_send_marked_secondmate_creates_pending_and_embeds_corr
 test_document_pointer_resolves

@@ -305,6 +305,7 @@ phase_teardown() {
   printf 'confirmed:%s\n' "$corr" > "$HOME_DIR/state/.backlog-handoff-design.wake-pending"
   printf '%s\tattempt\n' "$(date +%s)" > "$HOME_DIR/state/.secondmate-relaunch-design"
   printf '%s\tdead\n' "$(date +%s)" > "$HOME_DIR/state/.secondmate-relaunch-bound-design"
+  printf 'x 1:1 0 0\n' > "$HOME_DIR/state/.pending-reply-wrong-home-$corr.cursor"
   : > "$LOG"
   teardown_out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" FM_FAKE_TMUX_LOG="$LOG" FM_FAKE_TMUX_CAPTURE="$PANE" \
     "$ROOT/bin/fm-teardown.sh" design 2>&1) \
@@ -316,6 +317,8 @@ phase_teardown() {
   assert_absent "$HOME_DIR/state/.backlog-handoff-design.wake-pending" \
     "teardown left receiver wake state that could poison a replacement route"
   assert_absent "$rec" "teardown left the retired receiver wake correlation"
+  assert_absent "$HOME_DIR/state/.pending-reply-wrong-home-$corr.cursor" \
+    "teardown left the retired request's wrong-home scan cursor"
   assert_absent "$HOME_DIR/state/.secondmate-relaunch-design" \
     "teardown left the relaunch ledger a same-id replacement would inherit"
   assert_absent "$HOME_DIR/state/.secondmate-relaunch-bound-design" \

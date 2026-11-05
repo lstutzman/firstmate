@@ -758,6 +758,7 @@ _fm_pending_reply_try_resolve_locked() {  # <state-dir> <corr_id> [status-file-o
   fi
   fm_pending_reply_set "$rec" resolved_epoch "$now" || return 1
   fm_pending_reply_set "$rec" resolved_via "$via" || return 1
+  rm -f -- "$(fm_pending_reply_wrong_home_cursor_path "$state" "$corr")"
   # The record is resolved either way; a failed close stays retryable from the
   # watcher tick rather than turning a settled request back into a failure.
   _fm_pending_reply_close_escalation_locked "$state" "$corr" || true
@@ -1539,10 +1540,7 @@ fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home
   [ -f "$rec" ] || return 1
   [ -n "$sm_home" ] && [ -d "$sm_home" ] || return 0
   phase=$(fm_pending_reply_get "$rec" phase)
-  if [ "$phase" = resolved ]; then
-    rm -f -- "$(fm_pending_reply_wrong_home_cursor_path "$state" "$corr")"
-    return 0
-  fi
+  [ "$phase" != resolved ] || return 0
   delivered=$(fm_pending_reply_get "$rec" delivered_epoch)
   [ -n "$delivered" ] || return 0
   snapshot=$(fm_pending_reply_status_set_signature "$sm_home/state")
@@ -1630,7 +1628,8 @@ EOF
 
 # The wrong-home scan's position in each child log, one cursor per request:
 # `<encoded path> <dev:ino> <byte offset> <lines read>` rows. It lives beside
-# the pending-reply store rather than inside it so retention never sees it.
+# the pending-reply store rather than inside it so retention never sees it,
+# and is removed when the request resolves or its task is torn down.
 fm_pending_reply_wrong_home_cursor_path() {  # <state-dir> <corr_id>
   printf '%s/.pending-reply-wrong-home-%s.cursor' "$1" "$2"
 }
