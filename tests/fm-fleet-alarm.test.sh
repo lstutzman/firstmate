@@ -401,11 +401,11 @@ path.write_text(json.dumps(value))
 PY_EDIT
 }
 # A long task that reports sparingly: the mate's own latest line is working or paused, with work held.
-MATE_LINE=working mate 1 0 7200
+MATE_LINE="working" mate 1 0 7200
 [ -z "$(run_alarm check)" ] || fail 'a mate whose latest line is working on in-flight work is healthy'
-MATE_LINE=paused mate 1 0 7200
+MATE_LINE="paused" mate 1 0 7200
 [ -z "$(run_alarm check)" ] || fail 'a mate whose latest line is paused on in-flight work is healthy'
-MATE_LINE=done mate 1 0 7200
+MATE_LINE="done" mate 1 0 7200
 assert_contains "$(run_alarm check)" 'holding work silent' 'a mate whose latest line is neither working nor paused still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
@@ -417,7 +417,7 @@ printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 9000))" "$(date -u -
 assert_contains "$(run_alarm check)" 'holding work silent' 'a declared pause whose clearing time is long past still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
-MATE_LINE=working mate 1 0 7200
+MATE_LINE="working" mate 1 0 7200
 python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_IDLE'
 from pathlib import Path
 import json,sys
@@ -428,18 +428,18 @@ PY_IDLE
 mate 0 0 0
 run_alarm check >/dev/null
 # The working ceiling defaults to 6 silence windows: 6 hours at the default 60 minutes.
-MATE_LINE=working mate 1 0 19800
+MATE_LINE="working" mate 1 0 19800
 [ -z "$(run_alarm check)" ] || fail 'a working line five and a half hours old is still a long task'
-MATE_LINE=working mate 1 0 22200
+MATE_LINE="working" mate 1 0 22200
 assert_contains "$(run_alarm check)" 'holding work silent' 'a working line past the six-hour ceiling still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
-MATE_LINE=working mate 1 0 7200
+MATE_LINE="working" mate 1 0 7200
 edit_mate_summary "value['counts']['decisions_open']=1; value['decisions_open']=[dict(id='ask',key='ask',verb='needs-decision',source='status')]"
 assert_contains "$(run_alarm check)" 'holding work silent' 'a working mate with a child asking it something still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
-MATE_LINE=working mate 1 0 7200
+MATE_LINE="working" mate 1 0 7200
 edit_mate_summary "value['counts']['decisions_open']=2; value['decisions_open']=[]"
 assert_contains "$(run_alarm check)" 'holding work silent' 'a working mate with a truncated decision list still alarms'
 mate 0 0 0
