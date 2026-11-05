@@ -1217,6 +1217,75 @@ EOF
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
 }
 
+# A done child with a recorded PR is healthy waiting on merge; failed and done-without-PR still flag.
+test_home_summary_done_child_with_pr_is_waiting_on_merge() {
+  local home fakebin out
+  home=$(make_home summary-waiting-on-merge)
+  mkdir -p "$home/projects/waiting"
+  fakebin=$(make_fakebin "$home")
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] pr-ship - Done child awaiting merge (repo: alpha) (kind: ship) (since 2026-07-11)
+
+## Queued
+
+## Done
+EOF
+  fm_write_meta "$home/state/pr-ship.meta" \
+    "window=firstmate:fm-pr-ship" \
+    "worktree=$home/projects/waiting" \
+    "project=alpha" \
+    "harness=claude" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "pr=https://github.com/example/alpha/pull/4619" \
+    "pr_head=0123456789abcdef0123456789abcdef01234567"
+  record_claude_idle "$home/state" pr-ship
+  printf 'done: PR https://github.com/example/alpha/pull/4619 checks green\n' > "$home/state/pr-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '
+    .valid == true
+      and .invalidity.kind == null
+      and .counts.waiting_on_merge == 1
+      and .waiting_on_merge == [{id:"pr-ship",pr:"https://github.com/example/alpha/pull/4619"}]
+  ' >/dev/null || fail "done child with a recorded PR must be valid and waiting on merge: $out"
+
+  # Same child without a recorded PR flags exactly as before.
+  fm_write_meta "$home/state/pr-ship.meta" \
+    "window=firstmate:fm-pr-ship" \
+    "worktree=$home/projects/waiting" \
+    "project=alpha" \
+    "harness=claude" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  printf 'done: complete\n' > "$home/state/pr-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '
+    .valid == false
+      and .invalidity == {kind:"terminal_in_flight",ids:["pr-ship"]}
+      and .counts.waiting_on_merge == 0
+  ' >/dev/null || fail "done child with no PR must still produce terminal_in_flight: $out"
+
+  # A failed child flags even when a PR is recorded.
+  fm_write_meta "$home/state/pr-ship.meta" \
+    "window=firstmate:fm-pr-ship" \
+    "worktree=$home/projects/waiting" \
+    "project=alpha" \
+    "harness=claude" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "pr=https://github.com/example/alpha/pull/4619" \
+    "pr_head=0123456789abcdef0123456789abcdef01234567"
+  printf 'failed: stopped\n' > "$home/state/pr-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '
+    .valid == false
+      and .invalidity == {kind:"terminal_in_flight",ids:["pr-ship"]}
+      and .counts.waiting_on_merge == 0
+  ' >/dev/null || fail "failed child with a PR must still produce terminal_in_flight: $out"
+  pass "home-summary treats a done child with a recorded PR as waiting on merge"
+}
+
 test_snapshot_handles_large_status_fields() {
   local home mate fakebin out
   home=$(make_home large-status)
@@ -1266,6 +1335,7 @@ test_snapshot_handles_large_status_fields
 test_empty_fleet_json
 test_fixture_snapshot_json
 test_home_summary_excludes_secondmate_from_child_inventory
+test_home_summary_done_child_with_pr_is_waiting_on_merge
 test_undated_captain_hold_phrasing_and_aging
 test_hold_buckets_are_total_and_text_blind
 test_main_inventory_orphan_and_unstructured_disclosure

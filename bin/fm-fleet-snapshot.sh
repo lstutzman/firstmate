@@ -256,6 +256,11 @@ aggregation, includes generated_epoch for freshness arithmetic, and marks
 inventory contradictions or unavailable child state invalid.
 kind=secondmate meta records are not child inventory for unowned_current or
 terminal_in_flight; they never have backlog rows.
+A done child with a recorded PR (pr= in meta or a status-line PR URL) is waiting
+on merge, not terminal_in_flight: it is listed in waiting_on_merge and counted in
+counts.waiting_on_merge. No forge read is made; a recorded PR counts as waiting
+until the merge teardown removes the child. A failed child, or a done child with
+no recorded PR, still invalidates the inventory.
 Its invalidity object names the normalized failure kind and affected ids.
 Actionable tasks-axi captain holds appear as decisions_open and stay visible in
 queued with hold_reason, hold_kind, hold_until,
@@ -1055,7 +1060,13 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | $tasks[]
          | select(.kind != "secondmate")
          | select(.id == $work.id and (.current_state.state == "done" or .current_state.state == "failed"))
+         | select((.current_state.state == "done" and .pr.url != null) | not)
          | {id,state:.current_state.state} ]) as $terminal_in_flight
+    | ([ $owned_in_flight[] as $work
+         | $tasks[]
+         | select(.kind != "secondmate")
+         | select(.id == $work.id and .current_state.state == "done" and .pr.url != null)
+         | {id,pr:(.pr.url | trunc(500))} ]) as $waiting_on_merge
     | ([if $backlog.present != true then
           {kind:"missing_backlog",ids:[],reason:"missing structured backlog"}
         else empty end,
@@ -1139,6 +1150,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
         active_children:$active_all[:$child_n],
         decisions_open:$decisions_all[:$decisions_n],
         holds:$holds_all[:$queued_n],
+        waiting_on_merge:$waiting_on_merge[:$child_n],
         queued:([$queued_all[] | {id:(.id | trunc(120)),title:(.title | trunc(120)),
           blocked_by:((.blocked_by // null) | if . == null then null else trunc(120) end),
           blocked_by_ids:((.blocked_by_ids // []) | map(trunc(120))),
@@ -1165,6 +1177,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
           active_children:($active_all | length),
           decisions_open:($decisions_all | length),
           holds:($holds_all | length),
+          waiting_on_merge:($waiting_on_merge | length),
           queued:($queued_all | length),
           landed:($landed_all | length),
           endpoints:($tasks | length)

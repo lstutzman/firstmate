@@ -286,6 +286,11 @@ done < "$2"
             work = [counts.get('in_flight', 0), counts['active_children'], counts['decisions_open'], counts['holds']]
             if any(type(n) is not int or n < 0 for n in work):
                 raise ValueError('invalid work counts')
+            # A done child with a recorded PR is waiting on merge, not silent work.
+            waiting = counts.get('waiting_on_merge', 0)
+            if type(waiting) is not int or waiting < 0:
+                raise ValueError('invalid work counts')
+            work[0] = max(0, work[0] - waiting)
             invalidity = summary.get('invalidity')
             partial_counts = (isinstance(invalidity, dict)
                               and invalidity.get('kind') == 'child_current_unavailable'
