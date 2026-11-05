@@ -852,7 +852,8 @@ def scope_route(row, offices, team, jev=None):
     Rungs are tried in order and the first that names any office decides: the repository of a linked GitHub URL,
     a project name in the ask's words, a Linear id in the run's team (PropertyCompass2), then the ask's source
     (a Captain's Log "Start fix:" tap goes to the office with the quartermaster role).
-    A rung that names two offices is ambiguous, never a guess. When none names an office, local-jev labels the ask.
+    A rung that names two offices is ambiguous, never a guess. An ask a rung places still passes local-jev's hold
+    checks (a "Start fix:" tap skips the not-a-start one). When none names an office, local-jev labels the ask.
     """
     text = ask_text(row)
     words = re.findall(r"[0-9a-z]+", text.casefold())
@@ -868,7 +869,8 @@ def scope_route(row, offices, team, jev=None):
     for label, match in rungs:
         hits = {o.home: found for o in offices if (found := match(o))}
         if len(hits) == 1:
-            return next(iter(hits)), None
+            why = jev and jev.hold(text, title.casefold().startswith("start fix:"))
+            return (None, why) if why else (next(iter(hits)), None)
         if hits:
             return None, "ambiguous: %s names %d offices (%s)" % (
                 label, len(hits), ", ".join(sorted(n for names in hits.values() for n in names)))
@@ -905,11 +907,13 @@ OFFICE_MINIMUM = 0.7
 class LocalJev:
     """Places an ask with an office through the local-jev skill's jev.py, or leaves it with main.
 
-    Four checks, in order, each stopping the ask with main and a reason when it fails: a `choice` over the
-    registered offices' roles (no main option) must reach OFFICE_MINIMUM; a `noul` SCOPE_QUESTION check asks
-    whether the ask is about the app or the fleet at all and below SCOPE_MINIMUM it fits no office; a `noul`
-    NOT_A_START check holds a constraint, answer, approval or decision for Lee at NOT_A_START_MINIMUM; a `noul`
-    MONEY_LEGAL_QUESTION check holds a pricing, legal, payments or spending change for Lee at MONEY_LEGAL_MINIMUM.
+    place() runs four checks, in order, each stopping the ask with main and a reason when it fails: a `choice` over
+    the registered offices' roles (no main option) must reach OFFICE_MINIMUM; a `noul` SCOPE_QUESTION check asks
+    whether the ask is about the app or the fleet at all and below SCOPE_MINIMUM it fits no office; then hold()'s two.
+    hold() also runs on every ask scope_route's evidence or source places: a `noul` NOT_A_START check holds a
+    constraint, answer, approval or decision for Lee at NOT_A_START_MINIMUM (skipped for a "Start fix:" tap, which
+    is the captain's own start), and a `noul` MONEY_LEGAL_QUESTION check holds a pricing, legal, payments or
+    spending change for Lee at MONEY_LEGAL_MINIMUM.
     Only the ask's words are sent. Any failure, including a timeout or an unreadable answer, is remembered so the
     rest of the run stays with `home`.
     """
@@ -919,11 +923,12 @@ class LocalJev:
         self.script = script or os.environ.get("FM_LOCAL_JEV") or os.path.expanduser("~/.claude/skills/local-jev/jev.py")
         self.offices = {o.role: o for o in offices if o.role}
         if any(not o.role for o in offices):
-            self.down = "an office has no role"
+            self.unplaceable = "an office has no role"
         elif len(self.offices) != len(offices):
-            self.down = "two offices share a role"
+            self.unplaceable = "two offices share a role"
         else:
-            self.down = None
+            self.unplaceable = None
+        self.down = None
 
     def options(self):
         return {role: "%s Projects: %s." % (ROLE_SCOPES.get(role, o.mandate), ", ".join(sorted(o.projects)))
@@ -940,9 +945,28 @@ class LocalJev:
         args = [a for flag, value in zip(("--true", "--false"), criteria) for a in (flag, value)]
         return float(self.ask(text, "noul", question, *args)["noul"])
 
-    def place(self, text):
+    def failed(self, exc):
+        self.down = type(exc).__name__ + (": " + str(exc) if str(exc) else "")
+        return "local-jev unavailable: " + self.down
+
+    def hold(self, text, start_fix=False):
+        """The reason to keep a placed ask with Lee, else None; a check that cannot run keeps it too."""
         if self.down:
-            return None, "local-jev unavailable: " + self.down
+            return "local-jev unavailable: " + self.down
+        try:
+            not_a_start = 0.0 if start_fix else self.noul(text, *NOT_A_START)
+            money_legal = self.noul(text, *MONEY_LEGAL_QUESTION)
+        except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+            return self.failed(exc)
+        if not_a_start >= NOT_A_START_MINIMUM:
+            return "local-jev says it is a constraint, answer or decision for Lee, not a request for work (%.2f)" % not_a_start
+        if money_legal >= MONEY_LEGAL_MINIMUM:
+            return "local-jev says it changes pricing, legal text, payments or spending, which Lee decides (%.2f)" % money_legal
+        return None
+
+    def place(self, text):
+        if self.down or self.unplaceable:
+            return None, "local-jev unavailable: " + (self.down or self.unplaceable)
         try:
             options = self.options()
             answer = self.ask(text, "choice", self.QUESTION, *[a for k, v in options.items() for a in ("-o", k + "=" + v)])
@@ -955,17 +979,11 @@ class LocalJev:
             if in_scope < SCOPE_MINIMUM:
                 return None, "local-jev says it fits no office scope (%.2f, below %.1f); %s was %.2f" % (
                     in_scope, SCOPE_MINIMUM, label, confidence)
-            not_a_start = self.noul(text, *NOT_A_START)
-            money_legal = self.noul(text, *MONEY_LEGAL_QUESTION)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
-            self.down = type(exc).__name__ + (": " + str(exc) if str(exc) else "")
-            return None, "local-jev unavailable: " + self.down
-        if not_a_start >= NOT_A_START_MINIMUM:
-            return None, "local-jev says it is a constraint, answer or decision for Lee, not a request for work (%.2f); %s was %.2f" % (
-                not_a_start, label, confidence)
-        if money_legal >= MONEY_LEGAL_MINIMUM:
-            return None, "local-jev says it changes pricing, legal text, payments or spending, which Lee decides (%.2f); %s was %.2f" % (
-                money_legal, label, confidence)
+            return None, self.failed(exc)
+        why = self.hold(text)
+        if why:
+            return None, "%s; %s was %.2f" % (why, label, confidence)
         return self.offices[label].home, None
 
 

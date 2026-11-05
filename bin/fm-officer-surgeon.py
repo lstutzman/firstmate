@@ -1147,7 +1147,9 @@ def start_body(row, what):
 
 def execute_for(row, rid, what, main_home, start_homes):
     body = start_body(row, what)
-    return {"action": "start", "env": {"FM_HOME": progress.start_home_for(row, main_home, start_homes)}, "request_id": rid,
+    project = (row.get("project") or DEFAULT_PROJECT).rsplit("/", 1)[-1].lower()
+    home = next((o.home for o in start_homes if project in o.projects), main_home)
+    return {"action": "start", "env": {"FM_HOME": home}, "request_id": rid,
             "argv": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh"),
                      "note", "--request-id", rid, "--json", "--", body]}
 
@@ -1360,7 +1362,7 @@ def main(argv):
     apply_found(findings, found, read_json(os.path.join(out, LEDGER_FILE), {}))
     writes, blocked = file_findings(findings, args, args.date, out, state, found, jev) if args.writes == "linear" else ([], None)
     apply_found(findings, found, read_json(os.path.join(out, LEDGER_FILE), {}))
-    start_homes = [(h, {p.lower() for p in projects.split(",") if p}) for h, _, projects in (a.partition("=") for a in args.start_home)]
+    start_homes = [progress.parse_office(a) for a in args.start_home]
     main_home = args.fm_home or (args.home[0] if args.home else "")
     starts, held, asks = plan_starts(findings, rubric, args.date, args.writes, main_home, start_homes, state.setdefault("handled", {}))
     if rubric.pattern_memory:

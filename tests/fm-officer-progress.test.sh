@@ -1013,7 +1013,7 @@ test_start_home_routes_project_less_asks_by_scope() {
   cat > "$WORLD/local-jev.py" <<'PY'
 import os, sys
 text = sys.stdin.read()
-open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "jev-calls"), "a").write(sys.argv[1] + ": " + text + "\n")
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "jev-calls"), "a").write(sys.argv[1] + " [" + sys.argv[2] + "]: " + text + "\n")
 options = [a.split("=", 1)[0] for a in sys.argv if "=" in a and not a.startswith("-")]
 if "DOWN" in text:
     sys.exit(3)
@@ -1086,7 +1086,11 @@ PY
  {"id":"jev-main","words":"HIGHQM LEEASK approve it","status":"not-started","work":[],"links":[]},
  {"id":"holiday","words":"Research holiday flights for March","status":"not-started","work":[],"links":[]},
  {"id":"price","words":"Change the premium price to £12","status":"not-started","work":[],"links":[]},
- {"id":"low-scope","words":"HIGHQM LOWSCOPE tidy the queue","status":"not-started","work":[],"links":[]}
+ {"id":"low-scope","words":"HIGHQM LOWSCOPE tidy the queue","status":"not-started","work":[],"links":[]},
+ {"id":"pc-price","words":"Raise the PropertyCompass2 annual plan price","status":"not-started","work":[],"links":[]},
+ {"id":"pc-hold","words":"PropertyCompass2 calendar export is not ready yet, LEEASK hold it","status":"not-started","work":[],"links":[]},
+ {"id":"fix-lee","words":"Start fix: LEEASK sort the wake queue","status":"not-started","work":[],"links":[]},
+ {"id":"fix-price","words":"Start fix: set the trial price lower","status":"not-started","work":[],"links":[]}
 ]}
 JSON
   run_progress >/dev/null || fail 'a run with two start-home offices must succeed'
@@ -1106,7 +1110,8 @@ JSON
   assert_equals "$nav" "$(routed jev-nav)" 'a confident local-jev label routes to that office'
   assert_equals "$qm" "$(routed low-scope)" 'a scope score above the low bar still routes'
   assert_equals "$qm" "$(routed jev-qm)" 'a confident local-jev label routes to the fleet office'
-  for id in both other-repo bare jev-low jev-main holiday price; do
+  assert_equals "$qm" "$(routed fix-lee)" 'a Start fix tap is never held as a constraint, since the captain started it'
+  for id in both other-repo bare jev-low jev-main holiday price pc-price pc-hold fix-price; do
     assert_equals "FM_HOME=$WORLD_HOME" "$(request_home "$lane/$DATE.start-requests.sh" "$id")" "$id stays with this home"
   done
   assert_contains "$(jq -r '.start_requests[] | select(.id == "both") | .unrouted' "$file")" 'ambiguous' 'an ask that fits two offices is reported as ambiguous'
@@ -1115,20 +1120,25 @@ JSON
   assert_contains "$(jq -r '.start_requests[] | select(.id == "bare") | .unrouted' "$file")" 'fits no office scope (0.05' 'an ask that is neither app nor fleet work stays with this home even after a confident office pick'
   assert_contains "$(jq -r '.start_requests[] | select(.id == "holiday") | .unrouted' "$file")" 'fits no office scope (0.05' 'an out-of-scope request for work stays with this home and is reported'
   assert_contains "$(jq -r '.start_requests[] | select(.id == "price") | .unrouted' "$file")" 'changes pricing, legal text, payments or spending, which Lee decides (0.93)' 'a pricing change is held for Lee even when it is app work'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "pc-price") | .unrouted' "$file")" 'changes pricing, legal text, payments or spending, which Lee decides (0.93)' 'a pricing change that names a project is held for Lee'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "pc-hold") | .unrouted' "$file")" 'a constraint, answer or decision for Lee, not a request for work (0.91)' 'a constraint that names a project is not started'
+  assert_contains "$(jq -r '.start_requests[] | select(.id == "fix-price") | .unrouted' "$file")" 'changes pricing, legal text, payments or spending, which Lee decides (0.93)' 'a pricing Start fix tap is held for Lee'
   assert_equals '' "$(grep -c ' - ' "$WORLD/jev-calls" | grep -v '^0$')" 'local-jev is sent only the ask words, never record ids'
   assert_not_contains "$(cat "$WORLD/jev-calls")" 'Top of Mind' 'no Top of Mind record text goes to local-jev'
-  assert_not_contains "$(cat "$WORLD/jev-calls")" 'listings page' 'an ask the evidence placed is never sent to local-jev'
-  assert_not_contains "$(cat "$WORLD/jev-calls")" 'Start fix' 'an ask its source placed is never sent to local-jev'
+  assert_not_contains "$(grep -E '^(choice|noul \[Does this concern)' "$WORLD/jev-calls")" 'listings page' 'an ask the evidence placed is never sent to the office or scope questions'
+  assert_not_contains "$(grep -E '^(choice|noul \[Does this concern)' "$WORLD/jev-calls")" 'Start fix' 'an ask its source placed is never sent to the office or scope questions'
+  assert_contains "$(grep '^noul \[Is this a change to pricing' "$WORLD/jev-calls")" 'listings page' 'an ask the evidence placed still gets the pricing check'
+  assert_not_contains "$(grep '^noul \[Which is this' "$WORLD/jev-calls")" 'Start fix' 'a Start fix tap skips the not-a-start check'
   assert_equals 'null' "$(jq -r '.start_requests[] | select(.id == "pc-link") | .unrouted' "$file")" 'a routed ask carries no unrouted reason'
   assert_contains "$(cat "$lane/$DATE.md")" 'unrouted, stays with this home: ambiguous' 'the Markdown digest lists the unrouted ask'
-  assert_equals '21' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all twenty asks and the backlog row become addressed requests'
+  assert_equals '25' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all twenty-four asks and the backlog row become addressed requests'
   assert_equals '0' "$(jq '.excluded | length' "$file")" 'no ask is dropped'
-  printf '{"rows":[{"id":"d1","words":"DOWN first ask","status":"not-started","work":[],"links":[]},{"id":"d2","words":"DOWN second ask","status":"not-started","work":[],"links":[]},{"id":"d3","words":"GARBAGE third ask","status":"not-started","work":[],"links":[]}]}\n' > "$WORLD/top-of-mind.json"
+  printf '{"rows":[{"id":"d1","words":"DOWN first ask","status":"not-started","work":[],"links":[]},{"id":"d2","words":"DOWN second ask","status":"not-started","work":[],"links":[]},{"id":"d3","words":"GARBAGE third ask","status":"not-started","work":[],"links":[]},{"id":"d4","words":"DOWN tidy the PropertyCompass2 export","status":"not-started","work":[],"links":[]}]}\n' > "$WORLD/top-of-mind.json"
   : > "$WORLD/jev-calls"
   run_progress >/dev/null || fail 'an unreachable local-jev must never fail the run'
-  assert_equals '1' "$(wc -l < "$WORLD/jev-calls" | tr -d ' ')" 'after local-jev fails the run stops asking it'
-  assert_equals 'local-jev unavailable' "$(jq -r '[.start_requests[] | select(.id == "d1" or .id == "d2" or .id == "d3") | .unrouted[:21]] | unique[0]' "$file")" 'an unreachable local-jev leaves the asks with this home and says why'
-  assert_equals '3 3' "$(jq -r '[.start_requests[] | select(.id | test("^d[123]$"))] | "\(length) \([.[] | select(.execute.env.FM_HOME == "'"$WORLD_HOME"'")] | length)"' "$file")" 'every ask is still addressed to this home'
+  assert_equals '1' "$(grep -cE 'DOWN|GARBAGE' "$WORLD/jev-calls")" 'after local-jev fails the run stops asking it'
+  assert_equals 'local-jev unavailable' "$(jq -r '[.start_requests[] | select(.id | test("^d[1-4]$")) | .unrouted[:21]] | unique[0]' "$file")" 'an unreachable local-jev leaves the asks with this home and says why'
+  assert_equals '4 4' "$(jq -r '[.start_requests[] | select(.id | test("^d[1-4]$"))] | "\(length) \([.[] | select(.execute.env.FM_HOME == "'"$WORLD_HOME"'")] | length)"' "$file")" 'every ask is still addressed to this home'
   pass 'progress: project-less asks route to the office their own evidence names, else stay with this home and are reported'
 }
 
