@@ -10,6 +10,7 @@ Usage:
                              --out <lane-dir> [--home <dir>]... [--hosts a,b]
                              [--captains-log <https-url>] [--channel <mate-id>]...
                              [--days <n>] [--model none] [--now <epoch>]
+                             [--bosun-hosts a,b]
 
 Friction is anything that slowed an agent down, above all a step it had to
 wait for Lee to do. One day's friction events come from three sources:
@@ -67,6 +68,52 @@ two or more days, one
 of them the run's day, becomes a repeat-ask event whose evidence is each day's
 scrubbed quote. The fix is to make the instruction automatic work (a scheduled
 check, a hook, or a standing rule) so Lee stops giving it.
+
+Bosun unsure items are a separate finding class, `bosun-unsure`, read only
+with --bosun-hosts (the registry's `bosun-hosts` field). For each host the
+officer reads the `unsure` list of ~/services/bosun-maintenance/last-result.json
+over `ssh -o BatchMode=yes` (the list is in the file, not in its counts). Each
+item carries a bucket: `rule-settles` (a rule could decide it once a fact is
+known) or `unreadable` (a check failed at run time; the Bosun retries it the
+next night, so the officer never answers it). An item with no bucket (a result
+written before the split) is counted and not answered. The officer answers a
+`rule-settles` item only from fleet rules section 6 and the captain-shared
+clean-up rule, with no model: a branch item and a copy item whose branch is
+unmerged and whose pull request the Bosun could not read are answered from the
+branch's pull requests and `git merge-base --is-ancestor <sha> origin/HEAD`,
+read live (read-only git and gh on the host):
+
+  open pull request                       keep    (never while one uses it)
+  pull request merged or closed at the
+  tip (branch) or at HEAD (copy)          delete  (unmerged-branch rule, rule c)
+  tip or HEAD an ancestor of origin/HEAD  delete  (content already on the
+                                                   default branch)
+  anything else                           keep    (unique unlanded work is
+                                                   never deleted)
+
+A pull request, tip or HEAD that cannot be read is no answer, and so is an
+origin/HEAD that cannot be read when no pull request decides the item. A
+file or log item that is a session log or transcript (never a branch or a
+copy, which is a worktree or task copy) is answered keep (fleet rules
+section 6: always kept, because it is training data), never delete. Every other item (an old scratch file, a log folder, a copy whose
+state the officer does not read, a branch or copy whose tip or HEAD is not a
+full 40-character sha) is unsettled.
+Answers go to <out>/bosun-answers.json, never into the velocity file, which
+fleet-app pulls and would show them as velocity findings:
+
+  {"schema_version": 1, "source": "friction-officer", "date": <run date>,
+   "answers": [{"host", "result_date", "kind", "item", "sha",
+                "verdict": "delete"|"keep", "rule", "fact"}, ...]}
+
+sorted by host, kind and item, one entry per item. `sha` is the full commit
+the answer was decided on (a branch's tip, a copy's HEAD, read live) and is
+present on branch and copy answers only; a session-log keep has none. A
+`delete` is the rule's permission only: the Bosun reads the file the next
+night, must refuse an answer whose `sha` no longer matches the tip or HEAD it
+finds, and must itself re-check live worktrees, open pull requests, unpushed
+work and remote ownership before it deletes anything. The
+digest lists each unsettled item for the Quartermaster, never for Lee, and an
+unreachable host is a coverage gap. The officer never deletes anything.
 
 Re-running a day with unchanged inputs rewrites identical digest bytes; the
 one environment input is this host's name, which counts as the home's own
@@ -886,6 +933,161 @@ def remote_scan(host, archive, date, days):
     return json.loads(proc.stdout.decode("utf-8"))
 
 
+BOSUN_RESULT = "~/services/bosun-maintenance/last-result.json"
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
+# Session logs and transcripts are always kept (fleet rules section 6): a file or log item under them is only ever answered keep.
+SESSION_LOG_RE = re.compile(r"\.jsonl(?:\.gz)?$|/\.(?:claude|codex|pi|omp|kimi)(?:/|$)|/transcript-archive(?:/|$)|/herdr(?:/|$)")
+BRANCH_ITEM_RE = re.compile(r"^(/.+) (\S+) \((local|remote)\)$")
+COPY_BRANCH_RE = re.compile(r"^branch (\S+) is not merged and its pull request is missing or unreadable$")
+BRANCH_RULE = "fleet rules section 6, unmerged-branch rule (%s)"
+COPY_RULE = "fleet rules section 6, rule c (%s)"
+SESSION_LOG_RULE = "fleet rules section 6 (Agent session logs and transcripts are always kept, because they are training data)"
+
+
+def _read(cmd, cwd):
+    """stdout of a read-only command, or None when it fails."""
+    try:
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout.strip() if proc.returncode == 0 else None
+
+
+def _on_default(sha, cwd):
+    """True when sha is an ancestor of origin/HEAD, False when it is not, None when that cannot be read."""
+    if not sha:
+        return None
+    try:
+        proc = subprocess.run(["git", "merge-base", "--is-ancestor", sha, "origin/HEAD"], cwd=cwd,
+                              capture_output=True, timeout=60, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {0: True, 1: False}.get(proc.returncode)
+
+
+def _pull_requests(cwd, branch):
+    out = _read(["gh", "pr", "list", "--head=" + branch, "--state", "all", "--limit", "30",
+                 "--json", "number,state,headRefOid,url"], cwd)
+    try:
+        prs = json.loads(out) if out is not None else None
+    except ValueError:
+        return None
+    return prs if isinstance(prs, list) else None
+
+
+def bosun_probe(entry):
+    """The live facts one rule-settles item needs, read on the host with read-only git and gh."""
+    kind, item, why = entry["kind"], entry["item"], entry["why"]
+    m = BRANCH_ITEM_RE.match(item) if kind == "branch" else None
+    if m and os.path.isdir(m.group(1)):
+        repo, branch, where = m.groups()
+        ref = ("refs/heads/" if where == "local" else "refs/remotes/origin/") + branch
+        sha = _read(["git", "rev-parse", "--verify", "-q", ref], repo)
+        return {"sha": sha, "prs": _pull_requests(repo, branch), "on_default": _on_default(sha, repo)}
+    m = COPY_BRANCH_RE.match(why) if kind == "copy" else None
+    if m and os.path.isdir(item):
+        sha = _read(["git", "rev-parse", "HEAD"], item)
+        return {"sha": sha, "prs": _pull_requests(item, m.group(1)), "on_default": _on_default(sha, item)}
+    return None
+
+
+def bosun_read():
+    """Runs on a Bosun host: the unsure list of its last result, with the live facts of each rule-settles item."""
+    with open(os.path.expanduser(BOSUN_RESULT), encoding="utf-8") as fh:
+        result = json.load(fh)
+    unsure = [u for u in result.get("unsure") or []
+              if isinstance(u, dict) and all(isinstance(u.get(k), str) for k in ("kind", "item", "why"))]
+    return {"date": result.get("date"), "unsure": unsure,
+            "facts": [bosun_probe(u) if u.get("bucket") == "rule-settles" else None for u in unsure]}
+
+
+def remote_bosun(host):
+    proc = subprocess.run(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", host, "python3 -I - bosun-read"],
+        input=remote_program(), capture_output=True, check=False)
+    try:
+        if proc.returncode != 0:
+            raise ValueError
+        read = json.loads(proc.stdout.decode("utf-8"))
+        if not (isinstance(read["unsure"], list) and len(read["facts"]) == len(read["unsure"])):
+            raise ValueError
+    except (ValueError, KeyError, TypeError):
+        raise RuntimeError("Bosun host %s unreachable or its last result unreadable (ssh exit %d), so its unsure"
+                           " items are not answered." % (host, proc.returncode))
+    return read
+
+
+def bosun_decide(entry, facts):
+    """(answer, None) for one rule-settles item, or (None, why it is unsettled)."""
+    kind, item, why = entry["kind"], entry["item"], entry["why"]
+    if kind == "branch" and BRANCH_ITEM_RE.match(item):
+        rule = BRANCH_RULE
+    elif kind == "copy" and COPY_BRANCH_RE.match(why):
+        rule = COPY_RULE
+    elif kind not in ("branch", "copy") and SESSION_LOG_RE.search(item):
+        return {"kind": kind, "item": item, "verdict": "keep", "rule": SESSION_LOG_RULE,
+                "fact": "its path is a session log or transcript"}, None
+    else:
+        return None, "no rule settles it from facts the officer reads: " + why
+    sha = (facts or {}).get("sha")
+    prs = (facts or {}).get("prs")
+    if not (isinstance(sha, str) and SHA_RE.match(sha)) or not isinstance(prs, list):
+        return None, "its commit or pull requests could not be read now"
+    short = sha[:7]
+    opened = next((p for p in prs if isinstance(p, dict) and p.get("state") == "OPEN"), None)
+    ended = next((p for p in prs if isinstance(p, dict) and p.get("headRefOid") == sha
+                  and p.get("state") in ("MERGED", "CLOSED")), None)
+    if opened:
+        verdict, why_rule, fact = "keep", "never while an open pull request uses it", "pull request %s is open, read live" % opened.get("url")
+    elif ended:
+        verdict, why_rule = "delete", "pull request merged or closed"
+        fact = "pull request %s %s at %s, read live" % (ended.get("url"), ended["state"].lower(), short)
+    elif facts.get("on_default") is None:
+        return None, "whether it is on the default branch could not be read now"
+    elif facts["on_default"]:
+        verdict, why_rule = "delete", "content already on the default branch"
+        fact = "%s is an ancestor of origin/HEAD, read live" % short
+    else:
+        verdict, why_rule = "keep", "unique unlanded work is never deleted"
+        fact = "no pull request ended at %s (%d found, read live) and it is not an ancestor of origin/HEAD" % (short, len(prs))
+    if verdict == "delete" and rule is COPY_RULE:
+        fact += "; the Bosun reached this check only after finding no uncommitted or unpushed work"
+    return {"kind": kind, "item": item, "sha": sha, "verdict": verdict, "rule": rule % why_rule, "fact": fact}, None
+
+
+def bosun_section(hosts):
+    """The bosun-unsure class: answers, unsettled items and coverage gaps for each host's last result."""
+    out = {"hosts": [], "answers": [], "unsettled": [], "gaps": []}
+    for host in hosts:
+        try:
+            read = remote_bosun(host)
+        except RuntimeError as exc:
+            out["gaps"].append(str(exc))
+            continue
+        row = {"host": host, "result_date": read["date"], "unsure": len(read["unsure"]),
+               "answered": 0, "unreadable": 0, "no_bucket": 0, "unsettled": 0}
+        for entry, facts in zip(read["unsure"], read["facts"]):
+            bucket = entry.get("bucket")
+            if bucket == "unreadable":
+                row["unreadable"] += 1
+            elif bucket != "rule-settles":
+                row["no_bucket"] += 1
+            else:
+                answer, reason = bosun_decide(entry, facts)
+                if answer:
+                    row["answered"] += 1
+                    out["answers"].append(dict(answer, host=host, result_date=read["date"]))
+                else:
+                    row["unsettled"] += 1
+                    out["unsettled"].append({"host": host, "kind": entry["kind"], "item": entry["item"], "reason": reason})
+        out["hosts"].append(row)
+    key = lambda x: (x["host"], x["kind"], x["item"])
+    out["answers"].sort(key=key)
+    out["unsettled"].sort(key=key)
+    return out
+
+
 def parse_status_line(line):
     """(state, key, at, text, stated cause or None) of one status line, or None."""
     m = STATUS_RE.match(line.strip())
@@ -1535,6 +1737,17 @@ def render_md(doc):
             cov["captains_log"]["cards"], cov["captains_log"]["card_only"]))
     for note in cov["notes"]:
         lines.append("- " + note)
+    bosun = doc.get("bosun")
+    if bosun:
+        lines += ["", "## Bosun unsure items", ""]
+        for row in bosun["hosts"]:
+            lines.append("- %s (result of %s): %d unsure; %d answered, %d unreadable (the Bosun retries them), %d without a bucket,"
+                         " %d unsettled." % (row["host"], row["result_date"] or "unknown date", row["unsure"], row["answered"],
+                                             row["unreadable"], row["no_bucket"], row["unsettled"]))
+        if bosun["unsettled"]:
+            lines += ["", "Unsettled, for the Quartermaster (no rule settles them from facts the officer reads):", ""]
+            for u in bosun["unsettled"]:
+                lines.append("- %s %s `%s`: %s" % (u["host"], u["kind"], u["item"].replace("`", "'"), u["reason"]))
     lines += ["", "## Findings", ""]
     if not doc["findings"]:
         lines.append("- None.")
@@ -1565,6 +1778,9 @@ def render_md(doc):
 
 
 def main(argv):
+    if argv == ["bosun-read"]:
+        json.dump(bosun_read(), sys.stdout, sort_keys=True)
+        return 0
     parser = argparse.ArgumentParser(prog="fm-officer-friction.py")
     parser.add_argument("action", choices=["scan", "run"])
     parser.add_argument("--archive", required=True)
@@ -1577,6 +1793,7 @@ def main(argv):
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--model", default="none")
     parser.add_argument("--now", type=int)
+    parser.add_argument("--bosun-hosts", default="")
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date):
         parser.error("--date must be YYYY-MM-DD")
@@ -1587,6 +1804,9 @@ def main(argv):
     if not args.out:
         parser.error("run needs --out")
     now = args.now if args.now is not None else int(time.time())
+    bosun_hosts = [h for h in (x.strip() for x in args.bosun_hosts.split(",")) if h]
+    if not all(HOST_RE.match(h) for h in bosun_hosts):
+        parser.error("--bosun-hosts must be comma-separated host names")
     remote = re.match(r"^([A-Za-z0-9][A-Za-z0-9._@-]*):(/.*)$", args.archive)
     try:
         if args.model != "none":
@@ -1611,6 +1831,9 @@ def main(argv):
             except RuntimeError as exc:
                 replies_gap = exc
         doc = summarise(scanned, homes, hosts, args.model, cards, log, CHANNEL_LOGS | set(args.channel))
+        if bosun_hosts:
+            doc["bosun"] = bosun_section(bosun_hosts)
+            doc["coverage"]["notes"] += doc["bosun"]["gaps"]
         if replies_gap:
             doc["coverage"]["notes"].append(
                 "The Captain's Log replies are %s, so Start fix taps seen only there are not counted; states come"
@@ -1625,6 +1848,10 @@ def main(argv):
     triage.write_if_changed(os.path.join(args.out, args.date + ".velocity-findings.json"),
                             json.dumps(velocity_doc(doc, now, states), sort_keys=True, indent=1,
                                        ensure_ascii=False) + "\n")
+    if bosun_hosts:
+        triage.write_if_changed(os.path.join(args.out, "bosun-answers.json"), json.dumps(
+            {"schema_version": 1, "source": "friction-officer", "date": args.date, "answers": doc["bosun"]["answers"]},
+            sort_keys=True, indent=1, ensure_ascii=False) + "\n")
     print("DIGEST %s %d %s.md" % (args.date, doc["actionable"], args.date))
     return 0
 

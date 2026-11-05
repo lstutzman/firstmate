@@ -460,9 +460,11 @@ role_surgeon() {
 # channel log, state/<mate-id>.status, in this home.
 role_friction() {
   local -a args=(--now "$(now_epoch)")
-  local log line
+  local log line bosun
   log=$(line_field "$OFFICER_LINE" captains-log || true)
   [ -z "$log" ] || args+=(--captains-log "$log")
+  bosun=$(line_field "$OFFICER_LINE" bosun-hosts || true)
+  [ -z "$bosun" ] || args+=(--bosun-hosts "$bosun")
   if [ -f "$DATA/secondmates.md" ]; then
     while IFS= read -r line; do
       secondmate_registry_parse_line "$line" && args+=(--channel "$SECONDMATE_REGISTRY_ID")
