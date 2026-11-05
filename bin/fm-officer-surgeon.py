@@ -190,7 +190,8 @@ RESERVED = collections.OrderedDict([
     ("product", re.compile(r"\b(product (decision|change)s?|(change|raise|lower|set|move)[a-z]* (the )?(prices?|pricing|plan limits?|paywall))\b", re.I)),
     ("member-copy", re.compile(r"\b(change|update|reword|rewrite|edit|replace)[a-z]*\b.{0,40}?\b(wording|copy|text|microcopy)\b.{0,40}?"
                                r"\b(shown to|seen by|visible to|for) (members|users|customers)\b", re.I)),
-    ("credentials", re.compile(r"\b((rotate|revoke|regenerate|reissue)|(create|reset) (the|a|an|our|this|that|new))\b.{0,30}?\b(credentials?|secrets?|"
+    ("credentials", re.compile(r"(^|[.;:!?] +)((rotate|revoke|regenerate|reissue)( (the|a|an|our|this|that))?|(create|reset) (the|a|an|our|this|that|new))"
+                               r"( [\w-]+){0,2}? (credentials?|secrets?|"
                                r"api[- ]?keys?|tokens?|(access|account|storage|signing|private|ssh|encryption) keys?|"
                                r"(database|db|admin|service account) passwords?|connection strings?)\b", re.I)),
     ("production-actions", re.compile(r"\b((deploy|restart|promot|releas)[a-z]* (it |this )?to (production|prod)|production (deploy|restart|promotion)s?|"
@@ -658,7 +659,7 @@ def description(f, date, near=None, recurrence=None):
     return "\n".join(lines) + "\nsurgeon-fp:%s" % f["fingerprint"]
 
 
-def cluster_body(key, members, date):
+def cluster_body(key, members, recurrence=None):
     open_n = sum(1 for m in members.values() if m["state"] == "open")
     lines = ["Filed by the Ship's Surgeon from the %s results." % SOURCE_NAME["review"],
              "What it is for: the lower-severity code-review findings in %s, kept in one item so one change can work them together and none is lost." % plain_words(key),
@@ -666,6 +667,8 @@ def cluster_body(key, members, date):
              "Component: %s. Open: %d of %d. A ticked box is a finding the reviewer has marked resolved." % (key, open_n, len(members))]
     for fp, m in sorted(members.items(), key=lambda kv: (kv[1]["file"], kv[1]["title"], kv[0])):
         lines.append("- [%s] surgeon-fp:%s %s (%s)" % ("x" if m["state"] == "fixed" else " ", fp, m["title"], m["file"] or "no file"))
+    if recurrence:
+        lines.append(recurrence)
     return "\n".join(lines) + "\nsurgeon-fp:%s" % fingerprint("review", "cluster", key)
 
 
@@ -696,17 +699,22 @@ def search_hits(query, team, limit):
 
 
 def existing_issue(fp, team, cache):
-    """The open Linear item whose description carries the fingerprint, or None (a closed one is never reused).
+    """(open, closed): the open Linear item whose description carries the fingerprint, and the first closed one.
+
+    A closed item is never reused; it only lets the caller file a recurrence that names it.
 
     Linear's search is fuzzy and returns no descriptions, so a hit counts only once its
     description holds the marker; the first EXISTING_VIEWS hits are read (once a run each).
     """
     marker = "surgeon-fp:" + fp
+    closed = None
     for ident in search_hits(marker, team, 5)[:EXISTING_VIEWS]:
         issue = view_issue(ident, cache)
-        if ident and marker in str(issue.get("description") or "") and not is_closed(issue):
-            return ident
-    return None
+        if ident and marker in str(issue.get("description") or ""):
+            if not is_closed(issue):
+                return ident, closed
+            closed = closed or ident
+    return None, closed
 
 
 class Jev:
@@ -798,8 +806,8 @@ def plan_clusters(clustered, state, ledger):
     clusters = state.setdefault("clusters", {})
     assigned = {m: cfp for cfp, c in clusters.items() for m in c["members"]}
     keys = cluster_keys([f["location"] for f in clustered])
-    desired = {cfp: {"key": c["key"], "members": {m: dict(v) for m, v in c["members"].items()}, "findings": []}
-               for cfp, c in clusters.items()}
+    desired = {cfp: {"key": c["key"], "members": {m: dict(v) for m, v in c["members"].items()}, "findings": [],
+                     "recurrence": c.get("recurrence")} for cfp, c in clusters.items()}
     # A file keeps its cluster: a new finding in a file already listed joins that item, whatever the counts now say.
     by_file = {}
     for cfp, c in sorted(clusters.items()):
@@ -811,7 +819,7 @@ def plan_clusters(clustered, state, ledger):
         if cfp is None:
             key = keys[f["location"]]
             cfp = fingerprint("review", "cluster", key)
-            desired.setdefault(cfp, {"key": key, "members": {}, "findings": []})
+            desired.setdefault(cfp, {"key": key, "members": {}, "findings": [], "recurrence": None})
         member = desired[cfp]["members"].setdefault(f["fingerprint"], {"title": f["title"], "file": f["location"], "state": "open"})
         member["title"], member["file"] = f["title"], f["location"]
         desired[cfp]["findings"].append(f)
@@ -821,14 +829,14 @@ def plan_clusters(clustered, state, ledger):
         for m, member in c["members"].items():
             if review.get(m, {}).get("state") == "fixed":
                 member["state"] = "fixed"
-        body = cluster_body(c["key"], c["members"], "")
+        body = cluster_body(c["key"], c["members"], c["recurrence"])
         sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
         known = clusters.get(cfp)
         action = None if known and known.get("sha") == sha and cfp in ledger else "update" if cfp in ledger else "create"
         if not c["members"] or (not c["findings"] and action == "create"):
             continue
         plan.append({"key": c["key"], "fp": cfp, "members": c["members"], "body": body, "sha": sha,
-                     "action": action, "findings": c["findings"]})
+                     "action": action, "findings": c["findings"], "recurrence": c["recurrence"]})
     return plan
 
 
@@ -870,7 +878,7 @@ class Filer:
                 try:
                     for wait in VERIFY_SEARCH_WAITS:
                         time.sleep(wait)
-                        found = existing_issue(fp, self.args.team, self.cache)
+                        found = existing_issue(fp, self.args.team, self.cache)[0]
                         if found:
                             break
                 except LinearError as search_exc:
@@ -1021,11 +1029,14 @@ def file_findings(findings, args, date, out, state, found, jev):
                     f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run"}
                     continue
                 try:
-                    ident = existing_issue(f["fingerprint"], args.team, filer.cache)
+                    ident, closed = existing_issue(f["fingerprint"], args.team, filer.cache)
                     if ident:
                         ledger[f["fingerprint"]] = ident
                         f["filing"], f["issue_hint"] = {"action": "exists", "issue": ident}, ident
                         bumps.append(f)
+                        continue
+                    if closed:
+                        recur(f, closed)
                         continue
                     near = None
                     if not jev.dead:
@@ -1059,24 +1070,28 @@ def file_findings(findings, args, date, out, state, found, jev):
                         for f in c["findings"]:
                             f["filing"] = {"action": "not-filed", "reason": reason}
                         continue
-                    action, ident, old, body = c["action"], ledger.get(c["fp"]), None, c["body"]
+                    action, ident, old = c["action"], ledger.get(c["fp"]), None
                     if ident and is_closed(view_issue(ident, filer.cache)):
-                        old, ident, action = ident, None, "create"
-                        head, _, tail = body.rpartition("\nsurgeon-fp:")
-                        body = "%s\n%s\nsurgeon-fp:%s" % (head, recurrence_line(old, view_issue(old, filer.cache)), tail)
+                        old, ident = ident, None
                     if not ident and over_cap():
                         for f in c["findings"]:
                             f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run"}
                         continue
                     if not ident:
-                        ident = existing_issue(c["fp"], args.team, filer.cache)
+                        ident, closed = existing_issue(c["fp"], args.team, filer.cache)
+                        old = old or (None if ident else closed)
                         action = "update" if ident else "create"
+                    recurrence, body, sha = c["recurrence"], c["body"], c["sha"]
+                    if old:
+                        recurrence = recurrence_line(old, view_issue(old, filer.cache))
+                        body = cluster_body(c["key"], c["members"], recurrence)
+                        sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
                     if action == "create":
                         ident, _, _ = filer.create(c["fp"], title + " (%s)" % c["key"], body, wanted, "3")
                     else:
                         filer.update_body(ident, c["fp"], body)
                     ledger[c["fp"]] = ident
-                    state["clusters"][c["fp"]] = {"key": c["key"], "members": c["members"], "sha": c["sha"]}
+                    state["clusters"][c["fp"]] = {"key": c["key"], "members": c["members"], "sha": sha, "recurrence": recurrence}
                     error = relate(ident, old) if old else None
                     for f in c["findings"]:
                         f["filing"] = {"action": "clustered", "issue": ident, "cluster": c["key"]}

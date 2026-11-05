@@ -585,6 +585,13 @@ test_low_review_findings_are_clustered_and_ticked_off() {
   assert_contains "$(cat "$LDIR/bodies")" "Recurrence of $old (closed as Done)." "naming the closed one"
   assert_equals "$old" "$(row "$json" review c8 .filing.recurrence_of)" "and the finding says so"
   assert_not_contains "$(jq -r --arg fp "$cfp" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")" "$old" "the ledger points at the new item"
+  : > "$LDIR/updates"
+  jq '.result.findings += [{"id":"c9","severity":"medium","file":"infra/bicep/b.bicep","summary":"fourth finding in bicep"}]' \
+    "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2" > "$TMP_ROOT/clusters/r2.json"
+  mv "$TMP_ROOT/clusters/r2.json" "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2"
+  run_surgeon "$home" >/dev/null || fail "run after the recurrence"
+  assert_contains "$(cat "$LDIR/updates")" "surgeon-fp:$(fp review nightly-review c9)" "the next change updates the new cluster item"
+  assert_contains "$(cat "$LDIR/updates")" "Recurrence of $old (closed as Done)." "and keeps the line naming the closed one"
   pass "fm-officer surgeon: low review findings are clustered by component, updated in place and ticked off"
 }
 
@@ -876,10 +883,13 @@ test_reserved_classes_match_the_action_not_the_word() {
     {"fp":"r8","title":"Creates API key with predictable RNG","disposition":"new","severity":"P1"},
     {"fp":"r9","title":"Endpoint deletes records belonging to other users","disposition":"new","severity":"P1"},
     {"fp":"r10","title":"UpdateAsync updates rows without tenant filter","disposition":"new","severity":"P1"},
-    {"fp":"r11","title":"User-facing text not HTML-encoded (XSS)","disposition":"new","severity":"P1"}]'
+    {"fp":"r11","title":"User-facing text not HTML-encoded (XSS)","disposition":"new","severity":"P1"},
+    {"fp":"r13","title":"Session revoke does not clear the token cache","disposition":"new","severity":"P1"},
+    {"fp":"r14","title":"Revoke endpoint skips the token owner check","disposition":"new","severity":"P1"},
+    {"fp":"r15","title":"Token revoke leaves refresh tokens valid","disposition":"new","severity":"P1"}]'
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals "API key logged in plaintext|Creates API key with predictable RNG|Endpoint deletes records belonging to other users|Password reset token never expires|Reset token not invalidated after use|UpdateAsync updates rows without tenant filter|User-facing text not HTML-encoded (XSS)|password hash compared with ==|shallow copy of list mutates cache" \
+  assert_equals "API key logged in plaintext|Creates API key with predictable RNG|Endpoint deletes records belonging to other users|Password reset token never expires|Reset token not invalidated after use|Revoke endpoint skips the token owner check|Session revoke does not clear the token cache|Token revoke leaves refresh tokens valid|UpdateAsync updates rows without tenant filter|User-facing text not HTML-encoded (XSS)|password hash compared with ==|shallow copy of list mutates cache" \
     "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding") | .title] | sort | join("|")' "$json")" "security and code bugs that only mention a key, a token, rows or text start"
   assert_equals "credentials credentials member-copy" "$(jq -r '[.held[] | .class] | sort | join(" ")' "$json")" "a member wording change and key rotations, with or without an article, are held"
   assert_equals 1 "$(jq '.asks_for_lee | length' "$json")" "with one keyed needs-decision"
@@ -901,6 +911,21 @@ test_one_item_gets_one_start_request_a_run() {
   run_surgeon "$home" >/dev/null || fail "same-day rerun"
   assert_equals 1 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding" and .issue == "PC-9")] | length' "$json")" "which a same-day rerun repeats"
   pass "fm-officer surgeon: an item gets one start request a run, however many findings map to it"
+}
+
+test_closed_search_hit_files_a_recurrence() {
+  local home json
+  make_world closedhit "$LINEAR_ON"; home=$WORLD_HOME
+  set_pages closedhit '[]' '[{"fp":"h1","title":"Crash on save","disposition":"new","severity":"P1"}]'
+  fp sweeper pc-sweeper-intake h1 > "$LDIR/exists.txt"
+  echo Done > "$LDIR/state.PC-55"
+  run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "created PC-55" "$(row "$json" sweeper h1 '[.filing.action,.filing.recurrence_of]|join(" ")')" "with no ledger entry, a closed search hit still makes a recurrence"
+  assert_equals 0 "$(grep -c '^issue update PC-55' "$LINEAR_LOG")" "the closed item is not edited"
+  assert_contains "$(cat "$LDIR/bodies")" "Recurrence of PC-55 (closed as Done)." "the new item names it"
+  assert_equals "RELATION PC-101 --related PC-55" "$(cat "$LDIR/relations")" "and links it as related"
+  pass "fm-officer surgeon: a closed item found by fingerprint search gets a recurrence, not a plain new item"
 }
 
 test_registry_rules
@@ -936,3 +961,4 @@ test_nightly_area_tries_feature_labels_before_testing
 test_unreadable_rubric_leaves_items_to_start_later
 test_reserved_classes_match_the_action_not_the_word
 test_one_item_gets_one_start_request_a_run
+test_closed_search_hit_files_a_recurrence

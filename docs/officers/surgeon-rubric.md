@@ -59,7 +59,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   Below that the finding is filed new and the near match is noted in it.
   Without local-jev, only the fingerprint decides, and the digest says so.
 - A duplicate raises the existing item's one machine-maintained line, `Found: N times (first <date>, last <date>, by surgeon)`, in place.
-  The Surgeon never reopens an item a person closed: when the existing item is closed (its state type is completed or canceled), the finding is a recurrence, so a new item is filed with its own Found line, the line `Recurrence of <old id> (closed as <state>)` and a related link to the old item, and the ledger points at the new one.
+  The Surgeon never reopens an item a person closed: when the existing item (from the ledger, the fingerprint search or local-jev) is closed (its state type is completed or canceled), the finding is a recurrence, so a new item is filed with its own Found line, the line `Recurrence of <old id> (closed as <state>)` and a related link to the old item, and the ledger points at the new one.
   A closed cluster item is treated the same way: it is never updated again, and the cluster's next change files a new cluster item that names it.
   It adds one comment, on the item's first sighting of the day, and never a second the same day.
 - A finding already on its own cluster's list is not a new sighting.
@@ -102,7 +102,7 @@ Each class is matched by the action it asks for, not by a word appearing anywher
 - Legal text: terms, privacy policy, cookie banner, licence text.
 - Product decisions: a product decision, or changing prices, pricing, plan limits or the paywall.
 - Member-facing copy: a request to change, update or reword the wording, copy or text shown to members.
-- Credentials: a request to rotate, revoke, regenerate or reissue a secret, API key, token or service password ("Rotate SendGrid API key"), or to create or reset one ("reset the signing key"); a bug in token or key handling ("Reset token not invalidated") is a code fix and starts.
+- Credentials: a request, opening the title or a sentence, to rotate, revoke, regenerate or reissue a secret, API key, token or service password ("Rotate SendGrid API key"), or to create or reset one ("Reset the signing key"); a bug in token or key handling ("Reset token not invalidated", "Token revoke leaves refresh tokens valid") is a code fix and starts.
 - Production actions: deploying, restarting or promoting to production, or changing production data, config or settings.
 - Data-rewriting changes: dropping or renaming a table or column, a migration, backfill or script that updates or deletes existing rows, removing an enum value; an endpoint bug that deletes or updates rows is a code fix and starts.
 
