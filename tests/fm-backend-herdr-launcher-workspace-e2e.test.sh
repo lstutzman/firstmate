@@ -396,6 +396,9 @@ PRESF_REBOUND_WS=$(workspace_of_pane "$PRESF_REBOUND_PANE")
 [ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE_REBIND" ] \
   || fail "the reclaim changed the launcher workspace's tabs"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "the reclaim stole focus from the captain's workspace"
+PRESF_REBOUND_TAB=$(grep '^herdr_tab_id=' "$PRESF_META" | tail -1 | cut -d= -f2-)
+[ "$(lab tab get "$PRESF_REBOUND_TAB" | jq -r '.result.tab.label')" = fm-presF ] \
+  || fail "a reclaimed ordinary worker's tab should keep fm-<id>"
 pass "real herdr E2E: reclaiming a presentation-enabled home's destroyed endpoint lands in its workers workspace, not the launcher's"
 
 # --- 3. duplicate label, launcher in the NON-first match, driven from a real

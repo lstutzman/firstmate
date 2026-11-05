@@ -785,9 +785,12 @@ fm_backend_herdr_projection_journal_snapshot() {  # <journal> <task-id>
     && [ -n "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" ] \
     && [ -n "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" ] || return 1
   expected_label=$(fm_backend_herdr_projection_workspace_label "$id" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID")
-  expected_task_label="fm-$id"
+  # A journal written before an office's tab took its role name still carries
+  # fm-<id>, so both labels stay valid.
+  expected_task_label=$(fm_backend_herdr_task_label "$id")
   [ "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" = "$expected_label" ] \
-    && [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" = "$expected_task_label" ]
+    && { [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" = "fm-$id" ] \
+         || [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" = "$expected_task_label" ]; }
 }
 
 # fm_backend_herdr_projection_journal_token: validate and read either journal
@@ -2979,10 +2982,14 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
      || [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" != "$meta_pane" ] \
      || { [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$parent_label" ] \
           && { [ -z "$legacy_label" ] || [ "$FM_BACKEND_HERDR_JOURNAL_PARENT_LABEL" != "$legacy_label" ]; }; } \
-     || [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" != "$task_label" ]; then
+     || { [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" != "$task_label" ] \
+          && [ "$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL" != "fm-$id" ]; }; then
     echo "warning: herdr presentation binding for $id does not match its exact home, endpoint, or parent; spawning flat" >&2
     return 2
   fi
+  # The live tab carries the label the journal recorded, so the exact-shape
+  # checks and the replacement tab use that label, not the one passed in.
+  task_label=$FM_BACKEND_HERDR_JOURNAL_TASK_LABEL
   if ! fm_backend_herdr_projection_live_binding_matches \
     "$session" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID" \
     "$meta_workspace" "$meta_tab" "$meta_pane" \

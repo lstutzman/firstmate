@@ -3935,6 +3935,68 @@ test_task_label_migrate_renames_only_the_earlier_office_label() {
   pass "fm_backend_herdr_task_label_migrate: renames an office's earlier fm-<id> tab in place, and nothing else"
 }
 
+test_projection_journal_accepts_the_office_role_label_and_the_earlier_fm_label() {
+  local parent office plain dir state out
+  dir="$TMP_ROOT/journal-office-label"; state="$dir/state"; parent="$dir/parent"; office="$dir/office"; plain="$dir/plain"
+  mkdir -p "$state" "$parent/data" "$plain"
+  printf -- '- qm-office - Run the fleet. (role: quartermaster; added 2026-11-05)\n' > "$parent/data/offices.md"
+  make_office_home "$office" qm-office "$parent"
+  out=$(ROOT="$ROOT" STATE="$state" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    check() {  # <home> <id> <task-label>
+      rm -f "$STATE/$2.herdr-presentation"
+      token=$(fm_backend_herdr_projection_journal_create "$STATE" "$2") || exit 1
+      label=$(fm_backend_herdr_projection_workspace_label "$2" "$token")
+      home=$(fm_backend_herdr_projection_home_identity "$1") || exit 1
+      fm_backend_herdr_projection_journal_bind "$STATE/$2.herdr-presentation" "$2" "$home" fmtest \
+        w2 w2:t2 w2:p2 w1 firstmate "$label" "$3" || exit 1
+      if FM_HOME="$1" fm_backend_herdr_projection_journal_snapshot "$STATE/$2.herdr-presentation" "$2"; then printf ok; else printf no; fi
+      printf " "
+    }
+    check "$0" qm-office Quartermaster
+    check "$0" qm-office fm-qm-office
+    check "$0" qm-office Navigator
+    check "$1" wk7 fm-wk7
+    check "$1" wk7 Quartermaster
+  ' "$office" "$plain")
+  [ "$out" = "ok ok no ok no " ] \
+    || fail "journal validation should accept an office's role label and fm-<id>, and a worker's fm-<id> only: '$out'"
+  pass "herdr presentation journal: an office's role label and its earlier fm-<id> label both validate; a worker keeps fm-<id> only"
+}
+
+test_projection_reclaim_uses_the_label_its_journal_recorded() {
+  local parent office plain dir state out
+  dir="$TMP_ROOT/reclaim-office-label"; state="$dir/state"; parent="$dir/parent"; office="$dir/office"; plain="$dir/plain"
+  mkdir -p "$state" "$parent/data" "$plain"
+  printf -- '- qm-office - Run the fleet. (role: quartermaster; added 2026-11-05)\n' > "$parent/data/offices.md"
+  make_office_home "$office" qm-office "$parent"
+  out=$(ROOT="$ROOT" STATE="$state" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_cli() { return 1; }
+    fm_backend_herdr_projection_live_binding_matches() { printf "reached:%s " "$9"; return 1; }
+    run_case() {  # <home> <id> <journal-label> <passed-label>
+      rm -f "$STATE/$2.herdr-presentation"
+      home_real=$(cd "$1" && pwd -P)
+      token=$(fm_backend_herdr_projection_journal_create "$STATE" "$2") || exit 1
+      label=$(fm_backend_herdr_projection_workspace_label "$2" "$token")
+      fm_backend_herdr_projection_journal_bind "$STATE/$2.herdr-presentation" "$2" "$home_real" fmtest \
+        w2 w2:t2 w2:p2 w1 firstmate "$label" "$3" || exit 1
+      set +e
+      FM_HOME="$1" fm_backend_herdr_projection_reclaim_task \
+        fmtest "$STATE/$2.herdr-presentation" "$2" "$1" w2 w2:t2 w2:p2 firstmate "$4" /tmp/project 2>/dev/null
+      printf "rc:%s " "$?"
+      set -e
+    }
+    run_case "$0" qm-office Quartermaster Quartermaster
+    run_case "$0" qm-office fm-qm-office Quartermaster
+    run_case "$1" wk7 fm-wk7 fm-wk7
+    run_case "$1" wk7 Quartermaster fm-wk7
+  ' "$office" "$plain")
+  [ "$out" = "reached:Quartermaster rc:2 reached:fm-qm-office rc:2 reached:fm-wk7 rc:2 rc:1 " ] \
+    || fail "a reclaim should check the live tab under the label its journal recorded, and refuse a label it cannot own: '$out'"
+  pass "herdr presentation reclaim: an office journal under the role label or the earlier fm-<id> label reaches the live check with that label; a worker's stays fm-<id>"
+}
+
 test_create_task_earlier_label_live_refuses() {
   local dir log resp fb out status
   dir="$TMP_ROOT/earlier-live"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -6354,6 +6416,8 @@ test_workspace_find_matches_only_this_homes_own_label
 test_list_live_scoped_to_this_homes_workspace_only
 test_task_label_office_own_tab_uses_role
 test_task_label_migrate_renames_only_the_earlier_office_label
+test_projection_journal_accepts_the_office_role_label_and_the_earlier_fm_label
+test_projection_reclaim_uses_the_label_its_journal_recorded
 test_create_task_earlier_label_live_refuses
 test_create_task_earlier_label_husk_replaced
 test_list_live_finds_tasks_by_recorded_ids
