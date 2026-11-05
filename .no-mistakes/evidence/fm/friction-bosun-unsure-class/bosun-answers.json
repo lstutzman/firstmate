@@ -1,0 +1,96 @@
+{
+ "answers": [
+  {
+   "fact": "91cd8b5 is an ancestor of origin/HEAD, read live",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.8gJzNz/bosun/repo landed-b (local)",
+   "kind": "branch",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, unmerged-branch rule (content already on the default branch)",
+   "sha": "91cd8b5601f21cd6197fd2107e17e252bdbfb012",
+   "verdict": "delete"
+  },
+  {
+   "fact": "pull request https://x/pull/7 merged at 91cd8b5, read live",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.8gJzNz/bosun/repo merged-b (remote)",
+   "kind": "branch",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, unmerged-branch rule (pull request merged or closed)",
+   "sha": "91cd8b5601f21cd6197fd2107e17e252bdbfb012",
+   "verdict": "delete"
+  },
+  {
+   "fact": "pull request https://x/pull/8 is open, read live",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.8gJzNz/bosun/repo open-b (local)",
+   "kind": "branch",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, unmerged-branch rule (never while an open pull request uses it)",
+   "sha": "91cd8b5601f21cd6197fd2107e17e252bdbfb012",
+   "verdict": "keep"
+  },
+  {
+   "fact": "no pull request ended at 264710d (1 found, read live) and it is not an ancestor of origin/HEAD",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.8gJzNz/bosun/repo unique-b (local)",
+   "kind": "branch",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, unmerged-branch rule (unique unlanded work is never deleted)",
+   "sha": "264710d42102dfa34c390d867f69bb1b9ec50dcd",
+   "verdict": "keep"
+  },
+  {
+   "fact": "pull request https://x/pull/9 closed at 91cd8b5, read live; the Bosun reached this check only after finding no uncommitted or unpushed work",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.8gJzNz/bosun/copy",
+   "kind": "copy",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, rule c (pull request merged or closed)",
+   "sha": "91cd8b5601f21cd6197fd2107e17e252bdbfb012",
+   "verdict": "delete"
+  },
+  {
+   "fact": "91cd8b5 is an ancestor of origin/HEAD, read live; the Bosun reached this check only after finding no uncommitted or unpushed work",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.8gJzNz/bosun/copy-landed",
+   "kind": "copy",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, rule c (content already on the default branch)",
+   "sha": "91cd8b5601f21cd6197fd2107e17e252bdbfb012",
+   "verdict": "delete"
+  },
+  {
+   "fact": "no pull request ended at 264710d (0 found, read live) and it is not an ancestor of origin/HEAD",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.8gJzNz/bosun/copy-unique",
+   "kind": "copy",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, rule c (unique unlanded work is never deleted)",
+   "sha": "264710d42102dfa34c390d867f69bb1b9ec50dcd",
+   "verdict": "keep"
+  },
+  {
+   "fact": "pull request https://x/pull/5 closed at 91cd8b5, read live; the Bosun reached this check only after finding no uncommitted or unpushed work",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.8gJzNz/bosun/main/.claude/worktrees/wt",
+   "kind": "copy",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, rule c (pull request merged or closed)",
+   "sha": "91cd8b5601f21cd6197fd2107e17e252bdbfb012",
+   "verdict": "delete"
+  },
+  {
+   "fact": "its path is a session log or transcript",
+   "host": "okhost",
+   "item": "~/.claude/projects/x/s.jsonl",
+   "kind": "log",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6 (Agent session logs and transcripts are always kept, because they are training data)",
+   "verdict": "keep"
+  }
+ ],
+ "date": "2026-10-23",
+ "schema_version": 1,
+ "source": "friction-officer"
+}

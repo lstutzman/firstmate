@@ -1,0 +1,3 @@
+echo HOME=$HOME via sshd
+python3 -I - bosun-read
+python3 -I - bosun-read
