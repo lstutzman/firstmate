@@ -526,6 +526,70 @@ put_digest() {  # <world> <officer> <key> <n>
   printf 'DIGEST %s %s data/officers/%s/%s.md\n' "$3" "$4" "$2" "$3" > "$1/data/officers/$2/digest"
 }
 
+# upstream_world <name>: an upstream repo with 3 commits, a fork (bare origin plus a code root) that has the first, and a
+# quartermaster-style office home whose config names the upstream by path.
+upstream_world() {
+  local w up fork g
+  w=$(source_world "$1")
+  up="$w/up-work"; fork="$w/fork-root"
+  g="git -c user.email=t@t -c user.name=t"
+  mkdir -p "$up" && git -C "$up" init -q -b main && $g -C "$up" commit -q --allow-empty -m "base"
+  git clone -q --bare "$up" "$w/fork-origin.git"
+  git clone -q "$w/fork-origin.git" "$fork"
+  $g -C "$up" commit -q --allow-empty -m "up one" && $g -C "$up" commit -q --allow-empty -m "up two"
+  sed -i.bak 's/sources: tick,lane:progress,lane:surgeon:high;/sources: tick,upstream;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  mkdir -p "$w/navigator/config"
+  printf '# the upstream\n%s main origin/main\n' "$up" > "$w/navigator/config/firstmate-upstream"
+  FM_HOME="$w/navigator" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must accept upstream"
+  printf '%s\n' "$w"
+}
+
+up_check() {  # <world> <epoch>
+  FM_OFFICE_NOW=$2 FM_ROOT_OVERRIDE="$1/fork-root" FM_HOME="$1/navigator" bash "$OFFICE" check upstream
+}
+
+test_upstream_wakes_once_per_new_head() {
+  local w out g="git -c user.email=t@t -c user.name=t"
+  w=$(upstream_world upnew)
+  out=$(up_check "$w" "$SRC_NOW")
+  assert_contains "$out" "office navigator: upstream " "a new upstream head wakes the office"
+  assert_contains "$out" "2 new commit(s) not in origin/main; newest: up two | up one" "digest counts and names the commits"
+  assert_equals "" "$(up_check "$w" $((SRC_NOW + 90000)))" "the same head the next day: silent"
+  $g -C "$w/up-work" commit -q --allow-empty -m "up three"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 180000)))" "3 new commit(s)" "a newer head wakes again"
+  pass 'the upstream source wakes once per new upstream head'
+}
+
+test_upstream_is_daily_and_silent_when_nothing_new() {
+  local w g="git -c user.email=t@t -c user.name=t"
+  w=$(upstream_world upday)
+  git -C "$w/fork-origin.git" fetch -q "$w/up-work" main:main
+  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "nothing new for the fork: silent"
+  $g -C "$w/up-work" commit -q --allow-empty -m "later"
+  assert_equals "" "$(up_check "$w" $((SRC_NOW + 7200)))" "already checked today: no second fetch"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 90000)))" "1 new commit(s)" "the next day looks again"
+  pass 'the upstream source checks once a day and stays silent when the fork has everything'
+}
+
+test_upstream_failure_reports_only_when_persistent() {
+  local w
+  w=$(upstream_world upfail)
+  printf '%s/nowhere main origin/main\n' "$w" > "$w/navigator/config/firstmate-upstream"
+  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "first failure: silent"
+  assert_equals "" "$(up_check "$w" $((SRC_NOW + 7200)))" "a failure inside 24 hours: silent"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 90000)))" "unreachable since" "a failure spanning a day reports"
+  assert_equals "" "$(up_check "$w" $((SRC_NOW + 100000)))" "reported once per streak"
+  pass 'the upstream source reports a persistent fetch failure once'
+}
+
+test_upstream_without_config_is_silent() {
+  local w
+  w=$(upstream_world upnone)
+  rm -f "$w/navigator/config/firstmate-upstream"
+  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "no config: silent"
+  pass 'the upstream source is silent without config/firstmate-upstream'
+}
+
 test_register_sources_installs_trusted_shims() {
   local w out
   w=$(source_world reg)
@@ -797,6 +861,10 @@ test_status_without_a_backlog_is_empty
 test_arm_status_registers_a_silent_check
 test_disarm_status_retires_the_check
 test_arm_status_refuses_outside_an_office
+test_upstream_wakes_once_per_new_head
+test_upstream_is_daily_and_silent_when_nothing_new
+test_upstream_failure_reports_only_when_persistent
+test_upstream_without_config_is_silent
 test_register_sources_installs_trusted_shims
 test_register_sources_keeps_the_status_check
 test_shim_runs_through_the_watcher_trust_path

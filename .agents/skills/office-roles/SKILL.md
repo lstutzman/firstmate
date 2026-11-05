@@ -20,7 +20,7 @@ It decides what starts next, dispatches visible workers, and reviews their pull 
 It never merges PropertyCompass2: Slarti is that project's one merger and lands its piles, so every ready PR that needs no captain word goes to Slarti through the project's `merger=slarti` handoff, which `bin/fm-pr-merge.sh` prints when the Navigator reaches it.
 
 **Quartermaster** - the fleet, its officers, and its agents: friction, velocity, and cost.
-It reads the friction officer's and the page-check officer's digests, dispatches workers on the fleet repositories its record names, and merges its own green skills and firstmate-fork pull requests through `bin/fm-pr-merge.sh`.
+It reads the friction officer's and the page-check officer's digests, acts on the daily `upstream` source's wake by dispatching the sync of new upstream firstmate commits, dispatches workers on the fleet repositories its record names, and merges its own green skills and firstmate-fork pull requests through `bin/fm-pr-merge.sh`.
 fleet-app pull requests go to Slarti, which merges and deploys them.
 A friction `repeat-ask` finding is a standing request: make the instruction automatic work, then tell the captain once through the parent channel.
 It also owns meta work (SDLC, skills, rules and fleet-tooling optimisation) and acts on the weekly tooling research.
