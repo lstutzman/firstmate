@@ -250,37 +250,45 @@ surgeon_problem() {
     || { printf 'officer %s: writes: linear needs area: <the team PC area label every item carries>\n' "$id"; return; }
 }
 
-# office_read_problem <officer-id> <office> <field>: prints why <office>, named in the registry
-# <field>, cannot read this officer's digest, or nothing.
+# office_read_problem <officer-id> <office> <field> [main]: prints why <office>, named in the registry
+# <field>, cannot read this officer's digest, or nothing. A consumer office may read only the
+# :high lane when main, given as the fourth argument, also reads the digest.
 office_read_problem() {
-  local id=$1 c=$2 field=$3 office
+  local id=$1 c=$2 field=$3 main_reads=${4:-} office
   office=
   [[ "$c" =~ ^[a-z0-9-]+$ ]] && office=$(REGISTRY="$DATA/offices.md" registry_lines | grep -E "^- $c - " | head -n 1)
   [ -n "$office" ] \
     || { printf 'officer %s: %s "%s" is not main or an office in data/offices.md\n' "$id" "$field" "$c"; return; }
-  case ",$(line_field "$office" sources | tr -d ' ')," in
+  local srcs check=office-lane-$id
+  srcs=",$(line_field "$office" sources | tr -d ' '),"
+  case "$srcs" in
     *",lane:$id,"*) ;;
-    *) printf 'officer %s: %s office %s does not list sources: lane:%s, so it never reads this digest\n' "$id" "$field" "$c" "$id"; return ;;
+    *",lane:$id:high,"*)
+      [ "$field" = consumer ] && [ "$main_reads" != main ] \
+        && { printf 'officer %s: consumer office %s lists only sources: lane:%s:high, which drops the other findings unless main is also a consumer\n' "$id" "$c" "$id"; return; }
+      check=office-lane-$id-high ;;
+    *) printf 'officer %s: %s office %s does not list sources: lane:%s (or lane:%s:high), so it never reads this digest\n' "$id" "$field" "$c" "$id" "$id"; return ;;
   esac
   secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" \
     || { printf 'officer %s: %s office %s is not a registered second mate in data/secondmates.md\n' "$id" "$field" "$c"; return; }
   [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] \
     && { printf 'officer %s: %s office %s is remote, and a remote office cannot read this digest\n' "$id" "$field" "$c"; return; }
-  fm_custom_check_registered "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}/state" "office-lane-$id" \
-    || { printf 'officer %s: %s office %s has no registered lane:%s check (run bin/fm-office.sh register-sources in its home)\n' "$id" "$field" "$c" "$id"; return; }
+  fm_custom_check_registered "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}/state" "$check" \
+    || { printf 'officer %s: %s office %s has no registered %s check (run bin/fm-office.sh register-sources in its home)\n' "$id" "$field" "$c" "$check"; return; }
 }
 
 # consumer_problem <line>: prints why a valid line's consumer: or start-home: list misses an
 # office that reads its digest, or nothing.
 consumer_problem() {
-  local line=$1 id c problem
+  local line=$1 id c problem main_reads=
   local -a offices=()
   [[ "$line" =~ $REGISTRY_LINE_RE ]] || return 0
   id=${BASH_REMATCH[1]}
   IFS=', ' read -ra offices <<<"$(line_field "$line" consumer || true)"
+  for c in "${offices[@]}"; do [ "$c" = main ] && main_reads=main; done
   for c in "${offices[@]}"; do
     [ "$c" = main ] && continue
-    problem=$(office_read_problem "$id" "$c" consumer)
+    problem=$(office_read_problem "$id" "$c" consumer "$main_reads")
     [ -z "$problem" ] || { printf '%s\n' "$problem"; return; }
   done
   offices=()
