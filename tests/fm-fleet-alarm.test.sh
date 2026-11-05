@@ -459,6 +459,20 @@ edit_mate_summary "value['decisions_open'].append(dict(id='child-0',key='child-0
 assert_contains "$(run_alarm check)" 'holding work silent' 'a child asking its mate an open question still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
+# The navigator state: a parked child's status-source ask on a task the mate also holds as a
+# captain-hold row is the mate waiting on the captain, not the child asking the mate.
+mate 0 0 3601
+set_mate_work 2 0 4 1 1
+edit_mate_summary "value['decisions_open'][0]['id']='child-0'; value['counts']['decisions_open']=5; value['decisions_open'].append(dict(id='child-0',key='child-0',verb='needs-decision',source='status'))"
+[ -z "$(run_alarm check)" ] || fail 'a child ask on a task the mate holds as a captain hold is the mate waiting on the captain'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_work 2 0 4 1 1
+edit_mate_summary "value['counts']['decisions_open']=5; value['decisions_open'].append(dict(id='child-0',key='child-0',verb='needs-decision',source='status'))"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a child ask on a task with no captain hold still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
 mate 0 0 3601
 set_mate_work 2 0 1 1 1
 edit_mate_summary "value['holds'][0]['state']='blocked'; value['decisions_open'].append(dict(id='child-0',key='child-0',verb='blocked',source='status'))"

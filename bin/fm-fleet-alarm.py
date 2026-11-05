@@ -27,13 +27,16 @@ resolves when the condition clears.
 A secondmate whose own latest line is `working`, or `paused` with no `until` time, younger than
 working_ceiling_multiple (6) times silent_minutes, or `paused` with an `until` time less than
 silent_minutes past, while it holds work (in flight, an active child or a parked child), has asked main
-nothing open, and has no status-source ask and a complete decision list, is working a long task and
+nothing open, and has no status-source ask (one on a task it also holds as a captain-hold row
+does not count) and a complete decision list, is working a long task and
 is not silent either.
 A secondmate waiting on an open captain decision is healthy waiting and is never silent: no
-open decision row has source status (no child is asking it anything), its
+open decision row has source status unless the mate also holds that task id as a captain-hold row
+(no child is asking it anything), its
 decision list is complete and holds at least one captain-hold row, and its summary is valid or its
 only invalidity is kind child_current_unavailable. Its in-flight count need not be covered by held
-or parked work then, and a live worker beside the hold does not change that. Any status-source ask, a truncated decision list, any other
+or parked work then, and a live worker beside the hold does not change that. Any status-source ask
+on a task with no captain-hold row of the same id, a truncated decision list, any other
 invalidity kind, or in-flight work with no open captain decision still alarms.
 The Claude quota context line (every account's 7d use and carrying accounts) is appended only to
 cards whose alarms include a quota alarm (quota:, stale:, pool, ignored:, quota-read); on other
@@ -166,10 +169,14 @@ def read_json(path, limit=262144):
 
 def child_asking(summary, counts):
     # A child asking its second mate (a status-source row), or a decision list too short to tell.
+    # A status-source ask on a task the mate also holds as a captain-hold row is the mate waiting
+    # on the captain, so it is not the child asking the mate; row ids decide, never hold reasons.
     decisions = summary.get('decisions_open', [])
     if not isinstance(decisions, list) or counts['decisions_open'] > len(decisions):
         return True
-    return any(isinstance(row, dict) and row.get('source') == 'status' for row in decisions)
+    rows = [row for row in decisions if isinstance(row, dict)]
+    held = {row.get('id') for row in rows if row.get('verb') == 'captain-hold'}
+    return any(row.get('source') == 'status' and row.get('id') not in held for row in rows)
 
 
 def waiting_on_captain(summary, counts):
