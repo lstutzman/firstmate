@@ -724,7 +724,7 @@ test_lane_check_delivers_its_own_start_requests_once() {
   assert_equals "" "$(nav_check "$w" lane:progress)" "a repeat check delivers nothing again"
   rm "$w/navigator/data/office/lane-progress-starts.seen" "$w/navigator/data/office/lane-progress.seen"
   nav_check "$w" lane:progress >/dev/null
-  assert_equals 2 "$(ls "$w/navigator/state/inbox"/*.note | wc -l | tr -d ' ')" "a lost seen record replays the same request ids, adding no note"
+  assert_equals 2 "$(find "$w/navigator/state/inbox" -maxdepth 1 -name '*.note' | wc -l | tr -d ' ')" "a lost seen record replays the same request ids, adding no note"
   pass 'a lane check delivers only the start requests addressed to its own home, once'
 }
 
