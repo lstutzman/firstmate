@@ -336,6 +336,7 @@ fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mod
       [ "$is_ff" -eq 0 ] || continue
     fi
     [ "${have#*$'\n--\n'}" = "$text" ] || continue
+    [ ! -e "$dir/handled/$g" ] || f="$dir/handled/$g"
     rec=$f
     break
   done
@@ -350,7 +351,7 @@ fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mod
 # Whole file into the variable named by $2, byte-exact, without a fork.
 _fm_task_inbox_read_into() {  # <path> <var>
   local _content
-  IFS= read -r -d '' _content < "$1" 2>/dev/null
+  IFS= read -r -d '' _content 2>/dev/null < "$1"
   [ -f "$1" ] || return 1
   printf -v "$2" '%s' "$_content"
 }

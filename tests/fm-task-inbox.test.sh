@@ -475,13 +475,40 @@ test_idempotent_write_follows_concurrent_ack() {
       _original_read_into "$@"
     }
     fm_task_inbox_write_idempotent "$2" t1 "$3"
-  ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state" "$text") \
+  ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state" "$text" 2>"$state/race.err") \
     || fail "idempotent enqueue failed while acknowledgement moved its candidate"
   [ "$result" = "$state/t1.inbox/handled/${rec##*/}" ] \
     || fail "dedup did not follow the concurrently acknowledged record: $result"
+  [ ! -s "$state/race.err" ] || fail "a record vanishing mid-dedup leaked stderr: $(cat "$state/race.err")"
   count=$(find "$state/t1.inbox" -name '*.msg' | wc -l | tr -d ' ')
   [ "$count" = 1 ] || fail "acknowledgement racing dedup created a duplicate record"
   pass "inbox: idempotent enqueue follows a record concurrently moved to handled"
+}
+
+test_idempotent_write_follows_ack_after_match() {
+  local state rec result count text
+  state="$TMP_ROOT/idem-ack-after-read/state"; mkdir -p "$state"
+  text="acknowledge after dedup read"
+  rec=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "$text") \
+    || fail "ack-after-read fixture write failed"
+  result=$(FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    eval "$(declare -f _fm_task_inbox_read_into | sed "1s/_fm_task_inbox_read_into/_original_read_into/")"
+    _fm_task_inbox_read_into() {
+      _original_read_into "$@" || return 1
+      case "$1" in
+        */handled/*) ;;
+        *) mv "$1" "${1%/*}/handled/" || return 1 ;;
+      esac
+    }
+    fm_task_inbox_write_idempotent "$2" t1 "$3"
+  ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state" "$text") \
+    || fail "idempotent enqueue failed when acknowledgement followed its read"
+  [ "$result" = "$state/t1.inbox/handled/${rec##*/}" ] \
+    || fail "dedup reported a record acknowledged after its read at the root path: $result"
+  count=$(find "$state/t1.inbox" -name '*.msg' | wc -l | tr -d ' ')
+  [ "$count" = 1 ] || fail "acknowledgement after the dedup read created a duplicate record"
+  pass "inbox: idempotent enqueue reports a record acknowledged after its read at the handled path"
 }
 
 # Fixture: <count> acknowledged records 001..<count> in handled/, bodies "old steer N".
@@ -1279,6 +1306,7 @@ test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_follows_concurrent_ack
+test_idempotent_write_follows_ack_after_match
 test_idempotent_write_is_fast_with_long_handled_history
 test_idempotent_dedup_is_bounded_to_recent_window
 test_idempotent_fire_and_forget_never_matches_normal
