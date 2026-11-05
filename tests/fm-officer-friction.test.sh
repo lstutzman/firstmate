@@ -182,6 +182,47 @@ EOF
   pass "fm-officer friction: merge approval is not a missing tool; genuine missing tools still card"
 }
 
+test_token_scope_needs_a_token_permission_failure() {
+  local home json row task text want
+  local DATE=2026-10-26 T=1793033657 NOW=1793077200
+  home=$(make_world token-scope)
+  # task|key|text|expected "cause sub service"
+  local rows=(
+    "dealscoring-scale-scope|k1|dealscoring scale scope: per-key or per-token (a) or (b)|decision decision null"
+    "pc-2769-runs-scope|k2|pc-2769 runs scope: which key range, (a) last 30 days or (b) all|decision decision null"
+    "skills-pr71-merge|k3|skills PR 71 needs Lee's merge word; it edits the token scopes doc|policy merge-word null"
+    "pc-3417-merge-word|k4|pc-3417 merge word for the token scope PR|policy merge-word null"
+    "staging-bypass-token-leak|k5|Staging bypass token leak: rotate the token (scope: staging)|other other null"
+    "captain-hold-pc-sdk-10-0-403|k6|captain-hold-pc-sdk-10-0-403: pick (a) or (b)|decision decision null"
+    "pr-scope-narrow|k17|The PR scope is too narrow: (a) widen it (b) split|decision decision null"
+    "per-key-no-scope|k18|per-key design: no single scope fits, (a) or (b)|decision decision null"
+    "per-key-needs-scope|k19|per-key design needs a wider scope, (a) or (b)|decision decision null"
+    "pc-3279-cf-token-still-refused|k7|Cloudflare still refuses the agents' CLOUDFLARE_API_TOKEN for KV; the token is stored in 1Password|credential scope Cloudflare"
+    "gilligan-pc3182-access-token|k8|Cloudflare access token for gilligan-pc3182: stored in 1Password, Cloudflare Access returns forbidden|credential scope Cloudflare"
+    "op-denied|k9|(3) You do not have permission to perform this on the 1Password service account|credential scope 1Password"
+    "gh-push|k10|GitHub returns 403 Forbidden on push|credential scope GitHub"
+    "linear-api|k11|Linear API returns 403|credential scope Linear"
+    "cf-kv-write|k12|Cloudflare API 403 on KV write|credential scope Cloudflare"
+    "kv-narrow|k13|token scope too narrow for KV|credential scope null"
+    "kv-none|k14|the token has no KV scope|credential scope null"
+    "cf-env-token|k20|CLOUDFLARE_API_TOKEN lacks the KV scope|credential scope Cloudflare"
+    "op-signin|k15|op signin needed before the Cloudflare deploy|credential login 1Password"
+    "op-signed-out|k16|not currently signed in to 1Password; the GitHub deploy waits|credential login 1Password"
+  )
+  for row in "${rows[@]}"; do
+    IFS='|' read -r task key text want <<<"$row"
+    printf 'blocked [at=%s] [key=%s]: %s\n' "$T" "$key" "$text" > "$home/state/$task.status"
+  done
+  run_officer "$home" >/dev/null || fail "token-scope fixture run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  for row in "${rows[@]}"; do
+    IFS='|' read -r task key text want <<<"$row"
+    assert_equals "$want" "$(status_event "$json" "$task" "$key" '"\(.cause) \(.sub) \(.service)"')" \
+      "$task: $text"
+  done
+  pass "fm-officer friction: the token-scope finding needs a token permission failure"
+}
+
 test_status_waits_and_root_causes() {
   local home out json mate
   home=$(make_world status)
@@ -948,6 +989,7 @@ SH
 }
 
 test_merge_word_is_not_a_missing_tool
+test_token_scope_needs_a_token_permission_failure
 test_status_waits_and_root_causes
 test_stated_causes_group_blocked_lines
 test_transcript_lee_steps_and_refusals
