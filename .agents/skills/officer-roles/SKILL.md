@@ -54,6 +54,7 @@ Main leaves a digest it is not a consumer of to that office.
 2. Treat ordinary findings as evidence, not authorization; progress start requests use the standing authority and execution contract in [Progress officer](../../../docs/configuration.md#progress-officer).
 3. Route work the evidence supports through ordinary intake; file a tracker item only under the captain's standing rules for findings, and hold a real captain call through `bin/fm-captain-hold.sh hold`.
 4. Do not re-wake the captain for a digest with nothing new; the check already stays silent on repeats and empty digests.
+5. An office captures its outcome for each finding it acts on under `office-roles` "Capturing officer-finding outcomes".
 
 An officer's digest line reaches main only when its registry `consumer:` field lists `main` (the default), and reaches an office through that office's `lane:<officer-id>` wake source; the failure line always reaches main.
 A surgeon digest's `findings` are intake findings (real, won't fix, or needs a decision, with `tracked` and `filing` fields), and its `archive_findings` are the session join's.

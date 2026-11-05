@@ -1483,13 +1483,13 @@ EOF
     || fail "could not create quoted-record captain call"
   run_captain "$mate" hold quoted-record-call --reason "quoted record choice pending" \
     --origin quoted-origin >/dev/null || fail "quoted-record hold failed"
-  assert_grep 'needs-decision [key=captain-hold-quoted-record-call-1]: captain hold quoted-record-call: quoted record choice pending' \
+  assert_grep 'needs-decision [key=captain-hold-quoted-record-call-1] [cause=decision]: captain hold quoted-record-call: quoted record choice pending' \
     <(sed -E 's/ \[at=[0-9]+\]//' "$channel") "body prose was incorrectly counted as a resolution record"
 
   run_captain "$mate" hold mate-call --title "Choose the mate release" \
     --reason "release choice pending" --repo sample >/dev/null \
     || fail "mate hold failed"
-  assert_grep 'needs-decision [key=captain-hold-mate-call-1]: captain hold mate-call: release choice pending' \
+  assert_grep 'needs-decision [key=captain-hold-mate-call-1] [cause=decision]: captain hold mate-call: release choice pending' \
     <(sed -E 's/ \[at=[0-9]+\]//' "$channel") "the mate's hold did not reach the parent channel"
   run_captain "$mate" hold mate-call --reason "release choice pending" >/dev/null \
     || fail "repeated mate hold failed"
@@ -1504,8 +1504,30 @@ EOF
 
   run_captain "$mate" hold mate-call --reason "second release choice" >/dev/null \
     || fail "re-hold after release failed"
-  assert_grep 'needs-decision [key=captain-hold-mate-call-2]: captain hold mate-call: second release choice' \
+  assert_grep 'needs-decision [key=captain-hold-mate-call-2] [cause=decision]: captain hold mate-call: second release choice' \
     <(sed -E 's/ \[at=[0-9]+\]//' "$channel") "a re-held task did not open a distinct parent decision"
+  tasks_in "$mate" add cause-call "Approve the cleanup" --kind ship --repo sample >/dev/null \
+    || fail "could not create cause captain call"
+  if run_captain "$mate" hold cause-call --reason "cleanup approval" --cause bogus >/dev/null 2>&1; then
+    fail "an unknown --cause was accepted"
+  fi
+  run_captain "$mate" hold cause-call --reason "cleanup approval" --cause policy >/dev/null \
+    || fail "hold with --cause policy failed"
+  cause_line=$(grep -F 'captain-hold-cause-call-1' "$channel") || fail "cause hold did not reach the parent channel"
+  [ "$(bash -c '. "$1/bin/fm-classify-lib.sh"; status_line_cause "$2"' _ "$ROOT" "$cause_line")" = policy ] \
+    || fail "status_line_cause did not read back the written cause: $cause_line"
+  [ "$(bash -c '. "$1/bin/fm-classify-lib.sh"; status_line_cause "$2"' _ "$ROOT" "$(grep -F 'captain-hold-mate-call-2' "$channel")")" = decision ] \
+    || fail "a hold without --cause did not default to decision"
+  run_captain "$mate" hold cause-call --reason "cleanup approval" >/dev/null \
+    || fail "re-hold with a different cause failed"
+  [ "$(grep -c 'captain-hold-cause-call-1' "$channel")" = 1 ] \
+    || fail "a re-hold with a different cause duplicated the parent decision: $(cat "$channel")"
+  sed -i.bak 's/\(captain-hold-mate-call-2\]\) \[cause=decision\]/\1/' "$channel" && rm -f "$channel.bak"
+  grep -F 'captain-hold-mate-call-2' "$channel" | grep -qF 'cause=' && fail "legacy hold fixture still carries a cause"
+  run_captain "$mate" hold mate-call --reason "second release choice" >/dev/null \
+    || fail "re-hold of a legacy untagged hold failed"
+  [ "$(grep -c 'captain-hold-mate-call-2' "$channel")" = 1 ] \
+    || fail "a re-hold duplicated a legacy untagged parent decision: $(cat "$channel")"
   printf 'ship it\n' > "$decision"
   run_captain "$mate" answer mate-call --decision-file "$decision" >/dev/null \
     || fail "mate close answer failed"

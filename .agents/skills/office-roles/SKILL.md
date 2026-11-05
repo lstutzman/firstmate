@@ -45,18 +45,27 @@ A product choice is never a standing start; it goes to the captain as below.
 Until the progress officer addresses start requests to an office's own home, an office never runs a `<date>.start-requests.sh` whose `FM_HOME` is not its own home, because that file enqueues into the main home.
 In that interval the main firstmate consumes the progress digest and routes in-scope starts to the office as ordinary routed work.
 
+## Capturing officer-finding outcomes
+
+When the office decides on an officer finding, or its fix ships or is rejected, capture the outcome to the declared memory tier before reporting, following that tier's declared etiquette (docs/configuration.md "External memory tiers").
+Store a choice and its rationale as a `decision` memory, and a recurring error pattern with `mistake_note_add`.
+Tag each with this home, `officer:<id>` and the project; a correction supersedes with `memory_update` versioned, never an in-place edit or delete.
+A harness that cannot reach the MCP gets firstmate capture on its behalf from the office's report (`AGENTS.md` section 6).
+The officers stay model-free and write only their own lane; this step belongs to the office.
+
 ## Calls the office does not make
 
 A genuinely new call - one no standing rule or recorded answer settles - goes to the judge once one is deployed, and until then to the captain; the office never decides it itself.
 
 Only the captain decides a reserved merge class (payments or billing, legal text, a data-rewriting migration, a protected gate file edit that loosens a check, a production action), a product choice, member-facing copy, a credential, a destructive action, or a production change.
-For each such call, hold the task in this home with `bin/fm-captain-hold.sh hold`, then append one keyed `needs-decision [at=<epoch>] [cause=<policy|decision>] [key=<slug>]: ...` line to the parent channel; a reserved merge class uses `key=admit-<pr>-<class>`, and the main firstmate puts each call on the Captain's Log.
+For each such call, hold the task in this home with `bin/fm-captain-hold.sh hold` (`--cause policy` for a reserved-class call), then append one keyed `needs-decision [at=<epoch>] [cause=<policy|decision>] [key=<slug>]: ...` line to the parent channel; a reserved merge class uses `key=admit-<pr>-<class>`, and the main firstmate puts each call on the Captain's Log.
 An office never answers its own reserved-class call: it records the captain's words with `bin/fm-captain-hold.sh answer` only after the main firstmate relays them with that key, and only then merges.
 
 ## Merging
 
 Merge only through `bin/fm-pr-merge.sh`; its office checks are the boundary, so a refusal is reported, never worked around.
 An office never merges a change to the files that define its own authority, which its admission classifier flags as `authority`.
+The merge wrapper refuses such a PR, and `bin/fm-backlog-handoff.sh` cannot move an in-flight office task to main (it moves only Queued items from main to a second mate), so the PR waits, held for the captain, until the captain defines its route; do not invent one.
 After a merge the office performed itself, append the landed outcome with the PR's full URL to the parent channel.
 
 ## Main-home duties

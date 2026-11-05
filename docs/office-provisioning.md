@@ -141,16 +141,24 @@ FM_HOME=$NAV_HOME bin/fm-tasks-axi.sh list
 
 ## 9. After the Ship's Surgeon and `start-home:` land
 
-Add the Surgeon's `data/officers.md` line as its own documentation gives it, then register the Surgeon and retire triage, widen the Navigator's sources, and give the progress digest to the Navigator, in this order.
+Add the Surgeon's `data/officers.md` line as its own documentation gives it, then register the Surgeon and retire triage, widen the Navigator's and the Quartermaster's sources (the progress officer's `start-home:` names both offices, so both must list `lane:progress`), and give the progress digest to the Navigator, in this order.
 
 ```sh
 FM_HOME=$MAIN bin/fm-officer.sh register surgeon
 FM_HOME=$MAIN bin/fm-officer.sh retire triage
 sed -i.bak '/^- navigator - /s/sources: tick;/sources: tick,lane:progress,lane:surgeon:high;/' "$MAIN/data/offices.md"
 FM_HOME=$NAV_HOME bin/fm-office.sh register-sources
+sed -i.bak '/^- quartermaster - /s/sources: tick,lane:friction,lane:page-check;/sources: tick,lane:friction,lane:page-check,lane:progress;/' "$MAIN/data/offices.md"
+FM_HOME=$QM_HOME bin/fm-office.sh register-sources
 sed -i.bak -e '/^- progress - /s/; added /; consumer: navigator; start-home: navigator,quartermaster; added /' \
   -e '/^- surgeon - /s/; added /; consumer: main,navigator; added /' "$MAIN/data/officers.md"
 FM_HOME=$MAIN bin/fm-officer.sh register progress
 FM_HOME=$MAIN bin/fm-officer.sh register surgeon
 FM_HOME=$MAIN bin/fm-office.sh ensure
 ```
+
+### An office PR flagged `authority`
+
+An office never merges a change to the files that define its own authority, and `bin/fm-pr-merge.sh` refuses an office PR its admission classifier flags `authority`.
+`bin/fm-backlog-handoff.sh` moves only Queued items from main to a second mate, so it cannot hand an in-flight office task to main.
+Today such a PR waits, held for the captain, until the captain defines its route to a merge; no tooling provides one yet.

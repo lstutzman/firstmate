@@ -58,7 +58,8 @@ age=json.loads(sys.argv[5])
 now=int(time.time())
 summary=dict(schema='fm-secondmate-home-summary.v1',hold_classifier_schema='fm-captain-hold-buckets.v1',home=str(mate),generated_epoch=now,valid=True,counts=dict(in_flight=0,active_children=active,decisions_open=decisions,holds=0))
 (mate/'state/home-summary.json').write_text(json.dumps(summary))
-(home/'state/mate.status').write_text('working: no timestamp\n' if age is None else f'working [at={now-age}]: agent event\n')
+verb=__import__('os').environ.get('MATE_LINE','done')
+(home/'state/mate.status').write_text(f'{verb}: no timestamp\n' if age is None else f'{verb} [at={now-age}]: agent event\n')
 (home/'state/mate.meta').write_text('spawn_gen='+sys.argv[6]+'\n')
 PY_MATE
 }
@@ -148,7 +149,7 @@ summary=dict(schema='fm-secondmate-home-summary.v1',hold_classifier_schema='fm-c
 with (home/'state/mate.status').open('w') as file:
     for i in range(10000):
         file.write(f'note [at={now-4000}]: ' + 'x'*512 + '\n')
-    file.write(f'working [at={now-3601}]: ' + 'z'*200000 + '\n')
+    file.write(f'done [at={now-3601}]: ' + 'z'*200000 + '\n')
 PY_STATUS
 SECONDS=0
 out=$(run_alarm check)
@@ -399,10 +400,77 @@ exec(sys.argv[2])
 path.write_text(json.dumps(value))
 PY_EDIT
 }
+# A long task that reports sparingly: the mate's own latest line is working or paused, with work held.
+MATE_LINE="working" mate 1 0 7200
+[ -z "$(run_alarm check)" ] || fail 'a mate whose latest line is working on in-flight work is healthy'
+MATE_LINE="paused" mate 1 0 7200
+[ -z "$(run_alarm check)" ] || fail 'a mate whose latest line is paused on in-flight work is healthy'
+MATE_LINE="done" mate 1 0 7200
+assert_contains "$(run_alarm check)" 'holding work silent' 'a mate whose latest line is neither working nor paused still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+now=$(date +%s)
+mate 1 0 7200
+printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 7200))" "$(date -u -d "@$((now - 3000))" +%Y-%m-%dT%H:%MZ)" > "$HOME_FIX/state/mate.status"
+[ -z "$(run_alarm check)" ] || fail 'a declared pause that cleared under the silence window ago is healthy'
+printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 9000))" "$(date -u -d "@$((now - 7200))" +%Y-%m-%dT%H:%MZ)" > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a declared pause whose clearing time is long past still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+MATE_LINE="working" mate 1 0 7200
+python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_IDLE'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1]); value=json.loads(path.read_text()); value['counts'].update(in_flight=0,active_children=0)
+path.write_text(json.dumps(value))
+PY_IDLE
+[ -z "$(run_alarm check)" ] || fail 'a mate with no held work is idle, not silent'
+mate 0 0 0
+run_alarm check >/dev/null
+# The working ceiling defaults to 6 silence windows: 6 hours at the default 60 minutes.
+MATE_LINE="working" mate 1 0 19800
+[ -z "$(run_alarm check)" ] || fail 'a working line five and a half hours old is still a long task'
+MATE_LINE="working" mate 1 0 22200
+assert_contains "$(run_alarm check)" 'holding work silent' 'a working line past the six-hour ceiling still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+MATE_LINE="working" mate 1 0 7200
+edit_mate_summary "value['counts']['decisions_open']=1; value['decisions_open']=[dict(id='ask',key='ask',verb='needs-decision',source='status')]"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a working mate with a child asking it something still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+MATE_LINE="working" mate 1 0 7200
+edit_mate_summary "value['counts']['decisions_open']=2; value['decisions_open']=[]"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a working mate with a truncated decision list still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 7200
+printf 'working\tx [at=%s]: agent event\n' "$(($(date +%s) - 7200))" > "$HOME_FIX/state/mate.status"
+out=$(run_alarm check)
+assert_contains "$out" 'holding work silent' 'a tab inside the latest line verb is just another verb'
+case "$out" in *'inventory unavailable'*) fail "a tab inside the latest line verb must not break the roster: $out" ;; esac
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'a mate working or paused on in-progress work is healthy; a quiet or long-expired one still alarms'
+
 mate 0 0 3601
 set_mate_work 2 0 1 1 1
 edit_mate_summary "value['decisions_open'].append(dict(id='child-0',key='child-0',verb='needs-decision',source='status'))"
 assert_contains "$(run_alarm check)" 'holding work silent' 'a child asking its mate an open question still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+# The navigator state: a parked child's status-source ask on a task the mate also holds as a
+# captain-hold row is the mate waiting on the captain, not the child asking the mate.
+mate 0 0 3601
+set_mate_work 2 0 4 1 1
+edit_mate_summary "value['decisions_open'][0]['id']='child-0'; value['counts']['decisions_open']=5; value['decisions_open'].append(dict(id='child-0',key='child-0',verb='needs-decision',source='status'))"
+[ -z "$(run_alarm check)" ] || fail 'a child ask on a task the mate holds as a captain hold is the mate waiting on the captain'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_work 2 0 4 1 1
+edit_mate_summary "value['counts']['decisions_open']=5; value['decisions_open'].append(dict(id='child-0',key='child-0',verb='needs-decision',source='status'))"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a child ask on a task with no captain hold still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
 mate 0 0 3601
@@ -419,7 +487,7 @@ mate 0 0 0
 run_alarm check >/dev/null
 mate 1 0 3601
 set_mate_work 2 1 2 0
-assert_contains "$(run_alarm check)" 'holding work silent' 'a silent live worker beside captain holds still alarms'
+[ -z "$(run_alarm check)" ] || fail 'a live worker beside an open captain hold is healthy waiting'
 mate 0 0 0
 run_alarm check >/dev/null
 # Deep Thought's home summary at 2026-11-04T06:19Z, trimmed to the fields the alarm reads.
@@ -442,7 +510,7 @@ mate 0 0 3601
 dt_summary
 [ -z "$(run_alarm check)" ] || fail 'Deep Thought waiting on open captain decisions is healthy, not silent'
 edit_mate_summary "value['counts']['active_children']=1"
-assert_contains "$(run_alarm check)" 'holding work silent' 'a live worker beside captain decisions still alarms'
+[ -z "$(run_alarm check)" ] || fail 'a live worker beside Deep Thought captain decisions is healthy'
 mate 0 0 0
 run_alarm check >/dev/null
 mate 0 0 3601

@@ -136,7 +136,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Private secondmate config-reread generations with their retry and quarantine state.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
-- Verified gzip archives of aged process-event sequences under `state/archive/` (`bin/fm-retention.sh`, which the watcher runs once a day).
+- Verified gzip archives of aged process-event sequences and settled pending-reply records under `state/archive/` (`bin/fm-retention.sh`, which the watcher runs once a day).
 
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`.
 
@@ -524,6 +524,10 @@ Task meta records `backend=` only for a non-default backend; an absent `backend=
 
 - A cmux task additionally records `cmux_workspace_id=` and `cmux_surface_id=`.
 
+- An adopted task, written by `bin/fm-pr-adopt.sh <task-id> <pr-url> --mode no-mistakes --yolo <on|off> [--project <dir>]` for an open GitHub PR that has no task record in this home, records only `worktree=` (a path under `state/` that never exists), `project=`, `kind=ship`, `mode=`, `yolo=`, `adopted=1`, and `adopted_at=`, then `bin/fm-pr-check.sh` adds `pr=` and `pr_head=` from the forge.
+  It has no window, endpoint, branch, incarnation, or `office=`, so `bin/fm-pr-merge.sh` decides its merge under every unchanged guard, an office home refuses it, and `bin/fm-teardown.sh` cleans it as a windowless record; the script's header owns the field inventory and its refusals.
+  Until that cleanup, `bin/fm-crew-state.sh` reads it as state unknown with its worktree gone, which is expected rather than a stopped worker.
+
 ### Task selectors
 
 Task selectors for `fm-peek.sh`, `fm-send.sh`, and `fm-crew-state.sh` resolve centrally through `fm_backend_resolve_selector`.
@@ -545,7 +549,7 @@ Legacy tmux metadata remains cleanup-compatible when its exact window name is `f
 
 ### Herdr homes and presentation
 
-`FM_HOME` determines Herdr's home label: the primary home uses `firstmate`, and a secondmate home marked by `.fm-secondmate-home` uses `2ndmate-<secondmate-id>`.
+`FM_HOME` determines Herdr's home label: the primary home uses `firstmate`, a secondmate home marked by `.fm-secondmate-home` uses `2ndmate-<secondmate-id>`, and an office home uses its bare capitalised role name, such as `Quartermaster`.
 [`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) owns launcher-bound workspace placement, the label-only fallback, collision handling, and recovery behavior.
 
 The local `config/herdr-presentation-spaces` file instead opts a home out of, or explicitly in to, Herdr's default-on disposable single-task visual projection; [Presentation spaces](herdr-backend.md#presentation-spaces) owns its accepted values, default, Herdr version floor, migration, behavior, safety limits, recovery contract, and narrow locked session-start cleanup of exact restored idle-shell children.
@@ -632,8 +636,10 @@ Every step also names why no agent can run it, `--cause sudo|credential|policy|t
 
 The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quota readings, and registered second mates holding work without recent communication.
 Idle second mates are healthy.
-A second mate waiting on an open captain decision is also healthy: with no active child and at least one captain-hold row in its open decisions, it is not silent, whatever its in-flight count, because that decision is already on the Captain's Log.
-An open status-sourced decision (a child asking its own second mate), a truncated `decisions_open` list, or an invalid summary still alarms; a summary whose only invalidity is unavailable child liveness (`child_current_unavailable`) still qualifies.
+A second mate waiting on an open captain decision is also healthy: with at least one captain-hold row in its open decisions, it is not silent, whatever its in-flight count and even with a live worker beside the hold, because that decision is already on the Captain's Log.
+A second mate whose own latest line is `working` or `paused`, while it holds work and has no open question to main, is on a long task that reports sparingly and is not silent either: a `paused` line with an `until` time counts until that time is more than the silence window (`silent_minutes`, default 60) past, and any other such line counts while it is younger than `working_ceiling_multiple` (default 6) silence windows, so 6 hours by default.
+The alarm stays for a mate that holds work with no open captain hold and a latest line that is anything else, a declared pause whose clearing time is long past, or a `working` or open-ended `paused` line older than that ceiling.
+An open status-sourced decision (a child asking its own second mate) still alarms unless the mate also holds that same task id as a captain-hold row, which makes it the mate waiting on the captain (such an ask is suppressed for as long as the hold stays open, including a later, unrelated ask from that child); a truncated `decisions_open` list, or an invalid summary still alarms; a summary whose only invalidity is unavailable child liveness (`child_current_unavailable`) still qualifies.
 It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reads published home summaries for registered second mates without building a full fleet snapshot.
 Remote summary reads share the alarm deadline and fall back to the parent-side route-keyed cache.
 Missing, malformed, or stale home summaries from reachable homes produce an inventory alert; the configured stale-data threshold applies to summaries too.
@@ -738,8 +744,8 @@ The receipt prevents accidental publication through supported paths; it proves c
 ## Waiting worker spends no turns (config/wait-no-turns)
 
 The optional local, gitignored `config/wait-no-turns` presence flag opts this home into keeping a waiting worker from spending turns until it is answered.
-With it present, ship and scout briefs gain the `# Waiting` section and the foreground no-mistakes drive text, every brief's inbox section keeps the natural-checkpoint check and adds that a waiting worker does not poll or list its inbox because a waiting instruction rings, a pending-reply recovery waits while that mate has its own open decision or blocker (and escalates once, as a held decision, after `FM_PENDING_REPLY_HOLD_ESCALATE_SECS` of that wait), and a fire-and-forget steer whose doorbell did not land gets one later ring.
-With the file absent, generated briefs omit the waiting section and the no-poll inbox line, the drive text backgrounds the call, recovery sends during an open decision, and a fire-and-forget steer is not owed a retry ring.
+With it present, ship and scout briefs gain the `# Waiting` section and the foreground no-mistakes drive text, every brief's inbox section keeps the natural-checkpoint check and adds that a waiting worker does not poll or list its inbox because a waiting instruction rings, a pending-reply recovery waits while that mate is actually waiting, meaning its latest status event is a declared pause, a captain hold or an open keyed decision (and escalates once, as a held decision, after `FM_PENDING_REPLY_HOLD_ESCALATE_SECS` of that wait), while a mate that carries open decisions but has reported later work is still reposted once, and a fire-and-forget steer whose doorbell did not land gets one later ring.
+With the file absent, generated briefs omit the waiting section and the no-poll inbox line, the drive text backgrounds the call, recovery sends even while the mate is waiting, and a fire-and-forget steer is not owed a retry ring.
 The flag is a home-local preference and is not inherited by secondmate homes.
 
 ## No-mistakes pipeline spend (config/pipeline-spend)
@@ -950,7 +956,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `role` | `triage`, `surgeon`, `landing`, `friction`, `progress`, or `pagecheck` |
 | `cadence` | `daily HH:MM` in the home's local time: the run for yesterday's date starts at the first watcher check after that time. Or `every Nh` (N from 1 to 24): the run key is the slot `YYYY-MM-DDTHH`, slots start at local midnight and repeat every N hours until the next midnight, and the first watcher check in a slot starts that slot's run on current records. `bin/fm-registry-line-lib.sh` owns the grammar; `ensure` allows two of the officer's own periods between finished runs |
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
-| `consumer` | Optional comma-separated `main` and office ids, default `main`; each office id must be a local office in `data/offices.md` whose `sources` lists `lane:<officer-id>` (a `:high`-only lane would drop the other findings) and whose home has that check registered by `bin/fm-office.sh register-sources`; `register` refuses and `ensure` reports a consumer that misses this, and the check then wakes main as if main were listed. The check prints the `officer <id>: ... actionable finding(s)` digest line, which wakes main, only when `main` is listed, so an office that reads the digest through its own [wake source](#offices-dataofficesmd) can take it from main; the failure line is always printed |
+| `consumer` | Optional comma-separated `main` and office ids, default `main`; each office id must be a local office in `data/offices.md` whose `sources` lists `lane:<officer-id>`, or `lane:<officer-id>:high` only when `main` is also listed (the `:high` form wakes the office only for high or critical findings, so without `main` it would drop the other findings), and whose home has the matching `office-lane-<officer-id>` or `office-lane-<officer-id>-high` check registered by `bin/fm-office.sh register-sources`; `register` refuses and `ensure` reports a consumer that misses this, and the check then wakes main as if main were listed. The check prints the `officer <id>: ... actionable finding(s)` digest line, which wakes main, only when `main` is listed, so an office that reads the digest through its own [wake source](#offices-dataofficesmd) can take it from main; the failure line is always printed |
 | `archive` | Triage, surgeon and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
 | `ask-days` | Friction, optional: how many days of Lee's typed messages the repeated-ask finding compares; default 7 |
 | `app` | Pagecheck and surgeon, required: the fleet app's `https://` base URL, read with `GET` only |
@@ -958,6 +964,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `stale-days` | Pagecheck only, optional: days a card may stay asked and unanswered before it is stale; default 7 |
 | `remind-hours` | Pagecheck only, optional: hours before an unfixed finding is counted as new again; default 24 |
 | `hosts` | Triage, surgeon and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
+| `bosun-hosts` | Friction, optional: comma-separated hosts whose Bosun `last-result.json` the `bosun-unsure` class reads over `ssh -o BatchMode=yes`; unset turns the class off |
 | `captains-log` | Optional `https://` URL ending `/api/captains-log`: friction reads its cards with one `GET`, and its tap replies with one `GET <url>/replies`, and reports either unreachable as a coverage gap; progress uses its corresponding `/captains-log` page URL to link existing held cards without copying their questions |
 | `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2 with exactly the top-level keys `schema_version`, `generated_at`, `staging_sha`, `production_sha`, `records` keyed `<repo>#<pr>`, and `items` mapping each Linear id to its record keys; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
 | `team` | Landing, progress and surgeon, optional: the Linear team key to read (a surgeon that writes must use `PC`); default `PC` |
@@ -968,7 +975,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `reopen-state` | Landing only, optional: the state a Done item moves to when its linked PR never reached main (`on_main` false) or any release; default `In Progress`; `In Staging` and `Done` are refused. A Done item on main but not yet in production is release lag and is only reported |
 | `max-facts-age` | Landing only, optional: the oldest facts, in hours since their `generated_at`, the officer writes to Linear from; default 36. Older or missing `generated_at`, or facts with no `production_sha`, make no Linear write and raise a `stale-facts` finding |
 | `done-window` | Landing only, optional: how many Linear Done items one run lists, in one paged read, to find Done items no landing fact names; default 100, and 0 skips that read |
-| `start-home` | Progress, optional: comma-separated office ids. Each must pass the same checks as a `consumer` office, because the office runs the start requests for its projects; a request whose project is in that office's `dispatch:` list (a Linear item in the team, or a backlog row with only a Linear id, counts as PropertyCompass2) is written to that office's inbox instead of this home's |
+| `start-home` | Progress, optional: comma-separated office ids. Each must pass the same checks as a `consumer` office, because the office runs the start requests for its projects, except that a `lane:<officer-id>:high` source needs no `main` consumer, since start requests reach the office inbox either way; a request whose project is in that office's `dispatch:` list (a Linear item in the team, or a backlog row with only a Linear id, counts as PropertyCompass2) is written to that office's inbox instead of this home's |
 | `writes` (surgeon) | Surgeon, optional: `none` (default) files nothing; `linear` files Linear items as described under [Surgeon](#surgeon) |
 | `max-creates` | Surgeon, optional: the most items one run attempts to create; default 5. A failed create counts only once its dry run passed |
 | `area` | Surgeon, required with `writes: linear`: the one team PC area label every item carries; a label missing from team PC means the finding is reported and not filed |
@@ -979,7 +986,7 @@ Example:
 ```text
 - triage - Joins each day's archived sessions to firstmate tasks and outcomes (role: triage; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 - landing - Reconciles Linear against landing evidence (role: landing; cadence: daily 06:30; facts: slartibartfast:/home/lee/services/landing-truth/latest.json; team: PC; writes: corrections; model: none; added 2026-10-24)
-- surgeon - Joins archived sessions to tasks, then reads the nightly runs and the bug sweeper and files untracked real findings in Linear (role: surgeon; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,deepthought; app: https://fleet.example.ts.net; team: PC; writes: linear; max-creates: 5; area: Runtime; consumer: main,navigator; model: none; added 2026-11-04)
+- surgeon - Joins archived sessions to tasks, then reads the nightly runs and the bug sweeper and files untracked real findings in Linear (role: surgeon; cadence: daily 06:00; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,deepthought; app: https://fleet.example.ts.net; team: PC; writes: linear; max-creates: 5; area: ci-cd; consumer: main,navigator; model: none; added 2026-11-04)
 - friction - Finds what slowed agents down, above all waits on Lee, and proposes a fix for each (role: friction; cadence: daily 06:15; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 - progress - Starts authorised unstarted work through firstmate (role: progress; cadence: daily 07:00; team: PC; repos: example/project; requested: PC-123; model: none; added 2026-10-26)
 - page-check - Checks every fleet-app page for cards a standing rule settles, stale cards, cards shown after they were settled, and old pages (role: pagecheck; cadence: every 2h; app: https://fleet.example.ts.net; model: none; added 2026-10-31)
@@ -992,6 +999,11 @@ The friction officer also writes `<date>.velocity-findings.json`, a fleet-app ve
 Each finding in it carries a stable `id`, its `events` count and a read-only `state` (`open`, `started` with a `link`, or `settled`), and the file carries `totals` of the day's events and findings; `bin/fm-officer-friction.py`'s header owns how the state is read.
 A line in a home's `data/captain-shared.md` that says "standing rule" or "standing exception" settles a finding only when it names the finding's `id` (alone or as `friction-<id>`) or its key written `settles: <cause>/<sub>`, for example `settles: policy/merge-word`; a finding about one tool, hook or service also needs the line to name it, or the key written `settles: <cause>/<sub>/<name>`. No looser wording settles a finding.
 The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
+With `bosun-hosts` set, the friction officer also runs the `bosun-unsure` class: it answers the Bosun's `rule-settles` unsure items from fleet rules section 6 and writes the answers to `bosun-answers.json` in its lane, never into the velocity file, which fleet-app pulls.
+A file or log item that is a session log or transcript is answered keep, never delete; a branch or copy item is never treated as one. It lists the items no rule settles in its digest for the Quartermaster and reports an unreachable host as a coverage gap there, never in the velocity file; `bin/fm-officer-friction.py`'s header owns the answer shape and rules.
+Each branch or copy answer carries the full `sha` it was decided on; the Bosun must refuse an answer whose `sha` no longer matches the tip or HEAD it finds, and re-check live worktrees, open pull requests, unpushed work and uncommitted or untracked work itself before a delete (the script header owns the contract).
+The officer itself reads a copy's `git status --porcelain` before it answers delete, and keeps any copy with uncommitted or untracked work; as in the Bosun's own rule c check (fleet-app `src/bosun/cleanup.ts`), that excludes git-ignored files.
+The Bosun reading `bosun-answers.json` is a fleet-app follow-up.
 The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](#fleet-activity-ledger-configfleet-ledger) and [trace context](#trace-context-propagation-configtrace-context--fm_trace_context) lets them resolve tasks that were already cleaned up.
 
 ### Surgeon
@@ -1020,7 +1032,7 @@ Its findings are one of four kinds, each naming the page and the object so first
 | Kind | Meaning | Routed to |
 | --- | --- | --- |
 | `standing-rule` | A card Lee is shown that a standing rule already settles | cl-keeper closes it citing the rule |
-| `stale-card` | A shown card that is past its snooze date, unanswered for `stale-days`, already answered, naming a merged or closed PR, or settled by a later `resolved` status line | cl-keeper closes or corrects it |
+| `stale-card` | A shown card that is past its snooze date, unanswered for `stale-days`, already answered, naming a merged or closed PR, or settled by a later `resolved` status line; a card whose production action is still open or whose captain has not answered is not stale (the script header owns both exceptions) | cl-keeper closes or corrects it |
 | `shown-after-done` | A card shown although its record is settled: a status line resolved before the card was raised again, or the app's own card record for the Bosun source is closed | cl-keeper closes it; the source that re-raised it is fixed |
 | `page-old` | A page older than its normal gap (Bosun's results: 26 hours), never published, unreachable or unreadable (including JSON of an unexpected shape), or a live Runs job whose health is failing | the page's owner fixes the feed |
 
@@ -3240,9 +3252,10 @@ FM_SEND_SLEEP=0.4       # seconds between fm-send typed-plane submit checks
 FM_SEND_SETTLE=1        # seconds fm-send waits after a successful typed-plane submit; 0 disables
 FM_PENDING_REPLY_GRACE_SECS=120   # seconds after the request turn completes without a correlated parent report before its one recovery repost is eligible, and after the recovery turn completes before the missed-report escalation is eligible; never counted from delivery
 FM_PENDING_REPLY_HOLD_ESCALATE_SECS=86400   # seconds a wait-no-turns hold may keep a recovery repost back, counted from the request turn's completion, before the record takes its one held-decision escalation instead (bin/fm-pending-reply-lib.sh); an invalid or zero value falls back to the default
-FM_RETENTION_INTERVAL_SECS=86400   # seconds between the watcher's archive passes over the process-event inbox (bin/fm-retention.sh)
+FM_RETENTION_INTERVAL_SECS=86400   # seconds between the watcher's archive passes over the process-event inbox and pending-reply records (bin/fm-retention.sh)
 FM_RETENTION_PROCEVENT_SECS=259200   # age of a handled process-event sequence, counted from its handled marker, before its result is archived and emptied; unhandled sequences are never touched
-FM_RETENTION_MAX_ITEMS=5000   # most sequences one archive pass handles; a larger backlog drains over later passes
+FM_RETENTION_PENDING_REPLY_SECS=604800   # age of a resolved pending-reply record, counted from its resolved_epoch, before it is archived and removed; a record still escalated, unclosed, or named by a backlog-handoff wake is never touched
+FM_RETENTION_MAX_ITEMS=5000   # most sequences, and most pending-reply records, one archive pass handles; a larger backlog drains over later passes
 # sub-supervisor (bin/fm-supervise-daemon.sh); presence-gated via /afk
 FM_SUPERVISOR_BACKEND=             # optional supervisor pane backend override; tmux/herdr only, otherwise detects $TMUX_PANE then HERDR_ENV/HERDR_PANE_ID before tmux fallback
 FM_SUPERVISOR_TARGET=              # optional supervisor pane target override; tmux target or herdr <session>:<pane-id>, otherwise auto-detected

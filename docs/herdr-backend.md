@@ -103,8 +103,13 @@ When the launcher has no Herdr workspace to inherit, the adapter maintains one d
 | --- | --- |
 | Primary | `firstmate` |
 | Secondmate | `2ndmate-<secondmate-id>`, derived from its validated `.fm-secondmate-home` marker |
+| Office | Its bare capitalised role name, such as `Quartermaster` or `Navigator`, read from the parent home's `data/offices.md` line for the office id |
 
 A secondmate launched by the primary receives a narrowly scoped home override during container creation.
+
+Each task tab is labeled `fm-<id>`, except an office's own session in a flat workspace, whose tab carries the same bare role name as its workspace.
+A projected task tab and a tab minted by a destroyed-endpoint reclaim keep `fm-<id>`, including an office's.
+A tab label is display only: no lookup depends on it once a task's record holds its Herdr ids.
 
 ### Watching tasks
 
@@ -147,15 +152,22 @@ Firstmate running outside Herdr entirely has no launcher workspace to inherit, s
 That path needs the home label to identify exactly one workspace.
 Two workspaces sharing it are an unresolvable placement and refuse rather than adopting either.
 
-Avoid naming a personal workspace `firstmate` or `2ndmate-<id>` for that reason.
+Avoid naming a personal workspace `firstmate`, `2ndmate-<id>`, or an office role name such as `Quartermaster` or `Navigator` for that reason.
 Also avoid it because the adapter cannot distinguish that label collision from its own container.
+
+An office workspace still labeled `2ndmate-<id>`, and its `2ndmate-<id> workers` workspace, is renamed in place to the role label the next time that office's workspace is looked up, so a live office keeps its workspace and workers.
+The rename happens only when exactly one workspace holds the old label and none holds the new one.
+A projected worker journaled under the old parent label still reclaims its workspace.
 
 An older secondmate workspace using `firstmate-<id>` is not migrated automatically.
 Rename it manually before expecting new tasks or recovery to use it.
 
 ### Recovery and existing tasks
 
-Recovery and list-live still scan the first workspace matching the home label, because they address panes they already recorded rather than choosing where new work goes.
+Recovery and list-live find a home's tasks by the Herdr session, workspace, tab, and pane ids in that home's own task records, never by a tab label.
+A record is listed only while Herdr reports its recorded pane in the recorded tab and workspace, so a reused pane id elsewhere never matches.
+A primary therefore lists the secondmates and offices it spawned, whose records it holds, and never a secondmate's own workers.
+An `fm-<id>` tab in the first workspace matching the home label is still listed by that label only when no record for that id holds Herdr ids, which covers an orphan and a task recorded before ids were kept.
 The one recovery that does place new work is the control plane's reclaim of a destroyed endpoint.
 It mints a replacement tab through this section's ordinary placement rules, or in the workers workspace for a home with presentation spaces on, while pinning the herdr session the task's record names ([`agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
 
@@ -168,7 +180,7 @@ Closing its last tab can remove the workspace, and the next spawn recreates it.
 Each new crewmate or scout is placed in a disposable one-task workspace by default, on Herdr 0.8.0 and newer.
 This section calls that one-task workspace the projection.
 A home that turned the projection off, or an unconfigured home below that release, uses the ordinary flat layout described under [Watching and task containers](#watching-and-task-containers).
-When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task tab goes to that home's own workers workspace (`firstmate workers` or `2ndmate-<id> workers`) instead of the launcher's workspace.
+When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task tab goes to that home's own workers workspace (`firstmate workers`, `2ndmate-<id> workers`, or an office's `<Role> workers`, such as `Quartermaster workers`) instead of the launcher's workspace.
 That workspace is created unfocused on first use, found again by its exact label, and reused while it has task tabs; a claimed launcher identity is still validated first.
 If concurrent fallbacks created more than one, the first in Herdr's workspace list is used rather than refusing, because that workspace carries no identity.
 
@@ -519,7 +531,7 @@ herdr_pane_id=<pane-id>
 
 A Herdr pane id contains a colon, so the adapter splits `window=` on the first colon only.
 The recorded pane is the operational fast path.
-Workspace and tab ids support verification and cleanup but are not inferred from mutable labels during normal operation.
+Workspace and tab ids support verification, cleanup, and list-live discovery, and are never inferred from mutable labels during normal operation.
 
 ## Current transport behavior
 
@@ -528,6 +540,8 @@ Workspace and tab ids support verification and cleanup but are not inferred from
 The adapter starts and polls a named server before workspace, tab, pane, or agent calls.
 Every Herdr invocation goes through `fm_backend_herdr_cli`, which sets the environment and passes an explicit trailing `--session <name>`.
 An environment variable alone is not reliable when another Herdr server is running.
+An empty session name is refused before any Herdr call, by `fm_backend_herdr_cli` and by every adapter function that takes an optional session, rather than reaching the live default session.
+Leaving that optional session out still selects the ambient `HERDR_SESSION`, or `default`.
 
 When the selected named server is not running, the adapter launches it without these inherited values:
 
@@ -678,6 +692,10 @@ A restored same-labeled tab with a missing pane or no registered agent is a husk
 
 Create replaces only a confidently dead or no-agent husk, creates the replacement before closing the old tab, and refuses live or unknown states.
 This prevents closing the workspace's last tab before a replacement exists.
+An office tab still labeled `fm-<id>` from before offices took their role name counts as that office's tab, so a live one still refuses a second session and a husk is still replaced.
+A relaunch keeps the same tab, so it renames that exact tab from `fm-<id>` to the role name in place.
+
+Because the ids survive a restart, a task's record finds its restored tab again with no extra identifier.
 
 ### Where a restored worker resumes
 

@@ -26,6 +26,21 @@ card, a page owner fixes a page). It acts on nothing itself.
                  --stale-days, already answered, names a merged or closed PR
                  (read with `gh-axi api GET`, at most MAX_PR_LOOKUPS a run), or
                  whose keyed status line a later `resolved` line settled.
+                 Two live-decision exceptions keep this from false-flagging:
+                 * A merged PR alone does not stale a card that asks for a
+                   production action on it (deploy, production, roll out):
+                   that action is still open. The card's question, title and
+                   id are read for PRODUCTION_RE unless they ask for a
+                   merge (MERGE_RE: a merge-word card is stale once its PR
+                   merged; merely mentioning the merge is not asking).
+                   A closed-unmerged PR still flags.
+                 * A `resolved` line alone does not stale a card unless the
+                   captain answered. Evidence is a card `answer`, or a
+                   resolved line written by an answer: fm-send --resolve-key
+                   ("answered: ...") or `fm-captain-hold.sh answer`
+                   ("captain hold <id>: answered" or "...: released"). A
+                   routing or reconcile acknowledgement (decision-sweep,
+                   pending-reply, reconciled) is not evidence.
   shown-after-done  a card shown although its record is settled: its status
                  line was resolved before the card was (re)raised, or the app's
                  own card record for a facts source (GET
@@ -57,6 +72,11 @@ import time
 MAX_PR_LOOKUPS = 40
 FACTS_SOURCES = ("bosun",)
 PR_RE = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)")
+# A card names a production action when its question, title or own id matches PRODUCTION_RE and does not ask for a merge.
+PRODUCTION_RE = re.compile(r"\b(production|deploy\w*|roll(?:ed|s|ing)?[ -]?out)\b", re.I)
+MERGE_RE = re.compile(r"\bmerge[ -]words?\b|^merge\s|\bmerge (?:this|it|the PR|PR)\b", re.I)
+# A resolved status line written by an answer, as opposed to a routing or reconcile acknowledgement.
+ANSWER_RE = re.compile(r"^(?:answered:|captain hold \S+: (?:answered|released))", re.I)
 RULE_RE = re.compile(r"^\s*(?:-\s*)?standing-rule\s+([a-z0-9-]+)\s+/(.+)/\s+-\s+(.+?)\s*$", re.M)
 
 # page -> (GET path, dotted timestamp keys tried in order (newest value wins), longest normal gap in hours).
@@ -156,7 +176,7 @@ def load_rules(path):
 
 
 def settled_by_status(homes):
-    """card id -> (state, epoch) of its keyed status line's last word, when that word is `resolved`."""
+    """card id -> (epoch, text) of its keyed status line's last word, when that word is `resolved`."""
     out = {}
     for home in homes:
         for task, stream in friction.status_streams(triage.Home(home)).items():
@@ -166,7 +186,7 @@ def settled_by_status(homes):
                     last[e["key"]] = e
             for key, e in last.items():
                 if e["state"] == "resolved":
-                    out[friction.card_id(task, key)] = e["at"]
+                    out[friction.card_id(task, key)] = (e["at"], e["text"])
     return out
 
 
@@ -192,6 +212,12 @@ def words(card):
     return " ".join(str(card.get(k) or "") for k in ("question", "advice", "detail", "title", "tldr"))
 
 
+def open_production_action(card):
+    """True when the card asks for a production action, which a merged PR does not close."""
+    head = [str(card.get(k) or "") for k in ("id", "question", "title")]
+    return any(PRODUCTION_RE.search(h) for h in head) and not any(MERGE_RE.search(h) for h in head)
+
+
 def finding(kind, page, ref, title, evidence, route):
     return {"id": "%s:%s:%s" % (kind, page, ref), "kind": kind, "page": page, "title": friction.scrub(title, 110),
             "evidence": evidence, "route": route}
@@ -213,7 +239,7 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
                                    "standing rule %s settles it: %s" % (rid, friction.scrub(rule_text, 120)),
                                    "cl-keeper: close the card citing the rule"))
         asked = friction.epoch_of(c.get("reasked")) or friction.epoch_of(c.get("asked"))
-        done_at = settled.get(cid)
+        done_at, done_text = settled.get(cid, (None, ""))
         if cid in known_closed:
             out.append(finding("shown-after-done", page, cid, title,
                                "the app's own record for this card is closed but the page shows it %s" % c.get("state"),
@@ -225,7 +251,7 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
                                        time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(done_at)),
                                        time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(asked))),
                                    "cl-keeper: close the card; fix the source that re-raises it"))
-            else:
+            elif c.get("answer") or ANSWER_RE.match(done_text.strip()):
                 out.append(finding("stale-card", page, cid + ":resolved", title, "its status line was resolved elsewhere",
                                    "cl-keeper: close the card"))
         until = friction.epoch_of(c.get("until"))
@@ -239,6 +265,8 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
             out.append(finding("stale-card", page, cid + ":answered", title, "already answered but still shown", "cl-keeper: close"))
         for repo, number in PR_RE.findall(text):
             state = pr_state(repo, number, cache, budget)
+            if state == "merged" and open_production_action(c):
+                continue
             if state in ("merged", "closed"):
                 out.append(finding("stale-card", page, "%s:%s#%s" % (cid, repo, number), title,
                                    "names %s#%s, which is %s" % (repo, number, state), "cl-keeper: close or correct"))

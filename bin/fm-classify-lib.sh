@@ -379,9 +379,11 @@ status_is_paused_or_captain_held() {  # <status-line>
 # does any other later event. A captain-held line counts only while it is the
 # latest event. Bounded like last_status_line: only a tail window made wholly of
 # resolved events widens the read to the whole file.
-status_declared_wait_line() {  # <status-file>
-  local f=$1 last verb resolve legacy_re
-  last=$(last_status_line "$f")
+# With <exclude-key-prefixes> (space-separated), lines keyed under any of them
+# are read as absent, for a caller that writes such lines into the same log.
+status_declared_wait_line() {  # <status-file> [<exclude-key-prefixes>]
+  local f=$1 ex=${2-} last verb resolve legacy_re
+  last=$(_fm_status_latest_event "$f" "$ex")
   if status_is_paused_or_captain_held "$last"; then
     printf '%s\n' "$last"
     return 0
@@ -390,9 +392,35 @@ status_declared_wait_line() {  # <status-file>
   status_line_verb "$last" verb
   [ "$verb" = "$resolve" ] || return 0
   legacy_re="^[[:space:]]*(${FM_CAPTAIN_RE:-$FM_CLASSIFY_CAPTAIN_RE_DEFAULT})"
-  tail -n "$FM_CLASSIFY_EVENT_WINDOW_LINES" "$f" 2>/dev/null \
+  tail -n "$FM_CLASSIFY_EVENT_WINDOW_LINES" "$f" 2>/dev/null | _fm_status_exclude_keys "$ex" \
     | _fm_status_declared_wait_scan "$resolve" "$legacy_re" \
-    || _fm_status_declared_wait_scan "$resolve" "$legacy_re" < "$f" || :
+    || _fm_status_exclude_keys "$ex" < "$f" | _fm_status_declared_wait_scan "$resolve" "$legacy_re" || :
+}
+
+# The status lines on stdin without those keyed under any of the
+# space-separated <exclude-key-prefixes>; all of them when there are none.
+_fm_status_exclude_keys() {  # <exclude-key-prefixes>
+  local re='' p
+  for p in $1; do re="$re${re:+|}$p"; done
+  if [ -z "$re" ]; then
+    command cat
+  else
+    grep -avE -- "\\[key=($re)" || :
+  fi
+}
+
+# last_status_line's latest event, read without the excluded keys' lines.
+_fm_status_latest_event() {  # <status-file> <exclude-key-prefixes>
+  local f=$1 scan
+  if [ -z "$2" ]; then
+    last_status_line "$f"
+    return 0
+  fi
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  if ! scan=$(tail -n "$FM_CLASSIFY_EVENT_WINDOW_LINES" "$f" 2>/dev/null | _fm_status_exclude_keys "$2" | _fm_status_event_scan); then
+    scan=$(_fm_status_exclude_keys "$2" < "$f" | _fm_status_event_scan) || :
+  fi
+  printf '%s\n' "${scan##*$'\n'}"
 }
 
 # An open KEYED needs-decision is a declared wait too, for wedge and staleness
@@ -402,14 +430,16 @@ status_declared_wait_line() {  # <status-file>
 # needs-decision keeps today's behaviour. Kept apart from
 # status_declared_wait_line, whose callers read that line as paused or
 # captain-held only; status_wait_line joins the two. Prints the line, or nothing.
-status_open_keyed_decision_line() {  # <status-file>
+# <exclude-key-prefixes> is as for status_declared_wait_line; <open-set-fn>
+# (default status_open_decisions) names the fold that answers "open".
+status_open_keyed_decision_line() {  # <status-file> [<exclude-key-prefixes>] [<open-set-fn>]
   local f=$1 last verb key
-  last=$(last_status_line "$f")
+  last=$(_fm_status_latest_event "$f" "${2-}")
   status_line_verb "$last" verb
   [ "$verb" = needs-decision ] || return 0
   key=$(_fm_decision_key "$last" "") || return 0
   [ -n "$key" ] || return 0
-  status_open_decisions "$f" | awk -F'\t' -v k="$key" '$1 == k { found = 1 } END { exit !found }' || return 0
+  _fm_open_set_has "$("${3:-status_open_decisions}" "$f")" "$key" || return 0
   printf '%s\n' "$last"
 }
 
@@ -424,11 +454,12 @@ status_is_keyed_decision() {  # <status-line>
 }
 
 # The declared wait for wedge and staleness classification: the status file's
-# declared wait line, else its open keyed needs-decision line.
-status_wait_line() {  # <status-file>
+# declared wait line, else its open keyed needs-decision line. The optional
+# arguments are passed through to both.
+status_wait_line() {  # <status-file> [<exclude-key-prefixes>] [<open-set-fn>]
   local line
-  line=$(status_declared_wait_line "$1")
-  [ -n "$line" ] || line=$(status_open_keyed_decision_line "$1")
+  line=$(status_declared_wait_line "$1" "${2-}")
+  [ -n "$line" ] || line=$(status_open_keyed_decision_line "$1" "${2-}" "${3-}")
   printf '%s' "$line"
 }
 
@@ -1304,7 +1335,8 @@ EOF
 # it keeps working, so the task is not waiting on any of them. Pending-reply
 # recovery and a fire-and-forget retry ring consult this set and leave a task
 # alone while it is non-empty.
-# Folds with the cursor-backed status_open_decisions_incremental: the watcher
+# status_open_decisions_cached is the unfiltered set; it folds with the
+# cursor-backed status_open_decisions_incremental: the watcher
 # asks this once per open pending-reply record every poll, and the whole-file
 # fold re-reads and forks per line of a log that only ever grows. That fold
 # answers from its persisted cursor, which it can only keep current by writing
@@ -1315,8 +1347,8 @@ EOF
 # reason, such as an unwritable or full state directory) this answers from the
 # read-only whole-file status_open_decisions, so whether a task is held never
 # depends on a write succeeding.
-status_own_open_decisions() {  # <status-file>
-  local f=$1 open cf cursor='' size ident expected line prefix
+status_open_decisions_cached() {  # <status-file>
+  local f=$1 open cf cursor='' size ident expected
   open=$(status_open_decisions_incremental "$f") || open=''
   cf=$(_fm_open_decisions_cursor_path "$f")
   if [ -f "$cf" ] && [ ! -L "$cf" ]; then
@@ -1330,6 +1362,12 @@ status_own_open_decisions() {  # <status-file>
   if [ -z "$cursor" ] || [ -z "$size" ] || [ -z "$ident" ] || [ "$cursor" != "$expected" ]; then
     open=$(status_open_decisions "$f")
   fi
+  [ -z "$open" ] || printf '%s\n' "$open"
+}
+
+status_own_open_decisions() {  # <status-file>
+  local open line prefix
+  open=$(status_open_decisions_cached "$1")
   [ -n "$open" ] || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} remote-reply-continuity- captain-hold-; do
@@ -2639,13 +2677,24 @@ EOF
 # answering, so none of them count as the task's communication. Prints null
 # when no such line exists.
 status_agent_event_age() {  # <observed-status-log> <contract-path> <now-epoch>
-  local status_log=$1 path=$2 now=$3 ranges
-  [ -f "$status_log" ] || { printf 'null'; return 0; }
+  _status_agent_event_scan "$1" "$2" "$3" age
+}
+
+# The mate's own latest stamped line, by the same rule as the age above; prints nothing when it
+# has none. The fleet alarm reads its verb and declared `until` to tell a mate working or paused
+# on in-progress work from one that went quiet.
+status_agent_event_line() {  # <observed-status-log> <contract-path> <now-epoch>
+  _status_agent_event_scan "$1" "$2" "$3" line
+}
+
+_status_agent_event_scan() {  # <observed-status-log> <contract-path> <now-epoch> <age|line>
+  local status_log=$1 path=$2 now=$3 mode=$4 ranges
+  [ -f "$status_log" ] || { [ "$mode" = line ] || printf 'null'; return 0; }
   ranges=$(status_home_appends_ranges "$path") || ranges=
   # One pass: ledger ranges are ascending (status_home_appends_covers), so
   # merge them once and walk them alongside the lines; the stamp rule is
   # _fm_status_at_epoch's.
-  LC_ALL=C awk -v ranges="$ranges" -v now="$now" '
+  LC_ALL=C awk -v ranges="$ranges" -v now="$now" -v mode="$mode" '
     BEGIN {
       n = 0
       count = split(ranges, rows, "\n")
@@ -2654,7 +2703,7 @@ status_agent_event_age() {  # <observed-status-log> <contract-path> <now-epoch>
         if (n && f[1] + 0 <= hi[n]) { if (f[2] + 0 > hi[n]) hi[n] = f[2] + 0; continue }
         lo[++n] = f[1] + 0; hi[n] = f[2] + 0
       }
-      j = 1; offset = 0; age = "null"
+      j = 1; offset = 0; age = "null"; last = ""
     }
     {
       start = offset; end = start + length($0) + 1; offset = end
@@ -2671,9 +2720,9 @@ status_agent_event_age() {  # <observed-status-log> <contract-path> <now-epoch>
       if (index(substr(rest, close_at + 1), "[at=")) next
       if (value !~ /^[0-9]+$/ || value ~ /^0[0-9]/ || length(value) > 12) next
       if (value + 0 > now + 0) next
-      age = now - value
+      age = now - value; last = $0
     }
-    END { printf "%s", age }
+    END { if (mode == "line") printf "%s", last; else printf "%s", age }
   ' "$status_log"
 }
 

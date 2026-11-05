@@ -364,6 +364,83 @@ test_workspace_label_secondmate_marker_trims_whitespace() {
   pass "fm_backend_herdr_workspace_label: trims whitespace around the marker's secondmate id"
 }
 
+# make_office_home <home> <id> [<parent-home>]: an office home as
+# fm-home-seed.sh leaves it - matching .fm-office and .fm-secondmate-home
+# markers and a charter with the office heading - and, when given, a parent.
+make_office_home() {
+  local home=$1 id=$2 parent=${3:-}
+  mkdir -p "$home/data"
+  printf '%s\n' "$id" > "$home/.fm-secondmate-home"
+  printf '%s\n' "$id" > "$home/.fm-office"
+  printf '# Office authority\n' > "$home/data/charter.md"
+  [ -z "$parent" ] || printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+}
+
+test_workspace_label_office_home_uses_bare_registered_role() {
+  local parent home out
+  parent="$TMP_ROOT/office-parent"; mkdir -p "$parent/data"
+  # The role field is not first: the registry grammar allows fields in any order.
+  printf -- '- qm-office - Run the fleet. (runs-on: slartibartfast; role: quartermaster; wip: 3; added 2026-11-04)\n- nav - Lead. (role: navigator; runs-on: slartibartfast; added 2026-11-04)\n' > "$parent/data/offices.md"
+  home="$TMP_ROOT/office-home"
+  make_office_home "$home" qm-office "$parent"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "Quartermaster" ] || fail "an office home should resolve to its capitalised registered role, got '$out'"
+  # No registry to read: the office id stands in for the role.
+  rm -f "$home/.fm-secondmate-parent"
+  printf 'alchemist\n' > "$home/.fm-secondmate-home"; printf 'alchemist\n' > "$home/.fm-office"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "Alchemist" ] || fail "an office with no readable registry should use its id, got '$out'"
+  pass "fm_backend_herdr_workspace_label: an office home resolves to the bare capitalised role"
+}
+
+test_workspace_ensure_renames_a_legacy_office_workspace_in_place() {
+  local dir log resp fb home out status
+  home="$TMP_ROOT/office-legacy-home"
+  make_office_home "$home" quartermaster
+  dir="$TMP_ROOT/ensure-office-legacy"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w5","label":"2ndmate-quartermaster"},{"workspace_id":"w6","label":"2ndmate-quartermaster workers"}]}}\n' > "$resp/1.out"
+  printf '{"result":{}}\n' > "$resp/2.out"
+  printf '{"result":{}}\n' > "$resp/3.out"
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w5","label":"Quartermaster"},{"workspace_id":"w6","label":"Quartermaster workers"}]}}\n' > "$resp/4.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest FM_HOME="$home" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp other-home' "$ROOT" 2>&1 )
+  status=$?
+  expect_code 0 "$status" "a legacy-labeled office workspace must be adopted"$'\n'"$out"
+  [ "$out" = w5 ] || fail "the office should reuse its legacy workspace w5, got '$out'"
+  assert_contains "$(cat "$log")" $'workspace\x1frename\x1fw5\x1fQuartermaster\x1f--session' "the legacy office workspace was not renamed to its role"
+  assert_contains "$(cat "$log")" $'workspace\x1frename\x1fw6\x1fQuartermaster workers' "the legacy office workers workspace was not renamed"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' "a legacy office workspace must be renamed, not duplicated"
+  pass "fm_backend_herdr_workspace_ensure: an office's legacy 2ndmate workspaces are renamed in place and reused"
+}
+
+test_workspace_ensure_leaves_legacy_office_workspace_when_role_label_exists() {
+  local dir log resp fb home out
+  home="$TMP_ROOT/office-legacy-both"
+  make_office_home "$home" navigator
+  dir="$TMP_ROOT/ensure-office-legacy-both"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"workspaces":[{"workspace_id":"w2","label":"Navigator"},{"workspace_id":"w5","label":"2ndmate-navigator"}]}}\n' > "$resp/1.out"
+  cp "$resp/1.out" "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest FM_HOME="$home" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp other-home' "$ROOT" 2>&1 )
+  [ "$out" = w2 ] || fail "an office with a role-labeled workspace should use it, got '$out'"
+  assert_not_contains "$(cat "$log")" $'workspace\x1frename' "a legacy workspace must not be renamed onto an existing role label"
+  pass "fm_backend_herdr_workspace_ensure: a legacy office workspace is never renamed onto an existing role label"
+}
+
+test_workspace_label_non_office_secondmate_keeps_2ndmate_label() {
+  local home out
+  home="$TMP_ROOT/plain-sm-with-mismatched-office"; mkdir -p "$home"
+  printf 'plain-sm\n' > "$home/.fm-secondmate-home"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "2ndmate-plain-sm" ] || fail "a non-office second mate must keep '2ndmate-<id>', got '$out'"
+  printf 'someone-else\n' > "$home/.fm-office"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_label' "$ROOT" )
+  [ "$out" = "2ndmate-plain-sm" ] || fail "an .fm-office marker naming another id is not an office, got '$out'"
+  pass "fm_backend_herdr_workspace_label: a non-office second mate keeps '2ndmate-<id>'"
+}
+
 test_workspace_label_empty_marker_falls_back_to_primary() {
   local home
   home="$TMP_ROOT/secondmate-home-empty"; mkdir -p "$home"
@@ -3591,6 +3668,77 @@ test_projection_reclaim_refusal_matrix_is_non_mutating() {
   pass "herdr presentation reclaim: legacy, cross-home, ambiguous, live/unknown, and focus-unknown cases refuse without mutation"
 }
 
+test_projection_reclaim_accepts_an_office_legacy_parent_label() {
+  local dir state office plain home home_real out
+  dir="$TMP_ROOT/projection-reclaim-office-legacy"; state="$dir/state"; office="$dir/office"; plain="$dir/plain"
+  mkdir -p "$state" "$plain"
+  make_office_home "$office" quartermaster
+  printf 'plain\n' > "$plain/.fm-secondmate-home"
+  out=$(ROOT="$ROOT" STATE="$state" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_cli() { return 1; }
+    fm_backend_herdr_projection_live_binding_matches() { printf "reached:%s\n" "$7"; return 1; }
+    run_case() {
+      home=$1 legacy=$2 current=$3
+      home_real=$(cd "$home" && pwd -P)
+      rm -f "$STATE/office-t1.herdr-presentation"
+      token=$(fm_backend_herdr_projection_journal_create "$STATE" office-t1) || exit 1
+      label=$(fm_backend_herdr_projection_workspace_label office-t1 "$token")
+      fm_backend_herdr_projection_journal_bind \
+        "$STATE/office-t1.herdr-presentation" office-t1 "$home_real" fmtest \
+        w2 w2:t2 w2:p2 w1 "$legacy" "$label" fm-office-t1 || exit 1
+      set +e
+      FM_HOME="$home" fm_backend_herdr_projection_reclaim_task \
+        fmtest "$STATE/office-t1.herdr-presentation" office-t1 "$home" w2 w2:t2 w2:p2 "$current" fm-office-t1 /tmp/project 2>/dev/null
+      printf "rc:%s\n" "$?"
+      set -e
+    }
+    run_case "$0" 2ndmate-quartermaster Quartermaster
+    run_case "$1" 2ndmate-other 2ndmate-plain
+  ' "$office" "$plain")
+  [ "$out" = $'reached:Quartermaster\nrc:2\nrc:2' ] \
+    || fail "an office journal bound under its legacy parent label should pass the parent check and only that one: $out"
+  pass "herdr presentation reclaim: an office child journaled under the legacy 2ndmate parent label still reaches its live binding check"
+}
+
+test_projection_order_office_role_is_a_parent_but_a_personal_space_is_not() {
+  local dir log resp fb mover mover_log out status between
+  for between in Notes Quartermaster; do
+    dir="$TMP_ROOT/projection-order-top-level-$between"; mkdir -p "$dir/responses"
+    log="$dir/log"; resp="$dir/responses"; mover="$dir/mover"; mover_log="$dir/mover.log"
+    : > "$log"; : > "$mover_log"
+    printf '%s\n' "{\"result\":{\"workspaces\":[{\"workspace_id\":\"w1\",\"label\":\"firstmate\"},{\"workspace_id\":\"w2\",\"label\":\"$between\"},{\"workspace_id\":\"w3\",\"label\":\"└ its-child · p:QqWwEeRrTtYyUuIiOoPpAa\"},{\"workspace_id\":\"w4\",\"label\":\"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe\"}]}}" > "$resp/1.out"
+    printf '%s\n' '{"client":{"version":"0.7.4","protocol":16},"server":{"running":true}}' > "$resp/2.out"
+    # shellcheck disable=SC2016
+    printf '%s\n' '{"schemas":{"request":{"oneOf":[{"properties":{"method":{"const":"workspace.move"}}}],"$defs":{"WorkspaceMoveParams":{"required":["workspace_id","insert_index"],"properties":{"insert_index":{"type":"integer"}}}}}}}' > "$resp/3.out"
+    printf '%s\n' '{"sessions":[{"name":"fmtest","running":true,"socket_path":"/tmp/fmtest.sock"}]}' > "$resp/4.out"
+    cat > "$mover" <<SH
+#!/usr/bin/env bash
+printf '%s\t%s\t%s\n' "\$1" "\$2" "\$3" >> "\$FM_FAKE_MOVER_LOG"
+printf '%s\n' '{"id":"fm-workspace-move","result":{"type":"workspace_list","workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w4","label":"└ new · p:ZyXwVuTsRqPoNmLkJiHgFe"},{"workspace_id":"w2","label":"$between"},{"workspace_id":"w3","label":"└ its-child · p:QqWwEeRrTtYyUuIiOoPpAa"}]}}'
+SH
+    chmod +x "$mover"
+    fb=$(make_herdr_fakebin "$dir")
+    out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_HERDR_SCRIPT_STATUS=1 \
+      FM_BACKEND_HERDR_WORKSPACE_MOVER="$mover" FM_FAKE_MOVER_LOG="$mover_log" \
+      bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_focus_snapshot() { printf "w1\tw1:t1"; }; fm_backend_herdr_projection_focus_restore() { return 0; }; fm_backend_herdr_projection_order_best_effort fmtest w4 firstmate' "$ROOT" 2>&1)
+    status=$?
+    [ "$status" -eq 0 ] || fail "ordering past '$between' must not fail the spawn: $out"
+    case "$between" in
+      Notes)
+        assert_contains "$out" "ambiguous workspace layout" "a personal 'Notes' workspace was treated as a firstmate parent"
+        [ ! -s "$mover_log" ] || fail "a child after a personal workspace must leave the layout unmoved: $(cat "$mover_log")"
+        ;;
+      *)
+        [ -z "$out" ] || fail "an office parent's child block was reported ambiguous: $out"
+        [ "$(cat "$mover_log")" = "$(cd /tmp && pwd -P)/fmtest.sock"$'\t'"w4"$'\t'"1" ] \
+          || fail "an office parent block prevented the owning-parent insertion: $(cat "$mover_log")"
+        ;;
+    esac
+  done
+  pass "herdr presentation ordering: an office role workspace is a top-level parent and a personal 'Notes' workspace is not"
+}
+
 test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
   local dir state home home_real log resp fb journal token label out calls create_line close_line agent_line boundary_mutations
   dir="$TMP_ROOT/projection-reclaim-exact"; state="$dir/state"; home="$dir/home"
@@ -3748,6 +3896,139 @@ test_list_live_scoped_to_this_homes_workspace_only() {
   assert_not_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''list'$'\x1f''--workspace'$'\x1f''w1' \
     "list_live must never query the primary's (or a sibling secondmate's) workspace"
   pass "fm_backend_herdr_list_live: scoped to this home's own workspace, never a sibling home's"
+}
+
+# --- lookup by recorded ids, office tab label, empty-session guard ----------
+
+test_task_label_office_own_tab_uses_role() {
+  local parent home out
+  parent="$TMP_ROOT/task-label-parent"; mkdir -p "$parent/data"
+  printf -- '- qm-office - Run the fleet. (role: quartermaster; added 2026-11-05)\n' > "$parent/data/offices.md"
+  home="$TMP_ROOT/task-label-office"
+  make_office_home "$home" qm-office "$parent"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_task_label qm-office' "$ROOT" )
+  [ "$out" = Quartermaster ] || fail "an office's own tab should carry its bare role name, got '$out'"
+  out=$( FM_HOME="$home" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_task_label wk7' "$ROOT" )
+  [ "$out" = fm-wk7 ] || fail "a worker spawned from an office home should keep fm-<id>, got '$out'"
+  mkdir -p "$TMP_ROOT/task-label-primary"
+  out=$( FM_HOME="$TMP_ROOT/task-label-primary" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_task_label qm-office' "$ROOT" )
+  [ "$out" = fm-qm-office ] || fail "a non-office home's task should keep fm-<id>, got '$out'"
+  pass "fm_backend_herdr_task_label: an office's own tab is its role name; every other task keeps fm-<id>"
+}
+
+test_task_label_migrate_renames_only_the_earlier_office_label() {
+  local parent home dir log resp fb
+  parent="$TMP_ROOT/label-migrate-parent"; mkdir -p "$parent/data"
+  printf -- '- qm-office - Run the fleet. (role: quartermaster; added 2026-11-05)\n' > "$parent/data/offices.md"
+  home="$TMP_ROOT/label-migrate-office"
+  make_office_home "$home" qm-office "$parent"
+  dir="$TMP_ROOT/label-migrate"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tab":{"tab_id":"w5:t1","label":"fm-qm-office"}}}\n' > "$resp/1.out"
+  printf '{"result":{"tab":{"tab_id":"w5:t1","label":"My notes"}}}\n' > "$resp/3.out"
+  fb=$(make_herdr_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HOME="$home" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_task_label_migrate fmtest w5:t1 qm-office; fm_backend_herdr_task_label_migrate fmtest w5:t1 qm-office; fm_backend_herdr_task_label_migrate fmtest w5:t1 wk7' "$ROOT" \
+    || fail "task_label_migrate should never fail its caller"
+  assert_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''rename'$'\x1f''w5:t1'$'\x1f''Quartermaster' "an office tab still labeled fm-<id> was not renamed to its role"
+  [ "$(grep -c $'\x1f''rename'$'\x1f' "$log")" = 1 ] || fail "only the earlier fm-<id> label may be renamed, never a label someone chose:"$'\n'"$(cat "$log")"
+  [ "$(grep -c $'\x1f''tab'$'\x1f''get'$'\x1f' "$log")" = 2 ] || fail "a non-office task must not even read its tab:"$'\n'"$(cat "$log")"
+  pass "fm_backend_herdr_task_label_migrate: renames an office's earlier fm-<id> tab in place, and nothing else"
+}
+
+test_create_task_earlier_label_live_refuses() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/earlier-live"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t2","label":"fm-quartermaster","workspace_id":"w1"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"panes":[{"pane_id":"w1:p2","tab_id":"w1:t2"}]}}\n' > "$resp/2.out"
+  printf '{"result":{"pane":{"pane_id":"w1:p2"}}}\n' > "$resp/3.out"
+  printf '{"result":{"agent":{"agent_status":"idle"}}}\n' > "$resp/4.out"
+  printf '%s\n' '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w1:p2","shell_pid":4242,"foreground_process_group_id":4243,"foreground_processes":[{"pid":4243,"name":"node","argv0":"pi"}]}}}' > "$resp/5.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 Quartermaster /tmp/proj "" fm-quartermaster' "$ROOT" 2>&1 )
+  status=$?
+  [ "$status" -ne 0 ] || fail "a live office session still under its earlier fm-<id> label must refuse a second one"
+  assert_contains "$out" "already exists" "create_task did not report the earlier-labeled live tab"
+  assert_not_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''create' "create_task must not start a second office session beside a live earlier one"
+  pass "fm_backend_herdr_create_task: a live tab under the task's earlier fm-<id> label still refuses a duplicate"
+}
+
+test_create_task_earlier_label_husk_replaced() {
+  local dir log resp fb out tab pane
+  dir="$TMP_ROOT/earlier-husk"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t2","label":"fm-quartermaster","workspace_id":"w1"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"panes":[{"pane_id":"w1:p2","tab_id":"w1:t2"}]}}\n' > "$resp/2.out"
+  printf '{"error":{"code":"pane_not_found","message":"pane w1:p2 not found"}}\n' > "$resp/3.out"
+  printf '{"result":{"tab":{"tab_id":"w1:t3"},"root_pane":{"pane_id":"w1:p3"}}}\n' > "$resp/4.out"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t3","label":"Quartermaster","workspace_id":"w1"}]}}\n' > "$resp/6.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 Quartermaster /tmp/proj "" fm-quartermaster' "$ROOT" ) \
+    || fail "an earlier-labeled husk should be replaced, not refused"
+  read -r tab pane <<EOF
+$out
+EOF
+  [ "$tab $pane" = "w1:t3 w1:p3" ] || fail "create_task should echo the new tab/pane ids, got '$out'"
+  assert_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''create'$'\x1f''--workspace'$'\x1f''w1'$'\x1f''--cwd'$'\x1f''/tmp/proj'$'\x1f''--label'$'\x1f''Quartermaster' \
+    "the replacement tab should carry the role label"
+  assert_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''close'$'\x1f''w1:t2' "the earlier-labeled husk was not closed"
+  pass "fm_backend_herdr_create_task: an earlier fm-<id> husk is replaced by a tab under the new label"
+}
+
+test_list_live_finds_tasks_by_recorded_ids() {
+  local dir log resp fb out home rec
+  dir="$TMP_ROOT/list-live-ids"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$TMP_ROOT/list-live-ids-home"; mkdir -p "$home/state"
+  rec() {  # <id> <session> <ws> <tab> <pane>
+    printf 'window=%s:%s\nbackend=herdr\nherdr_session=%s\nherdr_workspace_id=%s\nherdr_tab_id=%s\nherdr_pane_id=%s\n' \
+      "$2" "$5" "$2" "$3" "$4" "$5" > "$home/state/$1.meta"
+  }
+  rec moved fmtest w1 w1:t9 w1:p9
+  rec office fmtest w5 w5:t1 w5:p1
+  rec other elsewhere w1 w1:t4 w1:p4
+  # Records are read in name order: moved, office, then other (another session, no call).
+  # 1: moved's recorded pane id now sits in a different tab - never a match.
+  printf '{"result":{"pane":{"pane_id":"w1:p9","tab_id":"w1:t3","workspace_id":"w1"}}}\n' > "$resp/1.out"
+  # 2: office's pane is exactly where its record says, under its role label.
+  printf '{"result":{"pane":{"pane_id":"w5:p1","tab_id":"w5:t1","workspace_id":"w5"}}}\n' > "$resp/2.out"
+  # 3-5: the label fallback in this home's own workspace.
+  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w5","label":"Quartermaster"}]}}\n' > "$resp/3.out"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t4","label":"fm-other"},{"tab_id":"w1:t5","label":"fm-orphan"},{"tab_id":"w1:t6","label":"notes"}]}}\n' > "$resp/4.out"
+  printf '{"result":{"panes":[{"pane_id":"w1:p5","tab_id":"w1:t5"}]}}\n' > "$resp/5.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HOME="$home" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_list_live fmtest' "$ROOT" )
+  [ "$out" = $'fmtest:w5:p1\tfm-office\nfmtest:w1:p5\tfm-orphan' ] \
+    || fail "list_live should list the recorded task wherever its tab is and whatever it is labelled, plus only unrecorded fm-<id> tabs by label, got:"$'\n'"$out"
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''get'$'\x1f''w5:p1' "list_live did not verify the recorded pane live"
+  pass "fm_backend_herdr_list_live: finds tasks by recorded ids verified live, never by title once ids are recorded"
+}
+
+test_empty_session_refused_before_any_herdr_call() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/empty-session"; mkdir -p "$dir/responses" "$dir/state"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  fb=$(make_herdr_fakebin "$dir")
+  run_empty() {  # <shell snippet>
+    PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest FM_T_STATE="$dir/state" \
+      bash -c '. "$0/bin/backends/herdr.sh"; '"$1" "$ROOT" 2>&1
+  }
+  out=$(run_empty 'fm_backend_herdr_container_ensure /tmp launcher-home ""'); status=$?
+  [ "$status" -ne 0 ] || fail "container_ensure must refuse an explicitly empty session"
+  assert_contains "$out" "empty session name" "container_ensure did not name the empty session"
+  out=$(run_empty 'fm_backend_herdr_cli "" workspace list'); status=$?
+  [ "$status" -ne 0 ] || fail "fm_backend_herdr_cli must refuse an empty session"
+  out=$(run_empty 'fm_backend_herdr_presentation_release_supported ""'); status=$?
+  expect_code 2 "$status" "release_supported with an empty session must be indeterminate"$'\n'"$out"
+  # shellcheck disable=SC2016 # FM_T_STATE expands in the child shell.
+  out=$(run_empty 'fm_backend_herdr_presentation_default_supported "$FM_T_STATE" ""'); status=$?
+  [ "$status" -ne 0 ] || fail "default_supported must not report support for an empty session"
+  out=$(run_empty 'fm_backend_herdr_list_live ""'); status=$?
+  [ "$status" -ne 0 ] || fail "list_live must refuse an empty session"
+  [ ! -s "$log" ] || fail "an empty session must be refused before any herdr call, but herdr ran:"$'\n'"$(cat "$log")"
+  # Leaving the session out still means the ambient one.
+  run_empty 'fm_backend_herdr_container_ensure /tmp launcher-home' >/dev/null
+  assert_contains "$(cat "$log")" $'\x1f''--session'$'\x1f''fmtest' "an omitted session should still resolve to the ambient HERDR_SESSION"
+  pass "herdr adapter: an explicitly empty session name refuses before any herdr call; an omitted one stays ambient"
 }
 
 # --- target parsing, key normalization ---------------------------------------
@@ -5940,6 +6221,10 @@ test_version_check_refuses_missing_herdr
 test_workspace_label_primary_home_no_marker
 test_workspace_label_secondmate_home_uses_marker_id
 test_workspace_label_secondmate_marker_trims_whitespace
+test_workspace_label_office_home_uses_bare_registered_role
+test_workspace_label_non_office_secondmate_keeps_2ndmate_label
+test_workspace_ensure_renames_a_legacy_office_workspace_in_place
+test_workspace_ensure_leaves_legacy_office_workspace_when_role_label_exists
 test_workspace_label_empty_marker_falls_back_to_primary
 test_workspace_label_different_secondmates_get_different_labels
 test_cli_helper_sets_env_and_appends_trailing_session_flag
@@ -6062,9 +6347,17 @@ test_presentation_session_lock_path_rejects_malformed_socket
 test_projection_order_rejects_malformed_socket
 test_projection_reclaim_refusal_matrix_is_non_mutating
 test_projection_reclaim_replaces_only_exact_husk_and_advances_binding
+test_projection_reclaim_accepts_an_office_legacy_parent_label
+test_projection_order_office_role_is_a_parent_but_a_personal_space_is_not
 test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk
 test_workspace_find_matches_only_this_homes_own_label
 test_list_live_scoped_to_this_homes_workspace_only
+test_task_label_office_own_tab_uses_role
+test_task_label_migrate_renames_only_the_earlier_office_label
+test_create_task_earlier_label_live_refuses
+test_create_task_earlier_label_husk_replaced
+test_list_live_finds_tasks_by_recorded_ids
+test_empty_session_refused_before_any_herdr_call
 test_parse_target
 test_normalize_key
 test_capture_calls_pane_read

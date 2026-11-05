@@ -471,17 +471,25 @@ test_consumer_office_must_read_the_digest() {
   nav_office "$home" tick,lane:progress
   sed -i.bak 's/model: none;/model: none; consumer: navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
   out=$(officer "$home" ensure)
-  assert_contains "$out" 'consumer office navigator does not list sources: lane:triage' "an office without the lane source is reported"
+  assert_contains "$out" 'consumer office navigator does not list sources: lane:triage (or lane:triage:high)' "an office without the lane source is reported"
   out=$(officer "$home" register triage 2>&1) && fail "register must refuse a consumer office that never reads the digest"
 
   nav_office "$home" lane:triage:high
   out=$(officer "$home" ensure)
-  assert_contains "$out" 'consumer office navigator does not list sources: lane:triage' "a high-only lane drops findings and is reported"
+  assert_contains "$out" 'consumer office navigator lists only sources: lane:triage:high, which drops the other findings unless main is also a consumer' "a high-only lane with no main consumer drops findings and is reported"
+  out=$(officer "$home" register triage 2>&1) && fail "register must refuse a high-only consumer office when main does not read the digest"
+  sed -i.bak 's/consumer: navigator;/consumer: main,navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
+  officer "$home" register triage >/dev/null || fail "register must accept a high-only consumer office when main also reads the digest"
+  assert_equals "" "$(officer "$home" ensure)" "consumer: main,navigator with a lane:triage:high source is a valid line"
+  rm -f "$home/../navigator/state/office-lane-triage-high.check.sh"
+  out=$(officer "$home" ensure)
+  assert_contains "$out" 'consumer office navigator has no registered office-lane-triage-high check' "a :high source whose check is not registered is reported"
+  sed -i.bak 's/consumer: main,navigator;/consumer: navigator;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"
 
   nav_office "$home" lane:triage
   rm -f "$home/../navigator/state/office-lane-triage.check.sh"
   out=$(officer "$home" ensure)
-  assert_contains "$out" 'consumer office navigator has no registered lane:triage check' "a lane source whose check is not registered is reported"
+  assert_contains "$out" 'consumer office navigator has no registered office-lane-triage check' "a lane source whose check is not registered is reported"
 
   printf -- '- navigator - nav (host: deepthought; root: /r; home: /r/navigator; scope: office; projects: PropertyCompass2; added 2026-11-04)\n' > "$home/data/secondmates.md"
   out=$(officer "$home" ensure)
@@ -535,6 +543,9 @@ test_start_home_office_must_read_the_progress_digest() {
   nav_office "$home" tick,lane:progress
   officer "$home" register progress >/dev/null || fail "register must accept a start-home office that reads the digest"
   assert_equals "" "$(officer "$home" ensure)" "a start-home office with the lane source is a valid line"
+  nav_office "$home" tick,lane:progress:high
+  officer "$home" register progress >/dev/null || fail "register must accept a start-home office on the :high lane"
+  assert_equals "" "$(officer "$home" ensure)" "a start-home office with only the :high lane source is a valid line"
   pass "fm-officer: a start-home office must read the progress digest through its own lane source"
 }
 

@@ -3976,7 +3976,7 @@ freshen_spawn_worktree_base() { # <worktree> [<base-branch>]
     }
     return 0
   fi
-  if ! git -C "$worktree" fetch --quiet origin; then
+  if ! fm_git_retry git -C "$worktree" fetch --quiet origin; then
     echo "error: could not fetch origin for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
     return 1
   fi
@@ -3993,7 +3993,7 @@ freshen_spawn_worktree_base() { # <worktree> [<base-branch>]
     }
   fi
   target="origin/$default"
-  if ! git -C "$worktree" fetch --quiet origin "+refs/heads/$default:refs/remotes/origin/$default"; then
+  if ! fm_git_retry git -C "$worktree" fetch --quiet origin "+refs/heads/$default:refs/remotes/origin/$default"; then
     echo "error: could not fetch '$target' for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
     return 1
   fi
@@ -4155,6 +4155,11 @@ if [ "$RELAUNCH" -eq 1 ]; then
     T=$RELAUNCH_TARGET
     WT_TARGET=$T
     SES=${T%%:*}
+    # An office tab an earlier release labeled fm-<id> takes its role name
+    # here, because a relaunch keeps the same tab.
+    if [ "$BACKEND" = herdr ] && [ "$KIND" = secondmate ]; then
+      FM_HOME="$WT" fm_backend_herdr_task_label_migrate "$HERDR_SES" "$HERDR_TAB_ID" "$ID"
+    fi
   else
     # The recorded endpoint is authoritatively gone, so there is nothing to
     # adopt: create ONE fresh endpoint for the same task, opened directly in the
@@ -4328,6 +4333,7 @@ else
             exit 1
           }
         fi
+        fm_backend_herdr_workspace_migrate_legacy "$HERDR_SES"
         if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then
           herdr_projection_existing_meta_allows_flat "$STATE/$ID.meta" || exit 1
         fi
@@ -4370,6 +4376,7 @@ else
           ! fm_backend_herdr_presentation_default_supported "$STATE" "$HERDR_SES"; then
           HERDR_LAUNCHER_RELATIONSHIP=launcher-home
         elif spawn_herdr_presentation_order_lock_acquire "$HERDR_SES"; then
+          fm_backend_herdr_workspace_migrate_legacy "$HERDR_SES"
           # The projected child is placed and bound UNDER this launcher's exact
           # parent workspace. Its own herdr pane identity names that workspace
           # directly; the label lookup is only the fallback for a launcher with
@@ -4449,7 +4456,10 @@ else
       HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_CONTAINER_RAW#*$'\t'}
       HERDR_SES=${CONTAINER%%:*}
       HERDR_WORKSPACE_ID=${CONTAINER#*:}
-      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$W" "$SPAWN_PANE_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
+      # An office's own tab shows its role name; fm-<id> stays the earlier
+      # label create_task still treats as this task's tab.
+      HERDR_TAB_LABEL=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_task_label "$ID")
+      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$SPAWN_PANE_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W") || exit 1
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
@@ -6474,6 +6484,10 @@ if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
 fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
+# The earlier refresh ran before the item moved to In flight, so republish now;
+# otherwise the summary reads "live child state has no in-flight backlog item"
+# until some later event refreshes it.
+"$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 
 SPAWN_DELIVERY=
 [ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"

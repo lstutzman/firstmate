@@ -13,8 +13,8 @@
 # the marker and answer only in its visible conversation. The parent must notice
 # the missing correlated report without scraping that conversation, send exactly
 # one automatic recovery request asking for a repost through the parent channel
-# (held back, when config/wait-no-turns is present, while the mate waits on its
-# own open decision or blocker), and
+# (held back, when config/wait-no-turns is present, while the mate is actually
+# waiting: see fm_pending_reply_mate_wait_line), and
 # escalate once if the recovery turn also completes without a correlated
 # report. A repost held back that way for longer than a bound (see
 # FM_PENDING_REPLY_HOLD_ESCALATE_SECS) is escalated once instead of being
@@ -39,6 +39,9 @@
 #   parent_status=          absolute path of parent state/<task_id>.status
 #   parent_status_scan_signature=
 #   request_summary=        short sanitized summary (no secrets by design)
+#   request_prs=            comma-separated GitHub PR URLs named anywhere in
+#                           the full request text (the summary is truncated),
+#                           empty when none; evidence for bin/fm-pending-reply-sweep.sh
 #   created_epoch=          when the expectation was created
 #   delivered_epoch=        when the marked request was confirmed delivered
 #                           (empty until delivery; delivery never resolves)
@@ -66,7 +69,8 @@
 #                           escalation was closed again (see the escalation
 #                           lifecycle note below); empty until then
 #   resolved_epoch=
-#   resolved_via=           status | document | helper | empty
+#   resolved_via=           status | document | helper | operator-resolve-key |
+#                           sweep | empty
 #   wrong_home_hits=        count of corr sightings under the secondmate home
 #   wrong_home_first_sighting= encoded path:line identity of the first sighting
 #   wrong_home_sightings=   comma-separated encoded path:line identities
@@ -91,6 +95,9 @@
 # fm-send --resolve-key (bin/fm-send.sh header): it must speak the close note
 # owned below (fm_pending_reply_resolved_note), because a bare answered: note is
 # not a reserved-key transition and would leave the decision open.
+# A close made outside the record that way (or by bin/fm-pending-reply-sweep.sh)
+# settles the record too, through fm_pending_reply_settle_closed_escalation;
+# otherwise it would stay escalated and be re-checked on every poll.
 #
 # Retryable undelivered escalation: a delivery-unknown escalation reports that
 # the request may never have reached the mate, so the request stays the owner's
@@ -151,6 +158,7 @@ _FM_PENDING_REPLY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/n
 
 FM_PENDING_REPLY_SCHEMA='fm-pending-reply.v1'
 FM_PENDING_REPLY_CORR_RE='corr=[A-Fa-f0-9]{16}'
+FM_PENDING_REPLY_PR_URL_RE='https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+'
 FM_PENDING_REPLY_GRACE_DEFAULT=120
 FM_PENDING_REPLY_HOLD_ESCALATE_DEFAULT=86400
 
@@ -337,7 +345,7 @@ fm_pending_reply_embed_corr() {  # <message> <corr_id> <result-var>
 # Does not deliver anything. Fails if parent paths cannot be prepared.
 fm_pending_reply_create() {  # <parent-home> <state-dir> <task_id> <request-text>
   local parent_home=$1 state=$2 task_id=$3 request_text=$4
-  local dir rec corr now summary status_path tmp
+  local dir rec corr now summary status_path tmp request_prs
   [ -n "$parent_home" ] && [ -n "$state" ] && [ -n "$task_id" ] || return 2
   dir=$(fm_pending_reply_dir "$state")
   mkdir -p "$dir" || return 1
@@ -353,6 +361,7 @@ fm_pending_reply_create() {  # <parent-home> <state-dir> <task_id> <request-text
   fi
   now=$(fm_pending_reply_now)
   summary=$(fm_pending_reply_summarize "$request_text")
+  request_prs=$(printf '%s\n' "$request_text" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true)
   status_path="$state/${task_id}.status"
   # Prefer absolute parent_status when parent_home/state resolve.
   case "$status_path" in
@@ -372,6 +381,7 @@ parent_home=$parent_home
 parent_status=$status_path
 parent_status_scan_signature=
 request_summary=$summary
+request_prs=$request_prs
 created_epoch=$now
 delivered_epoch=
 phase=awaiting_report
@@ -979,6 +989,17 @@ fm_pending_reply_hold_escalation_due() {  # <completed-epoch> <now-epoch>
   [ $(($2 - $1)) -ge "$bound" ]
 }
 
+# status_wait_line for the wait-no-turns hold, read without the lines supervisors
+# write into the mate's log under their reserved keys (this library's
+# escalations, the remote-reply continuity blocker), so one record's held
+# escalation never ends the wait the next record is held on. The open-key check
+# uses the cursor-backed fold: this runs once per open record every poll.
+fm_pending_reply_mate_wait_line() {  # <status-file>
+  status_wait_line "$1" \
+    "${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} remote-reply-continuity-" \
+    status_open_decisions_cached
+}
+
 # Deliver the recovery message once. Caller must hold phase awaiting_report with
 # turn completed and grace elapsed. Uses FM_PENDING_REPLY_SEND_HOOK when set
 # (tests), otherwise invokes fm-send with FM_PENDING_REPLY_EXISTING_CORR so a
@@ -1012,13 +1033,14 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
   task_id=$(fm_pending_reply_get "$rec" task_id)
   # A remote mate's report may exist and simply not have been mirrored yet.
   fm_pending_reply_missing_report_is_evidence "$state" "$task_id" "$completed" || return 1
-  # config/wait-no-turns: a mate waiting on its own open decision or blocker
-  # is never poked. The recovery stays unattempted until the answer lands.
+  # config/wait-no-turns: a mate actually waiting (its latest event a declared
+  # pause, a captain hold or an open keyed decision) is never poked; a mate
+  # that merely carries open decisions while it keeps working is. The recovery stays unattempted until the answer lands.
   # Past the hold bound the record escalates once instead of waiting on, which
   # moves it out of awaiting_report so the held repost is not re-checked on
   # every later poll; before the bound the mate is simply left alone.
   if [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ]; then
-    if [ -n "$(status_own_open_decisions "$state/$task_id.status")" ]; then
+    if [ -n "$(fm_pending_reply_mate_wait_line "$state/$task_id.status")" ]; then
       if fm_pending_reply_hold_escalation_due "$completed" "$now"; then
         fm_pending_reply_maybe_escalate "$state" "$corr" held 2>/dev/null || true
       fi
@@ -1195,6 +1217,14 @@ fm_pending_reply_escalation_payload() {  # <record-path> <kind>
   printf '%s: task=%s pending-reply-id=%s request=%s' "$token" "$task_id" "$corr" "$summary"
 }
 
+# Cause tag each escalation kind carries (vocabulary: status_line_cause in
+# bin/fm-classify-lib.sh). held is waiting on the mate's own open decision, so
+# decision; delivery-unknown, recovery-delivery and missed are all waiting on
+# another agent (its inbox or its report), so external.
+fm_pending_reply_escalation_cause() {  # <kind>
+  case "$1" in held) printf decision ;; *) printf external ;; esac
+}
+
 # The escalation line this library published for <corr_id>, or empty. A legacy
 # unkeyed escalation is matched and closed under the shared default key while
 # that exact escalation remains open. If an unrelated decision has since taken
@@ -1212,6 +1242,7 @@ fm_pending_reply_escalation_line() {  # <status-file> <record-path> <corr_id>
       case "$untimed" in
         "blocked [key=$own_key]: $payload"|"blocked: $payload") found=$line; break ;;
         "blocked [key=$own_key]: $payload "*|"blocked: $payload "*) found=$line; break ;;
+        "blocked [key=$own_key] [cause="*"]: $payload"|"blocked [key=$own_key] [cause="*"]: $payload "*) found=$line; break ;;
       esac
     done
   done < <(grep -aF -- "pending-reply-id=$corr" "$status_file" 2>/dev/null)
@@ -1288,6 +1319,81 @@ EOF
   fm_pending_reply_set "$rec" escalation_closed_epoch "$now"
 }
 
+# 0 when a live bin/fm-backlog-handoff.sh receiver-wake marker names <corr_id>:
+# that owner still needs the record to exist exactly as it is.
+fm_pending_reply_wake_marker_names() {  # <state-dir> <corr_id>
+  grep -qsF -- "$2" "$1"/.backlog-handoff-*.wake-pending
+}
+
+# The latest line in <status-file> that closed the escalation decision of
+# <corr_id> in this library's vocabulary (fm_pending_reply_resolved_note), or empty.
+fm_pending_reply_escalation_close_line() {  # <status-file> <corr_id>
+  local key line found=''
+  key=$(fm_pending_reply_escalation_key "$2")
+  while IFS= read -r line; do
+    [ "$(status_line_verb "$line")" = resolved ] || continue
+    [ "$(_fm_decision_key "$line" "")" = "$key" ] || continue
+    case "$(status_line_note "$line")" in pending-reply-resolved:*) found=$line ;; esac
+  done < <(grep -aF -- "[key=$key]" "$1" 2>/dev/null)
+  printf '%s' "$found"
+}
+
+# 0, printing the close line, when escalated record <corr_id> is provably settled
+# outside the record - by an operator fm-send --resolve-key, or by
+# bin/fm-pending-reply-sweep.sh. The proof is both facts at once: a close line
+# for the record's own key in its parent status
+# (fm_pending_reply_escalation_close_line), and that key absent from the
+# open-decision fold. Any other record - another phase, a decision still open,
+# no such close, one a backlog-handoff wake still names, or one never confirmed
+# delivered (that request stays its owner's to resend; see the retryable
+# undelivered escalation note above) - returns 1. Read-only.
+fm_pending_reply_closed_escalation_line() {  # <state-dir> <corr_id>
+  local state=$1 corr=$2 rec parent_status close
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ -f "$rec" ] || return 1
+  [ "$(fm_pending_reply_get "$rec" phase)" = escalated ] || return 1
+  [ -n "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || return 1
+  ! fm_pending_reply_wake_marker_names "$state" "$corr" || return 1
+  parent_status=$(fm_pending_reply_get "$rec" parent_status)
+  [ -n "$parent_status" ] || return 1
+  close=$(fm_pending_reply_escalation_close_line "$parent_status" "$corr")
+  [ -n "$close" ] || return 1
+  case $'\n'"$(status_open_decisions "$parent_status")" in
+    *$'\n'"$(fm_pending_reply_escalation_key "$corr")"$'\t'*) return 1 ;;
+  esac
+  printf '%s' "$close"
+}
+
+# Settle an escalated record that fm_pending_reply_closed_escalation_line proves
+# settled, so the watcher stops re-checking it every poll. Returns 0 only when
+# this call settled the record.
+fm_pending_reply_settle_closed_escalation() {  # <state-dir> <corr_id> <via>
+  # Lock handling as in fm_pending_reply_try_resolve.
+  local state=$1 corr=$2 lock rc=0
+  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+  STATE=$state
+  lock="$state/.pending-reply-$corr.lock"
+  # Deliberately undirected: bin/fm-wake-lib.sh is expanded once at the
+  # fm_pending_reply_try_resolve site.
+  . "$_FM_PENDING_REPLY_LIB_DIR/fm-wake-lib.sh"
+  fm_lock_acquire_wait "$lock" || return 1
+  _fm_pending_reply_settle_closed_escalation_locked "$@" || rc=$?
+  fm_lock_release "$lock"
+  return "$rc"
+}
+
+_fm_pending_reply_settle_closed_escalation_locked() {  # <state-dir> <corr_id> <via>
+  local state=$1 corr=$2 via=$3 rec close at
+  close=$(fm_pending_reply_closed_escalation_line "$state" "$corr") || return 1
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  at=$(status_line_at_epoch "$close") || at=$(fm_pending_reply_now)
+  # phase is written last, so a failed write leaves a record the sweep retries.
+  fm_pending_reply_set "$rec" resolved_epoch "$at" || return 1
+  fm_pending_reply_set "$rec" resolved_via "$via" || return 1
+  fm_pending_reply_set "$rec" escalation_closed_epoch "$at" || return 1
+  fm_pending_reply_set "$rec" phase resolved
+}
+
 # Escalate once after a missed recovery report or failed delivery outcome.
 # Retains the durable unresolved record. Never loops.
 fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
@@ -1315,7 +1421,7 @@ fm_pending_reply_maybe_escalate() {  # <state-dir> <corr_id>
 _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   local state=$1 corr=$2
   local rec phase completed now payload parent_status line kind first display
-  local delivered task_id meta sm_home remote_host grace age key new_episode
+  local delivered task_id meta sm_home remote_host grace age key new_episode legacy_line
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   phase=$(fm_pending_reply_get "$rec" phase)
@@ -1335,7 +1441,7 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
       [ -n "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || return 1
       fm_pending_reply_hold_escalation_due "$completed" "$(fm_pending_reply_now)" || return 1
       [ -e "${FM_CONFIG_OVERRIDE:-${FM_HOME:-}/config}/wait-no-turns" ] || return 1
-      [ -n "$(status_own_open_decisions "$state/$(fm_pending_reply_get "$rec" task_id).status")" ] || return 1
+      [ -n "$(fm_pending_reply_mate_wait_line "$state/$(fm_pending_reply_get "$rec" task_id).status")" ] || return 1
       fm_pending_reply_missing_report_is_evidence "$state" \
         "$(fm_pending_reply_get "$rec" task_id)" "$completed" || return 1
       ;;
@@ -1395,7 +1501,8 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
   [ -n "$parent_status" ] || return 1
   mkdir -p "$(dirname "$parent_status")" 2>/dev/null || return 1
   key=$(fm_pending_reply_escalation_key "$corr")
-  line="blocked [key=$key]: $payload"
+  legacy_line="blocked [key=$key]: $payload"
+  line="blocked [key=$key] [cause=$(fm_pending_reply_escalation_cause "$kind")]: $payload"
   # A record that already escalated reaches here again only after a reset, so
   # a closed decision means the operator settled the earlier episode and this
   # loss is a new one. While the decision is open the identical line is a retry.
@@ -1406,7 +1513,8 @@ _fm_pending_reply_maybe_escalate_locked() {  # <state-dir> <corr_id>
       *) new_episode=0 ;;
     esac
   fi
-  if [ "$new_episode" -eq 0 ] || ! status_event_recorded "$parent_status" "$line"; then
+  # An identical untagged line written before the cause tag existed is the same retry.
+  if [ "$new_episode" -eq 0 ] || { ! status_event_recorded "$parent_status" "$line" && ! status_event_recorded "$parent_status" "$legacy_line"; }; then
     printf '%s\n' "$(status_stamp_line "$line")" >> "$parent_status" 2>/dev/null || return 1
   fi
   now=$(fm_pending_reply_now)

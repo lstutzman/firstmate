@@ -32,6 +32,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | [`fm-backlog-handoff.sh`](../bin/fm-backlog-handoff.sh) | Move queued backlog items into a secondmate home; its header owns route-specific wake outcomes and retries |
 | `fm-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
 | `fm-captain-hold.sh`     | Hold tasks for the captain, record the captain's answers, gate investigation completion, and report record divergence between the status log and the backlog |
+| [`fm-pending-reply-sweep.sh`](../bin/fm-pending-reply-sweep.sh) | Dry-run by default; with `--apply`, settle an escalated pending-reply record whose escalation decision is already closed in its parent status log; every still-open escalation is listed for `review` with its reason and closes only when named with `--apply --key <key>` and its delivery was confirmed; other phases, unproven, undelivered-closed and backlog-handoff-named records are never closed; its header owns the rules |
+| [`fm-decision-sweep.sh`](../bin/fm-decision-sweep.sh) | Dry-run by default; with `--apply`, mark an open `merge-handoff-<n>` decision resolved once PR `<n>`, the one PR URL it names, is merged; other decisions whose named PRs all merged are listed for `review` and close only when named with `--apply --key <key>`; closed-unmerged, open, unreadable and `[truncated]` decisions, `captain-hold-` and `pending-reply-` keys, and decisions without a PR URL are never closed; its header owns the rules |
 | `fm-decision-hold.sh`    | One-release compatibility shim mapping the retired decision commands onto fm-captain-hold.sh |
 | `fm-brief.sh`            | Scaffold ship (explicit `--mode`, plus the project's registered `--forge`), scout, secondmate-charter, office role-charter (`--office`), and Herdr-lab briefs, with Captain's intent and Firstmate spec subsections on ship/scout |
 | [`fm-dod-lib.sh`](../bin/fm-dod-lib.sh) | Own ship/scout worker role scope, ship definitions of done, the named-head reachability gate and the recorded ready-evidence gate on ship `done:` acceptance, and the no-mistakes `--intent` contract |
@@ -98,7 +100,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-watch-checkpoint.sh` | Run one bounded foreground watcher checkpoint for Codex-style supervision            |
 | `fm-watch.sh`            | Singleton-safe watcher: absorb benign wakes, detect stalled local-secondmate wake queues, and exit on actionable ones |
 | `fm-inactive-reconcile.sh` | Reconcile long-inactive direct crewmate terminal outcomes without forge access |
-| `fm-retention.sh`        | Daily archive pass: handled process-event sequences older than 72 h are copied into `state/archive/` and their results emptied |
+| `fm-retention.sh`        | Daily archive pass: handled process-event sequences older than 72 h are copied into `state/archive/` and their results emptied; settled resolved pending-reply records older than 7 days are archived there and removed; its header owns the rules |
 | `fm-afk-contract.sh`     | Own the away-or-quiet record's posture, schema, entry, read-back, archive, and cross-subsystem authority lock |
 | `fm-afk-start.sh`        | Run the common sourceable away-mode daemon entry in the foreground                      |
 | `fm-afk-launch.sh`       | Own away/quiet entry (same-turn record write, then read-back), exit, rollback, and any backend terminal lifecycle |
@@ -113,6 +115,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-timing-lib.sh`       | Single owner of the deferred network stage's per-step elapsed-time records, inert unless a run asks for them |
 | `fm-supervision-lib.sh`  | Shared in-flight-work-without-fresh-watcher-beacon predicate                         |
 | `fm-ff-lib.sh`           | Shared guarded fast-forward/reconcile helper for origin pulls and secondmate syncs, with durable divergence markers |
+| `fm-git-retry-lib.sh`    | Bounded retry (3 tries, 2 s then 5 s) of a git fetch or clone that fails only on its first ssh connection; never retries a push rejection or missing ref |
 | `fm-lock-lib.sh`         | Shared "is this git lock provably abandoned?" proof used by teardown and fleet-sync   |
 | `fm-config-inherit-lib.sh` | Shared primary-to-secondmate inherited local-material propagation and config-reread delivery |
 | `fm-tasks-axi.sh`        | Run `tasks-axi` against this home's backlog from any working directory               |
@@ -147,6 +150,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated pull-request, merge-request, and Gerrit-change poll sidecars |
 | `fm-contributions.sh`    | Observe owned publications, retain exact-head judgments, measure required actors, and wake on maintainer signals |
 | `fm-pr-check.sh`         | Record validated task `pr=` and `pr_head=` values and the PR's first-recorded `pr_at=` ready time and the project's `ready_evidence=` verdict, then atomically arm a static merge poll; refuses GitHub drafts, failed ready evidence, and persistent secondmate records (see [architecture.md](architecture.md)) |
+| `fm-pr-adopt.sh`         | Write the minimal task record for an open GitHub PR that has no record in this home, then register it through `fm-pr-check.sh` so `fm-pr-merge.sh` can run on it under every unchanged guard ([configuration](configuration.md#task-metadata)) |
 | `fm-review-check.sh`    | Record a forge=external task's validated `review=` and `review_head=` and the project's `ready_evidence=` verdict without arming a merge watch ([design](external-review-forge.md)) |
 | `fm-external-review-lib.sh` | Shared readers for the forge=external review tool adapter, ready-URL pattern, backup remote, and remote URLs |
 | `fm-pr-merge.sh`         | Record PR metadata, merge a task's canonical full GitHub, GitLab, or Forgejo URL or, with `--stack`, a gated GitHub stacked pull request set, refuse a Gerrit change because firstmate never submits one, then refuse an outcome it cannot prove landed or queued |

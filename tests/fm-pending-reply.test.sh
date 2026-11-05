@@ -145,6 +145,21 @@ latest_record_body() {  # <home> <task>
 
 # --- tests ------------------------------------------------------------------
 
+test_create_records_request_prs() {
+  local home state corr rec
+  home=$(setup_parent request-fields)
+  state="$home/state"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" \
+    "merge https://github.com/o/r/pull/7 then https://github.com/o/r/pull/9; see https://github.com/o/r/pull/7 again")
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  [ "$(fm_pending_reply_get "$rec" request_prs)" = "https://github.com/o/r/pull/7,https://github.com/o/r/pull/9" ] \
+    || fail "request_prs must hold each PR URL once, in order: $(fm_pending_reply_get "$rec" request_prs)"
+  corr=$(fm_pending_reply_create "$home" "$state" "hibit" "no links here")
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  grep -qx 'request_prs=' "$rec" || fail "a request with no PRs records request_prs empty"
+  pass "a new expectation records the PR URLs of its full request"
+}
+
 test_normal_correlated_reply_resolves_once() {
   local home state corr status rec
   home=$(setup_parent resolve-once)
@@ -496,6 +511,20 @@ test_escalation_grace_measures_from_recovery_turn_completion() {
   esac
   escalations=$(grep -Fc "blocked [key=pending-reply-$corr]" "$state/hibit.status")
   [ "$escalations" = 1 ] || fail "missed recovery should publish exactly one escalation, got $escalations"
+  [ "$(bash -c '. "$1/bin/fm-classify-lib.sh"; status_line_cause "$2"' _ "$ROOT" "$status_line")" = external ] \
+    || fail "missed escalation should carry cause=external: $status_line"
+  [ -n "$(fm_pending_reply_escalation_line "$state/hibit.status" "$(fm_pending_reply_path "$state" "$corr")" "$corr")" ] \
+    || fail "the cause-tagged escalation must still be recognised"
+  # An escalation written before the cause tag existed is still recognised and
+  # is not re-posted as a new episode when the escalation retries.
+  sed -i.bak 's/ \[cause=external\]//' "$state/hibit.status" && rm -f "$state/hibit.status.bak"
+  grep -qF 'cause=' "$state/hibit.status" && fail "legacy fixture still carries a cause"
+  [ -n "$(fm_pending_reply_escalation_line "$state/hibit.status" "$(fm_pending_reply_path "$state" "$corr")" "$corr")" ] \
+    || fail "a legacy untagged escalation must still be recognised"
+  fm_pending_reply_set "$(fm_pending_reply_path "$state" "$corr")" phase recovery_sent
+  fm_pending_reply_maybe_escalate "$state" "$corr" || fail "retried escalation failed"
+  [ "$(grep -Fc "blocked [key=pending-reply-$corr]" "$state/hibit.status")" = 1 ] \
+    || fail "a legacy escalation was re-posted as a new episode"
 
   export FM_PENDING_REPLY_GRACE_SECS=0
   pass "missed-report escalation grace is measured from the recovery turn's completion"
@@ -2134,7 +2163,6 @@ test_tick_folds_each_log_once_however_many_records_are_open() (
       fi
       i=$((i + 1))
     done
-    printf 'needs-decision [key=ask]: narrow or wide?\n'
   } > "$state/hibit.status"
   i=0
   while [ "$i" -lt "$n" ]; do
@@ -2146,6 +2174,8 @@ test_tick_folds_each_log_once_however_many_records_are_open() (
     printf 'note [at=%s]: quoting xcorr=%s\n' "$i" "$corr" >> "$state/hibit.status"
     i=$((i + 1))
   done
+  # The hold needs the mate's latest event to be a wait, so the decision comes last.
+  printf 'needs-decision [key=ask]: narrow or wide?\n' >> "$state/hibit.status"
   probe="$TMP_ROOT/tick-cost-probe"
   line_count="$TMP_ROOT/tick-cost-lines"
   whole_count="$TMP_ROOT/tick-cost-whole"
@@ -2176,7 +2206,7 @@ test_tick_folds_each_log_once_however_many_records_are_open() (
     [ "$(fm_pending_reply_get "$rec" phase)" = awaiting_report ] \
       || fail "a held record must stay unattempted, got $(fm_pending_reply_get "$rec" phase)"
   done
-  pass "a poll over $n open records folds the log once and tests only token lines"
+  pass "a poll over $n held records folds the log once and tests only token lines"
 )
 
 # A request whose recovery repost the wait-no-turns hold keeps back is flagged
@@ -2282,6 +2312,73 @@ test_hold_escalation_closes_when_the_report_arrives() (
   open=$(status_open_decisions "$state/hibit.status" | cut -f1 | grep "^pending-reply-$corr\$" || true)
   [ -z "$open" ] || fail "resolving must close the held decision"
   pass "a held escalation closes through the ordinary resolve when the report finally arrives"
+)
+
+# The hold is for a mate that is actually waiting. A mate that still carries an
+# open decision but has reported later work is reposted once after the grace.
+test_working_mate_with_open_decisions_gets_the_repost() (
+  local home state corr
+  hold_fixture hold-working 1000
+  home=$HOLD_HOME
+  corr=$HOLD_CORR
+  state="$home/state"
+  printf 'working [at=1]: back on the build\n' >> "$state/hibit.status"
+  export FM_PENDING_REPLY_NOW=1200
+  fm_pending_reply_tick "$state"
+  [ "$(wc -l < "$HOLD_HOOK_LOG" | tr -d ' ')" = 1 ] \
+    || fail "a working mate with open decisions must get the repost, got: $(cat "$HOLD_HOOK_LOG")"
+  [ "$(held_lines "$state" "$corr")" = 0 ] || fail "a working mate must not be held-escalated"
+  pass "a mate with open decisions but a later working line is reposted after the grace"
+)
+
+# A latest paused, captain-held or open keyed needs-decision event holds the
+# repost, and the record escalates once as held after the bound.
+test_waiting_mate_is_held_and_escalates_once() (
+  local home state corr line n=0
+  for line in 'paused [at=1]: waiting on the MacBook' \
+    "${FM_CLASSIFY_CAPTAIN_HELD_VERB:-captain-held} [at=1]: awaiting the captain" \
+    'needs-decision [key=later-ask]: merge or wait?'; do
+    n=$((n + 1))
+    hold_fixture "hold-waiting-$n" 1000
+    home=$HOLD_HOME
+    corr=$HOLD_CORR
+    state="$home/state"
+    printf 'working [at=1]: busy\n%s\n' "$line" >> "$state/hibit.status"
+    export FM_PENDING_REPLY_NOW=1200
+    fm_pending_reply_tick "$state"
+    [ ! -s "$HOLD_HOOK_LOG" ] || fail "a waiting mate ($line) must not be reposted"
+    [ "$(phase_of "$state" "$corr")" = awaiting_report ] || fail "a waiting mate ($line) must stay held"
+    export FM_PENDING_REPLY_NOW=2000
+    fm_pending_reply_tick "$state"
+    fm_pending_reply_tick "$state"
+    [ "$(phase_of "$state" "$corr")" = escalated ] || fail "a waiting mate ($line) must escalate past the bound"
+    [ "$(held_lines "$state" "$corr")" = 1 ] || fail "expected exactly one held escalation for ($line)"
+    [ ! -s "$HOLD_HOOK_LOG" ] || fail "the held escalation replaces the repost ($line)"
+  done
+  pass "a paused, captain-held or open keyed-decision mate is held and escalates once as held"
+)
+
+# A held escalation is written into the mate's own log. It must not end the
+# wait it reports, or the mate's next record past the bound gets the repost.
+test_one_held_escalation_keeps_the_next_record_held() (
+  local home state corr second
+  hold_fixture hold-two 1000
+  home=$HOLD_HOME
+  corr=$HOLD_CORR
+  state="$home/state"
+  second=$(fm_pending_reply_create "$home" "$state" hibit "second ask")
+  fm_pending_reply_mark_delivered "$state" "$second"
+  fm_pending_reply_observe_busy "$state" "$second" busy
+  fm_pending_reply_observe_busy "$state" "$second" idle
+  export FM_PENDING_REPLY_NOW=2000
+  fm_pending_reply_tick "$state"
+  fm_pending_reply_tick "$state"
+  [ ! -s "$HOLD_HOOK_LOG" ] || fail "a mate still waiting must not be reposted, got: $(cat "$HOLD_HOOK_LOG")"
+  [ "$(phase_of "$state" "$corr")" = escalated ] || fail "the first record must escalate as held"
+  [ "$(phase_of "$state" "$second")" = escalated ] || fail "the second record must escalate as held too"
+  [ "$(held_lines "$state" "$corr")" = 1 ] || fail "expected one held escalation for the first record"
+  [ "$(held_lines "$state" "$second")" = 1 ] || fail "expected one held escalation for the second record"
+  pass "one record's held escalation does not end the wait that holds the next one"
 )
 
 # Make the fold's <suffix> temp file unwritable: a directory in its place fails
@@ -2408,8 +2505,13 @@ test_tick_folds_each_log_once_however_many_records_are_open || exit 1
 test_hold_bound_leaves_a_younger_hold_alone || exit 1
 test_hold_bound_escalates_once_and_survives_restart || exit 1
 test_hold_escalation_closes_when_the_report_arrives || exit 1
+test_working_mate_with_open_decisions_gets_the_repost || exit 1
+test_waiting_mate_is_held_and_escalates_once || exit 1
+test_one_held_escalation_keeps_the_next_record_held || exit 1
 test_hold_survives_an_unwritable_open_decision_cursor || exit 1
 test_drain_scan_keeps_the_trusted_set_when_the_span_cannot_be_written || exit 1
 test_hold_bound_without_the_flag_or_the_hold_does_not_escalate || exit 1
+
+test_create_records_request_prs || exit 1
 
 printf 'ok - all pending-reply tests passed\n'
