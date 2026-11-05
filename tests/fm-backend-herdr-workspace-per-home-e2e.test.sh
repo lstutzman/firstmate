@@ -27,11 +27,16 @@
 #     running its OWN fm-spawn.sh) landing in the secondmate's own workspace -
 #     this exact path has never run before this test
 #   - an office spawned by the primary showing its bare role name on its tab
+#   - steer, interrupt, exit and relaunch each finding the recorded pane, for
+#     both the office and an ordinary crewmate, and a relaunch giving an
+#     office tab still labeled fm-<id> its role name back
 #   - teardown closing the right tab (and no other)
 #   - list-live recovery finding exactly the tasks each home recorded
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tests/lib.sh
+. "$ROOT/tests/lib.sh"
 
 fail() { printf 'not ok - %s\n' "$1" >&2; cleanup_all; exit 1; }
 pass() { printf 'ok - %s\n' "$1"; }
@@ -77,6 +82,7 @@ cleanup_all() {
   # Spawn leaves each state/<id>.git-hooks strip dir read-only.
   find "$TMP_ROOT" -type d -exec chmod u+rwx {} + 2>/dev/null
   rm -rf "$TMP_ROOT"
+  fm_test_cleanup
 }
 trap cleanup_all EXIT
 fm_herdr_lab_prepare "$SESSION" || fail "could not prepare isolated Herdr lab session"
@@ -243,6 +249,119 @@ QM_WSID=$(herdr pane get "$QM_PANE" --session "$SESSION" 2>/dev/null | jq -r '.r
 QM_WS_LABEL=$(herdr workspace list --session "$SESSION" 2>&1 | jq -r --arg id "$QM_WSID" '.result.workspaces[]? | select(.workspace_id == $id) | .label')
 [ "$QM_WS_LABEL" = Quartermaster ] || fail "an office's workspace should carry its bare role name, got '$QM_WS_LABEL'"
 pass "real herdr E2E: an office spawned by the primary shows its bare role name on both its workspace and its tab"
+
+# --- 3c. steer, interrupt, exit and relaunch find the recorded pane --------
+#
+# Each control path resolves the task through its record in the spawning home,
+# never through the tab title, so the role-named office tab and the fm-<id>
+# crewmate tab must behave the same. The agent is a stand-in process named like
+# a harness and registered with Herdr, as in tests/fm-control-herdr-smoke.test.sh.
+
+STANDIN_BIN=$(fm_agent_standin "$TMP_ROOT/standin") || STANDIN_BIN=
+if [ -z "$STANDIN_BIN" ]; then
+  echo "skip: no long-running stand-in binary survives a rename; lifecycle control checks not run"
+else
+  mkdir -p "$TMP_ROOT/agentbin"
+  ln -s "$STANDIN_BIN" "$TMP_ROOT/agentbin/claude"
+  printf -v CLAUDE_Q '%q' "$TMP_ROOT/agentbin/claude"
+
+  run_control() {  # <home> <id> <verb> [args...]
+    local home=$1; shift
+    env FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" HERDR_SESSION="$SESSION" FM_SPAWN_NO_GUARD=1 \
+      FM_CONTROL_POLL=0.2 FM_CONTROL_EXIT_WAIT=2 FM_CONTROL_LAUNCH_WAIT=20 \
+      "$ROOT/bin/fm-control.sh" "$@" 2>&1
+  }
+
+  wait_process_state() {  # <pane> <expected>
+    local i=0
+    while [ "$i" -lt 50 ]; do
+      [ "$(fm_backend_herdr_pane_process_state "$SESSION" "$1")" != "$2" ] || return 0
+      sleep 0.1
+      i=$((i + 1))
+    done
+    return 1
+  }
+
+  stop_agent() {  # <pane>
+    local pid
+    pid=$(herdr pane process-info --pane "$1" --session "$SESSION" 2>/dev/null \
+      | jq -r '.result.process_info.foreground_processes[0].pid // empty')
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    herdr pane release-agent "$1" --source fm-e2e --agent fm-e2e-agent --session "$SESSION" >/dev/null 2>&1
+    wait_process_state "$1" shell || fail "the stand-in agent in pane $1 did not stop"
+  }
+
+  lifecycle_check() {  # <home> <id> <pane>
+    local home=$1 id=$2 pane=$3 meta="$1/state/$2.meta" out fakebin fakebin_q
+    out=$(env FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" HERDR_SESSION="$SESSION" \
+      "$ROOT/bin/fm-send.sh" "$id" "e2e steer for $id" 2>&1) \
+      || fail "fm-send could not steer $id through its record: $out"
+    compgen -G "$home/state/$id.inbox/*.msg" >/dev/null \
+      || fail "fm-send to $id left no durable record in $home/state/$id.inbox/"
+    grep -q "e2e steer for $id" "$home/state/$id.inbox/"*.msg \
+      || fail "$id's steering inbox does not hold the steer that was sent"
+    pass "real herdr E2E: fm-send steers $id into its own durable inbox through its record"
+
+    awk -F= '$1 == "harness" {$0="harness=claude"} {print}' "$meta" > "$meta.tmp" && mv "$meta.tmp" "$meta"
+    fm_backend_herdr_send_text_line "$SESSION:$pane" "$CLAUDE_Q 900" \
+      || fail "could not start the stand-in agent in $id's pane"
+    wait_process_state "$pane" agent || fail "the stand-in agent in $id's pane is not seen as an agent"
+    herdr pane report-agent "$pane" --source fm-e2e --agent fm-e2e-agent --state idle \
+      --session "$SESSION" >/dev/null 2>&1 || fail "could not register the stand-in agent on $id's pane"
+    out=$(run_control "$home" "$id" interrupt) || fail "interrupt of $id failed: $out"
+    assert_contains_local "$out" "interrupt-delivered $id harness=claude backend=herdr verified=agent-alive" \
+      "interrupt of $id did not prove the agent on its recorded pane survived"
+    pass "real herdr E2E: interrupt reaches $id's recorded pane"
+
+    stop_agent "$pane"
+    out=$(run_control "$home" "$id" exit) || fail "exit of $id failed: $out"
+    assert_contains_local "$out" "already-stopped $id" "exit of $id did not read its recorded pane as stopped"
+    assert_contains_local "$out" "endpoint=$SESSION:$pane" "exit of $id read an endpoint other than its recorded pane"
+    pass "real herdr E2E: exit finds $id's recorded pane stopped"
+
+    fakebin="$TMP_ROOT/fakebin-$id"
+    mkdir -p "$fakebin/agent"
+    ln -s "$STANDIN_BIN" "$fakebin/agent/codex"
+    cat > "$fakebin/codex" <<EOF
+#!/usr/bin/env bash
+herdr pane report-agent '$pane' --source fm-e2e --agent fm-e2e-agent --state idle --session '$SESSION' >/dev/null 2>&1
+exec '$fakebin/agent/codex' 900
+EOF
+    chmod +x "$fakebin/codex"
+    printf -v fakebin_q '%q' "$fakebin"
+    fm_backend_herdr_send_text_line "$SESSION:$pane" "export PATH=$fakebin_q:\$PATH; clear" \
+      || fail "could not put the stand-in codex on $id's pane PATH"
+    sleep 0.5
+    out=$(run_control "$home" "$id" relaunch --harness codex --note "e2e relaunch of $id") \
+      || fail "relaunch of $id failed: $out"
+    assert_contains_local "$out" "relaunched $id harness=codex" "relaunch of $id did not report the codex replacement"
+    assert_contains_local "$out" "endpoint=$SESSION:$pane" "relaunch of $id did not confirm its replacement on the recorded pane"
+    [ "$(sed -n 's/^window=//p' "$meta" | tail -1)" = "$SESSION:$pane" ] \
+      || fail "relaunch of $id replaced its endpoint instead of reusing its pane"
+    [ "$(sed -n 's/^herdr_pane_id=//p' "$meta" | tail -1)" = "$pane" ] \
+      || fail "relaunch of $id rebound its record to another pane"
+    pass "real herdr E2E: relaunch of $id reuses its recorded pane"
+
+    stop_agent "$pane"
+  }
+
+  lifecycle_check "$PRIMARY_HOME" cm1 "$CM1_PANE"
+  [ "$(herdr tab get "$(grep '^herdr_tab_id=' "$CM1_META" | cut -d= -f2-)" --session "$SESSION" 2>/dev/null \
+    | jq -r '.result.tab.label // empty')" = fm-cm1 ] \
+    || fail "an ordinary crewmate's tab must keep its fm-<id> label through a relaunch"
+
+  herdr tab rename "$QM_TAB" fm-e2eqm --session "$SESSION" >/dev/null 2>&1 \
+    || fail "could not give the office tab its earlier fm-<id> label"
+  [ "$(herdr tab get "$QM_TAB" --session "$SESSION" 2>/dev/null | jq -r '.result.tab.label // empty')" = fm-e2eqm ] \
+    || fail "the office tab did not take the earlier fm-<id> label"
+  lifecycle_check "$PRIMARY_HOME" e2eqm "$QM_PANE"
+  [ "$(sed -n 's/^herdr_tab_id=//p' "$QM_META" | tail -1)" = "$QM_TAB" ] \
+    || fail "relaunch of the office rebound its record to another tab"
+  QM_TAB_LABEL=$(herdr tab get "$QM_TAB" --session "$SESSION" 2>/dev/null | jq -r '.result.tab.label // empty')
+  [ "$QM_TAB_LABEL" = Quartermaster ] \
+    || fail "relaunching an office whose tab still says fm-e2eqm should rename that same tab to its role name, got '$QM_TAB_LABEL'"
+  pass "real herdr E2E: relaunching an office renames its earlier fm-<id> tab to its role name in place"
+fi
 
 # --- 4. list-live recovery: each home sees only its own tabs ---------------
 
