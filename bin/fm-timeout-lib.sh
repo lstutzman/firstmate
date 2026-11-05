@@ -23,6 +23,21 @@
 #       also collapses into 124: there it means the bound fired, not that the
 #       command chose to die.
 #
+#   fm_watcher_remote_poll <command> [args...]
+#       Runs one remote poll that a watcher cycle waits on, bounded by
+#       FM_WATCH_REMOTE_BUDGET seconds (default 30, far below the beacon grace).
+#       Returns the command's status, or 124 when the bound expired; the caller
+#       maps 124 like a transport failure (ssh 255): a coverage gap, never
+#       evidence of death. Without the bound an unreachable host holds the cycle
+#       for ssh's whole TCP connect timeout while the beacon the guard reads
+#       goes stale.
+#
+#   fm_watcher_cycle_beat
+#       Calls fm_watcher_beat when the sourcing watcher defines it. The caller
+#       runs it in the watcher's own shell after a poll, never inside the
+#       command substitution that captured the poll, so a frozen watcher cannot
+#       be kept looking alive by a subshell it left behind.
+#
 #   fm_exec_timed <seconds> <grace-seconds> <command> [args...]
 #       Replaces the calling shell with the bounded command, so it must be the
 #       last command of a subshell: the bound kills the command, not the
@@ -191,6 +206,16 @@ fm_run_timed() {  # <seconds> <command...>
     bash) fm_run_bash_timeout "$seconds" "$@" ;;
     *) return 124 ;;
   esac
+}
+
+fm_watcher_cycle_beat() {
+  ! declare -F fm_watcher_beat >/dev/null 2>&1 || fm_watcher_beat
+}
+
+fm_watcher_remote_poll() {  # <command...>
+  local budget=${FM_WATCH_REMOTE_BUDGET:-30}
+  case "$budget" in ''|*[!0-9]*|0) budget=30 ;; esac
+  fm_run_timed "$budget" "$@"
 }
 
 fm_timed_out() {  # <status>

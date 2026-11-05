@@ -1609,6 +1609,105 @@ SH
   printf '%s\n' "$dir"
 }
 
+# A remote poll that outlives the beacon grace used to hold the whole cycle, so
+# the guard read a live watcher as dead (evidence: .watch-cycle-exits.log
+# beacon_age 335-590s with an ssh to an unreachable host as the watcher's
+# child). The fake ssh never answers; the cycle must cut each probe at its
+# bound, report the host unavailable, and keep touching the beacon itself.
+# Sampling 12s of one-second polls with a 3s bound: a regression leaves the
+# first probe hanging 60s, so the beacon age passes 12s.
+beacon_age() {  # <state>
+  local mtime
+  mtime=$(stat -c %Y "$1/.last-watcher-beat" 2>/dev/null || stat -f %m "$1/.last-watcher-beat" 2>/dev/null) || mtime=0
+  printf '%s\n' $(( $(date +%s) - mtime ))
+}
+
+test_hung_remote_poll_keeps_the_beacon_fresh_and_is_reported() {
+  local dir state home fakebin watcher i age max=0 probes triage
+  dir=$(make_case hung-remote-poll)
+  state="$dir/state"
+  home="$dir/home"
+  fakebin="$dir/fakebin"
+  mkdir -p "$home/data"
+  printf 'window=remote:rsm1\nkind=secondmate\nharness=claude\nremote_host=lab-host\nremote_backend=herdr\nremote_herdr_session=fm-remote\nremote_target=fm-remote:w1:p1\nhome=/remote/rsm1-home\n' > "$state/rsm1.meta"
+  printf -- '- rsm1 - Remote mate (host: lab-host; root: /remote/root; home: /remote/rsm1-home; scope: remote work; projects: alpha; added 2026-01-01)\n' > "$home/data/secondmates.md"
+  printf '#!/usr/bin/env bash\necho probe >> "%s/ssh.log"\nsleep 60\n' "$dir" > "$fakebin/ssh"
+  chmod +x "$fakebin/ssh"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" FM_SSH_BIN="$fakebin/ssh" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_SECONDMATE_LIVENESS_SECS=1 FM_WATCH_REMOTE_BUDGET=3 "$WATCH" > "$dir/watch.out" 2>&1 &
+  watcher=$!
+  i=0
+  while [ "$i" -lt 100 ] && [ ! -e "$state/.last-watcher-beat" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  i=0
+  while [ "$i" -lt 120 ]; do
+    age=$(beacon_age "$state")
+    [ "$age" -le "$max" ] || max=$age
+    sleep 0.1
+    i=$((i + 1))
+  done
+  is_live_non_zombie "$watcher" || fail "a hung remote poll killed the watcher: $(cat "$dir/watch.out")"
+  [ "$max" -le 6 ] || fail "beacon went ${max}s stale during a hung remote poll"
+  probes=$(wc -l < "$dir/ssh.log" 2>/dev/null | tr -d ' ')
+  triage=$(cat "$state/.watch-triage.log" 2>/dev/null || true)
+  [ "${probes:-0}" -ge 2 ] || fail "the cycle did not move on to a second probe (probes=${probes:-0}): $(cat "$dir/watch.out") $triage"
+  case "$triage" in *"secondmate rsm1 liveness: remote host unavailable"*) ;; *) fail "the unreachable host was not reported: $triage" ;; esac
+
+  # The beat belongs to the live cycle: a stopped watcher stops beating.
+  kill -STOP "$watcher"
+  sleep 4
+  age=$(beacon_age "$state")
+  kill -CONT "$watcher"
+  [ "$age" -ge 3 ] || fail "a stopped watcher still looked alive (beacon age ${age}s)"
+  kill -TERM "$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  pass "watch: a hung remote poll is cut at its bound, reported, and never stales the beacon"
+}
+
+# The custom-check sweep runs every state/*.check.sh serially, each under its
+# own timeout, in one loop iteration. With enough slow checks the sweep alone
+# outlasts the beacon grace (a healthy watcher read as dead at 6 minutes). Six
+# checks of two seconds make a twelve-second sweep: a loop that beats only at
+# its top lets the beacon age past 10s, one that beats between checks stays
+# within a check's length.
+test_slow_check_sweep_keeps_the_beacon_fresh() {
+  local dir state home watcher i id age max=0
+  dir=$(make_case slow-check-sweep)
+  state="$dir/state"
+  home="$dir/home"
+  mkdir -p "$home/data"
+  for id in slow1 slow2 slow3 slow4 slow5 slow6; do
+    printf '#!/usr/bin/env bash\nsleep 2\n' > "$state/$id.check.sh"
+    chmod 700 "$state/$id.check.sh"
+    FM_HOME="$home" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-check-register.sh" "$id" >/dev/null \
+      || fail "fixture: could not register $id"
+  done
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=1 FM_HEARTBEAT=999999 "$WATCH" > "$dir/watch.out" 2>&1 &
+  watcher=$!
+  i=0
+  while [ "$i" -lt 100 ] && [ ! -e "$state/.last-watcher-beat" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  i=0
+  while [ "$i" -lt 150 ]; do
+    age=$(beacon_age "$state")
+    [ "$age" -le "$max" ] || max=$age
+    sleep 0.1
+    i=$((i + 1))
+  done
+  is_live_non_zombie "$watcher" || fail "the slow sweep killed the watcher: $(cat "$dir/watch.out")"
+  kill -TERM "$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  [ -e "$state/.last-check" ] || fail "the sweep never ran, so this case proves nothing"
+  [ "$max" -le 4 ] || fail "beacon went ${max}s stale during a sweep of slow checks"
+  pass "watch: a sweep of slow custom checks beats between checks instead of staling the beacon"
+}
+
 test_opencode_arm_plugin_decides_with_the_shared_predicate() {
   command -v node >/dev/null 2>&1 || { printf 'skip: node not found\n'; return 0; }
   local driver case_name dir state config out status
@@ -1744,3 +1843,5 @@ test_take_over_attaches_to_a_cycle_the_named_arm_does_not_own
 test_take_over_owns_a_fresh_cycle_and_keeps_queued_work_surfacing
 test_take_over_preserves_downtime_from_watcher_self_exit
 test_opencode_arm_plugin_decides_with_the_shared_predicate
+test_hung_remote_poll_keeps_the_beacon_fresh_and_is_reported
+test_slow_check_sweep_keeps_the_beacon_fresh

@@ -768,6 +768,24 @@ test_remote_poll_probe_unreachable_preserves_route() {
   pass "poll probe: unreachable or inconclusive remote reads preserve the route"
 }
 
+test_remote_poll_probe_hanging_host_times_out_as_unavailable() {
+  local w out start elapsed
+  w=$(make_remote_probe_world probe-hang)
+  # A host whose connect never completes: ssh itself would sit for the TCP
+  # connect timeout, far past the watcher's beacon grace.
+  cat > "$w/fakebin/ssh" <<'SH'
+#!/usr/bin/env bash
+sleep 30
+SH
+  start=$(date +%s)
+  out=$(probe_remote "$w" poll FM_WATCH_REMOTE_BUDGET=1)
+  elapsed=$(( $(date +%s) - start ))
+  [ "$out" = 'skipped|unknown|0|||remote host unavailable or endpoint state unknown; route preserved on lab-host' ] \
+    || fail "a probe past its bound must read as unavailable, never dead, got: $out"
+  [ "$elapsed" -lt 10 ] || fail "the probe outlived its 1s bound by ${elapsed}s"
+  pass "poll probe: a remote probe that hangs is cut at its bound and reported unavailable"
+}
+
 test_tmux_agent_state_classifies
 test_tmux_agent_state_rejects_malformed_targets_before_probe
 test_herdr_agent_state_preserves_husk_classifier
@@ -789,5 +807,6 @@ test_relaunch_waits_for_other_mates_relaunch_lock
 test_sweep_refuses_relaunch_on_ledger_errors
 test_remote_poll_probe_maps_states
 test_remote_poll_probe_unreachable_preserves_route
+test_remote_poll_probe_hanging_host_times_out_as_unavailable
 
 echo "# all fm-secondmate-liveness tests passed"
