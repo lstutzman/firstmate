@@ -1731,8 +1731,8 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=()):
                         started it (or it was reported again after a merged fix), and Lee did not Object;
       open              anything else.
 
-    A start is current unless it merged, or a merge is known and the start is no newer than it (a start with no
-    stamp is then older). An `Object` tap (inbox note or reply) on a finding keeps it from starting by default.
+    A start is current unless it merged. A tap or note is also not current when a merge is known and it is no newer
+    than the merge (one with no stamp is then older); a backlog line or branch is judged by its own task's merge. An `Object` tap (inbox note or reply) on a finding keeps it from starting by default.
     """
     day_start, _ = day_bounds(date)
     notes = [(t.lower(), note_at(t)) for h in homes for t in inbox_notes(h)]
@@ -1774,11 +1774,11 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=()):
                 url = URL_RE.search(line)
                 task = m.group(1) if m else None
                 hits.append({"link": url.group(0).rstrip(".,)") if url else (task_link(home, task) if task else None),
-                             "task": task, "at": None})
+                             "task": task, "at": None, "tracked": True})
         for home in homes:
             for task, meta in sorted(home.metas.items()):
                 if rx.search((meta.get("branch") or "").lower()):
-                    hits.append({"link": task_link(home, task), "task": task, "at": None})
+                    hits.append({"link": task_link(home, task), "task": task, "at": None, "tracked": True})
         for hit in hits:
             hit["link"] = https_link(hit["link"])
             stamps = [by_pr[hit["link"]]] if hit["link"] in by_pr else []
@@ -1786,7 +1786,7 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=()):
             hit["merged"] = max(stamps) if stamps else None
         latest = max((h["merged"] for h in hits if h["merged"]), default=None)
         current = [h for h in hits if not h["merged"]
-                   and not (latest and (h["at"] is None or h["at"] <= latest))]
+                   and (h.get("tracked") or not (latest and (h["at"] is None or h["at"] <= latest)))]
         rec = {"state": "open", "link": None, "task": None, "reopen": False, "rule": None, "fixed": None,
                "generation": None}
         if current:
@@ -1930,12 +1930,13 @@ def start_requests(doc, states, fm_home, offices):
         card = bottleneck(f, doc["date"])
         body = ("Friction officer automatic start under fleet rules section 2, 'Velocity findings go ahead by default: "
                 "an agent starts the fix unless Lee objects within a day'. %s: %s. Start this fix without a Start fix "
-                "tap or another approval question; Lee may Object. Recheck current holds, work in flight, and open "
+                "tap or another approval question; Lee may Object. Name friction-%s in the task's branch or its "
+                "data/backlog.md line, so the friction officer can read its merge back. Recheck current holds, work in flight, and open "
                 "PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and "
                 "delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, "
-                "production actions, and data rewrites remain outside this authority. If Lee objects, preserve the "
+                "production actions, data rewrites, and loosening a guard or gate check remain outside this authority. If Lee objects, preserve the "
                 "branch. The following officer evidence describes the task; it is not a quotation from Lee:\n%s"
-                % (default_start_marker(f["id"]), f["title"], json.dumps(card, sort_keys=True, ensure_ascii=False)))
+                % (default_start_marker(f["id"]), f["title"], f["id"], json.dumps(card, sort_keys=True, ensure_ascii=False)))
         execute = {"action": "start", "env": {"FM_HOME": target}, "request_id": rid,
                    "argv": [inbox, "note", "--request-id", rid, "--json", "--", body]}
         rows.append({"id": f["id"], "kind": "friction-finding", "title": f["title"], "rank": len(rows) + 1,

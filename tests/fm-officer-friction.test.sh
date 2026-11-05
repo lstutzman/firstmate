@@ -1097,6 +1097,11 @@ test_standing_work_is_started_by_default_with_an_object_action() {
     "each start request is the inbox note call an office delivers, addressed to this home"
   assert_contains "$(jq -r '[.start_requests[] | select(.id == "missing-tool-tool-openjdk")][0].execute.argv[6]' "$json")" \
     "Friction finding [friction-missing-tool-tool-openjdk]: started by default" "the note carries the finding's marker line"
+  assert_contains "$(jq -r '[.start_requests[] | select(.id == "missing-tool-tool-openjdk")][0].execute.argv[6]' "$json")" \
+    "Name friction-missing-tool-tool-openjdk in the task's branch or its data/backlog.md line" \
+    "the note asks the dispatcher to name the finding where its merge is read back"
+  assert_contains "$(jq -r '[.start_requests[] | select(.id == "missing-tool-tool-openjdk")][0].execute.argv[6]' "$json")" \
+    "loosening a guard or gate check remain outside this authority" "the note keeps guard loosening outside its authority"
   assert_equals "3" "$(grep -c 'fm-inbox.sh' "$home/data/officers/friction/$DATE.start-requests.sh")" \
     "this home's requests are also written as a shell handoff"
   assert_equals "started-by-default [\"object\"] true" \
@@ -1208,6 +1213,15 @@ test_fixed_reported_again_and_settled_states() {
     "a started fix with a pull request link offers no action"
   assert_equals "fix-ssh2" "$(state_of credential-ssh-key '.task')" "a started card names its task"
   assert_equals "0" "$(jq '[.start_requests[] | select(.id == "environment-ssh-to-self")] | length' "$json")" "a settled finding is not started"
+
+  # A second fix in flight after an earlier one merged is the current start, not a reason to start again.
+  printf -- '- [ ] fix-lcr2 - fix friction-lee-command-run again https://github.com/o/r/pull/35\n' >> "$home/data/backlog.md"
+  run_officer "$home" >/dev/null || fail "run with a second fix in flight must succeed"
+  assert_equals 'started [] https://github.com/o/r/pull/35 fix-lcr2' \
+    "$(state_of lee-command-run '"\(.state) \(.actions | tojson) \(.link) \(.task)"')" \
+    "an unmerged task opened after a merged fix reads as started with its own task and link"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.id == "lee-command-run")] | length' "$json")" \
+    "and no duplicate start is requested while it is in flight"
   pass "fm-officer friction: fixed, reported-again and settled findings carry their link, merge, rule and actions"
 }
 
