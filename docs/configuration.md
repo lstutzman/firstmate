@@ -1205,7 +1205,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 
 Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all linked `linear_ids`, nullable `authorising_class`, nullable `tag_source`, `reason`, `evidence`, numeric `priority` (0 means unspecified), nullable `rank`, and nullable `execute`.
 Optional `link`, `links` (every URL a Top of Mind ask links), `project`, `linear_only` (true when the record comes from Linear alone, so its `project` is a Linear project), `outcome`, and `captains_log_key` preserve source context for the page projection.
-A start request with an optional `unrouted` reason is one that no single office's scope fits and so stays with this home.
+A start request with an optional `unrouted` reason is one that no rule places with an office (see [`start-home`](#officers-dataofficersmd)), so it stays with this home.
 Only start requests have a one-based `rank` and an `execute` object; filler also carries `execute`.
 The execution object contains `action: start`, `request_id`, `env.FM_HOME` (this home, or the [`start-home`](#officers-dataofficersmd) office the request is addressed to), and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
 The adjacent shell handoff runs the quoted argument arrays addressed to this home in rank order, followed by filler when present; requests addressed to an office are not in it.
