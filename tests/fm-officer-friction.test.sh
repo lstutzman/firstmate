@@ -717,7 +717,7 @@ EOF
 }
 
 test_injected_user_records_are_not_repeat_asks() {
-  local home archive json d day
+  local home archive json d
   home="$TMP_ROOT/injected/fixturehost"
   archive="$TMP_ROOT/injected/archive"
   officer_home "$home"
