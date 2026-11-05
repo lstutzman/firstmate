@@ -65,6 +65,9 @@ team PC, highest score first:
      (AREA_RULES; a nightly E2E failure tries the feature rules on its spec path and words
      before `testing`); with no fit it is --triage-label; a label missing from team PC
      means the finding is reported and not filed. The Surgeon never creates a label.
+     Fleet work (lib.fleet_work: a finding from firstmate, skills or fleet-app) takes
+     area:fleet instead and goes in the Fleet project, and its low review findings
+     cluster apart from PropertyCompass2 ones.
   2. medium or higher findings, and every non-review finding, each get their own
      item. Low review findings are clustered, one item per component: the group of
      the first CLUSTER_PARTS directory parts of the file, split one level deeper
