@@ -218,7 +218,8 @@ to the --start-home office whose role is quartermaster, else to --fm-home; an
 office's lane check delivers it (bin/fm-office.sh). The note carries a marker
 line, so a delivered request reads back as started. An `Object` tap on the
 finding's card (a note or reply "Object") keeps it from starting by default.
-Without --fm-home nothing can be addressed, so no finding is started by default.
+Without --fm-home, or when the addressed home is not one of the --home records read (a delivered note could never be
+read back), nothing is started by default and the digest names the gap.
 Each card carries `actions`: open and reported-again offer start-fix, a
 started-by-default card offers object, a started card with no link or task
 offers reopen, and the rest offer none, so a standing-work card never offers a
@@ -1904,6 +1905,11 @@ def card_findings(doc):
             if f["title"] and f["fix"] and (f["cause"], f["sub"]) not in NOT_CARDED][:MAX_CARDS]
 
 
+def start_target(fm_home, offices):
+    """The home a start request is addressed to: the start-home office whose role is quartermaster, else fm_home."""
+    return next((o.home for o in offices if o.role == "quartermaster"), fm_home) if fm_home else None
+
+
 def start_requests(doc, states, fm_home, offices):
     """The start requests for findings started by default, in rank order, and each one's request id on its state.
 
@@ -1911,7 +1917,7 @@ def start_requests(doc, states, fm_home, offices):
     whose role is quartermaster (a start-home office), else to fm_home. The note carries the finding's marker line,
     so once it is delivered finding_states reads the finding as started. Nothing here executes it.
     """
-    target = next((o.home for o in offices if o.role == "quartermaster"), fm_home)
+    target = start_target(fm_home, offices)
     inbox = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh")
     rows = []
     for f in card_findings(doc):
@@ -2123,14 +2129,22 @@ def main(argv):
         print("fm-officer-friction: %s" % exc, file=sys.stderr)
         return 1
     offices = [_progress().parse_office(a) for a in args.start_home]
-    # Without a home to address, nothing can start a finding by default, so none is reported as started.
+    # A finding starts by default only when the home its request is addressed to is one this pass reads, because the
+    # delivered note is the only thing that stops the next night asking again. Without such a home none is started.
+    target = start_target(args.fm_home, offices)
+    readable = {os.path.realpath(h.path) for h in homes}
+    if target and os.path.realpath(target) not in readable:
+        doc["coverage"]["notes"].append(
+            "Start requests would go to %s, which this pass does not read, so no finding is started by default."
+            % place(target))
+        target = None
     eligible = {f["id"] for f in card_findings(doc) if f["carded"] and (f["cause"], f["sub"]) in STANDING_START} \
-        if args.fm_home else set()
+        if target else set()
     states = finding_states(doc["findings"], homes, replies, args.date, eligible)
     # The end of the digest's day, not the clock: a re-run stays byte-identical, and an office delivers the start
     # requests only within 36 hours of it (bin/fm-office.sh), so a digest for a long-past day starts nothing.
     doc["source"], doc["generated_at"] = "friction-officer", iso_utc(day_bounds(args.date)[1])
-    doc["start_requests"] = start_requests(doc, states, args.fm_home, offices) if args.fm_home else []
+    doc["start_requests"] = start_requests(doc, states, args.fm_home, offices) if eligible else []
     for f in doc["findings"]:
         f["state"] = states[f["id"]]
     if args.fm_home:

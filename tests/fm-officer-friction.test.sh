@@ -1134,17 +1134,33 @@ test_standing_work_is_started_by_default_with_an_object_action() {
     "without a home to address, no finding is reported as started by default"
   assert_equals "0" "$(jq '.start_requests | length' "$first/$DATE.json")" "and there are no start requests"
 
-  # The quartermaster office, when a start-home, is the address.
+  # The quartermaster office, when a start-home, is the address - and the home its delivered notes are read back from.
   office="$TMP_ROOT/defaults/office"
-  mkdir -p "$office"
+  mkdir -p "$office/state/inbox"
   rm -f "$home/state/inbox/"*.note
   python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
-    --home "$home" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
+    --home "$home" --home "$office" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
     || fail "a run with a start-home must succeed"
   assert_equals "$office" "$(jq -r '[.start_requests[].execute.env.FM_HOME] | unique | join(",")' "$first/$DATE.json")" \
     "start requests go to the office whose role is quartermaster"
   assert_equals "0" "$(grep -c 'fm-inbox.sh' "$first/$DATE.start-requests.sh")" \
     "an office's requests are not in this home's handoff; its lane check delivers them"
+  printf 'id=1-q\nat=2026-10-24T05:10:00Z\n--\nFriction finding [friction-missing-tool-tool-openjdk]: started by default: x\n' > "$office/state/inbox/1-q.note"
+  python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
+    --home "$home" --home "$office" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
+    || fail "a run after the office received a note must succeed"
+  assert_equals "2" "$(jq '.start_requests | length' "$first/$DATE.json")" \
+    "a note delivered into the office's inbox is read back, so the finding is not requested again"
+  assert_equals "started true" "$(jq -r '[.bottlenecks[] | select(.id == "missing-tool-tool-openjdk")][0] | "\(.state) \(.reopen)"' "$first/$DATE.velocity-findings.json")" \
+    "and it reads as started"
+
+  # An office this pass cannot read could never confirm a delivery, so nothing is started for it.
+  python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
+    --home "$home" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
+    || fail "a run with an unreadable start-home must succeed"
+  assert_equals "0 0" "$(jq -r '"\(.start_requests | length) \([.findings[] | select(.state.state == "started-by-default")] | length)"' "$first/$DATE.json")" \
+    "with the office unreadable no finding is started by default and no request is written"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$first/$DATE.json")" "which this pass does not read" "the gap is a coverage note"
   pass "fm-officer friction: standing-work findings start by default with an Object action, never a bare Start fix"
 }
 
