@@ -42,8 +42,8 @@ Judge every candidate before dispatching it: a digest entry or a start request i
 Skip a candidate that is not a startable work item (a shell command, a note such as "same release as PR N", a duplicate of queued or in-flight work), and record why in the backlog note.
 A product choice is never a standing start; it goes to the captain as below.
 
-Until the progress officer addresses start requests to an office's own home, an office never runs a `<date>.start-requests.sh` whose `FM_HOME` is not its own home, because that file enqueues into the main home.
-In that interval the main firstmate consumes the progress digest and routes in-scope starts to the office as ordinary routed work.
+When the progress officer's `start-home:` names this office, its `lane:progress` source delivers each start request addressed to this home straight into this home's inbox ([Progress officer](../../../docs/configuration.md#progress-officer)); judge each such inbox note as above and dispatch it as ordinary routed work without asking main or the captain.
+Never run a `<date>.start-requests.sh`: it holds only the main home's requests, and the main firstmate runs it.
 
 ## Capturing officer-finding outcomes
 

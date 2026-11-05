@@ -901,6 +901,78 @@ request_home() {  # <handoff file> <task id>: the FM_HOME the task's start reque
   awk -v id="\"id\": \"$2\"" '/^FM_HOME=/ {home = $1} index($0, id) {print home}' "$1"
 }
 
+test_non_work_and_duplicates_are_dropped_and_reported() {
+  make_world nonwork
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json" digest
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] flying - Repair the cache (kind: ship)
+
+## Queued
+
+- [ ] dup-a - Fix the importer crash (kind: bug)
+- [ ] same-title - Fix the importer crash (kind: bug)
+- [ ] tidy-a - Tidy the logs
+- [ ] tidy-b - Tidy the logs
+- [ ] tom-later - Add CSV export (kind: feature) (requested-by: Lee)
+- [ ] release-ship - Ship glossary same release as PR 4593 (kind: bug)
+- [ ] json - Add JSON export
+
+## Done
+MD
+  python3 -I - "$WORLD/linear" <<'PYFIX'
+import json, os, sys
+issue = {'identifier':'PC-10','title':'export PATH=/opt/bin breaks gh auth','state':'Todo','stateType':'unstarted','priority':0}
+json.dump({'ok':True,'data':{'issues':[issue]}}, open(os.path.join(sys.argv[1],'list.json'),'w'))
+json.dump({'ok':True,'data':{'issue':dict(issue,parent=None,description=''),'subIssues':[]}}, open(os.path.join(sys.argv[1],'PC-10.json'),'w'))
+PYFIX
+  cat > "$WORLD/prs.json" <<'JSON'
+[{"title":"Fix the upload crash","html_url":"https://github.com/example/project/pull/7","head":{"ref":"fm/other-name"}}]
+JSON
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[
+ {"id":"release","words":"same release as PR N","status":"not-started","work":[],"links":[]},
+ {"id":"stamp","words":"Last updated: November 2026","status":"not-started","work":[],"links":[]},
+ {"id":"shell","words":"sudo lvextend -r -L +300g ubuntu-vg/ubuntu-lv","status":"not-started","work":[],"links":[]},
+ {"id":"cmd","words":"export PATH=<set> gh auth login -h github.com","status":"not-started","work":[],"links":[]},
+ {"id":"cp-sed","words":"cp ~/.zshenv ~/.zshenv.bak-allowgate && sed -i \"\" 's/a/b/' ~/.zshenv","status":"not-started","work":[],"links":[]},
+ {"id":"csv","words":"Add CSV export.","status":"not-started","work":[],"links":[]},
+ {"id":"json-ask","words":"Add JSON export.","status":"not-started","work":[],"links":[]},
+ {"id":"curl","words":"curl timeouts in importer","status":"not-started","work":[],"links":[]},
+ {"id":"quoted","words":"make \"Save draft\" work offline","status":"not-started","work":[],"links":[]},
+ {"id":"retries","words":"make retries > 3 configurable","status":"not-started","work":[],"links":[]},
+ {"id":"redirect","words":"cat x > /tmp/y","status":"not-started","work":[],"links":[]},
+ {"id":"cache","words":"Repair the cache!","status":"not-started","work":[],"links":[]},
+ {"id":"dup-b","words":"Fix the importer crash!","status":"not-started","work":[],"links":[]},
+ {"id":"pr-dup","words":"Fix the upload crash.","status":"not-started","work":[],"links":[]},
+ {"id":"tidy","words":"Tidy the logs","status":"not-started","work":[],"links":[]},
+ {"id":"real","words":"Fix the export crash","status":"not-started","work":[],"links":[]}
+]}
+JSON
+  run_progress >/dev/null || fail 'filter run failed'
+  digest=$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")
+  assert_equals 'PC-10 curl dup-a json quoted real release-ship retries same-title tidy-a tidy-b tom-later' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" \
+    'real work, including a fleet record that shares a title, a command word used as prose, a release mention in a task, and a command-like Linear title, survives the filter'
+  assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'csv - Add CSV export.: Unstarted work authorised by requested-feature' 'an ask restating a fleet row up to punctuation joins it, even when the ask sorts first'
+  assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'json-ask - Add JSON export.: Unstarted work authorised by requested-feature' 'an ask joins an unclassified backlog row that differs only by punctuation'
+  assert_equals 'requested-feature' "$(jq -r '.start_requests[] | select(.id == "json") | .authorising_class' "$file")" 'the joined unclassified backlog row starts as Lee-requested work'
+  assert_equals '' "$(jq -r '.excluded[] | select(.id == "csv" or .id == "json-ask" or .id == "dup-b" or .id == "cache") | .id' "$file")" 'no ask that joins existing work is dropped as a separate duplicate'
+  assert_contains "$digest" 'release - same release as PR N' 'a dropped release note is listed'
+  assert_equals 'Not a work item: a release note' "$(jq -r '.excluded[] | select(.id == "release") | .reason' "$file")" 'a release note is dropped with its reason'
+  assert_equals 'Not a work item: a date or status stamp' "$(jq -r '.excluded[] | select(.id == "stamp") | .reason' "$file")" 'a status stamp is dropped with its reason'
+  assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "shell") | .reason' "$file")" 'a pasted Top of Mind command is dropped'
+  assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "cmd") | .reason' "$file")" 'a pasted assignment command is dropped'
+  assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "cp-sed") | .reason' "$file")" 'a pasted command chain is dropped'
+  assert_equals 'Not a work item: a shell command' "$(jq -r '.excluded[] | select(.id == "redirect") | .reason' "$file")" 'a pasted redirect to a path is dropped'
+  assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'dup-b - Fix the importer crash!: Unstarted work authorised by bug' 'an ask restating a start joins it instead of starting again'
+  assert_equals 'Duplicate of open-PR work: https://github.com/example/project/pull/7' "$(jq -r '.excluded[] | select(.id == "pr-dup") | .reason' "$file")" 'work an open PR already covers is dropped'
+  assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'cache - Repair the cache!: Already in flight: flying' 'an ask for work already in flight joins it and never starts'
+  assert_contains "$(jq -r '.top_of_mind[]' "$file")" 'stamp - Last updated: November 2026: Not a work item: a date or status stamp' 'the Top of Mind section reports each dropped ask'
+  assert_not_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh")" 'lvextend' 'no dropped item reaches the handoff'
+  pass 'progress: non-work and duplicate candidates are dropped before handoff and reported with a reason'
+}
+
 test_start_home_routes_requests_by_project() {
   make_world starthome
   local nav="$WORLD/navigator" lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh"
@@ -921,9 +993,15 @@ MD
   assert_equals "FM_HOME=$WORLD_HOME FM_HOME=$WORLD_HOME" "$(request_home "$file" pc-crash) $(request_home "$file" fm-crash)" 'without start-home every request goes to this home'
   sed -i 's/model: none;/start-home: navigator; model: none;/' "$WORLD_HOME/data/officers.md"
   run_progress >/dev/null || fail 'a run with start-home must succeed'
-  assert_equals "FM_HOME=$nav" "$(request_home "$file" pc-crash)" 'the PropertyCompass2 request goes to the navigator'
+  assert_equals "" "$(request_home "$file" pc-crash)" "the office's request is not in this home's shell handoff"
   assert_equals "FM_HOME=$WORLD_HOME" "$(request_home "$file" fm-crash)" 'a project no office dispatches stays with this home'
-  assert_equals "$nav" "$(jq -r '.start_requests[] | select(.id == "pc-crash") | .execute.env.FM_HOME' "$lane/$DATE.json")" 'the digest records where each request was sent'
+  assert_equals "$nav" "$(jq -r '.start_requests[] | select(.id == "pc-crash") | .execute.env.FM_HOME' "$lane/$DATE.json")" 'the digest addresses the PropertyCompass2 request to the navigator'
+  assert_contains "$(FM_OFFICE_NOW=$NOW FM_HOME="$nav" bash "$ROOT/bin/fm-office.sh" check lane:progress)" "1 start request(s) delivered to this office's inbox" "the navigator's own lane check delivers its request"
+  FM_HOME="$WORLD_HOME" bash "$file" >/dev/null || fail "this home's handoff must run"
+  assert_contains "$(FM_HOME="$nav" bash "$ROOT/bin/fm-inbox.sh" receipts --all-pending)" 'Fix a PropertyCompass crash' "the navigator's inbox receives its start"
+  assert_not_contains "$(FM_HOME="$nav" bash "$ROOT/bin/fm-inbox.sh" receipts --all-pending)" 'Fix a firstmate crash' "the navigator never receives this home's start"
+  assert_contains "$(FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" receipts --all-pending)" 'Fix a firstmate crash' "this home's handoff still delivers its own start"
+  assert_not_contains "$(FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" receipts --all-pending)" 'Fix a PropertyCompass crash' "this home never receives the navigator's start"
   printf -- '- navigator - nav (role: navigator; dispatch: PropertyCompass2; sources: tick; added 2026-11-04)\n' > "$WORLD_HOME/data/offices.md"
   run_progress >/dev/null || fail 'a run whose start-home office stopped reading the lane must succeed'
   assert_equals "FM_HOME=$WORLD_HOME" "$(request_home "$file" pc-crash)" 'an office that no longer reads lane:progress gets no requests, so they stay with this home'
@@ -1273,6 +1351,7 @@ JSON
 }
 
 test_start_home_routes_requests_by_project
+test_non_work_and_duplicates_are_dropped_and_reported
 test_top_of_mind_start
 test_top_of_mind_kind
 test_top_of_mind_dispositions

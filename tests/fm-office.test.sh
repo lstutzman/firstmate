@@ -686,6 +686,73 @@ test_sources_changes_nothing_in_the_parent() {
   pass 'source checks read the parent and write only in the office home'
 }
 
+# put_starts <world> <generated-epoch> <rank>:<home>:<shape>...: a progress digest whose start requests are
+# addressed to <home> (navigator, quartermaster or main); shape bad names another program.
+put_starts() {
+  local w=$1 at=$2
+  shift 2
+  put_digest "$w" progress 2026-11-05 "$#"
+  python3 -I - "$w" "$at" "$ROOT" "$@" > "$w/data/officers/progress/2026-11-05.json" <<'PY'
+import datetime, json, sys
+w, at, root, specs = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4:]
+rows = []
+for spec in specs:
+    rank, home, shape = spec.split(":")
+    rid = "progress-2026-11-05-%016x" % int(rank)
+    program = "/tmp/evil.sh" if shape == "bad" else root + "/bin/fm-inbox.sh"
+    rows.append({"id": "item-" + rank, "rank": int(rank), "execute": {
+        "action": "start", "request_id": rid, "env": {"FM_HOME": w if home == "main" else w + "/" + home},
+        "argv": [program, "note", "--request-id", rid, "--json", "--", "Start item " + rank + " for " + home]}})
+print(json.dumps({"source": "progress-officer", "generated_at": datetime.datetime.fromtimestamp(
+    at, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "start_requests": rows[::-1]}))
+PY
+}
+
+notes() {  # <home>: the bodies of its pending inbox notes, one per line, sorted
+  cat "$1"/state/inbox/*.note 2>/dev/null | grep -o 'Start item [0-9]* for [a-z]*' | sort
+}
+
+test_lane_check_delivers_its_own_start_requests_once() {
+  local w out
+  w=$(source_world starts)
+  put_starts "$w" $((SRC_NOW - 3600)) 1:navigator:ok 2:main:ok 3:navigator:ok 4:quartermaster:ok
+  out=$(nav_check "$w" lane:progress)
+  assert_equals "office navigator: progress digest 2026-11-05: 4 finding(s) in $w/data/officers/progress/2026-11-05.md; 2 start request(s) delivered to this office's inbox" "$out" "lane line names the delivery"
+  assert_equals "$(printf 'Start item 1 for navigator\nStart item 3 for navigator')" "$(notes "$w/navigator")" "only this office's requests reach its inbox"
+  assert_equals "" "$(notes "$w")" "main's request stays for main"
+  assert_equals "" "$(notes "$w/quartermaster")" "another office's request is not delivered by this one"
+  assert_equals "" "$(nav_check "$w" lane:progress)" "a repeat check delivers nothing again"
+  rm "$w/navigator/data/office/lane-progress-starts.seen" "$w/navigator/data/office/lane-progress.seen"
+  nav_check "$w" lane:progress >/dev/null
+  assert_equals 2 "$(find "$w/navigator/state/inbox" -maxdepth 1 -name '*.note' | wc -l | tr -d ' ')" "a lost seen record replays the same request ids, adding no note"
+  pass 'a lane check delivers only the start requests addressed to its own home, once'
+}
+
+test_lane_check_delivers_in_rank_order_and_stops_at_a_bad_request() {
+  local w out
+  w=$(source_world startorder)
+  put_starts "$w" $((SRC_NOW - 3600)) 1:navigator:ok 2:navigator:bad 3:navigator:ok
+  out=$(nav_check "$w" lane:progress)
+  assert_contains "$out" "start request 2 of 3 could not be delivered; the next check retries it" "the failure is reported"
+  assert_equals "Start item 1 for navigator" "$(notes "$w/navigator")" "rank 1 went first and nothing after the bad request ran"
+  assert_equals "" "$(nav_check "$w" lane:progress)" "the same failure is reported once"
+  put_starts "$w" $((SRC_NOW - 3600)) 1:navigator:ok 2:navigator:ok 3:navigator:ok
+  assert_contains "$(nav_check "$w" lane:progress)" "3 start request(s) delivered" "a corrected digest is retried"
+  assert_equals "$(printf 'Start item 1 for navigator\nStart item 2 for navigator\nStart item 3 for navigator')" "$(notes "$w/navigator")" "the retry replays rank 1 and adds the rest"
+  pass 'a lane check delivers in rank order and stops, reporting once, at a request it will not run'
+}
+
+test_lane_check_never_delivers_a_stale_digest() {
+  local w out
+  w=$(source_world startstale)
+  put_starts "$w" $((SRC_NOW - 37 * 3600)) 1:navigator:ok
+  out=$(nav_check "$w" lane:progress)
+  assert_contains "$out" "digest older than 36 hours, 1 start request(s) for this office not delivered" "a stale digest is reported"
+  assert_equals "" "$(notes "$w/navigator")" "nothing from a stale digest is delivered"
+  assert_equals "" "$(nav_check "$w" lane:progress)" "the stale digest is reported once"
+  pass 'a lane check never delivers start requests from a digest older than 36 hours'
+}
+
 test_healthy_registry_prints_nothing
 test_absent_registry_means_no_offices
 test_gaps
@@ -722,3 +789,6 @@ test_lane_check_reads_a_spaced_sources_list
 test_lane_check_is_silent_when_it_cannot_read
 test_high_lane_counts_only_high_severity
 test_sources_changes_nothing_in_the_parent
+test_lane_check_delivers_its_own_start_requests_once
+test_lane_check_delivers_in_rank_order_and_stops_at_a_bad_request
+test_lane_check_never_delivers_a_stale_digest

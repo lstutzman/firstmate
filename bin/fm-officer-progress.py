@@ -76,6 +76,33 @@ BLOCKABLE_STATES = ("backlog", "unstarted")
 TRUNCATED = "\n... (truncated, "
 EVENT = re.compile(r"^([a-z-]+)\b([^:]*):\s*(.*)$")
 KEY = re.compile(r"\bkey=([^\]\s]+)")
+# Non-work candidate shapes seen in real Top of Mind captures. A command needs shell structure after a
+# lowercase command word, as pasted, so a title that only starts with one ("curl timeouts") survives.
+SHELL = re.compile(r"^\$\s|^(?:sudo\s+)?(?:sudo|cp|mv|sed|awk|grep|chmod|chown|mkdir|scp|rsync|curl|wget|lvextend"
+                   r"|systemctl|apt(?:-get)?|export|cd|cat|echo|source|kill|make|touch|ls|rm|ln|git|gh|ssh|npm|npx"
+                   r"|dotnet|az|brew|pip3?|python3?|bash|node|op)\s+"
+                   r"(?:[-~/]|\.{1,2}/|\.[a-z]|[A-Za-z_]\w*=|.*\s(?:&&\s|\|\s*[a-z]|>>?\s*(?:[~/]|\.{1,2}/)))")
+RELEASE_NOTE = re.compile(r"^(?:\w+\s*:\s*)?same release as (?:pr\s*)?#?(?:\d+|n)[.!]*$", re.I)
+MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
+DATE = r"(?:\d{4}-\d{2}-\d{2}|(?:\d{1,2}\s+)?%s(?:\s+\d{1,2})?,?\s+\d{4}|%s\s+\d{1,2})" % (MONTH, MONTH)
+STAMP = re.compile(r"^(?:last\s+)?(?:updated|modified|revised|reviewed|edited|as of|dated?|status)"
+                   r"(?:\s*:\s*(?:on\s+)?(?:%s|[\w-]+)|\s+(?:on\s+)?%s)\.?$" % (DATE, DATE), re.I)
+
+
+def non_work(text, free_text=False):
+    """Why a candidate's text is not a work item, or None; only free text can be a pasted command."""
+    text = " ".join(text.split())
+    if free_text and SHELL.match(text):
+        return "Not a work item: a shell command"
+    if RELEASE_NOTE.match(text):
+        return "Not a work item: a release note"
+    if STAMP.match(text):
+        return "Not a work item: a date or status stamp"
+    return None
+
+
+def title_key(title):
+    return re.sub(r"[^0-9a-z]+", " ", TAG.sub("", title).casefold()).strip()
 
 
 def read(path):
@@ -549,11 +576,10 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
         links = [link["url"] for entry in [ask] + work for link in entry.get("links", [])]
         text = "\n".join([ask["words"]] + [str(w.get("title", "")) for w in work] + links)
         identifiers = set(LINEAR_ID.findall(text))
-        titles = {TAG.sub("", title).strip().casefold()
-                  for title in [ask["words"]] + [str(w.get("title", "")) for w in work]}
+        titles = {title_key(title) for title in [ask["words"]] + [str(w.get("title", "")) for w in work]} - {""}
         found = [r for r in rows + issues + extra if r["id"] == ask["id"]
                  or identifiers.intersection(r["linear_ids"])
-                 or TAG.sub("", r["title"]).strip().casefold() in titles
+                 or title_key(r["title"]) in titles
                  or (r.get("link") and r["link"] in links)
                  or any(url.endswith("/captains-log#" + r["id"]) for url in links)]
         # Judge merges a Linear issue into the home records that link it.
@@ -603,7 +629,17 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
     team_id = re.compile(r"\b%s-\d+\b" % re.escape(team))
     rows = [row for snapshot in snapshots for row in snapshot["rows"]]
     homes = [snapshot["home"] for snapshot in snapshots] or ["unknown"]
-    rows += top_of_mind_items(top_of_mind, rows, issues, prs, homes)
+    asks = []
+    for ask in top_of_mind:
+        reason = non_work(ask["words"], free_text=True)
+        if not reason:
+            asks.append(ask)
+            continue
+        # Dropped before matching, so non-work never joins, reclassifies, or starts other work.
+        row = item(ask["id"], ask["words"], homes[0], "")
+        row.update(reason=reason, tag_source=None, evidence=["Top of Mind: " + ask["id"] + " - " + ask["words"]])
+        doc["excluded"].append(row)
+    rows += top_of_mind_items(asks, rows, issues, prs, homes)
     category = {}
     linked = {}
     for row in rows:
@@ -729,13 +765,22 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             doc["start_requests"].append(row)
     doc["start_requests"].sort(key=lambda r: (CLASS_ORDER[r["authorising_class"]],
                                              r["priority"] or 5, r["id"], r["owner_home"]))
-    seen = set()
+    pr_titles = {title_key(pr.get("title") or ""): pr.get("html_url") or "an open PR" for pr in prs}
+    pr_titles.pop("", None)
+    seen = {}
     unique = []
     for row in doc["start_requests"]:
         key = row["linear_id"] or (row["owner_home"], row["id"])
-        if key in seen:
+        title = title_key(row["title"])
+        from_ask = any(e.startswith("Top of Mind: ") for e in row["evidence"][:1])
+        reason = non_work(row["title"]) or (
+            "Duplicate of start request " + seen[key] if key in seen else
+            "Duplicate of open-PR work: " + pr_titles[title] if from_ask and title in pr_titles else None)
+        if reason:
+            row["reason"] = reason
+            doc["excluded"].append(row)
             continue
-        seen.add(key)
+        seen[key] = row["id"]
         unique.append(row)
     doc["start_requests"] = unique
     if blockers:
@@ -820,6 +865,7 @@ def executable_requests(doc, home, start_homes=()):
 
 def write_handoff(path, requests):
     lines = ["#!/usr/bin/env bash", "# Firstmate executes this handoff; the officer only writes it.",
+             "# It holds this home's requests; each start-home office's lane check delivers its own from the JSON.",
              "set -euo pipefail"]
     for request in requests:
         lines.append("FM_HOME=" + shlex.quote(request["env"]["FM_HOME"]) + " "
@@ -1018,7 +1064,7 @@ def main(argv):
     except (OSError, ValueError, TypeError, http.client.HTTPException):
         problems.append("Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed")
     requested = set(filter(None, args.requested.split(",")))
-    requested.update(i for ask in top_of_mind if ask.get("kind") != "statement"
+    requested.update(i for ask in top_of_mind if ask.get("kind") != "statement" and not non_work(ask["words"], free_text=True)
                      for i in LINEAR_ID.findall(json.dumps(ask))
                      if re.fullmatch(re.escape(args.team) + r"-\d+", i))
     for snapshot in snapshots:
@@ -1075,7 +1121,8 @@ def main(argv):
     start_homes = [(h, {p.lower() for p in projects.split(",") if p})
                    for h, _, projects in (a.partition("=") for a in args.start_home)]
     requests = executable_requests(doc, args.home[0], start_homes)
-    write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"), requests)
+    write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"),
+                  [r for r in requests if r["env"]["FM_HOME"] == args.home[0]])
     reported = None
     runs = sorted(n for n in os.listdir(args.out) if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", n))
     if runs:

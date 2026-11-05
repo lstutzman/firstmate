@@ -94,9 +94,21 @@
 #                    "office <id>: <officer> digest <key>: <n> high-severity finding(s) in <path>"
 #                    once per new count of findings in the digest's .json whose
 #                    severity is "high" or "critical", or a number of 4 or more.
+# Either lane form, reading a progress digest (.json source "progress-officer"),
+# first delivers the start requests whose execute.env.FM_HOME is this office home:
+# in rank order, by running this code root's fm-inbox.sh with the request's
+# recorded note arguments (never the program the file names), with FM_HOME set to
+# this home. It delivers nothing from a digest whose generated_at is over 36 hours
+# old, stops at the first request it will not run or that fails, and retries on
+# later checks; request-id replay keeps each request one note. The outcome is
+# appended to the line as "; <n> start request(s) delivered to this office's
+# inbox", "; digest older than 36 hours, ...", or "; start request <r> of <n>
+# could not be delivered; ...", once per digest content, recorded in
+# data/office/lane-<officer>-starts.seen.
 # The seen-records are data/office/tick.seen and data/office/lane-<officer>[-high].seen
 # in the office home. A remote parent, an unreadable file, an unregistered
-# source or a home that is not an office is silent.
+# source or a home that is not an office is silent. Start delivery runs
+# fm-inbox.sh in this home only; nothing in the parent is written.
 #
 # Environment: FM_HOME, FM_DATA_OVERRIDE, FM_STATE_OVERRIDE as the other bin/ scripts do.
 # FM_OFFICE_HOST names this host for tests (default: hostname -s).
@@ -553,19 +565,80 @@ check_tick() {
   seen_once tick "$SLOT_KEY" "$line"
 }
 
+# deliver_starts <officer>: delivers the progress digest's start requests addressed to this
+# office home into its own inbox, in rank order, and prints one phrase when there is news.
+deliver_starts() {
+  mkdir -p "$DATA/office" 2>/dev/null || return 0
+  python3 -I - "${LANE_PATH%.md}.json" "$FM_HOME" "$SCRIPT_DIR/fm-inbox.sh" \
+    "$DATA/office/lane-$1-starts.seen" "$LANE_KEY" "$(now_epoch)" <<'PY' 2>/dev/null || true
+import datetime, hashlib, json, os, re, subprocess, sys
+path, home, inbox, seen_path, key, now = sys.argv[1:7]
+try:
+    raw = open(path, "rb").read()
+    doc = json.loads(raw)
+except (OSError, ValueError):
+    sys.exit()
+if not isinstance(doc, dict) or doc.get("source") != "progress-officer":
+    sys.exit()
+home = os.path.realpath(home)
+requests = sorted((r for r in doc.get("start_requests") or [] if isinstance(r, dict)),
+                  key=lambda r: r.get("rank") if isinstance(r.get("rank"), int) else 1 << 30)
+mine = [r.get("execute") for r in requests if isinstance(r.get("execute"), dict)
+        and isinstance((r["execute"].get("env") or {}).get("FM_HOME"), str)
+        and os.path.realpath(r["execute"]["env"]["FM_HOME"]) == home]
+if not mine:
+    sys.exit()
+stamp = key + " " + hashlib.sha256(raw).hexdigest()
+try:
+    last = open(seen_path).read().strip()
+except OSError:
+    last = ""
+if last in ("delivered " + stamp, "stale " + stamp):
+    sys.exit()
+def record(state, phrase):
+    with open(seen_path + ".tmp", "w") as fh:
+        fh.write(state + " " + stamp + "\n")
+    os.replace(seen_path + ".tmp", seen_path)
+    print(phrase)
+try:
+    generated = datetime.datetime.fromisoformat(doc["generated_at"].replace("Z", "+00:00")).timestamp()
+except (KeyError, AttributeError, ValueError):
+    generated = None
+if generated is None or int(now) - generated > 36 * 3600:
+    record("stale", "digest older than 36 hours, %d start request(s) for this office not delivered" % len(mine))
+    sys.exit()
+for n, execute in enumerate(mine, 1):
+    rid, argv = execute.get("request_id"), execute.get("argv")
+    # Run this office's own intake with the recorded arguments, never a program named in the file.
+    ok = (execute.get("action") == "start" and isinstance(rid, str)
+          and re.fullmatch(r"progress-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", rid) and isinstance(argv, list)
+          and len(argv) == 7 and all(isinstance(a, str) for a in argv)
+          and os.path.basename(argv[0]) == "fm-inbox.sh" and argv[1:6] == ["note", "--request-id", rid, "--json", "--"])
+    if ok:
+        ok = subprocess.run([inbox] + argv[1:], env=dict(os.environ, FM_HOME=home),
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+    if not ok:
+        if last != "failed " + stamp:
+            record("failed", "start request %d of %d could not be delivered; the next check retries it" % (n, len(mine)))
+        sys.exit()
+record("delivered", "%d start request(s) delivered to this office's inbox" % len(mine))
+PY
+}
+
 check_lane() {  # <officer> <high:0|1>
-  local officer=$1 high=$2 n
+  local officer=$1 high=$2 n line='' starts
   lane_digest "$officer" || return 0
+  starts=$(deliver_starts "$officer")
   if [ "$high" = 1 ]; then
     n=$(high_findings "$LANE_PATH")
-    [ "$n" -gt 0 ] || return 0
-    seen_once "lane-$officer-high" "$LANE_KEY $n" \
-      "office $OFFICE_ID: $officer digest $LANE_KEY: $n high-severity finding(s) in $LANE_PATH"
+    [ "$n" -gt 0 ] && line=$(seen_once "lane-$officer-high" "$LANE_KEY $n" \
+      "office $OFFICE_ID: $officer digest $LANE_KEY: $n high-severity finding(s) in $LANE_PATH")
   else
-    [ "$LANE_N" -gt 0 ] || return 0
-    seen_once "lane-$officer" "$LANE_KEY $LANE_N $LANE_PATH" \
-      "office $OFFICE_ID: $officer digest $LANE_KEY: $LANE_N finding(s) in $LANE_PATH"
+    [ "$LANE_N" -gt 0 ] && line=$(seen_once "lane-$officer" "$LANE_KEY $LANE_N $LANE_PATH" \
+      "office $OFFICE_ID: $officer digest $LANE_KEY: $LANE_N finding(s) in $LANE_PATH")
   fi
+  [ -z "$starts" ] || line="${line:-office $OFFICE_ID: $officer digest $LANE_KEY}; $starts"
+  [ -z "$line" ] || printf '%s\n' "$line"
 }
 
 cmd_check() {

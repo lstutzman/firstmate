@@ -59,7 +59,7 @@ Main leaves a digest it is not a consumer of to that office.
 An officer's digest line reaches main only when its registry `consumer:` field lists `main` (the default), and reaches an office through that office's `lane:<officer-id>` wake source; the failure line always reaches main.
 A surgeon digest's `findings` are intake findings (real, won't fix, or needs a decision, with `tracked` and `filing` fields), and its `archive_findings` are the session join's.
 
-For a progress digest, firstmate runs the adjacent `<date>.start-requests.sh` to enqueue the automatic starts, then processes those inbox notes through ordinary intake without another prioritization decision.
+For a progress digest, firstmate runs the adjacent `<date>.start-requests.sh` to enqueue the automatic starts addressed to its home, then processes those inbox notes through ordinary intake without another prioritization decision; a `start-home` office's own lane check delivers the requests addressed to it.
 Apply the linked contract's freshness and readiness checks first; route its `asks_for_lee` to Captain's Log cards through the ordinary hold path.
 The officer itself still never spawns or steers; executing the handoff and dispatching are firstmate's actions.
 
