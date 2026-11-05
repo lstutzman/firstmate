@@ -945,13 +945,12 @@ class LocalJev:
 def start_home_for(row, home, offices, team="PC", jev=None):
     """(home, unrouted reason) for a start request: the office whose dispatch list holds the row's project.
 
-    A Linear-only row is PropertyCompass2 work (the officer reads team PC; its Linear project is not a repo).
-    A row with no project is placed by scope_route. One that fits no single office stays with `home` and is
+    A row with no project, a Linear-only row included, is placed by scope_route, whose team Linear id rung sends
+    team work to PropertyCompass2. One that fits no single office stays with `home` and is
     reported as unrouted, but only when offices are configured to route to at all.
     A named project that no office dispatches stays with `home`, as it always has.
     """
-    project = "PropertyCompass2" if row.get("linear_only") else row.get("project") or ""
-    project = project.rsplit("/", 1)[-1].lower()
+    project = (row.get("project") or "").rsplit("/", 1)[-1].lower()
     if project:
         return next((o.home for o in offices if project in o.projects), home), None
     if row.get("requires_firstmate") or not offices:
