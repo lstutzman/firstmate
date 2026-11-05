@@ -773,8 +773,8 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
     unique = []
     for row in doc["start_requests"]:
         title = title_key(row["title"])
-        # Fleet records carry their own identity; only free-text Top of Mind asks are matched by title.
-        free_text = row.get("origin") == "top-of-mind"
+        # Fleet records carry their own identity; only rows created from a Top of Mind ask match by title.
+        free_text = any(e.startswith("Top of Mind: ") for e in row["evidence"][:1])
         keys = [k for k in (row["linear_id"] or (row["owner_home"], row["id"]), title if free_text else "") if k]
         earlier = next((seen[k] for k in keys if k in seen), None)
         reason = non_work(row["title"]) or (
@@ -1069,7 +1069,7 @@ def main(argv):
     except (OSError, ValueError, TypeError, http.client.HTTPException):
         problems.append("Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed")
     requested = set(filter(None, args.requested.split(",")))
-    requested.update(i for ask in top_of_mind if ask.get("kind") != "statement"
+    requested.update(i for ask in top_of_mind if ask.get("kind") != "statement" and not non_work(ask["words"])
                      for i in LINEAR_ID.findall(json.dumps(ask))
                      if re.fullmatch(re.escape(args.team) + r"-\d+", i))
     for snapshot in snapshots:

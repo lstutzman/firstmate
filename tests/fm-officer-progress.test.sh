@@ -914,6 +914,8 @@ test_non_work_and_duplicates_are_dropped_and_reported() {
 - [ ] cmd - export PATH=/opt/bin gh auth login -h github.com (kind: bug)
 - [ ] dup-a - Fix the importer crash (kind: bug)
 - [ ] same-title - Fix the importer crash (kind: bug)
+- [ ] tidy-a - Tidy the logs
+- [ ] tidy-b - Tidy the logs
 
 ## Done
 MD
@@ -928,12 +930,13 @@ JSON
  {"id":"cache","words":"Repair the cache!","status":"not-started","work":[],"links":[]},
  {"id":"dup-b","words":"Fix the importer crash!","status":"not-started","work":[],"links":[]},
  {"id":"pr-dup","words":"Fix the upload crash.","status":"not-started","work":[],"links":[]},
+ {"id":"tidy","words":"Tidy the logs","status":"not-started","work":[],"links":[]},
  {"id":"real","words":"Fix the export crash","status":"not-started","work":[],"links":[]}
 ]}
 JSON
   run_progress >/dev/null || fail 'filter run failed'
   digest=$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")
-  assert_equals 'dup-a real same-title' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'real work, including a fleet record that shares a title, survives the filter'
+  assert_equals 'dup-a real same-title tidy-a tidy-b' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'real work, including a fleet record that shares a title, survives the filter'
   assert_contains "$digest" 'release - same release as PR N' 'a dropped release note is listed'
   assert_equals 'Not a work item: a release note' "$(jq -r '.excluded[] | select(.id == "release") | .reason' "$file")" 'a release note is dropped with its reason'
   assert_equals 'Not a work item: a date or status stamp' "$(jq -r '.excluded[] | select(.id == "stamp") | .reason' "$file")" 'a status stamp is dropped with its reason'

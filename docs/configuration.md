@@ -1180,7 +1180,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 | `schema_version`, `source` | `1` and `progress-officer` |
 | `date`, `generated_at` | Run date and actual UTC observation timestamp |
 | `doing`, `done` | Work in the start classes currently in flight, and work recorded completed or canceled; completed Linear-only history is not listed |
-| `start_requests` | Ranked authorized work waiting for firstmate to dispatch |
+| `start_requests` | Ranked authorized work waiting for firstmate, or the `start-home` office it is addressed to, to dispatch |
 | `asks_for_lee` | Explicit asks of Lee, title-gated choices and work outside automatic-start authority, and merge asks whose PRs are not all merged, each with its reason; these need Captain's Log cards |
 | `excluded` | Evidence that prevents a new start, including existing cards and incomplete discovery |
 | `unclassified` | Count of open items with no recorded start class; they are not listed |
