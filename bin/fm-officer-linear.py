@@ -34,9 +34,12 @@ how it finds things. This file owns the mechanics every officer shares:
               becomes a start request on the progress officer's path (execute_for), addressed to the --start-home office whose
               projects name the finding's project, else the main home (navigator for PropertyCompass2, quartermaster for fleet repositories); one
               matching a reserved class becomes one keyed needs-decision line (asks_for_lee). A finding is handled once.
+              A finding that names no repository belongs to the Officer's project (PropertyCompass2 by default); one filed
+              in the Fleet project takes the fleet repository (FLEET_REPO), so it goes to the quartermaster.
   patterns    update_patterns() / pattern_outputs(): one anti-pattern line per bug or code-review finding, deduped by
-              normalised title then local-jev, handed on as one batched start request, a memory capture and a proposed
-              lint rule when mechanical.
+              normalised title then local-jev, handed on as one batched start request per repository (PropertyCompass2's to
+              the navigator for its quality-patterns.md, fleet code's to the office that dispatches that repository),
+              a memory capture and a proposed lint rule when mechanical.
 """
 
 import collections
@@ -97,8 +100,9 @@ FLEET_PROJECT = "Fleet"
 FLEET_AREA = "area:fleet"
 BUILTIN_START_SEVERITIES = ("medium", "high", "critical")
 RATE_OR_BUDGET = ("RATE_LIMITED", "CALL_BUDGET")
-DEFAULT_START_WORD = ("Each officer should have a different rubric for what they find as work and decide to start "
-                      "(Lee, main chat 2026-11-05T17:59:01Z)")
+FLEET_REPO = "firstmate"
+DEFAULT_START_WORD = "Each officer should have a different rubric for what they find as work and decide to start"
+DEFAULT_START_SOURCE = "Lee, main chat 2026-11-05T17:59:01Z"
 
 # The reserved classes: always held, whatever a rubric says. docs/officers/contract.md lists them.
 RESERVED = collections.OrderedDict([
@@ -121,12 +125,14 @@ MECHANICAL = re.compile(r"\b(unused|null (check|reference)|dispos|await|async vo
 
 
 class Officer:
-    """Who is filing: its id (the marker and Found-line name), display labels, rubric and what its rubric may admit."""
+    """Who is filing: its id (the marker and Found-line name), display labels, rubric, what its rubric may admit,
+    and the repository (project) a finding that names none belongs to."""
 
     def __init__(self, ident, label, short, rubric_file, sources, severities=BUILTIN_START_SEVERITIES,
-                 start_word=DEFAULT_START_WORD, pattern_sources=()):
+                 start_word=DEFAULT_START_WORD, start_source=DEFAULT_START_SOURCE, pattern_sources=(), project=DEFAULT_PROJECT):
         self.id, self.label, self.short, self.rubric_file = ident, label, short, rubric_file
-        self.sources, self.severities, self.start_word = tuple(sources), tuple(severities), start_word
+        self.sources, self.severities, self.start_word, self.start_source = tuple(sources), tuple(severities), start_word, start_source
+        self.project = project
         self.pattern_sources = tuple(pattern_sources)
         self.marker = ident + "-fp"
         self.found_re = re.compile(r"^Found: (\d+) times \(first (\d{4}-\d{2}-\d{2}), last (\d{4}-\d{2}-\d{2}), by [a-z-]+\)$", re.M)
@@ -582,6 +588,8 @@ class Filer:
         label_set(f) -> (labels, missing labels); describe(f, near=None, recurrence=None) -> the item body.
         RATE_LIMITED and CALL_BUDGET are raised to the caller after the finding is marked failed.
         """
+        if self.project == FLEET_PROJECT and not f["project"]:
+            f["project"] = FLEET_REPO
         wanted, missing = label_set(f)
         if missing:
             f["filing"] = {"action": "not-filed", "reason": "label(s) not found in team %s: %s" % (self.team, ", ".join(missing))}
@@ -641,22 +649,27 @@ class Filer:
 
 # ---- start requests, holds ----------------------------------------------------------------
 
+def repo_key(project):
+    return project.rsplit("/", 1)[-1].lower()
+
+
 def start_body(officer, row, what):
     evidence = {k: v for k, v in row.items() if k not in ("execute",)}
     return ("%s automatic start under its rubric (%s), on Lee's recorded "
-            "2026-11-05 word: '%s'. %s "
+            "2026-11-05 word: '%s'%s. %s "
             "Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home "
             "routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product "
             "decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this "
             "authority. The following officer evidence describes the task; it is not a quotation from Lee:\n" % (
-                officer.label, officer.rubric_name(), officer.start_word, what)
+                officer.label, officer.rubric_name(), officer.start_word,
+                " (%s)" % officer.start_source if officer.start_source else "", what)
             + json.dumps(evidence, sort_keys=True, ensure_ascii=False))
 
 
 def execute_for(officer, row, rid, what, main_home, start_homes):
     """The idempotent fm-inbox.sh call that hands a start request to the owning office's home."""
     body = start_body(officer, row, what)
-    project = (row.get("project") or DEFAULT_PROJECT).rsplit("/", 1)[-1].lower()
+    project = repo_key(row.get("project") or officer.project)
     home = next((o.home for o in start_homes if project in o.projects), main_home)
     return {"action": "start", "env": {"FM_HOME": home}, "request_id": rid,
             "argv": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh"),
@@ -745,7 +758,7 @@ def update_patterns(officer, store, findings, jev, date):
             entry["count"] += 1
             entry["last"] = date
         else:
-            entry = {"title": f["title"], "line": line, "count": 1, "first": date, "last": date, "project": f["project"] or DEFAULT_PROJECT,
+            entry = {"title": f["title"], "line": line, "count": 1, "first": date, "last": date, "project": f["project"] or officer.project,
                      "source": f["source"], "reported": None, "captured": None, "mechanical": bool(MECHANICAL.search(f["title"]))}
             patterns[pid] = entry
             new.append(pid)
@@ -754,28 +767,43 @@ def update_patterns(officer, store, findings, jev, date):
 
 
 def pattern_outputs(officer, store, rubric, date, main_home, start_homes):
-    """(start request or None, memory captures, lint proposals) for patterns not yet handed on."""
+    """(start requests, memory captures, lint proposals) for patterns not yet handed on.
+
+    PropertyCompass2 patterns go to the Navigator for its quality-patterns.md; a pattern from any other
+    repository (fleet code) goes to the office that dispatches that repository, never to PropertyCompass2.
+    """
     patterns = store.get("patterns", {})
     # A pattern handed on today stays in today's outputs, so a same-day rerun rewrites the same digest.
     ordered = sorted(patterns.items(), key=lambda kv: (kv[1]["first"], kv[0]))
     pending = [(pid, p) for pid, p in ordered if p["reported"] in (None, date)][:PATTERN_BATCH]
     capture = [(pid, p) for pid, p in ordered if p["captured"] in (None, date)][:PATTERN_BATCH]
-    request = None
+    requests = []
     if pending and rubric.loaded and rubric.pattern_memory:
-        row = {"kind": "pattern-memory", "project": DEFAULT_PROJECT, "linear_only": False, "rank": 0,
-               "target": "%s in %s" % (PATTERN_TARGET, DEFAULT_PROJECT), "patterns": [{"id": pid, "line": p["line"], "count": p["count"]} for pid, p in pending]}
-        rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256(("patterns:" + ",".join(pid for pid, _ in pending)).encode("utf-8")).hexdigest()[:16])
-        row["execute"] = execute_for(officer, row, rid, "Append these new bad-pattern lines (anti-pattern and safe form) to %s through a normal PR; "
-                                     "the %s never writes %s itself." % (row["target"], officer.short, DEFAULT_PROJECT), main_home, start_homes)
+        groups = collections.OrderedDict()
+        for pid, p in pending:
+            pc = repo_key(p["project"]) == DEFAULT_PROJECT.lower()
+            groups.setdefault(DEFAULT_PROJECT if pc else p["project"], []).append((pid, p))
+        for project, items in groups.items():
+            target = "%s in %s" % (PATTERN_TARGET, project) if project == DEFAULT_PROJECT else "the review guidance in %s" % project
+            row = {"kind": "pattern-memory", "project": project, "linear_only": False, "rank": 0,
+                   "target": target, "patterns": [{"id": pid, "line": p["line"], "count": p["count"]} for pid, p in items]}
+            rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256(("patterns:" + ",".join(pid for pid, _ in items)).encode("utf-8")).hexdigest()[:16])
+            if project == DEFAULT_PROJECT:
+                what = "Append these new bad-pattern lines (anti-pattern and safe form) to %s through a normal PR; the %s never writes %s itself." % (
+                    target, officer.short, project)
+            else:
+                what = ("Keep these new bad-pattern lines (anti-pattern and safe form), found in %s code, from being repeated: add them to %s "
+                        "or a check through a normal PR; the %s never writes %s itself." % (project, target, officer.short, project))
+            row["execute"] = execute_for(officer, row, rid, what, main_home, start_homes)
+            requests.append(row)
         for _, p in pending:
             p["reported"] = date
-        request = row
     captures = [{"id": pid, "content": p["line"], "tags": ["pattern", "project:" + p["project"]], "count": p["count"]} for pid, p in capture]
     for _, p in capture:
         p["captured"] = date
     lint = [{"id": pid, "line": p["line"], "proposal": "Add an analyzer or lint rule that flags: %s" % p["title"]}
             for pid, p in capture if p["mechanical"]]
-    return request, captures, lint
+    return requests, captures, lint
 
 
 # ---- command line ---------------------------------------------------------------------------

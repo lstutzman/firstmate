@@ -7,7 +7,7 @@
 # match; the score the found count gives (severity weight x log2(1 + found)); the per-run create cap and the Linear
 # call budget leaving a named overflow and nothing dropped; a reserved class becoming one keyed needs-decision and
 # never a start, whatever the rubric lists; a rubric only narrowing; fleet findings taking the Fleet project and
-# area:fleet; --dry-run before --verify on every write; a closed item never edited, reopened or re-prioritised
+# area:fleet and their start requests and patterns going to the Quartermaster; --dry-run before --verify on every write; a closed item never edited, reopened or re-prioritised
 # (a new item names it); and no call that closes or deletes.
 set -u
 # shellcheck source=tests/lib.sh
@@ -197,6 +197,26 @@ elif scenario == "starts":
            "sev": sorted(rub.start_severities), "min": str(rub.min_score),
            "next_day": [[s["title"] for s in again[0]], again[1], again[2]],
            "body": starts[0]["execute"]["argv"][-1] if starts else None}
+elif scenario == "fleet-start":
+    offices = [lib.progress.parse_office("/home/nav=propertycompass2=navigator"), lib.progress.parse_office("/home/qm=firstmate,skills=quartermaster")]
+    fleet = find("f", "Bosun backup check crashes", "high")
+    fl, lin = filer(project="Fleet")
+    run(fl, [fleet])
+    pc = find("p", "Null reference when saving", "high")
+    pc["filing"] = {"action": "created", "issue": "PC-300"}
+    fs = [fleet, pc]
+    for f in fs:
+        f["score"] = lib.score_of(f)
+    rub = lib.load_rubric(rubric_file, officer)
+    starts, held, asks = lib.plan_starts(officer, fs, rub, date, "linear", "/home/main", offices, {})
+    store = {}
+    lib.update_patterns(officer, store, fs, lib.Jev(os.path.join(W, "jev.py")), date)
+    pats, captures, lint = lib.pattern_outputs(officer, store, rub, date, "/home/main", offices)
+    res = {"starts": {s["title"]: s["execute"]["env"]["FM_HOME"] for s in starts}, "project": fleet["project"],
+           "body": starts[0]["execute"]["argv"][-1],
+           "patterns": [{"home": r["execute"]["env"]["FM_HOME"], "target": r["target"], "body": r["execute"]["argv"][-1],
+                         "lines": [p["line"] for p in r["patterns"]]} for r in pats],
+           "captures": sorted(c["tags"][1] for c in captures)}
 print(json.dumps(res))
 PY
 }
@@ -294,7 +314,7 @@ EOF
   assert_equals 4.0 "$(jq -r '.min' <<<"$out")" "a rubric cannot lower the start minimum"
   assert_equals '[[],[],[]]' "$(jq -c '.next_day' <<<"$out")" "an item started or held is not asked for again the next day"
   assert_contains "$(jq -r '.body' <<<"$out")" "Fixture Officer automatic start under its rubric (docs/officers/fixture-rubric.md)" "the start request names the officer and its rubric"
-  assert_equals '["/home/nav","/home/nav"]' "$(jq -c '.homes' <<<"$out")" "a Linear-only item is PropertyCompass2 work and goes to the owning office"
+  assert_equals '["/home/nav","/home/nav"]' "$(jq -c '.homes' <<<"$out")" "a finding naming no repository is the officer's default project, PropertyCompass2, and goes to the Navigator"
   pass "fm-officer-linear: a reserved class is one keyed needs-decision and never starts; a rubric only narrows"
 }
 
@@ -310,6 +330,29 @@ test_fleet_findings_take_the_fleet_project_and_label() {
   assert_contains "$(grep '^issue create' "$LDIR/calls" | sed -n 1p)" "--dry-run" "the dry run comes first"
   assert_contains "$(grep '^issue create' "$LDIR/calls" | sed -n 2p)" "--verify" "then the verify"
   pass "fm-officer-linear: a fleet finding goes to the Fleet project with area:fleet, dry-run then verify"
+}
+
+test_fleet_finding_starts_and_patterns_go_to_the_quartermaster() {
+  local out
+  world fleet-start '{}'
+  cat > "$W/fixture-rubric.md" <<'EOF'
+# Fixture rubric
+
+## Settings the code reads
+
+- start-severities: high, critical
+EOF
+  out=$(drive fleet-start) || fail "driver must succeed"
+  assert_equals firstmate "$(jq -r '.project' <<<"$out")" "a finding filed in the Fleet project takes the fleet repository"
+  assert_equals /home/qm "$(jq -r '.starts["Bosun backup check crashes"]' <<<"$out")" "its start request goes to the Quartermaster's home"
+  assert_equals /home/nav "$(jq -r '.starts["Null reference when saving"]' <<<"$out")" "a PropertyCompass2 finding still goes to the Navigator"
+  assert_contains "$(jq -r '.body' <<<"$out")" "word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z)." "only Lee's words are inside the quotation marks"
+  assert_equals '["/home/qm","/home/nav"]' "$(jq -c '[.patterns[].home]' <<<"$out")" "a fleet pattern goes to the Quartermaster, a PropertyCompass2 one to the Navigator"
+  assert_equals "Anti-pattern: Bosun backup check crashes. Safe form: not stated by the source; see the linked item" "$(jq -r '.patterns[0].lines | join("|")' <<<"$out")" "the fleet request carries only the fleet pattern"
+  assert_not_contains "$(jq -r '.patterns[0].target + .patterns[0].body' <<<"$out")" "quality-patterns.md" "a fleet pattern never goes to PropertyCompass2's quality-patterns.md"
+  assert_contains "$(jq -r '.patterns[1].target' <<<"$out")" ".agents/skills/sdlc-review/references/quality-patterns.md in PropertyCompass2" "a PropertyCompass2 pattern still targets quality-patterns.md"
+  assert_equals '["project:PropertyCompass2","project:firstmate"]' "$(jq -c '.captures' <<<"$out")" "both patterns go to the memory tier tagged with their project"
+  pass "fm-officer-linear: a Fleet-project finding and its pattern go to the Quartermaster; PropertyCompass2 work keeps the Navigator"
 }
 
 test_closed_item_is_never_touched() {
@@ -343,5 +386,6 @@ test_score_is_the_found_count_lever
 test_cap_overflow_is_listed_and_budget_stops_the_run
 test_reserved_class_becomes_one_keyed_needs_decision
 test_fleet_findings_take_the_fleet_project_and_label
+test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
 test_closed_item_is_never_touched
 test_no_call_closes_or_deletes

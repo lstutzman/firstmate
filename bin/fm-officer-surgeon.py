@@ -526,7 +526,7 @@ def plan_clusters(clustered, state, ledger):
 # ---- filing -----------------------------------------------------------------------------
 
 OFFICER = lib.Officer("surgeon", "Ship's Surgeon", "Surgeon", RUBRIC_FILE, BUILTIN_START_SOURCES,
-                      start_word="Start them through the Navigator's start path, per the surgeon's rubric",
+                      start_word="Start them through the Navigator's start path, per the surgeon's rubric", start_source="",
                       pattern_sources=("review", "sweeper"))
 iso_week = lib.iso_week
 
@@ -742,9 +742,8 @@ def main(argv):
     starts, held, asks = lib.plan_starts(OFFICER, findings, rubric, args.date, args.writes, main_home, start_homes, state.setdefault("handled", {}))
     if rubric.pattern_memory:
         lib.update_patterns(OFFICER, store, findings, jev, args.date)
-    pattern_request, captures, lint = lib.pattern_outputs(OFFICER, store, rubric, args.date, main_home, start_homes)
-    if pattern_request:
-        starts.append(pattern_request)
+    pattern_requests, captures, lint = lib.pattern_outputs(OFFICER, store, rubric, args.date, main_home, start_homes)
+    starts.extend(pattern_requests)
     for rank, row in enumerate(starts, 1):
         row["rank"] = rank
     classes = {}

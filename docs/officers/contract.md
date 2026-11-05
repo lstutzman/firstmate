@@ -44,6 +44,7 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
 
 - A finding starts only when it is real, untracked and filed, its source and severity are ones the rubric admits, its score reaches the rubric's minimum (never below 4), and it matches no reserved class.
 - The start request uses the progress officer's start-request path, so the owning office's own check delivers it: the Navigator for PropertyCompass2, the Quartermaster for fleet repositories.
+  A finding filed in the Fleet project, or one naming a fleet repository, goes to the Quartermaster; a finding that names no repository belongs to the officer's own project, PropertyCompass2 unless the officer declares another.
   An item is started or held once; a later day never asks for it again.
 - The reserved classes are fixed in the library and always hold, whatever a rubric says.
   A finding that matches one is still filed, and the run's digest carries one keyed `needs-decision` line (`<officer-id>-holds-<date>`) naming them.
@@ -69,7 +70,10 @@ For a bug or code-review finding, the specific bad pattern is remembered so it i
 
 - One line per pattern: the anti-pattern and the safe form.
 - Patterns are deduped like findings (normalised title, then local-jev above 0.85), and a repeat raises the pattern's count.
-- A new pattern leaves in three ways: one batched start request to the Navigator to append the lines to PropertyCompass2's `.agents/skills/sdlc-review/references/quality-patterns.md` through a normal PR (the officer never writes that repository), the digest for capture to the memory tier tagged `pattern` and the project, and, for a mechanical pattern, a proposed analyzer or lint rule.
+- A new pattern leaves in three ways: a batched start request, the digest for capture to the memory tier tagged `pattern` and the project, and, for a mechanical pattern, a proposed analyzer or lint rule.
+  A PropertyCompass2 pattern's request goes to the Navigator to append the lines to PropertyCompass2's `.agents/skills/sdlc-review/references/quality-patterns.md` through a normal PR.
+  A pattern from fleet code never goes to that file: its request goes to the Quartermaster, to add the lines to that repository's review guidance or a check through a normal PR.
+  The officer never writes either repository itself.
 
 ## The rubric file
 
