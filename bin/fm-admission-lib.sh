@@ -9,12 +9,19 @@
 #   command=scripts/ci/classify-diff.sh --risk --stdin
 #   classes=payments legal-text data-rewriting-migration
 #   clear=none
-# command and classes are required, clear is optional, each appears at most
-# once, and no other key is accepted. command is split on spaces with no shell
+#   route.scan-gate=handoff:slarti
+# command and classes are required, clear and route.<class> are optional, each
+# key appears at most once, and no other key is accepted. command is split on spaces with no shell
 # quoting or expansion. classes is the space-separated list of class names
 # that need the captain's word, and clear the verdict words that need nothing;
 # every name, like every word the classifier prints, is [A-Za-z0-9._-] and does
 # not start with a dot, because a class becomes part of a task id.
+# route.<class>=handoff:<home> declares that a flagged <class> is never
+# admitted in this home but handed to merger home <home>, which merges it only
+# after a fresh reviewer who did not write the change records on the PR that it
+# loosens no check. <class> must be one of classes=, and the authority class
+# can never be routed, because a change to what grants authority stays with
+# the captain.
 #
 # The classifier contract matches the project's own diff classifier: it runs
 # with the project's local copy as its working directory, so a relative command
@@ -29,9 +36,11 @@
 # bound, or prints an empty or undeclared verdict is an error.
 #
 #   fm_admission_load <config-file>
-#       Sets FM_ADMISSION_COMMAND (array), FM_ADMISSION_CLASSES, and
-#       FM_ADMISSION_CLEAR (one word per line), or sets FM_ADMISSION_ERROR and
-#       returns 1.
+#       Sets FM_ADMISSION_COMMAND (array), FM_ADMISSION_CLASSES,
+#       FM_ADMISSION_CLEAR (one word per line), and FM_ADMISSION_ROUTES (one
+#       "<class> <home>" per line), or sets FM_ADMISSION_ERROR and returns 1.
+#   fm_admission_route <class>
+#       Prints the home a class is handed to, or nothing for an unrouted class.
 #   fm_admission_classify <project-dir> <paths-file>
 #       Sets FM_ADMISSION_FLAGGED to the configured classes the classifier
 #       printed, sorted and one per line (empty when none), or sets
@@ -52,10 +61,11 @@ fm_admission_name_ok() {  # <word>
 }
 
 fm_admission_load() {  # <config-file>
-  local file=$1 line key value command='' classes='' clear='' seen='' class names
+  local file=$1 line key value command='' classes='' clear='' routes='' seen='' class names home
   FM_ADMISSION_COMMAND=()
   FM_ADMISSION_CLASSES=
   FM_ADMISSION_CLEAR=
+  FM_ADMISSION_ROUTES=
   FM_ADMISSION_ERROR=
   if [ ! -f "$file" ] || [ ! -r "$file" ]; then
     FM_ADMISSION_ERROR="the admission config $file is missing or unreadable"
@@ -80,8 +90,22 @@ fm_admission_load() {  # <config-file>
       command) command=$value ;;
       classes) classes=$value ;;
       clear) clear=$value ;;
+      route.*)
+        class=${key#route.}
+        home=${value#handoff:}
+        if ! fm_admission_name_ok "$class" || [ "$home" = "$value" ] || ! fm_admission_name_ok "$home"; then
+          FM_ADMISSION_ERROR="the admission config $file has a route that is not route.<class>=handoff:<home>: $line"
+          return 1
+        fi
+        if [ "$class" = authority ]; then
+          FM_ADMISSION_ERROR="the admission config $file routes the authority class, which is never handed to another merger"
+          return 1
+        fi
+        routes="$routes$class $home
+"
+        ;;
       *)
-        FM_ADMISSION_ERROR="the admission config $file has an unknown key $key; only command=, classes=, and clear= are accepted"
+        FM_ADMISSION_ERROR="the admission config $file has an unknown key $key; only command=, classes=, clear=, and route.<class>= are accepted"
         return 1
         ;;
     esac
@@ -113,6 +137,21 @@ fm_admission_load() {  # <config-file>
     FM_ADMISSION_CLEAR="$FM_ADMISSION_CLEAR$class
 "
   done
+  while read -r class home; do
+    [ -n "$class" ] || continue
+    if ! printf '%s' "$FM_ADMISSION_CLASSES" | grep -qxF -- "$class"; then
+      FM_ADMISSION_ERROR="the admission config $file routes $class, which is not one of its classes="
+      return 1
+    fi
+  done <<< "$routes"
+  FM_ADMISSION_ROUTES=$routes
+}
+
+fm_admission_route() {  # <class>
+  local class home
+  while read -r class home; do
+    [ "$class" != "$1" ] || { printf '%s\n' "$home"; return 0; }
+  done <<< "$FM_ADMISSION_ROUTES"
 }
 
 fm_admission_classify() {  # <project-dir> <paths-file>
