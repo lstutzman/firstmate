@@ -75,6 +75,9 @@
 #   wrong_home_first_sighting= encoded path:line identity of the first sighting
 #   wrong_home_sightings=   comma-separated encoded path:line identities
 #   wrong_home_scan_signature=
+#                           The scan reads each child log from a remembered byte
+#                           offset kept in state/.pending-reply-wrong-home-<corr>.cursor
+#                           (see fm_pending_reply_wrong_home_read_new), never whole.
 #   grace_secs=             bounded grace before recovery, and before the
 #                           missed-report escalation, are eligible - measured
 #                           from the relevant turn's completion (request or
@@ -755,6 +758,7 @@ _fm_pending_reply_try_resolve_locked() {  # <state-dir> <corr_id> [status-file-o
   fi
   fm_pending_reply_set "$rec" resolved_epoch "$now" || return 1
   fm_pending_reply_set "$rec" resolved_via "$via" || return 1
+  rm -f -- "$(fm_pending_reply_wrong_home_cursor_path "$state" "$corr")"
   # The record is resolved either way; a failed close stays retryable from the
   # watcher tick rather than turning a settled request back into a failure.
   _fm_pending_reply_close_escalation_locked "$state" "$corr" || true
@@ -1530,6 +1534,8 @@ fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home
   local state=$1 corr=$2 sm_home=$3
   local rec delivered hits first sightings snapshot previous status_file line line_no sighting_base sighting_id phase changed=0
   local remote_parent_channel=0
+  local cursor cursor_rows new_rows='' token prev_ident prev_offset prev_lines row_path row_ident row_offset row_lines
+  local scan header new_ident new_offset new_lines bytes_read matches row
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   [ -n "$sm_home" ] && [ -d "$sm_home" ] || return 0
@@ -1552,7 +1558,14 @@ fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home
     && [ "$FM_PARENT_CHANNEL_ROUTE" = remote ]; then
     remote_parent_channel=1
   fi
+  declare -F fm_watcher_cycle_beat >/dev/null 2>&1 || . "$_FM_PENDING_REPLY_LIB_DIR/fm-timeout-lib.sh"
+  cursor=$(fm_pending_reply_wrong_home_cursor_path "$state" "$corr")
+  cursor_rows=$(cat "$cursor" 2>/dev/null || true)
+  token=$(fm_pending_reply_corr_token "$corr")
   for status_file in "$sm_home"/state/*.status; do
+    # A long-lived child log can be large; beat between files so one of them
+    # never freezes the watcher's liveness beat.
+    fm_watcher_cycle_beat
     [ -e "$status_file" ] || continue
     if [ "$remote_parent_channel" = 1 ] \
       && [ "$(basename "$status_file")" = parent-replies.status ]; then
@@ -1560,9 +1573,30 @@ fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home
     fi
     sighting_base=$(fm_pending_reply_sighting_encode "$status_file" 0) || continue
     sighting_base=${sighting_base%:0}
-    line_no=0
-    while IFS= read -r line || [ -n "$line" ]; do
-      line_no=$((line_no + 1))
+    prev_ident=- prev_offset=0 prev_lines=0
+    while IFS=$'\t' read -r row_path row_ident row_offset row_lines; do
+      [ "$row_path" = "$sighting_base" ] || continue
+      case "$row_offset:$row_lines" in *[!0-9:]* | :* | *:) continue ;; esac
+      prev_ident=$row_ident prev_offset=$row_offset prev_lines=$row_lines
+      break
+    done <<EOF
+$cursor_rows
+EOF
+    scan=$(fm_pending_reply_wrong_home_read_new "$status_file" "$prev_ident" "$prev_offset" "$prev_lines" "$token") \
+      || continue
+    header=${scan%%$'\n'*}
+    IFS=$'\t' read -r new_ident new_offset new_lines bytes_read <<EOF
+$header
+EOF
+    [ -z "${FM_PENDING_REPLY_SCAN_PROBE:-}" ] \
+      || printf '%s\t%s\n' "$status_file" "$bytes_read" >> "$FM_PENDING_REPLY_SCAN_PROBE"
+    new_rows="${new_rows}${sighting_base}"$'\t'"${new_ident}"$'\t'"${new_offset}"$'\t'"${new_lines}"$'\n'
+    case "$scan" in *$'\n'*) matches=${scan#*$'\n'} ;; *) matches= ;; esac
+    while [ -n "$matches" ]; do
+      row=${matches%%$'\n'*}
+      case "$matches" in *$'\n'*) matches=${matches#*$'\n'} ;; *) matches= ;; esac
+      line_no=${row%%$'\t'*}
+      line=${row#*$'\t'}
       fm_pending_reply_line_resolves "$line" "$corr" || continue
       sighting_id="$sighting_base:$line_no"
       [ -n "$first" ] || first=$sighting_id
@@ -1576,7 +1610,7 @@ fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home
       fi
       hits=$((hits + 1))
       changed=1
-    done < "$status_file"
+    done
   done
   if [ -n "$first" ] && [ -z "$(fm_pending_reply_get "$rec" wrong_home_first_sighting)" ]; then
     fm_pending_reply_set "$rec" wrong_home_first_sighting "$first" || return 1
@@ -1586,7 +1620,63 @@ fm_pending_reply_detect_wrong_home() {  # <state-dir> <corr_id> <secondmate-home
     fm_pending_reply_set "$rec" wrong_home_hits "$hits" || return 1
   fi
   fm_pending_reply_set "$rec" wrong_home_scan_signature "$snapshot" || return 1
+  # The cursor commits last: a sighting that failed to persist above is read
+  # again from the old position, and one already recorded is deduplicated.
+  fm_pending_reply_wrong_home_cursor_write "$cursor" "$new_rows" || true
   return 0
+}
+
+# The wrong-home scan's position in each child log, one cursor per request:
+# `<encoded path> <dev:ino> <byte offset> <lines read>` rows. It lives beside
+# the pending-reply store rather than inside it so retention never sees it,
+# and is removed when the request resolves or its task is torn down.
+fm_pending_reply_wrong_home_cursor_path() {  # <state-dir> <corr_id>
+  printf '%s/.pending-reply-wrong-home-%s.cursor' "$1" "$2"
+}
+
+fm_pending_reply_wrong_home_cursor_write() {  # <cursor-path> <rows>
+  local cursor=$1 rows=$2 tmp
+  tmp="$cursor.tmp.$$"
+  printf '%s' "$rows" > "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 1; }
+  mv -f -- "$tmp" "$cursor" 2>/dev/null || { rm -f -- "$tmp"; return 1; }
+}
+
+# Read only the bytes of <status-file> past the remembered position and print
+# `<dev:ino> <new offset> <lines read> <bytes read>` followed by one
+# `<line number> <line>` row per new line holding <token>. The position resets
+# to the start of the file when its inode changed or it shrank (rotated,
+# replaced or truncated). Only newline-terminated lines are consumed: a partial
+# last line stays past the new offset until it completes, so it is neither lost
+# nor counted twice. Line numbers count from the start of the file because the
+# remembered line count carries across reads.
+fm_pending_reply_wrong_home_read_new() {  # <status-file> <ident> <offset> <lines> <token>
+  perl -e '
+    my ($path, $ident, $offset, $lines, $token) = @ARGV;
+    open(my $fh, "<:raw", $path) or exit 1;
+    my @st = stat($fh) or exit 1;
+    my ($now_ident, $size) = ("$st[0]:$st[1]", $st[7]);
+    ($offset, $lines) = (0, 0) if $ident ne $now_ident || $offset > $size;
+    my $buf = "";
+    if ($size > $offset) {
+      seek($fh, $offset, 0) or exit 1;
+      my $got = read($fh, $buf, $size - $offset);
+      defined $got or exit 1;
+    }
+    my $end = rindex($buf, "\n");
+    my $out = "";
+    if ($end >= 0) {
+      my $pos = 0;
+      while ($pos <= $end) {
+        my $nl = index($buf, "\n", $pos);
+        my $text = substr($buf, $pos, $nl - $pos);
+        $lines++;
+        $out .= "$lines\t$text\n" if index($text, $token) >= 0;
+        $pos = $nl + 1;
+      }
+      $offset += $end + 1;
+    }
+    print "$now_ident\t$offset\t$lines\t" . length($buf) . "\n$out";
+  ' "$1" "$2" "$3" "$4" "$5"
 }
 
 # Restatement-copy a same-basename self-home corr= line onto the parent channel.
