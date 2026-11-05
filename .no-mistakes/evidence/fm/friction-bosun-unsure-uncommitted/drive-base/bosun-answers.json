@@ -1,0 +1,47 @@
+{
+ "answers": [
+  {
+   "fact": "b6a1cec is an ancestor of origin/HEAD, read live; the Bosun reached this check only after finding no uncommitted or unpushed work",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.zuXw3T/bosun/clean",
+   "kind": "copy",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, rule c (content already on the default branch)",
+   "sha": "b6a1cecf2e54b33b6a73db302cab4d3b44153db5",
+   "verdict": "delete"
+  },
+  {
+   "fact": "b6a1cec is an ancestor of origin/HEAD, read live; the Bosun reached this check only after finding no uncommitted or unpushed work",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.zuXw3T/bosun/ignored",
+   "kind": "copy",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, rule c (content already on the default branch)",
+   "sha": "b6a1cecf2e54b33b6a73db302cab4d3b44153db5",
+   "verdict": "delete"
+  },
+  {
+   "fact": "b6a1cec is an ancestor of origin/HEAD, read live; the Bosun reached this check only after finding no uncommitted or unpushed work",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.zuXw3T/bosun/staged",
+   "kind": "copy",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, rule c (content already on the default branch)",
+   "sha": "b6a1cecf2e54b33b6a73db302cab4d3b44153db5",
+   "verdict": "delete"
+  },
+  {
+   "fact": "b6a1cec is an ancestor of origin/HEAD, read live; the Bosun reached this check only after finding no uncommitted or unpushed work",
+   "host": "okhost",
+   "item": "/tmp/fm-officer-friction.zuXw3T/bosun/untracked",
+   "kind": "copy",
+   "result_date": "2026-10-24",
+   "rule": "fleet rules section 6, rule c (content already on the default branch)",
+   "sha": "b6a1cecf2e54b33b6a73db302cab4d3b44153db5",
+   "verdict": "delete"
+  }
+ ],
+ "date": "2026-10-23",
+ "schema_version": 1,
+ "source": "friction-officer"
+}
