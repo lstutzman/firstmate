@@ -2065,7 +2065,7 @@ test_projection_journal_v2_binds_and_advances_exact_endpoint() {
       "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" \
       "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL"
     fm_backend_herdr_projection_journal_replace_endpoint \
-      "$journal" fm-hibit-r1 w2:t2 w2:p2 w2:t3 w2:p3 || exit 1
+      "$journal" fm-hibit-r1 w2:t2 w2:p2 w2:t3 w2:p3 fm-fm-hibit-r1 || exit 1
     fm_backend_herdr_projection_journal_snapshot "$journal" fm-hibit-r1 || exit 1
     printf "%s|%s\n" "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" "$FM_BACKEND_HERDR_JOURNAL_PANE_ID"
   ' "$ROOT" "$state" "$home") || fail "version 2 projection journal binding failed"
@@ -3995,6 +3995,59 @@ test_projection_reclaim_uses_the_label_its_journal_recorded() {
   [ "$out" = "reached:Quartermaster rc:2 reached:fm-qm-office rc:2 reached:fm-wk7 rc:2 rc:1 " ] \
     || fail "a reclaim should check the live tab under the label its journal recorded, and refuse a label it cannot own: '$out'"
   pass "herdr presentation reclaim: an office journal under the role label or the earlier fm-<id> label reaches the live check with that label; a worker's stays fm-<id>"
+}
+
+test_projection_reclaim_gives_an_office_replacement_tab_its_role_label() {
+  local parent office plain dir state out
+  dir="$TMP_ROOT/reclaim-office-migrate"; state="$dir/state"; parent="$dir/parent"; office="$dir/office"; plain="$dir/plain"
+  mkdir -p "$state" "$parent/data" "$plain"
+  printf -- '- qm-office - Run the fleet. (role: quartermaster; added 2026-11-05)\n' > "$parent/data/offices.md"
+  make_office_home "$office" qm-office "$parent"
+  out=$(ROOT="$ROOT" STATE="$state" bash -c '
+    . "$ROOT/bin/backends/herdr.sh"
+    fm_backend_herdr_cli() {
+      n=$(cat "$STATE/n")
+      case "$2 $3" in
+        "tab create")
+          n=$((n + 1)); printf "%s" "$n" > "$STATE/n"; printf "created:%s " "${9}" >> "$STATE/created"
+          printf "{\"result\":{\"tab\":{\"tab_id\":\"w2:t$((n + 2))\"},\"root_pane\":{\"pane_id\":\"w2:p$((n + 2))\"}}}" ;;
+        "tab get") printf "{\"result\":{\"tab\":{\"tab_id\":\"%s\",\"workspace_id\":\"w2\"}}}" "$4" ;;
+        "pane get") printf "{\"result\":{\"pane\":{\"pane_id\":\"%s\",\"tab_id\":\"w2:t$((n + 2))\",\"workspace_id\":\"w2\"}}}" "$4" ;;
+        *) return 1 ;;
+      esac
+    }
+    fm_backend_herdr_projection_live_binding_matches() { printf "live:%s:%s " "$4" "$9" >&2; }
+    fm_backend_herdr_pane_agent_state() { if [ -e "$STATE/closed-$2" ]; then printf dead; else printf no-agent; fi; }
+    fm_backend_herdr_projection_focus_snapshot() { printf "w1\tw1:t1"; }
+    fm_backend_herdr_projection_focus_restore() { :; }
+    fm_backend_herdr_projection_close_pane_focus_preserving() { : > "$STATE/closed-$2"; }
+    reclaim() {  # <home> <id> <passed-label>
+      journal="$STATE/$2.herdr-presentation"
+      tab=$(sed -n "s/^tab_id=//p" "$journal"); pane=$(sed -n "s/^pane_id=//p" "$journal")
+      FM_HOME="$1" fm_backend_herdr_projection_reclaim_task \
+        fmtest "$journal" "$2" "$1" w2 "$tab" "$pane" firstmate "$3" /tmp/project 2>&1 >/dev/null || printf "rc:%s " "$?"
+      printf "%sjournal:%s\n" "$(cat "$STATE/created")" "$(sed -n "s/^task_label=//p" "$journal")"
+      : > "$STATE/created"
+    }
+    bind() {  # <home> <id> <journal-label>
+      printf 0 > "$STATE/n"; : > "$STATE/created"; rm -f "$STATE"/closed-*
+      token=$(fm_backend_herdr_projection_journal_create "$STATE" "$2") || exit 1
+      label=$(fm_backend_herdr_projection_workspace_label "$2" "$token")
+      home_real=$(cd "$1" && pwd -P)
+      fm_backend_herdr_projection_journal_bind "$STATE/$2.herdr-presentation" "$2" "$home_real" fmtest \
+        w2 w2:t2 w2:p2 w1 firstmate "$label" "$3" || exit 1
+    }
+    bind "$0" qm-office fm-qm-office
+    reclaim "$0" qm-office Quartermaster
+    reclaim "$0" qm-office Quartermaster
+    bind "$1" wk7 fm-wk7
+    reclaim "$1" wk7 fm-wk7
+  ' "$office" "$plain")
+  [ "$out" = "live:w2:t2:fm-qm-office live:w2:t3:Quartermaster created:Quartermaster journal:Quartermaster
+live:w2:t3:Quartermaster live:w2:t4:Quartermaster created:Quartermaster journal:Quartermaster
+live:w2:t2:fm-wk7 live:w2:t3:fm-wk7 created:fm-wk7 journal:fm-wk7" ] \
+    || fail "a reclaim should give an office's replacement tab and journal its role label, and leave a worker on fm-<id>: '$out'"
+  pass "herdr presentation reclaim: an office journal under the earlier fm-<id> label moves its replacement tab and journal to the role label, which a second reclaim keeps; a worker stays fm-<id>"
 }
 
 test_create_task_earlier_label_live_refuses() {
@@ -6418,6 +6471,7 @@ test_task_label_office_own_tab_uses_role
 test_task_label_migrate_renames_only_the_earlier_office_label
 test_projection_journal_accepts_the_office_role_label_and_the_earlier_fm_label
 test_projection_reclaim_uses_the_label_its_journal_recorded
+test_projection_reclaim_gives_an_office_replacement_tab_its_role_label
 test_create_task_earlier_label_live_refuses
 test_create_task_earlier_label_husk_replaced
 test_list_live_finds_tasks_by_recorded_ids

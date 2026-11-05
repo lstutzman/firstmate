@@ -108,7 +108,7 @@ When the launcher has no Herdr workspace to inherit, the adapter maintains one d
 A secondmate launched by the primary receives a narrowly scoped home override during container creation.
 
 Each task tab is labeled `fm-<id>`, except an office's own session, whose tab carries the same bare role name as its workspace on every path that creates it: the flat create, the destroyed-endpoint reclaim, and the presentation projection.
-A projection journal written before that keeps `fm-<id>` and stays valid, and its reclaim keeps the label the journal recorded.
+A projection journal written before that still records `fm-<id>` and stays valid; its reclaim checks the old tab under that label, then gives the replacement tab and the journal the role name.
 A tab label is display only: no lookup depends on it once a task's record holds its Herdr ids.
 
 ### Watching tasks
