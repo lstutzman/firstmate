@@ -1207,7 +1207,7 @@ Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all link
 Optional `link`, `links` (every URL a Top of Mind ask links), `project`, `linear_only` (true when the record comes from Linear alone, so its `project` is a Linear project), `outcome`, and `captains_log_key` preserve source context for the page projection.
 A start request with an optional `unrouted` reason is one that no single office's scope fits and so stays with this home.
 Only start requests have a one-based `rank` and an `execute` object; filler also carries `execute`.
-The execution object contains `action: start`, `request_id`, `env.FM_HOME` (this home, or the [`start-home`](#officers-dataofficersmd) office whose `dispatch:` list holds the project), and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
+The execution object contains `action: start`, `request_id`, `env.FM_HOME` (this home, or the [`start-home`](#officers-dataofficersmd) office the request is addressed to), and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
 The adjacent shell handoff runs the quoted argument arrays addressed to this home in rank order, followed by filler when present; requests addressed to an office are not in it.
 The request identifier is stable for the same item and date, so retries replay the original inbox note; a later date may retry work still unstarted.
 
