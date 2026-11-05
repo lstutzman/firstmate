@@ -1761,8 +1761,8 @@ require_admission_answers() {  # <verified-head>
   if [ -n "$routed" ]; then
     # One PR has one merger, and the handoff key merge-handoff-<pr> is what
     # bin/fm-decision-sweep.sh settles once the PR merges.
-    home=$(printf '%s\n' $routed | sed 's/^[^:]*://' | LC_ALL=C sort -u)
-    class=$(printf '%s\n' $routed | sed 's/:.*//' | tr '\n' ' ')
+    home=$(tr ' ' '\n' <<< "${routed# }" | sed 's/^[^:]*://' | LC_ALL=C sort -u)
+    class=$(tr ' ' '\n' <<< "${routed# }" | sed 's/:.*//' | tr '\n' ' ')
     class=${class% }
     if [ "$home" != "${home%%$'\n'*}" ]; then
       echo "error: PR merge refused: $URL changes $class, which its admission config hands to more than one home ($(printf '%s' "$home" | tr '\n' ' ')); one PR has one merger" >&2
