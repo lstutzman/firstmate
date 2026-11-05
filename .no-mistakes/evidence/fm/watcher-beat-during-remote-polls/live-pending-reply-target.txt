@@ -1,0 +1,9 @@
+17:21:29 tick start
+17:21:31 tick end rc=0 elapsed=2s
+--- ssh probes:
+17:21:29 ssh -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- macbook fm-remote-entrypoint.sh 1 L3JlbW90ZS9yb290 L3JlbW90ZS9pb3MtaG9tZQ== Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABvYnNlcnZlAGlvcwA=
+--- beats:
+17:21:29.506 beat (watcher shell pid 3319725)
+17:21:31.563 beat (watcher shell pid 3319725)
+--- record:
+phase=awaiting_report

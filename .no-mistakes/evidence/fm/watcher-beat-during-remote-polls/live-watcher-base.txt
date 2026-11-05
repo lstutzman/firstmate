@@ -1,0 +1,31 @@
+t=1s beacon_age=0s watcher_alive=yes
+t=2s beacon_age=1s watcher_alive=yes
+t=3s beacon_age=2s watcher_alive=yes
+t=4s beacon_age=3s watcher_alive=yes
+t=5s beacon_age=4s watcher_alive=yes
+  guard(grace=10s): <no watcher-down banner>
+t=6s beacon_age=6s watcher_alive=yes
+t=7s beacon_age=7s watcher_alive=yes
+t=8s beacon_age=8s watcher_alive=yes
+t=9s beacon_age=9s watcher_alive=yes
+t=10s beacon_age=10s watcher_alive=yes
+  guard(grace=10s): ●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: 10s ago, grace 10s).
+t=11s beacon_age=11s watcher_alive=yes
+t=12s beacon_age=12s watcher_alive=yes
+t=13s beacon_age=13s watcher_alive=yes
+t=14s beacon_age=14s watcher_alive=yes
+t=15s beacon_age=15s watcher_alive=yes
+  guard(grace=10s): ●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: 15s ago, grace 10s).
+t=16s beacon_age=17s watcher_alive=yes
+t=17s beacon_age=18s watcher_alive=yes
+t=18s beacon_age=19s watcher_alive=yes
+t=19s beacon_age=20s watcher_alive=yes
+t=20s beacon_age=21s watcher_alive=yes
+  guard(grace=10s): ●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: 21s ago, grace 10s).
+MAX beacon_age=21s
+--- ssh probes (fake unreachable macbook):
+17:20:33 ssh -o ForwardAgent=no -o ClearAllForwardings=yes -o SendEnv=-* -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -- macbook fm-remote-entrypoint.sh 1 L3JlbW90ZS9yb290 L3JlbW90ZS9yc20xLWhvbWU= Zm0tcmVtb3RlLXNlY29uZG1hdGUtY29udHJvbC5zaABzdGF0ZQByc20xAA==
+--- triage log:

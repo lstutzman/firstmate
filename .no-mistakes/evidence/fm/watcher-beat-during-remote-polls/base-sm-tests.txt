@@ -1,0 +1,4 @@
+# all fm-secondmate-liveness tests passed
+ok - poll probe: unreachable or inconclusive remote reads preserve the route
+not ok - a probe past its bound must read as unavailable, never dead, got: skipped||0|||remote endpoint returned an invalid state
+rc=1

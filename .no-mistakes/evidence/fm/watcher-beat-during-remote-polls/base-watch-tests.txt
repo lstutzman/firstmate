@@ -1,0 +1,2 @@
+not ok - beacon went 13s stale during a hung remote poll
+rc=1

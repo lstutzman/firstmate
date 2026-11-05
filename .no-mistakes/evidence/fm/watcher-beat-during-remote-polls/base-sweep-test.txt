@@ -1,0 +1,2 @@
+not ok - beacon went 13s stale during a sweep of slow checks
+rc=1

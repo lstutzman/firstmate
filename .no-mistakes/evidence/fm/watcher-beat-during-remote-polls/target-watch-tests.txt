@@ -1,0 +1,8 @@
+ok - watch: a hung remote poll is cut at its bound, reported, and never stales the beacon
+ok - watch: a sweep of slow custom checks beats between checks instead of staling the beacon
+# selected done
+
+real	0m33.842s
+user	0m2.125s
+sys	0m2.614s
+rc=0

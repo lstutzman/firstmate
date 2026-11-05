@@ -1,0 +1,9 @@
+# all fm-secondmate-liveness tests passed
+ok - poll probe: unreachable or inconclusive remote reads preserve the route
+ok - poll probe: a remote probe that hangs is cut at its bound and reported unavailable
+# selected done
+
+real	0m1.140s
+user	0m0.061s
+sys	0m0.091s
+rc=0
