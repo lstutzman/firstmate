@@ -869,6 +869,7 @@ test_bosun_unsure_class() {
       {kind: "branch", item: ($bare + " nohead-b (local)"), why: "x", bucket: "rule-settles"},
       {kind: "branch", item: ($repo + " gone-b (local)"), why: "x", bucket: "rule-settles"},
       {kind: "copy", item: ($w + "/main/.claude/worktrees/wt"), why: copy_why("task-wt"), bucket: "rule-settles"},
+      {kind: "copy", item: ($w + "/main/.claude/worktrees/dirty"), why: "uncommitted work", bucket: "rule-settles"},
       {kind: "copy", item: $copy, why: $why, bucket: "rule-settles"},
       {kind: "copy", item: ($w + "/copy-landed"), why: copy_why("task-landed"), bucket: "rule-settles"},
       {kind: "copy", item: ($w + "/copy-unique"), why: copy_why("task-unique"), bucket: "rule-settles"},
@@ -923,17 +924,19 @@ SH
   assert_equals "0" "$(jq '[.answers[] | select(.kind == "branch" or .kind == "copy") | select((.sha // "") | test("^[0-9a-f]{40}$") | not)] | length' "$ans")" \
     "every branch and copy answer carries a full sha"
   assert_equals "null" "$(jq -r '[.answers[] | select(.item | contains("s.jsonl"))][0].sha' "$ans")" "a session-log keep carries no sha"
+  assert_equals "" "$(verdict .claude/worktrees/dirty)" "a .claude worktree copy with another why is not kept as a session log"
   assert_equals "" "$(verdict gone-b)" "a branch whose tip cannot be read is not answered"
   assert_equals "9" "$(jq ".answers | length" "$ans")" "only the nine settled items are answered"
   assert_contains "$(jq -r '[.answers[] | select(.item | contains("merged-b"))][0] | "\(.host) \(.result_date) \(.rule) | \(.fact)"' "$ans")" \
     "okhost 2026-10-24 fleet rules section 6, unmerged-branch rule (pull request merged or closed) | pull request https://x/pull/7 merged at ${sha_m:0:7}, read live" \
     "an answer names its host, rule and the fact it read"
-  assert_contains "$(<"$md")" "okhost (result of 2026-10-24): 16 unsure; 9 answered, 1 unreadable (the Bosun retries them), 1 without a bucket, 5 unsettled." "the digest counts each bucket"
+  assert_contains "$(<"$md")" "okhost (result of 2026-10-24): 17 unsure; 9 answered, 1 unreadable (the Bosun retries them), 1 without a bucket, 6 unsettled." "the digest counts each bucket"
   assert_contains "$(<"$md")" "blind-b (local)\`: its commit or pull requests could not be read now" "an unreadable pull request is listed unsettled"
   assert_contains "$(<"$md")" "/scratch/lint.txt\`: no rule settles it" "an old scratch file is listed for the Quartermaster"
   assert_contains "$(<"$md")" "nohead-b (local)\`: whether it is on the default branch could not be read now" "a branch with no origin/HEAD is listed unsettled"
   assert_contains "$(<"$md")" "copy-nohead\`: whether it is on the default branch could not be read now" "a copy with no origin/HEAD is listed unsettled"
   assert_not_contains "$(<"$md")" "s.jsonl" "a session log is not listed unsettled"
+  assert_contains "$(<"$md")" ".claude/worktrees/dirty\`: no rule settles it" "a .claude worktree copy with another why is listed unsettled"
   assert_contains "$(<"$md")" "gone-b (local)\`: its commit or pull requests could not be read now" "a branch with no readable sha is listed unsettled"
   assert_contains "$(<"$md")" "Bosun host downhost unreachable" "an unreachable host is a coverage gap"
   assert_not_contains "$(<"$md")" "/slots/unreadable" "an unreadable item is neither answered nor listed"

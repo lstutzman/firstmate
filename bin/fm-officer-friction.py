@@ -93,9 +93,9 @@ read live (read-only git and gh on the host):
 
 A pull request, tip or HEAD that cannot be read is no answer, and so is an
 origin/HEAD that cannot be read when no pull request decides the item. A
-session log or transcript that is not such a branch or copy item is answered
-keep (fleet rules section 6: always kept, because it is training data), never
-delete. Every other item (an old scratch file, a log folder, a copy whose
+file or log item that is a session log or transcript (never a branch or a
+copy, which is a worktree or task copy) is answered keep (fleet rules
+section 6: always kept, because it is training data), never delete. Every other item (an old scratch file, a log folder, a copy whose
 state the officer does not read, a branch or copy whose tip or HEAD is not a
 full 40-character sha) is unsettled.
 Answers go to <out>/bosun-answers.json, never into the velocity file, which
@@ -936,7 +936,7 @@ def remote_scan(host, archive, date, days):
 BOSUN_RESULT = "~/services/bosun-maintenance/last-result.json"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@-]*$")
-# Session logs and transcripts are always kept (fleet rules section 6): a non-branch item under them is only ever answered keep.
+# Session logs and transcripts are always kept (fleet rules section 6): a file or log item under them is only ever answered keep.
 SESSION_LOG_RE = re.compile(r"\.jsonl(?:\.gz)?$|/\.(?:claude|codex|pi|omp|kimi)(?:/|$)|/transcript-archive(?:/|$)|/herdr(?:/|$)")
 BRANCH_ITEM_RE = re.compile(r"^(/.+) (\S+) \((local|remote)\)$")
 COPY_BRANCH_RE = re.compile(r"^branch (\S+) is not merged and its pull request is missing or unreadable$")
@@ -1025,7 +1025,7 @@ def bosun_decide(entry, facts):
         rule = BRANCH_RULE
     elif kind == "copy" and COPY_BRANCH_RE.match(why):
         rule = COPY_RULE
-    elif kind != "branch" and SESSION_LOG_RE.search(item):
+    elif kind not in ("branch", "copy") and SESSION_LOG_RE.search(item):
         return {"kind": kind, "item": item, "verdict": "keep", "rule": SESSION_LOG_RULE,
                 "fact": "its path is a session log or transcript"}, None
     else:
