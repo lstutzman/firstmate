@@ -3876,6 +3876,25 @@ test_task_label_office_own_tab_uses_role() {
   pass "fm_backend_herdr_task_label: an office's own tab is its role name; every other task keeps fm-<id>"
 }
 
+test_task_label_migrate_renames_only_the_earlier_office_label() {
+  local parent home dir log resp fb
+  parent="$TMP_ROOT/label-migrate-parent"; mkdir -p "$parent/data"
+  printf -- '- qm-office - Run the fleet. (role: quartermaster; added 2026-11-05)\n' > "$parent/data/offices.md"
+  home="$TMP_ROOT/label-migrate-office"
+  make_office_home "$home" qm-office "$parent"
+  dir="$TMP_ROOT/label-migrate"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tab":{"tab_id":"w5:t1","label":"fm-qm-office"}}}\n' > "$resp/1.out"
+  printf '{"result":{"tab":{"tab_id":"w5:t1","label":"My notes"}}}\n' > "$resp/3.out"
+  fb=$(make_herdr_fakebin "$dir")
+  PATH="$fb:$PATH" FM_HOME="$home" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_task_label_migrate fmtest w5:t1 qm-office; fm_backend_herdr_task_label_migrate fmtest w5:t1 qm-office; fm_backend_herdr_task_label_migrate fmtest w5:t1 wk7' "$ROOT" \
+    || fail "task_label_migrate should never fail its caller"
+  assert_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''rename'$'\x1f''w5:t1'$'\x1f''Quartermaster' "an office tab still labeled fm-<id> was not renamed to its role"
+  [ "$(grep -c $'\x1f''rename'$'\x1f' "$log")" = 1 ] || fail "only the earlier fm-<id> label may be renamed, never a label someone chose:"$'\n'"$(cat "$log")"
+  [ "$(grep -c $'\x1f''tab'$'\x1f''get'$'\x1f' "$log")" = 2 ] || fail "a non-office task must not even read its tab:"$'\n'"$(cat "$log")"
+  pass "fm_backend_herdr_task_label_migrate: renames an office's earlier fm-<id> tab in place, and nothing else"
+}
+
 test_create_task_earlier_label_live_refuses() {
   local dir log resp fb out status
   dir="$TMP_ROOT/earlier-live"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -6293,6 +6312,7 @@ test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk
 test_workspace_find_matches_only_this_homes_own_label
 test_list_live_scoped_to_this_homes_workspace_only
 test_task_label_office_own_tab_uses_role
+test_task_label_migrate_renames_only_the_earlier_office_label
 test_create_task_earlier_label_live_refuses
 test_create_task_earlier_label_husk_replaced
 test_list_live_finds_tasks_by_recorded_ids

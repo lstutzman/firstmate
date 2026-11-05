@@ -388,6 +388,21 @@ fm_backend_herdr_task_label() {  # <task-id>
   printf '%s' "${office:-fm-$1}"
 }
 
+# fm_backend_herdr_task_label_migrate: give an office's recorded tab its role
+# name in place when it still carries the earlier fm-<id> label, since a
+# relaunch reuses the tab rather than creating one. Only that exact tab, only
+# from exactly fm-<id>; a no-op for every other task. Best effort, because a
+# label is display only.
+fm_backend_herdr_task_label_migrate() {  # <session> <tab-id> <task-id>
+  local session=$1 tab=$2 id=$3 label current
+  label=$(fm_backend_herdr_task_label "$id")
+  [ "$label" != "fm-$id" ] && [ -n "$session" ] && [ -n "$tab" ] || return 0
+  current=$(fm_backend_herdr_cli "$session" tab get "$tab" 2>/dev/null | jq -r '.result.tab.label // empty' 2>/dev/null)
+  [ "$current" = "fm-$id" ] || return 0
+  fm_backend_herdr_cli "$session" tab rename "$tab" "$label" >/dev/null 2>&1 \
+    || echo "warning: could not rename herdr tab $tab from 'fm-$id' to '$label'" >&2
+}
+
 # fm_backend_herdr_office_role_labels: every capitalised office role name, one
 # per line, from the office role list and the role names held for later
 # offices - the labels an office home's workspace can carry.

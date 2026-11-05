@@ -692,6 +692,7 @@ A restored same-labeled tab with a missing pane or no registered agent is a husk
 Create replaces only a confidently dead or no-agent husk, creates the replacement before closing the old tab, and refuses live or unknown states.
 This prevents closing the workspace's last tab before a replacement exists.
 An office tab still labeled `fm-<id>` from before offices took their role name counts as that office's tab, so a live one still refuses a second session and a husk is still replaced.
+A relaunch keeps the same tab, so it renames that exact tab from `fm-<id>` to the role name in place.
 
 Because the ids survive a restart, a task's record finds its restored tab again with no extra identifier.
 

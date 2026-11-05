@@ -4132,6 +4132,11 @@ if [ "$RELAUNCH" -eq 1 ]; then
     T=$RELAUNCH_TARGET
     WT_TARGET=$T
     SES=${T%%:*}
+    # An office tab an earlier release labeled fm-<id> takes its role name
+    # here, because a relaunch keeps the same tab.
+    if [ "$BACKEND" = herdr ] && [ "$KIND" = secondmate ]; then
+      FM_HOME="$WT" fm_backend_herdr_task_label_migrate "$HERDR_SES" "$HERDR_TAB_ID" "$ID"
+    fi
   else
     # The recorded endpoint is authoritatively gone, so there is nothing to
     # adopt: create ONE fresh endpoint for the same task, opened directly in the
