@@ -697,6 +697,46 @@ test_pane_agent_session_ref_degrades_to_nothing_when_not_resumable() {
   pass "herdr pane agent session: anything unresumable degrades to a nonzero read with no output"
 }
 
+# A Herdr ship or scout pane is created inside its leased worktree, so the pane
+# holds ONE shell with no nested `treehouse get` shell beneath it. The
+# classifier proves liveness from the real process table, not from nesting, so
+# an agent that is a descendant of that single shell (suspended or backgrounded
+# outside the foreground group) must still read alive, while the same single
+# shell with no agent must still read stale-agent over a lingering registration.
+test_single_shell_pane_liveness_is_read_from_the_process_table() {
+  local sleep_bin dir pi_bin shell_pid pi_pid out
+  sleep_bin=$(command -v sleep) || fail "sleep not found"
+  dir="$TMP_ROOT/single-shell-pi"; mkdir -p "$dir"
+  pi_bin="$dir/pi"
+  # shellcheck disable=SC2016 # $1 expands when the stand-in runs, not here.
+  printf '#!/bin/sh\n"$1" 300\n' > "$pi_bin"
+  chmod +x "$pi_bin"
+  # One real shell whose only child is the stand-in agent, started in the
+  # background so it is outside the foreground group the canned body names.
+  bash -c '"$0" "$1" & wait' "$pi_bin" "$sleep_bin" >/dev/null 2>&1 &
+  shell_pid=$!
+  # The child must be visible in the process table before the classifier reads it.
+  for _ in $(seq 1 50); do
+    pgrep -P "$shell_pid" >/dev/null 2>&1 && break
+    sleep 0.1
+  done
+  out=$(stale_registration_case single-shell-agent idle "$(shell_only_process_info "$shell_pid")")
+  # Stop the whole stand-in tree by pid: shell -> pi script -> sleep.
+  pi_pid=$(pgrep -P "$shell_pid" | head -1)
+  [ -z "$pi_pid" ] || kill "$(pgrep -P "$pi_pid" | head -1)" "$pi_pid" 2>/dev/null || true
+  kill "$shell_pid" 2>/dev/null || true
+  [ "$out" = "live alive refused" ] \
+    || fail "an agent descended from the pane's single shell must read live/alive, got '$out'"
+
+  "$sleep_bin" 300 &
+  shell_pid=$!
+  out=$(stale_registration_case single-shell-bare idle "$(shell_only_process_info "$shell_pid")")
+  kill "$shell_pid" 2>/dev/null || true
+  [ "$out" = "stale-agent dead refused" ] \
+    || fail "a single shell with no agent must still read stale-agent over a lingering registration, got '$out'"
+  pass "herdr liveness: a pane born in its worktree (one shell, no nested treehouse shell) is classified from the process table"
+}
+
 test_registered_agent_with_a_non_shell_foreground_process_stays_alive() {
   local out
   # A registered agent running a foreground tool in its own process group is
@@ -6195,6 +6235,7 @@ test_stale_registration_ignores_status_and_reads_the_process
 test_pane_agent_session_ref_reports_a_resumable_reference_with_its_agent
 test_pane_agent_session_ref_degrades_to_nothing_when_not_resumable
 test_registered_agent_with_a_live_foreground_process_stays_alive
+test_single_shell_pane_liveness_is_read_from_the_process_table
 test_registered_agent_with_a_non_shell_foreground_process_stays_alive
 test_transient_prompt_helper_settles_into_stale_agent
 test_exhausted_settle_window_keeps_a_non_shell_foreground_live

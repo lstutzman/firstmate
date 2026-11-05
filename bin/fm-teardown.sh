@@ -3681,79 +3681,13 @@ fi
 # not by task-worktree cleanup.
 if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
   conclude_task_no_mistakes_run "$WT"
-  reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
-elif [ "$KIND" != secondmate ]; then
-  reap_task_worktree_processes tasktmp "$TASK_TMP"
-fi
-if [ "$KIND" = ship ] && teardown_owns_worktree && [ -e "$CONFIG/pipeline-spend" ]; then
-  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
-    "$SCRIPT_DIR/fm-pipeline-spend.sh" record "$ID" >/dev/null \
-    || echo "warning: could not record $ID's no-mistakes pipeline spend; cleanup continues" >&2
 fi
 
-# Fix 3 (see script header): sweep remote job workers abandoned by an already
-# pruned code root. Best effort - a sweep failure never blocks this teardown.
-"$SCRIPT_DIR/fm-remote-job-reap-orphans.sh" >&2 || true
-
-# Best-effort: drop the local task branch so the shared repo does not accumulate refs.
-if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
-  if [ "$ORCA_PATH_MATCH_VERIFIED" != 1 ]; then
-    require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
-    ORCA_PATH_MATCH_VERIFIED=1
-  fi
-  if [ -d "$WT" ]; then
-    branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
-    if [ "$branch" != "HEAD" ]; then
-      if git -C "$WT" checkout --detach -q 2>/dev/null; then
-        git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
-      fi
-    fi
-    rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
-      "$WT/.opencode/plugins/fm-busy-state.js" \
-      "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
-  fi
-  if [ -n "$T_ORCA" ]; then
-    fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
-      || { endpoint_close_refusal "$ID" "$BACKEND" "$T" 0; exit 1; }
-  fi
-  fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
-elif [ "$KIND" != secondmate ] && ! teardown_owns_worktree; then
-  :
-elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
-  branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
-  if [ "$branch" != "HEAD" ]; then
-    if git -C "$WT" checkout --detach -q 2>/dev/null; then
-      git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
-    fi
-  fi
-  # Remove our hook file so a reused pool worktree cannot fire signals for a dead task.
-  rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
-    "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
-  # Kills remaining processes in the worktree (including the agent), resets, returns
-  # to pool. treehouse resolves the pool from the working directory, so run it from
-  # the project. teardown_treehouse_return tolerates transient and stale git locks
-  # left by a killed crew process; see the script header for retry and stale-lock proof.
-  post_lock_cleanup_check=
-  if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
-    post_lock_cleanup_check=validate_worktree_teardown_safety
-  fi
-  if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ]; then
-    teardown_scrub_scratch_copy "$WT" || exit 1
-  fi
-  wt_pool_slot=0
-  fm_treehouse_pool_slot "$PROJ" "$WT" && wt_pool_slot=1
-  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
-    echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
-    exit 1
-  }
-  [ "$wt_pool_slot" = 0 ] || teardown_note_dirty_return "$WT"
-  # The slot is back in the pool, so this task's claim on it is spent. Dropping
-  # it here - and only after a return that succeeded - keeps a returned slot
-  # unclaimed until its next holder claims it, and leaves the claim in place
-  # whenever the return did not actually happen.
-  fm_treehouse_slot_owner_release "$WT" "$ID"
-fi
-
+# A Herdr ship or scout pane is created in its worktree, so its own shell is one
+# of the processes the reap and the worktree return below kill. Close it here
+# first, under the presentation lock and focus-preservingly: a pane whose shell
+# is killed instead is removed by Herdr itself, which can move the captain's
+# active workspace and tab.
 HERDR_PRESENTATION_JOURNAL="$STATE/$ID.herdr-presentation"
 # teardown_herdr_journal_orphaned: true when the task's own journal names
 # nothing the session-start sweep could still close - a version 1 attempt whose
@@ -3814,9 +3748,6 @@ elif [ "$BACKEND" = herdr ]; then
   else
     echo "warning: herdr session presentation lock path is unavailable; skipping the pane close rather than closing unlocked" >&2
   fi
-elif [ "$BACKEND" != orca ] && [ "$TEARDOWN_WINDOWLESS" != 1 ]; then
-  fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
-    || endpoint_close_refusal "$ID" "$BACKEND" "$T" 1 || exit 1
 fi
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
   if [ "$(fm_backend_herdr_pane_agent_state "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE")" = dead ]; then
@@ -3844,6 +3775,85 @@ if [ "$BACKEND" = herdr ]; then
     echo "error: herdr pane $T for $ID is not confirmed gone after its close was refused, skipped, or failed; retaining every durable task record - rerun teardown once the close can run under the session lock" >&2
     exit 1
   fi
+fi
+
+if [ "$KIND" != secondmate ] && teardown_owns_worktree; then
+  reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+elif [ "$KIND" != secondmate ]; then
+  reap_task_worktree_processes tasktmp "$TASK_TMP"
+fi
+if [ "$KIND" = ship ] && teardown_owns_worktree && [ -e "$CONFIG/pipeline-spend" ]; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-pipeline-spend.sh" record "$ID" >/dev/null \
+    || echo "warning: could not record $ID's no-mistakes pipeline spend; cleanup continues" >&2
+fi
+
+# Fix 3 (see script header): sweep remote job workers abandoned by an already
+# pruned code root. Best effort - a sweep failure never blocks this teardown.
+"$SCRIPT_DIR/fm-remote-job-reap-orphans.sh" >&2 || true
+
+# Best-effort: drop the local task branch so the shared repo does not accumulate refs.
+if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
+  if [ "$ORCA_PATH_MATCH_VERIFIED" != 1 ]; then
+    require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
+    ORCA_PATH_MATCH_VERIFIED=1
+  fi
+  if [ -d "$WT" ]; then
+    branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
+    if [ "$branch" != "HEAD" ]; then
+      if git -C "$WT" checkout --detach -q 2>/dev/null; then
+        git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
+      fi
+    fi
+    rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
+      "$WT/.opencode/plugins/fm-busy-state.js" \
+      "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
+  fi
+  if [ -n "$T_ORCA" ]; then
+    fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
+      || { endpoint_close_refusal "$ID" "$BACKEND" "$T" 0; exit 1; }
+  fi
+  fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
+elif [ "$KIND" != secondmate ] && ! teardown_owns_worktree; then
+  :
+elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
+  branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
+  if [ "$branch" != "HEAD" ]; then
+    if git -C "$WT" checkout --detach -q 2>/dev/null; then
+      git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
+    fi
+  fi
+  # Remove our hook file so a reused pool worktree cannot fire signals for a dead task.
+  rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
+    "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
+  # Kills remaining processes in the worktree (including any non-Herdr agent), resets, returns
+  # to pool. treehouse resolves the pool from the working directory, so run it from
+  # the project. teardown_treehouse_return tolerates transient and stale git locks
+  # left by a killed crew process; see the script header for retry and stale-lock proof.
+  post_lock_cleanup_check=
+  if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
+    post_lock_cleanup_check=validate_worktree_teardown_safety
+  fi
+  if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ]; then
+    teardown_scrub_scratch_copy "$WT" || exit 1
+  fi
+  wt_pool_slot=0
+  fm_treehouse_pool_slot "$PROJ" "$WT" && wt_pool_slot=1
+  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
+    echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
+    exit 1
+  }
+  [ "$wt_pool_slot" = 0 ] || teardown_note_dirty_return "$WT"
+  # The slot is back in the pool, so this task's claim on it is spent. Dropping
+  # it here - and only after a return that succeeded - keeps a returned slot
+  # unclaimed until its next holder claims it, and leaves the claim in place
+  # whenever the return did not actually happen.
+  fm_treehouse_slot_owner_release "$WT" "$ID"
+fi
+
+if [ "$BACKEND" != herdr ] && [ "$BACKEND" != orca ] && [ "$TEARDOWN_WINDOWLESS" != 1 ]; then
+  fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" \
+    || endpoint_close_refusal "$ID" "$BACKEND" "$T" 1 || exit 1
 fi
 if [ "$KIND" != secondmate ]; then
   if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \

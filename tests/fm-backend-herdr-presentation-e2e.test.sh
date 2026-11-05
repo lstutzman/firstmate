@@ -184,14 +184,6 @@ if [ "$status" -eq 0 ] && [ "$mutation" = tab-create ]; then
       ;;
   esac
 fi
-if [ "$status" -eq 0 ] && [ "${1:-} ${2:-}" = "pane get" ] && [ -d "$POST_CREATE_ABORT_CONTROL" ]; then
-  for task_dir in "$POST_CREATE_ABORT_CONTROL"/abort-*; do
-    [ -d "$task_dir" ] || continue
-    [ "${3:-}" = "$(cat "$task_dir/task-pane" 2>/dev/null || true)" ] || continue
-    out=$(printf '%s' "$out" | jq --arg cwd "$POST_CREATE_ABORT_CONTROL/not-a-worktree" '.result.pane.foreground_cwd = $cwd')
-    break
-  done
-fi
 if [ -n "$mutation" ]; then
   after=$(focus_snapshot || printf ambiguous/ambiguous)
   printf '%s\t%s\t%s\t%s\n' "$mutation" "$before" "$after" "$mutation_target" >> "$FOCUS_AUDIT_LOG"
@@ -216,8 +208,18 @@ set -u
   done
   printf '\n'
 } >> "$TREEHOUSE_CALL_LOG"
-if [ -d "$POST_CREATE_ABORT_CONTROL" ] && [ "${1:-}" = get ]; then
-  exit 0
+# While the abort case owns the control directory, `get --lease` hands out a
+# plain non-git directory: the spawn creates its pane there, then refuses it as
+# no isolated worktree, and the abort returns that lease (a no-op here).
+if [ -d "$POST_CREATE_ABORT_CONTROL" ]; then
+  case "${1:-}" in
+    get)
+      mkdir -p "$POST_CREATE_ABORT_CONTROL/not-a-worktree"
+      printf '%s\n' "$POST_CREATE_ABORT_CONTROL/not-a-worktree"
+      exit 0
+      ;;
+    return) exit 0 ;;
+  esac
 fi
 # Treehouse's pool allocator is outside the Herdr concurrency contract under
 # test. Serialize its calls so simultaneous recovery spawns cannot race for
@@ -872,12 +874,11 @@ if wait "$ABORT_A_PID"; then ABORT_A_STATUS=0; else ABORT_A_STATUS=$?; fi
 if wait "$ABORT_B_PID"; then ABORT_B_STATUS=0; else ABORT_B_STATUS=$?; fi
 finish_concurrent_expected_abort abort-a "$ABORT_A_STATUS" "$TMP_ROOT/abort-a.out" "$TMP_ROOT/abort-a.err"
 finish_concurrent_expected_abort abort-b "$ABORT_B_STATUS" "$TMP_ROOT/abort-b.out" "$TMP_ROOT/abort-b.err"
-# The forced foreground_cwd is a plain non-git directory, which the discovery
-# poll now screens out on every read rather than adopting, so the armed failure
-# arrives as the poll's own deadline refusal naming that path.
-grep -F "did not enter an isolated worktree" "$TMP_ROOT/abort-a.err" >/dev/null 2>&1 \
+# The leased path is a plain non-git directory, so the armed failure arrives as
+# the isolation check's refusal of that path after the pane exists.
+grep -F "treehouse get --lease did not yield an isolated worktree" "$TMP_ROOT/abort-a.err" >/dev/null 2>&1 \
   || fail "post-create abort fixture A did not reach the armed validation failure"
-grep -F "did not enter an isolated worktree" "$TMP_ROOT/abort-b.err" >/dev/null 2>&1 \
+grep -F "treehouse get --lease did not yield an isolated worktree" "$TMP_ROOT/abort-b.err" >/dev/null 2>&1 \
   || fail "post-create abort fixture B did not reach the armed validation failure"
 ABORT_A_PANE=$(cat "$POST_CREATE_ABORT_CONTROL/abort-a/task-pane")
 ABORT_B_PANE=$(cat "$POST_CREATE_ABORT_CONTROL/abort-b/task-pane")

@@ -697,12 +697,21 @@ A relaunch keeps the same tab, so it renames that exact tab from `fm-<id>` to th
 
 Because the ids survive a restart, a task's record finds its restored tab again with no extra identifier.
 
+### Where a restored worker resumes
+
+Herdr saves a pane at its creation cwd and resumes the agent there, and a shell that later changes directory never changes it.
+So a fresh Herdr ship or scout spawn leases its Treehouse slot from the spawn process (`treehouse get --lease --lease-holder <task>`) and creates the pane in that worktree, rather than typing `treehouse get` into a pane created in the project clone.
+A restored worker then resumes in its own worktree, not in the clone whose parent home `CLAUDE.md` would make Claude Code ask to approve an external import.
+The spawn returns that lease only if it fails before the task record is published, and only after closing its own pane; after that, teardown returns it like any other.
+Workers spawned before this change keep the cwd they were created with until they are respawned or reclaimed.
+Relaunch, secondmate, and the other backends keep their current flow.
+
 ### Stale agent registrations
 
 A registration alone never proves an agent.
 Herdr keeps a Pi registration after the Pi process has exited to a plain shell, whenever a nested interactive shell sits under the pane's top shell.
 In that case `agent get` still reports `agent=pi` with its last status.
-That nested shell is the crew shape `treehouse get` leaves behind (measured on Herdr 0.9.0 - [verification](verification/runtime-backends.md) "Stale agent registration"; upstream issue #4115).
+That nested shell is the shape an interactive `treehouse get` leaves behind (Herdr ship and scout spawns no longer create it, but older workers and the other backends do; measured on Herdr 0.9.0 - [verification](verification/runtime-backends.md) "Stale agent registration"; upstream issue #4115).
 
 So before a registered agent counts as live, the pane classifier reads `pane process-info` and the real process table.
 It uses the shared harness-process classifier in `bin/fm-agent-process-lib.sh`, the same rule the tmux adapter proves liveness with:
