@@ -94,7 +94,8 @@
 #                    "office <id>: <officer> digest <key>: <n> high-severity finding(s) in <path>"
 #                    once per new count of findings in the digest's .json whose
 #                    severity is "high" or "critical", or a number of 4 or more.
-# Either lane form, reading a progress digest (.json source "progress-officer"),
+# Either lane form, reading a progress or surgeon digest (.json source "progress-officer"
+# or "surgeon-officer"),
 # first delivers the start requests whose execute.env.FM_HOME is this office home:
 # in rank order, by running this code root's fm-inbox.sh with the request's
 # recorded note arguments (never the program the file names), with FM_HOME set to
