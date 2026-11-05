@@ -953,17 +953,21 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | Field | Meaning |
 | --- | --- |
 | `<id>` | Lowercase letters, digits, and dashes, at most 40 characters; names the lane `data/officers/<id>/` and the check `state/officer-<id>.check.sh` |
-| `role` | `triage`, `surgeon`, `landing`, `friction`, `progress`, or `pagecheck` |
+| `role` | `triage`, `surgeon`, `landing`, `friction`, `progress`, `pagecheck`, `corpus`, or `library` |
 | `cadence` | `daily HH:MM` in the home's local time: the run for yesterday's date starts at the first watcher check after that time. Or `every Nh` (N from 1 to 24): the run key is the slot `YYYY-MM-DDTHH`, slots start at local midnight and repeat every N hours until the next midnight, and the first watcher check in a slot starts that slot's run on current records. `bin/fm-registry-line-lib.sh` owns the grammar; `ensure` allows two of the officer's own periods between finished runs |
 | `model` | `none`; model scoring is a later slice, and any other value is refused |
 | `consumer` | Optional comma-separated `main` and office ids, default `main`; each office id must be a local office in `data/offices.md` whose `sources` lists `lane:<officer-id>`, or `lane:<officer-id>:high` only when `main` is also listed (the `:high` form wakes the office only for high or critical findings, so without `main` it would drop the other findings), and whose home has the matching `office-lane-<officer-id>` or `office-lane-<officer-id>-high` check registered by `bin/fm-office.sh register-sources`; `register` refuses and `ensure` reports a consumer that misses this, and the check then wakes main as if main were listed. The check prints the `officer <id>: ... actionable finding(s)` digest line, which wakes main, only when `main` is listed, so an office that reads the digest through its own [wake source](#offices-dataofficesmd) can take it from main; the failure line is always printed |
-| `archive` | Triage, surgeon and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes` |
+| `archive` | Triage, surgeon and friction: the session archive directory, or `<host>:<dir>` to read it over `ssh -o BatchMode=yes`. Corpus, required: the corpus folder that holds `transcript-archive/` and `memory-harvest/`, as a directory or `<host>:<dir>` |
 | `ask-days` | Friction, optional: how many days of Lee's typed messages the repeated-ask finding compares; default 7 |
 | `app` | Pagecheck and surgeon, required: the fleet app's `https://` base URL, read with `GET` only |
 | `rules` | Pagecheck only, optional: the file holding the standing rules (see [Page-check officer](#page-check-officer)); default this home's `data/captain-shared.md` |
 | `stale-days` | Pagecheck only, optional: days a card may stay asked and unanswered before it is stale; default 7 |
 | `remind-hours` | Pagecheck only, optional: hours before an unfixed finding is counted as new again; default 24 |
-| `hosts` | Triage, surgeon and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding |
+| `hosts` | Triage, surgeon and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding. Corpus, optional: the hosts whose Bosun `last-result.json` archive counts it reads |
+| `harvest` | Corpus, optional: the memory harvest's `last-result.json`, a path or `<host>:<path>`; default `memory-harvest/last-result.json` under `archive` |
+| `prep` | Corpus, optional: local-jev's prep `ready.json`, a path or `<host>:<path>`; default `slartibartfast:Documents/GitHub/local-jev/data/prep/ready.json`, where the prep timer runs |
+| `local-jev` | Corpus, optional: the local-jev checkout whose `results/weekly/history.jsonl` and `results/judge/` it reads, a directory or `<host>:<dir>`; default `deepthought:Documents/GitHub/local-jev` |
+| `audit` | Library, optional: the librarian-audit job's `runs/` folder; default `~/fm-homes/slarti/data/librarian-audit/runs` |
 | `bosun-hosts` | Friction, optional: comma-separated hosts whose Bosun `last-result.json` the `bosun-unsure` class reads over `ssh -o BatchMode=yes`; unset turns the class off |
 | `captains-log` | Optional `https://` URL ending `/api/captains-log`: friction reads its cards with one `GET`, and its tap replies with one `GET <url>/replies`, and reports either unreachable as a coverage gap; progress uses its corresponding `/captains-log` page URL to link existing held cards without copying their questions |
 | `facts` | Landing only: the fleet-app landing-truth facts file (`schema_version` 2 with exactly the top-level keys `schema_version`, `generated_at`, `staging_sha`, `production_sha`, `records` keyed `<repo>#<pr>`, and `items` mapping each Linear id to its record keys; any other version or layout fails the run), as a path, `<host>:<path>` read over `ssh -o BatchMode=yes`, or an `https://` URL |
@@ -990,6 +994,8 @@ Example:
 - friction - Finds what slowed agents down, above all waits on Lee, and proposes a fix for each (role: friction; cadence: daily 06:15; archive: deepthought:/srv/pc-corpus/transcript-archive; hosts: slartibartfast,macbook,deepthought,mac-mini; model: none; added 2026-10-24)
 - progress - Starts authorised unstarted work through firstmate (role: progress; cadence: daily 07:00; team: PC; repos: example/project; requested: PC-123; model: none; added 2026-10-26)
 - page-check - Checks every fleet-app page for cards a standing rule settles, stale cards, cards shown after they were settled, and old pages (role: pagecheck; cadence: every 2h; app: https://fleet.example.ts.net; model: none; added 2026-10-31)
+- corpus - Checks the agent training corpus is complete, scrubbed and current: archive coverage, the memory harvest, local-jev's data and retrains (role: corpus; cadence: daily 08:15; archive: deepthought:/srv/pc-corpus; hosts: slartibartfast,deepthought; model: none; consumer: alchemist; added 2026-11-05)
+- library - Judges the weekly librarian audit: what is safe to ship and what needs Lee (role: library; cadence: daily 11:30; model: none; consumer: librarian; added 2026-11-05)
 ```
 
 After adding a line, run `bin/fm-officer.sh register <id>` to install and trust its watcher check; `bin/fm-officer.sh retire <id>` removes the check and the line and keeps the findings.
@@ -1019,6 +1025,23 @@ A real finding whose source gave no key has no stable fingerprint, so it is repo
 With `writes: linear`, the Surgeon files each real, untracked finding in team PC and nothing else: it never edits, comments on, closes or deletes an item.
 Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`), the registry's one area label, and `surgeon-fp:<sha256>` in its description, which a search for the fingerprint (and the lane's `filed-fingerprints.json`) checks first.
 One rate-limit answer from Linear stops the run's Linear calls and writes `linear-resume-after.json` in the lane; runs before that time make no Linear call.
+
+### Corpus officer
+
+The corpus officer checks the agent training corpus for its office, the Alchemist, which sees counts, manifests and digests only.
+It reads the transcript-archive ingester's results, the memory harvest's result, local-jev's prep store and weekly retrain history, the judge's result names, and each `hosts` machine's Bosun archive counts.
+It never opens, prints, copies or parses a transcript, a corpus row or a harvested memory record: for a `<host>:<path>` input it sends its own script to that host over `ssh -o BatchMode=yes`, and only the documented counts, timestamps and names come back.
+`bin/fm-officer-corpus.py`'s header owns the inputs, the fields read and the finding classes: a source not collected for two runs, an archive gap on two Bosun nights, a failed or drifting harvest, a stale prep store, and a missed weekly retrain.
+Each finding is reported once by its fingerprint in the lane's `reported.json`, and the lane's `nights.json` remembers each Bosun night's gap count.
+An unreachable host or a missing file is a coverage gap, never a failed run; the memory harvest has not shipped, so its missing result is a coverage note.
+
+### Library officer
+
+The library officer judges the weekly librarian audit for its office, the Librarian; the fleet-app `librarian-audit` job collects, and the officer only judges.
+It reads the newest dated run folder under `audit`, that run's `result.json` and `findings.json`, and nothing else.
+`bin/fm-officer-library.py`'s header owns the rules that put each finding in one bucket: needs Lee, safe to ship, code work, or on hold; the run's decisions for Lee are one needs-Lee item.
+Each item is reported once by its fingerprint, and its digest line counts the new items outside on hold.
+It has no Library staleness input while Markdown-to-HTML conversion is skipped.
 
 ### Page-check officer
 
