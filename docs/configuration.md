@@ -632,7 +632,9 @@ Every step also names why no agent can run it, `--cause sudo|credential|policy|t
 
 The opt-in alarm reports Claude weekly quota pressure, stale or unavailable quota readings, and registered second mates holding work without recent communication.
 Idle second mates are healthy.
-A second mate waiting on an open captain decision is also healthy: with no active child and at least one captain-hold row in its open decisions, it is not silent, whatever its in-flight count, because that decision is already on the Captain's Log.
+A second mate waiting on an open captain decision is also healthy: with at least one captain-hold row in its open decisions, it is not silent, whatever its in-flight count and even with a live worker beside the hold, because that decision is already on the Captain's Log.
+A second mate whose own latest line is `working`, or `paused` with no `until` time or one less than the silence window past, while it holds work and has no open question to main, is on a long task that reports sparingly and is not silent either.
+The alarm stays for a mate that holds work with no open captain hold and a latest line that is anything else, or a declared pause whose clearing time is long past.
 An open status-sourced decision (a child asking its own second mate), a truncated `decisions_open` list, or an invalid summary still alarms; a summary whose only invalidity is unavailable child liveness (`child_current_unavailable`) still qualifies.
 It reads quota through `cpa-usage-axi`, using `config/cpa-usage-host` for remote reads, and reads published home summaries for registered second mates without building a full fleet snapshot.
 Remote summary reads share the alarm deadline and fall back to the parent-side route-keyed cache.

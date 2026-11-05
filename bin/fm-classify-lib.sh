@@ -2677,13 +2677,24 @@ EOF
 # answering, so none of them count as the task's communication. Prints null
 # when no such line exists.
 status_agent_event_age() {  # <observed-status-log> <contract-path> <now-epoch>
-  local status_log=$1 path=$2 now=$3 ranges
-  [ -f "$status_log" ] || { printf 'null'; return 0; }
+  _status_agent_event_scan "$1" "$2" "$3" age
+}
+
+# The mate's own latest stamped line, by the same rule as the age above; prints nothing when it
+# has none. The fleet alarm reads its verb and declared `until` to tell a mate working or paused
+# on in-progress work from one that went quiet.
+status_agent_event_line() {  # <observed-status-log> <contract-path> <now-epoch>
+  _status_agent_event_scan "$1" "$2" "$3" line
+}
+
+_status_agent_event_scan() {  # <observed-status-log> <contract-path> <now-epoch> <age|line>
+  local status_log=$1 path=$2 now=$3 mode=$4 ranges
+  [ -f "$status_log" ] || { [ "$mode" = line ] || printf 'null'; return 0; }
   ranges=$(status_home_appends_ranges "$path") || ranges=
   # One pass: ledger ranges are ascending (status_home_appends_covers), so
   # merge them once and walk them alongside the lines; the stamp rule is
   # _fm_status_at_epoch's.
-  LC_ALL=C awk -v ranges="$ranges" -v now="$now" '
+  LC_ALL=C awk -v ranges="$ranges" -v now="$now" -v mode="$mode" '
     BEGIN {
       n = 0
       count = split(ranges, rows, "\n")
@@ -2692,7 +2703,7 @@ status_agent_event_age() {  # <observed-status-log> <contract-path> <now-epoch>
         if (n && f[1] + 0 <= hi[n]) { if (f[2] + 0 > hi[n]) hi[n] = f[2] + 0; continue }
         lo[++n] = f[1] + 0; hi[n] = f[2] + 0
       }
-      j = 1; offset = 0; age = "null"
+      j = 1; offset = 0; age = "null"; last = ""
     }
     {
       start = offset; end = start + length($0) + 1; offset = end
@@ -2709,9 +2720,9 @@ status_agent_event_age() {  # <observed-status-log> <contract-path> <now-epoch>
       if (index(substr(rest, close_at + 1), "[at=")) next
       if (value !~ /^[0-9]+$/ || value ~ /^0[0-9]/ || length(value) > 12) next
       if (value + 0 > now + 0) next
-      age = now - value
+      age = now - value; last = $0
     }
-    END { printf "%s", age }
+    END { if (mode == "line") printf "%s", last; else printf "%s", age }
   ' "$status_log"
 }
 
