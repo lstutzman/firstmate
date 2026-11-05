@@ -1,0 +1,82 @@
+ok - fm-pr-merge hands a routed class to its merger home and keeps the captain hold for an unrouted class
+ok - fm-pr-merge refuses an authority route or a malformed route as a config error
+ok - an office hands a pinned routed class off, never to itself, and refuses an unpinned route
+ok - an office's flagged class refuses with the same hold and answer commands as any home
+ok - fm-pr-merge refuses a flagged class until the captain's answer for that PR is recorded, and keeps it across pushes that flag no new class
+ok - fm-pr-merge merges an admission project's PR when no configured class is flagged
+=== transcript-archive/scrub.py (home alchemist) rc=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/9 changes scan-gate, which is never merged from this home; hand the PR to home slarti, which merges it only after a fresh reviewer who did not write it records on the PR that it loosens no check:
+printf %s\\n needs-decision\ \[key=merge-handoff-9\]\ \[cause=external\]\ \[at=1793875195\]:\ \[handoff=slarti\]\ https://github.com/example/repo/pull/9\ is\ ready\ to\ merge\ once\ a\ fresh\ reviewer\ who\ did\ not\ write\ it\ records\ on\ the\ PR\ that\ its\ scan-gate\ change\ loosens\ no\ check\;\ a\ change\ that\ loosens\ one\ goes\ to\ the\ captain >> /tmp/fm-pr-merge-tests.dF7YGn/sg-transcript-archive-scrub.py/parent/state/alchemist.status
+=== local-jev/pii_gate.py (home alchemist) rc=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/9 changes scan-gate, which is never merged from this home; hand the PR to home slarti, which merges it only after a fresh reviewer who did not write it records on the PR that it loosens no check:
+printf %s\\n needs-decision\ \[key=merge-handoff-9\]\ \[cause=external\]\ \[at=1793875196\]:\ \[handoff=slarti\]\ https://github.com/example/repo/pull/9\ is\ ready\ to\ merge\ once\ a\ fresh\ reviewer\ who\ did\ not\ write\ it\ records\ on\ the\ PR\ that\ its\ scan-gate\ change\ loosens\ no\ check\;\ a\ change\ that\ loosens\ one\ goes\ to\ the\ captain >> /tmp/fm-pr-merge-tests.dF7YGn/sg-local-jev-pii_gate.py/parent/state/alchemist.status
+=== archive.py (home alchemist) rc=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/9 changes scan-gate, which is never merged from this home; hand the PR to home slarti, which merges it only after a fresh reviewer who did not write it records on the PR that it loosens no check:
+printf %s\\n needs-decision\ \[key=merge-handoff-9\]\ \[cause=external\]\ \[at=1793875197\]:\ \[handoff=slarti\]\ https://github.com/example/repo/pull/9\ is\ ready\ to\ merge\ once\ a\ fresh\ reviewer\ who\ did\ not\ write\ it\ records\ on\ the\ PR\ that\ its\ scan-gate\ change\ loosens\ no\ check\;\ a\ change\ that\ loosens\ one\ goes\ to\ the\ captain >> /tmp/fm-pr-merge-tests.dF7YGn/sg-archive.py/parent/state/alchemist.status
+=== config/private-projects.json (home alchemist) rc=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/9 changes scan-gate, which is never merged from this home; hand the PR to home slarti, which merges it only after a fresh reviewer who did not write it records on the PR that it loosens no check:
+printf %s\\n needs-decision\ \[key=merge-handoff-9\]\ \[cause=external\]\ \[at=1793875198\]:\ \[handoff=slarti\]\ https://github.com/example/repo/pull/9\ is\ ready\ to\ merge\ once\ a\ fresh\ reviewer\ who\ did\ not\ write\ it\ records\ on\ the\ PR\ that\ its\ scan-gate\ change\ loosens\ no\ check\;\ a\ change\ that\ loosens\ one\ goes\ to\ the\ captain >> /tmp/fm-pr-merge-tests.dF7YGn/sg-config-private-projects.json/parent/state/alchemist.status
+=== scrub.py (home slarti) rc=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/9 changes scan-gate, which its admission config hands to home slarti, and this home is slarti; a routed class is never merged by this script
+=== deploy/run.sh (authority, unrouted) rc=1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+error: PR merge refused: https://github.com/example/repo/pull/9 changes authority, which need the captain's recorded word for this PR before merging; hold each class for the captain, then record the captain's exact words:
+FM_HOME=/tmp/fm-pr-merge-tests.dF7YGn/sg-auth/home {run-worktree}/bin/fm-captain-hold.sh hold task-x1-admit-9-authority --title Admit\ https://github.com/example/repo/pull/9:\ authority --reason https://github.com/example/repo/pull/9\ changes\ authority\,\ which\ needs\ the\ captain\'s\ word\ before\ it\ merges --repo project
+FM_HOME=/tmp/fm-pr-merge-tests.dF7YGn/sg-auth/home {run-worktree}/bin/fm-captain-hold.sh answer task-x1-admit-9-authority --decision-file <file-with-the-captains-words>
+=== README.md (clear) rc=0
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+verified: https://github.com/example/repo/pull/9 is open and mergeable, with every unwaived required check reported and every unwaived check green at head deadbeefcafefeed0000000000000000deadbeef
+ok - scan-gate config routes scrub/archive/private-projects/pii_gate to slarti, keeps authority with captain, merges clear
