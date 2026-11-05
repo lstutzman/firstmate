@@ -878,6 +878,8 @@ test_reserved_classes_match_the_action_not_the_word() {
     {"fp":"r4","title":"Reword the wording shown to members on the pricing page","disposition":"new","severity":"P1"},
     {"fp":"r5","title":"Rotate the staging API key used by the mailer","disposition":"new","severity":"P1"},
     {"fp":"r12","title":"Rotate SendGrid API key","disposition":"new","severity":"P1"},
+    {"fp":"r16","title":"SendGrid API key exposed in logs","cause":"Rotate the SendGrid API key and scrub the logs.","disposition":"new","severity":"P1"},
+    {"fp":"r17","title":"[P1] Rotate the API key","disposition":"new","severity":"P1"},
     {"fp":"r6","title":"Password reset token never expires","disposition":"new","severity":"P1"},
     {"fp":"r7","title":"Reset token not invalidated after use","disposition":"new","severity":"P1"},
     {"fp":"r8","title":"Creates API key with predictable RNG","disposition":"new","severity":"P1"},
@@ -891,7 +893,7 @@ test_reserved_classes_match_the_action_not_the_word() {
   json="$home/data/officers/surgeon/$DATE.json"
   assert_equals "API key logged in plaintext|Creates API key with predictable RNG|Endpoint deletes records belonging to other users|Password reset token never expires|Reset token not invalidated after use|Revoke endpoint skips the token owner check|Session revoke does not clear the token cache|Token revoke leaves refresh tokens valid|UpdateAsync updates rows without tenant filter|User-facing text not HTML-encoded (XSS)|password hash compared with ==|shallow copy of list mutates cache" \
     "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding") | .title] | sort | join("|")' "$json")" "security and code bugs that only mention a key, a token, rows or text start"
-  assert_equals "credentials credentials member-copy" "$(jq -r '[.held[] | .class] | sort | join(" ")' "$json")" "a member wording change and key rotations, with or without an article, are held"
+  assert_equals "credentials credentials credentials credentials member-copy" "$(jq -r '[.held[] | .class] | sort | join(" ")' "$json")" "a member wording change and key rotations, with or without an article, are held"
   assert_equals 1 "$(jq '.asks_for_lee | length' "$json")" "with one keyed needs-decision"
   pass "fm-officer surgeon: reserved classes match the action they ask for, so real security bugs start"
 }

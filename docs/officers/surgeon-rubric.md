@@ -102,7 +102,7 @@ Each class is matched by the action it asks for, not by a word appearing anywher
 - Legal text: terms, privacy policy, cookie banner, licence text.
 - Product decisions: a product decision, or changing prices, pricing, plan limits or the paywall.
 - Member-facing copy: a request to change, update or reword the wording, copy or text shown to members.
-- Credentials: a request, opening the title or a sentence, to rotate, revoke, regenerate or reissue a secret, API key, token or service password ("Rotate SendGrid API key"), or to create or reset one ("Reset the signing key"); a bug in token or key handling ("Reset token not invalidated", "Token revoke leaves refresh tokens valid") is a code fix and starts.
+- Credentials: a request, opening the title (after any bracketed tag such as `[P1]`) or a sentence of the summary or cause, to rotate, revoke, regenerate or reissue a secret, API key, token or service password ("Rotate SendGrid API key"), or to create or reset one ("Reset the signing key"); a bug in token or key handling ("Reset token not invalidated", "Token revoke leaves refresh tokens valid") is a code fix and starts.
 - Production actions: deploying, restarting or promoting to production, or changing production data, config or settings.
 - Data-rewriting changes: dropping or renaming a table or column, a migration, backfill or script that updates or deletes existing rows, removing an enum value; an endpoint bug that deletes or updates rows is a code fix and starts.
 

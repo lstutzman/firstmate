@@ -190,7 +190,7 @@ RESERVED = collections.OrderedDict([
     ("product", re.compile(r"\b(product (decision|change)s?|(change|raise|lower|set|move)[a-z]* (the )?(prices?|pricing|plan limits?|paywall))\b", re.I)),
     ("member-copy", re.compile(r"\b(change|update|reword|rewrite|edit|replace)[a-z]*\b.{0,40}?\b(wording|copy|text|microcopy)\b.{0,40}?"
                                r"\b(shown to|seen by|visible to|for) (members|users|customers)\b", re.I)),
-    ("credentials", re.compile(r"(^|[.;:!?] +)((rotate|revoke|regenerate|reissue)( (the|a|an|our|this|that))?|(create|reset) (the|a|an|our|this|that|new))"
+    ("credentials", re.compile(r"(^|[.;:!?] +|^\[[^\]]*\] *)((rotate|revoke|regenerate|reissue)( (the|a|an|our|this|that))?|(create|reset) (the|a|an|our|this|that|new))"
                                r"( [\w-]+){0,2}? (credentials?|secrets?|"
                                r"api[- ]?keys?|tokens?|(access|account|storage|signing|private|ssh|encryption) keys?|"
                                r"(database|db|admin|service account) passwords?|connection strings?)\b", re.I)),
@@ -486,9 +486,9 @@ def load_rubric(path):
 
 
 def reserved_class(f):
-    haystack = " ".join([f["title"], f["summary"], f["location"], text(f["evidence"].get("cause"))])
+    fields = [f["title"], f["summary"], f["location"], text(f["evidence"].get("cause"))]
     for name, rx in RESERVED.items():
-        if rx.search(haystack):
+        if any(rx.search(field) for field in fields):
             return name
     return None
 
