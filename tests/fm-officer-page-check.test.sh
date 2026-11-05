@@ -168,6 +168,8 @@ STATUS
     {id: "approve-fix", band: "now", question: "Approve https://github.com/ex/repo/pull/9? It will apply the fix", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "hold-ask", band: "now", question: "Release the hold for https://github.com/ex/repo/pull/9?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "merge-word", band: "now", question: "Merge word for https://github.com/ex/repo/pull/9 to production?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "approve-ci-run", band: "now", question: "Approve https://github.com/ex/repo/pull/9? Its CI run is green", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "hold-enables", band: "now", question: "Release the hold for https://github.com/ex/repo/pull/9? It enables the cache", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "mem-infra-v4-install", band: "now", question: "Go for v4? https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "skills-118-token-scope-probe-golive", band: "now", question: "Go for the probe? https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "run-these", band: "now", question: "Run these steps for https://github.com/ex/repo/pull/9?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
@@ -180,9 +182,9 @@ STATUS
     "$pages/_api_captains-log" > "$pages/log.tmp" && mv "$pages/log.tmp" "$pages/_api_captains-log"
   officer live run page-check --date "$KEY" >/dev/null || fail "run must succeed"
   json="$home/data/officers/page-check/$KEY.json"
-  assert_equals "approve-fix:ex/repo#9 closed-deploy:ex/repo#10 closed-install:ex/repo#10 hold-ask:ex/repo#9 merge-word:ex/repo#9" \
+  assert_equals "approve-ci-run:ex/repo#9 approve-fix:ex/repo#9 closed-deploy:ex/repo#10 closed-install:ex/repo#10 hold-ask:ex/repo#9 hold-enables:ex/repo#9 merge-word:ex/repo#9" \
     "$(jq -r '[.findings[] | select(.kind == "stale-card" and (.id | test(":ex/repo#(9|10)$"))) | .id | sub("^stale-card:Captain.s Log:"; "")] | sort | join(" ")' "$json")" \
-    "a merged PR stales a merge-word, approve or hold card but not a production, go-live, install or run card named by its words or id; a closed-unmerged PR still flags"
+    "a merged PR stales a merge-word, approve or hold card even when it mentions a run or what the PR enables, but not a production card or a card that asks to run, install or go live; a closed-unmerged PR still flags"
   assert_equals "$(printf '%s\n' "$k4:resolved" "$k5:resolved" | sort | paste -sd' ')" \
     "$(jq -r --arg a "$k3" --arg b "$k4" --arg c "$k5" --arg d "$k6" '[.findings[] | select(.kind == "stale-card" and (.id | test("(" + $a + "|" + $b + "|" + $c + "|" + $d + "):resolved$"))) | .id | sub("^stale-card:Captain.s Log:"; "")] | sort | join(" ")' "$json")" \
     "a captain answer or release stales a card, not a routing sweep or a reconcile"

@@ -28,10 +28,14 @@ card, a page owner fixes a page). It acts on nothing itself.
                  whose keyed status line a later `resolved` line settled.
                  Two live-decision exceptions keep this from false-flagging:
                  * A merged PR alone does not stale a card that asks for a
-                   production action on it (deploy, production, roll out, activate, go live,
-                   install, enable, run):
-                   that action is still open. The card's question, title and
-                   id are read for PRODUCTION_RE unless they ask for a
+                   production or activation action on it: that action is
+                   still open. A production card's question, title or id
+                   names deploy, production or roll out (PRODUCTION_RE); an
+                   activation card's question or title opens with run these,
+                   run the, install, activate, enable or go live
+                   (ACTIVATION_ASK_RE), or its id carries an -install,
+                   -golive, -go-live, -activate or -run-these token
+                   (ACTIVATION_ID_RE). Neither counts when the card asks for a
                    merge (MERGE_RE: a merge-word card is stale once its PR
                    merged; merely mentioning the merge is not asking).
                    A closed-unmerged PR still flags.
@@ -73,8 +77,11 @@ import time
 MAX_PR_LOOKUPS = 40
 FACTS_SOURCES = ("bosun",)
 PR_RE = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)")
-# A card names a production or go-live action (deploy, activate, install, enable, run) when its question, title or own id matches PRODUCTION_RE and does not ask for a merge.
-PRODUCTION_RE = re.compile(r"\b(production|deploy\w*|roll(?:ed|s|ing)?[ -]?out|activat\w*|go[ -]?live|install\w*|enabl\w*|run)\b", re.I)
+# A card names a production action when its question, title or own id matches PRODUCTION_RE and does not ask for a merge.
+PRODUCTION_RE = re.compile(r"\b(production|deploy\w*|roll(?:ed|s|ing)?[ -]?out)\b", re.I)
+# A card asks to activate or run its subject when its question or title opens with the ask, or its id carries the token.
+ACTIVATION_ASK_RE = re.compile(r"^(?:run these|run the|install|activate|enable|go live)\b", re.I)
+ACTIVATION_ID_RE = re.compile(r"-(?:install|golive|go-live|activate|run-these)(?:-|$)", re.I)
 MERGE_RE = re.compile(r"\bmerge[ -]words?\b|^merge\s|\bmerge (?:this|it|the PR|PR)\b", re.I)
 # A resolved status line written by an answer, as opposed to a routing or reconcile acknowledgement.
 ANSWER_RE = re.compile(r"^(?:answered:|captain hold \S+: (?:answered|released))", re.I)
@@ -214,9 +221,11 @@ def words(card):
 
 
 def open_production_action(card):
-    """True when the card asks for a production action, which a merged PR does not close."""
-    head = [str(card.get(k) or "") for k in ("id", "question", "title")]
-    return any(PRODUCTION_RE.search(h) for h in head) and not any(MERGE_RE.search(h) for h in head)
+    """True when the card asks for a production or activation action, which a merged PR does not close."""
+    head = [str(card.get(k) or "").strip() for k in ("id", "question", "title")]
+    asks = (any(PRODUCTION_RE.search(h) for h in head) or ACTIVATION_ID_RE.search(head[0])
+            or any(ACTIVATION_ASK_RE.search(h) for h in head[1:]))
+    return bool(asks) and not any(MERGE_RE.search(h) for h in head)
 
 
 def finding(kind, page, ref, title, evidence, route):
