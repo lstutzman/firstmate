@@ -979,7 +979,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `reopen-state` | Landing only, optional: the state a Done item moves to when its linked PR never reached main (`on_main` false) or any release; default `In Progress`; `In Staging` and `Done` are refused. A Done item on main but not yet in production is release lag and is only reported |
 | `max-facts-age` | Landing only, optional: the oldest facts, in hours since their `generated_at`, the officer writes to Linear from; default 36. Older or missing `generated_at`, or facts with no `production_sha`, make no Linear write and raise a `stale-facts` finding |
 | `done-window` | Landing only, optional: how many Linear Done items one run lists, in one paged read, to find Done items no landing fact names; default 100, and 0 skips that read |
-| `start-home` | Progress, optional: comma-separated office ids. Each must pass the same checks as a `consumer` office, because the office runs the start requests for its projects, except that a `lane:<officer-id>:high` source needs no `main` consumer, since start requests reach the office inbox either way; a request whose project is in that office's `dispatch:` list (a Linear item in the team, or a backlog row with only a Linear id, counts as PropertyCompass2) is written to that office's inbox instead of this home's |
+| `start-home` | Progress, optional: comma-separated office ids. Each must pass the same checks as a `consumer` office, because the office's own lane check delivers the start requests for its projects, except that a `lane:<officer-id>:high` source needs no `main` consumer, since that check delivers them either way; a request whose project is in that office's `dispatch:` list (a Linear item in the team, or a backlog row with only a Linear id, counts as PropertyCompass2) is addressed to that office's home instead of this one. An office that fails those checks gets no requests, so its projects' requests stay with this home |
 | `writes` (surgeon) | Surgeon, optional: `none` (default) files nothing; `linear` files Linear items as described under [Surgeon](#surgeon) |
 | `max-creates` | Surgeon, optional: the most items one run attempts to create; default 5. A failed create counts only once its dry run passed |
 | `area` | Surgeon, required with `writes: linear`: the one team PC area label every item carries; a label missing from team PC means the finding is reported and not filed |
@@ -1148,6 +1148,10 @@ This slice uses `model: none` throughout.
 Held, blocked, already carded, in-flight, completed, or open-PR-linked work is excluded from starts.
 Unresolved keyed status calls remain open across later `working` lines.
 The same Linear identifier produces at most one start request across homes.
+Before ranking, a candidate filter drops what is not a work item: a Top of Mind ask, or any start candidate, whose text is a shell command, a release note such as `same release as PR N`, or a date or status stamp such as `Last updated: November 2026`.
+A dropped ask is set aside before matching, so it never joins, reclassifies, or starts other work.
+A second copy of a start (the same Linear identifier, the same home and id, or, for a Top of Mind ask, the same title once punctuation and case are ignored) and a Top of Mind ask whose title matches open queued or in-flight work in any home or an open PR's title are dropped as duplicates; fleet records keep their own identity, so two backlog rows that share a title both remain candidates.
+Every dropped item is listed in `excluded` and the digest with its reason, and a dropped ask also in the Top of Mind section; nothing is dropped silently.
 Code-review findings and bugs start under their recorded class even when their titles or descriptions mention business, product, wording, legal, payments, billing, pricing, or restricted operations.
 Only an explicit ask overrides that classification: an `Ask Lee:`, `Ask for Lee:`, `Lee ask:`, `Decision for Lee:`, `Need Lee:`, or `Needs Lee:` line (a spaced ` - ` may replace the colon), or a `Needs Lee to ...` marker, identifies the decision or action Lee must take.
 Bulleted lines and Markdown headings or bold markers may wrap those prefixes.
@@ -1189,7 +1193,7 @@ Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all link
 Optional `link`, `project`, `outcome`, and `captains_log_key` preserve source context for the page projection.
 Only start requests have a one-based `rank` and an `execute` object; filler also carries `execute`.
 The execution object contains `action: start`, `request_id`, `env.FM_HOME` (this home, or the [`start-home`](#officers-dataofficersmd) office whose `dispatch:` list holds the project), and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
-The adjacent shell handoff runs those same quoted argument arrays in rank order, followed by filler when present.
+The adjacent shell handoff runs the quoted argument arrays addressed to this home in rank order, followed by filler when present; requests addressed to an office are not in it.
 The request identifier is stable for the same item and date, so retries replay the original inbox note; a later date may retry work still unstarted.
 
 Firstmate executes the handoff without another decision about whether to start authorized work.
@@ -1197,6 +1201,10 @@ Before executing, check `generated_at`: rerun a digest older than 36 hours, and 
 Firstmate routes and dispatches through ordinary intake, including registered scope, capacity limits, quota routing, project delivery rules, and `fm-spawn.sh`; capacity or quota delays stay queued.
 Officer evidence never becomes a quotation attributed to Lee in a worker's intent.
 If Lee later stops requested work, keep its branch parked rather than discarding it.
+Each `start-home` office's `lane:<officer-id>` (or `:high`) wake source delivers the requests addressed to its own home: the office's check reads the dated JSON and runs only requests whose `env.FM_HOME` is that office's home, in rank order, through its own `fm-inbox.sh note` with the recorded arguments, never a program named in the file.
+It delivers nothing from a digest whose `generated_at` is more than 36 hours old, stops at the first request it cannot deliver, and retries on the next check; the stable request identifier makes every retry a replay, so each request becomes one inbox note.
+The office then judges and dispatches each note under the `office-roles` skill as ordinary routed work.
+For example, `start-home: navigator,quartermaster` sends PropertyCompass2 work to the Navigator and fleet work to the Quartermaster; each office must list `lane:progress` in its `sources:`, and `repos:` must name every repository whose open PRs should stop a duplicate start, the fleet repositories included.
 The officer writes only its findings lane and never executes the handoff itself.
 
 The fleet app pulls `progress-state.json` for a separate progress officer page; this does not replace Captain's Choice or Captain's Log.
@@ -1249,7 +1257,7 @@ Offices live in the primary home's `data/offices.md`, one line per office, in th
 
 Each source is a watcher check in the office home's own `state/`, so it wakes the office and never main.
 `bin/fm-office.sh register-sources`, run in the office home, installs and trusts one `state/office-<source>.check.sh` per listed source, and `bin/fm-office.sh check <source>` is its body; the script's header owns what each prints and when it stays silent.
-`tick` fires once per slot of the office's `tick` cadence when a place under `wip` is free and work could start; `lane:<officer-id>` fires once per new digest of that officer in the parent home; `lane:<officer-id>:high` fires only for findings the digest's `.json` marks high or critical.
+`tick` fires once per slot of the office's `tick` cadence when a place under `wip` is free and work could start; `lane:<officer-id>` fires once per new digest of that officer in the parent home; `lane:<officer-id>:high` fires only for findings the digest's `.json` marks high or critical; either also delivers a progress digest's start requests addressed to the office (see [Progress officer](#progress-officer)).
 
 A local office home also carries a `.fm-office` marker holding the office id and a `data/charter.md` with a `# Office authority` heading.
 `bin/fm-brief.sh <id> --secondmate --office <id>` writes that role charter, a standing mandate that replaces the second mate's idle-by-default clauses, and `bin/fm-home-seed.sh ... --office <id>` seeds the home with the marker, the merge tokens and admission copies its line needs, and its source checks; each script's header owns its checks and refusals, and the `office-roles` skill owns each role's mandate.

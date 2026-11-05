@@ -76,6 +76,31 @@ BLOCKABLE_STATES = ("backlog", "unstarted")
 TRUNCATED = "\n... (truncated, "
 EVENT = re.compile(r"^([a-z-]+)\b([^:]*):\s*(.*)$")
 KEY = re.compile(r"\bkey=([^\]\s]+)")
+# Non-work candidate shapes seen in real Top of Mind captures; lowercase only, as pasted.
+SHELL = re.compile(r"^(?:sudo|cp|mv|sed|awk|grep|chmod|chown|mkdir|scp|rsync|curl|wget|lvextend|systemctl|apt(?:-get)?)\s"
+                   r"|^(?:export|cd|cat|echo|source|kill|make|touch|ls|rm|ln|git|gh|ssh|npm|npx|dotnet|az|brew|pip3?|python3?"
+                   r"|bash|node|op)\s+(?:[-~/.$\"']|[A-Za-z_]\w*=)")
+RELEASE_NOTE = re.compile(r"^(?:\w+\s+){0,3}same release as\b.{0,40}$", re.I)
+MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
+DATE = r"(?:\d{4}-\d{2}-\d{2}|(?:\d{1,2}\s+)?%s(?:\s+\d{1,2})?,?\s+\d{4}|%s\s+\d{1,2})" % (MONTH, MONTH)
+STAMP = re.compile(r"^(?:last\s+)?(?:updated|modified|revised|reviewed|edited|as of|dated?|status)"
+                   r"(?:\s*:\s*(?:on\s+)?(?:%s|[\w-]+)|\s+(?:on\s+)?%s)\.?$" % (DATE, DATE), re.I)
+
+
+def non_work(text):
+    """Why a candidate's text is not a work item, or None."""
+    text = " ".join(text.split())
+    if SHELL.match(text):
+        return "Not a work item: a shell command"
+    if RELEASE_NOTE.match(text):
+        return "Not a work item: a release note"
+    if STAMP.match(text):
+        return "Not a work item: a date or status stamp"
+    return None
+
+
+def title_key(title):
+    return re.sub(r"[^0-9a-z]+", " ", TAG.sub("", title).casefold()).strip()
 
 
 def read(path):
@@ -603,7 +628,17 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
     team_id = re.compile(r"\b%s-\d+\b" % re.escape(team))
     rows = [row for snapshot in snapshots for row in snapshot["rows"]]
     homes = [snapshot["home"] for snapshot in snapshots] or ["unknown"]
-    rows += top_of_mind_items(top_of_mind, rows, issues, prs, homes)
+    asks = []
+    for ask in top_of_mind:
+        reason = non_work(ask["words"])
+        if not reason:
+            asks.append(ask)
+            continue
+        # Dropped before matching, so non-work never joins, reclassifies, or starts other work.
+        row = item(ask["id"], ask["words"], homes[0], "")
+        row.update(reason=reason, tag_source=None, evidence=["Top of Mind: " + ask["id"] + " - " + ask["words"]])
+        doc["excluded"].append(row)
+    rows += top_of_mind_items(asks, rows, issues, prs, homes)
     category = {}
     linked = {}
     for row in rows:
@@ -729,13 +764,28 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
             doc["start_requests"].append(row)
     doc["start_requests"].sort(key=lambda r: (CLASS_ORDER[r["authorising_class"]],
                                              r["priority"] or 5, r["id"], r["owner_home"]))
-    seen = set()
+    candidates = {id(r) for r in doc["start_requests"]}
+    busy = {title_key(r["title"]): r["id"] for r in rows if id(r) not in candidates and r.get("section") != "done"
+            and r.get("state", "") not in FINISHED and r.get("latest") not in ("done", "failed")}
+    busy.update((title_key(pr.get("title") or ""), pr.get("html_url") or "an open PR") for pr in prs)
+    busy.pop("", None)
+    seen = {}
     unique = []
     for row in doc["start_requests"]:
-        key = row["linear_id"] or (row["owner_home"], row["id"])
-        if key in seen:
+        title = title_key(row["title"])
+        # Fleet records carry their own identity; only free-text Top of Mind asks are matched by title.
+        free_text = row.get("origin") == "top-of-mind"
+        keys = [k for k in (row["linear_id"] or (row["owner_home"], row["id"]), title if free_text else "") if k]
+        earlier = next((seen[k] for k in keys if k in seen), None)
+        reason = non_work(row["title"]) or (
+            "Duplicate of start request " + earlier if earlier else
+            "Duplicate of queued, in-flight, or open-PR work: " + busy[title] if free_text and title in busy else None)
+        if reason:
+            row["reason"] = reason
+            doc["excluded"].append(row)
             continue
-        seen.add(key)
+        for k in filter(None, keys + [title]):
+            seen.setdefault(k, row["id"])
         unique.append(row)
     doc["start_requests"] = unique
     if blockers:
@@ -820,6 +870,7 @@ def executable_requests(doc, home, start_homes=()):
 
 def write_handoff(path, requests):
     lines = ["#!/usr/bin/env bash", "# Firstmate executes this handoff; the officer only writes it.",
+             "# It holds this home's requests; each start-home office's lane check delivers its own from the JSON.",
              "set -euo pipefail"]
     for request in requests:
         lines.append("FM_HOME=" + shlex.quote(request["env"]["FM_HOME"]) + " "
@@ -1075,7 +1126,8 @@ def main(argv):
     start_homes = [(h, {p.lower() for p in projects.split(",") if p})
                    for h, _, projects in (a.partition("=") for a in args.start_home)]
     requests = executable_requests(doc, args.home[0], start_homes)
-    write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"), requests)
+    write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"),
+                  [r for r in requests if r["env"]["FM_HOME"] == args.home[0]])
     reported = None
     runs = sorted(n for n in os.listdir(args.out) if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", n))
     if runs:
