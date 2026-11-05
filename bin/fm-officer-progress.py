@@ -76,21 +76,23 @@ BLOCKABLE_STATES = ("backlog", "unstarted")
 TRUNCATED = "\n... (truncated, "
 EVENT = re.compile(r"^([a-z-]+)\b([^:]*):\s*(.*)$")
 KEY = re.compile(r"\bkey=([^\]\s]+)")
-# Non-work candidate shapes seen in real Top of Mind captures; lowercase only, as pasted.
-SHELL = re.compile(r"^(?:sudo|cp|mv|sed|awk|grep|chmod|chown|mkdir|scp|rsync|curl|wget|lvextend|systemctl|apt(?:-get)?)\s"
-                   r"|^(?:export|cd|cat|echo|source|kill|make|touch|ls|rm|ln|git|gh|ssh|npm|npx|dotnet|az|brew|pip3?|python3?"
-                   r"|bash|node|op)\s+(?:[-~/.$\"']|[A-Za-z_]\w*=)")
-RELEASE_NOTE = re.compile(r"^(?:\w+\s+){0,3}same release as\b.{0,40}$", re.I)
+# Non-work candidate shapes seen in real Top of Mind captures. A command needs shell structure after a
+# lowercase command word, as pasted, so a title that only starts with one ("curl timeouts") survives.
+SHELL = re.compile(r"^\$\s|^(?:sudo\s+)?(?:sudo|cp|mv|sed|awk|grep|chmod|chown|mkdir|scp|rsync|curl|wget|lvextend"
+                   r"|systemctl|apt(?:-get)?|export|cd|cat|echo|source|kill|make|touch|ls|rm|ln|git|gh|ssh|npm|npx"
+                   r"|dotnet|az|brew|pip3?|python3?|bash|node|op)\s+"
+                   r"(?:[-~/$\"']|\.{1,2}/|\.[a-z]|[A-Za-z_]\w*=|.*\s(?:\||&&|>>?)\s)")
+RELEASE_NOTE = re.compile(r"^(?:\w+\s*:\s*)?same release as (?:pr\s*)?#?(?:\d+|n)[.!]*$", re.I)
 MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
 DATE = r"(?:\d{4}-\d{2}-\d{2}|(?:\d{1,2}\s+)?%s(?:\s+\d{1,2})?,?\s+\d{4}|%s\s+\d{1,2})" % (MONTH, MONTH)
 STAMP = re.compile(r"^(?:last\s+)?(?:updated|modified|revised|reviewed|edited|as of|dated?|status)"
                    r"(?:\s*:\s*(?:on\s+)?(?:%s|[\w-]+)|\s+(?:on\s+)?%s)\.?$" % (DATE, DATE), re.I)
 
 
-def non_work(text):
-    """Why a candidate's text is not a work item, or None."""
+def non_work(text, free_text=False):
+    """Why a candidate's text is not a work item, or None; only free text can be a pasted command."""
     text = " ".join(text.split())
-    if SHELL.match(text):
+    if free_text and SHELL.match(text):
         return "Not a work item: a shell command"
     if RELEASE_NOTE.match(text):
         return "Not a work item: a release note"
@@ -630,7 +632,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
     homes = [snapshot["home"] for snapshot in snapshots] or ["unknown"]
     asks = []
     for ask in top_of_mind:
-        reason = non_work(ask["words"])
+        reason = non_work(ask["words"], free_text=True)
         if not reason:
             asks.append(ask)
             continue
@@ -771,10 +773,14 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
     busy.pop("", None)
     seen = {}
     unique = []
-    for row in doc["start_requests"]:
+    order = {id(r): n for n, r in enumerate(doc["start_requests"])}
+    # Fleet records carry their own identity and claim their titles first; only rows created
+    # from a Top of Mind ask match by title, so an ask restating a fleet start drops whatever the sort order.
+    def from_ask(row):
+        return any(e.startswith("Top of Mind: ") for e in row["evidence"][:1])
+    for row in sorted(doc["start_requests"], key=from_ask):
         title = title_key(row["title"])
-        # Fleet records carry their own identity; only rows created from a Top of Mind ask match by title.
-        free_text = any(e.startswith("Top of Mind: ") for e in row["evidence"][:1])
+        free_text = from_ask(row)
         keys = [k for k in (row["linear_id"] or (row["owner_home"], row["id"]), title if free_text else "") if k]
         earlier = next((seen[k] for k in keys if k in seen), None)
         reason = non_work(row["title"]) or (
@@ -787,6 +793,7 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         for k in filter(None, keys + [title]):
             seen.setdefault(k, row["id"])
         unique.append(row)
+    unique.sort(key=lambda r: order[id(r)])
     doc["start_requests"] = unique
     if blockers:
         for row in doc["start_requests"]:
@@ -1069,7 +1076,7 @@ def main(argv):
     except (OSError, ValueError, TypeError, http.client.HTTPException):
         problems.append("Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed")
     requested = set(filter(None, args.requested.split(",")))
-    requested.update(i for ask in top_of_mind if ask.get("kind") != "statement" and not non_work(ask["words"])
+    requested.update(i for ask in top_of_mind if ask.get("kind") != "statement" and not non_work(ask["words"], free_text=True)
                      for i in LINEAR_ID.findall(json.dumps(ask))
                      if re.fullmatch(re.escape(args.team) + r"-\d+", i))
     for snapshot in snapshots:
