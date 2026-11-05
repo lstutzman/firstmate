@@ -1,0 +1,35 @@
+== run 1: register PR (head A)
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+handed off: https://github.com/o/r/pull/4837 to home slarti
+armed: state/task-a.check.sh
+rc=0
+== slarti inbox records after run 1:
+/tmp/fm-lab.zzOCo7/state/slarti.inbox/001.msg
+--- /tmp/fm-lab.zzOCo7/state/slarti.inbox/001.msg
+schema=fm-task-inbox.v1
+at=2026-11-05T15:35:56Z
+--
+[fm-from-firstmate]⁣corr=66b8fcc934ecbb6d needs-decision [key=merge-handoff-4837] [cause=external] [at=1793892954]: [handoff=slarti] https://github.com/o/r/pull/4837 is ready to merge
+== task-a.status handoff lines (expect none):
+0
+== record:
+https://github.com/o/r/pull/4837 0123456789abcdef0123456789abcdef01234567
+== run 2: same head again
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+armed: state/task-a.check.sh
+rc=0
+== run 3: new head B
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+handed off: https://github.com/o/r/pull/4837 to home slarti
+armed: state/task-a.check.sh
+rc=0
+== handoff records delivered to slarti inbox, by count:
+2
+== slarti pane screen:
+lee@slartibartfast:/tmp$

@@ -1,0 +1,23 @@
+== S1 deepthought registers PR 4837 and 4839 (admission-bound merger=slarti project)
+handed off: https://github.com/lstutzman/PropertyCompass2/pull/4837 to home slarti
+armed: state/t4837.check.sh
+handed off: https://github.com/lstutzman/PropertyCompass2/pull/4839 to home slarti
+armed: state/t4839.check.sh
+== S1 parent channel (parent-replies.status) handoff lines:
+needs-decision [key=merge-handoff-4837] [cause=external] [at=1793892987]: [handoff=slarti] https://github.com/lstutzman/PropertyCompass2/pull/4837 is ready to merge
+needs-decision [key=merge-handoff-4839] [cause=external] [at=1793892989]: [handoff=slarti] https://github.com/lstutzman/PropertyCompass2/pull/4839 is ready to merge
+== S1 open keyed decisions the parent sees (fm-classify-lib status_open_decisions):
+merge-handoff-4837	needs-decision	[handoff=slarti] https://github.com/lstutzman/PropertyCompass2/pull/4837 is ready to merge
+merge-handoff-4839	needs-decision	[handoff=slarti] https://github.com/lstutzman/PropertyCompass2/pull/4839 is ready to merge== S2 re-register 4837 same head (expect silent):
+armed: state/t4837.check.sh
+count 4837 lines: 1
+== S3 merger home itself (identity slarti) registers a new head (expect no handoff):
+armed: state/t4837.check.sh
+count 4837 lines: 1
+== S4 task held for the captain, new head (expect no handoff):
+held
+armed: state/t4839.check.sh
+count 4839 lines: 1
+== S5 project with no merger (expect no handoff):
+armed: state/t4840.check.sh
+count 4840 lines: 0
