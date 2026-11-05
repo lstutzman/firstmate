@@ -524,6 +524,9 @@ Task meta records `backend=` only for a non-default backend; an absent `backend=
 
 - A cmux task additionally records `cmux_workspace_id=` and `cmux_surface_id=`.
 
+- An adopted task, written by `bin/fm-pr-adopt.sh <task-id> <pr-url> --mode no-mistakes --yolo <on|off> [--project <dir>]` for an open GitHub PR that has no task record in this home, records only `worktree=` (a path under `state/` that never exists), `project=`, `kind=ship`, `mode=`, `yolo=`, `adopted=1`, and `adopted_at=`, then `bin/fm-pr-check.sh` adds `pr=` and `pr_head=` from the forge.
+  It has no window, endpoint, branch, incarnation, or `office=`, so `bin/fm-pr-merge.sh` decides its merge under every unchanged guard, an office home refuses it, and `bin/fm-teardown.sh` cleans it as a windowless record; the script's header owns the field inventory and its refusals.
+
 ### Task selectors
 
 Task selectors for `fm-peek.sh`, `fm-send.sh`, and `fm-crew-state.sh` resolve centrally through `fm_backend_resolve_selector`.
