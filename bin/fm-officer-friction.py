@@ -39,7 +39,8 @@ wait for Lee to do. One day's friction events come from three sources:
                measured to the next message Lee typed; a tool result whose
                line starts with a guard refusal, a sudo prompt, an ssh key
                refusal, a 1Password refusal, a not-signed-in CLI, or
-               `command not found` is agent-side friction. A worker session
+               `command not found` is agent-side friction; a not-found name
+               that is no installable tool (plausible_tool) is skipped. A worker session
                whose cwd is outside the worktree its task record names started
                in the wrong directory.
   captain's log with --captains-log, the cards fleet-app serves at GET
@@ -653,16 +654,31 @@ INJECTED_FLAGS = ("isMeta", "isSidechain", "isCompactSummary", "isVisibleInTrans
                   "toolUseResult", "sourceToolUseID", "sourceToolAssistantUUID")
 
 
-def typed_text(rec):
+# Blocks Claude Code and its hooks wrap around guidance they add to a user-role record.
+INJECTED_BLOCK_RE = re.compile(
+    r"<(system-reminder|task-notification|command-[\w-]+|local-command-[\w-]+|user-prompt-submit-hook"
+    r"|hook-[\w-]+|available-deferred-tools|new-diagnostics|ide_[\w]+)\b[^>]*>.*?(?:</\1>|\Z)", re.S)
+
+
+def typed_text(rec, stamped=False):
     """user_text, but only for a record Lee typed: never a peer or agent message, hook context,
-    tool result or sub-agent prompt. Claude Code stamps typed text origin.kind == "human"; a record
-    without an origin (older versions) counts unless another marker flags it."""
+    tool result, sub-agent prompt, or guidance the harness wrapped into the message. Claude Code stamps
+    typed text origin.kind == "human"; a record without an origin counts only in a transcript where no
+    record carries one (older versions), and unless another marker flags it. `stamped` says the
+    transcript's records carry origins."""
     if any(rec.get(flag) for flag in INJECTED_FLAGS):
         return None
+    if rec.get("userType") not in (None, "external"):
+        return None
     origin = rec.get("origin")
+    if origin is None and stamped:
+        return None
     if origin is not None and (not isinstance(origin, dict) or origin.get("kind") != "human"):
         return None
-    return user_text(rec)
+    text = user_text(rec)
+    if text is None:
+        return None
+    return INJECTED_BLOCK_RE.sub("\n", text)
 
 
 def classify_command(command, machine=None, after=""):
@@ -717,9 +733,51 @@ def hit_event(hit, m):
             "service": service, "tool": tool, "signature": sig}
 
 
+SHELL_SHEBANG_RE = re.compile(r"#!\S*(?:/|\s)(?:ba)?sh\b")
+
+
+def tool_inputs(records):
+    """Every Bash command of one transcript by tool_use id, and its shell code joined: the commands and
+    the bodies written or edited into shell files (.sh, .bash or a sh/bash shebang)."""
+    by_id, bodies = {}, []
+    for rec in records:
+        content = (rec.get("message") or {}).get("content")
+        if rec.get("type") != "assistant" or not isinstance(content, list):
+            continue
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_use":
+                inp = block.get("input") or {}
+                command = inp.get("command") if isinstance(inp.get("command"), str) else None
+                by_id[block.get("id")] = command
+                texts = [v for k, v in inp.items() if k in ("content", "new_string") and isinstance(v, str)]
+                if command is not None:
+                    bodies.append(command)
+                elif str(inp.get("file_path") or "").endswith((".sh", ".bash")) \
+                        or any(SHELL_SHEBANG_RE.match(t) for t in texts):
+                    bodies.extend(texts)
+    return by_id, "\n".join(bodies)
+
+
+def plausible_tool(name, command, bodies):
+    """Whether `name` from a "command not found" line is an installable command a person could add:
+    not a dotted field name, not a shell function the session itself defined (a test helper, a function
+    used outside its script), and not a word the command that ran held only as a `name:` label
+    (a command that never names it reached it through a script: a real miss)."""
+    if re.fullmatch(r"[A-Za-z_]+(?:\.[A-Za-z_]+)+", name):
+        return False
+    esc = re.escape(name)
+    if re.search(r"(?m)^\s*(?:function\s+%s\b|%s\s*\(\s*\))" % (esc, esc), bodies or ""):
+        return False
+    word = r"(?<![\w.-])%s(?![\w.-])" % esc
+    if command is None or not re.search(word, command):
+        return True
+    return re.search(word + "(?!:)", command) is not None
+
+
 def session_events(records, machine):
     """Friction events in one transcript, in record order."""
     events = []
+    commands, bodies = tool_inputs(records)
     asks = {}
     pending = []    # asks waiting for Lee's next typed message
     for n, rec in enumerate(records):
@@ -780,6 +838,12 @@ def session_events(records, machine):
                 body = triage.result_text(block)
                 for hit, pattern in HIT_PATTERNS:
                     m = pattern.search(body)
+                    if m and hit == "missing-tool":
+                        command = commands.get(block.get("tool_use_id"))
+                        m = next((x for x in pattern.finditer(body)
+                                  if plausible_tool(x.group(1), command, bodies)), None)
+                        if m is None:
+                            break
                     if m:
                         events.append(dict(hit_event(hit, m), at=at))
                         break
@@ -840,12 +904,13 @@ def lee_instructions(records, worker):
     A worker session's first prompt is firstmate's launch brief, which quotes Lee, so it is skipped."""
     out = []
     skip = worker
+    stamped = any(isinstance(rec.get("origin"), dict) for rec in records)
     for rec in records:
         first = user_text(rec) if rec.get("type") == "user" else None
         if first is not None and skip:
             skip = False
             continue
-        text = typed_text(rec) if first is not None else None
+        text = typed_text(rec, stamped) if first is not None else None
         if text is None:
             continue
         if MACHINE_PROMPT_RE.match(text) or BASH_INPUT_RE.match(text.strip()) or len(text) > 6000:
