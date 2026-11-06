@@ -1,0 +1,26 @@
+read rc=0 required=[] error=none
+--- serial shard names reported at PR 136 head:
+Behavior portable serial 1
+Behavior portable serial 10
+Behavior portable serial 11
+Behavior portable serial 12
+Behavior portable serial 13
+Behavior portable serial 14
+Behavior portable serial 15
+Behavior portable serial 2
+Behavior portable serial 3
+Behavior portable serial 4
+Behavior portable serial 5
+Behavior portable serial 6
+Behavior portable serial 7
+Behavior portable serial 8
+Behavior portable serial 9
+--- missing vs live required set (what the gate enforces today):
+(end; rc=0)
+--- missing vs the CONTRIBUTING.md list, at PR 136 head:
+(end; rc=0)
+--- adversarial: rollup with serial 15 dropped, live required set:
+(end; rc=0 -> nothing refused)
+--- adversarial: same rollup, if the listed contexts were required:
+Behavior portable serial 15
+(end; rc=0)

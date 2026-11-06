@@ -1,0 +1,6 @@
+$ gh api repos/lstutzman/firstmate/rulesets
+[]
+$ gh api repos/lstutzman/firstmate/branches/main --jq "{protected, protection}"
+{"protected":false,"protection":{"enabled":false,"required_status_checks":{"checks":[],"contexts":[],"enforcement_level":"off"}}}
+$ gh api repos/lstutzman/firstmate/rules/branches/main
+[]

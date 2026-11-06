@@ -1,0 +1,7 @@
+--- real PR 136 rollup as reported (all green): not-green set:
+(end rc=0)
+--- same rollup with serial 11 FAILURE, 12 CANCELLED, 13 IN_PROGRESS: not-green set:
+Behavior portable serial 11
+Behavior portable serial 12
+Behavior portable serial 13
+(end rc=0)
