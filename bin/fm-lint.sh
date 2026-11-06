@@ -16,6 +16,10 @@
 # paths attempt --external-sources with the selected dataflow mode.
 # Tests stop source analysis at imported production modules because CI analyzes
 # every production shell separately as a canonical, source-aware root.
+# Every root also gets the ratchet check (fm_lint_ratchet_root), a second
+# ShellCheck invocation under the same per-root bounds: a stricter check
+# enforced on each root not named in bin/fm-lint-ratchet.exceptions;
+# bin/fm-lint-ratchet.sh owns the daily move.
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
 # before merge instead of only failing to run as CI.
@@ -267,6 +271,76 @@ fm_lint_exec_root() {  # <path> <stdout-file> <stderr-file> <rss-file> <seconds>
   FM_LINT_LAST_RC=$invocation_rc
 }
 
+# Ratchet: a stricter ShellCheck check that enforces on every canonical root not
+# named in the committed exception list, so new files must pass and the check
+# only ever gets stricter. The list holds the files that failed when the check
+# was switched on; bin/fm-lint-ratchet.sh moves one file off it at a time. A
+# listed file that already passes is reported as stale so the list cannot hide
+# a file that could be enforced. Optional checks come from ShellCheck's own
+# --enable names; --include keeps this check to the codes they emit, so the
+# default pass keeps owning every other diagnostic.
+RATCHET_ENABLE=quote-safe-variables,useless-use-of-cat
+RATCHET_INCLUDE=SC2248,SC2002
+fm_lint_ratchet_list() {
+  printf '%s\n' "${FM_LINT_RATCHET_LIST:-$ROOT/bin/fm-lint-ratchet.exceptions}"
+}
+
+fm_lint_ratchet_entries() {  # <list>
+  [ -f "$1" ] || return 0
+  grep -Ev '^[[:space:]]*(#|$)' "$1"
+}
+
+# fm_lint_ratchet_relative <path>: the root-relative spelling the list uses.
+fm_lint_ratchet_relative() {
+  local path=$1
+  path=${path#"$ROOT"/}
+  while [ "${path#./}" != "$path" ]; do path=${path#./}; done
+  printf '%s\n' "$path"
+}
+
+# Run the ratchet check on one root as its own invocation under the time left
+# in that root's one deadline (at least a second) and the same memory limit, setting FM_LINT_RATCHET_RC,
+# FM_LINT_RATCHET_REASON and FM_LINT_RATCHET_RSS. An enforced root fails on any
+# finding; a listed root must still have findings, so a clean listed root is a
+# stale entry. Any status other than a clean pass or findings is a tool failure,
+# never a stale entry.
+fm_lint_ratchet_root() {  # <path> <file-stem> <shard-output> <seconds-left>
+  local path=$1 out="$2.ratchet.out" err="$2.ratchet.err" rss="$2.ratchet.rss" shard_out=$3 seconds=$4
+  [ "$seconds" -ge 1 ] || seconds=1
+  local list=${FM_LINT_INTERNAL_RATCHET_LIST:-} listed=0 reason
+  local -a args=(--norc --enable="$RATCHET_ENABLE" --include="$RATCHET_INCLUDE")
+  if [ -n "$list" ] && fm_lint_ratchet_entries "$list" | grep -Fxq -- "$(fm_lint_ratchet_relative "$path")"; then
+    listed=1
+    args+=(-f gcc)
+  fi
+  fm_lint_exec_root "$path" "$out" "$err" "$rss" "$seconds" "${args[@]}"
+  reason=$(fm_lint_classify_root "$FM_LINT_LAST_RC" "$err")
+  FM_LINT_RATCHET_RSS=$(fm_lint_root_rss "$rss")
+  FM_LINT_RATCHET_RC=0
+  FM_LINT_RATCHET_REASON=ok
+  case "$listed:$reason" in
+    1:findings|0:ok) ;;
+    1:ok)
+      printf 'fm-lint.sh: %s passes the ratchet check; remove it from %s\n' \
+        "$(fm_lint_ratchet_relative "$path")" "$(fm_lint_ratchet_relative "$list")" >> "$shard_out"
+      FM_LINT_RATCHET_RC=1
+      FM_LINT_RATCHET_REASON=findings
+      ;;
+    0:findings)
+      cat "$out" "$err" >> "$shard_out"
+      FM_LINT_RATCHET_RC=1
+      FM_LINT_RATCHET_REASON=findings
+      ;;
+    *)
+      printf 'fm-lint: ratchet check of %s failed (reason=%s rc=%s)\n' \
+        "$path" "$reason" "$FM_LINT_LAST_RC" >> "$shard_out"
+      cat "$err" >> "$shard_out"
+      FM_LINT_RATCHET_RC=$FM_LINT_LAST_RC
+      FM_LINT_RATCHET_REASON=$reason
+      ;;
+  esac
+}
+
 # Run one selected root, retry memory failures without source following, record
 # its lifecycle in the roots log, and append the final diagnostics.
 fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
@@ -339,6 +413,17 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
     rss_kib=$(fm_lint_root_rss "$rss_file")
     cat "$root_out" "$root_err" >> "$output_dir/shard.$shard_index.out"
   fi
+  case "$reason" in
+    ok|findings|memory-fallback)
+      fm_lint_ratchet_root "$path" "$output_dir/root.$shard_index.$index" "$output_dir/shard.$shard_index.out" \
+        $(( (start_ms + FM_LINT_INTERNAL_ROOT_SECS * 1000 - $(fm_lint_now_ms) + 999) / 1000 ))
+      rss_kib=$(fm_lint_max_root_rss "$rss_kib" "$FM_LINT_RATCHET_RSS")
+      if [ "$invocation_rc" -eq 0 ] && [ "$FM_LINT_RATCHET_RC" -ne 0 ]; then
+        invocation_rc=$FM_LINT_RATCHET_RC
+        reason=$FM_LINT_RATCHET_REASON
+      fi
+      ;;
+  esac
   end_ms=$(fm_lint_now_ms)
   duration_ms=$((end_ms - start_ms))
   if [ -n "${FM_LINT_INTERNAL_ROOTS_LOG:-}" ]; then
@@ -477,6 +562,23 @@ fm_lint_usage() {
 fm_lint_run_workflows() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
   "$SELF_DIR/fm-lint-workflows.sh"
+}
+
+# Entries naming a file that no longer exists are stale too; one partition
+# reports them so a four-way CI split does not repeat the message. The per-root
+# ratchet check itself runs inside the workers (fm_lint_ratchet_root).
+fm_lint_run_ratchet() {
+  local list entry rc=0
+  [ "$EXPLICIT_PATHS" -eq 0 ] && [ "$CHANGED_MODE" -eq 0 ] \
+    && { [ -z "$PARTITION" ] || [ "${PARTITION%%of*}" = 1 ]; } || return 0
+  list=$(fm_lint_ratchet_list)
+  while IFS= read -r entry; do
+    [ -f "$ROOT/$entry" ] && continue
+    printf 'fm-lint.sh: ratchet exception %s names no file; remove it from %s\n' \
+      "$entry" "$(fm_lint_ratchet_relative "$list")" >&2
+    rc=1
+  done < <(fm_lint_ratchet_entries "$list")
+  return "$rc"
 }
 
 # Backend adapters belong behind tasks-axi. Keep direct Beads CLI invocations
@@ -1182,6 +1284,7 @@ fm_lint_run_worker() {  # <worker-index>
     FM_LINT_INTERNAL_ROOTS_LOG="$ROOTS_LOG"
     FM_LINT_INTERNAL_MODE="$ANALYSIS_MODE"
     FM_LINT_INTERNAL_PROGRESS="$PROGRESS"
+    FM_LINT_INTERNAL_RATCHET_LIST="$(fm_lint_ratchet_list)"
     FM_LINT_SHELLCHECK="$SHELLCHECK_BIN"
     FM_LINT_PERL_BIN="$PERL_BIN"
   )
@@ -1278,6 +1381,12 @@ purity_rc=0
 fm_lint_run_backend_purity || purity_rc=$?
 if [ "$overall_rc" -eq 0 ] && [ "$purity_rc" -ne 0 ]; then
   overall_rc=$purity_rc
+fi
+
+ratchet_rc=0
+fm_lint_run_ratchet || ratchet_rc=$?
+if [ "$overall_rc" -eq 0 ] && [ "$ratchet_rc" -ne 0 ]; then
+  overall_rc=$ratchet_rc
 fi
 
 if [ "$overall_rc" -eq 0 ]; then

@@ -73,12 +73,12 @@
 # register-sources runs in an office home (one carrying .fm-office). It reads
 # the office's registry line from the parent's data/offices.md, writes one
 # shim state/office-<source>.check.sh for each source in its sources: field
-# (tick -> office-tick, upstream -> office-upstream, lane:progress -> office-lane-progress,
-# lane:surgeon:high -> office-lane-surgeon-high), and binds each with
-# fm-check-register.sh. Each shim exports FM_HOME for the office home and
-# execs "fm-office.sh check <source>". It is idempotent, and it unregisters an
-# office-tick or office-lane-* shim whose source is no longer listed. The office's own
-# watcher sweeps state/*.check.sh, so a source wakes the office and never main.
+# (tick -> office-tick, upstream -> office-upstream, ratchet -> office-ratchet,
+# lane:progress -> office-lane-progress, lane:surgeon:high -> office-lane-surgeon-high),
+# and binds each with fm-check-register.sh. Each shim exports FM_HOME for the
+# office home and execs "fm-office.sh check <source>". It is idempotent, and it
+# unregisters an office-tick, office-upstream, office-ratchet or office-lane-*
+# shim whose source is no longer listed. The office's own watcher sweeps state/*.check.sh, so a source wakes the office and never main.
 #
 # check <source> is the body of a source check. It is fast, contacts no other
 # host (except the upstream source, below), always exits 0, and prints one line at most:
@@ -129,6 +129,13 @@
 #                    head reported or found empty), upstream.day (last successful UTC
 #                    day), upstream.try (last attempt) and upstream.fail (first failure
 #                    epoch, with a "reported" suffix once reported).
+#   ratchet          "office <id>: ratchet <YYYY-MM-DD>: next file <path> (<n> left on bin/fm-lint-ratchet.exceptions); if no ratchet PR for <path> is open, ..."
+#                    once per UTC day while this code root's lint ratchet list
+#                    (bin/fm-lint-ratchet.sh next) names a file; silent when the list is
+#                    empty. Record: data/office/ratchet.seen (last day reported). The
+#                    office skips the day while a ratchet PR for that file is still open,
+#                    and otherwise dispatches one ordinary ship worker for it, which fixes
+#                    it, retires it from the list and opens one pull request.
 #
 # Environment: FM_HOME, FM_DATA_OVERRIDE, FM_STATE_OVERRIDE as the other bin/ scripts do.
 # FM_OFFICE_HOST names this host for tests (default: hostname -s).
@@ -202,17 +209,17 @@ office_problems() {
   [ "$v" = none ] || printf 'auto-merge-classes must be none, got "%s"\n' "$v"
   v=$(line_field "$line" sources || true)
   if [ -z "$v" ]; then
-    printf 'sources must list tick, upstream or lane:<officer-id>[:high]\n'
+    printf 'sources must list tick, upstream, ratchet or lane:<officer-id>[:high]\n'
   else
     for p in ${v//,/ }; do
       case "$p" in
-        tick|upstream) ;;
+        tick|upstream|ratchet) ;;
         lane:*)
           p=${p#lane:}; p=${p%:high}
           grep -Eq "^- $p - " "$DATA/officers.md" 2>/dev/null \
             || printf 'source lane:%s is not a registered officer\n' "$p"
           ;;
-        *) printf 'source "%s" must be tick, upstream, lane:<officer-id> or lane:<officer-id>:high\n' "$p" ;;
+        *) printf 'source "%s" must be tick, upstream, ratchet, lane:<officer-id> or lane:<officer-id>:high\n' "$p" ;;
       esac
     done
   fi
@@ -459,7 +466,7 @@ cmd_register_sources() {
   device=$(fm_pr_file_device "$STATE") || die "state directory is unavailable"
   for src in ${sources//,/ }; do
     case "$src" in
-      tick|upstream|lane:*) ;;
+      tick|upstream|ratchet|lane:*) ;;
       *) die "unknown source $src" 3 ;;
     esac
     id=$(source_check_id "$src")
@@ -481,7 +488,7 @@ cmd_register_sources() {
     keep="$keep$id "
     printf 'registered: office source %s (state/%s.check.sh)\n' "$src" "$id"
   done
-  for f in "$STATE"/office-tick.check.sh "$STATE"/office-upstream.check.sh "$STATE"/office-lane-*.check.sh; do
+  for f in "$STATE"/office-tick.check.sh "$STATE"/office-upstream.check.sh "$STATE"/office-ratchet.check.sh "$STATE"/office-lane-*.check.sh; do
     [ -e "$f" ] || continue
     id=$(basename "$f" .check.sh)
     case "$keep" in *" $id "*) continue ;; esac
@@ -723,6 +730,16 @@ check_upstream() {
     "$OFFICE_ID" "${base:-none}" "$(printf '%s' "$head" | cut -c1-9)" "$n" "$forkref" "$subjects"
 }
 
+# check_ratchet: once per UTC day, names the next file on this code root's lint ratchet list.
+check_ratchet() {
+  local now day file n
+  file=$("$SCRIPT_DIR/fm-lint-ratchet.sh" next 2>/dev/null) || return 0
+  n=$("$SCRIPT_DIR/fm-lint-ratchet.sh" count 2>/dev/null) || return 0
+  now=$(now_epoch)
+  day=$(date -u -d "@$now" +%Y-%m-%d 2>/dev/null || date -u -r "$now" +%Y-%m-%d)
+  seen_once ratchet "$day" "office $OFFICE_ID: ratchet $day: next file $file ($n left on bin/fm-lint-ratchet.exceptions); if no ratchet PR for $file is open, dispatch one ship worker to fix it until bin/fm-lint-ratchet.sh check $file passes, retire it with bin/fm-lint-ratchet.sh retire $file, and open one PR"
+}
+
 cmd_check() {
   local src=$1 sources officer
   [ -e "$FM_HOME/.fm-office" ] || return 0
@@ -732,6 +749,7 @@ cmd_check() {
   case "$src" in
     tick) check_tick ;;
     upstream) check_upstream ;;
+    ratchet) check_ratchet ;;
     lane:*:high) officer=${src#lane:}; check_lane "${officer%:high}" 1 ;;
     lane:*) check_lane "${src#lane:}" 0 ;;
   esac

@@ -1731,7 +1731,7 @@ Offices live in the primary home's `data/offices.md`, one line per office, in th
 | `auto-merge-classes` | Must be `none`; no class auto-merges yet |
 | `wip` | The most live tasks the office may run at once, 1 to 9 |
 | `tick` | `every Nh` (N from 1 to 24) |
-| `sources` | Comma-separated `tick`, `upstream`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
+| `sources` | Comma-separated `tick`, `upstream`, `ratchet`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
 
 Each source is a watcher check in the office home's own `state/`, so it wakes the office and never main.
 `bin/fm-office.sh register-sources`, run in the office home, installs and trusts one `state/office-<source>.check.sh` per listed source, and `bin/fm-office.sh check <source>` is its body; the script's header owns what each prints and when it stays silent.
@@ -1739,6 +1739,8 @@ Each source is a watcher check in the office home's own `state/`, so it wakes th
 `upstream` is the daily check for new commits on the firstmate upstream: the optional local `config/firstmate-upstream` holds one line, `<remote-or-url> [<branch>] [<fork-ref>]` (branch defaults to `main`, fork-ref to `origin/main`), and the source wakes the office once per new upstream head with the commit count, the merge-base..head range and the newest subjects; it is silent when the fork already has everything, when the file is absent, and on a transient fetch failure (a failure lasting 24 hours is reported once).
 It is the one source that contacts another host, and `bin/fm-office.sh` owns its attempt cadence and records.
 The check only wakes the office; the sync itself is ordinary dispatched work.
+`ratchet` is the daily clock of firstmate's lint ratchet: once per UTC day, while `bin/fm-lint-ratchet.exceptions` in the office's code root still lists a file, it wakes the office with the next file (`bin/fm-lint-ratchet.sh next`) and the count left, and it is silent when the list is empty; [Office provisioning](office-provisioning.md) step 10 lists it on the Quartermaster's line.
+While a ratchet PR for that file is still open the office skips the day; otherwise it dispatches one ordinary ship worker for that file, which fixes it until `bin/fm-lint-ratchet.sh check <file>` passes, retires it with `bin/fm-lint-ratchet.sh retire <file>`, and opens one pull request.
 
 A local office home also carries a `.fm-office` marker holding the office id and a `data/charter.md` with a `# Office authority` heading.
 `bin/fm-brief.sh <id> --secondmate --office <id>` writes that role charter, a standing mandate that replaces the second mate's idle-by-default clauses, and `bin/fm-home-seed.sh ... --office <id>` seeds the home with the marker, the merge tokens and admission copies its line needs, and its source checks; each script's header owns its checks and refusals, and the `office-roles` skill owns each role's mandate.

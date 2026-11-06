@@ -657,6 +657,28 @@ test_upstream_is_daily_and_silent_when_nothing_new() {
   pass 'the upstream source checks once a day and stays silent when the fork has everything'
 }
 
+ratchet_check() {  # <world> <list> <epoch>
+  FM_LINT_RATCHET_LIST=$2 FM_OFFICE_NOW=$3 FM_HOME="$1/navigator" bash "$OFFICE" check ratchet
+}
+
+test_ratchet_names_the_next_file_once_a_day() {
+  local w list
+  w=$(source_world ratchetday)
+  sed -i.bak 's/sources: tick,lane:progress,lane:surgeon:high;/sources: tick,ratchet;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  FM_HOME="$w/navigator" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must accept ratchet"
+  [ -x "$w/navigator/state/office-ratchet.check.sh" ] || fail "register-sources did not install the ratchet shim"
+  list="$w/ratchet.list"
+  printf '# header\nbin/a.sh\nbin/b.sh\n' > "$list"
+  assert_equals "office navigator: ratchet 2026-11-07: next file bin/a.sh (2 left on bin/fm-lint-ratchet.exceptions); if no ratchet PR for bin/a.sh is open, dispatch one ship worker to fix it until bin/fm-lint-ratchet.sh check bin/a.sh passes, retire it with bin/fm-lint-ratchet.sh retire bin/a.sh, and open one PR" \
+    "$(ratchet_check "$w" "$list" 1794009600)" "the first check of a day names the next file"
+  assert_equals "" "$(ratchet_check "$w" "$list" $((1794009600 + 3600)))" "the same day again: silent"
+  printf '# header\n' > "$list"
+  assert_equals "" "$(ratchet_check "$w" "$list" $((1794009600 + 90000)))" "an empty list: silent"
+  printf 'bin/b.sh\n' > "$list"
+  assert_contains "$(ratchet_check "$w" "$list" $((1794009600 + 180000)))" "ratchet 2026-11-09: next file bin/b.sh (1 left" "the next day wakes again"
+  pass 'the ratchet source names the next listed file once per UTC day'
+}
+
 test_upstream_failure_reports_only_when_persistent() {
   local w
   w=$(upstream_world upfail)
@@ -996,6 +1018,7 @@ test_disarm_status_retires_the_check
 test_arm_status_refuses_outside_an_office
 test_upstream_wakes_once_per_new_head
 test_upstream_is_daily_and_silent_when_nothing_new
+test_ratchet_names_the_next_file_once_a_day
 test_upstream_failure_reports_only_when_persistent
 test_upstream_unresolved_fork_ref_reports_when_persistent
 test_upstream_gap_in_attempts_starts_a_new_streak
