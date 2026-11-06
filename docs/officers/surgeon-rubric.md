@@ -90,10 +90,10 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   Findings in a fleet repository go to the Quartermaster.
   Both use the same start path as the progress officer, so each office's own check delivers its requests.
 - Fixes never chain: a failure in work the Surgeon's own start caused starts nothing new.
-  An item is started once (`bin/fm-officer-linear.py:741`, the `handled` check in `plan_starts`), so a later failure of the same item only raises its Found line.
+  An item is started once (the `handled` check in `plan_starts`, `bin/fm-officer-linear.py`), so a later failure of the same item only raises its Found line.
 - Repeated failure stops at 3 starts: a closed item that recurs is a new item, so the Surgeon counts the items started per fingerprint.
-  Once 3 have started (`START_ATTEMPT_CAP`, `bin/fm-officer-linear.py:88`, checked at line 749), the next is filed but not started.
-  The run's digest carries one keyed `needs-decision` (`surgeon-<issue>-fix-cap`) for the owning office instead.
+  Once 3 have started (`START_ATTEMPT_CAP` in `bin/fm-officer-linear.py`), the next is filed but not started.
+  The run's digest carries one keyed `needs-decision` (`surgeon-<issue>-fix-cap`) in `asks_for_lee` instead, which main turns into a Captain's Log card for Lee.
   Three separates a bad first attempt from a wrong diagnosis, and few enough that a stuck finding reaches a person within days.
   The office dispatches no more than 3 fixes for one finding either (`office-roles` "Picking work"); the test is `test_a_finding_that_keeps_coming_back_stops_at_three_starts`.
 - Nothing else starts.

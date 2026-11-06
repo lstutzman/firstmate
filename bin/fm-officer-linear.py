@@ -85,7 +85,7 @@ JEV_CANDIDATES = 3
 JEV_CALLS_MAX = 300
 JEV_TIMEOUT = 20
 START_MIN_SCORE = 4.0
-START_ATTEMPT_CAP = 3  # starts for one fingerprint (a recurrence is a new item) before the owning office decides
+START_ATTEMPT_CAP = 3  # starts for one fingerprint (a recurrence is a new item) before Lee decides
 PATTERN_BATCH = 40
 EXISTING_VIEWS = 3
 VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
@@ -767,7 +767,7 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     asks = []
     for c in capped:
         key = "%s-%s-fix-cap" % (officer.id, c["issue"])
-        asks.append({"key": key, "findings": [c], "line": "needs-decision [key=%s]: %s has failed again after %d started fixes, so no fourth start; the owning office decides" % (
+        asks.append({"key": key, "findings": [c], "line": "needs-decision [key=%s]: %s has failed again after %d started fixes, so no fourth start; Lee decides" % (
             key, c["title"], c["tries"])})
     if held:
         key = "%s-holds-%s" % (officer.id, date)
