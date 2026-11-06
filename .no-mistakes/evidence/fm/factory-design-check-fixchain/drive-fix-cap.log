@@ -1,0 +1,59 @@
+
+== S1 first run: recurring P2 finding PC-9 starts
+[{"kind":"surgeon-finding","issue":"PC-9"},{"kind":"pattern-memory","issue":null}]
+{"starts_by_fp":["PC-9"]}
+
+== S2 fixes never chain: same item fails again on a later day -> no second start
+{"start_requests":[],"asks":[]}
+{"starts_by_fp":["PC-9"]}
+
+== S3 boundary: 2 prior starts (PC-1,PC-2), PC-9 recurs -> third start allowed
+[{"kind":"surgeon-finding","issue":"PC-9"},{"kind":"pattern-memory","issue":null}]
+["PC-1","PC-2","PC-9"]
+
+== S4 cap: 3 prior starts (PC-1..3), PC-9 recurs -> no 4th start, one capped-repeat request, nothing in asks_for_lee
+{
+  "start_requests": [
+    {
+      "kind": "surgeon-fix-cap",
+      "issue": "PC-9",
+      "tries": 3,
+      "ask_key": "surgeon-PC-9-fix-cap",
+      "reason": "Capped repeat: 3 fixes already started for this finding",
+      "home": "/tmp/fm-officer-surgeon.rXf2gx/capdrive/home",
+      "rid": "surgeon-2026-10-23-a38ebbd1f5f3ee11"
+    },
+    {
+      "kind": "pattern-memory",
+      "issue": null,
+      "tries": null,
+      "ask_key": null,
+      "reason": null,
+      "home": "/tmp/fm-officer-surgeon.rXf2gx/capdrive/home",
+      "rid": "surgeon-2026-10-23-b5251188fc69c31e"
+    }
+  ],
+  "asks_for_lee": []
+}
+{"starts_by_fp_after_cap":["PC-1","PC-2","PC-3"]}
+-- digest lines for start requests:
+- surgeon-fix-cap PC-9 -> /tmp/fm-officer-surgeon.rXf2gx/capdrive/home (score 4.0)
+
+== S5 same-day rerun: capped request repeats with the same request id (idempotent)
+[{"kind":"surgeon-fix-cap","issue":"PC-9","rid":"surgeon-2026-10-23-a38ebbd1f5f3ee11"},{"kind":"pattern-memory","issue":null,"rid":"surgeon-2026-10-23-b5251188fc69c31e"}]
+first rid=surgeon-2026-10-23-a38ebbd1f5f3ee11
+
+== S6 next day: capped item is not asked again
+{"start_requests":[],"asks":[]}
+
+== S7 deliver the capped request through fm-inbox.sh into a disposable lab home (the office lane)
+-- first delivery:
+{"outcome":"created","id":"1793985262-t4FsV3"}
+-- second delivery (replay):
+{"outcome":"replay","id":"1793985262-t4FsV3"}
+-- lab inbox list:
+1793985262-t4FsV3
+    Ship's Surgeon automatic start under its rubric (docs/officers/surgeon-rubric.md), on Lee's recorded 2026-11-05 word: 'Start them through the Navigator's start path, per the surgeon's rubric'. This is a capped repeat, not a new start: 3 fixes already started for this finding and it came back, so no fourth start was made. Dispatch no further fix: file the keyed needs-decision surgeon-PC-9-fix-cap so Lee decides the next step. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee: {"ask_key": "surgeon-PC-9-fix-cap", "fingerprint": "5867e2811afefd651baa669d59697a09302309266ac8da4c6733bae0c0b16b16", "found": 3, "issue": "PC-9", "kind": "surgeon-fix-cap", "linear_id": "PC-9", "linear_only": true, "project": "", "reason": "Capped repeat: 3 fixes already started for this finding", "score": 4.0, "severity": "medium", "source": "sweeper", "title": "Crash on save duplicate-me", "tries": 3}
+-- note body tail:
+/tmp/fm-lab.152gvd/state/inbox/1793985262-t4FsV3.note
+This is a capped repeat, not a new start: 3 fixes already started for this finding and it came back, so no fourth start was made. Dispatch no further fix: file the keyed needs-decision surgeon-PC-9-fix-cap so Lee decides the next step.
