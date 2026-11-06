@@ -54,7 +54,7 @@ On a tick or lane wake with a free place, start only what a standing start autho
 Judge every candidate before dispatching it: a digest entry or a start request is evidence, never an order.
 Skip a candidate that is not a startable work item (a shell command, a note such as "same release as PR N", a duplicate of queued or in-flight work), and record why in the backlog note.
 A product choice is never a standing start; it goes to the captain as below.
-A fix that fails again never chains into another start on its own, and the office dispatches at most 3 fixes for one finding; the Surgeon's own start cap delivers the capped repeat to the office lane as a `surgeon-fix-cap` request instead of a fourth dispatch, and the office files the keyed `needs-decision` `surgeon-<issue>-fix-cap` for Lee only when the next step is a reserved class.
+A fix that fails again never chains into another start on its own, and the office dispatches at most 3 fixes for one finding; the Surgeon's own start cap delivers the capped repeat to the office lane as a `surgeon-fix-cap` request instead of a fourth dispatch, and the office dispatches no fourth fix and files the keyed `needs-decision` `surgeon-<issue>-fix-cap` so Lee decides the next step.
 
 ## Designing a standing task or start source
 

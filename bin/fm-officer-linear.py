@@ -85,7 +85,7 @@ JEV_CANDIDATES = 3
 JEV_CALLS_MAX = 300
 JEV_TIMEOUT = 20
 START_MIN_SCORE = 4.0
-START_ATTEMPT_CAP = 3  # starts for one fingerprint (a recurrence is a new item) before the owning office judges the repeat
+START_ATTEMPT_CAP = 3  # starts for one fingerprint (a recurrence is a new item) before the owning office hands the repeat to Lee
 PATTERN_BATCH = 40
 EXISTING_VIEWS = 3
 VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
@@ -757,8 +757,7 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256((f["fingerprint"] + "\0fix-cap\0" + issue).encode("utf-8")).hexdigest()[:16])
             row["execute"] = execute_for(officer, row, rid, (
                 "This is a capped repeat, not a new start: %d fixes already started for this finding and it came back, so no fourth start was made. "
-                "Judge it as ordinary routed work (a changed approach, a diagnosis or a decision), and escalate to Lee only if the next step is a reserved class, "
-                "with the keyed needs-decision %s." % (row["tries"], row["ask_key"])), main_home, start_homes)
+                "Dispatch no further fix: file the keyed needs-decision %s so Lee decides the next step." % (row["tries"], row["ask_key"])), main_home, start_homes)
             starts.append(row)
         elif fresh and issue and rubric.loaded:
             handled[issue] = date
