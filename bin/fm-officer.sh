@@ -74,13 +74,15 @@
 # digest as if main were listed. The failure line is always printed, because a
 # broken officer is main's to fix.
 #
-# start-home: is an optional progress field, a comma list of office ids. Each must
+# start-home: is an optional progress, surgeon and friction field, a comma list of office ids. Each must
 # pass the same office checks as consumer: (a local office that reads the progress
 # digest), because the start requests for that office's projects (its dispatch:
 # field) are then addressed to that office's home, and that office's lane check
 # delivers them into its own inbox (bin/fm-office.sh check); main's shell handoff
 # keeps only main's requests. A request with no project is placed by its evidence,
-# its source, and then local-jev (bin/fm-officer-progress.py).
+# its source, and then local-jev (bin/fm-officer-progress.py). The friction officer
+# addresses its started-by-default findings (bin/fm-officer-friction.py) to the
+# start-home office whose role is quartermaster, else to this home.
 #
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
@@ -492,6 +494,12 @@ START_HOMES
 role_friction() {
   local -a args=(--now "$(now_epoch)")
   local log line bosun
+  while IFS= read -r line; do
+    [ -n "$line" ] && args+=(--start-home "$line")
+  done <<START_HOMES
+$(start_homes)
+START_HOMES
+  args+=(--fm-home "$FM_HOME")
   log=$(line_field "$OFFICER_LINE" captains-log || true)
   [ -z "$log" ] || args+=(--captains-log "$log")
   bosun=$(line_field "$OFFICER_LINE" bosun-hosts || true)

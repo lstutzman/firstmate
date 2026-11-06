@@ -396,9 +396,12 @@ cats = {"waiting", "rework", "tooling", "review", "environment", "coordination",
 assert 1 <= len(d["bottlenecks"]) <= 25, len(d["bottlenecks"])
 assert set(d["totals"]) == {"events", "findings"} and d["totals"]["events"] >= d["totals"]["findings"] >= 1
 for b in d["bottlenecks"]:
-    assert set(b) == set(limits) | {"category", "severity", "confidence", "effort", "id", "events", "state"}, sorted(b)
+    base = set(limits) | {"category", "severity", "confidence", "effort", "id", "events", "state", "actions"}
+    assert base <= set(b) <= base | {"link", "task", "reopen", "rule", "fixed", "request_id"}, sorted(b)
     assert re.fullmatch(r"[a-z0-9][a-z0-9-]{0,53}", b["id"]), b["id"]
-    assert isinstance(b["events"], int) and b["events"] >= 1 and b["state"] in ("open", "started", "settled")
+    assert isinstance(b["events"], int) and b["events"] >= 1 and b["state"] in ("open", "started", "started-by-default", "fixed", "reported-again", "settled")
+    assert b["actions"] == {"open": ["start-fix"], "reported-again": ["start-fix"], "started-by-default": ["object"],
+                            "started": [], "fixed": [], "settled": []}[b["state"]], (b["id"], b["actions"])
     for k, n in limits.items():
         assert 1 <= len(b[k]) <= n, (k, len(b[k]))
     assert b["category"] in cats and b["effort"] in ("S", "M", "L")
@@ -432,8 +435,11 @@ test_velocity_ids_counts_and_states() {
   assert_equals "$(jq '[.findings[] | select(.title and .fix and .sub != "decision")] | map({key: .id, value: .events}) | from_entries' "$json" | jq -S .)" \
     "$(jq -S '[.bottlenecks[] | {key: .id, value: .events}] | from_entries' "$vel")" \
     "each written finding carries the event count of the group it stands for, keyed by its id"
-  assert_equals "" "$(jq -r '[.bottlenecks[] | select(.state != "open" or has("link"))] | map(.id) | join(",")' "$vel")" \
-    "with no tap, task or rule naming a finding every state is open with no link"
+  assert_equals "" "$(jq -r '[.bottlenecks[] | select((.state != "open" and .state != "started-by-default") or has("link"))] | map(.id) | join(",")' "$vel")" \
+    "with no tap, task or rule naming a finding every state is open or started by default, with no link"
+  assert_equals "environment-ssh-to-self,lee-command-run,missing-tool-tool-openjdk" \
+    "$(jq -r '[.bottlenecks[] | select(.state == "started-by-default")] | map(.id) | sort | join(",")' "$vel")" \
+    "a carded standing-work finding is started by default, never left open for a Start fix tap"
   ids=$(jq -c '[.bottlenecks[] | .id] | sort' "$vel")
   assert_equals "$(jq '.bottlenecks | length' "$vel")" "$(jq 'unique | length' <<<"$ids")" "ids are unique within a run"
 
@@ -481,13 +487,14 @@ EOF2
     "a standing-rule line settles a finding by its key with the service named, settles: <cause>/<sub>/<name>"
   assert_equals "settled -" "$(state_of environment-ssh-to-self)" \
     "a standing-rule line settles a finding about no one tool by its key, settles: <cause>/<sub>"
-  assert_equals "open -" "$(state_of missing-tool-tool-openjdk)" \
-    "a key line that does not name the finding's tool settles nothing"
+  assert_equals "started-by-default -" "$(state_of missing-tool-tool-openjdk)" \
+    "a key line that does not name the finding's tool settles nothing, and the standing-work finding starts by default"
   assert_equals "open -" "$(state_of credential-ssh-key)" "standing wording about ssh keys with no id or key settles nothing"
   assert_equals "open - open - started -" \
     "$(state_of environment-wrong-cwd) $(state_of guard-hook-refused-pre-bash-secret-exposure-py) $(state_of sudo-sudo)" \
     "the Linear and clean-up standing rules (go, approval, worktrees) settle nothing"
-  assert_equals "open -" "$(state_of lee-command-run)" "a line that names the id without saying standing rule settles nothing"
+  assert_equals "started-by-default -" "$(state_of lee-command-run)" \
+    "a line that names the id without saying standing rule settles nothing"
 
   # Replies the Captain's Log serves (beside the cards) also start a finding, and carry the answer's link.
   fakebin=$(fm_fakebin "$TMP_ROOT/states")
@@ -586,9 +593,9 @@ test_boundary_reads_only_and_writes_only_its_lane() {
   after=$(cd "$TMP_ROOT/boundary" && find . -path ./fixturehost/data/officers -prune -o -path ./fakebin -prune -o -type f -print | sort | xargs cksum)
   assert_equals "$before" "$after" "no file outside the officer's lane is created or changed"
   assert_absent "$fakebin/calls" "a local archive run calls no network, GitHub, Linear, 1Password, or steering command"
-  assert_equals "$DATE.json $DATE.md $DATE.velocity-findings.json digest runs.log" \
+  assert_equals "$DATE.json $DATE.md $DATE.start-requests.sh $DATE.velocity-findings.json digest runs.log" \
     "$(cd "$home/data/officers/friction" && find . -maxdepth 1 -type f ! -name '.*' | sed 's|^\./||' | sort | tr '\n' ' ' | sed 's/ $//')" \
-    "the lane holds only the findings, the digest marker, and the run log"
+    "the lane holds only the findings, the start-request handoff, the digest marker, and the run log"
   pass "fm-officer friction: the pass reads records and writes only its lane"
 }
 
@@ -1109,6 +1116,159 @@ SH
   pass "fm-officer friction: the bosun-unsure class answers settled items into bosun-answers.json"
 }
 
+test_standing_work_is_started_by_default_with_an_object_action() {
+  local home json vel first office
+  home=$(make_world defaults)
+  json="$home/data/officers/friction/$DATE.json"
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  assert_equals "friction-officer" "$(jq -r .source "$json")" "the digest names its source so an office delivers its start requests"
+  assert_equals "2026-10-24T00:00:00Z" "$(jq -r .generated_at "$json")" \
+    "the digest is stamped with the end of its day, not the clock, so a re-run stays identical"
+  assert_equals "environment-ssh-to-self,lee-command-run,missing-tool-tool-openjdk" \
+    "$(jq -r '[.start_requests[].id] | sort | join(",")' "$json")" \
+    "each carded standing-work finding gets one start request, and no reserved class does"
+  assert_equals "1,2,3" "$(jq -r '[.start_requests[].rank] | join(",")' "$json")" "start requests are ranked in card order"
+  assert_equals "true" "$(jq --arg h "$home" '[.start_requests[] | .execute |
+      (.action == "start" and .env.FM_HOME == $h and (.request_id | test("^friction-2026-10-23-[0-9a-f]{16}$")) and (.argv | length) == 7
+       and (.argv[0] | endswith("/fm-inbox.sh")) and .argv[1:6] == ["note", "--request-id", .request_id, "--json", "--"])] | all' "$json")" \
+    "each start request is the inbox note call an office delivers, addressed to this home"
+  assert_contains "$(jq -r '[.start_requests[] | select(.id == "missing-tool-tool-openjdk")][0].execute.argv[6]' "$json")" \
+    "Friction finding [friction-missing-tool-tool-openjdk]: started by default" "the note carries the finding's marker line"
+  assert_contains "$(jq -r '[.start_requests[] | select(.id == "missing-tool-tool-openjdk")][0].execute.argv[6]' "$json")" \
+    "Name friction-missing-tool-tool-openjdk in the task's branch or its data/backlog.md line" \
+    "the note asks the dispatcher to name the finding where its merge is read back"
+  assert_contains "$(jq -r '[.start_requests[] | select(.id == "missing-tool-tool-openjdk")][0].execute.argv[6]' "$json")" \
+    "loosening a guard or gate check remain outside this authority" "the note keeps guard loosening outside its authority"
+  assert_equals "3" "$(grep -c 'fm-inbox.sh' "$home/data/officers/friction/$DATE.start-requests.sh")" \
+    "this home's requests are also written as a shell handoff"
+  assert_equals "started-by-default [\"object\"] true" \
+    "$(jq -r '[.bottlenecks[] | select(.id == "lee-command-run")][0] | "\(.state) \(.actions | tojson) \(has("request_id"))"' "$vel")" \
+    "a standing-work card is started by default and offers Object"
+  assert_equals "" "$(jq -r '[.bottlenecks[] | select(.state == "started-by-default" and (.actions | index("start-fix")))] | map(.id) | join(",")' "$vel")" \
+    "no standing-work card offers Start fix"
+  assert_equals "open [\"start-fix\"]" "$(jq -r '[.bottlenecks[] | select(.id == "sudo-sudo")][0] | "\(.state) \(.actions | tojson)"' "$vel")" \
+    "a reserved class (a sudoers rule grants new authority) stays open for Lee's Start fix"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.id == "sudo-sudo" or .id == "policy-credential-approval" or .id == "guard-hook-secret-hook")] | length' "$json")" \
+    "no reserved class is started by default"
+
+  # Delivered, the note reads back as a start with no task or link: the card says so and offers Reopen.
+  mkdir -p "$home/state/inbox"
+  printf 'id=9-x\nat=2026-10-24T05:10:00Z\n--\n%s: Hook refusals\n' "Friction finding [friction-lee-command-run]: started by default" > "$home/state/inbox/9-x.note"
+  run_officer "$home" >/dev/null || fail "run after delivery must succeed"
+  assert_equals 'started true ["reopen"] none' \
+    "$(jq -r '[.bottlenecks[] | select(.id == "lee-command-run")][0] | "\(.state) \(.reopen) \(.actions | tojson) \(.link // .task // "none")"' "$vel")" \
+    "a delivered default start names no task or link, so it reads started with a reopen"
+  assert_equals "2" "$(jq '.start_requests | length' "$json")" "a started finding is not requested again"
+
+  # An Object tap keeps a finding from starting by default.
+  printf "id=9-y\nat=2026-10-24T05:20:00Z\n--\nCaptain's Log reply [friction-environment-ssh-to-self]: Object: leave it\n" > "$home/state/inbox/9-y.note"
+  run_officer "$home" >/dev/null || fail "run after an Object tap must succeed"
+  assert_equals "open [\"start-fix\"]" "$(jq -r '[.bottlenecks[] | select(.id == "environment-ssh-to-self")][0] | "\(.state) \(.actions | tojson)"' "$vel")" \
+    "an Object tap leaves the finding open"
+  assert_equals "1" "$(jq '.start_requests | length' "$json")" "an objected finding gets no start request"
+
+  # With no home to address, nothing can start a finding, so none is reported as started.
+  first="$TMP_ROOT/defaults/direct"
+  mkdir -p "$first"
+  python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
+    --home "$home" --now "$NOW" >/dev/null || fail "a run with no --fm-home must succeed"
+  assert_equals "0" "$(jq '[.bottlenecks[] | select(.state == "started-by-default")] | length' "$first/$DATE.velocity-findings.json")" \
+    "without a home to address, no finding is reported as started by default"
+  assert_equals "0" "$(jq '.start_requests | length' "$first/$DATE.json")" "and there are no start requests"
+
+  # The quartermaster office, when a start-home, is the address - and the home its delivered notes are read back from.
+  office="$TMP_ROOT/defaults/office"
+  mkdir -p "$office/state/inbox"
+  rm -f "$home/state/inbox/"*.note
+  python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
+    --home "$home" --home "$office" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
+    || fail "a run with a start-home must succeed"
+  assert_equals "$office" "$(jq -r '[.start_requests[].execute.env.FM_HOME] | unique | join(",")' "$first/$DATE.json")" \
+    "start requests go to the office whose role is quartermaster"
+  assert_equals "0" "$(grep -c 'fm-inbox.sh' "$first/$DATE.start-requests.sh")" \
+    "an office's requests are not in this home's handoff; its lane check delivers them"
+  printf 'id=1-q\nat=2026-10-24T05:10:00Z\n--\nFriction finding [friction-missing-tool-tool-openjdk]: started by default: x\n' > "$office/state/inbox/1-q.note"
+  python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
+    --home "$home" --home "$office" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
+    || fail "a run after the office received a note must succeed"
+  assert_equals "2" "$(jq '.start_requests | length' "$first/$DATE.json")" \
+    "a note delivered into the office's inbox is read back, so the finding is not requested again"
+  assert_equals "started true" "$(jq -r '[.bottlenecks[] | select(.id == "missing-tool-tool-openjdk")][0] | "\(.state) \(.reopen)"' "$first/$DATE.velocity-findings.json")" \
+    "and it reads as started"
+
+  # An office this pass cannot read could never confirm a delivery, so nothing is started for it.
+  python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
+    --home "$home" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
+    || fail "a run with an unreadable start-home must succeed"
+  assert_equals "0 0" "$(jq -r '"\(.start_requests | length) \([.findings[] | select(.state.state == "started-by-default")] | length)"' "$first/$DATE.json")" \
+    "with the office unreadable no finding is started by default and no request is written"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$first/$DATE.json")" "which this pass does not read" "the gap is a coverage note"
+  pass "fm-officer friction: standing-work findings start by default with an Object action, never a bare Start fix"
+}
+
+test_fixed_reported_again_and_settled_states() {
+  local home json vel first
+  home=$(make_world fixed)
+  json="$home/data/officers/friction/$DATE.json"
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  first=$(jq -r '[.start_requests[] | select(.id == "lee-command-run")][0].request_id' "$json")
+  {
+    printf '## Done\n'
+    printf -- '- [x] fix-jdk - fix missing-tool-tool-openjdk https://github.com/o/r/pull/31\n'
+    printf -- '- [x] fix-lcr - fix lee-command-run https://github.com/o/r/pull/32\n'
+    printf -- '- [x] fix-cf - fix credential-scope-cloudflare https://github.com/o/r/pull/33\n'
+    printf -- '- [ ] fix-ssh - fix environment-ssh-to-self\n'
+    printf -- '- [ ] fix-ssh2 - fix credential-ssh-key\n'
+  } > "$home/data/backlog.md"
+  printf 'done [at=1]: PR https://github.com/o/r/pull/34 checks green\n' > "$home/state/fix-ssh2.status"
+  {
+    printf '{"v":1,"ts":%s,"event":"task.merged","task":"fix-jdk","via":"pr","pr":"https://github.com/o/r/pull/31"}\n' "$((NOW - 3600))"
+    printf '{"v":1,"ts":%s,"event":"task.merged","task":"fix-lcr","via":"pr","pr":"https://github.com/o/r/pull/32"}\n' "$PREV"
+    printf '{"v":1,"ts":%s,"event":"task.merged","task":"fix-cf","via":"pr","pr":"https://github.com/o/r/pull/33"}\n' "$PREV"
+  } >> "$home/state/fleet-ledger.jsonl"
+  printf 'Standing rule: Lee-step ssh lines run locally on their own host (settles: environment/ssh-to-self).\n' > "$home/data/captain-shared.md"
+  run_officer "$home" >/dev/null || fail "run with merged fixes must succeed"
+  state_of() { jq -r --arg i "$1" "[.bottlenecks[] | select(.id == \$i)][0] | $2" "$vel"; }
+  assert_equals 'fixed [] https://github.com/o/r/pull/31 true' \
+    "$(state_of missing-tool-tool-openjdk '"\(.state) \(.actions | tojson) \(.fixed.link) \(.fixed.merged_at | test("^2026-10-24T04:00:00Z$"))"')" \
+    "a started fix that merged after the finding was last seen is fixed, with the merge's link and time, and no action"
+  assert_equals 'reported-again https://github.com/o/r/pull/33 ["start-fix"]' \
+    "$(state_of credential-scope-cloudflare '"\(.state) \(.fixed.link) \(.actions | tojson)"')" \
+    "a reserved finding reported again after its fix merged shows Start fix back"
+  assert_equals 'started-by-default ["object"] true' \
+    "$(state_of lee-command-run '"\(.state) \(.actions | tojson) \(.request_id != null)"')" \
+    "a standing-work finding reported again after its fix merged is started by default again, not offered Start fix"
+  assert_equals "false" "$(jq --arg f "$first" '[.start_requests[] | select(.id == "lee-command-run")][0].request_id == $f' "$json")" \
+    "the new start is a different request from the first, so an earlier fix does not swallow it"
+  assert_equals "https://github.com/o/r/pull/32" "$(jq -r '[.start_requests[] | select(.id == "lee-command-run")][0].generation' "$json")" \
+    "the new start follows the merged fix it came after"
+  assert_equals "settled [] true true" \
+    "$(state_of environment-ssh-to-self '"\(.state) \(.actions | tojson) \(.rule.text | startswith("Standing rule: Lee-step ssh")) \(.rule.source | endswith("data/captain-shared.md line 1"))"')" \
+    "a settled card quotes the standing rule and names its source and line, and offers nothing"
+  assert_equals "started [] https://github.com/o/r/pull/34" "$(state_of credential-ssh-key '"\(.state) \(.actions | tojson) \(.link)"')" \
+    "a started fix with a pull request link offers no action"
+  assert_equals "fix-ssh2" "$(state_of credential-ssh-key '.task')" "a started card names its task"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.id == "environment-ssh-to-self")] | length' "$json")" "a settled finding is not started"
+
+  # A second fix in flight after an earlier one merged is the current start, not a reason to start again.
+  printf -- '- [ ] fix-lcr2 - fix friction-lee-command-run again https://github.com/o/r/pull/35\n' >> "$home/data/backlog.md"
+  run_officer "$home" >/dev/null || fail "run with a second fix in flight must succeed"
+  assert_equals 'started [] https://github.com/o/r/pull/35 fix-lcr2' \
+    "$(state_of lee-command-run '"\(.state) \(.actions | tojson) \(.link) \(.task)"')" \
+    "an unmerged task opened after a merged fix reads as started with its own task and link"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.id == "lee-command-run")] | length' "$json")" \
+    "and no duplicate start is requested while it is in flight"
+
+  # A backlog line naming no task or pull request cannot merge, so after a merged fix it is no start.
+  printf -- '- [x] fix-jdk2 - fix missing-tool-tool-openjdk again https://github.com/o/r/pull/31\n  - also covers friction-missing-tool-tool-openjdk hook text\n' >> "$home/data/backlog.md"
+  run_officer "$home" >/dev/null || fail "run with a task-less sub-bullet must succeed"
+  assert_equals 'fixed []' "$(state_of missing-tool-tool-openjdk '"\(.state) \(.actions | tojson)"')" \
+    "a task-less sub-bullet under a merged task line leaves the finding fixed, not started with a reopen"
+  pass "fm-officer friction: fixed, reported-again and settled findings carry their link, merge, rule and actions"
+}
+
 test_merge_word_is_not_a_missing_tool
 test_token_scope_needs_a_token_permission_failure
 test_status_waits_and_root_causes
@@ -1129,3 +1289,5 @@ test_long_session_asks_dated_by_message
 test_paraphrased_upkeep_asks_cluster
 test_registry_and_unharvested_day
 test_bosun_unsure_class
+test_standing_work_is_started_by_default_with_an_object_action
+test_fixed_reported_again_and_settled_states
