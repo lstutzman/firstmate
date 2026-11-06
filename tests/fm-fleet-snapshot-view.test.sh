@@ -1217,12 +1217,12 @@ EOF
     "kind=ship" \
     "mode=no-mistakes"
   record_claude_idle "$home/state" terminal-ship
-  printf 'done: complete\n' > "$home/state/terminal-ship.status"
+  printf 'failed: stopped\n' > "$home/state/terminal-ship.status"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
   printf '%s' "$out" | jq -e '
     .valid == false
       and .invalidity == {kind:"terminal_in_flight",ids:["terminal-ship"]}
-      and (.reason | contains("terminal-ship=done"))
+      and (.reason | contains("terminal-ship=failed"))
       and (.reason | contains("mate=") | not)
   ' >/dev/null || fail "ordinary terminal in-flight ship must still produce terminal_in_flight without listing the secondmate: $out"
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
@@ -1303,11 +1303,22 @@ SH
   printf '%s' "$out" | jq -e --arg pr "$pr_url" '
     .tasks[] | select(.id == "pr-ship") | .pr.url == $pr and .pr.source == "status_event"
   ' >/dev/null || fail "fixture must record the PR from the status log only: $out"
-  assert_terminal "done child with a status-line PR only must still produce terminal_in_flight"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.counts.waiting_on_merge == 0' >/dev/null \
+    || fail "a status-line PR only must not count as waiting on merge: $out"
 
-  # No PR at all still flags.
+  # A pipeline-handoff done (no CI-ready or published note) is live work, not terminal.
   printf 'done: complete\n' > "$home/state/pr-ship.status"
-  assert_terminal "done child with no PR must still produce terminal_in_flight"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '
+    .valid == true and .invalidity.kind == null and .counts.waiting_on_merge == 0
+  ' >/dev/null || fail "pipeline-handoff done must not produce terminal_in_flight: $out"
+
+  # CI-ready done with no PR armed poll and a stale meta PR still flags (finished, never closed).
+  write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"
+  printf 'done: PR %s checks green\n' "$pr_url" > "$home/state/pr-ship.status"
+  rm -f "$home/state/pr-ship.check.sh"
+  assert_terminal "finished done child without an armed merge poll must still produce terminal_in_flight"
 
   # A failed child flags even with a meta PR and an armed poll.
   write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"

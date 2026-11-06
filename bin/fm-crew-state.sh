@@ -326,6 +326,12 @@ fi
 emit_ship_status_done() {  # [extra-detail]
   local extra=${1:-} reason
   if reason=$(fm_dod_accept_ship_done "$KIND" "$(meta_value mode)" "$WT" "$(meta_value project)" "$LOG_LINE" "$STATE" "$ID" "$META"); then
+    # A no-mistakes ship's pre-validation done: is the handoff to the pipeline,
+    # not a finished task: mark it so inventory checks read it as live work.
+    if [ "$KIND" = ship ] && case "$(meta_value mode)" in no-mistakes|'') true ;; *) false ;; esac \
+      && ! fm_dod_should_gate_ship_done "$KIND" "$(meta_value mode)" "$LOG_LINE"; then
+      extra="pipeline handoff: validation run not finished${extra:+${SEP}$extra}"
+    fi
     emit "done" status-log "$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"
   fi
   emit blocked status-log "$reason"
