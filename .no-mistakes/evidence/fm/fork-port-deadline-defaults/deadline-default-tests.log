@@ -1,0 +1,12 @@
+ok - every reserved class refuses a deadline default and writes nothing
+ok - unknown classes, missing fields, policy and credential calls, past deadlines and reserved paths all refuse
+ok - dry-run (the default) logs once, lists the call and answers nothing
+ok - live mode applies the default under a label that says it is not the captain's words
+ok - a captain answer first always wins; one after a default supersedes it
+ok - a deferral clears the default unless it brings a later one, and a default inside the deferral refuses
+ok - an active call refuses a different default and accepts an identical repeat
+ok - a call re-held for a new question never inherits the old default
+ok - a keyed captain answer supersedes a deadline default
+ok - the wake drain lists a due default in both modes and answers nothing
+ok - parent-channel lines for a deadline default say it is not the captain's
+exit=0

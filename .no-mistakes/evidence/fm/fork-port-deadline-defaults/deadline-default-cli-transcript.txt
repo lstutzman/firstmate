@@ -1,0 +1,146 @@
+=== S1: reserved classes refuse (nothing written) ===
+$ cap hold demo-payments --title Call payments --reason decide --repo sample --recommend go --default-by 2026-07-21T12:00:00Z --class payments
+fm-captain-hold: a call in the reserved class payments can never carry a deadline default; it waits for the captain
+[exit 1]
+
+$ cap hold demo-legal --title Call legal --reason decide --repo sample --recommend go --default-by 2026-07-21T12:00:00Z --class legal
+fm-captain-hold: a call in the reserved class legal can never carry a deadline default; it waits for the captain
+[exit 1]
+
+$ cap hold demo-product --title Call product --reason decide --repo sample --recommend go --default-by 2026-07-21T12:00:00Z --class product
+fm-captain-hold: a call in the reserved class product can never carry a deadline default; it waits for the captain
+[exit 1]
+
+$ cap hold demo-member-copy --title Call member-copy --reason decide --repo sample --recommend go --default-by 2026-07-21T12:00:00Z --class member-copy
+fm-captain-hold: a call in the reserved class member-copy can never carry a deadline default; it waits for the captain
+[exit 1]
+
+$ cap hold demo-credentials --title Call credentials --reason decide --repo sample --recommend go --default-by 2026-07-21T12:00:00Z --class credentials
+fm-captain-hold: a call in the reserved class credentials can never carry a deadline default; it waits for the captain
+[exit 1]
+
+$ cap hold demo-production --title Call production --reason decide --repo sample --recommend go --default-by 2026-07-21T12:00:00Z --class production
+fm-captain-hold: a call in the reserved class production can never carry a deadline default; it waits for the captain
+[exit 1]
+
+$ cap hold demo-data-rewriting --title Call data-rewriting --reason decide --repo sample --recommend go --default-by 2026-07-21T12:00:00Z --class data-rewriting
+fm-captain-hold: a call in the reserved class data-rewriting can never carry a deadline default; it waits for the captain
+[exit 1]
+
+$ cap hold demo-unknown --title Call unknown --reason decide --repo sample --recommend go --default-by 2026-07-21T12:00:00Z --class mystery
+fm-captain-hold: cannot determine that class 'mystery' is safe for a deadline default; declare one of: fleet tooling docs process
+[exit 1]
+
+backlog after refusals:
+## In flight
+
+## Queued
+
+## Done
+
+=== S2: fleet call holds with a default; dry-run (default mode) ===
+$ cap hold demo-fleet --title Rename the fleet log dir --reason Choose go or wait --repo sample --recommend go live --default-by 2026-07-21T12:00:00Z --class fleet
+demo-fleet
+[exit 0]
+
+before deadline:
+$ cap defaults-due
+[exit 0]
+
+after deadline:
+$ cap defaults-due
+demo-fleet	2026-07-21T12:00:00Z	go live	fleet	dry-run	no	Rename the fleet log dir
+[exit 0]
+
+--- wake drain after deadline (dry-run) ---
+DEFAULTS DUE (dry-run: nothing will be answered, the default is only logged):
+demo-fleet: no captain answer by 2026-07-21T12:00:00Z, recommended "go live" (class fleet, dry-run): Rename the fleet log dir
+DEFAULTS DUE: record each with bin/fm-captain-hold.sh answer <task> --deadline-default (it logs what it would have answered); going live is config/captain-hold-defaults set to live.
+
+$ cap answer demo-fleet --deadline-default
+dry-run: would answer demo-fleet with the recommendation "go live" (deadline 2026-07-21T12:00:00Z, class fleet); nothing was answered. Set live in config/captain-hold-defaults to apply it.
+[exit 0]
+
+log:
+2026-07-21T13:00:00Z dry-run would-answer task=demo-fleet hold=2026-07-20T12:00:00Z by=2026-07-21T12:00:00Z class=fleet recommend=go live
+
+  state: queued
+  held: yes
+
+=== S3: live mode applies, labelled not the captain's words ===
+--- wake drain (live) ---
+DEFAULTS DUE (no captain answer by the deadline; nothing is applied until you run the answer, and it is recorded as not the captain's words):
+demo-fleet: no captain answer by 2026-07-21T12:00:00Z, recommended "go live" (class fleet, live, logged): Rename the fleet log dir
+DEFAULTS DUE: apply each with bin/fm-captain-hold.sh answer <task> --deadline-default, steer any worker with that answer as a deadline default (not the captain's decision), and tell the captain; a real captain answer always wins and supersedes a default.
+
+(drain applied nothing:)
+  state: queued
+  held: yes
+
+$ cap answer demo-fleet --deadline-default
+deadline-default: demo-fleet
+[exit 0]
+
+task:
+  id: demo-fleet
+  title: Rename the fleet log dir
+  state: done
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "fm-hold-v1:Q2hvb3NlIGdvIG9yIHdhaXQ="
+  hold_kind: captain
+  hold_until: "-"
+  kind: captain
+  repo: sample
+  priority: "-"
+  created: "-"
+  closed: 2026-11-06
+  deps: none
+  links: none
+  body: "Resolution recorded by fm-captain-hold.\nDecision digest: 1f8540383a53724a750d5e82f320d6e2c5f717fb7451582557d04b838a053742\nResolution mode: deadline-default\n\nDeadline default (not the captain's words):\nNo captain answer arrived by 2026-07-21T12:00:00Z, so Firstmate proceeded on its recommendation: go live. These are not the captain's words (deadline default, class fleet)."
+$ cap answered demo-fleet
+[exit 1]
+
+=== S4: captain answer after default supersedes it ===
+$ cap answer demo-fleet --decision-file /tmp/fm-dd-demo.7kKoHD/late.txt
+superseded: demo-fleet
+[exit 0]
+
+  body: "Resolution recorded by fm-captain-hold.\nDecision digest: e5f394bee7757e9c56d19ecfa68cf2093578073a24e34e438693ccbe8e7f8903\nResolution mode: repaired\nSupersedes the deadline default recorded below.\n\nCaptain decision:\nActually, wait until Monday.\n\nResolution recorded by fm-captain-hold.\nDecision digest: 1f8540383a53724a750d5e82f320d6e2c5f717fb7451582557d04b838a053742\nResolution mode: deadline-default\n\nDeadline default (not the captain's words):\nNo captain answer arrived by 2026-07-21T12:00:00Z, so Firstmate proceeded on its recommendation: go live. These are not the captain's words (deadline default, class fleet)."
+$ cap answered demo-fleet
+[exit 0]
+
+=== S5: captain answer before deadline wins; default refused ===
+$ cap hold demo-first --title Pick docs layout --reason Choose --repo sample --recommend layout A --default-by 2026-07-21T12:00:00Z --class docs
+demo-first
+[exit 0]
+
+$ cap answer demo-first --decision-file /tmp/fm-dd-demo.7kKoHD/real.txt
+answered: demo-first
+[exit 0]
+
+$ cap defaults-due
+[exit 0]
+
+$ cap answer demo-first --deadline-default
+fm-captain-hold: captain-held task demo-first records a different captain decision
+[exit 1]
+
+  body: "Resolution recorded by fm-captain-hold.\nDecision digest: 834582a1ce32dc477cccb746b319f3e8cc32a38bca6b67ad58781990cb91dc2d\nResolution mode: answered\n\nCaptain decision:\nLayout B."
+=== S6: captain 'later' deferral clears the default ===
+$ cap hold demo-later --title Tooling choice --reason Choose --repo sample --recommend tool X --default-by 2026-07-21T12:00:00Z --class tooling
+demo-later
+[exit 0]
+
+$ cap hold demo-later --reason Choose --until 2026-08-15
+demo-later
+[exit 0]
+
+$ cap defaults-due
+[exit 0]
+
+$ cap answer demo-later --deadline-default
+fm-captain-hold: task demo-later has no deadline default due: it is answered, deferred, has no default for this hold, or its deadline has not passed
+[exit 1]
+
