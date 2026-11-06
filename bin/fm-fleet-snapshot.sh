@@ -265,8 +265,11 @@ count) and the merge poll fm-pr-check.sh arms for that same PR is live and valid
 (state/<id>.check.sh, <id>.pr-poll and <id>.pr-poll-registration as the watcher
 validates them, shown as pr.merge_check_armed). The armed poll wakes the supervisor when the PR merges or closes, so the child cannot sit
 unnoticed. Such a child is listed in waiting_on_merge and counted in
-counts.waiting_on_merge; no forge read is made. A failed child, or a done child
-without both a meta PR and an armed poll for it, still invalidates the inventory.
+counts.waiting_on_merge; no forge read is made. A done child whose status-log
+detail is fm-crew-state.sh's pipeline-handoff marker (a no-mistakes ship's
+pre-validation done while its run on that branch is still live) is live work,
+not terminal_in_flight. A failed child, or any other done child without both a
+meta PR and an armed poll for it, still invalidates the inventory.
 Its invalidity object names the normalized failure kind and affected ids.
 Actionable tasks-axi captain holds appear as decisions_open and stay visible in
 queued with hold_reason, hold_kind, hold_until,
