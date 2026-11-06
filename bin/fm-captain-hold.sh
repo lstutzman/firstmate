@@ -1715,8 +1715,7 @@ command_answers() {
       skipped=$((skipped + 1))
       continue
     fi
-    # shellcheck disable=SC2086  # release_flag is empty or a single literal flag.
-    if "$0" answer "$id" --decision-file "$tmp" $release_flag </dev/null >/dev/null 2>"$err"; then
+    if "$0" answer "$id" --decision-file "$tmp" ${release_flag:+"$release_flag"} </dev/null >/dev/null 2>"$err"; then
       # A parent-channel delivery problem is reported on stderr by the answer
       # path even when the close succeeded; keep it visible.
       [ ! -s "$err" ] || cat "$err" >&2
