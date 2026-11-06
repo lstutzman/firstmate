@@ -1,0 +1,45 @@
+== S1 first run: one start, recorded against fingerprint
+{"starts":[{"issue":"PC-9","fingerprint":"5867e2811afefd651baa669d59697a09302309266ac8da4c6733bae0c0b16b16"}],"asks":[]}
+{"handled":{"PC-9":"2026-10-23"},"starts_by_fp":{"5867e2811afefd651baa669d59697a09302309266ac8da4c6733bae0c0b16b16":["PC-9"]}}
+== S2 no chain: same item fails again same day -> no second start
+{"starts":["PC-9"],"asks":[]}
+["PC-9"]
+== S2b no chain next day: handled item is not restarted
+{"starts":[],"asks":[]}
+["PC-9"]
+== S3 boundary: 2 prior starts -> 3rd still starts
+{"starts":["PC-9"],"asks":[]}
+["PC-1","PC-2","PC-9"]
+== S4 cap: 3 prior starts -> 4th not started, keyed fix-cap ask for Lee
+{
+  "starts": [],
+  "asks_for_lee": [
+    {
+      "findings": [
+        {
+          "fingerprint": "5867e2811afefd651baa669d59697a09302309266ac8da4c6733bae0c0b16b16",
+          "issue": "PC-9",
+          "title": "Crash on save duplicate-me",
+          "tries": 3
+        }
+      ],
+      "key": "surgeon-PC-9-fix-cap",
+      "line": "needs-decision [key=surgeon-PC-9-fix-cap]: Crash on save duplicate-me has failed again after 3 started fixes, so no fourth start; Lee decides"
+    }
+  ]
+}
+2026-10-23.json
+2026-10-23.md
+2026-10-23.start-requests.sh
+2026-10-24.json
+2026-10-24.md
+2026-10-24.start-requests.sh
+digest
+filed-fingerprints.json
+found.json
+patterns.json
+review-state.json
+runs.log
+needs-decision [key=surgeon-PC-9-fix-cap]: Crash on save duplicate-me has failed again after 3 started fixes, so no fourth start; Lee decides
+== S5 rerun capped same day: ask not duplicated, no start
+{"starts":[],"asks":["surgeon-PC-9-fix-cap"]}

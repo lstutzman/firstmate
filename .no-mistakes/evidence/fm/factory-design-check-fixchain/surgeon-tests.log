@@ -1,0 +1,35 @@
+ok - fm-officer surgeon: the registry line is validated
+ok - fm-officer surgeon: findings are classified and rated from the app's results with no Linear call
+ok - fm-officer surgeon: a red night is high only on the staging tip
+ok - fm-officer surgeon: a rerun is byte-identical
+ok - fm-officer surgeon: real untracked findings are filed with one Type, Source and area label
+ok - fm-officer surgeon: a fingerprint already filed is never created again
+ok - fm-officer surgeon: the max-creates cap holds and the rest are reported
+ok - fm-officer surgeon: a failed verify is logged and not retried
+ok - fm-officer surgeon: a failed fallback search keeps the verify error as the reason
+ok - fm-officer surgeon: a created item whose verify mismatches is still ledgered
+ok - fm-officer surgeon: a verify mismatch waits briefly for the search to find the item
+ok - fm-officer surgeon: a failed or incomplete label lookup reports the finding instead of filing
+ok - fm-officer surgeon: a rate limit stops Linear for the run and pauses later runs
+ok - fm-officer surgeon: an unreachable app is a coverage gap, not a failed run
+ok - fm-officer surgeon: register surgeon, then retire triage, keeps triage's findings
+ok - fm-officer surgeon: the area label is derived from each finding, with triage as the fallback
+ok - fm-officer surgeon: low review findings are clustered by component, updated in place and ticked off
+ok - fm-officer surgeon: a local-jev duplicate bumps the Found line once a day
+ok - fm-officer surgeon: without local-jev only the fingerprint decides
+ok - fm-officer surgeon: an environment of production bumps severity, and text alone never does
+ok - fm-officer surgeon: an invalid nightly E2E run is filed as a top-severity promotion blocker
+ok - fm-officer surgeon: starts follow the rubric, which can only narrow, and reserved classes hold
+ok - fm-officer surgeon: the Linear call budget stops the run without a pause
+ok - fm-officer surgeon: a key-less finding is fingerprinted from its normalised title and location
+ok - fm-officer surgeon: bad patterns are deduped, handed to the Navigator, captured and proposed as rules
+ok - fm-officer surgeon: a cluster over 25 splits one level deeper and small subgroups fold back
+ok - fm-officer surgeon: start requests go to the office whose dispatch list holds the project
+ok - fm-officer surgeon: the found count reaches the start decision, once per item
+ok - fm-officer surgeon: a finding that keeps coming back stops at 3 starts
+ok - fm-officer surgeon: start-home in the registry sends starts to the owning office
+ok - fm-officer surgeon: a nightly E2E failure tries the feature labels before testing
+ok - fm-officer surgeon: an unreadable rubric marks nothing handled, so the item starts later
+ok - fm-officer surgeon: reserved classes match the action they ask for, so real security bugs start
+ok - fm-officer surgeon: an item gets one start request a run, however many findings map to it
+ok - fm-officer surgeon: a closed item found by fingerprint search gets a recurrence, not a plain new item
