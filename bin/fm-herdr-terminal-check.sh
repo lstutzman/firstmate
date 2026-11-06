@@ -9,8 +9,9 @@
 # healthy machine prints nothing. Always exits 0.
 #
 # Terminal workspace (the captain's own scratch shell, never used by an agent):
-#   - none labelled exactly "Terminal": create one, a bare shell at $HOME with
-#     one tab and one pane, nothing run in it, focus left where it is;
+#   - none labelled "Terminal" (with or without a leading "[n] " prefix): create
+#     one, a bare shell at $HOME with one tab and one pane, nothing run in it,
+#     focus left where it is;
 #   - exactly one: leave it alone, and report it only if it holds an agent or
 #     more than one tab or pane;
 #   - several: report them and change nothing.
