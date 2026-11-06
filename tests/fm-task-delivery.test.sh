@@ -564,7 +564,7 @@ EOF
 OFFICE_LOCAL_ID=office-local-a1
 
 make_office_local_case() {
-  local name=$1 home proj id=$OFFICE_LOCAL_ID kv key old
+  local name=$1 home proj id=$OFFICE_LOCAL_ID kv key old done_head
   shift
   local -a rec=(id=mate-x dispatch=proj merge=proj merge-via=none auto-merge-classes=none wip=2
     admission-sha256=proj:0000000000000000000000000000000000000000000000000000000000000000)
@@ -587,8 +587,10 @@ make_office_local_case() {
   printf 'change\n' > "$proj/change"
   git -C "$proj" add change || fail "could not stage office local-merge change"
   git -C "$proj" commit -qm change || fail "could not commit office local-merge change"
+  done_head=$(git -C "$proj" rev-parse HEAD)
   git -C "$proj" checkout -q - || fail "could not restore office local-merge default branch"
-  printf 'project=%s\nmode=local-only\nbranch=fm/%s\nyolo=on\noffice=mate-x\n' "$proj" "$id" > "$home/state/$id.meta"
+  printf 'project=%s\nmode=local-only\nbranch=fm/%s\nyolo=on\noffice=mate-x\nlocal_done_head=%s\n' \
+    "$proj" "$id" "$done_head" > "$home/state/$id.meta"
   fm_write_office_home "$home" mate-x "${rec[@]}"
   printf '%s\n' "$home|$proj|$id"
 }

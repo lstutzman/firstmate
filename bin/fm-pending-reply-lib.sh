@@ -1222,7 +1222,7 @@ fm_pending_reply_escalation_payload() {  # <record-path> <kind>
       token='pending-reply-missed'
       ;;
     held)
-      token=pending-reply-held
+      token='pending-reply-held'
       ;;
     delivery-unknown)
       token='pending-reply-delivery-unknown'

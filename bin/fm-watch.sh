@@ -2765,7 +2765,7 @@ task_captain_call_open() {  # <task>
 open_decision_reminder_tick() {  # [now-epoch], for deterministic clock callers
   local now=${1:-} threshold=${FM_OPEN_DECISION_OVERDUE_SECS:-1800}
   local cap=${FM_OPEN_DECISION_BACKOFF_MAX_SECS:-14400} value
-  local f task open key verb opened note exclude ledger rows='' old=''
+  local f task open key verb opened note exclude ledger rows='' old_rows=''
   local old_task old_key old_opened old_last old_delay last delay
   local due_task='' due_key='' due_opened='' due_delay='' tmp reason
   OPEN_DECISION_REMINDER=
@@ -2779,7 +2779,7 @@ open_decision_reminder_tick() {  # [now-epoch], for deterministic clock callers
   ledger="$STATE/.open-decision-reminders"
   if [ -e "$ledger" ] || [ -L "$ledger" ]; then
     [ -f "$ledger" ] && [ -r "$ledger" ] && [ ! -L "$ledger" ] || return 1
-    old=$(cat "$ledger") || return 1
+    old_rows=$(cat "$ledger") || return 1
   fi
   exclude=$(status_scan_parent_channel_exclude "$STATE")
   for f in "$STATE"/*.status; do
@@ -2801,7 +2801,7 @@ open_decision_reminder_tick() {  # [now-epoch], for deterministic clock callers
         [ "$delay" -le "$cap" ] || delay=$cap
         break
       done <<EOF
-$old
+$old_rows
 EOF
       rows="$rows$task"$'\t'"$key"$'\t'"$opened"$'\t'"$last"$'\t'"$delay"$'\n'
       [ "$now" -ge "$opened" ] && [ "$((now - opened))" -ge "$threshold" ] || continue

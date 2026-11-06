@@ -78,8 +78,11 @@ n=0
 while [ ! -e "$gate/entered" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
 [ -e "$gate/entered" ] || { touch "$gate/release"; wait "$blocked_pid" || true; fail 'blocking setup never started'; }
 fm_test_spawn_brief "$setup_home" setup-concurrent
+# The fake tmux records one window per fakebin, so the concurrent spawn gets its
+# own; sharing one would make the blocked spawn's window vanish from list-windows.
+concurrent_fakebin=$(fm_test_make_spawn_fakebin "$TMP_ROOT/fake-concurrent")
 concurrent_rc=0
-fm_test_run_spawn "$setup_home" "$wt2" "$fakebin" setup-concurrent "$proj" --mode no-mistakes --yolo off > "$TMP_ROOT/setup-concurrent.out" 2>&1 || concurrent_rc=$?
+fm_test_run_spawn "$setup_home" "$wt2" "$concurrent_fakebin" setup-concurrent "$proj" --mode no-mistakes --yolo off > "$TMP_ROOT/setup-concurrent.out" 2>&1 || concurrent_rc=$?
 touch "$gate/release"
 wait "$blocked_pid" || fail "blocked spawn failed: $(cat "$TMP_ROOT/setup-blocked.out")"
 [ "$concurrent_rc" -eq 0 ] || fail "concurrent spawn was refused while setup ran: $(cat "$TMP_ROOT/setup-concurrent.out")"
