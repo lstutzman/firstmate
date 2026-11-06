@@ -474,6 +474,26 @@ esac
 # so an interrupted run announces again rather than never. A project this home
 # merges, a task held for the captain, and the merge-time re-record
 # (fm-pr-merge.sh prints its own handoff) hand nothing off.
+# A no-mistakes ship's run would otherwise keep watching the PR for its merge and
+# hold one of the machine's few pipeline slots until the other home lands it, so
+# right after the handoff is delivered and recorded the run is released with
+# `no-mistakes axi handoff` in the task's copy. That runs once per handed-off
+# head; a failure is reported on the task's status and on stderr, leaves the run
+# as it is, and is not retried.
+pr_check_release_nm_run() {
+  local merger=$1 out rc=0 line
+  [ "$PR_MODE" = no-mistakes ] && [ -n "$WT" ] && [ -d "$WT" ] || return 0
+  out=$(cd "$WT" && timeout 120 no-mistakes axi handoff 2>&1) || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    line="working: released the no-mistakes run after handing PR $URL to home $merger"
+  else
+    out=$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)
+    line="working: could not release the no-mistakes run after handing PR $URL to home $merger (rc=$rc), run left as it is: $out"
+    printf 'actionable: %s\n' "${line#working: }" >&2
+  fi
+  printf '%s\n' "$(status_stamp_line "$line")" >> "$STATE/$ID.status" 2>/dev/null || true
+}
+
 pr_check_merge_handoff() {
   local name merger self rc=0 record sent line dest tmp
   [ "${KIND:-ship}" = ship ] && [ "${FM_PR_CHECK_MERGE:-}" != 1 ] && [ -n "$PROJECT" ] || return 0
@@ -515,6 +535,7 @@ pr_check_merge_handoff() {
   tmp=$(mktemp "$STATE/.fm-merge-handoff.XXXXXX") && printf '%s\n' "$sent" > "$tmp" && mv -f -- "$tmp" "$record" \
     || printf 'actionable: PR %s was handed to home %s but the handoff record could not be written, so the next registration announces it again\n' "$URL" "$merger" >&2
   printf 'handed off: %s to home %s\n' "$URL" "$merger"
+  pr_check_release_nm_run "$merger"
 }
 pr_check_merge_handoff
 printf 'armed: state/%s.check.sh\n' "$ID"
