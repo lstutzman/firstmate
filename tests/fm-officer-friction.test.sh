@@ -875,6 +875,8 @@ test_test_run_output_is_not_fleet_friction() {
   ["Bash", {"command": "make"}, "/bin/bash: line 4: jq: command not found", true],
   ["Bash", {"command": "bash tests/fm-officer-friction.test.sh"}, "lee@alpha: Permission denied (publickey).", true],
   ["Bash", {"command": "bash tests/fm-git-retry-lib.test.sh"}, "git@github.com: Permission denied (publickey).", true],
+  ["Bash", {"command": "bin/fm-test-run.sh --family officer"}, "lee@beta: Permission denied (publickey).", true],
+  ["Bash", {"command": "git push origin fm/x"}, "git@github.com: Permission denied (publickey).", true],
   ["Bash", {"command": "ssh -t stranger.example true"}, "lee@stranger.example: Permission denied (publickey).", true],
   ["Bash", {"command": "ssh -t alpha.tail1.ts.net true"}, "lee@alpha.tail1.ts.net: Permission denied (publickey).", true]]}]}
 EOF
@@ -884,10 +886,10 @@ EOF
   json="$home/data/officers/friction/$DATE.json"
   assert_equals "jq,slopwatch" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
     "firstmate shell functions (snake_case anywhere, a bare word defined in bin/) are sourcing slips; a real missing binary, even one a test stubs, still is a finding"
-  assert_equals 1 "$(jq '[.events[] | select(.kind == "agent-hit" and .sub == "ssh-key")] | length' "$json")" \
-    "a key refusal printed by a tests/*.test.sh run or naming a host outside the fleet is not friction; one against a fleet host outside a test run is"
+  assert_equals 3 "$(jq '[.events[] | select(.kind == "agent-hit" and .sub == "ssh-key")] | length' "$json")" \
+    "a key refusal printed by a tests/*.test.sh or fm-test-run.sh run is not friction; one outside a test run is, whatever host it names (github.com, an unknown host, a fleet host)"
   assert_equals "credential" "$(jq -r '[.findings[] | select(.sub == "ssh-key")][0].cause' "$json")" \
-    "the genuine publickey refusal against a fleet host is still a credential finding"
+    "the genuine publickey refusals outside a test run are still a credential finding"
   pass "fm-officer friction: output of a firstmate test run is not fleet friction; real misses and refusals still are"
 }
 
