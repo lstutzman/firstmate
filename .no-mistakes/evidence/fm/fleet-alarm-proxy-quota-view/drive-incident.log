@@ -1,0 +1,22 @@
+=== S1 incident: marley 7d 100% carried earlier in the hour, proxy rotated to lstutzman (13%) ===
+exit=0
+--- ledger needs-decision rows after S1:
+0
+--- timer RUN-RESULT after S1:
+RUN-RESULT {"summary": "no alerts; Serving Claude accounts (successful traffic in last 15 minutes): lstutzman@example.invalid 7d 13%; pooled: 61% mean 7d headroom across 3 non-stale accounts; rotated out (over 90% 7d): marle", "counts": {"alerts": 0}}
+exit=0
+
+=== S2 adversarial: every serving account exhausted (marley 100%, lstutzman 95% both serving) ===
+Carrying Claude account marleycrittendom@example.invalid 7d 100% (resets 2026-11-09T10:00:00Z); Carrying Claude account lstutzman@example.invalid 7d 95% (resets 2026-11-12T10:00:00Z); Claude quota context (not an alarm; proxy view): Serving Claude accounts (successful traffic in last 15 minutes): lstutzman@example.invalid 7d 95%, marleycrittendom@example.invalid 7d 100%; pooled: 33% mean 7d headroom across 3 non-stale accounts; rotated out (over 90% 7d): lstutzman@example.invalid 7d 95%, marleycrittendom@example.invalid 7d 100%
+exit=0
+--- ledger needs-decision rows after S2:
+grep: /tmp/fm-alarm-lab.ooqHeF/home/state/fleet-ledger.jsonl: No such file or directory
+
+=== S3 adversarial: only failed requests on the headroom account (not really serving) ===
+Carrying Claude account marleycrittendom@example.invalid 7d 100% (resets 2026-11-09T10:00:00Z); Claude quota context (not an alarm; proxy view): Serving Claude accounts (successful traffic in last 15 minutes): marleycrittendom@example.invalid 7d 100%; pooled: 61% mean 7d headroom across 3 non-stale accounts; rotated out (over 90% 7d): marleycrittendom@example.invalid 7d 100%
+exit=0
+
+--- cpa-usage-axi calls made:
+      4 accounts
+      4 models --hours 0.25 --limit 1000
+      4 models --hours 1 --limit 1000
