@@ -1,0 +1,23 @@
+== before: workspaces
+[{"label":"captain-anchor","tab_count":1,"pane_count":1}]
+== session start 1 (no Terminal)
+14:BOOTSTRAP
+16:herdr-terminal: created the 'Terminal' workspace w2 (bare shell at $HOME, the captain's)
+== after: workspaces
+[{"label":"captain-anchor","tab_count":1,"pane_count":1},{"label":"Terminal","tab_count":1,"pane_count":1}]
+== Terminal pane
+[{"pane_id":"w2:p1","cwd":"~","agent":null}]
+HOME=~
+== agents
+[]
+== session start 2 (Terminal present, add two agents sharing a workspace)
+8:lock acquired: harness pid 262862
+16:herdr-terminal: 2 agent(s) share a workspace with another session: claude in pane w3:p1 (workspace shared), codex in pane w3:p2 (workspace shared); every agent runs alone in its own workspace, nothing was moved
+28:- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+49:   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+62:   `supervision-host: branch-outcome: ...` means it handled a wake and recorded captain outcomes for you: run `bin/fm-wake-drain.sh`, process each entry of its `BRANCH OUTCOMES` section as firstmate from the task's current state, because each entry says how long ago it was recorded (tell the captain, land or merge what is ready, answer or escalate a decision, or act on a blocker; your reply covers only entries still open, as if a settled one, such as a PR since merged, had never been listed), then run the `mark-processed` acknowledgement it prints; every drain presents them again until you do.
+159:Follow the supervision operating instructions block above for harness 'claude'.
+== after 2: workspaces
+[{"label":"captain-anchor","tab_count":1,"pane_count":1},{"label":"Terminal","tab_count":1,"pane_count":1},{"label":"shared","tab_count":1,"pane_count":2}]
+== non-herdr backend
+[rc=0]

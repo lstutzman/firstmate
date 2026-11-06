@@ -1,0 +1,6 @@
+ok - missing Terminal workspace is created as one bare tab and pane
+ok - existing Terminal workspace is left alone and the check is silent
+ok - a secondmate home recreates a missing Terminal, and skips while another home holds the lock
+ok - two Terminal workspaces are reported and left untouched
+ok - only agents sharing a workspace with another session are flagged, on one summary line
+ok - the check never closed, moved or renamed anything
