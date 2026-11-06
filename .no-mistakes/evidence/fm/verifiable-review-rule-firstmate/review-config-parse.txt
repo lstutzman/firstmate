@@ -1,0 +1,15 @@
+# no-mistakes version v1.106.1 (5732d1e) 2026-10-31T05:16:02Z
+# disposable clone at ae2d94824cca039d1219b2aeaef93e27fb1275f9
+
+## 1. Shipped .no-mistakes.yaml through the real repo-config parser (no-mistakes ci-workflow)
+ci-workflow: commands.test not configured in .no-mistakes.yaml
+(the parser reached the commands check, so review.path_instructions loaded without an error)
+
+## 2. Adversarial: third block's path emptied
+ci-workflow: parse repo config: review.path_instructions[2].path must not be empty
+
+## 3. Adversarial: 33 path_instructions entries
+ci-workflow: parse repo config: review.path_instructions has 33 entries, at most 32 are allowed
+
+## 4. Rule file the first block points at
+4:no-mistakes review step. Every review answers a required section, "How is this fully verifiable?",
