@@ -398,6 +398,89 @@ MD
   pass 'progress: merged-PR drops follow the class judge applies'
 }
 
+test_work_items_under_one_issue_get_distinct_ids() {
+  make_world shared-issue
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+- [ ] pc23-b - PC-23 second piece (kind: bug) (pr: https://github.com/example/project/pull/4602)
+- [ ] pc23-c - PC-23 third piece (kind: bug) (pr: https://github.com/example/project/pull/4626)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+- [x] pc27-b - PC-2700 two outcome (kind: bug)
+MD
+  local file="$WORLD_HOME/data/officers/progress/progress-state.json" before
+  run_progress >/dev/null || fail 'shared-issue run failed'
+  assert_equals '3' "$(jq '.doing | length' "$file")" 'every work item under one issue is listed'
+  assert_equals '3' "$(jq '[.doing[].id] | unique | length' "$file")" 'work items under one issue get distinct doing ids'
+  assert_equals '2' "$(jq '[.done[].id] | unique | length' "$file")" 'work items under one issue get distinct done ids'
+  assert_equals '0' "$(jq '[.doing[].id | length | select(. > 80)] | length' "$file")" 'ids stay inside the reader limit'
+  before=$(jq -c '[.doing[].id, .done[].id] | sort' "$file")
+  run_progress >/dev/null || fail 'second shared-issue run failed'
+  assert_equals "$before" "$(jq -c '[.doing[].id, .done[].id] | sort' "$file")" 'ids are stable across runs'
+  assert_equals '2' "$(jq '.done | length' "$file")" 'reported outcomes stay on the page'
+  pass 'progress: work items under one Linear issue get distinct, stable page ids'
+}
+
+test_open_pr_listing_failures() {
+  local file stub lane
+  make_world pr-listing
+  lane="$WORLD_HOME/data/officers/progress"
+  stub_sleep
+  linear_item PC-61 'Bug: checked work starts'
+  file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  # Stub: fail the first N listing calls with a stderr cause; N comes from the "fail-count" file.
+  stub="$WORLD/gh-axi-real"
+  cp "$FAKEBIN/gh-axi" "$stub"
+  cat > "$FAKEBIN/gh-axi" <<SH
+#!/usr/bin/env bash
+case "\$3" in
+  */pulls\?*)
+    n=\$(cat "\$PROGRESS_WORLD/fail-count" 2>/dev/null || echo 0)
+    if [ "\$n" -gt 0 ]; then
+      echo \$((n - 1)) > "\$PROGRESS_WORLD/fail-count"
+      echo "Get https://api.github.com/repos/x: dial tcp: i/o timeout token=FIXTURESECRET0123456789abcdefghijklmnopqrstuv" >&2
+      exit 1
+    fi ;;
+esac
+exec "$stub" "\$@"
+SH
+  chmod +x "$FAKEBIN/gh-axi"
+  # Transient: one failure is retried and starts go through.
+  echo 1 > "$WORLD/fail-count"
+  run_progress >/dev/null 2>"$WORLD/stderr" || fail 'a retried PR listing must publish state'
+  assert_equals 'null' "$(jq -r '[.coverage[] | select(contains("Starts held"))] | first' "$file")" 'a transient failure does not hold starts'
+  assert_equals '1' "$(jq '.start_requests | length' "$file")" 'a retried listing lets the start through'
+  assert_contains "$(cat "$lane/.run.err")" 'open PR listing failed for example/project (attempt 1)' 'the retried failure is logged'
+  # Persistent: both attempts fail, starts stay held and the blocker names the repo and the cause.
+  echo 5 > "$WORLD/fail-count"
+  run_progress >/dev/null 2>"$WORLD/stderr" || fail 'a failed PR listing must still publish state'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'a persistent failure still holds starts'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete' \
+    'the held reason stays'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'example/project: gh-axi read failed (exit 1): Get https://api.github.com/repos/x: dial tcp: i/o timeout token [redacted]' \
+    'the blocker names the real failure'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")$(cat "$lane/.run.err")" 'FIXTURESECRET' 'no token reaches the digest or the log'
+  assert_contains "$(cat "$lane/.run.err")" '(attempt 2)' 'the run log names both attempts'
+  # A stray non-PR line beside PR data does not abort the listing.
+  rm "$WORLD/fail-count"
+  cat > "$FAKEBIN/gh-axi" <<SH
+#!/usr/bin/env bash
+case "\$3" in */pulls\?*) echo 'notice: a new gh-axi version is available' ;; esac
+exec "$stub" "\$@"
+SH
+  python3 -I - "$WORLD/prs.json" <<'PY'
+import json, sys
+json.dump([{"title": "Some open PR", "number": 1, "html_url": "https://github.com/example/project/pull/1"}], open(sys.argv[1], "w"))
+PY
+  run_progress >/dev/null 2>&1 || fail 'a stray notice line must not abort the listing'
+  assert_equals '0' "$(jq '[.coverage[] | select(contains("open PR discovery"))] | length' "$file")" 'a stray notice line is skipped'
+  pass 'progress: PR listing failures are named and retried once, and persistent ones still hold starts'
+}
+
 test_github_reads_respect_deadline() {
   make_world github-deadline
   stub_sleep
@@ -1497,6 +1580,8 @@ test_linear_rate_limit_recovers
 test_merge_ask_pr_state
 test_merged_pr_asks_follow_effective_class
 test_github_reads_respect_deadline
+test_open_pr_listing_failures
+test_work_items_under_one_issue_get_distinct_ids
 test_review_words_and_explicit_asks
 test_partial_coverage_starts
 test_linear_pagination

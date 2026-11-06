@@ -209,8 +209,18 @@ def command(args, input_bytes=None, timeout=120):
     proc = subprocess.run(args, input=input_bytes, capture_output=True, timeout=timeout, check=False)
     if proc.returncode:
         # External stderr may contain credentials; keep the failure structural.
-        raise RuntimeError("%s read failed (exit %d)" % (args[0], proc.returncode))
+        raise RuntimeError("%s read failed (exit %d)%s" % (args[0], proc.returncode, failure_hint(proc.stderr)))
     return proc.stdout.decode("utf-8")
+
+
+def failure_hint(stderr):
+    """First stderr line, with token-like strings removed and bounded, so a log can name the cause."""
+    text = (stderr or b"").decode("utf-8", "replace").strip().splitlines()
+    if not text:
+        return ""
+    line = re.sub(r"(?i)(authorization|token|bearer|password|secret|key)\S*[:= ]+\S+", r"\1 [redacted]", text[0])
+    line = re.sub(r"\b[A-Za-z0-9_\-]{32,}\b|\b(?:gh[pousr]_|github_pat_)\w+", "[redacted]", line)
+    return ": " + line[:200]
 
 
 class LinearDiscovery:
@@ -431,17 +441,38 @@ def remaining(deadline):
     return left
 
 
+def list_open_prs(repo, deadline):
+    raw = command(["gh-axi", "api", "GET", "/repos/" + repo + "/pulls?state=open&per_page=100",
+                   "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'], timeout=remaining(deadline))
+    prs, stray = [], []
+    for line in raw.splitlines():
+        if line.startswith("PRJSON "):
+            prs.append(json.loads(line[7:]))
+        elif line.strip():
+            stray.append(line.strip())
+    # A notice line beside PR data is skipped; text with no PR data may be an error, so it is not an empty list.
+    if stray and not prs:
+        raise RuntimeError("unexpected GitHub output (no PR data): " + stray[0][:120])
+    return prs
+
+
 def open_prs(repos, deadline):
+    """List open PRs; a failed repo is retried once and then named in the raised error."""
     prs = []
     for repo in repos:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
             raise RuntimeError("repos must contain comma-separated owner/repo names")
-        raw = command(["gh-axi", "api", "GET", "/repos/" + repo + "/pulls?state=open&per_page=100",
-                       "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'], timeout=remaining(deadline))
-        for line in raw.splitlines():
-            if not line.startswith("PRJSON "):
-                raise RuntimeError("GitHub read returned an unexpected PR format")
-            prs.append(json.loads(line[7:]))
+        for attempt in (1, 2):
+            try:
+                prs.extend(list_open_prs(repo, deadline))
+                break
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                reason = ("timeout after %.0f seconds" % exc.timeout if isinstance(exc, subprocess.TimeoutExpired)
+                          else str(exc) or type(exc).__name__)
+                print("open PR listing failed for %s (attempt %d): %s" % (repo, attempt, reason), file=sys.stderr)
+                if attempt == 2 or str(exc) == "run deadline reached":
+                    raise RuntimeError("%s: %s" % (repo, reason)) from None
+                time.sleep(min(2, max(0, deadline - time.monotonic())))
     return prs
 
 
@@ -1091,9 +1122,20 @@ def page_state(doc, officer, previous, repos, log_url, reported):
     sources = {"security": "cve", "cve": "cve", "code-review": "review", "bug": "bug",
                "requested-feature": "feature", "requested-fleet": "fleet", "filler": "filler"}
 
+    counts = {g: collections.Counter() for g in used}
+    for g, rows in (("doing", doc["doing"][:30]), ("done", doc["done"]), ("asking", doc["start_requests"] + doc["asks_for_lee"])):
+        counts[g].update(stable_key(r) for r in rows)
+
     def unique(key, group, row):
-        if key in used[group]:
-            key += "-" + hashlib.sha256(row.get("owner_home", "").encode()).hexdigest()[:12]
+        # Work items under one Linear issue share its key; tell them apart by their own id, link and title,
+        # which do not depend on run order, so each id is unique per item and stable across runs.
+        if counts[group][key] > 1 or key in used[group]:
+            own = "\0".join(str(row.get(f, "")) for f in ("owner_home", "id", "link", "title"))
+            base = key[:46] + "-" + hashlib.sha256(own.encode()).hexdigest()[:12]
+            key, n = base, 1
+            while key in used[group]:
+                n += 1
+                key = "%s-%d" % (base, n)
         used[group].add(key)
         return key
 
@@ -1116,9 +1158,9 @@ def page_state(doc, officer, previous, repos, log_url, reported):
             entry["project"] = plain(row["project"], 60)
         page["doing"].append(entry)
     for row in doc["done"]:
-        if reported is not None and stable_key(row) in reported and stable_key(row) not in old_done:
-            continue
         key = unique(stable_key(row), "done", row)
+        if reported is not None and stable_key(row) in reported and key not in old_done:
+            continue
         entry = {"id": key, "description": plain("Recorded work outcome: " + row["title"], 200),
                  "at": observed_time(old_done.get(key, {}).get("at"), now), "outcome": row.get("outcome", "ok"),
                  "detail": plain(row["reason"], 300)}
@@ -1263,8 +1305,8 @@ def main(argv):
         problems.append("Linear discovery: " + str(exc))
     try:
         prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()], discovery.deadline)
-    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
-        blockers.append("open PR discovery unavailable or incomplete")
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        blockers.append("open PR discovery unavailable or incomplete (%s)" % (str(exc) or type(exc).__name__))
     problems = ["Linear labels not readable by linear-axi"] + problems
     configured = set(filter(None, args.requested.split(",")))
     checked, unchecked = set(), {}
