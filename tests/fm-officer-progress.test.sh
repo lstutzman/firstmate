@@ -431,7 +431,7 @@ test_page_ids_ignore_sibling_count() {
   cat > "$WORLD_HOME/data/backlog.md" <<'MD'
 ## In flight
 
-- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+- [ ] pc23-a - PC-23 first piece (kind: bug)
 
 ## Done
 
@@ -456,6 +456,8 @@ MD
   run_progress >/dev/null || fail 'sibling-added run failed'
   NOW=$previous_now
   assert_equals '2' "$(jq '[.doing[].id] | unique | length' "$file")" 'a second item under one issue gets its own id'
+  assert_equals 'https://github.com/example/project/pull/4596' \
+    "$(jq -r --arg id "$lone_id" '.doing[] | select(.id == $id) | .link' "$file")" 'an item keeps its id when its PR link appears'
   assert_contains "$(jq -r '.doing[].id' "$file")" "$lone_id" 'an existing item keeps its id when a sibling appears'
   assert_equals "$lone_started" "$(jq -r --arg id "$lone_id" '.doing[] | select(.id == $id) | .started_at' "$file")" \
     'an existing item keeps its start time when a sibling appears'
@@ -477,7 +479,41 @@ MD
   assert_equals "$lone_id" "$(jq -r '[.doing[].id] | join(" ")' "$file")" 'the remaining item keeps its id when a sibling leaves'
   assert_equals "$lone_started" "$(jq -r '.doing[0].started_at' "$file")" 'the remaining item keeps its start time'
   assert_equals '2' "$(jq '.done | length' "$file")" 'both reported outcomes stay on the page'
-  pass 'progress: page ids do not change as sibling items come and go'
+  pass 'progress: page ids do not change as sibling items come and go or a PR link appears'
+}
+
+test_legacy_page_ids_carry_over() {
+  make_world legacy-ids
+  local file="$WORLD_HOME/data/officers/progress/progress-state.json" previous_now=$NOW
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+- [x] pc27-b - PC-2700 two outcome (kind: bug)
+MD
+  run_progress >/dev/null || fail 'legacy-id first run failed'
+  # The page as an earlier release wrote it: bare issue keys, shared by items under one issue.
+  jq '.doing |= map(.id = "PC-23" | .started_at = "2026-01-01T00:00:00Z")
+      | .done |= map(.id = "PC-2700" | .at = "2026-01-02T00:00:00Z")' "$file" > "$file.new" && mv "$file.new" "$file"
+  NOW=$((NOW + 60))
+  run_progress >/dev/null || fail 'legacy-id second run failed'
+  NOW=$previous_now
+  assert_equals '2' "$(jq '[.done[].id] | unique | length' "$file")" 'reported outcomes under a legacy id stay on the page'
+  assert_equals '2026-01-02T00:00:00Z 2026-01-02T00:00:00Z' "$(jq -r '[.done[].at] | join(" ")' "$file")" \
+    'each outcome keeps the legacy time'
+  assert_equals '2026-01-01T00:00:00Z' "$(jq -r '.doing[0].started_at' "$file")" 'doing keeps the legacy start time'
+  assert_equals '0' "$(jq '[.doing[].id, .done[].id] | map(select(. == "PC-23" or . == "PC-2700")) | length' "$file")" \
+    'only new ids are written'
+  NOW=$((NOW + 120))
+  run_progress >/dev/null || fail 'legacy-id third run failed'
+  NOW=$previous_now
+  assert_equals '2026-01-02T00:00:00Z 2026-01-02T00:00:00Z' "$(jq -r '[.done[].at] | join(" ")' "$file")" \
+    'times stay after the ids settle'
+  pass 'progress: page state written with legacy ids keeps its outcomes and times'
 }
 
 test_open_pr_listing_failures() {
@@ -1642,6 +1678,7 @@ test_github_reads_respect_deadline
 test_open_pr_listing_failures
 test_work_items_under_one_issue_get_distinct_ids
 test_page_ids_ignore_sibling_count
+test_legacy_page_ids_carry_over
 test_review_words_and_explicit_asks
 test_partial_coverage_starts
 test_linear_pagination

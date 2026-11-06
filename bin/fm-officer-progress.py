@@ -1105,8 +1105,8 @@ def stable_key(row):
 
 
 def page_id(row):
-    """Issue key plus a hash of the work item's own fields, so it never depends on sibling items."""
-    own = "\0".join(str(row.get(f, "")) for f in ("owner_home", "id", "link", "title"))
+    """Issue key plus a hash of the work item's own identity, so it never depends on siblings or mutable fields."""
+    own = "\0".join(str(row.get(f, "")) for f in ("owner_home", "id"))
     return stable_key(row)[:46] + "-" + hashlib.sha256(own.encode()).hexdigest()[:12]
 
 
@@ -1127,6 +1127,14 @@ def page_state(doc, officer, previous, repos, log_url, reported):
     sources = {"security": "cve", "cve": "cve", "code-review": "review", "bug": "bug",
                "requested-feature": "feature", "requested-fleet": "fleet", "filler": "filler"}
 
+    def prior(old, key, row):
+        """The previous entry under this id, or under an id written before page_id existed."""
+        legacy = stable_key(row)
+        for k in (key, legacy, legacy + "-" + hashlib.sha256(row.get("owner_home", "").encode()).hexdigest()[:12]):
+            if k in old:
+                return old[k]
+        return None
+
     def unique(group, row):
         base = key = page_id(row)
         n = 1
@@ -1140,12 +1148,12 @@ def page_state(doc, officer, previous, repos, log_url, reported):
         key = unique("asking", row)
         return {"key": key, "kind": "instruction", "question": plain(question, 300),
                 "waiting_on": "firstmate", "link": https_url(row.get("link")) or default_link,
-                "asked_at": observed_time(old_asking.get(key, {}).get("asked_at"), now)}
+                "asked_at": observed_time((prior(old_asking, key, row) or {}).get("asked_at"), now)}
 
     for row in doc["doing"][:30]:
         key = unique("doing", row)
         entry = {"id": key, "description": plain("Watching work: " + row["title"], 200),
-                 "started_at": observed_time(old_doing.get(key, {}).get("started_at"), now)}
+                 "started_at": observed_time((prior(old_doing, key, row) or {}).get("started_at"), now)}
         if sources.get(row["authorising_class"]):
             entry["source"] = sources[row["authorising_class"]]
         link = https_url(row.get("link"))
@@ -1156,10 +1164,11 @@ def page_state(doc, officer, previous, repos, log_url, reported):
         page["doing"].append(entry)
     for row in doc["done"]:
         key = unique("done", row)
-        if reported is not None and page_id(row) in reported and key not in old_done:
+        old = prior(old_done, key, row)
+        if reported is not None and page_id(row) in reported and old is None:
             continue
         entry = {"id": key, "description": plain("Recorded work outcome: " + row["title"], 200),
-                 "at": observed_time(old_done.get(key, {}).get("at"), now), "outcome": row.get("outcome", "ok"),
+                 "at": observed_time((old or {}).get("at"), now), "outcome": row.get("outcome", "ok"),
                  "detail": plain(row["reason"], 300)}
         if sources.get(row["authorising_class"]):
             entry["source"] = sources[row["authorising_class"]]
