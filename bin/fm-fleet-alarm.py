@@ -423,6 +423,9 @@ def check(channel):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
+            if channel == 'timer':
+                print('RUN-RESULT ' + json.dumps({'summary': 'skipped: another fleet-alarm run holds the lock',
+                                                  'counts': {'alerts': 0}, 'outcome': 'skipped'}))
             return
         record = STATE / '.fleet-alarm.json'
         stored = json.loads(record.read_text()) if record.exists() else {}
@@ -534,9 +537,9 @@ def check(channel):
         if channel == 'timer':
             quota = ('quota unreadable' if 'quota-read' in raw
                      else quota_info.removeprefix('Claude quota context (not an alarm): ') or 'quota not read')
-            raised = len(alarms)
-            summary = ((f'{raised} alert(s) raised' if raised else 'no alerts') + f'; {quota}')[:200]
-            print('RUN-RESULT ' + json.dumps({'summary': summary, 'counts': {'alerts': raised}}))
+            open_alerts = len(holding)
+            summary = ((f'{open_alerts} alert(s) open' if open_alerts else 'no alerts') + f'; {quota}')[:200]
+            print('RUN-RESULT ' + json.dumps({'summary': summary, 'counts': {'alerts': open_alerts}}))
 
 
 def setup(action):
