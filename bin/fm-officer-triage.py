@@ -90,8 +90,10 @@ SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\||\n)\s*")
 SEGMENT_SPLIT_OPS = re.compile(r"\s*(&&|\|\||;|\||\n)\s*")
 # A consumer that prints only a count or an exit status, never the values it reads.
 COUNT_ONLY_RE = re.compile(
-    r"^(?:(?:grep|egrep|fgrep)\s+(?:\S+\s+)*?(?:-[A-Za-z]*[cq][A-Za-z]*|--count|--quiet|--silent)(?:\s|$)"
+    r"^(?:(?:grep|egrep|fgrep)\s+(?:\S+\s+)*?(?:-[A-Za-dg-z]*[cq][A-Za-z]*|--count|--quiet|--silent)(?:\s|$)"
     r"|wc(?:\s+-[lwcm]+)*\s*$)")
+# A stage that only passes on part of what it reads to the next stage, writing nothing else.
+PURE_FILTER_RE = re.compile(r"^(?:grep|egrep|fgrep|sort|uniq|cut|awk)(?:\s[^<>]*)?$")
 HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 NETWORKIDLE_RE = re.compile(
@@ -151,17 +153,22 @@ def command_segments(command):
 
 
 def count_only_env_segments(command):
-    """Indexes (into command_segments) of env/printenv segments whose output
-    goes straight into a count-only consumer, so no value is printed."""
+    """Indexes (into command_segments) of segments whose output is piped,
+    through pure filters only, into a count-only consumer, so no value is printed."""
     parts = SEGMENT_SPLIT_OPS.split(flat_command(command).strip())
     segments = parts[0::2]
     ops = parts[1::2]
     kept = [i for i, seg in enumerate(segments) if seg]
     skipped = set()
-    for pos, i in enumerate(kept[:-1]):
-        nxt = kept[pos + 1]
-        if ops[i] == "|" and nxt == i + 1 and COUNT_ONLY_RE.match(segments[nxt]):
-            skipped.add(pos)
+    for pos, i in enumerate(kept):
+        j = i + 1
+        while j < len(segments) and ops[j - 1] == "|" and segments[j]:
+            if COUNT_ONLY_RE.match(segments[j]):
+                skipped.add(pos)
+                break
+            if not PURE_FILTER_RE.match(segments[j]):
+                break
+            j += 1
     return skipped
 
 

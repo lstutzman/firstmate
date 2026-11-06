@@ -40,6 +40,12 @@ spec = {"sessions": [
                        "new_string": "await page.waitForLoadState('networkidle')"}, "", False],
              ["Edit", {"file_path": "/y.ts", "old_string": "a",
                        "new_string": "await page.goto(u, { waitUntil: 'networkidle' })"}, "", False]]},
+  # The 2026-11-05 incident: a count of env lines prints no values.
+  {"machine": "alpha", "id": "s-env", "first_prompt": "hello",
+   "calls": [["Bash", {"command": c}, "", False] for c in (
+     "env | grep -c GH_TOKEN", "env | grep GH_ | wc -l", "env | sort | grep -c X",
+     "printenv | grep -q X", "env | grep -c X | tee out",
+     "env", "env | grep -ec X", "env | tee out | grep -c X", "env | grep X > out | wc -l")]},
   {"machine": "alpha", "id": "s-failed", "first_prompt": ": Firstmate operational input waiting: read 'y'",
    "calls": [["Read", msg, brief_failed, False],
              ["Bash", {"command": "sleep 30 && git status"}, "", False]]},
@@ -161,7 +167,7 @@ test_rule_violation_reports_command_head_only() {
   home=$(make_world rules)
   run_officer "$home" >/dev/null || fail "run must succeed"
   json="$home/data/officers/triage/$DATE.json"
-  findings=$(jq -c '[.findings[] | select(.kind == "rule-violation")]' "$json")
+  findings=$(jq -c '[.findings[] | select(.kind == "rule-violation" and .session == "alpha:s-done")]' "$json")
   assert_equals "networkidle rm-not-trash" "$(printf '%s' "$findings" | jq -r '[.[].rule] | sort | join(" ")')" \
     "only the bare rm and the waitUntil networkidle edit are violations, not heredoc bodies or quoted patterns"
   assert_equals 1 "$(printf '%s' "$findings" | jq -r '.[] | select(.rule == "rm-not-trash") | .count')" \
@@ -183,32 +189,16 @@ test_rule_violation_reports_command_head_only() {
 }
 
 test_env_dump_rule_ignores_count_only_pipelines() {
-  local out
-  out=$(python3 -I - "$ROOT/bin/fm-officer-triage.py" <<'PY'
-import importlib.util, sys
-spec = importlib.util.spec_from_file_location("triage", sys.argv[1])
-triage = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(triage)
-rule = [r for r in triage.SEGMENT_RULES if r[0] == "env-dump"][0][2]
-dot = "." + "env"  # keep the literal dot-env read out of this file's command text
-cases = [
-  ("env | grep -c GH_TOKEN", 0), ("printenv | grep -q X", 0), ("env | wc -l", 0),
-  ("env | grep --count X", 0), ("env | grep --quiet X", 0), ("env | grep -qc X", 0),
-  ("printenv | wc", 0), ("env | grep -c X | tee out", 0),
-  ("env", 1), ("printenv", 1), ("env | grep GH_TOKEN", 1), ("env | sort", 1),
-  ("env | tee out", 1), ("env | tee out | grep -c X", 1), ("env | grep -c X; env", 1),
-  ("cat " + dot, 1), ("cat /home/x/" + dot, 1),
-]
-for command, want in cases:
-    segs = triage.command_segments(command)
-    skip = triage.count_only_env_segments(command)
-    got = sum(1 for i, seg in enumerate(segs) if i not in skip and rule.search(seg))
-    print(("ok" if got == want else "BAD"), command, got)
-PY
-)
-  assert_no_grep "^BAD" <(printf '%s\n' "$out") "every env-dump case matches"
-  assert_contains "$out" "ok env | grep -c GH_TOKEN 0" "a grep -c count is not an env-dump"
-  assert_contains "$out" "ok env | grep GH_TOKEN 1" "a grep that prints the value is still an env-dump"
+  local home json finding
+  home=$(make_world envdump)
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/triage/$DATE.json"
+  finding=$(jq -c '[.findings[] | select(.kind == "rule-violation" and .rule == "env-dump")]' "$json")
+  assert_equals 1 "$(printf '%s' "$finding" | jq -r 'length')" "env-dump is one finding for the one session"
+  assert_equals alpha:s-env "$(printf '%s' "$finding" | jq -r '.[0].session')" "the finding names the session"
+  assert_equals 4 "$(printf '%s' "$finding" | jq -r '.[0].count')" \
+    "a bare env, grep -ec, a tee and a redirect print values; the four counts and checks do not"
+  assert_contains "$(printf '%s' "$finding" | jq -r '.[0].summary')" "e.g. env" "the finding carries the head env"
   pass "fm-officer triage: env-dump ignores count-only pipelines and still flags value-printing forms"
 }
 
