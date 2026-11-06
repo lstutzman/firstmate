@@ -85,6 +85,7 @@ JEV_CANDIDATES = 3
 JEV_CALLS_MAX = 300
 JEV_TIMEOUT = 20
 START_MIN_SCORE = 4.0
+START_ATTEMPT_CAP = 3  # starts for one fingerprint (a recurrence is a new item) before the owning office decides
 PATTERN_BATCH = 40
 EXISTING_VIEWS = 3
 VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
@@ -712,7 +713,7 @@ def execute_for(officer, row, rid, what, main_home, start_homes):
                      "note", "--request-id", rid, "--json", "--", body]}
 
 
-def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes, handled):
+def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes, handled, attempts=None):
     """(start requests, held findings, asks for Lee): the rubric admits, the reserved classes hold.
 
     An item is handled (started or held) once; `handled` maps its Linear id to the date, so a same-day
@@ -721,8 +722,10 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     starts like a new finding, which is how the found count reaches the start decision.
     A finding may carry `start_what` (the request's wording, in place of "Start this Linear item.") and `start_row`
     (extra fields for the request's evidence); `start_generation` (the merged fix it follows) gives a restart its own request id.
+    `attempts` (fingerprint -> the items started for it) caps a loop: a recurrence is a new item, so once START_ATTEMPT_CAP items
+    have started for one fingerprint the next is not started but asked for as one keyed needs-decision (`<id>-<issue>-fix-cap`).
     """
-    starts, held, seen = [], [], set()
+    starts, held, seen, capped = [], [], set(), []
     sources = rubric.start_sources if rubric.loaded else set(officer.sources)
     severities = rubric.start_severities if rubric.loaded else set(officer.severities)
     for f in findings:
@@ -742,9 +745,18 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             if issue:
                 handled[issue] = date
                 seen.add(issue)
+        elif fresh and issue and rubric.loaded and attempts is not None and f["fingerprint"] and (
+                issue not in attempts.get(f["fingerprint"], []) and len(attempts.get(f["fingerprint"], [])) >= START_ATTEMPT_CAP):
+            handled[issue] = date
+            seen.add(issue)
+            capped.append({"fingerprint": f["fingerprint"], "title": f["title"], "issue": issue, "tries": len(attempts[f["fingerprint"]])})
         elif fresh and issue and rubric.loaded:
             handled[issue] = date
             seen.add(issue)
+            if attempts is not None and f["fingerprint"]:
+                tried = attempts.setdefault(f["fingerprint"], [])
+                if issue not in tried:
+                    tried.append(issue)
             row = {"kind": "%s-finding" % officer.id, "title": f["title"], "severity": f["severity"], "score": f["score"], "found": f["found"],
                    "source": f["source"], "fingerprint": f["fingerprint"], "issue": issue, "linear_id": issue,
                    "project": f["project"], "linear_only": not f["project"], "reason": "Real %s finding admitted by the rubric" % f["severity"]}
@@ -753,6 +765,10 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             row["execute"] = execute_for(officer, row, rid, f.get("start_what") or "Start this Linear item.", main_home, start_homes)
             starts.append(row)
     asks = []
+    for c in capped:
+        key = "%s-%s-fix-cap" % (officer.id, c["issue"])
+        asks.append({"key": key, "findings": [c], "line": "needs-decision [key=%s]: %s has failed again after %d started fixes, so no fourth start; the owning office decides" % (
+            key, c["title"], c["tries"])})
     if held:
         key = "%s-holds-%s" % (officer.id, date)
         asks.append({"key": key, "findings": held, "line": "needs-decision [key=%s]: %d finding(s) held for Lee, they match a reserved class: %s" % (
