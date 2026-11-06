@@ -724,7 +724,7 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     (extra fields for the request's evidence); `start_generation` (the merged fix it follows) gives a restart its own request id.
     `attempts` (fingerprint -> the items started for it) caps a loop: a recurrence is a new item, so once START_ATTEMPT_CAP items
     have started for one fingerprint the next is not started; it goes to the start-home office as a capped-repeat request (kind `<id>-fix-cap`),
-    never into asks_for_lee, and the office escalates to Lee only for a reserved class.
+    never into asks_for_lee, and the office dispatches no fourth fix and files the keyed needs-decision `<id>-<issue>-fix-cap` so Lee decides the next step.
     """
     starts, held, seen = [], [], set()
     sources = rubric.start_sources if rubric.loaded else set(officer.sources)
