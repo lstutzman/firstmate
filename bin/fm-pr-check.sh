@@ -115,7 +115,9 @@ pr_check_pr_retired() {  # <id> <recorded-url>
 # the task's copy. state/<id>.nm-released records the handed-off PR and head
 # that were attempted, so each head is attempted once: a success prints a
 # released: line, and a failure prints an actionable: line on stderr and
-# leaves the run as it is. Nothing is written to the task's status, so an
+# leaves the run as it is. An attempt cut short by a caller budget below the
+# full bound is not an attempt: it records and reports nothing, so a later
+# sweep tries that head again. Nothing is written to the task's status, so an
 # office still counts the finished ship as landing. A project this home
 # merges, and a task held for the captain, have no handoff record and are
 # never released. Registration attempts it straight after the handoff, except
@@ -126,6 +128,7 @@ pr_check_meta_value() {  # <meta> <key>
   grep "^$2=" "$1" | tail -1 | cut -d= -f2- || true
 }
 
+PR_CHECK_RELEASE_BOUND=120
 pr_check_release_nm_run() {  # <id> <seconds>
   local id=$1 seconds=$2 meta="$STATE/$1.meta" record="$STATE/$1.merge-handoff" marker="$STATE/$1.nm-released"
   local kind sent url wt last note out rc=0 tmp
@@ -149,6 +152,7 @@ pr_check_release_nm_run() {  # <id> <seconds>
     *) return 0 ;;
   esac
   out=$(cd "$wt" && fm_run_timed "$seconds" no-mistakes axi handoff 2>&1) || rc=$?
+  ! fm_timed_out "$rc" || [ "$seconds" -ge "$PR_CHECK_RELEASE_BOUND" ] || return 0
   { tmp=$(mktemp "$STATE/.fm-nm-released.XXXXXX") && printf '%s\n' "$sent" > "$tmp" && mv -f -- "$tmp" "$marker"; } \
     || { [ -z "${tmp:-}" ] || rm -f -- "$tmp"; printf 'actionable: %s could not record its no-mistakes run release, so a later sweep attempts it again\n' "$id" >&2; }
   if [ "$rc" -eq 0 ]; then
@@ -172,6 +176,7 @@ pr_check_release_sweep() {
     fm_pr_task_id_valid "$id" || continue
     left=$((start + budget - $(date +%s)))
     [ "$left" -gt 0 ] || break
+    [ "$left" -le "$PR_CHECK_RELEASE_BOUND" ] || left=$PR_CHECK_RELEASE_BOUND
     err=$(pr_check_release_nm_run "$id" "$left" 2>&1 >/dev/null) || true
     [ -z "$err" ] || printf '%s\n' "${err#actionable: }"
   done
@@ -597,5 +602,5 @@ pr_check_merge_handoff() {
   printf 'handed off: %s to home %s\n' "$URL" "$merger"
 }
 pr_check_merge_handoff
-[ "${FM_PR_CHECK_MERGE:-}" = 1 ] || [ "${FM_PR_CHECK_SCAN:-}" = 1 ] || pr_check_release_nm_run "$ID" 120
+[ "${FM_PR_CHECK_MERGE:-}" = 1 ] || [ "${FM_PR_CHECK_SCAN:-}" = 1 ] || pr_check_release_nm_run "$ID" "$PR_CHECK_RELEASE_BOUND"
 printf 'armed: state/%s.check.sh\n' "$ID"

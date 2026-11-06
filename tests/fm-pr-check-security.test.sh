@@ -260,6 +260,7 @@ SH
 # CLI's help states; FM_TEST_NM_CHECKS_PASSED=1 is a run that has.
 if [ "${1:-} ${2:-}" = "axi handoff" ]; then
   [ -z "${FM_TEST_NM_HANDOFF_LOG:-}" ] || printf '%s\n' "$PWD" >> "$FM_TEST_NM_HANDOFF_LOG"
+  [ -z "${FM_TEST_NM_HANDOFF_SLEEP:-}" ] || sleep "$FM_TEST_NM_HANDOFF_SLEEP"
   [ "${FM_TEST_NM_CHECKS_PASSED:-0}" = 1 ] || { echo "error: run has not reached checks-passed" >&2; exit 1; }
   [ "${FM_TEST_NM_HANDOFF_RC:-0}" = 0 ] || { echo "handoff refused" >&2; exit "$FM_TEST_NM_HANDOFF_RC"; }
   exit 0
@@ -1540,6 +1541,21 @@ test_handed_off_nm_run_is_released_once_at_green() {
   out=$(FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_NM_HANDOFF_RC=3 release) || fail "nm-release: a repeat sweep failed"
   [ -z "$out" ] && [ "$(attempts)" -eq 4 ] || fail "nm-release: the sweep retried or re-reported a failed release: $out"
 
+  # A handoff cut short by the sweep's own time budget is not a failure: it
+  # records and reports nothing, and a later sweep releases that head.
+  printf 'working [at=1700000400]: fixing another finding\n' >> "$status"
+  FM_TEST_GH_HEAD=5555555555555555555555555555555555555555 register >/dev/null 2>&1 \
+    || fail "nm-release: registering the budget-cut head failed"
+  printf 'done [at=1700000500]: PR %s checks green\n' "$url" >> "$status"
+  out=$(FM_CHECK_TIMEOUT=7 FM_TEST_NM_HANDOFF_SLEEP=5 FM_TEST_NM_CHECKS_PASSED=1 release) \
+    || fail "nm-release: the budget-cut sweep failed"
+  [ "$(attempts)" -eq 5 ] || fail "nm-release: the budget-cut sweep did not start the handoff"
+  [ -z "$out" ] || fail "nm-release: a handoff cut by the sweep budget was reported as a failure: $out"
+  out=$(FM_TEST_NM_CHECKS_PASSED=1 release) || fail "nm-release: the sweep after a budget cut failed"
+  [ -z "$out" ] && [ "$(attempts)" -eq 6 ] || fail "nm-release: a handoff cut by the sweep budget was not tried again: $out"
+  [ "$(cat "$state/task-a.nm-released")" = "$(cat "$state/task-a.merge-handoff")" ] \
+    || fail "nm-release: the retried release was not recorded"
+
   # A project this home merges hands nothing off, so its run is never released.
   write_task_meta "$dir" task-b
   printf 'done [at=1700000100]: PR https://github.com/o/r/pull/43 checks green\n' > "$state/task-b.status"
@@ -1547,7 +1563,7 @@ test_handed_off_nm_run_is_released_once_at_green() {
   FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_NM_HANDOFF_LOG="$dir/nm-handoff.log" BASE_PATH="$BASE_PATH:$tasks_path" \
     run_check_entry "$dir" task-b https://github.com/o/r/pull/43 >/dev/null 2>&1 || fail "nm-release: registering a self-merged PR failed"
   FM_TEST_NM_CHECKS_PASSED=1 release >/dev/null || fail "nm-release: the sweep failed for a self-merged PR"
-  [ "$(attempts)" -eq 4 ] || fail "nm-release: a project this home merges had its run released"
+  [ "$(attempts)" -eq 6 ] || fail "nm-release: a project this home merges had its run released"
   pass "fm-pr-check releases a handed-off no-mistakes run once per head after it reports green, reports a failure once, and never for a project it merges"
 }
 
