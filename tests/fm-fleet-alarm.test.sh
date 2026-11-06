@@ -628,6 +628,11 @@ edit_mate_summary "value['counts']['endpoints']=4; value['endpoints'].append(dic
 assert_contains "$(run_alarm check)" 'holding work silent' 'an ask naming a nested secondmate child covers no in-flight item'
 mate 0 0 0
 run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=unrelated]: card' 'blocked [at=@AT@] [key=x]: stuck'
+edit_mate_summary "value['counts'].update(in_flight=1, waiting_on_merge=1, holds=1)"
+assert_contains "$(run_alarm check)" 'holding work silent' 'an ask covering nothing never exempts when every in-flight item is waiting on merge'
+mate 0 0 0
+run_alarm check >/dev/null
 open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'blocked [at=@AT@] [key=item-b]: stuck b' 'blocked [at=@AT@] [key=item-c]: stuck c'
 assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked line is not a needs-decision and never exempts its item'
 mate 0 0 0

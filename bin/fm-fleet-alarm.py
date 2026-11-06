@@ -360,7 +360,7 @@ done < "$2"
                 continue
             if waiting_on_captain(summary, counts):
                 continue
-            if asks and counts.get('in_flight', 0) and waiting_on_open_ask(summary, counts, asks.split()):
+            if asks and work[0] and waiting_on_open_ask(summary, counts, asks.split()):
                 continue
             if working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg):
                 continue
