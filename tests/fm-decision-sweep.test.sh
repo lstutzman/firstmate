@@ -4,6 +4,8 @@
 # decisions for review, closes those only when named with --key, and touches
 # nothing else. A fake gh on PATH answers `gh pr view <url> --json ...` from
 # per-URL JSON files; a URL with no file makes the fake fail like an unreachable forge.
+# Also covers a decision or blocker whose opening line names a
+# [dep=pr/<owner>/<repo>/<n>] dependency, and --settle-only, the watcher's mode.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -20,6 +22,7 @@ mkdir -p "$PRS"
 cat > "$FAKEBIN/gh" <<'SH'
 #!/usr/bin/env bash
 [ "$1 $2" = "pr view" ] || exit 2
+printf '%s\n' "$3" >> "$FAKE_GH_PRS/.calls"
 f="$FAKE_GH_PRS/$(printf '%s' "$3" | tr '/:' '__')"
 [ -f "$f" ] || { echo "gh: could not resolve to a PullRequest" >&2; exit 1; }
 cat "$f"
@@ -233,6 +236,97 @@ EOF
   pass "fleet ledger hook runs when config/fleet-ledger exists"
 }
 
+test_dependency_clears_the_wait_once_its_pr_merges() {
+  local h out
+  h=$(mkhome dep <<EOF
+needs-decision [at=1790000001] [cause=external] [key=adopt-6] [dep=pr/o/r/6]: please adopt and merge $(U 6) and see $(U 3)
+blocked [at=1790000002] [cause=external] [key=wait-on-7] [dep=pr/o/r/7]: waiting for the other home to merge it
+blocked [at=1790000003] [cause=external] [key=wait-on-2] [dep=pr/o/r/2]: waiting on a PR that was closed
+blocked [at=1790000004] [key=pending-reply-y] [dep=pr/o/r/1]: pending-reply-missed: reserved even with a dependency
+needs-decision [at=1790000005] [key=reopened] [dep=pr/o/r/1]: first ask
+needs-decision [at=1790000006] [key=reopened]: reopened without the tag, $(U 1)
+EOF
+  )
+  pr 6 OPEN
+  pr 7 OPEN
+  out=$(sweep "$h" --apply) || fail "apply exited nonzero: $out"
+  assert_contains "$out" "key=adopt-6 verdict=open prs=$(U 6)=OPEN" "the dependency, not the note's other PR, decides"
+  assert_contains "$out" "key=wait-on-7 verdict=open" "a blocker on an open PR stays open"
+  assert_contains "$out" "key=wait-on-2 verdict=manual" "a closed-unmerged dependency settles nothing"
+  assert_contains "$out" "key=reopened verdict=review" "a reopening line without the tag is free text again"
+  assert_not_contains "$out" "pending-reply-y" "reserved keys stay with their owner"
+  pr 6 MERGED 2026-11-05T12:00:00Z
+  pr 7 MERGED 2026-11-05T13:00:00Z
+  out=$(sweep "$h" --settle-only --apply) || fail "settle-only apply exited nonzero: $out"
+  assert_contains "$out" "key=adopt-6 verdict=settled" "the decision settles once its dependency merged"
+  assert_contains "$out" "key=wait-on-7 verdict=settled" "the blocker settles once its dependency merged"
+  assert_equals "wait-on-2 pending-reply-y reopened " "$(open_keys "$h")" "only the cleared waits left the fold"
+  assert_grep "resolved [key=wait-on-7] [at=" "$h/state/t.status" "the close carries the exact key and a stamp"
+  assert_grep "decision-sweep: $(U 7) merged 2026-11-05T13:00:00Z" "$h/state/t.status" "the close cites the merge"
+  pass "a dependency-tagged wait clears itself once its pull request merges"
+}
+
+test_settle_only_reads_only_settle_candidates() {
+  local h out
+  h=$(mkhome settleonly <<EOF
+needs-decision [at=1790000001] [key=merge-handoff-1]: [handoff=slarti] $(U 1) is ready to merge
+needs-decision [at=1790000002] [key=release-1720-go]: $(U 4) merged to main; go for production deploy?
+needs-decision [at=1790000003] [key=merge-handoff-12]: $(U 1) and $(U 12) are ready to merge
+needs-decision [at=1790000004] [key=captain-hold-x]: hold on $(U 1)
+EOF
+  )
+  : > "$PRS/.calls"
+  out=$(sweep "$h" --settle-only --apply) || fail "settle-only apply exited nonzero: $out"
+  assert_equals "$(U 1)" "$(cat "$PRS/.calls")" "only the matching handoff's PR was read"
+  assert_contains "$out" "key=merge-handoff-1 verdict=settled" "the matching handoff settles"
+  assert_not_contains "$out" "release-1720-go" "free-text asks are not listed"
+  assert_contains "$out" "candidates=1 settled=1 closed-by-key=0 review=0" "totals count only settle candidates"
+  assert_equals "release-1720-go merge-handoff-12 captain-hold-x " "$(open_keys "$h")" "everything else stays open"
+  pass "--settle-only reads the forge only for decisions that could settle"
+}
+
+# The live watcher runs the settle-only sweep on its own cadence, so a handed-off
+# wait clears with no one running the sweep by hand; turning the cadence off
+# leaves it open.
+start_watcher() {  # <home> [env-assignment...]
+  fm_test_track_watcher_state "$1/state"
+  env FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" FM_CONFIG_OVERRIDE="$1/config" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "${@:2}" "$ROOT/bin/fm-watch.sh" >/dev/null 2>&1 &
+}
+
+stop_watcher() {  # <home>
+  FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" "$ROOT/bin/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
+}
+
+test_watcher_clears_settled_waits_on_its_own() {
+  local on off i
+  on=$(mkhome watch-on <<EOF
+blocked [at=1790000001] [cause=external] [key=wait-on-8] [dep=pr/o/r/8]: waiting for the other home to merge it
+EOF
+  )
+  off=$(mkhome watch-off <<EOF
+blocked [at=1790000001] [cause=external] [key=wait-on-8] [dep=pr/o/r/8]: waiting for the other home to merge it
+EOF
+  )
+  mkdir -p "$on/config" "$off/config"
+  pr 8 MERGED 2026-11-05T14:00:00Z
+  start_watcher "$on"
+  start_watcher "$off" FM_DECISION_SWEEP_INTERVAL_SECS=0
+  i=0
+  while [ "$i" -lt 200 ] && { [ -n "$(open_keys "$on")" ] || [ ! -e "$off/state/.last-watcher-beat" ]; }; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  sleep 2
+  stop_watcher "$on"
+  stop_watcher "$off"
+  assert_equals "" "$(open_keys "$on")" "the watcher closed the wait once its PR had merged"
+  assert_grep "resolved [key=wait-on-8] [at=" "$on/state/t.status" "the close is a stamped resolved line"
+  assert_present "$off/state/.last-watcher-beat" "the watcher with the sweep off has polled"
+  assert_equals "wait-on-8 " "$(open_keys "$off")" "a zero cadence leaves the wait open"
+  pass "the watcher clears a dependency-tagged wait on its own cadence"
+}
+
 test_verdicts_and_skips
 test_dry_run_changes_nothing
 test_key_needs_apply
@@ -243,3 +337,6 @@ test_mixed_prs_close_once_all_land
 test_unkeyed_lines_need_a_key
 test_truncated_note_is_never_trusted
 test_ledger_hook_runs_when_configured
+test_dependency_clears_the_wait_once_its_pr_merges
+test_settle_only_reads_only_settle_candidates
+test_watcher_clears_settled_waits_on_its_own

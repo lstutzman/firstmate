@@ -4247,6 +4247,7 @@ FM_RETENTION_INTERVAL_SECS=86400   # seconds between the watcher's archive passe
 FM_RETENTION_PROCEVENT_SECS=259200   # age of a handled process-event sequence, counted from its handled marker, before its result is archived and emptied; unhandled sequences are never touched
 FM_RETENTION_PENDING_REPLY_SECS=604800   # age of a resolved pending-reply record, counted from its resolved_epoch, before it is archived and removed; a record still escalated, unclosed, or named by a backlog-handoff wake is never touched
 FM_RETENTION_MAX_ITEMS=5000   # most sequences, and most pending-reply records, one archive pass handles; a larger backlog drains over later passes
+FM_DECISION_SWEEP_INTERVAL_SECS=600   # seconds between the watcher's detached settle-only decision sweeps, which close an open decision once the PR it hands off or names as its dependency has merged (bin/fm-decision-sweep.sh); 0 turns the sweep off
 # sub-supervisor (bin/fm-supervise-daemon.sh); presence-gated via /afk
 FM_SUPERVISOR_BACKEND=             # optional supervisor endpoint backend override; see "Away-mode supervisor backend" for supported backends and detection
 FM_SUPERVISOR_TARGET=              # optional supervisor endpoint target override; tmux uses the exact forms owned by fm_backend_target_exists in bin/fm-backend.sh, herdr uses <session>:<pane-id>, t3code uses the thread id, otherwise auto-detected

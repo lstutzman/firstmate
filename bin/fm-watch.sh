@@ -3817,6 +3817,25 @@ home_summary_refresh_detached() {
   HOME_SUMMARY_PID=$!
 }
 
+# Self-clearing external waits: close open decisions whose PR dependency has
+# merged (bin/fm-decision-sweep.sh's header owns which ones), detached because
+# each candidate costs a forge read. Its closes are this home's own appends and
+# wake nothing. The stamp is touched at launch so a slow sweep is not relaunched.
+DECISION_SWEEP_PID=
+decision_sweep_detached() {
+  if [ -n "$DECISION_SWEEP_PID" ]; then
+    if kill -0 "$DECISION_SWEEP_PID" 2>/dev/null; then
+      return 0
+    fi
+    wait "$DECISION_SWEEP_PID" 2>/dev/null || triage_log "decision sweep did not close every settled wait"
+    DECISION_SWEEP_PID=
+  fi
+  touch "$STATE/.decision-sweep-last-run"
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
+    "$SCRIPT_DIR/fm-decision-sweep.sh" --settle-only --apply </dev/null >/dev/null 2>&1 &
+  DECISION_SWEEP_PID=$!
+}
+
 # Opt-in lane capacity facts (docs/configuration.md "Lane capacity"): publish
 # state/lane-capacity.json detached for the same beacon-freshness reason as the
 # home summary above. bin/fm-capacity.sh's header owns the document.
@@ -3998,6 +4017,12 @@ while :; do
   # repost after grace, and escalate once if the recovery turn is also missed.
   # No conversation scraping; unresolved records are never silently expired.
   fm_pending_reply_tick "$STATE" || true
+
+  DECISION_SWEEP_INTERVAL=${FM_DECISION_SWEEP_INTERVAL_SECS:-600}
+  if [ "$DECISION_SWEEP_INTERVAL" != 0 ] \
+    && [ "$(age_of "$STATE/.decision-sweep-last-run")" -ge "$DECISION_SWEEP_INTERVAL" ]; then
+    decision_sweep_detached
+  fi
 
   # Daily archive pass for the grow-only process-event inbox (handled
   # sequences); the script holds the rules and stamps its own cadence, so most
