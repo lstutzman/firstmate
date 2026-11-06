@@ -98,7 +98,7 @@ gap_case() {
 test_gaps() {
   gap_case macbook 'host not allowed: macbook' "edit_file data/offices.md sed 's/runs-on: slartibartfast; dispatch: Property/runs-on: macbook; dispatch: Property/'"
   gap_case role 'unknown role "wizard"' "edit_file data/offices.md sed 's/role: navigator/role: wizard/'"
-  gap_case reserved 'role "librarian" is reserved: it has no charter or authority yet' "edit_file data/offices.md sed 's/role: navigator/role: librarian/'"
+  gap_case reserved 'unknown role "bosun"' "edit_file data/offices.md sed 's/role: navigator/role: bosun/'"
   gap_case wip 'wip must be' "edit_file data/offices.md sed 's/wip: 2; tick: every 2h/wip: 0; tick: every 2h/'"
   gap_case tick 'tick must be' "edit_file data/offices.md sed 's/tick: every 2h/tick: hourly/'"
   gap_case auto 'auto-merge-classes must be none' "edit_file data/offices.md awk '!d && sub(/auto-merge-classes: none/, \"auto-merge-classes: docs\") { d = 1 } 1'"
@@ -115,6 +115,46 @@ test_gaps() {
   gap_case subset 'merge project skills is not in dispatch' "edit_file data/offices.md sed 's/dispatch: firstmate,skills/dispatch: firstmate/'"
   gap_case overlap 'merge-via project firstmate overlaps merge' "edit_file data/offices.md sed 's/merge-via: none/merge-via: firstmate=slarti/'"
   gap_case malformed 'malformed registry line' "printf -- '- broken line\n' >> data/offices.md"
+}
+
+# add_corpus_offices <world>: seed an alchemist and a librarian office home, each
+# with its officer, admission config and published authority record, beside
+# the two make_world offices.
+add_corpus_offices() {
+  local w=$1 id
+  printf -- '- corpus - c (role: corpus; cadence: daily 05:00; added 2026-11-05)\n- library - l (role: library; cadence: daily 11:30; added 2026-11-05)\n' >> "$w/data/officers.md"
+  printf 'command=fm-reserved-classify.sh\nclasses=scan-gate\nclear=none\n' > "$w/config/admission/ta"
+  printf 'scrub.py scan-gate\n' > "$w/config/admission/ta.rules"
+  for id in alchemist librarian; do
+    mkdir -p "$w/$id/data" "$w/$id/config/admission"
+    printf '%s\n' "$id" > "$w/$id/.fm-secondmate-home"
+    printf '%s\n' "$id" > "$w/$id/.fm-office"
+    printf '# Charter\n\n# Office authority\n' > "$w/$id/data/charter.md"
+    printf -- '- %s - office (home: %s/%s; scope: office; projects: none; added 2026-11-06)\n' "$id" "$w" "$id" >> "$w/data/secondmates.md"
+    printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$w" > "$w/$id/.fm-secondmate-parent"
+  done
+  printf -- '- transcript-archive [no-mistakes admission=ta] - ta (added 2026-11-05)\n' > "$w/alchemist/data/projects.md"
+  printf -- '- firstmate [no-mistakes] - fm (added 2026-10-02)\n' > "$w/librarian/data/projects.md"
+  cp "$w/config/admission/ta" "$w/config/admission/ta.rules" "$w/alchemist/config/admission/"
+  printf -- '- alchemist - Keep the corpus (role: alchemist; runs-on: slartibartfast; dispatch: transcript-archive; merge: transcript-archive; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 6h; sources: tick,lane:corpus; added 2026-11-06)\n' >> "$w/data/offices.md"
+  printf -- '- librarian - Keep the documents (role: librarian; runs-on: slartibartfast; dispatch: firstmate; merge: none; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 6h; sources: tick,lane:library; added 2026-11-06)\n' >> "$w/data/offices.md"
+  for id in alchemist librarian; do
+    FM_HOME="$w/$id" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must succeed in $id"
+    publish "$w" "$id" >/dev/null || fail "add_corpus_offices: could not publish $id"
+  done
+}
+
+test_alchemist_and_librarian_are_accepted_offices() {
+  local w out
+  w=$(make_world corpus-roles)
+  add_corpus_offices "$w"
+  assert_equals "" "$(ensure "$w")" "ensure output with both new offices"
+  out=$(FM_HOME="$w" FM_DATA_OVERRIDE="$w/data" bash "$OFFICE" list)
+  assert_contains "$out" "alchemist alchemist ok" "alchemist listed ok"
+  assert_contains "$out" "librarian librarian ok" "librarian listed ok"
+  assert_equals "0|alchemist|" "$(resolve "$w/alchemist")" "alchemist's gate"
+  assert_equals "0|librarian|" "$(resolve "$w/librarian")" "librarian's gate"
+  pass 'ensure is silent and the gate loads for a seeded alchemist and librarian office'
 }
 
 test_list_counts_gaps() {
@@ -928,6 +968,7 @@ test_lane_check_never_delivers_a_stale_digest() {
 test_healthy_registry_prints_nothing
 test_absent_registry_means_no_offices
 test_gaps
+test_alchemist_and_librarian_are_accepted_offices
 test_list_counts_gaps
 test_ensure_changes_nothing
 test_publish_reaches_only_the_named_office

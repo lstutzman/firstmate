@@ -1721,7 +1721,7 @@ Offices live in the primary home's `data/offices.md`, one line per office, in th
 | Field | Meaning |
 | --- | --- |
 | `<id>` | The id of a second mate registered in `data/secondmates.md`; the office's home is that mate's home |
-| `role` | `navigator` or `quartermaster`; `alchemist` and `librarian` are reserved placeholders with no charter or authority, so a line naming them is refused |
+| `role` | `navigator`, `quartermaster`, `alchemist` or `librarian`; any other role name is refused |
 | `runs-on` | Comma-separated hosts; the second mate's `host:` (or this host, for a local route) must be in it, and `macbook` is refused |
 | `dispatch` | Comma-separated project names; each must be listed in the office home's `data/projects.md` |
 | `merge` | `none`, or the projects the office merges: a subset of `dispatch`, each carrying `admission=<name>` in the office home's `data/projects.md` |
@@ -2939,7 +2939,7 @@ A missing or malformed config, a classifier that fails or prints an empty or und
 An optional `route.<class>=handoff:<home>` line hands a flagged class to merger home `<home>` instead of the captain: the merge is refused even with a captain answer, and in place of the `hold` and `answer` commands the refusal prints the `[handoff=<home>]` merger-handoff line, keyed `merge-handoff-<pr-number>` so `bin/fm-decision-sweep.sh` settles it once the PR merges, telling that home to merge only after a fresh reviewer who did not write the change records on the PR that it loosens no check (a change that loosens one goes to the captain); routed classes that name more than one home refuse with no handoff, because one PR has one merger.
 The routed class must be one of `classes=`, a route naming the `authority` class is a config error that refuses every merge, and a route naming the merging home itself refuses with no handoff, so a route never admits or merges anything in its own home.
 A class with no route keeps the captain-answer path above, and in an office the route is pinned by the same `admission-sha256` as the rest of the config.
-For example, a `config/admission/transcript-archive` (and `local-jev`, the same with its own rules file) for the planned Alchemist office, whose role name is still reserved, hands the scan gate to Slarti and keeps deploy and unit changes with the captain:
+For example, a `config/admission/transcript-archive` (and `local-jev`, the same with its own rules file) for the Alchemist office hands the scan gate to Slarti and keeps deploy and unit changes with the captain:
 
 ```
 command=/path/to/bin/fm-reserved-classify.sh --rules /path/to/config/admission/transcript-archive.rules

@@ -941,7 +941,7 @@ register_admission() {
   mkdir -p "$case_dir/home/config/admission" "$case_dir/project"
   printf '%s\n' '# Lee'"'"'s merge-word classes' \
     'command=./classify.sh --risk --stdin' \
-    'classes=payments legal-text data-rewriting-migration' \
+    "classes=${ADMISSION_CLASSES:-payments legal-text data-rewriting-migration}" \
     'clear=code docs' \
     ${ADMISSION_EXTRA:+"$ADMISSION_EXTRA"} \
     > "$case_dir/home/config/admission/risky"
@@ -1149,6 +1149,20 @@ test_office_flagged_class_refuses_like_any_home() {
 # An office reads a route only from the config its authority record pins: a
 # pinned route hands off, a route naming the office itself never merges, and a
 # route added after publishing refuses like any other edit.
+# The Alchemist owns transcript-archive and local-jev, whose scan gate it can
+# never admit itself: a scan-gate flag refuses with the captain hold, exactly
+# as any other flagged class does (fleet rules section 3, scan-gate PRs).
+test_alchemist_scan_gate_flag_is_refused() {
+  local case_dir
+  case_dir=$(ADMISSION_CLASSES='scan-gate deploy' make_office_case office-scan-gate 'scan-gate')
+  run_office_merge "$case_dir"
+  [ "$RC" -ne 0 ] || fail "office-scan-gate: an office merged a scan-gate PR"
+  assert_not_merged "$case_dir" office-scan-gate
+  assert_grep 'hold task-x1-admit-9-scan-gate' "$case_dir/stderr" "office-scan-gate: the refusal did not name the hold"
+  assert_grep 'answer task-x1-admit-9-scan-gate' "$case_dir/stderr" "office-scan-gate: the refusal did not name the answer"
+  pass "an office never admits a scan-gate flag; it refuses with the hold and answer commands"
+}
+
 test_office_routed_class_hands_off_and_is_pinned() {
   local case_dir
   case_dir=$(ADMISSION_EXTRA='route.payments=handoff:slarti' make_office_case office-routed 'code payments')
@@ -5761,6 +5775,7 @@ test_non_office_homes_merge_as_before_with_a_stray_record
 test_office_merges_inside_its_record
 test_office_refuses_outside_its_record
 test_office_flagged_class_refuses_like_any_home
+test_alchemist_scan_gate_flag_is_refused
 test_office_routed_class_hands_off_and_is_pinned
 test_office_merge_via_ends_at_the_merger_handoff
 test_admission_merges_when_no_configured_class_is_flagged

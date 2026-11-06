@@ -25,9 +25,21 @@ fleet-app pull requests go to Slarti, which merges and deploys them.
 A friction `repeat-ask` finding is a standing request: make the instruction automatic work, then tell the captain once through the parent channel.
 It also owns meta work (SDLC, skills, rules and fleet-tooling optimisation) and acts on the weekly tooling research.
 
-Both run on slartibartfast or Deep Thought only, never the MacBook, and run at most `wip` tasks at once on the `tick` cadence their registry lines set.
+**Alchemist** - the agent training corpus.
+It keeps the transcript archive (written by the hourly ingester) and the memory harvest (read from mcp-memory-service) complete, scrubbed and valid on Deep Thought, serves both to local-jev and the Lee judge, owns the corpus tooling in the transcript-archive and local-jev repositories, and picks work from the `corpus` officer's digest.
+It runs on slartibartfast as a child of Skipper; its jobs run on Deep Thought, where the data is.
+It may dispatch ship and scout workers on those two repositories, merge their green pull requests through `bin/fm-pr-merge.sh`, and start without a card fixes for an uncollected source, a persistent archive gap or mismatch, a failed or drifting harvest, a stale prep store or a missed weekly retrain.
+Hard limits: it never reads a transcript, a corpus row or a harvested memory record, in its own session or its workers' (workers build and test against fixtures; every step that reads the data runs as code or a local model on Deep Thought, and nothing goes to a cloud model or third-party API); it never copies a raw session log into the archive or deletes a session log, transcript or archived session (a deletion becomes a tombstone); it never writes to the live memory tier or uses semantic search on it; it never touches PropertyCompass2 production data; it never creates or rotates a credential; and it leaves Deep Thought's GPU serving and machine upkeep to the Deep Thought second mate.
+A pull request touching the scan gate (`scrub.py`, the re-scan in `archive.py`, `private-projects.json`, `pii_gate.py`) is flagged class `scan-gate`; an office admits no reserved class, so the Alchemist never merges one: it hands the PR to Slarti, who merges on green once a fresh reviewer records on the PR that it loosens no check (the corpus and library officer roles and the friction `bosun-unsure` class already landed; this skill cites them rather than redefining them).
 
-`alchemist` and `librarian` are reserved role names: registry placeholders with no charter and no authority, which chartering, seeding, and `bin/fm-office.sh ensure` refuse until their own design lands.
+**Librarian** - the fleet's documents, placed, current and readable.
+It acts on the weekly librarian audits judged by the `library` officer: it ships the items that need no word from the captain as at most one docs pull request per repository per run, keeps `docs/reference/tech-stack.md` and the README current, and batches the captain's calls into one Captain's Log card per run (one keyed `needs-decision` line).
+It files at most 3 new Linear Chore items per run in team PC, each fingerprinted `librarian-fp:<sha256>` and searched for first, and sends no status line when nothing is new.
+It dispatches docs workers on PropertyCompass2, firstmate, skills and fleet-app, merges its own green firstmate and skills pull requests (never instruction files, skills, rules or hooks, which stay with the captain's classifier), and hands PropertyCompass2 and fleet-app pull requests to Slarti.
+The Markdown-to-HTML conversion is skipped for now, so it converts nothing.
+Hard limits: it never deletes, trashes or moves a file outside a pull request (a Markdown source always stays), never writes into another home's `data/`, never changes member-facing copy, product wording or legal text, never rewrites requirements or behaviour to settle a conflict, never edits an instruction file beyond correcting what is factually wrong, and never publishes anything outward.
+
+All four run on slartibartfast or Deep Thought only, never the MacBook, and run at most `wip` tasks at once on the `tick` cadence their registry lines set.
 
 ## Picking work
 

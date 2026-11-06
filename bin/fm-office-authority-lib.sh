@@ -67,7 +67,8 @@
 #
 # FM_OFFICE_ROLES names the roles an office may take, and
 # FM_OFFICE_RESERVED_ROLES the role names held for later offices; a reserved
-# role has no charter and no authority, so a line naming it is refused.
+# role has no charter and no authority, so a line naming it is refused. The
+# reserved set is empty: alchemist and librarian were unlocked as office roles.
 #
 # Public functions:
 #   fm_office_detect <home> <data-dir>
@@ -128,9 +129,9 @@ FM_OFFICE_ERROR=
 FM_OFFICE_LIVE=0
 FM_OFFICE_LIVE_IDS=
 # The office roles with a charter, and the role names held for later offices
-# that have neither a charter nor any authority yet.
-FM_OFFICE_ROLES="navigator quartermaster"
-FM_OFFICE_RESERVED_ROLES="alchemist librarian"
+# that have neither a charter nor any authority yet (none at present).
+FM_OFFICE_ROLES="navigator quartermaster alchemist librarian"
+FM_OFFICE_RESERVED_ROLES=""
 FM_OFFICE_REPAIR="the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>"
 
 fm_office_in() {  # <item> <comma-list>
