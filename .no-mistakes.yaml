@@ -29,15 +29,16 @@ review:
     - path: "**"
       instructions: |
         Verifiability: read ~/.claude/references/verifiable-review.md and answer its
-        "How is this fully verifiable?" section for this change. "Tests pass" is not an answer.
-        A changed behaviour with no check that would fail if it broke is a finding.
+        "How is this fully verifiable?" section for this change, and put that answer in
+        risk_rationale. "Tests pass" is not an answer. A changed behaviour with no check that
+        would fail if it broke is a finding, and each gap that is not yet verifiable is filed as
+        its own finding.
     - path: "**"
       instructions: |
         Failure in this repo means a fleet script or contract that behaves wrongly, loses unlanded
-        work, or reports success it did not have. Skip style and nits. Ignore generated files,
-        lockfiles and files under docs/verification/ that only record dated output. Every finding
-        cites file and line. The summary opens with a count and says "no issues" plainly when
-        there are none.
+        work, or reports success it did not have. Skip style and nits. Ignore generated files and
+        lockfiles. Every finding cites file and line. risk_rationale opens with the finding count
+        and says "no issues" plainly when there are none.
     - path: "**"
       instructions: |
         In a re-review, report a new finding on code the fix round did not change only if it is
