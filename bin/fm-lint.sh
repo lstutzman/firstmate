@@ -298,21 +298,22 @@ fm_lint_ratchet_relative() {
   printf '%s\n' "$path"
 }
 
-# Run the ratchet check on one root as its own invocation under the same
-# per-root deadline and memory limit, setting FM_LINT_RATCHET_RC,
+# Run the ratchet check on one root as its own invocation under the time left
+# in that root's one deadline (at least a second) and the same memory limit, setting FM_LINT_RATCHET_RC,
 # FM_LINT_RATCHET_REASON and FM_LINT_RATCHET_RSS. An enforced root fails on any
 # finding; a listed root must still have findings, so a clean listed root is a
 # stale entry. Any status other than a clean pass or findings is a tool failure,
 # never a stale entry.
-fm_lint_ratchet_root() {  # <path> <file-stem> <shard-output>
-  local path=$1 out="$2.ratchet.out" err="$2.ratchet.err" rss="$2.ratchet.rss" shard_out=$3
+fm_lint_ratchet_root() {  # <path> <file-stem> <shard-output> <seconds-left>
+  local path=$1 out="$2.ratchet.out" err="$2.ratchet.err" rss="$2.ratchet.rss" shard_out=$3 seconds=$4
+  [ "$seconds" -ge 1 ] || seconds=1
   local list=${FM_LINT_INTERNAL_RATCHET_LIST:-} listed=0 reason
   local -a args=(--norc --enable="$RATCHET_ENABLE" --include="$RATCHET_INCLUDE")
   if [ -n "$list" ] && fm_lint_ratchet_entries "$list" | grep -Fxq -- "$(fm_lint_ratchet_relative "$path")"; then
     listed=1
     args+=(-f gcc)
   fi
-  fm_lint_exec_root "$path" "$out" "$err" "$rss" "$FM_LINT_INTERNAL_ROOT_SECS" "${args[@]}"
+  fm_lint_exec_root "$path" "$out" "$err" "$rss" "$seconds" "${args[@]}"
   reason=$(fm_lint_classify_root "$FM_LINT_LAST_RC" "$err")
   FM_LINT_RATCHET_RSS=$(fm_lint_root_rss "$rss")
   FM_LINT_RATCHET_RC=0
@@ -414,7 +415,8 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
   fi
   case "$reason" in
     ok|findings|memory-fallback)
-      fm_lint_ratchet_root "$path" "$output_dir/root.$shard_index.$index" "$output_dir/shard.$shard_index.out"
+      fm_lint_ratchet_root "$path" "$output_dir/root.$shard_index.$index" "$output_dir/shard.$shard_index.out" \
+        $(( (start_ms + FM_LINT_INTERNAL_ROOT_SECS * 1000 - $(fm_lint_now_ms) + 999) / 1000 ))
       rss_kib=$(fm_lint_max_root_rss "$rss_kib" "$FM_LINT_RATCHET_RSS")
       if [ "$invocation_rc" -eq 0 ] && [ "$FM_LINT_RATCHET_RC" -ne 0 ]; then
         invocation_rc=$FM_LINT_RATCHET_RC

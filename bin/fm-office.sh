@@ -129,11 +129,12 @@
 #                    head reported or found empty), upstream.day (last successful UTC
 #                    day), upstream.try (last attempt) and upstream.fail (first failure
 #                    epoch, with a "reported" suffix once reported).
-#   ratchet          "office <id>: ratchet <YYYY-MM-DD>: next file <path> (<n> left on bin/fm-lint-ratchet.exceptions); ..."
+#   ratchet          "office <id>: ratchet <YYYY-MM-DD>: next file <path> (<n> left on bin/fm-lint-ratchet.exceptions); if no ratchet PR for <path> is open, ..."
 #                    once per UTC day while this code root's lint ratchet list
 #                    (bin/fm-lint-ratchet.sh next) names a file; silent when the list is
 #                    empty. Record: data/office/ratchet.seen (last day reported). The
-#                    office dispatches one ordinary ship worker for that file, which fixes
+#                    office skips the day while a ratchet PR for that file is still open,
+#                    and otherwise dispatches one ordinary ship worker for it, which fixes
 #                    it, retires it from the list and opens one pull request.
 #
 # Environment: FM_HOME, FM_DATA_OVERRIDE, FM_STATE_OVERRIDE as the other bin/ scripts do.
@@ -736,7 +737,7 @@ check_ratchet() {
   n=$("$SCRIPT_DIR/fm-lint-ratchet.sh" count 2>/dev/null) || return 0
   now=$(now_epoch)
   day=$(date -u -d "@$now" +%Y-%m-%d 2>/dev/null || date -u -r "$now" +%Y-%m-%d)
-  seen_once ratchet "$day" "office $OFFICE_ID: ratchet $day: next file $file ($n left on bin/fm-lint-ratchet.exceptions); dispatch one ship worker to fix it until bin/fm-lint-ratchet.sh check $file passes, retire it with bin/fm-lint-ratchet.sh retire $file, and open one PR"
+  seen_once ratchet "$day" "office $OFFICE_ID: ratchet $day: next file $file ($n left on bin/fm-lint-ratchet.exceptions); if no ratchet PR for $file is open, dispatch one ship worker to fix it until bin/fm-lint-ratchet.sh check $file passes, retire it with bin/fm-lint-ratchet.sh retire $file, and open one PR"
 }
 
 cmd_check() {

@@ -669,7 +669,7 @@ test_ratchet_names_the_next_file_once_a_day() {
   [ -x "$w/navigator/state/office-ratchet.check.sh" ] || fail "register-sources did not install the ratchet shim"
   list="$w/ratchet.list"
   printf '# header\nbin/a.sh\nbin/b.sh\n' > "$list"
-  assert_equals "office navigator: ratchet 2026-11-07: next file bin/a.sh (2 left on bin/fm-lint-ratchet.exceptions); dispatch one ship worker to fix it until bin/fm-lint-ratchet.sh check bin/a.sh passes, retire it with bin/fm-lint-ratchet.sh retire bin/a.sh, and open one PR" \
+  assert_equals "office navigator: ratchet 2026-11-07: next file bin/a.sh (2 left on bin/fm-lint-ratchet.exceptions); if no ratchet PR for bin/a.sh is open, dispatch one ship worker to fix it until bin/fm-lint-ratchet.sh check bin/a.sh passes, retire it with bin/fm-lint-ratchet.sh retire bin/a.sh, and open one PR" \
     "$(ratchet_check "$w" "$list" 1794009600)" "the first check of a day names the next file"
   assert_equals "" "$(ratchet_check "$w" "$list" $((1794009600 + 3600)))" "the same day again: silent"
   printf '# header\n' > "$list"

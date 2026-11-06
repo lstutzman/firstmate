@@ -1740,7 +1740,7 @@ Each source is a watcher check in the office home's own `state/`, so it wakes th
 It is the one source that contacts another host, and `bin/fm-office.sh` owns its attempt cadence and records.
 The check only wakes the office; the sync itself is ordinary dispatched work.
 `ratchet` is the daily clock of firstmate's lint ratchet: once per UTC day, while `bin/fm-lint-ratchet.exceptions` in the office's code root still lists a file, it wakes the office with the next file (`bin/fm-lint-ratchet.sh next`) and the count left, and it is silent when the list is empty; [Office provisioning](office-provisioning.md) step 10 lists it on the Quartermaster's line.
-The office then dispatches one ordinary ship worker for that file, which fixes it until `bin/fm-lint-ratchet.sh check <file>` passes, retires it with `bin/fm-lint-ratchet.sh retire <file>`, and opens one pull request.
+While a ratchet PR for that file is still open the office skips the day; otherwise it dispatches one ordinary ship worker for that file, which fixes it until `bin/fm-lint-ratchet.sh check <file>` passes, retires it with `bin/fm-lint-ratchet.sh retire <file>`, and opens one pull request.
 
 A local office home also carries a `.fm-office` marker holding the office id and a `data/charter.md` with a `# Office authority` heading.
 `bin/fm-brief.sh <id> --secondmate --office <id>` writes that role charter, a standing mandate that replaces the second mate's idle-by-default clauses, and `bin/fm-home-seed.sh ... --office <id>` seeds the home with the marker, the merge tokens and admission copies its line needs, and its source checks; each script's header owns its checks and refusals, and the `office-roles` skill owns each role's mandate.

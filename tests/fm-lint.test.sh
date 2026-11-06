@@ -1332,6 +1332,42 @@ SH
   pass "fm-lint.sh reports a crashed ratchet check as a tool failure, not a stale entry"
 }
 
+test_ratchet_shares_the_roots_one_deadline() {
+  # The ratchet check spends only what the main pass left of the root's one
+  # deadline: a 2s main pass under a 4s deadline leaves a hung ratchet about
+  # 2s, so the root ends near 4s with a named timeout, where a fresh deadline
+  # would let it run to about 6s.
+  if ! fm_lint_bounds_supported; then
+    pass "SKIP (bounded runs unsupported): ratchet deadline check"
+    return
+  fi
+  local tmp fakebin out rc duration
+  tmp=$(fm_test_tmproot fm-lint-ratchet-deadline)
+  fakebin=$(fm_fakebin "$tmp")
+  printf '%s\n' '#!/usr/bin/env bash' 'echo hi' > "$tmp/slow.sh"
+  cat > "$fakebin/shellcheck" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+  printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
+  exit 0
+fi
+case " $* " in *" --include="*) sleep 30; exit 0 ;; esac
+sleep 2
+exit 0
+SH
+  chmod +x "$fakebin/shellcheck"
+  rc=0
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_REQUIRE_BOUNDS=1 FM_LINT_ROOT_SECONDS=4 \
+    FM_LINT_ROOT_GRACE=1 "$LINT" "$tmp/slow.sh" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a hung ratchet check passed"$'\n'"$out"
+  assert_contains "$out" "ratchet check of $tmp/slow.sh failed (reason=timeout" \
+    "the ratchet timeout was not named"
+  duration=$(printf '%s\n' "$out" | sed -n 's/^fm-lint: end .* duration_ms=\([0-9]*\) .*/\1/p')
+  [ -n "$duration" ] && [ "$duration" -lt 5500 ] \
+    || fail "the ratchet check got a fresh deadline (duration_ms=${duration:-none})"$'\n'"$out"
+  pass "fm-lint.sh runs the ratchet check inside the root's one deadline"
+}
+
 test_ratchet_helper_retires_one_file_at_a_time() {
   if ! pinned_ready; then
     pass "SKIP (ShellCheck $REQUIRED not resolved): ratchet helper check"
@@ -2187,6 +2223,7 @@ test_rejects_direct_beads_cli_in_explicit_core_path
 test_ratchet_skips_listed_files_and_fails_unlisted_ones
 test_ratchet_reports_a_listed_file_that_now_passes
 test_ratchet_tool_failure_is_not_a_stale_entry
+test_ratchet_shares_the_roots_one_deadline
 test_ratchet_helper_retires_one_file_at_a_time
 test_ignores_ambient_shellcheck_opts
 test_clean_fixture_passes
