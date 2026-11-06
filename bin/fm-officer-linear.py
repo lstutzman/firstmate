@@ -85,7 +85,7 @@ JEV_CANDIDATES = 3
 JEV_CALLS_MAX = 300
 JEV_TIMEOUT = 20
 START_MIN_SCORE = 4.0
-START_ATTEMPT_CAP = 3  # starts for one fingerprint (a recurrence is a new item) before Lee decides
+START_ATTEMPT_CAP = 3  # starts for one fingerprint (a recurrence is a new item) before the owning office judges the repeat
 PATTERN_BATCH = 40
 EXISTING_VIEWS = 3
 VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
@@ -723,9 +723,10 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     A finding may carry `start_what` (the request's wording, in place of "Start this Linear item.") and `start_row`
     (extra fields for the request's evidence); `start_generation` (the merged fix it follows) gives a restart its own request id.
     `attempts` (fingerprint -> the items started for it) caps a loop: a recurrence is a new item, so once START_ATTEMPT_CAP items
-    have started for one fingerprint the next is not started but asked for as one keyed needs-decision (`<id>-<issue>-fix-cap`).
+    have started for one fingerprint the next is not started; it goes to the start-home office as a capped-repeat request (kind `<id>-fix-cap`),
+    never into asks_for_lee, and the office escalates to Lee only for a reserved class.
     """
-    starts, held, seen, capped = [], [], set(), []
+    starts, held, seen = [], [], set()
     sources = rubric.start_sources if rubric.loaded else set(officer.sources)
     severities = rubric.start_severities if rubric.loaded else set(officer.severities)
     for f in findings:
@@ -749,7 +750,16 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
                 issue not in attempts.get(f["fingerprint"], []) and len(attempts.get(f["fingerprint"], [])) >= START_ATTEMPT_CAP):
             handled[issue] = date
             seen.add(issue)
-            capped.append({"fingerprint": f["fingerprint"], "title": f["title"], "issue": issue, "tries": len(attempts[f["fingerprint"]])})
+            row = {"kind": "%s-fix-cap" % officer.id, "title": f["title"], "severity": f["severity"], "score": f["score"], "found": f["found"],
+                   "source": f["source"], "fingerprint": f["fingerprint"], "issue": issue, "linear_id": issue, "project": f["project"],
+                   "linear_only": not f["project"], "tries": len(attempts[f["fingerprint"]]), "ask_key": "%s-%s-fix-cap" % (officer.id, issue),
+                   "reason": "Capped repeat: %d fixes already started for this finding" % len(attempts[f["fingerprint"]])}
+            rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256((f["fingerprint"] + "\0fix-cap\0" + issue).encode("utf-8")).hexdigest()[:16])
+            row["execute"] = execute_for(officer, row, rid, (
+                "This is a capped repeat, not a new start: %d fixes already started for this finding and it came back, so no fourth start was made. "
+                "Judge it as ordinary routed work (a changed approach, a diagnosis or a decision), and escalate to Lee only if the next step is a reserved class, "
+                "with the keyed needs-decision %s." % (row["tries"], row["ask_key"])), main_home, start_homes)
+            starts.append(row)
         elif fresh and issue and rubric.loaded:
             handled[issue] = date
             seen.add(issue)
@@ -765,10 +775,6 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             row["execute"] = execute_for(officer, row, rid, f.get("start_what") or "Start this Linear item.", main_home, start_homes)
             starts.append(row)
     asks = []
-    for c in capped:
-        key = "%s-%s-fix-cap" % (officer.id, c["issue"])
-        asks.append({"key": key, "findings": [c], "line": "needs-decision [key=%s]: %s has failed again after %d started fixes, so no fourth start; Lee decides" % (
-            key, c["title"], c["tries"])})
     if held:
         key = "%s-holds-%s" % (officer.id, date)
         asks.append({"key": key, "findings": held, "line": "needs-decision [key=%s]: %d finding(s) held for Lee, they match a reserved class: %s" % (

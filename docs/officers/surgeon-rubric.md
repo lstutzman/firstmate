@@ -93,7 +93,8 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   An item is started once (the `handled` check in `plan_starts`, `bin/fm-officer-linear.py`), so a later failure of the same item only raises its Found line.
 - Repeated failure stops at 3 starts: a closed item that recurs is a new item, so the Surgeon counts the items started per fingerprint.
   Once 3 have started (`START_ATTEMPT_CAP` in `bin/fm-officer-linear.py`), the next is filed but not started.
-  The run's digest carries one keyed `needs-decision` (`surgeon-<issue>-fix-cap`) in `asks_for_lee` instead, which main turns into a Captain's Log card for Lee.
+  It goes to the owning office as a capped-repeat start request (kind `surgeon-fix-cap`) on the same lane a start takes, never into `asks_for_lee`.
+  The office judges it and files the keyed `needs-decision` `surgeon-<issue>-fix-cap` for Lee only if the next step is a reserved class.
   Three separates a bad first attempt from a wrong diagnosis, and few enough that a stuck finding reaches a person within days.
   The office dispatches no more than 3 fixes for one finding either (`office-roles` "Picking work"); the test is `test_a_finding_that_keeps_coming_back_stops_at_three_starts`.
 - Nothing else starts.

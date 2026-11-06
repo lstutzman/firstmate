@@ -663,7 +663,9 @@ test_a_finding_that_keeps_coming_back_stops_at_three_starts() {
   jq --arg fp "$fp" 'del(.handled["PC-9"]) | .starts_by_fp[$fp] = ["PC-1","PC-2","PC-3"]' "$state" > "$TMP_ROOT/capstart/s.json" && mv "$TMP_ROOT/capstart/s.json" "$state"
   run_surgeon "$home" >/dev/null || fail "capped rerun"
   assert_equals 0 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding")] | length' "$json")" "a fourth item for one fingerprint does not start"
-  assert_equals "surgeon-PC-9-fix-cap" "$(jq -r '.asks_for_lee[0].key' "$json")" "it goes to Lee as one keyed needs-decision"
+  assert_equals 1 "$(jq '[.start_requests[] | select(.kind == "surgeon-fix-cap")] | length' "$json")" "it goes to the office lane as one capped-repeat request"
+  assert_equals 0 "$(jq '[.asks_for_lee[] | select(.key == "surgeon-PC-9-fix-cap")] | length' "$json")" "and is not added to asks_for_lee"
+  assert_contains "$(jq -r '[.start_requests[] | select(.kind == "surgeon-fix-cap")][0].execute.argv | last' "$json")" "surgeon-PC-9-fix-cap" "the request names its escalation key for the office"
   pass "fm-officer surgeon: a finding that keeps coming back stops at 3 starts"
 }
 
