@@ -80,13 +80,25 @@ SEGMENT_RULES = [
     ("pkill-f", "medium", re.compile(r"^(sudo\s+)?(pkill\s+(-\w+\s+)*-f\b|killall\b)")),
     ("no-verify", "medium", re.compile(r"^git\b.*\s--no-verify\b")),
     ("bare-git-stash", "medium", re.compile(r"^git\s+stash(\s+pop)?\s*$")),
-    ("env-dump", "high", re.compile(r"^(env|printenv)\s*$|^cat\s+(\S*/)?\.env\s*$")),
+    ("env-dump", "high", re.compile(
+        r"^(?:(?:env|printenv)(?:\s+2>>?\s*\S+)*\s*(?:(?:&>>?|1?>[>|]?)\s*(?!/dev/null\b)\S.*)?"
+        r"|cat\s+(\S*/)?\.env(?:\s+2>>?\s*\S+)*\s*)$")),
     ("startup-file-print", "medium", re.compile(
         r"^(cat|head|tail|less|more)\s+(\S*/)?\.(zshrc|bashrc|profile|zprofile|bash_profile|zshenv)\s*$")),
 ]
 PR_CREATE_RE = re.compile(r"\b(gh|gh-axi)\s+pr\s+create\b")
 PR_HEADINGS = ("Testing", "Risk", "How to revert")
-SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\||\n)\s*")
+SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||;|(?<!>)\||\n)\s*")
+SEGMENT_SPLIT_OPS = re.compile(r"\s*(&&|\|\||;|(?<!>)\||\n)\s*")
+# A consumer that prints only a count or an exit status, never the values it reads.
+COUNT_ONLY_RE = re.compile(
+    r"^(?:(?:grep|egrep|fgrep)\s+(?:\S+\s+)*?(?:-[A-Za-dg-z]*[cq][A-Za-z]*|--count|--quiet|--silent)(?:\s|$)"
+    r"|wc(?:\s+-[lwcm]+)*\s*$)")
+# A stage that only passes on part of what it reads to the next stage, writing nothing else.
+PURE_FILTER_RE = re.compile(
+    r"^(?:(?:grep|egrep|fgrep|cut)(?:\s[^<>]*)?"
+    r"|sort(?!\S|.*\s(?:-[A-Za-z]*o|--o))(?:\s[^<>]*)?"
+    r"|uniq(?:\s+-\S+)*)$")
 HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 NETWORKIDLE_RE = re.compile(
@@ -124,8 +136,8 @@ def command_head(segment):
     return " ".join(head) + (" ..." if len(words) > len(head) else "")
 
 
-def command_segments(command):
-    """Shell command segments, skipping heredoc bodies and quoted text."""
+def flat_command(command):
+    """The command with heredoc bodies dropped and quoted text blanked."""
     kept = []
     end = None
     for line in command.split("\n"):
@@ -137,8 +149,34 @@ def command_segments(command):
         m = HEREDOC_RE.search(line)
         if m:
             end = (m.group(1) == "-", m.group(3))
-    flat = QUOTED_RE.sub("''", "\n".join(kept))
-    return [s for s in SEGMENT_SPLIT.split(flat.strip()) if s]
+    return QUOTED_RE.sub("''", "\n".join(kept))
+
+
+def command_segments(command):
+    """Shell command segments, skipping heredoc bodies and quoted text."""
+    return [s for s in SEGMENT_SPLIT.split(flat_command(command).strip()) if s]
+
+
+def count_only_env_segments(command):
+    """Indexes (into command_segments) of segments whose output is piped,
+    through pure filters only, into a count-only consumer, so no value is printed."""
+    parts = SEGMENT_SPLIT_OPS.split(flat_command(command).strip())
+    segments = parts[0::2]
+    ops = parts[1::2]
+    kept = [i for i, seg in enumerate(segments) if seg]
+    skipped = set()
+    for pos, i in enumerate(kept):
+        if re.search(r"(?<![2>])>", segments[i]):
+            continue
+        j = i + 1
+        while j < len(segments) and ops[j - 1] == "|" and segments[j]:
+            if COUNT_ONLY_RE.match(segments[j]):
+                skipped.add(pos)
+                break
+            if not PURE_FILTER_RE.match(segments[j]):
+                break
+            j += 1
+    return skipped
 
 
 def classify(first_prompt):
@@ -249,10 +287,13 @@ def analyse_transcript(path):
         elif name == "Bash":
             command = args.get("command") or ""
             segments = command_segments(command)
+            count_only = count_only_env_segments(command)
             for i, segment in enumerate(segments):
                 if SLEEP_RE.match(segment) and (i + 1 < len(segments) or len(segments) == 1):
                     bump(wasted, "sleep-then-check")
                 for rule, severity, pattern in SEGMENT_RULES:
+                    if rule == "env-dump" and i in count_only:
+                        continue
                     if pattern.search(segment):
                         found.append((rule, severity, normalise(command_head(segment), 80)))
             if NETWORKIDLE_RE.search(command):

@@ -40,6 +40,23 @@ spec = {"sessions": [
                        "new_string": "await page.waitForLoadState('networkidle')"}, "", False],
              ["Edit", {"file_path": "/y.ts", "old_string": "a",
                        "new_string": "await page.goto(u, { waitUntil: 'networkidle' })"}, "", False]]},
+  # The 2026-11-05 incident: a count of env lines prints no values. One session per command.
+  *[{"machine": "alpha", "id": "s-env-" + label, "first_prompt": "hello",
+     "calls": [["Bash", {"command": c}, "", False]]} for label, c in (
+     ("grep-c", "env | grep -c GH_TOKEN"), ("grep-wc", "env | grep GH_ | wc -l"),
+     ("sort-grep-c", "env | sort | grep -c X"), ("grep-q", "printenv | grep -q X"),
+     ("cut-sort-uniq-wc", "env | cut -d= -f1 | sort | uniq | wc -l"),
+     ("devnull", "env > /dev/null"), ("devnull-stderr", "env >/dev/null 2>&1"),
+     ("bare", "env"), ("grep-ec", "env | grep -ec X"), ("count-tee", "env | grep -c X | tee out"),
+     ("tee-count", "env | tee out | grep -c X"), ("redirect-mid", "env | grep X > out | wc -l"),
+     ("to-file", "env > /tmp/dump"), ("append-file", "printenv >> /tmp/dump"),
+     ("amp-file", "env &> /tmp/dump"), ("amp-append", "env &>> /tmp/dump"),
+     ("clobber-file", "env >| /tmp/dump"), ("stderr-merge", "env 2>&1"),
+     ("stderr-null", "env 2>/dev/null"), ("sort-o", "env | sort -o /tmp/x | wc -l"),
+     ("uniq-out", "env | uniq - /tmp/x | wc -l"),
+     ("file-then-count", "env > /tmp/dump | wc -l"),
+     ("append-then-count", "printenv 2>&1 >> /tmp/dump | grep -c X"),
+     ("awk-print", "env | awk '{print > \"f\"}' | wc -l"))],
   {"machine": "alpha", "id": "s-failed", "first_prompt": ": Firstmate operational input waiting: read 'y'",
    "calls": [["Read", msg, brief_failed, False],
              ["Bash", {"command": "sleep 30 && git status"}, "", False]]},
@@ -161,7 +178,7 @@ test_rule_violation_reports_command_head_only() {
   home=$(make_world rules)
   run_officer "$home" >/dev/null || fail "run must succeed"
   json="$home/data/officers/triage/$DATE.json"
-  findings=$(jq -c '[.findings[] | select(.kind == "rule-violation")]' "$json")
+  findings=$(jq -c '[.findings[] | select(.kind == "rule-violation" and .session == "alpha:s-done")]' "$json")
   assert_equals "networkidle rm-not-trash" "$(printf '%s' "$findings" | jq -r '[.[].rule] | sort | join(" ")')" \
     "only the bare rm and the waitUntil networkidle edit are violations, not heredoc bodies or quoted patterns"
   assert_equals 1 "$(printf '%s' "$findings" | jq -r '.[] | select(.rule == "rm-not-trash") | .count')" \
@@ -180,6 +197,19 @@ test_rule_violation_reports_command_head_only() {
   assert_contains "$(jq -r '.top_errors[].signature' "$json")" "bash: <token>: command not found" \
     "the error signature keeps its shape with the token redacted"
   pass "fm-officer triage: rule violations and error signatures carry no transcript excerpt or token"
+}
+
+test_env_dump_rule_ignores_count_only_pipelines() {
+  local home json flagged
+  home=$(make_world envdump)
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/triage/$DATE.json"
+  flagged=$(jq -r '[.findings[] | select(.kind == "rule-violation" and .rule == "env-dump") | .session]
+    | sort | join(" ")' "$json")
+  assert_equals "alpha:s-env-amp-append alpha:s-env-amp-file alpha:s-env-append-file alpha:s-env-append-then-count alpha:s-env-awk-print alpha:s-env-bare alpha:s-env-clobber-file alpha:s-env-file-then-count alpha:s-env-grep-ec alpha:s-env-redirect-mid alpha:s-env-sort-o alpha:s-env-stderr-merge alpha:s-env-stderr-null alpha:s-env-tee-count alpha:s-env-to-file alpha:s-env-uniq-out" \
+    "$flagged" \
+    "exactly the commands that print values or write them to a file flag; counts (even teed), checks and stdout to /dev/null do not"
+  pass "fm-officer triage: env-dump ignores count-only pipelines and still flags value-printing forms"
 }
 
 test_unharvested_day_fails_the_run() {
@@ -235,6 +265,7 @@ test_classification_join_and_outcomes
 test_rerun_is_byte_identical
 test_coverage_names_missing_host
 test_rule_violation_reports_command_head_only
+test_env_dump_rule_ignores_count_only_pipelines
 test_unharvested_day_fails_the_run
 test_remote_archive_reads_over_ssh
 test_model_seam_accepts_only_none
