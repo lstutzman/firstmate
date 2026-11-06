@@ -683,6 +683,8 @@ Task meta records `backend=` only for a non-default backend; an absent `backend=
   It has no window, endpoint, branch, incarnation, or `office=`, so `bin/fm-pr-merge.sh` decides its merge under every unchanged guard, an office home refuses it, and `bin/fm-teardown.sh` cleans it as a windowless record; the script's header owns the field inventory and its refusals.
   Until that cleanup, `bin/fm-crew-state.sh` reads it as state unknown with its worktree gone, which is expected rather than a stopped worker.
 
+- A parked ship, whose copy `bin/fm-tree-park.sh` returned to the pool while its PR waits on another home's merger, has no `worktree=` line and records `parked=1`, `parked_branch=`, `parked_head=`, `parked_worktree=`, and `parked_at=` instead; a text steer through `bin/fm-send.sh` restores `worktree=` and drops those fields, and the script's header owns the rules.
+
 ### Task selectors
 
 Task selectors for `fm-peek.sh`, `fm-send.sh`, and `fm-crew-state.sh` resolve centrally through `fm_backend_resolve_selector`.
@@ -700,6 +702,7 @@ Backend guides and other documents refer here instead of restating the resolutio
 `fm-teardown.sh <id>` takes a task id directly and validates the complete metadata-only endpoint identity before any runtime dispatch or cleanup mutation.
 Missing, empty, duplicate, malformed, backend-inconsistent, or task-mismatched endpoint records are preserved and refused.
 When the worktree identity is missing, empty, or ambiguous, the refusal also explains how to identify the held copy and restore exactly one `worktree=` line without changing the record automatically.
+A parked ship's one `parked_worktree=` line stands in for that identity, and its cleanup has no copy to return.
 
 Legacy tmux metadata remains cleanup-compatible when its exact window name is `fm-<id>`; opaque non-tmux endpoints require their recorded `endpoint_task_id=` binding.
 
@@ -2959,6 +2962,7 @@ A project entry may name the one home that merges its PRs with `merger=<home>`, 
 In a secondmate home that command appends a stamped `needs-decision [key=merge-handoff-<PR number>] [cause=external]: [handoff=<home>] <PR URL> is ready to merge` line to the home's parent channel (the destination `fm_parent_channel_destination` in [`bin/fm-parent-channel-lib.sh`](../bin/fm-parent-channel-lib.sh) resolves), and the main home relays it to the merger; in a home with no parent it is `bin/fm-send.sh fm-<home>` with that same line.
 `bin/fm-pr-check.sh` publishes that same line itself when a ship task's PR is registered in any other home, once per PR and head, delivered the same way: on the parent channel, or with `bin/fm-send.sh fm-<home>` in a home with no parent; a task held for the captain and the merger home itself publish none, and its header owns the rules.
 Once a handed-off no-mistakes ship reports that PR checks green, `bin/fm-pr-check.sh` also runs `no-mistakes axi handoff` in the task's copy, at registration or on the watcher's next check sweep (`fm-pr-check.sh release`), so the run stops holding one of the machine's pipeline slots while it waits for the merger; each PR head is attempted once and a failed attempt is reported once (a `check: nm-release:` wake from the sweep), and the same header owns the rules.
+On a Herdr or Rex home the watcher's check sweep (`bin/fm-tree-park.sh sweep`) also returns a handed-off ship's copy to the pool once its worker reported the PR and any no-mistakes run was released, when the copy is clean and its head is the pushed PR head, keeping the task record, and a later text steer to the task leases a fresh copy at that head and relaunches the worker before the steer is recorded; a park that fails after stopping the worker is reported once as a `check: tree-park:` wake, and that script's header owns the rules.
 A home's own id is its seeded `.fm-secondmate-home` marker, and a home without one is `main`, so a fleet has exactly one primary home.
 The binding is read from the merging home's own `data/projects.md`, which is not inherited, so every home that could merge the project must carry the same `merger=<home>` token on its own registry line; a home whose line lacks it is not refused.
 A project with no `merger=` token keeps every home's merge authority exactly as before, and `yolo` still decides whether the merger home merges without the captain's word.

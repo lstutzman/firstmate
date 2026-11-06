@@ -717,11 +717,19 @@ fm_backend_validate_task_endpoint() {  # <meta-file> <task-id>
     echo "REFUSED: task $id has a missing, empty, or ambiguous window endpoint; preserving task state." >&2
     return 1
   }
-  worktree=$(fm_backend_meta_exact_value "$meta" worktree) || {
-    echo "REFUSED: task $id has a missing, empty, or ambiguous worktree identity; preserving task state." >&2
-    fm_backend_worktree_identity_repair_hint "$meta" >&2
-    return 1
-  }
+  # A parked ship (bin/fm-tree-park.sh) returned its copy to the pool and names
+  # no worktree= on purpose; its one parked_worktree= is the identity instead.
+  if ! worktree=$(fm_backend_meta_exact_value "$meta" worktree); then
+    if [ "$(grep -c '^worktree=' "$meta" 2>/dev/null || true)" = 0 ] \
+       && [ "$(fm_backend_meta_exact_value "$meta" parked || true)" = 1 ] \
+       && worktree=$(fm_backend_meta_exact_value "$meta" parked_worktree); then
+      :
+    else
+      echo "REFUSED: task $id has a missing, empty, or ambiguous worktree identity; preserving task state." >&2
+      fm_backend_worktree_identity_repair_hint "$meta" >&2
+      return 1
+    fi
+  fi
   project=$(fm_backend_meta_exact_value "$meta" project) || {
     echo "REFUSED: task $id has a missing, empty, or ambiguous project identity; preserving task state." >&2
     return 1

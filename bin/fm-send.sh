@@ -10,6 +10,9 @@
 #   target. fm-send refuses unresolved guesses rather than falling back to a
 #   tmux window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
+# A text steer to a parked task first runs bin/fm-tree-park.sh unpark, which
+# gives it a fresh copy and a relaunched worker, and a refused unpark sends
+# nothing; a --key to a parked task is refused.
 # The text must be nonempty: an empty or whitespace-only message is refused
 # before anything is marked, recorded, or submitted, because an empty marked
 # secondmate request delivers only marker and correlation bytes and leaves the
@@ -669,6 +672,30 @@ while :; do
   *) break ;;
   esac
 done
+
+# A parked task (bin/fm-tree-park.sh) returned its copy to the pool while its
+# PR waited on another home's merger, so it has no agent to read a steer. Text
+# to it first gets a fresh copy and a relaunched worker from that script, and
+# only then is recorded; a refused unpark sends nothing. A key has no agent to
+# reach, so it is refused.
+if [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] && [ "$TARGET_BACKEND" != remote ] &&
+  [ "$(fm_meta_get "$TARGET_META" parked)" = 1 ]; then
+  PARKED_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
+  if [ "${1:-}" = --key ]; then
+    echo "error: task $PARKED_TASK_ID is parked: its copy was returned to the pool while its PR waits on its merger, so it has no agent for a key; send text to bring it back" >&2
+    exit 1
+  fi
+  if [ -n "$(printf '%s' "$*" | tr -d '[:space:]')" ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-tree-park.sh" unpark "$PARKED_TASK_ID" >&2 || {
+      echo "error: steer not sent to $PARKED_TASK_ID: it is parked and could not be given a fresh copy and worker; it stays parked" >&2
+      exit 1
+    }
+    fm_send_resolve_target "$RAW_TARGET" || exit 1
+    T=$RESOLVED_TARGET
+    # shellcheck disable=SC2034
+    FM_COMPOSER_HARNESS=$TARGET_HARNESS
+  fi
+fi
 
 if [ "$TARGET_BACKEND" != remote ]; then
   fm_backend_validate "$TARGET_BACKEND" || exit 1

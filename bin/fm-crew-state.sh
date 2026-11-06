@@ -306,6 +306,13 @@ HARNESS=$(meta_value harness)
 REMOTE_HOST=$(meta_value remote_host)
 [ -n "$KIND" ] || KIND=ship
 
+# A parked ship (bin/fm-tree-park.sh) returned its copy to the pool once its
+# pushed PR head was handed to another home's merger; its work is done and the
+# record has no copy or agent to read.
+if [ "$(meta_value parked)" = 1 ]; then
+  emit "done" status-log "PR $(meta_value pr) waits on its merger; copy returned to the pool at $(meta_value parked_head) (parked)"
+fi
+
 # A torn-down (or never-created) worktree has no current state to read. A
 # remote secondmate's recorded worktree is a path on ITS host, so the local
 # probe proves nothing for it - the remote arm below reads the true source.
