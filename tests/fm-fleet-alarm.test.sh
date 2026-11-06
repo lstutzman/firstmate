@@ -14,7 +14,7 @@ cat > "$BIN_FIX/cpa-usage-axi" <<'SH'
 printf '%s\n' "$*" >> "$FM_HOME/quota-calls"
 [ ! -f "$FM_HOME/quota-fail" ] || exit 1
 if [ "$1" = models ]; then
-  cat "$FM_HOME/models"
+  if [ "$3" = 0.25 ] && [ -f "$FM_HOME/models-recent" ]; then cat "$FM_HOME/models-recent"; else cat "$FM_HOME/models"; fi
 else
   cat "$FM_HOME/accounts"
 fi
@@ -286,7 +286,7 @@ out=$(run_alarm check)
 mate 1 0 3601
 out=$(run_alarm check)
 assert_contains "$out" 'holding work silent' 'silent mate alarms'
-case "$out" in *'7d 100%'*|*'account pressure'*|*'Carrying Claude accounts'*) fail "a non-quota alarm must not carry per-account quota text: $out" ;; esac
+case "$out" in *'7d 100%'*|*'account pressure'*|*'Serving Claude accounts'*) fail "a non-quota alarm must not carry per-account quota text: $out" ;; esac
 mate 0 0 0
 quota 0.2
 run_alarm check >/dev/null
@@ -309,7 +309,7 @@ ROWS
 out=$(run_alarm check)
 assert_contains "$out" 'Carrying Claude account first@example.invalid 7d 91%' 'first carrying account alarms'
 assert_contains "$out" 'Carrying Claude account second@example.invalid 7d 92%' 'second carrying account alarms'
-assert_contains "$out" 'Carrying Claude accounts: first@example.invalid, second@example.invalid' 'all carrying accounts named'
+assert_contains "$out" 'Serving Claude accounts (successful traffic in last 15 minutes): first@example.invalid 7d 91%' 'serving account named'
 assert_not_contains "$out" 'Carrying Claude account failed@example.invalid' 'failed-only traffic does not carry'
 assert_not_contains "$out" 'foreign@example.invalid' 'other provider traffic does not carry'
 # Clear previous conditions before testing no carrying traffic.
@@ -322,14 +322,14 @@ ROWS
 quota 0.91
 out=$(run_alarm check)
 assert_contains "$out" 'pool near empty' 'pool alarms without a carrying account'
-assert_contains "$out" 'Carrying Claude accounts: none (no successful Claude traffic in last 60 minutes)' 'no carrying account explained'
+assert_contains "$out" 'Serving Claude accounts (successful traffic in last 15 minutes): none (no successful Claude traffic in last 15 minutes)' 'no carrying account explained'
 assert_not_contains "$out" 'Carrying Claude account member@example.invalid' 'failed-only traffic skips carrying condition'
 quota 0.2
 run_alarm check >/dev/null
 mate 1 0 3601
 out=$(run_alarm check)
 assert_contains "$out" 'holding work silent' 'silent-mate alarm survives no recent successful traffic'
-assert_not_contains "$out" 'Carrying Claude accounts' 'a silent-mate alarm carries no quota context'
+assert_not_contains "$out" 'Serving Claude accounts' 'a silent-mate alarm carries no quota context'
 mate 0 0 0
 cat > "$HOME_FIX/models" <<'ROWS'
 models[1]{account,model,requests,failed}:
@@ -558,6 +558,40 @@ mate 0 0 0
 run_alarm check >/dev/null
 pass 'captain-held mates are healthy idle while stuck or un-held work still alarms'
 
+# Proxy view (a stale account supplies the quota card that carries the context line): a rotated-away exhausted account raises no decision while a headroom account serves.
+rotation_accounts() { # rotated_used serving_used
+  printf '%s\n' 'accounts[4]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:' \
+    "  rotated@example.invalid,claude,0.0,,$1,window9,,1,0" \
+    "  serving@example.invalid,claude,0.1,,$2,window9,,1,0" \
+    "  idle@example.invalid,claude,0.0,,0.0,window9,,1,0" \
+    "  old@example.invalid,claude,0.0,,0.5,window9,,200,0" > "$HOME_FIX/accounts"
+}
+printf '%s\n' 'models[2]{account,model,requests,failed}:' \
+  '  rotated@example.invalid,claude-opus-5-5,9,0' '  serving@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models"
+printf '%s\n' 'models[1]{account,model,requests,failed}:' '  serving@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models-recent"
+rotation_accounts 1.0 0.13
+out=$(run_alarm check)
+assert_not_contains "$out" 'Carrying Claude account rotated@example.invalid' 'a rotated exhausted account raises no decision'
+assert_contains "$out" 'Serving Claude accounts (successful traffic in last 15 minutes): serving@example.invalid 7d 13%' 'context names the serving account'
+assert_contains "$out" 'rotated out (over 90% 7d): rotated@example.invalid 7d 100%' 'context labels the exhausted account rotated out'
+assert_contains "$out" 'pooled: 62% mean 7d headroom across 3 non-stale accounts' 'context shows pooled headroom'
+assert_contains "$(cat "$HOME_FIX/quota-calls")" 'models --hours 0.25' 'the serving window is the recent 15 minutes'
+printf '%s\n' 'models[1]{account,model,requests,failed}:' '  old@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models-recent"
+assert_contains "$(run_alarm check)" 'Serving Claude accounts (successful traffic in last 15 minutes): old@example.invalid reading stale/unknown;' 'a serving account with a stale reading is still named as serving'
+rotation_accounts 0.2 0.2
+run_alarm check >/dev/null
+# Every serving account exhausted: the decision is still raised.
+rotation_accounts 1.0 0.95
+printf '%s\n' 'models[2]{account,model,requests,failed}:' \
+  '  rotated@example.invalid,claude-opus-5-5,9,0' '  serving@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models-recent"
+out=$(run_alarm check)
+assert_contains "$out" 'Carrying Claude account rotated@example.invalid 7d 100%' 'exhausted serving accounts still raise a decision'
+assert_contains "$out" 'Carrying Claude account serving@example.invalid 7d 95%' 'every exhausted serving account is named'
+rm -f "$HOME_FIX/models-recent"
+rotation_accounts 0.2 0.2
+run_alarm check >/dev/null
+pass 'quota alarm follows the proxy view: rotated accounts raise nothing, all-exhausted serving still does'
+
 # Carrying-account repeats are suppressed while the reset is near and the pool has headroom.
 soon=$(date -u -d '+2 hours' +%Y-%m-%dT%H:%M:%SZ)
 far=$(date -u -d '+30 hours' +%Y-%m-%dT%H:%M:%SZ)
@@ -713,6 +747,7 @@ run_alarm check >/dev/null
 out=$(run_alarm timer)
 [ "$(printf '%s\n' "$out" | wc -l)" = 1 ] || fail 'timer prints only its run result'
 printf '%s\n' "${out#RUN-RESULT }" | jq -e '.counts.alerts >= 1 and (.summary | test("^[0-9]+ alert\\(s\\) open; ")) and (.summary | length <= 200)' >/dev/null || fail 'timer run result counts alerts'
+printf '%s\n' "${out#RUN-RESULT }" | jq -e '.summary | test("open; Serving Claude accounts ")' >/dev/null || fail 'timer run result drops the quota context boilerplate'
 assert_contains "$(cat "$HOME_FIX/state/fleet-ledger.jsonl")" 'needs-decision' 'timer publishes without a watcher'
 jq -e -s 'map(select(.state == "needs-decision")) | length > 0 and all(.[]; .cause == "decision")' \
   "$HOME_FIX/state/fleet-ledger.jsonl" >/dev/null || fail 'a quota alarm line must state cause decision'
