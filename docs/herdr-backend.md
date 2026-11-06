@@ -510,15 +510,16 @@ Any of these preserves the candidate and lets session startup continue with at m
 
 Every machine keeps exactly one Herdr workspace labelled `Terminal`: a bare shell at the home directory with one tab and one pane, which belongs to the captain and never hosts an agent.
 Every agent runs alone in its own workspace, never in an extra tab or pane of another workspace.
-`bin/fm-herdr-terminal-check.sh` enforces both at locked session start, in the BOOTSTRAP section of the digest, and prints one `herdr-terminal:` line per finding; a healthy machine prints nothing.
+`bin/fm-herdr-terminal-check.sh` enforces both at locked session start in every Herdr home, primary or secondmate, in the BOOTSTRAP section of the digest; a healthy machine prints nothing.
 
 - When the session has no workspace labelled exactly `Terminal`, the check creates one without taking focus and runs nothing in it.
+- One machine-wide lock per host and Herdr session, outside every home (under `XDG_RUNTIME_DIR`, else `TMPDIR`; `FM_HERDR_TERMINAL_LOCK` overrides it), guards the Terminal part, so exactly one home creates the workspace and a home that finds the lock held skips it.
 - When several carry that label, or the single one holds an agent or more than one tab or pane, the check reports it and changes nothing.
-- Each agent that Herdr itself recognizes (`herdr agent list`) and that shares a workspace with another agent, or whose workspace has an extra tab or pane, gets one finding line; the home reports these to main.
+- Agents that Herdr itself recognizes (`herdr agent list`) and that share a workspace with another agent, or sit in the `Terminal` workspace, are reported on one summary line with their count and the first three; an agent alone in its workspace is not flagged, even beside extra non-agent tabs or panes. The home reports the line to main.
 - The check never closes, moves, kills, or renames a workspace, tab, pane, or process, and never starts a Herdr server.
-- Only the primary home runs it: a home marked by `.fm-secondmate-home` (every secondmate and office) and a home whose backend is not Herdr print nothing, so no second home can race the creation.
+- A home whose backend is not Herdr prints nothing.
 
-`tests/fm-herdr-terminal-check-e2e.test.sh` covers creation, an existing Terminal, a secondmate home, duplicate Terminals, and the flagged placements in a guarded non-default named lab.
+`tests/fm-herdr-terminal-check-e2e.test.sh` covers creation, an existing Terminal, a secondmate home creating it and skipping while the lock is held, duplicate Terminals, and the flagged placements in a guarded non-default named lab.
 
 ## Default-tab prune safety
 

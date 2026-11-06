@@ -59,8 +59,10 @@ SH
 chmod +x "$FAKEBIN/herdr"
 
 lab() { env PATH="$HERDR_ORIGINAL_PATH" "$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" "$@"; }
+TERMINAL_LOCK="$TMP_ROOT/terminal.lock"
 check() {
   FM_HOME="${CHECK_HOME:-$HOME_DIR}" FM_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
+    FM_HERDR_TERMINAL_LOCK="$TERMINAL_LOCK" \
     PATH="$FAKEBIN:$HERDR_ORIGINAL_PATH" "$ROOT/bin/fm-herdr-terminal-check.sh"
 }
 terminals() { lab workspace list | jq '[.result.workspaces[] | select(.label == "Terminal")] | length'; }
@@ -94,17 +96,33 @@ OUT=$(check) || fail 'check failed with a Terminal present'
 [ "$(snapshot)" = "$BEFORE" ] || fail 'existing Terminal run changed the workspaces'
 pass 'existing Terminal workspace is left alone and the check is silent'
 
-# 3. A secondmate or office home never creates or reports anything.
+# 3. A secondmate or office home recreates a missing Terminal too, unless
+# another home holds the machine-wide lock, in which case it skips creation.
 lab workspace list | jq -r '.result.workspaces[] | select(.label == "Terminal") | .workspace_id' \
-  | while read -r id; do lab workspace rename "$id" Renamed >/dev/null; done
+  | while read -r id; do lab workspace close "$id" >/dev/null; done
+[ "$(terminals)" = 0 ] || fail 'fixture could not remove the Terminal workspace'
 mkdir -p "$TMP_ROOT/mate/state" "$TMP_ROOT/mate/config"
 printf '%s\n' herdr > "$TMP_ROOT/mate/config/backend"
 printf '%s\n' mate > "$TMP_ROOT/mate/.fm-secondmate-home"
+hold_lock() {
+  . "$ROOT/bin/fm-wake-lib.sh"
+  fm_lock_try_acquire "$TERMINAL_LOCK" || return 1
+  touch "$TMP_ROOT/held"
+  while [ ! -e "$TMP_ROOT/release" ]; do sleep 0.1; done
+  fm_lock_release "$TERMINAL_LOCK"
+}
+hold_lock &
+HOLDER=$!
+for _ in $(seq 1 100); do [ -e "$TMP_ROOT/held" ] && break; sleep 0.1; done
+[ -e "$TMP_ROOT/held" ] || fail 'fixture could not hold the machine-wide lock'
+OUT=$(CHECK_HOME="$TMP_ROOT/mate" check) || fail 'secondmate check failed while the lock was held'
+[ -z "$OUT" ] && [ "$(terminals)" = 0 ] || fail "a home created or reported a Terminal while another held the lock: $OUT"
+touch "$TMP_ROOT/release"
+wait "$HOLDER" || fail 'fixture lock holder failed'
 OUT=$(CHECK_HOME="$TMP_ROOT/mate" check) || fail 'secondmate check failed'
-[ -z "$OUT" ] && [ "$(terminals)" = 0 ] || fail 'secondmate home created or reported a Terminal'
-pass 'a secondmate home does not touch the Terminal workspace'
-lab workspace list | jq -r '.result.workspaces[] | select(.label == "Renamed") | .workspace_id' \
-  | while read -r id; do lab workspace rename "$id" Terminal >/dev/null; done
+[ "$(terminals)" = 1 ] || fail 'secondmate home did not recreate the missing Terminal'
+case "$OUT" in *"created the 'Terminal' workspace"*) ;; *) fail "secondmate creation was not reported: $OUT" ;; esac
+pass 'a secondmate home recreates a missing Terminal, and skips while another home holds the lock'
 
 # 4. Two Terminals are reported, nothing is changed.
 read -r EXTRA _ <<< "$(new_workspace Terminal)"
@@ -115,30 +133,35 @@ case "$OUT" in *"2 workspaces are labelled 'Terminal'"*"changed nothing"*) ;; *)
 lab workspace close "$EXTRA" >/dev/null || fail 'could not remove the fixture extra Terminal'
 pass 'two Terminal workspaces are reported and left untouched'
 
-# 5. A lone agent in its own workspace is fine; two in one workspace, or an
-# agent beside an extra tab or pane, are flagged and nothing is closed.
+# 5. A lone agent is fine even beside extra non-agent tabs and panes; two
+# agents in one workspace, or one in the Terminal, are flagged on one line.
 read -r WS_A PANE_A <<< "$(new_workspace solo)"
 register_agent "$PANE_A" solo
 OUT=$(check) || fail 'check failed with a lone agent'
 [ -z "$OUT" ] || fail "a lone agent was flagged: $OUT"
 lab pane split "$PANE_A" --direction down --cwd "$HOME_DIR" --no-focus >/dev/null || fail 'could not split fixture pane'
-BEFORE=$(snapshot)
-OUT=$(check) || fail 'check failed with an agent beside an extra pane'
-case "$OUT" in *"pane $PANE_A"*"2 panes"*) ;; *) fail "agent beside an extra pane not flagged: $OUT" ;; esac
 lab tab create --workspace "$WS_A" --cwd "$HOME_DIR" --no-focus >/dev/null || fail 'could not create fixture tab'
-OUT=$(check) || fail 'check failed with an agent beside an extra tab'
-case "$OUT" in *"pane $PANE_A"*"2 tabs"*) ;; *) fail "agent beside an extra tab not flagged: $OUT" ;; esac
+OUT=$(check) || fail 'check failed with a lone agent beside extra tabs and panes'
+[ -z "$OUT" ] || fail "a lone agent beside non-agent tabs or panes was flagged: $OUT"
 OTHER=$(lab pane list --workspace "$WS_A" | jq -r --arg a "$PANE_A" '[.result.panes[] | select(.pane_id != $a)][0].pane_id')
 register_agent "$OTHER" second
-OUT=$(check) || fail 'check failed with two agents in one workspace'
-case "$OUT" in *"pane $PANE_A"*"shares workspace"*) ;; *) fail "shared workspace not flagged for first agent: $OUT" ;; esac
-case "$OUT" in *"pane $OTHER"*"shares workspace"*) ;; *) fail "shared workspace not flagged for second agent: $OUT" ;; esac
-[ "$(printf '%s\n' "$OUT" | grep -c 'herdr-terminal: agent')" = 2 ] || fail "expected one line per agent: $OUT"
-pass 'agents sharing a workspace, tab or pane are flagged one line each'
+TERMINAL_PANE=$(lab pane list --workspace "$(lab workspace list | jq -r '.result.workspaces[] | select(.label == "Terminal") | .workspace_id')" \
+  | jq -r '.result.panes[0].pane_id')
+register_agent "$TERMINAL_PANE" squatter
+BEFORE=$(snapshot)
+OUT=$(check) || fail 'check failed with shared workspaces'
+[ "$(printf '%s\n' "$OUT" | grep -c 'herdr-terminal:')" = 1 ] || fail "expected one placement summary line: $OUT"
+SUMMARY=$OUT
+case "$SUMMARY" in "herdr-terminal: 3 agent(s) share a workspace"*) ;; *) fail "summary count is not 3: $OUT" ;; esac
+for pane in "$PANE_A" "$OTHER" "$TERMINAL_PANE"; do
+  case "$SUMMARY" in *"pane $pane "*) ;; *) fail "summary does not name $pane: $SUMMARY" ;; esac
+done
+[ "$(snapshot)" = "$BEFORE" ] || fail 'flagging changed the workspaces'
+pass 'only agents sharing a workspace with another session are flagged, on one summary line'
 
 # 6. Nothing was ever closed or renamed by the check itself.
 AFTER=$(lab workspace list | jq '[.result.workspaces[]] | length')
 [ "$AFTER" -ge 3 ] || fail 'a workspace disappeared'
-for pane in "$PANE_A" "$OTHER"; do lab pane get "$pane" >/dev/null || fail 'a flagged pane was closed'; done
+for pane in "$PANE_A" "$OTHER" "$TERMINAL_PANE"; do lab pane get "$pane" >/dev/null || fail 'a flagged pane was closed'; done
 lab workspace get "$(printf '%s' "$ANCHOR" | cut -d' ' -f1)" >/dev/null || fail 'the anchor workspace was touched'
 pass 'the check never closed, moved or renamed anything'

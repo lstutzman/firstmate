@@ -4,8 +4,9 @@
 #
 # Usage: fm-herdr-terminal-check.sh
 #
-# Runs at locked session start (bin/fm-session-start.sh, BOOTSTRAP section) and
-# prints one line per finding; a healthy machine prints nothing. Always exits 0.
+# Runs at locked session start (bin/fm-session-start.sh, BOOTSTRAP section) in
+# every herdr home, primary or secondmate, and prints one line per finding; a
+# healthy machine prints nothing. Always exits 0.
 #
 # Terminal workspace (the captain's own scratch shell, never used by an agent):
 #   - none labelled exactly "Terminal": create one, a bare shell at $HOME with
@@ -13,13 +14,15 @@
 #   - exactly one: leave it alone, and report it only if it holds an agent or
 #     more than one tab or pane;
 #   - several: report them and change nothing.
-# Only the primary home does this: a home carrying .fm-secondmate-home (every
-# secondmate and office) and a home whose backend is not herdr print nothing.
+# One machine-wide lock per host and Herdr session (FM_HERDR_TERMINAL_LOCK,
+# default under XDG_RUNTIME_DIR or TMPDIR, outside every home) guards this part,
+# so exactly one home creates the workspace; a home that finds the lock held
+# skips it. A home whose backend is not herdr prints nothing.
 #
 # Agent placement: every agent Herdr itself recognizes (`herdr agent list`) must
-# sit alone in its own workspace, in its only tab and pane. An agent that shares
-# a workspace with another agent, or whose workspace has an extra tab or pane,
-# gets one finding line naming its pane and the reason.
+# sit alone in its own workspace. Agents that share a workspace with another
+# agent, or sit in the Terminal workspace, are reported on one summary line with
+# their count and the first few; extra non-agent tabs or panes are not flagged.
 #
 # This script never closes, moves, kills or renames a workspace, tab, pane or
 # process. It works on the session fm_backend_herdr_session names (HERDR_SESSION,
@@ -34,18 +37,22 @@ FM_TERMINAL_LABEL=Terminal
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
 fm_backend_source herdr
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
 
 fm_herdr_terminal_note() { printf 'herdr-terminal: %s\n' "$*"; }
 
-fm_herdr_terminal_check() {
-  local session workspaces agents terminal_ids count created
-  [ ! -e "$FM_HOME/.fm-secondmate-home" ] && [ ! -L "$FM_HOME/.fm-secondmate-home" ] || return 0
-  [ "$(fm_backend_name 2>/dev/null)" = herdr ] || return 0
-  command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
-  session=$(fm_backend_herdr_session)
+fm_herdr_terminal_lock_path() {  # <session>
+  local host
+  host=$(uname -n 2>/dev/null | tr -c 'A-Za-z0-9._-' _)
+  printf '%s/fm-herdr-terminal.%s.%s.lock' "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}" \
+    "${host:-host}" "$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' _)"
+}
+
+fm_herdr_terminal_workspace() {  # <session>
+  local session=$1 workspaces terminal_ids count created
   workspaces=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
   printf '%s' "$workspaces" | jq -e '.result.workspaces | type == "array"' >/dev/null 2>&1 || return 0
-
   terminal_ids=$(printf '%s' "$workspaces" | jq -r --arg label "$FM_TERMINAL_LABEL" \
     '.result.workspaces[] | select(.label == $label) | .workspace_id')
   count=$(printf '%s\n' "$terminal_ids" | awk 'NF { n++ } END { print n+0 }')
@@ -68,21 +75,31 @@ fm_herdr_terminal_check() {
       fm_herdr_terminal_note "$count workspaces are labelled '$FM_TERMINAL_LABEL' ($(printf '%s' "$terminal_ids" | paste -sd, -)); changed nothing, the captain keeps one"
       ;;
   esac
+}
 
+fm_herdr_terminal_check() {
+  local session lock workspaces agents
+  [ "$(fm_backend_name 2>/dev/null)" = herdr ] || return 0
+  command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 0
+  session=$(fm_backend_herdr_session)
+  lock=${FM_HERDR_TERMINAL_LOCK:-$(fm_herdr_terminal_lock_path "$session")}
+  if fm_lock_try_acquire "$lock"; then
+    fm_herdr_terminal_workspace "$session"
+    fm_lock_release "$lock" || true
+  fi
+
+  workspaces=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
+  printf '%s' "$workspaces" | jq -e '.result.workspaces | type == "array"' >/dev/null 2>&1 || return 0
   agents=$(fm_backend_herdr_cli "$session" agent list 2>/dev/null) || return 0
   printf '%s' "$agents" | jq -e '.result.agents | type == "array"' >/dev/null 2>&1 || return 0
   jq -rn --argjson ws "$workspaces" --argjson ag "$agents" --arg terminal "$FM_TERMINAL_LABEL" '
-    ($ws.result.workspaces | map({key: .workspace_id, value: .}) | from_entries) as $w
+    ($ws.result.workspaces | map({key: .workspace_id, value: .label}) | from_entries) as $label
     | ($ag.result.agents | group_by(.workspace_id) | map({key: .[0].workspace_id, value: length}) | from_entries) as $n
-    | $ag.result.agents[]
-    | . as $a
-    | ($w[$a.workspace_id] // {}) as $space
-    | [ (if ($n[$a.workspace_id] // 1) > 1 then "shares workspace with \(($n[$a.workspace_id]) - 1) other agent(s)" else empty end),
-        (if ($space.tab_count // 1) > 1 then "its workspace has \($space.tab_count) tabs" else empty end),
-        (if ($space.pane_count // 1) > 1 then "its workspace has \($space.pane_count) panes" else empty end),
-        (if $space.label == $terminal then "it sits in the \($terminal) workspace" else empty end) ]
-    | select(length > 0)
-    | "herdr-terminal: agent \($a.agent // "unknown") in pane \($a.pane_id) (workspace \($space.label // $a.workspace_id)): \(join("; ")); every agent runs alone in its own workspace, nothing was moved"
+    | [ $ag.result.agents[]
+        | select($n[.workspace_id] > 1 or $label[.workspace_id] == $terminal)
+        | "\(.agent // "unknown") in pane \(.pane_id) (workspace \($label[.workspace_id] // .workspace_id))" ] as $flagged
+    | select($flagged | length > 0)
+    | "herdr-terminal: \($flagged | length) agent(s) share a workspace with another session: \($flagged[:3] | join(", "))\(if ($flagged | length) > 3 then ", and \(($flagged | length) - 3) more" else "" end); every agent runs alone in its own workspace, nothing was moved"
   ' 2>/dev/null
   return 0
 }
