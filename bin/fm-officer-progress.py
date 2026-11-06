@@ -209,8 +209,21 @@ def command(args, input_bytes=None, timeout=120):
     proc = subprocess.run(args, input=input_bytes, capture_output=True, timeout=timeout, check=False)
     if proc.returncode:
         # External stderr may contain credentials; keep the failure structural.
-        raise RuntimeError("%s read failed (exit %d)" % (args[0], proc.returncode))
+        raise RuntimeError("%s read failed (exit %d)%s" % (args[0], proc.returncode, failure_hint(proc.stderr)))
     return proc.stdout.decode("utf-8")
+
+
+def redact(line, limit):
+    """One output line with token-like strings removed and bounded, so a log can quote it."""
+    line = re.sub(r"(?i)(authorization|token|bearer|password|secret|key)\S*[:= ]+\S+", r"\1 [redacted]", line.strip())
+    line = re.sub(r"\b[A-Za-z0-9_\-]{32,}\b|\b(?:gh[pousr]_|github_pat_)\w+", "[redacted]", line)
+    return line[:limit]
+
+
+def failure_hint(stderr):
+    """First stderr line, redacted, so a log can name the cause."""
+    text = (stderr or b"").decode("utf-8", "replace").strip().splitlines()
+    return ": " + redact(text[0], 200) if text else ""
 
 
 class LinearDiscovery:
@@ -431,17 +444,34 @@ def remaining(deadline):
     return left
 
 
+def list_open_prs(repo, deadline):
+    raw = command(["gh-axi", "api", "GET", "/repos/" + repo + "/pulls?state=open&per_page=100",
+                   "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'], timeout=remaining(deadline))
+    prs = []
+    for line in raw.splitlines():
+        if not line.startswith("PRJSON "):
+            raise RuntimeError("unexpected GitHub output: " + redact(line, 120))
+        prs.append(json.loads(line[7:]))
+    return prs
+
+
 def open_prs(repos, deadline):
+    """List open PRs; a failed repo is retried once and then named in the raised error."""
     prs = []
     for repo in repos:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
             raise RuntimeError("repos must contain comma-separated owner/repo names")
-        raw = command(["gh-axi", "api", "GET", "/repos/" + repo + "/pulls?state=open&per_page=100",
-                       "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'], timeout=remaining(deadline))
-        for line in raw.splitlines():
-            if not line.startswith("PRJSON "):
-                raise RuntimeError("GitHub read returned an unexpected PR format")
-            prs.append(json.loads(line[7:]))
+        for attempt in (1, 2):
+            try:
+                prs.extend(list_open_prs(repo, deadline))
+                break
+            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+                reason = ("timeout after %.0f seconds" % exc.timeout if isinstance(exc, subprocess.TimeoutExpired)
+                          else str(exc) or type(exc).__name__)
+                print("open PR listing failed for %s (attempt %d): %s" % (repo, attempt, reason), file=sys.stderr)
+                if attempt == 2 or str(exc) == "run deadline reached":
+                    raise RuntimeError("%s: %s" % (repo, reason)) from None
+                time.sleep(min(2, max(0, deadline - time.monotonic())))
     return prs
 
 
@@ -1074,10 +1104,16 @@ def stable_key(row):
     return plain(value, 60) or "discovery"
 
 
+def page_id(row):
+    """Issue key plus a hash of the work item's own identity, so it never depends on siblings or mutable fields."""
+    own = "\0".join(str(row.get(f, "")) for f in ("owner_home", "id"))
+    return stable_key(row)[:46] + "-" + hashlib.sha256(own.encode()).hexdigest()[:12]
+
+
 def page_state(doc, officer, previous, repos, log_url, reported):
     """Fleet-app v1 projection; detailed execution stays in <date>.json.
 
-    reported holds the done keys of the previous dated run, or None on a first run;
+    reported holds the done page ids of the previous dated run, or None on a first run;
     outcomes already reported there and no longer on the page are not re-added."""
     now = doc["generated_at"]
     default_link = "https://github.com/" + repos.split(",")[0].strip()
@@ -1091,22 +1127,33 @@ def page_state(doc, officer, previous, repos, log_url, reported):
     sources = {"security": "cve", "cve": "cve", "code-review": "review", "bug": "bug",
                "requested-feature": "feature", "requested-fleet": "fleet", "filler": "filler"}
 
-    def unique(key, group, row):
-        if key in used[group]:
-            key += "-" + hashlib.sha256(row.get("owner_home", "").encode()).hexdigest()[:12]
+    def prior(old, key, row):
+        """The previous entry under this id, or under an id written before page_id existed."""
+        legacy = stable_key(row)
+        for k in (key, legacy, legacy + "-" + hashlib.sha256(row.get("owner_home", "").encode()).hexdigest()[:12]):
+            if k in old:
+                return old[k]
+        return None
+
+    def unique(group, row):
+        base = key = page_id(row)
+        n = 1
+        while key in used[group]:
+            n += 1
+            key = "%s-%d" % (base, n)
         used[group].add(key)
         return key
 
     def instruction(row, question):
-        key = unique(stable_key(row), "asking", row)
+        key = unique("asking", row)
         return {"key": key, "kind": "instruction", "question": plain(question, 300),
                 "waiting_on": "firstmate", "link": https_url(row.get("link")) or default_link,
-                "asked_at": observed_time(old_asking.get(key, {}).get("asked_at"), now)}
+                "asked_at": observed_time((prior(old_asking, key, row) or {}).get("asked_at"), now)}
 
     for row in doc["doing"][:30]:
-        key = unique(stable_key(row), "doing", row)
+        key = unique("doing", row)
         entry = {"id": key, "description": plain("Watching work: " + row["title"], 200),
-                 "started_at": observed_time(old_doing.get(key, {}).get("started_at"), now)}
+                 "started_at": observed_time((prior(old_doing, key, row) or {}).get("started_at"), now)}
         if sources.get(row["authorising_class"]):
             entry["source"] = sources[row["authorising_class"]]
         link = https_url(row.get("link"))
@@ -1116,11 +1163,12 @@ def page_state(doc, officer, previous, repos, log_url, reported):
             entry["project"] = plain(row["project"], 60)
         page["doing"].append(entry)
     for row in doc["done"]:
-        if reported is not None and stable_key(row) in reported and stable_key(row) not in old_done:
+        key = unique("done", row)
+        old = prior(old_done, key, row)
+        if reported is not None and page_id(row) in reported and old is None:
             continue
-        key = unique(stable_key(row), "done", row)
         entry = {"id": key, "description": plain("Recorded work outcome: " + row["title"], 200),
-                 "at": observed_time(old_done.get(key, {}).get("at"), now), "outcome": row.get("outcome", "ok"),
+                 "at": observed_time((old or {}).get("at"), now), "outcome": row.get("outcome", "ok"),
                  "detail": plain(row["reason"], 300)}
         if sources.get(row["authorising_class"]):
             entry["source"] = sources[row["authorising_class"]]
@@ -1263,8 +1311,8 @@ def main(argv):
         problems.append("Linear discovery: " + str(exc))
     try:
         prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()], discovery.deadline)
-    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired):
-        blockers.append("open PR discovery unavailable or incomplete")
+    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        blockers.append("open PR discovery unavailable or incomplete (%s)" % (str(exc) or type(exc).__name__))
     problems = ["Linear labels not readable by linear-axi"] + problems
     configured = set(filter(None, args.requested.split(",")))
     checked, unchecked = set(), {}
@@ -1299,7 +1347,7 @@ def main(argv):
     runs = sorted(n for n in os.listdir(args.out) if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", n))
     if runs:
         try:
-            reported = {stable_key(r) for r in json.loads(read(os.path.join(args.out, runs[-1])))["done"]}
+            reported = {page_id(r) for r in json.loads(read(os.path.join(args.out, runs[-1])))["done"]}
         except (ValueError, KeyError, TypeError, AttributeError):
             reported = None
     write(os.path.join(args.out, args.date + ".json"), doc)

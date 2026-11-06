@@ -398,6 +398,184 @@ MD
   pass 'progress: merged-PR drops follow the class judge applies'
 }
 
+test_work_items_under_one_issue_get_distinct_ids() {
+  make_world shared-issue
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+- [ ] pc23-b - PC-23 second piece (kind: bug) (pr: https://github.com/example/project/pull/4602)
+- [ ] pc23-c - PC-23 third piece (kind: bug) (pr: https://github.com/example/project/pull/4626)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+- [x] pc27-b - PC-2700 two outcome (kind: bug)
+MD
+  local file="$WORLD_HOME/data/officers/progress/progress-state.json" before
+  run_progress >/dev/null || fail 'shared-issue run failed'
+  assert_equals '3' "$(jq '.doing | length' "$file")" 'every work item under one issue is listed'
+  assert_equals '3' "$(jq '[.doing[].id] | unique | length' "$file")" 'work items under one issue get distinct doing ids'
+  assert_equals '2' "$(jq '[.done[].id] | unique | length' "$file")" 'work items under one issue get distinct done ids'
+  assert_equals '0' "$(jq '[.doing[].id | length | select(. > 80)] | length' "$file")" 'ids stay inside the reader limit'
+  before=$(jq -c '[.doing[].id, .done[].id] | sort' "$file")
+  run_progress >/dev/null || fail 'second shared-issue run failed'
+  assert_equals "$before" "$(jq -c '[.doing[].id, .done[].id] | sort' "$file")" 'ids are stable across runs'
+  assert_equals '2' "$(jq '.done | length' "$file")" 'reported outcomes stay on the page'
+  pass 'progress: work items under one Linear issue get distinct, stable page ids'
+}
+
+test_page_ids_ignore_sibling_count() {
+  make_world sibling-count
+  local file="$WORLD_HOME/data/officers/progress/progress-state.json" lone_id lone_started first_done previous_now=$NOW
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+MD
+  run_progress >/dev/null || fail 'single-item run failed'
+  lone_id=$(jq -r '.doing[0].id' "$file")
+  lone_started=$(jq -r '.doing[0].started_at' "$file")
+  first_done=$(jq -r '.done[0].id' "$file")
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+- [ ] pc23-b - PC-23 second piece (kind: bug) (pr: https://github.com/example/project/pull/4602)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+- [x] pc27-b - PC-2700 two outcome (kind: bug)
+MD
+  NOW=$((NOW + 60))
+  run_progress >/dev/null || fail 'sibling-added run failed'
+  NOW=$previous_now
+  assert_equals '2' "$(jq '[.doing[].id] | unique | length' "$file")" 'a second item under one issue gets its own id'
+  assert_equals 'https://github.com/example/project/pull/4596' \
+    "$(jq -r --arg id "$lone_id" '.doing[] | select(.id == $id) | .link' "$file")" 'an item keeps its id when its PR link appears'
+  assert_contains "$(jq -r '.doing[].id' "$file")" "$lone_id" 'an existing item keeps its id when a sibling appears'
+  assert_equals "$lone_started" "$(jq -r --arg id "$lone_id" '.doing[] | select(.id == $id) | .started_at' "$file")" \
+    'an existing item keeps its start time when a sibling appears'
+  assert_equals '2' "$(jq '.done | length' "$file")" 'a second outcome under a reported issue is shown'
+  assert_contains "$(jq -r '.done[].id' "$file")" "$first_done" 'the reported outcome keeps its id'
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+- [x] pc27-b - PC-2700 two outcome (kind: bug)
+MD
+  NOW=$((NOW + 120))
+  run_progress >/dev/null || fail 'sibling-removed run failed'
+  NOW=$previous_now
+  assert_equals "$lone_id" "$(jq -r '[.doing[].id] | join(" ")' "$file")" 'the remaining item keeps its id when a sibling leaves'
+  assert_equals "$lone_started" "$(jq -r '.doing[0].started_at' "$file")" 'the remaining item keeps its start time'
+  assert_equals '2' "$(jq '.done | length' "$file")" 'both reported outcomes stay on the page'
+  pass 'progress: page ids do not change as sibling items come and go or a PR link appears'
+}
+
+test_legacy_page_ids_carry_over() {
+  make_world legacy-ids
+  local file="$WORLD_HOME/data/officers/progress/progress-state.json" previous_now=$NOW
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+- [x] pc27-b - PC-2700 two outcome (kind: bug)
+MD
+  run_progress >/dev/null || fail 'legacy-id first run failed'
+  # The page as an earlier release wrote it: bare issue keys, shared by items under one issue.
+  jq '.doing |= map(.id = "PC-23" | .started_at = "2026-01-01T00:00:00Z")
+      | .done |= map(.id = "PC-2700" | .at = "2026-01-02T00:00:00Z")' "$file" > "$file.new" && mv "$file.new" "$file"
+  NOW=$((NOW + 60))
+  run_progress >/dev/null || fail 'legacy-id second run failed'
+  NOW=$previous_now
+  assert_equals '2' "$(jq '[.done[].id] | unique | length' "$file")" 'reported outcomes under a legacy id stay on the page'
+  assert_equals '2026-01-02T00:00:00Z 2026-01-02T00:00:00Z' "$(jq -r '[.done[].at] | join(" ")' "$file")" \
+    'each outcome keeps the legacy time'
+  assert_equals '2026-01-01T00:00:00Z' "$(jq -r '.doing[0].started_at' "$file")" 'doing keeps the legacy start time'
+  assert_equals '0' "$(jq '[.doing[].id, .done[].id] | map(select(. == "PC-23" or . == "PC-2700")) | length' "$file")" \
+    'only new ids are written'
+  NOW=$((NOW + 120))
+  run_progress >/dev/null || fail 'legacy-id third run failed'
+  NOW=$previous_now
+  assert_equals '2026-01-02T00:00:00Z 2026-01-02T00:00:00Z' "$(jq -r '[.done[].at] | join(" ")' "$file")" \
+    'times stay after the ids settle'
+  pass 'progress: page state written with legacy ids keeps its outcomes and times'
+}
+
+test_open_pr_listing_failures() {
+  local file stub lane
+  make_world pr-listing
+  lane="$WORLD_HOME/data/officers/progress"
+  stub_sleep
+  linear_item PC-61 'Bug: checked work starts'
+  file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  # Stub: fail the first N listing calls with a stderr cause; N comes from the "fail-count" file.
+  stub="$WORLD/gh-axi-real"
+  cp "$FAKEBIN/gh-axi" "$stub"
+  cat > "$FAKEBIN/gh-axi" <<SH
+#!/usr/bin/env bash
+case "\$3" in
+  */pulls\?*)
+    n=\$(cat "\$PROGRESS_WORLD/fail-count" 2>/dev/null || echo 0)
+    if [ "\$n" -gt 0 ]; then
+      echo \$((n - 1)) > "\$PROGRESS_WORLD/fail-count"
+      echo "Get https://api.github.com/repos/x: dial tcp: i/o timeout token=FIXTURESECRET0123456789abcdefghijklmnopqrstuv" >&2
+      exit 1
+    fi ;;
+esac
+exec "$stub" "\$@"
+SH
+  chmod +x "$FAKEBIN/gh-axi"
+  # Transient: one failure is retried and starts go through.
+  echo 1 > "$WORLD/fail-count"
+  run_progress >/dev/null 2>"$WORLD/stderr" || fail 'a retried PR listing must publish state'
+  assert_equals 'null' "$(jq -r '[.coverage[] | select(contains("Starts held"))] | first' "$file")" 'a transient failure does not hold starts'
+  assert_equals '1' "$(jq '.start_requests | length' "$file")" 'a retried listing lets the start through'
+  assert_contains "$(cat "$lane/.run.err")" 'open PR listing failed for example/project (attempt 1)' 'the retried failure is logged'
+  # Persistent: both attempts fail, starts stay held and the blocker names the repo and the cause.
+  echo 5 > "$WORLD/fail-count"
+  run_progress >/dev/null 2>"$WORLD/stderr" || fail 'a failed PR listing must still publish state'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'a persistent failure still holds starts'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete' \
+    'the held reason stays'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'example/project: gh-axi read failed (exit 1): Get https://api.github.com/repos/x: dial tcp: i/o timeout token [redacted]' \
+    'the blocker names the real failure'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")$(cat "$lane/.run.err")" 'FIXTURESECRET' 'no token reaches the digest or the log'
+  assert_contains "$(cat "$lane/.run.err")" '(attempt 2)' 'the run log names both attempts'
+  # An unexpected line beside PR data holds starts, and the blocker quotes it.
+  rm "$WORLD/fail-count"
+  cat > "$FAKEBIN/gh-axi" <<SH
+#!/usr/bin/env bash
+case "\$3" in */pulls\?*) echo 'notice: a new gh-axi version is available' ;; esac
+exec "$stub" "\$@"
+SH
+  python3 -I - "$WORLD/prs.json" <<'PY'
+import json, sys
+json.dump([{"title": "Some open PR", "number": 1, "html_url": "https://github.com/example/project/pull/1"}], open(sys.argv[1], "w"))
+PY
+  run_progress >/dev/null 2>&1 || fail 'an unexpected listing line must still publish state'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'an unexpected listing line holds starts'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'example/project: unexpected GitHub output: notice: a new gh-axi version is available' \
+    'the blocker names the repo and the unexpected line'
+  assert_contains "$(cat "$lane/.run.err")" 'open PR listing failed for example/project (attempt 2): unexpected GitHub output' \
+    'the run log names the unexpected line'
+  pass 'progress: PR listing failures are named and retried once, and persistent ones still hold starts'
+}
+
 test_github_reads_respect_deadline() {
   make_world github-deadline
   stub_sleep
@@ -1199,7 +1377,7 @@ MD
   assert_equals 'progress' "$(jq -r '.officer' "$file")" 'page names registered officer'
   assert_equals 'bug' "$(jq -r '.doing[0].source' "$file")" 'page maps the authorising class to its agreed source'
   assert_equals 'bug' "$(jq -r '.done[0].source' "$file")" 'page records the completed source'
-  assert_equals 'firstmate' "$(jq -r '.asking[] | select(.key == "ready") | .waiting_on' "$file")" 'start requests wait on firstmate'
+  assert_equals 'firstmate' "$(jq -r '.asking[] | select(.question == "Start authorised work: Fix the next crash") | .waiting_on' "$file")" 'start requests wait on firstmate'
   assert_equals 'captains_log' "$(jq -r '.asking[] | select(.key == "existing-card") | .kind' "$file")" 'existing Log cards remain references'
   assert_equals 'key kind link' "$(jq -r '.asking[] | select(.key == "existing-card") | keys | join(" ")' "$file")" 'a Log reference repeats no decision text'
   assert_equals 'https://fleet.example/captains-log#existing-card' \
@@ -1244,18 +1422,18 @@ for path in sys.argv[2:]:
 PY
   local first_started first_asked previous_now=$NOW
   first_started=$(jq -r '.doing[0].started_at' "$file")
-  first_asked=$(jq -r '.asking[] | select(.key == "ready") | .asked_at' "$file")
+  first_asked=$(jq -r '.asking[] | select(.question == "Start authorised work: Fix the next crash") | .asked_at' "$file")
   NOW=$((NOW + 60))
   run_progress >/dev/null || fail 'second page observation failed'
   NOW=$previous_now
   assert_equals "$first_started" "$(jq -r '.doing[0].started_at' "$file")" 'watch start remains the first observation'
-  assert_equals "$first_asked" "$(jq -r '.asking[] | select(.key == "ready") | .asked_at' "$file")" 'waiting time survives repeat observations'
+  assert_equals "$first_asked" "$(jq -r '.asking[] | select(.question == "Start authorised work: Fix the next crash") | .asked_at' "$file")" 'waiting time survives repeat observations'
   jq '.done = []' "$file" > "$file.new" && mv "$file.new" "$file"
   printf -- '- [x] fresh - Fix new crash (kind: bug)\n' >> "$WORLD_HOME/data/backlog.md"
   NOW=$((NOW + 120))
   run_progress >/dev/null || fail 'third page observation failed'
   NOW=$previous_now
-  assert_equals 'fresh' "$(jq -r '[.done[].id] | join(" ")' "$file")" \
+  assert_equals 'Recorded work outcome: Fix new crash' "$(jq -r '[.done[].description] | join("|")' "$file")" \
     'an outcome reported earlier and off the page does not return as new; a new outcome does'
   pass 'progress: fleet-app state matches the agreed schema and Slarti sample'
 }
@@ -1497,6 +1675,10 @@ test_linear_rate_limit_recovers
 test_merge_ask_pr_state
 test_merged_pr_asks_follow_effective_class
 test_github_reads_respect_deadline
+test_open_pr_listing_failures
+test_work_items_under_one_issue_get_distinct_ids
+test_page_ids_ignore_sibling_count
+test_legacy_page_ids_carry_over
 test_review_words_and_explicit_asks
 test_partial_coverage_starts
 test_linear_pagination

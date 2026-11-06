@@ -1578,6 +1578,7 @@ The progress script's header owns request, page, and backoff bounds, including t
 Later runs skip Linear discovery, naming that gap, until the resume time passes.
 A capped or failed Linear read is a per-item coverage gap: checked items still produce start requests, while items whose full description or parent checks fail remain excluded and are named in coverage.
 A missing or unreadable registered home, an unsupported non-Markdown backlog, or failed open-PR discovery leaves the duplicate-start check unable to pass for any item, so that run emits no start requests and its coverage names the reason.
+A failed open-PR listing is retried once per repository; if it fails again, the coverage blocker and run log name that repository and its redacted cause.
 Filler waits for complete coverage.
 The installed `linear-axi` cannot return or filter issue labels, so the officer reports `Linear labels not readable by linear-axi` rather than claiming label-based discovery is complete.
 The pass reads current records; the common officer scheduler's date names the run rather than a historical snapshot.
@@ -1696,6 +1697,7 @@ Its top-level fields are:
 | `done` | At most 50 entries, newest observation first; an outcome already in the previous dated run that has left the page is not added again; with `id`, `description`, `at`, `outcome` (`ok`, `failed`, or `skipped`), and optional `link`, `detail`, and `source` |
 | `asking` | At most 30 entries: `instruction` entries have `key`, `kind`, `question`, `waiting_on`, `link`, and optional `asked_at`; `captains_log` references carry only `key`, `kind`, and `link` |
 
+Each page `id` and `key` is the Linear issue key plus a hash of the work item's own home and id, so several work items under one issue get distinct ids that stay the same across runs.
 Page times describe when the officer first observed the work, outcome, or request, and persist across successive observations while the entry remains present.
 Descriptions say that the officer is watching or recording work rather than claiming it performed another worker's action.
 The optional `source` on `doing` and `done` maps security/CVE to `cve`, code-review to `review`, bug to `bug`, requested-feature to `feature`, requested-fleet to `fleet`, and filler to `filler`.
