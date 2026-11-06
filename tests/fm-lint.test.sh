@@ -305,9 +305,9 @@ if [ "\${1:-}" = --version ]; then
   printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
   exit 0
 fi
-# The ratchet pass (--include) is a separate invocation that must not disturb
-# the per-root accounting below: report one finding per listed file in gcc
-# format and nothing for the default format.
+# The ratchet check (--include) is a separate invocation that must not disturb
+# the per-root accounting below: a listed root (gcc format) still has a
+# finding, and an enforced root (default format) is clean.
 ratchet=no
 gcc=no
 for arg in "\$@"; do
@@ -318,6 +318,7 @@ if [ "\$ratchet" = yes ]; then
     for arg in "\$@"; do
       case "\$arg" in -*|gcc) ;; *) printf '%s:1:1: note: stub [SC2248]\n' "\$arg" ;; esac
     done
+    exit 1
   fi
   exit 0
 fi
@@ -1297,6 +1298,40 @@ test_ratchet_reports_a_listed_file_that_now_passes() {
   pass "fm-lint.sh reports a listed file that already passes the ratchet"
 }
 
+test_ratchet_tool_failure_is_not_a_stale_entry() {
+  # A ratchet invocation that dies (here a stub reporting a heap exhaustion)
+  # must fail lint as a tool failure; a listed file must never be called
+  # stale because ShellCheck produced no findings while crashing.
+  local tmp fakebin list out rc
+  tmp=$(fm_test_tmproot fm-lint-ratchet-crash)
+  fakebin=$(fm_fakebin "$tmp")
+  mkdir -p "$tmp/repo/bin"
+  cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$tmp/repo/bin/"
+  list="$tmp/list"
+  printf '%s\n' '#!/usr/bin/env bash' 'echo hi' > "$tmp/repo/bin/listed.sh"
+  printf 'bin/listed.sh\n' > "$list"
+  cat > "$fakebin/shellcheck" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = "--version" ]; then
+  printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
+  exit 0
+fi
+case " $* " in *" --include="*) printf 'shellcheck: Heap exhausted;\n' >&2; exit 251 ;; esac
+exit 0
+SH
+  chmod +x "$fakebin/shellcheck"
+  rc=0
+  out=$(PATH="$fakebin:$PATH" FM_LINT_RATCHET_LIST="$list" "$tmp/repo/bin/fm-lint.sh" bin/listed.sh 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a crashed ratchet check passed lint"$'\n'"$out"
+  assert_contains "$out" "ratchet check of bin/listed.sh failed (reason=memory" \
+    "the ratchet tool failure was not named"
+  case "$out" in
+    *"passes the ratchet check"*) fail "a crashed ratchet check reported a stale entry"$'\n'"$out" ;;
+  esac
+  pass "fm-lint.sh reports a crashed ratchet check as a tool failure, not a stale entry"
+}
+
 test_ratchet_helper_retires_one_file_at_a_time() {
   if ! pinned_ready; then
     pass "SKIP (ShellCheck $REQUIRED not resolved): ratchet helper check"
@@ -2151,6 +2186,7 @@ test_rejects_direct_beads_cli_invocations
 test_rejects_direct_beads_cli_in_explicit_core_path
 test_ratchet_skips_listed_files_and_fails_unlisted_ones
 test_ratchet_reports_a_listed_file_that_now_passes
+test_ratchet_tool_failure_is_not_a_stale_entry
 test_ratchet_helper_retires_one_file_at_a_time
 test_ignores_ambient_shellcheck_opts
 test_clean_fixture_passes

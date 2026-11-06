@@ -7,7 +7,8 @@
 # time off that list; fm-lint.sh owns the check definition and the list format.
 # One small change a day keeps review cheap.
 #
-# Daily run (not scheduled by this repo; an office tick or a timer calls it):
+# Daily run (an office's `ratchet` source in bin/fm-office.sh names the file once
+# per UTC day; the office dispatches one ship worker to do the rest):
 #   1. file=$(bin/fm-lint-ratchet.sh next)    exit 1 with no output when empty
 #   2. fix "$file" until: bin/fm-lint-ratchet.sh check "$file"
 #   3. bin/fm-lint-ratchet.sh retire "$file"  removes it from the list

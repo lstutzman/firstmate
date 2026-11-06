@@ -157,6 +157,16 @@ FM_HOME=$MAIN bin/fm-officer.sh register surgeon
 FM_HOME=$MAIN bin/fm-office.sh ensure
 ```
 
+## 10. Arm the lint ratchet's daily clock
+
+Add `ratchet` to the Quartermaster's sources so its home wakes once per UTC day with the next file on `bin/fm-lint-ratchet.exceptions` ([Offices](configuration.md#offices-dataofficesmd) owns what the source prints); the Quartermaster then dispatches one ship worker for that file.
+
+```sh
+sed -i.bak '/^- quartermaster - /s/sources: \([^;]*\);/sources: \1,ratchet;/' "$MAIN/data/offices.md"
+FM_HOME=$QM_HOME bin/fm-office.sh register-sources
+FM_HOME=$MAIN bin/fm-office.sh ensure
+```
+
 ### An office PR flagged `authority`
 
 An office never merges a change to the files that define its own authority, and `bin/fm-pr-merge.sh` refuses an office PR its admission classifier flags `authority`.
