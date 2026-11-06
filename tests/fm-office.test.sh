@@ -788,6 +788,8 @@ test_landing_needs_a_handoff_to_another_merger() {
   rm -f "$w/navigator/data/office/tick.seen"
   if command -v tasks-axi >/dev/null 2>&1; then
     assert_contains "$(nav_check "$w" tick)" "1 landing" "a project merged by another home is a handoff"
+  else
+    assert_equals "" "$(nav_check "$w" tick)" "without tasks-axi the captain-hold read fails, so the merger binding alone frees no place"
   fi
   put_landing "$w" t1 "$w/projects/x"
   printf 'x\n' > "$s/t1.merge-handoff"
