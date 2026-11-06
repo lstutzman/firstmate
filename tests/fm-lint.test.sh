@@ -305,6 +305,22 @@ if [ "\${1:-}" = --version ]; then
   printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
   exit 0
 fi
+# The ratchet pass (--include) is a separate invocation that must not disturb
+# the per-root accounting below: report one finding per listed file in gcc
+# format and nothing for the default format.
+ratchet=no
+gcc=no
+for arg in "\$@"; do
+  case "\$arg" in --include=*) ratchet=yes ;; gcc) gcc=yes ;; esac
+done
+if [ "\$ratchet" = yes ]; then
+  if [ "\$gcc" = yes ]; then
+    for arg in "\$@"; do
+      case "\$arg" in -*|gcc) ;; *) printf '%s:1:1: note: stub [SC2248]\n' "\$arg" ;; esac
+    done
+  fi
+  exit 0
+fi
 mode=on
 follow=no
 exclude=none
@@ -364,6 +380,7 @@ if [ "${1:-}" = "--version" ]; then
   printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
   exit 0
 fi
+case " $* " in *" --include="*) exit 0 ;; esac
 target=${!#}
 case "$target" in
   *blocker*)
@@ -1105,6 +1122,7 @@ if [ "$1" = "--version" ]; then
   printf 'ShellCheck - shell script analysis tool\nversion: 0.9.9\nlicense: x\nwebsite: y\n'
   exit 0
 fi
+case " $* " in *" --include="*) exit 0 ;; esac
 exit 0
 SH
   chmod +x "$fakebin/shellcheck"
@@ -1219,6 +1237,87 @@ test_rejects_direct_beads_cli_in_explicit_core_path() {
       "explicit core path did not report the backend-boundary violation: $spelling"
   done
   pass "fm-lint.sh enforces backend purity for explicit core paths"
+}
+
+# A file that fails the ratchet check (a variable that needs no quoting is left
+# bare, which only the optional quote-safe-variables check flags) but passes the
+# default pass, so only the ratchet can fail it.
+# shellcheck disable=SC2016 # The fixture text is shell source, not expanded here.
+fm_lint_ratchet_fixture() {  # <path> <passing|failing>
+  if [ "$2" = failing ]; then
+    printf '%s\n' '#!/usr/bin/env bash' 'foo=1' 'echo $foo' > "$1"
+  else
+    printf '%s\n' '#!/usr/bin/env bash' 'foo=1' 'echo "$foo"' > "$1"
+  fi
+}
+
+test_ratchet_skips_listed_files_and_fails_unlisted_ones() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): ratchet regression check"
+    return
+  fi
+  local tmp listed unlisted list out rc
+  tmp=$(fm_test_tmproot fm-lint-ratchet)
+  mkdir -p "$tmp/repo/bin"
+  cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
+  listed="$tmp/repo/bin/listed.sh"
+  unlisted="$tmp/repo/bin/unlisted.sh"
+  list="$tmp/list"
+  fm_lint_ratchet_fixture "$listed" failing
+  fm_lint_ratchet_fixture "$unlisted" failing
+  printf '# exceptions\nbin/listed.sh\n' > "$list"
+
+  rc=0
+  out=$(FM_LINT_RATCHET_LIST="$list" "$tmp/repo/bin/fm-lint.sh" bin/listed.sh 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "a listed failing file was not skipped by the ratchet"$'\n'"$out"
+
+  rc=0
+  out=$(FM_LINT_RATCHET_LIST="$list" "$tmp/repo/bin/fm-lint.sh" bin/unlisted.sh 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an unlisted failing file passed the ratchet"$'\n'"$out"
+  assert_contains "$out" "SC2248" "the ratchet did not report the stricter finding"
+  pass "fm-lint.sh skips listed files and fails unlisted ones under the ratchet"
+}
+
+test_ratchet_reports_a_listed_file_that_now_passes() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): ratchet stale-entry check"
+    return
+  fi
+  local tmp list out rc
+  tmp=$(fm_test_tmproot fm-lint-ratchet-stale)
+  mkdir -p "$tmp/repo/bin"
+  cp "$LINT" "$tmp/repo/bin/fm-lint.sh"
+  list="$tmp/list"
+  fm_lint_ratchet_fixture "$tmp/repo/bin/fixed.sh" passing
+  printf 'bin/fixed.sh\n' > "$list"
+  rc=0
+  out=$(FM_LINT_RATCHET_LIST="$list" "$tmp/repo/bin/fm-lint.sh" bin/fixed.sh 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a listed file that passes the ratchet was not reported"$'\n'"$out"
+  assert_contains "$out" "remove it from" "the stale exception was not named"
+  pass "fm-lint.sh reports a listed file that already passes the ratchet"
+}
+
+test_ratchet_helper_retires_one_file_at_a_time() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): ratchet helper check"
+    return
+  fi
+  local helper="$ROOT/bin/fm-lint-ratchet.sh" tmp list out rc
+  tmp=$(fm_test_tmproot fm-lint-ratchet-helper)
+  list="$tmp/list"
+  printf '# header\nbin/fm-lint-ratchet.sh\nbin/fm-send.sh\n' > "$list"
+  out=$(FM_LINT_RATCHET_LIST="$list" "$helper" next) || fail "next failed"
+  [ "$out" = bin/fm-lint-ratchet.sh ] || fail "next did not print the first entry: $out"
+  out=$(FM_LINT_RATCHET_LIST="$list" "$helper" count)
+  [ "$out" = 2 ] || fail "count was $out, expected 2"
+  rc=0
+  FM_LINT_RATCHET_LIST="$list" "$helper" retire bin/not-listed.sh >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "retire accepted a file that is not on the list"
+  FM_LINT_RATCHET_LIST="$list" "$helper" retire bin/fm-lint-ratchet.sh >/dev/null 2>&1 \
+    || fail "retire refused a file that passes the ratchet"
+  [ "$(FM_LINT_RATCHET_LIST="$list" "$helper" list)" = bin/fm-send.sh ] \
+    || fail "retire did not leave exactly the other entry"
+  pass "fm-lint-ratchet.sh retires one passing file at a time"
 }
 
 test_ignores_ambient_shellcheck_opts() {
@@ -1362,6 +1461,7 @@ if [ "${1:-}" = "--version" ]; then
   printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
   exit 0
 fi
+case " $* " in *" --include="*) exit 0 ;; esac
 printf '%s\n' "$$" > "$FM_TEST_SHELLCHECK_PID"
 trap 'exit 143' HUP INT TERM
 while :; do
@@ -1550,6 +1650,7 @@ if [ "${1:-}" = --version ]; then
   printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
   exit 0
 fi
+case " $* " in *" --include="*) exit 0 ;; esac
 follow=no
 exclude=none
 while [ "$#" -gt 0 ] && [ "$1" != -- ]; do
@@ -1609,6 +1710,7 @@ SH
 if [ "${1:-}" = --version ]; then
   exec "$FM_REAL_SHELLCHECK" "$@"
 fi
+case " $* " in *" --include="*) exit 0 ;; esac
 for arg in "$@"; do
   if [ "$arg" = --external-sources ]; then
     printf 'shellcheck: Heap exhausted;\n' >&2
@@ -1650,6 +1752,7 @@ if [ "${1:-}" = --version ]; then
   printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
   exit 0
 fi
+case " $* " in *" --include="*) exit 0 ;; esac
 for arg in "$@"; do
   if [ "$arg" = --external-sources ]; then
     printf 'follow\n' >> "$FM_TEST_ATTEMPT_LOG"
@@ -2046,6 +2149,9 @@ test_rejects_wrong_shellcheck_version
 test_catches_a_real_lint_defect
 test_rejects_direct_beads_cli_invocations
 test_rejects_direct_beads_cli_in_explicit_core_path
+test_ratchet_skips_listed_files_and_fails_unlisted_ones
+test_ratchet_reports_a_listed_file_that_now_passes
+test_ratchet_helper_retires_one_file_at_a_time
 test_ignores_ambient_shellcheck_opts
 test_clean_fixture_passes
 test_jobs_are_deterministic_and_complete

@@ -16,6 +16,9 @@
 # paths attempt --external-sources with the selected dataflow mode.
 # Tests stop source analysis at imported production modules because CI analyzes
 # every production shell separately as a canonical, source-aware root.
+# Every run also applies the ratchet pass (fm_lint_run_ratchet): a stricter
+# ShellCheck check enforced on each root not named in
+# bin/fm-lint-ratchet.exceptions; bin/fm-lint-ratchet.sh owns the daily move.
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
 # before merge instead of only failing to run as CI.
@@ -477,6 +480,78 @@ fm_lint_usage() {
 fm_lint_run_workflows() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
   "$SELF_DIR/fm-lint-workflows.sh"
+}
+
+# Ratchet: a stricter ShellCheck pass that enforces on every canonical root not
+# named in the committed exception list, so new files must pass and the check
+# only ever gets stricter. The list holds the files that failed when the check
+# was switched on; bin/fm-lint-ratchet.sh moves one file off it at a time. A
+# listed file that already passes is reported as stale so the list cannot hide
+# a file that could be enforced. Optional checks come from ShellCheck's own
+# --enable names; --include keeps this pass to the codes they emit, so the
+# default pass keeps owning every other diagnostic.
+RATCHET_ENABLE=quote-safe-variables,useless-use-of-cat
+RATCHET_INCLUDE=SC2248,SC2002
+fm_lint_ratchet_list() {
+  printf '%s\n' "${FM_LINT_RATCHET_LIST:-$ROOT/bin/fm-lint-ratchet.exceptions}"
+}
+
+# fm_lint_ratchet_relative <path>: the root-relative spelling the list uses.
+fm_lint_ratchet_relative() {
+  local path=$1
+  path=${path#"$ROOT"/}
+  while [ "${path#./}" != "$path" ]; do path=${path#./}; done
+  printf '%s\n' "$path"
+}
+
+fm_lint_run_ratchet() {
+  local list path relative entry rc=0 findings
+  local -a exceptions enforce listed_roots
+  list=$(fm_lint_ratchet_list)
+  exceptions=()
+  if [ -f "$list" ]; then
+    while IFS= read -r entry; do
+      case "$entry" in ''|'#'*) continue ;; esac
+      exceptions+=("$entry")
+    done < "$list"
+  fi
+  enforce=()
+  listed_roots=()
+  for path in "${ROOTS[@]}"; do
+    [ -f "$path" ] || continue
+    relative=$(fm_lint_ratchet_relative "$path")
+    if [ "${#exceptions[@]}" -gt 0 ] && printf '%s\n' "${exceptions[@]}" | grep -Fxq -- "$relative"; then
+      listed_roots+=("$path")
+    else
+      enforce+=("$path")
+    fi
+  done
+  if [ "${#enforce[@]}" -gt 0 ]; then
+    "$SHELLCHECK_BIN" --norc --enable="$RATCHET_ENABLE" --include="$RATCHET_INCLUDE" \
+      "${enforce[@]}" || rc=1
+  fi
+  if [ "${#listed_roots[@]}" -gt 0 ]; then
+    findings=$("$SHELLCHECK_BIN" --norc -f gcc --enable="$RATCHET_ENABLE" --include="$RATCHET_INCLUDE" \
+      "${listed_roots[@]}" 2>/dev/null | cut -d: -f1 | LC_ALL=C sort -u)
+    for path in "${listed_roots[@]}"; do
+      printf '%s\n' "$findings" | grep -Fxq -- "$path" && continue
+      printf 'fm-lint.sh: %s passes the ratchet check; remove it from %s\n' \
+        "$(fm_lint_ratchet_relative "$path")" "$(fm_lint_ratchet_relative "$list")" >&2
+      rc=1
+    done
+  fi
+  # Entries naming a file that no longer exists are stale too; one partition
+  # reports them so a four-way CI split does not repeat the message.
+  if [ "$EXPLICIT_PATHS" -eq 0 ] && [ "$CHANGED_MODE" -eq 0 ] \
+    && { [ -z "$PARTITION" ] || [ "${PARTITION%%of*}" = 1 ]; } && [ "${#exceptions[@]}" -gt 0 ]; then
+    for entry in "${exceptions[@]}"; do
+      [ -f "$ROOT/$entry" ] && continue
+      printf 'fm-lint.sh: ratchet exception %s names no file; remove it from %s\n' \
+        "$entry" "$(fm_lint_ratchet_relative "$list")" >&2
+      rc=1
+    done
+  fi
+  return "$rc"
 }
 
 # Backend adapters belong behind tasks-axi. Keep direct Beads CLI invocations
@@ -1278,6 +1353,12 @@ purity_rc=0
 fm_lint_run_backend_purity || purity_rc=$?
 if [ "$overall_rc" -eq 0 ] && [ "$purity_rc" -ne 0 ]; then
   overall_rc=$purity_rc
+fi
+
+ratchet_rc=0
+fm_lint_run_ratchet || ratchet_rc=$?
+if [ "$overall_rc" -eq 0 ] && [ "$ratchet_rc" -ne 0 ]; then
+  overall_rc=$ratchet_rc
 fi
 
 if [ "$overall_rc" -eq 0 ]; then
