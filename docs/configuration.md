@@ -1327,7 +1327,7 @@ It reads only the home's `data/backlog.md`, `data/office-decisions.md` and `stat
 Cards are ordered working, then next, then done (newest first).
 
 `decisions` lists the findings the office judged important, projected from the home's `data/office-decisions.md`, so they show on the Status page and not only in notes.
-That file holds a markdown table with the columns `Date | Source | Finding | Call | Action`; the header, separator and any line that is not a five-cell row with an ISO `YYYY-MM-DD` date and a non-empty finding and call are skipped, and an absent or unreadable file gives an empty list.
+That file holds a markdown table with the columns `Date | Source | Finding | Call | Action`; cells split on unescaped `|` only, and `\|` inside a cell reads as `|`; the header, separator and any line that is not a five-cell row with an ISO `YYYY-MM-DD` date and a non-empty finding and call are skipped, and an absent or unreadable file gives an empty list.
 Each object carries its five cells as plain text (a link in a cell stays as written), ordered newest date first (rows of the same date newest line first) and capped at 20.
 The key was added to schema version 1; readers that ignore unknown keys are unaffected.
 Filing a decision stays with the office; this projection only reads the file.
