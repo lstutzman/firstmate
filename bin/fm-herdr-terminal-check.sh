@@ -34,7 +34,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 FM_TERMINAL_LABEL=Terminal
 # Some Herdr versions prefix workspace labels with "[n] "; compare without it.
-FM_JQ_NORM='def norm: sub("^\\[[0-9]+\\] "; "");'
+FM_JQ_NORM='def norm: strings | sub("^\\[[0-9]+\\] "; "");'
 
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"

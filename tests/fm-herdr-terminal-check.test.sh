@@ -45,3 +45,9 @@ for l in 'Terminal 2' '[5] Terminals' 'My Terminal' '[x] Terminal'; do
   [ "$CREATES" -eq 1 ] || fail "'$l' wrongly matched as Terminal"
   echo "ok - '$l' is not a match"
 done
+printf '{"result":{"workspaces":[{"workspace_id":"w1","label":null,"tab_count":1,"pane_count":1},{"workspace_id":"w2","tab_count":1,"pane_count":1},{"workspace_id":"w3","label":"[5] Terminal","tab_count":1,"pane_count":1}]}}' > "$TMP/workspaces.json"
+rm -f "$TMP/calls"
+OUT=$(STUB_DIR=$TMP FM_HOME="$TMP/home" FM_BACKEND=herdr HERDR_SESSION=stub \
+  FM_HERDR_TERMINAL_LOCK="$TMP/lock" PATH="$TMP/bin:$PATH" "$ROOT/bin/fm-herdr-terminal-check.sh" 2>&1)
+[ ! -f "$TMP/calls" ] && [ -z "$OUT" ] || fail "null or missing label broke the Terminal match: out=$OUT"
+echo "ok - null and missing labels beside a Terminal leave it found and not recreated"
