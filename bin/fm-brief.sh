@@ -176,6 +176,16 @@
 # anything is written. Secondmate charters never take it. In a secondmate home
 # the file is the primary's text with the home's own lines below it
 # (bin/fm-config-inherit-lib.sh owns that composition).
+# --linear <PC-n> names the Property Compass Linear item the task serves. The
+# scaffold reads it read-only (`linear-axi issue view <id> --full`) and quotes the
+# item's Audience, Entry point and Acceptance text verbatim, as a blockquote marked
+# "Quoted from Linear <id>", under `## Captain's intent`, so the builder, the
+# reviewer and the acceptor all work from the same words. A field the item does not
+# state is named as not stated, never invented; a failed read stops the scaffold
+# with the reason before anything is written. A field is a label line (optionally
+# bulleted, bold or a heading) such as "Audience:", "Entry point:" or
+# "Acceptance:" (or "Acceptance criteria:"), and runs until the next label,
+# heading or end of the description. Ship and scout only.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -213,6 +223,76 @@ IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    Follow the resolution rule below when the wait clears, then resume the task.
    Use \`blocked:\` when you are stuck and need help.
 EOF
+
+# fm_linear_quote <PC-n>: print the blockquoted Audience, Entry point and
+# Acceptance text of a Linear item, read-only. Stops with the reason on a bad id
+# or a failed read. The parser lives in an inline python3 -I program.
+fm_linear_quote() {
+  local id=$1 view
+  case "$id" in
+    PC-[0-9]*) ;;
+    *) echo "error: --linear takes a Property Compass item id such as PC-123 (got '$id')" >&2; return 1 ;;
+  esac
+  case "${id#PC-}" in *[!0-9]*) echo "error: --linear takes a Property Compass item id such as PC-123 (got '$id')" >&2; return 1 ;; esac
+  command -v linear-axi >/dev/null 2>&1 || { echo "error: cannot read $id: linear-axi is not installed" >&2; return 1; }
+  view=$(linear-axi issue view "$id" --full 2>&1) || {
+    echo "error: cannot read $id for the brief's quoted acceptance: $view" >&2
+    return 1
+  }
+  [ -n "$view" ] || { echo "error: cannot read $id: linear-axi printed nothing" >&2; return 1; }
+  printf '%s\n' "$view" | python3 -I -c '
+import json, re, sys
+item = sys.argv[1]
+text = sys.stdin.read()
+desc = ""
+for line in text.splitlines():
+    m = re.match(r"^\s*description:\s*(.*)$", line)
+    if m:
+        raw = m.group(1).strip()
+        try:
+            desc = json.loads(raw)
+        except ValueError:
+            desc = raw
+        break
+if not desc:
+    sys.stderr.write("error: cannot read %s: the item view carries no description\n" % item)
+    sys.exit(1)
+label = re.compile(r"^[\s>*#\-]*\**\s*(audience|entry point|acceptance(?: criteria| bullets)?)\s*\**\s*:\s*\**\s*(.*)$", re.I)
+other = re.compile(r"^\s*(#+\s|\**[A-Z][^:\n]{0,40}:\**(\s|$))")
+fields = {"audience": [], "entry point": [], "acceptance": []}
+found = set()
+cur = None
+for line in desc.split("\n"):
+    m = label.match(line)
+    if m:
+        key = m.group(1).lower()
+        key = "acceptance" if key.startswith("acceptance") else key
+        cur = key
+        found.add(key)
+        if m.group(2).strip():
+            fields[cur].append(m.group(2).rstrip())
+        continue
+    if cur is not None and other.match(line) and not re.match(r"^\s*[-*]\s", line):
+        cur = None
+    if cur is not None:
+        fields[cur].append(line.rstrip())
+out = ["> Quoted from Linear %s (read-only, verbatim):" % item]
+for key, title in (("audience", "Audience"), ("entry point", "Entry point"), ("acceptance", "Acceptance")):
+    body = fields[key]
+    while body and not body[0].strip():
+        body.pop(0)
+    while body and not body[-1].strip():
+        body.pop()
+    if not body:
+        out.append("> %s: not stated on %s" % (title, item))
+    elif len(body) == 1:
+        out.append("> %s: %s" % (title, body[0].strip()))
+    else:
+        out.append("> %s:" % title)
+        out.extend(("> " + l) if l.strip() else ">" for l in body)
+print("\n".join(out))
+' "$id"
+}
 
 resolve_directory_input() {
   local name=$1 path=$2 resolved
@@ -261,6 +341,7 @@ PROJECT_DIR=
 PROJECT_DIR_SET=0
 OFFICE=
 OFFICE_SET=0
+LINEAR_ITEM=
 POS=()
 want_value=
 for a in "$@"; do
@@ -278,6 +359,7 @@ for a in "$@"; do
       upstream-consent) UPSTREAM_CONSENT=$a; UPSTREAM_CONSENT_SET=1 ;;
       project) PROJECT_DIR=$a; PROJECT_DIR_SET=1 ;;
       office) OFFICE=$a; OFFICE_SET=1 ;;
+      linear) LINEAR_ITEM=$a ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -306,6 +388,8 @@ for a in "$@"; do
     --project=*) PROJECT_DIR=${a#--project=}; PROJECT_DIR_SET=1 ;;
     --office) want_value=office ;;
     --office=*) OFFICE=${a#--office=}; OFFICE_SET=1 ;;
+    --linear) want_value=linear ;;
+    --linear=*) LINEAR_ITEM=${a#--linear=} ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -431,6 +515,10 @@ if ! git check-ref-format --branch "$BRANCH" >/dev/null 2>&1; then
 fi
 printf -v BRANCH_Q '%q' "$BRANCH"
 
+if [ "$KIND" = secondmate ] && [ -n "$LINEAR_ITEM" ]; then
+  echo "error: --linear applies only to ship and scout briefs" >&2
+  exit 1
+fi
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2
   exit 1
@@ -760,6 +848,14 @@ IFS= read -r -d '' TASK_SECTION <<'EOF' || true
 {FIRSTMATE_SPEC}
 EOF
 TASK_SECTION=${TASK_SECTION%$'\n'}
+
+# Quote the Linear item's audience, entry point and acceptance into the intent.
+if [ -n "$LINEAR_ITEM" ]; then
+  LINEAR_QUOTE=$(fm_linear_quote "$LINEAR_ITEM") || exit 1
+  TASK_HEAD=${TASK_SECTION%%\{TASK\}*}
+  TASK_TAIL=${TASK_SECTION#*\{TASK\}}
+  TASK_SECTION="${TASK_HEAD}{TASK}"$'\n\n'"${LINEAR_QUOTE}${TASK_TAIL}"
+fi
 
 # One shared string keeps the ship and scout infrastructure rule identical.
 # Rule 2 governs file edits, so it does not prohibit pool administration.

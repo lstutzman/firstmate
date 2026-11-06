@@ -1735,3 +1735,65 @@ test_crewmate_scaffolds_teach_captain_steps_waits_and_resume_check() {
 }
 
 test_crewmate_scaffolds_teach_captain_steps_waits_and_resume_check
+
+# --linear <PC-n>: the scaffold reads the item read-only with a stub linear-axi
+# and quotes its audience, entry point and acceptance under Captain's intent.
+linear_stub() {
+  local bin=$1 mode=$2
+  mkdir -p "$bin"
+  cat > "$bin/linear-axi" <<'SH'
+#!/usr/bin/env bash
+[ "$1 $2" = "issue view" ] || exit 2
+case "$STUB_MODE" in
+  fail) echo "Linear request failed: boom" >&2; exit 1 ;;
+  full)
+    printf 'issue:\n  identifier: %s\n  description: "Intro text.\\n\\nAudience: Free members\\nEntry point: /discover, Saved tab\\nAcceptance:\\n- Free user sees the tab\\n- Admin sees the count\\n\\nEpic: none"\n' "$3" ;;
+  *)
+    printf 'issue:\n  identifier: %s\n  description: "What it is for: tooling only."\n' "$3" ;;
+esac
+SH
+  chmod +x "$bin/linear-axi"
+  export STUB_MODE=$mode
+}
+
+test_linear_item_is_quoted_into_the_intent() {
+  local home bin brief rc
+  home="$TMP_ROOT/linear-home"; bin="$TMP_ROOT/linear-bin"
+  mkdir -p "$home/data"
+  linear_stub "$bin" full
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lin-full alpha --mode no-mistakes --linear PC-42 >/dev/null 2>&1 \
+    || fail "fm-brief.sh --linear exited non-zero for an item with all fields"
+  brief="$home/data/lin-full/brief.md"
+  assert_grep '> Quoted from Linear PC-42' "$brief" "brief did not mark the quote as from the item"
+  assert_grep '> Audience: Free members' "$brief" "audience not quoted verbatim"
+  assert_grep '> Entry point: /discover, Saved tab' "$brief" "entry point not quoted verbatim"
+  assert_grep '> - Free user sees the tab' "$brief" "acceptance bullet not quoted"
+  assert_grep '> - Admin sees the count' "$brief" "second acceptance bullet not quoted"
+  if grep -q 'Epic: none' "$brief"; then fail "quote ran past the acceptance field"; fi
+  assert_grep '{TASK}' "$brief" "the {TASK} placeholder was lost"
+  pass "fm-brief.sh --linear: audience, entry point and acceptance are quoted verbatim"
+
+  linear_stub "$bin" bare
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lin-bare alpha --scout --linear PC-43 >/dev/null 2>&1 \
+    || fail "fm-brief.sh --linear exited non-zero for an item without the fields"
+  brief="$home/data/lin-bare/brief.md"
+  assert_grep '> Audience: not stated on PC-43' "$brief" "missing audience not stated plainly"
+  assert_grep '> Entry point: not stated on PC-43' "$brief" "missing entry point not stated plainly"
+  assert_grep '> Acceptance: not stated on PC-43' "$brief" "missing acceptance not stated plainly"
+  pass "fm-brief.sh --linear: missing fields are named as not stated"
+
+  linear_stub "$bin" fail
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lin-fail alpha --mode no-mistakes --linear PC-44 >/dev/null 2>"$TMP_ROOT/lin-fail.err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "a failed Linear read did not stop the scaffold"
+  assert_grep 'cannot read PC-44' "$TMP_ROOT/lin-fail.err" "failed read did not name the reason"
+  [ ! -e "$home/data/lin-fail/brief.md" ] || fail "a brief was written despite the failed read"
+
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lin-bad alpha --mode no-mistakes --linear 123 >/dev/null 2>&1 \
+    && fail "a non-PC item id was accepted"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lin-none alpha --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh without --linear failed"
+  if grep -q 'Quoted from Linear' "$home/data/lin-none/brief.md"; then fail "a non-Linear brief gained a quote"; fi
+  pass "fm-brief.sh --linear: a failed read stops the scaffold; a task without --linear is unchanged"
+}
+
+test_linear_item_is_quoted_into_the_intent
