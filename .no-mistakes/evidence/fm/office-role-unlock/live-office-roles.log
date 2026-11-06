@@ -1,0 +1,29 @@
+### 1. charter both offices with fm-brief.sh --secondmate --office
+fm-brief alchemist rc=0 
+runs the `alchemist` role
+office-authority headings: 1
+fm-brief librarian rc=0 
+runs the `librarian` role
+office-authority headings: 1
+### 2. seed both office homes with fm-home-seed.sh --office
+seed alchemist rc=0 warning: You appear to have cloned an empty repository.
+seed librarian rc=0 warning: You appear to have cloned an empty repository.
+alchemist .fm-office=alchemist projects: - transcript-archive [direct-PR +yolo admission=transcript-archive] - transcript archive (added 2026-11-05)
+librarian .fm-office=librarian projects: - firstmate [direct-PR +yolo] - firstmate (added 2026-10-02)
+- alchemist - Keep the agent training corpus (home: /private/var/folders/3z/xfcx
+- librarian - Keep the fleet documents (home: /private/var/folders/3z/xfcxhgmj1j
+### 3. publish then ensure
+publish alchemist rc=0 
+publish librarian rc=0 
+ensure rc=0 output=[]
+alchemist alchemist ok
+librarian librarian ok
+### 4. herdr workspace label for each office home
+alchemist workspace label: Alchemist
+librarian workspace label: Librarian
+### 5. adversarial: unknown role bosun and an empty role
+ensure: OFFICE: office librarian: unknown role "bosun" (known: navigator quartermaster alchemist librarian)
+fm-brief bosun rc=1 error: office librarian: unknown role "bosun" (known: navigator quartermaster alchemist librarian)
+ensure: OFFICE: office librarian: unknown role "" (known: navigator quartermaster alchemist librarian)
+restored ensure: []
+lab removed: yes
