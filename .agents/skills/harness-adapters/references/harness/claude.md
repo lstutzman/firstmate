@@ -61,7 +61,7 @@ Never send Enter or text into it.
 Before that instant plus `FM_CLAUDE_LIMIT_RESET_MARGIN` seconds it only records a `paused:` line carrying `until <UTC time>`, so the idle pane is a declared wait the watcher rechecks when it clears.
 After it, it re-proves the live match, dismisses the prompt with `fm-control.sh <id> interrupt` (one Escape), requires a re-read to prove the prompt gone, and sends one steer through `fm-send.sh` telling the crew to re-read its own current state.
 It refuses rather than guessing whenever the pane, the match, the stated time or its zone is uncertain, so treat a refusal as a stop-and-inspect result, and add `--check` to get the verdict without sending or recording anything.
-A clock time with no date is read as its first occurrence after the moment the pane last changed, so a stall noticed late waits longer and never resumes before the stated reset.
+A clock time with no date names the five-hour window, so it is never more than five hours out: one at most five hours ahead is a timed wait, and one already passed today, or more than five hours ahead, means the window has reset and the crew is recovered now rather than paused until the next day.
 No other verified harness has been observed presenting a blocking usage-limit prompt, so nothing here applies to codex, opencode, pi, grok, or kimi.
 [`../../../../../docs/verification/supervision.md`](../../../../../docs/verification/supervision.md#claude-usage-limit-recovery) records what was checked against the installed Claude Code and what was not.
 

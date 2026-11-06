@@ -2666,11 +2666,8 @@ clear_pause_tracking() {  # <window-key>
 # from the dialog name the poll already derived from its one capture, so a pane
 # that is not on that prompt costs nothing and a crew that is on it costs one
 # detached, bounded run per FM_LIMIT_RESUME_CHECK_SECS (default 60).
-# The pane-change time (the hash file's mtime) is passed as the bound on when
-# the prompt was drawn: a bound that is late can only delay a recovery, never
-# advance it before the stated reset.
-limit_resume_check() {  # <window> <task> <dialog-name> <hash-file>
-  local win=$1 task=$2 dialog=${3-} hf=${4-} key interval since marker
+limit_resume_check() {  # <window> <task> <dialog-name>
+  local win=$1 task=$2 dialog=${3-} key interval marker
   [ "$dialog" = "$FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME" ] || return 0
   [ -n "$task" ] || return 0
   [ "$(window_harness "$win")" = claude ] || return 0
@@ -2680,12 +2677,10 @@ limit_resume_check() {  # <window> <task> <dialog-name> <hash-file>
   marker="$STATE/.limit-resume-checked-$key"
   [ "$(age_of "$marker")" -ge "$interval" ] || return 0
   touch "$marker" 2>/dev/null || return 0
-  since=$(stat_mtime "$hf" 2>/dev/null || true)
-  case "$since" in '' | *[!0-9]*) since=$(date +%s) ;; esac
-  triage_log "claude usage-limit prompt on $win: asking fm-limit-resume.sh (pane unchanged since $since)"
+  triage_log "claude usage-limit prompt on $win: asking fm-limit-resume.sh"
   (
     fm_run_timed 120 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
-      "${FM_LIMIT_RESUME_BIN:-$SCRIPT_DIR/fm-limit-resume.sh}" --since "$since" "$task" \
+      "${FM_LIMIT_RESUME_BIN:-$SCRIPT_DIR/fm-limit-resume.sh}" "$task" \
       </dev/null >"$STATE/.limit-resume.$key.out" 2>&1 || true
   ) </dev/null >/dev/null 2>&1 &
 }
@@ -4476,7 +4471,7 @@ EOF
       if [ "$n" -ge 2 ] && [ "$busy_now" -ne 0 ]; then
         # The pane is idle/stale at hash $h. Triage decides whether this wakes
         # firstmate. Detection itself is unchanged from above.
-        [ "$kind" = secondmate ] || limit_resume_check "$w" "$task" "$dialog" "$hf"
+        [ "$kind" = secondmate ] || limit_resume_check "$w" "$task" "$dialog"
         if [ "$kind" = secondmate ]; then
           case "$(pause_state_class "$w" "$task")" in
             paused) handle_paused_stale "$w" "$task" "$h" ;;

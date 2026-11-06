@@ -96,7 +96,7 @@ wait_for_file() {  # <file> [ticks]
 }
 
 test_claude_crew_on_the_prompt_is_handed_to_the_recovery() {
-  local dir state capture window key log since
+  local dir state capture window key log
   dir=$(make_case limit-claude); state="$dir/state"
   capture="$dir/pane.txt"; log="$dir/resume.log"; window="test:fm-stalled"
   write_limit_prompt "$capture"
@@ -107,15 +107,9 @@ test_claude_crew_on_the_prompt_is_handed_to_the_recovery() {
     || fail "the stale wake did not name the usage-limit prompt: $(cat "$dir/watch.out")"
   wait_for_file "$log" || fail "the watcher never asked the recovery script"
   [ "$(grep -c . "$log")" -eq 1 ] || fail "the watcher asked the recovery script more than once: $(cat "$log")"
-  case "$(cat "$log")" in
-    "--since "[0-9]*" stalled") ;;
-    *) fail "the recovery was not asked for the right task with a bound: $(cat "$log")" ;;
-  esac
-  since=$(sed -n 's/^--since \([0-9]*\) stalled$/\1/p' "$log")
-  [ "$since" -le "$(date +%s)" ] || fail "the bound on when the prompt was drawn is in the future: $since"
-  [ "$since" -ge "$(( $(date +%s) - 600 ))" ] || fail "the bound is not the pane-change time the watcher recorded: $since"
+  assert_equals "stalled" "$(cat "$log")" "the recovery was not asked for the right task"
   assert_present "$state/.limit-resume-checked-$key" "no throttle record was left"
-  pass "a claude crew parked on the usage-limit prompt is named and handed to the recovery once, with the pane-change bound"
+  pass "a claude crew parked on the usage-limit prompt is named and handed to the recovery once"
 }
 
 test_a_recent_check_throttles_the_recovery() {

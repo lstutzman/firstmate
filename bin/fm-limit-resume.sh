@@ -2,14 +2,9 @@
 # fm-limit-resume.sh - recover ONE crewmate stalled on Claude Code's usage-limit
 # prompt, but only after the reset time that prompt states.
 #
-# Usage: FM_HOME=<firstmate home> bin/fm-limit-resume.sh [--check] [--since <epoch>] <task-id>
+# Usage: FM_HOME=<firstmate home> bin/fm-limit-resume.sh [--check] <task-id>
 #
-#   --check          report the verdict and exit without sending or recording
-#                    anything.
-#   --since <epoch>  a lower bound on when the prompt was drawn, for a stated
-#                    clock time with no date. The watcher passes the moment the
-#                    pane last changed; without it the bound is now. A bound that
-#                    is too late only delays the answer, never advances it.
+#   --check  report the verdict and exit without sending or recording anything.
 #
 # Exit codes: 0 recovered, the timed wait was recorded, or --check reported a
 #               verdict it could establish.
@@ -44,13 +39,16 @@
 #   3. The prompt must STATE a reset time this script can read (a known zone, an
 #      hour and minute in range), and the current time must be past that time
 #      plus FM_CLAUDE_LIMIT_RESET_MARGIN seconds (default 60). Elapsed time,
-#      the window length, and a guess never stand in for it. See
-#      bin/fm-claude-limit-lib.sh for the wordings read and the rule for a clock
-#      time with no date.
+#      the window length, and a guess never stand in for it. A clock time with
+#      no date names the five-hour window: when it is more than five hours
+#      ahead, or already passed today, the window has reset and recovery runs
+#      now rather than waiting for the next day. See bin/fm-claude-limit-lib.sh
+#      for the wordings read and that rule.
 #   4. The same stated reset is not recovered twice within
 #      FM_LIMIT_RESUME_COOLDOWN seconds (default 1800): a prompt that returns
 #      with the same reset means the window had not reset, and sending Escape
-#      again would only loop.
+#      again would only loop. This is checked before any wait is recorded, so
+#      such a prompt is refused for inspection rather than absorbed as a pause.
 #   5. The Escape goes through `fm-control.sh <id> interrupt`, never a raw key.
 #   6. After Escape, the prompt must be PROVABLY gone on a re-read before the
 #      steer is sent: a capture that succeeded, was non-empty, and did not match.
@@ -110,28 +108,19 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-claude-limit-lib.sh"
 
 CHECK_ONLY=0
-SINCE=
 ID=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --check) CHECK_ONLY=1 ;;
-    --since)
-      [ "$#" -ge 2 ] || { echo "usage: fm-limit-resume.sh [--check] [--since <epoch>] <task-id>" >&2; exit 2; }
-      SINCE=$2
-      shift
-      ;;
-    --*) echo "usage: fm-limit-resume.sh [--check] [--since <epoch>] <task-id>" >&2; exit 2 ;;
+    --*) echo "usage: fm-limit-resume.sh [--check] <task-id>" >&2; exit 2 ;;
     *)
-      [ -z "$ID" ] || { echo "usage: fm-limit-resume.sh [--check] [--since <epoch>] <task-id>" >&2; exit 2; }
+      [ -z "$ID" ] || { echo "usage: fm-limit-resume.sh [--check] <task-id>" >&2; exit 2; }
       ID=$1
       ;;
   esac
   shift
 done
-[ -n "$ID" ] || { echo "usage: fm-limit-resume.sh [--check] [--since <epoch>] <task-id>" >&2; exit 2; }
-case "$SINCE" in
-  ''|*[!0-9]*) [ -z "$SINCE" ] || { echo "usage: --since takes an epoch in seconds" >&2; exit 2; } ;;
-esac
+[ -n "$ID" ] || { echo "usage: fm-limit-resume.sh [--check] <task-id>" >&2; exit 2; }
 
 refuse() {  # <message>
   echo "refused: $1" >&2
@@ -155,7 +144,6 @@ LABEL="fm-$ID"
 fm_backend_visible_capture_supported "$BACKEND" \
   || refuse "the $BACKEND backend has no verified viewport read, so a fresh match cannot be proven"
 
-SCAN_LINES=$(fm_claude_limit_scan_lines)
 PANE=
 PROMPT_STATE=
 
@@ -171,7 +159,7 @@ prompt_state() {  # sets PROMPT_STATE and PANE
   PANE=$(fm_backend_visible_capture "$BACKEND" "$TARGET" "$LABEL" 2>/dev/null) \
     || { PANE=; PROMPT_STATE=unreadable; return 0; }
   [ -n "$PANE" ] || { PROMPT_STATE=unreadable; return 0; }
-  PANE=$(printf '%s\n' "$PANE" | tail -n "$SCAN_LINES")
+  PANE=$(printf '%s\n' "$PANE" | tail -n "$FM_CLAUDE_LIMIT_SCAN_LINES")
   if printf '%s\n' "$PANE" | fm_claude_limit_dialog_match; then
     PROMPT_STATE=showing
   else
@@ -190,9 +178,22 @@ NOW=$(date +%s)
 case "$NOW" in ''|*[!0-9]*) refuse "the clock could not be read" ;; esac
 MARGIN=$(fm_claude_limit_reset_margin)
 
+# A prompt back with the very reset we already recovered from means the window
+# had not reset; another Escape would loop, and recording a wait would hide it.
+COOLDOWN=${FM_LIMIT_RESUME_COOLDOWN:-1800}
+case "$COOLDOWN" in ''|*[!0-9]*) COOLDOWN=1800 ;; esac
+MARKER="$STATE/.limit-resumed-$ID"
+if [ -f "$MARKER" ]; then
+  IFS=$'\t' read -r PRIOR_AT PRIOR_PHRASE < "$MARKER" || true
+  case "${PRIOR_AT:-}" in ''|*[!0-9]*) PRIOR_AT= ;; esac
+  if [ -n "$PRIOR_AT" ] && [ "${PRIOR_PHRASE:-}" = "$PHRASE" ] && [ $((NOW - PRIOR_AT)) -lt "$COOLDOWN" ]; then
+    refuse "$ID already recovered from this stated reset ($PHRASE) $((NOW - PRIOR_AT))s ago and the prompt is back; the window had not reset, left untouched for inspection"
+  fi
+fi
+
 # The wait this script recorded earlier for THIS stated reset is the stable
-# answer: the epoch it names does not move as the watcher's lower bound does.
-# Anything else is computed from the phrase.
+# answer: the epoch it names does not move as the clock does. Anything else is
+# computed from the phrase.
 PAUSE_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 PAUSE_HEAD="claude usage limit reached; resumes after the stated reset ($PHRASE); until "
 LAST=$(last_status_line "$LOG")
@@ -206,8 +207,7 @@ if [ "$OWNED_PAUSE" = 1 ] && RESUME_AT=$(status_paused_until "$LAST"); then
   :
 else
   OWNED_PAUSE=0
-  REF=${SINCE:-$NOW}
-  RESET_AT=$(fm_claude_limit_reset_epoch "$PHRASE" "$REF") \
+  RESET_AT=$(fm_claude_limit_reset_epoch "$PHRASE" "$NOW") \
     || refuse "$ID states the reset time '$PHRASE', which this script cannot place (unknown zone or unreadable time); not sending keys"
   # Round the earliest resume up to the minute: the declared `until` has minute
   # resolution, and the watcher must never recheck before it.
@@ -263,19 +263,6 @@ if [ "$CHECK_ONLY" = 1 ]; then
   exit 0
 fi
 
-# A prompt back with the very reset we already recovered from means the window
-# had not reset; another Escape would loop.
-COOLDOWN=${FM_LIMIT_RESUME_COOLDOWN:-1800}
-case "$COOLDOWN" in ''|*[!0-9]*) COOLDOWN=1800 ;; esac
-MARKER="$STATE/.limit-resumed-$ID"
-if [ -f "$MARKER" ]; then
-  IFS=$'\t' read -r PRIOR_AT PRIOR_PHRASE < "$MARKER" || true
-  case "${PRIOR_AT:-}" in ''|*[!0-9]*) PRIOR_AT= ;; esac
-  if [ -n "$PRIOR_AT" ] && [ "${PRIOR_PHRASE:-}" = "$PHRASE" ] && [ $((NOW - PRIOR_AT)) -lt "$COOLDOWN" ]; then
-    refuse "$ID already recovered from this stated reset ($PHRASE) $((NOW - PRIOR_AT))s ago and the prompt is back; the window had not reset, left untouched for inspection"
-  fi
-fi
-
 if ! FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-control.sh" "$ID" interrupt >/dev/null; then
   refuse "could not deliver the interrupt to $ID through the control plane"
 fi
@@ -302,7 +289,7 @@ case "$PROMPT_STATE" in
     ;;
 esac
 
-STEER=${FM_LIMIT_RESUME_STEER:-"The claude usage limit that stalled you has reset. Do not assume where you stopped: re-read your own current state first, including whether your validation run still exists and belongs to your current commit, then continue from what you actually find."}
+STEER="The claude usage limit that stalled you has reset. Do not assume where you stopped: re-read your own current state first, including whether your validation run still exists and belongs to your current commit, then continue from what you actually find."
 
 if ! FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-send.sh" "$ID" "$STEER" >/dev/null; then
   refuse "dismissed the prompt on $ID but the resume instruction did not land; steer it by hand"

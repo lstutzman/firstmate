@@ -4153,7 +4153,6 @@ FM_LIMIT_RESUME_CHECK_SECS=60   # minimum seconds between watcher requests to bi
 FM_CLAUDE_LIMIT_RESET_MARGIN=60   # seconds past the reset time the usage-limit prompt states before bin/fm-limit-resume.sh sends anything
 FM_LIMIT_RESUME_COOLDOWN=1800     # seconds within which bin/fm-limit-resume.sh will not recover the same stated reset twice
 FM_LIMIT_RESUME_SETTLE=1          # seconds bin/fm-limit-resume.sh waits after the interrupt before re-reading the pane
-FM_CLAUDE_LIMIT_SCAN_LINES=40     # viewport rows bin/fm-limit-resume.sh matches the usage-limit prompt against
 FM_CREW_STATE_RUNS_LIMIT=200  # plain runs-ledger rows scanned for fallback attribution; does not change the CLI's AXI overview window (selection owner: bin/fm-nm-run-lib.sh)
 FM_TEARDOWN_NM_RUNS_LIMIT=200  # recent no-mistakes run rows scanned to prove an unresolved-head parked run belongs to teardown's task
 FM_CREW_STATE_BIN=bin/fm-crew-state.sh   # test override for the current-state reader used by watcher triage: the working/paused classification, the wedge timer's parked-gate wait evidence, and its opt-in validating-run deferral

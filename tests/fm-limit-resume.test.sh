@@ -20,8 +20,10 @@
 #   (a) signature: the real prompt matches; ordinary worker output that discusses
 #       limits does not, and neither does the prompt's own text quoted inside a
 #       working pane;
-#   (b) stated reset: read from the pane, placed in time without ever landing
-#       before the stated moment, and an unreadable or unplaceable one refuses;
+#   (b) stated reset: read from the pane and placed in time; a clock time with
+#       no date names the five-hour window, so one more than five hours ahead
+#       or already passed today has reset rather than waiting for tomorrow, and
+#       an unreadable or unplaceable one refuses;
 #   (c) recovery: only a fresh live match plus a passed reset sends the interrupt
 #       (through fm-control.sh), the prompt must be PROVABLY gone before the
 #       resume instruction is sent (a pane that cannot be re-read refuses too),
@@ -238,71 +240,85 @@ test_reset_phrase_ignores_unanchored_times() {
   pass "a time without reset wording, and a row with no time, state no reset"
 }
 
-test_reset_epoch_places_a_clock_time_without_going_early() {
-  local since got want
-  since=$(date -u -d '2026-11-06 12:00' +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M' '2026-11-06 12:00' +%s)
+utc_epoch() {  # <YYYY-MM-DD HH:MM> -> epoch of that UTC wall-clock time
+  date -u -d "$1" +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M' "$1" +%s
+}
 
-  got=$(fm_claude_limit_reset_epoch '6:40pm (UTC)' "$since") || fail "a UTC clock time was not placed"
-  want=$((since + 6 * 3600 + 40 * 60))
-  assert_equals "$want" "$got" "6:40pm UTC after noon was not placed at 18:40 the same day"
+# Oracle: Claude prints a clock time with no date only for the five-hour window,
+# so the reset it names is at most five hours ahead of now; any other reading of
+# the same clock is the occurrence that has already passed.
+test_reset_epoch_places_a_clock_time_inside_the_five_hour_window() {
+  local now got
+  now=$(utc_epoch '2026-11-06 12:00')
 
-  # Already past on the day of the bound: the NEXT such time, never an earlier one.
-  got=$(fm_claude_limit_reset_epoch '9:15am (UTC)' "$since") || fail "a past clock time was not placed"
-  want=$((since + 21 * 3600 + 15 * 60))
-  assert_equals "$want" "$got" "9:15am UTC after noon was not placed at 09:15 the next day"
+  got=$(fm_claude_limit_reset_epoch '2pm (UTC)' "$now") || fail "a clock time two hours ahead was not placed"
+  assert_equals "$(utc_epoch '2026-11-06 14:00')" "$got" "2pm UTC at noon was not placed two hours ahead"
 
-  # A zone moves the instant: 6:40pm in New York in November is 23:40 UTC.
-  got=$(fm_claude_limit_reset_epoch '6:40pm (America/New_York)' "$since") || fail "a named zone was not placed"
-  want=$((since + 11 * 3600 + 40 * 60))
-  assert_equals "$want" "$got" "6:40pm New York was not placed at 23:40 UTC"
+  got=$(fm_claude_limit_reset_epoch '5pm (UTC)' "$now") || fail "a clock time five hours ahead was not placed"
+  assert_equals "$(utc_epoch '2026-11-06 17:00')" "$got" "a reset exactly five hours ahead was not kept as a wait"
 
-  # 12am and 12pm are midnight and noon.
-  got=$(fm_claude_limit_reset_epoch '12am (UTC)' "$since") || fail "12am was not placed"
-  assert_equals "$((since + 12 * 3600))" "$got" "12am was not placed at the next midnight"
-  got=$(fm_claude_limit_reset_epoch '12pm (UTC)' "$since") || fail "12pm was not placed"
-  assert_equals "$since" "$got" "12pm was not placed at noon on the day of the bound"
+  # Already passed today: the window has reset, not tomorrow's same clock.
+  got=$(fm_claude_limit_reset_epoch '9:15am (UTC)' "$now") || fail "a past clock time was not placed"
+  assert_equals "$(utc_epoch '2026-11-06 09:15')" "$got" "9:15am UTC at noon was put off to the next day"
 
-  # A later bound can only move the answer later.
-  got=$(fm_claude_limit_reset_epoch '6:40pm (UTC)' "$((since + 7 * 3600))") || fail "a later bound was not placed"
-  assert_equals "$((since + 30 * 3600 + 40 * 60))" "$got" "a bound past the stated time did not roll to the next day"
-  pass "a clock time lands on its first occurrence at or after the bound, in its own zone"
+  # More than five hours ahead cannot be this window's reset: it already passed.
+  got=$(fm_claude_limit_reset_epoch '5:01pm (UTC)' "$now") || fail "a clock time past five hours was not placed"
+  assert_equals "$(utc_epoch '2026-11-05 17:01')" "$got" "a clock time more than five hours ahead was recorded as a wait"
+  got=$(fm_claude_limit_reset_epoch '12am (UTC)' "$now") || fail "12am was not placed"
+  assert_equals "$(utc_epoch '2026-11-06 00:00')" "$got" "12am seen at noon was not the midnight already passed"
+  got=$(fm_claude_limit_reset_epoch '12pm (UTC)' "$now") || fail "12pm was not placed"
+  assert_equals "$now" "$got" "12pm was not placed at noon"
+
+  # The fork's overnight case: stalled at 14:00 on 6:40pm, first seen at 22:00.
+  got=$(fm_claude_limit_reset_epoch '6:40pm (UTC)' "$(utc_epoch '2026-11-06 22:00')") \
+    || fail "a reset seen hours late was not placed"
+  assert_equals "$(utc_epoch '2026-11-06 18:40')" "$got" "a reset seen hours late was put off to the next day"
+
+  # Across midnight the window's reset is tomorrow's early clock.
+  got=$(fm_claude_limit_reset_epoch '1am (UTC)' "$(utc_epoch '2026-11-06 23:00')") || fail "a reset after midnight was not placed"
+  assert_equals "$(utc_epoch '2026-11-07 01:00')" "$got" "a reset two hours ahead across midnight was misplaced"
+
+  # A zone moves the instant: 10:40am in New York in November is 15:40 UTC.
+  got=$(fm_claude_limit_reset_epoch '10:40am (America/New_York)' "$now") || fail "a named zone was not placed"
+  assert_equals "$(utc_epoch '2026-11-06 15:40')" "$got" "10:40am New York was not placed at 15:40 UTC"
+  pass "a clock time is a wait only within five hours ahead; otherwise it is the reset already passed"
 }
 
 test_reset_epoch_places_a_dated_reset() {
-  local since got want
-  since=$(date -u -d '2026-11-06 12:00' +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M' '2026-11-06 12:00' +%s)
+  local now got want
+  now=$(utc_epoch '2026-11-06 12:00')
   want=$(date -u -d '2026-11-09 15:00' +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M' '2026-11-09 15:00' +%s)
-  got=$(fm_claude_limit_reset_epoch 'Nov 9, 3pm (UTC)' "$since") || fail "a dated reset was not placed"
+  got=$(fm_claude_limit_reset_epoch 'Nov 9, 3pm (UTC)' "$now") || fail "a dated reset was not placed"
   assert_equals "$want" "$got" "Nov 9, 3pm was not placed in the current year"
 
-  # A month already behind the bound by more than half a year is next year's.
+  # A month already behind now by more than half a year is next year's.
   want=$(date -u -d '2027-01-02 09:05' +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M' '2027-01-02 09:05' +%s)
   got=$(fm_claude_limit_reset_epoch 'Jan 2, 9:05am (UTC)' "$(( $(date -u -d '2026-11-06 12:00' +%s 2>/dev/null || date -u -j -f '%Y-%m-%d %H:%M' '2026-11-06 12:00' +%s) ))") \
     || fail "a dated reset in the new year was not placed"
-  # Jan 2 2026 is ten months before the bound, so the year rolls to 2027.
-  assert_equals "$want" "$got" "a month far behind the bound was not rolled to next year"
+  # Jan 2 2026 is ten months before now, so the year rolls to 2027.
+  assert_equals "$want" "$got" "a month far behind now was not rolled to next year"
 
-  got=$(fm_claude_limit_reset_epoch 'Jan 2, 2027, 9:05am (UTC)' "$since") || fail "a dated reset naming its year was not placed"
+  got=$(fm_claude_limit_reset_epoch 'Jan 2, 2027, 9:05am (UTC)' "$now") || fail "a dated reset naming its year was not placed"
   assert_equals "$want" "$got" "a dated reset naming its year was misplaced"
   pass "a dated reset lands on its date, in the year it names or the nearest one"
 }
 
 test_reset_epoch_fails_closed() {
-  local since
-  since=$(date +%s)
-  fm_claude_limit_reset_epoch '6:40pm (Not/AZone)' "$since" >/dev/null \
+  local now
+  now=$(date +%s)
+  fm_claude_limit_reset_epoch '6:40pm (Not/AZone)' "$now" >/dev/null \
     && fail "an unknown zone was placed (it would silently read as UTC)"
-  fm_claude_limit_reset_epoch '6:40pm (../../etc/passwd)' "$since" >/dev/null \
+  fm_claude_limit_reset_epoch '6:40pm (../../etc/passwd)' "$now" >/dev/null \
     && fail "a path-shaped zone was placed"
-  fm_claude_limit_reset_epoch '13pm' "$since" >/dev/null && fail "hour 13 was placed"
-  fm_claude_limit_reset_epoch '0am' "$since" >/dev/null && fail "hour 0 was placed"
-  fm_claude_limit_reset_epoch '6:75pm' "$since" >/dev/null && fail "minute 75 was placed"
-  fm_claude_limit_reset_epoch 'Foo 9, 3pm' "$since" >/dev/null && fail "an unknown month was placed"
-  fm_claude_limit_reset_epoch 'Nov 40, 3pm' "$since" >/dev/null && fail "day 40 was placed"
-  fm_claude_limit_reset_epoch 'soon' "$since" >/dev/null && fail "prose was placed"
-  fm_claude_limit_reset_epoch '6:40pm' '' >/dev/null && fail "a missing bound was accepted"
-  fm_claude_limit_reset_epoch '6:40pm' 'abc' >/dev/null && fail "a non-numeric bound was accepted"
-  pass "an unknown zone, an out-of-range time or a missing bound is refused, never guessed"
+  fm_claude_limit_reset_epoch '13pm' "$now" >/dev/null && fail "hour 13 was placed"
+  fm_claude_limit_reset_epoch '0am' "$now" >/dev/null && fail "hour 0 was placed"
+  fm_claude_limit_reset_epoch '6:75pm' "$now" >/dev/null && fail "minute 75 was placed"
+  fm_claude_limit_reset_epoch 'Foo 9, 3pm' "$now" >/dev/null && fail "an unknown month was placed"
+  fm_claude_limit_reset_epoch 'Nov 40, 3pm' "$now" >/dev/null && fail "day 40 was placed"
+  fm_claude_limit_reset_epoch 'soon' "$now" >/dev/null && fail "prose was placed"
+  fm_claude_limit_reset_epoch '6:40pm' '' >/dev/null && fail "a missing current time was accepted"
+  fm_claude_limit_reset_epoch '6:40pm' 'abc' >/dev/null && fail "a non-numeric current time was accepted"
+  pass "an unknown zone, an out-of-range time or a missing current time is refused, never guessed"
 }
 
 # --- (c)/(d) guarded recovery ----------------------------------------------
@@ -381,15 +397,11 @@ stated_reset() {
   clock_phrase "$(( $(date +%s) + $1 ))" UTC | sed 's/$/ (UTC)/'
 }
 
-# recover_args <case-dir>: the --since a watcher would pass for a prompt drawn
-# four hours ago, so a stated reset a few hours back is placed on today's clock.
-long_ago() { printf '%s' "$(( $(date +%s) - 4 * 3600 ))"; }
-
 test_recovery_refuses_non_claude_harness() {
   local d; d=$(make_case refuse-harness)
   setup_task "$d" stalled codex
   limit_prompt_pane "$(stated_reset -3600)" > "$d/pane.txt"
-  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(long_ago)" stalled >/dev/null 2>&1 \
+  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" stalled >/dev/null 2>&1 \
     && fail "recovery ran against a non-claude harness"
   [ ! -s "$d/control.log" ] || fail "an interrupt was sent to a non-claude harness"
   pass "recovery refuses a task whose recorded harness is not claude"
@@ -416,12 +428,12 @@ test_recovery_refuses_without_a_live_match() {
   local d; d=$(make_case refuse-no-match)
   setup_task "$d" stalled claude
   limit_prose_pane > "$d/pane.txt"
-  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(long_ago)" stalled >/dev/null 2>&1 \
+  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" stalled >/dev/null 2>&1 \
     && fail "recovery ran against a working pane"
   [ ! -s "$d/control.log" ] || fail "an interrupt was sent to a working pane"
 
   # An unreadable pane must refuse too, never assume.
-  FM_FAKE_PANE_FILE="$d/missing.txt" run_resume "$d" --since "$(long_ago)" stalled >/dev/null 2>&1 \
+  FM_FAKE_PANE_FILE="$d/missing.txt" run_resume "$d" stalled >/dev/null 2>&1 \
     && fail "recovery ran against an unreadable pane"
   [ ! -s "$d/control.log" ] || fail "an interrupt was sent to an unreadable pane"
   [ ! -s "$d/state/stalled.status" ] || fail "a pane that was not the prompt got a status line"
@@ -433,7 +445,7 @@ test_recovery_refuses_when_no_reset_is_stated() {
   setup_task "$d" stalled claude
   printf '%s\n' '● Pushed the branch.' '' '   What do you want to do?' '' ' ❯ 1. Stop and wait for limit to reset' \
     '   2. Upgrade your plan' '' '   Enter to confirm · Esc to cancel' > "$d/pane.txt"
-  out=$(FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(long_ago)" stalled 2>&1) \
+  out=$(FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" stalled 2>&1) \
     && fail "recovery ran for a prompt that states no reset"
   assert_contains "$out" "states no reset time" "the missing reset was not reported"
   [ ! -s "$d/control.log" ] || fail "an interrupt was sent without a stated reset"
@@ -445,7 +457,7 @@ test_recovery_refuses_an_unplaceable_reset() {
   local d out; d=$(make_case refuse-unplaceable)
   setup_task "$d" stalled claude
   limit_prompt_pane '6:40pm (Not/AZone)' > "$d/pane.txt"
-  out=$(FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(long_ago)" stalled 2>&1) \
+  out=$(FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" stalled 2>&1) \
     && fail "recovery ran for a reset in an unknown zone"
   assert_contains "$out" "cannot place" "the unplaceable reset was not reported"
   [ ! -s "$d/control.log" ] || fail "an interrupt was sent for an unplaceable reset"
@@ -454,7 +466,7 @@ test_recovery_refuses_an_unplaceable_reset() {
 }
 
 test_future_reset_records_a_timed_wait() {
-  local d out last until_iso; d=$(make_case future-wait)
+  local d out last until_iso wait_secs; d=$(make_case future-wait)
   setup_task "$d" stalled claude
   limit_prompt_pane "$(stated_reset 7200)" > "$d/pane.txt"
   out=$(FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" stalled) || fail "recording a timed wait exited non-zero"
@@ -471,20 +483,17 @@ test_future_reset_records_a_timed_wait() {
   # shellcheck source=/dev/null
   ( . "$ROOT/bin/fm-classify-lib.sh"; status_paused_until "$last" >/dev/null ) \
     || fail "the watcher's own declared-wait reader could not read the recorded until time: $last"
-  # The recorded time is never before the stated reset: at least an hour out here.
-  [ "$(( $(TZ=UTC date -d "${until_iso%Z}:00" +%s 2>/dev/null || TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%S' "${until_iso%Z}:00" +%s) - $(date +%s) ))" -gt 3000 ] \
-    || fail "the recorded wait ends sooner than the stated reset: $last"
+  # The recorded time is never before the stated reset, and it is today's
+  # window, not tomorrow's: between one and three hours out here.
+  wait_secs=$(( $(TZ=UTC date -d "${until_iso%Z}:00" +%s 2>/dev/null || TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%S' "${until_iso%Z}:00" +%s) - $(date +%s) ))
+  [ "$wait_secs" -gt 3000 ] || fail "the recorded wait ends sooner than the stated reset: $last"
+  [ "$wait_secs" -lt 10800 ] || fail "a reset two hours ahead was recorded as a wait past the five-hour window: $last"
 
   # Idempotent: a recheck on the same unchanged wait must not stack lines, since
   # every status append is a wake-worthy event for the watcher.
   FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" stalled >/dev/null || fail "the second recheck exited non-zero"
   [ "$(grep -c '^paused' "$d/state/stalled.status")" -eq 1 ] \
     || fail "re-running against an unchanged wait stacked duplicate paused lines"
-  # A later, different lower bound must not move the recorded answer either.
-  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(( $(date +%s) + 90000 ))" stalled >/dev/null \
-    || fail "a recheck with another bound exited non-zero"
-  [ "$(grep -c '^paused' "$d/state/stalled.status")" -eq 1 ] \
-    || fail "a recheck with a different lower bound re-recorded the wait"
   pass "a stated reset still ahead records one timed wait (until its reset) and sends nothing"
 }
 
@@ -493,10 +502,28 @@ test_a_reset_inside_the_margin_still_waits() {
   setup_task "$d" stalled claude
   limit_prompt_pane "$(stated_reset -3600)" > "$d/pane.txt"
   FM_FAKE_PANE_FILE="$d/pane.txt" FM_CLAUDE_LIMIT_RESET_MARGIN=7200 \
-    run_resume "$d" --since "$(long_ago)" stalled >/dev/null || fail "a margin wait exited non-zero"
+    run_resume "$d" stalled >/dev/null || fail "a margin wait exited non-zero"
   [ ! -s "$d/control.log" ] || fail "an interrupt was sent inside the margin past the stated reset"
   grep -q '^paused' "$d/state/stalled.status" || fail "the margin wait was not recorded"
   pass "the margin keeps a just-passed reset waiting"
+}
+
+# The fork's overnight case: the crew stalled hours ago and the watcher first
+# sees the prompt now, long after the clock time it states. That window has
+# reset; recording a wait until the same clock tomorrow would repeat the stall.
+test_a_reset_first_seen_hours_late_recovers_now() {
+  local d out; d=$(make_case seen-late)
+  setup_task "$d" stalled claude
+  limit_prompt_pane "$(stated_reset -12000)" > "$d/pane.txt"
+  dismissed_pane > "$d/after.txt"
+  out=$(FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" \
+    run_resume "$d" stalled) || fail "a reset seen hours late exited non-zero"
+  assert_contains "$out" "dismissed" "a reset seen hours late was not recovered"
+  [ "$(grep -c . "$d/control.log")" -eq 1 ] || fail "a reset seen hours late did not send its interrupt"
+  [ -s "$d/sent.log" ] || fail "a reset seen hours late was not steered"
+  ! grep -q '^paused' "$d/state/stalled.status" 2>/dev/null \
+    || fail "a reset seen hours late was put off as a wait until the next day"
+  pass "a stated clock time first seen hours after it passed recovers now instead of waiting a day"
 }
 
 test_a_passed_reset_dismisses_and_resumes() {
@@ -505,7 +532,7 @@ test_a_passed_reset_dismisses_and_resumes() {
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
   dismissed_pane > "$d/after.txt"
   out=$(FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" \
-    run_resume "$d" --since "$(long_ago)" stalled) || fail "recovery after the stated reset exited non-zero"
+    run_resume "$d" stalled) || fail "recovery after the stated reset exited non-zero"
   [ "$(grep -c . "$d/control.log")" -eq 1 ] || fail "recovery made other than one control call"
   assert_equals "stalled interrupt" "$(cat "$d/control.log")" "the Escape did not go through fm-control.sh interrupt"
   [ ! -s "$d/keys.log" ] || fail "recovery sent a raw key to the endpoint"
@@ -525,7 +552,7 @@ test_recovery_stops_when_the_prompt_survives_the_interrupt() {
   setup_task "$d" stalled claude
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
   # No after-key pane: the prompt is still showing on the re-read.
-  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(long_ago)" stalled >/dev/null 2>&1 \
+  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" stalled >/dev/null 2>&1 \
     && fail "recovery continued past a prompt that survived the interrupt"
   [ "$(grep -c . "$d/control.log")" -eq 1 ] || fail "recovery escalated more keys after the interrupt did not land"
   [ ! -s "$d/sent.log" ] || fail "a resume instruction was sent while the prompt was still showing"
@@ -537,7 +564,7 @@ test_recovery_stops_when_the_pane_is_unreadable_after_the_interrupt() {
   setup_task "$d" stalled claude
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
   out=$(FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_UNREADABLE_AFTER_KEY=1 \
-    run_resume "$d" --since "$(long_ago)" stalled 2>&1) \
+    run_resume "$d" stalled 2>&1) \
     && fail "recovery continued past a pane it could not re-read after the interrupt"
   assert_contains "$out" "could not be read" "an unreadable re-read was not reported"
   [ "$(grep -c . "$d/control.log")" -eq 1 ] || fail "recovery escalated more keys after an unreadable re-read"
@@ -550,7 +577,7 @@ test_a_failed_interrupt_sends_no_steer() {
   setup_task "$d" stalled claude
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
   out=$(FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_CONTROL_FAILS=1 \
-    run_resume "$d" --since "$(long_ago)" stalled 2>&1) \
+    run_resume "$d" stalled 2>&1) \
     && fail "a control-plane refusal was reported as success"
   assert_contains "$out" "control plane" "the control-plane refusal was not reported"
   [ ! -s "$d/sent.log" ] || fail "a steer was sent after the interrupt failed"
@@ -559,25 +586,35 @@ test_a_failed_interrupt_sends_no_steer() {
 }
 
 test_a_returned_prompt_with_the_same_reset_is_not_looped() {
-  local d out; d=$(make_case cooldown)
+  local d out phrase; d=$(make_case cooldown)
   setup_task "$d" stalled claude
-  limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
+  # Recovered just after the stated reset, as the watcher would.
+  phrase=$(stated_reset -120)
+  limit_prompt_pane "$phrase" > "$d/pane.txt"
   dismissed_pane > "$d/after.txt"
   FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" \
-    run_resume "$d" --since "$(long_ago)" stalled >/dev/null || fail "the first recovery exited non-zero"
+    run_resume "$d" stalled >/dev/null || fail "the first recovery exited non-zero"
   # The prompt is back with the same stated reset: the window had not reset.
-  limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
+  # The watcher asks again on the redraw, at the current time.
+  limit_prompt_pane "$phrase" > "$d/pane.txt"
   out=$(FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" \
-    run_resume "$d" --since "$(long_ago)" stalled 2>&1) \
+    run_resume "$d" stalled 2>&1) \
     && fail "recovery looped on a prompt that returned with the same stated reset"
   assert_contains "$out" "already recovered" "the repeat refusal was not explained"
+  # Even where the same reset would still be waited on, it is refused, not absorbed.
+  out=$(FM_FAKE_PANE_FILE="$d/pane.txt" FM_CLAUDE_LIMIT_RESET_MARGIN=7200 \
+    run_resume "$d" stalled 2>&1) \
+    && fail "a returned prompt inside the margin was recorded as a wait instead of refused"
+  assert_contains "$out" "already recovered" "the repeat inside the margin was not refused"
   [ "$(grep -c . "$d/control.log")" -eq 1 ] || fail "the repeat sent a second interrupt"
+  ! grep -q '^paused' "$d/state/stalled.status" 2>/dev/null \
+    || fail "a returned prompt with the same reset was hidden as a declared wait"
   # A different stated reset is a new prompt and recovers again.
   limit_prompt_pane "$(stated_reset -5400)" > "$d/pane.txt"
   FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" \
-    run_resume "$d" --since "$(long_ago)" stalled >/dev/null || fail "a prompt with a new stated reset was not recovered"
+    run_resume "$d" stalled >/dev/null || fail "a prompt with a new stated reset was not recovered"
   [ "$(grep -c . "$d/control.log")" -eq 2 ] || fail "the new stated reset did not send its own interrupt"
-  pass "the same stated reset is not recovered twice in a row, a new one is"
+  pass "the same stated reset is refused for inspection, never re-sent or absorbed as a wait; a new one recovers"
 }
 
 test_recovery_uses_the_wait_it_recorded() {
@@ -589,11 +626,11 @@ test_recovery_uses_the_wait_it_recorded() {
   last=$(grep -v '^[[:space:]]*$' "$d/state/stalled.status" | tail -1)
   [ -n "$(printf '%s' "$last" | sed -n 's/.* until \([0-9T:Z-]*\).*/\1/p')" ] || fail "no until time was recorded: $last"
   # Time passes: the recorded until moves into the past. The recorded line, not
-  # a recomputation, decides - so a bound that would roll to tomorrow changes nothing.
+  # a recomputation (which still puts the reset two hours ahead), decides.
   sed -i.bak 's/ until [0-9T:Z-]*/ until 2020-01-01T00:00Z/' "$d/state/stalled.status"
   before=$(grep -c . "$d/control.log")
   FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" \
-    run_resume "$d" --since "$(( $(date +%s) + 90000 ))" stalled >/dev/null \
+    run_resume "$d" stalled >/dev/null \
     || fail "recovery after the recorded wait elapsed exited non-zero"
   [ "$(grep -c . "$d/control.log")" -eq $((before + 1)) ] || fail "the elapsed recorded wait did not recover the crew"
   pass "once the recorded wait's until time passes, recovery follows it rather than recomputing"
@@ -632,7 +669,7 @@ test_recovery_closes_only_a_wait_it_owns() {
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
   dismissed_pane > "$d/after.txt"
   FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" \
-    run_resume "$d" --since "$(long_ago)" stalled >/dev/null \
+    run_resume "$d" stalled >/dev/null \
     || fail "recovery with no recorded wait exited non-zero"
   [ ! -s "$d/state/stalled.status" ] \
     || fail "recovery wrote a status line although it had no wait to close"
@@ -642,7 +679,7 @@ test_recovery_closes_only_a_wait_it_owns() {
   rm -f "$d/state/.limit-resumed-stalled"
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
   FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" \
-    run_resume "$d" --since "$(long_ago)" stalled >/dev/null \
+    run_resume "$d" stalled >/dev/null \
     || fail "recovery over a crew-declared pause exited non-zero"
   [ "$(cat "$d/state/stalled.status")" = "paused: waiting on the upstream release" ] \
     || fail "recovery closed a paused line it did not open"
@@ -657,7 +694,7 @@ test_malformed_settle_falls_back_to_the_default() {
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
   dismissed_pane > "$d/after.txt"
   FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" FM_LIMIT_RESUME_SETTLE=1.2.3 \
-    run_resume "$d" --since "$(long_ago)" stalled >/dev/null 2>&1 \
+    run_resume "$d" stalled >/dev/null 2>&1 \
     || fail "a malformed settle value aborted the run after the interrupt had been sent"
   [ -s "$d/sent.log" ] || fail "the resume instruction did not land under a malformed settle value"
   pass "a malformed settle value falls back to the default instead of aborting mid-recovery"
@@ -669,7 +706,7 @@ test_failed_steer_is_reported_not_swallowed() {
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
   dismissed_pane > "$d/after.txt"
   FM_FAKE_PANE_FILE="$d/pane.txt" FM_FAKE_PANE_AFTER_KEY="$d/after.txt" FM_FAKE_SEND_FAILS=1 \
-    run_resume "$d" --since "$(long_ago)" stalled >/dev/null 2>&1 \
+    run_resume "$d" stalled >/dev/null 2>&1 \
     && fail "a resume instruction that did not land was reported as success"
   pass "a resume instruction that does not land is reported, not swallowed"
 }
@@ -678,7 +715,7 @@ test_check_only_never_sends_or_records() {
   local d out; d=$(make_case check-only)
   setup_task "$d" stalled claude
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
-  out=$(FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --check --since "$(long_ago)" stalled) \
+  out=$(FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --check stalled) \
     || fail "--check exited non-zero on a recoverable stall"
   assert_contains "$out" "recoverable" "--check did not report a recoverable stall"
   [ ! -s "$d/control.log" ] || fail "--check sent an interrupt"
@@ -696,8 +733,7 @@ test_check_only_never_sends_or_records() {
 test_usage_errors_exit_two() {
   local d; d=$(make_case usage)
   run_resume "$d" >/dev/null 2>&1; expect_code 2 $? "no task id"
-  run_resume "$d" --since >/dev/null 2>&1; expect_code 2 $? "--since without a value"
-  run_resume "$d" --since soon stalled >/dev/null 2>&1; expect_code 2 $? "--since with a non-epoch"
+  run_resume "$d" stalled extra >/dev/null 2>&1; expect_code 2 $? "a second task id"
   run_resume "$d" --bogus stalled >/dev/null 2>&1; expect_code 2 $? "an unknown flag"
   (unset FM_HOME; PATH="$d/fakebin:$PATH" "$d/bin/fm-limit-resume.sh" stalled >/dev/null 2>&1); expect_code 2 $? "no FM_HOME"
   pass "a missing task id, a bad flag or an unset FM_HOME is a usage error"
@@ -710,7 +746,7 @@ fm_test_run \
   test_signature_requires_every_anchor_in_order \
   test_reset_phrase_reads_every_wording \
   test_reset_phrase_ignores_unanchored_times \
-  test_reset_epoch_places_a_clock_time_without_going_early \
+  test_reset_epoch_places_a_clock_time_inside_the_five_hour_window \
   test_reset_epoch_places_a_dated_reset \
   test_reset_epoch_fails_closed \
   test_recovery_refuses_non_claude_harness \
@@ -720,6 +756,7 @@ fm_test_run \
   test_recovery_refuses_an_unplaceable_reset \
   test_future_reset_records_a_timed_wait \
   test_a_reset_inside_the_margin_still_waits \
+  test_a_reset_first_seen_hours_late_recovers_now \
   test_a_passed_reset_dismisses_and_resumes \
   test_recovery_stops_when_the_prompt_survives_the_interrupt \
   test_recovery_stops_when_the_pane_is_unreadable_after_the_interrupt \
