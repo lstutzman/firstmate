@@ -1,0 +1,61 @@
+DIGEST 2026-11-05 8 data/officers/triage/2026-11-05.md
+officer exit=0
+[
+  {
+    "session": "alpha:s-bare",
+    "rule": "env-dump",
+    "severity": "high",
+    "head": null
+  },
+  {
+    "session": "alpha:s-grep-ec",
+    "rule": "env-dump",
+    "severity": "high",
+    "head": null
+  },
+  {
+    "session": "alpha:s-tee-count",
+    "rule": "env-dump",
+    "severity": "high",
+    "head": null
+  },
+  {
+    "session": "alpha:s-amp",
+    "rule": "env-dump",
+    "severity": "high",
+    "head": null
+  },
+  {
+    "session": "alpha:s-file-then-count",
+    "rule": "env-dump",
+    "severity": "high",
+    "head": null
+  },
+  {
+    "session": "alpha:s-to-file",
+    "rule": "env-dump",
+    "severity": "high",
+    "head": null
+  },
+  {
+    "session": "alpha:s-printenv",
+    "rule": "env-dump",
+    "severity": "high",
+    "head": null
+  },
+  {
+    "session": "alpha:s-append",
+    "rule": "env-dump",
+    "severity": "high",
+    "head": null
+  }
+]
+--- digest rule lines ---
+30:- [high] rule-violation: env-dump: 1 call(s), e.g. env (alpha:s-bare)
+31:- [high] rule-violation: env-dump: 1 call(s), e.g. env (alpha:s-grep-ec)
+32:- [high] rule-violation: env-dump: 1 call(s), e.g. env (alpha:s-tee-count)
+33:- [high] rule-violation: env-dump: 1 call(s), e.g. env ... (alpha:s-amp)
+34:- [high] rule-violation: env-dump: 1 call(s), e.g. env ... (alpha:s-file-then-count)
+35:- [high] rule-violation: env-dump: 1 call(s), e.g. env ... (alpha:s-to-file)
+36:- [high] rule-violation: env-dump: 1 call(s), e.g. printenv (alpha:s-printenv)
+37:- [high] rule-violation: env-dump: 1 call(s), e.g. printenv ... (alpha:s-append)

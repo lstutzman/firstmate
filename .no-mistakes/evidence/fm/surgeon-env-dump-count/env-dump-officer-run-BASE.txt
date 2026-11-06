@@ -1,0 +1,15 @@
+officer exit=0
+    "session": "alpha:s-bare",
+    "session": "alpha:s-grep-ec",
+    "session": "alpha:s-grep-wc",
+    "session": "alpha:s-incident",
+    "session": "alpha:s-tee-count",
+    "session": "alpha:s-grep-q",
+    "session": "alpha:s-printenv",
+30:- [high] rule-violation: env-dump: 1 call(s), e.g. env (alpha:s-bare)
+31:- [high] rule-violation: env-dump: 1 call(s), e.g. env (alpha:s-grep-ec)
+32:- [high] rule-violation: env-dump: 1 call(s), e.g. env (alpha:s-grep-wc)
+33:- [high] rule-violation: env-dump: 1 call(s), e.g. env (alpha:s-incident)
+34:- [high] rule-violation: env-dump: 1 call(s), e.g. env (alpha:s-tee-count)
+35:- [high] rule-violation: env-dump: 1 call(s), e.g. printenv (alpha:s-grep-q)
+36:- [high] rule-violation: env-dump: 1 call(s), e.g. printenv (alpha:s-printenv)
