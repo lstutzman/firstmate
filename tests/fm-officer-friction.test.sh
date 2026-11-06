@@ -1452,6 +1452,33 @@ test_repeated_ask_words_never_reach_linear() {
   pass "fm-officer friction: a repeated ask is filed in Linear without any of Lee's words"
 }
 
+test_groups_of_one_cause_reach_local_jev_apart() {
+  python3 -I - "$ROOT/bin/fm-officer-friction.py" <<'PY' || fail "two groups of one cause must reach local-jev as different reports"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1])
+friction = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(friction)
+lib = friction._lib()
+
+def group(fid, cause, sub, name):
+    return {"id": fid, "cause": cause, "sub": sub, "name": name, "title": "Hook refusals slow agents down",
+            "fix": "Fix the hook so a safe command passes.", "events": 2, "lee_events": 0, "wait_total_s": 60,
+            "carded": True, "severity": 4}
+
+doc = {"findings": [group("a", "guard-hook", "refused", "hook-alpha"), group("b", "guard-hook", "refused", "hook-beta"),
+                    group("c", "repeat-ask", "instruction", "flaky parser benchmarks"),
+                    group("d", "repeat-ask", "instruction", "shared database branch")]}
+states = {f["id"]: {"state": "new", "generation": ""} for f in doc["findings"]}
+texts = [lib.finding_text(lf) for lf in friction.lib_findings(lib, doc, states, set())]
+assert texts[0] != texts[1], texts
+assert texts[2] != texts[3], texts
+assert "hook-alpha" in texts[0] and "hook-beta" in texts[1], texts
+for word in ("parser", "benchmarks", "database", "branch"):
+    assert not any(word in t for t in texts), (word, texts)
+PY
+  pass "fm-officer friction: two groups of one cause reach local-jev as different reports, without Lee's words"
+}
+
 test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started() {
   local home json dir rubric
   linear_world capped "; max-creates: 2"
@@ -1508,3 +1535,4 @@ test_findings_are_filed_in_linear_under_the_contract
 test_a_missing_label_or_no_writes_starts_nothing
 test_repeated_ask_words_never_reach_linear
 test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started
+test_groups_of_one_cause_reach_local_jev_apart

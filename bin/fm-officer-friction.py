@@ -2047,7 +2047,7 @@ def lib_findings(lib, doc, states, eligible):
             f["events"], f["lee_events"], human_span(f["wait_total_s"]), f["fix"] or "No fix proposed yet.")
         lf = lib.make_finding(f["cause"], f["sub"], "/".join((f["cause"], f["sub"], f["name"] or "")), title, summary, klass,
                               "high" if f["carded"] else "medium" if f["severity"] >= 3 else "low",
-                              state["state"] in ("settled", "started", "fixed"), {}, fix=f["fix"] or "")
+                              state["state"] in ("settled", "started", "fixed"), {}, location=subject(f) or "", fix=f["fix"] or "")
         lf.update(id=f["id"], raw=f, start=False)
         if f["id"] in eligible and state["state"] == "started-by-default":
             lf.update(start=True, start_generation=state["generation"] or "", start_what=(
@@ -2334,17 +2334,9 @@ def main(argv):
     parser.add_argument("--channel", action="append", default=[])
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--model", default="none")
-    parser.add_argument("--now", type=int)
     parser.add_argument("--bosun-hosts", default="")
-    parser.add_argument("--fm-home")
-    parser.add_argument("--start-home", action="append", default=[])
-    parser.add_argument("--team", default="PC")
-    parser.add_argument("--writes", choices=["none", "linear"], default="none")
-    parser.add_argument("--max-creates", type=int, default=100)
-    parser.add_argument("--max-linear-calls", type=int, default=450)
-    parser.add_argument("--triage-label", default="triage")
-    parser.add_argument("--rubric", default=RUBRIC_FILE)
-    parser.add_argument("--jev", default=os.path.expanduser("~/.claude/skills/local-jev/jev.py"))
+    if argv[:1] != ["scan"]:
+        _lib().add_common_args(parser, RUBRIC_FILE)
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date):
         parser.error("--date must be YYYY-MM-DD")
