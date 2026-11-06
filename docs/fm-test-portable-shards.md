@@ -9,7 +9,9 @@ Balance hints come from serial runs of the real lanes on `ubuntu-24.04`.
 The concurrent isolation proof in [fm-test-isolation-proof.md](fm-test-isolation-proof.md) establishes concurrency safety, not serial CI duration.
 Local timings are not interchangeable with CI timings: platform and machine load can affect each script differently and change their relative weights.
 
-The portable serial hint table was refreshed again on 2026-11-02 from eight green Ubuntu CI runs on `lstutzman/firstmate` (41056282922, 41207534722, 41207547671, 41210211924, 41211333584, 41214986542, 41218007432, 41220570713).
+The portable serial hint table was refreshed on 2026-11-06 from five green Ubuntu CI runs on `lstutzman/firstmate` (42259522502, 42252576912, 42249761061, 42243881424, 42238131810), covering all 318 serial members.
+Stale hints had modeled the largest shard at about 20.6 minutes while shards 7 and 8 really took 26-28 minutes and were cancelled at the 30-minute cap on unrelated PRs; the lane moved from eleven to fifteen shards, which packs the largest shard at about 19.7 minutes (one indivisible script) without raising any timeout.
+The previous refresh was on 2026-11-02 from eight green Ubuntu CI runs on `lstutzman/firstmate` (41056282922, 41207534722, 41207547671, 41210211924, 41211333584, 41214986542, 41218007432, 41220570713).
 It holds the slowest successful `duration_ms` per script from those runs' `fm-test-timing-portable-serial-*` artifacts, covering all 234 serial members, with the native-Windows-only exception below.
 The packing budget moved from 1200000 to 1400000 ms because `tests/fm-watch-triage.test.sh` alone now runs 1174-1351 s.
 
@@ -63,7 +65,7 @@ Its scheduling regressions also check stored parallel lane order and preserve se
 These checks do not detect a script outgrowing an existing hint or establish measured job headroom.
 Refresh `portable_parallel_weight_hints` with the slowest completed `duration_ms` per script from several green CI runs' `fm-test-timing-portable-parallel-*` artifacts whenever the parallel set gains scripts or a member grows materially.
 
-The remote-secondmate lifecycle hint is 1005249 ms, its completed, passing `FM_TEST_END` sample from Ubuntu run [41289019354](https://github.com/kunchenguid/firstmate/actions/runs/41289019354). Rex lifecycle coverage outgrew the previous 345655 ms hint; serial shard 9 then reached the 30-minute job cap while running later tests. Eleven serial shards accommodate the refreshed weight within the unchanged modeled budget and timeout policy. This is a completed-script measurement from a partial run, not a successful whole-shard timing or a guarantee of future headroom.
+The remote-secondmate lifecycle hint is 1005249 ms, its completed, passing `FM_TEST_END` sample from Ubuntu run [41289019354](https://github.com/kunchenguid/firstmate/actions/runs/41289019354). Rex lifecycle coverage outgrew the previous 345655 ms hint; serial shard 9 then reached the 30-minute job cap while running later tests. Eleven serial shards then accommodated the refreshed weight within the unchanged modeled budget and timeout policy. This is a completed-script measurement from a partial run, not a successful whole-shard timing or a guarantee of future headroom.
 
 ## Portable serial remainder
 
@@ -141,7 +143,7 @@ Root time tracks the sourced library closure, not file size, so byte weight is o
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the three watch-triage members still sum to about 26 minutes of CI test time.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses eighteen long-lived Linux jobs (eleven serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses twenty-two long-lived Linux jobs (fifteen serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession and keeps only the newest of close main pushes' runs, without changing the compliance workflow's event semantics.
 
