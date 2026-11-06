@@ -40,7 +40,12 @@ on a task with no captain-hold row of the same id, a truncated decision list, an
 invalidity kind, or in-flight work with no open captain decision still alarms. A child ask on a
 task the mate holds for the captain is suppressed for as long as that hold is open, including a
 later, unrelated ask from the same child.
-The Claude quota context line (every account's 7d use and carrying accounts) is appended only to
+The Claude quota context line shows the proxy's view: the accounts serving now (successful Claude
+traffic in the last 15 minutes, from `cpa-usage-axi models --hours 0.25`), pooled 7d headroom across
+non-stale accounts, and accounts over the seven_day threshold labelled rotated out. A carrying
+account (successful traffic in the last 60 minutes) over seven_day raises a quota decision only when
+no non-stale account under the threshold is serving; once the proxy has rotated, nothing needs the
+captain. The line is appended only to
 cards whose alarms include a quota alarm (quota:, stale:, pool, ignored:, quota-read); on other
 alarms it is left off.
 A carrying-account finding alarms once. While its weekly reset is within carrying_reset_hours
@@ -89,6 +94,8 @@ def cause_of(alarms):
 
 def is_inventory(key):
     return key == 'mate-read' or key.startswith('mate-read:')
+SERVING_MINUTES = 15
+SERVING_HOURS = str(SERVING_MINUTES / 60)
 RETIRED_MINUTES = 7 * 24 * 60
 
 
@@ -354,20 +361,33 @@ def collect(cfg):
     else:
         raise ValueError('invalid cpa-usage-host')
     try:
-        rows = accounts(read([*cpa, 'accounts'], 3))
-        traffic = table(read([*cpa, 'models', '--hours', '1', '--limit', '1000'], 2), 'models')
-        carrying = set()
-        for row in traffic:
-            requests, failed = int(row['requests']), int(row['failed'])
-            if not 0 <= failed <= requests:
-                raise ValueError('invalid traffic counts')
-            if row['model'].startswith('claude-') and requests > failed:
-                carrying.add(row['account'])
-        pressure = ', '.join(f"{row['account']} 7d {row['used_7d']:.0%}"
-                             for row in rows if row['used_7d'] is not None
-                             and (row['age_min'] is None or row['age_min'] < RETIRED_MINUTES))
-        carriers = ', '.join(sorted(carrying)) if carrying else 'none (no successful Claude traffic in last 60 minutes)'
-        quota_info = f'Claude quota context (not an alarm): {pressure}; Carrying Claude accounts: {carriers}'
+        rows = accounts(read([*cpa, 'accounts'], 4))
+
+        def served(hours, share):
+            names = set()
+            for row in table(read([*cpa, 'models', '--hours', hours, '--limit', '1000'], share), 'models'):
+                requests, failed = int(row['requests']), int(row['failed'])
+                if not 0 <= failed <= requests:
+                    raise ValueError('invalid traffic counts')
+                if row['model'].startswith('claude-') and requests > failed:
+                    names.add(row['account'])
+            return names
+
+        carrying = served('1', 3)
+        serving = served(SERVING_HOURS, 2)
+        live = [row for row in rows if row['used_7d'] is not None and row['age_min'] is not None
+                and row['age_min'] < cfg['stale_minutes']]
+        live_pool = [row['used_7d'] for row in live]
+        pooled = (f"{sum(1 - Decimal(str(used)) for used in live_pool) / len(live_pool):.0%} mean 7d headroom "
+                  f"across {len(live_pool)} non-stale accounts") if live_pool else 'no non-stale readings'
+        rotated = sorted(f"{row['account']} 7d {row['used_7d']:.0%}" for row in live if row['used_7d'] > cfg['seven_day'])
+        # The proxy has rotated when a non-stale account with headroom is serving current traffic.
+        rotated_away = any(row['account'] in serving and row['used_7d'] <= cfg['seven_day'] for row in live)
+        servers = ', '.join(f"{name} 7d {row['used_7d']:.0%}" for row in live for name in [row['account']]
+                            if name in serving) or f'none (no successful Claude traffic in last {SERVING_MINUTES} minutes)'
+        quota_info = (f'Claude quota context (not an alarm; proxy view): Serving Claude accounts '
+                      f'(successful traffic in last {SERVING_MINUTES} minutes): {servers}; pooled: {pooled}; '
+                      f"rotated out (over {cfg['seven_day']:.0%} 7d): {', '.join(rotated) if rotated else 'none'}")
         pool, ignored, carrying_keys = [], 0, {}
         for row in rows:
             name = row['account']
@@ -381,7 +401,7 @@ def collect(cfg):
                 findings['stale:' + name] = f'Claude quota reading stale: {name}'
             else:
                 pool.append(row['used_7d'])
-            if name in carrying and row['used_7d'] > cfg['seven_day']:
+            if name in carrying and row['used_7d'] > cfg['seven_day'] and not rotated_away:
                 reset = row['reset_7d']
                 # cpa-usage-axi's reset time drifts a minute between reads; key on the nearest hour.
                 try:
