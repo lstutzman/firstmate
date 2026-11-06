@@ -174,6 +174,7 @@ state/               runtime records and signals; gitignored
   .secondmate-relaunch-<id> .secondmate-relaunch-bound-<id>   durable relaunch history and parked-bound state; never touch (bin/fm-secondmate-liveness-lib.sh owns the ledger contract)
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   lane-capacity.json  this home's published lane facts, refreshed only while config/lane-capacity exists; written only by bin/fm-capacity.sh --publish, whose header owns the document
+  .decision-sweep-last-run .decision-sweep.out .decision-sweep.out.tmp  the watcher's detached settle-only decision sweep cadence stamp, its finished report (consumed and removed by the next poll, which wakes firstmate naming each closed wait), and the in-progress report; bin/fm-watch.sh decision_sweep_tick owns them, bin/fm-decision-sweep.sh owns which decisions close; safe to delete
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
 .no-mistakes/        local validation state and evidence; gitignored

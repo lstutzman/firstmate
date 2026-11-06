@@ -746,6 +746,35 @@ CASES
   pass "status_line_cause reads the stated cause and falls back to unstated"
 }
 
+test_status_line_dep() {
+  local line want got
+  while IFS='|' read -r want line; do
+    got=$(status_line_dep "$line" && printf '\t%s' "$(status_dep_pr_url "$(status_line_dep "$line")" || printf none)") || got=none
+    assert_equals "$want" "$got" "dependency of: $line"
+  done <<'CASES'
+pr/o/r/12	https://github.com/o/r/pull/12|needs-decision [at=1790000000] [cause=external] [key=k] [dep=pr/o/r/12]: handed to another home
+pr/lstutzman/fleet-app/131	https://github.com/lstutzman/fleet-app/pull/131|blocked [dep=pr/lstutzman/fleet-app/131] [key=k]: tag order is free
+pr/o/r/12	https://github.com/o/r/pull/12|paused [at=10:30] [dep=pr/o/r/12]: readable stamp keeps its colon out of the head
+mate/navigator	none|blocked [dep=mate/navigator] [key=k]: another kind parses but names no PR
+pr/o/r	none|blocked [dep=pr/o/r] [key=k]: a PR dependency needs a number
+pr/o/r/x	none|blocked [dep=pr/o/r/x] [key=k]: a PR number is digits only
+none|needs-decision: [dep=pr/o/r/12] [key=k] a note-head tag is prose
+none|blocked [dep=nokind] [key=k]: no kind separator
+none|blocked [dep=pr//12] [key=k]: empty part
+none|blocked [dep=/pr/o/r/12] [key=k]: leading separator
+none|blocked [dep=pr/o/r/12/] [key=k]: trailing separator
+none|blocked [dep=] [key=k]: empty value
+none|blocked [at=1790000000] [key=k]: no dependency tag
+none|blocked without any colon
+CASES
+  assert_equals "blocked" "$(status_line_verb 'blocked [at=1] [dep=pr/o/r/1] [key=k]: x')" \
+    "a dependency tag does not change the verb"
+  assert_equals "k" "$(_fm_decision_key 'blocked [dep=pr/o/r/1] [key=k]: x')" "a dependency tag does not change the key"
+  assert_equals "external" "$(status_line_cause 'blocked [cause=external] [dep=pr/o/r/1] [key=k]: x')" \
+    "a dependency tag does not change the cause"
+  pass "status_line_dep reads a named dependency and status_dep_pr_url its pull request"
+}
+
 test_whole_fold_ten_thousand_lines() {
   local dir started elapsed
   dir=$(case_dir ten-thousand)
@@ -774,3 +803,4 @@ SH
 test_whole_fold_ten_thousand_lines
 test_whole_fold_matches_captured_stream
 test_status_line_cause
+test_status_line_dep

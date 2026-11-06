@@ -832,6 +832,9 @@ test_secondmate_marked_request_reporting_contract() {
     "secondmate charter lost same-key closure for a reportable material phase"
   assert_grep 'resolved [key=<work-slug>]' "$brief" \
     "secondmate charter lost resolved closure for a keyed material phase"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'such as an adopt or merge handoff, also tag it `[dep=pr/<owner>/<repo>/<number>]`' "$brief" \
+    "secondmate charter did not teach the pull request dependency tag for cross-home merge waits"
 
   assert_grep 'include that exact token in your parent status reply' "$brief" \
     "secondmate charter lost correlated parent results"
@@ -1722,6 +1725,7 @@ test_crewmate_scaffolds_teach_captain_steps_waits_and_resume_check() {
   # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
   assert_grep 'paused [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until' "$brief" \
     "ship brief did not turn an unreachable dependency into a timed wait"
+  assert_grep '[dep=pr/<owner>/<repo>/<number>]' "$brief" "ship brief did not teach the pull request dependency tag"
   assert_grep "'$ROOT/bin/fm-worktree-assert.sh' $id" "$brief" "ship brief did not name the resume directory check"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-lee-step-scout alpha --scout >/dev/null 2>&1 \
     || fail "fm-brief.sh --scout exited non-zero"

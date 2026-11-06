@@ -889,6 +889,40 @@ status_line_cause() {  # <status-line> -> policy|credential|sudo|tool|decision|p
     *) printf unstated ;;
   esac
 }
+# Dependency grammar: an external wait may name what it waits on as an OPTIONAL
+# "[dep=<kind>/<ref>]" token beside the other tags before the first colon. The
+# one kind firstmate re-checks by itself is pr/<owner>/<repo>/<number>, a GitHub
+# pull request whose merge clears the wait; the ref is a path, never a URL,
+# because the head ends at the first colon. Like the cause tag it is metadata
+# only and never changes how a line opens or closes a decision:
+# bin/fm-decision-sweep.sh's header owns which open decisions it closes once
+# their dependency resolves. Prints "<kind>/<ref>"; fails when the line names
+# none, or names one outside the A-Za-z0-9._/- charset or with an empty part.
+status_line_dep() {  # <status-line> -> <kind>/<ref>
+  local unstamped head
+  _fm_status_unstamped "$1" unstamped
+  head=${unstamped%%:*}
+  case "$head" in *\[dep=*\]*) ;; *) return 1 ;; esac
+  head=${head#*\[dep=}
+  head=${head%%\]*}
+  case "$head" in
+    ''|*[!A-Za-z0-9._/-]*|/*|*/|*//*) return 1 ;;
+    */*) printf '%s' "$head" ;;
+    *) return 1 ;;
+  esac
+}
+# The GitHub pull request URL a pr/<owner>/<repo>/<number> dependency names;
+# fails for any other kind or shape.
+status_dep_pr_url() {  # <dep> -> https://github.com/<owner>/<repo>/pull/<number>
+  local rest=${1#pr/} owner repo number
+  [ "$rest" != "$1" ] || return 1
+  owner=${rest%%/*}; rest=${rest#*/}
+  repo=${rest%%/*}; number=${rest#*/}
+  [ -n "$owner" ] && [ -n "$repo" ] || return 1
+  case "$number" in ''|*[!0-9]*) return 1 ;; esac
+  printf 'https://github.com/%s/%s/pull/%s' "$owner" "$repo" "$number"
+}
+
 # Unkeyed lines stamped at or after this epoch take synthetic keys (see the key
 # grammar above). FM_CLASSIFY_UNKEYED_CUTOVER overrides it.
 FM_CLASSIFY_UNKEYED_CUTOVER_DEFAULT=1791843600

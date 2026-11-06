@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # fm-decision-sweep.sh - close open needs-decision lines whose PRs have all landed.
 #
-# Usage: FM_HOME=<home> fm-decision-sweep.sh [--apply [--key <key>[,<key>...]]...]
+# Usage: FM_HOME=<home> fm-decision-sweep.sh [--settle-only] [--apply [--key <key>[,<key>...]]...]
 #
 # Resolved decisions linger in a home's status logs as needs-decision lines no
 # one reconciled, so the OPEN DECISIONS fold keeps listing them. This sweep
 # reads the open set with status_open_decisions (bin/fm-classify-lib.sh, the
 # only owner of the status grammar) for every state/*.status in FM_HOME and
-# looks at needs-decision entries only.
+# looks at needs-decision entries, plus blocked entries that name a dependency.
 #
 # A candidate names one or more full GitHub PR URLs
 # (https://github.com/<owner>/<repo>/pull/<n>) in its note; bare "#123" or
@@ -15,7 +15,11 @@
 # The sweep never guesses what a free-text ask wants. Verdicts:
 #   settled    key is merge-handoff-<n> (written by bin/fm-pr-merge.sh with the
 #              PR as its subject), the note names exactly one PR URL, its
-#              number is <n>, and that PR is MERGED;
+#              number is <n>, and that PR is MERGED; or the line that opened
+#              the decision names a pr/<owner>/<repo>/<n> dependency
+#              (status_line_dep in bin/fm-classify-lib.sh) and that PR is
+#              MERGED, whatever the note says, because the tag is the writer's
+#              own statement that the merge clears the wait;
 #   review     every named PR is MERGED but the line is not a matching
 #              merge-handoff; listed under its own heading with the start of
 #              its note, for a reader to judge;
@@ -28,6 +32,14 @@
 # Never candidates: keys starting captain-hold- or pending-reply- (those close
 # only through bin/fm-captain-hold.sh answer and the pending-reply owner), and
 # decisions naming no PR URL.
+#
+# --settle-only looks up only candidates that could settle - a merge-handoff
+# key matching its one named PR, or a pr dependency - so it costs one gh call
+# per such decision and none for free-text asks; nothing else is listed or
+# counted. bin/fm-watch.sh runs it with --apply on its own cadence
+# (FM_DECISION_SWEEP_INTERVAL_SECS, default 600 seconds, 0 turns it off) and
+# wakes firstmate naming each wait it closed, so a wait on another home's merge
+# clears itself once the PR lands.
 #
 # Default is a dry run: one line per candidate, the review list, and totals;
 # nothing changed. --apply closes every settled candidate. --key (repeatable,
@@ -49,11 +61,12 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-usage() { echo "usage: FM_HOME=<home> fm-decision-sweep.sh [--apply [--key <key>[,<key>...]]...]" >&2; exit 2; }
-APPLY=0 KEYS=''
+usage() { echo "usage: FM_HOME=<home> fm-decision-sweep.sh [--settle-only] [--apply [--key <key>[,<key>...]]...]" >&2; exit 2; }
+APPLY=0 KEYS='' SETTLE_ONLY=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
+    --settle-only) SETTLE_ONLY=1 ;;
     --key) [ "$#" -ge 2 ] && [ -n "$2" ] || usage; KEYS="$KEYS,$2"; shift ;;
     -h | --help) sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) usage ;;
@@ -111,21 +124,51 @@ pr_state() {  # <pr-url>
 total=0 settled=0 keyed=0 review=0 open=0 manual=0 unreadable=0 truncated=0 skipped_reserved=0 skipped_no_pr=0 failed=0
 REVIEW_OUT=''
 
+# The pr dependency named by the line that opened <key>'s open decision, as a
+# PR URL; fails when that line names none. The opener is the last
+# needs-decision or blocked line carrying the key, because each such line
+# reopens the decision under its own note.
+dep_pr_url() {  # <status-file> <key>
+  local line opener='' lkey lverb dep
+  while IFS= read -r line; do
+    status_line_verb "$line" lverb
+    case "$lverb" in needs-decision | blocked) ;; *) continue ;; esac
+    lkey=$(status_line_decision_key "$line") || continue
+    [ "$lkey" = "$2" ] && opener=$line
+  done < <(grep -aF -- "[key=$2]" "$1" 2>/dev/null)
+  [ -n "$opener" ] && dep=$(status_line_dep "$opener") || return 1
+  status_dep_pr_url "$dep"
+}
+
 for f in "$STATE"/*.status; do
   [ -f "$f" ] || continue
   decisions=$(status_open_decisions "$f")
   [ -n "$decisions" ] || continue
+  has_deps=0
+  ! grep -qaF -- '[dep=' "$f" 2>/dev/null || has_deps=1
   close_lines=() close_keys=()
   while IFS=$'\t' read -r key verb note; do
-    [ "$verb" = needs-decision ] || continue
+    case "$verb" in needs-decision | blocked) ;; *) continue ;; esac
+    dep_url=''
+    [ "$has_deps" -eq 0 ] || dep_url=$(dep_pr_url "$f" "$key") || dep_url=''
+    [ "$verb" = needs-decision ] || [ -n "$dep_url" ] || continue
     case "$key" in
       captain-hold-* | pending-reply-*)
+        [ "$SETTLE_ONLY" -eq 1 ] && ! listed "$key" && continue
         skipped_reserved=$((skipped_reserved + 1))
         ! listed "$key" || refuse "$key" "reserved key"
         continue
         ;;
     esac
-    urls=$(printf '%s\n' "$note" | grep -oE "$PR_URL_RE" | awk '!seen[$0]++' || true)
+    if [ -n "$dep_url" ]; then
+      urls=$dep_url
+    else
+      urls=$(printf '%s\n' "$note" | grep -oE "$PR_URL_RE" | awk '!seen[$0]++' || true)
+    fi
+    if [ "$SETTLE_ONLY" -eq 1 ] && [ -z "$dep_url" ] \
+      && { [ -z "$urls" ] || [ "$key" != "merge-handoff-${urls##*/}" ] || [ "$urls" != "${urls%%$'\n'*}" ]; }; then
+      continue
+    fi
     if [ -z "$urls" ]; then
       skipped_no_pr=$((skipped_no_pr + 1))
       ! listed "$key" || refuse "$key" "names no PR URL"
@@ -133,8 +176,8 @@ for f in "$STATE"/*.status; do
     fi
     total=$((total + 1))
     base=${f##*/}
-    case "$note" in
-      *' [truncated]')
+    case "$dep_url:$note" in
+      :*' [truncated]')
         truncated=$((truncated + 1))
         echo "home=$FM_HOME file=$base key=$key verdict=truncated prs=$(printf '%s' "$urls" | tr '\n' ',')"
         ! listed "$key" || refuse "$key" "note is truncated"
@@ -156,6 +199,7 @@ $urls
 EOF
     if [ "$verdict" = merged ]; then
       verdict=review
+      [ -z "$dep_url" ] || verdict=settled
       [ "$key" != "merge-handoff-${urls##*/}" ] || [ "$urls" != "${urls%%$'\n'*}" ] || verdict=settled
     fi
     line="home=$FM_HOME file=$base key=$key verdict=$verdict prs=$prs"

@@ -166,6 +166,11 @@
 #                          running a check or removing poll artifacts
 #   heartbeat              fleet-scan backstop found an unsurfaced captain-relevant
 #                          status, unless afk is active
+#   check: decision-sweep: closed once the pull request each waited on merged: file=<status> key=<key> ...
+#                          the detached decision sweep closed these open waits
+#                          because the pull request each one handed off or
+#                          named as its dependency merged; tell whoever waited
+#                          to go on
 #   check: inactive-outcome bounded poll-loop reconciliation found a suspicious
 #                          inactive terminal outcome that still lacks its durable
 #                          upstream receipt
@@ -3817,6 +3822,40 @@ home_summary_refresh_detached() {
   HOME_SUMMARY_PID=$!
 }
 
+# Self-clearing external waits: close open decisions whose PR dependency has
+# merged (bin/fm-decision-sweep.sh's header owns which ones). The sweep runs
+# detached, bounded, because each candidate costs a forge read, and its closes
+# are this home's own appends. A watcher cycle ends at its first wake, so the
+# job hands its report over through state/.decision-sweep.out, written only
+# when it finishes; the next poll that finds a report naming a closed wait wakes
+# firstmate with it, so whoever waited is told to go on. The stamp is touched at
+# launch, so a slow sweep is not relaunched before its bound elapses.
+decision_sweep_tick() {
+  local interval closed reason
+  if [ -f "$STATE/.decision-sweep.out" ]; then
+    closed=$(awk '/ verdict=settled( |$)/ {
+      for (i = 1; i <= NF; i++) if ($i ~ /^(file|key)=/) printf "%s%s", (n++ ? " " : ""), $i
+    }' "$STATE/.decision-sweep.out" 2>/dev/null) || closed=
+    rm -f "$STATE/.decision-sweep.out"
+    if [ -n "$closed" ]; then
+      reason="check: decision-sweep: closed once the pull request each waited on merged: $closed"
+      fm_wake_append check decision-sweep "$reason" || exit 1
+      wake "$reason"
+    fi
+  fi
+  interval=${FM_DECISION_SWEEP_INTERVAL_SECS:-600}
+  case "$interval" in '' | *[!0-9]*) interval=600 ;; esac
+  [ "$interval" -gt 0 ] || return 0
+  [ "$(age_of "$STATE/.decision-sweep-last-run")" -ge "$interval" ] || return 0
+  touch "$STATE/.decision-sweep-last-run"
+  (
+    fm_run_timed 300 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+      "$SCRIPT_DIR/fm-decision-sweep.sh" --settle-only --apply \
+      </dev/null >"$STATE/.decision-sweep.out.tmp" 2>/dev/null || true
+    mv -f "$STATE/.decision-sweep.out.tmp" "$STATE/.decision-sweep.out"
+  ) </dev/null >/dev/null 2>&1 &
+}
+
 # Opt-in lane capacity facts (docs/configuration.md "Lane capacity"): publish
 # state/lane-capacity.json detached for the same beacon-freshness reason as the
 # home summary above. bin/fm-capacity.sh's header owns the document.
@@ -3998,6 +4037,8 @@ while :; do
   # repost after grace, and escalate once if the recovery turn is also missed.
   # No conversation scraping; unresolved records are never silently expired.
   fm_pending_reply_tick "$STATE" || true
+
+  decision_sweep_tick
 
   # Daily archive pass for the grow-only process-event inbox (handled
   # sequences); the script holds the rules and stamps its own cadence, so most
