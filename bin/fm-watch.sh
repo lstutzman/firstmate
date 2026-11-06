@@ -2666,8 +2666,12 @@ clear_pause_tracking() {  # <window-key>
 # from the dialog name the poll already derived from its one capture, so a pane
 # that is not on that prompt costs nothing and a crew that is on it costs one
 # detached, bounded run per FM_LIMIT_RESUME_CHECK_SECS (default 60).
-limit_resume_check() {  # <window> <task> <dialog-name>
-  local win=$1 task=$2 dialog=${3-} key interval marker
+# The earliest evidence that the stall had begun - the crew's last status-line
+# time or the pane-change time (the hash file's mtime), whichever is earlier -
+# is passed as the bound a stated clock time is placed after, so a watcher
+# restart does not push a long-passed reset to the next day.
+limit_resume_check() {  # <window> <task> <dialog-name> <hash-file>
+  local win=$1 task=$2 dialog=${3-} hf=${4-} key interval marker since t
   [ "$dialog" = "$FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME" ] || return 0
   [ -n "$task" ] || return 0
   [ "$(window_harness "$win")" = claude ] || return 0
@@ -2677,10 +2681,15 @@ limit_resume_check() {  # <window> <task> <dialog-name>
   marker="$STATE/.limit-resume-checked-$key"
   [ "$(age_of "$marker")" -ge "$interval" ] || return 0
   touch "$marker" 2>/dev/null || return 0
-  triage_log "claude usage-limit prompt on $win: asking fm-limit-resume.sh"
+  since=$(date +%s)
+  for t in "$(stat_mtime "$hf" 2>/dev/null || true)" "$(stat_mtime "$STATE/$task.status" 2>/dev/null || true)"; do
+    case "$t" in '' | *[!0-9]*) continue ;; esac
+    [ "$t" -ge "$since" ] || since=$t
+  done
+  triage_log "claude usage-limit prompt on $win: asking fm-limit-resume.sh (earliest stall evidence $since)"
   (
     fm_run_timed 120 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
-      "${FM_LIMIT_RESUME_BIN:-$SCRIPT_DIR/fm-limit-resume.sh}" "$task" \
+      "${FM_LIMIT_RESUME_BIN:-$SCRIPT_DIR/fm-limit-resume.sh}" --since "$since" "$task" \
       </dev/null >"$STATE/.limit-resume.$key.out" 2>&1 || true
   ) </dev/null >/dev/null 2>&1 &
 }
@@ -4471,7 +4480,7 @@ EOF
       if [ "$n" -ge 2 ] && [ "$busy_now" -ne 0 ]; then
         # The pane is idle/stale at hash $h. Triage decides whether this wakes
         # firstmate. Detection itself is unchanged from above.
-        [ "$kind" = secondmate ] || limit_resume_check "$w" "$task" "$dialog"
+        [ "$kind" = secondmate ] || limit_resume_check "$w" "$task" "$dialog" "$hf"
         if [ "$kind" = secondmate ]; then
           case "$(pause_state_class "$w" "$task")" in
             paused) handle_paused_stale "$w" "$task" "$h" ;;

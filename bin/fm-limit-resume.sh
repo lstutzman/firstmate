@@ -2,9 +2,15 @@
 # fm-limit-resume.sh - recover ONE crewmate stalled on Claude Code's usage-limit
 # prompt, but only after the reset time that prompt states.
 #
-# Usage: FM_HOME=<firstmate home> bin/fm-limit-resume.sh [--check] <task-id>
+# Usage: FM_HOME=<firstmate home> bin/fm-limit-resume.sh [--check] [--since <epoch>] <task-id>
 #
-#   --check  report the verdict and exit without sending or recording anything.
+#   --check          report the verdict and exit without sending or recording
+#                    anything.
+#   --since <epoch>  the earliest evidence that the stall had begun, for a stated
+#                    clock time with no date. The watcher passes the earlier of
+#                    the crew's last status-line time and the pane-change time;
+#                    without it the bound is now. A bound that is too late only
+#                    delays the answer, never advances it.
 #
 # Exit codes: 0 recovered, the timed wait was recorded, or --check reported a
 #               verdict it could establish.
@@ -40,10 +46,9 @@
 #      hour and minute in range), and the current time must be past that time
 #      plus FM_CLAUDE_LIMIT_RESET_MARGIN seconds (default 60). Elapsed time,
 #      the window length, and a guess never stand in for it. A clock time with
-#      no date names the five-hour window: when it is more than five hours
-#      ahead, or already passed today, the window has reset and recovery runs
-#      now rather than waiting for the next day. See bin/fm-claude-limit-lib.sh
-#      for the wordings read and that rule.
+#      no date is its first occurrence at or after --since: passed means
+#      recover now, ahead means a timed wait until it. See
+#      bin/fm-claude-limit-lib.sh for the wordings read and that rule.
 #   4. The same stated reset is not recovered twice within
 #      FM_LIMIT_RESUME_COOLDOWN seconds (default 1800): a prompt that returns
 #      with the same reset means the window had not reset, and sending Escape
@@ -107,20 +112,30 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 # shellcheck source=bin/fm-claude-limit-lib.sh
 . "$SCRIPT_DIR/fm-claude-limit-lib.sh"
 
+USAGE="usage: fm-limit-resume.sh [--check] [--since <epoch>] <task-id>"
 CHECK_ONLY=0
+SINCE=
 ID=
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --check) CHECK_ONLY=1 ;;
-    --*) echo "usage: fm-limit-resume.sh [--check] <task-id>" >&2; exit 2 ;;
+    --since)
+      [ "$#" -ge 2 ] || { echo "$USAGE" >&2; exit 2; }
+      SINCE=$2
+      shift
+      ;;
+    --*) echo "$USAGE" >&2; exit 2 ;;
     *)
-      [ -z "$ID" ] || { echo "usage: fm-limit-resume.sh [--check] <task-id>" >&2; exit 2; }
+      [ -z "$ID" ] || { echo "$USAGE" >&2; exit 2; }
       ID=$1
       ;;
   esac
   shift
 done
-[ -n "$ID" ] || { echo "usage: fm-limit-resume.sh [--check] <task-id>" >&2; exit 2; }
+[ -n "$ID" ] || { echo "$USAGE" >&2; exit 2; }
+case "$SINCE" in
+  ''|*[!0-9]*) [ -z "$SINCE" ] || { echo "usage: --since takes an epoch in seconds" >&2; exit 2; } ;;
+esac
 
 refuse() {  # <message>
   echo "refused: $1" >&2
@@ -159,7 +174,7 @@ prompt_state() {  # sets PROMPT_STATE and PANE
   PANE=$(fm_backend_visible_capture "$BACKEND" "$TARGET" "$LABEL" 2>/dev/null) \
     || { PANE=; PROMPT_STATE=unreadable; return 0; }
   [ -n "$PANE" ] || { PROMPT_STATE=unreadable; return 0; }
-  PANE=$(printf '%s\n' "$PANE" | tail -n "$FM_CLAUDE_LIMIT_SCAN_LINES")
+  PANE=$(printf '%s\n' "$PANE" | tail -n 40)
   if printf '%s\n' "$PANE" | fm_claude_limit_dialog_match; then
     PROMPT_STATE=showing
   else
@@ -207,7 +222,9 @@ if [ "$OWNED_PAUSE" = 1 ] && RESUME_AT=$(status_paused_until "$LAST"); then
   :
 else
   OWNED_PAUSE=0
-  RESET_AT=$(fm_claude_limit_reset_epoch "$PHRASE" "$NOW") \
+  REF=${SINCE:-$NOW}
+  [ "$REF" -le "$NOW" ] || REF=$NOW
+  RESET_AT=$(fm_claude_limit_reset_epoch "$PHRASE" "$REF") \
     || refuse "$ID states the reset time '$PHRASE', which this script cannot place (unknown zone or unreadable time); not sending keys"
   # Round the earliest resume up to the minute: the declared `until` has minute
   # resolution, and the watcher must never recheck before it.

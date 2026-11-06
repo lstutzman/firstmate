@@ -41,11 +41,6 @@
 # shellcheck source=bin/fm-composer-lib.sh
 . "$(dirname -- "${BASH_SOURCE[0]}")/fm-composer-lib.sh"
 
-# Pane tail (lines) the recovery matches, the same tail the watcher captures:
-# large enough to hold the whole prompt plus the limit line above it.
-# shellcheck disable=SC2034 # read by bin/fm-limit-resume.sh
-FM_CLAUDE_LIMIT_SCAN_LINES=40
-
 # Seconds past the stated reset before anything is sent. The prompt prints the
 # reset to the minute, so the true instant can sit up to a minute after the
 # printed one; this keeps "never before the stated reset" true despite that and
@@ -120,24 +115,26 @@ _fm_claude_limit_local_epoch() {
   printf '%s' "$out"
 }
 
-# fm_claude_limit_reset_epoch <phrase> <now-epoch>: the epoch the stated reset
+# fm_claude_limit_reset_epoch <phrase> <since-epoch>: the epoch the stated reset
 # means, or failure.
 #
-# A clock time with no date names the five-hour window, so it is never more
-# than five hours out. It is resolved against <now-epoch>: its next occurrence
-# when that is at most five hours ahead (the timed wait), otherwise its latest
-# occurrence before now, because a clock time already passed today, or one that
-# would only come round again more than five hours from now, means the window
-# has already reset. A dated phrase is taken at its date, in the year it names,
-# else the current year, rolled to the next year only when that would put it
-# more than half a year before <now-epoch>.
+# A clock time with no date means "the next such time after the prompt was
+# drawn", up to a day out (a weekly limit prints one too, so the window length
+# is never assumed). The pane does not say when it was drawn, so <since-epoch>
+# is the caller's earliest evidence that the stall had begun, and the answer is
+# the FIRST such clock time at or after it. A bound that is too late can only
+# push the answer later, never earlier, so with no earlier evidence than now a
+# stall waits for the next occurrence rather than resuming before the stated
+# reset. A dated phrase is taken at its date, in the year it names, else the
+# current year, rolled to the next year only when that would put it more than
+# half a year before <since-epoch>.
 #
 # Fails (returns 1, prints nothing) for a phrase it cannot read, an hour or
 # minute out of range, or a zone name with no zoneinfo entry: an unknown zone
 # silently reads as UTC, which could be hours early.
-fm_claude_limit_reset_epoch() {  # <phrase> <now-epoch>
-  local phrase=${1-} now=${2-} body tz='' hh mm ap mon day year='' d noon cand i month_n prev=
-  case "$now" in ''|*[!0-9]*) return 1 ;; esac
+fm_claude_limit_reset_epoch() {  # <phrase> <since-epoch>
+  local phrase=${1-} since=${2-} body tz='' hh mm ap mon day year='' d noon cand i month_n
+  case "$since" in ''|*[!0-9]*) return 1 ;; esac
   if [[ $phrase =~ ^(.*)\ \(([A-Za-z0-9_+/-]+)\)$ ]]; then
     body=${BASH_REMATCH[1]}
     tz=${BASH_REMATCH[2]}
@@ -168,32 +165,27 @@ fm_claude_limit_reset_epoch() {  # <phrase> <now-epoch>
       _fm_claude_limit_dated_epoch "$tz" "$year" "$month_n" "$day" "$hh" "$mm"
       return $?
     fi
-    year=$(_fm_claude_limit_fmt "$tz" "$now" %Y) || return 1
+    year=$(_fm_claude_limit_fmt "$tz" "$since" %Y) || return 1
     cand=$(_fm_claude_limit_dated_epoch "$tz" "$year" "$month_n" "$day" "$hh" "$mm") || return 1
-    if [ "$cand" -lt $((now - 15552000)) ]; then
+    if [ "$cand" -lt $((since - 15552000)) ]; then
       cand=$(_fm_claude_limit_dated_epoch "$tz" "$((year + 1))" "$month_n" "$day" "$hh" "$mm") || return 1
     fi
     printf '%s' "$cand"
     return 0
   fi
-  # Clock time only: walk the day before now, today and tomorrow, anchoring each
-  # step at noon so a daylight-saving shift cannot skip or repeat a calendar day.
-  d=$(_fm_claude_limit_fmt "$tz" "$now" %Y-%m-%d) || return 1
+  # Clock time only: walk forward day by day from the day of <since-epoch>,
+  # anchoring each step at noon so a daylight-saving shift cannot skip or
+  # repeat a calendar day.
+  d=$(_fm_claude_limit_fmt "$tz" "$since" %Y-%m-%d) || return 1
   noon=$(_fm_claude_limit_local_epoch "$tz" "$d" 12 00) || return 1
-  i=-1
-  while [ "$i" -le 1 ]; do
+  i=0
+  while [ "$i" -le 2 ]; do
     d=$(_fm_claude_limit_fmt "$tz" "$((noon + i * 86400))" %Y-%m-%d) || return 1
     cand=$(_fm_claude_limit_local_epoch "$tz" "$d" "$(printf '%02d' "$hh")" "$(printf '%02d' "$mm")") || return 1
-    if [ "$cand" -ge "$now" ]; then
-      if [ $((cand - now)) -le 18000 ]; then
-        printf '%s' "$cand"
-      else
-        [ -n "$prev" ] || return 1
-        printf '%s' "$prev"
-      fi
+    if [ "$cand" -ge "$since" ]; then
+      printf '%s' "$cand"
       return 0
     fi
-    prev=$cand
     i=$((i + 1))
   done
   return 1
