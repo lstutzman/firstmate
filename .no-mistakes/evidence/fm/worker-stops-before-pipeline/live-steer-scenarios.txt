@@ -1,0 +1,52 @@
+### A. start slip: pre-pipeline done, no run (real fm-send + tmux pane)
+exit=0
+inbox records: 1
+schema=fm-task-inbox.v1
+at=2026-11-06T21:45:50Z
+body-terminator=1
+--
+Automatic steer: your done: is the pipeline handoff, and no no-mistakes run exists for fm/a, so validation has not started. Run /no-mistakes now as your brief's Definition of done says: background the drive call, declare the wait, reattach whenever it returns without a gate or outcome, and report done only with the green, non-draft PR URL.
+marker: g1 start
+--- pane fm-a:
+bash-5.3$
+--- A2. same generation after ack:
+exit=1
+inbox records: 0
+
+### B. reattach slip: run in ci, no drive call process anywhere
+exit=0
+inbox records: 1
+schema=fm-task-inbox.v1
+at=2026-11-06T21:45:53Z
+body-terminator=1
+--
+Automatic steer: the no-mistakes run for fm/b is still active, but no no-mistakes axi run or respond call is running from your copy, so nothing will wake you at its next gate or outcome. Re-run `no-mistakes axi run` with no flags now, backgrounded as your brief's Definition of done says, and reattach the same way every time it returns without a gate or outcome.
+
+### C. live drive call: real process argv 'no-mistakes axi run --wait 60m' with cwd inside worktree
+2683585 no-mistakes axi run --wait 60m
+cwd: /tmp/fm-lab.gohbwy/wt-c/sub
+exit=1
+inbox records: 0
+
+### D. same real drive call but cwd in ANOTHER worktree -> worker c2 still steered
+exit=0
+inbox records: 1
+
+### E. adversarial: shell wrapper that only mentions the command, cwd inside worktree
+2688133 bash -c sleep 600; echo no-mistakes axi run
+2688134 no-mistakes axi status
+exit=0
+inbox records: 1
+
+### F. human-owed gate: no steer
+exit=1
+inbox records: 0
+
+### G. declared external wait: no steer
+exit=1
+inbox records: 0
+
+### H. relaunch (new spawn_gen) of a: new start steer
+exit=0
+inbox records: 1
+marker: g1 start;g2 start;

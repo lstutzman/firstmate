@@ -1,0 +1,15 @@
+$ bin/fm-crew-state.sh live-start
+state: unknown · source: pane · harness state unavailable (unknown missing)
+$ bin/fm-nm-drive-steer.sh live-start   (first)
+exit=1
+--- inbox
+ls: cannot access '/tmp/fm-lab.gohbwy/state/live-start.inbox': No such file or directory
+cat: '/tmp/fm-lab.gohbwy/state/live-start.inbox/*.msg': No such file or directory
+--- marker
+cat: /tmp/fm-lab.gohbwy/state/.nm-drive-steer-live-start: No such file or directory
+--- pane
+bash-5.3$
+mv: cannot stat '/tmp/fm-lab.gohbwy/state/live-start.inbox/*.msg': No such file or directory
+$ bin/fm-nm-drive-steer.sh live-start   (second, after ack)
+exit=1
+0
