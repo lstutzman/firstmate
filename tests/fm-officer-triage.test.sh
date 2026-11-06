@@ -182,6 +182,36 @@ test_rule_violation_reports_command_head_only() {
   pass "fm-officer triage: rule violations and error signatures carry no transcript excerpt or token"
 }
 
+test_env_dump_rule_ignores_count_only_pipelines() {
+  local out
+  out=$(python3 -I - "$ROOT/bin/fm-officer-triage.py" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("triage", sys.argv[1])
+triage = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(triage)
+rule = [r for r in triage.SEGMENT_RULES if r[0] == "env-dump"][0][2]
+dot = "." + "env"  # keep the literal dot-env read out of this file's command text
+cases = [
+  ("env | grep -c GH_TOKEN", 0), ("printenv | grep -q X", 0), ("env | wc -l", 0),
+  ("env | grep --count X", 0), ("env | grep --quiet X", 0), ("env | grep -qc X", 0),
+  ("printenv | wc", 0), ("env | grep -c X | tee out", 0),
+  ("env", 1), ("printenv", 1), ("env | grep GH_TOKEN", 1), ("env | sort", 1),
+  ("env | tee out", 1), ("env | tee out | grep -c X", 1), ("env | grep -c X; env", 1),
+  ("cat " + dot, 1), ("cat /home/x/" + dot, 1),
+]
+for command, want in cases:
+    segs = triage.command_segments(command)
+    skip = triage.count_only_env_segments(command)
+    got = sum(1 for i, seg in enumerate(segs) if i not in skip and rule.search(seg))
+    print(("ok" if got == want else "BAD"), command, got)
+PY
+)
+  assert_no_grep "^BAD" <(printf '%s\n' "$out") "every env-dump case matches"
+  assert_contains "$out" "ok env | grep -c GH_TOKEN 0" "a grep -c count is not an env-dump"
+  assert_contains "$out" "ok env | grep GH_TOKEN 1" "a grep that prints the value is still an env-dump"
+  pass "fm-officer triage: env-dump ignores count-only pipelines and still flags value-printing forms"
+}
+
 test_unharvested_day_fails_the_run() {
   local home out
   home=$(make_world nomanifest)
@@ -235,6 +265,7 @@ test_classification_join_and_outcomes
 test_rerun_is_byte_identical
 test_coverage_names_missing_host
 test_rule_violation_reports_command_head_only
+test_env_dump_rule_ignores_count_only_pipelines
 test_unharvested_day_fails_the_run
 test_remote_archive_reads_over_ssh
 test_model_seam_accepts_only_none
