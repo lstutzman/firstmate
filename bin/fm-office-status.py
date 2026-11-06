@@ -5,7 +5,7 @@ Called by `fm-office.sh status`; docs/configuration.md "Office status
 (data/office-status.json)" owns the schema and the lane rules. This file owns
 the mechanics.
 
-Reads <data>/backlog.md and <state>/<task>.meta in one office home and writes
+Reads <data>/backlog.md, <data>/office-decisions.md and <state>/<task>.meta in one office home and writes
 only <data>/office-status.json and <state>/office-status.seen.json (the first
 time each done item was seen), each atomically (temp file in the same
 directory, then rename). It prints nothing and exits 0 on success; a failure
@@ -28,6 +28,9 @@ NEXT_LIMIT = 10
 DONE_WINDOW = timedelta(hours=24)
 SEEN_KEEP = timedelta(days=7)
 TITLE_LIMIT = 200
+DECISIONS_LIMIT = 20
+DECISION_KEYS = ("date", "source", "finding", "call", "action")
+CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
 
 ROW_RE = re.compile(r"^- \[( |x)\] ([A-Za-z0-9._-]+) - (.*)$")
 HEADING_RE = re.compile(r"^## (.+?)\s*$")
@@ -37,6 +40,7 @@ TAIL_RE = re.compile(
 URL_TAIL_RE = re.compile(r"\s*https://\S+\s*$")
 URL_RE = re.compile(r"https://[^\s)>\]]+")
 DATE_RE = re.compile(r"\((since|merged|done) (\d{4}-\d{2}-\d{2})[^)]*\)")
+DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 HOLD_KIND_RE = re.compile(r"\(hold-kind: ([^)]*)\)")
 
 LANES = {"in flight": "working", "queued": "next", "done": "done"}
@@ -77,6 +81,34 @@ def parse_backlog(path):
         else:
             row = None
     return rows
+
+
+def parse_decisions(path):
+    """Return office-decisions.md table rows as dicts, newest first, capped.
+
+    Absent or unreadable means none; a row without exactly five cells or with
+    a blank date, finding or call is skipped.
+    """
+    try:
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+    found = []
+    for line in lines:
+        text = line.strip()
+        if not (text.startswith("|") and text.endswith("|")):
+            continue
+        cells = [cell.strip().replace("\\|", "|") for cell in CELL_SPLIT_RE.split(text[1:-1])]
+        if len(cells) != len(DECISION_KEYS):
+            continue
+        entry = dict(zip(DECISION_KEYS, cells))
+        if not DATE_ONLY_RE.match(entry["date"]) or not entry["finding"] or not entry["call"]:
+            continue
+        found.append(entry)
+    found.reverse()
+    found.sort(key=lambda entry: entry["date"], reverse=True)
+    return found[:DECISIONS_LIMIT]
 
 
 def clean_title(head):
@@ -231,6 +263,7 @@ def main():
         "title": args.office[:1].upper() + args.office[1:],
         "written_at": iso(now),
         "cards": build_cards(rows, args.state, now, seen),
+        "decisions": parse_decisions(os.path.join(args.data, "office-decisions.md")),
     }
     seen = {key: stamp for key, stamp in seen.items() if now - stamp <= SEEN_KEEP}
     if seen != loaded:

@@ -450,6 +450,44 @@ test_status_without_a_backlog_is_empty() {
   pass 'status writes an empty card list when the office has no backlog'
 }
 
+test_status_projects_decisions() {
+  local w f
+  w=$(make_world st-decisions)
+  f="$w/navigator/data/office-decisions.md"
+  {
+    printf '# Decisions\n\n| Date | Source | Finding | Call | Action |\n|---|---|---|---|---|\n'
+    printf '| 2026-11-03 | older | Old finding | Adopt | Done: [x](https://e.test/1) |\n'
+    printf '| 2026-11-05 | first | Same day first | Trial | Queued |\n'
+    printf '| 2026-11-05 | second | Same day second | Needs Lee | Asked |\n'
+    printf '| 2026-11-05 | short | only four | cells |\n'
+    printf '| not a date | s | f | c | a |\n'
+    printf '| 2026-11-04 | s | | c | a |\n'
+    # shellcheck disable=SC2016 # literal backticks in the markdown row
+    printf '%s\n' '| 2026-11-02 | piped | Use `a \| b` | Adopt | Done |'
+  } > "$f"
+  status "$w"
+  assert_equals "second first older piped" "$(jq -r '[.decisions[].source] | join(" ")' "$w/navigator/data/office-status.json")" "newest first, malformed skipped"
+  # shellcheck disable=SC2016 # literal backticks in the expected cell
+  assert_equals 'Use `a | b`' "$(jq -r '.decisions[3].finding' "$w/navigator/data/office-status.json")" "escaped pipe stays in its cell"
+  assert_equals "Done: [x](https://e.test/1)" "$(jq -r '.decisions[2].action' "$w/navigator/data/office-status.json")" "link stays text"
+  assert_equals "date source finding call action" "$(jq -r '.decisions[0] | keys_unsorted | join(" ")' "$w/navigator/data/office-status.json")" "keys"
+  pass 'status projects office-decisions.md newest first and skips malformed rows'
+}
+
+test_status_decisions_cap_and_absence() {
+  local w i
+  w=$(make_world st-decisions-cap)
+  status "$w"
+  assert_equals "[]" "$(jq -c .decisions "$w/navigator/data/office-status.json")" "absent file"
+  {
+    printf '| Date | Source | Finding | Call | Action |\n|---|---|---|---|---|\n'
+    for i in $(seq 1 25); do printf '| 2026-10-%02d | s%s | f | c | a |\n' "$i" "$i"; done
+  } > "$w/navigator/data/office-decisions.md"
+  status "$w" $((NOW + 1000))
+  assert_equals "20 s25 s6" "$(jq -r '[(.decisions | length), .decisions[0].source, .decisions[-1].source] | join(" ")' "$w/navigator/data/office-status.json")" "cap"
+  pass 'status caps decisions at 20 and writes an empty list when the file is absent'
+}
+
 # --- arm-status / disarm-status: the silent status check -----------------------
 arm() { FM_HOME="$1/navigator" bash "$OFFICE" "${2:-arm-status}"; }
 check_registered() {
@@ -909,6 +947,8 @@ test_status_skips_unchanged_write
 test_status_writes_only_its_file
 test_status_outside_an_office_does_nothing
 test_status_without_a_backlog_is_empty
+test_status_projects_decisions
+test_status_decisions_cap_and_absence
 test_arm_status_registers_a_silent_check
 test_disarm_status_retires_the_check
 test_arm_status_refuses_outside_an_office
