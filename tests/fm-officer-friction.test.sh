@@ -19,7 +19,7 @@
 # coverage gap),
 # and the registry refusing a friction line with no archive.
 # With writes: linear (a fake linear-axi that logs every call): every finding filed once with
-# Improvement, friction-officer and area:fleet in the Fleet project, a repeat night raising the
+# Improvement, agent and area:fleet in the Fleet project, a repeat night raising the
 # Found line, no transcript text in an item, a missing label or writes: none starting nothing
 # and leaving the card on Start fix, the create cap naming what it leaves, the rubric
 # narrowing what starts, and only standing-work findings handed to the office.
@@ -185,7 +185,7 @@ linear_world() {
   friction_registry "$home" "$TMP_ROOT/$name/archive" "; writes: linear; jev: /nonexistent/jev.py${2:-}"
   export FAKE_LINEAR_DIR="$TMP_ROOT/$name/linear"
   mkdir -p "$FAKE_LINEAR_DIR"
-  printf '%s\n' Bug Improvement friction-officer area:fleet > "$FAKE_LINEAR_DIR/labels.txt"
+  printf '%s\n' Bug Improvement agent area:fleet > "$FAKE_LINEAR_DIR/labels.txt"
 }
 
 run_officer() {  # <home> [args...]
@@ -1365,8 +1365,8 @@ test_findings_are_filed_in_linear_under_the_contract() {
   real=$(jq '[.findings[] | select(.linear.class == "real" and (.state.state | IN("settled", "started", "fixed") | not))] | length' "$json")
   assert_equals "$real" "$(creates "$log")" "every real, untracked finding is filed once"
   assert_equals "$real" "$(grep -c '^issue create .*--dry-run' "$log")" "every create is a dry run first, then a verified write"
-  assert_equals "$real" "$(count_lines '^issue create .*--label Improvement --label friction-officer --label area:fleet --project Fleet --verify' "$log")" \
-    "each item has one Type, the friction Source and area:fleet, in the Fleet project"
+  assert_equals "$real" "$(count_lines '^issue create .*--label Improvement --label agent --label area:fleet --project Fleet --verify' "$log")" \
+    "each item has one Type, the agent Source and area:fleet, in the Fleet project"
   assert_contains "$(grep 'An agent token lacks a scope' "$log" | head -1)" "--priority 2" "a card-bar finding is High priority"
   assert_equals "$real" "$(count_lines '^friction-fp:' "$dir/bodies")" "every body carries its fingerprint marker, and the marker is alone on its line"
   assert_equals "$real" "$(count_lines '^Found: 1 times (first 2026-10-23, last 2026-10-23, by friction)$' "$dir/bodies")" "every body starts its one Found line"
@@ -1404,7 +1404,7 @@ test_a_missing_label_or_no_writes_starts_nothing() {
   printf '%s\n' Bug Improvement area:fleet > "$dir/labels.txt"
   run_officer "$home" >/dev/null || fail "a run with a missing label must succeed"
   assert_equals "0" "$(creates "$dir/log")" "with the Source label missing nothing is created"
-  assert_contains "$(jq -r '[.findings[].linear.reason // empty] | join(" ")' "$json")" "label(s) not found in team PC: friction-officer" \
+  assert_contains "$(jq -r '[.findings[].linear.reason // empty] | join(" ")' "$json")" "label(s) not found in team PC: agent" \
     "the finding is reported with the missing label named"
   assert_equals "0 0" "$(jq -r '"\(.start_requests | length) \([.findings[] | select(.state.state == "started-by-default")] | length)"' "$json")" \
     "with no Linear item no finding starts by default"
@@ -1444,6 +1444,20 @@ test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started() {
   run_officer "$home" >/dev/null || fail "a run with a narrowed rubric must succeed"
   assert_equals "lee-command-run" "$(jq -r '[.start_requests[].id] | join(",")' "$json")" "a rubric can narrow what starts"
   assert_contains "$(jq -r '.coverage.notes | join(" ")' "$json")" "which the code does not admit; ignored" "a value the code does not admit is named and ignored"
+
+  rubric="$TMP_ROOT/source-rubric.md"
+  sed 's/^- source-label: .*/- source-label: scheduled-review/' "$ROOT/docs/officers/friction-rubric.md" > "$rubric"
+  linear_world sourced "; rubric: $rubric"
+  home=$LW_HOME
+  printf '%s\n' Bug Improvement scheduled-review area:fleet > "$FAKE_LINEAR_DIR/labels.txt"
+  run_officer "$home" >/dev/null || fail "a run with another Source label must succeed"
+  assert_contains "$(grep '^issue create' "$FAKE_LINEAR_DIR/log" | head -1)" "--label scheduled-review" "the rubric can name another of Lee's Source labels"
+  sed -i 's/^- source-label: .*/- source-label: friction-officer/' "$rubric"
+  linear_world badsource "; rubric: $rubric"
+  home=$LW_HOME
+  run_officer "$home" >/dev/null || fail "a run with an unknown Source label must succeed"
+  assert_contains "$(grep '^issue create' "$FAKE_LINEAR_DIR/log" | head -1)" "--label agent" "a Source label outside Lee's set is ignored for agent"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$home/data/officers/friction/$DATE.json")" "not one of Lee's Source labels" "and named as a gap"
 
   linear_world norubric "; rubric: $TMP_ROOT/absent-rubric.md"
   home=$LW_HOME

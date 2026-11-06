@@ -1531,9 +1531,9 @@ An unreachable app is a finding, not a failed run.
 ### Friction officer and Linear
 
 With `writes: linear` the friction officer follows the shared [officer contract](officers/contract.md) with its rubric [`docs/officers/friction-rubric.md`](officers/friction-rubric.md), which owns what counts as work, how a finding is scored and what starts.
-Every finding that is not a product choice or a retired tool, settled, started or fixed is filed once in team PC, project Fleet, with the labels Improvement, `friction-officer` (Source) and `area:fleet`; a repeat night raises the item's `Found:` line, and the found count raises its score.
+Every finding that is not a product choice or a retired tool, settled, started or fixed is filed once in team PC, project Fleet, with the labels Improvement, `agent` (Source, named in the rubric) and `area:fleet`; a repeat night raises the item's `Found:` line, and the found count raises its score.
 The shared [filing rules](officers/contract.md#file) own duplicates, recurrences and the call budget, and the item body holds counts and identifiers only, never a transcript line.
-The `friction-officer` Source label must exist in team PC: the officer never creates a label, and a finding is reported and not filed while the label is missing.
+The Source label is `agent`, from Lee's Source set, and the officer never creates a label: a finding is reported and not filed while a label is missing from team PC.
 A standing-work finding (the groups fleet rules section 2 starts by default) whose item exists is handed to the Quartermaster as a start request, and a finding in a reserved class is held as one keyed `needs-decision` line in the digest.
 Without `writes: linear` nothing starts by default, each card offers Start fix, and the digest names the gap.
 `bin/fm-officer-friction.py`'s header owns the finding states and the start requests.
