@@ -1,0 +1,48 @@
+$ FM_HOME=$H bin/fm-office.sh status ; echo exit=$?
+exit=0
+$ cat $H/data/office-status.json
+{
+  "schema_version": 1,
+  "office": "quartermaster",
+  "title": "Quartermaster",
+  "written_at": "2025-11-06T12:00:00Z",
+  "cards": [
+    {
+      "id": "qm-fix-1",
+      "title": "Fix officer digest routing",
+      "state": "working",
+      "link": "",
+      "since": "2026-11-05T00:00:00Z"
+    },
+    {
+      "id": "qm-next-1",
+      "title": "Review watcher cadence",
+      "state": "next",
+      "link": "",
+      "waiting": "Lee"
+    }
+  ],
+  "decisions": [
+    {
+      "date": "2026-11-05",
+      "source": "triage officer",
+      "finding": "Pipe split `a | b` in table",
+      "call": "Adopt",
+      "action": "Queued qm-pipe"
+    },
+    {
+      "date": "2026-11-05",
+      "source": "10-article research, rank 8",
+      "finding": "Alerts should wake an agent",
+      "call": "Needs Lee: approve action group",
+      "action": "Asked Lee, key alert-wakes-agent"
+    },
+    {
+      "date": "2026-11-04",
+      "source": "friction officer",
+      "finding": "Agents wait on routine approvals",
+      "call": "Adopt",
+      "action": "Started fix: [PR 120](https://github.com/lstutzman/firstmate/pull/120)"
+    }
+  ]
+}

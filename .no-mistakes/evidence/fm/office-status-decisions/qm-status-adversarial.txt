@@ -1,0 +1,18 @@
+## A: new decision row appended 60s later (inside 900s refresh window) must appear
+exit=0
+{"written_at":"2025-11-06T12:01:00Z","first":{"date":"2026-11-06","source":"progress officer","finding":"New important finding","call":"Adopt","action":"Started qm-new"},"n":4}
+## B: no change 60s later -> file not rewritten (written_at unchanged)
+exit=0
+2025-11-06T12:01:00Z
+## C: 25 rows -> capped at 20, newest first
+exit=0
+[20,"s25","s6"]
+## D: non-UTF8 decisions file -> empty list, cards still written, exit 0
+exit=0
+{"decisions":[],"cards":2}
+## E: decisions file removed -> []
+exit=0
+[]
+## F: home without .fm-office -> does nothing
+exit=0
+office-decisions.md
