@@ -40,6 +40,10 @@ on a task with no captain-hold row of the same id, a truncated decision list, an
 invalidity kind, or in-flight work with no open captain decision still alarms. A child ask on a
 task the mate holds for the captain is suppressed for as long as that hold is open, including a
 later, unrelated ask from the same child.
+A secondmate whose every in-flight item (not waiting on merge) is a non-secondmate child
+endpoint named by the key of the mate's own open needs-decision (the item id, or
+captain-hold-<id>-<n>) is waiting on the captain too. A blocked line never exempts, and a
+truncated endpoint list or one uncovered in-flight item keeps the silence check live.
 The Claude quota context line shows the proxy's view: the accounts serving now (successful Claude
 traffic in the last 15 minutes, from `cpa-usage-axi models --hours 0.25`), pooled 7d headroom across
 non-stale accounts, and accounts over the seven_day threshold labelled rotated out. A carrying
@@ -200,6 +204,44 @@ def waiting_on_captain(summary, counts):
     return any(isinstance(row, dict) and row.get('verb') == 'captain-hold' for row in summary.get('decisions_open', []))
 
 
+def waiting_on_open_ask(summary, counts, asks):
+    # Every in-flight item the mate holds is waiting on Lee: the mate's own unanswered needs-decision
+    # names it by key (the item id, or captain-hold-<id>-<n>). Items are the summary's non-secondmate
+    # child endpoints, so a truncated endpoint list never exempts, and one uncovered in-flight item
+    # keeps the silence check live. No child may be asking the mate.
+    invalidity = summary.get('invalidity')
+    partial = isinstance(invalidity, dict) and invalidity.get('kind') == 'child_current_unavailable'
+    if not (summary['valid'] or partial) or child_asking(summary, counts):
+        return False
+    endpoints = summary.get('endpoints')
+    if not isinstance(endpoints, list) or type(counts.get('endpoints')) is not int or counts['endpoints'] > len(endpoints):
+        return False
+    named = set(asks) | {match[1] for key in asks if (match := re.fullmatch(r'captain-hold-(.+)-[0-9]+', key))}
+    merging = {row.get('id') for row in summary.get('waiting_on_merge', []) if isinstance(row, dict)}
+    items = {row.get('id') for row in endpoints
+             if isinstance(row, dict) and row.get('kind') and row.get('kind') != 'secondmate'}
+    asked = (items & named) - merging
+    return len(asked) >= counts.get('in_flight', 0) - counts.get('waiting_on_merge', 0)
+
+
+def held_terminal_complete(summary, counts):
+    # An in-flight item whose child is done is complete when the mate holds that same task as a
+    # captain-hold row: it is waiting on the captain's call, not a contradiction in the inventory.
+    # Every id in the invalidity must be a done child with a captain-hold row, the decision list
+    # must be complete, and endpoints (the structured child state) decide done; prose never does.
+    invalidity = summary.get('invalidity')
+    if not isinstance(invalidity, dict) or invalidity.get('kind') != 'terminal_in_flight':
+        return False
+    ids, decisions, endpoints = invalidity.get('ids'), summary.get('decisions_open'), summary.get('endpoints')
+    if not (isinstance(ids, list) and ids and isinstance(decisions, list) and isinstance(endpoints, list)):
+        return False
+    if counts['decisions_open'] > len(decisions):
+        return False
+    held = {row.get('id') for row in decisions if isinstance(row, dict) and row.get('verb') == 'captain-hold'}
+    done = {row.get('id') for row in endpoints if isinstance(row, dict) and row.get('state') == 'done'}
+    return all(item in held and item in done for item in ids)
+
+
 def working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg):
     # The mate's own latest line says it is working, or paused for work it still holds, and
     # nobody is waiting on it: a long task that reports sparingly, not a mate gone quiet. A
@@ -245,8 +287,10 @@ while IFS= read -r line || [ -n "$line" ]; do
       verb=$(status_line_verb "$line")
       case "$verb" in working|paused) ;; *) verb=other ;; esac
       until=$(status_paused_until "$line" || true)
-      open=$(status_open_decisions "$window" secondmate | LC_ALL=C awk -F '\t' '$2 == "needs-decision" || $2 == "blocked"' | LC_ALL=C wc -l | tr -d ' ')
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until"
+      folded=$(status_open_decisions "$window" secondmate)
+      open=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" || $2 == "blocked"' | LC_ALL=C wc -l | tr -d ' ')
+      asks=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" { printf "%s%s", sep, $1; sep = " " }')
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks"
       ;;
   esac
 done < "$2"
@@ -254,7 +298,7 @@ done < "$2"
     seen = set()
     routes = list(csv.reader(io.StringIO(roster), delimiter='\t'))
     for index, row in enumerate(routes):
-        name, host, home, age, open_decisions, last_verb, paused_until = row
+        name, host, home, age, open_decisions, last_verb, paused_until, asks = row
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name) or name in seen or not Path(home).is_absolute():
             raise ValueError('invalid or duplicate secondmate route')
         seen.add(name)
@@ -299,6 +343,8 @@ done < "$2"
             if type(waiting) is not int or waiting < 0:
                 raise ValueError('invalid work counts')
             work[0] = max(0, work[0] - waiting)
+            if not summary['valid'] and held_terminal_complete(summary, counts):
+                summary = {**summary, 'valid': True, 'invalidity': None}
             invalidity = summary.get('invalidity')
             partial_counts = (isinstance(invalidity, dict)
                               and invalidity.get('kind') == 'child_current_unavailable'
@@ -313,6 +359,8 @@ done < "$2"
             if not any(work) and open_decisions == '0':
                 continue
             if waiting_on_captain(summary, counts):
+                continue
+            if asks and work[0] and waiting_on_open_ask(summary, counts, asks.split()):
                 continue
             if working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg):
                 continue

@@ -558,6 +558,92 @@ mate 0 0 0
 run_alarm check >/dev/null
 pass 'captain-held mates are healthy idle while stuck or un-held work still alarms'
 
+# The navigator's top10-title-panel-boundary-wording: an in-flight item whose child finished and
+# which the mate holds for a captain call is complete, not an inventory contradiction.
+navigator_held_done() {
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" "$2" <<'PY_NAV'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1]); value=json.loads(path.read_text())
+item='top10-title-panel-boundary-wording'
+child_state,hold=sys.argv[2],sys.argv[3]
+value.update(valid=False, state='unknown',
+             invalidity=dict(kind='terminal_in_flight', ids=[item]),
+             reason=f'in-flight backlog item has terminal child state: {item}={child_state}',
+             counts=dict(in_flight=1, held_in_flight=1, active_children=0, decisions_open=1, holds=0, endpoints=1),
+             decisions_open=[dict(id=item if hold == 'held' else 'other-card', key=item, verb='captain-hold', source='backlog')],
+             endpoints=[dict(id=item, state=child_state)], holds=[])
+path.write_text(json.dumps(value))
+PY_NAV
+}
+mate 0 0 3601
+navigator_held_done 'done' held
+[ -z "$(run_alarm check)" ] || fail 'a done child held for a captain call is complete, not an incomplete inventory'
+mate 0 0 3601
+navigator_held_done 'done' unheld
+assert_contains "$(run_alarm check)" 'home inventory incomplete' 'a done child with no captain hold for its task still alarms as incomplete'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+navigator_held_done failed held
+assert_contains "$(run_alarm check)" 'home inventory incomplete' 'a failed child is not a done child and still alarms as incomplete'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'a captain-held in-flight item with a done child counts as complete; other terminal items still alarm'
+
+# cl-keeper and Deep Thought: every in-flight item waits on the mate's own needs-decision for Lee.
+open_ask_mate() { # status lines (one per argument, each stamped 3601 seconds ago)
+  mate 0 0 3601
+  set_mate_work 3 0 0 0 none
+  edit_mate_summary "value['counts']['endpoints']=3; value['endpoints']=[dict(id=i,kind='worker',state='working') for i in ('item-a','item-b','item-c')]"
+  local at=$(($(date +%s) - 3601)) line
+  : > "$HOME_FIX/state/mate.status"
+  for line in "$@"; do printf '%s\n' "${line//@AT@/$at}" >> "$HOME_FIX/state/mate.status"; done
+}
+open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: waiting on the card for item a'
+assert_contains "$(run_alarm check)" 'holding work silent' 'one ask covering one of three in-flight items leaves the other two silent'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'needs-decision [at=@AT@] [key=item-b]: card b' \
+  'needs-decision [at=@AT@] [key=captain-hold-item-c-2]: card c'
+[ -z "$(run_alarm check)" ] || fail 'a mate whose every in-flight item waits on its own needs-decision is waiting, not silent'
+edit_mate_summary "value['counts']['endpoints']=4"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a truncated endpoint list cannot prove every item is covered'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'needs-decision [at=@AT@] [key=item-b]: card b' \
+  'needs-decision [at=@AT@] [key=captain-hold-item-c-2]: card c'
+edit_mate_summary "value['counts']['decisions_open']=1; value['decisions_open']=[dict(id='item-b',key='ask',verb='needs-decision',source='status')]"
+assert_contains "$(run_alarm check)" 'holding work silent' 'open needs-decisions beside a child asking the mate still alarm'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=captain-hold-item-a-1]: card a' 'needs-decision [at=@AT@] [key=item-b]: card b'
+edit_mate_summary "value['counts']['held_in_flight']=1"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a held item with no hold row named by an ask is not counted twice; the third item still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'needs-decision [at=@AT@] [key=item-b]: card b' \
+  'needs-decision [at=@AT@] [key=nested-mate]: card for the nested mate'
+edit_mate_summary "value['counts']['endpoints']=4; value['endpoints'].append(dict(id='nested-mate',kind='secondmate',state='working'))"
+assert_contains "$(run_alarm check)" 'holding work silent' 'an ask naming a nested secondmate child covers no in-flight item'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=unrelated]: card' 'blocked [at=@AT@] [key=x]: stuck'
+edit_mate_summary "value['counts'].update(in_flight=1, waiting_on_merge=1, holds=1)"
+assert_contains "$(run_alarm check)" 'holding work silent' 'an ask covering nothing never exempts when every in-flight item is waiting on merge'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'blocked [at=@AT@] [key=item-b]: stuck b' 'blocked [at=@AT@] [key=item-c]: stuck c'
+assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked line is not a needs-decision and never exempts its item'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_work 1 0 0 0 none
+assert_contains "$(run_alarm check)" 'holding work silent' 'work with no open needs-decision and no hold still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'work is not silent only when every in-flight item waits on a needs-decision naming it'
+
 # Proxy view (a stale account supplies the quota card that carries the context line): a rotated-away exhausted account raises no decision while a headroom account serves.
 rotation_accounts() { # rotated_used serving_used
   printf '%s\n' 'accounts[4]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:' \
