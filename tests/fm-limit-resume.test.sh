@@ -568,6 +568,26 @@ test_a_reset_many_hours_out_sends_nothing_and_declares_no_wait() {
 # The crew last wrote status before the stated clock time and stalled after
 # it: the watcher's bound is when it saw the prompt, so "resets <5h ago>" is
 # tomorrow's, about nineteen hours out, and nothing is sent before it.
+# A dated reset is unambiguous, so even days out it is declared as a wait.
+# Oracle: three days and three hours from now, written as Claude prints a date.
+test_a_dated_reset_days_out_records_the_timed_wait() {
+  local d target phrase last until_iso got want; d=$(make_case dated-wait)
+  setup_task "$d" stalled claude
+  target=$(( ($(date +%s) / 60 + 3 * 1440 + 180) * 60 ))
+  phrase="$(TZ=America/New_York date -d "@$target" '+%b %-d, ' 2>/dev/null || TZ=America/New_York date -r "$target" '+%b %-d, ')$(clock_phrase "$target" America/New_York) (America/New_York)"
+  limit_prompt_pane "$phrase" > "$d/pane.txt"
+  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(date +%s)" stalled >/dev/null \
+    || fail "a dated reset days out exited non-zero"
+  [ ! -s "$d/control.log" ] || fail "an interrupt was sent days before a dated reset"
+  last=$(grep -v '^[[:space:]]*$' "$d/state/stalled.status" 2>/dev/null | tail -1)
+  case "$last" in paused*) ;; *) fail "a dated reset days out was not declared as a wait: $last" ;; esac
+  until_iso=$(printf '%s' "$last" | sed -n 's/.* until \([0-9T:Z-]*\).*/\1/p')
+  got=$(TZ=UTC date -d "${until_iso%Z}:00" +%s 2>/dev/null || TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%S' "${until_iso%Z}:00" +%s)
+  want=$((target + 60))
+  assert_equals "$want" "$got" "the dated wait was not declared until its stated reset plus the margin: $last"
+  pass "a dated reset days out is declared as a timed wait until it"
+}
+
 test_a_clock_time_behind_the_stall_is_tomorrows() {
   local d; d=$(make_case behind-the-stall)
   setup_task "$d" stalled claude
@@ -820,6 +840,7 @@ fm_test_run \
   test_a_reset_inside_the_margin_still_waits \
   test_a_reset_passed_since_the_stall_recovers_at_once \
   test_a_reset_many_hours_out_sends_nothing_and_declares_no_wait \
+  test_a_dated_reset_days_out_records_the_timed_wait \
   test_a_clock_time_behind_the_stall_is_tomorrows \
   test_without_a_bound_the_next_occurrence_is_awaited \
   test_a_passed_reset_dismisses_and_resumes \

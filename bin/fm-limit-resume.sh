@@ -65,12 +65,14 @@
 # and reports, because sending keys into a live crewmate's pane speculatively is
 # worse than the stall it would fix.
 #
-# BEFORE THE RESET, when the resume is at most five hours away, it records the
-# wait with the fleet's `paused:` vocabulary and an `until <UTC time>` taken
-# from the stated reset, on the task's status file. A resume further out records
-# nothing and sends nothing, so the pane keeps reaching the supervisor as an
-# ordinary stale wake naming the prompt and its stated reset: a late bound may
-# have pushed it a day out, and a day-long declared pause would hide that.
+# BEFORE THE RESET it records the wait with the fleet's `paused:` vocabulary and
+# an `until <UTC time>` taken from the stated reset, on the task's status file.
+# The one exception is a clock time with no date whose resume is more than five
+# hours out: that records nothing and sends nothing, so the pane keeps reaching
+# the supervisor as an ordinary stale wake naming the prompt and its stated
+# reset, because a late bound may have pushed it a day out and a day-long
+# declared pause would hide that. A dated reset is unambiguous and is declared
+# however far out it is.
 # From that point the ordinary declared-pause handling in the watcher and the
 # away-mode daemon applies: the idle pane is absorbed and rechecked when the
 # declared time arrives, instead of aging toward a possible-wedge escalation. The
@@ -274,8 +276,8 @@ if [ "$NOW" -lt "$RESUME_AT" ]; then
     echo "$ID: parked on the claude usage-limit prompt; the stated reset ($PHRASE) is not reached, resumable after $RESUME_ISO (bounded external wait)"
     exit 0
   fi
-  if [ "$OWNED_PAUSE" = 0 ] && [ $((RESUME_AT - NOW)) -gt 18000 ]; then
-    echo "$ID: the stated reset ($PHRASE) is not reached and is more than five hours out ($RESUME_ISO); recorded no wait and sent nothing, so the stall stays visible"
+  if [ "$OWNED_PAUSE" = 0 ] && ! [[ $PHRASE =~ ^[A-Z][a-z]{2}\ [0-9] ]] && [ $((RESUME_AT - NOW)) -gt 18000 ]; then
+    echo "$ID: the stated clock-time reset ($PHRASE) is not reached and is more than five hours out ($RESUME_ISO); recorded no wait and sent nothing, so the stall stays visible"
     exit 0
   fi
   record_pause
