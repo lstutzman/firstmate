@@ -831,11 +831,11 @@ A silent second mate is an external wait, not a question for the captain: the ti
 If the second mate is still silent when that time passes, the next timer poll re-emits the wait once as `needs-decision [cause=external]`, naming the second mate, how long it has been down and the recovery it was expected by, so it reaches the captain; later polls do not repeat it, and it resolves when the condition clears.
 A silent second mate whose home becomes unreachable, or whose inventory cannot be read, still counts as holding for that recheck.
 A question line that loses every alarm except silent second mates is resolved and replaced by the paused wait.
-The quota alarm fires when mean remaining weekly capacity across non-stale Claude readings falls below the pool threshold, or a carrying account exceeds the weekly threshold.
+The quota alarm fires when mean remaining weekly capacity across non-stale Claude readings falls below the pool threshold, or a carrying account exceeds the weekly threshold while no non-stale account under that threshold is serving.
 A carrying-account finding alarms once, and stays quiet while its weekly reset is within `carrying_reset_hours` (default 6) and mean remaining weekly capacity stays above `carrying_pool_floor` (default 0.4).
 It alerts again when either condition stops holding; the pool-near-empty alarm is unaffected.
 Every Claude account with successful Claude-model requests in the last 60 minutes is carrying; several accounts can qualify, and failed-only traffic does not qualify.
-A card that carries a quota alarm ends with a `Claude quota context (not an alarm)` line naming every account's weekly use and all carrying accounts; cards for other alarms, such as a silent second mate, leave it off, and pressure alone on an idle account does not trigger an alarm.
+A card that carries a quota alarm ends with a `Claude quota context (not an alarm; proxy view)` line naming the accounts serving in the last 15 minutes (with each one's weekly use, or `reading stale/unknown`), the pooled weekly headroom across non-stale accounts, and the accounts over the weekly threshold as rotated out; cards for other alarms, such as a silent second mate, leave it off, and pressure alone on an idle account does not trigger an alarm.
 With no successful traffic in that window, the carrying condition is skipped and the card says so; the pool condition still applies.
 The quota reader does not expose enabled status, so the pool uses reading freshness rather than verified account enablement.
 Mean remaining capacity does not predict how long the pool can sustain a workload.

@@ -576,6 +576,8 @@ assert_contains "$out" 'Serving Claude accounts (successful traffic in last 15 m
 assert_contains "$out" 'rotated out (over 90% 7d): rotated@example.invalid 7d 100%' 'context labels the exhausted account rotated out'
 assert_contains "$out" 'pooled: 62% mean 7d headroom across 3 non-stale accounts' 'context shows pooled headroom'
 assert_contains "$(cat "$HOME_FIX/quota-calls")" 'models --hours 0.25' 'the serving window is the recent 15 minutes'
+printf '%s\n' 'models[1]{account,model,requests,failed}:' '  old@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models-recent"
+assert_contains "$(run_alarm check)" 'Serving Claude accounts (successful traffic in last 15 minutes): old@example.invalid reading stale/unknown;' 'a serving account with a stale reading is still named as serving'
 rotation_accounts 0.2 0.2
 run_alarm check >/dev/null
 # Every serving account exhausted: the decision is still raised.
@@ -745,6 +747,7 @@ run_alarm check >/dev/null
 out=$(run_alarm timer)
 [ "$(printf '%s\n' "$out" | wc -l)" = 1 ] || fail 'timer prints only its run result'
 printf '%s\n' "${out#RUN-RESULT }" | jq -e '.counts.alerts >= 1 and (.summary | test("^[0-9]+ alert\\(s\\) open; ")) and (.summary | length <= 200)' >/dev/null || fail 'timer run result counts alerts'
+printf '%s\n' "${out#RUN-RESULT }" | jq -e '.summary | test("open; Serving Claude accounts ")' >/dev/null || fail 'timer run result drops the quota context boilerplate'
 assert_contains "$(cat "$HOME_FIX/state/fleet-ledger.jsonl")" 'needs-decision' 'timer publishes without a watcher'
 jq -e -s 'map(select(.state == "needs-decision")) | length > 0 and all(.[]; .cause == "decision")' \
   "$HOME_FIX/state/fleet-ledger.jsonl" >/dev/null || fail 'a quota alarm line must state cause decision'

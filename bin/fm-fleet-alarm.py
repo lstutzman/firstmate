@@ -95,6 +95,7 @@ def cause_of(alarms):
 def is_inventory(key):
     return key == 'mate-read' or key.startswith('mate-read:')
 SERVING_MINUTES = 15
+QUOTA_PREFIX = 'Claude quota context (not an alarm; proxy view): '
 SERVING_HOURS = str(SERVING_MINUTES / 60)
 RETIRED_MINUTES = 7 * 24 * 60
 
@@ -383,9 +384,10 @@ def collect(cfg):
         rotated = sorted(f"{row['account']} 7d {row['used_7d']:.0%}" for row in live if row['used_7d'] > cfg['seven_day'])
         # The proxy has rotated when a non-stale account with headroom is serving current traffic.
         rotated_away = any(row['account'] in serving and row['used_7d'] <= cfg['seven_day'] for row in live)
-        servers = ', '.join(f"{name} 7d {row['used_7d']:.0%}" for row in live for name in [row['account']]
-                            if name in serving) or f'none (no successful Claude traffic in last {SERVING_MINUTES} minutes)'
-        quota_info = (f'Claude quota context (not an alarm; proxy view): Serving Claude accounts '
+        live_used = {row['account']: row['used_7d'] for row in live}
+        servers = ', '.join(f"{name} 7d {live_used[name]:.0%}" if name in live_used else f'{name} reading stale/unknown'
+                            for name in sorted(serving)) or f'none (no successful Claude traffic in last {SERVING_MINUTES} minutes)'
+        quota_info = (f'{QUOTA_PREFIX}Serving Claude accounts '
                       f'(successful traffic in last {SERVING_MINUTES} minutes): {servers}; pooled: {pooled}; '
                       f"rotated out (over {cfg['seven_day']:.0%} 7d): {', '.join(rotated) if rotated else 'none'}")
         pool, ignored, carrying_keys = [], 0, {}
@@ -556,7 +558,7 @@ def check(channel):
         os.replace(temporary, record)
         if channel == 'timer':
             quota = ('quota unreadable' if 'quota-read' in raw
-                     else quota_info.removeprefix('Claude quota context (not an alarm): ') or 'quota not read')
+                     else quota_info.removeprefix(QUOTA_PREFIX) or 'quota not read')
             open_alerts = len(holding)
             summary = ((f'{open_alerts} alert(s) open' if open_alerts else 'no alerts') + f'; {quota}')[:200]
             print('RUN-RESULT ' + json.dumps({'summary': summary, 'counts': {'alerts': open_alerts}}))
