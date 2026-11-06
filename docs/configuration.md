@@ -2234,6 +2234,15 @@ Removing the primary's file leaves each home exactly its own lines.
 
 `bin/fm-brief.sh`'s header owns the placement rule and its safety argument.
 
+## Linear-required projects (config/linear-required-projects)
+
+The optional local, gitignored `config/linear-required-projects` lists, one project name per line, the projects whose ship and scout briefs must name their Linear item; blank lines and `#` comments are ignored.
+For a listed project, `bin/fm-brief.sh` stops before writing anything unless the call passes `--linear <PC-n>` or `--no-linear "<reason>"`.
+`--no-linear` records `Linear item: none (<reason>)` under the brief's `## Captain's intent`, and it conflicts with `--linear`.
+An absent file, or a project not listed in it, changes nothing.
+For the Navigator and Deep Thought homes, add the line `PropertyCompass2` to the file.
+`bin/fm-brief.sh`'s header owns the matching rule.
+
 ## Home branch prompt include (config/branch-prompt-include.md)
 
 The optional local, gitignored `config/branch-prompt-include.md` adds standing home rules to the supervision branch's system prompt, the way `config/brief-include.md` extends worker briefs.
