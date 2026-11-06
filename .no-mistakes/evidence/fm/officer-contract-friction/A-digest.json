@@ -1,0 +1,1469 @@
+{
+ "actionable": 8,
+ "asks_for_lee": [],
+ "coverage": {
+  "captains_log": {
+   "state": "not-set"
+  },
+  "harvester_last_run": "2026-10-24T01:00:00+00:00",
+  "homes": [
+   {
+    "ledger": true,
+    "path": "/tmp/fm-officer-friction.mZR3go/ev/fixturehost",
+    "status_logs": 7
+   }
+  ],
+  "hosts_expected": [
+   "alpha"
+  ],
+  "hosts_present": [
+   "alpha"
+  ],
+  "notes": [
+   "No captains-log URL is set, so Lee steps seen only as Captain's Log cards are not counted.",
+   "A worker that resumed in the wrong directory is found only while its task record survives.",
+   "local-jev not found at /nonexistent/jev.py, so duplicates are found by fingerprint only"
+  ],
+  "sessions_analysed": 2
+ },
+ "date": "2026-10-23",
+ "events": [
+  {
+   "at": null,
+   "cause": "service-limit",
+   "home": "fixturehost",
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "alpha",
+   "service": "1Password",
+   "session": "alpha:s-worker",
+   "signature": "1Password: Too many requests",
+   "sub": "rate-limit",
+   "task": "task-wt",
+   "tool": null
+  },
+  {
+   "at": null,
+   "cause": "guard-hook",
+   "home": "fixturehost",
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:s-worker",
+   "signature": "pre-bash-secret-exposure.py: secret exposure",
+   "sub": "refused",
+   "task": "task-wt",
+   "tool": "pre-bash-secret-exposure.py"
+  },
+  {
+   "at": null,
+   "cause": "missing-tool",
+   "home": "fixturehost",
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:s-worker",
+   "signature": "slopwatch: command not found",
+   "sub": "tool",
+   "task": "task-wt",
+   "tool": "slopwatch"
+  },
+  {
+   "at": null,
+   "cause": "sudo",
+   "home": "fixturehost",
+   "kind": "agent-hit",
+   "lee": false,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:s-worker",
+   "signature": "sudo: a terminal is required",
+   "sub": "sudo",
+   "task": "task-wt",
+   "tool": null
+  },
+  {
+   "at": null,
+   "cause": "environment",
+   "home": "fixturehost",
+   "kind": "session-cwd",
+   "lee": false,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:s-worker",
+   "signature": "worker started outside its task worktree",
+   "sub": "wrong-cwd",
+   "task": "task-wt",
+   "tool": null
+  },
+  {
+   "answered_at": 1792749900,
+   "at": 1792749600,
+   "cause": "lee-command",
+   "count": 2,
+   "home": null,
+   "kind": "lee-ask",
+   "last_at": 1792749720,
+   "lee": true,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:s-mate",
+   "signature": "ssh -t beta bash lic.sh",
+   "sub": "run",
+   "task": null,
+   "tool": null,
+   "wait_s": 300
+  },
+  {
+   "answered_at": 1792752000,
+   "answered_by": "lee",
+   "at": 1792749600,
+   "cause": "sudo",
+   "channel": false,
+   "home": "fixturehost",
+   "key": "fleet-sudo",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "the fleet-app deploy needs sudo on slartibartfast: Lee runs sudo systemctl restart fleet",
+   "source": "ledger",
+   "state": "blocked",
+   "stated": null,
+   "sub": "sudo",
+   "task": "gone",
+   "tool": null,
+   "wait_s": 2400
+  },
+  {
+   "answered_at": 1792753200,
+   "answered_by": "lee",
+   "at": 1792749600,
+   "cause": "credential",
+   "channel": false,
+   "home": "fixturehost",
+   "key": "cf-scope",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": "Cloudflare",
+   "signature": "Cloudflare refuses the agent token for Email Routing and KV (code 10000); one widening Lee needs",
+   "source": "status",
+   "state": "needs-decision",
+   "stated": null,
+   "sub": "scope",
+   "task": "task-cf",
+   "tool": null,
+   "wait_s": 3600
+  },
+  {
+   "answered_at": 1792750500,
+   "answered_by": null,
+   "at": 1792749600,
+   "cause": "sudo",
+   "channel": false,
+   "home": "fixturehost",
+   "key": null,
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "next-line",
+   "reask": false,
+   "service": null,
+   "signature": "the licence install needs sudo on the gate host; Lee runs the script",
+   "source": "status",
+   "state": "blocked",
+   "stated": null,
+   "sub": "sudo",
+   "task": "task-lic",
+   "tool": null,
+   "wait_s": 900
+  },
+  {
+   "answered_at": 1792755000,
+   "answered_by": "lee",
+   "at": 1792749600,
+   "cause": "policy",
+   "channel": false,
+   "home": "fixturehost",
+   "key": "mailbox-token",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "creating staging secret E2E_MAILBOX_TOKEN is a credential change: the rules need Lee's own words naming it",
+   "source": "status",
+   "state": "needs-decision",
+   "stated": null,
+   "sub": "credential-approval",
+   "task": "task-mail",
+   "tool": null,
+   "wait_s": 5400
+  },
+  {
+   "answered_at": 1792750200,
+   "answered_by": "lee",
+   "at": 1792749600,
+   "cause": "guard-hook",
+   "channel": false,
+   "home": "fixturehost",
+   "key": "node-line",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "Making Node the default needs one line from Lee (hooks block me editing his shell startup file)",
+   "source": "status",
+   "state": "needs-decision",
+   "stated": null,
+   "sub": "secret-hook",
+   "task": "task-node",
+   "tool": null,
+   "wait_s": 600
+  },
+  {
+   "answered_at": 1792749720,
+   "answered_by": "lee",
+   "at": 1792749600,
+   "cause": "decision",
+   "channel": false,
+   "home": "fixturehost",
+   "key": "wording",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "Lee, pick (a) the short wording or (b) the long one",
+   "source": "status",
+   "state": "needs-decision",
+   "stated": null,
+   "sub": "decision",
+   "task": "task-pick",
+   "tool": null,
+   "wait_s": 120
+  },
+  {
+   "answered_at": 1792756800,
+   "answered_by": "lee",
+   "at": 1792749600,
+   "cause": "environment",
+   "channel": false,
+   "home": "fixturehost",
+   "key": "swap-c2",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": "resolved-key",
+   "reask": false,
+   "service": null,
+   "signature": "arm 2 done. Lee, please run: ssh -t fixturehost 'bash /x/swap.sh c2' -- it should end with OK. Options: (a) run it now; (b) skip",
+   "source": "status",
+   "state": "needs-decision",
+   "stated": null,
+   "sub": "ssh-to-self",
+   "task": "task-swap",
+   "tool": null,
+   "wait_s": 7200
+  },
+  {
+   "at": 1792750000,
+   "cause": "environment",
+   "home": null,
+   "kind": "lee-command",
+   "lee": true,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:s-mate",
+   "signature": "ssh -t alpha bash swap.sh",
+   "sub": "ssh-to-self",
+   "task": null,
+   "tool": null
+  },
+  {
+   "at": 1792750050,
+   "cause": "credential",
+   "home": null,
+   "kind": "lee-command",
+   "lee": true,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:s-mate",
+   "signature": "ssh -t beta bash lic.sh",
+   "sub": "ssh-key",
+   "task": null,
+   "tool": null
+  },
+  {
+   "at": 1792750100,
+   "cause": "lee-command",
+   "home": null,
+   "kind": "lee-command",
+   "lee": true,
+   "machine": "alpha",
+   "service": "1Password",
+   "session": "alpha:s-mate",
+   "signature": "op run",
+   "sub": "run",
+   "task": null,
+   "tool": null
+  },
+  {
+   "at": 1792750200,
+   "cause": "missing-tool",
+   "home": null,
+   "kind": "lee-command",
+   "lee": true,
+   "machine": "alpha",
+   "service": null,
+   "session": "alpha:s-mate",
+   "signature": "brew install",
+   "sub": "tool",
+   "task": null,
+   "tool": "openjdk"
+  },
+  {
+   "answered_at": null,
+   "answered_by": null,
+   "at": 1792751400,
+   "cause": "environment",
+   "channel": false,
+   "home": "fixturehost",
+   "key": "swap-c2",
+   "kind": "status-wait",
+   "lee": true,
+   "measured_by": null,
+   "reask": true,
+   "service": null,
+   "signature": "the c2 swap did not take effect. Lee, please run it again: ssh -t fixturehost 'bash /x/swap.sh c2'",
+   "source": "status",
+   "state": "needs-decision",
+   "stated": null,
+   "sub": "ssh-to-self",
+   "task": "task-swap",
+   "tool": null,
+   "wait_s": null
+  }
+ ],
+ "findings": [
+  {
+   "carded": true,
+   "category": "environment",
+   "cause": "environment",
+   "confidence": 5,
+   "effort": "S",
+   "events": 3,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "arm 2 done. Lee, please run: ssh -t fixturehost 'bash /x/swap.sh c2' -- it should end with OK. Options: (a) run it now; (b) skip",
+    "sessions": [
+     "alpha:s-mate"
+    ],
+    "status_keys": [
+     "swap-c2@2026-10-23T10:00:00Z",
+     "swap-c2@2026-10-23T10:30:00Z"
+    ],
+    "tasks": [
+     "task-swap"
+    ]
+   },
+   "fix": "Make Lee-step one-liners host-aware: print `bash <script>` when the session already runs on the target host and `ssh -t <host> ...` only from another machine, or install a loopback key.",
+   "id": "environment-ssh-to-self",
+   "kinds": {
+    "lee-command": 1,
+    "status-wait": 2
+   },
+   "last_seen_at": 1792751400,
+   "lee_did": "run an ssh -t <host> line inside a session on that same host, where ssh to itself has no key",
+   "lee_events": 3,
+   "lee_step": true,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-103",
+    "score": 4.0,
+    "severity": "high"
+   },
+   "name": null,
+   "open": 0,
+   "owner": "main (firstmate)",
+   "reasks": 1,
+   "severity": 5,
+   "state": {
+    "actions": [
+     "object"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "request_id": "friction-2026-10-23-f3da93bd23ca6620",
+    "rule": null,
+    "state": "started-by-default",
+    "task": null
+   },
+   "stated_causes": {
+    "unstated": 2
+   },
+   "sub": "ssh-to-self",
+   "title": "Lee-step ssh lines target the machine they run on",
+   "wait_max_s": 7200,
+   "wait_median_s": 7200,
+   "wait_total_s": 7200,
+   "waits_measured": 1,
+   "where": {
+    "alpha": 1,
+    "fixturehost": 2
+   }
+  },
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "sudo",
+   "confidence": 5,
+   "effort": "M",
+   "events": 3,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "sudo: a terminal is required",
+    "sessions": [
+     "alpha:s-worker"
+    ],
+    "status_keys": [
+     "fleet-sudo@2026-10-23T10:00:00Z"
+    ],
+    "tasks": [
+     "gone",
+     "task-lic",
+     "task-wt"
+    ]
+   },
+   "fix": "Install a root-owned script for the step with a NOPASSWD sudoers rule naming that exact path (or a systemd unit the agent may start), approved once by Lee, so the agent runs it itself.",
+   "id": "sudo-sudo",
+   "kinds": {
+    "agent-hit": 1,
+    "status-wait": 2
+   },
+   "last_seen_at": 1792749600,
+   "lee_did": "run a sudo command or script by hand",
+   "lee_events": 2,
+   "lee_step": true,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-108",
+    "score": 4.0,
+    "severity": "high"
+   },
+   "name": null,
+   "open": 0,
+   "owner": "fixturehost home (Lee approves the sudoers rule)",
+   "reasks": 0,
+   "severity": 4,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {
+    "unstated": 2
+   },
+   "sub": "sudo",
+   "title": "Agents hand Lee sudo steps to run by hand",
+   "wait_max_s": 2400,
+   "wait_median_s": 2400,
+   "wait_total_s": 3300,
+   "waits_measured": 2,
+   "where": {
+    "alpha": 1,
+    "fixturehost": 2
+   }
+  },
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "credential",
+   "confidence": 5,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "Cloudflare refuses the agent token for Email Routing and KV (code 10000); one widening Lee needs",
+    "sessions": [],
+    "status_keys": [
+     "cf-scope@2026-10-23T10:00:00Z"
+    ],
+    "tasks": [
+     "task-cf"
+    ]
+   },
+   "fix": "Keep the agent token's required scopes in one checked list and probe them at session start, so a widening is asked for once, with the full list, before work starts.",
+   "id": "credential-scope-cloudflare",
+   "kinds": {
+    "status-wait": 1
+   },
+   "last_seen_at": 1792749600,
+   "lee_did": "widen or roll a Cloudflare token for the agents",
+   "lee_events": 1,
+   "lee_step": true,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-101",
+    "score": 4.0,
+    "severity": "high"
+   },
+   "name": "Cloudflare",
+   "open": 0,
+   "owner": "Lee (token owner); main keeps the scope list",
+   "reasks": 0,
+   "severity": 4,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {
+    "unstated": 1
+   },
+   "sub": "scope",
+   "title": "An agent token lacks a scope, so Lee widens it",
+   "wait_max_s": 3600,
+   "wait_median_s": 3600,
+   "wait_total_s": 3600,
+   "waits_measured": 1,
+   "where": {
+    "fixturehost": 1
+   }
+  },
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "policy",
+   "confidence": 5,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "creating staging secret E2E_MAILBOX_TOKEN is a credential change: the rules need Lee's own words naming it",
+    "sessions": [],
+    "status_keys": [
+     "mailbox-token@2026-10-23T10:00:00Z"
+    ],
+    "tasks": [
+     "task-mail"
+    ]
+   },
+   "fix": "Adopt a standing naming rule for new staging-only credentials (name pattern, vault, owner) so a name that follows it is pre-approved; production credentials stay direct-only.",
+   "id": "policy-credential-approval",
+   "kinds": {
+    "status-wait": 1
+   },
+   "last_seen_at": 1792749600,
+   "lee_did": "approve a new credential by name",
+   "lee_events": 1,
+   "lee_step": true,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-107",
+    "score": 4.0,
+    "severity": "high"
+   },
+   "name": null,
+   "open": 0,
+   "owner": "Lee (fleet rules section 5)",
+   "reasks": 0,
+   "severity": 4,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {
+    "unstated": 1
+   },
+   "sub": "credential-approval",
+   "title": "New staging credentials wait on Lee's per-credential word",
+   "wait_max_s": 5400,
+   "wait_median_s": 5400,
+   "wait_total_s": 5400,
+   "waits_measured": 1,
+   "where": {
+    "fixturehost": 1
+   }
+  },
+  {
+   "carded": true,
+   "category": "tooling",
+   "cause": "guard-hook",
+   "confidence": 5,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "Making Node the default needs one line from Lee (hooks block me editing his shell startup file)",
+    "sessions": [],
+    "status_keys": [
+     "node-line@2026-10-23T10:00:00Z"
+    ],
+    "tasks": [
+     "task-node"
+    ]
+   },
+   "fix": "Give the secret-exposure hook a sanctioned path for writing op:// reference lines (never literal values) to shell startup files, with a fixture test, so agents make the edit themselves.",
+   "id": "guard-hook-secret-hook",
+   "kinds": {
+    "status-wait": 1
+   },
+   "last_seen_at": 1792749600,
+   "lee_did": "make a shell startup or secret-file edit the secret-exposure hook refused",
+   "lee_events": 1,
+   "lee_step": true,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-104",
+    "score": 4.0,
+    "severity": "high"
+   },
+   "name": null,
+   "open": 0,
+   "owner": "skills (global hooks)",
+   "reasks": 0,
+   "severity": 3,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {
+    "unstated": 1
+   },
+   "sub": "secret-hook",
+   "title": "Secret-exposure hook blocks safe shell-file edits, so Lee makes them",
+   "wait_max_s": 600,
+   "wait_median_s": 600,
+   "wait_total_s": 600,
+   "waits_measured": 1,
+   "where": {
+    "fixturehost": 1
+   }
+  },
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "lee-command",
+   "confidence": 4,
+   "effort": "S",
+   "events": 2,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "op run",
+    "sessions": [
+     "alpha:s-mate"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Make every Lee-step ask name why the agent cannot run it (sudo, credential, policy or tool), so the cause can be removed; then remove it, starting with the most repeated.",
+   "id": "lee-command-run",
+   "kinds": {
+    "lee-ask": 1,
+    "lee-command": 1
+   },
+   "last_seen_at": 1792750100,
+   "lee_did": "run a command or script by hand",
+   "lee_events": 2,
+   "lee_step": true,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-105",
+    "score": 4.0,
+    "severity": "high"
+   },
+   "name": null,
+   "open": 0,
+   "owner": "main (firstmate)",
+   "reasks": 0,
+   "severity": 3,
+   "state": {
+    "actions": [
+     "object"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "request_id": "friction-2026-10-23-3c23b4d4a217d3a0",
+    "rule": null,
+    "state": "started-by-default",
+    "task": null
+   },
+   "stated_causes": {},
+   "sub": "run",
+   "title": "Lee runs commands by hand with no recorded reason",
+   "wait_max_s": 300,
+   "wait_median_s": 300,
+   "wait_total_s": 300,
+   "waits_measured": 1,
+   "where": {
+    "alpha": 2
+   }
+  },
+  {
+   "carded": true,
+   "category": "waiting",
+   "cause": "credential",
+   "confidence": 4,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "ssh -t beta bash lic.sh",
+    "sessions": [
+     "alpha:s-mate"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Install the agent's key in the target host's authorized_keys, or give it an ssh alias that reaches the host, and record it in the machine's bootstrap so the refusal cannot come back.",
+   "id": "credential-ssh-key",
+   "kinds": {
+    "lee-command": 1
+   },
+   "last_seen_at": 1792750050,
+   "lee_did": "run an ssh step by hand because the agent's key was refused",
+   "lee_events": 1,
+   "lee_step": true,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-102",
+    "score": 4.0,
+    "severity": "high"
+   },
+   "name": null,
+   "open": 0,
+   "owner": "alpha home",
+   "reasks": 0,
+   "severity": 3,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {},
+   "sub": "ssh-key",
+   "title": "Agents lack an ssh key for a fleet host",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  },
+  {
+   "carded": true,
+   "category": "tooling",
+   "cause": "missing-tool",
+   "confidence": 4,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "brew install",
+    "sessions": [
+     "alpha:s-mate"
+    ],
+    "status_keys": [],
+    "tasks": []
+   },
+   "fix": "Add openjdk to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "id": "missing-tool-tool-openjdk",
+   "kinds": {
+    "lee-command": 1
+   },
+   "last_seen_at": 1792750200,
+   "lee_did": "install a tool by hand",
+   "lee_events": 1,
+   "lee_step": true,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-106",
+    "score": 4.0,
+    "severity": "high"
+   },
+   "name": "openjdk",
+   "open": 0,
+   "owner": "alpha home",
+   "reasks": 0,
+   "severity": 3,
+   "state": {
+    "actions": [
+     "object"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "request_id": "friction-2026-10-23-7e5df314006e9dc2",
+    "rule": null,
+    "state": "started-by-default",
+    "task": null
+   },
+   "stated_causes": {},
+   "sub": "tool",
+   "title": "A tool agents need is missing: openjdk",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  },
+  {
+   "carded": false,
+   "category": "waiting",
+   "cause": "decision",
+   "confidence": 5,
+   "effort": null,
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "Lee, pick (a) the short wording or (b) the long one",
+    "sessions": [],
+    "status_keys": [
+     "wording@2026-10-23T10:00:00Z"
+    ],
+    "tasks": [
+     "task-pick"
+    ]
+   },
+   "fix": null,
+   "id": "decision-decision",
+   "kinds": {
+    "status-wait": 1
+   },
+   "last_seen_at": 1792749600,
+   "lee_did": null,
+   "lee_events": 1,
+   "lee_step": true,
+   "linear": {
+    "class": "decision",
+    "found": 1,
+    "score": 2.0,
+    "severity": "medium"
+   },
+   "name": null,
+   "open": 0,
+   "owner": null,
+   "reasks": 0,
+   "severity": 3,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {
+    "unstated": 1
+   },
+   "sub": "decision",
+   "title": null,
+   "wait_max_s": 120,
+   "wait_median_s": 120,
+   "wait_total_s": 120,
+   "waits_measured": 1,
+   "where": {
+    "fixturehost": 1
+   }
+  },
+  {
+   "carded": false,
+   "category": "environment",
+   "cause": "environment",
+   "confidence": 3,
+   "effort": "M",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "worker started outside its task worktree",
+    "sessions": [
+     "alpha:s-worker"
+    ],
+    "status_keys": [],
+    "tasks": [
+     "task-wt"
+    ]
+   },
+   "fix": "Resume each worker in the worktree its task record names (cd to its meta worktree= first) and refuse a resume whose directory differs.",
+   "id": "environment-wrong-cwd",
+   "kinds": {
+    "session-cwd": 1
+   },
+   "last_seen_at": null,
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-109",
+    "score": 1.0,
+    "severity": "low"
+   },
+   "name": null,
+   "open": 0,
+   "owner": "main (firstmate)",
+   "reasks": 0,
+   "severity": 2,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {},
+   "sub": "wrong-cwd",
+   "title": "Worker sessions resume in the wrong directory after a restart",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  },
+  {
+   "carded": false,
+   "category": "tooling",
+   "cause": "guard-hook",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "pre-bash-secret-exposure.py: secret exposure",
+    "sessions": [
+     "alpha:s-worker"
+    ],
+    "status_keys": [],
+    "tasks": [
+     "task-wt"
+    ]
+   },
+   "fix": "Where the refusal is right, make its message name the allowed command so the agent's next try succeeds; where it is a false positive, report it to the hook's owner with a fixture.",
+   "id": "guard-hook-refused-pre-bash-secret-exposure-py",
+   "kinds": {
+    "agent-hit": 1
+   },
+   "last_seen_at": null,
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-110",
+    "score": 1.0,
+    "severity": "low"
+   },
+   "name": "pre-bash-secret-exposure.py",
+   "open": 0,
+   "owner": "skills (global hooks)",
+   "reasks": 0,
+   "severity": 2,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {},
+   "sub": "refused",
+   "title": "Hook refusals slow agents down",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  },
+  {
+   "carded": false,
+   "category": "tooling",
+   "cause": "missing-tool",
+   "confidence": 3,
+   "effort": "S",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "slopwatch: command not found",
+    "sessions": [
+     "alpha:s-worker"
+    ],
+    "status_keys": [],
+    "tasks": [
+     "task-wt"
+    ]
+   },
+   "fix": "Add slopwatch to alpha's bootstrap and its doctor check, so it is present before the next session.",
+   "id": "missing-tool-tool-slopwatch",
+   "kinds": {
+    "agent-hit": 1
+   },
+   "last_seen_at": null,
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-111",
+    "score": 1.0,
+    "severity": "low"
+   },
+   "name": "slopwatch",
+   "open": 0,
+   "owner": "alpha home",
+   "reasks": 0,
+   "severity": 2,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {},
+   "sub": "tool",
+   "title": "A tool agents need is missing: slopwatch",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  },
+  {
+   "carded": false,
+   "category": "environment",
+   "cause": "service-limit",
+   "confidence": 3,
+   "effort": "M",
+   "events": 1,
+   "evidence": {
+    "asks": [],
+    "cards": [],
+    "example": "1Password: Too many requests",
+    "sessions": [
+     "alpha:s-worker"
+    ],
+    "status_keys": [],
+    "tasks": [
+     "task-wt"
+    ]
+   },
+   "fix": "Serve repeat reads from a cache (op-agent's for 1Password) and count calls per host, so one busy worker cannot exhaust the shared limit; warn at 80% instead of failing at 100%.",
+   "id": "service-limit-rate-limit-1password",
+   "kinds": {
+    "agent-hit": 1
+   },
+   "last_seen_at": null,
+   "lee_did": "nothing directly (agent-side friction)",
+   "lee_events": 0,
+   "lee_step": false,
+   "linear": {
+    "action": "created",
+    "class": "real",
+    "found": 1,
+    "issue": "PC-112",
+    "score": 1.0,
+    "severity": "low"
+   },
+   "name": "1Password",
+   "open": 0,
+   "owner": "skills (op-agent)",
+   "reasks": 0,
+   "severity": 2,
+   "state": {
+    "actions": [
+     "start-fix"
+    ],
+    "fixed": null,
+    "generation": null,
+    "link": null,
+    "reopen": false,
+    "rule": null,
+    "state": "open",
+    "task": null
+   },
+   "stated_causes": {},
+   "sub": "rate-limit",
+   "title": "Service rate limits stall agents until the limit resets",
+   "wait_max_s": null,
+   "wait_median_s": null,
+   "wait_total_s": null,
+   "waits_measured": 0,
+   "where": {
+    "alpha": 1
+   }
+  }
+ ],
+ "generated_at": "2026-10-24T00:00:00Z",
+ "held": [],
+ "linear_call_budget": 450,
+ "linear_calls": 37,
+ "linear_gaps": [
+  "local-jev not found at /nonexistent/jev.py, so duplicates are found by fingerprint only"
+ ],
+ "model": "none",
+ "not_filed": [],
+ "officer_role": "friction",
+ "scorer": "friction-deterministic-v1",
+ "source": "friction-officer",
+ "start_requests": [
+  {
+   "card": {
+    "category": "environment",
+    "confidence": 5,
+    "effort": "S",
+    "events": 3,
+    "evidence": "3 event(s) on 2026-10-23; tasks task-swap; status swap-c2@2026-10-23T10:00:00Z, swap-c2@2026-10-23T10:30:00Z; sessions alpha:s-mate; e.g. arm 2 done. Lee, please run: ssh -t fixturehost 'bash /x/swap.sh c2' -- it should end with OK. Options: (a) run it now; (b) skip",
+    "id": "environment-ssh-to-self",
+    "impact": "Removes 3 Lee step(s) and 2.0 h of agent waiting seen on 2026-10-23.",
+    "improvement": "Make Lee-step one-liners host-aware: print `bash <script>` when the session already runs on the target host and `ssh -t <host> ...` only from another machine, or install a loopback key.",
+    "owner": "main (firstmate)",
+    "severity": 5,
+    "time_saved": "about 2.0 h a day: 1 measured wait(s) on 2026-10-23 totalling 2.0 h, from ask to answer",
+    "title": "Lee-step ssh lines target the machine they run on",
+    "tldr": "Lee had to run an ssh -t <host> line inside a session on that same host, where ssh to itself has no key: 3 time(s) on 2026-10-23; agents waited 2.0 h."
+   },
+   "execute": {
+    "action": "start",
+    "argv": [
+     "{run-worktree}/bin/fm-inbox.sh",
+     "note",
+     "--request-id",
+     "friction-2026-10-23-f3da93bd23ca6620",
+     "--json",
+     "--",
+     "Friction officer automatic start under its rubric (docs/officers/friction-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Friction finding [friction-environment-ssh-to-self]: started by default: Lee-step ssh lines target the machine they run on. Start this fix without a Start fix tap or another approval question, under fleet rules section 2 ('Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'); Lee may Object. Name friction-environment-ssh-to-self in the task's branch or its data/backlog.md line, so the friction officer can read its merge back. Loosening a guard or gate check is outside this authority; if Lee objects, preserve the branch. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"card\": {\"category\": \"environment\", \"confidence\": 5, \"effort\": \"S\", \"events\": 3, \"evidence\": \"3 event(s) on 2026-10-23; tasks task-swap; status swap-c2@2026-10-23T10:00:00Z, swap-c2@2026-10-23T10:30:00Z; sessions alpha:s-mate; e.g. arm 2 done. Lee, please run: ssh -t fixturehost 'bash /x/swap.sh c2' -- it should end with OK. Options: (a) run it now; (b) skip\", \"id\": \"environment-ssh-to-self\", \"impact\": \"Removes 3 Lee step(s) and 2.0 h of agent waiting seen on 2026-10-23.\", \"improvement\": \"Make Lee-step one-liners host-aware: print `bash <script>` when the session already runs on the target host and `ssh -t <host> ...` only from another machine, or install a loopback key.\", \"owner\": \"main (firstmate)\", \"severity\": 5, \"time_saved\": \"about 2.0 h a day: 1 measured wait(s) on 2026-10-23 totalling 2.0 h, from ask to answer\", \"title\": \"Lee-step ssh lines target the machine they run on\", \"tldr\": \"Lee had to run an ssh -t <host> line inside a session on that same host, where ssh to itself has no key: 3 time(s) on 2026-10-23; agents waited 2.0 h.\"}, \"fingerprint\": \"7b5d145ef9157aa5a74ffcca4bac4eb60c73503409a719b3466998281c6a4483\", \"found\": 1, \"friction_id\": \"environment-ssh-to-self\", \"issue\": \"PC-103\", \"kind\": \"friction-finding\", \"linear_id\": \"PC-103\", \"linear_only\": true, \"project\": \"\", \"reason\": \"Real high finding admitted by the rubric\", \"score\": 4.0, \"severity\": \"high\", \"source\": \"environment\", \"title\": \"Lee-step ssh lines target the machine they run on\"}"
+    ],
+    "env": {
+     "FM_HOME": "/tmp/fm-officer-friction.mZR3go/ev/fixturehost"
+    },
+    "request_id": "friction-2026-10-23-f3da93bd23ca6620"
+   },
+   "fingerprint": "7b5d145ef9157aa5a74ffcca4bac4eb60c73503409a719b3466998281c6a4483",
+   "found": 1,
+   "friction_id": "environment-ssh-to-self",
+   "generation": null,
+   "id": "environment-ssh-to-self",
+   "issue": "PC-103",
+   "kind": "friction-finding",
+   "linear_id": "PC-103",
+   "linear_only": true,
+   "owner_home": "/tmp/fm-officer-friction.mZR3go/ev/fixturehost",
+   "project": "",
+   "rank": 1,
+   "reason": "Real high finding admitted by the rubric",
+   "score": 4.0,
+   "severity": "high",
+   "source": "environment",
+   "title": "Lee-step ssh lines target the machine they run on"
+  },
+  {
+   "card": {
+    "category": "waiting",
+    "confidence": 4,
+    "effort": "S",
+    "events": 2,
+    "evidence": "2 event(s) on 2026-10-23; sessions alpha:s-mate; e.g. op run",
+    "id": "lee-command-run",
+    "impact": "Removes 2 Lee step(s) and 5 min of agent waiting seen on 2026-10-23.",
+    "improvement": "Make every Lee-step ask name why the agent cannot run it (sudo, credential, policy or tool), so the cause can be removed; then remove it, starting with the most repeated.",
+    "owner": "main (firstmate)",
+    "severity": 3,
+    "time_saved": "about 5 min a day: 1 measured wait(s) on 2026-10-23 totalling 5 min, from ask to answer",
+    "title": "Lee runs commands by hand with no recorded reason",
+    "tldr": "Lee had to run a command or script by hand: 2 time(s) on 2026-10-23; agents waited 5 min."
+   },
+   "execute": {
+    "action": "start",
+    "argv": [
+     "{run-worktree}/bin/fm-inbox.sh",
+     "note",
+     "--request-id",
+     "friction-2026-10-23-3c23b4d4a217d3a0",
+     "--json",
+     "--",
+     "Friction officer automatic start under its rubric (docs/officers/friction-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Friction finding [friction-lee-command-run]: started by default: Lee runs commands by hand with no recorded reason. Start this fix without a Start fix tap or another approval question, under fleet rules section 2 ('Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'); Lee may Object. Name friction-lee-command-run in the task's branch or its data/backlog.md line, so the friction officer can read its merge back. Loosening a guard or gate check is outside this authority; if Lee objects, preserve the branch. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"card\": {\"category\": \"waiting\", \"confidence\": 4, \"effort\": \"S\", \"events\": 2, \"evidence\": \"2 event(s) on 2026-10-23; sessions alpha:s-mate; e.g. op run\", \"id\": \"lee-command-run\", \"impact\": \"Removes 2 Lee step(s) and 5 min of agent waiting seen on 2026-10-23.\", \"improvement\": \"Make every Lee-step ask name why the agent cannot run it (sudo, credential, policy or tool), so the cause can be removed; then remove it, starting with the most repeated.\", \"owner\": \"main (firstmate)\", \"severity\": 3, \"time_saved\": \"about 5 min a day: 1 measured wait(s) on 2026-10-23 totalling 5 min, from ask to answer\", \"title\": \"Lee runs commands by hand with no recorded reason\", \"tldr\": \"Lee had to run a command or script by hand: 2 time(s) on 2026-10-23; agents waited 5 min.\"}, \"fingerprint\": \"1e62a00f15bbe2a6d6b78395c68142e07726e464f0ec82f6b49de5352e9719a8\", \"found\": 1, \"friction_id\": \"lee-command-run\", \"issue\": \"PC-105\", \"kind\": \"friction-finding\", \"linear_id\": \"PC-105\", \"linear_only\": true, \"project\": \"\", \"reason\": \"Real high finding admitted by the rubric\", \"score\": 4.0, \"severity\": \"high\", \"source\": \"lee-command\", \"title\": \"Lee runs commands by hand with no recorded reason\"}"
+    ],
+    "env": {
+     "FM_HOME": "/tmp/fm-officer-friction.mZR3go/ev/fixturehost"
+    },
+    "request_id": "friction-2026-10-23-3c23b4d4a217d3a0"
+   },
+   "fingerprint": "1e62a00f15bbe2a6d6b78395c68142e07726e464f0ec82f6b49de5352e9719a8",
+   "found": 1,
+   "friction_id": "lee-command-run",
+   "generation": null,
+   "id": "lee-command-run",
+   "issue": "PC-105",
+   "kind": "friction-finding",
+   "linear_id": "PC-105",
+   "linear_only": true,
+   "owner_home": "/tmp/fm-officer-friction.mZR3go/ev/fixturehost",
+   "project": "",
+   "rank": 2,
+   "reason": "Real high finding admitted by the rubric",
+   "score": 4.0,
+   "severity": "high",
+   "source": "lee-command",
+   "title": "Lee runs commands by hand with no recorded reason"
+  },
+  {
+   "card": {
+    "category": "tooling",
+    "confidence": 4,
+    "effort": "S",
+    "events": 1,
+    "evidence": "1 event(s) on 2026-10-23; sessions alpha:s-mate; e.g. brew install",
+    "id": "missing-tool-tool-openjdk",
+    "impact": "Removes 1 Lee step(s) and not measured of agent waiting seen on 2026-10-23.",
+    "improvement": "Add openjdk to alpha's bootstrap and its doctor check, so it is present before the next session.",
+    "owner": "alpha home",
+    "severity": 3,
+    "time_saved": "not measured: 1 step(s) on 2026-10-23 with no recorded answer time",
+    "title": "A tool agents need is missing: openjdk",
+    "tldr": "openjdk: Lee had to install a tool by hand: 1 time(s) on 2026-10-23; agents waited not measured."
+   },
+   "execute": {
+    "action": "start",
+    "argv": [
+     "{run-worktree}/bin/fm-inbox.sh",
+     "note",
+     "--request-id",
+     "friction-2026-10-23-7e5df314006e9dc2",
+     "--json",
+     "--",
+     "Friction officer automatic start under its rubric (docs/officers/friction-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Friction finding [friction-missing-tool-tool-openjdk]: started by default: A tool agents need is missing: openjdk. Start this fix without a Start fix tap or another approval question, under fleet rules section 2 ('Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'); Lee may Object. Name friction-missing-tool-tool-openjdk in the task's branch or its data/backlog.md line, so the friction officer can read its merge back. Loosening a guard or gate check is outside this authority; if Lee objects, preserve the branch. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"card\": {\"category\": \"tooling\", \"confidence\": 4, \"effort\": \"S\", \"events\": 1, \"evidence\": \"1 event(s) on 2026-10-23; sessions alpha:s-mate; e.g. brew install\", \"id\": \"missing-tool-tool-openjdk\", \"impact\": \"Removes 1 Lee step(s) and not measured of agent waiting seen on 2026-10-23.\", \"improvement\": \"Add openjdk to alpha's bootstrap and its doctor check, so it is present before the next session.\", \"owner\": \"alpha home\", \"severity\": 3, \"time_saved\": \"not measured: 1 step(s) on 2026-10-23 with no recorded answer time\", \"title\": \"A tool agents need is missing: openjdk\", \"tldr\": \"openjdk: Lee had to install a tool by hand: 1 time(s) on 2026-10-23; agents waited not measured.\"}, \"fingerprint\": \"1298fa71586e56bb8ae2593752356d0b4be3d546024bb329642ff18c2b3df327\", \"found\": 1, \"friction_id\": \"missing-tool-tool-openjdk\", \"issue\": \"PC-106\", \"kind\": \"friction-finding\", \"linear_id\": \"PC-106\", \"linear_only\": true, \"project\": \"\", \"reason\": \"Real high finding admitted by the rubric\", \"score\": 4.0, \"severity\": \"high\", \"source\": \"missing-tool\", \"title\": \"A tool agents need is missing: openjdk\"}"
+    ],
+    "env": {
+     "FM_HOME": "/tmp/fm-officer-friction.mZR3go/ev/fixturehost"
+    },
+    "request_id": "friction-2026-10-23-7e5df314006e9dc2"
+   },
+   "fingerprint": "1298fa71586e56bb8ae2593752356d0b4be3d546024bb329642ff18c2b3df327",
+   "found": 1,
+   "friction_id": "missing-tool-tool-openjdk",
+   "generation": null,
+   "id": "missing-tool-tool-openjdk",
+   "issue": "PC-106",
+   "kind": "friction-finding",
+   "linear_id": "PC-106",
+   "linear_only": true,
+   "owner_home": "/tmp/fm-officer-friction.mZR3go/ev/fixturehost",
+   "project": "",
+   "rank": 3,
+   "reason": "Real high finding admitted by the rubric",
+   "score": 4.0,
+   "severity": "high",
+   "source": "missing-tool",
+   "title": "A tool agents need is missing: openjdk"
+  }
+ ],
+ "writes": "linear",
+ "writes_blocked": null,
+ "writes_done": [
+  {
+   "action": "created",
+   "fingerprint": "bb239f1301853b30ad4759d0e822b1c1ba7fbc33e5e56719858486dce5d15444",
+   "issue": "PC-101",
+   "severity": "high",
+   "source": "credential",
+   "title": "An agent token lacks a scope, so Lee widens it"
+  },
+  {
+   "action": "created",
+   "fingerprint": "1ade7624b29367a44f71da6a4985f8408c26c091faead24de7f5e578227bbc38",
+   "issue": "PC-102",
+   "severity": "high",
+   "source": "credential",
+   "title": "Agents lack an ssh key for a fleet host"
+  },
+  {
+   "action": "created",
+   "fingerprint": "7b5d145ef9157aa5a74ffcca4bac4eb60c73503409a719b3466998281c6a4483",
+   "issue": "PC-103",
+   "severity": "high",
+   "source": "environment",
+   "title": "Lee-step ssh lines target the machine they run on"
+  },
+  {
+   "action": "created",
+   "fingerprint": "583f5fed0c9818aa9e30346c7b0cec35b9c03732c358d906d350dc1f739e150a",
+   "issue": "PC-104",
+   "severity": "high",
+   "source": "guard-hook",
+   "title": "Secret-exposure hook blocks safe shell-file edits, so Lee makes them"
+  },
+  {
+   "action": "created",
+   "fingerprint": "1e62a00f15bbe2a6d6b78395c68142e07726e464f0ec82f6b49de5352e9719a8",
+   "issue": "PC-105",
+   "severity": "high",
+   "source": "lee-command",
+   "title": "Lee runs commands by hand with no recorded reason"
+  },
+  {
+   "action": "created",
+   "fingerprint": "1298fa71586e56bb8ae2593752356d0b4be3d546024bb329642ff18c2b3df327",
+   "issue": "PC-106",
+   "severity": "high",
+   "source": "missing-tool",
+   "title": "A tool agents need is missing: openjdk"
+  },
+  {
+   "action": "created",
+   "fingerprint": "aef7cd7a890cd5fa41dcf0f560f753886c4774d48826d510d412b00132757768",
+   "issue": "PC-107",
+   "severity": "high",
+   "source": "policy",
+   "title": "New staging credentials wait on Lee's per-credential word"
+  },
+  {
+   "action": "created",
+   "fingerprint": "2795540c90b2b7f861a1c13597dedd89f3cfbcc9f55908338c096500517f7bbf",
+   "issue": "PC-108",
+   "severity": "high",
+   "source": "sudo",
+   "title": "Agents hand Lee sudo steps to run by hand"
+  },
+  {
+   "action": "created",
+   "fingerprint": "8d18a0740f7e6225bc96feacdbf62ef24ca096706fb1688507a72830e3055e77",
+   "issue": "PC-109",
+   "severity": "low",
+   "source": "environment",
+   "title": "Worker sessions resume in the wrong directory after a restart"
+  },
+  {
+   "action": "created",
+   "fingerprint": "10f46e3b7812cdbacc2e5b6a15518951d6f56eaccb1734f763b9e1ca0b02179b",
+   "issue": "PC-110",
+   "severity": "low",
+   "source": "guard-hook",
+   "title": "Hook refusals slow agents down"
+  },
+  {
+   "action": "created",
+   "fingerprint": "3c19d7c4cbd2d7b5f1893e306df1f7176b7a838c4aac58cc4b90cb92956050b5",
+   "issue": "PC-111",
+   "severity": "low",
+   "source": "missing-tool",
+   "title": "A tool agents need is missing: slopwatch"
+  },
+  {
+   "action": "created",
+   "fingerprint": "764c14397650bf25e8f3844cb0ae320da6d9904b8826791fcf9f9bd95c2536c2",
+   "issue": "PC-112",
+   "severity": "low",
+   "source": "service-limit",
+   "title": "Service rate limits stall agents until the limit resets"
+  }
+ ]
+}

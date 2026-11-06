@@ -1,0 +1,32 @@
+== Scenario A: writes: linear night 1 ==
+run exit=0
+creates verified: 12
+real findings: 12
+start requests: environment-ssh-to-self->PC-103, lee-command-run->PC-105, missing-tool-tool-openjdk->PC-106
+leaks of status text in bodies: 0
+== Scenario B: same-day rerun ==
+rerun exit=0 creates now: 12
+== Scenario C: later night raises Found ==
+exit=0 updates: 12 comments: 12 creates: 12
+first filed: issue=PC-103 found=2 score=6.34
+== Scenario D: writes: none ==
+exit=0 linear called: no starts: 0
+3 finding(s) due to start by default were not started because the run writes no Linear items (set writes: linear); each card offers Start fix.
+== F4: each linear gap printed once in digest ==
+~/.no-mistakes/evidence/01M6QBFR5FYY27R1W692E7SX8K/A-digest.md dup lines:
+- Owner: alpha home; effort S.
+- Owner: main (firstmate); effort S.
+- Owner: skills (global hooks); effort S.
+- State: open.
+- State: started-by-default.
+- Waits: 0 measured, total not measured, median not measured, longest not measured; 0 still open; 0 re-ask(s).
+- What Lee had to do: nothing directly (agent-side friction); 0 of 1 event(s) named Lee.
+~/.no-mistakes/evidence/01M6QBFR5FYY27R1W692E7SX8K/D-digest-writes-none.md dup lines:
+- Linear: real not filed; found 1, score 1.0 (low).
+- Linear: real not filed; found 1, score 4.0 (high).
+- Owner: alpha home; effort S.
+- Owner: main (firstmate); effort S.
+- Owner: skills (global hooks); effort S.
+- State: open.
+- Waits: 0 measured, total not measured, median not measured, longest not measured; 0 still open; 0 re-ask(s).
+- What Lee had to do: nothing directly (agent-side friction); 0 of 1 event(s) named Lee.
