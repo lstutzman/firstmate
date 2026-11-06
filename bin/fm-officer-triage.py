@@ -166,6 +166,8 @@ def count_only_env_segments(command):
     kept = [i for i, seg in enumerate(segments) if seg]
     skipped = set()
     for pos, i in enumerate(kept):
+        if re.search(r"(?<![2>])>", segments[i]):
+            continue
         j = i + 1
         while j < len(segments) and ops[j - 1] == "|" and segments[j]:
             if COUNT_ONLY_RE.match(segments[j]):

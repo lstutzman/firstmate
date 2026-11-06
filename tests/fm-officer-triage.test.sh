@@ -54,6 +54,8 @@ spec = {"sessions": [
      ("clobber-file", "env >| /tmp/dump"), ("stderr-merge", "env 2>&1"),
      ("stderr-null", "env 2>/dev/null"), ("sort-o", "env | sort -o /tmp/x | wc -l"),
      ("uniq-out", "env | uniq - /tmp/x | wc -l"),
+     ("file-then-count", "env > /tmp/dump | wc -l"),
+     ("append-then-count", "printenv 2>&1 >> /tmp/dump | grep -c X"),
      ("awk-print", "env | awk '{print > \"f\"}' | wc -l"))],
   {"machine": "alpha", "id": "s-failed", "first_prompt": ": Firstmate operational input waiting: read 'y'",
    "calls": [["Read", msg, brief_failed, False],
@@ -204,7 +206,7 @@ test_env_dump_rule_ignores_count_only_pipelines() {
   json="$home/data/officers/triage/$DATE.json"
   flagged=$(jq -r '[.findings[] | select(.kind == "rule-violation" and .rule == "env-dump") | .session]
     | sort | join(" ")' "$json")
-  assert_equals "alpha:s-env-amp-append alpha:s-env-amp-file alpha:s-env-append-file alpha:s-env-awk-print alpha:s-env-bare alpha:s-env-clobber-file alpha:s-env-grep-ec alpha:s-env-redirect-mid alpha:s-env-sort-o alpha:s-env-stderr-merge alpha:s-env-stderr-null alpha:s-env-tee-count alpha:s-env-to-file alpha:s-env-uniq-out" \
+  assert_equals "alpha:s-env-amp-append alpha:s-env-amp-file alpha:s-env-append-file alpha:s-env-append-then-count alpha:s-env-awk-print alpha:s-env-bare alpha:s-env-clobber-file alpha:s-env-file-then-count alpha:s-env-grep-ec alpha:s-env-redirect-mid alpha:s-env-sort-o alpha:s-env-stderr-merge alpha:s-env-stderr-null alpha:s-env-tee-count alpha:s-env-to-file alpha:s-env-uniq-out" \
     "$flagged" \
     "exactly the commands that print values or write them to a file flag; counts (even teed), checks and stdout to /dev/null do not"
   pass "fm-officer triage: env-dump ignores count-only pipelines and still flags value-printing forms"
