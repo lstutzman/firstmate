@@ -2644,7 +2644,47 @@ test_no_mistakes_prevalidation_done_stays_done() {
   out=$(run_crew_state "$d" preval)
   assert_contains "$out" "state: done" "no-mistakes pre-validation done: remains done"
   assert_not_contains "$out" "state: blocked" "pre-validation done: must not be the named-head gate"
+  assert_not_contains "$out" "pipeline handoff" "a done with no run ever started is not a pipeline handoff"
   pass "no-mistakes pre-validation done: stays current-state done"
+}
+
+# The handoff shape: the worker wrote done: while the daemon still reports this
+# branch's run (at an older head, so it is not attributed to the crew).
+setup_prevalidation_done_with_stale_run() {  # <case-dir> <run-fixture-fn>
+  local d=$1
+  make_repo_on_branch "$d/wt" fm/handoff
+  FM_FAKE_AXI_STATUS="$("$2" fm/handoff)"
+  git -C "$d/wt" commit -q --allow-empty -m 'worker commit after the run head'
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/handoff.meta" \
+    "window=fm:fm-handoff" "worktree=$d/wt" "project=$d/wt" \
+    "kind=ship" "mode=no-mistakes" "harness=claude"
+  printf 'done: implementation complete\n' > "$d/state/handoff.status"
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" handoff
+}
+
+test_no_mistakes_handoff_done_with_live_run_is_marked() {
+  reset_fakes
+  local d out
+  d=$(new_case handoff-live)
+  setup_prevalidation_done_with_stale_run "$d" run_parked
+  out=$(run_crew_state "$d" handoff)
+  assert_contains "$out" "state: done · source: status-log · pipeline handoff: validation run not finished · implementation complete" \
+    "a done while the branch's run is unfinished leads with the handoff marker: $out"
+  pass "no-mistakes handoff done with a live run is marked as a pipeline handoff"
+}
+
+test_no_mistakes_done_after_cancelled_run_is_not_marked() {
+  reset_fakes
+  local d out
+  d=$(new_case handoff-cancelled)
+  setup_prevalidation_done_with_stale_run "$d" run_cancelled
+  out=$(run_crew_state "$d" handoff)
+  assert_contains "$out" "state: done · source: status-log · implementation complete" \
+    "a done after the branch's run was cancelled reads as a plain done: $out"
+  assert_not_contains "$out" "pipeline handoff" "a cancelled run is not a pipeline handoff"
+  pass "no-mistakes done after a cancelled run is not marked as a pipeline handoff"
 }
 
 test_moved_remote_branch_without_named_head_is_blocked() {
@@ -6867,6 +6907,8 @@ test_unpushed_ship_done_is_blocked
 test_ready_evidence_state_read_only_reads_the_record
 test_merged_pr_reads_done_under_captured_meta
 test_no_mistakes_prevalidation_done_stays_done
+test_no_mistakes_handoff_done_with_live_run_is_marked
+test_no_mistakes_done_after_cancelled_run_is_not_marked
 test_moved_remote_branch_without_named_head_is_blocked
 test_external_review_done_reads_ready
 test_no_run_busy_pane

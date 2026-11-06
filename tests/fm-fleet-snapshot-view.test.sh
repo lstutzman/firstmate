@@ -1217,12 +1217,12 @@ EOF
     "kind=ship" \
     "mode=no-mistakes"
   record_claude_idle "$home/state" terminal-ship
-  printf 'done: complete\n' > "$home/state/terminal-ship.status"
+  printf 'failed: stopped\n' > "$home/state/terminal-ship.status"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
   printf '%s' "$out" | jq -e '
     .valid == false
       and .invalidity == {kind:"terminal_in_flight",ids:["terminal-ship"]}
-      and (.reason | contains("terminal-ship=done"))
+      and (.reason | contains("terminal-ship=failed"))
       and (.reason | contains("mate=") | not)
   ' >/dev/null || fail "ordinary terminal in-flight ship must still produce terminal_in_flight without listing the secondmate: $out"
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
@@ -1303,11 +1303,19 @@ SH
   printf '%s' "$out" | jq -e --arg pr "$pr_url" '
     .tasks[] | select(.id == "pr-ship") | .pr.url == $pr and .pr.source == "status_event"
   ' >/dev/null || fail "fixture must record the PR from the status log only: $out"
-  assert_terminal "done child with a status-line PR only must still produce terminal_in_flight"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.counts.waiting_on_merge == 0' >/dev/null \
+    || fail "a status-line PR only must not count as waiting on merge: $out"
 
-  # No PR at all still flags.
+  # A pre-validation done with no run ever started still flags.
   printf 'done: complete\n' > "$home/state/pr-ship.status"
-  assert_terminal "done child with no PR must still produce terminal_in_flight"
+  assert_terminal "pre-validation done child with no run must still produce terminal_in_flight"
+
+  # CI-ready done with no PR armed poll and a stale meta PR still flags (finished, never closed).
+  write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"
+  printf 'done: PR %s checks green\n' "$pr_url" > "$home/state/pr-ship.status"
+  rm -f "$home/state/pr-ship.check.sh"
+  assert_terminal "finished done child without an armed merge poll must still produce terminal_in_flight"
 
   # A failed child flags even with a meta PR and an armed poll.
   write_pr_ship_meta "pr=$pr_url" "pr_head=$pr_head"
@@ -1315,6 +1323,70 @@ SH
   assert_terminal "failed child with a PR must still produce terminal_in_flight"
   unset -f write_pr_ship_meta assert_terminal
   pass "home-summary treats a done child as waiting on merge only with a meta PR and an armed merge poll"
+}
+
+# A no-mistakes done: written while the daemon still reports the branch's run
+# unfinished is a pipeline handoff, not finished work; without that live run,
+# or with only a worker note that mentions a handoff, it still flags.
+test_home_summary_pipeline_handoff_done_is_live_work() {
+  local home fakebin wt run_head out
+  home=$(make_home summary-pipeline-handoff)
+  fakebin=$(make_fakebin "$home")
+  wt=$home/projects/handoff
+  mkdir -p "$wt"
+  git -C "$wt" init -q
+  git -C "$wt" commit -q --allow-empty -m init
+  git -C "$wt" checkout -q -b fm/handoff
+  git -C "$wt" update-ref refs/remotes/origin/main "$(git -C "$wt" rev-parse HEAD)"
+  run_head=$(git -C "$wt" rev-parse HEAD)
+  git -C "$wt" commit -q --allow-empty -m 'worker commit after the run head'
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] handoff-ship - Handed off to validation (repo: alpha) (kind: ship) (since 2026-07-11)
+
+## Queued
+
+## Done
+EOF
+  fm_write_meta "$home/state/handoff-ship.meta" \
+    "window=firstmate:fm-handoff-ship" \
+    "worktree=$wt" \
+    "project=$wt" \
+    "harness=claude" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  record_claude_idle "$home/state" handoff-ship
+  printf 'done: implementation complete\n' > "$home/state/handoff-ship.status"
+  cat > "$fakebin/no-mistakes" <<SH
+#!/usr/bin/env bash
+[ "\${1:-}" = axi ] || exit 0
+cat <<'TOON'
+run:
+  id: "01RUN"
+  branch: fm/handoff
+  status: awaiting_approval
+  awaiting_agent: parked 2m10s
+  head: "$run_head"
+  pr: ""
+  findings: none
+gate: review
+TOON
+SH
+  chmod +x "$fakebin/no-mistakes"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.valid == true and .invalidity.kind == null' >/dev/null \
+    || fail "a done while the branch's run is unfinished must not produce terminal_in_flight: $out"
+
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fakebin/no-mistakes"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.invalidity == {kind:"terminal_in_flight",ids:["handoff-ship"]}' >/dev/null \
+    || fail "a done with no live run must produce terminal_in_flight: $out"
+
+  printf 'done: pipeline handoff complete\n' > "$home/state/handoff-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.invalidity == {kind:"terminal_in_flight",ids:["handoff-ship"]}' >/dev/null \
+    || fail "a worker note naming a handoff is not the handoff marker: $out"
+  pass "home-summary reads a no-mistakes done as live work only while the branch's run is unfinished"
 }
 
 test_snapshot_handles_large_status_fields() {
@@ -1368,6 +1440,7 @@ fm_test_run \
   test_fixture_snapshot_json \
   test_home_summary_excludes_secondmate_from_child_inventory \
   test_home_summary_done_child_with_pr_is_waiting_on_merge \
+  test_home_summary_pipeline_handoff_done_is_live_work \
   test_undated_captain_hold_phrasing_and_aging \
   test_hold_buckets_are_total_and_text_blind \
   test_main_inventory_orphan_and_unstructured_disclosure \

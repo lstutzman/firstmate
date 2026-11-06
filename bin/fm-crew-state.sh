@@ -326,6 +326,14 @@ fi
 emit_ship_status_done() {  # [extra-detail]
   local extra=${1:-} reason
   if reason=$(fm_dod_accept_ship_done "$KIND" "$(meta_value mode)" "$WT" "$(meta_value project)" "$LOG_LINE" "$STATE" "$ID" "$META"); then
+    # A no-mistakes ship's pre-validation done: is the handoff to the pipeline,
+    # not a finished task, while the daemon still reports a live run on this
+    # branch: lead with the marker so inventory checks read it as live work.
+    if [ "$KIND" = ship ] && case "$(meta_value mode)" in no-mistakes|'') true ;; *) false ;; esac \
+      && ! fm_dod_should_gate_ship_done "$KIND" "$(meta_value mode)" "$LOG_LINE" \
+      && nm_branch_reports_live_run; then
+      emit "done" status-log "pipeline handoff: validation run not finished${SEP}$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"
+    fi
     emit "done" status-log "$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"
   fi
   emit blocked status-log "$reason"
@@ -440,6 +448,12 @@ nm_run() {  # <args...>
 RUN_OUT=""
 nm_field() {  # <key>
   fm_nm_field "$RUN_OUT" "$1"
+}
+
+# 0 when the last `axi status` read reports an unfinished run on this branch.
+nm_branch_reports_live_run() {
+  [ -n "${CREW_BRANCH:-}" ] && [ -n "${RUN_OUT:-}" ] || return 1
+  [ "$(strip_quotes "$(nm_field branch)")" = "$CREW_BRANCH" ] && fm_nm_run_is_active "$RUN_OUT"
 }
 
 pr_read_record_bounded() {  # <host> <owner> <repo> <number>
