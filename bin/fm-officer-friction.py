@@ -12,6 +12,8 @@ Usage:
                              [--days <n>] [--model none] [--now <epoch>]
                              [--bosun-hosts a,b] [--fm-home <dir>]
                              [--start-home <home>=<projects>[=<role>[=<mandate>]]]...
+                             [--writes none|linear] [--team PC] [--max-creates <n>]
+                             [--max-linear-calls <n>] [--rubric <file>] [--jev <jev.py>]
 
 Friction is anything that slowed an agent down, above all a step it had to
 wait for Lee to do. One day's friction events come from three sources:
@@ -132,8 +134,9 @@ anything. The digest lists each unsettled item for the Quartermaster, never
 for Lee, and an unreachable host is a coverage gap there, never a note in the
 velocity file. The officer never deletes anything.
 
-Re-running a day with unchanged inputs rewrites identical digest bytes; the
-one environment input is this host's name, which counts as the home's own
+Re-running a day with unchanged inputs rewrites identical digest bytes (with writes:
+linear, once its items exist: the Linear call count differs between a first and a
+second run); the one environment input is this host's name, which counts as the home's own
 host for ssh-to-self.
 
 `scan` reads only the archive and prints the per-session facts as JSON, so
@@ -212,15 +215,40 @@ Standing work (STANDING_START) is a finding in a card-bar group whose fix fleet
 rules section 2 already starts ("Velocity findings go ahead by default: an
 agent starts the fix unless Lee objects within a day"); credentials, approvals,
 sudoers rules, the gate-edit and secret hooks, and product decisions are
-reserved and stay open for Lee. Each such finding gets a start request in the
-digest's `start_requests` (and, for this home, a <date>.start-requests.sh
-handoff), the same fm-inbox.sh note call the progress officer writes, addressed
-to the --start-home office whose role is quartermaster, else to --fm-home; an
-office's lane check delivers it (bin/fm-office.sh). The note carries a marker
-line, so a delivered request reads back as started. An `Object` tap on the
-finding's card (a note or reply "Object") keeps it from starting by default.
-Without --fm-home, or when the addressed home is not one of the --home records read (a delivered note could never be
-read back), nothing is started by default and the digest names the gap.
+reserved and stay open for Lee.
+
+Linear. The officer follows the shared officer contract (docs/officers/contract.md;
+bin/fm-officer-linear.py owns the mechanics) with its rubric
+docs/officers/friction-rubric.md, which owns what counts as work, how a finding
+is scored and what starts. With --writes linear (the registry's `writes:
+linear`, with max-creates, max-linear-calls and jev) every finding that is
+real, not tracked (state settled, started or fixed), and not a product choice
+or a retired tool is filed once in team PC, project Fleet, labels Improvement,
+the Source label agent (from Lee's set) and area:fleet, keyed by its cause, sub and name.
+A repeat night raises the item's `Found: N times` line in place, and the found
+count is the priority lever: score = severity weight x log2(1 + found), with a
+card-bar finding high, an uncarded one of friction severity 3 or more medium,
+and the rest low. The item body holds counts, waits, the fix, owner and
+identifiers, and never a transcript line, command or quoted ask. A label that
+team PC lacks means the finding is reported and not filed. Whatever the
+create cap, call budget or a rate limit leaves unfiled is named in the digest
+and filed by the next run. The lane keeps filed-fingerprints.json, found.json
+and review-state.json only when it writes.
+
+Each standing-work finding whose Linear item exists and whose score reaches the
+rubric minimum gets a start request in the digest's `start_requests` (and, for
+this home, a <date>.start-requests.sh handoff), the shared start emitter's
+fm-inbox.sh note call, addressed to the --start-home office that dispatches the
+fleet repositories (the Quartermaster), else to --fm-home; an office's lane
+check delivers it (bin/fm-office.sh). The note carries a marker line, so a
+delivered request reads back as started, and a request is repeated each night
+until it does. A finding that matches a reserved class is held instead, as one
+keyed needs-decision line in the digest's `asks_for_lee`. Without writes: linear
+nothing starts by default (each card offers Start fix and the digest names the
+gap). An `Object` tap on the finding's card (a note or reply "Object") keeps it
+from starting by default. Without --fm-home, or when the addressed home is not
+one of the --home records read (a delivered note could never be read back),
+nothing is started by default and the digest names the gap.
 Each card carries `actions`: open and reported-again offer start-fix, a
 started-by-default card offers object, a started card with no link or task
 offers reopen, and the rest offer none, so a standing-work card never offers a
@@ -566,6 +594,12 @@ STANDING_START = {
     ("environment", "ssh-to-self"), ("environment", "wrong-cwd"), ("environment", "external"),
     ("lee-command", "run"), ("repeat-ask", "instruction"), ("other", "other"),
 }
+# The standing-work causes are the sources the rubric (docs/officers/friction-rubric.md) may let start.
+START_SOURCES = tuple(sorted({cause for cause, _ in STANDING_START}))
+RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "friction-rubric.md")
+TYPE_LABEL = "Improvement"
+# "agent" is the Source label of Lee's Linear setup (2026-10-13) for any worker filing on his behalf.
+SOURCE_LABEL = "agent"
 # The actions the page may draw for each state; a standing-work finding is never offered a bare Start fix.
 STATE_ACTIONS = {"open": ["start-fix"], "reported-again": ["start-fix"], "started-by-default": ["object"],
                  "started": [], "fixed": [], "settled": []}
@@ -1610,7 +1644,14 @@ def name_shared_titles(findings):
     for f in findings:
         if f["title"] in shared and f["name"]:
             room = 90 - len(f["title"]) - 2
-            f["title"] = "%s: %s" % (f["title"], clip(f["name"], max(room, 8)))
+            f["title"] = "%s: %s" % (f["title"], clip(subject(f), max(room, 8)))
+
+
+def subject(f):
+    """A finding's name as it may leave the home: a repeated ask's topic is Lee's own words, so it goes as a hash."""
+    if f["cause"] == "repeat-ask" and f["name"]:
+        return "ask " + hashlib.sha256(f["name"].encode("utf-8")).hexdigest()[:8]
+    return f["name"]
 
 
 def assign_ids(findings):
@@ -1971,43 +2012,180 @@ def card_findings(doc):
             if f["title"] and f["fix"] and (f["cause"], f["sub"]) not in NOT_CARDED][:MAX_CARDS]
 
 
-def start_target(fm_home, offices):
-    """The home a start request is addressed to: the start-home office whose role is quartermaster, else fm_home."""
-    return next((o.home for o in offices if o.role == "quartermaster"), fm_home) if fm_home else None
+def _lib():
+    """The shared Linear filing library, loaded where findings are filed (the archive host never has it)."""
+    mod = sys.modules.get("fm_officer_linear")
+    if mod is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-officer-linear.py")
+        spec = importlib.util.spec_from_file_location("fm_officer_linear", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["fm_officer_linear"] = mod
+    return mod
 
 
-def start_requests(doc, states, fm_home, offices):
-    """The start requests for findings started by default, in rank order, and each one's request id on its state.
+def officer(lib):
+    """The friction officer as the contract (docs/officers/contract.md) knows it: Fleet work, standing-work causes may start."""
+    return lib.Officer("friction", "Friction officer", "Friction officer", RUBRIC_FILE, START_SOURCES,
+                       severities=("high", "critical"), project=lib.FLEET_PROJECT)
 
-    A request is the same inbox note a progress start is (fm-inbox.sh note --request-id), addressed to the office
-    whose role is quartermaster (a start-home office), else to fm_home. The note carries the finding's marker line,
-    so once it is delivered finding_states reads the finding as started. Nothing here executes it.
+
+def lib_findings(lib, doc, states, eligible):
+    """One shared-library finding per friction finding (docs/officers/friction-rubric.md scores it).
+
+    A card-bar finding is high, an uncarded one of severity 3 or more medium, the rest low. A product choice is a
+    decision and a retired tool a won't fix; neither is filed. Only an `eligible` finding that is still
+    started-by-default carries the start wording, so only those can start.
     """
-    target = start_target(fm_home, offices)
-    inbox = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh")
-    rows = []
-    for f in card_findings(doc):
-        rec = states.get(f["id"])
-        if not rec or rec["state"] != "started-by-default":
+    out = []
+    for f in doc["findings"]:
+        state = states[f["id"]]
+        klass = "decision" if (f["cause"], f["sub"]) in NOT_CARDED else \
+            "wont-fix" if f["cause"] == "missing-tool" and f["name"] in RETIRED_TOOLS else "real"
+        title = f["title"] or "%s / %s%s (no rule names a fix)" % (f["cause"], f["sub"], " / " + subject(f) if f["name"] else "")
+        summary = "%d event(s), %d naming Lee, agents waited %s. %s" % (
+            f["events"], f["lee_events"], human_span(f["wait_total_s"]), f["fix"] or "No fix proposed yet.")
+        lf = lib.make_finding(f["cause"], f["sub"], "/".join((f["cause"], f["sub"], f["name"] or "")), title, summary, klass,
+                              "high" if f["carded"] else "medium" if f["severity"] >= 3 else "low",
+                              state["state"] in ("settled", "started", "fixed"), {}, location=subject(f) or "", fix=f["fix"] or "")
+        lf.update(id=f["id"], raw=f, start=False)
+        if f["id"] in eligible and state["state"] == "started-by-default":
+            lf.update(start=True, start_generation=state["generation"] or "", start_what=(
+                "%s: %s. Start this fix without a Start fix tap or another approval question, under fleet rules section 2 "
+                "('Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'); Lee may "
+                "Object. Name friction-%s in the task's branch or its data/backlog.md line, so the friction officer can read its "
+                "merge back. Loosening a guard or gate check is outside this authority; if Lee objects, preserve the branch."
+                % (default_start_marker(f["id"]), title, f["id"])),
+                start_row={"friction_id": f["id"], "card": bottleneck(f, doc["date"])})
+        out.append(lf)
+    return out
+
+
+def description(lf, date, off, near=None, recurrence=None):
+    """The Linear item body. It holds counts and identifiers only: no transcript line, command or quoted ask goes to Linear."""
+    f = lf["raw"]
+    lines = ["Filed by the friction officer from the %s friction events." % date,
+             "What it is for: a step that slowed agents down, fixed once so it is not hit again.",
+             "Epic: not assigned; whoever triages this picks one.", "",
+             "Severity: %s (friction severity %d, confidence %d). Root cause: %s / %s%s." % (
+                 lf["severity"], f["severity"], f["confidence"], f["cause"], f["sub"], ", " + subject(f) if f["name"] else ""),
+             off.found_line(1, date, date)]
+    if recurrence:
+        lines.append(recurrence)
+    if near:
+        lines.append("Near match (not treated as the same issue): %s, local-jev %.2f." % near)
+    lines += ["What Lee had to do: %s." % (f["lee_did"] or "not stated"),
+              "Events on %s: %d, %d naming Lee; %d wait(s) measured, total %s; %d still open; %d re-ask(s)." % (
+                  date, f["events"], f["lee_events"], f["waits_measured"], human_span(f["wait_total_s"]), f["open"], f["reasks"]),
+              "Proposed fix: %s" % (f["fix"] or "none yet"),
+              "Owner: %s; effort %s." % (f["owner"] or "not stated", f["effort"] or "not stated")]
+    ev = f["evidence"]
+    for label, items in (("Tasks", ev["tasks"]), ("Status keys", ev["status_keys"]), ("Cards", ev["cards"])):
+        if items:
+            lines.append("%s: %s" % (label, ", ".join(items[:6])))
+    # No trailing newline: Linear trims it, and `create --verify` then reports a mismatch on a good create.
+    return "\n".join(lines) + "\n%s:%s" % (off.marker, lf["fingerprint"])
+
+
+def file_findings(lib, off, findings, args, date, out, ledger, found, jev, lin):
+    """Files the real, untracked findings, highest score first; returns (writes done, why Linear stopped or None)."""
+    todo = [f for f in findings if f["class"] == "real" and not f["tracked"]]
+    filer = lib.Filer(off, lin, args.team, date, out, ledger, found, jev, args.max_creates)
+
+    def stop(reason, rate_limited=False):
+        for f in todo:
+            f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
+        if rate_limited:
+            lib.pause_for_rate_limit(out, args.now)
+        return lib.summary_rows(todo), reason
+
+    for f in todo:
+        if f["fingerprint"] in ledger:
+            f["filing"], f["issue_hint"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}, ledger[f["fingerprint"]]
+            filer.bumps.append(f)
+    due = [f for f in filer.bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != date]
+    if not any(not f["filing"] for f in todo) and not due:
+        return lib.summary_rows(todo), None
+    stopped = lib.paused_until(out, args.now)
+    if stopped:
+        return stop(stopped)
+    try:
+        names = lib.label_names(lin, args.team)
+    except lib.LinearError as exc:
+        return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
+
+    def label_set(f):
+        return lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
+
+    def describe(f, near=None, recurrence=None):
+        return description(f, date, off, near, recurrence)
+
+    try:
+        for f in todo:
+            if not f["filing"]:
+                filer.file_single(f, label_set, describe)
+        filer.settle_bumps(label_set, describe)
+    except lib.LinearError as exc:
+        if exc.code == "RATE_LIMITED":
+            return stop("Linear rate limit reached: %s" % exc, True)
+        return stop("%s; the next run continues from the ledger" % exc)
+    return lib.summary_rows(todo), None
+
+
+def linear_pass(doc, states, eligible, args, offices, main_home):
+    """Files every finding in Linear (writes: linear) and hands the standing-work ones to the owning office.
+
+    Mutates `states` (a finding whose request could not be written is no longer started by default; a request
+    names its id) and returns the digest fields. A start needs the finding's Linear item, so without writes: linear
+    nothing starts by default and the card offers Start fix. A reserved class (docs/officers/contract.md) is held.
+    """
+    lib = _lib()
+    off = officer(lib)
+    out, date, linear = args.out, doc["date"], args.writes == "linear"
+    lin = lib.Linear(args.max_linear_calls)
+    state = lib.read_json(os.path.join(out, lib.STATE_FILE), {})
+    found = lib.read_json(os.path.join(out, lib.FOUND_FILE), {})
+    ledger = lib.read_json(os.path.join(out, lib.LEDGER_FILE), {})
+    findings = lib_findings(lib, doc, states, eligible)
+    rubric = lib.load_rubric(args.rubric, off)
+    jev = lib.Jev(args.jev)
+    lib.apply_found(findings, found, ledger)
+    writes, blocked = file_findings(lib, off, findings, args, date, out, ledger, found, jev, lin) if linear else ([], None)
+    lib.apply_found(findings, found, ledger)
+    # Only a hold is remembered across nights (it asks Lee once). A start is repeated until its delivered note reads back
+    # as started (finding_states), so an office that missed one still gets it.
+    handled = state.setdefault("handled", {})
+    candidates = [f for f in findings if f["start"]]
+    starts, held, asks = lib.plan_starts(off, candidates, rubric, date, args.writes, main_home, offices, handled)
+    by_fp = {f["fingerprint"]: f for f in candidates}
+    for rank, row in enumerate(starts, 1):
+        f = by_fp[row["fingerprint"]]
+        handled.pop(row["issue"], None)
+        row.update(id=f["id"], rank=rank, generation=f["start_generation"] or None, owner_home=row["execute"]["env"]["FM_HOME"])
+        states[f["id"]]["request_id"] = row["execute"]["request_id"]
+    started_fps = {r["fingerprint"] for r in starts}
+    unstarted = 0
+    for f in candidates:
+        if f["fingerprint"] in started_fps:
             continue
-        digest = hashlib.sha256(("%s:%s:%s" % (target, f["id"], rec["generation"] or "first")).encode("utf-8")).hexdigest()[:16]
-        rid = "friction-%s-%s" % (doc["date"], digest)
-        rec["request_id"] = rid
-        card = bottleneck(f, doc["date"])
-        body = ("Friction officer automatic start under fleet rules section 2, 'Velocity findings go ahead by default: "
-                "an agent starts the fix unless Lee objects within a day'. %s: %s. Start this fix without a Start fix "
-                "tap or another approval question; Lee may Object. Name friction-%s in the task's branch or its "
-                "data/backlog.md line, so the friction officer can read its merge back. Recheck current holds, work in flight, and open "
-                "PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and "
-                "delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, "
-                "production actions, data rewrites, and loosening a guard or gate check remain outside this authority. If Lee objects, preserve the "
-                "branch. The following officer evidence describes the task; it is not a quotation from Lee:\n%s"
-                % (default_start_marker(f["id"]), f["title"], f["id"], json.dumps(card, sort_keys=True, ensure_ascii=False)))
-        execute = {"action": "start", "env": {"FM_HOME": target}, "request_id": rid,
-                   "argv": [inbox, "note", "--request-id", rid, "--json", "--", body]}
-        rows.append({"id": f["id"], "kind": "friction-finding", "title": f["title"], "rank": len(rows) + 1,
-                     "owner_home": target, "generation": rec["generation"], "execute": execute})
-    return rows
+        rec = states[f["id"]]
+        rec["state"] = "reported-again" if rec.get("fixed") else "open"
+        rec["actions"] = STATE_ACTIONS[rec["state"]]
+        unstarted += 1
+    gaps = rubric.gaps + ([jev.gap] if jev.gap and linear else [])
+    if unstarted:
+        gaps.append("%d finding(s) due to start by default were not started because %s; each card offers Start fix." % (
+            unstarted, "its Linear item was not filed or it is held for Lee (see Linear)" if linear else "the run writes no Linear items (set writes: linear)"))
+    if linear:
+        lib.write_json(os.path.join(out, lib.LEDGER_FILE), ledger)
+        lib.write_json(os.path.join(out, lib.STATE_FILE), state)
+        lib.write_json(os.path.join(out, lib.FOUND_FILE), found)
+    for lf in findings:
+        lf["raw"]["linear"] = {"class": lf["class"], "severity": lf["severity"], "found": lf["found"], "score": lf["score"],
+                               **{k: v for k, v in (lf["filing"] or {}).items() if k in ("action", "issue", "reason", "found", "recurrence_of")}}
+    return {"writes": args.writes, "writes_done": writes, "writes_blocked": blocked, "linear_calls": lin.n,
+            "linear_call_budget": lin.budget, "linear_gaps": gaps, "not_filed": lib.not_filed_lines(findings),
+            "held": held, "asks_for_lee": asks}, starts
 
 
 def coverage(scanned, homes, hosts, log):
@@ -2096,6 +2274,12 @@ def render_md(doc):
             lines += ["", "Unsettled, for the Quartermaster (no rule settles them from facts the officer reads):", ""]
             for u in bosun["unsettled"]:
                 lines.append("- %s %s `%s`: %s" % (u["host"], u["kind"], u["item"].replace("`", "'"), u["reason"]))
+    lines += ["", "## Linear", ""]
+    lines.append("- Writes: %s; %d of %d Linear call(s) used%s." % (
+        doc["writes"], doc["linear_calls"], doc["linear_call_budget"],
+        "; stopped: " + doc["writes_blocked"] if doc["writes_blocked"] else ""))
+    lines += ["- " + n for n in doc["not_filed"]]
+    lines += ["- " + a["line"] for a in doc["asks_for_lee"]]
     lines += ["", "## Findings", ""]
     if not doc["findings"]:
         lines.append("- None.")
@@ -2117,6 +2301,11 @@ def render_md(doc):
             " (%s %s)" % (k, st[k]) for k in ("link", "task") if st.get(k)) + (
                 " (reopen: no task or link names it)" if st["reopen"] else "") + (
                 " (rule: %s - %s)" % (st["rule"]["text"], st["rule"]["source"]) if st["rule"] else "")))
+        lin = f.get("linear")
+        if lin:
+            lines.append("- Linear: %s %s; found %d, score %.1f (%s)%s." % (
+                lin["class"], lin.get("issue") or lin.get("action", "not filed"), lin["found"], lin["score"], lin["severity"],
+                ": " + lin["reason"] if lin.get("reason") else ""))
         lines.append("- Proposed fix: %s" % (f["fix"] or "none yet; the model seam is off (model: none)."))
         lines.append("- Owner: %s; effort %s." % (f["owner"] or "not stated", f["effort"] or "not stated"))
         ev = f["evidence"]
@@ -2145,10 +2334,9 @@ def main(argv):
     parser.add_argument("--channel", action="append", default=[])
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--model", default="none")
-    parser.add_argument("--now", type=int)
     parser.add_argument("--bosun-hosts", default="")
-    parser.add_argument("--fm-home")
-    parser.add_argument("--start-home", action="append", default=[])
+    if argv[:1] != ["scan"]:
+        _lib().add_common_args(parser, RUBRIC_FILE)
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date):
         parser.error("--date must be YYYY-MM-DD")
@@ -2198,7 +2386,10 @@ def main(argv):
     offices = [_progress().parse_office(a) for a in args.start_home]
     # A finding starts by default only when the home its request is addressed to is one this pass reads, because the
     # delivered note is the only thing that stops the next night asking again. Without such a home none is started.
-    target = start_target(args.fm_home, offices)
+    lib = _lib()
+    args.now = now
+    lib.check_common_args(parser, args)
+    target = lib.office_home(lib.FLEET_PROJECT, args.fm_home, offices) if args.fm_home else None
     readable = {os.path.realpath(h.path) for h in homes}
     if target and os.path.realpath(target) not in readable:
         doc["coverage"]["notes"].append(
@@ -2211,7 +2402,9 @@ def main(argv):
     # The end of the digest's day, not the clock: a re-run stays byte-identical, and an office delivers the start
     # requests only within 36 hours of it (bin/fm-office.sh), so a digest for a long-past day starts nothing.
     doc["source"], doc["generated_at"] = "friction-officer", iso_utc(day_bounds(args.date)[1])
-    doc["start_requests"] = start_requests(doc, states, args.fm_home, offices) if eligible else []
+    linear, doc["start_requests"] = linear_pass(doc, states, eligible, args, offices, args.fm_home)
+    doc.update(linear)
+    doc["coverage"]["notes"].extend(linear["linear_gaps"])
     for f in doc["findings"]:
         f["state"] = states[f["id"]]
     if args.fm_home:

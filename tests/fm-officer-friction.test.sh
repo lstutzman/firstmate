@@ -18,6 +18,11 @@
 # items skipped, unsettled items in the digest, an unreachable host as a
 # coverage gap),
 # and the registry refusing a friction line with no archive.
+# With writes: linear (a fake linear-axi that logs every call): every finding filed once with
+# Improvement, agent and area:fleet in the Fleet project, a repeat night raising the
+# Found line, no transcript text in an item, a missing label or writes: none starting nothing
+# and leaving the card on Start fix, the create cap naming what it leaves, the rubric
+# narrowing what starts, and only standing-work findings handed to the office.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -30,6 +35,55 @@ T=1792749600      # 2026-10-23T10:00:00Z
 PREV=1792663200   # 2026-10-22T10:00:00Z
 NOW=1792818000    # 2026-10-24T05:00:00Z
 export TZ=UTC
+
+# fake_linear <bindir>: linear-axi driven by $FAKE_LINEAR_DIR (labels.txt, exists.txt, state.<id>); it logs every
+# call to $FAKE_LINEAR_DIR/log and refuses to run without that variable, so no test can reach the real Linear.
+fake_linear() {
+  cat > "$1/linear-axi" <<'SH'
+#!/usr/bin/env bash
+d=${FAKE_LINEAR_DIR:-}
+[ -n "$d" ] || { echo '{"ok":false,"error":{"code":"UNKNOWN","message":"no fake linear dir"}}'; exit 1; }
+printf '%s\n' "$*" >> "$d/log"
+case "$1 $2" in
+  "label list")
+    printf '{"ok":true,"data":{"labels":['
+    sep=''; while IFS= read -r l; do printf '%s{"name":"%s"}' "$sep" "$l"; sep=','; done < "$d/labels.txt"
+    echo ']}}' ;;
+  "issue search")
+    q=${3#friction-fp:}
+    if [ -n "$q" ] && grep -qF -- "$q" "$d/exists.txt" 2>/dev/null; then
+      echo '{"ok":true,"data":{"issues":[{"identifier":"PC-55"}]}}'
+    else echo '{"ok":true,"data":{"issues":[]}}'; fi ;;
+  "issue view")
+    st=$(cat "$d/state.$3" 2>/dev/null || echo Todo)
+    case "$st" in Done) ty=completed ;; *) ty=unstarted ;; esac
+    desc="Found: 1 times (first 2026-10-20, last 2026-10-20, by friction)"
+    [ "$3" = PC-55 ] && desc="$desc\\nfriction-fp:$(tr -d '\n' < "$d/exists.txt")"
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'","state":"'"$st"'","stateType":"'"$ty"'","description":"'"$desc"'"}}}' ;;
+  "issue create")
+    case " $* " in
+      *" --verify "*)
+        n=$(( $(cat "$d/created" 2>/dev/null || echo 100) + 1 )); echo "$n" > "$d/created"
+        for a in "$@"; do [ "${prev:-}" = "--body-file" ] && cat "$a" >> "$d/bodies" && echo >> "$d/bodies"; prev=$a; done
+        echo '{"ok":true,"data":{"issue":{"identifier":"PC-'"$n"'"}}}' ;;
+      *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
+    esac ;;
+  "issue update")
+    case " $* " in *" --verify "*) echo "UPDATE $3" >> "$d/updates" ;; esac
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'"}}}' ;;
+  "issue comment")
+    case " $* " in *" --verify "*) echo "COMMENT $3" >> "$d/comments" ;; esac
+    echo '{"ok":true,"data":{"dryRun":true}}' ;;
+  "issue relation") echo '{"ok":true,"data":{"dryRun":true}}' ;;
+  *) echo '{"ok":false,"error":{"code":"UNKNOWN","message":"unexpected call"}}'; exit 1 ;;
+esac
+SH
+  chmod +x "$1/linear-axi"
+}
+LINEAR_BIN="$TMP_ROOT/linear-bin"
+mkdir -p "$LINEAR_BIN"
+fake_linear "$LINEAR_BIN"
+export PATH="$LINEAR_BIN:$PATH"
 
 write_status() {  # <home>
   local s=$1/state
@@ -117,9 +171,21 @@ make_world() {  # <name>
   printf '%s\n' "$home"
 }
 
-friction_registry() {  # <home> <archive>
-  printf -- '- friction - Finds what slowed agents down, above all waits on Lee (role: friction; cadence: daily 06:15; archive: %s; hosts: alpha; model: none; added 2026-10-24)\n' \
-    "$2" > "$1/data/officers.md"
+friction_registry() {  # <home> <archive> [extra registry fields, each led by "; "]
+  printf -- '- friction - Finds what slowed agents down, above all waits on Lee (role: friction; cadence: daily 06:15; archive: %s; hosts: alpha%s; model: none; added 2026-10-24)\n' \
+    "$2" "${3:-}" > "$1/data/officers.md"
+}
+
+# linear_world <name> [extra registry fields]: a world whose friction line writes Linear items through the fake.
+# Call it directly, not in $(...): it sets LW_HOME (the home) and FAKE_LINEAR_DIR (the fake's folder) for the test.
+linear_world() {
+  local name=$1 home
+  home=$(make_world "$name")
+  LW_HOME=$home
+  friction_registry "$home" "$TMP_ROOT/$name/archive" "; writes: linear; jev: /nonexistent/jev.py${2:-}"
+  export FAKE_LINEAR_DIR="$TMP_ROOT/$name/linear"
+  mkdir -p "$FAKE_LINEAR_DIR"
+  printf '%s\n' Bug Improvement agent area:fleet > "$FAKE_LINEAR_DIR/labels.txt"
 }
 
 run_officer() {  # <home> [args...]
@@ -425,7 +491,8 @@ PY
 
 test_velocity_ids_counts_and_states() {
   local home vel json fakebin ids
-  home=$(make_world states)
+  linear_world states
+  home=$LW_HOME
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
   json="$home/data/officers/friction/$DATE.json"
   run_officer "$home" >/dev/null || fail "run must succeed"
@@ -935,6 +1002,12 @@ test_registry_and_unharvested_day() {
   printf -- '- friction - Finds friction (role: friction; cadence: daily 06:15; model: none; added 2026-10-24)\n' > "$home/data/officers.md"
   out=$(FM_HOME="$home" "$OFFICER" run friction --date "$DATE" 2>&1) && fail "a friction line without an archive must be refused"
   assert_contains "$out" "a friction officer needs archive" "the refusal names the missing field"
+  friction_registry "$home" "$TMP_ROOT/registry/archive" "; writes: sheets"
+  out=$(FM_HOME="$home" "$OFFICER" run friction --date "$DATE" 2>&1) && fail "a friction line with unknown writes must be refused"
+  assert_contains "$out" "writes must be linear or none" "the refusal names the Linear field"
+  friction_registry "$home" "$TMP_ROOT/registry/archive" "; writes: linear; team: ENG"
+  out=$(FM_HOME="$home" "$OFFICER" run friction --date "$DATE" 2>&1) && fail "a friction line writing outside team PC must be refused"
+  assert_contains "$out" "a friction files into team PC only" "the refusal names the team"
   friction_registry "$home" "$TMP_ROOT/registry/archive"
   out=$(FM_HOME="$home" "$OFFICER" run friction --date 2026-10-01 2>&1) && fail "a day with no manifest must fail the run"
   assert_contains "$out" "no archive manifest for 2026-10-01" "the failure names the missing manifest"
@@ -1118,7 +1191,8 @@ SH
 
 test_standing_work_is_started_by_default_with_an_object_action() {
   local home json vel first office
-  home=$(make_world defaults)
+  linear_world defaults
+  home=$LW_HOME
   json="$home/data/officers/friction/$DATE.json"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
   run_officer "$home" >/dev/null || fail "run must succeed"
@@ -1139,7 +1213,7 @@ test_standing_work_is_started_by_default_with_an_object_action() {
     "Name friction-missing-tool-tool-openjdk in the task's branch or its data/backlog.md line" \
     "the note asks the dispatcher to name the finding where its merge is read back"
   assert_contains "$(jq -r '[.start_requests[] | select(.id == "missing-tool-tool-openjdk")][0].execute.argv[6]' "$json")" \
-    "loosening a guard or gate check remain outside this authority" "the note keeps guard loosening outside its authority"
+    "Loosening a guard or gate check is outside this authority" "the note keeps guard loosening outside its authority"
   assert_equals "3" "$(grep -c 'fm-inbox.sh' "$home/data/officers/friction/$DATE.start-requests.sh")" \
     "this home's requests are also written as a shell handoff"
   assert_equals "started-by-default [\"object\"] true" \
@@ -1172,7 +1246,7 @@ test_standing_work_is_started_by_default_with_an_object_action() {
   first="$TMP_ROOT/defaults/direct"
   mkdir -p "$first"
   python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
-    --home "$home" --now "$NOW" >/dev/null || fail "a run with no --fm-home must succeed"
+    --home "$home" --now "$NOW" --writes linear --jev /nonexistent/jev.py >/dev/null || fail "a run with no --fm-home must succeed"
   assert_equals "0" "$(jq '[.bottlenecks[] | select(.state == "started-by-default")] | length' "$first/$DATE.velocity-findings.json")" \
     "without a home to address, no finding is reported as started by default"
   assert_equals "0" "$(jq '.start_requests | length' "$first/$DATE.json")" "and there are no start requests"
@@ -1182,7 +1256,7 @@ test_standing_work_is_started_by_default_with_an_object_action() {
   mkdir -p "$office/state/inbox"
   rm -f "$home/state/inbox/"*.note
   python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
-    --home "$home" --home "$office" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
+    --home "$home" --home "$office" --now "$NOW" --fm-home "$home" --start-home "$office=firstmate,skills,fleet-app=quartermaster=the fleet" --writes linear --jev /nonexistent/jev.py >/dev/null \
     || fail "a run with a start-home must succeed"
   assert_equals "$office" "$(jq -r '[.start_requests[].execute.env.FM_HOME] | unique | join(",")' "$first/$DATE.json")" \
     "start requests go to the office whose role is quartermaster"
@@ -1190,7 +1264,7 @@ test_standing_work_is_started_by_default_with_an_object_action() {
     "an office's requests are not in this home's handoff; its lane check delivers them"
   printf 'id=1-q\nat=2026-10-24T05:10:00Z\n--\nFriction finding [friction-missing-tool-tool-openjdk]: started by default: x\n' > "$office/state/inbox/1-q.note"
   python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
-    --home "$home" --home "$office" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
+    --home "$home" --home "$office" --now "$NOW" --fm-home "$home" --start-home "$office=firstmate,skills,fleet-app=quartermaster=the fleet" --writes linear --jev /nonexistent/jev.py >/dev/null \
     || fail "a run after the office received a note must succeed"
   assert_equals "2" "$(jq '.start_requests | length' "$first/$DATE.json")" \
     "a note delivered into the office's inbox is read back, so the finding is not requested again"
@@ -1199,7 +1273,7 @@ test_standing_work_is_started_by_default_with_an_object_action() {
 
   # An office this pass cannot read could never confirm a delivery, so nothing is started for it.
   python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/defaults/archive" --date "$DATE" --out "$first" \
-    --home "$home" --now "$NOW" --fm-home "$home" --start-home "$office=fleet=quartermaster=the fleet" >/dev/null \
+    --home "$home" --now "$NOW" --fm-home "$home" --start-home "$office=firstmate,skills,fleet-app=quartermaster=the fleet" --writes linear --jev /nonexistent/jev.py >/dev/null \
     || fail "a run with an unreadable start-home must succeed"
   assert_equals "0 0" "$(jq -r '"\(.start_requests | length) \([.findings[] | select(.state.state == "started-by-default")] | length)"' "$first/$DATE.json")" \
     "with the office unreadable no finding is started by default and no request is written"
@@ -1209,7 +1283,8 @@ test_standing_work_is_started_by_default_with_an_object_action() {
 
 test_fixed_reported_again_and_settled_states() {
   local home json vel first
-  home=$(make_world fixed)
+  linear_world fixed
+  home=$LW_HOME
   json="$home/data/officers/friction/$DATE.json"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
   run_officer "$home" >/dev/null || fail "run must succeed"
@@ -1269,6 +1344,171 @@ test_fixed_reported_again_and_settled_states() {
   pass "fm-officer friction: fixed, reported-again and settled findings carry their link, merge, rule and actions"
 }
 
+count_lines() {  # <pattern> <file>: how many lines match; 0 when the file does not exist
+  local n
+  n=$(grep -c -- "$1" "$2" 2>/dev/null || true)
+  echo "${n:-0}"
+}
+
+creates() {  # <log>: the number of verified creates in a fake Linear log
+  count_lines "^issue create .*--verify" "$1"
+}
+
+test_findings_are_filed_in_linear_under_the_contract() {
+  local home json log dir real found_before
+  linear_world filing
+  home=$LW_HOME
+  dir=$FAKE_LINEAR_DIR
+  log="$dir/log"
+  json="$home/data/officers/friction/$DATE.json"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  real=$(jq '[.findings[] | select(.linear.class == "real" and (.state.state | IN("settled", "started", "fixed") | not))] | length' "$json")
+  assert_equals "$real" "$(creates "$log")" "every real, untracked finding is filed once"
+  assert_equals "$real" "$(grep -c '^issue create .*--dry-run' "$log")" "every create is a dry run first, then a verified write"
+  assert_equals "$real" "$(count_lines '^issue create .*--label Improvement --label agent --label area:fleet --project Fleet --verify' "$log")" \
+    "each item has one Type, the agent Source and area:fleet, in the Fleet project"
+  assert_contains "$(grep 'An agent token lacks a scope' "$log" | head -1)" "--priority 2" "a card-bar finding is High priority"
+  assert_equals "$real" "$(count_lines '^friction-fp:' "$dir/bodies")" "every body carries its fingerprint marker, and the marker is alone on its line"
+  assert_equals "$real" "$(count_lines '^Found: 1 times (first 2026-10-23, last 2026-10-23, by friction)$' "$dir/bodies")" "every body starts its one Found line"
+  assert_no_grep "/x/swap.sh" "$dir/bodies" "no quoted command or status line reaches Linear"
+  assert_no_grep "arm 2 done" "$dir/bodies" "no status text reaches Linear"
+  assert_equals "none" "$(jq -r '[.findings[] | select(.id == "decision-decision")][0].linear | "\(.action // "none")"' "$json")" "a product choice is not filed"
+  assert_contains "$(<"${json%.json}.md")" "## Linear" "the digest has a Linear section"
+  assert_equals "ok" "$(jq -r '[.findings[] | select(.linear.class == "real" and .linear.issue != null)] | map(select(.linear.found >= 1 and .linear.score > 0)) | if length > 0 then "ok" else "none" end' "$json")" \
+    "the digest shows each filed finding's found count and score"
+
+  run_officer "$home" >/dev/null || fail "a same-day re-run must succeed"
+  assert_equals "$real" "$(creates "$log")" "a re-run the same day files nothing again"
+  assert_equals "0" "$(count_lines '^UPDATE' "$dir/updates")" "and raises no Found line"
+
+  # A later night raises the Found line in place with one comment, and the score follows the found count.
+  found_before=$(jq '[.issues[]] | length' "$home/data/officers/friction/found.json")
+  jq '.issues |= map_values(.last = "2026-10-20")' "$home/data/officers/friction/found.json" > "$TMP_ROOT/found.json"
+  cp "$TMP_ROOT/found.json" "$home/data/officers/friction/found.json"
+  run_officer "$home" >/dev/null || fail "a later-night run must succeed"
+  assert_equals "$found_before" "$(count_lines '^UPDATE' "$dir/updates")" "each filed item's Found line is raised once, in place"
+  assert_equals "$found_before" "$(count_lines '^COMMENT' "$dir/comments")" "with one comment on the day's first sighting"
+  assert_equals "$real" "$(creates "$log")" "and nothing is filed twice"
+  assert_equals "true" "$(jq '[.findings[] | select(.linear.issue != null)][0].linear | .found == 2 and .score > 6' "$json")" \
+    "the found count of 2 lifts a high finding's score from 4 to 6.3"
+  pass "fm-officer friction: every real finding is filed once in Linear, the Found line rises in place, and no transcript text is sent"
+}
+
+test_a_missing_label_or_no_writes_starts_nothing() {
+  local home json dir vel
+  linear_world nolabel
+  home=$LW_HOME
+  dir=$FAKE_LINEAR_DIR
+  json="$home/data/officers/friction/$DATE.json"
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  printf '%s\n' Bug Improvement area:fleet > "$dir/labels.txt"
+  run_officer "$home" >/dev/null || fail "a run with a missing label must succeed"
+  assert_equals "0" "$(creates "$dir/log")" "with the Source label missing nothing is created"
+  assert_contains "$(jq -r '[.findings[].linear.reason // empty] | join(" ")' "$json")" "label(s) not found in team PC: agent" \
+    "the finding is reported with the missing label named"
+  assert_equals "0 0" "$(jq -r '"\(.start_requests | length) \([.findings[] | select(.state.state == "started-by-default")] | length)"' "$json")" \
+    "with no Linear item no finding starts by default"
+  assert_equals "0" "$(jq '[.bottlenecks[] | select(.state == "started-by-default")] | length' "$vel")" "and no card claims a start"
+  assert_equals "open [\"start-fix\"]" "$(jq -r '[.bottlenecks[] | select(.id == "lee-command-run")][0] | "\(.state) \(.actions | tojson)"' "$vel")" \
+    "the card offers Start fix instead"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$json")" "were not started" "the digest names the gap"
+
+  home=$(make_world nowrites)
+  FAKE_LINEAR_DIR="$TMP_ROOT/nowrites/linear"
+  mkdir -p "$FAKE_LINEAR_DIR"
+  json="$home/data/officers/friction/$DATE.json"
+  run_officer "$home" >/dev/null || fail "a writes: none run must succeed"
+  assert_equals "gone" "$([ -e "$FAKE_LINEAR_DIR/log" ] && echo called || echo gone)" "writes: none makes no Linear call at all"
+  assert_equals "0" "$(jq '.start_requests | length' "$json")" "and starts nothing by default"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$json")" "set writes: linear" "the digest says why"
+  pass "fm-officer friction: a missing Source label or writes: none files and starts nothing, and the card offers Start fix"
+}
+
+test_repeated_ask_words_never_reach_linear() {
+  local home archive dir n day
+  home="$TMP_ROOT/askwords/fixturehost"
+  archive="$TMP_ROOT/askwords/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  for day in 2026-10-22 "$DATE"; do
+    printf '%s\n' '{"sessions": [{"machine": "alpha", "id": "lee-'"$day"'", "first_prompt": "hello", "calls": [], "raw": [' \
+      '  {"type": "user", "timestamp": "'"$day"'T09:00:00.000Z", "message": {"content": "Always rerun the flaky parser benchmarks nightly."}},' \
+      '  {"type": "user", "timestamp": "'"$day"'T09:10:00.000Z", "message": {"content": "Never push straight to the shared database branch."}}]}]}' \
+      > "$TMP_ROOT/askwords/$day.json"
+    officer_archive "$archive" "$day" "$TMP_ROOT/askwords/$day.json"
+  done
+  friction_registry "$home" "$archive" "; writes: linear; jev: /nonexistent/jev.py"
+  export FAKE_LINEAR_DIR="$TMP_ROOT/askwords/linear"
+  dir=$FAKE_LINEAR_DIR
+  mkdir -p "$dir"
+  printf '%s\n' Bug Improvement agent area:fleet > "$dir/labels.txt"
+  run_officer "$home" >/dev/null || fail "a run with two repeated asks must succeed"
+  n=$(jq '[.findings[] | select(.cause == "repeat-ask" and .linear.issue != null)] | length' "$home/data/officers/friction/$DATE.json")
+  assert_equals 2 "$n" "both repeated asks are filed"
+  for word in parser benchmarks nightly database branch; do
+    assert_no_grep "$word" "$dir/log" "no word of Lee's repeated ask reaches a Linear title or search: $word"
+    assert_no_grep "$word" "$dir/bodies" "no word of Lee's repeated ask reaches a Linear body: $word"
+  done
+  pass "fm-officer friction: a repeated ask is filed in Linear without any of Lee's words"
+}
+
+test_groups_of_one_cause_reach_local_jev_apart() {
+  python3 -I - "$ROOT/bin/fm-officer-friction.py" <<'PY' || fail "two groups of one cause must reach local-jev as different reports"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1])
+friction = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(friction)
+lib = friction._lib()
+
+def group(fid, cause, sub, name):
+    return {"id": fid, "cause": cause, "sub": sub, "name": name, "title": "Hook refusals slow agents down",
+            "fix": "Fix the hook so a safe command passes.", "events": 2, "lee_events": 0, "wait_total_s": 60,
+            "carded": True, "severity": 4}
+
+doc = {"findings": [group("a", "guard-hook", "refused", "hook-alpha"), group("b", "guard-hook", "refused", "hook-beta"),
+                    group("c", "repeat-ask", "instruction", "flaky parser benchmarks"),
+                    group("d", "repeat-ask", "instruction", "shared database branch")]}
+states = {f["id"]: {"state": "new", "generation": ""} for f in doc["findings"]}
+texts = [lib.finding_text(lf) for lf in friction.lib_findings(lib, doc, states, set())]
+assert texts[0] != texts[1], texts
+assert texts[2] != texts[3], texts
+assert "hook-alpha" in texts[0] and "hook-beta" in texts[1], texts
+for word in ("parser", "benchmarks", "database", "branch"):
+    assert not any(word in t for t in texts), (word, texts)
+PY
+  pass "fm-officer friction: two groups of one cause reach local-jev as different reports, without Lee's words"
+}
+
+test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started() {
+  local home json dir rubric
+  linear_world capped "; max-creates: 2"
+  home=$LW_HOME
+  dir=$FAKE_LINEAR_DIR
+  json="$home/data/officers/friction/$DATE.json"
+  run_officer "$home" >/dev/null || fail "a capped run must succeed"
+  assert_equals "2" "$(creates "$dir/log")" "max-creates bounds the items one run creates"
+  assert_contains "$(<"${json%.json}.md")" "Not filed (over max-creates for this run)" "the overflow is named in the digest, highest score first"
+  assert_equals "ok" "$(jq -r 'if ([.start_requests[].id] | all(. as $i | [.findings[] | select(.id == $i)][0].linear.issue != null)) then "ok" else "bad" end' "$json")" \
+    "only a finding whose item exists is started"
+
+  rubric="$TMP_ROOT/narrow-rubric.md"
+  sed 's/^- start-sources: .*/- start-sources: lee-command, bogus-source/' "$ROOT/docs/officers/friction-rubric.md" > "$rubric"
+  linear_world narrowed "; rubric: $rubric"
+  home=$LW_HOME
+  json="$home/data/officers/friction/$DATE.json"
+  run_officer "$home" >/dev/null || fail "a run with a narrowed rubric must succeed"
+  assert_equals "lee-command-run" "$(jq -r '[.start_requests[].id] | join(",")' "$json")" "a rubric can narrow what starts"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$json")" "which the code does not admit; ignored" "a value the code does not admit is named and ignored"
+
+  linear_world norubric "; rubric: $TMP_ROOT/absent-rubric.md"
+  home=$LW_HOME
+  json="$home/data/officers/friction/$DATE.json"
+  run_officer "$home" >/dev/null || fail "a run with no rubric must succeed"
+  assert_equals "0" "$(jq '.start_requests | length' "$json")" "a missing rubric starts nothing"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$json")" "unreadable, so nothing starts by itself" "and the digest says so"
+  pass "fm-officer friction: the create cap and the rubric bound what is filed and what starts"
+}
+
 test_merge_word_is_not_a_missing_tool
 test_token_scope_needs_a_token_permission_failure
 test_status_waits_and_root_causes
@@ -1291,3 +1531,8 @@ test_registry_and_unharvested_day
 test_bosun_unsure_class
 test_standing_work_is_started_by_default_with_an_object_action
 test_fixed_reported_again_and_settled_states
+test_findings_are_filed_in_linear_under_the_contract
+test_a_missing_label_or_no_writes_starts_nothing
+test_repeated_ask_words_never_reach_linear
+test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started
+test_groups_of_one_cause_reach_local_jev_apart

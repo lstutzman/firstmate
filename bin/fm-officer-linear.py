@@ -719,6 +719,8 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     rerun repeats the same request and a later day never asks twice. Only an emitted start or hold marks
     it handled. A finding whose Found count has lifted its score to the minimum (a medium at found 3)
     starts like a new finding, which is how the found count reaches the start decision.
+    A finding may carry `start_what` (the request's wording, in place of "Start this Linear item.") and `start_row`
+    (extra fields for the request's evidence); `start_generation` (the merged fix it follows) gives a restart its own request id.
     """
     starts, held, seen = [], [], set()
     sources = rubric.start_sources if rubric.loaded else set(officer.sources)
@@ -746,8 +748,9 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             row = {"kind": "%s-finding" % officer.id, "title": f["title"], "severity": f["severity"], "score": f["score"], "found": f["found"],
                    "source": f["source"], "fingerprint": f["fingerprint"], "issue": issue, "linear_id": issue,
                    "project": f["project"], "linear_only": not f["project"], "reason": "Real %s finding admitted by the rubric" % f["severity"]}
-            rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256(f["fingerprint"].encode("utf-8")).hexdigest()[:16])
-            row["execute"] = execute_for(officer, row, rid, "Start this Linear item.", main_home, start_homes)
+            rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256((f["fingerprint"] + f.get("start_generation", "")).encode("utf-8")).hexdigest()[:16])
+            row.update(f.get("start_row") or {})
+            row["execute"] = execute_for(officer, row, rid, f.get("start_what") or "Start this Linear item.", main_home, start_homes)
             starts.append(row)
     asks = []
     if held:

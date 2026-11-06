@@ -3,7 +3,7 @@
 This is the one page every registered officer follows when it finds work: find it, file it in Linear, triage it, and start it or hold it for Lee.
 Fleet rules section 8 gives every officer authority to create and update Linear items under this contract and its own rubric file.
 This page owns the contract; `bin/fm-officer-linear.py`'s header owns the mechanics, and each officer's `docs/officers/<id>-rubric.md` owns what that officer counts as work.
-The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.md)); the friction, library, page-check, corpus and progress officers each adopt it in their own change.
+The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.md)), then the friction officer ([`friction-rubric.md`](friction-rubric.md)); the library, page-check, corpus and progress officers each adopt it in their own change.
 
 ## The four steps
 
@@ -22,7 +22,7 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
 - A duplicate raises the item's one machine-kept line, `Found: N times (first <date>, last <date>, by <officer-id>)`, in place, and adds one comment on that day's first sighting and no more.
 - Every Linear write is `--dry-run` and then `--verify`.
   A failed verify is never retried blindly; the fingerprint search decides whether the item exists.
-- Each item has one Type, one Source (the officer's own Source label) and one area label.
+- Each item has one Type, one Source (a Source label from Lee's set, named in the officer's rubric: agent, captain, bug-sweep, scheduled-review or slack-desk) and one area label.
   A fleet finding (the officer's project is `Fleet`, or the finding names firstmate, skills or fleet-app) goes in the Fleet project, and the library sets its area label to `area:fleet` whatever the officer's own labels say; `area:fleet` on any other finding stops it being filed.
   This holds for every item the library creates, an officer's grouped items included: a group never mixes fleet and PropertyCompass2 findings, and a fleet group is created like a fleet finding.
   The officer's own label lookup does not cover `area:fleet`; if team PC lacked it, Linear's dry run would refuse the item and the digest would report it failed.
@@ -101,5 +101,5 @@ An officer adopts it in one change:
 - add its `docs/officers/<id>-rubric.md`, using the headings above;
 - load `bin/fm-officer-linear.py`, declare an `Officer` with its id, label, rubric file, allowed sources and project, and file through `Filer` (`file_single`, or `item_labels` and `create` with the item's project for anything it groups); a finding's own repository, else the officer's project, decides both filing and routing: Fleet work (the `Fleet` project or a fleet repository) is filed in the Fleet project and its starts and patterns go to the Quartermaster, and anything else is filed with no Linear project;
 - add `writes: linear`, `max-creates`, `max-linear-calls` and `start-home` to its registry line ([Officers](../configuration.md#officers-dataofficersmd)), and have `bin/fm-officer.sh` pass them to its script as it does for the Surgeon;
-- make sure its Source label exists in team PC; the library sets `area:fleet` and the Fleet project for fleet work itself;
+- name its Source label in the rubric, one of Lee's set, so it exists in team PC; the library sets `area:fleet` and the Fleet project for fleet work itself;
 - prove it with tests that run the officer through `bin/fm-officer.sh` against a fake `linear-axi`, as `tests/fm-officer-surgeon.test.sh` does.
