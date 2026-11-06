@@ -141,9 +141,10 @@ fm_office_in() {  # <item> <comma-list>
 
 fm_office_role_check() {  # <role>: 0 for an office role, or 1 with FM_OFFICE_ERROR
   case " $FM_OFFICE_ROLES " in *" $1 "*) return 0 ;; esac
+  FM_OFFICE_ERROR="unknown role \"$1\" (known: $FM_OFFICE_ROLES)"
+  [ -n "$1" ] || return 1
   case " $FM_OFFICE_RESERVED_ROLES " in
     *" $1 "*) FM_OFFICE_ERROR="role \"$1\" is reserved: it has no charter or authority yet" ;;
-    *) FM_OFFICE_ERROR="unknown role \"$1\" (known: $FM_OFFICE_ROLES)" ;;
   esac
   return 1
 }

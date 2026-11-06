@@ -3,8 +3,8 @@
 # report gaps, run an office's own wake-source checks, and project an office
 # home's work onto its status file.
 #
-# An office is a second mate that runs a standing role mandate (navigator or
-# quartermaster) instead of idling. docs/configuration.md "Offices
+# An office is a second mate that runs a standing role mandate (navigator,
+# quartermaster, alchemist or librarian) instead of idling. docs/configuration.md "Offices
 # (data/offices.md)" owns the registry schema; this header owns the mechanics.
 #
 # Usage:
