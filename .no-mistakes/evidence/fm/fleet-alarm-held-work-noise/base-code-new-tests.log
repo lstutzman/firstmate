@@ -1,0 +1,18 @@
+ok - idle secondmate never alarms, regardless of silence
+ok - partial child observations retain independently trustworthy work counts
+ok - inventory contradictions remain loud on reachable homes
+ok - done children waiting on merge are healthy waiting
+ok - offline laptops are not collected while reachable inventory failures alarm
+ok - quota alarm thresholds are strict at the configured boundaries
+ok - cached summary reader completes inside budget with oversized status history
+ok - cached remote inventory and parent-channel silence preserve source and freshness boundaries
+ok - slow remote summary reads do not starve the silent-mate check
+ok - idle exhausted account does not alarm while the pool has headroom
+ok - one, several, and no carrying accounts use successful Claude traffic only
+ok - pool mean excludes stale readings
+ok - host config uses the first non-comment non-blank line with surrounding whitespace trimmed
+ok - collection errors report the actual reason without echoing config contents
+ok - carrying threshold deduplicates per reset window
+ok - a mate working or paused on in-progress work is healthy; a quiet or long-expired one still alarms
+ok - captain-held mates are healthy idle while stuck or un-held work still alarms
+not ok - a done child held for a captain call is complete, not an incomplete inventory

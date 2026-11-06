@@ -1,0 +1,22 @@
+{
+  "valid": true,
+  "counts": {
+    "in_flight": 1,
+    "held_in_flight": 0,
+    "active_children": 1,
+    "decisions_open": 0,
+    "holds": 0,
+    "waiting_on_merge": 0,
+    "queued": 0,
+    "landed": 0,
+    "endpoints": 1
+  },
+  "endpoints": [
+    {
+      "id": "live-kind-item",
+      "kind": "ship",
+      "state": "working"
+    }
+  ]
+}
+PASS: every endpoint carries kind
