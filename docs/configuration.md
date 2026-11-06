@@ -709,6 +709,7 @@ Legacy tmux metadata remains cleanup-compatible when its exact window name is `f
 [`herdr-backend.md`](herdr-backend.md#watching-and-task-containers) owns launcher-bound workspace placement, the label-only fallback, collision handling, and recovery behavior.
 
 The local `config/herdr-presentation-spaces` file instead opts a home out of, or explicitly in to, Herdr's default-on disposable single-task visual projection; [Presentation spaces](herdr-backend.md#presentation-spaces) owns its accepted values, default, Herdr version floor, migration, behavior, safety limits, recovery contract, and narrow locked session-start cleanup of exact restored idle-shell children.
+Every Herdr home also keeps the captain's bare `Terminal` workspace and flags agents that share a workspace; [Terminal workspace and agent placement](herdr-backend.md#terminal-workspace-and-agent-placement) owns that check.
 The setting is inherited into secondmate homes under the primary-authoritative contract owned by [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
 The local `config/herdr-project-groups` file opts a home in to display-only Herdr project groups; [Project groups](herdr-backend.md#project-groups) owns its values, rules, tags, inheritance, and limits.
 
@@ -1423,7 +1424,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `reopen-state` | Landing only, optional: the state a Done item moves to when its linked PR never reached main (`on_main` false) or any release; default `In Progress`; `In Staging` and `Done` are refused. A Done item on main but not yet in production is release lag and is only reported |
 | `max-facts-age` | Landing only, optional: the oldest facts, in hours since their `generated_at`, the officer writes to Linear from; default 36. Older or missing `generated_at`, or facts with no `production_sha`, make no Linear write and raise a `stale-facts` finding |
 | `done-window` | Landing only, optional: how many Linear Done items one run lists, in one paged read, to find Done items no landing fact names; default 100, and 0 skips that read |
-| `start-home` | Progress and surgeon, optional: comma-separated office ids. Each must pass the same checks as a `consumer` office, because the office's own lane check delivers the start requests for its projects, except that a `lane:<officer-id>:high` source needs no `main` consumer, since that check delivers them either way; a request whose project is in that office's `dispatch:` list (a Linear item in the team, or a backlog row with only a Linear id, counts as PropertyCompass2) is addressed to that office's home instead of this one. An office that fails those checks gets no requests, so its projects' requests stay with this home |
+| `start-home` | Progress, surgeon and friction, optional: comma-separated office ids. Each must pass the same checks as a `consumer` office, because the office's own lane check delivers the start requests for its projects, except that a `lane:<officer-id>:high` source needs no `main` consumer, since that check delivers them either way; a request whose project is in that office's `dispatch:` list is addressed to that office's home instead of this one; the surgeon treats a request with no project as PropertyCompass2 work, and for the progress officer a request with no project (every Top of Mind ask, and every Linear-only item, whose `project` is a Linear project rather than a repository) is placed in this order: the repository of a linked GitHub URL, a project name in the ask's words, a Linear id in the officer's team (PropertyCompass2), each matched against the offices' `dispatch:` projects, then the ask's source (a "Start fix:" tap, a velocity or friction finding, goes to the office whose `role` is `quartermaster`), where the first of these that names any office decides and one that names two offices is ambiguous; when none does, local-jev, the local classifier (the local-jev skill's `jev.py`, or the script named by `FM_LOCAL_JEV`), which is sent only the ask's words, picks among the offices' roles (no `main` option; each described for the role and its `dispatch:` projects), the pick must reach confidence 0.7, and one more local-jev question keeps the ask with this home when it concerns neither the PropertyCompass2 app nor the agent fleet (below 0.2 it fits no office scope). Every ask placed either way then gets two local-jev hold checks, each keeping it with this home: whether it is a constraint, answer, approval or decision rather than a request for work (0.85 or more; skipped for a "Start fix:" tap, the captain's own start), and whether it is a change to pricing, legal text, payments or spending (0.85 or more). Any other outcome, including an unreachable local-jev (after which the run stops asking it), leaves the request with this home and records an `unrouted` reason on it, with no cloud model call. An office that fails those checks gets no requests, so its projects' requests stay with this home |
 | `writes` (surgeon) | Surgeon, optional: `none` (default) files nothing; `linear` files Linear items as described under [Surgeon](#surgeon) |
 | `max-creates` | Surgeon, optional: the most new items one run attempts to create (clusters included, updates and found-count edits not); default 100. A failed create counts only once its dry run passed |
 | `max-linear-calls` | Surgeon, optional: the most `linear-axi` calls one run makes; default 450. The run stops its Linear work there, names what is left, and the next run continues; it is not a rate-limit pause |
@@ -1450,7 +1451,10 @@ After adding a line, run `bin/fm-officer.sh register <id>` to install and trust 
 Session start runs `bin/fm-officer.sh ensure`, which prints one `OFFICER:` line per gap.
 A second mate home never runs officers: `register` and `run` refuse there, and `ensure` reports any registry it finds.
 The friction officer also writes `<date>.velocity-findings.json`, a fleet-app velocity findings file (`FINDINGS_SCHEMA` schema version 1, source `friction-officer`) for the velocity audit page (`/runs/velocity-audit`); it never posts that file itself.
-Each finding in it carries a stable `id`, its `events` count and a read-only `state` (`open`, `started` with a `link`, or `settled`), and the file carries `totals` of the day's events and findings; `bin/fm-officer-friction.py`'s header owns how the state is read.
+Each finding in it carries a stable `id`, its `events` count, a read-only `state` and the `actions` the page may draw for it; the file carries `totals` of the day's events and findings, and `bin/fm-officer-friction.py`'s header owns how the state is read.
+`state` is one of `open` (action `start-fix`), `started` (carries `link` and `task` when known, or `reopen: true` when neither is, which offers `reopen`), `fixed` (carries `fixed`: `{link, merged_at}` of the merged fix), `reported-again` (the fix merged and the finding was seen after it; carries `fixed`, offers `start-fix`), `started-by-default` (offers `object`; carries `request_id`) and `settled` (carries `rule`: `{text, source}`, the standing-rule line quoted and where it sits).
+A finding whose fix is standing work (fleet rules section 2: a velocity finding goes ahead unless Lee objects within a day, reserved classes excepted) is never offered a bare Start fix: it is `started-by-default`, and the digest's `start_requests` (also written as `<date>.start-requests.sh` for this home) hold the start note for the `start-home` office whose role is quartermaster, else this home, delivered by that office's lane check like a progress start.
+An `Object` reply on the finding's card keeps it from starting by default.
 A line in a home's `data/captain-shared.md` that says "standing rule" or "standing exception" settles a finding only when it names the finding's `id` (alone or as `friction-<id>`) or its key written `settles: <cause>/<sub>`, for example `settles: policy/merge-word`; a finding about one tool, hook or service also needs the line to name it, or the key written `settles: <cause>/<sub>/<name>`. No looser wording settles a finding.
 The fleet app pulls the file from the officer's lane, a fleet-app follow-up that Slarti owns.
 With `bosun-hosts` set, the friction officer also runs the `bosun-unsure` class: it answers the Bosun's `rule-settles` unsure items from fleet rules section 6 and writes the answers to `bosun-answers.json` in its lane, never into the velocity file, which fleet-app pulls.
@@ -1463,7 +1467,8 @@ The triage and friction officers read this home and each local second mate home 
 ### Surgeon
 
 The Ship's Surgeon is the triage pass plus intake.
-`bin/fm-officer-surgeon.py`'s header owns the classification tables, severity rules and Linear steps, and [`docs/officers/surgeon-rubric.md`](officers/surgeon-rubric.md) owns what counts as work, how it is scored, what starts and what holds for Lee; `bin/fm-officer-triage.py` stays because the friction pass imports it.
+It files, dedupes, scores and starts through the shared library `bin/fm-officer-linear.py`, whose contract every officer follows: [`docs/officers/contract.md`](officers/contract.md) owns it.
+`bin/fm-officer-surgeon.py`'s header owns the classification tables and severity rules, `bin/fm-officer-linear.py`'s header owns the Linear steps, and [`docs/officers/surgeon-rubric.md`](officers/surgeon-rubric.md) owns what counts as work, how it is scored, what starts and what holds for Lee; `bin/fm-officer-triage.py` stays because the friction pass imports it.
 Its digest keeps the session join's findings under `archive_findings` and puts the intake findings in `findings`, so a `severity: high` (or `critical`) there, which the `lane:surgeon:high` [wake source](#offices-dataofficesmd) counts, means a high intake finding and never an archive coverage gap.
 Intake reads the fleet app with `GET` only: `/api/runs`, the latest result of each live nightly E2E or code-review job, and `/api/sweeper-results`.
 A red nightly E2E finding is high only when its run's `sha` is the current staging tip, and medium for an older run; an unreadable tip or a result with no `sha` rates it medium and adds a coverage gap.
@@ -1472,9 +1477,8 @@ A sweeper bug whose `environment` is production moves up one severity step; the 
 A finding the source already put in Linear is `tracked` and never filed again.
 A real finding whose source gave no key is fingerprinted from its normalised title plus location.
 With `writes: linear`, the Surgeon files each real, untracked finding in team PC: medium or higher findings one item each, low review findings one item per component cluster.
-Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`), one area label derived from the finding (the `triage-label` when none fits), and `surgeon-fp:<sha256>` in its description, which a search for the fingerprint (and the lane's `filed-fingerprints.json`) checks first; a text search then asks local-jev whether a candidate is the same issue, above 0.85.
-A duplicate raises the existing item's `Found: N times (first <date>, last <date>, by surgeon)` line in place and adds at most one comment a day; a duplicate of a closed (completed or canceled) item, single or cluster, is never reopened or edited but filed as a new item that names the old one (`Recurrence of <id> (closed as <state>)`) and links it as related.
-It never closes or deletes an item, and a cluster item or its own Found line is the only text it edits.
+Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`) and one area label derived from the finding (the `triage-label` when none fits).
+Fingerprinting, duplicate detection, the `Found:` line, recurrences of closed items and what the Surgeon never touches are the shared [filing rules](officers/contract.md#file); its own cluster items are the only text it edits besides the Found line.
 Every Linear call is counted against `max-linear-calls`.
 One rate-limit answer from Linear stops the run's Linear calls and writes `linear-resume-after.json` in the lane; runs before that time make no Linear call.
 The lane also keeps `review-state.json` (cluster membership, the weekly burn-down), `found.json` and `patterns.json`.
@@ -1526,7 +1530,7 @@ An unreachable app is a finding, not a failed run.
 ### Repeated asks (friction officer)
 
 The friction officer also compares Lee's typed instructions across the last `ask-days` days of the session archive (interactive and worker sessions, never a worker's launch brief, which quotes him).
-Only text Lee typed counts: a user-role record the harness injected, such as a peer or agent message, hook context, a tool result, a sub-agent prompt or a compaction summary, is skipped, so Claude Code's own built-in text is never read as Lee repeating himself; `typed_text` in `bin/fm-officer-friction.py` owns the exact markers.
+Only text Lee typed counts: a user-role record the harness injected, such as a peer or agent message, hook context, a tool result, a sub-agent prompt or a compaction summary, is skipped, as is guidance the harness wraps into a typed message (such as a `<system-reminder>` block), so Claude Code's own built-in text is never read as Lee repeating himself; `typed_text` in `bin/fm-officer-friction.py` owns the exact markers.
 It sees only what the archive holds: a message Lee gave somewhere that is not archived as a Claude Code transcript is not counted.
 Each instruction is dated by its own message time in the archive's timezone, not by the day whose manifest lists the session, and a session listed on several days is read once, so one long chat holding asks on different days counts each ask on the day Lee gave it.
 An instruction given on two or more days, one of them the run's day, becomes a `repeat-ask` finding with Lee's scrubbed sentence for each day, so a repeat becomes automatic work instead of Lee repeating himself.
@@ -1647,9 +1651,10 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 | `linear_coverage` | Linear discovery counts described under [Progress officer](#progress-officer) |
 
 Each work record has `id`, `title`, `owner_home`, nullable `linear_id`, all linked `linear_ids`, nullable `authorising_class`, nullable `tag_source`, `reason`, `evidence`, numeric `priority` (0 means unspecified), nullable `rank`, and nullable `execute`.
-Optional `link`, `project`, `outcome`, and `captains_log_key` preserve source context for the page projection.
+Optional `link`, `links` (every URL a Top of Mind ask links), `project`, `linear_only` (true when the record comes from Linear alone, so its `project` is a Linear project), `outcome`, and `captains_log_key` preserve source context for the page projection.
+A start request with an optional `unrouted` reason is one that no rule places with an office (see [`start-home`](#officers-dataofficersmd)), so it stays with this home.
 Only start requests have a one-based `rank` and an `execute` object; filler also carries `execute`.
-The execution object contains `action: start`, `request_id`, `env.FM_HOME` (this home, or the [`start-home`](#officers-dataofficersmd) office whose `dispatch:` list holds the project), and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
+The execution object contains `action: start`, `request_id`, `env.FM_HOME` (this home, or the [`start-home`](#officers-dataofficersmd) office the request is addressed to), and an argument array `argv` for the existing idempotent `fm-inbox.sh note` intake.
 The adjacent shell handoff runs the quoted argument arrays addressed to this home in rank order, followed by filler when present; requests addressed to an office are not in it.
 The request identifier is stable for the same item and date, so retries replay the original inbox note; a later date may retry work still unstarted.
 
@@ -1661,6 +1666,7 @@ If Lee later stops requested work, keep its branch parked rather than discarding
 Each `start-home` office's `lane:<officer-id>` (or `:high`) wake source delivers the requests addressed to its own home: the office's check reads the dated JSON and runs only requests whose `env.FM_HOME` is that office's home, in rank order, through its own `fm-inbox.sh note` with the recorded arguments, never a program named in the file.
 It delivers nothing from a digest whose `generated_at` is more than 36 hours old, stops at the first request it cannot deliver, and retries on the next check; the stable request identifier makes every retry a replay, so each request becomes one inbox note.
 The office then judges and dispatches each note under the `office-roles` skill as ordinary routed work.
+An ask that no rule places stays in this home's handoff and the Markdown digest's request line says why, with local-jev's label and confidence when it answered; it is never dropped.
 For example, `start-home: navigator,quartermaster` sends PropertyCompass2 work to the Navigator and fleet work to the Quartermaster; each office must list `lane:progress` in its `sources:`, and `repos:` must name every repository whose open PRs should stop a duplicate start, the fleet repositories included.
 The officer writes only its findings lane and never executes the handoff itself.
 
@@ -1710,11 +1716,14 @@ Offices live in the primary home's `data/offices.md`, one line per office, in th
 | `auto-merge-classes` | Must be `none`; no class auto-merges yet |
 | `wip` | The most live tasks the office may run at once, 1 to 9 |
 | `tick` | `every Nh` (N from 1 to 24) |
-| `sources` | Comma-separated `tick`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
+| `sources` | Comma-separated `tick`, `upstream`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
 
 Each source is a watcher check in the office home's own `state/`, so it wakes the office and never main.
 `bin/fm-office.sh register-sources`, run in the office home, installs and trusts one `state/office-<source>.check.sh` per listed source, and `bin/fm-office.sh check <source>` is its body; the script's header owns what each prints and when it stays silent.
-`tick` fires once per slot of the office's `tick` cadence when a place under `wip` is free and work could start; `lane:<officer-id>` fires once per new digest of that officer in the parent home; `lane:<officer-id>:high` fires only for findings the digest's `.json` marks high or critical; either also delivers a progress or surgeon digest's start requests addressed to the office (see [Progress officer](#progress-officer) and [Surgeon](#surgeon)).
+`tick` fires once per slot of the office's `tick` cadence when a place under `wip` is free and work could start; `lane:<officer-id>` fires once per new digest of that officer in the parent home; `lane:<officer-id>:high` fires only for findings the digest's `.json` marks high or critical; either also delivers a progress, surgeon or friction digest's start requests addressed to the office (see [Progress officer](#progress-officer), [Surgeon](#surgeon) and the friction officer's started-by-default findings above).
+`upstream` is the daily check for new commits on the firstmate upstream: the optional local `config/firstmate-upstream` holds one line, `<remote-or-url> [<branch>] [<fork-ref>]` (branch defaults to `main`, fork-ref to `origin/main`), and the source wakes the office once per new upstream head with the commit count, the merge-base..head range and the newest subjects; it is silent when the fork already has everything, when the file is absent, and on a transient fetch failure (a failure lasting 24 hours is reported once).
+It is the one source that contacts another host, and `bin/fm-office.sh` owns its attempt cadence and records.
+The check only wakes the office; the sync itself is ordinary dispatched work.
 
 A local office home also carries a `.fm-office` marker holding the office id and a `data/charter.md` with a `# Office authority` heading.
 `bin/fm-brief.sh <id> --secondmate --office <id>` writes that role charter, a standing mandate that replaces the second mate's idle-by-default clauses, and `bin/fm-home-seed.sh ... --office <id>` seeds the home with the marker, the merge tokens and admission copies its line needs, and its source checks; each script's header owns its checks and refusals, and the `office-roles` skill owns each role's mandate.
@@ -1734,7 +1743,7 @@ These checks only refuse, and a home that is not an office never runs them.
 ### Office status (data/office-status.json)
 
 `bin/fm-office.sh status` runs inside an office home and projects that home's own work onto `data/office-status.json`, the file the fleet app's Status page pulls.
-It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only `data/office-status.json` and `state/office-status.seen.json`, prints nothing on success, and does nothing in a home without a `.fm-office` marker.
+It reads only the home's `data/backlog.md`, `data/office-decisions.md` and `state/<task>.meta`, writes only `data/office-status.json` and `state/office-status.seen.json`, prints nothing on success, and does nothing in a home without a `.fm-office` marker.
 `bin/fm-office-status.py` owns the mechanics.
 
 ```json
@@ -1747,6 +1756,9 @@ It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only 
     { "id": "pc-4701-fix", "title": "...", "state": "working", "link": "https://github.com/...", "since": "2026-11-03T00:00:00Z" },
     { "id": "pc-4712", "title": "...", "state": "next", "link": "", "waiting": "Lee" },
     { "id": "pc-4690-fix", "title": "...", "state": "done", "link": "https://github.com/...", "done_at": "2026-11-04T09:40:00Z" }
+  ],
+  "decisions": [
+    { "date": "2026-11-05", "source": "10-article research, rank 8", "finding": "...", "call": "Needs Lee: ...", "action": "Asked Lee, key alert-wakes-agent" }
   ]
 }
 ```
@@ -1760,6 +1772,12 @@ It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only 
 `office` is the `.fm-office` marker and `title` is that id with its first letter capitalized.
 `title` on a card is the row text without its trailing `(key: value)` groups and URL, cut to 200 characters.
 Cards are ordered working, then next, then done (newest first).
+
+`decisions` lists the findings the office judged important, projected from the home's `data/office-decisions.md`, so they show on the Status page and not only in notes.
+That file holds a markdown table with the columns `Date | Source | Finding | Call | Action`; cells split on unescaped `|` only, and `\|` inside a cell reads as `|`; the header, separator and any line that is not a five-cell row with an ISO `YYYY-MM-DD` date and a non-empty finding and call are skipped, and an absent or unreadable file gives an empty list.
+Each object carries its five cells as plain text (a link in a cell stays as written), ordered newest date first (rows of the same date newest line first) and capped at 20.
+The key was added to schema version 1; readers that ignore unknown keys are unaffected.
+Filing a decision stays with the office; this projection only reads the file.
 
 The backlog records only a date (`merged` or `done`) for a finished item, so the check keeps the time it first saw each done item in `state/office-status.seen.json`, a JSON object of item id to UTC time, replaced atomically.
 A done card shows while that first-seen time is at most 24 hours old, then leaves, which the page shows as a finished card leaving.
@@ -4092,6 +4110,8 @@ FM_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls
 FM_TASK_INBOX_GRACE_SECS=90   # seconds an unhandled steering-inbox message may sit before the watcher attempts doorbell delivery on an idle endpoint; also the minimum spacing between attempts
 FM_TASK_INBOX_RING_MAX=3      # watcher delivery attempts without an acknowledgement before the task surfaces as a stale wake for recovery
 FM_TASK_INBOX_BUSY_MAX=2      # consecutive busy-deferred due polls before a stuck-busy stale wake; 1..999999999, at most 9 decimal digits, otherwise 2; policy: bin/fm-task-inbox-lib.sh
+FM_TASK_INBOX_DEDUP_WINDOW=200   # newest sequence numbers an idempotent (remote) steering write compares for a matching body; older records are not matched; policy: bin/fm-task-inbox-lib.sh
+FM_TASK_INBOX_HANDLED_KEEP=500   # acknowledged records kept in <task>.inbox/handled/; older ones move to <task>.inbox/archive/, never deleted; policy: bin/fm-task-inbox-lib.sh
 FM_CHECK_TIMEOUT=30     # seconds allowed per slow check script; a cut check wakes with its output so far plus `timed out after <seconds>s`
 FM_WATCH_REMOTE_BUDGET=30   # seconds allowed per remote poll the watcher cycle waits on (secondmate liveness probe, pending-reply observation); a poll past it reads as an unreachable host, never a dead one
 FM_MAIL_CHECK_BUDGET=15   # seconds allowed for one standing mail poll; valid 5..25, cut to fit FM_CHECK_TIMEOUT

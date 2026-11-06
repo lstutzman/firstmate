@@ -73,7 +73,7 @@
 # register-sources runs in an office home (one carrying .fm-office). It reads
 # the office's registry line from the parent's data/offices.md, writes one
 # shim state/office-<source>.check.sh for each source in its sources: field
-# (tick -> office-tick, lane:progress -> office-lane-progress,
+# (tick -> office-tick, upstream -> office-upstream, lane:progress -> office-lane-progress,
 # lane:surgeon:high -> office-lane-surgeon-high), and binds each with
 # fm-check-register.sh. Each shim exports FM_HOME for the office home and
 # execs "fm-office.sh check <source>". It is idempotent, and it unregisters an
@@ -81,7 +81,7 @@
 # watcher sweeps state/*.check.sh, so a source wakes the office and never main.
 #
 # check <source> is the body of a source check. It is fast, contacts no other
-# host, always exits 0, and prints one line at most:
+# host (except the upstream source, below), always exits 0, and prints one line at most:
 #   tick             "office <id>: tick <YYYY-MM-DDTHH>: <n> of <wip> places free, <q> queued"
 #                    once per slot of the registry line's tick: cadence, when a
 #                    place is free (live ship and scout task records < wip) and
@@ -94,8 +94,8 @@
 #                    "office <id>: <officer> digest <key>: <n> high-severity finding(s) in <path>"
 #                    once per new count of findings in the digest's .json whose
 #                    severity is "high" or "critical", or a number of 4 or more.
-# Either lane form, reading a progress or surgeon digest (.json source "progress-officer"
-# or "surgeon-officer"),
+# Either lane form, reading a progress, surgeon or friction digest (.json source
+# "progress-officer", "surgeon-officer" or "friction-officer"),
 # first delivers the start requests whose execute.env.FM_HOME is this office home:
 # in rank order, by running this code root's fm-inbox.sh with the request's
 # recorded note arguments (never the program the file names), with FM_HOME set to
@@ -110,6 +110,25 @@
 # in the office home. A remote parent, an unreadable file, an unregistered
 # source or a home that is not an office is silent. Start delivery runs
 # fm-inbox.sh in this home only; nothing in the parent is written.
+#
+#   upstream         "office <id>: upstream <old>..<new>: <n> new commit(s) not in <fork-ref>; newest: <subject> | ..."
+#                    once per new upstream head, read from config/firstmate-upstream
+#                    (one line: <remote-or-url> [<branch>] [<fork-ref>]; branch defaults to
+#                    main, fork-ref to origin/main; absent file: silent). It tries at most
+#                    once an hour and, after a success, once per UTC day. It is the one
+#                    source that contacts another host (git ls-remote, then a bounded fetch
+#                    into refs/fm-upstream-check/head of this code root, only for a head not
+#                    yet reported; the network calls together stay under the watcher's 30s
+#                    check limit). It is silent when upstream has nothing the fork lacks,
+#                    and on a failed attempt until failures span 24 hours, when it reports
+#                    "upstream check of <src> against <fork-ref> failing since <date>; ..."
+#                    once per failure streak. An attempt counts as failed until it succeeds,
+#                    so a killed attempt or a fork-ref that does not resolve counts too; a
+#                    gap of more than 2 hours since the last attempt starts a new streak.
+#                    <old> is the merge base. Records: data/office/upstream.seen (last
+#                    head reported or found empty), upstream.day (last successful UTC
+#                    day), upstream.try (last attempt) and upstream.fail (first failure
+#                    epoch, with a "reported" suffix once reported).
 #
 # Environment: FM_HOME, FM_DATA_OVERRIDE, FM_STATE_OVERRIDE as the other bin/ scripts do.
 # FM_OFFICE_HOST names this host for tests (default: hostname -s).
@@ -183,17 +202,17 @@ office_problems() {
   [ "$v" = none ] || printf 'auto-merge-classes must be none, got "%s"\n' "$v"
   v=$(line_field "$line" sources || true)
   if [ -z "$v" ]; then
-    printf 'sources must list tick or lane:<officer-id>[:high]\n'
+    printf 'sources must list tick, upstream or lane:<officer-id>[:high]\n'
   else
     for p in ${v//,/ }; do
       case "$p" in
-        tick) ;;
+        tick|upstream) ;;
         lane:*)
           p=${p#lane:}; p=${p%:high}
           grep -Eq "^- $p - " "$DATA/officers.md" 2>/dev/null \
             || printf 'source lane:%s is not a registered officer\n' "$p"
           ;;
-        *) printf 'source "%s" must be tick, lane:<officer-id> or lane:<officer-id>:high\n' "$p" ;;
+        *) printf 'source "%s" must be tick, upstream, lane:<officer-id> or lane:<officer-id>:high\n' "$p" ;;
       esac
     done
   fi
@@ -440,7 +459,7 @@ cmd_register_sources() {
   device=$(fm_pr_file_device "$STATE") || die "state directory is unavailable"
   for src in ${sources//,/ }; do
     case "$src" in
-      tick|lane:*) ;;
+      tick|upstream|lane:*) ;;
       *) die "unknown source $src" 3 ;;
     esac
     id=$(source_check_id "$src")
@@ -462,7 +481,7 @@ cmd_register_sources() {
     keep="$keep$id "
     printf 'registered: office source %s (state/%s.check.sh)\n' "$src" "$id"
   done
-  for f in "$STATE"/office-tick.check.sh "$STATE"/office-lane-*.check.sh; do
+  for f in "$STATE"/office-tick.check.sh "$STATE"/office-upstream.check.sh "$STATE"/office-lane-*.check.sh; do
     [ -e "$f" ] || continue
     id=$(basename "$f" .check.sh)
     case "$keep" in *" $id "*) continue ;; esac
@@ -566,7 +585,7 @@ check_tick() {
   seen_once tick "$SLOT_KEY" "$line"
 }
 
-# deliver_starts <officer>: delivers the progress digest's start requests addressed to this
+# deliver_starts <officer>: delivers the progress, surgeon or friction digest's start requests addressed to this
 # office home into its own inbox, in rank order, and prints one phrase when there is news.
 deliver_starts() {
   mkdir -p "$DATA/office" 2>/dev/null || return 0
@@ -579,7 +598,7 @@ try:
     doc = json.loads(raw)
 except (OSError, ValueError):
     sys.exit()
-if not isinstance(doc, dict) or doc.get("source") not in ("progress-officer", "surgeon-officer"):
+if not isinstance(doc, dict) or doc.get("source") not in ("progress-officer", "surgeon-officer", "friction-officer"):
     sys.exit()
 home = os.path.realpath(home)
 requests = sorted((r for r in doc.get("start_requests") or [] if isinstance(r, dict)),
@@ -612,7 +631,7 @@ for n, execute in enumerate(mine, 1):
     rid, argv = execute.get("request_id"), execute.get("argv")
     # Run this office's own intake with the recorded arguments, never a program named in the file.
     ok = (execute.get("action") == "start" and isinstance(rid, str)
-          and re.fullmatch(r"(?:progress|surgeon)-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", rid) and isinstance(argv, list)
+          and re.fullmatch(r"(?:progress|surgeon|friction)-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", rid) and isinstance(argv, list)
           and len(argv) == 7 and all(isinstance(a, str) for a in argv)
           and os.path.basename(argv[0]) == "fm-inbox.sh" and argv[1:6] == ["note", "--request-id", rid, "--json", "--"])
     if ok:
@@ -642,6 +661,68 @@ check_lane() {  # <officer> <high:0|1>
   [ -z "$line" ] || printf '%s\n' "$line"
 }
 
+# bounded <seconds> <command...>: runs the command under timeout when the host has it.
+bounded() {
+  local secs=$1
+  shift
+  if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"; else "$@"; fi
+}
+
+# upstream_fail <src> <fork-ref>: marks an attempt as failed until it succeeds; reports once when failures span 24 hours.
+upstream_fail() {
+  local rec="$DATA/office/upstream.fail" first now
+  now=$(now_epoch)
+  first=$(cat "$rec" 2>/dev/null || true)
+  case "$first" in
+    *reported*) return 0 ;;
+    ''|*[!0-9]*) printf '%s\n' "$now" > "$rec" 2>/dev/null; return 0 ;;
+  esac
+  [ $((now - first)) -ge 86400 ] || return 0
+  printf '%s reported\n' "$first" > "$rec" 2>/dev/null || return 0
+  printf 'office %s: upstream check of %s against %s failing since %s; check the remote and fork-ref in config/firstmate-upstream\n' \
+    "$OFFICE_ID" "$1" "$2" "$(date -u -d "@$first" +%Y-%m-%d 2>/dev/null || date -u -r "$first" +%Y-%m-%d)"
+}
+
+check_upstream() {
+  local cfg="$CONFIG/firstmate-upstream" src branch fork now day last fail head forkref base n subjects
+  local rec="$DATA/office" ref=refs/fm-upstream-check/head
+  [ -r "$cfg" ] || return 0
+  read -r src branch fork < <(grep -Ev '^[[:space:]]*(#|$)' "$cfg" | head -n 1) || true
+  [ -n "${src:-}" ] || return 0
+  branch=${branch:-main}
+  forkref=${fork:-origin/main}
+  now=$(now_epoch)
+  day=$(date -u -d "@$now" +%Y-%m-%d 2>/dev/null || date -u -r "$now" +%Y-%m-%d)
+  [ "$(cat "$rec/upstream.day" 2>/dev/null)" = "$day" ] && return 0
+  mkdir -p "$rec" 2>/dev/null || return 0
+  last=$(cat "$rec/upstream.try" 2>/dev/null || true)
+  case "$last" in
+    ''|*[!0-9]*) rm -f "$rec/upstream.fail" ;;
+    *) [ $((now - last)) -ge 3600 ] || return 0
+       [ $((now - last)) -le 7200 ] || rm -f "$rec/upstream.fail" ;;
+  esac
+  printf '%s\n' "$now" > "$rec/upstream.try" 2>/dev/null || return 0
+  fail=$(upstream_fail "$src" "$forkref")
+  [ -z "$fail" ] || { printf '%s\n' "$fail"; return 0; }
+  head=$(bounded 8 git -C "$FM_ROOT" ls-remote "$src" "refs/heads/$branch" 2>/dev/null | awk 'NR==1{print $1}')
+  [[ "$head" =~ ^[0-9a-f]{40}$ ]] || return 0
+  case "$forkref" in */*) bounded 5 git -C "$FM_ROOT" fetch --quiet --no-tags "${forkref%%/*}" "${forkref#*/}" >/dev/null 2>&1 || true ;; esac
+  if [ "$(cat "$rec/upstream.seen" 2>/dev/null)" = "$head" ]; then
+    rm -f "$rec/upstream.fail"; printf '%s\n' "$day" > "$rec/upstream.day" 2>/dev/null; return 0
+  fi
+  git -C "$FM_ROOT" rev-parse -q --verify "$forkref^{commit}" >/dev/null 2>&1 || return 0
+  bounded 12 git -C "$FM_ROOT" fetch --quiet --no-tags "$src" "+refs/heads/$branch:$ref" >/dev/null 2>&1 || return 0
+  rm -f "$rec/upstream.fail"
+  printf '%s\n' "$day" > "$rec/upstream.day" 2>/dev/null
+  printf '%s\n' "$head" > "$rec/upstream.seen" 2>/dev/null
+  n=$(git -C "$FM_ROOT" rev-list --count "$forkref..$ref" 2>/dev/null) || return 0
+  [ "${n:-0}" -gt 0 ] || return 0
+  base=$(git -C "$FM_ROOT" merge-base "$forkref" "$ref" 2>/dev/null | cut -c1-9)
+  subjects=$(git -C "$FM_ROOT" log -n 3 --format=%s "$forkref..$ref" 2>/dev/null | cut -c1-80 | paste -sd'|' - | sed 's/|/ | /g')
+  printf 'office %s: upstream %s..%s: %s new commit(s) not in %s; newest: %s\n' \
+    "$OFFICE_ID" "${base:-none}" "$(printf '%s' "$head" | cut -c1-9)" "$n" "$forkref" "$subjects"
+}
+
 cmd_check() {
   local src=$1 sources officer
   [ -e "$FM_HOME/.fm-office" ] || return 0
@@ -650,6 +731,7 @@ cmd_check() {
   case ",${sources// /}," in *",$src,"*) ;; *) return 0 ;; esac
   case "$src" in
     tick) check_tick ;;
+    upstream) check_upstream ;;
     lane:*:high) officer=${src#lane:}; check_lane "${officer%:high}" 1 ;;
     lane:*) check_lane "${src#lane:}" 0 ;;
   esac

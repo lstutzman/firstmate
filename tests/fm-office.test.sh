@@ -450,6 +450,44 @@ test_status_without_a_backlog_is_empty() {
   pass 'status writes an empty card list when the office has no backlog'
 }
 
+test_status_projects_decisions() {
+  local w f
+  w=$(make_world st-decisions)
+  f="$w/navigator/data/office-decisions.md"
+  {
+    printf '# Decisions\n\n| Date | Source | Finding | Call | Action |\n|---|---|---|---|---|\n'
+    printf '| 2026-11-03 | older | Old finding | Adopt | Done: [x](https://e.test/1) |\n'
+    printf '| 2026-11-05 | first | Same day first | Trial | Queued |\n'
+    printf '| 2026-11-05 | second | Same day second | Needs Lee | Asked |\n'
+    printf '| 2026-11-05 | short | only four | cells |\n'
+    printf '| not a date | s | f | c | a |\n'
+    printf '| 2026-11-04 | s | | c | a |\n'
+    # shellcheck disable=SC2016 # literal backticks in the markdown row
+    printf '%s\n' '| 2026-11-02 | piped | Use `a \| b` | Adopt | Done |'
+  } > "$f"
+  status "$w"
+  assert_equals "second first older piped" "$(jq -r '[.decisions[].source] | join(" ")' "$w/navigator/data/office-status.json")" "newest first, malformed skipped"
+  # shellcheck disable=SC2016 # literal backticks in the expected cell
+  assert_equals 'Use `a | b`' "$(jq -r '.decisions[3].finding' "$w/navigator/data/office-status.json")" "escaped pipe stays in its cell"
+  assert_equals "Done: [x](https://e.test/1)" "$(jq -r '.decisions[2].action' "$w/navigator/data/office-status.json")" "link stays text"
+  assert_equals "date source finding call action" "$(jq -r '.decisions[0] | keys_unsorted | join(" ")' "$w/navigator/data/office-status.json")" "keys"
+  pass 'status projects office-decisions.md newest first and skips malformed rows'
+}
+
+test_status_decisions_cap_and_absence() {
+  local w i
+  w=$(make_world st-decisions-cap)
+  status "$w"
+  assert_equals "[]" "$(jq -c .decisions "$w/navigator/data/office-status.json")" "absent file"
+  {
+    printf '| Date | Source | Finding | Call | Action |\n|---|---|---|---|---|\n'
+    for i in $(seq 1 25); do printf '| 2026-10-%02d | s%s | f | c | a |\n' "$i" "$i"; done
+  } > "$w/navigator/data/office-decisions.md"
+  status "$w" $((NOW + 1000))
+  assert_equals "20 s25 s6" "$(jq -r '[(.decisions | length), .decisions[0].source, .decisions[-1].source] | join(" ")' "$w/navigator/data/office-status.json")" "cap"
+  pass 'status caps decisions at 20 and writes an empty list when the file is absent'
+}
+
 # --- arm-status / disarm-status: the silent status check -----------------------
 arm() { FM_HOME="$1/navigator" bash "$OFFICE" "${2:-arm-status}"; }
 check_registered() {
@@ -524,6 +562,99 @@ put_backlog() {  # <world> <queued lines...>
 
 put_digest() {  # <world> <officer> <key> <n>
   printf 'DIGEST %s %s data/officers/%s/%s.md\n' "$3" "$4" "$2" "$3" > "$1/data/officers/$2/digest"
+}
+
+# upstream_world <name>: an upstream repo with 3 commits, a fork (bare origin plus a code root) that has the first, and a
+# quartermaster-style office home whose config names the upstream by path.
+upstream_world() {
+  local w up fork g
+  w=$(source_world "$1")
+  up="$w/up-work"; fork="$w/fork-root"
+  g="git -c user.email=t@t -c user.name=t"
+  mkdir -p "$up" && git -C "$up" init -q -b main && $g -C "$up" commit -q --allow-empty -m "base"
+  git clone -q --bare "$up" "$w/fork-origin.git"
+  git clone -q "$w/fork-origin.git" "$fork"
+  $g -C "$up" commit -q --allow-empty -m "up one" && $g -C "$up" commit -q --allow-empty -m "up two"
+  sed -i.bak 's/sources: tick,lane:progress,lane:surgeon:high;/sources: tick,upstream;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  mkdir -p "$w/navigator/config"
+  printf '# the upstream\n%s main origin/main\n' "$up" > "$w/navigator/config/firstmate-upstream"
+  FM_HOME="$w/navigator" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must accept upstream"
+  printf '%s\n' "$w"
+}
+
+up_hourly() {  # <world> <start-epoch> <hours> <label>: hourly failing attempts, all silent
+  local i
+  for ((i = 0; i <= $3; i++)); do
+    assert_equals "" "$(up_check "$1" $(($2 + i * 3600)))" "$4: silent at hour $i"
+  done
+}
+
+up_check() {  # <world> <epoch>
+  FM_OFFICE_NOW=$2 FM_ROOT_OVERRIDE="$1/fork-root" FM_HOME="$1/navigator" bash "$OFFICE" check upstream
+}
+
+test_upstream_wakes_once_per_new_head() {
+  local w out g="git -c user.email=t@t -c user.name=t"
+  w=$(upstream_world upnew)
+  out=$(up_check "$w" "$SRC_NOW")
+  assert_contains "$out" "office navigator: upstream " "a new upstream head wakes the office"
+  assert_contains "$out" "2 new commit(s) not in origin/main; newest: up two | up one" "digest counts and names the commits"
+  assert_equals "" "$(up_check "$w" $((SRC_NOW + 90000)))" "the same head the next day: silent"
+  $g -C "$w/up-work" commit -q --allow-empty -m "up three"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 180000)))" "3 new commit(s)" "a newer head wakes again"
+  pass 'the upstream source wakes once per new upstream head'
+}
+
+test_upstream_is_daily_and_silent_when_nothing_new() {
+  local w g="git -c user.email=t@t -c user.name=t"
+  w=$(upstream_world upday)
+  git -C "$w/fork-origin.git" fetch -q "$w/up-work" main:main
+  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "nothing new for the fork: silent"
+  $g -C "$w/up-work" commit -q --allow-empty -m "later"
+  assert_equals "" "$(up_check "$w" $((SRC_NOW + 7200)))" "already checked today: no second fetch"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 90000)))" "1 new commit(s)" "the next day looks again"
+  pass 'the upstream source checks once a day and stays silent when the fork has everything'
+}
+
+test_upstream_failure_reports_only_when_persistent() {
+  local w
+  w=$(upstream_world upfail)
+  printf '%s/nowhere main origin/main\n' "$w" > "$w/navigator/config/firstmate-upstream"
+  up_hourly "$w" "$SRC_NOW" 23 "a failure inside 24 hours"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 86400)))" "failing since" "a failure spanning a day reports"
+  assert_equals "" "$(up_check "$w" $((SRC_NOW + 90000)))" "reported once per streak"
+  pass 'the upstream source reports a persistent fetch failure once'
+}
+
+test_upstream_unresolved_fork_ref_reports_when_persistent() {
+  local w up
+  w=$(upstream_world upforkref)
+  up="$w/up-work"
+  printf '%s main nosuch/main\n' "$up" > "$w/navigator/config/firstmate-upstream"
+  up_hourly "$w" "$SRC_NOW" 23 "an unresolved fork-ref inside 24 hours"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 86400)))" "against nosuch/main failing since" "an unresolved fork-ref spanning a day reports"
+  printf '%s main origin/main\n' "$up" > "$w/navigator/config/firstmate-upstream"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 90000)))" "2 new commit(s)" "a fixed fork-ref checks normally"
+  [ ! -e "$w/navigator/data/office/upstream.fail" ] || fail "a success must clear the failure streak"
+  pass 'the upstream source reports an unresolved fork-ref once failures span a day'
+}
+
+test_upstream_gap_in_attempts_starts_a_new_streak() {
+  local w
+  w=$(upstream_world upgap)
+  printf '%s/nowhere main origin/main\n' "$w" > "$w/navigator/config/firstmate-upstream"
+  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "first failure: silent"
+  up_hourly "$w" $((SRC_NOW + 108000)) 23 "after a 30-hour pause, a new streak"
+  assert_contains "$(up_check "$w" $((SRC_NOW + 108000 + 86400)))" "failing since" "the new streak reports once it spans a day"
+  pass 'a pause in upstream attempts starts a new failure streak instead of reporting at once'
+}
+
+test_upstream_without_config_is_silent() {
+  local w
+  w=$(upstream_world upnone)
+  rm -f "$w/navigator/config/firstmate-upstream"
+  assert_equals "" "$(up_check "$w" "$SRC_NOW")" "no config: silent"
+  pass 'the upstream source is silent without config/firstmate-upstream'
 }
 
 test_register_sources_installs_trusted_shims() {
@@ -731,6 +862,28 @@ PY
   pass "a lane check delivers a surgeon digest's start requests like a progress digest's"
 }
 
+test_lane_check_delivers_a_friction_digests_start_requests() {
+  local w out rid=friction-2026-11-05-00000000000000f1
+  w=$(source_world frictionstarts)
+  mkdir -p "$w/data/officers/friction"
+  sed -i.bak 's/lane:surgeon:high;/lane:surgeon:high,lane:friction;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  printf -- '- friction - z (role: triage; cadence: daily 06:00; added 2026-10-24)\n' >> "$w/data/officers.md"
+  put_digest "$w" friction 2026-11-05 1
+  python3 -I - "$w" "$SRC_NOW" "$ROOT" "$rid" > "$w/data/officers/friction/2026-11-05.json" <<'PY'
+import datetime, json, sys
+w, at, root, rid = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+row = {"id": "missing-tool-tool-jq", "kind": "friction-finding", "rank": 1, "execute": {"action": "start", "request_id": rid,
+       "env": {"FM_HOME": w + "/navigator"},
+       "argv": [root + "/bin/fm-inbox.sh", "note", "--request-id", rid, "--json", "--", "Start item 1 for navigator"]}}
+print(json.dumps({"source": "friction-officer", "generated_at": datetime.datetime.fromtimestamp(
+    at - 3600, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "start_requests": [row], "findings": []}))
+PY
+  out=$(nav_check "$w" lane:friction)
+  assert_contains "$out" "1 start request(s) delivered to this office's inbox" "the lane delivers the friction officer's start request"
+  assert_equals "Start item 1 for navigator" "$(notes "$w/navigator")" "into the office's own inbox"
+  pass "a lane check delivers a friction digest's start requests like a progress digest's"
+}
+
 test_lane_check_delivers_its_own_start_requests_once() {
   local w out
   w=$(source_world starts)
@@ -794,9 +947,17 @@ test_status_skips_unchanged_write
 test_status_writes_only_its_file
 test_status_outside_an_office_does_nothing
 test_status_without_a_backlog_is_empty
+test_status_projects_decisions
+test_status_decisions_cap_and_absence
 test_arm_status_registers_a_silent_check
 test_disarm_status_retires_the_check
 test_arm_status_refuses_outside_an_office
+test_upstream_wakes_once_per_new_head
+test_upstream_is_daily_and_silent_when_nothing_new
+test_upstream_failure_reports_only_when_persistent
+test_upstream_unresolved_fork_ref_reports_when_persistent
+test_upstream_gap_in_attempts_starts_a_new_streak
+test_upstream_without_config_is_silent
 test_register_sources_installs_trusted_shims
 test_register_sources_keeps_the_status_check
 test_shim_runs_through_the_watcher_trust_path
@@ -809,6 +970,7 @@ test_lane_check_is_silent_when_it_cannot_read
 test_high_lane_counts_only_high_severity
 test_sources_changes_nothing_in_the_parent
 test_lane_check_delivers_a_surgeon_digests_start_requests
+test_lane_check_delivers_a_friction_digests_start_requests
 test_lane_check_delivers_its_own_start_requests_once
 test_lane_check_delivers_in_rank_order_and_stops_at_a_bad_request
 test_lane_check_never_delivers_a_stale_digest

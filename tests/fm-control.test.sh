@@ -138,6 +138,12 @@ case "${1:-}" in
     else
       printf '%s\n' "$payload" >> "$D/keys"
       printf '%s %s\n' "$(perl -MTime::HiRes=time -e 'printf "%.3f", time')" "$payload" >> "$D/key-times"
+      # enter-stops-at holds N: the Nth Enter (the submit counts as one) confirms
+      # the exit picker and ends the agent, as Claude's "Exit and stop tasks" does.
+      if [ "$payload" = Enter ] && [ -f "$D/enter-stops-at" ] \
+         && [ "$(grep -c '^Enter$' "$D/keys")" -ge "$(cat "$D/enter-stops-at")" ]; then
+        printf 'zsh' > "$D/command"
+      fi
       if [ "$payload" = Escape ] && [ -f "$D/devin" ]; then
         case "$(cat "$D/devin")" in
           running) printf armed > "$D/devin" ;;
@@ -1103,6 +1109,131 @@ test_exit_names_a_picker_that_renders_after_the_submit() {
   pass "fm-control exit: a picker that renders after the submit returned is named when the stop wait times out"
 }
 
+# --stop-background: the explicit opt-in that answers the background-task exit
+# picker. Without it every case above still refuses.
+test_refusal_names_the_stop_background_opt_in() {
+  local dir out rc
+  dir=$(new_case picker-hint)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  exit_picker_screen > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "an open picker still refuses without the flag"$'\n'"$out"
+  assert_contains "$out" "--stop-background" "the refusal should name the opt-in"
+  assert_not_contains "$out" "Esc" "the refusal must not name a dismissal key"
+  pass "fm-control exit: the picker refusal names --stop-background"
+}
+
+test_stop_background_confirms_an_open_picker() {
+  local dir out rc enters
+  dir=$(new_case sb-open)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  exit_picker_screen > "$dir/fake/pane"
+  printf '1' > "$dir/fake/enter-stops-at"
+  out=$(run_control "$dir" t1 exit --stop-background); rc=$?
+  expect_code 0 "$rc" "--stop-background should close an agent parked on the picker"$'\n'"$out"
+  assert_contains "$out" "stopped background-tasks=stopped" "the stop should be reported with the opt-in's effect"
+  [ ! -s "$dir/fake/literal" ] || fail "nothing may be typed into an open picker, got: $(literals "$dir")"
+  enters=$(grep -c '^Enter$' "$dir/fake/keys" || true)
+  [ "$enters" -eq 1 ] || fail "exactly one confirming Enter should be sent, got $enters"
+  [ -z "$(keys_sent "$dir")" ] || fail "no key other than Enter may be sent, got: $(keys_sent "$dir")"
+  pass "fm-control exit --stop-background: an open picker is confirmed with one Enter and the agent proven gone"
+}
+
+test_stop_background_confirms_the_picker_the_exit_command_opens() {
+  local dir out rc enters
+  dir=$(new_case sb-submit)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  exit_picker_screen > "$dir/fake/after-enter"
+  printf '2' > "$dir/fake/enter-stops-at"
+  # /exit alone does not end the agent: the picker holds it until confirmed.
+  out=$(env FM_FAKE_NEVER_DIES=1 PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" \
+    FM_FAKE_DIR="$dir/fake" FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 \
+    "$CONTROL" t1 exit --stop-background 2>&1); rc=$?
+  expect_code 0 "$rc" "--stop-background should answer the picker /exit opens"$'\n'"$out"
+  assert_contains "$out" "stopped background-tasks=stopped" "the stop should be reported"
+  [ "$(literals "$dir")" = /exit ] || fail "the exit command should be typed once, got '$(literals "$dir")'"
+  enters=$(grep -c '^Enter$' "$dir/fake/keys" || true)
+  [ "$enters" -eq 2 ] || fail "the submit Enter and one confirming Enter only, got $enters"
+  [ -z "$(keys_sent "$dir")" ] || fail "no key other than Enter may be sent, got: $(keys_sent "$dir")"
+  pass "fm-control exit --stop-background: the picker the exit command opens is confirmed once"
+}
+
+test_stop_background_confirms_a_late_rendering_picker() {
+  local dir out rc enters
+  dir=$(new_case sb-late)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  exit_picker_screen > "$dir/fake/after-enter"
+  printf '1' > "$dir/fake/after-enter-late"
+  printf '2' > "$dir/fake/enter-stops-at"
+  out=$(env FM_FAKE_NEVER_DIES=1 PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" \
+    FM_FAKE_DIR="$dir/fake" FM_CONTROL_POLL=0.01 FM_CONTROL_EXIT_WAIT=0.05 \
+    "$CONTROL" t1 exit --stop-background 2>&1); rc=$?
+  expect_code 0 "$rc" "a picker that renders after the submit should still be confirmed"$'\n'"$out"
+  assert_contains "$out" "stopped background-tasks=stopped" "the stop should be reported"
+  enters=$(grep -c '^Enter$' "$dir/fake/keys" || true)
+  [ "$enters" -eq 2 ] || fail "the submit Enter and one confirming Enter only, got $enters"
+  pass "fm-control exit --stop-background: a picker that renders after the submit is confirmed once"
+}
+
+test_stop_background_without_a_picker_is_an_ordinary_exit() {
+  local dir out rc
+  dir=$(new_case sb-nopicker)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  out=$(run_control "$dir" t1 exit --stop-background); rc=$?
+  expect_code 0 "$rc" "the flag must not change an exit that opens no picker"$'\n'"$out"
+  assert_not_contains "$out" "background-tasks" "no picker was answered, so none is reported"
+  [ -z "$(keys_sent "$dir")" ] || fail "no key beyond the submit may be sent, got: $(keys_sent "$dir")"
+  pass "fm-control exit --stop-background: an exit with no picker behaves as without the flag"
+}
+
+test_stop_background_never_answers_another_row_or_dialog() {
+  local dir out rc
+  dir=$(new_case sb-other)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  # The selected row is "Move to background and exit": not the recorded picker.
+  printf '%s\n' \
+    'Background work is running' \
+    '  1. Exit and stop tasks' \
+    'The following will stop when you exit:' \
+    'shell · sleep 300' \
+    '❯ 2. Move to background and exit' \
+    '  3. Stay' \
+    'Enter to confirm · Esc to cancel' > "$dir/fake/pane"
+  printf '1' > "$dir/fake/enter-stops-at"
+  out=$(run_control "$dir" t1 exit --stop-background); rc=$?
+  expect_code 1 "$rc" "a picker whose selected row is not Exit and stop tasks must refuse"$'\n'"$out"
+  [ ! -s "$dir/fake/literal" ] || fail "nothing may be typed into the dialog, got: $(literals "$dir")"
+  ! grep -qx Enter "$dir/fake/keys" || fail "Enter must never confirm a different row"
+
+  dir=$(new_case sb-unknown)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  printf '%s\n' 'Switch model?' '❯ 1. Yes' '  2. No' 'Enter to confirm · Esc to cancel' > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 exit --stop-background); rc=$?
+  expect_code 1 "$rc" "an unrecognised dialog must refuse even with the flag"$'\n'"$out"
+  [ ! -s "$dir/fake/literal" ] || fail "nothing may be typed into an unrecognised dialog"
+  ! grep -qx Enter "$dir/fake/keys" || fail "Enter must never answer an unrecognised dialog"
+  pass "fm-control exit --stop-background: another row or an unrecognised dialog is still refused"
+}
+
+test_stop_background_is_exit_only() {
+  local dir out rc
+  dir=$(new_case sb-verb)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  out=$(run_control "$dir" t1 interrupt --stop-background); rc=$?
+  expect_code 1 "$rc" "--stop-background applies to exit only"$'\n'"$out"
+  assert_contains "$out" "applies to 'exit' only" "the refusal should say why"
+  [ ! -s "$dir/fake/keys" ] || fail "a refused invocation must send nothing"
+  pass "fm-control: --stop-background is refused on any verb but exit"
+}
+
 test_idle_agent_is_not_interrupted() {
   local dir out rc gen
   dir=$(new_case idle)
@@ -1395,6 +1526,13 @@ test_exit_drops_meta_busy_gen_with_the_sidecar
 test_exit_refuses_an_open_background_picker
 test_exit_refuses_the_confirming_enter
 test_exit_names_a_picker_that_renders_after_the_submit
+test_refusal_names_the_stop_background_opt_in
+test_stop_background_confirms_an_open_picker
+test_stop_background_confirms_the_picker_the_exit_command_opens
+test_stop_background_confirms_a_late_rendering_picker
+test_stop_background_without_a_picker_is_an_ordinary_exit
+test_stop_background_never_answers_another_row_or_dialog
+test_stop_background_is_exit_only
 test_interrupt_without_acknowledgement_preserves_busy_state
 test_muse_interrupt_confirms_adapter_acknowledgement
 test_interrupt_revalidates_agent_after_acknowledgement_wait

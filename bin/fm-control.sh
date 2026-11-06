@@ -3,7 +3,7 @@
 # lifecycle verbs addressed to an exact task id.
 #
 # Usage: fm-control.sh <task-id> interrupt
-#        fm-control.sh <task-id> exit
+#        fm-control.sh <task-id> exit [--stop-background]
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
 #                                         [--effort <level>] [--account <entry>]
 #                                         (--note <text> | --note-file <path>)
@@ -36,7 +36,17 @@
 #              every uncommitted change. Interrupts first when the task reads
 #              busy, then submits the harness's exit command. Postcondition:
 #              the backend's recovery-grade classifier reports the agent gone.
-#              Already-stopped is success (idempotent). An endpoint that reads
+#              Already-stopped is success (idempotent). By default a recognised
+#              dialog that a further Enter would answer is refused, never
+#              answered. --stop-background is the explicit opt-in for ONE such
+#              dialog: Claude's "Background work is running" exit picker. When
+#              the screen is that picker AND its selected row is "Exit and stop
+#              tasks", exit confirms it with the single Enter that row needs
+#              (never a different row, never Escape, never any other dialog),
+#              which stops the agent's background tasks along with the agent,
+#              and then proves the agent gone as usual. Use it only to close a
+#              FINISHED agent; never to stop live work, and relaunch never
+#              passes it. An endpoint that reads
 #              `missing` (or, on Rex, `unreadable`, which is how a stopped Rex
 #              server reads without starting it) is put through the control
 #              plane's per-backend absence
@@ -192,6 +202,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/fm-composer-lib.sh
+. "$SCRIPT_DIR/fm-composer-lib.sh"
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
 # shellcheck source=bin/fm-polytoken-lib.sh
@@ -275,6 +287,7 @@ EFFORT_SET=0
 ACCOUNT_SET=0
 NOTE=
 NOTE_SET=0
+STOP_BACKGROUND=0
 control_want_value=
 for control_arg in "$@"; do
   if [ -n "$control_want_value" ]; then
@@ -305,6 +318,7 @@ for control_arg in "$@"; do
     --effort=*) NEW_EFFORT=${control_arg#--effort=}; EFFORT_SET=1 ;;
     --account) control_want_value=account ;;
     --account=*) NEW_ACCOUNT=${control_arg#--account=}; ACCOUNT_SET=1 ;;
+    --stop-background) STOP_BACKGROUND=1 ;;
     --note) control_want_value=note ;;
     --note=*) NOTE=${control_arg#--note=}; NOTE_SET=1 ;;
     --note-file) control_want_value=note_file ;;
@@ -326,6 +340,9 @@ if [ "$VERB" != relaunch ]; then
     || die "--harness, --model, --effort, --account, and --note apply to 'relaunch' only"
 fi
 [ "$ACCOUNT_SET" = 0 ] || [ -n "$NEW_ACCOUNT" ] || die "--account requires a non-empty value"
+if [ "$VERB" != exit ] && [ "$STOP_BACKGROUND" = 1 ]; then
+  die "--stop-background applies to 'exit' only"
+fi
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
 [ "$EFFORT_SET" = 0 ] || [ -n "$NEW_EFFORT" ] || die "--effort requires a non-empty value"
@@ -449,9 +466,37 @@ require_state_verified_backend() {  # <verb>
 
 # refuse_blocking_prompt: the screen is a dialog a confirming Enter would
 # answer. Name it and stop. Do not type Escape or an option: both dismiss
-# or choose.
+# or choose. For the one dialog --stop-background can answer, the refusal also
+# names that opt-in so the operator can close a finished agent.
 refuse_blocking_prompt() {  # <dialog-name>
-  die "task $ID is blocked on a prompt: $1. Refusing to type Enter into it."
+  local hint=
+  if [ "$1" = "$BACKGROUND_PICKER_NAME" ] && [ "$VERB" = exit ]; then
+    hint=" To close a finished agent anyway, rerun with --stop-background, which confirms 'Exit and stop tasks' and so stops its background tasks."
+  fi
+  die "task $ID is blocked on a prompt: $1. Refusing to type Enter into it.$hint"
+}
+
+# The only dialog --stop-background may answer; the name is the one
+# fm_composer_blocking_dialog prints for Claude's background-task exit picker.
+BACKGROUND_PICKER_NAME='Claude background-task exit picker'
+
+# answer_background_picker <dialog-name>: with --stop-background, confirm the
+# picker with one Enter. Re-reads the viewport and re-runs the recorded
+# structure match first, so the Enter lands only while "Exit and stop tasks" is
+# the selected row (fm_composer_blocking_dialog matches that row alone); any
+# other screen or dialog name refuses unchanged. Returns 0 once Enter is sent.
+answer_background_picker() {  # <dialog-name>
+  local screen name
+  [ "$STOP_BACKGROUND" = 1 ] && [ "$1" = "$BACKGROUND_PICKER_NAME" ] \
+    || refuse_blocking_prompt "$1"
+  screen=$(fm_backend_visible_capture "$BACKEND" "$T" "$LABEL" 2>/dev/null) \
+    || refuse_blocking_prompt "$1"
+  name=$(fm_composer_blocking_dialog "$screen") || refuse_blocking_prompt "$1"
+  [ "$name" = "$BACKGROUND_PICKER_NAME" ] || refuse_blocking_prompt "$1"
+  fm_control_backend_supports_key "$BACKEND" Enter \
+    || die "task $ID shows the background-task exit picker, but the $BACKEND backend cannot deliver Enter to confirm it"
+  fm_backend_send_key "$BACKEND" "$T" Enter "$LABEL" \
+    || die "the Enter that confirms 'Exit and stop tasks' was not delivered to task $ID on $BACKEND"
 }
 
 # rendered_matches <ere>: whether any row of the visible viewport matches.
@@ -635,7 +680,7 @@ verify_interrupt_running() {
     after=$(agent_state)
     [ "$after" = alive ] \
       || die "task $ID's agent is '$after' after its interrupt key; an interrupt must leave the agent running"
-    proof=agent-alive
+    proof='agent-alive'
   fi
   printf '%s' "$proof"
 }
@@ -712,7 +757,7 @@ retire_busy_incarnation() {
 # do_exit: stop the running agent, preserving endpoint and worktree. Prints
 # `already-stopped`, `endpoint-gone`, or `stopped`.
 do_exit() {
-  local state cmd hazard verdict composer_state cancel absence interrupt_result=not-needed dialog
+  local state cmd hazard verdict composer_state cancel absence interrupt_result=not-needed dialog bg=
   require_state_verified_backend exit
   fm_control_backend_exit_supported "$BACKEND" \
     || die "task $ID runs on the $BACKEND backend, whose T3 Orchestrator V2 tools have no session stop, so 'exit' cannot stop its agent; 'interrupt' ends the running turn and teardown archives the thread"
@@ -790,7 +835,14 @@ do_exit() {
   # rather than a function that subshell sourced.
   if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
     dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
-    refuse_blocking_prompt "$dialog"
+    # With --stop-background the already-open picker is answered in place: its
+    # Enter is the exit, so no /exit is typed into it.
+    answer_background_picker "$dialog"
+    state=$(wait_agent_state "$EXIT_WAIT" dead) \
+      || die "exit-delivered $ID interrupt=$interrupt_result background-picker=confirmed agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
+    retire_busy_incarnation
+    printf 'stopped background-tasks=stopped'
+    return 0
   fi
   case "$composer_state" in
     empty) ;;
@@ -834,7 +886,8 @@ do_exit() {
       if [ -s "${FM_COMPOSER_DIALOG_SINK:-}" ]; then
         dialog=$(cat "$FM_COMPOSER_DIALOG_SINK")
         if [ "$(agent_state)" != dead ]; then
-          refuse_blocking_prompt "$dialog"
+          answer_background_picker "$dialog"
+          bg=confirmed
         fi
       fi
       ;;
@@ -845,15 +898,25 @@ do_exit() {
     # before the picker renders. Read the screen once more here.
     : > "$FM_COMPOSER_DIALOG_SINK" || true
     fm_backend_composer_state "$BACKEND" "$T" "$LABEL" >/dev/null 2>&1 || true
-    if [ -s "$FM_COMPOSER_DIALOG_SINK" ]; then
+    if [ -s "$FM_COMPOSER_DIALOG_SINK" ] && [ -z "$bg" ]; then
+      answer_background_picker "$(cat "$FM_COMPOSER_DIALOG_SINK")"
+      bg=confirmed
+      state=$(wait_agent_state "$EXIT_WAIT" dead) || state=$(agent_state)
+      [ "$state" = dead ] || die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered background-picker=confirmed agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
+    elif [ -s "$FM_COMPOSER_DIALOG_SINK" ]; then
       refuse_blocking_prompt "$(cat "$FM_COMPOSER_DIALOG_SINK")"
+    else
+      die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
     fi
-    die "exit-delivered $ID interrupt=$interrupt_result exit-command=delivered agent-state=$state exit=unconfirmed; the agent did not stop within ${EXIT_WAIT}s"
   }
   # The incarnation is over: retire its busy wiring so no stale record or
   # orphaned generation survives the agent that produced it.
   retire_busy_incarnation
-  printf 'stopped'
+  if [ -n "$bg" ]; then
+    printf 'stopped background-tasks=stopped'
+  else
+    printf 'stopped'
+  fi
 }
 
 # --- transactional relaunch -------------------------------------------------

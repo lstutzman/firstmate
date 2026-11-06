@@ -25,6 +25,8 @@
 # Layout under <state-dir>:
 #   <task>.inbox/NNN.msg       one durable steer, numeric sequence, atomic rename
 #   <task>.inbox/handled/      the worker's `mv` here IS the acknowledgement
+#   <task>.inbox/archive/      handled records older than the retention window
+#                              (see "Bounded history" below); kept, never read
 #   <task>.inbox/.seq.lock     serializes sequence allocation across writers
 #                              (the session and the away daemon)
 #   <task>.inbox/.ring-state   watcher re-ring ladder: "<msg>\t<count>\t<epoch>"
@@ -48,6 +50,21 @@
 # inbox root and handled/, so a message is processed at most once per worker
 # lifetime even if every doorbell is duplicated. Concurrent writers serialize
 # on .seq.lock; the worst racing outcome is ordering, never loss.
+#
+# Bounded history: a long-lived inbox must not make a write slower with every
+# message, so both the sequence allocation and the idempotent dedup read only
+# a recent window and never fork per record. fm_task_inbox_write_idempotent
+# compares the new body against the records of the newest
+# FM_TASK_INBOX_DEDUP_WINDOW sequence numbers (default 200), root and handled/,
+# with fire-and-forget and normal records still never matching each other; a
+# recovery resend is a repeat of a recent request, so it still lands on its
+# existing record. Retention is owned by _fm_task_inbox_retain_locked, run
+# under .seq.lock by every writer: handled records whose sequence is more than
+# FM_TASK_INBOX_HANDLED_KEEP (default 500) behind the newest move into
+# <task>.inbox/archive/ - moved, never deleted. Unhandled records never move.
+# The newest records always stay in the root or handled/, so a sequence is
+# still never reissued. A resend of a request older than the window enqueues
+# again; the keep bound is therefore at least the dedup window.
 #
 # Re-ring ladder (fm_task_inbox_due_action): an unhandled message older than
 # FM_TASK_INBOX_GRACE_SECS is due one delivery attempt per grace period; an
@@ -93,6 +110,8 @@
 #   FM_TASK_INBOX_GRACE_SECS   default 90; delivery-attempt grace and spacing
 #   FM_TASK_INBOX_RING_MAX     default 3; delivery attempts before escalation
 #   FM_TASK_INBOX_BUSY_MAX     default 2; consecutive busy-deferred due polls before escalation
+#   FM_TASK_INBOX_DEDUP_WINDOW default 200; newest sequence numbers the idempotent write compares
+#   FM_TASK_INBOX_HANDLED_KEEP default 500; handled records kept in handled/ (older move to archive/)
 
 _FM_TASK_INBOX_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Both dependencies are canonical lint roots in their own right. Keep them as
@@ -108,6 +127,8 @@ FM_TASK_INBOX_GRACE_DEFAULT=90
 FM_TASK_INBOX_RING_MAX_DEFAULT=3
 FM_TASK_INBOX_BUSY_MAX_DEFAULT=2
 FM_TASK_INBOX_LOCK_WAIT_DEFAULT=5
+FM_TASK_INBOX_DEDUP_WINDOW_DEFAULT=200
+FM_TASK_INBOX_HANDLED_KEEP_DEFAULT=500
 
 fm_task_inbox_grace_secs() {
   local g=${FM_TASK_INBOX_GRACE_SECS:-$FM_TASK_INBOX_GRACE_DEFAULT}
@@ -171,18 +192,58 @@ fm_task_inbox_seq_of() {  # <basename>
   printf '%s' "$((10#$n))"
 }
 
+# Highest sequence present in the inbox root or handled/ (0 when empty), into
+# the variable named by $2. Pure bash: no fork per record.
+_fm_task_inbox_max_seq_into() {  # <inbox-dir> <var>
+  local _dir=$1 _d _f _n _hi=0
+  for _d in "$_dir" "$_dir/handled"; do
+    for _f in "$_d"/*.msg; do
+      [ -e "$_f" ] || continue
+      _n=${_f##*/}; _n=${_n%.msg}
+      case "$_n" in ''|*[!0-9]*) continue ;; esac
+      _n=$((10#$_n))
+      [ "$_n" -le "$_hi" ] || _hi=$_n
+    done
+  done
+  printf -v "$2" '%s' "$_hi"
+}
+
 # Next unused sequence, scanning the inbox root AND handled/ so an
 # acknowledged sequence is never reissued. Caller must hold .seq.lock.
 fm_task_inbox_next_seq() {  # <inbox-dir>
-  local dir=$1 max=0 d f n
-  for d in "$dir" "$dir/handled"; do
-    for f in "$d"/*.msg; do
-      [ -e "$f" ] || continue
-      n=$(fm_task_inbox_seq_of "${f##*/}") || continue
-      [ "$n" -le "$max" ] || max=$n
-    done
-  done
+  local max
+  _fm_task_inbox_max_seq_into "$1" max
   printf '%03d' "$((max + 1))"
+}
+
+_fm_task_inbox_positive_env() {  # <value> <default>
+  case "$1" in ''|*[!0-9]*|0*) printf '%s' "$2" ;; *) [ "${#1}" -le 9 ] && printf '%s' "$1" || printf '%s' "$2" ;; esac
+}
+
+# Move handled records more than FM_TASK_INBOX_HANDLED_KEEP sequences behind the
+# newest into archive/ (batched mv, never delete). Caller must hold .seq.lock.
+# Best-effort: a failure leaves records in place and never fails the write.
+_fm_task_inbox_retain_locked() {  # <inbox-dir>
+  local dir=$1 keep max cutoff f n i=0
+  local -a old=()
+  keep=$(_fm_task_inbox_positive_env "${FM_TASK_INBOX_HANDLED_KEEP:-}" "$FM_TASK_INBOX_HANDLED_KEEP_DEFAULT")
+  _fm_task_inbox_max_seq_into "$dir" max
+  cutoff=$((max - keep))
+  [ "$cutoff" -gt 0 ] || return 0
+  for f in "$dir/handled"/*.msg; do
+    [ -e "$f" ] || continue
+    n=${f##*/}; n=${n%.msg}
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    [ "$((10#$n))" -le "$cutoff" ] || continue
+    old+=("$f")
+  done
+  [ "${#old[@]}" -gt 0 ] || return 0
+  mkdir -p "$dir/archive" || return 0
+  while [ "$i" -lt "${#old[@]}" ]; do
+    mv -f -- "${old[@]:i:200}" "$dir/archive/" 2>/dev/null || true
+    i=$((i + 200))
+  done
+  return 0
 }
 
 fm_task_inbox_lock_acquire() {  # <lock-path>
@@ -205,6 +266,7 @@ fm_task_inbox_lock_acquire() {  # <lock-path>
 # rename. Prints the record path. Caller must hold .seq.lock.
 _fm_task_inbox_write_record_locked() {  # <inbox-dir> <text> [delivery-mode]
   local dir=$1 text=$2 delivery_mode=${3:-} seq tmp rec status=0
+  _fm_task_inbox_retain_locked "$dir"
   seq=$(fm_task_inbox_next_seq "$dir")
   rec="$dir/$seq.msg"
   tmp=$(mktemp "$dir/.staging.XXXXXX") || return 1
@@ -241,8 +303,9 @@ fm_task_inbox_write() {  # <state-dir> <task-id> <text> [delivery-mode]
 }
 
 # Durably enqueue one steer at most once: when a record with the exact same
-# body and delivery mode already exists, unhandled or acknowledged in handled/,
-# no new record is written and the existing record's path is printed instead.
+# body already exists among the newest FM_TASK_INBOX_DEDUP_WINDOW sequences -
+# unhandled or already acknowledged in handled/ - no new record is written and
+# the existing record's path is printed instead.
 # This is the enqueue primitive for a transport that can fail with completion
 # unknown (the remote steer leg over ssh): the caller's safe recovery is to run
 # the same enqueue again, and this dedup is what makes the re-run land on the
@@ -252,71 +315,58 @@ fm_task_inbox_write() {  # <state-dir> <task-id> <text> [delivery-mode]
 # local plane keeps plain fm_task_inbox_write: its outcome is synchronous, so
 # a repeated identical local steer is a deliberate new instruction.
 fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mode]
-  local state=$1 task=$2 text=$3 delivery_mode=${4:-} dir lock want have f rec='' status=0
-  local first_line=${3%%$'\n'*} scan_dir
+  local state=$1 task=$2 text=$3 delivery_mode=${4:-} dir lock rec='' status=0
+  local window max first s f g have header is_ff body
   dir=$(fm_task_inbox_dir "$state" "$task")
   mkdir -p "$dir/handled" || return 1
   lock="$dir/.seq.lock"
   fm_task_inbox_lock_acquire "$lock" || return 1
-  if want=$(mktemp "$dir/.dedup.XXXXXX") && have=$(mktemp "$dir/.dedup.XXXXXX"); then
-    if printf '%s' "$text" > "$want"; then
-      # One grep per directory replaces per-record parsing of unrelated history.
-      # Header/other-line hits are harmless: mode and exact body still decide.
-      # Empty bodies also match the separator, including empty legacy records.
-      [ -n "$text" ] || first_line=--
-      while IFS= read -r -d '' f; do
-        if [ ! -e "$f" ]; then
-          case "$f" in
-            "$dir"/*.msg)
-              f="$dir/handled/${f##*/}"
-              [ -e "$f" ] || continue
-              ;;
-            *) continue ;;
-          esac
-        fi
-        if [ "$delivery_mode" = fire-and-forget ]; then
-          fm_task_inbox_is_fire_and_forget "$f" || continue
-        elif fm_task_inbox_is_fire_and_forget "$f"; then
-          continue
-        fi
-        if ! fm_task_inbox_body "$f" > "$have" 2>/dev/null; then
-          case "$f" in
-            "$dir"/*.msg)
-              f="$dir/handled/${f##*/}"
-              fm_task_inbox_body "$f" > "$have" 2>/dev/null || continue
-              ;;
-            *) continue ;;
-          esac
-        fi
-        cmp -s "$want" "$have" || continue
-        [ ! -e "$dir/handled/${f##*/}" ] || f="$dir/handled/${f##*/}"
-        rec=$f
-        break
-      done < <(
-        # Expand handled/ only AFTER scanning pending records: an acknowledgement
-        # racing grep must remain visible even if its original path disappeared.
-        for scan_dir in "$dir" "$dir/handled"; do
-          # A read/argument-limit error must not turn an exact retry into a new
-          # request. Fall back to the original scan only on error, not no-match.
-          LC_ALL=C grep -lFx --null -- "$first_line" "$scan_dir"/*.msg 2>/dev/null || {
-            [ "$?" -eq 1 ] || printf '%s\0' "$scan_dir"/*.msg
-          }
-        done
-      )
+  window=$(_fm_task_inbox_positive_env "${FM_TASK_INBOX_DEDUP_WINDOW:-}" "$FM_TASK_INBOX_DEDUP_WINDOW_DEFAULT")
+  _fm_task_inbox_max_seq_into "$dir" max
+  first=$((max - window + 1))
+  [ "$first" -ge 1 ] || first=1
+  for ((s = first; s <= max; s++)); do
+    printf -v g '%03d.msg' "$s"
+    f="$dir/$g"
+    have=''
+    if [ -e "$f" ] && _fm_task_inbox_read_into "$f" have; then
+      :
     else
-      status=1
+      f="$dir/handled/$g"
+      { [ -e "$f" ] && _fm_task_inbox_read_into "$f" have; } || continue
     fi
-    rm -f "$want" "$have"
-  else
-    rm -f "${want:-}" 2>/dev/null || true
-    status=1
-  fi
+    # fm_task_inbox_body's rule: the body starts after the first "--" line.
+    case "$have" in *$'\n--\n'*) ;; *) continue ;; esac
+    header=${have%%$'\n--\n'*}
+    case $'\n'"$header"$'\n' in *$'\ndelivery=fire-and-forget\n'*) is_ff=1 ;; *) is_ff=0 ;; esac
+    if [ "$delivery_mode" = fire-and-forget ]; then
+      [ "$is_ff" -eq 1 ] || continue
+    else
+      [ "$is_ff" -eq 0 ] || continue
+    fi
+    body=${have#*$'\n--\n'}
+    # A record marked body-terminator=1 carries one synthetic final newline
+    # (fm_task_inbox_body's rule); it is not part of the logical body.
+    case $'\n'"$header"$'\n' in *$'\nbody-terminator=1\n'*) body=${body%$'\n'} ;; esac
+    [ "$body" = "$text" ] || continue
+    [ ! -e "$dir/handled/$g" ] || f="$dir/handled/$g"
+    rec=$f
+    break
+  done
   if [ "$status" -eq 0 ] && [ -z "$rec" ]; then
     rec=$(_fm_task_inbox_write_record_locked "$dir" "$text" "$delivery_mode") || status=1
   fi
   fm_lock_release "$lock"
   [ "$status" -eq 0 ] || return 1
   printf '%s' "$rec"
+}
+
+# Whole file into the variable named by $2, byte-exact, without a fork.
+_fm_task_inbox_read_into() {  # <path> <var>
+  local _content
+  IFS= read -r -d '' _content 2>/dev/null < "$1"
+  [ -f "$1" ] || return 1
+  printf -v "$2" '%s' "$_content"
 }
 
 # The exact enqueued text back out of a record.
