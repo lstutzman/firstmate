@@ -653,6 +653,28 @@ action_run() {
   cat "$OFFICER_LANE/digest"
 }
 
+# detach <log> <command...>: start the command in a new session so the
+# watcher's process-group stop cannot reach it, returning once it has detached.
+detach() {
+  local log=$1
+  shift
+  python3 -I -c '
+import os, sys
+log = sys.argv[1]
+r, w = os.pipe()
+if os.fork() == 0:
+    os.close(r)
+    os.setsid()
+    fd = os.open(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    os.dup2(fd, 1); os.dup2(fd, 2)
+    null = os.open(os.devnull, os.O_RDONLY); os.dup2(null, 0)
+    os.write(w, b"1"); os.close(w)
+    os.execvp(sys.argv[2], sys.argv[2:])
+os.close(w)
+os.read(r, 1)
+' "$log" "$@"
+}
+
 # attempts <date> <since> / finished <date> <since> / last_attempt <date>: from the lane's runs.log.
 # Both count only lines logged at or after <since>, the epoch of the cadence
 # time that made the date due, so a run logged before it (a same-day manual run)
@@ -714,7 +736,7 @@ action_check() {
   tries=$(attempts "$date" "$since")
   if ! [ "$(epoch_fmt "$now" %H:%M)" \< "$at" ] && ! finished "$date" "$since" && ! lock_held \
     && [ "$tries" -lt "$max" ] && [ $((now - $(last_attempt "$date"))) -ge "$retry" ]; then
-    fm_detach_session "$OFFICER_LANE/run-output.log" \
+    detach "$OFFICER_LANE/run-output.log" \
       bash "$SCRIPT_DIR/fm-officer.sh" __timed-run "$id" "$date" >/dev/null 2>&1 || true
   fi
   digest=$(cat "$OFFICER_LANE/digest" 2>/dev/null || true)

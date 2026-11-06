@@ -90,6 +90,7 @@
 #       to <log> and stdin from /dev/null, and returns once it has detached.
 #       A watcher check's process-group stop cannot reach it, so work that
 #       must not be cut off half way can outlive the check that started it.
+#       bin/fm-officer.sh still carries its own copy as detach().
 #
 # A non-positive bound is not a bound: `timeout 0` and the perl fallback's
 # `alarm 0` both disable the deadline, so callers must reject 0 before calling.
