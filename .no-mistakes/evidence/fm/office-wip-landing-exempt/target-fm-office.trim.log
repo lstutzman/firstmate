@@ -1,0 +1,3 @@
+ok - tick counts live ship and scout records against wip and is silent when none is free
+ok - tick leaves a ready, handed-off ship out of wip, and counts one with an open finding, a later event or a steer
+ok - a landing task needs its PR handed to another merger: a handoff record, an open handoff decision, or the merger binding

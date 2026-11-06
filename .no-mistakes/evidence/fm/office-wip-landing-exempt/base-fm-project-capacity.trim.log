@@ -1,0 +1,2 @@
+ok - an office spawn past its wip is deferred before anything exists
+not ok - an office whose only task is landing deferred a spawn: deferred: office navigator runs at most 1 task(s) at once (its authority record's wip=) and 1 are live (landing-a); task task-c was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up: expected exit 0, got 75

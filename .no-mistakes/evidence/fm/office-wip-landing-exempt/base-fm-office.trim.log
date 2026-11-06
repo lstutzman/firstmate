@@ -1,0 +1,4 @@
+ok - tick counts live ship and scout records against wip and is silent when none is free
+not ok - a landing task holds no place (missing: '1 of 2 places free, 1 queued, 1 landing')
+--- output ---
+

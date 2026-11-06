@@ -1,0 +1,2 @@
+EXIT=75
+OUT=deferred: office navigator runs at most 1 task(s) at once (its authority record's wip=) and 1 are live (live-b), while 1 landing task(s) hold no place (landing-a); task task-c was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or its PR is handed to its merger
