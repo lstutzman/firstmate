@@ -1,0 +1,24 @@
+== fm-decision-sweep
+ok - unkeyed decisions close only when listed
+ok - a note cut by the line cap is never settled
+ok - fleet ledger hook runs when config/fleet-ledger exists
+ok - a dependency-tagged wait clears itself once its pull request merges
+ok - --settle-only reads the forge only for decisions that could settle
+ok - the watcher clears a dependency-tagged wait on its own cadence and says so
+rc=0
+== fm-classify-decision-key
+ok - only a colon-bearing or keyed line is a decision transition in the fold
+ok - a recorded line stays recorded across a later resolve
+ok - 10,000-line whole-file fold completed within five seconds (0s)
+ok - whole-file fold matches pre-optimization bytes at every corpus checkpoint
+ok - status_line_cause reads the stated cause and falls back to unstated
+ok - status_line_dep reads a named dependency and status_dep_pr_url its pull request
+rc=0
+== fm-brief
+ok - fm-brief.sh: --branch-prefix value is validated against embedded spaces and a leading dash
+Switched to a new branch '$(touch${IFS}/tmp/fm-brief.iepdhd/branch-prefix-shell-safe-marker)brief-branch-safe-g3'
+ok - fm-brief.sh: ref-format-valid shell metacharacters stay literal in generated branch commands
+ok - fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool
+ok - fm-brief: every scaffold teaches the inbox take command
+ok - fm-brief.sh: scaffolds teach captain steps, external waits and the resume directory check
+rc=0

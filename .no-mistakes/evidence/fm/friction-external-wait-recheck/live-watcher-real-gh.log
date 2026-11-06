@@ -1,0 +1,15 @@
+cycles=2
+$ watcher wake output
+signal: /tmp/fm-lab.rCfeOy/state/office.status
+check: decision-sweep: closed once the pull request each waited on merged: file=office.status key=merge-handoff-wait-121
+
+$ resolved lines
+resolved [key=adopt-124] [at=1793961820]: decision-sweep: https://github.com/lstutzman/firstmate/pull/124 merged 2026-11-06T08:50:51Z
+resolved [key=merge-handoff-123] [at=1793961820]: decision-sweep: https://github.com/lstutzman/firstmate/pull/123 merged 2026-11-06T08:23:31Z
+resolved [key=merge-handoff-wait-121] [at=1793961831]: decision-sweep: https://github.com/lstutzman/firstmate/pull/121 merged 2026-11-06T07:06:20Z
+
+$ open decisions
+wait-on-96	blocked	waiting on another home to merge it
+wait-on-99999	blocked	waiting on a PR the forge cannot find
+release-go	needs-decision	https://github.com/lstutzman/firstmate/pull/122 merged; go for production?
+bad-dep	blocked	malformed dep number
