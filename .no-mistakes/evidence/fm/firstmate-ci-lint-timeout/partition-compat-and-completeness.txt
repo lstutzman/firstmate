@@ -1,0 +1,4 @@
+1of2: new script output identical to base (320 roots)
+2of2: new script output identical to base (319 roots)
+base canonical inventory (1of2 ∪ 2of2): 639 roots
+4-way union == base canonical inventory: yes

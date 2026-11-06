@@ -1,0 +1,33 @@
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: begin bin/fm-brief-heading-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-brief-heading-lib.sh reason=ok rc=0 duration_ms=64 rss_kib=unavailable
+fm-lint: begin bin/fm-busy-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-busy-lib.sh reason=ok rc=0 duration_ms=518 rss_kib=unavailable
+fm-lint: begin bin/fm-claude-account-quota.sh (shard 0, full mode)
+fm-lint: end bin/fm-claude-account-quota.sh reason=ok rc=0 duration_ms=517 rss_kib=unavailable
+fm-lint: begin bin/fm-config-push.sh (shard 0, full mode)
+fm-lint: end bin/fm-config-push.sh reason=ok rc=0 duration_ms=11489 rss_kib=unavailable
+fm-lint: begin bin/fm-cursor-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-cursor-lib.sh reason=ok rc=0 duration_ms=318 rss_kib=unavailable
+fm-lint: begin bin/fm-decision-hold.sh (shard 0, full mode)
+fm-lint: end bin/fm-decision-hold.sh reason=ok rc=0 duration_ms=166 rss_kib=unavailable
+fm-lint: begin bin/fm-fleet-sync.sh (shard 0, full mode)
+fm-lint: end bin/fm-fleet-sync.sh reason=ok rc=0 duration_ms=418 rss_kib=unavailable
+fm-lint: begin bin/fm-gemini-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-gemini-lib.sh reason=ok rc=0 duration_ms=69 rss_kib=unavailable
+fm-lint: begin bin/fm-git-strip-ai-trailers.sh (shard 0, full mode)
+fm-lint: end bin/fm-git-strip-ai-trailers.sh reason=ok rc=0 duration_ms=172 rss_kib=unavailable
+fm-lint: begin bin/fm-herdr-lab.sh (shard 0, full mode)
+fm-lint: end bin/fm-herdr-lab.sh reason=ok rc=0 duration_ms=467 rss_kib=unavailable
+fm-lint: begin bin/fm-hermes-process-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-hermes-process-lib.sh reason=ok rc=0 duration_ms=68 rss_kib=unavailable
+fm-lint: begin bin/fm-landed-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-landed-lib.sh reason=ok rc=0 duration_ms=69 rss_kib=unavailable
+fm-lint: begin bin/fm-mail.sh (shard 0, full mode)
+fm-lint: end bin/fm-mail.sh reason=ok rc=0 duration_ms=15145 rss_kib=unavailable
+fm-lint: begin bin/fm-merge-authority-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-merge-authority-lib.sh reason=ok rc=0 duration_ms=5124 rss_kib=unavailable
+fm-lint: begin bin/fm-pending-reply-sweep.sh (shard 0, full mode)
+fm-lint: end bin/fm-pending-reply-sweep.sh reason=ok rc=0 duration_ms=30921 rss_kib=unavailable
+fm-lint: begin bin/fm-pr-merge.sh (shard 0, full mode)

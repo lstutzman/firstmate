@@ -1,0 +1,26 @@
+format	fm-lint-roots-v1
+meta	shellcheck_version	0.11.0
+meta	platform	Linux x86_64
+meta	image_os	unknown
+meta	image_version	unknown
+meta	mode	full
+meta	partition	4of4
+meta	jobs	1
+meta	bounds_enforced	1
+meta	root_deadline_seconds	1200
+meta	root_kill_grace_seconds	5
+meta	root_memory_limit_kib	12582912
+meta	timing_mechanism	perl
+begin	3	bin/fm-arm-pretool-check.sh	0	full	1793946647213
+end	3	bin/fm-arm-pretool-check.sh	0	full	1793946647213	1793946647328	115	0	ok	unavailable	1
+begin	4	bin/fm-backend-hometag-lib.sh	0	full	1793946647329
+end	4	bin/fm-backend-hometag-lib.sh	0	full	1793946647329	1793946647393	64	0	ok	unavailable	1
+begin	5	bin/fm-backend.sh	0	full	1793946647393
+end	5	bin/fm-backend.sh	0	full	1793946647393	1793946648160	767	0	ok	unavailable	1
+begin	6	bin/fm-backlog-handoff.sh	0	full	1793946648161
+end	6	bin/fm-backlog-handoff.sh	0	full	1793946648161	1793946694110	45949	0	ok	unavailable	1
+begin	8	bin/fm-bearings-snapshot.sh	0	full	1793946694111
+end	8	bin/fm-bearings-snapshot.sh	0	full	1793946694111	1793946694531	420	0	ok	unavailable	1
+begin	9	bin/fm-bootstrap.sh	0	full	1793946694532
+end	9	bin/fm-bootstrap.sh	0	full	1793946694532	1793946724108	29576	0	ok	unavailable	1
+begin	11	bin/fm-captain-hold.sh	0	full	1793946724108

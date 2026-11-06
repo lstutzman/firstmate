@@ -1,0 +1,31 @@
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: begin bin/fm-afk-contract.sh (shard 0, full mode)
+fm-lint: end bin/fm-afk-contract.sh reason=ok rc=0 duration_ms=2872 rss_kib=unavailable
+fm-lint: begin bin/fm-backlog-receive.sh (shard 0, full mode)
+fm-lint: end bin/fm-backlog-receive.sh reason=ok rc=0 duration_ms=6627 rss_kib=unavailable
+fm-lint: begin bin/fm-branch-report.sh (shard 0, full mode)
+fm-lint: end bin/fm-branch-report.sh reason=ok rc=0 duration_ms=9783 rss_kib=unavailable
+fm-lint: begin bin/fm-claude-stop-autoarm.sh (shard 0, full mode)
+fm-lint: end bin/fm-claude-stop-autoarm.sh reason=ok rc=0 duration_ms=7529 rss_kib=unavailable
+fm-lint: begin bin/fm-contributions.sh (shard 0, full mode)
+fm-lint: end bin/fm-contributions.sh reason=ok rc=0 duration_ms=9734 rss_kib=unavailable
+fm-lint: begin bin/fm-devin-config.sh (shard 0, full mode)
+fm-lint: end bin/fm-devin-config.sh reason=ok rc=0 duration_ms=66 rss_kib=unavailable
+fm-lint: begin bin/fm-doc-audience-check.sh (shard 0, full mode)
+fm-lint: end bin/fm-doc-audience-check.sh reason=ok rc=0 duration_ms=66 rss_kib=unavailable
+fm-lint: begin bin/fm-fleet-snapshot.sh (shard 0, full mode)
+fm-lint: end bin/fm-fleet-snapshot.sh reason=ok rc=0 duration_ms=12439 rss_kib=unavailable
+fm-lint: begin bin/fm-hc-lab.sh (shard 0, full mode)
+fm-lint: end bin/fm-hc-lab.sh reason=ok rc=0 duration_ms=218 rss_kib=unavailable
+fm-lint: begin bin/fm-herdr-ci-cleanup.sh (shard 0, full mode)
+fm-lint: end bin/fm-herdr-ci-cleanup.sh reason=ok rc=0 duration_ms=67 rss_kib=unavailable
+fm-lint: begin bin/fm-herdr-session-cleanup.sh (shard 0, full mode)
+fm-lint: end bin/fm-herdr-session-cleanup.sh reason=ok rc=0 duration_ms=9333 rss_kib=unavailable
+fm-lint: begin bin/fm-home-seed.sh (shard 0, full mode)
+fm-lint: end bin/fm-home-seed.sh reason=ok rc=0 duration_ms=8332 rss_kib=unavailable
+fm-lint: begin bin/fm-inbox.sh (shard 0, full mode)
+fm-lint: end bin/fm-inbox.sh reason=ok rc=0 duration_ms=11238 rss_kib=unavailable
+fm-lint: begin bin/fm-lock.sh (shard 0, full mode)
+fm-lint: end bin/fm-lock.sh reason=ok rc=0 duration_ms=7226 rss_kib=unavailable
+fm-lint: begin bin/fm-merge-outcome-lib.sh (shard 0, full mode)

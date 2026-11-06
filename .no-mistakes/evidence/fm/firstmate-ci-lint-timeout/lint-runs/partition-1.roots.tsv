@@ -1,0 +1,42 @@
+format	fm-lint-roots-v1
+meta	shellcheck_version	0.11.0
+meta	platform	Linux x86_64
+meta	image_os	unknown
+meta	image_version	unknown
+meta	mode	full
+meta	partition	1of4
+meta	jobs	1
+meta	bounds_enforced	1
+meta	root_deadline_seconds	1200
+meta	root_kill_grace_seconds	5
+meta	root_memory_limit_kib	12582912
+meta	timing_mechanism	perl
+begin	2	bin/fm-afk-contract.sh	0	full	1793946647228
+end	2	bin/fm-afk-contract.sh	0	full	1793946647228	1793946650100	2872	0	ok	unavailable	1
+begin	4	bin/fm-backlog-receive.sh	0	full	1793946650101
+end	4	bin/fm-backlog-receive.sh	0	full	1793946650101	1793946656728	6627	0	ok	unavailable	1
+begin	5	bin/fm-branch-report.sh	0	full	1793946656729
+end	5	bin/fm-branch-report.sh	0	full	1793946656729	1793946666512	9783	0	ok	unavailable	1
+begin	9	bin/fm-claude-stop-autoarm.sh	0	full	1793946666512
+end	9	bin/fm-claude-stop-autoarm.sh	0	full	1793946666512	1793946674041	7529	0	ok	unavailable	1
+begin	13	bin/fm-contributions.sh	0	full	1793946674042
+end	13	bin/fm-contributions.sh	0	full	1793946674042	1793946683776	9734	0	ok	unavailable	1
+begin	15	bin/fm-devin-config.sh	0	full	1793946683777
+end	15	bin/fm-devin-config.sh	0	full	1793946683777	1793946683843	66	0	ok	unavailable	1
+begin	16	bin/fm-doc-audience-check.sh	0	full	1793946683844
+end	16	bin/fm-doc-audience-check.sh	0	full	1793946683844	1793946683910	66	0	ok	unavailable	1
+begin	18	bin/fm-fleet-snapshot.sh	0	full	1793946683911
+end	18	bin/fm-fleet-snapshot.sh	0	full	1793946683911	1793946696350	12439	0	ok	unavailable	1
+begin	22	bin/fm-hc-lab.sh	0	full	1793946696350
+end	22	bin/fm-hc-lab.sh	0	full	1793946696350	1793946696568	218	0	ok	unavailable	1
+begin	23	bin/fm-herdr-ci-cleanup.sh	0	full	1793946696569
+end	23	bin/fm-herdr-ci-cleanup.sh	0	full	1793946696569	1793946696636	67	0	ok	unavailable	1
+begin	24	bin/fm-herdr-session-cleanup.sh	0	full	1793946696636
+end	24	bin/fm-herdr-session-cleanup.sh	0	full	1793946696636	1793946705969	9333	0	ok	unavailable	1
+begin	25	bin/fm-home-seed.sh	0	full	1793946705969
+end	25	bin/fm-home-seed.sh	0	full	1793946705969	1793946714301	8332	0	ok	unavailable	1
+begin	26	bin/fm-inbox.sh	0	full	1793946714301
+end	26	bin/fm-inbox.sh	0	full	1793946714301	1793946725539	11238	0	ok	unavailable	1
+begin	31	bin/fm-lock.sh	0	full	1793946725540
+end	31	bin/fm-lock.sh	0	full	1793946725540	1793946732766	7226	0	ok	unavailable	1
+begin	32	bin/fm-merge-outcome-lib.sh	0	full	1793946732767

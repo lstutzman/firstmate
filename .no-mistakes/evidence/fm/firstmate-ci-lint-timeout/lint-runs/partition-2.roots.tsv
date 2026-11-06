@@ -1,0 +1,44 @@
+format	fm-lint-roots-v1
+meta	shellcheck_version	0.11.0
+meta	platform	Linux x86_64
+meta	image_os	unknown
+meta	image_version	unknown
+meta	mode	full
+meta	partition	2of4
+meta	jobs	1
+meta	bounds_enforced	1
+meta	root_deadline_seconds	1200
+meta	root_kill_grace_seconds	5
+meta	root_memory_limit_kib	12582912
+meta	timing_mechanism	perl
+begin	3	bin/fm-brief-heading-lib.sh	0	full	1793946647228
+end	3	bin/fm-brief-heading-lib.sh	0	full	1793946647228	1793946647292	64	0	ok	unavailable	1
+begin	4	bin/fm-busy-lib.sh	0	full	1793946647293
+end	4	bin/fm-busy-lib.sh	0	full	1793946647293	1793946647811	518	0	ok	unavailable	1
+begin	5	bin/fm-claude-account-quota.sh	0	full	1793946647811
+end	5	bin/fm-claude-account-quota.sh	0	full	1793946647811	1793946648328	517	0	ok	unavailable	1
+begin	6	bin/fm-config-push.sh	0	full	1793946648329
+end	6	bin/fm-config-push.sh	0	full	1793946648329	1793946659818	11489	0	ok	unavailable	1
+begin	7	bin/fm-cursor-lib.sh	0	full	1793946659818
+end	7	bin/fm-cursor-lib.sh	0	full	1793946659818	1793946660136	318	0	ok	unavailable	1
+begin	8	bin/fm-decision-hold.sh	0	full	1793946660137
+end	8	bin/fm-decision-hold.sh	0	full	1793946660137	1793946660303	166	0	ok	unavailable	1
+begin	11	bin/fm-fleet-sync.sh	0	full	1793946660304
+end	11	bin/fm-fleet-sync.sh	0	full	1793946660304	1793946660722	418	0	ok	unavailable	1
+begin	12	bin/fm-gemini-lib.sh	0	full	1793946660723
+end	12	bin/fm-gemini-lib.sh	0	full	1793946660723	1793946660792	69	0	ok	unavailable	1
+begin	13	bin/fm-git-strip-ai-trailers.sh	0	full	1793946660792
+end	13	bin/fm-git-strip-ai-trailers.sh	0	full	1793946660792	1793946660964	172	0	ok	unavailable	1
+begin	15	bin/fm-herdr-lab.sh	0	full	1793946660965
+end	15	bin/fm-herdr-lab.sh	0	full	1793946660965	1793946661432	467	0	ok	unavailable	1
+begin	17	bin/fm-hermes-process-lib.sh	0	full	1793946661433
+end	17	bin/fm-hermes-process-lib.sh	0	full	1793946661433	1793946661501	68	0	ok	unavailable	1
+begin	21	bin/fm-landed-lib.sh	0	full	1793946661502
+end	21	bin/fm-landed-lib.sh	0	full	1793946661502	1793946661571	69	0	ok	unavailable	1
+begin	24	bin/fm-mail.sh	0	full	1793946661572
+end	24	bin/fm-mail.sh	0	full	1793946661572	1793946676717	15145	0	ok	unavailable	1
+begin	25	bin/fm-merge-authority-lib.sh	0	full	1793946676718
+end	25	bin/fm-merge-authority-lib.sh	0	full	1793946676718	1793946681842	5124	0	ok	unavailable	1
+begin	27	bin/fm-pending-reply-sweep.sh	0	full	1793946681843
+end	27	bin/fm-pending-reply-sweep.sh	0	full	1793946681843	1793946712764	30921	0	ok	unavailable	1
+begin	29	bin/fm-pr-merge.sh	0	full	1793946712764

@@ -1,0 +1,12 @@
+--partition '5of4' -> rc=2 : fm-lint.sh: --partition index must not exceed the partition count, got 5of4.
+--partition '0of4' -> rc=2 : fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 8, got 0of4.
+--partition '9of9' -> rc=2 : fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 8, got 9of9.
+--partition '1of0' -> rc=2 : fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 8, got 1of0.
+--partition '2of1' -> rc=2 : fm-lint.sh: --partition index must not exceed the partition count, got 2of1.
+--partition '1of10' -> rc=2 : fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 8, got 1of10.
+--partition 'abc' -> rc=2 : fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 8, got abc.
+--partition '1of4x' -> rc=2 : fm-lint.sh: --partition must be <k>of<n> with 1 <= k <= n <= 8, got 1of4x.
+--partition '' -> rc=2 : fm-lint.sh: --partition requires <k>of<n>, such as 1of4.
+--partition 1of4 --fast -> rc=2 : fm-lint.sh: --partition requires full canonical lint; omit --fast and explicit paths.
+--partition 1of4 <path> -> rc=2 : fm-lint.sh: --partition requires full canonical lint; omit --fast and explicit paths.
+--partition (no value) -> rc=2 : fm-lint.sh: --partition requires <k>of<n>, such as 1of4.

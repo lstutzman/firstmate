@@ -1,0 +1,15 @@
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint: begin bin/fm-arm-pretool-check.sh (shard 0, full mode)
+fm-lint: end bin/fm-arm-pretool-check.sh reason=ok rc=0 duration_ms=115 rss_kib=unavailable
+fm-lint: begin bin/fm-backend-hometag-lib.sh (shard 0, full mode)
+fm-lint: end bin/fm-backend-hometag-lib.sh reason=ok rc=0 duration_ms=64 rss_kib=unavailable
+fm-lint: begin bin/fm-backend.sh (shard 0, full mode)
+fm-lint: end bin/fm-backend.sh reason=ok rc=0 duration_ms=767 rss_kib=unavailable
+fm-lint: begin bin/fm-backlog-handoff.sh (shard 0, full mode)
+fm-lint: end bin/fm-backlog-handoff.sh reason=ok rc=0 duration_ms=45949 rss_kib=unavailable
+fm-lint: begin bin/fm-bearings-snapshot.sh (shard 0, full mode)
+fm-lint: end bin/fm-bearings-snapshot.sh reason=ok rc=0 duration_ms=420 rss_kib=unavailable
+fm-lint: begin bin/fm-bootstrap.sh (shard 0, full mode)
+fm-lint: end bin/fm-bootstrap.sh reason=ok rc=0 duration_ms=29576 rss_kib=unavailable
+fm-lint: begin bin/fm-captain-hold.sh (shard 0, full mode)
