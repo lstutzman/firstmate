@@ -89,6 +89,14 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - PropertyCompass2 findings go to the Navigator.
   Findings in a fleet repository go to the Quartermaster.
   Both use the same start path as the progress officer, so each office's own check delivers its requests.
+- Fixes never chain: a failure in work the Surgeon's own start caused starts nothing new.
+  An item is started once (the `handled` check in `plan_starts`, `bin/fm-officer-linear.py`), so a later failure of the same item only raises its Found line.
+- Repeated failure stops at 3 starts: a closed item that recurs is a new item, so the Surgeon counts the items started per fingerprint.
+  Once 3 have started (`START_ATTEMPT_CAP` in `bin/fm-officer-linear.py`), the next is filed but not started.
+  It goes to the owning office as a capped-repeat start request (kind `surgeon-fix-cap`) on the same lane a start takes, never into `asks_for_lee`.
+  The office dispatches no fourth fix and files the keyed `needs-decision` `surgeon-<issue>-fix-cap`, so Lee decides the next step.
+  Three separates a bad first attempt from a wrong diagnosis, and few enough that a stuck finding reaches a person within days.
+  The office dispatches no more than 3 fixes for one finding either (`office-roles` "Picking work"); the test is `test_a_finding_that_keeps_coming_back_stops_at_three_starts`.
 - Nothing else starts.
   Medium findings seen fewer than 3 times, low findings, clusters and invalid E2E runs only get filed.
 - A real security bug starts like any other at its severity, as the fleet rule wants high and critical security fixes started at once: a password hash compared with `==` or an API key logged in plaintext is a code fix, not a credential action.

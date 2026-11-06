@@ -85,6 +85,7 @@ JEV_CANDIDATES = 3
 JEV_CALLS_MAX = 300
 JEV_TIMEOUT = 20
 START_MIN_SCORE = 4.0
+START_ATTEMPT_CAP = 3  # starts for one fingerprint (a recurrence is a new item) before the owning office hands the repeat to Lee
 PATTERN_BATCH = 40
 EXISTING_VIEWS = 3
 VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
@@ -712,7 +713,7 @@ def execute_for(officer, row, rid, what, main_home, start_homes):
                      "note", "--request-id", rid, "--json", "--", body]}
 
 
-def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes, handled):
+def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes, handled, attempts=None):
     """(start requests, held findings, asks for Lee): the rubric admits, the reserved classes hold.
 
     An item is handled (started or held) once; `handled` maps its Linear id to the date, so a same-day
@@ -721,6 +722,9 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     starts like a new finding, which is how the found count reaches the start decision.
     A finding may carry `start_what` (the request's wording, in place of "Start this Linear item.") and `start_row`
     (extra fields for the request's evidence); `start_generation` (the merged fix it follows) gives a restart its own request id.
+    `attempts` (fingerprint -> the items started for it) caps a loop: a recurrence is a new item, so once START_ATTEMPT_CAP items
+    have started for one fingerprint the next is not started; it goes to the start-home office as a capped-repeat request (kind `<id>-fix-cap`),
+    never into asks_for_lee, and the office dispatches no fourth fix and files the keyed needs-decision `<id>-<issue>-fix-cap` so Lee decides the next step.
     """
     starts, held, seen = [], [], set()
     sources = rubric.start_sources if rubric.loaded else set(officer.sources)
@@ -742,9 +746,26 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             if issue:
                 handled[issue] = date
                 seen.add(issue)
+        elif fresh and issue and rubric.loaded and attempts is not None and f["fingerprint"] and (
+                issue not in attempts.get(f["fingerprint"], []) and len(attempts.get(f["fingerprint"], [])) >= START_ATTEMPT_CAP):
+            handled[issue] = date
+            seen.add(issue)
+            row = {"kind": "%s-fix-cap" % officer.id, "title": f["title"], "severity": f["severity"], "score": f["score"], "found": f["found"],
+                   "source": f["source"], "fingerprint": f["fingerprint"], "issue": issue, "linear_id": issue, "project": f["project"],
+                   "linear_only": not f["project"], "tries": len(attempts[f["fingerprint"]]), "ask_key": "%s-%s-fix-cap" % (officer.id, issue),
+                   "reason": "Capped repeat: %d fixes already started for this finding" % len(attempts[f["fingerprint"]])}
+            rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256((f["fingerprint"] + "\0fix-cap\0" + issue).encode("utf-8")).hexdigest()[:16])
+            row["execute"] = execute_for(officer, row, rid, (
+                "This is a capped repeat, not a new start: %d fixes already started for this finding and it came back, so no fourth start was made. "
+                "Dispatch no further fix: file the keyed needs-decision %s so Lee decides the next step." % (row["tries"], row["ask_key"])), main_home, start_homes)
+            starts.append(row)
         elif fresh and issue and rubric.loaded:
             handled[issue] = date
             seen.add(issue)
+            if attempts is not None and f["fingerprint"]:
+                tried = attempts.setdefault(f["fingerprint"], [])
+                if issue not in tried:
+                    tried.append(issue)
             row = {"kind": "%s-finding" % officer.id, "title": f["title"], "severity": f["severity"], "score": f["score"], "found": f["found"],
                    "source": f["source"], "fingerprint": f["fingerprint"], "issue": issue, "linear_id": issue,
                    "project": f["project"], "linear_only": not f["project"], "reason": "Real %s finding admitted by the rubric" % f["severity"]}

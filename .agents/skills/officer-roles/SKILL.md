@@ -44,6 +44,19 @@ Add the registry line, then run `bin/fm-officer.sh register <id>`, which install
 Retire with `bin/fm-officer.sh retire <id>`; it removes the check and the line and keeps the findings.
 Never hand-write the check script or its trust record.
 
+Before registering an officer, answer these design questions in its registry notes or rubric:
+
+1. What triggers it?
+2. What does it do, and which services does it read and write?
+3. What does it trigger next?
+4. Where does a human re-enter?
+5. What stops two runs doing the same work?
+
+Every officer is a ticket source and starts work, so also answer what stops it filing the same ticket twice.
+The answers to 5 and the duplicate question already exist: the stable key or fingerprint search, the local-jev duplicate check above 0.85 and the found count in `docs/officers/contract.md`, and the handled-once start rule.
+A new officer points at them and states only what it adds.
+(Adapted from mattpocock/skills, MIT, the software-factory skill.)
+
 ## Handling an officer wake
 
 A `check:` wake from `state/officer-<id>.check.sh` reading `officer <id>: <date>: <n> actionable finding(s) in <path>` is one new digest.

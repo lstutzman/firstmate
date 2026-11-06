@@ -646,6 +646,29 @@ test_found_count_lifts_a_duplicate_into_the_start_decision() {
   pass "fm-officer surgeon: the found count reaches the start decision, once per item"
 }
 
+test_a_finding_that_keeps_coming_back_stops_at_three_starts() {
+  local home json state fp
+  make_world capstart "${LINEAR_ON}jev: $TMP_ROOT/capstart/jev.py; "; home=$WORLD_HOME
+  fake_jev "$TMP_ROOT/capstart/jev.py"
+  printf 'Older report.\\nFound: 2 times (first 2026-10-01, last 2026-10-20, by surgeon)' > "$LDIR/pc9.desc"
+  set_pages capstart '[]' '[{"fp":"f1","title":"Crash on save duplicate-me","disposition":"new","severity":"P2"}]'
+  run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"; state="$home/data/officers/surgeon/review-state.json"
+  fp=$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding")][0].fingerprint' "$json")
+  assert_equals '["PC-9"]' "$(jq -c --arg fp "$fp" '.starts_by_fp[$fp]' "$state")" "a start is recorded against its fingerprint"
+  jq --arg fp "$fp" 'del(.handled["PC-9"]) | .starts_by_fp[$fp] = ["PC-1","PC-2"]' "$state" > "$TMP_ROOT/capstart/s.json" && mv "$TMP_ROOT/capstart/s.json" "$state"
+  run_surgeon "$home" >/dev/null || fail "third-start rerun"
+  assert_equals 1 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding")] | length' "$json")" "a third item for one fingerprint still starts"
+  assert_equals '["PC-1","PC-2","PC-9"]' "$(jq -c --arg fp "$fp" '.starts_by_fp[$fp]' "$state")" "the third start is recorded"
+  jq --arg fp "$fp" 'del(.handled["PC-9"]) | .starts_by_fp[$fp] = ["PC-1","PC-2","PC-3"]' "$state" > "$TMP_ROOT/capstart/s.json" && mv "$TMP_ROOT/capstart/s.json" "$state"
+  run_surgeon "$home" >/dev/null || fail "capped rerun"
+  assert_equals 0 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding")] | length' "$json")" "a fourth item for one fingerprint does not start"
+  assert_equals 1 "$(jq '[.start_requests[] | select(.kind == "surgeon-fix-cap")] | length' "$json")" "it goes to the office lane as one capped-repeat request"
+  assert_equals 0 "$(jq '[.asks_for_lee[] | select(.key == "surgeon-PC-9-fix-cap")] | length' "$json")" "and is not added to asks_for_lee"
+  assert_contains "$(jq -r '[.start_requests[] | select(.kind == "surgeon-fix-cap")][0].execute.argv | last' "$json")" "surgeon-PC-9-fix-cap" "the request names its escalation key for the office"
+  pass "fm-officer surgeon: a finding that keeps coming back stops at 3 starts"
+}
+
 test_start_home_reaches_the_surgeon_through_the_registry() {
   local home nav json
   make_world wiring "${LINEAR_ON}start-home: navigator; "; home=$WORLD_HOME
@@ -958,6 +981,7 @@ test_patterns_are_deduped_handed_on_and_proposed_as_rules
 test_cluster_split_and_fold_constants
 test_start_requests_route_by_project_to_the_owning_office
 test_found_count_lifts_a_duplicate_into_the_start_decision
+test_a_finding_that_keeps_coming_back_stops_at_three_starts
 test_start_home_reaches_the_surgeon_through_the_registry
 test_nightly_area_tries_feature_labels_before_testing
 test_unreadable_rubric_leaves_items_to_start_later

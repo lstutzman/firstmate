@@ -756,7 +756,7 @@ def main(argv):
     apply_found(findings, found, read_json(os.path.join(out, LEDGER_FILE), {}))
     start_homes = lib.parse_start_homes(args.start_home)
     main_home = args.fm_home or (args.home[0] if args.home else "")
-    starts, held, asks = lib.plan_starts(OFFICER, findings, rubric, args.date, args.writes, main_home, start_homes, state.setdefault("handled", {}))
+    starts, held, asks = lib.plan_starts(OFFICER, findings, rubric, args.date, args.writes, main_home, start_homes, state.setdefault("handled", {}), state.setdefault("starts_by_fp", {}))
     if rubric.pattern_memory:
         lib.update_patterns(OFFICER, store, findings, jev, args.date)
     pattern_requests, captures, lint = lib.pattern_outputs(OFFICER, store, rubric, args.date, main_home, start_homes)
