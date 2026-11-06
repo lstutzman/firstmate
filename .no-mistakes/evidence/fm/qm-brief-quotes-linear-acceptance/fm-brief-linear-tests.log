@@ -1,0 +1,9 @@
+ok - fm-brief.sh: ship and scout scaffolds make omitted Herdr intent fail-visible
+ok - fm-brief.sh: relative directory inputs ignore CDPATH, render stable absolute charter paths, or fail loudly
+ok - fm-brief.sh: the home brief include lands last on ship and scout, verbatim, and fails closed
+ok - fm-brief.sh --linear: audience, entry point and acceptance are quoted verbatim
+ok - fm-brief.sh --linear: missing fields are named as not stated
+ok - fm-brief.sh --linear: heading-form fields are quoted and fields stop at their own section
+ok - fm-brief.sh --linear: a long field is quoted whole
+ok - fm-brief.sh --linear: an empty or null description states every field as not stated
+ok - fm-brief.sh --linear: a failed read stops the scaffold; a task without --linear is unchanged
