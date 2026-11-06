@@ -1,0 +1,72 @@
+=== 1 handoff: done while the branch's run is parked at a gate
+daemon run status: awaiting_approval
+status file: done: implementation complete
+--- fm-crew-state.sh handoff-ship
+state: parked · source: run-step · parked at review
+--- fm-fleet-snapshot.sh --secondmate-home-summary
+{"valid":true,"invalidity":{"kind":null,"ids":[]},"reason":null}
+
+=== 2 handoff: done while the branch's run is running
+daemon run status: running
+status file: done: implementation complete
+--- fm-crew-state.sh handoff-ship
+state: parked · source: run-step · parked at review
+--- fm-fleet-snapshot.sh --secondmate-home-summary
+{"valid":true,"invalidity":{"kind":null,"ids":[]},"reason":null}
+
+=== 3 no run ever started: done reads terminal (alarm stays)
+daemon run status: none
+status file: done: no change needed
+--- fm-crew-state.sh handoff-ship
+state: done · source: status-log · no change needed
+--- fm-fleet-snapshot.sh --secondmate-home-summary
+{"valid":false,"invalidity":{"kind":"terminal_in_flight","ids":["handoff-ship"]},"reason":"in-flight backlog item has terminal child state: handoff-ship=done"}
+
+=== 4 run cancelled/aborted, no failed line: done reads terminal
+daemon run status: cancelled
+status file: done: implementation complete
+--- fm-crew-state.sh handoff-ship
+state: parked · source: run-step · parked at review
+--- fm-fleet-snapshot.sh --secondmate-home-summary
+{"valid":true,"invalidity":{"kind":null,"ids":[]},"reason":null}
+
+=== 5 adversarial: worker note names a handoff, no live run
+daemon run status: none
+status file: done: pipeline handoff: validation run not finished
+--- fm-crew-state.sh handoff-ship
+state: done · source: status-log · pipeline handoff: validation run not finished
+--- fm-fleet-snapshot.sh --secondmate-home-summary
+{"valid":true,"invalidity":{"kind":null,"ids":[]},"reason":null}
+
+=== 5b adversarial: worker note mentions a pipeline handoff loosely, no live run
+daemon run status: none
+status file: done: pipeline handoff complete
+--- fm-crew-state.sh handoff-ship
+state: done · source: status-log · pipeline handoff complete
+--- fm-fleet-snapshot.sh --secondmate-home-summary
+{"valid":false,"invalidity":{"kind":"terminal_in_flight","ids":["handoff-ship"]},"reason":"in-flight backlog item has terminal child state: handoff-ship=done"}
+
+=== 5c adversarial: worker note mentions handoff, cancelled run
+daemon run status: cancelled
+status file: done: handed off; pipeline handoff done
+--- fm-crew-state.sh handoff-ship
+state: parked · source: run-step · parked at review
+--- fm-fleet-snapshot.sh --secondmate-home-summary
+{"valid":true,"invalidity":{"kind":null,"ids":[]},"reason":null}
+
+=== 6 adversarial: 5000-char note with live run (truncation)
+daemon run status: awaiting_approval
+status file: done: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx... (5006 chars)
+--- fm-crew-state.sh handoff-ship
+state: parked · source: run-step · parked at review
+--- fm-fleet-snapshot.sh --secondmate-home-summary
+{"valid":true,"invalidity":{"kind":null,"ids":[]},"reason":null}
+
+=== 7 non-no-mistakes mode (direct) with a live run: no marker
+daemon run status: awaiting_approval
+status file: done: implementation complete
+--- fm-crew-state.sh handoff-ship
+state: parked · source: run-step · parked at review
+--- fm-fleet-snapshot.sh --secondmate-home-summary
+{"valid":true,"invalidity":{"kind":null,"ids":[]},"reason":null}
+
