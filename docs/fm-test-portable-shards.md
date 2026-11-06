@@ -131,15 +131,17 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 
 ## Lint partitions and end-to-end latency
 
-`bin/fm-lint.sh` owns two canonical CI partitions, each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
+`bin/fm-lint.sh` owns the canonical CI partitions (`<k>of<n>`; CI runs four), each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
 No fast mode, path skips, or paid runner provisioning is part of this layout.
+Measured before the four-way split (main run of 2026-11-06, 638 roots, one ShellCheck process per runner because each analysis peaks near 8 GiB): per-root time summed to 3192 seconds, so two byte-balanced partitions took 1461 and 1737 seconds of lint (Lint 2 finished the job in 29m10s on a passing run and hit the 30-minute limit on later runs).
+Root time tracks the sourced library closure, not file size, so byte weight is only a scheduling proxy; the same packing at four partitions models at 743 to 841 seconds, which keeps every job well under the limit without touching the timeout tier.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the three watch-triage members still sum to about 26 minutes of CI test time.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses sixteen long-lived Linux jobs (eleven serial, two parallel, Herdr, two lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses eighteen long-lived Linux jobs (eleven serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession and keeps only the newest of close main pushes' runs, without changing the compliance workflow's event semantics.
 
