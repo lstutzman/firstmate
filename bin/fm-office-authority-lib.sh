@@ -103,7 +103,9 @@
 #       FM_OFFICE_LANDING and FM_OFFICE_LANDING_IDS to the landing tasks it
 #       left out; returns 1 with FM_OFFICE_ERROR when a record cannot be read.
 #   fm_office_task_landing <state-dir> <id> <office-id>
-#       0 when task <id> is landing, as defined below.
+#       0 when task <id> is landing, as defined below. bin/fm-watch.sh reads it
+#       too, to skip wedge alarms for a landing task (wedge_skip_landing), with
+#       an empty <office-id> outside an office.
 #
 # Landing: a ship whose finished PR waits only on another home's merge holds no
 # place under wip=, because its worker has stopped and the office can do

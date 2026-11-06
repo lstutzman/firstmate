@@ -970,6 +970,62 @@ test_wedge_threshold_validating_run_is_off_until_armed() {
   pass "with config/wedge-defer-validating absent a running validation keeps the unchanged ladder, wording and reads"
 }
 
+# A landing fixture: a ship that reported its PR checks green, its PR named in
+# its record, and, unless <handoff> is "none", that PR handed to another home's
+# merger (state/<id>.merge-handoff, as bin/fm-pr-check.sh writes it). The done
+# line is captain-relevant, so the wedge timer is pre-armed for the overridden
+# terminal route that owns such a lane.
+landing_fixture() {  # <name> [handoff]
+  local dir state url="https://github.com/o/fleet-app/pull/148"
+  dir=$(wedge_threshold_fixture "$1" \
+    "done [at=$(( $(date +%s) - 600 ))]: PR $url checks green" 0 5)
+  state="$dir/state"
+  printf 'pr=%s\n' "$url" >> "$state/wedge.meta"
+  [ "${2:-record}" = none ] || printf '%s abc123\n' "$url" > "$state/wedge.merge-handoff"
+  printf '%s\n' "$dir"
+}
+
+test_wedge_threshold_skips_a_landing_task() {
+  local dir state fakebin out capture window key n
+  local working='state: working · source: run-step · ci running'
+  window="test:fm-wedge"; key=$(printf '%s' "$window" | tr ':/.' '___')
+
+  dir=$(landing_fixture landing)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  n=1
+  while [ "$n" -le 3 ]; do
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "a landing task woke the watcher at threshold $n: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a landing task queued a stale wake: $(cat "$state/.wake-queue")"
+  grep -F 'possible wedge' "$out" >/dev/null \
+    && fail "a landing task was reported as a possible wedge"
+  [ ! -e "$state/.wedge-escalations-$key" ] \
+    || fail "a landing task counted $(cat "$state/.wedge-escalations-$key") wedge escalation(s)"
+
+  # The same finished PR not handed to another home's merger is not landing.
+  dir=$(landing_fixture landing-no-handoff none)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a finished PR not handed off stopped alarming"
+  grep -F 'possible wedge, escalation 1' "$out" >/dev/null \
+    || fail "a finished PR not handed off lost its wedge alarm: $(cat "$out")"
+
+  # A handed-off task steered back into fix work after its done line is live again.
+  dir=$(landing_fixture landing-steered)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  mkdir -p "$state/wedge.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nfix the review comment\n' \
+    "$(iso_utc_at "$(( $(date +%s) - 60 ))")" > "$state/wedge.inbox/handled/001.msg"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a landing task steered since its done line stopped alarming"
+  grep -F 'possible wedge, escalation 1' "$out" >/dev/null \
+    || fail "a landing task steered since its done line lost its wedge alarm: $(cat "$out")"
+  pass "a landing task's wedge alarm is skipped, and one not handed off or steered since done still alarms"
+}
+
 if [ -n "${FM_TEST_ONLY:-}" ]; then
   "$FM_TEST_ONLY"
   exit 0
@@ -988,4 +1044,5 @@ fm_test_run \
   test_wedge_defer_refuses_a_half_filled_wait_record \
   test_wedge_threshold_defers_to_an_executing_validation_run \
   test_wedge_threshold_escalates_when_no_run_is_executing \
-  test_wedge_threshold_validating_run_is_off_until_armed
+  test_wedge_threshold_validating_run_is_off_until_armed \
+  test_wedge_threshold_skips_a_landing_task
