@@ -40,7 +40,7 @@ on a task with no captain-hold row of the same id, a truncated decision list, an
 invalidity kind, or in-flight work with no open captain decision still alarms. A child ask on a
 task the mate holds for the captain is suppressed for as long as that hold is open, including a
 later, unrelated ask from the same child.
-A secondmate whose every in-flight item (not waiting on merge) is a captain-held item or a child
+A secondmate whose every in-flight item (not waiting on merge) is a non-secondmate child
 endpoint named by the key of the mate's own open needs-decision (the item id, or
 captain-hold-<id>-<n>) is waiting on the captain too. A blocked line never exempts, and a
 truncated endpoint list or one uncovered in-flight item keeps the silence check live.
@@ -205,24 +205,23 @@ def waiting_on_captain(summary, counts):
 
 
 def waiting_on_open_ask(summary, counts, asks):
-    # Every in-flight item the mate holds is waiting on Lee: a captain-hold row covers it, or the
-    # mate's own unanswered needs-decision names it by key (the item id, or captain-hold-<id>-<n>).
-    # Items are the summary's child endpoints, so a truncated endpoint list never exempts, and one
-    # uncovered in-flight item keeps the silence check live. No child may be asking the mate.
+    # Every in-flight item the mate holds is waiting on Lee: the mate's own unanswered needs-decision
+    # names it by key (the item id, or captain-hold-<id>-<n>). Items are the summary's non-secondmate
+    # child endpoints, so a truncated endpoint list never exempts, and one uncovered in-flight item
+    # keeps the silence check live. No child may be asking the mate.
     invalidity = summary.get('invalidity')
     partial = isinstance(invalidity, dict) and invalidity.get('kind') == 'child_current_unavailable'
     if not (summary['valid'] or partial) or child_asking(summary, counts):
         return False
-    endpoints, held_in_flight = summary.get('endpoints'), counts.get('held_in_flight', 0)
-    if (not isinstance(endpoints, list) or type(counts.get('endpoints')) is not int
-            or counts['endpoints'] > len(endpoints) or type(held_in_flight) is not int):
+    endpoints = summary.get('endpoints')
+    if not isinstance(endpoints, list) or type(counts.get('endpoints')) is not int or counts['endpoints'] > len(endpoints):
         return False
     named = set(asks) | {match[1] for key in asks if (match := re.fullmatch(r'captain-hold-(.+)-[0-9]+', key))}
-    held = {row.get('id') for row in summary.get('decisions_open', []) if isinstance(row, dict) and row.get('verb') == 'captain-hold'}
     merging = {row.get('id') for row in summary.get('waiting_on_merge', []) if isinstance(row, dict)}
-    asked = ({row.get('id') for row in endpoints if isinstance(row, dict)} & named) - held - merging
-    uncovered = counts.get('in_flight', 0) - counts.get('waiting_on_merge', 0) - held_in_flight
-    return len(asked) >= uncovered
+    items = {row.get('id') for row in endpoints
+             if isinstance(row, dict) and row.get('kind') and row.get('kind') != 'secondmate'}
+    asked = (items & named) - merging
+    return len(asked) >= counts.get('in_flight', 0) - counts.get('waiting_on_merge', 0)
 
 
 def held_terminal_complete(summary, counts):

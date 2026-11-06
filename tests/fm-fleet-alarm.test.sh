@@ -595,7 +595,7 @@ pass 'a captain-held in-flight item with a done child counts as complete; other 
 open_ask_mate() { # status lines (one per argument, each stamped 3601 seconds ago)
   mate 0 0 3601
   set_mate_work 3 0 0 0 none
-  edit_mate_summary "value['counts']['endpoints']=3; value['endpoints']=[dict(id=i,state='working') for i in ('item-a','item-b','item-c')]"
+  edit_mate_summary "value['counts']['endpoints']=3; value['endpoints']=[dict(id=i,kind='worker',state='working') for i in ('item-a','item-b','item-c')]"
   local at=$(($(date +%s) - 3601)) line
   : > "$HOME_FIX/state/mate.status"
   for line in "$@"; do printf '%s\n' "${line//@AT@/$at}" >> "$HOME_FIX/state/mate.status"; done
@@ -615,6 +615,17 @@ open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'needs-decision [a
   'needs-decision [at=@AT@] [key=captain-hold-item-c-2]: card c'
 edit_mate_summary "value['counts']['decisions_open']=1; value['decisions_open']=[dict(id='item-b',key='ask',verb='needs-decision',source='status')]"
 assert_contains "$(run_alarm check)" 'holding work silent' 'open needs-decisions beside a child asking the mate still alarm'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=captain-hold-item-a-1]: card a' 'needs-decision [at=@AT@] [key=item-b]: card b'
+edit_mate_summary "value['counts']['held_in_flight']=1"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a held item with no hold row named by an ask is not counted twice; the third item still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'needs-decision [at=@AT@] [key=item-b]: card b' \
+  'needs-decision [at=@AT@] [key=nested-mate]: card for the nested mate'
+edit_mate_summary "value['counts']['endpoints']=4; value['endpoints'].append(dict(id='nested-mate',kind='secondmate',state='working'))"
+assert_contains "$(run_alarm check)" 'holding work silent' 'an ask naming a nested secondmate child covers no in-flight item'
 mate 0 0 0
 run_alarm check >/dev/null
 open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'blocked [at=@AT@] [key=item-b]: stuck b' 'blocked [at=@AT@] [key=item-c]: stuck c'
