@@ -134,8 +134,9 @@ anything. The digest lists each unsettled item for the Quartermaster, never
 for Lee, and an unreachable host is a coverage gap there, never a note in the
 velocity file. The officer never deletes anything.
 
-Re-running a day with unchanged inputs rewrites identical digest bytes; the
-one environment input is this host's name, which counts as the home's own
+Re-running a day with unchanged inputs rewrites identical digest bytes (with writes:
+linear, once its items exist: the Linear call count differs between a first and a
+second run); the one environment input is this host's name, which counts as the home's own
 host for ssh-to-self.
 
 `scan` reads only the archive and prints the per-session facts as JSON, so

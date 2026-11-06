@@ -82,7 +82,8 @@
 # keeps only main's requests. A request with no project is placed by its evidence,
 # its source, and then local-jev (bin/fm-officer-progress.py). The friction officer
 # addresses its started-by-default findings (bin/fm-officer-friction.py) to the
-# start-home office whose role is quartermaster, else to this home.
+# start-home office whose dispatch: list names the fleet repositories (firstmate, skills,
+# fleet-app), else to this home; it starts nothing without writes: linear.
 #
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
