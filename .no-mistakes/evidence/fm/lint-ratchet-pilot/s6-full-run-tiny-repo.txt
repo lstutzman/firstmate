@@ -1,0 +1,36 @@
+repo=/tmp/tmp.kpHANjXkx6/repo (not a git repo, so fm-lint takes the full canonical run)
+### S6: full lint with a list entry naming a deleted file (bin/gone.sh)
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint.sh: ratchet exception bin/gone.sh names no file; remove it from bin/fm-lint-ratchet.exceptions
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 1 workflow files valid
+exit=1
+
+### S6b: partition 2of2 does not repeat the missing-file report
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 1 workflow files valid
+exit=0
+
+### S6c: stale entry removed -> full lint passes with legacy.sh (still failing) listed
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 1 workflow files valid
+exit=0
+
+### S6d: a brand-new unlisted file with a ratchet finding fails the full run
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+
+In bin/newfile.sh line 2:
+cat /etc/hostname | wc -l
+    ^-----------^ SC2002 (style): Useless cat. Consider 'cmd < file | ..' or 'cmd file | ..' instead.
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2002 -- Useless cat. Consider 'cmd < file...
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 1 workflow files valid
+exit=1

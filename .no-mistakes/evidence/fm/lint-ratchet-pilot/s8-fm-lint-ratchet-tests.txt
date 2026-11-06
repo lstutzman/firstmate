@@ -1,0 +1,5 @@
+ok - fm-lint.sh skips listed files and fails unlisted ones under the ratchet
+ok - fm-lint.sh reports a listed file that already passes the ratchet
+ok - fm-lint.sh reports a crashed ratchet check as a tool failure, not a stale entry
+ok - fm-lint.sh runs the ratchet check inside the root's one deadline
+ok - fm-lint-ratchet.sh retires one passing file at a time

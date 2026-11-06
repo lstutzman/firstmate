@@ -1,0 +1,28 @@
+### S4: every real exception-list entry still fails the ratchet but the listed run passes (no stale entries)
+entries: 13 (count says 13)
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+
+real	1m4.060s
+user	1m48.515s
+sys	0m4.502s
+exit=0
+
+### S5: helper next / check on the real next file (expected to fail the stricter check)
+next=bin/fm-captain-hold.sh
+                                                ^-----------^ SC2248 (style): Prefer double quoting even when variables don't contain special characters.
+  https://www.shellcheck.net/wiki/SC2248 -- Prefer double quoting even when v...
+check exit=1
+
+### S5b: retire refuses a still-failing file and leaves the list intact (temp copy)
+retire exit=1
+list unchanged
+
+### S5c: retire after a fix: clean file listed in temp list is retired
+14
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint-ratchet.sh: retired bin/zz-ratchet-probe.sh
+retire exit=0
+13
+list back to original

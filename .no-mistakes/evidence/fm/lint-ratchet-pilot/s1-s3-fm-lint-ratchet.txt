@@ -1,0 +1,40 @@
+### S1: new file with ratchet findings, not listed -> fm-lint fails
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+
+In bin/zz-ratchet-probe.sh line 4:
+echo $x
+     ^-- SC2248 (style): Prefer double quoting even when variables don't contain special characters.
+
+Did you mean:
+echo "$x"
+
+
+In bin/zz-ratchet-probe.sh line 5:
+cat /etc/hostname | wc -l
+    ^-----------^ SC2002 (style): Useless cat. Consider 'cmd < file | ..' or 'cmd file | ..' instead.
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2002 -- Useless cat. Consider 'cmd < file...
+  https://www.shellcheck.net/wiki/SC2248 -- Prefer double quoting even when v...
+
+real	0m0.125s
+user	0m0.052s
+sys	0m0.061s
+exit=1
+
+### S2: same file listed on the exception list -> passes
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+exit=0
+
+### S3: listed file that is clean -> stale entry reported
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint.sh: bin/zz-ratchet-probe.sh passes the ratchet check; remove it from /tmp/tmp.jfs51dzNWU/list
+exit=1
+
+### S3b: clean file not listed -> passes
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+exit=0
