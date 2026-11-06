@@ -214,6 +214,7 @@ line_problem() {
           || { printf 'officer %s: captains-log must be an https URL on a friction officer\n' "$id"; return; }
       fi
       [ "$role" != surgeon ] || surgeon_problem "$line" "$id"
+      [ "$role" != friction ] || linear_problem "$line" "$id" friction
       ;;
     pagecheck)
       [[ "$(line_field "$line" app || true)" == https://* ]] \
@@ -243,9 +244,18 @@ SURGEON_STAGING_REPO=git@github.com:lstutzman/PropertyCompass2.git
 
 # surgeon_problem <line> <id>: prints why a surgeon line is unusable, or nothing.
 surgeon_problem() {
-  local line=$1 id=$2 writes
+  local line=$1 id=$2
   [[ "$(line_field "$line" app || true)" == https://* ]] \
     || { printf 'officer %s: a surgeon officer needs app: <https URL of the fleet app>\n' "$id"; return; }
+  [ -n "$(line_field "$line" staging-repo || echo "$SURGEON_STAGING_REPO")" ] \
+    || { printf 'officer %s: staging-repo must name the git remote whose staging branch is the tip\n' "$id"; return; }
+  linear_problem "$line" "$id" surgeon
+}
+
+# linear_problem <line> <id> <role>: prints why the Linear fields (writes, max-creates, max-linear-calls, team)
+# of a filing officer's line are unusable, or nothing.
+linear_problem() {
+  local line=$1 id=$2 role=$3 writes
   writes=$(line_field "$line" writes || echo none)
   case "$writes" in none|linear) ;; *) printf 'officer %s: writes must be linear or none\n' "$id"; return ;; esac
   case "$(line_field "$line" max-creates || echo 100)" in
@@ -254,11 +264,9 @@ surgeon_problem() {
   case "$(line_field "$line" max-linear-calls || echo 450)" in
     ''|*[!0-9]*|0) printf 'officer %s: max-linear-calls must be a whole number, at least 1\n' "$id"; return ;;
   esac
-  [ -n "$(line_field "$line" staging-repo || echo "$SURGEON_STAGING_REPO")" ] \
-    || { printf 'officer %s: staging-repo must name the git remote whose staging branch is the tip\n' "$id"; return; }
   [ "$writes" = linear ] || return 0
   [ "$(line_field "$line" team || echo PC)" = PC ] \
-    || { printf 'officer %s: a surgeon files into team PC only\n' "$id"; return; }
+    || { printf 'officer %s: a %s files into team PC only\n' "$id" "$role"; return; }
 }
 
 # office_read_problem <officer-id> <office> <field> [main]: prints why <office>, named in the registry
@@ -504,6 +512,12 @@ START_HOMES
   [ -z "$log" ] || args+=(--captains-log "$log")
   bosun=$(line_field "$OFFICER_LINE" bosun-hosts || true)
   [ -z "$bosun" ] || args+=(--bosun-hosts "$bosun")
+  [ -z "$(line_field "$OFFICER_LINE" rubric || true)" ] || args+=(--rubric "$(line_field "$OFFICER_LINE" rubric)")
+  args+=(--writes "$(line_field "$OFFICER_LINE" writes || echo none)"
+    --team "$(line_field "$OFFICER_LINE" team || echo PC)"
+    --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)"
+    --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)"
+    --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")")
   if [ -f "$DATA/secondmates.md" ]; then
     while IFS= read -r line; do
       secondmate_registry_parse_line "$line" && args+=(--channel "$SECONDMATE_REGISTRY_ID")
