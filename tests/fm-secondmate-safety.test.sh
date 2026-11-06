@@ -3017,7 +3017,7 @@ EOF
 
 - nav - Drive alpha forward progress (role: navigator; runs-on: slartibartfast; dispatch: alpha; merge: none; merge-via: alpha=slarti; auto-merge-classes: none; wip: 2; tick: every 2h; sources: tick; added 2026-11-04)
 - qm - Drive fleet self-improvement (role: quartermaster; runs-on: slartibartfast,deepthought; dispatch: alpha,beta; merge: alpha,beta; merge-via: none; auto-merge-classes: none; wip: 2; tick: every 4h; sources: tick; added 2026-11-04)
-- alch - Later office (role: alchemist; runs-on: slartibartfast; dispatch: alpha; merge: none; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 4h; sources: tick; added 2026-11-04)
+- alch - Later office (role: bosun; runs-on: slartibartfast; dispatch: alpha; merge: none; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 4h; sources: tick; added 2026-11-04)
 - mac - Laptop office (role: navigator; runs-on: macbook,slartibartfast; dispatch: alpha; merge: none; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 4h; sources: tick; added 2026-11-04)
 EOF
   printf 'command=%s --rules %s\nclasses=authority\nclear=none\n' "$ROOT/bin/fm-reserved-classify.sh" "$w/qm/config/admission/alpha.rules" > "$w/main/config/admission/alpha"
@@ -3044,13 +3044,13 @@ test_office_charter_replaces_idle_by_default() {
   assert_no_grep '{TASK}' "$brief" "office charter left a placeholder to fill"
   assert_grep 'only to RECONCILE work that is already yours' "$brief" "office charter dropped the startup reconciliation scope"
   if FM_HOME="$w/main" "$ROOT/bin/fm-brief.sh" alch --secondmate --office alch alpha >/dev/null 2>&1; then
-    fail "a reserved office role was chartered"
+    fail "an unknown office role was chartered"
   fi
   assert_absent "$w/main/data/alch/brief.md" "a refused office charter still wrote a file"
   if FM_HOME="$w/main" "$ROOT/bin/fm-brief.sh" other --secondmate --office nav alpha >/dev/null 2>&1; then
     fail "an office charter was written for a secondmate id other than the office id"
   fi
-  pass "office charter replaces idle-by-default with the role mandate, and refuses reserved roles and mismatched ids"
+  pass "office charter replaces idle-by-default with the role mandate, and refuses unknown roles and mismatched ids"
 }
 
 test_office_seed_end_to_end() {
@@ -3078,7 +3078,7 @@ test_office_seed_end_to_end() {
       || fail "publish $id failed after an office seed"
   done
   out=$(FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-office.sh" ensure)
-  assert_contains "$out" 'office alch: role "alchemist" is reserved' "ensure did not run over the registry"
+  assert_contains "$out" 'office alch: unknown role "bosun"' "ensure did not run over the registry"
   assert_not_contains "$out" 'office nav:' "ensure gaps for the seeded and published navigator"
   assert_not_contains "$out" 'office qm:' "ensure gaps for the seeded and published quartermaster"
 
@@ -3141,7 +3141,7 @@ test_office_seed_refusals() {
   fi
   assert_grep 'not in the seeded project list' "$err" "dispatch refusal did not explain itself"
   if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" alch "$w/alch" alpha --office alch >/dev/null 2>"$err"; then
-    fail "an office with a reserved role was seeded"
+    fail "an office with an unknown role was seeded"
   fi
   if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha --office qm >/dev/null 2>"$err"; then
     fail "--office naming another id was accepted"
@@ -3161,7 +3161,7 @@ test_office_seed_refusals() {
     assert_absent "$w/$id/.fm-office" "refused office seed of $id left a marker"
     assert_no_grep "- $id - " "$w/main/data/secondmates.md" "refused office seed of $id registered it"
   done
-  pass "office seed refuses plain second mates, macbook and unlisted hosts, missing dispatch, reserved roles, foreign rules and plain charters"
+  pass "office seed refuses plain second mates, macbook and unlisted hosts, missing dispatch, unknown roles, foreign rules and plain charters"
 }
 
 test_backlog_handoff_aborts_safely() {

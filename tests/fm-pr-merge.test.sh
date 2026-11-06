@@ -1146,23 +1146,25 @@ test_office_flagged_class_refuses_like_any_home() {
   pass "an office's flagged class refuses with the same hold and answer commands as any home"
 }
 
-# An office reads a route only from the config its authority record pins: a
-# pinned route hands off, a route naming the office itself never merges, and a
-# route added after publishing refuses like any other edit.
 # The Alchemist owns transcript-archive and local-jev, whose scan gate it can
-# never admit itself: a scan-gate flag refuses with the captain hold, exactly
-# as any other flagged class does (fleet rules section 3, scan-gate PRs).
+# never admit itself: its pinned scan-gate route hands the PR to Slarti and
+# never offers the office the captain hold (fleet rules section 3, scan-gate PRs).
 test_alchemist_scan_gate_flag_is_refused() {
   local case_dir
-  case_dir=$(ADMISSION_CLASSES='scan-gate deploy' make_office_case office-scan-gate 'scan-gate')
+  case_dir=$(ADMISSION_CLASSES='scan-gate deploy' ADMISSION_EXTRA='route.scan-gate=handoff:slarti' \
+    make_office_case office-scan-gate 'scan-gate')
   run_office_merge "$case_dir"
   [ "$RC" -ne 0 ] || fail "office-scan-gate: an office merged a scan-gate PR"
   assert_not_merged "$case_dir" office-scan-gate
-  assert_grep 'hold task-x1-admit-9-scan-gate' "$case_dir/stderr" "office-scan-gate: the refusal did not name the hold"
-  assert_grep 'answer task-x1-admit-9-scan-gate' "$case_dir/stderr" "office-scan-gate: the refusal did not name the answer"
-  pass "an office never admits a scan-gate flag; it refuses with the hold and answer commands"
+  assert_grep 'handoff=slarti' "$case_dir/stderr" "office-scan-gate: the refusal did not hand off to slarti"
+  assert_grep 'key=merge-handoff-9' "$case_dir/stderr" "office-scan-gate: the handoff line was not printed"
+  assert_no_grep 'admit-9-scan-gate' "$case_dir/stderr" "office-scan-gate: the office was offered the captain hold"
+  pass "an office never admits a scan-gate flag; its pinned route hands the PR to slarti"
 }
 
+# An office reads a route only from the config its authority record pins: a
+# pinned route hands off, a route naming the office itself never merges, and a
+# route added after publishing refuses like any other edit.
 test_office_routed_class_hands_off_and_is_pinned() {
   local case_dir
   case_dir=$(ADMISSION_EXTRA='route.payments=handoff:slarti' make_office_case office-routed 'code payments')

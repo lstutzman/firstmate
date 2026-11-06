@@ -37,7 +37,7 @@
 #   instead: a standing mandate that replaces idle-by-default. <id> must equal
 #   the task id and name exactly one line in this home's data/offices.md whose
 #   role is an office role (bin/fm-office-authority-lib.sh owns the role list,
-#   and a reserved role is refused). The charter keeps the second-mate parent
+#   and any other role is refused). The charter keeps the second-mate parent
 #   channel, inbox, and escalation sections, replaces the operating model's
 #   idle clauses and the idle Definition of done, and adds an "# Office cycle"
 #   section and the "# Office authority" heading that bin/fm-office-authority-lib.sh

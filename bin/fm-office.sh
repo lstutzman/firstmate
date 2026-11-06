@@ -27,7 +27,7 @@
 # ensure (run by bin/fm-bootstrap.sh) prints one "OFFICE: office <id>: <gap>"
 # line per mismatch between data/offices.md and the fleet, and nothing when
 # they agree. An absent data/offices.md means no offices. A gap is a malformed
-# line, an unknown or reserved role, a bad value for a key, a runs-on host that is not
+# line, an unknown role, a bad value for a key, a runs-on host that is not
 # allowed or not the registered second mate's host, an id that is not a
 # registered second mate, a missing .fm-office marker or "# Office authority"
 # charter heading in a local office home, a dispatch project missing from the
