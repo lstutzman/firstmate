@@ -714,3 +714,52 @@ fm_nm_runs_newest_for_branch() {  # <branch> <runs-list-output>
   done <<< "$list"
   return 0
 }
+
+# Whether a worker is still driving its no-mistakes run from <worktree>: 0 when
+# a `no-mistakes axi run` or `no-mistakes axi respond` process has its current
+# working directory at or under <worktree>, 1 when none does, 2 when that could
+# not be established. A drive call is the only thing that wakes a worker at its
+# run's next gate or outcome, so this is the evidence that a quiet worker on an
+# active run will come back by itself. The match is structural: argv[0]'s base
+# name is `no-mistakes` and the next two words are `axi run` or `axi respond`,
+# so a shell wrapper whose script merely mentions the command, and the bounded
+# `axi status` reads supervision itself makes from the worktree, never count.
+# The working directory comes from the kernel: /proc/<pid>/cwd where /proc
+# exists (FM_PROC_ROOT_OVERRIDE names another root for tests), else
+# `lsof -a -p <pid> -d cwd`. A candidate that is still running but whose
+# directory cannot be read makes the answer 2 unless another candidate proves a
+# live call; one that exited since the listing is skipped.
+fm_nm_drive_call_live() {  # <worktree>
+  local wt=$1 out pid cwd proc_root unknown=0
+  [ -n "$wt" ] && [ -d "$wt" ] || return 2
+  wt=$(cd "$wt" 2>/dev/null && pwd -P) || return 2
+  proc_root=${FM_PROC_ROOT_OVERRIDE:-/proc}
+  out=$(LC_ALL=C ps -A -o pid= -o args= 2>/dev/null) || return 2
+  out=$(printf '%s\n' "$out" | awk '
+    {
+      n = split($2, part, "/")
+      if (part[n] == "no-mistakes" && $3 == "axi" && ($4 == "run" || $4 == "respond")) print $1
+    }')
+  for pid in $out; do
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    [ "$pid" != "$$" ] || continue
+    cwd=
+    if [ -d "$proc_root/$pid" ]; then
+      cwd=$(readlink "$proc_root/$pid/cwd" 2>/dev/null) || cwd=
+    elif command -v lsof >/dev/null 2>&1; then
+      cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1) || cwd=
+    fi
+    if [ -z "$cwd" ]; then
+      # A process that exited since the listing is simply not a drive call.
+      if [ -d "$proc_root/$pid" ] || { [ ! -d "$proc_root" ] && ps -p "$pid" >/dev/null 2>&1; }; then
+        unknown=1
+      fi
+      continue
+    fi
+    case "$cwd" in
+      "$wt"|"$wt"/*) return 0 ;;
+    esac
+  done
+  [ "$unknown" -eq 0 ] || return 2
+  return 1
+}

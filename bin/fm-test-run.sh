@@ -323,7 +323,7 @@ family_for_basename() {
     fm-watch-triage.test.sh|fm-watch-triage-pause.test.sh|fm-watch-limit-resume.test.sh|\
     fm-watch-triage-wedge-defer.test.sh|fm-task-inbox.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-watch-wedge-cap.test.sh|\
-    fm-watch-wedge-cap-unconfigured-parity.test.sh)
+    fm-watch-wedge-cap-unconfigured-parity.test.sh|fm-nm-drive-steer.test.sh)
       printf '%s\n' watcher-wake-lock
       ;;
     fm-afk-inject-herdr-e2e.test.sh|fm-afk-launch.test.sh|fm-backend-autodetect-smoke.test.sh|\
@@ -868,6 +868,7 @@ tests/fm-mail.test.sh 11507
 tests/fm-merge-local.test.sh 10277
 tests/fm-muse-harness.test.sh 57488
 tests/fm-muse-signals-live-e2e.test.sh 59
+tests/fm-nm-drive-steer.test.sh 63137
 tests/fm-nm-test-contract.test.sh 144
 tests/fm-no-mistakes-required.test.sh 354
 tests/fm-office-authority.test.sh 2442
@@ -1668,7 +1669,7 @@ families_for_changed_path() {
       printf '%s\n' watcher-wake-lock
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
       ;;
-    bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
+    bin/fm-wake*|bin/fm-inactive-reconcile.sh|bin/fm-nm-drive-steer.sh|\
     bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
       printf '%s\n' watcher-wake-lock
       ;;
@@ -1840,11 +1841,13 @@ families_for_changed_path() {
     bin/fm-nm-run-lib.sh)
       # Shared no-mistakes run-attribution primitives, sourced by
       # bin/fm-crew-state.sh (pure-contract-unit), bin/fm-teardown.sh's
-      # pre-teardown run abort (pr-forge), and bin/fm-rex-marks.sh's
-      # validation progress (rex).
+      # pre-teardown run abort (pr-forge), bin/fm-rex-marks.sh's
+      # validation progress (rex), and bin/fm-nm-drive-steer.sh's drive-call
+      # probe (watcher-wake-lock).
       printf '%s\n' pure-contract-unit
       printf '%s\n' pr-forge
       printf '%s\n' rex
+      printf '%s\n' watcher-wake-lock
       ;;
     bin/fm-control-lib.sh)
       printf '%s\n' backend-dispatch
