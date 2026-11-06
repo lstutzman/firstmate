@@ -710,7 +710,9 @@ mate 0 0 0
 quota 0.99
 run_alarm check >/dev/null
 : > "$HOME_FIX/config/fleet-ledger"
-[ -z "$(run_alarm timer)" ] || fail 'timer publishes through ledger without stdout'
+out=$(run_alarm timer)
+[ "$(printf '%s\n' "$out" | wc -l)" = 1 ] || fail 'timer prints only its run result'
+printf '%s\n' "${out#RUN-RESULT }" | jq -e '.counts.alerts >= 1 and (.summary | test("alert.*raised")) and (.summary | length <= 200)' >/dev/null || fail 'timer run result counts alerts'
 assert_contains "$(cat "$HOME_FIX/state/fleet-ledger.jsonl")" 'needs-decision' 'timer publishes without a watcher'
 jq -e -s 'map(select(.state == "needs-decision")) | length > 0 and all(.[]; .cause == "decision")' \
   "$HOME_FIX/state/fleet-ledger.jsonl" >/dev/null || fail 'a quota alarm line must state cause decision'
@@ -1056,3 +1058,10 @@ run_alarm timer
 tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=fleet-alarm\]: ' \
   || fail 'the escalated wait must resolve when the secondmate is readable and speaks again'
 pass 'a silent mate whose home goes unreachable still escalates at its recheck time'
+mate 0 0 0
+quota 0.2
+out=$(run_alarm timer)
+[ "$(printf '%s\n' "$out" | wc -l)" = 1 ] || fail 'timer prints only its run result'
+assert_contains "$out" 'RUN-RESULT {"summary": "no alerts;' 'timer run result says no alerts'
+printf '%s\n' "${out#RUN-RESULT }" | jq -e '.counts.alerts == 0' >/dev/null || fail 'timer run result counts zero alerts'
+pass 'timer prints one RUN-RESULT line with no alerts'

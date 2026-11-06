@@ -531,6 +531,12 @@ def check(channel):
                        'suspect': {**stored.get('suspect', {}), channel: suspect}}, file)
             temporary = file.name
         os.replace(temporary, record)
+        if channel == 'timer':
+            quota = ('quota unreadable' if 'quota-read' in raw
+                     else quota_info.removeprefix('Claude quota context (not an alarm): ') or 'quota not read')
+            raised = len(alarms)
+            summary = ((f'{raised} alert(s) raised' if raised else 'no alerts') + f'; {quota}')[:200]
+            print('RUN-RESULT ' + json.dumps({'summary': summary, 'counts': {'alerts': raised}}))
 
 
 def setup(action):
