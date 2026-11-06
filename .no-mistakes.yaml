@@ -22,6 +22,27 @@ document:
     evidence destination, and unique safety facts, then review the complete
     branch diff again after every documentation or lint fix.
 
+# Review rules. Trusted-only, read from the default-branch copy, so they take effect after merge.
+# The verifiable-review rule is owned by ~/.claude/references/verifiable-review.md; do not restate it.
+review:
+  path_instructions:
+    - path: "**"
+      instructions: |
+        Verifiability: read ~/.claude/references/verifiable-review.md and answer its
+        "How is this fully verifiable?" section for this change. "Tests pass" is not an answer.
+        A changed behaviour with no check that would fail if it broke is a finding.
+    - path: "**"
+      instructions: |
+        Failure in this repo means a fleet script or contract that behaves wrongly, loses unlanded
+        work, or reports success it did not have. Skip style and nits. Ignore generated files,
+        lockfiles and files under docs/verification/ that only record dated output. Every finding
+        cites file and line. The summary opens with a count and says "no issues" plainly when
+        there are none.
+    - path: "**"
+      instructions: |
+        In a re-review, report a new finding on code the fix round did not change only if it is
+        an error; otherwise report nothing.
+
 # Pin lint to the same owner CI invokes instead of leaving it to no-mistakes'
 # default handling, which does not invoke the repository's canonical lint gate.
 # `bin/fm-lint.sh` owns the context-sensitive ShellCheck modes and GitHub
