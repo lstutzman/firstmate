@@ -2657,6 +2657,39 @@ clear_pause_tracking() {  # <window-key>
   clear_stale_hash_tracking "$key"
 }
 
+# A claude crew parked on its usage-limit prompt never resumes on its own, and
+# the pane it leaves is idle with no error. bin/fm-limit-resume.sh owns what to
+# do about it: before the reset the prompt states it records a timed `paused:`
+# wait (so this watcher's declared-pause handling absorbs the idle pane and
+# rechecks when the time arrives), and after it dismisses the prompt through
+# bin/fm-control.sh and steers the crew once. This only decides WHEN to ask it,
+# from the dialog name the poll already derived from its one capture, so a pane
+# that is not on that prompt costs nothing and a crew that is on it costs one
+# detached, bounded run per FM_LIMIT_RESUME_CHECK_SECS (default 60).
+# The pane-change time (the hash file's mtime) is passed as the bound on when
+# the prompt was drawn: a bound that is late can only delay a recovery, never
+# advance it before the stated reset.
+limit_resume_check() {  # <window> <task> <dialog-name> <hash-file>
+  local win=$1 task=$2 dialog=${3-} hf=${4-} key interval since marker
+  [ "$dialog" = "$FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME" ] || return 0
+  [ -n "$task" ] || return 0
+  [ "$(window_harness "$win")" = claude ] || return 0
+  interval=${FM_LIMIT_RESUME_CHECK_SECS:-60}
+  case "$interval" in '' | *[!0-9]*) interval=60 ;; esac
+  key=$(window_key "$win")
+  marker="$STATE/.limit-resume-checked-$key"
+  [ "$(age_of "$marker")" -ge "$interval" ] || return 0
+  touch "$marker" 2>/dev/null || return 0
+  since=$(stat_mtime "$hf" 2>/dev/null || true)
+  case "$since" in '' | *[!0-9]*) since=$(date +%s) ;; esac
+  triage_log "claude usage-limit prompt on $win: asking fm-limit-resume.sh (pane unchanged since $since)"
+  (
+    fm_run_timed 120 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+      "${FM_LIMIT_RESUME_BIN:-$SCRIPT_DIR/fm-limit-resume.sh}" --since "$since" "$task" \
+      </dev/null >"$STATE/.limit-resume.$key.out" 2>&1 || true
+  ) </dev/null >/dev/null 2>&1 &
+}
+
 # Reconcile a declared pause or captain-held status with authoritative crew state.
 # After fm-crew-state has fallen back to stopped or unknown, paused classification is
 # recovered only for a confidently dead ordinary crew, or for a secondmate, whose
@@ -4443,6 +4476,7 @@ EOF
       if [ "$n" -ge 2 ] && [ "$busy_now" -ne 0 ]; then
         # The pane is idle/stale at hash $h. Triage decides whether this wakes
         # firstmate. Detection itself is unchanged from above.
+        [ "$kind" = secondmate ] || limit_resume_check "$w" "$task" "$dialog" "$hf"
         if [ "$kind" = secondmate ]; then
           case "$(pause_state_class "$w" "$task")" in
             paused) handle_paused_stale "$w" "$task" "$h" ;;
