@@ -148,6 +148,55 @@ test_unrelated_processes_are_not_drive_calls() {
   pass "only a no-mistakes axi run or respond process in the worker's own copy counts as a drive call"
 }
 
+# Where /proc does not exist (macOS), the probe reads each candidate's working
+# directory from `lsof -a -p <pid> -d cwd -Fn`, whose field output is one
+# `p<pid>`, `f<fd>` and `n<name>` record per line (lsof(8) OUTPUT FOR OTHER
+# PROGRAMS). The fake lsof prints those records from $dir/lsof/<pid>, and the
+# fake `ps -p <pid>` reports a pid alive while $dir/alive/<pid> exists.
+probe_without_proc() {  # <dir>
+  local dir=$1
+  PATH="$dir/fakebin:$PATH" FM_PROC_ROOT_OVERRIDE="$dir/no-proc" \
+    bash -c '. "$1/bin/fm-nm-run-lib.sh"; fm_nm_drive_call_live "$2"' _ "$ROOT" "$dir/wt"
+}
+
+test_lsof_probe_reads_the_drive_call_cwd_without_proc() {
+  local dir rc
+  dir="$TMP_ROOT/lsof"
+  mkdir -p "$dir/fakebin" "$dir/wt/sub" "$dir/other" "$dir/lsof" "$dir/alive"
+  dir=$(cd "$dir" && pwd -P)
+  cat > "$dir/fakebin/ps" <<SH
+#!/usr/bin/env bash
+if [ "\$*" = "-A -o pid= -o args=" ]; then cat "$dir/ps.txt"; exit 0; fi
+if [ "\$1" = "-p" ]; then [ -e "$dir/alive/\$2" ]; exit; fi
+exit 1
+SH
+  cat > "$dir/fakebin/lsof" <<SH
+#!/usr/bin/env bash
+[ "\$*" = "-a -p \$3 -d cwd -Fn" ] || exit 1
+cat "$dir/lsof/\$3" 2>/dev/null
+SH
+  chmod +x "$dir/fakebin/ps" "$dir/fakebin/lsof"
+
+  printf '6001 no-mistakes axi run --wait 60m\n' > "$dir/ps.txt"
+  printf 'p6001\nfcwd\nn%s\n' "$dir/wt/sub" > "$dir/lsof/6001"
+  rc=0; probe_without_proc "$dir" || rc=$?
+  [ "$rc" = 0 ] || fail "a drive call whose lsof cwd is inside the copy answered $rc, not 0"
+
+  printf 'p6001\nfcwd\nn%s\n' "$dir/other" > "$dir/lsof/6001"
+  rc=0; probe_without_proc "$dir" || rc=$?
+  [ "$rc" = 1 ] || fail "a drive call whose lsof cwd is another copy answered $rc, not 1"
+
+  : > "$dir/lsof/6001"
+  : > "$dir/alive/6001"
+  rc=0; probe_without_proc "$dir" || rc=$?
+  [ "$rc" = 2 ] || fail "a live drive call with no readable lsof cwd answered $rc, not 2"
+
+  rm -f "$dir/alive/6001"
+  rc=0; probe_without_proc "$dir" || rc=$?
+  [ "$rc" = 1 ] || fail "a drive call that exited since the listing answered $rc, not 1"
+  pass "without /proc the probe reads the drive call's cwd from lsof field output"
+}
+
 test_declared_external_wait_gets_no_steer() {
   local dir line
   for line in \
@@ -279,6 +328,7 @@ fm_test_run \
   test_parked_gate_the_worker_owes_is_a_reattach_but_a_human_gate_is_not \
   test_live_drive_call_gets_no_steer \
   test_unrelated_processes_are_not_drive_calls \
+  test_lsof_probe_reads_the_drive_call_cwd_without_proc \
   test_declared_external_wait_gets_no_steer \
   test_only_an_open_decision_outlives_a_later_event \
   test_unknown_probe_or_ci_ready_done_gets_no_steer \
