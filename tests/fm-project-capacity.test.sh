@@ -1057,6 +1057,68 @@ test_office_wip_defers_without_leaving_anything_behind() {
   pass "an office spawn past its wip is deferred before anything exists"
 }
 
+# A ready PR handed to its merger, whose worker reported done: a landing task
+# (bin/fm-office-authority-lib.sh), which holds no place under the office's wip=.
+write_landing() {  # <home> <id> <project-dir> <pr-number> <hours-ago>
+  write_ready "$1" "$2" "$3" "$4" "$5"
+  printf 'done [at=%s]: PR https://github.com/o/r/pull/%s checks green\n' "$(($(date +%s) - 60))" "$4" > "$1/state/$2.status"
+  printf 'https://github.com/o/r/pull/%s abc123\n' "$4" > "$1/state/$2.merge-handoff"
+}
+
+test_office_landing_task_frees_a_place() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case office-landing task-c task-d)
+  home="$case_dir/home"
+  make_office "$home" wip=1
+  write_landing "$home" landing-a "$case_dir/project" 1 1
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "an office whose only task is landing deferred a spawn: $out"
+  assert_contains "$out" "spawned task-c" "an office whose only task is landing did not launch the worker"
+
+  printf 'needs-decision [at=%s] [cause=decision] [key=nm-r1-review]: ask-user findings=f1\n' "$(date +%s)" >> "$home/state/landing-a.status"
+  rm -f "$home/state/task-c.meta"
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  rc=0; out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "an office whose task has an open finding was not deferred: $out"
+  assert_contains "$out" "deferred: office navigator runs at most 1 task(s) at once (its authority record's wip=) and 1 are live (landing-a)" \
+    "the office deferral did not count the task with an open finding"
+  assert_nothing_created "$case_dir" "$home" task-d "$before" "$worktrees"
+  pass "an office's landing task frees its place in the spawn gate, and one with an open finding does not"
+}
+
+test_office_landing_keeps_project_capacity_and_landing_lag() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case office-landing-capacity task-c)
+  home="$case_dir/home"
+  make_office "$home" wip=2
+  declare_capacity "$home" "project 1"
+  write_landing "$home" landing-a "$case_dir/project" 1 1
+  write_live "$home" live-b "$case_dir/project"
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a spawn past the project's capacity was admitted because a landing task freed an office place: $out"
+  assert_not_contains "$out" "deferred: office" "the office wip deferred a spawn that its landing task left room for"
+  assert_contains "$out" "deferred: project project admits 1 worker(s) at once on this machine ($home/config/project-capacity) and 1 already hold a place (live-b)" \
+    "the project capacity did not defer the spawn"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+
+  case_dir=$(make_case office-landing-lag task-c)
+  home="$case_dir/home"
+  make_office "$home" wip=1
+  register_landing_lag "$home" 24
+  write_landing "$home" landing-a "$case_dir/project" 1 30
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  rc=0; out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a spawn while landing lags was admitted because a landing task freed an office place: $out"
+  assert_not_contains "$out" "deferred: office" "the office wip deferred a spawn that its landing task left room for"
+  assert_contains "$out" "https://github.com/o/r/pull/1 (task landing-a) has waited 30 hour(s)" "landing lag did not defer the spawn"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  pass "a landing task frees an office place but project capacity and landing lag still defer the spawn"
+}
+
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_exhausted_capacity_defers_without_leaving_anything_behind
@@ -1090,3 +1152,5 @@ test_office_spawns_inside_its_record
 test_non_office_spawn_records_no_office
 test_office_refuses_spawns_outside_its_record
 test_office_wip_defers_without_leaving_anything_behind
+test_office_landing_task_frees_a_place
+test_office_landing_keeps_project_capacity_and_landing_lag
