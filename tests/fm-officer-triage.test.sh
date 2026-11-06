@@ -40,13 +40,21 @@ spec = {"sessions": [
                        "new_string": "await page.waitForLoadState('networkidle')"}, "", False],
              ["Edit", {"file_path": "/y.ts", "old_string": "a",
                        "new_string": "await page.goto(u, { waitUntil: 'networkidle' })"}, "", False]]},
-  # The 2026-11-05 incident: a count of env lines prints no values.
-  {"machine": "alpha", "id": "s-env", "first_prompt": "hello",
-   "calls": [["Bash", {"command": c}, "", False] for c in (
-     "env | grep -c GH_TOKEN", "env | grep GH_ | wc -l", "env | sort | grep -c X",
-     "printenv | grep -q X", "env | grep -c X | tee out",
-     "env", "env | grep -ec X", "env | tee out | grep -c X", "env | grep X > out | wc -l",
-     "env > /tmp/dump", "printenv >> /tmp/dump", "env > /dev/null")]},
+  # The 2026-11-05 incident: a count of env lines prints no values. One session per command.
+  *[{"machine": "alpha", "id": "s-env-" + label, "first_prompt": "hello",
+     "calls": [["Bash", {"command": c}, "", False]]} for label, c in (
+     ("grep-c", "env | grep -c GH_TOKEN"), ("grep-wc", "env | grep GH_ | wc -l"),
+     ("sort-grep-c", "env | sort | grep -c X"), ("grep-q", "printenv | grep -q X"),
+     ("cut-sort-uniq-wc", "env | cut -d= -f1 | sort | uniq | wc -l"),
+     ("devnull", "env > /dev/null"), ("devnull-stderr", "env >/dev/null 2>&1"),
+     ("bare", "env"), ("grep-ec", "env | grep -ec X"), ("count-tee", "env | grep -c X | tee out"),
+     ("tee-count", "env | tee out | grep -c X"), ("redirect-mid", "env | grep X > out | wc -l"),
+     ("to-file", "env > /tmp/dump"), ("append-file", "printenv >> /tmp/dump"),
+     ("amp-file", "env &> /tmp/dump"), ("amp-append", "env &>> /tmp/dump"),
+     ("clobber-file", "env >| /tmp/dump"), ("stderr-merge", "env 2>&1"),
+     ("stderr-null", "env 2>/dev/null"), ("sort-o", "env | sort -o /tmp/x | wc -l"),
+     ("uniq-out", "env | uniq - /tmp/x | wc -l"),
+     ("awk-print", "env | awk '{print > \"f\"}' | wc -l"))],
   {"machine": "alpha", "id": "s-failed", "first_prompt": ": Firstmate operational input waiting: read 'y'",
    "calls": [["Read", msg, brief_failed, False],
              ["Bash", {"command": "sleep 30 && git status"}, "", False]]},
@@ -190,16 +198,15 @@ test_rule_violation_reports_command_head_only() {
 }
 
 test_env_dump_rule_ignores_count_only_pipelines() {
-  local home json finding
+  local home json flagged
   home=$(make_world envdump)
   run_officer "$home" >/dev/null || fail "run must succeed"
   json="$home/data/officers/triage/$DATE.json"
-  finding=$(jq -c '[.findings[] | select(.kind == "rule-violation" and .rule == "env-dump")]' "$json")
-  assert_equals 1 "$(printf '%s' "$finding" | jq -r 'length')" "env-dump is one finding for the one session"
-  assert_equals alpha:s-env "$(printf '%s' "$finding" | jq -r '.[0].session')" "the finding names the session"
-  assert_equals 6 "$(printf '%s' "$finding" | jq -r '.[0].count')" \
-    "a bare env, grep -ec, a tee, a pipe to a redirect, env > file and printenv >> file flag; counts, checks and env > /dev/null do not"
-  assert_contains "$(printf '%s' "$finding" | jq -r '.[0].summary')" "e.g. env" "the finding carries the head env"
+  flagged=$(jq -r '[.findings[] | select(.kind == "rule-violation" and .rule == "env-dump") | .session]
+    | sort | join(" ")' "$json")
+  assert_equals "alpha:s-env-amp-append alpha:s-env-amp-file alpha:s-env-append-file alpha:s-env-awk-print alpha:s-env-bare alpha:s-env-clobber-file alpha:s-env-grep-ec alpha:s-env-redirect-mid alpha:s-env-sort-o alpha:s-env-stderr-merge alpha:s-env-stderr-null alpha:s-env-tee-count alpha:s-env-to-file alpha:s-env-uniq-out" \
+    "$flagged" \
+    "exactly the commands that print values or write them to a file flag; counts (even teed), checks and stdout to /dev/null do not"
   pass "fm-officer triage: env-dump ignores count-only pipelines and still flags value-printing forms"
 }
 

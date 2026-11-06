@@ -81,20 +81,24 @@ SEGMENT_RULES = [
     ("no-verify", "medium", re.compile(r"^git\b.*\s--no-verify\b")),
     ("bare-git-stash", "medium", re.compile(r"^git\s+stash(\s+pop)?\s*$")),
     ("env-dump", "high", re.compile(
-        r"^(env|printenv)\s*(?:1?>>?\s*(?!/dev/null\b)\S.*)?$|^cat\s+(\S*/)?\.env\s*$")),
+        r"^(?:(?:env|printenv)(?:\s+2>>?\s*\S+)*\s*(?:(?:&>>?|1?>[>|]?)\s*(?!/dev/null\b)\S.*)?"
+        r"|cat\s+(\S*/)?\.env(?:\s+2>>?\s*\S+)*\s*)$")),
     ("startup-file-print", "medium", re.compile(
         r"^(cat|head|tail|less|more)\s+(\S*/)?\.(zshrc|bashrc|profile|zprofile|bash_profile|zshenv)\s*$")),
 ]
 PR_CREATE_RE = re.compile(r"\b(gh|gh-axi)\s+pr\s+create\b")
 PR_HEADINGS = ("Testing", "Risk", "How to revert")
-SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\||\n)\s*")
-SEGMENT_SPLIT_OPS = re.compile(r"\s*(&&|\|\||;|\||\n)\s*")
+SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||;|(?<!>)\||\n)\s*")
+SEGMENT_SPLIT_OPS = re.compile(r"\s*(&&|\|\||;|(?<!>)\||\n)\s*")
 # A consumer that prints only a count or an exit status, never the values it reads.
 COUNT_ONLY_RE = re.compile(
     r"^(?:(?:grep|egrep|fgrep)\s+(?:\S+\s+)*?(?:-[A-Za-dg-z]*[cq][A-Za-z]*|--count|--quiet|--silent)(?:\s|$)"
     r"|wc(?:\s+-[lwcm]+)*\s*$)")
 # A stage that only passes on part of what it reads to the next stage, writing nothing else.
-PURE_FILTER_RE = re.compile(r"^(?:grep|egrep|fgrep|sort|uniq|cut|awk)(?:\s[^<>]*)?$")
+PURE_FILTER_RE = re.compile(
+    r"^(?:(?:grep|egrep|fgrep|cut)(?:\s[^<>]*)?"
+    r"|sort(?!\S|.*\s(?:-[A-Za-z]*o|--o))(?:\s[^<>]*)?"
+    r"|uniq(?:\s+-\S+)*)$")
 HEREDOC_RE = re.compile(r"(?<!<)<<(?!<)(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
 QUOTED_RE = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 NETWORKIDLE_RE = re.compile(
