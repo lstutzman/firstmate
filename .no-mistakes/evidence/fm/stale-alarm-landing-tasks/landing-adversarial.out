@@ -1,0 +1,7 @@
+A triage log: [2026-11-06T21:03:41+0000] absorbed stale (overridden terminal status) (open keyed decision explains the quiet, idle 1s): test:fm-wedge
+ok - A: a decision opened after done is not landing (the existing open-decision deferral owns it)
+B watch output: stale: test:fm-wedge (idle 6s, possible wedge, escalation 1)
+ok - B: a non-ship task is never treated as landing
+ok - C: a handoff record for a different PR does not make the task landing
+D triage log: [2026-11-06T21:03:50+0000] absorbed stale (overridden terminal status) (landing: its finished PR waits on another home's merger, idle 1s): test:fm-wedge
+ok - D: landing skip leaves an audit line
