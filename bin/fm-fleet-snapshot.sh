@@ -1075,7 +1075,9 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | select(.kind != "secondmate")
          | select(.id == $work.id and (.current_state.state == "done" or .current_state.state == "failed"))
          | select((.current_state.state == "done" and .pr.source == "meta" and .pr.merge_check_armed == true) | not)
-         | select((.current_state.state == "done" and (.current_state.detail | contains("pipeline handoff"))) | not)
+         | select((.current_state.state == "done" and .current_state.source == "status-log"
+             and ((.current_state.detail // "") | . == "pipeline handoff: validation run not finished"
+               or startswith("pipeline handoff: validation run not finished · "))) | not)
          | {id,state:.current_state.state} ]) as $terminal_in_flight
     | ([ $owned_in_flight[] as $work
          | $tasks[]
