@@ -1,0 +1,3 @@
+ok - fm-pr-check hands a ready PR to its project's merger home once per head, and never with no merger, from the merger, or while held
+ok - fm-pr-check releases a handed-off no-mistakes run once per head after it reports green, reports a failure once, and never for a project it merges
+rc=0

@@ -1,0 +1,19 @@
+== sweep 1: ship-a green+handed off, ship-b handed off but still working, ship-c self-merged
+[exit=0]
+-- handoff calls:
+axi handoff | cwd=/tmp/fm-lab.yFnSBV/wt-a
+-- ship-a marker: https://github.com/o/r/pull/148 aaaaaaa
+-- ship-a status unchanged:
+done [at=1700000100]: PR https://github.com/o/r/pull/148 checks green
+== sweep 2 (same heads): expect no new calls
+[exit=0]
+1
+== ship-b reports green, but its run refuses handoff (rc=1)
+ship-b could not release its no-mistakes run after its PR https://github.com/o/r/pull/149 was handed off (rc=1), so the run still holds a pipeline slot: error: run has not reached checks-passed
+[exit=0]
+2
+== sweep again after the failure: expect no retry and no report
+[exit=0]
+2
+== ship-c never released (no handoff record):
+0

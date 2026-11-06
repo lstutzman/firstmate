@@ -1,0 +1,2 @@
+f9c61d18: status=handed_off class=unknown active=no
+HEAD: status=handed_off class=terminal active=no
