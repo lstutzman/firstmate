@@ -45,7 +45,8 @@ spec = {"sessions": [
    "calls": [["Bash", {"command": c}, "", False] for c in (
      "env | grep -c GH_TOKEN", "env | grep GH_ | wc -l", "env | sort | grep -c X",
      "printenv | grep -q X", "env | grep -c X | tee out",
-     "env", "env | grep -ec X", "env | tee out | grep -c X", "env | grep X > out | wc -l")]},
+     "env", "env | grep -ec X", "env | tee out | grep -c X", "env | grep X > out | wc -l",
+     "env > /tmp/dump", "printenv >> /tmp/dump", "env > /dev/null")]},
   {"machine": "alpha", "id": "s-failed", "first_prompt": ": Firstmate operational input waiting: read 'y'",
    "calls": [["Read", msg, brief_failed, False],
              ["Bash", {"command": "sleep 30 && git status"}, "", False]]},
@@ -196,8 +197,8 @@ test_env_dump_rule_ignores_count_only_pipelines() {
   finding=$(jq -c '[.findings[] | select(.kind == "rule-violation" and .rule == "env-dump")]' "$json")
   assert_equals 1 "$(printf '%s' "$finding" | jq -r 'length')" "env-dump is one finding for the one session"
   assert_equals alpha:s-env "$(printf '%s' "$finding" | jq -r '.[0].session')" "the finding names the session"
-  assert_equals 4 "$(printf '%s' "$finding" | jq -r '.[0].count')" \
-    "a bare env, grep -ec, a tee and a redirect print values; the four counts and checks do not"
+  assert_equals 6 "$(printf '%s' "$finding" | jq -r '.[0].count')" \
+    "a bare env, grep -ec, a tee, a pipe to a redirect, env > file and printenv >> file flag; counts, checks and env > /dev/null do not"
   assert_contains "$(printf '%s' "$finding" | jq -r '.[0].summary')" "e.g. env" "the finding carries the head env"
   pass "fm-officer triage: env-dump ignores count-only pipelines and still flags value-printing forms"
 }

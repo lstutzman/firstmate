@@ -80,7 +80,8 @@ SEGMENT_RULES = [
     ("pkill-f", "medium", re.compile(r"^(sudo\s+)?(pkill\s+(-\w+\s+)*-f\b|killall\b)")),
     ("no-verify", "medium", re.compile(r"^git\b.*\s--no-verify\b")),
     ("bare-git-stash", "medium", re.compile(r"^git\s+stash(\s+pop)?\s*$")),
-    ("env-dump", "high", re.compile(r"^(env|printenv)\s*$|^cat\s+(\S*/)?\.env\s*$")),
+    ("env-dump", "high", re.compile(
+        r"^(env|printenv)\s*(?:1?>>?\s*(?!/dev/null\b)\S.*)?$|^cat\s+(\S*/)?\.env\s*$")),
     ("startup-file-print", "medium", re.compile(
         r"^(cat|head|tail|less|more)\s+(\S*/)?\.(zshrc|bashrc|profile|zprofile|bash_profile|zshenv)\s*$")),
 ]
