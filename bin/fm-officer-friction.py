@@ -960,9 +960,9 @@ def session_events(records, machine):
     return events
 
 
-# A firstmate test run by the tool call that produced the output: tests/<name>.test.sh, the glob, or the
+# A firstmate test run by the tool call that produced the output: tests/<name>.test.sh or a glob of them, or the
 # bin/fm-test-run.sh runner (--all, --family, --changed, --lane).
-TEST_RUN_RE = re.compile(r"(?<![\w.-])(?:tests/(?:[\w.-]+|\*)\.test\.sh|fm-test-run\.sh)(?![\w.-])")
+TEST_RUN_RE = re.compile(r"(?<![\w.-])(?:tests/[\w.*?-]+\.test\.sh|fm-test-run\.sh)(?![\w.-])")
 
 
 INSTRUCTION_RE = re.compile(
@@ -2428,10 +2428,10 @@ def main(argv):
             scanned = scan(args.archive, args.date, args.days)
         triage.require_harvested(scanned)
         homes = [triage.Home(h) for h in args.home]
-        hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
         drop_test_noise(scanned)
         triage.join_sessions(scanned, homes)
         triage.classify_mates(scanned, homes)
+        hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
         cards, log, replies, replies_gap = [], {"state": "not-set"}, [], None
         if args.captains_log:
             try:

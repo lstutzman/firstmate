@@ -875,6 +875,7 @@ test_test_run_output_is_not_fleet_friction() {
   ["Bash", {"command": "make"}, "/bin/bash: line 4: jq: command not found", true],
   ["Bash", {"command": "bash tests/fm-officer-friction.test.sh"}, "lee@alpha: Permission denied (publickey).", true],
   ["Bash", {"command": "bash tests/fm-git-retry-lib.test.sh"}, "git@github.com: Permission denied (publickey).", true],
+  ["Bash", {"command": "for t in tests/fm-officer*.test.sh; do bash \"$t\"; done"}, "lee@alpha: Permission denied (publickey).", true],
   ["Bash", {"command": "bin/fm-test-run.sh --family officer"}, "lee@beta: Permission denied (publickey).", true],
   ["Bash", {"command": "git push origin fm/x"}, "git@github.com: Permission denied (publickey).", true],
   ["Bash", {"command": "ssh -t stranger.example true"}, "lee@stranger.example: Permission denied (publickey).", true],
