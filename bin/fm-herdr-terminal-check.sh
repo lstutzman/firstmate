@@ -9,8 +9,9 @@
 # healthy machine prints nothing. Always exits 0.
 #
 # Terminal workspace (the captain's own scratch shell, never used by an agent):
-#   - none labelled exactly "Terminal": create one, a bare shell at $HOME with
-#     one tab and one pane, nothing run in it, focus left where it is;
+#   - none labelled "Terminal" (with or without a leading "[n] " prefix): create
+#     one, a bare shell at $HOME with one tab and one pane, nothing run in it,
+#     focus left where it is;
 #   - exactly one: leave it alone, and report it only if it holds an agent or
 #     more than one tab or pane;
 #   - several: report them and change nothing.
@@ -33,6 +34,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 FM_TERMINAL_LABEL=Terminal
+# Some Herdr versions prefix workspace labels with "[n] "; compare without it.
+FM_JQ_NORM='def norm: strings | sub("^\\[[0-9]+\\] "; "");'
 
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
@@ -54,7 +57,7 @@ fm_herdr_terminal_workspace() {  # <session>
   workspaces=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
   printf '%s' "$workspaces" | jq -e '.result.workspaces | type == "array"' >/dev/null 2>&1 || return 0
   terminal_ids=$(printf '%s' "$workspaces" | jq -r --arg label "$FM_TERMINAL_LABEL" \
-    '.result.workspaces[] | select(.label == $label) | .workspace_id')
+    "$FM_JQ_NORM"'.result.workspaces[] | select((.label | norm) == $label) | .workspace_id')
   count=$(printf '%s\n' "$terminal_ids" | awk 'NF { n++ } END { print n+0 }')
   case "$count" in
     0)
@@ -67,8 +70,8 @@ fm_herdr_terminal_workspace() {  # <session>
       fi
       ;;
     1)
-      printf '%s' "$workspaces" | jq -r --arg label "$FM_TERMINAL_LABEL" '
-        .result.workspaces[] | select(.label == $label and (.tab_count != 1 or .pane_count != 1))
+      printf '%s' "$workspaces" | jq -r --arg label "$FM_TERMINAL_LABEL" "$FM_JQ_NORM"'
+        .result.workspaces[] | select((.label | norm) == $label and (.tab_count != 1 or .pane_count != 1))
         | "herdr-terminal: the \($label) workspace \(.workspace_id) has \(.tab_count) tabs and \(.pane_count) panes; it should be one bare pane, nothing was changed"'
       ;;
     *)
@@ -92,8 +95,8 @@ fm_herdr_terminal_check() {
   printf '%s' "$workspaces" | jq -e '.result.workspaces | type == "array"' >/dev/null 2>&1 || return 0
   agents=$(fm_backend_herdr_cli "$session" agent list 2>/dev/null) || return 0
   printf '%s' "$agents" | jq -e '.result.agents | type == "array"' >/dev/null 2>&1 || return 0
-  jq -rn --argjson ws "$workspaces" --argjson ag "$agents" --arg terminal "$FM_TERMINAL_LABEL" '
-    ($ws.result.workspaces | map({key: .workspace_id, value: .label}) | from_entries) as $label
+  jq -rn --argjson ws "$workspaces" --argjson ag "$agents" --arg terminal "$FM_TERMINAL_LABEL" "$FM_JQ_NORM"'
+    ($ws.result.workspaces | map({key: .workspace_id, value: (.label | norm)}) | from_entries) as $label
     | ($ag.result.agents | group_by(.workspace_id) | map({key: .[0].workspace_id, value: length}) | from_entries) as $n
     | [ $ag.result.agents[]
         | select($n[.workspace_id] > 1 or $label[.workspace_id] == $terminal)
