@@ -5456,9 +5456,12 @@ test_deadline_default_parent_channel_lines_say_it_is_not_the_captain() {
 
 test_deadline_default_deferral_clears_or_replaces_the_default() {
   (
-    local home show
+    local home parent show
     home=$(make_home default-deferred)
+    parent=$(make_home default-deferred-parent)
     printf 'live\n' > "$home/config/captain-hold-defaults"
+    printf 'sample-mate\n' > "$home/.fm-secondmate-home"
+    printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
     cp "$home/data/backlog.md" "$home/before"
     if dd_hold "$home" sample-inside docs --until 2026-08-15 >/dev/null 2>"$home/err"; then
       fail "a default due inside its own deferral was accepted"
@@ -5480,6 +5483,8 @@ test_deadline_default_deferral_clears_or_replaces_the_default() {
       --until 2026-08-15 >/dev/null || fail "the captain's later was refused"
     assert_grep "default cleared: captain deferred to 2026-08-15 task=sample-later hold=$DD_HOLD" \
       "$home/state/captain-hold-default.log" "the clearing was not logged"
+    assert_grep "captain hold sample-later: Choose go or wait (default cleared: captain deferred to 2026-08-15)" \
+      "$parent/state/sample-mate.status" "the parent channel was not told the default was cleared"
     [ -z "$(dd_at 2026-08-15T00:00:00Z "$home" defaults-due)" ] || fail "a deferred call came due on its return"
     if dd_at 2026-08-15T00:00:00Z "$home" answer sample-later --deadline-default >/dev/null 2>&1; then
       fail "a deferred call took its old default"
