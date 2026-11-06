@@ -70,7 +70,10 @@
 #                          arms it, a validation gate of its own awaiting a
 #                          supervisor decision nobody has answered yet - is
 #                          deferred to that same long recheck cadence instead
-#                          (wedge_wait_evidence), and a pane whose own task
+#                          (wedge_wait_evidence); a landing task, whose finished
+#                          PR waits only on another home's merger, is skipped
+#                          with no wake at all (wedge_skip_landing, which reads
+#                          fm_office_task_landing); and a pane whose own task
 #                          worktree was written during the quiet window is
 #                          deferred rather than escalated (wedge_defer_writing),
 #                          because files appearing there are liveness the pane and
@@ -1584,6 +1587,30 @@ wedge_defer_writing() {  # <window> <since-file> <triage-label> <idle-age>
   triage_log "absorbed $label (worktree written since the idle window opened, idle ${age}s): $win"
 }
 
+# Skip ONE wedge escalation, with no wake at all, for a landing task: a ship
+# whose finished PR waits only on another home's merger. Its worker has
+# stopped, nothing this home does lands it, and the merge-landed poll wakes this
+# home when it merges, so every alarm on that lane would change nothing.
+# fm_office_task_landing in bin/fm-office-authority-lib.sh owns which tasks are
+# landing, shared with an office's wip count; any doubt there keeps the ladder.
+# In an office its id is the merger the PR must not be bound to, and anywhere
+# else that branch of the test is off. Like the other deferrals this restarts
+# the idle timer and leaves the escalation count alone, so a task steered back
+# into fix work stops being landing and alarms within one STALE_ESCALATE_SECS.
+wedge_skip_landing() {  # <window> <since-file> <triage-label> <idle-age> <task>
+  local win=$1 since_file=$2 label=$3 age=$4 task=$5 office=''
+  [ -n "$task" ] || return 1
+  if ! declare -F fm_office_task_landing >/dev/null; then
+    # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
+    . "$SCRIPT_DIR/fm-office-authority-lib.sh"
+  fi
+  ! fm_office_detect "$FM_HOME" "${FM_DATA_OVERRIDE:-$FM_HOME/data}" || office=$FM_OFFICE_DETECT_ID
+  fm_office_task_landing "$STATE" "$task" "$office" || return 1
+  clear_write_tracking "$(window_key "$win")"
+  date +%s > "$since_file"
+  triage_log "absorbed $label (landing: its finished PR waits on another home's merger, idle ${age}s): $win"
+}
+
 # One wait record, carrying every field a recheck needs to be correct. Emitting
 # them together is the point: a recheck that names the wrong human, or asks for
 # an action that does not clear the lane, points the reader away from the only
@@ -2228,6 +2255,9 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
         if [ "$FM_WEDGE_MAX_ESCALATIONS" -gt 0 ] && _wedge_cap_marker_stands "$_wkey"; then
           wedge_dead_record "$win" "$since_file" "$label" "$age" "$hash" "$task" \
             || { fm_epoch_seconds_to _wrb_now; printf '%s\n' "$_wrb_now" > "$since_file"; }
+          return 0
+        fi
+        if wedge_skip_landing "$win" "$since_file" "$label" "$age" "$task"; then
           return 0
         fi
         if evidence=$(wedge_wait_evidence "$task") &&
