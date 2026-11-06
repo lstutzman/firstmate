@@ -1,0 +1,199 @@
+{
+  "start_requests": [
+    {
+      "id": "environment-ssh-to-self",
+      "kind": "friction-finding",
+      "title": "Lee-step ssh lines target the machine they run on",
+      "severity": "high",
+      "score": 4.0,
+      "found": 1,
+      "issue": "PC-103",
+      "project": "",
+      "office": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "friction-2026-10-23-f3da93bd23ca6620",
+          "--json",
+          "--",
+          "Friction officer automatic start under its rubric (docs/officers/friction-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Friction finding [friction-environment-ssh-to-self]: started by default: Lee-step ssh lines target the machine they run on. Start this fix without a Start fix tap or another approval question, under fleet rules section 2 ('Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'); Lee may Object. Name friction-environment-ssh-to-self in the task's branch or its data/backlog.md line, so the friction officer can read its merge back. Loosening a guard or gate check is outside this authority; if Lee objects, preserve the branch. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"card\": {\"category\": \"environment\", \"confidence\": 5, \"effort\": \"S\", \"events\": 3, \"evidence\": \"3 event(s) on 2026-10-23; tasks task-swap; status swap-c2@2026-10-23T10:00:00Z, swap-c2@2026-10-23T10:30:00Z; sessions alpha:s-mate; e.g. arm 2 done. Lee, please run: ssh -t fixturehost 'bash /x/swap.sh c2' -- it should end with OK. Options: (a) run it now; (b) skip\", \"id\": \"environment-ssh-to-self\", \"impact\": \"Removes 3 Lee step(s) and 2.0 h of agent waiting seen on 2026-10-23.\", \"improvement\": \"Make Lee-step one-liners host-aware: print `bash <script>` when the session already runs on the target host and `ssh -t <host> ...` only from another machine, or install a loopback key.\", \"owner\": \"main (firstmate)\", \"severity\": 5, \"time_saved\": \"about 2.0 h a day: 1 measured wait(s) on 2026-10-23 totalling 2.0 h, from ask to answer\", \"title\": \"Lee-step ssh lines target the machine they run on\", \"tldr\": \"Lee had to run an ssh -t <host> line inside a session on that same host, where ssh to itself has no key: 3 time(s) on 2026-10-23; agents waited 2.0 h.\"}, \"fingerprint\": \"7b5d145ef9157aa5a74ffcca4bac4eb60c73503409a719b3466998281c6a4483\", \"found\": 1, \"friction_id\": \"environment-ssh-to-self\", \"issue\": \"PC-103\", \"kind\": \"friction-finding\", \"linear_id\": \"PC-103\", \"linear_only\": true, \"project\": \"\", \"reason\": \"Real high finding admitted by the rubric\", \"score\": 4.0, \"severity\": \"high\", \"source\": \"environment\", \"title\": \"Lee-step ssh lines target the machine they run on\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-friction.qHBhtg/evidence/fixturehost"
+        },
+        "request_id": "friction-2026-10-23-f3da93bd23ca6620"
+      }
+    },
+    {
+      "id": "lee-command-run",
+      "kind": "friction-finding",
+      "title": "Lee runs commands by hand with no recorded reason",
+      "severity": "high",
+      "score": 4.0,
+      "found": 1,
+      "issue": "PC-105",
+      "project": "",
+      "office": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "friction-2026-10-23-3c23b4d4a217d3a0",
+          "--json",
+          "--",
+          "Friction officer automatic start under its rubric (docs/officers/friction-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Friction finding [friction-lee-command-run]: started by default: Lee runs commands by hand with no recorded reason. Start this fix without a Start fix tap or another approval question, under fleet rules section 2 ('Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'); Lee may Object. Name friction-lee-command-run in the task's branch or its data/backlog.md line, so the friction officer can read its merge back. Loosening a guard or gate check is outside this authority; if Lee objects, preserve the branch. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"card\": {\"category\": \"waiting\", \"confidence\": 4, \"effort\": \"S\", \"events\": 2, \"evidence\": \"2 event(s) on 2026-10-23; sessions alpha:s-mate; e.g. op run\", \"id\": \"lee-command-run\", \"impact\": \"Removes 2 Lee step(s) and 5 min of agent waiting seen on 2026-10-23.\", \"improvement\": \"Make every Lee-step ask name why the agent cannot run it (sudo, credential, policy or tool), so the cause can be removed; then remove it, starting with the most repeated.\", \"owner\": \"main (firstmate)\", \"severity\": 3, \"time_saved\": \"about 5 min a day: 1 measured wait(s) on 2026-10-23 totalling 5 min, from ask to answer\", \"title\": \"Lee runs commands by hand with no recorded reason\", \"tldr\": \"Lee had to run a command or script by hand: 2 time(s) on 2026-10-23; agents waited 5 min.\"}, \"fingerprint\": \"1e62a00f15bbe2a6d6b78395c68142e07726e464f0ec82f6b49de5352e9719a8\", \"found\": 1, \"friction_id\": \"lee-command-run\", \"issue\": \"PC-105\", \"kind\": \"friction-finding\", \"linear_id\": \"PC-105\", \"linear_only\": true, \"project\": \"\", \"reason\": \"Real high finding admitted by the rubric\", \"score\": 4.0, \"severity\": \"high\", \"source\": \"lee-command\", \"title\": \"Lee runs commands by hand with no recorded reason\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-friction.qHBhtg/evidence/fixturehost"
+        },
+        "request_id": "friction-2026-10-23-3c23b4d4a217d3a0"
+      }
+    },
+    {
+      "id": "missing-tool-tool-openjdk",
+      "kind": "friction-finding",
+      "title": "A tool agents need is missing: openjdk",
+      "severity": "high",
+      "score": 4.0,
+      "found": 1,
+      "issue": "PC-106",
+      "project": "",
+      "office": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "friction-2026-10-23-7e5df314006e9dc2",
+          "--json",
+          "--",
+          "Friction officer automatic start under its rubric (docs/officers/friction-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Friction finding [friction-missing-tool-tool-openjdk]: started by default: A tool agents need is missing: openjdk. Start this fix without a Start fix tap or another approval question, under fleet rules section 2 ('Velocity findings go ahead by default: an agent starts the fix unless Lee objects within a day'); Lee may Object. Name friction-missing-tool-tool-openjdk in the task's branch or its data/backlog.md line, so the friction officer can read its merge back. Loosening a guard or gate check is outside this authority; if Lee objects, preserve the branch. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"card\": {\"category\": \"tooling\", \"confidence\": 4, \"effort\": \"S\", \"events\": 1, \"evidence\": \"1 event(s) on 2026-10-23; sessions alpha:s-mate; e.g. brew install\", \"id\": \"missing-tool-tool-openjdk\", \"impact\": \"Removes 1 Lee step(s) and not measured of agent waiting seen on 2026-10-23.\", \"improvement\": \"Add openjdk to alpha's bootstrap and its doctor check, so it is present before the next session.\", \"owner\": \"alpha home\", \"severity\": 3, \"time_saved\": \"not measured: 1 step(s) on 2026-10-23 with no recorded answer time\", \"title\": \"A tool agents need is missing: openjdk\", \"tldr\": \"openjdk: Lee had to install a tool by hand: 1 time(s) on 2026-10-23; agents waited not measured.\"}, \"fingerprint\": \"1298fa71586e56bb8ae2593752356d0b4be3d546024bb329642ff18c2b3df327\", \"found\": 1, \"friction_id\": \"missing-tool-tool-openjdk\", \"issue\": \"PC-106\", \"kind\": \"friction-finding\", \"linear_id\": \"PC-106\", \"linear_only\": true, \"project\": \"\", \"reason\": \"Real high finding admitted by the rubric\", \"score\": 4.0, \"severity\": \"high\", \"source\": \"missing-tool\", \"title\": \"A tool agents need is missing: openjdk\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-friction.qHBhtg/evidence/fixturehost"
+        },
+        "request_id": "friction-2026-10-23-7e5df314006e9dc2"
+      }
+    }
+  ],
+  "filed": [
+    {
+      "id": "environment-ssh-to-self",
+      "cause": "environment",
+      "sub": "ssh-to-self",
+      "issue": "PC-103",
+      "found": 1,
+      "score": 4.0,
+      "state": "started-by-default"
+    },
+    {
+      "id": "sudo-sudo",
+      "cause": "sudo",
+      "sub": "sudo",
+      "issue": "PC-108",
+      "found": 1,
+      "score": 4.0,
+      "state": "open"
+    },
+    {
+      "id": "credential-scope-cloudflare",
+      "cause": "credential",
+      "sub": "scope",
+      "issue": "PC-101",
+      "found": 1,
+      "score": 4.0,
+      "state": "open"
+    },
+    {
+      "id": "policy-credential-approval",
+      "cause": "policy",
+      "sub": "credential-approval",
+      "issue": "PC-107",
+      "found": 1,
+      "score": 4.0,
+      "state": "open"
+    },
+    {
+      "id": "guard-hook-secret-hook",
+      "cause": "guard-hook",
+      "sub": "secret-hook",
+      "issue": "PC-104",
+      "found": 1,
+      "score": 4.0,
+      "state": "open"
+    },
+    {
+      "id": "lee-command-run",
+      "cause": "lee-command",
+      "sub": "run",
+      "issue": "PC-105",
+      "found": 1,
+      "score": 4.0,
+      "state": "started-by-default"
+    },
+    {
+      "id": "credential-ssh-key",
+      "cause": "credential",
+      "sub": "ssh-key",
+      "issue": "PC-102",
+      "found": 1,
+      "score": 4.0,
+      "state": "open"
+    },
+    {
+      "id": "missing-tool-tool-openjdk",
+      "cause": "missing-tool",
+      "sub": "tool",
+      "issue": "PC-106",
+      "found": 1,
+      "score": 4.0,
+      "state": "started-by-default"
+    },
+    {
+      "id": "environment-wrong-cwd",
+      "cause": "environment",
+      "sub": "wrong-cwd",
+      "issue": "PC-109",
+      "found": 1,
+      "score": 1.0,
+      "state": "open"
+    },
+    {
+      "id": "guard-hook-refused-pre-bash-secret-exposure-py",
+      "cause": "guard-hook",
+      "sub": "refused",
+      "issue": "PC-110",
+      "found": 1,
+      "score": 1.0,
+      "state": "open"
+    },
+    {
+      "id": "missing-tool-tool-slopwatch",
+      "cause": "missing-tool",
+      "sub": "tool",
+      "issue": "PC-111",
+      "found": 1,
+      "score": 1.0,
+      "state": "open"
+    },
+    {
+      "id": "service-limit-rate-limit-1password",
+      "cause": "service-limit",
+      "sub": "rate-limit",
+      "issue": "PC-112",
+      "found": 1,
+      "score": 1.0,
+      "state": "open"
+    }
+  ],
+  "not_filed": [
+    {
+      "id": "decision-decision",
+      "cause": "decision",
+      "reason": null
+    }
+  ]
+}

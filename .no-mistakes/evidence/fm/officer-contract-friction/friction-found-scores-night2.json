@@ -1,0 +1,74 @@
+[
+  {
+    "id": "environment-ssh-to-self",
+    "issue": "PC-103",
+    "found": 2,
+    "score": 6.34
+  },
+  {
+    "id": "sudo-sudo",
+    "issue": "PC-108",
+    "found": 2,
+    "score": 6.34
+  },
+  {
+    "id": "credential-scope-cloudflare",
+    "issue": "PC-101",
+    "found": 2,
+    "score": 6.34
+  },
+  {
+    "id": "policy-credential-approval",
+    "issue": "PC-107",
+    "found": 2,
+    "score": 6.34
+  },
+  {
+    "id": "guard-hook-secret-hook",
+    "issue": "PC-104",
+    "found": 2,
+    "score": 6.34
+  },
+  {
+    "id": "lee-command-run",
+    "issue": "PC-105",
+    "found": 2,
+    "score": 6.34
+  },
+  {
+    "id": "credential-ssh-key",
+    "issue": "PC-102",
+    "found": 2,
+    "score": 6.34
+  },
+  {
+    "id": "missing-tool-tool-openjdk",
+    "issue": "PC-106",
+    "found": 2,
+    "score": 6.34
+  },
+  {
+    "id": "environment-wrong-cwd",
+    "issue": "PC-109",
+    "found": 2,
+    "score": 1.58
+  },
+  {
+    "id": "guard-hook-refused-pre-bash-secret-exposure-py",
+    "issue": "PC-110",
+    "found": 2,
+    "score": 1.58
+  },
+  {
+    "id": "missing-tool-tool-slopwatch",
+    "issue": "PC-111",
+    "found": 2,
+    "score": 1.58
+  },
+  {
+    "id": "service-limit-rate-limit-1password",
+    "issue": "PC-112",
+    "found": 2,
+    "score": 1.58
+  }
+]
