@@ -309,6 +309,9 @@ WATCH_HOME_EXISTED=0
 # and wake emission (secondmate_liveness_tick below).
 # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
 . "$SCRIPT_DIR/fm-secondmate-liveness-lib.sh"
+# The reset time Claude's usage-limit prompt states, named on its stale wake.
+# shellcheck source=bin/fm-claude-limit-lib.sh
+. "$SCRIPT_DIR/fm-claude-limit-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -2666,13 +2669,16 @@ clear_pause_tracking() {  # <window-key>
 # from the dialog name the poll already derived from its one capture, so a pane
 # that is not on that prompt costs nothing and a crew that is on it costs one
 # detached, bounded run per FM_LIMIT_RESUME_CHECK_SECS (default 60).
-# The earliest evidence that the stall had begun - the crew's last status-line
-# time or the pane-change time (the hash file's mtime), whichever is earlier -
-# is passed as the bound a stated clock time is placed after, so a watcher
-# restart does not push a long-passed reset to the next day.
+# The pane-change time (the hash file's mtime) is passed as the bound a stated
+# clock time is placed after: it is the first poll that saw the prompt, so it is
+# at or after the prompt was drawn, and the hash file survives a watcher
+# restart. A late bound only delays a recovery, never advances it.
 limit_resume_check() {  # <window> <task> <dialog-name> <hash-file>
-  local win=$1 task=$2 dialog=${3-} hf=${4-} key interval marker since t
-  [ "$dialog" = "$FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME" ] || return 0
+  local win=$1 task=$2 dialog=${3-} hf=${4-} key interval marker since
+  case "$dialog" in
+    "$FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME" | "$FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME, resets "*) ;;
+    *) return 0 ;;
+  esac
   [ -n "$task" ] || return 0
   [ "$(window_harness "$win")" = claude ] || return 0
   interval=${FM_LIMIT_RESUME_CHECK_SECS:-60}
@@ -2681,12 +2687,9 @@ limit_resume_check() {  # <window> <task> <dialog-name> <hash-file>
   marker="$STATE/.limit-resume-checked-$key"
   [ "$(age_of "$marker")" -ge "$interval" ] || return 0
   touch "$marker" 2>/dev/null || return 0
-  since=$(date +%s)
-  for t in "$(stat_mtime "$hf" 2>/dev/null || true)" "$(stat_mtime "$STATE/$task.status" 2>/dev/null || true)"; do
-    case "$t" in '' | *[!0-9]*) continue ;; esac
-    [ "$t" -ge "$since" ] || since=$t
-  done
-  triage_log "claude usage-limit prompt on $win: asking fm-limit-resume.sh (earliest stall evidence $since)"
+  since=$(stat_mtime "$hf" 2>/dev/null || true)
+  case "$since" in '' | *[!0-9]*) since=$(date +%s) ;; esac
+  triage_log "claude usage-limit prompt on $win: asking fm-limit-resume.sh (pane unchanged since $since)"
   (
     fm_run_timed 120 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
       "${FM_LIMIT_RESUME_BIN:-$SCRIPT_DIR/fm-limit-resume.sh}" --since "$since" "$task" \
@@ -4459,6 +4462,10 @@ EOF
     # The matcher is already defined in this shell. It reads the capture this
     # poll already takes, and a miss drops a name the away daemon saved.
     dialog=$(fm_composer_blocking_dialog "$tail40") || dialog=
+    if [ "$dialog" = "$FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME" ] \
+      && limit_phrase=$(printf '%s\n' "$tail40" | fm_claude_limit_reset_phrase); then
+      dialog="$dialog, resets $limit_phrase"
+    fi
     [ -n "$dialog" ] || clear_dialog_suffix "$task"
     h=$(printf '%s' "$tail40" | hash_pane)
     hf="$STATE/.hash-$key"

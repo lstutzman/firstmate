@@ -121,11 +121,12 @@ _fm_claude_limit_local_epoch() {
 # A clock time with no date means "the next such time after the prompt was
 # drawn", up to a day out (a weekly limit prints one too, so the window length
 # is never assumed). The pane does not say when it was drawn, so <since-epoch>
-# is the caller's earliest evidence that the stall had begun, and the answer is
-# the FIRST such clock time at or after it. A bound that is too late can only
-# push the answer later, never earlier, so with no earlier evidence than now a
-# stall waits for the next occurrence rather than resuming before the stated
-# reset. A dated phrase is taken at its date, in the year it names, else the
+# is the caller's bound at or after that moment (the watcher's first sight of
+# the unchanged prompt), and the answer is the FIRST such clock time at or after
+# it, never an earlier one. A bound that is too late can only push the answer
+# later, so the stall waits longer rather than resuming before the stated
+# reset; a bound before the draw could place it early, so callers never pass
+# one. A dated phrase is taken at its date, in the year it names, else the
 # current year, rolled to the next year only when that would put it more than
 # half a year before <since-epoch>.
 #

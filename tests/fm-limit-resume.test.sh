@@ -287,6 +287,11 @@ test_reset_epoch_follows_when_the_stall_began() {
   got=$(fm_claude_limit_reset_epoch '6:40pm (UTC)' "$(utc_epoch '2026-11-06 08:00')") \
     || fail "a weekly reset after an 08:00 stall was not placed"
   assert_equals "$(utc_epoch '2026-11-06 18:40')" "$got" "a reset more than five hours out was not kept for the same day"
+  # A crew last wrote status at 09:00 and hit a weekly limit at 15:00 with
+  # "resets 10am": seen at 15:00 that is tomorrow's 10:00, never today's.
+  got=$(fm_claude_limit_reset_epoch '10am (UTC)' "$(utc_epoch '2026-11-06 15:00')") \
+    || fail "a weekly reset seen at 15:00 was not placed"
+  assert_equals "$(utc_epoch '2026-11-07 10:00')" "$got" "10am seen at 15:00 was not placed at tomorrow's 10:00"
   pass "a clock time is the first occurrence after the stall began, whether five or more hours out"
 }
 
@@ -538,40 +543,51 @@ test_a_reset_passed_since_the_stall_recovers_at_once() {
   pass "a stated clock time that passed after the stall began recovers at once"
 }
 
-# A weekly limit prints a clock time too, and it can be many hours out. Ten
-# hours after a stall that began now is a wait, with nothing sent.
-test_a_reset_many_hours_out_waits_without_sending() {
-  local d last until_iso want got; d=$(make_case weekly-wait)
-  setup_task "$d" stalled claude
-  limit_prompt_pane "$(stated_reset 38400)" > "$d/pane.txt"
-  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(date +%s)" stalled >/dev/null \
-    || fail "a reset ten hours out exited non-zero"
-  [ ! -s "$d/control.log" ] || fail "an interrupt was sent ten hours before the stated reset"
-  [ ! -s "$d/sent.log" ] || fail "a steer was sent ten hours before the stated reset"
-  last=$(grep -v '^[[:space:]]*$' "$d/state/stalled.status" | tail -1)
-  until_iso=$(printf '%s' "$last" | sed -n 's/.* until \([0-9T:Z-]*\).*/\1/p')
-  want=$(( $(date +%s) + 38400 ))
-  got=$(TZ=UTC date -d "${until_iso%Z}:00" +%s 2>/dev/null || TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%S' "${until_iso%Z}:00" +%s)
-  [ "$got" -ge "$((want - 120))" ] && [ "$got" -le "$((want + 180))" ] \
-    || fail "the wait was not recorded until the stated reset ten hours out: $last"
-  pass "a clock time many hours out is a timed wait until it, with zero keys sent"
+# A wait more than five hours out records nothing and sends nothing, so the
+# stall keeps reaching the supervisor as an ordinary stale wake.
+expect_no_wait_and_nothing_sent() {  # <case-dir> <what>
+  [ ! -s "$1/control.log" ] || fail "an interrupt was sent before the stated reset ($2)"
+  [ ! -s "$1/sent.log" ] || fail "a steer was sent before the stated reset ($2)"
+  ! grep -q '^paused' "$1/state/stalled.status" 2>/dev/null \
+    || fail "a wait more than five hours out was declared as a pause ($2)"
 }
 
-# No evidence earlier than now: the next occurrence, so a stated time that has
+# A weekly limit prints a clock time too, and it can be many hours out: ten
+# hours after a stall the watcher saw now is not reached.
+test_a_reset_many_hours_out_sends_nothing_and_declares_no_wait() {
+  local d out; d=$(make_case weekly-wait)
+  setup_task "$d" stalled claude
+  limit_prompt_pane "$(stated_reset 38400)" > "$d/pane.txt"
+  out=$(FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(date +%s)" stalled) \
+    || fail "a reset ten hours out exited non-zero"
+  expect_no_wait_and_nothing_sent "$d" "ten hours out"
+  assert_contains "$out" "more than five hours out" "the undeclared long wait was not reported"
+  pass "a clock time more than five hours out sends nothing and declares no pause"
+}
+
+# The crew last wrote status before the stated clock time and stalled after
+# it: the watcher's bound is when it saw the prompt, so "resets <5h ago>" is
+# tomorrow's, about nineteen hours out, and nothing is sent before it.
+test_a_clock_time_behind_the_stall_is_tomorrows() {
+  local d; d=$(make_case behind-the-stall)
+  setup_task "$d" stalled claude
+  printf 'working: implementing the parser\n' > "$d/state/stalled.status"
+  limit_prompt_pane "$(stated_reset -18000)" > "$d/pane.txt"
+  FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" --since "$(date +%s)" stalled >/dev/null \
+    || fail "a clock time behind the stall exited non-zero"
+  expect_no_wait_and_nothing_sent "$d" "nineteen hours out"
+  pass "a stated clock time already behind the stall is tomorrow's, and nothing is sent early"
+}
+
+# No bound at all: the next occurrence after now, so a stated time that has
 # already gone by today is tomorrow's, never a resume before the stated reset.
-test_without_earlier_evidence_the_next_occurrence_is_awaited() {
-  local d last until_iso got; d=$(make_case no-reference)
+test_without_a_bound_the_next_occurrence_is_awaited() {
+  local d; d=$(make_case no-reference)
   setup_task "$d" stalled claude
   limit_prompt_pane "$(stated_reset -7200)" > "$d/pane.txt"
   FM_FAKE_PANE_FILE="$d/pane.txt" run_resume "$d" stalled >/dev/null || fail "a wait with no bound exited non-zero"
-  [ ! -s "$d/control.log" ] || fail "an interrupt was sent with no evidence of when the stall began"
-  last=$(grep -v '^[[:space:]]*$' "$d/state/stalled.status" | tail -1)
-  until_iso=$(printf '%s' "$last" | sed -n 's/.* until \([0-9T:Z-]*\).*/\1/p')
-  got=$(TZ=UTC date -d "${until_iso%Z}:00" +%s 2>/dev/null || TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%S' "${until_iso%Z}:00" +%s)
-  # Two hours ago, a day later: 22 hours out.
-  [ "$((got - $(date +%s)))" -gt $((21 * 3600)) ] && [ "$((got - $(date +%s)))" -le $((22 * 3600 + 180)) ] \
-    || fail "with no earlier evidence the wait was not the next occurrence: $last"
-  pass "with no evidence earlier than now, the next occurrence is awaited"
+  expect_no_wait_and_nothing_sent "$d" "twenty-two hours out"
+  pass "with no bound, the next occurrence is awaited and nothing is sent"
 }
 
 test_a_passed_reset_dismisses_and_resumes() {
@@ -803,8 +819,9 @@ fm_test_run \
   test_future_reset_records_a_timed_wait \
   test_a_reset_inside_the_margin_still_waits \
   test_a_reset_passed_since_the_stall_recovers_at_once \
-  test_a_reset_many_hours_out_waits_without_sending \
-  test_without_earlier_evidence_the_next_occurrence_is_awaited \
+  test_a_reset_many_hours_out_sends_nothing_and_declares_no_wait \
+  test_a_clock_time_behind_the_stall_is_tomorrows \
+  test_without_a_bound_the_next_occurrence_is_awaited \
   test_a_passed_reset_dismisses_and_resumes \
   test_recovery_stops_when_the_prompt_survives_the_interrupt \
   test_recovery_stops_when_the_pane_is_unreadable_after_the_interrupt \

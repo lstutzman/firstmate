@@ -6,9 +6,9 @@
 # These drive a real fm-watch.sh subprocess against a pane parked on the prompt
 # and assert the contract of limit_resume_check in bin/fm-watch.sh:
 #   - a claude crew on the prompt makes the watcher ask the recovery script,
-#     once per throttle window, with the earlier of the crew's last status-line
-#     time and the pane-change time as the evidence of when the stall began,
-#     and the stale wake names the prompt;
+#     once per throttle window, with the pane-change time as the bound on when
+#     the prompt was drawn, and the stale wake names the prompt and the reset
+#     time it states;
 #   - nothing else does: not a crew of another harness, not the same words
 #     quoted above a composer, not a second mate, not a crew checked a moment
 #     ago.
@@ -104,8 +104,8 @@ test_claude_crew_on_the_prompt_is_handed_to_the_recovery() {
   key=$(prime_limit_window "$state" stalled "$window" ship claude "$capture")
   run_watch "$dir" "$window" "$capture" "$log"
   grep -F "stale: $window" "$dir/watch.out" >/dev/null || fail "the wake was not a stale wake: $(cat "$dir/watch.out")"
-  grep -F 'blocked-on-prompt: Claude usage-limit prompt' "$dir/watch.out" >/dev/null \
-    || fail "the stale wake did not name the usage-limit prompt: $(cat "$dir/watch.out")"
+  grep -F 'blocked-on-prompt: Claude usage-limit prompt, resets 6:40pm' "$dir/watch.out" >/dev/null \
+    || fail "the stale wake did not name the usage-limit prompt and its stated reset: $(cat "$dir/watch.out")"
   wait_for_file "$log" || fail "the watcher never asked the recovery script"
   [ "$(grep -c . "$log")" -eq 1 ] || fail "the watcher asked the recovery script more than once: $(cat "$log")"
   case "$(cat "$log")" in
@@ -119,23 +119,28 @@ test_claude_crew_on_the_prompt_is_handed_to_the_recovery() {
   pass "a claude crew parked on the usage-limit prompt is named and handed to the recovery once, with a bound"
 }
 
-# The fork's overnight case: the crew last wrote its status at the stall, the
-# watcher was down, and the pane-change time it records on restart is hours
-# later. The earlier status-line time is the evidence the recovery must get.
-test_the_crews_last_status_time_bounds_a_stall_seen_after_a_restart() {
-  local dir state capture window log stalled_at since
+# The crew wrote its last status hours before it stalled, so that time says
+# nothing about when the prompt was drawn. The bound is the pane-hash time,
+# which is at or after the draw and survives a watcher restart.
+test_the_bound_is_the_pane_hash_time_not_the_last_status_line() {
+  local dir state capture window log key status_at seen_at since
   dir=$(make_case limit-restart); state="$dir/state"
   capture="$dir/pane.txt"; log="$dir/resume.log"; window="test:fm-restarted"
   write_limit_prompt "$capture"
-  prime_limit_window "$state" restarted "$window" ship claude "$capture" >/dev/null
-  stalled_at=$(( $(date +%s) - 8 * 3600 ))
-  touch -d "@$stalled_at" "$state/restarted.status" 2>/dev/null \
-    || touch -t "$(date -r "$stalled_at" +%Y%m%d%H%M.%S)" "$state/restarted.status"
+  key=$(prime_limit_window "$state" restarted "$window" ship claude "$capture")
+  status_at=$(( $(date +%s) - 6 * 3600 ))
+  seen_at=$(( $(date +%s) - 3600 ))
+  touch_at "$status_at" "$state/restarted.status"
+  touch_at "$seen_at" "$state/.hash-$key"
   run_watch "$dir" "$window" "$capture" "$log"
   wait_for_file "$log" || fail "the watcher never asked the recovery script"
   since=$(sed -n 's/^--since \([0-9]*\) restarted$/\1/p' "$log")
-  assert_equals "$stalled_at" "$since" "the bound was not the crew's last status-line time: $(cat "$log")"
-  pass "a stall first seen after a watcher restart is bounded by the crew's last status-line time"
+  assert_equals "$seen_at" "$since" "the bound was not the pane-hash time: $(cat "$log")"
+  pass "the recovery's bound is the pane-hash time, never the crew's earlier last status line"
+}
+
+touch_at() {  # <epoch> <file>
+  touch -d "@$1" "$2" 2>/dev/null || touch -t "$(date -r "$1" +%Y%m%d%H%M.%S)" "$2"
 }
 
 test_a_recent_check_throttles_the_recovery() {
@@ -203,7 +208,7 @@ test_a_second_mate_is_never_handed_to_the_recovery() {
 
 fm_test_run \
   test_claude_crew_on_the_prompt_is_handed_to_the_recovery \
-  test_the_crews_last_status_time_bounds_a_stall_seen_after_a_restart \
+  test_the_bound_is_the_pane_hash_time_not_the_last_status_line \
   test_a_recent_check_throttles_the_recovery \
   test_another_harness_is_never_handed_to_the_recovery \
   test_quoted_prompt_text_is_never_handed_to_the_recovery \
