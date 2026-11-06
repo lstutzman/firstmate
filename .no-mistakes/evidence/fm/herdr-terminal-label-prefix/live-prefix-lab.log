@@ -1,0 +1,12 @@
+== lab fm-lab-term-prefix-459613-9905 workspaces before (real herdr herdr 0.9.5):
+[{"workspace_id":"w1","label":"anchor","tab_count":1,"pane_count":1},{"workspace_id":"w2","label":"[5] Terminal","tab_count":1,"pane_count":1}]
+== scenario A: changed check, run twice, with a '[5] Terminal' present
+out1=[] out2=[]
+[{"workspace_id":"w1","label":"anchor","tab_count":1,"pane_count":1},{"workspace_id":"w2","label":"[5] Terminal","tab_count":1,"pane_count":1}]
+== scenario B: agent in the '[5] Terminal' is flagged by the changed check
+out=[herdr-terminal: 1 agent(s) share a workspace with another session: claude in pane w2:p1 (workspace Terminal); every agent runs alone in its own workspace, nothing was moved]
+[{"workspace_id":"w1","label":"anchor","tab_count":1,"pane_count":1},{"workspace_id":"w2","label":"[5] Terminal","tab_count":1,"pane_count":1}]
+== scenario C (baseline): base-commit check against the same lab
+out=[herdr-terminal: created the 'Terminal' workspace w3 (bare shell at $HOME, the captain's)]
+[{"workspace_id":"w1","label":"anchor","tab_count":1,"pane_count":1},{"workspace_id":"w2","label":"[5] Terminal","tab_count":1,"pane_count":1},{"workspace_id":"w3","label":"Terminal","tab_count":1,"pane_count":1}]
+teardown exit=0

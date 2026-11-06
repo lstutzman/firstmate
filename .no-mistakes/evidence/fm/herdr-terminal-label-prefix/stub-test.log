@@ -1,0 +1,8 @@
+ok - 'Terminal' is found and not recreated
+ok - '[5] Terminal' is found and not recreated
+ok - plain and prefixed Terminal count as two
+ok - 'Terminal 2' is not a match
+ok - '[5] Terminals' is not a match
+ok - 'My Terminal' is not a match
+ok - '[x] Terminal' is not a match
+ok - null and missing labels beside a Terminal leave it found and not recreated
