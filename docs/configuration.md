@@ -1485,7 +1485,7 @@ Fingerprinting, duplicate detection, the `Found:` line, recurrences of closed it
 Every Linear call is counted against `max-linear-calls`.
 One rate-limit answer from Linear stops the run's Linear calls and writes `linear-resume-after.json` in the lane; runs before that time make no Linear call.
 The lane also keeps `review-state.json` (cluster membership, the weekly burn-down), `found.json` and `patterns.json`.
-The digest adds a weekly burn-down line (open, new and fixed reviewer findings), the start requests, one keyed needs-decision line for findings held in a reserved class, one capped-repeat start request (kind `surgeon-fix-cap`) to the start-home office for each finding stopped at the rubric's start cap, which the office hands to Lee as a keyed needs-decision instead of a fourth fix, and the bad patterns found.
+The digest adds a weekly burn-down line (open, new and fixed reviewer findings), the start requests, one keyed needs-decision line for findings held in a reserved class, one capped-repeat start request (kind `surgeon-fix-cap`) to the start-home office for each finding stopped after 3 started fixes ([surgeon-rubric.md](officers/surgeon-rubric.md)), which the office hands to Lee as a keyed needs-decision instead of a fourth fix, and the bad patterns found.
 Real critical and high findings, and medium findings found at least 3 times, that the rubric admits are written as `start_requests` in the dated JSON, the same shape the progress officer uses, so `start-home:` offices deliver their own and this home's go in the adjacent `<date>.start-requests.sh`.
 
 ### Corpus officer
