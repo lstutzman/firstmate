@@ -200,6 +200,33 @@ def waiting_on_captain(summary, counts):
     return any(isinstance(row, dict) and row.get('verb') == 'captain-hold' for row in summary.get('decisions_open', []))
 
 
+def waiting_on_open_ask(summary, counts):
+    # The mate's own latest status fold holds an open needs-decision or blocked line that nobody has
+    # answered, and no child is asking the mate anything: the work it holds is waiting on the answer,
+    # not silent. A mate with an ask but no work in flight keeps the old rule: the ask is the work.
+    invalidity = summary.get('invalidity')
+    partial = isinstance(invalidity, dict) and invalidity.get('kind') == 'child_current_unavailable'
+    return (summary['valid'] or partial) and not child_asking(summary, counts)
+
+
+def held_terminal_complete(summary, counts):
+    # An in-flight item whose child is done is complete when the mate holds that same task as a
+    # captain-hold row: it is waiting on the captain's call, not a contradiction in the inventory.
+    # Every id in the invalidity must be a done child with a captain-hold row, the decision list
+    # must be complete, and endpoints (the structured child state) decide done; prose never does.
+    invalidity = summary.get('invalidity')
+    if not isinstance(invalidity, dict) or invalidity.get('kind') != 'terminal_in_flight':
+        return False
+    ids, decisions, endpoints = invalidity.get('ids'), summary.get('decisions_open'), summary.get('endpoints')
+    if not (isinstance(ids, list) and ids and isinstance(decisions, list) and isinstance(endpoints, list)):
+        return False
+    if counts['decisions_open'] > len(decisions):
+        return False
+    held = {row.get('id') for row in decisions if isinstance(row, dict) and row.get('verb') == 'captain-hold'}
+    done = {row.get('id') for row in endpoints if isinstance(row, dict) and row.get('state') == 'done'}
+    return all(item in held and item in done for item in ids)
+
+
 def working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg):
     # The mate's own latest line says it is working, or paused for work it still holds, and
     # nobody is waiting on it: a long task that reports sparingly, not a mate gone quiet. A
@@ -299,6 +326,8 @@ done < "$2"
             if type(waiting) is not int or waiting < 0:
                 raise ValueError('invalid work counts')
             work[0] = max(0, work[0] - waiting)
+            if not summary['valid'] and held_terminal_complete(summary, counts):
+                summary = {**summary, 'valid': True, 'invalidity': None}
             invalidity = summary.get('invalidity')
             partial_counts = (isinstance(invalidity, dict)
                               and invalidity.get('kind') == 'child_current_unavailable'
@@ -313,6 +342,8 @@ done < "$2"
             if not any(work) and open_decisions == '0':
                 continue
             if waiting_on_captain(summary, counts):
+                continue
+            if open_decisions != '0' and counts.get('in_flight', 0) and waiting_on_open_ask(summary, counts):
                 continue
             if working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg):
                 continue
