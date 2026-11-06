@@ -425,6 +425,61 @@ MD
   pass 'progress: work items under one Linear issue get distinct, stable page ids'
 }
 
+test_page_ids_ignore_sibling_count() {
+  make_world sibling-count
+  local file="$WORLD_HOME/data/officers/progress/progress-state.json" lone_id lone_started first_done previous_now=$NOW
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+MD
+  run_progress >/dev/null || fail 'single-item run failed'
+  lone_id=$(jq -r '.doing[0].id' "$file")
+  lone_started=$(jq -r '.doing[0].started_at' "$file")
+  first_done=$(jq -r '.done[0].id' "$file")
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+- [ ] pc23-b - PC-23 second piece (kind: bug) (pr: https://github.com/example/project/pull/4602)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+- [x] pc27-b - PC-2700 two outcome (kind: bug)
+MD
+  NOW=$((NOW + 60))
+  run_progress >/dev/null || fail 'sibling-added run failed'
+  NOW=$previous_now
+  assert_equals '2' "$(jq '[.doing[].id] | unique | length' "$file")" 'a second item under one issue gets its own id'
+  assert_contains "$(jq -r '.doing[].id' "$file")" "$lone_id" 'an existing item keeps its id when a sibling appears'
+  assert_equals "$lone_started" "$(jq -r --arg id "$lone_id" '.doing[] | select(.id == $id) | .started_at' "$file")" \
+    'an existing item keeps its start time when a sibling appears'
+  assert_equals '2' "$(jq '.done | length' "$file")" 'a second outcome under a reported issue is shown'
+  assert_contains "$(jq -r '.done[].id' "$file")" "$first_done" 'the reported outcome keeps its id'
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## In flight
+
+- [ ] pc23-a - PC-23 first piece (kind: bug) (pr: https://github.com/example/project/pull/4596)
+
+## Done
+
+- [x] pc27-a - PC-2700 one outcome (kind: bug)
+- [x] pc27-b - PC-2700 two outcome (kind: bug)
+MD
+  NOW=$((NOW + 120))
+  run_progress >/dev/null || fail 'sibling-removed run failed'
+  NOW=$previous_now
+  assert_equals "$lone_id" "$(jq -r '[.doing[].id] | join(" ")' "$file")" 'the remaining item keeps its id when a sibling leaves'
+  assert_equals "$lone_started" "$(jq -r '.doing[0].started_at' "$file")" 'the remaining item keeps its start time'
+  assert_equals '2' "$(jq '.done | length' "$file")" 'both reported outcomes stay on the page'
+  pass 'progress: page ids do not change as sibling items come and go'
+}
+
 test_open_pr_listing_failures() {
   local file stub lane
   make_world pr-listing
@@ -465,7 +520,7 @@ SH
     'the blocker names the real failure'
   assert_not_contains "$(jq -r '.coverage[]' "$file")$(cat "$lane/.run.err")" 'FIXTURESECRET' 'no token reaches the digest or the log'
   assert_contains "$(cat "$lane/.run.err")" '(attempt 2)' 'the run log names both attempts'
-  # A stray non-PR line beside PR data does not abort the listing.
+  # An unexpected line beside PR data holds starts, and the blocker quotes it.
   rm "$WORLD/fail-count"
   cat > "$FAKEBIN/gh-axi" <<SH
 #!/usr/bin/env bash
@@ -476,8 +531,12 @@ SH
 import json, sys
 json.dump([{"title": "Some open PR", "number": 1, "html_url": "https://github.com/example/project/pull/1"}], open(sys.argv[1], "w"))
 PY
-  run_progress >/dev/null 2>&1 || fail 'a stray notice line must not abort the listing'
-  assert_equals '0' "$(jq '[.coverage[] | select(contains("open PR discovery"))] | length' "$file")" 'a stray notice line is skipped'
+  run_progress >/dev/null 2>&1 || fail 'an unexpected listing line must still publish state'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'an unexpected listing line holds starts'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'example/project: unexpected GitHub output: notice: a new gh-axi version is available' \
+    'the blocker names the repo and the unexpected line'
+  assert_contains "$(cat "$lane/.run.err")" 'open PR listing failed for example/project (attempt 2): unexpected GitHub output' \
+    'the run log names the unexpected line'
   pass 'progress: PR listing failures are named and retried once, and persistent ones still hold starts'
 }
 
@@ -1282,7 +1341,7 @@ MD
   assert_equals 'progress' "$(jq -r '.officer' "$file")" 'page names registered officer'
   assert_equals 'bug' "$(jq -r '.doing[0].source' "$file")" 'page maps the authorising class to its agreed source'
   assert_equals 'bug' "$(jq -r '.done[0].source' "$file")" 'page records the completed source'
-  assert_equals 'firstmate' "$(jq -r '.asking[] | select(.key == "ready") | .waiting_on' "$file")" 'start requests wait on firstmate'
+  assert_equals 'firstmate' "$(jq -r '.asking[] | select(.question == "Start authorised work: Fix the next crash") | .waiting_on' "$file")" 'start requests wait on firstmate'
   assert_equals 'captains_log' "$(jq -r '.asking[] | select(.key == "existing-card") | .kind' "$file")" 'existing Log cards remain references'
   assert_equals 'key kind link' "$(jq -r '.asking[] | select(.key == "existing-card") | keys | join(" ")' "$file")" 'a Log reference repeats no decision text'
   assert_equals 'https://fleet.example/captains-log#existing-card' \
@@ -1327,18 +1386,18 @@ for path in sys.argv[2:]:
 PY
   local first_started first_asked previous_now=$NOW
   first_started=$(jq -r '.doing[0].started_at' "$file")
-  first_asked=$(jq -r '.asking[] | select(.key == "ready") | .asked_at' "$file")
+  first_asked=$(jq -r '.asking[] | select(.question == "Start authorised work: Fix the next crash") | .asked_at' "$file")
   NOW=$((NOW + 60))
   run_progress >/dev/null || fail 'second page observation failed'
   NOW=$previous_now
   assert_equals "$first_started" "$(jq -r '.doing[0].started_at' "$file")" 'watch start remains the first observation'
-  assert_equals "$first_asked" "$(jq -r '.asking[] | select(.key == "ready") | .asked_at' "$file")" 'waiting time survives repeat observations'
+  assert_equals "$first_asked" "$(jq -r '.asking[] | select(.question == "Start authorised work: Fix the next crash") | .asked_at' "$file")" 'waiting time survives repeat observations'
   jq '.done = []' "$file" > "$file.new" && mv "$file.new" "$file"
   printf -- '- [x] fresh - Fix new crash (kind: bug)\n' >> "$WORLD_HOME/data/backlog.md"
   NOW=$((NOW + 120))
   run_progress >/dev/null || fail 'third page observation failed'
   NOW=$previous_now
-  assert_equals 'fresh' "$(jq -r '[.done[].id] | join(" ")' "$file")" \
+  assert_equals 'Recorded work outcome: Fix new crash' "$(jq -r '[.done[].description] | join("|")' "$file")" \
     'an outcome reported earlier and off the page does not return as new; a new outcome does'
   pass 'progress: fleet-app state matches the agreed schema and Slarti sample'
 }
@@ -1582,6 +1641,7 @@ test_merged_pr_asks_follow_effective_class
 test_github_reads_respect_deadline
 test_open_pr_listing_failures
 test_work_items_under_one_issue_get_distinct_ids
+test_page_ids_ignore_sibling_count
 test_review_words_and_explicit_asks
 test_partial_coverage_starts
 test_linear_pagination

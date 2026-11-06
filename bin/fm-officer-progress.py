@@ -213,14 +213,17 @@ def command(args, input_bytes=None, timeout=120):
     return proc.stdout.decode("utf-8")
 
 
-def failure_hint(stderr):
-    """First stderr line, with token-like strings removed and bounded, so a log can name the cause."""
-    text = (stderr or b"").decode("utf-8", "replace").strip().splitlines()
-    if not text:
-        return ""
-    line = re.sub(r"(?i)(authorization|token|bearer|password|secret|key)\S*[:= ]+\S+", r"\1 [redacted]", text[0])
+def redact(line, limit):
+    """One output line with token-like strings removed and bounded, so a log can quote it."""
+    line = re.sub(r"(?i)(authorization|token|bearer|password|secret|key)\S*[:= ]+\S+", r"\1 [redacted]", line.strip())
     line = re.sub(r"\b[A-Za-z0-9_\-]{32,}\b|\b(?:gh[pousr]_|github_pat_)\w+", "[redacted]", line)
-    return ": " + line[:200]
+    return line[:limit]
+
+
+def failure_hint(stderr):
+    """First stderr line, redacted, so a log can name the cause."""
+    text = (stderr or b"").decode("utf-8", "replace").strip().splitlines()
+    return ": " + redact(text[0], 200) if text else ""
 
 
 class LinearDiscovery:
@@ -444,15 +447,11 @@ def remaining(deadline):
 def list_open_prs(repo, deadline):
     raw = command(["gh-axi", "api", "GET", "/repos/" + repo + "/pulls?state=open&per_page=100",
                    "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'], timeout=remaining(deadline))
-    prs, stray = [], []
+    prs = []
     for line in raw.splitlines():
-        if line.startswith("PRJSON "):
-            prs.append(json.loads(line[7:]))
-        elif line.strip():
-            stray.append(line.strip())
-    # A notice line beside PR data is skipped; text with no PR data may be an error, so it is not an empty list.
-    if stray and not prs:
-        raise RuntimeError("unexpected GitHub output (no PR data): " + stray[0][:120])
+        if not line.startswith("PRJSON "):
+            raise RuntimeError("unexpected GitHub output: " + redact(line, 120))
+        prs.append(json.loads(line[7:]))
     return prs
 
 
@@ -1105,10 +1104,16 @@ def stable_key(row):
     return plain(value, 60) or "discovery"
 
 
+def page_id(row):
+    """Issue key plus a hash of the work item's own fields, so it never depends on sibling items."""
+    own = "\0".join(str(row.get(f, "")) for f in ("owner_home", "id", "link", "title"))
+    return stable_key(row)[:46] + "-" + hashlib.sha256(own.encode()).hexdigest()[:12]
+
+
 def page_state(doc, officer, previous, repos, log_url, reported):
     """Fleet-app v1 projection; detailed execution stays in <date>.json.
 
-    reported holds the done keys of the previous dated run, or None on a first run;
+    reported holds the done page ids of the previous dated run, or None on a first run;
     outcomes already reported there and no longer on the page are not re-added."""
     now = doc["generated_at"]
     default_link = "https://github.com/" + repos.split(",")[0].strip()
@@ -1122,31 +1127,23 @@ def page_state(doc, officer, previous, repos, log_url, reported):
     sources = {"security": "cve", "cve": "cve", "code-review": "review", "bug": "bug",
                "requested-feature": "feature", "requested-fleet": "fleet", "filler": "filler"}
 
-    counts = {g: collections.Counter() for g in used}
-    for g, rows in (("doing", doc["doing"][:30]), ("done", doc["done"]), ("asking", doc["start_requests"] + doc["asks_for_lee"])):
-        counts[g].update(stable_key(r) for r in rows)
-
-    def unique(key, group, row):
-        # Work items under one Linear issue share its key; tell them apart by their own id, link and title,
-        # which do not depend on run order, so each id is unique per item and stable across runs.
-        if counts[group][key] > 1 or key in used[group]:
-            own = "\0".join(str(row.get(f, "")) for f in ("owner_home", "id", "link", "title"))
-            base = key[:46] + "-" + hashlib.sha256(own.encode()).hexdigest()[:12]
-            key, n = base, 1
-            while key in used[group]:
-                n += 1
-                key = "%s-%d" % (base, n)
+    def unique(group, row):
+        base = key = page_id(row)
+        n = 1
+        while key in used[group]:
+            n += 1
+            key = "%s-%d" % (base, n)
         used[group].add(key)
         return key
 
     def instruction(row, question):
-        key = unique(stable_key(row), "asking", row)
+        key = unique("asking", row)
         return {"key": key, "kind": "instruction", "question": plain(question, 300),
                 "waiting_on": "firstmate", "link": https_url(row.get("link")) or default_link,
                 "asked_at": observed_time(old_asking.get(key, {}).get("asked_at"), now)}
 
     for row in doc["doing"][:30]:
-        key = unique(stable_key(row), "doing", row)
+        key = unique("doing", row)
         entry = {"id": key, "description": plain("Watching work: " + row["title"], 200),
                  "started_at": observed_time(old_doing.get(key, {}).get("started_at"), now)}
         if sources.get(row["authorising_class"]):
@@ -1158,8 +1155,8 @@ def page_state(doc, officer, previous, repos, log_url, reported):
             entry["project"] = plain(row["project"], 60)
         page["doing"].append(entry)
     for row in doc["done"]:
-        key = unique(stable_key(row), "done", row)
-        if reported is not None and stable_key(row) in reported and key not in old_done:
+        key = unique("done", row)
+        if reported is not None and page_id(row) in reported and key not in old_done:
             continue
         entry = {"id": key, "description": plain("Recorded work outcome: " + row["title"], 200),
                  "at": observed_time(old_done.get(key, {}).get("at"), now), "outcome": row.get("outcome", "ok"),
@@ -1341,7 +1338,7 @@ def main(argv):
     runs = sorted(n for n in os.listdir(args.out) if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", n))
     if runs:
         try:
-            reported = {stable_key(r) for r in json.loads(read(os.path.join(args.out, runs[-1])))["done"]}
+            reported = {page_id(r) for r in json.loads(read(os.path.join(args.out, runs[-1])))["done"]}
         except (ValueError, KeyError, TypeError, AttributeError):
             reported = None
     write(os.path.join(args.out, args.date + ".json"), doc)
