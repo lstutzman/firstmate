@@ -216,6 +216,7 @@ A hold may carry a recommended answer and a UTC deadline when its declared class
 Every reserved class (payments or billing, legal text, product, member-facing copy, credentials, production, data-rewriting, security, outward-facing, money, destructive or irreversible) refuses, as does a class the script cannot recognise as safe, so an undetermined class refuses.
 This is narrower than the source fork, which also let product and copy calls take a default; the fleet rules forbid that, so it is not taken.
 The default lives in a private record under `state/captain-hold-default/` tied to the hold-set stamp, so the mechanism adds no second decision store and a re-held call never inherits a stale default.
+A deferral (`hold --until <date>` on an active call, the captain's "later") is a real answer, so it removes the call's default and logs "default cleared: captain deferred to <date>", unless it brings a fresh `--default-by` later than that date, which replaces the old default; a default at or before the `--until` date refuses.
 The wake drain prints `DEFAULTS DUE` for calls past their deadline and applies nothing.
 `config/captain-hold-defaults` selects dry-run (shipped default: `answer --deadline-default` only logs) or live (it records the default as `Resolution mode: deadline-default` under the label "Deadline default (not the captain's words):").
 `answered` and every merge admission that depends on it never count a deadline default as the captain's word, and the parent-channel lines say it was a deadline default.

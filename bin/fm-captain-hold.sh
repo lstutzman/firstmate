@@ -100,7 +100,13 @@
 # class cannot be determined and refuses), a `--cause` of policy or credential,
 # and any `--touches <path>` that bin/fm-reserved-classify.sh flags under the
 # home's config/admission/captain-hold-defaults.rules (a missing rules file with
-# --touches refuses). The deadline must be later than the hold-set time.
+# --touches refuses). The deadline must be later than the hold-set time and,
+# with --until, later than the start of that date. An active call re-held with
+# a different default refuses unless the re-hold is a deferral. A deferral (the
+# captain's "later", `hold --until <date>` on an active call) is a real answer:
+# it removes the call's default record, logs "default cleared: captain deferred
+# to <date>" with the task and hold stamp, and says so on the parent channel,
+# unless it carries a fresh --default-by, which replaces the old default.
 # `defaults-due` lists calls whose deadline passed, still open, not deferred to
 # a later `--until`, as `<task-id>\t<deadline>\t<recommendation>\t<class>\t<mode>\t<logged>\t<title>`,
 # and changes nothing. `answer --deadline-default` is the only way to act on one,
@@ -1239,8 +1245,8 @@ valid_utc_stamp() {  # <value>
 
 # Validates the --recommend/--default-by/--class/--touches set before anything
 # is written. A hold with none of them is untouched by deadline defaults.
-validate_default_request() {  # <cause> <hold-set>
-  local cause=$1 hold_set=$2 verdict classes
+validate_default_request() {  # <cause> <hold-set> <until>
+  local cause=$1 hold_set=$2 until=$3 verdict classes
   [ -n "$DEFAULT_RECOMMEND$DEFAULT_BY$DEFAULT_CLASS" ] || [ "${#DEFAULT_TOUCHES[@]}" -eq 0 ] \
     || fail "--touches needs --recommend, --default-by and --class"
   [ -n "$DEFAULT_RECOMMEND$DEFAULT_BY$DEFAULT_CLASS" ] || return 0
@@ -1257,6 +1263,8 @@ validate_default_request() {  # <cause> <hold-set>
   valid_utc_stamp "$DEFAULT_BY" || fail "--default-by must be a UTC YYYY-MM-DDTHH:MM:SSZ stamp: $DEFAULT_BY"
   [[ "$DEFAULT_BY" > "$hold_set" ]] \
     || fail "--default-by must be later than the hold time so the captain can see the call first: $DEFAULT_BY"
+  [ -z "$until" ] || [[ "$DEFAULT_BY" > "${until}T00:00:00Z" ]] \
+    || fail "--default-by must be later than --until $until so the deferred call resurfaces before its default: $DEFAULT_BY"
   require_default_class_allowed "$DEFAULT_CLASS"
   if [ "${#DEFAULT_TOUCHES[@]}" -gt 0 ]; then
     [ -f "$DEFAULT_RULES" ] \
@@ -1326,6 +1334,7 @@ default_logged() {  # <task-id> <hold-set> <by>
 command_hold() {
   local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind hold_set occurrence
   local cause=decision origin_key='' existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason original_body='' hold_status=0
+  local clear_default=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -1368,7 +1377,7 @@ command_hold() {
     *) fail "FM_CAPTAIN_HOLD_NOW must be a UTC YYYY-MM-DDTHH:MM:SSZ timestamp" ;;
   esac
   # Refused before any write, so a refused default leaves the backlog untouched.
-  validate_default_request "$cause" "$hold_set"
+  validate_default_request "$cause" "$hold_set" "$until"
   acquire_task_control_lock "$id"
   require_tasks_axi
   if task_show "$id"; then
@@ -1380,12 +1389,17 @@ command_hold() {
     existing_held=$(show_field_value "$show" held)
     if [ "$existing_hold_kind" = captain ] && [ "$existing_held" = yes ]; then
       preserve_hold_set=1
-      # An active call keeps the default it published; only an identical repeat passes.
-      if [ -n "$DEFAULT_BY" ] && read_default_record "$id" \
-        && [ "$DR_HOLD_SET" = "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ] \
-        && { [ "$DR_BY" != "$DEFAULT_BY" ] || [ "$DR_CLASS" != "$DEFAULT_CLASS" ] \
+      # An active call keeps the default it published; only an identical repeat
+      # passes. A deferral (--until) is the captain's answer: it drops the
+      # default unless it brings a fresh one, which replaces it.
+      if read_default_record "$id" \
+        && [ "$DR_HOLD_SET" = "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ]; then
+        if [ -n "$until" ]; then
+          [ -n "$DEFAULT_BY" ] || clear_default=1
+        elif [ -n "$DEFAULT_BY" ] && { [ "$DR_BY" != "$DEFAULT_BY" ] || [ "$DR_CLASS" != "$DEFAULT_CLASS" ] \
           || [ "$DR_RECOMMEND" != "$DEFAULT_RECOMMEND" ]; }; then
-        fail "active call $id already carries a different deadline default; resolve it before publishing a new one"
+          fail "active call $id already carries a different deadline default; resolve it before publishing a new one"
+        fi
       fi
     fi
     if [ -n "$title" ]; then
@@ -1457,6 +1471,11 @@ command_hold() {
     write_default_record "$id" "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" \
       || fail "could not record the deadline default for $id"
     reason="$reason (deadline default, not the captain: if unanswered by $DEFAULT_BY, Firstmate may proceed on its recommendation: $DEFAULT_RECOMMEND)"
+  elif [ "$clear_default" = 1 ]; then
+    printf '%s default cleared: captain deferred to %s task=%s hold=%s\n' "$hold_set" "$until" "$id" "$DR_HOLD_SET" >> "$DEFAULT_LOG" \
+      && rm -f -- "$(default_record_path "$id")" \
+      || fail "could not clear the deadline default for $id"
+    reason="$reason (default cleared: captain deferred to $until)"
   fi
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$cause"
   if [ -n "$origin" ]; then
