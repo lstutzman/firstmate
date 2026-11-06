@@ -1472,9 +1472,10 @@ command_hold() {
       || fail "could not record the deadline default for $id"
     reason="$reason (deadline default, not the captain: if unanswered by $DEFAULT_BY, Firstmate may proceed on its recommendation: $DEFAULT_RECOMMEND)"
   elif [ "$clear_default" = 1 ]; then
-    printf '%s default cleared: captain deferred to %s task=%s hold=%s\n' "$hold_set" "$until" "$id" "$DR_HOLD_SET" >> "$DEFAULT_LOG" \
-      && rm -f -- "$(default_record_path "$id")" \
-      || fail "could not clear the deadline default for $id"
+    if ! { printf '%s default cleared: captain deferred to %s task=%s hold=%s\n' "$hold_set" "$until" "$id" "$DR_HOLD_SET" >> "$DEFAULT_LOG" \
+      && rm -f -- "$(default_record_path "$id")"; }; then
+      fail "could not clear the deadline default for $id"
+    fi
     reason="$reason (default cleared: captain deferred to $until)"
   fi
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$cause"
