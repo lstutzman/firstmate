@@ -1296,7 +1296,7 @@ These checks only refuse, and a home that is not an office never runs them.
 ### Office status (data/office-status.json)
 
 `bin/fm-office.sh status` runs inside an office home and projects that home's own work onto `data/office-status.json`, the file the fleet app's Status page pulls.
-It reads only the home's `data/backlog.md` and `state/<task>.meta`, writes only `data/office-status.json` and `state/office-status.seen.json`, prints nothing on success, and does nothing in a home without a `.fm-office` marker.
+It reads only the home's `data/backlog.md`, `data/office-decisions.md` and `state/<task>.meta`, writes only `data/office-status.json` and `state/office-status.seen.json`, prints nothing on success, and does nothing in a home without a `.fm-office` marker.
 `bin/fm-office-status.py` owns the mechanics.
 
 ```json

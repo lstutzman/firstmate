@@ -462,9 +462,11 @@ test_status_projects_decisions() {
     printf '| 2026-11-05 | short | only four | cells |\n'
     printf '| not a date | s | f | c | a |\n'
     printf '| 2026-11-04 | s | | c | a |\n'
+    printf '%s\n' '| 2026-11-02 | piped | Use `a \| b` | Adopt | Done |'
   } > "$f"
   status "$w"
-  assert_equals "second first older" "$(jq -r '[.decisions[].source] | join(" ")' "$w/navigator/data/office-status.json")" "newest first, malformed skipped"
+  assert_equals "second first older piped" "$(jq -r '[.decisions[].source] | join(" ")' "$w/navigator/data/office-status.json")" "newest first, malformed skipped"
+  assert_equals 'Use `a | b`' "$(jq -r '.decisions[3].finding' "$w/navigator/data/office-status.json")" "escaped pipe stays in its cell"
   assert_equals "Done: [x](https://e.test/1)" "$(jq -r '.decisions[2].action' "$w/navigator/data/office-status.json")" "link stays text"
   assert_equals "date source finding call action" "$(jq -r '.decisions[0] | keys_unsorted | join(" ")' "$w/navigator/data/office-status.json")" "keys"
   pass 'status projects office-decisions.md newest first and skips malformed rows'

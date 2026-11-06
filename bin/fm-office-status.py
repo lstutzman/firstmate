@@ -30,6 +30,7 @@ SEEN_KEEP = timedelta(days=7)
 TITLE_LIMIT = 200
 DECISIONS_LIMIT = 20
 DECISION_KEYS = ("date", "source", "finding", "call", "action")
+CELL_SPLIT_RE = re.compile(r"(?<!\\)\|")
 
 ROW_RE = re.compile(r"^- \[( |x)\] ([A-Za-z0-9._-]+) - (.*)$")
 HEADING_RE = re.compile(r"^## (.+?)\s*$")
@@ -98,7 +99,7 @@ def parse_decisions(path):
         text = line.strip()
         if not (text.startswith("|") and text.endswith("|")):
             continue
-        cells = [cell.strip() for cell in text[1:-1].split("|")]
+        cells = [cell.strip().replace("\\|", "|") for cell in CELL_SPLIT_RE.split(text[1:-1])]
         if len(cells) != len(DECISION_KEYS):
             continue
         entry = dict(zip(DECISION_KEYS, cells))
