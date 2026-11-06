@@ -1,0 +1,74 @@
+{
+  "asking": [
+    {
+      "asked_at": "2026-10-26T06:00:00Z",
+      "key": "PC-61-3372da2065f8",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Start authorised work: Bug: checked work starts",
+      "waiting_on": "firstmate"
+    },
+    {
+      "asked_at": "2026-10-26T06:00:00Z",
+      "key": "coverage-0-e589e7a86bc7",
+      "kind": "instruction",
+      "link": "https://github.com/lstutzman/firstmate",
+      "question": "Restore discovery coverage: Linear labels not readable by linear-axi",
+      "waiting_on": "firstmate"
+    }
+  ],
+  "doing": [
+    {
+      "description": "Watching work: PC-23 first piece",
+      "id": "PC-23-13ebcc6a41b4",
+      "link": "https://github.com/lstutzman/firstmate/pull/4596",
+      "source": "bug",
+      "started_at": "2026-10-26T06:00:00Z"
+    },
+    {
+      "description": "Watching work: PC-23 second piece",
+      "id": "PC-23-c994b6cd5ca2",
+      "link": "https://github.com/lstutzman/firstmate/pull/4602",
+      "source": "bug",
+      "started_at": "2026-10-26T06:00:00Z"
+    },
+    {
+      "description": "Watching work: PC-23 third piece",
+      "id": "PC-23-2f9f654c91cb",
+      "link": "https://github.com/lstutzman/firstmate/pull/4626",
+      "source": "bug",
+      "started_at": "2026-10-26T06:00:00Z"
+    }
+  ],
+  "done": [
+    {
+      "at": "2026-10-26T06:00:00Z",
+      "description": "Recorded work outcome: PC-2700 three outcome",
+      "detail": "Recorded completed or canceled",
+      "id": "PC-2700-ad95df981924",
+      "outcome": "ok",
+      "source": "bug"
+    },
+    {
+      "at": "2026-10-26T06:00:00Z",
+      "description": "Recorded work outcome: PC-2700 two outcome",
+      "detail": "Recorded completed or canceled",
+      "id": "PC-2700-a46add192250",
+      "outcome": "ok",
+      "source": "bug"
+    },
+    {
+      "at": "2026-10-26T06:00:00Z",
+      "description": "Recorded work outcome: PC-2700 one outcome",
+      "detail": "Recorded completed or canceled",
+      "id": "PC-2700-8c609dd33223",
+      "outcome": "ok",
+      "source": "bug"
+    }
+  ],
+  "officer": "progress",
+  "schema_version": 1,
+  "stale_after_minutes": 2880,
+  "summary": "Watching 3 work items; 3 outcomes recorded; 2 requests waiting on firstmate or Lee; 0 items outside the start classes; 1 coverage gaps. Showing up to 30 current items, 50 outcomes, and 30 requests.",
+  "written_at": "2026-10-26T06:05:00Z"
+}

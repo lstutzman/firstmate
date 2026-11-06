@@ -1,0 +1,2 @@
+progress-state.json accepted (0 problems)
+progress-state.old-ids.json REJECTED: ["duplicate doing id \"PC-23-34e968b66648\"","duplicate done id \"PC-2700-cb7491d0079e\""]

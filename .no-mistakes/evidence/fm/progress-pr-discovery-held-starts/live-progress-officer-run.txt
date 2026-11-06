@@ -1,0 +1,34 @@
+exit=0
+=== A clean live listing of lstutzman/firstmate
+real PR listing calls: 1
+start_requests: ["PC-61"]
+coverage (Starts/PR lines):
+run log PR lines:
+(none)
+token leaked? 0 files
+exit=0
+=== B one transient failure then real listing
+real PR listing calls: 2
+start_requests: ["PC-61"]
+coverage (Starts/PR lines):
+run log PR lines:
+open PR listing failed for lstutzman/firstmate (attempt 1): gh-axi read failed (exit 1): Post https://api.github.com/graphql: read tcp: connection reset by peer token [redacted]
+token leaked? 0 files
+exit=0
+=== C two failures (persistent)
+real PR listing calls: 2
+start_requests: []
+coverage (Starts/PR lines):
+Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete (lstutzman/firstmate: gh-axi read failed (exit 1): Post https://api.github.com/graphql: read tcp: connection reset by peer token [redacted])
+run log PR lines:
+open PR listing failed for lstutzman/firstmate (attempt 1): gh-axi read failed (exit 1): Post https://api.github.com/graphql: read tcp: connection reset by peer token [redacted]
+open PR listing failed for lstutzman/firstmate (attempt 2): gh-axi read failed (exit 1): Post https://api.github.com/graphql: read tcp: connection reset by peer token [redacted]
+token leaked? 0 files
+exit=0
+=== D page ids, run 1
+{"doing":[{"id":"PC-23-13ebcc6a41b4","started_at":"2026-10-26T06:00:00Z","link":"https://github.com/lstutzman/firstmate/pull/4596"},{"id":"PC-23-c994b6cd5ca2","started_at":"2026-10-26T06:00:00Z","link":"https://github.com/lstutzman/firstmate/pull/4602"},{"id":"PC-23-2f9f654c91cb","started_at":"2026-10-26T06:00:00Z","link":"https://github.com/lstutzman/firstmate/pull/4626"}],"done":[{"id":"PC-2700-ad95df981924","at":"2026-10-26T06:00:00Z"},{"id":"PC-2700-a46add192250","at":"2026-10-26T06:00:00Z"},{"id":"PC-2700-8c609dd33223","at":"2026-10-26T06:00:00Z"}]}
+exit=0
+=== D page ids, run 2 (5 min later)
+{"doing":[{"id":"PC-23-13ebcc6a41b4","started_at":"2026-10-26T06:00:00Z"},{"id":"PC-23-c994b6cd5ca2","started_at":"2026-10-26T06:00:00Z"},{"id":"PC-23-2f9f654c91cb","started_at":"2026-10-26T06:00:00Z"}],"done":[{"id":"PC-2700-ad95df981924","at":"2026-10-26T06:00:00Z"},{"id":"PC-2700-a46add192250","at":"2026-10-26T06:00:00Z"},{"id":"PC-2700-8c609dd33223","at":"2026-10-26T06:00:00Z"}]}
+ids unique doing/done: 3/3 3/3
+ids stable across runs: yes
