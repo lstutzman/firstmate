@@ -286,12 +286,20 @@ EOF
 }
 
 # The live watcher runs the settle-only sweep on its own cadence, so a handed-off
-# wait clears with no one running the sweep by hand; turning the cadence off
-# leaves it open.
+# wait clears with no one running the sweep by hand and the wake names it;
+# turning the cadence off leaves it open. Each watcher cycle ends at its first
+# wake, so the test re-arms a home's watcher once it exits, as firstmate does;
+# every cycle's wake output is appended to <home>/wake.out.
 start_watcher() {  # <home> [env-assignment...]
   fm_test_track_watcher_state "$1/state"
   env FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" FM_CONFIG_OVERRIDE="$1/config" FM_POLL=1 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "${@:2}" "$ROOT/bin/fm-watch.sh" >/dev/null 2>&1 &
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "${@:2}" "$ROOT/bin/fm-watch.sh" >>"$1/wake.out" 2>/dev/null &
+  printf '%s\n' "$!" > "$1/watch.pid"
+}
+
+rearm_watcher() {  # <home> [env-assignment...]
+  ! kill -0 "$(cat "$1/watch.pid")" 2>/dev/null || return 0
+  start_watcher "$@"
 }
 
 stop_watcher() {  # <home>
@@ -313,7 +321,9 @@ EOF
   start_watcher "$on"
   start_watcher "$off" FM_DECISION_SWEEP_INTERVAL_SECS=0
   i=0
-  while [ "$i" -lt 200 ] && { [ -n "$(open_keys "$on")" ] || [ ! -e "$off/state/.last-watcher-beat" ]; }; do
+  while [ "$i" -lt 200 ] && ! grep -qs 'check: decision-sweep' "$on/wake.out"; do
+    rearm_watcher "$on"
+    rearm_watcher "$off" FM_DECISION_SWEEP_INTERVAL_SECS=0
     sleep 0.1
     i=$((i + 1))
   done
@@ -322,9 +332,12 @@ EOF
   stop_watcher "$off"
   assert_equals "" "$(open_keys "$on")" "the watcher closed the wait once its PR had merged"
   assert_grep "resolved [key=wait-on-8] [at=" "$on/state/t.status" "the close is a stamped resolved line"
+  assert_grep "check: decision-sweep: closed once the pull request each waited on merged: file=t.status key=wait-on-8" \
+    "$on/wake.out" "the watcher woke firstmate naming the closed wait"
+  assert_no_grep 'check: decision-sweep' "$off/wake.out" "a zero cadence wakes nothing"
   assert_present "$off/state/.last-watcher-beat" "the watcher with the sweep off has polled"
   assert_equals "wait-on-8 " "$(open_keys "$off")" "a zero cadence leaves the wait open"
-  pass "the watcher clears a dependency-tagged wait on its own cadence"
+  pass "the watcher clears a dependency-tagged wait on its own cadence and says so"
 }
 
 test_verdicts_and_skips

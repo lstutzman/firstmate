@@ -832,6 +832,7 @@ test_secondmate_marked_request_reporting_contract() {
     "secondmate charter lost same-key closure for a reportable material phase"
   assert_grep 'resolved [key=<work-slug>]' "$brief" \
     "secondmate charter lost resolved closure for a keyed material phase"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
   assert_grep 'such as an adopt or merge handoff, also tag it `[dep=pr/<owner>/<repo>/<number>]`' "$brief" \
     "secondmate charter did not teach the pull request dependency tag for cross-home merge waits"
 

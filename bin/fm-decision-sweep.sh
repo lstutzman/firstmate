@@ -37,8 +37,9 @@
 # key matching its one named PR, or a pr dependency - so it costs one gh call
 # per such decision and none for free-text asks; nothing else is listed or
 # counted. bin/fm-watch.sh runs it with --apply on its own cadence
-# (FM_DECISION_SWEEP_INTERVAL_SECS, default 600 seconds, 0 turns it off), so a
-# wait on another home's merge clears itself once the PR lands.
+# (FM_DECISION_SWEEP_INTERVAL_SECS, default 600 seconds, 0 turns it off) and
+# wakes firstmate naming each wait it closed, so a wait on another home's merge
+# clears itself once the PR lands.
 #
 # Default is a dry run: one line per candidate, the review list, and totals;
 # nothing changed. --apply closes every settled candidate. --key (repeatable,
