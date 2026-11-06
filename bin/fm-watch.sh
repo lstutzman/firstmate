@@ -162,6 +162,10 @@
 #                          line reported a PR that the check sweep's
 #                          fm-pr-check.sh scan could not record; the line
 #                          names the task, the PR, and the refusal
+#   check: nm-release: <lines>
+#                          the no-mistakes run of a green PR handed to another
+#                          home's merger could not be released; each line names
+#                          the task, the PR, and the reason, once per PR head
 #   check: rejected unauthenticated state checks: <paths>
 #                          unsafe state checks were refused without execution
 #   check: rejected unauthenticated PR poll retirement receipts: <paths>
@@ -4205,6 +4209,14 @@ while :; do
         fm_wake_append check pr-register "$pr_register_reason" || exit 1
       fi
     fi
+    # Release the no-mistakes run of each green PR handed to another home's
+    # merger (bin/fm-pr-check.sh owns the release).
+    nm_release_reason=
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" run_check_capture "$SCRIPT_DIR/fm-pr-check.sh" release || exit 1
+    if [ -n "$FM_CHECK_RESULT" ]; then
+      nm_release_reason="check: nm-release: $FM_CHECK_RESULT"
+      fm_wake_append check nm-release "$nm_release_reason" || exit 1
+    fi
     for c in "$STATE"/*.check.sh; do
       [ -e "$c" ] || continue
       # Each check may use its whole CHECK_TIMEOUT; with many checks the sweep
@@ -4331,6 +4343,7 @@ EOF
     fi
     touch "$STATE/.last-check"
     [ -z "$pr_register_reason" ] || wake "$pr_register_reason"
+    [ -z "$nm_release_reason" ] || wake "$nm_release_reason"
     if [ -n "$contribution_check_output" ]; then
       wake "$contribution_check_output"
     fi

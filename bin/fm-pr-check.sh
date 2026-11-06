@@ -48,8 +48,12 @@
 # cannot take the whole budget on every sweep. Registrations
 # stop FM_CHECK_TIMEOUT (default 30) minus 5 seconds after the scan starts; a
 # registration cut at that bound prints nothing and is retried.
+#
+# release attempts the no-mistakes run release that pr_check_release_nm_run
+# below owns for every task, printing one line per failed attempt.
 # Usage: fm-pr-check.sh <task-id> <pr-url>
 #        fm-pr-check.sh scan
+#        fm-pr-check.sh release
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -99,6 +103,83 @@ pr_check_pr_retired() {  # <id> <recorded-url>
   [ -n "$2" ] && fm_pr_url_parse "$2" || return 1
   fm_pr_poll_merge_already_notified "$STATE" "$1" "$FM_PR_PROVIDER" "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" && return 0
   fm_pr_poll_retirement_parse "$STATE/$1.pr-poll-retirement" && [ "$FM_PR_RETIRE_URL" = "$2" ]
+}
+
+# A no-mistakes ship whose PR another home merges would otherwise keep its run
+# watching the PR for the merge, holding one of the machine's few pipeline
+# slots until that home lands it. Once the PR is handed off
+# (state/<id>.merge-handoff, written by pr_check_merge_handoff below) and the
+# worker's latest status event reports that PR checks green, the report a
+# worker gives only after its drive call returned checks-passed, which
+# `no-mistakes axi handoff` requires, the run is released with that command in
+# the task's copy. state/<id>.nm-released records the handed-off PR and head
+# that were attempted, so each head is attempted once: a success prints a
+# released: line, and a failure prints an actionable: line on stderr and
+# leaves the run as it is. An attempt cut short by a caller budget below the
+# full bound is not an attempt: it records and reports nothing, so a later
+# sweep tries that head again. Nothing is written to the task's status, so an
+# office still counts the finished ship as landing. A project this home
+# merges, and a task held for the captain, have no handoff record and are
+# never released. Registration attempts it straight after the handoff, except
+# a scan registration, which discards a registered task's stderr. Every check
+# sweep, bin/fm-watch.sh runs `fm-pr-check.sh release`, which attempts it for
+# every task, so a PR whose checks go green after its handoff is released too.
+pr_check_meta_value() {  # <meta> <key>
+  grep "^$2=" "$1" | tail -1 | cut -d= -f2- || true
+}
+
+PR_CHECK_RELEASE_BOUND=120
+pr_check_release_nm_run() {  # <id> <seconds>
+  local id=$1 seconds=$2 meta="$STATE/$1.meta" record="$STATE/$1.merge-handoff" marker="$STATE/$1.nm-released"
+  local kind sent url wt last note out rc=0 tmp
+  [ -f "$meta" ] && [ ! -L "$meta" ] && [ -f "$record" ] && [ ! -L "$record" ] || return 0
+  kind=$(pr_check_meta_value "$meta" kind)
+  [ "${kind:-ship}" = ship ] && [ "$(pr_check_meta_value "$meta" mode)" = no-mistakes ] || return 0
+  sent=$(cat "$record" 2>/dev/null) || return 0
+  url=${sent%% *}
+  [ -n "$url" ] && [ "$(pr_check_meta_value "$meta" pr)" = "$url" ] || return 0
+  if [ -f "$marker" ] && [ ! -L "$marker" ] && [ "$(cat "$marker" 2>/dev/null)" = "$sent" ]; then
+    return 0
+  fi
+  wt=$(pr_check_meta_value "$meta" worktree)
+  [ -n "$wt" ] && [ -d "$wt" ] || return 0
+  last=$(_fm_status_latest_event "$STATE/$id.status" merge-handoff-)
+  [ "$(status_line_verb "$last")" = "done" ] || return 0
+  note=$(status_line_note "$last")
+  fm_dod_note_reports_ci_ready "$note" || return 0
+  case " $note " in
+    *"$url"[^[:alnum:]]*) ;;
+    *) return 0 ;;
+  esac
+  out=$(cd "$wt" && fm_run_timed "$seconds" no-mistakes axi handoff 2>&1) || rc=$?
+  ! fm_timed_out "$rc" || [ "$seconds" -ge "$PR_CHECK_RELEASE_BOUND" ] || return 0
+  { tmp=$(mktemp "$STATE/.fm-nm-released.XXXXXX") && printf '%s\n' "$sent" > "$tmp" && mv -f -- "$tmp" "$marker"; } \
+    || { [ -z "${tmp:-}" ] || rm -f -- "$tmp"; printf 'actionable: %s could not record its no-mistakes run release, so a later sweep attempts it again\n' "$id" >&2; }
+  if [ "$rc" -eq 0 ]; then
+    printf 'released: the no-mistakes run of %s, whose PR %s waits on another home to merge it\n' "$id" "$url"
+  else
+    out=$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)
+    printf 'actionable: %s could not release its no-mistakes run after its PR %s was handed off (rc=%s), so the run still holds a pipeline slot: %s\n' "$id" "$url" "$rc" "$out" >&2
+  fi
+}
+
+pr_check_release_sweep() {
+  local budget start meta id left err
+  budget=${FM_CHECK_TIMEOUT:-30}
+  case "$budget" in ''|*[!0-9]*) budget=30 ;; esac
+  budget=$((budget - 5))
+  start=$(date +%s)
+  for meta in "$STATE"/*.meta; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    id=${meta##*/}
+    id=${id%.meta}
+    fm_pr_task_id_valid "$id" || continue
+    left=$((start + budget - $(date +%s)))
+    [ "$left" -gt 0 ] || break
+    [ "$left" -le "$PR_CHECK_RELEASE_BOUND" ] || left=$PR_CHECK_RELEASE_BOUND
+    err=$(pr_check_release_nm_run "$id" "$left" 2>&1 >/dev/null) || true
+    [ -z "$err" ] || printf '%s\n' "${err#actionable: }"
+  done
 }
 
 pr_check_scan() {
@@ -154,6 +235,10 @@ EOF_SCAN
 
 if [ "$#" -eq 1 ] && [ "$1" = scan ]; then
   pr_check_scan
+  exit 0
+fi
+if [ "$#" -eq 1 ] && [ "$1" = release ]; then
+  pr_check_release_sweep
   exit 0
 fi
 
@@ -517,4 +602,5 @@ pr_check_merge_handoff() {
   printf 'handed off: %s to home %s\n' "$URL" "$merger"
 }
 pr_check_merge_handoff
+[ "${FM_PR_CHECK_MERGE:-}" = 1 ] || [ "${FM_PR_CHECK_SCAN:-}" = 1 ] || pr_check_release_nm_run "$ID" "$PR_CHECK_RELEASE_BOUND"
 printf 'armed: state/%s.check.sh\n' "$ID"

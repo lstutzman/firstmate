@@ -256,6 +256,15 @@ SH
   cat > "$fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash
 [ -z "${FM_TEST_NM_LOG:-}" ] || printf '%s\n' "$*" >> "$FM_TEST_NM_LOG"
+# `axi handoff` refuses a run that has not reached checks-passed, as the real
+# CLI's help states; FM_TEST_NM_CHECKS_PASSED=1 is a run that has.
+if [ "${1:-} ${2:-}" = "axi handoff" ]; then
+  [ -z "${FM_TEST_NM_HANDOFF_LOG:-}" ] || printf '%s\n' "$PWD" >> "$FM_TEST_NM_HANDOFF_LOG"
+  [ -z "${FM_TEST_NM_HANDOFF_SLEEP:-}" ] || sleep "$FM_TEST_NM_HANDOFF_SLEEP"
+  [ "${FM_TEST_NM_CHECKS_PASSED:-0}" = 1 ] || { echo "error: run has not reached checks-passed" >&2; exit 1; }
+  [ "${FM_TEST_NM_HANDOFF_RC:-0}" = 0 ] || { echo "handoff refused" >&2; exit "$FM_TEST_NM_HANDOFF_RC"; }
+  exit 0
+fi
 [ "${1:-} ${2:-}" = "axi status" ] || exit 2
 [ "${FM_TEST_NM_FAIL:-0}" = 0 ] || exit 1
 head=$(git rev-parse HEAD 2>/dev/null) || exit 1
@@ -1445,6 +1454,117 @@ SH
   # The hold itself skipped it, not an unreadable hold record.
   assert_no_grep 'cannot be read' "$dir/err" "merger-handoff: the captain hold could not be read: $(cat "$dir/err")"
   pass "fm-pr-check hands a ready PR to its project's merger home once per head, and never with no merger, from the merger, or while held"
+}
+
+# A no-mistakes ship whose PR another home merges has its run released with
+# `no-mistakes axi handoff` once that PR is handed off and the worker reports it
+# checks green, so the run stops holding a pipeline slot until the merge. The
+# oracle is the CLI's own contract (handoff works only after checks-passed),
+# the fm-brief worker contract (the checks-green done line follows a
+# checks-passed drive return), and the office landing rule
+# (fm_office_task_landing): a release that wrote a status event would make the
+# finished ship count as a live task again.
+test_handed_off_nm_run_is_released_once_at_green() {
+  local dir url=https://github.com/o/r/pull/42 tasks_path state status wt out before
+  tasks_path=$(command -v tasks-axi) || fail "these cases read captain holds through tasks-axi, which was not found"
+  tasks_path=$(dirname "$tasks_path")
+  dir=$(make_case nm-release)
+  state="$dir/home/state"
+  status="$state/task-a.status"
+  write_task_meta "$dir"
+  seed_secondmate_home "$dir"
+  fm_test_tasks_toml "$dir/home/.tasks.toml"
+  printf '%s\n' '## In flight' '' '## Queued' '' '## Done' > "$dir/home/data/backlog.md"
+  printf '%s\n' '- project [no-mistakes +yolo merger=slarti] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+  wt=$(cd "$dir/wt" && pwd -P)
+  attempts() { wc -l < "$dir/nm-handoff.log" | tr -d ' '; }
+  : > "$dir/nm-handoff.log"
+  release() {
+    FM_TEST_NM_HANDOFF_LOG="$dir/nm-handoff.log" FM_ROOT_OVERRIDE="$dir/root" FM_HOME="$dir/home" \
+      FM_CONFIG_OVERRIDE="$dir/home/config" PATH="$dir/fakebin:$BASE_PATH:$tasks_path" "$PR_CHECK" release
+  }
+  register() {
+    FM_TEST_NM_HANDOFF_LOG="$dir/nm-handoff.log" BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url"
+  }
+
+  # Registered while the run is still checking: handed off, not released.
+  printf 'working [at=1700000000]: driving the no-mistakes run\n' > "$status"
+  register >/dev/null 2>"$dir/err" || fail "nm-release: registering a pending PR failed: $(cat "$dir/err")"
+  [ -f "$state/task-a.merge-handoff" ] || fail "nm-release: the pending PR was not handed off"
+  [ "$(attempts)" -eq 0 ] || fail "nm-release: a run that had not reported checks green was released"
+  out=$(release) || fail "nm-release: the release sweep failed"
+  [ -z "$out" ] && [ "$(attempts)" -eq 0 ] || fail "nm-release: the sweep released a run before it reported checks green: $out"
+
+  # The worker reports green; the watcher's next check sweep releases the run
+  # once, in its copy, and queues no wake for a success.
+  printf 'done [at=1700000100]: PR %s checks green\n' "$url" >> "$status"
+  before=$(cat "$status")
+  add_stop_custom_check "$dir"
+  FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_NM_HANDOFF_LOG="$dir/nm-handoff.log" \
+    run_watcher_bounded "$dir/home" "$dir/fakebin" >/dev/null 2>"$dir/watch.err" \
+    || fail "nm-release: the watcher sweep failed at green: $(cat "$dir/watch.err")"
+  [ "$(attempts)" -eq 1 ] || fail "nm-release: the watcher sweep did not release the green run once: $(cat "$dir/nm-handoff.log")"
+  [ "$(cat "$dir/nm-handoff.log")" = "$wt" ] || fail "nm-release: the run was released outside the task's copy"
+  ! grep -qF 'check: nm-release: ' "$state/.wake-queue" 2>/dev/null || fail "nm-release: a successful release woke the supervisor"
+  [ "$(cat "$status")" = "$before" ] || fail "nm-release: the release wrote to the task's status: $(cat "$status")"
+  bash -c '. "$1/bin/fm-classify-lib.sh"; . "$1/bin/fm-office-authority-lib.sh"; fm_office_task_landing "$2" task-a navigator' \
+    _ "$ROOT" "$state" || fail "nm-release: the released ship no longer counts as landing in its office"
+  FM_TEST_NM_CHECKS_PASSED=1 release >/dev/null || fail "nm-release: a second sweep failed"
+  FM_TEST_NM_CHECKS_PASSED=1 register >/dev/null 2>&1 || fail "nm-release: re-registering the same head failed"
+  [ "$(attempts)" -eq 1 ] || fail "nm-release: the same head was released again"
+
+  # A new head that is already green is released straight from registration.
+  out=$(FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_GH_HEAD=2222222222222222222222222222222222222222 register 2>"$dir/err") \
+    || fail "nm-release: registering a green new head failed: $(cat "$dir/err")"
+  [ "$(attempts)" -eq 2 ] || fail "nm-release: a green new head was not released at registration"
+  case "$out" in *"released: "*task-a*) ;; *) fail "nm-release: registration did not report the release: $out" ;; esac
+
+  # A failed release at registration is reported once and is not retried.
+  FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_NM_HANDOFF_RC=3 FM_TEST_GH_HEAD=3333333333333333333333333333333333333333 \
+    register >/dev/null 2>"$dir/err" || fail "nm-release: a failed release made registration fail"
+  [ "$(attempts)" -eq 3 ] || fail "nm-release: the failing head was not attempted once"
+  assert_grep 'could not release its no-mistakes run' "$dir/err" "nm-release: a failed release was not reported"
+  assert_grep 'handoff refused' "$dir/err" "nm-release: the release failure reason was not reported"
+  [ "$(cat "$status")" = "$before" ] || fail "nm-release: a failed release wrote to the task's status"
+  out=$(FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_NM_HANDOFF_RC=3 release) || fail "nm-release: the sweep after a failure failed"
+  [ -z "$out" ] && [ "$(attempts)" -eq 3 ] || fail "nm-release: a failed release was retried: $out"
+
+  # A failure found by the sweep is printed once for the watcher to surface.
+  printf 'working [at=1700000200]: fixing a review finding\n' >> "$status"
+  FM_TEST_GH_HEAD=4444444444444444444444444444444444444444 register >/dev/null 2>&1 \
+    || fail "nm-release: registering a resumed worker's head failed"
+  [ "$(attempts)" -eq 3 ] || fail "nm-release: a resumed worker's run was released on its older green report"
+  printf 'done [at=1700000300]: PR %s checks green\n' "$url" >> "$status"
+  out=$(FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_NM_HANDOFF_RC=3 release) || fail "nm-release: the failing sweep failed"
+  [ "$(attempts)" -eq 4 ] || fail "nm-release: the sweep did not attempt the green head"
+  case "$out" in *task-a*"$url"*"handoff refused"*) ;; *) fail "nm-release: the sweep did not report the failed release: $out" ;; esac
+  out=$(FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_NM_HANDOFF_RC=3 release) || fail "nm-release: a repeat sweep failed"
+  [ -z "$out" ] && [ "$(attempts)" -eq 4 ] || fail "nm-release: the sweep retried or re-reported a failed release: $out"
+
+  # A handoff cut short by the sweep's own time budget is not a failure: it
+  # records and reports nothing, and a later sweep releases that head.
+  printf 'working [at=1700000400]: fixing another finding\n' >> "$status"
+  FM_TEST_GH_HEAD=5555555555555555555555555555555555555555 register >/dev/null 2>&1 \
+    || fail "nm-release: registering the budget-cut head failed"
+  printf 'done [at=1700000500]: PR %s checks green\n' "$url" >> "$status"
+  out=$(FM_CHECK_TIMEOUT=7 FM_TEST_NM_HANDOFF_SLEEP=5 FM_TEST_NM_CHECKS_PASSED=1 release) \
+    || fail "nm-release: the budget-cut sweep failed"
+  [ "$(attempts)" -eq 5 ] || fail "nm-release: the budget-cut sweep did not start the handoff"
+  [ -z "$out" ] || fail "nm-release: a handoff cut by the sweep budget was reported as a failure: $out"
+  out=$(FM_TEST_NM_CHECKS_PASSED=1 release) || fail "nm-release: the sweep after a budget cut failed"
+  [ -z "$out" ] && [ "$(attempts)" -eq 6 ] || fail "nm-release: a handoff cut by the sweep budget was not tried again: $out"
+  [ "$(cat "$state/task-a.nm-released")" = "$(cat "$state/task-a.merge-handoff")" ] \
+    || fail "nm-release: the retried release was not recorded"
+
+  # A project this home merges hands nothing off, so its run is never released.
+  write_task_meta "$dir" task-b
+  printf 'done [at=1700000100]: PR https://github.com/o/r/pull/43 checks green\n' > "$state/task-b.status"
+  printf '%s\n' '- project [no-mistakes +yolo] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+  FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_NM_HANDOFF_LOG="$dir/nm-handoff.log" BASE_PATH="$BASE_PATH:$tasks_path" \
+    run_check_entry "$dir" task-b https://github.com/o/r/pull/43 >/dev/null 2>&1 || fail "nm-release: registering a self-merged PR failed"
+  FM_TEST_NM_CHECKS_PASSED=1 release >/dev/null || fail "nm-release: the sweep failed for a self-merged PR"
+  [ "$(attempts)" -eq 6 ] || fail "nm-release: a project this home merges had its run released"
+  pass "fm-pr-check releases a handed-off no-mistakes run once per head after it reports green, reports a failure once, and never for a project it merges"
 }
 
 run_watcher_bounded() {
@@ -4311,6 +4431,7 @@ test_watcher_sweep_records_a_reported_pr
 test_valid_recording_and_merge_derivation
 test_ready_time_is_recorded_once_per_pr
 test_ready_pr_is_handed_to_its_merger_once_per_head
+test_handed_off_nm_run_is_released_once_at_green
 test_rejected_metacharacter_bytes_are_inert
 test_static_poll_contract
 test_atomic_interruption_leaves_no_partial_artifact

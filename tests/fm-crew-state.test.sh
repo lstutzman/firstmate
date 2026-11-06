@@ -686,6 +686,21 @@ automatic_skips: "publication skipped: no-mistakes.yaml pr.enabled=false"
 EOF
 }
 
+# A run released by `no-mistakes axi handoff` after checks-passed, as the real
+# CLI v1.106.1 prints it: status handed_off, outcome handed-off.
+run_handed_off() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: handed_off
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: "https://github.com/o/r/pull/2"
+  findings: none
+outcome: handed-off
+EOF
+}
+
 run_passed_with_pr() {  # <branch> <pr-url>
   cat <<EOF
 run:
@@ -1585,6 +1600,23 @@ test_terminal_passed_with_override() {
   assert_not_contains "$out" "state: unknown" "passed-with-override must not fall through to unknown"
   assert_not_contains "$out" "outcome: passed-with-override" "passed-with-override must not surface as a raw unmapped outcome detail"
   pass "terminal passed-with-override run reads done like a clean pass"
+}
+
+test_terminal_handed_off() {
+  reset_fakes
+  local d; d=$(new_case handed-off)
+  make_repo_on_branch "$d/wt" fm/feat-handed
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-handed.meta" "window=fm:fm-feat-handed" "worktree=$d/wt" "kind=ship"
+  printf 'done: PR https://github.com/o/r/pull/2 checks green\n' > "$d/state/feat-handed.status"
+  FM_FAKE_AXI_STATUS="$(run_handed_off fm/feat-handed)"
+  local out; out=$(run_crew_state "$d" feat-handed)
+  assert_contains "$out" "state: done" "a handed-off run is done, not unknown"
+  assert_contains "$out" "source: run-step" "a handed-off run reads from its run-step"
+  assert_contains "$out" "checks green" "a handed-off run keeps its checks-green reading"
+  assert_not_contains "$out" "state: unknown" "a handed-off run must not fall through to unknown"
+  assert_not_contains "$out" "unverified" "a handed-off status must be a recognised run status"
+  pass "a run released by axi handoff after green reads done"
 }
 
 test_terminal_passed_with_skips() {
@@ -6873,6 +6905,7 @@ test_top_level_fixing_ci_running_after_green_stays_working
 test_top_level_fixing_done_log_stays_working
 test_terminal_passed
 test_terminal_passed_with_override
+test_terminal_handed_off
 test_terminal_passed_with_skips
 test_terminal_passed_uses_matching_retirement_receipt_without_forge
 test_terminal_passed_no_forge_switch_skips_read_but_keeps_receipt

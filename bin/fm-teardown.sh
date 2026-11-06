@@ -2280,7 +2280,7 @@ task_status_is_terminal_run() {  # <axi-status-output> <run-id>
   [ "$run_id" = "$expected_id" ] || return 1
   outcome=$(fm_nm_strip_quotes "$(fm_nm_field "$out" outcome)")
   case "$outcome" in
-    cancelled|failed|passed|checks-passed|passed-with-override|passed-with-skips) return 0 ;;
+    cancelled|failed|passed|checks-passed|handed-off|passed-with-override|passed-with-skips) return 0 ;;
   esac
   return 1
 }
@@ -4179,7 +4179,7 @@ fi
 [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" cleaned_up "$ID" || true
 teardown_retire_status "$STATE" "$ID" || exit 1
 fm_wake_queue_prune_task "$STATE" "$ID" "$T" 2>/dev/null || true
-rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" "$STATE/$ID.merge-handoff" \
+rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" "$STATE/$ID.merge-handoff" "$STATE/$ID.nm-released" \
   "$(fm_wake_signal_seen_path "$STATE" "$STATE/$ID.turn-ended")" \
   "$STATE/$ID.pi-ext.ts" "$STATE/$ID.omp-ext.ts" "$STATE/$ID.grok-turnend-token" \
   "$STATE/$ID.kimi-turnend-token" "$STATE/$ID.muse-session" \
