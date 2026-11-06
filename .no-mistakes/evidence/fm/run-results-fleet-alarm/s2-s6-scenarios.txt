@@ -1,0 +1,20 @@
+## S1b repeat real-quota run (condition still open)
+RUN-RESULT {"summary": "1 alert(s) open; lee@propertycompass.co.uk 7d 100%, lstutzman@gmail.com 7d 6%, marleycrittendom@gmail.com 7d 91%, misterrobot@propertycompass.co.uk 7d 0%; Carrying Claude accounts: lstutzman@gmail.com", "counts": {"alerts": 1}}
+CONTRACT OK {"summary": "1 alert(s) open; lee@propertycompass.co.uk 7d 100%, lstutzman@gmail.com 7d 6%, marleycrittendom@gmail.com 7d 91%, misterrobot@propertycompass.co.uk 7d 0%; Carrying Claude accounts: lstutzman@gmail.com", "counts": {"alerts": 1}}
+ledger lines: 1
+## S2 stub quota 20% -> no alerts
+RUN-RESULT {"summary": "1 alert(s) open; quota unreadable", "counts": {"alerts": 1}}
+CONTRACT OK {"summary": "1 alert(s) open; quota unreadable", "counts": {"alerts": 1}}
+## S3 stub quota 95% on carrying account
+RUN-RESULT {"summary": "1 alert(s) open; quota unreadable", "counts": {"alerts": 1}}
+CONTRACT OK {"summary": "1 alert(s) open; quota unreadable", "counts": {"alerts": 1}}
+## S4 quota reader fails
+RUN-RESULT {"summary": "1 alert(s) open; quota unreadable", "counts": {"alerts": 1}}
+CONTRACT OK {"summary": "1 alert(s) open; quota unreadable", "counts": {"alerts": 1}}
+## S5 lock held by another run
+exit 0
+RUN-RESULT {"summary": "skipped: another fleet-alarm run holds the lock", "counts": {"alerts": 0}, "outcome": "skipped"}
+CONTRACT OK {"summary": "skipped: another fleet-alarm run holds the lock", "counts": {"alerts": 0}, "outcome": "skipped"}
+## S6 check channel stays free of RUN-RESULT
+check stdout: [Claude quota unavailable; reading may be stale: ValueError: no models header in quota reading]
+RUN-RESULT lines: 0

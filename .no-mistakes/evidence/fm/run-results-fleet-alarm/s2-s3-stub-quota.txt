@@ -1,0 +1,11 @@
+## S2 stub quota 20% -> no alerts (after alerting run, condition clears)
+RUN-RESULT {"summary": "no alerts; member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid", "counts": {"alerts": 0}}
+CONTRACT OK {"summary": "no alerts; member@example.invalid 7d 20%; Carrying Claude accounts: member@example.invalid", "counts": {"alerts": 0}}
+resolved [at=1793929244] [key=fleet-alarm]: Fleet alarm conditions cleared
+## S3 stub quota 95% on carrying account -> 1 alert open, ledger publish
+RUN-RESULT {"summary": "2 alert(s) open; member@example.invalid 7d 95%; Carrying Claude accounts: member@example.invalid", "counts": {"alerts": 2}}
+CONTRACT OK {"summary": "2 alert(s) open; member@example.invalid 7d 95%; Carrying Claude accounts: member@example.invalid", "counts": {"alerts": 2}}
+needs-decision [at=1793929244] [cause=decision] [key=fleet-alarm]: Carrying Claude account member@example.invalid 7d 95% (resets 2026-11-10T00:00:00Z); Claude pool near empty; Claude quota context (not an alarm): member@example.invalid 7d 95%; Carrying Claude accounts: member@example.invalid
+## S3b same condition again -> still reported open, no new status line
+RUN-RESULT {"summary": "2 alert(s) open; member@example.invalid 7d 95%; Carrying Claude accounts: member@example.invalid", "counts": {"alerts": 2}}
+status lines before=4 after=4
