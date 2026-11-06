@@ -1,0 +1,42 @@
+$ bin/fm-lint-ratchet.sh check bin/fm-captain-hold.sh  (target)
+fm-lint-ratchet.sh: bin/fm-captain-hold.sh is not on the exception list.
+exit=1
+
+$ bin/fm-lint-ratchet.sh list
+bin/fm-hc-lab.sh
+bin/fm-officer.sh
+tests/fm-backend-herdr.test.sh
+tests/fm-harness-liveness-drift-live-e2e.test.sh
+tests/fm-hc-lab.test.sh
+tests/fm-officer-surgeon.test.sh
+tests/fm-officer.test.sh
+tests/fm-opencode-primary-live-e2e.test.sh
+tests/fm-project-mode.test.sh
+tests/fm-task-delivery.test.sh
+tests/fm-timeout-lib.test.sh
+tests/fm-watch-wedge-cap.test.sh
+exit=0
+
+$ bin/fm-lint.sh bin/fm-captain-hold.sh  (default list, file no longer excepted)
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+exit=0
+
+$ base-commit fm-captain-hold.sh under ratchet (expect fail)
+fm-lint-ratchet.sh: bin/fm-captain-hold.sh is not on the exception list.
+exit=1
+
+$ bin/fm-lint.sh bin/fm-captain-hold.sh  with BASE-commit content and the new (unlisted) exceptions (expect fail)
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+
+In bin/fm-captain-hold.sh line 1719:
+    if "$0" answer "$id" --decision-file "$tmp" $release_flag </dev/null >/dev/null 2>"$err"; then
+                                                ^-----------^ SC2248 (style): Prefer double quoting even when variables don't contain special characters.
+
+Did you mean:
+    if "$0" answer "$id" --decision-file "$tmp" "$release_flag" </dev/null >/dev/null 2>"$err"; then
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2248 -- Prefer double quoting even when v...
+exit=1
