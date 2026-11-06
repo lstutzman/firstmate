@@ -1584,6 +1584,17 @@ start_owned_watcher() {  # <home> <state> <fakebin> <arm-out>
   done
   WATCH_PID=$(sed -n 's/^watcher: started pid=\([0-9][0-9]*\).*/\1/p' "$armout" | head -1)
   [ -n "$WATCH_PID" ] || fail "arm did not start a watcher: $(cat "$armout")"
+  # Hand back only once the watcher idles in its FM_POLL=1 sleep between
+  # cycles. A removal that lands mid-cycle fails some later step first, under
+  # that step's reason; one made while idle is met by the loop's teardown check.
+  i=0
+  while ! pgrep -P "$WATCH_PID" -fx 'sleep 1' >/dev/null 2>&1; do
+    if [ "$i" -ge 600 ] || ! is_live_non_zombie "$WATCH_PID"; then
+      fail "watcher pid $WATCH_PID never idled between cycles: $(cat "$armout")"
+    fi
+    sleep 0.1
+    i=$((i + 1))
+  done
 }
 
 # The watcher is the arm's child, not this shell's, so wait on liveness only.
