@@ -43,7 +43,14 @@ wait for Lee to do. One day's friction events come from three sources:
                line starts with a guard refusal, a sudo prompt, an ssh key
                refusal, a 1Password refusal, a not-signed-in CLI, or
                `command not found` is agent-side friction; a not-found name
-               that is no installable tool (plausible_tool) is skipped. A worker session
+               that is no installable tool (plausible_tool) is skipped, and so is
+               one firstmate defines as a shell function in its own bin/ or
+               tests/ (a sourcing slip). An ssh key refusal printed by a
+               tests/*.test.sh run in the same tool call, or naming a host that
+               is no fleet host (--hosts, the archive's machines, the homes'
+               own names; an IP address or no host is kept), is test output,
+               not friction; both are dropped at run time on the reading side,
+               so a remote scan still reports them. A worker session
                whose cwd is outside the worktree its task record names started
                in the wrong directory.
   captain's log with --captains-log, the cards fleet-app serves at GET
@@ -270,6 +277,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -944,9 +952,27 @@ def session_events(records, machine):
                         if m is None:
                             break
                     if m:
-                        events.append(dict(hit_event(hit, m), at=at))
+                        ev = hit_event(hit, m)
+                        if hit == "ssh-key":
+                            ev["in_test_run"] = bool(TEST_RUN_RE.search(commands.get(block.get("tool_use_id")) or ""))
+                            ev["ssh_host"] = refused_host(body, m.start())
+                        events.append(dict(ev, at=at))
                         break
     return events
+
+
+# A firstmate test script run by the tool call that produced the output (tests/<name>.test.sh or the glob).
+TEST_RUN_RE = re.compile(r"(?<![\w.-])tests/(?:[\w.-]+|\*)\.test\.sh(?![\w.-])")
+REFUSED_HOST_RE = re.compile(r"(?:^|[\s'\"(])(?:[\w.-]+@)?([A-Za-z0-9][\w.-]*): Permission denied \(publickey")
+
+
+def refused_host(body, pos):
+    """The host an ssh key refusal names (`user@host: Permission denied (publickey`), or None for a bare
+    `ssh: Permission denied` that names none."""
+    start = body.rfind("\n", 0, pos) + 1
+    end = body.find("\n", pos)
+    m = REFUSED_HOST_RE.search(body[start:end if end >= 0 else len(body)])
+    return m.group(1) if m and m.group(1).lower() != "ssh" else None
 
 
 INSTRUCTION_RE = re.compile(
@@ -1120,6 +1146,72 @@ def scan(archive, date, days=1):
         })
     out["sessions"].sort(key=lambda s: s["session"])
     return out
+
+
+SHELL_FUNCTION_RE = re.compile(
+    r"^[ \t]*(?:function[ \t]+([A-Za-z_][\w:-]*)|([A-Za-z_][\w:-]*)[ \t]*\([ \t]*\))[ \t]*(?:\{|$)", re.M)
+_FUNCTIONS = {}
+
+
+def firstmate_functions(root=None):
+    """Names firstmate defines as shell functions (`name()` or `function name`) in bin/ and tests/ of the
+    code root, read at run time. A not-found one is a sourcing slip in a worker's shell, not a missing tool.
+    A test file also stubs real tools (`jq() {`), and a bin/ file can hold a heredoc of another language, so
+    a bare word counts only when a bin/ file defines it and no executable of that name is on PATH; a
+    snake_case name (`now_epoch`) counts wherever it is defined."""
+    root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in _FUNCTIONS:
+        names = set()
+        for sub in ("bin", "tests"):
+            for dirpath, _, files in os.walk(os.path.join(root, sub)):
+                for name in files:
+                    if not name.endswith((".sh", ".bash")):
+                        continue
+                    try:
+                        with open(os.path.join(dirpath, name), encoding="utf-8", errors="replace") as fh:
+                            text = fh.read()
+                    except OSError:
+                        continue
+                    for a, b in SHELL_FUNCTION_RE.findall(text):
+                        fn = a or b
+                        if "_" in fn or (sub == "bin" and not shutil.which(fn)):
+                            names.add(fn)
+        _FUNCTIONS[root] = names
+    return _FUNCTIONS[root]
+
+
+def short_host(name):
+    return (name or "").split("@")[-1].split(".")[0].lower()
+
+
+def drop_test_noise(scanned, hosts, homes=(), functions=None):
+    """Drop agent-hit events that are output of a firstmate test run, not fleet friction: a not-found name
+    firstmate defines as a shell function, and an ssh key refusal printed by a tests/*.test.sh run or naming
+    a host that is no fleet host (the registry's hosts, the archive's machines and the homes' own names).
+    A refusal naming no host, or an IP address, is kept: there is nothing to show it is not a fleet host."""
+    functions = firstmate_functions() if functions is None else functions
+    fleet = {short_host(h) for h in hosts}
+    for s in scanned["sessions"]:
+        fleet.add(short_host(s.get("machine")))
+    for home in homes:
+        fleet.update(short_host(n) for n in host_names(home))
+    fleet.discard("")
+
+    def noise(ev):
+        if ev.get("kind") != "agent-hit":
+            return False
+        if ev.get("cause") == "missing-tool":
+            return ev.get("tool") in functions
+        if ev.get("sub") == "ssh-key":
+            host = ev.get("ssh_host")
+            unknown = host and not re.fullmatch(r"[\d.]+|[0-9a-fA-F:]+:[0-9a-fA-F:]*", host) \
+                and short_host(host) not in fleet
+            return bool(ev.get("in_test_run") or unknown)
+        return False
+
+    for s in scanned["sessions"]:
+        s["events"] = [ev for ev in s["events"] if not noise(ev)]
+    return scanned
 
 
 def remote_program():
@@ -2360,9 +2452,10 @@ def main(argv):
             scanned = scan(args.archive, args.date, args.days)
         triage.require_harvested(scanned)
         homes = [triage.Home(h) for h in args.home]
+        hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
+        drop_test_noise(scanned, hosts, homes)
         triage.join_sessions(scanned, homes)
         triage.classify_mates(scanned, homes)
-        hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
         cards, log, replies, replies_gap = [], {"state": "not-set"}, [], None
         if args.captains_log:
             try:
