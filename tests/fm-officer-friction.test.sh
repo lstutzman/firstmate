@@ -1170,7 +1170,7 @@ test_standing_work_is_started_by_default_with_an_object_action() {
 }
 
 test_fixed_reported_again_and_settled_states() {
-  local home json vel first state_of
+  local home json vel first
   home=$(make_world fixed)
   json="$home/data/officers/friction/$DATE.json"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
