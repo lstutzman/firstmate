@@ -317,8 +317,9 @@ cmd_unpark() {
   PARK_URL=$(park_meta_value pr)
   branch=$(park_meta_value parked_branch)
   head=$(park_meta_value parked_head)
-  [ -n "$PARK_PROJ" ] && [ -d "$PARK_PROJ" ] && [ -n "$branch" ] && fm_pr_head_valid "$head" \
-    || die "$ID's parked record is incomplete (project, parked_branch, parked_head)"
+  if [ -z "$PARK_PROJ" ] || [ ! -d "$PARK_PROJ" ] || [ -z "$branch" ] || ! fm_pr_head_valid "$head"; then
+    die "$ID's parked record is incomplete (project, parked_branch, parked_head)"
+  fi
   project_lock=$(fm_treehouse_project_lock_path "$PARK_PROJ") || die "the project Treehouse lock for $PARK_PROJ cannot be resolved"
   fm_lock_acquire_wait_max "$project_lock" 60 || die "another slot allocation or return holds the project lock for $PARK_PROJ"
   LOCKS_HELD+=("$project_lock")
