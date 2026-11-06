@@ -94,10 +94,43 @@
 #   fm_office_role_check <role>
 #       0 for an office role, or 1 with FM_OFFICE_ERROR naming a reserved or
 #       unknown role.
-#   fm_office_live_tasks <state-dir> <own-id>
-#       sets FM_OFFICE_LIVE and FM_OFFICE_LIVE_IDS to this home's task records
-#       other than <own-id> and any secondmate, or returns 1 with
-#       FM_OFFICE_ERROR when a record cannot be read.
+#   fm_office_live_tasks <state-dir> <own-id> <office-id>
+#       the one count of an office's places under wip=, used by the tick
+#       (bin/fm-office.sh) and the spawn gate (bin/fm-spawn.sh). Sets
+#       FM_OFFICE_LIVE and FM_OFFICE_LIVE_IDS to this home's task records other
+#       than <own-id>, any secondmate, and any landing task, and
+#       FM_OFFICE_LANDING and FM_OFFICE_LANDING_IDS to the landing tasks it
+#       left out; returns 1 with FM_OFFICE_ERROR when a record cannot be read.
+#   fm_office_task_landing <state-dir> <id> <office-id>
+#       0 when task <id> is landing, as defined below.
+#
+# Landing: a ship whose finished PR waits only on another home's merge holds no
+# place under wip=, because its worker has stopped and the office can do
+# nothing to land it. Every condition comes from a record firstmate already
+# keeps, and any doubt counts the task:
+#   - its meta records kind=ship and a pr= URL (bin/fm-pr-check.sh writes it
+#     when the PR is ready);
+#   - that PR is handed to a merger that is not this office: state/<id>.merge-handoff
+#     names the same URL (bin/fm-pr-check.sh writes it once the handoff line
+#     is delivered), or the task's own status holds that PR's open
+#     merge-handoff-<n> decision naming the URL, or the project's merger
+#     binding (bin/fm-project-mode.sh --merger) names another home and the task
+#     is not held for the captain (bin/fm-captain-hold.sh open);
+#   - its status folds to no open decision other than that handoff
+#     (status_open_decisions in bin/fm-classify-lib.sh), so an open ask-user,
+#     blocker or other question still counts;
+#   - its latest status event, without merge-handoff lines, is a done line with
+#     an [at=<epoch>] stamp, so a later working, paused, failed or resolved
+#     event (a resumed worker) counts;
+#   - its steering inbox holds no unhandled message and no handled one written
+#     after that done line, so a worker steered back into fix work counts until
+#     it reports done again.
+# A handoff routed by an admission config (route.<class>=handoff:<home>) is
+# recorded only on the office's parent channel, which is not read here, so such
+# a task counts until one of the records above names it.
+# Project capacity (bin/fm-project-capacity-lib.sh) and landing lag
+# (data/projects.md landing-lag=) still bound every spawn, so leaving landing
+# tasks out of wip= never lifts a project's own limits.
 #
 # Every FM_OFFICE_* authority variable is set only by fm_office_authority_load
 # and fm_office_authority_parse, so in a home that is not an office they stay
@@ -127,6 +160,8 @@ FM_OFFICE_DETECT_ID=
 FM_OFFICE_ERROR=
 FM_OFFICE_LIVE=0
 FM_OFFICE_LIVE_IDS=
+FM_OFFICE_LANDING=0
+FM_OFFICE_LANDING_IDS=
 # The office roles with a charter, and the role names held for later offices
 # that have neither a charter nor any authority yet.
 FM_OFFICE_ROLES="navigator quartermaster"
@@ -417,10 +452,72 @@ fm_office_resolve() {  # <home> <data-dir> <config-dir>
   esac
 }
 
-fm_office_live_tasks() {  # <state-dir> <own-id>
+# The last value of <key>= in a task record, or nothing.
+fm_office_meta_value() {  # <meta> <key>
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -n 1
+}
+
+# 0 when the handled steering message <msg> was written after <epoch>, or when
+# its time cannot be read.
+fm_office_msg_after() {  # <msg> <epoch>
+  local schema at epoch
+  { IFS= read -r schema; IFS= read -r at; } < "$1" 2>/dev/null || return 0
+  case "$at" in at=*) ;; *) return 0 ;; esac
+  epoch=$(fm_utc_iso_to_epoch "${at#at=}") || return 0
+  [ "$epoch" -ge "$2" ]
+}
+
+fm_office_task_landing() {  # <state-dir> <id> <office-id>
+  local state=$1 id=$2 self=$3 meta=$1/$2.meta status=$1/$2.status url n open key verb note handed=0 last done_at msg project merger rc=0
+  [ "$(fm_office_meta_value "$meta" kind)" = ship ] || return 1
+  url=$(fm_office_meta_value "$meta" pr)
+  [ -n "$url" ] || return 1
+  n=${url##*/}
+  [ -f "$status" ] && [ ! -L "$status" ] && [ -r "$status" ] || return 1
+  open=$(status_open_decisions "$status" ship)
+  while IFS=$'\t' read -r key verb note; do
+    [ -n "$key" ] || continue
+    [ "$key" = "merge-handoff-$n" ] || return 1
+    case "$note" in *"$url"*) handed=1 ;; esac
+  done <<EOF
+$open
+EOF
+  last=$(_fm_status_latest_event "$status" merge-handoff-)
+  status_line_verb "$last" verb
+  [ "$verb" = "done" ] || return 1
+  done_at=$(status_line_at_epoch "$last") || return 1
+  for msg in "$state/$id.inbox"/*.msg; do
+    [ ! -e "$msg" ] || return 1
+  done
+  for msg in "$state/$id.inbox/handled"/*.msg; do
+    [ -f "$msg" ] || continue
+    ! fm_office_msg_after "$msg" "$done_at" || return 1
+  done
+  [ "$handed" = 0 ] || return 0
+  if [ -f "$state/$id.merge-handoff" ] && [ ! -L "$state/$id.merge-handoff" ]; then
+    read -r key _ < "$state/$id.merge-handoff" 2>/dev/null || key=
+    [ "$key" != "$url" ] || return 0
+  fi
+  project=$(fm_office_meta_value "$meta" project)
+  [ -n "$project" ] && [ -n "$self" ] || return 1
+  merger=$("$(dirname "${BASH_SOURCE[0]}")/fm-project-mode.sh" --merger "$(basename "$project")" 2>/dev/null) || return 1
+  [ -n "$merger" ] && [ "$merger" != "$self" ] || return 1
+  FM_STATE_OVERRIDE="$state" "$(dirname "${BASH_SOURCE[0]}")/fm-captain-hold.sh" open "$id" --distinguish-absent >/dev/null 2>&1 || rc=$?
+  case "$rc" in 1|3) return 0 ;; esac
+  return 1
+}
+
+fm_office_live_tasks() {  # <state-dir> <own-id> <office-id>
   local meta id
   FM_OFFICE_LIVE=0
   FM_OFFICE_LIVE_IDS=
+  FM_OFFICE_LANDING=0
+  FM_OFFICE_LANDING_IDS=
+  # The landing test reads the status fold, which bin/fm-classify-lib.sh owns.
+  if ! declare -F status_open_decisions >/dev/null; then
+    # shellcheck source=bin/fm-classify-lib.sh
+    . "$(dirname "${BASH_SOURCE[0]}")/fm-classify-lib.sh"
+  fi
   for meta in "$1"/*.meta; do
     [ -f "$meta" ] && [ ! -L "$meta" ] || continue
     id=$(basename "$meta" .meta)
@@ -430,6 +527,11 @@ fm_office_live_tasks() {  # <state-dir> <own-id>
       return 1
     }
     ! grep -qx 'kind=secondmate' "$meta" || continue
+    if fm_office_task_landing "$1" "$id" "${3-}"; then
+      FM_OFFICE_LANDING=$((FM_OFFICE_LANDING + 1))
+      FM_OFFICE_LANDING_IDS="${FM_OFFICE_LANDING_IDS:+$FM_OFFICE_LANDING_IDS, }$id"
+      continue
+    fi
     FM_OFFICE_LIVE=$((FM_OFFICE_LIVE + 1))
     FM_OFFICE_LIVE_IDS="${FM_OFFICE_LIVE_IDS:+$FM_OFFICE_LIVE_IDS, }$id"
   done

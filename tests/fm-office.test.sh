@@ -735,6 +735,67 @@ test_tick_is_silent_when_places_are_full() {
   pass 'tick counts live ship and scout records against wip and is silent when none is free'
 }
 
+# put_landing <world> <id> <project> [handoff]: a ship whose ready PR was handed
+# to its merger and whose worker reported done; with handoff "record" (the
+# default) state/<id>.merge-handoff names the PR, with "none" nothing does.
+put_landing() {
+  local s="$1/navigator/state" id=$2 url="https://github.com/o/r/pull/7$2"
+  printf 'kind=ship\nproject=%s\nyolo=on\npr=%s\n' "$3" "$url" > "$s/$id.meta"
+  printf 'done [at=%s]: PR %s checks green\n' "$((SRC_NOW - 600))" "$url" > "$s/$id.status"
+  [ "${4:-record}" = none ] || printf '%s abc123\n' "$url" > "$s/$id.merge-handoff"
+}
+
+test_tick_leaves_landing_tasks_out_of_wip() {
+  local w s
+  w=$(source_world landing)
+  s="$w/navigator/state"
+  put_backlog "$w" '- [ ] job-a - A (repo: x) (kind: ship)'
+  put_landing "$w" t1 x
+  printf 'kind=scout\nproject=x\n' > "$s/t2.meta"
+  assert_contains "$(nav_check "$w" tick)" "1 of 2 places free, 1 queued, 1 landing" "a landing task holds no place"
+
+  rm -f "$w/navigator/data/office/tick.seen"
+  printf 'needs-decision [at=%s] [cause=decision] [key=nm-r1-review]: ask-user findings=f1\n' "$((SRC_NOW - 300))" >> "$s/t1.status"
+  assert_equals "" "$(nav_check "$w" tick)" "a task with an open finding still holds its place"
+  printf 'resolved [at=%s] [key=nm-r1-review]: answered\n' "$((SRC_NOW - 200))" >> "$s/t1.status"
+  assert_equals "" "$(nav_check "$w" tick)" "a worker resumed after its answer still holds its place"
+  printf 'done [at=%s]: PR checks green again\n' "$((SRC_NOW - 100))" >> "$s/t1.status"
+  assert_contains "$(nav_check "$w" tick)" "1 landing" "a fresh done frees the place again"
+
+  rm -f "$w/navigator/data/office/tick.seen"
+  mkdir -p "$s/t1.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nfix the review comment\n' "$(date -u -d "@$((SRC_NOW - 50))" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$((SRC_NOW - 50))" +%Y-%m-%dT%H:%M:%SZ)" > "$s/t1.inbox/handled/001.msg"
+  assert_equals "" "$(nav_check "$w" tick)" "a worker steered back into fix work after its done holds its place"
+  printf 'done [at=%s]: fix pushed, checks green\n' "$SRC_NOW" >> "$s/t1.status"
+  assert_contains "$(nav_check "$w" tick)" "1 landing" "the done after the fix frees the place"
+  rm -f "$w/navigator/data/office/tick.seen"
+  printf 'schema=fm-task-inbox.v1\nat=2026-01-01T00:00:00Z\n--\nnew steer\n' > "$s/t1.inbox/002.msg"
+  assert_equals "" "$(nav_check "$w" tick)" "an unhandled steer holds the place"
+  pass 'tick leaves a ready, handed-off ship out of wip, and counts one with an open finding, a later event or a steer'
+}
+
+test_landing_needs_a_handoff_to_another_merger() {
+  local w s
+  w=$(source_world handoff)
+  s="$w/navigator/state"
+  put_backlog "$w" '- [ ] job-a - A (repo: x) (kind: ship)'
+  printf 'kind=scout\nproject=x\n' > "$s/t2.meta"
+  put_landing "$w" t1 "$w/projects/x" none
+  assert_equals "" "$(nav_check "$w" tick)" "a ready PR handed to nobody still holds its place"
+  printf 'needs-decision [at=%s] [key=merge-handoff-7t1] [cause=external]: [handoff=slarti] https://github.com/o/r/pull/7t1 is ready to merge\n' "$((SRC_NOW - 900))" >> "$s/t1.status"
+  assert_contains "$(nav_check "$w" tick)" "1 landing" "an open merge-handoff decision for the PR is a handoff"
+  put_landing "$w" t1 "$w/projects/PropertyCompass2" none
+  rm -f "$w/navigator/data/office/tick.seen"
+  if command -v tasks-axi >/dev/null 2>&1; then
+    assert_contains "$(nav_check "$w" tick)" "1 landing" "a project merged by another home is a handoff"
+  fi
+  put_landing "$w" t1 "$w/projects/x"
+  printf 'x\n' > "$s/t1.merge-handoff"
+  rm -f "$w/navigator/data/office/tick.seen"
+  assert_equals "" "$(nav_check "$w" tick)" "a handoff record for another PR is no handoff"
+  pass 'a landing task needs its PR handed to another merger: a handoff record, an open handoff decision, or the merger binding'
+}
+
 test_tick_counts_unread_lane_digests() {
   local w out
   w=$(source_world tickdigest)
@@ -963,6 +1024,8 @@ test_register_sources_keeps_the_status_check
 test_shim_runs_through_the_watcher_trust_path
 test_tick_prints_once_per_slot_and_only_when_work_could_start
 test_tick_is_silent_when_places_are_full
+test_tick_leaves_landing_tasks_out_of_wip
+test_landing_needs_a_handoff_to_another_merger
 test_tick_counts_unread_lane_digests
 test_lane_check_reports_each_new_digest_once
 test_lane_check_reads_a_spaced_sources_list

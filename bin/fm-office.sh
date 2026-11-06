@@ -83,8 +83,10 @@
 # check <source> is the body of a source check. It is fast, contacts no other
 # host (except the upstream source, below), always exits 0, and prints one line at most:
 #   tick             "office <id>: tick <YYYY-MM-DDTHH>: <n> of <wip> places free, <q> queued"
+#                    (then ", <d> unread digest(s)" and ", <l> landing" when not 0)
 #                    once per slot of the registry line's tick: cadence, when a
-#                    place is free (live ship and scout task records < wip) and
+#                    place is free (fm_office_live_tasks in
+#                    bin/fm-office-authority-lib.sh counts fewer than wip) and
 #                    work could start: an unheld, unblocked Queued item in
 #                    data/backlog.md, or an unread lane digest. Silent otherwise.
 #   lane:<officer>   "office <id>: <officer> digest <key>: <n> finding(s) in <path>"
@@ -533,15 +535,13 @@ except Exception:
 ' "${1%.md}.json" 2>/dev/null || echo 0
 }
 
-# count_live: this home's ship and scout task records.
+# count_live: this home's task records that hold a place under wip=, from the
+# one count bin/fm-office-authority-lib.sh owns (fm_office_live_tasks); sets
+# LIVE and LANDING, and returns 1 when a record cannot be read.
 count_live() {
-  local meta kind n=0
-  for meta in "$STATE"/*.meta; do
-    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
-    kind=$(sed -n 's/^kind=//p' "$meta" 2>/dev/null | tail -n 1)
-    case "$kind" in ship|scout) n=$((n + 1)) ;; esac
-  done
-  printf '%s\n' "$n"
+  fm_office_live_tasks "$STATE" '' "$OFFICE_ID" || return 1
+  LIVE=$FM_OFFICE_LIVE
+  LANDING=$FM_OFFICE_LANDING
 }
 
 # count_queued: unheld, unblocked items in the backlog's Queued section.
@@ -568,13 +568,13 @@ unread_lanes() {
 }
 
 check_tick() {
-  local cadence wip live free queued unread sources line
+  local cadence wip free queued unread sources line
   cadence=$(line_field "$OFFICE_LINE" tick || true)
   wip=$(line_field "$OFFICE_LINE" wip || true)
   [[ "$cadence" =~ ^every\ ([1-9]|1[0-9]|2[0-4])h$ ]] && [[ "$wip" =~ ^[1-9]$ ]] || return 0
   slot_of "$cadence" "$(now_epoch)"
-  live=$(count_live)
-  free=$((wip - live))
+  count_live || return 0
+  free=$((wip - LIVE))
   [ "$free" -gt 0 ] || return 0
   queued=$(count_queued)
   sources=$(line_field "$OFFICE_LINE" sources || true)
@@ -582,6 +582,7 @@ check_tick() {
   [ "$queued" -gt 0 ] || [ "$unread" -gt 0 ] || return 0
   line="office $OFFICE_ID: tick $SLOT_KEY: $free of $wip places free, $queued queued"
   [ "$unread" -eq 0 ] || line="$line, $unread unread digest(s)"
+  [ "$LANDING" -eq 0 ] || line="$line, $LANDING landing"
   seen_once tick "$SLOT_KEY" "$line"
 }
 
