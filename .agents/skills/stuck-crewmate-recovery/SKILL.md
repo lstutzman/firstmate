@@ -74,6 +74,9 @@ Only positive socket refusal or absence is a daemon-down finding; escalate that 
 
 ## Live-endpoint escalation
 
+A claude crew whose stale wake names `blocked-on-prompt: Claude usage-limit prompt` is parked on a prompt that never self-resumes, and its work, worktree and any in-flight validation run are intact.
+That has its own recovery, which the watcher already requests by itself: follow the claude usage-limit stall entry in `harness-adapters`, and do not interrupt, exit, or relaunch such a crew by hand.
+
 Escalate in order:
 
 1. Peek the pane, and check the task's steering inbox (`state/<id>.inbox/`) for unhandled `*.msg` records - a stale wake naming an unread firstmate instruction means the worker never acknowledged a durable steer, and the record itself shows exactly what was intended.

@@ -1010,3 +1010,30 @@ Unverified sessions retain the foreground protocol, whose existing live guard re
 The native proof above was a real adapter smoke; it did not add a test case or modify the foreground live guard.
 `tests/fm-codex-stop-park.test.sh` separately covers the opt-in and version gates, single-flight claim, fallback latch, final-result delivery when supervision ends, owner-gone watcher exit and retained quiet boundary against a fake `codex`.
 [The Codex protocol](../supervision-protocols/codex.md) owns operating instructions; script headers own registration, failure fallback and process ownership.
+
+## Claude usage-limit recovery
+
+This record supports the prompt signature in `fm_composer_blocking_dialog` (`bin/fm-composer-lib.sh`) and the stated-reset reading in `bin/fm-claude-limit-lib.sh`.
+The behavior is covered without a real stall by `tests/fm-limit-resume.test.sh` (signature, reset reading, recovery) and `tests/fm-watch-limit-resume.test.sh` (the watcher's request), in both directions: the observed prompt matches, and ordinary worker output that discusses limits, or quotes the prompt above a composer, does not.
+
+Checked on 2026-11-06 against the installed Claude Code 2.1.319, by reading the strings and the menu code in its binary.
+It does not reproduce the rendered prompt, because a real stall needs an exhausted account.
+
+```sh
+claude --version
+LC_ALL=C grep -a -o -F 'Stop and wait for limit to reset' ~/.local/share/claude/versions/2.1.319 | sort | uniq -c
+LC_ALL=C grep -a -o -F 'Wait here, then continue automatically at ' ~/.local/share/claude/versions/2.1.319 | sort | uniq -c
+LC_ALL=C grep -a -o -F 'label:Vt?"Stop":"Stop and wait for limit to reset"' ~/.local/share/claude/versions/2.1.319 | head -1
+```
+
+Observed output: `2.1.319 (Claude Code)`, then `2 Stop and wait for limit to reset`, `2 Wait here, then continue automatically at `, and the `label:Vt?"Stop":"Stop and wait for limit to reset"` option definition.
+The same menu code builds the dialog titled `What do you want to do?`, formats the reset time as a clock time within a day (`6:40pm`) or a date beyond it (`Nov 9, 3pm`), each with a trailing ` (Zone)` when it prints the zone, and wires Escape to the dialog's cancel handler.
+
+Not checked, so not claimed:
+
+- The rendered pane of this dialog on 2.1.319, including whether a status line is drawn under the `Enter to confirm · Esc to cancel` row (the signature admits up to two such rows) and which of the stop labels a given launch shows.
+- The prompt's footer text, which is taken from the fork's capture below and from the other picker recorded in `fm_composer_blocking_dialog`.
+- That Escape leaves the composer empty: the cancel handler can prefill a continue draft when the build's own automatic continue is armed, which would make `fm-send` skip its ring until the draft is cleared.
+- A full recovery against a live stalled crew.
+
+The rendered prompt the signature was first written from is nikzorz/firstmate commit 100698b12's capture of an older build (2026-07-29), which has the long stop label and no time-bearing row.

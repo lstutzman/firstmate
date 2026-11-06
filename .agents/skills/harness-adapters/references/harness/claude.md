@@ -47,6 +47,24 @@ Inspect the session to identify which dialog is on screen, and report it rather 
 A launch under `config/claude-permission-mode=auto` never meets the bypass confirmation, because it does not request bypass mode: on 2.1.269 `claude --permission-mode auto` reached the composer directly with the footer `⏵⏵ auto mode on (shift+tab to cycle)`, so a captain who refuses the bypass dialog selects `auto` there instead of accepting it.
 The workspace-trust dialog is unaffected by the permission mode and still needs the pre-registration above.
 
+## Usage-limit stall
+
+When the account usage limit is hit mid-turn, Claude Code stops on a choice prompt.
+It shows the question `What do you want to do?`, numbered rows (on Claude Code 2.1.319 a `Wait here, then continue automatically at <time>` row, `Upgrade your plan`, and `Stop and wait for limit to reset`, which an adapter that offers to continue automatically labels just `Stop`), and an `Enter to confirm · Esc to cancel` row.
+It waits for a human indefinitely, including long after the window resets, and the pane it leaves is idle with no error.
+In the incident the recovery below was ported from, three crews sat about 8.7 hours after their five-hour window had reset.
+`fm_composer_blocking_dialog` in `../../../bin/fm-composer-lib.sh` names it `Claude usage-limit prompt`, so the watcher's stale wake carries `blocked-on-prompt: Claude usage-limit prompt`, and the control plane and `fm-send` treat it as a dialog a confirming Enter would answer.
+Never send Enter or text into it.
+
+`../../../bin/fm-limit-resume.sh <id>` is the recovery, and the watcher asks it by itself for a claude crew on the prompt (`limit_resume_check` in `../../../bin/fm-watch.sh`).
+`../../../bin/fm-claude-limit-lib.sh` owns what the prompt states: the reset time it prints (`6:40pm`, `6:40pm (Europe/London)`, or `Nov 9, 3pm`) and the instant that means.
+Before that instant plus `FM_CLAUDE_LIMIT_RESET_MARGIN` seconds it only records a `paused:` line carrying `until <UTC time>`, so the idle pane is a declared wait the watcher rechecks when it clears.
+After it, it re-proves the live match, dismisses the prompt with `fm-control.sh <id> interrupt` (one Escape), requires a re-read to prove the prompt gone, and sends one steer through `fm-send.sh` telling the crew to re-read its own current state.
+It refuses rather than guessing whenever the pane, the match, the stated time or its zone is uncertain, so treat a refusal as a stop-and-inspect result, and add `--check` to get the verdict without sending or recording anything.
+A clock time with no date can be up to a day out (weekly limits print one too), so it is read as its first occurrence at or after the moment the watcher first saw the unchanged prompt, which it passes as `--since` (the pane-hash time, which survives a watcher restart); it is never placed earlier, so it never resumes before the stated reset. A passed reset is recovered now, and one at most five hours out is declared as a wait until it. A clock time with no date further out records no wait, so the pane keeps reaching firstmate as a stale wake naming the prompt and the stated reset, such as `blocked-on-prompt: Claude usage-limit prompt, resets 10am`. A dated reset (`Nov 9, 3pm`) is unambiguous, so it is declared as a wait until it however far out it is.
+No other verified harness has been observed presenting a blocking usage-limit prompt, so nothing here applies to codex, opencode, pi, grok, or kimi.
+[`../../../../../docs/verification/supervision.md`](../../../../../docs/verification/supervision.md#claude-usage-limit-recovery) records what was checked against the installed Claude Code and what was not.
+
 ## Composer ghost
 
 Completed turns can render dim predicted text inside an empty composer, indistinguishable in plain `tmux capture-pane`.

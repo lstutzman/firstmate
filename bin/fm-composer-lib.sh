@@ -2223,16 +2223,40 @@ EOF
 # and prints nothing.
 # Recorded 2026-10-05 on Claude Code 2.1.289: /exit while a background shell
 # is still running opens this picker, and its selected row is Exit and stop tasks.
+# The usage-limit prompt is the second recognised structure; its name is
+# FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME and bin/fm-claude-limit-lib.sh owns what
+# the pane says about it (the stated reset time) and every recovery decision.
+FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME='Claude usage-limit prompt'
 fm_composer_blocking_dialog() {  # <screen> -> dialog name
-  local screen=${1-}
+  local screen=${1-} plain
   [ -n "$screen" ] || return 1
-  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+  plain=$(printf '%s\n' "$screen" | fm_composer_strip_ansi)
+  if printf '%s\n' "$plain" | LC_ALL=C awk '
     /^[ \t]*Background work is running[ \t\r]*$/ { heading = 1 }
     heading && /^[ \t]*❯ 1\. Exit and stop tasks[ \t\r]*$/ { selected = 1 }
     /[^ \t\r]/ { last = $0 }
     END { exit !(selected && last ~ /^[ \t]*Enter to confirm · Esc to cancel[ \t\r]*$/) }
   '; then
     printf '%s' 'Claude background-task exit picker'
+    return 0
+  fi
+  # Claude Code's usage-limit prompt: the question on its own row, then the
+  # numbered stop row (labelled "Stop and wait for limit to reset", or just
+  # "Stop" on a build that also offers to continue automatically), then the
+  # confirm footer, in that order. Unlike the picker above, the footer may have
+  # up to two non-blank rows under it (a status line), because the live prompt
+  # replaces the composer: the bordered composer box and hint row that sit
+  # under the same words quoted in tool output on a working pane are at least
+  # three rows, so they fail that bound. Raising the bound weakens that
+  # separation.
+  if printf '%s\n' "$plain" | LC_ALL=C awk '
+    /[^ \t\r]/ { n++ }
+    /^[ \t]*What do you want to do\?[ \t\r]*$/ { q = n }
+    /^[^0-9]*[0-9]+\.[ \t]+Stop( and wait for limit to reset)?[ \t\r]*$/ { o = n }
+    /^[ \t]*Enter to confirm[^[:alnum:]]+Esc to cancel[ \t\r]*$/ { f = n }
+    END { exit !(q && o && f && q < o && o < f && n - f <= 2) }
+  '; then
+    printf '%s' "$FM_COMPOSER_CLAUDE_LIMIT_DIALOG_NAME"
     return 0
   fi
   return 1
