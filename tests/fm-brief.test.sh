@@ -1800,7 +1800,7 @@ test_linear_item_is_quoted_into_the_intent() {
   assert_grep '> The admin page lists every member.' "$brief" "heading-form acceptance not quoted"
   assert_grep '> It loads within two seconds.' "$brief" "second paragraph of a heading-form acceptance not quoted"
   assert_grep '> Entry point: /admin/members' "$brief" "inline entry point after a heading not quoted"
-  for leak in 'Evidence prose stays out' 'The other slices' 'Acceptance plan stays out' 'Because.'; do
+  for leak in 'Evidence prose stays out' 'The other slices' 'Acceptance plan stays out' 'run the migration first' 'Agents in notes' 'Because.'; do
     if grep -q "$leak" "$brief"; then fail "quote took in text outside its field: $leak"; fi
   done
   pass "fm-brief.sh --linear: heading-form fields are quoted and fields stop at their own section"
