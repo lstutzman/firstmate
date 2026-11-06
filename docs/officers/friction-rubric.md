@@ -2,7 +2,7 @@
 
 This is the friction officer's rubric: what it treats as work, how it scores it, what it starts by itself, and what it only files.
 Lee reads and edits this file, and `bin/fm-officer-friction.py` reads the lines under "Settings the code reads" on every run.
-A rubric can only narrow what the code allows; `source-label` can only name one of Lee's Source labels (agent, captain, bug-sweep, scheduled-review, slack-desk).
+A rubric can only narrow what the code allows.
 The reserved classes below are fixed in the code, so no line here can admit one.
 
 ## What counts as work
@@ -35,7 +35,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - Each friction finding is one Linear item, keyed by its cause, sub-cause and name, so the same group is the same item every night.
 - Duplicates, the `Found:` line, recurrences of closed items and the call budget are the shared [filing rules](contract.md#file).
 - The item body carries counts, waits, the root cause, the proposed fix, the owner and effort, and task, status and card identifiers.
-  It carries no quoted line from a transcript, a command or a repeated ask, because Linear is third-party storage.
+  It carries no quoted line from a transcript, a command or a repeated ask, because Linear is third-party storage; a repeated ask's topic goes as a hash.
 
 ## What starts by itself
 
@@ -66,5 +66,4 @@ Friction findings are not bugs or code-review findings, so pattern memory is off
 - start-sources: guard-hook, service-limit, missing-tool, environment, lee-command, repeat-ask, other
 - start-min-score: 4
 - pattern-memory: off
-- source-label: agent
 - hold-classes: payments-billing, legal, product, member-copy, credentials, production-actions, data-rewriting

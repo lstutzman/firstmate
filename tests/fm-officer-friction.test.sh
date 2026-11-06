@@ -1424,6 +1424,34 @@ test_a_missing_label_or_no_writes_starts_nothing() {
   pass "fm-officer friction: a missing Source label or writes: none files and starts nothing, and the card offers Start fix"
 }
 
+test_repeated_ask_words_never_reach_linear() {
+  local home archive dir n day
+  home="$TMP_ROOT/askwords/fixturehost"
+  archive="$TMP_ROOT/askwords/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  for day in 2026-10-22 "$DATE"; do
+    printf '%s\n' '{"sessions": [{"machine": "alpha", "id": "lee-'"$day"'", "first_prompt": "hello", "calls": [], "raw": [' \
+      '  {"type": "user", "timestamp": "'"$day"'T09:00:00.000Z", "message": {"content": "Always rerun the flaky parser benchmarks nightly."}},' \
+      '  {"type": "user", "timestamp": "'"$day"'T09:10:00.000Z", "message": {"content": "Never push straight to the shared database branch."}}]}]}' \
+      > "$TMP_ROOT/askwords/$day.json"
+    officer_archive "$archive" "$day" "$TMP_ROOT/askwords/$day.json"
+  done
+  friction_registry "$home" "$archive" "; writes: linear; jev: /nonexistent/jev.py"
+  export FAKE_LINEAR_DIR="$TMP_ROOT/askwords/linear"
+  dir=$FAKE_LINEAR_DIR
+  mkdir -p "$dir"
+  printf '%s\n' Bug Improvement agent area:fleet > "$dir/labels.txt"
+  run_officer "$home" >/dev/null || fail "a run with two repeated asks must succeed"
+  n=$(jq '[.findings[] | select(.cause == "repeat-ask" and .linear.issue != null)] | length' "$home/data/officers/friction/$DATE.json")
+  assert_equals 2 "$n" "both repeated asks are filed"
+  for word in parser benchmarks nightly database branch; do
+    assert_no_grep "$word" "$dir/log" "no word of Lee's repeated ask reaches a Linear title or search: $word"
+    assert_no_grep "$word" "$dir/bodies" "no word of Lee's repeated ask reaches a Linear body: $word"
+  done
+  pass "fm-officer friction: a repeated ask is filed in Linear without any of Lee's words"
+}
+
 test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started() {
   local home json dir rubric
   linear_world capped "; max-creates: 2"
@@ -1444,20 +1472,6 @@ test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started() {
   run_officer "$home" >/dev/null || fail "a run with a narrowed rubric must succeed"
   assert_equals "lee-command-run" "$(jq -r '[.start_requests[].id] | join(",")' "$json")" "a rubric can narrow what starts"
   assert_contains "$(jq -r '.coverage.notes | join(" ")' "$json")" "which the code does not admit; ignored" "a value the code does not admit is named and ignored"
-
-  rubric="$TMP_ROOT/source-rubric.md"
-  sed 's/^- source-label: .*/- source-label: scheduled-review/' "$ROOT/docs/officers/friction-rubric.md" > "$rubric"
-  linear_world sourced "; rubric: $rubric"
-  home=$LW_HOME
-  printf '%s\n' Bug Improvement scheduled-review area:fleet > "$FAKE_LINEAR_DIR/labels.txt"
-  run_officer "$home" >/dev/null || fail "a run with another Source label must succeed"
-  assert_contains "$(grep '^issue create' "$FAKE_LINEAR_DIR/log" | head -1)" "--label scheduled-review" "the rubric can name another of Lee's Source labels"
-  sed -i 's/^- source-label: .*/- source-label: friction-officer/' "$rubric"
-  linear_world badsource "; rubric: $rubric"
-  home=$LW_HOME
-  run_officer "$home" >/dev/null || fail "a run with an unknown Source label must succeed"
-  assert_contains "$(grep '^issue create' "$FAKE_LINEAR_DIR/log" | head -1)" "--label agent" "a Source label outside Lee's set is ignored for agent"
-  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$home/data/officers/friction/$DATE.json")" "not one of Lee's Source labels" "and named as a gap"
 
   linear_world norubric "; rubric: $TMP_ROOT/absent-rubric.md"
   home=$LW_HOME
@@ -1492,4 +1506,5 @@ test_standing_work_is_started_by_default_with_an_object_action
 test_fixed_reported_again_and_settled_states
 test_findings_are_filed_in_linear_under_the_contract
 test_a_missing_label_or_no_writes_starts_nothing
+test_repeated_ask_words_never_reach_linear
 test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started

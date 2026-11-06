@@ -224,7 +224,7 @@ is scored and what starts. With --writes linear (the registry's `writes:
 linear`, with max-creates, max-linear-calls and jev) every finding that is
 real, not tracked (state settled, started or fixed), and not a product choice
 or a retired tool is filed once in team PC, project Fleet, labels Improvement,
-the rubric's Source label (agent, from Lee's set) and area:fleet, keyed by its cause, sub and name.
+the Source label agent (from Lee's set) and area:fleet, keyed by its cause, sub and name.
 A repeat night raises the item's `Found: N times` line in place, and the found
 count is the priority lever: score = severity weight x log2(1 + found), with a
 card-bar finding high, an uncarded one of friction severity 3 or more medium,
@@ -598,9 +598,8 @@ STANDING_START = {
 START_SOURCES = tuple(sorted({cause for cause, _ in STANDING_START}))
 RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "friction-rubric.md")
 TYPE_LABEL = "Improvement"
-# Lee's Linear setup (2026-10-13) allows these Source labels; "agent" is for any worker filing on his behalf. The rubric's
-# `source-label` setting picks one, and any other value is ignored.
-SOURCE_LABELS, DEFAULT_SOURCE_LABEL = ("agent", "bug-sweep", "scheduled-review", "slack-desk", "captain"), "agent"
+# "agent" is the Source label of Lee's Linear setup (2026-10-13) for any worker filing on his behalf.
+SOURCE_LABEL = "agent"
 # The actions the page may draw for each state; a standing-work finding is never offered a bare Start fix.
 STATE_ACTIONS = {"open": ["start-fix"], "reported-again": ["start-fix"], "started-by-default": ["object"],
                  "started": [], "fixed": [], "settled": []}
@@ -1645,7 +1644,14 @@ def name_shared_titles(findings):
     for f in findings:
         if f["title"] in shared and f["name"]:
             room = 90 - len(f["title"]) - 2
-            f["title"] = "%s: %s" % (f["title"], clip(f["name"], max(room, 8)))
+            f["title"] = "%s: %s" % (f["title"], clip(subject(f), max(room, 8)))
+
+
+def subject(f):
+    """A finding's name as it may leave the home: a repeated ask's topic is Lee's own words, so it goes as a hash."""
+    if f["cause"] == "repeat-ask" and f["name"]:
+        return "ask " + hashlib.sha256(f["name"].encode("utf-8")).hexdigest()[:8]
+    return f["name"]
 
 
 def assign_ids(findings):
@@ -2024,19 +2030,6 @@ def officer(lib):
                        severities=("high", "critical"), project=lib.FLEET_PROJECT)
 
 
-def source_label(path, gaps):
-    """The Source label the rubric names (docs/officers/friction-rubric.md `source-label`), else "agent"."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            body = fh.read().partition("## Settings the code reads")[2]
-    except OSError:
-        return DEFAULT_SOURCE_LABEL
-    m = re.search(r"^- source-label: *(\S+) *$", body, re.M)
-    if m and m.group(1).lower() not in SOURCE_LABELS:
-        gaps.append("rubric source-label names %s, which is not one of Lee's Source labels; using %s" % (m.group(1), DEFAULT_SOURCE_LABEL))
-    return m.group(1).lower() if m and m.group(1).lower() in SOURCE_LABELS else DEFAULT_SOURCE_LABEL
-
-
 def lib_findings(lib, doc, states, eligible):
     """One shared-library finding per friction finding (docs/officers/friction-rubric.md scores it).
 
@@ -2049,7 +2042,7 @@ def lib_findings(lib, doc, states, eligible):
         state = states[f["id"]]
         klass = "decision" if (f["cause"], f["sub"]) in NOT_CARDED else \
             "wont-fix" if f["cause"] == "missing-tool" and f["name"] in RETIRED_TOOLS else "real"
-        title = f["title"] or "%s / %s%s (no rule names a fix)" % (f["cause"], f["sub"], " / " + f["name"] if f["name"] else "")
+        title = f["title"] or "%s / %s%s (no rule names a fix)" % (f["cause"], f["sub"], " / " + subject(f) if f["name"] else "")
         summary = "%d event(s), %d naming Lee, agents waited %s. %s" % (
             f["events"], f["lee_events"], human_span(f["wait_total_s"]), f["fix"] or "No fix proposed yet.")
         lf = lib.make_finding(f["cause"], f["sub"], "/".join((f["cause"], f["sub"], f["name"] or "")), title, summary, klass,
@@ -2075,7 +2068,7 @@ def description(lf, date, off, near=None, recurrence=None):
              "What it is for: a step that slowed agents down, fixed once so it is not hit again.",
              "Epic: not assigned; whoever triages this picks one.", "",
              "Severity: %s (friction severity %d, confidence %d). Root cause: %s / %s%s." % (
-                 lf["severity"], f["severity"], f["confidence"], f["cause"], f["sub"], ", " + f["name"] if f["name"] else ""),
+                 lf["severity"], f["severity"], f["confidence"], f["cause"], f["sub"], ", " + subject(f) if f["name"] else ""),
              off.found_line(1, date, date)]
     if recurrence:
         lines.append(recurrence)
@@ -2094,7 +2087,7 @@ def description(lf, date, off, near=None, recurrence=None):
     return "\n".join(lines) + "\n%s:%s" % (off.marker, lf["fingerprint"])
 
 
-def file_findings(lib, off, findings, args, date, out, ledger, found, jev, lin, source):
+def file_findings(lib, off, findings, args, date, out, ledger, found, jev, lin):
     """Files the real, untracked findings, highest score first; returns (writes done, why Linear stopped or None)."""
     todo = [f for f in findings if f["class"] == "real" and not f["tracked"]]
     filer = lib.Filer(off, lin, args.team, date, out, ledger, found, jev, args.max_creates)
@@ -2122,8 +2115,7 @@ def file_findings(lib, off, findings, args, date, out, ledger, found, jev, lin, 
         return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
 
     def label_set(f):
-        wanted = [TYPE_LABEL, source, lib.FLEET_AREA]
-        return wanted, [w for w in wanted if w.lower() not in names]
+        return lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
 
     def describe(f, near=None, recurrence=None):
         return description(f, date, off, near, recurrence)
@@ -2157,10 +2149,8 @@ def linear_pass(doc, states, eligible, args, offices, main_home):
     findings = lib_findings(lib, doc, states, eligible)
     rubric = lib.load_rubric(args.rubric, off)
     jev = lib.Jev(args.jev)
-    label_gaps = []
-    source = source_label(args.rubric, label_gaps)
     lib.apply_found(findings, found, ledger)
-    writes, blocked = file_findings(lib, off, findings, args, date, out, ledger, found, jev, lin, source) if linear else ([], None)
+    writes, blocked = file_findings(lib, off, findings, args, date, out, ledger, found, jev, lin) if linear else ([], None)
     lib.apply_found(findings, found, ledger)
     # Only a hold is remembered across nights (it asks Lee once). A start is repeated until its delivered note reads back
     # as started (finding_states), so an office that missed one still gets it.
@@ -2182,7 +2172,7 @@ def linear_pass(doc, states, eligible, args, offices, main_home):
         rec["state"] = "reported-again" if rec.get("fixed") else "open"
         rec["actions"] = STATE_ACTIONS[rec["state"]]
         unstarted += 1
-    gaps = rubric.gaps + label_gaps + ([jev.gap] if jev.gap and linear else [])
+    gaps = rubric.gaps + ([jev.gap] if jev.gap and linear else [])
     if unstarted:
         gaps.append("%d finding(s) due to start by default were not started because %s; each card offers Start fix." % (
             unstarted, "its Linear item was not filed or it is held for Lee (see Linear)" if linear else "the run writes no Linear items (set writes: linear)"))
@@ -2288,7 +2278,7 @@ def render_md(doc):
     lines.append("- Writes: %s; %d of %d Linear call(s) used%s." % (
         doc["writes"], doc["linear_calls"], doc["linear_call_budget"],
         "; stopped: " + doc["writes_blocked"] if doc["writes_blocked"] else ""))
-    lines += ["- " + n for n in doc["not_filed"] + doc["linear_gaps"]]
+    lines += ["- " + n for n in doc["not_filed"]]
     lines += ["- " + a["line"] for a in doc["asks_for_lee"]]
     lines += ["", "## Findings", ""]
     if not doc["findings"]:
