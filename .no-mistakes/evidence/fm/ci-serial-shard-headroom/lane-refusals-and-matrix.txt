@@ -1,0 +1,15 @@
+tests/fm-remote-secondmate-lifecycle-e2e.test.sh
+== --list --lane portable-serial-7of11
+rc=2
+fm-test-run: lane 'portable-serial-7of11' asks for 11 portable serial shards but this runner is configured for 15 (see --list-lanes)
+== --list --lane portable-serial-16of15
+rc=2
+fm-test-run: lane 'portable-serial-16of15' shard index is outside 1..15 (see --list-lanes)
+== --list --lane portable-serial-0of15
+rc=2
+fm-test-run: lane 'portable-serial-0of15' shard index is outside 1..15 (see --list-lanes)
+== --list --lane portable-serial-15of15
+rc=0
+== CI matrix (parsed YAML)
+matrix [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] timeout 30
+['set -eu\nmkdir -p "$RUNNER_TEMP/fm-test"\nbin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \\\n  --fail-on-gate-skip \'Pi extension typecheck prerequisite not found\' \\\n  --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"\n']

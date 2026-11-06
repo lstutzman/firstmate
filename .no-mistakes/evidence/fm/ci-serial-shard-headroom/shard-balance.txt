@@ -1,0 +1,23 @@
+shard  1 scripts=  1 modeled_ms= 1179716 (19.7 min)
+shard  2 scripts= 18 modeled_ms= 1124435 (18.7 min)
+shard  3 scripts= 21 modeled_ms= 1124444 (18.7 min)
+shard  4 scripts= 23 modeled_ms= 1124425 (18.7 min)
+shard  5 scripts= 23 modeled_ms= 1124424 (18.7 min)
+shard  6 scripts= 22 modeled_ms= 1124401 (18.7 min)
+shard  7 scripts= 22 modeled_ms= 1124401 (18.7 min)
+shard  8 scripts= 23 modeled_ms= 1124446 (18.7 min)
+shard  9 scripts= 24 modeled_ms= 1124438 (18.7 min)
+shard 10 scripts= 24 modeled_ms= 1124446 (18.7 min)
+shard 11 scripts= 23 modeled_ms= 1124445 (18.7 min)
+shard 12 scripts= 23 modeled_ms= 1124445 (18.7 min)
+shard 13 scripts= 24 modeled_ms= 1124442 (18.7 min)
+shard 14 scripts= 23 modeled_ms= 1124444 (18.7 min)
+shard 15 scripts= 24 modeled_ms= 1124441 (18.7 min)
+
+tests/fm-public-followup.test.sh -> shard 10 (hint 398127 ms)
+tests/fm-watch-arm.test.sh -> shard 12 (hint 338408 ms)
+tests/fm-secondmate-harness.test.sh -> shard 14 (hint 244588 ms)
+tests/fm-watch-triage.test.sh -> shard 2 (hint 1010589 ms)
+
+total=318 unique=318 portable-serial=318
+shard union == portable-serial set
