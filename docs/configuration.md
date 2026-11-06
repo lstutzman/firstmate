@@ -675,6 +675,7 @@ Not-collected homes preserve their own prior silence and inventory-failure recei
 The alarm uses the custom-check contract on every primary tool; its independent timer runs the same check without starting another fleet supervisor.
 The two paths have separate delivery receipts so a regular check cannot suppress the timer's alert.
 The timer publishes keyed `needs-decision` status through the existing fleet activity ledger for Captain's Log readers, and publishes `resolved` when all conditions clear.
+Each timer run also prints one `RUN-RESULT` stdout line for the fleet app's Runs page: the open alert count and quota context, or a `skipped` outcome when another alarm run holds the lock.
 That publication still requires a working machine, scheduler, ledger storage, and Captain's Log reader; it cannot alert during a machine outage.
 
 From the primary home's stable code directory, set `FM_HOME` to the primary home, then register the check:
