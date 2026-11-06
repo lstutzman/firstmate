@@ -43,7 +43,14 @@ wait for Lee to do. One day's friction events come from three sources:
                line starts with a guard refusal, a sudo prompt, an ssh key
                refusal, a 1Password refusal, a not-signed-in CLI, or
                `command not found` is agent-side friction; a not-found name
-               that is no installable tool (plausible_tool) is skipped. A worker session
+               that is no installable tool (plausible_tool) is skipped, and so is
+               one firstmate defines as a shell function in its own bin/ or
+               tests/ (a sourcing slip). An ssh key refusal printed by a
+               firstmate test run in the same tool call (a tests/*.test.sh
+               script or bin/fm-test-run.sh) is test output, not friction; a
+               refusal outside a test run, whatever host it names, is kept.
+               Both are dropped at run time on the reading side, so a remote
+               scan still reports them. A worker session
                whose cwd is outside the worktree its task record names started
                in the wrong directory.
   captain's log with --captains-log, the cards fleet-app serves at GET
@@ -270,6 +277,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -944,9 +952,17 @@ def session_events(records, machine):
                         if m is None:
                             break
                     if m:
-                        events.append(dict(hit_event(hit, m), at=at))
+                        ev = hit_event(hit, m)
+                        if hit == "ssh-key":
+                            ev["in_test_run"] = bool(TEST_RUN_RE.search(commands.get(block.get("tool_use_id")) or ""))
+                        events.append(dict(ev, at=at))
                         break
     return events
+
+
+# A firstmate test run by the tool call that produced the output: tests/<name>.test.sh or a glob of them, or the
+# bin/fm-test-run.sh runner (--all, --family, --changed, --lane).
+TEST_RUN_RE = re.compile(r"(?<![\w.-])(?:tests/[\w.*?-]+\.test\.sh|fm-test-run\.sh)(?![\w.-])")
 
 
 INSTRUCTION_RE = re.compile(
@@ -1120,6 +1136,58 @@ def scan(archive, date, days=1):
         })
     out["sessions"].sort(key=lambda s: s["session"])
     return out
+
+
+SHELL_FUNCTION_RE = re.compile(
+    r"^[ \t]*(?:function[ \t]+([A-Za-z_][\w:-]*)|([A-Za-z_][\w:-]*)[ \t]*\([ \t]*\))[ \t]*(?:\{|$)", re.M)
+_FUNCTIONS = {}
+
+
+def firstmate_functions(root=None):
+    """Names firstmate defines as shell functions (`name()` or `function name`) in bin/ and tests/ of the
+    code root, read at run time. A not-found one is a sourcing slip in a worker's shell, not a missing tool.
+    A test file also stubs real tools (`jq() {`), and a bin/ file can hold a heredoc of another language, so
+    a bare word counts only when a bin/ file defines it and no executable of that name is on PATH; a
+    snake_case name (`now_epoch`) counts wherever it is defined."""
+    root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in _FUNCTIONS:
+        names = set()
+        for sub in ("bin", "tests"):
+            for dirpath, _, files in os.walk(os.path.join(root, sub)):
+                for name in files:
+                    if not name.endswith((".sh", ".bash")):
+                        continue
+                    try:
+                        with open(os.path.join(dirpath, name), encoding="utf-8", errors="replace") as fh:
+                            text = fh.read()
+                    except OSError:
+                        continue
+                    for a, b in SHELL_FUNCTION_RE.findall(text):
+                        fn = a or b
+                        if "_" in fn or (sub == "bin" and not shutil.which(fn)):
+                            names.add(fn)
+        _FUNCTIONS[root] = names
+    return _FUNCTIONS[root]
+
+
+def drop_test_noise(scanned, functions=None):
+    """Drop agent-hit events that are output of a firstmate test run, not fleet friction: a not-found name
+    firstmate defines as a shell function, and an ssh key refusal printed by a firstmate test run. A refusal
+    outside a test run is kept whatever host it names."""
+    functions = firstmate_functions() if functions is None else functions
+
+    def noise(ev):
+        if ev.get("kind") != "agent-hit":
+            return False
+        if ev.get("cause") == "missing-tool":
+            return ev.get("tool") in functions
+        if ev.get("sub") == "ssh-key":
+            return bool(ev.get("in_test_run"))
+        return False
+
+    for s in scanned["sessions"]:
+        s["events"] = [ev for ev in s["events"] if not noise(ev)]
+    return scanned
 
 
 def remote_program():
@@ -2360,6 +2428,7 @@ def main(argv):
             scanned = scan(args.archive, args.date, args.days)
         triage.require_harvested(scanned)
         homes = [triage.Home(h) for h in args.home]
+        drop_test_noise(scanned)
         triage.join_sessions(scanned, homes)
         triage.classify_mates(scanned, homes)
         hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]

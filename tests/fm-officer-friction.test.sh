@@ -860,6 +860,40 @@ EOF
   pass "fm-officer friction: injected guidance and non-installable names are classifier noise"
 }
 
+test_test_run_output_is_not_fleet_friction() {
+  local home archive json
+  home="$TMP_ROOT/testrun/fixturehost"
+  archive="$TMP_ROOT/testrun/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  cat > "$TMP_ROOT/testrun/day.json" <<'EOF'
+{"sessions": [{"machine": "alpha", "id": "testrun", "first_prompt": "hello", "calls": [
+  ["Bash", {"command": "bash tests/fm-pending-reply.test.sh"}, "/bin/bash: line 3: fm_pending_reply_path: command not found", true],
+  ["Bash", {"command": "bash tests/fm-retention.test.sh"}, "/bin/bash: line 9: now_epoch: command not found", true],
+  ["Bash", {"command": "bash bin/fm-crew-state.sh"}, "/bin/bash: line 9: fail: command not found", true],
+  ["Bash", {"command": "make"}, "/bin/bash: line 4: slopwatch: command not found", true],
+  ["Bash", {"command": "make"}, "/bin/bash: line 4: jq: command not found", true],
+  ["Bash", {"command": "bash tests/fm-officer-friction.test.sh"}, "lee@alpha: Permission denied (publickey).", true],
+  ["Bash", {"command": "bash tests/fm-git-retry-lib.test.sh"}, "git@github.com: Permission denied (publickey).", true],
+  ["Bash", {"command": "for t in tests/fm-officer*.test.sh; do bash \"$t\"; done"}, "lee@alpha: Permission denied (publickey).", true],
+  ["Bash", {"command": "bin/fm-test-run.sh --family officer"}, "lee@beta: Permission denied (publickey).", true],
+  ["Bash", {"command": "git push origin fm/x"}, "git@github.com: Permission denied (publickey).", true],
+  ["Bash", {"command": "ssh -t stranger.example true"}, "lee@stranger.example: Permission denied (publickey).", true],
+  ["Bash", {"command": "ssh -t alpha.tail1.ts.net true"}, "lee@alpha.tail1.ts.net: Permission denied (publickey).", true]]}]}
+EOF
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/testrun/day.json"
+  friction_registry "$home" "$archive"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals "jq,slopwatch" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
+    "firstmate shell functions (snake_case anywhere, a bare word defined in bin/) are sourcing slips; a real missing binary, even one a test stubs, still is a finding"
+  assert_equals 3 "$(jq '[.events[] | select(.kind == "agent-hit" and .sub == "ssh-key")] | length' "$json")" \
+    "a key refusal printed by a tests/*.test.sh or fm-test-run.sh run is not friction; one outside a test run is, whatever host it names (github.com, an unknown host, a fleet host)"
+  assert_equals "credential" "$(jq -r '[.findings[] | select(.sub == "ssh-key")][0].cause' "$json")" \
+    "the genuine publickey refusals outside a test run are still a credential finding"
+  pass "fm-officer friction: output of a firstmate test run is not fleet friction; real misses and refusals still are"
+}
+
 test_long_session_asks_dated_by_message() {
   local home archive json
   home="$TMP_ROOT/longsession/fixturehost"
@@ -1525,6 +1559,7 @@ test_captains_log_cards_read_only
 test_repeated_lee_asks_across_days
 test_injected_user_records_are_not_repeat_asks
 test_noise_is_not_a_finding
+test_test_run_output_is_not_fleet_friction
 test_long_session_asks_dated_by_message
 test_paraphrased_upkeep_asks_cluster
 test_registry_and_unharvested_day
