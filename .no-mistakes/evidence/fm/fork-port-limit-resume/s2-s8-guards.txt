@@ -1,0 +1,56 @@
+### S2 returned prompt, same stated reset (5:21pm (UTC)) recovered at 1793992899; watcher --since = redraw time (now)
+You've hit your limit · resets 5:21pm (UTC)
+refused: crew1 already recovered from this stated reset (5:21pm (UTC)) 71s ago and the prompt is back; the window had not reset, left untouched for inspection
+rc=1
+keys:
+status:
+(none)
+
+### S3 reset 1h ahead (8:22pm (UTC)): records timed pause, sends nothing; rerun is idempotent
+crew2: the stated reset (8:22pm (UTC)) is not reached; recorded the wait until 2026-11-06T20:23Z and sent nothing
+rc=0
+crew2: the stated reset (8:22pm (UTC)) is not reached; recorded the wait until 2026-11-06T20:23Z and sent nothing
+rc=0
+keys:
+status:
+paused [cause=external] [at=1793992970]: claude usage limit reached; resumes after the stated reset (8:22pm (UTC)); until 2026-11-06T20:23Z
+
+### S4 clock-only reset 10h ahead (5:22am (UTC)): no pause declared, nothing sent
+crew3: the stated clock-time reset (5:22am (UTC)) is not reached and is more than five hours out (2026-11-07T05:23Z); recorded no wait and sent nothing, so the stall stays visible
+rc=0
+keys:
+status:
+(none)
+
+### S5 prompt survives Escape (5:22pm (UTC) passed): refuses, no steer
+refused: crew4 still shows the claude usage-limit prompt after Escape; left untouched for inspection
+rc=1
+keys:
+'\x1b'
+(no inbox: no steer)
+
+### S6 limit prompt words quoted above a live composer: refuses, nothing sent
+● Pushed the branch and opened the pull request.
+>    What do you want to do?
+>  ❯ 1. Stop and wait for limit to reset
+>    Enter to confirm · Esc to cancel
+> the limit resets 5:22pm (UTC)
+╭────────────────────────────────────────╮
+│ >                                      │
+╰────────────────────────────────────────╯
+  ? for shortcuts
+refused: crew5 is not showing the claude usage-limit prompt (pane unreadable, or the crew has moved on)
+rc=1
+keys:
+
+### S7 dated reset days out (Nov 9, 3pm (UTC)): timed pause recorded
+crew6: the stated reset (Nov 9, 3pm (UTC)) is not reached; recorded the wait until 2026-11-09T15:01Z and sent nothing
+rc=0
+keys:
+status:
+paused [cause=external] [at=1793992973]: claude usage limit reached; resumes after the stated reset (Nov 9, 3pm (UTC)); until 2026-11-09T15:01Z
+
+### S8 non-claude harness on the prompt: refused
+refused: task 'crew7' records harness='codex'; the usage-limit prompt is claude-specific
+rc=1
+keys:

@@ -1,0 +1,43 @@
+### S1 passed reset (stated 5:21pm (UTC), --since 4h ago): pane before
+● Pushed the branch and opened the pull request.
+You've hit your limit · resets 5:21pm (UTC)
+   What do you want to do?
+ ❯ 1. Wait here, then continue automatically at 5:21pm (UTC)
+   2. Upgrade your plan
+   3. Stop and wait for limit to reset
+   Enter to confirm · Esc to cancel
+### recover
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.QdiH2F
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.QdiH2F
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /tmp/fm-lab.QdiH2F
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+crew1: dismissed the claude usage-limit prompt after its stated reset (5:21pm (UTC)) and sent the resume instruction
+rc=0
+### pane after
+● Pushed the branch and opened the pull request.
+> : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'crew1.inbox' steering inbox, read and act on eac
+h in numeric order, then mv each into its handled/.
+╭────────────────────────────────────────╮
+│ >                                      │
+╰────────────────────────────────────────╯
+  ? for shortcuts
+### keys received by crew
+'\x1b'
+': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'crew1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+'\r'
+### marker
+1793992899	5:21pm (UTC)
+### status
+(no status file)
+### /tmp/fm-lab.QdiH2F/state/crew1.inbox/001.msg
+schema=fm-task-inbox.v1
+at=2026-11-06T19:21:43Z
+body-terminator=1
+--
+The claude usage limit that stalled you has reset. Do not assume where you stopped: re-read your own current state first, including whether your validation run still exists and belongs to your current commit, then continue from what you actually find.

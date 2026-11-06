@@ -1,0 +1,20 @@
+### S9 recovery after its own recorded wait elapsed closes that wait
+status before:
+paused [cause=external] [at=1793991787]: claude usage limit reached; resumes after the stated reset (7:13pm (UTC)); until 2026-11-06T19:18Z
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+crew8: dismissed the claude usage-limit prompt after its stated reset (7:13pm (UTC)) and sent the resume instruction
+rc=0
+status after:
+paused [cause=external] [at=1793991787]: claude usage limit reached; resumes after the stated reset (7:13pm (UTC)); until 2026-11-06T19:18Z
+working [at=1793992993]: claude usage limit window reset; prompt dismissed and the crew re-steered
+keys:
+'\x1b'
+': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'crew8.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+'\r'
+● Pushed the branch and opened the pull request.
+> : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'crew8.inbox' steering inbox, read and act on eac
+h in numeric order, then mv each into its handled/.
+╭────────────────────────────────────────╮
+│ >                                      │
+╰────────────────────────────────────────╯
+  ? for shortcuts

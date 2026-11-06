@@ -1,0 +1,36 @@
+1..34
+ok - the claude usage-limit prompt matches, in the observed and the 2.1.319 shapes
+ok - the signature tolerates the Stop label, a status line under the footer, the plain marker and ANSI styling
+ok - ordinary worker output never matches, quoted prompt text included
+ok - the signature requires all three anchors, in order, owning the bottom of the pane
+ok - the stated reset is read from the limit line, the menu row and the fork's wording
+ok - a time without reset wording, and a row with no time, state no reset
+ok - a clock time lands on its first occurrence at or after the bound, in its own zone
+ok - a clock time is the first occurrence after the stall began, whether five or more hours out
+ok - a dated reset lands on its date, in the year it names or the nearest one
+ok - an unknown zone, an out-of-range time or a missing bound is refused, never guessed
+ok - recovery refuses a task whose recorded harness is not claude
+ok - recovery refuses, with a diagnostic, when the task, its endpoint or its placement cannot be used
+ok - recovery refuses unless the live viewport proves the prompt is showing
+ok - recovery refuses, and records nothing, when the prompt states no reset it can read
+ok - recovery refuses when the stated reset is in a zone it does not know
+ok - a stated reset still ahead records one timed wait (until its reset) and sends nothing
+ok - the margin keeps a just-passed reset waiting
+ok - a stated clock time that passed after the stall began recovers at once
+ok - a clock time more than five hours out sends nothing and declares no pause
+ok - a dated reset days out is declared as a timed wait until it
+ok - a stated clock time already behind the stall is tomorrow's, and nothing is sent early
+ok - with no bound, the next occurrence is awaited and nothing is sent
+ok - a passed reset is recovered with one interrupt through fm-control plus a re-check-your-state steer
+ok - a prompt that survives the interrupt stops the run instead of escalating keys
+ok - an unreadable pane after the interrupt refuses instead of steering on unproven dismissal
+ok - an interrupt the control plane refuses sends no steer and leaves no cooldown
+ok - the same stated reset is refused for inspection, never re-sent or absorbed as a wait; a new one recovers
+ok - once the recorded wait's until time passes, recovery follows it rather than recomputing
+ok - recovery closes the timed wait it opened, returning the crew to the wedge cadence
+ok - recovery writes nothing when there is no wait of its own, and never closes the crew's
+ok - a malformed settle value falls back to the default instead of aborting mid-recovery
+ok - a resume instruction that does not land is reported, not swallowed
+ok - --check reports the verdict without sending or recording anything
+ok - a missing task id, a bad flag or an unset FM_HOME is a usage error
+FM_TEST_COMPLETE

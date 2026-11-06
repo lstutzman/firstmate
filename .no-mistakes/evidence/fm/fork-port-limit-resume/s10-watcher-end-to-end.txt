@@ -1,0 +1,39 @@
+### S10 real fm-watch.sh in lab: crew9 parked on prompt with passed reset
+--- watcher wakes:
+--- watcher exit rc=0 at 19:26:16
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:16
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:17
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:17
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:17
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:18
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:18
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:18
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:18
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:19
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:19
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:19
+check: rearm-resurface
+--- watcher exit rc=0 at 19:26:20
+--- triage log lines:
+--- fm-limit-resume output written by watcher:
+--- marker:
+--- keys received by crew9:
+--- pane after:
+● Pushed the branch and opened the pull request.
+You've hit your limit · resets 7:09pm (UTC)
+   What do you want to do?
+ ❯ 1. Wait here, then continue automatically at 7:09pm (UTC)
+   2. Upgrade your plan
+   3. Stop and wait for limit to reset
+   Enter to confirm · Esc to cancel

@@ -1,0 +1,8 @@
+1..6
+ok - a claude crew parked on the usage-limit prompt is named and handed to the recovery once, with a bound
+ok - the recovery's bound is the pane-hash time, never the crew's earlier last status line
+ok - a crew checked inside the throttle window is not asked again, and is still named
+ok - the recovery is claude-specific: another harness's pane is never handed to it
+ok - prompt text quoted above a composer stays an ordinary stale and is never handed to the recovery
+ok - a second mate is outside the recovery: an idle mate endpoint is healthy by design
+FM_TEST_COMPLETE
