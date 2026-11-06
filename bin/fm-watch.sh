@@ -123,6 +123,14 @@
 #                          classification still reads running resets the timer
 #                          while its latest turn boundary is under
 #                          BUSY_TURN_MAX_SECS old (wedge_defer_t3code_running).
+#                          Outside afk, the first sight of a stale hash on an
+#                          idle no-mistakes ship whose validation never started,
+#                          or whose active run nothing is driving, sends that
+#                          worker one fixed steer instead of this reason and
+#                          holds the hash for STALE_ESCALATE_SECS
+#                          (nm_drive_steered; bin/fm-nm-drive-steer.sh owns
+#                          which panes qualify and the once-per-generation
+#                          bound), after which the ordinary decision applies.
 #   stale: <window> (unread firstmate instruction: ...)
 #   stale: <window> (steering-inbox ladder bookkeeping unwritable: ...)
 #   stale: <window> (steering-inbox busy bookkeeping unwritable: ...)
@@ -2940,6 +2948,35 @@ captain_call_stale_bound() {  # <window-key> <task>
   stale_wait_throttled "$key" "$STALE_WAIT_DECLARATION"
 }
 
+# On the first sight of a stale hash, give an idle no-mistakes ship that has
+# nothing driving its validation one fixed steer instead of a stale alarm.
+# bin/fm-nm-drive-steer.sh owns which panes qualify, the steer texts, and the
+# once-per-slip-per-generation bound. A steer holds that same hash for
+# STALE_ESCALATE_SECS (.nm-drive-grace-<key>) and leaves the stale suppressor
+# untouched, so a worker still quiet on that hash afterwards gets exactly the
+# alarm it would have got without the steer, and a new hash starts over. 0 while
+# the steer holds the hash, 1 when the ordinary stale path should decide.
+nm_drive_steered() {  # <window> <task> <hash>
+  local w=$1 task=$2 h=$3 grace held at
+  [ -n "$task" ] || return 1
+  grep -qx 'mode=no-mistakes' "$STATE/$task.meta" 2>/dev/null || return 1
+  grace="$STATE/.nm-drive-grace-$(window_key "$w")"
+  if [ -f "$grace" ] && IFS=' ' read -r held at < "$grace"; then
+    case "$at" in ''|*[!0-9]*) at=0 ;; esac
+    if [ "$held" = "$h" ]; then
+      [ "$(( $(date +%s) - at ))" -lt "$STALE_ESCALATE_SECS" ] && return 0
+      rm -f "$grace"
+      return 1
+    fi
+    rm -f "$grace"
+  fi
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    FM_CREW_STATE_BIN="$FM_CREW_STATE_BIN" \
+    "$SCRIPT_DIR/fm-nm-drive-steer.sh" "$task" </dev/null >/dev/null 2>&1 || return 1
+  printf '%s %s\n' "$h" "$(date +%s)" > "$grace"
+  triage_log "absorbed stale (sent the automatic no-mistakes drive steer): $w"
+}
+
 # Surface a stale pane no classifier could resolve, so firstmate inspects it: it
 # may have finished through an interactive menu that wrote no status, be waiting on
 # a decision, or be wedged. pause_state_class deliberately answers `none` for a
@@ -4523,7 +4560,9 @@ EOF
           # authoritative source fm-crew-state.sh itself already prioritizes
           # over the log) a chance to override before trusting the log.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            if crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
+            if nm_drive_steered "$w" "$task" "$h"; then
+              :
+            elif crew_is_provably_working "$(window_to_task "$w" "$STATE")"; then
               printf '%s' "$h" > "$sf"
               # Pre-cap shape kept the count here (keep-count contract).
               wedge_episode_end "$key" 0 1
@@ -4599,6 +4638,7 @@ EOF
           #     wait out the timer.
           if [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
             task=$(window_to_task "$w" "$STATE")
+            nm_drive_steered "$w" "$task" "$h" ||
             case "$(pause_state_class "$w" "$task")" in
               working)
                 clear_pause_tracking "$key"

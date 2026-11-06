@@ -9,6 +9,7 @@ metadata:
 # Validation supervision
 
 For a no-mistakes ship, trigger validation on the same worker after its implementation commit, using the harness invocation owned by `harness-adapters`.
+The watcher sends that trigger itself, once per task generation, when the worker goes quiet with no run for its branch, and likewise one reattach steer when an active run has no drive call (`bin/fm-nm-drive-steer.sh`); its pending steer in the task's inbox makes a second one from firstmate redundant.
 The task worker that starts a no-mistakes run drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.
 `bin/fm-dod-lib.sh` owns the worker-side `--intent` contract.
