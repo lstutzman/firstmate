@@ -1,0 +1,6 @@
+officer exit: 0
+missing-tool findings: gitleaks,jq
+ssh-key agent-hit events: 3
+ssh-key event hosts/details:
+[{"at":null,"cause":"credential","home":null,"in_test_run":false,"kind":"agent-hit","lee":false,"machine":"alpha","service":null,"session":"alpha:cards","signature":"ssh: Permission denied (publickey)","sub":"ssh-key","task":null,"tool":null},{"at":null,"cause":"credential","home":null,"in_test_run":false,"kind":"agent-hit","lee":false,"machine":"alpha","service":null,"session":"alpha:cards","signature":"ssh: Permission denied (publickey)","sub":"ssh-key","task":null,"tool":null},{"at":null,"cause":"credential","home":null,"in_test_run":false,"kind":"agent-hit","lee":false,"machine":"alpha","s
+ssh-key finding: [{"cause":"credential","sub":"ssh-key","title":"Agents lack an ssh key for a fleet host","events":3}]
