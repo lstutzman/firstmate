@@ -161,6 +161,19 @@ test_declared_external_wait_gets_no_steer() {
   pass "a declared external wait, blocker, or open decision gets no steer"
 }
 
+test_only_an_open_decision_outlives_a_later_event() {
+  local dir
+  dir=$(drive_case superseded-blocker 'blocked [at=1] [cause=external]: run pending for 25 min')
+  printf '%s\n' 'paused [at=2]: no-mistakes run queued; background reattach will wake me' \
+    >> "$dir/state/superseded-blocker.status"
+  run_steer "$dir" superseded-blocker "$WORKING_RUN" \
+    || fail "an older blocker superseded by a later pause suppressed the steer"
+  dir=$(drive_case open-decision 'needs-decision [at=1] [cause=decision] [key=scope]: pick a scope')
+  printf '%s\n' 'paused [at=2]: no-mistakes run queued' >> "$dir/state/open-decision.status"
+  if run_steer "$dir" open-decision "$WORKING_RUN"; then fail "a worker with an open decision was steered"; fi
+  pass "an older blocker a later event superseded allows the steer, an open decision does not"
+}
+
 test_unknown_probe_or_ci_ready_done_gets_no_steer() {
   local dir
   dir=$(drive_case ps-fails 'paused [at=1]: no-mistakes run queued')
@@ -267,6 +280,7 @@ fm_test_run \
   test_live_drive_call_gets_no_steer \
   test_unrelated_processes_are_not_drive_calls \
   test_declared_external_wait_gets_no_steer \
+  test_only_an_open_decision_outlives_a_later_event \
   test_unknown_probe_or_ci_ready_done_gets_no_steer \
   test_watcher_steers_a_prepipeline_done_instead_of_alarming \
   test_watcher_steers_an_undriven_run_then_alarms_when_still_quiet \

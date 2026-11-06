@@ -25,7 +25,9 @@
 # ship (kind=ship, mode=no-mistakes, no remote_host); its record names no
 # branch, worktree, or spawn generation; its last event is blocked,
 # needs-decision, failed, or captain-held, or a `paused:` declared with
-# [cause=external] or a [dep=...] tag; any keyed decision is still open; its
+# [cause=external] or a [dep=...] tag; any needs-decision is still open (an
+# older blocker a later event superseded does not count, as on the wedge
+# ladder, which reads only the newest event); its
 # steering inbox already holds an unhandled steer; a drive call is running from
 # its worktree, or that cannot be established (fm_nm_drive_call_live in
 # bin/fm-nm-run-lib.sh); bin/fm-crew-state.sh does not name one of the two
@@ -88,7 +90,7 @@ if status_is_paused "$last"; then
   [ "$(status_line_cause "$last")" != external ] || exit 1
   [ -z "$(status_line_dep "$last")" ] || exit 1
 fi
-[ -z "$(status_open_decisions "$statusf" ship)" ] || exit 1
+! status_has_open_needs_decision "$statusf" || exit 1
 ! fm_task_inbox_oldest_unhandled "$STATE" "$id" >/dev/null || exit 1
 
 fm_nm_drive_call_live "$wt"
