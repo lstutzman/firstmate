@@ -945,9 +945,9 @@ test_open_decision_clears_on_keyed_resolution() {
 # main's own keyed answer and its no-reply escalations are not the second
 # mate's communication.
 # shellcheck disable=SC2031 # The subshells source libraries whose functions assign their own now/home; this test's locals are never reassigned.
-test_parent_answer_does_not_reset_agent_event_age() {
-  local home fakebin out now
-  home=$(make_home agent-age)
+make_agent_age_home() {  # <name> <now-epoch>
+  local home now=$2
+  home=$(make_home "$1")
   mkdir -p "$home/secondmate-home"
   fm_write_meta "$home/state/quiet-mate.meta" \
     "window=firstmate:fm-quiet-mate" \
@@ -958,7 +958,6 @@ test_parent_answer_does_not_reset_agent_event_age() {
     "mode=secondmate" \
     "home=$home/secondmate-home" \
     "projects=alpha"
-  now=$(date +%s)
   printf 'needs-decision [key=race] [at=%s]: pick an order\n' "$((now - 4000))" > "$home/state/quiet-mate.status"
   (
     # shellcheck source=bin/fm-wake-lib.sh
@@ -976,6 +975,13 @@ test_parent_answer_does_not_reset_agent_event_age() {
   ) || fail "escalation fixture failed"
   printf 'blocked [key=remote-reply-continuity-quiet-mate] [at=%s]: remote reply continuity broke\n' \
     "$((now - 5))" >> "$home/state/quiet-mate.status"
+  printf '%s\n' "$home"
+}
+
+test_parent_answer_does_not_reset_agent_event_age() {
+  local home fakebin out now
+  now=$(date +%s)
+  home=$(make_agent_age_home agent-age "$now")
   fakebin=$(make_fakebin "$home")
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_NOW_EPOCH="$now" "$SNAPSHOT" --json)
   printf '%s' "$out" | jq -e '
@@ -983,10 +989,15 @@ test_parent_answer_does_not_reset_agent_event_age() {
     | .parent_event.age_seconds < 100 and .parent_event.agent_age_seconds == 4000
   ' >/dev/null || fail "parent answer and escalations must not count as the mate's event: $out"
   pass "agent event age skips this home's own answers and no-reply escalations"
+}
 
-  # A long suffix of unstamped echoes and main-written escalations must still
-  # resolve to the mate's old stamped event, without one process per line.
-  local i real tool
+# A long suffix of unstamped echoes and main-written escalations must still
+# resolve to the mate's old stamped event, without one process per line.
+test_agent_event_age_reads_long_suffix_in_one_pass() {
+  local home fakebin out now i real tool
+  now=$(date +%s)
+  home=$(make_agent_age_home agent-age-suffix "$now")
+  fakebin=$(make_fakebin "$home")
   for i in $(seq 1 3000); do
     printf 'working: unstamped echo %s\n' "$i"
     printf 'blocked [key=pending-reply-c%s] [at=%s]: no reply\n' "$i" "$((now - 1))"
@@ -1351,24 +1362,26 @@ PY_STATUS
   pass 'large status text and aggregated decisions serialize without argument limits'
 }
 
-test_snapshot_handles_large_status_fields
-test_empty_fleet_json
-test_fixture_snapshot_json
-test_home_summary_excludes_secondmate_from_child_inventory
-test_home_summary_done_child_with_pr_is_waiting_on_merge
-test_undated_captain_hold_phrasing_and_aging
-test_hold_buckets_are_total_and_text_blind
-test_main_inventory_orphan_and_unstructured_disclosure
-test_normalized_roles_and_plural_blocker_readiness
-test_event_hints_follow_reconciled_current_state
-test_open_decision_survives_later_unrelated_event
-test_secondmate_open_decision_survives_live_endpoint
-test_open_decision_transfers_to_captain_hold
-test_open_decision_clears_on_keyed_resolution
-test_parent_answer_does_not_reset_agent_event_age
-test_completed_scout_report_is_pointer_not_pending
-test_parked_scout_decision_stays_pending
-test_scout_reports_include_teardown_reports
-test_backlog_tasks_axi_forms_and_overrides
-test_view_renders_snapshot
-test_view_renders_dead_secondmate_agent_status
+fm_test_run \
+  test_snapshot_handles_large_status_fields \
+  test_empty_fleet_json \
+  test_fixture_snapshot_json \
+  test_home_summary_excludes_secondmate_from_child_inventory \
+  test_home_summary_done_child_with_pr_is_waiting_on_merge \
+  test_undated_captain_hold_phrasing_and_aging \
+  test_hold_buckets_are_total_and_text_blind \
+  test_main_inventory_orphan_and_unstructured_disclosure \
+  test_normalized_roles_and_plural_blocker_readiness \
+  test_event_hints_follow_reconciled_current_state \
+  test_open_decision_survives_later_unrelated_event \
+  test_secondmate_open_decision_survives_live_endpoint \
+  test_open_decision_transfers_to_captain_hold \
+  test_open_decision_clears_on_keyed_resolution \
+  test_parent_answer_does_not_reset_agent_event_age \
+  test_agent_event_age_reads_long_suffix_in_one_pass \
+  test_completed_scout_report_is_pointer_not_pending \
+  test_parked_scout_decision_stays_pending \
+  test_scout_reports_include_teardown_reports \
+  test_backlog_tasks_axi_forms_and_overrides \
+  test_view_renders_snapshot \
+  test_view_renders_dead_secondmate_agent_status

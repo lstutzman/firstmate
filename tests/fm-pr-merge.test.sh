@@ -192,8 +192,13 @@ case "${1:-} ${2:-}" in
           [ -n "$call_m" ] || call_m=$(tail -n1 "$FM_TEST_GH_MERGEABLE_SEQUENCE")
           # An optional second word overrides the first check's conclusion.
           read -r call_m call_c <<< "$call_m"
-          jq -c --arg m "$call_m" --arg c "${call_c:-}" \
-            '.mergeable = $m | if $c != "" then .statusCheckRollup[0].conclusion = $c else . end' \
+          call_h=
+          view_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+          if [ -f "$view_dir/github-head-by-call" ]; then
+            call_h=$(sed -n "${call_n}p" "$view_dir/github-head-by-call")
+          fi
+          jq -c --arg m "$call_m" --arg c "${call_c:-}" --arg h "$call_h" \
+            '.mergeable = $m | if $h != "" then .headRefOid = $h else . end | if $c != "" then .statusCheckRollup[0].conclusion = $c else . end' \
             "$FM_TEST_GH_VIEW_JSON"
         else
           cat "$FM_TEST_GH_VIEW_JSON"
@@ -204,6 +209,11 @@ case "${1:-} ${2:-}" in
           else
             rm -f "$FM_STATE_OVERRIDE/.afk-contract"
           fi
+        fi
+        view_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+        if [ -f "$view_dir/github-head-after-view" ]; then
+          cp "$view_dir/github-head-after-view" "$view_dir/github-server-head"
+          rm -f "$view_dir/github-head-after-view"
         fi
         exit 0
         ;;
@@ -231,6 +241,21 @@ case "${1:-} ${2:-}" in
       "$FM_TEST_ROOT/bin/fm-afk-contract.sh" words \
         > "$FM_TEST_AWAY_WORDS_AT_MERGE" 2>/dev/null \
         || printf 'no-live-record\n' > "$FM_TEST_AWAY_WORDS_AT_MERGE"
+    fi
+    view_dir=$(dirname "$FM_TEST_GH_VIEW_JSON")
+    if [ -f "$view_dir/github-server-head" ]; then
+      match=
+      prev=
+      for arg in "$@"; do
+        if [ "$prev" = "--match-head-commit" ]; then
+          match=$arg
+        fi
+        prev=$arg
+      done
+      if [ -n "$match" ] && [ "$match" != "$(cat "$view_dir/github-server-head")" ]; then
+        printf 'error: head out of date\n' >&2
+        exit 1
+      fi
     fi
     if [ -n "${FM_TEST_GH_MERGE_OUTPUT:-}" ]; then
       printf '%s\n' "$FM_TEST_GH_MERGE_OUTPUT"
@@ -371,10 +396,28 @@ case "${1:-} ${2:-}" in
       cat "$case_dir/mr-post.json"
     else
       cat "$FM_TEST_GLAB_JSON"
+      if [ -f "$case_dir/glab-head-after-view" ]; then
+        cp "$case_dir/glab-head-after-view" "$case_dir/glab-server-head"
+        rm -f "$case_dir/glab-head-after-view"
+      fi
     fi
     exit 0
     ;;
   "mr merge")
+    if [ -f "$case_dir/glab-server-head" ]; then
+      sha=
+      prev=
+      for arg in "$@"; do
+        if [ "$prev" = "--sha" ]; then
+          sha=$arg
+        fi
+        prev=$arg
+      done
+      if [ -n "$sha" ] && [ "$sha" != "$(cat "$case_dir/glab-server-head")" ]; then
+        echo "error: head out of date" >&2
+        exit 1
+      fi
+    fi
     [ ! -e "$case_dir/glab-merge-fails" ] || { echo "error: mr merge failed" >&2 ; exit 1 ; }
     : > "$case_dir/glab-merge-called"
     exit 0
@@ -520,6 +563,10 @@ case "$endpoint" in
       cat "$log_dir/pr-post.json"
     else
       cat "$log_dir/pr.json"
+      if [ -f "$log_dir/tea-head-after-view" ]; then
+        cp "$log_dir/tea-head-after-view" "$log_dir/tea-expected-head"
+        rm -f "$log_dir/tea-head-after-view"
+      fi
     fi
     ;;
 esac
@@ -2470,6 +2517,27 @@ test_malformed_url_refuses_before_merge() {
   pass "fm-pr-merge refuses malformed PR URLs before calling gh-axi"
 }
 
+test_help_prints_usage_and_exits_zero() {
+  local case_dir rc flag
+  case_dir=$(make_case help)
+  for flag in --help -h; do
+    set +e
+    run_pr_merge "$case_dir" "$flag" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 0 "$rc" "help: fm-pr-merge $flag must exit 0"
+    assert_grep 'fm-pr-merge.sh <task-id> <pr-url>' "$case_dir/stdout" \
+      "help: $flag must print the usage line from the header on stdout"
+    assert_grep 'Merge method on GitHub defaults to --squash' "$case_dir/stdout" \
+      "help: $flag must print the whole header, not a truncated range"
+    assert_no_grep '^#' "$case_dir/stdout" \
+      "help: $flag must strip the comment markers"
+    [ ! -s "$case_dir/stderr" ] || fail "help: $flag wrote to stderr: $(cat "$case_dir/stderr")"
+    [ ! -s "$case_dir/gh.log" ] || fail "help: $flag invoked gh"
+  done
+  pass "fm-pr-merge --help and -h print the header usage and exit 0"
+}
+
 test_rejects_unsafe_url_segments_before_recording() {
   local case_dir rc
   case_dir=$(make_case unsafe-url-segment)
@@ -3319,6 +3387,423 @@ test_github_still_forwards_sha_arg() {
   pass "fm-pr-merge refuses a caller --sha on GitHub because the head comes from the live read"
 }
 
+# --expected-head is optional. These cases pin the caller-supplied commit on
+# every forge the script merges, and they refuse when that commit is not the
+# one the forge write would bind.
+test_expected_head_matching_reaches_each_forge() {
+  local case_dir rc merge_line old long
+  old=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  long=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  [ "${#old}" -eq 40 ] || fail "expected-head-match: fixture sha is not 40 characters"
+  [ "${#long}" -eq 64 ] || fail "expected-head-match: fixture sha is not 64 characters"
+
+  case_dir=$(make_case expected-head-gh-match)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$old"
+  : > "$case_dir/gh-axi.log"
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/201 \
+    --expected-head "$old" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "expected-head-gh-match: a matching head should merge: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 201 example/repo --squash
+  assert_grep "green at head $old" "$case_dir/stderr" \
+    "expected-head-gh-match: the verified line did not name the supplied head"
+
+  case_dir=$(make_case expected-head-gh-match-64)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$long"
+  : > "$case_dir/gh-axi.log"
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/202 \
+    --expected-head "$long" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "expected-head-gh-match-64: a 64-character head should merge: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 202 example/repo --squash
+
+  case_dir=$(make_gitlab_case expected-head-gl-match)
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --expected-head "$MR_HEAD" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "expected-head-gl-match: a matching head should merge: $(cat "$case_dir/stderr")"
+  merge_line=$(glab_merge_line "$case_dir/glab.log")
+  [ "$merge_line" = "GITLAB_HOST=$MR_HOST mr merge 7 -R $MR_PROJECT_URL --sha $MR_HEAD --yes" ] \
+    || fail "expected-head-gl-match: the forge was not bound to the supplied head: '$merge_line'"
+
+  case_dir=$(make_forgejo_case expected-head-fj-match)
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --expected-head "$FJ_HEAD" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "expected-head-fj-match: a matching head should merge: $(cat "$case_dir/stderr")"
+  merge_line=$(tea_merge_line "$case_dir/tea.log")
+  case "$merge_line" in
+    *"head_commit_id=$FJ_HEAD"*) : ;;
+    *) fail "expected-head-fj-match: the forge was not bound to the supplied head: '$merge_line'" ;;
+  esac
+  pass "fm-pr-merge sends a matching --expected-head to each forge"
+}
+
+test_expected_head_mismatch_refuses_before_merge() {
+  local case_dir rc old new
+  old=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  new=dddddddddddddddddddddddddddddddddddddddd
+
+  case_dir=$(make_case expected-head-gh-before)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$new"
+  : > "$case_dir/gh-axi.log"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/203 \
+    --expected-head "$old" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-gh-before: a replaced head must refuse"
+  assert_grep "the live head is \"$new\", not the expected head $old" "$case_dir/stderr" \
+    "expected-head-gh-before: the refusal did not name both heads"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "expected-head-gh-before: gh pr merge ran after the live head moved"
+
+  case_dir=$(make_gitlab_case expected-head-gl-before \
+    head="$MR_STALE_HEAD" pipeline_sha="$MR_STALE_HEAD")
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --expected-head "$MR_HEAD" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-gl-before: a replaced head must refuse"
+  assert_grep "the live head is \"$MR_STALE_HEAD\", not the expected head $MR_HEAD" \
+    "$case_dir/stderr" "expected-head-gl-before: the refusal did not name both heads"
+  [ -z "$(glab_merge_line "$case_dir/glab.log")" ] \
+    || fail "expected-head-gl-before: glab mr merge ran after the live head moved"
+
+  case_dir=$(make_forgejo_case expected-head-fj-before head="$FJ_STALE_HEAD")
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --expected-head "$FJ_HEAD" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-fj-before: a replaced head must refuse"
+  assert_grep "the live head is \"$FJ_STALE_HEAD\", not the expected head $FJ_HEAD" \
+    "$case_dir/stderr" "expected-head-fj-before: the refusal did not name both heads"
+  [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+    || fail "expected-head-fj-before: a Forgejo merge ran after the live head moved"
+  pass "fm-pr-merge refuses before any merge write when the live head differs from --expected-head"
+}
+
+test_expected_head_push_after_verify_is_refused_by_the_forge() {
+  local case_dir rc merge_line old new
+  old=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  new=dddddddddddddddddddddddddddddddddddddddd
+
+  case_dir=$(make_case expected-head-gh-after)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$old"
+  printf '%s\n' "$new" > "$case_dir/github-head-after-view"
+  write_github_outcome "$case_dir" OPEN false false main
+  : > "$case_dir/gh-axi.log"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/204 \
+    --expected-head "$old" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-gh-after: the forge must refuse the stale supplied head"
+  assert_logged_gh_merge "$case_dir" 204 example/repo --squash
+  assert_grep 'head out of date' "$case_dir/stderr" \
+    "expected-head-gh-after: the forge refusal was not surfaced"
+  assert_no_grep "--match-head-commit $new" "$case_dir/gh.log" \
+    "expected-head-gh-after: the merge was bound to the head that landed after verification"
+
+  case_dir=$(make_gitlab_case expected-head-gl-after)
+  printf '%s\n' "$MR_STALE_HEAD" > "$case_dir/glab-head-after-view"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --expected-head "$MR_HEAD" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-gl-after: the forge must refuse the stale supplied head"
+  merge_line=$(glab_merge_line "$case_dir/glab.log")
+  [ "$merge_line" = "GITLAB_HOST=$MR_HOST mr merge 7 -R $MR_PROJECT_URL --sha $MR_HEAD --yes" ] \
+    || fail "expected-head-gl-after: the forge was not asked for the supplied head: '$merge_line'"
+  assert_grep 'head out of date' "$case_dir/stderr" \
+    "expected-head-gl-after: the forge refusal was not surfaced"
+
+  case_dir=$(make_forgejo_case expected-head-fj-after)
+  printf '%s\n' "$FJ_STALE_HEAD" > "$case_dir/tea-head-after-view"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --expected-head "$FJ_HEAD" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-fj-after: the forge must refuse the stale supplied head"
+  merge_line=$(tea_merge_line "$case_dir/tea.log")
+  case "$merge_line" in
+    *"head_commit_id=$FJ_HEAD"*) : ;;
+    *) fail "expected-head-fj-after: the forge was not asked for the supplied head: '$merge_line'" ;;
+  esac
+  assert_no_grep "head_commit_id=$FJ_STALE_HEAD" "$case_dir/tea.log" \
+    "expected-head-fj-after: the merge was bound to the head that landed after verification"
+  assert_grep 'Forgejo did not confirm' "$case_dir/stderr" \
+    "expected-head-fj-after: a rejected forge match was treated as merged"
+  pass "fm-pr-merge binds the forge write to the supplied head after that head moves"
+}
+
+test_expected_head_later_preflight_does_not_adopt_a_new_head() {
+  local case_dir rc old new
+  old=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  new=dddddddddddddddddddddddddddddddddddddddd
+  case_dir=$(make_case expected-head-gh-preflight)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$old"
+  printf '%s\n' UNKNOWN MERGEABLE > "$case_dir/mergeable-sequence"
+  printf '%s\n' "$old" "$new" > "$case_dir/github-head-by-call"
+  : > "$case_dir/gh-axi.log"
+  : > "$case_dir/gh.log"
+
+  set +e
+  FM_TEST_GH_MERGEABLE_SEQUENCE="$case_dir/mergeable-sequence" \
+  FM_PR_GITHUB_MERGEABLE_RETRY_DELAY=0 \
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/205 \
+    --expected-head "$old" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-gh-preflight: a head that moves between preflight reads must refuse"
+  assert_grep "the live head is \"$new\", not the expected head $old" "$case_dir/stderr" \
+    "expected-head-gh-preflight: the later read was not compared with the supplied head"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "expected-head-gh-preflight: a later preflight adopted the new head and merged it"
+  [ "$(grep -c '^pr view .*statusCheckRollup' "$case_dir/gh.log")" -eq 2 ] \
+    || fail "expected-head-gh-preflight: expected exactly 2 live reads, got $(grep -c '^pr view .*statusCheckRollup' "$case_dir/gh.log")"
+  pass "fm-pr-merge does not replace --expected-head when a later preflight reads a new head"
+}
+
+test_expected_head_bad_inputs_refuse_before_effects() {
+  local case_dir rc name code needle full other
+  full=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  other=dddddddddddddddddddddddddddddddddddddddd
+  for name in malformed short7 short12 upper missing equals equals-full twice \
+    conflict-sha conflict-match; do
+    case_dir=$(make_case "expected-head-bad-$name")
+    mkdir -p "$case_dir/wt"
+    add_gh_mocks "$case_dir" "$full"
+    : > "$case_dir/gh-axi.log"
+    case "$name" in
+      malformed)
+        code=2
+        needle='full lowercase commit sha'
+        set -- --expected-head 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz'
+        ;;
+      short7)
+        code=2
+        needle='full lowercase commit sha'
+        set -- --expected-head abc1234
+        ;;
+      short12)
+        code=2
+        needle='full lowercase commit sha'
+        set -- --expected-head abcdef123456
+        ;;
+      upper)
+        code=2
+        needle='full lowercase commit sha'
+        set -- --expected-head BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
+        ;;
+      missing)
+        code=2
+        needle='requires a full commit sha'
+        set -- --expected-head
+        ;;
+      equals)
+        code=2
+        needle='separate full commit sha argument'
+        set -- --expected-head=
+        ;;
+      equals-full)
+        code=2
+        needle='separate full commit sha argument'
+        set -- "--expected-head=$full"
+        ;;
+      twice)
+        code=2
+        needle='may be specified only once'
+        set -- --expected-head "$full" --expected-head "$other"
+        ;;
+      conflict-sha)
+        code=1
+        needle='must not override the head commit'
+        set -- --expected-head "$full" -- --sha "$other"
+        ;;
+      conflict-match)
+        code=1
+        needle='must not override the head commit'
+        set -- --expected-head "$full" -- --match-head-commit "$other"
+        ;;
+    esac
+    set +e
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/210 "$@" \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code "$code" "$rc" "expected-head-bad-$name"
+    assert_grep "$needle" "$case_dir/stderr" \
+      "expected-head-bad-$name: refusal did not name the bad input"
+    assert_no_grep 'pr=' "$case_dir/state/task-x1.meta" \
+      "expected-head-bad-$name: state was recorded before the bad input was refused"
+    assert_absent "$case_dir/state/task-x1.check.sh" \
+      "expected-head-bad-$name: a bad input armed a merge poll"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" \
+      "expected-head-bad-$name: gh pr merge ran for a bad input"
+  done
+  pass "fm-pr-merge refuses a malformed, abbreviated, missing, or conflicting --expected-head before any effect"
+}
+
+test_expected_head_keeps_existing_refusals() {
+  local case_dir rc head
+  head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+  case_dir=$(make_case expected-head-draft)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  jq -c '.isDraft = true' "$case_dir/github-view.json" > "$case_dir/github-view.tmp"
+  mv "$case_dir/github-view.tmp" "$case_dir/github-view.json"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/211 \
+    --expected-head "$head" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-draft: a draft must still refuse"
+  assert_grep 'the pull request is a draft' "$case_dir/stderr" \
+    "expected-head-draft: the draft refusal was skipped"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "expected-head-draft: gh pr merge ran on a draft"
+
+  case_dir=$(make_case expected-head-red)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  write_github_red_json "$case_dir" "$head" lint
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/212 \
+    --expected-head "$head" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-red: a red check must still refuse"
+  assert_grep "check 'lint' is not green" "$case_dir/stderr" \
+    "expected-head-red: the red check was skipped"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "expected-head-red: gh pr merge ran on a red check"
+
+  case_dir=$(make_case expected-head-required)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  write_github_required "$case_dir" classic:ci classic:validate
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/213 \
+    --expected-head "$head" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-required: a missing required check must still refuse"
+  assert_grep "required check 'validate' has not reported at head $head" "$case_dir/stderr" \
+    "expected-head-required: the missing required check was skipped"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "expected-head-required: gh pr merge ran with a required check unreported"
+
+  case_dir=$(make_case expected-head-hold)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  # Queued is enough. The hold check reads the captain-hold mark, and
+  # fm-tasks-axi.sh refuses add --start without a dispatch record.
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-tasks-axi.sh" add task-x1 "Held merge" --kind ship --repo example \
+    > "$case_dir/hold-add.out" 2> "$case_dir/hold-add.err" \
+    || fail "expected-head-hold: could not add the task: $(cat "$case_dir/hold-add.err")"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --reason "captain merge approval pending" \
+    > "$case_dir/hold.out" 2> "$case_dir/hold.err" \
+    || fail "expected-head-hold: could not hold the task: $(cat "$case_dir/hold.err")"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/214 \
+    --expected-head "$head" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-hold: a captain hold must still refuse"
+  assert_grep 'still held for the captain' "$case_dir/stderr" \
+    "expected-head-hold: the hold refusal was skipped"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "expected-head-hold: gh pr merge ran while the task was held"
+
+  case_dir=$(make_gitlab_case expected-head-review discussions=false)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --expected-head "$MR_HEAD" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-review: unresolved review discussion must still refuse"
+  assert_grep 'blocking_discussions_resolved is "false", not true' "$case_dir/stderr" \
+    "expected-head-review: the discussion refusal was skipped"
+  [ -z "$(glab_merge_line "$case_dir/glab.log")" ] \
+    || fail "expected-head-review: glab mr merge ran with review discussion open"
+
+  case_dir=$(make_forgejo_case expected-head-fj-draft draft=true)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --expected-head "$FJ_HEAD" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-fj-draft: a Forgejo draft must still refuse"
+  assert_grep 'the pull request is a draft' "$case_dir/stderr" \
+    "expected-head-fj-draft: the draft refusal was skipped"
+  [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+    || fail "expected-head-fj-draft: a Forgejo merge ran on a draft"
+
+  case_dir=$(make_forgejo_case expected-head-fj-status)
+  write_forgejo_status_json "$case_dir/tea-status.json" state=failure
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --expected-head "$FJ_HEAD" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-fj-status: a failed combined status must still refuse"
+  assert_grep 'the combined commit status is "failure", not success' "$case_dir/stderr" \
+    "expected-head-fj-status: the status refusal was skipped"
+  [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+    || fail "expected-head-fj-status: a Forgejo merge ran on a failed status"
+
+  case_dir=$(make_case expected-head-away)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  write_away_record "$case_dir" --words 'merge task-x1 when green'
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/215 \
+    --expected-head "$head" --allow-red lint \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "expected-head-away: an attended-only waiver while away must still refuse"
+  assert_grep '--allow-red is attended-only' "$case_dir/stderr" \
+    "expected-head-away: the authority refusal was skipped"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "expected-head-away: gh pr merge ran against the away authority"
+
+  case_dir=$(make_case expected-head-identity)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  printf '\npr=https://github.com/example/repo/pull/99\n' >> "$case_dir/state/task-x1.meta"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/216 \
+    --expected-head "$head" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "expected-head-identity: a different recorded PR must still refuse"
+  assert_grep 'is bound to https://github.com/example/repo/pull/99' "$case_dir/stderr" \
+    "expected-head-identity: the task identity refusal was skipped"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "expected-head-identity: gh pr merge ran for a task bound to another PR"
+  pass "fm-pr-merge keeps draft, hold, review, check, authority, and identity refusals when --expected-head matches"
+}
+
 # --- durable merge outcome ---------------------------------------------------
 # A merge that lands must leave a record outside the merging agent's memory.
 # bin/fm-merge-outcome-lib.sh owns where that record goes; these cases pin the
@@ -3659,6 +4144,7 @@ test_github_queue_required_refusal_names_retry_flags
 test_extra_merge_args_forwarded
 test_missing_meta_refuses_before_merge
 test_malformed_url_refuses_before_merge
+test_help_prints_usage_and_exits_zero
 test_rejects_unsafe_url_segments_before_recording
 test_repo_override_args_refuse_before_recording
 test_bundled_repo_override_args_refuse_before_recording
@@ -5105,6 +5591,8 @@ test_allow_missing_follows_the_allow_red_rules() {
   expect_code 2 "$RC" "gitlab-allow-missing: the waiver must not apply on GitLab"
   assert_grep '--allow-missing does not apply to GitLab' "$case_dir/stderr" \
     "gitlab-allow-missing: the refusal did not name GitLab"
+  assert_grep '--allow-no-pipeline waives only a merge request with no head pipeline' "$case_dir/stderr" \
+    "gitlab-allow-missing: the refusal did not point at the GitLab no-pipeline waiver"
   [ ! -s "$case_dir/glab.log" ] || fail "gitlab-allow-missing: glab ran despite the waiver"
   pass "fm-pr-merge --allow-missing is single use, attended-only, and GitHub-only like --allow-red"
 }
@@ -5137,6 +5625,128 @@ test_allow_missing_refused_on_forgejo() {
     "forgejo-allow-missing: refusal did not name Forgejo"
   [ ! -s "$case_dir/tea.log" ] || fail "forgejo-allow-missing: tea ran despite --allow-missing"
   pass "fm-pr-merge refuses --allow-missing on Forgejo"
+}
+
+# --allow-no-pipeline is for a GitLab repository that deliberately runs no merge
+# request pipeline: it waives only a head_pipeline GitLab reports as null, and
+# the merge stays bound to the verified head.
+test_allow_no_pipeline_merges_only_a_null_head_pipeline() {
+  local case_dir rc merge_line name spec expected
+  case_dir=$(make_gitlab_case gitlab-no-pipeline-waived pipeline=null)
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --allow-no-pipeline \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "gitlab-no-pipeline-waived: a merge request with no head pipeline should merge: $(cat "$case_dir/stderr")"
+  merge_line=$(glab_merge_line "$case_dir/glab.log")
+  [ "$merge_line" = "GITLAB_HOST=$MR_HOST mr merge 7 -R $MR_PROJECT_URL --sha $MR_HEAD --yes" ] \
+    || fail "gitlab-no-pipeline-waived: unexpected merge invocation: '$merge_line'"
+  assert_grep "at head $MR_HEAD, with no head pipeline, waived by --allow-no-pipeline" "$case_dir/stderr" \
+    "gitlab-no-pipeline-waived: the waived verification was not reported"
+
+  case_dir=$(make_gitlab_case gitlab-no-pipeline-flag-absent pipeline=null)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "gitlab-no-pipeline-flag-absent: no head pipeline must still refuse by default"
+  assert_grep 'the head pipeline status is "none", not success' "$case_dir/stderr" \
+    "gitlab-no-pipeline-flag-absent: the refusal did not name the missing pipeline"
+  [ -z "$(glab_merge_line "$case_dir/glab.log")" ] \
+    || fail "gitlab-no-pipeline-flag-absent: a merge was attempted without the waiver"
+
+  # A pipeline that exists is a verdict, never an absence, so the waiver does
+  # not reach it; and every other condition still holds beside the waiver.
+  set -- \
+    "failed|pipeline_status=failed|the head pipeline status is \"failed\", not success" \
+    "running|pipeline_status=running|the head pipeline status is \"running\", not success" \
+    "canceled|pipeline_status=canceled|the head pipeline status is \"canceled\", not success" \
+    "stale|pipeline_sha=$MR_STALE_HEAD|the head pipeline ran at \"$MR_STALE_HEAD\", not at the current head $MR_HEAD" \
+    "not-mergeable|pipeline=null detail=ci_must_pass|detailed_merge_status is \"ci_must_pass\", not mergeable" \
+    "discussions|pipeline=null discussions=false|blocking_discussions_resolved is \"false\", not true" \
+    "conflicts|pipeline=null conflicts=true|has_conflicts is \"true\", not false"
+  for spec in "$@"; do
+    name=${spec%%|*}
+    expected=${spec##*|}
+    spec=${spec#*|}
+    # shellcheck disable=SC2086 # the field list is deliberately word-split
+    case_dir=$(make_gitlab_case "gitlab-no-pipeline-refuse-$name" ${spec%%|*})
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$MR_URL" --allow-no-pipeline \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "gitlab-no-pipeline-refuse-$name: the waiver must not merge"
+    assert_grep "$expected" "$case_dir/stderr" \
+      "gitlab-no-pipeline-refuse-$name: the refusal did not name the failing condition"
+    [ -z "$(glab_merge_line "$case_dir/glab.log")" ] \
+      || fail "gitlab-no-pipeline-refuse-$name: a merge was attempted despite the refusal"
+  done
+
+  # An absent head_pipeline field is unreadable state, not a reported absence.
+  case_dir=$(make_gitlab_case gitlab-no-pipeline-field-missing)
+  "$JQ_BIN" -c 'del(.head_pipeline)' "$case_dir/mr.json" > "$case_dir/mr.json.new"
+  mv "$case_dir/mr.json.new" "$case_dir/mr.json"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --allow-no-pipeline \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "gitlab-no-pipeline-field-missing: an unread pipeline field must not be waived"
+  [ -z "$(glab_merge_line "$case_dir/glab.log")" ] \
+    || fail "gitlab-no-pipeline-field-missing: a merge was attempted on an unread pipeline field"
+  pass "fm-pr-merge --allow-no-pipeline waives only a null GitLab head pipeline and keeps every other condition"
+}
+
+test_allow_no_pipeline_is_attended_only_and_gitlab_only() {
+  local case_dir rc head
+  case_dir=$(make_gitlab_case gitlab-no-pipeline-away pipeline=null)
+  write_away_record "$case_dir" --words 'merge task-x1'
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --allow-no-pipeline \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "gitlab-no-pipeline-away: the waiver must be refused while away"
+  assert_grep '--allow-no-pipeline is attended-only' "$case_dir/stderr" \
+    "gitlab-no-pipeline-away: the refusal did not name attended-only"
+  [ -z "$(glab_merge_line "$case_dir/glab.log")" ] \
+    || fail "gitlab-no-pipeline-away: glab merged despite an away waiver"
+
+  case_dir=$(make_gitlab_case gitlab-no-pipeline-equals pipeline=null)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" --allow-no-pipeline=true \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "gitlab-no-pipeline-equals: a value must be refused"
+  [ ! -s "$case_dir/glab.log" ] || fail "gitlab-no-pipeline-equals: glab ran for a valued flag"
+
+  head=abababababababababababababababababababab
+  case_dir=$(make_case github-no-pipeline)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" "$head"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/88 --allow-no-pipeline \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "github-no-pipeline: the waiver must not apply on GitHub"
+  assert_grep '--allow-no-pipeline applies only to GitLab' "$case_dir/stderr" \
+    "github-no-pipeline: the refusal did not name GitLab"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "github-no-pipeline: gh pr merge ran despite the waiver"
+
+  case_dir=$(make_forgejo_case forgejo-no-pipeline)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" --allow-no-pipeline \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "forgejo-no-pipeline: the waiver must not apply on Forgejo"
+  assert_grep '--allow-no-pipeline applies only to GitLab' "$case_dir/stderr" \
+    "forgejo-no-pipeline: the refusal did not name GitLab"
+  [ ! -s "$case_dir/tea.log" ] || fail "forgejo-no-pipeline: tea ran despite the waiver"
+  pass "fm-pr-merge --allow-no-pipeline is attended-only, takes no value, and applies only to GitLab"
 }
 
 test_merger_home_refuses_another_home
@@ -5212,3 +5822,11 @@ test_app_bound_required_status_context_matches_by_name
 test_required_partial_reads_report_all_failures
 test_allow_red_refused_on_forgejo
 test_allow_missing_refused_on_forgejo
+test_allow_no_pipeline_merges_only_a_null_head_pipeline
+test_allow_no_pipeline_is_attended_only_and_gitlab_only
+test_expected_head_matching_reaches_each_forge
+test_expected_head_mismatch_refuses_before_merge
+test_expected_head_push_after_verify_is_refused_by_the_forge
+test_expected_head_later_preflight_does_not_adopt_a_new_head
+test_expected_head_bad_inputs_refuse_before_effects
+test_expected_head_keeps_existing_refusals

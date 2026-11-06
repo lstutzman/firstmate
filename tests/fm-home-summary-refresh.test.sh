@@ -46,9 +46,9 @@ command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 cat > "$FAKEBIN/tmux" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}" in
-  display-message)
+  display-message|list-windows)
     [ "${FM_TEST_ENDPOINT_STALL:-0}" != 1 ] || sleep 60
-    printf '%%1\n'
+    [ "${1:-}" != display-message ] || printf '%%1\n'
     ;;
   capture-pane) printf 'fixture pane\n> \n' ;;
 esac

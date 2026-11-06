@@ -1,10 +1,8 @@
 ---
 name: project-management
 description: >-
-  Agent-only procedure for Firstmate project management.
-  Use before adding, creating, removing, or initializing a project.
+  Load before adding, creating, removing, or initializing a project.
   Cloning or registering a project is add intake and uses the same trigger.
-  Owns project add, create, clone, remove, initialization, registry, delivery-mode, autonomy, and outward-consent decisions.
 user-invocable: false
 metadata:
   internal: true
@@ -62,6 +60,7 @@ A forge composes with `no-mistakes`, `direct-PR`, and `no-mistakes-prod-only` (`
 `yolo` is inactive on a `forge=gerrit` project, so never propose `+yolo` alongside it.
 `forge=external` marks a project whose review tool uploads its own snapshot, so workers never push a task branch to its shared origin: it is never detected, so register it only on the captain's confirmation, as `[direct-PR forge=external]` with no `+yolo`, and only once the home has `config/external-review.md` (`docs/configuration.md` "External review tool").
 `bin/fm-project-mode.sh`'s header owns the binding and `bin/fm-dod-lib.sh` owns what it changes for a worker.
+The optional `pr=manual` token marks a `no-mistakes` project whose PR title and body a person writes, so the pipeline's `pr` step must not rewrite them; register it only on the captain's confirmation, with no `forge=` token (`docs/configuration.md` "PR text selection").
 
 The optional `merger=<home>` token names the one home that merges the project's PRs, by its secondmate id or `main` for the primary home; `bin/fm-pr-merge.sh` refuses every other home.
 Register it only on the captain's instruction, and leave it off a project every home may merge; `docs/configuration.md` "Merger home" owns its meaning.
@@ -93,6 +92,8 @@ Use `gh-axi` for the approved GitHub operation and consult its current help rath
 After remote creation succeeds, clone it locally, add the registry entry, and initialize it according to its delivery posture.
 
 For a purely `local-only` project, create a local Git repository under its unused `projects/<name>` path, add the registry entry, and make no GitHub call.
+A new repository has no commit, and spawn refuses to dispatch work into a project with an unborn `HEAD`.
+Tell the captain that the project needs a first commit.
 The captain's request to create that local project authorizes this local initialization, but it does not authorize an unmentioned remote repository.
 
 ## Initialize

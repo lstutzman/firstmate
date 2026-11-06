@@ -1074,6 +1074,8 @@ test_ship_and_scout_teach_validation_round_pause() {
       "$kind brief still allows a paused wait on any external condition"
     assert_no_grep "is not a \`paused:\` wait" "$brief" \
       "$kind brief still tells workers never to declare a wait they hold in a command"
+    assert_no_grep "heavy-test slot" "$brief" \
+      "$kind brief names a heavy-test slot that nothing defines"
     assert_grep "your own validation round" "$brief" \
       "$kind brief did not teach workers to declare their validation-round wait"
     assert_grep 'Before ending your turn with your own background shell or monitor still running' "$brief" \
@@ -1105,6 +1107,29 @@ test_scout_and_secondmate_load_decision_hold_policy() {
   assert_grep "load \`captain-hold-lifecycle\`" "$charter" \
     "secondmate charter did not load the shared captain-call policy for detailed investigations"
   pass "fm-brief.sh: investigation and visual-review completions load the shared decision policy"
+}
+
+test_scout_completion_write_exception_is_task_scoped() {
+  local home id brief command
+  home="$TMP_ROOT/scout completion home"
+  mkdir -p "$home/data"
+  for id in inventory-alpha inventory-beta; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" sample --scout >/dev/null \
+      || fail "scout completion scaffold failed"
+    brief="$home/data/$id/brief.md"
+    command="FM_HOME='$home' bash '$ROOT/bin/fm-captain-hold.sh' complete '$id' --none"
+    assert_grep "except for the task's empty-inventory attestation through \`fm-captain-hold.sh complete --none\`, exactly as specified under Definition of done." "$brief" \
+      "scout outside-write rule did not name its exact completion gate"
+    assert_grep "Only when the reviewed inventory is empty, run \`$command\`." "$brief" \
+      "scout did not receive the empty-inventory command for its own task and home"
+    assert_grep 'This exception permits only that command, not direct metadata edits, another task, or any backlog write.' "$brief" \
+      "scout completion exception granted broader write authority"
+    assert_grep 'If any captain call remains, ask firstmate to register the inventory and attest completion before you report done.' "$brief" \
+      "scout was instructed to write a non-empty inventory itself"
+    assert_grep 'If the command refuses, report the refusal to firstmate and stop rather than bypassing the completion gate.' "$brief" \
+      "scout was allowed to bypass a refused completion"
+  done
+  pass "fm-brief.sh: scouts may attest only their own empty inventory through the guarded command"
 }
 
 # A scout brief offers the Lavish review loop for every compatible board version,
@@ -1584,6 +1609,13 @@ test_crewmate_scaffolds_forbid_pool_administration() {
   [ "$ship_rule" = "$scout_rule" ] \
     || fail "ship and scout shared-infrastructure rules have drifted apart"
 
+  ship_cd_rule=$(awk '/^8\. Never start a shell command with/,/^$/' "$home/data/brief-pool-no-mistakes/brief.md")
+  scout_cd_rule=$(awk '/^8\. Never start a shell command with/,/^$/' "$brief")
+  [ -n "$ship_cd_rule" ] || fail "ship brief emitted no leading-cd rule"
+  [ "$ship_cd_rule" = "$scout_cd_rule" ] \
+    || fail "scout brief leading-cd rule is missing or differs from the ship brief"
+  assert_grep "every sub-agent you launch" "$brief" "scout brief did not pass the leading-cd rule to sub-agents"
+
   # The daemon half of the rule survived the fold.
   assert_grep "no-mistakes" "$brief" "scout brief lost the shared no-mistakes daemon rule"
   # shellcheck disable=SC2016 # Literal backticks and braces must remain unexpanded.
@@ -1628,6 +1660,7 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_ship_and_scout_teach_validation_round_pause
 test_scout_and_secondmate_load_decision_hold_policy
+test_scout_completion_write_exception_is_task_scoped
 test_scout_and_secondmate_scaffold
 test_scout_lavish_line_follows_presentation_floor
 test_workers_wait_without_spending_turns
@@ -1641,6 +1674,38 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+
+# The worker reads its steering inbox with one command, which is also the
+# acknowledgement; bin/fm-task-inbox.sh owns the record format, including the
+# synthetic body terminator, so the scaffold must not teach a manual listing.
+test_inbox_guidance_names_the_take_command() {
+  local home brief kind id
+  home="$TMP_ROOT/inbox-guidance"
+  for kind in no-mistakes scout secondmate; do
+    id="inbox-$kind"
+    case "$kind" in
+      no-mistakes)
+        FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode no-mistakes >/dev/null \
+          || fail "ship scaffold failed"
+        ;;
+      scout)
+        FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --scout >/dev/null \
+          || fail "scout scaffold failed"
+        ;;
+      secondmate)
+        FM_HOME="$home" FM_SECONDMATE_CHARTER='Supervise assigned work.' \
+          "$ROOT/bin/fm-brief.sh" "$id" --secondmate --no-projects >/dev/null \
+          || fail "secondmate scaffold failed"
+        ;;
+    esac
+    brief="$home/data/$id/brief.md"
+    assert_grep "fm-task-inbox.sh' take" "$brief" "$kind scaffold omitted the inbox take command"
+    assert_grep 'it files each printed message into handled/' "$brief" "$kind scaffold omitted that take is the acknowledgement"
+  done
+  pass "fm-brief: every scaffold teaches the inbox take command"
+}
+
+test_inbox_guidance_names_the_take_command
 
 # The scaffold teaches the captain-step renderer, the physical cause, the external-wait pause and
 # the resume directory check, with this home's own script paths.

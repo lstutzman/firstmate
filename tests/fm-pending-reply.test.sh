@@ -45,6 +45,8 @@
 #  21. The wrong-home scan reads a child log from a remembered byte offset: a 1 MB
 #      log costs only the bytes appended since, a rotated or truncated log is read
 #      from its start once, a partial last line is held until it completes
+#  22. A request summary keeps accented letters, drops control characters, and
+#      caps at 120 characters without splitting one under any caller locale
 #      without being lost or counted twice, and the watcher beats between logs
 # The hold tests run in subshells that set the clock and the config location.
 # shellcheck disable=SC2030,SC2031
@@ -2606,6 +2608,25 @@ test_hold_bound_without_the_flag_or_the_hold_does_not_escalate() (
   pass "only a record the hold actually keeps back takes the hold escalation"
 )
 
+test_summary_keeps_accents_and_caps_by_character() {
+  local out long cap_chars loc
+  out=$(fm_pending_reply_summarize "não faça a correção")
+  [ "$out" = "não faça a correção" ] || fail "accented summary must survive unchanged, got '$out'"
+  out=$(fm_pending_reply_summarize "$(printf 'a\001b\033c\177d\tnão\r\nfaça')")
+  [ "$out" = "abcd não  faça" ] || fail "control characters must be removed and whitespace flattened, got '$out'"
+  long=$(printf 'ç%.0s' $(seq 1 130))
+  for loc in C "" en_US.UTF-8; do
+    out=$(LC_ALL=${loc:-C} fm_pending_reply_summarize "$long")
+    cap_chars=$(printf '%s' "$out" | LC_ALL=C tr -d '\200-\277' | LC_ALL=C wc -c | tr -d ' ')
+    [ "$cap_chars" = 120 ] || fail "capped accented text must hold 120 characters under locale '${loc:-C}', got $cap_chars"
+    printf '%s' "$out" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 \
+      || fail "capped accented text must stay valid UTF-8 under locale '${loc:-C}'"
+    [ "$out" = "$(printf 'ç%.0s' $(seq 1 117))..." ] || fail "capped text must be 117 characters plus an ellipsis under locale '${loc:-C}'"
+  done
+  out=$(fm_pending_reply_summarize "$(printf 'x%.0s' $(seq 1 120))")
+  [ "${#out}" = 120 ] || fail "a 120-character summary must not be capped, got ${#out}"
+  pass "the summary keeps accented letters, drops control characters, and caps by character"
+}
 # --- run --------------------------------------------------------------------
 
 test_normal_correlated_reply_resolves_once
@@ -2673,5 +2694,6 @@ test_drain_scan_keeps_the_trusted_set_when_the_span_cannot_be_written || exit 1
 test_hold_bound_without_the_flag_or_the_hold_does_not_escalate || exit 1
 
 test_create_records_request_prs || exit 1
+test_summary_keeps_accents_and_caps_by_character
 
 printf 'ok - all pending-reply tests passed\n'
