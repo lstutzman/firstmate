@@ -419,7 +419,8 @@ fm_backend_herdr_office_role_labels() {
 # workspace, obviously distinguishable from the primary's (and from every
 # other secondmate's) in herdr's spaces sidebar. An OFFICE home (a secondmate
 # running a standing role) resolves instead to its bare capitalised role name,
-# "Quartermaster" or "Navigator" (fm_backend_herdr_office_label); a workspace
+# such as "Quartermaster", "Navigator", "Alchemist" or "Librarian"
+# (fm_backend_herdr_office_label); a workspace
 # it still holds under its legacy "2ndmate-<id>" label is renamed in place by
 # fm_backend_herdr_workspace_migrate_legacy. Read fresh from FM_HOME on
 # every call rather than cached at source time: FM_HOME is the home's own

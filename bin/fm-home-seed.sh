@@ -30,7 +30,7 @@
 #       Seed <home> as an office: a second mate that runs a standing role
 #       mandate (docs/configuration.md "Offices (data/offices.md)"). <id> must
 #       equal the secondmate id and name exactly one line in this home's
-#       data/offices.md with an office role (a reserved role is refused), whose
+#       data/offices.md with an office role (any other role is refused), whose
 #       runs-on lists this host (FM_OFFICE_HOST, default hostname -s) and never
 #       macbook, and whose every dispatch project is in the seeded project list.
 #       It refuses a home that already carries .fm-secondmate-home without

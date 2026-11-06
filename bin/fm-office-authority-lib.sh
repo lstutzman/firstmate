@@ -67,7 +67,8 @@
 #
 # FM_OFFICE_ROLES names the roles an office may take, and
 # FM_OFFICE_RESERVED_ROLES the role names held for later offices; a reserved
-# role has no charter and no authority, so a line naming it is refused.
+# role has no charter and no authority, so a line naming it is refused. The
+# reserved set is empty: alchemist and librarian were unlocked as office roles.
 #
 # Public functions:
 #   fm_office_detect <home> <data-dir>
@@ -128,9 +129,9 @@ FM_OFFICE_ERROR=
 FM_OFFICE_LIVE=0
 FM_OFFICE_LIVE_IDS=
 # The office roles with a charter, and the role names held for later offices
-# that have neither a charter nor any authority yet.
-FM_OFFICE_ROLES="navigator quartermaster"
-FM_OFFICE_RESERVED_ROLES="alchemist librarian"
+# that have neither a charter nor any authority yet (none at present).
+FM_OFFICE_ROLES="navigator quartermaster alchemist librarian"
+FM_OFFICE_RESERVED_ROLES=""
 FM_OFFICE_REPAIR="the main home reports this with bin/fm-office.sh ensure and republishes the record with bin/fm-office.sh publish <id>"
 
 fm_office_in() {  # <item> <comma-list>
@@ -140,9 +141,10 @@ fm_office_in() {  # <item> <comma-list>
 
 fm_office_role_check() {  # <role>: 0 for an office role, or 1 with FM_OFFICE_ERROR
   case " $FM_OFFICE_ROLES " in *" $1 "*) return 0 ;; esac
+  FM_OFFICE_ERROR="unknown role \"$1\" (known: $FM_OFFICE_ROLES)"
+  [ -n "$1" ] || return 1
   case " $FM_OFFICE_RESERVED_ROLES " in
     *" $1 "*) FM_OFFICE_ERROR="role \"$1\" is reserved: it has no charter or authority yet" ;;
-    *) FM_OFFICE_ERROR="unknown role \"$1\" (known: $FM_OFFICE_ROLES)" ;;
   esac
   return 1
 }
