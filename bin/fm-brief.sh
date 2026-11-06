@@ -183,9 +183,13 @@
 # reviewer and the acceptor all work from the same words. A field the item does not
 # state is named as not stated, never invented; a failed read stops the scaffold
 # with the reason before anything is written. A field is a label line (optionally
-# bulleted, bold or a heading) such as "Audience:", "Entry point:" or
-# "Acceptance:" (or "Acceptance criteria:"), and runs until the next label,
-# heading or end of the description. Ship and scout only.
+# bulleted or bold) such as "Audience:", "Entry point:" or "Acceptance:" (or
+# "Acceptance criteria:"), or a heading whose text is the label, colon optional.
+# A heading field runs until the next heading of the same or higher level; a label
+# field runs until the next label or heading, or a blank line followed by text that
+# is not a list item or indented. Either kind also ends at a "+++" line, and text
+# inside a "+++ ... +++" block (agent notes) is never quoted. Fields are quoted
+# whole, without a length cap. Ship and scout only.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -267,7 +271,14 @@ fields = {"audience": [], "entry point": [], "acceptance": []}
 cur = None
 level = 0
 lines = desc.split("\n")
+in_notes = False
 for i, line in enumerate(lines):
+    if line.lstrip().startswith("+++"):
+        in_notes = not in_notes
+        cur = None
+        continue
+    if in_notes:
+        continue
     m = label.match(line)
     if m and (m.group(3) is not None or m.group(1)):
         key = m.group(2).lower()
@@ -283,7 +294,7 @@ for i, line in enumerate(lines):
     if cur is None:
         continue
     h = heading.match(line)
-    if line.lstrip().startswith("+++") or (h and (not level or len(h.group(1)) <= level)):
+    if h and (not level or len(h.group(1)) <= level):
         cur = None
         continue
     if not level:

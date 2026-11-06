@@ -1749,7 +1749,7 @@ case "$STUB_MODE" in
   full)
     printf 'issue:\n  identifier: %s\n  description: "Intro text.\\n\\nAudience: Free members\\nEntry point: /discover, Saved tab\\nAcceptance:\\n- Free user sees the tab\\n- Admin sees the count\\n\\nEpic: none"\n' "$3" ;;
   heading)
-    printf 'issue:\n  identifier: %s\n  description: "## Why\\n\\nBecause.\\n\\n## Audience\\n\\nAdmins only\\n\\n## Acceptance criteria\\n\\nThe admin page lists every member.\\n\\nIt loads within two seconds.\\n\\n## Evidence\\n\\nEvidence prose stays out.\\n\\nEntry point: /admin/members\\n\\nThe other slices are separate issues.\\n\\n+++ Agent notes\\n\\nAcceptance plan stays out.\\n\\n+++"\n' "$3" ;;
+    printf 'issue:\n  identifier: %s\n  description: "## Why\\n\\nBecause.\\n\\n## Audience\\n\\nAdmins only\\n\\n## Acceptance criteria\\n\\nThe admin page lists every member.\\n\\nIt loads within two seconds.\\n\\n## Evidence\\n\\nEvidence prose stays out.\\n\\nEntry point: /admin/members\\n\\nThe other slices are separate issues.\\n\\n+++ Agent notes\\n\\nAcceptance plan stays out.\\nAcceptance: run the migration first\\n\\n## Audience\\n\\nAgents in notes\\n\\n+++"\n' "$3" ;;
   long)
     line=$(printf 'x%.0s' $(seq 1 1000))
     desc="Acceptance:"
