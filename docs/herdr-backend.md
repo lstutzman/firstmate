@@ -510,6 +510,7 @@ Any of these preserves the candidate and lets session startup continue with at m
 
 Every machine keeps exactly one Herdr workspace labelled `Terminal`: a bare shell at the home directory with one tab and one pane, which belongs to the captain and never hosts an agent.
 Every agent runs alone in its own workspace, never in an extra tab or pane of another workspace.
+Until `fm-spawn` changes that (tracked separately), the [ordinary topology](#watching-and-task-containers) still places each task tab in the launcher's workspace, so the check reports those agents meanwhile.
 `bin/fm-herdr-terminal-check.sh` enforces both at locked session start in every Herdr home, primary or secondmate, in the BOOTSTRAP section of the digest; a healthy machine prints nothing.
 
 - When the session has no workspace labelled exactly `Terminal`, the check creates one without taking focus and runs nothing in it.
