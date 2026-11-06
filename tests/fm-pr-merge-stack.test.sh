@@ -141,6 +141,7 @@ case " $* " in
     ;;
   *"/stacks?pull_request="*) cat "$C/stacks.json"; exit 0 ;;
   *"/compare/"*) cat "$C/compare.json"; exit 0 ;;
+  *"/contents/.github/required-checks.list"*) printf 'gh: Not Found (HTTP 404)\n' >&2; exit 1 ;;
   *"/rules/branches/"*) cat "$C/rules.json"; exit 0 ;;
   *"/branches/"*) cat "$C/branch.json"; exit 0 ;;
   *"/pulls/"*"/files"*)

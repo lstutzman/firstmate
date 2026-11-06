@@ -45,6 +45,10 @@
 # here, so an attended --attended-override -- --admin merge can bypass that
 # protection without a missing-check waiver when a same-named status reported.
 # An unreadable producer read still refuses.
+# The base branch's .github/required-checks.list, when it exists, adds its listed
+# contexts to that required set by name, for a repository whose forge sets no
+# required checks; github_read_listed_contexts owns the file format. A repository
+# without the file keeps the forge-only behavior, and an unreadable file refuses.
 # Successfully read requirements remain checked even if another
 # source fails, so known missing checks and all read errors are reported together.
 # github_branch_rules_unavailable_on_plan owns the narrow plan-unavailable
@@ -1393,6 +1397,47 @@ github_read_required_contexts() {
   [ -z "$FM_PR_GITHUB_REQUIRED_ERROR" ]
 }
 
+# The repository's own required list: .github/required-checks.list on the base
+# branch (never the PR head, so a PR cannot edit its own bar), one check context
+# per line, blank lines and lines starting with # ignored. Its contexts are
+# unioned into FM_PR_GITHUB_REQUIRED as name-only requirements, so a listed job
+# that never reported refuses the merge exactly as a forge-required one does and
+# --allow-missing waives it by name. A repository without the file (the forge's
+# 404) keeps the forge-only behavior; any other read failure refuses.
+FM_PR_REQUIRED_LIST_PATH=.github/required-checks.list
+FM_PR_LISTED_ERROR=
+github_read_listed_contexts() {
+  local base=$1 ref body listed err_file err_text
+  FM_PR_LISTED_ERROR=
+  ref=$(github_urlencode_path_segment "$base")
+  if ! err_file=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-required-list.XXXXXX"); then
+    FM_PR_LISTED_ERROR="the required check list $FM_PR_REQUIRED_LIST_PATH on base branch $base could not be read"
+    return 1
+  fi
+  if body=$(gh api -H 'Accept: application/vnd.github.raw' \
+    "repos/$PR_OWNER/$PR_REPO/contents/$FM_PR_REQUIRED_LIST_PATH?ref=$ref" 2>"$err_file"); then
+    rm -f "$err_file"
+    if ! listed=$(printf '%s\n' "$body" | jq -Rsc '
+        split("\n") | map(sub("\r$"; "") | sub("^\\s+"; "") | sub("\\s+$"; ""))
+        | map(select(length > 0 and (startswith("#") | not)))
+        | map({context: ., app_id: null})' 2>/dev/null); then
+      FM_PR_LISTED_ERROR="the required check list $FM_PR_REQUIRED_LIST_PATH on base branch $base could not be read"
+      return 1
+    fi
+    FM_PR_GITHUB_REQUIRED=$(printf '%s\n%s\n' "$FM_PR_GITHUB_REQUIRED" "$listed" | jq -sc '
+      .[0] + .[1] | unique_by([.context, .app_id]) | group_by(.context)
+      | map(if any(.[]; .app_id != null) then map(select(.app_id != null)) else . end) | add // []')
+    return 0
+  fi
+  err_text=$(cat "$err_file" 2>/dev/null)
+  rm -f "$err_file"
+  case "$err_text" in
+    *"HTTP 404"* | *"Not Found"*) return 0 ;;
+  esac
+  FM_PR_LISTED_ERROR="the required check list $FM_PR_REQUIRED_LIST_PATH on base branch $base could not be read"
+  return 1
+}
+
 github_required_checks_missing() {
   local json=$1 required=$2 producers=$3
   printf '%s' "$json" | jq -r --argjson required "$required" --argjson producers "$producers" '
@@ -1514,6 +1559,10 @@ EOF
     done <<EOF
 $FM_PR_GITHUB_REQUIRED_ERROR
 EOF
+  fi
+  if ! github_read_listed_contexts "${FM_PR_STACK_TRUNK:-$base}"; then
+    refusals="$refusals  - $FM_PR_LISTED_ERROR, so a listed check that has not reported cannot be ruled out
+"
   fi
   producers='[]'
   if printf '%s' "$FM_PR_GITHUB_REQUIRED" | jq -e 'any(.[]; .app_id != null)' >/dev/null; then

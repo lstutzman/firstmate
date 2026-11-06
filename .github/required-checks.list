@@ -1,0 +1,31 @@
+# Check contexts that bin/fm-pr-merge.sh requires at the PR head before it merges into this repository.
+# One context per line; blank lines and lines starting with # are ignored.
+# A listed context that has not reported at the head refuses the merge; see CONTRIBUTING.md "Maintaining required checks".
+Full suite
+Lint 1
+Lint 2
+Lint 3
+Lint 4
+Test coverage guard
+Repo invariants
+Stock macOS Bash snapshot compatibility
+Behavior portable parallel 1
+Behavior portable parallel 2
+Behavior portable serial 1
+Behavior portable serial 2
+Behavior portable serial 3
+Behavior portable serial 4
+Behavior portable serial 5
+Behavior portable serial 6
+Behavior portable serial 7
+Behavior portable serial 8
+Behavior portable serial 9
+Behavior portable serial 10
+Behavior portable serial 11
+Behavior portable serial 12
+Behavior portable serial 13
+Behavior portable serial 14
+Behavior portable serial 15
+Behavior tests (Herdr)
+Behavior timing aggregate
+PR must be raised via no-mistakes

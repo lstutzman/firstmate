@@ -50,17 +50,20 @@ Before dispatching an agent-driven contribution, follow the [Firstmate role and 
 No GitHub ruleset or branch protection is configured on main today, so GitHub itself requires no check.
 The merge gate is `bin/fm-pr-merge.sh`: it refuses a merge while any check reported at the exact head is red, cancelled or still pending.
 It also refuses a check the forge requires for the base branch that never reported, which today means none.
-It carries no list of its own, so a job that never reports is not caught until the contexts below are required on GitHub.
-Creating that ruleset is a repository-settings change, separate from committing workflow YAML.
-When it is created, preserve any existing pull-request, merge-method, linear-history, deletion, non-fast-forward, and administrator-bypass settings.
+Its own list closes that gap: [`.github/required-checks.list`](.github/required-checks.list) names the job contexts that every merge must see green, one per line, with blank lines and `#` comment lines ignored.
+The script reads that file from the base branch of the pull request, never from the pull request head, and a listed context that has not reported at the head refuses the merge and is named in the refusal.
+An attended `--allow-missing <context>` waives exactly one listed context by name, a base branch without the file keeps the forge-only behavior, and a file that cannot be read refuses the merge.
+When a job is added, renamed or retired, change the file in the same pull request.
+A GitHub ruleset would add forge-side enforcement and is a repository-settings change, separate from committing workflow YAML and from the list above.
+When such a ruleset is created, preserve any existing pull-request, merge-method, linear-history, deletion, non-fast-forward, and administrator-bypass settings.
 Add required status checks with `strict_required_status_checks_policy: false`; a main update alone must not force a branch update and retest.
 Bind the checks to the GitHub Actions app already producing them, rather than accepting the same context from any integration.
 No new app installation or manual runner setup is needed for that setting.
 
-The job contexts that every merge must see green, and that the ruleset should require, are: `Full suite`, `Lint 1` through `Lint 4`, `Test coverage guard`, `Repo invariants`, `Stock macOS Bash snapshot compatibility`, `Behavior portable parallel 1`, `Behavior portable parallel 2`, `Behavior portable serial 1` through `Behavior portable serial 15`, `Behavior tests (Herdr)`, `Behavior timing aggregate`, and `PR must be raised via no-mistakes`.
-The last name is the compliance job context, not its workflow title; its existing automation exceptions remain unchanged.
+The listed contexts are the actual job contexts: `Full suite`, the `Lint`, `Behavior portable` and other lane jobs, and `PR must be raised via no-mistakes`.
+The last listed name is the compliance job context, not its workflow title; its existing automation exceptions remain unchanged.
 The timing aggregate is not a substitute for individual jobs because it can succeed while collecting evidence from a failed run.
-The individual lanes skip on an outside pull request until it has the `full-ci` label, and a skipped job satisfies a required check, so `Full suite` must be required too: it fails until the label is on and whenever a lane failed or was cancelled.
+The individual lanes skip on an outside pull request until it has the `full-ci` label, and a skipped job satisfies a required check, so `Full suite` must be listed too: it fails until the label is on and whenever a lane failed or was cancelled.
 
 Apply the ruleset only after the corresponding workflow is green and landed, confirming exact names and the Actions integration id from real checks first.
 Snapshot the current ruleset, amend or create the rule with the authenticated GitHub API or settings UI, and read back both the ruleset and effective branch rules.
