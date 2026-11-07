@@ -153,7 +153,7 @@ pr_check_release_nm_run() {  # <id> <seconds>
     *"$url"[^[:alnum:]]*) ;;
     *) return 0 ;;
   esac
-  out=$(cd "$wt" && fm_run_timed "$seconds" no-mistakes axi status 2>/dev/null) || out=
+  out=$(cd "$wt" && fm_run_timed "$(( seconds < 20 ? seconds : 20 ))" no-mistakes axi status 2>/dev/null) || out=
   if [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" status)")" = handed_off ]; then
     already=1
   else
