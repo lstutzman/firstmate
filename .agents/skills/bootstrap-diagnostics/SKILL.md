@@ -80,6 +80,8 @@ When any diagnostic needs captain attention, report the plain consequence and re
   Never republish to clear an office-local admission difference: copy the master config back into the office home instead.
 - `OFFICE: approved office <role> not provisioned (...)` or `OFFICE: deferral <role> ... defers nothing: <reason>` - in the primary home, a role in `FM_OFFICE_ROLES` has neither a `data/offices.md` line nor a valid deferral in `data/office-deferrals.md`.
   Provision it per [`docs/office-provisioning.md`](../../../docs/office-provisioning.md), or record the captain's quoted deferral per `docs/configuration.md` "Office deferrals"; never write a deferral without his words.
+- `OFFICE: pool: <gap>` - clones of one project on this host share a treehouse pool but differ on `max_trees` in their untracked `treehouse.toml`, so a clone with the smaller cap can read the shared pool as full.
+  Copy the largest `treehouse.toml` into the other clones and add `/treehouse.toml` to each one's `.git/info/exclude`, per `docs/configuration.md` "Offices (data/offices.md)".
 - `NUDGE_SECONDMATES: secondmate <id>: send failed: <reason>` - secondmate convergence changed a running home's loaded instructions or inherited config, but the deterministic `fm-send.sh fm-<id>` re-read nudge failed.
   Inspect the reason, keep the pending marker under `state/.secondmate-nudge-pending/` intact, and rerun session start after the endpoint or metadata issue is fixed so bootstrap can retry the exact same marked send on the same local or remote route.
 - `FMX: X mode on ...` / `FMX: X mode off ...` - bootstrap confirmed or removed the local Relay poll artifacts (`docs/configuration.md` "Relay (.env)"); the emitted line still carries Relay's former `X mode` wording.

@@ -122,7 +122,7 @@ FM_HOME=$MAIN bin/fm-officer.sh register page-check
 
 ## 8. Confirm nothing is out of place
 
-Each command prints nothing, except that the main home's `ensure` prints `OFFICE: approved office <role> not provisioned` for each approved role that has no office line yet and no deferral ([Offices](configuration.md#offices-dataofficesmd) owns that check).
+Each command prints nothing, except that the main home's `ensure` prints `OFFICE: approved office <role> not provisioned` for each approved role that has no office line yet and no deferral, and any home's `ensure` prints an `OFFICE: pool:` line while clones of one project on the host differ on treehouse `max_trees` ([Offices](configuration.md#offices-dataofficesmd) owns both checks).
 
 ```sh
 FM_HOME=$MAIN bin/fm-office.sh ensure
