@@ -3,7 +3,7 @@
 This is the one page every registered officer follows when it finds work: find it, file it in Linear, triage it, and start it or hold it for Lee.
 Fleet rules section 8 gives every officer authority to create and update Linear items under this contract and its own rubric file.
 This page owns the contract; `bin/fm-officer-linear.py`'s header owns the mechanics, and each officer's `docs/officers/<id>-rubric.md` owns what that officer counts as work.
-The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.md)), then the friction officer ([`friction-rubric.md`](friction-rubric.md)) and the library officer ([`library-rubric.md`](library-rubric.md)); the page-check, corpus and progress officers each adopt it in their own change.
+The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.md)), then the friction officer ([`friction-rubric.md`](friction-rubric.md)), the library officer ([`library-rubric.md`](library-rubric.md)) and the page-check officer ([`page-check-rubric.md`](page-check-rubric.md)); the corpus and progress officers each adopt it in their own change.
 
 ## The four steps
 

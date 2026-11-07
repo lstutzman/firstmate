@@ -96,8 +96,8 @@
 #                    "office <id>: <officer> digest <key>: <n> high-severity finding(s) in <path>"
 #                    once per new count of findings in the digest's .json whose
 #                    severity is "high" or "critical", or a number of 4 or more.
-# Either lane form, reading a progress, surgeon, friction or library digest (.json source
-# "progress-officer", "surgeon-officer", "friction-officer" or "library-officer"),
+# Either lane form, reading a progress, surgeon, friction, library or page-check digest (.json source
+# "progress-officer", "surgeon-officer", "friction-officer", "library-officer" or "page-check-officer"),
 # first delivers the start requests whose execute.env.FM_HOME is this office home:
 # in rank order, by running this code root's fm-inbox.sh with the request's
 # recorded note arguments (never the program the file names), with FM_HOME set to
@@ -593,7 +593,7 @@ check_tick() {
   seen_once tick "$SLOT_KEY" "$line"
 }
 
-# deliver_starts <officer>: delivers the progress, surgeon, friction or library digest's start requests addressed to this
+# deliver_starts <officer>: delivers the progress, surgeon, friction, library or page-check digest's start requests addressed to this
 # office home into its own inbox, in rank order, and prints one phrase when there is news.
 deliver_starts() {
   mkdir -p "$DATA/office" 2>/dev/null || return 0
@@ -606,7 +606,7 @@ try:
     doc = json.loads(raw)
 except (OSError, ValueError):
     sys.exit()
-if not isinstance(doc, dict) or doc.get("source") not in ("progress-officer", "surgeon-officer", "friction-officer", "library-officer"):
+if not isinstance(doc, dict) or doc.get("source") not in ("progress-officer", "surgeon-officer", "friction-officer", "library-officer", "page-check-officer"):
     sys.exit()
 home = os.path.realpath(home)
 requests = sorted((r for r in doc.get("start_requests") or [] if isinstance(r, dict)),
@@ -639,7 +639,7 @@ for n, execute in enumerate(mine, 1):
     rid, argv = execute.get("request_id"), execute.get("argv")
     # Run this office's own intake with the recorded arguments, never a program named in the file.
     ok = (execute.get("action") == "start" and isinstance(rid, str)
-          and re.fullmatch(r"(?:progress|surgeon|friction|library)-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", rid) and isinstance(argv, list)
+          and re.fullmatch(r"(?:progress|surgeon|friction|library|page-check)-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", rid) and isinstance(argv, list)
           and len(argv) == 7 and all(isinstance(a, str) for a in argv)
           and os.path.basename(argv[0]) == "fm-inbox.sh" and argv[1:6] == ["note", "--request-id", rid, "--json", "--"])
     if ok:

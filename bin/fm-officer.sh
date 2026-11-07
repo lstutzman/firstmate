@@ -74,7 +74,7 @@
 # digest as if main were listed. The failure line is always printed, because a
 # broken officer is main's to fix.
 #
-# start-home: is an optional progress, surgeon, friction and library field, a comma list of office ids. Each must
+# start-home: is an optional progress, surgeon, friction, library and pagecheck field, a comma list of office ids. Each must
 # pass the same office checks as consumer: (a local office that reads the progress
 # digest), because the start requests for that office's projects (its dispatch:
 # field) are then addressed to that office's home, and that office's lane check
@@ -226,6 +226,7 @@ line_problem() {
       case "$(line_field "$line" stale-days || echo 7)$(line_field "$line" remind-hours || echo 24)" in
         ''|*[!0-9]*) printf 'officer %s: stale-days and remind-hours must be whole numbers\n' "$id"; return ;;
       esac
+      linear_problem "$line" "$id" pagecheck
       ;;
     landing)
       line_field "$line" facts >/dev/null \
@@ -545,6 +546,17 @@ role_pagecheck() {
   done <<EOF
 $(readable_homes)
 EOF
+  while IFS= read -r home; do
+    [ -n "$home" ] && args+=(--start-home "$home")
+  done <<START_HOMES
+$(start_homes)
+START_HOMES
+  [ -z "$(line_field "$OFFICER_LINE" rubric || true)" ] || args+=(--rubric "$(line_field "$OFFICER_LINE" rubric)")
+  args+=(--fm-home "$FM_HOME" --writes "$(line_field "$OFFICER_LINE" writes || echo none)"
+    --team "$(line_field "$OFFICER_LINE" team || echo PC)"
+    --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)"
+    --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)"
+    --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")")
   python3 -I "$SCRIPT_DIR/fm-officer-page-check.py" "${args[@]}"
 }
 

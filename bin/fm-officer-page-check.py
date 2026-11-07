@@ -8,6 +8,9 @@ Usage:
   fm-officer-page-check.py run --key <YYYY-MM-DDTHH> --out <lane-dir> --app <https-url>
                                [--rules <file>] [--stale-days N] [--remind-hours N]
                                [--home <dir>]... [--now <epoch>]
+                               [--writes none|linear] [--team PC] [--max-creates <n>]
+                               [--max-linear-calls <n>] [--rubric <file>] [--jev <jev.py>]
+                               [--fm-home <dir>] [--start-home <home>=<projects>[=<role>[=<mandate>]]]...
 
 Lee's rule is that every fleet-app page stays current without being asked.
 This pass reads each page's own GET endpoint (curl, never a write) and this
@@ -65,6 +68,31 @@ digest) and state.json (when each finding was last reported). It prints
 reported more than --remind-hours (default 24) ago, so an unchanged page set
 does not wake firstmate every slot while a finding nobody fixed returns daily.
 An unreachable app is a finding, not a failed run.
+
+Linear. With --writes linear (the registry's `writes: linear`) the officer follows the
+shared officer contract (docs/officers/contract.md; bin/fm-officer-linear.py owns the
+mechanics) with its rubric docs/officers/page-check-rubric.md, which owns what counts
+as work, the severity of each kind and what starts. Every open finding is filed once
+in team PC, project Fleet, labels Bug, the Source label agent and area:fleet, keyed by
+its id (kind, page and object), so a finding nobody fixed raises the item's
+`Found: N times` line once a day and that count is the priority lever. A card's own
+words never go to Linear: the item names the card by id. A page-old or shown-after-done
+finding whose item exists and whose score reaches the rubric minimum gets a start
+request in the digest's `start_requests` (and, for this home, a <key>.start-requests.sh
+handoff), addressed to the --start-home office that dispatches the fleet repositories
+(the Quartermaster), else to --fm-home; fleet-app merges stay with Slarti. A
+standing-rule or stale-card finding is filed so its card is cleared and never starts a
+fix. The reserved-class check judges what the started fix would change, so it reads the
+finding's own kind, page, evidence and route, and the object id only when the object is
+the fix target (a page or a Runs job), never a card's id or question: a finding whose
+fix is in a reserved class is held as one keyed needs-decision line in `asks_for_lee`.
+A page-old or shown-after-done finding is a bug in fleet code, so its bad pattern (the
+kind, the page or Runs job, and the route as the safe form, with no timestamps and no
+card id) is remembered once through the shared pattern memory, a repeat on another card
+or day raising its count, and handed on in the digest's `patterns` and one batched
+pattern-memory start request. Without writes: linear nothing is filed and
+nothing starts. What the create cap, call budget or a rate limit leaves unfiled is named
+in the digest.
 """
 
 import argparse
@@ -77,6 +105,12 @@ import sys
 import time
 
 MAX_PR_LOOKUPS = 40
+RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "page-check-rubric.md")
+# The kinds the rubric may let start: a page or a card source that is broken, never a card a rule already settles.
+START_SOURCES = ("page-old", "shown-after-done")
+TYPE_LABEL = "Bug"
+# "agent" is the Source label of Lee's Linear setup (2026-10-13) for any worker filing on his behalf.
+SOURCE_LABEL = "agent"
 FACTS_SOURCES = ("bosun",)
 PR_RE = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)")
 # A card names a production action when its question, title or own id matches PRODUCTION_RE and does not ask for a merge.
@@ -230,9 +264,9 @@ def open_production_action(card):
     return bool(asks) and not any(MERGE_RE.search(h) for h in head)
 
 
-def finding(kind, page, ref, title, evidence, route):
+def finding(kind, page, ref, title, evidence, route, severity="medium"):
     return {"id": "%s:%s:%s" % (kind, page, ref), "kind": kind, "page": page, "title": friction.scrub(title, 110),
-            "evidence": evidence, "route": route}
+            "evidence": evidence, "route": route, "severity": severity}
 
 
 def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
@@ -249,7 +283,7 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
             if pattern.search(text):
                 out.append(finding("standing-rule", page, "%s:%s" % (cid, rid), title,
                                    "standing rule %s settles it: %s" % (rid, friction.scrub(rule_text, 120)),
-                                   "cl-keeper: close the card citing the rule"))
+                                   "cl-keeper: close the card citing the rule", "low"))
         asked = friction.epoch_of(c.get("reasked")) or friction.epoch_of(c.get("asked"))
         done_at, done_text = settled.get(cid, (None, ""))
         if cid in known_closed:
@@ -266,23 +300,23 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
                                    "cl-keeper: close the card; fix the source that re-raises it"))
             elif answered:
                 out.append(finding("stale-card", page, cid + ":resolved", title, "its status line was resolved elsewhere",
-                                   "cl-keeper: close the card"))
+                                   "cl-keeper: close the card", "low"))
         until = friction.epoch_of(c.get("until"))
         if c.get("state") == "snoozed" and until is not None and until < now:
             out.append(finding("stale-card", page, cid + ":snooze", title, "snooze ended %d day(s) ago" % ((now - until) // 86400),
-                               "cl-keeper: re-ask or close"))
+                               "cl-keeper: re-ask or close", "low"))
         elif c.get("state") == "asked" and asked is not None and now - asked > stale_days * 86400 and not c.get("pinned"):
             out.append(finding("stale-card", page, cid + ":unanswered", title, "unanswered for %d day(s)" % ((now - asked) // 86400),
-                               "cl-keeper: close or re-word"))
+                               "cl-keeper: close or re-word", "low"))
         if c.get("state") == "asked" and c.get("answer"):
-            out.append(finding("stale-card", page, cid + ":answered", title, "already answered but still shown", "cl-keeper: close"))
+            out.append(finding("stale-card", page, cid + ":answered", title, "already answered but still shown", "cl-keeper: close", "low"))
         for repo, number in PR_RE.findall(text):
             state = pr_state(repo, number, cache, budget)
             if state == "merged" and open_production_action(c):
                 continue
             if state in ("merged", "closed"):
                 out.append(finding("stale-card", page, "%s:%s#%s" % (cid, repo, number), title,
-                                   "names %s#%s, which is %s" % (repo, number, state), "cl-keeper: close or correct"))
+                                   "names %s#%s, which is %s" % (repo, number, state), "cl-keeper: close or correct", "low"))
             elif state is None:
                 unread.add("%s#%s" % (repo, number))
     if unread:
@@ -305,7 +339,7 @@ def page_findings(app, now):
         ref = path.rsplit("/", 1)[-1]
         if state != "read":
             out.append(finding("page-old", page, ref, "%s: %s" % (page, WHY[state]),
-                               "GET %s was %s" % (path, state), "page owner: restore the page's feed"))
+                               "GET %s was %s" % (path, state), "page owner: restore the page's feed", "high"))
             continue
         at = newest(doc, keys)
         if at is None:
@@ -319,7 +353,7 @@ def page_findings(app, now):
     state, runs = fetch(app, "/api/runs")
     if state != "read":
         out.append(finding("page-old", "Runs", "runs", "Runs: %s" % WHY[state], "GET /api/runs was %s" % state,
-                           "page owner: restore the page's feed"))
+                           "page owner: restore the page's feed", "high"))
     else:
         for job in items(runs, "jobs"):
             if job.get("state") == "live" and job.get("health") == "failing":
@@ -329,22 +363,187 @@ def page_findings(app, now):
     state, _ = fetch(app, "/api/health")
     if state != "read":
         out.append(finding("page-old", "Home", "health", "Home: app %s" % WHY[state], "GET /api/health was %s" % state,
-                           "page owner: restore the app"))
+                           "page owner: restore the app", "high"))
     return out, docs
 
 
-def render_md(key, findings, new_ids, coverage):
+def officer(lib):
+    """The page-check officer as the contract (docs/officers/contract.md) knows it: Fleet work, two kinds may start."""
+    return lib.Officer("page-check", "Page-check officer", "Page check", RUBRIC_FILE, START_SOURCES,
+                       severities=("high", "medium"), pattern_sources=START_SOURCES, project=lib.FLEET_PROJECT)
+
+
+def fix_target(lf):
+    """What a started fix changes: the page, or the Runs job a page-old finding names; never the card a card finding observed."""
+    ref = lf["key"].split(":", 2)[2]
+    return "%s job %s" % (lf["job"], ref) if lf["source"] == "page-old" and lf["job"] == "Runs" and ref != "runs" else lf["job"]
+
+
+def fix_view(lf):
+    """The finding as the reserved-class check reads it: its kind and fix target in place of a title that may carry a card id."""
+    return dict(lf, title="%s: %s" % (fix_target(lf), lf["source"]))
+
+
+def pattern_findings(lib, findings):
+    """The bad pattern of each filed page or card-source defect: its kind and fix target, with the route as the safe form."""
+    return [dict(lf, title=lib.text("%s on %s (route: %s)" % (lf["source"], fix_target(lf), lf["raw"]["route"]), 120),
+                 fix=lib.text(lf["raw"]["route"], 200)) for lf in findings if (lf["filing"] or {}).get("issue")]
+
+
+def lib_findings(lib, findings):
+    """One shared-library finding per page-check finding, built from the kind, page, object id, evidence and route only,
+    never from a card's words, because Linear is third-party storage."""
+    out = []
+    for f in findings:
+        ref = f["id"].split(":", 2)[2]
+        lf = lib.make_finding(f["kind"], f["page"], f["id"], "%s: %s %s" % (f["page"], f["kind"], ref),
+                              "%s. Route: %s." % (f["evidence"], f["route"]), "real", f["severity"], False, {})
+        lf["raw"] = f
+        out.append(lf)
+    return out
+
+
+def description(lf, key, off, near=None, recurrence=None):
+    """The Linear item body: ids, evidence and the route, never a card's question or answer."""
+    f = lf["raw"]
+    day = key[:10]
+    lines = ["Filed by the page-check officer from the %s page check." % key,
+             "What it is for: a fleet-app page that shows a card a rule already settles, a stale card, a card shown after it was settled, or an old page.",
+             "Epic: not assigned; whoever triages this picks one.", "",
+             "Severity: %s. Kind: %s. Page: %s. Object: %s." % (lf["severity"], f["kind"], f["page"], f["id"].split(":", 2)[2]),
+             off.found_line(1, day, day)]
+    if recurrence:
+        lines.append(recurrence)
+    if near:
+        lines.append("Near match (not treated as the same issue): %s, local-jev %.2f." % near)
+    lines += ["Evidence: %s." % f["evidence"], "Route: %s." % f["route"]]
+    # No trailing newline: Linear trims it, and `create --verify` then reports a mismatch on a good create.
+    return "\n".join(lines) + "\n%s:%s" % (off.marker, lf["fingerprint"])
+
+
+def file_findings(lib, off, findings, args, key, ledger, found, jev, lin):
+    """Files every open finding, highest score first; returns (writes done, why Linear stopped or None)."""
+    day, out = key[:10], args.out
+    filer = lib.Filer(off, lin, args.team, day, out, ledger, found, jev, args.max_creates)
+
+    def stop(reason, rate_limited=False):
+        for f in findings:
+            f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
+        if rate_limited:
+            lib.pause_for_rate_limit(out, args.now)
+        return lib.summary_rows(findings), reason
+
+    for f in findings:
+        if f["fingerprint"] in ledger:
+            f["filing"], f["issue_hint"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}, ledger[f["fingerprint"]]
+            filer.bumps.append(f)
+    due = [f for f in filer.bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != day]
+    if not any(not f["filing"] for f in findings) and not due:
+        return lib.summary_rows(findings), None
+    stopped = lib.paused_until(out, args.now)
+    if stopped:
+        return stop(stopped)
+    try:
+        names = lib.label_names(lin, args.team)
+    except lib.LinearError as exc:
+        return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
+
+    def label_set(f):
+        return lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
+
+    def describe(f, near=None, recurrence=None):
+        return description(f, key, off, near, recurrence)
+
+    try:
+        for f in findings:
+            if not f["filing"]:
+                filer.file_single(f, label_set, describe)
+        filer.settle_bumps(label_set, describe)
+    except lib.LinearError as exc:
+        if exc.code == "RATE_LIMITED":
+            return stop("Linear rate limit reached: %s" % exc, True)
+        return stop("%s; the next run continues from the ledger" % exc)
+    return lib.summary_rows(findings), None
+
+
+def linear_pass(raw, args, key):
+    """Files the findings in Linear (writes: linear) and hands the page defects to the owning office.
+
+    Returns (the digest's Linear fields, the library findings). A start needs the finding's Linear item, so without
+    writes: linear nothing is filed or started; a reserved class (docs/officers/contract.md) is held, not started.
+    """
+    lib = friction._lib()
+    off, out, day, linear = officer(lib), args.out, key[:10], args.writes == "linear"
+    lin = lib.Linear(args.max_linear_calls)
+    state = lib.read_json(os.path.join(out, lib.STATE_FILE), {})
+    found = lib.read_json(os.path.join(out, lib.FOUND_FILE), {})
+    ledger = lib.read_json(os.path.join(out, lib.LEDGER_FILE), {})
+    findings = lib_findings(lib, raw)
+    rubric = lib.load_rubric(args.rubric, off)
+    jev = lib.Jev(args.jev)
+    lib.apply_found(findings, found, ledger)
+    writes, blocked = file_findings(lib, off, findings, args, key, ledger, found, jev, lin) if linear else ([], None)
+    lib.apply_found(findings, found, ledger)
+    handled = state.setdefault("handled", {})
+    gaps = rubric.gaps + ([jev.gap] if jev.gap and linear else [])
+    if args.fm_home:
+        starts, held, asks = lib.plan_starts(off, [fix_view(f) for f in findings], rubric, day, args.writes, args.fm_home, lib.parse_start_homes(args.start_home), handled)
+    else:
+        starts, held, asks = [], [], []
+        gaps.append("no --fm-home, so nothing starts by itself")
+    by_fp = {f["fingerprint"]: f for f in findings}
+    for row in starts:
+        row["id"] = by_fp[row["fingerprint"]]["raw"]["id"]
+    store = lib.read_json(os.path.join(out, lib.PATTERN_FILE), {})
+    captures, lint = [], []
+    if linear and rubric.pattern_memory:
+        lib.update_patterns(off, store, pattern_findings(lib, findings), jev, day)
+    if linear and args.fm_home:
+        pattern_requests, captures, lint = lib.pattern_outputs(off, store, rubric, day, args.fm_home, lib.parse_start_homes(args.start_home))
+        starts.extend(pattern_requests)
+    for rank, row in enumerate(starts, 1):
+        row.update(rank=rank, owner_home=row["execute"]["env"]["FM_HOME"])
+    if linear:
+        lib.write_json(os.path.join(out, lib.LEDGER_FILE), ledger)
+        lib.write_json(os.path.join(out, lib.STATE_FILE), state)
+        lib.write_json(os.path.join(out, lib.FOUND_FILE), found)
+        lib.write_json(os.path.join(out, lib.PATTERN_FILE), store)
+    patterns = store.get("patterns", {})
+    for lf in findings:
+        lf["raw"]["linear"] = {"severity": lf["severity"], "found": lf["found"], "score": lf["score"],
+                               **{k: v for k, v in (lf["filing"] or {}).items() if k in ("action", "issue", "reason", "found", "recurrence_of")}}
+    return {"source": "page-check-officer", "generated_at": lib.iso(args.now), "writes": args.writes, "writes_done": writes,
+            "writes_blocked": blocked, "linear_calls": lin.n, "linear_call_budget": lin.budget, "linear_gaps": gaps,
+            "not_filed": lib.not_filed_lines(findings), "held": held, "asks_for_lee": asks, "start_requests": starts,
+            "patterns": {"total": len(patterns), "new": [dict(id=i, line=p["line"], count=p["count"]) for i, p in sorted(patterns.items()) if p["first"] == day],
+                         "captures": captures, "lint": lint}}
+
+
+def render_md(key, findings, new_ids, coverage, linear):
     lines = ["# Page check %s" % key, "", "%d open finding(s), %d new." % (len(findings), len(new_ids)), ""]
     lines += ["Coverage: " + c for c in coverage]
+    lines += ["- Linear: writes %s; %d of %d call(s) used%s." % (
+        linear["writes"], linear["linear_calls"], linear["linear_call_budget"],
+        "; stopped: " + linear["writes_blocked"] if linear["writes_blocked"] else "")]
+    lines += ["- Linear: " + g for g in linear["linear_gaps"]] + ["- " + n for n in linear["not_filed"]]
+    lines += ["- " + a["line"] for a in linear["asks_for_lee"]]
+    pat = linear["patterns"]
+    lines += ["- Patterns: %d known, %d new this run." % (pat["total"], len(pat["new"]))] + ["- Pattern: %s (x%d)" % (p["line"], p["count"]) for p in pat["new"]]
+    if pat["captures"]:
+        lines.append("- Memory capture needed (tags pattern + project): the office captures these %d line(s) from `patterns` in the digest json." % len(pat["captures"]))
+    lines += ["- Proposed follow-up: %s" % p["proposal"] for p in pat["lint"]]
     for f in findings:
-        lines.append("- %s[%s] %s - %s: %s (evidence: %s) -> %s" % (
+        lin = f.get("linear") or {}
+        lines.append("- %s[%s] %s - %s: %s (evidence: %s) -> %s%s" % (
             "NEW " if f["id"] in new_ids else "", f["kind"], f["page"], f["id"].split(":", 2)[2], f["title"],
-            f["evidence"], f["route"]))
+            f["evidence"], f["route"],
+            " [Linear %s, found %d, score %.1f%s]" % (lin.get("issue") or lin.get("action", "not filed"), lin["found"], lin["score"],
+                                                    ": " + lin["reason"] if lin.get("reason") else "") if lin else ""))
     return "\n".join(lines) + "\n"
 
 
 def run(args):
-    now = args.now if args.now is not None else int(time.time())
+    now = args.now
     rules, coverage = load_rules(args.rules) if args.rules else ([], ["no standing rules file"])
     findings, docs = page_findings(args.app, now)
     log = docs["Captain's Log"]
@@ -360,6 +559,9 @@ def run(args):
         findings += card_findings(doc if isinstance(doc, dict) else {}, rules, settled_by_status(args.home), known_closed,
                                   now, args.stale_days, coverage)
     findings.sort(key=lambda f: f["id"])
+    os.makedirs(args.out, exist_ok=True)
+    linear = linear_pass(findings, args, args.key)
+    coverage.extend(linear["linear_gaps"])
     seen_path = os.path.join(args.out, "state.json")
     try:
         with open(seen_path, encoding="utf-8") as fh:
@@ -368,13 +570,15 @@ def run(args):
         seen = {}
     window = args.remind_hours * 3600
     new_ids = {f["id"] for f in findings if now - seen.get(f["id"], -window - 1) >= window}
-    os.makedirs(args.out, exist_ok=True)
     kept = {f["id"]: (now if f["id"] in new_ids else seen[f["id"]]) for f in findings}
     triage.write_if_changed(seen_path, json.dumps(kept, sort_keys=True, indent=1) + "\n")
     triage.write_if_changed(os.path.join(args.out, args.key + ".json"),
-                            json.dumps({"key": args.key, "findings": findings, "new": sorted(new_ids), "coverage": coverage},
+                            json.dumps(dict(linear, key=args.key, findings=findings, new=sorted(new_ids), coverage=coverage),
                                        sort_keys=True, indent=1, ensure_ascii=False) + "\n")
-    triage.write_if_changed(os.path.join(args.out, args.key + ".md"), render_md(args.key, findings, new_ids, coverage))
+    triage.write_if_changed(os.path.join(args.out, args.key + ".md"), render_md(args.key, findings, new_ids, coverage, linear))
+    if args.fm_home:
+        friction._progress().write_handoff(os.path.join(args.out, args.key + ".start-requests.sh"),
+                                           [r["execute"] for r in linear["start_requests"] if r["execute"]["env"]["FM_HOME"] == args.fm_home])
     print("DIGEST %s %d %s.md" % (args.key, len(new_ids), args.key))
     return 0
 
@@ -389,10 +593,11 @@ def main(argv):
     parser.add_argument("--stale-days", type=int, default=7)
     parser.add_argument("--remind-hours", type=int, default=24)
     parser.add_argument("--home", action="append", default=[])
-    parser.add_argument("--now", type=int)
+    friction._lib().add_common_args(parser, RUBRIC_FILE)
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}(T\d{2})?", args.key):
         parser.error("--key must be YYYY-MM-DD or YYYY-MM-DDTHH")
+    friction._lib().check_common_args(parser, args)
     return run(args)
 
 

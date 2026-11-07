@@ -386,6 +386,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/officers/page-check-rubric.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/captain-hold-lifecycle.md",
       "audience": "maintainer-architecture"
     },
