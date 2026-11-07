@@ -40,6 +40,7 @@ case " \$* " in
   *" pr view "*headRefOid*) printf '%s\n' "$HEAD_SHA" ;;
   *" pr merge "*) printf 'merged\n' ;;
   *" api graphql "*) printf '%s\n' state=MERGED merged=true queued=false base=main ;;
+  *"/contents/.github/required-checks.list"*) printf 'gh: Not Found (HTTP 404)\n' >&2; exit 1 ;;
   *"/rules/branches/"*) printf '[]\n' ;;
   *"/branches/"*) printf '{"name":"main","protected":false,"protection":{"enabled":false,"required_status_checks":{"enforcement_level":"off","contexts":[],"checks":[]}}}\n' ;;
   *) exit 1 ;;
