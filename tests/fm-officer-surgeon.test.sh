@@ -14,9 +14,9 @@
 # label lookup reporting instead of filing, one rate limit stopping every
 # Linear call and pausing later runs, only label list, issue search and issue
 # create ever being called, an unreachable app as a coverage gap, and register
-# surgeon / retire triage keeping triage's findings, and the visual review source: its findings file (version 1 and 2)
+# surgeon / retire triage keeping triage's findings, and the visual review source: its findings file (version 2 only)
 # filed once per fingerprint and bumped on a repeat, wording or product findings held for Lee as one keyed decision with no
-# item, a missing, unreadable or unchanged file as a named gap, and a run without writes: linear touching nothing in Linear.
+# item, a missing, unreadable, version 1, unchanged or incomplete file as a named gap, and a run without writes: linear touching nothing in Linear.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -964,30 +964,30 @@ vfp() {  # <route> <rubric item>: the findings file's fingerprint, sha256 of pre
   printf '%s\n%s\n%s' visual-review-fp-v1 "$1" "$2" | sha256sum | cut -d' ' -f1
 }
 
-# write_visual <path> <version> <stamp>: a deal-finder defect seen on two viewports (one screenshot on disk, one not)
-# and a jargon finding on /portfolio. Version 1 carries none of the fields version 2 added.
+# write_visual <path> <stamp>: a version 2 file with a deal-finder defect seen on two viewports (one screenshot on disk,
+# one not) and a jargon finding on /portfolio.
 write_visual() {
   local fpa fpb
   fpa=$(vfp /deal-finder contradictory-numbers); fpb=$(vfp /portfolio jargon)
-  jq -n --argjson v "$2" --arg stamp "$3" --arg fpa "$fpa" --arg fpb "$fpb" '
+  jq -n --arg stamp "$2" --arg fpa "$fpa" --arg fpb "$fpb" '
     def f($route; $vp; $item; $sev; $file; $fp; $class):
       {key: ($route + "|" + $vp + "|default"), route: $route, viewport: $vp, state: "default", test: "t", file: $file, reason: "new",
-       rubric_item: $item, evidence: "Net yield 9% and 4%", region: "summary", severity: $sev}
-      + (if $v == 2 then {screenshot: $file, fingerprint: $fp, class: $class} else {} end);
-    {schema_version: $v, run: {date: $stamp, origin: "https://pc-staging-web.azurewebsites.net", images_reviewed: 3}, errors: [],
+       rubric_item: $item, evidence: "Net yield 9% and 4%", region: "summary", severity: $sev,
+       screenshot: $file, fingerprint: $fp, class: $class};
+    {schema_version: 2, run: {date: $stamp, origin: "https://pc-staging-web.azurewebsites.net", images_reviewed: 3}, errors: [],
      findings: [f("/deal-finder"; "desktop"; "contradictory-numbers"; "high"; "shots/a-desktop.png"; $fpa; "defect"),
                 f("/deal-finder"; "mobile"; "contradictory-numbers"; "medium"; "shots/a-mobile.png"; $fpa; "defect"),
                 f("/portfolio"; "desktop"; "jargon"; "high"; "shots/b-desktop.png"; $fpb; "held-for-lee")]}' > "$1"
 }
 
-# make_visual_world <name> <version> [registry extras]: a world whose app pages hold nothing, so the visual file is the only intake.
+# make_visual_world <name> [registry extras]: a world whose app pages hold nothing, so the visual file is the only intake.
 make_visual_world() {
   local name=$1 dir
   dir="$TMP_ROOT/$name-visual"
   mkdir -p "$dir/captures/shots"
   : > "$dir/captures/shots/a-desktop.png"
-  write_visual "$dir/findings.json" "$2" "$VSTAMP1"
-  make_world "$name" "${LINEAR_ON}visual-findings: $dir/findings.json; visual-captures: $dir/captures; ${3:-}"
+  write_visual "$dir/findings.json" "$VSTAMP1"
+  make_world "$name" "${LINEAR_ON}visual-findings: $dir/findings.json; visual-captures: $dir/captures; ${2:-}"
   printf 'Bug\nscheduled-review\ndeal-finder\nui-ux\ntriage\n' > "$LDIR/labels.txt"
   set_pages "$name" '[]' '[]'
   VISUAL_DIR=$dir
@@ -995,7 +995,7 @@ make_visual_world() {
 
 test_visual_defects_are_filed_once_and_wording_is_held() {
   local home json bodies out hex
-  make_visual_world vis 2; home=$WORLD_HOME
+  make_visual_world vis; home=$WORLD_HOME
   out=$(run_surgeon "$home") || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
   hex=$(vfp /deal-finder contradictory-numbers)
@@ -1023,26 +1023,12 @@ test_visual_defects_are_filed_once_and_wording_is_held() {
   pass "fm-officer surgeon: a visual defect is one item, wording is held for Lee and nothing starts"
 }
 
-test_visual_version_1_file_is_upgraded() {
-  local home json hex
-  make_visual_world vis1 1; home=$WORLD_HOME
-  run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
-  json="$home/data/officers/surgeon/$DATE.json"
-  hex=$(vfp /deal-finder contradictory-numbers)
-  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "a version 1 file files its defect once"
-  assert_contains "$(cat "$LDIR/bodies")" "visual-review-fp:$hex" "its fingerprint is derived from the route and the rubric item"
-  assert_contains "$(cat "$LDIR/bodies")" "Screenshot: $VISUAL_DIR/captures/shots/a-desktop.png" "and its screenshot is the file field"
-  assert_equals "needs-decision" "$(row "$json" visual "$(vfp /portfolio jargon)" .class)" "a wording rubric item is held"
-  assert_equals "surgeon-visual-held-$DATE" "$(jq -r '.asks_for_lee[0].key' "$json")" "as one decision"
-  pass "fm-officer surgeon: a version 1 findings file is read like version 2"
-}
-
 test_visual_repeat_bumps_the_found_line_and_an_unchanged_file_adds_nothing() {
   local home json out
-  make_visual_world visrep 2; home=$WORLD_HOME
+  make_visual_world visrep; home=$WORLD_HOME
   run_surgeon "$home" >/dev/null || fail "first run"
   : > "$LINEAR_LOG"
-  write_visual "$VISUAL_DIR/findings.json" 2 "$VSTAMP2"
+  write_visual "$VISUAL_DIR/findings.json" "$VSTAMP2"
   run_surgeon_next_day "$home" visrep >/dev/null || fail "next night's run"
   json="$home/data/officers/surgeon/$DATE2.json"
   assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "the same fingerprint is not created twice"
@@ -1058,7 +1044,7 @@ test_visual_repeat_bumps_the_found_line_and_an_unchanged_file_adds_nothing() {
 
 test_visual_held_only_run_makes_no_linear_call() {
   local home json
-  make_visual_world visheld 2; home=$WORLD_HOME
+  make_visual_world visheld; home=$WORLD_HOME
   jq '.findings |= map(select(.rubric_item == "jargon"))' "$VISUAL_DIR/findings.json" > "$VISUAL_DIR/f.json" && mv "$VISUAL_DIR/f.json" "$VISUAL_DIR/findings.json"
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
@@ -1069,7 +1055,7 @@ test_visual_held_only_run_makes_no_linear_call() {
 
 test_visual_file_problems_are_named_gaps() {
   local home out
-  make_visual_world visbad 2; home=$WORLD_HOME
+  make_visual_world visbad; home=$WORLD_HOME
   rm "$VISUAL_DIR/findings.json"
   out=$(run_surgeon "$home") || fail "a missing file must not fail the run"
   assert_contains "$out" "Coverage gap: visual findings file $VISUAL_DIR/findings.json not found" "a missing file is a gap"
@@ -1079,13 +1065,38 @@ test_visual_file_problems_are_named_gaps() {
   printf '%s\n' '{"schema_version": 3, "findings": []}' > "$VISUAL_DIR/findings.json"
   out=$(run_surgeon "$home") || fail "another schema must not fail the run"
   assert_contains "$out" "has schema_version 3" "a schema this code does not read is a gap"
+  write_visual "$VISUAL_DIR/findings.json" "$VSTAMP1"
+  jq '.schema_version = 1' "$VISUAL_DIR/findings.json" > "$VISUAL_DIR/f.json" && mv "$VISUAL_DIR/f.json" "$VISUAL_DIR/findings.json"
+  out=$(run_surgeon "$home") || fail "a version 1 file must not fail the run"
+  assert_contains "$out" "has schema_version 1 and a list of findings; only a version 2 file with a findings list is read" "a version 1 file is a gap, not read"
   [ ! -s "$LINEAR_LOG" ] || fail "no Linear call comes from a file that could not be read"
-  pass "fm-officer surgeon: a missing, unreadable or foreign visual findings file is a named coverage gap"
+  pass "fm-officer surgeon: a missing, unreadable, foreign or version 1 visual findings file is a named coverage gap"
+}
+
+test_visual_incomplete_review_is_a_named_gap() {
+  local home out
+  make_visual_world visinc; home=$WORLD_HOME
+  jq '.findings = [] | .errors = [{image: "shots/a-desktop.png", error: "model call failed"}, {image: "shots/a-mobile.png", error: "timeout"}]
+      | .run.images_failed = 2 | .run.images_deferred = 1 | .run.malformed_findings_dropped = 0' \
+    "$VISUAL_DIR/findings.json" > "$VISUAL_DIR/f.json" && mv "$VISUAL_DIR/f.json" "$VISUAL_DIR/findings.json"
+  out=$(run_surgeon "$home") || fail "a review with errors must not fail the run"
+  assert_contains "$out" "Coverage gap: visual findings file $VISUAL_DIR/findings.json reports 2 review error(s), so its findings are incomplete" "a failed review is not a clean night"
+  assert_contains "$out" "Coverage gap: visual findings file $VISUAL_DIR/findings.json: run.images_failed is 2" "failed images are named"
+  assert_contains "$out" "Coverage gap: visual findings file $VISUAL_DIR/findings.json: run.images_deferred is 1" "deferred images are named"
+  assert_not_contains "$out" "malformed_findings_dropped" "a zero count is no gap"
+  jq '.errors = [] | .run.images_failed = 0 | .run.images_deferred = 0
+      | .findings = [{route: "/deal-finder", rubric_item: "contradictory-numbers", class: "defect", severity: "high", screenshot: "shots/a-desktop.png"}]' \
+    "$VISUAL_DIR/findings.json" > "$VISUAL_DIR/f.json" && mv "$VISUAL_DIR/f.json" "$VISUAL_DIR/findings.json"
+  out=$(run_surgeon "$home") || fail "a row without a fingerprint must not fail the run"
+  assert_contains "$out" "1 finding(s) without a route, rubric item and 64-hex fingerprint skipped" "a row with no fingerprint is skipped and named"
+  assert_not_contains "$out" "review error" "an empty errors list is no gap"
+  [ ! -s "$LINEAR_LOG" ] || fail "nothing is filed from an incomplete review or a row without a fingerprint: $(cat "$LINEAR_LOG")"
+  pass "fm-officer surgeon: an incomplete visual review and a row with no fingerprint are named coverage gaps"
 }
 
 test_visual_dry_run_writes_nothing_to_linear() {
   local home json
-  make_visual_world visdry 2; home=$WORLD_HOME
+  make_visual_world visdry; home=$WORLD_HOME
   sed -i 's/writes: linear; //' "$home/data/officers.md"
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
@@ -1143,9 +1154,9 @@ test_reserved_classes_match_the_action_not_the_word
 test_one_item_gets_one_start_request_a_run
 test_closed_search_hit_files_a_recurrence
 test_visual_defects_are_filed_once_and_wording_is_held
-test_visual_version_1_file_is_upgraded
 test_visual_repeat_bumps_the_found_line_and_an_unchanged_file_adds_nothing
 test_visual_held_only_run_makes_no_linear_call
 test_visual_file_problems_are_named_gaps
+test_visual_incomplete_review_is_a_named_gap
 test_visual_dry_run_writes_nothing_to_linear
 test_visual_registry_fields_are_validated

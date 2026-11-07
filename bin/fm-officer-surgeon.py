@@ -49,17 +49,20 @@ Each finding is classified with the tables below and no model:
                         no environment field gets no bump.
 
   visual review         with --visual-findings, the nightly visual review's findings file (PropertyCompass2
-                        scripts/visual-review/README.md owns the format; schema_version 1 and 2 are read, 1 is
-                        upgraded the way its upgrade_document() does). Findings sharing a fingerprint (route plus
+                        scripts/visual-review/README.md owns the format; only schema_version 2 is read, and each
+                        row's own fingerprint and class are trusted). Findings sharing a fingerprint (route plus
                         rubric item; viewports do not split them) are one finding with every screenshot listed.
                         A `defect` is real at the file's own severity (high, medium or low; none stated: medium).
                         Anything not `defect` is held for Lee: never filed, never started, one keyed needs-decision
                         `surgeon-visual-held-<date>` per run for the ones not yet announced, and low severity so
                         it never raises the high-severity wake. The `visual` source is not a start source. A file
                         that is missing, unreadable, of another schema_version, or unchanged since the last run is a
-                        named `Coverage gap:`, and so is the fact that screenshots are only named in the item:
-                        linear-axi has no attachment command, so the item lists each screenshot's path (resolved
-                        against --visual-captures when given and the file is there).
+                        named `Coverage gap:`, as are a row without a route, rubric item or 64-hex fingerprint
+                        (skipped), a non-empty errors list or a run.images_failed, run.images_deferred or
+                        run.malformed_findings_dropped above zero (the review is incomplete), and the fact that
+                        screenshots are only named in the item: linear-axi has no attachment command, so the item
+                        lists each screenshot's path (resolved against --visual-captures when given and the file
+                        is there).
 
 A won't-fix finding is always low. A finding the source already put in Linear (an
 `issue` on the nightly failure, a filing on the review finding, a Linear item
@@ -172,8 +175,6 @@ SOURCE_LABEL = {"nightly": "scheduled-review", "review": "scheduled-review", "sw
 SOURCE_NAME = {"nightly": "nightly E2E", "review": "nightly code review", "sweeper": "bug sweeper", "visual": "nightly visual review"}
 # The visual review's findings file (PropertyCompass2 scripts/visual-review/evaluate.py): the fingerprint prefix and the
 # wording or product rubric items it holds for Lee. A version 1 file has neither fingerprint nor class, so both are derived here.
-VISUAL_FP_PREFIX = "visual-review-fp-v1"
-VISUAL_HELD_ITEMS = ("jargon", "repeated-or-developer-copy", "empty-state-clutter", "source-text-outside-sources")
 VISUAL_JOB = "visual-review"
 VISUAL_AREA_FALLBACK = "ui-ux"
 VISUAL_SEVERITY = {"high": "high", "medium": "medium", "low": "low"}
@@ -377,10 +378,6 @@ def intake(app, staging_repo):
         findings += judge_sweeper(sweeps)
     return findings, gaps, resolved
 
-def visual_fingerprint(route, rubric_item):
-    return hashlib.sha256("\n".join((VISUAL_FP_PREFIX, route, rubric_item)).encode("utf-8")).hexdigest()
-
-
 def visual_severity(row):
     return VISUAL_SEVERITY.get(text(row.get("severity"), 10).lower(), "medium")
 
@@ -413,33 +410,38 @@ def visual_intake(path, captures, state, ledger, date, writes):
         return [], [], ["visual findings file %s unreadable: %s" % (path, text(exc, 80))]
     version = doc.get("schema_version") if isinstance(doc, dict) else None
     rows = doc.get("findings") if isinstance(doc, dict) else None
-    if type(version) is not int or version not in (1, 2) or not isinstance(rows, list):
-        return [], [], ["visual findings file %s has schema_version %s and %s findings; only a version 1 or 2 file with a findings list is read"
+    if type(version) is not int or version != 2 or not isinstance(rows, list):
+        return [], [], ["visual findings file %s has schema_version %s and %s findings; only a version 2 file with a findings list is read"
                         % (path, text(version, 20), "no" if not isinstance(rows, list) else "a list of")]
     run = doc.get("run") if isinstance(doc.get("run"), dict) else {}
     stamp = text(run.get("date"), 40)
     seen = state.setdefault("visual", {})
     gaps, groups, skipped = [], collections.OrderedDict(), 0
+    errors = doc.get("errors")
+    if isinstance(errors, list) and errors:
+        gaps.append("visual findings file %s reports %d review error(s), so its findings are incomplete" % (path, len(errors)))
+    for count in ("images_failed", "images_deferred", "malformed_findings_dropped"):
+        value = run.get(count)
+        if type(value) is int and value > 0:
+            gaps.append("visual findings file %s: run.%s is %d, so its findings are incomplete" % (path, count, value))
     for row in dicts(rows):
         route, item = text(row.get("route"), 200), text(row.get("rubric_item"), 60)
-        if not route or not item:
+        fp = text(row.get("fingerprint"), 100)
+        if not route or not item or not re.fullmatch(r"[0-9a-f]{64}", fp):
             skipped += 1
             continue
-        fp = text(row.get("fingerprint"), 64) if version == 2 else ""
-        if not re.fullmatch(r"[0-9a-f]{64}", fp):
-            fp = visual_fingerprint(route, item)
-        klass = text(row.get("class"), 20) if version == 2 else ("held-for-lee" if item in VISUAL_HELD_ITEMS else "defect")
+        klass = text(row.get("class"), 20)
         group = groups.setdefault(fp, {"route": route, "item": item, "held": False, "rows": []})
         group["held"] = group["held"] or klass != "defect"
         group["rows"].append(row)
     if skipped:
-        gaps.append("visual findings file %s: %d finding(s) without a route and rubric item skipped" % (path, skipped))
+        gaps.append("visual findings file %s: %d finding(s) without a route, rubric item and 64-hex fingerprint skipped" % (path, skipped))
     findings, held = [], []
     for fp, g in groups.items():
         rows = g["rows"]
         top = min(rows, key=lambda r: RANK[visual_severity(r)])
         reviewer = visual_severity(top)
-        shots = sorted({text(r.get("screenshot") or r.get("file"), 300) for r in rows if r.get("screenshot") or r.get("file")})
+        shots = sorted({text(r.get("screenshot"), 300) for r in rows if r.get("screenshot")})
         evidence = {"rubric_item": g["item"], "evidence": text(top.get("evidence"), 240), "region": text(top.get("region"), 80),
                     "reason": text(top.get("reason"), 20), "viewports": ", ".join(sorted({text(r.get("viewport"), 20) for r in rows if r.get("viewport")})),
                     "reviewer_severity": reviewer, "review_run": stamp, "visual_review_fp": fp,

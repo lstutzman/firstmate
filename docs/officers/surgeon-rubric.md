@@ -18,7 +18,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - Not work: a duplicate, a fixed-live bug, noise, a finding the code reviewer rated low, a finding the source already put in Linear.
   A finding needing a product or spec call, an unclear one and one fixed on staging only come to Lee as a decision and are not filed.
 - Held for Lee, never filed and never started: a visual-review finding whose class is anything but `defect`.
-  Today those are the wording and product rubric items `jargon`, `repeated-or-developer-copy`, `empty-state-clutter` and `source-text-outside-sources`.
+  The findings file sets the class; today the held ones are the wording and product rubric items `jargon`, `repeated-or-developer-copy`, `empty-state-clutter` and `source-text-outside-sources`.
   Member-facing copy and product choices are Lee's.
 
 ## How severity and priority are scored
@@ -118,7 +118,9 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 
 The visual review is not a start source: its defects are filed and counted, and a person or the owning office picks them up from Linear.
 Its held findings are announced once as one keyed needs-decision, `surgeon-visual-held-<date>`, that names each route and rubric item, and a finding already announced is not put to Lee again.
-A findings file that is missing, unreadable, of a schema version other than 1 or 2, or unchanged since the last run is a named coverage gap, never silence.
+A findings file that is missing, unreadable, of a schema version other than 2, or unchanged since the last run is a named coverage gap, never silence.
+So is a file whose review was incomplete (a non-empty `errors` list, or `run.images_failed`, `run.images_deferred` or `run.malformed_findings_dropped` above zero), and a row without a route, a rubric item and a 64-hex `fingerprint`, which is skipped.
+The Surgeon trusts each row's own `fingerprint` and `class`; it keeps no copy of the held rubric items.
 A file the lane already read adds only the defects no item exists for yet, so an old file is never counted as a new sighting.
 
 These classes never start, whatever the severity.

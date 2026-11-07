@@ -91,7 +91,7 @@
 #
 # visual-findings: and visual-captures: are optional surgeon fields, absolute paths: the nightly visual review's
 # findings file and the capture directory its screenshot paths are relative to (bin/fm-officer-surgeon.py owns how
-# they are read; visual-captures needs visual-findings).
+# they are read: only a schema_version 2 file; visual-captures needs visual-findings).
 #
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
