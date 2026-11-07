@@ -1,0 +1,8 @@
+### run 1: bin/fm-officer.sh run progress
+Linear coverage: 6 pages, 16 items seen, 15 requests, 8 team items, 8 unblocked items, 1 requested roots visited, 1 hierarchy items, 0 rate-limit retries, 1 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: PC-208 not triaged: its description was not read in full
+DIGEST 2026-10-25 9 data/officers/progress/2026-10-25.md
+exit=0
+### run 2 (no new sightings)
+exit=0
+linear writes in run 2: 0

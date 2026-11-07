@@ -1,0 +1,26 @@
+{
+ "PC-201": {
+  "priority": 1,
+  "severity": "high"
+ },
+ "PC-202": {
+  "priority": 3,
+  "severity": "medium"
+ },
+ "PC-203": {
+  "priority": 3,
+  "severity": "medium"
+ },
+ "PC-205": {
+  "priority": 3,
+  "severity": "low"
+ },
+ "PC-206": {
+  "priority": 2,
+  "severity": "medium"
+ },
+ "PC-207": {
+  "priority": 3,
+  "severity": "low"
+ }
+}

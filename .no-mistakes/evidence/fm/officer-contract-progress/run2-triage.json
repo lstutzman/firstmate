@@ -1,0 +1,77 @@
+[
+  {
+    "linear_id": "PC-201",
+    "owner_office": "navigator",
+    "triage": {
+      "action": "kept",
+      "filed_by": "surgeon",
+      "found": 3,
+      "priority": 1,
+      "priority_was": 1,
+      "score": 8.0,
+      "severity": "high",
+      "why": "already at or above the score's priority"
+    }
+  },
+  {
+    "linear_id": "PC-206",
+    "owner_office": "navigator",
+    "triage": {
+      "action": "kept",
+      "filed_by": "surgeon",
+      "found": 3,
+      "priority": 2,
+      "priority_was": 2,
+      "score": 4.0,
+      "severity": "medium",
+      "why": "already at or above the score's priority"
+    }
+  },
+  {
+    "linear_id": "PC-202",
+    "owner_office": "navigator",
+    "triage": {
+      "action": "kept",
+      "filed_by": "surgeon",
+      "found": 9,
+      "priority": 3,
+      "priority_was": 3,
+      "score": 6.6,
+      "severity": "medium",
+      "why": "assigned to a person"
+    }
+  },
+  {
+    "linear_id": "PC-203",
+    "owner_office": "quartermaster",
+    "triage": {
+      "action": "kept",
+      "filed_by": "corpus",
+      "found": 1,
+      "priority": 3,
+      "priority_was": 3,
+      "score": 2.0,
+      "severity": "medium",
+      "why": "already at or above the score's priority"
+    }
+  },
+  {
+    "linear_id": "PC-207",
+    "owner_office": "navigator",
+    "triage": {
+      "action": "kept",
+      "filed_by": "surgeon",
+      "found": 3,
+      "priority": 3,
+      "priority_was": 3,
+      "score": 2.0,
+      "severity": "low",
+      "why": "already at or above the score's priority"
+    }
+  },
+  {
+    "linear_id": "PC-204",
+    "owner_office": null,
+    "triage": null
+  }
+]

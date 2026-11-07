@@ -1,0 +1,355 @@
+{
+  "asks_for_lee": [
+    {
+      "ask_key": "progress-holds-2026-10-25",
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-208"
+      ],
+      "execute": null,
+      "id": "PC-208",
+      "linear_id": "PC-208",
+      "linear_ids": [
+        "PC-208"
+      ],
+      "linear_only": true,
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.H6N9UO/live/home",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Item not read in full asks for data-rewriting, a reserved class: held for Lee",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: long story"
+    },
+    {
+      "ask_key": "progress-holds-2026-10-25",
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-205"
+      ],
+      "execute": null,
+      "id": "PC-205",
+      "linear_id": "PC-205",
+      "linear_ids": [
+        "PC-205"
+      ],
+      "linear_only": true,
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.H6N9UO/live/home",
+      "owner_office": "navigator",
+      "priority": 3,
+      "project": "",
+      "rank": null,
+      "reason": "Officer-filed item asks for credentials, a reserved class: held for Lee",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: key problem",
+      "triage": {
+        "action": "set",
+        "filed_by": "surgeon",
+        "found": 1,
+        "priority": 3,
+        "priority_was": 0,
+        "score": 1.0,
+        "severity": "low"
+      }
+    }
+  ],
+  "coverage": [
+    "PC-208 not triaged: its description was not read in full"
+  ],
+  "date": "2026-10-25",
+  "doing": [],
+  "done": [],
+  "excluded": [],
+  "filler": null,
+  "generated_at": "2026-10-26T06:00:00Z",
+  "linear_coverage": {
+    "descriptions_truncated": 1,
+    "hierarchy_items": 1,
+    "items_seen": 16,
+    "pages_fetched": 6,
+    "rate_limit_retries": 0,
+    "requests": 15,
+    "roots_visited": 1,
+    "team_items": 8,
+    "unblocked_items": 8,
+    "unverified_starts": 0
+  },
+  "schema_version": 1,
+  "source": "progress-officer",
+  "start_requests": [
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-201"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-c021767e6f77e488",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-201\"], \"id\": \"PC-201\", \"linear_id\": \"PC-201\", \"linear_ids\": [\"PC-201\"], \"linear_only\": true, \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.H6N9UO/live/home\", \"owner_office\": \"navigator\", \"priority\": 1, \"project\": \"\", \"rank\": 1, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: filed three times\", \"triage\": {\"action\": \"set\", \"filed_by\": \"surgeon\", \"found\": 3, \"priority\": 1, \"priority_was\": 2, \"score\": 8.0, \"severity\": \"high\"}}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.H6N9UO/live/navigator"
+        },
+        "request_id": "progress-2026-10-25-c021767e6f77e488"
+      },
+      "id": "PC-201",
+      "linear_id": "PC-201",
+      "linear_ids": [
+        "PC-201"
+      ],
+      "linear_only": true,
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.H6N9UO/live/home",
+      "owner_office": "navigator",
+      "priority": 1,
+      "project": "",
+      "rank": 1,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: filed three times",
+      "triage": {
+        "action": "set",
+        "filed_by": "surgeon",
+        "found": 3,
+        "priority": 1,
+        "priority_was": 2,
+        "score": 8.0,
+        "severity": "high"
+      }
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-206"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-01d23ffd2c998747",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-206\"], \"id\": \"PC-206\", \"linear_id\": \"PC-206\", \"linear_ids\": [\"PC-206\"], \"linear_only\": true, \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.H6N9UO/live/home\", \"owner_office\": \"navigator\", \"priority\": 2, \"project\": \"\", \"rank\": 2, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: medium seen thrice\", \"triage\": {\"action\": \"set\", \"filed_by\": \"surgeon\", \"found\": 3, \"priority\": 2, \"priority_was\": 3, \"score\": 4.0, \"severity\": \"medium\"}}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.H6N9UO/live/navigator"
+        },
+        "request_id": "progress-2026-10-25-01d23ffd2c998747"
+      },
+      "id": "PC-206",
+      "linear_id": "PC-206",
+      "linear_ids": [
+        "PC-206"
+      ],
+      "linear_only": true,
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.H6N9UO/live/home",
+      "owner_office": "navigator",
+      "priority": 2,
+      "project": "",
+      "rank": 2,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: medium seen thrice",
+      "triage": {
+        "action": "set",
+        "filed_by": "surgeon",
+        "found": 3,
+        "priority": 2,
+        "priority_was": 3,
+        "score": 4.0,
+        "severity": "medium"
+      }
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-202"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-7c28f6e24910b14d",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-202\"], \"id\": \"PC-202\", \"linear_id\": \"PC-202\", \"linear_ids\": [\"PC-202\"], \"linear_only\": true, \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.H6N9UO/live/home\", \"owner_office\": \"navigator\", \"priority\": 3, \"project\": \"\", \"rank\": 3, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: someone took it\", \"triage\": {\"action\": \"kept\", \"filed_by\": \"surgeon\", \"found\": 9, \"priority\": 3, \"priority_was\": 3, \"score\": 6.6, \"severity\": \"medium\", \"why\": \"assigned to a person\"}}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.H6N9UO/live/navigator"
+        },
+        "request_id": "progress-2026-10-25-7c28f6e24910b14d"
+      },
+      "id": "PC-202",
+      "linear_id": "PC-202",
+      "linear_ids": [
+        "PC-202"
+      ],
+      "linear_only": true,
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.H6N9UO/live/home",
+      "owner_office": "navigator",
+      "priority": 3,
+      "project": "",
+      "rank": 3,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: someone took it",
+      "triage": {
+        "action": "kept",
+        "filed_by": "surgeon",
+        "found": 9,
+        "priority": 3,
+        "priority_was": 3,
+        "score": 6.6,
+        "severity": "medium",
+        "why": "assigned to a person"
+      }
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-203"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-ebce8af3a7aab7b7",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-203\"], \"id\": \"PC-203\", \"linear_id\": \"PC-203\", \"linear_ids\": [\"PC-203\"], \"linear_only\": true, \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.H6N9UO/live/home\", \"owner_office\": \"quartermaster\", \"priority\": 3, \"project\": \"Fleet\", \"rank\": 4, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: fleet finding\", \"triage\": {\"action\": \"kept\", \"filed_by\": \"corpus\", \"found\": 1, \"priority\": 3, \"priority_was\": 3, \"score\": 2.0, \"severity\": \"medium\", \"why\": \"already at or above the score's priority\"}}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.H6N9UO/live/quartermaster"
+        },
+        "request_id": "progress-2026-10-25-ebce8af3a7aab7b7"
+      },
+      "id": "PC-203",
+      "linear_id": "PC-203",
+      "linear_ids": [
+        "PC-203"
+      ],
+      "linear_only": true,
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.H6N9UO/live/home",
+      "owner_office": "quartermaster",
+      "priority": 3,
+      "project": "Fleet",
+      "rank": 4,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: fleet finding",
+      "triage": {
+        "action": "kept",
+        "filed_by": "corpus",
+        "found": 1,
+        "priority": 3,
+        "priority_was": 3,
+        "score": 2.0,
+        "severity": "medium",
+        "why": "already at or above the score's priority"
+      }
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-207"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-7b8d782c8e331b5d",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-207\"], \"id\": \"PC-207\", \"linear_id\": \"PC-207\", \"linear_ids\": [\"PC-207\"], \"linear_only\": true, \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.H6N9UO/live/home\", \"owner_office\": \"navigator\", \"priority\": 3, \"project\": \"\", \"rank\": 5, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: low seen thrice\", \"triage\": {\"action\": \"kept\", \"filed_by\": \"surgeon\", \"found\": 3, \"priority\": 3, \"priority_was\": 3, \"score\": 2.0, \"severity\": \"low\", \"why\": \"already at or above the score's priority\"}}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.H6N9UO/live/navigator"
+        },
+        "request_id": "progress-2026-10-25-7b8d782c8e331b5d"
+      },
+      "id": "PC-207",
+      "linear_id": "PC-207",
+      "linear_ids": [
+        "PC-207"
+      ],
+      "linear_only": true,
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.H6N9UO/live/home",
+      "owner_office": "navigator",
+      "priority": 3,
+      "project": "",
+      "rank": 5,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: low seen thrice",
+      "triage": {
+        "action": "kept",
+        "filed_by": "surgeon",
+        "found": 3,
+        "priority": 3,
+        "priority_was": 3,
+        "score": 2.0,
+        "severity": "low",
+        "why": "already at or above the score's priority"
+      }
+    },
+    {
+      "authorising_class": "bug",
+      "evidence": [
+        "Linear PC-204"
+      ],
+      "execute": {
+        "action": "start",
+        "argv": [
+          "{run-worktree}/bin/fm-inbox.sh",
+          "note",
+          "--request-id",
+          "progress-2026-10-25-f91ab93ff16c87db",
+          "--json",
+          "--",
+          "Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. Start this work without another prioritization or approval question. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Business, product, wording, legal, payments, pricing, merges, production, credentials, data rewrites, destructive actions, and spending remain outside this authority. If Lee later parks this work, preserve its branch. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"authorising_class\": \"bug\", \"evidence\": [\"Linear PC-204\"], \"id\": \"PC-204\", \"linear_id\": \"PC-204\", \"linear_ids\": [\"PC-204\"], \"linear_only\": true, \"link\": \"\", \"owner_home\": \"/tmp/fm-officer-progress.H6N9UO/live/home\", \"priority\": 0, \"project\": \"\", \"rank\": 6, \"reason\": \"Unstarted work authorised by bug\", \"tag_source\": \"linear-title-prefix:Bug\", \"title\": \"Bug: filed by a person\"}"
+        ],
+        "env": {
+          "FM_HOME": "/tmp/fm-officer-progress.H6N9UO/live/home"
+        },
+        "request_id": "progress-2026-10-25-f91ab93ff16c87db"
+      },
+      "id": "PC-204",
+      "linear_id": "PC-204",
+      "linear_ids": [
+        "PC-204"
+      ],
+      "linear_only": true,
+      "link": "",
+      "owner_home": "/tmp/fm-officer-progress.H6N9UO/live/home",
+      "priority": 0,
+      "project": "",
+      "rank": 6,
+      "reason": "Unstarted work authorised by bug",
+      "tag_source": "linear-title-prefix:Bug",
+      "title": "Bug: filed by a person",
+      "unrouted": "local-jev unavailable: RuntimeError: exit 2"
+    }
+  ],
+  "top_of_mind": [],
+  "unclassified": 0
+}
