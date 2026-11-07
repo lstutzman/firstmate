@@ -1,0 +1,5 @@
+stub status-sleep lines: 1
+FM_CHECK_TIMEOUT=125 status-hang=100s elapsed=20s handoff_calls=1 marker=written
+  sweep output: <none>
+FM_CHECK_TIMEOUT=30 status-hang=100s elapsed=20s handoff_calls=1 marker=written
+  sweep output: <none>
