@@ -1,0 +1,632 @@
+{
+ "asks_for_lee": [
+  {
+   "findings": [
+    {
+     "class": "payments-billing",
+     "fingerprint": "5442b4085ea2f851383391beeb6a57f8fb08d92fa1c86e131d5284a525a7bb7a",
+     "issue": "PC-103",
+     "severity": "medium",
+     "title": "Runs job stripe-billing-sync: page-old"
+    }
+   ],
+   "key": "page-check-holds-2026-11-09",
+   "line": "needs-decision [key=page-check-holds-2026-11-09]: 1 finding(s) held for Lee, they match a reserved class: Runs job stripe-billing-sync: page-old (payments-billing)"
+  }
+ ],
+ "coverage": [
+  "no standing rules file",
+  "local-jev not found at /nonexistent/jev.py, so duplicates are found by fingerprint only"
+ ],
+ "findings": [
+  {
+   "evidence": "normal gap is 26 hour(s); last publish 2026-11-07 04:37Z",
+   "id": "page-old:Bosun:results",
+   "kind": "page-old",
+   "linear": {
+    "action": "exists",
+    "found": 2,
+    "issue": "PC-106",
+    "score": 3.17,
+    "severity": "medium"
+   },
+   "page": "Bosun",
+   "route": "page owner: fix the feed",
+   "severity": "medium",
+   "title": "Bosun: not updated for 55 hour(s)"
+  },
+  {
+   "evidence": "normal gap is 36 hour(s); last publish 2026-11-04 06:00Z",
+   "id": "page-old:Business health:business-health",
+   "kind": "page-old",
+   "linear": {
+    "action": "exists",
+    "found": 3,
+    "issue": "PC-102",
+    "score": 4.0,
+    "severity": "medium"
+   },
+   "page": "Business health",
+   "route": "page owner: fix the feed",
+   "severity": "medium",
+   "title": "Business health: not updated for 126 hour(s)"
+  },
+  {
+   "evidence": "normal gap is 6 hour(s); last publish 2026-11-07 11:30Z",
+   "id": "page-old:Captain's Log:captains-log",
+   "kind": "page-old",
+   "linear": {
+    "action": "exists",
+    "found": 2,
+    "issue": "PC-107",
+    "score": 3.17,
+    "severity": "medium"
+   },
+   "page": "Captain's Log",
+   "route": "page owner: fix the feed",
+   "severity": "medium",
+   "title": "Captain's Log: not updated for 48 hour(s)"
+  },
+  {
+   "evidence": "normal gap is 3 hour(s); last publish 2026-11-07 11:50Z",
+   "id": "page-old:Cost and cycle time:cost-cycle",
+   "kind": "page-old",
+   "linear": {
+    "action": "exists",
+    "found": 2,
+    "issue": "PC-108",
+    "score": 3.17,
+    "severity": "medium"
+   },
+   "page": "Cost and cycle time",
+   "route": "page owner: fix the feed",
+   "severity": "medium",
+   "title": "Cost and cycle time: not updated for 48 hour(s)"
+  },
+  {
+   "evidence": "normal gap is 36 hour(s); last publish 2026-11-07 06:00Z",
+   "id": "page-old:Feature ideation:ideation",
+   "kind": "page-old",
+   "linear": {
+    "action": "exists",
+    "found": 1,
+    "issue": "PC-110",
+    "score": 2.0,
+    "severity": "medium"
+   },
+   "page": "Feature ideation",
+   "route": "page owner: fix the feed",
+   "severity": "medium",
+   "title": "Feature ideation: not updated for 54 hour(s)"
+  },
+  {
+   "evidence": "normal gap is 48 hour(s); last publish 2026-11-07 07:00Z",
+   "id": "page-old:Progress officer:progress-officer",
+   "kind": "page-old",
+   "linear": {
+    "action": "exists",
+    "found": 1,
+    "issue": "PC-111",
+    "score": 2.0,
+    "severity": "medium"
+   },
+   "page": "Progress officer",
+   "route": "page owner: fix the feed",
+   "severity": "medium",
+   "title": "Progress officer: not updated for 53 hour(s)"
+  },
+  {
+   "evidence": "officer bosun: health failing, next due 2026-11-08T00:00:00Z",
+   "id": "page-old:Runs:stripe-billing-sync",
+   "kind": "page-old",
+   "linear": {
+    "action": "exists",
+    "found": 3,
+    "issue": "PC-103",
+    "score": 4.0,
+    "severity": "medium"
+   },
+   "page": "Runs",
+   "route": "page owner: fix the job",
+   "severity": "medium",
+   "title": "Billing sync is failing"
+  },
+  {
+   "evidence": "normal gap is 6 hour(s); last publish 2026-11-07 11:00Z",
+   "id": "page-old:Top of Mind:top-of-mind",
+   "kind": "page-old",
+   "linear": {
+    "action": "exists",
+    "found": 2,
+    "issue": "PC-109",
+    "score": 3.17,
+    "severity": "medium"
+   },
+   "page": "Top of Mind",
+   "route": "page owner: fix the feed",
+   "severity": "medium",
+   "title": "Top of Mind: not updated for 49 hour(s)"
+  },
+  {
+   "evidence": "GET /api/velocity-audit was missing",
+   "id": "page-old:Velocity audit:velocity-audit",
+   "kind": "page-old",
+   "linear": {
+    "action": "exists",
+    "found": 3,
+    "issue": "PC-101",
+    "score": 8.0,
+    "severity": "high"
+   },
+   "page": "Velocity audit",
+   "route": "page owner: restore the page's feed",
+   "severity": "high",
+   "title": "Velocity audit: never published"
+  },
+  {
+   "evidence": "the app's own record for this card is closed but the page shows it asked",
+   "id": "shown-after-done:Captain's Log:payments-legal-merge-asks-2026-11-07",
+   "kind": "shown-after-done",
+   "linear": {
+    "action": "exists",
+    "found": 3,
+    "issue": "PC-104",
+    "score": 4.0,
+    "severity": "medium"
+   },
+   "page": "Captain's Log",
+   "route": "cl-keeper: close the card; fix the source that re-raises it",
+   "severity": "medium",
+   "title": "Go for production deploy of 1.2.3 and payments merge?"
+  }
+ ],
+ "generated_at": "2026-11-09T12:00:00Z",
+ "held": [
+  {
+   "class": "payments-billing",
+   "fingerprint": "5442b4085ea2f851383391beeb6a57f8fb08d92fa1c86e131d5284a525a7bb7a",
+   "issue": "PC-103",
+   "severity": "medium",
+   "title": "Runs job stripe-billing-sync: page-old"
+  }
+ ],
+ "key": "2026-11-09T12",
+ "linear_call_budget": 450,
+ "linear_calls": 21,
+ "linear_gaps": [
+  "local-jev not found at /nonexistent/jev.py, so duplicates are found by fingerprint only"
+ ],
+ "new": [
+  "page-old:Bosun:results",
+  "page-old:Business health:business-health",
+  "page-old:Captain's Log:captains-log",
+  "page-old:Cost and cycle time:cost-cycle",
+  "page-old:Feature ideation:ideation",
+  "page-old:Progress officer:progress-officer",
+  "page-old:Runs:stripe-billing-sync",
+  "page-old:Top of Mind:top-of-mind",
+  "page-old:Velocity audit:velocity-audit",
+  "shown-after-done:Captain's Log:payments-legal-merge-asks-2026-11-07"
+ ],
+ "not_filed": [],
+ "patterns": {
+  "captures": [
+   {
+    "content": "Anti-pattern: page-old on Progress officer (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+    "count": 1,
+    "id": "0f17decfb30a3db0",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   },
+   {
+    "content": "Anti-pattern: page-old on Velocity audit (route: page owner: restore the page's feed). Safe form: page owner: restore the page's feed",
+    "count": 1,
+    "id": "3486cfd8069fb634",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   },
+   {
+    "content": "Anti-pattern: shown-after-done on Captain's Log (route: cl-keeper: close the card; fix the source that re-raises it). Safe form: cl-keeper: close the card; fix the source that re-raises it",
+    "count": 1,
+    "id": "476de870b603940e",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   },
+   {
+    "content": "Anti-pattern: page-old on Business health (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+    "count": 1,
+    "id": "4d1d27da27181d1c",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   },
+   {
+    "content": "Anti-pattern: page-old on Feature ideation (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+    "count": 1,
+    "id": "4de14f4a98e8c7a2",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   },
+   {
+    "content": "Anti-pattern: page-old on Runs job stripe-billing-sync (route: page owner: fix the job). Safe form: page owner: fix the job",
+    "count": 1,
+    "id": "54152623fc564957",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   },
+   {
+    "content": "Anti-pattern: page-old on Cost and cycle time (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+    "count": 1,
+    "id": "6a469fbb06c23064",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   },
+   {
+    "content": "Anti-pattern: page-old on Captain's Log (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+    "count": 1,
+    "id": "8f257412670fb653",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   },
+   {
+    "content": "Anti-pattern: page-old on Top of Mind (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+    "count": 1,
+    "id": "c785966e2ec81303",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   },
+   {
+    "content": "Anti-pattern: page-old on Bosun (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+    "count": 1,
+    "id": "ef93e530760ed84e",
+    "tags": [
+     "pattern",
+     "project:Fleet"
+    ]
+   }
+  ],
+  "lint": [],
+  "new": [
+   {
+    "count": 1,
+    "id": "0f17decfb30a3db0",
+    "line": "Anti-pattern: page-old on Progress officer (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+   },
+   {
+    "count": 1,
+    "id": "3486cfd8069fb634",
+    "line": "Anti-pattern: page-old on Velocity audit (route: page owner: restore the page's feed). Safe form: page owner: restore the page's feed"
+   },
+   {
+    "count": 1,
+    "id": "476de870b603940e",
+    "line": "Anti-pattern: shown-after-done on Captain's Log (route: cl-keeper: close the card; fix the source that re-raises it). Safe form: cl-keeper: close the card; fix the source that re-raises it"
+   },
+   {
+    "count": 1,
+    "id": "4d1d27da27181d1c",
+    "line": "Anti-pattern: page-old on Business health (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+   },
+   {
+    "count": 1,
+    "id": "4de14f4a98e8c7a2",
+    "line": "Anti-pattern: page-old on Feature ideation (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+   },
+   {
+    "count": 1,
+    "id": "54152623fc564957",
+    "line": "Anti-pattern: page-old on Runs job stripe-billing-sync (route: page owner: fix the job). Safe form: page owner: fix the job"
+   },
+   {
+    "count": 1,
+    "id": "6a469fbb06c23064",
+    "line": "Anti-pattern: page-old on Cost and cycle time (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+   },
+   {
+    "count": 1,
+    "id": "8f257412670fb653",
+    "line": "Anti-pattern: page-old on Captain's Log (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+   },
+   {
+    "count": 1,
+    "id": "c785966e2ec81303",
+    "line": "Anti-pattern: page-old on Top of Mind (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+   },
+   {
+    "count": 1,
+    "id": "ef93e530760ed84e",
+    "line": "Anti-pattern: page-old on Bosun (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+   }
+  ],
+  "total": 10
+ },
+ "source": "page-check-officer",
+ "start_requests": [
+  {
+   "execute": {
+    "action": "start",
+    "argv": [
+     "{run-worktree}/bin/fm-inbox.sh",
+     "note",
+     "--request-id",
+     "page-check-2026-11-09-09b2815a67c0de36",
+     "--json",
+     "--",
+     "Page-check officer automatic start under its rubric (docs/officers/page-check-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Start this Linear item. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"fingerprint\": \"f825d69ebd1f10c8b36ab7fe31b0f6f9f55d68cf60dc58db0686630cc2134552\", \"found\": 3, \"issue\": \"PC-101\", \"kind\": \"page-check-finding\", \"linear_id\": \"PC-101\", \"linear_only\": true, \"project\": \"\", \"reason\": \"Real high finding admitted by the rubric\", \"score\": 8.0, \"severity\": \"high\", \"source\": \"page-old\", \"title\": \"Velocity audit: page-old\"}"
+    ],
+    "env": {
+     "FM_HOME": "/tmp/pc-live.EM8pyz/quartermaster"
+    },
+    "request_id": "page-check-2026-11-09-09b2815a67c0de36"
+   },
+   "fingerprint": "f825d69ebd1f10c8b36ab7fe31b0f6f9f55d68cf60dc58db0686630cc2134552",
+   "found": 3,
+   "id": "page-old:Velocity audit:velocity-audit",
+   "issue": "PC-101",
+   "kind": "page-check-finding",
+   "linear_id": "PC-101",
+   "linear_only": true,
+   "owner_home": "/tmp/pc-live.EM8pyz/quartermaster",
+   "project": "",
+   "rank": 1,
+   "reason": "Real high finding admitted by the rubric",
+   "score": 8.0,
+   "severity": "high",
+   "source": "page-old",
+   "title": "Velocity audit: page-old"
+  },
+  {
+   "execute": {
+    "action": "start",
+    "argv": [
+     "{run-worktree}/bin/fm-inbox.sh",
+     "note",
+     "--request-id",
+     "page-check-2026-11-09-d908702ba68b17b6",
+     "--json",
+     "--",
+     "Page-check officer automatic start under its rubric (docs/officers/page-check-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Start this Linear item. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"fingerprint\": \"116075a7ded9f11701b5e716a69f487a45371dd1025005bb6021c66db92eadaf\", \"found\": 3, \"issue\": \"PC-102\", \"kind\": \"page-check-finding\", \"linear_id\": \"PC-102\", \"linear_only\": true, \"project\": \"\", \"reason\": \"Real medium finding admitted by the rubric\", \"score\": 4.0, \"severity\": \"medium\", \"source\": \"page-old\", \"title\": \"Business health: page-old\"}"
+    ],
+    "env": {
+     "FM_HOME": "/tmp/pc-live.EM8pyz/quartermaster"
+    },
+    "request_id": "page-check-2026-11-09-d908702ba68b17b6"
+   },
+   "fingerprint": "116075a7ded9f11701b5e716a69f487a45371dd1025005bb6021c66db92eadaf",
+   "found": 3,
+   "id": "page-old:Business health:business-health",
+   "issue": "PC-102",
+   "kind": "page-check-finding",
+   "linear_id": "PC-102",
+   "linear_only": true,
+   "owner_home": "/tmp/pc-live.EM8pyz/quartermaster",
+   "project": "",
+   "rank": 2,
+   "reason": "Real medium finding admitted by the rubric",
+   "score": 4.0,
+   "severity": "medium",
+   "source": "page-old",
+   "title": "Business health: page-old"
+  },
+  {
+   "execute": {
+    "action": "start",
+    "argv": [
+     "{run-worktree}/bin/fm-inbox.sh",
+     "note",
+     "--request-id",
+     "page-check-2026-11-09-3ec6b06645dfe13a",
+     "--json",
+     "--",
+     "Page-check officer automatic start under its rubric (docs/officers/page-check-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Start this Linear item. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"fingerprint\": \"add11e875272baeaff74119bca295c46e4150b79b1964d149b44658ff790f429\", \"found\": 3, \"issue\": \"PC-104\", \"kind\": \"page-check-finding\", \"linear_id\": \"PC-104\", \"linear_only\": true, \"project\": \"\", \"reason\": \"Real medium finding admitted by the rubric\", \"score\": 4.0, \"severity\": \"medium\", \"source\": \"shown-after-done\", \"title\": \"Captain's Log: shown-after-done\"}"
+    ],
+    "env": {
+     "FM_HOME": "/tmp/pc-live.EM8pyz/quartermaster"
+    },
+    "request_id": "page-check-2026-11-09-3ec6b06645dfe13a"
+   },
+   "fingerprint": "add11e875272baeaff74119bca295c46e4150b79b1964d149b44658ff790f429",
+   "found": 3,
+   "id": "shown-after-done:Captain's Log:payments-legal-merge-asks-2026-11-07",
+   "issue": "PC-104",
+   "kind": "page-check-finding",
+   "linear_id": "PC-104",
+   "linear_only": true,
+   "owner_home": "/tmp/pc-live.EM8pyz/quartermaster",
+   "project": "",
+   "rank": 3,
+   "reason": "Real medium finding admitted by the rubric",
+   "score": 4.0,
+   "severity": "medium",
+   "source": "shown-after-done",
+   "title": "Captain's Log: shown-after-done"
+  },
+  {
+   "execute": {
+    "action": "start",
+    "argv": [
+     "{run-worktree}/bin/fm-inbox.sh",
+     "note",
+     "--request-id",
+     "page-check-2026-11-09-b520408f93d51517",
+     "--json",
+     "--",
+     "Page-check officer automatic start under its rubric (docs/officers/page-check-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Keep these new bad-pattern lines (anti-pattern and safe form), found in Fleet code, from being repeated: add them to the review guidance of the fleet repository it came from or a check through a normal PR; the Page check never writes that repository itself. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:\n{\"kind\": \"pattern-memory\", \"linear_only\": true, \"patterns\": [{\"count\": 1, \"id\": \"0f17decfb30a3db0\", \"line\": \"Anti-pattern: page-old on Progress officer (route: page owner: fix the feed). Safe form: page owner: fix the feed\"}, {\"count\": 1, \"id\": \"3486cfd8069fb634\", \"line\": \"Anti-pattern: page-old on Velocity audit (route: page owner: restore the page's feed). Safe form: page owner: restore the page's feed\"}, {\"count\": 1, \"id\": \"476de870b603940e\", \"line\": \"Anti-pattern: shown-after-done on Captain's Log (route: cl-keeper: close the card; fix the source that re-raises it). Safe form: cl-keeper: close the card; fix the source that re-raises it\"}, {\"count\": 1, \"id\": \"4d1d27da27181d1c\", \"line\": \"Anti-pattern: page-old on Business health (route: page owner: fix the feed). Safe form: page owner: fix the feed\"}, {\"count\": 1, \"id\": \"4de14f4a98e8c7a2\", \"line\": \"Anti-pattern: page-old on Feature ideation (route: page owner: fix the feed). Safe form: page owner: fix the feed\"}, {\"count\": 1, \"id\": \"54152623fc564957\", \"line\": \"Anti-pattern: page-old on Runs job stripe-billing-sync (route: page owner: fix the job). Safe form: page owner: fix the job\"}, {\"count\": 1, \"id\": \"6a469fbb06c23064\", \"line\": \"Anti-pattern: page-old on Cost and cycle time (route: page owner: fix the feed). Safe form: page owner: fix the feed\"}, {\"count\": 1, \"id\": \"8f257412670fb653\", \"line\": \"Anti-pattern: page-old on Captain's Log (route: page owner: fix the feed). Safe form: page owner: fix the feed\"}, {\"count\": 1, \"id\": \"c785966e2ec81303\", \"line\": \"Anti-pattern: page-old on Top of Mind (route: page owner: fix the feed). Safe form: page owner: fix the feed\"}, {\"count\": 1, \"id\": \"ef93e530760ed84e\", \"line\": \"Anti-pattern: page-old on Bosun (route: page owner: fix the feed). Safe form: page owner: fix the feed\"}], \"project\": \"Fleet\", \"rank\": 0, \"target\": \"the review guidance of the fleet repository it came from\"}"
+    ],
+    "env": {
+     "FM_HOME": "/tmp/pc-live.EM8pyz/quartermaster"
+    },
+    "request_id": "page-check-2026-11-09-b520408f93d51517"
+   },
+   "kind": "pattern-memory",
+   "linear_only": true,
+   "owner_home": "/tmp/pc-live.EM8pyz/quartermaster",
+   "patterns": [
+    {
+     "count": 1,
+     "id": "0f17decfb30a3db0",
+     "line": "Anti-pattern: page-old on Progress officer (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+    },
+    {
+     "count": 1,
+     "id": "3486cfd8069fb634",
+     "line": "Anti-pattern: page-old on Velocity audit (route: page owner: restore the page's feed). Safe form: page owner: restore the page's feed"
+    },
+    {
+     "count": 1,
+     "id": "476de870b603940e",
+     "line": "Anti-pattern: shown-after-done on Captain's Log (route: cl-keeper: close the card; fix the source that re-raises it). Safe form: cl-keeper: close the card; fix the source that re-raises it"
+    },
+    {
+     "count": 1,
+     "id": "4d1d27da27181d1c",
+     "line": "Anti-pattern: page-old on Business health (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+    },
+    {
+     "count": 1,
+     "id": "4de14f4a98e8c7a2",
+     "line": "Anti-pattern: page-old on Feature ideation (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+    },
+    {
+     "count": 1,
+     "id": "54152623fc564957",
+     "line": "Anti-pattern: page-old on Runs job stripe-billing-sync (route: page owner: fix the job). Safe form: page owner: fix the job"
+    },
+    {
+     "count": 1,
+     "id": "6a469fbb06c23064",
+     "line": "Anti-pattern: page-old on Cost and cycle time (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+    },
+    {
+     "count": 1,
+     "id": "8f257412670fb653",
+     "line": "Anti-pattern: page-old on Captain's Log (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+    },
+    {
+     "count": 1,
+     "id": "c785966e2ec81303",
+     "line": "Anti-pattern: page-old on Top of Mind (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+    },
+    {
+     "count": 1,
+     "id": "ef93e530760ed84e",
+     "line": "Anti-pattern: page-old on Bosun (route: page owner: fix the feed). Safe form: page owner: fix the feed"
+    }
+   ],
+   "project": "Fleet",
+   "rank": 4,
+   "target": "the review guidance of the fleet repository it came from"
+  }
+ ],
+ "writes": "linear",
+ "writes_blocked": null,
+ "writes_done": [
+  {
+   "action": "exists",
+   "fingerprint": "f825d69ebd1f10c8b36ab7fe31b0f6f9f55d68cf60dc58db0686630cc2134552",
+   "found": 3,
+   "issue": "PC-101",
+   "severity": "high",
+   "source": "page-old",
+   "title": "Velocity audit: page-old velocity-audit"
+  },
+  {
+   "action": "exists",
+   "fingerprint": "8b442e257118cf743bc3d2c8478167999c26892cf50972ce193b0c964895963f",
+   "found": 2,
+   "issue": "PC-106",
+   "severity": "medium",
+   "source": "page-old",
+   "title": "Bosun: page-old results"
+  },
+  {
+   "action": "exists",
+   "fingerprint": "116075a7ded9f11701b5e716a69f487a45371dd1025005bb6021c66db92eadaf",
+   "found": 3,
+   "issue": "PC-102",
+   "severity": "medium",
+   "source": "page-old",
+   "title": "Business health: page-old business-health"
+  },
+  {
+   "action": "exists",
+   "fingerprint": "32904e678c69babcdfebb7cdd58bc6a05322f9ee21b72e0629592c7d8fbeaeac",
+   "found": 2,
+   "issue": "PC-107",
+   "severity": "medium",
+   "source": "page-old",
+   "title": "Captain's Log: page-old captains-log"
+  },
+  {
+   "action": "exists",
+   "fingerprint": "f582f6cb6770c9bfe392591c72570cc49ad58989faaa7535b0c31a0ca5bcec7b",
+   "found": 2,
+   "issue": "PC-108",
+   "severity": "medium",
+   "source": "page-old",
+   "title": "Cost and cycle time: page-old cost-cycle"
+  },
+  {
+   "action": "exists",
+   "fingerprint": "b0aa35f7df2f554915eb88a7aed29201e65a1229b74ecd12ab295a0edaafa2e2",
+   "found": 1,
+   "issue": "PC-110",
+   "severity": "medium",
+   "source": "page-old",
+   "title": "Feature ideation: page-old ideation"
+  },
+  {
+   "action": "exists",
+   "fingerprint": "a58e38ce8beeb1aa4e4bd0c68e042f7a24eb1557ebb21253d83a5d655a46dc1f",
+   "found": 1,
+   "issue": "PC-111",
+   "severity": "medium",
+   "source": "page-old",
+   "title": "Progress officer: page-old progress-officer"
+  },
+  {
+   "action": "exists",
+   "fingerprint": "5442b4085ea2f851383391beeb6a57f8fb08d92fa1c86e131d5284a525a7bb7a",
+   "found": 3,
+   "issue": "PC-103",
+   "severity": "medium",
+   "source": "page-old",
+   "title": "Runs: page-old stripe-billing-sync"
+  },
+  {
+   "action": "exists",
+   "fingerprint": "8e63df140167cb2f9828a79eecb69fa0a213cecfa4ffd5beda3ee3d81406318f",
+   "found": 2,
+   "issue": "PC-109",
+   "severity": "medium",
+   "source": "page-old",
+   "title": "Top of Mind: page-old top-of-mind"
+  },
+  {
+   "action": "exists",
+   "fingerprint": "add11e875272baeaff74119bca295c46e4150b79b1964d149b44658ff790f429",
+   "found": 3,
+   "issue": "PC-104",
+   "severity": "medium",
+   "source": "shown-after-done",
+   "title": "Captain's Log: shown-after-done payments-legal-merge-asks-2026-11-07"
+  }
+ ]
+}

@@ -1,0 +1,136 @@
+{
+ "by_finding": {
+  "116075a7ded9f11701b5e716a69f487a45371dd1025005bb6021c66db92eadaf": "4d1d27da27181d1c",
+  "32904e678c69babcdfebb7cdd58bc6a05322f9ee21b72e0629592c7d8fbeaeac": "8f257412670fb653",
+  "5442b4085ea2f851383391beeb6a57f8fb08d92fa1c86e131d5284a525a7bb7a": "54152623fc564957",
+  "8b442e257118cf743bc3d2c8478167999c26892cf50972ce193b0c964895963f": "ef93e530760ed84e",
+  "8e63df140167cb2f9828a79eecb69fa0a213cecfa4ffd5beda3ee3d81406318f": "c785966e2ec81303",
+  "a58e38ce8beeb1aa4e4bd0c68e042f7a24eb1557ebb21253d83a5d655a46dc1f": "0f17decfb30a3db0",
+  "add11e875272baeaff74119bca295c46e4150b79b1964d149b44658ff790f429": "476de870b603940e",
+  "b0aa35f7df2f554915eb88a7aed29201e65a1229b74ecd12ab295a0edaafa2e2": "4de14f4a98e8c7a2",
+  "f582f6cb6770c9bfe392591c72570cc49ad58989faaa7535b0c31a0ca5bcec7b": "6a469fbb06c23064",
+  "f825d69ebd1f10c8b36ab7fe31b0f6f9f55d68cf60dc58db0686630cc2134552": "3486cfd8069fb634"
+ },
+ "patterns": {
+  "0f17decfb30a3db0": {
+   "captured": "2026-11-09",
+   "count": 1,
+   "first": "2026-11-09",
+   "last": "2026-11-09",
+   "line": "Anti-pattern: page-old on Progress officer (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-09",
+   "source": "page-old",
+   "title": "page-old on Progress officer (route: page owner: fix the feed)"
+  },
+  "3486cfd8069fb634": {
+   "captured": "2026-11-07",
+   "count": 1,
+   "first": "2026-11-07",
+   "last": "2026-11-07",
+   "line": "Anti-pattern: page-old on Velocity audit (route: page owner: restore the page's feed). Safe form: page owner: restore the page's feed",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-07",
+   "source": "page-old",
+   "title": "page-old on Velocity audit (route: page owner: restore the page's feed)"
+  },
+  "476de870b603940e": {
+   "captured": "2026-11-07",
+   "count": 1,
+   "first": "2026-11-07",
+   "last": "2026-11-07",
+   "line": "Anti-pattern: shown-after-done on Captain's Log (route: cl-keeper: close the card; fix the source that re-raises it). Safe form: cl-keeper: close the card; fix the source that re-raises it",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-07",
+   "source": "shown-after-done",
+   "title": "shown-after-done on Captain's Log (route: cl-keeper: close the card; fix the source that re-raises it)"
+  },
+  "4d1d27da27181d1c": {
+   "captured": "2026-11-07",
+   "count": 1,
+   "first": "2026-11-07",
+   "last": "2026-11-07",
+   "line": "Anti-pattern: page-old on Business health (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-07",
+   "source": "page-old",
+   "title": "page-old on Business health (route: page owner: fix the feed)"
+  },
+  "4de14f4a98e8c7a2": {
+   "captured": "2026-11-09",
+   "count": 1,
+   "first": "2026-11-09",
+   "last": "2026-11-09",
+   "line": "Anti-pattern: page-old on Feature ideation (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-09",
+   "source": "page-old",
+   "title": "page-old on Feature ideation (route: page owner: fix the feed)"
+  },
+  "54152623fc564957": {
+   "captured": "2026-11-07",
+   "count": 1,
+   "first": "2026-11-07",
+   "last": "2026-11-07",
+   "line": "Anti-pattern: page-old on Runs job stripe-billing-sync (route: page owner: fix the job). Safe form: page owner: fix the job",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-07",
+   "source": "page-old",
+   "title": "page-old on Runs job stripe-billing-sync (route: page owner: fix the job)"
+  },
+  "6a469fbb06c23064": {
+   "captured": "2026-11-08",
+   "count": 1,
+   "first": "2026-11-08",
+   "last": "2026-11-08",
+   "line": "Anti-pattern: page-old on Cost and cycle time (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-08",
+   "source": "page-old",
+   "title": "page-old on Cost and cycle time (route: page owner: fix the feed)"
+  },
+  "8f257412670fb653": {
+   "captured": "2026-11-08",
+   "count": 1,
+   "first": "2026-11-08",
+   "last": "2026-11-08",
+   "line": "Anti-pattern: page-old on Captain's Log (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-08",
+   "source": "page-old",
+   "title": "page-old on Captain's Log (route: page owner: fix the feed)"
+  },
+  "c785966e2ec81303": {
+   "captured": "2026-11-08",
+   "count": 1,
+   "first": "2026-11-08",
+   "last": "2026-11-08",
+   "line": "Anti-pattern: page-old on Top of Mind (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-08",
+   "source": "page-old",
+   "title": "page-old on Top of Mind (route: page owner: fix the feed)"
+  },
+  "ef93e530760ed84e": {
+   "captured": "2026-11-08",
+   "count": 1,
+   "first": "2026-11-08",
+   "last": "2026-11-08",
+   "line": "Anti-pattern: page-old on Bosun (route: page owner: fix the feed). Safe form: page owner: fix the feed",
+   "mechanical": false,
+   "project": "Fleet",
+   "reported": "2026-11-08",
+   "source": "page-old",
+   "title": "page-old on Bosun (route: page owner: fix the feed)"
+  }
+ }
+}

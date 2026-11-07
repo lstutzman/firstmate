@@ -1,0 +1,127 @@
+label list --team PC --limit 250 --output json
+issue search page-check-fp:f825d69ebd1f10c8b36ab7fe31b0f6f9f55d68cf60dc58db0686630cc2134552 --team PC --limit 5 --output json
+issue create --team PC --title Velocity audit: page-old velocity-audit --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-f825d69ebd1f.md --priority 2 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Velocity audit: page-old velocity-audit --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-f825d69ebd1f.md --priority 2 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue search page-check-fp:116075a7ded9f11701b5e716a69f487a45371dd1025005bb6021c66db92eadaf --team PC --limit 5 --output json
+issue create --team PC --title Business health: page-old business-health --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-116075a7ded9.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Business health: page-old business-health --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-116075a7ded9.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue search page-check-fp:5442b4085ea2f851383391beeb6a57f8fb08d92fa1c86e131d5284a525a7bb7a --team PC --limit 5 --output json
+issue create --team PC --title Runs: page-old stripe-billing-sync --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-5442b4085ea2.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Runs: page-old stripe-billing-sync --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-5442b4085ea2.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue search page-check-fp:add11e875272baeaff74119bca295c46e4150b79b1964d149b44658ff790f429 --team PC --limit 5 --output json
+issue create --team PC --title Captain's Log: shown-after-done payments-legal-merge-asks-2026-11-07 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-add11e875272.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Captain's Log: shown-after-done payments-legal-merge-asks-2026-11-07 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-add11e875272.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue search page-check-fp:f688fd13831cd31474fcf1c6b6a413f7c6364d1e42cc553c4d3b515374cc060f --team PC --limit 5 --output json
+issue create --team PC --title Captain's Log: standing-rule cleanup:routine-cleanup --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-f688fd13831c.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Captain's Log: standing-rule cleanup:routine-cleanup --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-07-f688fd13831c.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+label list --team PC --limit 250 --output json
+issue search page-check-fp:8b442e257118cf743bc3d2c8478167999c26892cf50972ce193b0c964895963f --team PC --limit 5 --output json
+issue create --team PC --title Bosun: page-old results --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-8b442e257118.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Bosun: page-old results --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-8b442e257118.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue search page-check-fp:32904e678c69babcdfebb7cdd58bc6a05322f9ee21b72e0629592c7d8fbeaeac --team PC --limit 5 --output json
+issue create --team PC --title Captain's Log: page-old captains-log --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-32904e678c69.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Captain's Log: page-old captains-log --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-32904e678c69.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue search page-check-fp:f582f6cb6770c9bfe392591c72570cc49ad58989faaa7535b0c31a0ca5bcec7b --team PC --limit 5 --output json
+issue create --team PC --title Cost and cycle time: page-old cost-cycle --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-f582f6cb6770.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Cost and cycle time: page-old cost-cycle --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-f582f6cb6770.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue search page-check-fp:8e63df140167cb2f9828a79eecb69fa0a213cecfa4ffd5beda3ee3d81406318f --team PC --limit 5 --output json
+issue create --team PC --title Top of Mind: page-old top-of-mind --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-8e63df140167.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Top of Mind: page-old top-of-mind --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-8e63df140167.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue view PC-101 --full --output json
+issue update PC-101 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-f825d69ebd1f.md --dry-run --output json
+issue update PC-101 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-f825d69ebd1f.md --verify --output json
+issue comment PC-101 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --dry-run --output json
+issue comment PC-101 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --verify --output json
+issue view PC-102 --full --output json
+issue update PC-102 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-116075a7ded9.md --dry-run --output json
+issue update PC-102 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-116075a7ded9.md --verify --output json
+issue comment PC-102 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --dry-run --output json
+issue comment PC-102 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --verify --output json
+issue view PC-103 --full --output json
+issue update PC-103 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-5442b4085ea2.md --dry-run --output json
+issue update PC-103 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-5442b4085ea2.md --verify --output json
+issue comment PC-103 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --dry-run --output json
+issue comment PC-103 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --verify --output json
+issue view PC-104 --full --output json
+issue update PC-104 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-add11e875272.md --dry-run --output json
+issue update PC-104 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-add11e875272.md --verify --output json
+issue comment PC-104 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --dry-run --output json
+issue comment PC-104 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --verify --output json
+issue view PC-105 --full --output json
+issue update PC-105 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-f688fd13831c.md --dry-run --output json
+issue update PC-105 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-08-f688fd13831c.md --verify --output json
+issue comment PC-105 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --dry-run --output json
+issue comment PC-105 --body Seen again on 2026-11-08 by the Page-check officer (found 2 times). --verify --output json
+label list --team PC --limit 250 --output json
+issue search page-check-fp:b0aa35f7df2f554915eb88a7aed29201e65a1229b74ecd12ab295a0edaafa2e2 --team PC --limit 5 --output json
+issue create --team PC --title Feature ideation: page-old ideation --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-b0aa35f7df2f.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Feature ideation: page-old ideation --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-b0aa35f7df2f.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue search page-check-fp:a58e38ce8beeb1aa4e4bd0c68e042f7a24eb1557ebb21253d83a5d655a46dc1f --team PC --limit 5 --output json
+issue create --team PC --title Progress officer: page-old progress-officer --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-a58e38ce8bee.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title Progress officer: page-old progress-officer --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-a58e38ce8bee.md --priority 3 --label Bug --label agent --label area:fleet --project Fleet --verify --output json
+issue view PC-101 --full --output json
+issue update PC-101 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-f825d69ebd1f.md --dry-run --output json
+issue update PC-101 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-f825d69ebd1f.md --verify --output json
+issue comment PC-101 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --dry-run --output json
+issue comment PC-101 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --verify --output json
+issue view PC-102 --full --output json
+issue update PC-102 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-116075a7ded9.md --dry-run --output json
+issue update PC-102 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-116075a7ded9.md --verify --output json
+issue comment PC-102 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --dry-run --output json
+issue comment PC-102 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --verify --output json
+issue view PC-103 --full --output json
+issue update PC-103 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-5442b4085ea2.md --dry-run --output json
+issue update PC-103 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-5442b4085ea2.md --verify --output json
+issue comment PC-103 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --dry-run --output json
+issue comment PC-103 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --verify --output json
+issue view PC-104 --full --output json
+issue update PC-104 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-add11e875272.md --dry-run --output json
+issue update PC-104 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-add11e875272.md --verify --output json
+issue comment PC-104 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --dry-run --output json
+issue comment PC-104 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --verify --output json
+issue view PC-106 --full --output json
+issue update PC-106 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-8b442e257118.md --dry-run --output json
+issue update PC-106 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-8b442e257118.md --verify --output json
+issue comment PC-106 --body Seen again on 2026-11-09 by the Page-check officer (found 2 times). --dry-run --output json
+issue comment PC-106 --body Seen again on 2026-11-09 by the Page-check officer (found 2 times). --verify --output json
+issue view PC-107 --full --output json
+issue update PC-107 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-32904e678c69.md --dry-run --output json
+issue update PC-107 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-32904e678c69.md --verify --output json
+issue comment PC-107 --body Seen again on 2026-11-09 by the Page-check officer (found 2 times). --dry-run --output json
+issue comment PC-107 --body Seen again on 2026-11-09 by the Page-check officer (found 2 times). --verify --output json
+issue view PC-108 --full --output json
+issue update PC-108 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-f582f6cb6770.md --dry-run --output json
+issue update PC-108 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-f582f6cb6770.md --verify --output json
+issue comment PC-108 --body Seen again on 2026-11-09 by the Page-check officer (found 2 times). --dry-run --output json
+issue comment PC-108 --body Seen again on 2026-11-09 by the Page-check officer (found 2 times). --verify --output json
+issue view PC-109 --full --output json
+issue update PC-109 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-8e63df140167.md --dry-run --output json
+issue update PC-109 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-8e63df140167.md --verify --output json
+issue comment PC-109 --body Seen again on 2026-11-09 by the Page-check officer (found 2 times). --dry-run --output json
+issue comment PC-109 --body Seen again on 2026-11-09 by the Page-check officer (found 2 times). --verify --output json
+issue view PC-105 --full --output json
+issue update PC-105 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-f688fd13831c.md --dry-run --output json
+issue update PC-105 --body-file /tmp/pc-live.EM8pyz/lab/data/officers/page-check/.page-check-2026-11-09-f688fd13831c.md --verify --output json
+issue comment PC-105 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --dry-run --output json
+issue comment PC-105 --body Seen again on 2026-11-09 by the Page-check officer (found 3 times). --verify --output json
+label list --team PC --limit 250 --output json
+issue search page-check-fp:f825d69ebd1f10c8b36ab7fe31b0f6f9f55d68cf60dc58db0686630cc2134552 --team PC --limit 5 --output json
+issue view PC-101 --full --output json
+issue search page-check-fp:8b442e257118cf743bc3d2c8478167999c26892cf50972ce193b0c964895963f --team PC --limit 5 --output json
+issue view PC-106 --full --output json
+issue search page-check-fp:116075a7ded9f11701b5e716a69f487a45371dd1025005bb6021c66db92eadaf --team PC --limit 5 --output json
+issue view PC-102 --full --output json
+issue search page-check-fp:32904e678c69babcdfebb7cdd58bc6a05322f9ee21b72e0629592c7d8fbeaeac --team PC --limit 5 --output json
+issue view PC-107 --full --output json
+issue search page-check-fp:f582f6cb6770c9bfe392591c72570cc49ad58989faaa7535b0c31a0ca5bcec7b --team PC --limit 5 --output json
+issue view PC-108 --full --output json
+issue search page-check-fp:b0aa35f7df2f554915eb88a7aed29201e65a1229b74ecd12ab295a0edaafa2e2 --team PC --limit 5 --output json
+issue view PC-110 --full --output json
+issue search page-check-fp:a58e38ce8beeb1aa4e4bd0c68e042f7a24eb1557ebb21253d83a5d655a46dc1f --team PC --limit 5 --output json
+issue view PC-111 --full --output json
+issue search page-check-fp:5442b4085ea2f851383391beeb6a57f8fb08d92fa1c86e131d5284a525a7bb7a --team PC --limit 5 --output json
+issue view PC-103 --full --output json
+issue search page-check-fp:8e63df140167cb2f9828a79eecb69fa0a213cecfa4ffd5beda3ee3d81406318f --team PC --limit 5 --output json
+issue view PC-109 --full --output json
+issue search page-check-fp:add11e875272baeaff74119bca295c46e4150b79b1964d149b44658ff790f429 --team PC --limit 5 --output json
+issue view PC-104 --full --output json
