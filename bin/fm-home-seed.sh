@@ -80,6 +80,8 @@ SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 # shellcheck source=bin/fm-git-retry-lib.sh
 . "$SCRIPT_DIR/fm-git-retry-lib.sh"
+# shellcheck source=bin/fm-treehouse-toml-lib.sh
+. "$SCRIPT_DIR/fm-treehouse-toml-lib.sh"
 # shellcheck source=bin/fm-secondmate-parent-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
 # shellcheck source=bin/fm-secondmate-charter-lib.sh
@@ -534,7 +536,8 @@ EOF
     return 0
   fi
   url=$(source_origin_url "$project" "$mode" "$src") || return 1
-  fm_git_retry git clone --quiet "$url" "$dst"
+  fm_git_retry git clone --quiet "$url" "$dst" || return 1
+  fm_th_inherit "$dst" "$project" "$(dirname "$home")" "$(dirname "$FM_HOME")"
 }
 
 validate_seed_project() {
