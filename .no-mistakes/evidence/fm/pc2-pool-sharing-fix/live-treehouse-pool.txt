@@ -1,0 +1,24 @@
+== Navigator clone grows the shared pool to 17 leased slots (its max_trees = 20)
+== BEFORE: an un-seeded clone (plain git clone, no treehouse.toml) asks for a slot
+🌳 Setting up worktree...
+all 17 worktrees are in use or dirty (max_trees = 16). Run 'treehouse status' to see details, or increase max_trees in treehouse.toml
+exit=1
+== fm-office.sh ensure reports the mismatch
+OFFICE: pool: clones of /tmp/fmth-live.JzoEYv/App.git share a treehouse pool but differ on max_trees (/tmp/fmth-live.JzoEYv/home/fm-homes/main/projects/App=16 /tmp/fmth-live.JzoEYv/home/fm-homes/nav/projects/App=20 /tmp/fmth-live.JzoEYv/home/fm-homes/old/projects/App=16); copy the largest treehouse.toml into the others and add /treehouse.toml to each one's .git/info/exclude
+exit=0
+== AFTER: fm-home-seed.sh seeds the Librarian home
+treehouse.toml for App: copied from /tmp/fmth-live.JzoEYv/home/fm-homes/nav/projects/App (max_trees 20; peers: /tmp/fmth-live.JzoEYv/home/fm-homes/nav/projects/App=20)
+-- lib treehouse.toml:
+max_trees = 20
+-- lib git status --porcelain: []
+🌳 Setting up worktree...
+🌳 Leased worktree at /tmp/fmth-live.JzoEYv/pool/.treehouse/App-37a165/18/App. Run 'treehouse return /tmp/fmth-live.JzoEYv/pool/.treehouse/App-37a165/18/App' to release it.
+/tmp/fmth-live.JzoEYv/pool/.treehouse/App-37a165/18/App
+exit=0
+14    leased       /tmp/fmth-live.JzoEYv/pool/.treehouse/App-37a165/14/App  (detached)
+15    leased       /tmp/fmth-live.JzoEYv/pool/.treehouse/App-37a165/15/App  (detached)
+16    leased       /tmp/fmth-live.JzoEYv/pool/.treehouse/App-37a165/16/App  (detached)
+17    leased       /tmp/fmth-live.JzoEYv/pool/.treehouse/App-37a165/17/App  (detached)
+18    leased       /tmp/fmth-live.JzoEYv/pool/.treehouse/App-37a165/18/App  (detached)
+== cleanup
+removed
