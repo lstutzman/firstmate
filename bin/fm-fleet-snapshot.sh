@@ -263,7 +263,7 @@ aggregation, includes generated_epoch for freshness arithmetic, and marks
 inventory contradictions or unavailable child state invalid.
 kind=secondmate meta records are not child inventory for unowned_current or
 terminal_in_flight; they never have backlog rows.
-A done child is waiting on merge, not terminal_in_flight, only when its meta
+A done child is waiting on merge, not terminal_in_flight, when its meta
 records pr= (pr.source is "meta"; a PR URL found only in the status log does not
 count) and the merge poll fm-pr-check.sh arms for that same PR is live and valid
 (state/<id>.check.sh, <id>.pr-poll and <id>.pr-poll-registration as the watcher
