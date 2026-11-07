@@ -1,0 +1,15 @@
+== check-coverage
+FM_TEST_COVERAGE ok total=364 parallel=26 parallel_max_ms=1566073 parallel_imbalance_ms=27 parallel_unhinted=0 serial=321 serial_shards=15 serial_unhinted=2 serial_max_ms=1179716 serial_budget_ms=1400000 herdr=17
+exit=0
+== lane 1: --list vs --list-scheduled
+identical order
+== lane 2: --list vs --list-scheduled
+identical order
+== union vs proven-isolated set
+union == proven set
+== overlap
+       0
+== lane weights from hints
+lane 1 total 1566073 ms
+lane 2 total 1566046 ms
+== base commit lane weights (old hints, old lists)
