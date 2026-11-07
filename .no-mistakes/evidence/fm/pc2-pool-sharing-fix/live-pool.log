@@ -1,0 +1,38 @@
+LAB=/tmp/fm-th-lab.tyKYvi TREEHOUSE_ROOT=/tmp/fm-th-lab.tyKYvi/pool
+== nav grows the shared pool to 17 slots (max_trees 20) and returns them
+nav leased 17 slots
+/tmp/fm-th-lab.tyKYvi/pool/.treehouse/App-efa378/
+slots on disk: 20
+== BASELINE: clone without treehouse.toml (default 16) tries to get a slot
+🌳 Setting up worktree...
+all 17 worktrees are in use, dirty, or not provably this clone's (17 belong to another clone; 0 whose clone identity cannot be verified; max_trees = 16). A worktree is reused only by the clone it belongs to. Run 'treehouse status' to see details, or increase max_trees in treehouse.toml
+old exit=1
+== fm-office ensure reports the mismatch
+OFFICE: pool: clones of /tmp/fm-th-lab.tyKYvi/App.git share a treehouse pool but differ on max_trees (/tmp/fm-th-lab.tyKYvi/fm-homes/main/projects/App=16 /tmp/fm-th-lab.tyKYvi/fm-homes/nav/projects/App=20 /tmp/fm-th-lab.tyKYvi/fm-homes/old/projects/App=16); copy the largest treehouse.toml into the others and add /treehouse.toml to each one's .git/info/exclude
+ensure exit=0
+== real fm-home-seed seeds the Librarian home (peer roots only via call-site args)
+Note: switching to '3f7f0b3ebb91d942b1c44224510ee9b23e337dce'.
+
+changes and commit them, and you can discard any commits you make in this
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+
+Or undo this operation with:
+
+
+
+scaffolded: /tmp/fm-th-lab.tyKYvi/fm-homes/main/data/lib/brief.md (secondmate charter)
+treehouse.toml for App: copied from /tmp/fm-th-lab.tyKYvi/fm-homes/nav/projects/App (max_trees 20; peers: /tmp/fm-th-lab.tyKYvi/fm-homes/nav/projects/App=20)
+home=/tmp/fm-th-lab.tyKYvi/fm-homes/lib
+seed exit=0
+-- lib treehouse.toml:
+max_trees = 20
+-- lib git status --porcelain: []
+== Librarian clone gets a slot from the shared pool
+lib exit=0 path=🌳 Setting up worktree...
+🌳 Leased worktree at /tmp/fm-th-lab.tyKYvi/pool/.treehouse/App-efa378/18/App. Run 'treehouse return /tmp/fm-th-lab.tyKYvi/pool/.treehouse/App-efa378/18/App' to release it.
+/tmp/fm-th-lab.tyKYvi/pool/.treehouse/App-efa378/18/App
+== teardown
+lab trashed
