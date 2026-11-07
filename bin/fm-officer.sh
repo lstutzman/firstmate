@@ -89,6 +89,10 @@
 # officer (bin/fm-officer-corpus.py) addresses its start requests the same way, to the office
 # whose dispatch: list names transcript-archive or local-jev, else to this home.
 #
+# visual-findings: and visual-captures: are optional surgeon fields, absolute paths: the nightly visual review's
+# findings file and the capture directory its screenshot paths are relative to (bin/fm-officer-surgeon.py owns how
+# they are read; visual-captures needs visual-findings).
+#
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
 # (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py),
@@ -258,7 +262,21 @@ surgeon_problem() {
     || { printf 'officer %s: a surgeon officer needs app: <https URL of the fleet app>\n' "$id"; return; }
   [ -n "$(line_field "$line" staging-repo || echo "$SURGEON_STAGING_REPO")" ] \
     || { printf 'officer %s: staging-repo must name the git remote whose staging branch is the tip\n' "$id"; return; }
+  visual_problem "$line" "$id"
   linear_problem "$line" "$id" surgeon
+}
+
+# visual_problem <line> <id>: prints why a surgeon line's visual-findings or visual-captures is unusable, or nothing.
+visual_problem() {
+  local line=$1 id=$2 field value
+  for field in visual-findings visual-captures; do
+    if value=$(line_field "$line" "$field"); then
+      case "$value" in /*) ;; *) printf 'officer %s: %s must be an absolute path\n' "$id" "$field"; return ;; esac
+    fi
+  done
+  if line_field "$line" visual-captures >/dev/null && ! line_field "$line" visual-findings >/dev/null; then
+    printf 'officer %s: visual-captures needs visual-findings\n' "$id"
+  fi
 }
 
 # linear_problem <line> <id> <role>: prints why the Linear fields (writes, max-creates, max-linear-calls, team)
@@ -504,6 +522,8 @@ START_HOMES
     --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")" \
     --fm-home "$FM_HOME" \
     --staging-repo "$(line_field "$OFFICER_LINE" staging-repo || echo "$SURGEON_STAGING_REPO")" \
+    --visual-findings "$(line_field "$OFFICER_LINE" visual-findings || true)" \
+    --visual-captures "$(line_field "$OFFICER_LINE" visual-captures || true)" \
     ${extra[@]+"${extra[@]}"}
 }
 

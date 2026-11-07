@@ -12,7 +12,8 @@ Usage:
                             --app <https url> [--home <dir>]... [--hosts a,b] [--model none]
                             [--team PC] [--writes none|linear] [--max-creates 100]
                             [--max-linear-calls 450] [--triage-label triage] [--area <ignored>]
-                            [--staging-repo <git remote>] [--rubric <file>] [--jev <jev.py>]
+                            [--staging-repo <git remote>] [--visual-findings <file>] [--visual-captures <dir>]
+                            [--rubric <file>] [--jev <jev.py>]
                             [--fm-home <dir>] [--start-home <home>=<project,...>]... [--now <epoch>]
 
 Pass 1 is bin/fm-officer-triage.py's session join, unchanged (that script stays: the
@@ -46,6 +47,19 @@ Each finding is classified with the tables below and no model:
                         finding moves up one step (low, medium, high, critical).
                         Production is never inferred from text; a payload with
                         no environment field gets no bump.
+
+  visual review         with --visual-findings, the nightly visual review's findings file (PropertyCompass2
+                        scripts/visual-review/README.md owns the format; schema_version 1 and 2 are read, 1 is
+                        upgraded the way its upgrade_document() does). Findings sharing a fingerprint (route plus
+                        rubric item; viewports do not split them) are one finding with every screenshot listed.
+                        A `defect` is real at the file's own severity (high, medium or low; none stated: medium).
+                        Anything not `defect` is held for Lee: never filed, never started, one keyed needs-decision
+                        `surgeon-visual-held-<date>` per run for the ones not yet announced, and low severity so
+                        it never raises the high-severity wake. The `visual` source is not a start source. A file
+                        that is missing, unreadable, of another schema_version, or unchanged since the last run is a
+                        named `Coverage gap:`, and so is the fact that screenshots are only named in the item:
+                        linear-axi has no attachment command, so the item lists each screenshot's path (resolved
+                        against --visual-captures when given and the file is there).
 
 A won't-fix finding is always low. A finding the source already put in Linear (an
 `issue` on the nightly failure, a filing on the review finding, a Linear item
@@ -154,8 +168,15 @@ SWEEP_NOISE = ("duplicate", "fixed-live", "noise")
 SWEEP_HIGH = ("p1", "critical", "high")
 SWEEP_MEDIUM = ("p2", "medium")
 REVIEW_SEVERITY = {"critical": "high", "high": "medium", "medium": "low"}
-SOURCE_LABEL = {"nightly": "scheduled-review", "review": "scheduled-review", "sweeper": "bug-sweep"}
-SOURCE_NAME = {"nightly": "nightly E2E", "review": "nightly code review", "sweeper": "bug sweeper"}
+SOURCE_LABEL = {"nightly": "scheduled-review", "review": "scheduled-review", "sweeper": "bug-sweep", "visual": "scheduled-review"}
+SOURCE_NAME = {"nightly": "nightly E2E", "review": "nightly code review", "sweeper": "bug sweeper", "visual": "nightly visual review"}
+# The visual review's findings file (PropertyCompass2 scripts/visual-review/evaluate.py): the fingerprint prefix and the
+# wording or product rubric items it holds for Lee. A version 1 file has neither fingerprint nor class, so both are derived here.
+VISUAL_FP_PREFIX = "visual-review-fp-v1"
+VISUAL_HELD_ITEMS = ("jargon", "repeated-or-developer-copy", "empty-state-clutter", "source-text-outside-sources")
+VISUAL_JOB = "visual-review"
+VISUAL_AREA_FALLBACK = "ui-ux"
+VISUAL_SEVERITY = {"high": "high", "medium": "medium", "low": "low"}
 # Clustering of low review findings (the rule main measured on the 4 Nov findings file).
 CLUSTER_PARTS = 2
 CLUSTER_SPLIT_OVER = 25
@@ -356,6 +377,103 @@ def intake(app, staging_repo):
         findings += judge_sweeper(sweeps)
     return findings, gaps, resolved
 
+def visual_fingerprint(route, rubric_item):
+    return hashlib.sha256("\n".join((VISUAL_FP_PREFIX, route, rubric_item)).encode("utf-8")).hexdigest()
+
+
+def visual_severity(row):
+    return VISUAL_SEVERITY.get(text(row.get("severity"), 10).lower(), "medium")
+
+
+def screenshot_where(captures, rel):
+    """Where a screenshot is: its real path when it is a file inside the capture directory, else its relative path, named."""
+    if not captures:
+        return "%s (relative to the nightly capture directory)" % rel
+    root = os.path.realpath(captures)
+    full = os.path.realpath(os.path.join(root, rel))
+    if full.startswith(root + os.sep) and os.path.isfile(full):
+        return full
+    return "%s (not found under %s)" % (rel, captures)
+
+
+def visual_intake(path, captures, state, ledger, date, writes):
+    """(findings, held to announce, coverage gaps) from the nightly visual review's findings file; no path means the source is off.
+
+    A `defect` is a real finding; anything else is held for Lee as a needs-decision finding, which file_findings and plan_starts
+    never touch. A findings file this lane already read on an earlier date adds only the defects no item exists for yet.
+    """
+    if not path:
+        return [], [], []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except FileNotFoundError:
+        return [], [], ["visual findings file %s not found" % path]
+    except (OSError, ValueError) as exc:
+        return [], [], ["visual findings file %s unreadable: %s" % (path, text(exc, 80))]
+    version = doc.get("schema_version") if isinstance(doc, dict) else None
+    rows = doc.get("findings") if isinstance(doc, dict) else None
+    if type(version) is not int or version not in (1, 2) or not isinstance(rows, list):
+        return [], [], ["visual findings file %s has schema_version %s and %s findings; only a version 1 or 2 file with a findings list is read"
+                        % (path, text(version, 20), "no" if not isinstance(rows, list) else "a list of")]
+    run = doc.get("run") if isinstance(doc.get("run"), dict) else {}
+    stamp = text(run.get("date"), 40)
+    seen = state.setdefault("visual", {})
+    gaps, groups, skipped = [], collections.OrderedDict(), 0
+    for row in dicts(rows):
+        route, item = text(row.get("route"), 200), text(row.get("rubric_item"), 60)
+        if not route or not item:
+            skipped += 1
+            continue
+        fp = text(row.get("fingerprint"), 64) if version == 2 else ""
+        if not re.fullmatch(r"[0-9a-f]{64}", fp):
+            fp = visual_fingerprint(route, item)
+        klass = text(row.get("class"), 20) if version == 2 else ("held-for-lee" if item in VISUAL_HELD_ITEMS else "defect")
+        group = groups.setdefault(fp, {"route": route, "item": item, "held": False, "rows": []})
+        group["held"] = group["held"] or klass != "defect"
+        group["rows"].append(row)
+    if skipped:
+        gaps.append("visual findings file %s: %d finding(s) without a route and rubric item skipped" % (path, skipped))
+    findings, held = [], []
+    for fp, g in groups.items():
+        rows = g["rows"]
+        top = min(rows, key=lambda r: RANK[visual_severity(r)])
+        reviewer = visual_severity(top)
+        shots = sorted({text(r.get("screenshot") or r.get("file"), 300) for r in rows if r.get("screenshot") or r.get("file")})
+        evidence = {"rubric_item": g["item"], "evidence": text(top.get("evidence"), 240), "region": text(top.get("region"), 80),
+                    "reason": text(top.get("reason"), 20), "viewports": ", ".join(sorted({text(r.get("viewport"), 20) for r in rows if r.get("viewport")})),
+                    "reviewer_severity": reviewer, "review_run": stamp, "visual_review_fp": fp,
+                    "screenshots": [screenshot_where(captures, s) for s in shots]}
+        f = finding("visual", VISUAL_JOB, fp, "Visual review: %s on %s" % (g["item"], g["route"]),
+                    "%s on %s: %s" % (g["item"], g["route"], text(top.get("evidence"), 120)),
+                    "needs-decision" if g["held"] else "real", "low" if g["held"] else reviewer, None, evidence, location=g["route"])
+        findings.append(f)
+        if g["held"]:
+            held.append(f)
+    if stamp and seen.get("run") == stamp and seen.get("date") != date:
+        gaps.append("visual findings file %s is unchanged since the review run of %s, so no nightly visual review ran since" % (path, stamp))
+        findings = [f for f in findings if f["class"] != "real" or f["fingerprint"] not in ledger]
+    else:
+        seen["run"], seen["date"] = stamp, date
+    announced = seen.setdefault("announced", {})
+    held = [f for f in held if announced.setdefault(f["fingerprint"], date) == date]
+    todo = [f for f in findings if f["class"] == "real"]
+    if todo and writes == "linear":
+        gaps.append("visual review screenshots are named in the Linear items, not attached: linear-axi has no attachment command (%d finding(s))" % len(todo))
+    return findings, held, gaps
+
+
+def visual_ask(held, date):
+    """The one keyed needs-decision line for the wording or product findings held for Lee this run, or None."""
+    if not held:
+        return None
+    key = "surgeon-visual-held-%s" % date
+    names = ["%s (%s)" % (f["location"], f["evidence"]["rubric_item"]) for f in held]
+    return {"key": key, "findings": [{"fingerprint": f["fingerprint"], "title": f["title"], "class": "held-for-lee"} for f in held],
+            "line": "needs-decision [key=%s]: %d visual-review finding(s) on wording or product held for Lee, not filed and never started: %s" % (
+                key, len(held), "; ".join(names[:10]) + ("; and %d more" % (len(names) - 10) if len(names) > 10 else ""))}
+
+
 # ---- area, clusters ---------------------------------------------------------------------
 
 def area_for(location, words, names, fallback, feature_first=False):
@@ -450,11 +568,14 @@ def description(f, date, near=None, recurrence=None):
         lines.append(recurrence)
     if near:
         lines.append("Near match (not treated as the same issue): %s, local-jev %.2f." % near)
-    lines += ["%s: %s" % (k, text(v, 300)) for k, v in sorted(f["evidence"].items()) if v not in (None, "")]
+    shots = f["evidence"].get("screenshots") or []
+    lines += ["%s: %s" % (k, text(v, 300)) for k, v in sorted(f["evidence"].items()) if v not in (None, "") and k not in ("screenshots", "visual_review_fp")]
     if f["location"]:
         lines.append("Location: " + f["location"])
+    lines += ["Screenshot: " + s for s in shots[:10]] + (["Screenshot: and %d more" % (len(shots) - 10)] if len(shots) > 10 else [])
     # No trailing newline: Linear trims it, and `create --verify` then reports a mismatch on a good create.
-    return "\n".join(lines) + "\nsurgeon-fp:%s" % f["fingerprint"]
+    marker = "\nvisual-review-fp:%s" % f["evidence"]["visual_review_fp"] if f["source"] == "visual" else ""
+    return "\n".join(lines) + marker + "\nsurgeon-fp:%s" % f["fingerprint"]
 
 
 def cluster_fp(key, project=""):
@@ -595,7 +716,8 @@ def file_findings(findings, args, date, out, state, found, jev):
     def label_set(f, location=None, words=None):
         location = f["location"] if location is None else location
         words = f["title"] + " " + f["summary"] if words is None else words
-        area = area_for(location, words, names, args.triage_label, f["source"] == "nightly" and not f.get("special"))
+        fallback = VISUAL_AREA_FALLBACK if f["source"] == "visual" else args.triage_label
+        area = area_for(location, words, names, fallback, f["source"] == "nightly" and not f.get("special"))
         wanted = ["Bug", SOURCE_LABEL[f["source"]], area or args.triage_label]
         missing = [w for w in wanted if w.lower() not in names]
         return wanted, missing
@@ -721,6 +843,8 @@ def main(argv):
     lib.add_common_args(parser, RUBRIC_FILE)
     parser.add_argument("--area", default="", help="ignored: the area label now comes from each finding")
     parser.add_argument("--staging-repo", default=STAGING_REPO)
+    parser.add_argument("--visual-findings", default="", help="the nightly visual review's findings file; empty leaves the source off")
+    parser.add_argument("--visual-captures", default="", help="the capture directory that file's screenshot paths are relative to")
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date):
         parser.error("--date must be YYYY-MM-DD")
@@ -750,6 +874,9 @@ def main(argv):
     state = read_json(os.path.join(out, STATE_FILE), {})
     found = read_json(os.path.join(out, FOUND_FILE), {})
     store = read_json(os.path.join(out, PATTERN_FILE), {})
+    visual, visual_held, visual_gaps = visual_intake(args.visual_findings, args.visual_captures, state,
+                                                     read_json(os.path.join(out, LEDGER_FILE), {}), args.date, args.writes)
+    findings, gaps = findings + visual, gaps + visual_gaps
     update_review_state(state, findings, resolved, args.date)
     apply_found(findings, found, read_json(os.path.join(out, LEDGER_FILE), {}))
     writes, blocked = file_findings(findings, args, args.date, out, state, found, jev) if args.writes == "linear" else ([], None)
@@ -757,6 +884,7 @@ def main(argv):
     start_homes = lib.parse_start_homes(args.start_home)
     main_home = args.fm_home or (args.home[0] if args.home else "")
     starts, held, asks = lib.plan_starts(OFFICER, findings, rubric, args.date, args.writes, main_home, start_homes, state.setdefault("handled", {}), state.setdefault("starts_by_fp", {}))
+    asks.extend(a for a in [visual_ask(visual_held, args.date)] if a)
     if rubric.pattern_memory:
         lib.update_patterns(OFFICER, store, findings, jev, args.date)
     pattern_requests, captures, lint = lib.pattern_outputs(OFFICER, store, rubric, args.date, main_home, start_homes)

@@ -12,8 +12,14 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - A bug from the bug sweeper that is new or regressed.
 - A nightly E2E run that is itself invalid (the run broke, no test result to read).
   This is work even though no test failed.
+- A `defect` in the nightly visual review's findings file: a contradictory or impossible number, a raw internal name, missing core data, truncated or overflowing text, or a tie or zero shown as best.
+  The review is the PropertyCompass2 script in `scripts/visual-review`, whose README owns the file format.
+  Findings that share a fingerprint (the same rubric item on the same route, however many viewports show it) are one finding with every screenshot listed.
 - Not work: a duplicate, a fixed-live bug, noise, a finding the code reviewer rated low, a finding the source already put in Linear.
   A finding needing a product or spec call, an unclear one and one fixed on staging only come to Lee as a decision and are not filed.
+- Held for Lee, never filed and never started: a visual-review finding whose class is anything but `defect`.
+  Today those are the wording and product rubric items `jargon`, `repeated-or-developer-copy`, `empty-state-clutter` and `source-text-outside-sources`.
+  Member-facing copy and product choices are Lee's.
 
 ## How severity and priority are scored
 
@@ -23,9 +29,12 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 | Nightly code review | none | reviewer critical | reviewer high | reviewer medium |
 | Bug sweeper | production bump only | P1, critical or high | P2 or medium | anything else |
 | Nightly E2E run invalid | always | | | |
+| Nightly visual review defect | none | file severity high | file severity medium | file severity low |
 
 - Production bump: when the sweeper's payload says the bug was seen in production (its `environment` field), the finding moves up one step, low to medium to high to critical.
   The code never infers production from a bug's text, so a payload with no `environment` field gets no bump.
+- A visual-review defect takes the severity the findings file gives it, and a finding with none stated is medium.
+  A held visual-review finding is always low, so it never raises the high-severity wake.
 - A won't-fix finding is always low.
 - Linear priority follows severity: critical is Urgent, high is High, medium and low are Medium.
 - An invalid nightly E2E run is critical and promotion-blocking.
@@ -48,6 +57,10 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   The area label comes from the finding's file path or component, and falls back to the triage label when nothing fits.
   A nightly E2E failure's path is always a spec file, so for it the feature labels (calculators, deal-finder, authentication, api and so on) are tried first, on the spec path and then the finding's words, and `testing` is only its fallback.
   The Surgeon never creates a label.
+- A visual-review defect is one item, with the Source `scheduled-review`, the type Bug and an area label taken from its route (the same path rules), falling back to `ui-ux` and then to the triage label.
+  Its description lists every screenshot and carries `visual-review-fp:<hex>`, the findings file's own fingerprint, beside the Surgeon's.
+  The Surgeon cannot attach a screenshot because `linear-axi` has no attachment command, so the item names each screenshot's path: the real path when the registry line names the capture directory and the file is there, else the relative path.
+  Every run that files one says so in a `Coverage gap:` line.
 - A finding with no source key is fingerprinted from its normalised title and location (digits dropped), so it is filed like any other.
 - Linear calls are counted.
   A run stops its Linear work at its call budget, and the digest names everything left unfiled (call budget, create cap, rate limit), which the next run files.
@@ -98,10 +111,15 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   Three separates a bad first attempt from a wrong diagnosis, and few enough that a stuck finding reaches a person within days.
   The office dispatches no more than 3 fixes for one finding either (`office-roles` "Picking work"); the test is `test_a_finding_that_keeps_coming_back_stops_at_three_starts`.
 - Nothing else starts.
-  Medium findings seen fewer than 3 times, low findings, clusters and invalid E2E runs only get filed.
+  Medium findings seen fewer than 3 times, low findings, clusters, invalid E2E runs and every visual-review finding only get filed (or, for a held visual finding, announced).
 - A real security bug starts like any other at its severity, as the fleet rule wants high and critical security fixes started at once: a password hash compared with `==` or an API key logged in plaintext is a code fix, not a credential action.
 
 ## What only files, and holds for Lee
+
+The visual review is not a start source: its defects are filed and counted, and a person or the owning office picks them up from Linear.
+Its held findings are announced once as one keyed needs-decision, `surgeon-visual-held-<date>`, that names each route and rubric item, and a finding already announced is not put to Lee again.
+A findings file that is missing, unreadable, of a schema version other than 1 or 2, or unchanged since the last run is a named coverage gap, never silence.
+A file the lane already read adds only the defects no item exists for yet, so an old file is never counted as a new sighting.
 
 These classes never start, whatever the severity.
 A finding that matches one is still filed, and the digest carries one keyed needs-decision line for the run that names it.
