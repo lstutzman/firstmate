@@ -3972,6 +3972,21 @@ decision_sweep_tick() {
   ) </dev/null >/dev/null 2>&1 &
 }
 
+# An approved office with no data/offices.md line and no valid deferral wakes
+# firstmate at most once a day until it is provisioned or deferred
+# (bin/fm-office.sh unprovisioned owns the check, docs/configuration.md "Offices").
+office_unprovisioned_tick() {
+  local gaps reason data=${FM_DATA_OVERRIDE:-$FM_HOME/data}
+  [ "$(age_of "$STATE/.office-unprovisioned-last")" -ge 86400 ] || return 0
+  gaps=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$data" "$SCRIPT_DIR/fm-office.sh" unprovisioned 2>/dev/null </dev/null \
+    | tr '\n' ' ' | sed 's/ *OFFICE: / | /g; s/^ *| //') || return 0
+  [ -n "$gaps" ] || return 0
+  touch "$STATE/.office-unprovisioned-last"
+  reason="check: office-provisioning: $gaps"
+  fm_wake_append check office-provisioning "$reason" || exit 1
+  wake "$reason"
+}
+
 # Opt-in lane capacity facts (docs/configuration.md "Lane capacity"): publish
 # state/lane-capacity.json detached for the same beacon-freshness reason as the
 # home summary above. bin/fm-capacity.sh's header owns the document.
@@ -4155,6 +4170,7 @@ while :; do
   fm_pending_reply_tick "$STATE" || true
 
   decision_sweep_tick
+  office_unprovisioned_tick
 
   # Daily archive pass for the grow-only process-event inbox (handled
   # sequences); the script holds the rules and stamps its own cadence, so most

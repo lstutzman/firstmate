@@ -1816,6 +1816,19 @@ A local office home also carries a `.fm-office` marker holding the office id and
 `bin/fm-office.sh list` prints each office and its gap count.
 Session start runs `bin/fm-office.sh ensure`, which prints one `OFFICE:` line per gap and nothing when the registry and the homes agree.
 An absent `data/offices.md` means no offices.
+In a primary home (it keeps `data/offices.md` and has no `.fm-secondmate-home` or `.fm-office` marker), `ensure` also prints `OFFICE: approved office <role> not provisioned` for every role in `FM_OFFICE_ROLES` (`bin/fm-office-authority-lib.sh`) that has neither a `data/offices.md` line nor a valid deferral; the watcher repeats that as a `check: office-provisioning` wake at most once a day until it is gone.
+
+### Office deferrals (data/office-deferrals.md)
+
+A deferral records that the captain chose not to build an approved office yet.
+It is one line per role in the registry line family:
+
+```text
+- <role> - "<the captain's quoted words>" (said: <where and when>; until: YYYY-MM-DD; added YYYY-MM-DD)
+```
+
+`<role>` must be a known office role, the words must be quoted, and `said` is required; `until` is optional and the deferral holds through that UTC date, after which the alarm returns.
+A malformed or expired line is reported as `OFFICE: deferral <role> ... defers nothing` and never silences the alarm.
 `list` and `ensure` only read: they seed, publish, spawn and grant nothing.
 
 An office acts only inside the authority record the main home publishes into it as `config/office-authority`, proven by the receipt `config/.fm-inherit-office-authority.generation`; `bin/fm-office-authority-lib.sh`'s header owns the record grammar, the receipt rule, the admission digest, and which home receives which record.

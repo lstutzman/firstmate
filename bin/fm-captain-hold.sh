@@ -24,7 +24,7 @@
 #     [--title <title>] [--repo <repo>] [--origin <origin-id>] [--origin-key <key>] [--until YYYY-MM-DD] \
 #     [--cause <policy|credential|sudo|tool|decision|physical|external>]   (why the ask exists; default decision)
 #     [--recommend <answer> --default-by <YYYY-MM-DDTHH:MM:SSZ> --class <class> [--touches <path>]...]
-#   fm-captain-hold.sh answer <task-id> --decision-file <path|-> [--release]   (- reads stdin)
+#   fm-captain-hold.sh answer <task-id> --decision-file <path|-> [--release (--phases-filed <id>[,<id>...] | --no-phases)]   (- reads stdin)
 #   fm-captain-hold.sh answer <task-id> --deadline-default
 #   fm-captain-hold.sh defaults-due
 #   fm-captain-hold.sh answers [<legacy-origin> | --any-origin] --source <provenance>   (keyed answers on stdin)
@@ -69,7 +69,12 @@
 # tasks-axi --archive-body). It closes a question with `tasks-axi done` - or,
 # with `--release`, lifts the hold with `tasks-axi unhold` so a captain-gated
 # WORK item resumes without closing - and restores resolution-first body
-# ordering. `--release` is attended-only: while the away-posture record exists
+# ordering. `--release` also requires exactly one of `--phases-filed
+# <id>[,<id>...]` or `--no-phases`: an approval whose plan has phases is released
+# only when every remaining phase, the go-live step included, is a filed open
+# backlog item in this home, so no approved phase lives only in prose. Each id
+# must exist and not be Done, and the resolution record carries a `Phases:` line
+# naming the ids or `none`. `--release` is attended-only: while the away-posture record exists
 # (state/.afk-contract, or the daemon flag state/.afk, read as away; a quiet
 # record is a present captain) it is refused before anything is written, so an
 # unattended supervisor cannot free held work with its own words and then steer
@@ -131,7 +136,8 @@
 # identically no matter which channel the answer arrived on. The key IS the
 # task id - no identity arithmetic. The optional fourth field selects the close:
 # empty or `done` completes the task, `release` lifts the hold so held work
-# resumes; anything else is skipped. A `release` line while the away-posture
+# resumes (written `release:<id>[,<id>...]` or `release:none`, the same two phase
+# answers as `answer --release`; a bare `release` is refused); anything else is skipped. A `release` line while the away-posture
 # record exists is reported as `refused:` under the same attended-only rule as
 # `answer --release` and feeds nothing. A key that names no task, a task that is
 # not held for the captain, or a task already closed is reported as `skipped:`
@@ -631,11 +637,13 @@ closed_answer_replay_mode_compatible() {  # <mode> <task-body>
 DEADLINE_DEFAULT_LABEL="Deadline default (not the captain's words):"
 DEADLINE_DEFAULT=0
 SUPERSEDES_DEFAULT=0
+PHASES_RECORD=''
 resolution_block() {  # <mode>
   local label='Captain decision:'
   [ "$1" != reconciled ] || label='Reconciliation evidence:'
   [ "$1" != deadline-default ] || label=$DEADLINE_DEFAULT_LABEL
   printf 'Resolution recorded by fm-captain-hold.\nDecision digest: %s\nResolution mode: %s\n' "$DECISION_DIGEST" "$1"
+  [ -z "$PHASES_RECORD" ] || printf 'Phases: %s\n' "$PHASES_RECORD"
   [ "$SUPERSEDES_DEFAULT" != 1 ] || printf 'Supersedes the deadline default recorded below.\n'
   printf '\n%s\n%s\n' "$label" "$DECISION_TEXT"
 }
@@ -1629,20 +1637,43 @@ prepare_deadline_default() {  # <task-id>
   printf '%s\n' "$words" > "$DEADLINE_DECISION_FILE" || fail "cannot stage the deadline default"
 }
 
+# Every phase id must be an open (not Done) item in this home's backlog.
+verify_phases_filed() {  # <released-task-id> <comma-separated ids>
+  local released=$1 phase ids
+  IFS=, read -ra ids <<< "$2"
+  for phase in "${ids[@]}"; do
+    validate_slug phase-id "$phase"
+    [ "$phase" != "$released" ] || fail "task $released cannot be its own remaining phase"
+    task_show "$phase" || fail "task $released is not released: phase $phase is not in this home's backlog; file it first"
+    [ "$(show_field "$TASK_SHOW_OUTPUT" state)" != "done" ] \
+      || fail "task $released is not released: phase $phase is already Done, so it is not a remaining phase; file the open phase"
+  done
+}
+
 command_answer() {
-  local id=${1:-} decision_file='' release=0 deadline_default=0 show state hold_kind body outcome recorded_mode occurrence prep_rc=0
+  local id=${1:-} decision_file='' release=0 deadline_default=0 phases_filed='' no_phases=0 show state hold_kind body outcome recorded_mode occurrence prep_rc=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --decision-file) shift; decision_file=${1:-} ;;
       --release) release=1 ;;
+      --phases-filed) shift; phases_filed=${1:-}; [ -n "$phases_filed" ] || fail "--phases-filed needs at least one backlog item id" ;;
+      --no-phases) no_phases=1 ;;
       --deadline-default) deadline_default=1 ;;
       *) usage >&2; exit 2 ;;
     esac
     shift
   done
   validate_slug task-id "$id"
+  if [ "$release" = 1 ]; then
+    { [ -n "$phases_filed" ] && [ "$no_phases" = 1 ]; } \
+      && fail "--release takes --phases-filed or --no-phases, not both"
+    [ -n "$phases_filed" ] || [ "$no_phases" = 1 ] \
+      || fail "task $id is not released: --release needs --phases-filed <id>[,<id>...] naming a filed open backlog item for every remaining phase of the approved plan (the go-live step included), or --no-phases when the plan has none"
+  else
+    [ -z "$phases_filed" ] && [ "$no_phases" = 0 ] || fail "--phases-filed and --no-phases belong to --release"
+  fi
   if [ "$deadline_default" = 1 ]; then
     # The owner chooses the words and the close, so no caller can supply them.
     [ -z "$decision_file" ] && [ "$release" = 0 ] \
@@ -1760,6 +1791,12 @@ command_answer() {
       publish_parent_resolution_then_retire "$id" $((occurrence - 1)) "$outcome"
       printf '%s: %s\n' "$outcome" "$id"
       return 0
+    fi
+    if [ "$release" = 1 ]; then
+      if [ "$no_phases" = 1 ]; then PHASES_RECORD=none; else
+        verify_phases_filed "$id" "$phases_filed"
+        PHASES_RECORD="filed $phases_filed"
+      fi
     fi
     write_resolution_record "$id" "$outcome" "$body"
     if ! close_answered "$id" "$release"; then
@@ -1888,7 +1925,7 @@ sanitize_reconcile_provenance() {
 command_answers() {
   local origin='' source='' row rest key answer label mode id show state hold_kind body digest legacy_digest legacy_key
   local recorded_digest recorded_mode occurrence tmp err closed=0 skipped=0 reason release_flag tab=$'\t'
-  local resolve_rc
+  local resolve_rc phase_args=()
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --source) shift; source=${1:-} ;;
@@ -1930,9 +1967,17 @@ command_answers() {
       continue
     fi
     release_flag=''
+    phase_args=()
     case "${mode:-}" in
       ''|done) : ;;
-      release) release_flag=--release ;;
+      release:none) release_flag=--release; phase_args=(--no-phases) ;;
+      release:?*)
+        release_flag=--release; phase_args=(--phases-filed "${mode#release:}") ;;
+      release)
+        printf 'skipped: %s (a release line needs release:<id>[,<id>...] or release:none)\n' "$key"
+        skipped=$((skipped + 1))
+        continue
+        ;;
       *)
         printf 'skipped: %s (unknown close mode %s)\n' "$key" "$(sanitize_field "$mode")"
         skipped=$((skipped + 1))
@@ -2018,7 +2063,7 @@ command_answers() {
       skipped=$((skipped + 1))
       continue
     fi
-    if "$0" answer "$id" --decision-file "$tmp" ${release_flag:+"$release_flag"} </dev/null >/dev/null 2>"$err"; then
+    if "$0" answer "$id" --decision-file "$tmp" ${release_flag:+"$release_flag" "${phase_args[@]}"} </dev/null >/dev/null 2>"$err"; then
       # A parent-channel delivery problem is reported on stderr by the answer
       # path even when the close succeeded; keep it visible.
       [ ! -s "$err" ] || cat "$err" >&2

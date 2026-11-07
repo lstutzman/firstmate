@@ -576,6 +576,7 @@ __FM_BEARINGS_BOARD_DATA__
           note: note
         };
         if (item.close) ctxData.close = item.close;
+        if (item.phases) ctxData.phases = item.phases;
         window.lavish.queuePrompt(
           "Captain's Call answer - " + item.title + ": " + displayAnswer,
           { tag: "choice", text: item.title + " -> " + displayAnswer, element: form,

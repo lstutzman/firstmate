@@ -162,6 +162,10 @@ validate_payload() {  # <data.json>
       and (if has("subject") then .type == "decision" else true end)
       and (optional_string("freeform_hint"))
       and ((has("close") | not) or (.close == "done" or .close == "release"))
+      and ((.close // "") != "release"
+        or (has("phases") and (.phases | type == "string"
+          and test("^(none|[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*)$"))))
+      and ((.close // "") == "release" or (has("phases") | not))
       and ((has("allow_freeform") | not) or (.allow_freeform | type == "boolean"))
       and ((has("recommend_value") | not)
         or ((.recommend_value | slug(128))
