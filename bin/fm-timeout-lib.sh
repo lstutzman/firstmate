@@ -85,6 +85,13 @@
 #   fm_timed_out <status>
 #       0 iff <status> is how fm_run_timed or fm_exec_timed reports the bound.
 #
+#   fm_detach_session <log> <command> [args...]
+#       Starts the command in a new session, with stdout and stderr appended
+#       to <log> and stdin from /dev/null, and returns once it has detached.
+#       A watcher check's process-group stop cannot reach it, so work that
+#       must not be cut off half way can outlive the check that started it.
+#       bin/fm-officer.sh still carries its own copy as detach().
+#
 # A non-positive bound is not a bound: `timeout 0` and the perl fallback's
 # `alarm 0` both disable the deadline, so callers must reject 0 before calling.
 #
@@ -355,4 +362,24 @@ fm_exec_timed() {  # <seconds> <grace-seconds> <command...>
   fi
   printf 'fm_exec_timed: cannot bound %s within %ss: none of perl, timeout, or gtimeout is available\n' "${1##*/}" "$seconds" >&2
   exit 127
+}
+
+fm_detach_session() {  # <log> <command...>
+  local log=$1
+  shift
+  python3 -I -c '
+import os, sys
+log = sys.argv[1]
+r, w = os.pipe()
+if os.fork() == 0:
+    os.close(r)
+    os.setsid()
+    fd = os.open(log, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    os.dup2(fd, 1); os.dup2(fd, 2)
+    null = os.open(os.devnull, os.O_RDONLY); os.dup2(null, 0)
+    os.write(w, b"1"); os.close(w)
+    os.execvp(sys.argv[2], sys.argv[2:])
+os.close(w)
+os.read(r, 1)
+' "$log" "$@"
 }
