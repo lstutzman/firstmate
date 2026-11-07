@@ -1,0 +1,14 @@
+$ grep -c "2026-11-29 | u" knowledge.md (after failed+repaired delivery)
+1
+$ office line without research in sources; new complete run 2026-12-06
+rc=0 (empty = silent)
+  2026-12-06 in research.seen: 0
+$ invalid source name rejected by register-sources
+registered: office source tick (state/office-tick.check.sh)
+registered: office source upstream (state/office-upstream.check.sh)
+registered: office source lane:progress (state/office-lane-progress.check.sh)
+registered: office source lane:friction (state/office-lane-friction.check.sh)
+registered: office source lane:page-check (state/office-lane-page-check.check.sh)
+registered: office source ratchet (state/office-ratchet.check.sh)
+fm-office: unknown source reserch
+rc=3

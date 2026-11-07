@@ -1,0 +1,24 @@
+$ incomplete run 2026-11-29 (only suggestions.json) also present
+$ check (run 2026-11-15: truncated suggestions.json, one line with no matching section)
+office quartermaster: research 2026-11-15: suggestions.json unreadable, 1 knowledge line(s) appended, 1 not placed (listed in the digest); digest /tmp/fm-lab.sAx7ef/qm/data/office/research/2026-11-15.md
+rc=0
+--- digest 2026-11-15
+# Tooling research 2026-11-15
+
+Run: /tmp/fm-lab.sAx7ef/runs/2026-11-15
+Knowledge lines appended: 1 to /tmp/fm-lab.sAx7ef/qm/data/tooling-research/knowledge.md
+
+Not appended (no matching section in the knowledge file; place by hand): 1
+
+- 2026-11-15 a line under a label the knowledge file has no section for
+
+## Proposals
+
+suggestions.json is unreadable: not valid JSON (Expecting property name enclosed in double quotes: line 1 column 17 (char 16)). Read /tmp/fm-lab.sAx7ef/runs/2026-11-15/suggestions.json yourself; nothing was guessed.
+$ re-check delivers the next run, 2026-11-22
+office quartermaster: research 2026-11-22: 0 proposal(s), 1 knowledge line(s) appended; digest /tmp/fm-lab.sAx7ef/qm/data/office/research/2026-11-22.md
+rc=0
+$ re-check: only the incomplete 2026-11-29 remains
+rc=0 (empty = silent)
+$ grep malformed-run article in knowledge.md
+1

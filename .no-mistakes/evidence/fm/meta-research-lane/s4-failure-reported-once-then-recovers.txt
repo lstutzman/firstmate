@@ -1,0 +1,20 @@
+$ chmod 555 data/office/research (helper cannot write the digest)
+$ FM_OFFICE_NOW=+0 check research
+rc=0
+  research.fail: 1796000000
+$ FM_OFFICE_NOW=+600 check research
+rc=0
+  research.fail: 1796000000
+$ FM_OFFICE_NOW=+3700 check research
+office quartermaster: research check failing since 2026-11-30T00:53Z (exit 1): PermissionError: [Errno 13] Permission denied: '/tmp/fm-lab.sAx7ef/qm/data/office/research/2026-11-29.md.tmp'; nothing is delivered until it succeeds
+rc=0
+  research.fail: 1796000000 reported
+$ FM_OFFICE_NOW=+7400 check research
+rc=0
+  research.fail: 1796000000 reported
+$ grep 2026-11-29 research.seen (must be absent)
+0
+$ chmod 755 (repair) then check
+office quartermaster: research 2026-11-29: 0 proposal(s), 0 knowledge line(s) appended; digest /tmp/fm-lab.sAx7ef/qm/data/office/research/2026-11-29.md
+rc=0
+  research.fail exists after success? no

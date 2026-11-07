@@ -1,0 +1,52 @@
+$ new run 2026-11-08 present; bash state/office-research.check.sh
+office quartermaster: research 2026-11-08: 4 proposal(s), 11 knowledge line(s) appended; digest /tmp/fm-lab.sAx7ef/qm/data/office/research/2026-11-08.md
+rc=0
+$ re-poll
+rc=0 (empty = silent)
+$ diff knowledge.md before/after
+77a78,87
+> - 2026-11-08 | https://github.com/kunchenguid/firstmate/commit/49dc31b287f6f36b5663ac2b9f73bc45c2ebb3bf | 2026-11-01 | Host mirror now dedupes replies on a SHA-256 of the full text, not the 4000-char capped text, so two long replies that differ only in the middle are both kept.
+> - 2026-11-08 | https://github.com/kunchenguid/firstmate/commit/95f006f8141a2a20a679a060c7d08d0a8b90a5a5 | 2026-11-01 | The herdr-core (hc) backend now requires hc 0.1.14 or later and a protocol hello, and uses `hc send --wait` to prove a message was submitted. A required CI lane for it was added.
+> - 2026-11-08 | https://github.com/kunchenguid/no-mistakes/commit/6c2fd84e957d49684e1f9d06d5ec08081e2e2351 | 2026-11-01 | no-mistakes adds a trusted-only `intent.check` that warns about or rejects set terms and patterns in inferred intent, and `pr.intent` for a structured PR brief. A pushed branch cannot change either.
+> - 2026-11-08 | https://github.com/kunchenguid/firstmate/commit/bdaf633d65e01936c3d8aea9c592f34f7f902943 | 2026-11-01 | `fm-captain-hold.sh answer --release` is refused while the away record exists, so an unattended supervisor cannot release held work on its own words.
+> - 2026-11-08 | https://github.com/kunchenguid/firstmate/commit/a03b3a1a8fafa059aceb31cb7c65f618846639d0 | 2026-11-01 | The herdr backend reads each pane's foreground processes in one jq pass instead of one jq per field. The per-field cost made a fleet scan outrun the watcher heartbeat grace.
+> - 2026-11-08 | https://github.com/kunchenguid/firstmate/commit/043d834454ed4b032203e143f2731311cfd582bf | 2026-10-31 | Dispatch profiles can name an explicit `quota_scope` row, such as an Antigravity tier. A missing row leaves the profile eligible but unranked.
+> - 2026-11-08 | https://github.com/kunchenguid/firstmate/commit/8fdf2622ec86d2a50db2dc0fe97e48ceaec55f09 | 2026-10-31 | Pi workers can opt in to model-stream silence tracking (open, progress and close records per request), so the watcher can tell a silent model stream from a stalled worker.
+> - 2026-11-08 | https://github.com/kunchenguid/firstmate/commit/d42a6997e1fdc5a11775e434fae88d8b546741f0 | 2026-10-31 | The cd guard now allows a literal absolute `cd` to the firstmate home itself, checked both logically and through symlinks. `fm-pr-merge.sh` gained `--help`.
+> - 2026-11-08 | https://github.com/kunchenguid/firstmate/commit/e2e4e56464e2ee9ab23f6590677cda28523243ef | 2026-10-31 | Fixes a watcher start-up interrupted by a signal leaving stale lock owners that cascade. Recovery lock waits can now be bounded, and the error names the lock that blocked.
+> - 2026-11-08 | https://github.com/kunchenguid/firstmate/commit/f61b404e334f3cbc582e5e837ea9e1e9e246273e | 2026-10-31 | When teardown refuses a task with a missing, empty or ambiguous worktree= line, it now prints a repair path: a git worktree list command and the record saved before the last relaunch.
+90a101
+> - 2026-11-08 (verified) LAB finding: the research lane appends under a suffixed Findings heading.
+$ cat data/office/research.seen
+2026-10-19
+2026-10-25
+2026-11-01
+2026-11-08
+--- digest data/office/research/2026-11-08.md
+# Tooling research 2026-11-08
+
+Run: /tmp/fm-lab.sAx7ef/runs/2026-11-08
+Knowledge lines appended: 11 to /tmp/fm-lab.sAx7ef/qm/data/tooling-research/knowledge.md
+
+## Proposals
+
+- tr-20261101-p1 (rank 1, effort M): Sync our firstmate fork with upstream watcher, lock and captain-hold fixes
+  Pull upstream firstmate commits since our 19 Oct sync. Several fix watcher load, stale-lock cascades, away-mode safety and merge-poll identity, all of which we run.
+
+- tr-20261101-p2 (rank 2, effort S): Guard no-mistakes intent publishing against transcript secrets
+  no-mistakes infers intent from ~/.claude/projects transcripts and can publish it in PRs. Check publish_intent, and once upgraded add a global intent.check with secret patterns.
+
+- tr-20261101-p3 (rank 3, effort S): Measure and trim the per-tool-call hook forks on Slarti
+  Every tool call on Slarti runs AgentDeck curl hooks (a Pre hook with --max-time 60) and macOS-only moshi-hook paths. Measure their cost and remove the ones that do nothing on Linux.
+
+- tr-20261101-p4 (rank 4, effort S): Make our guard refusals name the repair path
+  Follow firstmate #8027: every deny message from our pre-bash and pre-edit hooks should print the exact allowed alternative, because guard refusals are our top source of tool errors.
+
+
+## Research follow-through
+
+Adopted (a backlog line or commit names the report or a PC id in its recommendation): 2. No recommendation heading: 1.
+Not adopted: 2 (evidence, not proof; the office decides).
+
+- zz-lab-context-pc-only (qm): Do the context-only thing.
+- zz-lab-not-adopted (qm): Nobody picked this up.
