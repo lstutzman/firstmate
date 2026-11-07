@@ -214,7 +214,7 @@ Verify the worker is placed in the correct workspace.
 EOF
 }
 
-for id in uniqA uniqB dupC dupD staleF smE presU presD presF presG presH presI presJ huskK huskL huskM; do
+for id in uniqA uniqB dupC dupD staleF smE presU presD presF presG presH presI presJ huskK huskL huskM huskN; do
   mkdir -p "$PRIMARY_HOME/data/$id" "$SM_HOME/data/$id" "$PRES_HOME/data/$id"
   write_ship_brief "$PRIMARY_HOME/data/$id/brief.md" "$id"
   write_ship_brief "$SM_HOME/data/$id/brief.md" "$id"
@@ -653,6 +653,24 @@ lab pane get "$HUSK_PANE" >/dev/null 2>&1 || fail "the respawn closed huskM's ea
 assert_contains_local "$(cat "$SPAWN_ERR")" "left this task's earlier herdr endpoint" "the respawn did not note the pane it left in place"
 return_husk_worktrees huskM
 pass "real herdr E2E: a respawn leaves the task's earlier pane alone when it holds a live agent"
+
+# A record whose pane id Herdr now reports in another workspace and tab (the
+# shape of a pane id reused elsewhere, such as a bare shell in the captain's own
+# workspace) is never treated as this task's husk.
+spawn_husk_task huskN
+HUSKN_META="$PRIMARY_HOME/state/huskN.meta"
+read -r FOREIGN_WS FOREIGN_TAB _ <<EOF
+$(make_workspace foreign-shell)
+EOF
+[ -n "$FOREIGN_WS" ] && [ -n "$FOREIGN_TAB" ] || fail "could not create the foreign workspace"
+sed -i -e "s|^herdr_workspace_id=.*|herdr_workspace_id=$FOREIGN_WS|" -e "s|^herdr_tab_id=.*|herdr_tab_id=$FOREIGN_TAB|" "$HUSKN_META" \
+  || fail "could not point huskN's record at another workspace and tab"
+respawn_husk_task huskN
+lab pane get "$HUSK_PANE" >/dev/null 2>&1 || fail "the respawn closed a pane Herdr reports outside the task's recorded workspace and tab"
+workspace_exists "$HUSK_WS" || fail "the respawn closed the workspace of a pane outside the task's recorded workspace and tab"
+assert_contains_local "$(cat "$SPAWN_ERR")" "not in its recorded workspace and tab" "the respawn did not note why it left the pane in place"
+return_husk_worktrees huskN
+pass "real herdr E2E: a respawn never closes a recorded pane id that Herdr reports in another workspace and tab"
 
 # --- 3. duplicate label, launcher in the NON-first match, driven from a real
 #        Herdr pane so the identity comes from Herdr's own injection ----------

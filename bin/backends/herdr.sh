@@ -2858,18 +2858,28 @@ EOF
 
 # fm_backend_herdr_retire_recorded_husk: close a respawned task's earlier
 # endpoint at the exact <pane_id> its own record names, in its recorded
-# <session>, once the replacement <new_pane_id> exists. Every crewmate or scout
+# <session>, once the replacement <new_pane_id> exists. Herdr must still report
+# that pane in the recorded <workspace_id> and <tab_id>, so a reused pane id
+# elsewhere is never closed. Every crewmate or scout
 # gets a fresh workspace, so fm_backend_herdr_create_task's same-workspace label
 # scan never finds that earlier tab. Only a pane proven no-agent is closed (a
 # dead pane is already gone; live, stale-agent and unknown are left alone),
 # through the focus-preserving close, so a workspace the husk was the last
 # occupant of goes with it and one that holds anything else stays. Nothing is
 # looked up by label. Anything not closed gets a one-line note.
-fm_backend_herdr_retire_recorded_husk() {  # <session> <pane_id> <new_pane_id>
-  local session=$1 pane_id=$2 new_pane_id=$3
+fm_backend_herdr_retire_recorded_husk() {  # <session> <workspace_id> <tab_id> <pane_id> <new_pane_id>
+  local session=$1 workspace_id=$2 tab_id=$3 pane_id=$4 new_pane_id=$5 where reason="gone or unreadable"
   [ -n "$session" ] && [ -n "$pane_id" ] && [ "$pane_id" != "$new_pane_id" ] || return 0
-  fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$pane_id" no-agent >/dev/null 2>&1 && return 0
-  echo "note: left this task's earlier herdr endpoint $session:$pane_id in place (${FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE:-gone or unreadable}): it is not a provable agent-free husk" >&2
+  FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=""
+  where=$(fm_backend_herdr_cli "$session" pane get "$pane_id" 2>/dev/null \
+    | jq -r '[.result.pane.pane_id, .result.pane.workspace_id, .result.pane.tab_id] | map(. // "") | join(" ")' 2>/dev/null) || where=""
+  if [ -n "$workspace_id" ] && [ -n "$tab_id" ] && [ "$where" = "$pane_id $workspace_id $tab_id" ]; then
+    fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$pane_id" no-agent >/dev/null 2>&1 && return 0
+    reason=${FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE:-$reason}
+  elif [ -n "$where" ] && [ "$where" != "  " ]; then
+    reason="not in its recorded workspace and tab"
+  fi
+  echo "note: left this task's earlier herdr endpoint $session:$pane_id in place ($reason): it is not a provable agent-free husk" >&2
   return 0
 }
 

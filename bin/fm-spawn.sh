@@ -5412,12 +5412,15 @@ $HERDR_TASK_IDS
 EOF
       # A respawn over this task's own earlier endpoint retires it once the
       # new tab exists, because it sits in another workspace that the label
-      # scan above never sees. Only the exact pane this task's record names is
-      # a candidate, and only a provable agent-free husk is closed.
+      # scan above never sees. Only the exact pane this task's record names, still
+      # in its recorded workspace and tab, is a candidate, and only a provable
+      # agent-free husk is closed.
       if [ "$HERDR_LAUNCHER_RELATIONSHIP" = flat-workers ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
         [ "$(fm_backend_of_meta "$STATE/$ID.meta")" = herdr ]; then
         fm_backend_herdr_retire_recorded_husk \
           "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_session || true)" \
+          "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_workspace_id || true)" \
+          "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_tab_id || true)" \
           "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_pane_id || true)" "$HERDR_PANE_ID"
       fi
     fi
