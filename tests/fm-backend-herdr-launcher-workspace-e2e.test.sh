@@ -203,7 +203,7 @@ Verify the worker is placed in the correct workspace.
 EOF
 }
 
-for id in uniqA uniqB dupC dupD staleF smE presU presD presF presG presH; do
+for id in uniqA uniqB dupC dupD staleF smE presU presD presF presG presH presI presJ; do
   mkdir -p "$PRIMARY_HOME/data/$id" "$SM_HOME/data/$id" "$PRES_HOME/data/$id"
   write_ship_brief "$PRIMARY_HOME/data/$id/brief.md" "$id"
   write_ship_brief "$SM_HOME/data/$id/brief.md" "$id"
@@ -285,9 +285,10 @@ PRESU_JOURNAL="$PRES_HOME/state/presU.herdr-presentation"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "a projected spawn stole focus from the captain's workspace"
 pass "real herdr E2E: presentation spaces still create the isolated child workspace and bind it under the launcher's exact parent, without stealing focus"
 
-# --- 2c. presentation spaces ON but the projection falls back flat: the worker
-#         gets this home's dedicated workers workspace, never the launcher's
-#         own workspace, and nothing there changes ---------------------------
+# --- 2c. presentation spaces ON but the projection falls back flat: each
+#         worker gets its own fresh workspace (never the launcher's own, and
+#         never one another session already holds), and nothing in the
+#         launcher's workspace changes ----------------------------------------
 
 PRES_LOCK_PATH=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_presentation_session_lock_path "$1"' \
   "$ROOT" "$HERDR_LAB_SESSION") || fail "could not resolve the lab session's presentation lock"
@@ -327,18 +328,21 @@ PRESF_WS=$(workspace_of_pane "$PRESF_PANE")
 [ ! -e "$PRES_HOME/state/presF.herdr-presentation" ] || fail "a flat fallback published a presentation journal"
 PRESG_META="$PRES_HOME/state/presG.meta"
 record_worktree "$PRESG_META"
-[ "$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESG_META" | cut -d= -f2-)")" = "$PRESF_WS" ] \
-  || fail "a second flat fallback did not reuse this home's workers workspace"
+PRESG_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESG_META" | cut -d= -f2-)")
+[ -n "$PRESG_WS" ] && [ "$PRESG_WS" != "$PRESF_WS" ] && [ "$PRESG_WS" != "$WS_PRIMARY" ] \
+  || fail "a second flat fallback shared a workspace with another session (presF $PRESF_WS, presG '$PRESG_WS')"
+[ "$(tab_labels_of_workspace "$PRESF_WS")" = "fm-presF" ] \
+  || fail "a flat fallback's workspace holds more than its own session: '$(tab_labels_of_workspace "$PRESF_WS")'"
 [ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE_FLAT" ] \
   || fail "a flat fallback changed the launcher workspace's tabs"
 [ "$(active_tab_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_ACTIVE_BEFORE_FLAT" ] \
   || fail "a flat fallback changed the launcher workspace's active tab"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "a flat fallback stole focus from the captain's workspace"
-pass "real herdr E2E: a presentation-enabled flat fallback lands in this home's workers workspace and leaves the launcher's workspace untouched"
+pass "real herdr E2E: each presentation-enabled flat fallback gets its own workspace and leaves the launcher's workspace untouched"
 
-# --- 2d. two '<home> workers' workspaces (concurrent fallbacks can both create
-#         one): a flat fallback adopts the first in Herdr's workspace list
-#         instead of refusing every later spawn ---------------------------------
+# --- 2d. '<home> workers' workspaces that already exist (from before this
+#         rule, or made by hand): a flat fallback never adopts one, it creates
+#         its own ------------------------------------------------------------
 
 read -r WS_WORKERS_DUP _ _ <<EOF
 $(make_workspace "firstmate workers")
@@ -367,13 +371,16 @@ wait "$PRES_LOCK_PID" || fail "the presentation lock holder failed"
   || fail "a flat fallback refused when two 'firstmate workers' workspaces exist"$'\n'"$(cat "$PRESH_ERR")"
 PRESH_META="$PRES_HOME/state/presH.meta"
 record_worktree "$PRESH_META"
-[ "$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESH_META" | cut -d= -f2-)")" = "$WS_WORKERS_FIRST" ] \
-  || fail "with two workers workspaces, the flat fallback did not land in the first one ($WS_WORKERS_FIRST)"
-pass "real herdr E2E: with two 'firstmate workers' workspaces, a flat fallback adopts the first instead of refusing"
+PRESH_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESH_META" | cut -d= -f2-)")
+[ -n "$PRESH_WS" ] && [ "$PRESH_WS" != "$WS_WORKERS_FIRST" ] && [ "$PRESH_WS" != "$WS_WORKERS_DUP" ] \
+  && [ "$PRESH_WS" != "$PRESF_WS" ] && [ "$PRESH_WS" != "$PRESG_WS" ] \
+  || fail "a flat fallback adopted an existing workspace instead of creating its own ($PRESH_WS)"
+pass "real herdr E2E: existing '<home> workers' workspaces are never adopted; a flat fallback creates its own"
 
-# --- 2e. reclaim of a destroyed endpoint from a presentation-enabled home:
-#         the replacement tab also goes to the workers workspace, never the
-#         launcher's own --------------------------------------------------------
+# --- 2e. reclaim of a destroyed endpoint from a presentation-enabled home
+#         (the relaunch an unpark runs): the replacement gets a fresh
+#         workspace of its own, never the launcher's and never one that
+#         another session already holds -----------------------------------------
 
 PRESF_TAB=$(grep '^herdr_tab_id=' "$PRESF_META" | cut -d= -f2-)
 lab tab close "$PRESF_TAB" >/dev/null 2>&1 || fail "could not destroy presF's endpoint"
@@ -391,15 +398,72 @@ PRESF_REBOUND_WS=$(workspace_of_pane "$PRESF_REBOUND_PANE")
 [ -n "$PRESF_REBOUND_WS" ] || fail "could not read presF's rebound workspace"
 [ "$PRESF_REBOUND_WS" != "$WS_PRIMARY" ] \
   || fail "a reclaimed worker from a presentation-enabled home landed in the launcher's own workspace"
-[ "$(label_of_workspace "$PRESF_REBOUND_WS")" = "firstmate workers" ] \
-  || fail "a reclaimed worker did not land in this home's 'firstmate workers' workspace: '$(label_of_workspace "$PRESF_REBOUND_WS")'"
+[ "$PRESF_REBOUND_WS" != "$PRESG_WS" ] && [ "$PRESF_REBOUND_WS" != "$PRESH_WS" ] \
+  || fail "a reclaimed worker joined a workspace another session holds ($PRESF_REBOUND_WS)"
+[ "$(tab_labels_of_workspace "$PRESF_REBOUND_WS")" = "fm-presF" ] \
+  || fail "a reclaimed worker's workspace holds more than its own session: '$(tab_labels_of_workspace "$PRESF_REBOUND_WS")'"
 [ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE_REBIND" ] \
   || fail "the reclaim changed the launcher workspace's tabs"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "the reclaim stole focus from the captain's workspace"
 PRESF_REBOUND_TAB=$(grep '^herdr_tab_id=' "$PRESF_META" | tail -1 | cut -d= -f2-)
 [ "$(lab tab get "$PRESF_REBOUND_TAB" | jq -r '.result.tab.label')" = fm-presF ] \
   || fail "a reclaimed ordinary worker's tab should keep fm-<id>"
-pass "real herdr E2E: reclaiming a presentation-enabled home's destroyed endpoint lands in its workers workspace, not the launcher's"
+pass "real herdr E2E: reclaiming a presentation-enabled home's destroyed endpoint gets its own workspace, not the launcher's or another session's"
+
+# --- 2f. park, unpark, then a new spawn: three different workspaces ---------
+# bin/fm-tree-park.sh unpark ends in fm-control.sh relaunch, which stops the
+# worker and runs the same fm-spawn.sh --relaunch the reclaim above runs, so
+# this drives that call after stopping the endpoint exactly as a park does.
+# presI is parked and unparked while presJ is spawned as a fresh task, each
+# from the same lock-contended presentation-enabled home as 2c.
+
+ROOT="$ROOT" READY="$PRES_LOCK_READY.f" RELEASE="$PRES_LOCK_RELEASE.f" LOCK="$PRES_LOCK_PATH" bash -c '
+  . "$ROOT/bin/fm-wake-lib.sh"
+  fm_lock_try_acquire "$LOCK" || exit 1
+  : > "$READY"
+  while [ ! -e "$RELEASE" ]; do sleep 0.05; done
+  fm_lock_release "$LOCK"
+' &
+PRES_LOCK_PID=$!
+while [ ! -e "$PRES_LOCK_READY.f" ] && kill -0 "$PRES_LOCK_PID" 2>/dev/null; do sleep 0.01; done
+[ -e "$PRES_LOCK_READY.f" ] || fail "could not hold the lab session's presentation lock for the park case"
+spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presI "$PROJ" --mode no-mistakes --yolo off
+[ "$SPAWN_RC" -eq 0 ] || fail "presI's spawn failed"$'\n'"$(cat "$SPAWN_ERR")"
+PRESI_META="$PRES_HOME/state/presI.meta"
+record_worktree "$PRESI_META"
+PRESI_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESI_META" | cut -d= -f2-)")
+lab tab close "$(grep '^herdr_tab_id=' "$PRESI_META" | cut -d= -f2-)" >/dev/null 2>&1 || fail "could not stop presI the way a park does"
+env PATH="$FAKEBIN:$PATH" HERDR_ENV=1 HERDR_PANE_ID="$LAUNCH_PRIMARY_PANE" HERDR_SESSION="$HERDR_LAB_SESSION" \
+  HERDR_SOCKET_PATH="$LAB_SOCKET" FM_SPAWN_NO_GUARD=1 FM_HOME="$PRES_HOME" FM_ROOT_OVERRIDE="$ROOT" \
+  "$ROOT/bin/fm-spawn.sh" presI --relaunch --harness codex >"$TMP_ROOT/presI-unpark.out" 2>"$TMP_ROOT/presI-unpark.err" \
+  || fail "relaunching presI after its park failed"$'\n'"$(cat "$TMP_ROOT/presI-unpark.err")"
+PRESI_UNPARKED_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESI_META" | tail -1 | cut -d= -f2-)")
+spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presJ "$PROJ" --mode no-mistakes --yolo off
+[ "$SPAWN_RC" -eq 0 ] || fail "presJ's spawn failed"$'\n'"$(cat "$SPAWN_ERR")"
+PRESJ_META="$PRES_HOME/state/presJ.meta"
+record_worktree "$PRESJ_META"
+PRESJ_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESJ_META" | cut -d= -f2-)")
+: > "$PRES_LOCK_RELEASE.f"
+wait "$PRES_LOCK_PID" || fail "the presentation lock holder failed"
+[ -n "$PRESI_WS" ] && [ -n "$PRESI_UNPARKED_WS" ] && [ -n "$PRESJ_WS" ] || fail "could not read all three workspaces"
+[ "$PRESI_WS" != "$PRESI_UNPARKED_WS" ] && [ "$PRESI_WS" != "$PRESJ_WS" ] && [ "$PRESI_UNPARKED_WS" != "$PRESJ_WS" ] \
+  || fail "park, unpark and a new spawn shared a workspace (first $PRESI_WS, unparked $PRESI_UNPARKED_WS, new $PRESJ_WS)"
+[ "$(tab_labels_of_workspace "$PRESI_UNPARKED_WS")" = "fm-presI" ] && [ "$(tab_labels_of_workspace "$PRESJ_WS")" = "fm-presJ" ] \
+  || fail "an unparked or new session's workspace holds more than that one session"
+pass "real herdr E2E: a session, its unparked relaunch and a new spawn each get their own workspace"
+
+# The guard: placing a session into a workspace that already holds another
+# tab refuses, names the workspace, and creates nothing.
+GUARD_TABS_BEFORE=$(tab_labels_of_workspace "$PRESJ_WS")
+GUARD_ERR="$TMP_ROOT/guard.err"
+FM_HOME="$PRES_HOME" HERDR_SESSION="$HERDR_LAB_SESSION" bash -c '
+  . "$0/bin/backends/herdr.sh"
+  fm_backend_herdr_create_task "$1:$2" fm-guard "$3" "" "" exclusive' "$ROOT" "$HERDR_LAB_SESSION" "$PRESJ_WS" "$TMP_ROOT" >/dev/null 2>"$GUARD_ERR" \
+  && fail "the guard let a second session into a workspace that already holds one"
+assert_contains_local "$(cat "$GUARD_ERR")" "$PRESJ_WS" "the guard refusal did not name the workspace"
+assert_contains_local "$(cat "$GUARD_ERR")" "one session only" "the guard refusal did not state the rule"
+[ "$(tab_labels_of_workspace "$PRESJ_WS")" = "$GUARD_TABS_BEFORE" ] || fail "a refused placement still changed the workspace's tabs"
+pass "real herdr E2E: the guard refuses a second session in a workspace that already holds one"
 
 # --- 3. duplicate label, launcher in the NON-first match, driven from a real
 #        Herdr pane so the identity comes from Herdr's own injection ----------

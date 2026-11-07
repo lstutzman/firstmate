@@ -457,9 +457,10 @@ fm_backend_herdr_workspace_legacy_label() {
   printf '2ndmate-%s' "$id"
 }
 
-# fm_backend_herdr_flat_workers_workspace_label: the per-home workspace label a
-# presentation-enabled home uses when a worker falls back to the flat layout,
-# so that worker never lands in the launching firstmate's own workspace.
+# fm_backend_herdr_flat_workers_workspace_label: the label of the fresh workspace
+# a presentation-enabled home gives a worker that falls back to the flat layout,
+# so that worker never lands in the launching firstmate's own workspace. The
+# label is display only: each such worker gets its own workspace.
 fm_backend_herdr_flat_workers_workspace_label() {
   printf '%s workers' "$(fm_backend_herdr_workspace_label)"
 }
@@ -2203,14 +2204,12 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #                   own per-home workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
 #   flat-workers  - a crewmate or scout from a presentation-enabled home whose
-#                   projection fell back flat. It goes to this home's one
-#                   "<home label> workers" workspace, found or created by label
-#                   like the per-home lookup below, never into the launcher's
-#                   own workspace. It holds no identity, so when concurrent
-#                   fallbacks created several, the first in workspace-list
-#                   order is adopted instead of refusing. A claimed launcher
-#                   identity is still validated first, so a broken one refuses
-#                   as above.
+#                   projection fell back flat. It always gets a fresh
+#                   "<home label> workers" workspace of its own, never an
+#                   existing one and never the launcher's own workspace,
+#                   because a workspace holds one session only. A claimed
+#                   launcher identity is still validated first, so a broken
+#                   one refuses as above.
 # With no herdr ancestry at all there is no launcher workspace to inherit, so
 # the per-home label lookup below stays the resolver - but it must then resolve
 # to exactly ONE workspace. Two same-labeled home workspaces with no launcher
@@ -2240,9 +2239,12 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
     esac
     [ "$relationship" = launcher-home ] || label=$(fm_backend_herdr_flat_workers_workspace_label)
   fi
-  matches=$(fm_backend_herdr_workspace_find_all "$session" "$label")
+  # A flat-workers placement never looks for an existing workspace: each such
+  # session gets a fresh one, because a workspace holds one session only.
+  matches=
+  [ "$relationship" = flat-workers ] || matches=$(fm_backend_herdr_workspace_find_all "$session" "$label")
   count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
-  if [ "$count" -gt 1 ] && [ "$relationship" != flat-workers ]; then
+  if [ "$count" -gt 1 ]; then
     echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and nothing identifies which one this spawn belongs in; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
     return 3
   fi
@@ -2774,8 +2776,8 @@ fm_backend_herdr_agent_alive() {  # <target>
 # A tab under either label counts as the same task's tab, so a live earlier
 # session still refuses a duplicate and an earlier husk is still replaced.
 # Echoes "<tab_id> <pane_id>" on success.
-fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_tab_id> [<earlier_label>]
-  local container=$1 label=$2 cwd=$3 seeded_tab_id=${4:-} earlier=${5:-} session wsid list dup_tabs dup dup_pane dup_tab_ids out tab_id pane_id remaining_dup_tabs
+fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_tab_id> [<earlier_label>] [exclusive]
+  local container=$1 label=$2 cwd=$3 seeded_tab_id=${4:-} earlier=${5:-} exclusive=${6:-} session wsid list dup_tabs dup dup_pane dup_tab_ids out tab_id pane_id remaining_dup_tabs other_tabs
   session=${container%%:*}
   wsid=${container#*:}
   [ -n "$earlier" ] || earlier=$label
@@ -2784,6 +2786,17 @@ fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_ta
     echo "error: could not parse herdr tab list output for workspace $wsid (session $session)" >&2
     return 1
   }
+  # <exclusive> (6th arg): the workspace must be one this spawn just created, so
+  # its only tab is the seeded default one. Any other tab means another session
+  # already lives there, and a workspace holds one session only (fleet rules
+  # section 1), so refuse before creating anything.
+  if [ "$exclusive" = exclusive ]; then
+    other_tabs=$(printf '%s' "$list" | jq -r --arg seeded "$seeded_tab_id" '.result.tabs[] | select(.tab_id != $seeded) | .tab_id' 2>/dev/null | tr '\n' ' ')
+    if [ -n "${other_tabs// /}" ]; then
+      echo "error: refusing to place '$label' in herdr workspace $wsid (session $session): it already holds tab(s) ${other_tabs% }, and a workspace holds one session only; nothing was created, so run the spawn again to get a fresh workspace, or close those tabs first" >&2
+      return 1
+    fi
+  fi
   dup_tab_ids=""
   if [ -n "$dup_tabs" ]; then
     while IFS= read -r dup; do

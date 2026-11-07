@@ -173,9 +173,9 @@
 #   outside herdr has no workspace to inherit and uses this home's own labeled
 #   workspace, which must then match exactly one. --secondmate is the deliberate
 #   exception: it stands up that secondmate home's own workspace. A home whose
-#   presentation layout (below) is on but falls back flat instead places the
-#   worker in that home's own "<home label> workers" workspace, never in the
-#   launcher's workspace.
+#   presentation layout (below) is on but falls back flat instead creates a
+#   fresh "<home label> workers" workspace for that one worker, never the
+#   launcher's workspace and never one another session holds.
 #   Herdr additionally uses a presentation-only layout by default when the
 #   selected client and running server meet the Herdr 0.8.0 floor. The local
 #   config/herdr-presentation-spaces file can say off to disable it or on to
@@ -5126,9 +5126,10 @@ EOF
     # never endpoint or ownership authority, and flat is already the documented
     # fallback for every recovery it cannot bind exactly
     # (docs/herdr-backend.md "Presentation spaces"). Like every flat fallback
-    # of a presentation-enabled home, the tab goes to that home's
-    # "<home label> workers" workspace, never the launcher's own; a home that
-    # opted out keeps the launcher's workspace.
+    # of a presentation-enabled home, the tab goes to a fresh "<home label>
+    # workers" workspace of its own, never the launcher's and never one that
+    # holds another session; a home that opted out keeps the launcher's
+    # workspace.
     #
     # KNOWN LIMITATION (bead fm-herdr-rebind-leak-20260913): the tab minted
     # below is registered with no abort cleanup, so a later refusal leaves that
@@ -5186,7 +5187,9 @@ EOF
     HERDR_REBIND_LABEL_HOME=$FM_HOME
     [ "$KIND" != secondmate ] || HERDR_REBIND_LABEL_HOME=$WT
     HERDR_TAB_LABEL=$(FM_HOME="$HERDR_REBIND_LABEL_HOME" fm_backend_herdr_task_label "$ID")
-    HERDR_TASK_IDS=$(fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$WT" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W") || exit 1
+    HERDR_REBIND_EXCLUSIVE=
+    [ "$HERDR_REBIND_RELATIONSHIP" != flat-workers ] || HERDR_REBIND_EXCLUSIVE=exclusive
+    HERDR_TASK_IDS=$(fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$WT" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W" "$HERDR_REBIND_EXCLUSIVE") || exit 1
     read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
@@ -5265,8 +5268,8 @@ else
     HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
     HERDR_PROJECTED=0
     if [ "$KIND" != secondmate ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
-      # A presentation-enabled home that ends up flat places the worker in its
-      # own workers workspace, never in the launcher's workspace.
+      # A presentation-enabled home that ends up flat places the worker in a
+      # fresh workspace of its own, never in the launcher's workspace.
       HERDR_LAUNCHER_RELATIONSHIP=flat-workers
       HERDR_SES=$(fm_backend_herdr_session)
       HERDR_PARENT_LABEL=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_workspace_label)
@@ -5416,7 +5419,9 @@ else
       HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_CONTAINER_RAW#*$'\t'}
       HERDR_SES=${CONTAINER%%:*}
       HERDR_WORKSPACE_ID=${CONTAINER#*:}
-      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$SPAWN_PANE_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W") || exit 1
+      HERDR_FLAT_EXCLUSIVE=
+      [ "$HERDR_LAUNCHER_RELATIONSHIP" != flat-workers ] || HERDR_FLAT_EXCLUSIVE=exclusive
+      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$SPAWN_PANE_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W" "$HERDR_FLAT_EXCLUSIVE") || exit 1
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF

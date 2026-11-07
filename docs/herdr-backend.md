@@ -176,7 +176,7 @@ A record is listed only while Herdr reports its recorded pane in the recorded ta
 A primary therefore lists the secondmates and offices it spawned, whose records it holds, and never a secondmate's own workers.
 An `fm-<id>` tab in the first workspace matching the home label is still listed by that label only when no record for that id holds Herdr ids, which covers an orphan and a task recorded before ids were kept.
 The one recovery that does place new work is the control plane's reclaim of a destroyed endpoint.
-It mints a replacement tab through this section's ordinary placement rules, or in the workers workspace for a home with presentation spaces on, while pinning the herdr session the task's record names ([`agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
+It mints a replacement tab through this section's ordinary placement rules, or in a fresh workspace of its own for a home with presentation spaces on, while pinning the herdr session the task's record names ([`agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
 
 Existing task operations use recorded endpoint ids and do not move a live task when labels change.
 The per-home workspace is reused while it has task tabs.
@@ -187,9 +187,10 @@ Closing its last tab can remove the workspace, and the next spawn recreates it.
 Each new crewmate or scout is placed in a disposable one-task workspace by default, on Herdr 0.8.0 and newer.
 This section calls that one-task workspace the projection.
 A home that turned the projection off, or an unconfigured home below that release, uses the ordinary flat layout described under [Watching and task containers](#watching-and-task-containers).
-When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task tab goes to that home's own workers workspace (`firstmate workers`, `2ndmate-<id> workers`, or an office's `<Role> workers`, such as `Quartermaster workers`) instead of the launcher's workspace.
-That workspace is created unfocused on first use, found again by its exact label, and reused while it has task tabs; a claimed launcher identity is still validated first.
-If concurrent fallbacks created more than one, the first in Herdr's workspace list is used rather than refusing, because that workspace carries no identity.
+When a home with the projection on still falls back flat, for example on a contended presentation lock, an absent or ambiguous parent, or a recovery it cannot bind exactly, the task goes to a fresh workspace of its own, labeled `firstmate workers`, `2ndmate-<id> workers`, or an office's `<Role> workers` (such as `Quartermaster workers`), instead of the launcher's workspace.
+Every such session gets its own, because a workspace holds one session only; an existing workers workspace is never adopted.
+It is created unfocused, and a claimed launcher identity is still validated first.
+Before the task tab is created, the spawn refuses a workspace that already holds any tab besides the one Herdr seeded, with a message naming the workspace and that tab.
 
 ### Setting values
 
@@ -496,7 +497,7 @@ Any of these preserves the candidate and lets session startup continue with at m
   Dead-owner reclaim still stops the wait when a holder crashed.
   Unbounded blocking on the session lock is never the default.
 - Existing layouts are not force-renamed or rearranged.
-- Missing or ambiguous restart bindings fall back to the home's workers workspace while the old projection remains untouched.
+- Missing or ambiguous restart bindings fall back to a fresh workers workspace while the old projection remains untouched.
 - Crashes, lost responses, failed exact-pane cleanup, or human renames can leave quarantined spaces.
   Session start removes only the exact home-local, uniquely journal-correlated, childless idle-shell shape above.
 - Spaces have no cross-home cleanup path, and a secondmate child can clean up only from its exact home.
