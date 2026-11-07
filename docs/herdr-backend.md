@@ -175,11 +175,10 @@ A record is listed only while Herdr reports its recorded pane in the recorded ta
 A primary therefore lists the secondmates and offices it spawned, whose records it holds, and never a secondmate's own workers.
 An `fm-<id>` tab in the first workspace matching the home label is still listed by that label only when no record for that id holds Herdr ids, which covers an orphan and a task recorded before ids were kept.
 The one recovery that does place new work is the control plane's reclaim of a destroyed endpoint.
-It mints a replacement tab through this section's ordinary placement rules, or in a fresh workspace of its own for a home with presentation spaces on, while pinning the herdr session the task's record names ([`agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
+It mints the replacement tab in a fresh workspace of its own, like any other crewmate or scout, while pinning the herdr session the task's record names ([`agent-control.md`](agent-control.md) "Reclaiming a task whose endpoint is gone").
 
 Existing task operations use recorded endpoint ids and do not move a live task when labels change.
-The per-home workspace is reused while it has task tabs.
-Closing its last tab can remove the workspace, and the next spawn recreates it.
+A crewmate's or scout's workspace holds only that task, so closing its last tab can remove the workspace; a respawn creates a fresh one.
 
 ## Presentation spaces
 
