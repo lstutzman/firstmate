@@ -23,7 +23,10 @@
 #   fm-captain-hold.sh hold <task-id> --reason <reason> \
 #     [--title <title>] [--repo <repo>] [--origin <origin-id>] [--origin-key <key>] [--until YYYY-MM-DD] \
 #     [--cause <policy|credential|sudo|tool|decision|physical|external>]   (why the ask exists; default decision)
+#     [--recommend <answer> --default-by <YYYY-MM-DDTHH:MM:SSZ> --class <class> [--touches <path>]...]
 #   fm-captain-hold.sh answer <task-id> --decision-file <path|-> [--release]   (- reads stdin)
+#   fm-captain-hold.sh answer <task-id> --deadline-default
+#   fm-captain-hold.sh defaults-due
 #   fm-captain-hold.sh answers [<legacy-origin> | --any-origin] --source <provenance>   (keyed answers on stdin)
 #   fm-captain-hold.sh reconcile-requests --source-id <source-id> --source <provenance>   (task ids on stdin)
 #   fm-captain-hold.sh bind <source-id> [<legacy-origin> | --any-origin]
@@ -82,6 +85,43 @@
 # answered captain call. A hold that expired by date (`--until` in the past) is
 # still answerable: the surviving hold annotations, not tasks-axi's live
 # `held:` bit, prove the captain owned it.
+#
+# DEADLINE DEFAULT (ported from doitdigital0495/firstmate@78c946be9, MIT).
+# A hold may carry a recommended answer and a UTC deadline: `hold --recommend
+# <answer> --default-by <stamp> --class <class>`. The three come together and
+# are stored in a private record under `state/captain-hold-default/`, tied to
+# the hold-set stamp of the lifecycle that made them, so a re-held call never
+# inherits a stale default. It never touches the task body.
+# Only a non-reserved call may carry one. `hold` refuses (before writing
+# anything) a class in any reserved class (payments, billing, legal, product,
+# member copy, credentials, production, data-rewriting, security, outward-facing,
+# money, destructive, irreversible), a class this script does not recognise as
+# safe (the allowed classes are fleet, tooling, docs and process, so an unknown
+# class cannot be determined and refuses), a `--cause` of policy or credential,
+# and any `--touches <path>` that bin/fm-reserved-classify.sh flags under the
+# home's config/admission/captain-hold-defaults.rules (a missing rules file with
+# --touches refuses). The deadline must be later than the hold-set time and,
+# with --until, later than the start of that date. An active call re-held with
+# a different default refuses unless the re-hold is a deferral. A deferral (the
+# captain's "later", `hold --until <date>` on an active call) is a real answer:
+# it removes the call's default record, logs "default cleared: captain deferred
+# to <date>" with the task and hold stamp, and says so on the parent channel,
+# unless it carries a fresh --default-by, which replaces the old default.
+# `defaults-due` lists calls whose deadline passed, still open, not deferred to
+# a later `--until`, as `<task-id>\t<deadline>\t<recommendation>\t<class>\t<mode>\t<logged>\t<title>`,
+# and changes nothing. `answer --deadline-default` is the only way to act on one,
+# and what it does depends on config/captain-hold-defaults, one word: `dry-run`
+# (the default when the file is absent or says anything else) or `live`.
+# Dry-run only appends what it would have answered, when and for which task to
+# state/captain-hold-default.log, and answers nothing. Live rechecks the call is
+# due and its class is still allowed, generates the words itself, and records
+# them through the same guarded answer path with `Resolution mode:
+# deadline-default` and the label "Deadline default (not the captain's words):".
+# `answered` never treats that mode as the captain's answer, and every
+# parent-channel line it publishes says it was a deadline default, not the
+# captain. A captain answer that arrives first closes the call, so the default
+# is refused; one that arrives after a default is recorded on top as a
+# `repaired` record that names the default it supersedes.
 #
 # ONE KEYED-ANSWER INTAKE, FED BY EVERY CHANNEL.
 # "A keyed answer resolves its matching captain-held task" is a single
@@ -217,8 +257,8 @@
 # one captain call. See "record divergence" beside command_diverged below.
 #
 # Resolution records: the block written into the body names this script, the
-# decision digest, and a `Resolution mode:` of answered, released, repaired, or
-# reconciled. Records written by the retired fm-decision-hold.sh (routed,
+# decision digest, and a `Resolution mode:` of answered, released, repaired,
+# reconciled, or deadline-default. Records written by the retired fm-decision-hold.sh (routed,
 # declined, answered, repaired) are recognized everywhere a record is read, so
 # nothing already closed needs rewriting.
 #
@@ -244,6 +284,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 
 # shellcheck source=bin/fm-classify-lib.sh
 # shellcheck disable=SC1091
@@ -537,6 +578,7 @@ body_has_resolution_record() {  # <task-body>
     *"Resolution recorded by fm-captain-hold."*"Captain decision:"*) return 0 ;;
     *"Resolution recorded by fm-decision-hold."*"Captain decision:"*) return 0 ;;
     *"Resolution recorded by fm-captain-hold."*"Reconciliation evidence:"*) return 0 ;;
+    *"Resolution recorded by fm-captain-hold."*"$DEADLINE_DEFAULT_LABEL"*) return 0 ;;
   esac
   return 1
 }
@@ -578,6 +620,7 @@ recorded_resolution_mode() {  # <task-body>
 closed_answer_replay_mode_compatible() {  # <mode> <task-body>
   case "$1" in
     answered|repaired|routed) return 0 ;;
+    deadline-default) [ "$DEADLINE_DEFAULT" = 1 ] && return 0 ;;
   esac
   return 1
 }
@@ -585,11 +628,16 @@ closed_answer_replay_mode_compatible() {  # <mode> <task-body>
 # The record's label is what keeps an evidence-backed reconciliation from
 # reading as the captain's own words. `reconciled` closes a call that went moot
 # and carries verified evidence; every other mode carries what the captain said.
+DEADLINE_DEFAULT_LABEL="Deadline default (not the captain's words):"
+DEADLINE_DEFAULT=0
+SUPERSEDES_DEFAULT=0
 resolution_block() {  # <mode>
   local label='Captain decision:'
   [ "$1" != reconciled ] || label='Reconciliation evidence:'
-  printf 'Resolution recorded by fm-captain-hold.\nDecision digest: %s\nResolution mode: %s\n\n%s\n%s\n' \
-    "$DECISION_DIGEST" "$1" "$label" "$DECISION_TEXT"
+  [ "$1" != deadline-default ] || label=$DEADLINE_DEFAULT_LABEL
+  printf 'Resolution recorded by fm-captain-hold.\nDecision digest: %s\nResolution mode: %s\n' "$DECISION_DIGEST" "$1"
+  [ "$SUPERSEDES_DEFAULT" != 1 ] || printf 'Supersedes the deadline default recorded below.\n'
+  printf '\n%s\n%s\n' "$label" "$DECISION_TEXT"
 }
 
 # Durable state of one captain call: an active captain hold (annotations
@@ -1138,9 +1186,155 @@ verify_entry_durable() {  # <origin-or-empty> <entry>; prints "<id> <how> <origi
   printf '%s %s %s\n' "$id" "$how" "$origin_state"
 }
 
+# --- deadline defaults (ported from doitdigital0495/firstmate@78c946be9, MIT) --
+#
+# The header's DEADLINE DEFAULT section owns the contract. The default is a
+# private record next to the hold, never part of the task body, so it adds no
+# second decision store and a re-held call (new hold-set stamp) ignores it.
+
+DEFAULT_ALLOWED_CLASSES='fleet tooling docs process'
+DEFAULT_RESERVED_CLASSES='payments billing legal product member-copy copy credentials credential production data-rewriting security outward-facing money destructive irreversible'
+DEFAULT_RECORD_DIR="$STATE/captain-hold-default"
+DEFAULT_LOG="$STATE/captain-hold-default.log"
+DEFAULT_RULES="$CONFIG/admission/captain-hold-defaults.rules"
+DEFAULT_RECOMMEND=''
+DEFAULT_BY=''
+DEFAULT_CLASS=''
+DEFAULT_TOUCHES=()
+
+default_record_path() { printf '%s/%s.default\n' "$DEFAULT_RECORD_DIR" "$1"; }
+
+# dry-run unless config/captain-hold-defaults says exactly `live`.
+default_mode() {
+  local line mode=dry-run
+  if [ -f "$CONFIG/captain-hold-defaults" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      line=${line%%#*}
+      line=$(printf '%s' "$line" | tr -d '[:space:]')
+      [ -n "$line" ] || continue
+      [ "$line" != live ] || mode=live
+      break
+    done < "$CONFIG/captain-hold-defaults"
+  fi
+  printf '%s\n' "$mode"
+}
+
+# Fails with the reason a class can never carry a default; allowed classes pass.
+require_default_class_allowed() {  # <class>
+  local class=$1 c
+  for c in $DEFAULT_RESERVED_CLASSES; do
+    [ "$c" != "$class" ] \
+      || fail "a call in the reserved class $class can never carry a deadline default; it waits for the captain"
+  done
+  for c in $DEFAULT_ALLOWED_CLASSES; do
+    [ "$c" != "$class" ] || return 0
+  done
+  fail "cannot determine that class '$class' is safe for a deadline default; declare one of: $DEFAULT_ALLOWED_CLASSES"
+}
+
+valid_utc_stamp() {  # <value>
+  local v=$1 mo d h mi se
+  case "$v" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) : ;;
+    *) return 1 ;;
+  esac
+  mo=${v:5:2}; d=${v:8:2}; h=${v:11:2}; mi=${v:14:2}; se=${v:17:2}
+  [ $((10#$mo)) -ge 1 ] && [ $((10#$mo)) -le 12 ] && [ $((10#$d)) -ge 1 ] && [ $((10#$d)) -le 31 ] \
+    && [ $((10#$h)) -le 23 ] && [ $((10#$mi)) -le 59 ] && [ $((10#$se)) -le 59 ]
+}
+
+# Validates the --recommend/--default-by/--class/--touches set before anything
+# is written. A hold with none of them is untouched by deadline defaults.
+validate_default_request() {  # <cause> <hold-set> <until>
+  local cause=$1 hold_set=$2 until=$3 verdict classes
+  [ -n "$DEFAULT_RECOMMEND$DEFAULT_BY$DEFAULT_CLASS" ] || [ "${#DEFAULT_TOUCHES[@]}" -eq 0 ] \
+    || fail "--touches needs --recommend, --default-by and --class"
+  [ -n "$DEFAULT_RECOMMEND$DEFAULT_BY$DEFAULT_CLASS" ] || return 0
+  [ -n "$DEFAULT_RECOMMEND" ] && [ -n "$DEFAULT_BY" ] && [ -n "$DEFAULT_CLASS" ] \
+    || fail "a deadline default needs --recommend, --default-by and --class together"
+  case "$cause" in
+    policy|credential) fail "a call raised for $cause can never carry a deadline default; it waits for the captain" ;;
+  esac
+  validate_one_line recommendation "$DEFAULT_RECOMMEND"
+  [ "${#DEFAULT_RECOMMEND}" -le 500 ] || fail "--recommend must be at most 500 characters"
+  case "$DEFAULT_RECOMMEND" in
+    *[[:cntrl:]]*) fail "--recommend must not contain control characters" ;;
+  esac
+  valid_utc_stamp "$DEFAULT_BY" || fail "--default-by must be a UTC YYYY-MM-DDTHH:MM:SSZ stamp: $DEFAULT_BY"
+  [[ "$DEFAULT_BY" > "$hold_set" ]] \
+    || fail "--default-by must be later than the hold time so the captain can see the call first: $DEFAULT_BY"
+  [ -z "$until" ] || [[ "$DEFAULT_BY" > "${until}T00:00:00Z" ]] \
+    || fail "--default-by must be later than --until $until so the deferred call resurfaces before its default: $DEFAULT_BY"
+  require_default_class_allowed "$DEFAULT_CLASS"
+  if [ "${#DEFAULT_TOUCHES[@]}" -gt 0 ]; then
+    [ -f "$DEFAULT_RULES" ] \
+      || fail "cannot classify --touches paths: no rules file at $DEFAULT_RULES, so the call cannot take a deadline default"
+    verdict=$(printf '%s\n' "${DEFAULT_TOUCHES[@]}" | "$SCRIPT_DIR/fm-reserved-classify.sh" --rules "$DEFAULT_RULES" 2>/dev/null) \
+      || fail "cannot classify --touches paths with $DEFAULT_RULES, so the call cannot take a deadline default"
+    classes=$(printf '%s' "$verdict" | tr '\n' ' ')
+    [ "$verdict" = none ] \
+      || fail "the touched paths fall in reserved class(es) ${classes% }; the call can never carry a deadline default"
+  fi
+}
+
+# Reads the record into DR_HOLD_SET/DR_BY/DR_CLASS/DR_RECOMMEND; nonzero when absent.
+read_default_record() {  # <task-id>
+  local path line
+  DR_HOLD_SET='' DR_BY='' DR_CLASS='' DR_RECOMMEND=''
+  path=$(default_record_path "$1")
+  [ -f "$path" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      hold_set=*) DR_HOLD_SET=${line#hold_set=} ;;
+      by=*) DR_BY=${line#by=} ;;
+      class=*) DR_CLASS=${line#class=} ;;
+      recommend=*) DR_RECOMMEND=${line#recommend=} ;;
+    esac
+  done < "$path"
+  [ -n "$DR_HOLD_SET" ] && [ -n "$DR_BY" ] && [ -n "$DR_CLASS" ] && [ -n "$DR_RECOMMEND" ]
+}
+
+write_default_record() {  # <task-id> <hold-set-stamp>
+  local path tmp
+  path=$(default_record_path "$1")
+  mkdir -p "$DEFAULT_RECORD_DIR" || return 1
+  tmp=$(umask 077; mktemp "$DEFAULT_RECORD_DIR/.tmp.XXXXXX") || return 1
+  if ! printf 'schema=fm-captain-hold-default.v1\nhold_set=%s\nby=%s\nclass=%s\nrecommend=%s\n' \
+      "$2" "$DEFAULT_BY" "$DEFAULT_CLASS" "$DEFAULT_RECOMMEND" > "$tmp" \
+    || ! mv -f -- "$tmp" "$path"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
+# Whether this call may proceed on its default now; fills DR_*. Prints nothing.
+# Open, held for the captain, the record belongs to this hold, the deadline has
+# passed, the class is still allowed, and a later `--until` has not deferred it.
+deadline_default_due() {  # <task-show-output> <task-id> <now-stamp>
+  local show=$1 id=$2 now=$3 hold_until stamp
+  [ "$(show_field "$show" state)" != "done" ] || return 1
+  [ "$(show_field_value "$show" hold_kind)" = captain ] || return 1
+  read_default_record "$id" || return 1
+  stamp=$(body_hold_set_timestamp "$(show_field_value "$show" body)")
+  [ -n "$stamp" ] && [ "$stamp" = "$DR_HOLD_SET" ] || return 1
+  hold_until=$(show_field_value "$show" hold_until)
+  case "$hold_until" in
+    ''|-) : ;;
+    *) if [[ "$hold_until" > "${now%%T*}" ]]; then return 1; fi ;;
+  esac
+  [[ "$DR_BY" < "$now" || "$DR_BY" = "$now" ]] || return 1
+  ( require_default_class_allowed "$DR_CLASS" ) >/dev/null 2>&1 || return 1
+}
+
+default_log_key() { printf 'task=%s hold=%s by=%s' "$1" "$2" "$3"; }
+default_logged() {  # <task-id> <hold-set> <by>
+  [ -f "$DEFAULT_LOG" ] && grep -qF -- "$(default_log_key "$1" "$2" "$3")" "$DEFAULT_LOG"
+}
+
 command_hold() {
   local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind hold_set occurrence
   local cause=decision origin_key='' existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason original_body='' hold_status=0
+  local clear_default=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
@@ -1152,6 +1346,10 @@ command_hold() {
       --origin-key) shift; origin_key=${1:-} ;;
       --until) shift; until=${1:-} ;;
       --cause) shift; cause=${1:-} ;;
+      --recommend) shift; DEFAULT_RECOMMEND=${1:-} ;;
+      --default-by) shift; DEFAULT_BY=${1:-} ;;
+      --class) shift; DEFAULT_CLASS=${1:-} ;;
+      --touches) shift; [ -n "${1:-}" ] || fail "--touches needs a path"; DEFAULT_TOUCHES+=("$1") ;;
       *) usage >&2; exit 2 ;;
     esac
     shift
@@ -1178,6 +1376,8 @@ command_hold() {
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) : ;;
     *) fail "FM_CAPTAIN_HOLD_NOW must be a UTC YYYY-MM-DDTHH:MM:SSZ timestamp" ;;
   esac
+  # Refused before any write, so a refused default leaves the backlog untouched.
+  validate_default_request "$cause" "$hold_set" "$until"
   acquire_task_control_lock "$id"
   require_tasks_axi
   if task_show "$id"; then
@@ -1189,6 +1389,18 @@ command_hold() {
     existing_held=$(show_field_value "$show" held)
     if [ "$existing_hold_kind" = captain ] && [ "$existing_held" = yes ]; then
       preserve_hold_set=1
+      # An active call keeps the default it published; only an identical repeat
+      # passes. A deferral (--until) is the captain's answer: it drops the
+      # default unless it brings a fresh one, which replaces it.
+      if read_default_record "$id" \
+        && [ "$DR_HOLD_SET" = "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" ]; then
+        if [ -n "$until" ]; then
+          [ -n "$DEFAULT_BY" ] || clear_default=1
+        elif [ -n "$DEFAULT_BY" ] && { [ "$DR_BY" != "$DEFAULT_BY" ] || [ "$DR_CLASS" != "$DEFAULT_CLASS" ] \
+          || [ "$DR_RECOMMEND" != "$DEFAULT_RECOMMEND" ]; }; then
+          fail "active call $id already carries a different deadline default; resolve it before publishing a new one"
+        fi
+      fi
     fi
     if [ -n "$title" ]; then
       existing_title=$(show_field_value "$show" title)
@@ -1254,6 +1466,17 @@ command_hold() {
     { mkdir -p "$(dirname "$(origin_key_path "$id" "$occurrence")")" \
       && printf '%s\n' "$origin_key" > "$(origin_key_path "$id" "$occurrence")"; } \
       || fail "could not record the origin key for $id"
+  fi
+  if [ -n "$DEFAULT_BY" ]; then
+    write_default_record "$id" "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" \
+      || fail "could not record the deadline default for $id"
+    reason="$reason (deadline default, not the captain: if unanswered by $DEFAULT_BY, Firstmate may proceed on its recommendation: $DEFAULT_RECOMMEND)"
+  elif [ "$clear_default" = 1 ]; then
+    if ! { printf '%s default cleared: captain deferred to %s task=%s hold=%s\n' "$hold_set" "$until" "$id" "$DR_HOLD_SET" >> "$DEFAULT_LOG" \
+      && rm -f -- "$(default_record_path "$id")"; }; then
+      fail "could not clear the deadline default for $id"
+    fi
+    reason="$reason (default cleared: captain deferred to $until)"
   fi
   publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$cause"
   if [ -n "$origin" ]; then
@@ -1368,23 +1591,73 @@ remove_interrupted_answer_stamp() {  # <task-id>
   rm -f -- "$tmp"
 }
 
+# Resolves `answer --deadline-default`: in dry-run it logs what it would have
+# answered and returns 3 (nothing answered); live it stages the owner-generated
+# words in DEADLINE_DECISION_FILE. The captain never supplies these words.
+DEADLINE_DECISION_FILE=
+prepare_deadline_default() {  # <task-id>
+  local id=$1 show now mode words stamp
+  require_tasks_axi
+  task_show "$id" || fail "captain-held task $id is absent from this home's configured backlog (data directory $DATA)"
+  show=$TASK_SHOW_OUTPUT
+  now=${FM_CAPTAIN_HOLD_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
+  # A call that is no longer open reaches the answer guard instead, which
+  # replays this default's own record and refuses anything the captain said.
+  if [ "$(show_field "$show" state)" = "done" ]; then
+    read_default_record "$id" && [ "$(default_mode)" = live ] \
+      || fail "task $id has no deadline default due: it is already closed"
+  else
+    deadline_default_due "$show" "$id" "$now" \
+      || fail "task $id has no deadline default due: it is answered, deferred, has no default for this hold, or its deadline has not passed"
+  fi
+  words="No captain answer arrived by $DR_BY, so Firstmate proceeded on its recommendation: $DR_RECOMMEND. These are not the captain's words (deadline default, class $DR_CLASS)."
+  mode=$(default_mode)
+  if [ "$mode" != live ]; then
+    stamp=$DR_HOLD_SET
+    if ! default_logged "$id" "$stamp" "$DR_BY"; then
+      mkdir -p "$STATE"
+      printf '%s dry-run would-answer %s class=%s recommend=%s\n' \
+        "$now" "$(default_log_key "$id" "$stamp" "$DR_BY")" "$DR_CLASS" "$(sanitize_field "$DR_RECOMMEND")" >> "$DEFAULT_LOG" \
+        || fail "cannot write the dry-run log at $DEFAULT_LOG"
+    fi
+    printf 'dry-run: would answer %s with the recommendation "%s" (deadline %s, class %s); nothing was answered. Set live in config/captain-hold-defaults to apply it.\n' \
+      "$id" "$(sanitize_field "$DR_RECOMMEND")" "$DR_BY" "$DR_CLASS"
+    return 3
+  fi
+  DEADLINE_DECISION_FILE=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-captain-hold-default.XXXXXX") \
+    || fail "cannot stage the deadline default"
+  printf '%s\n' "$words" > "$DEADLINE_DECISION_FILE" || fail "cannot stage the deadline default"
+}
+
 command_answer() {
-  local id=${1:-} decision_file='' release=0 show state hold_kind body outcome recorded_mode occurrence
+  local id=${1:-} decision_file='' release=0 deadline_default=0 show state hold_kind body outcome recorded_mode occurrence prep_rc=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --decision-file) shift; decision_file=${1:-} ;;
       --release) release=1 ;;
+      --deadline-default) deadline_default=1 ;;
       *) usage >&2; exit 2 ;;
     esac
     shift
   done
   validate_slug task-id "$id"
+  if [ "$deadline_default" = 1 ]; then
+    # The owner chooses the words and the close, so no caller can supply them.
+    [ -z "$decision_file" ] && [ "$release" = 0 ] \
+      || fail "--deadline-default takes no --decision-file or --release"
+    prepare_deadline_default "$id" || prep_rc=$?
+    [ "$prep_rc" -ne 3 ] || return 0
+    [ "$prep_rc" -eq 0 ] || exit "$prep_rc"
+    DEADLINE_DEFAULT=1
+    decision_file=$DEADLINE_DECISION_FILE
+  fi
   if [ "$release" = 1 ] && ! release_attended; then
     fail "task $id stays held: $RELEASE_AWAY_REASON"
   fi
   load_decision "$decision_file"
+  [ -z "$DEADLINE_DECISION_FILE" ] || rm -f -- "$DEADLINE_DECISION_FILE"
   acquire_task_control_lock "$id"
   if [ "$release" = 1 ]; then
     fm_afk_contract_lock_hold "$STATE" || fail "task $id stays held: the away-posture record is locked"
@@ -1396,17 +1669,40 @@ command_answer() {
   state=$(show_field "$show" state)
   hold_kind=$(show_field_value "$show" hold_kind)
   body=$(show_field "$show" body)
-  if [ "$release" = 1 ]; then outcome=released; else outcome=answered; fi
+  if [ "$release" = 1 ]; then outcome=released
+  elif [ "$DEADLINE_DEFAULT" = 1 ]; then outcome="deadline-default"
+  else outcome=answered; fi
+  # A captain answer may have landed between the due check and this lock; the
+  # default then yields, and the answer guard below refuses to overwrite it.
+  if [ "$DEADLINE_DEFAULT" = 1 ] && [ "$state" != "done" ]; then
+    deadline_default_due "$show" "$id" "${FM_CAPTAIN_HOLD_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" \
+      || fail "task $id has no deadline default due any more: it was answered, deferred or re-held"
+  fi
   # The occurrence the parent line names: the record about to be written is
   # one past those already in the body, and a retry names the newest one.
   occurrence=$(( $(resolution_record_count "$body") + 1 ))
 
   if [ "$state" = "done" ]; then
     if body_has_resolution_record "$body"; then
+      recorded_mode=$(recorded_resolution_mode "$body" || true)
+      # A captain answer that arrives after a deadline default supersedes it:
+      # recorded on top, labelled as the captain's, naming the default it replaces.
+      if [ "$recorded_mode" = deadline-default ] && [ "$DEADLINE_DEFAULT" != 1 ] \
+        && [ "$(recorded_decision_digest "$body" || true)" != "$DECISION_DIGEST" ]; then
+        [ "$release" = 0 ] || fail "task $id is already closed; --release cannot reopen it"
+        [ "$hold_kind" = captain ] || fail "task $id was never held for the captain; nothing to record an answer on"
+        SUPERSEDES_DEFAULT=1
+        write_resolution_record "$id" repaired "$body"
+        remove_interrupted_answer_stamp "$id"
+        task_show "$id" || fail "task $id disappeared while recording the answer"
+        [ "$(show_field "$TASK_SHOW_OUTPUT" state)" = "done" ] || fail "recording the answer reopened closed task $id"
+        publish_parent_resolution_then_retire "$id" "$occurrence" "answered by the captain (supersedes the deadline default)"
+        printf 'superseded: %s\n' "$id"
+        return 0
+      fi
       # An exact compatible retry is an idempotent no-op; drift is rejected.
       [ "$(recorded_decision_digest "$body" || true)" = "$DECISION_DIGEST" ] \
         || fail "captain-held task $id records a different captain decision"
-      recorded_mode=$(recorded_resolution_mode "$body" || true)
       closed_answer_replay_mode_compatible "$recorded_mode" "$body" \
         || fail "task $id records this resolution with mode ${recorded_mode:-unknown}; it is not a captain-answer replay"
       [ "$release" = 0 ] \
@@ -1417,10 +1713,11 @@ command_answer() {
       else
         publish_parent_resolution_then_retire "$id" $((occurrence - 1)) answered
       fi
-      printf 'answered: %s\n' "$id"
+      if [ "$DEADLINE_DEFAULT" = 1 ]; then printf 'deadline-default: %s\n' "$id"; else printf 'answered: %s\n' "$id"; fi
       return 0
     fi
     [ "$release" = 0 ] || fail "task $id is already closed; --release cannot reopen it"
+    [ "$DEADLINE_DEFAULT" != 1 ] || fail "task $id was closed without a recorded default; a deadline default never repairs a closed call"
     # Closed outside this script: record the captain's answer retroactively.
     # tasks-axi keeps hold_kind through a close, so it is the surviving proof
     # this really was the captain's item rather than ordinary finished work.
@@ -1451,6 +1748,9 @@ command_answer() {
       case "$recorded_mode" in
         released) [ "$release" = 1 ] || fail "task $id records this answer as a release; retry with --release" ;;
         answered|routed) [ "$release" = 0 ] || fail "task $id records this answer as a close; retry without --release" ;;
+        deadline-default)
+          [ "$DEADLINE_DEFAULT" = 1 ] || fail "task $id records this text as a deadline default, which is not the captain's answer; record the captain's words instead"
+          ;;
         *) fail "task $id records this resolution with mode ${recorded_mode:-unknown}; it is not a captain-answer replay" ;;
       esac
       if ! close_answered "$id" "$release"; then
@@ -1705,7 +2005,10 @@ command_answers() {
         continue
       fi
     fi
-    if [ "$state" = "done" ]; then
+    # A call closed by a deadline default still takes the captain's own answer:
+    # the answer path records it on top and names the default it supersedes.
+    if [ "$state" = "done" ] && ! { [ "$recorded_mode" = deadline-default ] \
+        && [ "$hold_kind" = captain ] && [ -z "$release_flag" ]; }; then
       printf 'skipped: %s (already closed)\n' "$id"
       skipped=$((skipped + 1))
       continue
@@ -1786,6 +2089,7 @@ reconcile_request_retire() {  # <task-id>
 
 publish_parent_resolution_then_retire() {  # <task-id> <occurrence> <note>
   local id=$1 occurrence=$2 note=$3 request
+  [ "$DEADLINE_DEFAULT" != 1 ] || note="resolved by a deadline default (the captain did not answer by the deadline; these are not the captain's words)"
   request=$(reconcile_request_path "$id")
   publish_parent_hold "$id" "$occurrence" resolved "$note"
   [ "$PARENT_HOLD_PUBLISHED" != 1 ] || resolve_parent_origin_key "$id" "$occurrence" "$note"
@@ -2174,6 +2478,18 @@ EOF
 # Every still-open task id in this home's backlog, one per line. Only the first
 # two comma-separated listing fields are read - both are slugs that precede any
 # quoted title - so a title containing commas or quotes cannot shift them.
+open_captain_task_ids() {
+  local data
+  data=$(fm_backlog_data_absolute "$DATA") || return 1
+  fm_backlog_row_list "$data" --fields hold_kind 2>/dev/null | awk -F, '
+    /^  [A-Za-z0-9._-]+,/ {
+      id = $1
+      sub(/^ +/, "", id)
+      if ($2 != "done" && $NF == "captain") print id
+    }
+  '
+}
+
 open_task_ids() {
   local data
   data=$(fm_backlog_data_absolute "$DATA") || return 1
@@ -2251,6 +2567,31 @@ INNER
 $ids
 EOF
   done
+}
+
+# Calls whose deadline default has come due, one tab-separated row each:
+# <task-id> <deadline> <recommendation> <class> <mode> <logged> <title>.
+# Read-only on a per-wake path, like `diverged`: what it cannot read stays undue.
+command_defaults_due() {
+  local ids id now mode logged
+  [ "$#" -eq 0 ] || { usage >&2; exit 2; }
+  [ -d "$DEFAULT_RECORD_DIR" ] || return 0
+  command -v tasks-axi >/dev/null 2>&1 || return 0
+  now=${FM_CAPTAIN_HOLD_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
+  mode=$(default_mode)
+  ids=$(open_captain_task_ids) || return 0
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    [ -f "$(default_record_path "$id")" ] || continue
+    task_show "$id" || continue
+    deadline_default_due "$TASK_SHOW_OUTPUT" "$id" "$now" || continue
+    logged=no
+    ! default_logged "$id" "$DR_HOLD_SET" "$DR_BY" || logged=yes
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$DR_BY" "$(sanitize_field "$DR_RECOMMEND")" \
+      "$DR_CLASS" "$mode" "$logged" "$(sanitize_field "$(show_field_value "$TASK_SHOW_OUTPUT" title)")"
+  done <<EOF
+$ids
+EOF
 }
 
 # Still an open captain call? Exit 0 yes, 1 no, 2 cannot tell (see the header).
@@ -2366,6 +2707,7 @@ case "${1:-}" in
   open) shift; command_open "$@" ;;
   answered) shift; command_answered "$@" ;;
   diverged) shift; command_diverged "$@" ;;
+  defaults-due) shift; command_defaults_due "$@" ;;
   reconcile) shift; command_reconcile "$@" ;;
   -h|--help) usage ;;
   *) usage >&2; exit 2 ;;

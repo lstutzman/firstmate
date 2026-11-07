@@ -5265,6 +5265,307 @@ test_uninventoried_report_decision_refuses_completion
 test_hold_decodes_a_bare_scalar_body_without_the_nonref_default
 test_retained_body_keeps_its_utf8_bytes
 test_completion_gate_attests_and_transfers
+# --- deadline defaults (ported from doitdigital0495/firstmate@78c946be9, MIT) --
+# NOW values are fixture clocks: FM_CAPTAIN_HOLD_NOW drives hold-set and due time.
+DD_HOLD=2026-07-20T12:00:00Z
+DD_BY=2026-07-21T12:00:00Z
+dd_hold() {  # <home> <id> <class> [<extra hold args...>]
+  local home=$1 id=$2 class=$3
+  shift 3
+  FM_CAPTAIN_HOLD_NOW=$DD_HOLD run_captain "$home" hold "$id" --title "Pick the wording of $id" \
+    --reason "Choose go or wait" --repo sample --recommend "go live" --default-by "$DD_BY" --class "$class" "$@"
+}
+dd_at() {  # <now> <home> <command args...>
+  local now=$1 home=$2
+  shift 2
+  FM_CAPTAIN_HOLD_NOW=$now run_captain "$home" "$@"
+}
+
+test_deadline_default_refuses_every_reserved_class() {
+  (
+    local home class
+    home=$(make_home default-refused)
+    for class in payments billing legal product member-copy copy credentials credential production data-rewriting security outward-facing money destructive irreversible; do
+      cp "$home/data/backlog.md" "$home/before"
+      if dd_hold "$home" "sample-$class" "$class" >/dev/null 2>"$home/err"; then
+        fail "a reserved class $class accepted a deadline default"
+      fi
+      assert_grep "reserved class $class can never carry a deadline default" "$home/err" "wrong refusal for $class"
+      cmp "$home/before" "$home/data/backlog.md" || fail "the refused $class default changed the backlog"
+    done
+    pass "every reserved class refuses a deadline default and writes nothing"
+  )
+}
+
+test_deadline_default_refuses_unknown_and_malformed_requests() {
+  (
+    local home
+    home=$(make_home default-unknown)
+    if dd_hold "$home" sample-unknown mystery >/dev/null 2>"$home/err"; then fail "an unknown class accepted a default"; fi
+    assert_grep "cannot determine that class 'mystery'" "$home/err" "an unknown class did not name why it refused"
+    if dd_hold "$home" sample-noclass "" >/dev/null 2>"$home/err"; then fail "a default without a class was accepted"; fi
+    assert_grep "needs --recommend, --default-by and --class together" "$home/err" "a missing class did not refuse"
+    if FM_CAPTAIN_HOLD_NOW=$DD_HOLD run_captain "$home" hold sample-half --title "Half" --reason "r" --repo sample \
+      --recommend "go" >/dev/null 2>"$home/err"; then fail "a recommendation without a deadline was accepted"; fi
+    assert_grep "together" "$home/err" "a lone recommendation did not refuse"
+    if dd_hold "$home" sample-past fleet --cause policy >/dev/null 2>"$home/err"; then fail "a policy call accepted a default"; fi
+    assert_grep "raised for policy can never carry" "$home/err" "a policy call did not refuse"
+    if dd_hold "$home" sample-cred fleet --cause credential >/dev/null 2>"$home/err"; then fail "a credential call accepted a default"; fi
+    if FM_CAPTAIN_HOLD_NOW=2026-07-22T00:00:00Z run_captain "$home" hold sample-late --title "Late" --reason "r" --repo sample \
+      --recommend "go" --default-by "$DD_BY" --class fleet >/dev/null 2>"$home/err"; then fail "a deadline in the past was accepted"; fi
+    assert_grep "later than the hold time" "$home/err" "a past deadline did not refuse"
+    if dd_hold "$home" sample-badstamp fleet --default-by 2026-07-21 >/dev/null 2>"$home/err"; then fail "a date-only deadline was accepted"; fi
+    if dd_hold "$home" sample-touch fleet --touches src/a.sh >/dev/null 2>"$home/err"; then fail "touched paths with no rules file were accepted"; fi
+    assert_grep "no rules file" "$home/err" "a missing rules file did not refuse"
+    mkdir -p "$home/config/admission"
+    printf 'infra/** production\nbilling/** payments\n' > "$home/config/admission/captain-hold-defaults.rules"
+    if dd_hold "$home" sample-touch fleet --touches billing/invoice.sh >/dev/null 2>"$home/err"; then fail "a touched reserved path was accepted"; fi
+    assert_grep "reserved class(es) payments" "$home/err" "the path classifier's verdict was not named"
+    dd_hold "$home" sample-touch-ok fleet --touches docs/readme.md >/dev/null 2>"$home/err" \
+      || fail "an unflagged touched path refused a default: $(cat "$home/err")"
+    if tasks_in "$home" show sample-unknown >/dev/null 2>&1; then fail "a refused default still created its task"; fi
+    pass "unknown classes, missing fields, policy and credential calls, past deadlines and reserved paths all refuse"
+  )
+}
+
+test_deadline_default_dry_run_logs_and_answers_nothing() {
+  (
+    local home out show rows
+    home=$(make_home default-dry)
+    dd_hold "$home" sample-dry fleet >/dev/null || fail "could not hold a call with a default"
+    [ -z "$(dd_at 2026-07-21T11:00:00Z "$home" defaults-due)" ] || fail "a default listed before its deadline"
+    rows=$(dd_at 2026-07-21T12:00:01Z "$home" defaults-due)
+    assert_contains "$rows" "sample-dry" "the due default was not listed"
+    assert_contains "$rows" "dry-run" "the due list did not name the dry-run mode"
+    out=$(dd_at 2026-07-21T12:00:01Z "$home" answer sample-dry --deadline-default) \
+      || fail "the dry-run default failed"
+    assert_contains "$out" "dry-run: would answer sample-dry" "the dry run did not say what it would answer"
+    assert_contains "$out" "nothing was answered" "the dry run did not say it answered nothing"
+    show=$(tasks_in "$home" show sample-dry --full)
+    assert_contains "$show" "held: yes" "the dry run released the call"
+    assert_not_contains "$show" "Resolution mode" "the dry run wrote a resolution record"
+    assert_grep "would-answer task=sample-dry" "$home/state/captain-hold-default.log" "the dry run was not logged"
+    assert_grep "by=$DD_BY class=fleet recommend=go live" "$home/state/captain-hold-default.log" "the log lost what it would answer"
+    dd_at 2026-07-21T12:05:00Z "$home" answer sample-dry --deadline-default >/dev/null
+    [ "$(grep -c 'would-answer' "$home/state/captain-hold-default.log")" = 1 ] || fail "a repeated dry run logged twice"
+    assert_contains "$(dd_at 2026-07-21T12:05:00Z "$home" defaults-due)" "yes" "a logged default was not marked logged"
+    printf 'garbage\n' > "$home/config/captain-hold-defaults"
+    dd_at 2026-07-21T12:05:00Z "$home" answer sample-dry --deadline-default | grep -q 'dry-run' \
+      || fail "an unreadable mode did not stay dry-run"
+    pass "dry-run (the default) logs once, lists the call and answers nothing"
+  )
+}
+
+test_deadline_default_live_applies_with_the_not_the_captain_label() {
+  (
+    local home out show
+    home=$(make_home default-live)
+    printf 'live\n' > "$home/config/captain-hold-defaults"
+    dd_hold "$home" sample-live docs >/dev/null || fail "could not hold a call with a default"
+    if dd_at 2026-07-21T11:00:00Z "$home" answer sample-live --deadline-default >/dev/null 2>"$home/err"; then
+      fail "a default applied before its deadline"
+    fi
+    assert_grep "no deadline default due" "$home/err" "an early default did not say why it refused"
+    if dd_at 2026-07-21T13:00:00Z "$home" answer sample-live --deadline-default --decision-file /dev/null >/dev/null 2>&1; then
+      fail "a caller supplied the default's words"
+    fi
+    out=$(dd_at 2026-07-21T13:00:00Z "$home" answer sample-live --deadline-default) || fail "the live default failed"
+    assert_contains "$out" "deadline-default: sample-live" "the live default did not report its mode"
+    show=$(tasks_in "$home" show sample-live --full)
+    assert_contains "$show" "state: done" "the live default did not close the call"
+    assert_contains "$show" "Resolution mode: deadline-default" "the record lost its deadline-default mode"
+    assert_contains "$show" "Deadline default (not the captain's words):" "the record lost the not-the-captain label"
+    assert_contains "$show" "These are not the captain's words" "the recorded words do not say they are not the captain's"
+    assert_not_contains "$show" "Captain decision:" "the default was labelled as a captain decision"
+    if run_captain "$home" answered sample-live >/dev/null 2>&1; then fail "answered accepted a deadline default as the captain's word"; fi
+    dd_at 2026-07-21T13:05:00Z "$home" answer sample-live --deadline-default >/dev/null \
+      || fail "an identical default retry was not idempotent"
+    [ -z "$(dd_at 2026-07-21T13:05:00Z "$home" defaults-due)" ] || fail "a closed call stayed in the due list"
+    pass "live mode applies the default under a label that says it is not the captain's words"
+  )
+}
+
+test_real_answer_wins_and_later_answer_supersedes_the_default() {
+  (
+    local home show
+    home=$(make_home default-race)
+    printf 'live\n' > "$home/config/captain-hold-defaults"
+    dd_hold "$home" sample-first docs >/dev/null || fail "could not hold the first call"
+    printf 'Wait, do not ship it.\n' > "$home/real.txt"
+    dd_at 2026-07-21T00:00:00Z "$home" answer sample-first --decision-file "$home/real.txt" >/dev/null \
+      || fail "the captain's answer was refused"
+    [ -z "$(dd_at 2026-07-21T13:00:00Z "$home" defaults-due)" ] || fail "an answered call stayed due"
+    if dd_at 2026-07-21T13:00:00Z "$home" answer sample-first --deadline-default >/dev/null 2>&1; then
+      fail "a default overwrote the captain's answer"
+    fi
+    show=$(tasks_in "$home" show sample-first --full)
+    assert_contains "$show" "Wait, do not ship it." "the captain's answer was lost"
+    assert_not_contains "$show" "deadline-default" "a default was recorded over the captain's answer"
+    run_captain "$home" answered sample-first >/dev/null || fail "the captain's answer stopped counting"
+
+    dd_hold "$home" sample-second docs >/dev/null || fail "could not hold the second call"
+    dd_at 2026-07-21T13:00:00Z "$home" answer sample-second --deadline-default >/dev/null || fail "the default failed"
+    printf 'Actually, hold off.\n' > "$home/late.txt"
+    dd_at 2026-07-22T00:00:00Z "$home" answer sample-second --decision-file "$home/late.txt" >/dev/null \
+      || fail "a late captain answer was refused after a default"
+    show=$(tasks_in "$home" show sample-second --full)
+    assert_contains "$show" "Actually, hold off." "the late captain answer was not recorded"
+    assert_contains "$show" "Supersedes the deadline default" "the late answer did not name the default it replaces"
+    assert_contains "$show" "Deadline default (not the captain's words):" "the superseded default's record was lost"
+    run_captain "$home" answered sample-second >/dev/null || fail "the late captain answer did not count as the captain's"
+    pass "a captain answer first always wins; one after a default supersedes it"
+  )
+}
+
+test_deadline_default_is_listed_by_the_wake_drain_and_applies_nothing() {
+  (
+    local home drain show
+    home=$(make_home default-drain)
+    dd_hold "$home" sample-drain fleet >/dev/null || fail "could not hold the call"
+    drain=$(FM_CAPTAIN_HOLD_NOW=2026-07-21T11:00:00Z run_drain "$home") || fail "the drain failed before the deadline"
+    assert_not_contains "$drain" "DEFAULTS DUE" "the drain listed a default before its deadline"
+    drain=$(FM_CAPTAIN_HOLD_NOW=2026-07-21T13:00:00Z run_drain "$home") || fail "the drain failed after the deadline"
+    assert_contains "$drain" "DEFAULTS DUE (dry-run: nothing will be answered" "the dry-run drain header is missing"
+    assert_contains "$drain" "sample-drain: no captain answer by $DD_BY" "the drain did not list the due call"
+    printf 'live\n' > "$home/config/captain-hold-defaults"
+    drain=$(FM_CAPTAIN_HOLD_NOW=2026-07-21T13:00:00Z run_drain "$home") || fail "the live drain failed"
+    assert_contains "$drain" "recorded as not the captain's words" "the live drain header does not say the default is not the captain's"
+    show=$(tasks_in "$home" show sample-drain --full)
+    assert_contains "$show" "held: yes" "the drain applied a default by itself"
+    pass "the wake drain lists a due default in both modes and answers nothing"
+  )
+}
+
+test_deadline_default_parent_channel_lines_say_it_is_not_the_captain() {
+  (
+    local home mate line
+    mate=$(make_home default-parent-mate)
+    home=$(make_home default-parent-main)
+    printf 'live\n' > "$mate/config/captain-hold-defaults"
+    printf 'sample-mate\n' > "$mate/.fm-secondmate-home"
+    printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$home" > "$mate/.fm-secondmate-parent"
+    dd_hold "$mate" sample-up fleet >/dev/null || fail "could not hold the call in the mate"
+    dd_at 2026-07-21T13:00:00Z "$mate" answer sample-up --deadline-default >/dev/null || fail "the live default failed"
+    line=$(cat "$home/state/sample-mate.status" 2>/dev/null) || line=''
+    assert_contains "$line" "deadline default, not the captain" "the published hold line does not say it carries a default"
+    assert_contains "$line" "resolved [key=captain-hold-sample-up-1]" "the default's resolution was not published"
+    assert_contains "$line" "not the captain's words" "the published resolution does not say it is not the captain's"
+    pass "parent-channel lines for a deadline default say it is not the captain's"
+  )
+}
+
+test_deadline_default_deferral_clears_or_replaces_the_default() {
+  (
+    local home parent show
+    home=$(make_home default-deferred)
+    parent=$(make_home default-deferred-parent)
+    printf 'live\n' > "$home/config/captain-hold-defaults"
+    printf 'sample-mate\n' > "$home/.fm-secondmate-home"
+    printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+    cp "$home/data/backlog.md" "$home/before"
+    if dd_hold "$home" sample-inside docs --until 2026-08-15 >/dev/null 2>"$home/err"; then
+      fail "a default due inside its own deferral was accepted"
+    fi
+    assert_grep "later than --until 2026-08-15" "$home/err" "a default inside the deferral did not say why it refused"
+    cmp "$home/before" "$home/data/backlog.md" || fail "the refused deferral changed the backlog"
+    [ ! -e "$home/state/captain-hold-default/sample-inside.default" ] || fail "the refused deferral wrote a default record"
+
+    dd_hold "$home" sample-later docs >/dev/null || fail "could not hold the call"
+    cp "$home/data/backlog.md" "$home/before"
+    if FM_CAPTAIN_HOLD_NOW=2026-07-20T18:00:00Z run_captain "$home" hold sample-later --reason "Choose go or wait" \
+      --until 2026-08-15 --recommend "go live" --default-by 2026-08-15T00:00:00Z --class docs >/dev/null 2>"$home/err"; then
+      fail "a re-hold's default at the --until date was accepted"
+    fi
+    cmp "$home/before" "$home/data/backlog.md" || fail "the refused re-hold changed the backlog"
+    assert_grep "by=$DD_BY" "$home/state/captain-hold-default/sample-later.default" "the refused re-hold changed the default"
+
+    FM_CAPTAIN_HOLD_NOW=2026-07-20T18:00:00Z run_captain "$home" hold sample-later --reason "Choose go or wait" \
+      --until 2026-08-15 >/dev/null || fail "the captain's later was refused"
+    assert_grep "default cleared: captain deferred to 2026-08-15 task=sample-later hold=$DD_HOLD" \
+      "$home/state/captain-hold-default.log" "the clearing was not logged"
+    assert_grep "captain hold sample-later: Choose go or wait (default cleared: captain deferred to 2026-08-15)" \
+      "$parent/state/sample-mate.status" "the parent channel was not told the default was cleared"
+    [ -z "$(dd_at 2026-08-15T00:00:00Z "$home" defaults-due)" ] || fail "a deferred call came due on its return"
+    if dd_at 2026-08-15T00:00:00Z "$home" answer sample-later --deadline-default >/dev/null 2>&1; then
+      fail "a deferred call took its old default"
+    fi
+    show=$(tasks_in "$home" show sample-later --full)
+    assert_not_contains "$show" "Resolution mode" "a deferred call was answered by its old default"
+
+    dd_hold "$home" sample-fresh docs >/dev/null || fail "could not hold the fresh call"
+    FM_CAPTAIN_HOLD_NOW=2026-07-20T18:00:00Z run_captain "$home" hold sample-fresh --reason "Choose go or wait" \
+      --until 2026-08-15 --recommend "wait" --default-by 2026-08-16T12:00:00Z --class docs >/dev/null \
+      || fail "a deferral with a fresh later default was refused"
+    [ -z "$(dd_at 2026-08-16T11:00:00Z "$home" defaults-due)" ] || fail "the fresh default came due before its deadline"
+    assert_contains "$(dd_at 2026-08-16T13:00:00Z "$home" defaults-due)" "sample-fresh" "the fresh default never came due"
+    dd_at 2026-08-16T13:00:00Z "$home" answer sample-fresh --deadline-default >/dev/null || fail "the fresh default failed"
+    show=$(tasks_in "$home" show sample-fresh --full)
+    assert_contains "$show" "its recommendation: wait." "the fresh default did not replace the old one"
+    pass "a deferral clears the default unless it brings a later one, and a default inside the deferral refuses"
+  )
+}
+
+test_deadline_default_active_rehold_keeps_its_published_default() {
+  (
+    local home
+    home=$(make_home default-rehold)
+    dd_hold "$home" sample-again fleet >/dev/null || fail "could not hold the call"
+    cp "$home/data/backlog.md" "$home/before"
+    cp "$home/state/captain-hold-default/sample-again.default" "$home/record"
+    if FM_CAPTAIN_HOLD_NOW=2026-07-20T13:00:00Z run_captain "$home" hold sample-again --reason "Choose go or wait" \
+      --recommend "wait" --default-by "$DD_BY" --class fleet >/dev/null 2>"$home/err"; then
+      fail "an active call swapped its published default"
+    fi
+    assert_grep "already carries a different deadline default" "$home/err" "the swap did not say why it refused"
+    cmp "$home/before" "$home/data/backlog.md" || fail "the refused swap changed the backlog"
+    cmp "$home/record" "$home/state/captain-hold-default/sample-again.default" || fail "the refused swap changed the record"
+    FM_CAPTAIN_HOLD_NOW=2026-07-20T13:00:00Z dd_hold "$home" sample-again fleet >/dev/null \
+      || fail "an identical re-hold was refused"
+    cmp "$home/record" "$home/state/captain-hold-default/sample-again.default" || fail "an identical re-hold changed the record"
+    pass "an active call refuses a different default and accepts an identical repeat"
+  )
+}
+
+test_deadline_default_rehold_after_an_answer_never_inherits_it() {
+  (
+    local home
+    home=$(make_home default-stale)
+    printf 'live\n' > "$home/config/captain-hold-defaults"
+    tasks_in "$home" add sample-stale "Ship the stale fixture" --kind ship --repo sample >/dev/null
+    FM_CAPTAIN_HOLD_NOW=$DD_HOLD run_captain "$home" hold sample-stale --reason "Choose go or wait" \
+      --recommend "go live" --default-by "$DD_BY" --class docs >/dev/null || fail "could not hold the call"
+    printf 'Go.\n' > "$home/go.txt"
+    dd_at 2026-07-20T13:00:00Z "$home" answer sample-stale --decision-file "$home/go.txt" --release >/dev/null \
+      || fail "the captain's release was refused"
+    FM_CAPTAIN_HOLD_NOW=2026-07-20T14:00:00Z run_captain "$home" hold sample-stale --reason "A new question" >/dev/null \
+      || fail "could not re-hold the call"
+    [ -z "$(dd_at 2026-07-22T00:00:00Z "$home" defaults-due)" ] || fail "a re-held call inherited a stale default"
+    if dd_at 2026-07-22T00:00:00Z "$home" answer sample-stale --deadline-default >/dev/null 2>&1; then
+      fail "a re-held call took a stale default"
+    fi
+    pass "a call re-held for a new question never inherits the old default"
+  )
+}
+
+test_keyed_answer_supersedes_a_deadline_default() {
+  (
+    local home out show
+    home=$(make_home default-keyed)
+    printf 'live\n' > "$home/config/captain-hold-defaults"
+    dd_hold "$home" sample-keyed docs >/dev/null || fail "could not hold the call"
+    dd_at 2026-07-21T13:00:00Z "$home" answer sample-keyed --deadline-default >/dev/null || fail "the default failed"
+    out=$(printf 'sample-keyed\tActually, hold off.\tCaptain\n' \
+      | dd_at 2026-07-22T00:00:00Z "$home" answers --any-origin --source "keyed supersede fixture") \
+      || fail "the keyed answer was refused after a default"
+    assert_contains "$out" "closed: sample-keyed" "the keyed answer did not close over the default"
+    show=$(tasks_in "$home" show sample-keyed --full)
+    assert_contains "$show" "Actually, hold off." "the keyed answer was not recorded"
+    assert_contains "$show" "Supersedes the deadline default" "the keyed answer did not name the default it replaces"
+    run_captain "$home" answered sample-keyed >/dev/null || fail "the keyed answer did not count as the captain's"
+    pass "a keyed captain answer supersedes a deadline default"
+  )
+}
+
 test_answer_records_and_closes
 test_answered_reports_only_a_recorded_captain_answer
 test_answer_reads_the_decision_from_stdin
@@ -5325,3 +5626,14 @@ test_captain_hold_mutations_address_the_beads_backend
 test_hold_creates_a_captain_row_when_beads_requires_due_without_custom_type
 test_archived_answered_hold_still_satisfies_the_gate
 test_archived_answer_in_a_user_configured_archive_satisfies_the_gate
+test_deadline_default_refuses_every_reserved_class
+test_deadline_default_refuses_unknown_and_malformed_requests
+test_deadline_default_dry_run_logs_and_answers_nothing
+test_deadline_default_live_applies_with_the_not_the_captain_label
+test_real_answer_wins_and_later_answer_supersedes_the_default
+test_deadline_default_deferral_clears_or_replaces_the_default
+test_deadline_default_active_rehold_keeps_its_published_default
+test_deadline_default_rehold_after_an_answer_never_inherits_it
+test_keyed_answer_supersedes_a_deadline_default
+test_deadline_default_is_listed_by_the_wake_drain_and_applies_nothing
+test_deadline_default_parent_channel_lines_say_it_is_not_the_captain

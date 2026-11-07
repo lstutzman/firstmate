@@ -36,7 +36,12 @@ Never close anything the captain owns without recording what he actually said: `
 A merge approval uses that existing release path because approval permits the merge to proceed; cleanup closes the work only after it lands and records what shipped.
 Closing a held row at merge approval instead records completion before landing, so the backlog claims completion before the work actually ships.
 When the answer changes what a task must build, follow `AGENTS.md` section 7's mid-task ask rule to preserve the captain's words in the brief and steer the worker.
+A hold may carry a deadline default (`--recommend`, `--default-by`, `--class`) only when the call is honestly non-reserved: payments, legal text, product, member-facing copy, credentials, production, data-rewriting, security, outward-facing, money, destructive and irreversible calls never carry one, and an undetermined class refuses.
+`bin/fm-captain-hold.sh --help` owns the fields and refusals, and `config/captain-hold-defaults` ships dry-run, so `answer <id> --deadline-default` only logs until the captain makes it live.
+When the wake drain prints `DEFAULTS DUE`, run that command, steer any worker with its answer as a deadline default, and tell the captain in the next report.
+Never write a default into `--decision-file`, and never present one as his decision; a real captain answer always wins and supersedes a default.
 When the captain says "later", that is an answer too: re-hold with `bin/fm-captain-hold.sh hold <id> --reason "<reason>" --until <date>` so the item leaves the live Captain's Call and resurfaces on its date, instead of leaving a live-looking card or fabricating a closure.
+That deferral clears the call's deadline default, because his "later" is an answer; to keep a default, pass a fresh `--default-by` later than the `--until` date.
 "A keyed answer resolves its matching captain-held task" is one capability with one owner, `bin/fm-captain-hold.sh answers`, and every channel that carries a captain answer feeds it the same task id and answer; a channel never maps keys to tasks, records a decision, or resolves anything itself.
 Chat already feeds it through `bin/fm-send.sh --resolve-key`, and a captured-answer source feeds it once bound with `bin/fm-captain-hold.sh bind <source-id>`; bind before arming the source, and key each structured question by the held task's id.
 An unbound source and a key that names no captain-held task both simply feed nothing: the answer is still captured and firstmate is still woken, and closing falls back to the direct command above.

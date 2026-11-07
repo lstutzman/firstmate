@@ -17,6 +17,7 @@ This document records the deterministic mechanism, structured surfaces, compatib
 | Why did a decision card disappear from the board? | [Card hygiene](#card-hygiene-a-landed-subject-is-not-a-live-call) |
 | Where does a hold appear in snapshots and Bearings? | [Structured read surfaces](#structured-read-surfaces) |
 | What does a `RECORD DIVERGENCE` section mean? | [Record divergence](#record-divergence) |
+| What does a `DEFAULTS DUE` section mean? | [Deadline defaults](#deadline-defaults) |
 | How do rows from older installs still work? | [Compatibility with pre-collapse installs](#compatibility-with-pre-collapse-installs) |
 | Which tests prove this, and how is the record refreshed? | [Verification record](#verification-record) |
 
@@ -44,6 +45,7 @@ It never reads report bodies, review artifacts, terminal output, or chat.
 | `reconcile-requests` | Internal intake that records a reconcile request from a board selection. | [Reconcile](#reconcile-re-check-reality-never-a-blind-close) |
 | `reconcile close`, `reconcile note`, `reconcile list` | Retire or list pending reconcile requests. | [Verifying and retiring a request](#verifying-and-retiring-a-request) |
 | `diverged` | Read-only report of a call whose two records disagree. | [Record divergence](#record-divergence) |
+| `defaults-due` | Read-only list of open calls whose deadline default has come due. | [Deadline defaults](#deadline-defaults) |
 
 ### Creating a hold (`hold`)
 
@@ -206,6 +208,21 @@ The refusal names the record and the validation reason, so the captain can repai
 `--force` does not lift the deferral, because it authorizes discarding unlanded work, never the captain's question.
 Only `answer` with the captain's words or evidence-backed `reconcile close` resolves the call, by either closing the question or releasing the gated work.
 `bin/fm-backlog-transition-lib.sh` owns the transition and its record, and `bin/fm-captain-hold.sh --help` owns the predicate's contract.
+
+## Deadline defaults
+
+Ported from doitdigital0495/firstmate@78c946be9 (MIT), adapted to this repository's hold records.
+`bin/fm-captain-hold.sh --help` owns the fields, refusals and record format, and the `captain-hold-lifecycle` skill owns the policy.
+A hold may carry a recommended answer and a UTC deadline when its declared class is non-reserved.
+Every reserved class (payments or billing, legal text, product, member-facing copy, credentials, production, data-rewriting, security, outward-facing, money, destructive or irreversible) refuses, as does a class the script cannot recognise as safe, so an undetermined class refuses.
+This is narrower than the source fork, which also let product and copy calls take a default; the fleet rules forbid that, so it is not taken.
+The default lives in a private record under `state/captain-hold-default/` tied to the hold-set stamp, so the mechanism adds no second decision store and a re-held call never inherits a stale default.
+A deferral (`hold --until <date>` on an active call, the captain's "later") is a real answer, so it removes the call's default and logs "default cleared: captain deferred to <date>", unless it brings a fresh `--default-by` later than that date, which replaces the old default; a default at or before the `--until` date refuses.
+The wake drain prints `DEFAULTS DUE` for calls past their deadline and applies nothing.
+`config/captain-hold-defaults` selects dry-run (shipped default: `answer --deadline-default` only logs) or live (it records the default as `Resolution mode: deadline-default` under the label "Deadline default (not the captain's words):").
+`answered` and every merge admission that depends on it never count a deadline default as the captain's word, and the parent-channel lines say it was a deadline default.
+A captain answer that arrives first closes the call, so the default is refused; one that arrives after a default is recorded on top as a `repaired` record naming the default it supersedes, through the direct `answer` command and the keyed-answer intake alike.
+`tests/fm-captain-hold-lifecycle.test.sh` exercises each rule through the public commands.
 
 ## Answer-time resolution
 
