@@ -1,0 +1,1 @@
+ok - fm-pr-merge refuses a merge from a home that is not the project's merger, before any forge call
