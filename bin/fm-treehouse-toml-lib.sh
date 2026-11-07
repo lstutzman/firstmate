@@ -8,7 +8,8 @@
 # and bin/fm-office.sh (mismatch check). "Same project" means the same origin
 # URL string. Peer clones are <root>/*/projects/<name> under the colon list in
 # FM_TREEHOUSE_PEER_ROOTS (default $HOME/fm-homes) plus any roots the caller
-# passes; a clone is only ever read, never written.
+# passes; a clone is only ever read, never written. The copy is listed in the new
+# clone's .git/info/exclude so it never makes the clone read as dirty.
 
 FM_TH_DEFAULT_MAX=16
 
@@ -62,7 +63,16 @@ EOF2
   else
     cp "$first/treehouse.toml" "$dst/treehouse.toml"
   fi
+  fm_th_exclude "$dst"
   printf 'treehouse.toml for %s: copied from %s (max_trees %s; peers:%s)\n' "$name" "$first" "${best:-unset}" "$list"
+}
+
+# fm_th_exclude <clone>: list /treehouse.toml in the clone's info/exclude.
+fm_th_exclude() {
+  local ex
+  ex=$(git -C "$1" rev-parse --path-format=absolute --git-path info/exclude) || return 1
+  grep -qxF '/treehouse.toml' "$ex" 2>/dev/null && return 0
+  mkdir -p "$(dirname "$ex")" && printf '/treehouse.toml\n' >> "$ex"
 }
 
 # fm_th_mismatches: one line per project whose clones on this host disagree on
@@ -84,6 +94,6 @@ EOF2
     { if ($1 != o) { flush(); o = $1; list = ""; n = 0; delete vals }
       list = list " " $2 "=" $3; vals[$3] = 1; n++ }
     function flush(  k, c) { if (o == "") return; c = 0; for (k in vals) c++
-      if (c > 1) printf "clones of %s share a treehouse pool but differ on max_trees (%s); copy the largest treehouse.toml into the others\n", o, substr(list, 2) }
+      if (c > 1) printf "clones of %s share a treehouse pool but differ on max_trees (%s); copy the largest treehouse.toml into the others and add /treehouse.toml to each one'\''s .git/info/exclude\n", o, substr(list, 2) }
     END { flush() }'
 }

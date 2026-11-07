@@ -38,7 +38,26 @@ test_new_clone_inherits_max_trees() {
   assert_equals 'other = "x"
 max_trees = 24' "$(cat "$w/homes/lib/projects/App/treehouse.toml")" "inherited file"
   assert_contains "$out" "$w/homes/nav/projects/App" "output names the source"
-  pass 'a new clone inherits max_trees from an existing clone'
+  assert_equals "" "$(git -C "$w/homes/lib/projects/App" status --porcelain)" "status after inherit"
+  inherit "$w" lib >/dev/null
+  assert_equals 1 "$(grep -cxF /treehouse.toml "$(git -C "$w/homes/lib/projects/App" rev-parse --path-format=absolute --git-path info/exclude)")" "one exclude entry"
+  pass 'a new clone inherits max_trees from an existing clone and stays clean'
+}
+
+test_seed_clone_inherits_max_trees() {
+  local w main
+  w="$TMP_ROOT/seed"; main="$w/fm-homes/main"
+  mkdir -p "$main/projects" "$main/data" "$main/state" "$w/fm-homes/nav/projects"
+  fm_git_init_commit "$main/projects/App"
+  fm_git_add_origin "$main/projects/App" "$w/App.git"
+  printf '%s\n' '- App [direct-PR] - app (added 2026-11-07)' > "$main/data/projects.md"
+  git clone -q "$(git -C "$main/projects/App" remote get-url origin)" "$w/fm-homes/nav/projects/App"
+  printf 'max_trees = 24\n' > "$w/fm-homes/nav/projects/App/treehouse.toml"
+  FM_HOME="$main" FM_SECONDMATE_CHARTER='librarian' FM_SECONDMATE_SCOPE='librarian' \
+    "$ROOT/bin/fm-home-seed.sh" lib "$w/fm-homes/lib" App >/dev/null || fail "seed failed"
+  assert_equals 'max_trees = 24' "$(cat "$w/fm-homes/lib/projects/App/treehouse.toml")" "seeded clone's treehouse.toml"
+  assert_equals "" "$(git -C "$w/fm-homes/lib/projects/App" status --porcelain)" "seeded clone status"
+  pass 'fm-home-seed gives a new clone the max_trees of a peer home clone'
 }
 
 test_largest_max_trees_wins() {
@@ -84,5 +103,5 @@ test_ensure_is_silent_when_they_agree() {
   pass 'ensure is silent when clones agree on max_trees'
 }
 
-fm_test_run test_new_clone_inherits_max_trees test_largest_max_trees_wins test_existing_file_is_kept \
+fm_test_run test_new_clone_inherits_max_trees test_seed_clone_inherits_max_trees test_largest_max_trees_wins test_existing_file_is_kept \
   test_other_origin_is_not_a_peer test_ensure_reports_differing_max_trees test_ensure_is_silent_when_they_agree
