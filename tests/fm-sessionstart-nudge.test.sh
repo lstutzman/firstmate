@@ -970,11 +970,15 @@ JS
 test_run_resume_delegates_to_the_nudge() {
   local root="$TMP_ROOT/run-resume" out status=0
   make_run_primary "$root"
-  out=$(run_hook "$root" --source resume </dev/null) || status=$?
+  out=$(FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%42 run_hook "$root" --source resume </dev/null) || status=$?
   expect_code 0 "$status" "run wrapper resume"
   [ "$out" = "$NUDGE_LINE" ] || fail "resume did not delegate to the exact nudge line, got: $out"
   assert_absent "$root/state/.lock" "resume acquired the fleet lock instead of delegating"
-  pass "run wrapper: resume delegates to the nudge instead of re-running the digest"
+  # A resumed session can stay idle with no turn, so the resume records its
+  # endpoint for the out-of-session backstop (bin/fm-watch-backstop.sh).
+  assert_contains "$(cat "$root/state/.watch-backstop-endpoint" 2>/dev/null)" 'target=%42' \
+    "resume did not record its endpoint for the watcher backstop"
+  pass "run wrapper: resume delegates to the nudge and records its endpoint for the backstop"
 }
 
 test_run_reads_source_from_the_hook_payload() {

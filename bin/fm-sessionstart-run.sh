@@ -139,6 +139,10 @@ fi
 
 case "$SOURCE" in
   resume|reload|fork)
+    # A resumed session may sit idle with no turn, so nothing in it re-arms the
+    # watcher; record its endpoint for the out-of-session backstop
+    # (bin/fm-watch-backstop.sh), which can then ring it.
+    "$SCRIPT_DIR/fm-watch-backstop.sh" record-endpoint </dev/null >/dev/null 2>&1 || true
     exec "$SCRIPT_DIR/fm-sessionstart-nudge.sh"
     ;;
   clear|compact)

@@ -894,6 +894,32 @@ To turn off independent alerts, run `launchctl bootout "gui/$(id -u)" "$HOME/Lib
 To turn off the registered check too, run `bash bin/fm-check-unregister.sh fleet-alarm` with the same `FM_HOME`.
 Neither action removes the alarm's history or turns off the ledger for other producers.
 
+## Watcher backstop timer
+
+`bin/fm-watch-backstop.sh` rings a home's own session when its supervision stays down with nothing inside the session to re-arm it, such as an idle resumed Claude session ([watcher continuity](watcher-continuity.md#out-of-session-backstop)).
+Install one user timer per home; no command needs sudo.
+The session records its endpoint at session start and on resume, so the timer needs no endpoint configuration.
+The generated files capture the installation shell's `PATH` and the home, and existing scheduler files are never overwritten.
+Run these from the home's stable code directory with `FM_HOME` set to the home.
+
+On Linux:
+
+```sh
+FM_HOME="$PWD" bin/fm-watch-backstop.sh timer-files linux "$HOME/.config/systemd/user"
+systemctl --user daemon-reload
+systemctl --user enable --now firstmate-watch-backstop-<slug>.timer
+```
+
+On macOS:
+
+```sh
+FM_HOME="$PWD" bin/fm-watch-backstop.sh timer-files darwin "$HOME/Library/LaunchAgents"
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.firstmate.watch-backstop.<slug>.plist"
+```
+
+`timer-files` prints the generated file names, including the per-home `<slug>`.
+To turn it off, run `systemctl --user disable --now firstmate-watch-backstop-<slug>.timer` on Linux or `launchctl bootout` with the same plist path on macOS.
+
 ## Firstmate role (config/firstmate-role)
 
 The optional local, gitignored `config/firstmate-role` declares this home's relationship to the firstmate repository itself.
@@ -4205,6 +4231,7 @@ FM_PF_RETRY_BACKOFF_SECS=900   # seconds before the next attempt after a retryab
 FM_LOCK_STALE_AFTER=2   # grace seconds for missing or nonnumeric lock-owner PIDs (minimum 2s); dead numeric PIDs, and live ones whose start time (or, for the watch lock, process identity) no longer matches the holder's recorded value, have no age grace
 FM_GUARD_GRACE=300      # beacon freshness threshold for guard verdicts, arm health checks, and the primary turn-end guard; see docs/turnend-guard.md for model-aware exceptions
 FM_CLAUDE_AUTOARM_ATTEMPTS=2   # bounded Stop-owned arm attempts per Claude auto-arm cycle; accepted values are 1, 2, or 3
+FM_WATCH_BACKSTOP_STALE_SECS=900   # watcher beacon age at which the out-of-session backstop (bin/fm-watch-backstop.sh) treats a home that needs supervision as down and rings its session
 FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=800   # milliseconds the --claude turn-end guard waits for watcher health, an open Stop auto-arm generation claim, or a fresh epoch before deciding recovery ownership or failure progression
 FM_CLAUDE_AUTOARM_EPOCH_FRESH=15   # seconds a recorded auto-arm outcome remains eligible for the current event epoch's recovery or failure decision
 FM_CLAUDE_TURNEND_BLOCK_BUDGET=3   # consecutive --claude guard re-blocks before the verified one-time attended fail-open; safely below Claude Code's 8-block override

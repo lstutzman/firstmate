@@ -729,6 +729,9 @@ if [ "$READ_ONLY" -eq 0 ]; then
   if [ "$REEMIT" -eq 0 ]; then
     rm -f "$COMPLETION_FILE" 2>/dev/null || true
   fi
+  # The out-of-session watcher backstop rings this endpoint when supervision
+  # stays down (bin/fm-watch-backstop.sh owns the record and its gate).
+  "$SCRIPT_DIR/fm-watch-backstop.sh" record-endpoint </dev/null >/dev/null 2>&1 || true
   fm_trace_context_session_start "$CONFIG" "$STATE/.trace-context-effective"
   # A full locked start publishes this home's current structured summary.
   # Publication is side-band and best-effort, so it can never change the
