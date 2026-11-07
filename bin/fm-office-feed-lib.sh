@@ -21,7 +21,8 @@
 # whose files cannot be read is left out, so the remote check stays silent for
 # it, as it is for a missing digest. A lane file over FM_OFFICE_FEED_LANE_MAX
 # bytes, or a whole copy over FM_OFFICE_FEED_MAX bytes, is not left out: no copy
-# is built at all, so the sender keeps the remote office's last copy and says why.
+# is built at all, so the remote inherit push leaves the remote office's last copy
+# in place and still succeeds, and bin/fm-office.sh reports why.
 #
 # Public functions:
 #   fm_office_feed_payload <src-home> <src-data> <dest-id> <remote-home> <out-file> <now>

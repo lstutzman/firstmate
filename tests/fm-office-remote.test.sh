@@ -190,11 +190,11 @@ test_oversized_feed_is_held_and_reported() {
   assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "publish leaves the remote copy untouched"
   assert_equals "0|nav|" "$(resolve "$w/remote-nav")" "publish still sends the authority record"
 
-  rc=0; out=$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 FM_INHERITABLE_CONFIG=office-feed \
+  rc=0; out=$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 FM_INHERITABLE_CONFIG="office-authority office-feed" \
     bash "$ROOT/bin/fm-remote-inherit-push.sh" nav 900 2>&1) || rc=$?
-  [ "$rc" -ne 0 ] || fail "a convergence push must fail for an oversized copy"
-  assert_contains "$out" "error: config/office-feed: feed not pushed: " "the convergence push names the held copy"
+  assert_equals 0 "$rc" "a convergence push still succeeds with an oversized copy: $out"
   assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "a convergence push never sends an absence for it"
+  assert_equals "0|nav|" "$(resolve "$w/remote-nav")" "and still delivers the authority record"
 
   assert_contains "$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" ensure)" \
     "OFFICE: office nav: feed not pushed: " "ensure reports the held copy"

@@ -123,7 +123,7 @@ FM_HOME=$MAIN bin/fm-spawn.sh <id> --secondmate
 `publish` also arms the `office-feed` watcher check in the main home.
 That check, and each officer run as it writes a digest, send the remote office a copy of its own `data/offices.md` line and of each lane officer's digest, `.json` and start requests addressed to it, which the office's source checks read in place of the parent's files; a new digest reaches the remote home within one watcher sweep (300 seconds by default), and a copy older than 36 hours silences the remote checks.
 `bin/fm-office.sh`'s header owns the mechanics, and `bin/fm-office.sh feed <id>` sends one copy now.
-A copy over `FM_OFFICE_FEED_MAX` bytes, or a lane digest over `FM_OFFICE_FEED_LANE_MAX`, is never sent: the remote office keeps its last copy, `publish` and `feed` print `office <id>: feed not pushed: <why>` and exit non-zero, `ensure` prints an `OFFICE:` line for it, and the watcher check prints one such line each time it starts.
+A copy over `FM_OFFICE_FEED_MAX` bytes, or a lane digest over `FM_OFFICE_FEED_LANE_MAX`, is never sent: the remote office keeps its last copy, spawn and convergence pushes still succeed, `publish` and `feed` print `office <id>: feed not pushed: <why>` and exit non-zero, `ensure` prints an `OFFICE:` line for it, and the watcher check prints one such line each time it starts.
 A failed step after the home exists prints the command that repeats it.
 
 ## 7. Route the officers' digests

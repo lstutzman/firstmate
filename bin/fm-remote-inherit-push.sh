@@ -91,18 +91,18 @@ while IFS= read -r rel; do
     config/office-feed)
       # The remote office's copy of its office line and lane digests
       # (bin/fm-office-feed-lib.sh); an absence for any other destination.
-      # A copy over its size limit leaves the remote office's last copy in place.
+      # A copy over its size limit leaves the remote office's last copy in place
+      # and fails nothing here; bin/fm-office.sh publish, feed, feed-sweep and ensure report it.
       source="$TMP/office-feed.resolved"
       feed_rc=0
       fm_office_feed_payload "$FM_HOME" "$DATA" "$ID" "$REMOTE_HOME" "$source" "$FEED_NOW" || feed_rc=$?
-      if [ "$feed_rc" -ne 0 ]; then
+      if [ "$feed_rc" -eq 2 ]; then
+        printf 'skip\n' > "$TMP/item.$N.plan"
+        continue
+      elif [ "$feed_rc" -ne 0 ]; then
         printf 'error: %s: %s\n' "$rel" "$FM_OFFICE_ERROR" >&2
         FAILED=1
         rm -f -- "$source"
-        if [ "$feed_rc" -eq 2 ]; then
-          printf 'skip\n' > "$TMP/item.$N.plan"
-          continue
-        fi
       fi
       ;;
     config/*) source="$CONFIG/${rel#config/}" ;;
