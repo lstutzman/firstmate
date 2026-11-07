@@ -3164,6 +3164,42 @@ test_office_seed_refusals() {
   pass "office seed refuses plain second mates, macbook and unlisted hosts, missing dispatch, unknown roles, foreign rules and plain charters"
 }
 
+test_office_seed_token_master_serves_two_offices() {
+  local w out id p
+  w=$(office_seed_main office-token)
+  local PATH="$w/fakebin:$PATH"
+  # alch is re-roled to a second quartermaster-role office that merges alpha too.
+  sed -i 's/^- alch - Later office (role: bosun; runs-on: slartibartfast; dispatch: alpha; merge: none/- alch - Second merger (role: quartermaster; runs-on: slartibartfast; dispatch: alpha,beta; merge: alpha,beta/' "$w/main/data/offices.md"
+  for p in alpha beta; do
+    printf 'command=%s --rules @OFFICE_HOME@/config/admission/%s.rules\nclasses=authority\nclear=none\n' "$ROOT/bin/fm-reserved-classify.sh" "$p" > "$w/main/config/admission/$p"
+  done
+  for id in qm alch; do
+    out=$(FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" "$id" "$w/$id" alpha beta --office "$id") \
+      || fail "seeding $id from a tokened master failed: $out"
+    assert_grep "--rules $w/$id/config/admission/alpha.rules" "$w/$id/config/admission/alpha" "$id copy does not name its own home"
+    assert_no_grep '@OFFICE_HOME@' "$w/$id/config/admission/alpha" "$id copy kept the token"
+    FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-office.sh" publish "$id" >/dev/null || fail "publish $id failed"
+  done
+  out=$(FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-office.sh" ensure)
+  assert_not_contains "$out" 'office qm:' "ensure gaps for qm seeded from a token master"
+  assert_not_contains "$out" 'office alch:' "ensure gaps for alch seeded from a token master"
+  # The main home reads the same master as its own: the token is its home.
+  out=$(bash -c '. "$1"; fm_admission_load "$2" && printf "%s" "${FM_ADMISSION_COMMAND[*]}"' _ "$ROOT/bin/fm-admission-lib.sh" "$w/main/config/admission/alpha")
+  assert_contains "$out" "--rules $w/main/config/admission/alpha.rules" "admission load did not expand the token to its own home"
+  # A literal master still seeds the office it names and refuses another.
+  w=$(office_seed_main office-literal)
+  sed -i 's/^- alch - Later office (role: bosun; runs-on: slartibartfast; dispatch: alpha; merge: none/- alch - Second merger (role: quartermaster; runs-on: slartibartfast; dispatch: alpha,beta; merge: alpha,beta/' "$w/main/data/offices.md"
+  for p in alpha beta; do
+    printf 'command=%s --rules %s\nclasses=authority\nclear=none\n' "$ROOT/bin/fm-reserved-classify.sh" "$w/qm/config/admission/$p.rules" > "$w/main/config/admission/$p"
+  done
+  FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" qm "$w/qm" alpha beta --office qm >/dev/null || fail "literal master no longer seeds the office it names"
+  assert_grep "--rules $w/qm/config/admission/alpha.rules" "$w/qm/config/admission/alpha" "literal master changed in the copy"
+  if FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" alch "$w/alch" alpha beta --office alch >/dev/null 2>&1; then
+    fail "a literal master seeded another office"
+  fi
+  pass "a master with @OFFICE_HOME@ seeds two offices that each pass publish and ensure, and a literal master still seeds only its own office"
+}
+
 test_backlog_handoff_aborts_safely() {
   # The happy move (verbatim into the Queued section, out-of-scope left alone,
   # idempotent re-run) is asserted in the lifecycle e2e. Here: every refusal path
@@ -3366,5 +3402,6 @@ test_office_charter_replaces_idle_by_default
 test_office_seed_end_to_end
 test_office_seed_rolls_back_office_files
 test_office_seed_refusals
+test_office_seed_token_master_serves_two_offices
 test_backlog_handoff_aborts_safely
 test_backlog_handoff_refuses_done_items_and_non_secondmate_homes

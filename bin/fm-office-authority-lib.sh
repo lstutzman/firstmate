@@ -52,6 +52,15 @@
 # already carry each --rules path. It lets an office's merge notice a local
 # edit to its own classifier config or rules.
 #
+# Master token: a master admission config in the main home may write the one
+# literal token @OFFICE_HOME@ wherever it names a home path, so one master serves
+# every office that merges the project. The seed (bin/fm-home-seed.sh) copies
+# the master with the token replaced by the office home, and a publish digests
+# the master with the token replaced the same way (the optional third argument),
+# so the pin equals the digest of the office's own copy. A --rules path written
+# as @OFFICE_HOME@/config/admission/<file> reads the master's own <file>. A
+# master with literal paths is copied and digested unchanged.
+#
 # Publishing: fm_office_inherit_payload builds one destination's record from
 # the main home's data/offices.md, so every other home receives an absence.
 # A destination gets a record only when exactly one registry line names its
@@ -79,7 +88,10 @@
 #   fm_office_resolve <home> <data-dir> <config-dir>
 #       detect, then load: 0 with FM_OFFICE_ID empty (not an office) or set (an
 #       office with its authority loaded), or 1 with FM_OFFICE_ERROR (refuse).
-#   fm_office_admission_digest <config-dir> <name>
+#   fm_office_admission_expand <office-home>
+#       a filter: copies stdin to stdout with @OFFICE_HOME@ replaced by
+#       <office-home>.
+#   fm_office_admission_digest <config-dir> <name> [<office-home>]
 #       prints the digest above, or returns 1 when config/admission/<name> or a
 #       rules file it names is missing or unreadable, or a --rules path is not
 #       absolute.
@@ -235,8 +247,15 @@ fm_office_detect() {  # <home> <data-dir>
   return 0
 }
 
-fm_office_admission_digest() {  # <config-dir> <name>
-  local dir=$1/admission name=$2 f line sum listing='' words i
+fm_office_admission_expand() {  # <office-home>
+  local t
+  t=$(cat; printf x)
+  t=${t%x}
+  printf '%s' "${t//@OFFICE_HOME@/"$1"}"
+}
+
+fm_office_admission_digest() {  # <config-dir> <name> [<office-home>]
+  local dir=$1/admission name=$2 oh=${3:-} f line sum listing='' words i
   local -a files=()
   [ -f "$dir/$name" ] && [ ! -L "$dir/$name" ] && [ -r "$dir/$name" ] || return 1
   files=("$dir/$name")
@@ -245,6 +264,9 @@ fm_office_admission_digest() {  # <config-dir> <name>
   for ((i = 0; i < ${#words[@]}; i++)); do
     [ "${words[$i]}" = --rules ] || continue
     f=${words[$((i + 1))]:-}
+    if [ -n "$oh" ] && [ "${f#@OFFICE_HOME@/config/admission/}" != "$f" ]; then
+      f=$dir/${f#@OFFICE_HOME@/config/admission/}
+    fi
     case "$f" in /*) files+=("$f") ;; *) return 1 ;; esac
   done
   if [ "${#files[@]}" -eq 1 ] && { [ -e "$dir/$name.rules" ] || [ -L "$dir/$name.rules" ]; }; then
@@ -252,7 +274,11 @@ fm_office_admission_digest() {  # <config-dir> <name>
   fi
   for f in "${files[@]}"; do
     [ -f "$f" ] && [ ! -L "$f" ] && [ -r "$f" ] || return 1
-    sum=$(fm_role_sha256_stdin < "$f")
+    if [ -n "$oh" ] && [ "$f" = "$dir/$name" ]; then
+      sum=$(fm_office_admission_expand "$oh" < "$f" | fm_role_sha256_stdin)
+    else
+      sum=$(fm_role_sha256_stdin < "$f")
+    fi
     [ -n "$sum" ] || return 1
     listing="$listing$sum
 "
@@ -426,7 +452,7 @@ EOF
       name=$(fm_office_project_token "$home/data/projects.md" "$p" admission)
       [ -n "$name" ] || fm_office_payload_fail "merge project $p has no admission= in $home/data/projects.md" || return 1
       fm_office_name_ok "$name" || fm_office_payload_fail "merge project $p names admission config '$name', which is not a name" || return 1
-      digest=$(fm_office_admission_digest "$config" "$name") \
+      digest=$(fm_office_admission_digest "$config" "$name" "$home") \
         || fm_office_payload_fail "the main home's master admission config $config/admission/$name or a rules file it names cannot be read" || return 1
       sha="${sha:+$sha,}$p:$digest"
     done
