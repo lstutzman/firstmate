@@ -273,7 +273,8 @@ counts.waiting_on_merge; no forge read is made. A done child whose status-log
 detail is fm-crew-state.sh's pipeline-handoff marker (a no-mistakes ship's
 pre-validation done while its run on that branch is still live) is live work,
 not terminal_in_flight. A done ship parked on another home's merger (fm_office_task_landing in
-bin/fm-office-authority-lib.sh, shown as pr.parked_handoff) is consistent too.
+bin/fm-office-authority-lib.sh, shown as pr.parked_handoff) is consistent too,
+and is listed in waiting_on_merge and counted in counts.waiting_on_merge.
 A failed child, or any other done child without both a
 meta PR and an armed poll for it or a parked handoff, still invalidates the inventory.
 Its invalidity object names the normalized failure kind and affected ids.
@@ -1098,7 +1099,8 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
     | ([ $owned_in_flight[] as $work
          | $tasks[]
          | select(.kind != "secondmate")
-         | select(.id == $work.id and .current_state.state == "done" and .pr.source == "meta" and .pr.merge_check_armed == true)
+         | select(.id == $work.id and .current_state.state == "done"
+             and ((.pr.source == "meta" and .pr.merge_check_armed == true) or .pr.parked_handoff == true))
          | {id,pr:(.pr.url | trunc(500))} ]) as $waiting_on_merge
     | ([if $backlog.present != true then
           {kind:"missing_backlog",ids:[],reason:"missing structured backlog"}

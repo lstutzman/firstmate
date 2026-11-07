@@ -1359,6 +1359,8 @@ EOF
 
   printf '%s\n' "$pr_url" > "$home/state/parked-ship.merge-handoff"
   assert_parked '.valid == true and .invalidity.kind == null' "a handed-off, parked item must be consistent"
+  assert_parked ".counts.waiting_on_merge == 1 and .waiting_on_merge == [{id:\"parked-ship\",pr:\"$pr_url\"}]" \
+    "a parked item must be listed as waiting on merge"
 
   write_parked_meta
   printf 'done [at=1000]: complete\n' > "$home/state/parked-ship.status"
