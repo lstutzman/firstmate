@@ -1,0 +1,14 @@
+1..11
+ok - a clean handed-off ship whose head is the pushed PR head returns its copy and keeps its record
+ok - the watcher sweep parks a candidate once per handoff, outside its own check bound
+ok - a park that fails after it stopped the agent is reported once and keeps the record naming its copy
+ok - dirty, untracked, unpushed, mismatched, live-run, unreleased, steered, tmux, busy, and unstopped copies are never parked
+ok - a busy agent or an unreadable forge head defers the park to a later sweep, and unsafe work does not
+ok - a steer to a parked task leases a fresh copy at the recorded PR head, relaunches the worker there, then records the steer
+ok - a steer to a parked task whose PR head moved checks out the new head and tells the worker it moved
+ok - an unpark whose PR merged, whose branch is gone, or whose worker cannot relaunch leaves the task parked and records no steer
+ok - a rollback whose slot return fails keeps the claim and names the copy still leased
+ok - the watcher's check sweep parks a finished ship and wakes once on a park report
+ok - cleanup of a parked task after its merge removes the record without touching the pool
+FM_TEST_COMPLETE
+rc=0

@@ -1,0 +1,69 @@
+== real treehouse lease of the ship's first slot
+slot: /tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/1/project
+== treehouse status before park
+base  main  (repository default)
+1     leased       /tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/1/project  [fm/lab-task]  (held by task-a)
+== S1: watcher sweep parks the handed-off ship
+sweep rc=0
+-- park log
+parked: task-a returned its copy /tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/1/project; its PR https://github.com/o/r/pull/42 waits on its merger at 4855d0ed5ef6797e934989f245c545c880f0e95f
+-- record after park
+parked=1
+parked_branch=fm/lab-task
+parked_head=4855d0ed5ef6797e934989f245c545c880f0e95f
+parked_worktree=/tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/1/project
+parked_at=1794049200
+pr=https://github.com/o/r/pull/42
+pr_head=4855d0ed5ef6797e934989f245c545c880f0e95f
+-- control log
+task-a exit --stop-background
+-- treehouse status after park (slot should be free/not leased)
+base  main  (repository default)
+1     available    /tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/1/project  (detached)
+== S2: a second sweep does nothing
+rc=0
+== S3: adversarial: new work can take the freed slot
+other task got: /tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/1/project
+== S4: merger restacks the PR branch while parked
+parked_head=4855d0ed5ef6797e934989f245c545c880f0e95f new PR head=7eb97ac05a9cbbbc834f687cd5f98a27bab8af13
+== S4: steer the parked task via fm-send
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+unparked: task-a relaunched in /tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/2/project at 7eb97ac05a9cbbbc834f687cd5f98a27bab8af13 (the PR head moved from 4855d0ed5ef6797e934989f245c545c880f0e95f)
+fm-send: doorbell not typed because the agent in lab:p1 has exited; the steer is durably recorded at /tmp/fm-lab.XdrfKD/home/state/task-a.inbox/001.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane
+send rc=0
+-- record after unpark
+worktree=/tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/2/project
+-- fresh copy: branch=fm/lab-task head=7eb97ac05a9cbbbc834f687cd5f98a27bab8af13 status=[]
+-- control log
+task-a exit --stop-background
+task-a relaunch --note-file /tmp/fm-tree-park-note.4p4vQp
+relaunch worktree=/tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/2/project head=7eb97ac05a9cbbbc834f687cd5f98a27bab8af13 branch=fm/lab-task
+-- relaunch note
+Your previous copy was returned to the pool while your PR https://github.com/o/r/pull/42 waited for its merger.
+The PR head moved from 4855d0ed5ef6797e934989f245c545c880f0e95f to 7eb97ac05a9cbbbc834f687cd5f98a27bab8af13 while your copy was parked: re-read the branch before you change anything.
+This is a fresh copy of branch fm/lab-task at 7eb97ac05a9cbbbc834f687cd5f98a27bab8af13, the PR head now; your earlier conversation is gone.
+Do not create the branch again: it is checked out. Read your steering inbox now for the instruction that brought you back.
+-- inbox
+task-a.inbox
+-- treehouse status after unpark
+base  main  (repository default)
+1     leased       /tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/1/project  (detached)  (held by other-task)
+2     leased       /tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/2/project  [fm/lab-task]  (held by task-a)
+== S5: adversarial: a dirty copy is never parked
+not parked: task-a: copy has uncommitted changes
+park rc=1 (expect 1)
+worktree=/tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/2/project
+/tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/2/project/uncommitted.txt
+== S6: adversarial: an unpushed commit is never parked
+not parked: task-a: copy has commits not on origin/fm/lab-task
+park rc=1 (expect 1)
+worktree=/tmp/fm-lab.XdrfKD/pool/.treehouse/project-7ec92f/2/project
+3809b48 local-only
+== cleanup
+lab removed
