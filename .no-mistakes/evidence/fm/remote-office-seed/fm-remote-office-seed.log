@@ -1,0 +1,3 @@
+ok - a remote office seed writes the marker, charter, admission copies, tokens, record, feed and checks
+ok - a remote seed leaves an empty backlog and a re-seed keeps an existing one
+ok - a remote office seed refuses a host not in runs-on, an unknown office, a plain re-seed, an id mismatch and a literal remote rules path

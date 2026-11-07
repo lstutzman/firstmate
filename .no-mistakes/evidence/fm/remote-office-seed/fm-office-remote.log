@@ -1,0 +1,7 @@
+ok - publish delivers the authority record, its receipt and the feed to a remote office, and its gate accepts them
+ok - the remote checks read the line and the lane digest from the carried copy, once per digest
+ok - the feed sweep pushes a changed copy at once, an unchanged one only to refresh it, and prints nothing
+ok - a failed feed push is retried after its window, not on every sweep
+ok - a stale, mismatched or absent feed leaves every remote check silent
+ok - an oversized feed or lane is never sent, and publish, feed, the sweep and ensure report it
+ok - an officer run sends its new digest to a remote office at once

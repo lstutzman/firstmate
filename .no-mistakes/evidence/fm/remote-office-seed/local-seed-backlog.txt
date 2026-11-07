@@ -1,0 +1,50 @@
+$ bin/fm-lab-home.sh create $LAB
+/tmp/fm-lab.uO5nmI
+$ FM_HOME=$LAB FM_SECONDMATE_CHARTER='Docs lane' bin/fm-home-seed.sh docs $SUB --no-projects
+Note: switching to '8e69ae225500d0cf379ddead0f795e06a2c628d9'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+
+scaffolded: /tmp/fm-lab.uO5nmI/data/docs/brief.md (secondmate charter)
+home=/tmp/fm-lab-sub.RhJeOT
+rc=0
+$ cat $SUB/data/backlog.md
+0000000   #   #       I   n       f   l   i   g   h   t  \n  \n   #   #
+0000020       Q   u   e   u   e   d  \n  \n   #   #       D   o   n   e
+0000040  \n
+0000041
+## In flight
+
+## Queued
+
+## Done
+--- add a queued item, then re-seed
+home=/tmp/fm-lab-sub.RhJeOT
+rc=0
+$ cat $SUB/data/backlog.md (after re-seed)
+## In flight
+
+## Queued
+- keep me
+
+## Done
+$ (cd $SUB && bin/fm-tasks-axi.sh list)
+count: 0
+tasks: 0 tasks in this backlog
+help[2]:
+  - "Run `tasks-axi add <id> \"<title>\"` to add a task"
+  - Run `tasks-axi list --state done` to see completed work
+rc=0
