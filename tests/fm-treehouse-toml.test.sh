@@ -60,6 +60,26 @@ test_seed_clone_inherits_max_trees() {
   pass 'fm-home-seed gives a new clone the max_trees of a peer home clone'
 }
 
+test_remote_provision_clone_inherits_max_trees() {
+  local w origin
+  mkdir -p "$TMP_ROOT/provision/homes/nav/projects"
+  w=$(cd "$TMP_ROOT/provision" && pwd -P)
+  fm_git_init_commit "$w/src"
+  git clone -q --bare "$w/src" "$w/App.git"
+  origin="file://$w/App.git"
+  git clone -q "$origin" "$w/homes/nav/projects/App"
+  printf 'max_trees = 24\n' > "$w/homes/nav/projects/App/treehouse.toml"
+  b64() { printf '%s' "$1" | base64 | tr -d '\n'; }
+  printf 'schema=fm-remote-home-provision.v1\nid_b64=%s\ncharter_b64=%s\nproject_count=1\nproject=%s|%s|%s|%s\n' \
+    "$(b64 lib)" "$(b64 'Librarian charter.')" "$(b64 App)" "$(b64 "$origin")" \
+    "$(b64 '- App [direct-PR] - app (added 2026-11-07)')" "$(b64 direct-PR)" > "$w/manifest"
+  FM_HOME="$w/homes/lib" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-remote-home-provision.sh" < "$w/manifest" >/dev/null 2>&1 \
+    || fail "remote provision failed"
+  assert_equals 'max_trees = 24' "$(cat "$w/homes/lib/projects/App/treehouse.toml")" "provisioned clone's treehouse.toml"
+  assert_equals "" "$(git -C "$w/homes/lib/projects/App" status --porcelain)" "provisioned clone status"
+  pass 'fm-remote-home-provision gives a new clone the max_trees of a peer home clone'
+}
+
 test_largest_max_trees_wins() {
   local w out; w=$(world largest)
   clone_into "$w" a 20; clone_into "$w" b 30; clone_into "$w" lib
@@ -103,5 +123,5 @@ test_ensure_is_silent_when_they_agree() {
   pass 'ensure is silent when clones agree on max_trees'
 }
 
-fm_test_run test_new_clone_inherits_max_trees test_seed_clone_inherits_max_trees test_largest_max_trees_wins test_existing_file_is_kept \
+fm_test_run test_new_clone_inherits_max_trees test_seed_clone_inherits_max_trees test_remote_provision_clone_inherits_max_trees test_largest_max_trees_wins test_existing_file_is_kept \
   test_other_origin_is_not_a_peer test_ensure_reports_differing_max_trees test_ensure_is_silent_when_they_agree
