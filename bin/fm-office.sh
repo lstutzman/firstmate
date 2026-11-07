@@ -11,6 +11,9 @@
 #   fm-office.sh list
 #   fm-office.sh ensure
 #   fm-office.sh publish <id>
+#   fm-office.sh feed <id>
+#   fm-office.sh feed-sweep
+#   fm-office.sh arm-feed
 #   fm-office.sh status
 #   fm-office.sh arm-status
 #   fm-office.sh disarm-status
@@ -40,7 +43,7 @@
 # data/offices.md and the main home's master admission configs, and an
 # office-local admission config that differs from the master its record pins.
 # A remote office's home is not readable from here, so its file checks are
-# skipped.
+# skipped; for it ensure reports only a feed-sweep check that is not registered.
 #
 # publish <id> (run in the main home) pushes that one office's authority record
 # into its home now: config/office-authority and its receipt
@@ -49,11 +52,30 @@
 # uses, restricted to that item. bin/fm-office-authority-lib.sh owns what the
 # record holds and when a home receives an absence instead. <id> must be a
 # second mate registered in data/secondmates.md on a local route, whose home's
-# .fm-secondmate-home names it; a remote office receives its record from the
-# ordinary remote inheritance push. publish refuses in a second-mate home. It
-# prints one line, "office <id>: <pushed|unchanged|error> [reason]", and exits
-# non-zero on an error. Every convergence point (secondmate spawn, the
-# bootstrap secondmate sweep, bin/fm-config-push.sh) publishes the same record.
+# .fm-secondmate-home names it, or a remote route. A remote office's record and
+# its feed (below) are sent through the ordinary remote inherit push
+# (bin/fm-remote-inherit-push.sh) restricted to those two items, under the route's
+# transaction lock and with the next generation; the remote home's gates then
+# trust the record exactly as a local office's do. publish also arms feed-sweep
+# in this home (arm-feed). publish refuses in a second-mate home. It prints one
+# line, "office <id>: <pushed|unchanged|error> [reason]", and exits non-zero on
+# an error. Every convergence point (secondmate spawn, the bootstrap secondmate
+# sweep, bin/fm-config-push.sh) publishes the same record, and the feed too.
+#
+# feed <id> (run in the main home) sends only a remote office's feed now:
+# config/office-feed, the copy of its own line in data/offices.md and of each
+# lane officer's digest, its .json and the start requests addressed to that
+# office, which a home on another host cannot read from the parent
+# (bin/fm-office-feed-lib.sh owns the format). It prints the same one line as
+# publish. feed-sweep is the watcher check that keeps the copy current: for each
+# remote office it sends the feed when the copy's content changed since the last
+# send, or the last send is over FM_OFFICE_FEED_REFRESH_SECS (default 21600)
+# old, never more often than every FM_OFFICE_FEED_RETRY_SECS (default 120) for one
+# office, within one 25 second bound for the whole sweep, and prints nothing. arm-feed (run once in the main home)
+# writes state/office-feed.check.sh, a shim that execs "fm-office.sh feed-sweep",
+# and binds it with bin/fm-check-register.sh; running it again rewrites the same
+# bytes. A new digest therefore reaches a remote office within one parent
+# watcher sweep plus the push.
 #
 # status (run inside an office home, as its silent watcher check) projects that
 # home's backlog and in-flight task records onto data/office-status.json for the
@@ -91,7 +113,10 @@
 #                    data/backlog.md, or an unread lane digest. Silent otherwise.
 #   lane:<officer>   "office <id>: <officer> digest <key>: <n> finding(s) in <path>"
 #                    once per new digest with n > 0, read from the parent's
-#                    data/officers/<officer>/digest (a local parent route only).
+#                    data/officers/<officer>/digest (a local parent route), or,
+#                    on a remote office home, from the copy in config/office-feed,
+#                    whose files it writes under data/office/feed/ and names in
+#                    its line.
 #   lane:<officer>:high
 #                    "office <id>: <officer> digest <key>: <n> high-severity finding(s) in <path>"
 #                    once per new count of findings in the digest's .json whose
@@ -109,8 +134,12 @@
 # could not be delivered; ...", once per digest content, recorded in
 # data/office/lane-<officer>-starts.seen.
 # The seen-records are data/office/tick.seen and data/office/lane-<officer>[-high].seen
-# in the office home. A remote parent, an unreadable file, an unregistered
-# source or a home that is not an office is silent. Start delivery runs
+# in the office home. An unreadable file, an unregistered
+# source or a home that is not an office is silent, and so is a remote office
+# whose config/office-feed is missing, malformed, for another office, or older
+# than FM_OFFICE_FEED_MAX_AGE (default 36 hours); on a remote office home that
+# copy supplies the office's line too, so every source reads it and never the
+# parent. Start delivery runs
 # fm-inbox.sh in this home only; nothing in the parent is written.
 #
 #   upstream         "office <id>: upstream <old>..<new>: <n> new commit(s) not in <fork-ref>; newest: <subject> | ..."
@@ -154,6 +183,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 REGISTRY="$DATA/offices.md"
 STATUS_CHECK_ID=office-status
 STATUS_CHECK="$STATE/$STATUS_CHECK_ID.check.sh"
+FEED_CHECK_ID=office-feed
+FEED_CHECK="$STATE/$FEED_CHECK_ID.check.sh"
 
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
@@ -167,6 +198,8 @@ STATUS_CHECK="$STATE/$STATUS_CHECK_ID.check.sh"
 . "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
 # shellcheck source=bin/fm-office-authority-lib.sh
 . "$SCRIPT_DIR/fm-office-authority-lib.sh"
+# shellcheck source=bin/fm-office-feed-lib.sh
+. "$SCRIPT_DIR/fm-office-feed-lib.sh"
 
 usage() {
   cat <<'EOF'
@@ -174,6 +207,9 @@ Usage:
   fm-office.sh list      list registered offices and their state
   fm-office.sh ensure    session-start health: one OFFICE: line per gap
   fm-office.sh publish <id>   push that office's authority record into its home now
+  fm-office.sh feed <id>      send a remote office its copy of its line and lane digests now
+  fm-office.sh feed-sweep     (watcher check) keep every remote office's copy current
+  fm-office.sh arm-feed       register feed-sweep as this home's silent watcher check
   fm-office.sh status    write data/office-status.json for this office home (silent)
   fm-office.sh arm-status     register status as this office home's silent watcher check
   fm-office.sh disarm-status  retire that check
@@ -252,8 +288,8 @@ office_problems() {
   host=${SECONDMATE_REGISTRY_HOST:-${FM_OFFICE_HOST:-$(hostname -s)}}
   in_list "$host" "$runs_on" || printf 'runs-on %s does not include the second mate host %s\n' "$runs_on" "$host"
   if [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
-    [ -z "$merge" ] || [ "$merge" = none ] \
-      || printf 'it merges %s, and its admission config cannot be pinned on a remote route, so its authority record cannot be published\n' "$merge"
+    fm_custom_check_registered "$STATE" "$FEED_CHECK_ID" \
+      || printf 'it is on a remote route and %s is not registered in %s (run bin/fm-office.sh arm-feed, or publish %s)\n' "$FEED_CHECK_ID" "$STATE" "$id"
     return
   fi
   home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
@@ -352,15 +388,140 @@ cmd_status() {
 
 publish_die() { echo "office-publish: $1" >&2; exit 1; }
 
+# remote_push <id> <items>: one remote inherit push of just those inherited items, under the route's
+# transaction lock and with the next generation, as a convergence push runs it; it sends no reread
+# nudge, because the office's checks and gates read these files when they run. Sets PUSH_STATUS
+# (pushed, unchanged or error) and PUSH_REASON; returns 1 on an error.
+remote_push() {
+  local id=$1 items=$2 lock gen out rc=0
+  PUSH_STATUS=error
+  PUSH_REASON=
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  # shellcheck source=bin/fm-secondmate-nudge-lib.sh
+  . "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
+  lock=$(fm_remote_inherit_transaction_lock_path "$STATE" "$id") || lock=
+  if [ -z "$lock" ] || ! fm_lock_acquire_wait "$lock"; then
+    PUSH_REASON="cannot lock $id's remote inheritance"
+    return 1
+  fi
+  gen=$(fm_remote_inherit_generation_next "$STATE" "$id" 2>/dev/null) || gen=
+  if [ -z "$gen" ]; then
+    fm_lock_release "$lock" || true
+    PUSH_REASON="cannot publish the next inheritance generation"
+    return 1
+  fi
+  out=$(FM_INHERITABLE_CONFIG="$items" "$SCRIPT_DIR/fm-remote-inherit-push.sh" "$id" "$gen" 2>&1) || rc=$?
+  fm_lock_release "$lock" || true
+  if [ "$rc" -ne 0 ]; then
+    PUSH_REASON=$(printf '%s\n' "$out" | sed -n 's/^error: //p' | head -n 1)
+    [ -n "$PUSH_REASON" ] || PUSH_REASON="the remote push exited $rc"
+    return 1
+  fi
+  PUSH_STATUS=unchanged
+  if printf '%s\n' "$out" | grep -Eq '^(pushed|removed):'; then PUSH_STATUS=pushed; fi
+  return 0
+}
+
+# feed_fingerprint_of <id>: prints the fingerprint of the feed the parent would send now, or nothing.
+feed_fingerprint_of() {
+  local id=$1 stage fp=
+  stage=$(mktemp "${TMPDIR:-/tmp}/fm-office-feed.XXXXXX") || return 0
+  secondmate_registry_line_for_id "$DATA/secondmates.md" "$id" \
+    && fm_office_feed_payload "$FM_HOME" "$DATA" "$id" "$SECONDMATE_REGISTRY_HOME" "$stage" "$(now_epoch)" \
+    && [ -f "$stage" ] && fp=$(fm_office_feed_fingerprint "$stage")
+  rm -f "$stage"
+  printf '%s\n' "$fp"
+}
+
+record_feed_push() {  # <id> <fingerprint>
+  mkdir -p "$STATE" 2>/dev/null && printf '%s %s\n' "$2" "$(now_epoch)" > "$STATE/$FEED_CHECK_ID.$1.pushed" 2>/dev/null || true
+}
+
+cmd_feed() {
+  local id=${1:-} fp
+  [ "$#" -eq 1 ] && [[ "$id" =~ ^[a-z0-9-]+$ ]] || publish_die "usage: fm-office.sh feed <id>"
+  [ ! -e "$FM_HOME/.fm-secondmate-home" ] || publish_die "only the main home sends office feeds, and $FM_HOME is a second-mate home"
+  secondmate_registry_line_for_id "$DATA/secondmates.md" "$id" \
+    || publish_die "$id is not a registered second mate in $DATA/secondmates.md"
+  [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] || publish_die "second mate $id is on a local route, which reads the parent directly"
+  fp=$(feed_fingerprint_of "$id")
+  if remote_push "$id" office-feed; then
+    [ -z "$fp" ] || record_feed_push "$id" "$fp"
+    printf 'office %s: %s\n' "$id" "$PUSH_STATUS"
+  else
+    printf 'office %s: error - %s\n' "$id" "$PUSH_REASON"
+    return 1
+  fi
+}
+
+cmd_feed_sweep() {
+  local line id fp last_fp last_at now try deadline left
+  [ ! -e "$FM_HOME/.fm-secondmate-home" ] || return 0
+  now=$(now_epoch)
+  deadline=$(( $(date +%s) + 25 ))
+  while IFS= read -r line; do
+    [[ "$line" =~ $REGISTRY_LINE_RE ]] || continue
+    id=${BASH_REMATCH[1]}
+    secondmate_registry_line_for_id "$DATA/secondmates.md" "$id" && [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] || continue
+    fp=$(feed_fingerprint_of "$id")
+    [ -n "$fp" ] || continue
+    read -r last_fp last_at < "$STATE/$FEED_CHECK_ID.$id.pushed" 2>/dev/null || { last_fp=; last_at=0; }
+    case "$last_at" in ''|*[!0-9]*) last_at=0 ;; esac
+    if [ "$last_fp" = "$fp" ] && [ $((now - last_at)) -lt "${FM_OFFICE_FEED_REFRESH_SECS:-21600}" ]; then continue; fi
+    try=$(cat "$STATE/$FEED_CHECK_ID.$id.try" 2>/dev/null || echo 0)
+    case "$try" in ''|*[!0-9]*) try=0 ;; esac
+    [ $((now - try)) -ge "${FM_OFFICE_FEED_RETRY_SECS:-120}" ] || continue
+    left=$(( deadline - $(date +%s) ))
+    [ "$left" -ge 1 ] || break
+    printf '%s\n' "$now" > "$STATE/$FEED_CHECK_ID.$id.try" 2>/dev/null || continue
+    bounded "$left" "$SCRIPT_DIR/fm-office.sh" feed "$id" >/dev/null 2>&1 || true
+  done <<EOF
+$(registry_lines)
+EOF
+  return 0
+}
+
+cmd_arm_feed() {
+  local home want device tmp
+  [ ! -e "$FM_HOME/.fm-secondmate-home" ] || publish_die "only the main home arms the office feed, and $FM_HOME is a second-mate home"
+  home=$(CDPATH='' cd -- "$FM_HOME" 2>/dev/null && pwd -P) || publish_die "cannot resolve FM_HOME $FM_HOME"
+  want=$(printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    '# Auto-generated by fm-office.sh arm-feed - keeps remote office feeds current; silent.' \
+    "export FM_HOME=$(printf '%q' "$home")" \
+    "exec $(printf '%q' "$SCRIPT_DIR/fm-office.sh") feed-sweep")
+  mkdir -p "$STATE" || publish_die "cannot create $STATE"
+  [ -d "$STATE" ] && [ ! -L "$STATE" ] || publish_die "state directory is unavailable"
+  device=$(fm_pr_file_device "$STATE") || publish_die "state directory is unavailable"
+  fm_pr_regular_destination_on_device_or_absent "$FEED_CHECK" "$device" || publish_die "refusing to replace $FEED_CHECK"
+  tmp=$(umask 077; mktemp "$STATE/.fm-office-check.XXXXXX") || publish_die "cannot write $FEED_CHECK"
+  if ! printf '%s\n' "$want" > "$tmp" || ! chmod 0700 "$tmp" || ! mv -f -- "$tmp" "$FEED_CHECK"; then
+    rm -f -- "$tmp"
+    publish_die "cannot write $FEED_CHECK"
+  fi
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-check-register.sh" "$FEED_CHECK_ID" >/dev/null \
+    || publish_die "could not register $FEED_CHECK"
+}
+
 cmd_publish() {
-  local id=${1:-} home lock report status reason rc=0
+  local id=${1:-} home lock report status reason rc=0 fp
   [ "$#" -eq 1 ] && [[ "$id" =~ ^[a-z0-9-]+$ ]] || publish_die "usage: fm-office.sh publish <id>"
   [ ! -e "$FM_HOME/.fm-secondmate-home" ] && [ ! -L "$FM_HOME/.fm-secondmate-home" ] \
     || publish_die "only the main home publishes office authority, and $FM_HOME is a second-mate home"
   secondmate_registry_line_for_id "$DATA/secondmates.md" "$id" \
     || publish_die "$id is not a registered second mate in $DATA/secondmates.md"
-  [ "$SECONDMATE_REGISTRY_REMOTE" != 1 ] \
-    || publish_die "second mate $id is on a remote route; bin/fm-config-push.sh publishes its record with the rest of its inherited config"
+  if [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
+    cmd_arm_feed
+    fp=$(feed_fingerprint_of "$id")
+    if remote_push "$id" "office-authority office-feed"; then
+      [ -z "$fp" ] || record_feed_push "$id" "$fp"
+      printf 'office %s: %s\n' "$id" "$PUSH_STATUS"
+      return 0
+    fi
+    printf 'office %s: error - %s\n' "$id" "$PUSH_REASON"
+    return 1
+  fi
   home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
   home=$(CDPATH='' cd -- "$home" 2>/dev/null && pwd -P) || publish_die "second mate $id's home $SECONDMATE_REGISTRY_HOME is missing"
   [ -f "$home/.fm-secondmate-home" ] && [ ! -L "$home/.fm-secondmate-home" ] \
@@ -437,16 +598,26 @@ source_check_id() {
   printf 'office-%s\n' "${1//:/-}"
 }
 
-# office_context: sets OFFICE_ID, OFFICE_PARENT (the local parent home) and OFFICE_LINE
-# (this office's line in the parent's data/offices.md); returns 1 when any is unavailable.
+# office_context: sets OFFICE_ID, OFFICE_PARENT (the local parent home, empty on a remote route),
+# OFFICE_FEED (the pushed copy's path on a remote route) and OFFICE_LINE (this office's line in the
+# parent's data/offices.md); returns 1 when any is unavailable.
 office_context() {
   local line
   OFFICE_ID=$(cat "$FM_HOME/.fm-office" 2>/dev/null) || return 1
   [[ "$OFFICE_ID" =~ ^[a-z0-9-]+$ ]] || return 1
   fm_secondmate_parent_record_parse "$FM_HOME/.fm-secondmate-parent" || return 1
+  OFFICE_LINE=
+  OFFICE_FEED=
+  if [ "$FM_SECONDMATE_PARENT_ROUTE" = remote ]; then
+    # A home on another host reads the copy its parent pushed (bin/fm-office-feed-lib.sh), or nothing.
+    fm_office_feed_load "$CONFIG/office-feed" "$OFFICE_ID" "$(now_epoch)" || return 1
+    OFFICE_PARENT=
+    OFFICE_FEED="$CONFIG/office-feed"
+    OFFICE_LINE=$FM_OFFICE_FEED_LINE
+    return 0
+  fi
   [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
   OFFICE_PARENT=$FM_SECONDMATE_PARENT_HOME
-  OFFICE_LINE=
   while IFS= read -r line; do
     [[ "$line" =~ $REGISTRY_LINE_RE ]] || continue
     [ "${BASH_REMATCH[1]}" = "$OFFICE_ID" ] && { OFFICE_LINE=$line; break; }
@@ -511,6 +682,15 @@ seen_once() {
 # lane_digest <officer>: sets LANE_KEY, LANE_N and LANE_PATH (an absolute path) from the parent's digest file.
 lane_digest() {
   local digest
+  if [ -n "$OFFICE_FEED" ]; then
+    fm_office_feed_lane "$OFFICE_FEED" "$1" "$DATA/office/feed" || return 1
+    digest=$FM_OFFICE_FEED_DIGEST
+    [[ "$digest" =~ ^DIGEST\ ([0-9T-]{10,13})\ ([0-9]+)\ (.+)$ ]] || return 1
+    LANE_KEY=${BASH_REMATCH[1]}
+    LANE_N=${BASH_REMATCH[2]}
+    LANE_PATH="$DATA/office/feed/$1.md"
+    return 0
+  fi
   digest=$(cat "$OFFICE_PARENT/data/officers/$1/digest" 2>/dev/null) || return 1
   [[ "$digest" =~ ^DIGEST\ ([0-9T-]{10,13})\ ([0-9]+)\ (.+)$ ]] || return 1
   LANE_KEY=${BASH_REMATCH[1]}
@@ -761,6 +941,9 @@ case "${1:-}" in
   list) cmd_list ;;
   ensure) cmd_ensure ;;
   publish) shift; cmd_publish "$@" ;;
+  feed) shift; cmd_feed "$@" ;;
+  feed-sweep) [ "$#" -eq 1 ] || { usage >&2; exit 2; }; cmd_feed_sweep ;;
+  arm-feed) [ "$#" -eq 1 ] || { usage >&2; exit 2; }; cmd_arm_feed ;;
   status) cmd_status ;;
   arm-status) cmd_arm_status ;;
   disarm-status) cmd_disarm_status ;;

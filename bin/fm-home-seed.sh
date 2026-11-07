@@ -57,6 +57,12 @@
 #       authority record (bin/fm-office.sh publish) and launching the office stay
 #       separate steps. A seed without --office refuses a home that carries
 #       .fm-office, so re-seeding never drops an office's charter heading.
+#   fm-home-seed.sh office-stage <id> <office-home> <stage-dir> <project>...
+#       The office half of a seed for a home on another host, which
+#       bin/fm-remote-home-seed.sh calls: the same office checks as above, then
+#       the same project tokens, admission copies and .fm-office marker written
+#       into <stage-dir> (which holds data/projects.md) instead of a home.
+#       <office-home> only names the path the classifier copy must read.
 #   fm-home-seed.sh validate
 #       Refuse records that operational consumers cannot parse, unavailable or
 #       unsafe registry files when present, non-absolute or unresolvable homes,
@@ -89,6 +95,7 @@ SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 
 usage() {
   echo "usage: fm-home-seed.sh <id> <home|-> {<project>...|--no-projects} [--office <id>]" >&2
+  echo "       fm-home-seed.sh office-stage <id> <office-home> <stage-dir> <project>..." >&2
   echo "       fm-home-seed.sh validate" >&2
 }
 
@@ -1203,6 +1210,13 @@ seed_home() {
   done
 
   cp "$SEED_PARENT_BRIEF" "$home/data/charter.md"
+  # An empty structured backlog, so the fleet inventory finds the file in every
+  # new home; an existing one is never touched (bin/fm-remote-home-provision.sh
+  # writes the same bytes on a remote home).
+  if [ ! -e "$home/data/backlog.md" ] && [ ! -L "$home/data/backlog.md" ]; then
+    seed_office_backup "$home/data/backlog.md" || return 1
+    printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md" || return 1
+  fi
   if [ "$office_set" = 1 ]; then
     seed_office_files "$id" "$home" || { echo "error: could not write office $id's files into $home" >&2; return 1; }
   fi
@@ -1237,10 +1251,34 @@ seed_home() {
   fi
 }
 
+# office_stage <id> <office-home> <stage-dir> <project>...: the office half of a
+# seed for a home on another host (bin/fm-remote-home-seed.sh). It runs the same
+# office checks as a local seed, with <office-home> only a path to name in the
+# classifier check, then applies the same files to <stage-dir>, which must hold
+# data/projects.md with one line for each project: the project tokens, the
+# admission copies and the .fm-office marker.
+office_stage() {
+  local id=$1 home=$2 stage=$3
+  shift 3
+  [ -f "$stage/data/projects.md" ] || { echo "error: $stage/data/projects.md is missing" >&2; return 1; }
+  validate_office_line "$id" "$@" || return 1
+  validate_office_admission "$home" || return 1
+  SEED_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-home-seed.XXXXXX") || return 1
+  SEED_OFFICE_TARGETS="$SEED_BACKUP_DIR/office-targets"
+  : > "$SEED_OFFICE_TARGETS"
+  seed_office_files "$id" "$stage" || { rm -rf -- "$SEED_BACKUP_DIR"; return 1; }
+  rm -rf -- "$SEED_BACKUP_DIR"
+}
+
 case "${1:-}" in
   validate)
     [ $# -eq 1 ] || { usage; exit 1; }
     validate_registry
+    ;;
+  office-stage)
+    [ $# -ge 5 ] || { usage; exit 1; }
+    shift
+    office_stage "$@"
     ;;
   -h|--help|'')
     usage

@@ -24,6 +24,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 # shellcheck source=bin/fm-config-inherit-lib.sh
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
+# shellcheck source=bin/fm-office-feed-lib.sh
+. "$SCRIPT_DIR/fm-office-feed-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 sha256_file() {
@@ -40,6 +42,9 @@ case "$GENERATION" in ''|*[!0-9]*) die "generation must be a positive integer" ;
 [ "${#GENERATION}" -le 18 ] && [ "$GENERATION" -ge 1 ] || die "generation is outside the supported range"
 REMOTE=$(secondmate_registry_field "$DATA/secondmates.md" "$ID" remote 2>/dev/null || true)
 [ "$REMOTE" = 1 ] || die "secondmate $ID is not a remote route"
+REMOTE_HOME=$(secondmate_registry_field "$DATA/secondmates.md" "$ID" home 2>/dev/null || true)
+# FM_OFFICE_NOW pins the office feed's clock for tests, as in bin/fm-office.sh.
+case "${FM_OFFICE_NOW:-}" in ''|*[!0-9]*) FEED_NOW=$(date +%s) ;; *) FEED_NOW=$FM_OFFICE_NOW ;; esac
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-remote-inherit-push.XXXXXX") || die "cannot create inheritance staging directory"
 trap 'rm -rf -- "$TMP"' EXIT
 trap 'exit 143' TERM
@@ -77,7 +82,17 @@ while IFS= read -r rel; do
       # A remote home cannot be read from here, so the record is published
       # from data/offices.md alone (bin/fm-office-authority-lib.sh).
       source="$TMP/office-authority.resolved"
-      if ! fm_office_inherit_payload "$CONFIG" "$DATA" "$ID" "" "$source"; then
+      if ! fm_office_inherit_payload "$CONFIG" "$DATA" "$ID" "" "$source" "$REMOTE_HOME"; then
+        printf 'error: %s: %s\n' "$rel" "$FM_OFFICE_ERROR" >&2
+        FAILED=1
+        rm -f -- "$source"
+      fi
+      ;;
+    config/office-feed)
+      # The remote office's copy of its office line and lane digests
+      # (bin/fm-office-feed-lib.sh); an absence for any other destination.
+      source="$TMP/office-feed.resolved"
+      if ! fm_office_feed_payload "$FM_HOME" "$DATA" "$ID" "$REMOTE_HOME" "$source" "$FEED_NOW"; then
         printf 'error: %s: %s\n' "$rel" "$FM_OFFICE_ERROR" >&2
         FAILED=1
         rm -f -- "$source"

@@ -3063,6 +3063,14 @@ test_office_seed_end_to_end() {
   assert_grep '# Office authority' "$w/nav/data/charter.md" "seeded charter lacks the office authority heading"
   assert_grep '- alpha [direct-PR +yolo merger=slarti] - alpha project' "$w/nav/data/projects.md" "merge-via project lacks merger="
   assert_present "$w/nav/state/office-tick.check.sh" "seed did not register the office's tick source"
+  assert_equals "## In flight
+
+## Queued
+
+## Done" "$(cat "$w/nav/data/backlog.md")" "a fresh seed must leave an empty structured backlog"
+  if command -v tasks-axi >/dev/null 2>&1; then
+    assert_contains "$(FM_HOME="$w/nav" "$ROOT/bin/fm-tasks-axi.sh" list 2>&1)" "count: 0" "the empty backlog must read as empty"
+  fi
   assert_grep '- nav - ' "$w/main/data/secondmates.md" "office not registered as a second mate"
   out=$(bash -c '. "$1"; rc=0; fm_office_detect "$2" "$2/data" || rc=$?; echo "$rc"' _ "$ROOT/bin/fm-office-authority-lib.sh" "$w/nav")
   assert_equals 0 "$out" "a seeded office is detected as an office"
@@ -3086,6 +3094,11 @@ test_office_seed_end_to_end() {
   FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha --office nav >/dev/null \
     || fail "re-seeding an existing office was refused"
   assert_equals 1 "$(grep -c 'merger=slarti' "$w/nav/data/projects.md")" "re-seed duplicated the merger token"
+  printf '## In flight\n- [ ] kept - an existing item (repo: alpha) (kind: ship) (since 2026-11-07)\n\n## Queued\n\n## Done\n' > "$w/nav/data/backlog.md"
+  cp "$w/nav/data/backlog.md" "$w/backlog.before"
+  FM_HOME="$w/main" FM_OFFICE_HOST=slartibartfast "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha --office nav >/dev/null \
+    || fail "re-seeding an office with a backlog was refused"
+  cmp -s "$w/backlog.before" "$w/nav/data/backlog.md" || fail "a re-seed must keep an existing backlog byte for byte"
   if FM_HOME="$w/main" FM_SECONDMATE_CHARTER='plain' "$ROOT/bin/fm-home-seed.sh" nav "$w/nav" alpha >/dev/null 2>&1; then
     fail "a plain re-seed of an office home was accepted"
   fi

@@ -295,8 +295,9 @@ office_read_problem() {
   esac
   secondmate_registry_line_for_id "$DATA/secondmates.md" "$c" \
     || { printf 'officer %s: %s office %s is not a registered second mate in data/secondmates.md\n' "$id" "$field" "$c"; return; }
-  [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] \
-    && { printf 'officer %s: %s office %s is remote, and a remote office cannot read this digest\n' "$id" "$field" "$c"; return; }
+  # A remote office reads the copy of this digest that bin/fm-office.sh feed-sweep pushes to it; its own
+  # home's state is not readable from here, so its registered check cannot be tested.
+  [ "$SECONDMATE_REGISTRY_REMOTE" != 1 ] || return 0
   fm_custom_check_registered "${SECONDMATE_REGISTRY_HOME/#\~/$HOME}/state" "$check" \
     || { printf 'officer %s: %s office %s has no registered %s check (run bin/fm-office.sh register-sources in its home)\n' "$id" "$field" "$c" "$check"; return; }
 }
@@ -661,6 +662,8 @@ action_run() {
   n=$(printf '%s\n' "$digest" | awk '{print $3}')
   printf 'DIGEST %s %s data/officers/%s/%s.md\n' "$date" "$n" "$id" "$date" > "$OFFICER_LANE/digest"
   run_log "$date" ok "$n"
+  # A remote office reads a pushed copy of this digest (bin/fm-office.sh feed-sweep); send it now, not at the next sweep.
+  "$SCRIPT_DIR/fm-office.sh" feed-sweep >/dev/null 2>&1 || true
   printf '%s\n' "$out" | grep -E '^(Linear coverage:|Coverage gap:)' || true
   cat "$OFFICER_LANE/digest"
 }

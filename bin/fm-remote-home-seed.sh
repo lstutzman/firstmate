@@ -2,7 +2,7 @@
 # Register and provision a whole secondmate home on an SSH-reachable host.
 #
 # Usage:
-#   fm-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<project>[=<origin-url>]...|--no-projects}
+#   fm-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<project>[=<origin-url>]...|--no-projects} [--office <id>]
 #
 # The SSH alias must already reach a host whose non-interactive PATH exposes the
 # fixed fm-remote-entrypoint.sh from <remote-root>. The command records the
@@ -20,6 +20,18 @@
 # unregistered or local-only project, or one whose registry entry
 # bin/fm-project-mode.sh refuses, is refused rather than provisioned.
 # Seeding writes nothing under projects/ and needs no fleet sync first.
+#
+# --office <id> (the id must equal <id>) seeds the home as an office, as
+# bin/fm-home-seed.sh --office does for a local one, and so the host must be the
+# one data/offices.md names in runs-on. The office checks, the project tokens,
+# the admission copies and the .fm-office marker come from that script's
+# office-stage command, so the rules stay in one place, and travel in the same
+# manifest; the charter must carry the "# Office authority" heading, which a
+# missing brief is scaffolded with. Once the home exists the seed runs
+# bin/fm-office.sh publish <id> (the authority record, the office-feed copy of
+# its line and lane digests, and the feed check in this home), then arm-status
+# and register-sources inside the remote home. A failure there leaves a valid
+# office home whose checks are missing: the seed exits 1 naming the repair.
 #
 # Known provisioning failure rolls the registry back. SSH status 255 preserves
 # the route and any newly scaffolded brief because completion is unknown and a same-route rerun converges.
@@ -46,7 +58,7 @@ MAX_MANIFEST_BYTES=1048576
 . "$SCRIPT_DIR/fm-project-origin-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 encode() { base64 | tr -d '\n'; }
 safe_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac; }
 
@@ -81,10 +93,19 @@ case "$REMOTE_HOME/" in "$REMOTE_ROOT/"*) die "remote home must not be inside th
 case "$REMOTE_ROOT/" in "$REMOTE_HOME/"*) die "remote code root must not be inside the remote home" ;; esac
 
 NO_PROJECTS=0
+OFFICE=
+WANT_OFFICE=0
 PROJECT_NAMES=()
 PROJECT_ORIGINS=()
 for arg in "$@"; do
-  if [ "$arg" = --no-projects ]; then
+  if [ "$WANT_OFFICE" = 1 ]; then
+    OFFICE=$arg
+    WANT_OFFICE=0
+  elif [ "$arg" = --office ]; then
+    WANT_OFFICE=1
+  elif [ "${arg#--office=}" != "$arg" ]; then
+    OFFICE=${arg#--office=}
+  elif [ "$arg" = --no-projects ]; then
     NO_PROJECTS=1
   else
     name=${arg%%=*}
@@ -99,6 +120,8 @@ for arg in "$@"; do
     PROJECT_ORIGINS+=("$origin")
   fi
 done
+[ "$WANT_OFFICE" = 0 ] || die "--office requires the office id"
+[ -z "$OFFICE" ] || [ "$OFFICE" = "$ID" ] || die "--office must name the secondmate being seeded: an office id equals its secondmate id (got '$OFFICE' for '$ID')"
 if [ "$NO_PROJECTS" -eq 1 ]; then
   [ "${#PROJECT_NAMES[@]}" -eq 0 ] || die "--no-projects cannot be combined with project names"
 else
@@ -127,13 +150,19 @@ mkdir -p "$DATA"
 BRIEF="$DATA/$ID/brief.md"
 BRIEF_CREATED=0
 if [ ! -f "$BRIEF" ]; then
-  [ -n "${FM_SECONDMATE_CHARTER:-}" ] || die "no filled charter at $BRIEF; set FM_SECONDMATE_CHARTER or scaffold one first"
+  [ -n "${FM_SECONDMATE_CHARTER:-}" ] || [ -n "$OFFICE" ] || die "no filled charter at $BRIEF; set FM_SECONDMATE_CHARTER or scaffold one first"
+  OFFICE_ARGS=()
+  [ -z "$OFFICE" ] || OFFICE_ARGS=(--office "$ID")
   if [ "$NO_PROJECTS" -eq 1 ]; then
-    "$SCRIPT_DIR/fm-brief.sh" "$ID" --secondmate --no-projects >/dev/null
+    "$SCRIPT_DIR/fm-brief.sh" "$ID" --secondmate ${OFFICE_ARGS[@]+"${OFFICE_ARGS[@]}"} --no-projects >/dev/null
   else
-    "$SCRIPT_DIR/fm-brief.sh" "$ID" --secondmate "${PROJECT_NAMES[@]}" >/dev/null
+    "$SCRIPT_DIR/fm-brief.sh" "$ID" --secondmate ${OFFICE_ARGS[@]+"${OFFICE_ARGS[@]}"} "${PROJECT_NAMES[@]}" >/dev/null
   fi
   BRIEF_CREATED=1
+fi
+if [ -n "$OFFICE" ] && ! grep -q '^# Office authority' "$BRIEF"; then
+  [ "$BRIEF_CREATED" -eq 0 ] || rm -f -- "$BRIEF"
+  die "charter brief at $BRIEF has no \"# Office authority\" heading; re-scaffold it with fm-brief.sh $ID --secondmate --office $ID before seeding an office"
 fi
 if grep -F '{TASK}' "$BRIEF" >/dev/null 2>&1; then
   [ "$BRIEF_CREATED" -eq 0 ] || rm -f -- "$BRIEF"
@@ -143,6 +172,7 @@ SUMMARY=$(registry_summary_for_brief "$BRIEF")
 SCOPE=$(registry_scope_for_brief "$BRIEF")
 [ -n "$SUMMARY" ] && [ -n "$SCOPE" ] || die "charter summary and routing scope must be nonempty"
 
+restore_registry_and_brief_early() { [ "$BRIEF_CREATED" -eq 0 ] || rm -f -- "$BRIEF"; }
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-remote-home-seed.XXXXXX") || die "cannot create seed staging directory"
 REG_EXISTED=0
 [ -f "$REG" ] && { cp "$REG" "$TMP/registry.before"; REG_EXISTED=1; }
@@ -173,6 +203,9 @@ done < "$BRIEF" > "$TMP/charter.remote"
 PROJECTS_CSV=
 : > "$TMP/project.records"
 PROJECT_INDEX=0
+mkdir -p "$TMP/office-stage/data"
+: > "$TMP/office-stage/data/projects.md"
+: > "$TMP/modes"
 for project in "${PROJECT_NAMES[@]+"${PROJECT_NAMES[@]}"}"; do
   ORIGIN=${PROJECT_ORIGINS[$PROJECT_INDEX]}
   PROJECT_INDEX=$((PROJECT_INDEX + 1))
@@ -198,13 +231,37 @@ EOF
     || die "project $project origin is not an accepted clone URL: $ORIGIN"
   REGISTRY_LINE=$(awk -v p="$project" '$1 == "-" && $2 == p { print; exit }' "$DATA/projects.md" 2>/dev/null || true)
   [ -n "$REGISTRY_LINE" ] || die "project $project has no registry record"
-  NAME_B64=$(printf '%s' "$project" | encode)
-  ORIGIN_B64=$(printf '%s' "$ORIGIN" | encode)
-  PROJECT_REG_B64=$(printf '%s' "$REGISTRY_LINE" | encode)
-  MODE_B64=$(printf '%s' "$MODE" | encode)
-  printf 'project=%s|%s|%s|%s\n' "$NAME_B64" "$ORIGIN_B64" "$PROJECT_REG_B64" "$MODE_B64" >> "$TMP/project.records"
+  printf '%s\n' "$REGISTRY_LINE" >> "$TMP/office-stage/data/projects.md"
+  printf '%s %s\n' "$project" "$MODE" >> "$TMP/modes"
+  printf '%s\n' "$ORIGIN" > "$TMP/origin.$((PROJECT_INDEX - 1))"
   PROJECTS_CSV="${PROJECTS_CSV}${PROJECTS_CSV:+, }$project"
 done
+
+# An office's project tokens, admission copies and marker come from the same code
+# a local seed runs; the staged registry lines then carry its tokens.
+OFFICE_RECORDS=
+if [ -n "$OFFICE" ]; then
+  OFFICE_STAGE_OUT=$(FM_HOME="$FM_HOME" FM_OFFICE_HOST="$HOST" "$SCRIPT_DIR/fm-home-seed.sh" office-stage \
+    "$ID" "$REMOTE_HOME" "$TMP/office-stage" ${PROJECT_NAMES[@]+"${PROJECT_NAMES[@]}"} 2>&1) \
+    || { printf '%s\n' "$OFFICE_STAGE_OUT" >&2; restore_registry_and_brief_early; die "office $ID cannot be seeded on $HOST (see above)"; }
+  for admission in "$TMP"/office-stage/config/admission/*; do
+    [ -f "$admission" ] || continue
+    case "$admission" in *.rules) continue ;; esac
+    name=${admission##*/}
+    rules=
+    [ ! -f "$admission.rules" ] || rules=$(encode < "$admission.rules")
+    OFFICE_RECORDS="${OFFICE_RECORDS}admission=$(printf '%s' "$name" | encode)|$(encode < "$admission")|$rules
+"
+  done
+fi
+PROJECT_INDEX=0
+while read -r project MODE; do
+  REGISTRY_LINE=$(awk -v p="$project" '$1 == "-" && $2 == p { print; exit }' "$TMP/office-stage/data/projects.md")
+  ORIGIN=$(cat "$TMP/origin.$PROJECT_INDEX")
+  PROJECT_INDEX=$((PROJECT_INDEX + 1))
+  printf 'project=%s|%s|%s|%s\n' "$(printf '%s' "$project" | encode)" "$(printf '%s' "$ORIGIN" | encode)" \
+    "$(printf '%s' "$REGISTRY_LINE" | encode)" "$(printf '%s' "$MODE" | encode)" >> "$TMP/project.records"
+done < "$TMP/modes"
 
 {
   printf 'schema=fm-remote-home-provision.v1\n'
@@ -218,7 +275,9 @@ done
   # nothing on the remote filesystem.
   printf 'parent_host_b64=%s\n' "$(printf '%s' "$HOST" | encode)"
   printf 'project_count=%s\n' "${#PROJECT_NAMES[@]}"
+  [ -z "$OFFICE" ] || printf 'office_b64=%s\n' "$(printf '%s' "$OFFICE" | encode)"
   cat "$TMP/project.records"
+  printf '%s' "$OFFICE_RECORDS"
 } > "$TMP/manifest"
 MANIFEST_BYTES=$(LC_ALL=C wc -c < "$TMP/manifest" | tr -d ' ')
 [ "$MANIFEST_BYTES" -le "$MAX_MANIFEST_BYTES" ] \
@@ -274,3 +333,16 @@ if [ "$PROVISION_RC" -ne 0 ]; then
 fi
 printf '%s\n' "$PROVISION_OUT"
 printf 'home=%s:%s\n' "$HOST" "$REMOTE_HOME"
+if [ -n "$OFFICE" ]; then
+  # The home is seeded and registered; each step below is repeatable, so a failure names the repair.
+  office_repair() {
+    printf 'error: office %s is seeded on %s, but %s; run: %s\n' "$ID" "$HOST" "$1" "$2" >&2
+    exit 1
+  }
+  FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-office.sh" publish "$ID" \
+    || office_repair "its authority record and feed were not published" "FM_HOME=$FM_HOME $SCRIPT_DIR/fm-office.sh publish $ID"
+  "$SCRIPT_DIR/fm-on.sh" "$ID" fm-office.sh arm-status \
+    || office_repair "its status check did not register" "FM_HOME=$FM_HOME $SCRIPT_DIR/fm-on.sh $ID fm-office.sh arm-status"
+  "$SCRIPT_DIR/fm-on.sh" "$ID" fm-office.sh register-sources \
+    || office_repair "its source checks did not register" "FM_HOME=$FM_HOME $SCRIPT_DIR/fm-on.sh $ID fm-office.sh register-sources"
+fi
