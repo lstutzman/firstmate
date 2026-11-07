@@ -102,8 +102,11 @@ Removing or upgrading the shadowing client is the durable fix.
 
 ## Watching and task containers
 
-The ordinary topology puts one task tab per endpoint in the exact workspace of the Firstmate or secondmate that launches it.
-When the launcher has no Herdr workspace to inherit, the adapter maintains one durable home-labeled workspace instead.
+Every agent session runs alone in its own workspace, never as a tab or pane of another workspace.
+A crewmate or scout therefore always gets a workspace of its own, whatever the home's presentation setting (fleet rules section 1: the captain's standing rule that all sessions live only in a single workspace each).
+A secondmate or office is the one session its own home workspace holds.
+
+A crewmate's or scout's own workspace is labeled `<home label> workers`, because the home label itself must identify exactly one workspace.
 
 | Home | Workspace label |
 | --- | --- |
@@ -136,10 +139,9 @@ Herdr 0.7.5 exports `HERDR_ENV`, `HERDR_PANE_ID`, `HERDR_SESSION`, `HERDR_SOCKET
 A Firstmate or secondmate agent's own commands inherit them.
 Older injection shapes are unverified, so a claimed launcher pane without the injected socket identity cannot be trusted.
 
-With presentation spaces disabled, a crewmate or scout is created in the exact workspace that identity currently resolves to.
-That workspace is read live from Herdr rather than from the injected snapshot, so the worker always appears beside the agent that launched it.
+The identity is validated before every crewmate or scout spawn, but it never selects the worker's workspace: the worker always gets a fresh workspace of its own, so it appears next to the launcher's workspace, never inside it.
 Duplicate labels elsewhere in the session are irrelevant, and the globally focused workspace is never the target.
-A `--secondmate` launch is the deliberate exception: it stands up that secondmate home's own workspace instead of joining the launcher's.
+A `--secondmate` launch stands up that secondmate home's own workspace.
 
 ### Unresolvable launcher identity
 
@@ -155,12 +157,9 @@ That covers:
 
 ### Firstmate running outside Herdr
 
-Firstmate running outside Herdr entirely has no launcher workspace to inherit, so its workers use this home's own labeled workspace, created on first use.
-That path needs the home label to identify exactly one workspace.
-Two workspaces sharing it are an unresolvable placement and refuse rather than adopting either.
+Firstmate running outside Herdr entirely has no launcher identity to validate, and its workers get a workspace of their own exactly like any other.
 
-Avoid naming a personal workspace `firstmate`, `2ndmate-<id>`, or an office role name such as `Quartermaster` or `Navigator` for that reason.
-Also avoid it because the adapter cannot distinguish that label collision from its own container.
+Avoid naming a personal workspace `firstmate`, `2ndmate-<id>`, or an office role name such as `Quartermaster` or `Navigator`, because the adapter cannot distinguish that label collision from its own container.
 
 An office workspace still labeled `2ndmate-<id>`, and its `2ndmate-<id> workers` workspace, is renamed in place to the role label the next time that office's workspace is looked up, so a live office keeps its workspace and workers.
 The rename happens only when exactly one workspace holds the old label and none holds the new one.
@@ -643,7 +642,7 @@ To repeat the check on a live session, turn the feature on, wait one watcher pol
 
 Every machine keeps exactly one Herdr workspace labelled `Terminal`: a bare shell at the home directory with one tab and one pane, which belongs to the captain and never hosts an agent.
 Every agent runs alone in its own workspace, never in an extra tab or pane of another workspace.
-Until `fm-spawn` changes that (tracked separately), the [ordinary topology](#watching-and-task-containers) still places each task tab in the launcher's workspace, so the check reports those agents meanwhile.
+`fm-spawn` gives every crewmate and scout, including a relaunch, a workspace of its own (see [task containers](#watching-and-task-containers)), so the check reports only sessions that were placed by hand or before that rule.
 `bin/fm-herdr-terminal-check.sh` enforces both at locked session start in every Herdr home, primary or secondmate, in the BOOTSTRAP section of the digest; a healthy machine prints nothing.
 
 - A label matches `Terminal` with or without the leading `[n] ` prefix that some Herdr versions add (`[5] Terminal`).
@@ -1039,7 +1038,6 @@ Tests use thin compatibility wrappers in `tests/herdr-test-safety.sh` and never 
 - Presentation ordering needs protocol 16 and Python and is best-effort only.
 - Project groups need protocol 22 and Python, are tested offline, and were checked live once against Herdr 0.9.5 on protocol 22.
 - Mutable labels can collide; they are never placement or destructive authority.
-- A Firstmate outside Herdr cannot resolve a launcher workspace, so a colliding home label refuses new spawns until the collision is cleared.
 - Ghost and placeholder recognition uses ANSI de-emphasis when available; an unstyled glyph row carrying trailing non-idle text fails safely to `unknown`.
 - Supervisor transport support is separate from task-spawn support; see [away-mode supervisor configuration](configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target).
 

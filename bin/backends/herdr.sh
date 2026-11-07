@@ -2195,16 +2195,17 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 # <launcher-relationship> (3rd arg, default "launcher-home") says whether the
 # container being ensured belongs to the SAME firstmate home as the process
 # calling this:
-#   launcher-home - a crewmate or scout for the caller's own home. When the
-#                   caller is itself running in a herdr pane, the worker MUST
-#                   land in that exact workspace
-#                   (fm_backend_herdr_launcher_identity), never in whichever
-#                   same-labeled workspace happens to sort first.
+#   launcher-home - the caller's own home workspace, adopted through the
+#                   launcher's exact pane identity
+#                   (fm_backend_herdr_launcher_identity). No spawn path asks
+#                   for it for a crewmate or scout any more, because a
+#                   workspace holds one session only (fleet rules section 1);
+#                   it stays only as an adapter primitive.
 #   other-home    - a --secondmate launch, which stands up a DIFFERENT home's
 #                   own per-home workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
-#   flat-workers  - a crewmate or scout from a presentation-enabled home whose
-#                   projection fell back flat. It always gets a fresh
+#   flat-workers  - every crewmate or scout that is not projected, whatever
+#                   the home's presentation setting. It always gets a fresh
 #                   "<home label> workers" workspace of its own, never an
 #                   existing one and never the launcher's own workspace,
 #                   because a workspace holds one session only. A claimed
@@ -2257,6 +2258,17 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$cwd" --label "$label" --no-focus 2>/dev/null) || return 1
   wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
   [ -n "$wsid" ] || return 1
+  FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
+  if [ -z "$FM_BACKEND_HERDR_WS_SEEDED_TAB_ID" ]; then
+    # Without the seeded tab id nothing can tell the seeded tab from a session's
+    # own, so the exclusive-workspace guard could not tell a fresh workspace from
+    # an occupied one. This call created the workspace, so close it (through its
+    # root pane, focus-safe) rather than leave it empty behind the refusal.
+    fm_backend_herdr_projection_close_pane_focus_preserving "$session" \
+      "$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)" >/dev/null 2>&1 || true
+    echo "error: herdr workspace create in session '$session' returned no seeded tab id; the new workspace was closed" >&2
+    return 1
+  fi
   FM_BACKEND_HERDR_WS_ID=$wsid
   # Herdr seeds a new workspace with one auto-created default tab firstmate
   # never uses. It is NOT pruned here: at this instant it is the workspace's
@@ -2265,7 +2277,6 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   # workspace we just created. fm_backend_herdr_create_task prunes it instead,
   # once the first real task tab exists alongside it, and only ever targets
   # this exact captured tab_id.
-  FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
   printf '%s' "$wsid"
 }
 
