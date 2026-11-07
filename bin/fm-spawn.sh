@@ -5317,7 +5317,7 @@ else
           echo "warning: herdr presentation could not ensure its session server; using the ordinary flat layout without projection" >&2
         elif [ "${FM_BACKEND_HERDR_PRESENTATION_PREFERENCE:-default}" = default ] &&
           ! fm_backend_herdr_presentation_default_supported "$STATE" "$HERDR_SES"; then
-          HERDR_LAUNCHER_RELATIONSHIP=launcher-home
+          :
         elif spawn_herdr_presentation_order_lock_acquire "$HERDR_SES"; then
           fm_backend_herdr_workspace_migrate_legacy "$HERDR_SES"
           # The projected child is placed and bound UNDER this launcher's exact
@@ -5410,6 +5410,16 @@ else
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
+      # A respawn over this task's own earlier endpoint retires it once the
+      # new tab exists, because it sits in another workspace that the label
+      # scan above never sees. Only the exact pane this task's record names is
+      # a candidate, and only a provable agent-free husk is closed.
+      if [ "$HERDR_LAUNCHER_RELATIONSHIP" = flat-workers ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
+        [ "$(fm_backend_of_meta "$STATE/$ID.meta")" = herdr ]; then
+        fm_backend_herdr_retire_recorded_husk \
+          "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_session || true)" \
+          "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_pane_id || true)" "$HERDR_PANE_ID"
+      fi
     fi
     if [ -z "$HERDR_TAB_ID" ] || [ -z "$HERDR_PANE_ID" ]; then
       echo "error: herdr did not return a tab/pane id for $W" >&2

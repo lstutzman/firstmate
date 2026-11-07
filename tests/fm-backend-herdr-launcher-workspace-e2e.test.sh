@@ -155,6 +155,18 @@ record_worktree() {  # <meta>
   return 0
 }
 
+# return_worktrees <meta>: hand every worktree a finished case recorded back
+# early, so the later cases still find a free one in the pool.
+return_worktrees() {  # <meta>
+  local wt
+  while IFS= read -r wt; do
+    [ -n "$wt" ] && treehouse return --force "$wt" >/dev/null 2>&1
+  done <<EOF
+$(grep '^worktree=' "$1" 2>/dev/null | cut -d= -f2-)
+EOF
+  return 0
+}
+
 LAB_SOCKET=$(lab session list --json 2>/dev/null \
   | jq -r --arg s "$HERDR_LAB_SESSION" '.sessions[]? | select(.name == $s) | .socket_path' 2>/dev/null)
 [ -n "$LAB_SOCKET" ] || fail "could not read the isolated lab session's socket path"
@@ -202,7 +214,7 @@ Verify the worker is placed in the correct workspace.
 EOF
 }
 
-for id in uniqA uniqB dupC dupD staleF smE presU presD presF presG presH presI presJ; do
+for id in uniqA uniqB dupC dupD staleF smE presU presD presF presG presH presI presJ huskK huskL huskM; do
   mkdir -p "$PRIMARY_HOME/data/$id" "$SM_HOME/data/$id" "$PRES_HOME/data/$id"
   write_ship_brief "$PRIMARY_HOME/data/$id/brief.md" "$id"
   write_ship_brief "$SM_HOME/data/$id/brief.md" "$id"
@@ -524,6 +536,123 @@ done
   || fail "the workspace created before the refusal was left behind"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "closing the unusable workspace stole focus"
 pass "real herdr E2E: a workspace whose create response has no seeded tab id is closed again and focus is preserved"
+
+# --- 2i. an unconfigured home whose client meets the presentation floor but
+#         whose running server reads below it at the session re-check: the
+#         worker still gets a fresh workspace of its own, never the launcher's
+
+FLOOR_HOME="$TMP_ROOT/floor-home"
+mkdir -p "$FLOOR_HOME/state" "$FLOOR_HOME/config" "$FLOOR_HOME/data/floorA"
+write_ship_brief "$FLOOR_HOME/data/floorA/brief.md" floorA
+FLOORBIN="$TMP_ROOT/floorbin"
+mkdir -p "$FLOORBIN"
+# The third status read of a spawn is the session-scoped re-check that follows
+# the client gate and the server ensure; only that read reports an old server.
+cat > "$FLOORBIN/herdr" <<SHIM
+#!/usr/bin/env bash
+out=\$("$REAL_HERDR" "\$@") || exit \$?
+if [ "\${1:-}" = status ]; then
+  n=\$(( \$(cat "$FLOORBIN/count" 2>/dev/null || echo 0) + 1 ))
+  printf '%s' "\$n" > "$FLOORBIN/count"
+  if [ "\$n" = 3 ]; then
+    printf '%s\n' "\$out" | jq -c '.server.version = "0.7.5" | .server.protocol = 14'
+    exit 0
+  fi
+fi
+printf '%s\n' "\$out"
+SHIM
+chmod +x "$FLOORBIN/herdr"
+WS_PRIMARY_TABS_BEFORE_FLOOR=$(tab_labels_of_workspace "$WS_PRIMARY")
+env PATH="$FLOORBIN:$PATH" HERDR_ENV=1 HERDR_PANE_ID="$LAUNCH_PRIMARY_PANE" HERDR_SESSION="$HERDR_LAB_SESSION" \
+  HERDR_SOCKET_PATH="$LAB_SOCKET" FM_SPAWN_NO_GUARD=1 FM_HOME="$FLOOR_HOME" FM_ROOT_OVERRIDE="$ROOT" \
+  "$ROOT/bin/fm-spawn.sh" floorA "$PROJ" "sh -c 'echo launcher-ws-ok'" --backend herdr --mode no-mistakes --yolo off \
+  >"$TMP_ROOT/floorA.out" 2>"$TMP_ROOT/floorA.err" \
+  || fail "a spawn whose server reads below the presentation floor failed"$'\n'"$(cat "$TMP_ROOT/floorA.err")"
+assert_contains_local "$(cat "$TMP_ROOT/floorA.err")" "server version 0.7.5" "the fixture did not reach the below-floor server read"
+FLOORA_META="$FLOOR_HOME/state/floorA.meta"
+record_worktree "$FLOORA_META"
+FLOORA_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$FLOORA_META" | cut -d= -f2-)")
+[ -n "$FLOORA_WS" ] && [ "$FLOORA_WS" != "$WS_PRIMARY" ] \
+  || fail "a spawn whose server reads below the floor joined the launcher's workspace ('$FLOORA_WS')"
+[ "$(label_of_workspace "$FLOORA_WS")" = "firstmate workers" ] \
+  || fail "a spawn whose server reads below the floor did not get a fresh 'firstmate workers' workspace: '$(label_of_workspace "$FLOORA_WS")'"
+[ "$(tab_labels_of_workspace "$FLOORA_WS")" = "fm-floorA" ] \
+  || fail "the below-floor spawn's workspace holds more than its own session"
+[ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE_FLOOR" ] \
+  || fail "the below-floor spawn changed the launcher workspace's tabs"
+return_worktrees "$FLOORA_META"
+pass "real herdr E2E: a client above the presentation floor with a server below it still gives the worker its own workspace"
+
+# --- 2j. a respawn over the task's own earlier agent-free husk closes that
+#         exact husk, and its workspace only when nothing else is left in it;
+#         a husk pane that now holds a live agent is left alone ----------------
+
+# spawn_husk_task <id> -> sets HUSK_PANE and HUSK_WS for the first spawn of <id>
+spawn_husk_task() {
+  spawn_from_launcher "" "$PRIMARY_HOME" "$1" "$PROJ" --mode no-mistakes --yolo off
+  [ "$SPAWN_RC" -eq 0 ] || fail "the first spawn of $1 failed"$'\n'"$(cat "$SPAWN_ERR")"
+  record_worktree "$PRIMARY_HOME/state/$1.meta"
+  HUSK_PANE=$(grep '^herdr_pane_id=' "$PRIMARY_HOME/state/$1.meta" | cut -d= -f2-)
+  HUSK_WS=$(workspace_of_pane "$HUSK_PANE")
+  [ -n "$HUSK_PANE" ] && [ -n "$HUSK_WS" ] || fail "could not read $1's first endpoint"
+  HUSK_WT=$(grep '^worktree=' "$PRIMARY_HOME/state/$1.meta" | cut -d= -f2-)
+}
+# respawn_husk_task <id> -> sets NEW_PANE and NEW_WS for the respawn of <id>
+respawn_husk_task() {
+  spawn_from_launcher "" "$PRIMARY_HOME" "$1" "$PROJ" --mode no-mistakes --yolo off
+  [ "$SPAWN_RC" -eq 0 ] || fail "the respawn of $1 failed"$'\n'"$(cat "$SPAWN_ERR")"
+  record_worktree "$PRIMARY_HOME/state/$1.meta"
+  NEW_PANE=$(grep '^herdr_pane_id=' "$PRIMARY_HOME/state/$1.meta" | tail -1 | cut -d= -f2-)
+  NEW_WS=$(workspace_of_pane "$NEW_PANE")
+  [ -n "$NEW_PANE" ] && [ "$NEW_PANE" != "$HUSK_PANE" ] && [ -n "$NEW_WS" ] && [ "$NEW_WS" != "$HUSK_WS" ] \
+    || fail "the respawn of $1 did not get its own fresh workspace (old $HUSK_WS, new '$NEW_WS')"
+  [ "$(tab_labels_of_workspace "$NEW_WS")" = "fm-$1" ] \
+    || fail "the respawn of $1's workspace holds more than its own session"
+}
+# return_husk_worktrees <id>: once a case's checks are done, hand back both the
+# first spawn's and the respawn's worktrees.
+return_husk_worktrees() {  # <id>
+  [ -z "$HUSK_WT" ] || treehouse return --force "$HUSK_WT" >/dev/null 2>&1
+  return_worktrees "$PRIMARY_HOME/state/$1.meta"
+}
+workspace_exists() {  # <workspace_id>
+  [ -n "$(label_of_workspace "$1")" ]
+}
+wait_workspace_gone() {  # <workspace_id>
+  local i=0
+  while workspace_exists "$1" && [ "$i" -lt 50 ]; do sleep 0.2; i=$((i + 1)); done
+  ! workspace_exists "$1"
+}
+
+spawn_husk_task huskK
+respawn_husk_task huskK
+lab pane get "$HUSK_PANE" >/dev/null 2>&1 && fail "the respawn left huskK's earlier agent-free husk pane behind"
+wait_workspace_gone "$HUSK_WS" || fail "the respawn left huskK's emptied husk workspace behind"
+[ "$(focused_workspace)" = "$WS_OTHER" ] || fail "retiring huskK's husk stole focus"
+return_husk_worktrees huskK
+pass "real herdr E2E: a respawn closes the task's earlier agent-free husk and its emptied workspace"
+
+spawn_husk_task huskL
+lab tab create --workspace "$HUSK_WS" --cwd "$TMP_ROOT" --label other-session --no-focus >/dev/null 2>&1 \
+  || fail "could not add another tab to huskL's workspace"
+respawn_husk_task huskL
+lab pane get "$HUSK_PANE" >/dev/null 2>&1 && fail "the respawn left huskL's earlier agent-free husk pane behind"
+workspace_exists "$HUSK_WS" || fail "the respawn closed huskL's husk workspace although it still held another tab"
+[ "$(tab_labels_of_workspace "$HUSK_WS")" = "other-session" ] \
+  || fail "huskL's husk workspace lost its other tab: '$(tab_labels_of_workspace "$HUSK_WS")'"
+return_husk_worktrees huskL
+pass "real herdr E2E: a respawn closes the husk but keeps its workspace when that still holds another tab"
+
+spawn_husk_task huskM
+lab pane send-text "$HUSK_PANE" "sleep 600" >/dev/null 2>&1 || fail "could not type a command into huskM's pane"
+lab pane send-keys "$HUSK_PANE" enter >/dev/null 2>&1 || fail "could not start a process in huskM's pane"
+lab pane report-agent "$HUSK_PANE" --source fm-launcher-e2e --agent test-agent --state idle >/dev/null 2>&1 \
+  || fail "could not register a live agent in huskM's pane"
+respawn_husk_task huskM
+lab pane get "$HUSK_PANE" >/dev/null 2>&1 || fail "the respawn closed huskM's earlier pane although it holds a live agent"
+assert_contains_local "$(cat "$SPAWN_ERR")" "left this task's earlier herdr endpoint" "the respawn did not note the pane it left in place"
+return_husk_worktrees huskM
+pass "real herdr E2E: a respawn leaves the task's earlier pane alone when it holds a live agent"
 
 # --- 3. duplicate label, launcher in the NON-first match, driven from a real
 #        Herdr pane so the identity comes from Herdr's own injection ----------
