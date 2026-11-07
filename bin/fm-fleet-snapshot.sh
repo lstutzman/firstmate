@@ -240,6 +240,10 @@ esac
 . "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"  # fm_pr_poll_artifacts_valid: the armed merge poll
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$SCRIPT_DIR/fm-office-authority-lib.sh"  # fm_office_task_landing: the parked-handoff predicate
+SNAPSHOT_OFFICE_ID=
+! fm_office_detect "$FM_HOME" "$DATA" || SNAPSHOT_OFFICE_ID=$FM_OFFICE_DETECT_ID
 
 usage() {
   cat <<'EOF'
@@ -259,7 +263,7 @@ aggregation, includes generated_epoch for freshness arithmetic, and marks
 inventory contradictions or unavailable child state invalid.
 kind=secondmate meta records are not child inventory for unowned_current or
 terminal_in_flight; they never have backlog rows.
-A done child is waiting on merge, not terminal_in_flight, only when its meta
+A done child is waiting on merge, not terminal_in_flight, when its meta
 records pr= (pr.source is "meta"; a PR URL found only in the status log does not
 count) and the merge poll fm-pr-check.sh arms for that same PR is live and valid
 (state/<id>.check.sh, <id>.pr-poll and <id>.pr-poll-registration as the watcher
@@ -268,8 +272,11 @@ unnoticed. Such a child is listed in waiting_on_merge and counted in
 counts.waiting_on_merge; no forge read is made. A done child whose status-log
 detail is fm-crew-state.sh's pipeline-handoff marker (a no-mistakes ship's
 pre-validation done while its run on that branch is still live) is live work,
-not terminal_in_flight. A failed child, or any other done child without both a
-meta PR and an armed poll for it, still invalidates the inventory.
+not terminal_in_flight. A done ship parked on another home's merger (fm_office_task_landing in
+bin/fm-office-authority-lib.sh, shown as pr.parked_handoff) is consistent too,
+and is listed in waiting_on_merge and counted in counts.waiting_on_merge.
+A failed child, or any other done child without both a
+meta PR and an armed poll for it or a parked handoff, still invalidates the inventory.
 Its invalidity object names the normalized failure kind and affected ids.
 Actionable tasks-axi captain holds appear as decisions_open and stay visible in
 queued with hold_reason, hold_kind, hold_until,
@@ -784,7 +791,7 @@ task_json_lines() {
   local meta original_meta id kind harness mode yolo project worktree home projects spawn_gen backend target status_log report_path
   local remote_host remote_root current_file endpoint_file observation_line index=0
   local pr pr_source endpoint_exists agent_alive meta_json report_json worktree_json home_json
-  local event_file decisions_file merge_check_armed
+  local event_file decisions_file merge_check_armed parked_handoff
   local current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
 
@@ -830,6 +837,11 @@ task_json_lines() {
     if [ "$pr_source" = meta ] && fm_pr_poll_artifacts_valid "$STATE" "$id" "$SCRIPT_DIR/fm-pr-poll.sh" \
       && [ "$FM_PR_DATA_URL" = "$pr" ]; then
       merge_check_armed=1
+    fi
+
+    parked_handoff=0
+    if [ "$kind" = ship ] && fm_office_task_landing "$STATE" "$id" "$SNAPSHOT_OFFICE_ID"; then
+      parked_handoff=1
     fi
 
     current_file="$SNAPSHOT_TASK_DIR/$id.json"
@@ -930,6 +942,7 @@ task_json_lines() {
       --argjson blocked_event "$(bool_json "$blocked_event")" \
       --argjson report_present "$(bool_json "$report_present")" \
       --argjson merge_check_armed "$(bool_json "$merge_check_armed")" \
+      --argjson parked_handoff "$(bool_json "$parked_handoff")" \
       '($current_state[0]) as $current_state
        | ($status_log[0]) as $status_log
        | ($open_decisions[0]) as $open_decisions
@@ -958,7 +971,7 @@ task_json_lines() {
                   elif $agent_alive == "alive" or $agent_alive == "dead" then $agent_alive
                   else "unknown" end),
           observed_at:$observed_at,freshness:"fresh"},
-        pr:{url:($pr | if . == "" then null else . end),source:$pr_source,head:($pr_head | if . == "" then null else . end),merge_check_armed:$merge_check_armed},
+        pr:{url:($pr | if . == "" then null else . end),source:$pr_source,head:($pr_head | if . == "" then null else . end),merge_check_armed:$merge_check_armed,parked_handoff:$parked_handoff},
         hints:{
           pending_decision:$pending_decision,
           blocked_event:$blocked_event,
@@ -1078,6 +1091,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | select(.kind != "secondmate")
          | select(.id == $work.id and (.current_state.state == "done" or .current_state.state == "failed"))
          | select((.current_state.state == "done" and .pr.source == "meta" and .pr.merge_check_armed == true) | not)
+         | select((.current_state.state == "done" and .pr.parked_handoff == true) | not)
          | select((.current_state.state == "done" and .current_state.source == "status-log"
              and ((.current_state.detail // "") | . == "pipeline handoff: validation run not finished"
                or startswith("pipeline handoff: validation run not finished · "))) | not)
@@ -1085,7 +1099,8 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
     | ([ $owned_in_flight[] as $work
          | $tasks[]
          | select(.kind != "secondmate")
-         | select(.id == $work.id and .current_state.state == "done" and .pr.source == "meta" and .pr.merge_check_armed == true)
+         | select(.id == $work.id and .current_state.state == "done"
+             and ((.pr.source == "meta" and .pr.merge_check_armed == true) or .pr.parked_handoff == true))
          | {id,pr:(.pr.url | trunc(500))} ]) as $waiting_on_merge
     | ([if $backlog.present != true then
           {kind:"missing_backlog",ids:[],reason:"missing structured backlog"}
