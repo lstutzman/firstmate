@@ -1,0 +1,28 @@
+### HEAD, writer result: ok
+DIGEST 2026-11-07 0 2026-11-07.md
+  md: - Memory harvest: outcome ok; listed 10, tier_total 10, written 10, withheld 0, deleted 0, superseded 0.
+  findings: 
+### HEAD, writer result: partial
+DIGEST 2026-11-07 1 2026-11-07.md
+  md: - NEW [medium] harvest-drift memory-harvest: the memory harvest listed 6 records against the tier's 10, more than 1% apart
+- Memory harvest: outcome partial; listed 6, tier_total 10, written 6, withheld 0, deleted 0, superseded 0.
+  findings: harvest-drift medium
+### HEAD, writer result: failed
+Coverage gap: corpus: the memory harvest's result names no tier_total count
+DIGEST 2026-11-07 1 2026-11-07.md
+  md: - NEW [high] harvest-failed memory-harvest: the memory harvest's last run failed
+- Memory harvest: outcome failed; listed 0, written 0, withheld 0, deleted 0, superseded 0.
+- the memory harvest's result names no tier_total count
+  findings: harvest-failed high
+### HEAD, writer result: nulltotal
+Coverage gap: corpus: the memory harvest's result names no tier_total count
+DIGEST 2026-11-07 0 2026-11-07.md
+  md: - Memory harvest: outcome ok; listed 5, written 5, withheld 0, deleted 0, superseded 0.
+- the memory harvest's result names no tier_total count
+  findings: 
+### BASE (53f76627), writer result: failed
+Coverage gap: corpus: the memory harvest's result names no listed and total counts
+DIGEST 2026-11-07 0 2026-11-07.md
+  md: - Memory harvest: outcome None; .
+- the memory harvest's result names no listed and total counts
+  findings: 

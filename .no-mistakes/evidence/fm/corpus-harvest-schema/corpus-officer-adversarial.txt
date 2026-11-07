@@ -1,0 +1,20 @@
+### HEAD, harvest file: noresult
+Coverage gap: corpus: the memory harvest's last result is unreadable (/tmp/tmp.F5lb0jjoRT/noresult.json)
+DIGEST 2026-11-07 0 2026-11-07.md
+  exit=0
+  findings: 
+### HEAD, harvest file: badresult
+Coverage gap: corpus: the memory harvest's last result is unreadable (/tmp/tmp.F5lb0jjoRT/badresult.json)
+DIGEST 2026-11-07 0 2026-11-07.md
+  exit=0
+  findings: 
+### HEAD, harvest file: oldschema
+Coverage gap: corpus: the memory harvest's last result is unreadable (/tmp/tmp.F5lb0jjoRT/oldschema.json)
+DIGEST 2026-11-07 0 2026-11-07.md
+  exit=0
+  findings: 
+### HEAD, harvest file: missing
+Coverage gap: corpus: the memory harvest has no result yet (/tmp/tmp.F5lb0jjoRT/missing.json); the harvest job has not shipped
+DIGEST 2026-11-07 0 2026-11-07.md
+  exit=0
+  findings: 
