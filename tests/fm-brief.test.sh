@@ -501,7 +501,10 @@ test_no_mistakes_dod_releases_pipeline_slot() {
     fi
     assert_grep 'axi sync --check' "$brief" "$mode: release must start with a read-only sync check"
     assert_grep 'safe_equivalent_advance' "$brief" "$mode: release must use sync's own advance when offered"
-    assert_grep 'refs/heads/archive/<branch>-prerebase' "$brief" "$mode: release must archive the old local head"
+    assert_grep 'already on the pushed head, go to step 3' "$brief" "$mode: a copy already on the pushed head must skip the sync and archive step"
+    assert_grep 'git branch archive/<branch>-prerebase <old head>' "$brief" "$mode: release must archive the old local head as a local ref"
+    assert_grep 'push it to no remote' "$brief" "$mode: the archive ref must stay local"
+    assert_no_grep 'push the old local head' "$brief" "$mode: the archive ref must not be pushed"
     assert_grep 'git checkout -B <branch> <pushed head>' "$brief" "$mode: release must move the branch to the pushed head"
     # shellcheck disable=SC2016  # the backticks are literal brief text
     assert_grep 'from a clean `git status` only' "$brief" "$mode: release must refuse a dirty tree"

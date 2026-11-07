@@ -113,8 +113,10 @@ pr_check_pr_retired() {  # <id> <recorded-url>
 # worker gives only after its drive call returned checks-passed, which
 # `no-mistakes axi handoff` requires, the run is released with that command in
 # the task's copy. state/<id>.nm-released records the handed-off PR and head
-# that were attempted, so each head is attempted once: a success prints a
-# released: line, and a failure prints an actionable: line on stderr and
+# that were attempted, so each head is attempted once: a run that
+# `no-mistakes axi status` already reads handed_off (the worker released it
+# itself, as its brief's done step does) is recorded with no command and no
+# line, a success prints a released: line, and a failure prints an actionable: line on stderr and
 # leaves the run as it is. An attempt cut short by a caller budget below the
 # full bound is not an attempt: it records and reports nothing, so a later
 # sweep tries that head again. Nothing is written to the task's status, so an
@@ -131,7 +133,7 @@ pr_check_meta_value() {  # <meta> <key>
 PR_CHECK_RELEASE_BOUND=120
 pr_check_release_nm_run() {  # <id> <seconds>
   local id=$1 seconds=$2 meta="$STATE/$1.meta" record="$STATE/$1.merge-handoff" marker="$STATE/$1.nm-released"
-  local kind sent url wt last note out rc=0 tmp
+  local kind sent url wt last note out rc=0 tmp already=0
   [ -f "$meta" ] && [ ! -L "$meta" ] && [ -f "$record" ] && [ ! -L "$record" ] || return 0
   kind=$(pr_check_meta_value "$meta" kind)
   [ "${kind:-ship}" = ship ] && [ "$(pr_check_meta_value "$meta" mode)" = no-mistakes ] || return 0
@@ -151,12 +153,17 @@ pr_check_release_nm_run() {  # <id> <seconds>
     *"$url"[^[:alnum:]]*) ;;
     *) return 0 ;;
   esac
-  out=$(cd "$wt" && fm_run_timed "$seconds" no-mistakes axi handoff 2>&1) || rc=$?
-  ! fm_timed_out "$rc" || [ "$seconds" -ge "$PR_CHECK_RELEASE_BOUND" ] || return 0
+  out=$(cd "$wt" && fm_run_timed "$seconds" no-mistakes axi status 2>/dev/null) || out=
+  if [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" status)")" = handed_off ]; then
+    already=1
+  else
+    out=$(cd "$wt" && fm_run_timed "$seconds" no-mistakes axi handoff 2>&1) || rc=$?
+    ! fm_timed_out "$rc" || [ "$seconds" -ge "$PR_CHECK_RELEASE_BOUND" ] || return 0
+  fi
   { tmp=$(mktemp "$STATE/.fm-nm-released.XXXXXX") && printf '%s\n' "$sent" > "$tmp" && mv -f -- "$tmp" "$marker"; } \
     || { [ -z "${tmp:-}" ] || rm -f -- "$tmp"; printf 'actionable: %s could not record its no-mistakes run release, so a later sweep attempts it again\n' "$id" >&2; }
   if [ "$rc" -eq 0 ]; then
-    printf 'released: the no-mistakes run of %s, whose PR %s waits on another home to merge it\n' "$id" "$url"
+    [ "$already" = 1 ] || printf 'released: the no-mistakes run of %s, whose PR %s waits on another home to merge it\n' "$id" "$url"
   else
     out=$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)
     printf 'actionable: %s could not release its no-mistakes run after its PR %s was handed off (rc=%s), so the run still holds a pipeline slot: %s\n' "$id" "$url" "$rc" "$out" >&2
