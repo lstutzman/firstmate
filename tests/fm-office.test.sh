@@ -657,6 +657,97 @@ test_upstream_is_daily_and_silent_when_nothing_new() {
   pass 'the upstream source checks once a day and stays silent when the fork has everything'
 }
 
+# research_world <name>: a quartermaster-style office whose config points at fixture runs and a knowledge file.
+research_world() {
+  local w
+  w=$(source_world "$1")
+  sed -i.bak 's/sources: tick,lane:progress,lane:surgeon:high;/sources: tick,research;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  mkdir -p "$w/navigator/config" "$w/runs" "$w/navigator/data/tooling-research"
+  printf '%s/runs\n' "$w" > "$w/navigator/config/tooling-research-runs"
+  printf '# K\n\n## Bookmark\nold bookmark\n\n## Articles read\n- old | u | d | t\n\n## Findings\nf\n' > "$w/navigator/data/tooling-research/knowledge.md"
+  FM_HOME="$w/navigator" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must accept research"
+  printf '%s\n' "$w"
+}
+
+put_run() {  # <world> <date> <suggestions-json> [article-line]
+  local d="$1/runs/$2"
+  mkdir -p "$d"
+  printf '## Lines for knowledge.md\n\nArticles read:\n\n%s\n\nBookmarks (copy):\n\n- src: newest %s\n' "${4:-- $2 | u | $2 | learned}" "$2" > "$d/report.md"
+  printf '%s\n' "$3" > "$d/suggestions.json"
+  printf '{}\n' > "$d/result.json"
+}
+
+res_check() { FM_OFFICE_NOW=$2 FM_HOME="$1/navigator" bash "$OFFICE" check research; }
+
+test_research_delivers_a_run_once_and_appends_knowledge_once() {
+  local w out k
+  w=$(research_world resonce)
+  k="$w/navigator/data/tooling-research/knowledge.md"
+  put_run "$w" 2026-11-01 '[{"id":"tr-1","rank":1,"title":"Sync the fork","tldr":"pull upstream"}]'
+  out=$(res_check "$w" "$SRC_NOW")
+  assert_contains "$out" "office navigator: research 2026-11-01: 1 proposal(s), 2 knowledge line(s) appended" "a new run wakes the office"
+  assert_contains "$(cat "$w/navigator/data/office/research/2026-11-01.md")" "tr-1 (rank 1, effort ?): Sync the fork" "the digest names each proposal"
+  assert_contains "$(cat "$w/navigator/data/office/research/2026-11-01.md")" "## Research follow-through" "the first digest of the week carries the follow-through"
+  assert_equals "" "$(res_check "$w" $((SRC_NOW + 60)))" "a re-poll delivers nothing"
+  assert_equals 1 "$(grep -c '^- 2026-11-01 | u' "$k")" "the article line is appended once"
+  assert_equals 1 "$(grep -c 'src: newest 2026-11-01' "$k")" "the bookmark line is appended once"
+  assert_equals "old bookmark" "$(sed -n 4p "$k")" "other lines are untouched"
+  [ "$(awk '/^## Articles read/{a=1} a&&/^- 2026-11-01/{print NR}' "$k")" -lt "$(awk '/^## Findings/{print NR}' "$k")" ] || fail "the article line must sit under its own section"
+  pass 'the research source delivers a run once and appends its knowledge lines once'
+}
+
+test_research_one_run_per_check_and_skips_incomplete_runs() {
+  local w
+  w=$(research_world resmany)
+  put_run "$w" 2026-11-01 '[{"id":"a","title":"A"}]'
+  put_run "$w" 2026-11-08 '[{"id":"b","title":"B"}]'
+  mkdir -p "$w/runs/2026-11-15" && printf '[]' > "$w/runs/2026-11-15/suggestions.json"
+  assert_contains "$(res_check "$w" "$SRC_NOW")" "research 2026-11-01" "the oldest unseen run first"
+  assert_contains "$(res_check "$w" "$SRC_NOW")" "research 2026-11-08" "then the next"
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "a run without report.md and result.json is not delivered yet"
+  pass 'the research source delivers one complete run per check, oldest first'
+}
+
+test_research_reports_malformed_suggestions_without_guessing() {
+  local w out
+  w=$(research_world resbad)
+  put_run "$w" 2026-11-01 '[{"id": "x", '
+  out=$(res_check "$w" "$SRC_NOW")
+  assert_contains "$out" "suggestions.json unreadable" "the line names the problem"
+  assert_contains "$(cat "$w/navigator/data/office/research/2026-11-01.md")" "nothing was guessed" "the digest says nothing was guessed"
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "a malformed run is still delivered only once"
+  put_run "$w" 2026-11-08 '{"id":"not a list"}'
+  assert_contains "$(res_check "$w" "$SRC_NOW")" "suggestions.json unreadable" "a non-list is malformed too"
+  pass 'the research source reports a malformed suggestions.json instead of guessing'
+}
+
+test_research_follow_through_lists_unadopted_reports_once_a_week() {
+  local w d out
+  w=$(research_world resfollow)
+  for d in zz-adopted-q7 zz-open-q7; do
+    mkdir -p "$w/navigator/data/$d"
+    printf '# t\n\n## Recommendation\n\nDo the %s thing.\n' "$d" > "$w/navigator/data/$d/report.md"
+  done
+  printf '## Queued\n- [ ] zz-adopted-q7 - own item\n- [ ] build-it - ship it (from data/zz-adopted-q7/report.md)\n' > "$w/navigator/data/backlog.md"
+  put_run "$w" 2026-11-01 '[]'
+  put_run "$w" 2026-11-08 '[]'
+  res_check "$w" "$SRC_NOW" >/dev/null
+  out=$(cat "$w/navigator/data/office/research/2026-11-01.md")
+  assert_contains "$out" "Adopted (a backlog line or commit names the report or a PC id in it): 1" "one report is adopted"
+  assert_contains "$out" "- zz-open-q7 (navigator): Do the zz-open-q7 thing." "an unadopted recommendation is listed"
+  res_check "$w" "$SRC_NOW" >/dev/null
+  case "$(cat "$w/navigator/data/office/research/2026-11-08.md")" in *"Research follow-through"*) fail "the follow-through must come once a week" ;; esac
+  pass 'the research source lists unadopted report recommendations once a week'
+}
+
+test_research_without_runs_root_is_silent() {
+  local w
+  w=$(research_world resnone)
+  rm -rf "$w/runs"
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "no runs root: silent"
+  pass 'the research source is silent without a runs root'
+}
+
 ratchet_check() {  # <world> <list> <epoch>
   FM_LINT_RATCHET_LIST=$2 FM_OFFICE_NOW=$3 FM_HOME="$1/navigator" bash "$OFFICE" check ratchet
 }
@@ -1130,6 +1221,11 @@ test_upstream_failure_reports_only_when_persistent
 test_upstream_unresolved_fork_ref_reports_when_persistent
 test_upstream_gap_in_attempts_starts_a_new_streak
 test_upstream_without_config_is_silent
+test_research_delivers_a_run_once_and_appends_knowledge_once
+test_research_one_run_per_check_and_skips_incomplete_runs
+test_research_reports_malformed_suggestions_without_guessing
+test_research_follow_through_lists_unadopted_reports_once_a_week
+test_research_without_runs_root_is_silent
 test_register_sources_installs_trusted_shims
 test_register_sources_keeps_the_status_check
 test_shim_runs_through_the_watcher_trust_path

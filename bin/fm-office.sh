@@ -73,11 +73,11 @@
 # register-sources runs in an office home (one carrying .fm-office). It reads
 # the office's registry line from the parent's data/offices.md, writes one
 # shim state/office-<source>.check.sh for each source in its sources: field
-# (tick -> office-tick, upstream -> office-upstream, ratchet -> office-ratchet,
+# (tick -> office-tick, upstream -> office-upstream, ratchet -> office-ratchet, research -> office-research,
 # lane:progress -> office-lane-progress, lane:surgeon:high -> office-lane-surgeon-high),
 # and binds each with fm-check-register.sh. Each shim exports FM_HOME for the
 # office home and execs "fm-office.sh check <source>". It is idempotent, and it
-# unregisters an office-tick, office-upstream, office-ratchet or office-lane-*
+# unregisters an office-tick, office-upstream, office-ratchet, office-research or office-lane-*
 # shim whose source is no longer listed. The office's own watcher sweeps state/*.check.sh, so a source wakes the office and never main.
 #
 # check <source> is the body of a source check. It is fast, contacts no other
@@ -138,6 +138,18 @@
 #                    office skips the day while a ratchet PR for that file is still open,
 #                    and otherwise dispatches one ordinary ship worker for it, which fixes
 #                    it, retires it from the list and opens one pull request.
+#   research         "office <id>: research <YYYY-MM-DD>: <n> proposal(s), <k> knowledge line(s) appended; digest <path>"
+#                    once per complete weekly tooling-research run directory (report.md,
+#                    suggestions.json and result.json present), oldest unseen first, one per
+#                    check. Runs root: config/tooling-research-runs (one line; default
+#                    /home/lee/fm-homes/slarti/data/tooling-research/runs). It appends the run's
+#                    "Lines for knowledge.md" to config/tooling-research-knowledge (default
+#                    data/tooling-research/knowledge.md) and writes data/office/research/<run>.md
+#                    with each proposal's id and text, plus once per ISO week the follow-through of
+#                    the data/*/report.md reports of the parent and office homes. A malformed
+#                    suggestions.json is named in the line, never guessed. It starts and files
+#                    nothing; bin/fm-office-research.py owns the mechanics and
+#                    data/office/research.seen the delivered runs.
 #
 # Environment: FM_HOME, FM_DATA_OVERRIDE, FM_STATE_OVERRIDE as the other bin/ scripts do.
 # FM_OFFICE_HOST names this host for tests (default: hostname -s).
@@ -211,17 +223,17 @@ office_problems() {
   [ "$v" = none ] || printf 'auto-merge-classes must be none, got "%s"\n' "$v"
   v=$(line_field "$line" sources || true)
   if [ -z "$v" ]; then
-    printf 'sources must list tick, upstream, ratchet or lane:<officer-id>[:high]\n'
+    printf 'sources must list tick, upstream, ratchet, research or lane:<officer-id>[:high]\n'
   else
     for p in ${v//,/ }; do
       case "$p" in
-        tick|upstream|ratchet) ;;
+        tick|upstream|ratchet|research) ;;
         lane:*)
           p=${p#lane:}; p=${p%:high}
           grep -Eq "^- $p - " "$DATA/officers.md" 2>/dev/null \
             || printf 'source lane:%s is not a registered officer\n' "$p"
           ;;
-        *) printf 'source "%s" must be tick, upstream, ratchet, lane:<officer-id> or lane:<officer-id>:high\n' "$p" ;;
+        *) printf 'source "%s" must be tick, upstream, ratchet, research, lane:<officer-id> or lane:<officer-id>:high\n' "$p" ;;
       esac
     done
   fi
@@ -468,7 +480,7 @@ cmd_register_sources() {
   device=$(fm_pr_file_device "$STATE") || die "state directory is unavailable"
   for src in ${sources//,/ }; do
     case "$src" in
-      tick|upstream|ratchet|lane:*) ;;
+      tick|upstream|ratchet|research|lane:*) ;;
       *) die "unknown source $src" 3 ;;
     esac
     id=$(source_check_id "$src")
@@ -490,7 +502,7 @@ cmd_register_sources() {
     keep="$keep$id "
     printf 'registered: office source %s (state/%s.check.sh)\n' "$src" "$id"
   done
-  for f in "$STATE"/office-tick.check.sh "$STATE"/office-upstream.check.sh "$STATE"/office-ratchet.check.sh "$STATE"/office-lane-*.check.sh; do
+  for f in "$STATE"/office-tick.check.sh "$STATE"/office-upstream.check.sh "$STATE"/office-ratchet.check.sh "$STATE"/office-research.check.sh "$STATE"/office-lane-*.check.sh; do
     [ -e "$f" ] || continue
     id=$(basename "$f" .check.sh)
     case "$keep" in *" $id "*) continue ;; esac
@@ -741,6 +753,26 @@ check_ratchet() {
   seen_once ratchet "$day" "office $OFFICE_ID: ratchet $day: next file $file ($n left on bin/fm-lint-ratchet.exceptions); if no ratchet PR for $file is open, dispatch one ship worker to fix it until bin/fm-lint-ratchet.sh check $file passes, retire it with bin/fm-lint-ratchet.sh retire $file, and open one PR"
 }
 
+# check_research: hands the next tooling-research run to bin/fm-office-research.py with this office's paths.
+check_research() {
+  local runs knowledge homes=() id line home h args
+  runs=$(grep -Ev '^[[:space:]]*(#|$)' "$CONFIG/tooling-research-runs" 2>/dev/null | head -n 1)
+  knowledge=$(grep -Ev '^[[:space:]]*(#|$)' "$CONFIG/tooling-research-knowledge" 2>/dev/null | head -n 1)
+  args=(--office "$OFFICE_ID" --runs "${runs:-/home/lee/fm-homes/slarti/data/tooling-research/runs}"
+    --knowledge "${knowledge:-$DATA/tooling-research/knowledge.md}" --record "$DATA/office"
+    --code-root "$FM_ROOT" --now "$(now_epoch)")
+  homes=("$OFFICE_PARENT" "$FM_HOME")
+  while IFS= read -r id; do
+    secondmate_registry_line_for_id "$OFFICE_PARENT/data/secondmates.md" "$id" || continue
+    [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] && continue
+    home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
+    for h in "${homes[@]}"; do [ "$h" = "$home" ] && continue 2; done
+    homes+=("$home")
+  done < <(sed -n 's/^- \([^ ]*\) - .*/\1/p' "$OFFICE_PARENT/data/offices.md" 2>/dev/null)
+  for h in "${homes[@]}"; do args+=(--home "$h"); done
+  bounded 20 python3 -I "$SCRIPT_DIR/fm-office-research.py" "${args[@]}" 2>/dev/null || true
+}
+
 cmd_check() {
   local src=$1 sources officer
   [ -e "$FM_HOME/.fm-office" ] || return 0
@@ -751,6 +783,7 @@ cmd_check() {
     tick) check_tick ;;
     upstream) check_upstream ;;
     ratchet) check_ratchet ;;
+    research) check_research ;;
     lane:*:high) officer=${src#lane:}; check_lane "${officer%:high}" 1 ;;
     lane:*) check_lane "${src#lane:}" 0 ;;
   esac
