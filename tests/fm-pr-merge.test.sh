@@ -288,6 +288,18 @@ case "${1:-} ${2:-}" in
         cat "$FM_TEST_GH_RUNS"
         exit $?
         ;;
+      *" repos/"*"/contents/.github/required-checks.list"*)
+        if [ -f "${FM_TEST_GH_REQUIRED_LIST_FAIL:-}" ]; then
+          cat "$FM_TEST_GH_REQUIRED_LIST_FAIL" >&2
+          exit 1
+        fi
+        if [ -f "${FM_TEST_GH_REQUIRED_LIST:-}" ]; then
+          cat "$FM_TEST_GH_REQUIRED_LIST"
+          exit 0
+        fi
+        printf 'gh: Not Found (HTTP 404)\n' >&2
+        exit 1
+        ;;
       *" repos/"*"/pulls/"*"/files"*)
         cat "$FM_TEST_GH_FILES"
         exit $?
@@ -737,6 +749,8 @@ run_pr_merge() {
   FM_TEST_GH_BRANCH_FAIL="$case_dir/github-branch-fail" \
   FM_TEST_GH_REQUIRED_RULES="$case_dir/github-required-rules.json" \
   FM_TEST_GH_REQUIRED_RULES_FAIL="$case_dir/github-required-rules-fail" \
+  FM_TEST_GH_REQUIRED_LIST="$case_dir/github-required-list" \
+  FM_TEST_GH_REQUIRED_LIST_FAIL="$case_dir/github-required-list-fail" \
   FM_TEST_GH_FILES="$case_dir/github-files.json" \
   FM_TEST_GH_PULL="$case_dir/github-pull.json" \
   FM_TEST_META_AT_MERGE="$case_dir/meta-at-merge" \
@@ -5403,6 +5417,87 @@ test_required_checks_reported_and_green_merge() {
   pass "fm-pr-merge merges when every required check reported and is green"
 }
 
+test_repo_required_list_blocks_a_listed_check_that_never_reported() {
+  local case_dir head
+  head=a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6
+
+  # Absent file: the forge reports nothing required, so today's behaviour holds.
+  case_dir=$(make_case github-list-absent)
+  add_gh_mocks "$case_dir" "$head"
+  run_required_case "$case_dir" 120
+  expect_code 0 "$RC" "list-absent: no list file must keep the forge-only behaviour: $(cat "$case_dir/stderr")"
+  assert_grep 'repos/example/repo/contents/.github/required-checks.list?ref=main' "$case_dir/gh.log" \
+    "list-absent: the list was not read from the base branch"
+  assert_logged_gh_merge "$case_dir" 120 example/repo --squash
+
+  # A listed job that never reported refuses, naming each missing context.
+  case_dir=$(make_case github-list-missing)
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" "$(check_run ci COMPLETED SUCCESS)"
+  printf '%s\n' '# the jobs this repo requires' '' 'ci' 'Behavior portable serial 15' '  Lint 2  ' \
+    > "$case_dir/github-required-list"
+  run_required_case "$case_dir" 121
+  expect_code 1 "$RC" "list-missing: a listed check that never reported must refuse"
+  assert_grep "required check 'Behavior portable serial 15' has not reported at head $head" "$case_dir/stderr" \
+    "list-missing: the first missing listed check was not named"
+  assert_grep "required check 'Lint 2' has not reported at head $head" "$case_dir/stderr" \
+    "list-missing: the trimmed listed check was not named"
+  assert_no_grep "required check 'ci'" "$case_dir/stderr" "list-missing: a reported listed check was called missing"
+  assert_no_grep '# the jobs' "$case_dir/stderr" "list-missing: a comment line was treated as a context"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "list-missing: gh pr merge ran with a listed check unreported"
+
+  # Every listed context reported and green merges.
+  case_dir=$(make_case github-list-present)
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" \
+    "$(check_run ci COMPLETED SUCCESS)" "$(check_run 'Lint 1' COMPLETED SUCCESS)"
+  printf '%s\n' 'ci' 'Lint 1' > "$case_dir/github-required-list"
+  run_required_case "$case_dir" 122
+  expect_code 0 "$RC" "list-present: every listed check reported and green must merge: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 122 example/repo --squash
+
+  # The list unions with the forge's own required set.
+  case_dir=$(make_case github-list-union)
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" "$(check_run ci COMPLETED SUCCESS)"
+  write_github_required "$case_dir" ruleset:forge-only
+  printf '%s\n' 'ci' 'listed-only' > "$case_dir/github-required-list"
+  run_required_case "$case_dir" 123
+  expect_code 1 "$RC" "list-union: forge-required and listed checks must both be enforced"
+  assert_grep "required check 'forge-only' has not reported" "$case_dir/stderr" "list-union: the forge-required check was dropped"
+  assert_grep "required check 'listed-only' has not reported" "$case_dir/stderr" "list-union: the listed check was dropped"
+
+  # A named waiver covers exactly one listed context.
+  case_dir=$(make_case github-list-waived)
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" "$(check_run ci COMPLETED SUCCESS)"
+  printf '%s\n' 'ci' 'Lint 3' 'Lint 4' > "$case_dir/github-required-list"
+  run_required_case "$case_dir" 124 --allow-missing 'Lint 3'
+  expect_code 1 "$RC" "list-waived: the other listed check must still refuse"
+  assert_grep "required check 'Lint 4' has not reported" "$case_dir/stderr" "list-waived: the unwaived listed check was not named"
+  assert_no_grep "required check 'Lint 3'" "$case_dir/stderr" "list-waived: the waived listed check was still reported"
+  case_dir=$(make_case github-list-waived-all)
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" "$(check_run ci COMPLETED SUCCESS)"
+  printf '%s\n' 'ci' 'Lint 3' > "$case_dir/github-required-list"
+  run_required_case "$case_dir" 125 --allow-missing 'Lint 3'
+  expect_code 0 "$RC" "list-waived: the named waiver should merge: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 125 example/repo --squash
+
+  # An unreadable list refuses, and no waiver covers it.
+  case_dir=$(make_case github-list-unreadable)
+  add_gh_mocks "$case_dir" "$head"
+  write_github_rollup_json "$case_dir" "$head" "$(check_run ci COMPLETED SUCCESS)"
+  printf 'gh: Resource not accessible by personal access token (HTTP 403)\n' \
+    > "$case_dir/github-required-list-fail"
+  run_required_case "$case_dir" 126 --allow-missing ci
+  expect_code 1 "$RC" "list-unreadable: an unreadable list must refuse"
+  assert_grep 'the required check list .github/required-checks.list on base branch main could not be read' \
+    "$case_dir/stderr" "list-unreadable: the refusal did not name the unreadable list"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "list-unreadable: gh pr merge ran with an unreadable list"
+  pass "fm-pr-merge requires every context in the repository's required list, and a named waiver covers one"
+}
+
 test_red_and_unreported_checks_are_reported_together() {
   local case_dir head
   head=a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3
@@ -5829,6 +5924,7 @@ test_merge_refuses_when_the_away_record_cannot_be_locked
 test_allow_red_refused_on_gitlab
 test_required_check_that_never_reported_refuses
 test_required_checks_reported_and_green_merge
+test_repo_required_list_blocks_a_listed_check_that_never_reported
 test_red_and_unreported_checks_are_reported_together
 test_unreadable_required_set_refuses
 test_allow_missing_waives_only_the_named_unreported_check

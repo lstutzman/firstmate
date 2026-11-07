@@ -141,6 +141,14 @@ case " $* " in
     ;;
   *"/stacks?pull_request="*) cat "$C/stacks.json"; exit 0 ;;
   *"/compare/"*) cat "$C/compare.json"; exit 0 ;;
+  *"/contents/.github/required-checks.list"*)
+    for arg in "$@"; do
+      case "$arg" in *"/contents/.github/required-checks.list?ref="*) ref=${arg##*\?ref=} ;; esac
+    done
+    [ -f "$C/required-list-$ref" ] || { printf 'gh: Not Found (HTTP 404)\n' >&2; exit 1; }
+    cat "$C/required-list-$ref"
+    exit 0
+    ;;
   *"/rules/branches/"*) cat "$C/rules.json"; exit 0 ;;
   *"/branches/"*) cat "$C/branch.json"; exit 0 ;;
   *"/pulls/"*"/files"*)
@@ -338,6 +346,24 @@ test_trunk_required_check_applies_to_every_member() {
   pass "the trunk's required checks apply to every stack member"
 }
 
+test_trunk_required_list_applies_to_every_member() {
+  local case_dir rc=0
+  case_dir=$(make_stack_case trunk-list)
+  printf '%s\n' '# required jobs' 'build' > "$case_dir/required-list-main"
+  write_pr_view "$case_dir/pr-1.json" "$H1" main \
+    '[{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]'
+  write_pr_view "$case_dir/pr-3.json" "$H3" feat/b \
+    '[{"__typename":"CheckRun","name":"build","status":"COMPLETED","conclusion":"SUCCESS"}]'
+  run_default_stack "$case_dir" || rc=$?
+  expect_code 1 "$rc" "trunk-list: a mid member missing a context the trunk's list names must refuse"
+  assert_grep "required check 'build' has not reported at head $H2" "$case_dir/stderr" \
+    "trunk-list: the mid member's missing listed context was not named"
+  assert_no_grep 'required-checks.list?ref=feat' "$case_dir/gh.log" \
+    "trunk-list: a member's required list was read from its own base instead of the trunk"
+  assert_no_merge_request "$case_dir" trunk-list
+  pass "the trunk's required check list applies to every stack member"
+}
+
 test_trunk_that_is_not_an_ancestor_refuses() {
   local case_dir rc=0
   case_dir=$(make_stack_case diverged)
@@ -511,6 +537,7 @@ test_named_top_that_is_not_the_top_refuses
 test_draft_member_refuses
 test_red_check_on_a_lower_member_refuses
 test_trunk_required_check_applies_to_every_member
+test_trunk_required_list_applies_to_every_member
 test_trunk_that_is_not_an_ancestor_refuses
 test_refused_merge_request_reports_nothing_merged
 test_pending_request_is_polled_to_a_proven_merge
