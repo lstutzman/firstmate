@@ -17,7 +17,7 @@ Everything in the second-mate contract still applies: the parent channel is the 
 
 **Navigator** - PropertyCompass2 forward progress, from the captain's Top of Mind, feature ideation, and requested items.
 It decides what starts next, dispatches visible workers, and reviews their pull requests.
-Every PropertyCompass2 ship or scout brief names its Linear item with `--linear <PC-n>`.
+Every PropertyCompass2 ship brief names its Linear item with `--linear <PC-n>`, and a scout brief does too unless no item exists yet, in which case it passes `--no-linear "<reason>"`.
 It never merges PropertyCompass2: Slarti is that project's one merger and lands its piles, so every ready PR that needs no captain word goes to Slarti through the project's `merger=slarti` handoff, which `bin/fm-pr-merge.sh` prints when the Navigator reaches it.
 
 **Quartermaster** - the fleet, its officers, and its agents: friction, velocity, and cost.
