@@ -176,6 +176,25 @@ export const REQUIRED_TOOLS = [
   "orchestrator_capabilities",
 ];
 const ENVIRONMENT_TOOL = "t3_environment_read";
+// T3 0.1.3 folded the three pending-request tools into one action tool and
+// the configuration read into t3_thread_configure (source: T3 Code
+// apps/server/src/mcp/toolkits/thread/tools.ts at v0.1.2 and v0.1.3). The
+// backend is not ported to them, so it refuses that line with this mapping.
+export const UNSUPPORTED_FROM_VERSION = "0.1.3";
+export const RENAMED_TOOLS = [
+  ["t3_thread_configuration", "t3_thread_configure"],
+  ["t3_pending_request_list", "t3_pending_request (action list)"],
+  ["t3_pending_request_read", "t3_pending_request (action read)"],
+  ["t3_pending_request_respond", "t3_pending_request (action respond)"],
+];
+const RENAMED_NEW_NAMES = new Set(["t3_thread_configure", "t3_pending_request"]);
+function versionAtLeastUnsupported(version) {
+  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(version ?? "").trim());
+  if (!m) return false;
+  const floor = UNSUPPORTED_FROM_VERSION.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (+m[i + 1] !== floor[i]) return +m[i + 1] > floor[i];
+  return true;
+}
 const EXPIRY_WARN_DAYS = 5;
 const DAY_MS = 86_400_000;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -493,6 +512,17 @@ export async function gate(session, cred) {
   const names = new Set((listed?.tools ?? []).map((t) => t.name));
   const version = server?.serverInfo?.version ?? null;
   const missing = REQUIRED_TOOLS.filter((t) => !names.has(t));
+  const renamedAway = RENAMED_TOOLS.filter(([old]) => missing.includes(old));
+  const newNamesSeen = [...RENAMED_NEW_NAMES].some((n) => names.has(n));
+  if (versionAtLeastUnsupported(version) || (renamedAway.length && newNamesSeen)) {
+    const mapping = RENAMED_TOOLS.map(([old, now]) => `${old} is now ${now}`).join("; ");
+    throw new Refusal(
+      "capability_gate",
+      `T3 ${version ?? "(unknown version)"} at ${session.origin} is not supported: backend=t3code supports T3 only before ${UNSUPPORTED_FROM_VERSION}, which renamed tools it needs (${mapping}); see docs/t3code-backend.md`,
+      4,
+      { serverVersion: version, renamed: Object.fromEntries(RENAMED_TOOLS) },
+    );
+  }
   if (missing.length) {
     throw new Refusal(
       "capability_gate",

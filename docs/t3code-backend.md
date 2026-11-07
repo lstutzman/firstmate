@@ -13,7 +13,7 @@ T3 Code runs only the `claude` and `codex` harnesses; every other harness, and a
 Prerequisites:
 
 - A running T3 Code server that passes the [capability gate](#capability-gate).
-  T3 stable 0.0.45 lacks the Orchestrator V2 thread tools, so it is refused; the verified version is recorded in [`verification/runtime-backends.md`](verification/runtime-backends.md#t3-code).
+  T3 stable 0.0.45 lacks the Orchestrator V2 thread tools, so it is refused, and T3 0.1.3 or later is refused because it renamed tools this backend needs (supported: before 0.1.3); the verified version is recorded in [`verification/runtime-backends.md`](verification/runtime-backends.md#t3-code).
 - `node`, which the adapter uses to speak MCP, and `treehouse`.
 - For `codex` tasks, Codex trust for each project (the home, for a secondmate) in the Codex configuration T3's Codex provider instance runs with, by default the server user's `~/.codex/config.toml`: a `[projects."<main checkout>"]` table with `trust_level = "trusted"`.
   Codex applies a project's `.codex/config.toml`, which carries a Codex thread's [per-directory environment](#per-directory-harness-environment), only in a trusted project.
@@ -80,7 +80,8 @@ Every selected option is checked against the model's catalog descriptors.
 
 Every call first runs `tools/list` and refuses unless T3 offers every tool in `REQUIRED_TOOLS` in `bin/fm-t3-mcp.mjs` (the thread, project, configuration, pending-request, and catalog tools) and `t3_environment_read`.
 It then refuses unless `t3_environment_read` reports the environment id recorded at sign-in, so a different T3 server behind the same address is never driven with this credential.
-A refusal names the missing tool or both environment ids, and spawn, control, and teardown stop before their first mutation.
+A server reporting 0.1.3 or later, or offering `t3_thread_configure` or `t3_pending_request` in place of the required tools, is refused first with the version found, the statement that the backend supports T3 only before 0.1.3, and each rename (`t3_thread_configuration` to `t3_thread_configure`; `t3_pending_request_list`, `_read` and `_respond` to `t3_pending_request` with an `action`).
+Otherwise a refusal names the missing tool or both environment ids, and spawn, control, and teardown stop before their first mutation.
 This gate replaces the HTTP dispatch probe and version floor of the pre-V2 transport, which T3 0.0.46 removed.
 
 ## Task shape and metadata
