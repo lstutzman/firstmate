@@ -45,7 +45,9 @@
 #           data/projects.md, adding a bracket to a legacy line that has none;
 #         - copies the main home's master admission config
 #           config/admission/<project>, and config/admission/<project>.rules when
-#           it exists, into the office home's config/admission/; a master whose
+#           it exists, into the office home's config/admission/, replacing the
+#           literal token @OFFICE_HOME@ in the config (not the rules) with the
+#           office home so one master serves every office; a master whose
 #           command= names a --rules path other than
 #           <office home>/config/admission/<project>.rules is refused, so the
 #           classifier the office runs reads only the copy made here;
@@ -947,7 +949,7 @@ validate_office_admission() {
     master="$CONFIG/admission/$p"
     [ -f "$master" ] && [ ! -L "$master" ] && [ -r "$master" ] \
       || { echo "error: office merge project $p has no master admission config at $master" >&2; return 1; }
-    line=$(grep -m 1 '^command=' "$master") || line=
+    line=$(grep -m 1 '^command=' "$master" | fm_office_admission_expand "$home") || line=
     read -r -a words <<< "${line#command=}"
     for ((i = 0; i < ${#words[@]}; i++)); do
       [ "${words[$i]}" = --rules ] || continue
@@ -1017,7 +1019,7 @@ seed_office_files() {  # <id> <home>
   for p in ${OFFICE_MERGE//,/ }; do
     set_project_token "$home/data/projects.md" "$p" admission "$p" || return 1
     seed_office_backup "$home/config/admission/$p" || return 1
-    cp "$CONFIG/admission/$p" "$home/config/admission/$p" || return 1
+    fm_office_admission_expand "$home" < "$CONFIG/admission/$p" > "$home/config/admission/$p" || return 1
     if [ -f "$CONFIG/admission/$p.rules" ]; then
       seed_office_backup "$home/config/admission/$p.rules" || return 1
       cp "$CONFIG/admission/$p.rules" "$home/config/admission/$p.rules" || return 1

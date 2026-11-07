@@ -48,6 +48,8 @@
 
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fm-office-authority-lib.sh"
 
 FM_ADMISSION_CLASSIFIER_TIMEOUT=${FM_ADMISSION_CLASSIFIER_TIMEOUT:-120}
 # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
@@ -110,6 +112,13 @@ fm_admission_load() {  # <config-file>
         ;;
     esac
   done < "$file"
+  case "$command" in *@OFFICE_HOME@*)
+    # A master's token reads as the home that owns this config directory.
+    case "$file" in
+      */config/admission/*) command=$(printf '%s\n' "$command" | fm_office_admission_expand "${file%/config/admission/*}") ;;
+      *) FM_ADMISSION_ERROR="the admission config $file uses @OFFICE_HOME@ but is not under <home>/config/admission/"; return 1 ;;
+    esac ;;
+  esac
   read -r -a FM_ADMISSION_COMMAND <<< "$command"
   if [ "${#FM_ADMISSION_COMMAND[@]}" -eq 0 ]; then
     FM_ADMISSION_ERROR="the admission config $file names no classifier command="

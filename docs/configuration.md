@@ -3041,6 +3041,7 @@ deploy/** authority
 systemd/** authority
 ```
 
+A master in the main home may write each home path as the literal token `@OFFICE_HOME@`: `bin/fm-home-seed.sh --office` copies the config with the token replaced by the office home, `bin/fm-office.sh publish` pins the digest of the master with the same replacement so it equals the digest of the office's own copy, and the main home reads the token as itself; a `--rules` path of `@OFFICE_HOME@/config/admission/<file>` reads the master's own `<file>`, and a master with literal paths is copied unchanged and seeds only the office home it names.
 A project with no `admission=` token merges exactly as before, and like `merger=` the token is read from the merging home's own registry, which is not inherited.
 `bin/fm-admission-lib.sh` owns the config format and classifier contract, `bin/fm-pr-merge.sh`'s header owns the merge-time check, and `bin/fm-project-mode.sh --admission <name>` reads the binding back.
 
