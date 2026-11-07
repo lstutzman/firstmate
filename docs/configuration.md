@@ -1817,6 +1817,8 @@ A local office home also carries a `.fm-office` marker holding the office id and
 Session start runs `bin/fm-office.sh ensure`, which prints one `OFFICE:` line per gap and nothing when the registry and the homes agree.
 An absent `data/offices.md` means no offices.
 In a primary home (it keeps `data/offices.md` and has no `.fm-secondmate-home` or `.fm-office` marker), `ensure` also prints `OFFICE: approved office <role> not provisioned` for every role in `FM_OFFICE_ROLES` (`bin/fm-office-authority-lib.sh`) that has neither a `data/offices.md` line nor a valid deferral; the watcher repeats that as a `check: office-provisioning` wake at most once a day until it is gone.
+`bin/fm-office.sh unprovisioned` runs that check alone against the home `FM_HOME` names, so pointing it at a scratch copy of a primary home shows the alarm for a role missing from that copy's `data/offices.md`.
+`list` and `ensure` only read: they seed, publish, spawn and grant nothing.
 
 ### Office deferrals (data/office-deferrals.md)
 
@@ -1830,7 +1832,6 @@ It is one line per role in the registry line family:
 `<role>` must be a known office role, the words must be quoted, and `said` is required; `until` is optional and the deferral holds through that UTC date, after which the alarm returns.
 The fields must not contain parentheses, because the line's last ` (` opens them; write a relay citation as `said: main chat, relayed by main, corr <id>`, and a line with parentheses inside its fields is reported with that cause.
 A malformed or expired line is reported as `OFFICE: deferral <role> ... defers nothing` and never silences the alarm.
-`list` and `ensure` only read: they seed, publish, spawn and grant nothing.
 
 An office acts only inside the authority record the main home publishes into it as `config/office-authority`, proven by the receipt `config/.fm-inherit-office-authority.generation`; `bin/fm-office-authority-lib.sh`'s header owns the record grammar, the receipt rule, the admission digest, and which home receives which record.
 The main home builds each destination's record from that destination's own line, so every other second mate receives an absence and a plain second mate gains no file; every inheritance push (a second-mate spawn, the bootstrap sweep, `bin/fm-config-push.sh`) publishes it, and `bin/fm-office.sh publish <id>` publishes one local office's record now.
