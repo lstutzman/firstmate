@@ -57,13 +57,14 @@ scheduled-review, with the documentation area label (else the triage label), sea
 first by its `librarian-fp:<sha256>` marker and then by title with local-jev. Hold items and
 the run's decisions item are never filed. The Filer runs on the audit run's date, so the
 Found line rises once per audit run and not once a day; the create cap (fleet rules
-section 8: 3) is per audit run, not per day, and what it leaves unfiled is named in the
+section 8: 3, and a larger --max-creates is held to 3) is per audit run, not per day, and what it leaves unfiled is named in the
 digest and filed by the next audit run. A safe finding is filed as medium at least, so it
 reaches the start score once the audit finds it three times (a high one at once). A safe
 finding whose item exists and whose score reaches the rubric minimum gets a start request in
-`start_requests` (and, for this home, a <date>.start-requests.sh handoff), addressed to the
---start-home office whose dispatch list names the finding's repository (the officer's project
-PropertyCompass2 by default), else to --fm-home. Code and needs-lee findings are filed and
+`start_requests` (and, for this home, a <date>.start-requests.sh handoff). The weekly audit
+covers PropertyCompass2 only, so every finding is PropertyCompass2 work: it is filed without the
+Fleet project, and its start request goes to the --start-home office whose dispatch list names
+PropertyCompass2, else to --fm-home. Code and needs-lee findings are filed and
 never start. A safe finding that matches a reserved class is held, and the audit's
 needs-lee items become one keyed needs-decision `library-needs-lee-<run>` in `asks_for_lee`.
 The lane keeps filed-fingerprints.json, found.json and review-state.json only when it writes.
@@ -247,7 +248,7 @@ def file_findings(lib, off, todo, args, run, out, ledger, found, jev, lin, allow
             f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
         if rate_limited:
             lib.pause_for_rate_limit(out, args.now)
-        return lib.summary_rows(todo), reason, 0
+        return lib.summary_rows(todo), reason, filer.creates
 
     for f in todo:
         if f["fingerprint"] in ledger:
@@ -300,7 +301,7 @@ def linear_pass(args, run, items, unread, offices, main_home):
     writes, blocked = [], None
     if linear:
         writes, blocked, n = file_findings(lib, off, findings, args, run, out, ledger, found, jev, lin,
-                                           max(0, args.max_creates - created.get(run, 0)))
+                                           max(0, min(args.max_creates, MAX_CREATES) - created.get(run, 0)))
         created[run] = created.get(run, 0) + n
         lib.apply_found(findings, found, ledger)
     safe = [f for f in findings if f["item"]["bucket"] == "safe"]

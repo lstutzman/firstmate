@@ -1515,9 +1515,9 @@ It reads the newest dated run folder under `audit`, that run's `result.json` and
 Each item is reported once by its fingerprint, and its digest line counts the new items outside on hold.
 It has no Library staleness input while Markdown-to-HTML conversion is skipped.
 With `writes: linear` it also files under the shared [officer contract](officers/contract.md), and [`docs/officers/library-rubric.md`](officers/library-rubric.md) owns what counts as work, how it is scored, what starts and what holds for Lee; `bin/fm-officer-library.py`'s header owns the mechanics.
-It reads the registry's `writes`, `team` (`PC` only), `max-creates` (default 3, the fleet rules section 8 cap per audit run, not per day), `max-linear-calls`, `jev` and `start-home`.
+It reads the registry's `writes`, `team` (`PC` only), `max-creates` (default 3, the fleet rules section 8 cap per audit run, not per day; a larger value is held to 3), `max-linear-calls`, `jev` and `start-home`.
 Each new safe, code and needs-Lee finding becomes one Chore in team PC (Source `scheduled-review`, marked `librarian-fp:<sha256>`), and the `Found:` line rises once per audit run.
-A safe finding whose score reaches the rubric minimum is written to `start_requests` (digest `source` `library-officer`) for the `start-home` office that dispatches its repository, else this home, and an office's lane check delivers it; needs-Lee items become one keyed needs-decision per audit run.
+A safe finding whose score reaches the rubric minimum is written to `start_requests` (digest `source` `library-officer`) for the `start-home` office that dispatches PropertyCompass2 (the audit covers PropertyCompass2 only, so no finding goes to the Fleet project), else this home, and an office's lane check delivers it; needs-Lee items become one keyed needs-decision per audit run.
 
 ### Page-check officer
 

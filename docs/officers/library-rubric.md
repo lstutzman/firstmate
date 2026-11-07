@@ -23,7 +23,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 ## Where findings are filed
 
 - Team PC, Type Chore, Source `scheduled-review` (the weekly audit), label `documentation`, else the team's triage label; no Linear project for PropertyCompass2 work.
-- At most 3 new items per audit run (fleet rules section 8).
+- At most 3 new items per audit run (fleet rules section 8), whatever the registry's `max-creates`.
   What the cap leaves unfiled is named in the digest, highest score first, and the next audit run files it.
 - Each item carries the `librarian-fp:<sha256>` marker.
   Duplicates, the `Found:` line, recurrences of closed items and the call budget are the shared [filing rules](contract.md#file).
@@ -32,7 +32,8 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 ## What starts by itself
 
 - A safe-to-ship finding starts once its item exists and its score reaches the minimum below: a high finding on first sight, a medium one when the audit has found it three times.
-- The request goes to the office whose dispatch list names the repository (the Navigator for PropertyCompass2), else to the main home.
+- The weekly audit covers PropertyCompass2 only, so every finding is PropertyCompass2 work, filed without the Fleet project.
+  The request goes to the office whose dispatch list names PropertyCompass2 (the Navigator), else to the main home.
   The Librarian office reads the same digest and ships its own docs pull request, at most one per repository per run, so the request asks only that this item is not missed.
 
 ## What only files, and holds for Lee

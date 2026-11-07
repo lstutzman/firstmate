@@ -10,7 +10,8 @@
 #
 # With writes: linear (a fake linear-axi that logs every call): findings filed as Chore
 # items under the librarian-fp marker, the create cap of 3 per audit run (not per day) with
-# the overflow named and filed by the next audit, the Found line raised once per audit run,
+# the overflow named and filed by the next audit, kept across a rate-limit stop and above a
+# larger registry max-creates, the Found line raised once per audit run,
 # a safe high finding started, a reserved-class one held, needs-Lee items one keyed
 # needs-decision per run, and hold items and the decisions item never filed.
 set -u
@@ -23,7 +24,8 @@ TMP_ROOT=$(fm_test_tmproot fm-officer-library)
 DATE=2026-11-01
 NOW=1793871000 # 2026-11-05T09:30:00Z
 
-# fake_linear <bindir>: linear-axi driven by $FAKE_LINEAR_DIR (labels.txt); it logs every call to
+# fake_linear <bindir>: linear-axi driven by $FAKE_LINEAR_DIR (labels.txt, and rate-limit-at, the PC number whose
+# create --verify answers RATE_LIMITED instead); it logs every call to
 # $FAKE_LINEAR_DIR/log and refuses to run without that variable, so no test can reach the real Linear.
 fake_linear() {
   cat > "$1/linear-axi" <<'SH'
@@ -42,7 +44,11 @@ case "$1 $2" in
   "issue create")
     case " $* " in
       *" --verify "*)
-        n=$(( $(cat "$d/created" 2>/dev/null || echo 100) + 1 )); echo "$n" > "$d/created"
+        n=$(( $(cat "$d/created" 2>/dev/null || echo 100) + 1 ))
+        if [ "$n" = "$(cat "$d/rate-limit-at" 2>/dev/null)" ]; then
+          echo '{"ok":false,"error":{"code":"RATE_LIMITED","message":"slow down"}}'; exit 1
+        fi
+        echo "$n" > "$d/created"
         for a in "$@"; do [ "${prev:-}" = "--body-file" ] && cat "$a" >> "$d/bodies" && echo >> "$d/bodies"; prev=$a; done
         echo '{"ok":true,"data":{"issue":{"identifier":"PC-'"$n"'"}}}' ;;
       *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
@@ -255,6 +261,30 @@ test_findings_are_filed_capped_per_audit_run_and_found_raised() {
   pass "fm-officer library: findings are filed as Chore items, capped per audit run, and the Found line rises once per audit run"
 }
 
+test_rate_limit_after_a_create_keeps_the_cap() {
+  local dir log
+  linear_world ratelimit
+  dir=$FAKE_LINEAR_DIR
+  log=$dir/log
+  echo 102 > "$dir/rate-limit-at"
+  run_library >/dev/null || fail "a rate-limited run must succeed"
+  assert_equals 101 "$(cat "$dir/created")" "one item was created before Linear answered RATE_LIMITED"
+  assert_equals 2 "$(count_lines '^issue create .*--verify' "$log")" "the run stops at the rate-limited create"
+  rm "$dir/rate-limit-at"
+  run_library 2026-11-02 $((NOW + 86400)) >/dev/null || fail "a next-day run must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" \
+    "the next day attempts only what is left of the audit run's cap of 3, counting the creates before the stop"
+  pass "fm-officer library: a rate limit after a create still counts that create against the per-audit-run cap"
+}
+
+test_registry_max_creates_is_held_to_three() {
+  linear_world bigcap "; max-creates: 10"
+  run_library >/dev/null || fail "a run with max-creates 10 must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$FAKE_LINEAR_DIR/log")" \
+    "a registry max-creates above 3 still creates at most 3 items per audit run (fleet rules section 8)"
+  pass "fm-officer library: max-creates above 3 is held to the fleet rules cap"
+}
+
 test_safe_findings_start_and_reserved_ones_hold() {
   local json dir
   linear_world starts
@@ -323,6 +353,8 @@ test_unreadable_audit_keeps_the_ledger
 test_coverage_gaps_never_fail_the_run
 test_run_writes_only_its_lane
 test_findings_are_filed_capped_per_audit_run_and_found_raised
+test_rate_limit_after_a_create_keeps_the_cap
+test_registry_max_creates_is_held_to_three
 test_safe_findings_start_and_reserved_ones_hold
 test_start_requests_reach_the_owning_office
 test_no_writes_and_a_missing_label_file_nothing
