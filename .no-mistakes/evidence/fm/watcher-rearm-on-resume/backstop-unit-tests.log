@@ -1,0 +1,12 @@
+1..10
+ok - backstop: usage is explicit and refuses unknown input
+ok - backstop: record-endpoint records only for a reclaimable or own lock and a discovered endpoint
+ok - backstop: a home with no need or a fresh beacon is left alone
+ok - backstop: a down home with no recorded endpoint reports and stays retryable
+ok - backstop: timer-files writes per-home scheduler files, and a rerun keeps them
+ok - backstop: install is one idempotent command, and verify names it while the timer is missing
+ok - backstop: the unit's bare environment rings a herdr endpoint once per stale episode
+ok - backstop: a down home is rung once per stale episode through a real pane
+ok - backstop: a primary that keeps invisible characters gets the typed watcher input
+ok - backstop: a busy composer or a vanished endpoint defers without ringing
+FM_TEST_COMPLETE

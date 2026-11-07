@@ -1,0 +1,8 @@
+## endpoint record
+backend=herdr
+target=fm-lab-backstop-4068783-16668:w1:p1
+harness=claude
+recorded_at=1794053640
+## check #1 (env -i FM_HOME PATH, as the timer unit runs it)
+backstop: rang fm-lab-backstop-4068783-16668:w1:p1 on herdr for episode 1794018654
+rc=0

@@ -1,0 +1,8 @@
+## record body delivered
+Independent watcher backstop: this home has 1 task(s) in flight, but its watcher beacon is 583 minutes old and no live watcher holds the home lock. Supervision is down and nothing inside this session re-armed it, for example after a resume. If this session has not run bin/fm-session-start.sh since it opened, run it now; otherwise run bin/fm-wake-drain.sh. Then restore supervision as the session-start operating block says before ending the turn.
+## check #2 same episode
+backstop: episode 1794018654 already rung
+## half-typed composer, new episode
+backstop: supervision down (beacon 1200s ago) but not rung: deferred: composer of fm-lab-backstop-4068783-16668:w1:p1 is pending, not an idle empty prompt
+episode=1794018654
+rung_at=17940536561
