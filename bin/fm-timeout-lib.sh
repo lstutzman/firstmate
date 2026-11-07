@@ -365,7 +365,7 @@ fm_exec_timed() {  # <seconds> <grace-seconds> <command...>
 }
 
 fm_detach_session() {  # <log> <command...>
-  local log=$1
+  local log_path=$1
   shift
   python3 -I -c '
 import os, sys
@@ -381,5 +381,5 @@ if os.fork() == 0:
     os.execvp(sys.argv[2], sys.argv[2:])
 os.close(w)
 os.read(r, 1)
-' "$log" "$@"
+' "$log_path" "$@"
 }
