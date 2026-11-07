@@ -90,9 +90,10 @@
         "triage": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["filed_by", "found", "score", "priority_was", "priority", "action"],
+          "required": ["filed_by", "found", "severity", "score", "priority_was", "priority", "action"],
           "properties": {
             "filed_by": {"type": "string"},
+            "severity": {"enum": ["critical", "high", "medium", "low"]},
             "found": {"type": "integer", "minimum": 0},
             "score": {"type": "number"},
             "priority_was": {"enum": [0, 1, 2, 3, 4]},

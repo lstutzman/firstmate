@@ -1651,9 +1651,10 @@ The pass reads current records; the common officer scheduler's date names the ru
 
 The progress officer follows the shared [officer contract](officers/contract.md) with its rubric [`docs/officers/progress-rubric.md`](officers/progress-rubric.md), which owns the triage rules; it finds no work and files nothing in Linear.
 Before it writes the start request for an item another officer filed (the description carries that officer's `<officer-id>-fp:<sha256>` marker), it names the owning office, the Navigator for PropertyCompass2 and the Quartermaster for the Fleet project, and sends the request to that office's home.
-With `writes: linear` it also raises the item's Linear priority from its score (the severity its current priority stands for, times log2(1 + the `Found:` line's count): 8 or more is Urgent, 4 or more High, else Medium), through `linear-axi` `--dry-run` then `--verify`, within `max-linear-calls`.
+With `writes: linear` it also raises the item's Linear priority from its score (the severity fixed when the lane first saw the item, from the filer's `Severity:` line or else what its priority then stood for, times log2(1 + the `Found:` line's count): 8 or more is Urgent, 4 or more High, else Medium), through `linear-axi` `--dry-run` then `--verify`, within `max-linear-calls`.
 It only raises a priority, and never touches an item that is assigned or whose priority differs from what the lane's `triage-state.json` last recorded, which is how a person's change shows.
-The ranked list re-sorts on the new priority, and each request carries a `triage` record (filed by, found count, score, priority before and after, the action).
+The ranked list re-sorts on the new priority, and each request carries a `triage` record (filed by, severity, found count, score, priority before and after, the action).
+Only an item read in full (`issue view --full`, which carries its assignee) is triaged; any other is a named coverage gap, and is still held for Lee when the text that was read asks for a reserved class.
 An officer-filed item that asks for a reserved class is held for Lee instead of started, as one keyed `needs-decision` line, `progress-holds-<date>`, in the digest.
 A missing or unreadable rubric, `triage: off`, an exhausted call budget or a rate limit stops only the priority write and is named as a coverage gap; which items start does not change.
 

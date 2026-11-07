@@ -64,6 +64,9 @@ types = {'Done': 'completed', 'In Progress': 'started', 'Backlog': 'backlog'}
 data = doc.get('data')
 if isinstance(data, dict) and isinstance(data.get('issues'), list):
     data['issues'] = [i for i in data['issues'] if (i.get('stateType') or types.get(i.get('state'), 'unstarted')) == state]
+    if '--fields' in args:
+        keep = {'identifier', 'title', 'state', 'team'} | set(opt('--fields').split(','))
+        data['issues'] = [{k: v for k, v in i.items() if k in keep} for i in data['issues']]
     data.setdefault('pagination', {'hasNextPage': False})
 print(json.dumps(doc))
 PYLIST
@@ -89,7 +92,24 @@ if 'data' in doc:
 print(json.dumps(doc))
 PYFIX
     ;;
-  'issue update') printf '{"ok":true,"data":{"issue":{"identifier":"%s"}}}\n' "$3" ;;
+  'issue update')
+    case " $* " in *' --verify '*)
+      python3 -I - "$PROGRESS_WORLD/linear" "$3" "$5" <<'PYSET'
+import json, pathlib, sys
+root, ident, priority = pathlib.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+path = root / (ident + '.json')
+if path.exists():
+    doc = json.loads(path.read_text())
+    doc['data']['issue']['priority'] = priority
+    path.write_text(json.dumps(doc))
+listed = json.loads((root / 'list.json').read_text())
+for issue in listed['data']['issues']:
+    if issue['identifier'] == ident:
+        issue['priority'] = priority
+(root / 'list.json').write_text(json.dumps(listed))
+PYSET
+    esac
+    printf '{"ok":true,"data":{"issue":{"identifier":"%s"}}}\n' "$3" ;;
   *) exit 99 ;;
 esac
 SH
@@ -202,7 +222,7 @@ spec = [
 listed = []
 for ident, title, parent, description in spec:
     issue = dict(identifier=ident, title=title, state='Todo', stateType='unstarted')
-    listed.append(issue)
+    listed.append({k: v for k, v in issue.items() if k != 'assignee'})
     (root / (ident + '.json')).write_text(json.dumps(dict(ok=True, data=dict(
         issue=dict(issue, parent=parent, description=description)))))
 (root / 'list.json').write_text(json.dumps(dict(ok=True, data=dict(issues=listed))))
@@ -1551,6 +1571,9 @@ spec = [  # id, title, priority, assignee, project, description
     ('PC-203', 'Bug: fleet finding', 3, None, 'Fleet', 'Finding: z.\n' + found(1) + '\ncorpus-fp:' + 'c' * 64),
     ('PC-204', 'Bug: filed by a person', 0, None, None, 'A person wrote this one.'),
     ('PC-205', 'Bug: key problem', 0, None, None, 'Finding: bad. Rotate the API key.\n' + found(1) + '\nsurgeon-fp:' + 'd' * 64),
+    ('PC-206', 'Bug: medium seen thrice', 3, None, None, 'Finding: m.\nSeverity: medium.\n' + found(3) + '\nsurgeon-fp:' + 'e' * 64),
+    ('PC-207', 'Bug: low seen thrice', 3, None, None, 'Finding: l.\nSeverity: low.\n' + found(3) + '\nsurgeon-fp:' + 'f' * 64),
+    ('PC-208', 'Bug: long story', 3, None, None, 'Finding: the migration rewrites existing rows in the member table.' + '\n... (truncated, 9000 chars)'),
 ]
 issues, listed = {}, []
 for ident, title, priority, assignee, project, description in spec:
@@ -1573,21 +1596,32 @@ test_officer_filed_items_are_triaged() {
   assert_equals 'kept 3' "$(jq -r '.start_requests[] | select(.linear_id=="PC-203") | .triage.action + " " + (.triage.priority|tostring)' "$file")" \
     'a Medium item with a score under 4 stays Medium'
   assert_equals 'null' "$(jq -r '.start_requests[] | select(.linear_id=="PC-204") | .triage' "$file")" 'an item with no officer marker is not triaged'
-  assert_equals 'PC-201 PC-202 PC-203 PC-204' "$(jq -r '[.start_requests[] | .linear_id] | join(" ")' "$file")" \
-    'the ranked list orders by the triaged priority, and the reserved-class item is not among the starts'
-  assert_equals 'navigator navigator quartermaster null' "$(jq -r '[.start_requests[] | .owner_office] | map(. // "null") | join(" ")' "$file")" \
+  assert_equals 'set 3 2' "$(jq -r '.start_requests[] | select(.linear_id=="PC-206") | .triage.action + " " + (.triage.priority_was|tostring) + " " + (.triage.priority|tostring)' "$file")" \
+    'a medium finding found 3 times (score 4) is raised from Medium to High'
+  assert_equals 'kept low 2' "$(jq -r '.start_requests[] | select(.linear_id=="PC-207") | .triage.action + " " + .triage.severity + " " + (.triage.score|floor|tostring)' "$file")" \
+    'a low finding filed at Medium is scored as low (1 x log2 4 = 2), not medium'
+  assert_equals 'PC-201 PC-206 PC-202 PC-203 PC-207 PC-204' "$(jq -r '[.start_requests[] | .linear_id] | join(" ")' "$file")" \
+    'the ranked list orders by the triaged priority, and the reserved-class items are not among the starts'
+  assert_equals 'navigator navigator navigator quartermaster navigator null' "$(jq -r '[.start_requests[] | .owner_office] | map(. // "null") | join(" ")' "$file")" \
     'the owner office is named: the Navigator for PropertyCompass2 work, the Quartermaster for the Fleet project'
-  assert_equals "$WORLD/navigator $WORLD/navigator $WORLD/quartermaster" "$(jq -r '[.start_requests[] | select(.owner_office) | .execute.env.FM_HOME] | join(" ")' "$file")" \
+  assert_equals "$WORLD/navigator $WORLD/navigator $WORLD/navigator $WORLD/quartermaster $WORLD/navigator" "$(jq -r '[.start_requests[] | select(.owner_office) | .execute.env.FM_HOME] | join(" ")' "$file")" \
     'a triaged request goes to its owner office home'
-  assert_equals 'PC-205 progress-holds-'"$DATE" "$(jq -r '.asks_for_lee[] | .linear_id + " " + .ask_key' "$file")" 'a reserved class is held as one keyed needs-decision'
-  assert_contains "$(cat "$md")" "needs-decision [key=progress-holds-$DATE]: 1 officer-filed item(s) held for Lee" 'the digest carries the keyed line'
+  assert_equals "PC-205 progress-holds-$DATE PC-208 progress-holds-$DATE" "$(jq -r '[.asks_for_lee[] | .linear_id + " " + .ask_key] | sort | join(" ")' "$file")" \
+    'a reserved class is held as one keyed needs-decision, also when the description was cut short'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'PC-208 not triaged: its description was not read in full' 'a cut-short description is a named gap'
+  assert_contains "$(cat "$md")" "needs-decision [key=progress-holds-$DATE]: 2 item(s) held for Lee" 'the digest carries the keyed line'
   local calls
   calls=$(grep '^issue update' "$WORLD/calls")
   assert_contains "$calls" 'issue update PC-201 --priority 1 --dry-run --output json' 'the priority write dry-runs first'
   assert_contains "$calls" 'issue update PC-201 --priority 1 --verify --output json' 'and then verifies'
   assert_contains "$calls" 'issue update PC-205 --priority 3 --dry-run' 'a held item is still prioritised'
-  assert_equals '4' "$(printf '%s\n' "$calls" | wc -l | tr -d ' ')" 'only the two raised items are written'
-  assert_equals '1' "$(jq -r '."PC-201"' "$lane/triage-state.json")" 'the lane records the priority it left'
+  assert_equals '6' "$(printf '%s\n' "$calls" | wc -l | tr -d ' ')" 'only the three raised items are written'
+  assert_equals '1 high' "$(jq -r '."PC-201" | "\(.priority) \(.severity)"' "$lane/triage-state.json")" 'the lane records the priority it left and the severity it fixed'
+  : > "$WORLD/calls"
+  run_progress >/dev/null || fail 'unchanged triage run failed'
+  assert_equals '0' "$(grep -c '^issue update' "$WORLD/calls")" 'a second run with no new Found sighting writes nothing'
+  assert_equals 'kept 2' "$(jq -r '.start_requests[] | select(.linear_id=="PC-206") | .triage.action + " " + (.triage.priority|tostring)' "$file")" \
+    'the lane never reads its own raise as a higher severity'
   python3 -I - "$WORLD/linear" <<'PY'
 import json, sys
 for ident, priority in (('PC-201', 4),):
@@ -1620,9 +1654,10 @@ test_triage_writes_need_linear_and_a_rubric() {
   file="$WORLD_HOME/data/officers/progress/$DATE.json"
   run_progress >/dev/null || fail 'missing rubric run failed'
   assert_equals '0' "$(grep -c '^issue update' "$WORLD/calls")" 'a missing rubric makes no Linear write'
-  assert_contains "$(jq -r '.coverage[]' "$file")" 'progress-rubric.md unreadable' 'and names the gap'
-  assert_equals 'PC-201 PC-202 PC-203 PC-204' "$(jq -r '[.start_requests[] | .linear_id] | sort | join(" ")' "$file")" 'the same items still start'
-  assert_equals 'PC-205' "$(jq -r '.asks_for_lee[] | .linear_id' "$file")" 'the reserved class is still held'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'progress-rubric.md unreadable, so no triage priority is written' 'and names the gap'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'nothing starts by itself' 'and does not claim that starts stopped'
+  assert_equals 'PC-201 PC-202 PC-203 PC-204 PC-206 PC-207' "$(jq -r '[.start_requests[] | .linear_id] | sort | join(" ")' "$file")" 'the same items still start'
+  assert_equals 'PC-205 PC-208' "$(jq -r '[.asks_for_lee[] | .linear_id] | sort | join(" ")' "$file")" 'the reserved class is still held'
   pass 'progress: triage writes need writes: linear and a readable rubric, and starts do not depend on them'
 }
 

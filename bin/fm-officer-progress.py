@@ -368,7 +368,7 @@ class LinearDiscovery:
         label = "%s listing (%s)" % ("unblocked" if unblocked else "team", state)
         for _ in range(100):
             args = ["list", "--team", team, "--state", state, "--limit", "100", "--all", "--max-items", "100",
-                    "--fields", "stateType,priority,url,project,description"]
+                    "--fields", "stateType,priority,url,project,description,assignee"]
             if unblocked:
                 args.append("--unblocked")
             if cursor:
@@ -1404,10 +1404,13 @@ def triage_pass(doc, facts, args):
     lib = _lib()
     off = lib.Officer("progress", "Progress officer", "Progress officer", RUBRIC_FILE, ())
     rubric = lib.load_rubric(args.rubric, off)
-    gaps = list(rubric.gaps)
+    if not rubric.loaded:
+        gaps = ["rubric %s unreadable, so no triage priority is written" % os.path.basename(args.rubric)]
+    else:
+        gaps = list(rubric.gaps)
     write = args.writes == "linear" and rubric.loaded and rubric.settings.get("triage", ["on"])[0] != "off"
-    if args.writes == "linear" and not write:
-        gaps.append("triage writes are off: the rubric %s" % ("is unreadable" if not rubric.loaded else "turns triage off"))
+    if args.writes == "linear" and rubric.loaded and not write:
+        gaps.append("triage writes are off: the rubric turns triage off")
     path = os.path.join(args.out, lib.TRIAGE_FILE)
     try:
         seen = json.loads(read(path) or "{}")
@@ -1423,6 +1426,13 @@ def triage_pass(doc, facts, args):
     for row in list(doc["start_requests"]):
         issue = facts.get(row["linear_id"] or "")
         if not issue:
+            continue
+        if not issue["full"]:
+            gaps.append("%s not triaged: its description was not read in full" % row["linear_id"])
+            reserved = lib.reserved_class({"title": row["title"], "summary": issue.get("description") or "", "location": "", "evidence": {}})
+            if reserved:
+                row.update(reason="Item not read in full asks for %s, a reserved class: held for Lee" % reserved, ask_key=key)
+                held.append(row)
             continue
         try:
             record = lib.triage_issue(lin, row["linear_id"], issue, seen, write)
@@ -1471,7 +1481,7 @@ def render_md(doc):
                 row["linear_id"] or "none", row["owner_home"],
                 row["authorising_class"] or "unclassified", row["tag_source"] or "none", row["reason"])
                 + ("; unrouted, stays with this home: " + row["unrouted"] if row.get("unrouted") else "")
-                + ("; triage: filed by %(filed_by)s, found %(found)d, score %(score).1f, priority %(priority_was)d -> %(priority)d (%(action)s)" % row["triage"]
+                + ("; triage: filed by %(filed_by)s, severity %(severity)s, found %(found)d, score %(score).1f, priority %(priority_was)d -> %(priority)d (%(action)s)" % row["triage"]
                    if row.get("triage") else "") + ("; owner office: " + row["owner_office"] if row.get("owner_office") else ""))
         if not doc[key]:
             lines.append("- None.")
@@ -1481,7 +1491,7 @@ def render_md(doc):
                       + doc["filler"]["reason"], ""])
     held = [r for r in doc["asks_for_lee"] if r.get("ask_key")]
     if held:
-        lines.extend(["## Needs decision", "", "- needs-decision [key=%s]: %d officer-filed item(s) held for Lee, they match a reserved class: %s" % (
+        lines.extend(["## Needs decision", "", "- needs-decision [key=%s]: %d item(s) held for Lee, they match a reserved class: %s" % (
             held[0]["ask_key"], len(held), "; ".join("%s (%s)" % (r["id"], r["title"]) for r in held[:10])), ""])
     lines.extend(["## Unclassified", "", "- %d open items have no recorded start class and are not listed."
                   % doc["unclassified"], ""])
@@ -1612,7 +1622,8 @@ def main(argv):
     reconcile_merge_asks([r for snapshot in snapshots for r in snapshot["rows"]] + list(rows.values()),
                          problems, discovery.deadline, rows)
     # judge() strips the fields a digest does not carry from the rows it returns, which are these same dicts.
-    facts = {i: {k: r.get(k) for k in ("description", "assignee", "priority", "project")} for i, r in rows.items()}
+    facts = {i: dict({k: r.get(k) for k in ("description", "assignee", "priority", "project")},
+                     full=i in discovery.viewed and not r["description_truncated"]) for i, r in rows.items()}
     doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers, top_of_mind, repo_gaps, repos)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date

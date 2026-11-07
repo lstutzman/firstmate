@@ -19,7 +19,8 @@ The reserved classes below are fixed in `bin/fm-officer-linear.py`, so no line h
 
 - Before an officer-filed start candidate's request is written, the officer sets its Linear priority from its score and names its owner office.
 - The score is the shared one: severity weight (critical 8, high 4, medium 2, low 1) multiplied by log2(1 + found), and the found count is the item's `Found:` line.
-  The severity is what the filing officer's priority stands for: Urgent is critical, High is high, Medium is medium, and none or Low is low.
+  The severity is the filing officer's `Severity:` line in the description; without one it is what the item's priority stood for when the officer first saw it: Urgent is critical, High is high, Medium is medium, and none or Low is low.
+  It is fixed at first sight in the lane's `triage-state.json`, so the officer's own priority writes never raise it; only a new Found sighting raises the score.
 - The priority follows the score: 8 or more is Urgent (1), 4 or more is High (2), anything lower is Medium (3).
   The found count is the lever: an item nobody has fixed climbs each time an officer sees it again.
 - The officer only raises a priority.
@@ -33,6 +34,7 @@ The reserved classes below are fixed in `bin/fm-officer-linear.py`, so no line h
 
 - Linear's only write is the priority above, `--dry-run` then `--verify`, counted against the registry line's `max-linear-calls` and stopped by one rate-limit answer.
 - A failed write is a named coverage gap on that item; its start request still goes out at the priority it had.
+- An item whose description was not read in full is not triaged and is a named coverage gap; it is still held for Lee when the text that was read asks for a reserved class.
 - The shared [filing rules](contract.md#file) do not apply, because the officer creates nothing.
 
 ## What starts by itself and what only holds for Lee
