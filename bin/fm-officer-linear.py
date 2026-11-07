@@ -39,7 +39,7 @@ how it finds things. This file owns the mechanics every officer shares:
               the fleet repositories (FLEET_REPOS), the quartermaster.
   triage      triage_issue(): the progress officer's one Linear priority write, for an item another officer filed (its
               `<officer>-fp:<sha256>` marker). The score is score_of()'s from the severity fixed when the lane first saw the
-              item (the filer's `Severity:` line, else what its priority then stood for) and the Found line's count; a score of 8 or more is High-or-Urgent (1), 4 or more High (2), else Medium (3). It only
+              item (the filer's `Severity:` line, else what its priority then stood for) and the Found line's count; a score of 8 or more is Urgent (1), 4 or more High (2), else Medium (3). It only
               raises a priority, never lowers one, and never touches an item that is assigned or whose priority a person
               changed since the progress lane last saw it (its triage-state.json). `--dry-run`, then `--verify`.
   patterns    update_patterns() / pattern_outputs(): one anti-pattern line per bug or code-review finding, deduped by
