@@ -27,10 +27,11 @@ Inputs (relative paths are under the host's home directory):
            of runs.jsonl beside it: each run's `finished`, the source names
            its `sources` reads not collected for a reason other than host
            offline, and the hosts it reads offline.
-  harvest  --harvest, default <archive>/memory-harvest/last-result.json: its
-           outcome and counts listed, total (the tier's own total), written,
-           withheld, deleted and superseded. The memory harvest has not
-           shipped, so these names are the design's and a missing file is a
+  harvest  --harvest, default <archive>/memory-harvest/last-result.json, as
+           memory_harvest.py writes it: `result` (ok, partial or failed) and the
+           flat counts listed, tier_total (the tier's own total, null when the
+           backend gives none), written, withheld, deleted and superseded. A
+           file without a known `result` is unreadable; a missing file is a
            coverage note.
   bosun    each --hosts host's ~/services/bosun-maintenance/last-result.json:
            its date and the counts of its `archive` section (reached, checked,
@@ -54,8 +55,9 @@ Finding classes, each with a fingerprint:
                   remembers each host's count per Bosun date (seven at most).
                   An archive section that is absent or not reached is a
                   coverage gap.
-  harvest-failed  the harvest's outcome is failed.
-  harvest-drift   listed and total differ by more than 1% of total.
+  harvest-failed  the harvest's result is failed; a partial run is left to
+                  harvest-drift.
+  harvest-drift   listed and tier_total differ by more than 1% of tier_total.
   prep-stale      the prep store finished more than PREP_HOURS hours ago.
   retrain-missed  the newest weekly retrain started more than RETRAIN_DAYS
                   days ago, there is none, or it failed.
@@ -116,7 +118,8 @@ DEFAULT_LOCAL_JEV = "deepthought:Documents/GitHub/local-jev"
 OFFLINE = "not collected: host offline"
 REMOTE_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._@-]*):(.+)$")
 INGEST_COUNTS = ("archived", "unchanged", "withheld", "errors", "sources_ok", "sources_not_collected", "hosts_offline")
-HARVEST_COUNTS = ("listed", "total", "written", "withheld", "deleted", "superseded")
+HARVEST_OUTCOMES = ("ok", "partial", "failed")
+HARVEST_COUNTS = ("listed", "tier_total", "written", "withheld", "deleted", "superseded")
 BOSUN_COUNTS = ("checked", "archived", "pending", "missing", "mismatched", "withheld")
 RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "corpus-rubric.md")
 TYPE_LABEL = "Chore"
@@ -181,7 +184,9 @@ def probe_ingest(path):
 
 def probe_harvest(path):
     doc = _json(path)
-    return {"outcome": _text(doc.get("outcome")), "counts": _ints(doc.get("counts"), HARVEST_COUNTS)}
+    if doc.get("result") not in HARVEST_OUTCOMES:
+        raise ValueError("no known result field")  # the writer's schema only: never guess
+    return {"outcome": doc["result"], "counts": _ints(doc, HARVEST_COUNTS)}
 
 
 def probe_bosun(path):
@@ -332,7 +337,7 @@ def judge(facts, nights, now):
     if harvest["state"] != "read":
         unread.update(("harvest", "harvest-counts"))
     if harvest["state"] == "missing":
-        coverage.append("the memory harvest has no result yet (%s); the harvest job has not shipped" % harvest["where"])
+        coverage.append("the memory harvest has no result yet (%s); the officer could not read the harvest" % harvest["where"])
     elif harvest["state"] != "read":
         coverage.append(gap(harvest, "the memory harvest's last result"))
     else:
@@ -340,14 +345,14 @@ def judge(facts, nights, now):
         notes.append("Memory harvest: outcome %s; %s." % (harvest["outcome"], ", ".join("%s %d" % (k, c[k]) for k in HARVEST_COUNTS if k in c)))
         if harvest["outcome"] == "failed":
             findings.append(finding("harvest", "harvest-failed", "memory-harvest", "high", "the memory harvest's last run failed"))
-        if "listed" in c and "total" in c:
-            if c["total"] and abs(c["listed"] - c["total"]) > DRIFT * c["total"]:
+        if "listed" in c and "tier_total" in c:
+            if c["tier_total"] and abs(c["listed"] - c["tier_total"]) > DRIFT * c["tier_total"]:
                 findings.append(finding("harvest-counts", "harvest-drift", "memory-harvest", "medium",
                                         "the memory harvest listed %d records against the tier's %d, more than 1%% apart" % (
-                                            c["listed"], c["total"])))
+                                            c["listed"], c["tier_total"])))
         else:
             unread.add("harvest-counts")
-            coverage.append("the memory harvest's result names no listed and total counts")
+            coverage.append("the memory harvest's result names no %s count" % " or ".join(k for k in ("listed", "tier_total") if k not in c))
     for name in sorted(k for k in facts if k.startswith("bosun:")):
         host, read = name[len("bosun:"):], facts[name]
         if read["state"] != "read":
