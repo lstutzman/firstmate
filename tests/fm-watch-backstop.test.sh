@@ -150,14 +150,165 @@ test_timer_files() {
   assert_contains "$(cat "$dir/$name.service")" "\"FM_HOME=$(cd -P "$home" && pwd -P)\"" "the service must bind this home"
   assert_contains "$(cat "$dir/$name.service")" "fm-watch-backstop.sh\" check" "the service must run one check"
   assert_contains "$(cat "$dir/$name.timer")" 'OnUnitActiveSec=5min' "the timer must poll every five minutes"
+  printf '# kept\n' >> "$dir/$name.service"
   run_backstop "$home" timer-files linux "$dir" >/dev/null 2>&1 || status=$?
-  [ "$status" -ne 0 ] || fail "timer-files must never overwrite existing scheduler files"
+  expect_code 0 "$status" "a second timer-files run on the same home must succeed"
+  assert_contains "$(cat "$dir/$name.service")" '# kept' "timer-files must never overwrite an existing scheduler file"
   out=$(run_backstop "$home" timer-files darwin "$dir") || fail "darwin timer-files failed"
   python3 -c 'import plistlib,sys; d=plistlib.load(open(sys.argv[1],"rb")); assert d["ProgramArguments"][1]=="check" and d["StartInterval"]==300, d' \
     "$dir/$out" || fail "the launchd plist is not a valid five-minute check agent"
   [ "$(run_backstop "$(make_home "$TMP_ROOT/timer-other")" timer-files linux "$TMP_ROOT/timer-other-out" | head -n 1)" != "$name.service" ] \
     || fail "two homes must get distinct unit names"
-  pass "backstop: timer-files writes per-home scheduler files and never overwrites"
+  pass "backstop: timer-files writes per-home scheduler files, and a rerun keeps them"
+}
+
+# Stateful systemctl, launchctl, and uname stand-ins: <dir>/enabled marks the
+# timer enabled, <dir>/unreachable models a user bus that cannot be reached.
+make_scheduler_fakes() {  # <dir> <Linux|Darwin>
+  local fb="$1/bin" st="$1"
+  mkdir -p "$fb"
+  : > "$st/calls.log"
+  printf '#!/usr/bin/env bash\necho %s\n' "$2" > "$fb/uname"
+  {
+    printf '#!/usr/bin/env bash\nST=%q\n' "$st"
+    cat <<'SH'
+printf '%s\n' "$*" >> "$ST/calls.log"
+[ ! -e "$ST/unreachable" ] || { echo "Failed to connect to user scope bus" >&2; exit 1; }
+case "$2" in
+  daemon-reload) exit 0 ;;
+  enable) [ "$3" = --now ] && touch "$ST/enabled" ;;
+  is-enabled) if [ -e "$ST/enabled" ]; then echo enabled; else echo not-found; exit 4; fi ;;
+esac
+SH
+  } > "$fb/systemctl"
+  {
+    printf '#!/usr/bin/env bash\nST=%q\n' "$st"
+    cat <<'SH'
+printf '%s\n' "$*" >> "$ST/calls.log"
+case "$1" in
+  print) [ -e "$ST/enabled" ] ;;
+  bootstrap) [ -f "$3" ] && touch "$ST/enabled" ;;
+  *) exit 1 ;;
+esac
+SH
+  } > "$fb/launchctl"
+  chmod +x "$fb/uname" "$fb/systemctl" "$fb/launchctl"
+  printf '%s\n' "$fb"
+}
+
+test_install_is_idempotent_and_verify_reports_a_missing_timer() {
+  local home st fb user out status=0 unit
+  home=$(make_home "$TMP_ROOT/install-linux")
+  st="$TMP_ROOT/install-linux-sched"
+  user="$TMP_ROOT/install-linux-user"
+  mkdir -p "$user"
+  fb=$(make_scheduler_fakes "$st" Linux)
+  [ -z "$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" verify)" ] \
+    || fail "verify must stay silent for a home with no endpoint the timer could ring"
+  record_as "$home" tmux '%3'
+  out=$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" verify)
+  assert_contains "$out" 'WATCH_BACKSTOP:' "verify must report a home whose timer is not installed"
+  assert_contains "$out" "(not-found)" "verify must name the scheduler's own state"
+  assert_contains "$out" "fm-watch-backstop.sh install" "verify must name the install command"
+  out=$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" install) || status=$?
+  expect_code 0 "$status" "install must succeed: $out"
+  unit=$(find "$user/.config/systemd/user" -name '*.timer' -exec basename {} .timer \;)
+  [ -n "$unit" ] || fail "install did not write the timer into the user unit directory"
+  assert_contains "$(cat "$st/calls.log")" "--user enable --now $unit.timer" "install must enable and start the timer"
+  [ -z "$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" verify)" ] \
+    || fail "verify must be silent once the timer is enabled"
+  printf '# kept\n' >> "$user/.config/systemd/user/$unit.service"
+  status=0
+  PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" install >/dev/null || status=$?
+  expect_code 0 "$status" "a second install on an installed home must succeed"
+  assert_contains "$(cat "$user/.config/systemd/user/$unit.service")" '# kept' "a second install must not overwrite the unit"
+  [ "$(find "$user/.config/systemd/user" -type f | grep -c .)" -eq 2 ] || fail "a second install duplicated scheduler files"
+  touch "$st/unreachable"
+  [ -z "$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" verify)" ] \
+    || fail "verify must stay silent when the user scheduler cannot be asked"
+
+  home=$(make_home "$TMP_ROOT/install-darwin")
+  st="$TMP_ROOT/install-darwin-sched"
+  user="$TMP_ROOT/install-darwin-user"
+  mkdir -p "$user"
+  fb=$(make_scheduler_fakes "$st" Darwin)
+  record_as "$home" tmux '%4'
+  assert_contains "$(PATH="$fb:$PATH" HOME="$user" run_backstop "$home" verify)" '(not loaded)' \
+    "verify must report a macOS home whose agent is not loaded"
+  PATH="$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null || fail "macOS install failed"
+  PATH="$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null || fail "a second macOS install failed"
+  [ "$(grep -c '^bootstrap ' "$st/calls.log")" -eq 1 ] || fail "a loaded agent must not be bootstrapped again: $(cat "$st/calls.log")"
+  [ -z "$(PATH="$fb:$PATH" HOME="$user" run_backstop "$home" verify)" ] || fail "verify must be silent once the agent is loaded"
+  pass "backstop: install is one idempotent command, and verify names it while the timer is missing"
+}
+
+# A Herdr CLI stand-in scoped to one session and pane: it answers only calls
+# that carry that exact --session, renders the composer as a bare Claude
+# prompt, and reports the agent working once after each submitted Enter.
+make_fake_herdr() {  # <dir> <session> <pane>
+  local fb="$1/bin" st="$1/state"
+  mkdir -p "$fb" "$st"
+  : > "$st/buffer"
+  : > "$st/submitted"
+  {
+    printf '#!/usr/bin/env bash\nST=%q\nSESSION=%q\nPANE=%q\n' "$st" "$2" "$3"
+    cat <<'SH'
+args=("$@")
+n=${#args[@]}
+[ "$n" -ge 2 ] && [ "${args[$((n - 2))]}" = --session ] && [ "${args[$((n - 1))]}" = "$SESSION" ] || exit 1
+case "$1 $2" in
+  "status --json") printf '{"client":{"version":"0.9.0","protocol":22},"server":{"running":true}}\n' ;;
+  "pane get") [ "$3" = "$PANE" ] && printf '{"result":{"pane":{"pane_id":"%s"}}}\n' "$PANE" ;;
+  "pane read") [ "$3" = "$PANE" ] && printf '\xe2\x9d\xaf %s\n' "$(cat "$ST/buffer")" ;;
+  "pane send-text") [ "$3" = "$PANE" ] && printf '%s' "$4" >> "$ST/buffer" ;;
+  "pane send-keys")
+    [ "$3" = "$PANE" ] || exit 1
+    case "$4" in
+      enter) { cat "$ST/buffer"; printf '\n'; } >> "$ST/submitted"; : > "$ST/buffer"; : > "$ST/working" ;;
+      ctrl+u) : > "$ST/buffer" ;;
+    esac
+    ;;
+  "agent get")
+    [ "$3" = "$PANE" ] || exit 1
+    status=idle
+    if [ -e "$ST/working" ]; then status=working; rm -f "$ST/working"; fi
+    printf '{"result":{"agent":{"agent":"claude","agent_status":"%s"}}}\n' "$status"
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  } > "$fb/herdr"
+  chmod +x "$fb/herdr"
+  printf '%s\n' "$fb"
+}
+
+# The timer runs check with only FM_HOME and the PATH captured at install.
+unit_check() {  # <home> <path>
+  env -i FM_HOME="$1" PATH="$2" "$BACKSTOP" check
+}
+
+test_ring_herdr_from_bare_unit_env() {
+  local home fb out
+  command -v jq >/dev/null 2>&1 || { pass "backstop: herdr ring skipped (jq not installed)"; return; }
+  fb=$(make_fake_herdr "$TMP_ROOT/herdr" fmhome 'w1:p2')
+  home=$(make_down_home "$TMP_ROOT/down-herdr" 35000)
+  record_as "$home" herdr 'fmhome:w1:p2'
+  assert_contains "$(cat "$home/state/.watch-backstop-endpoint")" 'backend=herdr' "the herdr endpoint must be recorded"
+
+  out=$(unit_check "$home" "$fb:$PATH")
+  assert_contains "$out" 'rang fmhome:w1:p2 on herdr' "the bare unit environment must ring the recorded herdr pane: $out"
+  [ "$(grep -c . "$TMP_ROOT/herdr/state/submitted")" -eq 1 ] || fail "the herdr pane did not receive exactly one submit"
+  assert_contains "$(cat "$TMP_ROOT/herdr/state/submitted")" '.msg' "a Claude primary on herdr must receive the record-backed doorbell"
+
+  out=$(unit_check "$home" "$fb:$PATH")
+  assert_contains "$out" 'already rung' "a second unit poll in the same episode must not ring"
+  [ "$(grep -c . "$TMP_ROOT/herdr/state/submitted")" -eq 1 ] || fail "the herdr episode rang more than once"
+
+  fm_touch_epoch "$(( $(date +%s) - 1500 ))" "$home/state/.last-watcher-beat"
+  out=$(unit_check "$home" "$fb:$PATH")
+  assert_contains "$out" 'rang fmhome:w1:p2 on herdr' "a new stale episode must ring the herdr pane again: $out"
+  [ "$(grep -c . "$TMP_ROOT/herdr/state/submitted")" -eq 2 ] || fail "the new herdr episode did not ring exactly once"
+  pass "backstop: the unit's bare environment rings a herdr endpoint once per stale episode"
 }
 
 # --- real ring through a private tmux socket --------------------------------
@@ -301,6 +452,8 @@ fm_test_run \
   test_check_without_need_or_with_fresh_beat_does_nothing \
   test_check_without_endpoint_reports_and_retries \
   test_timer_files \
+  test_install_is_idempotent_and_verify_reports_a_missing_timer \
+  test_ring_herdr_from_bare_unit_env \
   test_ring_once_per_stale_episode \
   test_ring_typed_input_for_other_harnesses \
   test_ring_defers_on_pending_composer_and_dead_target

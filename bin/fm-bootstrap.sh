@@ -1613,6 +1613,7 @@ detect_local_config() {
   fi
   detect_code_root_backlog_fork
   detect_home_summary_publication
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-watch-backstop.sh" verify </dev/null 2>/dev/null || true
   FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-officer.sh" ensure 2>/dev/null || true
   FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \

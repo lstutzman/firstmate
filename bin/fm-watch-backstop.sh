@@ -29,7 +29,19 @@
 #       One poll, normally from the timer. Prints one outcome line and exits 0.
 #   fm-watch-backstop.sh timer-files <linux|darwin> <dir>
 #       Writes this home's scheduler files into <dir> and prints their names.
-#       Never loads or starts a scheduler and never overwrites a file.
+#       Never loads or starts a scheduler. A file that already exists is kept
+#       as it is, so a second run changes nothing.
+#   fm-watch-backstop.sh install
+#       The one per-home install command: writes this host's scheduler files
+#       (systemd user units on Linux, a launchd agent on macOS) into the user's
+#       scheduler directory and enables the timer. Idempotent: on an installed
+#       home it keeps the files and re-enables the same timer.
+#   fm-watch-backstop.sh verify
+#       Prints one WATCH_BACKSTOP diagnostic naming the install command when
+#       this home has a recorded endpoint and the scheduler reports its timer
+#       as not installed or not enabled; silent when there is no endpoint to
+#       ring, the timer is enabled, or the scheduler cannot be asked.
+#       Run by bin/fm-bootstrap.sh at session start. Always exits 0.
 #   fm-watch-backstop.sh -h|--help
 #
 # FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state directory.
@@ -57,11 +69,15 @@ usage() {
 Usage: fm-watch-backstop.sh record-endpoint
        fm-watch-backstop.sh check
        fm-watch-backstop.sh timer-files <linux|darwin> <dir>
+       fm-watch-backstop.sh install
+       fm-watch-backstop.sh verify
        fm-watch-backstop.sh -h|--help
 
 record-endpoint  record this session's endpoint for the home (run in-session)
 check            one poll: ring the recorded endpoint once per stale episode
 timer-files      write this home's systemd user or launchd files into <dir>
+install          write and enable this home's timer (idempotent)
+verify           report when this home's timer is not installed or enabled
 FM_HOME selects the home. FM_WATCH_BACKSTOP_STALE_SECS (default 900) is the
 watcher beacon age treated as supervision down.
 EOF
@@ -79,7 +95,7 @@ case "$STALE_SECS" in ''|*[!0-9]*|0) STALE_SECS=900 ;; esac
 ACTION=${1:-}
 case "$ACTION" in
   -h|--help) usage; exit 0 ;;
-  record-endpoint|check) [ "$#" -eq 1 ] || { usage >&2; exit 2; } ;;
+  record-endpoint|check|install|verify) [ "$#" -eq 1 ] || { usage >&2; exit 2; } ;;
   timer-files) [ "$#" -eq 3 ] || { usage >&2; exit 2; } ;;
   *) usage >&2; exit 2 ;;
 esac
@@ -212,28 +228,53 @@ check() {
 quote() { local v=${1//\\/\\\\}; v=${v//\"/\\\"}; v=${v//%/%%}; printf '"%s"' "$v"; }
 xml() { local v=${1//&/&amp;}; v=${v//</&lt;}; v=${v//>/&gt;}; printf '%s' "$v"; }
 
-timer_files() {  # <linux|darwin> <dir>
-  local platform=$1 dir=$2 home slug name env_path self
-  home=$(cd -P "$FM_HOME" 2>/dev/null && pwd -P) || { echo "error: FM_HOME $FM_HOME is not a directory" >&2; return 1; }
+# This home's resolved path and its per-home scheduler name.
+home_path() { cd -P "$FM_HOME" 2>/dev/null && pwd -P; }
+unit_name() {  # <linux|darwin>
+  local home slug
+  home=$(home_path) || { echo "error: FM_HOME $FM_HOME is not a directory" >&2; return 1; }
   slug=$(printf '%s' "$home" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-12)
+  case "$1" in
+    linux) printf 'firstmate-watch-backstop-%s' "$slug" ;;
+    darwin) printf 'com.firstmate.watch-backstop.%s' "$slug" ;;
+    *) echo "error: platform must be linux or darwin" >&2; return 2 ;;
+  esac
+}
+
+host_platform() {
+  case "$(uname -s 2>/dev/null)" in
+    Linux) printf linux ;;
+    Darwin) printf darwin ;;
+    *) return 1 ;;
+  esac
+}
+
+scheduler_dir() {  # <linux|darwin>
+  case "$1" in
+    linux) printf '%s/systemd/user' "${XDG_CONFIG_HOME:-$HOME/.config}" ;;
+    darwin) printf '%s/Library/LaunchAgents' "$HOME" ;;
+  esac
+}
+
+timer_files() {  # <linux|darwin> <dir>
+  local platform=$1 dir=$2 home name env_path self
+  home=$(home_path) || { echo "error: FM_HOME $FM_HOME is not a directory" >&2; return 1; }
+  name=$(unit_name "$platform") || return $?
   self="$SCRIPT_DIR/fm-watch-backstop.sh"
   env_path=${PATH:-/usr/bin:/bin}
   mkdir -p "$dir" || return 1
   case "$platform" in
     linux)
-      name="firstmate-watch-backstop-$slug"
-      [ ! -e "$dir/$name.service" ] && [ ! -e "$dir/$name.timer" ] \
-        || { echo "error: $dir/$name.service or .timer already exists" >&2; return 1; }
-      printf '[Unit]\nDescription=Firstmate watcher backstop for %s\n[Service]\nType=oneshot\nEnvironment=%s\nEnvironment=%s\nExecStart=%s check\n' \
-        "$home" "$(quote "FM_HOME=$home")" "$(quote "PATH=$env_path")" "$(quote "$self")" > "$dir/$name.service" || return 1
-      printf '[Unit]\nDescription=Firstmate watcher backstop for %s\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=5min\n[Install]\nWantedBy=timers.target\n' \
-        "$home" > "$dir/$name.timer" || return 1
+      [ -e "$dir/$name.service" ] \
+        || printf '[Unit]\nDescription=Firstmate watcher backstop for %s\n[Service]\nType=oneshot\nEnvironment=%s\nEnvironment=%s\nExecStart=%s check\n' \
+          "$home" "$(quote "FM_HOME=$home")" "$(quote "PATH=$env_path")" "$(quote "$self")" > "$dir/$name.service" || return 1
+      [ -e "$dir/$name.timer" ] \
+        || printf '[Unit]\nDescription=Firstmate watcher backstop for %s\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=5min\n[Install]\nWantedBy=timers.target\n' \
+          "$home" > "$dir/$name.timer" || return 1
       printf '%s\n%s\n' "$name.service" "$name.timer"
       ;;
     darwin)
-      name="com.firstmate.watch-backstop.$slug"
-      [ ! -e "$dir/$name.plist" ] || { echo "error: $dir/$name.plist already exists" >&2; return 1; }
-      cat > "$dir/$name.plist" <<EOF || return 1
+      [ -e "$dir/$name.plist" ] || cat > "$dir/$name.plist" <<EOF || return 1
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -251,12 +292,57 @@ timer_files() {  # <linux|darwin> <dir>
 EOF
       printf '%s\n' "$name.plist"
       ;;
-    *) echo "error: platform must be linux or darwin" >&2; return 2 ;;
   esac
+}
+
+install_timer() {
+  local platform dir name
+  platform=$(host_platform) || { echo "error: no systemd user timer or launchd agent on $(uname -s 2>/dev/null)" >&2; return 2; }
+  dir=$(scheduler_dir "$platform")
+  timer_files "$platform" "$dir" >/dev/null || return 1
+  name=$(unit_name "$platform") || return 1
+  case "$platform" in
+    linux)
+      systemctl --user daemon-reload || return 1
+      systemctl --user enable --now "$name.timer" || return 1
+      printf 'installed: %s/%s.timer\n' "$dir" "$name"
+      ;;
+    darwin)
+      launchctl print "gui/$(id -u)/$name" >/dev/null 2>&1 \
+        || launchctl bootstrap "gui/$(id -u)" "$dir/$name.plist" || return 1
+      printf 'installed: %s/%s.plist\n' "$dir" "$name"
+      ;;
+  esac
+}
+
+verify_timer() {
+  local platform name state home
+  [ -f "$ENDPOINT_FILE" ] || return 0
+  platform=$(host_platform) || return 0
+  name=$(unit_name "$platform" 2>/dev/null) || return 0
+  case "$platform" in
+    linux)
+      state=$(systemctl --user is-enabled "$name.timer" 2>/dev/null) || true
+      state=$(printf '%s' "$state" | head -n 1)
+      [ -n "$state" ] || return 0
+      [ "$state" != enabled ] || return 0
+      name="$name.timer ($state)"
+      ;;
+    darwin)
+      command -v launchctl >/dev/null 2>&1 || return 0
+      ! launchctl print "gui/$(id -u)/$name" >/dev/null 2>&1 || return 0
+      name="$name (not loaded)"
+      ;;
+  esac
+  home=$(home_path)
+  printf 'WATCH_BACKSTOP: this home'"'"'s out-of-session watcher backstop timer %s is not installed or not enabled, so an idle resumed session with supervision down is never rung; install it with: FM_HOME=%q %q install\n' \
+    "$name" "$home" "$SCRIPT_DIR/fm-watch-backstop.sh"
 }
 
 case "$ACTION" in
   record-endpoint) record_endpoint >/dev/null 2>&1; exit 0 ;;
   check) check ;;
   timer-files) timer_files "$2" "$3" ;;
+  install) install_timer ;;
+  verify) verify_timer; exit 0 ;;
 esac

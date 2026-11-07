@@ -557,7 +557,7 @@ It checks that a newly appended keyed decision is classified without rereading e
 It also covers generation-claim single-flight, stuck-claim supersession, superseded-owner silence, notice-marker refusal and retry, ownership-atomic episode reset, and the legacy upgrade shim.
 [`turnend-guard.md`](turnend-guard.md) owns those behavior contracts.
 
-`tests/fm-watch-backstop.test.sh` covers the out-of-session backstop: the endpoint record's ownership gate, one ring per stale episode through a real tmux pane for a resumed home with a dead session lock and a consumed interrupted notice, deferral on a pending composer or a vanished endpoint, and the generated scheduler files.
+`tests/fm-watch-backstop.test.sh` covers the out-of-session backstop: the endpoint record's ownership gate, one ring per stale episode through a real tmux pane for a resumed home with a dead session lock and a consumed interrupted notice, a ring through the Herdr backend from the bare environment the timer unit runs `check` in, deferral on a pending composer or a vanished endpoint, the generated scheduler files, the idempotent `install`, and the `verify` diagnostic.
 
 `FM_CLAUDE_LIVE_E2E=1 tests/fm-claude-stop-autoarm-live-e2e.test.sh`:
 
@@ -590,6 +590,6 @@ The other harnesses rely on these mechanisms:
 - Codex retains bounded foreground checkpoints unless the home opts in to its [native Stop park](supervision-protocols/codex.md).
 
 Every harness above re-arms only from inside a session that takes turns.
-The [out-of-session backstop](#out-of-session-backstop) covers an idle or resumed session only where its per-home timer is installed and an endpoint was recorded, and it waits at least its 15-minute threshold plus one timer interval.
+The [out-of-session backstop](#out-of-session-backstop) covers an idle or resumed session only where its per-home timer is installed and an endpoint was recorded; session start reports a home whose timer is missing or disabled, and it waits at least its 15-minute threshold plus one timer interval.
 
 [`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the current cross-harness live evidence, the dated Stop-owned Claude auto-arm results, and exact opt-in commands.

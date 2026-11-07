@@ -899,26 +899,20 @@ Neither action removes the alarm's history or turns off the ledger for other pro
 `bin/fm-watch-backstop.sh` rings a home's own session when its supervision stays down with nothing inside the session to re-arm it, such as an idle resumed Claude session ([watcher continuity](watcher-continuity.md#out-of-session-backstop)).
 Install one user timer per home; no command needs sudo.
 The session records its endpoint at session start and on resume, so the timer needs no endpoint configuration.
-The generated files capture the installation shell's `PATH` and the home, and existing scheduler files are never overwritten.
-Run these from the home's stable code directory with `FM_HOME` set to the home.
-
-On Linux:
+Run this once from the home's stable code directory, with `FM_HOME` set to the home:
 
 ```sh
-FM_HOME="$PWD" bin/fm-watch-backstop.sh timer-files linux "$HOME/.config/systemd/user"
-systemctl --user daemon-reload
-systemctl --user enable --now firstmate-watch-backstop-<slug>.timer
+FM_HOME="$PWD" bin/fm-watch-backstop.sh install
 ```
 
-On macOS:
-
-```sh
-FM_HOME="$PWD" bin/fm-watch-backstop.sh timer-files darwin "$HOME/Library/LaunchAgents"
-launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.firstmate.watch-backstop.<slug>.plist"
-```
-
-`timer-files` prints the generated file names, including the per-home `<slug>`.
-To turn it off, run `systemctl --user disable --now firstmate-watch-backstop-<slug>.timer` on Linux or `launchctl bootout` with the same plist path on macOS.
+On Linux it writes a systemd user service and timer into `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user` and runs `systemctl --user enable --now` on the timer.
+On macOS it writes a launchd agent into `$HOME/Library/LaunchAgents` and bootstraps it unless it is already loaded.
+The generated files capture the installation shell's `PATH` and the home, and the unit names carry a per-home `<slug>`.
+The command is idempotent: running it again keeps the existing files unchanged and enables the same timer, so nothing is overwritten or duplicated.
+Session start's bootstrap runs `bin/fm-watch-backstop.sh verify`, which prints one `WATCH_BACKSTOP:` line naming this install command when the home has a recorded endpoint and the scheduler reports its timer as not installed or not enabled.
+It never installs anything itself.
+`bin/fm-watch-backstop.sh timer-files <linux|darwin> <dir>` writes the same files into another directory without touching a scheduler.
+To turn it off, run `systemctl --user disable --now firstmate-watch-backstop-<slug>.timer` on Linux or `launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.firstmate.watch-backstop.<slug>.plist"` on macOS.
 
 ## Firstmate role (config/firstmate-role)
 
