@@ -1790,7 +1790,7 @@ Offices live in the primary home's `data/offices.md`, one line per office, in th
 | `auto-merge-classes` | Must be `none`; no class auto-merges yet |
 | `wip` | The most live tasks the office may run at once, 1 to 9; a landing task, a ship whose ready PR is handed to another home's merger with nothing left open, holds no place, while [project capacity](#project-capacity-configproject-capacity) and [landing lag](#landing-lag-dataprojectsmd-landing-lag-token) still bound every spawn (`bin/fm-office-authority-lib.sh` owns the definition) |
 | `tick` | `every Nh` (N from 1 to 24) |
-| `sources` | Comma-separated `tick`, `upstream`, `ratchet`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
+| `sources` | Comma-separated `tick`, `upstream`, `ratchet`, `research`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
 
 Each source is a watcher check in the office home's own `state/`, so it wakes the office and never main.
 `bin/fm-office.sh register-sources`, run in the office home, installs and trusts one `state/office-<source>.check.sh` per listed source, and `bin/fm-office.sh check <source>` is its body; the script's header owns what each prints and when it stays silent.
