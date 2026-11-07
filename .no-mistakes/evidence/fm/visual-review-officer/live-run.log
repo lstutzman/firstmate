@@ -1,0 +1,100 @@
+
+===== S1 night 1: PR 5076 review() writes the file, the Surgeon files it =====
+Visual review: model stub-model, reviewed 3 of 3 images (0 unchanged, 0 failed, 0 deferred), 3 findings, cost $0.0003
+--- registry line:
+- surgeon - Triage plus intake (role: surgeon; cadence: daily 06:00; archive: /tmp/fm-officer-surgeon.XruJiB/live/archive; hosts: alpha; app: https://app.test; writes: linear; team: PC; visual-findings: /tmp/fm-officer-surgeon.XruJiB/live-visual/findings.json; visual-captures: /tmp/fm-officer-surgeon.XruJiB/live-visual/captures; jev: /tmp/fm-officer-surgeon.XruJiB/no-jev.py; model: none; added 2026-11-04)
+--- findings file from PR 5076 (fingerprint/class/screenshot):
+{"route":"/deal-finder","viewport":"desktop","rubric_item":"contradictory-numbers","class":"defect","fingerprint":"92b0fa394f31405be37589116a143a4c53100c04a8dc6f7113182466c8dd435e","screenshot":"shots/deal-desktop.png"}
+{"route":"/deal-finder","viewport":"mobile","rubric_item":"contradictory-numbers","class":"defect","fingerprint":"92b0fa394f31405be37589116a143a4c53100c04a8dc6f7113182466c8dd435e","screenshot":"shots/deal-mobile.png"}
+{"route":"/portfolio","viewport":"desktop","rubric_item":"jargon","class":"held-for-lee","fingerprint":"6d98f54a82cf2cc1e59a383081ed75962dacf57ecad4f6f0253ac1f01eac4d8c","screenshot":"shots/port-desktop.png"}
+--- independent fingerprint check: sha256(visual-review-fp-v1\n/deal-finder\ncontradictory-numbers)
+92b0fa394f31405be37589116a143a4c53100c04a8dc6f7113182466c8dd435e  -
+--- fm-officer.sh run surgeon:
+Coverage gap: visual review screenshots are named in the Linear items, not attached: linear-axi has no attachment command (1 finding(s))
+Coverage gap: local-jev not found at /tmp/fm-officer-surgeon.XruJiB/no-jev.py, so duplicates are found by fingerprint only
+DIGEST 2026-10-23 2 data/officers/surgeon/2026-10-23.md
+exit=0
+--- linear-axi calls:
+label list --team PC --limit 250 --output json
+issue search surgeon-fp:b2b975f4558969acd6dec1c2701e566834b4f72d4ad0408c3d5accd43c91ca0d --team PC --limit 5 --output json
+issue view PC-9 --full --output json
+issue create --team PC --title Visual review: contradictory-numbers on /deal-finder --body-file /tmp/fm-officer-surgeon.XruJiB/live/home/data/officers/surgeon/.surgeon-2026-10-23-b2b975f45589.md --priority 2 --label Bug --label scheduled-review --label deal-finder --dry-run --output json
+issue create --team PC --title Visual review: contradictory-numbers on /deal-finder --body-file /tmp/fm-officer-surgeon.XruJiB/live/home/data/officers/surgeon/.surgeon-2026-10-23-b2b975f45589.md --priority 2 --label Bug --label scheduled-review --label deal-finder --verify --output json
+--- created item body:
+Filed by the Ship's Surgeon from the 2026-10-23 nightly visual review results.
+What it is for: a finding no Linear item tracked yet, so it is not lost.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: high. Source job: visual-review.
+Found: 1 times (first 2026-10-23, last 2026-10-23, by surgeon)
+evidence: Net yield 9% beside net yield 4%
+reason: new
+region: summary
+review_run: 2026-10-23T02:10:00+00:00
+reviewer_severity: high
+rubric_item: contradictory-numbers
+viewports: desktop, mobile
+Location: /deal-finder
+Screenshot: /tmp/fm-officer-surgeon.XruJiB/live-visual/captures/shots/deal-desktop.png
+Screenshot: /tmp/fm-officer-surgeon.XruJiB/live-visual/captures/shots/deal-mobile.png
+visual-review-fp:92b0fa394f31405be37589116a143a4c53100c04a8dc6f7113182466c8dd435e
+surgeon-fp:b2b975f4558969acd6dec1c2701e566834b4f72d4ad0408c3d5accd43c91ca0d--- asks_for_lee:
+[{"findings":[{"class":"held-for-lee","fingerprint":"d005c538919d683655cdeb0cabfaa61cdfab346220dc02517cef420f51192008","title":"Visual review: jargon on /portfolio"}],"key":"surgeon-visual-held-2026-10-23","line":"needs-decision [key=surgeon-visual-held-2026-10-23]: 1 visual-review finding(s) on wording or product held for Lee, not filed and never started: /portfolio (jargon)"}]
+--- visual findings in digest json:
+{"class":"real","severity":"high","title":"Visual review: contradictory-numbers on /deal-finder","filing":{"action":"created","issue":"PC-101"}}
+{"class":"needs-decision","severity":"low","title":"Visual review: jargon on /portfolio","filing":null}
+--- visual start requests:
+[]
+--- digest md (visual lines):
+3:Intake: needs-decision 1, real 1.
+6:Coverage gap: visual review screenshots are named in the Linear items, not attached: linear-axi has no attachment command (1 finding(s))
+8:needs-decision [key=surgeon-visual-held-2026-10-23]: 1 visual-review finding(s) on wording or product held for Lee, not filed and never started: /portfolio (jargon)
+12:- [high] real visual/visual-review: contradictory-numbers on /deal-finder: Net yield 9% beside net yield 4% (score 4.0, found 1) [created PC-101]
+13:- [low] needs-decision visual/visual-review: jargon on /portfolio: LTV ICR DSCR (score 1.0, found 1)
+
+===== S2 night 2: screens changed, same defect re-seen -> Found bump, no new item, held not re-asked =====
+Visual review: model stub-model, reviewed 3 of 3 images (0 unchanged, 0 failed, 0 deferred), 3 findings, cost $0.0003
+Coverage gap: visual review screenshots are named in the Linear items, not attached: linear-axi has no attachment command (1 finding(s))
+Coverage gap: local-jev not found at /tmp/fm-officer-surgeon.XruJiB/no-jev.py, so duplicates are found by fingerprint only
+DIGEST 2026-10-24 2 data/officers/surgeon/2026-10-24.md
+exit=0
+--- linear-axi calls:
+label list --team PC --limit 250 --output json
+issue view PC-101 --full --output json
+issue update PC-101 --body-file /tmp/fm-officer-surgeon.XruJiB/live/home/data/officers/surgeon/.surgeon-2026-10-24-b2b975f45589.md --dry-run --output json
+issue update PC-101 --body-file /tmp/fm-officer-surgeon.XruJiB/live/home/data/officers/surgeon/.surgeon-2026-10-24-b2b975f45589.md --verify --output json
+issue comment PC-101 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --dry-run --output json
+issue comment PC-101 --body Seen again on 2026-10-24 by the Ship's Surgeon (found 2 times). --verify --output json
+--- update bodies:
+UPDATE PC-101
+unrelated
+Found: 2 times (first 2026-10-24, last 2026-10-24, by surgeon)
+--- asks_for_lee count:
+0
+
+===== S3 night 3: same file (no new nightly) -> named gap, nothing written =====
+Coverage gap: visual findings file /tmp/fm-officer-surgeon.XruJiB/live-visual/findings.json is unchanged since the review run of 2026-10-24T02:10:00+00:00, so no nightly visual review ran since
+--- linear writes:
+0
+
+===== S4 night 4: every model call fails in PR 5076 -> errors+images_failed -> named gaps, nothing filed =====
+Visual review: model stub-model, reviewed 0 of 3 images (0 unchanged, 3 failed, 0 deferred), 0 findings, cost $0.0000
+{"findings":[],"errors":[{"error":"model call failed: 503","key":"/deal-finder|desktop|default"},{"error":"model call failed: 503","key":"/deal-finder|mobile|default"},{"error":"model call failed: 503","key":"/portfolio|desktop|default"}],"failed":3}
+Coverage gap: visual findings file /tmp/fm-officer-surgeon.XruJiB/live-visual/findings.json reports 3 review error(s), so its findings are incomplete
+Coverage gap: visual findings file /tmp/fm-officer-surgeon.XruJiB/live-visual/findings.json: run.images_failed is 3, so its findings are incomplete
+--- linear writes:
+0
+
+===== S5 writes none: digest only, no Linear call =====
+Visual review: model stub-model, reviewed 3 of 3 images (0 unchanged, 0 failed, 0 deferred), 3 findings, cost $0.0003
+~/.no-mistakes/evidence/01M6W31SBPE3B97073BNSA0BHH/driver/drive.sh: line 1162: /tmp/fm-officer-surgeon.XruJiB/dry/linear.calls: No such file or directory
+--- linear log size: 0
+{"class":"real","severity":"high"}
+{"class":"needs-decision","severity":"low"}
+["surgeon-visual-held-2026-10-23"]
+
+===== S6 registry guard: relative visual-findings, captures without findings =====
+fm-officer: officer surgeon: visual-findings must be an absolute path
+exit=2
+fm-officer: officer surgeon: visual-captures needs visual-findings
+exit=2

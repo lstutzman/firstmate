@@ -1,0 +1,7 @@
+ok - fm-officer surgeon: a visual defect is one item, wording is held for Lee and nothing starts
+ok - fm-officer surgeon: a repeat bumps the Found line, an unchanged file adds nothing
+ok - fm-officer surgeon: a held-only visual run is one decision and no Linear call
+ok - fm-officer surgeon: a missing, unreadable, foreign or version 1 visual findings file is a named coverage gap
+ok - fm-officer surgeon: an incomplete visual review and a row with no fingerprint are named coverage gaps
+ok - fm-officer surgeon: without writes: linear the visual review reaches the digest and nothing reaches Linear
+ok - fm-officer surgeon: the visual registry fields are validated
