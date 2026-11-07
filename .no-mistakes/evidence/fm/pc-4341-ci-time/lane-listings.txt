@@ -1,0 +1,86 @@
+$ bin/fm-test-run.sh --list --lane portable-parallel-1
+tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-lint.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-backend-herdr.test.sh
+tests/fm-arm-pretool-check.test.sh
+tests/fm-t3-mcp.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-brief.test.sh
+tests/fm-review-diff.test.sh
+tests/fm-send-strict.test.sh
+tests/fm-spawn-batch.test.sh
+tests/fm-composer-ghost.test.sh
+tests/fm-ensure-agents-md.test.sh
+$ bin/fm-test-run.sh --list-scheduled --lane portable-parallel-1
+tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-lint.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-backend-herdr.test.sh
+tests/fm-arm-pretool-check.test.sh
+tests/fm-t3-mcp.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-brief.test.sh
+tests/fm-review-diff.test.sh
+tests/fm-send-strict.test.sh
+tests/fm-spawn-batch.test.sh
+tests/fm-composer-ghost.test.sh
+tests/fm-ensure-agents-md.test.sh
+$ bin/fm-test-run.sh --list --lane portable-parallel-2
+tests/fm-pr-merge.test.sh
+tests/fm-test-run.test.sh
+tests/fm-backend-t3code.test.sh
+tests/fm-x-mode.test.sh
+tests/fm-pi-primary-types.test.sh
+tests/fm-composer-lib.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-grok-harness.test.sh
+tests/fm-send-popup-settle.test.sh
+tests/fm-send-settle.test.sh
+tests/fm-tmux-submit-busy.test.sh
+tests/fm-supervision-instructions.test.sh
+tests/fm-transition-lib.test.sh
+$ bin/fm-test-run.sh --list-scheduled --lane portable-parallel-2
+tests/fm-pr-merge.test.sh
+tests/fm-test-run.test.sh
+tests/fm-backend-t3code.test.sh
+tests/fm-x-mode.test.sh
+tests/fm-pi-primary-types.test.sh
+tests/fm-composer-lib.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-grok-harness.test.sh
+tests/fm-send-popup-settle.test.sh
+tests/fm-send-settle.test.sh
+tests/fm-tmux-submit-busy.test.sh
+tests/fm-supervision-instructions.test.sh
+tests/fm-transition-lib.test.sh
+$ bin/fm-test-run.sh --check-coverage
+FM_TEST_COVERAGE ok total=364 parallel=26 parallel_max_ms=1566073 parallel_imbalance_ms=27 parallel_unhinted=0 serial=321 serial_shards=15 serial_unhinted=2 serial_max_ms=1179716 serial_budget_ms=1400000 herdr=17
+exit=0
+$ bin/fm-test-isolation-proof.sh --list
+tests/fm-arm-pretool-check.test.sh
+tests/fm-backend-herdr.test.sh
+tests/fm-backend-t3code.test.sh
+tests/fm-brief.test.sh
+tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-composer-ghost.test.sh
+tests/fm-composer-lib.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-ensure-agents-md.test.sh
+tests/fm-grok-harness.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-lint.test.sh
+tests/fm-pi-primary-types.test.sh
+tests/fm-pr-merge.test.sh
+tests/fm-review-diff.test.sh
+tests/fm-send-popup-settle.test.sh
+tests/fm-send-settle.test.sh
+tests/fm-send-strict.test.sh
+tests/fm-spawn-batch.test.sh
+tests/fm-supervision-instructions.test.sh
+tests/fm-t3-mcp.test.sh
+tests/fm-test-run.test.sh
+tests/fm-tmux-submit-busy.test.sh
+tests/fm-transition-lib.test.sh
+tests/fm-x-mode.test.sh

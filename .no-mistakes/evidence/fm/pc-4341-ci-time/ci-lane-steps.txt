@@ -1,0 +1,3 @@
+job=tests-portable-parallel-1 step="Run portable parallel shard 1" pi_install=false pi_guard=false
+job=tests-portable-parallel-2 step="Run portable parallel shard 2" pi_install=false pi_guard=true
+job=tests-portable-serial step="Install the Pi package for the Pi extension tests" pi_install=true pi_guard=false
