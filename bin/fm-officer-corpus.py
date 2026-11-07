@@ -57,7 +57,7 @@ Finding classes, each with a fingerprint:
                   coverage gap.
   harvest-failed  the harvest's result is failed; a partial run is left to
                   harvest-drift.
-  harvest-drift   listed and tier_total differ by more than 1% of total.
+  harvest-drift   listed and tier_total differ by more than 1% of tier_total.
   prep-stale      the prep store finished more than PREP_HOURS hours ago.
   retrain-missed  the newest weekly retrain started more than RETRAIN_DAYS
                   days ago, there is none, or it failed.
