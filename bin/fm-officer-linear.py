@@ -37,6 +37,11 @@ how it finds things. This file owns the mechanics every officer shares:
               A finding that names no repository belongs to the Officer's project (owning_project: PropertyCompass2 by
               default, Fleet for a fleet officer); a Fleet item names no repository and goes to the office that dispatches
               the fleet repositories (FLEET_REPOS), the quartermaster.
+  triage      triage_issue(): the progress officer's one Linear priority write, for an item another officer filed (its
+              `<officer>-fp:<sha256>` marker). The score is score_of()'s from the severity fixed when the lane first saw the
+              item (the filer's `Severity:` line, else what its priority then stood for) and the Found line's count; a score of 8 or more is Urgent (1), 4 or more High (2), else Medium (3). It only
+              raises a priority, never lowers one, and never touches an item that is assigned or whose priority a person
+              changed since the progress lane last saw it (its triage-state.json). `--dry-run`, then `--verify`.
   patterns    update_patterns() / pattern_outputs(): one anti-pattern line per bug or code-review finding, deduped by
               normalised title then local-jev, handed on as one batched start request per repository (PropertyCompass2's to
               the navigator for its quality-patterns.md, fleet code's to the office that dispatches that repository),
@@ -87,6 +92,12 @@ JEV_TIMEOUT = 20
 START_MIN_SCORE = 4.0
 START_ATTEMPT_CAP = 3  # starts for one fingerprint (a recurrence is a new item) before the owning office hands the repeat to Lee
 PATTERN_BATCH = 40
+TRIAGE_FILE = "triage-state.json"
+TRIAGE_BANDS = ((8.0, "1"), (START_MIN_SCORE, "2"))  # score at or above -> Linear priority; below both -> 3
+PRIORITY_SEVERITY = {1: "critical", 2: "high", 3: "medium"}  # what a creating officer's priority stands for; 0 and 4 count as low
+OFFICER_FILED = re.compile(r"\b([a-z][a-z-]*)-fp:[0-9a-f]{64}\b")
+SEVERITY_LINE = re.compile(r"\bSeverity: (critical|high|medium|low)\b")
+FOUND_ANY = re.compile(r"^Found: (\d+) times \(first \d{4}-\d{2}-\d{2}, last \d{4}-\d{2}-\d{2}, by [a-z-]+\)$", re.M)
 EXISTING_VIEWS = 3
 VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
 CLOSED_STATES = ("Done", "Canceled", "Cancelled", "Duplicate")
@@ -251,6 +262,7 @@ class Rubric:
         self.start_sources = set()
         self.min_score = START_MIN_SCORE
         self.pattern_memory = False
+        self.settings = {}
         self.gaps = []
 
 
@@ -266,6 +278,7 @@ def load_rubric(path, officer):
     settings = {m.group(1): [v.strip().lower() for v in m.group(2).split(",") if v.strip()]
                 for m in re.finditer(r"^- ([a-z-]+): *(.*?) *$", section, re.M)}
     rubric.loaded = True
+    rubric.settings = settings
 
     def narrow(key, allowed):
         asked = settings.get(key)
@@ -657,6 +670,51 @@ class Filer:
                 if exc.code in RATE_OR_BUDGET:
                     raise
                 f["filing"]["found_error"] = str(exc)
+
+
+def triage_issue(lin, ident, issue, seen, write):
+    """The triage record of an item another officer filed, or None when no officer's marker is in its description.
+
+    `seen` maps an item to the priority the progress lane last left it at and the severity it fixed at first sight: a
+    priority that differs now was changed by a person, so the item is kept for good. `write` False records the score and
+    priority it would set and writes nothing.
+    Raises LinearError only for RATE_LIMITED or CALL_BUDGET; any other failed write is named in the record's `error`.
+    """
+    desc = str(issue.get("description") or "")
+    marked = OFFICER_FILED.search(desc)
+    if not marked:
+        return None
+    count = FOUND_ANY.search(desc)
+    found = int(count.group(1)) if count else 1
+    current = int(issue.get("priority") or 0)
+    last = seen.get(ident) or {}
+    stated = SEVERITY_LINE.search(desc)
+    severity = last.get("severity") or (stated.group(1) if stated else PRIORITY_SEVERITY.get(current, "low"))
+    score = round(SEVERITY_WEIGHT[severity] * math.log2(1 + found), 1)
+    target = next((p for floor, p in TRIAGE_BANDS if score >= floor), "3")
+    record = {"filed_by": marked.group(1), "found": found, "severity": severity, "score": score, "priority_was": current,
+              "priority": current, "action": "kept"}
+    if issue.get("assignee"):
+        record["why"] = "assigned to a person"
+    elif "priority" in last and last["priority"] != current:
+        record["why"] = "a person changed the priority"
+    elif current and int(target) >= current:
+        record["why"] = "already at or above the score's priority"
+    elif not write:
+        record.update(action="would-set", priority=int(target), why="writes is not linear")
+    else:
+        cmd = ["issue", "update", ident, "--priority", target]
+        try:
+            lin(cmd + ["--dry-run"])
+            lin(cmd + ["--verify"])
+            record.update(action="set", priority=int(target))
+        except LinearError as exc:
+            if exc.code in RATE_OR_BUDGET:
+                raise
+            record["error"] = str(exc)
+    if record.get("why") != "a person changed the priority":
+        seen[ident] = {"priority": record["priority"] if record["action"] == "set" else current, "severity": severity}
+    return record
 
 
 # ---- start requests, holds ----------------------------------------------------------------
