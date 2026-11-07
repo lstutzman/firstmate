@@ -43,7 +43,7 @@ Coverage counters include both team and unblocked listings, counting each
 returned entry; team_items and unblocked_items separate those passes.
 Linear labels come from one filtered GraphQL query (linear-axi cannot read them) sent with the credential from
 `linear-token header`; an item carrying a start-class label gets that class and a failed read is a named gap.
-Open PRs are listed once per repo per run; a limited or blank answer backs off 2, 8 and 30 seconds, and a repo that
+Open PRs are listed once per repo per run; a blank answer is no open PRs, a limited one backs off 2, 8 and 30 seconds, and a repo that
 still fails holds only its own starts. A requested root that cannot be read skips only its own subtree.
 No cloud model calls, dispatch, steering, Linear writes, or GitHub writes.
 Only a start request that its source and evidence do not place is labelled by local-jev, the local classifier.
