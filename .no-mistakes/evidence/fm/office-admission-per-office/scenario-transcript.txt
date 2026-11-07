@@ -1,0 +1,51 @@
+== master config/admission/firstmate
+command=@OFFICE_HOME@/bin/fm-reserved-classify.sh --rules @OFFICE_HOME@/config/admission/firstmate.rules
+classes=authority
+clear=none
+
+== SCENARIO seed quartermaster
+seed quartermaster: OK
+-- quartermaster copy of config/admission/firstmate:
+command=/tmp/fm-lab.gZU5SB/quartermaster/bin/fm-reserved-classify.sh --rules /tmp/fm-lab.gZU5SB/quartermaster/config/admission/firstmate.rules
+classes=authority
+clear=none
+rules copied verbatim: OK
+== SCENARIO publish quartermaster
+office quartermaster: pushed
+publish quartermaster: OK
+
+== SCENARIO seed librarian
+seed librarian: OK
+-- librarian copy of config/admission/firstmate:
+command=/tmp/fm-lab.gZU5SB/librarian/bin/fm-reserved-classify.sh --rules /tmp/fm-lab.gZU5SB/librarian/config/admission/firstmate.rules
+classes=authority
+clear=none
+rules copied verbatim: OK
+== SCENARIO publish librarian
+office librarian: pushed
+publish librarian: OK
+
+== SCENARIO ensure (both offices)
+OFFICE: office libtwo: not a registered second mate in data/secondmates.md
+
+== SCENARIO classify a diff through each office's own config
+quartermaster firstmate diff {AGENTS.md}: cmd: /tmp/fm-lab.gZU5SB/quartermaster/bin/fm-reserved-classify.sh --rules /tmp/fm-lab.gZU5SB/quartermaster/config/admission/firstmate.rules
+flagged=[authority]
+quartermaster firstmate diff {docs/readme-only.md}: cmd: /tmp/fm-lab.gZU5SB/quartermaster/bin/fm-reserved-classify.sh --rules /tmp/fm-lab.gZU5SB/quartermaster/config/admission/firstmate.rules
+flagged=[]
+librarian firstmate diff {AGENTS.md}: cmd: /tmp/fm-lab.gZU5SB/librarian/bin/fm-reserved-classify.sh --rules /tmp/fm-lab.gZU5SB/librarian/config/admission/firstmate.rules
+flagged=[authority]
+librarian firstmate diff {docs/readme-only.md}: cmd: /tmp/fm-lab.gZU5SB/librarian/bin/fm-reserved-classify.sh --rules /tmp/fm-lab.gZU5SB/librarian/config/admission/firstmate.rules
+flagged=[]
+
+== ADVERSARIAL: office edits its own rules after publish -> ensure must notice
+OFFICE: office librarian: admission config firstmate in /tmp/fm-lab.gZU5SB/librarian/config differs from the master copy its record pins, so its merges of firstmate are refused; copy it again from /tmp/fm-lab.gZU5SB/main/config/admission
+OFFICE: office libtwo: not a registered second mate in data/secondmates.md
+
+== ADVERSARIAL: literal Quartermaster-path master refuses Librarian (old behaviour preserved)
+refused: error: master admission config /tmp/fm-lab.gZU5SB/main/config/admission/firstmate names --rules /tmp/fm-lab.gZU5SB/quartermaster/config/admission/firstmate.rules; an office's classifier must read /tmp/fm-lab.gZU5SB/libtwo/config/admission/firstmate.rules, the copy this seed makes
+
+== ADVERSARIAL: tokened master with --rules pointing outside the office home is refused
+refused: error: master admission config /tmp/fm-lab.gZU5SB/main/config/admission/firstmate names --rules /elsewhere/firstmate.rules; an office's classifier must read /tmp/fm-lab.gZU5SB/libtwo/config/admission/firstmate.rules, the copy this seed makes
+
+overall rc=0
