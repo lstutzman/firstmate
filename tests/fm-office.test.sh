@@ -124,6 +124,23 @@ test_expired_or_malformed_deferral_does_not_defer() {
   pass 'an expired or malformed deferral reports itself and defers nothing'
 }
 
+# The documented standalone run: only FM_HOME names a scratch copy of a primary
+# home's data/offices.md; the check prints the alarm and changes nothing.
+test_standalone_run_reads_and_writes_only_its_home() {
+  local scratch="$TMP_ROOT/standalone" before after out
+  mkdir -p "$scratch/data"
+  printf '# Offices\n\n%s\n' "$NAV" > "$scratch/data/offices.md"
+  before=$(cd "$scratch" && find . -print | sort | xargs cksum 2>&1)
+  out=$(env -i PATH="$PATH" HOME="$TMP_ROOT/nohome" FM_HOME="$scratch" bash "$OFFICE" unprovisioned)
+  after=$(cd "$scratch" && find . -print | sort | xargs cksum 2>&1)
+  assert_contains "$out" "OFFICE: approved office quartermaster not provisioned" "the missing role's alarm"
+  assert_contains "$out" "OFFICE: approved office alchemist not provisioned" "another missing role's alarm"
+  assert_not_contains "$out" "approved office navigator" "the built role alarmed"
+  assert_equals "$before" "$after" "the standalone run changed its home"
+  assert_absent "$TMP_ROOT/nohome" "the standalone run wrote outside FM_HOME"
+  pass 'the unprovisioned check runs standalone against a scratch home and prints the alarm without writing'
+}
+
 test_office_and_second_mate_homes_print_nothing() {
   local w
   w=$(make_world not-primary)
@@ -1371,6 +1388,7 @@ test_status_decisions_cap_and_absence
 test_unbuilt_approved_office_alarms
 test_valid_deferral_silences_the_alarm
 test_expired_or_malformed_deferral_does_not_defer
+test_standalone_run_reads_and_writes_only_its_home
 test_office_and_second_mate_homes_print_nothing
 test_arm_status_registers_a_silent_check
 test_disarm_status_retires_the_check
