@@ -15,7 +15,7 @@
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
 # Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--linear <PC-n>] [--herdr-lab]
-#        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--linear <PC-n>] [--herdr-lab]
+#        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--linear <PC-n> | --no-linear "<reason>"] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #        fm-brief.sh <task-id> --secondmate --office <task-id> {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
@@ -190,6 +190,14 @@
 # is not a list item or indented. Either kind also ends at a "+++" line, and text
 # inside a "+++ ... +++" block (agent notes) is never quoted. Fields are quoted
 # whole, without a length cap. Ship and scout only.
+# config/linear-required-projects (optional, one project name per line, blank
+# lines and # comments ignored) lists the projects whose ship and scout briefs
+# must name their Linear item: for a listed <repo-name> a ship brief stops
+# unless --linear <PC-n> is passed, with no opt-out, and a scout brief stops
+# unless --linear <PC-n> or --no-linear "<reason>" is passed. --no-linear is a
+# scout-only flag that records the reason in the brief under Captain's intent as
+# "Linear item: none (<reason>)", and it conflicts with --linear. Unlisted
+# projects behave exactly as before without either flag.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -373,6 +381,8 @@ PROJECT_DIR_SET=0
 OFFICE=
 OFFICE_SET=0
 LINEAR_ITEM=
+NO_LINEAR=
+NO_LINEAR_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -391,6 +401,7 @@ for a in "$@"; do
       project) PROJECT_DIR=$a; PROJECT_DIR_SET=1 ;;
       office) OFFICE=$a; OFFICE_SET=1 ;;
       linear) LINEAR_ITEM=$a ;;
+      no-linear) NO_LINEAR=$a; NO_LINEAR_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -421,6 +432,8 @@ for a in "$@"; do
     --office=*) OFFICE=${a#--office=}; OFFICE_SET=1 ;;
     --linear) want_value=linear ;;
     --linear=*) LINEAR_ITEM=${a#--linear=} ;;
+    --no-linear) want_value=no-linear ;;
+    --no-linear=*) NO_LINEAR=${a#--no-linear=}; NO_LINEAR_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -550,6 +563,18 @@ if [ "$KIND" = secondmate ] && [ -n "$LINEAR_ITEM" ]; then
   echo "error: --linear applies only to ship and scout briefs" >&2
   exit 1
 fi
+if [ "$KIND" != scout ] && [ "$NO_LINEAR_SET" -eq 1 ]; then
+  echo "error: --no-linear applies only to scout briefs; a ship brief names its Linear item with --linear <PC-n>" >&2
+  exit 1
+fi
+if [ "$NO_LINEAR_SET" -eq 1 ] && [ -z "$(printf '%s' "$NO_LINEAR" | tr -d '[:space:]')" ]; then
+  echo "error: --no-linear needs a non-empty reason" >&2
+  exit 1
+fi
+if [ "$NO_LINEAR_SET" -eq 1 ] && [ -n "$LINEAR_ITEM" ]; then
+  echo "error: --linear and --no-linear are mutually exclusive" >&2
+  exit 1
+fi
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2
   exit 1
@@ -581,6 +606,24 @@ if [ "$OFFICE_SET" -eq 1 ]; then
   OFFICE_MANDATE=${BASH_REMATCH[2]}
   OFFICE_ROLE=$(line_field "$office_line" role || true)
   fm_office_role_check "$OFFICE_ROLE" || { echo "error: office $ID: $FM_OFFICE_ERROR" >&2; exit 1; }
+fi
+
+# A project listed in config/linear-required-projects needs its Linear item named
+# before anything is written; only a scout may give an explicit reason for none.
+LINEAR_REQUIRED_FILE="$CONFIG/linear-required-projects"
+if [ "$KIND" != secondmate ] && [ -z "$LINEAR_ITEM" ] && [ "$NO_LINEAR_SET" -eq 0 ] && [ -e "$LINEAR_REQUIRED_FILE" ]; then
+  [ -f "$LINEAR_REQUIRED_FILE" ] && [ -r "$LINEAR_REQUIRED_FILE" ] || {
+    echo "error: $LINEAR_REQUIRED_FILE must be a readable regular file" >&2
+    exit 1
+  }
+  if grep -v '^[[:space:]]*#' "$LINEAR_REQUIRED_FILE" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -Fxq -- "${POS[1]:-}"; then
+    if [ "$KIND" = scout ]; then
+      echo "error: ${POS[1]:-} is listed in $LINEAR_REQUIRED_FILE, so its scout briefs must name their Linear item: pass --linear <PC-n>, or --no-linear \"<reason>\" when there is none" >&2
+    else
+      echo "error: ${POS[1]:-} is listed in $LINEAR_REQUIRED_FILE, so its ship briefs must name their Linear item: pass --linear <PC-n>" >&2
+    fi
+    exit 1
+  fi
 fi
 
 # The optional home-local include is read before anything is written, so an
@@ -886,6 +929,12 @@ if [ -n "$LINEAR_ITEM" ]; then
   TASK_HEAD=${TASK_SECTION%%\{TASK\}*}
   TASK_TAIL=${TASK_SECTION#*\{TASK\}}
   TASK_SECTION="${TASK_HEAD}{TASK}"$'\n\n'"${LINEAR_QUOTE}${TASK_TAIL}"
+fi
+
+if [ "$NO_LINEAR_SET" -eq 1 ]; then
+  TASK_HEAD=${TASK_SECTION%%\{TASK\}*}
+  TASK_TAIL=${TASK_SECTION#*\{TASK\}}
+  TASK_SECTION="${TASK_HEAD}{TASK}"$'\n\n'"Linear item: none ($NO_LINEAR)${TASK_TAIL}"
 fi
 
 # One shared string keeps the ship and scout infrastructure rule identical.

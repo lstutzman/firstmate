@@ -1845,3 +1845,39 @@ test_linear_item_is_quoted_into_the_intent() {
 }
 
 test_linear_item_is_quoted_into_the_intent
+
+test_linear_required_projects_gate_briefs() {
+  local home bin brief
+  home="$TMP_ROOT/linreq-home"; bin="$TMP_ROOT/linreq-bin"
+  mkdir -p "$home/config"
+  linear_stub "$bin" full
+  printf '# required\nalpha\n' > "$home/config/linear-required-projects"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lr-no alpha --mode no-mistakes >/dev/null 2>"$TMP_ROOT/lr-no.err" \
+    && fail "a listed project's ship brief without --linear was accepted"
+  assert_grep 'must name their Linear item' "$TMP_ROOT/lr-no.err" "refusal did not explain itself"
+  [ ! -e "$home/data/lr-no/brief.md" ] || fail "a brief was written despite the refusal"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lr-scout alpha --scout >/dev/null 2>&1 \
+    && fail "a listed project's scout brief without --linear was accepted"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lr-yes alpha --mode no-mistakes --linear PC-42 >/dev/null 2>&1 \
+    || fail "a listed project's brief with --linear was refused"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lr-ship-opt alpha --mode no-mistakes --no-linear "fleet tooling, no item" >/dev/null 2>"$TMP_ROOT/lr-ship-opt.err" \
+    && fail "a listed project's ship brief accepted --no-linear"
+  assert_grep 'only to scout briefs' "$TMP_ROOT/lr-ship-opt.err" "the ship --no-linear refusal did not explain itself"
+  [ ! -e "$home/data/lr-ship-opt/brief.md" ] || fail "a ship brief was written despite --no-linear"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lr-ship-other beta --mode no-mistakes --no-linear "x" >/dev/null 2>&1 \
+    && fail "an unlisted project's ship brief accepted --no-linear"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lr-opt alpha --scout --no-linear "survey, no item yet" >/dev/null 2>&1 \
+    || fail "a listed project's scout brief with --no-linear and a reason was refused"
+  brief="$home/data/lr-opt/brief.md"
+  assert_grep 'Linear item: none (survey, no item yet)' "$brief" "--no-linear reason not recorded"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lr-empty alpha --scout --no-linear "  " >/dev/null 2>&1 \
+    && fail "--no-linear with a blank reason was accepted"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lr-both alpha --scout --linear PC-42 --no-linear x >/dev/null 2>&1 \
+    && fail "--linear with --no-linear was accepted"
+  PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lr-other beta --mode no-mistakes >/dev/null 2>&1 \
+    || fail "an unlisted project's brief was refused"
+  if grep -q 'Linear item: none' "$home/data/lr-other/brief.md"; then fail "an unlisted brief gained a no-linear line"; fi
+  pass "fm-brief.sh: config/linear-required-projects requires --linear on listed ship briefs and allows --no-linear on scouts only"
+}
+
+test_linear_required_projects_gate_briefs

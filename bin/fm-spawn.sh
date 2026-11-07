@@ -4546,12 +4546,14 @@ if [ "$KIND" = ship ]; then
   # and is never inferred here from a remote, host, or protocol. A brief that
   # disagrees with it would tell the worker to open a pull request a Gerrit
   # server does not have, or to publish a change to a forge that is not Gerrit.
+  BRIEF_LINEAR=$(sed -n 's/^> Quoted from Linear \(PC-[0-9][0-9]*\) (read-only.*$/\1/p' "$BRIEF" | head -n 1)
   if [ "$BRIEF_FORGE" != "$STANDING_FORGE" ]; then
     if [ "$STANDING_FORGE" = none ]; then
       forge_scaffold="fm-brief.sh $ID $PROJ_NAME --mode $MODE"
     else
       forge_scaffold="fm-brief.sh $ID $PROJ_NAME --mode $MODE --forge $STANDING_FORGE"
     fi
+    [ -z "$BRIEF_LINEAR" ] || forge_scaffold="$forge_scaffold --linear $BRIEF_LINEAR"
     echo "error: forge mismatch for $ID: $PROJ_NAME is registered forge=$STANDING_FORGE but $SOURCE_BRIEF records forge=$BRIEF_FORGE; keep the filled ## Captain's intent and ## Firstmate spec bodies, remove $SOURCE_BRIEF, re-scaffold it with $forge_scaffold, then re-fill those two subsections, so the worker's publication matches the project's forge" >&2
     exit 1
   fi
@@ -4572,6 +4574,7 @@ if [ "$KIND" = ship ]; then
     pr_scaffold="fm-brief.sh $ID $PROJ_NAME --mode $MODE"
     [ "$STANDING_FORGE" = none ] || pr_scaffold="$pr_scaffold --forge $STANDING_FORGE"
     [ "$STANDING_PR" = auto ] || pr_scaffold="$pr_scaffold --pr $STANDING_PR"
+    [ -z "$BRIEF_LINEAR" ] || pr_scaffold="$pr_scaffold --linear $BRIEF_LINEAR"
     echo "error: PR-text mismatch for $ID: $PROJ_NAME is registered pr=$STANDING_PR but $SOURCE_BRIEF records pr=$BRIEF_PR; keep the filled ## Captain's intent and ## Firstmate spec bodies, remove $SOURCE_BRIEF, re-scaffold it with $pr_scaffold, then re-fill those two subsections, so the worker owns the PR text exactly when the project says so" >&2
     exit 1
   fi
