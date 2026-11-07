@@ -121,6 +121,11 @@ test_expired_or_malformed_deferral_does_not_defer() {
   out=$(unprov "$w")
   assert_contains "$out" "no said: field" "missing said: accepted"
   assert_contains "$out" "approved office librarian not provisioned" "bad until deferred"
+  printf -- '- alchemist - "Not yet." (said: main chat, relayed by main (corr abc); added 2026-11-05)\n' > "$w/data/office-deferrals.md"
+  out=$(unprov "$w")
+  assert_contains "$out" "fields contain parentheses" "parenthesised said: misreported"
+  assert_not_contains "$out" "not Lee's quoted words" "parenthesised said: blamed the quotes"
+  assert_contains "$out" "approved office alchemist not provisioned" "parenthesised deferral deferred"
   pass 'an expired or malformed deferral reports itself and defers nothing'
 }
 

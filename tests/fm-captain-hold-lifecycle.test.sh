@@ -2179,6 +2179,26 @@ test_reconcile_never_closes_through_the_keyed_answer_intake() {
   pass "only a bound captured source creates reconcile requests"
 }
 
+# A release choice reaches the intake only with the card's phase answer: one whose
+# phases are missing or malformed is dropped, so it can never release unphased.
+test_lavish_release_choice_needs_its_phases() {
+  local result="$TMP_ROOT/release-phases.result" out
+  cat > "$result" <<'EOF'
+session:
+  file: /review.html
+  status: feedback
+prompts[4]{uid,prompt,selector,tag,text}:
+  "1","No phases: go\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-no-phases\",\n  \"selection\": \"go\",\n  \"note\": \"\",\n  \"close\": \"release\"\n}","section#call > form:nth-of-type(1)",choice,"No phases: go"
+  "2","Bad phases: go\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-bad-phases\",\n  \"selection\": \"go\",\n  \"note\": \"\",\n  \"close\": \"release\",\n  \"phases\": \"a, b\"\n}","section#call > form:nth-of-type(2)",choice,"Bad phases: go"
+  "3","Listed phases: go\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-listed-phases\",\n  \"selection\": \"go\",\n  \"note\": \"\",\n  \"close\": \"release\",\n  \"phases\": \"launch-a,launch-b\"\n}","section#call > form:nth-of-type(3)",choice,"Listed phases: go"
+  "4","Done card: yes\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-done-card\",\n  \"selection\": \"yes\",\n  \"note\": \"\",\n  \"close\": \"done\"\n}","section#call > form:nth-of-type(4)",choice,"Done card: yes"
+EOF
+  out=$("$ROOT/bin/fm-procevent-lavish.sh" answers "$result") || fail "could not read the captured answers"
+  assert_equals "$(printf 'sample-listed-phases\tgo\tListed phases: go\trelease:launch-a,launch-b\nsample-done-card\tyes\tDone card: yes\tdone')" \
+    "$out" "the relayed release and done rows"
+  pass "a release choice without well-formed phases never reaches the intake"
+}
+
 test_normal_answers_retire_pending_reconcile_requests() {
   local home list id
   home=$(make_home reconcile-normal-answer)
@@ -5647,6 +5667,7 @@ test_secondmate_home_publishes_holds_and_answers
 test_hold_answer_closes_originating_decision_key
 test_secondmate_reconcile_publishes_before_request_retirement
 test_bound_channel_answers_close_at_answer_time
+test_lavish_release_choice_needs_its_phases
 test_reconcile_never_closes_through_the_keyed_answer_intake
 test_normal_answers_retire_pending_reconcile_requests
 test_reconcile_closes_with_evidence_or_keeps_the_call_open

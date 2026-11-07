@@ -295,7 +295,46 @@ EOF
   pass "the complete snapshot question and options reach rendered decision text"
 }
 
+# A release card's answer carries the card's phases to the Lavish adapter, which
+# relays them to the keyed-answer intake as release:<phases>.
+test_a_release_answer_carries_its_phases_to_the_intake() {
+  local home calls out data prompt result rows
+  home=$(make_home release-phases)
+  cat > "$home/data/backlog.md" <<'BACKLOG'
+## In flight
+
+## Queued
+- [ ] gated-build - Build the gated office (repo: sample) (kind: captain) (hold: may the build proceed?) (hold-kind: captain)
+
+## Done
+BACKLOG
+  calls='[{"key":"gated-build","type":"decision","repo":"sample","title":"Gated build",
+    "decide":"May the build proceed?","options":[{"value":"go","label":"Go"}],
+    "close":"release","phases":"launch-alchemist,launch-librarian"}]'
+  out=$(render_board "$home" '[]' '[]' 0 0 "$calls")
+  printf '%s' "$out" | jq -e '.error == "" and (.captains_call | length) == 1' >/dev/null \
+    || fail "the release card did not render: $out"
+  out=$(node "$HARNESS" "$home/.lavish/bearings-board.html" '{"index":0,"value":"go"}') \
+    || fail "the release card could not be answered"
+  data=$(printf '%s' "$out" | jq -c '.queued[0].data')
+  printf '%s' "$data" | jq -e '.question == "gated-build" and .selection == "go"
+    and .close == "release" and .phases == "launch-alchemist,launch-librarian"' >/dev/null \
+    || fail "the queued answer did not carry the card's close mode and phases: $out"
+  prompt=$(printf '%s' "$out" | jq -r '.queued[0].prompt')
+  result="$home/release.result"
+  {
+    printf 'session:\n  file: /board.html\n  status: feedback\nprompts[1]{uid,prompt,selector,tag,text}:\n'
+    printf '  "1",%s,"section#call > form",choice,"Gated build -> go"\n' \
+      "$(jq -n --arg p "$prompt" --argjson d "$data" '$p + "\n\nContext data:\n" + ($d | tojson)')"
+  } > "$result"
+  rows=$("$ROOT/bin/fm-procevent-lavish.sh" answers "$result") || fail "the adapter could not read the answer"
+  assert_equals "$(printf 'gated-build\tgo\tGated build -> go\trelease:launch-alchemist,launch-librarian')" "$rows" \
+    "the adapter row for the release answer"
+  pass "a release card's answer reaches the intake as release:<phases>"
+}
+
 test_full_snapshot_question_reaches_the_rendered_decision
+test_a_release_answer_carries_its_phases_to_the_intake
 test_an_underway_row_leads_with_the_task_name_and_keeps_its_run_status
 test_an_underway_identifier_label_is_not_replaced_by_run_status
 test_charted_next_reads_newest_filed_first

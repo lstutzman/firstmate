@@ -49,7 +49,8 @@
 # role is it, or a valid deferral line in data/office-deferrals.md; a role with neither
 # prints "OFFICE: approved office <role> not provisioned (...)". A deferral is a registry
 # line `- <role> - "<Lee's words>" (said: <where and when>; until: YYYY-MM-DD; added
-# YYYY-MM-DD)` with until optional; one that is malformed or past its until date (UTC) is
+# YYYY-MM-DD)` with until optional and no parentheses inside the fields (write a relay
+# citation as "relayed by main, corr <id>"); one that is malformed or past its until date (UTC) is
 # reported as "OFFICE: deferral ..." and defers nothing. The heartbeat in the watcher
 # wakes firstmate with these lines at most once a day until they are gone.
 #
@@ -376,6 +377,7 @@ deferral_state() {  # <line>
   if ! [[ "$line" =~ $REGISTRY_LINE_RE ]]; then echo "malformed deferral line"; return; fi
   words=${BASH_REMATCH[2]}
   fm_office_role_check "${BASH_REMATCH[1]}" || { echo "$FM_OFFICE_ERROR"; return; }
+  [[ "$words" =~ ^\"[^\"]*\"\ \( ]] && { echo "its fields contain parentheses, which a deferral line must not"; return; }
   [[ "$words" =~ ^\".+\"$ ]] || { echo "its words are not Lee's quoted words"; return; }
   said=$(line_field "$line" said || true)
   [ -n "$said" ] || { echo "no said: field naming where and when Lee said it"; return; }

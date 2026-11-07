@@ -1828,6 +1828,7 @@ It is one line per role in the registry line family:
 ```
 
 `<role>` must be a known office role, the words must be quoted, and `said` is required; `until` is optional and the deferral holds through that UTC date, after which the alarm returns.
+The fields must not contain parentheses, because the line's last ` (` opens them; write a relay citation as `said: main chat, relayed by main, corr <id>`, and a line with parentheses inside its fields is reported with that cause.
 A malformed or expired line is reported as `OFFICE: deferral <role> ... defers nothing` and never silences the alarm.
 `list` and `ensure` only read: they seed, publish, spawn and grant nothing.
 
