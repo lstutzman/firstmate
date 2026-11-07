@@ -1670,7 +1670,7 @@ command_answer() {
   hold_kind=$(show_field_value "$show" hold_kind)
   body=$(show_field "$show" body)
   if [ "$release" = 1 ]; then outcome=released
-  elif [ "$DEADLINE_DEFAULT" = 1 ]; then outcome=deadline-default
+  elif [ "$DEADLINE_DEFAULT" = 1 ]; then outcome="deadline-default"
   else outcome=answered; fi
   # A captain answer may have landed between the due check and this lock; the
   # default then yields, and the answer guard below refuses to overwrite it.
