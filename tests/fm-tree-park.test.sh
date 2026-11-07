@@ -283,6 +283,38 @@ test_refuses_each_unsafe_copy() {
   pass "dirty, untracked, unpushed, mismatched, live-run, unreleased, steered, tmux, busy, and unstopped copies are never parked"
 }
 
+test_transient_refusals_are_retried_on_a_later_sweep() {
+  local dir head gen i
+  dir=$(make_lab retry)
+  head=$(cat "$dir/gh-head")
+  # A worker still finishing its turn: the sweep waits and spends no attempt.
+  "$ROOT/bin/fm-busy-event.sh" apply "$dir/home/state" "$ID" busy --current-gen --source claude-hook --event prompt \
+    || fail "retry: could not record a busy agent"
+  lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" sweep >/dev/null 2>&1 || fail "retry: the busy sweep failed"
+  [ ! -e "$dir/home/state/$ID.park-attempt" ] || fail "retry: a busy agent spent the handoff's park attempt"
+  [ ! -s "$dir/control.log" ] || fail "retry: a busy agent was stopped"
+  "$ROOT/bin/fm-busy-event.sh" apply "$dir/home/state" "$ID" idle --current-gen --source claude-hook --event stop \
+    || fail "retry: could not record the agent idle again"
+  # An unreadable forge head refuses this attempt and frees it for a retry.
+  printf 'unreadable\n' > "$dir/gh-head"
+  cp "$dir/home/state/$ID.merge-handoff" "$dir/home/state/$ID.park-attempt"
+  park "$dir" >/dev/null 2>&1 && fail "retry: a copy whose PR head could not be read was parked"
+  assert_not_parked "$dir" retry
+  [ ! -e "$dir/home/state/$ID.park-attempt" ] || fail "retry: an unreadable forge head spent the park attempt"
+  printf '%s\n' "$head" > "$dir/gh-head"
+  lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" sweep >/dev/null 2>&1 || fail "retry: the retry sweep failed"
+  i=0
+  until [ "$(meta_value "$dir" parked)" = 1 ] || [ "$i" -ge 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "retry: the later sweep did not park: $(cat "$dir/home/state/$ID.park-log" 2>/dev/null)"
+  # Unsafe work keeps the attempt spent, so it is not retried every sweep.
+  dir=$(make_lab retry-dirty)
+  printf 'edit\n' >> "$dir/pool/1/project/change.txt"
+  cp "$dir/home/state/$ID.merge-handoff" "$dir/home/state/$ID.park-attempt"
+  park "$dir" >/dev/null 2>&1 && fail "retry-dirty: a dirty copy was parked"
+  [ -e "$dir/home/state/$ID.park-attempt" ] || fail "retry-dirty: a dirty copy freed its attempt for endless retries"
+  pass "a busy agent or an unreadable forge head defers the park to a later sweep, and unsafe work does not"
+}
+
 test_steer_unparks_on_the_recorded_head() {
   local dir head out new
   dir=$(make_lab unpark)
@@ -356,6 +388,7 @@ fm_test_run \
   test_sweep_parks_once_per_handoff \
   test_sweep_reports_a_failure_after_the_agent_stopped_once \
   test_refuses_each_unsafe_copy \
+  test_transient_refusals_are_retried_on_a_later_sweep \
   test_steer_unparks_on_the_recorded_head \
   test_refused_unpark_stays_parked_and_sends_nothing \
   test_teardown_after_merge_on_a_parked_task

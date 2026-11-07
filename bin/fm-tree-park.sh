@@ -42,6 +42,11 @@
 #     equals both origin/<branch> and the PR head the forge reports now;
 #   - a no-mistakes task has no live run for the copy (`no-mistakes axi status`);
 #   - the agent's busy verdict is idle.
+# A refusal that can clear by itself (a busy agent, an unreadable fetch, forge
+# head, or run, a live run, a stop the control plane could not prove) removes
+# state/<id>.park-attempt so a later sweep tries again; one that names unsafe
+# work in the copy keeps the attempt spent. The sweep also waits while the
+# agent reads busy rather than starting a park that would refuse.
 # It then stops the agent with `bin/fm-control.sh <id> exit --stop-background`,
 # the control plane's verified stop for a finished agent, and refuses if that
 # stop is not proven. Holding the project Treehouse lock, the task's control
@@ -54,7 +59,9 @@
 # its backlog item, its merge poll, and its status are left as they were.
 #
 # unpark runs from bin/fm-send.sh before a steer to a parked task is recorded.
-# Under the project lock it leases a fresh slot (`treehouse get --lease`) and
+# Under the project lock it first leases in place every slot this home's
+# records still name (fm_treehouse_lease_recorded_slots, as bin/fm-spawn.sh
+# does before its own get), then leases a fresh slot (`treehouse get --lease`) and
 # claims it, fetches the PR branch, and requires origin/<branch> and the forge's
 # PR head to both equal parked_head before it checks the branch out there. It
 # then restores worktree= and drops the parked fields, and relaunches the worker
@@ -93,6 +100,13 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 refuse() { printf 'not parked: %s\n' "$*" >&2; exit 1; }
+# A refusal that may clear by itself (a busy agent, an unreadable forge or run,
+# a stop the control plane could not prove) frees the handoff's one attempt so
+# the next sweep tries again; one that names unsafe work keeps it spent.
+retry_later() {
+  rm -f "$STATE/$ID.park-attempt"
+  refuse "$* (retried on a later sweep)"
+}
 
 park_meta_value() {  # <key>
   fm_meta_get "$META" "$1"
@@ -162,17 +176,18 @@ park_copy_dirt() {  # <worktree>
 # fetch and the forge's PR head. Sets PARK_BRANCH and PARK_HEAD.
 park_copy_preserved() {
   local dirt remote forge
+  PARK_TRANSIENT=0
   dirt=$(park_copy_dirt "$PARK_WT")
   [ -z "$dirt" ] || { PARK_WHY="copy has uncommitted changes"; return 1; }
   PARK_BRANCH=$(git -C "$PARK_WT" symbolic-ref --quiet --short HEAD 2>/dev/null) || { PARK_WHY="copy is not on a branch"; return 1; }
   PARK_HEAD=$(git -C "$PARK_WT" rev-parse HEAD 2>/dev/null) || { PARK_WHY="copy head cannot be read"; return 1; }
   fm_run_timed 60 git -C "$PARK_WT" fetch --quiet origin "+refs/heads/$PARK_BRANCH:refs/remotes/origin/$PARK_BRANCH" >/dev/null 2>&1 \
-    || { PARK_WHY="origin/$PARK_BRANCH cannot be fetched"; return 1; }
+    || { PARK_WHY="origin/$PARK_BRANCH cannot be fetched"; PARK_TRANSIENT=1; return 1; }
   remote=$(git -C "$PARK_WT" rev-parse --verify --quiet "refs/remotes/origin/$PARK_BRANCH^{commit}" 2>/dev/null) \
     || { PARK_WHY="origin/$PARK_BRANCH does not exist"; return 1; }
   [ -z "$(git -C "$PARK_WT" rev-list "$remote..HEAD" 2>/dev/null)" ] || { PARK_WHY="copy has commits not on origin/$PARK_BRANCH"; return 1; }
   [ "$remote" = "$PARK_HEAD" ] || { PARK_WHY="copy head $PARK_HEAD is not origin/$PARK_BRANCH $remote"; return 1; }
-  forge=$(park_forge_head "$PARK_WT") || { PARK_WHY="the forge's PR head cannot be read"; return 1; }
+  forge=$(park_forge_head "$PARK_WT") || { PARK_WHY="the forge's PR head cannot be read"; PARK_TRANSIENT=1; return 1; }
   [ "$forge" = "$PARK_HEAD" ] || { PARK_WHY="copy head $PARK_HEAD is not the PR head $forge"; return 1; }
 }
 
@@ -182,6 +197,15 @@ park_forge_head() {  # <dir>
   head=$(cd "$1" && fm_run_timed 30 gh pr view "$PARK_URL" --json headRefOid -q .headRefOid 2>/dev/null) || return 1
   fm_pr_head_valid "$head" || return 1
   printf '%s\n' "$head"
+}
+
+park_agent_idle() {
+  local verdict
+  verdict=$(fm_busy_classify_meta "$META" "$ID" "$STATE")
+  case "$verdict" in
+    idle*|dead*) ;;
+    *) PARK_WHY="its agent reads '$verdict', not idle"; return 1 ;;
+  esac
 }
 
 park_no_live_run() {
@@ -264,17 +288,16 @@ EOF
 }
 
 cmd_park() {
-  local verdict out
+  local out
   park_candidate || refuse "$ID: $PARK_WHY"
-  park_copy_preserved || refuse "$ID: $PARK_WHY"
-  park_no_live_run || refuse "$ID: $PARK_WHY"
-  verdict=$(fm_busy_classify_meta "$META" "$ID" "$STATE")
-  case "$verdict" in
-    idle*|dead*) ;;
-    *) refuse "$ID: its agent reads '$verdict', not idle" ;;
-  esac
+  park_agent_idle || retry_later "$ID: $PARK_WHY"
+  if ! park_copy_preserved; then
+    [ "$PARK_TRANSIENT" = 1 ] && retry_later "$ID: $PARK_WHY"
+    refuse "$ID: $PARK_WHY"
+  fi
+  park_no_live_run || retry_later "$ID: $PARK_WHY"
   out=$("$SCRIPT_DIR/fm-control.sh" "$ID" exit --stop-background 2>&1) \
-    || refuse "$ID: the control plane could not prove its agent stopped: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
+    || retry_later "$ID: the control plane could not prove its agent stopped: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
   if ! park_take_locks; then
     park_report "$ID's agent was stopped to park its copy, but $PARK_WHY; relaunch it with bin/fm-control.sh $ID relaunch --note <text> or retry the park"
     exit 1
@@ -325,6 +348,10 @@ cmd_unpark() {
   LOCKS_HELD+=("$project_lock")
   park_lock "$(fm_meta_lock_path "$META")" wait || die "$ID's record cannot be locked"
   [ "$(park_meta_value parked)" = 1 ] || { park_unlock_all; printf 'unparked: %s is not parked\n' "$ID"; return 0; }
+  # As bin/fm-spawn.sh does before its own get: lease every slot this home's
+  # records still name and claim, so get cannot hand out and reset one of them.
+  fm_treehouse_lease_recorded_slots "$PARK_PROJ" "$STATE"/*.meta \
+    || die "could not lease the pool slots this home's task records still name ($FM_TREEHOUSE_SLOT_LEASE_ERROR); $ID stays parked"
   UNPARK_WT=$(cd "$PARK_PROJ" && treehouse get --lease --lease-holder "$ID" 2>/dev/null) && [ -n "$UNPARK_WT" ] \
     || { UNPARK_WT=; die "treehouse get --lease could not lease a fresh copy for $ID from $PARK_PROJ"; }
   if ! fm_treehouse_pool_slot "$PARK_PROJ" "$UNPARK_WT"; then
@@ -395,6 +422,7 @@ cmd_sweep() {
       rm -f "$report"
     fi
     park_candidate || continue
+    park_agent_idle || continue
     handoff=$PARK_HANDOFF
     [ "$(park_record_line "$STATE/$ID.park-attempt" || true)" != "$handoff" ] || continue
     printf '%s\n' "$handoff" > "$STATE/$ID.park-attempt" || continue
