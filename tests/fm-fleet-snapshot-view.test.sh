@@ -1325,6 +1325,48 @@ SH
   pass "home-summary treats a done child as waiting on merge only with a meta PR and an armed merge poll"
 }
 
+# A done ship parked on another home's merger (PR 146) is consistent with its
+# in-flight item; a done child with no PR, or a PR handed to no one, still flags.
+test_home_summary_parked_handoff_is_consistent() {
+  local home fakebin out other
+  local pr_url=https://github.com/example/alpha/pull/4620
+  home=$(make_home summary-parked-handoff)
+  mkdir -p "$home/projects/parked"
+  fakebin=$(make_fakebin "$home")
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] parked-ship - Parked on a handoff (repo: alpha) (kind: ship) (since 2026-07-11)
+
+## Queued
+
+## Done
+EOF
+  write_parked_meta() {
+    fm_write_meta "$home/state/parked-ship.meta" \
+      "window=firstmate:fm-parked-ship" "worktree=$home/projects/parked" \
+      "project=alpha" "harness=claude" "kind=ship" "mode=no-mistakes" "$@"
+  }
+  assert_parked() {
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+    printf '%s' "$out" | jq -e "$1" >/dev/null || fail "$2: $out"
+  }
+  record_claude_idle "$home/state" parked-ship
+  printf 'done [at=1000]: PR %s checks green\n' "$pr_url" > "$home/state/parked-ship.status"
+  write_parked_meta "pr=$pr_url" "pr_head=0123456789abcdef0123456789abcdef01234567"
+
+  other='.valid == false and .invalidity == {kind:"terminal_in_flight",ids:["parked-ship"]}'
+  assert_parked "$other" "a PR handed to no one must still flag"
+
+  printf '%s\n' "$pr_url" > "$home/state/parked-ship.merge-handoff"
+  assert_parked '.valid == true and .invalidity.kind == null' "a handed-off, parked item must be consistent"
+
+  write_parked_meta
+  printf 'done [at=1000]: complete\n' > "$home/state/parked-ship.status"
+  assert_parked "$other" "a done child with no PR must still flag"
+  unset -f write_parked_meta assert_parked
+  pass "home-summary treats a parked handed-off item as consistent"
+}
+
 # A no-mistakes done: written while the daemon still reports the branch's run
 # unfinished is a pipeline handoff, not finished work; without that live run,
 # or with only a worker note that mentions a handoff, it still flags.
@@ -1440,6 +1482,7 @@ fm_test_run \
   test_fixture_snapshot_json \
   test_home_summary_excludes_secondmate_from_child_inventory \
   test_home_summary_done_child_with_pr_is_waiting_on_merge \
+  test_home_summary_parked_handoff_is_consistent \
   test_home_summary_pipeline_handoff_done_is_live_work \
   test_undated_captain_hold_phrasing_and_aging \
   test_hold_buckets_are_total_and_text_blind \
