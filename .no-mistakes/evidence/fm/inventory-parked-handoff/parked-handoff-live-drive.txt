@@ -1,0 +1,15 @@
+=== S0 baseline: done ship with PR, no handoff record, no armed poll (expect terminal_in_flight)
+{"valid":false,"state":"no_active_work","invalidity":{"kind":"terminal_in_flight","ids":["pc2-pool-sharing-fix"]},"waiting_on_merge":[],"counts_waiting_on_merge":0}
+=== S1 parked handed-off ship (expect valid, waiting_on_merge lists it)
+{"valid":true,"state":"no_active_work","invalidity":{"kind":null,"ids":[]},"waiting_on_merge":[{"id":"pc2-pool-sharing-fix","pr":"https://github.com/example/alpha/pull/4620"}],"counts_waiting_on_merge":1}
+--- task pr object:
+{"id":"pc2-pool-sharing-fix","state":"done","pr":{"url":"https://github.com/example/alpha/pull/4620","source":"meta","head":"0123456789abcdef0123456789abcdef01234567","merge_check_armed":false,"parked_handoff":true}}
+=== S2 adversarial: handoff record names a different PR (expect terminal_in_flight)
+{"valid":false,"state":"no_active_work","invalidity":{"kind":"terminal_in_flight","ids":["pc2-pool-sharing-fix"]},"waiting_on_merge":[],"counts_waiting_on_merge":0}
+=== S3 adversarial: steer pending in the inbox after done (expect terminal_in_flight)
+{"valid":false,"state":"no_active_work","invalidity":{"kind":"terminal_in_flight","ids":["pc2-pool-sharing-fix"]},"waiting_on_merge":[],"counts_waiting_on_merge":0}
+=== S4 adversarial: latest event is failed, not done (expect terminal_in_flight)
+{"valid":false,"state":"no_active_work","invalidity":{"kind":"terminal_in_flight","ids":["pc2-pool-sharing-fix"]},"waiting_on_merge":[],"counts_waiting_on_merge":0}
+=== S5 adversarial: same records on a non-ship task (expect terminal_in_flight)
+{"valid":false,"state":"no_active_work","invalidity":{"kind":"terminal_in_flight","ids":["pc2-pool-sharing-fix"]},"waiting_on_merge":[],"counts_waiting_on_merge":0}
+lab removed: yes

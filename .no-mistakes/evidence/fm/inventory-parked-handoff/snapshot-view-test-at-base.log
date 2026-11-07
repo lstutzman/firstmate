@@ -1,0 +1,75 @@
+1..24
+ok - large status text and aggregated decisions serialize without argument limits
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, stable ordering, and emission-time event age
+ok - home-summary excludes kind=secondmate from unowned_current and terminal_in_flight
+ok - home-summary treats a done child as waiting on merge only with a meta PR and an armed merge poll
+not ok - a handed-off, parked item must be consistent: {
+  "schema": "fm-secondmate-home-summary.v1",
+  "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+  "contributions": {
+    "known": 1,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 1,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": false,
+    "proven_clear": false,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "generated": "2026-11-07T22:09:14Z",
+  "generated_epoch": 1794089354,
+  "home": "/tmp/fm-fleet-snapshot.dbs1B6/summary-parked-handoff",
+  "valid": false,
+  "reason": "in-flight backlog item has terminal child state: parked-ship=done",
+  "invalidity": {
+    "kind": "terminal_in_flight",
+    "ids": [
+      "parked-ship"
+    ]
+  },
+  "state": "no_active_work",
+  "active_children": [],
+  "decisions_open": [],
+  "holds": [],
+  "waiting_on_merge": [],
+  "queued": [],
+  "landed": [],
+  "endpoints": [
+    {
+      "id": "parked-ship",
+      "kind": "ship",
+      "state": "done",
+      "source": "status-log",
+      "endpoint": {
+        "target": "firstmate:fm-parked-ship",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-07T22:09:14Z",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "counts": {
+    "in_flight": 1,
+    "held_in_flight": 0,
+    "active_children": 0,
+    "decisions_open": 0,
+    "holds": 0,
+    "waiting_on_merge": 0,
+    "queued": 0,
+    "landed": 0,
+    "endpoints": 1
+  },
+  "omitted": []
+}
