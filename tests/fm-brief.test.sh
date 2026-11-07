@@ -484,6 +484,37 @@ test_pr_based_dod_requires_non_draft() {
   pass "fm-brief.sh: PR-based done requires a non-draft PR; a deliberate draft declares a wait"
 }
 
+# The no-mistakes done step releases the worker's own pipeline slot before the done line;
+# briefs with no CI-monitoring run (direct-PR, local-only) carry no release sequence.
+test_no_mistakes_dod_releases_pipeline_slot() {
+  local home id brief mode
+  home=$(mktemp -d)
+  mkdir -p "$home/data"
+  for mode in no-mistakes direct-PR local-only; do
+    id="brief-release-$mode"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1
+    brief="$home/data/$id/brief.md"
+    assert_present "$brief" "$mode: brief was not scaffolded"
+    if [ "$mode" != no-mistakes ]; then
+      assert_no_grep 'axi handoff' "$brief" "$mode: a brief with no CI-monitoring run must not carry the slot release"
+      continue
+    fi
+    assert_grep 'axi sync --check' "$brief" "$mode: release must start with a read-only sync check"
+    assert_grep 'safe_equivalent_advance' "$brief" "$mode: release must use sync's own advance when offered"
+    assert_grep 'refs/heads/archive/<branch>-prerebase' "$brief" "$mode: release must archive the old local head"
+    assert_grep 'git checkout -B <branch> <pushed head>' "$brief" "$mode: release must move the branch to the pushed head"
+    # shellcheck disable=SC2016  # the backticks are literal brief text
+    assert_grep 'from a clean `git status` only' "$brief" "$mode: release must refuse a dirty tree"
+    assert_grep 'axi handoff' "$brief" "$mode: release must hand the run off"
+    # shellcheck disable=SC2016  # the backticks are literal brief text
+    assert_grep 'never `no-mistakes axi abort`' "$brief" "$mode: release must never abort the run"
+    assert_grep 'reads handed_off' "$brief" "$mode: release must be confirmed before done"
+    [ "$(grep -n 'axi handoff' "$brief" | head -1 | cut -d: -f1)" -lt "$(grep -n 'PR {url} checks green' "$brief" | head -1 | cut -d: -f1)" ] \
+      || fail "$mode: release must come before the checks-green done line"
+  done
+  pass "fm-brief.sh: no-mistakes done releases the pipeline slot; other modes unchanged"
+}
+
 # Pin the specific line the bug lived on: the no-mistakes DOD's no-mistakes
 # reference must render as plain prose with no dangling apostrophe artifact.
 test_no_mistakes_dod_wording() {
@@ -1650,6 +1681,7 @@ test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
 test_no_mistakes_dod_green_detection
 test_pr_based_dod_requires_non_draft
+test_no_mistakes_dod_releases_pipeline_slot
 test_ask_user_escalation_format
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
