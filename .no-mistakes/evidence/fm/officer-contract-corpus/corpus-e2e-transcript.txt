@@ -1,0 +1,154 @@
+registered: office source tick (state/office-tick.check.sh)
+registered: office source lane:corpus (state/office-lane-corpus.check.sh)
+== officers.md corpus line
+- corpus - Checks the agent training corpus (role: corpus; cadence: daily 08:15; archive: deepthought:/tmp/fm-officer-corpus.O3jksL/demo/corpus; hosts: slartibartfast,deepthought; writes: linear; jev: /nonexistent/jev.py; start-home: alchemist; model: none; added 2026-11-05)
+== fm-officer.sh run corpus
+DIGEST 2026-11-04 6 data/officers/corpus/2026-11-04.md
+exit=0
+== digest .md
+# Corpus officer digest for 2026-11-04
+
+6 new finding(s) of 6 open. Counts, timestamps and names only; no transcript, corpus row or memory record was read.
+
+## Findings
+
+- NEW [high] archive-gap slartibartfast: slartibartfast: the archive misses or holds an out-of-date copy of 3 session logs on 2026-11-05, and of 3 on 2026-11-04
+- NEW [high] harvest-failed memory-harvest: the memory harvest's last run failed
+- NEW [medium] harvest-drift memory-harvest: the memory harvest listed 90 records against the tier's 100, more than 1% apart
+- NEW [medium] not-collected slartibartfast/codex: slartibartfast/codex was not collected in the last 2 runs (newest finished 2026-11-05T07:08:54+00:00)
+- NEW [medium] prep-stale local-jev-prep: the local-jev prep store last finished 2026-11-03T08:00:00+00:00, more than 36 hours ago
+- NEW [medium] retrain-missed weekly:20261024:missed: no weekly retrain started in the last 8 days (newest: run 20261024, started 2026-10-24T20:00:02+00:00)
+
+## Corpus
+
+- Ingester: outcome ok; archived 3, unchanged 90, withheld 1, errors 0, sources_ok 20, sources_not_collected 0, hosts_offline 0.
+- Hosts offline in the newest ingester run: macbook.
+- Memory harvest: outcome failed; listed 90, total 100.
+- Bosun deepthought (2026-11-05): archive holds 99 of 100 session logs; 1 pending, 0 missing, 0 out of date, 0 withheld.
+- Bosun slartibartfast (2026-11-05): archive holds 96 of 100 session logs; 1 pending, 2 missing, 1 out of date, 0 withheld.
+- Prep store: finished 2026-11-03T08:00:00+00:00, 9 rows.
+- Weekly retrain: newest run 20261024 started 2026-10-24T20:00:02+00:00, status kept.
+- Judge: 1 evaluation results, newest eval-judge-20261031-r1.json.
+
+## Coverage gaps
+
+- local-jev not found at /nonexistent/jev.py, so duplicates are found by fingerprint only
+
+## Linear
+
+Writes: linear; 19 linear-axi call(s) of 450.
+- local-jev not found at /nonexistent/jev.py, so duplicates are found by fingerprint only
+- Start request: archive-gap: slartibartfast (PC-101, score 4.0), scan-gate route.
+- Start request: harvest-failed: memory-harvest (PC-102, score 4.0), scan-gate route.
+== start_requests
+{"class":"archive-gap","project":"transcript-archive","scan_gate":true,"home":"/tmp/fm-officer-corpus.O3jksL/demo/alchemist"}
+{"class":"harvest-failed","project":"transcript-archive","scan_gate":true,"home":"/tmp/fm-officer-corpus.O3jksL/demo/alchemist"}
+== linear-axi calls
+label list --team PC --limit 250 --output json
+issue search corpus-fp:5a9f5d465806f36e759a99a7e64f4bae27a70436ed470dcd8ed0ff36a3c5a305 --team PC --limit 5 --output json
+issue create --team PC --title archive-gap: slartibartfast --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-5a9f5d465806.md --priority 2 --label Chore --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title archive-gap: slartibartfast --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-5a9f5d465806.md --priority 2 --label Chore --label agent --label area:fleet --project Fleet --verify --output json
+issue search corpus-fp:5c5529a8d0ab9a3bd8ebd92648d1d1038865d23e6d5bab56b1134ffd24de59ba --team PC --limit 5 --output json
+issue create --team PC --title harvest-failed: memory-harvest --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-5c5529a8d0ab.md --priority 2 --label Chore --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title harvest-failed: memory-harvest --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-5c5529a8d0ab.md --priority 2 --label Chore --label agent --label area:fleet --project Fleet --verify --output json
+issue search corpus-fp:a670aaba3efac61f0bf503cfa0401f3f442f9a38ee6e6acac3a573b7fce17b8d --team PC --limit 5 --output json
+issue create --team PC --title harvest-drift: memory-harvest --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-a670aaba3efa.md --priority 3 --label Chore --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title harvest-drift: memory-harvest --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-a670aaba3efa.md --priority 3 --label Chore --label agent --label area:fleet --project Fleet --verify --output json
+issue search corpus-fp:9c009020cd43e0b507b509d7c8a4e96cb9ad4c5e938fde7cfc8c9360001dbfa8 --team PC --limit 5 --output json
+issue create --team PC --title not-collected: slartibartfast/codex --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-9c009020cd43.md --priority 3 --label Chore --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title not-collected: slartibartfast/codex --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-9c009020cd43.md --priority 3 --label Chore --label agent --label area:fleet --project Fleet --verify --output json
+issue search corpus-fp:b06a71ad903305e8a6b61e09f3be2f16ecf7707ee1130e19864f45c413e28185 --team PC --limit 5 --output json
+issue create --team PC --title prep-stale: local-jev-prep --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-b06a71ad9033.md --priority 3 --label Chore --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title prep-stale: local-jev-prep --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-b06a71ad9033.md --priority 3 --label Chore --label agent --label area:fleet --project Fleet --verify --output json
+issue search corpus-fp:26f09f1c1a8019974688dcd0686445e8431a7d5142ed3c5d862c608fad6eec23 --team PC --limit 5 --output json
+issue create --team PC --title retrain-missed: weekly:20261024:missed --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-26f09f1c1a80.md --priority 3 --label Chore --label agent --label area:fleet --project Fleet --dry-run --output json
+issue create --team PC --title retrain-missed: weekly:20261024:missed --body-file /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/.corpus-2026-11-04-26f09f1c1a80.md --priority 3 --label Chore --label agent --label area:fleet --project Fleet --verify --output json
+== item bodies
+Filed by the corpus officer from the 2026-11-04 corpus check.
+What it is for: keep the agent training corpus complete, scrubbed and current.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: high. Class: archive-gap. Subject: slartibartfast.
+Found: 1 times (first 2026-11-04, last 2026-11-04, by corpus)
+Finding: slartibartfast: the archive misses or holds an out-of-date copy of 3 session logs on 2026-11-05, and of 3 on 2026-11-04.
+Repository: transcript-archive.
+Scan gate: the fix may touch the scan gate files, so its pull request goes to Slarti, never the corpus-owning office.
+corpus-fp:5a9f5d465806f36e759a99a7e64f4bae27a70436ed470dcd8ed0ff36a3c5a305
+Filed by the corpus officer from the 2026-11-04 corpus check.
+What it is for: keep the agent training corpus complete, scrubbed and current.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: high. Class: harvest-failed. Subject: memory-harvest.
+Found: 1 times (first 2026-11-04, last 2026-11-04, by corpus)
+Finding: the memory harvest's last run failed.
+Repository: transcript-archive.
+Scan gate: the fix may touch the scan gate files, so its pull request goes to Slarti, never the corpus-owning office.
+corpus-fp:5c5529a8d0ab9a3bd8ebd92648d1d1038865d23e6d5bab56b1134ffd24de59ba
+Filed by the corpus officer from the 2026-11-04 corpus check.
+What it is for: keep the agent training corpus complete, scrubbed and current.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: medium. Class: harvest-drift. Subject: memory-harvest.
+Found: 1 times (first 2026-11-04, last 2026-11-04, by corpus)
+Finding: the memory harvest listed 90 records against the tier's 100, more than 1% apart.
+Repository: transcript-archive.
+Scan gate: the fix may touch the scan gate files, so its pull request goes to Slarti, never the corpus-owning office.
+corpus-fp:a670aaba3efac61f0bf503cfa0401f3f442f9a38ee6e6acac3a573b7fce17b8d
+Filed by the corpus officer from the 2026-11-04 corpus check.
+What it is for: keep the agent training corpus complete, scrubbed and current.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: medium. Class: not-collected. Subject: slartibartfast/codex.
+Found: 1 times (first 2026-11-04, last 2026-11-04, by corpus)
+Finding: slartibartfast/codex was not collected in the last 2 runs (newest finished 2026-11-05T07:08:54+00:00).
+Repository: transcript-archive.
+corpus-fp:9c009020cd43e0b507b509d7c8a4e96cb9ad4c5e938fde7cfc8c9360001dbfa8
+Filed by the corpus officer from the 2026-11-04 corpus check.
+What it is for: keep the agent training corpus complete, scrubbed and current.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: medium. Class: prep-stale. Subject: local-jev-prep.
+Found: 1 times (first 2026-11-04, last 2026-11-04, by corpus)
+Finding: the local-jev prep store last finished 2026-11-03T08:00:00+00:00, more than 36 hours ago.
+Repository: local-jev.
+corpus-fp:b06a71ad903305e8a6b61e09f3be2f16ecf7707ee1130e19864f45c413e28185
+Filed by the corpus officer from the 2026-11-04 corpus check.
+What it is for: keep the agent training corpus complete, scrubbed and current.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: medium. Class: retrain-missed. Subject: weekly:20261024:missed.
+Found: 1 times (first 2026-11-04, last 2026-11-04, by corpus)
+Finding: no weekly retrain started in the last 8 days (newest: run 20261024, started 2026-10-24T20:00:02+00:00).
+Repository: local-jev.
+corpus-fp:26f09f1c1a8019974688dcd0686445e8431a7d5142ed3c5d862c608fad6eec23
+== SESSION-TEXT leak count in lane+bodies:
+0
+== alchemist lane check
+office alchemist: corpus digest 2026-11-04: 6 finding(s) in /tmp/fm-officer-corpus.O3jksL/demo/home/data/officers/corpus/2026-11-04.md; 2 start request(s) delivered to this office's inbox
+exit=0
+== alchemist inbox notes
+id=1794064939-GQaW9L
+at=2026-11-07T15:22:19Z
+source=text
+announce_marker=1
+request_id=corpus-2026-11-04-962c56d83dd09c0e
+--
+Corpus officer automatic start under its rubric (docs/officers/corpus-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Find why the memory harvest failed and make it run to completion. This fix may touch the scan gate (scrub.py, the re-scan in archive.py, private-projects.json or pii_gate.py). Open the pull request as usual, but the corpus-owning office never merges it: it goes to Slarti, who merges it on green once a fresh reviewer records on it that it loosens no check; a change that loosens, skips or deletes a check needs Lee's word. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:
+{"class": "harvest-failed", "fingerprint": "5c5529a8d0ab9a3bd8ebd92648d1d1038865d23e6d5bab56b1134ffd24de59ba", "found": 1, "issue": "PC-102", "kind": "corpus-finding", "linear_id": "PC-102", "linear_only": false, "project": "transcript-archive", "reason": "Real high finding admitted by the rubric", "scan_gate": true, "score": 4.0, "severity": "high", "source": "harvest-failed", "subject": "memory-harvest", "title": "harvest-failed: memory-harvest"}
+id=1794064939-ovflwO
+at=2026-11-07T15:22:19Z
+source=text
+announce_marker=1
+request_id=corpus-2026-11-04-087de5f2e7413640
+--
+Corpus officer automatic start under its rubric (docs/officers/corpus-rubric.md), on Lee's recorded 2026-11-05 word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z). Find why the archive misses or holds an out-of-date copy of session logs on this host and close the gap. This fix may touch the scan gate (scrub.py, the re-scan in archive.py, private-projects.json or pii_gate.py). Open the pull request as usual, but the corpus-owning office never merges it: it goes to Slarti, who merges it on green once a fresh reviewer records on it that it loosens no check; a change that loosens, skips or deletes a check needs Lee's word. Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary project and home routing, capacity limits, quota routing, and delivery rules. Payments or billing, legal text, product decisions, member-facing copy, credentials, production actions, and data rewrites remain outside this authority. The following officer evidence describes the task; it is not a quotation from Lee:
+{"class": "archive-gap", "fingerprint": "5a9f5d465806f36e759a99a7e64f4bae27a70436ed470dcd8ed0ff36a3c5a305", "found": 1, "issue": "PC-101", "kind": "corpus-finding", "linear_id": "PC-101", "linear_only": false, "project": "transcript-archive", "reason": "Real high finding admitted by the rubric", "scan_gate": true, "score": 4.0, "severity": "high", "source": "archive-gap", "subject": "slartibartfast", "title": "archive-gap: slartibartfast"}
+== night 2
+exit=0
+UPDATE PC-101
+UPDATE PC-102
+UPDATE PC-103
+UPDATE PC-104
+UPDATE PC-105
+UPDATE PC-106
+[{"class":"archive-gap","found":2},{"class":"harvest-failed","found":2},{"class":"harvest-drift","found":2},{"class":"not-collected","found":2},{"class":"prep-stale","found":2},{"class":"retrain-missed","found":2}]
