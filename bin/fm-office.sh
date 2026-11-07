@@ -10,6 +10,7 @@
 # Usage:
 #   fm-office.sh list
 #   fm-office.sh ensure
+#   fm-office.sh unprovisioned
 #   fm-office.sh publish <id>
 #   fm-office.sh status
 #   fm-office.sh arm-status
@@ -41,6 +42,17 @@
 # office-local admission config that differs from the master its record pins.
 # A remote office's home is not readable from here, so its file checks are
 # skipped.
+#
+# unprovisioned (also the last step of ensure) is the check that an approved office
+# cannot go unbuilt unnoticed. In a primary home only (it keeps data/offices.md and has no
+# .fm-secondmate-home or .fm-office marker), every role in FM_OFFICE_ROLES needs a data/offices.md line whose
+# role is it, or a valid deferral line in data/office-deferrals.md; a role with neither
+# prints "OFFICE: approved office <role> not provisioned (...)". A deferral is a registry
+# line `- <role> - "<Lee's words>" (said: <where and when>; until: YYYY-MM-DD; added
+# YYYY-MM-DD)` with until optional and no parentheses inside the fields (write a relay
+# citation as "relayed by main, corr <id>"); one that is malformed or past its until date (UTC) is
+# reported as "OFFICE: deferral ..." and defers nothing. The heartbeat in the watcher
+# wakes firstmate with these lines at most once a day until they are gone.
 #
 # publish <id> (run in the main home) pushes that one office's authority record
 # into its home now: config/office-authority and its receipt
@@ -189,6 +201,7 @@ usage() {
 Usage:
   fm-office.sh list      list registered offices and their state
   fm-office.sh ensure    session-start health: one OFFICE: line per gap
+  fm-office.sh unprovisioned    OFFICE: lines for approved roles with no office line or valid deferral
   fm-office.sh publish <id>   push that office's authority record into its home now
   fm-office.sh status    write data/office-status.json for this office home (silent)
   fm-office.sh arm-status     register status as this office home's silent watcher check
@@ -353,7 +366,57 @@ EOF
   done <<EOF
 $(registry_lines)
 EOF
-  return 0
+  cmd_unprovisioned
+}
+
+# One deferral line is valid when it is a registry line for a known role whose words
+# are quoted, with a said: field and an until: date (when present) that is a real date
+# not before today. Prints "valid" or the reason; today comes from FM_OFFICE_TODAY or UTC.
+deferral_state() {  # <line>
+  local line=$1 words said until today=${FM_OFFICE_TODAY:-$(date -u +%Y-%m-%d)}
+  if ! [[ "$line" =~ $REGISTRY_LINE_RE ]]; then echo "malformed deferral line"; return; fi
+  words=${BASH_REMATCH[2]}
+  fm_office_role_check "${BASH_REMATCH[1]}" || { echo "$FM_OFFICE_ERROR"; return; }
+  [[ "$words" =~ ^\"[^\"]*\"\ \( ]] && { echo "its fields contain parentheses, which a deferral line must not"; return; }
+  [[ "$words" =~ ^\".+\"$ ]] || { echo "its words are not Lee's quoted words"; return; }
+  said=$(line_field "$line" said || true)
+  [ -n "$said" ] || { echo "no said: field naming where and when Lee said it"; return; }
+  until=$(line_field "$line" until || true)
+  if [ -n "$until" ]; then
+    if ! [[ "$until" =~ ^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$ ]]; then
+      echo "until: is not a YYYY-MM-DD date"; return
+    fi
+    if [[ "$until" < "$today" ]]; then echo "expired on $until"; return; fi
+  fi
+  echo valid
+}
+
+cmd_unprovisioned() {
+  local role line deferrals="$DATA/office-deferrals.md" deferred=' ' id state have
+  [ -f "$REGISTRY" ] && [ ! -e "$FM_HOME/.fm-secondmate-home" ] && [ ! -e "$FM_HOME/.fm-office" ] || return 0
+  if [ -f "$deferrals" ]; then
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      state=$(deferral_state "$line")
+      id=$(printf '%s' "$line" | cut -d' ' -f2)
+      if [ "$state" = valid ]; then deferred="$deferred$id "
+      else printf 'OFFICE: deferral %s in %s defers nothing: %s\n' "$id" "$deferrals" "$state"; fi
+    done <<EOF
+$(grep -E '^- ' "$deferrals" || true)
+EOF
+  fi
+  have=' '
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    have="$have$(line_field "$line" role || true) "
+  done <<EOF
+$(registry_lines)
+EOF
+  for role in $FM_OFFICE_ROLES; do
+    case "$have$deferred" in *" $role "*) continue ;; esac
+    printf 'OFFICE: approved office %s not provisioned (no %s line for it, and no valid deferral in %s)\n' \
+      "$role" "$REGISTRY" "$deferrals"
+  done
 }
 
 cmd_status() {
@@ -819,6 +882,7 @@ cmd_check() {
 case "${1:-}" in
   list) cmd_list ;;
   ensure) cmd_ensure ;;
+  unprovisioned) cmd_unprovisioned ;;
   publish) shift; cmd_publish "$@" ;;
   status) cmd_status ;;
   arm-status) cmd_arm_status ;;

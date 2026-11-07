@@ -3633,6 +3633,25 @@ event_wait_or_sleep() {
   esac
 }
 
+# An approved office with no data/offices.md line and no valid deferral wakes
+# firstmate at most once a day until it is provisioned or deferred
+# (bin/fm-office.sh unprovisioned owns the check, docs/configuration.md "Offices").
+# Only a primary home runs the check, at most once an hour.
+office_unprovisioned_tick() {
+  local gaps reason data=${FM_DATA_OVERRIDE:-$FM_HOME/data}
+  [ -f "$data/offices.md" ] && [ ! -e "$FM_HOME/.fm-secondmate-home" ] && [ ! -e "$FM_HOME/.fm-office" ] || return 0
+  [ "$(age_of "$STATE/.office-unprovisioned-last")" -ge 86400 ] || return 0
+  [ "$(age_of "$STATE/.office-unprovisioned-run")" -ge 3600 ] || return 0
+  touch "$STATE/.office-unprovisioned-run"
+  gaps=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$data" "$SCRIPT_DIR/fm-office.sh" unprovisioned 2>/dev/null </dev/null \
+    | tr '\n' ' ' | sed 's/ *OFFICE: / | /g; s/^ *| //; s/ *$//') || return 0
+  [ -n "$gaps" ] || return 0
+  touch "$STATE/.office-unprovisioned-last"
+  reason="check: office-provisioning: $gaps"
+  fm_wake_append check office-provisioning "$reason" || exit 1
+  wake "$reason"
+}
+
 # --- Main entry: the runtime below runs only when this file is executed as a
 # script. When sourced (unit tests loading the functions above), return here
 # before acquiring the singleton lock or entering the blocking loop.
@@ -4155,6 +4174,7 @@ while :; do
   fm_pending_reply_tick "$STATE" || true
 
   decision_sweep_tick
+  office_unprovisioned_tick
 
   # Daily archive pass for the grow-only process-event inbox (handled
   # sequences); the script holds the rules and stamps its own cadence, so most

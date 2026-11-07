@@ -24,7 +24,8 @@
 #                 "SECONDMATE_LIVENESS: secondmate <id>: skipped: <reason>|respawn failed after <cause>: <reason>",
 #                 "SECONDMATE_HANDOFF: secondmate <id>: pending delivery: <n> item(s)",
 #                 "OFFICER: <gap>" (bin/fm-officer.sh ensure owns the cases),
-#                 "OFFICE: office <id>: <gap>" (bin/fm-office.sh ensure owns the cases),
+#                 "OFFICE: office <id>: <gap>", "OFFICE: approved office <role> not provisioned (...)",
+#                 or "OFFICE: deferral <role> ..." (bin/fm-office.sh ensure owns the cases),
 #                 "FMX: X mode on ..." or "FMX: X mode off ...".
 #          When a RUNNING secondmate home is fast-forwarded, its target is
 #          firstmate's own current default-branch commit. A local worktree uses

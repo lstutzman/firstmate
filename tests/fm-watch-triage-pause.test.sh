@@ -813,7 +813,7 @@ test_reheld_captain_call_starts_its_own_resurface_window() {
   # Answer and release, then re-hold: a second, distinct captain call on the same
   # task id, with no status append, so the status signature cannot tell them apart.
   printf 'go ahead\n' > "$dir/decision.txt"
-  run_hold "$dir" answer held-merge --decision-file "$dir/decision.txt" --release \
+  run_hold "$dir" answer held-merge --decision-file "$dir/decision.txt" --release --no-phases \
     || fail "could not record the captain's answer"
   run_hold "$dir" hold held-merge --reason 'awaiting the captain a second time' \
     || fail "could not re-hold the task as a second captain call"

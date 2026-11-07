@@ -909,7 +909,7 @@ test_answered_reports_only_a_recorded_captain_answer() {
   [ "$rc" -eq 2 ] || fail "answered accepted --title with no title (status $rc)"
 
   run_captain "$home" hold sample-plain --reason "captain go needed" >/dev/null
-  run_captain "$home" answer sample-plain --decision-file "$home/yes.txt" --release >/dev/null \
+  run_captain "$home" answer sample-plain --decision-file "$home/yes.txt" --release --no-phases >/dev/null \
     || fail "could not release the held work"
   [ "$(answered_rc sample-plain)" = 0 ] || fail "answered rejected a released captain answer"
   run_captain "$home" hold sample-plain --reason "a second captain call" >/dev/null
@@ -927,6 +927,66 @@ test_answered_reports_only_a_recorded_captain_answer() {
   run_captain "$home" answered 'bad/id' >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 2 ] || fail "answered did not refuse an unsafe task id (status $rc)"
   pass "answered reports only a recorded captain answer on a call not held again"
+}
+
+# A release names every remaining phase of the approved plan as an open backlog
+# item, or says there are none; the record shows which.
+test_release_requires_phases_filed() {
+  local home show rc out
+  home=$(make_home release-phases)
+  tasks_in "$home" add sample-gated "Gated work" --kind ship --repo sample >/dev/null \
+    || fail "could not create the gated item"
+  tasks_in "$home" add sample-golive "Go-live phase" --kind ship --repo sample >/dev/null \
+    || fail "could not create the open phase"
+  tasks_in "$home" add sample-built "Built phase" --kind ship --repo sample >/dev/null \
+    || fail "could not create the finished phase"
+  tasks_in "$home" "done" sample-built >/dev/null || fail "could not close the finished phase"
+  run_captain "$home" hold sample-gated --reason "captain go needed" >/dev/null \
+    || fail "could not hold the gated item"
+  printf 'Go, in phases.\n' > "$home/go.txt"
+  rel() { run_captain "$home" answer sample-gated --decision-file "$home/go.txt" --release "$@" 2>&1; }
+  set +e
+  rel >/dev/null; rc=$?
+  [ "$rc" -ne 0 ] || fail "--release with neither phase flag succeeded"
+  rel --phases-filed sample-golive --no-phases >/dev/null; rc=$?
+  [ "$rc" -ne 0 ] || fail "--release with both phase flags succeeded"
+  rel --phases-filed sample-missing >/dev/null; rc=$?
+  [ "$rc" -ne 0 ] || fail "--release accepted a phase that is not in the backlog"
+  rel --phases-filed sample-golive,sample-built >/dev/null; rc=$?
+  [ "$rc" -ne 0 ] || fail "--release accepted a Done phase"
+  run_captain "$home" answer sample-gated --decision-file "$home/go.txt" --phases-filed sample-golive >/dev/null 2>&1; rc=$?
+  [ "$rc" -ne 0 ] || fail "--phases-filed was accepted without --release"
+  set -e
+  show=$(tasks_in "$home" show sample-gated --full)
+  assert_contains "$show" "held: yes" "a refused release lifted the hold"
+  rel --phases-filed sample-golive >/dev/null || fail "--release with an open phase failed"
+  show=$(tasks_in "$home" show sample-gated --full)
+  assert_contains "$show" "Phases: filed sample-golive" "the release did not record its filed phases"
+  assert_contains "$show" "held: no" "a release with an open phase kept the hold"
+
+  tasks_in "$home" add sample-single "Single step" --kind ship --repo sample >/dev/null \
+    || fail "could not create the unphased item"
+  run_captain "$home" hold sample-single --reason "captain go needed" >/dev/null \
+    || fail "could not hold the unphased item"
+  run_captain "$home" answer sample-single --decision-file "$home/go.txt" --release --no-phases >/dev/null \
+    || fail "--release --no-phases failed"
+  assert_contains "$(tasks_in "$home" show sample-single --full)" "Phases: none" \
+    "the release did not record that there are no phases"
+  tasks_in "$home" add sample-bare "Bare release row" --kind ship --repo sample >/dev/null \
+    || fail "could not create the bare-row item"
+  run_captain "$home" hold sample-bare --reason "captain go needed" >/dev/null \
+    || fail "could not hold the bare-row item"
+  set +e
+  out=$(printf 'sample-bare\tgo\t\trelease\n' | run_captain "$home" answers --source "bare release fixture" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "the intake released on a bare release row"
+  assert_contains "$out" "skipped: sample-bare (a release line needs" "the bare release row was not explained"
+  assert_contains "$(tasks_in "$home" show sample-bare --full)" "held: yes" "a bare release row lifted the hold"
+  out=$(printf 'sample-bare\tgo\t\trelease:sample-golive\n' | run_captain "$home" answers --source "phased release fixture") \
+    || fail "the intake refused a release row naming an open phase"
+  assert_contains "$(tasks_in "$home" show sample-bare --full)" "Phases: filed sample-golive" "the intake release lost its phases"
+  pass "release requires every remaining phase filed open, or an explicit no-phases"
 }
 
 # --release lifts the hold instead of closing, preserving the work item's own
@@ -967,7 +1027,7 @@ EOF
     --reason "captain go needed before shipping" >/dev/null \
     || fail "could not hold the work item for the captain"
   printf 'Not urgent; ship it as planned.\n' > "$home/go.txt"
-  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release >/dev/null \
+  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release --no-phases >/dev/null \
     || fail "answer --release failed on the held work item"
   show=$(tasks_in "$home" show sample-widget --full)
   assert_contains "$show" "state: queued" "a released work item did not stay queued"
@@ -979,7 +1039,7 @@ EOF
     "the release corrupted escaped or Unicode body text"
   assert_contains "$show" "Captain hold set: 2025-01-02T03:04:05Z" \
     "hold stamping deleted matching user content outside the leading stamp"
-  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release >/dev/null \
+  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release --no-phases >/dev/null \
     || fail "identical release retry was not idempotent"
   if run_captain "$home" answer sample-widget --decision-file "$home/go.txt" \
     > "$home/wrong-mode.out" 2> "$home/wrong-mode.err"; then
@@ -994,7 +1054,7 @@ EOF
   tasks_in "$home" add sample-empty-label-widget "Ship without a display label" \
     --kind ship --repo sample >/dev/null
   run_captain "$home" hold sample-empty-label-widget --reason "captain go needed" >/dev/null
-  out=$(printf 'sample-empty-label-widget\tgo\t\trelease\n' \
+  out=$(printf 'sample-empty-label-widget\tgo\t\trelease:none\n' \
     | run_captain "$home" answers --source "empty-label release fixture") \
     || fail "an empty answer label shifted the release close mode"
   assert_contains "$out" "closed: sample-empty-label-widget" \
@@ -1020,7 +1080,7 @@ EOF
       and .hold_bucket == "live"
   ' >/dev/null || fail "a new hold lifecycle reused historical timestamp or answer text: $snap"
   printf 'Price it at nine dollars.\n' > "$home/price.txt"
-  run_captain "$home" answer sample-widget --decision-file "$home/price.txt" --release >/dev/null \
+  run_captain "$home" answer sample-widget --decision-file "$home/price.txt" --release --no-phases >/dev/null \
     || fail "a re-held task refused a new answer"
   show=$(tasks_in "$home" show sample-widget --full)
   assert_contains "$show" "Price it at nine dollars." "the new answer was not recorded"
@@ -1055,7 +1115,7 @@ test_release_is_attended_only() {
     --words 'merge green work' >/dev/null 2>&1 || fail "away entry failed"
 
   rc=0
-  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release \
+  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release --no-phases \
     >/dev/null 2>"$home/away.err" || rc=$?
   [ "$rc" -ne 0 ] || fail "answer --release succeeded while the away record exists"
   assert_grep "attended session" "$home/away.err" \
@@ -1064,7 +1124,7 @@ test_release_is_attended_only() {
   assert_contains "$show" "held: yes" "the away refusal lifted the hold"
   assert_not_contains "$show" "Resolution mode" "the away refusal wrote a resolution record"
 
-  out=$(printf 'sample-widget\tgo\t\trelease\n' \
+  out=$(printf 'sample-widget\tgo\t\trelease:none\n' \
     | run_captain "$home" answers --source "away release fixture") \
     && fail "the keyed-answer intake released held work while away"
   assert_contains "$out" "refused: sample-widget" "the intake did not report the away refusal"
@@ -1083,14 +1143,14 @@ test_release_is_attended_only() {
   rm -f "$home/state/.afk-contract"
   printf 'away\n%s\n' "$(date +%s)" > "$home/state/.afk"
   rc=0
-  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release \
+  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release --no-phases \
     >/dev/null 2>&1 || rc=$?
   [ "$rc" -ne 0 ] || fail "answer --release succeeded while the away daemon flag exists"
   show=$(tasks_in "$home" show sample-widget --full)
   assert_contains "$show" "held: yes" "the daemon-flag refusal lifted the hold"
 
   rm -f "$home/state/.afk"
-  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release >/dev/null \
+  run_captain "$home" answer sample-widget --decision-file "$home/go.txt" --release --no-phases >/dev/null \
     || fail "answer --release failed with no away record"
   show=$(tasks_in "$home" show sample-widget --full)
   assert_contains "$show" "held: no" "an attended release kept the hold"
@@ -1103,7 +1163,7 @@ test_release_is_attended_only() {
     "$ROOT/bin/fm-afk-contract.sh" enter --words 'keep routine wakes off my main' >/dev/null 2>&1 \
     || fail "quiet entry failed"
   printf 'Still ship it.\n' > "$home/go-quiet.txt"
-  run_captain "$home" answer sample-widget --decision-file "$home/go-quiet.txt" --release >/dev/null \
+  run_captain "$home" answer sample-widget --decision-file "$home/go-quiet.txt" --release --no-phases >/dev/null \
     || fail "answer --release failed in quiet mode"
   show=$(tasks_in "$home" show sample-widget --full)
   assert_contains "$show" "held: no" "a quiet-mode release kept the hold"
@@ -1129,7 +1189,7 @@ test_release_rechecks_away_after_waiting_on_task_lock() {
   [ -e "$home/control-held" ] || fail "the task control lock was not taken"
 
   rc=0
-  run_captain "$home" answer sample-widget --decision-file "$home/go-race.txt" --release \
+  run_captain "$home" answer sample-widget --decision-file "$home/go-race.txt" --release --no-phases \
     >/dev/null 2>"$home/race.err" &
   local release_pid=$!
   sleep 1
@@ -1648,7 +1708,7 @@ EOF
     || fail "a repeated hold duplicated the parent decision: $(cat "$channel")"
 
   printf 'ship it later\n' > "$decision"
-  run_captain "$mate" answer mate-call --decision-file "$decision" --release >/dev/null \
+  run_captain "$mate" answer mate-call --decision-file "$decision" --release --no-phases >/dev/null \
     || fail "mate release answer failed"
   assert_grep 'resolved [key=captain-hold-mate-call-1]: captain hold mate-call: released' \
     <(sed -E 's/ \[at=[0-9]+\]//' "$channel") "the released answer did not close the parent decision"
@@ -1742,12 +1802,12 @@ test_hold_answer_closes_originating_decision_key() {
     --repo sample >/dev/null || fail "pillow release hold failed"
   run_captain "$mate" answer pillow-calls --decision-file "$decision" >/dev/null \
     || fail "pillow answer failed"
-  run_captain "$mate" answer pillow-release --decision-file "$decision" --release >/dev/null \
+  run_captain "$mate" answer pillow-release --decision-file "$decision" --release --no-phases >/dev/null \
     || fail "pillow release answer failed"
 
   run_captain "$mate" hold gates-work --title "Gated work" --reason "held under another id" \
     --repo sample --origin-key recorded-key >/dev/null || fail "origin-key hold failed"
-  run_captain "$mate" answer gates-work --decision-file "$decision" --release >/dev/null \
+  run_captain "$mate" answer gates-work --decision-file "$decision" --release --no-phases >/dev/null \
     || fail "origin-key answer failed"
   run_captain "$mate" hold moot-task --title "Moot task" --reason "may be moot" \
     --repo sample --origin-key moot-key >/dev/null || fail "moot hold failed"
@@ -1922,7 +1982,7 @@ prompts[13]{uid,prompt,selector,tag,text}:
   "1","Reconcile first\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-source-reconcile\",\n  \"selection\": \"reconcile\",\n  \"note\": \"\"\n}","section#call > form:nth-of-type(6)",choice,"Reconcile"
   "2","Membership: gold-only - captain detail\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-membership-call\",\n  \"selection\": \"gold-only\",\n  \"note\": \"captain detail\"\n}","section#call > form:nth-of-type(1)",choice,"Membership: gold-only - captain detail"
   "3","Headline: f1-when-fp-gold\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-headline-call\",\n  \"selection\": \"f1-when-fp-gold\",\n  \"note\": \"\"\n}","section#call > form:nth-of-type(2)",choice,"Headline: f1-when-fp-gold"
-  "4","Gated work: go\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-gated-work\",\n  \"selection\": \"go\",\n  \"note\": \"\",\n  \"close\": \"release\"\n}","section#call > form:nth-of-type(3)",choice,"Gated work: go"
+  "4","Gated work: go\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-gated-work\",\n  \"selection\": \"go\",\n  \"note\": \"\",\n  \"close\": \"release\",\n  \"phases\": \"none\"\n}","section#call > form:nth-of-type(3)",choice,"Gated work: go"
   "5","Absent call: yes\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-nonexistent-call\",\n  \"selection\": \"yes\",\n  \"note\": \"\"\n}","section#call > form:nth-of-type(4)",choice,"Absent call: yes"
   "6","Invalid close: yes\n\nContext data:\n{\n  \"question\": \"sample-invalid-close-call\",\n  \"answer\": \"yes\",\n  \"close\": \"drop\"\n}","section#call > form:nth-of-type(5)",choice,"Invalid close: yes"
   "7","Reconcile this - re-check latest publication\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-source-reconcile\",\n  \"selection\": \"reconcile\",\n  \"note\": \"re-check latest publication\"\n}","section#call > form:nth-of-type(6)",choice,"Reconcile - re-check latest publication"
@@ -1941,7 +2001,7 @@ EOF
     "a repeated reconcile selection deleted another card's answer"
   assert_contains "$out" "sample-headline-call	f1-when-fp-gold" \
     "a repeated ordinary selection was not preserved"
-  assert_contains "$out" "sample-gated-work	go	Gated work: go	release" \
+  assert_contains "$out" "sample-gated-work	go	Gated work: go	release:none" \
     "the card-declared release mode was not relayed"
   assert_not_contains "$out" "sample-forged-call" \
     "a freeform captain message forged a task id from its own prose"
@@ -2119,6 +2179,26 @@ test_reconcile_never_closes_through_the_keyed_answer_intake() {
   pass "only a bound captured source creates reconcile requests"
 }
 
+# A release choice reaches the intake only with the card's phase answer: one whose
+# phases are missing or malformed is dropped, so it can never release unphased.
+test_lavish_release_choice_needs_its_phases() {
+  local result="$TMP_ROOT/release-phases.result" out
+  cat > "$result" <<'EOF'
+session:
+  file: /review.html
+  status: feedback
+prompts[4]{uid,prompt,selector,tag,text}:
+  "1","No phases: go\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-no-phases\",\n  \"selection\": \"go\",\n  \"note\": \"\",\n  \"close\": \"release\"\n}","section#call > form:nth-of-type(1)",choice,"No phases: go"
+  "2","Bad phases: go\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-bad-phases\",\n  \"selection\": \"go\",\n  \"note\": \"\",\n  \"close\": \"release\",\n  \"phases\": \"a, b\"\n}","section#call > form:nth-of-type(2)",choice,"Bad phases: go"
+  "3","Listed phases: go\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-listed-phases\",\n  \"selection\": \"go\",\n  \"note\": \"\",\n  \"close\": \"release\",\n  \"phases\": \"launch-a,launch-b\"\n}","section#call > form:nth-of-type(3)",choice,"Listed phases: go"
+  "4","Done card: yes\n\nContext data:\n{\n  \"schema\": \"fm-bearings-answer.v1\",\n  \"question\": \"sample-done-card\",\n  \"selection\": \"yes\",\n  \"note\": \"\",\n  \"close\": \"done\"\n}","section#call > form:nth-of-type(4)",choice,"Done card: yes"
+EOF
+  out=$("$ROOT/bin/fm-procevent-lavish.sh" answers "$result") || fail "could not read the captured answers"
+  assert_equals "$(printf 'sample-listed-phases\tgo\tListed phases: go\trelease:launch-a,launch-b\nsample-done-card\tyes\tDone card: yes\tdone')" \
+    "$out" "the relayed release and done rows"
+  pass "a release choice without well-formed phases never reaches the intake"
+}
+
 test_normal_answers_retire_pending_reconcile_requests() {
   local home list id
   home=$(make_home reconcile-normal-answer)
@@ -2133,7 +2213,7 @@ test_normal_answers_retire_pending_reconcile_requests() {
   printf 'Captain said release.\n' > "$home/release.txt"
   run_captain "$home" answer sample-direct-close --decision-file "$home/close.txt" >/dev/null \
     || fail "a direct close answer failed"
-  run_captain "$home" answer sample-direct-release --decision-file "$home/release.txt" --release >/dev/null \
+  run_captain "$home" answer sample-direct-release --decision-file "$home/release.txt" --release --no-phases >/dev/null \
     || fail "a direct release answer failed"
   printf 'sample-keyed-close\tyes\tYes\n' \
     | run_captain "$home" answers --source "board sequence 2" >/dev/null \
@@ -2144,7 +2224,7 @@ test_normal_answers_retire_pending_reconcile_requests() {
 
   run_captain "$home" answer sample-direct-close --decision-file "$home/close.txt" >/dev/null \
     || fail "a direct close replay failed"
-  run_captain "$home" answer sample-direct-release --decision-file "$home/release.txt" --release >/dev/null \
+  run_captain "$home" answer sample-direct-release --decision-file "$home/release.txt" --release --no-phases >/dev/null \
     || fail "a direct release replay failed"
   printf 'sample-keyed-close\tyes\tYes\n' \
     | run_captain "$home" answers --source "board sequence 2" >/dev/null \
@@ -3083,7 +3163,7 @@ test_retained_row_artifacts_survive_captain_answers() {
   run_captain "$home" hold "$approved_id" --reason "captain merge approval pending" \
     >/dev/null || fail "could not hold the approved merge"
   printf 'Merge the approved pull request.\n' > "$home/approved-answer.txt"
-  run_captain "$home" answer "$approved_id" --release \
+  run_captain "$home" answer "$approved_id" --release --no-phases \
     --decision-file "$home/approved-answer.txt" >/dev/null \
     || fail "could not release the approved merge"
   show=$(tasks_in "$home" show "$approved_id" --full) || fail "the approved merge disappeared"
@@ -3111,7 +3191,7 @@ test_retained_row_artifacts_survive_captain_answers() {
   run_captain "$home" hold "$local_id" --reason "captain local merge approval pending" \
     >/dev/null || fail "could not hold the released local merge"
   printf 'Land the approved change locally.\n' > "$home/local-answer.txt"
-  run_captain "$home" answer "$local_id" --release \
+  run_captain "$home" answer "$local_id" --release --no-phases \
     --decision-file "$home/local-answer.txt" >/dev/null \
     || fail "could not release the local merge"
   show=$(tasks_in "$home" show "$local_id" --full) || fail "the released local merge disappeared"
@@ -3139,7 +3219,7 @@ test_retained_row_artifacts_survive_captain_answers() {
   complete_through_sibling "$home" "$released_id" >/dev/null \
     || fail "completion gate failed for the released report"
   printf 'Release the completed report.\n' > "$home/released-answer.txt"
-  run_captain "$home" answer "$released_id" --release \
+  run_captain "$home" answer "$released_id" --release --no-phases \
     --decision-file "$home/released-answer.txt" >/dev/null \
     || fail "could not release the completed report"
   run_teardown "$home" "$released_id" > "$home/released-teardown.out" \
@@ -3152,7 +3232,7 @@ test_retained_row_artifacts_survive_captain_answers() {
   run_captain "$home" hold "$answered_id" --reason "captain route choice pending" \
     >/dev/null || fail "could not hold the artifactless captain call"
   printf 'Continue without a delivery artifact.\n' > "$home/artifactless-answer.txt"
-  run_captain "$home" answer "$answered_id" --release \
+  run_captain "$home" answer "$answered_id" --release --no-phases \
     --decision-file "$home/artifactless-answer.txt" >/dev/null \
     || fail "could not release the artifactless captain call"
   tasks_in "$home" 'done' "$answered_id" >/dev/null \
@@ -3165,7 +3245,7 @@ test_retained_row_artifacts_survive_captain_answers() {
   run_captain "$home" hold "$decision_local_id" --reason "captain landing route pending" \
     >/dev/null || fail "could not hold the local-worded decision fixture"
   printf 'local main\n' > "$home/local-worded-answer.txt"
-  run_captain "$home" answer "$decision_local_id" --release \
+  run_captain "$home" answer "$decision_local_id" --release --no-phases \
     --decision-file "$home/local-worded-answer.txt" >/dev/null \
     || fail "could not release the local-worded decision fixture"
   tasks_in "$home" 'done' "$decision_local_id" >/dev/null \
@@ -3651,7 +3731,7 @@ test_merge_approval_releases_before_zero_done_retention() {
   run_captain "$home" hold "$id" --reason "captain merge approval pending" >/dev/null \
     || fail "could not hold the zero-retention merge"
   printf 'Merge the approved change.\n' > "$home/merge-answer.txt"
-  run_captain "$home" answer "$id" --release \
+  run_captain "$home" answer "$id" --release --no-phases \
     --decision-file "$home/merge-answer.txt" >/dev/null \
     || fail "could not release the approved zero-retention merge"
   show=$(tasks_in "$home" show "$id" --full) || fail "the released merge row disappeared"
@@ -4109,7 +4189,7 @@ test_merge_entrypoints_serialize_forced_teardown_before_task_reads() {
   run_captain "$home" hold "$id" --reason "captain merge approval pending" >/dev/null \
     || fail "could not hold the PR teardown-race fixture"
   printf 'Merge the released pull request.\n' > "$home/race-answer.txt"
-  run_captain "$home" answer "$id" --release --decision-file "$home/race-answer.txt" \
+  run_captain "$home" answer "$id" --release --no-phases --decision-file "$home/race-answer.txt" \
     >/dev/null || fail "could not release the PR teardown-race fixture"
 
   real_grep=$(command -v grep)
@@ -4188,7 +4268,7 @@ SH
     --reason "captain local merge approval pending" >/dev/null \
     || fail "could not hold the local teardown-race fixture"
   printf 'Land the released local change.\n' > "$local_home/race-answer.txt"
-  run_captain "$local_home" answer "$local_id" --release \
+  run_captain "$local_home" answer "$local_id" --release --no-phases \
     --decision-file "$local_home/race-answer.txt" >/dev/null \
     || fail "could not release the local teardown-race fixture"
 
@@ -4278,7 +4358,7 @@ test_released_merge_passes_the_entrypoint_and_lands() {
   run_captain "$home" hold "$id" --reason "captain merge approval pending" >/dev/null \
     || fail "could not hold the released merge fixture"
   printf 'Merge the approved pull request.\n' > "$home/merge-answer.txt"
-  run_captain "$home" answer "$id" --release \
+  run_captain "$home" answer "$id" --release --no-phases \
     --decision-file "$home/merge-answer.txt" >/dev/null \
     || fail "could not release the approved merge"
   show=$(tasks_in "$home" show "$id" --full) || fail "the released merge task disappeared"
@@ -4572,7 +4652,7 @@ test_hold_origins_follow_backend_holds() {
       fi
       if [ "$phase" = released ]; then
         printf 'Release this work.\n' > "$home/answer.txt"
-        run_captain "$home" answer "$id" --release --decision-file "$home/answer.txt" >/dev/null \
+        run_captain "$home" answer "$id" --release --no-phases --decision-file "$home/answer.txt" >/dev/null \
           || fail "could not release the original hold"
       fi
       cat > "$home/fakebin/tasks-axi" <<'SH'
@@ -4722,7 +4802,7 @@ test_interrupted_origin_move_does_not_inherit_the_previous_answer() {
       run_captain "$home" hold "$id" --title "Separate call" --reason "Choose for A" \
         --origin origin-a >/dev/null || fail "could not hold the call for A"
       printf 'Release this work.\n' > "$home/answer.txt"
-      run_captain "$home" answer "$id" --release --decision-file "$home/answer.txt" >/dev/null \
+      run_captain "$home" answer "$id" --release --no-phases --decision-file "$home/answer.txt" >/dev/null \
         || fail "could not release the call for A"
       until_args=()
       [ "$phase" != expired ] || until_args=(--until 2000-01-01)
@@ -4806,7 +4886,7 @@ SH
             fail "verify accepted a released answer beneath an incomplete hold"
           fi
           if [ "$phase" = released-replay ]; then
-            run_captain "$home" answer "$id" --release --decision-file "$home/answer.txt" >/dev/null \
+            run_captain "$home" answer "$id" --release --no-phases --decision-file "$home/answer.txt" >/dev/null \
               || fail "could not replay A's earlier answer"
           else
             tasks_in "$home" "done" "$id" --keep 1 >/dev/null || fail "could not complete the released work"
@@ -4832,7 +4912,7 @@ SH
       run_captain "$home" complete origin-b "$id" >/dev/null \
         || fail "a held call for B did not complete B"
       printf 'Ship it for B.\n' > "$home/answer-b.txt"
-      run_captain "$home" answer "$id" --release --decision-file "$home/answer-b.txt" >/dev/null \
+      run_captain "$home" answer "$id" --release --no-phases --decision-file "$home/answer-b.txt" >/dev/null \
         || fail "could not release the call for B"
       run_captain "$home" complete origin-b "$id" >/dev/null \
         || fail "the genuine answer for B did not complete B"
@@ -5535,7 +5615,7 @@ test_deadline_default_rehold_after_an_answer_never_inherits_it() {
     FM_CAPTAIN_HOLD_NOW=$DD_HOLD run_captain "$home" hold sample-stale --reason "Choose go or wait" \
       --recommend "go live" --default-by "$DD_BY" --class docs >/dev/null || fail "could not hold the call"
     printf 'Go.\n' > "$home/go.txt"
-    dd_at 2026-07-20T13:00:00Z "$home" answer sample-stale --decision-file "$home/go.txt" --release >/dev/null \
+    dd_at 2026-07-20T13:00:00Z "$home" answer sample-stale --decision-file "$home/go.txt" --release --no-phases >/dev/null \
       || fail "the captain's release was refused"
     FM_CAPTAIN_HOLD_NOW=2026-07-20T14:00:00Z run_captain "$home" hold sample-stale --reason "A new question" >/dev/null \
       || fail "could not re-hold the call"
@@ -5570,6 +5650,7 @@ test_answer_records_and_closes
 test_answered_reports_only_a_recorded_captain_answer
 test_answer_reads_the_decision_from_stdin
 test_release_frees_held_work
+test_release_requires_phases_filed
 test_release_is_attended_only
 test_release_rechecks_away_after_waiting_on_task_lock
 test_hold_stamp_precedes_hold_visibility
@@ -5586,6 +5667,7 @@ test_secondmate_home_publishes_holds_and_answers
 test_hold_answer_closes_originating_decision_key
 test_secondmate_reconcile_publishes_before_request_retirement
 test_bound_channel_answers_close_at_answer_time
+test_lavish_release_choice_needs_its_phases
 test_reconcile_never_closes_through_the_keyed_answer_intake
 test_normal_answers_retire_pending_reconcile_requests
 test_reconcile_closes_with_evidence_or_keeps_the_call_open

@@ -88,9 +88,11 @@ The `answer` subcommand records the captain's exact words and resolves the call 
 | Form | Effect |
 | --- | --- |
 | `answer` | Closes a question-shaped call. |
-| `answer --release` | Frees a captain-gated work item to proceed without completing it. |
+| `answer --release --phases-filed <id>[,<id>...]` or `--no-phases` | Frees a captain-gated work item to proceed without completing it. |
 
 It requires a non-empty captain decision file of at most 8192 bytes.
+`answer --release` also requires exactly one of `--phases-filed` or `--no-phases`: every id must be an open (not Done) item in this home's backlog, and the resolution record carries a `Phases:` line naming them or `none`, so an approved phase cannot live only in prose.
+The keyed-answer intake takes the same two answers in a `release:<id>[,<id>...]` or `release:none` mode field and skips a bare `release`; a Bearings card that declares `close: "release"` carries them as its `phases` field, which the board validator requires, and the Lavish adapter relays it into that mode field.
 `answer --release` is attended-only: while the away-posture record exists it is refused before anything is written, and the keyed-answer intake refuses a `release` line the same way, because only the captain in an attended session releases a captain hold.
 A quiet record is a present captain and does not refuse.
 It then works in this order:

@@ -2,10 +2,13 @@
 // shim and print what the renderer actually produced, so board behavior is
 // asserted through the real template rather than by reading its source.
 //
-// Usage: node board-render-harness.mjs <built-board.html>
+// Usage: node board-render-harness.mjs <built-board.html> [<answer-json>]
+// <answer-json> is {"index":<n>,"value":"<option>"}: select that option on the
+// nth captain's-call form and submit it, as the captain would.
 // Prints one JSON document:
 //   { stats:[{n,label}], captains_call:[text], underway:[{title,sub,badges}],
-//     charted:[{title,sub,badges,pickable}], empty, more, error }
+//     charted:[{title,sub,badges,pickable}], empty, more, error,
+//     queued:[{prompt,tag,text,data}] }
 import { readFileSync } from "node:fs";
 
 const html = readFileSync(process.argv[2], "utf8");
@@ -24,8 +27,10 @@ class Node {
     this.type = "";
     this.value = "";
     this.checked = false;
+    this.listeners = {};
     this.classList = {
       add: (c) => { this.className = (this.className + " " + c).trim(); },
+      remove: (c) => { this.className = this.className.split(/\s+/).filter((x) => x && x !== c).join(" "); },
       contains: (c) => this.className.split(/\s+/).includes(c),
       toggle: (c, force) => {
         const classes = new Set(this.className.split(/\s+/).filter(Boolean));
@@ -44,7 +49,7 @@ class Node {
   set textContent(v) { this._text = String(v); this.children = []; }
   appendChild(n) { n.parentNode = this; this.children.push(n); return n; }
   setAttribute(k, v) { this.attributes[k] = v; }
-  addEventListener() {}
+  addEventListener(type, fn) { (this.listeners[type] ||= []).push(fn); }
   querySelectorAll(sel) {
     const want = sel.replace(/^\./, "").replace(/:checked$/, "");
     const checkedOnly = sel.endsWith(":checked");
@@ -85,8 +90,20 @@ globalThis.document = {
     return byId.get(id);
   },
 };
-globalThis.window = {};
+const queued = [];
+globalThis.window = {
+  lavish: { queuePrompt: (prompt, o) => queued.push({ prompt, tag: o.tag, text: o.text, data: o.data }) },
+};
 globalThis.TextEncoder = TextEncoder;
+const descendants = (n) => n.children.flatMap((c) => [c, ...descendants(c)]);
+globalThis.FormData = class {
+  constructor(form) { this.form = form; }
+  get(name) {
+    const field = descendants(this.form).find((c) => c.tagName === "input" && c.name === name
+      && (c.type !== "radio" || c.checked));
+    return field ? field.value : null;
+  }
+};
 
 const script = html.slice(html.indexOf("<script>") + "<script>".length, html.lastIndexOf("</script>"));
 new Function(script)();
@@ -121,6 +138,19 @@ const captains_call = (byId.get("bb-call") || new Node("div")).children
   .filter((n) => n.className.split(/\s+/).includes("bb-decision"))
   .map((n) => n.textContent);
 
+if (process.argv[3]) {
+  const answer = JSON.parse(process.argv[3]);
+  const form = descendants(byId.get("bb-call") || new Node("div")).filter((n) => n.tagName === "form")[answer.index];
+  if (!form) throw new Error("no captain's-call form at index " + answer.index);
+  for (const input of descendants(form)) {
+    if (input.tagName === "input" && input.type === "radio") input.checked = input.value === answer.value;
+  }
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = () => 0;
+  for (const fn of form.listeners.submit || []) fn({ preventDefault() {} });
+  globalThis.setTimeout = realSetTimeout;
+}
+
 const ch = byId.get("bb-charted") || new Node("div");
 const charted = rowsOf(ch);
 // A fail-closed render replaces the page body instead of the board sections, so
@@ -133,4 +163,4 @@ const empty = ch.children.filter((c) => c.className.includes("bb-empty")).map((c
 const more = ch.children.filter((c) => c.className.includes("bb-morechip")).map((c) => c.textContent);
 
 process.stdout.write(
-  JSON.stringify({ stats, captains_call, underway, charted, empty, more, error: errorText }) + "\n");
+  JSON.stringify({ stats, captains_call, underway, charted, empty, more, error: errorText, queued }) + "\n");

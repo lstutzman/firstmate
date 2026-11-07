@@ -760,7 +760,8 @@ cmd_silent() {
 
 # Print `key<TAB>answer<TAB>label[<TAB>mode]` for each non-reconcile structured choice the
 # captain submitted in a captured result; the optional mode column relays the
-# card's declared close mode (`done` or `release`) to the keyed-answer intake.
+# card's declared close mode (`done`, or `release` with the card's `phases`, relayed as
+# `release:<phases>`) to the keyed-answer intake.
 # Items come from the shared result parser above, in either emission form, and
 # only items whose `tag` field is `choice` are read.
 # The header owns the partial-output and failure contract.
@@ -826,6 +827,12 @@ cmd_choice_rows() {
         next if !defined($data->{close}) || ref($data->{close})
           || ($data->{close} ne "done" && $data->{close} ne "release");
         $mode = $data->{close};
+        if ($mode eq "release") {
+          # The intake releases only with its phase answer, so the card must carry one.
+          next if !defined($data->{phases}) || ref($data->{phases})
+            || $data->{phases} !~ /\A(?:none|[A-Za-z0-9._-]+(?:,[A-Za-z0-9._-]+)*)\z/;
+          $mode = "release:$data->{phases}";
+        }
       }
       my $label = defined $f{text} ? $f{text} : "";
       s/[\x00-\x1f\x7f]/ /g for ($answer, $note, $label);

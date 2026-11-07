@@ -309,6 +309,41 @@ test_build_refuses_malformed_payloads_before_touching_the_board() {
   pass "build refuses malformed payloads before touching the board"
 }
 
+test_a_release_card_needs_well_formed_phases() {
+  local home data board rc phases
+  home=$(make_home release-phases)
+  board="$home/.lavish/bearings-board.html"
+  data="$home/payload.json"
+  for phases in '' '"a, b"' '"a;b"' '"a,"' '7'; do
+    write_valid_payload "$data"
+    if [ -z "$phases" ]; then
+      jq '.captains_call[0].close = "release"' "$data" > "$data.tmp"
+    else
+      jq --argjson p "$phases" '.captains_call[0].close = "release" | .captains_call[0].phases = $p' "$data" > "$data.tmp"
+    fi
+    mv "$data.tmp" "$data"
+    set +e; run_board "$home" build "$data" >/dev/null 2>&1; rc=$?; set -e
+    [ "$rc" -ne 0 ] || fail "a release card with phases ${phases:-absent} was accepted"
+  done
+  for phases in '"none"' '"done"'; do
+    write_valid_payload "$data"
+    jq --argjson p "$phases" '.captains_call[0].phases = $p' "$data" > "$data.tmp" && mv "$data.tmp" "$data"
+    set +e; run_board "$home" build "$data" >/dev/null 2>&1; rc=$?; set -e
+    [ "$rc" -ne 0 ] || fail "a card that releases nothing accepted phases $phases"
+  done
+  jq '.captains_call[0].close = "done"' "$data" > "$data.tmp" && mv "$data.tmp" "$data"
+  set +e; run_board "$home" build "$data" >/dev/null 2>&1; rc=$?; set -e
+  [ "$rc" -ne 0 ] || fail "a close:done card accepted phases"
+  assert_absent "$board" "a refused release payload still produced a board"
+  for phases in '"none"' '"launch-alchemist,launch.librarian_2"'; do
+    write_valid_payload "$data"
+    jq --argjson p "$phases" '.captains_call[0].close = "release" | .captains_call[0].phases = $p' "$data" > "$data.tmp" \
+      && mv "$data.tmp" "$data"
+    run_board "$home" build "$data" >/dev/null || fail "a release card with phases $phases was refused"
+  done
+  pass "a release card needs none or a comma-separated id list as its phases, and no other card carries phases"
+}
+
 test_build_injects_binds_then_arms() {
   local home data board out sid
   home=$(make_home build)
@@ -772,6 +807,7 @@ test_build_refuses_a_nondecision_reconcile_value() {
 test_path_is_stable_and_home_scoped
 test_build_refuses_malformed_payloads_before_touching_the_board
 test_charted_kind_is_optional_and_accepts_both_values
+test_a_release_card_needs_well_formed_phases
 test_build_injects_binds_then_arms
 test_registration_cannot_consume_before_any_origin_binding
 test_build_does_not_bind_or_arm_when_session_start_fails

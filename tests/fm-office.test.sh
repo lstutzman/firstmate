@@ -14,6 +14,11 @@ export FM_OFFICE_HOST=slartibartfast
 NAV='- navigator - Drive progress (role: navigator; runs-on: slartibartfast; dispatch: PropertyCompass2; merge: none; merge-via: PropertyCompass2=slarti; auto-merge-classes: none; wip: 2; tick: every 2h; sources: tick,lane:progress; added 2026-11-04)'
 QM='- quartermaster - Drive fleet self-improvement (role: quartermaster; runs-on: slartibartfast; dispatch: firstmate,skills; merge: firstmate,skills; merge-via: none; auto-merge-classes: none; wip: 2; tick: every 4h; sources: tick,lane:friction; added 2026-11-04)'
 
+# defer_corpus_roles <world>: valid deferrals for the two roles the fixture does not build.
+defer_corpus_roles() {
+  printf -- '- alchemist - "Not yet." (said: fixture chat, 2026-11-05; added 2026-11-05)\n- librarian - "Not yet." (said: fixture chat, 2026-11-05; added 2026-11-05)\n' > "$1/data/office-deferrals.md"
+}
+
 # make_world <name>: a primary home with both offices registered, their
 # admission configs copied from the main home's master copies, and each
 # office's authority record published.
@@ -31,6 +36,7 @@ make_world() {
   printf -- '- firstmate [no-mistakes admission=fm] - fm (added 2026-10-02)\n- skills [no-mistakes admission=sk] - skills (added 2026-10-02)\n' > "$w/quartermaster/data/projects.md"
   printf -- '- progress - x (role: progress; cadence: daily 07:00; added 2026-10-26)\n- friction - y (role: friction; cadence: daily 06:15; added 2026-10-24)\n' > "$w/data/officers.md"
   printf '# Offices\n\n%s\n%s\n' "$NAV" "$QM" > "$w/data/offices.md"
+  defer_corpus_roles "$w"
   for name in fm sk; do
     printf 'command=fm-reserved-classify.sh\nclasses=authority\nclear=none\n' > "$w/config/admission/$name"
     printf 'AGENTS.md authority\n' > "$w/config/admission/$name.rules"
@@ -72,9 +78,83 @@ test_absent_registry_means_no_offices() {
   local w
   w=$(make_world absent)
   rm "$w/data/offices.md"
-  assert_equals "" "$(ensure "$w")" "ensure output"
   assert_equals "" "$(FM_HOME="$w" FM_DATA_OVERRIDE="$w/data" bash "$OFFICE" list)" "list output"
+  assert_equals "" "$(ensure "$w")" "ensure output"
   pass 'an absent data/offices.md means no offices'
+}
+
+# unprov <home> [today]: the unprovisioned check's own output for one home.
+unprov() { FM_HOME="$1" FM_DATA_OVERRIDE="$1/data" FM_OFFICE_TODAY="${2:-2026-11-07}" bash "$OFFICE" unprovisioned; }
+
+test_unbuilt_approved_office_alarms() {
+  local w out
+  w=$(make_world unbuilt)
+  rm "$w/data/office-deferrals.md"
+  out=$(unprov "$w")
+  assert_contains "$out" "OFFICE: approved office alchemist not provisioned" "alchemist alarm"
+  assert_contains "$out" "OFFICE: approved office librarian not provisioned" "librarian alarm"
+  assert_not_contains "$out" "navigator" "a built role alarmed"
+  assert_contains "$(ensure "$w")" "approved office librarian not provisioned" "ensure carries the alarm"
+  pass 'a primary home missing an office line for a known role prints the alarm'
+}
+
+test_valid_deferral_silences_the_alarm() {
+  local w
+  w=$(make_world deferred)
+  assert_equals "" "$(unprov "$w")" "deferred roles"
+  printf -- '- alchemist - "Later." (said: Slarti chat, 2026-11-06; until: 2026-11-07; added 2026-11-06)\n- librarian - "Later." (said: Slarti chat, 2026-11-06; added 2026-11-06)\n' > "$w/data/office-deferrals.md"
+  assert_equals "" "$(unprov "$w" 2026-11-07)" "a deferral on its until date"
+  pass 'a valid deferral silences the alarm, including on its until date'
+}
+
+test_expired_or_malformed_deferral_does_not_defer() {
+  local w out
+  w=$(make_world bad-deferral)
+  printf -- '- alchemist - "Later." (said: Slarti chat, 2026-11-06; until: 2026-11-06; added 2026-11-06)\n' > "$w/data/office-deferrals.md"
+  printf -- '- librarian - Later without quotes (said: Slarti chat; added 2026-11-06)\n' >> "$w/data/office-deferrals.md"
+  out=$(unprov "$w" 2026-11-07)
+  assert_contains "$out" "approved office alchemist not provisioned" "expired deferral deferred"
+  assert_contains "$out" "alchemist in" "expired deferral not reported"
+  assert_contains "$out" "expired on 2026-11-06" "expiry reason"
+  assert_contains "$out" "approved office librarian not provisioned" "unquoted deferral deferred"
+  printf -- '- alchemist - "Later." (until: 2026-12-01; added 2026-11-06)\nnot a line\n- librarian - "Later." (said: x; until: soon; added 2026-11-06)\n' > "$w/data/office-deferrals.md"
+  out=$(unprov "$w")
+  assert_contains "$out" "no said: field" "missing said: accepted"
+  assert_contains "$out" "approved office librarian not provisioned" "bad until deferred"
+  printf -- '- alchemist - "Not yet." (said: main chat, relayed by main (corr abc); added 2026-11-05)\n' > "$w/data/office-deferrals.md"
+  out=$(unprov "$w")
+  assert_contains "$out" "fields contain parentheses" "parenthesised said: misreported"
+  assert_not_contains "$out" "not Lee's quoted words" "parenthesised said: blamed the quotes"
+  assert_contains "$out" "approved office alchemist not provisioned" "parenthesised deferral deferred"
+  pass 'an expired or malformed deferral reports itself and defers nothing'
+}
+
+# The documented standalone run: only FM_HOME names a scratch copy of a primary
+# home's data/offices.md; the check prints the alarm and changes nothing.
+test_standalone_run_reads_and_writes_only_its_home() {
+  local scratch="$TMP_ROOT/standalone" before after out
+  mkdir -p "$scratch/data"
+  printf '# Offices\n\n%s\n' "$NAV" > "$scratch/data/offices.md"
+  before=$(cd "$scratch" && find . -print | sort | xargs cksum 2>&1)
+  out=$(env -i PATH="$PATH" HOME="$TMP_ROOT/nohome" FM_HOME="$scratch" bash "$OFFICE" unprovisioned)
+  after=$(cd "$scratch" && find . -print | sort | xargs cksum 2>&1)
+  assert_contains "$out" "OFFICE: approved office quartermaster not provisioned" "the missing role's alarm"
+  assert_contains "$out" "OFFICE: approved office alchemist not provisioned" "another missing role's alarm"
+  assert_not_contains "$out" "approved office navigator" "the built role alarmed"
+  assert_equals "$before" "$after" "the standalone run changed its home"
+  assert_absent "$TMP_ROOT/nohome" "the standalone run wrote outside FM_HOME"
+  pass 'the unprovisioned check runs standalone against a scratch home and prints the alarm without writing'
+}
+
+test_office_and_second_mate_homes_print_nothing() {
+  local w
+  w=$(make_world not-primary)
+  rm "$w/data/office-deferrals.md"
+  assert_equals "" "$(unprov "$w/navigator")" "an office home"
+  assert_equals "" "$(ensure "$w/navigator")" "an office home's ensure"
+  rm "$w/navigator/.fm-office"
+  assert_equals "" "$(unprov "$w/navigator")" "an ordinary second-mate home"
+  pass 'an office or second-mate home prints nothing'
 }
 
 # edit_file <file> <cmd...>: rewrite <file> through <cmd>, portable across GNU and BSD.
@@ -1310,6 +1390,11 @@ test_status_outside_an_office_does_nothing
 test_status_without_a_backlog_is_empty
 test_status_projects_decisions
 test_status_decisions_cap_and_absence
+test_unbuilt_approved_office_alarms
+test_valid_deferral_silences_the_alarm
+test_expired_or_malformed_deferral_does_not_defer
+test_standalone_run_reads_and_writes_only_its_home
+test_office_and_second_mate_homes_print_nothing
 test_arm_status_registers_a_silent_check
 test_disarm_status_retires_the_check
 test_arm_status_refuses_outside_an_office
