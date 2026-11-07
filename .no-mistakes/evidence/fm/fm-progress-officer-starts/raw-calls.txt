@@ -1,0 +1,7 @@
+$ linear-axi issue view PC-1902 --output json | keys/labels
+{"schemaVersion":1,"ok":true,"command":"issue view","data":{"issue":{"identifier":"PC-1902","title":"Epic — Calc reimagining: one deal around a property, with dated entrances, side-by-side exits, and a timeline","state":"In Progress","stateType":"started","assignee":"Lee","team":"PC","parent":null,"project":"Calc reimagining","cycleId":null,"priority":0,"estimate":null,"dueDate":null,"url":"https://linear.app/property-compass-uk/issue/PC-1902/epic-calc-reimagining-one-deal-around-a-property-with-dated-entrances","commentCount":0,"description":"Replace the one-calculator-per-strategy model wi
+
+$ gh-axi api GET repos/lstutzman/Nuggets/pulls?state=open&per_page=100 --paginate --jq '.[] | "PRJSON " + tojson' | wc -c
+1
+$ gh-axi api GET repos/lstutzman/skills/pulls?state=open&per_page=100 --paginate --jq '.[] | "PRJSON " + tojson' | wc -c
+1

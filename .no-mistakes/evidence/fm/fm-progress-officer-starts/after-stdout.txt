@@ -1,0 +1,3 @@
+Linear coverage: 22 pages, 1776 items seen, 134 requests, 1339 team items, 437 unblocked items, 17 requested roots visited, 40 hierarchy items, 0 rate-limit retries, 1243 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear discovery: requested tree PC-1902: sub-issues page cap reached (no supported cursor); its descendants were not read
+DIGEST 2026-11-07 102 2026-11-07.md

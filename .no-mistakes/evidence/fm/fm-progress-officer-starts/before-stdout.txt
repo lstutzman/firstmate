@@ -1,0 +1,5 @@
+Linear coverage: 22 pages, 1776 items seen, 24 requests, 1339 team items, 437 unblocked items, 1 requested roots visited, 1 hierarchy items, 0 rate-limit retries, 1335 listed descriptions truncated, 0 start candidates unverified.
+Coverage gap: Linear labels not readable by linear-axi
+Coverage gap: Linear discovery: requested tree PC-1902: sub-issues page cap reached (no supported cursor); 16 queued hierarchy reads skipped; requested roots not read: PC-23, PC-2460, PC-2528, PC-290, PC-2915, PC-3279, PC-3499, PC-351, PC-3804, PC-3858, PC-3864, PC-3905, PC-4222, PC-4277, PC-4279, PC-816
+Coverage gap: Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete (lstutzman/skills: unexpected GitHub output: )
+DIGEST 2026-11-07 4 2026-11-07.md
