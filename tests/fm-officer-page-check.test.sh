@@ -13,6 +13,13 @@
 # app as a finding rather than a failed run, the interval slot key the
 # scheduler gives a run, and the read-only boundary (GET only, no write
 # tool, nothing written outside the lane).
+#
+# With writes: linear (a fake linear-axi that logs every call): every open
+# finding filed once in team PC, project Fleet, as Bug, agent and area:fleet, with
+# no card words in the item, a later day raising the Found line in place, the
+# create cap naming its overflow, a start request only for a page defect
+# (page-old, shown-after-done) and never for a card a rule settles, and a reserved
+# class held as one keyed needs-decision line.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -24,6 +31,55 @@ KEY=2026-10-31T14
 NOW=1793457000          # 2026-10-31T14:30:00Z
 E=1793437200            # 2026-10-31T09:00:00Z
 export TZ=UTC
+
+# fake_linear <bindir>: linear-axi driven by $FAKE_LINEAR_DIR (labels.txt, exists.txt, state.<id>); it logs every
+# call to $FAKE_LINEAR_DIR/log and refuses to run without that variable, so no test can reach the real Linear.
+fake_linear() {
+  cat > "$1/linear-axi" <<'SH'
+#!/usr/bin/env bash
+d=${FAKE_LINEAR_DIR:-}
+[ -n "$d" ] || { echo '{"ok":false,"error":{"code":"UNKNOWN","message":"no fake linear dir"}}'; exit 1; }
+printf '%s\n' "$*" >> "$d/log"
+case "$1 $2" in
+  "label list")
+    printf '{"ok":true,"data":{"labels":['
+    sep=''; while IFS= read -r l; do printf '%s{"name":"%s"}' "$sep" "$l"; sep=','; done < "$d/labels.txt"
+    echo ']}}' ;;
+  "issue search")
+    q=${3#page-check-fp:}
+    if [ -n "$q" ] && grep -qF -- "$q" "$d/exists.txt" 2>/dev/null; then
+      echo '{"ok":true,"data":{"issues":[{"identifier":"PC-55"}]}}'
+    else echo '{"ok":true,"data":{"issues":[]}}'; fi ;;
+  "issue view")
+    st=$(cat "$d/state.$3" 2>/dev/null || echo Todo)
+    case "$st" in Done) ty=completed ;; *) ty=unstarted ;; esac
+    desc="Found: $(cat "$d/count.$3" 2>/dev/null || echo 1) times (first 2026-10-20, last 2026-10-20, by page-check)"
+    [ "$3" = PC-55 ] && desc="$desc\\npage-check-fp:$(tr -d '\n' < "$d/exists.txt")"
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'","state":"'"$st"'","stateType":"'"$ty"'","description":"'"$desc"'"}}}' ;;
+  "issue create")
+    case " $* " in
+      *" --verify "*)
+        n=$(( $(cat "$d/created" 2>/dev/null || echo 100) + 1 )); echo "$n" > "$d/created"
+        for a in "$@"; do [ "${prev:-}" = "--body-file" ] && cat "$a" >> "$d/bodies" && echo >> "$d/bodies"; prev=$a; done
+        echo '{"ok":true,"data":{"issue":{"identifier":"PC-'"$n"'"}}}' ;;
+      *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
+    esac ;;
+  "issue update")
+    case " $* " in *" --verify "*) echo "UPDATE $3" >> "$d/updates" ;; esac
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'"}}}' ;;
+  "issue comment")
+    case " $* " in *" --verify "*) echo "COMMENT $3" >> "$d/comments" ;; esac
+    echo '{"ok":true,"data":{"dryRun":true}}' ;;
+  "issue relation") echo '{"ok":true,"data":{"dryRun":true}}' ;;
+  *) echo '{"ok":false,"error":{"code":"UNKNOWN","message":"unexpected call"}}'; exit 1 ;;
+esac
+SH
+  chmod +x "$1/linear-axi"
+}
+LINEAR_BIN="$TMP_ROOT/linear-bin"
+mkdir -p "$LINEAR_BIN"
+fake_linear "$LINEAR_BIN"
+export PATH="$LINEAR_BIN:$PATH"
 
 write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
   local d=$1 k1 k2 k3
@@ -261,6 +317,158 @@ test_scheduled_slot_and_read_only_boundary() {
   pass "fm-officer page-check: a scheduled run takes the slot key and only reads"
 }
 
+
+count_lines() {  # <pattern> <file>: how many lines match; 0 when the file does not exist
+  local n
+  n=$(grep -c -- "$1" "$2" 2>/dev/null || true)
+  echo "${n:-0}"
+}
+
+creates() {  # <log>: the number of verified creates in a fake Linear log
+  count_lines "^issue create .*--verify" "$1"
+}
+
+# linear_world <name> [extra registry fields]: a world whose page-check line writes Linear items through the fake.
+# Call it directly, not in $(...): it sets LW_HOME and FAKE_LINEAR_DIR for the test.
+linear_world() {
+  local name=$1 home
+  home=$(make_world "$name")
+  LW_HOME=$home
+  printf -- '- page-check - Checks the fleet app pages (role: pagecheck; cadence: every 2h; app: https://app.test; writes: linear; jev: /nonexistent/jev.py%s; model: none; added 2026-10-31)\n' \
+    "${2:-}" > "$home/data/officers.md"
+  export FAKE_LINEAR_DIR="$TMP_ROOT/$name/linear"
+  mkdir -p "$FAKE_LINEAR_DIR"
+  printf '%s\n' Bug agent area:fleet > "$FAKE_LINEAR_DIR/labels.txt"
+}
+
+later_day() {  # <name> <key>: a run one day after the first
+  local name=$1
+  FM_OFFICER_NOW=$((NOW + 86400)) PATH="$TMP_ROOT/$name/fakebin:$PATH" FM_HOME="$TMP_ROOT/$name/home" "$OFFICER" run page-check --date "$2"
+}
+
+test_findings_are_filed_in_linear_under_the_contract() {
+  local home json dir log n
+  linear_world filing
+  home=$LW_HOME
+  dir=$FAKE_LINEAR_DIR
+  log=$dir/log
+  json="$home/data/officers/page-check/$KEY.json"
+  officer filing run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  n=$(jq '.findings | length' "$json")
+  assert_equals "$n" "$(creates "$log")" "every open finding is filed once"
+  assert_equals "$n" "$(grep -c '^issue create .*--dry-run' "$log")" "every create is a dry run first, then a verified write"
+  assert_equals "$n" "$(count_lines '^issue create .*--label Bug --label agent --label area:fleet --project Fleet --verify' "$log")" \
+    "each item has one Type, the agent Source and area:fleet, in the Fleet project"
+  assert_equals "$n" "$(count_lines '^page-check-fp:' "$dir/bodies")" "every body carries its fingerprint marker alone on its line"
+  assert_equals "$n" "$(count_lines '^Found: 1 times (first 2026-10-31, last 2026-10-31, by page-check)$' "$dir/bodies")" "every body starts its one Found line"
+  assert_no_grep "Approve deleting 475" "$dir/bodies" "no card question reaches Linear"
+  assert_no_grep "Which key" "$dir/bodies" "no card question reaches Linear"
+  assert_no_grep "Approve deleting 475" "$log" "nor a title or search"
+  assert_contains "$(<"${json%.json}.md")" "- Linear: writes linear;" "the digest has a Linear line"
+  assert_equals "true" "$(jq '[.findings[] | select(.linear.issue != null)] | all(.linear.found >= 1 and .linear.score > 0)' "$json")" \
+    "the digest shows each filed finding's found count and score"
+
+  officer filing run page-check --date "$KEY" >/dev/null || fail "a same-day re-run must succeed"
+  assert_equals "$n" "$(creates "$log")" "a re-run the same day files nothing again"
+  assert_equals "0" "$(count_lines '^UPDATE' "$dir/updates")" "and raises no Found line"
+
+  later_day filing 2026-11-01T14 >/dev/null || fail "a later-day run must succeed"
+  json="$home/data/officers/page-check/2026-11-01T14.json"
+  assert_equals "" "$(grep '^page-check-fp:' "$dir/bodies" | sort | uniq -d)" "a later day files nothing twice, though pages that aged overnight add new findings"
+  assert_equals "$n" "$(count_lines '^UPDATE' "$dir/updates")" "each item filed the first day has its Found line raised once, in place"
+  assert_equals "$n" "$(count_lines '^COMMENT' "$dir/comments")" "with one comment on the day's first sighting"
+  assert_equals "true" "$(jq '[.findings[] | select(.id == "page-old:Velocity audit:velocity-audit")][0].linear | .found == 2 and .score == 6.34' "$json")" \
+    "the found count of 2 lifts a high finding's score from 4 to 6.34"
+  pass "fm-officer page-check: every finding is filed once in Linear, the Found line rises in place, and no card words are sent"
+}
+
+test_page_defects_start_and_settled_cards_do_not() {
+  local home json office
+  linear_world starts
+  home=$LW_HOME
+  json="$home/data/officers/page-check/$KEY.json"
+  officer starts run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  assert_equals "page-old:Velocity audit:velocity-audit" "$(jq -r '[.start_requests[].id] | join(",")' "$json")" \
+    "only the high page defect starts at found 1; a medium one needs a higher found count"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.id | startswith("standing-rule") or startswith("stale-card"))] | length' "$json")" \
+    "a card a standing rule settles, or a stale card, is filed and never started"
+  assert_equals "true" "$(jq --arg h "$home" '[.start_requests[] | .execute |
+      (.action == "start" and .env.FM_HOME == $h and (.request_id | test("^page-check-2026-10-31-[0-9a-f]{16}$")) and (.argv | length) == 7
+       and (.argv[0] | endswith("/fm-inbox.sh")) and .argv[1:6] == ["note", "--request-id", .request_id, "--json", "--"])] | all' "$json")" \
+    "the request is the inbox note call an office delivers, addressed to this home without a start-home"
+  assert_equals "page-check-officer" "$(jq -r .source "$json")" "the digest names its source so an office delivers its start requests"
+  assert_equals "1" "$(grep -c 'fm-inbox.sh' "$home/data/officers/page-check/$KEY.start-requests.sh")" "this home's request is also written as a shell handoff"
+  officer starts run page-check --date "$KEY" >/dev/null || fail "a same-day re-run must succeed"
+  assert_equals "1" "$(jq '.start_requests | length' "$json")" "the request repeats on every run of the same day"
+  later_day starts 2026-11-01T14 >/dev/null || fail "a later-day run must succeed"
+  assert_equals "0" "$(jq '.start_requests | length' "$home/data/officers/page-check/2026-11-01T14.json")" "a later day never asks twice"
+
+  office="$TMP_ROOT/starts/office"
+  mkdir -p "$office/state/inbox"
+  PATH="$TMP_ROOT/starts/fakebin:$PATH" python3 -I "$ROOT/bin/fm-officer-page-check.py" run --key "$KEY" --out "$TMP_ROOT/starts/direct" \
+    --app https://app.test --now "$NOW" --fm-home "$home" --start-home "$office=firstmate,skills,fleet-app=quartermaster=the fleet" \
+    --writes linear --jev /nonexistent/jev.py >/dev/null || fail "a run with a start-home must succeed"
+  assert_equals "$office" "$(jq -r '[.start_requests[].execute.env.FM_HOME] | unique | join(",")' "$TMP_ROOT/starts/direct/$KEY.json")" \
+    "a page defect goes to the office that dispatches the fleet repositories"
+  pass "fm-officer page-check: a page defect starts through the Quartermaster, a settled card never does"
+}
+
+test_no_writes_a_missing_label_and_the_cap() {
+  local home json dir
+  linear_world nowrites
+  home=$LW_HOME
+  printf -- '- page-check - Checks pages (role: pagecheck; cadence: every 2h; app: https://app.test; model: none; added 2026-10-31)\n' > "$home/data/officers.md"
+  officer nowrites run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  assert_absent "$FAKE_LINEAR_DIR/log" "without writes: linear no Linear call is made"
+  assert_equals "0" "$(jq '.start_requests | length' "$home/data/officers/page-check/$KEY.json")" "and nothing starts"
+
+  linear_world nolabel
+  home=$LW_HOME
+  dir=$FAKE_LINEAR_DIR
+  printf '%s\n' Bug area:fleet > "$dir/labels.txt"
+  officer nolabel run page-check --date "$KEY" >/dev/null || fail "a run with a missing label must succeed"
+  assert_equals "0" "$(creates "$dir/log")" "a label team PC lacks means nothing is filed"
+  assert_contains "$(<"$home/data/officers/page-check/$KEY.md")" "Not filed" "and the digest says so"
+  assert_equals "0" "$(jq '.start_requests | length' "$home/data/officers/page-check/$KEY.json")" "an unfiled finding is not started"
+
+  linear_world capped "; max-creates: 2"
+  home=$LW_HOME
+  dir=$FAKE_LINEAR_DIR
+  json="$home/data/officers/page-check/$KEY.json"
+  officer capped run page-check --date "$KEY" >/dev/null || fail "a capped run must succeed"
+  assert_equals "2" "$(creates "$dir/log")" "max-creates bounds the items one run creates"
+  assert_contains "$(<"${json%.json}.md")" "Not filed (over max-creates for this run)" "the overflow is named in the digest"
+  assert_equals "true" "$(jq '. as $d | [.start_requests[].id] | all(. as $i | [$d.findings[] | select(.id == $i)][0].linear.issue != null)' "$json")" \
+    "only a finding whose item exists is started"
+  pass "fm-officer page-check: no writes, a missing label and the create cap bound what is filed and started"
+}
+
+test_a_reserved_class_is_held_for_lee() {
+  local home dir json day2 issue
+  linear_world held
+  home=$LW_HOME
+  dir=$FAKE_LINEAR_DIR
+  jq '.value.cards += [{id: "pay-card", band: "now", question: "Approve the payments refund change?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"}]' \
+    "$TMP_ROOT/held/pages/_api_captains-log" > "$TMP_ROOT/held/captains-log.json"
+  cp "$TMP_ROOT/held/captains-log.json" "$TMP_ROOT/held/pages/_api_captains-log"
+  jq '.cards += [{id: "pay-card", lifecycle: "closed"}]' "$TMP_ROOT/held/pages/_api_captains-log_facts_source_bosun" > "$TMP_ROOT/held/facts.json"
+  cp "$TMP_ROOT/held/facts.json" "$TMP_ROOT/held/pages/_api_captains-log_facts_source_bosun"
+  officer held run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/page-check/$KEY.json"
+  issue=$(jq -r '[.findings[] | select(.id | contains("pay-card"))][0].linear.issue' "$json")
+  assert_not_contains "$issue" "null" "the reserved finding is still filed"
+  assert_no_grep "payments refund" "$dir/bodies" "and its card words never reach Linear"
+  # An item already raised to Found: 2 is raised to 3 by the next day, which lifts a medium finding to the start minimum, where the reserved class holds it.
+  printf 2 > "$dir/count.$issue"
+  day2=2026-11-01T14
+  later_day held "$day2" >/dev/null || fail "a later-day run must succeed"
+  json="$home/data/officers/page-check/$day2.json"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.id | contains("pay-card"))] | length' "$json")" "a reserved class is never started"
+  assert_equals "page-check-holds-2026-11-01" "$(jq -r '.asks_for_lee[0].key' "$json")" "it is held as one keyed needs-decision line"
+  assert_contains "$(jq -r '.asks_for_lee[0].line' "$json")" "payments-billing" "the line names the reserved class"
+  pass "fm-officer page-check: a finding in a reserved class is filed and held for Lee, never started"
+}
+
 test_registry_needs_an_https_app
 test_findings_of_every_kind
 test_live_decisions_are_not_stale
@@ -268,3 +476,7 @@ test_bosun_rules_and_unexpected_shapes
 test_unchanged_pages_stay_quiet_until_the_reminder
 test_unreachable_app_is_a_finding_not_a_failed_run
 test_scheduled_slot_and_read_only_boundary
+test_findings_are_filed_in_linear_under_the_contract
+test_page_defects_start_and_settled_cards_do_not
+test_no_writes_a_missing_label_and_the_cap
+test_a_reserved_class_is_held_for_lee
