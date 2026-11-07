@@ -597,8 +597,12 @@ def row_repo(row, repos, team):
     """The repo in `repos` that a start row belongs to, or None when nothing ties it to one.
 
     A row's own project decides; a row without one is placed by the office routing rungs (scope_route), with each
-    repo standing in for an office, so team Linear items go to the PropertyCompass2 repo.
+    repo standing in for an office, so team Linear items go to the PropertyCompass2 repo. A Fleet project or
+    `area:fleet` Linear item lives in a fleet repo its title rarely names, so it is claimed by none.
     """
+    if row.get("linear_only") and ((row.get("project") or "").strip().lower() == "fleet"
+                                   or "area:fleet" in {name.lower() for name in row.get("labels") or ()}):
+        return None
     wanted = {r.lower(): r for r in repos}
     project = "" if row.get("linear_only") else (row.get("project") or "").strip().lower()
     if project in wanted:

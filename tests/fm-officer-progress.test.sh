@@ -766,6 +766,25 @@ SH
   assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete (example/PropertyCompass2: gh-axi read failed (exit 1): API rate limit exceeded for installation; example/other: ' \
     'every repo is named'
   assert_contains "$(cat "$lane/.run.err")" 'open PR listing failed for example/project (attempt 4)' 'a rate-limit error is retried four times'
+  clear_listings
+  # A fleet item filed in team PC lives in a fleet repo, so it is held while firstmate's list is missing even
+  # though PropertyCompass2's list answers; team app work still ranks.
+  sed -i 's#example/PropertyCompass2;#example/PropertyCompass2,example/firstmate;#' "$WORLD_HOME/data/officers.md"
+  python3 -I - "$WORLD" <<'PY'
+import json, sys
+root = sys.argv[1]
+issues = [dict(identifier=i, title=t, state='Todo', stateType='unstarted', priority=0)
+          for i, t in (('PC-61', 'Bug: team work for the app'), ('PC-62', 'Bug: officer digest drops a line'))]
+json.dump({'ok': True, 'data': {'issues': issues}}, open(root + '/linear/list.json', 'w'))
+for issue in issues:
+    json.dump({'ok': True, 'data': {'issue': dict(issue, parent=None, description='')}}, open(root + '/linear/' + issue['identifier'] + '.json', 'w'))
+json.dump({'PC-62': ['area:fleet']}, open(root + '/labels.json', 'w'))
+PY
+  echo 99 > "$WORLD/limit-firstmate"
+  run_progress >/dev/null 2>&1 || fail 'a limited firstmate listing must publish state'
+  assert_equals 'PC-61 other-bug project-bug' "$(start_ids)" 'app and repo-tagged work still ranks'
+  assert_contains "$(jq -r '.excluded[] | .id + ": " + .reason' "$file")" 'PC-62: Start deferred because no repository claims it and the duplicate-start check is unavailable for example/firstmate' \
+    'an area:fleet team item is not attributed to PropertyCompass2'
   pass 'progress: open PR discovery retries limits, reads a blank list as no PRs, and holds only the failed repo and unclaimed work'
 }
 

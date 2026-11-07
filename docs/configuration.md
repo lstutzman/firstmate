@@ -1583,7 +1583,7 @@ A missing or unreadable registered home, an unsupported non-Markdown backlog, or
 Each repository's open-PR list is read once per run.
 A blank answer is a repository with no open PRs. A rate-limited answer is retried with 2, 8, then 30 second waits, and any other failed listing is retried once.
 A repository that still fails holds only its own starts, and its coverage entry and the run log name that repository and its redacted cause.
-A start's repository is its project, else the one the office routing rungs name, with each configured repository standing in for an office: a linked repository, the repository's name in the text, or a team Linear id for PropertyCompass2.
+A start's repository is its project, else the one the office routing rungs name, with each configured repository standing in for an office: a linked repository, the repository's name in the text, or a team Linear id for PropertyCompass2. A team item in the Fleet project or with the `area:fleet` label is claimed by no repository for this check.
 While any repository's list is missing, a start that no repository claims is held too and named in each gap's coverage entry.
 Filler waits for complete coverage.
 The installed `linear-axi` cannot return or filter issue labels, so the officer reads them from Linear's GraphQL API with the fleet credential from `linear-token header`, never printing it.
