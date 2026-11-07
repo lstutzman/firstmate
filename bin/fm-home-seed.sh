@@ -64,7 +64,8 @@
 #       bin/fm-remote-home-seed.sh calls: the same office checks as above, then
 #       the same project tokens, admission copies and .fm-office marker written
 #       into <stage-dir> (which holds data/projects.md) instead of a home.
-#       <office-home> only names the path the classifier copy must read.
+#       <office-home> is the remote path that replaces @OFFICE_HOME@ in the
+#       copied admission configs, as the local seed does for its own home.
 #   fm-home-seed.sh validate
 #       Refuse records that operational consumers cannot parse, unavailable or
 #       unsafe registry files when present, non-absolute or unresolvable homes,
@@ -1017,8 +1018,8 @@ set_project_token() {
   ' "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
-seed_office_files() {  # <id> <home>
-  local id=$1 home=$2 p pair
+seed_office_files() {  # <id> <home> [<expansion-home>]
+  local id=$1 home=$2 oh=${3:-$2} p pair
   mkdir -p "$home/config/admission" || return 1
   for pair in ${OFFICE_MERGE_VIA//,/ }; do
     set_project_token "$home/data/projects.md" "${pair%%=*}" merger "${pair#*=}" || return 1
@@ -1026,7 +1027,7 @@ seed_office_files() {  # <id> <home>
   for p in ${OFFICE_MERGE//,/ }; do
     set_project_token "$home/data/projects.md" "$p" admission "$p" || return 1
     seed_office_backup "$home/config/admission/$p" || return 1
-    fm_office_admission_expand "$home" < "$CONFIG/admission/$p" > "$home/config/admission/$p" || return 1
+    fm_office_admission_expand "$oh" < "$CONFIG/admission/$p" > "$home/config/admission/$p" || return 1
     if [ -f "$CONFIG/admission/$p.rules" ]; then
       seed_office_backup "$home/config/admission/$p.rules" || return 1
       cp "$CONFIG/admission/$p.rules" "$home/config/admission/$p.rules" || return 1
@@ -1268,7 +1269,7 @@ office_stage() {
   SEED_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-home-seed.XXXXXX") || return 1
   SEED_OFFICE_TARGETS="$SEED_BACKUP_DIR/office-targets"
   : > "$SEED_OFFICE_TARGETS"
-  seed_office_files "$id" "$stage" || { rm -rf -- "$SEED_BACKUP_DIR"; return 1; }
+  seed_office_files "$id" "$stage" "$home" || { rm -rf -- "$SEED_BACKUP_DIR"; return 1; }
   rm -rf -- "$SEED_BACKUP_DIR"
 }
 

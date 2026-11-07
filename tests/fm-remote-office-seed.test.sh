@@ -59,7 +59,7 @@ cat > "$PARENT/data/offices.md" <<'EOF'
 - lib - Keep the documents placed (role: librarian; runs-on: remote-mac; dispatch: alpha; merge: alpha; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 4h; sources: tick,lane:progress; added 2026-11-07)
 - away - Runs elsewhere (role: librarian; runs-on: other-host; dispatch: alpha; merge: none; merge-via: none; auto-merge-classes: none; wip: 1; tick: every 4h; sources: tick; added 2026-11-07)
 EOF
-printf 'command=%s --rules %s\nclasses=authority\nclear=none\n' "$ROOT/bin/fm-reserved-classify.sh" "$REMOTE_HOME/config/admission/alpha.rules" > "$PARENT/config/admission/alpha"
+printf 'command=%s --rules %s\nclasses=authority\nclear=none\n' "$ROOT/bin/fm-reserved-classify.sh" '@OFFICE_HOME@/config/admission/alpha.rules' > "$PARENT/config/admission/alpha"
 printf 'AGENTS.md authority\n' > "$PARENT/config/admission/alpha.rules"
 
 cat > "$FAKEBIN/fake-ssh" <<'SH'
@@ -108,7 +108,7 @@ test_remote_office_seed_writes_the_office_home() {
   assert_equals lib "$(cat "$REMOTE_HOME/.fm-secondmate-home")" "the identity marker"
   assert_grep '# Office authority' "$REMOTE_HOME/data/charter.md" "the remote charter lacks the office authority heading"
   assert_grep '- alpha [direct-PR admission=alpha]' "$REMOTE_HOME/data/projects.md" "the merge project lacks admission="
-  cmp -s "$PARENT/config/admission/alpha" "$REMOTE_HOME/config/admission/alpha" || fail "the admission config was not copied"
+  assert_contains "$(cat "$REMOTE_HOME/config/admission/alpha")" "--rules $REMOTE_HOME/config/admission/alpha.rules" "the admission config expands @OFFICE_HOME@ to the remote home"
   cmp -s "$PARENT/config/admission/alpha.rules" "$REMOTE_HOME/config/admission/alpha.rules" || fail "the admission rules were not copied"
   assert_present "$REMOTE_HOME/state/office-tick.check.sh" "the tick source was not registered in the remote home"
   assert_present "$REMOTE_HOME/state/office-lane-progress.check.sh" "the lane source was not registered in the remote home"
