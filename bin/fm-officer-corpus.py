@@ -55,7 +55,8 @@ Finding classes, each with a fingerprint:
                   remembers each host's count per Bosun date (seven at most).
                   An archive section that is absent or not reached is a
                   coverage gap.
-  harvest-failed  the harvest's result is failed or partial.
+  harvest-failed  the harvest's result is failed; a partial run is left to
+                  harvest-drift.
   harvest-drift   listed and tier_total differ by more than 1% of total.
   prep-stale      the prep store finished more than PREP_HOURS hours ago.
   retrain-missed  the newest weekly retrain started more than RETRAIN_DAYS
@@ -342,9 +343,8 @@ def judge(facts, nights, now):
     else:
         c = harvest["counts"]
         notes.append("Memory harvest: outcome %s; %s." % (harvest["outcome"], ", ".join("%s %d" % (k, c[k]) for k in HARVEST_COUNTS if k in c)))
-        if harvest["outcome"] != "ok":
-            findings.append(finding("harvest", "harvest-failed", "memory-harvest", "high",
-                                    "the memory harvest's last run %s" % ("failed" if harvest["outcome"] == "failed" else "was partial")))
+        if harvest["outcome"] == "failed":
+            findings.append(finding("harvest", "harvest-failed", "memory-harvest", "high", "the memory harvest's last run failed"))
         if "listed" in c and "tier_total" in c:
             if c["tier_total"] and abs(c["listed"] - c["tier_total"]) > DRIFT * c["tier_total"]:
                 findings.append(finding("harvest-counts", "harvest-drift", "memory-harvest", "medium",
@@ -352,7 +352,7 @@ def judge(facts, nights, now):
                                             c["listed"], c["tier_total"])))
         else:
             unread.add("harvest-counts")
-            coverage.append("the memory harvest's result names no listed and tier_total counts")
+            coverage.append("the memory harvest's result names no %s count" % " or ".join(k for k in ("listed", "tier_total") if k not in c))
     for name in sorted(k for k in facts if k.startswith("bosun:")):
         host, read = name[len("bosun:"):], facts[name]
         if read["state"] != "read":
