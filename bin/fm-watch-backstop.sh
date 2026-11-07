@@ -100,12 +100,19 @@ case "$ACTION" in
   *) usage >&2; exit 2 ;;
 esac
 
-# shellcheck source=bin/fm-wake-lib.sh
-. "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-session-lock-lib.sh
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
-# shellcheck source=bin/fm-supervision-lib.sh
-. "$SCRIPT_DIR/fm-supervision-lib.sh"
+# Only the two in-home actions load the libraries: fm-wake-lib.sh creates the
+# state directory, which the scheduler actions (verify runs in a detect-only
+# bootstrap) must never do.
+case "$ACTION" in
+  record-endpoint|check)
+    # shellcheck source=bin/fm-wake-lib.sh
+    . "$SCRIPT_DIR/fm-wake-lib.sh"
+    # shellcheck source=bin/fm-session-lock-lib.sh
+    . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+    # shellcheck source=bin/fm-supervision-lib.sh
+    . "$SCRIPT_DIR/fm-supervision-lib.sh"
+    ;;
+esac
 
 # Write <content> to <path> atomically, or fail.
 write_atomic() {  # <path> <content>

@@ -292,7 +292,8 @@ test_ring_herdr_from_bare_unit_env() {
   command -v jq >/dev/null 2>&1 || { pass "backstop: herdr ring skipped (jq not installed)"; return; }
   fb=$(make_fake_herdr "$TMP_ROOT/herdr" fmhome 'w1:p2')
   home=$(make_down_home "$TMP_ROOT/down-herdr" 35000)
-  record_as "$home" herdr 'fmhome:w1:p2'
+  # Pin the recorded harness: detection otherwise follows the runner's ancestry.
+  FM_SUPERVISION_ACTOR=branch FM_SUPERVISION_PRIMARY_HARNESS=claude record_as "$home" herdr 'fmhome:w1:p2'
   assert_contains "$(cat "$home/state/.watch-backstop-endpoint")" 'backend=herdr' "the herdr endpoint must be recorded"
 
   out=$(unit_check "$home" "$fb:$PATH")
