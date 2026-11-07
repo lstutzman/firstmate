@@ -279,14 +279,11 @@ test_publish_refusals() {
     fail "publish ran in a second-mate home"
   fi
   assert_contains "$err" "only the main home publishes office authority" "second-mate home"
-  edit_file "$w/data/secondmates.md" sed 's/^- quartermaster - office (home:/- quartermaster - office (host: deepthought; root: \/r; home:/'
-  if err=$(publish "$w" quartermaster 2>&1); then fail "publish accepted a remote route"; fi
-  assert_contains "$err" "is on a remote route" "remote route"
-  pass 'publish refuses an unregistered id, a mismatched home, a second-mate home, and a remote route'
+  pass 'publish refuses an unregistered id, a mismatched home and a second-mate home'
 }
 
 test_remote_push_carries_the_record() {
-  local w dest fake out gen=1
+  local w dest fake out gen=1 name
   w=$(make_world pub-remote)
   dest="$w/remote-nav"
   fake="$w/fakebin"
@@ -316,18 +313,18 @@ SH
   printf '# Office authority\n' > "$dest/data/charter.md"
   assert_equals "0|navigator|" "$(resolve "$dest")" "the remote office's gate"
   edit_file "$w/data/secondmates.md" sed 's/^- navigator /- quartermaster /'
-  if out=$(FM_HOME="$w" FM_ROOT_OVERRIDE="$ROOT" FM_CONFIG_OVERRIDE="$w/config" FM_DATA_OVERRIDE="$w/data" \
+  # A remote seed names each merge project's admission config after the project.
+  for name in firstmate:fm skills:sk; do
+    cp "$w/config/admission/${name#*:}" "$w/config/admission/${name%:*}"
+    cp "$w/config/admission/${name#*:}.rules" "$w/config/admission/${name%:*}.rules"
+  done
+  out=$(FM_HOME="$w" FM_ROOT_OVERRIDE="$ROOT" FM_CONFIG_OVERRIDE="$w/config" FM_DATA_OVERRIDE="$w/data" \
     FM_INHERITABLE_CONFIG=office-authority FM_SSH_BIN="$fake/inherit-ssh" \
-    "$ROOT/bin/fm-remote-inherit-push.sh" quartermaster 2 2>&1); then
-    fail "a remote office that merges was published"
-  fi
-  assert_contains "$out" "error: config/office-authority: " "remote merge office error line"
-  assert_contains "$out" "cannot be pinned on a remote route" "remote merge office"
-  assert_contains "$out" "data/captain-shared.md" "the items after the record still go"
-  assert_absent "$dest/config/office-authority"
-  edit_file "$w/data/secondmates.md" sed 's/host: inherit-host/host: slartibartfast/'
-  assert_contains "$(ensure "$w")" "OFFICE: office quartermaster: it merges" "ensure names the unpublishable remote record"
-  pass 'the remote push carries an office its record with a receipt, and sends a remote office that merges an absence'
+    "$ROOT/bin/fm-remote-inherit-push.sh" quartermaster 2 2>&1) || fail "a remote office that merges was not published: $out"
+  assert_contains "$(cat "$dest/config/office-authority")" "admission-sha256=firstmate:" "the remote record pins firstmate's admission config"
+  assert_contains "$(cat "$dest/config/office-authority")" ",skills:" "the remote record pins skills' admission config"
+  assert_equals "$(cat "$w/quartermaster/config/office-authority")" "$(cat "$dest/config/office-authority")" "the remote record is the one a local publish builds"
+  pass 'the remote push carries an office its record with a receipt, and pins a remote office that merges'
 }
 
 # --- status: the office-status.json projection --------------------------------

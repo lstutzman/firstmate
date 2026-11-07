@@ -71,7 +71,8 @@
 # auto-merge-classes and wip, and pins admission-sha256 from the main home's
 # master copy config/admission/<name>, where <name> is the admission= token of
 # that project in the office home's data/projects.md; a remote route cannot
-# read that registry, so a remote office that merges cannot be published. The
+# read that registry, so it takes the seed's own name (the project) and needs
+# the remote home path to publish a merging office. The
 # built record must pass the same grammar check the office applies on load.
 #
 # FM_OFFICE_ROLES names the roles an office may take, and
@@ -98,9 +99,13 @@
 #   fm_office_authority_parse <file> <office-id>
 #       the grammar check alone, with no receipt: 0 with the FM_OFFICE_*
 #       authority variables set, or 1 with FM_OFFICE_ERROR.
-#   fm_office_inherit_payload <src-config> <src-data> <dest-id> <dest-home> <out-file>
+#   fm_office_inherit_payload <src-config> <src-data> <dest-id> <dest-home> <out-file> [<remote-home>]
 #       writes <dest-id>'s record to <out-file>, or leaves it absent; returns 1
-#       with FM_OFFICE_ERROR on an error. <dest-home> is empty on a remote route.
+#       with FM_OFFICE_ERROR on an error. <dest-home> is empty on a remote route,
+#       where <remote-home> (the registered home path) lets a merging office be
+#       published: the seed names its admission configs after their projects, and
+#       the master's --rules path <remote-home>/config/admission/<name>.rules
+#       digests as the master copy.
 #   fm_office_project_token <projects.md> <project> <key>
 #       prints a key=value token of one data/projects.md line, or nothing.
 #   fm_office_in <item> <comma-list>
@@ -417,8 +422,8 @@ fm_office_payload_fail() {
   return 1
 }
 
-fm_office_inherit_payload() {  # <src-config-dir> <src-data-dir> <dest-id> <dest-home> <out-file>
-  local config=$1 REGISTRY=$2/offices.md want=$3 home=$4 out=$5 line match='' n=0 key p name digest tmp=''
+fm_office_inherit_payload() {  # <src-config-dir> <src-data-dir> <dest-id> <dest-home> <out-file> [<remote-home>]
+  local config=$1 REGISTRY=$2/offices.md want=$3 home=$4 out=$5 remote=${6:-} line match='' n=0 key p name digest tmp=''
   local dispatch merge via auto wip sha=''
   FM_OFFICE_ERROR=
   rm -f "$out" || { FM_OFFICE_ERROR="cannot clear the staged authority record $out"; return 1; }
@@ -447,12 +452,13 @@ EOF
   auto=$(line_field "$match" auto-merge-classes)
   wip=$(line_field "$match" wip)
   if [ -n "$merge" ] && [ "$merge" != none ]; then
-    [ -n "$home" ] || fm_office_payload_fail "it merges $merge, and its admission config cannot be pinned on a remote route" || return 1
+    [ -n "$home" ] || [ -n "$remote" ] || fm_office_payload_fail "it merges $merge, and its admission config cannot be pinned on a remote route without the remote home path" || return 1
     for p in ${merge//,/ }; do
-      name=$(fm_office_project_token "$home/data/projects.md" "$p" admission)
+      # A remote seed (bin/fm-remote-home-seed.sh) always names the config for a merge project after the project.
+      if [ -n "$home" ]; then name=$(fm_office_project_token "$home/data/projects.md" "$p" admission); else name=$p; fi
       [ -n "$name" ] || fm_office_payload_fail "merge project $p has no admission= in $home/data/projects.md" || return 1
       fm_office_name_ok "$name" || fm_office_payload_fail "merge project $p names admission config '$name', which is not a name" || return 1
-      digest=$(fm_office_admission_digest "$config" "$name" "$home") \
+      digest=$(fm_office_admission_digest "$config" "$name" "${home:-$remote}") \
         || fm_office_payload_fail "the main home's master admission config $config/admission/$name or a rules file it names cannot be read" || return 1
       sha="${sha:+$sha,}$p:$digest"
     done
