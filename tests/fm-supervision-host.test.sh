@@ -484,7 +484,7 @@ test_undelivered_dialog_is_fed_again_on_the_next_turn() {
   real_node=$(command -v node)
   cat > "$home/fakebin/node" <<SH
 #!/usr/bin/env bash
-if [ "\${2:-}" = wake-prompt ] && [ -e "\$FM_HOME/slow-render" ]; then echo 120 > "\$FM_HOME/park-clock"; fi
+if [ "\${2:-}" = wake-prompt ] && [ -e "\$FM_HOME/slow-render" ]; then echo 3600 > "\$FM_HOME/park-clock"; fi
 exec "$real_node" "\$@"
 SH
   chmod +x "$home/fakebin/node"
@@ -492,7 +492,7 @@ SH
   echo 0 > "$home/park-clock"
   # The park bound sits past every wall-clock check below, so a host that
   # ignored the test clock could never reach a boundary inside this case.
-  FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" FM_SUPERVISION_HOST_PARK_SECONDS=120 FM_SUPERVISION_HOST_TURN_TIMEOUT=20 FM_SUPERVISION_ENGINE_GRACE=1 start_session "$home"
+  FM_TEST_SUPERVISION_HOST_CLOCK="$home/park-clock" FM_SUPERVISION_HOST_PARK_SECONDS=3600 FM_SUPERVISION_HOST_TURN_TIMEOUT=20 FM_SUPERVISION_ENGINE_GRACE=1 start_session "$home"
   park_again "$home"
   append_status "$home" 'first'
   wait_until_deadline 180 handled_at_least "$home" 1 || fail "mirror boundary: the first wake was not handled: $(cat "$home/state/.supervision-host.log")"
