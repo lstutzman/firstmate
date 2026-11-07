@@ -57,7 +57,7 @@ Skip a candidate that is not a startable work item (a shell command, a note such
 A product choice is never a standing start; it goes to the captain as below.
 A fix that fails again never chains into another start on its own, and the office dispatches at most 3 fixes for one finding; the Surgeon's own start cap delivers the capped repeat to the office lane as a `surgeon-fix-cap` request instead of a fourth dispatch, and the office dispatches no fourth fix and files the keyed `needs-decision` `surgeon-<issue>-fix-cap` so Lee decides the next step.
 
-When the progress, surgeon or friction officer's `start-home:` names this office, its `lane:progress`, `lane:surgeon:high` or `lane:friction` source delivers each start request addressed to this home straight into this home's inbox ([Progress officer](../../../docs/configuration.md#progress-officer)); judge each such inbox note as above and dispatch it as ordinary routed work without asking main or the captain.
+When the progress, surgeon, friction or library officer's `start-home:` names this office, its `lane:progress`, `lane:surgeon:high`, `lane:friction` or `lane:library` source delivers each start request addressed to this home straight into this home's inbox ([Progress officer](../../../docs/configuration.md#progress-officer)); judge each such inbox note as above and dispatch it as ordinary routed work without asking main or the captain.
 Never run a `<date>.start-requests.sh`: it holds only the main home's requests, and the main firstmate runs it.
 
 ## Designing a standing task or start source

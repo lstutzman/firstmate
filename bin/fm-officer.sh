@@ -74,7 +74,7 @@
 # digest as if main were listed. The failure line is always printed, because a
 # broken officer is main's to fix.
 #
-# start-home: is an optional progress, surgeon and friction field, a comma list of office ids. Each must
+# start-home: is an optional progress, surgeon, friction and library field, a comma list of office ids. Each must
 # pass the same office checks as consumer: (a local office that reads the progress
 # digest), because the start requests for that office's projects (its dispatch:
 # field) are then addressed to that office's home, and that office's lane check
@@ -83,7 +83,9 @@
 # its source, and then local-jev (bin/fm-officer-progress.py). The friction officer
 # addresses its started-by-default findings (bin/fm-officer-friction.py) to the
 # start-home office whose dispatch: list names the fleet repositories (firstmate, skills,
-# fleet-app), else to this home; it starts nothing without writes: linear.
+# fleet-app), else to this home; it starts nothing without writes: linear. The library
+# officer (bin/fm-officer-library.py) addresses its safe-to-ship audit findings the same way,
+# to the office whose dispatch: list names PropertyCompass2, else to this home.
 #
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
@@ -217,6 +219,7 @@ line_problem() {
       [ "$role" != surgeon ] || surgeon_problem "$line" "$id"
       [ "$role" != friction ] || linear_problem "$line" "$id" friction
       ;;
+    library) linear_problem "$line" "$id" library ;;
     pagecheck)
       [[ "$(line_field "$line" app || true)" == https://* ]] \
         || { printf 'officer %s: a pagecheck officer needs app: <https URL of the fleet app>\n' "$id"; return; }
@@ -566,8 +569,22 @@ role_corpus() {  # <date>: counts only, read on each host by the script itself.
 }
 
 role_library() {  # <date>: the newest librarian audit run, read from the job's run folders.
+  local line
+  local -a extra=()
+  while IFS= read -r line; do
+    [ -n "$line" ] && extra+=(--start-home "$line")
+  done <<START_HOMES
+$(start_homes)
+START_HOMES
+  [ -z "$(line_field "$OFFICER_LINE" rubric || true)" ] || extra+=(--rubric "$(line_field "$OFFICER_LINE" rubric)")
   python3 -I "$SCRIPT_DIR/fm-officer-library.py" run --date "$1" --out "$OFFICER_LANE" --now "$(now_epoch)" \
-    --audit "$(line_field "$OFFICER_LINE" audit || echo "$HOME/fm-homes/slarti/data/librarian-audit/runs")"
+    --audit "$(line_field "$OFFICER_LINE" audit || echo "$HOME/fm-homes/slarti/data/librarian-audit/runs")" \
+    --team "$(line_field "$OFFICER_LINE" team || echo PC)" \
+    --writes "$(line_field "$OFFICER_LINE" writes || echo none)" \
+    --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 3)" \
+    --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)" \
+    --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")" \
+    --fm-home "$FM_HOME" ${extra[@]+"${extra[@]}"}
 }
 
 role_progress() {  # <date>: current records, dated with the common cadence's run date.

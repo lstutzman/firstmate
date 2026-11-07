@@ -1010,6 +1010,28 @@ PY
   pass "a lane check delivers a friction digest's start requests like a progress digest's"
 }
 
+test_lane_check_delivers_a_library_digests_start_requests() {
+  local w out rid=library-2026-11-05-00000000000000f1
+  w=$(source_world librarystarts)
+  mkdir -p "$w/data/officers/library"
+  sed -i.bak 's/lane:surgeon:high;/lane:surgeon:high,lane:library;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  printf -- '- library - z (role: triage; cadence: daily 06:00; added 2026-10-24)\n' >> "$w/data/officers.md"
+  put_digest "$w" library 2026-11-05 1
+  python3 -I - "$w" "$SRC_NOW" "$ROOT" "$rid" > "$w/data/officers/library/2026-11-05.json" <<'PY'
+import datetime, json, sys
+w, at, root, rid = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+row = {"kind": "library-finding", "rank": 1, "execute": {"action": "start", "request_id": rid,
+       "env": {"FM_HOME": w + "/navigator"},
+       "argv": [root + "/bin/fm-inbox.sh", "note", "--request-id", rid, "--json", "--", "Start item 1 for navigator"]}}
+print(json.dumps({"source": "library-officer", "generated_at": datetime.datetime.fromtimestamp(
+    at - 3600, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "start_requests": [row], "findings": []}))
+PY
+  out=$(nav_check "$w" lane:library)
+  assert_contains "$out" "1 start request(s) delivered to this office's inbox" "the lane delivers the library officer's start request"
+  assert_equals "Start item 1 for navigator" "$(notes "$w/navigator")" "into the office's own inbox"
+  pass "a lane check delivers a library digest's start requests like a progress digest's"
+}
+
 test_lane_check_delivers_its_own_start_requests_once() {
   local w out
   w=$(source_world starts)
@@ -1101,6 +1123,7 @@ test_high_lane_counts_only_high_severity
 test_sources_changes_nothing_in_the_parent
 test_lane_check_delivers_a_surgeon_digests_start_requests
 test_lane_check_delivers_a_friction_digests_start_requests
+test_lane_check_delivers_a_library_digests_start_requests
 test_lane_check_delivers_its_own_start_requests_once
 test_lane_check_delivers_in_rank_order_and_stops_at_a_bad_request
 test_lane_check_never_delivers_a_stale_digest

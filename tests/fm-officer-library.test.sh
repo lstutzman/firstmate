@@ -7,6 +7,13 @@
 # skipped, report-once fingerprints across days, byte-identical re-runs,
 # coverage gaps (no run folder, a missing findings file, a partial outcome, an
 # old audit) that never fail the run, and lane-only writes.
+#
+# With writes: linear (a fake linear-axi that logs every call): findings filed as Chore
+# items under the librarian-fp marker, the create cap of 3 per audit run (not per day) with
+# the overflow named and filed by the next audit, kept across a rate-limit stop and above a
+# larger registry max-creates, the Found line raised once per audit run,
+# a safe high finding started, a reserved-class one held, needs-Lee items one keyed
+# needs-decision per run, and hold items and the decisions item never filed.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -16,6 +23,52 @@ OFFICER="$ROOT/bin/fm-officer.sh"
 TMP_ROOT=$(fm_test_tmproot fm-officer-library)
 DATE=2026-11-01
 NOW=1793871000 # 2026-11-05T09:30:00Z
+
+# fake_linear <bindir>: linear-axi driven by $FAKE_LINEAR_DIR (labels.txt, and rate-limit-at, the PC number whose
+# create --verify answers RATE_LIMITED instead); it logs every call to
+# $FAKE_LINEAR_DIR/log and refuses to run without that variable, so no test can reach the real Linear.
+fake_linear() {
+  cat > "$1/linear-axi" <<'SH'
+#!/usr/bin/env bash
+d=${FAKE_LINEAR_DIR:-}
+[ -n "$d" ] || { echo '{"ok":false,"error":{"code":"UNKNOWN","message":"no fake linear dir"}}'; exit 1; }
+printf '%s\n' "$*" >> "$d/log"
+case "$1 $2" in
+  "label list")
+    printf '{"ok":true,"data":{"labels":['
+    sep=''; while IFS= read -r l; do printf '%s{"name":"%s"}' "$sep" "$l"; sep=','; done < "$d/labels.txt"
+    echo ']}}' ;;
+  "issue search") echo '{"ok":true,"data":{"issues":[]}}' ;;
+  "issue view")
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'","state":"Todo","stateType":"unstarted","description":"Found: 1 times (first 2026-10-24, last 2026-10-24, by library)"}}}' ;;
+  "issue create")
+    case " $* " in
+      *" --verify "*)
+        n=$(( $(cat "$d/created" 2>/dev/null || echo 100) + 1 ))
+        if [ "$n" = "$(cat "$d/rate-limit-at" 2>/dev/null)" ]; then
+          echo '{"ok":false,"error":{"code":"RATE_LIMITED","message":"slow down"}}'; exit 1
+        fi
+        echo "$n" > "$d/created"
+        for a in "$@"; do [ "${prev:-}" = "--body-file" ] && cat "$a" >> "$d/bodies" && echo >> "$d/bodies"; prev=$a; done
+        echo '{"ok":true,"data":{"issue":{"identifier":"PC-'"$n"'"}}}' ;;
+      *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
+    esac ;;
+  "issue update")
+    case " $* " in *" --verify "*) echo "UPDATE $3" >> "$d/updates" ;; esac
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'"}}}' ;;
+  "issue comment")
+    case " $* " in *" --verify "*) echo "COMMENT $3" >> "$d/comments" ;; esac
+    echo '{"ok":true,"data":{"dryRun":true}}' ;;
+  "issue relation") echo '{"ok":true,"data":{"dryRun":true}}' ;;
+  *) echo '{"ok":false,"error":{"code":"UNKNOWN","message":"unexpected call"}}'; exit 1 ;;
+esac
+SH
+  chmod +x "$1/linear-axi"
+}
+LINEAR_BIN="$TMP_ROOT/linear-bin"
+mkdir -p "$LINEAR_BIN"
+fake_linear "$LINEAR_BIN"
+export PATH="$LINEAR_BIN:$PATH"
 
 finding() {  # <kind> <path> <title> <disposition> [severity]
   printf '{"kind": "%s", "severity": "%s", "title": "%s", "path": "%s", "evidence": "read it", "disposition": "%s"}' \
@@ -153,9 +206,155 @@ test_run_writes_only_its_lane() {
   pass "fm-officer library: a run writes only its lane"
 }
 
+count_lines() {  # <pattern> <file>: how many lines match; 0 when the file does not exist
+  local n
+  n=$(grep -c -- "$1" "$2" 2>/dev/null || true)
+  echo "${n:-0}"
+}
+
+# linear_world <name> [extra registry fields]: a world whose library line writes Linear items through the fake.
+# Call it directly, not in $(...): it sets HOME_DIR, RUNS and FAKE_LINEAR_DIR.
+linear_world() {
+  make_world "$1"
+  sed -i.bak "s|; model: none;|; writes: linear; jev: /nonexistent/jev.py${2:-}; model: none;|" "$HOME_DIR/data/officers.md"
+  export FAKE_LINEAR_DIR="$TMP_ROOT/$1/linear"
+  mkdir -p "$FAKE_LINEAR_DIR"
+  printf '%s\n' Bug Chore scheduled-review documentation triage > "$FAKE_LINEAR_DIR/labels.txt"
+}
+
+test_findings_are_filed_capped_per_audit_run_and_found_raised() {
+  local json dir log
+  linear_world filed
+  dir=$FAKE_LINEAR_DIR
+  log=$dir/log
+  json="$(lane)/$DATE.json"
+  run_library >/dev/null || fail "a writing run must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "at most 3 new items are created for one audit run"
+  assert_equals 3 "$(count_lines '^issue create .*--dry-run' "$log")" "every create is a dry run first"
+  assert_equals 3 "$(count_lines '^issue create .*--label Chore --label scheduled-review --label documentation --verify' "$log")" \
+    "each item is a Chore with the scheduled-review Source and an area label, in no Linear project"
+  assert_no_grep "--project" "$log" "PropertyCompass2 work goes in no Fleet project"
+  assert_equals 3 "$(count_lines '^librarian-fp:' "$dir/bodies")" "every body carries the librarian-fp marker alone on its line"
+  assert_equals 3 "$(count_lines '^Found: 1 times (first 2026-10-31, last 2026-10-31, by library)$' "$dir/bodies")" "and its one Found line, dated by the audit run"
+  assert_no_grep "Brief among scripts" "$dir/bodies" "an on-hold finding is never filed"
+  assert_no_grep "decision(s) for Lee" "$dir/bodies" "and neither is the run's decisions item"
+  assert_equals "Propose a dated successor note." "$(grep -m1 -A0 '^Proposed: Propose a dated' "$dir/bodies" | sed 's/^Proposed: //')" "the highest-scored finding (the high conflict) is filed first"
+  assert_contains "$(<"$(lane)/$DATE.md")" "Not filed (over max-creates for this run)" "the overflow is named in the digest"
+  assert_equals 1 "$(jq '[.asks_for_lee[] | select(.key == "library-needs-lee-2026-10-31")] | length' "$json")" "needs-Lee items are one keyed needs-decision for the run"
+  assert_equals 1 "$(jq '.asks_for_lee | length' "$json")" "and only that one"
+
+  run_library >/dev/null || fail "a same-day re-run must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "a re-run files nothing more"
+  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and raises no Found line"
+  run_library 2026-11-02 $((NOW + 86400)) >/dev/null || fail "a next-day run must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "the cap is per audit run, so the next day creates nothing"
+  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and the Found line rises once per audit run, not once a day"
+  assert_equals 0 "$(jq '.asks_for_lee | length' "$(lane)/2026-11-02.json")" "the needs-decision is not repeated for the same audit run"
+
+  # A newer audit run raises the filed items and files the next three.
+  write_run "$RUNS/2026-11-07" ok 5
+  run_library 2026-11-07 $((NOW + 7 * 86400)) >/dev/null || fail "the next audit's run must succeed"
+  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "the next audit run files the findings the cap left"
+  assert_equals 3 "$(count_lines '^UPDATE' "$dir/updates")" "and raises each filed item's Found line in place"
+  assert_equals 3 "$(count_lines '^COMMENT' "$dir/comments")" "with one comment on the day's first sighting"
+  assert_equals true "$(jq '[.items[] | select(.linear.found == 2)] | length > 0' "$(lane)/2026-11-07.json")" "the digest shows the found count"
+  pass "fm-officer library: findings are filed as Chore items, capped per audit run, and the Found line rises once per audit run"
+}
+
+test_rate_limit_after_a_create_keeps_the_cap() {
+  local dir log
+  linear_world ratelimit
+  dir=$FAKE_LINEAR_DIR
+  log=$dir/log
+  echo 102 > "$dir/rate-limit-at"
+  run_library >/dev/null || fail "a rate-limited run must succeed"
+  assert_equals 101 "$(cat "$dir/created")" "one item was created before Linear answered RATE_LIMITED"
+  assert_equals 2 "$(count_lines '^issue create .*--verify' "$log")" "the run stops at the rate-limited create"
+  rm "$dir/rate-limit-at"
+  run_library 2026-11-02 $((NOW + 86400)) >/dev/null || fail "a next-day run must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" \
+    "the next day attempts only what is left of the audit run's cap of 3, counting the creates before the stop"
+  pass "fm-officer library: a rate limit after a create still counts that create against the per-audit-run cap"
+}
+
+test_registry_max_creates_is_held_to_three() {
+  linear_world bigcap "; max-creates: 10"
+  run_library >/dev/null || fail "a run with max-creates 10 must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$FAKE_LINEAR_DIR/log")" \
+    "a registry max-creates above 3 still creates at most 3 items per audit run (fleet rules section 8)"
+  pass "fm-officer library: max-creates above 3 is held to the fleet rules cap"
+}
+
+test_safe_findings_start_and_reserved_ones_hold() {
+  local json dir
+  linear_world starts
+  dir=$FAKE_LINEAR_DIR
+  json="$(lane)/$DATE.json"
+  printf '[%s,%s,%s,%s]\n' \
+    "$(finding readme README.md "README undercounts the rules" "Propose changing the count to 29." high)" \
+    "$(finding readme docs/terms.md "Terms text is stale" "Propose rewording the terms of service text." high)" \
+    "$(finding readme docs/low.md "Low readme note" "Propose a one-line fix.")" \
+    "$(finding conflict docs/adr/0003.md "ADR conflict" "Propose a dated successor note." high)" > "$RUNS/2026-10-31/findings.json"
+  run_library >/dev/null || fail "a writing run must succeed"
+  assert_equals "README undercounts the rules" "$(jq -r '[.start_requests[].title] | join(",")' "$json")" \
+    "only the high safe finding with an item starts: a low one has not reached the start score, a needs-Lee one never starts"
+  assert_equals "$HOME_DIR" "$(jq -r '.start_requests[0].execute.env.FM_HOME' "$json")" "with no start-home office the request goes to this home"
+  assert_contains "$(jq -r '.start_requests[0].execute.request_id' "$json")" "library-$DATE-" "the request id names the library officer"
+  assert_contains "$(jq -r '.start_requests[0].execute.argv | join(" ")' "$json")" "fm-inbox.sh note --request-id" "it is the progress officer's fm-inbox.sh note call"
+  assert_equals 1 "$(count_lines 'fm-inbox.sh' "$(lane)/$DATE.start-requests.sh")" "this home's request is in the shell handoff"
+  assert_equals library-officer "$(jq -r .source "$json")" "the digest names its source so an office delivers its requests"
+  assert_equals "Terms text is stale" "$(jq -r '.held[0].title' "$json")" "a safe finding that asks for legal text is held"
+  assert_equals "legal" "$(jq -r '.held[0].class' "$json")" "with its reserved class"
+  assert_equals "library-holds-$DATE library-needs-lee-2026-10-31" "$(jq -r '[.asks_for_lee[].key] | join(" ")' "$json")" "held and needs-Lee items are each one keyed needs-decision"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$dir/log")" "the three highest-scored findings are filed under the cap, held ones included"
+  run_library >/dev/null || fail "a same-day re-run must succeed"
+  assert_equals 1 "$(jq '.start_requests | length' "$json")" "a re-run repeats the same request"
+  run_library 2026-11-02 $((NOW + 86400)) >/dev/null || fail "a next-day run must succeed"
+  assert_equals 0 "$(jq '.start_requests | length' "$(lane)/2026-11-02.json")" "a later day never asks for the item again"
+  pass "fm-officer library: a safe finding starts, a reserved class holds, and needs-Lee items hold"
+}
+
+test_start_requests_reach_the_owning_office() {
+  local json
+  linear_world office
+  json="$(lane)/$DATE.json"
+  mkdir -p "$TMP_ROOT/office/navhome"
+  printf '[%s]\n' "$(finding readme README.md "README undercounts the rules" "Propose changing the count to 29." high)" > "$RUNS/2026-10-31/findings.json"
+  FM_OFFICER_NOW="$NOW" FM_HOME="$HOME_DIR" python3 -I "$ROOT/bin/fm-officer-library.py" run --audit "$RUNS" --date "$DATE" \
+    --out "$(lane)" --now "$NOW" --writes linear --jev /nonexistent/jev.py --fm-home "$HOME_DIR" \
+    --start-home "$TMP_ROOT/office/navhome=PropertyCompass2=navigator=work" >/dev/null || fail "a run with an office must succeed"
+  assert_equals "$TMP_ROOT/office/navhome" "$(jq -r '.start_requests[0].execute.env.FM_HOME' "$json")" "a PropertyCompass2 finding goes to the office that dispatches it"
+  assert_equals 0 "$(count_lines 'fm-inbox.sh' "$(lane)/$DATE.start-requests.sh")" "and not into this home's handoff"
+  pass "fm-officer library: a start request is addressed to the office that owns the repository"
+}
+
+test_no_writes_and_a_missing_label_file_nothing() {
+  local dir
+  make_world nowrites
+  export FAKE_LINEAR_DIR="$TMP_ROOT/nowrites/linear"
+  mkdir -p "$FAKE_LINEAR_DIR"
+  run_library >/dev/null || fail "a writes: none run must succeed"
+  assert_equals gone "$([ -e "$FAKE_LINEAR_DIR/log" ] && echo called || echo gone)" "writes: none makes no Linear call at all"
+  assert_equals 0 "$(jq '.start_requests | length' "$(lane)/$DATE.json")" "and starts nothing"
+
+  linear_world nolabel
+  dir=$FAKE_LINEAR_DIR
+  printf '%s\n' Bug Chore documentation > "$dir/labels.txt"
+  run_library >/dev/null || fail "a run with a missing label must succeed"
+  assert_equals 0 "$(count_lines '^issue create' "$dir/log")" "with the Source label missing nothing is created"
+  assert_contains "$(jq -r '[.items[].linear.reason // empty] | join(" ")' "$(lane)/$DATE.json")" "label(s) not found in team PC: scheduled-review" "the finding is reported with the label named"
+  pass "fm-officer library: writes: none and a missing label file and start nothing"
+}
+
 test_buckets
 test_reported_once_and_identical_rerun
 test_hold_item_counts_once_it_can_ship
 test_unreadable_audit_keeps_the_ledger
 test_coverage_gaps_never_fail_the_run
 test_run_writes_only_its_lane
+test_findings_are_filed_capped_per_audit_run_and_found_raised
+test_rate_limit_after_a_create_keeps_the_cap
+test_registry_max_creates_is_held_to_three
+test_safe_findings_start_and_reserved_ones_hold
+test_start_requests_reach_the_owning_office
+test_no_writes_and_a_missing_label_file_nothing
