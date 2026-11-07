@@ -371,17 +371,31 @@ test_a_medium_finding_starts_on_its_third_night() {
 }
 
 test_start_requests_reach_the_owning_office() {
-  local json
-  linear_world office
-  json="$(lane)/$DATE.json"
-  mkdir -p "$W/archivehome"
-  PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW="$NOW" FM_HOME="$HOME_DIR" python3 -I "$ROOT/bin/fm-officer-corpus.py" run \
-    --archive "deepthought:$W/corpus" --date "$DATE" --out "$(lane)" --now "$NOW" --hosts slartibartfast,deepthought \
-    --writes linear --jev /nonexistent/jev.py --fm-home "$HOME_DIR" \
-    --start-home "$W/archivehome=transcript-archive=alchemist=corpus" >/dev/null || fail "a run with an office must succeed"
-  assert_equals "$W/archivehome" "$(request_of harvest-failed | jq -r '.execute.env.FM_HOME')" "a transcript-archive finding goes to the office that dispatches it"
-  assert_equals 0 "$(count_lines 'fm-inbox.sh' "$(lane)/$DATE.start-requests.sh")" "and not into this home's handoff"
-  pass "fm-officer corpus: a start request is addressed to the office that owns the repository"
+  local alc
+  linear_world office "; start-home: alchemist"
+  alc="$W/alchemist"
+  officer_home "$alc"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$alc/data/backlog.md"
+  printf 'alchemist\n' > "$alc/.fm-office"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$HOME_DIR" > "$alc/.fm-secondmate-parent"
+  printf -- '- alchemist - corpus (home: %s; scope: office; projects: transcript-archive; added 2026-11-06)\n' "$alc" > "$HOME_DIR/data/secondmates.md"
+  printf -- '- alchemist - corpus (role: alchemist; dispatch: transcript-archive; sources: tick,lane:corpus; added 2026-11-06)\n' > "$HOME_DIR/data/offices.md"
+  FM_HOME="$alc" "$ROOT/bin/fm-office.sh" register-sources >/dev/null || fail "register-sources must succeed in the alchemist home"
+  run_corpus >/dev/null || fail "a run with an office must succeed"
+  assert_equals "$alc" "$(request_of harvest-failed | jq -r '.execute.env.FM_HOME')" "a transcript-archive finding goes to the office named in start-home:"
+  assert_equals "$alc" "$(request_of archive-gap | jq -r '.execute.env.FM_HOME')" "as does an archive gap"
+  assert_equals 0 "$(count_lines 'fm-inbox.sh' "$(lane)/$DATE.start-requests.sh")" "and neither goes into this home's handoff"
+  pass "fm-officer corpus: start-home in the registry sends a start request to the office that owns the repository"
+}
+
+test_registry_checks_the_linear_fields() {
+  make_world badwrites
+  sed -i.bak 's/; model: none;/; writes: bogus; model: none;/' "$HOME_DIR/data/officers.md"
+  assert_contains "$(FM_HOME="$HOME_DIR" "$OFFICER" ensure)" "OFFICER: officer corpus: writes must be linear or none" "ensure reports a bad writes: on a corpus line"
+  make_world badcap
+  sed -i.bak 's/; model: none;/; max-creates: 0; model: none;/' "$HOME_DIR/data/officers.md"
+  assert_contains "$(FM_HOME="$HOME_DIR" "$OFFICER" ensure)" "OFFICER: officer corpus: max-creates must be a whole number" "ensure reports a bad max-creates: on a corpus line"
+  pass "fm-officer corpus: the registry checks the corpus line's Linear fields"
 }
 
 test_a_reserved_class_is_held() {
@@ -433,5 +447,6 @@ test_create_cap_names_the_overflow
 test_start_requests_follow_the_rubric_and_the_repository
 test_a_medium_finding_starts_on_its_third_night
 test_start_requests_reach_the_owning_office
+test_registry_checks_the_linear_fields
 test_a_reserved_class_is_held
 test_no_writes_and_a_missing_label_file_nothing

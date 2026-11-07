@@ -64,8 +64,9 @@ A finding is reported once: reported.json maps each open fingerprint to the
 run key that first reported it, a finding counts as new only at that key, and
 a fingerprint that clears is dropped, so a recurrence after a fix is new
 again. A fingerprint whose input was a coverage gap this run is kept, not
-cleared, so an outage does not re-report it. Re-running a key on unchanged inputs writes identical bytes: no output
-holds the clock, only source timestamps and thresholds.
+cleared, so an outage does not re-report it. Re-running a key on unchanged inputs with the same --now writes identical
+bytes: only the digest's generated_at holds the clock; every other output holds
+source timestamps and thresholds.
 
 Linear. The officer follows the shared officer contract (docs/officers/contract.md;
 bin/fm-officer-linear.py owns the mechanics) with its rubric docs/officers/corpus-rubric.md,
