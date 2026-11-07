@@ -65,7 +65,9 @@
 #       the same project tokens, admission copies and .fm-office marker written
 #       into <stage-dir> (which holds data/projects.md) instead of a home.
 #       <office-home> is the remote path that replaces @OFFICE_HOME@ in the
-#       copied admission configs, as the local seed does for its own home.
+#       copied admission configs, as the local seed does for its own home; a
+#       master must write its --rules path with that token, never as the
+#       literal remote path, or it is refused.
 #   fm-home-seed.sh validate
 #       Refuse records that operational consumers cannot parse, unavailable or
 #       unsafe registry files when present, non-absolute or unresolvable homes,
@@ -948,15 +950,27 @@ refuse_plain_secondmate_as_office() {
   fi
 }
 
-# validate_office_admission <home>: each merge project's master admission config
-# exists, and any --rules path it names is the copy this seed makes.
+# validate_office_admission <home> [token]: each merge project's master admission config
+# exists, and any --rules path it names is the copy this seed makes; with token (a home on
+# another host) that path must be written as @OFFICE_HOME@, the only form the main home can
+# digest as the master copy (fm_office_admission_digest).
 validate_office_admission() {
-  local home=$1 p master line i f
+  local home=$1 token=${2:-} p master line i f
   local -a words=()
   for p in ${OFFICE_MERGE//,/ }; do
     master="$CONFIG/admission/$p"
     [ -f "$master" ] && [ ! -L "$master" ] && [ -r "$master" ] \
       || { echo "error: office merge project $p has no master admission config at $master" >&2; return 1; }
+    if [ -n "$token" ]; then
+      line=$(grep -m 1 '^command=' "$master") || line=
+      read -r -a words <<< "${line#command=}"
+      for ((i = 0; i < ${#words[@]}; i++)); do
+        [ "${words[$i]}" = --rules ] || continue
+        f=${words[$((i + 1))]:-}
+        [ "$f" = "@OFFICE_HOME@/config/admission/$p.rules" ] \
+          || { echo "error: master admission config $master names --rules $f; for an office on another host it must name @OFFICE_HOME@/config/admission/$p.rules" >&2; return 1; }
+      done
+    fi
     line=$(grep -m 1 '^command=' "$master" | fm_office_admission_expand "$home") || line=
     read -r -a words <<< "${line#command=}"
     for ((i = 0; i < ${#words[@]}; i++)); do
@@ -1265,7 +1279,7 @@ office_stage() {
   shift 3
   [ -f "$stage/data/projects.md" ] || { echo "error: $stage/data/projects.md is missing" >&2; return 1; }
   validate_office_line "$id" "$@" || return 1
-  validate_office_admission "$home" || return 1
+  validate_office_admission "$home" token || return 1
   SEED_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-home-seed.XXXXXX") || return 1
   SEED_OFFICE_TARGETS="$SEED_BACKUP_DIR/office-targets"
   : > "$SEED_OFFICE_TARGETS"

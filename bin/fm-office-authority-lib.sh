@@ -104,8 +104,9 @@
 #       with FM_OFFICE_ERROR on an error. <dest-home> is empty on a remote route,
 #       where <remote-home> (the registered home path) lets a merging office be
 #       published: the seed names its admission configs after their projects, and
-#       the master's --rules path <remote-home>/config/admission/<name>.rules
-#       digests as the master copy.
+#       the master's --rules path, which must be written with the token as
+#       @OFFICE_HOME@/config/admission/<name>.rules (a literal remote path is
+#       refused by the remote seed), digests as the master copy.
 #   fm_office_project_token <projects.md> <project> <key>
 #       prints a key=value token of one data/projects.md line, or nothing.
 #   fm_office_in <item> <comma-list>

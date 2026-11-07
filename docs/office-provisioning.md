@@ -112,7 +112,7 @@ FM_HOME=$MAIN bin/fm-spawn.sh quartermaster --secondmate
 
 An office whose line says `runs-on: deepthought` (or another remote host) is seeded from the main home in one command, because the host the second mate's `host:` names must be in `runs-on`.
 [Remote second mates](remote-secondmates.md) owns the SSH alias, the remote code root and the readiness checks; the remote home's code root must already be at least as new as this home's, because the receiving side refuses inherited material it does not declare.
-Steps 0 to 4 are unchanged, and step 3's master admission config names `--rules <remote home>/config/admission/<project>.rules`.
+Steps 0 to 4 are unchanged, and step 3's master admission config must name `--rules @OFFICE_HOME@/config/admission/<project>.rules` with the token, never the literal remote home path: the main home digests only the token form as the master copy, and the remote seed refuses a literal path.
 `bin/fm-remote-home-seed.sh` runs the same office checks as step 5, sends the marker, charter, admission copies and project tokens to the remote home, then runs `fm-office.sh publish <id>` here and `arm-status` and `register-sources` there; the remote office needs no separate step 6 publish.
 
 ```sh
@@ -123,6 +123,7 @@ FM_HOME=$MAIN bin/fm-spawn.sh <id> --secondmate
 `publish` also arms the `office-feed` watcher check in the main home.
 That check, and each officer run as it writes a digest, send the remote office a copy of its own `data/offices.md` line and of each lane officer's digest, `.json` and start requests addressed to it, which the office's source checks read in place of the parent's files; a new digest reaches the remote home within one watcher sweep (300 seconds by default), and a copy older than 36 hours silences the remote checks.
 `bin/fm-office.sh`'s header owns the mechanics, and `bin/fm-office.sh feed <id>` sends one copy now.
+A copy over `FM_OFFICE_FEED_MAX` bytes, or a lane digest over `FM_OFFICE_FEED_LANE_MAX`, is never sent: the remote office keeps its last copy, `publish` and `feed` print `office <id>: feed not pushed: <why>` and exit non-zero, `ensure` prints an `OFFICE:` line for it, and the watcher check prints one such line each time it starts.
 A failed step after the home exists prints the command that repeats it.
 
 ## 7. Route the officers' digests

@@ -44,7 +44,8 @@
 # data/offices.md and the main home's master admission configs, and an
 # office-local admission config that differs from the master its record pins.
 # A remote office's home is not readable from here, so its file checks are
-# skipped; for it ensure reports only a feed-sweep check that is not registered.
+# skipped; for it ensure reports only a feed-sweep check that is not registered,
+# and a feed or lane over its size limit (bin/fm-office-feed-lib.sh).
 #
 # unprovisioned (also the last step of ensure) is the check that an approved office
 # cannot go unbuilt unnoticed. In a primary home only (it keeps data/offices.md and has no
@@ -71,7 +72,9 @@
 # trust the record exactly as a local office's do. publish also arms feed-sweep
 # in this home (arm-feed). publish refuses in a second-mate home. It prints one
 # line, "office <id>: <pushed|unchanged|error> [reason]", and exits non-zero on
-# an error. Every convergence point (secondmate spawn, the bootstrap secondmate
+# an error. When a remote office's feed or one of its lanes is over its size
+# limit, publish sends the record alone, keeps the remote office's last feed,
+# prints "office <id>: feed not pushed: <why>" and exits non-zero. Every convergence point (secondmate spawn, the bootstrap secondmate
 # sweep, bin/fm-config-push.sh) publishes the same record, and the feed too.
 #
 # feed <id> (run in the main home) sends only a remote office's feed now:
@@ -79,11 +82,15 @@
 # lane officer's digest, its .json and the start requests addressed to that
 # office, which a home on another host cannot read from the parent
 # (bin/fm-office-feed-lib.sh owns the format). It prints the same one line as
-# publish. feed-sweep is the watcher check that keeps the copy current: for each
+# publish, including the "feed not pushed" line, after which it sends nothing. feed-sweep is the watcher check that keeps the copy current: for each
 # remote office it sends the feed when the copy's content changed since the last
 # send, or the last send is over FM_OFFICE_FEED_REFRESH_SECS (default 21600)
 # old, never more often than every FM_OFFICE_FEED_RETRY_SECS (default 120) for one
-# office, within one 25 second bound for the whole sweep, and prints nothing. arm-feed (run once in the main home)
+# office, within one 25 second bound for the whole sweep. It prints nothing,
+# except one "OFFICE: office <id>: feed not pushed: <why>" line the first time
+# that office's feed or a given lane goes over its size limit (record:
+# state/office-feed.<id>.over, cleared once the feed fits; FM_OFFICE_FEED_SWEEP_REPORT=0
+# neither prints nor records it); the oversized feed is not sent. arm-feed (run once in the main home)
 # writes state/office-feed.check.sh, a shim that execs "fm-office.sh feed-sweep",
 # and binds it with bin/fm-check-register.sh; running it again rewrites the same
 # bytes. A new digest therefore reaches a remote office within one parent
@@ -319,6 +326,8 @@ office_problems() {
   if [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
     fm_custom_check_registered "$STATE" "$FEED_CHECK_ID" \
       || printf 'it is on a remote route and %s is not registered in %s (run bin/fm-office.sh arm-feed, or publish %s)\n' "$FEED_CHECK_ID" "$STATE" "$id"
+    feed_stage "$id"
+    [ -z "$FEED_OVER" ] || printf '%s\n' "$FEED_REASON"
     return
   fi
   home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
@@ -502,15 +511,25 @@ remote_push() {
   return 0
 }
 
-# feed_fingerprint_of <id>: prints the fingerprint of the feed the parent would send now, or nothing.
-feed_fingerprint_of() {
-  local id=$1 stage fp=
+# feed_stage <id>: sets FEED_FP to the fingerprint of the feed the parent would send now, or empty;
+# when the copy or a lane is over its size limit, FEED_OVER (feed or lane:<officer>) and FEED_REASON
+# ("feed not pushed: ...") say so.
+feed_stage() {
+  local id=$1 stage rc=0
+  FEED_FP=
+  FEED_OVER=
+  FEED_REASON=
   stage=$(mktemp "${TMPDIR:-/tmp}/fm-office-feed.XXXXXX") || return 0
-  secondmate_registry_line_for_id "$DATA/secondmates.md" "$id" \
-    && fm_office_feed_payload "$FM_HOME" "$DATA" "$id" "$SECONDMATE_REGISTRY_HOME" "$stage" "$(now_epoch)" \
-    && [ -f "$stage" ] && fp=$(fm_office_feed_fingerprint "$stage")
+  if secondmate_registry_line_for_id "$DATA/secondmates.md" "$id"; then
+    fm_office_feed_payload "$FM_HOME" "$DATA" "$id" "$SECONDMATE_REGISTRY_HOME" "$stage" "$(now_epoch)" || rc=$?
+    if [ "$rc" -eq 2 ]; then
+      FEED_OVER=$FM_OFFICE_FEED_OVER
+      FEED_REASON=$FM_OFFICE_ERROR
+    elif [ "$rc" -eq 0 ] && [ -f "$stage" ]; then
+      FEED_FP=$(fm_office_feed_fingerprint "$stage")
+    fi
+  fi
   rm -f "$stage"
-  printf '%s\n' "$fp"
 }
 
 record_feed_push() {  # <id> <fingerprint>
@@ -518,15 +537,19 @@ record_feed_push() {  # <id> <fingerprint>
 }
 
 cmd_feed() {
-  local id=${1:-} fp
+  local id=${1:-}
   [ "$#" -eq 1 ] && [[ "$id" =~ ^[a-z0-9-]+$ ]] || publish_die "usage: fm-office.sh feed <id>"
   [ ! -e "$FM_HOME/.fm-secondmate-home" ] || publish_die "only the main home sends office feeds, and $FM_HOME is a second-mate home"
   secondmate_registry_line_for_id "$DATA/secondmates.md" "$id" \
     || publish_die "$id is not a registered second mate in $DATA/secondmates.md"
   [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] || publish_die "second mate $id is on a local route, which reads the parent directly"
-  fp=$(feed_fingerprint_of "$id")
+  feed_stage "$id"
+  if [ -n "$FEED_OVER" ]; then
+    printf 'office %s: %s\n' "$id" "$FEED_REASON"
+    return 1
+  fi
   if remote_push "$id" office-feed; then
-    [ -z "$fp" ] || record_feed_push "$id" "$fp"
+    [ -z "$FEED_FP" ] || record_feed_push "$id" "$FEED_FP"
     printf 'office %s: %s\n' "$id" "$PUSH_STATUS"
   else
     printf 'office %s: error - %s\n' "$id" "$PUSH_REASON"
@@ -535,7 +558,7 @@ cmd_feed() {
 }
 
 cmd_feed_sweep() {
-  local line id fp last_fp last_at now try deadline left
+  local line id fp last_fp last_at now try deadline left over_rec
   [ ! -e "$FM_HOME/.fm-secondmate-home" ] || return 0
   now=$(now_epoch)
   deadline=$(( $(date +%s) + 25 ))
@@ -543,7 +566,17 @@ cmd_feed_sweep() {
     [[ "$line" =~ $REGISTRY_LINE_RE ]] || continue
     id=${BASH_REMATCH[1]}
     secondmate_registry_line_for_id "$DATA/secondmates.md" "$id" && [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] || continue
-    fp=$(feed_fingerprint_of "$id")
+    feed_stage "$id"
+    fp=$FEED_FP
+    over_rec="$STATE/$FEED_CHECK_ID.$id.over"
+    if [ -n "$FEED_OVER" ]; then
+      if [ "${FM_OFFICE_FEED_SWEEP_REPORT:-1}" != 0 ] && [ "$(cat "$over_rec" 2>/dev/null)" != "$FEED_OVER" ]; then
+        printf 'OFFICE: office %s: %s\n' "$id" "$FEED_REASON"
+        mkdir -p "$STATE" 2>/dev/null && printf '%s\n' "$FEED_OVER" > "$over_rec" 2>/dev/null || true
+      fi
+      continue
+    fi
+    rm -f "$over_rec" 2>/dev/null || true
     [ -n "$fp" ] || continue
     read -r last_fp last_at < "$STATE/$FEED_CHECK_ID.$id.pushed" 2>/dev/null || { last_fp=; last_at=0; }
     case "$last_at" in ''|*[!0-9]*) last_at=0 ;; esac
@@ -584,7 +617,7 @@ cmd_arm_feed() {
 }
 
 cmd_publish() {
-  local id=${1:-} home lock report status reason rc=0 fp
+  local id=${1:-} home lock report status reason rc=0
   [ "$#" -eq 1 ] && [[ "$id" =~ ^[a-z0-9-]+$ ]] || publish_die "usage: fm-office.sh publish <id>"
   [ ! -e "$FM_HOME/.fm-secondmate-home" ] && [ ! -L "$FM_HOME/.fm-secondmate-home" ] \
     || publish_die "only the main home publishes office authority, and $FM_HOME is a second-mate home"
@@ -592,9 +625,14 @@ cmd_publish() {
     || publish_die "$id is not a registered second mate in $DATA/secondmates.md"
   if [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ]; then
     cmd_arm_feed
-    fp=$(feed_fingerprint_of "$id")
-    if remote_push "$id" "office-authority office-feed"; then
-      [ -z "$fp" ] || record_feed_push "$id" "$fp"
+    feed_stage "$id"
+    if [ -n "$FEED_OVER" ]; then
+      if remote_push "$id" office-authority; then
+        printf 'office %s: %s\n' "$id" "$FEED_REASON"
+        return 1
+      fi
+    elif remote_push "$id" "office-authority office-feed"; then
+      [ -z "$FEED_FP" ] || record_feed_push "$id" "$FEED_FP"
       printf 'office %s: %s\n' "$id" "$PUSH_STATUS"
       return 0
     fi

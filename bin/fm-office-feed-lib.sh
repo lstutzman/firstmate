@@ -18,15 +18,18 @@
 # The digest file is the officer's "DIGEST <key> <n> <path>" pointer. The .json
 # holds only what the checks read: the start_requests whose execute.env.FM_HOME
 # is the office's own registered home, and everything else untouched. A lane
-# whose files cannot be read or are over FM_OFFICE_FEED_LANE_MAX bytes is left
-# out, and the whole copy is left out over FM_OFFICE_FEED_MAX bytes, so the
-# remote check stays silent for it, as it is for a missing digest.
+# whose files cannot be read is left out, so the remote check stays silent for
+# it, as it is for a missing digest. A lane file over FM_OFFICE_FEED_LANE_MAX
+# bytes, or a whole copy over FM_OFFICE_FEED_MAX bytes, is not left out: no copy
+# is built at all, so the sender keeps the remote office's last copy and says why.
 #
 # Public functions:
 #   fm_office_feed_payload <src-home> <src-data> <dest-id> <remote-home> <out-file> <now>
 #       writes <dest-id>'s copy to <out-file>, or leaves it absent when the
 #       registry names no such office line; returns 1 with FM_OFFICE_ERROR
-#       when the line is malformed or the copy cannot be staged.
+#       when the line is malformed or the copy cannot be staged, and 2 with
+#       FM_OFFICE_ERROR ("feed not pushed: ...") and FM_OFFICE_FEED_OVER (feed,
+#       or lane:<officer>) when the copy or a lane is over its size limit.
 #   fm_office_feed_fingerprint <file>
 #       prints a digest of the copy without its generated= line, so an
 #       unchanged copy has an unchanged fingerprint.
@@ -57,17 +60,23 @@ fm_office_feed_sha256() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 | awk '{print $1}'; else sha256sum | awk '{print $1}'; fi
 }
 
-# fm_office_feed_lane_record <src-home> <src-data> <officer> <remote-home>: prints the lane record, or nothing.
+# fm_office_feed_lane_record <src-home> <src-data> <officer> <remote-home>: prints the lane record, or
+# nothing; returns 2 after printing the reason when a lane file is over FM_OFFICE_FEED_LANE_MAX.
 fm_office_feed_lane_record() {
-  local home=$1 data=$2 officer=$3 remote=$4 pointer path md json
+  local home=$1 data=$2 officer=$3 remote=$4 pointer path md json f bytes
   pointer=$(cat "$data/officers/$officer/digest" 2>/dev/null) || return 0
   [[ "$pointer" =~ ^DIGEST\ ([0-9T-]{10,13})\ ([0-9]+)\ (.+)$ ]] || return 0
   path=${BASH_REMATCH[3]}
   case "$path" in /*) ;; *) path="$home/$path" ;; esac
   case "$path" in *..*) return 0 ;; *.md) ;; *) return 0 ;; esac
   [ -f "$path" ] && [ ! -L "$path" ] && [ -f "${path%.md}.json" ] && [ ! -L "${path%.md}.json" ] || return 0
-  [ "$(LC_ALL=C wc -c < "$path" | tr -d ' ')" -le "$FM_OFFICE_FEED_LANE_MAX" ] || return 0
-  [ "$(LC_ALL=C wc -c < "${path%.md}.json" | tr -d ' ')" -le "$FM_OFFICE_FEED_LANE_MAX" ] || return 0
+  for f in "$path" "${path%.md}.json"; do
+    bytes=$(LC_ALL=C wc -c < "$f" | tr -d ' ')
+    if [ "$bytes" -gt "$FM_OFFICE_FEED_LANE_MAX" ]; then
+      printf 'lane %s digest %s is %s bytes, over FM_OFFICE_FEED_LANE_MAX (%s)\n' "$officer" "$f" "$bytes" "$FM_OFFICE_FEED_LANE_MAX"
+      return 2
+    fi
+  done
   json=$(python3 -I -c '
 import json, sys
 home = sys.argv[2]
@@ -87,8 +96,9 @@ sys.stdout.write(json.dumps(doc, sort_keys=True, separators=(",", ":")))
 }
 
 fm_office_feed_payload() {  # <src-home> <src-data> <dest-id> <remote-home> <out-file> <now>
-  local home=$1 data=$2 want=$3 remote=$4 out=$5 now=$6 REGISTRY="$2/offices.md" line match='' n=0 src officer seen=' ' tmp rec sources
+  local home=$1 data=$2 want=$3 remote=$4 out=$5 now=$6 REGISTRY="$2/offices.md" line match='' n=0 src officer seen=' ' tmp rec rc sources bytes
   FM_OFFICE_ERROR=
+  FM_OFFICE_FEED_OVER=
   rm -f "$out" || { FM_OFFICE_ERROR="cannot clear the staged office feed $out"; return 1; }
   [ -n "$want" ] && [ -f "$REGISTRY" ] && [ -r "$REGISTRY" ] || return 0
   while IFS= read -r line; do
@@ -111,13 +121,24 @@ EOF
       [[ "$officer" =~ ^[a-z0-9-]+$ ]] || continue
       case "$seen" in *" $officer "*) continue ;; esac
       seen="$seen$officer "
-      rec=$(fm_office_feed_lane_record "$home" "$data" "$officer" "$remote") || rec=
-      [ -z "$rec" ] || printf '%s\n' "$rec"
+      rc=0
+      rec=$(fm_office_feed_lane_record "$home" "$data" "$officer" "$remote") || rc=$?
+      if [ "$rc" -eq 2 ]; then
+        FM_OFFICE_FEED_OVER="lane:$officer"
+        FM_OFFICE_ERROR="feed not pushed: $rec"
+        break
+      fi
+      [ "$rc" -ne 0 ] || [ -z "$rec" ] || printf '%s\n' "$rec"
     done
   } > "$tmp" || { rm -f "$tmp"; FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
-  if [ "$(LC_ALL=C wc -c < "$tmp" | tr -d ' ')" -gt "$FM_OFFICE_FEED_MAX" ]; then
+  bytes=$(LC_ALL=C wc -c < "$tmp" | tr -d ' ')
+  if [ -z "$FM_OFFICE_FEED_OVER" ] && [ "$bytes" -gt "$FM_OFFICE_FEED_MAX" ]; then
+    FM_OFFICE_FEED_OVER=feed
+    FM_OFFICE_ERROR="feed not pushed: $bytes bytes over FM_OFFICE_FEED_MAX ($FM_OFFICE_FEED_MAX)"
+  fi
+  if [ -n "$FM_OFFICE_FEED_OVER" ]; then
     rm -f "$tmp"
-    return 0
+    return 2
   fi
   mv -f "$tmp" "$out" || { rm -f "$tmp"; FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
 }

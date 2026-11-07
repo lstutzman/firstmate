@@ -3,11 +3,13 @@
 # feed-sweep push the office's authority record and the office-feed copy of its
 # line and lane digests through the real remote inherit push (over a fake ssh to
 # a local "remote" home), and the remote home's gates and source checks read
-# only what arrived there.
+# only what arrived there. A copy or lane over its size limit is never sent,
+# and publish, feed, feed-sweep and ensure say so; an officer run sends its new
+# digest to the remote office at once.
 set -u
 
-# shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/officer-helpers.sh
+. "$(dirname "${BASH_SOURCE[0]}")/officer-helpers.sh"
 
 OFFICE="$ROOT/bin/fm-office.sh"
 TMP_ROOT=$(fm_test_tmproot fm-office-remote)
@@ -88,7 +90,7 @@ test_publish_reaches_the_remote_home() {
   assert_present "$w/remote-nav/config/office-feed" "the feed reached the remote home"
   assert_equals "0|nav|" "$(resolve "$w/remote-nav")" "the remote home's gate accepts the published record"
   assert_equals "office nav: unchanged" "$(publish "$w")" "a repeat publish changes nothing"
-  assert_equals "" "$(main_env "$w" "$NOW" bash "$OFFICE" ensure)" "ensure is clean once published and the feed check is armed"
+  assert_equals "" "$(main_env "$w" "$NOW" bash "$OFFICE" ensure | grep 'office nav:' || true)" "ensure is clean once published and the feed check is armed"
   rm -f "$w/state/office-feed.check.sh" "$w/state/office-feed.check-trust"
   assert_contains "$(main_env "$w" "$NOW" bash "$OFFICE" ensure)" "office-feed is not registered" "ensure reports a remote office whose feed check is gone"
   rm -f "$w/remote-nav/config/.fm-inherit-office-authority.generation"
@@ -169,8 +171,75 @@ test_stale_or_absent_copy_is_silent() {
   pass 'a stale, mismatched or absent feed leaves every remote check silent'
 }
 
+test_oversized_feed_is_held_and_reported() {
+  local w before out rc
+  w=$(world oversize)
+  publish "$w" >/dev/null || fail "publish failed"
+  before=$(cat "$w/remote-nav/config/office-feed")
+  put_digest "$w" 2026-11-04 3
+
+  rc=0; out=$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" feed nav) || rc=$?
+  [ "$rc" -ne 0 ] || fail "feed must exit non-zero for an oversized copy"
+  assert_contains "$out" "office nav: feed not pushed: " "feed names the held copy"
+  assert_contains "$out" " bytes over FM_OFFICE_FEED_MAX (1000)" "feed names the limit"
+  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "feed leaves the remote copy untouched"
+
+  rc=0; out=$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" publish nav) || rc=$?
+  [ "$rc" -ne 0 ] || fail "publish must exit non-zero for an oversized copy"
+  assert_contains "$out" "office nav: feed not pushed: " "publish names the held copy"
+  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "publish leaves the remote copy untouched"
+  assert_equals "0|nav|" "$(resolve "$w/remote-nav")" "publish still sends the authority record"
+
+  rc=0; out=$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 FM_INHERITABLE_CONFIG=office-feed \
+    bash "$ROOT/bin/fm-remote-inherit-push.sh" nav 900 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a convergence push must fail for an oversized copy"
+  assert_contains "$out" "error: config/office-feed: feed not pushed: " "the convergence push names the held copy"
+  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "a convergence push never sends an absence for it"
+
+  assert_contains "$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" ensure)" \
+    "OFFICE: office nav: feed not pushed: " "ensure reports the held copy"
+
+  out=$(main_env "$w" "$((NOW + 200))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" feed-sweep)
+  assert_contains "$out" "OFFICE: office nav: feed not pushed: " "the sweep reports the held copy"
+  assert_equals "" "$(main_env "$w" "$((NOW + 300))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" feed-sweep)" "and only once"
+  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "the sweep leaves the remote copy untouched"
+
+  rc=0; out=$(main_env "$w" "$((NOW + 400))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" feed nav) || rc=$?
+  [ "$rc" -ne 0 ] || fail "feed must exit non-zero for an oversized lane"
+  assert_contains "$out" "office nav: feed not pushed: lane progress digest $w/data/officers/progress/2026-11-04.md is " "feed names the oversized lane"
+  assert_contains "$out" "over FM_OFFICE_FEED_LANE_MAX (10)" "and its limit"
+  assert_contains "$(main_env "$w" "$((NOW + 400))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" ensure)" \
+    "OFFICE: office nav: feed not pushed: lane progress" "ensure reports the oversized lane"
+  out=$(main_env "$w" "$((NOW + 500))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" feed-sweep)
+  assert_contains "$out" "OFFICE: office nav: feed not pushed: lane progress" "the sweep reports a newly oversized lane"
+  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "an oversized lane leaves the remote copy untouched"
+
+  assert_equals "" "$(sweep "$w" "$((NOW + 600))")" "a copy that fits again is sent silently"
+  assert_contains "$(cat "$w/remote-nav/config/office-feed")" "lane=progress " "with its lane"
+  assert_absent "$w/state/office-feed.nav.over" "and the held record is cleared"
+  pass 'an oversized feed or lane is never sent, and publish, feed, the sweep and ensure report it'
+}
+
+test_officer_run_sends_its_digest_to_a_remote_office() {
+  local w spec
+  w=$(world officer)
+  spec="$TMP_ROOT/officer/spec.json"
+  printf '{"sessions": [{"machine": "alpha", "id": "s1", "first_prompt": "hello", "calls": [["Bash", {"command": "rm -f /tmp/x"}, "", false]]}]}\n' > "$spec"
+  officer_archive "$TMP_ROOT/officer/archive" 2026-11-03 "$spec"
+  officer_registry "$w" "$TMP_ROOT/officer/archive" alpha
+  sed 's/lane:progress/lane:triage/' "$w/data/offices.md" > "$w/offices.tmp" && mv "$w/offices.tmp" "$w/data/offices.md"
+  publish "$w" >/dev/null || fail "publish failed"
+  assert_not_contains "$(cat "$w/remote-nav/config/office-feed")" "lane=triage " "no digest is carried before the officer runs"
+  main_env "$w" "$NOW" env FM_OFFICER_NOW="$NOW" TZ=UTC bash "$ROOT/bin/fm-officer.sh" run triage --date 2026-11-03 >/dev/null \
+    || fail "the officer run failed"
+  assert_contains "$(cat "$w/remote-nav/config/office-feed")" "lane=triage " "the officer run sends its new digest to the remote office"
+  pass 'an officer run sends its new digest to a remote office at once'
+}
+
 test_publish_reaches_the_remote_home
 test_remote_checks_read_the_carried_copy
 test_sweep_pushes_only_what_changed
 test_sweep_backs_off_after_a_failed_push
 test_stale_or_absent_copy_is_silent
+test_oversized_feed_is_held_and_reported
+test_officer_run_sends_its_digest_to_a_remote_office

@@ -680,8 +680,9 @@ action_run() {
   n=$(printf '%s\n' "$digest" | awk '{print $3}')
   printf 'DIGEST %s %s data/officers/%s/%s.md\n' "$date" "$n" "$id" "$date" > "$OFFICER_LANE/digest"
   run_log "$date" ok "$n"
-  # A remote office reads a pushed copy of this digest (bin/fm-office.sh feed-sweep); send it now, not at the next sweep.
-  "$SCRIPT_DIR/fm-office.sh" feed-sweep >/dev/null 2>&1 || true
+  # A remote office reads a pushed copy of this digest (bin/fm-office.sh feed-sweep); send it now, not at the next sweep,
+  # and leave an oversize report to the watcher's own sweep, whose output reaches firstmate.
+  FM_OFFICE_FEED_SWEEP_REPORT=0 "$SCRIPT_DIR/fm-office.sh" feed-sweep >/dev/null 2>&1 || true
   printf '%s\n' "$out" | grep -E '^(Linear coverage:|Coverage gap:)' || true
   cat "$OFFICER_LANE/digest"
 }

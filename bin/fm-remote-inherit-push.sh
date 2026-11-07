@@ -91,11 +91,18 @@ while IFS= read -r rel; do
     config/office-feed)
       # The remote office's copy of its office line and lane digests
       # (bin/fm-office-feed-lib.sh); an absence for any other destination.
+      # A copy over its size limit leaves the remote office's last copy in place.
       source="$TMP/office-feed.resolved"
-      if ! fm_office_feed_payload "$FM_HOME" "$DATA" "$ID" "$REMOTE_HOME" "$source" "$FEED_NOW"; then
+      feed_rc=0
+      fm_office_feed_payload "$FM_HOME" "$DATA" "$ID" "$REMOTE_HOME" "$source" "$FEED_NOW" || feed_rc=$?
+      if [ "$feed_rc" -ne 0 ]; then
         printf 'error: %s: %s\n' "$rel" "$FM_OFFICE_ERROR" >&2
         FAILED=1
         rm -f -- "$source"
+        if [ "$feed_rc" -eq 2 ]; then
+          printf 'skip\n' > "$TMP/item.$N.plan"
+          continue
+        fi
       fi
       ;;
     config/*) source="$CONFIG/${rel#config/}" ;;
@@ -209,7 +216,7 @@ while [ "$i" -le "$launched" ]; do
   fi
   i=$((i + 1))
 done
-# A planning failure (the office authority record could not be built) fails the
+# A planning failure (an office authority record or office feed could not be built) fails the
 # push even when every item that was sent succeeded.
 if [ -n "$FAILED" ] && [ "$status" -eq 0 ]; then status=1; fi
 exit "$status"

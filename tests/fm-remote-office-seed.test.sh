@@ -156,7 +156,12 @@ test_remote_office_seed_refusals() {
     fail "an office id that differs from the secondmate id was accepted"
   fi
   assert_contains "$out" "an office id equals its secondmate id" "the id mismatch is named"
-  pass 'a remote office seed refuses a host not in runs-on, an unknown office, a plain re-seed and an id mismatch'
+  cp "$PARENT/config/admission/alpha" "$TMP_ROOT/alpha.master"
+  printf 'command=%s --rules %s\nclasses=authority\nclear=none\n' "$ROOT/bin/fm-reserved-classify.sh" "$REMOTE_HOME/config/admission/alpha.rules" > "$PARENT/config/admission/alpha"
+  if out=$(seed_office lib 2>&1); then fail "a master naming the literal remote rules path was accepted"; fi
+  assert_contains "$out" "for an office on another host it must name @OFFICE_HOME@/config/admission/alpha.rules" "the literal remote rules path is named"
+  cp "$TMP_ROOT/alpha.master" "$PARENT/config/admission/alpha"
+  pass 'a remote office seed refuses a host not in runs-on, an unknown office, a plain re-seed, an id mismatch and a literal remote rules path'
 }
 
 test_remote_office_seed_writes_the_office_home
