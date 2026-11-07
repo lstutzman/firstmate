@@ -172,3 +172,14 @@ sed -i.bak '/^- quartermaster - /{/sources:\([^;]*[ ,]\)\{0,1\}ratchet[,;]/!s/so
 FM_HOME=$QM_HOME bin/fm-office.sh register-sources
 FM_HOME=$MAIN bin/fm-office.sh ensure
 ```
+
+## 11. Feed the weekly tooling research to the Quartermaster
+
+Add `research` to the Quartermaster's sources so each complete weekly tooling-research run reaches its home with the run's knowledge lines placed and its proposals digested ([Offices](configuration.md#offices-dataofficesmd) owns what the source does); the Quartermaster then judges each proposal under its standing authority and files a keyed `needs-decision` for any call only Lee can make.
+If the runs are not under the Slarti home's `data/tooling-research/runs` on this machine, first write their directory to the Quartermaster home's `config/tooling-research-runs`.
+
+```sh
+sed -i.bak '/^- quartermaster - /{/sources:\([^;]*[ ,]\)\{0,1\}research[,;]/!s/sources: \([^;]*\);/sources: \1,research;/;}' "$MAIN/data/offices.md"
+FM_HOME=$QM_HOME bin/fm-office.sh register-sources
+FM_HOME=$MAIN bin/fm-office.sh ensure
+```

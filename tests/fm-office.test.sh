@@ -657,6 +657,174 @@ test_upstream_is_daily_and_silent_when_nothing_new() {
   pass 'the upstream source checks once a day and stays silent when the fork has everything'
 }
 
+# research_world <name>: a quartermaster-style office whose config points at fixture runs and a knowledge file.
+research_world() {
+  local w
+  w=$(source_world "$1")
+  sed -i.bak 's/sources: tick,lane:progress,lane:surgeon:high;/sources: tick,research;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  mkdir -p "$w/navigator/config" "$w/runs" "$w/navigator/data/tooling-research"
+  printf '%s/runs\n' "$w" > "$w/navigator/config/tooling-research-runs"
+  printf '# K\n\n## Bookmark\nold bookmark\n\n## Articles read\n- old | u | d | t\n\n## Findings (facts about our setup)\nf\n' > "$w/navigator/data/tooling-research/knowledge.md"
+  mkdir -p "$w/code" && git -C "$w/code" init -q -b main && git -C "$w/code" -c user.email=t@t -c user.name=t commit -q --allow-empty -m base
+  FM_HOME="$w/navigator" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must accept research"
+  [ -z "$(res_check "$w" "$SRC_NOW")" ] || fail "the first check with no runs must be silent"
+  printf '%s\n' "$w"
+}
+
+put_run() {  # <world> <date> <suggestions-json> [article-line]
+  local d="$1/runs/$2"
+  mkdir -p "$d"
+  printf '## Lines for knowledge.md\n\nArticles read:\n\n%s\n\nBookmarks (the job keeps its own; this is the copy for the Bookmark section):\n\n- src: newest handled %s\n\nFindings:\n\n- finding of %s\n' "${4:-- $2 | u | $2 | learned}" "$2" "$2" > "$d/report.md"
+  printf '%s\n' "$3" > "$d/suggestions.json"
+  printf '{}\n' > "$d/result.json"
+}
+
+res_check() { FM_OFFICE_NOW=$2 FM_ROOT_OVERRIDE="$1/code" FM_HOME="$1/navigator" bash "$OFFICE" check research; }
+
+test_research_delivers_a_run_once_and_appends_knowledge_once() {
+  local w out k
+  w=$(research_world resonce)
+  k="$w/navigator/data/tooling-research/knowledge.md"
+  put_run "$w" 2026-11-01 '[{"id":"tr-1","rank":1,"title":"Sync the fork","tldr":"pull upstream"}]'
+  out=$(res_check "$w" "$SRC_NOW")
+  assert_contains "$out" "office navigator: research 2026-11-01: 1 proposal(s), 2 knowledge line(s) appended" "a new run wakes the office"
+  assert_contains "$(cat "$w/navigator/data/office/research/2026-11-01.md")" "tr-1 (rank 1, effort ?): Sync the fork" "the digest names each proposal"
+  assert_contains "$(cat "$w/navigator/data/office/research/2026-11-01.md")" "## Research follow-through" "the first digest of the week carries the follow-through"
+  assert_equals "" "$(res_check "$w" $((SRC_NOW + 60)))" "a re-poll delivers nothing"
+  assert_equals 1 "$(grep -c '^- 2026-11-01 | u' "$k")" "the article line is appended once"
+  assert_equals 0 "$(grep -c 'src: newest' "$k")" "the run's bookmark copy is never appended"
+  assert_equals "## Bookmark|old bookmark|" "$(sed -n 3,5p "$k" | paste -sd'|' -)" "the Bookmark section is untouched"
+  [ "$(awk '/^## Articles read/{a=1} a&&/^- 2026-11-01/{print NR}' "$k")" -lt "$(awk '/^## Findings/{print NR}' "$k")" ] || fail "the article line must sit under its own section"
+  [ "$(awk '/^## Findings/{print NR}' "$k")" -lt "$(grep -n '^- finding of 2026-11-01' "$k" | cut -d: -f1)" ] || fail "a findings line must land under a Findings heading that has a suffix"
+  pass 'the research source delivers a run once and appends its knowledge lines once'
+}
+
+test_research_one_run_per_check_and_skips_incomplete_runs() {
+  local w
+  w=$(research_world resmany)
+  put_run "$w" 2026-11-01 '[{"id":"a","title":"A"}]'
+  put_run "$w" 2026-11-08 '[{"id":"b","title":"B"}]'
+  mkdir -p "$w/runs/2026-11-15" && printf '[]' > "$w/runs/2026-11-15/suggestions.json"
+  assert_contains "$(res_check "$w" "$SRC_NOW")" "research 2026-11-01" "the oldest unseen run first"
+  assert_contains "$(res_check "$w" "$SRC_NOW")" "research 2026-11-08" "then the next"
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "a run without report.md and result.json is not delivered yet"
+  pass 'the research source delivers one complete run per check, oldest first'
+}
+
+test_research_reports_malformed_suggestions_without_guessing() {
+  local w out
+  w=$(research_world resbad)
+  put_run "$w" 2026-11-01 '[{"id": "x", '
+  out=$(res_check "$w" "$SRC_NOW")
+  assert_contains "$out" "suggestions.json unreadable" "the line names the problem"
+  assert_contains "$(cat "$w/navigator/data/office/research/2026-11-01.md")" "nothing was guessed" "the digest says nothing was guessed"
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "a malformed run is still delivered only once"
+  put_run "$w" 2026-11-08 '{"id":"not a list"}'
+  assert_contains "$(res_check "$w" "$SRC_NOW")" "suggestions.json unreadable" "a non-list is malformed too"
+  pass 'the research source reports a malformed suggestions.json instead of guessing'
+}
+
+test_research_follow_through_lists_unadopted_reports_once_a_week() {
+  local w d out
+  w=$(research_world resfollow)
+  for d in zz-adopted-q7 zz-open-q7; do
+    mkdir -p "$w/navigator/data/$d"
+    printf '# t\n\n## Recommendation\n\nDo the %s thing.\n' "$d" > "$w/navigator/data/$d/report.md"
+  done
+  printf '## Queued\n- [ ] zz-adopted-q7 - own item\n- [ ] build-it - ship it (from data/zz-adopted-q7/report.md)\n' > "$w/navigator/data/backlog.md"
+  put_run "$w" 2026-11-01 '[]'
+  put_run "$w" 2026-11-08 '[]'
+  res_check "$w" "$SRC_NOW" >/dev/null
+  out=$(cat "$w/navigator/data/office/research/2026-11-01.md")
+  assert_contains "$out" "Adopted (a backlog line or commit names the report or a PC id in its recommendation): 1" "one report is adopted"
+  assert_contains "$out" "- zz-open-q7 (navigator): Do the zz-open-q7 thing." "an unadopted recommendation is listed"
+  res_check "$w" "$SRC_NOW" >/dev/null
+  case "$(cat "$w/navigator/data/office/research/2026-11-08.md")" in *"Research follow-through"*) fail "the follow-through must come once a week" ;; esac
+  pass 'the research source lists unadopted report recommendations once a week'
+}
+
+test_research_lists_lines_it_cannot_place() {
+  local w out
+  w=$(research_world resunplaced)
+  printf '# K\n\n## Articles read\n' > "$w/navigator/data/tooling-research/knowledge.md"
+  put_run "$w" 2026-11-01 '[]'
+  out=$(res_check "$w" "$SRC_NOW")
+  assert_contains "$out" "1 knowledge line(s) appended, 1 not placed (listed in the digest)" "the wake line counts the unplaced line"
+  assert_contains "$(cat "$w/navigator/data/office/research/2026-11-01.md")" "- finding of 2026-11-01" "the digest lists the unplaced line itself"
+  pass 'the research source lists the knowledge lines it could not place'
+}
+
+test_research_first_check_delivers_none_of_the_existing_runs() {
+  local w
+  w=$(source_world resfirst)
+  sed -i.bak 's/sources: tick,lane:progress,lane:surgeon:high;/sources: tick,research;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  mkdir -p "$w/navigator/config" "$w/navigator/data/tooling-research" "$w/code"
+  git -C "$w/code" init -q -b main
+  printf '%s/runs\n' "$w" > "$w/navigator/config/tooling-research-runs"
+  printf '# K\n\n## Articles read\n' > "$w/navigator/data/tooling-research/knowledge.md"
+  put_run "$w" 2026-10-19 '[]'
+  put_run "$w" 2026-10-25 '[]'
+  put_run "$w" 2026-11-01 '[]'
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "the first check delivers none of the runs already there"
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "nor does the next"
+  assert_equals 0 "$(grep -c '^- 2026-1' "$w/navigator/data/tooling-research/knowledge.md")" "no knowledge line from an existing run is appended"
+  put_run "$w" 2026-11-08 '[]'
+  assert_contains "$(res_check "$w" "$SRC_NOW")" "research 2026-11-08" "a run added afterwards is delivered"
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "once"
+  pass 'the research source delivers only runs newer than its first check'
+}
+
+test_research_adoption_reads_pc_ids_from_the_recommendation_only() {
+  local w d out
+  w=$(research_world respc)
+  for d in zz-context-q7 zz-backlog-q7 zz-commit-q7; do mkdir -p "$w/navigator/data/$d"; done
+  printf '# t\n\nPer the rules (PC-3504).\n\n## Recommendation\n\nDo it.\n' > "$w/navigator/data/zz-context-q7/report.md"
+  printf '# t\n\n## Recommendation\n\nDo it.\n\nTracked as PC-7001.\n\n## Notes\n' > "$w/navigator/data/zz-backlog-q7/report.md"
+  printf '# t\n\n## Recommendation\n\nShip PC-7002.\n' > "$w/navigator/data/zz-commit-q7/report.md"
+  printf '## Queued\n- [ ] other - follows PC-3504 and PC-7001\n' > "$w/navigator/data/backlog.md"
+  git -C "$w/code" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "fix: the thing (PC-7002)"
+  put_run "$w" 2026-11-01 '[]'
+  res_check "$w" "$SRC_NOW" >/dev/null
+  out=$(cat "$w/navigator/data/office/research/2026-11-01.md")
+  assert_contains "$out" "names the report or a PC id in its recommendation): 2" "the backlog and commit matches count as adopted"
+  assert_contains "$out" "- zz-context-q7 (navigator): Do it." "a PC id cited only outside the recommendation does not adopt it"
+  case "$out" in *"zz-backlog-q7 ("*|*"zz-commit-q7 ("*) fail "a PC id in the recommendation, named by a backlog line or a commit, adopts the report" ;; esac
+  pass 'research follow-through reads PC ids from the recommendation section only'
+}
+
+test_research_tolerates_undecodable_reports() {
+  local w
+  w=$(research_world resbytes)
+  mkdir -p "$w/navigator/data/zz-bytes-q7"
+  printf '## Recommendation\n\n\xff\xfe bad\n' > "$w/navigator/data/zz-bytes-q7/report.md"
+  put_run "$w" 2026-11-01 '[]'
+  assert_contains "$(res_check "$w" "$SRC_NOW")" "research 2026-11-01" "an undecodable report does not stop delivery"
+  pass 'the research source skips a report it cannot decode'
+}
+
+test_research_failure_reports_once_when_persistent() {
+  local w
+  w=$(research_world resfail)
+  put_run "$w" 2026-11-01 '[]'
+  : > "$w/navigator/data/office/research"
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "a first failure is silent"
+  assert_equals "" "$(res_check "$w" $((SRC_NOW + 1800)))" "a failure inside the hour is silent"
+  assert_contains "$(res_check "$w" $((SRC_NOW + 3600)))" "office navigator: research check failing since" "a failure spanning an hour reports"
+  assert_equals "" "$(res_check "$w" $((SRC_NOW + 3700)))" "reported once per streak"
+  rm -f "$w/navigator/data/office/research"
+  assert_contains "$(res_check "$w" $((SRC_NOW + 3800)))" "research 2026-11-01" "the run is delivered once the failure clears"
+  [ ! -e "$w/navigator/data/office/research.fail" ] || fail "a success must clear the failure streak"
+  pass 'the research source reports a persistent helper failure once'
+}
+
+test_research_without_runs_root_is_silent() {
+  local w
+  w=$(research_world resnone)
+  rm -rf "$w/runs"
+  assert_equals "" "$(res_check "$w" "$SRC_NOW")" "no runs root: silent"
+  pass 'the research source is silent without a runs root'
+}
+
 ratchet_check() {  # <world> <list> <epoch>
   FM_LINT_RATCHET_LIST=$2 FM_OFFICE_NOW=$3 FM_HOME="$1/navigator" bash "$OFFICE" check ratchet
 }
@@ -1152,6 +1320,16 @@ test_upstream_failure_reports_only_when_persistent
 test_upstream_unresolved_fork_ref_reports_when_persistent
 test_upstream_gap_in_attempts_starts_a_new_streak
 test_upstream_without_config_is_silent
+test_research_delivers_a_run_once_and_appends_knowledge_once
+test_research_one_run_per_check_and_skips_incomplete_runs
+test_research_reports_malformed_suggestions_without_guessing
+test_research_follow_through_lists_unadopted_reports_once_a_week
+test_research_lists_lines_it_cannot_place
+test_research_first_check_delivers_none_of_the_existing_runs
+test_research_adoption_reads_pc_ids_from_the_recommendation_only
+test_research_tolerates_undecodable_reports
+test_research_failure_reports_once_when_persistent
+test_research_without_runs_root_is_silent
 test_register_sources_installs_trusted_shims
 test_register_sources_keeps_the_status_check
 test_shim_runs_through_the_watcher_trust_path

@@ -24,7 +24,7 @@ It never merges PropertyCompass2: Slarti is that project's one merger and lands 
 It reads the friction officer's and the page-check officer's digests, acts on the daily `upstream` source's wake by dispatching the sync of new upstream firstmate commits, dispatches workers on the fleet repositories its record names, and merges its own green skills and firstmate-fork pull requests through `bin/fm-pr-merge.sh`.
 fleet-app pull requests go to Slarti, which merges and deploys them.
 A friction `repeat-ask` finding is a standing request: make the instruction automatic work, then tell the captain once through the parent channel.
-It also owns meta work (SDLC, skills, rules and fleet-tooling optimisation) and acts on the weekly tooling research.
+It also owns meta work (SDLC, skills, rules and fleet-tooling optimisation) and judges each proposal in the `research` source's digest of the weekly tooling research (a start under its standing authority, or one keyed `needs-decision` for a reserved class), which also appends the run's knowledge lines and lists the research reports nothing has adopted.
 
 **Alchemist** - the agent training corpus.
 It keeps the transcript archive (written by the hourly ingester) and the memory harvest (read from mcp-memory-service) complete, scrubbed and valid on Deep Thought, serves both to local-jev and the Lee judge, owns the corpus tooling in the transcript-archive and local-jev repositories, and picks work from the `corpus` officer's digest.
