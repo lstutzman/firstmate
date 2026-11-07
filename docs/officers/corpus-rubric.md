@@ -13,7 +13,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   a failed or drifting memory harvest,
   a stale prep store,
   and a missed or failed weekly retrain.
-- Not work: a source skipped because its host is offline, a coverage gap (an unreachable host or a missing file), and a harvest that has not shipped yet.
+- Not work: a source skipped because its host is offline, a coverage gap (an unreachable host or a missing file), and a missing memory harvest result (the officer could not read the harvest).
   The digest names them and nothing is filed.
 
 ## How severity and priority are scored

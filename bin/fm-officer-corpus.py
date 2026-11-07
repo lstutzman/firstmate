@@ -337,7 +337,7 @@ def judge(facts, nights, now):
     if harvest["state"] != "read":
         unread.update(("harvest", "harvest-counts"))
     if harvest["state"] == "missing":
-        coverage.append("the memory harvest has no result yet (%s); the harvest job has not shipped" % harvest["where"])
+        coverage.append("the memory harvest has no result yet (%s); the officer could not read the harvest" % harvest["where"])
     elif harvest["state"] != "read":
         coverage.append(gap(harvest, "the memory harvest's last result"))
     else:
