@@ -174,6 +174,11 @@
 #                          the no-mistakes run of a green PR handed to another
 #                          home's merger could not be released; each line names
 #                          the task, the PR, and the reason, once per PR head
+#   check: tree-park: <lines>
+#                          returning a finished ship's copy to the pool while
+#                          its PR waits on another home's merger failed after
+#                          it changed something; each line names the task and
+#                          what to do, once (bin/fm-tree-park.sh)
 #   check: rejected unauthenticated state checks: <paths>
 #                          unsafe state checks were refused without execution
 #   check: rejected unauthenticated PR poll retirement receipts: <paths>
@@ -4254,6 +4259,14 @@ while :; do
       nm_release_reason="check: nm-release: $FM_CHECK_RESULT"
       fm_wake_append check nm-release "$nm_release_reason" || exit 1
     fi
+    # Return the copy of each finished ship whose PR waits on another home's
+    # merger to the pool (bin/fm-tree-park.sh owns the rules).
+    tree_park_reason=
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" run_check_capture "$SCRIPT_DIR/fm-tree-park.sh" sweep || exit 1
+    if [ -n "$FM_CHECK_RESULT" ]; then
+      tree_park_reason="check: tree-park: $FM_CHECK_RESULT"
+      fm_wake_append check tree-park "$tree_park_reason" || exit 1
+    fi
     for c in "$STATE"/*.check.sh; do
       [ -e "$c" ] || continue
       # Each check may use its whole CHECK_TIMEOUT; with many checks the sweep
@@ -4381,6 +4394,7 @@ EOF
     touch "$STATE/.last-check"
     [ -z "$pr_register_reason" ] || wake "$pr_register_reason"
     [ -z "$nm_release_reason" ] || wake "$nm_release_reason"
+    [ -z "$tree_park_reason" ] || wake "$tree_park_reason"
     if [ -n "$contribution_check_output" ]; then
       wake "$contribution_check_output"
     fi
