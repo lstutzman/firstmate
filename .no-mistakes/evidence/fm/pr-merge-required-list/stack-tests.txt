@@ -1,0 +1,4 @@
+ok - the trunk's required check list applies to every stack member
+ok - the trunk's required checks apply to every stack member
+ok - a green stack merges through one head-bound request and records every member
+exit=0

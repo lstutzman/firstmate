@@ -1,0 +1,5 @@
+ok - fm-pr-merge requires every context in the repository's required list, and a named waiver covers one
+ok - fm-pr-merge refuses when a required check from branch protection or a ruleset never reported
+ok - fm-pr-merge --allow-missing waives only its named unreported check
+ok - fm-pr-merge merges when every required check reported and is green
+exit=0

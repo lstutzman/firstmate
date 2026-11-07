@@ -1,0 +1,19 @@
+committed list contexts: 28
+=== S1: every committed context green -> merge
+exit=0
+pr merge 201 --repo example/repo --match-head-commit b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7 --squash
+=== S2: serial 15 never reported -> refuse
+exit=1
+error: refusing to merge https://github.com/example/repo/pull/202
+  - required check 'Behavior portable serial 15' has not reported at head b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7
+error: these required checks have not reported: Behavior portable serial 15
+0
+=== S3: compliance + Full suite never reported, waive one -> still refuse on other
+exit=1
+error: refusing to merge https://github.com/example/repo/pull/203
+  - required check 'PR must be raised via no-mistakes' has not reported at head b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7b7
+error: these required checks have not reported: PR must be raised via no-mistakes
+0
+=== S4: list read from base ref, not head
+contents/.github/required-checks.list?ref=main
+script-exit=0

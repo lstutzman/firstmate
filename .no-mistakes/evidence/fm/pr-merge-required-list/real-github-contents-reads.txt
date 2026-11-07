@@ -1,0 +1,10 @@
+$ gh api -H "Accept: application/vnd.github.raw" "repos/lstutzman/firstmate/contents/.github/required-checks.list?ref=main"
+{"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}gh: Not Found (HTTP 404)
+exit=1
+
+$ gh api ... ?ref=fm/pr-merge-required-list (urlencoded)
+gh: No commit found for the ref fm/pr-merge-required-list (HTTP 404)
+{"message":"No commit found for the ref fm/pr-merge-required-list","documentation_url":"https://docs.github.com/v3/repos/contents/","status":"404"}exit=1
+$ gh api ... CONTRIBUTING.md?ref=main (raw accept sanity)
+# Contributing
+
