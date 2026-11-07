@@ -89,6 +89,7 @@ if 'data' in doc:
 print(json.dumps(doc))
 PYFIX
     ;;
+  'issue update') printf '{"ok":true,"data":{"issue":{"identifier":"%s"}}}\n' "$3" ;;
   *) exit 99 ;;
 esac
 SH
@@ -1523,6 +1524,108 @@ JSON
   pass 'progress: project-less asks route to the office their own evidence names, else stay with this home and are reported'
 }
 
+triage_world() {  # <name> <registry fields before model: none>: offices, and officer-filed and other Linear items
+  make_world "$1"
+  local office dir
+  : > "$WORLD_HOME/data/secondmates.md"
+  : > "$WORLD_HOME/data/offices.md"
+  for office in navigator:PropertyCompass2 quartermaster:firstmate,skills,fleet-app; do
+    dir="$WORLD/${office%%:*}"
+    officer_home "$dir"
+    printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
+    printf '%s\n' "${office%%:*}" > "$dir/.fm-office"
+    printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$WORLD_HOME" > "$dir/.fm-secondmate-parent"
+    printf -- '- %s - office (home: %s; scope: office; projects: %s; added 2026-11-04)\n' "${office%%:*}" "$dir" "${office#*:}" >> "$WORLD_HOME/data/secondmates.md"
+    printf -- '- %s - Works the %s mandate (role: %s; dispatch: %s; sources: tick,lane:progress; added 2026-11-04)\n' "${office%%:*}" "${office%%:*}" "${office%%:*}" "${office#*:}" >> "$WORLD_HOME/data/offices.md"
+    FM_HOME="$dir" "$ROOT/bin/fm-office.sh" register-sources >/dev/null || fail "register-sources must succeed in the ${office%%:*} home"
+  done
+  sed -i "s|model: none;|$2 start-home: navigator,quartermaster; model: none;|" "$WORLD_HOME/data/officers.md"
+  python3 -I - "$WORLD/linear" <<'PY'
+import json, sys
+root = sys.argv[1]
+fp = lambda c: 'progress-officer-fp:' + c * 64
+found = lambda n: 'Found: %d times (first 2026-11-01, last 2026-11-05, by surgeon)' % n
+spec = [  # id, title, priority, assignee, project, description
+    ('PC-201', 'Bug: filed three times', 2, None, None, 'Finding: x.\n' + found(3) + '\nsurgeon-fp:' + 'a' * 64),
+    ('PC-202', 'Bug: someone took it', 3, 'lee', None, 'Finding: y.\n' + found(9) + '\nsurgeon-fp:' + 'b' * 64),
+    ('PC-203', 'Bug: fleet finding', 3, None, 'Fleet', 'Finding: z.\n' + found(1) + '\ncorpus-fp:' + 'c' * 64),
+    ('PC-204', 'Bug: filed by a person', 0, None, None, 'A person wrote this one.'),
+    ('PC-205', 'Bug: key problem', 0, None, None, 'Finding: bad. Rotate the API key.\n' + found(1) + '\nsurgeon-fp:' + 'd' * 64),
+]
+issues, listed = {}, []
+for ident, title, priority, assignee, project, description in spec:
+    issue = {'identifier': ident, 'title': title, 'state': 'Todo', 'stateType': 'unstarted', 'priority': priority,
+             'assignee': assignee, 'project': project, 'description': description}
+    listed.append(issue)
+    json.dump({'ok': True, 'data': {'issue': dict(issue, parent=None)}}, open('%s/%s.json' % (root, ident), 'w'))
+json.dump({'ok': True, 'data': {'issues': listed}}, open(root + '/list.json', 'w'))
+PY
+}
+
+test_officer_filed_items_are_triaged() {
+  triage_world triage 'writes: linear;'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json" md="$WORLD_HOME/data/officers/progress/$DATE.md" lane="$WORLD_HOME/data/officers/progress"
+  run_progress >/dev/null || fail 'triage run failed'
+  assert_equals 'set 2 1' "$(jq -r '.start_requests[] | select(.linear_id=="PC-201") | .triage.action + " " + (.triage.priority_was|tostring) + " " + (.triage.priority|tostring)' "$file")" \
+    'an officer-filed item found 3 times (score 8) is raised from High to Urgent'
+  assert_equals 'kept assigned to a person' "$(jq -r '.start_requests[] | select(.linear_id=="PC-202") | .triage.action + " " + .triage.why' "$file")" \
+    'an assigned item is not re-prioritised'
+  assert_equals 'kept 3' "$(jq -r '.start_requests[] | select(.linear_id=="PC-203") | .triage.action + " " + (.triage.priority|tostring)' "$file")" \
+    'a Medium item with a score under 4 stays Medium'
+  assert_equals 'null' "$(jq -r '.start_requests[] | select(.linear_id=="PC-204") | .triage' "$file")" 'an item with no officer marker is not triaged'
+  assert_equals 'PC-201 PC-202 PC-203 PC-204' "$(jq -r '[.start_requests[] | .linear_id] | join(" ")' "$file")" \
+    'the ranked list orders by the triaged priority, and the reserved-class item is not among the starts'
+  assert_equals 'navigator navigator quartermaster null' "$(jq -r '[.start_requests[] | .owner_office] | map(. // "null") | join(" ")' "$file")" \
+    'the owner office is named: the Navigator for PropertyCompass2 work, the Quartermaster for the Fleet project'
+  assert_equals "$WORLD/navigator $WORLD/navigator $WORLD/quartermaster" "$(jq -r '[.start_requests[] | select(.owner_office) | .execute.env.FM_HOME] | join(" ")' "$file")" \
+    'a triaged request goes to its owner office home'
+  assert_equals 'PC-205 progress-holds-'"$DATE" "$(jq -r '.asks_for_lee[] | .linear_id + " " + .ask_key' "$file")" 'a reserved class is held as one keyed needs-decision'
+  assert_contains "$(cat "$md")" "needs-decision [key=progress-holds-$DATE]: 1 officer-filed item(s) held for Lee" 'the digest carries the keyed line'
+  local calls
+  calls=$(grep '^issue update' "$WORLD/calls")
+  assert_contains "$calls" 'issue update PC-201 --priority 1 --dry-run --output json' 'the priority write dry-runs first'
+  assert_contains "$calls" 'issue update PC-201 --priority 1 --verify --output json' 'and then verifies'
+  assert_contains "$calls" 'issue update PC-205 --priority 3 --dry-run' 'a held item is still prioritised'
+  assert_equals '4' "$(printf '%s\n' "$calls" | wc -l | tr -d ' ')" 'only the two raised items are written'
+  assert_equals '1' "$(jq -r '."PC-201"' "$lane/triage-state.json")" 'the lane records the priority it left'
+  python3 -I - "$WORLD/linear" <<'PY'
+import json, sys
+for ident, priority in (('PC-201', 4),):
+    path = '%s/%s.json' % (sys.argv[1], ident)
+    doc = json.load(open(path))
+    doc['data']['issue']['priority'] = priority
+    json.dump(doc, open(path, 'w'))
+    listed = json.load(open(sys.argv[1] + '/list.json'))
+    for issue in listed['data']['issues']:
+        if issue['identifier'] == ident:
+            issue['priority'] = priority
+    json.dump(listed, open(sys.argv[1] + '/list.json', 'w'))
+PY
+  : > "$WORLD/calls"
+  run_progress >/dev/null || fail 'second triage run failed'
+  assert_equals 'kept a person changed the priority' "$(jq -r '.start_requests[] | select(.linear_id=="PC-201") | .triage.action + " " + .triage.why' "$file")" \
+    'a priority a person changed since the lane left it is never raised again'
+  assert_equals '0' "$(grep -c '^issue update PC-201' "$WORLD/calls")" 'and is not written'
+  pass 'progress: officer-filed items are triaged before their start request, and a person-touched item is left alone'
+}
+
+test_triage_writes_need_linear_and_a_rubric() {
+  triage_world triage-none ''
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  run_progress >/dev/null || fail 'writes none run failed'
+  assert_equals 'would-set 1' "$(jq -r '.start_requests[] | select(.linear_id=="PC-201") | .triage.action + " " + (.triage.priority|tostring)' "$file")" \
+    'without writes: linear the score is shown and nothing is written'
+  assert_equals '0' "$(grep -c '^issue update' "$WORLD/calls")" 'writes none makes no Linear write'
+  triage_world triage-rubric 'writes: linear; rubric: /nonexistent/progress-rubric.md;'
+  file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  run_progress >/dev/null || fail 'missing rubric run failed'
+  assert_equals '0' "$(grep -c '^issue update' "$WORLD/calls")" 'a missing rubric makes no Linear write'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'progress-rubric.md unreadable' 'and names the gap'
+  assert_equals 'PC-201 PC-202 PC-203 PC-204' "$(jq -r '[.start_requests[] | .linear_id] | sort | join(" ")' "$file")" 'the same items still start'
+  assert_equals 'PC-205' "$(jq -r '.asks_for_lee[] | .linear_id' "$file")" 'the reserved class is still held'
+  pass 'progress: triage writes need writes: linear and a readable rubric, and starts do not depend on them'
+}
+
 test_remote_home_and_missing_home() {
   make_world remote
   local other="$WORLD/remote-home" file="$WORLD_HOME/data/officers/progress/$DATE.json"
@@ -1902,5 +2005,7 @@ test_linear_block_and_model_boundary
 test_state_schema_and_idempotence
 test_executable_start_requests
 test_start_home_routes_project_less_asks_by_scope
+test_officer_filed_items_are_triaged
+test_triage_writes_need_linear_and_a_rubric
 test_remote_home_and_missing_home
 test_fleet_app_page_schema

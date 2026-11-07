@@ -4,6 +4,7 @@
 Usage: fm-officer-progress.py run --date YYYY-MM-DD --out <lane>
          --home <dir|host:/dir> [--home ...] [--team PC]
          [--repos owner/repo,...] [--requested PC-1,...] [--now <epoch>]
+         [--writes none|linear] [--max-linear-calls <n>] [--rubric <file>]
        fm-officer-progress.py scan --home <dir>
 
 Reads Top of Mind once per run with a five-second HTTPS timeout, from the
@@ -45,7 +46,17 @@ Linear labels come from one filtered GraphQL query (linear-axi cannot read them)
 `linear-token header`; an item carrying a start-class label gets that class and a failed read is a named gap.
 Open PRs are listed once per repo per run; a blank answer is no open PRs, a limited one backs off 2, 8 and 30 seconds, and a repo that
 still fails holds only its own starts. A requested root that cannot be read skips only its own subtree.
-No cloud model calls, dispatch, steering, Linear writes, or GitHub writes.
+Triage. A start candidate that another officer filed (its description carries a `<officer>-fp:<sha256>` marker, the
+shared officer contract's, docs/officers/contract.md) is triaged before its start request is written, under
+docs/officers/progress-rubric.md: bin/fm-officer-linear.py's triage_issue raises its Linear priority from its score (severity
+weight x log2(1 + the Found line's count)), `--dry-run` then `--verify`, only with --writes linear, and never on an item that
+is assigned or whose priority a person changed since this lane last left it (triage-state.json). The request names the owning
+office (navigator for PropertyCompass2, quartermaster for the Fleet project) and goes to it, and the ranked list re-sorts on the
+new priority. An officer-filed item that asks for a reserved class is held for Lee as one keyed needs-decision
+(`progress-holds-<date>`) and is not started. Nothing else about which items start changes. The officer files no Linear
+items of its own: it finds no work, it only starts the work other officers and Lee filed.
+Linear writes are the triage priority update above only; there are no other Linear writes, and no cloud model calls,
+dispatch, steering, or GitHub writes.
 Only a start request that its source and evidence do not place is labelled by local-jev, the local classifier.
 """
 
@@ -55,6 +66,7 @@ import copy
 import datetime
 import hashlib
 import http.client
+import importlib.util
 import json
 import os
 import re
@@ -66,6 +78,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "progress-rubric.md")
+OWNER_OFFICES = {True: "quartermaster", False: "navigator"}  # keyed by whether the item is Fleet work
 LINEAR_ID = re.compile(r"\b[A-Z][A-Z0-9]*-\d+\b")
 # Source marks: a Captain's Log "Start fix:" tap is a velocity or friction finding, work of the quartermaster role.
 SOURCE_ROLES = ((re.compile(r"start fix:", re.I), "quartermaster"),)
@@ -430,7 +444,7 @@ def linear_row(entry, home, clear, parent=None):
                {m[1].strip(): m[2].strip() for m in TAG.finditer(text)})
     row.update({"linear_id": entry["identifier"], "linear_ids": [entry["identifier"]],
                 "priority": entry.get("priority") or 0, "project": entry.get("project") or "",
-                "link": entry.get("url") or "", "parent": parent, "linear_only": True,
+                "assignee": entry.get("assignee"), "link": entry.get("url") or "", "parent": parent, "linear_only": True,
                 "description_truncated": TRUNCATED in description, "description": description,
                 "state": str(entry.get("stateType") or entry["state"]).lower(),
                 "evidence": ["Linear " + entry["identifier"]]})
@@ -1189,6 +1203,9 @@ def start_home_for(row, home, offices, team="PC", jev=None):
     reported as unrouted, but only when offices are configured to route to at all.
     A named project that no office dispatches stays with `home`, as it always has.
     """
+    owner = next((o.home for o in offices if o.role and o.role == row.get("owner_office")), None)
+    if owner:
+        return owner, None
     project = "" if row.get("linear_only") else (row.get("project") or "").rsplit("/", 1)[-1].lower()
     if project:
         return next((o.home for o in offices if project in o.projects), home), None
@@ -1367,6 +1384,78 @@ def page_state(doc, officer, previous, repos, log_url, reported):
     return page
 
 
+def _lib():
+    mod = sys.modules.get("fm_officer_linear")
+    if mod is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-officer-linear.py")
+        spec = importlib.util.spec_from_file_location("fm_officer_linear", path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["fm_officer_linear"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+def triage_pass(doc, facts, args):
+    """Triages the officer-filed start candidates in place; returns the coverage gaps it names.
+
+    Each gets its priority raised from its score (writes: linear), the owning office named, and the ranked list re-sorted.
+    One that asks for a reserved class moves to asks_for_lee under the keyed needs-decision progress-holds-<date>.
+    """
+    lib = _lib()
+    off = lib.Officer("progress", "Progress officer", "Progress officer", RUBRIC_FILE, ())
+    rubric = lib.load_rubric(args.rubric, off)
+    gaps = list(rubric.gaps)
+    write = args.writes == "linear" and rubric.loaded and rubric.settings.get("triage", ["on"])[0] != "off"
+    if args.writes == "linear" and not write:
+        gaps.append("triage writes are off: the rubric %s" % ("is unreadable" if not rubric.loaded else "turns triage off"))
+    path = os.path.join(args.out, lib.TRIAGE_FILE)
+    try:
+        seen = json.loads(read(path) or "{}")
+    except ValueError:
+        seen = {}
+    lin = lib.Linear(args.max_linear_calls)
+    paused = lib.paused_until(args.out, args.now) if write else None
+    if paused:
+        write = False
+        gaps.append(paused + ", so no triage priority was written")
+    key = "progress-holds-" + args.date
+    held = []
+    for row in list(doc["start_requests"]):
+        issue = facts.get(row["linear_id"] or "")
+        if not issue:
+            continue
+        try:
+            record = lib.triage_issue(lin, row["linear_id"], issue, seen, write)
+        except lib.LinearError as exc:
+            write = False
+            gaps.append("triage stopped at %s: %s" % (row["linear_id"], exc))
+            if exc.code == "RATE_LIMITED":
+                lib.pause_for_rate_limit(args.out, args.now)
+            record = lib.triage_issue(lin, row["linear_id"], issue, seen, False)
+        if not record:
+            continue
+        if record.get("error"):
+            gaps.append("triage priority for %s not written: %s" % (row["linear_id"], record["error"]))
+        fleet = lib.is_fleet(row.get("project") or issue.get("project") or "")
+        row.update(triage=record, owner_office=OWNER_OFFICES[fleet], priority=record["priority"])
+        reserved = lib.reserved_class({"title": row["title"], "summary": issue.get("description") or "", "location": "", "evidence": {}})
+        if reserved:
+            row.update(reason="Officer-filed item asks for %s, a reserved class: held for Lee" % reserved, ask_key=key)
+            held.append(row)
+    if held:
+        ids = {id(r) for r in held}
+        doc["start_requests"] = [r for r in doc["start_requests"] if id(r) not in ids]
+        doc["asks_for_lee"] += held
+        for r in held:
+            r["rank"] = None
+    doc["start_requests"].sort(key=lambda r: (CLASS_ORDER[r["authorising_class"]], r["priority"] or 5, r["id"], r["owner_home"]))
+    for rank, row in enumerate(doc["start_requests"], 1):
+        row["rank"] = rank
+    if write or seen:
+        lib.write_json(path, seen)
+    return gaps
+
+
 def render_md(doc):
     lines = ["# Progress officer digest for " + doc["date"], "", "## Top of Mind", ""]
     lines += ["- " + line for line in doc["top_of_mind"]]
@@ -1381,13 +1470,19 @@ def render_md(doc):
                 str(row["rank"]) + ". " if row["rank"] is not None else "", row["id"], row["title"],
                 row["linear_id"] or "none", row["owner_home"],
                 row["authorising_class"] or "unclassified", row["tag_source"] or "none", row["reason"])
-                + ("; unrouted, stays with this home: " + row["unrouted"] if row.get("unrouted") else ""))
+                + ("; unrouted, stays with this home: " + row["unrouted"] if row.get("unrouted") else "")
+                + ("; triage: filed by %(filed_by)s, found %(found)d, score %(score).1f, priority %(priority_was)d -> %(priority)d (%(action)s)" % row["triage"]
+                   if row.get("triage") else "") + ("; owner office: " + row["owner_office"] if row.get("owner_office") else ""))
         if not doc[key]:
             lines.append("- None.")
         lines.append("")
     if doc["filler"]:
         lines.extend(["## Filler proposal", "", "- " + doc["filler"]["kind"] + " (source: " + doc["filler"]["tag_source"] + "): "
                       + doc["filler"]["reason"], ""])
+    held = [r for r in doc["asks_for_lee"] if r.get("ask_key")]
+    if held:
+        lines.extend(["## Needs decision", "", "- needs-decision [key=%s]: %d officer-filed item(s) held for Lee, they match a reserved class: %s" % (
+            held[0]["ask_key"], len(held), "; ".join("%s (%s)" % (r["id"], r["title"]) for r in held[:10])), ""])
     lines.extend(["## Unclassified", "", "- %d open items have no recorded start class and are not listed."
                   % doc["unclassified"], ""])
     lines.extend(["## Coverage", ""] + ["- " + p for p in doc["coverage"]])
@@ -1425,6 +1520,9 @@ def main(argv):
     parser.add_argument("--officer", default="progress")
     parser.add_argument("--captains-log", default="")
     parser.add_argument("--now", type=int, default=None)
+    parser.add_argument("--writes", choices=["none", "linear"], default="none")
+    parser.add_argument("--max-linear-calls", type=int, default=450)
+    parser.add_argument("--rubric", default=RUBRIC_FILE)
     args = parser.parse_args(argv)
     if args.action == "scan":
         print(json.dumps(scan_home(args.home[0]), sort_keys=True))
@@ -1513,11 +1611,15 @@ def main(argv):
     discovery.stats["unverified_starts"] = len(unchecked)
     reconcile_merge_asks([r for snapshot in snapshots for r in snapshot["rows"]] + list(rows.values()),
                          problems, discovery.deadline, rows)
+    # judge() strips the fields a digest does not carry from the rows it returns, which are these same dicts.
+    facts = {i: {k: r.get(k) for k in ("description", "assignee", "priority", "project")} for i, r in rows.items()}
     doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers, top_of_mind, repo_gaps, repos)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
-    doc["filler"] = filler_for(doc, args.date)
     doc["generated_at"] = iso(now)
+    args.now = now
+    doc["coverage"] += triage_pass(doc, facts, args)
+    doc["filler"] = filler_for(doc, args.date)
     start_homes = [parse_office(a) for a in args.start_home]
     requests = executable_requests(doc, args.home[0], start_homes, args.team, LocalJev(start_homes) if start_homes else None)
     write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"),

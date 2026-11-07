@@ -386,6 +386,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/officers/progress-rubric.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/officers/library-rubric.md",
       "audience": "operator-current"
     },

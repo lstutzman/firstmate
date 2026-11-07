@@ -203,6 +203,7 @@ line_problem() {
         [[ "$(line_field "$line" captains-log)" == https://*/api/captains-log ]] \
           || { printf 'officer %s: captains-log must be an https URL ending /api/captains-log\n' "$id"; return; }
       fi
+      linear_problem "$line" "$id" progress
       ;;
     corpus)
       [ -n "$(line_field "$line" archive || true)" ] \
@@ -619,7 +620,10 @@ role_progress() {  # <date>: current records, dated with the common cadence's ru
     --team "$(line_field "$OFFICER_LINE" team || echo PC)"
     --repos "$(line_field "$OFFICER_LINE" repos || true)"
     --officer "$OFFICER_ID" --captains-log "$(line_field "$OFFICER_LINE" captains-log || true)"
-    --requested "$(line_field "$OFFICER_LINE" requested || true)")
+    --requested "$(line_field "$OFFICER_LINE" requested || true)"
+    --writes "$(line_field "$OFFICER_LINE" writes || echo none)"
+    --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)")
+  [ -z "$(line_field "$OFFICER_LINE" rubric || true)" ] || args+=(--rubric "$(line_field "$OFFICER_LINE" rubric)")
   args+=(--home "$FM_HOME")
   while IFS= read -r line; do
     [ -n "$line" ] && args+=(--start-home "$line")
