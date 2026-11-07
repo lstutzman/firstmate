@@ -1,0 +1,117 @@
+
+================ S1 watcher sweep parks a clean handed-off ship (real treehouse pool) ================
+pool before:
+1     leased       /tmp/fm-lab.qvmABt/s1/pool/.treehouse/project-3dc79d/1/project  [fm/lab-task]  (held by task-a)
+sweep rc=0
+park-log:
+parked: task-a returned its copy /tmp/fm-lab.qvmABt/s1/pool/.treehouse/project-3dc79d/1/project; its PR https://github.com/o/r/pull/42 waits on its merger at 945beb87d74b5a8e407774a9edd183abd29125dd
+pool after:
+1     available    /tmp/fm-lab.qvmABt/s1/pool/.treehouse/project-3dc79d/1/project  (detached)
+--- record:
+parked=1
+parked_branch=fm/lab-task
+parked_head=945beb87d74b5a8e407774a9edd183abd29125dd
+parked_worktree=/tmp/fm-lab.qvmABt/s1/pool/.treehouse/project-3dc79d/1/project
+parked_at=1794060610
+control: task-a exit --stop-background
+crew-state: state: done · source: status-log · PR https://github.com/o/r/pull/42 waits on its merger; copy returned to the pool at 945beb87d74b5a8e407774a9edd183abd29125dd (parked)
+status lines: 1
+
+================ S4 steer to the parked task re-acquires a fresh real slot at the PR head ================
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+unparked: task-a relaunched in /tmp/fm-lab.qvmABt/s1/pool/.treehouse/project-3dc79d/1/project at 945beb87d74b5a8e407774a9edd183abd29125dd
+fm-send: doorbell not typed because the agent in lab:p1 has exited; the steer is durably recorded at /tmp/fm-lab.qvmABt/s1/home/state/task-a.inbox/001.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane
+send rc=0
+pool after steer:
+1     leased       /tmp/fm-lab.qvmABt/s1/pool/.treehouse/project-3dc79d/1/project  [fm/lab-task]  (held by task-a)
+--- record:
+worktree=/tmp/fm-lab.qvmABt/s1/pool/.treehouse/project-3dc79d/1/project
+fresh copy HEAD=945beb87d74b5a8e407774a9edd183abd29125dd branch=fm/lab-task expected=945beb87d74b5a8e407774a9edd183abd29125dd
+control:
+task-a exit --stop-background
+task-a relaunch --note-file /tmp/fm-tree-park-note.APgEnp
+relaunch worktree=/tmp/fm-lab.qvmABt/s1/pool/.treehouse/project-3dc79d/1/project head=945beb87d74b5a8e407774a9edd183abd29125dd branch=fm/lab-task
+inbox:
+schema=fm-task-inbox.v1
+at=2026-11-07T14:10:14Z
+body-terminator=1
+--
+restack onto main
+
+================ S6 teardown after merge on a parked record ================
+parked: task-a returned its copy /tmp/fm-lab.qvmABt/s6/pool/.treehouse/project-3103a4/1/project; its PR https://github.com/o/r/pull/42 waits on its merger at c3e98d17fd0e9ffac56923c57a7b14945d9e48bf
+park rc=0
+warning: lsof is unavailable; cannot resolve a process-group fallback for herdr task task-a
+/tmp/fm-lab.qvmABt/s6/project: pruned master
+/tmp/fm-lab.qvmABt/s6/project: already current
+teardown task-a complete (window lab:p1, worktree )
+Backlog: task-a just finished (config/backlog-backend selects manual editing). Update /tmp/fm-lab.qvmABt/s6/home/data/backlog.md - move task-a to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+teardown rc=0
+record exists after teardown: no
+pool after: 1     available    /tmp/fm-lab.qvmABt/s6/pool/.treehouse/project-3103a4/1/project  (detached)
+pool unchanged by teardown
+
+================ S5 steer follows a PR head the merger moved while parked ================
+parked: task-a returned its copy /tmp/fm-lab.qvmABt/s5/pool/.treehouse/project-ed3b4a/1/project; its PR https://github.com/o/r/pull/42 waits on its merger at 79607abe970870d0e7e95f5bb7f993604a17f2c1
+park rc=0
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+unparked: task-a relaunched in /tmp/fm-lab.qvmABt/s5/pool/.treehouse/project-ed3b4a/1/project at 4a6391f220402bff4072c19a81638225bf592107 (the PR head moved from 79607abe970870d0e7e95f5bb7f993604a17f2c1)
+fm-send: doorbell not typed because the agent in lab:p1 has exited; the steer is durably recorded at /tmp/fm-lab.qvmABt/s5/home/state/task-a.inbox/001.msg for recovery (stuck-crewmate-recovery), and the watcher will not re-ring a dead pane
+send rc=0
+fresh copy HEAD=4a6391f220402bff4072c19a81638225bf592107 expected moved head=4a6391f220402bff4072c19a81638225bf592107
+note:
+Your previous copy was returned to the pool while your PR https://github.com/o/r/pull/42 waited for its merger.
+The PR head moved from 79607abe970870d0e7e95f5bb7f993604a17f2c1 to 4a6391f220402bff4072c19a81638225bf592107 while your copy was parked: re-read the branch before you change anything.
+This is a fresh copy of branch fm/lab-task at 4a6391f220402bff4072c19a81638225bf592107, the PR head now; your earlier conversation is gone.
+Do not create the branch again: it is checked out. Read your steering inbox now for the instruction that brought you back.
+
+================ S2 adversarial: untracked file in the copy is never parked ================
+not parked: task-a: copy has uncommitted changes
+park rc=1
+1     leased       /tmp/fm-lab.qvmABt/s2/pool/.treehouse/project-4f0e4e/1/project  [fm/lab-task]  (held by task-a)
+--- record:
+worktree=/tmp/fm-lab.qvmABt/s2/pool/.treehouse/project-4f0e4e/1/project
+/tmp/fm-lab.qvmABt/s2/pool/.treehouse/project-4f0e4e/1/project/notes.txt
+
+================ S3 adversarial: committed-but-unpushed work is never parked ================
+not parked: task-a: copy has commits not on origin/fm/lab-task
+park rc=1
+1     leased       /tmp/fm-lab.qvmABt/s3/pool/.treehouse/project-b6e106/1/project  [fm/lab-task]  (held by task-a)
+--- record:
+worktree=/tmp/fm-lab.qvmABt/s3/pool/.treehouse/project-b6e106/1/project
+b4129fb unpushed
+
+================ S7 adversarial: steer to a parked task whose PR merged stays parked, sends nothing ================
+parked: task-a returned its copy /tmp/fm-lab.qvmABt/s7/pool/.treehouse/project-c27155/1/project; its PR https://github.com/o/r/pull/42 waits on its merger at d950b3487e721833de249821689f6f95165a9ada
+park rc=0
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: task-a's PR https://github.com/o/r/pull/42 is merged, so it has nothing left to steer
+error: steer not sent to task-a: it was parked and could not be given a fresh copy and worker; the error above says what its record and the pool hold now
+send rc=1
+--- record:
+parked=1
+parked_branch=fm/lab-task
+parked_head=d950b3487e721833de249821689f6f95165a9ada
+parked_worktree=/tmp/fm-lab.qvmABt/s7/pool/.treehouse/project-c27155/1/project
+parked_at=1794060630
+pool:
+1     available    /tmp/fm-lab.qvmABt/s7/pool/.treehouse/project-c27155/1/project  (detached)
+inbox msgs: 0
