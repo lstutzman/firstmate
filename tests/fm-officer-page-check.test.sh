@@ -18,8 +18,11 @@
 # finding filed once in team PC, project Fleet, as Bug, agent and area:fleet, with
 # no card words in the item, a later day raising the Found line in place, the
 # create cap naming its overflow, a start request only for a page defect
-# (page-old, shown-after-done) and never for a card a rule settles, and a reserved
-# class held as one keyed needs-decision line.
+# (page-old, shown-after-done) and never for a card a rule settles, a settled
+# production-deploy card that is re-shown still starting its page fix (the reserved
+# classes judge the fix, not the card's question), a finding whose own fix is in a
+# reserved class held as one keyed needs-decision line, and a page defect's bad
+# pattern remembered once, with no second line for a repeat.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -388,20 +391,22 @@ test_page_defects_start_and_settled_cards_do_not() {
   home=$LW_HOME
   json="$home/data/officers/page-check/$KEY.json"
   officer starts run page-check --date "$KEY" >/dev/null || fail "run must succeed"
-  assert_equals "page-old:Velocity audit:velocity-audit" "$(jq -r '[.start_requests[].id] | join(",")' "$json")" \
+  assert_equals "page-old:Velocity audit:velocity-audit" "$(jq -r '[.start_requests[] | select(.kind == "page-check-finding") | .id] | join(",")' "$json")" \
     "only the high page defect starts at found 1; a medium one needs a higher found count"
-  assert_equals "0" "$(jq '[.start_requests[] | select(.id | startswith("standing-rule") or startswith("stale-card"))] | length' "$json")" \
+  assert_equals "0" "$(jq '[.start_requests[] | select(.id // "" | startswith("standing-rule") or startswith("stale-card"))] | length' "$json")" \
     "a card a standing rule settles, or a stale card, is filed and never started"
   assert_equals "true" "$(jq --arg h "$home" '[.start_requests[] | .execute |
       (.action == "start" and .env.FM_HOME == $h and (.request_id | test("^page-check-2026-10-31-[0-9a-f]{16}$")) and (.argv | length) == 7
        and (.argv[0] | endswith("/fm-inbox.sh")) and .argv[1:6] == ["note", "--request-id", .request_id, "--json", "--"])] | all' "$json")" \
     "the request is the inbox note call an office delivers, addressed to this home without a start-home"
   assert_equals "page-check-officer" "$(jq -r .source "$json")" "the digest names its source so an office delivers its start requests"
-  assert_equals "1" "$(grep -c 'fm-inbox.sh' "$home/data/officers/page-check/$KEY.start-requests.sh")" "this home's request is also written as a shell handoff"
+  assert_equals "$(jq '.start_requests | length' "$json")" "$(grep -c 'fm-inbox.sh' "$home/data/officers/page-check/$KEY.start-requests.sh")" \
+    "this home's requests are also written as a shell handoff"
   officer starts run page-check --date "$KEY" >/dev/null || fail "a same-day re-run must succeed"
-  assert_equals "1" "$(jq '.start_requests | length' "$json")" "the request repeats on every run of the same day"
+  assert_equals "1" "$(jq '[.start_requests[] | select(.kind == "page-check-finding")] | length' "$json")" "the request repeats on every run of the same day"
   later_day starts 2026-11-01T14 >/dev/null || fail "a later-day run must succeed"
-  assert_equals "0" "$(jq '.start_requests | length' "$home/data/officers/page-check/2026-11-01T14.json")" "a later day never asks twice"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.kind == "page-check-finding" and .id == "page-old:Velocity audit:velocity-audit")] | length' \
+    "$home/data/officers/page-check/2026-11-01T14.json")" "a later day never asks twice"
 
   office="$TMP_ROOT/starts/office"
   mkdir -p "$office/state/inbox"
@@ -438,35 +443,80 @@ test_no_writes_a_missing_label_and_the_cap() {
   officer capped run page-check --date "$KEY" >/dev/null || fail "a capped run must succeed"
   assert_equals "2" "$(creates "$dir/log")" "max-creates bounds the items one run creates"
   assert_contains "$(<"${json%.json}.md")" "Not filed (over max-creates for this run)" "the overflow is named in the digest"
-  assert_equals "true" "$(jq '. as $d | [.start_requests[].id] | all(. as $i | [$d.findings[] | select(.id == $i)][0].linear.issue != null)' "$json")" \
+  assert_equals "true" "$(jq '. as $d | [.start_requests[] | select(.kind == "page-check-finding") | .id] | all(. as $i | [$d.findings[] | select(.id == $i)][0].linear.issue != null)' "$json")" \
     "only a finding whose item exists is started"
   pass "fm-officer page-check: no writes, a missing label and the create cap bound what is filed and started"
 }
 
-test_a_reserved_class_is_held_for_lee() {
-  local home dir json day2 issue
+# raise_to_start <name> <finding id>: files the world's findings, then makes the given finding's item read Found: 2, so the
+# next day raises it to 3, which lifts a medium finding to the start minimum of 4. Prints the next day's digest path.
+raise_to_start() {
+  local name=$1 id=$2 json issue day2=2026-11-01T14
+  officer "$name" run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  json="$LW_HOME/data/officers/page-check/$KEY.json"
+  issue=$(jq -r --arg i "$id" '[.findings[] | select(.id == $i)][0].linear.issue' "$json")
+  assert_not_contains "$issue" "null" "the finding $id is filed"
+  printf 2 > "$FAKE_LINEAR_DIR/count.$issue"
+  later_day "$name" "$day2" >/dev/null || fail "a later-day run must succeed"
+  printf '%s\n' "$LW_HOME/data/officers/page-check/$day2.json"
+}
+
+test_a_settled_production_card_shown_again_starts_its_page_fix() {
+  local json
+  linear_world prodcard
+  jq '.value.cards += [{id: "release-1-2-3", band: "now", question: "Go for production deploy of 1.2.3?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"}]' \
+    "$TMP_ROOT/prodcard/pages/_api_captains-log" > "$TMP_ROOT/prodcard/captains-log.json"
+  cp "$TMP_ROOT/prodcard/captains-log.json" "$TMP_ROOT/prodcard/pages/_api_captains-log"
+  jq '.cards += [{id: "release-1-2-3", lifecycle: "closed"}]' "$TMP_ROOT/prodcard/pages/_api_captains-log_facts_source_bosun" > "$TMP_ROOT/prodcard/facts.json"
+  cp "$TMP_ROOT/prodcard/facts.json" "$TMP_ROOT/prodcard/pages/_api_captains-log_facts_source_bosun"
+  json=$(raise_to_start prodcard "shown-after-done:Captain's Log:release-1-2-3" | tail -n 1)
+  assert_no_grep "production deploy" "$FAKE_LINEAR_DIR/bodies" "the card's words never reach Linear"
+  assert_equals "1" "$(jq '[.start_requests[] | select(.kind == "page-check-finding" and .id == "shown-after-done:Captain'"'"'s Log:release-1-2-3")] | length' "$json")" \
+    "the re-shown card's page fix starts at the start minimum, though the card asks for a production deploy"
+  assert_equals "0" "$(jq '[.held[] | select(.title | contains("release-1-2-3"))] | length' "$json")" "and it is not held for Lee"
+  pass "fm-officer page-check: a settled production-deploy card shown again starts its fleet-app page fix"
+}
+
+test_a_fix_in_a_reserved_class_is_held_for_lee() {
+  local json
   linear_world held
+  jq '.jobs += [{id: "stripe-billing-sync", label: "Billing sync", officer: "bosun", state: "live", health: "failing", nextDueAt: "2026-11-01T00:00:00Z"}]' \
+    "$TMP_ROOT/held/pages/_api_runs" > "$TMP_ROOT/held/runs.json"
+  cp "$TMP_ROOT/held/runs.json" "$TMP_ROOT/held/pages/_api_runs"
+  json=$(raise_to_start held "page-old:Runs:stripe-billing-sync" | tail -n 1)
+  assert_equals "0" "$(jq '[.start_requests[] | select(.id == "page-old:Runs:stripe-billing-sync")] | length' "$json")" "a fix to a billing job is never started"
+  assert_equals "1" "$(jq '.asks_for_lee | length' "$json")" "the run carries one needs-decision line"
+  assert_equals "page-check-holds-2026-11-01" "$(jq -r '.asks_for_lee[0].key' "$json")" "it is keyed for the day"
+  assert_contains "$(jq -r '.asks_for_lee[0].line' "$json")" "stripe-billing-sync (payments-billing)" "the line names the finding and its reserved class"
+  pass "fm-officer page-check: a finding whose own fix is in a reserved class is filed and held for Lee, never started"
+}
+
+test_a_page_defect_pattern_is_remembered_once() {
+  local home json day2
+  linear_world patterns
   home=$LW_HOME
-  dir=$FAKE_LINEAR_DIR
-  jq '.value.cards += [{id: "pay-card", band: "now", question: "Approve the payments refund change?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"}]' \
-    "$TMP_ROOT/held/pages/_api_captains-log" > "$TMP_ROOT/held/captains-log.json"
-  cp "$TMP_ROOT/held/captains-log.json" "$TMP_ROOT/held/pages/_api_captains-log"
-  jq '.cards += [{id: "pay-card", lifecycle: "closed"}]' "$TMP_ROOT/held/pages/_api_captains-log_facts_source_bosun" > "$TMP_ROOT/held/facts.json"
-  cp "$TMP_ROOT/held/facts.json" "$TMP_ROOT/held/pages/_api_captains-log_facts_source_bosun"
-  officer held run page-check --date "$KEY" >/dev/null || fail "run must succeed"
   json="$home/data/officers/page-check/$KEY.json"
-  issue=$(jq -r '[.findings[] | select(.id | contains("pay-card"))][0].linear.issue' "$json")
-  assert_not_contains "$issue" "null" "the reserved finding is still filed"
-  assert_no_grep "payments refund" "$dir/bodies" "and its card words never reach Linear"
-  # An item already raised to Found: 2 is raised to 3 by the next day, which lifts a medium finding to the start minimum, where the reserved class holds it.
-  printf 2 > "$dir/count.$issue"
+  officer patterns run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  assert_equals "1" "$(jq '[.patterns.new[] | select(.line | startswith("Anti-pattern: page-old on Velocity audit:"))] | length' "$json")" \
+    "a new page-old finding yields one pattern line"
+  assert_contains "$(jq -r '[.patterns.new[] | select(.line | contains("Velocity audit"))][0].line' "$json")" "Safe form: page owner: restore the page's feed" \
+    "its safe form is the finding's route"
+  assert_equals "true" "$(jq '[.patterns.new[].line] | all(startswith("Anti-pattern: page-old on ") or startswith("Anti-pattern: shown-after-done on "))' "$json")" \
+    "a card a rule settles, or a stale card, is not a bug pattern"
+  assert_equals "0" "$(jq '[.patterns.new[].line | select(contains("Bosun asks about an episode"))] | length' "$json")" "a pattern never carries a card's words"
+  assert_equals "$(jq '.patterns.total' "$json")" "$(jq '[.start_requests[] | select(.kind == "pattern-memory") | .patterns[]] | length' "$json")" \
+    "the new patterns go on in one pattern-memory start request"
+  officer patterns run page-check --date "$KEY" >/dev/null || fail "a same-day re-run must succeed"
+  assert_equals "1" "$(jq '[.patterns.new[] | select(.line | contains("Velocity audit"))] | length' "$json")" "a same-day re-run adds no second line"
   day2=2026-11-01T14
-  later_day held "$day2" >/dev/null || fail "a later-day run must succeed"
-  json="$home/data/officers/page-check/$day2.json"
-  assert_equals "0" "$(jq '[.start_requests[] | select(.id | contains("pay-card"))] | length' "$json")" "a reserved class is never started"
-  assert_equals "page-check-holds-2026-11-01" "$(jq -r '.asks_for_lee[0].key' "$json")" "it is held as one keyed needs-decision line"
-  assert_contains "$(jq -r '.asks_for_lee[0].line' "$json")" "payments-billing" "the line names the reserved class"
-  pass "fm-officer page-check: a finding in a reserved class is filed and held for Lee, never started"
+  later_day patterns "$day2" >/dev/null || fail "a later-day run must succeed"
+  assert_equals "1" "$(jq '[.patterns[] | select(.title | contains("Velocity audit"))] | length' "$home/data/officers/page-check/patterns.json")" \
+    "a repeat of the finding on a later day does not duplicate its pattern"
+  assert_equals "1" "$(jq '[.patterns[] | select(.title | contains("Velocity audit"))][0].count' "$home/data/officers/page-check/patterns.json")" \
+    "nor counts it again"
+  assert_equals "0" "$(jq '[.patterns.new[] | select(.line | contains("Velocity audit"))] | length' "$home/data/officers/page-check/$day2.json")" \
+    "and the later day lists it as known, not new"
+  pass "fm-officer page-check: a page defect's bad pattern is remembered once, with its route as the safe form"
 }
 
 test_registry_needs_an_https_app
@@ -479,4 +529,6 @@ test_scheduled_slot_and_read_only_boundary
 test_findings_are_filed_in_linear_under_the_contract
 test_page_defects_start_and_settled_cards_do_not
 test_no_writes_a_missing_label_and_the_cap
-test_a_reserved_class_is_held_for_lee
+test_a_settled_production_card_shown_again_starts_its_page_fix
+test_a_fix_in_a_reserved_class_is_held_for_lee
+test_a_page_defect_pattern_is_remembered_once

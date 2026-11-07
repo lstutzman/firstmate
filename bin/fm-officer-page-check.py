@@ -82,9 +82,15 @@ request in the digest's `start_requests` (and, for this home, a <key>.start-requ
 handoff), addressed to the --start-home office that dispatches the fleet repositories
 (the Quartermaster), else to --fm-home; fleet-app merges stay with Slarti. A
 standing-rule or stale-card finding is filed so its card is cleared and never starts a
-fix. A finding that matches a reserved class is held as one keyed needs-decision line
-in `asks_for_lee`. Without writes: linear nothing is filed and nothing starts. What the
-create cap, call budget or a rate limit leaves unfiled is named in the digest.
+fix. The reserved-class check judges what the started fix would change, so it reads the
+finding's own kind, page, object id, evidence and route, never the card's question: a
+finding whose fix is in a reserved class is held as one keyed needs-decision line in
+`asks_for_lee`. A page-old or shown-after-done finding is a bug in fleet code, so its
+bad pattern (the kind, page and evidence, with the route as the safe form) is remembered
+once through the shared pattern memory and handed on in the digest's `patterns` and one
+batched pattern-memory start request. Without writes: linear nothing is filed and
+nothing starts. What the create cap, call budget or a rate limit leaves unfiled is named
+in the digest.
 """
 
 import argparse
@@ -362,18 +368,23 @@ def page_findings(app, now):
 def officer(lib):
     """The page-check officer as the contract (docs/officers/contract.md) knows it: Fleet work, two kinds may start."""
     return lib.Officer("page-check", "Page-check officer", "Page check", RUBRIC_FILE, START_SOURCES,
-                       severities=("high", "medium"), project=lib.FLEET_PROJECT)
+                       severities=("high", "medium"), pattern_sources=START_SOURCES, project=lib.FLEET_PROJECT)
+
+
+def pattern_findings(lib, findings):
+    """The bad pattern of each filed page or card-source defect: its kind, page and evidence, with the route as the safe form."""
+    return [dict(lf, title=lib.text("%s on %s: %s" % (lf["source"], lf["job"], lf["raw"]["evidence"]), 120),
+                 fix=lib.text(lf["raw"]["route"], 200)) for lf in findings if (lf["filing"] or {}).get("issue")]
 
 
 def lib_findings(lib, findings):
-    """One shared-library finding per page-check finding. The title is built from the kind, page and object id, never from
-    a card's words (Linear is third-party storage); the card's own title is kept as `location` for the reserved-class match only."""
+    """One shared-library finding per page-check finding, built from the kind, page, object id, evidence and route only,
+    never from a card's words: Linear is third-party storage, and the reserved-class match judges the fix, not the card."""
     out = []
     for f in findings:
         ref = f["id"].split(":", 2)[2]
         lf = lib.make_finding(f["kind"], f["page"], f["id"], "%s: %s %s" % (f["page"], f["kind"], ref),
-                              "%s. Route: %s." % (f["evidence"], f["route"]), "real", f["severity"], False, {},
-                              location=f["title"] if f["kind"] != "page-old" else "")
+                              "%s. Route: %s." % (f["evidence"], f["route"]), "real", f["severity"], False, {})
         lf["raw"] = f
         out.append(lf)
     return out
@@ -468,18 +479,31 @@ def linear_pass(raw, args, key):
         starts, held, asks = [], [], []
         gaps.append("no --fm-home, so nothing starts by itself")
     by_fp = {f["fingerprint"]: f for f in findings}
+    for row in starts:
+        row["id"] = by_fp[row["fingerprint"]]["raw"]["id"]
+    store = lib.read_json(os.path.join(out, lib.PATTERN_FILE), {})
+    captures, lint = [], []
+    if linear and rubric.pattern_memory:
+        lib.update_patterns(off, store, pattern_findings(lib, findings), jev, day)
+    if linear and args.fm_home:
+        pattern_requests, captures, lint = lib.pattern_outputs(off, store, rubric, day, args.fm_home, lib.parse_start_homes(args.start_home))
+        starts.extend(pattern_requests)
     for rank, row in enumerate(starts, 1):
-        row.update(id=by_fp[row["fingerprint"]]["raw"]["id"], rank=rank, owner_home=row["execute"]["env"]["FM_HOME"])
+        row.update(rank=rank, owner_home=row["execute"]["env"]["FM_HOME"])
     if linear:
         lib.write_json(os.path.join(out, lib.LEDGER_FILE), ledger)
         lib.write_json(os.path.join(out, lib.STATE_FILE), state)
         lib.write_json(os.path.join(out, lib.FOUND_FILE), found)
+        lib.write_json(os.path.join(out, lib.PATTERN_FILE), store)
+    patterns = store.get("patterns", {})
     for lf in findings:
         lf["raw"]["linear"] = {"severity": lf["severity"], "found": lf["found"], "score": lf["score"],
                                **{k: v for k, v in (lf["filing"] or {}).items() if k in ("action", "issue", "reason", "found", "recurrence_of")}}
     return {"source": "page-check-officer", "generated_at": lib.iso(args.now), "writes": args.writes, "writes_done": writes,
             "writes_blocked": blocked, "linear_calls": lin.n, "linear_call_budget": lin.budget, "linear_gaps": gaps,
-            "not_filed": lib.not_filed_lines(findings), "held": held, "asks_for_lee": asks, "start_requests": starts}
+            "not_filed": lib.not_filed_lines(findings), "held": held, "asks_for_lee": asks, "start_requests": starts,
+            "patterns": {"total": len(patterns), "new": [dict(id=i, line=p["line"], count=p["count"]) for i, p in sorted(patterns.items()) if p["first"] == day],
+                         "captures": captures, "lint": lint}}
 
 
 def render_md(key, findings, new_ids, coverage, linear):
@@ -490,6 +514,11 @@ def render_md(key, findings, new_ids, coverage, linear):
         "; stopped: " + linear["writes_blocked"] if linear["writes_blocked"] else "")]
     lines += ["- Linear: " + g for g in linear["linear_gaps"]] + ["- " + n for n in linear["not_filed"]]
     lines += ["- " + a["line"] for a in linear["asks_for_lee"]]
+    pat = linear["patterns"]
+    lines += ["- Patterns: %d known, %d new this run." % (pat["total"], len(pat["new"]))] + ["- Pattern: %s (x%d)" % (p["line"], p["count"]) for p in pat["new"]]
+    if pat["captures"]:
+        lines.append("- Memory capture needed (tags pattern + project): the office captures these %d line(s) from `patterns` in the digest json." % len(pat["captures"]))
+    lines += ["- Proposed follow-up: %s" % p["proposal"] for p in pat["lint"]]
     for f in findings:
         lin = f.get("linear") or {}
         lines.append("- %s[%s] %s - %s: %s (evidence: %s) -> %s%s" % (
