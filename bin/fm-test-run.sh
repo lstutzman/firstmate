@@ -874,6 +874,7 @@ tests/fm-nm-test-contract.test.sh 144
 tests/fm-no-mistakes-required.test.sh 354
 tests/fm-office-authority.test.sh 2442
 tests/fm-office-relaunch.test.sh 8409
+tests/fm-office-remote.test.sh 14000
 tests/fm-office.test.sh 103534
 tests/fm-officer-corpus.test.sh 3767
 tests/fm-officer-friction.test.sh 30517
@@ -941,6 +942,7 @@ tests/fm-remote-job-launchagent.test.sh 59935
 tests/fm-remote-job-orphan-reap.test.sh 3494
 tests/fm-remote-job-process-start.test.sh 4110
 tests/fm-remote-job.test.sh 140531
+tests/fm-remote-office-seed.test.sh 50000
 tests/fm-remote-reply.test.sh 234550
 tests/fm-remote-secondmate-lifecycle-e2e.test.sh 1179716
 tests/fm-remote-secondmate-omp.test.sh 6130

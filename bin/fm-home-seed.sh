@@ -15,7 +15,8 @@
 #       project list, and omitting both still fails loudly. A project-less seed
 #       refuses a home with project clones or project-registry entries, so it
 #       never converts populated homes in place. The charter brief
-#       is copied to data/charter.md, newly cloned no-mistakes projects are
+#       is copied to data/charter.md, an empty structured data/backlog.md is
+#       written when the home has none, newly cloned no-mistakes projects are
 #       initialized, an ignored .fm-secondmate-parent binding is published before
 #       the .fm-secondmate-home identity marker, and data/secondmates.md is updated.
 #       Seeding is transactional: on validation, clone, init, or registry failure,
@@ -59,6 +60,15 @@
 #       authority record (bin/fm-office.sh publish) and launching the office stay
 #       separate steps. A seed without --office refuses a home that carries
 #       .fm-office, so re-seeding never drops an office's charter heading.
+#   fm-home-seed.sh office-stage <id> <office-home> <stage-dir> <project>...
+#       The office half of a seed for a home on another host, which
+#       bin/fm-remote-home-seed.sh calls: the same office checks as above, then
+#       the same project tokens, admission copies and .fm-office marker written
+#       into <stage-dir> (which holds data/projects.md) instead of a home.
+#       <office-home> is the remote path that replaces @OFFICE_HOME@ in the
+#       copied admission configs, as the local seed does for its own home; a
+#       master must write its --rules path with that token, never as the
+#       literal remote path, or it is refused.
 #   fm-home-seed.sh validate
 #       Refuse records that operational consumers cannot parse, unavailable or
 #       unsafe registry files when present, non-absolute or unresolvable homes,
@@ -93,6 +103,7 @@ SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 
 usage() {
   echo "usage: fm-home-seed.sh <id> <home|-> {<project>...|--no-projects} [--office <id>]" >&2
+  echo "       fm-home-seed.sh office-stage <id> <office-home> <stage-dir> <project>..." >&2
   echo "       fm-home-seed.sh validate" >&2
 }
 
@@ -943,15 +954,27 @@ refuse_plain_secondmate_as_office() {
   fi
 }
 
-# validate_office_admission <home>: each merge project's master admission config
-# exists, and any --rules path it names is the copy this seed makes.
+# validate_office_admission <home> [token]: each merge project's master admission config
+# exists, and any --rules path it names is the copy this seed makes; with token (a home on
+# another host) that path must be written as @OFFICE_HOME@, the only form the main home can
+# digest as the master copy (fm_office_admission_digest).
 validate_office_admission() {
-  local home=$1 p master line i f
+  local home=$1 token=${2:-} p master line i f
   local -a words=()
   for p in ${OFFICE_MERGE//,/ }; do
     master="$CONFIG/admission/$p"
     [ -f "$master" ] && [ ! -L "$master" ] && [ -r "$master" ] \
       || { echo "error: office merge project $p has no master admission config at $master" >&2; return 1; }
+    if [ -n "$token" ]; then
+      line=$(grep -m 1 '^command=' "$master") || line=
+      read -r -a words <<< "${line#command=}"
+      for ((i = 0; i < ${#words[@]}; i++)); do
+        [ "${words[$i]}" = --rules ] || continue
+        f=${words[$((i + 1))]:-}
+        [ "$f" = "@OFFICE_HOME@/config/admission/$p.rules" ] \
+          || { echo "error: master admission config $master names --rules $f; for an office on another host it must name @OFFICE_HOME@/config/admission/$p.rules" >&2; return 1; }
+      done
+    fi
     line=$(grep -m 1 '^command=' "$master" | fm_office_admission_expand "$home") || line=
     read -r -a words <<< "${line#command=}"
     for ((i = 0; i < ${#words[@]}; i++)); do
@@ -1013,8 +1036,8 @@ set_project_token() {
   ' "$file" > "$tmp" && mv "$tmp" "$file"
 }
 
-seed_office_files() {  # <id> <home>
-  local id=$1 home=$2 p pair
+seed_office_files() {  # <id> <home> [<expansion-home>]
+  local id=$1 home=$2 oh=${3:-$2} p pair
   mkdir -p "$home/config/admission" || return 1
   for pair in ${OFFICE_MERGE_VIA//,/ }; do
     set_project_token "$home/data/projects.md" "${pair%%=*}" merger "${pair#*=}" || return 1
@@ -1022,7 +1045,7 @@ seed_office_files() {  # <id> <home>
   for p in ${OFFICE_MERGE//,/ }; do
     set_project_token "$home/data/projects.md" "$p" admission "$p" || return 1
     seed_office_backup "$home/config/admission/$p" || return 1
-    fm_office_admission_expand "$home" < "$CONFIG/admission/$p" > "$home/config/admission/$p" || return 1
+    fm_office_admission_expand "$oh" < "$CONFIG/admission/$p" > "$home/config/admission/$p" || return 1
     if [ -f "$CONFIG/admission/$p.rules" ]; then
       seed_office_backup "$home/config/admission/$p.rules" || return 1
       cp "$CONFIG/admission/$p.rules" "$home/config/admission/$p.rules" || return 1
@@ -1208,6 +1231,13 @@ seed_home() {
   done
 
   cp "$SEED_PARENT_BRIEF" "$home/data/charter.md"
+  # An empty structured backlog, so the fleet inventory finds the file in every
+  # new home; an existing one is never touched (bin/fm-remote-home-provision.sh
+  # writes the same bytes on a remote home).
+  if [ ! -e "$home/data/backlog.md" ] && [ ! -L "$home/data/backlog.md" ]; then
+    seed_office_backup "$home/data/backlog.md" || return 1
+    printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md" || return 1
+  fi
   if [ "$office_set" = 1 ]; then
     seed_office_files "$id" "$home" || { echo "error: could not write office $id's files into $home" >&2; return 1; }
   fi
@@ -1242,10 +1272,34 @@ seed_home() {
   fi
 }
 
+# office_stage <id> <office-home> <stage-dir> <project>...: the office half of a
+# seed for a home on another host (bin/fm-remote-home-seed.sh). It runs the same
+# office checks as a local seed, with <office-home> only a path to name in the
+# classifier check, then applies the same files to <stage-dir>, which must hold
+# data/projects.md with one line for each project: the project tokens, the
+# admission copies and the .fm-office marker.
+office_stage() {
+  local id=$1 home=$2 stage=$3
+  shift 3
+  [ -f "$stage/data/projects.md" ] || { echo "error: $stage/data/projects.md is missing" >&2; return 1; }
+  validate_office_line "$id" "$@" || return 1
+  validate_office_admission "$home" token || return 1
+  SEED_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-home-seed.XXXXXX") || return 1
+  SEED_OFFICE_TARGETS="$SEED_BACKUP_DIR/office-targets"
+  : > "$SEED_OFFICE_TARGETS"
+  seed_office_files "$id" "$stage" "$home" || { rm -rf -- "$SEED_BACKUP_DIR"; return 1; }
+  rm -rf -- "$SEED_BACKUP_DIR"
+}
+
 case "${1:-}" in
   validate)
     [ $# -eq 1 ] || { usage; exit 1; }
     validate_registry
+    ;;
+  office-stage)
+    [ $# -ge 5 ] || { usage; exit 1; }
+    shift
+    office_stage "$@"
     ;;
   -h|--help|'')
     usage

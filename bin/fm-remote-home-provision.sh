@@ -17,6 +17,11 @@
 # reply promise, which the subsystem can only carry on the parent's own
 # filesystem, is never mistaken for one this child could hold - and the
 # .fm-secondmate-home marker commits the complete seed last.
+# An office manifest also carries office_b64 and one admission=<name>|<config>|<rules>
+# record per merge project, all base64. It requires the charter's "# Office authority"
+# heading, writes config/admission/<name> and its .rules copy, and writes the
+# .fm-office marker before the identity marker; a home is never converted between
+# a plain second mate and an office by re-provisioning, as bin/fm-home-seed.sh refuses.
 # A newly created home is removed on failure. An existing matching seeded home
 # is converged only through guarded ordinary-file updates and new project clones.
 set -eu
@@ -60,6 +65,7 @@ PROVISION_LOCK_HELD=0
 STAGE_HOME=
 CREATED_PROJECTS="$TMP/created-projects"
 : > "$CREATED_PROJECTS"
+: > "$TMP/owned-extra"
 release_provision_lock() {
   if [ "$PROVISION_LOCK_HELD" -eq 1 ]; then
     fm_lock_release "$PROVISION_LOCK"
@@ -90,6 +96,10 @@ rollback() {
       restore_owned_file data/projects.md || true
       restore_owned_file .fm-secondmate-home || true
       restore_owned_file .fm-secondmate-parent || true
+      restore_owned_file .fm-office || true
+      while IFS= read -r rel; do
+        [ -z "$rel" ] || restore_owned_file "$rel" || true
+      done < "$TMP/owned-extra"
       [ "$CREATED_BACKLOG" -eq 0 ] || rm -f -- "$FM_HOME/data/backlog.md"
     fi
   fi
@@ -111,6 +121,7 @@ CHARTER_B64=$(manifest_value "$TMP/manifest" charter_b64 || true)
 # host in that case rather than refusing the whole seed.
 PARENT_HOST_B64=$(manifest_value "$TMP/manifest" parent_host_b64 || true)
 COUNT=$(manifest_value "$TMP/manifest" project_count || true)
+OFFICE_B64=$(manifest_value "$TMP/manifest" office_b64 || true)
 base64_decode_to "$ID_B64" "$TMP/id" || die "manifest id is not valid base64"
 base64_decode_to "$CHARTER_B64" "$TMP/charter" || die "manifest charter is not valid base64"
 PARENT_HOST=
@@ -120,9 +131,16 @@ if [ -n "$PARENT_HOST_B64" ]; then
 fi
 ID=$(cat "$TMP/id")
 safe_id "$ID" || die "manifest carries an unsafe secondmate id"
+OFFICE=
+if [ -n "$OFFICE_B64" ]; then
+  base64_decode_to "$OFFICE_B64" "$TMP/office" || die "manifest office id is not valid base64"
+  OFFICE=$(cat "$TMP/office")
+  [ "$OFFICE" = "$ID" ] || die "manifest office id must equal the secondmate id"
+fi
 case "$COUNT" in ''|*[!0-9]*) die "manifest project count is invalid" ;; esac
 [ -s "$TMP/charter" ] || die "manifest charter is empty"
 [ -z "$(LC_ALL=C tr -cd '\000' < "$TMP/charter")" ] || die "manifest charter contains NUL bytes"
+[ -z "$OFFICE" ] || grep -q '^# Office authority' "$TMP/charter" || die "an office manifest's charter has no \"# Office authority\" heading"
 RECORDS=$(grep -c '^project=' "$TMP/manifest" 2>/dev/null || true)
 [ "$RECORDS" -eq "$COUNT" ] || die "manifest project count does not match its records"
 
@@ -165,7 +183,7 @@ if [ -e "$FM_HOME" ] || [ -L "$FM_HOME" ]; then
     fi
   done
   mkdir -p "$TMP/before/data"
-  for rel in data/charter.md data/projects.md .fm-secondmate-home .fm-secondmate-parent; do
+  for rel in data/charter.md data/projects.md .fm-secondmate-home .fm-secondmate-parent .fm-office; do
     existing="$FM_HOME/$rel"
     if [ -e "$existing" ] || [ -L "$existing" ]; then
       [ -f "$existing" ] && [ ! -L "$existing" ] || die "existing remote home has unsafe owned file: $rel"
@@ -177,6 +195,11 @@ if [ -e "$FM_HOME" ] || [ -L "$FM_HOME" ]; then
   EXISTING_HOME=1
   if [ -f "$FM_HOME/.fm-secondmate-home" ]; then
     [ "$(cat "$FM_HOME/.fm-secondmate-home")" = "$ID" ] || die "existing remote home belongs to another secondmate"
+    if [ -n "$OFFICE" ]; then
+      [ -f "$FM_HOME/.fm-office" ] || die "$FM_HOME is already a plain second mate; an office is seeded into a new home, never converted from one"
+    else
+      [ ! -e "$FM_HOME/.fm-office" ] || die "$FM_HOME is an office; re-seed it with --office $ID so its charter keeps the office authority heading"
+    fi
   elif find "$FM_HOME/data" "$FM_HOME/state" "$FM_HOME/projects" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null | grep -q .; then
     die "unmarked existing remote home contains operational data"
   fi
@@ -273,6 +296,44 @@ chmod 600 "$FM_HOME/data/charter.md.tmp.$$"
 mv -f -- "$FM_HOME/data/charter.md.tmp.$$" "$FM_HOME/data/charter.md"
 cp "$PROJECT_REG" "$FM_HOME/data/projects.md.tmp.$$"
 mv -f -- "$FM_HOME/data/projects.md.tmp.$$" "$FM_HOME/data/projects.md"
+if [ -n "$OFFICE" ]; then
+  mkdir -p "$FM_HOME/config/admission" || die "cannot create the remote admission directory"
+  while IFS= read -r record; do
+    case "$record" in admission=*) ;; *) continue ;; esac
+    old_ifs=$IFS
+    IFS='|'
+    read -r NAME_B64 CONFIG_B64 RULES_B64 <<EOF
+${record#admission=}
+EOF
+    IFS=$old_ifs
+    [ -n "$NAME_B64" ] && [ -n "$CONFIG_B64" ] || die "admission manifest record is incomplete"
+    base64_decode_to "$NAME_B64" "$TMP/admission-name" || die "admission name is not valid base64"
+    NAME=$(cat "$TMP/admission-name")
+    safe_id "$NAME" || die "admission name is unsafe: $NAME"
+    case "$NAME" in .*|*.rules) die "admission name is not usable: $NAME" ;; esac
+    for rel in "config/admission/$NAME" "config/admission/$NAME.rules"; do
+      if [ -e "$FM_HOME/$rel" ] || [ -L "$FM_HOME/$rel" ]; then
+        [ -f "$FM_HOME/$rel" ] && [ ! -L "$FM_HOME/$rel" ] || die "existing remote home has unsafe admission file: $rel"
+        if [ "$EXISTING_HOME" -eq 1 ]; then
+          mkdir -p "$(dirname "$TMP/before/$rel")"
+          cp -p -- "$FM_HOME/$rel" "$TMP/before/$rel" || die "cannot snapshot admission file: $rel"
+          : > "$TMP/before/$rel.present"
+        fi
+      fi
+      printf '%s\n' "$rel" >> "$TMP/owned-extra"
+    done
+    base64_decode_to "$CONFIG_B64" "$TMP/admission-config" || die "admission config is not valid base64"
+    cp "$TMP/admission-config" "$FM_HOME/config/admission/$NAME.tmp.$$"
+    mv -f -- "$FM_HOME/config/admission/$NAME.tmp.$$" "$FM_HOME/config/admission/$NAME"
+    if [ -n "$RULES_B64" ]; then
+      base64_decode_to "$RULES_B64" "$TMP/admission-rules" || die "admission rules are not valid base64"
+      cp "$TMP/admission-rules" "$FM_HOME/config/admission/$NAME.rules.tmp.$$"
+      mv -f -- "$FM_HOME/config/admission/$NAME.rules.tmp.$$" "$FM_HOME/config/admission/$NAME.rules"
+    fi
+  done < <(grep '^admission=' "$TMP/manifest" || true)
+  printf '%s\n' "$ID" > "$FM_HOME/.fm-office.tmp.$$"
+  mv -f -- "$FM_HOME/.fm-office.tmp.$$" "$FM_HOME/.fm-office"
+fi
 {
   printf 'schema=fm-secondmate-parent.v1\n'
   printf 'route=remote\n'

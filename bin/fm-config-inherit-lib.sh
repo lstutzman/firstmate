@@ -104,7 +104,7 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send typesafe-base-url typesafe-model typesafe-token-file crew-harness backlog-backend backend herdr-presentation-spaces herdr-project-groups startup-memory-budget trace-context launch-env-allowlist claude-permission-mode codex-approval-mode lavish-axi-host t3code-instances keep-ai-trailers supervision-host-off firstmate-role cpa-usage-host brief-include.md office-authority}"
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json dispatch-never-send typesafe-base-url typesafe-model typesafe-token-file crew-harness backlog-backend backend herdr-presentation-spaces herdr-project-groups startup-memory-budget trace-context launch-env-allowlist claude-permission-mode codex-approval-mode lavish-axi-host t3code-instances keep-ai-trailers supervision-host-off firstmate-role cpa-usage-host brief-include.md office-authority office-feed}"
 
 # The one inherited item composed from a primary base plus the home's own lines
 # (see the header) instead of copied whole.
@@ -131,6 +131,11 @@ FM_BRIEF_INCLUDE_FILE="brief-include.md"
 # and a plain secondmate that never held a record gains no file and no receipt.
 # The destination id comes from the caller's registry or task record, never
 # from the destination home; with no id the payload is an absence.
+#
+# office-feed carries no receipt and only ever reaches a remote office: the
+# remote route's sender builds it per destination (fm_office_feed_payload in
+# bin/fm-office-feed-lib.sh, which owns what it holds), and the primary has no
+# such file of its own, so a local route mirrors it as an absence.
 FM_RECEIPT_INHERITABLE_CONFIG="firstmate-role office-authority"
 
 # Items whose value is a home-SESSION enablement decision rather than durable

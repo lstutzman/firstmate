@@ -493,7 +493,7 @@ test_consumer_office_must_read_the_digest() {
 
   printf -- '- navigator - nav (host: deepthought; root: /r; home: /r/navigator; scope: office; projects: PropertyCompass2; added 2026-11-04)\n' > "$home/data/secondmates.md"
   out=$(officer "$home" ensure)
-  assert_contains "$out" 'consumer office navigator is remote' "a remote consumer office is reported"
+  assert_not_contains "$out" 'consumer office navigator' "a remote consumer office reads the pushed copy of the digest, so it is accepted"
 
   : > "$home/data/secondmates.md"
   sed -i.bak 's/consumer: navigator;/consumer: .*;/' "$home/data/officers.md" && rm -f "$home/data/officers.md.bak"

@@ -24,6 +24,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 # shellcheck source=bin/fm-config-inherit-lib.sh
 . "$SCRIPT_DIR/fm-config-inherit-lib.sh"
+# shellcheck source=bin/fm-office-feed-lib.sh
+. "$SCRIPT_DIR/fm-office-feed-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 sha256_file() {
@@ -40,6 +42,9 @@ case "$GENERATION" in ''|*[!0-9]*) die "generation must be a positive integer" ;
 [ "${#GENERATION}" -le 18 ] && [ "$GENERATION" -ge 1 ] || die "generation is outside the supported range"
 REMOTE=$(secondmate_registry_field "$DATA/secondmates.md" "$ID" remote 2>/dev/null || true)
 [ "$REMOTE" = 1 ] || die "secondmate $ID is not a remote route"
+REMOTE_HOME=$(secondmate_registry_field "$DATA/secondmates.md" "$ID" home 2>/dev/null || true)
+# FM_OFFICE_NOW pins the office feed's clock for tests, as in bin/fm-office.sh.
+case "${FM_OFFICE_NOW:-}" in ''|*[!0-9]*) FEED_NOW=$(date +%s) ;; *) FEED_NOW=$FM_OFFICE_NOW ;; esac
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-remote-inherit-push.XXXXXX") || die "cannot create inheritance staging directory"
 trap 'rm -rf -- "$TMP"' EXIT
 trap 'exit 143' TERM
@@ -77,7 +82,24 @@ while IFS= read -r rel; do
       # A remote home cannot be read from here, so the record is published
       # from data/offices.md alone (bin/fm-office-authority-lib.sh).
       source="$TMP/office-authority.resolved"
-      if ! fm_office_inherit_payload "$CONFIG" "$DATA" "$ID" "" "$source"; then
+      if ! fm_office_inherit_payload "$CONFIG" "$DATA" "$ID" "" "$source" "$REMOTE_HOME"; then
+        printf 'error: %s: %s\n' "$rel" "$FM_OFFICE_ERROR" >&2
+        FAILED=1
+        rm -f -- "$source"
+      fi
+      ;;
+    config/office-feed)
+      # The remote office's copy of its office line and lane digests
+      # (bin/fm-office-feed-lib.sh); an absence for any other destination.
+      # A copy over its size limit leaves the remote office's last copy in place
+      # and fails nothing here; bin/fm-office.sh publish, feed, feed-sweep and ensure report it.
+      source="$TMP/office-feed.resolved"
+      feed_rc=0
+      fm_office_feed_payload "$FM_HOME" "$DATA" "$ID" "$REMOTE_HOME" "$source" "$FEED_NOW" || feed_rc=$?
+      if [ "$feed_rc" -eq 2 ]; then
+        printf 'skip\n' > "$TMP/item.$N.plan"
+        continue
+      elif [ "$feed_rc" -ne 0 ]; then
         printf 'error: %s: %s\n' "$rel" "$FM_OFFICE_ERROR" >&2
         FAILED=1
         rm -f -- "$source"
@@ -194,7 +216,7 @@ while [ "$i" -le "$launched" ]; do
   fi
   i=$((i + 1))
 done
-# A planning failure (the office authority record could not be built) fails the
+# A planning failure (an office authority record or office feed could not be built) fails the
 # push even when every item that was sent succeeded.
 if [ -n "$FAILED" ] && [ "$status" -eq 0 ]; then status=1; fi
 exit "$status"
