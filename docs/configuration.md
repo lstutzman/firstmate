@@ -1802,6 +1802,7 @@ The check only wakes the office; the sync itself is ordinary dispatched work.
 While a ratchet PR for that file is still open the office skips the day; otherwise it dispatches one ordinary ship worker for that file, which fixes it until `bin/fm-lint-ratchet.sh check <file>` passes, retires it with `bin/fm-lint-ratchet.sh retire <file>`, and opens one pull request.
 
 `research` is the weekly tooling-research lane: once per complete run directory under `config/tooling-research-runs` (default the Slarti home's `data/tooling-research/runs`) it appends the run's "Lines for knowledge.md" to `config/tooling-research-knowledge` (default `data/tooling-research/knowledge.md`) and writes a digest of the run's proposals, with once a week the adopted-or-not follow-through of the `data/*/report.md` reports of the main and office homes.
+It leaves out the run's bookmark copy, delivers none of the runs already present when it first runs, lists any line it could not place in the digest, and reports a helper failure once failures span an hour.
 It starts and files nothing, and a malformed `suggestions.json` is reported rather than guessed; `bin/fm-office.sh` owns the wake line and `bin/fm-office-research.py` the mechanics and records.
 
 A local office home also carries a `.fm-office` marker holding the office id and a `data/charter.md` with a `# Office authority` heading.

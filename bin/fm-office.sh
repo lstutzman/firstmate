@@ -147,7 +147,11 @@
 #                    data/tooling-research/knowledge.md) and writes data/office/research/<run>.md
 #                    with each proposal's id and text, plus once per ISO week the follow-through of
 #                    the data/*/report.md reports of the parent and office homes. A malformed
-#                    suggestions.json is named in the line, never guessed. It starts and files
+#                    suggestions.json is named in the line, never guessed. The first check, before
+#                    data/office/research.seen exists, records the runs already there and
+#                    delivers none. A helper failure or timeout is silent until failures span an
+#                    hour, then "office <id>: research check failing since <time> (exit <n>): <last
+#                    line>" once per streak (record data/office/research.fail). It starts and files
 #                    nothing; bin/fm-office-research.py owns the mechanics and
 #                    data/office/research.seen the delivered runs.
 #
@@ -755,7 +759,7 @@ check_ratchet() {
 
 # check_research: hands the next tooling-research run to bin/fm-office-research.py with this office's paths.
 check_research() {
-  local runs knowledge homes=() id line home h args
+  local runs knowledge homes=() id line home h args out rc
   runs=$(grep -Ev '^[[:space:]]*(#|$)' "$CONFIG/tooling-research-runs" 2>/dev/null | head -n 1)
   knowledge=$(grep -Ev '^[[:space:]]*(#|$)' "$CONFIG/tooling-research-knowledge" 2>/dev/null | head -n 1)
   args=(--office "$OFFICE_ID" --runs "${runs:-/home/lee/fm-homes/slarti/data/tooling-research/runs}"
@@ -770,7 +774,29 @@ check_research() {
     homes+=("$home")
   done < <(sed -n 's/^- \([^ ]*\) - .*/\1/p' "$OFFICE_PARENT/data/offices.md" 2>/dev/null)
   for h in "${homes[@]}"; do args+=(--home "$h"); done
-  bounded 20 python3 -I "$SCRIPT_DIR/fm-office-research.py" "${args[@]}" 2>/dev/null || true
+  out=$(bounded 20 python3 -I "$SCRIPT_DIR/fm-office-research.py" "${args[@]}" 2>&1) && rc=0 || rc=$?
+  if [ "$rc" = 0 ]; then
+    rm -f "$DATA/office/research.fail"
+    [ -z "$out" ] || printf '%s\n' "$out"
+    return 0
+  fi
+  research_fail "$rc" "$(printf '%s\n' "$out" | tail -n 1)"
+}
+
+# research_fail <exit> <last output line>: marks the lane failed until a check succeeds; reports once when failures span an hour.
+research_fail() {
+  local rec="$DATA/office/research.fail" first now
+  now=$(now_epoch)
+  first=$(cat "$rec" 2>/dev/null || true)
+  case "$first" in
+    *reported*) return 0 ;;
+    ''|*[!0-9]*) mkdir -p "$DATA/office" 2>/dev/null; printf '%s\n' "$now" > "$rec" 2>/dev/null; return 0 ;;
+  esac
+  [ $((now - first)) -ge 3600 ] || return 0
+  printf '%s reported\n' "$first" > "$rec" 2>/dev/null || return 0
+  printf 'office %s: research check failing since %s (exit %s%s): %s; nothing is delivered until it succeeds\n' \
+    "$OFFICE_ID" "$(date -u -d "@$first" +%Y-%m-%dT%H:%MZ 2>/dev/null || date -u -r "$first" +%Y-%m-%dT%H:%MZ)" "$1" \
+    "$([ "$1" = 124 ] && printf ', timed out after 20s')" "${2:-no output}"
 }
 
 cmd_check() {

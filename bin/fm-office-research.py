@@ -2,8 +2,12 @@
 """Body of the office `research` source (bin/fm-office.sh check research).
 
 Delivers the oldest tooling-research run directory this office has not yet been
-told about: appends the run's "Lines for knowledge.md" to the office's knowledge
-file, writes a digest the office can act on, and prints one wake line.
+told about: appends the run's "Lines for knowledge.md" (except its bookmark copy,
+which the job keeps itself) to the office's knowledge file, writes a digest the
+office can act on, and prints one wake line. A line with no matching section is
+listed in the digest and counted in the wake line. The first call, before
+<record>/research.seen exists, records the complete runs already there as seen
+and delivers none of them.
 Starts and files nothing. Silent when there is nothing new or the run is not
 complete (report.md, suggestions.json and result.json must all exist).
 
@@ -12,7 +16,8 @@ after the knowledge lines are appended, and a knowledge line already in the file
 (whole-line match) is never appended again, so a crash between the two steps
 cannot duplicate it. Once per ISO week the digest also lists the research and
 scout reports found under data/*/report.md of every --home, with whether another
-backlog line or a commit in --code-root names each (adopted) or not.
+backlog line or a commit in --code-root names each, by its task name or a PC id
+in its recommendation section (adopted), or not.
 
 usage: fm-office-research.py --office ID --runs DIR --knowledge FILE --record DIR
        --code-root DIR [--home DIR]... [--now EPOCH]
@@ -25,14 +30,14 @@ import re
 import subprocess
 import sys
 
-SECTIONS = {"articles read": "## Articles read", "bookmarks": "## Bookmark", "findings": "## Findings"}
+SECTIONS = {"articles read": "## Articles read", "findings": "## Findings"}
 
 
 def read(path):
     try:
         with open(path, encoding="utf-8") as handle:
             return handle.read()
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
@@ -45,15 +50,16 @@ def write_atomic(path, text):
 
 
 def knowledge_lines(report):
-    """The run's 'Lines for knowledge.md' as [(section heading or None, bullet line)]."""
+    """The run's 'Lines for knowledge.md' as [(section heading or None, bullet line)], without its bookmark copy."""
     match = re.search(r"^## Lines for knowledge\.md\s*$(.*?)(?=^## |\Z)", report, re.M | re.S)
-    out, heading = [], None
+    out, heading, bookmarks = [], None, False
     for line in (match.group(1).splitlines() if match else []):
         if line.startswith("- "):
-            out.append((heading, line.rstrip()))
+            if not bookmarks:
+                out.append((heading, line.rstrip()))
         elif line.strip():
             label = re.split(r"[:(]", line.strip().lower())[0].strip()
-            heading = SECTIONS.get(label)
+            heading, bookmarks = SECTIONS.get(label), label == "bookmarks"
     return out
 
 
@@ -68,7 +74,7 @@ def append_lines(path, lines):
     for heading, line in lines:
         if line in present:
             continue
-        start = next((i for i, r in enumerate(rows) if heading and r.strip() == heading), None)
+        start = next((i for i, r in enumerate(rows) if heading and r.strip().startswith(heading)), None)
         if start is None:
             unplaced.append(line)
             continue
@@ -115,7 +121,8 @@ def follow_through(homes, code_root):
             if not rec:
                 skipped += 1
                 continue
-            names = {task, *re.findall(r"\bPC-\d+\b", text)}
+            section = re.split(r"^#", text[rec.start(1):], maxsplit=1, flags=re.M)[0]
+            names = {task, *re.findall(r"\bPC-\d+\b", section)}
             hit = any(re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(n), line) and not own_item(line, task)
                       for n in names for line in backlog)
             if not hit:
@@ -125,7 +132,7 @@ def follow_through(homes, code_root):
             adopted += hit
             if not hit:
                 rows.append("- %s (%s): %s" % (task, os.path.basename(home), " ".join(rec.group(1).split())[:240]))
-    head = "## Research follow-through\n\nAdopted (a backlog line or commit names the report or a PC id in it): %d. No recommendation heading: %d.\nNot adopted: %d (evidence, not proof; the office decides).\n" % (adopted, skipped, len(rows))
+    head = "## Research follow-through\n\nAdopted (a backlog line or commit names the report or a PC id in its recommendation): %d. No recommendation heading: %d.\nNot adopted: %d (evidence, not proof; the office decides).\n" % (adopted, skipped, len(rows))
     return head + ("\n" + "\n".join(rows) + "\n" if rows else "")
 
 
@@ -141,13 +148,17 @@ def main():
     args = ap.parse_args()
 
     seen_path = os.path.join(args.record, "research.seen")
-    seen = set((read(seen_path) or "").split())
+    recorded = read(seen_path)
+    seen = set((recorded or "").split())
     try:
         runs = sorted(r for r in os.listdir(args.runs) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", r))
     except OSError:
         return 0
-    run = next((r for r in runs if r not in seen
-                and all(os.path.isfile(os.path.join(args.runs, r, f)) for f in ("report.md", "suggestions.json", "result.json"))), None)
+    complete = [r for r in runs if all(os.path.isfile(os.path.join(args.runs, r, f)) for f in ("report.md", "suggestions.json", "result.json"))]
+    if recorded is None:
+        write_atomic(seen_path, "".join(r + "\n" for r in complete))
+        return 0
+    run = next((r for r in complete if r not in seen), None)
     if run is None:
         return 0
     folder = os.path.join(args.runs, run)
@@ -159,7 +170,7 @@ def main():
     week_path = os.path.join(args.record, "research.week")
     doc = ["# Tooling research %s\n\nRun: %s\nKnowledge lines appended: %d to %s\n" % (run, folder, added, args.knowledge)]
     if unplaced:
-        doc.append("Not appended (no matching section in the knowledge file; place by hand): %d\n" % len(unplaced))
+        doc.append("Not appended (no matching section in the knowledge file; place by hand): %d\n\n%s\n" % (len(unplaced), "\n".join(unplaced)))
     doc.append("## Proposals\n")
     if problem:
         doc.append("suggestions.json is unreadable: %s. Read %s yourself; nothing was guessed.\n" % (problem, os.path.join(folder, "suggestions.json")))
@@ -167,12 +178,13 @@ def main():
         doc.append("- %s (rank %s, effort %s): %s\n  %s\n" % (p["id"], p.get("rank", "?"), p.get("effort", "?"), p.get("title", ""), " ".join(str(p.get("tldr", "")).split())))
     if (read(week_path) or "").strip() != week:
         doc.append("\n" + follow_through(args.home, args.code_root))
-        write_atomic(week_path, week + "\n")
     digest = os.path.join(args.record, "research", run + ".md")
     write_atomic(digest, "\n".join(doc))
+    write_atomic(week_path, week + "\n")
     write_atomic(seen_path, "\n".join(sorted(seen | {run})) + "\n")
-    print("office %s: research %s: %s, %d knowledge line(s) appended; digest %s" % (
-        args.office, run, "suggestions.json unreadable" if problem else "%d proposal(s)" % len(items), added, digest))
+    print("office %s: research %s: %s, %d knowledge line(s) appended%s; digest %s" % (
+        args.office, run, "suggestions.json unreadable" if problem else "%d proposal(s)" % len(items), added,
+        ", %d not placed (listed in the digest)" % len(unplaced) if unplaced else "", digest))
     return 0
 
 
