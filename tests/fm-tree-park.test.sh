@@ -94,7 +94,7 @@ SH
   cat > "$dir/fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 [ "${1:-} ${2:-}" = "pr view" ] || exit 2
-cat "$FM_TEST_LAB/gh-head"
+printf '%s %s\n' "${FM_TEST_GH_STATE:-OPEN}" "$(cat "$FM_TEST_LAB/gh-head")"
 SH
   cat > "$dir/fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash
@@ -341,23 +341,78 @@ test_steer_unparks_on_the_recorded_head() {
   pass "a steer to a parked task leases a fresh copy at the recorded PR head, relaunches the worker there, then records the steer"
 }
 
+# push_moved_head <dir>: the merger home restacks the PR branch while the task
+# is parked; prints the new head, which the forge now reports.
+push_moved_head() {
+  local dir=$1 head
+  git -C "$dir/project" checkout -q "$BRANCH"
+  git -C "$dir/project" commit -q --allow-empty -m restacked
+  git -C "$dir/project" push -q origin "$BRANCH"
+  head=$(git -C "$dir/project" rev-parse HEAD)
+  git -C "$dir/project" checkout -q --detach
+  printf '%s\n' "$head" > "$dir/gh-head"
+  printf '%s\n' "$head"
+}
+
+test_steer_follows_a_moved_pr_head() {
+  local dir old new out wt
+  dir=$(make_lab unpark-moved)
+  old=$(cat "$dir/gh-head")
+  park "$dir" >/dev/null 2>"$dir/err" || fail "unpark-moved: setup park failed: $(cat "$dir/err")"
+  new=$(push_moved_head "$dir")
+  out=$(lab_env "$dir" "$dir/root/bin/fm-send.sh" "$ID" "fix the finding" 2>&1) \
+    || fail "unpark-moved: a steer to a parked task whose PR head moved was refused: $out"
+  wt=$(meta_value "$dir" worktree)
+  [ -n "$wt" ] && [ "$(meta_value "$dir" parked)" != 1 ] || fail "unpark-moved: the task was not given a fresh copy"
+  [ "$(git -C "$wt" rev-parse HEAD)" = "$new" ] || fail "unpark-moved: the fresh copy is not at the moved PR head"
+  grep -qx "relaunch worktree=$wt head=$new branch=$BRANCH" "$dir/control.log" \
+    || fail "unpark-moved: the worker was not relaunched at the moved head: $(cat "$dir/control.log")"
+  assert_grep "moved from $old to $new" "$dir/relaunch-note" "unpark-moved: the relaunch note does not tell the worker the head moved"
+  grep -rqF 'fix the finding' "$dir/home/state/$ID.inbox" || fail "unpark-moved: the steer was not recorded"
+
+  # With the forge unreadable, the pushed branch head is the one to follow.
+  dir=$(make_lab unpark-moved-noforge)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "unpark-moved-noforge: setup park failed: $(cat "$dir/err")"
+  new=$(push_moved_head "$dir")
+  printf 'unreadable\n' > "$dir/gh-head"
+  out=$(lab_env "$dir" "$dir/root/bin/fm-send.sh" "$ID" "fix the finding" 2>&1) \
+    || fail "unpark-moved-noforge: an unreadable forge refused the unpark: $out"
+  [ "$(git -C "$(meta_value "$dir" worktree)" rev-parse HEAD)" = "$new" ] \
+    || fail "unpark-moved-noforge: the fresh copy is not at origin's moved head"
+  pass "a steer to a parked task whose PR head moved checks out the new head and tells the worker it moved"
+}
+
+assert_stays_parked() {  # <dir> <label> <returns expected in treehouse.log>
+  local dir=$1 label=$2
+  [ "$(meta_value "$dir" parked)" = 1 ] && [ -z "$(meta_value "$dir" worktree)" ] \
+    || fail "$label: a refused unpark did not leave the task parked"
+  ! ls "$dir/home/state/$ID.inbox/"*.msg >/dev/null 2>&1 || fail "$label: a refused unpark still recorded the steer"
+  ! grep -q relaunch "$dir/control.log" || fail "$label: a refused unpark relaunched the worker"
+  [ "$(grep -c '^return' "$dir/treehouse.log")" = "$3" ] || fail "$label: the fresh slot was not returned: $(cat "$dir/treehouse.log")"
+}
+
 test_refused_unpark_stays_parked_and_sends_nothing() {
   local dir out
-  dir=$(make_lab unpark-moved)
-  park "$dir" >/dev/null 2>"$dir/err" || fail "unpark-moved: setup park failed: $(cat "$dir/err")"
-  printf '%s\n' 2222222222222222222222222222222222222222 > "$dir/gh-head"
+  dir=$(make_lab unpark-merged)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "unpark-merged: setup park failed: $(cat "$dir/err")"
+  out=$(FM_TEST_GH_STATE=MERGED lab_env "$dir" "$dir/root/bin/fm-send.sh" "$ID" "fix the finding" 2>&1) \
+    && fail "unpark-merged: a steer was sent to a task whose PR merged: $out"
+  case "$out" in *"$URL is merged"*) ;; *) fail "unpark-merged: the refusal does not say the PR merged: $out" ;; esac
+  assert_stays_parked "$dir" unpark-merged 2
+
+  dir=$(make_lab unpark-branch-gone)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "unpark-branch-gone: setup park failed: $(cat "$dir/err")"
+  git -C "$dir/project" push -q origin --delete "$BRANCH"
   out=$(lab_env "$dir" "$dir/root/bin/fm-send.sh" "$ID" "fix the finding" 2>&1) \
-    && fail "unpark-moved: a steer was sent although the PR head moved: $out"
-  [ "$(meta_value "$dir" parked)" = 1 ] && [ -z "$(meta_value "$dir" worktree)" ] \
-    || fail "unpark-moved: a refused unpark did not leave the task parked"
-  ! ls "$dir/home/state/$ID.inbox/"*.msg >/dev/null 2>&1 || fail "unpark-moved: a refused unpark still recorded the steer"
-  ! grep -q relaunch "$dir/control.log" || fail "unpark-moved: a refused unpark relaunched the worker"
-  [ "$(grep -c '^return' "$dir/treehouse.log")" = 2 ] || fail "unpark-moved: the fresh slot was not returned: $(cat "$dir/treehouse.log")"
+    && fail "unpark-branch-gone: a steer was sent although the PR branch is gone: $out"
+  case "$out" in *"$BRANCH is gone"*) ;; *) fail "unpark-branch-gone: the refusal does not say the branch is gone: $out" ;; esac
+  assert_stays_parked "$dir" unpark-branch-gone 2
 
   dir=$(make_lab unpark-relaunch-fails)
   park "$dir" >/dev/null 2>"$dir/err" || fail "unpark-relaunch-fails: setup park failed: $(cat "$dir/err")"
   out=$(FM_TEST_CONTROL_RELAUNCH_RC=1 lab_env "$dir" "$dir/root/bin/fm-send.sh" "$ID" "fix the finding" 2>&1) \
     && fail "unpark-relaunch-fails: a steer was sent with no relaunched worker: $out"
+  case "$out" in *"so it was parked again"*) ;; *) fail "unpark-relaunch-fails: the failure does not say it was parked again: $out" ;; esac
   [ "$(meta_value "$dir" parked)" = 1 ] && [ -z "$(meta_value "$dir" worktree)" ] \
     || fail "unpark-relaunch-fails: a failed relaunch did not leave the task parked"
   ! ls "$dir/home/state/$ID.inbox/"*.msg >/dev/null 2>&1 || fail "unpark-relaunch-fails: the steer was recorded with no worker"
@@ -365,7 +420,43 @@ test_refused_unpark_stays_parked_and_sends_nothing() {
   out=$(lab_env "$dir" "$dir/root/bin/fm-send.sh" "$ID" --key Enter 2>&1) \
     && fail "unpark-relaunch-fails: a key was sent to a parked task: $out"
   case "$out" in *parked*) ;; *) fail "unpark-relaunch-fails: the key refusal does not say the task is parked: $out" ;; esac
-  pass "an unpark that cannot match the head or relaunch the worker leaves the task parked and records no steer"
+  pass "an unpark whose PR merged, whose branch is gone, or whose worker cannot relaunch leaves the task parked and records no steer"
+}
+
+test_failed_rollback_names_the_copy_it_still_holds() {
+  local dir out fresh
+  dir=$(make_lab unpark-rollback-fails)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "unpark-rollback-fails: setup park failed: $(cat "$dir/err")"
+  fresh="$dir/pool/2/project"
+  out=$(FM_TEST_CONTROL_RELAUNCH_RC=1 FM_TEST_TH_RETURN_RC=1 lab_env "$dir" "$dir/root/bin/fm-send.sh" "$ID" "fix the finding" 2>&1) \
+    && fail "unpark-rollback-fails: a steer was sent with no relaunched worker: $out"
+  case "$out" in *"so it was parked again"*) fail "unpark-rollback-fails: an unfinished rollback was reported as finished: $out" ;; esac
+  case "$out" in *"could not be returned"*"$fresh"*|*"$fresh"*"could not be returned"*) ;;
+    *) fail "unpark-rollback-fails: the failure does not name the fresh copy still leased: $out" ;; esac
+  [ "$(meta_value "$dir" parked_worktree)" = "$fresh" ] || fail "unpark-rollback-fails: the record does not name the copy it still holds"
+  FM_HOME="$dir/home" fm_treehouse_slot_owner_state "$fresh" "$ID"
+  [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] || fail "unpark-rollback-fails: the claim on a still-leased copy was dropped"
+  pass "a rollback whose slot return fails keeps the claim and names the copy still leased"
+}
+
+test_watcher_sweep_parks_and_wakes_once_on_a_report() {
+  local dir out i
+  dir=$(make_lab watch)
+  # A report a failed park left for the sweep to surface; its wake ends the
+  # watcher's cycle.
+  printf '%s\n' "$ID's agent was stopped to park its copy, but lab failure" > "$dir/home/state/$ID.park-report"
+  out=$(lab_env "$dir" env FM_CHECK_INTERVAL=0 FM_POLL=0.02 FM_HEARTBEAT=999999 FM_SIGNAL_GRACE=0 \
+    perl -e 'alarm 60; exec @ARGV' "$dir/root/bin/fm-watch.sh" 2>"$dir/watch.err") || fail "watch: the watcher failed: $(cat "$dir/watch.err")"
+  [ "$(printf '%s\n' "$out" | grep -c 'check: tree-park: ')" = 1 ] \
+    || fail "watch: the sweep's report did not wake the home exactly once: $out"
+  [ "$(grep -c 'check: tree-park: ' "$dir/home/state/.wake-queue" 2>/dev/null)" -le 1 ] \
+    || fail "watch: the report was queued as more than one wake"
+  case "$out" in *"check: tree-park: $ID's agent was stopped to park its copy, but lab failure"*) ;;
+    *) fail "watch: the wake does not carry the report: $out" ;; esac
+  i=0
+  until [ "$(meta_value "$dir" parked)" = 1 ] || [ "$i" -ge 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "watch: the watcher's sweep did not park the finished ship: $(cat "$dir/home/state/$ID.park-log" 2>/dev/null)"
+  pass "the watcher's check sweep parks a finished ship and wakes once on a park report"
 }
 
 test_teardown_after_merge_on_a_parked_task() {
@@ -390,5 +481,8 @@ fm_test_run \
   test_refuses_each_unsafe_copy \
   test_transient_refusals_are_retried_on_a_later_sweep \
   test_steer_unparks_on_the_recorded_head \
+  test_steer_follows_a_moved_pr_head \
   test_refused_unpark_stays_parked_and_sends_nothing \
+  test_failed_rollback_names_the_copy_it_still_holds \
+  test_watcher_sweep_parks_and_wakes_once_on_a_report \
   test_teardown_after_merge_on_a_parked_task

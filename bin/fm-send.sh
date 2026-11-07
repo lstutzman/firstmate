@@ -676,7 +676,7 @@ done
 # A parked task (bin/fm-tree-park.sh) returned its copy to the pool while its
 # PR waited on another home's merger, so it has no agent to read a steer. Text
 # to it first gets a fresh copy and a relaunched worker from that script, and
-# only then is recorded; a refused unpark sends nothing. A key has no agent to
+# only then is recorded; a refused or failed unpark sends nothing. A key has no agent to
 # reach, so it is refused.
 if [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] && [ "$TARGET_BACKEND" != remote ] &&
   [ "$(fm_meta_get "$TARGET_META" parked)" = 1 ]; then
@@ -687,7 +687,7 @@ if [ -n "$TARGET_SELECTOR" ] && [ -n "$TARGET_META" ] && [ "$TARGET_BACKEND" != 
   fi
   if [ -n "$(printf '%s' "$*" | tr -d '[:space:]')" ]; then
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-tree-park.sh" unpark "$PARKED_TASK_ID" >&2 || {
-      echo "error: steer not sent to $PARKED_TASK_ID: it is parked and could not be given a fresh copy and worker; it stays parked" >&2
+      echo "error: steer not sent to $PARKED_TASK_ID: it was parked and could not be given a fresh copy and worker; the error above says what its record and the pool hold now" >&2
       exit 1
     }
     fm_send_resolve_target "$RAW_TARGET" || exit 1

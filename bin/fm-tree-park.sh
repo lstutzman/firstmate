@@ -62,13 +62,17 @@
 # Under the project lock it first leases in place every slot this home's
 # records still name (fm_treehouse_lease_recorded_slots, as bin/fm-spawn.sh
 # does before its own get), then leases a fresh slot (`treehouse get --lease`) and
-# claims it, fetches the PR branch, and requires origin/<branch> and the forge's
-# PR head to both equal parked_head before it checks the branch out there. It
-# then restores worktree= and drops the parked fields, and relaunches the worker
-# through `bin/fm-control.sh <id> relaunch --note-file`, whose note tells the
-# replacement that its copy is fresh and its steer is in its inbox. Any failure
-# returns the fresh slot and restores the parked record, so a refused unpark
-# leaves the task exactly as parked and exits nonzero.
+# claims it, fetches the PR branch, and checks out the PR's current head there:
+# the forge's PR head, or origin/<branch> when the forge cannot be read. That
+# head may have moved since the park (a restack by the merger home, an update
+# from the forge); the parked copy held nothing unpushed, so no work is lost. It
+# refuses when the forge reports the PR closed or merged or the branch is gone.
+# It then restores worktree= and drops the parked fields, and relaunches the
+# worker through `bin/fm-control.sh <id> relaunch --note-file`, whose note tells
+# the replacement that its copy is fresh, names a moved head, and says its steer
+# is in its inbox. Any failure returns the fresh slot and restores the parked
+# record, so a refused unpark leaves the task parked and exits nonzero; when the
+# rollback itself cannot finish, the error names the copy still leased.
 #
 # bin/fm-teardown.sh treats a parked record as one with no copy to return.
 # Exit codes: 0 done (or nothing to do), 1 refused or failed, 2 usage.
@@ -175,7 +179,7 @@ park_copy_dirt() {  # <worktree>
 # The copy is clean, on a branch, and its HEAD equals origin/<branch> after a
 # fetch and the forge's PR head. Sets PARK_BRANCH and PARK_HEAD.
 park_copy_preserved() {
-  local dirt remote forge
+  local dirt remote
   PARK_TRANSIENT=0
   dirt=$(park_copy_dirt "$PARK_WT")
   [ -z "$dirt" ] || { PARK_WHY="copy has uncommitted changes"; return 1; }
@@ -187,16 +191,19 @@ park_copy_preserved() {
     || { PARK_WHY="origin/$PARK_BRANCH does not exist"; return 1; }
   [ -z "$(git -C "$PARK_WT" rev-list "$remote..HEAD" 2>/dev/null)" ] || { PARK_WHY="copy has commits not on origin/$PARK_BRANCH"; return 1; }
   [ "$remote" = "$PARK_HEAD" ] || { PARK_WHY="copy head $PARK_HEAD is not origin/$PARK_BRANCH $remote"; return 1; }
-  forge=$(park_forge_head "$PARK_WT") || { PARK_WHY="the forge's PR head cannot be read"; PARK_TRANSIENT=1; return 1; }
-  [ "$forge" = "$PARK_HEAD" ] || { PARK_WHY="copy head $PARK_HEAD is not the PR head $forge"; return 1; }
+  park_forge_pr "$PARK_WT" || { PARK_WHY="the forge's PR head cannot be read"; PARK_TRANSIENT=1; return 1; }
+  [ "$FORGE_HEAD" = "$PARK_HEAD" ] || { PARK_WHY="copy head $PARK_HEAD is not the PR head $FORGE_HEAD"; return 1; }
 }
 
-park_forge_head() {  # <dir>
-  local head
+park_forge_pr() {  # <dir>: sets FORGE_STATE and FORGE_HEAD from the forge
+  local out
+  FORGE_STATE=''
+  FORGE_HEAD=''
   fm_pr_url_parse "$PARK_URL" && [ "$FM_PR_PROVIDER" = github ] || return 1
-  head=$(cd "$1" && fm_run_timed 30 gh pr view "$PARK_URL" --json headRefOid -q .headRefOid 2>/dev/null) || return 1
-  fm_pr_head_valid "$head" || return 1
-  printf '%s\n' "$head"
+  out=$(cd "$1" && fm_run_timed 30 gh pr view "$PARK_URL" --json state,headRefOid -q '.state + " " + .headRefOid' 2>/dev/null) || return 1
+  FORGE_STATE=${out%% *}
+  FORGE_HEAD=${out#* }
+  [ -n "$FORGE_STATE" ] && fm_pr_head_valid "$FORGE_HEAD" || return 1
 }
 
 park_agent_idle() {
@@ -288,7 +295,7 @@ EOF
 }
 
 cmd_park() {
-  local out
+  local out parked_at
   park_candidate || refuse "$ID: $PARK_WHY"
   park_agent_idle || retry_later "$ID: $PARK_WHY"
   if ! park_copy_preserved; then
@@ -314,9 +321,10 @@ cmd_park() {
     exit 1
   fi
   fm_treehouse_slot_owner_release "$PARK_WT" "$ID"
+  parked_at=$(date +%s)
   if ! park_rewrite_meta 'worktree|parked|parked_branch|parked_head|parked_worktree|parked_at' \
-      parked=1 "parked_branch=$PARK_BRANCH" "parked_head=$PARK_HEAD" "parked_worktree=$PARK_WT" "parked_at=$(date +%s)"; then
-    park_report "$ID's copy $PARK_WT was returned to the pool, but its record could not be rewritten and still names that slot; set parked=1, parked_branch=$PARK_BRANCH, parked_head=$PARK_HEAD and remove worktree= in $META by hand"
+      parked=1 "parked_branch=$PARK_BRANCH" "parked_head=$PARK_HEAD" "parked_worktree=$PARK_WT" "parked_at=$parked_at"; then
+    park_report "$ID's copy $PARK_WT was returned to the pool, but its record could not be rewritten and still names that slot; in $META by hand remove worktree= and add, before pr_at= (or pr= when there is none), parked=1, parked_branch=$PARK_BRANCH, parked_head=$PARK_HEAD, parked_worktree=$PARK_WT and parked_at=$parked_at"
     exit 1
   fi
   git -C "$PARK_PROJ" branch -D "$PARK_BRANCH" >/dev/null 2>&1 || true
@@ -324,23 +332,33 @@ cmd_park() {
 }
 
 UNPARK_WT=
+# Return the fresh slot and drop its claim. A slot treehouse would not take back
+# stays leased and keeps its claim, so nothing else is handed it, and this fails.
 unpark_rollback() {
   [ -n "$UNPARK_WT" ] || return 0
-  ( cd "$PARK_PROJ" && fm_run_timed 120 treehouse return --force "$UNPARK_WT" ) >/dev/null 2>&1 \
-    || printf 'warning: could not return the fresh copy %s for %s; run treehouse return --force %s from %s\n' "$UNPARK_WT" "$ID" "$UNPARK_WT" "$PARK_PROJ" >&2
+  if ! ( cd "$PARK_PROJ" && fm_run_timed 120 treehouse return --force "$UNPARK_WT" ) >/dev/null 2>&1; then
+    printf 'warning: could not return the fresh copy %s for %s, so it stays leased and claimed for it; run treehouse return --force %s from %s, then remove %s\n' \
+      "$UNPARK_WT" "$ID" "$UNPARK_WT" "$PARK_PROJ" "${UNPARK_WT%/*}/.fm-slot-owner" >&2
+    return 1
+  fi
   fm_treehouse_slot_owner_release "$UNPARK_WT" "$ID"
   UNPARK_WT=
 }
 
+unpark_refuse() {  # <reason>: the record is still parked; return the fresh slot
+  unpark_rollback || true
+  die "$*"
+}
+
 cmd_unpark() {
-  local head branch remote forge project_lock note out
+  local head old branch remote rc note out project_lock moved=
   [ -f "$META" ] && [ ! -L "$META" ] || die "$ID has no task record"
   [ "$(park_meta_value parked)" = 1 ] || { printf 'unparked: %s is not parked\n' "$ID"; return 0; }
   PARK_PROJ=$(park_meta_value project)
   PARK_URL=$(park_meta_value pr)
   branch=$(park_meta_value parked_branch)
-  head=$(park_meta_value parked_head)
-  if [ -z "$PARK_PROJ" ] || [ ! -d "$PARK_PROJ" ] || [ -z "$branch" ] || ! fm_pr_head_valid "$head"; then
+  old=$(park_meta_value parked_head)
+  if [ -z "$PARK_PROJ" ] || [ ! -d "$PARK_PROJ" ] || [ -z "$branch" ] || ! fm_pr_head_valid "$old"; then
     die "$ID's parked record is incomplete (project, parked_branch, parked_head)"
   fi
   project_lock=$(fm_treehouse_project_lock_path "$PARK_PROJ") || die "the project Treehouse lock for $PARK_PROJ cannot be resolved"
@@ -354,58 +372,67 @@ cmd_unpark() {
     || die "could not lease the pool slots this home's task records still name ($FM_TREEHOUSE_SLOT_LEASE_ERROR); $ID stays parked"
   UNPARK_WT=$(cd "$PARK_PROJ" && treehouse get --lease --lease-holder "$ID" 2>/dev/null) && [ -n "$UNPARK_WT" ] \
     || { UNPARK_WT=; die "treehouse get --lease could not lease a fresh copy for $ID from $PARK_PROJ"; }
-  if ! fm_treehouse_pool_slot "$PARK_PROJ" "$UNPARK_WT"; then
-    unpark_rollback; die "the leased copy for $ID is not a pool slot of $PARK_PROJ"
-  fi
-  if ! fm_treehouse_slot_owner_claim "$UNPARK_WT" "$ID" "$FM_HOME"; then
-    unpark_rollback; die "could not claim the fresh copy for $ID"
-  fi
+  fm_treehouse_pool_slot "$PARK_PROJ" "$UNPARK_WT" || unpark_refuse "the leased copy for $ID is not a pool slot of $PARK_PROJ"
+  fm_treehouse_slot_owner_claim "$UNPARK_WT" "$ID" "$FM_HOME" || unpark_refuse "could not claim the fresh copy for $ID"
+  rc=0
+  fm_run_timed 60 git -C "$UNPARK_WT" ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1 || rc=$?
+  [ "$rc" != 2 ] || unpark_refuse "$ID's PR branch $branch is gone from origin"
+  [ "$rc" = 0 ] || unpark_refuse "origin/$branch cannot be read for $ID"
   if ! fm_run_timed 60 git -C "$UNPARK_WT" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" >/dev/null 2>&1 \
       || ! remote=$(git -C "$UNPARK_WT" rev-parse --verify --quiet "refs/remotes/origin/$branch^{commit}"); then
-    unpark_rollback; die "origin/$branch cannot be fetched for $ID"
+    unpark_refuse "origin/$branch cannot be fetched for $ID"
   fi
-  if [ "$remote" != "$head" ]; then
-    unpark_rollback; die "origin/$branch is $remote, not $ID's parked head $head; the PR branch moved while the copy was parked"
+  head=$remote
+  if park_forge_pr "$UNPARK_WT"; then
+    [ "$FORGE_STATE" = OPEN ] || unpark_refuse "$ID's PR $PARK_URL is $(printf '%s' "$FORGE_STATE" | tr '[:upper:]' '[:lower:]'), so it has nothing left to steer"
+    head=$FORGE_HEAD
+    git -C "$UNPARK_WT" cat-file -e "$head^{commit}" 2>/dev/null \
+      || fm_run_timed 60 git -C "$UNPARK_WT" fetch --quiet origin "$head" >/dev/null 2>&1 \
+      || unpark_refuse "the forge's PR head $head for $ID cannot be fetched"
   fi
-  if ! forge=$(park_forge_head "$UNPARK_WT") || [ "$forge" != "$head" ]; then
-    unpark_rollback; die "the forge's head for $PARK_URL is ${forge:-unreadable}, not $ID's parked head $head"
-  fi
+  [ "$head" = "$old" ] || moved=1
   if ! git -C "$UNPARK_WT" checkout --quiet -B "$branch" "$head" 2>/dev/null \
       || ! git -C "$UNPARK_WT" branch --quiet --set-upstream-to="origin/$branch" "$branch" 2>/dev/null \
       || [ "$(git -C "$UNPARK_WT" rev-parse HEAD)" != "$head" ]; then
-    unpark_rollback; die "could not check out $branch at $head in the fresh copy for $ID"
+    unpark_refuse "could not check out $branch at $head in the fresh copy for $ID"
   fi
-  if ! park_rewrite_meta 'worktree|parked|parked_branch|parked_head|parked_worktree|parked_at' "worktree=$UNPARK_WT"; then
-    unpark_rollback; die "could not record the fresh copy in $ID's record"
-  fi
+  park_rewrite_meta 'worktree|parked|parked_branch|parked_head|parked_worktree|parked_at' "worktree=$UNPARK_WT" \
+    || unpark_refuse "could not record the fresh copy in $ID's record"
   park_unlock_all
-  note=$(mktemp "${TMPDIR:-/tmp}/fm-tree-park-note.XXXXXX") || die "could not write the relaunch note"
-  printf '%s\n' \
-    "Your previous copy was returned to the pool while your PR $PARK_URL waited for its merger." \
-    "This is a fresh copy of branch $branch at $head, matching the PR head; your earlier conversation is gone." \
-    "Do not create the branch again: it is checked out. Read your steering inbox now for the instruction that brought you back." > "$note"
+  note=$(mktemp "${TMPDIR:-/tmp}/fm-tree-park-note.XXXXXX") || unpark_relaunch_failed "$branch" "$head" "the relaunch note could not be written"
+  {
+    printf '%s\n' "Your previous copy was returned to the pool while your PR $PARK_URL waited for its merger."
+    if [ -n "$moved" ]; then
+      printf '%s\n' "The PR head moved from $old to $head while your copy was parked: re-read the branch before you change anything."
+    fi
+    printf '%s\n' \
+      "This is a fresh copy of branch $branch at $head, the PR head now; your earlier conversation is gone." \
+      "Do not create the branch again: it is checked out. Read your steering inbox now for the instruction that brought you back."
+  } > "$note"
   if ! out=$("$SCRIPT_DIR/fm-control.sh" "$ID" relaunch --note-file "$note" 2>&1); then
     rm -f "$note"
-    park_take_locks_for_rollback
-    die "$ID was given a fresh copy but its worker could not be relaunched, so it was parked again: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-300)"
+    unpark_relaunch_failed "$branch" "$head" "$(printf '%s' "$out" | tr '\n' ' ' | cut -c1-300)"
   fi
   rm -f "$note"
-  printf 'unparked: %s relaunched in %s at %s\n' "$ID" "$UNPARK_WT" "$head"
+  printf 'unparked: %s relaunched in %s at %s%s\n' "$ID" "$UNPARK_WT" "$head" "${moved:+ (the PR head moved from $old)}"
 }
 
 # A relaunch that failed leaves no agent in the fresh copy, so the record goes
-# back to parked and the copy back to the pool.
-park_take_locks_for_rollback() {
-  local project_lock
-  project_lock=$(fm_treehouse_project_lock_path "$PARK_PROJ") || return 0
-  fm_lock_acquire_wait_max "$project_lock" 60 || return 0
+# back to parked and the copy back to the pool; a step that cannot finish is
+# named, with the copy the record or the pool still holds.
+unpark_relaunch_failed() {  # <branch> <head> <why>
+  local project_lock lead="$ID was given the fresh copy $UNPARK_WT but its worker could not be relaunched ($3)"
+  if ! project_lock=$(fm_treehouse_project_lock_path "$PARK_PROJ") || ! fm_lock_acquire_wait_max "$project_lock" 60; then
+    die "$lead, and it could not be parked again because the project Treehouse lock was not free; its record still names $UNPARK_WT with no worker: relaunch it with bin/fm-control.sh $ID relaunch --note <text>"
+  fi
   LOCKS_HELD+=("$project_lock")
-  park_lock "$(fm_meta_lock_path "$META")" wait || return 0
-  park_rewrite_meta 'worktree|parked|parked_branch|parked_head|parked_worktree|parked_at' \
-    parked=1 "parked_branch=$(git -C "$UNPARK_WT" symbolic-ref --quiet --short HEAD 2>/dev/null)" \
-    "parked_head=$(git -C "$UNPARK_WT" rev-parse HEAD 2>/dev/null)" "parked_worktree=$UNPARK_WT" "parked_at=$(date +%s)" || return 0
-  unpark_rollback
-  park_unlock_all
+  if ! park_lock "$(fm_meta_lock_path "$META")" wait \
+      || ! park_rewrite_meta 'worktree|parked|parked_branch|parked_head|parked_worktree|parked_at' \
+        parked=1 "parked_branch=$1" "parked_head=$2" "parked_worktree=$UNPARK_WT" "parked_at=$(date +%s)"; then
+    die "$lead, and its record could not be rewritten to parked, so it still names $UNPARK_WT with no worker: relaunch it with bin/fm-control.sh $ID relaunch --note <text>"
+  fi
+  unpark_rollback || die "$lead; it was parked again, but the fresh copy $UNPARK_WT could not be returned to the pool"
+  die "$lead, so it was parked again"
 }
 
 cmd_sweep() {

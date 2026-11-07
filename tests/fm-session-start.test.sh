@@ -1437,6 +1437,9 @@ EOF
   printf 'window=sess:p-live\nkind=ship\nbackend=herdr\n' > "$home/state/task-live.meta"
   printf 'window=sess:p-dead\nkind=ship\nbackend=herdr\n' > "$home/state/task-dead.meta"
   printf 'window=sess:p-odd\nkind=ship\nbackend=herdr\n' > "$home/state/task-odd.meta"
+  # A parked ship's pane is gone by design (bin/fm-tree-park.sh), so it is
+  # reported parked with the way back, not as a dead worker.
+  printf 'window=sess:p-parked\nkind=ship\nbackend=herdr\nparked=1\n' > "$home/state/task-parked.meta"
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_contains "$out" "endpoint: alive (backend=herdr window=sess:p-live)" "live herdr endpoint not reported alive"
@@ -1445,6 +1448,8 @@ EOF
     "a probe exiting 4 for a gone surface was not reported dead"
   assert_not_contains "$out" "endpoint: error (backend=herdr window=sess:p-odd" \
     "a probe exiting 4 was mislabelled as a failed read"
+  assert_contains "$out" "endpoint: parked (copy returned to the pool" "a parked ship was not reported parked"
+  assert_not_contains "$out" "window=sess:p-parked)" "a parked ship's gone pane was probed and reported as an endpoint"
 
   pass "herdr endpoint liveness is reported per task: alive, dead for exit 1, dead for any other probe status"
 }
