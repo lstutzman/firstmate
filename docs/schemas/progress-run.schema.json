@@ -84,7 +84,24 @@
         "project": {"type": "string"},
         "linear_only": {"type": "boolean"},
         "outcome": {"enum": ["ok", "failed", "skipped"]},
-        "captains_log_key": {"type": "string"}
+        "captains_log_key": {"type": "string"},
+        "owner_office": {"enum": ["navigator", "quartermaster"]},
+        "ask_key": {"type": "string"},
+        "triage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["filed_by", "found", "score", "priority_was", "priority", "action"],
+          "properties": {
+            "filed_by": {"type": "string"},
+            "found": {"type": "integer", "minimum": 0},
+            "score": {"type": "number"},
+            "priority_was": {"enum": [0, 1, 2, 3, 4]},
+            "priority": {"enum": [0, 1, 2, 3, 4]},
+            "action": {"enum": ["set", "kept", "would-set"]},
+            "why": {"type": "string"},
+            "error": {"type": "string"}
+          }
+        }
       }
     }
   }

@@ -3,7 +3,7 @@
 This is the one page every registered officer follows when it finds work: find it, file it in Linear, triage it, and start it or hold it for Lee.
 Fleet rules section 8 gives every officer authority to create and update Linear items under this contract and its own rubric file.
 This page owns the contract; `bin/fm-officer-linear.py`'s header owns the mechanics, and each officer's `docs/officers/<id>-rubric.md` owns what that officer counts as work.
-The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.md)), then the friction officer ([`friction-rubric.md`](friction-rubric.md)), the library officer ([`library-rubric.md`](library-rubric.md)), the page-check officer ([`page-check-rubric.md`](page-check-rubric.md)) and the corpus officer ([`corpus-rubric.md`](corpus-rubric.md)); the progress officer adopts it in its own change.
+The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.md)), then the friction officer ([`friction-rubric.md`](friction-rubric.md)), the library officer ([`library-rubric.md`](library-rubric.md)), the page-check officer ([`page-check-rubric.md`](page-check-rubric.md)) the corpus officer ([`corpus-rubric.md`](corpus-rubric.md)) and the progress officer ([`progress-rubric.md`](progress-rubric.md)), which files nothing and only triages and starts.
 
 ## The four steps
 
@@ -27,7 +27,7 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
   This holds for every item the library creates, an officer's grouped items included: a group never mixes fleet and PropertyCompass2 findings, and a fleet group is created like a fleet finding.
   The officer's own label lookup does not cover `area:fleet`; if team PC lacked it, Linear's dry run would refuse the item and the digest would report it failed.
   An officer never creates a label; a missing label means the finding is reported and not filed.
-- An officer filing under this contract never closes or deletes an item, and never changes the state, priority, labels, assignee or title of one that exists.
+- An officer filing under this contract never closes or deletes an item, and never changes the state, priority, labels, assignee or title of one that exists; the one exception is the progress officer's triage below.
   The only text it edits is the Found line (and an officer's own cluster list).
   An item a person closed is never reopened: a repeat finding files a new item that says `Recurrence of <id>` and links the old one.
 - The registry line sets the per-run create cap (`max-creates`) and the Linear call budget (`max-linear-calls`).
@@ -40,7 +40,9 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
 - The found count is a priority lever.
   The score is the severity weight (critical 8, high 4, medium 2, low 1) multiplied by log2(1 + found), and it orders what is filed and what starts.
   The digest shows each finding's found count and score.
-- The progress officer will triage officer-filed items (priority, owning office) before it starts them; until it does, the severity-derived priority above stands.
+- The progress officer triages an officer-filed item (one carrying an `<officer-id>-fp:<sha256>` marker) before it starts it: it raises the item's Linear priority from its score (8 or more is Urgent, 4 or more High, else Medium), never lowers it, never touches an item that is assigned or whose priority a person changed, and names the owning office in the start request.
+  Until an item is triaged, the severity-derived priority above stands.
+  [`progress-rubric.md`](progress-rubric.md) owns the rules, and `bin/fm-officer-linear.py`'s `triage_issue` is the one write.
 
 ## Start
 
