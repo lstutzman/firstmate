@@ -10,6 +10,14 @@
 # archive section) that never fail the run, report-once fingerprints and a
 # recurrence after a fix, byte-identical re-runs, counts-only output, lane-only
 # writes, and the registry's archive requirement.
+#
+# With writes: linear (a fake linear-axi that logs every call): findings filed as Chore items
+# under the corpus-fp marker in the Fleet project with area:fleet, nothing but counts, names
+# and timestamps in an item body, the create cap with the overflow named, the Found line
+# raised once a night, a high finding started on first sight and a medium one on its third
+# night, a start request addressed to the office that dispatches the repository (else this
+# home), the scan-gate route named on a request whose fix may touch the scan gate, a
+# reserved class held as one keyed needs-decision, and writes: none making no Linear call.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -217,6 +225,200 @@ test_registry_needs_archive() {
   pass "fm-officer corpus: the registry line needs archive:"
 }
 
+# fake_linear <bindir>: linear-axi driven by $FAKE_LINEAR_DIR (labels.txt); it logs every call to
+# $FAKE_LINEAR_DIR/log and refuses to run without that variable, so no test can reach the real Linear.
+fake_linear() {
+  cat > "$1/linear-axi" <<'SH'
+#!/usr/bin/env bash
+d=${FAKE_LINEAR_DIR:-}
+[ -n "$d" ] || { echo '{"ok":false,"error":{"code":"UNKNOWN","message":"no fake linear dir"}}'; exit 1; }
+printf '%s\n' "$*" >> "$d/log"
+case "$1 $2" in
+  "label list")
+    printf '{"ok":true,"data":{"labels":['
+    sep=''; while IFS= read -r l; do printf '%s{"name":"%s"}' "$sep" "$l"; sep=','; done < "$d/labels.txt"
+    echo ']}}' ;;
+  "issue search") echo '{"ok":true,"data":{"issues":[]}}' ;;
+  "issue view")
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'","state":"Todo","stateType":"unstarted","description":"Found: '"$(cat "$d/found-count" 2>/dev/null || echo 1)"' times (first 2026-11-03, last 2026-11-03, by corpus)"}}}' ;;
+  "issue create")
+    case " $* " in
+      *" --verify "*)
+        n=$(( $(cat "$d/created" 2>/dev/null || echo 100) + 1 ))
+        echo "$n" > "$d/created"
+        for a in "$@"; do [ "${prev:-}" = "--body-file" ] && cat "$a" >> "$d/bodies" && echo >> "$d/bodies"; prev=$a; done
+        echo '{"ok":true,"data":{"issue":{"identifier":"PC-'"$n"'"}}}' ;;
+      *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
+    esac ;;
+  "issue update")
+    case " $* " in *" --verify "*) echo "UPDATE $3" >> "$d/updates" ;; esac
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'"}}}' ;;
+  "issue comment")
+    case " $* " in *" --verify "*) echo "COMMENT $3" >> "$d/comments" ;; esac
+    echo '{"ok":true,"data":{"dryRun":true}}' ;;
+  "issue relation") echo '{"ok":true,"data":{"dryRun":true}}' ;;
+  *) echo '{"ok":false,"error":{"code":"UNKNOWN","message":"unexpected call"}}'; exit 1 ;;
+esac
+SH
+  chmod +x "$1/linear-axi"
+}
+
+count_lines() {  # <pattern> <file>: how many lines match; 0 when the file does not exist
+  local n
+  n=$(grep -c -- "$1" "$2" 2>/dev/null || true)
+  echo "${n:-0}"
+}
+
+# linear_world <name> [extra registry fields]: a world with one finding of every class (a source not collected
+# for two runs, a failed and a drifting harvest, a stale prep store, a missed retrain, an archive gap on two
+# nights) whose corpus line writes Linear items through the fake. Call it directly, not in $(...): it sets
+# W, HOME_DIR, FAKEBIN and FAKE_LINEAR_DIR.
+linear_world() {
+  make_world "$1"
+  {
+    runs_line ok ok
+    runs_line bad ok
+    runs_line bad ok
+  } > "$W/corpus/transcript-archive/runs.jsonl"
+  printf '{"outcome": "failed", "counts": {"listed": 90, "total": 100}}\n' > "$W/corpus/memory-harvest/last-result.json"
+  printf '{"finished": "2026-11-03T08:00:00+00:00", "rows": 9}\n' > "$W/hosts/slartibartfast/Documents/GitHub/local-jev/data/prep/ready.json"
+  printf '{"run": "20261024", "started": "2026-10-24T20:00:02+00:00", "status": "kept"}\n' \
+    > "$W/hosts/deepthought/Documents/GitHub/local-jev/results/weekly/history.jsonl"
+  bosun "$W/hosts/slartibartfast" 2026-11-04 2 1
+  run_corpus 2026-11-04 $((NOW - 86400)) >/dev/null || fail "the first night must succeed"
+  bosun "$W/hosts/slartibartfast" 2026-11-05 2 1
+  sed -i.bak "s|; model: none;|; writes: linear; jev: /nonexistent/jev.py${2:-}; model: none;|" "$HOME_DIR/data/officers.md"
+  fake_linear "$FAKEBIN"
+  export FAKE_LINEAR_DIR="$W/linear"
+  mkdir -p "$FAKE_LINEAR_DIR"
+  printf '%s\n' Bug Chore agent area:fleet triage > "$FAKE_LINEAR_DIR/labels.txt"
+}
+
+request_of() {  # <class> [date]: the start request of a finding class from the digest
+  jq -c --arg c "$1" '.start_requests[] | select(.class == $c)' "$(lane)/${2:-$DATE}.json"
+}
+
+test_findings_are_filed_in_the_fleet_project_with_counts_only() {
+  local dir log json
+  linear_world filed
+  dir=$FAKE_LINEAR_DIR
+  log=$dir/log
+  json="$(lane)/$DATE.json"
+  run_corpus >/dev/null || fail "a writing run must succeed"
+  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "each of the six open findings is filed once"
+  assert_equals 6 "$(count_lines '^issue create .*--dry-run' "$log")" "every create is a dry run first"
+  assert_equals 6 "$(count_lines '^issue create .*--label Chore --label agent --label area:fleet --project Fleet --dry-run' "$log")" \
+    "each item is a Chore with the agent Source and area:fleet, in the Fleet project, in team PC"
+  assert_equals 6 "$(count_lines '^corpus-fp:' "$dir/bodies")" "every body carries the corpus-fp marker alone on its line"
+  assert_equals 6 "$(count_lines '^Found: 1 times (first 2026-11-04, last 2026-11-04, by corpus)$' "$dir/bodies")" "and its one Found line"
+  assert_no_grep "SESSION-TEXT" "$dir/bodies" "no session text, error text or list item reaches a Linear item"
+  assert_grep "Scan gate: the fix may touch the scan gate files" "$dir/bodies" "an item whose fix may touch the scan gate says so"
+  assert_equals 0 "$(jq '.asks_for_lee | length' "$json")" "nothing is held for Lee"
+
+  run_corpus >/dev/null || fail "a same-day re-run must succeed"
+  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "a re-run files nothing more"
+  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and raises no Found line"
+  run_corpus 2026-11-05 $((NOW + 86400)) >/dev/null || fail "the next night must succeed"
+  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "the next night creates nothing: the findings already have items"
+  assert_equals 6 "$(count_lines '^UPDATE' "$dir/updates")" "and raises each item's Found line in place"
+  assert_equals 6 "$(count_lines '^COMMENT' "$dir/comments")" "with one comment on the night's first sighting"
+  assert_equals 6 "$(jq '[.findings[] | select(.linear.found == 2)] | length' "$(lane)/2026-11-05.json")" "the digest shows the found count"
+  pass "fm-officer corpus: findings are filed as Fleet Chore items from counts only, and the Found line rises once a night"
+}
+
+test_create_cap_names_the_overflow() {
+  linear_world cap "; max-creates: 2"
+  run_corpus >/dev/null || fail "a capped run must succeed"
+  assert_equals 2 "$(count_lines '^issue create .*--verify' "$FAKE_LINEAR_DIR/log")" "no more than max-creates items are created"
+  assert_contains "$(<"$(lane)/$DATE.md")" "Not filed (over max-creates for this run)" "the overflow is named in the digest"
+  pass "fm-officer corpus: the registry create cap holds and names what it leaves"
+}
+
+test_start_requests_follow_the_rubric_and_the_repository() {
+  local json
+  linear_world starts
+  json="$(lane)/$DATE.json"
+  run_corpus >/dev/null || fail "a writing run must succeed"
+  assert_equals "archive-gap,harvest-failed" "$(jq -r '[.start_requests[].class] | sort | join(",")' "$json")" \
+    "only the high findings start on first sight; a medium one has not reached the start score"
+  assert_equals "$HOME_DIR" "$(jq -r '.start_requests[0].execute.env.FM_HOME' "$json")" "with no start-home office a request goes to this home"
+  assert_equals corpus-officer "$(jq -r .source "$json")" "the digest names its source so an office delivers its requests"
+  assert_contains "$(jq -r '.start_requests[0].execute.request_id' "$json")" "corpus-$DATE-" "the request id names the corpus officer"
+  assert_equals 2 "$(count_lines 'fm-inbox.sh' "$(lane)/$DATE.start-requests.sh")" "this home's requests are in the shell handoff"
+  assert_equals true "$(request_of harvest-failed | jq .scan_gate)" "a failed harvest may touch the scan gate"
+  assert_contains "$(request_of harvest-failed | jq -r '.execute.argv | last')" "never merges it: it goes to Slarti" "and its request names the scan-gate route"
+  assert_equals transcript-archive "$(request_of harvest-failed | jq -r .project)" "and the repository it lands in"
+  run_corpus >/dev/null || fail "a same-day re-run must succeed"
+  assert_equals 2 "$(jq '.start_requests | length' "$json")" "a re-run repeats the same requests"
+  run_corpus 2026-11-05 $((NOW + 86400)) >/dev/null || fail "the next night must succeed"
+  assert_equals 0 "$(jq '.start_requests | length' "$(lane)/2026-11-05.json")" "a later night never asks for an item again"
+  pass "fm-officer corpus: a high finding starts on first sight, a repeat is not asked twice, and the scan-gate route is named"
+}
+
+test_a_medium_finding_starts_on_its_third_night() {
+  local dir
+  linear_world third
+  dir=$FAKE_LINEAR_DIR
+  run_corpus >/dev/null || fail "the first writing night must succeed"
+  echo 2 > "$dir/found-count" # the items now read Found: 2 times, so the next night's raise makes it 3
+  jq '.handled = {}' "$(lane)/review-state.json" > "$dir/state.json" && cp "$dir/state.json" "$(lane)/review-state.json"
+  run_corpus 2026-11-05 $((NOW + 86400)) >/dev/null || fail "a later night must succeed"
+  assert_equals "archive-gap,harvest-drift,harvest-failed,not-collected,prep-stale,retrain-missed" \
+    "$(jq -r '[.start_requests[].class] | sort | join(",")' "$(lane)/2026-11-05.json")" "a medium finding found three times reaches the start score"
+  assert_equals local-jev "$(request_of prep-stale 2026-11-05 | jq -r .project)" "a prep store request names local-jev"
+  assert_equals false "$(request_of prep-stale 2026-11-05 | jq .scan_gate)" "and no scan-gate route, since its fix is not in the scan gate"
+  pass "fm-officer corpus: the found count lifts a medium finding to a start"
+}
+
+test_start_requests_reach_the_owning_office() {
+  local json
+  linear_world office
+  json="$(lane)/$DATE.json"
+  mkdir -p "$W/archivehome"
+  PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW="$NOW" FM_HOME="$HOME_DIR" python3 -I "$ROOT/bin/fm-officer-corpus.py" run \
+    --archive "deepthought:$W/corpus" --date "$DATE" --out "$(lane)" --now "$NOW" --hosts slartibartfast,deepthought \
+    --writes linear --jev /nonexistent/jev.py --fm-home "$HOME_DIR" \
+    --start-home "$W/archivehome=transcript-archive=alchemist=corpus" >/dev/null || fail "a run with an office must succeed"
+  assert_equals "$W/archivehome" "$(request_of harvest-failed | jq -r '.execute.env.FM_HOME')" "a transcript-archive finding goes to the office that dispatches it"
+  assert_equals 0 "$(count_lines 'fm-inbox.sh' "$(lane)/$DATE.start-requests.sh")" "and not into this home's handoff"
+  pass "fm-officer corpus: a start request is addressed to the office that owns the repository"
+}
+
+test_a_reserved_class_is_held() {
+  local json line
+  linear_world reserved
+  line='{"started": "2026-11-05T07:00:00+00:00", "finished": "2026-11-05T07:08:54+00:00", "sources": {"deploy to production/codex": "not collected: ssh exited 1", "deepthought/claude-code": "ok"}}'
+  printf '%s\n%s\n' "$line" "$line" > "$W/corpus/transcript-archive/runs.jsonl"
+  run_corpus >/dev/null || fail "the first writing night must succeed"
+  echo 2 > "$FAKE_LINEAR_DIR/found-count" # the item reaches the start score on its third night
+  json="$(lane)/2026-11-05.json"
+  run_corpus 2026-11-05 $((NOW + 86400)) >/dev/null || fail "a later night must succeed"
+  assert_equals "corpus-holds-2026-11-05" "$(jq -r '.asks_for_lee[0].key' "$json")" "a finding matching a reserved class is one keyed needs-decision"
+  assert_equals production-actions "$(jq -r '.held[0].class' "$json")" "with its class"
+  assert_equals false "$(jq '[.start_requests[].class] | index("not-collected") != null' "$json")" "and never starts"
+  pass "fm-officer corpus: a reserved class is held for Lee and never starts"
+}
+
+test_no_writes_and_a_missing_label_file_nothing() {
+  local dir
+  make_world nowrites
+  fake_linear "$FAKEBIN"
+  export FAKE_LINEAR_DIR="$W/linear"
+  mkdir -p "$FAKE_LINEAR_DIR"
+  printf '{"outcome": "failed", "counts": {"listed": 100, "total": 100}}\n' > "$W/corpus/memory-harvest/last-result.json"
+  run_corpus >/dev/null || fail "a writes: none run must succeed"
+  assert_equals gone "$([ -e "$FAKE_LINEAR_DIR/log" ] && echo called || echo gone)" "writes: none makes no Linear call at all"
+  assert_equals 0 "$(jq '.start_requests | length' "$(lane)/$DATE.json")" "and starts nothing"
+
+  linear_world nolabel
+  dir=$FAKE_LINEAR_DIR
+  printf '%s\n' Bug Chore area:fleet > "$dir/labels.txt"
+  run_corpus >/dev/null || fail "a run with a missing label must succeed"
+  assert_equals 0 "$(count_lines '^issue create' "$dir/log")" "with the Source label missing nothing is created"
+  assert_contains "$(jq -r '[.findings[].linear.reason // empty] | join(" ")' "$(lane)/$DATE.json")" "label(s) not found in team PC: agent" "each finding is reported with the label named"
+  pass "fm-officer corpus: writes: none and a missing label file nothing"
+}
+
 test_healthy_corpus_has_no_findings
 test_each_finding_class
 test_archive_gap_needs_two_nights
@@ -226,3 +428,10 @@ test_harvest_zero_total_is_not_missing_counts
 test_coverage_gaps_never_fail_the_run
 test_run_writes_only_its_lane
 test_registry_needs_archive
+test_findings_are_filed_in_the_fleet_project_with_counts_only
+test_create_cap_names_the_overflow
+test_start_requests_follow_the_rubric_and_the_repository
+test_a_medium_finding_starts_on_its_third_night
+test_start_requests_reach_the_owning_office
+test_a_reserved_class_is_held
+test_no_writes_and_a_missing_label_file_nothing
