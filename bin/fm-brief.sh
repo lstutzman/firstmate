@@ -14,7 +14,7 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--linear <PC-n> | --no-linear "<reason>"] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--linear <PC-n>] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--linear <PC-n> | --no-linear "<reason>"] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #        fm-brief.sh <task-id> --secondmate --office <task-id> {<project>...|--no-projects}
@@ -192,11 +192,12 @@
 # whole, without a length cap. Ship and scout only.
 # config/linear-required-projects (optional, one project name per line, blank
 # lines and # comments ignored) lists the projects whose ship and scout briefs
-# must name their Linear item: for a listed <repo-name> the scaffold stops unless
-# --linear <PC-n> or --no-linear "<reason>" is passed. --no-linear records the
-# reason in the brief under Captain's intent as "Linear item: none (<reason>)".
-# --no-linear and --linear are mutually exclusive; unlisted projects accept
-# --no-linear too, and behave exactly as before without either flag.
+# must name their Linear item: for a listed <repo-name> a ship brief stops
+# unless --linear <PC-n> is passed, with no opt-out, and a scout brief stops
+# unless --linear <PC-n> or --no-linear "<reason>" is passed. --no-linear is a
+# scout-only flag that records the reason in the brief under Captain's intent as
+# "Linear item: none (<reason>)", and it conflicts with --linear. Unlisted
+# projects behave exactly as before without either flag.
 # Refuses to overwrite an existing brief.
 set -eu
 
@@ -562,8 +563,8 @@ if [ "$KIND" = secondmate ] && [ -n "$LINEAR_ITEM" ]; then
   echo "error: --linear applies only to ship and scout briefs" >&2
   exit 1
 fi
-if [ "$KIND" = secondmate ] && [ "$NO_LINEAR_SET" -eq 1 ]; then
-  echo "error: --no-linear applies only to ship and scout briefs" >&2
+if [ "$KIND" != scout ] && [ "$NO_LINEAR_SET" -eq 1 ]; then
+  echo "error: --no-linear applies only to scout briefs; a ship brief names its Linear item with --linear <PC-n>" >&2
   exit 1
 fi
 if [ "$NO_LINEAR_SET" -eq 1 ] && [ -z "$(printf '%s' "$NO_LINEAR" | tr -d '[:space:]')" ]; then
@@ -608,7 +609,7 @@ if [ "$OFFICE_SET" -eq 1 ]; then
 fi
 
 # A project listed in config/linear-required-projects needs its Linear item named
-# (or an explicit reason for none) before anything is written.
+# before anything is written; only a scout may give an explicit reason for none.
 LINEAR_REQUIRED_FILE="$CONFIG/linear-required-projects"
 if [ "$KIND" != secondmate ] && [ -z "$LINEAR_ITEM" ] && [ "$NO_LINEAR_SET" -eq 0 ] && [ -e "$LINEAR_REQUIRED_FILE" ]; then
   [ -f "$LINEAR_REQUIRED_FILE" ] && [ -r "$LINEAR_REQUIRED_FILE" ] || {
@@ -616,7 +617,11 @@ if [ "$KIND" != secondmate ] && [ -z "$LINEAR_ITEM" ] && [ "$NO_LINEAR_SET" -eq 
     exit 1
   }
   if grep -v '^[[:space:]]*#' "$LINEAR_REQUIRED_FILE" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -Fxq -- "${POS[1]:-}"; then
-    echo "error: ${POS[1]:-} is listed in $LINEAR_REQUIRED_FILE, so its briefs must name their Linear item: pass --linear <PC-n>, or --no-linear \"<reason>\" when there is none" >&2
+    if [ "$KIND" = scout ]; then
+      echo "error: ${POS[1]:-} is listed in $LINEAR_REQUIRED_FILE, so its scout briefs must name their Linear item: pass --linear <PC-n>, or --no-linear \"<reason>\" when there is none" >&2
+    else
+      echo "error: ${POS[1]:-} is listed in $LINEAR_REQUIRED_FILE, so its ship briefs must name their Linear item: pass --linear <PC-n>" >&2
+    fi
     exit 1
   fi
 fi

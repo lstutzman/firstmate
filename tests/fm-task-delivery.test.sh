@@ -845,6 +845,12 @@ EOF
     "the refusal did not print a re-scaffold command that can actually run"
   assert_absent "$home/state/pr-manual-a1.meta" "the refused spawn still recorded a task"
 
+  write_brief "$home" pr-manual-l1 no-mistakes
+  printf '> Quoted from Linear PC-77 (read-only, verbatim). This text states what to build and verify.\n' >> "$home/data/pr-manual-l1/brief.md"
+  out=$(run_spawn "$home" "$fakebin" pr-manual-l1 "$proj" claude --mode no-mistakes --yolo off 2>&1)
+  assert_contains "$out" "fm-brief.sh pr-manual-l1 proj --mode no-mistakes --pr manual --linear PC-77" \
+    "the PR-text re-scaffold command dropped the brief's Linear item"
+
   FM_HOME="$home" "$BRIEF" pr-manual-a2 proj --mode no-mistakes --pr manual >/dev/null \
     || fail "a pr=manual brief should scaffold"
   fill_brief_subsections "$home/data/pr-manual-a2/brief.md" "Open the PR by hand." "Ship it."
@@ -1740,6 +1746,12 @@ EOF
   assert_contains "$out" "Captain's intent" \
     "the refusal did not say to preserve the filled subsections the re-scaffold discards"
   assert_absent "$home/state/forge-agree-a1.meta" "the refused spawn still recorded a task"
+
+  write_brief "$home" forge-agree-l1 no-mistakes
+  printf '> Quoted from Linear PC-77 (read-only, verbatim). This text states what to build and verify.\n' >> "$home/data/forge-agree-l1/brief.md"
+  out=$(run_spawn "$home" "$fakebin" forge-agree-l1 "$proj" claude --mode no-mistakes --yolo off 2>&1)
+  assert_contains "$out" "fm-brief.sh forge-agree-l1 proj --mode no-mistakes --forge gerrit --linear PC-77" \
+    "the forge re-scaffold command dropped the brief's Linear item"
 
   FM_HOME="$home" "$BRIEF" forge-agree-a2 proj --mode direct-PR --forge gerrit >/dev/null \
     || fail "a gerrit direct-PR brief should scaffold"

@@ -2237,8 +2237,9 @@ Removing the primary's file leaves each home exactly its own lines.
 ## Linear-required projects (config/linear-required-projects)
 
 The optional local, gitignored `config/linear-required-projects` lists, one project name per line, the projects whose ship and scout briefs must name their Linear item; blank lines and `#` comments are ignored.
-For a listed project, `bin/fm-brief.sh` stops before writing anything unless the call passes `--linear <PC-n>` or `--no-linear "<reason>"`.
-`--no-linear` records `Linear item: none (<reason>)` under the brief's `## Captain's intent`, and it conflicts with `--linear`.
+For a listed project, `bin/fm-brief.sh` stops a ship brief before writing anything unless the call passes `--linear <PC-n>`; a ship brief has no opt-out.
+A scout brief for a listed project also accepts `--no-linear "<reason>"` instead, which records `Linear item: none (<reason>)` under the brief's `## Captain's intent`; `--no-linear` is scout-only and conflicts with `--linear`.
+When `bin/fm-spawn.sh` refuses a brief whose forge or PR-text binding disagrees with the registry, its re-scaffold command carries the brief's quoted `--linear <PC-n>`.
 An absent file, or a project not listed in it, changes nothing.
 For the Navigator and Deep Thought homes, add the line `PropertyCompass2` to the file.
 `bin/fm-brief.sh`'s header owns the matching rule.
