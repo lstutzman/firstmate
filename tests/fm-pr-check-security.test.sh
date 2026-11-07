@@ -269,8 +269,8 @@ fi
 [ "${FM_TEST_NM_FAIL:-0}" = 0 ] || exit 1
 head=$(git rev-parse HEAD 2>/dev/null) || exit 1
 pipeline=${FM_TEST_NM_PIPELINE_HEAD:-$head}
-printf 'run:\n  id: "RUNFIXTURE"\n  branch: fm/task\n  status: completed\n  head_sha: %s\noutcome: %s\n' \
-  "$pipeline" "${FM_TEST_NM_OUTCOME-passed}"
+printf 'run:\n  id: "RUNFIXTURE"\n  branch: fm/task\n  status: %s\n  head_sha: %s\noutcome: %s\n' \
+  "${FM_TEST_NM_RUN_STATUS:-completed}" "$pipeline" "${FM_TEST_NM_OUTCOME-passed}"
 printf 'branch_sync:\n  state: %s\n  local:\n    head: %s\n  pipeline:\n    current_head: %s\n' \
   "${FM_TEST_NM_SYNC_STATE:-synchronized}" "$head" "$pipeline"
 if [ -n "${FM_TEST_NM_NEXT_ACTION:-}" ]; then
@@ -1556,6 +1556,21 @@ test_handed_off_nm_run_is_released_once_at_green() {
   [ "$(cat "$state/task-a.nm-released")" = "$(cat "$state/task-a.merge-handoff")" ] \
     || fail "nm-release: the retried release was not recorded"
 
+  # A run the worker already released itself (its brief's done step) reads
+  # handed_off, which the real `axi handoff` has no CI monitor left to end: it
+  # is recorded with no second handoff, no released: line and no actionable one.
+  printf 'working [at=1700000600]: fixing a last finding\n' >> "$status"
+  FM_TEST_GH_HEAD=6666666666666666666666666666666666666666 register >/dev/null 2>&1 \
+    || fail "nm-release: registering the worker-released head failed"
+  printf 'done [at=1700000700]: PR %s checks green\n' "$url" >> "$status"
+  out=$(FM_TEST_NM_RUN_STATUS=handed_off FM_TEST_NM_CHECKS_PASSED=1 FM_TEST_NM_HANDOFF_RC=3 release 2>"$dir/err") \
+    || fail "nm-release: the sweep over a worker-released run failed"
+  [ "$(attempts)" -eq 6 ] || fail "nm-release: a run already handed off was handed off again"
+  [ -z "$out" ] || fail "nm-release: a run the worker released was reported as released again: $out"
+  assert_no_grep 'actionable' "$dir/err" "nm-release: a run the worker released was reported as still holding a slot"
+  [ "$(cat "$state/task-a.nm-released")" = "$(cat "$state/task-a.merge-handoff")" ] \
+    || fail "nm-release: the worker-released run was not recorded"
+
   # A project this home merges hands nothing off, so its run is never released.
   write_task_meta "$dir" task-b
   printf 'done [at=1700000100]: PR https://github.com/o/r/pull/43 checks green\n' > "$state/task-b.status"
@@ -1564,7 +1579,7 @@ test_handed_off_nm_run_is_released_once_at_green() {
     run_check_entry "$dir" task-b https://github.com/o/r/pull/43 >/dev/null 2>&1 || fail "nm-release: registering a self-merged PR failed"
   FM_TEST_NM_CHECKS_PASSED=1 release >/dev/null || fail "nm-release: the sweep failed for a self-merged PR"
   [ "$(attempts)" -eq 6 ] || fail "nm-release: a project this home merges had its run released"
-  pass "fm-pr-check releases a handed-off no-mistakes run once per head after it reports green, reports a failure once, and never for a project it merges"
+  pass "fm-pr-check releases a handed-off no-mistakes run once per head after it reports green, reports a failure once, skips a run already handed off, and never for a project it merges"
 }
 
 run_watcher_bounded() {

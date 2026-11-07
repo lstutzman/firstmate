@@ -710,6 +710,13 @@ EOF
 
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), read the PR back from the forge and confirm it is not a draft $draft_check
 A draft cannot be merged, so a done report on one leaves the merge unasked.
+Then release your pipeline slot, because the run keeps watching CI until the PR merges and only two runs fit at once; you never merge your own PR, so always do this before the done line, in this order:
+1. Run \`no-mistakes axi sync --check\`.
+2. If this copy is already on the pushed head, go to step 3. Otherwise, if the check offers a strict fast-forward or a safe_equivalent_advance, run \`no-mistakes axi sync\`.
+   Otherwise, from a clean \`git status\` only, save the old local head as the local ref \`refs/heads/archive/<branch>-prerebase\` with \`git branch archive/<branch>-prerebase <old head>\` and push it to no remote (this copy shares its object store with the home clone, so the ref outlives the copy and nothing is posted outward), confirm with \`git range-diff\` that the pushed head carries it, then run \`git checkout -B <branch> <pushed head>\`.
+   A dirty tree, or a sync that offers neither path, is not yours to force: append \`needs-decision [at=<epoch>] [cause=tool] [key=nm-release-<branch>]: {sync output}\` and stop.
+3. Run \`no-mistakes axi handoff\`, and never \`no-mistakes axi abort\`.
+4. Confirm \`no-mistakes axi status\` reads handed_off for this branch.
 Then append \`done [at=<epoch>]: PR {url} checks green\` and stop. You are finished.
 That CI-ready \`done:\` is accepted only when this copy's HEAD - your latest commit - is one the /no-mistakes run pushed, so commit nothing after the run; the check tests that commit, not merely that a branch moved.
 If you deliberately keep the PR a draft, append \`paused [at=<epoch>]: {why the draft is held}\` instead of done.
