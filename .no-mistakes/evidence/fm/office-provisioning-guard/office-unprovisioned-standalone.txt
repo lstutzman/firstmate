@@ -1,0 +1,28 @@
+### S1: primary home with navigator+quartermaster only; HOME=/tmp/fm-sandbox-home.8hHjf4 (empty), cwd=/
+OFFICE: approved office alchemist not provisioned (no /tmp/fm-lab.XOnmd6/data/offices.md line for it, and no valid deferral in /tmp/fm-lab.XOnmd6/data/office-deferrals.md)
+OFFICE: approved office librarian not provisioned (no /tmp/fm-lab.XOnmd6/data/offices.md line for it, and no valid deferral in /tmp/fm-lab.XOnmd6/data/office-deferrals.md)
+exit=0
+home tree checksum before=0e297ff9e19bdc17b52478747488caf4  - after=0e297ff9e19bdc17b52478747488caf4  -
+files written in sandbox HOME: 0
+
+### S2: valid deferral for alchemist only
+OFFICE: approved office librarian not provisioned (no /tmp/fm-lab.XOnmd6/data/offices.md line for it, and no valid deferral in /tmp/fm-lab.XOnmd6/data/office-deferrals.md)
+exit=0
+
+### S3 adversarial: parenthesised said: and expired until
+OFFICE: deferral alchemist in /tmp/fm-lab.XOnmd6/data/office-deferrals.md defers nothing: its fields contain parentheses, which a deferral line must not
+OFFICE: deferral librarian in /tmp/fm-lab.XOnmd6/data/office-deferrals.md defers nothing: expired on 2026-11-01
+OFFICE: approved office alchemist not provisioned (no /tmp/fm-lab.XOnmd6/data/offices.md line for it, and no valid deferral in /tmp/fm-lab.XOnmd6/data/office-deferrals.md)
+OFFICE: approved office librarian not provisioned (no /tmp/fm-lab.XOnmd6/data/offices.md line for it, and no valid deferral in /tmp/fm-lab.XOnmd6/data/office-deferrals.md)
+exit=0
+
+### S4: both missing roles validly deferred -> silent
+exit=0 output=[]
+
+### S5: same home marked as office / second-mate -> silent
+office home output=[]
+second-mate home output=[]
+
+### S6: ensure carries the alarm
+OFFICE: approved office alchemist not provisioned (no /tmp/fm-lab.XOnmd6/data/offices.md line for it, and no valid deferral in /tmp/fm-lab.XOnmd6/data/office-deferrals.md)
+OFFICE: approved office librarian not provisioned (no /tmp/fm-lab.XOnmd6/data/offices.md line for it, and no valid deferral in /tmp/fm-lab.XOnmd6/data/office-deferrals.md)

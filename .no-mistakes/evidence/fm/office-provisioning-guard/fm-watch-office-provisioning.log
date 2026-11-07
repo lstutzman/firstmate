@@ -1,0 +1,4 @@
+ok - a missing approved office wakes once, stays quiet for a day, then wakes again
+ok - several missing offices are joined into one wake
+ok - a provisioned or deferred home is quiet, and the check runs at most once an hour
+ok - a second-mate, office or registry-less home skips the check

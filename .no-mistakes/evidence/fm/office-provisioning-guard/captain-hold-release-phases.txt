@@ -1,0 +1,32 @@
+### setup in scratch home: lab-gated (to be held), lab-golive (open phase), lab-built (Done phase)
+hold exit=0
+
+$ fm-captain-hold.sh answer lab-gated --decision-file go.txt --release 
+fm-captain-hold: task lab-gated is not released: --release needs --phases-filed <id>[,<id>...] naming a filed open backlog item for every remaining phase of the approved plan (the go-live step included), or --no-phases when the plan has none
+exit=1
+
+$ fm-captain-hold.sh answer lab-gated --decision-file go.txt --release --phases-filed lab-golive --no-phases
+fm-captain-hold: --release takes --phases-filed or --no-phases, not both
+exit=1
+
+$ fm-captain-hold.sh answer lab-gated --decision-file go.txt --release --phases-filed lab-missing
+fm-captain-hold: task lab-gated is not released: phase lab-missing is not in this home's backlog; file it first
+exit=1
+
+$ fm-captain-hold.sh answer lab-gated --decision-file go.txt --release --phases-filed lab-golive,lab-built
+fm-captain-hold: task lab-gated is not released: phase lab-built is already Done, so it is not a remaining phase; file the open phase
+exit=1
+
+  held: yes
+
+$ fm-captain-hold.sh answer lab-gated --decision-file go.txt --release --phases-filed lab-golive
+released: lab-gated
+exit=0
+  held: no
+  body: "Resolution recorded by fm-captain-hold.\nDecision digest: 1242952cbacc6b43f4d3d93d6d77d67e7d5ffcf02575bcad8eb3cd02010f0c4f\nResolution mode: released\nPhases: filed lab-golive\n\nCaptain decision:\nGo, in phases."
+
+$ fm-captain-hold.sh answer lab-single --decision-file go.txt --release --no-phases
+released: lab-single
+exit=0
+  held: no
+  body: "Resolution recorded by fm-captain-hold.\nDecision digest: 1242952cbacc6b43f4d3d93d6d77d67e7d5ffcf02575bcad8eb3cd02010f0c4f\nResolution mode: released\nPhases: none\n\nCaptain decision:\nGo, in phases."
