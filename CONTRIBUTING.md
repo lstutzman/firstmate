@@ -51,7 +51,7 @@ No GitHub ruleset or branch protection is configured on main today, so GitHub it
 The merge gate is `bin/fm-pr-merge.sh`: it refuses a merge while any check reported at the exact head is red, cancelled or still pending.
 It also refuses a check the forge requires for the base branch that never reported, which today means none.
 Its own list closes that gap: [`.github/required-checks.list`](.github/required-checks.list) names the job contexts that every merge must see green, one per line, with blank lines and `#` comment lines ignored.
-The script reads that file from the base branch of the pull request, never from the pull request head, and a listed context that has not reported at the head refuses the merge and is named in the refusal.
+The script reads that file from the base branch of the pull request (for a `--stack` merge, the stack's trunk), never from the pull request head, and a listed context that has not reported at the head refuses the merge and is named in the refusal.
 An attended `--allow-missing <context>` waives exactly one listed context by name, a base branch without the file keeps the forge-only behavior, and a file that cannot be read refuses the merge.
 An added job can be listed in the same pull request that adds it, because the base list does not name it yet.
 To rename or retire a listed job, first remove the old name from the list in its own pull request, which merges because the old job still reports, and then change the job.
