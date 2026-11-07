@@ -164,6 +164,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-check-unregister.sh` | Retire a custom watcher check and its trust binding by validated task id            |
 | `fm-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
 | `fm-tool-update-check.sh` | Report watched tooling with an update available, and updates installed but left inert by PATH order |
+| `fm-watch-backstop.sh`   | Per-home timer check that rings a home's own session once per stale episode when supervision stays down with nothing in the session to re-arm it ([configuration](configuration.md#watcher-backstop-timer)) |
 | `fm-fleet-alarm.py`      | Opt-in custom check and independent timer that alarm on Claude weekly quota pressure and silent second mates holding work ([configuration](configuration.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)) |
 | `fm-startup-growth-check.sh` | Daily metadata-only growth check for startup memory and tracked startup/instruction surfaces |
 | `fm-usage-warner.sh`     | Opt-in macOS threshold warner that notifies once when a configured Claude usage window crosses its percentage |

@@ -787,8 +787,16 @@ EOF
   : > "$home/data/captain.md"
   # secondmates.md, captain-shared.md, and learnings.md deliberately absent
 
-  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  printf '#!/usr/bin/env bash\necho not-found\nexit 4\n' > "$fakebin/systemctl"
+  printf '#!/usr/bin/env bash\nexit 113\n' > "$fakebin/launchctl"
+  chmod +x "$fakebin/systemctl" "$fakebin/launchctl"
 
+  out=$(FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%42 run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+
+  assert_contains "$(cat "$home/state/.watch-backstop-endpoint" 2>/dev/null)" 'target=%42' \
+    "a locked session start did not record its endpoint for the watcher backstop"
+  assert_contains "$out" "WATCH_BACKSTOP:" "session start did not report the home's missing backstop timer"
+  assert_contains "$out" "fm-watch-backstop.sh install" "the missing-timer report did not name the install command"
   jq -e --arg home "$home" '
     .schema == "fm-secondmate-home-summary.v1"
     and .home == $home

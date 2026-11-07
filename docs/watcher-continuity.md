@@ -128,6 +128,16 @@ The host owns successive watcher cycles through the same arm.
 Its [acknowledged hand-back](supervision-host.md#acknowledged-hand-back) section owns the opt-in Claude transfer that preserves supervision and retries delivery until main acknowledges the specific queued check.
 The arm's recovery and acknowledgement contracts below still apply.
 
+### Out-of-session backstop
+
+Every re-arm owner above runs inside the primary session, so a session that never ends a turn re-arms nothing.
+A session killed mid-cycle and relaunched with `claude --resume <id>` comes back idle in exactly that state: no Stop fires until someone types into it, while its home keeps work in flight with no watcher.
+`bin/fm-watch-backstop.sh` is the one path outside the session.
+Session start and every resume, reload, or fork record the session's endpoint, and a per-home user timer runs one `check` every five minutes.
+When the home needs supervision, no healthy watcher holds its lock, and the beacon is older than 15 minutes, the check rings that endpoint once per stale episode with a `watcher` operational input, so the next turn and its turn end restore supervision through the ordinary owner.
+It types only into an affirmatively empty idle composer and never starts, stops, or kills a session or watcher.
+Its header owns the record gate, the episode key, and the ring guards, and [configuration](configuration.md#watcher-backstop-timer) owns installation.
+
 ## Actionable wake ordering
 
 This section covers what each re-arm owner does between an actionable close and the wake reaching the model.
@@ -547,6 +557,8 @@ It checks that a newly appended keyed decision is classified without rereading e
 It also covers generation-claim single-flight, stuck-claim supersession, superseded-owner silence, notice-marker refusal and retry, ownership-atomic episode reset, and the legacy upgrade shim.
 [`turnend-guard.md`](turnend-guard.md) owns those behavior contracts.
 
+`tests/fm-watch-backstop.test.sh` covers the out-of-session backstop: the endpoint record's ownership gate, one ring per stale episode through a real tmux pane for a resumed home with a dead session lock and a consumed interrupted notice, a ring through the Herdr backend from the bare environment the timer unit runs `check` in, deferral on a pending composer or a vanished endpoint, the generated scheduler files, the idempotent `install`, and the `verify` diagnostic.
+
 `FM_CLAUDE_LIVE_E2E=1 tests/fm-claude-stop-autoarm-live-e2e.test.sh`:
 
 1. Starts with the reproduced stale-lock state.
@@ -576,5 +588,8 @@ The other harnesses rely on these mechanisms:
 - Cursor depends on its awaited stop-hook park.
 - Grok retains native background-completion notifications.
 - Codex retains bounded foreground checkpoints unless the home opts in to its [native Stop park](supervision-protocols/codex.md).
+
+Every harness above re-arms only from inside a session that takes turns.
+The [out-of-session backstop](#out-of-session-backstop) covers an idle or resumed session only where its per-home timer is installed and an endpoint was recorded; session start reports a home whose timer is missing or disabled, and it waits at least its 15-minute threshold plus one timer interval.
 
 [`verification/supervision.md`](verification/supervision.md#watcher-continuity) records the current cross-harness live evidence, the dated Stop-owned Claude auto-arm results, and exact opt-in commands.
