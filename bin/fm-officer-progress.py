@@ -393,11 +393,10 @@ def read_labels(team, deadline):
     header = auth.stdout.decode("utf-8", "replace").strip()
     if auth.returncode or not header:
         raise RuntimeError("linear-token gave no credential (exit %d)" % auth.returncode)
-    url = os.environ.get("LINEAR_TOKEN_API_URL", LABEL_API)
     labels, cursor, seen = {}, None, set()
     for _ in range(20):
         body = json.dumps({"query": LABEL_QUERY, "variables": {"team": team, "after": cursor, "names": names}}).encode()
-        request = urllib.request.Request(url, data=body, method="POST",
+        request = urllib.request.Request(LABEL_API, data=body, method="POST",
                                          headers={"Authorization": header, "Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(request, timeout=remaining(deadline)) as response:
@@ -534,7 +533,7 @@ def remaining(deadline):
 
 
 class TransientGitHub(RuntimeError):
-    """A GitHub answer that a short wait may fix: a rate limit, or an answer with no content."""
+    """A rate-limited GitHub answer, which a short wait may fix."""
 
 
 RATE_LIMITED = re.compile(r"rate[ _-]*limit|too many requests|abuse detection|secondary limit|retry[ -]after|\b(?:403|429)\b", re.I)
@@ -557,16 +556,13 @@ def list_open_prs(repo, deadline):
                 raise TransientGitHub("rate limited: " + redact(line, 120))
             raise RuntimeError("unexpected GitHub output: " + redact(line, 120))
         prs.append(json.loads(line[7:]))
-    if raw and not raw.strip():
-        # A zero-byte answer is an empty list, but blank lines alone are what a limited call prints.
-        raise TransientGitHub("empty GitHub answer (%d bytes)" % len(raw))
     return prs
 
 
 def open_prs(repos, deadline, cache=None):
     """({open PRs}, {repo: reason}): each repo is listed at most once per run.
 
-    A rate-limited or empty answer is retried with backoff (2, 8, then 30 seconds); any other failure is retried once.
+    A blank answer is a repo with no open PRs. A rate-limited answer is retried with backoff (2, 8, then 30 seconds); any other failure is retried once.
     A repo that still fails is named in the gaps and never aborts the other repos.
     """
     cache = {} if cache is None else cache
@@ -597,8 +593,12 @@ def open_prs(repos, deadline, cache=None):
     return prs, gaps
 
 
-def row_repo(row, repos):
-    """The repo in `repos` that a start row belongs to, or None when nothing ties it to one."""
+def row_repo(row, repos, team):
+    """The repo in `repos` that a start row belongs to, or None when nothing ties it to one.
+
+    A row's own project decides; a row without one is placed by the office routing rungs (scope_route), with each
+    repo standing in for an office, so team Linear items go to the PropertyCompass2 repo.
+    """
     wanted = {r.lower(): r for r in repos}
     project = "" if row.get("linear_only") else (row.get("project") or "").strip().lower()
     if project in wanted:
@@ -607,10 +607,7 @@ def row_repo(row, repos):
     for lowered, repo in wanted.items():
         if base and lowered.rsplit("/", 1)[-1] == base:
             return repo
-    for match in GITHUB_REPO.finditer((row.get("link") or "") + " " + (row.get("title") or "")):
-        if (match[1] + "/" + match[2]).lower() in wanted:
-            return wanted[(match[1] + "/" + match[2]).lower()]
-    return None
+    return scope_route(row, [Office(r, {r.rsplit("/", 1)[-1].lower()}, "", "") for r in repos], team)[0]
 
 
 def reconcile_merge_asks(rows, problems, deadline, linear):
@@ -802,7 +799,7 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
     return extra
 
 
-def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers, top_of_mind=(), repo_gaps=None):
+def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers, top_of_mind=(), repo_gaps=None, repos=()):
     doc = {"schema_version": 1, "source": "progress-officer", "doing": [], "done": [],
            "start_requests": [], "asks_for_lee": [], "excluded": [], "unclassified": 0,
            "filler": None, "coverage": problems}
@@ -965,19 +962,24 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
     doc["start_requests"] = unique
     repo_gaps = repo_gaps or {}
     if repo_gaps and not blockers:
-        # Only the repos whose open-PR list is missing hold their own starts; start requests are rechecked for
-        # open PRs again at dispatch, so work that no repo claims is not held for another repo's gap.
-        kept = []
+        # A repo whose open-PR list is missing holds its own starts, and work no repo claims could be any repo's.
+        kept, unclaimed = [], []
+        missing = ", ".join(sorted(repo_gaps))
         for row in doc["start_requests"]:
-            repo = row_repo(row, repo_gaps)
-            if repo:
+            repo = row_repo(row, repos, team)
+            if repo in repo_gaps:
                 row["reason"] = "Start deferred because the duplicate-start check is unavailable for " + repo
                 doc["excluded"].append(row)
+            elif repo is None:
+                row["reason"] = "Start deferred because no repository claims it and the duplicate-start check is unavailable for " + missing
+                doc["excluded"].append(row)
+                unclaimed.append(row["id"])
             else:
                 kept.append(row)
         doc["start_requests"] = kept
-        problems = problems + ["Starts held for %s: duplicate-start check unavailable: open PR discovery unavailable or incomplete (%s: %s)"
-                               % (repo, repo, reason) for repo, reason in sorted(repo_gaps.items())]
+        problems = problems + ["Starts held for %s: duplicate-start check unavailable: open PR discovery unavailable or incomplete (%s: %s)%s"
+                               % (repo, repo, reason, "; unclaimed starts held too: " + ", ".join(unclaimed) if unclaimed else "")
+                               for repo, reason in sorted(repo_gaps.items())]
     if blockers:
         for row in doc["start_requests"]:
             row["reason"] = "Start deferred because the duplicate-start check is unavailable"
@@ -1491,7 +1493,7 @@ def main(argv):
     checked, unchecked = set(), {}
     while not blockers:
         trial = judge(copy.deepcopy(snapshots), copy.deepcopy(list(rows.values())), set(configured),
-                      prs, [], args.team, unchecked, [], top_of_mind, repo_gaps)
+                      prs, [], args.team, unchecked, [], top_of_mind, repo_gaps, repos)
         candidates = [i for row in trial["start_requests"] for i in row["linear_ids"] if i not in checked]
         if not candidates:
             break
@@ -1507,7 +1509,7 @@ def main(argv):
     discovery.stats["unverified_starts"] = len(unchecked)
     reconcile_merge_asks([r for snapshot in snapshots for r in snapshot["rows"]] + list(rows.values()),
                          problems, discovery.deadline, rows)
-    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers, top_of_mind, repo_gaps)
+    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers, top_of_mind, repo_gaps, repos)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)

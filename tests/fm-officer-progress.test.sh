@@ -699,64 +699,74 @@ PY
 test_open_pr_discovery_is_per_repo() {
   make_world pr-per-repo
   stub_sleep
-  sed -i 's#repos: example/project;#repos: example/project,example/other;#' "$WORLD_HOME/data/officers.md"
-  printf -- '## Queued\n\n- [ ] other-bug - Bug: other repo crash (repo: example/other)\n- [ ] project-bug - Bug: project crash (repo: example/project)\n' > "$WORLD_HOME/data/backlog.md"
-  linear_item PC-61 'Bug: unattributed work starts'
+  sed -i 's#repos: example/project;#repos: example/project,example/other,example/PropertyCompass2;#' "$WORLD_HOME/data/officers.md"
+  printf -- '## Queued\n\n- [ ] other-bug - Bug: other repo crash (repo: example/other)\n- [ ] project-bug - Bug: project crash (repo: example/project)\n- [ ] loose-bug - Bug: loose crash\n' > "$WORLD_HOME/data/backlog.md"
+  linear_item PC-61 'Bug: team work for the app'
   local stub="$WORLD/gh-axi-real" file="$WORLD_HOME/data/officers/progress/$DATE.json" lane="$WORLD_HOME/data/officers/progress"
   cp "$FAKEBIN/gh-axi" "$stub"
-  # example/other answers blank lines only (a limited call) for the first N listings; example/project always answers.
+  # limit-<repo> holds how many more listings of that repo answer with GitHub's rate-limit error; a blank-<repo>
+  # file makes that repo answer as gh-axi does for zero open PRs: one newline.
   cat > "$FAKEBIN/gh-axi" <<SH
 #!/usr/bin/env bash
 case "\$3" in
-  */example/other/pulls\?*)
-    echo "\$3" >> "\$PROGRESS_WORLD/other-listings"
-    n=\$(cat "\$PROGRESS_WORLD/blank-count" 2>/dev/null || echo 0)
-    if [ "\$n" -gt 0 ]; then echo \$((n - 1)) > "\$PROGRESS_WORLD/blank-count"; printf '\n'; exit 0; fi ;;
+  */pulls\?*)
+    name=\${3#/repos/example/}; name=\${name%%/*}
+    echo "\$3" >> "\$PROGRESS_WORLD/listings-\$name"
+    n=\$(cat "\$PROGRESS_WORLD/limit-\$name" 2>/dev/null || echo 0)
+    if [ "\$n" -gt 0 ]; then echo \$((n - 1)) > "\$PROGRESS_WORLD/limit-\$name"; echo 'API rate limit exceeded for installation' >&2; exit 1; fi
+    if [ -e "\$PROGRESS_WORLD/blank-\$name" ]; then printf '\n'; exit 0; fi ;;
 esac
 exec "$stub" "\$@"
 SH
   chmod +x "$FAKEBIN/gh-axi"
-  # A limited answer is retried with backoff and the starts go through.
-  echo 2 > "$WORLD/blank-count"
+  clear_listings() { rm -f "$WORLD"/sleeps "$WORLD"/listings-* "$WORLD"/limit-* "$WORLD"/blank-*; }
+  start_ids() { jq -r '[.start_requests[].id] | sort | join(" ")' "$file"; }
+  # A lone newline is a repo with no open PRs: no retry, no wait, and every start goes ahead.
+  touch "$WORLD/blank-project" "$WORLD/blank-other" "$WORLD/blank-PropertyCompass2"
+  run_progress >/dev/null 2>&1 || fail 'repos with no open PRs must publish state'
+  assert_equals '1' "$(wc -l < "$WORLD/listings-other" | tr -d ' ')" 'a blank answer is read once'
+  assert_equals 'no sleeps' "$([ -e "$WORLD/sleeps" ] && cat "$WORLD/sleeps" || echo 'no sleeps')" 'a blank answer is never waited on'
+  assert_equals 'PC-61 loose-bug other-bug project-bug' "$(start_ids)" 'zero open PRs holds no start'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'Starts held' 'zero open PRs is not a coverage gap'
+  clear_listings
+  # A rate-limited answer is retried with backoff and the starts go through.
+  echo 2 > "$WORLD/limit-other"
   run_progress >/dev/null 2>&1 || fail 'a retried rate-limited listing must publish state'
-  assert_equals '3' "$(wc -l < "$WORLD/other-listings" | tr -d ' ')" 'a blank answer is retried with backoff (two blanks, then the list)'
+  assert_equals '3' "$(wc -l < "$WORLD/listings-other" | tr -d ' ')" 'a rate-limited answer is retried with backoff (two limits, then the list)'
   assert_equals '2 8' "$(tr '\n' ' ' < "$WORLD/sleeps" | sed 's/ $//')" 'the waits back off 2 then 8 seconds'
-  assert_equals 'PC-61 other-bug project-bug' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'every start goes through once the list arrives'
+  assert_equals 'PC-61 loose-bug other-bug project-bug' "$(start_ids)" 'every start goes through once the list arrives'
   assert_not_contains "$(jq -r '.coverage[]' "$file")" 'Starts held' 'a recovered listing holds nothing'
-  rm -f "$WORLD/sleeps" "$WORLD/other-listings"
-  : > "$WORLD/calls"
-  # One repo stays limited: only that repo's starts are held, and the gap is named per repo.
-  echo 99 > "$WORLD/blank-count"
-  run_progress >/dev/null 2>"$WORLD/stderr" || fail 'a persistently limited repo must publish state'
-  assert_equals '4' "$(wc -l < "$WORLD/other-listings" | tr -d ' ')" 'a limited repo is tried four times in all'
-  assert_equals 'PC-61 project-bug' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" \
-    'starts for the repos that answered still go; unattributed work is not held for another repo'
+  clear_listings
+  # One repo stays limited: its starts and unclaimed starts are held, and the gap is named per repo.
+  echo 99 > "$WORLD/limit-other"
+  run_progress >/dev/null 2>&1 || fail 'a persistently limited repo must publish state'
+  assert_equals '4' "$(wc -l < "$WORLD/listings-other" | tr -d ' ')" 'a limited repo is tried four times in all'
+  assert_equals '1' "$(wc -l < "$WORLD/listings-project" | tr -d ' ')" 'each answering repo is listed once per run'
+  assert_equals 'PC-61 project-bug' "$(start_ids)" 'starts for the repos that answered still go'
   assert_contains "$(jq -r '.excluded[] | .id + ": " + .reason' "$file")" 'other-bug: Start deferred because the duplicate-start check is unavailable for example/other' \
     'the limited repo holds its own start'
-  assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held for example/other: duplicate-start check unavailable: open PR discovery unavailable or incomplete (example/other: empty GitHub answer (1 bytes))' \
-    'the gap names the repo and the cause'
+  assert_contains "$(jq -r '.excluded[] | .id + ": " + .reason' "$file")" 'loose-bug: Start deferred because no repository claims it and the duplicate-start check is unavailable for example/other' \
+    'work no repo claims is held while a list is missing'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held for example/other: duplicate-start check unavailable: open PR discovery unavailable or incomplete (example/other: gh-axi read failed (exit 1): API rate limit exceeded for installation); unclaimed starts held too: loose-bug' \
+    'the gap names the repo, the cause and the unclaimed start'
   assert_not_contains "$(jq -r '.coverage[]' "$file")" 'example/project' 'the repo that answered is not named as a gap'
   assert_not_contains "$(jq -r '.coverage[]' "$file")" 'Starts held: duplicate-start check unavailable' 'one repo never holds every start'
-  assert_equals '1' "$(grep -c 'example/project/pulls' "$WORLD/calls")" 'each repo is listed once per run'
+  clear_listings
+  # The PropertyCompass2 list fails while another repo answers: the team Linear item is held, the others rank.
+  echo 99 > "$WORLD/limit-PropertyCompass2"
+  run_progress >/dev/null 2>&1 || fail 'a limited PropertyCompass2 listing must publish state'
+  assert_equals 'other-bug project-bug' "$(start_ids)" 'rows from the answering repos still rank'
+  assert_contains "$(jq -r '.excluded[] | .id + ": " + .reason' "$file")" 'PC-61: Start deferred because the duplicate-start check is unavailable for example/PropertyCompass2' \
+    'a team Linear item is held with its PropertyCompass2 repo'
+  clear_listings
   # Every repo limited: no PR evidence at all, so every start waits.
-  cat > "$FAKEBIN/gh-axi" <<'SH'
-#!/usr/bin/env bash
-case "$3" in */pulls\?*) printf '\n'; exit 0 ;; esac
-exit 99
-SH
+  echo 99 > "$WORLD/limit-project"; echo 99 > "$WORLD/limit-other"; echo 99 > "$WORLD/limit-PropertyCompass2"
   run_progress >/dev/null 2>&1 || fail 'all repos limited must still publish state'
-  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'with every list missing nothing starts'
-  assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete (example/other: empty GitHub answer (1 bytes); example/project: empty GitHub answer (1 bytes))' \
-    'both repos are named'
-  # A rate-limit message from gh-axi counts as limited too.
-  cat > "$FAKEBIN/gh-axi" <<'SH'
-#!/usr/bin/env bash
-case "$3" in */pulls\?*) echo 'API rate limit exceeded for installation' >&2; exit 1 ;; esac
-exit 99
-SH
-  run_progress >/dev/null 2>"$WORLD/stderr" || fail 'a rate-limit error must publish state'
+  assert_equals '' "$(start_ids)" 'with every list missing nothing starts'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete (example/PropertyCompass2: gh-axi read failed (exit 1): API rate limit exceeded for installation; example/other: ' \
+    'every repo is named'
   assert_contains "$(cat "$lane/.run.err")" 'open PR listing failed for example/project (attempt 4)' 'a rate-limit error is retried four times'
-  pass 'progress: open PR discovery retries limits, lists each repo once, and holds only the failed repo'
+  pass 'progress: open PR discovery retries limits, reads a blank list as no PRs, and holds only the failed repo and unclaimed work'
 }
 
 test_ancestor_asks_hold_only_routed_asks() {

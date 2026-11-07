@@ -1581,8 +1581,10 @@ Later runs skip Linear discovery, naming that gap, until the resume time passes.
 A capped or failed Linear read is a per-item coverage gap: checked items still produce start requests, while items whose full description or parent checks fail remain excluded and are named in coverage.
 A missing or unreadable registered home, an unsupported non-Markdown backlog, or open-PR discovery that fails for every configured repository leaves the duplicate-start check unable to pass for any item, so that run emits no start requests and its coverage names the reason.
 Each repository's open-PR list is read once per run.
-A rate-limited or blank answer is retried with 2, 8, then 30 second waits, and any other failed listing is retried once.
-A repository that still fails holds only its own starts, and its coverage entry and the run log name that repository and its redacted cause; starts that no repository claims go ahead, because the dispatch recheck covers open PRs again.
+A blank answer is a repository with no open PRs. A rate-limited answer is retried with 2, 8, then 30 second waits, and any other failed listing is retried once.
+A repository that still fails holds only its own starts, and its coverage entry and the run log name that repository and its redacted cause.
+A start's repository is its project, else the one the office routing rungs name, with each configured repository standing in for an office: a linked repository, the repository's name in the text, or a team Linear id for PropertyCompass2.
+While any repository's list is missing, a start that no repository claims is held too and named in each gap's coverage entry.
 Filler waits for complete coverage.
 The installed `linear-axi` cannot return or filter issue labels, so the officer reads them from Linear's GraphQL API with the fleet credential from `linear-token header`, never printing it.
 One filtered query returns the open team issues that carry a start-class label (`security`, `security-scan`, `scheduled-review`, `Bug`, `bug-sweep`), with all of their labels.
