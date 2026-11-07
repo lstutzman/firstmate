@@ -173,8 +173,8 @@ SWEEP_MEDIUM = ("p2", "medium")
 REVIEW_SEVERITY = {"critical": "high", "high": "medium", "medium": "low"}
 SOURCE_LABEL = {"nightly": "scheduled-review", "review": "scheduled-review", "sweeper": "bug-sweep", "visual": "scheduled-review"}
 SOURCE_NAME = {"nightly": "nightly E2E", "review": "nightly code review", "sweeper": "bug sweeper", "visual": "nightly visual review"}
-# The visual review's findings file (PropertyCompass2 scripts/visual-review/evaluate.py): the fingerprint prefix and the
-# wording or product rubric items it holds for Lee. A version 1 file has neither fingerprint nor class, so both are derived here.
+# The visual review's findings file (PropertyCompass2 scripts/visual-review/evaluate.py): its findings' job name, the area
+# label used when the route maps to none, and the severities it may state.
 VISUAL_JOB = "visual-review"
 VISUAL_AREA_FALLBACK = "ui-ux"
 VISUAL_SEVERITY = {"high": "high", "medium": "medium", "low": "low"}
