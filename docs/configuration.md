@@ -1826,6 +1826,8 @@ A local office home also carries a `.fm-office` marker holding the office id and
 [Office provisioning](office-provisioning.md) gives the ordered steps that create the offices.
 `bin/fm-office.sh list` prints each office and its gap count.
 Session start runs `bin/fm-office.sh ensure`, which prints one `OFFICE:` line per gap and nothing when the registry and the homes agree.
+It also prints one `OFFICE: pool:` line when clones of one project (same origin URL) under `~/fm-homes` differ on `max_trees` in their untracked `treehouse.toml`, because treehouse shares one pool directory per project but counts it against each clone's own cap.
+When the seed (`bin/fm-home-seed.sh`, or `bin/fm-remote-home-provision.sh` on a remote host) clones a project and a peer clone on the host already has a `treehouse.toml`, it copies that file in, taking the largest `max_trees` and the other keys from the first peer found, and never overwrites an existing one (`bin/fm-treehouse-toml-lib.sh`; `FM_TREEHOUSE_PEER_ROOTS` overrides the default `~/fm-homes` search root).
 An absent `data/offices.md` means no offices.
 In a primary home (it keeps `data/offices.md` and has no `.fm-secondmate-home` or `.fm-office` marker), `ensure` also prints `OFFICE: approved office <role> not provisioned` for every role in `FM_OFFICE_ROLES` (`bin/fm-office-authority-lib.sh`) that has neither a `data/offices.md` line nor a valid deferral; the watcher repeats that as a `check: office-provisioning` wake at most once a day until it is gone.
 `bin/fm-office.sh unprovisioned` runs that check alone against the home `FM_HOME` names, so pointing it at a scratch copy of a primary home shows the alarm for a role missing from that copy's `data/offices.md`.

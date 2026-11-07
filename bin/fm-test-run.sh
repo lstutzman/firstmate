@@ -583,6 +583,7 @@ tests/fm-t3-mcp.test.sh 31397
 tests/fm-test-run.test.sh 536229
 tests/fm-tmux-submit-busy.test.sh 2898
 tests/fm-transition-lib.test.sh 277
+tests/fm-treehouse-toml.test.sh 3000
 tests/fm-x-mode.test.sh 47796
 EOF
 }
