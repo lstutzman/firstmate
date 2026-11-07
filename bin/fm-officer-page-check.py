@@ -83,12 +83,14 @@ handoff), addressed to the --start-home office that dispatches the fleet reposit
 (the Quartermaster), else to --fm-home; fleet-app merges stay with Slarti. A
 standing-rule or stale-card finding is filed so its card is cleared and never starts a
 fix. The reserved-class check judges what the started fix would change, so it reads the
-finding's own kind, page, object id, evidence and route, never the card's question: a
-finding whose fix is in a reserved class is held as one keyed needs-decision line in
-`asks_for_lee`. A page-old or shown-after-done finding is a bug in fleet code, so its
-bad pattern (the kind, page and evidence, with the route as the safe form) is remembered
-once through the shared pattern memory and handed on in the digest's `patterns` and one
-batched pattern-memory start request. Without writes: linear nothing is filed and
+finding's own kind, page, evidence and route, and the object id only when the object is
+the fix target (a page or a Runs job), never a card's id or question: a finding whose
+fix is in a reserved class is held as one keyed needs-decision line in `asks_for_lee`.
+A page-old or shown-after-done finding is a bug in fleet code, so its bad pattern (the
+kind, the page or Runs job, and the route as the safe form, with no timestamps and no
+card id) is remembered once through the shared pattern memory, a repeat on another card
+or day raising its count, and handed on in the digest's `patterns` and one batched
+pattern-memory start request. Without writes: linear nothing is filed and
 nothing starts. What the create cap, call budget or a rate limit leaves unfiled is named
 in the digest.
 """
@@ -371,15 +373,26 @@ def officer(lib):
                        severities=("high", "medium"), pattern_sources=START_SOURCES, project=lib.FLEET_PROJECT)
 
 
+def fix_target(lf):
+    """What a started fix changes: the page, or the Runs job a page-old finding names; never the card a card finding observed."""
+    ref = lf["key"].split(":", 2)[2]
+    return "%s job %s" % (lf["job"], ref) if lf["source"] == "page-old" and lf["job"] == "Runs" and ref != "runs" else lf["job"]
+
+
+def fix_view(lf):
+    """The finding as the reserved-class check reads it: its kind and fix target in place of a title that may carry a card id."""
+    return dict(lf, title="%s: %s" % (fix_target(lf), lf["source"]))
+
+
 def pattern_findings(lib, findings):
-    """The bad pattern of each filed page or card-source defect: its kind, page and evidence, with the route as the safe form."""
-    return [dict(lf, title=lib.text("%s on %s: %s" % (lf["source"], lf["job"], lf["raw"]["evidence"]), 120),
+    """The bad pattern of each filed page or card-source defect: its kind and fix target, with the route as the safe form."""
+    return [dict(lf, title=lib.text("%s on %s (route: %s)" % (lf["source"], fix_target(lf), lf["raw"]["route"]), 120),
                  fix=lib.text(lf["raw"]["route"], 200)) for lf in findings if (lf["filing"] or {}).get("issue")]
 
 
 def lib_findings(lib, findings):
     """One shared-library finding per page-check finding, built from the kind, page, object id, evidence and route only,
-    never from a card's words: Linear is third-party storage, and the reserved-class match judges the fix, not the card."""
+    never from a card's words, because Linear is third-party storage."""
     out = []
     for f in findings:
         ref = f["id"].split(":", 2)[2]
@@ -474,7 +487,7 @@ def linear_pass(raw, args, key):
     handled = state.setdefault("handled", {})
     gaps = rubric.gaps + ([jev.gap] if jev.gap and linear else [])
     if args.fm_home:
-        starts, held, asks = lib.plan_starts(off, findings, rubric, day, args.writes, args.fm_home, lib.parse_start_homes(args.start_home), handled)
+        starts, held, asks = lib.plan_starts(off, [fix_view(f) for f in findings], rubric, day, args.writes, args.fm_home, lib.parse_start_homes(args.start_home), handled)
     else:
         starts, held, asks = [], [], []
         gaps.append("no --fm-home, so nothing starts by itself")

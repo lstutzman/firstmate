@@ -464,17 +464,17 @@ raise_to_start() {
 test_a_settled_production_card_shown_again_starts_its_page_fix() {
   local json
   linear_world prodcard
-  jq '.value.cards += [{id: "release-1-2-3", band: "now", question: "Go for production deploy of 1.2.3?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"}]' \
+  jq '.value.cards += [{id: "payments-legal-merge-asks-2026-11-07", band: "now", question: "Go for production deploy of 1.2.3?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"}]' \
     "$TMP_ROOT/prodcard/pages/_api_captains-log" > "$TMP_ROOT/prodcard/captains-log.json"
   cp "$TMP_ROOT/prodcard/captains-log.json" "$TMP_ROOT/prodcard/pages/_api_captains-log"
-  jq '.cards += [{id: "release-1-2-3", lifecycle: "closed"}]' "$TMP_ROOT/prodcard/pages/_api_captains-log_facts_source_bosun" > "$TMP_ROOT/prodcard/facts.json"
+  jq '.cards += [{id: "payments-legal-merge-asks-2026-11-07", lifecycle: "closed"}]' "$TMP_ROOT/prodcard/pages/_api_captains-log_facts_source_bosun" > "$TMP_ROOT/prodcard/facts.json"
   cp "$TMP_ROOT/prodcard/facts.json" "$TMP_ROOT/prodcard/pages/_api_captains-log_facts_source_bosun"
-  json=$(raise_to_start prodcard "shown-after-done:Captain's Log:release-1-2-3" | tail -n 1)
+  json=$(raise_to_start prodcard "shown-after-done:Captain's Log:payments-legal-merge-asks-2026-11-07" | tail -n 1)
   assert_no_grep "production deploy" "$FAKE_LINEAR_DIR/bodies" "the card's words never reach Linear"
-  assert_equals "1" "$(jq '[.start_requests[] | select(.kind == "page-check-finding" and .id == "shown-after-done:Captain'"'"'s Log:release-1-2-3")] | length' "$json")" \
+  assert_equals "1" "$(jq '[.start_requests[] | select(.kind == "page-check-finding" and .id == "shown-after-done:Captain'"'"'s Log:payments-legal-merge-asks-2026-11-07")] | length' "$json")" \
     "the re-shown card's page fix starts at the start minimum, though the card asks for a production deploy"
-  assert_equals "0" "$(jq '[.held[] | select(.title | contains("release-1-2-3"))] | length' "$json")" "and it is not held for Lee"
-  pass "fm-officer page-check: a settled production-deploy card shown again starts its fleet-app page fix"
+  assert_equals "0" "$(jq '[.held[] | select(.title | contains("payments-legal-merge-asks-2026-11-07"))] | length' "$json")" "and it is not held for Lee"
+  pass "fm-officer page-check: a settled production-deploy card whose id names payments starts its fleet-app page fix when shown again"
 }
 
 test_a_fix_in_a_reserved_class_is_held_for_lee() {
@@ -487,7 +487,7 @@ test_a_fix_in_a_reserved_class_is_held_for_lee() {
   assert_equals "0" "$(jq '[.start_requests[] | select(.id == "page-old:Runs:stripe-billing-sync")] | length' "$json")" "a fix to a billing job is never started"
   assert_equals "1" "$(jq '.asks_for_lee | length' "$json")" "the run carries one needs-decision line"
   assert_equals "page-check-holds-2026-11-01" "$(jq -r '.asks_for_lee[0].key' "$json")" "it is keyed for the day"
-  assert_contains "$(jq -r '.asks_for_lee[0].line' "$json")" "stripe-billing-sync (payments-billing)" "the line names the finding and its reserved class"
+  assert_contains "$(jq -r '.asks_for_lee[0].line' "$json")" "Runs job stripe-billing-sync: page-old (payments-billing)" "the line names the finding and its reserved class"
   pass "fm-officer page-check: a finding whose own fix is in a reserved class is filed and held for Lee, never started"
 }
 
@@ -497,13 +497,17 @@ test_a_page_defect_pattern_is_remembered_once() {
   home=$LW_HOME
   json="$home/data/officers/page-check/$KEY.json"
   officer patterns run page-check --date "$KEY" >/dev/null || fail "run must succeed"
-  assert_equals "1" "$(jq '[.patterns.new[] | select(.line | startswith("Anti-pattern: page-old on Velocity audit:"))] | length' "$json")" \
+  assert_equals "1" "$(jq '[.patterns.new[] | select(.line | startswith("Anti-pattern: page-old on Velocity audit "))] | length' "$json")" \
     "a new page-old finding yields one pattern line"
   assert_contains "$(jq -r '[.patterns.new[] | select(.line | contains("Velocity audit"))][0].line' "$json")" "Safe form: page owner: restore the page's feed" \
     "its safe form is the finding's route"
   assert_equals "true" "$(jq '[.patterns.new[].line] | all(startswith("Anti-pattern: page-old on ") or startswith("Anti-pattern: shown-after-done on "))' "$json")" \
     "a card a rule settles, or a stale card, is not a bug pattern"
-  assert_equals "0" "$(jq '[.patterns.new[].line | select(contains("Bosun asks about an episode"))] | length' "$json")" "a pattern never carries a card's words"
+  assert_equals "0" "$(jq '[.patterns.new[].line | select(contains("Bosun asks about an episode") or contains("bosun-ep"))] | length' "$json")" \
+    "a pattern never carries a card's words or id"
+  assert_equals "0" "$(jq '[.patterns.new[].line | select(test("[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]+ hour"))] | length' "$json")" "a pattern carries no timestamp or age"
+  assert_equals "1 2" "$(jq -r '[.patterns.new[] | select(.line | startswith("Anti-pattern: shown-after-done on "))] | "\(length) \(.[0].count)"' "$json")" \
+    "two cards re-shown on the same page are one pattern, counted twice"
   assert_equals "$(jq '.patterns.total' "$json")" "$(jq '[.start_requests[] | select(.kind == "pattern-memory") | .patterns[]] | length' "$json")" \
     "the new patterns go on in one pattern-memory start request"
   officer patterns run page-check --date "$KEY" >/dev/null || fail "a same-day re-run must succeed"
@@ -514,6 +518,11 @@ test_a_page_defect_pattern_is_remembered_once() {
     "a repeat of the finding on a later day does not duplicate its pattern"
   assert_equals "1" "$(jq '[.patterns[] | select(.title | contains("Velocity audit"))][0].count' "$home/data/officers/page-check/patterns.json")" \
     "nor counts it again"
+  assert_not_equals "$(jq -r '[.findings[] | select(.id | startswith("page-old:Business health"))][0].title' "$json")" \
+    "$(jq -r '[.findings[] | select(.id | startswith("page-old:Business health"))][0].title' "$home/data/officers/page-check/$day2.json")" \
+    "the Business health page is seen old on both days with a different age"
+  assert_equals "1" "$(jq '[.patterns[] | select(.title | contains("Business health"))] | length' "$home/data/officers/page-check/patterns.json")" \
+    "two sightings of the same old page with different timestamps give one pattern"
   assert_equals "0" "$(jq '[.patterns.new[] | select(.line | contains("Velocity audit"))] | length' "$home/data/officers/page-check/$day2.json")" \
     "and the later day lists it as known, not new"
   pass "fm-officer page-check: a page defect's bad pattern is remembered once, with its route as the safe form"

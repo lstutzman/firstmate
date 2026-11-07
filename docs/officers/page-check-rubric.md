@@ -42,8 +42,8 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - A `page-old` or `shown-after-done` finding starts once its item exists and its score reaches the minimum below: a high finding on first sight (4 at found 1), a medium finding at found 3.
 - The request goes to the Quartermaster, who owns the fleet repositories; fleet-app merges stay with Slarti through the existing merge handoff.
 - A request is repeated on every run of the same day until the day ends, and a later day never asks twice.
-- A page-old or shown-after-done finding is a bug in fleet code, so once its item exists its bad pattern is remembered once: the kind, page and evidence as the anti-pattern and the route as the safe form, never a card's words.
-  A new pattern goes to the Quartermaster in one batched pattern-memory start request and in the digest's `patterns` for memory capture; a repeat of the same finding adds no second line.
+- A page-old or shown-after-done finding is a bug in fleet code, so once its item exists its bad pattern is remembered once: the kind and the page or Runs job as the anti-pattern and the route as the safe form, with no timestamps and never a card's id or words.
+  A new pattern goes to the Quartermaster in one batched pattern-memory start request and in the digest's `patterns` for memory capture; a repeat of the same finding adds no second line, and the same defect on another card or page sighting raises the pattern's count.
   `standing-rule` and `stale-card` findings are not bug patterns and are never remembered.
 
 ## What only files, and holds for Lee
@@ -52,7 +52,7 @@ These never start by themselves, whatever the score:
 
 - `standing-rule` and `stale-card` findings: the card is cleared by cl-keeper, and the rule is Lee's, so the officer never starts a fix for either.
 - The seven reserved classes: payments or billing, legal text, product decisions, member-facing copy, credentials, production actions and data-rewriting changes.
-  The check judges what the started fix would change, so it reads the finding's own kind, page, object id, evidence and route, never the card's question:
+  The check judges what the started fix would change, so it reads the finding's own kind, page, evidence and route, and the object id only when the object is the fix target (a page or a Runs job), never a card's id or question:
   a settled card asking for a production deploy that the app re-shows is a fleet-app page fix, and starts like any other.
   A finding whose own fix is in a reserved class is still filed, and the digest carries one keyed needs-decision line for the run.
 

@@ -1552,8 +1552,8 @@ Every open finding is filed once in team PC, project Fleet, with the labels Bug,
 The shared [filing rules](officers/contract.md#file) own duplicates, recurrences and the call budget, and the item names a card by its id and never carries the card's words.
 A `page-old` or `shown-after-done` finding whose item exists is handed to the Quartermaster as a start request; that routing needs `start-home: quartermaster` on the registry line, as in the example above, and without it the request goes to the home running the officer.
 A `standing-rule` or `stale-card` finding is filed so its card is cleared and never starts a fix.
-The reserved-class check judges what the started fix would change, so it reads the finding's own kind, page, object id, evidence and route and never the card's question; a finding whose fix is in a reserved class is held as one keyed `needs-decision` line in the digest.
-A `page-old` or `shown-after-done` finding is a bug, so its bad pattern (kind, page and evidence, with the route as the safe form) is remembered once and handed on in the digest's `patterns` and one batched pattern-memory start request.
+The reserved-class check judges what the started fix would change, so it reads the finding's own kind, page, evidence and route, and the object id only when the object is the fix target (a page or a Runs job), never a card's id or question; a finding whose fix is in a reserved class is held as one keyed `needs-decision` line in the digest.
+A `page-old` or `shown-after-done` finding is a bug, so its bad pattern (the kind and the page or Runs job, with the route as the safe form, and no timestamps or card id) is remembered once and handed on in the digest's `patterns` and one batched pattern-memory start request.
 Without `writes: linear` nothing is filed and nothing starts.
 `bin/fm-officer-page-check.py`'s header owns the filing and the start requests.
 
