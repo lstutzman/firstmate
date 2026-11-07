@@ -53,7 +53,8 @@ It also refuses a check the forge requires for the base branch that never report
 Its own list closes that gap: [`.github/required-checks.list`](.github/required-checks.list) names the job contexts that every merge must see green, one per line, with blank lines and `#` comment lines ignored.
 The script reads that file from the base branch of the pull request, never from the pull request head, and a listed context that has not reported at the head refuses the merge and is named in the refusal.
 An attended `--allow-missing <context>` waives exactly one listed context by name, a base branch without the file keeps the forge-only behavior, and a file that cannot be read refuses the merge.
-When a job is added, renamed or retired, change the file in the same pull request.
+An added job can be listed in the same pull request that adds it, because the base list does not name it yet.
+To rename or retire a listed job, first remove the old name from the list in its own pull request, which merges because the old job still reports, and then change the job.
 A GitHub ruleset would add forge-side enforcement and is a repository-settings change, separate from committing workflow YAML and from the list above.
 When such a ruleset is created, preserve any existing pull-request, merge-method, linear-history, deletion, non-fast-forward, and administrator-bypass settings.
 Add required status checks with `strict_required_status_checks_policy: false`; a main update alone must not force a branch update and retest.
