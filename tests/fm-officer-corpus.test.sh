@@ -41,7 +41,7 @@ make_world() {
     > "$W/corpus/transcript-archive/last-result.json"
   runs_line ok ok > "$W/corpus/transcript-archive/runs.jsonl"
   runs_line ok ok >> "$W/corpus/transcript-archive/runs.jsonl"
-  printf '{"outcome": "ok", "counts": {"listed": 100, "total": 100, "written": 4, "withheld": 0, "deleted": 0, "superseded": 2}}\n' \
+  printf '{"backend": "memory-service", "listed": 100, "written": 4, "withheld": 0, "deleted": 0, "superseded": 2, "tier_total": 100, "superseded_listable": true, "scrubber_version": "1", "started_at": "2026-11-05T03:00:00Z", "finished_at": "2026-11-05T03:00:09Z", "result": "ok"}\n' \
     > "$W/corpus/memory-harvest/last-result.json"
   bosun "$sl" 2026-11-05 0 0
   bosun "$dt" 2026-11-05 0 0
@@ -105,7 +105,7 @@ test_each_finding_class() {
     runs_line bad ok
     runs_line bad bad
   } > "$W/corpus/transcript-archive/runs.jsonl"
-  printf '{"outcome": "failed", "counts": {"listed": 90, "total": 100}}\n' > "$W/corpus/memory-harvest/last-result.json"
+  printf '{"backend": "memory-service", "listed": 90, "written": 4, "withheld": 0, "deleted": 0, "superseded": 2, "tier_total": 100, "superseded_listable": true, "scrubber_version": "1", "started_at": "2026-11-05T03:00:00Z", "finished_at": "2026-11-05T03:00:09Z", "result": "failed"}\n' > "$W/corpus/memory-harvest/last-result.json"
   printf '{"finished": "2026-11-03T08:00:00+00:00", "rows": 9}\n' > "$W/hosts/slartibartfast/Documents/GitHub/local-jev/data/prep/ready.json"
   printf '{"run": "20261024", "started": "2026-10-24T20:00:02+00:00", "status": "kept"}\n' \
     > "$W/hosts/deepthought/Documents/GitHub/local-jev/results/weekly/history.jsonl"
@@ -184,10 +184,31 @@ test_unreachable_source_is_not_reported_again() {
   pass "fm-officer corpus: an unreachable or missing source keeps its findings reported"
 }
 
+test_harvest_reads_the_writers_schema() {
+  local out hf
+  make_world schema
+  hf="$W/corpus/memory-harvest/last-result.json"
+  out=$(run_corpus) || fail "a good harvest must run: $out"
+  assert_not_contains "$out" "outcome None" "a good harvest never reads as outcome None"
+  assert_grep "Memory harvest: outcome ok; listed 100, tier_total 100, written 4" "$(lane)/$DATE.md" "the digest reads the writer's flat fields"
+  assert_not_contains "$(classes)" "harvest" "a good harvest raises no finding"
+  sed -i 's/"result": "ok"/"result": "partial"/; s/"listed": 100/"listed": 60/' "$hf"
+  run_corpus >/dev/null || fail "a partial harvest must run"
+  assert_contains "$(classes)" "harvest-failed memory-harvest" "a partial harvest is the harvest finding"
+  sed -i 's/"result": "partial"/"result": "failed"/' "$hf"
+  run_corpus >/dev/null || fail "a failed harvest must run"
+  assert_contains "$(classes)" "harvest-failed memory-harvest" "a failed harvest is the harvest finding"
+  sed -i 's/, "result": "failed"//' "$hf"
+  out=$(run_corpus) || fail "a harvest with no result must run: $out"
+  assert_not_contains "$(classes)" "harvest-failed" "a file with no result field is not guessed"
+  assert_contains "$out" "memory harvest's last result" "it is reported as unreadable"
+  pass "fm-officer corpus: the harvest is read from the fields memory_harvest.py writes"
+}
+
 test_harvest_zero_total_is_not_missing_counts() {
   local out
   make_world zero
-  printf '{"outcome": "ok", "counts": {"listed": 0, "total": 0}}\n' > "$W/corpus/memory-harvest/last-result.json"
+  printf '{"backend": "memory-service", "listed": 0, "written": 4, "withheld": 0, "deleted": 0, "superseded": 2, "tier_total": 0, "superseded_listable": true, "scrubber_version": "1", "started_at": "2026-11-05T03:00:00Z", "finished_at": "2026-11-05T03:00:09Z", "result": "ok"}\n' > "$W/corpus/memory-harvest/last-result.json"
   out=$(run_corpus) || fail "a run with an empty tier must succeed: $out"
   assert_not_contains "$out" "names no listed and total counts" "a total of 0 is a count, not a missing one"
   assert_contains "$out" "DIGEST $DATE 0 " "an empty tier is not a drift finding"
@@ -280,7 +301,7 @@ linear_world() {
     runs_line bad ok
     runs_line bad ok
   } > "$W/corpus/transcript-archive/runs.jsonl"
-  printf '{"outcome": "failed", "counts": {"listed": 90, "total": 100}}\n' > "$W/corpus/memory-harvest/last-result.json"
+  printf '{"backend": "memory-service", "listed": 90, "written": 4, "withheld": 0, "deleted": 0, "superseded": 2, "tier_total": 100, "superseded_listable": true, "scrubber_version": "1", "started_at": "2026-11-05T03:00:00Z", "finished_at": "2026-11-05T03:00:09Z", "result": "failed"}\n' > "$W/corpus/memory-harvest/last-result.json"
   printf '{"finished": "2026-11-03T08:00:00+00:00", "rows": 9}\n' > "$W/hosts/slartibartfast/Documents/GitHub/local-jev/data/prep/ready.json"
   printf '{"run": "20261024", "started": "2026-10-24T20:00:02+00:00", "status": "kept"}\n' \
     > "$W/hosts/deepthought/Documents/GitHub/local-jev/results/weekly/history.jsonl"
@@ -419,7 +440,7 @@ test_no_writes_and_a_missing_label_file_nothing() {
   fake_linear "$FAKEBIN"
   export FAKE_LINEAR_DIR="$W/linear"
   mkdir -p "$FAKE_LINEAR_DIR"
-  printf '{"outcome": "failed", "counts": {"listed": 100, "total": 100}}\n' > "$W/corpus/memory-harvest/last-result.json"
+  printf '{"backend": "memory-service", "listed": 100, "written": 4, "withheld": 0, "deleted": 0, "superseded": 2, "tier_total": 100, "superseded_listable": true, "scrubber_version": "1", "started_at": "2026-11-05T03:00:00Z", "finished_at": "2026-11-05T03:00:09Z", "result": "failed"}\n' > "$W/corpus/memory-harvest/last-result.json"
   run_corpus >/dev/null || fail "a writes: none run must succeed"
   assert_equals gone "$([ -e "$FAKE_LINEAR_DIR/log" ] && echo called || echo gone)" "writes: none makes no Linear call at all"
   assert_equals 0 "$(jq '.start_requests | length' "$(lane)/$DATE.json")" "and starts nothing"
@@ -438,6 +459,7 @@ test_each_finding_class
 test_archive_gap_needs_two_nights
 test_reported_once_rerun_identical_and_recurrence
 test_unreachable_source_is_not_reported_again
+test_harvest_reads_the_writers_schema
 test_harvest_zero_total_is_not_missing_counts
 test_coverage_gaps_never_fail_the_run
 test_run_writes_only_its_lane
