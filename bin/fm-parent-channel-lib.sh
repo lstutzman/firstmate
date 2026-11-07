@@ -175,9 +175,9 @@ fm_parent_channel_append_once() {  # <path> <line>
   fm_parent_channel_append "$path" "$line"
 }
 
-# The unstamped line that hands <pr-url> to merger home <home>: the same line
-# bin/fm-pr-merge.sh prints on its merger refusal, which
-# tests/fm-pr-merge.test.sh pins byte-identical to this builder.
+# The unstamped line that hands <pr-url> to merger home <home>, the one owner of
+# the handoff that bin/fm-pr-check.sh publishes and bin/fm-pr-merge.sh prints on
+# its merger refusal.
 fm_merge_handoff_line() {  # <home> <pr-url>
   printf 'needs-decision [key=merge-handoff-%s] [cause=external]: [handoff=%s] %s is ready to merge' \
     "${2##*/}" "$1" "$2"

@@ -858,11 +858,17 @@ test_merger_home_refuses_another_home() {
     "merger-refuses-other-home: the handoff did not open a keyed decision on the parent channel"
   assert_grep 'an earlier question' "$case_dir/open-decisions" \
     "merger-refuses-other-home: the handoff replaced the mate's earlier open decision"
-  # bin/fm-pr-check.sh publishes this same handoff at registration through
-  # fm_merge_handoff_line, so the refusal's line and the builder's must match.
-  [ "$(grep 'merge-handoff-9' "$case_dir/parent/state/gilligan.status" | sed -E 's/ \[at=[0-9]+\]//')" \
-    = "$(bash -c '. "$1/bin/fm-parent-channel-lib.sh"; fm_merge_handoff_line slarti "$2"' _ "$ROOT" https://github.com/example/repo/pull/9)" ] \
-    || fail "merger-refuses-other-home: the refusal's handoff line drifted from fm_merge_handoff_line"
+  # One owner: the refusal's printed line comes from fm_merge_handoff_line, so a
+  # copy of bin/ whose builder says something else makes the refusal say it too.
+  cp -R "$ROOT/bin" "$case_dir/bin-copy"
+  printf '%s\n' "fm_merge_handoff_line() { printf 'needs-decision: builder-says'; }" \
+    >> "$case_dir/bin-copy/fm-parent-channel-lib.sh"
+  set +e
+  PR_MERGE="$case_dir/bin-copy/fm-pr-merge.sh" run_pr_merge "$case_dir" task-x1 \
+    https://github.com/example/repo/pull/9 > /dev/null 2> "$case_dir/stderr-copy"
+  set -e
+  assert_grep 'builder-says' "$case_dir/stderr-copy" \
+    "merger-refuses-other-home: the refusal's handoff line did not come from fm_merge_handoff_line"
   [ ! -s "$case_dir/gh.log" ] || fail "merger-refuses-other-home: gh ran before the refusal"
   [ ! -s "$case_dir/gh-axi.log" ] || fail "merger-refuses-other-home: gh-axi ran before the refusal"
   assert_no_grep '^pr=' "$case_dir/state/task-x1.meta" \

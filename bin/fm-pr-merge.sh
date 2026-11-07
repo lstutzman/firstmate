@@ -759,7 +759,7 @@ if [ -n "$MERGE_PROJECT" ]; then
   if [ -n "$MERGE_MERGER" ] && [ "$MERGE_SELF" != "$MERGE_MERGER" ]; then
     echo "error: PR merge refused: $(basename "$MERGE_PROJECT") is merged only by home $MERGE_MERGER, and this home is $MERGE_SELF; hand the PR to that home instead:" >&2
     print_merge_handoff "$MERGE_MERGER" \
-      "$(status_stamp_line "needs-decision [key=merge-handoff-${URL##*/}] [cause=external]: [handoff=$MERGE_MERGER] $URL is ready to merge")"
+      "$(status_stamp_line "$(fm_merge_handoff_line "$MERGE_MERGER" "$URL")")"
     exit 1
   fi
 fi
