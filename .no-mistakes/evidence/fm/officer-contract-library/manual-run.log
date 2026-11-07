@@ -1,0 +1,95 @@
+== run 1 (2026-11-01), registry max-creates: 10 ==
+DIGEST 2026-11-01 9 data/officers/library/2026-11-01.md
+rc=0
+== creates sent to Linear (verify) ==
+issue create --team PC --title ADR points at the retired ledger --body-file <f> --priority 2 --label Chore --label scheduled-review --label documentation --verify --output json
+issue create --team PC --title README undercounts the rules --body-file <f> --priority 3 --label Chore --label scheduled-review --label documentation --verify --output json
+issue create --team PC --title TypeScript aliases --body-file <f> --priority 3 --label Chore --label scheduled-review --label documentation --verify --output json
+== bodies ==
+Filed by the library officer from the 2026-10-31 librarian audit.
+What it is for: keep the repository's documents placed, current and readable.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: high. Kind: conflict. Path: docs/adr/0003.md. Bucket: needs-lee (a conflict is never settled by rewriting requirements).
+Found: 1 times (first 2026-10-31, last 2026-10-31, by library)
+Finding: ADR points at the retired ledger
+Proposed: Propose a dated successor note.
+librarian-fp:d268f104b3985a1914a64b581eeec6aa71147ea965ab72ee0c2b40ec72c4997a
+Filed by the library officer from the 2026-10-31 librarian audit.
+What it is for: keep the repository's documents placed, current and readable.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: medium. Kind: readme. Path: README.md. Bucket: safe (a docs change one PR can ship).
+Found: 1 times (first 2026-10-31, last 2026-10-31, by library)
+Finding: README undercounts the rules
+Proposed: Propose changing the count to 29.
+librarian-fp:b949be6442b58b8ca42c15a635621a2055d4afa8409413a89292d333cdd8dad2
+Filed by the library officer from the 2026-10-31 librarian audit.
+What it is for: keep the repository's documents placed, current and readable.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: medium. Kind: stack-drift. Path: package.json. Bucket: safe (a docs change one PR can ship).
+Found: 1 times (first 2026-10-31, last 2026-10-31, by library)
+Finding: TypeScript aliases
+Proposed: Make sure tech-stack.md names both compilers.
+librarian-fp:89690912f2990c8a94c03b0173b6559969a8d1b71f2e7f5f3c366b821f6f8089
+== digest md ==
+# Library officer digest for 2026-11-01
+
+9 new item(s) to act on. Audit run: 2026-10-31.
+
+- Audit run 2026-10-31: outcome ok; cost_usd 2.5, decisions 5, findings 7, gaps 0, high 1, paths 10, shortcut_debt 0, unneeded_code 1.
+
+## Needs Lee (5)
+
+- NEW [high] decisions /tmp/tmp.jHc9RLt4f6/runs/2026-10-31/report.md: 5 decision(s) for Lee (the audit's decisions for Lee). Proposed: one Captain's Log card for the run
+- NEW [high] conflict docs/adr/0003.md: ADR points at the retired ledger (a conflict is never settled by rewriting requirements). Proposed: Propose a dated successor note.
+- NEW [low] readme .claude/skills/x/SKILL.md: Skill README stale (an instruction or hook file). Proposed: Propose a fix.
+- NEW [low] cruft scripts/old.sh: Old script (the disposition says deletion). Proposed: Check what reads it, then propose deletion.
+- NEW [low] misplaced spec/loose.md: Loose spec (the disposition says owner). Proposed: Propose moving it once its owner agrees.
+
+## Safe to ship (2)
+
+- NEW [low] readme README.md: README undercounts the rules (a docs change one PR can ship). Proposed: Propose changing the count to 29.
+- NEW [low] stack-drift package.json: TypeScript aliases (a docs change one PR can ship). Proposed: Make sure tech-stack.md names both compilers.
+
+## Code work (2)
+
+- NEW [medium] unneeded-code src/A.cs: Duplicate figure (code work, not a docs change). Proposed: Merge into one property.
+- NEW [low] stack-drift Directory.Packages.props: Mixed patch levels (code work, not a docs change). Proposed: Record the versions. Alignment needs its own upgrade brief.
+
+## On hold (2)
+
+- [low] other .: Partial inventory (nothing to ship yet). Proposed: Report the assessment as partial.
+- [low] misplaced scripts/ops/brief.md: Brief among scripts (nothing to ship yet). Proposed: Unresolved. Read both next run; propose docs/runbooks.
+
+## Coverage gaps
+
+- local-jev not found at /nonexistent/jev.py, so duplicates are found by fingerprint only
+
+## Linear
+
+Writes: linear; 10 linear-axi call(s) of 450.
+- Not filed (over max-creates for this run): 5, highest score first: Duplicate figure (medium, score 2.0); Old script (low, score 1.0); Loose spec (low, score 1.0); Skill README stale (low, score 1.0); Mixed patch levels (low, score 1.0)
+- local-jev not found at /nonexistent/jev.py, so duplicates are found by fingerprint only
+- needs-decision [key=library-needs-lee-2026-10-31]: 5 audit item(s) need Lee, listed in the 2026-10-31 digest: 5 decision(s) for Lee; ADR points at the retired ledger; Skill README stale; Old script; Loose spec
+== start_requests / asks_for_lee ==
+{"start_requests":[],"asks":["library-needs-lee-2026-10-31"]}
+== next day run (same audit run) ==
+DIGEST 2026-11-02 0 data/officers/library/2026-11-02.md
+rc=0
+total verify creates now: 3
+== adversarial registry lines ==
+-- max-creates: 0
+fm-officer: officer library: max-creates must be a whole number, at least 1
+rc=2
+-- team: ENG
+fm-officer: officer library: a library files into team PC only
+rc=2
+-- writes: maybe
+DIGEST 2026-11-03 0 data/officers/library/2026-11-03.md
+rc=0
+-- writes: maybe (alone)
+fm-officer: officer library: writes must be linear or none
+rc=2
+(note: the earlier 'writes: maybe' case repeated the writes field after 'writes: linear', so the first value won; this rerun checks the field on its own.)
