@@ -24,6 +24,9 @@
 # list prints one line per registry entry: "<id> <role> <state>", where state
 # is "ok" or "gaps:<n>".
 #
+# ensure also prints one "OFFICE: pool: <gap>" line per project whose clones on
+# this host differ on treehouse max_trees (bin/fm-treehouse-toml-lib.sh).
+#
 # ensure (run by bin/fm-bootstrap.sh) prints one "OFFICE: office <id>: <gap>"
 # line per mismatch between data/offices.md and the fleet, and nothing when
 # they agree. An absent data/offices.md means no offices. A gap is a malformed
@@ -177,6 +180,8 @@ STATUS_CHECK="$STATE/$STATUS_CHECK_ID.check.sh"
 . "$SCRIPT_DIR/fm-registry-line-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-treehouse-toml-lib.sh
+. "$SCRIPT_DIR/fm-treehouse-toml-lib.sh"
 # shellcheck source=bin/fm-check-lib.sh
 . "$SCRIPT_DIR/fm-check-lib.sh"
 # shellcheck source=bin/fm-secondmate-parent-lib.sh
@@ -353,6 +358,7 @@ EOF
   done <<EOF
 $(registry_lines)
 EOF
+  fm_th_mismatches | while IFS= read -r gap; do printf 'OFFICE: pool: %s\n' "$gap"; done
   return 0
 }
 

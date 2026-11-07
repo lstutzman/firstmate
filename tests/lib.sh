@@ -118,6 +118,8 @@ TOML
 # test files, not by this library, so it reads as "unused" here.
 # shellcheck disable=SC2034
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Keep tests off the host's real homes when fm-office.sh ensure looks for peer clones.
+export FM_TREEHOUSE_PEER_ROOTS=/nonexistent
 
 # --- reporters --------------------------------------------------------------
 
