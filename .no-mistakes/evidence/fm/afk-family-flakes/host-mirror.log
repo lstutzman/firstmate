@@ -1,0 +1,5 @@
+ 21:46:41 up 18 days,  4:56,  9 users,  load average: 51.67, 41.63, 34.18
+1..1
+ok - host: dialog a turn never completed with its report (a park boundary, a stopped turn, no report) reaches the next turn
+FM_TEST_COMPLETE
+rc=0 elapsed=66s

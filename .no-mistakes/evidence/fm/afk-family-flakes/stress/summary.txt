@@ -1,0 +1,15 @@
+hook.1.log: ok - host+hook: a close that turns main-only at its turn rewakes main and keeps its succes | rc=0
+hook.2.log: ok - host+hook: a close that turns main-only at its turn rewakes main and keeps its succes | rc=0
+hook.3.log: ok - host+hook: a close that turns main-only at its turn rewakes main and keeps its succes | rc=0
+hook.4.log: ok - host+hook: a close that turns main-only at its turn rewakes main and keeps its succes | rc=0
+hook.5.log: ok - host+hook: a close that turns main-only at its turn rewakes main and keeps its succes | rc=0
+hook.6.log: ok - host+hook: a close that turns main-only at its turn rewakes main and keeps its succes | rc=0
+host-mainonly.1.log: ok - host: an attended close whose task turns main-only before its turn still reaches main | rc=0
+host-mainonly.2.log: ok - host: an attended close whose task turns main-only before its turn still reaches main | rc=0
+host-mainonly.3.log: ok - host: an attended close whose task turns main-only before its turn still reaches main | rc=0
+host-mainonly.4.log: ok - host: an attended close whose task turns main-only before its turn still reaches main | rc=0
+host-mainonly.5.log: ok - host: an attended close whose task turns main-only before its turn still reaches main | rc=0
+host-mainonly.6.log: ok - host: an attended close whose task turns main-only before its turn still reaches main | rc=0
+host-mirror.1.log:  | rc=124
+host-mirror.2.log:  | rc=124
+host-mirror.3.log:  | rc=124

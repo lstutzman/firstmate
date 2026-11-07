@@ -1,0 +1,4 @@
+1..1
+ok - host+hook: a close that turns main-only at its turn rewakes main and keeps its successor watcher
+FM_TEST_COMPLETE
+rc=0

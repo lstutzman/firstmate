@@ -1,0 +1,9 @@
+1..1
+MUTANT ledger before:
+arm_pid=721359	watcher_pid=721434	origin=started	started_at=1794088314	ended_at=1794088315	exit_code=0	signal=none	reason=actionable-signal	beacon_age=1	lock_before=pid:721434|identity:linux-starttime=157330423 cmdline-hex=62617368002f686f6d652f6c65652f2e6e6f2d6d697374616b65732f776f726b74726565732f6436346264373165306633352f30314d365659333538563954563730315353435130475651394d2f62696e2f666d2d77617463682e736800	lock_after=pid:none|identity:none	successor=started:728004
+MUTANT: tearing down watcher pid=728004
+MUTANT ledger after:
+arm_pid=721359	watcher_pid=721434	origin=started	started_at=1794088314	ended_at=1794088315	exit_code=0	signal=none	reason=actionable-signal	beacon_age=1	lock_before=pid:721434|identity:linux-starttime=157330423 cmdline-hex=62617368002f686f6d652f6c65652f2e6e6f2d6d697374616b65732f776f726b74726565732f6436346264373165306633352f30314d365659333538563954563730315353435130475651394d2f62696e2f666d2d77617463682e736800	lock_after=pid:none|identity:none	successor=started:728004
+arm_pid=727924	watcher_pid=728004	origin=started	started_at=1794088316	ended_at=1794088317	exit_code=143	signal=TERM	reason=signal-exit	beacon_age=1	lock_before=pid:728004|identity:linux-starttime=157330612 cmdline-hex=62617368002f686f6d652f6c65652f2e6e6f2d6d697374616b65732f776f726b74726565732f6436346264373165306633352f30314d365659333538563954563730315353435130475651394d2f62696e2f666d2d77617463682e736800	lock_after=pid:none|identity:none	successor=none
+not ok - the pass-through left no successor watcher
+rc=1 elapsed=67s
