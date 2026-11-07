@@ -41,6 +41,10 @@ cut at 200 characters; descriptions_truncated counts listed issues so cut and
 left unread.
 Coverage counters include both team and unblocked listings, counting each
 returned entry; team_items and unblocked_items separate those passes.
+Linear labels come from one filtered GraphQL query (linear-axi cannot read them) sent with the credential from
+`linear-token header`; an item carrying a start-class label gets that class and a failed read is a named gap.
+Open PRs are listed once per repo per run; a limited or blank answer backs off 2, 8 and 30 seconds, and a repo that
+still fails holds only its own starts. A requested root that cannot be read skips only its own subtree.
 No cloud model calls, dispatch, steering, Linear writes, or GitHub writes.
 Only a start request that its source and evidence do not place is labelled by local-jev, the local classifier.
 """
@@ -58,6 +62,7 @@ import shlex
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -74,6 +79,16 @@ MERGE_NOTE = re.compile(r"\b(?:needs? Lee['’]s merge word|merge[- ]word (?:nee
 CHOICES = re.compile(r"\b(business|product|wording|legal|payments?|billing|pricing)\b", re.I)
 RESTRICTED = re.compile(r"\b(merg(?:e|ing)|production|credentials?|rotat(?:e|ing|ion)|data[- ]rewrit\w*"
                         r"|destructive|delet(?:e|ing|ion)|drop(?:ping)?|force[- ]push|spend(?:ing)?|purchas\w*)\b", re.I)
+# Linear labels that place an item in a start class, strongest first. linear-axi cannot read labels, so the
+# officer asks Linear's GraphQL API with the fleet credential. A reserved label (payments, legal) never authorises a start.
+LABEL_CLASSES = (("security", "security"), ("security-scan", "security"), ("scheduled-review", "code-review"),
+                 ("bug", "bug"), ("bug-sweep", "bug"))
+RESERVED_LABELS = {"billing", "compliance"}
+LABEL_API = "https://api.linear.app/graphql"
+LABEL_QUERY = ("query($team:String!,$after:String,$names:[String!]){issues(first:100,after:$after,filter:{"
+               "team:{key:{eq:$team}},state:{type:{in:[\"triage\",\"backlog\",\"unstarted\",\"started\"]}},"
+               "labels:{some:{name:{in:$names}}}}){nodes{identifier labels(first:50){nodes{name}}}"
+               "pageInfo{hasNextPage endCursor}}}")
 UNSTARTED = {"backlog", "todo", "to do", "queued", "unstarted"}
 FINISHED = {"done", "completed", "canceled", "cancelled", "duplicate"}
 OPEN_STATES = ("triage", "backlog", "unstarted", "started")
@@ -226,6 +241,25 @@ def failure_hint(stderr):
     return ": " + redact(text[0], 200) if text else ""
 
 
+def parse_response(raw):
+    """The JSON object in a CLI answer, or None; tolerates notice lines before or after the object."""
+    text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    # linear-axi can print an update notice or warning on stdout beside the object.
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"^\s*\{", text, re.M):
+        try:
+            doc, _ = decoder.raw_decode(text, match.end() - 1)
+        except ValueError:
+            continue
+        if isinstance(doc, dict) and "ok" in doc:
+            return doc
+    return None
+
+
 class LinearDiscovery:
     """Bound every CLI request, including retries and requested-root reads."""
 
@@ -249,6 +283,7 @@ class LinearDiscovery:
         self.deadline = started + max(0, duration - 30)
 
     def read(self, args):
+        bad_body = 0
         while True:
             if self.stopped_reason:
                 raise RuntimeError(self.stopped_reason)
@@ -269,10 +304,15 @@ class LinearDiscovery:
                 raise RuntimeError("timeout after %.0f seconds" % timeout) from None
             except OSError:
                 raise RuntimeError("linear-axi could not be executed") from None
-            try:
-                doc = json.loads(proc.stdout)
-            except ValueError:
-                raise RuntimeError("invalid JSON response (exit %d)" % proc.returncode) from None
+            doc = parse_response(proc.stdout)
+            if doc is None:
+                # An empty or cut-off body is usually transient: read once more before naming a gap.
+                bad_body += 1
+                if bad_body < 2:
+                    continue
+                first = (proc.stdout or b"").decode("utf-8", "replace").strip().splitlines()[:1]
+                raise RuntimeError("invalid JSON response (exit %d; %d bytes%s)" % (
+                    proc.returncode, len(proc.stdout or b""), "; first line: " + redact(first[0], 80) if first else ""))
             if not isinstance(doc, dict):
                 raise RuntimeError("response is not an object")
             if proc.returncode or not doc.get("ok"):
@@ -343,6 +383,47 @@ class LinearDiscovery:
         raise RuntimeError(label + ": page cap reached (100 pages)")
 
 
+def read_labels(team, deadline):
+    """{identifier: [label names]} for open team issues carrying a start-class label; raises RuntimeError when unreadable."""
+    names = sorted({"Bug"} | {n for n, _ in LABEL_CLASSES})
+    try:
+        auth = subprocess.run(["linear-token", "header"], capture_output=True, timeout=30, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        raise RuntimeError("linear-token could not be executed") from None
+    header = auth.stdout.decode("utf-8", "replace").strip()
+    if auth.returncode or not header:
+        raise RuntimeError("linear-token gave no credential (exit %d)" % auth.returncode)
+    url = os.environ.get("LINEAR_TOKEN_API_URL", LABEL_API)
+    labels, cursor, seen = {}, None, set()
+    for _ in range(20):
+        body = json.dumps({"query": LABEL_QUERY, "variables": {"team": team, "after": cursor, "names": names}}).encode()
+        request = urllib.request.Request(url, data=body, method="POST",
+                                         headers={"Authorization": header, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=remaining(deadline)) as response:
+                doc = json.load(response)
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError("Linear GraphQL answered HTTP %d%s" % (exc.code, " (rate limited)" if exc.code == 429 else "")) from None
+        except (OSError, ValueError, http.client.HTTPException):
+            raise RuntimeError("Linear GraphQL read failed") from None
+        try:
+            if doc.get("errors"):
+                text = json.dumps(doc["errors"])
+                raise RuntimeError("Linear GraphQL error" + (" (rate limited)" if re.search(r"ratelimit|rate limit", text, re.I) else ""))
+            page = doc["data"]["issues"]
+            for node in page["nodes"]:
+                labels[node["identifier"]] = [l["name"] for l in node["labels"]["nodes"]]
+            if not page["pageInfo"]["hasNextPage"]:
+                return labels
+            cursor = page["pageInfo"]["endCursor"]
+        except (KeyError, TypeError, AttributeError):
+            raise RuntimeError("Linear GraphQL answered malformed label data") from None
+        if not isinstance(cursor, str) or not cursor or cursor in seen:
+            raise RuntimeError("Linear GraphQL gave a missing or repeated label cursor")
+        seen.add(cursor)
+    raise RuntimeError("label page cap reached (20 pages)")
+
+
 def linear_row(entry, home, clear, parent=None):
     description = entry.get("description") or ""
     text = entry["title"] + "\n" + description
@@ -393,11 +474,16 @@ def linear_rows(team, home, requested, discovery, problems):
             discovery.stats["hierarchy_items"] += 1
             pending.extend(child["identifier"] for child in children)
         except (RuntimeError, KeyError, TypeError) as exc:
+            kind = "requested tree" if identifier in requested else "requested-tree descendant"
+            reason = str(exc) if isinstance(exc, RuntimeError) else "malformed hierarchy data"
+            if not (discovery.stopped_reason or "request budget reached" in reason):
+                # One unreadable root or node skips only its own subtree; the rest of the queue still reads.
+                problems.append("Linear discovery: %s %s: %s; its descendants were not read" % (kind, identifier, reason))
+                continue
             unread = set(pending[position + 1:]) - discovery.viewed - {identifier}
             skipped = sorted(unread & set(requested))
             problems.append("Linear discovery: %s %s: %s; %d queued hierarchy reads skipped%s" %
-                            ("requested tree" if identifier in requested else "requested-tree descendant", identifier,
-                             str(exc) if isinstance(exc, RuntimeError) else "malformed hierarchy data", len(unread),
+                            (kind, identifier, reason, len(unread),
                              "; requested roots not read: " + ", ".join(skipped) if skipped else ""))
             break
     return rows, clear
@@ -411,7 +497,10 @@ def verify_start(identifier, rows, clear, home, discovery):
         if identifier not in discovery.viewed:
             try:
                 entry = discovery.read(["view", identifier, "--full"])["issue"]
+                labels = (rows.get(identifier) or {}).get("labels")
                 rows[identifier] = linear_row(entry, home, clear, view_parent(entry))
+                if labels:
+                    rows[identifier]["labels"] = labels
             except (RuntimeError, KeyError, TypeError) as exc:
                 return str(exc) if isinstance(exc, RuntimeError) else "malformed issue data"
             discovery.viewed.add(identifier)
@@ -444,35 +533,84 @@ def remaining(deadline):
     return left
 
 
+class TransientGitHub(RuntimeError):
+    """A GitHub answer that a short wait may fix: a rate limit, or an answer with no content."""
+
+
+RATE_LIMITED = re.compile(r"rate[ _-]*limit|too many requests|abuse detection|secondary limit|retry[ -]after|\b(?:403|429)\b", re.I)
+
+
 def list_open_prs(repo, deadline):
-    raw = command(["gh-axi", "api", "GET", "/repos/" + repo + "/pulls?state=open&per_page=100",
-                   "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'], timeout=remaining(deadline))
+    try:
+        raw = command(["gh-axi", "api", "GET", "/repos/" + repo + "/pulls?state=open&per_page=100",
+                       "--paginate", "--full", "--jq", '.[] | "PRJSON " + tojson'], timeout=remaining(deadline))
+    except RuntimeError as exc:
+        if RATE_LIMITED.search(str(exc)):
+            raise TransientGitHub(str(exc)) from None
+        raise
     prs = []
     for line in raw.splitlines():
+        if not line.strip():
+            continue
         if not line.startswith("PRJSON "):
+            if RATE_LIMITED.search(line):
+                raise TransientGitHub("rate limited: " + redact(line, 120))
             raise RuntimeError("unexpected GitHub output: " + redact(line, 120))
         prs.append(json.loads(line[7:]))
+    if raw and not raw.strip():
+        # A zero-byte answer is an empty list, but blank lines alone are what a limited call prints.
+        raise TransientGitHub("empty GitHub answer (%d bytes)" % len(raw))
     return prs
 
 
-def open_prs(repos, deadline):
-    """List open PRs; a failed repo is retried once and then named in the raised error."""
-    prs = []
+def open_prs(repos, deadline, cache=None):
+    """({open PRs}, {repo: reason}): each repo is listed at most once per run.
+
+    A rate-limited or empty answer is retried with backoff (2, 8, then 30 seconds); any other failure is retried once.
+    A repo that still fails is named in the gaps and never aborts the other repos.
+    """
+    cache = {} if cache is None else cache
+    prs, gaps = [], {}
     for repo in repos:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
             raise RuntimeError("repos must contain comma-separated owner/repo names")
-        for attempt in (1, 2):
+        if repo in cache:
+            prs.extend(cache[repo])
+            continue
+        waits, attempt = [2], 0
+        while True:
+            attempt += 1
             try:
-                prs.extend(list_open_prs(repo, deadline))
+                cache[repo] = list_open_prs(repo, deadline)
+                prs.extend(cache[repo])
                 break
             except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
                 reason = ("timeout after %.0f seconds" % exc.timeout if isinstance(exc, subprocess.TimeoutExpired)
                           else str(exc) or type(exc).__name__)
                 print("open PR listing failed for %s (attempt %d): %s" % (repo, attempt, reason), file=sys.stderr)
-                if attempt == 2 or str(exc) == "run deadline reached":
-                    raise RuntimeError("%s: %s" % (repo, reason)) from None
-                time.sleep(min(2, max(0, deadline - time.monotonic())))
-    return prs
+                if isinstance(exc, TransientGitHub):
+                    waits = [2, 8, 30]
+                if attempt > len(waits) or str(exc) == "run deadline reached":
+                    gaps[repo] = reason
+                    break
+                time.sleep(min(waits[attempt - 1], max(0, deadline - time.monotonic())))
+    return prs, gaps
+
+
+def row_repo(row, repos):
+    """The repo in `repos` that a start row belongs to, or None when nothing ties it to one."""
+    wanted = {r.lower(): r for r in repos}
+    project = "" if row.get("linear_only") else (row.get("project") or "").strip().lower()
+    if project in wanted:
+        return wanted[project]
+    base = project.rsplit("/", 1)[-1]
+    for lowered, repo in wanted.items():
+        if base and lowered.rsplit("/", 1)[-1] == base:
+            return repo
+    for match in GITHUB_REPO.finditer((row.get("link") or "") + " " + (row.get("title") or "")):
+        if (match[1] + "/" + match[2]).lower() in wanted:
+            return wanted[(match[1] + "/" + match[2]).lower()]
+    return None
 
 
 def reconcile_merge_asks(rows, problems, deadline, linear):
@@ -527,6 +665,11 @@ def classify(row):
                                  ("bug", "Bug", r"bug(?: report)?\b")):
         if re.match(pattern, text):
             return name, "linear-title-prefix:" + label if linear_only else local
+    labels = {name.lower() for name in row.get("labels") or ()}
+    if labels and not labels & RESERVED_LABELS:
+        for label, name in LABEL_CLASSES:
+            if label in labels:
+                return name, "linear-label:" + label
     if kind in ("feature", "fleet") and row["tags"].get("requested-by", "").lower() == "lee":
         return "requested-" + kind, (local if local == "top-of-mind" else
                                      "linear-free-text:requested-by" if linear_only else local)
@@ -659,7 +802,7 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
     return extra
 
 
-def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers, top_of_mind=()):
+def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers, top_of_mind=(), repo_gaps=None):
     doc = {"schema_version": 1, "source": "progress-officer", "doing": [], "done": [],
            "start_requests": [], "asks_for_lee": [], "excluded": [], "unclassified": 0,
            "filler": None, "coverage": problems}
@@ -820,6 +963,21 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
         seen[key] = row["id"]
         unique.append(row)
     doc["start_requests"] = unique
+    repo_gaps = repo_gaps or {}
+    if repo_gaps and not blockers:
+        # Only the repos whose open-PR list is missing hold their own starts; start requests are rechecked for
+        # open PRs again at dispatch, so work that no repo claims is not held for another repo's gap.
+        kept = []
+        for row in doc["start_requests"]:
+            repo = row_repo(row, repo_gaps)
+            if repo:
+                row["reason"] = "Start deferred because the duplicate-start check is unavailable for " + repo
+                doc["excluded"].append(row)
+            else:
+                kept.append(row)
+        doc["start_requests"] = kept
+        problems = problems + ["Starts held for %s: duplicate-start check unavailable: open PR discovery unavailable or incomplete (%s: %s)"
+                               % (repo, repo, reason) for repo, reason in sorted(repo_gaps.items())]
     if blockers:
         for row in doc["start_requests"]:
             row["reason"] = "Start deferred because the duplicate-start check is unavailable"
@@ -1309,16 +1467,31 @@ def main(argv):
         problems.append("Linear discovery: malformed issue data")
     except RuntimeError as exc:
         problems.append("Linear discovery: " + str(exc))
+    repo_gaps = {}
+    repos = [r.strip() for r in args.repos.split(",") if r.strip()]
     try:
-        prs = open_prs([r.strip() for r in args.repos.split(",") if r.strip()], discovery.deadline)
-    except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        prs, repo_gaps = open_prs(repos, discovery.deadline, {})
+    except RuntimeError as exc:
         blockers.append("open PR discovery unavailable or incomplete (%s)" % (str(exc) or type(exc).__name__))
-    problems = ["Linear labels not readable by linear-axi"] + problems
+    if repo_gaps and len(repo_gaps) == len(repos):
+        # No repo answered: there is no PR evidence at all, so every start waits.
+        blockers.append("open PR discovery unavailable or incomplete (%s)" %
+                        "; ".join("%s: %s" % gap for gap in sorted(repo_gaps.items())))
+        repo_gaps = {}
+    if rows and not discovery.stopped_reason:
+        try:
+            for identifier, names in read_labels(args.team, discovery.deadline).items():
+                if identifier in rows:
+                    rows[identifier]["labels"] = names
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            problems.append("Linear labels unavailable: " + (str(exc) or type(exc).__name__))
+    elif rows:
+        problems.append("Linear labels unavailable: " + discovery.stopped_reason)
     configured = set(filter(None, args.requested.split(",")))
     checked, unchecked = set(), {}
     while not blockers:
         trial = judge(copy.deepcopy(snapshots), copy.deepcopy(list(rows.values())), set(configured),
-                      prs, [], args.team, unchecked, [], top_of_mind)
+                      prs, [], args.team, unchecked, [], top_of_mind, repo_gaps)
         candidates = [i for row in trial["start_requests"] for i in row["linear_ids"] if i not in checked]
         if not candidates:
             break
@@ -1334,7 +1507,7 @@ def main(argv):
     discovery.stats["unverified_starts"] = len(unchecked)
     reconcile_merge_asks([r for snapshot in snapshots for r in snapshot["rows"]] + list(rows.values()),
                          problems, discovery.deadline, rows)
-    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers, top_of_mind)
+    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers, top_of_mind, repo_gaps)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["filler"] = filler_for(doc, args.date)

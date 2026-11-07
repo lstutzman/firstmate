@@ -73,9 +73,14 @@ PYLIST
 import json, pathlib, sys
 root, ident = pathlib.Path(sys.argv[1]), sys.argv[2]
 path = root / (ident + '.json')
+if path.exists() and not path.read_text().lstrip().startswith('{'):
+    sys.stdout.write(path.read_text())
+    sys.exit()
 doc = json.loads(path.read_text()) if path.exists() else {'ok':True,'data':{'issue':{'identifier':ident,'title':'Requested root','state':'Done'}}}
 children = []
 for candidate in root.glob('PC-*.json'):
+    if not candidate.read_text().lstrip().startswith('{'):
+        continue
     entry = json.loads(candidate.read_text()).get('data', {}).get('issue', {})
     if (entry.get('parent') or '').split(' ')[0] == ident:
         children.append(entry)
@@ -106,7 +111,12 @@ for pr in json.load(open(sys.argv[1])):
     print('PRJSON ' + json.dumps(pr))
 PY
 SH
-  chmod +x "$FAKEBIN/linear-axi" "$FAKEBIN/gh-axi"
+  cat > "$FAKEBIN/linear-token" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = header ] || exit 99
+printf 'Bearer FIXTURETOKEN0123456789abcdefghijklmnop'
+SH
+  chmod +x "$FAKEBIN/linear-axi" "$FAKEBIN/gh-axi" "$FAKEBIN/linear-token"
 }
 
 stub_python() {
@@ -116,9 +126,23 @@ stub_python() {
 #!/usr/bin/env bash
 case "\$2" in
   *fm-officer-progress.py) exec "$real_python" -I -c '
-import io, json, os, pathlib, runpy, sys, time, urllib.request
+import io, json, os, pathlib, runpy, sys, time, urllib.error, urllib.request
 root = pathlib.Path(os.environ["PROGRESS_WORLD"])
+def graphql(request):
+    body = json.loads(request.data)["variables"]
+    with (root / "graphql-calls").open("a") as log: log.write(json.dumps(body) + " auth=" + str(request.get_header("Authorization")) + "\n")
+    if (root / "labels-status").exists():
+        raise urllib.error.HTTPError(request.full_url, int((root / "labels-status").read_text()), "fixture", {}, None)
+    labels = json.loads((root / "labels.json").read_text()) if (root / "labels.json").exists() else {}
+    names = sorted(labels)
+    size = int((root / "labels-page-size").read_text()) if (root / "labels-page-size").exists() else 100
+    start = int(body["after"] or 0)
+    nodes = [{"identifier": n, "labels": {"nodes": [{"name": x} for x in labels[n]]}} for n in names[start:start + size]]
+    more = start + size < len(names)
+    page = {"nodes": nodes, "pageInfo": {"hasNextPage": more, "endCursor": str(start + size) if more else None}}
+    return io.BytesIO(json.dumps({"data": {"issues": page}}).encode())
 def fetch(url, timeout):
+    if hasattr(url, "full_url"): return graphql(url)
     with (root / "fetches").open("a") as log: log.write(str(url) + " " + str(timeout) + "\n")
     if (root / "fetch-failure").exists(): raise OSError("fixture unavailable")
     return io.BytesIO((root / "top-of-mind.json").read_bytes())
@@ -198,7 +222,7 @@ PYFIX
   assert_contains "$(jq -r '.asking[].question' "$lane/progress-state.json")" \
     "Needs a Captain's Log card: Bug: merge a fix; Outside automatic-start authority: merge" 'restricted work needs a card'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'start check PC-64: NOT_FOUND' 'unreadable candidate is named'
-  assert_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels not readable by linear-axi' 'missing label support is explicit'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels' 'readable labels leave no label gap'
   assert_contains "$(jq -r '.asking[].question' "$lane/progress-state.json")" "Needs a Captain's Log card:" 'choices name the needed card'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'partial coverage never proves idleness'
   printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKEBIN/gh-axi"
@@ -594,6 +618,147 @@ MD
   pass 'progress: GitHub reads stop at the run deadline and publish the gap'
 }
 
+linear_items() {  # <id>=<title> ...: list them all as unstarted, each readable in full
+  python3 -I - "$WORLD" "$@" <<'PY'
+import json, sys
+root, specs = sys.argv[1], sys.argv[2:]
+listed = []
+for spec in specs:
+    ident, title = spec.split('=', 1)
+    issue = {'identifier': ident, 'title': title, 'state': 'Todo', 'stateType': 'unstarted', 'priority': 0}
+    listed.append(issue)
+    json.dump({'ok': True, 'data': {'issue': dict(issue, parent=None, description='')}}, open(root + '/linear/' + ident + '.json', 'w'))
+json.dump({'ok': True, 'data': {'issues': listed}}, open(root + '/linear/list.json', 'w'))
+PY
+}
+
+test_linear_labels_classify_starts() {
+  make_world labels
+  stub_sleep
+  linear_items 'PC-71=Plain unlabelled title' 'PC-72=Harden the login form' 'PC-73=Fix the invoice total' \
+    'PC-74=Crash on empty watchlist' 'PC-75=Quarterly review pass'
+  printf '{"PC-72":["security","agent"],"PC-73":["Bug","billing"],"PC-74":["Bug","agent"],"PC-75":["scheduled-review"]}\n' > "$WORLD/labels.json"
+  printf '1\n' > "$WORLD/labels-page-size"
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json" lane="$WORLD_HOME/data/officers/progress"
+  run_progress >/dev/null 2>&1 || fail 'a labelled run must publish state'
+  assert_equals 'PC-72 PC-74 PC-75' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
+    'security, bug and scheduled-review labels start work and an unlabelled item does not'
+  assert_equals 'security linear-label:security' "$(jq -r '.start_requests[0] | .authorising_class + " " + .tag_source' "$file")" \
+    'a label authorises its class and the start names the label'
+  assert_equals 'code-review linear-label:scheduled-review' "$(jq -r '.start_requests[2] | .authorising_class + " " + .tag_source' "$file")" \
+    'the scheduled-review label places an item in the code-review class'
+  assert_not_contains "$(jq -r '[.start_requests[].id, .excluded[].id] | join(" ")' "$file")" 'PC-73' \
+    'a billing label keeps a bug label from authorising a start'
+  assert_equals '2' "$(jq '.unclassified' "$file")" 'the unlabelled and the billing-labelled items stay unclassified'
+  assert_equals '4' "$(wc -l < "$WORLD/graphql-calls" | tr -d ' ')" 'the label read pages through every answer (4 labelled items, page size 1)'
+  assert_contains "$(cat "$WORLD/graphql-calls")" 'auth=Bearer ' 'the label read sends the fleet credential'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels' 'a successful label read leaves no label gap'
+  assert_not_contains "$(cat "$file" "$lane/$DATE.md" "$lane/.run.err" 2>/dev/null)" 'FIXTURETOKEN' 'the credential never reaches the digest or the log'
+  # A failed read is a named gap and classification falls back to titles and tags.
+  printf '429\n' > "$WORLD/labels-status"
+  run_progress >/dev/null 2>&1 || fail 'a failed label read must still publish state'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'without labels the unlabelled items do not start'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels unavailable: Linear GraphQL answered HTTP 429 (rate limited)' \
+    'the label gap names its cause'
+  assert_equals 'null' "$(jq -r '.filler' "$file")" 'a label gap never looks like an idle fleet'
+  pass 'progress: Linear labels classify starts, reserved labels do not, and a failed read is a named gap'
+}
+
+test_linear_reads_survive_one_bad_root() {
+  make_world bad-root
+  stub_sleep
+  sed -i 's/requested: PC-10;/requested: PC-10,PC-11,PC-12;/' "$WORLD_HOME/data/officers.md"
+  python3 -I - "$WORLD/linear" <<'PY'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+for ident, title in (('PC-11', 'Good root'), ('PC-12', 'Last root')):
+    (root / (ident + '.json')).write_text(json.dumps({'ok': True, 'data': {'issue': {
+        'identifier': ident, 'title': title, 'state': 'Todo', 'stateType': 'unstarted', 'parent': None, 'description': ''}}}))
+(root / 'PC-10.json').write_text('Update available: linear-sdk-axi 0.3.0\n')
+PY
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  run_progress >/dev/null 2>&1 || fail 'a bad root must still publish state'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'requested tree PC-10: invalid JSON response (exit 0; 39 bytes; first line: Update available: linear-sdk-axi 0.3.0)' \
+    'the bad root is named with what the CLI printed'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'queued hierarchy reads skipped' 'the rest of the queue is not skipped'
+  assert_contains "$(cat "$WORLD/calls")" 'issue view PC-11' 'the root after the bad one is read'
+  assert_contains "$(cat "$WORLD/calls")" 'issue view PC-12' 'the last root is read'
+  assert_equals '2' "$(grep -c 'issue view PC-10' "$WORLD/calls")" 'an unreadable body is read once more before it is a gap'
+  # Notice lines around a valid object are tolerated, so that root reads normally.
+  python3 -I - "$WORLD/linear/PC-10.json" <<'PY'
+import json, sys
+body = json.dumps({'ok': True, 'data': {'issue': {'identifier': 'PC-10', 'title': 'Noisy root', 'state': 'Todo',
+                   'stateType': 'unstarted', 'parent': None, 'description': ''}, 'subIssues': []}})
+open(sys.argv[1], 'w').write('warning: linear-sdk-axi 0.3.0 is available\n' + body + '\nrun update to upgrade\n')
+PY
+  run_progress >/dev/null 2>&1 || fail 'a noisy answer must still publish state'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'PC-10' 'notice lines beside a valid object do not make a gap'
+  pass 'progress: one unreadable root skips only itself, and notice lines beside valid JSON are tolerated'
+}
+
+test_open_pr_discovery_is_per_repo() {
+  make_world pr-per-repo
+  stub_sleep
+  sed -i 's#repos: example/project;#repos: example/project,example/other;#' "$WORLD_HOME/data/officers.md"
+  printf -- '## Queued\n\n- [ ] other-bug - Bug: other repo crash (repo: example/other)\n- [ ] project-bug - Bug: project crash (repo: example/project)\n' > "$WORLD_HOME/data/backlog.md"
+  linear_item PC-61 'Bug: unattributed work starts'
+  local stub="$WORLD/gh-axi-real" file="$WORLD_HOME/data/officers/progress/$DATE.json" lane="$WORLD_HOME/data/officers/progress"
+  cp "$FAKEBIN/gh-axi" "$stub"
+  # example/other answers blank lines only (a limited call) for the first N listings; example/project always answers.
+  cat > "$FAKEBIN/gh-axi" <<SH
+#!/usr/bin/env bash
+case "\$3" in
+  */example/other/pulls\?*)
+    echo "\$3" >> "\$PROGRESS_WORLD/other-listings"
+    n=\$(cat "\$PROGRESS_WORLD/blank-count" 2>/dev/null || echo 0)
+    if [ "\$n" -gt 0 ]; then echo \$((n - 1)) > "\$PROGRESS_WORLD/blank-count"; printf '\n'; exit 0; fi ;;
+esac
+exec "$stub" "\$@"
+SH
+  chmod +x "$FAKEBIN/gh-axi"
+  # A limited answer is retried with backoff and the starts go through.
+  echo 2 > "$WORLD/blank-count"
+  run_progress >/dev/null 2>&1 || fail 'a retried rate-limited listing must publish state'
+  assert_equals '3' "$(wc -l < "$WORLD/other-listings" | tr -d ' ')" 'a blank answer is retried with backoff (two blanks, then the list)'
+  assert_equals '2 8' "$(tr '\n' ' ' < "$WORLD/sleeps" | sed 's/ $//')" 'the waits back off 2 then 8 seconds'
+  assert_equals 'PC-61 other-bug project-bug' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'every start goes through once the list arrives'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'Starts held' 'a recovered listing holds nothing'
+  rm -f "$WORLD/sleeps" "$WORLD/other-listings"
+  : > "$WORLD/calls"
+  # One repo stays limited: only that repo's starts are held, and the gap is named per repo.
+  echo 99 > "$WORLD/blank-count"
+  run_progress >/dev/null 2>"$WORLD/stderr" || fail 'a persistently limited repo must publish state'
+  assert_equals '4' "$(wc -l < "$WORLD/other-listings" | tr -d ' ')" 'a limited repo is tried four times in all'
+  assert_equals 'PC-61 project-bug' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" \
+    'starts for the repos that answered still go; unattributed work is not held for another repo'
+  assert_contains "$(jq -r '.excluded[] | .id + ": " + .reason' "$file")" 'other-bug: Start deferred because the duplicate-start check is unavailable for example/other' \
+    'the limited repo holds its own start'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held for example/other: duplicate-start check unavailable: open PR discovery unavailable or incomplete (example/other: empty GitHub answer (1 bytes))' \
+    'the gap names the repo and the cause'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'example/project' 'the repo that answered is not named as a gap'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'Starts held: duplicate-start check unavailable' 'one repo never holds every start'
+  assert_equals '1' "$(grep -c 'example/project/pulls' "$WORLD/calls")" 'each repo is listed once per run'
+  # Every repo limited: no PR evidence at all, so every start waits.
+  cat > "$FAKEBIN/gh-axi" <<'SH'
+#!/usr/bin/env bash
+case "$3" in */pulls\?*) printf '\n'; exit 0 ;; esac
+exit 99
+SH
+  run_progress >/dev/null 2>&1 || fail 'all repos limited must still publish state'
+  assert_equals '0' "$(jq '.start_requests | length' "$file")" 'with every list missing nothing starts'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Starts held: duplicate-start check unavailable: open PR discovery unavailable or incomplete (example/other: empty GitHub answer (1 bytes); example/project: empty GitHub answer (1 bytes))' \
+    'both repos are named'
+  # A rate-limit message from gh-axi counts as limited too.
+  cat > "$FAKEBIN/gh-axi" <<'SH'
+#!/usr/bin/env bash
+case "$3" in */pulls\?*) echo 'API rate limit exceeded for installation' >&2; exit 1 ;; esac
+exit 99
+SH
+  run_progress >/dev/null 2>"$WORLD/stderr" || fail 'a rate-limit error must publish state'
+  assert_contains "$(cat "$lane/.run.err")" 'open PR listing failed for example/project (attempt 4)' 'a rate-limit error is retried four times'
+  pass 'progress: open PR discovery retries limits, lists each repo once, and holds only the failed repo'
+}
+
 test_ancestor_asks_hold_only_routed_asks() {
   make_world ancestor-asks
   python3 -I - "$WORLD/linear" <<'PYFIX'
@@ -733,7 +898,8 @@ PYCHILD
   run_progress > "$WORLD/output" || fail 'child cap must publish coverage'
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
   assert_contains "$(jq -r '.coverage[]' "$file")" 'sub-issues page cap reached' 'unpageable child connection never claims complete coverage'
-  assert_contains "$(jq -r '.coverage[]' "$file")" 'requested roots not read: PC-11' 'roots skipped after a tree failure are named'
+  assert_not_contains "$(jq -r '.coverage[]' "$file")" 'PC-11' 'a failed root never skips the other requested roots'
+  assert_contains "$(cat "$WORLD/calls")" 'issue view PC-11' 'the root after the failed one is still read'
   python3 -I - "$WORLD/linear" <<'PYDESC'
 import json,os,sys
 root=sys.argv[1]
@@ -742,8 +908,9 @@ json.dump({'ok':True,'data':{'issue':{'identifier':'PC-10','title':'Root','state
 json.dump({'ok':False,'error':{'code':'NOT_FOUND'}},open(os.path.join(root,'PC-55.json'),'w'))
 PYDESC
   run_progress > "$WORLD/output" || fail 'descendant failure must publish coverage'
-  assert_contains "$(jq -r '.coverage[]' "$file")" 'requested-tree descendant PC-55: NOT_FOUND (exit 0); 1 queued hierarchy reads skipped' \
-    'a failed descendant read is named as a descendant with the unread queue'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'requested-tree descendant PC-55: NOT_FOUND (exit 0); its descendants were not read' \
+    'a failed descendant read is named as a descendant'
+  assert_contains "$(cat "$WORLD/calls")" 'issue view PC-56' 'a sibling after the failed descendant is still read'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'incomplete hierarchy suppresses starts'
   pass 'progress: hidden CLI child limit is an explicit coverage gap'
 }
@@ -932,14 +1099,21 @@ test_filler_and_failure_coverage() {
   make_world filler
   local file="$WORLD_HOME/data/officers/progress/$DATE.json" out
   out=$(run_progress) || fail 'empty run failed'
-  assert_equals 'null' "$(jq -r '.filler' "$file")" 'unreadable labels cannot prove an idle fleet'
-  assert_contains "$out" "DIGEST $DATE 1" 'the label gap generates a digest for firstmate'
+  assert_equals 'standing-authority:filler' "$(jq -r '.filler.tag_source' "$file")" 'complete idle evidence proposes filler'
+  assert_contains "$out" "DIGEST $DATE 1" 'the filler generates a digest for firstmate'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'idle evidence creates no ranked work item'
-  assert_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels not readable by linear-axi' 'idle evidence names missing label support'
+  assert_equals '0' "$(jq '.coverage | length' "$file")" 'complete idle evidence reports no gap'
   printf 'bad response\n' > "$WORLD/linear/list.json"
   run_progress >/dev/null || fail 'coverage gaps must still publish state'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'missing evidence never looks like an idle fleet'
-  assert_equals '7' "$(jq '.coverage | length' "$file")" 'every failed listing pass and the label gap are reported'
+  assert_equals '6' "$(jq '.coverage | length' "$file")" 'every failed listing pass is reported'
+  printf '{"ok":true,"data":{"issues":[{"identifier":"PC-90","title":"Some work","state":"Todo","stateType":"unstarted"}]}}\n' > "$WORLD/linear/list.json"
+  printf '{"PC-90":["Bug"]}\n' > "$WORLD/linear/labels.json"
+  mv "$WORLD/linear/labels.json" "$WORLD/labels.json"
+  printf '500\n' > "$WORLD/labels-status"
+  run_progress >/dev/null || fail 'an unreadable label read must still publish state'
+  assert_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels unavailable: Linear GraphQL answered HTTP 500' 'a failed label read is named with its cause'
+  assert_equals 'null' "$(jq -r '.filler' "$file")" 'unreadable labels cannot prove an idle fleet'
   pass 'progress: proposes filler only with complete idle evidence'
 }
 
@@ -979,7 +1153,7 @@ PY
   mv "$WORLD/list.new" "$WORLD/linear/list.json"
   run_progress >/dev/null || fail 'idle free-text Linear run failed'
   assert_equals '0' "$(jq '.asks_for_lee | length' "$file")" 'moving choice work never becomes a new card'
-  assert_equals 'null' "$(jq -r '.filler' "$file")" 'missing label support still prevents filler'
+  assert_equals 'standing-authority:filler' "$(jq -r '.filler.tag_source' "$file")" 'readable labels and complete coverage allow filler'
   printf 'kind=ship\ntitle=Bug: meta-only crash\n' > "$WORLD_HOME/state/meta-bug.meta"
   run_progress >/dev/null || fail 'meta-only run failed'
   assert_equals 'meta-bug task-meta' "$(jq -r '.doing[] | .id + " " + .tag_source' "$file")" \
@@ -1662,6 +1836,9 @@ JSON
   pass 'progress: only Top of Mind asks start work'
 }
 
+test_linear_labels_classify_starts
+test_linear_reads_survive_one_bad_root
+test_open_pr_discovery_is_per_repo
 test_start_home_routes_requests_by_project
 test_non_work_and_duplicates_are_dropped_and_reported
 test_top_of_mind_start

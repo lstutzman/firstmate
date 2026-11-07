@@ -1579,10 +1579,15 @@ The progress script's header owns request, page, and backoff bounds, including t
 `linear-axi` reports every Linear limit as `RATE_LIMITED` with no reset time, so after the short 30, 60, and 120 second backoff a fourth consecutive limit counts as the hourly quota exhausted: the run stops Linear reads at once, names the gap with a resume time one hour later, and records it in the lane's `linear-resume-after.json`.
 Later runs skip Linear discovery, naming that gap, until the resume time passes.
 A capped or failed Linear read is a per-item coverage gap: checked items still produce start requests, while items whose full description or parent checks fail remain excluded and are named in coverage.
-A missing or unreadable registered home, an unsupported non-Markdown backlog, or failed open-PR discovery leaves the duplicate-start check unable to pass for any item, so that run emits no start requests and its coverage names the reason.
-A failed open-PR listing is retried once per repository; if it fails again, the coverage blocker and run log name that repository and its redacted cause.
+A missing or unreadable registered home, an unsupported non-Markdown backlog, or open-PR discovery that fails for every configured repository leaves the duplicate-start check unable to pass for any item, so that run emits no start requests and its coverage names the reason.
+Each repository's open-PR list is read once per run.
+A rate-limited or blank answer is retried with 2, 8, then 30 second waits, and any other failed listing is retried once.
+A repository that still fails holds only its own starts, and its coverage entry and the run log name that repository and its redacted cause; starts that no repository claims go ahead, because the dispatch recheck covers open PRs again.
 Filler waits for complete coverage.
-The installed `linear-axi` cannot return or filter issue labels, so the officer reports `Linear labels not readable by linear-axi` rather than claiming label-based discovery is complete.
+The installed `linear-axi` cannot return or filter issue labels, so the officer reads them from Linear's GraphQL API with the fleet credential from `linear-token header`, never printing it.
+One filtered query returns the open team issues that carry a start-class label (`security`, `security-scan`, `scheduled-review`, `Bug`, `bug-sweep`), with all of their labels.
+A failed label read is named as `Linear labels unavailable` with its cause, and filler waits for it.
+A requested root that cannot be read skips only its own subtree and is named; a stopped run (request budget, deadline, or quota) still ends the hierarchy reads.
 The pass reads current records; the common officer scheduler's date names the run rather than a historical snapshot.
 
 The deterministic classifier uses these authorizing classes, in this order:
@@ -1591,6 +1596,7 @@ The deterministic classifier uses these authorizing classes, in this order:
 | --- | --- |
 | `security`, `cve` | `kind: security` or `kind: cve`, a title beginning `Security`, or a CVE identifier in the title |
 | `code-review`, `bug` | `kind: code-review` or `kind: bug`, or a title beginning `[scheduled-review]`, `Code review finding`, `Code review fix`, or `Bug` |
+| `security`, `code-review`, `bug` by Linear label | A `security` or `security-scan` label (security), a `scheduled-review` label (code-review), or a `Bug` or `bug-sweep` label (bug), unless the item also carries a `billing` or `compliance` label |
 | `requested-feature`, `requested-fleet` | A Top of Mind ask defaults to `requested-feature` unless its matching work has a more specific class; `kind: feature` or `kind: fleet` with `requested-by: Lee`; a Linear item named in `requested` or linked from such a backlog row, or its descendants, defaults to `requested-feature` unless its own recorded class is more specific |
 
 Backlog metadata uses the existing parenthesized tags, for example `(kind: bug)` and `(severity: high)`.
@@ -1604,6 +1610,7 @@ To keep such starts visible, every record carries `tag_source`, naming where its
 | `backlog` | A tag or title prefix on a backlog row this fleet wrote |
 | `top-of-mind` | A fresh Top of Mind ask, never a statement, that supplies the requested-feature authority |
 | `task-meta` | The title in a task's `state/<id>.meta` file when the task has no backlog row; such tasks are already in flight and never start |
+| `linear-label:<label>` | A Linear label on the issue, read through the GraphQL API |
 | `linear-free-text:kind`, `linear-free-text:requested-by` | A tag in the Linear issue's title or description |
 | `linear-title-prefix:Security`, `linear-title-prefix:CVE`, `linear-title-prefix:Code review`, `linear-title-prefix:Bug`, `linear-title-prefix:scheduled-review` | The Linear title prefix, or a CVE identifier in the Linear title |
 | `requested-root:<id>` | The registered `requested` root the item descends from |
