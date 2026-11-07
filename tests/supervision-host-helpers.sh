@@ -378,6 +378,15 @@ watcher_live() {  # <home>
   [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
 }
 host_exited() { [ -s "$1/host.rc" ]; }
+# A pass-through left a successor cycle that outlived the host and the hook: it
+# is live now, or it ran and ended on its own signal (a second started cycle in
+# the arm ledger). A successor the fixture hands a fresh decision closes on it
+# within about a second, so a single liveness check passes or fails on host
+# speed; a torn-down successor appends no such row and never satisfies this.
+successor_left() {  # <home>
+  watcher_live "$1" \
+    || [ "$(grep -c 'origin=started.*signal=none.*reason=actionable-signal' "$1/state/.watch-cycle-exits.log" 2>/dev/null)" -ge 2 ]
+}
 # The recovery marker's episode kind (downtime or handling), read through its
 # owner's parser; the Claude re-arm owner delivers a close only on downtime.
 marker_kind() {  # <home>
@@ -882,7 +891,7 @@ start_session() {  # <home>
 park_again() {  # <home>
   rm -f "$1/host.rc"
   : > "$1/park.go"
-  wait_until 150 watcher_live "$1" \
+  wait_until_deadline 90 watcher_live "$1" \
     || fail "the next park never started a watcher cycle: $(cat "$1/host.out"; tail -n 5 "$1/state/.supervision-host.log" 2>/dev/null)"
 }
 
