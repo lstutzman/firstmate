@@ -74,7 +74,7 @@
 # digest as if main were listed. The failure line is always printed, because a
 # broken officer is main's to fix.
 #
-# start-home: is an optional progress, surgeon, friction and library field, a comma list of office ids. Each must
+# start-home: is an optional progress, surgeon, friction, corpus and library field, a comma list of office ids. Each must
 # pass the same office checks as consumer: (a local office that reads the progress
 # digest), because the start requests for that office's projects (its dispatch:
 # field) are then addressed to that office's home, and that office's lane check
@@ -85,7 +85,9 @@
 # start-home office whose dispatch: list names the fleet repositories (firstmate, skills,
 # fleet-app), else to this home; it starts nothing without writes: linear. The library
 # officer (bin/fm-officer-library.py) addresses its safe-to-ship audit findings the same way,
-# to the office whose dispatch: list names PropertyCompass2, else to this home.
+# to the office whose dispatch: list names PropertyCompass2, else to this home. The corpus
+# officer (bin/fm-officer-corpus.py) addresses its start requests the same way, to the office
+# whose dispatch: list names transcript-archive or local-jev, else to this home.
 #
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
@@ -205,6 +207,7 @@ line_problem() {
     corpus)
       [ -n "$(line_field "$line" archive || true)" ] \
         || { printf 'officer %s: a corpus officer needs archive: <dir> or <host>:<dir> (the folder holding transcript-archive/)\n' "$id"; return; }
+      linear_problem "$line" "$id" corpus
       ;;
     triage|friction|surgeon)
       line_field "$line" archive >/dev/null \
@@ -559,12 +562,23 @@ role_landing() {  # <date>
 }
 
 role_corpus() {  # <date>: counts only, read on each host by the script itself.
-  local field
+  local field line
   local -a args=(run --archive "$(line_field "$OFFICER_LINE" archive)" --date "$1" --out "$OFFICER_LANE"
-    --hosts "$(line_field "$OFFICER_LINE" hosts || true)" --now "$(now_epoch)")
-  for field in harvest prep local-jev; do
+    --hosts "$(line_field "$OFFICER_LINE" hosts || true)" --now "$(now_epoch)"
+    --team "$(line_field "$OFFICER_LINE" team || echo PC)"
+    --writes "$(line_field "$OFFICER_LINE" writes || echo none)"
+    --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)"
+    --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)"
+    --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")"
+    --fm-home "$FM_HOME")
+  for field in harvest prep local-jev rubric; do
     if line_field "$OFFICER_LINE" "$field" >/dev/null; then args+=("--$field" "$(line_field "$OFFICER_LINE" "$field")"); fi
   done
+  while IFS= read -r line; do
+    [ -n "$line" ] && args+=(--start-home "$line")
+  done <<START_HOMES
+$(start_homes)
+START_HOMES
   python3 -I "$SCRIPT_DIR/fm-officer-corpus.py" "${args[@]}"
 }
 

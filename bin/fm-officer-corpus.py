@@ -8,6 +8,9 @@ Usage:
   fm-officer-corpus.py run --archive <dir|host:dir> --date <YYYY-MM-DD> --out <lane-dir>
                            [--hosts a,b] [--harvest <path|host:path>] [--prep <path|host:path>]
                            [--local-jev <dir|host:dir>] [--now <epoch>]
+                           [--writes none|linear] [--team PC] [--max-creates <n>]
+                           [--max-linear-calls <n>] [--rubric <file>] [--jev <jev.py>]
+                           [--fm-home <dir>] [--start-home <home>=<projects>[=<role>[=<mandate>]]]...
 
 The officer reads counts, sizes, timestamps and names only, never a
 transcript, a corpus row or a harvested memory record. A `host:path` input is
@@ -64,6 +67,27 @@ again. A fingerprint whose input was a coverage gap this run is kept, not
 cleared, so an outage does not re-report it. Re-running a key on unchanged inputs writes identical bytes: no output
 holds the clock, only source timestamps and thresholds.
 
+Linear. The officer follows the shared officer contract (docs/officers/contract.md;
+bin/fm-officer-linear.py owns the mechanics) with its rubric docs/officers/corpus-rubric.md,
+which owns what counts as work, how a finding is scored and what starts. With
+--writes linear (the registry's `writes: linear`, with max-creates, max-linear-calls and
+jev) every open finding is filed in team PC as a Chore, Source label agent, in the Fleet
+project with the area:fleet label, searched for first by its `corpus-fp:<sha256>` marker and
+then by title with local-jev, and every night it is still open raises the item's Found line
+once. The item body holds only the finding's class, subject, severity and the summary built
+above from counts, timestamps and names, never a transcript, a corpus row or a memory record.
+A finding whose item exists and whose score reaches the rubric minimum gets a start request in
+`start_requests` (and, for this home, a <date>.start-requests.sh handoff), addressed to the
+--start-home office whose dispatch list names its repository (transcript-archive for the
+ingester, archive and harvest, local-jev for the prep store and the retrain), else to
+--fm-home; no office dispatches either repository until the Alchemist is registered. A finding
+whose fix may touch the scan gate (an archive gap, a failed or drifting harvest: scrub.py, the
+re-scan in archive.py, private-projects.json or pii_gate.py) says so in its start request:
+the corpus-owning office never merges that pull request, it goes to Slarti on a fresh
+reviewer's no-loosening record. A finding that matches a reserved class is held as one keyed
+needs-decision `corpus-holds-<date>`. The lane keeps filed-fingerprints.json, found.json and
+review-state.json only when it writes.
+
 Outputs <date>.json and <date>.md in --out, prints one `Coverage gap:` line
 per gap and `DIGEST <date> <n-new> <date>.md` last.
 """
@@ -72,6 +96,7 @@ import argparse
 import collections
 import datetime
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -92,6 +117,21 @@ REMOTE_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._@-]*):(.+)$")
 INGEST_COUNTS = ("archived", "unchanged", "withheld", "errors", "sources_ok", "sources_not_collected", "hosts_offline")
 HARVEST_COUNTS = ("listed", "total", "written", "withheld", "deleted", "superseded")
 BOSUN_COUNTS = ("checked", "archived", "pending", "missing", "mismatched", "withheld")
+RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "corpus-rubric.md")
+TYPE_LABEL = "Chore"
+SOURCE_LABEL = "agent"
+# Per finding class: the repository its fix lands in, whether the fix may touch the scan gate, and what a start asks for.
+CLASSES = {
+    "not-collected": ("transcript-archive", False, "Find why the ingester does not collect this source and restore it."),
+    "archive-gap": ("transcript-archive", True, "Find why the archive misses or holds an out-of-date copy of session logs on this host and close the gap."),
+    "harvest-failed": ("transcript-archive", True, "Find why the memory harvest failed and make it run to completion."),
+    "harvest-drift": ("transcript-archive", True, "Find why the memory harvest lists fewer or more records than the tier holds and make them agree."),
+    "prep-stale": ("local-jev", False, "Find why the prep store stopped refreshing and restart it."),
+    "retrain-missed": ("local-jev", False, "Find why the weekly retrain did not run or failed and get it running."),
+}
+SCAN_GATE_ROUTE = ("This fix may touch the scan gate (scrub.py, the re-scan in archive.py, private-projects.json or pii_gate.py). "
+                   "Open the pull request as usual, but the corpus-owning office never merges it: it goes to Slarti, who merges it on green "
+                   "once a fresh reviewer records on it that it loosens no check; a change that loosens, skips or deletes a check needs Lee's word.")
 
 
 # ---- probe: runs where the file is, and returns only the fields named in the header.
@@ -409,6 +449,132 @@ def mark_new(out, key, findings, unread):
     return sum(1 for f in findings if f["new"])
 
 
+# ---- Linear: the shared officer contract.
+
+def _lib():
+    mod = sys.modules.get("fm_officer_linear")
+    if mod is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-officer-linear.py")
+        spec = importlib.util.spec_from_file_location("fm_officer_linear", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["fm_officer_linear"] = mod
+    return mod
+
+
+def officer(lib):
+    return lib.Officer("corpus", "Corpus officer", "Corpus officer", RUBRIC_FILE, tuple(CLASSES), project=lib.FLEET_PROJECT)
+
+
+def lib_findings(lib, findings):
+    """One shared-library finding per open corpus finding; its source is its class, which the rubric's start-sources names."""
+    out = []
+    for f in findings:
+        lf = lib.make_finding(f["class"], "corpus", f["subject"], "%s: %s" % (f["class"], f["subject"]), f["summary"], "real",
+                              f["severity"], False, {}, location=f["subject"])
+        lf["item"] = f
+        out.append(lf)
+    return out
+
+
+def description(lf, date, off, near=None, recurrence=None):
+    """The Linear item body: class, subject, severity and the counts, timestamps and names of the summary; nothing else."""
+    f = lf["item"]
+    lines = ["Filed by the corpus officer from the %s corpus check." % date,
+             "What it is for: keep the agent training corpus complete, scrubbed and current.",
+             "Epic: not assigned; whoever triages this picks one.", "",
+             "Severity: %s. Class: %s. Subject: %s." % (lf["severity"], f["class"], f["subject"]),
+             off.found_line(1, date, date)]
+    if recurrence:
+        lines.append(recurrence)
+    if near:
+        lines.append("Near match (not treated as the same issue): %s, local-jev %.2f." % near)
+    lines += ["Finding: %s." % f["summary"].rstrip("."), "Repository: %s." % CLASSES[f["class"]][0]]
+    if CLASSES[f["class"]][1]:
+        lines.append("Scan gate: the fix may touch the scan gate files, so its pull request goes to Slarti, never the corpus-owning office.")
+    # No trailing newline: Linear trims it, and `create --verify` then reports a mismatch on a good create.
+    return "\n".join(lines) + "\n%s:%s" % (off.marker, lf["fingerprint"])
+
+
+def file_findings(lib, off, todo, args, date, out, ledger, found, jev, lin):
+    """Files the findings highest score first; returns (writes done, why Linear stopped or None)."""
+    filer = lib.Filer(off, lin, args.team, date, out, ledger, found, jev, args.max_creates)
+
+    def stop(reason, rate_limited=False):
+        for f in todo:
+            f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
+        if rate_limited:
+            lib.pause_for_rate_limit(out, args.now)
+        return lib.summary_rows(todo), reason
+
+    for f in todo:
+        if f["fingerprint"] in ledger:
+            f["filing"], f["issue_hint"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}, ledger[f["fingerprint"]]
+            filer.bumps.append(f)
+    due = [f for f in filer.bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != date]
+    if not any(not f["filing"] for f in todo) and not due:
+        return lib.summary_rows(todo), None
+    stopped = lib.paused_until(out, args.now)
+    if stopped:
+        return stop(stopped)
+    try:
+        names = lib.label_names(lin, args.team)
+    except lib.LinearError as exc:
+        return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
+
+    def label_set(f):
+        return lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
+
+    def describe(f, near=None, recurrence=None):
+        return description(f, date, off, near, recurrence)
+
+    try:
+        for f in todo:
+            if not f["filing"]:
+                filer.file_single(f, label_set, describe)
+        filer.settle_bumps(label_set, describe)
+    except lib.LinearError as exc:
+        if exc.code == "RATE_LIMITED":
+            return stop("Linear rate limit reached: %s" % exc, True)
+        return stop("%s; the next run continues from the ledger" % exc)
+    return lib.summary_rows(todo), None
+
+
+def linear_pass(args, date, findings, offices, main_home):
+    """Files the open findings (writes: linear) and hands the ones the rubric admits to the owning office; returns digest fields."""
+    lib = _lib()
+    off = officer(lib)
+    out, linear = args.out, args.writes == "linear"
+    lin = lib.Linear(args.max_linear_calls)
+    state = lib.read_json(os.path.join(out, lib.STATE_FILE), {})
+    found = lib.read_json(os.path.join(out, lib.FOUND_FILE), {})
+    ledger = lib.read_json(os.path.join(out, lib.LEDGER_FILE), {})
+    todo = lib_findings(lib, findings)
+    rubric = lib.load_rubric(args.rubric, off)
+    jev = lib.Jev(args.jev)
+    lib.apply_found(todo, found, ledger)
+    writes, blocked = file_findings(lib, off, todo, args, date, out, ledger, found, jev, lin) if linear else ([], None)
+    lib.apply_found(todo, found, ledger)
+    for f in todo:
+        repo, gate, what = CLASSES[f["item"]["class"]]
+        f.update(start_what=what + (" " + SCAN_GATE_ROUTE if gate else ""),
+                 start_row={"project": repo, "linear_only": False, "scan_gate": gate, "class": f["item"]["class"], "subject": f["item"]["subject"]})
+    handled = state.setdefault("handled", {})
+    starts, held, asks = lib.plan_starts(off, todo, rubric, date, args.writes, main_home, offices, handled)
+    for rank, row in enumerate(starts, 1):
+        row["rank"] = rank
+    gaps = rubric.gaps + ([jev.gap] if jev.gap and linear else [])
+    if linear:
+        for name, doc in ((lib.LEDGER_FILE, ledger), (lib.STATE_FILE, state), (lib.FOUND_FILE, found)):
+            lib.write_json(os.path.join(out, name), doc)
+    for f in todo:
+        f["item"]["linear"] = {"found": f["found"], "score": f["score"],
+                               **{k: v for k, v in (f["filing"] or {}).items() if k in ("action", "issue", "reason", "found", "recurrence_of")}}
+    return {"writes": args.writes, "writes_done": writes, "writes_blocked": blocked, "linear_calls": lin.n,
+            "linear_call_budget": lin.budget, "linear_gaps": gaps, "not_filed": lib.not_filed_lines(todo),
+            "start_requests": starts, "held": held, "asks_for_lee": asks}
+
+
 def render_md(doc):
     lines = ["# Corpus officer digest for %s" % doc["date"], "",
              "%d new finding(s) of %d open. Counts, timestamps and names only; no transcript, corpus row or memory record was read." % (
@@ -420,6 +586,14 @@ def render_md(doc):
     lines += ["", "## Corpus", ""] + ["- " + n for n in doc["notes"]]
     if doc["coverage"]:
         lines += ["", "## Coverage gaps", ""] + ["- " + c for c in doc["coverage"]]
+    lines += ["", "## Linear", "",
+              "Writes: %s; %d linear-axi call(s) of %d%s." % (
+                  doc["writes"], doc["linear_calls"], doc["linear_call_budget"],
+                  "; stopped: " + doc["writes_blocked"] if doc["writes_blocked"] else "")]
+    lines += ["- " + n for n in doc["not_filed"] + doc["linear_gaps"]]
+    lines += ["- Start request: %s (%s, score %.1f)%s." % (r["title"], r["issue"], r["score"], ", scan-gate route" if r["scan_gate"] else "")
+              for r in doc["start_requests"]]
+    lines += ["- " + a["line"] for a in doc["asks_for_lee"]]
     return "\n".join(lines) + "\n"
 
 
@@ -442,8 +616,15 @@ def run(args):
     findings, coverage, notes, nights, unread = judge(facts, read_json(nights_path, {}), now)
     write_if_changed(nights_path, json.dumps(nights, sort_keys=True, indent=1) + "\n")
     new = mark_new(args.out, args.date, findings, unread)
-    doc = {"officer_role": "corpus", "date": args.date, "actionable": new, "findings": findings,
-           "coverage": coverage, "notes": notes, "facts": facts}
+    lib = _lib()
+    args.now = now
+    lib.check_common_args(argparse.ArgumentParser(prog="fm-officer-corpus.py"), args)
+    linear = linear_pass(args, args.date, findings, lib.parse_start_homes(args.start_home), args.fm_home)
+    doc = {"officer_role": "corpus", "source": "corpus-officer", "generated_at": lib.iso(now), "date": args.date, "actionable": new,
+           "findings": findings, "coverage": coverage + linear["linear_gaps"], "notes": notes, "facts": facts, **linear}
+    if args.fm_home:
+        lib.progress.write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"),
+                                   [r["execute"] for r in linear["start_requests"] if r["execute"]["env"]["FM_HOME"] == args.fm_home])
     write_if_changed(os.path.join(args.out, args.date + ".json"),
                      json.dumps(doc, sort_keys=True, indent=1, ensure_ascii=False) + "\n")
     write_if_changed(os.path.join(args.out, args.date + ".md"), render_md(doc))
@@ -466,7 +647,7 @@ def main(argv):
     parser.add_argument("--harvest")
     parser.add_argument("--prep", default=DEFAULT_PREP)
     parser.add_argument("--local-jev", default=DEFAULT_LOCAL_JEV)
-    parser.add_argument("--now", type=int)
+    _lib().add_common_args(parser, RUBRIC_FILE)
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}(T\d{2})?", args.date):
         parser.error("--date must be YYYY-MM-DD or YYYY-MM-DDTHH")
