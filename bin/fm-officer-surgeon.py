@@ -455,6 +455,8 @@ def visual_intake(path, captures, state, ledger, date, writes):
         findings = [f for f in findings if f["class"] != "real" or f["fingerprint"] not in ledger]
     else:
         seen["run"], seen["date"] = stamp, date
+        if not stamp:
+            gaps.append("visual findings file %s has no run.date, so a repeat of the same file cannot be told from a new review" % path)
     announced = seen.setdefault("announced", {})
     held = [f for f in held if announced.setdefault(f["fingerprint"], date) == date]
     todo = [f for f in findings if f["class"] == "real"]
