@@ -171,9 +171,14 @@ test_merge_landed() {
   crew_state "$state" live 'state: done · source: status-log · shipped'
   rc=0; out=$(classify "$state" "$(row 9 check merged-live-x 'check: merge landed: live https://github.com/o/r/pull/6 away')") || rc=$?
   assert_equals 1 "$rc" "exit"
-  assert_contains "$out" "ACTION - task live is still recorded" "a recorded task needs its teardown"
+  assert_contains "$out" "ACTION - task live is still recorded and not shown merged" "a recorded task not shown merged needs a look"
   assert_contains "$out" "state: done" "the crew state is on the line"
-  pass "a merge landed for a torn-down task is no-action; one still recorded needs its teardown"
+
+  crew_state "$state" live 'state: done · source: run-step · PR merged · pr=https://github.com/o/r/pull/6'
+  rc=0; out=$(classify "$state" "$(row 9 check merged-live-x 'check: merge landed: live https://github.com/o/r/pull/6')") || rc=$?
+  assert_equals 0 "$rc" "exit"
+  assert_contains "$out" "no-action - task live's record already shows the merge" "a record already showing the merge is no-action"
+  pass "a merge landed for a torn-down task or one already recorded merged is no-action; any other recorded task needs a look"
 }
 
 # --- check: office lane delivery ------------------------------------------
@@ -379,6 +384,149 @@ test_a_broken_classifier_shows_the_raw_rows_and_acknowledges_nothing() {
   pass "a classifier that cannot run shows the raw wake rows and acknowledges nothing"
 }
 
+# --- --quiet-ack (the Stop hook's no-wake path) ----------------------------
+
+quiet_ack() { # <state>: exit status of the quiet drain, its output in $QUIET_OUT
+  local rc=0
+  QUIET_OUT=$(FM_STATE_OVERRIDE="$1" "$DRAIN" --quiet-ack 2>&1) || rc=$?
+  return "$rc"
+}
+
+merge_row() { append_wake "$1" check "merged-$2-x" "check: merge landed: $2 https://github.com/o/r/pull/5"; }
+
+test_quiet_ack_without_the_flag_does_nothing() {
+  local d state rc=0
+  d=$(make_case quiet-off); state="$d/state"
+  opt_out
+  merge_row "$state" gone
+  quiet_ack "$state" || rc=$?
+  assert_equals 11 "$rc" "the mode does not apply without the opt-in"
+  assert_equals "" "$QUIET_OUT" "and prints nothing"
+  [ "$(queue_rows "$state")" = 1 ] || fail "the row must stay queued"
+  pass "--quiet-ack without config/wake-auto-ack exits 11 and touches nothing"
+}
+
+test_quiet_ack_acknowledges_a_quiet_batch_and_leaves_one_record() {
+  local d state rc=0 out
+  d=$(make_case quiet-on); state="$d/state"
+  opt_in
+  merge_row "$state" gone
+  merge_row "$state" gone2
+  quiet_ack "$state" || rc=$?
+  assert_equals 0 "$rc" "a quiet batch is acknowledged"
+  assert_equals "" "$QUIET_OUT" "silently"
+  [ "$(queue_rows "$state")" = 0 ] || fail "the batch must be acknowledged: $(cat "$state/.wake-queue")"
+  [ "$(wc -l < "$state/.wake-auto-acked" | tr -d ' ')" = 1 ] || fail "one record line expected"
+  out=$(drain_summary "$state")
+  assert_contains "$out" "WAKE AUTO-ACKED WHILE NO MODEL WAS WOKEN: 2 wake(s) in 1 batch(es)" "the next drain reports it"
+  assert_contains "$out" "check=2" "with the kinds"
+  out=$(drain_summary "$state")
+  assert_not_contains "$out" "WHILE NO MODEL WAS WOKEN" "and only once"
+  opt_out
+  pass "--quiet-ack acknowledges a quiet batch silently and the next --summary drain reports it once"
+}
+
+test_quiet_ack_mixed_batch_wakes_and_consumes_nothing() {
+  local d state rc=0 out
+  d=$(make_case quiet-mixed); state="$d/state"
+  opt_in
+  printf 'note: bootstrap\n' > "$state/n1.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" >/dev/null 2>&1
+  printf 'note: the captain said use REST\n' >> "$state/n1.status"
+  merge_row "$state" gone
+  append_wake "$state" check pr-register 'check: pr-register: t #1 draft'
+  quiet_ack "$state" || rc=$?
+  assert_equals 10 "$rc" "one action wake means a model is needed"
+  [ "$(queue_rows "$state")" = 2 ] || fail "nothing may be acknowledged"
+  out=$(drain_summary "$state")
+  assert_contains "$out" "the captain said use REST" "the unread status was not consumed by the quiet pass"
+  assert_contains "$out" "WAKE SUMMARY (2 wake(s), 1 need action)" "and the supervisor's own drain shows both rows"
+  opt_out
+  pass "a mixed batch (and an unread note) leaves everything for the supervisor's own drain"
+}
+
+test_open_decisions_unchanged_since_last_presented() {
+  local d state rc=0 out
+  d=$(make_case quiet-od); state="$d/state"
+  opt_in
+  printf 'needs-decision [key=k1]: pick one\nneeds-decision [key=k2]: pick two\n' > "$state/other.status"
+  merge_row "$state" gone
+  # Nothing presented yet: the section is new to the model, so a model is needed.
+  quiet_ack "$state" || rc=$?
+  assert_equals 10 "$rc" "an OPEN DECISIONS section no model has seen wakes"
+  out=$(drain_summary "$state")
+  assert_contains "$out" "OPEN DECISIONS" "the real wake prints it"
+  assert_not_contains "$out" "AUTO-ACKED" "and does not auto-ack a new section"
+  # Identical set: quiet.
+  rc=0; quiet_ack "$state" || rc=$?
+  assert_equals 0 "$rc" "a byte-identical set is quiet"
+  [ "$(queue_rows "$state")" = 0 ] || fail "the batch must be acknowledged"
+  # The unchanged section still prints on the next real wake.
+  merge_row "$state" gone2
+  append_wake "$state" check pr-register 'check: pr-register: t #1 draft'
+  out=$(drain_summary "$state")
+  assert_contains "$out" "[key=k1] needs-decision: pick one" "the unchanged section still prints"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" --ack-through 2 --recovery-generation "$(sed -n 's/.*--recovery-generation //p' <<<"$out" | head -1)" >/dev/null 2>&1 || true
+  : > "$state/.wake-queue"
+  # One changed line wakes.
+  merge_row "$state" gone3
+  printf 'needs-decision [key=k1]: pick one, reworded\n' >> "$state/other.status"
+  rc=0; quiet_ack "$state" || rc=$?
+  assert_equals 10 "$rc" "a changed decision line wakes the model"
+  drain_summary "$state" >/dev/null
+  : > "$state/.wake-queue"
+  # A new key wakes.
+  merge_row "$state" gone4
+  printf 'needs-decision [key=k3]: a third\n' >> "$state/other.status"
+  rc=0; quiet_ack "$state" || rc=$?
+  assert_equals 10 "$rc" "a new decision key wakes the model"
+  drain_summary "$state" >/dev/null
+  : > "$state/.wake-queue"
+  # A removed key wakes.
+  merge_row "$state" gone5
+  printf 'resolved [key=k3]: done\n' >> "$state/other.status"
+  rc=0; quiet_ack "$state" || rc=$?
+  assert_equals 10 "$rc" "a removed decision key wakes the model"
+  opt_out
+  pass "an OPEN DECISIONS section byte-identical to the last presented one is quiet; a new, changed or removed decision wakes the model"
+}
+
+test_open_decisions_unchanged_does_not_hide_unread_status() {
+  local d state rc=0
+  d=$(make_case quiet-od-unread); state="$d/state"
+  opt_in
+  printf 'needs-decision [key=k1]: pick one\n' > "$state/other.status"
+  printf 'note: bootstrap\n' > "$state/n1.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" >/dev/null 2>&1
+  merge_row "$state" gone
+  drain_summary "$state" >/dev/null
+  printf 'note: new information\n' >> "$state/n1.status"
+  quiet_ack "$state" || rc=$?
+  assert_equals 10 "$rc" "UNREAD STATUS wakes even with an unchanged OPEN DECISIONS section"
+  opt_out
+  pass "an unread status line wakes the model even when OPEN DECISIONS is unchanged"
+}
+
+test_every_classified_wake_is_counted_once() {
+  local d state out
+  d=$(make_case counters); state="$d/state"
+  opt_in
+  merge_row "$state" gone
+  append_wake "$state" check pr-register 'check: pr-register: t #1 draft'
+  drain_summary "$state" >/dev/null
+  drain_summary "$state" >/dev/null
+  out=$(cat "$state/.wake-classified.jsonl")
+  [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 2 ] || fail "each wake is counted once, not per drain: $out"
+  assert_contains "$out" '"kind":"check","verdict":"no-action","auto_acked":false' "the quiet wake, not acknowledged because its batch was mixed"
+  assert_contains "$out" '"verdict":"action","auto_acked":false' "the action wake"
+  : > "$state/.wake-queue"; rm -f "$state/.wake-classified.jsonl"
+  merge_row "$state" gone9
+  quiet_ack "$state" || fail "the quiet batch must be acknowledged"
+  assert_contains "$(cat "$state/.wake-classified.jsonl")" '"verdict":"no-action","auto_acked":true' "an acknowledged wake is marked auto_acked"
+  opt_out
+  pass "state/.wake-classified.jsonl records ts, kind, verdict and auto_acked once per wake"
+}
+
 test_non_summary_drain_is_unchanged() {
   local d state out
   d=$(make_case drain-plain); state="$d/state"
@@ -401,6 +549,12 @@ test_summary_flag_is_exclusive() {
   pass "--summary cannot be combined with --ack-through"
 }
 
+test_quiet_ack_without_the_flag_does_nothing
+test_quiet_ack_acknowledges_a_quiet_batch_and_leaves_one_record
+test_quiet_ack_mixed_batch_wakes_and_consumes_nothing
+test_open_decisions_unchanged_since_last_presented
+test_open_decisions_unchanged_does_not_hide_unread_status
+test_every_classified_wake_is_counted_once
 test_signal_pause_batch_is_auto_acked_and_a_new_decision_is_not
 test_signal_without_annotation_reads_the_newest_status_line
 test_signal_on_a_declared_pause_is_no_action

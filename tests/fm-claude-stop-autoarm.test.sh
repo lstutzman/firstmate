@@ -1015,6 +1015,81 @@ test_missing_lock_interruption_is_silent() {
   pass "auto-arm: HUP, TERM and INT after lock loss close silently as session-ended"
 }
 
+# --- no-wake path (config/wake-auto-ack) ----------------------------------
+
+# A fixture home carrying the whole bin/ tree (the hook runs the drain and the
+# classifier) whose arm wrapper follows state/arm-plan, one line per foreground
+# arm: "quiet" queues a merge-landed wake for a task with no record, "action"
+# queues a pr-register check, "mixed" queues both, and each also prints the
+# matching wake line.
+make_quiet_home() {
+  local dir=$1
+  make_primary_dir "$dir" >/dev/null
+  cp -R "$ROOT/bin/." "$dir/bin/"
+  : > "$dir/state/task.meta"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ] || { printf 'watcher: started pid=%s (beacon fresh)\n' "$$"; exit 0; }
+echo "$$" >> "$FM_HOME/state/arm-ran"
+n=$(wc -l < "$FM_HOME/state/arm-ran" | tr -d ' ')
+plan=$(sed -n "${n}p" "$FM_HOME/state/arm-plan")
+queue() { FM_STATE_OVERRIDE="$FM_HOME/state" bash -c '. "$1"; fm_wake_append check "$2" "$3"' _ "$FM_HOME/bin/fm-wake-lib.sh" "$1" "$2"; }
+touch "$FM_HOME/state/.last-watcher-beat"
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+case "$plan" in
+  quiet|mixed) queue "merged-gone-$n" "check: merge landed: gone https://github.com/o/r/pull/5"; printf 'check: merge landed: gone\n' ;;
+esac
+case "$plan" in
+  action|mixed) queue "pr-register-$n" "check: pr-register: t #1 draft"; printf 'check: pr-register: t #1 draft\n' ;;
+esac
+exit 0
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  printf '%s\n' "$dir"
+}
+
+queued_rows() { grep -c . "$1/state/.wake-queue" 2>/dev/null || true; }
+
+test_quiet_wakes_are_acknowledged_in_code_and_the_next_action_wakes() {
+  local dir out status
+  dir=$(make_quiet_home "$TMP_ROOT/quiet-path")
+  : > "$dir/config/wake-auto-ack"
+  printf 'quiet\nquiet\naction\n' > "$dir/state/arm-plan"
+  out=$(run_autoarm "$dir" 2>&1); status=$?
+  expect_code 2 "$status" "the wake that needs judgement still rewakes the model: $out"
+  [ "$(wc -l < "$dir/state/arm-ran" | tr -d ' ')" = 3 ] || fail "two quiet batches re-arm in the hook, the third wakes: $(cat "$dir/state/arm-ran")"
+  assert_contains "$out" "check: pr-register" "the banner carries the action wake"
+  assert_not_contains "$out" "merge landed" "the quiet wakes never reached the model"
+  [ "$(queued_rows "$dir")" = 1 ] || fail "only the action row stays queued: $(cat "$dir/state/.wake-queue")"
+  [ "$(awk -F '\t' '{ n += $2 } END { print n }' "$dir/state/.wake-auto-acked")" = 2 ] || fail "two auto-acked wakes are on record"
+  pass "auto-arm: with config/wake-auto-ack a quiet batch is acknowledged without waking the model and the next action wake rewakes"
+}
+
+test_quiet_path_is_off_without_the_flag() {
+  local dir out status
+  dir=$(make_quiet_home "$TMP_ROOT/quiet-flag-absent")
+  printf 'quiet\n' > "$dir/state/arm-plan"
+  out=$(run_autoarm "$dir" 2>/dev/null); status=$?
+  expect_code 2 "$status" "without the flag a quiet wake still rewakes the model"
+  assert_contains "$out" "merge landed" "the wake line reaches the model"
+  [ "$(queued_rows "$dir")" = 1 ] || fail "the row stays queued"
+  assert_absent "$dir/state/.wake-auto-acked" "nothing is acknowledged in code"
+  pass "auto-arm: without config/wake-auto-ack every actionable close wakes the model as before"
+}
+
+test_a_mixed_batch_wakes_the_model_and_acknowledges_nothing() {
+  local dir out status
+  dir=$(make_quiet_home "$TMP_ROOT/quiet-mixed")
+  : > "$dir/config/wake-auto-ack"
+  printf 'mixed\n' > "$dir/state/arm-plan"
+  out=$(run_autoarm "$dir" 2>/dev/null); status=$?
+  expect_code 2 "$status" "one action wake in the batch rewakes the model"
+  [ "$(wc -l < "$dir/state/arm-ran" | tr -d ' ')" = 1 ] || fail "no quiet re-arm happened"
+  [ "$(queued_rows "$dir")" = 2 ] || fail "both rows stay queued for the model's own drain"
+  assert_absent "$dir/state/.wake-auto-acked" "nothing was auto-acknowledged"
+  pass "auto-arm: a mixed batch rewakes the model with nothing acknowledged"
+}
+
 # Exercise both sides of the session proof in the real signal handler and its
 # owned notice commit, while the process identities remain live and inspectable.
 test_signal_session_identity_proof() {
@@ -2244,6 +2319,9 @@ test_reused_identity_with_new_session_retires_interrupted_episode
 test_same_session_lock_move_preserves_interrupted_episode
 test_missing_lock_interruption_is_silent
 test_signal_session_identity_proof
+test_quiet_wakes_are_acknowledged_in_code_and_the_next_action_wakes
+test_quiet_path_is_off_without_the_flag
+test_a_mixed_batch_wakes_the_model_and_acknowledges_nothing
 test_abandoned_owner_claim_is_reclaimed_and_rearms
 test_abandoned_claim_reclaim_reaps_dead_steal_without_nesting
 test_arming_claim_with_fresh_beacon_is_never_reclaimed

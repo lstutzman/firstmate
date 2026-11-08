@@ -483,8 +483,12 @@ Create the empty, home-local `config/wake-auto-ack` file to let a supervisor's `
 The summary mode prints one line per wake with its kind, subject, the current state that decides it, and a verdict of `no-action` or `ACTION`, then the usual `WAKE_ACK_REQUIRED` command.
 It is the supervision protocols' drain command, so the supervisor needs no second read to see whether a wake needs it.
 With the file present, a main-actor `--summary` drain whose every row is `no-action` and whose presentation printed nothing else acknowledges the batch through the ordinary acknowledgement path and prints one `WAKE AUTO-ACKED` line.
-A batch with one `ACTION` row, or any unread status, open decision, record divergence, due default, branch outcome or supervision alarm, acknowledges nothing.
+A batch with one `ACTION` row, or any unread status, record divergence, due default, branch outcome or supervision alarm, acknowledges nothing.
+An OPEN DECISIONS section does not block it only when its folded text is byte-identical to the one last presented to a model, which `state/.wake-open-decisions-presented` records as a hash; a new, changed or removed decision line wakes the model, and the unchanged section still prints on the next real drain.
 A recovery episode with no queued rows, the case behind a `check: rearm-resurface` wake, is retired the same way when nothing else printed.
+On a Claude primary that does not run the supervision host, the Stop hook applies the same decision before it wakes the model: `bin/fm-wake-drain.sh --quiet-ack` classifies the queued wakes and, when every one is `no-action`, acknowledges them in code and the hook re-arms the watcher without a model turn; any wake that needs judgement wakes the model as it does without the file, with nothing consumed.
+The next `--summary` drain reports how many wakes were acknowledged that way and their kinds from `state/.wake-auto-acked`, once.
+Every classified wake is also counted in `state/.wake-classified.jsonl` (`ts`, `seq`, `kind`, `verdict`, `auto_acked`), so the real no-action share can be measured.
 The feature is off when the file is absent, is local to each home and is not inherited by secondmate homes, and the plain drain never acknowledges.
 The classifier is `bin/fm-wake-summary.sh`, whose header owns the exact no-action cases; its verdict is the whole handling of such a wake.
 Creating the file is a captain-class change to what a supervisor skips, so main routes it to the captain.

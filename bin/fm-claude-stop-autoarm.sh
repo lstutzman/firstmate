@@ -77,6 +77,12 @@
 #     retried instead of being judged by the healthy-watcher predicate
 #     (docs/supervision-host.md). On a home that opted out nothing below
 #     changes.
+#   - No-wake path: on a home that does not run the supervision host and keeps
+#     config/wake-auto-ack, an actionable close first runs
+#     `bin/fm-wake-drain.sh --quiet-ack`. When it acknowledged a batch of only
+#     no-action wakes (docs/configuration.md "Wake auto-acknowledge") the hook
+#     re-arms in the same process and wakes no model; otherwise it translates the
+#     close as below, with nothing consumed.
 #   - Translation: while supervision is still needed and AFK remains inactive,
 #     an actionable arm close (signal:/stale:/check:/heartbeat) prints one
 #     rewake banner to stderr and exits 2, which wakes Claude even while idle
@@ -552,6 +558,9 @@ start_handling_successor() {  # <closed-arm-pid>
 OUT=
 ACTIONABLE=0
 HEALTHY=0
+QUIET_ACKS=0
+QUIET_ACK_MAX=${FM_CLAUDE_QUIET_ACK_MAX:-500}
+case "$QUIET_ACK_MAX" in ''|*[!0-9]*) QUIET_ACK_MAX=500 ;; esac
 HOST_MODE=0
 HOST_RC=0
 ACTIONABLE_RE='^(signal:|stale:|check:|heartbeat($|:))'
@@ -592,6 +601,24 @@ while [ "$attempt" -lt "$AUTOARM_ATTEMPTS" ]; do
   ACTIONABLE=0
   if [ -n "$OUT" ]; then
     grep -Eq "$ACTIONABLE_RE" "$OUT" 2>/dev/null && ACTIONABLE=1
+  fi
+  if [ "$ACTIONABLE" -eq 1 ] && [ "$HOST_MODE" -eq 0 ] && [ "$QUIET_ACKS" -lt "$QUIET_ACK_MAX" ] \
+    && [ -e "$CONFIG/wake-auto-ack" ]; then
+    # No-wake path: where the next step would wake the model, first ask the drain
+    # whether every queued wake is classified no-action. Exit 0 means it already
+    # acknowledged them (and left its one-line record for the next real drain), so
+    # re-arm in this same hook instead of spending a model turn; any other status
+    # (10: a wake needs judgement) falls through to the wake below, unchanged.
+    # config/wake-auto-ack gates it, and the supervision host keeps its own hand-back.
+    QUIET_RC=0
+    FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-wake-drain.sh" --quiet-ack >/dev/null 2>&1 || QUIET_RC=$?
+    if [ "$QUIET_RC" -eq 0 ]; then
+      QUIET_ACKS=$((QUIET_ACKS + 1))
+      [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
+      OUT=
+      attempt=$((attempt - 1))
+      continue
+    fi
   fi
   [ "$ACTIONABLE" -eq 1 ] && break
   if [ "$HOST_MODE" -eq 1 ]; then
