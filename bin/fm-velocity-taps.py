@@ -52,7 +52,6 @@ REPLY_WINDOW_DAYS = 3   # the app's own reply window; older taps are never repla
 LEDGER_FILE = "velocity-taps.json"
 OFFICER_ID = "velocity-taps"
 AGENT_AS = "friction-officer"
-EPIC = "PC-3576 (the software-factory ladder, Fleet; the Quartermaster owns its order)"
 SOURCE_LABEL = "agent"
 TYPE_LABEL = "Improvement"
 MAIN_OWNERS = ("main", "slarti", "deepthought", "gilligan")
@@ -142,7 +141,7 @@ def description(sug, card_id, choice, found_line, known, marker, recurrence=None
     """The Linear item body: the card's own words, which the nightly audit already scrubbed, and who and what it is for."""
     lines = ["Filed by firstmate from Lee's Captain's Log tap on velocity card %s (%s)." % (card_id, choice),
              "What it is for: a velocity bottleneck the nightly audit found, fixed once so agents stop losing that time.",
-             "Epic: %s." % EPIC, ""]
+             "Epic: not assigned; whoever triages this picks one.", ""]
     if known:
         lines.append("Severity: %s (audit severity %s, confidence %s, effort %s)." % (
             severity_of(sug), sug.get("severity"), sug.get("confidence"), sug.get("effort") or "not stated"))
@@ -231,16 +230,27 @@ def file_card(lib, filer, ctx, reply_ctx, ledger):
     choice = "Create and fix now" if action == "fix" else "Create item for later"
     marker = "%s:%s" % (filer.officer.marker, fp)
     found = filer.officer.found_line(1, ctx["date"], ctx["date"])
+    def label_set(_f):
+        return lib.fleet_labels(SOURCE_LABEL, reply_ctx["names"], TYPE_LABEL)
+
+    def describe(_f, near=None, recurrence=None):
+        return description(sug, card_id, choice, found, known, marker, recurrence)
+
     try:
         if reply_ctx["names"] is None:
             reply_ctx["names"] = lib.label_names(filer.lin, ctx["team"])
-        names = reply_ctx["names"]
-        filer.file_single(f, lambda _f: lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL),
-                          lambda _f, near=None, recurrence=None: description(sug, card_id, choice, found, known, marker, recurrence))
+        filer.file_single(f, label_set, describe)
     except lib.LinearError as exc:
         f["filing"] = {"action": "failed", "reason": str(exc)}
         if exc.code == "RATE_LIMITED":
             lib.pause_for_rate_limit(ctx["out"], ctx["now"])
+    try:
+        filer.settle_bumps(label_set, describe)
+    except lib.LinearError as exc:
+        f["filing"]["found_error"] = str(exc)
+        if exc.code == "RATE_LIMITED":
+            lib.pause_for_rate_limit(ctx["out"], ctx["now"])
+    del filer.bumps[:]
     filing = f["filing"] or {}
     if filing.get("issue"):
         ledger["filed"][fp] = filing["issue"]
@@ -252,11 +262,12 @@ def run(replies, ctx):
     """Handles every new velocity tap in `replies`; returns (report dict, start_requests rows).
 
     ctx: out (the officer's lane), date (the digest's), now, app (the fleet app's origin), fm_home, offices, writes,
-    team, max_creates, max_calls, jev, and optionally fleet_axi. With writes other than linear nothing is filed or
-    answered and the taps wait.
+    team, max_creates, max_calls, jev, and optionally fleet_axi. max_creates and max_calls are what is left of the
+    officer's registry-line budget after its own Linear pass; the report's linear_calls names the calls this pass made.
+    With writes other than linear nothing is filed or answered and the taps wait.
     """
     lib = _load("fm_officer_linear", "fm-officer-linear.py")
-    report = {"read": 0, "handled": [], "waiting": [], "ignored": 0, "gaps": []}
+    report = {"read": 0, "handled": [], "waiting": [], "ignored": 0, "gaps": [], "linear_calls": 0}
     ledger_path = os.path.join(ctx["out"], LEDGER_FILE)
     ledger = lib.read_json(ledger_path, {})
     for key in ("replies", "filed", "found"):
@@ -347,6 +358,7 @@ def run(replies, ctx):
         entry.update(done=True, date=ctx["date"])
         lib.write_json(ledger_path, ledger)
         report["handled"].append({"request": rid, "card": card, "choice": action, "issue": issue})
+    report["linear_calls"] = lin.n
     lib.write_json(ledger_path, ledger)
     return report, digest_rows(ledger, ctx["date"])
 

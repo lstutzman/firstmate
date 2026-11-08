@@ -59,6 +59,14 @@ case "$1 $2" in
         echo '{"ok":true,"data":{"issue":{"identifier":"PC-'"$n"'"}}}' ;;
       *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
     esac ;;
+  "issue update")
+    case " $* " in
+      *" --verify "*)
+        prev=''
+        for a in "$@"; do [ "$prev" = "--body-file" ] && cp "$a" "$d/issue.${3#PC-}"; prev=$a; done ;;
+    esac
+    echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'"}}}' ;;
+  "issue comment") echo '{"ok":true,"data":{}}' ;;
   *) echo '{"ok":false,"error":{"code":"UNKNOWN","message":"unexpected call"}}'; exit 1 ;;
 esac
 SH
@@ -173,7 +181,7 @@ test_create_for_later_files_and_answers() {
   assert_equals "101 Fleet" "$(cat "$w/linear/projects.used")" "a fleet item is filed in the Fleet project"
   assert_grep "velocity-taps-fp:" "$w/linear/issue.101" "the item carries the suggestion's fingerprint as its key"
   assert_grep "Raise the staging queue concurrency to two." "$w/linear/issue.101" "the item holds the card's what-to-change text"
-  assert_grep "Epic: PC-3576" "$w/linear/issue.101" "the item names its epic"
+  assert_grep "Epic: not assigned; whoever triages this picks one." "$w/linear/issue.101" "the item leaves its epic to triage, as every officer item does"
   assert_equals "captains-log ack $(rid 1)
 captains-log answer $(rid 1) Filed as PC-101" "$(fleet_calls "$w" | sed 's/^--as [^ ]* //')" "the reply is acknowledged, then answered with the Linear id"
   assert_equals "0" "$(rows "$w" | jq length)" "Create item for later starts nothing"
@@ -355,6 +363,36 @@ test_failed_answers_are_retried_and_writes_none_waits() {
   pass "fm-velocity-taps: a failed answer is retried; writes: none leaves the tap to main"
 }
 
+test_the_run_shares_one_linear_budget() {
+  local w
+  w=$(make_world budget)
+  set_replies "$w" "$(reply 25 1 "Create item for later: Agents wait on the staging queue")" "$(reply 26 2 "Create item for later: A hook refuses a harmless cd")"
+  tap_run "$w" --max-linear-calls 3
+  assert_absent "$w/linear/created" "a create needs more calls than are left, so nothing is filed"
+  assert_equals "3" "$(wc -l < "$w/linear/log" | tr -d ' ')" "the run makes no more Linear calls than its registry line allows"
+  assert_equals "3" "$(taps "$w" '.linear_calls')" "the digest counts the velocity pass's calls in the run's total"
+  assert_equals "2" "$(taps "$w" '.velocity_taps.waiting | length')" "both taps wait for the next run"
+  w=$(make_world creates)
+  set_replies "$w" "$(reply 27 1 "Create item for later: Agents wait on the staging queue")" "$(reply 28 2 "Create item for later: A hook refuses a harmless cd")"
+  tap_run "$w" --max-creates 1
+  assert_equals "101" "$(cat "$w/linear/created")" "the run files no more items than its create cap"
+  assert_equals "1" "$(taps "$w" '.velocity_taps.waiting | length')" "the tap over the cap waits"
+  pass "fm-velocity-taps: the taps use what is left of the run's Linear call budget and create cap"
+}
+
+test_a_jev_duplicate_raises_its_found_line() {
+  local w
+  w=$(make_world jevdup)
+  printf 'Agents wait on the staging queue\nFiled by hand.\n' > "$w/linear/issue.50"
+  echo 'print("{\"type\": \"noul\", \"noul\": 0.95}")' > "$w/jev.py"
+  set_replies "$w" "$(reply 29 1 "Create item for later: Agents wait on the staging queue")"
+  tap_run "$w" --jev "$w/jev.py"
+  assert_absent "$w/linear/created" "a duplicate local-jev is sure of files no second item"
+  assert_grep "Found: 2 times" "$w/linear/issue.50" "the duplicate's Found line is raised"
+  assert_contains "$(fleet_calls "$w")" "answer $(rid 29) Already filed as PC-50" "the reply is answered with the existing item"
+  pass "fm-velocity-taps: a local-jev duplicate raises the existing item's Found line"
+}
+
 test_no_velocity_reply_calls_nothing() {
   local w
   w=$(make_world none)
@@ -381,4 +419,6 @@ fm_test_run \
   test_a_rerun_changes_nothing \
   test_replies_someone_else_took_and_old_taps_are_left_alone \
   test_failed_answers_are_retried_and_writes_none_waits \
+  test_the_run_shares_one_linear_budget \
+  test_a_jev_duplicate_raises_its_found_line \
   test_no_velocity_reply_calls_nothing

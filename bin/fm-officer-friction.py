@@ -2262,10 +2262,11 @@ def linear_pass(doc, states, eligible, args, offices, main_home):
             "held": held, "asks_for_lee": asks}, starts
 
 
-def velocity_taps(replies, args, offices):
+def velocity_taps(replies, args, offices, doc):
     """Handles the fleet app's velocity-card taps (bin/fm-velocity-taps.py owns what each choice does).
 
-    Runs only when a velocity- reply was read, so a run with none calls neither Linear, the app nor fleet-axi.
+    Runs only when a velocity- reply was read, so a run with none calls neither Linear, the app nor fleet-axi. It gets
+    what the Linear pass left of the run's call budget and create cap, and its calls count in the digest's total.
     """
     mod = sys.modules.get("fm_velocity_taps")
     if mod is None:
@@ -2277,7 +2278,9 @@ def velocity_taps(replies, args, offices):
     report, rows = mod.run(replies, {
         "out": args.out, "date": args.date, "now": args.now, "app": re.sub(r"/api/captains-log/?$", "", args.captains_log.rstrip("/")),
         "fm_home": args.fm_home, "offices": offices, "writes": args.writes, "team": args.team,
-        "max_creates": args.max_creates, "max_calls": args.max_linear_calls, "jev": args.jev})
+        "max_creates": max(0, args.max_creates - sum(1 for w in doc["writes_done"] if w.get("action") == "created")),
+        "max_calls": max(0, args.max_linear_calls - doc["linear_calls"]), "jev": args.jev})
+    doc["linear_calls"] += report["linear_calls"]
     return {"report": report, "rows": rows}
 
 
@@ -2508,7 +2511,7 @@ def main(argv):
     doc.update(linear)
     doc["coverage"]["notes"].extend(linear["linear_gaps"])
     if args.captains_log and any(str(r.get("card") or "").startswith("velocity-") for r in replies):
-        taps = velocity_taps(replies, args, offices)
+        taps = velocity_taps(replies, args, offices, doc)
         doc["velocity_taps"] = taps["report"]
         doc["coverage"]["notes"].extend(taps["report"]["gaps"])
         for rank, row in enumerate(taps["rows"], len(doc["start_requests"]) + 1):
