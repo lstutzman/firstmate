@@ -145,6 +145,20 @@ test_gate_refuses_renamed_tools_version() {
   mcp status
   expect_code 4 "$RC" "new tool names under an older version string are refused too"
   assert_contains "$ERR" "t3_thread_configuration is now t3_thread_configure" "the tool-name path should give the same mapping"
+  local v
+  for v in 0.1.3 v0.1.10 0.2.0 1.0.0; do
+    t3_fake_set "delete w.tools; w.serverVersion = \"$v\""
+    mcp status
+    expect_code 4 "$RC" "T3 $v offering the old tool names must still be refused by version"
+    assert_contains "$ERR" "T3 $v at" "the refusal should name version $v"
+    assert_contains "$ERR" "t3_pending_request_list is now t3_pending_request (action list)" "the version refusal for $v should map the renames"
+  done
+  for v in 0.1.2 0.1.2-nightly.20261020 0.0.99; do
+    t3_fake_set "delete w.tools; w.serverVersion = \"$v\""
+    mcp status
+    expect_code 0 "$RC" "T3 $v with the old tool names is before the rename and must pass: $ERR"
+    assert_equals "$v" "$(field "$OUT" serverVersion)" "status should report version $v"
+  done
   pass "fm-t3-mcp gate: refuses T3 0.1.3 and its renamed tools with a version message"
 }
 
