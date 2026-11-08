@@ -18,6 +18,7 @@
 #   <owner/name> merged=<n> fix_forward=<n> reverts=<n> [truncated]   or   <owner/name> unreadable: <reason>
 # JSON: {"days":N,"since":"YYYY-MM-DD","repos":[{"repo":...,"merged":n,"fix_forward":n,"reverts":n,"truncated":bool}
 # | {"repo":...,"error":"..."}]}
+# The window is the N UTC calendar days ending today, and since is its first day, so runs N days apart never overlap.
 # Read-only: one `gh pr list` per repository, no write call, no model. Exit 0 when every repository was read,
 # 1 when any was unreadable (the other repositories are still printed), 2 on usage errors.
 set -eu
@@ -47,7 +48,7 @@ for tool in gh jq; do
   command -v "$tool" >/dev/null 2>&1 || { echo "error: $tool is required" >&2; exit 2; }
 done
 
-SINCE=$(date -u -d "$DAYS days ago" +%Y-%m-%d)
+SINCE=$(date -u -d "$((DAYS - 1)) days ago" +%Y-%m-%d 2>/dev/null || date -u -v-"$((DAYS - 1))"d +%Y-%m-%d)
 LINE_RE='(^|\n)Fixes-regression-from: https://[^ \n]+/pull/[0-9]+'
 
 rows=()
