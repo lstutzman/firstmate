@@ -16,7 +16,8 @@
 # create ever being called, an unreachable app as a coverage gap, and register
 # surgeon / retire triage keeping triage's findings, and the visual review source: its findings file (version 2 only)
 # filed once per fingerprint and bumped on a repeat, wording or product findings held for Lee as one keyed decision with no
-# item, a missing, unreadable, version 1, unchanged or incomplete file as a named gap, and a run without writes: linear touching nothing in Linear.
+# item, a missing, unreadable, version 1, unchanged or incomplete file as a named gap, a run without writes: linear touching nothing in Linear,
+# and screenshot attaches: counted against the call budget, a failed one retried on later runs and abandoned after 7 days.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -1142,6 +1143,64 @@ test_visual_attach_failures_are_named_gaps() {
   pass "fm-officer surgeon: each screenshot attach failure is its own named coverage gap"
 }
 
+test_visual_attach_left_pending_is_retried_next_run_and_cleared() {
+  local home out state
+  make_visual_world visretry; home=$WORLD_HOME
+  state="$home/data/officers/surgeon/review-state.json"
+  echo 75 > "$LDIR/attach.exit"
+  out=$(run_surgeon "$home") || fail "a rate limited attach must not fail the run"
+  assert_contains "$out" "Coverage gap: 1 screenshot(s) not attached yet; the next run retries them" "the unattached screenshot is counted and said to be retried"
+  assert_equals "PC-101 $VISUAL_DIR/captures/shots/a-desktop.png $DATE" "$(jq -r '.pending_attach[] | [.issue, .file, .first] | join(" ")' "$state")" "and kept pending in the lane's state"
+  echo 0 > "$LDIR/attach.exit"
+  write_visual "$VISUAL_DIR/findings.json" "$VSTAMP2"
+  out=$(run_surgeon_next_day "$home" visretry) || fail "next night's run"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "the next run retries the pending screenshot"
+  assert_equals "PC-101 $VISUAL_DIR/captures/shots/a-desktop.png --verify" "$(tail -n 1 "$LDIR/attach.log")" "on the item it was filed as"
+  assert_not_contains "$out" "not attached yet" "a successful retry leaves nothing pending"
+  assert_equals null "$(jq .pending_attach "$state")" "and clears the state"
+  run_surgeon_next_day "$home" visretry "$DATE3" 2 >/dev/null || fail "a third night"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "an attached screenshot is never attached again"
+  pass "fm-officer surgeon: a screenshot left unattached is retried next run and cleared once attached"
+}
+
+test_visual_upload_rights_refusal_is_reported_every_run() {
+  local home out
+  make_visual_world visrights; home=$WORLD_HOME
+  echo 3 > "$LDIR/attach.exit"
+  run_surgeon "$home" >/dev/null || fail "first run"
+  out=$(run_surgeon_next_day "$home" visrights) || fail "next night's run"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "exit 3 stays pending and is tried again"
+  assert_contains "$out" "Coverage gap: screenshots not attached: the Linear app token lacks upload rights (linear-attach exit 3); Lee's call" "and is reported again until Lee changes the token"
+  pass "fm-officer surgeon: an upload-rights refusal stays pending and is reported every run"
+}
+
+test_visual_pending_attach_is_abandoned_after_seven_days() {
+  local home out state
+  make_visual_world visold; home=$WORLD_HOME
+  state="$home/data/officers/surgeon/review-state.json"
+  echo 75 > "$LDIR/attach.exit"
+  run_surgeon "$home" >/dev/null || fail "first run"
+  out=$(run_surgeon_next_day "$home" visold 2026-10-29 6) || fail "six days on"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "six days on it is still retried"
+  assert_not_contains "$out" "abandoned" "and not yet abandoned"
+  out=$(run_surgeon_next_day "$home" visold 2026-10-30 7) || fail "seven days on"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "seven days on it is not tried again"
+  assert_contains "$out" "Coverage gap: screenshot abandoned for PC-101 after 7 days unattached: $VISUAL_DIR/captures/shots/a-desktop.png" "it is dropped with a named gap"
+  assert_equals null "$(jq .pending_attach "$state")" "and leaves the state"
+  pass "fm-officer surgeon: a screenshot still unattached after 7 days is abandoned with a named gap"
+}
+
+test_visual_attach_stops_at_the_call_budget() {
+  local home out
+  make_visual_world visbudget "max-linear-calls: 5; "; home=$WORLD_HOME
+  out=$(run_surgeon "$home") || fail "a spent budget must not fail the run"
+  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "the item is still filed within the budget"
+  [ ! -s "$LDIR/attach.log" ] || fail "an attach past the budget is not made: $(cat "$LDIR/attach.log")"
+  assert_contains "$out" "Coverage gap: screenshots not attached: Linear call budget of 5 reached" "the budget stop is named"
+  assert_contains "$out" "Coverage gap: 1 screenshot(s) not attached yet; the next run retries them" "and the screenshot is left for the next run"
+  pass "fm-officer surgeon: each attach counts against the Linear call budget"
+}
+
 test_visual_registry_fields_are_validated() {
   local home out
   make_world visreg; home=$WORLD_HOME
@@ -1196,4 +1255,8 @@ test_visual_file_problems_are_named_gaps
 test_visual_incomplete_review_is_a_named_gap
 test_visual_dry_run_writes_nothing_to_linear
 test_visual_attach_failures_are_named_gaps
+test_visual_attach_left_pending_is_retried_next_run_and_cleared
+test_visual_upload_rights_refusal_is_reported_every_run
+test_visual_pending_attach_is_abandoned_after_seven_days
+test_visual_attach_stops_at_the_call_budget
 test_visual_registry_fields_are_validated

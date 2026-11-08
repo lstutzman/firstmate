@@ -65,6 +65,9 @@ Each finding is classified with the tables below and no model:
                         with `linear-attach <issue> <file> --verify` (never on a duplicate bump, each call counted
                         against the Linear call budget); a missing linear-attach, a missing screenshot file, exit 3
                         (upload rights) or exit 75 (rate limited, stops the run's attaching) is a named `Coverage gap:`.
+                        A screenshot not attached (other than a missing file) is kept as `pending_attach` in the
+                        lane's state and retried first on each later run, and dropped as abandoned, a named gap, once
+                        it was first left ATTACH_DAYS ago.
 
 A won't-fix finding is always low. A finding the source already put in Linear (an
 `issue` on the nightly failure, a filing on the review finding, a Linear item
@@ -134,6 +137,7 @@ Outputs <date>.json and <date>.md in --out and prints
 
 import argparse
 import collections
+import datetime
 import hashlib
 import importlib.util
 import json
@@ -185,6 +189,8 @@ CLUSTER_PARTS = 2
 CLUSTER_SPLIT_OVER = 25
 CLUSTER_MIN_SUBGROUP = 10
 CLUSTER_MIN_GROUP = 3
+# A screenshot left unattached is retried each run, and dropped as abandoned once it was first left this many days ago.
+ATTACH_DAYS = 7
 STAGING_REPO = "git@github.com:lstutzman/PropertyCompass2.git"
 RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "surgeon-rubric.md")
 
@@ -448,7 +454,6 @@ def visual_intake(path, captures, state, ledger, date, writes):
                     "reason": text(top.get("reason"), 20), "viewports": ", ".join(sorted({text(r.get("viewport"), 20) for r in rows if r.get("viewport")})),
                     "reviewer_severity": reviewer, "review_run": stamp, "visual_review_fp": fp,
                     "screenshots": [screenshot_where(captures, s) for s in shots]}
-        evidence["attach"] = [screenshot_where(captures, s) for s in shots] if captures else []
         f = finding("visual", VISUAL_JOB, fp, "Visual review: %s on %s" % (g["item"], g["route"]),
                     "%s on %s: %s" % (g["item"], g["route"], text(top.get("evidence"), 120)),
                     "needs-decision" if g["held"] else "real", "low" if g["held"] else reviewer, None, evidence, location=g["route"])
@@ -470,46 +475,51 @@ def visual_intake(path, captures, state, ledger, date, writes):
     return findings, held, gaps
 
 
-def attach_screenshots(f, gaps, state):
-    """Attaches a newly filed visual item's screenshots with `linear-attach --verify`; failures are named in gaps.
+def attach_screenshots(entries, gaps, run, date):
+    """Attaches each {"issue", "file", "first"} entry with `linear-attach <issue> <file> --verify`; returns those still pending.
 
-    `state` holds {"stopped": True} once linear-attach was rate limited this run, and "left" counts what was not attached.
-    Each call counts against the Linear call budget.
+    Failures are named in gaps. `run` holds "stopped" once linear-attach is missing, rate limited, refused for upload rights
+    or out of the Linear call budget this run; the entries after that stay pending. A file that is not there is a gap and
+    is not retried. An entry first left ATTACH_DAYS or more days ago is dropped as abandoned. Each call counts against the
+    Linear call budget.
     """
-    ident = f["filing"]["issue"]
-    files = [w for w in f["evidence"].get("attach") or []]
-    for n, where in enumerate(files):
-        if state.get("stopped"):
-            state["left"] += len(files) - n
-            return
+    pending = []
+    for e in entries:
+        ident, where = e["issue"], e["file"]
+        if (datetime.date.fromisoformat(date) - datetime.date.fromisoformat(e["first"])).days >= ATTACH_DAYS:
+            gaps.append("screenshot abandoned for %s after %d days unattached: %s" % (ident, ATTACH_DAYS, where))
+            continue
         if not os.path.isfile(where):
             gaps.append("screenshot not attached to %s: %s" % (ident, where))
             continue
+        if run.get("stopped"):
+            pending.append(e)
+            continue
         if LIN.n >= LIN.budget:
-            state["stopped"] = True
-            state["left"] += len(files) - n
+            run["stopped"] = True
+            pending.append(e)
             gaps.append("screenshots not attached: Linear call budget of %d reached" % LIN.budget)
-            return
+            continue
         LIN.n += 1
         try:
             proc = subprocess.run(["linear-attach", ident, where, "--verify"], capture_output=True, check=False)
         except OSError as exc:
-            state["stopped"] = True
-            state["left"] += len(files) - n
+            run["stopped"] = True
+            pending.append(e)
             gaps.append("screenshots not attached: linear-attach is not available (%s)" % text(exc, 80))
-            return
+            continue
         if proc.returncode == 0:
             continue
+        pending.append(e)
         if proc.returncode == 75:
-            state["stopped"] = True
-            state["left"] += len(files) - n
+            run["stopped"] = True
             gaps.append("screenshots not attached: linear-attach was rate limited at %s" % ident)
         elif proc.returncode == 3:
-            state["stopped"] = True
-            state["left"] += len(files) - n
+            run["stopped"] = True
             gaps.append("screenshots not attached: the Linear app token lacks upload rights (linear-attach exit 3); Lee's call")
         else:
             gaps.append("screenshot not attached to %s: linear-attach exit %d for %s" % (ident, proc.returncode, where))
+    return pending
 
 
 def visual_ask(held, date):
@@ -618,7 +628,7 @@ def description(f, date, near=None, recurrence=None):
     if near:
         lines.append("Near match (not treated as the same issue): %s, local-jev %.2f." % near)
     shots = f["evidence"].get("screenshots") or []
-    lines += ["%s: %s" % (k, text(v, 300)) for k, v in sorted(f["evidence"].items()) if v not in (None, "") and k not in ("screenshots", "attach", "visual_review_fp")]
+    lines += ["%s: %s" % (k, text(v, 300)) for k, v in sorted(f["evidence"].items()) if v not in (None, "") and k not in ("screenshots", "visual_review_fp")]
     if f["location"]:
         lines.append("Location: " + f["location"])
     lines += ["Screenshot: " + s for s in shots[:10]] + (["Screenshot: and %d more" % (len(shots) - 10)] if len(shots) > 10 else [])
@@ -720,7 +730,7 @@ def found_line(count, first, last):
     return OFFICER.found_line(count, first, last)
 
 
-def file_findings(findings, args, date, out, state, found, jev, gaps=None):
+def file_findings(findings, args, date, out, state, found, jev, gaps):
     """Files the real, untracked findings; returns (writes_done, why Linear was stopped or None)."""
     todo = [f for f in findings if f["class"] == "real" and not f["tracked"]]
     clustered = [f for f in todo if f["source"] == "review" and f["severity"] == "low" and f["fingerprint"]]
@@ -730,8 +740,7 @@ def file_findings(findings, args, date, out, state, found, jev, gaps=None):
     ledger_path = os.path.join(out, LEDGER_FILE)
     ledger = read_json(ledger_path, {})
     filer = lib.Filer(OFFICER, LIN, args.team, date, out, ledger, found, jev, args.max_creates)
-    gaps = [] if gaps is None else gaps
-    attach = {"left": 0}
+    attach = {"pending": state.pop("pending_attach", [])}
     plan = plan_clusters(clustered, state, ledger)
     bumps = filer.bumps
     for c in plan:
@@ -740,9 +749,9 @@ def file_findings(findings, args, date, out, state, found, jev, gaps=None):
                 f["filing"] = {"action": "clustered", "issue": ledger[c["fp"]], "cluster": c["key"], "new": False}
 
     def flush_attach():
-        if attach["left"]:
-            gaps.append("%d screenshot(s) left unattached this run" % attach["left"])
-            attach["left"] = 0
+        if attach["pending"]:
+            state["pending_attach"] = attach["pending"]
+            gaps.append("%d screenshot(s) not attached yet; the next run retries them" % len(attach["pending"]))
 
     def stop(reason, rate_limited=False):
         flush_attach()
@@ -761,10 +770,11 @@ def file_findings(findings, args, date, out, state, found, jev, gaps=None):
             f["issue_hint"] = ledger[f["fingerprint"]]
             bumps.append(f)
     due = [f for f in bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != date]
-    if not any(not f["filing"] for f in todo) and not any(c["action"] for c in plan) and not due:
+    if not any(not f["filing"] for f in todo) and not any(c["action"] for c in plan) and not due and not attach["pending"]:
         return lib.summary_rows(todo), None
     if stopped:
         return stop(stopped)
+    attach["pending"] = attach_screenshots(attach["pending"], gaps, attach, date)
     try:
         names = lib.label_names(LIN, args.team)
     except LinearError as exc:
@@ -789,8 +799,9 @@ def file_findings(findings, args, date, out, state, found, jev, gaps=None):
         for kind, item in order:
             if kind == "single":
                 filer.file_single(item, label_set, describe)
-                if item["source"] == "visual" and (item["filing"] or {}).get("action") == "created":
-                    attach_screenshots(item, gaps, attach)
+                if item["source"] == "visual" and args.visual_captures and (item["filing"] or {}).get("action") == "created":
+                    attach["pending"] += attach_screenshots([{"issue": item["filing"]["issue"], "file": w, "first": date}
+                                                             for w in item["evidence"]["screenshots"]], gaps, attach, date)
             else:
                 c = item
                 wanted, reason = filer.item_labels({"source": "review", "project": c["project"]},
