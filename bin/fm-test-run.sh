@@ -945,8 +945,8 @@ tests/fm-remote-job-process-start.test.sh 4110
 tests/fm-remote-job.test.sh 140531
 tests/fm-remote-office-seed.test.sh 50000
 tests/fm-remote-reply.test.sh 234550
-tests/fm-remote-secondmate-lifecycle-e2e.test.sh 650000
-tests/fm-remote-secondmate-lifecycle-rex-e2e.test.sh 560000
+tests/fm-remote-secondmate-lifecycle-e2e.test.sh 930000
+tests/fm-remote-secondmate-lifecycle-rex-e2e.test.sh 800000
 tests/fm-remote-secondmate-omp.test.sh 6130
 tests/fm-remote-secondmate-parent-binding.test.sh 104492
 tests/fm-remote-secondmate-relaunch.test.sh 1015
