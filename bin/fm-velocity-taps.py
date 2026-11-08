@@ -240,14 +240,10 @@ def file_card(lib, filer, ctx, reply_ctx, ledger):
         if reply_ctx["names"] is None:
             reply_ctx["names"] = lib.label_names(filer.lin, ctx["team"])
         filer.file_single(f, label_set, describe)
-    except lib.LinearError as exc:
-        f["filing"] = {"action": "failed", "reason": str(exc)}
-        if exc.code == "RATE_LIMITED":
-            lib.pause_for_rate_limit(ctx["out"], ctx["now"])
-    try:
         filer.settle_bumps(label_set, describe)
     except lib.LinearError as exc:
-        f["filing"]["found_error"] = str(exc)
+        ledger["filed"].pop(fp, None)
+        f["filing"] = {"action": "failed", "reason": str(exc)}
         if exc.code == "RATE_LIMITED":
             lib.pause_for_rate_limit(ctx["out"], ctx["now"])
     del filer.bumps[:]

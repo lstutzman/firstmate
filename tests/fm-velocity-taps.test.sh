@@ -393,6 +393,22 @@ test_a_jev_duplicate_raises_its_found_line() {
   pass "fm-velocity-taps: a local-jev duplicate raises the existing item's Found line"
 }
 
+test_a_bump_cut_short_by_the_budget_waits() {
+  local w
+  w=$(make_world jevbudget)
+  printf 'Agents wait on the staging queue\nFiled by hand.\n' > "$w/linear/issue.50"
+  echo 'print("{\"type\": \"noul\", \"noul\": 0.95}")' > "$w/jev.py"
+  set_replies "$w" "$(reply 30 1 "Create item for later: Agents wait on the staging queue")"
+  tap_run "$w" --jev "$w/jev.py" --max-linear-calls 5
+  assert_no_grep "Found: 2 times" "$w/linear/issue.50" "the budget ran out before the Found line was written"
+  assert_absent "$w/fleet.log" "a tap whose bump was cut short is not answered"
+  assert_equals "1" "$(taps "$w" '.velocity_taps.waiting | length')" "the tap waits for the next run"
+  tap_run "$w" --jev "$w/jev.py"
+  assert_grep "Found: 2 times" "$w/linear/issue.50" "the next run raises the Found line"
+  assert_contains "$(fleet_calls "$w")" "answer $(rid 30) Already filed as PC-50" "and answers the reply with the existing item"
+  pass "fm-velocity-taps: a Found bump cut short by the call budget leaves the tap waiting for the next run"
+}
+
 test_no_velocity_reply_calls_nothing() {
   local w
   w=$(make_world none)
@@ -421,4 +437,5 @@ fm_test_run \
   test_failed_answers_are_retried_and_writes_none_waits \
   test_the_run_shares_one_linear_budget \
   test_a_jev_duplicate_raises_its_found_line \
+  test_a_bump_cut_short_by_the_budget_waits \
   test_no_velocity_reply_calls_nothing
