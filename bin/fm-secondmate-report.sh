@@ -94,9 +94,12 @@ case "$CORR" in
   [a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9]) ;;
   *)
     echo "error: corr_id must be 16 hex characters (got '$CORR')" >&2
-    case "$CORR_PREFIXED:$CORR" in
-      0:*[!a-fA-F0-9]*) set -- "$CORR" "$@" ;;
-    esac
+    if [ "$CORR_PREFIXED" = 0 ] && [ -n "$CORR" ]; then
+      case "$CORR" in
+        *[!a-fA-F0-9]*) set -- "$CORR" "$@" ;;
+        *) [ "${#CORR}" -ge 8 ] || set -- "$CORR" "$@" ;;
+      esac
+    fi
     if [ "$DOC_MODE" = 1 ]; then
       if [ $# -ge 1 ]; then
         doc=$1
