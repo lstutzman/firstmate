@@ -1,0 +1,9 @@
+## base (20d3d5be) rc=0
+DIGEST 2026-11-08T02 15 data/officers/page-check/2026-11-08T02.md
+stale-card findings:
+  stale-card:Captain's Log:ai-legal-pack-needs:unanswered  [unanswered for 7 day(s)]
+  stale-card:Captain's Log:later-answered:answered  [already answered but still shown]
+  stale-card:Captain's Log:later-answered:unanswered  [unanswered for 7 day(s)]
+  stale-card:Captain's Log:later-snooze-ended:snooze  [snooze ended 7 day(s) ago]
+  stale-card:Captain's Log:next-old-ask:unanswered  [unanswered for 7 day(s)]
+  stale-card:Captain's Log:now-old-ask:unanswered  [unanswered for 7 day(s)]

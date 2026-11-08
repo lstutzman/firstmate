@@ -1,0 +1,22 @@
+linear-axi issue create --verify calls (fingerprints in bodies):
+104
+Captain's Log. Object: later-answered:answered.
+Captain's Log. Object: later-snooze-ended:snooze.
+Captain's Log. Object: next-old-ask:unanswered.
+Captain's Log. Object: now-old-ask:unanswered.
+page-check-fp:116075a7ded9f11701b5e716a69f487a45371dd1025005bb6021c66db92eadaf
+page-check-fp:32c826ba6064bf4a077a7a7ee5705008399263ab7295c438cb65c062cff2e8c4
+page-check-fp:3440cbc69007da9874ad5d1c7893b373593c5c65458963cd11535b3fc08cc50b
+page-check-fp:39943bf44b133e3375db28e326514434700b654e995edcec7156da5eea4a3876
+page-check-fp:6f90d5b9ef182a793d372bb30cf8c59c0366bbfde5130dde638dece660a3ccc9
+page-check-fp:8b442e257118cf743bc3d2c8478167999c26892cf50972ce193b0c964895963f
+page-check-fp:8e63df140167cb2f9828a79eecb69fa0a213cecfa4ffd5beda3ee3d81406318f
+page-check-fp:90a2421d1f607594c4ffd154133a3c7c49b03decb55192c3987f37e5020fe8e4
+page-check-fp:a58e38ce8beeb1aa4e4bd0c68e042f7a24eb1557ebb21253d83a5d655a46dc1f
+page-check-fp:b0aa35f7df2f554915eb88a7aed29201e65a1229b74ecd12ab295a0edaafa2e2
+page-check-fp:e31ae7981ce4643ea4950e088a1fffa54c114dcb26d0c2312dfb36f3f896ca31
+page-check-fp:f582f6cb6770c9bfe392591c72570cc49ad58989faaa7535b0c31a0ca5bcec7b
+page-check-fp:f825d69ebd1f10c8b36ab7fe31b0f6f9f55d68cf60dc58db0686630cc2134552
+mentions of ai-legal-pack-needs in any Linear call or body:
+/tmp/pc-live.Tn4Iix/ld/log:0
+/tmp/pc-live.Tn4Iix/ld/bodies:0
