@@ -308,6 +308,14 @@ test_dispatched_records_effort_and_skills_commit() {
   rows=$(dispatched_fields "$sk" high hash)
   case "$rows" in '["high","hash:'[0-9a-f]*'"]') ;; *) fail "expected an installed-content hash, got $rows" ;; esac
   assert_equals "$rows" "$(dispatched_fields "$sk" high hash2)" "the content hash is stable"
+  mkdir -p "$TMP_ROOT/elsewhere/deeper"
+  cp -R "$sk" "$TMP_ROOT/elsewhere/deeper/skills"
+  assert_equals "$rows" "$(dispatched_fields "$TMP_ROOT/elsewhere/deeper/skills" high moved)" "the same skills under another parent hash the same"
+  printf 'changed\n' > "$TMP_ROOT/elsewhere/deeper/skills/beta/SKILL.md"
+  [ "$rows" != "$(dispatched_fields "$TMP_ROOT/elsewhere/deeper/skills" high edited)" ] || fail "an edited SKILL.md must change the hash"
+  mv "$TMP_ROOT/elsewhere/deeper/skills/beta" "$TMP_ROOT/elsewhere/deeper/skills/gamma"
+  printf 'two\n' > "$TMP_ROOT/elsewhere/deeper/skills/gamma/SKILL.md"
+  [ "$rows" != "$(dispatched_fields "$TMP_ROOT/elsewhere/deeper/skills" high renamed)" ] || fail "a renamed skill must change the hash"
 
   printf '%s\n' 0123456789abcdef0123456789abcdef01234567 > "$sk/.skills-commit"
   assert_equals '["xhigh","commit:0123456789abcdef0123456789abcdef01234567"]' "$(dispatched_fields "$sk" xhigh marker)" "marker commit"
@@ -324,10 +332,21 @@ test_dispatched_records_effort_and_skills_commit() {
 test_dispatched_records_unknown_skills_when_unreadable() {
   assert_equals '["low","unknown"]' "$(dispatched_fields "$TMP_ROOT/missing" low missing)" "missing skills dir"
   assert_equals '["low","unknown"]' "$(dispatched_fields "$TMP_ROOT/empty" low emptydir)" "skills dir without SKILL.md"
+  assert_equals '["low","unknown"]' "$(dispatched_fields "" low unset)" "an empty FM_SKILLS_DIR means not readable on this host"
   pass "dispatched records skills_commit unknown, and still succeeds, when the skills cannot be read"
 }
 
+test_spawn_records_the_requested_effort() {
+  local out
+  make_case spawn-effort on
+  out=$(in_home "$ROOT/bin/fm-spawn.sh" "$TASK" "$PROJ_DIR" --mode local-only --yolo off --effort high 2>&1) \
+    || fail "spawn failed: $out"
+  assert_equals '["task.dispatched","high"]' "$(ledger_rows 'select(.event == "task.dispatched") | [.event, .effort]')" "spawn --effort high"
+  pass "fm-spawn --effort high records effort high in task.dispatched"
+}
+
 test_flag_on_records_the_task_lifecycle
+test_spawn_records_the_requested_effort
 test_dispatched_records_effort_and_skills_commit
 test_dispatched_records_unknown_skills_when_unreadable
 test_flag_on_records_a_pr_merge_once

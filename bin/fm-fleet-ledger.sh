@@ -46,9 +46,10 @@
 # so a reused task id starts at byte 0 of its fresh log.
 # dispatched also records the effort the worker launched with ("default" when
 # none was given) and skills_commit, the skills the session loads, read from
-# FM_SKILLS_DIR (default $HOME/.agents/skills): "commit:<sha>" from a git
-# checkout or a .skills-commit marker there, else "hash:<sha256>" of the
-# installed SKILL.md files, else "unknown". The read is bounded by a timeout
+# FM_SKILLS_DIR (default $HOME/.agents/skills; set but empty means not
+# readable here): "commit:<sha>" from a git checkout or a .skills-commit marker
+# there, else "hash:<sha256>" of the installed SKILL.md files and their paths
+# relative to that directory, else "unknown". The read is bounded by a timeout
 # and can never fail the record.
 # Every write holds state/.fleet-ledger.lock.
 #
@@ -136,12 +137,31 @@ grown_logs() {
   done
 }
 
+# shellcheck disable=SC2329 # invoked through declare -f inside a bounded bash -c.
+sha256_stdin() { # print the SHA-256 digest of stdin; shasum on macOS, sha256sum elsewhere
+  local out
+  if command -v shasum >/dev/null 2>&1; then out=$(shasum -a 256); else out=$(sha256sum); fi || return 1
+  printf '%s\n' "${out%% *}"
+}
+
+# shellcheck disable=SC2329 # invoked through declare -f inside a bounded bash -c.
+hash_skill_files() { # run inside the skills directory: digest of every SKILL.md, keyed by relative path
+  local files f
+  files=$(find -L . -maxdepth 2 -name SKILL.md -not -name '._*' 2>/dev/null | LC_ALL=C sort)
+  [ -n "$files" ] || return 1
+  while IFS= read -r f; do
+    printf '%s %s\n' "$(sha256_stdin < "$f")" "$f"
+  done <<< "$files" | sha256_stdin
+}
+
 # Print the skills version this host's sessions load; always exits 0.
 skills_commit() {
-  local dir=${FM_SKILLS_DIR:-${HOME:-}/.agents/skills} sha files
-  [ -d "$dir" ] || { echo unknown; return 0; }
+  local dir=${FM_SKILLS_DIR-${HOME:-}/.agents/skills} sha
+  [ -n "$dir" ] && [ -d "$dir" ] || { echo unknown; return 0; }
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$SCRIPT_DIR/fm-timeout-lib.sh" || { echo unknown; return 0; }
   if [ -e "$dir/.git" ]; then
-    sha=$(timeout 2 git -C "$dir" rev-parse HEAD 2>/dev/null) || sha=
+    sha=$(fm_run_timed 2 git -C "$dir" rev-parse HEAD 2>/dev/null) || sha=
   elif [ -f "$dir/.skills-commit" ]; then
     sha=$(head -n 1 "$dir/.skills-commit" 2>/dev/null) || sha=
   else
@@ -151,13 +171,8 @@ skills_commit() {
     ''|*[!0-9a-f]*) ;;
     *) echo "commit:$sha"; return 0 ;;
   esac
-  files=$(timeout 3 find -L "$dir" -maxdepth 2 -name SKILL.md -not -name '._*' 2>/dev/null | LC_ALL=C sort) || files=
-  if [ -n "$files" ]; then
-    sha=$(printf '%s\n' "$files" | timeout 3 xargs sha256sum 2>/dev/null | sha256sum 2>/dev/null) || sha=
-    sha=${sha%% *}
-    case "$sha" in ''|*[!0-9a-f]*) ;; *) echo "hash:$sha"; return 0 ;; esac
-  fi
-  echo unknown
+  sha=$(cd "$dir" && fm_run_timed 3 bash -c "$(declare -f sha256_stdin hash_skill_files); hash_skill_files" 2>/dev/null) || sha=
+  case "$sha" in ''|*[!0-9a-f]*) echo unknown ;; *) echo "hash:$sha" ;; esac
 }
 
 LIBS_LOADED=0
