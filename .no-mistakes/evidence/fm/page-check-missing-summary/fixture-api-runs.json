@@ -1,0 +1,11 @@
+{"jobs":[
+ {"id":"bosun-maintenance","label":"Bosun maintenance","officer":"bosun","state":"live","health":"working","latest":{"status":"finished","summary":null,"startedAt":"2026-11-08T04:37:00Z","finishedAt":"2026-11-08T04:40:00Z"},"lastDone":{"status":"finished","summary":null,"finishedAt":"2026-11-08T04:40:00Z"}},
+ {"id":"navigator-pass","label":"Navigator pass","officer":"navigator","state":"live","health":"working","latest":{"status":"running","summary":null,"startedAt":"2026-11-08T10:00:00Z"},"lastDone":{"status":"finished","summary":"","finishedAt":"2026-11-08T08:00:00Z"}},
+ {"id":"ws-job","label":"Whitespace job","officer":"surgeon","state":"live","health":"working","latest":{"status":"finished","summary":"   ","finishedAt":"2026-11-08T07:00:00Z"}},
+ {"id":"good-job","label":"Good job","officer":"triage","state":"live","health":"working","latest":{"status":"finished","summary":"3 items triaged","finishedAt":"2026-11-08T07:00:00Z"}},
+ {"id":"good-running","label":"Good running","officer":"triage","state":"live","health":"working","latest":{"status":"running","summary":null},"lastDone":{"status":"finished","summary":"done ok","finishedAt":"2026-11-08T06:00:00Z"}},
+ {"id":"first-run","label":"First run","officer":"library","state":"live","health":"working","latest":{"status":"running","summary":null},"lastDone":null},
+ {"id":"never-run","label":"Never run","officer":"corpus","state":"live","health":"working","latest":null},
+ {"id":"failed-blank","label":"Failed blank","officer":"friction","state":"live","health":"failing","nextDueAt":"2026-11-08T12:00:00Z","latest":{"status":"finished","summary":"","finishedAt":"2026-11-08T05:00:00Z"}},
+ {"id":"retired-blank","label":"Retired blank","officer":"old","state":"retired","health":"working","latest":{"status":"finished","summary":null,"finishedAt":"2026-10-01T00:00:00Z"}}
+]}

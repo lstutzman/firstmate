@@ -1,0 +1,88 @@
+{
+ "asks_for_lee": [],
+ "coverage": [
+  "standing rules file /tmp/fm-lab.ynYgme/data/captain-shared.md is unreadable"
+ ],
+ "findings": [
+  {
+   "evidence": "officer bosun: latest finished run at 2026-11-08T04:40:00Z has no summary",
+   "id": "page-old:Runs:bosun-maintenance",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 2.0,
+    "severity": "medium"
+   },
+   "page": "Runs",
+   "route": "page owner: fix the job's result",
+   "severity": "medium",
+   "title": "Bosun maintenance finished without a summary"
+  },
+  {
+   "evidence": "officer friction: health failing, next due 2026-11-08T12:00:00Z; its latest finished run (2026-11-08T05:00:00Z) also has no summary",
+   "id": "page-old:Runs:failed-blank",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 2.0,
+    "severity": "medium"
+   },
+   "page": "Runs",
+   "route": "page owner: fix the job",
+   "severity": "medium",
+   "title": "Failed blank is failing"
+  },
+  {
+   "evidence": "officer navigator: latest finished run at 2026-11-08T08:00:00Z has no summary",
+   "id": "page-old:Runs:navigator-pass",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 2.0,
+    "severity": "medium"
+   },
+   "page": "Runs",
+   "route": "page owner: fix the job's result",
+   "severity": "medium",
+   "title": "Navigator pass finished without a summary"
+  },
+  {
+   "evidence": "officer surgeon: latest finished run at 2026-11-08T07:00:00Z has no summary",
+   "id": "page-old:Runs:ws-job",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 2.0,
+    "severity": "medium"
+   },
+   "page": "Runs",
+   "route": "page owner: fix the job's result",
+   "severity": "medium",
+   "title": "Whitespace job finished without a summary"
+  }
+ ],
+ "generated_at": "2026-11-08T05:07:52Z",
+ "held": [],
+ "key": "2026-11-08T12",
+ "linear_call_budget": 450,
+ "linear_calls": 0,
+ "linear_gaps": [],
+ "new": [
+  "page-old:Runs:bosun-maintenance",
+  "page-old:Runs:failed-blank",
+  "page-old:Runs:navigator-pass",
+  "page-old:Runs:ws-job"
+ ],
+ "not_filed": [],
+ "patterns": {
+  "captures": [],
+  "lint": [],
+  "new": [],
+  "total": 0
+ },
+ "source": "page-check-officer",
+ "start_requests": [],
+ "writes": "none",
+ "writes_blocked": null,
+ "writes_done": []
+}

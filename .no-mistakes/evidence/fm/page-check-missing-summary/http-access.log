@@ -1,0 +1,11 @@
+GET /api/business-health
+GET /api/captains-log
+GET /api/captains-log/facts?source=bosun
+GET /api/cost-cycle
+GET /api/health
+GET /api/ideation
+GET /api/progress-officer
+GET /api/runs
+GET /api/runs/bosun-maintenance/results
+GET /api/top-of-mind
+GET /api/velocity-audit
