@@ -1,0 +1,4 @@
+open-keyed-decision: needs-decision [at=1794116967] [cause=decision] [key=nm-01ABC-rounds]: remaining findings=f1,f2 file=/tmp/fm-lab.WCylSY/data/lab-no-mistakes-x1/nm-01ABC-rounds.txt
+keyed=yes
+captain_relevant=yes
+unrecognized=no
