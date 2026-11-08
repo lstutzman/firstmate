@@ -101,12 +101,15 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 ## Review misses
 
 This is a note for the Surgeon's office, because the Surgeon itself is model-free and never runs the command.
-When a filed production or staging bug names the merged PR that introduced it, and a no-mistakes run reviewed that PR, the office records the bug as a review miss on slartibartfast, where the fleet's eval set lives:
+When a filed production or staging bug names the merged PR that introduced it, and a no-mistakes run reviewed that PR, the office records the bug as a review miss:
 `no-mistakes eval miss ingest <run> --finding '<json>'`, with an `id`, the `file` and `line` where the bug sits, a `severity`, an `action` and a `description` that names the bug and the fix PR.
 Use the run's last green review pass; the command refuses a run whose last pass was blocking.
-If the run lives on another machine, ingest it there and copy the case folder from `~/.no-mistakes/eval/cases/` to slartibartfast.
+Run the ingest on the machine that holds the run's no-mistakes state, so the miss lands in that machine's eval store.
+Never copy a case folder between machines: a copied folder is not registered in the store's `registry.sqlite`, so `eval sets`, `eval report` and `eval run` skip it without an error.
+After the ingest, check that the case count or gold count rose in `no-mistakes eval sets`.
 A bug whose PR merged before its first no-mistakes run has no run to label, so it is not recorded.
-Rescore with `no-mistakes eval report` whenever the reviewer's model or instructions change.
+When the reviewer's model or instructions change, replay with `no-mistakes eval run --cases labeled --candidate <agent,model=...[,effort=...]>`, which spends model tokens, then read `no-mistakes eval report`.
+`eval report` alone only restates the stored scores.
 
 ## What starts by itself
 
