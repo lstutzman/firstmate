@@ -1,0 +1,9 @@
+[scout] PropertyCompass2 brief (base script + untagged include) vs (new script + tagged include): BYTE-IDENTICAL (15375 bytes)
+[scout] firstmate brief diff (old untagged -> new tagged):
+   removed PC-rule lines: 30
+   bytes old=15110 new=11927
+[modenomistakes] PropertyCompass2 brief (base script + untagged include) vs (new script + tagged include): BYTE-IDENTICAL (24147 bytes)
+[modenomistakes] firstmate brief diff (old untagged -> new tagged):
+   removed PC-rule lines: 30
+   bytes old=23925 new=20699
+untagged include: firstmate brief from new script identical to base script: yes

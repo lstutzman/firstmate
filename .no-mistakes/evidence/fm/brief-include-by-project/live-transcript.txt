@@ -1,0 +1,87 @@
+== include sizes (bytes): tagged=3606 untagged=3553 pcblock=3441
+== [--scout] PC brief: base-commit script+untagged vs new script+tagged (home path normalised)
+17c17
+< After any restart or resume of this session, before other work, run `'/tmp/fmbrief-live.PNHsNM/base/bin/fm-worktree-assert.sh' t-pc`; if it exits non-zero it prints the exact directory you belong in, so `cd` there and rerun it before continuing.
+---
+> After any restart or resume of this session, before other work, run `'{run-worktree}/bin/fm-worktree-assert.sh' t-pc`; if it exits non-zero it prints the exact directory you belong in, so `cd` there and rerun it before continuing.
+27c27
+<    `echo "{state} [at=<epoch>]: {one short line}" >> 'HOME/state/t-pc.status' && { [ ! -e 'HOME/config/fleet-ledger' ] || '/tmp/fmbrief-live.PNHsNM/base/bin/fm-fleet-ledger.sh' appended 'HOME/config' 'HOME/state/t-pc.status' >/dev/null 2>&1 || true; }`
+---
+>    `echo "{state} [at=<epoch>]: {one short line}" >> 'HOME/state/t-pc.status' && { [ ! -e 'HOME/config/fleet-ledger' ] || '{run-worktree}/bin/fm-fleet-ledger.sh' appended 'HOME/config' 'HOME/state/t-pc.status' >/dev/null 2>&1 || true; }`
+54c54
+<    When the captain must run a command by hand, print it with `'/tmp/fmbrief-live.PNHsNM/base/bin/fm-lee-step.sh' --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]`, which picks `bash <script>` or `ssh -t <host> ...` for where the captain's session runs, and put its output and the same cause tag in your line.
+---
+>    When the captain must run a command by hand, print it with `'{run-worktree}/bin/fm-lee-step.sh' --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]`, which picks `bash <script>` or `ssh -t <host> ...` for where the captain's session runs, and put its output and the same cause tag in your line.
+86c86
+< When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - run `'/tmp/fmbrief-live.PNHsNM/base/bin/fm-task-inbox.sh' take 'HOME/state/t-pc.inbox'` and act on each message it prints, in the order printed.
+---
+> When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - run `'{run-worktree}/bin/fm-task-inbox.sh' take 'HOME/state/t-pc.inbox'` and act on each message it prints, in the order printed.
+93,94c93,94
+< Before reporting done, read and follow `/tmp/fmbrief-live.PNHsNM/base/.agents/skills/captain-hold-lifecycle/SKILL.md` and pass its shared completion gate for the report and any visual review.
+< Only when the reviewed inventory is empty, run `FM_HOME='HOME' bash '/tmp/fmbrief-live.PNHsNM/base/bin/fm-captain-hold.sh' complete 't-pc' --none`.
+---
+> Before reporting done, read and follow `{run-worktree}/.agents/skills/captain-hold-lifecycle/SKILL.md` and pass its shared completion gate for the report and any visual review.
+> Only when the reviewed inventory is empty, run `FM_HOME='HOME' bash '{run-worktree}/bin/fm-captain-hold.sh' complete 't-pc' --none`.
+BYTE-IDENTICAL: NO
+== [--scout] firstmate brief: old=15110 new=11927 bytes; PC rule lines old=30 new=0; shared A/B present: 2
+== [--scout] diff old->new firstmate brief:
+17c17
+< After any restart or resume of this session, before other work, run `'/tmp/fmbrief-live.PNHsNM/base/bin/fm-worktree-assert.sh' t-fm`; if it exits non-zero it prints the exact directory you belong in, so `cd` there and rerun it before continuing.
+---
+> After any restart or resume of this session, before other work, run `'{run-worktree}/bin/fm-worktree-assert.sh' t-fm`; if it exits non-zero it prints the exact directory you belong in, so `cd` there and rerun it before continuing.
+27c27
+<    `echo "{state} [at=<epoch>]: {one short line}" >> 'HOME/state/t-fm.status' && { [ ! -e 'HOME/config/fleet-ledger' ] || '/tmp/fmbrief-live.PNHsNM/base/bin/fm-fleet-ledger.sh' appended 'HOME/config' 'HOME/state/t-fm.status' >/dev/null 2>&1 || true; }`
+---
+>    `echo "{state} [at=<epoch>]: {one short line}" >> 'HOME/state/t-fm.status' && { [ ! -e 'HOME/config/fleet-ledger' ] || '{run-worktree}/bin/fm-fleet-ledger.sh' appended 'HOME/config' 'HOME/state/t-fm.status' >/dev/null 2>&1 || true; }`
+   ...
+== [--mode no-mistakes] PC brief: base-commit script+untagged vs new script+tagged (home path normalised)
+17c17
+< After any restart or resume of this session, before other work, run `'/tmp/fmbrief-live.PNHsNM/base/bin/fm-worktree-assert.sh' t-pc`; if it exits non-zero it prints the exact directory you belong in, so `cd` there and rerun it before continuing.
+---
+> After any restart or resume of this session, before other work, run `'{run-worktree}/bin/fm-worktree-assert.sh' t-pc`; if it exits non-zero it prints the exact directory you belong in, so `cd` there and rerun it before continuing.
+33c33
+<    `echo "{state} [at=<epoch>]: {one short line}" >> 'HOME/state/t-pc.status' && { [ ! -e 'HOME/config/fleet-ledger' ] || '/tmp/fmbrief-live.PNHsNM/base/bin/fm-fleet-ledger.sh' appended 'HOME/config' 'HOME/state/t-pc.status' >/dev/null 2>&1 || true; }`
+---
+>    `echo "{state} [at=<epoch>]: {one short line}" >> 'HOME/state/t-pc.status' && { [ ! -e 'HOME/config/fleet-ledger' ] || '{run-worktree}/bin/fm-fleet-ledger.sh' appended 'HOME/config' 'HOME/state/t-pc.status' >/dev/null 2>&1 || true; }`
+63c63
+<    When the captain must run a command by hand, print it with `'/tmp/fmbrief-live.PNHsNM/base/bin/fm-lee-step.sh' --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]`, which picks `bash <script>` or `ssh -t <host> ...` for where the captain's session runs, and put its output and the same cause tag in your line.
+---
+>    When the captain must run a command by hand, print it with `'{run-worktree}/bin/fm-lee-step.sh' --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]`, which picks `bash <script>` or `ssh -t <host> ...` for where the captain's session runs, and put its output and the same cause tag in your line.
+103c103
+< When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - run `'/tmp/fmbrief-live.PNHsNM/base/bin/fm-task-inbox.sh' take 'HOME/state/t-pc.inbox'` and act on each message it prints, in the order printed.
+---
+> When a terminal message says an instruction is waiting there - and at any natural checkpoint when you are unsure - run `'{run-worktree}/bin/fm-task-inbox.sh' take 'HOME/state/t-pc.inbox'` and act on each message it prints, in the order printed.
+108c108
+< A correction edits only the wrong text: do not run `/tmp/fmbrief-live.PNHsNM/base/bin/fm-ensure-agents-md.sh`, create either file, or add sections, headings, or pointers alongside it.
+---
+> A correction edits only the wrong text: do not run `{run-worktree}/bin/fm-ensure-agents-md.sh`, create either file, or add sections, headings, or pointers alongside it.
+BYTE-IDENTICAL: NO
+== [--mode no-mistakes] firstmate brief: old=23925 new=20699 bytes; PC rule lines old=30 new=0; shared A/B present: 2
+== [--mode no-mistakes] diff old->new firstmate brief:
+17c17
+< After any restart or resume of this session, before other work, run `'/tmp/fmbrief-live.PNHsNM/base/bin/fm-worktree-assert.sh' t-fm`; if it exits non-zero it prints the exact directory you belong in, so `cd` there and rerun it before continuing.
+---
+> After any restart or resume of this session, before other work, run `'{run-worktree}/bin/fm-worktree-assert.sh' t-fm`; if it exits non-zero it prints the exact directory you belong in, so `cd` there and rerun it before continuing.
+33c33
+<    `echo "{state} [at=<epoch>]: {one short line}" >> 'HOME/state/t-fm.status' && { [ ! -e 'HOME/config/fleet-ledger' ] || '/tmp/fmbrief-live.PNHsNM/base/bin/fm-fleet-ledger.sh' appended 'HOME/config' 'HOME/state/t-fm.status' >/dev/null 2>&1 || true; }`
+---
+>    `echo "{state} [at=<epoch>]: {one short line}" >> 'HOME/state/t-fm.status' && { [ ! -e 'HOME/config/fleet-ledger' ] || '{run-worktree}/bin/fm-fleet-ledger.sh' appended 'HOME/config' 'HOME/state/t-fm.status' >/dev/null 2>&1 || true; }`
+   ...
+== untagged include, new script: identical to base script for firstmate too?
+untagged firstmate brief unchanged: NO
+== adversarial: secondmate composition, base ends inside open PC block, home adds own lines
+composed:
+   | Base rule.
+   | <!-- project: PropertyCompass2 -->
+   | PC-only base rule.
+   | QM own rule.
+exit=1 stderr: error: S/qm-open/config/brief-include.md ends inside a project block that is not closed; end the last block with a line that is exactly <!-- /project -->
+no partial scaffold
+== secondmate composition with closed base block + own lines
+firstmate brief: own=1 base=1 pc=0
+PC brief:        own=1 base=1 pc=1
+== multi-name tag and near-miss repo name
+  repo=fleet-app MULTI-present=1 tags-leaked=0
+  repo=PropertyCompass2 MULTI-present=1 tags-leaked=0
+  repo=PropertyCompass MULTI-present=0 tags-leaked=0
+  repo=firstmate MULTI-present=0 tags-leaked=0
