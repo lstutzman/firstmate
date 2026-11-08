@@ -5,7 +5,7 @@
 #
 # The fleet fixes forward, so reverts alone read near zero while merge-on-green hides regressions; the line
 # links a fix to the PR that caused the bug, and the counts are a velocity evidence source (docs/configuration.md
-# "Fix-forward count"). The ship brief's rule 9 (bin/fm-brief.sh) tells workers to write the line.
+# "Officers (data/officers.md)"). The ship brief's rule 9 (bin/fm-brief.sh) tells workers to write the line.
 #
 # Usage: fm-fix-forward-count.sh [--days N] [--json] [--limit N] [--repo owner/name]...
 #   --days N    window length in days, default 7
