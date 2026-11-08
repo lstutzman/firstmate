@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Full remote secondmate lifecycle over the deterministic generic SSH boundary.
 set -u
+# Nothing here reads the caller's stdin, but remote job staging reads its stdin
+# to EOF, so an inherited open pipe would park a job in `head` indefinitely.
+exec </dev/null
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -33,6 +36,23 @@ TMUX_STATE="$TMP_ROOT/remote-tmux.state"
 PARENT_ROUTE_INBOX="$REMOTE_HOME/state/parent-route/ios.inbox"
 CLAIMS="$TMP_ROOT/claims"
 mkdir -p "$PARENT/data" "$PARENT/state" "$PARENT/config" "$PARENT/projects" "$REMOTE_ROOT" "$CLAIMS"
+# Wait for a background job, but fail naming what it was waiting for rather than
+# hanging until the CI job's own limit cancels the whole shard. A finished child
+# stays a zombie until waited on, so liveness is read from its process state.
+FM_TEST_WAIT_BOUND=${FM_TEST_WAIT_BOUND:-300}
+wait_bounded() { # <pid> <what>: the job's exit status, or a named failure at the bound
+  local pid=$1 what=$2 deadline=$((SECONDS + FM_TEST_WAIT_BOUND)) state
+  while :; do
+    state=$(ps -o stat= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+    case "$state" in ''|Z*) break ;; esac
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      kill "$pid" 2>/dev/null || true
+      fail "timed out after ${FM_TEST_WAIT_BOUND}s waiting for $what (pid $pid, state $state)"
+    fi
+    sleep 0.1
+  done
+  wait "$pid"
+}
 cleanup() {
   local worker_pid=''
   touch "$TMP_ROOT/provision.release" "$TMP_ROOT/seed.release" "$TMP_ROOT/handoff.release" \
@@ -140,6 +160,15 @@ cat > "$FAKEBIN/fake-ssh" <<'SH'
 #!/usr/bin/env bash
 count=$(cat "$FM_FAKE_SSH_COUNT" 2>/dev/null || echo 0)
 printf '%s\n' "$((count + 1))" > "$FM_FAKE_SSH_COUNT"
+# A held call waits for the test to release it, but a test that dies or loses
+# the release must fail the call by name instead of hanging the job.
+hold_until_released() { # <release-file> <what>
+  local deadline=$((SECONDS + ${FM_FAKE_HOLD_BOUND:-300}))
+  while [ ! -f "$1" ]; do
+    [ "$SECONDS" -lt "$deadline" ] || { echo "fake-ssh: timed out waiting for the $2 release" >&2; exit 97; }
+    sleep 0.02
+  done
+}
 while [ "$#" -gt 0 ]; do
   case "$1" in -o) shift 2 ;; --) shift; break ;; *) exit 90 ;; esac
 done
@@ -163,7 +192,7 @@ case "${FM_FAKE_SSH_MODE:-normal}:$command_name:$command_rel" in
   inherit-block:fm-remote-inherit.sh:data/captain-shared.md)
     cat > "$FM_FAKE_INHERIT_PAYLOAD"
     touch "$FM_FAKE_INHERIT_ENTERED"
-    while [ ! -f "$FM_FAKE_INHERIT_RELEASE" ]; do sleep 0.02; done
+    hold_until_released "$FM_FAKE_INHERIT_RELEASE" inherit
     "$FM_FAKE_REMOTE_ENTRYPOINT" "$@" < "$FM_FAKE_INHERIT_PAYLOAD"
     exit $?
     ;;
@@ -262,13 +291,13 @@ case "${FM_FAKE_SSH_MODE:-normal}:$command_name:$command_rel" in
     ;;
   provision-block-fail:fm-remote-home-provision.sh:*)
     touch "$FM_FAKE_SEED_ENTERED"
-    while [ ! -f "$FM_FAKE_SEED_RELEASE" ]; do sleep 0.02; done
+    hold_until_released "$FM_FAKE_SEED_RELEASE" seed
     exit 1
     ;;
   launch-block:fm-remote-secondmate-control.sh:*)
     [ "$_command_action" = launch ] || exit 93
     touch "$FM_FAKE_LAUNCH_ENTERED"
-    while [ ! -f "$FM_FAKE_LAUNCH_RELEASE" ]; do sleep 0.02; done
+    hold_until_released "$FM_FAKE_LAUNCH_RELEASE" launch
     ;;
 esac
 case "${FM_FAKE_SSH_MODE:-normal}" in
@@ -292,6 +321,42 @@ case "${FM_FAKE_SSH_MODE:-normal}" in
 esac
 SH
 chmod +x "$FAKEBIN/fake-ssh"
+
+read -r -t 1 _ 2>/dev/null
+stdin_rc=$?
+[ "$stdin_rc" -eq 1 ] || fail "the suite's stdin is not at end of file (read status $stdin_rc), so remote job staging could block on it"
+pass "the suite reads no inherited stdin"
+
+bound_rc=0
+bound_out=$( (
+  FM_TEST_WAIT_BOUND=1
+  sleep 30 >/dev/null 2>&1 &
+  printf '%s\n' "$!" > "$TMP_ROOT/bound-child.pid"
+  wait_bounded "$!" "a child that never exits"
+) 2>&1) || bound_rc=$?
+bound_child=$(cat "$TMP_ROOT/bound-child.pid")
+[ "$bound_rc" -ne 0 ] || fail "wait_bounded returned success for a child that never exits"
+case "$bound_out" in
+  *"timed out after 1s waiting for a child that never exits"*) ;;
+  *) fail "wait_bounded did not name what it timed out on: $bound_out" ;;
+esac
+bound_state=$(ps -o stat= -p "$bound_child" 2>/dev/null | tr -d '[:space:]')
+case "$bound_state" in ''|Z*) ;; *) kill "$bound_child" 2>/dev/null; fail "wait_bounded left its child running (state $bound_state)" ;; esac
+pass "a background job that never exits fails by name at the wait bound"
+
+hold_rc=0
+hold_out=$(FM_FAKE_HOLD_BOUND=1 FM_FAKE_SSH_MODE=inherit-block FM_FAKE_SSH_COUNT="$TMP_ROOT/hold-ssh.count" \
+  FM_FAKE_REMOTE_CWD="$TMP_ROOT" FM_FAKE_INHERIT_PAYLOAD="$TMP_ROOT/hold.payload" \
+  FM_FAKE_INHERIT_ENTERED="$TMP_ROOT/hold.entered" FM_FAKE_INHERIT_RELEASE="$TMP_ROOT/hold.never-released" \
+  "$FAKEBIN/fake-ssh" -- remote-mac fm-remote-entrypoint.sh _ _ _ \
+  "$(printf 'fm-remote-inherit.sh\0put\0data/captain-shared.md' | base64 | tr -d '\n')" 2>&1) || hold_rc=$?
+[ -f "$TMP_ROOT/hold.entered" ] || fail "the fake-ssh inherit hold was never entered"
+[ "$hold_rc" -eq 97 ] || fail "a fake-ssh hold whose release never appears exited $hold_rc, not 97: $hold_out"
+case "$hold_out" in
+  *"timed out waiting for the inherit release"*) ;;
+  *) fail "the fake-ssh hold did not name its missing release: $hold_out" ;;
+esac
+pass "a fake-ssh hold whose release never appears fails by name"
 
 publish_healthy_watcher_identity() { # <state> <home> <watch-script>
   local state=$1 home=$2 watch=$3 identity
@@ -398,7 +463,11 @@ if [ "\${1:-}" = clone ]; then
       printf 'clone\n' >> "$TMP_ROOT/provision-clones"
       if mkdir "$TMP_ROOT/provision-first" 2>/dev/null; then
         touch "$TMP_ROOT/provision.entered"
-        while [ ! -f "$TMP_ROOT/provision.release" ]; do sleep 0.02; done
+        provision_deadline=\$((SECONDS + 300))
+        while [ ! -f "$TMP_ROOT/provision.release" ]; do
+          [ "\$SECONDS" -lt "\$provision_deadline" ] || { echo "fake git: timed out waiting for the provision release" >&2; exit 97; }
+          sleep 0.02
+        done
       fi
       ;;
   esac
@@ -422,7 +491,15 @@ if [ "\${1:-}" = clone ] && [ -n "\${FM_FAKE_CLONE_HOLD_DIR:-}" ] \
     sleep 0.005
   done
   touch "$TMP_ROOT/race-clone.held"
-  while [ ! -f "$TMP_ROOT/race-clone.release" ] && [ -d "$TMP_ROOT" ]; do sleep 0.02; done
+  race_deadline=\$((SECONDS + 300))
+  while [ ! -f "$TMP_ROOT/race-clone.release" ] && [ -d "$TMP_ROOT" ]; do
+    if [ "\$SECONDS" -ge "\$race_deadline" ]; then
+      kill -CONT "\$hold_git" 2>/dev/null || true
+      echo "fake git: timed out waiting for the race-clone release" >&2
+      exit 97
+    fi
+    sleep 0.02
+  done
   kill -CONT "\$hold_git" 2>/dev/null || true
   wait "\$hold_git"
   exit \$?
@@ -453,8 +530,8 @@ sleep 0.2
 [ "$(grep -cF clone "$TMP_ROOT/provision-clones")" -eq 1 ] \
   || fail "overlapping provisioning reached home classification concurrently"
 touch "$TMP_ROOT/provision.release"
-wait "$provision_one" || fail "first serialized provisioning attempt failed"
-wait "$provision_two" || fail "reconciled provisioning attempt failed"
+wait_bounded "$provision_one" "the first overlapping home provisioning" || fail "first serialized provisioning attempt failed"
+wait_bounded "$provision_two" "the second overlapping home provisioning" || fail "reconciled provisioning attempt failed"
 [ "$(cat "$TMP_ROOT/concurrent-home/.fm-secondmate-home")" = ios ] \
   || fail "serialized provisioning lost the published home"
 [ "$(grep -cF clone "$TMP_ROOT/provision-clones")" -eq 1 ] \
@@ -482,7 +559,7 @@ while [ ! -f "$TMP_ROOT/race-clone.held" ]; do
 done
 rm -rf -- "$TMP_ROOT/raced-home"
 touch "$TMP_ROOT/race-clone.release"
-wait "$race_provision" \
+wait_bounded "$race_provision" "the raced home provisioning" \
   || { sed 's/^/race-provision: /' "$TMP_ROOT/race-provision.out"; fail "competing home cleanup reached a live provisioning clone"; }
 [ "$(cat "$TMP_ROOT/raced-home/.fm-secondmate-home")" = race ] \
   || fail "raced provisioning lost its published home marker"
@@ -518,7 +595,7 @@ done
 mkdir "$TMP_ROOT/appeared-home"
 printf 'foreign\n' > "$TMP_ROOT/appeared-home/foreign"
 touch "$TMP_ROOT/race-clone.release"
-if wait "$appeared_provision"; then
+if wait_bounded "$appeared_provision" "the provisioning that met an appearing home"; then
   fail "provision adopted a home that appeared while it was being provisioned"
 fi
 grep -qF "remote home appeared while it was being provisioned" "$TMP_ROOT/appeared-provision.out" \
@@ -555,10 +632,10 @@ seed_keep_pid=$!
 sleep 0.2
 kill -0 "$seed_keep_pid" 2>/dev/null || fail "competing seed bypassed the shared registry transaction"
 touch "$TMP_ROOT/seed.release"
-if wait "$seed_fail_pid"; then
+if wait_bounded "$seed_fail_pid" "the known-failing seed"; then
   fail "known-failing seed unexpectedly succeeded"
 fi
-wait "$seed_keep_pid" || fail "serialized successful seed failed"
+wait_bounded "$seed_keep_pid" "the serialized successful seed" || fail "serialized successful seed failed"
 assert_no_grep '- seed-fail ' "$TMP_ROOT/seed-parent/data/secondmates.md" "failed seed route survived rollback"
 assert_grep '- seed-keep ' "$TMP_ROOT/seed-parent/data/secondmates.md" "failed seed rollback removed a competing successful route"
 assert_present "$TMP_ROOT/seed-keep-home/.fm-secondmate-home" "serialized seed lost its published remote home"
@@ -1040,8 +1117,8 @@ sleep 0.2
 kill -0 "$spawn_config_push" 2>/dev/null \
   || fail "config push bypassed the active remote spawn inheritance transaction"
 touch "$TMP_ROOT/inherit.release"
-wait "$spawn_concurrent" || fail "serialized remote spawn failed"
-wait "$spawn_config_push" || fail "config push failed after serialized remote spawn"$'\n'"$(cat "$TMP_ROOT/spawn-concurrent-push.out")"
+wait_bounded "$spawn_concurrent" "the serialized remote spawn" || fail "serialized remote spawn failed"
+wait_bounded "$spawn_config_push" "the config push behind the remote spawn" || fail "config push failed after serialized remote spawn"$'\n'"$(cat "$TMP_ROOT/spawn-concurrent-push.out")"
 [ "$(tail -1 "$REMOTE_HOME/data/captain-shared.md")" = 'current post-spawn preference' ] \
   || fail "stale spawn inheritance overwrote later config convergence"
 pass "remote spawn serializes inheritance through launch publication"
@@ -1151,8 +1228,8 @@ sleep 0.2
 kill -0 "$config_second" 2>/dev/null \
   || fail "bootstrap bypassed the active remote inheritance transaction"
 touch "$TMP_ROOT/inherit.release"
-wait "$config_first" || fail "first serialized inheritance transaction failed"
-wait "$config_second" || fail "bootstrap inheritance transaction failed after waiting"
+wait_bounded "$config_first" "the first inheritance transaction" || fail "first serialized inheritance transaction failed"
+wait_bounded "$config_second" "the bootstrap inheritance transaction" || fail "bootstrap inheritance transaction failed after waiting"
 [ "$(tail -1 "$REMOTE_HOME/data/captain-shared.md")" = 'current concurrent preference' ] \
   || fail "later bootstrap convergence was overwritten by stale inherited bytes"
 pass "config push and bootstrap serialize remote inheritance convergence"
@@ -1835,7 +1912,7 @@ sleep 0.2
 kill -0 "$teardown_pid" 2>/dev/null || fail "remote retirement bypassed an active remote respawn"
 assert_present "$REMOTE_HOME" "remote retirement removed the home during an active remote respawn"
 touch "$TMP_ROOT/launch.release"
-if ! wait "$spawn_retirement_pid"; then
+if ! wait_bounded "$spawn_retirement_pid" "the serialized remote respawn"; then
   printf 'serialized respawn output:\n%s\n' "$(cat "$TMP_ROOT/spawn-retirement.out")" >&2
   fail "serialized remote respawn failed"
 fi
@@ -1849,9 +1926,9 @@ cp "$PARENT/state/ios.meta" "$TMP_ROOT/remote-meta.saved"
 sleep 0.2
 kill -0 "$teardown_pid" 2>/dev/null || fail "remote retirement bypassed an active backlog handoff"
 touch "$TMP_ROOT/handoff.release"
-wait "$handoff_holder_pid" || fail "handoff lock holder failed to release"
+wait_bounded "$handoff_holder_pid" "the backlog handoff lock holder" || fail "handoff lock holder failed to release"
 teardown_rc=0
-wait "$teardown_pid" || teardown_rc=$?
+wait_bounded "$teardown_pid" "the serialized remote retirement" || teardown_rc=$?
 if [ "$teardown_rc" -ne 4 ]; then
   printf 'serialized retirement output:\n%s\n%s\n' "$(cat "$TMP_ROOT/teardown-serialized.out")" \
     "$(cat "$TMP_ROOT/teardown-serialized.err")" >&2
