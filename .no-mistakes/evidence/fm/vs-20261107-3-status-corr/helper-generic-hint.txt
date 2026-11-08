@@ -1,0 +1,4 @@
+$ (unseeded home) fm-secondmate-report.sh done "audit clean"
+error: corr_id must be 16 hex characters (got 'audit clean')
+hint: take <corr_id> from the marked request's corr=<id> token; rerun: bin/fm-secondmate-report.sh done <corr_id> "audit clean"
+[exit 1]

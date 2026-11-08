@@ -1,0 +1,2 @@
+33:Optional helper: `bin/fm-secondmate-report.sh <verb> <corr_id> <note>` appends that correlated line to the parent channel itself - do not pass a status path, and do not write a hand path under this home.
+34-A filled example, for a request marked `corr=abcdef0123456789`: `bin/fm-secondmate-report.sh done abcdef0123456789 "audit clean"` appends `done [corr=abcdef0123456789]: audit clean`; the plain-echo form is `echo "done [corr=abcdef0123456789]: audit clean" >> <parent channel>`; if the helper refuses, it prints the corr it expects and the corrected command.

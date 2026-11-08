@@ -1,0 +1,43 @@
+open corr=e0747e5c32d18a93
+
+$ fm-secondmate-report.sh done audit clean
+error: corr_id must be 16 hex characters (got 'audit clean')
+hint: the open request from the parent expects corr=e0747e5c32d18a93; rerun: bin/fm-secondmate-report.sh done e0747e5c32d18a93 "audit clean"
+[exit 1]
+
+$ fm-secondmate-report.sh done audit clean
+error: corr_id must be 16 hex characters (got 'audit')
+hint: the open request from the parent expects corr=e0747e5c32d18a93; rerun: bin/fm-secondmate-report.sh done e0747e5c32d18a93 "audit clean"
+[exit 1]
+
+$ fm-secondmate-report.sh done added tests
+error: corr_id must be 16 hex characters (got 'added')
+hint: the open request from the parent expects corr=e0747e5c32d18a93; rerun: bin/fm-secondmate-report.sh done e0747e5c32d18a93 "added tests"
+[exit 1]
+
+$ fm-secondmate-report.sh done deadbeef00 audit clean
+error: corr_id must be 16 hex characters (got 'deadbeef00')
+hint: the open request from the parent expects corr=e0747e5c32d18a93; rerun: bin/fm-secondmate-report.sh done e0747e5c32d18a93 "audit clean"
+[exit 1]
+
+$ fm-secondmate-report.sh --doc done data/x/report.md see report
+error: corr_id must be 16 hex characters (got 'data/x/report.md')
+hint: the open request from the parent expects corr=e0747e5c32d18a93; rerun: bin/fm-secondmate-report.sh --doc done e0747e5c32d18a93 data/x/report.md "see report"
+[exit 1]
+
+$ fm-secondmate-report.sh done
+Usage:
+  fm-secondmate-report.sh <verb> <corr_id> <note...>
+  fm-secondmate-report.sh --doc <verb> <corr_id> <doc-path> <note...>
+Example (appends: done [corr=<id>]: audit clean (via-helper)):
+  fm-secondmate-report.sh done abcdef0123456789 "audit clean"
+[exit 2]
+
+--- parent status after refusals:
+(empty / absent)
+
+$ fm-secondmate-report.sh done e0747e5c32d18a93 audit clean
+[exit 0]
+
+--- parent status after correct report:
+done [corr=e0747e5c32d18a93] [at=1794102414]: audit clean (via-helper)
