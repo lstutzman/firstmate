@@ -94,6 +94,7 @@ write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
     {id: "fine", band: "now", question: "Pick the logo", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "cleanup", band: "now", question: "Approve deleting 475 stale branches?", advice: "yes", replies: ["yes"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "old-ask", band: "now", question: "Which colour?", advice: "a", replies: ["a"], asked: "2026-10-20T12:00:00Z", state: "asked"},
+    {id: "parked-later", band: "later", question: "Free sign-up for test packs?", advice: "a", replies: ["a"], asked: "2026-10-20T12:00:00Z", state: "asked"},
     {id: "snoozed-old", band: "later", question: "Revisit the export", advice: "a", replies: ["a"], asked: "2026-10-20T12:00:00Z", state: "snoozed", until: "2026-10-28T00:00:00Z"},
     {id: "pr-card", band: "now", question: "Merge https://github.com/ex/repo/pull/7 and https://github.com/ex/repo/pull/8?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "answered-shown", band: "now", question: "Sign off?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked", answer: {text: "yes", at: "2026-10-31T13:00:00Z"}},

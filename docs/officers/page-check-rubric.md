@@ -10,7 +10,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - A defect on a fleet-app page: something the page shows that it should not, or fails to show.
   Every open finding is one item, keyed by its kind, page and object, so the same defect is the same item every run.
 - `standing-rule`: a card or suggestion Lee is shown that a standing rule in `data/captain-shared.md` already settles.
-- `stale-card`: a shown card past its snooze date, unanswered for a week, already answered, naming a merged or closed PR, or whose status line was settled elsewhere.
+- `stale-card`: a shown card past its snooze date, unanswered for a week (a card in the Later band is parked on purpose and is not aged), already answered, naming a merged or closed PR, or whose status line was settled elsewhere.
 - `shown-after-done`: a card shown although its record was settled by a captain answer or is closed in the app's own card record.
 - `page-old`: a page older than its normal cadence allows, a failing job on the Runs page, or a page that is unreachable, unreadable or never published.
 - Every finding is filed once in Linear, so its found count can grow while nobody fixes it.
