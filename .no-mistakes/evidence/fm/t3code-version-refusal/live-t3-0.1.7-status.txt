@@ -1,0 +1,9 @@
+$ node bin/fm-t3-mcp.mjs login --url http://127.0.0.1:39713 --access full-access --t3 <tmp>/node_modules/.bin/t3 --base-dir <tmp>/base --token-file <tmp>/cred
+{"ok":false,"error":{"code":"capability_gate","message":"T3 0.1.7 at http://127.0.0.1:39713 is not supported: backend=t3code supports T3 only before 0.1.3, which renamed tools it needs (t3_thread_configuration is now t3_thread_configure; t3_pending_request_list is now t3_pending_request (action list); t3_pending_request_read is now t3_pending_request (action read); t3_pending_request_respond is now t3_pending_request (action respond)); see docs/t3code-backend.md","serverVersion":"0.1.7","renamed":{"t3_thread_configuration":"t3_thread_configure","t3_pending_request_list":"t3_pending_request (action list)","t3_pending_request_read":"t3_pending_request (action read)","t3_pending_request_respond":"t3_pending_request (action respond)"}}}
+fm-t3-mcp: T3 0.1.7 at http://127.0.0.1:39713 is not supported: backend=t3code supports T3 only before 0.1.3, which renamed tools it needs (t3_thread_configuration is now t3_thread_configure; t3_pending_request_list is now t3_pending_request (action list); t3_pending_request_read is now t3_pending_request (action read); t3_pending_request_respond is now t3_pending_request (action respond)); see docs/t3code-backend.md
+exit=4
+
+$ node bin/fm-t3-mcp.mjs status --token-file <tmp>/cred
+{"ok":false,"error":{"code":"no_credential","message":"no T3 credential at <tmp>/cred; the captain signs in with: bin/fm-t3-mcp.mjs login --access full-access"}}
+fm-t3-mcp: no T3 credential at <tmp>/cred; the captain signs in with: bin/fm-t3-mcp.mjs login --access full-access
+exit=4

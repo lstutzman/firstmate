@@ -1,0 +1,7 @@
+# AFTER (this change) against a live T3 0.1.2 (last release before the rename)
+$ node bin/fm-t3-mcp.mjs login --url http://127.0.0.1:39714 --access full-access ...
+exit=0
+$ node bin/fm-t3-mcp.mjs status --token-file <tmp>/cred012
+warning: T3 telemetry at http://127.0.0.1:39714 is not confirmed off; run the server that hosts Firstmate workers with T3CODE_TELEMETRY_ENABLED=false (docs/t3code-backend.md)
+{"ok":true,"origin":"http://127.0.0.1:39714","access":"full-access","expiresAt":"2026-12-08T00:35:15.350Z","daysLeft":30,"environmentId":"060cc29a-53db-4df3-96d7-5d926e82a60d","serverVersion":"0.1.2","recordedServerVersion":"0.1.2","telemetry":"unknown"}
+exit=0
