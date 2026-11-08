@@ -1,0 +1,38 @@
+no-mistakes version v1.106.1 (5732d1e) 2026-10-31T05:16:02Z
+=== no-mistakes eval miss ingest --help
+Reads confirmed post-PR misses from --finding JSON (repeatable), not from GitHub comments or an external ledger. Captures the named run if needed, then writes false-negative gold onto the last completed non-blocking review pass.
+
+Usage:
+  no-mistakes eval miss ingest <run> --finding <json> [flags]
+
+Flags:
+      --finding stringArray   confirmed miss as JSON finding object with id and description, optional file, line, severity (error|warning|info, default error) and action (auto-fix|ask-user|no-op) (repeatable)
+  -h, --help                  help for ingest
+=== no-mistakes eval sets --help
+Inspect local case-set size, finding-level gold, and composition
+
+Usage:
+  no-mistakes eval sets [flags]
+
+Flags:
+  -h, --help                  help for sets
+      --refresh-diversified   rebuild the official diversified pin set from current gold
+=== no-mistakes eval run --help
+Replay captured review passes and score findings against gold
+
+Usage:
+  no-mistakes eval run --cases <all|labeled|diversified|tune> --candidate <agent,model=...[,effort=...]> [flags]
+
+Flags:
+      --candidate string   candidate must be agent,model=<model>[,effort=<minimal|low|medium|high|xhigh|max>] (for example codex,model=gpt-5.4,effort=low)
+      --cases string       case set: all, labeled (finding-level gold), diversified (official gold-only holdout), or tune
+  -h, --help               help for run
+      --repeats int        replays per case (minimum 1) (default 3)
+=== no-mistakes eval report --help
+Report local true-positive / false-negative scores, tokens, and cost
+
+Usage:
+  no-mistakes eval report [flags]
+
+Flags:
+  -h, --help   help for report
