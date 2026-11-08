@@ -924,6 +924,22 @@ test_ratchet_names_the_next_file_once_a_day() {
   pass 'the ratchet source names the next listed file once per UTC day'
 }
 
+test_quartermaster_tick_wakes_once_a_day_for_heavy_sessions() {
+  local w ps out
+  w=$(source_world weight)
+  ps="$w/ps.txt"
+  printf '  4242 100000 claude --model claude-opus-5-5\n' > "$ps"
+  out=$(FM_SESSION_WEIGHT_PS=$ps CPA_USAGE_DB="$w/none.db" nav_check_qm "$w")
+  assert_contains "$out" "session-weight 2026-11-03 [key=session-weight-2026-11-03]: 1 session(s)" "the quartermaster's tick check reports a session older than 24 hours"
+  assert_contains "$out" "pids 4242" "the line names the process id"
+  assert_present "$w/quartermaster/data/session-weight/2026-11-03.txt" "the day's note is written in the office's data"
+  assert_equals "" "$(FM_SESSION_WEIGHT_PS=$ps CPA_USAGE_DB="$w/none.db" nav_check_qm "$w")" "the same day again: silent"
+  assert_equals "" "$(FM_SESSION_WEIGHT_PS=$ps CPA_USAGE_DB="$w/none.db" FM_HOME="$w/navigator" FM_OFFICE_NOW=$SRC_NOW bash "$OFFICE" check tick)" "another office's tick never runs the check"
+  pass "the quartermaster's tick check wakes once a day with one session-weight line"
+}
+
+nav_check_qm() { FM_OFFICE_NOW=$SRC_NOW FM_HOME="$1/quartermaster" bash "$OFFICE" check tick; }
+
 test_upstream_failure_reports_only_when_persistent() {
   local w
   w=$(upstream_world upfail)
@@ -1433,3 +1449,4 @@ test_lane_check_delivers_a_corpus_digests_start_requests
 test_lane_check_delivers_its_own_start_requests_once
 test_lane_check_delivers_in_rank_order_and_stops_at_a_bad_request
 test_lane_check_never_delivers_a_stale_digest
+test_quartermaster_tick_wakes_once_a_day_for_heavy_sessions
