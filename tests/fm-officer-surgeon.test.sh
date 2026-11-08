@@ -1201,6 +1201,20 @@ test_visual_attach_stops_at_the_call_budget() {
   pass "fm-officer surgeon: each attach counts against the Linear call budget"
 }
 
+test_visual_recurrence_of_a_closed_item_gets_its_screenshot() {
+  local home json
+  make_visual_world visrecur; home=$WORLD_HOME
+  run_surgeon "$home" >/dev/null || fail "first run"
+  echo Done > "$LDIR/state.PC-101"
+  write_visual "$VISUAL_DIR/findings.json" "$VSTAMP2"
+  run_surgeon_next_day "$home" visrecur >/dev/null || fail "next night's run after the item was closed"
+  json="$home/data/officers/surgeon/$DATE2.json"
+  assert_equals "created PC-102 PC-101" "$(row "$json" visual "$(vfp /deal-finder contradictory-numbers)" '[.filing.action,.filing.issue,.filing.recurrence_of]|join(" ")')" "a closed item's defect files a recurrence"
+  assert_equals "PC-102 $VISUAL_DIR/captures/shots/a-desktop.png --verify" "$(tail -n 1 "$LDIR/attach.log")" "and the recurrence gets the screenshot attached"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "once"
+  pass "fm-officer surgeon: a recurrence of a closed visual item gets its screenshot attached"
+}
+
 test_visual_registry_fields_are_validated() {
   local home out
   make_world visreg; home=$WORLD_HOME
@@ -1259,4 +1273,5 @@ test_visual_attach_left_pending_is_retried_next_run_and_cleared
 test_visual_upload_rights_refusal_is_reported_every_run
 test_visual_pending_attach_is_abandoned_after_seven_days
 test_visual_attach_stops_at_the_call_budget
+test_visual_recurrence_of_a_closed_item_gets_its_screenshot
 test_visual_registry_fields_are_validated

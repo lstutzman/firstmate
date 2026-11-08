@@ -753,7 +753,14 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
             state["pending_attach"] = attach["pending"]
             gaps.append("%d screenshot(s) not attached yet; the next run retries them" % len(attach["pending"]))
 
+    def attach_created(items):
+        for f in items:
+            if f["source"] == "visual" and args.visual_captures and (f["filing"] or {}).get("action") == "created":
+                attach["pending"] += attach_screenshots([{"issue": f["filing"]["issue"], "file": w, "first": date}
+                                                         for w in f["evidence"]["screenshots"]], gaps, attach, date)
+
     def stop(reason, rate_limited=False):
+        attach_created(bumps)
         flush_attach()
         for f in todo:
             f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
@@ -799,9 +806,7 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
         for kind, item in order:
             if kind == "single":
                 filer.file_single(item, label_set, describe)
-                if item["source"] == "visual" and args.visual_captures and (item["filing"] or {}).get("action") == "created":
-                    attach["pending"] += attach_screenshots([{"issue": item["filing"]["issue"], "file": w, "first": date}
-                                                             for w in item["evidence"]["screenshots"]], gaps, attach, date)
+                attach_created([item])
             else:
                 c = item
                 wanted, reason = filer.item_labels({"source": "review", "project": c["project"]},
@@ -849,6 +854,7 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
                     if exc.code in lib.RATE_OR_BUDGET:
                         raise
         filer.settle_bumps(label_set, describe)
+        attach_created(bumps)
         flush_attach()
     except LinearError as exc:
         if exc.code == "RATE_LIMITED":
