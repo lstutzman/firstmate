@@ -19,7 +19,9 @@
 # JSON: {"days":N,"since":"YYYY-MM-DD","repos":[{"repo":...,"merged":n,"fix_forward":n,"reverts":n,"truncated":bool}
 # | {"repo":...,"error":"..."}]}
 # The window is the N UTC calendar days ending today, and since is its first day, so runs N days apart never overlap.
-# Read-only: one `gh pr list` per repository, no write call, no model. Exit 0 when every repository was read,
+# Read-only: one `gh repo view` and one `gh pr list` per repository, no write call, no model. The view is needed
+# because `gh pr list --search` answers an empty list, exit 0, for a repository that does not exist or is not
+# readable, which would read as zero merges. Exit 0 when every repository was read,
 # 1 when any was unreadable (the other repositories are still printed), 2 on usage errors.
 set -eu
 
@@ -54,7 +56,8 @@ LINE_RE='(^|\n)Fixes-regression-from: https://[^ \n]+/pull/[0-9]+'
 rows=()
 failed=0
 for repo in "${REPOS[@]}"; do
-  if ! raw=$(gh pr list --repo "$repo" --state merged --search "merged:>=$SINCE" --limit "$LIMIT" \
+  if ! raw=$(gh repo view "$repo" --json nameWithOwner 2>&1) \
+      || ! raw=$(gh pr list --repo "$repo" --state merged --search "merged:>=$SINCE" --limit "$LIMIT" \
       --json number,title,body 2>&1); then
     failed=1
     rows+=("$(jq -cn --arg repo "$repo" --arg error "$(printf '%s' "$raw" | head -1)" '{repo:$repo,error:$error}')")

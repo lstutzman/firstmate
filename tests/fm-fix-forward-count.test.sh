@@ -3,7 +3,7 @@
 # `Fixes-regression-from:` line, and reverts per repository, with text and JSON output. A fake gh on PATH
 # answers `gh pr list` from per-repository JSON files, applies the `merged:>=DATE` / `merged:>DATE` qualifier the way
 # GitHub search documents it (by UTC merge date, inclusive for >=), records its arguments, and fails for an
-# unreadable repo.
+# unreadable repo the way real gh does: `gh repo view` fails, while `gh pr list --search` answers [] with exit 0.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -17,6 +17,10 @@ DATA="$TMP_ROOT/data"
 mkdir -p "$DATA"
 cat > "$FAKEBIN/gh" <<'SH'
 #!/usr/bin/env bash
+if [ "$1 $2" = "repo view" ]; then
+  [ -f "$FAKE_GH_DATA/$(printf '%s' "$3" | tr '/' '_')" ] && exit 0
+  echo "GraphQL: could not resolve to a Repository with the name '$3'. (repository)" >&2; exit 1
+fi
 [ "$1 $2" = "pr list" ] || exit 2
 printf '%s\n' "$*" >> "$FAKE_GH_DATA/.calls"
 repo=
@@ -27,7 +31,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 f="$FAKE_GH_DATA/$(printf '%s' "$repo" | tr '/' '_')"
-[ -f "$f" ] || { echo "gh: could not resolve to a Repository with the name '$repo'" >&2; exit 1; }
+[ -f "$f" ] || { [ -n "$search" ] && { echo '[]'; exit 0; }; echo "GraphQL: could not resolve to a Repository with the name '$repo'" >&2; exit 1; }
 case $search in
   'merged:>='*) jq --arg d "${search#merged:>=}" '[.[] | select((.mergedAt // "9999")[0:10] >= $d)]' "$f" ;;
   'merged:>'*) jq --arg d "${search#merged:>}" '[.[] | select((.mergedAt // "9999")[0:10] > $d)]' "$f" ;;
@@ -48,6 +52,7 @@ cat > "$DATA/o_a" <<'JSON'
 ]
 JSON
 printf '[]' > "$DATA/o_b"
+for r in firstmate skills fleet-app PropertyCompass2; do printf '[]' > "$DATA/lstutzman_$r"; done
 
 days_ago() { date -u -d "$1 days ago" +%Y-%m-%d 2>/dev/null || date -u -v-"$1"d +%Y-%m-%d; }
 cat > "$DATA/o_w" <<JSON
@@ -117,7 +122,7 @@ test_unreadable_repo_is_reported_and_others_still_print() {
   local out rc
   out=$(bash "$COUNT" --repo o/missing --repo o/b); rc=$?
   assert_equals 1 "$rc" "exit status"
-  assert_contains "$out" "o/missing unreadable: gh: could not resolve" "unreadable line"
+  assert_contains "$out" "o/missing unreadable: GraphQL: could not resolve" "unreadable line"
   assert_contains "$out" "o/b merged=0" "readable repo still printed"
   out=$(bash "$COUNT" --json --repo o/missing) || true
   assert_contains "$(jq -r '.repos[0].error' <<<"$out")" "could not resolve" "json error"
