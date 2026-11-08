@@ -8,8 +8,10 @@
 # nested under its dispatching home's workspace (labeled "└ <task> · p:<token>"
 # and ordered in the block right after it, on every path: spawn, relaunch and
 # fallback), never as a tab of the launcher's workspace, never in a workspace
-# another session holds, and never in one picked by a workspace label. A home
-# with no unique workspace to nest under is a named error. Herdr enforces no
+# another session holds, and never in one picked by a workspace label when the
+# launcher's pane names its own. A home with no workspace gets one created to
+# nest under, and duplicated home workspaces with no launcher identity resolve
+# to the lowest-numbered with a warning. Herdr enforces no
 # workspace-label uniqueness, so two workspaces can both be labeled "firstmate";
 # a claimed launcher identity is still validated first, so a stale one refuses.
 #
@@ -288,25 +290,17 @@ destroy_endpoint_workspace() {
 }
 
 # --- 1. presentation off, no herdr ancestry: with no home workspace to nest
-#        under the spawn stops with a named error and creates nothing; with
-#        one, the worker gets its own workspace nested right after it --------
+#        under, the spawn creates the home's own 'firstmate' workspace at the
+#        home and nests the worker's own fresh workspace right after it -------
 
-WS_COUNT_BEFORE_NOPARENT=$(lab workspace list 2>/dev/null | jq -r '.result.workspaces | length')
+[ -z "$(lab workspace list 2>/dev/null | jq -r '.result.workspaces[]? | select(.label == "firstmate") | .workspace_id')" ] \
+  || fail "the lab session already holds a 'firstmate' workspace before the missing-home case"
 spawn_from_launcher "" "$PRIMARY_HOME" uniqA "$PROJ" --mode no-mistakes --yolo off
-[ "$SPAWN_RC" -ne 0 ] || fail "a spawn with no home workspace to nest under must refuse, not create a flat workspace"
-assert_contains_local "$(cat "$SPAWN_ERR")" "no unique herdr workspace for home 'firstmate'" \
-  "the no-parent refusal did not name the missing home workspace"
-[ ! -e "$PRIMARY_HOME/state/uniqA.meta" ] || fail "a refused nested placement published task metadata"
-[ "$(lab workspace list 2>/dev/null | jq -r '.result.workspaces | length')" = "$WS_COUNT_BEFORE_NOPARENT" ] \
-  || fail "a refused nested placement still created a workspace"
-pass "real herdr E2E: a spawn with no home workspace to nest under is a named error and creates no workspace"
-
-read -r WS_PRIMARY _ LAUNCH_PRIMARY_PANE <<WSP
-$(make_workspace firstmate)
-WSP
-[ -n "$WS_PRIMARY" ] && [ -n "$LAUNCH_PRIMARY_PANE" ] || fail "could not create the launcher's 'firstmate' workspace"
-spawn_from_launcher "" "$PRIMARY_HOME" uniqA "$PROJ" --mode no-mistakes --yolo off
-[ "$SPAWN_RC" -eq 0 ] || fail "a primary-shaped spawn with no herdr parent failed"$'\n'"$(cat "$SPAWN_ERR")"
+[ "$SPAWN_RC" -eq 0 ] || fail "a spawn with no home workspace must create one and nest under it"$'\n'"$(cat "$SPAWN_ERR")"
+WS_PRIMARY=$(lab workspace list 2>/dev/null | jq -r '[.result.workspaces[]? | select(.label == "firstmate") | .workspace_id] | if length == 1 then .[0] else empty end')
+[ -n "$WS_PRIMARY" ] || fail "a spawn with no home workspace did not create exactly one 'firstmate' workspace"
+LAUNCH_PRIMARY_PANE=$(lab pane list --workspace "$WS_PRIMARY" 2>/dev/null | jq -r '.result.panes[0].pane_id // empty')
+[ -n "$LAUNCH_PRIMARY_PANE" ] || fail "could not read the created 'firstmate' workspace's pane"
 UNIQA_META="$PRIMARY_HOME/state/uniqA.meta"
 record_worktree "$UNIQA_META"
 UNIQA_PANE=$(grep '^herdr_pane_id=' "$UNIQA_META" | cut -d= -f2-)
@@ -317,7 +311,7 @@ assert_nested "$UNIQA_WS" uniqA "$WS_PRIMARY" "uniqA"
 [ "$(tab_labels_of_workspace "$UNIQA_WS")" = "fm-uniqA" ] \
   || fail "uniqA's workspace holds more than its own session: '$(tab_labels_of_workspace "$UNIQA_WS")'"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "the spawn stole focus from the captain's workspace"
-pass "real herdr E2E: a presentation-off spawn with no herdr parent gets its own fresh workspace nested under its home without stealing focus"
+pass "real herdr E2E: a presentation-off spawn with no home workspace creates it and gets its own fresh workspace nested under it without stealing focus"
 
 # --- 2. presentation off, WITH a launcher pane in a 'firstmate' workspace: the
 #        worker still gets its own workspace, and the launcher's is untouched --
@@ -801,18 +795,25 @@ assert_nested "$PRESD_WS" presD "$WS_PRIMARY_DUP" "a projected worker under a du
 pass "real herdr E2E: with a duplicated home label, a projected worker still hangs off the launcher's exact workspace and the sibling stays untouched"
 
 # --- 4. duplicate label with NO launcher identity: the label is the only way
-#        to find the home workspace and it names two, so the spawn stops with a
-#        named error and creates nothing, rather than guess or go flat ---------
+#        to find the home workspace and it names two, so the worker nests under
+#        the lowest-numbered one with one warning naming both ---------------
 
-WS_COUNT_BEFORE_DUPD=$(lab workspace list 2>/dev/null | jq -r '.result.workspaces | length')
+DUP_LOWEST=$(lab workspace list 2>/dev/null | jq -r '.result.workspaces[]? | select(.label == "firstmate") | .workspace_id' | sort -V | head -1)
+[ "$(lab workspace list 2>/dev/null | jq -r '[.result.workspaces[]? | select(.label == "firstmate")] | length')" = 2 ] \
+  || fail "the duplicate-label case needs exactly two 'firstmate' workspaces"
 spawn_from_launcher "" "$PRIMARY_HOME" dupD "$PROJ" --mode no-mistakes --yolo off
-[ "$SPAWN_RC" -ne 0 ] || fail "a spawn whose home label names two workspaces and has no launcher identity must refuse"
-assert_contains_local "$(cat "$SPAWN_ERR")" "no unique herdr workspace for home 'firstmate'" \
-  "the ambiguous-parent refusal did not name the home label"
-[ ! -e "$PRIMARY_HOME/state/dupD.meta" ] || fail "a refused nested placement published task metadata"
-[ "$(lab workspace list 2>/dev/null | jq -r '.result.workspaces | length')" = "$WS_COUNT_BEFORE_DUPD" ] \
-  || fail "a refused nested placement still created a workspace"
-pass "real herdr E2E: duplicate home-labeled workspaces with no launcher identity are a named error, not a guess or a flat workspace"
+[ "$SPAWN_RC" -eq 0 ] || fail "a spawn whose home label names two workspaces must still nest the worker"$'\n'"$(cat "$SPAWN_ERR")"
+[ "$(grep -c "herdr workspaces in session '$HERDR_LAB_SESSION' are labeled 'firstmate'" "$SPAWN_ERR")" = 1 ] \
+  || fail "the duplicate-parent spawn did not print exactly one warning naming the duplicated home"$'\n'"$(cat "$SPAWN_ERR")"
+assert_contains_local "$(cat "$SPAWN_ERR")" "lowest-numbered, $DUP_LOWEST" "the warning did not name the chosen workspace"
+DUPD_META="$PRIMARY_HOME/state/dupD.meta"
+record_worktree "$DUPD_META"
+DUPD_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$DUPD_META" | cut -d= -f2-)")
+assert_nested "$DUPD_WS" dupD "$DUP_LOWEST" "a worker under duplicated home workspaces"
+return_worktrees "$DUPD_META"
+[ "$(lab workspace list 2>/dev/null | jq -r '[.result.workspaces[]? | select(.label == "firstmate")] | length')" = 2 ] \
+  || fail "a duplicated home must not gain a third 'firstmate' workspace"
+pass "real herdr E2E: duplicate home-labeled workspaces with no launcher identity nest the worker under the lowest-numbered with one warning"
 
 # --- 5. a STALE launcher pane refuses, even though the home label is
 #        unambiguous from the launcher's own (now closed) workspace -----------

@@ -109,8 +109,10 @@ A secondmate or office is the one session its own home workspace holds.
 A crewmate's or scout's own workspace is nested under its dispatching home's workspace on every path: a fresh spawn, a relaunch or reclaim, and every fallback from the presentation projection.
 Herdr 0.9.5 has no parent field on a workspace, so nesting is presentation only: the child is labeled `└ <task> · p:<token>` and sits in the contiguous block right after the home workspace, the same shape the [presentation projection](#presentation-spaces) uses.
 No path creates a flat `<home label> workers` workspace any more.
-The parent is the launcher's own exact workspace, or, for a seat with no Herdr pane, the one workspace labeled for the home in the table below.
-When neither resolves to exactly one workspace, the spawn stops with a named error and creates nothing.
+The parent is the launcher's own exact workspace, or, for a seat with no Herdr pane, the workspace labeled for the home in the table below.
+A home with no such workspace gets one created at the home directory through the launcher-home placement, and the worker nests under it.
+When two or more workspaces carry the home's label and no launcher identity picks one, the worker nests under the lowest-numbered and the spawn prints one warning naming every candidate.
+A spawn stops with a named error only when no parent can be had: Herdr cannot list or create workspaces, or a claimed launcher identity is stale, contradictory or cross-session.
 
 | Home | Workspace label |
 | --- | --- |
@@ -193,7 +195,7 @@ When a home with the projection on still cannot journal a task, for example on a
 It waits up to about 30 seconds for a busy presentation lock so it can be ordered under its home, and if the lock never frees it stays nested by label without ordering.
 Every such session gets its own workspace, because a workspace holds one session only; an existing `<home> workers` workspace from before this rule is never adopted.
 It is created unfocused, and a claimed launcher identity is still validated first.
-A parent that is absent or ambiguous is not a fallback: the spawn stops with a named error.
+An absent parent is created and a duplicated one resolves to the lowest-numbered, as described there; only an untrustworthy launcher identity or an unreachable Herdr stops the spawn.
 Before the task tab is created, the spawn refuses a workspace that already holds any tab besides the one Herdr seeded, with a message naming the workspace and that tab.
 
 ### Setting values
@@ -493,7 +495,7 @@ Any of these preserves the candidate and lets session startup continue with at m
 - A failed journal publication or projected workspace create stops that spawn instead of falling back to a journal-free workspace.
   So a Herdr create failure surfaces as a spawn failure in every Herdr home, rather than only in homes that opted in.
   Every earlier degradation on the fresh projected-create path (no session server, contended presentation lock) still warns and continues as a nested workspace without a journal.
-  An absent or ambiguous parent stops the spawn with a named error instead.
+  An absent parent is created and a duplicated one resolves to the lowest-numbered with a warning; an untrustworthy launcher identity or an unreachable Herdr stops the spawn with a named error instead.
 - Recovery of an existing presentation journal refuses by default when the shared presentation lock is contended, rather than falling back to a journal-free workspace.
   Pass `fm-spawn.sh --herdr-resume-lock-wait` to opt that recovery into waiting for the lock instead, so concurrent recoveries can serialize.
   The flag applies to a fresh ship or scout spawn that recovers a journal.

@@ -1509,32 +1509,58 @@ test_workspace_ensure_nested_workers_always_creates_a_fresh_nested_workspace() {
   pass "fm_backend_herdr_workspace_ensure: a nested placement always creates a fresh '└ <task>' workspace and never adopts an existing '<home> workers' one"
 }
 
-test_workspace_ensure_nested_workers_refuses_without_a_home_workspace() {
-  local dir log resp fb out status
-  dir="$TMP_ROOT/ensure-nested-workers-no-parent"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+test_workspace_ensure_nested_workers_creates_a_missing_home_workspace() {
+  local dir log resp fb out status home
+  dir="$TMP_ROOT/ensure-nested-workers-no-parent"; mkdir -p "$dir/responses" "$dir/home"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  home="$dir/home"
+  # The parent lookup and the launcher-home placement each list once and find
+  # no 'firstmate' workspace, so the home workspace is created (w2) before the
+  # worker's own nested workspace (w12).
   printf '{"result":{"workspaces":[{"workspace_id":"w9","label":"firstmate workers"}]}}\n' > "$resp/1.out"
+  cp "$resp/1.out" "$resp/2.out"
+  printf '{"result":{"workspace":{"workspace_id":"w2","label":"firstmate"},"tab":{"tab_id":"w2:t1"},"root_pane":{"pane_id":"w2:p1"}}}\n' > "$resp/3.out"
+  printf '{"result":{"workspace":{"workspace_id":"w12","label":"nested"},"tab":{"tab_id":"w12:t1"},"root_pane":{"pane_id":"w12:p1"}}}\n' > "$resp/4.out"
   fb=$(make_herdr_fakebin "$dir")
-  out=$( HERDR_PANE_ID='' PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp nested-workers nestA' "$ROOT" 2>&1 )
+  out=$( FM_HOME="$home" HERDR_PANE_ID='' PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp nested-workers nestA; printf " parent=%s" "$FM_BACKEND_HERDR_NEST_PARENT_WS_ID"' "$ROOT" 2>&1 )
   status=$?
-  expect_code 3 "$status" "a nested placement with no home workspace must refuse"
-  assert_contains "$out" "no unique herdr workspace for home 'firstmate'" "the refusal did not name the missing home workspace"
-  assert_contains "$out" "never placed in a flat workspace" "the refusal did not say why it does not fall back flat"
-  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' "a refused nested placement must not create any workspace"
-  pass "fm_backend_herdr_workspace_ensure: a nested placement with no home workspace is a named error, not a flat workspace"
+  expect_code 0 "$status" "a nested placement with no home workspace must create one and succeed"$'\n'"$out"
+  [ "$out" = "w12 parent=w2" ] || fail "nested-workers should nest the fresh w12 under the newly created home w2, got '$out'"
+  assert_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create'$'\x1f''--cwd'$'\x1f'"$home"$'\x1f''--label'$'\x1f''firstmate'$'\x1f' "the missing home workspace was not created at the home under its own label"
+  assert_contains "$(cat "$log")" $'\x1f''--label'$'\x1f''└ nestA · p:' "the worker was not given its own nested workspace"
+  assert_not_contains "$(cat "$log")" 'firstmate workers'$'\x1f' "a nested placement must not label a workspace '<home> workers'"
+  pass "fm_backend_herdr_workspace_ensure: a nested placement with no home workspace creates it and nests the worker under it"
 }
 
-test_workspace_ensure_nested_workers_refuses_ambiguous_home_workspaces() {
+test_workspace_ensure_nested_workers_picks_the_lowest_numbered_duplicate_home() {
   local dir log resp fb out status
   dir="$TMP_ROOT/ensure-nested-workers-ambiguous"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w7","label":"firstmate"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"workspaces":[{"workspace_id":"w10","label":"firstmate"},{"workspace_id":"w9","label":"firstmate"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"workspace":{"workspace_id":"w12","label":"nested"},"tab":{"tab_id":"w12:t1"},"root_pane":{"pane_id":"w12:p1"}}}\n' > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( HERDR_PANE_ID='' PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp nested-workers nestA; printf " parent=%s" "$FM_BACKEND_HERDR_NEST_PARENT_WS_ID"' "$ROOT" 2>&1 )
+  status=$?
+  expect_code 0 "$status" "duplicated home workspaces must not stop a nested placement"$'\n'"$out"
+  assert_contains "$out" "w12 parent=w9" "the worker was not nested under the lowest-numbered home workspace w9"
+  assert_contains "$out" "labeled 'firstmate' (w9 w10)" "the warning did not name every candidate"
+  [ "$(printf '%s\n' "$out" | grep -c '^warning:')" = 1 ] || fail "expected exactly one duplicate warning, got: $out"
+  [ "$(grep -c $'\x1f''workspace'$'\x1f''create' "$log")" = 1 ] || fail "a duplicated home must not mint another home workspace"
+  pass "fm_backend_herdr_workspace_ensure: duplicated home workspaces resolve to the lowest-numbered with one warning naming them"
+}
+
+test_workspace_ensure_nested_workers_refuses_when_herdr_cannot_list() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/ensure-nested-workers-unreachable"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '1\n' > "$resp/1.exit"
   fb=$(make_herdr_fakebin "$dir")
   out=$( HERDR_PANE_ID='' PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp nested-workers nestA' "$ROOT" 2>&1 )
   status=$?
-  expect_code 3 "$status" "two same-labeled home workspaces must refuse a nested placement"
-  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' "an ambiguous nested placement must not create any workspace"
-  pass "fm_backend_herdr_workspace_ensure: a nested placement refuses to guess between two same-labeled home workspaces"
+  expect_code 3 "$status" "a nested placement whose workspace list fails must refuse"
+  assert_contains "$out" "could not list its workspaces to find home 'firstmate'" "the refusal did not name the failed list"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' "a nested placement that cannot list must not create any workspace"
+  pass "fm_backend_herdr_workspace_ensure: a nested placement refuses only when herdr cannot list its workspaces"
 }
 
 test_workspace_ensure_nested_workers_needs_a_task_id() {
@@ -7059,8 +7085,9 @@ test_launcher_identity_refuses_a_workspace_missing_from_the_session
 test_workspace_ensure_prefers_the_launcher_over_the_first_label_match
 test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher
 test_workspace_ensure_nested_workers_always_creates_a_fresh_nested_workspace
-test_workspace_ensure_nested_workers_refuses_without_a_home_workspace
-test_workspace_ensure_nested_workers_refuses_ambiguous_home_workspaces
+test_workspace_ensure_nested_workers_creates_a_missing_home_workspace
+test_workspace_ensure_nested_workers_picks_the_lowest_numbered_duplicate_home
+test_workspace_ensure_nested_workers_refuses_when_herdr_cannot_list
 test_workspace_ensure_nested_workers_needs_a_task_id
 test_create_task_exclusive_refuses_a_workspace_that_holds_another_session
 test_create_task_exclusive_accepts_a_fresh_workspace_with_only_its_seeded_tab

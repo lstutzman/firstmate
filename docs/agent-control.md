@@ -167,7 +167,7 @@ The reclaim pins the recorded **session** but not the **workspace**.
 Every reclaim creates a fresh workspace of its own for the new tab, never the launcher's and never one another session holds, so one session still lives alone in its workspace ([`docs/herdr-backend.md`](herdr-backend.md) "Watching and task containers").
 The record is republished consistently and no work is lost, but the task's `herdr_workspace_id` moves with it.
 The pane id necessarily changes (the pane did not survive), and the record follows it.
-A Herdr reclaim deliberately skips presentation projection, which is a presentation-only layout that is never endpoint or ownership authority; the new tab still goes to a fresh workspace nested under the dispatching home's workspace, and a home with none stops the reclaim with a named error ([`docs/herdr-backend.md`](herdr-backend.md)).
+A Herdr reclaim deliberately skips presentation projection, which is a presentation-only layout that is never endpoint or ownership authority; the new tab still goes to a fresh workspace nested under the dispatching home's workspace, and a home with none gets one created to nest under ([`docs/herdr-backend.md`](herdr-backend.md)).
 
 **Known Herdr limitation - a refusal before the record is republished leaves a stray husk pane** (follow-up bead `fm-herdr-rebind-leak-20260913`).
 The rebind registers no abort cleanup, so a refusal in the window between the new tab being created and the record being republished leaves that pane behind while the record still names the old, gone one.

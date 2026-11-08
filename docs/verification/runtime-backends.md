@@ -1775,8 +1775,7 @@ HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
 Observed guarantees on 2026-11-08 against Herdr 0.9.5 protocol 22 (client and server) on Linux x86_64:
 
 ```text
-ok - real herdr E2E: a spawn with no home workspace to nest under is a named error and creates no workspace
-ok - real herdr E2E: a presentation-off spawn with no herdr parent gets its own fresh workspace nested under its home without stealing focus
+ok - real herdr E2E: a presentation-off spawn with no home workspace creates it and gets its own fresh workspace nested under it without stealing focus
 ok - real herdr E2E: a presentation-off spawn from a launcher pane gets its own workspace and leaves the launcher's untouched
 ok - real herdr E2E: presentation spaces still create the isolated child workspace and bind it under the launcher's exact parent, without stealing focus
 ok - real herdr E2E: each presentation-enabled fallback gets its own nested workspace and leaves the launcher's workspace untouched
@@ -1794,7 +1793,7 @@ ok - real herdr E2E: a respawn never closes a recorded pane id that Herdr report
 ok - real herdr E2E: with two 'firstmate' workspaces, a worker spawned from inside the second one gets its own workspace
 ok - real herdr E2E: the duplicate-labeled sibling workspace is left entirely untouched and focus is preserved
 ok - real herdr E2E: with a duplicated home label, a projected worker still hangs off the launcher's exact workspace and the sibling stays untouched
-ok - real herdr E2E: duplicate home-labeled workspaces with no launcher identity are a named error, not a guess or a flat workspace
+ok - real herdr E2E: duplicate home-labeled workspaces with no launcher identity nest the worker under the lowest-numbered with one warning
 ok - real herdr E2E: a launcher pane that no longer exists refuses before any worker endpoint exists
 ok - real herdr E2E: a secondmate launching its own worker gets its own workspace too, and its same-labeled sibling is untouched
 ok - real herdr E2E: a --secondmate launch still stands up that secondmate's own workspace instead of inheriting the launcher's

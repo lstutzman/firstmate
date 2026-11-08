@@ -2240,25 +2240,23 @@ spawn_herdr_presentation_order_lock_release() {
 # Place a crewmate's or scout's own fresh workspace nested under its dispatching
 # home's workspace, for the rebind path and every fallback from the clean
 # projection (docs/herdr-backend.md "Presentation spaces"). Sets
-# HERDR_CONTAINER_RAW to fm_backend_herdr_container_ensure's
-# "<session>:<workspace>\t<seeded-tab>" output. A workspace holds one session
-# only, so the workspace is always fresh. The parent is proved first, so a home
-# with no workspace stops here with a named error before anything is created.
-# The presentation lock, taken patiently (about 30 seconds) because nesting no
-# longer degrades to a flat workspace on contention, spans the create and the
-# ordering so a concurrent spawn cannot slip another workspace in behind the
-# new one. If the lock never frees, the worker is still created nested by label
-# and ordering is skipped with a warning. Ordering stays best-effort and never
-# fails the spawn.
+# HERDR_CONTAINER_RAW to "<session>:<workspace>\t<seeded-tab>", the shape
+# fm_backend_herdr_container_ensure prints. A workspace holds one session only,
+# so the workspace is always fresh. A home with no workspace gets one created
+# first, and duplicated home workspaces resolve to the lowest-numbered
+# (fm_backend_herdr_nested_parent_resolve). The presentation lock, taken
+# patiently (about 30 seconds) unless the caller already holds it, spans the
+# parent resolve, the create and the ordering, so a concurrent spawn can neither
+# mint a second home workspace nor slip another workspace in behind the new one.
+# If the lock never frees, the worker is still created nested by label and
+# ordering is skipped with a warning. Ordering stays best-effort and never fails
+# the spawn.
 # Args: <session> <label-home> <launcher-pane-id> <cwd-for-the-workspace>
 spawn_herdr_nested_container() {
-  local ses=$1 label_home=$2 launcher_pane=$3 cwd=$4 parent_ws parent_label created lock_here=0
+  local ses=$1 label_home=$2 launcher_pane=$3 cwd=$4 status lock_here=0
   HERDR_CONTAINER_RAW=
   fm_backend_herdr_version_check || return 1
   fm_backend_herdr_server_ensure "$ses" || return 1
-  HERDR_PANE_ID=$launcher_pane FM_HOME=$label_home fm_backend_herdr_nested_parent_resolve "$ses" || return 1
-  parent_ws=$FM_BACKEND_HERDR_NEST_PARENT_WS_ID
-  parent_label=$FM_BACKEND_HERDR_NEST_PARENT_LABEL
   if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
     if spawn_herdr_presentation_order_lock_acquire "$ses" patient; then
       lock_here=1
@@ -2266,18 +2264,19 @@ spawn_herdr_nested_container() {
       echo "warning: herdr nested workspace ordering could not take its session lock; the worker is nested by label only" >&2
     fi
   fi
-  if ! HERDR_CONTAINER_RAW=$(HERDR_PANE_ID=$launcher_pane FM_HOME=$label_home \
-    fm_backend_herdr_container_ensure "$cwd" nested-workers "$ses" "$ID"); then
-    HERDR_CONTAINER_RAW=
+  HERDR_PANE_ID=$launcher_pane FM_HOME=$label_home \
+    fm_backend_herdr_workspace_ensure "$ses" "$cwd" nested-workers "$ID" >/dev/null && status=0 || status=$?
+  if [ "$status" -ne 0 ] || [ -z "$FM_BACKEND_HERDR_WS_ID" ]; then
+    [ "$status" -eq 3 ] || echo "error: failed to create the nested herdr workspace for task '$ID' in session '$ses'" >&2
     [ "$lock_here" -ne 1 ] || spawn_herdr_presentation_order_lock_release
     return 1
   fi
-  if [ "$lock_here" -eq 1 ]; then
-    created=${HERDR_CONTAINER_RAW%%$'\t'*}
-    created=${created#*:}
-    fm_backend_herdr_projection_order_best_effort "$ses" "$created" "$parent_label" "$parent_ws"
-    spawn_herdr_presentation_order_lock_release
+  HERDR_CONTAINER_RAW="$ses:$FM_BACKEND_HERDR_WS_ID"$'\t'"$FM_BACKEND_HERDR_WS_SEEDED_TAB_ID"
+  if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ]; then
+    fm_backend_herdr_projection_order_best_effort "$ses" "$FM_BACKEND_HERDR_WS_ID" \
+      "$FM_BACKEND_HERDR_NEST_PARENT_LABEL" "$FM_BACKEND_HERDR_NEST_PARENT_WS_ID"
   fi
+  [ "$lock_here" -ne 1 ] || spawn_herdr_presentation_order_lock_release
 }
 
 # Batch dispatch (see header): when the first positional is an `id=repo` pair, treat every
@@ -5176,7 +5175,7 @@ EOF
     # fresh workspace of its own nested under the dispatching home's workspace
     # (spawn_herdr_nested_container), never a flat "workers" workspace, never
     # the launcher's own and never one that holds another session (fleet rules
-    # section 1). A home with no workspace to nest under is a named error.
+    # section 1). A home with no workspace gets one created to nest under.
     #
     # KNOWN LIMITATION (bead fm-herdr-rebind-leak-20260913): the tab minted
     # below is registered with no abort cleanup, so a later refusal leaves that
@@ -5378,27 +5377,15 @@ else
           fm_backend_herdr_workspace_migrate_legacy "$HERDR_SES"
           # The projected child is placed and bound UNDER this launcher's exact
           # parent workspace. Its own herdr pane identity names that workspace
-          # directly; the label lookup is only the fallback for a launcher with
-          # no herdr ancestry at all. A claimed-but-broken identity refuses here
-          # rather than projecting under a guessed parent.
-          set +e
-          fm_backend_herdr_launcher_identity "$HERDR_SES"
-          HERDR_LAUNCHER_STATUS=$?
-          set -e
-          case "$HERDR_LAUNCHER_STATUS" in
-          0) HERDR_PARENT_WORKSPACE_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID ;;
-          2) HERDR_PARENT_WORKSPACE_ID=$(fm_backend_herdr_projection_parent_workspace_exact \
-            "$HERDR_SES" "$HERDR_PARENT_LABEL" 2>/dev/null || true) ;;
-          *)
-            spawn_herdr_presentation_order_lock_release
-            exit 1
-            ;;
-          esac
-          if [ -z "$HERDR_PARENT_WORKSPACE_ID" ]; then
-            echo "error: no unique herdr workspace for home '$HERDR_PARENT_LABEL' in session '$HERDR_SES' to nest this worker under, and a worker is never placed in a flat workspace; run firstmate inside its own workspace, or fix the missing or duplicated '$HERDR_PARENT_LABEL' workspace" >&2
+          # directly; a launcher with no herdr ancestry at all falls back to the
+          # home's labeled workspace, created when missing and the
+          # lowest-numbered when duplicated. A claimed-but-broken identity
+          # refuses here rather than projecting under a guessed parent.
+          if ! FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_nested_parent_resolve "$HERDR_SES"; then
             spawn_herdr_presentation_order_lock_release
             exit 1
           else
+            HERDR_PARENT_WORKSPACE_ID=$FM_BACKEND_HERDR_NEST_PARENT_WS_ID
             HERDR_PROJECTION_ID=$(fm_backend_herdr_projection_journal_create "$STATE" "$ID") || exit 1
             HERDR_PROJECTION_ABORT_JOURNAL_TOKEN=$HERDR_PROJECTION_ID
             HERDR_PROJECTION_LABEL=$(fm_backend_herdr_projection_workspace_label "$ID" "$HERDR_PROJECTION_ID")

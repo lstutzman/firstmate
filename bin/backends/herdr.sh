@@ -463,26 +463,47 @@ fm_backend_herdr_workspace_legacy_label() {
 # only: the child carries the "└ <task> · p:<token>" label and sits in the block
 # right after its owning home workspace (fm_backend_herdr_projection_order_best_effort).
 # The parent is the launcher's own exact workspace, or, for a seat with no herdr
-# pane at all, the one workspace labeled for this home. Sets, only on a 0 return,
+# pane at all, the workspace labeled for this home. A home with no such
+# workspace gets one created through the launcher-home placement, rooted at the
+# home directory. Two or more same-labeled home workspaces with no launcher
+# identity to pick one resolve to the lowest-numbered, with one warning naming
+# every candidate. Sets, only on a 0 return,
 #   FM_BACKEND_HERDR_NEST_PARENT_WS_ID
 #   FM_BACKEND_HERDR_NEST_PARENT_LABEL
-# Returns 3 with the exact reason on stderr when no parent can be proved, so a
-# spawn stops with a named error and never creates a flat workspace instead.
+# Returns 3 with the exact reason on stderr only when no parent can be had:
+# herdr cannot list or create workspaces, or a claimed launcher identity is
+# stale, contradictory or cross-session.
 fm_backend_herdr_nested_parent_resolve() {  # <session>
-  local session=$1 status label parent_ws
+  local session=$1 status label parent_ws list matches count
   FM_BACKEND_HERDR_NEST_PARENT_WS_ID=""
   FM_BACKEND_HERDR_NEST_PARENT_LABEL=""
   label=$(fm_backend_herdr_workspace_label)
   fm_backend_herdr_launcher_identity "$session" && status=0 || status=$?
   case "$status" in
     0) parent_ws=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID ;;
-    2) parent_ws=$(fm_backend_herdr_projection_parent_workspace_exact "$session" "$label" 2>/dev/null || true) ;;
+    2)
+      list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) &&
+        printf '%s' "$list" | jq -e '(.result.workspaces | type) == "array"' >/dev/null 2>&1 || {
+        echo "error: herdr session '$session' could not list its workspaces to find home '$label' to nest this worker under" >&2
+        return 3
+      }
+      matches=$(printf '%s' "$list" | jq -r --arg want "$label" '
+        .result.workspaces[] | select(.label == $want) | .workspace_id | select(type == "string" and length > 0)
+      ' 2>/dev/null | sort -V)
+      count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
+      if [ "$count" -eq 0 ]; then
+        parent_ws=$(fm_backend_herdr_workspace_ensure "$session" "$FM_HOME" launcher-home) && [ -n "$parent_ws" ] || {
+          echo "error: no herdr workspace for home '$label' in session '$session' and one could not be created to nest this worker under" >&2
+          return 3
+        }
+      else
+        parent_ws=${matches%%$'\n'*}
+        [ "$count" -eq 1 ] ||
+          echo "warning: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and no launcher identity picks one; nesting this worker under the lowest-numbered, $parent_ws" >&2
+      fi
+      ;;
     *) return 3 ;;
   esac
-  if [ -z "$parent_ws" ]; then
-    echo "error: no unique herdr workspace for home '$label' in session '$session' to nest this worker under, and a worker is never placed in a flat workspace; run firstmate inside its own workspace, or fix the missing or duplicated '$label' workspace" >&2
-    return 3
-  fi
   # shellcheck disable=SC2034  # callers consume the proved parent's parts
   FM_BACKEND_HERDR_NEST_PARENT_WS_ID=$parent_ws
   # shellcheck disable=SC2034  # callers consume the proved parent's parts
@@ -2235,11 +2256,14 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #                   and never the launcher's own workspace, because a
 #                   workspace holds one session only. The 4th argument names
 #                   the task. The owning home workspace is resolved by
-#                   fm_backend_herdr_nested_parent_resolve, which refuses (3)
-#                   when none can be proved; the caller orders the new
+#                   fm_backend_herdr_nested_parent_resolve, which creates it
+#                   when missing and picks the lowest-numbered of duplicates,
+#                   refusing (3) only when herdr or a claimed launcher identity
+#                   cannot be trusted; the caller orders the new
 #                   workspace under it (fm_backend_herdr_projection_order_best_effort).
-# With no herdr ancestry at all there is no launcher workspace to inherit, so
-# the per-home label lookup below stays the resolver - but it must then resolve
+# For launcher-home and other-home with no herdr ancestry at all there is no
+# launcher workspace to inherit, so the per-home label lookup below stays the
+# resolver - but it must then resolve
 # to exactly ONE workspace. Two same-labeled home workspaces with no launcher
 # identity to disambiguate them is an unresolvable placement, and adopting
 # either one is the very defect this refuses.
