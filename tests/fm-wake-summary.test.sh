@@ -361,6 +361,24 @@ test_recovery_only_drain_is_auto_acked() {
   pass "a recovery episode with no queued rows is retired by the auto-ack when the home opts in"
 }
 
+test_a_broken_classifier_shows_the_raw_rows_and_acknowledges_nothing() {
+  local d state out
+  d=$(make_case drain-broken); state="$d/state"
+  opt_in
+  mkdir -p "$d/bin"
+  cp -R "$ROOT/bin/." "$d/bin/"
+  chmod -x "$d/bin/fm-wake-summary.sh"
+  append_wake "$state" check merged-gone-x 'check: merge landed: gone https://github.com/o/r/pull/5'
+  out=$(FM_STATE_OVERRIDE="$state" "$d/bin/fm-wake-drain.sh" --summary 2>&1)
+  assert_contains "$out" "WAKE SUMMARY UNAVAILABLE (classified 0 of 1 wake rows)" "the failure is stated"
+  assert_contains "$out" "check: merge landed: gone" "the raw row is shown, never hidden"
+  assert_contains "$out" "WAKE_ACK_REQUIRED" "the ack command is printed"
+  assert_not_contains "$out" "AUTO-ACKED" "nothing is auto-acknowledged"
+  [ "$(queue_rows "$state")" = 1 ] || fail "the row must stay queued"
+  opt_out
+  pass "a classifier that cannot run shows the raw wake rows and acknowledges nothing"
+}
+
 test_non_summary_drain_is_unchanged() {
   local d state out
   d=$(make_case drain-plain); state="$d/state"
@@ -397,5 +415,6 @@ test_all_no_action_batch_is_auto_acked
 test_mixed_batch_acknowledges_nothing
 test_sections_block_the_auto_ack
 test_recovery_only_drain_is_auto_acked
+test_a_broken_classifier_shows_the_raw_rows_and_acknowledges_nothing
 test_non_summary_drain_is_unchanged
 test_summary_flag_is_exclusive

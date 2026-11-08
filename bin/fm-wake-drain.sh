@@ -906,7 +906,7 @@ print_status_presentation() {  # [<deduped-raw-rows>]
 # owed (a drain whose rows all belong to the branch grant).
 summary_tail() {
   local rows=$1 through=$2 generation=$3 presentation annotations sections outcomes outcomes_rc=0
-  local guard_out summary quiet=1 config ack_out ack_rc count=0 actions=0 line
+  local guard_out summary quiet=1 config ack_out ack_rc count=0 actions=0 line rows_total
   presentation=$( (print_status_presentation "$rows") ) || true
   annotations=$(printf '%s\n' "$presentation" | grep '^wake annotation:' || true)
   sections=$(printf '%s\n' "$presentation" | grep -v '^wake annotation:' | grep -v '^$' || true)
@@ -922,10 +922,20 @@ summary_tail() {
     done <<EOF
 $summary
 EOF
-    printf 'WAKE SUMMARY (%s wake(s), %s need action):\n%s\n' "$count" "$actions" "$summary"
-    # Annotations are what the summary lines were judged on; print them only when
-    # a reader still has to look.
-    [ "$quiet" -eq 0 ] || { [ -z "$annotations" ] || printf '%s\n' "$annotations"; }
+    rows_total=$(printf '%s\n' "$rows" | grep -c . || true)
+    if [ "$count" -ne "$rows_total" ]; then
+      # The classifier did not account for every row (missing, not executable, crashed).
+      # Never hide a wake behind a summary that did not cover it: show the raw rows and
+      # the annotations, and acknowledge nothing automatically.
+      quiet=1
+      printf 'WAKE SUMMARY UNAVAILABLE (classified %s of %s wake rows); raw rows follow, handle each:\n%s\n' "$count" "$rows_total" "$rows"
+      [ -z "$annotations" ] || printf '%s\n' "$annotations"
+    else
+      printf 'WAKE SUMMARY (%s wake(s), %s need action):\n%s\n' "$count" "$actions" "$summary"
+      # Annotations are what the summary lines were judged on; print them only when
+      # a reader still has to look.
+      [ "$quiet" -eq 0 ] || { [ -z "$annotations" ] || printf '%s\n' "$annotations"; }
+    fi
   elif [ -n "$through" ]; then
     printf 'WAKE SUMMARY (recovery only, no queued wake rows)\n'
     quiet=0
