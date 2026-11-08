@@ -131,6 +131,37 @@ test_gate_refuses_missing_tools() {
   pass "fm-t3-mcp gate: refuses a server missing a required tool or its identity tool"
 }
 
+test_gate_refuses_renamed_tools_version() {
+  fresh_case gate-renamed
+  t3_fake_set 'w.serverVersion = "0.1.3"; w.tools = ["t3_thread_launch","t3_thread_send","t3_thread_read","t3_thread_wait","t3_thread_interrupt","t3_thread_organize","t3_thread_list","t3_thread_configure","t3_project_list","t3_project_create","t3_pending_request","orchestrator_capabilities","t3_environment_read"]'
+  mcp status
+  expect_code 4 "$RC" "a T3 0.1.3 server must be refused"
+  assert_equals capability_gate "$(field "$OUT" error.code)" "the refusal should be the capability gate"
+  assert_contains "$ERR" "T3 0.1.3" "the refusal should name the version found"
+  assert_contains "$ERR" "only before 0.1.3" "the refusal should state the supported range"
+  assert_contains "$ERR" "t3_thread_configuration is now t3_thread_configure" "the refusal should map the configuration rename"
+  assert_contains "$ERR" "t3_pending_request_respond is now t3_pending_request (action respond)" "the refusal should map the pending-request rename"
+  t3_fake_set 'w.serverVersion = "0.0.99"; w.tools = ["t3_thread_launch","t3_thread_send","t3_thread_read","t3_thread_wait","t3_thread_interrupt","t3_thread_organize","t3_thread_list","t3_thread_configure","t3_project_list","t3_project_create","t3_pending_request","orchestrator_capabilities","t3_environment_read"]'
+  mcp status
+  expect_code 4 "$RC" "new tool names under an older version string are refused too"
+  assert_contains "$ERR" "t3_thread_configuration is now t3_thread_configure" "the tool-name path should give the same mapping"
+  local v
+  for v in 0.1.3 v0.1.10 0.2.0 1.0.0; do
+    t3_fake_set "delete w.tools; w.serverVersion = \"$v\""
+    mcp status
+    expect_code 4 "$RC" "T3 $v offering the old tool names must still be refused by version"
+    assert_contains "$ERR" "T3 $v at" "the refusal should name version $v"
+    assert_contains "$ERR" "t3_pending_request_list is now t3_pending_request (action list)" "the version refusal for $v should map the renames"
+  done
+  for v in 0.1.2 0.1.2-nightly.20261020 0.0.99; do
+    t3_fake_set "delete w.tools; w.serverVersion = \"$v\""
+    mcp status
+    expect_code 0 "$RC" "T3 $v with the old tool names is before the rename and must pass: $ERR"
+    assert_equals "$v" "$(field "$OUT" serverVersion)" "status should report version $v"
+  done
+  pass "fm-t3-mcp gate: refuses T3 0.1.3 and its renamed tools with a version message"
+}
+
 test_environment_mismatch_refused() {
   fresh_case env-mismatch '{"environmentId":"env-other"}'
   mcp status
@@ -805,6 +836,7 @@ test_login_origin_defaults
 test_login_refuses_other_ceilings
 test_status_gate_and_protocol
 test_gate_refuses_missing_tools
+test_gate_refuses_renamed_tools_version
 test_environment_mismatch_refused
 test_expiry_and_permissions
 test_revoked_credential_refused
