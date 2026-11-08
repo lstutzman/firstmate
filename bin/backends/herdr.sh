@@ -482,11 +482,11 @@ fm_backend_herdr_nested_parent_resolve() {  # <session>
   case "$status" in
     0) parent_ws=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID ;;
     2)
-      list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) &&
-        printf '%s' "$list" | jq -e '(.result.workspaces | type) == "array"' >/dev/null 2>&1 || {
+      if ! list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) ||
+        ! printf '%s' "$list" | jq -e '(.result.workspaces | type) == "array"' >/dev/null 2>&1; then
         echo "error: herdr session '$session' could not list its workspaces to find home '$label' to nest this worker under" >&2
         return 3
-      }
+      fi
       matches=$(printf '%s' "$list" | jq -r --arg want "$label" '
         .result.workspaces[] | select(.label == $want) | .workspace_id | select(type == "string" and length > 0)
       ' 2>/dev/null | sort -V)
