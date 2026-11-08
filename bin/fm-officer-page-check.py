@@ -26,7 +26,8 @@ card, a page owner fixes a page). It acts on nothing itself.
                  words. Other lines of the file are ignored; a file with no
                  rule line is a coverage note, since the check then covers nothing.
   stale-card     a shown card that is past its snooze date, unanswered for
-                 --stale-days, already answered, names a merged or closed PR
+                 --stale-days (a pinned card or one in the Later band, which
+                 cl-keeper parks on purpose, is never aged), already answered, names a merged or closed PR
                  (read with `gh-axi api GET`, at most MAX_PR_LOOKUPS a run), or
                  whose keyed status line a later `resolved` line settled.
                  Two live-decision exceptions keep this from false-flagging:
@@ -305,7 +306,7 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
         if c.get("state") == "snoozed" and until is not None and until < now:
             out.append(finding("stale-card", page, cid + ":snooze", title, "snooze ended %d day(s) ago" % ((now - until) // 86400),
                                "cl-keeper: re-ask or close", "low"))
-        elif c.get("state") == "asked" and asked is not None and now - asked > stale_days * 86400 and not c.get("pinned"):
+        elif c.get("state") == "asked" and asked is not None and now - asked > stale_days * 86400 and not c.get("pinned") and c.get("band") != "later":
             out.append(finding("stale-card", page, cid + ":unanswered", title, "unanswered for %d day(s)" % ((now - asked) // 86400),
                                "cl-keeper: close or re-word", "low"))
         if c.get("state") == "asked" and c.get("answer"):

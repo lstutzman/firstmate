@@ -1442,7 +1442,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `ask-days` | Friction, optional: how many days of Lee's typed messages the repeated-ask finding compares; default 7 |
 | `app` | Pagecheck and surgeon, required: the fleet app's `https://` base URL, read with `GET` only |
 | `rules` | Pagecheck only, optional: the file holding the standing rules (see [Page-check officer](#page-check-officer)); default this home's `data/captain-shared.md` |
-| `stale-days` | Pagecheck only, optional: days a card may stay asked and unanswered before it is stale; default 7 |
+| `stale-days` | Pagecheck only, optional: days a card may stay asked and unanswered before it is stale, except a Later-band or pinned card, which is never aged; default 7 |
 | `remind-hours` | Pagecheck only, optional: hours before an unfixed finding is counted as new again; default 24 |
 | `hosts` | Triage, surgeon and friction, optional: comma-separated hosts the archive is expected to cover; a missing one is a coverage finding. Corpus, optional: the hosts whose Bosun `last-result.json` archive counts it reads |
 | `harvest` | Corpus, optional: the memory harvest's `last-result.json`, a path or `<host>:<path>`; default `memory-harvest/last-result.json` under `archive` |
@@ -1564,7 +1564,7 @@ Its findings are one of four kinds, each naming the page and the object so first
 | Kind | Meaning | Routed to |
 | --- | --- | --- |
 | `standing-rule` | A card Lee is shown that a standing rule already settles | cl-keeper closes it citing the rule |
-| `stale-card` | A shown card that is past its snooze date, unanswered for `stale-days`, already answered, naming a merged or closed PR, or settled by a later `resolved` status line; a card whose production or activation action is still open or whose captain has not answered is not stale (the script header owns both exceptions) | cl-keeper closes or corrects it |
+| `stale-card` | A shown card that is past its snooze date, unanswered for `stale-days` (never a Later-band card, which cl-keeper parked on purpose), already answered, naming a merged or closed PR, or settled by a later `resolved` status line; a card whose production or activation action is still open or whose captain has not answered is not stale (the script header owns both exceptions) | cl-keeper closes or corrects it |
 | `shown-after-done` | A card shown although its record is settled: a status line resolved by a captain answer before the card was raised again (a routing resolve does not count), or the app's own card record for the Bosun source is closed | cl-keeper closes it; the source that re-raised it is fixed |
 | `page-old` | A page older than its normal gap (Bosun's results: 26 hours), never published, unreachable or unreadable (including JSON of an unexpected shape), or a live Runs job whose health is failing | the page's owner fixes the feed |
 
