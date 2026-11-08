@@ -12,7 +12,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - `standing-rule`: a card or suggestion Lee is shown that a standing rule in `data/captain-shared.md` already settles.
 - `stale-card`: a shown card past its snooze date, unanswered for a week (a card in the Later band is parked on purpose and is not aged), already answered, naming a merged or closed PR, or whose status line was settled elsewhere.
 - `shown-after-done`: a card shown although its record was settled by a captain answer or is closed in the app's own card record.
-- `page-old`: a page older than its normal cadence allows, a failing job on the Runs page, a Runs job whose latest finished run has no summary (a run still in progress or a job that never ran is not flagged), or a page that is unreachable, unreadable or never published.
+- `page-old`: a page older than its normal cadence allows, a failing job on the Runs page, a Runs job whose latest finished run has no summary (a run still in progress is not itself judged, and a job that never ran is not flagged), or a page that is unreachable, unreadable or never published.
 - Every finding is filed once in Linear, so its found count can grow while nobody fixes it.
 - Not work: a live decision (a merged PR whose production or activation action is still open, or a routing acknowledgement that is not a captain answer), which the officer never flags.
 

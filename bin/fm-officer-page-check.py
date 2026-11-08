@@ -362,6 +362,8 @@ def page_findings(app, now):
             if job.get("state") != "live":
                 continue
             last = job.get("latest") if isinstance(job.get("latest"), dict) else {}
+            if last.get("status") == "running":
+                last = job.get("lastDone") if isinstance(job.get("lastDone"), dict) else {}
             blank = last.get("status") == "finished" and not str(last.get("summary") or "").strip()
             name = job.get("label") or job.get("id")
             if job.get("health") == "failing":

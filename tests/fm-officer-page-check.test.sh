@@ -109,7 +109,7 @@ write_pages() {  # <dir>: the fleet app's pages, one file per GET path.
   jq -n '{sources: {workers: {homes: [{observed_at: "2026-10-31T14:10:00Z"}]}, prs: {observed_at: "2026-10-31T14:10:00Z"}, usage: {observed_at: "2026-10-31T14:10:00Z"}}}' > "$d/_api_cost-cycle"
   jq -n '{value: {generated_at: "2026-10-31T06:00:00Z"}}' > "$d/_api_ideation"
   jq -n '{value: {generated_at: "2026-10-29T06:00:00Z"}}' > "$d/_api_business-health"
-  jq -n '{jobs: [{id: "ok-job", state: "live", health: "working", latest: {status: "finished", summary: "ok", finishedAt: "2026-10-31T04:00:00Z"}}, {id: "mute-job", label: "Mute job", officer: "bosun", state: "live", health: "working", latest: {status: "finished", summary: "", finishedAt: "2026-10-31T04:00:00Z"}}, {id: "busy-job", state: "live", health: "working", latest: {status: "running", summary: null}}, {id: "idle-job", state: "live", health: "working", latest: null}, {id: "bad-job", label: "Bad job", officer: "bosun", state: "live", health: "failing", nextDueAt: "2026-11-01T00:00:00Z"}, {id: "gone", state: "retired", health: "failing"}]}' > "$d/_api_runs"
+  jq -n '{jobs: [{id: "ok-job", state: "live", health: "working", latest: {status: "finished", summary: "ok", finishedAt: "2026-10-31T04:00:00Z"}}, {id: "mute-job", label: "Mute job", officer: "bosun", state: "live", health: "working", latest: {status: "finished", summary: "", finishedAt: "2026-10-31T04:00:00Z"}}, {id: "busy-job", state: "live", health: "working", latest: {status: "running", summary: null}}, {id: "busy-mute-job", label: "Busy mute job", officer: "navigator", state: "live", health: "working", latest: {status: "running", summary: null}, lastDone: {status: "finished", summary: null, finishedAt: "2026-10-31T03:00:00Z"}}, {id: "idle-job", state: "live", health: "working", latest: null}, {id: "bad-job", label: "Bad job", officer: "bosun", state: "live", health: "failing", nextDueAt: "2026-11-01T00:00:00Z"}, {id: "gone", state: "retired", health: "failing"}]}' > "$d/_api_runs"
   jq -n '{status: "ok"}' > "$d/_api_health"
   jq -n '{runs: [{run: {startedAt: "2026-10-29T04:37:00Z"}}, {run: {startedAt: "2026-10-31T04:37:00Z"}}]}' > "$d/_api_runs_bosun-maintenance_results"
   # _api_velocity-audit is absent: the page was never published (404).
@@ -201,8 +201,8 @@ test_findings_of_every_kind() {
     "$(ids "$json" stale-card)" "stale cards: answered, unanswered for days, a merged PR (not the open one), snooze ended, resolved elsewhere"
   assert_equals "shown-after-done:Captain's Log:bosun-ep shown-after-done:Captain's Log:task-k-k1-$(printf 'task-k\0k1' | sha256sum | cut -c1-10)" \
     "$(ids "$json" shown-after-done)" "a card re-raised after an answered status line, and one the app records closed; a routing-only resolve (k3) is not flagged"
-  assert_equals "page-old:Business health:business-health page-old:Runs:bad-job page-old:Runs:mute-job page-old:Velocity audit:velocity-audit" \
-    "$(ids "$json" page-old)" "an old page, a failing live job (not the retired one), a finished run with no summary (not one with a summary, a running one, or a never-run job), and a page never published"
+  assert_equals "page-old:Business health:business-health page-old:Runs:bad-job page-old:Runs:busy-mute-job page-old:Runs:mute-job page-old:Velocity audit:velocity-audit" \
+    "$(ids "$json" page-old)" "an old page, a failing live job (not the retired one), a finished run with no summary, including the last finished run of a job now running (not one with a summary, a running one with no finished run, or a never-run job), and a page never published"
   assert_equals "$(jq '.findings | length' "$json")" "$(jq '.new | length' "$json")" "every first-seen finding is new"
   pass "fm-officer page-check: each finding kind is raised for the right object"
 }
