@@ -238,7 +238,7 @@ git -C "$SM2_HOME" init -q -b main
 
 # A third primary-shaped home that keeps presentation spaces ON through the
 # historical empty opt-in file, so the default-on migration is exercised against
-# real Herdr while the opted-out homes above assert the flat layout in isolation.
+# real Herdr while the opted-out homes above assert the journal-free nested layout in isolation.
 PRES_HOME="$TMP_ROOT/presentation-home"
 mkdir -p "$PRES_HOME/state" "$PRES_HOME/config"
 : > "$PRES_HOME/config/herdr-presentation-spaces"

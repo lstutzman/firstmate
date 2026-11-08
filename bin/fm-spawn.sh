@@ -4978,7 +4978,7 @@ herdr_projection_meta_field_exact() { # <meta> <key>
 
 # A stale presentation journal never grants launch authority.
 # Under the session lock, authoritative metadata must identify one positively
-# dead or agent-free endpoint before token inspection may allow flat fallback.
+# dead or agent-free endpoint before token inspection may allow a journal-free fallback.
 # Exact Herdr fields are retained for the narrower version 2 reclaim path.
 herdr_projection_existing_meta_allows_flat() { # <meta>
   local meta=$1 old_backend old_target old_session old_pane old_state target_session target_pane
@@ -5182,7 +5182,7 @@ EOF
     # below is registered with no abort cleanup, so a later refusal leaves that
     # pane behind and a retry mints another. Documented in
     # docs/agent-control.md rather than fixed here, because the remedy is
-    # machinery the ordinary flat spawn path does not have either.
+    # machinery the ordinary journal-free spawn path does not have either.
     #
     # Re-create the tab under the RECORDED herdr session. Without the explicit
     # session the container would resolve from the AMBIENT one
@@ -5429,7 +5429,7 @@ else
                 "$HERDR_PARENT_WORKSPACE_ID" "$HERDR_PARENT_LABEL" "$HERDR_PROJECTION_LABEL" "$HERDR_TAB_LABEL"; then
               :
             else
-              echo "warning: herdr presentation could not publish an exact restart binding; this task will use flat fallback after a restart" >&2
+              echo "warning: herdr presentation could not publish an exact restart binding; this task will use the journal-free nested layout after a restart" >&2
             fi
           fi
         else

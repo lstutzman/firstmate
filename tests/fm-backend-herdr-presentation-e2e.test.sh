@@ -629,7 +629,7 @@ teardown_task shape "$HOME_DIR" > "$TMP_ROOT/off-teardown.out" 2> "$TMP_ROOT/off
   || fail "opted-out teardown failed: $(cat "$TMP_ROOT/off-teardown.err")"
 
 # A home that configured nothing at all follows the version floor: it is
-# projected on a release at or above it, and takes the ordinary flat layout with
+# projected on a release at or above it, and takes the journal-free nested layout with
 # one naming warning below it. The only difference from the opted-out spawn
 # above is the removed file, so this case is the floor's live end-user proof on
 # whichever Herdr this lab is running.
