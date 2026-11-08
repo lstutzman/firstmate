@@ -1,0 +1,8 @@
+=== new test vs pre-fix script (expected to fail on unreadable repo):
+ok - fm-fix-forward-count.sh: text output counts merged, linked and reverted PRs
+ok - fm-fix-forward-count.sh: json output
+ok - fm-fix-forward-count.sh: a PR merged exactly N days ago falls outside the N-day window
+ok - fm-fix-forward-count.sh: falls back to BSD date -v when date -d is unavailable
+ok - fm-fix-forward-count.sh: a repository at the read limit is marked truncated
+not ok - exit status (expected '1', got '0')
+exit=1

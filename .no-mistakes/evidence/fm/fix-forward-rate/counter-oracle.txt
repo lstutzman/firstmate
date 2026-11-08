@@ -1,0 +1,19 @@
+lstutzman/firstmate search_api_merged_since_2026-11-02=126  merged_on_boundary_day_2026-11-01(excluded)=0
+lstutzman/skills search_api_merged_since_2026-11-02=103  merged_on_boundary_day_2026-11-01(excluded)=1
+lstutzman/fleet-app search_api_merged_since_2026-11-02=60  merged_on_boundary_day_2026-11-01(excluded)=1
+lstutzman/PropertyCompass2 search_api_merged_since_2026-11-02=355  merged_on_boundary_day_2026-11-01(excluded)=53
+
+--- --days 1 (today only) ---
+{"days":1,"since":"2026-11-08","repos":[{"repo":"lstutzman/firstmate","merged":17,"fix_forward":0,"reverts":0,"truncated":false}]}
+oracle today:
+17
+
+--- revert/fix-forward oracle over 60 days (search API, title 'Revert' / body line) ---
+lstutzman/firstmate revert-ish titles: 0 0 start with Revert
+  body-line hits: 0
+lstutzman/skills revert-ish titles: 0 0 start with Revert
+  body-line hits: 0
+lstutzman/fleet-app revert-ish titles: 0 0 start with Revert
+  body-line hits: 0
+lstutzman/PropertyCompass2 revert-ish titles: 5 0 start with Revert
+  body-line hits: 3

@@ -1,0 +1,46 @@
+$ fm-fix-forward-count.sh --repo lstutzman/firstmate --repo lstutzman/no-such-repo-zz9 --repo lstutzman/fleet-app
+lstutzman/firstmate merged=126 fix_forward=0 reverts=0
+lstutzman/no-such-repo-zz9 unreadable: GraphQL: Could not resolve to a Repository with the name 'lstutzman/no-such-repo-zz9'. (repository)
+lstutzman/fleet-app merged=60 fix_forward=0 reverts=0
+exit=1
+
+$ FM_FIX_FORWARD_REPOS="lstutzman/no-such-repo-zz9" fm-fix-forward-count.sh --json
+{
+  "days": 7,
+  "since": "2026-11-02",
+  "repos": [
+    {
+      "repo": "lstutzman/no-such-repo-zz9",
+      "error": "GraphQL: Could not resolve to a Repository with the name 'lstutzman/no-such-repo-zz9'. (repository)"
+    }
+  ]
+}
+exit=1
+
+$ fm-fix-forward-count.sh --repo lstutzman/PropertyCompass2 --limit 100
+lstutzman/PropertyCompass2 merged=100 fix_forward=0 reverts=0 truncated
+exit=0
+
+$ fm-fix-forward-count.sh --days 0
+error: --days needs a positive integer
+exit=2
+
+$ fm-fix-forward-count.sh --days x
+error: --days needs a positive integer
+exit=2
+
+$ fm-fix-forward-count.sh --limit -3
+error: --limit needs a positive integer
+exit=2
+
+$ fm-fix-forward-count.sh --bogus
+error: unknown argument: --bogus
+Usage: fm-fix-forward-count.sh [--days N] [--json] [--limit N] [--repo owner/name]...
+  --days N    window length in days, default 7
+exit=2
+
+$ fm-fix-forward-count.sh --days
+Usage: fm-fix-forward-count.sh [--days N] [--json] [--limit N] [--repo owner/name]...
+  --days N    window length in days, default 7
+  --json      print one JSON document instead of one line per repository
+exit=2

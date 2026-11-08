@@ -1,0 +1,12 @@
+=== new test vs fixed script:
+1..8
+ok - fm-fix-forward-count.sh: text output counts merged, linked and reverted PRs
+ok - fm-fix-forward-count.sh: json output
+ok - fm-fix-forward-count.sh: a PR merged exactly N days ago falls outside the N-day window
+ok - fm-fix-forward-count.sh: falls back to BSD date -v when date -d is unavailable
+ok - fm-fix-forward-count.sh: a repository at the read limit is marked truncated
+ok - fm-fix-forward-count.sh: an unreadable repository is reported without hiding the others
+ok - fm-fix-forward-count.sh: default repositories and the env override
+ok - fm-fix-forward-count.sh: usage errors exit 2
+FM_TEST_COMPLETE
+exit=0

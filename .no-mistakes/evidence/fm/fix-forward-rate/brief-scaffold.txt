@@ -1,0 +1,10 @@
+$ FM_HOME=$LAB bin/fm-brief.sh ff-ship firstmate --mode no-mistakes
+scaffolded: /tmp/fm-lab.AOc911/data/ff-ship/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+--- ship brief, Rules 7-9:
+74:7. Never administer infrastructure that every lane shares. Two things are shared:
+96:8. Never start a shell command with `cd`, and never run a search whose path depends on the current directory.
+99:9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, `Fixes-regression-from: <full PR URL>`, naming that earlier PR.
+
+$ FM_HOME=$LAB bin/fm-brief.sh ff-scout firstmate --scout
+scaffolded: /tmp/fm-lab.AOc911/data/ff-scout/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+--- scout brief Fixes-regression-from matches: 0

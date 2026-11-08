@@ -1,0 +1,14 @@
+$ bin/fm-fix-forward-count.sh --repo lstutzman/firstmate --repo lstutzman/no-such-repo-xyz   (after fix)
+lstutzman/firstmate merged=126 fix_forward=0 reverts=0
+lstutzman/no-such-repo-xyz unreadable: GraphQL: Could not resolve to a Repository with the name 'lstutzman/no-such-repo-xyz'. (repository)
+exit=1
+
+{"days":7,"since":"2026-11-02","repos":[{"repo":"lstutzman/no-such-repo-xyz","error":"GraphQL: Could not resolve to a Repository with the name 'lstutzman/no-such-repo-xyz'. (repository)"}]}
+exit=1
+
+$ bin/fm-fix-forward-count.sh   (default fleet merge-table repos)
+lstutzman/firstmate merged=126 fix_forward=0 reverts=0
+lstutzman/skills merged=103 fix_forward=0 reverts=0
+lstutzman/fleet-app merged=60 fix_forward=0 reverts=0
+lstutzman/PropertyCompass2 merged=200 fix_forward=0 reverts=0 truncated
+exit=0

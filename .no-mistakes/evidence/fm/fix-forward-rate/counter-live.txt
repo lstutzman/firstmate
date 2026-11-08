@@ -1,0 +1,34 @@
+### date -u: 2026-11-08
+$ bin/fm-fix-forward-count.sh   (default repos, default 7 days)
+lstutzman/firstmate merged=126 fix_forward=0 reverts=0
+lstutzman/skills merged=103 fix_forward=0 reverts=0
+lstutzman/fleet-app merged=60 fix_forward=0 reverts=0
+lstutzman/PropertyCompass2 merged=200 fix_forward=0 reverts=0 truncated
+rc=0
+$ bin/fm-fix-forward-count.sh --repo lstutzman/firstmate --json
+{
+  "days": 7,
+  "since": "2026-11-02",
+  "repos": [
+    {
+      "repo": "lstutzman/firstmate",
+      "merged": 126,
+      "fix_forward": 0,
+      "reverts": 0,
+      "truncated": false
+    }
+  ]
+}
+rc=0
+$ bin/fm-fix-forward-count.sh --repo lstutzman/firstmate --repo lstutzman/no-such-repo-zz9
+lstutzman/firstmate merged=126 fix_forward=0 reverts=0
+lstutzman/no-such-repo-zz9 unreadable: GraphQL: Could not resolve to a Repository with the name 'lstutzman/no-such-repo-zz9'. (repository)
+rc=1
+$ bin/fm-fix-forward-count.sh --days 0
+error: --days needs a positive integer
+rc=2
+$ bin/fm-fix-forward-count.sh --bogus
+error: unknown argument: --bogus
+Usage: fm-fix-forward-count.sh [--days N] [--json] [--limit N] [--repo owner/name]...
+  --days N    window length in days, default 7
+rc=2

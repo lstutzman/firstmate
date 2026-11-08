@@ -1,0 +1,34 @@
+=== ff-no-mistakes: rules 6-9 region
+96:8. Never start a shell command with `cd`, and never run a search whose path depends on the current director
+99:9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, `Fixes-
+150:1. Run `no-mistakes axi sync --check`.
+151:2. If this copy is already on the pushed head, go to step 3. Otherwise, if the check offers a strict fast-
+154:3. Run `no-mistakes axi handoff`, and never `no-mistakes axi abort`.
+155:4. Confirm `no-mistakes axi status` reads handed_off for this branch.
+Fixes-regression-from lines: 1
+=== ff-direct-PR: rules 6-9 region
+31:4. Report status by appending one line:
+54:5. If you hit the same obstacle twice, append `blocked [at=<epoch>] [cause=<cause>]: {why}` and stop; first
+55:6. If a decision belongs above the implementation worker (product choices, destructive actions),
+67:7. Never administer infrastructure that every lane shares. Two things are shared:
+89:8. Never start a shell command with `cd`, and never run a search whose path depends on the current director
+92:9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, `Fixes-
+Fixes-regression-from lines: 1
+=== ff-local-only: rules 6-9 region
+31:4. Report status by appending one line:
+54:5. If you hit the same obstacle twice, append `blocked [at=<epoch>] [cause=<cause>]: {why}` and stop; first
+55:6. If a decision belongs above the implementation worker (product choices, destructive actions),
+67:7. Never administer infrastructure that every lane shares. Two things are shared:
+89:8. Never start a shell command with `cd`, and never run a search whose path depends on the current director
+92:9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, `Fixes-
+Fixes-regression-from lines: 1
+=== ff-scout: rules 6-9 region
+25:3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+26:4. Report status by appending one line:
+46:5. If you hit the same obstacle twice, append `blocked [at=<epoch>] [cause=<cause>]: {why}` and stop; first
+47:6. If a decision belongs to a human (product choices, destructive actions),
+58:7. Never administer infrastructure that every lane shares. Two things are shared:
+80:8. Never start a shell command with `cd`, and never run a search whose path depends on the current director
+Fixes-regression-from lines: 0
+9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, `Fixes-regression-from: <full PR URL>`, naming that earlier PR.
+

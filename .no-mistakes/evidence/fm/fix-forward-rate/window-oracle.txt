@@ -1,0 +1,8 @@
+lstutzman/firstmate search-API merged 2026-11-02..11-08=126 ; merged on boundary day 2026-11-01 (must be excluded)=0
+lstutzman/skills search-API merged 2026-11-02..11-08=103 ; merged on boundary day 2026-11-01 (must be excluded)=1
+lstutzman/fleet-app search-API merged 2026-11-02..11-08=60 ; merged on boundary day 2026-11-01 (must be excluded)=1
+--- counter --days 1 (today only) for firstmate:
+lstutzman/firstmate merged=17 fix_forward=0 reverts=0
+search-API merged 2026-11-08 only: 17
+--- search-API PRs anywhere in lstutzman with body line 'Fixes-regression-from': 4
+--- search-API PRs titled Revert merged 2026-11-02..: 0

@@ -1,0 +1,8 @@
+### target d4784fee ship scaffold
+scaffolded: /tmp/fm-lab.otfere/data/ff-ship/brief.md (ship, mode=no-mistakes; replace {TASK} and {FIRSTMATE_SPEC})
+rc=0
+99:9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, `Fixes-regression-from: <full PR URL>`, naming that earlier PR.
+### scout scaffold
+scaffolded: /tmp/fm-lab.otfere/data/ff-scout/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+rc=0
+scout matches: 0

@@ -1,0 +1,43 @@
+$ bin/fm-fix-forward-count.sh
+lstutzman/firstmate merged=126 fix_forward=0 reverts=0
+lstutzman/skills merged=103 fix_forward=0 reverts=0
+lstutzman/fleet-app merged=60 fix_forward=0 reverts=0
+lstutzman/PropertyCompass2 merged=355 fix_forward=0 reverts=0
+exit=0
+
+$ bin/fm-fix-forward-count.sh --json
+{
+  "days": 7,
+  "since": "2026-11-02",
+  "repos": [
+    {
+      "repo": "lstutzman/firstmate",
+      "merged": 126,
+      "fix_forward": 0,
+      "reverts": 0,
+      "truncated": false
+    },
+    {
+      "repo": "lstutzman/skills",
+      "merged": 103,
+      "fix_forward": 0,
+      "reverts": 0,
+      "truncated": false
+    },
+    {
+      "repo": "lstutzman/fleet-app",
+      "merged": 60,
+      "fix_forward": 0,
+      "reverts": 0,
+      "truncated": false
+    },
+    {
+      "repo": "lstutzman/PropertyCompass2",
+      "merged": 355,
+      "fix_forward": 0,
+      "reverts": 0,
+      "truncated": false
+    }
+  ]
+}
+exit=0
