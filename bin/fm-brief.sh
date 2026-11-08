@@ -165,7 +165,8 @@
 # second owner of a contract that must stay current across relaunches.
 # A home may carry standing worker instructions without editing this tracked
 # script: when config/brief-include.md exists under the active home, ship and
-# scout scaffolds append its text verbatim as their last section, "# Home brief
+# scout scaffolds append its text (less project blocks for other repos, below)
+# as their last section, "# Home brief
 # additions", which defers to every other section of the brief. It goes last
 # because the machine-read `# Task` heading resolves to its first match, so
 # appended text can never shadow it; a later scout promotion appends its ship
