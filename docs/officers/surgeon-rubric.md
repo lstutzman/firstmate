@@ -59,7 +59,9 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   The Surgeon never creates a label.
 - A visual-review defect is one item, with the Source `scheduled-review`, the type Bug and an area label taken from its route (the same path rules), falling back to `ui-ux` and then to the triage label.
   Its description lists every screenshot and carries `visual-review-fp:<hex>`, the findings file's own fingerprint, beside the Surgeon's.
-  The Surgeon cannot attach a screenshot because `linear-axi` has no attachment command, so the item names each screenshot's path: the real path when the registry line names the capture directory and the file is there, else the relative path.
+  The item also names each screenshot's path: the real path when the registry line names the capture directory and the file is there, else the relative path.
+  When the registry line names the capture directory, the Surgeon attaches each screenshot to a newly filed item with `linear-attach <issue> <file> --verify`, never on a duplicate bump, and counts each call against the Linear call budget.
+  A missing `linear-attach`, a missing or refused screenshot file, exit 3 (the app token lacks upload rights, Lee's call) and exit 75 (rate limited, which stops attaching for the run) are each a named coverage gap; a run that attaches everything reports none.
   Every run that files one says so in a `Coverage gap:` line.
 - A finding with no source key is fingerprinted from its normalised title and location (digits dropped), so it is filed like any other.
 - Linear calls are counted.

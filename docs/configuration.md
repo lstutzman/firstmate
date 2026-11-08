@@ -1514,7 +1514,7 @@ An invalid nightly E2E run (the run itself broke) is one critical, promotion-blo
 A sweeper bug whose `environment` is production moves up one severity step; the payload is never read for the word, so a bug with no `environment` field gets no bump.
 A finding the source already put in Linear is `tracked` and never filed again.
 With `visual-findings`, intake also reads the nightly visual review's findings file: a `defect` is a real finding at the file's severity, one per fingerprint with every screenshot listed, filed like the others but never started; anything else (the wording and product rubric items) is held for Lee as one keyed needs-decision `surgeon-visual-held-<date>` and is neither filed nor started.
-`linear-axi` has no attachment command, so an item names its screenshots' paths instead and the run reports a coverage gap saying so ([surgeon-rubric.md](officers/surgeon-rubric.md) owns the rules).
+With `visual-captures`, a newly filed item also gets each screenshot attached through `linear-attach`, and a failed attach is a coverage gap ([surgeon-rubric.md](officers/surgeon-rubric.md) owns the rules).
 A real finding whose source gave no key is fingerprinted from its normalised title plus location.
 With `writes: linear`, the Surgeon files each real, untracked finding in team PC: medium or higher findings one item each, low review findings one item per component cluster.
 Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`; a visual-review defect is `scheduled-review`) and one area label derived from the finding (the `triage-label` when none fits).
