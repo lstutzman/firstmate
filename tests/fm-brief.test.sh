@@ -1663,14 +1663,14 @@ test_crewmate_scaffolds_forbid_pool_administration() {
   # One shared string, not two copies: the emitted rule must be byte-identical
   # across the ship and scout scaffolds so a later edit cannot fix one and miss
   # the other.
-  ship_rule=$(awk '/^7\. Never administer/,/^$/' "$home/data/brief-pool-no-mistakes/brief.md")
-  scout_rule=$(awk '/^7\. Never administer/,/^$/' "$brief")
+  ship_rule=$(awk '/^7\. Never administer/{p=1} p&&(/^8\./||/^$/){exit} p' "$home/data/brief-pool-no-mistakes/brief.md")
+  scout_rule=$(awk '/^7\. Never administer/{p=1} p&&(/^8\./||/^$/){exit} p' "$brief")
   [ -n "$ship_rule" ] || fail "ship brief emitted no shared-infrastructure rule to compare"
   [ "$ship_rule" = "$scout_rule" ] \
     || fail "ship and scout shared-infrastructure rules have drifted apart"
 
-  ship_cd_rule=$(awk '/^8\. Never start a shell command with/,/^$/' "$home/data/brief-pool-no-mistakes/brief.md")
-  scout_cd_rule=$(awk '/^8\. Never start a shell command with/,/^$/' "$brief")
+  ship_cd_rule=$(awk '/^8\. Never start a shell command with/{p=1} p&&(/^9\./||/^$/){exit} p' "$home/data/brief-pool-no-mistakes/brief.md")
+  scout_cd_rule=$(awk '/^8\. Never start a shell command with/{p=1} p&&(/^9\./||/^$/){exit} p' "$brief")
   [ -n "$ship_cd_rule" ] || fail "ship brief emitted no leading-cd rule"
   [ "$ship_cd_rule" = "$scout_cd_rule" ] \
     || fail "scout brief leading-cd rule is missing or differs from the ship brief"
@@ -1692,6 +1692,22 @@ test_crewmate_scaffolds_forbid_pool_administration() {
     "secondmate charter must not inherit the crewmate pool-administration prohibition"
 
   pass "fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool"
+}
+
+test_ship_brief_carries_the_fix_forward_rule() {
+  local home
+  home="$TMP_ROOT/fix-forward-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ff-ship some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship scaffold exited non-zero"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep '`Fixes-regression-from: <full PR URL>`' "$home/data/brief-ff-ship/brief.md" \
+    "ship brief lost the fix-forward PR-body line"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ff-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh scout scaffold exited non-zero"
+  assert_no_grep "Fixes-regression-from" "$home/data/brief-ff-scout/brief.md" \
+    "a scout opens no PR and must not carry the line"
+  pass "fm-brief.sh: ship brief carries the fix-forward line rule"
 }
 
 test_script_parses
@@ -1939,3 +1955,4 @@ test_linear_required_projects_gate_briefs() {
 }
 
 test_linear_required_projects_gate_briefs
+test_ship_brief_carries_the_fix_forward_rule
