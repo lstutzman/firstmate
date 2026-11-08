@@ -1467,6 +1467,8 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `triage-label` | Surgeon, optional: the team PC label an item gets when no area label fits its file path or component; default `triage`. A label missing from team PC means the finding is reported and not filed |
 | `jev` | Surgeon, friction, corpus, library and pagecheck, optional: the local-jev helper used for duplicate checks; default `~/.claude/skills/local-jev/jev.py`. Without it only the fingerprint decides |
 | `rubric` | Surgeon, friction, corpus, library, pagecheck and progress, optional: the rubric file; default `docs/officers/surgeon-rubric.md`, `docs/officers/friction-rubric.md`, `docs/officers/corpus-rubric.md`, `docs/officers/library-rubric.md`, `docs/officers/page-check-rubric.md` or `docs/officers/progress-rubric.md` |
+| `visual-findings` | Surgeon, optional: the absolute path of the nightly visual review's findings file on this machine (PropertyCompass2 `scripts/visual-review/README.md` owns the format; only version 2 is read). Without it the visual source is off. A configured file that is missing, unreadable, of another version, unchanged since the last run, or reporting review errors or failed, deferred or dropped images is a `Coverage gap:` line |
+| `visual-captures` | Surgeon, optional, needs `visual-findings`: the absolute path of the capture directory the findings file's `screenshot` paths are relative to, so an item can name a screenshot's real path |
 | `area` | Surgeon, no longer used: accepted and ignored, because each item's area label now comes from its finding |
 | `staging-repo` | Surgeon, optional: the git remote whose `refs/heads/staging` is the staging tip, read with `git ls-remote`; default `git@github.com:lstutzman/PropertyCompass2.git`, and an empty value is refused |
 
@@ -1511,9 +1513,11 @@ A red nightly E2E finding is high only when its run's `sha` is the current stagi
 An invalid nightly E2E run (the run itself broke) is one critical, promotion-blocking item per job while it stays invalid; each day bumps its Found line.
 A sweeper bug whose `environment` is production moves up one severity step; the payload is never read for the word, so a bug with no `environment` field gets no bump.
 A finding the source already put in Linear is `tracked` and never filed again.
+With `visual-findings`, intake also reads the nightly visual review's findings file: a `defect` is a real finding at the file's severity, one per fingerprint with every screenshot listed, filed like the others but never started; anything else (the wording and product rubric items) is held for Lee as one keyed needs-decision `surgeon-visual-held-<date>` and is neither filed nor started.
+`linear-axi` has no attachment command, so an item names its screenshots' paths instead and the run reports a coverage gap saying so ([surgeon-rubric.md](officers/surgeon-rubric.md) owns the rules).
 A real finding whose source gave no key is fingerprinted from its normalised title plus location.
 With `writes: linear`, the Surgeon files each real, untracked finding in team PC: medium or higher findings one item each, low review findings one item per component cluster.
-Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`) and one area label derived from the finding (the `triage-label` when none fits).
+Each item has the type Bug, one Source (`scheduled-review` or `bug-sweep`; a visual-review defect is `scheduled-review`) and one area label derived from the finding (the `triage-label` when none fits).
 Fingerprinting, duplicate detection, the `Found:` line, recurrences of closed items and what the Surgeon never touches are the shared [filing rules](officers/contract.md#file); its own cluster items are the only text it edits besides the Found line.
 Every Linear call is counted against `max-linear-calls`.
 One rate-limit answer from Linear stops the run's Linear calls and writes `linear-resume-after.json` in the lane; runs before that time make no Linear call.
