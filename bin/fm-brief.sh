@@ -973,7 +973,7 @@ IFS= read -r -d '' SHARED_NO_CD_RULE <<'EOF' || true
 8. Never start a shell command with `cd`, and never run a search whose path depends on the current directory.
    Use absolute paths, `git -C <abs>`, or a `( cd <abs> && ... )` subshell.
    Pass this rule to every sub-agent you launch.
-   To wait for a condition (CI, a run, a file), use one until-loop with a timeout, or the harness's monitor; do not re-run the same check command turn after turn.
+   To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
    Read a diff as `git diff --stat` first, then only the paths you need.
 EOF
 SHARED_NO_CD_RULE=${SHARED_NO_CD_RULE%$'\n'}
