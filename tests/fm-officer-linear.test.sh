@@ -225,7 +225,7 @@ elif scenario == "surgeon-clusters":
     fs += [low("f%d" % i, "infra/bicep/main%d.bicep" % i, "lstutzman/firstmate") for i in range(3)]
     state = {}
     args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100)
-    surgeon.file_findings(fs, args, date, W, state, {}, surgeon.lib.Jev(os.path.join(W, "jev.py")))
+    surgeon.file_findings(fs, args, date, W, state, {}, surgeon.lib.Jev(os.path.join(W, "jev.py")), [])
     issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
     def marker(job, key):
         return hashlib.sha256(("review\0%s\0%s" % (job, key)).encode("utf-8")).hexdigest()

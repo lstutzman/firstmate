@@ -16,7 +16,8 @@
 # create ever being called, an unreachable app as a coverage gap, and register
 # surgeon / retire triage keeping triage's findings, and the visual review source: its findings file (version 2 only)
 # filed once per fingerprint and bumped on a repeat, wording or product findings held for Lee as one keyed decision with no
-# item, a missing, unreadable, version 1, unchanged or incomplete file as a named gap, and a run without writes: linear touching nothing in Linear.
+# item, a missing, unreadable, version 1, unchanged or incomplete file as a named gap, a run without writes: linear touching nothing in Linear,
+# and screenshot attaches: counted against the call budget, a failed one retried on later runs and abandoned after 7 days.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -991,6 +992,14 @@ make_visual_world() {
   printf 'Bug\nscheduled-review\ndeal-finder\nui-ux\ntriage\n' > "$LDIR/labels.txt"
   set_pages "$name" '[]' '[]'
   VISUAL_DIR=$dir
+  # A fake linear-attach: logs its arguments to $LDIR/attach.log and exits with the code in $LDIR/attach.exit (default 0).
+  cat > "$FAKEBIN/linear-attach" <<SH
+#!/bin/sh
+echo "\$*" >> "$LDIR/attach.log"
+exit \$(cat "$LDIR/attach.exit" 2>/dev/null || echo 0)
+SH
+  chmod +x "$FAKEBIN/linear-attach"
+  : > "$LDIR/attach.log"
 }
 
 test_visual_defects_are_filed_once_and_wording_is_held() {
@@ -1008,7 +1017,9 @@ test_visual_defects_are_filed_once_and_wording_is_held() {
   assert_contains "$bodies" "Screenshot: $VISUAL_DIR/captures/shots/a-desktop.png" "a screenshot that is on disk is named by its real path"
   assert_contains "$bodies" "Screenshot: shots/a-mobile.png (not found under $VISUAL_DIR/captures)" "one that is not is named with what was looked for"
   assert_not_contains "$bodies" "/portfolio" "the held finding is in no item"
-  assert_contains "$out" "Coverage gap: visual review screenshots are named in the Linear items, not attached" "an attachment that cannot happen is a named gap"
+  assert_equals "PC-101 $VISUAL_DIR/captures/shots/a-desktop.png --verify" "$(cat "$LDIR/attach.log")" "the screenshot on disk is attached to the new item, once"
+  assert_contains "$out" "Coverage gap: screenshot not attached to PC-101: shots/a-mobile.png (not found under $VISUAL_DIR/captures)" "a screenshot file that is missing is a named gap"
+  assert_not_contains "$out" "linear-attach" "a clean attach names no linear-attach gap"
   assert_equals "surgeon-visual-held-$DATE" "$(jq -r '.asks_for_lee[0].key' "$json")" "the held finding is one keyed needs-decision"
   assert_equals 1 "$(jq '.asks_for_lee | length' "$json")" "and only one"
   assert_contains "$(jq -r '.asks_for_lee[0].line' "$json")" "/portfolio (jargon)" "the line names the route and the rubric item"
@@ -1019,6 +1030,7 @@ test_visual_defects_are_filed_once_and_wording_is_held() {
   : > "$LINEAR_LOG"
   run_surgeon "$home" >/dev/null || fail "same-day rerun"
   assert_equals 0 "$(grep -c '^issue create\|^issue update\|^issue comment' "$LINEAR_LOG")" "a same-day rerun writes nothing"
+  assert_equals 1 "$(wc -l < "$LDIR/attach.log")" "and attaches nothing again"
   assert_equals "surgeon-visual-held-$DATE" "$(jq -r '.asks_for_lee[0].key' "$json")" "and asks the same thing"
   pass "fm-officer surgeon: a visual defect is one item, wording is held for Lee and nothing starts"
 }
@@ -1033,6 +1045,7 @@ test_visual_repeat_bumps_the_found_line_and_an_unchanged_file_adds_nothing() {
   json="$home/data/officers/surgeon/$DATE2.json"
   assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "the same fingerprint is not created twice"
   assert_equals 1 "$(grep -c '^issue update PC-101 .*--verify' "$LINEAR_LOG")" "it bumps the existing item once"
+  assert_equals 1 "$(wc -l < "$LDIR/attach.log")" "a nightly re-find attaches no new screenshot"
   assert_contains "$(cat "$LDIR/updates")" "Found: 2 times (first $DATE2, last $DATE2, by surgeon)" "the one Found line says it was seen again"
   assert_equals 0 "$(jq '.asks_for_lee | length' "$json")" "a held finding already put to Lee is not asked again"
   : > "$LINEAR_LOG"
@@ -1101,9 +1114,105 @@ test_visual_dry_run_writes_nothing_to_linear() {
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
   [ ! -s "$LINEAR_LOG" ] || fail "writes: none makes no Linear call: $(cat "$LINEAR_LOG")"
+  [ ! -s "$LDIR/attach.log" ] || fail "writes: none uploads nothing: $(cat "$LDIR/attach.log")"
   assert_equals "real" "$(row "$json" visual "$(vfp /deal-finder contradictory-numbers)" .class)" "the defect is still read and shown in the digest"
   assert_equals "surgeon-visual-held-$DATE" "$(jq -r '.asks_for_lee[0].key' "$json")" "and the held finding still goes up"
   pass "fm-officer surgeon: without writes: linear the visual review reaches the digest and nothing reaches Linear"
+}
+
+test_visual_attach_failures_are_named_gaps() {
+  local home out
+  make_visual_world visatt; home=$WORLD_HOME
+  echo 75 > "$LDIR/attach.exit"
+  out=$(run_surgeon "$home") || fail "a rate limited attach must not fail the run"
+  assert_contains "$out" "Coverage gap: screenshots not attached: linear-attach was rate limited at PC-101" "exit 75 is a named gap"
+  assert_equals 1 "$(wc -l < "$LDIR/attach.log")" "and stops attaching for the run"
+  make_visual_world visatt3; home=$WORLD_HOME
+  echo 3 > "$LDIR/attach.exit"
+  out=$(run_surgeon "$home") || fail "an attach refused for upload rights must not fail the run"
+  assert_contains "$out" "Coverage gap: screenshots not attached: the Linear app token lacks upload rights (linear-attach exit 3); Lee's call" "exit 3 is named and left to Lee"
+  make_visual_world visatt1; home=$WORLD_HOME
+  echo 1 > "$LDIR/attach.exit"
+  out=$(run_surgeon "$home") || fail "a refused attach must not fail the run"
+  assert_contains "$out" "Coverage gap: screenshot not attached to PC-101: linear-attach exit 1 for $VISUAL_DIR/captures/shots/a-desktop.png" "any other failure names the item and file"
+  make_visual_world vismiss; home=$WORLD_HOME
+  rm "$FAKEBIN/linear-attach"
+  out=$(PATH="$FAKEBIN:/usr/bin:/bin" FM_OFFICER_NOW="$NOW" FM_HOME="$home" "$OFFICER" run surgeon --date "$DATE") || fail "a missing linear-attach must not fail the run"
+  assert_contains "$out" "Coverage gap: screenshots not attached: linear-attach is not available" "a missing linear-attach is a named gap"
+  assert_contains "$(cat "$LDIR/bodies")" "Screenshot: $VISUAL_DIR/captures/shots/a-desktop.png" "and the item still names the screenshot"
+  pass "fm-officer surgeon: each screenshot attach failure is its own named coverage gap"
+}
+
+test_visual_attach_left_pending_is_retried_next_run_and_cleared() {
+  local home out state
+  make_visual_world visretry; home=$WORLD_HOME
+  state="$home/data/officers/surgeon/review-state.json"
+  echo 75 > "$LDIR/attach.exit"
+  out=$(run_surgeon "$home") || fail "a rate limited attach must not fail the run"
+  assert_contains "$out" "Coverage gap: 1 screenshot(s) not attached yet; the next run retries them" "the unattached screenshot is counted and said to be retried"
+  assert_equals "PC-101 $VISUAL_DIR/captures/shots/a-desktop.png $DATE" "$(jq -r '.pending_attach[] | [.issue, .file, .first] | join(" ")' "$state")" "and kept pending in the lane's state"
+  echo 0 > "$LDIR/attach.exit"
+  write_visual "$VISUAL_DIR/findings.json" "$VSTAMP2"
+  out=$(run_surgeon_next_day "$home" visretry) || fail "next night's run"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "the next run retries the pending screenshot"
+  assert_equals "PC-101 $VISUAL_DIR/captures/shots/a-desktop.png --verify" "$(tail -n 1 "$LDIR/attach.log")" "on the item it was filed as"
+  assert_not_contains "$out" "not attached yet" "a successful retry leaves nothing pending"
+  assert_equals null "$(jq .pending_attach "$state")" "and clears the state"
+  run_surgeon_next_day "$home" visretry "$DATE3" 2 >/dev/null || fail "a third night"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "an attached screenshot is never attached again"
+  pass "fm-officer surgeon: a screenshot left unattached is retried next run and cleared once attached"
+}
+
+test_visual_upload_rights_refusal_is_reported_every_run() {
+  local home out
+  make_visual_world visrights; home=$WORLD_HOME
+  echo 3 > "$LDIR/attach.exit"
+  run_surgeon "$home" >/dev/null || fail "first run"
+  out=$(run_surgeon_next_day "$home" visrights) || fail "next night's run"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "exit 3 stays pending and is tried again"
+  assert_contains "$out" "Coverage gap: screenshots not attached: the Linear app token lacks upload rights (linear-attach exit 3); Lee's call" "and is reported again until Lee changes the token"
+  pass "fm-officer surgeon: an upload-rights refusal stays pending and is reported every run"
+}
+
+test_visual_pending_attach_is_abandoned_after_seven_days() {
+  local home out state
+  make_visual_world visold; home=$WORLD_HOME
+  state="$home/data/officers/surgeon/review-state.json"
+  echo 75 > "$LDIR/attach.exit"
+  run_surgeon "$home" >/dev/null || fail "first run"
+  out=$(run_surgeon_next_day "$home" visold 2026-10-29 6) || fail "six days on"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "six days on it is still retried"
+  assert_not_contains "$out" "abandoned" "and not yet abandoned"
+  out=$(run_surgeon_next_day "$home" visold 2026-10-30 7) || fail "seven days on"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "seven days on it is not tried again"
+  assert_contains "$out" "Coverage gap: screenshot abandoned for PC-101 after 7 days unattached: $VISUAL_DIR/captures/shots/a-desktop.png" "it is dropped with a named gap"
+  assert_equals null "$(jq .pending_attach "$state")" "and leaves the state"
+  pass "fm-officer surgeon: a screenshot still unattached after 7 days is abandoned with a named gap"
+}
+
+test_visual_attach_stops_at_the_call_budget() {
+  local home out
+  make_visual_world visbudget "max-linear-calls: 5; "; home=$WORLD_HOME
+  out=$(run_surgeon "$home") || fail "a spent budget must not fail the run"
+  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "the item is still filed within the budget"
+  [ ! -s "$LDIR/attach.log" ] || fail "an attach past the budget is not made: $(cat "$LDIR/attach.log")"
+  assert_contains "$out" "Coverage gap: screenshots not attached: Linear call budget of 5 reached" "the budget stop is named"
+  assert_contains "$out" "Coverage gap: 1 screenshot(s) not attached yet; the next run retries them" "and the screenshot is left for the next run"
+  pass "fm-officer surgeon: each attach counts against the Linear call budget"
+}
+
+test_visual_recurrence_of_a_closed_item_gets_its_screenshot() {
+  local home json
+  make_visual_world visrecur; home=$WORLD_HOME
+  run_surgeon "$home" >/dev/null || fail "first run"
+  echo Done > "$LDIR/state.PC-101"
+  write_visual "$VISUAL_DIR/findings.json" "$VSTAMP2"
+  run_surgeon_next_day "$home" visrecur >/dev/null || fail "next night's run after the item was closed"
+  json="$home/data/officers/surgeon/$DATE2.json"
+  assert_equals "created PC-102 PC-101" "$(row "$json" visual "$(vfp /deal-finder contradictory-numbers)" '[.filing.action,.filing.issue,.filing.recurrence_of]|join(" ")')" "a closed item's defect files a recurrence"
+  assert_equals "PC-102 $VISUAL_DIR/captures/shots/a-desktop.png --verify" "$(tail -n 1 "$LDIR/attach.log")" "and the recurrence gets the screenshot attached"
+  assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "once"
+  pass "fm-officer surgeon: a recurrence of a closed visual item gets its screenshot attached"
 }
 
 test_visual_registry_fields_are_validated() {
@@ -1159,4 +1268,10 @@ test_visual_held_only_run_makes_no_linear_call
 test_visual_file_problems_are_named_gaps
 test_visual_incomplete_review_is_a_named_gap
 test_visual_dry_run_writes_nothing_to_linear
+test_visual_attach_failures_are_named_gaps
+test_visual_attach_left_pending_is_retried_next_run_and_cleared
+test_visual_upload_rights_refusal_is_reported_every_run
+test_visual_pending_attach_is_abandoned_after_seven_days
+test_visual_attach_stops_at_the_call_budget
+test_visual_recurrence_of_a_closed_item_gets_its_screenshot
 test_visual_registry_fields_are_validated
