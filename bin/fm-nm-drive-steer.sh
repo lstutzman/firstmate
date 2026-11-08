@@ -151,8 +151,8 @@ if [ "$slip" = reattach ]; then
       overview=$(fm_nm_run "$wt" 10 axi)
       ids=$(fm_nm_table_column "$overview" runs id)
       branches=$(fm_nm_table_column "$overview" runs branch)
-      statuses=$(fm_nm_table_column "$overview" runs status)
-      holders=$(paste -d '\t' <(printf '%s\n' "$ids") <(printf '%s\n' "$branches") <(printf '%s\n' "$statuses") \
+      run_statuses=$(fm_nm_table_column "$overview" runs status)
+      holders=$(paste -d '\t' <(printf '%s\n' "$ids") <(printf '%s\n' "$branches") <(printf '%s\n' "$run_statuses") \
         | awk -F '\t' -v own="$branch" '$3 == "running" && $2 != own { printf "%s%s (run %s)", sep, $2, $1; sep = ", " }')
       text="$text Your run is pending because the machine's run slots are full, which is \`paused [cause=external]\`, not \`blocked\`; keep reattaching."
       [ -z "$holders" ] || text="$text Runs in this repo holding the slots (runs in other repos may hold more): $holders."
