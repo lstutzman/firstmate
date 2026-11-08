@@ -1675,6 +1675,13 @@ test_crewmate_scaffolds_forbid_pool_administration() {
   [ "$ship_cd_rule" = "$scout_cd_rule" ] \
     || fail "scout brief leading-cd rule is missing or differs from the ship brief"
   assert_grep "every sub-agent you launch" "$brief" "scout brief did not pass the leading-cd rule to sub-agents"
+  # The two token-burn habits ride in the same shared string, so ship and scout both carry them.
+  assert_grep "use one until-loop with a timeout" "$brief" "scout brief lost the single-wait rule"
+  assert_grep "do not re-run the same check command turn after turn" "$home/data/brief-pool-no-mistakes/brief.md" "ship brief lost the no-re-run rule"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'Read a diff as `git diff --stat` first' "$brief" "scout brief lost the diff-stat-first rule"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'Read a diff as `git diff --stat` first' "$home/data/brief-pool-no-mistakes/brief.md" "ship brief lost the diff-stat-first rule"
 
   # The daemon half of the rule survived the fold.
   assert_grep "no-mistakes" "$brief" "scout brief lost the shared no-mistakes daemon rule"
