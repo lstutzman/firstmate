@@ -58,9 +58,10 @@ card, a page owner fixes a page). It acts on nothing itself.
                  /api/captains-log/facts?source=bosun) is closed while the
                  page still shows it asked.
   page-old       a page whose newest publish is older than its normal cadence
-                 allows (PAGES), a job on the Runs page that is failing, or a
-                 page that is unreachable, unreadable or never published. A
-                 page whose JSON is not the expected shape is unreadable.
+                 allows (PAGES), a job on the Runs page that is failing or whose
+                 latest finished run has no summary, or a page that is
+                 unreachable, unreadable or never published. A page whose
+                 JSON is not the expected shape is unreadable.
 
 The pass reads current records, so --key (the scheduler's slot) only names the
 run. It writes into --out: <key>.json (every open finding), <key>.md (the
@@ -359,10 +360,23 @@ def page_findings(app, now):
                            "page owner: restore the page's feed", "high"))
     else:
         for job in items(runs, "jobs"):
-            if job.get("state") == "live" and job.get("health") == "failing":
-                out.append(finding("page-old", "Runs", str(job.get("id")), "%s is failing" % (job.get("label") or job.get("id")),
-                                   "officer %s: health failing, next due %s" % (job.get("officer"), job.get("nextDueAt")),
+            if job.get("state") != "live":
+                continue
+            last = job.get("latest") if isinstance(job.get("latest"), dict) else {}
+            if last.get("status") == "running":
+                last = job.get("lastDone") if isinstance(job.get("lastDone"), dict) else {}
+            blank = last.get("status") == "finished" and not str(last.get("summary") or "").strip()
+            name = job.get("label") or job.get("id")
+            if job.get("health") == "failing":
+                note = "; its latest finished run (%s) also has no summary" % last.get("finishedAt") if blank else ""
+                out.append(finding("page-old", "Runs", str(job.get("id")), "%s is failing" % name,
+                                   "officer %s: health failing, next due %s%s" % (job.get("officer"), job.get("nextDueAt"), note),
                                    "page owner: fix the job"))
+            elif blank:
+                out.append(finding("page-old", "Runs", str(job.get("id")), "%s finished without a summary" % name,
+                                   "officer %s: latest finished run at %s has no summary" % (
+                                       job.get("officer"), last.get("finishedAt") or last.get("startedAt")),
+                                   "page owner: fix the job's result"))
     state, _ = fetch(app, "/api/health")
     if state != "read":
         out.append(finding("page-old", "Home", "health", "Home: app %s" % WHY[state], "GET /api/health was %s" % state,
