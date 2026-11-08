@@ -19,13 +19,14 @@
 #
 # Covers, at minimum (per the task brief):
 #   - a primary-shaped home (no .fm-secondmate-home marker) spawning a
-#     crewmate into its own fresh "firstmate workers" workspace
+#     crewmate into its own fresh workspace nested under the home's
+#     "firstmate" workspace (labeled "└ <task> · p:<token>")
 #   - a secondmate-shaped home (with .fm-secondmate-home) getting its own
 #     labeled workspace when the PRIMARY spawns it (fm-spawn.sh's FM_HOME
 #     shadow for --secondmate)
 #   - a crewmate spawned FROM that secondmate-shaped home (the secondmate
-#     running its OWN fm-spawn.sh) landing in its own fresh "2ndmate-<id>
-#     workers" workspace, not the secondmate's own workspace
+#     running its OWN fm-spawn.sh) landing in its own fresh workspace nested
+#     under "2ndmate-<id>", not the secondmate's own workspace
 #   - an office spawned by the primary showing its bare role name on its tab
 #   - steer, interrupt, exit and relaunch each finding the recorded pane, for
 #     both the office and an ordinary crewmate, and a relaunch giving an
@@ -138,7 +139,27 @@ make_scratch_project() {  # <dir>
 PROJ1="$TMP_ROOT/scratch-project-1"; make_scratch_project "$PROJ1"
 PROJ2="$TMP_ROOT/scratch-project-2"; make_scratch_project "$PROJ2"
 
-# --- 1. primary-shaped home: a crewmate spawns into its own workers space ---
+# The primary's own workspace, which a crewmate spawned with no herdr pane nests under.
+fm_backend_herdr_server_ensure "$SESSION" || fail "could not start the isolated Herdr lab session"
+PRIMARY_WS_OUT=$(herdr workspace create --cwd "$TMP_ROOT" --label firstmate --no-focus --session "$SESSION" 2>/dev/null) \
+  || fail "could not create the primary home's 'firstmate' workspace"
+PRIMARY_WSID=$(printf '%s' "$PRIMARY_WS_OUT" | jq -r '.result.workspace.workspace_id // empty')
+[ -n "$PRIMARY_WSID" ] || fail "could not read the primary home's workspace id"
+
+# nested_under <workspace-id> <task-id> <parent-workspace-id>: the label and
+# the contiguous "└ " block right after the parent are how Herdr shows nesting.
+nested_under() {
+  herdr workspace list --session "$SESSION" 2>/dev/null | jq -e --arg ws "$1" --arg task "$2" --arg parent "$3" '
+    .result.workspaces as $w
+    | ([range(0; $w | length) | select($w[.].workspace_id == $ws)][0]) as $i
+    | ([range(0; $w | length) | select($w[.].workspace_id == $parent)][0]) as $p
+    | $i != null and $p != null and $i > $p
+    and ($w[$i].label | startswith("└ " + $task + " · p:"))
+    and ([range($p + 1; $i) | select(($w[.].label | startswith("└ ")) | not)] | length) == 0
+  ' >/dev/null 2>&1
+}
+
+# --- 1. primary-shaped home: a crewmate spawns into its own nested workspace ---
 
 CM1_OUT="$TMP_ROOT/cm1.out"; CM1_ERR="$TMP_ROOT/cm1.err"
 FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \
@@ -162,8 +183,8 @@ assert_contains_local "$CM1_CAPTURE" "primary-crew-ok" "cm1's raw launch command
 CM1_WSID=$(herdr pane get "$CM1_PANE" --session "$SESSION" 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
 [ -n "$CM1_WSID" ] || fail "could not read cm1's pane workspace_id"
 CM1_WS_LABEL=$(herdr workspace list --session "$SESSION" 2>&1 | jq -r --arg id "$CM1_WSID" '.result.workspaces[]? | select(.workspace_id == $id) | .label')
-[ "$CM1_WS_LABEL" = "firstmate workers" ] || fail "a primary-shaped home's crewmate should land in its own 'firstmate workers' workspace, got '$CM1_WS_LABEL'"
-pass "real herdr E2E: the primary-shaped home's crewmate landed in its own 'firstmate workers' workspace"
+nested_under "$CM1_WSID" cm1 "$PRIMARY_WSID" || fail "a primary-shaped home's crewmate should land in its own workspace nested under 'firstmate', got '$CM1_WS_LABEL'"
+pass "real herdr E2E: the primary-shaped home's crewmate landed in its own workspace nested under 'firstmate'"
 
 # --- 2. the PRIMARY spawns a secondmate: its tab lands in the SECONDMATE's own space ---
 # (fm-spawn.sh's herdr case arm shadows FM_HOME to the secondmate's home for
@@ -217,8 +238,8 @@ assert_contains_local "$CM2_CAPTURE" "sm-crew-ok" "cm2's raw launch command did 
 CM2_WSID=$(herdr pane get "$CM2_PANE" --session "$SESSION" 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
 [ -n "$CM2_WSID" ] && [ "$CM2_WSID" != "$SM_WSID" ] && [ "$CM2_WSID" != "$CM1_WSID" ] || fail "a crewmate spawned FROM the secondmate home must get its own workspace, got '$CM2_WSID' (secondmate $SM_WSID, primary crewmate $CM1_WSID)"
 CM2_WS_LABEL=$(herdr workspace list --session "$SESSION" 2>&1 | jq -r --arg id "$CM2_WSID" '.result.workspaces[]? | select(.workspace_id == $id) | .label')
-[ "$CM2_WS_LABEL" = "2ndmate-e2esm1 workers" ] || fail "a secondmate home's crewmate should land in '2ndmate-e2esm1 workers', got '$CM2_WS_LABEL'"
-pass "real herdr E2E: a crewmate spawned FROM the secondmate-shaped home gets its own '2ndmate-<id> workers' workspace, not the secondmate's"
+nested_under "$CM2_WSID" cm2 "$SM_WSID" || fail "a secondmate home's crewmate should land in its own workspace nested under '2ndmate-e2esm1', got '$CM2_WS_LABEL'"
+pass "real herdr E2E: a crewmate spawned FROM the secondmate-shaped home gets its own workspace nested under '2ndmate-<id>', not the secondmate's"
 
 # --- 3b. the PRIMARY spawns an OFFICE: its tab shows the bare role name -----
 

@@ -170,10 +170,13 @@
 #   workspace). A claimed parent identity that is unreadable, contradictory,
 #   stale, or from another herdr session still stops the spawn before any worker
 #   endpoint exists. --secondmate is the deliberate exception: it stands up that
-#   secondmate home's own workspace. A home whose presentation layout (below) is
-#   on projects a clean fresh task into its own disposable workspace; every
-#   other herdr spawn creates a fresh "<home label> workers" workspace for that
-#   one worker.
+#   secondmate home's own workspace. Every other herdr spawn, relaunch and
+#   fallback gives the worker a fresh workspace of its own labeled
+#   "└ <task> · p:<token>" and ordered right after its dispatching home's
+#   workspace, so workers always show nested under their home and never in a
+#   flat "<home label> workers" workspace. A home whose presentation layout
+#   (below) is on additionally journals a clean fresh task. A home with no
+#   workspace to nest under stops the spawn with a named error.
 #   Herdr additionally uses a presentation-only layout by default when the
 #   selected client and running server meet the Herdr 0.8.0 floor. The local
 #   config/herdr-presentation-spaces file can say off to disable it or on to
@@ -187,14 +190,14 @@
 #   so a same-id retry projects again. On a same-identity restart, that complete binding
 #   plus authoritative metadata may replace one exact agent-free husk in place.
 #   The journal, visible token, and labels alone are never endpoint or ownership
-#   authority, and every ambiguous recovery stays on the flat fallback after
+#   authority, and every ambiguous recovery stays on the journal-free nested fallback after
 #   duplicate-agent risk is independently absent. Treehouse allocation and task
 #   metadata are unchanged.
 #   A clean projected create and an exact resume both hold the one
 #   session-scoped presentation-order lock (keyed by named session plus
 #   canonical socket, outside any home's state/) through launch handoff.
 #   On contention a create makes one bounded attempt and falls back to the
-#   ordinary flat layout before any projection mutation. A resume refuses by
+#   nested layout without a journal before any projection mutation. A resume refuses by
 #   default on the same contention (it does not degrade flat; a concurrent
 #   resume is a hard failure). Pass --herdr-resume-lock-wait to opt that
 #   resume into waiting for the lock instead, so two concurrent recoveries
@@ -2154,17 +2157,18 @@ trap spawn_abort_cleanup EXIT
 # session without writing any other home's state directory.
 #
 # Default mode is one BOUNDED attempt. A clean create uses that default and
-# falls back to the ordinary flat layout on contention. An exact resume also
+# falls back to the nested layout without a journal on contention. An exact resume also
 # defaults to the bounded attempt and hard-refuses on contention (it does not
 # degrade flat). Passing mode `wait` makes this call WAIT for the lock instead
 # (`fm_lock_acquire_wait`, the same unbounded-wait idiom this file already uses
 # for its other fleet-shared locks). Only the recovery path under the explicit
 # --herdr-resume-lock-wait opt-in passes `wait`, so unbounded blocking on a
 # third-party session lock never becomes the default for every caller.
+# Mode `patient` is a bounded wait of about 30 seconds for the nested placement.
 # Dead-owner reclaim inside `fm_lock_try_acquire` still bounds a wait against a
 # holder that crashed mid-hold.
 spawn_herdr_presentation_order_lock_acquire() {
-  local session=${1:-} mode=${2:-} attempt lock_path
+  local session=${1:-} mode=${2:-} attempt limit=50 lock_path
   [ -n "$session" ] || session=$(fm_backend_herdr_session)
   lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session") || return 1
   HERDR_PRESENTATION_ORDER_LOCK="$lock_path"
@@ -2173,8 +2177,12 @@ spawn_herdr_presentation_order_lock_acquire() {
     HERDR_PRESENTATION_ORDER_LOCK_HELD=1
     return 0
   fi
+  # `patient` is the bounded long wait the nested placement uses: a worker can
+  # no longer degrade to a flat workspace, so it waits out a busy lock for up to
+  # about 30 seconds, then goes ahead nested by label without ordering.
+  [ "$mode" != patient ] || limit=300
   attempt=0
-  while [ "$attempt" -lt 50 ]; do
+  while [ "$attempt" -lt "$limit" ]; do
     if fm_lock_try_acquire "$HERDR_PRESENTATION_ORDER_LOCK"; then
       HERDR_PRESENTATION_ORDER_LOCK_HELD=1
       return 0
@@ -2227,6 +2235,49 @@ spawn_herdr_presentation_order_lock_release() {
   [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ] || return 0
   HERDR_PRESENTATION_ORDER_LOCK_HELD=0
   fm_lock_release "$HERDR_PRESENTATION_ORDER_LOCK" || true
+}
+
+# Place a crewmate's or scout's own fresh workspace nested under its dispatching
+# home's workspace, for the rebind path and every fallback from the clean
+# projection (docs/herdr-backend.md "Presentation spaces"). Sets
+# HERDR_CONTAINER_RAW to fm_backend_herdr_container_ensure's
+# "<session>:<workspace>\t<seeded-tab>" output. A workspace holds one session
+# only, so the workspace is always fresh. The parent is proved first, so a home
+# with no workspace stops here with a named error before anything is created.
+# The presentation lock, taken patiently (about 30 seconds) because nesting no
+# longer degrades to a flat workspace on contention, spans the create and the
+# ordering so a concurrent spawn cannot slip another workspace in behind the
+# new one. If the lock never frees, the worker is still created nested by label
+# and ordering is skipped with a warning. Ordering stays best-effort and never
+# fails the spawn.
+# Args: <session> <label-home> <launcher-pane-id> <cwd-for-the-workspace>
+spawn_herdr_nested_container() {
+  local ses=$1 label_home=$2 launcher_pane=$3 cwd=$4 parent_ws parent_label created lock_here=0
+  HERDR_CONTAINER_RAW=
+  fm_backend_herdr_version_check || return 1
+  fm_backend_herdr_server_ensure "$ses" || return 1
+  HERDR_PANE_ID=$launcher_pane FM_HOME=$label_home fm_backend_herdr_nested_parent_resolve "$ses" || return 1
+  parent_ws=$FM_BACKEND_HERDR_NEST_PARENT_WS_ID
+  parent_label=$FM_BACKEND_HERDR_NEST_PARENT_LABEL
+  if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
+    if spawn_herdr_presentation_order_lock_acquire "$ses" patient; then
+      lock_here=1
+    else
+      echo "warning: herdr nested workspace ordering could not take its session lock; the worker is nested by label only" >&2
+    fi
+  fi
+  if ! HERDR_CONTAINER_RAW=$(HERDR_PANE_ID=$launcher_pane FM_HOME=$label_home \
+    fm_backend_herdr_container_ensure "$cwd" nested-workers "$ses" "$ID"); then
+    HERDR_CONTAINER_RAW=
+    [ "$lock_here" -ne 1 ] || spawn_herdr_presentation_order_lock_release
+    return 1
+  fi
+  if [ "$lock_here" -eq 1 ]; then
+    created=${HERDR_CONTAINER_RAW%%$'\t'*}
+    created=${created#*:}
+    fm_backend_herdr_projection_order_best_effort "$ses" "$created" "$parent_label" "$parent_ws"
+    spawn_herdr_presentation_order_lock_release
+  fi
 }
 
 # Batch dispatch (see header): when the first positional is an `id=repo` pair, treat every
@@ -5119,14 +5170,13 @@ EOF
     # that argument). tmux and every secondmate were already refused, and rex
     # took the branch above, so there is no dispatch left to make.
     #
-    # This deliberately uses the FLAT container shape rather than Herdr's
-    # presentation projection: projection is a presentation-only layout that is
-    # never endpoint or ownership authority, and flat is already the documented
-    # fallback for every recovery it cannot bind exactly
-    # (docs/herdr-backend.md "Presentation spaces"). Like every flat fallback
-    # of every home, presentation-enabled or not, the tab goes to a fresh
-    # "<home label> workers" workspace of its own, never the launcher's and
-    # never one that holds another session (fleet rules section 1).
+    # This deliberately skips Herdr's presentation projection: projection is a
+    # presentation-only layout that is never endpoint or ownership authority,
+    # and a recovery cannot always bind it exactly. The tab still goes to a
+    # fresh workspace of its own nested under the dispatching home's workspace
+    # (spawn_herdr_nested_container), never a flat "workers" workspace, never
+    # the launcher's own and never one that holds another session (fleet rules
+    # section 1). A home with no workspace to nest under is a named error.
     #
     # KNOWN LIMITATION (bead fm-herdr-rebind-leak-20260913): the tab minted
     # below is registered with no abort cleanup, so a later refusal leaves that
@@ -5141,10 +5191,19 @@ EOF
     # onto another herdr server - an identity change, published as a
     # self-consistent but wrong record.
     HERDR_REBIND_SES=${RELAUNCH_TARGET%%:*}
-    HERDR_REBIND_RELATIONSHIP=flat-workers
+    HERDR_REBIND_RELATIONSHIP=nested-workers
     [ "$KIND" != secondmate ] || HERDR_REBIND_RELATIONSHIP=launcher-home
-    HERDR_CONTAINER_RAW=$(HERDR_PANE_ID="$RELAUNCH_LAUNCHER_PANE_ID" \
-      fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_REBIND_RELATIONSHIP" "$HERDR_REBIND_SES") || {
+    # An office's own tab shows its role name, read under the home that owns it.
+    HERDR_REBIND_LABEL_HOME=$FM_HOME
+    [ "$KIND" != secondmate ] || HERDR_REBIND_LABEL_HOME=$WT
+    {
+      if [ "$HERDR_REBIND_RELATIONSHIP" = nested-workers ]; then
+        spawn_herdr_nested_container "$HERDR_REBIND_SES" "$HERDR_REBIND_LABEL_HOME" "$RELAUNCH_LAUNCHER_PANE_ID" "$PROJ_ABS"
+      else
+        HERDR_CONTAINER_RAW=$(HERDR_PANE_ID="$RELAUNCH_LAUNCHER_PANE_ID" \
+          fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_REBIND_RELATIONSHIP" "$HERDR_REBIND_SES")
+      fi
+    } || {
       # container_ensure returns 1 for several unrelated reasons - a failed
       # version check, a server that will not start, an ambiguous workspace
       # label, a cross-session launcher identity, a failed workspace create -
@@ -5171,12 +5230,9 @@ EOF
     HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_CONTAINER_RAW#*$'\t'}
     HERDR_SES=${CONTAINER%%:*}
     HERDR_WORKSPACE_ID=${CONTAINER#*:}
-    # An office's own tab shows its role name, read under the home that owns it.
-    HERDR_REBIND_LABEL_HOME=$FM_HOME
-    [ "$KIND" != secondmate ] || HERDR_REBIND_LABEL_HOME=$WT
     HERDR_TAB_LABEL=$(FM_HOME="$HERDR_REBIND_LABEL_HOME" fm_backend_herdr_task_label "$ID")
     HERDR_REBIND_EXCLUSIVE=
-    [ "$HERDR_REBIND_RELATIONSHIP" != flat-workers ] || HERDR_REBIND_EXCLUSIVE=exclusive
+    [ "$HERDR_REBIND_RELATIONSHIP" != nested-workers ] || HERDR_REBIND_EXCLUSIVE=exclusive
     HERDR_TASK_IDS=$(fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$WT" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W" "$HERDR_REBIND_EXCLUSIVE") || exit 1
     read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
@@ -5245,7 +5301,7 @@ else
     # DIFFERENT home's own workspace by design - so it asks for the per-home
     # container instead.
     HERDR_LABEL_HOME=$FM_HOME
-    HERDR_LAUNCHER_RELATIONSHIP=flat-workers
+    HERDR_LAUNCHER_RELATIONSHIP=nested-workers
     if [ "$KIND" = secondmate ]; then
       HERDR_LABEL_HOME=$PROJ_ABS
       HERDR_LAUNCHER_RELATIONSHIP=other-home
@@ -5314,7 +5370,7 @@ else
         # Session lock path resolution and exact parent binding both need a
         # live named-session socket before journal publication.
         if ! fm_backend_herdr_server_ensure "$HERDR_SES"; then
-          echo "warning: herdr presentation could not ensure its session server; using the ordinary flat layout without projection" >&2
+          echo "warning: herdr presentation could not ensure its session server; the worker is nested under its home without a restart binding" >&2
         elif [ "${FM_BACKEND_HERDR_PRESENTATION_PREFERENCE:-default}" = default ] &&
           ! fm_backend_herdr_presentation_default_supported "$STATE" "$HERDR_SES"; then
           :
@@ -5339,8 +5395,9 @@ else
             ;;
           esac
           if [ -z "$HERDR_PARENT_WORKSPACE_ID" ]; then
-            echo "warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection" >&2
+            echo "error: no unique herdr workspace for home '$HERDR_PARENT_LABEL' in session '$HERDR_SES' to nest this worker under, and a worker is never placed in a flat workspace; run firstmate inside its own workspace, or fix the missing or duplicated '$HERDR_PARENT_LABEL' workspace" >&2
             spawn_herdr_presentation_order_lock_release
+            exit 1
           else
             HERDR_PROJECTION_ID=$(fm_backend_herdr_projection_journal_create "$STATE" "$ID") || exit 1
             HERDR_PROJECTION_ABORT_JOURNAL_TOKEN=$HERDR_PROJECTION_ID
@@ -5388,12 +5445,16 @@ else
             fi
           fi
         else
-          echo "warning: herdr presentation focus lock unavailable; using the ordinary flat layout without projection" >&2
+          echo "warning: herdr presentation focus lock unavailable; the worker is nested under its home without a restart binding" >&2
         fi
       fi
     fi
     if [ "$HERDR_PROJECTED" -ne 1 ]; then
-      HERDR_CONTAINER_RAW=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_LAUNCHER_RELATIONSHIP") || exit 1
+      if [ "$HERDR_LAUNCHER_RELATIONSHIP" = nested-workers ]; then
+        spawn_herdr_nested_container "$(fm_backend_herdr_session)" "$HERDR_LABEL_HOME" "${HERDR_PANE_ID:-}" "$PROJ_ABS" || exit 1
+      else
+        HERDR_CONTAINER_RAW=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_LAUNCHER_RELATIONSHIP") || exit 1
+      fi
       # fm_backend_herdr_container_ensure echoes "<session>:<workspace_id>\t<seeded_default_tab_id>"
       # (the second field empty when this call ADOPTED a pre-existing workspace
       # rather than creating a fresh one). Split on the guaranteed single tab
@@ -5405,7 +5466,7 @@ else
       HERDR_SES=${CONTAINER%%:*}
       HERDR_WORKSPACE_ID=${CONTAINER#*:}
       HERDR_FLAT_EXCLUSIVE=
-      [ "$HERDR_LAUNCHER_RELATIONSHIP" != flat-workers ] || HERDR_FLAT_EXCLUSIVE=exclusive
+      [ "$HERDR_LAUNCHER_RELATIONSHIP" != nested-workers ] || HERDR_FLAT_EXCLUSIVE=exclusive
       HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$SPAWN_PANE_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W" "$HERDR_FLAT_EXCLUSIVE") || exit 1
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
@@ -5415,7 +5476,7 @@ EOF
       # scan above never sees. Only the exact pane this task's record names, still
       # in its recorded workspace and tab, is a candidate, and only a provable
       # agent-free husk is closed.
-      if [ "$HERDR_LAUNCHER_RELATIONSHIP" = flat-workers ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
+      if [ "$HERDR_LAUNCHER_RELATIONSHIP" = nested-workers ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
         [ "$(fm_backend_of_meta "$STATE/$ID.meta")" = herdr ]; then
         fm_backend_herdr_retire_recorded_husk \
           "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_session || true)" \

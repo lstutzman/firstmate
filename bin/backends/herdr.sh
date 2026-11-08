@@ -457,12 +457,36 @@ fm_backend_herdr_workspace_legacy_label() {
   printf '2ndmate-%s' "$id"
 }
 
-# fm_backend_herdr_flat_workers_workspace_label: the label of the fresh workspace
-# a presentation-enabled home gives a worker that falls back to the flat layout,
-# so that worker never lands in the launching firstmate's own workspace. The
-# label is display only: each such worker gets its own workspace.
-fm_backend_herdr_flat_workers_workspace_label() {
-  printf '%s workers' "$(fm_backend_herdr_workspace_label)"
+# fm_backend_herdr_nested_parent_resolve: the exact workspace a crewmate's or
+# scout's own workspace is nested under, for the nested-workers placement.
+# Herdr 0.9.5 has no parent field on a workspace, so nesting is presentation
+# only: the child carries the "└ <task> · p:<token>" label and sits in the block
+# right after its owning home workspace (fm_backend_herdr_projection_order_best_effort).
+# The parent is the launcher's own exact workspace, or, for a seat with no herdr
+# pane at all, the one workspace labeled for this home. Sets, only on a 0 return,
+#   FM_BACKEND_HERDR_NEST_PARENT_WS_ID
+#   FM_BACKEND_HERDR_NEST_PARENT_LABEL
+# Returns 3 with the exact reason on stderr when no parent can be proved, so a
+# spawn stops with a named error and never creates a flat workspace instead.
+fm_backend_herdr_nested_parent_resolve() {  # <session>
+  local session=$1 status label parent_ws
+  FM_BACKEND_HERDR_NEST_PARENT_WS_ID=""
+  FM_BACKEND_HERDR_NEST_PARENT_LABEL=""
+  label=$(fm_backend_herdr_workspace_label)
+  fm_backend_herdr_launcher_identity "$session" && status=0 || status=$?
+  case "$status" in
+    0) parent_ws=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID ;;
+    2) parent_ws=$(fm_backend_herdr_projection_parent_workspace_exact "$session" "$label" 2>/dev/null || true) ;;
+    *) return 3 ;;
+  esac
+  if [ -z "$parent_ws" ]; then
+    echo "error: no unique herdr workspace for home '$label' in session '$session' to nest this worker under, and a worker is never placed in a flat workspace; run firstmate inside its own workspace, or fix the missing or duplicated '$label' workspace" >&2
+    return 3
+  fi
+  # shellcheck disable=SC2034  # callers consume the proved parent's parts
+  FM_BACKEND_HERDR_NEST_PARENT_WS_ID=$parent_ws
+  # shellcheck disable=SC2034  # callers consume the proved parent's parts
+  FM_BACKEND_HERDR_NEST_PARENT_LABEL=$label
 }
 
 # fm_backend_herdr_cli: run `herdr <args...>` scoped to <session>, setting
@@ -2204,13 +2228,16 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #   other-home    - a --secondmate launch, which stands up a DIFFERENT home's
 #                   own per-home workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
-#   flat-workers  - every crewmate or scout that is not projected, whatever
-#                   the home's presentation setting. It always gets a fresh
-#                   "<home label> workers" workspace of its own, never an
-#                   existing one and never the launcher's own workspace,
-#                   because a workspace holds one session only. A claimed
-#                   launcher identity is still validated first, so a broken
-#                   one refuses as above.
+#   nested-workers - every crewmate or scout, whatever the home's
+#                   presentation setting and whether or not a presentation
+#                   journal backs it. It always gets a fresh workspace of its
+#                   own labeled "└ <task> · p:<token>", never an existing one
+#                   and never the launcher's own workspace, because a
+#                   workspace holds one session only. The 4th argument names
+#                   the task. The owning home workspace is resolved by
+#                   fm_backend_herdr_nested_parent_resolve, which refuses (3)
+#                   when none can be proved; the caller orders the new
+#                   workspace under it (fm_backend_herdr_projection_order_best_effort).
 # With no herdr ancestry at all there is no launcher workspace to inherit, so
 # the per-home label lookup below stays the resolver - but it must then resolve
 # to exactly ONE workspace. Two same-labeled home workspaces with no launcher
@@ -2219,31 +2246,36 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 #
 # Returns 0 on success, 3 for a refusal whose exact reason is already on
 # stderr, and 1 for a failed or unparseable herdr call.
-fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship>]
-  local session=$1 cwd=$2 relationship=${3:-launcher-home} wsid out label matches count status
+fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship>] [<task-id>]
+  local session=$1 cwd=$2 relationship=${3:-launcher-home} task_id=${4:-} wsid out label matches count status token
   FM_BACKEND_HERDR_WS_ID=""
   FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=""
   fm_backend_herdr_workspace_migrate_legacy "$session"
   label=$(fm_backend_herdr_workspace_label)
-  if [ "$relationship" = launcher-home ] || [ "$relationship" = flat-workers ]; then
+  if [ "$relationship" = launcher-home ]; then
     fm_backend_herdr_launcher_identity "$session" && status=0 || status=$?
     case "$status" in
       0)
-        if [ "$relationship" = launcher-home ]; then
-          FM_BACKEND_HERDR_WS_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
-          printf '%s' "$FM_BACKEND_HERDR_WS_ID"
-          return 0
-        fi
+        FM_BACKEND_HERDR_WS_ID=$FM_BACKEND_HERDR_LAUNCHER_WORKSPACE_ID
+        printf '%s' "$FM_BACKEND_HERDR_WS_ID"
+        return 0
         ;;
       2) ;;
       *) return 3 ;;
     esac
-    [ "$relationship" = launcher-home ] || label=$(fm_backend_herdr_flat_workers_workspace_label)
+  elif [ "$relationship" = nested-workers ]; then
+    if [ -z "$task_id" ]; then
+      echo "error: herdr nested-workers placement needs the task id to label the worker's workspace; refusing to create an unlabeled or flat workspace" >&2
+      return 3
+    fi
+    fm_backend_herdr_nested_parent_resolve "$session" || return 3
+    token=$(fm_backend_herdr_projection_id) || return 1
+    label=$(fm_backend_herdr_projection_workspace_label "$task_id" "$token")
   fi
-  # A flat-workers placement never looks for an existing workspace: each such
+  # A nested-workers placement never looks for an existing workspace: each such
   # session gets a fresh one, because a workspace holds one session only.
   matches=
-  [ "$relationship" = flat-workers ] || matches=$(fm_backend_herdr_workspace_find_all "$session" "$label")
+  [ "$relationship" = nested-workers ] || matches=$(fm_backend_herdr_workspace_find_all "$session" "$label")
   count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
   if [ "$count" -gt 1 ]; then
     echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and nothing identifies which one this spawn belongs in; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
@@ -2299,20 +2331,23 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
 # fm_backend_herdr_launcher_identity compares the launcher's own ambient session
 # against this one, and shadowing would make that half of its cross-session
 # guard compare the pinned value with itself and pass vacuously.
-fm_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace> [<launcher-relationship>] [<session>]
-  local cwd=${1:-$PWD} relationship=${2:-launcher-home} session=${3:-} label status
+fm_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace> [<launcher-relationship>] [<session>] [<task-id>]
+  local cwd=${1:-$PWD} relationship=${2:-launcher-home} session=${3:-} task_id=${4:-} label status
   fm_backend_herdr_session_arg_given "$#" "$session" container_ensure 3 || return 1
   fm_backend_herdr_version_check || return 1
   [ -n "$session" ] || session=$(fm_backend_herdr_session)
   fm_backend_herdr_server_ensure "$session" || return 1
-  fm_backend_herdr_workspace_ensure "$session" "$cwd" "$relationship" >/dev/null && status=0 || status=$?
+  fm_backend_herdr_workspace_ensure "$session" "$cwd" "$relationship" "$task_id" >/dev/null && status=0 || status=$?
   # A 3 already reported the exact placement it refused to guess at; adding the
   # generic message here would bury it.
   [ "$status" -ne 3 ] || return 1
   if [ "$status" -ne 0 ] || [ -z "$FM_BACKEND_HERDR_WS_ID" ]; then
     label=$(fm_backend_herdr_workspace_label)
-    [ "$relationship" != flat-workers ] || label=$(fm_backend_herdr_flat_workers_workspace_label)
-    echo "error: failed to ensure herdr workspace '$label' in session '$session'" >&2
+    if [ "$relationship" = nested-workers ]; then
+      echo "error: failed to create the nested herdr workspace for task '$task_id' under '$label' in session '$session'" >&2
+    else
+      echo "error: failed to ensure herdr workspace '$label' in session '$session'" >&2
+    fi
     return 1
   fi
   printf '%s:%s\t%s' "$session" "$FM_BACKEND_HERDR_WS_ID" "$FM_BACKEND_HERDR_WS_SEEDED_TAB_ID"

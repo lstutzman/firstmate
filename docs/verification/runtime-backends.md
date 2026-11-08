@@ -1772,16 +1772,17 @@ HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
   tests/fm-backend-herdr-launcher-workspace-e2e.test.sh
 ```
 
-Observed guarantees on 2026-11-07 against Herdr 0.9.5 protocol 22 (client and server) on Linux x86_64:
+Observed guarantees on 2026-11-08 against Herdr 0.9.5 protocol 22 (client and server) on Linux x86_64:
 
 ```text
-ok - real herdr E2E: a presentation-off spawn with no herdr parent gets its own fresh workspace without stealing focus
+ok - real herdr E2E: a spawn with no home workspace to nest under is a named error and creates no workspace
+ok - real herdr E2E: a presentation-off spawn with no herdr parent gets its own fresh workspace nested under its home without stealing focus
 ok - real herdr E2E: a presentation-off spawn from a launcher pane gets its own workspace and leaves the launcher's untouched
 ok - real herdr E2E: presentation spaces still create the isolated child workspace and bind it under the launcher's exact parent, without stealing focus
-ok - real herdr E2E: each presentation-enabled flat fallback gets its own workspace and leaves the launcher's workspace untouched
-ok - real herdr E2E: existing '<home> workers' workspaces are never adopted; a flat fallback creates its own
+ok - real herdr E2E: each presentation-enabled fallback gets its own nested workspace and leaves the launcher's workspace untouched
+ok - real herdr E2E: existing '<home> workers' workspaces are never adopted; a fallback creates its own nested workspace
 ok - real herdr E2E: reclaiming a presentation-enabled home's destroyed endpoint gets its own workspace, not the launcher's or another session's
-ok - real herdr E2E: a session, its unparked relaunch and a new spawn each get their own workspace
+ok - real herdr E2E: a session, its unparked relaunch and a new spawn each get their own nested workspace
 ok - real herdr E2E: the guard refuses a second session in a workspace that already holds one
 ok - real herdr E2E: relaunching a presentation-off home's session gets its own workspace, not the launcher's
 ok - real herdr E2E: a workspace whose create response has no seeded tab id is closed again and focus is preserved
@@ -1793,7 +1794,7 @@ ok - real herdr E2E: a respawn never closes a recorded pane id that Herdr report
 ok - real herdr E2E: with two 'firstmate' workspaces, a worker spawned from inside the second one gets its own workspace
 ok - real herdr E2E: the duplicate-labeled sibling workspace is left entirely untouched and focus is preserved
 ok - real herdr E2E: with a duplicated home label, a projected worker still hangs off the launcher's exact workspace and the sibling stays untouched
-ok - real herdr E2E: duplicate home-labeled workspaces with no launcher identity no longer matter, the worker gets its own workspace
+ok - real herdr E2E: duplicate home-labeled workspaces with no launcher identity are a named error, not a guess or a flat workspace
 ok - real herdr E2E: a launcher pane that no longer exists refuses before any worker endpoint exists
 ok - real herdr E2E: a secondmate launching its own worker gets its own workspace too, and its same-labeled sibling is untouched
 ok - real herdr E2E: a --secondmate launch still stands up that secondmate's own workspace instead of inheriting the launcher's
@@ -1866,6 +1867,16 @@ ok - real Herdr lab: an opted-out spawn retains the Stage 1 Herdr command sequen
 ok - real Herdr lab: a home that configured nothing is projected by default
 ok - real Herdr lab: the primary presentation setting inherits into real secondmate homes
 ok - real Herdr lab validation completed on Herdr 0.8.0 with the default-session tripwire intact
+```
+
+The two cases above and the lock-contention case changed when every worker became nested under its home workspace.
+On 2026-11-08 against Herdr 0.9.5 protocol 22 the same suite, `tests/fm-backend-herdr-presentation-e2e.test.sh`, observed:
+
+```text
+ok - real Herdr lab: an opted-out spawn is nested under its home workspace without a presentation journal
+ok - real Herdr lab: bounded lock contention warns, waits for the lock and nests the worker without a journal or focus drift
+ok - real Herdr lab: session lock contention from a secondmate home nests the worker with no journal
+ok - real Herdr lab validation completed on Herdr 0.9.5 with the default-session tripwire intact
 ```
 
 The projected spawn in that run used the historical empty opt-in file, so a home that had already enabled the projection keeps it without any migration step.
