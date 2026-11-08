@@ -76,8 +76,10 @@ as work, the severity of each kind and what starts. Every open finding is filed 
 in team PC, project Fleet, labels Bug, the Source label agent and area:fleet, keyed by
 its id (kind, page and object), so a finding nobody fixed raises the item's
 `Found: N times` line once a day and that count is the priority lever. A card's own
-words never go to Linear: the item names the card by id. A page-old or shown-after-done
-finding whose item exists and whose score reaches the rubric minimum gets a start
+words never go to Linear: the item names the card by id. A repeat of a closed item
+raises that item's Found line, files nothing new and never starts it (the Filer's
+bump_closed). A page-old or shown-after-done
+finding whose open item exists and whose score reaches the rubric minimum gets a start
 request in the digest's `start_requests` (and, for this home, a <key>.start-requests.sh
 handoff), addressed to the --start-home office that dispatches the fleet repositories
 (the Quartermaster), else to --fm-home; fleet-app merges stay with Slarti. A
