@@ -19,7 +19,8 @@ how it finds things. This file owns the mechanics every officer shares:
               (`issue update --dry-run`, then `--verify`) and adds one comment, on the day's first sighting only.
               Every write is `--dry-run` then `--verify`. A failed verify is never retried; the fingerprint search then
               decides whether the item exists. An item a person closed (completed or canceled) is never reopened,
-              edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`).
+              edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`), unless
+              the Filer is built with bump_closed (the page-check officer), when it bumps the closed item and starts nothing.
               An item gets exactly one Type, one Source and one area label; fleet work
               (is_fleet: a finding's repository, else its Officer's project) goes in the Fleet project, with the area:fleet label (fleet_labels). The library never creates a label and never closes
               or deletes an item.
@@ -433,8 +434,9 @@ def not_filed_lines(findings):
 class Filer:
     """Files findings in one team under the contract; one per officer run (the cache lasts a run)."""
 
-    def __init__(self, officer, lin, team, date, out, ledger, found, jev, max_creates):
+    def __init__(self, officer, lin, team, date, out, ledger, found, jev, max_creates, bump_closed=False):
         self.officer, self.lin, self.team, self.date, self.out = officer, lin, team, date, out
+        self.bump_closed = bump_closed
         self.ledger, self.found, self.jev, self.max_creates = ledger, found, jev, max_creates
         self.cache, self.creates, self.bumps = {}, 0, []
 
@@ -455,7 +457,7 @@ class Filer:
     def existing_issue(self, fp):
         """(open, closed): the open Linear item whose description carries the fingerprint, and the first closed one.
 
-        A closed item is never reopened, but a repeat finding still bumps its Found line (file_single).
+        A closed item is never reused; it only lets the caller file a recurrence that names it, or bump it (bump_closed).
 
         Linear's search is fuzzy and returns no descriptions, so a hit counts only once its
         description holds the marker; the first EXISTING_VIEWS hits are read (once a run each).
@@ -549,11 +551,18 @@ class Filer:
         return None
 
     def bump(self, ident, f):
-        """The first sighting of the day: the Found line up by one, plus one comment; a closed item is bumped, never reopened."""
+        """The first sighting of the day: the Found line up by one, plus one comment; None when the item is closed,
+        unless bump_closed, when a closed item is bumped (never reopened) and marked closed for the day."""
         today = self.found.setdefault("issues", {}).setdefault(ident, {})
         if today.get("last") == self.date:
             return today.get("count", 1)
         issue = self.view_issue(ident)
+        if is_closed(issue):
+            if not self.bump_closed:
+                return None
+            today["closed"] = True
+        else:
+            today.pop("closed", None)
         desc = str(issue.get("description") or "")
         match = self.officer.found_re.search(desc)
         if match and match.group(3) == self.date:
@@ -585,6 +594,28 @@ class Filer:
         return wanted, None
 
     # one finding, one item
+    def recur(self, f, old, label_set, describe, priority=None):
+        """A finding whose item a person closed: never reopened; a new item names the old one."""
+        wanted, reason = self.item_labels(f, label_set)
+        if reason or self.over_cap():
+            reason = reason or "over max-creates for this run"
+            f["filing"] = {"action": "not-filed", "reason": "%s is closed; %s" % (old, reason)}
+            return
+        self.ledger.pop(f["fingerprint"], None)
+        recurrence = recurrence_line(old, self.view_issue(old))
+        f["filing"] = {"action": "failed", "reason": "recurrence of closed %s not filed" % old}
+        ident, created, verify = self.create(f["fingerprint"], f["title"], describe(f, recurrence=recurrence), wanted,
+                                             priority or PRIORITY[f["severity"]], f["project"])
+        self.ledger[f["fingerprint"]] = ident
+        self.found.setdefault("issues", {})[ident] = {"count": 1, "last": self.date}
+        f["filing"] = {"action": "created" if created else "exists", "issue": ident, "recurrence_of": old}
+        f["issue_hint"] = ident
+        if verify:
+            f["filing"]["verify"] = verify
+        error = self.relate(ident, old)
+        if error:
+            f["filing"]["relation_error"] = error
+
     def file_single(self, f, label_set, describe, priority=None):
         """Searches for the finding (fingerprint, then local-jev), then files it or queues a Found bump.
 
@@ -604,6 +635,9 @@ class Filer:
                 self.ledger[f["fingerprint"]] = ident
                 f["filing"], f["issue_hint"] = {"action": "exists", "issue": ident}, ident
                 self.bumps.append(f)
+                return
+            if closed and not self.bump_closed:
+                self.recur(f, closed, label_set, describe, priority)
                 return
             if closed:
                 self.ledger[f["fingerprint"]] = closed
@@ -634,11 +668,17 @@ class Filer:
                 raise
 
     def settle_bumps(self, label_set, describe):
-        """Raises the Found line of every duplicate found this run, closed items included."""
+        """Raises the Found line of every duplicate found this run; an item closed meanwhile files a recurrence,
+        or with bump_closed is bumped and marked closed."""
         for f in self.bumps:
             ident = f["filing"]["issue"]
             try:
                 count = self.bump(ident, f)
+                if count is None:
+                    self.recur(f, ident, label_set, describe)
+                    continue
+                if self.found["issues"][ident].get("closed"):
+                    f["filing"]["closed"] = True
                 f["filing"]["found"] = count
                 f["issue_hint"] = ident
             except LinearError as exc:
@@ -753,6 +793,7 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     rerun repeats the same request and a later day never asks twice. Only an emitted start or hold marks
     it handled. A finding whose Found count has lifted its score to the minimum (a medium at found 3)
     starts like a new finding, which is how the found count reaches the start decision.
+    A finding matched to a closed item (`closed`, set only by a bump_closed Filer) never starts.
     A finding may carry `start_what` (the request's wording, in place of "Start this Linear item.") and `start_row`
     (extra fields for the request's evidence); `start_generation` (the merged fix it follows) gives a restart its own request id.
     `attempts` (fingerprint -> the items started for it) caps a loop: a recurrence is a new item, so once START_ATTEMPT_CAP items
@@ -768,7 +809,7 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             continue
         filing = f["filing"] or {}
         issue = filing.get("issue")
-        if writes == "linear" and (filing.get("action") not in ("created", "exists", "duplicate") or not issue):
+        if writes == "linear" and (filing.get("action") not in ("created", "exists", "duplicate") or not issue or filing.get("closed")):
             continue
         if issue and issue in seen:
             continue

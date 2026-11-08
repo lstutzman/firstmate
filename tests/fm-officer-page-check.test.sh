@@ -461,6 +461,35 @@ raise_to_start() {
   printf '%s\n' "$LW_HOME/data/officers/page-check/$day2.json"
 }
 
+test_a_closed_item_is_bumped_and_never_started() {
+  local home json dir fp n
+  linear_world closedprobe
+  officer closedprobe run page-check --date "$KEY" >/dev/null || fail "probe run must succeed"
+  fp=$(grep -A5 'Object: velocity-audit\.' "$FAKE_LINEAR_DIR/bodies" | sed -n 's/^.*page-check-fp://p' | head -1)
+  n=$(creates "$FAKE_LINEAR_DIR/log")
+  assert_not_contains "$fp" " " "the probe finds the velocity-audit fingerprint"
+  linear_world closedhit
+  home=$LW_HOME
+  dir=$FAKE_LINEAR_DIR
+  printf '%s\n' "$fp" > "$dir/exists.txt"
+  echo Done > "$dir/state.PC-55"
+  json="$home/data/officers/page-check/$KEY.json"
+  officer closedhit run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  assert_equals "PC-55" "$(jq -r '[.findings[] | select(.id == "page-old:Velocity audit:velocity-audit")][0].linear.issue' "$json")" \
+    "the repeat of a closed item matches it by fingerprint"
+  assert_equals "$((n - 1))" "$(creates "$dir/log")" "and files no new item for it"
+  assert_equals "UPDATE PC-55" "$(cat "$dir/updates")" "its Found line is raised"
+  assert_equals "COMMENT PC-55" "$(cat "$dir/comments")" "with the day's one comment"
+  assert_equals 0 "$(grep '^issue update' "$dir/log" | grep -c -- '--state\|--priority')" "it is never reopened or re-prioritised"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.linear_id == "PC-55" or .id == "page-old:Velocity audit:velocity-audit")] | length' "$json")" \
+    "a closed item is never started"
+  later_day closedhit 2026-11-01T14 >/dev/null || fail "a later-day run must succeed"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.linear_id == "PC-55")] | length' "$home/data/officers/page-check/2026-11-01T14.json")" \
+    "nor on a later day, from the ledger"
+  assert_equals 0 "$(grep -cF -- "page-check-fp:$fp" "$dir/bodies")" "and no run re-files it"
+  pass "fm-officer page-check: a closed item that recurs is bumped, never re-filed or started"
+}
+
 test_a_settled_production_card_shown_again_starts_its_page_fix() {
   local json
   linear_world prodcard
@@ -538,6 +567,7 @@ test_scheduled_slot_and_read_only_boundary
 test_findings_are_filed_in_linear_under_the_contract
 test_page_defects_start_and_settled_cards_do_not
 test_no_writes_a_missing_label_and_the_cap
+test_a_closed_item_is_bumped_and_never_started
 test_a_settled_production_card_shown_again_starts_its_page_fix
 test_a_fix_in_a_reserved_class_is_held_for_lee
 test_a_page_defect_pattern_is_remembered_once

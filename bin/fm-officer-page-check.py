@@ -424,7 +424,7 @@ def description(lf, key, off, near=None, recurrence=None):
 def file_findings(lib, off, findings, args, key, ledger, found, jev, lin):
     """Files every open finding, highest score first; returns (writes done, why Linear stopped or None)."""
     day, out = key[:10], args.out
-    filer = lib.Filer(off, lin, args.team, day, out, ledger, found, jev, args.max_creates)
+    filer = lib.Filer(off, lin, args.team, day, out, ledger, found, jev, args.max_creates, bump_closed=True)
 
     def stop(reason, rate_limited=False):
         for f in findings:

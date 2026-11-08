@@ -738,11 +738,13 @@ test_invalid_nightly_e2e_is_a_top_severity_promotion_blocker() {
   : > "$LINEAR_LOG"; : > "$LDIR/bodies"
   run_surgeon_next_day "$home" invalid "$DATE3" 2 >/dev/null || fail "run after the item was closed"
   json="$home/data/officers/surgeon/$DATE3.json"
-  assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "a closed item is not replaced by a new one"
-  assert_equals "exists PC-101" "$(row "$json" nightly e2e-invalid '[.filing.action,.filing.issue]|join(" ")')" "the repeat matches the closed item"
-  assert_equals 1 "$(grep -c "^issue update PC-101 .*--verify" "$LINEAR_LOG")" "its Found line is bumped once"
-  assert_equals 0 "$(grep -c -- '--state\|--priority' "$LINEAR_LOG")" "without reopening or re-prioritising it"
-  assert_equals PC-101 "$(jq -r --arg fp "$(row "$json" nightly e2e-invalid .fingerprint)" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")" "the ledger keeps the closed item"
+  assert_equals 0 "$(grep -c '^issue update PC-101' "$LINEAR_LOG")" "a closed item is never bumped or reopened"
+  assert_equals "created PC-102 PC-101" "$(row "$json" nightly e2e-invalid '[.filing.action,.filing.issue,.filing.recurrence_of]|join(" ")')" "a recurrence files a new item"
+  assert_contains "$(cat "$LDIR/bodies")" "Recurrence of PC-101 (closed as Done)." "that names the closed one"
+  assert_contains "$(cat "$LDIR/bodies")" "Found: 1 times (first $DATE3, last $DATE3, by surgeon)" "with its own Found line"
+  assert_contains "$(grep '^issue create .*--verify' "$LINEAR_LOG")" "--priority 1" "still urgent and promotion-blocking"
+  assert_equals "RELATION PC-102 --related PC-101" "$(cat "$LDIR/relations")" "and is linked to it as related"
+  assert_equals PC-102 "$(jq -r --arg fp "$(row "$json" nightly e2e-invalid .fingerprint)" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")" "the old ledger entry is retired"
   set_pages invalid '[]' '[]' 'null'
   jq -n '{run: {}, result: null, shared: null}' > "$TMP_ROOT/invalid/pages/_api_runs_nightly-e2e_results_R1"
   assert_contains "$(run_surgeon "$home")" "Coverage gap: no E2E input" "an empty E2E result is a named gap, never a silent absence"
@@ -936,7 +938,7 @@ test_one_item_gets_one_start_request_a_run() {
   pass "fm-officer surgeon: an item gets one start request a run, however many findings map to it"
 }
 
-test_closed_search_hit_is_bumped() {
+test_closed_search_hit_files_a_recurrence() {
   local home json
   make_world closedhit "$LINEAR_ON"; home=$WORLD_HOME
   set_pages closedhit '[]' '[{"fp":"h1","title":"Crash on save","disposition":"new","severity":"P1"}]'
@@ -944,11 +946,11 @@ test_closed_search_hit_is_bumped() {
   echo Done > "$LDIR/state.PC-55"
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals "exists PC-55" "$(row "$json" sweeper h1 '[.filing.action,.filing.issue]|join(" ")')" "with no ledger entry, a closed search hit is matched, not replaced"
-  assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "no new item is created"
-  assert_equals 1 "$(grep -c '^issue update PC-55 .*--verify' "$LINEAR_LOG")" "the closed item's Found line is bumped"
-  assert_equals 0 "$(grep -c -- '--state\|--priority' "$LINEAR_LOG")" "without reopening or re-prioritising it"
-  pass "fm-officer surgeon: a closed item found by fingerprint search is bumped, not replaced"
+  assert_equals "created PC-55" "$(row "$json" sweeper h1 '[.filing.action,.filing.recurrence_of]|join(" ")')" "with no ledger entry, a closed search hit still makes a recurrence"
+  assert_equals 0 "$(grep -c '^issue update PC-55' "$LINEAR_LOG")" "the closed item is not edited"
+  assert_contains "$(cat "$LDIR/bodies")" "Recurrence of PC-55 (closed as Done)." "the new item names it"
+  assert_equals "RELATION PC-101 --related PC-55" "$(cat "$LDIR/relations")" "and links it as related"
+  pass "fm-officer surgeon: a closed item found by fingerprint search gets a recurrence, not a plain new item"
 }
 
 test_registry_rules
@@ -985,4 +987,4 @@ test_nightly_area_tries_feature_labels_before_testing
 test_unreadable_rubric_leaves_items_to_start_later
 test_reserved_classes_match_the_action_not_the_word
 test_one_item_gets_one_start_request_a_run
-test_closed_search_hit_is_bumped
+test_closed_search_hit_files_a_recurrence
