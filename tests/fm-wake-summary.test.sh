@@ -171,14 +171,15 @@ test_merge_landed() {
   crew_state "$state" live 'state: done · source: status-log · shipped'
   rc=0; out=$(classify "$state" "$(row 9 check merged-live-x 'check: merge landed: live https://github.com/o/r/pull/6 away')") || rc=$?
   assert_equals 1 "$rc" "exit"
-  assert_contains "$out" "ACTION - task live is still recorded and not shown merged" "a recorded task not shown merged needs a look"
+  assert_contains "$out" "ACTION - task live is still recorded" "a recorded task needs its teardown"
   assert_contains "$out" "state: done" "the crew state is on the line"
+
 
   crew_state "$state" live 'state: done · source: run-step · PR merged · pr=https://github.com/o/r/pull/6'
   rc=0; out=$(classify "$state" "$(row 9 check merged-live-x 'check: merge landed: live https://github.com/o/r/pull/6')") || rc=$?
-  assert_equals 0 "$rc" "exit"
-  assert_contains "$out" "no-action - task live's record already shows the merge" "a record already showing the merge is no-action"
-  pass "a merge landed for a torn-down task or one already recorded merged is no-action; any other recorded task needs a look"
+  assert_equals 1 "$rc" "exit"
+  assert_contains "$out" "ACTION - task live is still recorded" "a merged task that is not yet torn down still wakes the model"
+  pass "a merge landed for a torn-down task is no-action; any task still recorded, merged or not, wakes the model"
 }
 
 # --- check: office lane delivery ------------------------------------------

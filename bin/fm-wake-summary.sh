@@ -19,9 +19,9 @@
 #     that has passed, and bin/fm-crew-state.sh reports the task's state as paused.
 #   - stale: bin/fm-crew-state.sh reports the task paused, its newest status line is such a
 #     pause, and the wake text is not the watcher's "declared clearing time has passed" recheck.
-#   - check `merge landed: <task> <pr-url>`: the task's record is already gone (torn down), or
-#     bin/fm-crew-state.sh already reads the task as done with the merge named. A task with a
-#     live record that does not show the merge still needs a look.
+#   - check `merge landed: <task> <pr-url>`: the task is already torn down (its record is gone;
+#     teardown removes it together with the backlog move). A task with a live record, merged or
+#     not, always wakes: that wake is what triggers cleanup and re-evaluating queued work.
 #   - check `<state>/office-lane-<lane>.check.sh: office <id>: <officer> digest ...; <n> start
 #     request(s) delivered to this office's inbox` (a custom check's payload is its script path
 #     and its output), with
@@ -161,13 +161,7 @@ classify_check() { # <key> <payload>
     id=${BASH_REMATCH[1]}; url=${BASH_REMATCH[2]}
     if [ -e "$STATE/$id.meta" ]; then
       line=$(crew_state_line "$id") || line="crew state unreadable"
-      case "$line" in
-        "state: done "*merged*)
-          # The task's current-state read already carries the merge, so this wake adds nothing.
-          verdict no-action "task $id's record already shows the merge; $line"
-          ;;
-        *) verdict ACTION "task $id is still recorded and not shown merged, so it needs a look; $line" ;;
-      esac
+      verdict ACTION "task $id is still recorded, so this wake triggers its teardown, backlog move and re-evaluation; $line"
     else
       verdict no-action "task $id is already torn down (no task record); $url"
     fi
