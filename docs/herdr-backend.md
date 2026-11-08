@@ -290,8 +290,7 @@ Neither token, title, nor journal authorizes send, capture, task ownership, Tree
 
 ### Owning parent and tabs
 
-The owning parent is the launcher's own exact workspace, resolved from the same identity the flat path uses.
-It falls back to a unique home-label lookup only for a Firstmate outside Herdr.
+The owning parent is the same parent every nested worker uses, resolved as described under [Watching and task containers](#watching-and-task-containers): the launcher's own exact workspace, or the home-labeled workspace for a Firstmate outside Herdr.
 Projected children are never collapsed back into that parent.
 The parent is the placement and ordering reference the projection is bound under.
 

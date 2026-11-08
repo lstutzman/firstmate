@@ -331,7 +331,7 @@ fm_backend_herdr_presentation_default_supported() {  # <state-dir> [<session>]
 # disposable one-task workspaces (docs/herdr-backend.md "Presentation spaces"
 # owns the full contract). An explicit "off" or "on" is obeyed as written; a
 # home that configured nothing is projected only at or above the version floor,
-# and otherwise falls back to the flat layout with one warning. Sets
+# and otherwise falls back to the journal-free nested layout with one warning. Sets
 # FM_BACKEND_HERDR_PRESENTATION_PREFERENCE for the new-projection boundary to
 # distinguish an unconfigured default from an explicit opt-in.
 fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]

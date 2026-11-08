@@ -176,7 +176,8 @@
 #   workspace, so workers always show nested under their home and never in a
 #   flat "<home label> workers" workspace. A home whose presentation layout
 #   (below) is on additionally journals a clean fresh task. A home with no
-#   workspace to nest under stops the spawn with a named error.
+#   workspace to nest under gets one created; duplicated home workspaces
+#   resolve to the lowest-numbered with one warning.
 #   Herdr additionally uses a presentation-only layout by default when the
 #   selected client and running server meet the Herdr 0.8.0 floor. The local
 #   config/herdr-presentation-spaces file can say off to disable it or on to
