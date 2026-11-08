@@ -2104,28 +2104,28 @@ test_helper_refusal_names_expected_corr() {
     *) fail "the one-note refusal must name the open corr and keep the note, got: $err" ;;
   esac
   rc=0
-  err=$(FM_HOME="$sm_home" "$REPORT" done audit clean 2>&1 >/dev/null) || rc=$?
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" audit clean 2>&1 >/dev/null) || rc=$?
   [ "$rc" -eq 1 ] || fail "an unquoted note with the corr left out must be refused, got rc=$rc"
   case "$err" in
     *"done $corr \"audit clean\""*) ;;
     *) fail "the rerun command must keep every word of an unquoted note, got: $err" ;;
   esac
   rc=0
-  err=$(FM_HOME="$sm_home" "$REPORT" done added tests 2>&1 >/dev/null) || rc=$?
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" added tests 2>&1 >/dev/null) || rc=$?
   [ "$rc" -eq 1 ] || fail "a note whose first word is all a-f letters must be refused, got rc=$rc"
   case "$err" in
     *"done $corr \"added tests\""*) ;;
     *) fail "the rerun command must keep a first note word made of a-f letters, got: $err" ;;
   esac
   rc=0
-  err=$(FM_HOME="$sm_home" "$REPORT" done deadbeef00 "audit clean" 2>&1 >/dev/null) || rc=$?
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" deadbeef00 "audit clean" 2>&1 >/dev/null) || rc=$?
   [ "$rc" -eq 1 ] || fail "a mistyped corr must be refused, got rc=$rc"
   case "$err" in
     *"done $corr \"audit clean\""*) ;;
     *) fail "a mistyped corr must not be folded into the note, got: $err" ;;
   esac
   rc=0
-  err=$(FM_HOME="$sm_home" "$REPORT" --doc done data/x/report.md "see report" 2>&1 >/dev/null) || rc=$?
+  err=$(FM_HOME="$sm_home" "$REPORT" --doc "done" data/x/report.md "see report" 2>&1 >/dev/null) || rc=$?
   [ "$rc" -eq 1 ] || fail "a doc report with the corr left out must be refused, got rc=$rc"
   case "$err" in
     *"--doc done $corr data/x/report.md \"see report\""*) ;;
