@@ -175,6 +175,7 @@ fm_hclab_fleet_state() ( # <root>...
 
 fm_hclab_fleet_state_recorded() ( # <roots-file>
   set -o pipefail
+  # shellcheck disable=SC2002 # deliberate: tests inject read failures by faking cat
   cat "$1" | while IFS= read -r root; do
     fm_hclab_fleet_state "$root" || return 1
   done | LC_ALL=C sort
