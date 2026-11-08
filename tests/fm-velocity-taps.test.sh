@@ -167,7 +167,7 @@ test_create_for_later_files_and_answers() {
   w=$(make_world later)
   set_replies "$w" "$(reply 1 1 "Create item for later: Agents wait on the staging queue")"
   tap_run "$w"
-  assert_equals "PC-101" "$(cat "$w/linear/created" | sed 's/^/PC-/')" "one Linear item was created"
+  assert_equals "PC-101" "PC-$(cat "$w/linear/created")" "one Linear item was created"
   assert_equals "Improvement agent area:fleet" "$(awk '{print $2}' "$w/linear/labels.used" | paste -sd' ')" \
     "the item carries Improvement, agent and area:fleet"
   assert_equals "101 Fleet" "$(cat "$w/linear/projects.used")" "a fleet item is filed in the Fleet project"
@@ -223,7 +223,7 @@ test_owners_that_are_not_an_office_go_to_main() {
     "$(reply 6 4 "Create and fix now: Odd owner")"
   tap_run "$w"
   for n in 4 5 6; do
-    assert_equals "$w/main" "$(home_of "$w" "$(rid $n)")" "owner Lee, slarti and an unknown owner send the note to main (reply $n)"
+    assert_equals "$w/main" "$(home_of "$w" "$(rid "$n")")" "owner Lee, slarti and an unknown owner send the note to main (reply $n)"
   done
   assert_contains "$(body_of "$w" "$(rid 5)")" "Owner named on the card: slarti" "the note names the owner it could not address"
   assert_contains "$(body_of "$w" "$(rid 6)")" "the sweeper service" "an unknown owner is named in the note"
