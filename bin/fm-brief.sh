@@ -1115,6 +1115,7 @@ $ASK_USER_BLOCK
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved [at=<epoch>]: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
+9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, \`Fixes-regression-from: <full PR URL>\`, naming that earlier PR.
 
 $WAIT_BLOCK$INBOX_SECTION
 
