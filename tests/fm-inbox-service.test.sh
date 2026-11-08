@@ -206,7 +206,11 @@ for dest; do :; done
 case "\$dest" in
   "$home/state/inbox/"*.note)
     : >"$home/held"
-    while [ ! -e "$home/release" ]; do sleep 0.05; done ;;
+    i=0
+    while [ ! -e "$home/release" ] && [ "\$i" -lt 200 ] && kill -0 "$$" 2>/dev/null; do
+      sleep 0.05
+      i=\$((i + 1))
+    done ;;
 esac
 exec "$real_mv" "\$@"
 EOF
