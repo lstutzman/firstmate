@@ -557,12 +557,15 @@ FLOORBIN="$TMP_ROOT/floorbin"
 mkdir -p "$FLOORBIN"
 # The third status read of a spawn is the session-scoped re-check that follows
 # the client gate and the server ensure; only that read reports an old server.
+# Every other read names the 0.8.0 floor release (protocols untouched), so the
+# client is above the floor whatever Herdr the lab really runs (CI pins 0.7.4).
 cat > "$FLOORBIN/herdr" <<SHIM
 #!/usr/bin/env bash
 out=\$("$REAL_HERDR" "\$@") || exit \$?
 if [ "\${1:-}" = status ]; then
   n=\$(( \$(cat "$FLOORBIN/count" 2>/dev/null || echo 0) + 1 ))
   printf '%s' "\$n" > "$FLOORBIN/count"
+  out=\$(printf '%s\n' "\$out" | jq -c '.client.version = "0.8.0" | if .server.version then .server.version = "0.8.0" else . end')
   if [ "\$n" = 3 ]; then
     printf '%s\n' "\$out" | jq -c '.server.version = "0.7.5" | .server.protocol = 14'
     exit 0
