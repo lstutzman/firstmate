@@ -1797,6 +1797,8 @@ ok - real herdr E2E: duplicate home-labeled workspaces with no launcher identity
 ok - real herdr E2E: a launcher pane that no longer exists refuses before any worker endpoint exists
 ok - real herdr E2E: a secondmate launching its own worker gets its own workspace too, and its same-labeled sibling is untouched
 ok - real herdr E2E: a --secondmate launch still stands up that secondmate's own workspace instead of inheriting the launcher's
+ok - real herdr E2E: a no-pane projected spawn with no home workspace creates it and binds the child under it
+ok - real herdr E2E: a no-pane projected spawn under duplicated home workspaces binds the child under the lowest-numbered with one warning
 ok - real herdr E2E: teardown closes only the worker's own pane and leaves the launcher, its workspace, and the same-labeled sibling intact
 ok - real herdr E2E: isolated lab session removed and default fleet session unchanged
 ```

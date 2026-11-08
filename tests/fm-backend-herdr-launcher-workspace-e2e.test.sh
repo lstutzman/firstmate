@@ -243,6 +243,16 @@ PRES_HOME="$TMP_ROOT/presentation-home"
 mkdir -p "$PRES_HOME/state" "$PRES_HOME/config"
 : > "$PRES_HOME/config/herdr-presentation-spaces"
 
+# A presentation-on secondmate-shaped home whose '2ndmate-<id>' workspace does
+# not exist until a no-pane spawn needs it as the projection's parent.
+PRES_SM_ID="lwsm4"
+PRES_SM_HOME="$TMP_ROOT/presentation-secondmate-home"
+mkdir -p "$PRES_SM_HOME/state" "$PRES_SM_HOME/config" "$PRES_SM_HOME/projects" "$PRES_SM_HOME/bin" "$PRES_SM_HOME/data"
+: > "$PRES_SM_HOME/config/herdr-presentation-spaces"
+printf '# scratch secondmate home AGENTS.md placeholder\n' > "$PRES_SM_HOME/AGENTS.md"
+printf '%s\n' "$PRES_SM_ID" > "$PRES_SM_HOME/.fm-secondmate-home"
+printf 'trivial e2e secondmate charter: nothing to do.\n' > "$PRES_SM_HOME/data/charter.md"
+
 write_ship_brief() {  # <file> <id>
   cat > "$1" <<EOF
 # Task
@@ -259,6 +269,10 @@ for id in uniqA uniqB dupC dupD staleF smE presU presD presF presG presH presI p
   write_ship_brief "$PRIMARY_HOME/data/$id/brief.md" "$id"
   write_ship_brief "$SM_HOME/data/$id/brief.md" "$id"
   write_ship_brief "$PRES_HOME/data/$id/brief.md" "$id"
+done
+for id in presN presM; do
+  mkdir -p "$PRES_SM_HOME/data/$id"
+  write_ship_brief "$PRES_SM_HOME/data/$id/brief.md" "$id"
 done
 mkdir -p "$PRIMARY_HOME/data/$SM2_ID"
 printf 'trivial secondmate charter brief: nothing to do.\n' > "$PRIMARY_HOME/data/$SM2_ID/brief.md"
@@ -877,6 +891,51 @@ SM2_WS=$(workspace_of_pane "$SM2_PANE")
 [ "$(label_of_workspace "$SM2_WS")" = "2ndmate-$SM2_ID" ] \
   || fail "a --secondmate launch should land in '2ndmate-$SM2_ID', got '$(label_of_workspace "$SM2_WS")'"
 pass "real herdr E2E: a --secondmate launch still stands up that secondmate's own workspace instead of inheriting the launcher's"
+
+# --- 7b. presentation spaces ON with no launcher pane: a missing home
+#         workspace is created and the projected child is bound under it;
+#         with two, it is bound under the lowest-numbered with one warning ---
+
+return_worktrees "$PRESU_META"
+return_worktrees "$SME_META"
+PRES_SM_LABEL="2ndmate-$PRES_SM_ID"
+[ -z "$(lab workspace list 2>/dev/null | jq -r --arg l "$PRES_SM_LABEL" '.result.workspaces[]? | select(.label == $l) | .workspace_id')" ] \
+  || fail "the lab session already holds a '$PRES_SM_LABEL' workspace before the missing-home projection case"
+spawn_from_launcher "" "$PRES_SM_HOME" presN "$PROJ" --mode no-mistakes --yolo off
+[ "$SPAWN_RC" -eq 0 ] || fail "a no-pane projected spawn with no home workspace must create one and project under it"$'\n'"$(cat "$SPAWN_ERR")"
+WS_PRES_SM=$(lab workspace list 2>/dev/null | jq -r --arg l "$PRES_SM_LABEL" '[.result.workspaces[]? | select(.label == $l) | .workspace_id] | if length == 1 then .[0] else empty end')
+[ -n "$WS_PRES_SM" ] || fail "a no-pane projected spawn did not create exactly one '$PRES_SM_LABEL' workspace"
+PRESN_META="$PRES_SM_HOME/state/presN.meta"
+record_worktree "$PRESN_META"
+PRESN_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESN_META" | cut -d= -f2-)")
+PRESN_JOURNAL="$PRES_SM_HOME/state/presN.herdr-presentation"
+[ "$(journal_field "$PRESN_JOURNAL" version)" = 2 ] \
+  || fail "the missing-home projection did not publish a version 2 binding"$'\n'"$(cat "$PRESN_JOURNAL" 2>/dev/null)"
+[ "$(journal_field "$PRESN_JOURNAL" parent_workspace_id)" = "$WS_PRES_SM" ] \
+  || fail "the missing-home projection did not bind the created home workspace as its parent"
+assert_nested "$PRESN_WS" presN "$WS_PRES_SM" "a projected worker under a created home workspace"
+[ "$(focused_workspace)" = "$WS_OTHER" ] || fail "a missing-home projected spawn stole focus from the captain's workspace"
+return_worktrees "$PRESN_META"
+pass "real herdr E2E: a no-pane projected spawn with no home workspace creates it and binds the child under it"
+
+WS_PRES_SM_DUP=$(make_workspace "$PRES_SM_LABEL" | cut -d' ' -f1)
+[ -n "$WS_PRES_SM_DUP" ] || fail "could not create the second '$PRES_SM_LABEL' workspace"
+PRES_SM_LOWEST=$(printf '%s\n%s\n' "$WS_PRES_SM" "$WS_PRES_SM_DUP" | sort -V | head -1)
+spawn_from_launcher "" "$PRES_SM_HOME" presM "$PROJ" --mode no-mistakes --yolo off
+[ "$SPAWN_RC" -eq 0 ] || fail "a no-pane projected spawn under duplicated home workspaces must still project"$'\n'"$(cat "$SPAWN_ERR")"
+[ "$(grep -c "are labeled '$PRES_SM_LABEL'" "$SPAWN_ERR")" = 1 ] \
+  || fail "the duplicate-home projection did not print exactly one warning"$'\n'"$(cat "$SPAWN_ERR")"
+PRESM_META="$PRES_SM_HOME/state/presM.meta"
+record_worktree "$PRESM_META"
+PRESM_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESM_META" | cut -d= -f2-)")
+PRESM_JOURNAL="$PRES_SM_HOME/state/presM.herdr-presentation"
+[ "$(journal_field "$PRESM_JOURNAL" parent_workspace_id)" = "$PRES_SM_LOWEST" ] \
+  || fail "the duplicate-home projection did not bind the lowest-numbered home workspace $PRES_SM_LOWEST"
+assert_nested "$PRESM_WS" presM "$PRES_SM_LOWEST" "a projected worker under duplicated home workspaces"
+[ "$(lab workspace list 2>/dev/null | jq -r --arg l "$PRES_SM_LABEL" '[.result.workspaces[]? | select(.label == $l)] | length')" = 2 ] \
+  || fail "a duplicated home must not gain a third '$PRES_SM_LABEL' workspace"
+return_worktrees "$PRESM_META"
+pass "real herdr E2E: a no-pane projected spawn under duplicated home workspaces binds the child under the lowest-numbered with one warning"
 
 # --- 8. teardown closes only the worker's own pane --------------------------
 
