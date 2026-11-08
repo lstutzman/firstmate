@@ -31,8 +31,7 @@ world() {
   cat > "$fake/inherit-ssh" <<'SH'
 #!/usr/bin/env bash
 set -eu
-count=$(cat "$FM_FAKE_SSH_COUNT" 2>/dev/null || echo 0)
-printf '%s\n' "$((count + 1))" > "$FM_FAKE_SSH_COUNT"
+printf 'call\n' >> "$FM_FAKE_SSH_COUNT"  # one appended line per call: parallel item pushes cannot lose a count
 [ ! -f "$FM_FAKE_SSH_FAIL" ] || exit 255
 while [ "$#" -gt 0 ]; do
   case "$1" in -o) shift 2 ;; --) shift; break ;; *) exit 90 ;; esac
@@ -54,6 +53,7 @@ main_env() {  # <world> <now> <cmd...>
   env FM_HOME="$w" FM_ROOT_OVERRIDE="$ROOT" FM_CONFIG_OVERRIDE="$w/config" FM_DATA_OVERRIDE="$w/data" FM_STATE_OVERRIDE="$w/state" \
     FM_SSH_BIN="$w/fakebin/inherit-ssh" FM_FAKE_SSH_COUNT="$w/ssh.count" FM_FAKE_SSH_FAIL="$w/ssh.fail" FM_OFFICE_NOW="$now" "$@"
 }
+ssh_calls() { wc -l < "$1/ssh.count" | tr -d ' '; }
 publish() { main_env "$1" "${2:-$NOW}" bash "$OFFICE" publish nav; }
 sweep() { main_env "$1" "$2" bash "$OFFICE" feed-sweep; }
 remote_office() { env FM_HOME="$1/remote-nav" FM_OFFICE_NOW="$2" bash "$OFFICE" "${@:3}"; }
@@ -141,11 +141,11 @@ test_sweep_backs_off_after_a_failed_push() {
   put_digest "$w" 2026-11-04 3
   : > "$w/ssh.fail"
   sweep "$w" "$((NOW + 200))"
-  calls=$(cat "$w/ssh.count")
+  calls=$(ssh_calls "$w")
   sweep "$w" "$((NOW + 250))"
-  assert_equals "$calls" "$(cat "$w/ssh.count")" "a failed push is not retried inside the retry window"
+  assert_equals "$calls" "$(ssh_calls "$w")" "a failed push is not retried inside the retry window"
   sweep "$w" "$((NOW + 400))"
-  [ "$(cat "$w/ssh.count")" -gt "$calls" ] || fail "a failed push must be retried after the window"
+  [ "$(ssh_calls "$w")" -gt "$calls" ] || fail "a failed push must be retried after the window"
   assert_contains "$(cat "$w/remote-nav/config/office-feed")" "generated=$NOW" "a failed push leaves the old copy"
   pass 'a failed feed push is retried after its window, not on every sweep'
 }
