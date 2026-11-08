@@ -1,0 +1,4 @@
+old cases: 45, new cases (union): 45, diff: none
+~/.no-mistakes/evidence/01M6WSC3TVGHV8ESRA5AV7K2AQ/herdr-half.log:FM_TEST_END 2026-11-08T06:29:44Z tests/fm-remote-secondmate-lifecycle-e2e.test.sh exit=0 duration_ms=1274984 gate_skip=false
+~/.no-mistakes/evidence/01M6WSC3TVGHV8ESRA5AV7K2AQ/rex-half.log:FM_TEST_END 2026-11-08T06:25:08Z tests/fm-remote-secondmate-lifecycle-rex-e2e.test.sh exit=0 duration_ms=999390 gate_skip=false
+FM_TEST_COVERAGE ok total=372 parallel=26 parallel_max_ms=1566073 parallel_imbalance_ms=27 parallel_unhinted=0 serial=329 serial_shards=15 serial_unhinted=6 serial_max_ms=1192237 serial_budget_ms=1400000 herdr=17

@@ -1,0 +1,43 @@
+FM_TEST_BEGIN 2026-11-08T06:08:29Z tests/fm-remote-secondmate-lifecycle-e2e.test.sh family=secondmate expected_gate_skip=none
+ok - the suite reads no inherited stdin
+ok - a background job that never exits fails by name at the wait bound
+ok - a fake-ssh hold whose release never appears fails by name
+ok - overlapping remote home provisioning serializes through publication and rollback
+ok - competing cleanup of the public home cannot reach a live provisioning clone
+ok - a home that appears mid-provision makes the provision die without touching it
+ok - remote seed rollback preserves serialized competing routes
+ok - unknown readiness preserves its route and brief for reconciliation
+ok - remote seeding checks, repairs, and re-checks readiness, then stops on a remaining gap
+ok - remote seeding proceeds once the repair closes every gap
+ok - remote seeding provisions a supplied origin without touching the primary project tree
+ok - remote provisioning re-validates a supplied origin at the receiving host
+ok - seeding carries bitbucket, self-hosted, and scp-like origins through to the remote clone
+ok - remote seed registers the route and provisions the whole home and project clone on that host
+ok - remote inheritance rejects incomplete and superseded payload generations
+ok - mixed local and remote routes validate without migration
+ok - remote spawn launches on the remote-local backend and records a host-qualified route
+ok - legacy and mismatched remote endpoints fail closed before backend access
+ok - non-herdr remote endpoints are refused without changing either route
+ok - remote spawn serializes inheritance through launch publication
+ok - marked send and routed reply complete through the existing parent correlation owner
+ok - partial remote inheritance retains reread intent through bootstrap convergence
+ok - config push and bootstrap serialize remote inheritance convergence
+WARNING: watcher still down (same stale episode; last beat: 377s ago, grace 300s) - full banner already printed this episode.
+ok - remote inherited config retains and retries a failed live reread nudge
+ok - fleet snapshot projects mixed local and remote structured state
+ok - remote update imports and fast-forwards the persistent home on its configured host
+ok - the remote restart verb delegates to the host-local control plane and refuses before stopping anything
+ok - startup repairs remote readiness before probing without relaunching
+ok - watch liveness: a dead remote secondmate is auto-relaunched on its own host with one wake
+ok - watch liveness: an unreachable remote secondmate is probed, preserved, and never failed over
+ok - the host-local state read steps around a stale shadowing herdr client
+ok - startup reports alive legacy backends without changing their routes
+ALL TESTS PASSED
+FM_TEST_END 2026-11-08T06:29:44Z tests/fm-remote-secondmate-lifecycle-e2e.test.sh exit=0 duration_ms=1274984 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=1275039
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=1274984 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-remote-secondmate-lifecycle-e2e.test.sh duration_ms=1274984
+
+real	21m15.065s
+user	4m30.637s
+sys	7m27.127s
