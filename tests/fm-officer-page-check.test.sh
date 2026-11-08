@@ -483,6 +483,9 @@ test_a_closed_item_is_bumped_and_never_started() {
   assert_equals 0 "$(grep '^issue update' "$dir/log" | grep -c -- '--state\|--priority')" "it is never reopened or re-prioritised"
   assert_equals "0" "$(jq '[.start_requests[] | select(.linear_id == "PC-55" or .id == "page-old:Velocity audit:velocity-audit")] | length' "$json")" \
     "a closed item is never started"
+  officer closedhit run page-check --date 2026-10-31T16 >/dev/null || fail "a same-day second slot must succeed"
+  assert_equals "0" "$(jq '[.start_requests[] | select(.linear_id == "PC-55")] | length' "$home/data/officers/page-check/2026-10-31T16.json")" \
+    "nor in a second slot the same day"
   later_day closedhit 2026-11-01T14 >/dev/null || fail "a later-day run must succeed"
   assert_equals "0" "$(jq '[.start_requests[] | select(.linear_id == "PC-55")] | length' "$home/data/officers/page-check/2026-11-01T14.json")" \
     "nor on a later day, from the ledger"

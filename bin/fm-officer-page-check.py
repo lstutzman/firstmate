@@ -436,6 +436,8 @@ def file_findings(lib, off, findings, args, key, ledger, found, jev, lin):
     for f in findings:
         if f["fingerprint"] in ledger:
             f["filing"], f["issue_hint"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}, ledger[f["fingerprint"]]
+            if found.get("issues", {}).get(ledger[f["fingerprint"]], {}).get("closed"):
+                f["filing"]["closed"] = True
             filer.bumps.append(f)
     due = [f for f in filer.bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != day]
     if not any(not f["filing"] for f in findings) and not due:
