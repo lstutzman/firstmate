@@ -148,6 +148,84 @@ run_inbox drain --ack "$failed_id" >/dev/null
 assert_contains "$(cat "$home/state/parent-replies.status")" 'request=failed-relay' "acknowledgment retries a failed relay"
 pass "remote relay and failed-relay retention use the parent-channel owner"
 
+home="$TMP_ROOT/main-home"
+mkdir -p "$home/state" "$home/data" "$home/config"
+for kind in dispatch notice blocked; do
+  record "$kind" "main-$kind" ',"summary":"reported by the service"' | run_inbox service >/dev/null
+done
+run_inbox service-reconcile || fail "a main home has no upward channel to fail on"
+assert_equals 0 "$(find "$home/state" -maxdepth 1 -name '*.status' | wc -l | tr -d ' ')" "a main home relays nothing upward"
+main_drain=$(run_inbox drain)
+for kind in dispatch notice blocked; do
+  assert_contains "$main_drain" "\"kind\":\"$kind\"" "main home holds the $kind request for local handling"
+done
+main_ids=$(find "$home/state/inbox" -maxdepth 1 -name '*.note' -exec basename {} .note \;)
+# shellcheck disable=SC2086 # One id per argument is the contract.
+run_inbox drain --ack $main_ids >/dev/null || fail "a main home acknowledges its own service requests"
+assert_equals 0 "$(find "$home/state/inbox" -maxdepth 1 -name '*.note' | wc -l | tr -d ' ')" "acknowledged requests leave the pending inbox"
+pass "a main home handles dispatch, notice and blocked locally without a relay"
+
+home="$TMP_ROOT/corrupt-record"
+mkdir -p "$home/state" "$home/data" "$home/config"
+printf 'corrupt-mate\n' > "$home/.fm-secondmate-home"
+printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$home/.fm-secondmate-parent"
+corrupt_ids=
+for kind in notice dispatch; do
+  receipt=$(record "$kind" "corrupt-$kind" | run_inbox service)
+  id=$(printf '%s' "$receipt" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+  corrupt_ids="$corrupt_ids $id"
+  python3 - "$home/state/inbox/$id.note" <<'PY'
+import sys
+path = sys.argv[1]
+head = open(path).read().partition("--\n")[0]
+open(path, "w").write(head + "--\n{not json SECRET-VALUE\n")
+PY
+done
+record notice after-corrupt | run_inbox service >/dev/null
+if run_inbox service-reconcile >"$home/reconcile.out" 2>"$home/reconcile.err"; then
+  fail "reconcile reported success over a corrupted saved record"
+fi
+assert_contains "$(cat "$home/reconcile.err")" 'invalid JSON' "corrupted record is reported"
+assert_not_contains "$(cat "$home/reconcile.err")" 'SECRET-VALUE' "report never echoes the record body"
+assert_contains "$(cat "$parent/state/corrupt-mate.status")" 'request=after-corrupt' "a corrupted record does not block later records"
+assert_equals 1 "$(wc -l < "$parent/state/corrupt-mate.status" | tr -d ' ')" "only the intact record is relayed"
+for id in $corrupt_ids; do
+  if run_inbox drain --ack "$id" >/dev/null 2>&1; then
+    fail "corrupted record $id was acknowledged"
+  fi
+  assert_present "$home/state/inbox/$id.note" "corrupted record is left in place"
+done
+pass "a corrupted saved record is reported and left pending without blocking others"
+
+home="$TMP_ROOT/atomic-publish"
+mkdir -p "$home/state" "$home/data" "$home/config"
+writers=
+for n in 1 2 3 4 5 6 7 8; do
+  record notice "atomic-$n" | run_inbox service >/dev/null &
+  writers="$writers $!"
+done
+partial=0
+alive=1
+while [ "$alive" -eq 1 ]; do
+  alive=0
+  for pid in $writers; do
+    if kill -0 "$pid" 2>/dev/null; then alive=1; fi
+  done
+  for note in "$home/state/inbox/"*.note; do
+    [ -f "$note" ] || continue
+    body=$(sed '1,/^--$/d' "$note" 2>/dev/null || true)
+    case "$body" in
+      '{'*'}') ;;
+      *) partial=$((partial + 1)) ;;
+    esac
+  done
+done
+for pid in $writers; do wait "$pid" || fail "concurrent service submission failed"; done
+assert_equals 0 "$partial" "a pending note is never visible half written"
+assert_equals 8 "$(find "$home/state/inbox" -maxdepth 1 -name '*.note' | wc -l | tr -d ' ')" "every submission is published once"
+assert_equals 0 "$(find "$home/state/inbox" -maxdepth 1 -name '.staging-*' | wc -l | tr -d ' ')" "no staging file survives publication"
+pass "service records are published atomically"
+
 # A real watcher must relay on its poll before surfacing the queued request.
 home=$(make_case watcher)
 mkdir -p "$home/data" "$home/config"
