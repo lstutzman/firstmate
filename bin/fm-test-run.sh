@@ -1025,6 +1025,7 @@ tests/fm-turnend-foreign-owner-arm-fix.test.sh 6547
 tests/fm-turnend-guard.test.sh 95776
 tests/fm-update.test.sh 18320
 tests/fm-usage-warner.test.sh 27065
+tests/fm-velocity-taps.test.sh 14000
 tests/fm-vendor-auth-probe.test.sh 43582
 tests/fm-voice-relay.test.sh 28821
 tests/fm-wake-daemon-lifecycle-e2e.test.sh 10474

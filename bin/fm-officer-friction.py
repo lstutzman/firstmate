@@ -261,6 +261,12 @@ started-by-default card offers object, a started card with no link or task
 offers reopen, and the rest offer none, so a standing-work card never offers a
 bare Start fix. docs/configuration.md "Officers" lists the card fields.
 
+Velocity taps. A Captain's Log reply on a `velocity-vs-<id>` card (the fleet app's velocity audit page) is read from the
+same replies feed and handled by bin/fm-velocity-taps.py, which owns the five choices and the older words: it files the
+Linear item, answers the reply through fleet-axi, and adds its start, discuss or object notes to `start_requests`. The
+pass runs only when such a reply was read and needs --writes linear; the digest's `velocity_taps` section names what it
+handled and what waits.
+
 The proposed fix comes from the FIXES table. A group no rule names gets no
 card, and neither does a missing tool in RETIRED_TOOLS (its events are still
 counted, but the fleet no longer uses it, so installing it is never proposed);
@@ -2256,6 +2262,25 @@ def linear_pass(doc, states, eligible, args, offices, main_home):
             "held": held, "asks_for_lee": asks}, starts
 
 
+def velocity_taps(replies, args, offices):
+    """Handles the fleet app's velocity-card taps (bin/fm-velocity-taps.py owns what each choice does).
+
+    Runs only when a velocity- reply was read, so a run with none calls neither Linear, the app nor fleet-axi.
+    """
+    mod = sys.modules.get("fm_velocity_taps")
+    if mod is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-velocity-taps.py")
+        spec = importlib.util.spec_from_file_location("fm_velocity_taps", path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["fm_velocity_taps"] = mod
+        spec.loader.exec_module(mod)
+    report, rows = mod.run(replies, {
+        "out": args.out, "date": args.date, "now": args.now, "app": re.sub(r"/api/captains-log/?$", "", args.captains_log.rstrip("/")),
+        "fm_home": args.fm_home, "offices": offices, "writes": args.writes, "team": args.team,
+        "max_creates": args.max_creates, "max_calls": args.max_linear_calls, "jev": args.jev})
+    return {"report": report, "rows": rows}
+
+
 def coverage(scanned, homes, hosts, log):
     present = sorted({s["machine"] for s in scanned["sessions"] if s.get("machine")})
     home_rows = []
@@ -2342,6 +2367,14 @@ def render_md(doc):
             lines += ["", "Unsettled, for the Quartermaster (no rule settles them from facts the officer reads):", ""]
             for u in bosun["unsettled"]:
                 lines.append("- %s %s `%s`: %s" % (u["host"], u["kind"], u["item"].replace("`", "'"), u["reason"]))
+    taps = doc.get("velocity_taps")
+    if taps:
+        lines += ["", "## Velocity taps", ""]
+        lines.append("- %d velocity reply(ies) read: %d handled, %d waiting, %d ignored (bin/fm-velocity-taps.py)." % (
+            taps["read"], len(taps["handled"]), len(taps["waiting"]), taps["ignored"]))
+        for h in taps["handled"]:
+            lines.append("- %s (%s)%s." % (h["card"], h["choice"], ": Linear " + h["issue"] if h.get("issue") else ""))
+        lines += ["- " + g for g in taps["gaps"]]
     lines += ["", "## Linear", ""]
     lines.append("- Writes: %s; %d of %d Linear call(s) used%s." % (
         doc["writes"], doc["linear_calls"], doc["linear_call_budget"],
@@ -2474,6 +2507,12 @@ def main(argv):
     linear, doc["start_requests"] = linear_pass(doc, states, eligible, args, offices, args.fm_home)
     doc.update(linear)
     doc["coverage"]["notes"].extend(linear["linear_gaps"])
+    if args.captains_log and any(str(r.get("card") or "").startswith("velocity-") for r in replies):
+        taps = velocity_taps(replies, args, offices)
+        doc["velocity_taps"] = taps["report"]
+        doc["coverage"]["notes"].extend(taps["report"]["gaps"])
+        for rank, row in enumerate(taps["rows"], len(doc["start_requests"]) + 1):
+            doc["start_requests"].append(dict(row, rank=rank))
     for f in doc["findings"]:
         f["state"] = states[f["id"]]
     if args.fm_home:
