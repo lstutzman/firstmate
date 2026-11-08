@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/fm-fix-forward-count.test.sh - bin/fm-fix-forward-count.sh counts merged PRs, PRs carrying the
 # `Fixes-regression-from:` line, and reverts per repository, with text and JSON output. A fake gh on PATH
-# answers `gh pr list` from per-repository JSON files, applies the `merged:>=DATE` / `merged:>DATE` qualifier the way
+# answers `gh pr list` from per-repository JSON files, applies `--limit` and the `merged:>=DATE` / `merged:>DATE` qualifier the way
 # GitHub search documents it (by UTC merge date, inclusive for >=), records its arguments, and fails for an
 # unreadable repo the way real gh does: `gh repo view` fails, while `gh pr list --search` answers [] with exit 0.
 set -u
@@ -25,9 +25,11 @@ fi
 printf '%s\n' "$*" >> "$FAKE_GH_DATA/.calls"
 repo=
 search=
+limit=30
 while [ $# -gt 0 ]; do
   [ "$1" = --repo ] && repo=$2
   [ "$1" = --search ] && search=$2
+  [ "$1" = --limit ] && limit=$2
   shift
 done
 f="$FAKE_GH_DATA/$(printf '%s' "$repo" | tr '/' '_')"
@@ -36,7 +38,7 @@ case $search in
   'merged:>='*) jq --arg d "${search#merged:>=}" '[.[] | select((.mergedAt // "9999")[0:10] >= $d)]' "$f" ;;
   'merged:>'*) jq --arg d "${search#merged:>}" '[.[] | select((.mergedAt // "9999")[0:10] > $d)]' "$f" ;;
   *) cat "$f" ;;
-esac
+esac | jq --argjson n "$limit" '.[:$n]'
 SH
 chmod +x "$FAKEBIN/gh"
 export FAKE_GH_DATA="$DATA"
@@ -118,6 +120,13 @@ test_truncated_marker() {
   pass "fm-fix-forward-count.sh: a repository at the read limit is marked truncated"
 }
 
+test_default_limit_reads_a_busy_week() {
+  # 355 merges in one week is what lstutzman/PropertyCompass2 had for 2026-11-02..08 (GitHub search API).
+  jq -n --arg at "$(days_ago 1)T12:00:00Z" '[range(355) | {number:., title:"PR", body:"", mergedAt:$at}]' > "$DATA/o_busy"
+  assert_equals "o/busy merged=355 fix_forward=0 reverts=0" "$(bash "$COUNT" --repo o/busy)" "busy week, default limit"
+  pass "fm-fix-forward-count.sh: the default limit counts a 355-merge week without truncating"
+}
+
 test_unreadable_repo_is_reported_and_others_still_print() {
   local out rc
   out=$(bash "$COUNT" --repo o/missing --repo o/b); rc=$?
@@ -157,6 +166,7 @@ fm_test_run \
   test_window_is_exactly_n_days \
   test_bsd_date_fallback \
   test_truncated_marker \
+  test_default_limit_reads_a_busy_week \
   test_unreadable_repo_is_reported_and_others_still_print \
   test_default_repositories \
   test_usage_errors

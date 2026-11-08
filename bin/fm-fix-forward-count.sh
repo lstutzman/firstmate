@@ -10,7 +10,7 @@
 # Usage: fm-fix-forward-count.sh [--days N] [--json] [--limit N] [--repo owner/name]...
 #   --days N    window length in days, default 7
 #   --json      print one JSON document instead of one line per repository
-#   --limit N   most merged PRs read per repository, default 200 (a repository that hits it is marked truncated)
+#   --limit N   most merged PRs read per repository, default 1000 (a repository that hits it is marked truncated)
 #   --repo R    a repository to count; repeatable. Default: FM_FIX_FORWARD_REPOS (space-separated), else the fleet
 #               merge table repositories lstutzman/{firstmate,skills,fleet-app,PropertyCompass2}
 #
@@ -26,7 +26,7 @@
 set -eu
 
 DAYS=7
-LIMIT=200
+LIMIT=1000
 JSON=0
 REPOS=()
 usage() { sed -n '/^# Usage:/,/^# JSON:/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
