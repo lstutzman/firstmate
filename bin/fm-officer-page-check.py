@@ -77,8 +77,10 @@ as work, the severity of each kind and what starts. Every open finding is filed 
 in team PC, project Fleet, labels Bug, the Source label agent and area:fleet, keyed by
 its id (kind, page and object), so a finding nobody fixed raises the item's
 `Found: N times` line once a day and that count is the priority lever. A card's own
-words never go to Linear: the item names the card by id. A page-old or shown-after-done
-finding whose item exists and whose score reaches the rubric minimum gets a start
+words never go to Linear: the item names the card by id. A repeat of a closed item
+raises that item's Found line, files nothing new and never starts it (the Filer's
+bump_closed). A page-old or shown-after-done
+finding whose open item exists and whose score reaches the rubric minimum gets a start
 request in the digest's `start_requests` (and, for this home, a <key>.start-requests.sh
 handoff), addressed to the --start-home office that dispatches the fleet repositories
 (the Quartermaster), else to --fm-home; fleet-app merges stay with Slarti. A
@@ -425,7 +427,7 @@ def description(lf, key, off, near=None, recurrence=None):
 def file_findings(lib, off, findings, args, key, ledger, found, jev, lin):
     """Files every open finding, highest score first; returns (writes done, why Linear stopped or None)."""
     day, out = key[:10], args.out
-    filer = lib.Filer(off, lin, args.team, day, out, ledger, found, jev, args.max_creates)
+    filer = lib.Filer(off, lin, args.team, day, out, ledger, found, jev, args.max_creates, bump_closed=True)
 
     def stop(reason, rate_limited=False):
         for f in findings:
@@ -437,6 +439,8 @@ def file_findings(lib, off, findings, args, key, ledger, found, jev, lin):
     for f in findings:
         if f["fingerprint"] in ledger:
             f["filing"], f["issue_hint"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}, ledger[f["fingerprint"]]
+            if found.get("issues", {}).get(ledger[f["fingerprint"]], {}).get("closed"):
+                f["filing"]["closed"] = True
             filer.bumps.append(f)
     due = [f for f in filer.bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != day]
     if not any(not f["filing"] for f in findings) and not due:
