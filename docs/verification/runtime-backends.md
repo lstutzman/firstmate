@@ -1869,7 +1869,7 @@ ok - real Herdr lab: the primary presentation setting inherits into real secondm
 ok - real Herdr lab validation completed on Herdr 0.8.0 with the default-session tripwire intact
 ```
 
-The two cases above and the lock-contention case changed when every worker became nested under its home workspace.
+The opted-out case above, and the secondmate lock-contention case in the 2026-07-21 block, changed when every worker became nested under its home workspace; the bounded lock-contention case is new in the same change.
 On 2026-11-08 against Herdr 0.9.5 protocol 22 the same suite, `tests/fm-backend-herdr-presentation-e2e.test.sh`, observed:
 
 ```text
