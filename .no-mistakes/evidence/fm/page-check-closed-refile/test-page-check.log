@@ -1,0 +1,14 @@
+ok - fm-officer page-check: the registry needs an https app and a valid cadence
+ok - fm-officer page-check: each finding kind is raised for the right object
+ok - fm-officer page-check: an open production action and an unanswered decision are not stale
+ok - fm-officer page-check: Bosun's page gap, an empty rules file and unexpected JSON shapes are findings or notes, not crashes
+ok - fm-officer page-check: an unchanged page set is quiet until the reminder window passes
+ok - fm-officer page-check: an unreachable app is a finding, not a failed run
+ok - fm-officer page-check: a scheduled run takes the slot key and only reads
+ok - fm-officer page-check: every finding is filed once in Linear, the Found line rises in place, and no card words are sent
+ok - fm-officer page-check: a page defect starts through the Quartermaster, a settled card never does
+ok - fm-officer page-check: no writes, a missing label and the create cap bound what is filed and started
+ok - fm-officer page-check: a closed item that recurs is bumped, never re-filed or started
+ok - fm-officer page-check: a settled production-deploy card whose id names payments starts its fleet-app page fix when shown again
+ok - fm-officer page-check: a finding whose own fix is in a reserved class is filed and held for Lee, never started
+ok - fm-officer page-check: a page defect's bad pattern is remembered once, with its route as the safe form
