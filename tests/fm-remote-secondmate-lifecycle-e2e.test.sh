@@ -163,7 +163,7 @@ printf '%s\n' "$((count + 1))" > "$FM_FAKE_SSH_COUNT"
 # A held call waits for the test to release it, but a test that dies or loses
 # the release must fail the call by name instead of hanging the job.
 hold_until_released() { # <release-file> <what>
-  local deadline=$((SECONDS + 300))
+  local deadline=$((SECONDS + ${FM_FAKE_HOLD_BOUND:-300}))
   while [ ! -f "$1" ]; do
     [ "$SECONDS" -lt "$deadline" ] || { echo "fake-ssh: timed out waiting for the $2 release" >&2; exit 97; }
     sleep 0.02
@@ -321,6 +321,42 @@ case "${FM_FAKE_SSH_MODE:-normal}" in
 esac
 SH
 chmod +x "$FAKEBIN/fake-ssh"
+
+read -r -t 1 _ 2>/dev/null
+stdin_rc=$?
+[ "$stdin_rc" -eq 1 ] || fail "the suite's stdin is not at end of file (read status $stdin_rc), so remote job staging could block on it"
+pass "the suite reads no inherited stdin"
+
+bound_rc=0
+bound_out=$( (
+  FM_TEST_WAIT_BOUND=1
+  sleep 30 &
+  printf '%s\n' "$!" > "$TMP_ROOT/bound-child.pid"
+  wait_bounded "$!" "a child that never exits"
+) 2>&1) || bound_rc=$?
+bound_child=$(cat "$TMP_ROOT/bound-child.pid")
+[ "$bound_rc" -ne 0 ] || fail "wait_bounded returned success for a child that never exits"
+case "$bound_out" in
+  *"timed out after 1s waiting for a child that never exits"*) ;;
+  *) fail "wait_bounded did not name what it timed out on: $bound_out" ;;
+esac
+bound_state=$(ps -o stat= -p "$bound_child" 2>/dev/null | tr -d '[:space:]')
+case "$bound_state" in ''|Z*) ;; *) kill "$bound_child" 2>/dev/null; fail "wait_bounded left its child running (state $bound_state)" ;; esac
+pass "a background job that never exits fails by name at the wait bound"
+
+hold_rc=0
+hold_out=$(FM_FAKE_HOLD_BOUND=1 FM_FAKE_SSH_MODE=inherit-block FM_FAKE_SSH_COUNT="$TMP_ROOT/hold-ssh.count" \
+  FM_FAKE_REMOTE_CWD="$TMP_ROOT" FM_FAKE_INHERIT_PAYLOAD="$TMP_ROOT/hold.payload" \
+  FM_FAKE_INHERIT_ENTERED="$TMP_ROOT/hold.entered" FM_FAKE_INHERIT_RELEASE="$TMP_ROOT/hold.never-released" \
+  "$FAKEBIN/fake-ssh" -- remote-mac fm-remote-entrypoint.sh _ _ _ \
+  "$(printf 'fm-remote-inherit.sh\0put\0data/captain-shared.md' | base64 | tr -d '\n')" 2>&1) || hold_rc=$?
+[ -f "$TMP_ROOT/hold.entered" ] || fail "the fake-ssh inherit hold was never entered"
+[ "$hold_rc" -eq 97 ] || fail "a fake-ssh hold whose release never appears exited $hold_rc, not 97: $hold_out"
+case "$hold_out" in
+  *"timed out waiting for the inherit release"*) ;;
+  *) fail "the fake-ssh hold did not name its missing release: $hold_out" ;;
+esac
+pass "a fake-ssh hold whose release never appears fails by name"
 
 publish_healthy_watcher_identity() { # <state> <home> <watch-script>
   local state=$1 home=$2 watch=$3 identity
