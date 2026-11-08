@@ -2340,7 +2340,8 @@ An absent or blank file changes nothing, while a present path that is not a read
 The text is static and never executed or expanded, and secondmate charters never take it.
 
 A block can be limited to some projects: a line that is exactly `<!-- project: PropertyCompass2 -->` (several names are comma-separated) opens a block that only briefs whose repo-name is listed receive.
-The next tag line or a line that is exactly `<!-- /project -->` ends it; tag lines are never emitted, and untagged text always is.
+Every block must be closed with a line that is exactly `<!-- /project -->`: the next tag line may still end the block before it, but the last block must be closed, and a block left open at the end of the file stops the scaffold before anything is written, so own lines added below an inherited base never fall inside a base block.
+Tag lines are never emitted, and untagged text always is.
 A file with no tag line is emitted unchanged, so tagging only removes text from briefs for other projects and shrinks them.
 
 The primary's file is inherited by every secondmate home as a base: the home's copy is the primary's text followed by the home's own lines.

@@ -175,7 +175,9 @@
 # a later scout promotion could not outrank), stops the scaffold before
 # anything is written. Secondmate charters never take it. Lines between
 # `<!-- project: Name[, Name] -->` and the next tag line or `<!-- /project -->`
-# reach only briefs whose repo-name is listed; untagged text always reaches all. In a secondmate home
+# reach only briefs whose repo-name is listed; untagged text always reaches all.
+# Every block must be closed: the last one by `<!-- /project -->`, or the
+# scaffold stops before anything is written. In a secondmate home
 # the file is the primary's text with the home's own lines below it
 # (bin/fm-config-inherit-lib.sh owns that composition).
 # --linear <PC-n> names the Property Compass Linear item the task serves. The
@@ -646,13 +648,16 @@ fi
 
 # Project-conditional blocks: a line that is exactly `<!-- project: A[, B] -->`
 # opens a block that only a brief for a task whose repo-name is one of the
-# listed names receives; `<!-- /project -->` or the next tag line closes it.
-# Tag lines are never emitted, and untagged text always is, so an include with
-# no tag line is emitted byte for byte as before.
+# listed names receives; `<!-- /project -->` or the next tag line closes it,
+# and the last block must be closed by `<!-- /project -->`, so a block left open
+# at the end stops the scaffold before anything is written. Tag lines are never
+# emitted, and untagged text always is, so an include with no tag line is
+# emitted byte for byte as before.
 if [ -n "$BRIEF_INCLUDE_BODY" ] && printf '%s\n' "$BRIEF_INCLUDE_BODY" | grep -q '^<!-- \(/\)\{0,1\}project\(: .*\)\{0,1\} -->$'; then
   BRIEF_INCLUDE_BODY=$(printf '%s\n' "$BRIEF_INCLUDE_BODY" | awk -v repo="${POS[1]:-}" '
-    /^<!-- \/project -->$/ { emit = 1; next }
+    /^<!-- \/project -->$/ { emit = 1; open = 0; next }
     /^<!-- project: .* -->$/ {
+      open = 1
       names = $0
       sub(/^<!-- project: /, "", names); sub(/ -->$/, "", names)
       n = split(names, a, /[ ]*,[ ]*/); emit = 0
@@ -660,7 +665,11 @@ if [ -n "$BRIEF_INCLUDE_BODY" ] && printf '%s\n' "$BRIEF_INCLUDE_BODY" | grep -q
       next
     }
     BEGIN { emit = 1 }
-    emit { print }')
+    emit { print }
+    END { if (open) exit 3 }') || {
+    echo "error: $BRIEF_INCLUDE_FILE ends inside a project block that is not closed; end the last block with a line that is exactly <!-- /project -->" >&2
+    exit 1
+  }
   [ -n "$(printf '%s' "$BRIEF_INCLUDE_BODY" | tr -d '[:space:]')" ] || BRIEF_INCLUDE_BODY=
 fi
 

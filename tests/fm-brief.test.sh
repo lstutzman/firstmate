@@ -1342,7 +1342,7 @@ test_worker_role_scope() {
 # A tagged block reaches only briefs for the listed projects; untagged text
 # always reaches every brief, and an include with no tag line is unchanged.
 test_home_brief_include_project_blocks() {
-  local home config pc fm tagged plain
+  local home config pc fm tagged plain err
   home="$TMP_ROOT/include-tags"
   config="$home/config"
   mkdir -p "$config"
@@ -1367,13 +1367,32 @@ test_home_brief_include_project_blocks() {
   assert_grep 'Shared tail.' "$fm" "a firstmate brief lost untagged text after the block"
   assert_no_grep '<!-- ' "$pc" "a tag line reached a brief"
   # The PropertyCompass2 brief equals the untagged brief with the tag lines removed.
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tag-ref PropertyCompass2 --scout >/dev/null || fail "ref scaffold failed"
   grep -v '^<!-- ' "$tagged" > "$config/brief-include.md"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tag-ref2 PropertyCompass2 --scout >/dev/null || fail "ref2 scaffold failed"
   diff <(sed 's/tag-pc/ID/g' "$pc") <(sed 's/tag-ref2/ID/g' "$home/data/tag-ref2/brief.md") >/dev/null \
     || fail "a PropertyCompass2 brief is not identical to the untagged brief"
 
-  printf '%s\n' '<!-- project: PropertyCompass2 -->' 'PC-only rule.' > "$config/brief-include.md"
+  cp "$tagged" "$config/brief-include.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tag-ship-pc PropertyCompass2 --mode no-mistakes >/dev/null || fail "tagged pc ship scaffold failed"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tag-ship-fm firstmate --mode no-mistakes >/dev/null || fail "tagged fm ship scaffold failed"
+  assert_grep 'PC-only rule.' "$home/data/tag-ship-pc/brief.md" "a PropertyCompass2 ship brief lost its tagged block"
+  assert_no_grep 'PC-only rule.' "$home/data/tag-ship-fm/brief.md" "a firstmate ship brief received a PropertyCompass2 block"
+  assert_grep 'Shared tail.' "$home/data/tag-ship-fm/brief.md" "a firstmate ship brief lost untagged text after the block"
+
+  # An inherited base whose closed block is followed by the home's own lines.
+  printf '%s\n' 'Base rule.' '<!-- project: PropertyCompass2 -->' 'PC-only rule.' '<!-- /project -->' 'Own rule.' > "$config/brief-include.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tag-own-fm firstmate --scout >/dev/null || fail "base-and-own scaffold failed"
+  assert_grep 'Own rule.' "$home/data/tag-own-fm/brief.md" "a firstmate brief lost the home's own lines below a closed base block"
+  assert_no_grep 'PC-only rule.' "$home/data/tag-own-fm/brief.md" "a firstmate brief received a base PropertyCompass2 block"
+
+  printf '%s\n' 'Base rule.' '<!-- project: PropertyCompass2 -->' 'PC-only rule.' 'Own rule.' > "$config/brief-include.md"
+  err=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tag-open firstmate --scout 2>&1 >/dev/null) \
+    && fail "an include ending inside an open project block was accepted"
+  printf '%s' "$err" | grep -qF "$config/brief-include.md" || fail "the unclosed-block error did not name the include file: $err"
+  printf '%s' "$err" | grep -q 'not closed' || fail "the unclosed-block error did not say the block is not closed: $err"
+  [ ! -e "$home/data/tag-open" ] || fail "an unclosed project block left a partial scaffold"
+
+  printf '%s\n' '<!-- project: PropertyCompass2 -->' 'PC-only rule.' '<!-- /project -->' > "$config/brief-include.md"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" tag-empty firstmate --scout >/dev/null || fail "all-filtered scaffold failed"
   assert_no_grep '# Home brief additions' "$home/data/tag-empty/brief.md" "an include filtered to nothing still added a section"
   pass "fm-brief.sh: project-tagged include blocks reach only matching projects"
