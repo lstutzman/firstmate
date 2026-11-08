@@ -15,6 +15,12 @@
 #             running, fixing, ci) or parked at a gate the worker itself owes,
 #             yet no drive call is running from its copy, so nothing will wake
 #             it at the run's next gate or outcome.
+# When the run is pending (queued behind the machine's max_concurrent_runs
+# slots), the reattach steer also names the runs in this repo holding slots,
+# each as branch and run id from the `no-mistakes axi` overview, and says the
+# wait is `paused [cause=external]`, not `blocked`. The overview lists only this
+# repo's runs while the cap is machine-wide, so runs in other repos may also
+# hold slots; the steer says so rather than presenting a full list.
 # Either slip gets one fixed text steer through bin/fm-send.sh, the durable
 # steering inbox, at most once per slip per task generation (the meta's
 # spawn_gen), recorded in state/.nm-drive-steer-<task-id> before the send so a
@@ -138,6 +144,21 @@ case "$slip" in
     text="Automatic steer: the no-mistakes run for $branch is still active, but no no-mistakes axi run or respond call is running from your copy, so nothing will wake you at its next gate or outcome. Re-run \`no-mistakes axi run\` with no flags now, backgrounded as your brief's Definition of done says, and reattach the same way every time it returns without a gate or outcome."
     ;;
 esac
+
+if [ "$slip" = reattach ]; then
+  case "$detail" in
+    *"(pending)"*)
+      overview=$(fm_nm_run "$wt" 10 axi)
+      ids=$(fm_nm_table_column "$overview" runs id)
+      branches=$(fm_nm_table_column "$overview" runs branch)
+      run_statuses=$(fm_nm_table_column "$overview" runs status)
+      holders=$(paste -d '\t' <(printf '%s\n' "$ids") <(printf '%s\n' "$branches") <(printf '%s\n' "$run_statuses") \
+        | awk -F '\t' -v own="$branch" '$3 == "running" && $2 != own { printf "%s%s (run %s)", sep, $2, $1; sep = ", " }')
+      text="$text Your run is pending because the machine's run slots are full, which is \`paused [cause=external]\`, not \`blocked\`; keep reattaching."
+      [ -z "$holders" ] || text="$text Runs in this repo holding the slots (runs in other repos may hold more): $holders."
+      ;;
+  esac
+fi
 
 FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_SEND_EXPECTED_SPAWN_GEN="$gen" \
   fm_run_timed 30 "$SCRIPT_DIR/fm-send.sh" "$id" "$text" </dev/null >/dev/null 2>&1 || exit 1

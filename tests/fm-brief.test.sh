@@ -1262,6 +1262,7 @@ test_workers_wait_without_spending_turns() {
     assert_grep "natural checkpoint" "$brief" "$id: the flag dropped the natural-checkpoint inbox check"
   done
   brief="$home/data/brief-wait-ship/brief.md"
+  assert_grep "with no steps is queued behind the machine's run slots" "$brief" "the foreground drive text lost the queued-run wait"
   assert_grep "issue the same foreground call again" "$brief" \
     "the no-mistakes DOD must reattach with the same foreground call"
   assert_no_grep "background the drive call" "$brief" "the no-mistakes DOD still backgrounds the drive call"
@@ -1289,6 +1290,7 @@ test_wait_no_turns_absent_keeps_the_previous_brief() {
   assert_grep "natural checkpoint" "$brief" "an absent flag dropped the unprompted inbox check"
   assert_no_grep "Do not poll or list the inbox while waiting" "$brief" "an absent flag still added the no-poll inbox line"
   assert_grep "background the drive call" "$brief" "an absent flag replaced the backgrounded drive text"
+  assert_grep "with no steps is queued behind the machine's run slots" "$brief" "the backgrounded drive text lost the queued-run wait"
   assert_no_grep "issue the same foreground call again" "$brief" \
     "an absent flag still asked for the foreground reattach"
   pass "fm-brief: without config/wait-no-turns the brief and drive text stay as they were"
