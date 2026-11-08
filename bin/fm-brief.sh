@@ -968,7 +968,7 @@ IFS= read -r -d '' SHARED_INFRA_RULE <<'EOF' || true
 EOF
 SHARED_INFRA_RULE=${SHARED_INFRA_RULE%$'\n'}
 
-# One shared string keeps the ship and scout shell-path rule identical.
+# One shared string keeps the ship and scout shell-path rule, and its wait and diff habits, identical.
 IFS= read -r -d '' SHARED_NO_CD_RULE <<'EOF' || true
 8. Never start a shell command with `cd`, and never run a search whose path depends on the current directory.
    Use absolute paths, `git -C <abs>`, or a `( cd <abs> && ... )` subshell.
