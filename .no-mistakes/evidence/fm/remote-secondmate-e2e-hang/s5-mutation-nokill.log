@@ -1,0 +1,3 @@
+ok - the suite reads no inherited stdin
+not ok - wait_bounded left its child running (state S)
+exit=1 elapsed=3s

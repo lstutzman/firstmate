@@ -1,0 +1,2 @@
+not ok - the suite's stdin is not at end of file (read status 142), so remote job staging could block on it
+exit=1 elapsed=129s
