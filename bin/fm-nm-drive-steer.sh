@@ -16,9 +16,11 @@
 #             yet no drive call is running from its copy, so nothing will wake
 #             it at the run's next gate or outcome.
 # When the run is pending (queued behind the machine's max_concurrent_runs
-# slots), the reattach steer also names the runs holding those slots, each as
-# branch and run id from the `no-mistakes axi` overview, and says the wait is
-# `paused [cause=external]`, not `blocked`.
+# slots), the reattach steer also names the runs in this repo holding slots,
+# each as branch and run id from the `no-mistakes axi` overview, and says the
+# wait is `paused [cause=external]`, not `blocked`. The overview lists only this
+# repo's runs while the cap is machine-wide, so runs in other repos may also
+# hold slots; the steer says so rather than presenting a full list.
 # Either slip gets one fixed text steer through bin/fm-send.sh, the durable
 # steering inbox, at most once per slip per task generation (the meta's
 # spawn_gen), recorded in state/.nm-drive-steer-<task-id> before the send so a
@@ -153,7 +155,7 @@ if [ "$slip" = reattach ]; then
       holders=$(paste -d '\t' <(printf '%s\n' "$ids") <(printf '%s\n' "$branches") <(printf '%s\n' "$statuses") \
         | awk -F '\t' -v own="$branch" '$3 == "running" && $2 != own { printf "%s%s (run %s)", sep, $2, $1; sep = ", " }')
       text="$text Your run is pending because the machine's run slots are full, which is \`paused [cause=external]\`, not \`blocked\`; keep reattaching."
-      [ -z "$holders" ] || text="$text Runs holding the slots: $holders."
+      [ -z "$holders" ] || text="$text Runs in this repo holding the slots (runs in other repos may hold more): $holders."
       ;;
   esac
 fi

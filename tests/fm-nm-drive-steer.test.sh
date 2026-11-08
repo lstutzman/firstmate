@@ -129,7 +129,7 @@ SH
     || fail "a pending run with no drive call was not steered"
   body=$(inbox_body "$dir" queued)
   printf '%s' "$body" | grep -F 'paused [cause=external]' >/dev/null || fail "the pending steer does not say the wait is paused, not blocked"
-  printf '%s' "$body" | grep -F 'fm/other-one (run RUNONE), fm/other-two (run RUNTWO)' >/dev/null \
+  printf '%s' "$body" | grep -F 'Runs in this repo holding the slots (runs in other repos may hold more): fm/other-one (run RUNONE), fm/other-two (run RUNTWO).' >/dev/null \
     || fail "the pending steer does not name the runs holding the slots"
   printf '%s' "$body" | grep -F 'fm/old' >/dev/null && fail "a finished run was named as holding a slot"
   printf '%s' "$body" | grep -F 'fm/queued (run' >/dev/null && fail "the worker's own run was named as holding a slot"
