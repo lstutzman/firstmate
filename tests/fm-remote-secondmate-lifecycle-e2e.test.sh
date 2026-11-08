@@ -330,7 +330,7 @@ pass "the suite reads no inherited stdin"
 bound_rc=0
 bound_out=$( (
   FM_TEST_WAIT_BOUND=1
-  sleep 30 &
+  sleep 30 >/dev/null 2>&1 &
   printf '%s\n' "$!" > "$TMP_ROOT/bound-child.pid"
   wait_bounded "$!" "a child that never exits"
 ) 2>&1) || bound_rc=$?
