@@ -2339,6 +2339,10 @@ When the file exists, `bin/fm-brief.sh` appends its text verbatim as the scaffol
 An absent or blank file changes nothing, while a present path that is not a readable regular file, or text carrying its own `Delivery contract: mode=` line, stops the scaffold before anything is written.
 The text is static and never executed or expanded, and secondmate charters never take it.
 
+A block can be limited to some projects: a line that is exactly `<!-- project: PropertyCompass2 -->` (several names are comma-separated) opens a block that only briefs whose repo-name is listed receive.
+The next tag line or a line that is exactly `<!-- /project -->` ends it; tag lines are never emitted, and untagged text always is.
+A file with no tag line is emitted unchanged, so tagging only removes text from briefs for other projects and shrinks them.
+
 The primary's file is inherited by every secondmate home as a base: the home's copy is the primary's text followed by the home's own lines.
 Each push replaces only that base, so add a home's own rules below it; an edit inside the base is kept, re-appended below the next base rather than lost.
 A home whose file predates inheritance keeps its whole file as its own lines, less a leading copy of the primary's text, so text it duplicated differently appears twice once and is pruned by hand.
