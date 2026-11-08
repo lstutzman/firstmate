@@ -1,0 +1,11 @@
+### pending worker, worktree=~/Documents/GitHub/firstmate
+daemon: running
+runs[10]{id,branch,status,head,pr}:
+--
+Automatic steer: the no-mistakes run for fm/whatever is still active, but no no-mistakes axi run or respond call is running from your copy, so nothing will wake you at its next gate or outcome. Re-run `no-mistakes axi run` with no flags now, backgrounded as your brief's Definition of done says, and reattach the same way every time it returns without a gate or outcome. Your run is pending because the machine's run slots are full, which is `paused [cause=external]`, not `blocked`; keep reattaching.
+
+### pending worker, worktree={run-worktree}
+error: repo not initialized (run 'no-mistakes init' first)
+--
+Automatic steer: the no-mistakes run for fm/whatever is still active, but no no-mistakes axi run or respond call is running from your copy, so nothing will wake you at its next gate or outcome. Re-run `no-mistakes axi run` with no flags now, backgrounded as your brief's Definition of done says, and reattach the same way every time it returns without a gate or outcome. Your run is pending because the machine's run slots are full, which is `paused [cause=external]`, not `blocked`; keep reattaching.
+

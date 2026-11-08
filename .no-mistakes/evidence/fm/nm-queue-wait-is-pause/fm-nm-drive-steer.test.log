@@ -1,0 +1,15 @@
+1..13
+ok - a pre-pipeline done with no run gets exactly one start steer per generation
+ok - an active run with no drive call gets exactly one reattach steer per generation
+ok - a pending run's reattach steer says paused and names the runs holding the slots
+ok - a parked gate the worker owes is steered to reattach, a gate a human owes is not
+ok - a worker with a live run or respond drive call gets no steer
+ok - only a no-mistakes axi run or respond process in the worker's own copy counts as a drive call
+ok - without /proc the probe reads the drive call's cwd from lsof field output
+ok - a declared external wait, blocker, or open decision gets no steer
+ok - an older blocker a later event superseded allows the steer, an open decision does not
+ok - an unknown probe, a CI-ready done, or an unhandled steer gets no automatic steer
+ok - the watcher steers a pre-pipeline done once instead of a stale wake, then alarms as before
+ok - the watcher steers an undriven run once, then alarms when the worker stays quiet
+ok - the watcher neither steers nor alarms a worker whose drive call is live
+FM_TEST_COMPLETE

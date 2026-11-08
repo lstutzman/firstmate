@@ -1,0 +1,8 @@
+== fg brief (wait-no-turns on) ==
+140-Declare that wait using the brief's status-reporting rule before the foreground drive call.
+141:A run that stays `pending` with no steps is queued behind the machine's run slots: that is `paused [cause=external]`, never `blocked`, so declare it paused and keep reattaching on the same cadence.
+142-Never background a wait, and never arm a timer to stand in for one: a backgrounded call returns in milliseconds, so it does not wait at all, and every timer left behind fires later as a paid wake for nothing.
+== bg brief (wait-no-turns off) ==
+128-Where a harness's own command limit is not established, assume it bounds commands and use that same backgrounded shape.
+129:A run that stays `pending` with no steps is queued behind the machine's run slots: that is `paused [cause=external]`, never `blocked`, so declare it paused and keep reattaching on the same cadence.
+130-Only a drive call's return reports the green PR: `no-mistakes axi status` shows progress but never reports `checks-passed` while the ci step is still monitoring the PR for merge, so never wait on a status poll for the next gate or outcome.

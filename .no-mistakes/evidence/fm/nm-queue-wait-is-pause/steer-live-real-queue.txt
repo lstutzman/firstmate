@@ -1,0 +1,30 @@
+### real queue at 2026-11-08T03:32:44Z (read-only from state.sqlite):
+01M6WG9FNXZP50QZZTEFEBRZTF|fm/page-check-closed-refile|running
+01M6WGEWNR93EM6HR2GK9VX7MN|fm/nm-queue-wait-is-pause|running
+01M6WH83EP5FK8MNQVM6ED199Z|fm/remote-secondmate-e2e-hang|pending
+01M6WJY0PZNMQ3WA7G1WZAYQ93|fm/sf-l8-velocity-taps|pending
+01M6WK2FMT3X0X7PMCS8XKTMH9|fm/visual-source-attach|pending
+
+### S2: pending worker fm/sf-l8-velocity-taps, real no-mistakes axi overview
+fm-crew-state.sh
+tmux
+steer exit=0
+--- inbox message ---
+schema=fm-task-inbox.v1
+at=2026-11-08T03:32:47Z
+body-terminator=1
+--
+Automatic steer: the no-mistakes run for fm/sf-l8-velocity-taps is still active, but no no-mistakes axi run or respond call is running from your copy, so nothing will wake you at its next gate or outcome. Re-run `no-mistakes axi run` with no flags now, backgrounded as your brief's Definition of done says, and reattach the same way every time it returns without a gate or outcome. Your run is pending because the machine's run slots are full, which is `paused [cause=external]`, not `blocked`; keep reattaching. Runs in this repo holding the slots (runs in other repos may hold more): fm/nm-queue-wait-is-pause (run 01M6WGEWNR93EM6HR2GK9VX7MN), fm/page-check-closed-refile (run 01M6WG9FNXZP50QZZTEFEBRZTF).
+
+
+### S3: running worker (not pending) fm/page-check-closed-refile
+fm-crew-state.sh
+tmux
+steer exit=0
+--- inbox message ---
+schema=fm-task-inbox.v1
+at=2026-11-08T03:32:49Z
+body-terminator=1
+--
+Automatic steer: the no-mistakes run for fm/page-check-closed-refile is still active, but no no-mistakes axi run or respond call is running from your copy, so nothing will wake you at its next gate or outcome. Re-run `no-mistakes axi run` with no flags now, backgrounded as your brief's Definition of done says, and reattach the same way every time it returns without a gate or outcome.
+
