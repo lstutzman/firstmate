@@ -1,0 +1,8 @@
+== old (retire delayed 7 s before it can send TERM)
+not ok - the runner never became absent after TERM
+rc=1
+== new (retire delayed 7 s before it can send TERM)
+ok - retirement escalates after TERM leaves a surviving child (absent leader)
+ok - retirement escalates after TERM leaves a surviving child (zombie leader)
+proof block done
+rc=0

@@ -1,0 +1,3 @@
+== new, retire replaced by a no-op (runner never stops)
+not ok - the runner never became absent within 60 s of the retire's TERM
+rc=1 elapsed=71s

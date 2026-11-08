@@ -1,0 +1,6 @@
+old run1 rc=0 57s: ok - retirement escalates after TERM leaves a surviving child (absent leader)|ok - retirement escalates after TERM leaves a surviving child (zombie leader)|
+old run2 rc=0 111s: ok - retirement escalates after TERM leaves a surviving child (absent leader)|ok - retirement escalates after TERM leaves a surviving child (zombie leader)|
+old run3 rc=0 175s: ok - retirement escalates after TERM leaves a surviving child (absent leader)|ok - retirement escalates after TERM leaves a surviving child (zombie leader)|
+new run1 rc=0 220s: ok - retirement escalates after TERM leaves a surviving child (absent leader)|ok - retirement escalates after TERM leaves a surviving child (zombie leader)|
+new run2 rc=0 270s: ok - retirement escalates after TERM leaves a surviving child (absent leader)|ok - retirement escalates after TERM leaves a surviving child (zombie leader)|
+new run3 rc=0 307s: ok - retirement escalates after TERM leaves a surviving child (absent leader)|ok - retirement escalates after TERM leaves a surviving child (zombie leader)|
