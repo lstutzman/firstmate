@@ -898,6 +898,11 @@ pass "real herdr E2E: a --secondmate launch still stands up that secondmate's ow
 
 return_worktrees "$PRESU_META"
 return_worktrees "$SME_META"
+# The cases since the last focus check close panes and return worktrees, and
+# Herdr 0.7.x moves focus when that happens, so focus goes back to the captain's workspace here and the focus check below
+# measures only this spawn.
+lab tab focus "$WS_OTHER_TAB" >/dev/null 2>&1 || fail "could not refocus the captain's workspace"
+[ "$(focused_workspace)" = "$WS_OTHER" ] || fail "the captain's workspace did not take focus back"
 PRES_SM_LABEL="2ndmate-$PRES_SM_ID"
 [ -z "$(lab workspace list 2>/dev/null | jq -r --arg l "$PRES_SM_LABEL" '.result.workspaces[]? | select(.label == $l) | .workspace_id')" ] \
   || fail "the lab session already holds a '$PRES_SM_LABEL' workspace before the missing-home projection case"

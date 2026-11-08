@@ -371,6 +371,11 @@ RECORD
   TREEHOUSE_LOG="$CASE_DIR/treehouse.log"
 }
 
+# task_pane: the pane the spawn created for its task, the one it ran `cd` in.
+task_pane() {
+  sed -n 's/^pane run \([^ ]*\) cd -- .*/\1/p' "$HERDR_LOG" | head -n 1
+}
+
 run_herdr_spawn() {
   local id=$1
   shift
@@ -452,7 +457,7 @@ test_herdr_spawn_returns_the_lease_only_before_the_record_is_published() {
   status=$?
   [ "$status" -ne 0 ] || fail "spawn launched a worker whose pane was outside its worktree"$'\n'"$out"
   assert_contains "$out" "not its recorded worktree" "the refusal did not name the cwd mismatch"
-  assert_grep "pane close w1.t2.p" "$HERDR_LOG" "the spawn did not close its own pane"
+  assert_grep "pane close $(task_pane) " "$HERDR_LOG" "the spawn did not close its own pane"
   assert_grep "return --force $SLOT_DIR" "$TREEHOUSE_LOG" "the lease was not returned after a pre-launch refusal"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a refused spawn published a task record"
 
@@ -463,7 +468,7 @@ test_herdr_spawn_returns_the_lease_only_before_the_record_is_published() {
   out=$(FM_FAKE_HERDR_CLOSE_FAIL=1 FM_FAKE_HERDR_FG_CWD="$PROJ_DIR" run_herdr_spawn "$id")
   status=$?
   [ "$status" -ne 0 ] || fail "spawn launched a worker whose pane was outside its worktree"$'\n'"$out"
-  assert_grep "pane close w1.t2.p" "$HERDR_LOG" "the spawn did not try to close its own pane"
+  assert_grep "pane close $(task_pane) " "$HERDR_LOG" "the spawn did not try to close its own pane"
   assert_no_grep "return" "$TREEHOUSE_LOG" "the lease was returned though the pane could not be closed"
   assert_contains "$out" "could not be confirmed closed" "the kept lease and open pane were not reported"
 
@@ -500,7 +505,7 @@ SH
   [ "$status" -ne 0 ] || fail "spawn succeeded though its task record could not be published"$'\n'"$out"
   assert_contains "$out" "could not be published" "the spawn did not fail at record publication"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "a failed publication left a task record"
-  assert_grep "pane close w1.t2.p" "$HERDR_LOG" "the spawn did not close its own pane"
+  assert_grep "pane close $(task_pane) " "$HERDR_LOG" "the spawn did not close its own pane"
   assert_grep "return --force $SLOT_DIR" "$TREEHOUSE_LOG" "the lease was not returned after the publish failed"
   pass "a Herdr spawn whose record publish fails closes its own pane and returns its lease"
 }
@@ -532,7 +537,7 @@ SH
   assert_contains "$out" "could not be moved to In flight" "the spawn did not fail at the backlog commit"
   [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "the commit rollback did not remove the provisional record"
   assert_no_grep "return" "$TREEHOUSE_LOG" "the lease was returned after the worker was launched"
-  assert_no_grep "pane close w1.t2.p" "$HERDR_LOG" "the launched worker's pane was closed by the abort"
+  assert_no_grep "pane close " "$HERDR_LOG" "the launched worker's pane was closed by the abort"
   pass "a Herdr spawn keeps its lease when the commit rollback removes the record after launch"
 }
 
@@ -551,7 +556,7 @@ test_herdr_spawn_keeps_a_slot_leased_back_to_its_holder() {
   assert_contains "$out" "now durably leased to that task" "the slot was not leased back to its holder"
   assert_grep "lease 1 --lease-holder $holder" "$TREEHOUSE_LOG" "no lease named the holder"
   assert_no_grep "return" "$TREEHOUSE_LOG" "the slot leased back to its holder was returned"
-  assert_no_grep "pane close w1.t2.p" "$HERDR_LOG" "the refused spawn closed a pane in the holder's slot"
+  assert_no_grep "pane close " "$HERDR_LOG" "the refused spawn closed a pane in the holder's slot"
   assert_not_contains "$out" "stays durably leased to $id" "the abort claimed the holder's slot for the refused task"
   assert_grep "task=$holder" "$CASE_DIR/pool/1/.fm-slot-owner" "the holder's claim was replaced"
   pass "a Herdr spawn refused on a recorded slot leaves it leased to its holder"
