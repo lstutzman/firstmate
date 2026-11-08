@@ -1,0 +1,27 @@
+ok - real herdr E2E: a presentation-off spawn with no home workspace creates it and gets its own fresh workspace nested under it without stealing focus
+ok - real herdr E2E: a presentation-off spawn from a launcher pane gets its own workspace and leaves the launcher's untouched
+ok - real herdr E2E: presentation spaces still create the isolated child workspace and bind it under the launcher's exact parent, without stealing focus
+ok - real herdr E2E: each presentation-enabled fallback gets its own nested workspace and leaves the launcher's workspace untouched
+ok - real herdr E2E: existing '<home> workers' workspaces are never adopted; a fallback creates its own nested workspace
+ok - real herdr E2E: reclaiming a presentation-enabled home's destroyed endpoint gets its own workspace, not the launcher's or another session's
+ok - real herdr E2E: a session, its unparked relaunch and a new spawn each get their own nested workspace
+ok - real herdr E2E: the guard refuses a second session in a workspace that already holds one
+ok - real herdr E2E: relaunching a presentation-off home's session gets its own workspace, not the launcher's
+ok - real herdr E2E: a workspace whose create response has no seeded tab id is closed again and focus is preserved
+ok - real herdr E2E: a client above the presentation floor with a server below it still gives the worker its own workspace
+ok - real herdr E2E: a respawn closes the task's earlier agent-free husk and its emptied workspace
+ok - real herdr E2E: a respawn closes the husk but keeps its workspace when that still holds another tab
+ok - real herdr E2E: a respawn leaves the task's earlier pane alone when it holds a live agent
+ok - real herdr E2E: a respawn never closes a recorded pane id that Herdr reports in another workspace and tab
+ok - real herdr E2E: with two 'firstmate' workspaces, a worker spawned from inside the second one gets its own workspace
+ok - real herdr E2E: the duplicate-labeled sibling workspace is left entirely untouched and focus is preserved
+ok - real herdr E2E: with a duplicated home label, a projected worker still hangs off the launcher's exact workspace and the sibling stays untouched
+ok - real herdr E2E: duplicate home-labeled workspaces with no launcher identity nest the worker under the lowest-numbered with one warning
+ok - real herdr E2E: a launcher pane that no longer exists refuses before any worker endpoint exists
+ok - real herdr E2E: a secondmate launching its own worker gets its own workspace too, and its same-labeled sibling is untouched
+ok - real herdr E2E: a --secondmate launch still stands up that secondmate's own workspace instead of inheriting the launcher's
+ok - real herdr E2E: a no-pane projected spawn with no home workspace creates it and binds the child under it
+ok - real herdr E2E: a no-pane projected spawn under duplicated home workspaces binds the child under the lowest-numbered with one warning
+ok - real herdr E2E: teardown closes only the worker's own pane and leaves the launcher, its workspace, and the same-labeled sibling intact
+ok - real herdr E2E: isolated lab session removed and default fleet session unchanged
+exit=0

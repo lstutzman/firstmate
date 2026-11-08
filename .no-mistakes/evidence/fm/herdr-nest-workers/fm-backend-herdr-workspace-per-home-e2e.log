@@ -1,0 +1,21 @@
+ok - real herdr E2E: a primary-shaped home spawns a crewmate on the herdr backend
+ok - real herdr E2E: the primary-shaped home's crewmate landed in its own workspace nested under 'firstmate'
+ok - real herdr E2E: the primary spawns a --secondmate task on the herdr backend
+ok - real herdr E2E: a --secondmate spawn by the PRIMARY lands in the SECONDMATE's own labeled workspace, distinct from the primary's
+ok - real herdr E2E: a crewmate spawns successfully FROM a secondmate-shaped home's own fm-spawn.sh process
+ok - real herdr E2E: a crewmate spawned FROM the secondmate-shaped home gets its own workspace nested under '2ndmate-<id>', not the secondmate's
+ok - real herdr E2E: an office spawned by the primary shows its bare role name on both its workspace and its tab
+ok - real herdr E2E: fm-send steers cm1 into its own durable inbox through its record
+ok - real herdr E2E: interrupt reaches cm1's recorded pane
+ok - real herdr E2E: exit finds cm1's recorded pane stopped
+ok - real herdr E2E: relaunch of cm1 reuses its recorded pane
+ok - real herdr E2E: fm-send steers e2eqm into its own durable inbox through its record
+ok - real herdr E2E: interrupt reaches e2eqm's recorded pane
+ok - real herdr E2E: exit finds e2eqm's recorded pane stopped
+ok - real herdr E2E: relaunch of e2eqm reuses its recorded pane
+ok - real herdr E2E: relaunching an office renames its earlier fm-<id> tab to its role name in place
+ok - real herdr E2E: list_live from the primary's own context sees exactly the tasks the primary recorded
+ok - real herdr E2E: list_live from the secondmate's own context sees only tasks in the secondmate's own workspace (both its own tab and its crewmate's)
+ok - real herdr E2E: tearing down cm1 closes only its own tab - the secondmate's and cm2's tabs survive untouched
+ok - real herdr E2E: tearing down cm2 closes only its own tab - the secondmate's own tab (same workspace) survives untouched
+exit=0
