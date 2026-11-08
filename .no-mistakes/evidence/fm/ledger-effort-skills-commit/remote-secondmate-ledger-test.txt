@@ -1,0 +1,4 @@
+ok - a remote second mate records its requested effort and unknown skills, not the dispatcher's
+ok - a remote second mate launched without an effort records effort default
+ALL TESTS PASSED
+exit=0

@@ -1,0 +1,27 @@
+## S1 git checkout skills dir
+expected HEAD: 0043d6947078feb585f77c67fe7adbf49f524dfa
+rc=0
+## S2 .skills-commit marker
+rc=0
+## S3 hash fallback, same content at two different absolute paths
+manual oracle (independent, cd + sha256sum):
+40d14ea94ff373dc3089561e1e029b874fca7927c4d32a14f7661e514e7c6d7f
+## S3b content change changes hash
+## S4 unknown: missing dir, empty FM_SKILLS_DIR, dir without skills
+## S5 adversarial: hanging git (fake git sleeps 30s) -> bounded, record still written
+rc=0 elapsed=2s
+## S6 adversarial: bad marker content (not hex) -> falls back
+## S7 usage: 8 args rejected
+usage: fm-fleet-ledger.sh dispatched <task> <kind> <project> <harness> <model> [<effort>] | pr_ready <task> <url> | merged <task> pr <url> | merged <task> local | cleaned_up <task> | capture | appended <config> <state>/<task>.status
+rc=2
+## ledger
+{"task":"t1","model":"opus","effort":"high","skills_commit":"commit:0043d6947078feb585f77c67fe7adbf49f524dfa"}
+{"task":"t2","model":"gpt","effort":"default","skills_commit":"commit:0123456789abcdef0123456789abcdef01234567"}
+{"task":"t3a","model":null,"effort":"low","skills_commit":"hash:40d14ea94ff373dc3089561e1e029b874fca7927c4d32a14f7661e514e7c6d7f"}
+{"task":"t3b","model":null,"effort":"low","skills_commit":"hash:40d14ea94ff373dc3089561e1e029b874fca7927c4d32a14f7661e514e7c6d7f"}
+{"task":"t3c","model":null,"effort":"low","skills_commit":"hash:3b6ceda341ee1213542f47c3fa386b5b3808b120b2f63e718c79d927df21bbcc"}
+{"task":"t4a","model":null,"effort":"default","skills_commit":"unknown"}
+{"task":"t4b","model":null,"effort":"default","skills_commit":"unknown"}
+{"task":"t4c","model":null,"effort":"default","skills_commit":"unknown"}
+{"task":"t5","model":null,"effort":"default","skills_commit":"unknown"}
+{"task":"t6","model":null,"effort":"default","skills_commit":"hash:a3cc27fdaf99e0edc8abb704364b52cd01861ec3fc90aefa622c391d776f1361"}
