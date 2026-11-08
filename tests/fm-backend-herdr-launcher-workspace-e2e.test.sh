@@ -402,8 +402,9 @@ pass "real herdr E2E: existing '<home> workers' workspaces are never adopted; a 
 #         workspace of its own, never the launcher's and never one that
 #         another session already holds -----------------------------------------
 
-PRESF_TAB=$(grep '^herdr_tab_id=' "$PRESF_META" | cut -d= -f2-)
-lab tab close "$PRESF_TAB" >/dev/null 2>&1 || fail "could not destroy presF's endpoint"
+# Each session is alone in its workspace, and Herdr 0.7.x refuses to close a
+# workspace's last tab, so destroying the endpoint closes its workspace.
+lab workspace close "$PRESF_WS" >/dev/null 2>&1 || fail "could not destroy presF's endpoint"
 FAKEBIN="$TMP_ROOT/fakebin"
 mkdir -p "$FAKEBIN"
 printf '#!/bin/sh\nexit 0\n' > "$FAKEBIN/codex"
@@ -452,7 +453,7 @@ spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presI "$PROJ" --mode no-
 PRESI_META="$PRES_HOME/state/presI.meta"
 record_worktree "$PRESI_META"
 PRESI_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESI_META" | cut -d= -f2-)")
-lab tab close "$(grep '^herdr_tab_id=' "$PRESI_META" | cut -d= -f2-)" >/dev/null 2>&1 || fail "could not stop presI the way a park does"
+lab workspace close "$PRESI_WS" >/dev/null 2>&1 || fail "could not stop presI the way a park does"
 env PATH="$FAKEBIN:$PATH" HERDR_ENV=1 HERDR_PANE_ID="$LAUNCH_PRIMARY_PANE" HERDR_SESSION="$HERDR_LAB_SESSION" \
   HERDR_SOCKET_PATH="$LAB_SOCKET" FM_SPAWN_NO_GUARD=1 FM_HOME="$PRES_HOME" FM_ROOT_OVERRIDE="$ROOT" \
   "$ROOT/bin/fm-spawn.sh" presI --relaunch --harness codex >"$TMP_ROOT/presI-unpark.out" 2>"$TMP_ROOT/presI-unpark.err" \
@@ -487,8 +488,7 @@ pass "real herdr E2E: the guard refuses a second session in a workspace that alr
 
 # --- 2g. a presentation-off home's relaunch also gets its own workspace ------
 
-UNIQB_TAB=$(grep '^herdr_tab_id=' "$UNIQB_META" | cut -d= -f2-)
-lab tab close "$UNIQB_TAB" >/dev/null 2>&1 || fail "could not stop uniqB's endpoint"
+lab workspace close "$UNIQB_WS" >/dev/null 2>&1 || fail "could not stop uniqB's endpoint"
 WS_PRIMARY_TABS_BEFORE_UNPARK=$(tab_labels_of_workspace "$WS_PRIMARY")
 env PATH="$FAKEBIN:$PATH" HERDR_ENV=1 HERDR_PANE_ID="$LAUNCH_PRIMARY_PANE" HERDR_SESSION="$HERDR_LAB_SESSION" \
   HERDR_SOCKET_PATH="$LAB_SOCKET" FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \
