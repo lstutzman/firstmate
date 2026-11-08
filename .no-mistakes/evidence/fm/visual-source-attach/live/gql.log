@@ -1,0 +1,38 @@
+
+===== S1 new visual defect: real linear-attach uploads and attaches the PNG to the new item =====
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}
+POST fileUpload auth=Bearer fake-local-token vars={"contentType": "image/png", "filename": "a-desktop.png", "size": 73}
+PUT /upload/a-desktop.png 73 bytes type=image/png magic=89504e470d0a1a0a
+POST attachmentCreate auth=Bearer fake-local-token vars={"input": {"issueId": "uuid-PC-101", "title": "a-desktop.png", "url": "https://uploads.linear.example/a-desktop.png"}}
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}
+
+===== S2 rate limited (real exit 75): gap + pending, next night retried and attached =====
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}
+POST fileUpload auth=Bearer fake-local-token vars={"contentType": "image/png", "filename": "a-desktop.png", "size": 73}
+PUT /upload/a-desktop.png 73 bytes type=image/png magic=89504e470d0a1a0a
+POST attachmentCreate auth=Bearer fake-local-token vars={"input": {"issueId": "uuid-PC-101", "title": "a-desktop.png", "url": "https://uploads.linear.example/a-desktop.png"}}
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}
+
+===== S3 upload refused for rights (real exit 3): named Lee's-call gap, nothing uploaded =====
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}
+POST fileUpload auth=Bearer fake-local-token vars={"contentType": "image/png", "filename": "a-desktop.png", "size": 73}
+
+===== S4 closed item recurs: recurrence item gets the screenshot =====
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}
+POST fileUpload auth=Bearer fake-local-token vars={"contentType": "image/png", "filename": "a-desktop.png", "size": 73}
+PUT /upload/a-desktop.png 73 bytes type=image/png magic=89504e470d0a1a0a
+POST attachmentCreate auth=Bearer fake-local-token vars={"input": {"issueId": "uuid-PC-101", "title": "a-desktop.png", "url": "https://uploads.linear.example/a-desktop.png"}}
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}
+POST issue auth=Bearer fake-local-token vars={"id": "PC-102"}
+POST fileUpload auth=Bearer fake-local-token vars={"contentType": "image/png", "filename": "a-desktop.png", "size": 73}
+PUT /upload/a-desktop.png 73 bytes type=image/png magic=89504e470d0a1a0a
+POST attachmentCreate auth=Bearer fake-local-token vars={"input": {"issueId": "uuid-PC-102", "title": "a-desktop.png", "url": "https://uploads.linear.example/a-desktop.png"}}
+POST issue auth=Bearer fake-local-token vars={"id": "PC-102"}
+
+===== S5 duplicate bump on a later night attaches nothing new =====
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}
+POST fileUpload auth=Bearer fake-local-token vars={"contentType": "image/png", "filename": "a-desktop.png", "size": 73}
+PUT /upload/a-desktop.png 73 bytes type=image/png magic=89504e470d0a1a0a
+POST attachmentCreate auth=Bearer fake-local-token vars={"input": {"issueId": "uuid-PC-101", "title": "a-desktop.png", "url": "https://uploads.linear.example/a-desktop.png"}}
+POST issue auth=Bearer fake-local-token vars={"id": "PC-101"}

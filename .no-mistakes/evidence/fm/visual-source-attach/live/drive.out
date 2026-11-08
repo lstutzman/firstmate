@@ -1,0 +1,47 @@
+
+===== S1 new visual defect: real linear-attach uploads and attaches the PNG to the new item =====
+Coverage gap: screenshot not attached to PC-101: shots/a-mobile.png (not found under /tmp/fm-officer-surgeon.vMw0CR/liveok-visual/captures)
+Coverage gap: local-jev not found at /tmp/fm-officer-surgeon.vMw0CR/no-jev.py, so duplicates are found by fingerprint only
+DIGEST 2026-10-23 2 data/officers/surgeon/2026-10-23.md
+exit=0
+--- attach.log
+PC-101 /tmp/fm-officer-surgeon.vMw0CR/liveok-visual/captures/shots/a-desktop.png --verify
+--- item body screenshot lines
+Screenshot: /tmp/fm-officer-surgeon.vMw0CR/liveok-visual/captures/shots/a-desktop.png
+Screenshot: shots/a-mobile.png (not found under /tmp/fm-officer-surgeon.vMw0CR/liveok-visual/captures)
+--- pending_attach state: null
+
+===== S2 rate limited (real exit 75): gap + pending, next night retried and attached =====
+Coverage gap: screenshots not attached: linear-attach was rate limited at PC-101
+Coverage gap: screenshot not attached to PC-101: shots/a-mobile.png (not found under /tmp/fm-officer-surgeon.vMw0CR/liverl-visual/captures)
+Coverage gap: 1 screenshot(s) not attached yet; the next run retries them
+Coverage gap: local-jev not found at /tmp/fm-officer-surgeon.vMw0CR/no-jev.py, so duplicates are found by fingerprint only
+--- pending: [{"file":"/tmp/fm-officer-surgeon.vMw0CR/liverl-visual/captures/shots/a-desktop.png","first":"2026-10-23","issue":"PC-101"}]
+Coverage gap: local-jev not found at /tmp/fm-officer-surgeon.vMw0CR/no-jev.py, so duplicates are found by fingerprint only
+exit=0
+--- attach.log
+PC-101 /tmp/fm-officer-surgeon.vMw0CR/liverl-visual/captures/shots/a-desktop.png --verify
+PC-101 /tmp/fm-officer-surgeon.vMw0CR/liverl-visual/captures/shots/a-desktop.png --verify
+--- pending after retry: null
+
+===== S3 upload refused for rights (real exit 3): named Lee's-call gap, nothing uploaded =====
+Coverage gap: screenshots not attached: the Linear app token lacks upload rights (linear-attach exit 3); Lee's call
+Coverage gap: screenshot not attached to PC-101: shots/a-mobile.png (not found under /tmp/fm-officer-surgeon.vMw0CR/liveforbid-visual/captures)
+Coverage gap: 1 screenshot(s) not attached yet; the next run retries them
+Coverage gap: local-jev not found at /tmp/fm-officer-surgeon.vMw0CR/no-jev.py, so duplicates are found by fingerprint only
+exit=0
+
+===== S4 closed item recurs: recurrence item gets the screenshot =====
+Coverage gap: screenshot not attached to PC-102: shots/a-mobile.png (not found under /tmp/fm-officer-surgeon.vMw0CR/liverecur-visual/captures)
+Coverage gap: local-jev not found at /tmp/fm-officer-surgeon.vMw0CR/no-jev.py, so duplicates are found by fingerprint only
+--- attach.log
+PC-101 /tmp/fm-officer-surgeon.vMw0CR/liverecur-visual/captures/shots/a-desktop.png --verify
+PC-102 /tmp/fm-officer-surgeon.vMw0CR/liverecur-visual/captures/shots/a-desktop.png --verify
+{"action":"created","issue":"PC-102","recurrence_of":"PC-101"}
+
+===== S5 duplicate bump on a later night attaches nothing new =====
+--- attach.log (expect one line)
+PC-101 /tmp/fm-officer-surgeon.vMw0CR/livebump-visual/captures/shots/a-desktop.png --verify
+issue update PC-101 calls: 2
+
+TMP_ROOT=/tmp/fm-officer-surgeon.vMw0CR

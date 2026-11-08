@@ -1,0 +1,2 @@
+#!/bin/sh
+[ "$1" = header ] && echo "Bearer fake-local-token"; exit 0
