@@ -20,7 +20,7 @@
 #   bin/fm-teardown.sh           cleaned_up
 #
 # Usage:
-#   fm-fleet-ledger.sh dispatched <task> <kind> <project> <harness> <model>
+#   fm-fleet-ledger.sh dispatched <task> <kind> <project> <harness> <model> [<effort>]
 #   fm-fleet-ledger.sh pr_ready <task> <url>
 #   fm-fleet-ledger.sh merged <task> pr <url>
 #   fm-fleet-ledger.sh merged <task> local
@@ -44,6 +44,12 @@
 # records precede them. cleaned_up then deletes the task's offset, because teardown
 # retires that status log right after. dispatched deletes any leftover offset
 # so a reused task id starts at byte 0 of its fresh log.
+# dispatched also records the effort the worker launched with ("default" when
+# none was given) and skills_commit, the skills the session loads, read from
+# FM_SKILLS_DIR (default $HOME/.agents/skills): "commit:<sha>" from a git
+# checkout or a .skills-commit marker there, else "hash:<sha256>" of the
+# installed SKILL.md files, else "unknown". The read is bounded by a timeout
+# and can never fail the record.
 # Every write holds state/.fleet-ledger.lock.
 #
 # Environment: FM_HOME, FM_STATE_OVERRIDE, and FM_CONFIG_OVERRIDE resolve the
@@ -65,7 +71,7 @@ LOCK="$STATE/.fleet-ledger.lock"
 TEXT_MAX_CHARS=2000
 
 usage() {
-  echo "usage: fm-fleet-ledger.sh dispatched <task> <kind> <project> <harness> <model> | pr_ready <task> <url> | merged <task> pr <url> | merged <task> local | cleaned_up <task> | capture | appended <config> <state>/<task>.status" >&2
+  echo "usage: fm-fleet-ledger.sh dispatched <task> <kind> <project> <harness> <model> [<effort>] | pr_ready <task> <url> | merged <task> pr <url> | merged <task> local | cleaned_up <task> | capture | appended <config> <state>/<task>.status" >&2
   exit 2
 }
 
@@ -75,7 +81,7 @@ task_ok() {
 
 cmd=${1:-}
 case "$cmd" in
-  dispatched) { [ "$#" -eq 6 ] && task_ok "$2"; } || usage ;;
+  dispatched) { [ "$#" -ge 6 ] && [ "$#" -le 7 ] && task_ok "$2"; } || usage ;;
   pr_ready) { [ "$#" -eq 3 ] && task_ok "$2" && [ -n "$3" ]; } || usage ;;
   merged)
     task_ok "${2:-}" || usage
@@ -128,6 +134,30 @@ grown_logs() {
     read_offset "$id" saved
     [ "$size" = "$saved" ] || printf '%s\t%s\n' "$id" "$size"
   done
+}
+
+# Print the skills version this host's sessions load; always exits 0.
+skills_commit() {
+  local dir=${FM_SKILLS_DIR:-${HOME:-}/.agents/skills} sha files
+  [ -d "$dir" ] || { echo unknown; return 0; }
+  if [ -e "$dir/.git" ]; then
+    sha=$(timeout 2 git -C "$dir" rev-parse HEAD 2>/dev/null) || sha=
+  elif [ -f "$dir/.skills-commit" ]; then
+    sha=$(head -n 1 "$dir/.skills-commit" 2>/dev/null) || sha=
+  else
+    sha=
+  fi
+  case "$sha" in
+    ''|*[!0-9a-f]*) ;;
+    *) echo "commit:$sha"; return 0 ;;
+  esac
+  files=$(timeout 3 find -L "$dir" -maxdepth 2 -name SKILL.md -not -name '._*' 2>/dev/null | LC_ALL=C sort) || files=
+  if [ -n "$files" ]; then
+    sha=$(printf '%s\n' "$files" | timeout 3 xargs sha256sum 2>/dev/null | sha256sum 2>/dev/null) || sha=
+    sha=${sha%% *}
+    case "$sha" in ''|*[!0-9a-f]*) ;; *) echo "hash:$sha"; return 0 ;; esac
+  fi
+  echo unknown
 }
 
 LIBS_LOADED=0
@@ -194,6 +224,8 @@ if [ "$cmd" = capture ]; then
   [ -n "$grown" ] || exit 0
 fi
 
+SKILLS_COMMIT=
+[ "$cmd" != dispatched ] || SKILLS_COMMIT=$(skills_commit 2>/dev/null) || SKILLS_COMMIT=unknown
 load_libs || exit 1
 fm_lock_acquire_wait "$LOCK" || exit 1
 trap 'fm_lock_release "$LOCK"' EXIT
@@ -211,8 +243,9 @@ case "$cmd" in
   dispatched)
     rm -f -- "$(offset_path "$2")"
     append task.dispatched "$2" \
-      '{kind: ($kind | n), project: ($project | n), harness: ($harness | n), model: ($model | n)}' \
-      --arg kind "$3" --arg project "$4" --arg harness "$5" --arg model "$6" || rc=1
+      '{kind: ($kind | n), project: ($project | n), harness: ($harness | n), model: ($model | n), effort: ($effort | n), skills_commit: ($skills | n)}' \
+      --arg kind "$3" --arg project "$4" --arg harness "$5" --arg model "$6" \
+      --arg effort "${7:-default}" --arg skills "${SKILLS_COMMIT:-unknown}" || rc=1
     ;;
   pr_ready)
     capture_task "$2" || rc=1

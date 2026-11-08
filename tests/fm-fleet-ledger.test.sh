@@ -114,7 +114,7 @@ test_flag_on_records_the_task_lifecycle() {
     || fail "every record must carry v, ts, event, and task: $(cat "$HOME_DIR/state/fleet-ledger.jsonl")"
   rows=$(ledger_rows '[.event, .task] + (del(.v, .ts, .event, .task) | to_entries | map(.value))')
   assert_equals "$(cat <<EOF
-["task.dispatched","$TASK","ship","sample","claude",null]
+["task.dispatched","$TASK","ship","sample","claude",null,"default","unknown"]
 ["task.status","$TASK","working",null," setup done"]
 ["task.status","$TASK","needs-decision","pick-one"," choose \"a\"\\\\b or c"]
 ["task.status","$TASK","resolved","pick-one"," [key=pick-one]  chose a"]
@@ -290,7 +290,46 @@ test_flag_off_writes_nothing() {
   pass "flag off: the whole lifecycle leaves no ledger file, offset, or lock"
 }
 
+# Direct dispatched record under a chosen skills directory; prints effort and skills_commit.
+dispatched_fields() {  # <skills-dir|-> <effort|-> [<ledger-dir-name>]
+  local args=(dispatched t1 ship sample claude "")
+  make_case "disp-$3" on
+  [ "$2" = - ] || args+=("$2")
+  in_home env FM_SKILLS_DIR="$1" "$ROOT/bin/fm-fleet-ledger.sh" "${args[@]}" || fail "dispatched record failed"
+  ledger_rows '[.effort, .skills_commit]'
+}
+
+test_dispatched_records_effort_and_skills_commit() {
+  local sk="$TMP_ROOT/skills" sha rows
+  mkdir -p "$sk/alpha" "$sk/beta" "$TMP_ROOT/empty"
+  printf 'one\n' > "$sk/alpha/SKILL.md"
+  printf 'two\n' > "$sk/beta/SKILL.md"
+
+  rows=$(dispatched_fields "$sk" high hash)
+  case "$rows" in '["high","hash:'[0-9a-f]*'"]') ;; *) fail "expected an installed-content hash, got $rows" ;; esac
+  assert_equals "$rows" "$(dispatched_fields "$sk" high hash2)" "the content hash is stable"
+
+  printf '%s\n' 0123456789abcdef0123456789abcdef01234567 > "$sk/.skills-commit"
+  assert_equals '["xhigh","commit:0123456789abcdef0123456789abcdef01234567"]' "$(dispatched_fields "$sk" xhigh marker)" "marker commit"
+
+  rm -f "$sk/.skills-commit"
+  git -C "$sk" init -q
+  git -C "$sk" add -A
+  git -C "$sk" -c user.name=t -c user.email=t@example.invalid commit -qm s
+  sha=$(git -C "$sk" rev-parse HEAD)
+  assert_equals "[\"default\",\"commit:$sha\"]" "$(dispatched_fields "$sk" - git)" "git checkout commit and default effort"
+  pass "dispatched records effort and the skills commit from a marker, a git checkout, or the installed content hash"
+}
+
+test_dispatched_records_unknown_skills_when_unreadable() {
+  assert_equals '["low","unknown"]' "$(dispatched_fields "$TMP_ROOT/missing" low missing)" "missing skills dir"
+  assert_equals '["low","unknown"]' "$(dispatched_fields "$TMP_ROOT/empty" low emptydir)" "skills dir without SKILL.md"
+  pass "dispatched records skills_commit unknown, and still succeeds, when the skills cannot be read"
+}
+
 test_flag_on_records_the_task_lifecycle
+test_dispatched_records_effort_and_skills_commit
+test_dispatched_records_unknown_skills_when_unreadable
 test_flag_on_records_a_pr_merge_once
 test_flag_on_records_a_pr_registration
 test_worker_status_line_is_recorded_when_written
