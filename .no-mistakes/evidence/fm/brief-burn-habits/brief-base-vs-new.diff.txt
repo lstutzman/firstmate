@@ -1,0 +1,36 @@
+=== home default ===
+--- ship-no-mistakes: base 158 lines, new 160 lines
+98a99,100
+>    To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
+>    Read a diff as `git diff --stat` first, then only the paths you need.
+--- ship-direct-PR: base 114 lines, new 116 lines
+91a92,93
+>    To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
+>    Read a diff as `git diff --stat` first, then only the paths you need.
+--- ship-local-only: base 111 lines, new 113 lines
+91a92,93
+>    To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
+>    Read a diff as `git diff --stat` first, then only the paths you need.
+--- scout: base 99 lines, new 101 lines
+82a83,84
+>    To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
+>    Read a diff as `git diff --stat` first, then only the paths you need.
+--- sm: base 75 lines, new 75 lines
+=== home wait-no-turns ===
+--- ship-no-mistakes: base 171 lines, new 173 lines
+98a99,100
+>    To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
+>    Read a diff as `git diff --stat` first, then only the paths you need.
+--- ship-direct-PR: base 127 lines, new 129 lines
+91a92,93
+>    To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
+>    Read a diff as `git diff --stat` first, then only the paths you need.
+--- ship-local-only: base 124 lines, new 126 lines
+91a92,93
+>    To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
+>    Read a diff as `git diff --stat` first, then only the paths you need.
+--- scout: base 112 lines, new 114 lines
+82a83,84
+>    To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
+>    Read a diff as `git diff --stat` first, then only the paths you need.
+--- sm: base 76 lines, new 76 lines
