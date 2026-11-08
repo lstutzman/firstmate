@@ -637,6 +637,12 @@ test_ask_user_escalation_format() {
     "ship rule 6 lost the 3-round review fix cap"
   assert_grep "key=nm-<run>-rounds" "$brief" \
     "ship rule 6 must key the round-cap decision"
+  assert_grep "[cause=tool] [key=nm-<run>-range]" "$brief" \
+    "ship rule 6 must key the wrong-range decision"
+  assert_grep "never the run's base or the repository default" "$brief" \
+    "ship rule 6 must name the stacked parent branch as the wrong-range base"
+  assert_grep "after writing every remaining finding, verbatim, to \`$home/data/$id/nm-<run>-findings.txt\`" "$brief" \
+    "ship rule 6 must name the round-cap snapshot file"
 
   # The DOD's own ask-user paragraph must point back at rule 6's format
   # (one-owner rule) rather than restating or bare-citing it.
