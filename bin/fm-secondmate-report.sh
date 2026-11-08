@@ -39,8 +39,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Print, best effort, the open correlation ids the parent expects from this
 # mate and the command to rerun. Falls back to a generic hint when the parent's
 # records are not readable from here (a remote mate, or an unseeded home).
-corr_hint() {  # <verb> <note...>
-  local verb=$1 note=${2:-<note>} home=${FM_HOME:-} state id dir rec c ids=
+corr_hint() {  # <rerun-head> <rerun-tail>
+  local head=$1 tail=$2 home=${FM_HOME:-} state id dir rec c ids=
   if [ -n "$home" ]; then
     state="${FM_STATE_OVERRIDE:-$home/state}"
     if fm_parent_channel_destination "$home" "$state" >/dev/null 2>&1 \
@@ -57,10 +57,10 @@ corr_hint() {  # <verb> <note...>
   fi
   if [ -n "$ids" ]; then
     for c in $ids; do
-      echo "hint: the open request from the parent expects corr=$c; rerun: $0 $verb $c \"$note\"" >&2
+      echo "hint: the open request from the parent expects corr=$c; rerun: $0 $head $c $tail" >&2
     done
   else
-    echo "hint: take <corr_id> from the marked request's corr=<id> token; rerun: $0 $verb <corr_id> \"$note\"" >&2
+    echo "hint: take <corr_id> from the marked request's corr=<id> token; rerun: $0 $head <corr_id> $tail" >&2
   fi
 }
 
@@ -85,23 +85,38 @@ fi
 VERB=$1
 CORR=$2
 shift 2
-if [ "$DOC_MODE" = 1 ]; then
-  [ $# -ge 1 ] && [ -n "$1" ] || usage
-else
-  [ $# -ge 1 ] && [ -n "$*" ] || usage
-fi
 
+CORR_PREFIXED=0
 case "$CORR" in
-  corr=*) CORR=${CORR#corr=} ;;
+  corr=*) CORR=${CORR#corr=}; CORR_PREFIXED=1 ;;
 esac
 case "$CORR" in
   [a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9][a-fA-F0-9]) ;;
   *)
     echo "error: corr_id must be 16 hex characters (got '$CORR')" >&2
-    corr_hint "$VERB" "$*"
+    case "$CORR_PREFIXED:$CORR" in
+      0:*[!a-fA-F0-9]*) set -- "$CORR" "$@" ;;
+    esac
+    if [ "$DOC_MODE" = 1 ]; then
+      if [ $# -ge 1 ]; then
+        doc=$1
+        shift
+        corr_hint "--doc $VERB" "$doc${*:+ \"$*\"}"
+      else
+        corr_hint "--doc $VERB" "<doc-path> \"<note>\""
+      fi
+    else
+      corr_hint "$VERB" "\"${*:-<note>}\""
+    fi
     exit 1
     ;;
 esac
+
+if [ "$DOC_MODE" = 1 ]; then
+  [ $# -ge 1 ] && [ -n "$1" ] || usage
+else
+  [ $# -ge 1 ] && [ -n "$*" ] || usage
+fi
 
 HOME_DIR=$CALLER_FM_HOME
 case "$HOME_DIR" in

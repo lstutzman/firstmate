@@ -2096,6 +2096,27 @@ test_helper_refusal_names_expected_corr() {
     *"expects corr=$corr"*"done $corr"*) ;;
     *) fail "the refusal must name the open corr and the corrected command, got: $err" ;;
   esac
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" "audit clean" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a one-note report with the corr left out must be refused with the hint, got rc=$rc"
+  case "$err" in
+    *"expects corr=$corr"*"done $corr \"audit clean\""*) ;;
+    *) fail "the one-note refusal must name the open corr and keep the note, got: $err" ;;
+  esac
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" done audit clean 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 1 ] || fail "an unquoted note with the corr left out must be refused, got rc=$rc"
+  case "$err" in
+    *"done $corr \"audit clean\""*) ;;
+    *) fail "the rerun command must keep every word of an unquoted note, got: $err" ;;
+  esac
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" --doc done data/x/report.md "see report" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a doc report with the corr left out must be refused, got rc=$rc"
+  case "$err" in
+    *"--doc done $corr data/x/report.md \"see report\""*) ;;
+    *) fail "the doc rerun command must keep --doc, the doc path and the note, got: $err" ;;
+  esac
   if [ -s "$state/mate.status" ]; then
     fail "a refused report must append nothing"
   fi
