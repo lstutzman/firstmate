@@ -379,6 +379,22 @@ assert_focus_is() {  # <expected> <case-name>
 
 focus_audit_line_count() { wc -l < "$FOCUS_AUDIT_LOG" | tr -d '[:space:]'; }
 
+# assert_nested_after_parent <workspace-id> <task-id> <parent-workspace-id> <case-name>:
+# Herdr has no parent field, so nesting is the "└ <task> · p:<token>" label plus
+# a position inside the contiguous block of "└ " children after the parent.
+assert_nested_after_parent() {
+  local ws=$1 task=$2 parent=$3 case_name=$4 list
+  list=$(lab workspace list) || fail "$case_name: could not list workspaces"
+  printf '%s' "$list" | jq -e --arg ws "$ws" --arg parent "$parent" --arg task "$task" '
+    .result.workspaces as $w
+    | ([range(0; $w | length) | select($w[.].workspace_id == $ws)][0]) as $i
+    | ([range(0; $w | length) | select($w[.].workspace_id == $parent)][0]) as $p
+    | $i != null and $p != null and $i > $p
+    and ($w[$i].label | startswith("└ " + $task + " · p:"))
+    and ([range($p + 1; $i) | select(($w[.].label | startswith("└ ")) | not)] | length) == 0
+  ' >/dev/null 2>&1 || fail "$case_name: workspace $ws is not a nested '└ $task' child inside the block after $parent: $(printf '%s' "$list" | jq -c '[.result.workspaces[] | [.workspace_id, .label]]')"
+}
+
 assert_raw_presentation_mutations_preserved_since() {  # <line-count> <case-name>
   local start=$1 case_name=$2 changed
   changed=$(sed -n "$((start + 1)),\$p" "$FOCUS_AUDIT_LOG" | awk -F '\t' '
@@ -596,27 +612,24 @@ FIRSTMATE_WSID=$(printf '%s' "$FIRSTMATE_OUT" | jq -r '.result.workspace.workspa
 # Treehouse commands and metadata can be compared after normalizing endpoint
 # IDs and the deliberately fresh per-spawn incarnation.
 : > "$TREEHOUSE_CALL_LOG"
-OFF_HERDR_START=$(log_line_count)
-OFF_MOVE_START=$(wc -l < "$MOVE_CALL_LOG" | tr -d '[:space:]')
 spawn_task shape "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/off.out" 2> "$TMP_ROOT/off.err" \
   || fail "opted-out spawn failed: $(cat "$TMP_ROOT/off.err")"
-OFF_HERDR_END=$(log_line_count)
 OFF_META="$TMP_ROOT/off.meta"
 cp "$HOME_DIR/state/shape.meta" "$OFF_META"
 OFF_WT=$(remember_meta_worktree "$OFF_META")
 cp "$TREEHOUSE_CALL_LOG" "$TMP_ROOT/off-treehouse.log"
-[ "$(wc -l < "$MOVE_CALL_LOG" | tr -d '[:space:]')" = "$OFF_MOVE_START" ] \
-  || fail "opted-out spawn invoked the presentation-only workspace mover"
-OFF_HERDR_CALLS=$(sed -n "$((OFF_HERDR_START + 1)),${OFF_HERDR_END}p" "$HERDR_CALL_LOG")
-if printf '%s\n' "$OFF_HERDR_CALLS" | grep -E $'^(api\tschema|session\tlist)' >/dev/null 2>&1; then
-  fail "opted-out spawn added presentation-ordering capability or socket calls"
-fi
-pass "real Herdr lab: an opted-out spawn retains the Stage 1 Herdr command sequence with zero ordering calls"
+# Opting out of the presentation projection turns off the journal and its
+# restart binding only; every worker is still nested under its home workspace.
+OFF_WSID=$(grep '^herdr_workspace_id=' "$OFF_META" | cut -d= -f2-)
+assert_nested_after_parent "$OFF_WSID" shape "$FIRSTMATE_WSID" "opted-out spawn"
+[ ! -e "$HOME_DIR/state/shape.herdr-presentation" ] \
+  || fail "opted-out spawn published a presentation journal"
+pass "real Herdr lab: an opted-out spawn is nested under its home workspace without a presentation journal"
 teardown_task shape "$HOME_DIR" > "$TMP_ROOT/off-teardown.out" 2> "$TMP_ROOT/off-teardown.err" \
   || fail "opted-out teardown failed: $(cat "$TMP_ROOT/off-teardown.err")"
 
 # A home that configured nothing at all follows the version floor: it is
-# projected on a release at or above it, and takes the ordinary flat layout with
+# projected on a release at or above it, and takes the journal-free nested layout with
 # one naming warning below it. The only difference from the opted-out spawn
 # above is the removed file, so this case is the floor's live end-user proof on
 # whichever Herdr this lab is running.
@@ -653,6 +666,7 @@ else
     || fail "an unconfigured home published a presentation journal on below-floor herdr $FLOOR_VERSION"
   [ -n "$DEFAULT_ON_WSID" ] && [ "$DEFAULT_ON_WSID" != "$FIRSTMATE_WSID" ] \
     || fail "an unconfigured home did not get its own flat workspace on below-floor herdr $FLOOR_VERSION (got '${DEFAULT_ON_WSID:-<empty>}')"
+  assert_nested_after_parent "$DEFAULT_ON_WSID" default-on "$FIRSTMATE_WSID" "below-floor default"
   grep -q "$FLOOR_VERSION" "$TMP_ROOT/default-on.err" \
     || fail "the below-floor fallback did not name herdr $FLOOR_VERSION: $(cat "$TMP_ROOT/default-on.err")"
   pass "real Herdr lab: a home that configured nothing falls back flat on below-floor herdr $FLOOR_VERSION with one naming warning"
@@ -760,15 +774,14 @@ ROOT="$ROOT" READY="$LOCK_CONTENTION_READY" RELEASE="$LOCK_CONTENTION_RELEASE" \
   . "$ROOT/bin/fm-wake-lib.sh"
   fm_lock_try_acquire "$LOCK" || exit 1
   : > "$READY"
-  while [ ! -e "$RELEASE" ]; do sleep 0.05; done
+  held=0
+  while [ ! -e "$RELEASE" ] && [ "$held" -lt 160 ]; do sleep 0.05; held=$((held + 1)); done
   fm_lock_release "$LOCK"
 ' &
 LOCK_CONTENTION_OWNER_PID=$!
 while [ ! -e "$LOCK_CONTENTION_READY" ] && kill -0 "$LOCK_CONTENTION_OWNER_PID" 2>/dev/null; do sleep 0.01; done
 [ -e "$LOCK_CONTENTION_READY" ] || fail "could not hold the guarded lab presentation lock"
-LOCK_CONTENTION_START=$(log_line_count)
 LOCK_CONTENTION_FOCUS_START=$(focus_audit_line_count)
-LOCK_CONTENTION_MOVE_START=$(wc -l < "$MOVE_CALL_LOG" | tr -d '[:space:]')
 if spawn_task lock-contended "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/lock-contended.out" 2> "$TMP_ROOT/lock-contended.err"; then
   LOCK_CONTENTION_STATUS=0
 else
@@ -779,33 +792,27 @@ wait "$LOCK_CONTENTION_OWNER_PID" || fail "guarded lab presentation lock owner f
 LOCK_CONTENTION_OWNER_PID=
 [ "$LOCK_CONTENTION_STATUS" -eq 0 ] \
   || fail "bounded presentation lock contention did not fall back to a successful flat spawn: $(cat "$TMP_ROOT/lock-contended.err")"
-grep -F "presentation focus lock unavailable; using the ordinary flat layout without projection" "$TMP_ROOT/lock-contended.err" >/dev/null 2>&1 \
-  || fail "bounded presentation lock contention did not warn about flat fallback"
+grep -F "presentation focus lock unavailable; the worker is nested under its home without a restart binding" "$TMP_ROOT/lock-contended.err" >/dev/null 2>&1 \
+  || fail "bounded presentation lock contention did not warn about the journal-free fallback"
 LOCK_CONTENTION_META="$HOME_DIR/state/lock-contended.meta"
 remember_meta_worktree "$LOCK_CONTENTION_META" >/dev/null
 LOCK_CONTENTION_WSID=$(grep '^herdr_workspace_id=' "$LOCK_CONTENTION_META" | cut -d= -f2-)
 [ "$LOCK_CONTENTION_WSID" != "$FIRSTMATE_WSID" ] \
   || fail "bounded lock contention placed the worker in the launcher's own firstmate workspace"
-[ "$(lab workspace get "$LOCK_CONTENTION_WSID" | jq -r '.result.workspace.label // empty')" = "firstmate workers" ] \
-  || fail "bounded lock contention did not use this home's 'firstmate workers' workspace"
+assert_nested_after_parent "$LOCK_CONTENTION_WSID" lock-contended "$FIRSTMATE_WSID" "bounded lock contention"
 [ ! -e "$HOME_DIR/state/lock-contended.herdr-presentation" ] \
   || fail "bounded lock contention published a projection journal"
-LOCK_CONTENTION_CALLS=$(sed -n "$((LOCK_CONTENTION_START + 1)),\$p" "$HERDR_CALL_LOG")
-# session list is required to resolve the shared session lock path before the
-# bounded acquire attempt; it must not unlock projection create or move. The
-# only workspace it may create is this home's unprojected workers workspace,
-# whose seeded default tab the ordinary flat path prunes with a pane close.
-if printf '%s\n' "$LOCK_CONTENTION_CALLS" | grep -E $'^(workspace\tcreate\t.*\t--label\t\xe2\x94\x94 |api\tschema)' >/dev/null 2>&1; then
-  fail "bounded lock contention performed an unlocked projection mutation or ordering capability call"
-fi
-[ "$(wc -l < "$MOVE_CALL_LOG" | tr -d '[:space:]')" = "$LOCK_CONTENTION_MOVE_START" ] \
-  || fail "bounded lock contention invoked workspace.move"
 assert_focus_is "$CAPTAIN_FOCUS" "bounded presentation lock flat fallback"
 assert_raw_presentation_mutations_preserved_since "$LOCK_CONTENTION_FOCUS_START" "bounded presentation lock flat fallback"
 teardown_task lock-contended "$HOME_DIR" > "$TMP_ROOT/lock-contended-teardown.out" 2> "$TMP_ROOT/lock-contended-teardown.err" \
   || fail "flat lock-contention fixture teardown failed: $(cat "$TMP_ROOT/lock-contended-teardown.err")"
 assert_focus_is "$CAPTAIN_FOCUS" "bounded presentation lock flat fallback teardown"
-pass "real Herdr lab: bounded lock contention warns and falls back flat without projection or focus drift"
+pass "real Herdr lab: bounded lock contention warns, waits for the lock and nests the worker without a journal or focus drift"
+# The nested worker above was ordered by a workspace.move of its own; the
+# ordering scenarios below read the whole move log against projected workspaces
+# that are still live, so this retired workspace's entry leaves it.
+awk -F '\t' -v retired="$LOCK_CONTENTION_WSID" '$2 != retired' "$MOVE_CALL_LOG" > "$MOVE_CALL_LOG.keep" \
+  && cat "$MOVE_CALL_LOG.keep" > "$MOVE_CALL_LOG" && rm -f "$MOVE_CALL_LOG.keep"
 PROJECTION_ORDER_START=$(log_line_count)
 
 [ "$OFF_WT" = "$ON_WT" ] || fail "Treehouse did not reuse the same fixture worktree, so byte comparison is inconclusive"
@@ -1207,9 +1214,9 @@ printf '%s' "$CROSS_LIST" | jq -e '
 PCW_LABEL=$(lab workspace get "$(grep '^herdr_workspace_id=' "$HOME_DIR/state/pcw.meta" | cut -d= -f2-)" | jq -r '.result.workspace.label')
 ACW_LABEL=$(lab workspace get "$(grep '^herdr_workspace_id=' "$SECOND_HOME_A/state/acw.meta" | cut -d= -f2-)" | jq -r '.result.workspace.label')
 BCW_LABEL=$(lab workspace get "$(grep '^herdr_workspace_id=' "$SECOND_HOME_B/state/bcw.meta" | cut -d= -f2-)" | jq -r '.result.workspace.label')
-case "$PCW_LABEL" in $'└ pcw · p:'*|'firstmate workers') ;; *) fail "cross-home primary label wrong: $PCW_LABEL" ;; esac
-case "$ACW_LABEL" in $'└ acw · p:'*|'2ndmate-alpha workers') ;; *) fail "cross-home A label wrong: $ACW_LABEL" ;; esac
-case "$BCW_LABEL" in $'└ bcw · p:'*|'2ndmate-bravo workers') ;; *) fail "cross-home B label wrong: $BCW_LABEL" ;; esac
+case "$PCW_LABEL" in $'└ pcw · p:'*) ;; *) fail "cross-home primary label wrong: $PCW_LABEL" ;; esac
+case "$ACW_LABEL" in $'└ acw · p:'*) ;; *) fail "cross-home A label wrong: $ACW_LABEL" ;; esac
+case "$BCW_LABEL" in $'└ bcw · p:'*) ;; *) fail "cross-home B label wrong: $BCW_LABEL" ;; esac
 pass "real Herdr lab: concurrent primary/A/B spawns preserve parent order and exact focus"
 
 # Hold the shared session lock from a different home and force flat fallback.
@@ -1221,7 +1228,8 @@ ROOT="$ROOT" READY="$CROSS_LOCK_READY" RELEASE="$CROSS_LOCK_RELEASE" LOCK="$CROS
   . "$ROOT/bin/fm-wake-lib.sh"
   fm_lock_try_acquire "$LOCK" || exit 1
   : > "$READY"
-  while [ ! -e "$RELEASE" ]; do sleep 0.05; done
+  held=0
+  while [ ! -e "$RELEASE" ] && [ "$held" -lt 160 ]; do sleep 0.05; held=$((held + 1)); done
   fm_lock_release "$LOCK"
 ' &
 CROSS_LOCK_PID=$!
@@ -1238,19 +1246,21 @@ fi
 wait "$CROSS_LOCK_PID" || fail "cross-home session lock owner failed"
 [ "$AFLAT_STATUS" -eq 0 ] \
   || fail "cross-home lock contention did not fall back flat: $(cat "$TMP_ROOT/aflat.err")"
-grep -F "presentation focus lock unavailable; using the ordinary flat layout without projection" "$TMP_ROOT/aflat.err" >/dev/null 2>&1 \
-  || fail "cross-home lock contention did not warn about flat fallback"
+grep -F "presentation focus lock unavailable; the worker is nested under its home without a restart binding" "$TMP_ROOT/aflat.err" >/dev/null 2>&1 \
+  || fail "cross-home lock contention did not warn about the journal-free fallback"
 remember_meta_worktree "$SECOND_HOME_A/state/aflat.meta" >/dev/null
 AFLAT_WSID=$(grep '^herdr_workspace_id=' "$SECOND_HOME_A/state/aflat.meta" | cut -d= -f2-)
 AFLAT_LABEL=$(lab workspace get "$AFLAT_WSID" | jq -r '.result.workspace.label')
-[ "$AFLAT_LABEL" = "2ndmate-alpha workers" ] \
-  || fail "cross-home lock contention did not use the secondmate home's workers workspace: $AFLAT_LABEL"
+case "$AFLAT_LABEL" in
+  $'└ aflat · p:'*) : ;;
+  *) fail "cross-home lock contention did not nest the worker under the secondmate home: $AFLAT_LABEL" ;;
+esac
 [ ! -e "$SECOND_HOME_A/state/aflat.herdr-presentation" ] \
   || fail "cross-home lock contention published a projection journal"
 assert_focus_is "$CAPTAIN_FOCUS" "cross-home lock contention flat fallback"
 teardown_task aflat "$SECOND_HOME_A" > "$TMP_ROOT/aflat-teardown.out" 2> "$TMP_ROOT/aflat-teardown.err" \
   || fail "flat cross-home contention fixture teardown failed"
-pass "real Herdr lab: session lock contention from a secondmate home falls back flat with no journal"
+pass "real Herdr lab: session lock contention from a secondmate home nests the worker with no journal"
 
 # Same-identity recovery replaces only one exact agent-free husk in its
 # original projected workspace. These full-session restarts also stop the

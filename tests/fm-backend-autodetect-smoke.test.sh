@@ -89,12 +89,16 @@ on_exit() {
 trap on_exit EXIT
 "$HERDR_LAB_HELPER" provision "$HERDR_LAB_SESSION" || fail "could not provision isolated Herdr lab session"
 
+# Every worker nests under its home workspace, so the spawn needs one to find.
+"$HERDR_LAB_HELPER" run "$HERDR_LAB_SESSION" workspace create --cwd "$TMP_ROOT" --label firstmate --no-focus >/dev/null \
+  || fail "could not create the home workspace the spawned worker nests under"
+
 # --- scratch world: FM_HOME with NO backend config, one throwaway project ---
 
 STATE="$TMP_ROOT/state"; DATA="$TMP_ROOT/data"; CONFIG="$TMP_ROOT/config"
 mkdir -p "$STATE" "$DATA/$ID" "$CONFIG"
 # Backend auto-detection is what is under test here, so opt out of the default-on
-# presentation projection and keep the assertions on the flat per-home workspace.
+# presentation journal and keep the assertions on the plain nested workspace.
 printf 'off\n' > "$CONFIG/herdr-presentation-spaces"
 cat > "$DATA/$ID/brief.md" <<'EOF'
 # Task

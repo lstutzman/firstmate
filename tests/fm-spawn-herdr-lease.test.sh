@@ -110,7 +110,7 @@ case "${1:-} ${2:-}" in
       printf '{"result":{"agent":{"agent_status":"shell-starting"}}}\n'
     fi
     exit 0 ;;
-  'workspace list') printf '{"result":{"workspaces":[]}}\n'; exit 0 ;;
+  'workspace list') printf '{"result":{"workspaces":[{"workspace_id":"wshome","label":"firstmate"}]}}\n'; exit 0 ;;
   'workspace create')
     printf '{"result":{"workspace":{"workspace_id":"wsnew"},"tab":{"tab_id":"seedtab"},"root_pane":{"pane_id":"%%1"}}}\n'
     exit 0 ;;

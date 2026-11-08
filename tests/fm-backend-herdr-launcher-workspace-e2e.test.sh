@@ -5,8 +5,13 @@
 #
 # The guarantee under test: a crewmate or scout runs alone in a fresh Herdr
 # workspace of its own (fleet rules section 1: one session per workspace),
-# never as a tab of the launcher's workspace, never in a workspace another
-# session holds, and never in one picked by a workspace label. Herdr enforces no
+# nested under its dispatching home's workspace (labeled "└ <task> · p:<token>"
+# and ordered in the block right after it, on every path: spawn, relaunch and
+# fallback), never as a tab of the launcher's workspace, never in a workspace
+# another session holds, and never in one picked by a workspace label when the
+# launcher's pane names its own. A home with no workspace gets one created to
+# nest under, and duplicated home workspaces with no launcher identity resolve
+# to the lowest-numbered with a warning. Herdr enforces no
 # workspace-label uniqueness, so two workspaces can both be labeled "firstmate";
 # a claimed launcher identity is still validated first, so a stale one refuses.
 #
@@ -109,6 +114,41 @@ label_of_workspace() {  # <workspace_id>
     | jq -r --arg id "$1" '.result.workspaces[]? | select(.workspace_id == $id) | .label' 2>/dev/null
 }
 
+# assert_nested <workspace_id> <task-id> <parent_workspace_id> <what>: the
+# workspace carries the "└ <task> · p:<token>" child label and sits inside the
+# contiguous block of "└ " children right after its parent, because Herdr has
+# no parent field and that label plus ordering is how nesting is shown.
+assert_nested() {
+  local ws=$1 task=$2 parent=$3 what=$4 label order idx pidx i id lbl
+  label=$(label_of_workspace "$ws")
+  case "$label" in
+    "└ $task · p:"*) : ;;
+    *) fail "$what: workspace $ws is labeled '$label', not a nested '└ $task · p:<token>' child" ;;
+  esac
+  order=$(lab workspace list 2>/dev/null | jq -r '.result.workspaces[]? | [.workspace_id, .label] | @tsv')
+  idx=-1; pidx=-1; i=0
+  while IFS=$'\t' read -r id lbl; do
+    [ "$id" != "$ws" ] || idx=$i
+    [ "$id" != "$parent" ] || pidx=$i
+    i=$((i + 1))
+  done <<ORDER
+$order
+ORDER
+  [ "$pidx" -ge 0 ] && [ "$idx" -gt "$pidx" ] || fail "$what: workspace $ws is not after its parent $parent (positions $idx, $pidx)"
+  i=0
+  while IFS=$'\t' read -r id lbl; do
+    if [ "$i" -gt "$pidx" ] && [ "$i" -lt "$idx" ]; then
+      case "$lbl" in
+        "└ "*) : ;;
+        *) fail "$what: '$lbl' sits between parent $parent and nested workspace $ws, so the child is not in its parent's block" ;;
+      esac
+    fi
+    i=$((i + 1))
+  done <<ORDER
+$order
+ORDER
+}
+
 active_tab_of_workspace() {  # <workspace_id>
   lab workspace list 2>/dev/null \
     | jq -r --arg id "$1" '.result.workspaces[]? | select(.workspace_id == $id) | .active_tab_id // empty' 2>/dev/null
@@ -198,10 +238,20 @@ git -C "$SM2_HOME" init -q -b main
 
 # A third primary-shaped home that keeps presentation spaces ON through the
 # historical empty opt-in file, so the default-on migration is exercised against
-# real Herdr while the opted-out homes above assert the flat layout in isolation.
+# real Herdr while the opted-out homes above assert the journal-free nested layout in isolation.
 PRES_HOME="$TMP_ROOT/presentation-home"
 mkdir -p "$PRES_HOME/state" "$PRES_HOME/config"
 : > "$PRES_HOME/config/herdr-presentation-spaces"
+
+# A presentation-on secondmate-shaped home whose '2ndmate-<id>' workspace does
+# not exist until a no-pane spawn needs it as the projection's parent.
+PRES_SM_ID="lwsm4"
+PRES_SM_HOME="$TMP_ROOT/presentation-secondmate-home"
+mkdir -p "$PRES_SM_HOME/state" "$PRES_SM_HOME/config" "$PRES_SM_HOME/projects" "$PRES_SM_HOME/bin" "$PRES_SM_HOME/data"
+: > "$PRES_SM_HOME/config/herdr-presentation-spaces"
+printf '# scratch secondmate home AGENTS.md placeholder\n' > "$PRES_SM_HOME/AGENTS.md"
+printf '%s\n' "$PRES_SM_ID" > "$PRES_SM_HOME/.fm-secondmate-home"
+printf 'trivial e2e secondmate charter: nothing to do.\n' > "$PRES_SM_HOME/data/charter.md"
 
 write_ship_brief() {  # <file> <id>
   cat > "$1" <<EOF
@@ -219,6 +269,10 @@ for id in uniqA uniqB dupC dupD staleF smE presU presD presF presG presH presI p
   write_ship_brief "$PRIMARY_HOME/data/$id/brief.md" "$id"
   write_ship_brief "$SM_HOME/data/$id/brief.md" "$id"
   write_ship_brief "$PRES_HOME/data/$id/brief.md" "$id"
+done
+for id in presN presM; do
+  mkdir -p "$PRES_SM_HOME/data/$id"
+  write_ship_brief "$PRES_SM_HOME/data/$id/brief.md" "$id"
 done
 mkdir -p "$PRIMARY_HOME/data/$SM2_ID"
 printf 'trivial secondmate charter brief: nothing to do.\n' > "$PRIMARY_HOME/data/$SM2_ID/brief.md"
@@ -249,30 +303,33 @@ destroy_endpoint_workspace() {
   [ "$(focused_workspace)" = "$WS_OTHER" ]
 }
 
-# --- 1. presentation off, no herdr ancestry: the worker gets its own workspace
+# --- 1. presentation off, no herdr ancestry: with no home workspace to nest
+#        under, the spawn creates the home's own 'firstmate' workspace at the
+#        home and nests the worker's own fresh workspace right after it -------
 
+[ -z "$(lab workspace list 2>/dev/null | jq -r '.result.workspaces[]? | select(.label == "firstmate") | .workspace_id')" ] \
+  || fail "the lab session already holds a 'firstmate' workspace before the missing-home case"
 spawn_from_launcher "" "$PRIMARY_HOME" uniqA "$PROJ" --mode no-mistakes --yolo off
-[ "$SPAWN_RC" -eq 0 ] || fail "a primary-shaped spawn with no herdr parent failed"$'\n'"$(cat "$SPAWN_ERR")"
+[ "$SPAWN_RC" -eq 0 ] || fail "a spawn with no home workspace must create one and nest under it"$'\n'"$(cat "$SPAWN_ERR")"
+WS_PRIMARY=$(lab workspace list 2>/dev/null | jq -r '[.result.workspaces[]? | select(.label == "firstmate") | .workspace_id] | if length == 1 then .[0] else empty end')
+[ -n "$WS_PRIMARY" ] || fail "a spawn with no home workspace did not create exactly one 'firstmate' workspace"
+LAUNCH_PRIMARY_PANE=$(lab pane list --workspace "$WS_PRIMARY" 2>/dev/null | jq -r '.result.panes[0].pane_id // empty')
+[ -n "$LAUNCH_PRIMARY_PANE" ] || fail "could not read the created 'firstmate' workspace's pane"
 UNIQA_META="$PRIMARY_HOME/state/uniqA.meta"
 record_worktree "$UNIQA_META"
 UNIQA_PANE=$(grep '^herdr_pane_id=' "$UNIQA_META" | cut -d= -f2-)
 [ -n "$UNIQA_PANE" ] || fail "uniqA meta is missing herdr_pane_id"
 UNIQA_WS=$(workspace_of_pane "$UNIQA_PANE")
 [ -n "$UNIQA_WS" ] || fail "could not read uniqA's workspace"
-[ "$(label_of_workspace "$UNIQA_WS")" = "firstmate workers" ] \
-  || fail "uniqA did not land in a fresh 'firstmate workers' workspace: '$(label_of_workspace "$UNIQA_WS")'"
+assert_nested "$UNIQA_WS" uniqA "$WS_PRIMARY" "uniqA"
 [ "$(tab_labels_of_workspace "$UNIQA_WS")" = "fm-uniqA" ] \
   || fail "uniqA's workspace holds more than its own session: '$(tab_labels_of_workspace "$UNIQA_WS")'"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "the spawn stole focus from the captain's workspace"
-pass "real herdr E2E: a presentation-off spawn with no herdr parent gets its own fresh workspace without stealing focus"
+pass "real herdr E2E: a presentation-off spawn with no home workspace creates it and gets its own fresh workspace nested under it without stealing focus"
 
 # --- 2. presentation off, WITH a launcher pane in a 'firstmate' workspace: the
 #        worker still gets its own workspace, and the launcher's is untouched --
 
-read -r WS_PRIMARY _ LAUNCH_PRIMARY_PANE <<EOF
-$(make_workspace firstmate)
-EOF
-[ -n "$WS_PRIMARY" ] && [ -n "$LAUNCH_PRIMARY_PANE" ] || fail "could not create the launcher's 'firstmate' workspace"
 WS_PRIMARY_TABS_BEFORE_UNIQB=$(tab_labels_of_workspace "$WS_PRIMARY")
 
 spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRIMARY_HOME" uniqB "$PROJ" --mode no-mistakes --yolo off
@@ -283,6 +340,7 @@ UNIQB_PANE=$(grep '^herdr_pane_id=' "$UNIQB_META" | cut -d= -f2-)
 UNIQB_WS=$(workspace_of_pane "$UNIQB_PANE")
 [ -n "$UNIQB_WS" ] && [ "$UNIQB_WS" != "$WS_PRIMARY" ] && [ "$UNIQB_WS" != "$UNIQA_WS" ] \
   || fail "a crewmate launched from the 'firstmate' workspace must not share it or another session's workspace (got '$UNIQB_WS')"
+assert_nested "$UNIQB_WS" uniqB "$WS_PRIMARY" "uniqB"
 [ "$(tab_labels_of_workspace "$UNIQB_WS")" = "fm-uniqB" ] \
   || fail "uniqB's workspace holds more than its own session"
 [ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE_UNIQB" ] \
@@ -323,26 +381,36 @@ pass "real herdr E2E: presentation spaces still create the isolated child worksp
 
 PRES_LOCK_PATH=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_presentation_session_lock_path "$1"' \
   "$ROOT" "$HERDR_LAB_SESSION") || fail "could not resolve the lab session's presentation lock"
-PRES_LOCK_READY="$TMP_ROOT/pres-lock-ready"
-PRES_LOCK_RELEASE="$TMP_ROOT/pres-lock-release"
-ROOT="$ROOT" READY="$PRES_LOCK_READY" RELEASE="$PRES_LOCK_RELEASE" LOCK="$PRES_LOCK_PATH" bash -c '
-  . "$ROOT/bin/fm-wake-lib.sh"
-  fm_lock_try_acquire "$LOCK" || exit 1
-  : > "$READY"
-  while [ ! -e "$RELEASE" ]; do sleep 0.05; done
-  fm_lock_release "$LOCK"
-' &
-PRES_LOCK_PID=$!
-while [ ! -e "$PRES_LOCK_READY" ] && kill -0 "$PRES_LOCK_PID" 2>/dev/null; do sleep 0.01; done
-[ -e "$PRES_LOCK_READY" ] || fail "could not hold the lab session's presentation lock"
+# hold_presentation_lock <tag>: hold the shared session lock for 8 seconds,
+# which outlasts the 5 second bounded projection attempt, so the spawn that
+# follows falls back from the journaled projection and then waits for the lock
+# to free before it creates and orders its nested workspace.
+hold_presentation_lock() {  # <tag>
+  PRES_LOCK_READY="$TMP_ROOT/pres-lock-ready-$1"
+  ROOT="$ROOT" READY="$PRES_LOCK_READY" LOCK="$PRES_LOCK_PATH" bash -c '
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$LOCK" || exit 1
+    : > "$READY"
+    sleep 8
+    fm_lock_release "$LOCK"
+  ' &
+  PRES_LOCK_PID=$!
+  while [ ! -e "$PRES_LOCK_READY" ] && kill -0 "$PRES_LOCK_PID" 2>/dev/null; do sleep 0.01; done
+  [ -e "$PRES_LOCK_READY" ] || fail "could not hold the lab session's presentation lock ($1)"
+}
+release_presentation_lock() {
+  wait "$PRES_LOCK_PID" || fail "the presentation lock holder failed"
+}
+hold_presentation_lock presF
 WS_PRIMARY_TABS_BEFORE_FLAT=$(tab_labels_of_workspace "$WS_PRIMARY")
 WS_PRIMARY_ACTIVE_BEFORE_FLAT=$(active_tab_of_workspace "$WS_PRIMARY")
 spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presF "$PROJ" --mode no-mistakes --yolo off
 PRESF_RC=$SPAWN_RC; PRESF_ERR=$SPAWN_ERR
+release_presentation_lock
+hold_presentation_lock presG
 spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presG "$PROJ" --mode no-mistakes --yolo off
 PRESG_RC=$SPAWN_RC; PRESG_ERR=$SPAWN_ERR
-: > "$PRES_LOCK_RELEASE"
-wait "$PRES_LOCK_PID" || fail "the presentation lock holder failed"
+release_presentation_lock
 [ "$PRESF_RC" -eq 0 ] || fail "a presentation-enabled spawn that falls back flat failed"$'\n'"$(cat "$PRESF_ERR")"
 [ "$PRESG_RC" -eq 0 ] || fail "a second presentation-enabled flat fallback failed"$'\n'"$(cat "$PRESG_ERR")"
 grep -F "presentation focus lock unavailable" "$PRESF_ERR" >/dev/null 2>&1 \
@@ -354,8 +422,7 @@ PRESF_WS=$(workspace_of_pane "$PRESF_PANE")
 [ -n "$PRESF_WS" ] || fail "could not read presF's workspace"
 [ "$PRESF_WS" != "$WS_PRIMARY" ] \
   || fail "a flat-fallback worker from a presentation-enabled home landed in the launcher's own workspace"
-[ "$(label_of_workspace "$PRESF_WS")" = "firstmate workers" ] \
-  || fail "a flat-fallback worker did not land in this home's 'firstmate workers' workspace: '$(label_of_workspace "$PRESF_WS")'"
+assert_nested "$PRESF_WS" presF "$WS_PRIMARY" "a journal-free fallback worker"
 [ ! -e "$PRES_HOME/state/presF.herdr-presentation" ] || fail "a flat fallback published a presentation journal"
 PRESG_META="$PRES_HOME/state/presG.meta"
 record_worktree "$PRESG_META"
@@ -369,7 +436,8 @@ PRESG_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESG_META" | cut -d= -
 [ "$(active_tab_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_ACTIVE_BEFORE_FLAT" ] \
   || fail "a flat fallback changed the launcher workspace's active tab"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "a flat fallback stole focus from the captain's workspace"
-pass "real herdr E2E: each presentation-enabled flat fallback gets its own workspace and leaves the launcher's workspace untouched"
+assert_nested "$PRESG_WS" presG "$WS_PRIMARY" "a second journal-free fallback worker"
+pass "real herdr E2E: each presentation-enabled fallback gets its own nested workspace and leaves the launcher's workspace untouched"
 
 # --- 2d. '<home> workers' workspaces that already exist (from before this
 #         rule, or made by hand): a flat fallback never adopts one, it creates
@@ -382,22 +450,10 @@ EOF
 WS_WORKERS_FIRST=$(lab workspace list 2>/dev/null \
   | jq -r '[.result.workspaces[]? | select(.label == "firstmate workers") | .workspace_id][0] // empty')
 [ -n "$WS_WORKERS_FIRST" ] || fail "could not read the first 'firstmate workers' workspace"
-PRES_LOCK_READY="$TMP_ROOT/pres-lock-ready-dup"
-PRES_LOCK_RELEASE="$TMP_ROOT/pres-lock-release-dup"
-ROOT="$ROOT" READY="$PRES_LOCK_READY" RELEASE="$PRES_LOCK_RELEASE" LOCK="$PRES_LOCK_PATH" bash -c '
-  . "$ROOT/bin/fm-wake-lib.sh"
-  fm_lock_try_acquire "$LOCK" || exit 1
-  : > "$READY"
-  while [ ! -e "$RELEASE" ]; do sleep 0.05; done
-  fm_lock_release "$LOCK"
-' &
-PRES_LOCK_PID=$!
-while [ ! -e "$PRES_LOCK_READY" ] && kill -0 "$PRES_LOCK_PID" 2>/dev/null; do sleep 0.01; done
-[ -e "$PRES_LOCK_READY" ] || fail "could not hold the lab session's presentation lock again"
+hold_presentation_lock presH
 spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presH "$PROJ" --mode no-mistakes --yolo off
 PRESH_RC=$SPAWN_RC; PRESH_ERR=$SPAWN_ERR
-: > "$PRES_LOCK_RELEASE"
-wait "$PRES_LOCK_PID" || fail "the presentation lock holder failed"
+release_presentation_lock
 [ "$PRESH_RC" -eq 0 ] \
   || fail "a flat fallback refused when two 'firstmate workers' workspaces exist"$'\n'"$(cat "$PRESH_ERR")"
 PRESH_META="$PRES_HOME/state/presH.meta"
@@ -406,7 +462,8 @@ PRESH_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESH_META" | cut -d= -
 [ -n "$PRESH_WS" ] && [ "$PRESH_WS" != "$WS_WORKERS_FIRST" ] && [ "$PRESH_WS" != "$WS_WORKERS_DUP" ] \
   && [ "$PRESH_WS" != "$PRESF_WS" ] && [ "$PRESH_WS" != "$PRESG_WS" ] \
   || fail "a flat fallback adopted an existing workspace instead of creating its own ($PRESH_WS)"
-pass "real herdr E2E: existing '<home> workers' workspaces are never adopted; a flat fallback creates its own"
+assert_nested "$PRESH_WS" presH "$WS_PRIMARY" "a fallback beside existing workers workspaces"
+pass "real herdr E2E: existing '<home> workers' workspaces are never adopted; a fallback creates its own nested workspace"
 
 # --- 2e. reclaim of a destroyed endpoint from a presentation-enabled home
 #         (the relaunch an unpark runs): the replacement gets a fresh
@@ -430,6 +487,7 @@ PRESF_REBOUND_WS=$(workspace_of_pane "$PRESF_REBOUND_PANE")
   || fail "a reclaimed worker from a presentation-enabled home landed in the launcher's own workspace"
 [ "$PRESF_REBOUND_WS" != "$PRESG_WS" ] && [ "$PRESF_REBOUND_WS" != "$PRESH_WS" ] \
   || fail "a reclaimed worker joined a workspace another session holds ($PRESF_REBOUND_WS)"
+assert_nested "$PRESF_REBOUND_WS" presF "$WS_PRIMARY" "a reclaimed worker"
 [ "$(tab_labels_of_workspace "$PRESF_REBOUND_WS")" = "fm-presF" ] \
   || fail "a reclaimed worker's workspace holds more than its own session: '$(tab_labels_of_workspace "$PRESF_REBOUND_WS")'"
 [ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE_REBIND" ] \
@@ -447,18 +505,10 @@ pass "real herdr E2E: reclaiming a presentation-enabled home's destroyed endpoin
 # presI is parked and unparked while presJ is spawned as a fresh task, each
 # from the same lock-contended presentation-enabled home as 2c.
 
-ROOT="$ROOT" READY="$PRES_LOCK_READY.f" RELEASE="$PRES_LOCK_RELEASE.f" LOCK="$PRES_LOCK_PATH" bash -c '
-  . "$ROOT/bin/fm-wake-lib.sh"
-  fm_lock_try_acquire "$LOCK" || exit 1
-  : > "$READY"
-  while [ ! -e "$RELEASE" ]; do sleep 0.05; done
-  fm_lock_release "$LOCK"
-' &
-PRES_LOCK_PID=$!
-while [ ! -e "$PRES_LOCK_READY.f" ] && kill -0 "$PRES_LOCK_PID" 2>/dev/null; do sleep 0.01; done
-[ -e "$PRES_LOCK_READY.f" ] || fail "could not hold the lab session's presentation lock for the park case"
+hold_presentation_lock presI
 spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presI "$PROJ" --mode no-mistakes --yolo off
 [ "$SPAWN_RC" -eq 0 ] || fail "presI's spawn failed"$'\n'"$(cat "$SPAWN_ERR")"
+release_presentation_lock
 PRESI_META="$PRES_HOME/state/presI.meta"
 record_worktree "$PRESI_META"
 PRESI_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESI_META" | cut -d= -f2-)")
@@ -468,19 +518,21 @@ env PATH="$FAKEBIN:$PATH" HERDR_ENV=1 HERDR_PANE_ID="$LAUNCH_PRIMARY_PANE" HERDR
   "$ROOT/bin/fm-spawn.sh" presI --relaunch --harness codex >"$TMP_ROOT/presI-unpark.out" 2>"$TMP_ROOT/presI-unpark.err" \
   || fail "relaunching presI after its park failed"$'\n'"$(cat "$TMP_ROOT/presI-unpark.err")"
 PRESI_UNPARKED_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESI_META" | tail -1 | cut -d= -f2-)")
+hold_presentation_lock presJ
 spawn_from_launcher "$LAUNCH_PRIMARY_PANE" "$PRES_HOME" presJ "$PROJ" --mode no-mistakes --yolo off
 [ "$SPAWN_RC" -eq 0 ] || fail "presJ's spawn failed"$'\n'"$(cat "$SPAWN_ERR")"
+release_presentation_lock
 PRESJ_META="$PRES_HOME/state/presJ.meta"
 record_worktree "$PRESJ_META"
 PRESJ_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESJ_META" | cut -d= -f2-)")
-: > "$PRES_LOCK_RELEASE.f"
-wait "$PRES_LOCK_PID" || fail "the presentation lock holder failed"
 [ -n "$PRESI_WS" ] && [ -n "$PRESI_UNPARKED_WS" ] && [ -n "$PRESJ_WS" ] || fail "could not read all three workspaces"
 [ "$PRESI_WS" != "$PRESI_UNPARKED_WS" ] && [ "$PRESI_WS" != "$PRESJ_WS" ] && [ "$PRESI_UNPARKED_WS" != "$PRESJ_WS" ] \
   || fail "park, unpark and a new spawn shared a workspace (first $PRESI_WS, unparked $PRESI_UNPARKED_WS, new $PRESJ_WS)"
 [ "$(tab_labels_of_workspace "$PRESI_UNPARKED_WS")" = "fm-presI" ] && [ "$(tab_labels_of_workspace "$PRESJ_WS")" = "fm-presJ" ] \
   || fail "an unparked or new session's workspace holds more than that one session"
-pass "real herdr E2E: a session, its unparked relaunch and a new spawn each get their own workspace"
+assert_nested "$PRESI_UNPARKED_WS" presI "$WS_PRIMARY" "an unparked relaunch"
+assert_nested "$PRESJ_WS" presJ "$WS_PRIMARY" "a new spawn beside an unparked relaunch"
+pass "real herdr E2E: a session, its unparked relaunch and a new spawn each get their own nested workspace"
 
 # The guard: placing a session into a workspace that already holds another
 # tab refuses, names the workspace, and creates nothing.
@@ -507,8 +559,7 @@ UNIQB_PANE=$(grep '^herdr_pane_id=' "$UNIQB_META" | tail -1 | cut -d= -f2-)
 UNIQB_RELAUNCH_WS=$(workspace_of_pane "$UNIQB_PANE")
 [ -n "$UNIQB_RELAUNCH_WS" ] && [ "$UNIQB_RELAUNCH_WS" != "$WS_PRIMARY" ] && [ "$UNIQB_RELAUNCH_WS" != "$UNIQA_WS" ] \
   || fail "a presentation-off relaunch joined another session's workspace ('$UNIQB_RELAUNCH_WS')"
-[ "$(label_of_workspace "$UNIQB_RELAUNCH_WS")" = "firstmate workers" ] \
-  || fail "a presentation-off relaunch did not get a fresh 'firstmate workers' workspace"
+assert_nested "$UNIQB_RELAUNCH_WS" uniqB "$WS_PRIMARY" "a presentation-off relaunch"
 [ "$(tab_labels_of_workspace "$UNIQB_RELAUNCH_WS")" = "fm-uniqB" ] \
   || fail "the relaunched session's workspace holds more than that session"
 [ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE_UNPARK" ] \
@@ -534,7 +585,7 @@ WS_COUNT_BEFORE_SHIM=$(lab workspace list 2>/dev/null | jq -r '.result.workspace
 SHIM_ERR="$TMP_ROOT/shim.err"
 # shellcheck disable=SC2016 # $0 and the adapter path expand inside the child shell
 env -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SOCKET_PATH PATH="$SHIMBIN:$PATH" HERDR_SESSION="$HERDR_LAB_SESSION" \
-  FM_HOME="$PRIMARY_HOME" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_container_ensure /tmp flat-workers' "$ROOT" \
+  FM_HOME="$PRIMARY_HOME" bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_container_ensure /tmp nested-workers "$1" shimT' "$ROOT" "$HERDR_LAB_SESSION" \
   >/dev/null 2>"$SHIM_ERR" && fail "a workspace create with no seeded tab id was accepted"
 assert_contains_local "$(cat "$SHIM_ERR")" "no seeded tab id" "the refusal did not say why"
 i=0
@@ -586,8 +637,7 @@ record_worktree "$FLOORA_META"
 FLOORA_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$FLOORA_META" | cut -d= -f2-)")
 [ -n "$FLOORA_WS" ] && [ "$FLOORA_WS" != "$WS_PRIMARY" ] \
   || fail "a spawn whose server reads below the floor joined the launcher's workspace ('$FLOORA_WS')"
-[ "$(label_of_workspace "$FLOORA_WS")" = "firstmate workers" ] \
-  || fail "a spawn whose server reads below the floor did not get a fresh 'firstmate workers' workspace: '$(label_of_workspace "$FLOORA_WS")'"
+assert_nested "$FLOORA_WS" floorA "$WS_PRIMARY" "a spawn whose server reads below the floor"
 [ "$(tab_labels_of_workspace "$FLOORA_WS")" = "fm-floorA" ] \
   || fail "the below-floor spawn's workspace holds more than its own session"
 [ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE_FLOOR" ] \
@@ -721,6 +771,7 @@ DUPC_WS=$(workspace_of_pane "$DUPC_PANE")
 [ -n "$DUPC_WS" ] && [ "$DUPC_WS" != "$WS_PRIMARY_DUP" ] && [ "$DUPC_WS" != "$WS_PRIMARY" ] && [ "$DUPC_WS" != "$WS_OTHER" ] \
   || fail "a worker launched from the second 'firstmate' workspace must get its own workspace, got '$DUPC_WS'"
 [ "$(tab_labels_of_workspace "$DUPC_WS")" = "fm-dupC" ] || fail "dupC's workspace holds more than its own session"
+assert_nested "$DUPC_WS" dupC "$WS_PRIMARY_DUP" "a worker launched from the second 'firstmate' workspace"
 [ "$(grep '^herdr_workspace_id=' "$DUPC_META" | cut -d= -f2-)" = "$DUPC_WS" ] \
   || fail "the recorded endpoint workspace does not match the worker's workspace"
 [ "$(tab_labels_of_workspace "$WS_PRIMARY_DUP")" = "$WS_PRIMARY_DUP_TABS_BEFORE" ] \
@@ -751,29 +802,32 @@ PRESD_JOURNAL="$PRES_HOME/state/presD.herdr-presentation"
   || fail "the duplicate-label projection journal did not bind the launcher's exact parent workspace"
 [ "$PRESD_WS" != "$WS_PRIMARY" ] && [ "$PRESD_WS" != "$WS_PRIMARY_DUP" ] \
   || fail "a projected worker must not be collapsed into either same-labeled parent workspace"
-PRESD_ORDER=$(lab workspace list 2>/dev/null | jq -r --arg dup "$WS_PRIMARY_DUP" --arg child "$PRESD_WS" '
-  [range(0; (.result.workspaces | length)) as $i
-    | {i: $i, id: .result.workspaces[$i].workspace_id}]
-  | ((map(select(.id == $child)) | .[0].i) - (map(select(.id == $dup)) | .[0].i))')
-[ "$PRESD_ORDER" = 1 ] \
-  || fail "the projected child should sit immediately after the launcher's own workspace, offset was '$PRESD_ORDER'"
+assert_nested "$PRESD_WS" presD "$WS_PRIMARY_DUP" "a projected worker under a duplicated parent label"
 [ "$(tab_labels_of_workspace "$WS_PRIMARY")" = "$WS_PRIMARY_TABS_BEFORE" ] \
   || fail "the other same-labeled workspace was mutated by a projected spawn"
 [ "$(focused_workspace)" = "$WS_OTHER" ] || fail "a projected spawn stole focus from the captain's workspace"
 pass "real herdr E2E: with a duplicated home label, a projected worker still hangs off the launcher's exact workspace and the sibling stays untouched"
 
-# --- 4. duplicate label with NO launcher identity: no label is ever consulted,
-#        so the worker simply gets its own workspace ---------------------------
+# --- 4. duplicate label with NO launcher identity: the label is the only way
+#        to find the home workspace and it names two, so the worker nests under
+#        the lowest-numbered one with one warning naming both ---------------
 
+DUP_LOWEST=$(lab workspace list 2>/dev/null | jq -r '.result.workspaces[]? | select(.label == "firstmate") | .workspace_id' | sort -V | head -1)
+[ "$(lab workspace list 2>/dev/null | jq -r '[.result.workspaces[]? | select(.label == "firstmate")] | length')" = 2 ] \
+  || fail "the duplicate-label case needs exactly two 'firstmate' workspaces"
 spawn_from_launcher "" "$PRIMARY_HOME" dupD "$PROJ" --mode no-mistakes --yolo off
-[ "$SPAWN_RC" -eq 0 ] || fail "a spawn must not depend on the home label being unique"$'\n'"$(cat "$SPAWN_ERR")"
+[ "$SPAWN_RC" -eq 0 ] || fail "a spawn whose home label names two workspaces must still nest the worker"$'\n'"$(cat "$SPAWN_ERR")"
+[ "$(grep -c "herdr workspaces in session '$HERDR_LAB_SESSION' are labeled 'firstmate'" "$SPAWN_ERR")" = 1 ] \
+  || fail "the duplicate-parent spawn did not print exactly one warning naming the duplicated home"$'\n'"$(cat "$SPAWN_ERR")"
+assert_contains_local "$(cat "$SPAWN_ERR")" "lowest-numbered, $DUP_LOWEST" "the warning did not name the chosen workspace"
 DUPD_META="$PRIMARY_HOME/state/dupD.meta"
 record_worktree "$DUPD_META"
 DUPD_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$DUPD_META" | cut -d= -f2-)")
-[ -n "$DUPD_WS" ] && [ "$DUPD_WS" != "$WS_PRIMARY" ] && [ "$DUPD_WS" != "$WS_PRIMARY_DUP" ] \
-  || fail "dupD joined one of the two same-labeled workspaces ('$DUPD_WS')"
-[ "$(tab_labels_of_workspace "$DUPD_WS")" = "fm-dupD" ] || fail "dupD's workspace holds more than its own session"
-pass "real herdr E2E: duplicate home-labeled workspaces with no launcher identity no longer matter, the worker gets its own workspace"
+assert_nested "$DUPD_WS" dupD "$DUP_LOWEST" "a worker under duplicated home workspaces"
+return_worktrees "$DUPD_META"
+[ "$(lab workspace list 2>/dev/null | jq -r '[.result.workspaces[]? | select(.label == "firstmate")] | length')" = 2 ] \
+  || fail "a duplicated home must not gain a third 'firstmate' workspace"
+pass "real herdr E2E: duplicate home-labeled workspaces with no launcher identity nest the worker under the lowest-numbered with one warning"
 
 # --- 5. a STALE launcher pane refuses, even though the home label is
 #        unambiguous from the launcher's own (now closed) workspace -----------
@@ -820,8 +874,7 @@ SME_PANE=$(grep '^herdr_pane_id=' "$SME_META" | cut -d= -f2-)
 SME_WS=$(workspace_of_pane "$SME_PANE")
 [ -n "$SME_WS" ] && [ "$SME_WS" != "$WS_SM_LAUNCH" ] && [ "$SME_WS" != "$WS_SM_DECOY" ] \
   || fail "a secondmate's own worker must get its own workspace, got '$SME_WS'"
-[ "$(label_of_workspace "$SME_WS")" = "2ndmate-$SM_ID workers" ] \
-  || fail "the secondmate's worker did not land in a fresh '2ndmate-$SM_ID workers' workspace: '$(label_of_workspace "$SME_WS")'"
+assert_nested "$SME_WS" smE "$WS_SM_LAUNCH" "the secondmate's worker"
 [ "$(tab_labels_of_workspace "$WS_SM_DECOY")" = "$WS_SM_DECOY_TABS_BEFORE" ] \
   || fail "the duplicate secondmate-labeled workspace was mutated"
 pass "real herdr E2E: a secondmate launching its own worker gets its own workspace too, and its same-labeled sibling is untouched"
@@ -838,6 +891,56 @@ SM2_WS=$(workspace_of_pane "$SM2_PANE")
 [ "$(label_of_workspace "$SM2_WS")" = "2ndmate-$SM2_ID" ] \
   || fail "a --secondmate launch should land in '2ndmate-$SM2_ID', got '$(label_of_workspace "$SM2_WS")'"
 pass "real herdr E2E: a --secondmate launch still stands up that secondmate's own workspace instead of inheriting the launcher's"
+
+# --- 7b. presentation spaces ON with no launcher pane: a missing home
+#         workspace is created and the projected child is bound under it;
+#         with two, it is bound under the lowest-numbered with one warning ---
+
+return_worktrees "$PRESU_META"
+return_worktrees "$SME_META"
+# The cases since the last focus check close panes and return worktrees, and
+# Herdr 0.7.x moves focus when that happens, so focus goes back to the captain's workspace here and the focus check below
+# measures only this spawn.
+lab tab focus "$WS_OTHER_TAB" >/dev/null 2>&1 || fail "could not refocus the captain's workspace"
+[ "$(focused_workspace)" = "$WS_OTHER" ] || fail "the captain's workspace did not take focus back"
+PRES_SM_LABEL="2ndmate-$PRES_SM_ID"
+[ -z "$(lab workspace list 2>/dev/null | jq -r --arg l "$PRES_SM_LABEL" '.result.workspaces[]? | select(.label == $l) | .workspace_id')" ] \
+  || fail "the lab session already holds a '$PRES_SM_LABEL' workspace before the missing-home projection case"
+spawn_from_launcher "" "$PRES_SM_HOME" presN "$PROJ" --mode no-mistakes --yolo off
+[ "$SPAWN_RC" -eq 0 ] || fail "a no-pane projected spawn with no home workspace must create one and project under it"$'\n'"$(cat "$SPAWN_ERR")"
+WS_PRES_SM=$(lab workspace list 2>/dev/null | jq -r --arg l "$PRES_SM_LABEL" '[.result.workspaces[]? | select(.label == $l) | .workspace_id] | if length == 1 then .[0] else empty end')
+[ -n "$WS_PRES_SM" ] || fail "a no-pane projected spawn did not create exactly one '$PRES_SM_LABEL' workspace"
+PRESN_META="$PRES_SM_HOME/state/presN.meta"
+record_worktree "$PRESN_META"
+PRESN_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESN_META" | cut -d= -f2-)")
+PRESN_JOURNAL="$PRES_SM_HOME/state/presN.herdr-presentation"
+[ "$(journal_field "$PRESN_JOURNAL" version)" = 2 ] \
+  || fail "the missing-home projection did not publish a version 2 binding"$'\n'"$(cat "$PRESN_JOURNAL" 2>/dev/null)"
+[ "$(journal_field "$PRESN_JOURNAL" parent_workspace_id)" = "$WS_PRES_SM" ] \
+  || fail "the missing-home projection did not bind the created home workspace as its parent"
+assert_nested "$PRESN_WS" presN "$WS_PRES_SM" "a projected worker under a created home workspace"
+[ "$(focused_workspace)" = "$WS_OTHER" ] || fail "a missing-home projected spawn stole focus from the captain's workspace"
+return_worktrees "$PRESN_META"
+pass "real herdr E2E: a no-pane projected spawn with no home workspace creates it and binds the child under it"
+
+WS_PRES_SM_DUP=$(make_workspace "$PRES_SM_LABEL" | cut -d' ' -f1)
+[ -n "$WS_PRES_SM_DUP" ] || fail "could not create the second '$PRES_SM_LABEL' workspace"
+PRES_SM_LOWEST=$(printf '%s\n%s\n' "$WS_PRES_SM" "$WS_PRES_SM_DUP" | sort -V | head -1)
+spawn_from_launcher "" "$PRES_SM_HOME" presM "$PROJ" --mode no-mistakes --yolo off
+[ "$SPAWN_RC" -eq 0 ] || fail "a no-pane projected spawn under duplicated home workspaces must still project"$'\n'"$(cat "$SPAWN_ERR")"
+[ "$(grep -c "are labeled '$PRES_SM_LABEL'" "$SPAWN_ERR")" = 1 ] \
+  || fail "the duplicate-home projection did not print exactly one warning"$'\n'"$(cat "$SPAWN_ERR")"
+PRESM_META="$PRES_SM_HOME/state/presM.meta"
+record_worktree "$PRESM_META"
+PRESM_WS=$(workspace_of_pane "$(grep '^herdr_pane_id=' "$PRESM_META" | cut -d= -f2-)")
+PRESM_JOURNAL="$PRES_SM_HOME/state/presM.herdr-presentation"
+[ "$(journal_field "$PRESM_JOURNAL" parent_workspace_id)" = "$PRES_SM_LOWEST" ] \
+  || fail "the duplicate-home projection did not bind the lowest-numbered home workspace $PRES_SM_LOWEST"
+assert_nested "$PRESM_WS" presM "$PRES_SM_LOWEST" "a projected worker under duplicated home workspaces"
+[ "$(lab workspace list 2>/dev/null | jq -r --arg l "$PRES_SM_LABEL" '[.result.workspaces[]? | select(.label == $l)] | length')" = 2 ] \
+  || fail "a duplicated home must not gain a third '$PRES_SM_LABEL' workspace"
+return_worktrees "$PRESM_META"
+pass "real herdr E2E: a no-pane projected spawn under duplicated home workspaces binds the child under the lowest-numbered with one warning"
 
 # --- 8. teardown closes only the worker's own pane --------------------------
 
