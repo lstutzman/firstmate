@@ -59,8 +59,9 @@ card, a page owner fixes a page). It acts on nothing itself.
                  page still shows it asked.
   page-old       a page whose newest publish is older than its normal cadence
                  allows (PAGES), a job on the Runs page that is failing or whose
-                 latest finished run has no summary, or a page that is unreachable, unreadable or never published. A
-                 page whose JSON is not the expected shape is unreadable.
+                 latest finished run has no summary, or a page that is
+                 unreachable, unreadable or never published. A page whose
+                 JSON is not the expected shape is unreadable.
 
 The pass reads current records, so --key (the scheduler's slot) only names the
 run. It writes into --out: <key>.json (every open finding), <key>.md (the
