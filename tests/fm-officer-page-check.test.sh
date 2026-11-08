@@ -489,6 +489,11 @@ test_a_closed_item_is_bumped_and_never_started() {
   later_day closedhit 2026-11-01T14 >/dev/null || fail "a later-day run must succeed"
   assert_equals "0" "$(jq '[.start_requests[] | select(.linear_id == "PC-55")] | length' "$home/data/officers/page-check/2026-11-01T14.json")" \
     "nor on a later day, from the ledger"
+  echo Todo > "$dir/state.PC-55"
+  FM_OFFICER_NOW=$((NOW + 2 * 86400)) PATH="$TMP_ROOT/closedhit/fakebin:$PATH" FM_HOME="$home" "$OFFICER" run page-check --date 2026-11-02T14 >/dev/null \
+    || fail "a run after a person reopens the item must succeed"
+  assert_equals "1" "$(jq '[.start_requests[] | select(.linear_id == "PC-55")] | length' "$home/data/officers/page-check/2026-11-02T14.json")" \
+    "once a person reopens it, the item starts like any open item"
   assert_equals 0 "$(grep -cF -- "page-check-fp:$fp" "$dir/bodies")" "and no run re-files it"
   pass "fm-officer page-check: a closed item that recurs is bumped, never re-filed or started"
 }

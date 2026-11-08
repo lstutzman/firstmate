@@ -679,6 +679,8 @@ class Filer:
                     continue
                 if self.found["issues"][ident].get("closed"):
                     f["filing"]["closed"] = True
+                else:
+                    f["filing"].pop("closed", None)
                 f["filing"]["found"] = count
                 f["issue_hint"] = ident
             except LinearError as exc:
