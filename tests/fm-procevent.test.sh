@@ -4297,7 +4297,10 @@ PL
     pe "$HPROOF" retire proof-src >"$HPROOF/retire.log" 2>&1 &
   PROOF_STOP=$!
   proof_transition=0
-  for _ in $(seq 1 100); do
+  # Bounded for a loaded runner: the retire starts as its own process and must
+  # reach TERM before the leader can change state, so a flat 5 s window flaked.
+  proof_deadline=$((SECONDS + 60))
+  while [ "$SECONDS" -lt "$proof_deadline" ]; do
     if [ "$proof_state" = zombie ]; then
       case "$(ps -o stat= -p "$PROOF_PID" 2>/dev/null | tr -d '[:space:]')" in
         Z*) proof_transition=1; break ;;
@@ -4321,7 +4324,7 @@ PL
   wait "$PROOF_STOP" || proof_status=$?
   [ "$proof_reaped" -eq 1 ] || kill -KILL -"$PROOF_PID" 2>/dev/null || true
   wait "$PROOF_START" 2>/dev/null || true
-  [ "$proof_transition" -eq 1 ] || fail "the runner never became $proof_state after TERM"
+  [ "$proof_transition" -eq 1 ] || fail "the runner never became $proof_state within 60 s of the retire's TERM"
   [ "$proof_survivor" -eq 1 ] || fail "no child survived the $proof_state leader's TERM"
   [ "$proof_reaped" -eq 1 ] || fail "escalation abandoned a child behind a $proof_state leader"
   [ "$proof_status" -eq 0 ] || fail "retiring the $proof_state leader's group reported failure"
