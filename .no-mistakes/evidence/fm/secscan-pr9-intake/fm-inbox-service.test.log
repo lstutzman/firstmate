@@ -1,0 +1,13 @@
+ok - machine dispatch is a durable inbox request
+ok - request identity and acknowledgment survive retries
+ok - concurrent submissions and lost announcements keep one durable identity
+ok - invalid kinds, missing fields, unsafe framing, and unknown fields are refused
+ok - secondmate relays notice and keyed blocker exactly once before acknowledgment
+ok - acknowledgment waits for successful channel append
+ok - remote relay and failed-relay retention use the parent-channel owner
+ok - a main home handles dispatch, notice and blocked locally without a relay
+ok - a corrupted saved record is reported and left pending without blocking others
+ok - service records are published atomically
+ok - real watcher wakes and relays a machine-service arrival
+ok - watcher surfaces a broken parent route without losing the request
+ok - relay failure wakes once per episode and re-arms after recovery

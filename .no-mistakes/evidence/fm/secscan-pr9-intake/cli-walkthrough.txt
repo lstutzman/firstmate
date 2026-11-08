@@ -1,0 +1,50 @@
+## main home: submit dispatch/notice/blocked
+$ service (dispatch)
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1794122781-8NyaQx","request_id":"service:m-dispatch","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/tmp.pPUW7PyyVU/main/state/inbox/1794122781-8NyaQx.note"}
+ -> exit=0
+$ service (notice)
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1794122781-yOFHY0","request_id":"service:m-notice","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/tmp.pPUW7PyyVU/main/state/inbox/1794122781-yOFHY0.note"}
+ -> exit=0
+$ service (blocked)
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1794122782-HHRHvQ","request_id":"service:m-blocked","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/tmp.pPUW7PyyVU/main/state/inbox/1794122782-HHRHvQ.note"}
+ -> exit=0
+$ service-reconcile
+ -> exit=0
+status files in main state: 0
+$ drain
+1794122781-8NyaQx
+    {"evidence_path":"/reports/f.json","item_id":"PC-3385","kind":"dispatch","request_id":"m-dispatch","severity":"high","source":"nightly-scan","summary":"found aws key"}
+1794122781-yOFHY0
+    {"evidence_path":"/reports/f.json","item_id":"PC-3385","kind":"notice","request_id":"m-notice","severity":"high","source":"nightly-scan","summary":"found aws key"}
+1794122782-HHRHvQ
+    {"evidence_path":"/reports/f.json","item_id":"PC-3385","kind":"blocked","request_id":"m-blocked","severity":"high","source":"nightly-scan","summary":"found aws key"}
+
+Ack with: fm-inbox.sh drain --ack <id>...
+ -> exit=0
+$ wake-queue
+1794122781	1	check	inbox:1794122781-8NyaQx	check: machine service dispatch PC-3385 request=m-dispatch inbox=1794122781-8NyaQx
+1794122781	2	check	inbox:1794122781-yOFHY0	check: machine service notice PC-3385 request=m-notice inbox=1794122781-yOFHY0
+1794122782	3	check	inbox:1794122782-HHRHvQ	check: machine service blocked PC-3385 request=m-blocked inbox=1794122782-HHRHvQ
+
+## secondmate home relays notice + blocked to parent channel
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1794122782-7jN0lp","request_id":"service:s-notice","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/tmp.pPUW7PyyVU/mate/state/inbox/1794122782-7jN0lp.note"}
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1794122783-MQJ3av","request_id":"service:s-blocked","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/tmp.pPUW7PyyVU/mate/state/inbox/1794122783-MQJ3av.note"}
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1794122783-SH173Z","request_id":"service:s-dispatch","saved":true,"announced":true,"acknowledged":false,"path":"/tmp/tmp.pPUW7PyyVU/mate/state/inbox/1794122783-SH173Z.note"}
+ reconcile exit=0
+$ cat parent/state/scan-mate.status
+done [key=machine-909ec08bc8732fc107ba3cd8] [at=1794122784]: machine service notice source=nightly-scan item=PC-3385 severity=high request=s-notice reported: secret finding in src/app.py; work starting
+blocked [key=machine-rotate-secret] [at=1794122784]: machine service blocked source=nightly-scan item=PC-3385 severity=high request=s-blocked
+
+## adversarial: bad records refused
+fm-inbox service: invalid kind
+ -> exit=1
+fm-inbox service: unknown fields
+ -> exit=1
+
+## adversarial: corrupted saved record
+fm-inbox service: invalid JSON
+ reconcile exit=1
+fm-inbox service: invalid JSON
+fm-inbox: service note 1794122784-XFz70E remains pending until its parent relay succeeds
+ ack corrupted exit=1
+/tmp/tmp.pPUW7PyyVU/mate/state/inbox/1794122784-XFz70E.note
