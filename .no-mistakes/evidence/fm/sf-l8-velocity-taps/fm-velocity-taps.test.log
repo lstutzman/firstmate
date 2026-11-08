@@ -1,0 +1,20 @@
+1..18
+ok - fm-velocity-taps: Create item for later files the issue and answers the reply with its id
+ok - fm-velocity-taps: the older Accept reads as Create item for later
+ok - fm-velocity-taps: Create and fix now files, answers and hands one start note to the owning office
+ok - fm-velocity-taps: an owner that is main, slarti, Lee or unknown sends the start note to main
+ok - fm-velocity-taps: a reserved-class suggestion is filed and held for main
+ok - fm-velocity-taps: Let's discuss leaves one note for main and files nothing
+ok - fm-velocity-taps: Not for us and the older Reject do nothing but acknowledge
+ok - fm-velocity-taps: Object sends the owning office one keyed note naming the card
+ok - fm-velocity-taps: Object follows the office the app recorded for the card
+ok - fm-velocity-taps: a repeat tap on a card files nothing twice and answers with the same id
+ok - fm-velocity-taps: a reply already handled is never handled twice and a rerun is stable
+ok - fm-velocity-taps: replies main already took, old taps, Defer and unknown words are left alone
+ok - fm-velocity-taps: a failed answer is retried; writes: none leaves the tap to main
+ok - fm-velocity-taps: the taps use what is left of the run's Linear call budget and create cap
+ok - fm-velocity-taps: a local-jev duplicate raises the existing item's Found line
+ok - fm-velocity-taps: a Found bump cut short by the call budget leaves the tap waiting for the next run
+ok - fm-velocity-taps: a Found bump that landed before the budget ran out counts once
+ok - fm-velocity-taps: a run with no velocity reply calls nothing
+FM_TEST_COMPLETE
