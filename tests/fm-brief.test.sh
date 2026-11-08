@@ -625,6 +625,19 @@ test_ask_user_escalation_format() {
   assert_grep "The status line only points at the file; it never restates or summarizes a finding's content." "$brief" \
     "ship rule 6 must forbid paraphrasing ask-user findings into the status line"
 
+  # Review-gate discipline: wrong-range abort, one declines line per unfixed
+  # finding with the fixed class list, and a 3-round fix cap.
+  assert_grep "the review ran on the wrong range" "$brief" \
+    "ship rule 6 lost the wrong-range review rule"
+  assert_grep "\`$home/data/$id/declines.txt\`, formatted \`<run-id> <finding-id> <class> <reason>\`" "$brief" \
+    "ship rule 6 must name the task's own declines file and its line format"
+  assert_grep "wrong-range, escalated-kept, intentional, deferred:<item>, owned-elsewhere, pre-existing, not-worth-it, false-positive, style, duplicate" "$brief" \
+    "ship rule 6 lost the decline class list"
+  assert_grep "after 3 review fix rounds on one run, request no further fix" "$brief" \
+    "ship rule 6 lost the 3-round review fix cap"
+  assert_grep "key=nm-<run>-rounds" "$brief" \
+    "ship rule 6 must key the round-cap decision"
+
   # The DOD's own ask-user paragraph must point back at rule 6's format
   # (one-owner rule) rather than restating or bare-citing it.
   assert_grep "escalate to firstmate using rule 6's ask-user format" "$brief" \
@@ -644,6 +657,8 @@ test_ask_user_escalation_format() {
     other_brief="$home/data/$other_id/brief.md"
     assert_no_grep "nm-<run>-findings.txt" "$other_brief" \
       "$mode brief received a no-mistakes-only escalation format"
+    assert_no_grep "declines.txt" "$other_brief" \
+      "$mode brief received a no-mistakes-only review rule"
     assert_no_grep "destructive actions, ask-user findings" "$other_brief" \
       "$mode brief received a no-mistakes-only decision case"
   done
