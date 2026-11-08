@@ -198,30 +198,44 @@ done
 pass "a corrupted saved record is reported and left pending without blocking others"
 
 home="$TMP_ROOT/atomic-publish"
-mkdir -p "$home/state" "$home/data" "$home/config"
+mkdir -p "$home/state" "$home/data" "$home/config" "$home/holdbin"
+real_mv=$(command -v mv)
+cat >"$home/holdbin/mv" <<EOF
+#!/usr/bin/env bash
+for dest; do :; done
+case "\$dest" in
+  "$home/state/inbox/"*.note)
+    : >"$home/held"
+    while [ ! -e "$home/release" ]; do sleep 0.05; done ;;
+esac
+exec "$real_mv" "\$@"
+EOF
+chmod +x "$home/holdbin/mv"
+record notice atomic-held | PATH="$home/holdbin:$PATH" run_inbox service >"$home/held-receipt.json" &
+held_pid=$!
+i=0
+while [ ! -e "$home/held" ] && [ "$i" -lt 200 ]; do
+  sleep 0.05
+  i=$((i + 1))
+done
+assert_present "$home/held" "publication renames the note into the inbox"
+assert_equals 0 "$(find "$home/state/inbox" -maxdepth 1 -name '*.note' | wc -l | tr -d ' ')" "no pending note is visible before the rename"
+: >"$home/release"
+wait "$held_pid" || fail "held service submission failed"
+held_id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["id"])' "$home/held-receipt.json")
+python3 - "$home/state/inbox/$held_id.note" <<'PY'
+import json, sys
+record = json.loads(open(sys.argv[1]).read().partition("--\n")[2])
+assert record["request_id"] == "atomic-held", record
+assert record["kind"] == "notice", record
+PY
+run_inbox drain --ack "$held_id" >/dev/null
 writers=
 for n in 1 2 3 4 5 6 7 8; do
   record notice "atomic-$n" | run_inbox service >/dev/null &
   writers="$writers $!"
 done
-partial=0
-alive=1
-while [ "$alive" -eq 1 ]; do
-  alive=0
-  for pid in $writers; do
-    if kill -0 "$pid" 2>/dev/null; then alive=1; fi
-  done
-  for note in "$home/state/inbox/"*.note; do
-    [ -f "$note" ] || continue
-    body=$(sed '1,/^--$/d' "$note" 2>/dev/null || true)
-    case "$body" in
-      '{'*'}') ;;
-      *) partial=$((partial + 1)) ;;
-    esac
-  done
-done
 for pid in $writers; do wait "$pid" || fail "concurrent service submission failed"; done
-assert_equals 0 "$partial" "a pending note is never visible half written"
 assert_equals 8 "$(find "$home/state/inbox" -maxdepth 1 -name '*.note' | wc -l | tr -d ' ')" "every submission is published once"
 assert_equals 0 "$(find "$home/state/inbox" -maxdepth 1 -name '.staging-*' | wc -l | tr -d ' ')" "no staging file survives publication"
 pass "service records are published atomically"
