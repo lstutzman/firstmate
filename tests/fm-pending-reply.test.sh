@@ -2081,6 +2081,69 @@ test_mechanical_helper_writes_parent_channel() {
   pass "mechanical helper writes the parent channel from verb, corr, and note"
 }
 
+test_helper_refusal_names_expected_corr() {
+  local home state sm_home corr err rc
+  home=$(setup_parent helper-refusal-hint)
+  state="$home/state"
+  sm_home=$(bind_local_mate "$home" mate)
+  export FM_PENDING_REPLY_NOW=11300
+  corr=$(fm_pending_reply_create "$home" "$state" mate "status of the audit")
+  fm_pending_reply_mark_delivered "$state" "$corr"
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" "audit clean" "all good" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a note in the corr_id position must be refused"
+  case "$err" in
+    *"expects corr=$corr"*"done $corr"*) ;;
+    *) fail "the refusal must name the open corr and the corrected command, got: $err" ;;
+  esac
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" "audit clean" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a one-note report with the corr left out must be refused with the hint, got rc=$rc"
+  case "$err" in
+    *"expects corr=$corr"*"done $corr \"audit clean\""*) ;;
+    *) fail "the one-note refusal must name the open corr and keep the note, got: $err" ;;
+  esac
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" audit clean 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 1 ] || fail "an unquoted note with the corr left out must be refused, got rc=$rc"
+  case "$err" in
+    *"done $corr \"audit clean\""*) ;;
+    *) fail "the rerun command must keep every word of an unquoted note, got: $err" ;;
+  esac
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" added tests 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a note whose first word is all a-f letters must be refused, got rc=$rc"
+  case "$err" in
+    *"done $corr \"added tests\""*) ;;
+    *) fail "the rerun command must keep a first note word made of a-f letters, got: $err" ;;
+  esac
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" deadbeef00 "audit clean" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a mistyped corr must be refused, got rc=$rc"
+  case "$err" in
+    *"done $corr \"audit clean\""*) ;;
+    *) fail "a mistyped corr must not be folded into the note, got: $err" ;;
+  esac
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" --doc "done" data/x/report.md "see report" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a doc report with the corr left out must be refused, got rc=$rc"
+  case "$err" in
+    *"--doc done $corr data/x/report.md \"see report\""*) ;;
+    *) fail "the doc rerun command must keep --doc, the doc path and the note, got: $err" ;;
+  esac
+  if [ -s "$state/mate.status" ]; then
+    fail "a refused report must append nothing"
+  fi
+  rc=0
+  err=$(FM_HOME="$sm_home" "$REPORT" "done" 2>&1 >/dev/null) || rc=$?
+  [ "$rc" -eq 2 ] || fail "a missing corr_id and note is a usage error"
+  case "$err" in
+    *"done [corr=<id>]"*) ;;
+    *) fail "usage must show a filled example line, got: $err" ;;
+  esac
+  pass "helper refusal names the expected corr and the corrected command"
+}
+
 test_remote_parent_replies_is_not_wrong_home() {
   local home state sm_home corr rec hits
   home=$(setup_parent remote-parent-replies)
@@ -2678,6 +2741,7 @@ test_same_basename_self_home_corr_resolves_on_tick
 test_same_basename_reply_resolves_after_recovery_failure
 test_child_status_wrong_home_is_not_copied
 test_mechanical_helper_writes_parent_channel
+test_helper_refusal_names_expected_corr
 test_remote_parent_replies_is_not_wrong_home
 test_local_parent_replies_is_wrong_home_evidence
 test_escalated_undelivered_correlation_stays_retryable
