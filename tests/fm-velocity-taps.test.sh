@@ -129,7 +129,9 @@ make_world() {
     {id: "vs-20261022-4", title: "Odd owner", tldr: "No owner we know.", severity: 3, confidence: 3, effort: "S",
      improvement: "Tidy the log.", impact: "Small.", owner: "the sweeper service", time_saved: "1 minute a day", evidence: []},
     {id: "vs-20261022-5", title: "Token needs care", tldr: "A token step is slow.", severity: 3, confidence: 3, effort: "S",
-     improvement: "Rotate the staging token on a schedule.", impact: "Fewer expiries.", owner: "quartermaster", time_saved: "5 minutes a day", evidence: []}
+     improvement: "Rotate the staging token on a schedule.", impact: "Fewer expiries.", owner: "quartermaster", time_saved: "5 minutes a day", evidence: []},
+    {id: "vs-20261022-6", title: "Started by the app", tldr: "Already running.", severity: 3, confidence: 3, effort: "S",
+     improvement: "Tidy the guide.", impact: "Small.", owner: "Lee", office: "quartermaster", status: "started", time_saved: "1 minute a day", evidence: []}
   ]}}' > "$w/audit.json"
   printf '{"value":{"replies":[]}}\n' > "$w/replies.json"
   printf '%s\n' "$w"
@@ -279,6 +281,16 @@ test_object_notes_the_owning_office_once() {
   pass "fm-velocity-taps: Object sends the owning office one keyed note naming the card"
 }
 
+test_object_goes_to_the_office_the_app_started_the_card_under() {
+  local w
+  w=$(make_world objectoffice)
+  set_replies "$w" "$(reply 24 6 "Object: Started by the app")"
+  tap_run "$w"
+  assert_equals "$w/office" "$(home_of "$w" "object:vs-20261022-6")" \
+    "an Object on a card the app started under an office goes to that office, though its owner is Lee"
+  pass "fm-velocity-taps: Object follows the office the app recorded for the card"
+}
+
 test_a_repeat_tap_never_files_twice() {
   local w
   w=$(make_world repeat)
@@ -364,6 +376,7 @@ fm_test_run \
   test_lets_discuss_notes_main_and_files_nothing \
   test_not_for_us_and_reject_do_nothing \
   test_object_notes_the_owning_office_once \
+  test_object_goes_to_the_office_the_app_started_the_card_under \
   test_a_repeat_tap_never_files_twice \
   test_a_rerun_changes_nothing \
   test_replies_someone_else_took_and_old_taps_are_left_alone \

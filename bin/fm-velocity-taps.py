@@ -117,9 +117,12 @@ def load_suggestions(app):
     return {r["id"]: r for r in rows if isinstance(r, dict) and isinstance(r.get("id"), str)}
 
 
-def owner_home(owner, offices, main_home):
-    """(home, office role or None): the start-home office whose role is the card's owner, else main (named in the note)."""
-    word = clip(owner, "owner").lower()
+def owner_home(owner, offices, main_home, started_by=None):
+    """(home, office role or None): the start-home office whose role is the card's owner, else main (named in the note).
+
+    `started_by` is the office the app records on a card it started (its `office`); an Object stop note goes there first.
+    """
+    word = clip(started_by or owner, "owner").lower()
     if word not in MAIN_OWNERS:
         for office in offices:
             if office.role and office.role.lower() == word:
@@ -318,6 +321,10 @@ def run(replies, ctx):
         elif action == "discuss" and not entry["notes"]:
             entry["notes"] = [{"kind": "discuss", "key": rid, "home": ctx["fm_home"], "body": note_body("discuss", card, rid, title, owner, None, None)}]
         elif action == "object" and not entry["notes"]:
+            # The stop goes to the office the app recorded as having started the card, else the owner's office.
+            office_home, role = owner_home(owner, ctx["offices"], ctx["fm_home"], sug.get("office") if known else None)
+            if role is None:
+                office_home, role = owner_home(owner, ctx["offices"], ctx["fm_home"])
             entry["notes"] = [{"kind": "object", "key": "object:" + card_id, "home": office_home,
                                "body": note_body("object", card, rid, title, owner, None, role)}]
         if any(not n["home"] for n in entry["notes"]):
