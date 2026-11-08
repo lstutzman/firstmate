@@ -575,10 +575,10 @@ class Filer:
             count, first = 2, self.date
             new = desc.rstrip("\n") + "\n" + self.officer.found_line(count, first, self.date)
         self.update_body(ident, f["fingerprint"], new)
+        today.update(count=count, last=self.date)
         body = "Seen again on %s by the %s (found %d times)." % (self.date, self.officer.label, count)
         self.lin(["issue", "comment", ident, "--body", body, "--dry-run"])
         self.lin(["issue", "comment", ident, "--body", body, "--verify"])
-        today.update(count=count, last=self.date)
         return count
 
     def item_labels(self, f, label_set):

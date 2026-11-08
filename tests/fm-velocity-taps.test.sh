@@ -409,6 +409,22 @@ test_a_bump_cut_short_by_the_budget_waits() {
   pass "fm-velocity-taps: a Found bump cut short by the call budget leaves the tap waiting for the next run"
 }
 
+test_a_bump_that_landed_before_the_budget_ran_out_counts_once() {
+  local w
+  w=$(make_world jevlanded)
+  printf 'Agents wait on the staging queue\nFiled by hand.\n' > "$w/linear/issue.50"
+  echo 'print("{\"type\": \"noul\", \"noul\": 0.95}")' > "$w/jev.py"
+  set_replies "$w" "$(reply 31 1 "Create item for later: Agents wait on the staging queue")"
+  tap_run "$w" --jev "$w/jev.py" --max-linear-calls 6
+  assert_grep "Found: 2 times" "$w/linear/issue.50" "the Found line was written before the budget ran out"
+  assert_contains "$(fleet_calls "$w")" "answer $(rid 31) Already filed as PC-50" "the tap is answered: its bump landed"
+  officer_archive "$w/archive" 2026-10-24 "$w/spec.json"
+  tap_run "$w" --jev "$w/jev.py" --date 2026-10-24 --now $((NOW + 86400))
+  assert_grep "Found: 2 times" "$w/linear/issue.50" "the next day's run does not count the same tap again"
+  assert_no_grep "Found: 3 times" "$w/linear/issue.50" "one tap raises the Found count once"
+  pass "fm-velocity-taps: a Found bump that landed before the budget ran out counts once"
+}
+
 test_no_velocity_reply_calls_nothing() {
   local w
   w=$(make_world none)
@@ -438,4 +454,5 @@ fm_test_run \
   test_the_run_shares_one_linear_budget \
   test_a_jev_duplicate_raises_its_found_line \
   test_a_bump_cut_short_by_the_budget_waits \
+  test_a_bump_that_landed_before_the_budget_ran_out_counts_once \
   test_no_velocity_reply_calls_nothing
