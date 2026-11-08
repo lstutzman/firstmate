@@ -457,9 +457,10 @@ fm_backend_herdr_workspace_legacy_label() {
   printf '2ndmate-%s' "$id"
 }
 
-# fm_backend_herdr_flat_workers_workspace_label: the per-home workspace label a
-# presentation-enabled home uses when a worker falls back to the flat layout,
-# so that worker never lands in the launching firstmate's own workspace.
+# fm_backend_herdr_flat_workers_workspace_label: the label of the fresh workspace
+# a presentation-enabled home gives a worker that falls back to the flat layout,
+# so that worker never lands in the launching firstmate's own workspace. The
+# label is display only: each such worker gets its own workspace.
 fm_backend_herdr_flat_workers_workspace_label() {
   printf '%s workers' "$(fm_backend_herdr_workspace_label)"
 }
@@ -2194,23 +2195,22 @@ fm_backend_herdr_workspace_prune_seeded_default_tab() {  # <session> <workspace_
 # <launcher-relationship> (3rd arg, default "launcher-home") says whether the
 # container being ensured belongs to the SAME firstmate home as the process
 # calling this:
-#   launcher-home - a crewmate or scout for the caller's own home. When the
-#                   caller is itself running in a herdr pane, the worker MUST
-#                   land in that exact workspace
-#                   (fm_backend_herdr_launcher_identity), never in whichever
-#                   same-labeled workspace happens to sort first.
+#   launcher-home - the caller's own home workspace, adopted through the
+#                   launcher's exact pane identity
+#                   (fm_backend_herdr_launcher_identity). No spawn path asks
+#                   for it for a crewmate or scout any more, because a
+#                   workspace holds one session only (fleet rules section 1);
+#                   it stays only as an adapter primitive.
 #   other-home    - a --secondmate launch, which stands up a DIFFERENT home's
 #                   own per-home workspace by design. The launcher's workspace
 #                   is deliberately not inherited here.
-#   flat-workers  - a crewmate or scout from a presentation-enabled home whose
-#                   projection fell back flat. It goes to this home's one
-#                   "<home label> workers" workspace, found or created by label
-#                   like the per-home lookup below, never into the launcher's
-#                   own workspace. It holds no identity, so when concurrent
-#                   fallbacks created several, the first in workspace-list
-#                   order is adopted instead of refusing. A claimed launcher
-#                   identity is still validated first, so a broken one refuses
-#                   as above.
+#   flat-workers  - every crewmate or scout that is not projected, whatever
+#                   the home's presentation setting. It always gets a fresh
+#                   "<home label> workers" workspace of its own, never an
+#                   existing one and never the launcher's own workspace,
+#                   because a workspace holds one session only. A claimed
+#                   launcher identity is still validated first, so a broken
+#                   one refuses as above.
 # With no herdr ancestry at all there is no launcher workspace to inherit, so
 # the per-home label lookup below stays the resolver - but it must then resolve
 # to exactly ONE workspace. Two same-labeled home workspaces with no launcher
@@ -2240,9 +2240,12 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
     esac
     [ "$relationship" = launcher-home ] || label=$(fm_backend_herdr_flat_workers_workspace_label)
   fi
-  matches=$(fm_backend_herdr_workspace_find_all "$session" "$label")
+  # A flat-workers placement never looks for an existing workspace: each such
+  # session gets a fresh one, because a workspace holds one session only.
+  matches=
+  [ "$relationship" = flat-workers ] || matches=$(fm_backend_herdr_workspace_find_all "$session" "$label")
   count=$(printf '%s' "$matches" | grep -c '[^[:space:]]' || true)
-  if [ "$count" -gt 1 ] && [ "$relationship" != flat-workers ]; then
+  if [ "$count" -gt 1 ]; then
     echo "error: ${count} herdr workspaces in session '$session' are labeled '$label' (${matches//$'\n'/ }) and nothing identifies which one this spawn belongs in; rename or close the extras, or run firstmate inside the workspace its workers belong in" >&2
     return 3
   fi
@@ -2255,6 +2258,17 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$cwd" --label "$label" --no-focus 2>/dev/null) || return 1
   wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
   [ -n "$wsid" ] || return 1
+  FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
+  if [ -z "$FM_BACKEND_HERDR_WS_SEEDED_TAB_ID" ]; then
+    # Without the seeded tab id nothing can tell the seeded tab from a session's
+    # own, so the exclusive-workspace guard could not tell a fresh workspace from
+    # an occupied one. This call created the workspace, so close it (through its
+    # root pane, focus-safe) rather than leave it empty behind the refusal.
+    fm_backend_herdr_projection_close_pane_focus_preserving "$session" \
+      "$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)" >/dev/null 2>&1 || true
+    echo "error: herdr workspace create in session '$session' returned no seeded tab id; the new workspace was closed" >&2
+    return 1
+  fi
   FM_BACKEND_HERDR_WS_ID=$wsid
   # Herdr seeds a new workspace with one auto-created default tab firstmate
   # never uses. It is NOT pruned here: at this instant it is the workspace's
@@ -2263,7 +2277,6 @@ fm_backend_herdr_workspace_ensure() {  # <session> <cwd> [<launcher-relationship
   # workspace we just created. fm_backend_herdr_create_task prunes it instead,
   # once the first real task tab exists alongside it, and only ever targets
   # this exact captured tab_id.
-  FM_BACKEND_HERDR_WS_SEEDED_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
   printf '%s' "$wsid"
 }
 
@@ -2774,8 +2787,8 @@ fm_backend_herdr_agent_alive() {  # <target>
 # A tab under either label counts as the same task's tab, so a live earlier
 # session still refuses a duplicate and an earlier husk is still replaced.
 # Echoes "<tab_id> <pane_id>" on success.
-fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_tab_id> [<earlier_label>]
-  local container=$1 label=$2 cwd=$3 seeded_tab_id=${4:-} earlier=${5:-} session wsid list dup_tabs dup dup_pane dup_tab_ids out tab_id pane_id remaining_dup_tabs
+fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_tab_id> [<earlier_label>] [exclusive]
+  local container=$1 label=$2 cwd=$3 seeded_tab_id=${4:-} earlier=${5:-} exclusive=${6:-} session wsid list dup_tabs dup dup_pane dup_tab_ids out tab_id pane_id remaining_dup_tabs other_tabs
   session=${container%%:*}
   wsid=${container#*:}
   [ -n "$earlier" ] || earlier=$label
@@ -2784,6 +2797,17 @@ fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_ta
     echo "error: could not parse herdr tab list output for workspace $wsid (session $session)" >&2
     return 1
   }
+  # <exclusive> (6th arg): the workspace must be one this spawn just created, so
+  # its only tab is the seeded default one. Any other tab means another session
+  # already lives there, and a workspace holds one session only (fleet rules
+  # section 1), so refuse before creating anything.
+  if [ "$exclusive" = exclusive ]; then
+    other_tabs=$(printf '%s' "$list" | jq -r --arg seeded "$seeded_tab_id" '.result.tabs[] | select(.tab_id != $seeded) | .tab_id' 2>/dev/null | tr '\n' ' ')
+    if [ -n "${other_tabs// /}" ]; then
+      echo "error: refusing to place '$label' in herdr workspace $wsid (session $session): it already holds tab(s) ${other_tabs% }, and a workspace holds one session only; nothing was created, so run the spawn again to get a fresh workspace, or close those tabs first" >&2
+      return 1
+    fi
+  fi
   dup_tab_ids=""
   if [ -n "$dup_tabs" ]; then
     while IFS= read -r dup; do
@@ -2830,6 +2854,33 @@ EOF
     fi
   fi
   printf '%s %s' "$tab_id" "$pane_id"
+}
+
+# fm_backend_herdr_retire_recorded_husk: close a respawned task's earlier
+# endpoint at the exact <pane_id> its own record names, in its recorded
+# <session>, once the replacement <new_pane_id> exists. Herdr must still report
+# that pane in the recorded <workspace_id> and <tab_id>, so a reused pane id
+# elsewhere is never closed. Every crewmate or scout
+# gets a fresh workspace, so fm_backend_herdr_create_task's same-workspace label
+# scan never finds that earlier tab. Only a pane proven no-agent is closed (a
+# dead pane is already gone; live, stale-agent and unknown are left alone),
+# through the focus-preserving close, so a workspace the husk was the last
+# occupant of goes with it and one that holds anything else stays. Nothing is
+# looked up by label. Anything not closed gets a one-line note.
+fm_backend_herdr_retire_recorded_husk() {  # <session> <workspace_id> <tab_id> <pane_id> <new_pane_id>
+  local session=$1 workspace_id=$2 tab_id=$3 pane_id=$4 new_pane_id=$5 where reason="gone or unreadable"
+  [ -n "$session" ] && [ -n "$pane_id" ] && [ "$pane_id" != "$new_pane_id" ] || return 0
+  FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE=""
+  where=$(fm_backend_herdr_cli "$session" pane get "$pane_id" 2>/dev/null \
+    | jq -r '[.result.pane.pane_id, .result.pane.workspace_id, .result.pane.tab_id] | map(. // "") | join(" ")' 2>/dev/null) || where=""
+  if [ -n "$workspace_id" ] && [ -n "$tab_id" ] && [ "$where" = "$pane_id $workspace_id $tab_id" ]; then
+    fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$pane_id" no-agent >/dev/null 2>&1 && return 0
+    reason=${FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE:-$reason}
+  elif [ -n "$where" ] && [ "$where" != "  " ]; then
+    reason="not in its recorded workspace and tab"
+  fi
+  echo "note: left this task's earlier herdr endpoint $session:$pane_id in place ($reason): it is not a provable agent-free husk" >&2
+  return 0
 }
 
 # fm_backend_herdr_projection_create_task: create one disposable presentation

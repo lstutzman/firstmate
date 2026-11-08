@@ -1490,18 +1490,48 @@ test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher() {
   pass "fm_backend_herdr_workspace_ensure: refuses to guess between two same-labeled home workspaces"
 }
 
-test_workspace_ensure_flat_workers_adopts_the_first_of_several() {
+test_workspace_ensure_flat_workers_always_creates_a_fresh_workspace() {
   local dir log resp fb out status
-  dir="$TMP_ROOT/ensure-flat-workers-dup"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
-  printf '{"result":{"workspaces":[{"workspace_id":"w1","label":"firstmate"},{"workspace_id":"w4","label":"firstmate workers"},{"workspace_id":"w9","label":"firstmate workers"}]}}\n' > "$resp/1.out"
+  dir="$TMP_ROOT/ensure-flat-workers-fresh"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  # The first herdr call is the create: no workspace list is read, so existing
+  # '<home> workers' workspaces cannot be adopted.
+  printf '{"result":{"workspace":{"workspace_id":"w12","label":"firstmate workers"},"tab":{"tab_id":"w12:t1"},"root_pane":{"pane_id":"w12:p1"}}}\n' > "$resp/1.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" HERDR_SESSION=fmtest \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_workspace_ensure fmtest /tmp flat-workers' "$ROOT" 2>&1 )
   status=$?
-  expect_code 0 "$status" "two '<home> workers' workspaces must not block a flat fallback"$'\n'"$out"
-  [ "$out" = w4 ] || fail "flat-workers should adopt the first workers workspace w4 in list order, got '$out'"
-  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create' "an existing workers workspace must be reused, not duplicated again"
-  pass "fm_backend_herdr_workspace_ensure: a flat fallback adopts the first of several '<home> workers' workspaces"
+  expect_code 0 "$status" "a flat fallback must succeed beside existing workers workspaces"$'\n'"$out"
+  [ "$out" = w12 ] || fail "flat-workers should create and return a fresh workspace w12, got '$out'"
+  assert_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''create'$'\x1f''--cwd'$'\x1f''/tmp'$'\x1f''--label'$'\x1f''firstmate workers' "a flat fallback did not create its own workspace"
+  assert_not_contains "$(cat "$log")" $'\x1f''workspace'$'\x1f''list' "a flat fallback must not search for an existing workspace"
+  pass "fm_backend_herdr_workspace_ensure: a flat fallback always creates a fresh workspace and never adopts an existing '<home> workers' one"
+}
+
+test_create_task_exclusive_refuses_a_workspace_that_holds_another_session() {
+  local dir log resp fb out status
+  dir="$TMP_ROOT/create-task-exclusive-refuse"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t1","label":"1"},{"tab_id":"w1:t2","label":"fm-other"}]}}\n' > "$resp/1.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-newtask /tmp/proj w1:t1 "" exclusive' "$ROOT" 2>&1 )
+  status=$?
+  expect_code 1 "$status" "an exclusive create into a workspace holding another tab must refuse"
+  assert_contains "$out" "w1:t2" "the refusal did not name the tab already in the workspace"
+  assert_contains "$out" "one session only" "the refusal did not state the one-session-per-workspace rule"
+  assert_not_contains "$(cat "$log")" $'\x1f''tab'$'\x1f''create' "a refused exclusive create must not create a tab"
+  pass "fm_backend_herdr_create_task: exclusive refuses a workspace that already holds another session's tab"
+}
+
+test_create_task_exclusive_accepts_a_fresh_workspace_with_only_its_seeded_tab() {
+  local dir log resp fb out
+  dir="$TMP_ROOT/create-task-exclusive-fresh"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"tabs":[{"tab_id":"w1:t1","label":"1"}]}}\n' > "$resp/1.out"
+  printf '{"result":{"tab":{"tab_id":"w1:t2"},"root_pane":{"pane_id":"w1:p2"}}}\n' > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-newtask /tmp/proj w1:t1 "" exclusive' "$ROOT" 2>&1 )
+  assert_contains "$out" "w1:t2 w1:p2" "an exclusive create into a fresh workspace should succeed"
+  pass "fm_backend_herdr_create_task: exclusive accepts a fresh workspace holding only its seeded default tab"
 }
 
 test_workspace_ensure_other_home_ignores_the_launcher_identity() {
@@ -6986,7 +7016,9 @@ test_launcher_identity_refuses_a_pane_and_tab_that_disagree
 test_launcher_identity_refuses_a_workspace_missing_from_the_session
 test_workspace_ensure_prefers_the_launcher_over_the_first_label_match
 test_workspace_ensure_refuses_an_ambiguous_label_with_no_launcher
-test_workspace_ensure_flat_workers_adopts_the_first_of_several
+test_workspace_ensure_flat_workers_always_creates_a_fresh_workspace
+test_create_task_exclusive_refuses_a_workspace_that_holds_another_session
+test_create_task_exclusive_accepts_a_fresh_workspace_with_only_its_seeded_tab
 test_workspace_ensure_other_home_ignores_the_launcher_identity
 test_container_ensure_refuses_an_ambiguous_home_label
 test_container_ensure_starts_server_and_workspace

@@ -164,18 +164,16 @@
 #   A backend spawn refusal (missing dependency, version gate, unauthenticated
 #   socket, or unsupported secondmate mode) is terminal for that selected backend;
 #   callers must surface it instead of silently retrying another backend.
-#   A herdr crewmate or scout is placed in the exact workspace of the firstmate
-#   or secondmate process launching it, resolved from that process's own herdr
-#   pane rather than from a workspace label (herdr enforces no label uniqueness,
-#   so a label cannot tell two "firstmate" workspaces apart). A claimed parent
-#   identity that is unreadable, contradictory, stale, or from another herdr
-#   session stops the spawn before any worker endpoint exists. A launcher
-#   outside herdr has no workspace to inherit and uses this home's own labeled
-#   workspace, which must then match exactly one. --secondmate is the deliberate
-#   exception: it stands up that secondmate home's own workspace. A home whose
-#   presentation layout (below) is on but falls back flat instead places the
-#   worker in that home's own "<home label> workers" workspace, never in the
-#   launcher's workspace.
+#   A herdr crewmate or scout runs alone in a fresh workspace of its own, never
+#   as a tab or pane of the launching firstmate's workspace and never in one
+#   another session already holds (fleet rules section 1: one session per
+#   workspace). A claimed parent identity that is unreadable, contradictory,
+#   stale, or from another herdr session still stops the spawn before any worker
+#   endpoint exists. --secondmate is the deliberate exception: it stands up that
+#   secondmate home's own workspace. A home whose presentation layout (below) is
+#   on projects a clean fresh task into its own disposable workspace; every
+#   other herdr spawn creates a fresh "<home label> workers" workspace for that
+#   one worker.
 #   Herdr additionally uses a presentation-only layout by default when the
 #   selected client and running server meet the Herdr 0.8.0 floor. The local
 #   config/herdr-presentation-spaces file can say off to disable it or on to
@@ -5126,9 +5124,9 @@ EOF
     # never endpoint or ownership authority, and flat is already the documented
     # fallback for every recovery it cannot bind exactly
     # (docs/herdr-backend.md "Presentation spaces"). Like every flat fallback
-    # of a presentation-enabled home, the tab goes to that home's
-    # "<home label> workers" workspace, never the launcher's own; a home that
-    # opted out keeps the launcher's workspace.
+    # of every home, presentation-enabled or not, the tab goes to a fresh
+    # "<home label> workers" workspace of its own, never the launcher's and
+    # never one that holds another session (fleet rules section 1).
     #
     # KNOWN LIMITATION (bead fm-herdr-rebind-leak-20260913): the tab minted
     # below is registered with no abort cleanup, so a later refusal leaves that
@@ -5143,17 +5141,8 @@ EOF
     # onto another herdr server - an identity change, published as a
     # self-consistent but wrong record.
     HERDR_REBIND_SES=${RELAUNCH_TARGET%%:*}
-    HERDR_REBIND_RELATIONSHIP=launcher-home
-    if [ "$KIND" != secondmate ]; then
-      case "$(fm_backend_herdr_presentation_preference "$CONFIG")" in
-        on) HERDR_REBIND_RELATIONSHIP=flat-workers ;;
-        default)
-          if fm_backend_herdr_presentation_default_supported "$STATE" "$HERDR_REBIND_SES"; then
-            HERDR_REBIND_RELATIONSHIP=flat-workers
-          fi
-          ;;
-      esac
-    fi
+    HERDR_REBIND_RELATIONSHIP=flat-workers
+    [ "$KIND" != secondmate ] || HERDR_REBIND_RELATIONSHIP=launcher-home
     HERDR_CONTAINER_RAW=$(HERDR_PANE_ID="$RELAUNCH_LAUNCHER_PANE_ID" \
       fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_REBIND_RELATIONSHIP" "$HERDR_REBIND_SES") || {
       # container_ensure returns 1 for several unrelated reasons - a failed
@@ -5186,7 +5175,9 @@ EOF
     HERDR_REBIND_LABEL_HOME=$FM_HOME
     [ "$KIND" != secondmate ] || HERDR_REBIND_LABEL_HOME=$WT
     HERDR_TAB_LABEL=$(FM_HOME="$HERDR_REBIND_LABEL_HOME" fm_backend_herdr_task_label "$ID")
-    HERDR_TASK_IDS=$(fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$WT" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W") || exit 1
+    HERDR_REBIND_EXCLUSIVE=
+    [ "$HERDR_REBIND_RELATIONSHIP" != flat-workers ] || HERDR_REBIND_EXCLUSIVE=exclusive
+    HERDR_TASK_IDS=$(fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$WT" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W" "$HERDR_REBIND_EXCLUSIVE") || exit 1
     read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
@@ -5247,14 +5238,14 @@ else
     # after each prefixed simple-command call) so the secondmate's tab lands
     # in the secondmate's own workspace, not the primary's "firstmate" one.
     #
-    # Placement, separately from labeling: a crewmate/scout belongs in the
-    # EXACT herdr workspace this launching process is itself running in, which
-    # only its own herdr pane identity can name (a same-labeled sibling
-    # workspace must never be adopted). A --secondmate launch is the exception -
-    # it stands up a DIFFERENT home's own workspace by design - so it asks for
-    # the per-home container instead of inheriting this launcher's.
+    # Placement, separately from labeling: a crewmate/scout runs alone in a
+    # fresh workspace of its own (fleet rules section 1: one session per
+    # workspace), never in the launcher's workspace and never in one another
+    # session holds. A --secondmate launch is the exception - it stands up a
+    # DIFFERENT home's own workspace by design - so it asks for the per-home
+    # container instead.
     HERDR_LABEL_HOME=$FM_HOME
-    HERDR_LAUNCHER_RELATIONSHIP=launcher-home
+    HERDR_LAUNCHER_RELATIONSHIP=flat-workers
     if [ "$KIND" = secondmate ]; then
       HERDR_LABEL_HOME=$PROJ_ABS
       HERDR_LAUNCHER_RELATIONSHIP=other-home
@@ -5265,9 +5256,6 @@ else
     HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
     HERDR_PROJECTED=0
     if [ "$KIND" != secondmate ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
-      # A presentation-enabled home that ends up flat places the worker in its
-      # own workers workspace, never in the launcher's workspace.
-      HERDR_LAUNCHER_RELATIONSHIP=flat-workers
       HERDR_SES=$(fm_backend_herdr_session)
       HERDR_PARENT_LABEL=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_workspace_label)
       if [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; then
@@ -5329,7 +5317,7 @@ else
           echo "warning: herdr presentation could not ensure its session server; using the ordinary flat layout without projection" >&2
         elif [ "${FM_BACKEND_HERDR_PRESENTATION_PREFERENCE:-default}" = default ] &&
           ! fm_backend_herdr_presentation_default_supported "$STATE" "$HERDR_SES"; then
-          HERDR_LAUNCHER_RELATIONSHIP=launcher-home
+          :
         elif spawn_herdr_presentation_order_lock_acquire "$HERDR_SES"; then
           fm_backend_herdr_workspace_migrate_legacy "$HERDR_SES"
           # The projected child is placed and bound UNDER this launcher's exact
@@ -5416,10 +5404,25 @@ else
       HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_CONTAINER_RAW#*$'\t'}
       HERDR_SES=${CONTAINER%%:*}
       HERDR_WORKSPACE_ID=${CONTAINER#*:}
-      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$SPAWN_PANE_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W") || exit 1
+      HERDR_FLAT_EXCLUSIVE=
+      [ "$HERDR_LAUNCHER_RELATIONSHIP" != flat-workers ] || HERDR_FLAT_EXCLUSIVE=exclusive
+      HERDR_TASK_IDS=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_create_task "$CONTAINER" "$HERDR_TAB_LABEL" "$SPAWN_PANE_CWD" "$HERDR_SEEDED_DEFAULT_TAB_ID" "$W" "$HERDR_FLAT_EXCLUSIVE") || exit 1
       read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
 $HERDR_TASK_IDS
 EOF
+      # A respawn over this task's own earlier endpoint retires it once the
+      # new tab exists, because it sits in another workspace that the label
+      # scan above never sees. Only the exact pane this task's record names, still
+      # in its recorded workspace and tab, is a candidate, and only a provable
+      # agent-free husk is closed.
+      if [ "$HERDR_LAUNCHER_RELATIONSHIP" = flat-workers ] && [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] &&
+        [ "$(fm_backend_of_meta "$STATE/$ID.meta")" = herdr ]; then
+        fm_backend_herdr_retire_recorded_husk \
+          "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_session || true)" \
+          "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_workspace_id || true)" \
+          "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_tab_id || true)" \
+          "$(herdr_projection_meta_field_exact "$STATE/$ID.meta" herdr_pane_id || true)" "$HERDR_PANE_ID"
+      fi
     fi
     if [ -z "$HERDR_TAB_ID" ] || [ -z "$HERDR_PANE_ID" ]; then
       echo "error: herdr did not return a tab/pane id for $W" >&2
