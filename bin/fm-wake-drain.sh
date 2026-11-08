@@ -17,6 +17,18 @@
 # locked drain rotates such leftovers away before doing anything else.
 # FM_STATUS_PRESENTATION_LOCK_TIMEOUT sets the positive whole-second wait for
 # presentation-path locks (default 10); queue mutation locks remain blocking.
+#
+# --summary replaces the raw wake rows and per-file annotations with one line per
+# wake, each carrying the current state that decides it and a deterministic
+# `no-action` or `ACTION` verdict (bin/fm-wake-summary.sh owns the classifier), so
+# a supervisor needs no second read; every other section prints as before.
+# On a home that keeps the config/wake-auto-ack file, a --summary drain by main
+# whose rows are all `no-action` and whose presentation printed nothing else
+# (no unread status, open decision, divergence, due default, branch outcome or
+# supervision alarm) acknowledges the batch itself through the same
+# --ack-through path and prints one WAKE AUTO-ACKED line; any other batch
+# acknowledges nothing and prints the usual WAKE_ACK_REQUIRED command. Without
+# --summary the output and behavior are unchanged.
 set -u
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
@@ -223,6 +235,13 @@ presented_max_row() { # <rows-file>
   fi
 }
 
+SUMMARY=false
+if [ "${1:-}" = --summary ]; then
+  [ "$#" -eq 1 ] || { echo "usage: fm-wake-drain.sh [--summary | --ack-through SEQUENCE --recovery-generation GENERATION]" >&2; exit 2; }
+  SUMMARY=true
+  shift
+fi
+
 case "${1:-}" in
   '') ;;
   --ack-through)
@@ -234,7 +253,7 @@ case "${1:-}" in
     case "$ACK_GENERATION" in ''|*[!A-Za-z0-9._-]*) echo "wake drain: invalid recovery generation" >&2; exit 2 ;; esac
     [ "$#" -eq 4 ] || { echo "wake drain: unexpected acknowledgement arguments" >&2; exit 2; }
     ;;
-  *) echo "usage: fm-wake-drain.sh [--ack-through SEQUENCE --recovery-generation GENERATION]" >&2; exit 2 ;;
+  *) echo "usage: fm-wake-drain.sh [--summary | --ack-through SEQUENCE --recovery-generation GENERATION]" >&2; exit 2 ;;
 esac
 
 [ "$ACTOR" != branch ] || require_branch_eligible_rows || exit 1
@@ -879,6 +898,57 @@ print_status_presentation() {  # [<deduped-raw-rows>]
   return "$rc"
 }
 
+# summary_tail <deduped-rows> <ack-through|""> <generation|"">: the --summary
+# presentation. Captures what the ordinary path would print (annotations and
+# sections), prints one verdict line per wake instead of the raw rows, and, when
+# the home opted in and nothing in the whole presentation needs a reader,
+# acknowledges the batch itself. An empty ack-through means no acknowledgement is
+# owed (a drain whose rows all belong to the branch grant).
+summary_tail() {
+  local rows=$1 through=$2 generation=$3 presentation annotations sections outcomes outcomes_rc=0
+  local guard_out summary quiet=1 config ack_out ack_rc count=0 actions=0 line
+  presentation=$( (print_status_presentation "$rows") ) || true
+  annotations=$(printf '%s\n' "$presentation" | grep '^wake annotation:' || true)
+  sections=$(printf '%s\n' "$presentation" | grep -v '^wake annotation:' | grep -v '^$' || true)
+  outcomes=$(print_branch_outcomes_section) || outcomes_rc=1
+  [ "$outcomes_rc" -eq 0 ] || BRANCH_OUTCOMES_RC=1
+  guard_out=$(assert_watcher_liveness 2>&1)
+  if [ -n "$rows" ]; then
+    summary=$(printf '%s\n' "$rows" | "$SCRIPT_DIR/fm-wake-summary.sh" --annotations <(printf '%s\n' "$annotations")) && quiet=0
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      count=$((count + 1))
+      case "$line" in *': ACTION - '*) actions=$((actions + 1)) ;; esac
+    done <<EOF
+$summary
+EOF
+    printf 'WAKE SUMMARY (%s wake(s), %s need action):\n%s\n' "$count" "$actions" "$summary"
+    # Annotations are what the summary lines were judged on; print them only when
+    # a reader still has to look.
+    [ "$quiet" -eq 0 ] || { [ -z "$annotations" ] || printf '%s\n' "$annotations"; }
+  elif [ -n "$through" ]; then
+    printf 'WAKE SUMMARY (recovery only, no queued wake rows)\n'
+    quiet=0
+  fi
+  [ -z "$sections" ] || printf '%s\n' "$sections"
+  [ -z "$outcomes" ] || printf '%s\n' "$outcomes"
+  [ -z "$guard_out" ] || printf '%s\n' "$guard_out"
+  [ -n "$through" ] || return 0
+  config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
+  if [ "$quiet" -eq 0 ] && [ "$ACTOR" = main ] && [ -e "$config/wake-auto-ack" ] \
+    && [ -z "$sections" ] && [ -z "$outcomes" ] && [ "$outcomes_rc" -eq 0 ] && [ -z "$guard_out" ]; then
+    ack_rc=0
+    ack_out=$("$SCRIPT_DIR/fm-wake-drain.sh" --ack-through "$through" --recovery-generation "$generation" 2>&1) || ack_rc=$?
+    if [ "$ack_rc" -eq 0 ] && [ -z "$ack_out" ]; then
+      printf 'WAKE AUTO-ACKED: %s wake(s) classified no-action and acknowledged through %s (config/wake-auto-ack); nothing needs handling\n' "$count" "$through"
+      return 0
+    fi
+    [ -z "$ack_out" ] || printf '%s\n' "$ack_out" >&2
+  fi
+  printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through %s --recovery-generation %s\n' \
+    "$through" "$generation" >&2
+}
+
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
   local status=$?
@@ -1068,6 +1138,14 @@ if [ ! -s "$FM_WAKE_QUEUE" ]; then
   esac
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
+  if [ "$SUMMARY" = true ]; then
+    if [ "$RECOVERY_ACK_REQUIRED" = true ]; then
+      summary_tail "" 0 "${RECOVERY_MARKER_TOKEN##*:}"
+    else
+      summary_tail "" "" ""
+    fi
+    exit "$BRANCH_OUTCOMES_RC"
+  fi
   (print_status_presentation) || true
   print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
   if [ "$RECOVERY_ACK_REQUIRED" = true ]; then
@@ -1090,6 +1168,10 @@ if [ "$ACTOR" = main ]; then
     print_branch_held_notice
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     DRAIN_LOCK_HELD=false
+    if [ "$SUMMARY" = true ]; then
+      summary_tail "" "" ""
+      exit "$BRANCH_OUTCOMES_RC"
+    fi
     (print_status_presentation) || true
     print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
     assert_watcher_liveness
@@ -1139,7 +1221,7 @@ case "${FM_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT:-0}" in
   ''|*[!0-9]*) ;;
   *) sleep "$FM_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT" ;;
 esac
-if [ -n "$RAW_ROWS" ]; then
+if [ -n "$RAW_ROWS" ] && [ "$SUMMARY" != true ]; then
   printf '%s\n' "$RAW_ROWS" || exit "$?"
 fi
 fm_recovery_marker_snapshot "$RECOVERY_MARKER" || exit 1
@@ -1150,6 +1232,10 @@ case "$RECOVERY_MARKER_TOKEN" in
 esac
 fm_lock_release "$FM_WAKE_QUEUE_LOCK"
 DRAIN_LOCK_HELD=false
+if [ "$SUMMARY" = true ]; then
+  summary_tail "$RAW_ROWS" "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}"
+  exit "$BRANCH_OUTCOMES_RC"
+fi
 printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through %s --recovery-generation %s\n' \
   "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}" >&2
 

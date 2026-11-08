@@ -1337,6 +1337,29 @@ test_lane_check_delivers_its_own_start_requests_once() {
   pass 'a lane check delivers only the start requests addressed to its own home, once'
 }
 
+test_starts_handled_reads_only_acknowledged_requests() {
+  local w out rc id
+  w=$(source_world handled)
+  put_starts "$w" $((SRC_NOW - 3600)) 1:navigator:ok 2:navigator:ok 3:main:ok
+  starts_handled() { FM_OFFICE_NOW=$SRC_NOW FM_HOME="$w/navigator" bash "$OFFICE" starts-handled progress; }
+  rc=0; starts_handled || rc=$?
+  assert_equals 1 "$rc" "nothing is delivered yet"
+  nav_check "$w" lane:progress >/dev/null
+  rc=0; starts_handled || rc=$?
+  assert_equals 1 "$rc" "delivered but unacknowledged notes are not handled"
+  for id in "$w"/navigator/state/inbox/*.note; do
+    id=$(basename "$id" .note)
+    FM_HOME="$w/navigator" bash "$ROOT/bin/fm-inbox.sh" drain --ack "$id" >/dev/null || fail "could not acknowledge $id"
+  done
+  rc=0; starts_handled || rc=$?
+  assert_equals 0 "$rc" "every request addressed to this home is acknowledged"
+  rc=0; FM_HOME="$w/quartermaster" bash "$OFFICE" starts-handled progress || rc=$?
+  assert_equals 1 "$rc" "another office's requests were never delivered"
+  rc=0; FM_HOME="$w/navigator" bash "$OFFICE" starts-handled 'bad name' || rc=$?
+  assert_equals 2 "$rc" "an officer name is validated"
+  pass 'starts-handled succeeds only once every start request addressed to this office is acknowledged'
+}
+
 test_lane_check_delivers_in_rank_order_and_stops_at_a_bad_request() {
   local w out
   w=$(source_world startorder)
@@ -1431,5 +1454,6 @@ test_lane_check_delivers_a_library_digests_start_requests
 test_lane_check_delivers_a_page_check_digests_start_requests
 test_lane_check_delivers_a_corpus_digests_start_requests
 test_lane_check_delivers_its_own_start_requests_once
+test_starts_handled_reads_only_acknowledged_requests
 test_lane_check_delivers_in_rank_order_and_stops_at_a_bad_request
 test_lane_check_never_delivers_a_stale_digest

@@ -477,6 +477,18 @@ The supervision protocol is chosen when the session starts, so create or remove 
 The file is local to each home and is not inherited by secondmate homes.
 [The Codex protocol](supervision-protocols/codex.md) owns the parked operating protocol, and `bin/fm-codex-stop-park.sh` owns version selection, registration, and failure fallback.
 
+## Wake auto-acknowledge (config/wake-auto-ack)
+
+Create the empty, home-local `config/wake-auto-ack` file to let a supervisor's `bin/fm-wake-drain.sh --summary` acknowledge a batch of wakes that need no action.
+The summary mode prints one line per wake with its kind, subject, the current state that decides it, and a verdict of `no-action` or `ACTION`, then the usual `WAKE_ACK_REQUIRED` command.
+It is the supervision protocols' drain command, so the supervisor needs no second read to see whether a wake needs it.
+With the file present, a main-actor `--summary` drain whose every row is `no-action` and whose presentation printed nothing else acknowledges the batch through the ordinary acknowledgement path and prints one `WAKE AUTO-ACKED` line.
+A batch with one `ACTION` row, or any unread status, open decision, record divergence, due default, branch outcome or supervision alarm, acknowledges nothing.
+A recovery episode with no queued rows, the case behind a `check: rearm-resurface` wake, is retired the same way when nothing else printed.
+The feature is off when the file is absent, is local to each home and is not inherited by secondmate homes, and the plain drain never acknowledges.
+The classifier is `bin/fm-wake-summary.sh`, whose header owns the exact no-action cases; its verdict is the whole handling of such a wake.
+Creating the file is a captain-class change to what a supervisor skips, so main routes it to the captain.
+
 ## Warm-cache compaction (config/warm-compact)
 
 Create the home-local `config/warm-compact` file to compact an idle Claude primary and the supervision host's engine conversation before their prompt cache expires.
