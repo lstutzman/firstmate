@@ -455,7 +455,7 @@ class Filer:
     def existing_issue(self, fp):
         """(open, closed): the open Linear item whose description carries the fingerprint, and the first closed one.
 
-        A closed item is never reused; it only lets the caller file a recurrence that names it.
+        A closed item is never reopened, but a repeat finding still bumps its Found line (file_single).
 
         Linear's search is fuzzy and returns no descriptions, so a hit counts only once its
         description holds the marker; the first EXISTING_VIEWS hits are read (once a run each).
@@ -549,13 +549,11 @@ class Filer:
         return None
 
     def bump(self, ident, f):
-        """The first sighting of the day: the Found line up by one, plus one comment; None when the item is closed."""
+        """The first sighting of the day: the Found line up by one, plus one comment; a closed item is bumped, never reopened."""
         today = self.found.setdefault("issues", {}).setdefault(ident, {})
         if today.get("last") == self.date:
             return today.get("count", 1)
         issue = self.view_issue(ident)
-        if is_closed(issue):
-            return None
         desc = str(issue.get("description") or "")
         match = self.officer.found_re.search(desc)
         if match and match.group(3) == self.date:
@@ -587,28 +585,6 @@ class Filer:
         return wanted, None
 
     # one finding, one item
-    def recur(self, f, old, label_set, describe, priority=None):
-        """A finding whose item a person closed: never reopened; a new item names the old one."""
-        wanted, reason = self.item_labels(f, label_set)
-        if reason or self.over_cap():
-            reason = reason or "over max-creates for this run"
-            f["filing"] = {"action": "not-filed", "reason": "%s is closed; %s" % (old, reason)}
-            return
-        self.ledger.pop(f["fingerprint"], None)
-        recurrence = recurrence_line(old, self.view_issue(old))
-        f["filing"] = {"action": "failed", "reason": "recurrence of closed %s not filed" % old}
-        ident, created, verify = self.create(f["fingerprint"], f["title"], describe(f, recurrence=recurrence), wanted,
-                                             priority or PRIORITY[f["severity"]], f["project"])
-        self.ledger[f["fingerprint"]] = ident
-        self.found.setdefault("issues", {})[ident] = {"count": 1, "last": self.date}
-        f["filing"] = {"action": "created" if created else "exists", "issue": ident, "recurrence_of": old}
-        f["issue_hint"] = ident
-        if verify:
-            f["filing"]["verify"] = verify
-        error = self.relate(ident, old)
-        if error:
-            f["filing"]["relation_error"] = error
-
     def file_single(self, f, label_set, describe, priority=None):
         """Searches for the finding (fingerprint, then local-jev), then files it or queues a Found bump.
 
@@ -630,7 +606,9 @@ class Filer:
                 self.bumps.append(f)
                 return
             if closed:
-                self.recur(f, closed, label_set, describe, priority)
+                self.ledger[f["fingerprint"]] = closed
+                f["filing"], f["issue_hint"] = {"action": "exists", "issue": closed, "closed": True}, closed
+                self.bumps.append(f)
                 return
             near = None
             if not self.jev.dead:
@@ -656,14 +634,11 @@ class Filer:
                 raise
 
     def settle_bumps(self, label_set, describe):
-        """Raises the Found line of every duplicate found this run; an item closed meanwhile files a recurrence."""
+        """Raises the Found line of every duplicate found this run, closed items included."""
         for f in self.bumps:
             ident = f["filing"]["issue"]
             try:
                 count = self.bump(ident, f)
-                if count is None:
-                    self.recur(f, ident, label_set, describe)
-                    continue
                 f["filing"]["found"] = count
                 f["issue_hint"] = ident
             except LinearError as exc:

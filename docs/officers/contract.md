@@ -29,7 +29,7 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
   An officer never creates a label; a missing label means the finding is reported and not filed.
 - An officer filing under this contract never closes or deletes an item, and never changes the state, priority, labels, assignee or title of one that exists; the one exception is the progress officer's triage below.
   The only text it edits is the Found line (and an officer's own cluster list).
-  An item a person closed is never reopened: a repeat finding files a new item that says `Recurrence of <id>` and links the old one.
+  An item a person closed is never reopened and never replaced: a repeat finding that matches its fingerprint raises its Found line and adds the day's one comment, like any duplicate.
 - The registry line sets the per-run create cap (`max-creates`) and the Linear call budget (`max-linear-calls`).
   Whatever the cap, the budget or a rate limit leaves unfiled is named in the digest with its reason, highest score first, and the next run files it from the ledger.
   Nothing is dropped silently.

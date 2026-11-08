@@ -7,7 +7,7 @@
 # match; the score the found count gives (severity weight x log2(1 + found)); the per-run create cap and the Linear
 # call budget leaving a named overflow and nothing dropped; a reserved class becoming one keyed needs-decision and
 # never a start, whatever the rubric lists; a rubric only narrowing; fleet findings taking the Fleet project and
-# area:fleet and their start requests and patterns going to the Quartermaster; --dry-run before --verify on every write; a closed item never edited, reopened or re-prioritised
+# area:fleet and their start requests and patterns going to the Quartermaster; --dry-run before --verify on every write; a closed item bumped (Found line and comment) but never reopened, replaced or re-prioritised
 # (a new item names it); and no call that closes or deletes.
 set -u
 # shellcheck source=tests/lib.sh
@@ -429,18 +429,17 @@ test_surgeon_clusters_split_fleet_from_propertycompass2() {
   pass "fm-officer-linear: the Surgeon clusters fleet low findings apart, in the Fleet project with area:fleet; PropertyCompass2 clusters are unchanged"
 }
 
-test_closed_item_is_never_touched() {
-  local out before
+test_closed_item_is_bumped_not_replaced() {
+  local out
   world closed "$(jq -n --arg fp "$(printf '%s\0%s\0%s' scan job old | sha256sum | cut -d' ' -f1)" \
     '{"PC-60": {title: "Previously closed finding", state: "Done", description: ("Closed by a person.\nfixture-fp:" + $fp)}}')"
-  before=$(issue PC-60 .description)
   out=$(drive closed) || fail "driver must succeed"
-  assert_equals "created PC-102 PC-60" "$(jq -r '.filing | [.action, .issue, .recurrence_of] | join(" ")' <<<"$out")" "a repeat of a closed item is a recurrence in a new item"
-  assert_contains "$(issue PC-102 .description)" "Recurrence of PC-60 (closed as Done)." "which names the old one"
-  assert_equals "$before" "$(issue PC-60 .description)" "the closed item is not edited"
-  assert_equals 0 "$(grep -c '^issue update PC-60\|^issue comment PC-60' "$LDIR/calls")" "no update or comment reaches it"
-  assert_equals "PC-102 --related PC-60 --verify" "$(cat "$LDIR/relations")" "it is linked as related"
-  pass "fm-officer-linear: a closed item is never reopened or edited; a recurrence names it"
+  assert_equals "exists PC-60" "$(jq -r '.filing | [.action, .issue] | join(" ")' <<<"$out")" "a repeat of a closed item matches it and files nothing new"
+  assert_equals 0 "$(grep -c '^issue create' "$LDIR/calls")" "no new item is created"
+  assert_contains "$(issue PC-60 .description)" "Found: 2 times" "the closed item's Found line goes up"
+  assert_equals 1 "$(grep '^issue comment PC-60' "$LDIR/calls" | grep -c -- '--verify')" "with one comment"
+  assert_equals 0 "$(grep -c -- '--state\|--priority' "$LDIR/calls")" "it is not reopened or re-prioritised"
+  pass "fm-officer-linear: a closed item is bumped, never reopened or replaced"
 }
 
 test_no_call_closes_or_deletes() {
@@ -463,5 +462,5 @@ test_fleet_findings_take_the_fleet_project_and_label
 test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
 test_fleet_patterns_route_without_linear_writes
 test_surgeon_clusters_split_fleet_from_propertycompass2
-test_closed_item_is_never_touched
+test_closed_item_is_bumped_not_replaced
 test_no_call_closes_or_deletes

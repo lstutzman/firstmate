@@ -33,7 +33,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 ## Where findings are filed
 
 - Team PC, project Fleet, label `area:fleet`, Type Bug, Source `agent`, the label Lee's Linear setup gives a worker filing on his behalf; the officer's identity is in each item's fingerprint marker and description.
-- Duplicates, the `Found:` line, recurrences of closed items and the call budget are the shared [filing rules](contract.md#file).
+- Duplicates, the `Found:` line, a repeat of a closed item (which bumps it and files nothing new) and the call budget are the shared [filing rules](contract.md#file).
 - The item body carries the page, the kind, the object id, the evidence and the route.
   It carries no card question or answer, because Linear is third-party storage; the card is named by its id.
 
