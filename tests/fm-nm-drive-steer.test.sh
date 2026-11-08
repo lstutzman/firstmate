@@ -110,6 +110,36 @@ test_active_run_without_a_drive_call_gets_one_reattach_steer() {
   pass "an active run with no drive call gets exactly one reattach steer per generation"
 }
 
+test_pending_run_steer_names_the_runs_holding_the_slots() {
+  local dir body
+  dir=$(drive_case queued 'paused [at=1]: no-mistakes run queued')
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = axi ] || exit 1
+cat <<'OUT'
+runs[4]{id,branch,status,head,pr}:
+  "RUNPEND","fm/queued",pending,aaaaaaa1,""
+  "RUNONE","fm/other-one",running,bbbbbbb2,""
+  "RUNTWO","fm/other-two",running,ccccccc3,"https://example.test/pull/1"
+  "RUNOLD","fm/old",handed_off,ddddddd4,""
+OUT
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  run_steer "$dir" queued 'state: working · source: run-step · run active (pending) · run: RUNPEND' \
+    || fail "a pending run with no drive call was not steered"
+  body=$(inbox_body "$dir" queued)
+  printf '%s' "$body" | grep -F 'paused [cause=external]' >/dev/null || fail "the pending steer does not say the wait is paused, not blocked"
+  printf '%s' "$body" | grep -F 'fm/other-one (run RUNONE), fm/other-two (run RUNTWO)' >/dev/null \
+    || fail "the pending steer does not name the runs holding the slots"
+  printf '%s' "$body" | grep -F 'fm/old' >/dev/null && fail "a finished run was named as holding a slot"
+  printf '%s' "$body" | grep -F 'fm/queued (run' >/dev/null && fail "the worker's own run was named as holding a slot"
+  # A non-pending active run gets the plain steer.
+  dir=$(drive_case plain 'paused [at=1]: no-mistakes run queued')
+  run_steer "$dir" plain 'state: working · source: run-step · run active (running) · run: R1' || fail "the plain reattach was not steered"
+  inbox_body "$dir" plain | grep -F 'run slots' >/dev/null && fail "a run that is not pending got the slot text"
+  pass "a pending run's reattach steer says paused and names the runs holding the slots"
+}
+
 test_parked_gate_the_worker_owes_is_a_reattach_but_a_human_gate_is_not() {
   local dir
   dir=$(drive_case parked 'working [at=1]: answered the review gate')
@@ -325,6 +355,7 @@ test_watcher_leaves_a_live_drive_call_alone() {
 fm_test_run \
   test_prepipeline_done_without_a_run_gets_one_start_steer \
   test_active_run_without_a_drive_call_gets_one_reattach_steer \
+  test_pending_run_steer_names_the_runs_holding_the_slots \
   test_parked_gate_the_worker_owes_is_a_reattach_but_a_human_gate_is_not \
   test_live_drive_call_gets_no_steer \
   test_unrelated_processes_are_not_drive_calls \
