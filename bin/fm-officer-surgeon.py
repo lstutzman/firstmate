@@ -110,8 +110,9 @@ team PC, highest score first:
      adds one comment on that first sighting. A finding already on its own
      cluster's list is not a new sighting.
   5. `issue create --dry-run`, then `--verify`, with exactly one Type (Bug), one
-     Source and one area label. A failed verify is never retried; if the fingerprint
-     search finds the item within a few seconds, it counts as created (and is ledgered), else it is logged failed.
+     Source and one area label. A failed verify is never retried; the item counts as created (and is ledgered)
+     when the error names it (data.issue.identifier) or an exact-title search finds one open item, else it is logged failed
+     and tried again next run. A cluster reuses the oldest open item of exactly its title instead of creating another.
 It never closes or deletes an item. Every linear-axi call is counted; --max-linear-calls
 stops the run's Linear work (the next run continues from the ledger). --max-creates bounds
 new items a run. One RATE_LIMITED answer stops every Linear call in the run, writes
@@ -811,7 +812,7 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
                 c = item
                 wanted, reason = filer.item_labels({"source": "review", "project": c["project"]},
                                                    lambda f, key=c["key"]: label_set(f, key, key))
-                title = "Code review findings: %s" % plain_words(c["key"])
+                title = "Code review findings: %s (%s)" % (plain_words(c["key"]), c["key"])
                 try:
                     if reason:
                         for f in c["findings"]:
@@ -827,6 +828,8 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
                     if not ident:
                         ident, closed = filer.existing_issue(c["fp"])
                         old = old or (None if ident else closed)
+                        if not ident:
+                            ident = filer.open_by_title(title, fleet=bool(c["project"]))  # an earlier run's item whose ledger entry was lost
                         action = "update" if ident else "create"
                     recurrence, body, sha = c["recurrence"], c["body"], c["sha"]
                     if old:
@@ -834,7 +837,7 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
                         body = cluster_body(c["key"], c["members"], recurrence, c["project"])
                         sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
                     if action == "create":
-                        ident, _, _ = filer.create(c["fp"], title + " (%s)" % c["key"], body, wanted, "3", c["project"])
+                        ident, _, _ = filer.create(c["fp"], title, body, wanted, "3", c["project"])
                     else:
                         filer.update_body(ident, c["fp"], body)
                     ledger[c["fp"]] = ident

@@ -34,30 +34,51 @@ def out(data): print(json.dumps({"ok": True, "data": data})); sys.exit(0)
 def flag(name):
     return args[args.index(name) + 1] if name in args else None
 def save(): json.dump(issues, open(path, "w"))
+mode = os.environ.get("FAKE_VERIFY", "")
+def written(n):
+    # What --verify prints after the write, per FAKE_VERIFY: "textappend" is the JSON error with plain text lines after it
+    # (linear-verify today), "contract" the shared ok:false document naming the item, "nocontract" the same without the item,
+    # "rate" a rate limit with no write, "nowrite" a failure with no write.
+    msg = "Write verification did not match intended state"
+    if "--verify" not in args or not mode: out({"issue": {"identifier": n}})
+    if mode == "textappend":
+        print(json.dumps({"ok": False, "error": {"code": "VERIFY_MISMATCH", "message": msg}}))
+        print("linear-verify: description differs (auto-linked lint.sh)"); sys.exit(1)
+    if mode == "contract":
+        print(json.dumps({"schemaVersion": 1, "ok": False, "command": "issue create", "error": {"code": "VERIFY_MISMATCH", "message": msg},
+                          "data": {"issue": {"identifier": n, "url": "u"}, "verification": {"matched": False}}})); sys.exit(1)
+    print(json.dumps({"ok": False, "error": {"code": "VERIFY_MISMATCH", "message": msg}})); sys.exit(1)
+def failing():
+    if "--verify" in args and mode == "rate":
+        print(json.dumps({"ok": False, "error": {"code": "RATE_LIMITED", "message": "slow down"}})); sys.exit(1)
+    if "--verify" in args and mode == "nowrite":
+        print(json.dumps({"ok": False, "error": {"code": "UNKNOWN", "message": "boom"}})); sys.exit(1)
 if args[:2] == ["label", "list"]:
     out({"labels": [{"name": n} for n in open(os.path.join(d, "labels")).read().split()]})
 if args[:2] == ["issue", "search"]:
     q = args[2].lower()
     words = {w for w in q.replace("-", " ").split() if len(w) > 3}
     hits = [i for i, v in issues.items()
-            if (q in v["description"].lower() if ":" in q else words & set(v["title"].lower().split()))]
+            if (q in v["description"].lower() if "-fp:" in q else words & set(v["title"].lower().split()))]
     out({"issues": [{"identifier": i} for i in hits[:int(flag("--limit") or 20)]]})
 if args[:2] == ["issue", "view"]:
     v = issues[args[2]]
     out({"issue": {"identifier": args[2], "title": v["title"], "description": v["description"],
-                   "state": v["state"], "stateType": "completed" if v["state"] == "Done" else "unstarted"}})
+                   "state": v["state"], "project": v.get("project"), "stateType": "completed" if v["state"] == "Done" else "unstarted"}})
 dry = "--dry-run" in args
 if args[:2] == ["issue", "create"]:
     if dry: out({"dryRun": True})
+    failing()
     n = "PC-%d" % (101 + len(issues))
     issues[n] = {"title": flag("--title"), "description": open(flag("--body-file")).read(), "state": "Todo",
                  "labels": [args[k + 1] for k, a in enumerate(args) if a == "--label"], "project": flag("--project"),
                  "priority": flag("--priority")}
-    save(); out({"issue": {"identifier": n}})
+    save(); written(n)
 if args[:2] == ["issue", "update"]:
     if dry: out({"dryRun": True})
+    failing()
     issues[args[2]]["description"] = open(flag("--body-file")).read()
-    save(); out({"issue": {"identifier": args[2]}})
+    save(); written(args[2])
 if args[:2] == ["issue", "comment"]:
     if not dry: open(os.path.join(d, "comments"), "a").write(args[2] + "\n")
     out({"dryRun": True})
@@ -235,6 +256,40 @@ elif scenario == "surgeon-clusters":
            "clusters": {c["key"] + "|" + c.get("project", ""): sorted(c) for c in state["clusters"].values()},
            "markers": {k: marker(j, k) for k, j in (("infra/bicep", "cluster"),)}}
     res["markers"]["fleet"] = marker("cluster-fleet", "infra/bicep")
+elif scenario == "verify-fail":
+    mode = os.environ["FAKE_VERIFY"]
+    f = find("vf", "Lint script crashes on lint.sh")
+    fl, lin = filer()
+    err = None
+    try:
+        run(fl, [f])
+    except lib.LinearError as exc:
+        err = exc.code
+    res = {"filing": f["filing"], "ledger": fl.ledger, "err": err}
+elif scenario == "retry-failed":
+    f = find("rf", "Retried finding")
+    fl, lin = filer()
+    os.environ["FAKE_VERIFY"] = "nowrite"
+    run(fl, [f])
+    first = dict(f["filing"])
+    os.environ.pop("FAKE_VERIFY")
+    g = find("rf", "Retried finding")
+    fl2, _ = filer()
+    run(fl2, [g])
+    res = {"first": first, "second": g["filing"], "ledger": fl2.ledger}
+elif scenario == "cluster-reuse":
+    import argparse
+    sspec = importlib.util.spec_from_file_location("surgeon", os.path.join(os.path.dirname(os.environ["LIB"]), "fm-officer-surgeon.py"))
+    surgeon = importlib.util.module_from_spec(sspec)
+    sspec.loader.exec_module(surgeon)
+    fs = [surgeon.lib.make_finding("review", "nightly-review", "p%d" % i, "Review note p%d" % i, "summary", "real", "low", None, {},
+                                   location="infra/bicep/main%d.bicep" % i) for i in range(3)]
+    state = {}
+    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100)
+    surgeon.file_findings(fs, args, date, W, state, {}, surgeon.lib.Jev(os.path.join(W, "jev.py")), [])
+    issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
+    res = {"filings": [[f["filing"]["action"], f["filing"].get("issue")] for f in fs], "ids": sorted(issues),
+           "body": {i: v["description"].count("Review note") for i, v in issues.items()}}
 elif scenario in ("fleet-start", "fleet-nowrite"):
     offices = [lib.progress.parse_office("/home/nav=propertycompass2=navigator"), lib.progress.parse_office("/home/qm=firstmate,skills=quartermaster")]
     officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), pattern_sources=("scan",), project="Fleet")
@@ -468,6 +523,51 @@ test_closed_item_is_bumped_not_replaced() {
   pass "fm-officer-linear: with bump_closed a closed item is bumped, never reopened, replaced or started"
 }
 
+test_failed_verify_is_taken_as_written() {
+  local mode out
+  for mode in textappend contract; do
+    world "verify-$mode" '{}'
+    out=$(FAKE_VERIFY=$mode drive verify-fail) || fail "driver must succeed"
+    assert_equals "created PC-101" "$(jq -r '.filing | [.action, .issue] | join(" ")' <<<"$out")" "$mode: a mismatching --verify write is recorded as created"
+    assert_equals "PC-101" "$(jq -r '.ledger | to_entries[0].value' <<<"$out")" "$mode: and ledgered"
+    assert_equals 1 "$(grep -c '^issue create.*--verify' "$LDIR/calls")" "$mode: and never retried"
+  done
+  assert_equals 0 "$(sed -n '/^issue create.*--verify/,$p' "$LDIR/calls" | grep -c -- '-fp:')" "after the mismatch the title, not the fingerprint, is what is searched after the mismatch"
+  assert_contains "$(grep '^issue search' "$LDIR/calls" | tail -1)" "Lint script crashes on lint.sh" "textappend: the exact-title search ran"
+  world verify-nocontract '{}'
+  out=$(FAKE_VERIFY=nocontract drive verify-fail) || fail "driver must succeed"
+  assert_equals "created PC-101" "$(jq -r '.filing | [.action, .issue] | join(" ")' <<<"$out")" "ok:false without an identifier: the single exact-title hit is used"
+  pass "fm-officer-linear: a failed --verify write is found again by data.issue.identifier or exact title, never recorded failed"
+}
+
+test_failed_write_is_failed_and_retried_next_run() {
+  local out
+  world retry '{}'
+  out=$(drive retry-failed) || fail "driver must succeed"
+  assert_equals "failed" "$(jq -r '.first.action' <<<"$out")" "a write that did not happen is recorded failed"
+  assert_equals "created" "$(jq -r '.second.action' <<<"$out")" "and is filed on the next run, not skipped"
+  assert_equals 1 "$(jq '.ledger | length' <<<"$out")" "after which it is ledgered"
+  world rate '{}'
+  out=$(FAKE_VERIFY=rate drive verify-fail) || fail "driver must succeed"
+  assert_equals "RATE_LIMITED" "$(jq -r '.err' <<<"$out")" "a rate limit still stops the run"
+  assert_equals 0 "$(sed -n '/^issue create.*--verify/,$p' "$LDIR/calls" | grep -c '^issue search')" "without any search for the item"
+  assert_equals "failed" "$(jq -r '.filing.action' <<<"$out")" "and the finding is failed"
+  pass "fm-officer-linear: a failed write is retried next run; the rate-limit path is unchanged"
+}
+
+test_cluster_reuses_the_oldest_open_item_of_its_title() {
+  local out t='Code review findings: infra bicep (infra/bicep)'
+  world cluster-reuse "$(jq -n --arg t "$t" '{"PC-70": {title: $t, state: "Todo", description: "x"}, "PC-50": {title: $t, state: "Todo", description: "x"},
+    "PC-40": {title: $t, state: "Done", description: "x"}}')"
+  printf 'scheduled-review\n' >> "$LDIR/labels"
+  out=$(drive cluster-reuse) || fail "driver must succeed"
+  assert_equals "clustered:PC-50 clustered:PC-50 clustered:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the oldest open item is reused"
+  assert_equals '["PC-40","PC-50","PC-70"]' "$(jq -c '.ids' <<<"$out")" "no new cluster item is created"
+  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "the reused item carries the cluster's findings"
+  assert_equals 0 "$(jq -r '.body["PC-70"] + .body["PC-40"]' <<<"$out")" "the other open item and the closed one are untouched"
+  pass "fm-officer-linear: a cluster reuses the oldest open item of exactly its title"
+}
+
 test_no_call_closes_or_deletes() {
   local all
   dedupe_world audit
@@ -490,4 +590,7 @@ test_fleet_patterns_route_without_linear_writes
 test_surgeon_clusters_split_fleet_from_propertycompass2
 test_closed_item_is_never_touched
 test_closed_item_is_bumped_not_replaced
+test_failed_verify_is_taken_as_written
+test_failed_write_is_failed_and_retried_next_run
+test_cluster_reuses_the_oldest_open_item_of_its_title
 test_no_call_closes_or_deletes
