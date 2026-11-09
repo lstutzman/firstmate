@@ -14,19 +14,21 @@
 #
 # `no-action` is claimed for exactly these cases, each decided from a read that needs no
 # judgement; every other row, and any case where a read fails, is `ACTION`:
-#   - signal: every unread status line for the task is a `paused:` line that is not a captain
-#     hold, not a keyed decision, carries no cause other than external, names no clearing time
-#     that has passed, and bin/fm-crew-state.sh reports the task's state as paused.
+#   - signal: the drain's annotations carry no unread line for the status file (an unread line,
+#     a pause included, is the supervisor's to read in the turn it surfaces), the newest status
+#     line is a `paused:` line that is not a captain hold, not a keyed decision, carries no cause
+#     other than external, names no clearing time that has passed, and bin/fm-crew-state.sh
+#     reports the task's state as paused.
 #   - stale: bin/fm-crew-state.sh reports the task paused, its newest status line is such a
 #     pause, and the wake text is not the watcher's "declared clearing time has passed" recheck.
 #   - check `merge landed: <task> <pr-url>`: the task is already torn down (its record is gone;
 #     teardown removes it together with the backlog move). A task with a live record, merged or
 #     not, always wakes: that wake is what triggers cleanup and re-evaluating queued work.
-#   - check `<state>/office-lane-<lane>.check.sh: office <id>: <officer> digest ...; <n> start
+#   - check `<state>/office-lane-<lane>.check.sh: office <id>: <officer> digest <key>; <n> start
 #     request(s) delivered to this office's inbox` (a custom check's payload is its script path
-#     and its output), with
-#     or without the digest's findings clause: bin/fm-office.sh starts-handled <officer> says
-#     every start request in the lane digest is already acknowledged.
+#     and its output) with no findings clause, since an office must read findings that were not
+#     delivered as start requests: bin/fm-office.sh starts-handled <officer> says every start
+#     request in the lane digest is already acknowledged.
 # FM_WAKE_SUMMARY_CREW_STATE and FM_WAKE_SUMMARY_OFFICE override the two helper scripts (a test
 # seam). The verdict is the whole handling of a `no-action` row: the drain's --summary mode may
 # acknowledge a batch of only those rows when the home opts in (docs/configuration.md "Wake
@@ -118,26 +120,20 @@ classify_signal() { # <key> <payload>
   fi
   id=${FM_WAKE_STATUS_KEY%.status}
   lines=$(annotation_lines "$FM_WAKE_STATUS_KEY")
-  if [ -z "$lines" ]; then lines=$(last_status_line "$STATE/$FM_WAKE_STATUS_KEY"); fi
-  if [ -z "$lines" ]; then verdict ACTION "no status line to judge"; return; fi
-  newest=
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    status_line_verb "$line" verb
-    if [ "$verb" != paused ]; then
-      verdict ACTION "unread $verb line: $(short "$line" 90)"; return
-    fi
-    newest=$line
-  done <<EOF
-$lines
-EOF
+  if [ -n "$lines" ]; then
+    newest=${lines##*$'\n'}
+    status_line_verb "$newest" verb
+    verdict ACTION "unread $verb line: $(short "$newest" 90)"; return
+  fi
+  newest=$(last_status_line "$STATE/$FM_WAKE_STATUS_KEY")
+  if [ -z "$newest" ]; then verdict ACTION "no status line to judge"; return; fi
   if why=$(pause_line_ok "$newest"); then :; else verdict ACTION "$why"; return; fi
   if ! line=$(crew_state_line "$id") || [ -z "$line" ]; then
     verdict ACTION "crew state unreadable"; return
   fi
   word=$(crew_state_word "$line")
   if [ "$word" != paused ]; then verdict ACTION "$line"; return; fi
-  verdict no-action "declared pause already surfaced; $line"
+  verdict no-action "declared pause already presented; $line"
 }
 
 classify_stale() { # <key> <payload>
@@ -167,7 +163,7 @@ classify_check() { # <key> <payload>
     fi
     return
   fi
-  if [[ "$payload" =~ ^check:\ [^[:space:]]*/office-lane-([a-z0-9-]+)\.check\.sh:\ office\ [a-z0-9-]+:\ ([a-z0-9-]+)\ digest\ [0-9T-]{10,13}(:\ [0-9]+\ (high-severity\ )?finding\(s\)\ in\ [^\;]+)?\;\ [0-9]+\ start\ request\(s\)\ delivered\ to\ this\ office\'s\ inbox$ ]]; then
+  if [[ "$payload" =~ ^check:\ [^[:space:]]*/office-lane-([a-z0-9-]+)\.check\.sh:\ office\ [a-z0-9-]+:\ ([a-z0-9-]+)\ digest\ [0-9T-]{10,13}\;\ [0-9]+\ start\ request\(s\)\ delivered\ to\ this\ office\'s\ inbox$ ]]; then
     officer=${BASH_REMATCH[2]}
     if fm_run_timed 20 "$OFFICE" starts-handled "$officer" >/dev/null 2>&1; then
       verdict no-action "every $officer start request in the digest is already acknowledged"

@@ -61,19 +61,30 @@ annotation() { # <status-key> <line>
 
 # --- signal ---------------------------------------------------------------
 
-test_signal_on_a_declared_pause_is_no_action() {
+test_signal_on_a_presented_declared_pause_is_no_action() {
   local d state out rc=0
   d=$(make_case sig-paused); state="$d/state"
   printf 'paused [cause=external]: waiting on CI\n' > "$state/w1.status"
   crew_state "$state" w1 'state: paused · source: status-log · waiting on CI'
-  out=$(classify "$state" "$(row 7 signal w1.status 'signal: w1.status')" "$(annotation w1.status 'paused [cause=external]: waiting on CI')") || rc=$?
+  out=$(classify "$state" "$(row 7 signal w1.status 'signal: w1.status')" "$(annotation other.status 'note: x')") || rc=$?
   assert_equals 0 "$rc" "all rows no-action exits 0"
   assert_contains "$out" "#7 signal w1.status: no-action" "verdict line"
   assert_contains "$out" "state: paused" "the crew state that decides it is on the line"
   printf 'paused: waiting on a release; until 2099-01-01T00:00Z\n' > "$state/w1.status"
-  rc=0; out=$(classify "$state" "$(row 7 signal w1.status 's')" "$(annotation w1.status 'paused: waiting on a release; until 2099-01-01T00:00Z')") || rc=$?
-  assert_equals 0 "$rc" "a pause whose clearing time is still ahead is no-action"
-  pass "a signal whose unread lines are a declared pause on a paused crew is no-action"
+  rc=0; out=$(classify "$state" "$(row 7 signal w1.status 's')") || rc=$?
+  assert_equals 0 "$rc" "a presented pause whose clearing time is still ahead is no-action"
+  pass "a signal whose status file has no unread line and ends in a declared pause on a paused crew is no-action"
+}
+
+test_signal_on_an_unread_pause_needs_action() {
+  local d state out rc=0
+  d=$(make_case sig-unread-pause); state="$d/state"
+  printf 'paused [cause=external]: waiting on CI\n' > "$state/w1.status"
+  crew_state "$state" w1 'state: paused · source: status-log · waiting on CI'
+  out=$(classify "$state" "$(row 7 signal w1.status 'signal: w1.status')" "$(annotation w1.status 'paused [cause=external]: waiting on CI')") || rc=$?
+  assert_equals 1 "$rc" "an unread pause is not no-action"
+  assert_contains "$out" "#7 signal w1.status: ACTION - unread paused line: paused [cause=external]: waiting on CI" "the unread pause is named"
+  pass "a pause still in the drain's unread annotations needs the supervisor to read it"
 }
 
 test_signal_without_annotation_reads_the_newest_status_line() {
@@ -108,7 +119,7 @@ $(annotation w3.status 'done: finished')") || rc=$?
   assert_contains "$out" "ACTION - unread done" "a done line behind a pause still needs action"
 
   printf 'paused [cause=policy]: needs approval\n' > "$state/w3.status"
-  rc=0; out=$(classify "$state" "$(row 1 signal w3.status 's')" "$(annotation w3.status 'paused [cause=policy]: needs approval')") || rc=$?
+  rc=0; out=$(classify "$state" "$(row 1 signal w3.status 's')") || rc=$?
   assert_contains "$out" "ACTION - the pause names cause=policy" "a non-external cause needs action"
 
   rc=0; out=$(classify "$state" "$(row 1 signal w3.status 'needs-decision:w3.status')" "") || rc=$?
@@ -119,16 +130,16 @@ $(annotation w3.status 'done: finished')") || rc=$?
 
   printf 'paused: waiting\n' > "$state/w3.status"
   crew_state "$state" w3 'state: working · source: pane · busy'
-  rc=0; out=$(classify "$state" "$(row 1 signal w3.status 's')" "$(annotation w3.status 'paused: waiting')") || rc=$?
+  rc=0; out=$(classify "$state" "$(row 1 signal w3.status 's')") || rc=$?
   assert_contains "$out" "ACTION - state: working" "a pause on a crew that is not paused needs action"
 
   rm -f "$state/.fake-crew-state.w3"
-  rc=0; out=$(classify "$state" "$(row 1 signal w3.status 's')" "$(annotation w3.status 'paused: waiting')") || rc=$?
+  rc=0; out=$(classify "$state" "$(row 1 signal w3.status 's')") || rc=$?
   assert_contains "$out" "ACTION - state: unknown" "an unreadable crew state needs action"
 
   printf 'paused: waiting; until 2020-01-01T00:00Z\n' > "$state/w3.status"
   crew_state "$state" w3 'state: paused · source: status-log · x'
-  rc=0; out=$(classify "$state" "$(row 1 signal w3.status 's')" "$(annotation w3.status 'paused: waiting; until 2020-01-01T00:00Z')") || rc=$?
+  rc=0; out=$(classify "$state" "$(row 1 signal w3.status 's')") || rc=$?
   assert_contains "$out" "ACTION - the pause names a clearing time that has passed" "a passed clearing time needs action"
   pass "an unread decision, blocker or done line, a non-external cause, a passed clearing time and a non-paused crew all need action"
 }
@@ -190,10 +201,13 @@ test_office_lane_delivery() {
   plain="check: /h/state/office-lane-friction.check.sh: office quartermaster: friction digest 2026-11-08T21; 2 start request(s) delivered to this office's inbox"
   findings="check: /h/state/office-lane-friction.check.sh: office quartermaster: friction digest 2026-11-08T21: 5 finding(s) in /h/data/officers/friction/x.md; 2 start request(s) delivered to this office's inbox"
   : > "$state/.fake-starts-handled.friction"
-  for line in "$plain" "$findings"; do
+  rc=0; out=$(classify "$state" "$(row 11 check office-lane-friction "$plain")") || rc=$?
+  assert_equals 0 "$rc" "exit"
+  assert_contains "$out" "no-action - every friction start request" "all handled is no-action"
+  for line in "$findings" "${findings/5 finding/2 high-severity finding}"; do
     rc=0; out=$(classify "$state" "$(row 11 check office-lane-friction "$line")") || rc=$?
-    assert_equals 0 "$rc" "exit"
-    assert_contains "$out" "no-action - every friction start request" "all handled is no-action"
+    assert_equals 1 "$rc" "a findings clause needs action"
+    assert_contains "$out" "check office-lane-friction: ACTION" "the office must read new findings"
   done
   rm -f "$state/.fake-starts-handled.friction"
   rc=0; out=$(classify "$state" "$(row 11 check office-lane-friction "$plain")") || rc=$?
@@ -203,7 +217,7 @@ test_office_lane_delivery() {
   : > "$state/.fake-starts-handled.friction"
   rc=0; out=$(classify "$state" "$(row 11 check office-lane-friction "check: /h/state/office-lane-friction.check.sh: office quartermaster: friction digest 2026-11-08T21: 5 finding(s) in /h/x.md")") || rc=$?
   assert_contains "$out" "ACTION" "a digest line with no delivery clause is not classified"
-  pass "an office lane delivery is no-action only when every request is already acknowledged"
+  pass "an office lane delivery is no-action only without a findings clause and when every request is already acknowledged"
 }
 
 test_other_rows_need_action() {
@@ -336,7 +350,13 @@ test_signal_pause_batch_is_auto_acked_and_a_new_decision_is_not() {
   crew_state "$state" s1 'state: paused · source: status-log · waiting on CI'
   append_wake "$state" signal s1.status 'signal: s1.status'
   out=$(drain_summary "$state")
-  assert_contains "$out" "signal s1.status: no-action" "the paused signal is no-action"
+  assert_contains "$out" "signal s1.status: ACTION - unread paused line" "a fresh pause is an action wake"
+  assert_contains "$out" "wake annotation:" "the annotation it was judged on is printed"
+  assert_contains "$out" "waiting on CI" "so the supervisor reads the pause text"
+  assert_not_contains "$out" "AUTO-ACKED" "an unread pause is never auto-acked"
+  [ "$(queue_rows "$state")" = 1 ] || fail "the fresh pause wake must stay queued"
+  out=$(drain_summary "$state")
+  assert_contains "$out" "signal s1.status: no-action - declared pause already presented" "once presented, the pause is no-action"
   assert_contains "$out" "AUTO-ACKED" "and acknowledged"
 
   printf 'needs-decision [key=pick]: which one\n' >> "$state/s1.status"
@@ -346,7 +366,7 @@ test_signal_pause_batch_is_auto_acked_and_a_new_decision_is_not() {
   assert_not_contains "$out" "AUTO-ACKED" "never auto-acked"
   [ "$(queue_rows "$state")" = 1 ] || fail "the decision wake must stay queued"
   opt_out
-  pass "a paused signal is auto-acked, while a following needs-decision wake is not"
+  pass "a fresh pause wakes the supervisor, a presented one is auto-acked, and a following needs-decision wake is not"
 }
 
 test_recovery_only_drain_is_auto_acked() {
@@ -444,6 +464,50 @@ test_quiet_ack_mixed_batch_wakes_and_consumes_nothing() {
   assert_contains "$out" "WAKE SUMMARY (2 wake(s), 1 need action)" "and the supervisor's own drain shows both rows"
   opt_out
   pass "a mixed batch (and an unread note) leaves everything for the supervisor's own drain"
+}
+
+test_quiet_ack_fresh_pause_wakes_and_consumes_nothing() {
+  local d state rc=0 out
+  d=$(make_case quiet-pause); state="$d/state"
+  opt_in
+  printf 'note: bootstrap\n' > "$state/p1.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" >/dev/null 2>&1
+  printf 'paused [cause=external]: waiting on the vendor\n' >> "$state/p1.status"
+  crew_state "$state" p1 'state: paused · source: status-log · waiting on the vendor'
+  append_wake "$state" signal p1.status 'signal: p1.status'
+  quiet_ack "$state" || rc=$?
+  assert_equals 10 "$rc" "an unread pause needs a model"
+  [ "$(queue_rows "$state")" = 1 ] || fail "nothing may be acknowledged"
+  out=$(drain_summary "$state")
+  assert_contains "$out" "wake annotation:" "the supervisor's drain still has the unread annotation"
+  assert_contains "$out" "waiting on the vendor" "with the pause text, not consumed by the quiet pass"
+  opt_out
+  pass "--quiet-ack exits 10 on a fresh pause and leaves its status line unread"
+}
+
+test_quiet_ack_lock_timeout_does_not_report_success() {
+  local d state rc=0 holder i
+  d=$(make_case quiet-lock); state="$d/state"
+  opt_in
+  merge_row "$state" gone
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2"
+    printf "ready\n" > "$3"
+    exec sleep 30
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$state/.wake-queue.lock" "$d/queue.ready" &
+  holder=$!
+  i=0
+  while [ "$i" -lt 100 ] && [ ! -s "$d/queue.ready" ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$d/queue.ready" ] || { kill "$holder" 2>/dev/null || true; fail "queue holder never acquired its lock"; }
+  QUIET_OUT=$(FM_STATE_OVERRIDE="$state" FM_STATUS_PRESENTATION_LOCK_TIMEOUT=1 "$DRAIN" --quiet-ack 2>&1) || rc=$?
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  assert_equals 10 "$rc" "a quiet drain that could not take the queue lock acknowledged nothing"
+  [ "$(queue_rows "$state")" = 1 ] || fail "the row must stay queued"
+  [ ! -e "$state/.wake-auto-acked" ] || fail "no auto-ack record may be left"
+  opt_out
+  pass "--quiet-ack exits 10, not 0, when the queue lock stays held past the presentation timeout"
 }
 
 test_open_decisions_unchanged_since_last_presented() {
@@ -553,12 +617,15 @@ test_summary_flag_is_exclusive() {
 test_quiet_ack_without_the_flag_does_nothing
 test_quiet_ack_acknowledges_a_quiet_batch_and_leaves_one_record
 test_quiet_ack_mixed_batch_wakes_and_consumes_nothing
+test_quiet_ack_fresh_pause_wakes_and_consumes_nothing
+test_quiet_ack_lock_timeout_does_not_report_success
 test_open_decisions_unchanged_since_last_presented
 test_open_decisions_unchanged_does_not_hide_unread_status
 test_every_classified_wake_is_counted_once
 test_signal_pause_batch_is_auto_acked_and_a_new_decision_is_not
 test_signal_without_annotation_reads_the_newest_status_line
-test_signal_on_a_declared_pause_is_no_action
+test_signal_on_a_presented_declared_pause_is_no_action
+test_signal_on_an_unread_pause_needs_action
 test_signal_refusals
 test_stale_on_a_declared_pause
 test_merge_landed

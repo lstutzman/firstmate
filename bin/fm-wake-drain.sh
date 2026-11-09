@@ -945,6 +945,7 @@ section_digest() {
 # trace of having drained. The ordinary drain moves the recovery episode to
 # handling, but the Stop hook can only deliver its rewake while the episode still
 # reads downtime, so put it back (same generation while rows remain queued).
+# shellcheck disable=SC2317,SC2329 # Invoked by the cleanup trap handler.
 quiet_restore_marker() {
   fm_recovery_marker_snapshot "$RECOVERY_MARKER" || return 0
   case "$FM_RECOVERY_MARKER_TOKEN" in
@@ -1061,9 +1062,7 @@ EOF
       fi
     elif [ "$SUMMARY" != quiet ]; then
       printf 'WAKE SUMMARY (%s wake(s), %s need action):\n%s\n' "$count" "$actions" "$summary"
-      # Annotations are what the summary lines were judged on; print them only when
-      # a reader still has to look.
-      [ "$quiet" -eq 0 ] || { [ -z "$annotations" ] || printf '%s\n' "$annotations"; }
+      [ -z "$annotations" ] || printf '%s\n' "$annotations"
     fi
   elif [ -n "$through" ]; then
     [ "$SUMMARY" = quiet ] || printf 'WAKE SUMMARY (recovery only, no queued wake rows)\n'
@@ -1079,7 +1078,7 @@ EOF
   [ -n "$through" ] || return 0
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
   if [ "$quiet" -eq 0 ] && [ "$ACTOR" = main ] && [ -e "$config/wake-auto-ack" ] \
-    && [ -z "$other_sections" ] && [ "$od_unchanged" = true ] && [ -z "$outcomes" ] && [ "$outcomes_rc" -eq 0 ] && [ -z "$guard_out" ]; then
+    && [ -z "$annotations" ] && [ -z "$other_sections" ] && [ "$od_unchanged" = true ] && [ -z "$outcomes" ] && [ "$outcomes_rc" -eq 0 ] && [ -z "$guard_out" ]; then
     ack_rc=0
     ack_out=$("$SCRIPT_DIR/fm-wake-drain.sh" --ack-through "$through" --recovery-generation "$generation" 2>&1) || ack_rc=$?
     if [ "$ack_rc" -eq 0 ] && [ -z "$ack_out" ]; then
@@ -1151,9 +1150,13 @@ cleanup() {
   if [ "$DRAIN_LOCK_HELD" = true ]; then
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   fi
+  if [ "$SUMMARY" = quiet ] && [ "$status" -ne 0 ] && [ "$QUIET_LOCK_TAKEN" = true ]; then
+    quiet_restore_marker
+  fi
   exit "$status"
 }
 
+QUIET_LOCK_TAKEN=false
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -1167,12 +1170,14 @@ else
   if [ "$lock_rc" -eq 124 ]; then
     printf 'WAKE DRAIN SKIPPED: queue lock remains held by live pid %s after %ss; retry on the next drain.\n' \
       "${FM_LOCK_HELD_PID:-unknown}" "$PRESENTATION_LOCK_TIMEOUT"
+    [ "$SUMMARY" != quiet ] || exit 10
     exit 0
   fi
   printf 'wake drain: queue lock could not be acquired safely\n' >&2
   exit 1
 fi
 DRAIN_LOCK_HELD=true
+QUIET_LOCK_TAKEN=true
 rotate_scratch_locked
 reclaim_stale_branch_grant_locked || exit 1
 [ "$ACTOR" != main ] || retire_unconsumable_rows_locked
@@ -1338,7 +1343,7 @@ if [ ! -s "$FM_WAKE_QUEUE" ]; then
     else
       summary_tail "" "" ""
     fi
-    [ "$SUMMARY" != quiet ] || { [ "$QUIET_EXIT" -eq 0 ] || quiet_restore_marker; exit "$QUIET_EXIT"; }
+    [ "$SUMMARY" != quiet ] || exit "$QUIET_EXIT"
     exit "$BRANCH_OUTCOMES_RC"
   fi
   (print_status_presentation) || true
@@ -1365,7 +1370,7 @@ if [ "$ACTOR" = main ]; then
     DRAIN_LOCK_HELD=false
     if [ "$SUMMARY" != false ]; then
       summary_tail "" "" ""
-      [ "$SUMMARY" != quiet ] || { [ "$QUIET_EXIT" -eq 0 ] || quiet_restore_marker; exit "$QUIET_EXIT"; }
+      [ "$SUMMARY" != quiet ] || exit "$QUIET_EXIT"
       exit "$BRANCH_OUTCOMES_RC"
     fi
     (print_status_presentation) || true
@@ -1430,7 +1435,7 @@ fm_lock_release "$FM_WAKE_QUEUE_LOCK"
 DRAIN_LOCK_HELD=false
 if [ "$SUMMARY" != false ]; then
   summary_tail "$RAW_ROWS" "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}"
-  [ "$SUMMARY" != quiet ] || { [ "$QUIET_EXIT" -eq 0 ] || quiet_restore_marker; exit "$QUIET_EXIT"; }
+  [ "$SUMMARY" != quiet ] || exit "$QUIET_EXIT"
   exit "$BRANCH_OUTCOMES_RC"
 fi
 printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through %s --recovery-generation %s\n' \
