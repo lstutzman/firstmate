@@ -1,0 +1,12 @@
+== mode=same (worker head 2da905d8, real run head 2da905d8, real run at test step) rc=0
+no-mistakes calls:
+  axi status --run 01M6YTT2YN27BDR23N13PQZCGX
+marker: s1 reattach
+steer sent:
+  Automatic steer: the no-mistakes run for fm/nm-cancelled-runs is still active
+== mode=ahead (worker head 5a8cf01b, real run head 2da905d8, real run at test step) rc=0
+no-mistakes calls:
+  axi status --run 01M6YTT2YN27BDR23N13PQZCGX
+marker: s1 reattach
+steer sent:
+  Automatic steer: the no-mistakes run for fm/nm-cancelled-runs is still active
