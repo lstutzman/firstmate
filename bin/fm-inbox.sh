@@ -75,6 +75,10 @@
 # Each reply is stamped with a durable per-home sequence, so the receipts cursor
 # is a strict total order and two replies recorded in the same second are both
 # readable. One reply per note: a second one is refused.
+# A reply whose body starts with `declined:` declines the note: the progress
+# officer does not re-send a declined start request to this home until its
+# evidence changes or 14 days pass. Any other reply, an acceptance included,
+# is not a decline.
 # `ready` is the read-only primary-readiness projection (lock, wake-consumer
 # health, away posture, observation time). It never acquires the session lock
 # and never infers liveness from a lock file, a session, or a pane.

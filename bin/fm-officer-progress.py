@@ -58,6 +58,11 @@ items of its own: it finds no work, it only starts the work other officers and L
 Linear writes are the triage priority update above only; there are no other Linear writes, and no cloud model calls,
 dispatch, steering, or GitHub writes.
 Only a start request that its source and evidence do not place is labelled by local-jev, the local classifier.
+Declines. A home declines a start request by answering its note with `fm-inbox.sh reply <id> 'declined: <why>'`; only a
+reply whose body starts with `declined:` counts, and an acceptance or any other reply does not. A declined request is not
+re-sent to that home while its evidence is unchanged: it is listed under excluded with the decline, and the md digest counts
+it. As a deliberate safeguard so a decline is never permanent, a decline lapses after DECLINE_DAYS (14) days and the request
+is sent again.
 """
 
 import argparse
@@ -1229,9 +1234,10 @@ def item_digest(row):
 
 
 def declined_items(home, now):
-    """{item key: evidence digest} of notes this home answered with `fm-inbox.sh reply` less than DECLINE_DAYS ago.
+    """{item key: (evidence digest, reply time)} of notes this home declined less than DECLINE_DAYS ago.
 
-    shortcut: only a local home's inbox is read, and any reply counts as a decline; a remote start-home is never skipped.
+    A decline is an `fm-inbox.sh reply` whose body starts with `declined:`; any other reply is not a decline.
+    shortcut: only a local home's inbox is read; a remote start-home is never skipped.
     """
     inbox = os.path.join(home, "state", "inbox")
     declined = {}
@@ -1240,22 +1246,24 @@ def declined_items(home, now):
             continue
         try:
             reply = read(os.path.join(inbox, ".replies", name[:-5]))
-            at = re.search(r"^at=(\S+)$", reply, re.M).group(1)
+            head, text = reply.split("\n--\n", 1)
+            at = re.search(r"^at=(\S+)$", head, re.M).group(1)
             replied = calendar.timegm(time.strptime(at, "%Y-%m-%dT%H:%M:%SZ"))
             note = read(os.path.join(inbox, "handled", name))
             row = json.loads(note.split(EVIDENCE_MARK, 1)[1])
         except (OSError, AttributeError, IndexError, ValueError):
             continue
-        if now - replied < DECLINE_DAYS * 86400 and isinstance(row, dict):
+        if text.lstrip().startswith("declined:") and now - replied < DECLINE_DAYS * 86400 and isinstance(row, dict):
             key, digest = item_digest(row)
-            declined[key] = digest
+            declined[key] = (digest, at[:10])
     return declined
 
 
 def executable_requests(doc, home, start_homes=(), team="PC", jev=None, now=0):
     """Build firstmate's existing idempotent inbox calls; never execute them.
 
-    A start request its target home declined (replied to) with unchanged evidence is skipped and counted in doc["declined"].
+    A start request its target home declined with unchanged evidence is not sent: it moves to doc["excluded"],
+    the remaining starts are re-ranked, and doc["declined"] counts it.
     """
     requests = []
     doc["declined"] = 0
@@ -1283,14 +1291,23 @@ def executable_requests(doc, home, start_homes=(), team="PC", jev=None, now=0):
         if target not in declined:
             declined[target] = declined_items(target, now) if os.path.isdir(target) else {}
         key, digest = item_digest(row)
-        if declined[target].get(key) == digest:
+        decline = declined[target].get(key)
+        if decline and decline[0] == digest:
             doc["declined"] += 1
+            row.update(reason="Declined by %s on %s; evidence unchanged" % (target, decline[1]), rank=None)
+            if row is doc["filler"]:
+                doc["filler"] = None
+            else:
+                doc["start_requests"] = [r for r in doc["start_requests"] if r is not row]
+                doc["excluded"].append(row)
             continue
         execute = {"action": "start", "env": {"FM_HOME": target}, "request_id": request_id,
                    "argv": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh"),
                             "note", "--request-id", request_id, "--json", "--", body]}
         row["execute"] = execute
         requests.append(execute)
+    for rank, row in enumerate(doc["start_requests"], 1):
+        row["rank"] = rank
     return requests
 
 
