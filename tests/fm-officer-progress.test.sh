@@ -1375,6 +1375,32 @@ JSON
   pass 'progress: non-work and duplicate candidates are dropped before handoff and reported with a reason'
 }
 
+test_declined_requests_are_not_resent() {
+  make_world decline
+  local file="$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh" md="$WORLD_HOME/data/officers/progress/$DATE.md" id out
+  printf '## Queued\n\n- [ ] pc-crash - Fix a crash (kind: bug) (repo: firstmate)\n' > "$WORLD_HOME/data/backlog.md"
+  run_progress >/dev/null || fail 'first run failed'
+  FM_HOME="$WORLD_HOME" bash "$file" >/dev/null || fail 'handoff must run'
+  id=$(FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" receipts --all-pending | jq -r '.pending[0].id')
+  [ -n "$id" ] && [ "$id" != null ] || fail 'the request must be pending'
+  run_progress >/dev/null || fail 'unanswered run failed'; out=$(cat "$md")
+  assert_contains "$out" '0 declined requests not re-sent' 'an unanswered request is delivered as before'
+  assert_contains "$(cat "$file")" pc-crash 'an unanswered request is re-sent'
+  FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" drain --ack "$id" >/dev/null || fail 'ack failed'
+  FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" reply "$id" 'declined: not ours' >/dev/null || fail 'reply failed'
+  run_progress >/dev/null || fail 'declined run failed'; out=$(cat "$md")
+  assert_contains "$out" '1 declined requests not re-sent' 'the digest counts the skipped request'
+  assert_not_contains "$(cat "$file")" pc-crash 'a declined request is not re-sent'
+  printf '## Queued\n\n- [ ] pc-crash - Fix a crash (kind: bug) (repo: firstmate) (pr: https://example.test/pull/9)\n' > "$WORLD_HOME/data/backlog.md"
+  run_progress >/dev/null || fail 'changed-evidence run failed'
+  assert_contains "$(cat "$file")" pc-crash 'changed evidence makes the request deliverable again'
+  printf '## Queued\n\n- [ ] pc-crash - Fix a crash (kind: bug) (repo: firstmate)\n' > "$WORLD_HOME/data/backlog.md"
+  NOW=$((NOW + 400 * 86400)) run_progress >/dev/null || fail 'expiry run failed'; out=$(cat "$md")
+  assert_contains "$out" '0 declined requests not re-sent' 'a decline older than 14 days no longer skips'
+  assert_contains "$(cat "$file")" pc-crash 'an expired decline is re-sent'
+  pass 'progress: declined requests are skipped until evidence changes or 14 days pass'
+}
+
 test_start_home_routes_requests_by_project() {
   make_world starthome
   local nav="$WORLD/navigator" lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh"
@@ -2006,6 +2032,7 @@ JSON
 test_linear_labels_classify_starts
 test_linear_reads_survive_one_bad_root
 test_open_pr_discovery_is_per_repo
+test_declined_requests_are_not_resent
 test_start_home_routes_requests_by_project
 test_non_work_and_duplicates_are_dropped_and_reported
 test_top_of_mind_start

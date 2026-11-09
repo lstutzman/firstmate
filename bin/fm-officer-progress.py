@@ -61,6 +61,7 @@ Only a start request that its source and evidence do not place is labelled by lo
 """
 
 import argparse
+import calendar
 import collections
 import copy
 import datetime
@@ -1215,9 +1216,50 @@ def start_home_for(row, home, offices, team="PC", jev=None):
     return office_home or home, why
 
 
-def executable_requests(doc, home, start_homes=(), team="PC", jev=None):
-    """Build firstmate's existing idempotent inbox calls; never execute them."""
+DECLINE_DAYS = 14
+EVIDENCE_MARK = "not a quotation from Lee:\n"
+
+
+def item_digest(row):
+    """(item key, evidence digest) of a start request or of the evidence JSON a delivered note carries."""
+    key = row.get("linear_id") or row.get("id") or row.get("kind")
+    evidence = json.dumps([row.get("evidence"), sorted(row.get("linear_ids") or []), row.get("link") or ""],
+                          sort_keys=True, ensure_ascii=False)
+    return key, hashlib.sha256(evidence.encode("utf-8")).hexdigest()
+
+
+def declined_items(home, now):
+    """{item key: evidence digest} of notes this home answered with `fm-inbox.sh reply` less than DECLINE_DAYS ago.
+
+    shortcut: only a local home's inbox is read, and any reply counts as a decline; a remote start-home is never skipped.
+    """
+    inbox = os.path.join(home, "state", "inbox")
+    declined = {}
+    for name in sorted(os.listdir(os.path.join(inbox, "handled"))) if os.path.isdir(os.path.join(inbox, "handled")) else []:
+        if not name.endswith(".note"):
+            continue
+        try:
+            reply = read(os.path.join(inbox, ".replies", name[:-5]))
+            at = re.search(r"^at=(\S+)$", reply, re.M).group(1)
+            replied = calendar.timegm(time.strptime(at, "%Y-%m-%dT%H:%M:%SZ"))
+            note = read(os.path.join(inbox, "handled", name))
+            row = json.loads(note.split(EVIDENCE_MARK, 1)[1])
+        except (OSError, AttributeError, IndexError, ValueError):
+            continue
+        if now - replied < DECLINE_DAYS * 86400 and isinstance(row, dict):
+            key, digest = item_digest(row)
+            declined[key] = digest
+    return declined
+
+
+def executable_requests(doc, home, start_homes=(), team="PC", jev=None, now=0):
+    """Build firstmate's existing idempotent inbox calls; never execute them.
+
+    A start request its target home declined (replied to) with unchanged evidence is skipped and counted in doc["declined"].
+    """
     requests = []
+    doc["declined"] = 0
+    declined = {}
     work = list(doc["start_requests"])
     if doc["filler"]:
         work.append(doc["filler"])
@@ -1238,6 +1280,12 @@ def executable_requests(doc, home, start_homes=(), team="PC", jev=None):
         target, unrouted = start_home_for(row, home, start_homes, team, jev)
         if unrouted:
             row["unrouted"] = unrouted
+        if target not in declined:
+            declined[target] = declined_items(target, now) if os.path.isdir(target) else {}
+        key, digest = item_digest(row)
+        if declined[target].get(key) == digest:
+            doc["declined"] += 1
+            continue
         execute = {"action": "start", "env": {"FM_HOME": target}, "request_id": request_id,
                    "argv": [os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-inbox.sh"),
                             "note", "--request-id", request_id, "--json", "--", body]}
@@ -1494,7 +1542,7 @@ def render_md(doc):
         lines.extend(["## Needs decision", "", "- needs-decision [key=%s]: %d item(s) held for Lee, they match a reserved class: %s" % (
             held[0]["ask_key"], len(held), "; ".join("%s (%s)" % (r["id"], r["title"]) for r in held[:10])), ""])
     lines.extend(["## Unclassified", "", "- %d open items have no recorded start class and are not listed."
-                  % doc["unclassified"], ""])
+                  % doc["unclassified"], "", "## Declined", "", "- %d declined requests not re-sent" % doc["declined"], ""])
     lines.extend(["## Coverage", ""] + ["- " + p for p in doc["coverage"]])
     stats = doc["linear_coverage"]
     lines.append("- Linear: %(pages_fetched)d pages, %(items_seen)d items seen, %(requests)d requests, "
@@ -1632,7 +1680,7 @@ def main(argv):
     doc["coverage"] += triage_pass(doc, facts, args)
     doc["filler"] = filler_for(doc, args.date)
     start_homes = [parse_office(a) for a in args.start_home]
-    requests = executable_requests(doc, args.home[0], start_homes, args.team, LocalJev(start_homes) if start_homes else None)
+    requests = executable_requests(doc, args.home[0], start_homes, args.team, LocalJev(start_homes) if start_homes else None, now)
     write_handoff(os.path.join(args.out, args.date + ".start-requests.sh"),
                   [r for r in requests if r["env"]["FM_HOME"] == args.home[0]])
     reported = None
