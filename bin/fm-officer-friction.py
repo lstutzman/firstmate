@@ -890,9 +890,9 @@ def plausible_tool(name, command, bodies):
     if command is None or not re.search(word, command):
         return True
     # shortcut: a quoted string is text unless it feeds a shell (-c, -lc, eval, sh, bash, ssh [opts] host) or holds
-    # a $( or backtick substitution; upgrade if a miss hides elsewhere.
-    text = QUOTED_RE.sub(lambda m: m.group(0) if m.group(1) or (m.group(2)[0] == '"' and re.search(r"\$\(|`", m.group(2)))
-                         else "''", command)
+    # a $( substitution; upgrade if a miss hides elsewhere.
+    text = QUOTED_RE.sub(lambda m: m.group(0) if m.group(1) or (m.group(2)[0] == '"' and "$(" in m.group(2)) else "''",
+                         command)
     if not re.search(word, text):
         return False
     return re.search(word + "(?!:)", text) is not None

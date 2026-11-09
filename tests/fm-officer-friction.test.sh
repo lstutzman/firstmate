@@ -845,6 +845,7 @@ test_noise_is_not_a_finding() {
   ["Bash", {"command": "timeout 60 bash -lc 'dotnet test'"}, "bash: line 1: dotnet: command not found", true],
   ["Bash", {"command": "ssh -o BatchMode=yes deepthought -- 'playwright-cli open'"}, "bash: line 1: playwright-cli: command not found", true],
   ["Bash", {"command": "echo \"\$(fleet-axi status)\""}, "/bin/bash: line 1: fleet-axi: command not found", true],
+  ["Bash", {"command": "gh pr create --body \"rename the \`officer\` column\""}, "/bin/bash: line 1: officer: command not found", true],
   ["Bash", {"command": "\"\$slopwatch\" --scan"}, "/bin/bash: line 1: slopwatch: command not found", true],
   ["Bash", {"command": "make"}, "/bin/bash: line 1: _fm_helper: command not found\n/bin/bash: line 2: -x: command not found", true],
   ["Bash", {"command": "ssh deepthought bash -s <<'E'\njq . f\nE"}, "bash: line 1: jq: command not found", true],
