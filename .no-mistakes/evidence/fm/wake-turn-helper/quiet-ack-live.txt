@@ -1,0 +1,49 @@
+=== ack the mixed batch through the printed command
+bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 467903.1794185015.lHitDf
+queued rows: 0
+0
+
+=== S5: quiet-only batch, --quiet-ack -> exit 0, acked, record left
+rc=0 (stdout/stderr above should be empty)
+queued rows: 0
+0
+state/.wake-auto-acked:
+1794185060	1	check=1
+
+=== S6: next --summary drain reports the code-acked wakes once
+WAKE AUTO-ACKED WHILE NO MODEL WAS WOKEN: 1 wake(s) in 1 batch(es) since epoch 1794185060 (check=1); each was classified no-action and acknowledged by the Stop hook (config/wake-auto-ack), so nothing needed you.
+rc=0
+--- again:
+rc=0
+
+=== S7: live task record -> merge landed is ACTION, not auto-acked
+quiet-ack rc=10
+WAKE SUMMARY (1 wake(s), 1 need action):
+#5 check merged-live: ACTION - task live-task is still recorded, so this wake triggers its teardown, backlog move and re-evaluation; state: unknown · source: none · worktree gone (torn down?)
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 5 --recovery-generation 599885.1794185065.i6kTjK
+rc=0
+queued rows: 1
+
+=== S8 (adversarial): queue lock held by a live pid past timeout -> --quiet-ack must not exit 0
+held
+WAKE DRAIN SKIPPED: queue lock remains held by live pid 623492 after 2s; retry on the next drain.
+quiet-ack rc=10 (expect 10)
+queued rows: 1
+marker: pending:downtime:623084.1794185073.YpmCMQ
+after lock released:
+quiet-ack rc=0
+queued rows: 0
+0
+classified log tail:
+{"ts":1794185018,"seq":3,"kind":"check","verdict":"action","auto_acked":false}
+{"ts":1794185060,"seq":4,"kind":"check","verdict":"no-action","auto_acked":true}
+{"ts":1794185066,"seq":5,"kind":"check","verdict":"action","auto_acked":false}
+{"ts":1794185082,"seq":6,"kind":"check","verdict":"no-action","auto_acked":true}

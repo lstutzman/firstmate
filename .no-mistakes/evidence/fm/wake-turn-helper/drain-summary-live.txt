@@ -1,0 +1,30 @@
+=== S1: no opt-in, quiet batch: --summary prints verdict + ack command, acks nothing
+WAKE SUMMARY (1 wake(s), 0 need action):
+#1 check merged-gone-x: no-action - task gone-task is already torn down (no task record); https://github.com/o/r/pull/5
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 454637.1794185010.o4vZsa
+rc=0
+queued rows: 1
+
+=== S4a: --quiet-ack without opt-in -> exit 11
+rc=11
+queued rows: 1
+
+=== S2: opt in (config/wake-auto-ack), same batch -> WAKE AUTO-ACKED
+WAKE SUMMARY (1 wake(s), 0 need action):
+#1 check merged-gone-x: no-action - task gone-task is already torn down (no task record); https://github.com/o/r/pull/5
+WAKE AUTO-ACKED: 1 wake(s) classified no-action and acknowledged through 1 (config/wake-auto-ack); nothing needs handling
+rc=0
+queued rows: 0
+0
+
+=== S3: mixed batch (no-action + pr-register ACTION) -> nothing acked
+WAKE SUMMARY (2 wake(s), 1 need action):
+#2 check merged-gone-y: no-action - task gone-task2 is already torn down (no task record); https://github.com/o/r/pull/6
+#3 check pr-register: ACTION - check: pr-register: t #1 draft
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 467903.1794185015.lHitDf
+rc=0
+queued rows: 2
+
+=== S4b: --quiet-ack on mixed batch -> exit 10, nothing acked
+rc=10
+queued rows: 2
