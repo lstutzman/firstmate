@@ -63,7 +63,7 @@ prime_limit_window() {  # <state> <id> <window> <kind> <harness> <capture>
   printf 'window=%s\nkind=%s\nharness=%s\nbackend=tmux\n' "$window" "$kind" "$harness" > "$state/$id.meta"
   printf '%s\n' 'working: parked between turns' > "$statusf"
   printf '%s' "$(seen_sig "$statusf")" > "$state/.seen-${id}_status"
-  key=$(printf '%s' "$window" | tr ':/.' '___')
+  key=$(watch_window_key "$window")
   printf '%s' "$(hash_text "$(cat "$capture")")" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
   printf '%s' "$key"

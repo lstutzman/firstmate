@@ -276,7 +276,12 @@
 # <n> is the count of resolution records the body already carries plus one, so
 # a released and re-held task opens and closes a distinct parent decision with
 # no new persisted state, and an exact retry republishes the same line, which
-# the channel deduplicates. A main home has no channel and publishes nothing.
+# the channel deduplicates against that key's latest line, so a hold re-dated
+# back to an earlier `--until` is still delivered. A `hold --until` adds the
+# structured `[until=YYYY-MM-DD]` field to that line, which the parent watcher's
+# open-decision reminders read to keep the relayed key quiet until that date
+# (bin/fm-watch.sh open_decision_reminder_tick). A main home has no channel and
+# publishes nothing.
 # The hold or answer is already durable in the backlog, so a channel that
 # cannot be written is reported as `actionable:` on stderr rather than undoing
 # the record; bin/fm-inactive-reconcile.sh's diagnostics name a broken binding.
@@ -315,25 +320,31 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 
 PARENT_HOLD_PUBLISHED=0
-publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [<cause>]
-  local id=$1 occurrence=$2 verb=$3 note=$4 cause=${5:-} rc=0 tag='' head body destination line untimed rest
+publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [<cause>] [until-date]
+  local id=$1 occurrence=$2 verb=$3 note=$4 cause=${5:-} until=${6:-} rc=0 tag='' head body destination line rest latest='' key
   PARENT_HOLD_PUBLISHED=0
+  key="captain-hold-$id-$occurrence"
   [ -z "$cause" ] || tag=" [cause=$cause]"
-  head="$verb [key=captain-hold-$id-$occurrence]"
+  head="$verb [key=$key]"
+  [ -z "$until" ] || head="$head [until=$until]"
   body=": captain hold $id: $(fm_parent_channel_clean_note "$note")"
+  # Only the key's latest line decides a repeat, so a hold re-dated back to an
+  # earlier --until is still delivered; the cause tag is ignored in the match.
   if destination=$(fm_parent_channel_destination "$FM_HOME" "$STATE") && [ -f "$destination" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
-      _fm_status_untimed "$line" untimed
-      rest=${untimed#"$head [cause="}
-      [ "$rest" = "$untimed" ] || rest=${rest#*\]}
-      [ "$rest" = "$untimed" ] && rest=${untimed#"$head"}
+      [ "$(_fm_decision_key "$line" '')" = "$key" ] || continue
+      _fm_status_untimed "$line" latest
+    done < <(grep -F "[key=$key]" "$destination" || true)
+    rest=${latest#"$head"}
+    if [ "$rest" != "$latest" ]; then
+      case "$rest" in " [cause="*) rest=${rest#*\]} ;; esac
       if [ "$rest" = "$body" ]; then
         PARENT_HOLD_PUBLISHED=1
         return 0
       fi
-    done < "$destination"
+    fi
   fi
-  fm_parent_channel_report "$FM_HOME" "$STATE" "$head$tag$body" || rc=$?
+  fm_parent_channel_report "$FM_HOME" "$STATE" "$head$tag$body" "$key" || rc=$?
   case "$rc" in
     0|1) PARENT_HOLD_PUBLISHED=1 ;;
     *) printf 'actionable: task %s is held for the captain in this home but that did not reach the parent channel (rc=%s)\n' "$id" "$rc" >&2 ;;
@@ -1486,7 +1497,7 @@ command_hold() {
     fi
     reason="$reason (default cleared: captain deferred to $until)"
   fi
-  publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$cause"
+  publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$cause" "$until"
   if [ -n "$origin" ]; then
     write_hold_origin "$id" "$(show_field "$show" body)" "$origin" || exit $?
   fi

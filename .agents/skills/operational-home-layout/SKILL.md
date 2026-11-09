@@ -177,6 +177,9 @@ state/               runtime records and signals; gitignored
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   lane-capacity.json  this home's published lane facts, refreshed only while config/lane-capacity exists; written only by bin/fm-capacity.sh --publish, whose header owns the document
   .decision-sweep-last-run .decision-sweep.out .decision-sweep.out.tmp  the watcher's detached settle-only decision sweep cadence stamp, its finished report (consumed and removed by the next poll, which wakes firstmate naming each closed wait), and the in-progress report; bin/fm-watch.sh decision_sweep_tick owns them, bin/fm-decision-sweep.sh owns which decisions close; safe to delete
+  lane-footprint.json  auto lane budget's per-lane footprint ledger, written only by bin/fm-capacity.sh --publish in auto mode, whose header owns the format
+  .lane-vitals-host  cached Windows host view for the auto budget under WSL2 and on native Windows, written only by bin/fm-capacity.sh --publish; safe to delete
+  .lane-admission.lock  bin/fm-spawn.sh's machine-wide lane admission lock in the local root home, taken only with admit-spawns; never touch
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
 .no-mistakes/        local validation state and evidence; gitignored
