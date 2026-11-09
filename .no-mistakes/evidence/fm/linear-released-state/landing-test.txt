@@ -1,0 +1,11 @@
+ok - fm-officer landing: A1 and B1 follow the audit definitions from the facts
+ok - fm-officer landing: In Staging is refused as a reopen state before any Linear call
+ok - fm-officer landing: Released is refused as a reopen state before any Linear call
+ok - fm-officer-landing.py: Released is refused as a reopen state by the pass itself
+ok - fm-officer landing: a Linear failure fails the run with Linear's reason
+ok - fm-officer landing: a run writes only its lane; Linear is its one outside write
+ok - fm-officer landing: the writes: none switch turns every Linear write off
+ok - fm-officer landing: corrections are on by default: report what the release path missed, reopen false done, never In Staging
+ok - fm-officer landing: a moved Linear state or the close cap stops a close
+ok - fm-officer landing: facts that are stale or undated make no Linear write and raise a finding
+ok - fm-officer landing: facts over ssh are judged alike; another schema or layout is refused
