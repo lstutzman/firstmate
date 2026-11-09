@@ -2334,10 +2334,15 @@ The address selects the existing shared server; it does not authorize starting o
 
 The optional local, gitignored `config/brief-include.md` adds standing worker instructions to every ship and scout brief.
 This keeps private brief content out of tracked files.
-When the file exists, `bin/fm-brief.sh` appends its text verbatim as the scaffold's last section, `# Home brief additions`, which defers to every other section of the brief, including the ship contract a later scout promotion appends below it.
+When the file exists, `bin/fm-brief.sh` appends its text verbatim, less any blocks tagged for other projects (below), as the scaffold's last section, `# Home brief additions`, which defers to every other section of the brief, including the ship contract a later scout promotion appends below it.
 
 An absent or blank file changes nothing, while a present path that is not a readable regular file, or text carrying its own `Delivery contract: mode=` line, stops the scaffold before anything is written.
 The text is static and never executed or expanded, and secondmate charters never take it.
+
+A block can be limited to some projects: a line that is exactly `<!-- project: PropertyCompass2 -->` (several names are comma-separated) opens a block that only briefs whose repo-name is listed receive.
+Every block must be closed with a line that is exactly `<!-- /project -->`: the next tag line may still end the block before it, but the last block must be closed, and a block left open at the end of the file stops the scaffold before anything is written, so own lines added below an inherited base never fall inside a base block.
+Tag lines are never emitted, and untagged text always is.
+A file with no tag line is emitted unchanged, so tagging only removes text from briefs for other projects and shrinks them.
 
 The primary's file is inherited by every secondmate home as a base: the home's copy is the primary's text followed by the home's own lines.
 Each push replaces only that base, so add a home's own rules below it; an edit inside the base is kept, re-appended below the next base rather than lost.

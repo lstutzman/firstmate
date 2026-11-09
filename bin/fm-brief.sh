@@ -165,7 +165,8 @@
 # second owner of a contract that must stay current across relaunches.
 # A home may carry standing worker instructions without editing this tracked
 # script: when config/brief-include.md exists under the active home, ship and
-# scout scaffolds append its text verbatim as their last section, "# Home brief
+# scout scaffolds append its text (less project blocks for other repos, below)
+# as their last section, "# Home brief
 # additions", which defers to every other section of the brief. It goes last
 # because the machine-read `# Task` heading resolves to its first match, so
 # appended text can never shadow it; a later scout promotion appends its ship
@@ -173,7 +174,11 @@
 # absent or blank file changes nothing; a present path that is not a readable
 # regular file, or text carrying its own "Delivery contract: mode=" line (which
 # a later scout promotion could not outrank), stops the scaffold before
-# anything is written. Secondmate charters never take it. In a secondmate home
+# anything is written. Secondmate charters never take it. Lines between
+# `<!-- project: Name[, Name] -->` and the next tag line or `<!-- /project -->`
+# reach only briefs whose repo-name is listed; untagged text always reaches all.
+# Every block must be closed: the last one by `<!-- /project -->`, or the
+# scaffold stops before anything is written. In a secondmate home
 # the file is the primary's text with the home's own lines below it
 # (bin/fm-config-inherit-lib.sh owns that composition).
 # --linear <PC-n> names the Property Compass Linear item the task serves. The
@@ -639,6 +644,33 @@ if [ "$KIND" != secondmate ] && { [ -e "$BRIEF_INCLUDE_FILE" ] || [ -L "$BRIEF_I
     echo "error: $BRIEF_INCLUDE_FILE must not carry a 'Delivery contract: mode=' line; the delivery mode is a per-task --mode decision" >&2
     exit 1
   fi
+  [ -n "$(printf '%s' "$BRIEF_INCLUDE_BODY" | tr -d '[:space:]')" ] || BRIEF_INCLUDE_BODY=
+fi
+
+# Project-conditional blocks: a line that is exactly `<!-- project: A[, B] -->`
+# opens a block that only a brief for a task whose repo-name is one of the
+# listed names receives; `<!-- /project -->` or the next tag line closes it,
+# and the last block must be closed by `<!-- /project -->`, so a block left open
+# at the end stops the scaffold before anything is written. Tag lines are never
+# emitted, and untagged text always is, so an include with no tag line is
+# emitted byte for byte as before.
+if [ -n "$BRIEF_INCLUDE_BODY" ] && printf '%s\n' "$BRIEF_INCLUDE_BODY" | grep -q '^<!-- \(/\)\{0,1\}project\(: .*\)\{0,1\} -->$'; then
+  BRIEF_INCLUDE_BODY=$(printf '%s\n' "$BRIEF_INCLUDE_BODY" | awk -v repo="${POS[1]:-}" '
+    /^<!-- \/project -->$/ { emit = 1; open = 0; next }
+    /^<!-- project: .* -->$/ {
+      open = 1
+      names = $0
+      sub(/^<!-- project: /, "", names); sub(/ -->$/, "", names)
+      n = split(names, a, /[ ]*,[ ]*/); emit = 0
+      for (i = 1; i <= n; i++) if (a[i] == repo) emit = 1
+      next
+    }
+    BEGIN { emit = 1 }
+    emit { print }
+    END { if (open) exit 3 }') || {
+    echo "error: $BRIEF_INCLUDE_FILE ends inside a project block that is not closed; end the last block with a line that is exactly <!-- /project -->" >&2
+    exit 1
+  }
   [ -n "$(printf '%s' "$BRIEF_INCLUDE_BODY" | tr -d '[:space:]')" ] || BRIEF_INCLUDE_BODY=
 fi
 
