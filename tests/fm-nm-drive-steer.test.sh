@@ -40,6 +40,10 @@ fi
 exec "$real_ps" "\$@"
 SH
   chmod +x "$dir/fakebin/ps"
+  # No lane reaches the real no-mistakes: an unconfigured one answers every
+  # call with an error, which the steer reads as "no run facts, leave it alone".
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$dir/fakebin/no-mistakes"
+  chmod +x "$dir/fakebin/no-mistakes"
   printf 'window=test:fm-%s\nkind=ship\nmode=no-mistakes\nbranch=fm/%s\nworktree=%s\nspawn_gen=s1\n' \
     "$name" "$name" "$dir/wt" > "$dir/state/$name.meta"
   printf '%s\n' "$line" > "$dir/state/$name.status"
@@ -352,6 +356,172 @@ test_watcher_leaves_a_live_drive_call_alone() {
   pass "the watcher neither steers nor alarms a worker whose drive call is live"
 }
 
+# --- settle window and supersede ---------------------------------------------
+
+# Commit in <dir>/wt with the committer time <epoch>; prints the full sha.
+commit_at() {  # <dir> <epoch> <message>
+  local wt=$1/wt
+  [ -d "$wt/.git" ] || git -C "$wt" init -q
+  printf '%s\n' "$3" >> "$wt/f"
+  git -C "$wt" add f
+  GIT_COMMITTER_DATE="@$2 +0000" GIT_AUTHOR_DATE="@$2 +0000" \
+    git -C "$wt" -c user.name=t -c user.email=t@t -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+    commit -q -m "$3"
+  git -C "$wt" rev-parse HEAD
+}
+
+# A fake no-mistakes that serves one run, RUN1, from $dir/nm: head_sha, status
+# and the steps rows come from files, `axi abort --run RUN1` records the call
+# and, unless $dir/nm/ignore-abort exists, cancels the run.
+fake_run() {  # <dir> <head-sha> <status> <steps: one "name,status" per line>
+  local dir=$1
+  mkdir -p "$dir/nm"
+  printf '%s' "$2" > "$dir/nm/head"
+  printf '%s' "$3" > "$dir/nm/status"
+  printf '%s\n' "$4" > "$dir/nm/steps"
+  : > "$dir/nm/calls"
+  cat > "$dir/fakebin/no-mistakes" <<SH
+#!/usr/bin/env bash
+nm="$dir/nm"
+case "\$*" in
+  "axi status --run RUN1")
+    status=\$(cat "\$nm/status"); [ ! -e "\$nm/cancelled" ] || status=cancelled
+    printf 'run:\n  id: "RUN1"\n  branch: fm/x\n  status: %s\n  head_sha: %s\n' "\$status" "\$(cat "\$nm/head")"
+    [ "\$status" != cancelled ] || printf '  outcome: cancelled\n'
+    n=\$(wc -l < "\$nm/steps")
+    if [ "\$n" -gt 0 ] && [ -s "\$nm/steps" ]; then
+      printf '  steps[%s]{step,status,findings,duration_ms}:\n' "\$n"
+      while IFS=, read -r name st; do printf '    %s,%s,0,0\n' "\$name" "\$st"; done < "\$nm/steps"
+    fi
+    ;;
+  "axi abort --run RUN1")
+    echo "abort RUN1" >> "\$nm/calls"
+    [ -e "\$nm/ignore-abort" ] || : > "\$nm/cancelled"
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+}
+
+abort_calls() { wc -l < "$1/nm/calls" | tr -d ' '; }
+
+QUIET_RUN='state: working · source: run-step · run active (running) · run: RUN1'
+
+test_start_steer_waits_until_the_head_has_not_moved_for_the_settle_window() {
+  local dir now rc
+  now=$(date +%s)
+  # The done: stamp is fresh: the worker may still amend, so nothing is sent.
+  dir=$(drive_case settle-fresh-done "done [at=$now]: committed on fm/settle-fresh-done")
+  commit_at "$dir" $((now - 1000)) one >/dev/null
+  rc=0; run_steer "$dir" settle-fresh-done "$NO_RUN" || rc=$?
+  [ "$rc" = 4 ] || fail "a fresh done: stamp answered $rc, not 4 (wait)"
+  [ "$(inbox_count "$dir" settle-fresh-done)" = 0 ] || fail "a start steer was sent before the head settled"
+  [ ! -e "$dir/state/.nm-drive-steer-settle-fresh-done" ] || fail "a deferred start recorded the slip as spent"
+  # Time passes with the head unmoved: the same lane is now steered, once.
+  printf '%s\n' "done [at=$((now - 300))]: committed on fm/settle-fresh-done" > "$dir/state/settle-fresh-done.status"
+  run_steer "$dir" settle-fresh-done "$NO_RUN" || fail "a settled head was not steered"
+  [ "$(inbox_count "$dir" settle-fresh-done)" = 1 ] || fail "the settled start was not one steer"
+  # A head committed after an old done: line is still moving.
+  dir=$(drive_case settle-fresh-commit 'done [at=1]: committed on fm/settle-fresh-commit')
+  commit_at "$dir" "$now" amended >/dev/null
+  rc=0; run_steer "$dir" settle-fresh-commit "$NO_RUN" || rc=$?
+  [ "$rc" = 4 ] || fail "a head committed seconds ago answered $rc, not 4 (wait)"
+  [ "$(inbox_count "$dir" settle-fresh-commit)" = 0 ] || fail "a start steer was sent for a head that just moved"
+  # Window 0 turns the wait off.
+  FM_NM_START_SETTLE_SECS=0 run_steer "$dir" settle-fresh-commit "$NO_RUN" || fail "window 0 still held the start steer"
+  pass "a start steer waits until the branch head has not moved for the settle window"
+}
+
+test_run_superseded_before_review_is_cancelled_then_restarted_once() {
+  local dir now old new
+  now=$(date +%s)
+  dir=$(drive_case super 'paused [at=1]: no-mistakes run queued; background reattach will wake me')
+  old=$(commit_at "$dir" $((now - 2000)) one)
+  commit_at "$dir" $((now - 1000)) two >/dev/null
+  fake_run "$dir" "$old" running $'intent,completed\nrebase,running'
+  run_steer "$dir" super "$QUIET_RUN" || fail "a superseded pre-review run was not handled"
+  [ "$(abort_calls "$dir")" = 1 ] || fail "the superseded run was not aborted exactly once"
+  grep -Fx 'abort RUN1' "$dir/nm/calls" >/dev/null || fail "the abort did not target the run by id"
+  [ "$(inbox_count "$dir" super)" = 1 ] || fail "the worker was not sent one steer"
+  inbox_body "$dir" super | grep -F 'cancelled the no-mistakes run' >/dev/null || fail "the steer does not say the run was cancelled"
+  inbox_body "$dir" super | grep -F '/no-mistakes' >/dev/null || fail "the steer does not tell the worker to start a new run"
+  ack_inbox "$dir" super
+  rm -f "$dir/nm/cancelled"
+  if run_steer "$dir" super "$QUIET_RUN"; then fail "the supersede slip was steered twice in one generation"; fi
+  [ "$(abort_calls "$dir")" = 1 ] || fail "a second supersede aborted again"
+  # A run still queued (no steps yet) is cancelled the same way.
+  dir=$(drive_case super-pending 'paused [at=1]: no-mistakes run queued')
+  old=$(commit_at "$dir" $((now - 2000)) one)
+  commit_at "$dir" $((now - 1000)) two >/dev/null
+  fake_run "$dir" "$old" pending ''
+  run_steer "$dir" super-pending 'state: working · source: run-step · run active (pending) · run: RUN1' \
+    || fail "a superseded queued run was not handled"
+  [ "$(abort_calls "$dir")" = 1 ] || fail "the superseded queued run was not aborted"
+  pass "a run that has not reached review and whose head the branch moved past is cancelled, then the worker restarts it once"
+}
+
+test_run_is_left_alone_unless_it_is_provably_superseded_before_review() {
+  local dir now old new
+  now=$(date +%s)
+  # Review already started: its tokens are spent, so it keeps going.
+  dir=$(drive_case super-review 'paused [at=1]: no-mistakes run queued')
+  old=$(commit_at "$dir" $((now - 2000)) one)
+  commit_at "$dir" $((now - 1000)) two >/dev/null
+  fake_run "$dir" "$old" running $'intent,completed\nrebase,completed\nreview,running'
+  run_steer "$dir" super-review "$QUIET_RUN" || fail "a run at review was not given the ordinary reattach steer"
+  [ "$(abort_calls "$dir")" = 0 ] || fail "a run at its review step was aborted"
+  inbox_body "$dir" super-review | grep -F 'still active' >/dev/null || fail "a run at review did not get the reattach text"
+  # The run head is the worker's own head, or a descendant the pipeline added.
+  dir=$(drive_case super-same 'paused [at=1]: no-mistakes run queued')
+  old=$(commit_at "$dir" $((now - 2000)) one)
+  fake_run "$dir" "$old" running $'intent,completed\nrebase,running'
+  run_steer "$dir" super-same "$QUIET_RUN" || fail "a run on the worker's own head was not given the reattach steer"
+  [ "$(abort_calls "$dir")" = 0 ] || fail "a run on the worker's own head was aborted"
+  # A run head this copy cannot resolve is unverifiable, so it is left alone.
+  dir=$(drive_case super-unknown 'paused [at=1]: no-mistakes run queued')
+  commit_at "$dir" $((now - 2000)) one >/dev/null
+  fake_run "$dir" 0123456789012345678901234567890123456789 running $'intent,completed\nrebase,running'
+  run_steer "$dir" super-unknown "$QUIET_RUN" || fail "a run with an unresolvable head was not given the reattach steer"
+  [ "$(abort_calls "$dir")" = 0 ] || fail "a run with an unresolvable head was aborted"
+  # A head that moved seconds ago waits for the settle window, nothing is cancelled.
+  dir=$(drive_case super-moving 'paused [at=1]: no-mistakes run queued')
+  old=$(commit_at "$dir" $((now - 2000)) one)
+  commit_at "$dir" "$now" two >/dev/null
+  fake_run "$dir" "$old" running $'intent,completed\nrebase,running'
+  new=0; run_steer "$dir" super-moving "$QUIET_RUN" || new=$?
+  [ "$new" = 4 ] || fail "a still-moving head answered $new, not 4 (wait)"
+  [ "$(abort_calls "$dir")" = 0 ] || fail "a run was aborted while the head was still moving"
+  [ "$(inbox_count "$dir" super-moving)" = 0 ] || fail "a steer was sent while the head was still moving"
+  # An abort that does not take is never reported to the worker as a restart.
+  dir=$(drive_case super-stuck 'paused [at=1]: no-mistakes run queued')
+  old=$(commit_at "$dir" $((now - 2000)) one)
+  commit_at "$dir" $((now - 1000)) two >/dev/null
+  fake_run "$dir" "$old" running $'intent,completed\nrebase,running'
+  : > "$dir/nm/ignore-abort"
+  if run_steer "$dir" super-stuck "$QUIET_RUN"; then fail "an abort that did not stop the run was steered as a restart"; fi
+  [ "$(inbox_count "$dir" super-stuck)" = 0 ] || fail "an unconfirmed abort recorded a steer"
+  pass "a run is cancelled only when it is provably before review on a head the branch moved past"
+}
+
+test_watcher_holds_a_start_quietly_while_the_head_settles() {
+  local dir now
+  now=$(date +%s)
+  dir=$(drive_case wsettle "done [at=$now]: committed on fm/wsettle")
+  commit_at "$dir" $((now - 1000)) one >/dev/null
+  drive_watch_round "$dir" wsettle "$NO_RUN" 'idle prompt after done' absorb \
+    || fail "the watcher alarmed while the head was settling: $(cat "$dir/watch.out")"
+  [ "$(stale_wakes "$dir/state")" -eq 0 ] || fail "a settling head queued a stale wake"
+  [ "$(inbox_count "$dir" wsettle)" = 0 ] || fail "a settling head was steered"
+  ls "$dir/state"/.nm-drive-grace-* >/dev/null 2>&1 && fail "a held start left a grace record that would delay the real steer"
+  # Once the head has settled the very same pane is steered, not alarmed.
+  printf '%s\n' "done [at=$((now - 300))]: committed on fm/wsettle" > "$dir/state/wsettle.status"
+  drive_watch_round "$dir" wsettle "$NO_RUN" 'idle prompt after done' absorb \
+    || fail "the watcher alarmed after the head settled: $(cat "$dir/watch.out")"
+  [ "$(inbox_count "$dir" wsettle)" = 1 ] || fail "the settled head was not steered"
+  pass "the watcher holds a start quietly while the head settles, then steers it"
+}
+
 fm_test_run \
   test_prepipeline_done_without_a_run_gets_one_start_steer \
   test_active_run_without_a_drive_call_gets_one_reattach_steer \
@@ -365,4 +535,8 @@ fm_test_run \
   test_unknown_probe_or_ci_ready_done_gets_no_steer \
   test_watcher_steers_a_prepipeline_done_instead_of_alarming \
   test_watcher_steers_an_undriven_run_then_alarms_when_still_quiet \
-  test_watcher_leaves_a_live_drive_call_alone
+  test_watcher_leaves_a_live_drive_call_alone \
+  test_start_steer_waits_until_the_head_has_not_moved_for_the_settle_window \
+  test_run_superseded_before_review_is_cancelled_then_restarted_once \
+  test_run_is_left_alone_unless_it_is_provably_superseded_before_review \
+  test_watcher_holds_a_start_quietly_while_the_head_settles
