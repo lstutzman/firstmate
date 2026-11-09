@@ -875,13 +875,13 @@ def fold(args):
         print("fm-officer-surgeon fold: stopped: %s" % exc, file=sys.stderr)
     status = 0
     for ident in items:
-        targets = collections.Counter(bundles.bundles[bundles.member_of[f["fingerprint"]]].get("issue")
-                                      for f in findings if f["fold_from"] == ident and f["fingerprint"] in bundles.member_of)
-        target = min((t for t in targets if t), key=lambda t: (-targets[t], t), default=None)
-        if not target:
-            print("- not folded: %s (its bundle was not written)" % ident)
+        homes = [bundles.bundles.get(bundles.member_of.get(f["fingerprint"], "")) for f in findings if f["fold_from"] == ident]
+        if not homes or not all(bundles.written(b) for b in homes):
+            print("- not folded: %s (not every finding of it is on a written bundle)" % ident)
             status = 1
             continue
+        targets = collections.Counter(b["issue"] for b in homes)
+        target = min(targets, key=lambda t: (-targets[t], t))
         try:
             for cmd in (["issue", "relation", "add", ident, "--duplicate-of", target], ["issue", "update", ident, "--state", "Duplicate"]):
                 LIN(cmd + ["--dry-run"])

@@ -263,8 +263,8 @@ def apply_found(findings, found, ledger):
     highest score first."""
     issues, members = found.get("issues", {}), found.get("members", {})
     for f in findings:
-        item = issues.get(ledger.get(f["fingerprint"]) or "") or members.get(f["fingerprint"] or "", {})
-        f["found"] = max(1, item.get("count", 1))
+        item = issues.get(ledger.get(f["fingerprint"]) or "", {})
+        f["found"] = max(1, item.get("count", 1), members.get(f["fingerprint"] or "", {}).get("count", 1))
         f["score"] = score_of(f)
     findings.sort(key=lambda f: (-f["score"], RANK[f["severity"]], f["source"], f["job"], f["key"], f["title"]))
 
@@ -858,9 +858,10 @@ class Bundles:
 
     def count(self, f):
         """Raises the finding's own Found count once a day (found.json `members`), so a bundled finding still scores."""
+        old = self.filer.found.get("issues", {}).get(self.filer.ledger.get(f["fingerprint"]) or "", {}).get("count", 0)
         rec = self.filer.found.setdefault("members", {}).setdefault(f["fingerprint"], {"count": 0, "last": None})
         if rec["last"] != self.filer.date:
-            rec.update(count=rec["count"] + 1, last=self.filer.date)
+            rec.update(count=max(rec["count"], old) + 1, last=self.filer.date)
 
     def place(self, f):
         """Where a bundled finding goes, with no Linear call: its open bundle, its older single item (legacy, bumped as
@@ -876,6 +877,8 @@ class Bundles:
                 self.dirty.add(b["fp"])
             if b.get("issue"):
                 self.filing(f, b, False)
+                if not self.written(b):
+                    self.dirty.add(b["fp"])
                 if b.get("checked") != self.filer.date:
                     self.due.add(b["fp"])  # read once a day, so a bundle a person closed or started is noticed
                 return "bundled"
@@ -1039,6 +1042,13 @@ class Bundles:
                 b["members"][fp] = m
                 self.member_of[fp] = b["fp"]
         return b
+
+    def digest(self, b):
+        return hashlib.sha256(self.body(b).encode("utf-8")).hexdigest()
+
+    def written(self, b):
+        """True when the bundle's open item holds its body as the state has it now."""
+        return bool(b and b.get("issue") and not b.get("closed") and b.get("sha") == self.digest(b))
 
     def flush(self, b):
         body = self.body(b)

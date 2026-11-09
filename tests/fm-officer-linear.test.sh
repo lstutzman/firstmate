@@ -90,7 +90,8 @@ if args[:2] == ["issue", "create"]:
 if args[:2] == ["issue", "update"]:
     if dry: out({"dryRun": True})
     failing()
-    issues[args[2]]["description"] = open(flag("--body-file")).read()
+    if flag("--state"): issues[args[2]]["state"] = flag("--state")
+    if flag("--body-file"): issues[args[2]]["description"] = open(flag("--body-file")).read()
     save(); written(args[2])
 if args[:2] == ["issue", "comment"]:
     if not dry: open(os.path.join(d, "comments"), "a").write(args[2] + "\n")
@@ -735,6 +736,70 @@ test_fold_dry_run_plans_area_bundles_and_writes_nothing() {
   pass "fm-officer-surgeon fold: a dry run lists each area bundle's findings and items, keeps the promotion blocker single and writes nothing"
 }
 
+fold_apply() {  # [fold args...]: fold --apply in the current world; prints its output.
+  PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --now "$NOW" --apply "$@"
+}
+
+test_fold_apply_marks_each_item_a_duplicate_of_its_bundle() {
+  local out api
+  fold_world
+  out=$(fold_apply) || fail "fold --apply must succeed: $out"
+  api=$(jq -r 'to_entries[] | select(.value.title == "Automated findings: api (code review)") | .key' "$LDIR/issues.json")
+  [ -n "$api" ] || fail "the api bundle is created"
+  assert_equals "Duplicate Duplicate Duplicate Duplicate" "$(jq -r '[."PC-1", ."PC-9", ."PC-2", ."PC-3"] | map(.state) | join(" ")' "$LDIR/issues.json")" \
+    "every folded item is marked Duplicate"
+  assert_contains "$(cat "$LDIR/relations")" "PC-1 --duplicate-of $api --verify" "and related as a duplicate of its area bundle"
+  assert_contains "$out" "- folded: PC-9 is a duplicate of $api" "the run names each fold"
+  assert_equals "Todo Todo Todo" "$(jq -r '[."PC-4", ."PC-7", ."PC-10"] | map(.state) | join(" ")' "$LDIR/issues.json")" \
+    "the promotion blocker and other officers' items stay open"
+  assert_equals 5 "$(jq -r '.[] | select(.title | startswith("Automated findings")) | .description' "$LDIR/issues.json" | grep -c '^- \[ \]')" \
+    "every open line of the folded items is on a bundle"
+  assert_not_contains "$(calls)" "delete" "nothing is deleted"
+  pass "fm-officer-surgeon fold --apply: each original is related as a duplicate of its area bundle and marked Duplicate"
+}
+
+test_fold_apply_keeps_an_item_whose_findings_are_not_all_written() {
+  local out cfp
+  cfp() { printf 'review\0nightly-review\0%s' "$1" | sha256sum | cut -d' ' -f1; }
+  world fold-partial "$(jq -n --arg a "$(cfp a)" --arg b "$(cfp b)" '
+    {"PC-1": {title: "Code review findings: mixed (src)", state: "Todo", project: null,
+              description: ("Filed by the Ship'"'"'s Surgeon from the nightly code review results.\nWhat it is for: the lower-severity code-review findings.\n\n- [ ] surgeon-fp:\($a) api one (src/api/controllers/Foo.cs)\n- [ ] surgeon-fp:\($b) infra one (infra/bicep/a.bicep)")}}')"
+  printf 'scheduled-review\nbug-sweep\napi\ninfrastructure\n' >> "$LDIR/labels"
+  out=$(fold_apply --max-creates 1) && fail "a partial fold must exit non-zero: $out"
+  assert_equals 1 "$(jq -r '[.[] | select(.title | startswith("Automated findings"))] | length' "$LDIR/issues.json")" "only one bundle fits the create cap"
+  assert_contains "$out" "- not folded: PC-1 (not every finding of it is on a written bundle)" "an item with a line on no written bundle is not folded"
+  assert_equals "Todo" "$(issue PC-1 .state)" "and stays open, so its unwritten line is not lost"
+  [ ! -e "$LDIR/relations" ] || fail "no duplicate relation is written for it"
+  pass "fm-officer-surgeon fold --apply: an item is folded only when every one of its findings is on a written bundle"
+}
+
+test_a_folded_finding_keeps_raising_its_found_count() {
+  local out a
+  world bundle-folded '{"PC-50": {"title": "Alpha", "description": "x", "state": "Duplicate", "labels": [], "project": null}}'
+  bundle '[["a","Alpha","low","api/a.cs","api"]]' >/dev/null || fail "first run must succeed"
+  a=$(printf 'scan\0job\0a' | sha256sum | cut -d' ' -f1)
+  jq --arg a "$a" '.[$a] = "PC-50"' "$W/ledger.json" > "$W/l" && mv "$W/l" "$W/ledger.json"
+  jq '.issues["PC-50"] = {count: 5, last: "2026-11-01"}' "$W/found.json" > "$W/f" && mv "$W/f" "$W/found.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]' RUN_DATE=2026-11-06) || fail "second run must succeed"
+  assert_equals 6 "$(jq -r .found.a <<<"$out")" "a finding folded from an item found 5 times is found 6 times on its next day"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]' RUN_DATE=2026-11-07) || fail "third run must succeed"
+  assert_equals 7 "$(jq -r .found.a <<<"$out")" "and keeps rising on the bundle"
+  pass "fm-officer-linear: a finding folded off its old item keeps that item's found count and keeps raising it"
+}
+
+test_a_failed_bundle_update_is_retried_the_same_day() {
+  local out
+  world bundle-retry '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"]]' >/dev/null || fail "first run must succeed"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-06 FAKE_VERIFY=nowrite) || fail "second run must succeed"
+  assert_equals failed "$(jq -r .filings.b.action <<<"$out")" "the failed update is named on the finding"
+  assert_not_contains "$(body_of PC-101)" "Beta" "and the line is not on Linear yet"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-06) || fail "rerun must succeed"
+  assert_contains "$(body_of PC-101)" "Beta (low)" "a rerun the same day writes the line it reports as bundled"
+  assert_equals "bundled PC-101" "$(jq -r '.filings.b | [.action, .issue] | join(" ")' <<<"$out")" "on the same bundle"
+  pass "fm-officer-linear: a bundle whose update failed is rewritten by a rerun the same day"
+}
+
 bundle() {  # <findings json> [env...]: one bundle run in the current world; prints the result json.
   env FINDINGS="$1" "${@:2}" bash -c "$(declare -f drive); $(declare -p FAKEBIN LDIR W LIB DATE NOW); drive bundle"
 }
@@ -865,6 +930,10 @@ test_duplicate_items_are_closed() {
 }
 
 test_fold_dry_run_plans_area_bundles_and_writes_nothing
+test_fold_apply_marks_each_item_a_duplicate_of_its_bundle
+test_fold_apply_keeps_an_item_whose_findings_are_not_all_written
+test_a_folded_finding_keeps_raising_its_found_count
+test_a_failed_bundle_update_is_retried_the_same_day
 test_a_bundle_starts_once_and_a_reserved_line_holds_it
 test_bundle_appends_to_the_open_bundle_and_starts_part_2_at_the_cap
 test_bundle_groups_by_area_then_by_file
