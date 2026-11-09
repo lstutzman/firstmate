@@ -340,7 +340,7 @@ visual_problem() {
   fi
 }
 
-# linear_problem <line> <id> <role>: prints why the Linear fields (writes, max-creates, max-linear-calls, team)
+# linear_problem <line> <id> <role>: prints why the Linear fields (writes, max-creates, max-linear-calls, bundle-cap, team)
 # of a filing officer's line are unusable, or nothing.
 linear_problem() {
   local line=$1 id=$2 role=$3 writes
@@ -351,6 +351,9 @@ linear_problem() {
   esac
   case "$(line_field "$line" max-linear-calls || echo 450)" in
     ''|*[!0-9]*|0) printf 'officer %s: max-linear-calls must be a whole number, at least 1\n' "$id"; return ;;
+  esac
+  case "$(line_field "$line" bundle-cap || echo 15)" in
+    ''|*[!0-9]*|0) printf 'officer %s: bundle-cap must be a whole number, at least 1\n' "$id"; return ;;
   esac
   [ "$writes" = linear ] || return 0
   [ "$(line_field "$line" team || echo PC)" = PC ] \
@@ -806,6 +809,7 @@ START_HOMES
     --writes "$(line_field "$OFFICER_LINE" writes || echo none)" \
     --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)" \
     --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)" \
+    --bundle-cap "$(line_field "$OFFICER_LINE" bundle-cap || echo 15)" \
     --triage-label "$(line_field "$OFFICER_LINE" triage-label || echo triage)" \
     --jev "$(jev_path)" \
     --fm-home "$FM_HOME" \
@@ -835,6 +839,7 @@ START_HOMES
     --team "$(line_field "$OFFICER_LINE" team || echo PC)"
     --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)"
     --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)"
+    --bundle-cap "$(line_field "$OFFICER_LINE" bundle-cap || echo 15)"
     --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")")
   if [ -f "$DATA/secondmates.md" ]; then
     while IFS= read -r line; do
@@ -869,6 +874,7 @@ START_HOMES
     --team "$(line_field "$OFFICER_LINE" team || echo PC)"
     --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)"
     --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)"
+    --bundle-cap "$(line_field "$OFFICER_LINE" bundle-cap || echo 15)"
     --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")")
   python3 -I "$SCRIPT_DIR/fm-officer-page-check.py" "${args[@]}"
 }
@@ -891,6 +897,7 @@ corpus_args() {  # <date>: sets CORPUS_ARGS, the corpus script's run arguments.
     --writes "$(line_field "$OFFICER_LINE" writes || echo none)"
     --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)"
     --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)"
+    --bundle-cap "$(line_field "$OFFICER_LINE" bundle-cap || echo 15)"
     --jev "$(jev_path)"
     --fm-home "$FM_HOME")
   for field in harvest prep local-jev rubric; do
@@ -923,6 +930,7 @@ START_HOMES
     --writes "$(line_field "$OFFICER_LINE" writes || echo none)" \
     --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 3)" \
     --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)" \
+    --bundle-cap "$(line_field "$OFFICER_LINE" bundle-cap || echo 15)" \
     --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")" \
     --fm-home "$FM_HOME" ${extra[@]+"${extra[@]}"}
 }

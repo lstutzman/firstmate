@@ -910,7 +910,9 @@ class Bundles:
                 keep.append((f, RECUR + "%s" % closed))
                 continue
             if not self.filer.jev.dead:
-                ident, confidence, _ = self.filer.similar_issue(f)
+                ident, confidence, near = self.filer.similar_issue(f)
+                if near:
+                    f["bundle"]["near"] = "near match %s, local-jev %.2f" % near
                 if ident:
                     self.filer.ledger[f["fingerprint"]] = ident
                     f["filing"], f["issue_hint"] = {"action": "duplicate", "issue": ident, "confidence": round(confidence, 2)}, ident
@@ -966,7 +968,7 @@ class Bundles:
         old = self.bundles.get(self.member_of.get(fp, ""))
         if old and old is not b:
             del old["members"][fp]
-        extra = "; ".join(x for x in (f["bundle"].get("line"), note) if x)
+        extra = "; ".join(x for x in (f["bundle"].get("line"), f["bundle"].get("near"), note) if x)
         b["members"][fp] = {"title": f["title"], "file": f["location"], "severity": f["severity"], "state": "open", **({"note": extra} if extra else {})}
         if note.startswith(RECUR):
             b["members"][fp]["recurred"] = note[len(RECUR):]

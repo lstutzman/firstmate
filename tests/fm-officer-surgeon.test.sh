@@ -536,79 +536,67 @@ test_area_label_comes_from_the_finding() {
     {"id":"a4","severity":"critical","file":"src/Thing/Unlabelled.cs","summary":"no label for authentication here"}]' '[]'
   rm -f "$LDIR/labels.txt"; printf 'Bug\nscheduled-review\ntriage\ncalculators\ninfrastructure\n' > "$LDIR/labels.txt"
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
-  assert_contains "$(grep '^issue create .*yield rounds twice.*--verify' "$LINEAR_LOG")" "--label calculators" "a calculators path gets the calculators label"
-  assert_contains "$(grep '^issue create .*app plan has no alert.*--verify' "$LINEAR_LOG")" "--label infrastructure" "a bicep path gets infrastructure"
-  assert_contains "$(grep '^issue create .*mystery.*--verify' "$LINEAR_LOG")" "--label triage" "a finding that fits nothing gets the triage label"
-  assert_contains "$(grep '^issue create .*no label for authentication.*--verify' "$LINEAR_LOG")" "--label triage" "a rule whose label is not in team PC is skipped, never invented"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_contains "$(grep '^issue create .*Automated findings: calculators (code review).*--verify' "$LINEAR_LOG")" "--label calculators" "a calculators path goes to the calculators bundle, with that label"
+  assert_contains "$(grep '^issue create .*Automated findings: infrastructure (code review).*--verify' "$LINEAR_LOG")" "--label infrastructure" "a bicep path goes to infrastructure"
+  assert_contains "$(grep '^issue create .*Automated findings: triage (code review).*--verify' "$LINEAR_LOG")" "--label triage" "a finding that fits nothing goes to the triage bundle"
+  assert_equals "$(row "$json" review a3 .filing.issue)" "$(row "$json" review a4 .filing.issue)" "a rule whose label is not in team PC is skipped, never invented: that finding is in the triage bundle too"
   assert_not_contains "$(cat "$LINEAR_LOG")" "ci-cd" "no hard-wired area label"
-  assert_equals 4 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "every finding is filed"
+  assert_equals 3 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "every finding is filed, one bundle per area"
   pass "fm-officer surgeon: the area label is derived from each finding, with triage as the fallback"
 }
 
-test_low_review_findings_are_clustered_and_ticked_off() {
-  local home json bodies
+test_review_findings_are_bundled_by_area_and_ticked_off() {
+  local home json bodies infra old
   make_world clusters "$LINEAR_ON"; home=$WORLD_HOME
   set_pages clusters '[
-    {"id":"c1","severity":"medium","file":"infra/bicep/a.bicep","summary":"unpinned api version one"},
-    {"id":"c2","severity":"medium","file":"infra/bicep/b.bicep","summary":"unpinned api version two"},
-    {"id":"c3","severity":"medium","file":"infra/bicep/c.bicep","summary":"unpinned api version three"},
+    {"id":"c1","severity":"medium","file":"infra/bicep/b.bicep","summary":"unpinned api version one"},
+    {"id":"c2","severity":"medium","file":"infra/bicep/a.bicep","summary":"unpinned api version two"},
+    {"id":"c3","severity":"medium","file":"infra/bicep/a.bicep","summary":"unpinned api version three"},
     {"id":"c4","severity":"medium","file":"x/y/z.cs","summary":"lone finding"},
     {"id":"c5","severity":"medium","file":"x/w/q.cs","summary":"another lone finding"},
-    {"id":"m1","severity":"high","file":"infra/bicep/d.bicep","summary":"medium finding keeps its own item"}]' '[]'
+    {"id":"m1","severity":"high","file":"infra/bicep/d.bicep","summary":"a medium finding is bundled too"}]' '[]'
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals 3 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "a medium finding and two clusters, not one item per finding"
+  assert_equals 2 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "one item per feature area, whatever the severity, not one per finding or component"
+  infra=$(row "$json" review c1 .filing.issue)
+  assert_equals "$infra $infra $infra" "$(row "$json" review c2 .filing.issue) $(row "$json" review c3 .filing.issue) $(row "$json" review m1 .filing.issue)" "the infrastructure findings share one item"
   bodies=$(cat "$LDIR/bodies")
-  for id in c1 c2 c3; do
-    assert_contains "$bodies" "surgeon-fp:$(fp review nightly-review $id)" "the cluster lists $id's fingerprint"
-  done
-  assert_contains "$(grep '^issue create .*Code review findings: infra bicep' "$LINEAR_LOG")" "--label infrastructure" "the cluster's area comes from its path"
-  assert_contains "$(grep '^issue create .*Code review findings: x' "$LINEAR_LOG")" "x (misc)" "groups under three findings fold into the first part's misc cluster"
-  assert_equals clustered "$(row "$json" review c1 .filing.action)" "a clustered finding is reported as clustered"
+  assert_equals "### infra/bicep/a.bicep|### infra/bicep/b.bicep|### infra/bicep/d.bicep" "$(grep '^### infra' <<<"$bodies" | paste -sd'|')" "inside the area the lines are grouped by file"
+  assert_contains "$(grep '^issue create .*Automated findings: infrastructure (code review)' "$LINEAR_LOG")" "--label infrastructure" "the bundle's area comes from its findings' paths"
+  assert_contains "$(grep '^issue create .*Automated findings: infrastructure (code review)' "$LINEAR_LOG")" "--priority 3" "its priority follows its worst finding"
+  assert_equals bundled "$(row "$json" review c1 .filing.action)" "a bundled finding is reported as bundled"
   assert_equals "6 6 0" "$(jq -r '.burn_down | [.open,.new,.fixed] | map(tostring) | join(" ")' "$json")" "the first night: six open, six new, none fixed"
-  # Same day, a new finding joins its cluster and a resolved one is ticked off.
+  # Same day, a new finding joins its area's bundle and a resolved one is ticked off.
   : > "$LINEAR_LOG"
   jq '.result.resolved = ["c2"] | .result.findings += [{"id":"c6","severity":"medium","file":"infra/bicep/e.bicep","summary":"unpinned api version six"}]' \
     "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2" > "$TMP_ROOT/clusters/r2.json"
   mv "$TMP_ROOT/clusters/r2.json" "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2"
   run_surgeon "$home" >/dev/null || fail "second run must succeed"
-  assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "no new item for a new finding in a known cluster"
-  assert_equals 1 "$(grep -c '^issue update .*--dry-run' "$LINEAR_LOG")" "the cluster item is updated, dry-run first"
-  assert_equals 1 "$(grep -c '^issue update .*--verify' "$LINEAR_LOG")" "and verified"
+  assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "no new item for a new finding in an area with an open bundle"
+  assert_equals 1 "$(grep -c '^issue update .*--dry-run' "$LINEAR_LOG")" "the bundle is updated, dry-run first"
+  assert_equals 1 "$(grep -c "^issue update $infra .*--verify" "$LINEAR_LOG")" "and verified"
   assert_contains "$(cat "$LDIR/updates")" "- [x] surgeon-fp:$(fp review nightly-review c2)" "the reviewer's resolved finding is ticked off"
   assert_contains "$(cat "$LDIR/updates")" "- [ ] surgeon-fp:$(fp review nightly-review c6)" "the new finding is listed open"
+  assert_equals true "$(row "$json" review c6 .filing.new)" "and reported new"
   assert_contains "$(cat "$home/data/officers/surgeon/$DATE.md")" "Burn-down (reviewer findings, ISO week 2026-W43): 6 open, 7 new, 1 fixed." "the digest carries the burn-down line"
-  # Counts now say split (over 25 in infra/bicep), but a file already listed keeps its cluster.
-  jq '.result.findings += [range(0;27) | {id: ("n\(.)"), severity: "medium", file: "infra/bicep/m/f\(.).bicep", summary: "new finding \(.)"}]
-      | .result.findings += [{"id":"c7","severity":"medium","file":"infra/bicep/a.bicep","summary":"second finding in a.bicep"}]' \
-    "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2" > "$TMP_ROOT/clusters/r2.json"
-  mv "$TMP_ROOT/clusters/r2.json" "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2"
-  run_surgeon "$home" >/dev/null || fail "third run must succeed"
-  assert_equals "infra/bicep" "$(jq -r --arg fp "$(fp review nightly-review c7)" '.clusters | to_entries[] | select(.value.members[$fp]) | .value.key' "$home/data/officers/surgeon/review-state.json")" "a new finding in an already-listed file joins that file's cluster even when the counts now split the group"
-  assert_equals "infra/bicep/m" "$(jq -r --arg fp "$(fp review nightly-review n0)" '.clusters | to_entries[] | select(.value.members[$fp]) | .value.key' "$home/data/officers/surgeon/review-state.json")" "while files new to the group follow the split"
-  # A person closes the infra/bicep item: it is never updated again; a new finding files a new item naming it.
-  local cfp old
-  cfp=$(fp review cluster infra/bicep)
-  old=$(jq -r --arg fp "$cfp" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")
-  echo Done > "$LDIR/state.$old"
+  : > "$LINEAR_LOG"
+  run_surgeon "$home" >/dev/null || fail "unchanged rerun must succeed"
+  assert_equals 0 "$(grep -c '^issue' "$LINEAR_LOG")" "an unchanged run sends nothing to Linear"
+  # A person closes the infrastructure bundle: it is never updated again, and its findings still reported go to a new bundle naming it.
+  echo Done > "$LDIR/state.$infra"
   : > "$LINEAR_LOG"; : > "$LDIR/bodies"
   jq '.result.findings += [{"id":"c8","severity":"medium","file":"infra/bicep/a.bicep","summary":"third finding in a.bicep"}]' \
     "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2" > "$TMP_ROOT/clusters/r2.json"
   mv "$TMP_ROOT/clusters/r2.json" "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2"
-  run_surgeon "$home" >/dev/null || fail "run after the cluster item was closed"
-  assert_equals 0 "$(grep -c "^issue update $old" "$LINEAR_LOG")" "a closed cluster item is never updated"
-  assert_contains "$(grep '^issue create .*--verify' "$LINEAR_LOG")" "Code review findings: infra bicep" "a new cluster item is filed"
-  assert_contains "$(cat "$LDIR/bodies")" "Recurrence of $old (closed as Done)." "naming the closed one"
-  assert_equals "$old" "$(row "$json" review c8 .filing.recurrence_of)" "and the finding says so"
-  assert_not_contains "$(jq -r --arg fp "$cfp" '.[$fp]' "$home/data/officers/surgeon/filed-fingerprints.json")" "$old" "the ledger points at the new item"
-  : > "$LDIR/updates"
-  jq '.result.findings += [{"id":"c9","severity":"medium","file":"infra/bicep/b.bicep","summary":"fourth finding in bicep"}]' \
-    "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2" > "$TMP_ROOT/clusters/r2.json"
-  mv "$TMP_ROOT/clusters/r2.json" "$TMP_ROOT/clusters/pages/_api_runs_nightly-review_results_R2"
-  run_surgeon "$home" >/dev/null || fail "run after the recurrence"
-  assert_contains "$(cat "$LDIR/updates")" "surgeon-fp:$(fp review nightly-review c9)" "the next change updates the new cluster item"
-  assert_contains "$(cat "$LDIR/updates")" "Recurrence of $old (closed as Done)." "and keeps the line naming the closed one"
-  pass "fm-officer surgeon: low review findings are clustered by component, updated in place and ticked off"
+  run_surgeon "$home" >/dev/null || fail "run after the bundle was closed"
+  assert_equals 0 "$(grep -c "^issue update $infra" "$LINEAR_LOG")" "a closed bundle is never updated"
+  assert_contains "$(grep '^issue create .*--verify' "$LINEAR_LOG")" "Automated findings: infrastructure (code review)" "a new bundle is filed for the area"
+  assert_contains "$(cat "$LDIR/bodies")" "unpinned api version one (low); recurred, was in $infra" "and a finding still reported names the closed one"
+  assert_equals "$infra" "$(row "$json" review c1 .filing.recurrence_of)" "and says so"
+  assert_equals "" "$(row "$json" review c8 '.filing.recurrence_of // ""')" "a finding new to the area is no recurrence"
+  assert_not_contains "$(cat "$LDIR/bodies")" "unpinned api version two" "a ticked finding of the closed bundle is not carried over"
+  pass "fm-officer surgeon: review findings are bundled by area, updated in place, ticked off, and a closed bundle is never reopened"
 }
 
 test_duplicates_bump_the_found_count_through_local_jev() {
@@ -623,10 +611,9 @@ test_duplicates_bump_the_found_count_through_local_jev() {
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
   assert_equals "duplicate PC-9 0.91" "$(row "$json" sweeper d1 '[.filing.action,.filing.issue,(.filing.confidence|tostring)]|join(" ")')" "above 0.85 it is the same issue"
-  assert_equals created "$(row "$json" sweeper d2 .filing.action)" "a near match below 0.85 is filed new"
-  assert_equals PC-9 "$(row "$json" sweeper d2 .filing.near_match.issue)" "and names the near match"
-  assert_contains "$(cat "$LDIR/bodies")" "Near match (not treated as the same issue): PC-9" "in its description"
-  assert_equals 2 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "only the two that are not duplicates are created"
+  assert_equals bundled "$(row "$json" sweeper d2 .filing.action)" "a near match below 0.85 is filed new, in its bundle"
+  assert_contains "$(cat "$LDIR/bodies")" "Odd total near-me (medium); near match PC-9, local-jev 0.60" "and its line names the near match"
+  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "the two that are not duplicates share one bundle"
   assert_contains "$(cat "$LDIR/updates")" "Found: 2 times (first 2026-10-01, last $DATE, by surgeon)" "the duplicate bumps the one Found line in place"
   assert_contains "$(cat "$LDIR/updates")" "Tail evidence kept" "a description over 500 characters is read in full, so the rest of it survives the bump"
   assert_not_contains "$(cat "$LDIR/updates")" "truncated" "and no truncation hint is written back"
@@ -709,7 +696,7 @@ test_local_jev_unreachable_files_by_fingerprint_only() {
   printf 'import sys\nsys.exit(3)\n' > "$TMP_ROOT/nojev/jev.py"
   out=$(run_surgeon "$home") || fail "an unreachable local-jev must not fail the run"
   assert_contains "$out" "Coverage gap: local-jev unreachable" "the gap is named"
-  assert_equals 7 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "findings are still filed"
+  assert_equals 3 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "findings are still filed"
   pass "fm-officer surgeon: without local-jev only the fingerprint decides"
 }
 
@@ -849,18 +836,20 @@ test_patterns_are_deduped_handed_on_and_proposed_as_rules() {
   pass "fm-officer surgeon: bad patterns are deduped, handed to the Navigator, captured and proposed as rules"
 }
 
-test_cluster_split_and_fold_constants() {
-  local home findings
-  make_world split "$LINEAR_ON"; home=$WORLD_HOME
-  findings=$(jq -n '[range(0;12) | {id: ("c\(.)"), severity: "medium", file: "a/b/c/f\(.).cs", summary: "c finding \(.)"}]
-    + [range(0;12) | {id: ("d\(.)"), severity: "medium", file: "a/b/d/f\(.).cs", summary: "d finding \(.)"}]
-    + [range(0;6) | {id: ("e\(.)"), severity: "medium", file: "a/b/e/f\(.).cs", summary: "e finding \(.)"}]')
+test_bundle_cap_starts_the_next_part() {
+  local home json findings
+  make_world split "${LINEAR_ON}bundle-cap: 4; "; home=$WORLD_HOME
+  findings=$(jq -n '[range(0;9) | {id: ("c\(.)"), severity: "medium", file: "infra/f\(.).bicep", summary: "c finding \(.)"}]')
   set_pages split "$findings" '[]'
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
-  assert_equals 3 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "30 findings in one 2-part group (over 25) split into three items"
-  assert_contains "$(cat "$LINEAR_LOG")" "Code review findings: a b c (a/b/c)" "a subgroup of 10 or more keeps its own item"
-  assert_contains "$(cat "$LINEAR_LOG")" "(a/b (other))" "a subgroup under 10 folds back into the parent's (other) item"
-  pass "fm-officer surgeon: a cluster over 25 splits one level deeper and small subgroups fold back"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals 3 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "nine findings of one area at a bundle-cap of 4 fill three parts"
+  assert_equals "Automated findings: infrastructure (code review)|Automated findings: infrastructure (code review) part 2|Automated findings: infrastructure (code review) part 3" \
+    "$(grep '^issue create .*--verify' "$LINEAR_LOG" | sed 's/.*--title \(.*\) --body-file.*/\1/' | paste -sd'|')" "each later part names its number"
+  assert_equals "4 4 1" "$(jq -r '[.findings[] | select(.source == "review" and .class == "real") | .filing.issue] | group_by(.) | map(length) | sort | reverse | map(tostring) | join(" ")' "$json")" "a part holds at most the cap"
+  surgeon_registry "$home" "$TMP_ROOT/split/archive" "${LINEAR_ON}bundle-cap: 0; "
+  PATH="$FAKEBIN:$PATH" FM_HOME="$home" "$OFFICER" run surgeon --date "$DATE" >/dev/null 2>&1 && fail "bundle-cap 0 must be refused"
+  pass "fm-officer surgeon: at the bundle-cap the next finding of the area opens the next part"
 }
 
 test_start_requests_route_by_project_to_the_owning_office() {
@@ -1324,7 +1313,7 @@ test_rate_limit_stops_linear_for_the_run_and_later_runs
 test_unreachable_app_is_a_coverage_gap
 test_register_surgeon_and_retire_triage_keeps_findings
 test_area_label_comes_from_the_finding
-test_low_review_findings_are_clustered_and_ticked_off
+test_review_findings_are_bundled_by_area_and_ticked_off
 test_duplicates_bump_the_found_count_through_local_jev
 test_local_jev_unreachable_files_by_fingerprint_only
 test_production_environment_bumps_severity_one_step
@@ -1333,7 +1322,7 @@ test_start_requests_follow_the_rubric_and_hold_reserved_classes
 test_call_budget_stops_the_run_and_the_next_run_continues
 test_keyless_fingerprint_ignores_run_to_run_digits
 test_patterns_are_deduped_handed_on_and_proposed_as_rules
-test_cluster_split_and_fold_constants
+test_bundle_cap_starts_the_next_part
 test_start_requests_route_by_project_to_the_owning_office
 test_found_count_lifts_a_duplicate_into_the_start_decision
 test_a_finding_that_keeps_coming_back_stops_at_three_starts
