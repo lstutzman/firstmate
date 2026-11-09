@@ -747,6 +747,8 @@ def render_md(doc, archive_md):
 
 FOLD_OPENING = "Filed by the Ship's Surgeon from the "
 FOLD_OTHER = re.compile(r"^Filed by the (.+?) from ")
+# fleet-app's own automated item families, counted by their title (this fold does not move them yet).
+FOLD_FLEET_APP = ("Dependency a major version behind: ", "Nightly E2E: ")
 CLUSTER_TITLE = "Code review findings: "
 CLUSTER_LINE = re.compile(r"^- \[([ x])\] surgeon-fp:([0-9a-f]{64}) (.*) \((.*)\)$")
 SOURCE_OF_NAME = {name: source for source, name in SOURCE_NAME.items()}
@@ -818,8 +820,11 @@ def fold(args):
             continue
         if not desc.startswith(FOLD_OPENING):
             other = FOLD_OTHER.match(desc)
+            title = text(h.get("title"), 300)
             if other:
-                others[other.group(1)] += 1
+                others["filed by the %s" % other.group(1)] += 1
+            elif title.startswith(FOLD_FLEET_APP):
+                others["fleet-app's \"%s\" items" % next(t for t in FOLD_FLEET_APP if title.startswith(t)).rstrip(": ")] += 1
             continue
         try:
             fs, why = fold_findings(ident, filer.view_issue(ident))
@@ -857,7 +862,7 @@ def fold(args):
     for ident, why in kept:
         print("- kept: %s (%s)" % (ident, why))
     for name, n in sorted(others.items()):
-        print("- not folded here: %d open item(s) filed by the %s (its own lane folds them)" % (n, name))
+        print("- not folded yet: %d open item(s) %s; this command folds only the Surgeon's" % (n, name))
     if not args.apply:
         return 0
     for f in findings:

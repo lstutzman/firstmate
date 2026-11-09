@@ -345,7 +345,7 @@ elif scenario == "bundle":
     found = lib.read_json(os.path.join(W, "found.json"), {})
     fl = lib.Filer(officer, lib.Linear(450), "PC", os.environ.get("RUN_DATE", date), W, ledger, found,
                    lib.Jev(os.path.join(W, "jev.py")), int(os.environ.get("MAX_CREATES", "100")))
-    bundles = lib.Bundles(fl, int(os.environ.get("CAP", "15")))
+    bundles = lib.Bundles(fl, int(os.environ.get("CAP", "15")), recur_closed=os.environ.get("RECUR_CLOSED", "1") == "1")
     fs = []
     for key, title, severity, location, area, *single in rows:
         f = find(key, title, severity, location)
@@ -710,6 +710,7 @@ fold_world() {  # the open items an earlier Surgeon filed one by one, a componen
      "PC-6": {title: "Duplicate one", state: "Duplicate", project: null, description: surgeon("nightly code review"; "medium"; "src/api/Y.cs"; $g)},
      "PC-7": {title: "Friction: waits on Lee", state: "Todo", project: "Fleet", description: "Filed by the friction officer from the 2026-11-01 friction events.\nfriction-fp:\($g)"},
      "PC-8": {title: "Members cannot log in", state: "Todo", project: null, description: "Reported by a member through support."},
+     "PC-10": {title: "Nightly E2E: smoke.spec.ts › home page loads", state: "Todo", project: null, description: "The full E2E run found this test failing."},
      "PC-9": {title: "Unused variable", state: "Todo", project: null, description: surgeon("nightly code review"; "low"; "src/api/controllers/Bar.cs"; $g)}}')"
   printf 'scheduled-review\nbug-sweep\napi\ncalculators\ninfrastructure\ntesting\n' >> "$LDIR/labels"
 }
@@ -723,7 +724,8 @@ test_fold_dry_run_plans_area_bundles_and_writes_nothing() {
   assert_contains "$out" "- Automated findings: infrastructure (code review): 2 finding(s) from 1 item(s) (PC-3); 1 new bundle(s)" "a component cluster's open lines fold too, its ticked line left out"
   assert_contains "$out" "- Automated findings: calculators (nightly E2E): 1 finding(s) from 1 item(s) (PC-2); 1 new bundle(s)" "a nightly E2E item folds by the feature in its spec path"
   assert_contains "$out" "- kept: PC-4 (promotion-blocking, kept single)" "an invalid nightly E2E run stays single"
-  assert_contains "$out" "- not folded here: 1 open item(s) filed by the friction officer" "another officer's items are named and left alone"
+  assert_contains "$out" "- not folded yet: 1 open item(s) filed by the friction officer; this command folds only the Surgeon's" "another officer's items are named and left alone"
+  assert_contains "$out" "- not folded yet: 1 open item(s) fleet-app's \"Nightly E2E\" items; this command folds only the Surgeon's" "and so are fleet-app's own families"
   assert_not_contains "$out" "PC-5" "a closed item is never folded"
   assert_not_contains "$out" "PC-6" "nor a Duplicate one"
   assert_not_contains "$out" "PC-8" "nor an item a person filed"
@@ -814,6 +816,28 @@ test_bundle_never_writes_a_closed_or_started_bundle() {
   pass "fm-officer-linear: a closed bundle is never reopened and a started one takes no new line"
 }
 
+test_a_finding_back_after_its_bundle_closed() {
+  local out
+  world bundle-back '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' >/dev/null || fail "first run must succeed"
+  jq '."PC-101".state = "Done"' "$LDIR/issues.json" > "$LDIR/i" && mv "$LDIR/i" "$LDIR/issues.json"
+  bundle '[["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-06 >/dev/null || fail "second run must succeed"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-07) || fail "third run must succeed"
+  assert_equals "PC-102 PC-101" "$(jq -r '.filings.a | [.issue, .recurrence_of] | join(" ")' <<<"$out")" \
+    "a finding back on a later run, after its bundle closed, goes to the area's open bundle naming the closed one"
+  assert_contains "$(body_of PC-102)" "Alpha (low); recurred, was in PC-101" "and its line says so"
+  assert_equals 0 "$(grep -c '^issue update PC-101' "$LDIR/calls")" "the closed bundle is never written"
+  world bundle-keep '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"]]' RECUR_CLOSED=0 >/dev/null || fail "first run must succeed"
+  jq '."PC-101".state = "Done"' "$LDIR/issues.json" > "$LDIR/i" && mv "$LDIR/i" "$LDIR/issues.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]' RECUR_CLOSED=0 RUN_DATE=2026-11-06) || fail "second run must succeed"
+  assert_equals "PC-101 true" "$(jq -r '.filings.a | [.issue, .closed] | map(tostring) | join(" ")' <<<"$out")" "with recurrence off, a finding of a closed bundle stays with it"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]' RECUR_CLOSED=0 RUN_DATE=2026-11-07) || fail "third run must succeed"
+  assert_equals "PC-101 true" "$(jq -r '.filings.a | [.issue, .closed] | map(tostring) | join(" ")' <<<"$out")" "on every later run too"
+  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LDIR/calls")" "and is never filed again"
+  pass "fm-officer-linear: a finding back after its bundle closed recurs into the open bundle, or with recurrence off stays closed"
+}
+
 test_bundle_lost_state_adopts_the_open_item_by_title() {
   local out
   world bundle-lost '{}'
@@ -846,6 +870,7 @@ test_bundle_appends_to_the_open_bundle_and_starts_part_2_at_the_cap
 test_bundle_groups_by_area_then_by_file
 test_bundle_keeps_single_items_single
 test_bundle_never_writes_a_closed_or_started_bundle
+test_a_finding_back_after_its_bundle_closed
 test_bundle_lost_state_adopts_the_open_item_by_title
 test_duplicate_items_are_closed
 test_dedupe_exact_and_near_match

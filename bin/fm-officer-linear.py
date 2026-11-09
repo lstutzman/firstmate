@@ -881,6 +881,15 @@ class Bundles:
                 return "bundled"
             self.dirty.add(b["fp"])
             return "queued"
+        if b and b.get("closed"):
+            # Its bundle was closed by a person on an earlier run: never written again. The finding goes to the area's open
+            # bundle naming it, or (recur_closed off, the page check) stays with the closed one and is never filed again.
+            if not self.recur_closed:
+                f["filing"], f["issue_hint"] = {"action": "bundled", "issue": b["issue"], "closed": True}, b["issue"]
+                return "bundled"
+            del self.member_of[fp]
+            self.unkeyed.append((f, RECUR + b["issue"]))
+            return "queued"
         if fp in self.filer.ledger and not b:
             ident = self.filer.ledger[fp]
             f["filing"], f["issue_hint"] = {"action": "exists", "issue": ident}, ident
