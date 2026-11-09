@@ -376,7 +376,7 @@ cmd_relaunch() {
 }
 
 cmd_send_body() {
-  local id=$1 message=$2 delivery_mode=${3:-} rec ring_rc=0 meta meta_lock inline=
+  local id=$1 message=$2 delivery_mode=${3:-} rec ring_rc=0 inline_ring_rc meta meta_lock inline=
   validate_id "$id"
   [ -z "$delivery_mode" ] || [ "$delivery_mode" = fire-and-forget ] || die "invalid send delivery mode"
   validate_home "$id"
@@ -421,9 +421,16 @@ cmd_send_body() {
   esac
   fm_task_inbox_ring "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" "$rec" "fm-$id" || ring_rc=$?
   if [ "$ring_rc" -ne 0 ] && fm_task_inbox_is_inline "$rec"; then
-    # Hand a ring that did not land back to the pointer record and its ladder.
+    # Hand a ring that did not land back to the pointer record and its ladder,
+    # and ring that pointer once now (a dead endpoint, ring 3, takes no second
+    # attempt).
+    inline_ring_rc=$ring_rc
     rec=$(fm_task_inbox_untake "$rec") \
       || die "inline steer recorded but its doorbell did not land and the record could not be returned to the inbox; resend"
+    if [ "$inline_ring_rc" -ne 3 ]; then
+      ring_rc=0
+      fm_task_inbox_ring "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" "$rec" "fm-$id" || ring_rc=$?
+    fi
   fi
   case "$ring_rc" in
     1) printf 'notice: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at %s\n' "$rec" >&2 ;;
