@@ -839,6 +839,8 @@ test_noise_is_not_a_finding() {
   ["Bash", {"command": "cat <<'E'\nofficer: hi\nE"}, "/bin/bash: line 3: officer: command not found", true],
   ["Bash", {"command": "jq .properties.offer_amount f"}, "/bin/bash: line 1: properties.offer_amount: command not found", true],
   ["Bash", {"command": "echo 1+1 | bc"}, "/bin/bash: line 1: bc: command not found", true],
+  ["Bash", {"command": "echo \"column pdftotext of rows\""}, "/bin/bash: line 1: pdftotext: command not found", true],
+  ["Bash", {"command": "bash -c 'ruff check .'"}, "/bin/bash: line 1: ruff: command not found", true],
   ["Bash", {"command": "ssh deepthought bash -s <<'E'\njq . f\nE"}, "bash: line 1: jq: command not found", true],
   ["Edit", {"file_path": "/d.js", "old_string": "x", "new_string": "class D {\n  open() {\n  }\n}"}, "ok", false],
   ["Bash", {"command": "open report.html"}, "/bin/bash: line 1: open: command not found", true]], "raw": [
@@ -855,7 +857,7 @@ EOF
   json="$home/data/officers/friction/$DATE.json"
   assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
     "only the typed instruction repeats; guidance wrapped into it and origin-less records beside stamped ones are not asks"
-  assert_equals "bc,jq,open,yq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
+  assert_equals "bc,jq,open,ruff,yq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
     "a shell function, a heredoc label and a dotted field are not missing tools; bc, a heredoc run as shell, a JS method name and a miss after a noise line still are"
   pass "fm-officer friction: injected guidance and non-installable names are classifier noise"
 }
