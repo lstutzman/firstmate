@@ -173,6 +173,7 @@ test_closes_only_fully_landed_items_with_evidence() {
   : > "$LINEAR_LOG"
   run_landing "$home" >/dev/null || fail "a second landing run must succeed"
   assert_no_grep "PC-4688" "$LINEAR_LOG" "the same miss is not reported again on the next run"
+  assert_no_grep "issue view PC-1 " "$LINEAR_LOG" "a miss already reported is not re-read, so it takes no re-check slot"
   assert_grep "issue update PC-2 --state In Progress --verify" "$LINEAR_LOG" "a Done item whose PR never reached main or any release is reopened"
   assert_no_grep "PC-7" "$LINEAR_LOG" "a Done item on main awaiting its release is never written"
   assert_grep "issue comment PC-2 --body-file" "$LINEAR_LOG" "the reopen is recorded on the item"

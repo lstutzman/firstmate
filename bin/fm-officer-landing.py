@@ -38,8 +38,8 @@ Only production-code landing is decidable from the facts; the other kinds of
 work in the audit's definition need a probe or Lee's recorded word, so an A1
 with no facts is raised for a person, never acted on.
 
-PropertyCompass2's release workflow (linear-production-done.yml) is the
-routine Done writer; this officer never writes Done or Released. With
+PropertyCompass2's release path (Slarti, PC-4688) writes Released; this
+officer never writes Done or Released. With
 --writes corrections (the default) it makes two writes:
 
   report  an item not Done or Released whose every linked PR is merged and in
@@ -304,7 +304,9 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state, release_i
             reported = json.load(fh)
     except (OSError, ValueError):
         reported = {}
-    for record in [r for r in view if r["correction"]][:max_corrections * VIEWS_PER_CORRECTION]:
+    pending = [r for r in view if r["correction"]
+               and not (r["correction"] == "report" and reported.get(r["item"]) == miss_signature(r))]
+    for record in pending[:max_corrections * VIEWS_PER_CORRECTION]:
         if attempts >= max_corrections:
             break
         item = record["item"]
@@ -324,9 +326,6 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state, release_i
                                 "reason": "item has sub-issues"})
                 continue
             if action == "report":
-                signature = miss_signature(record)
-                if reported.get(item) == signature:
-                    continue
                 attempts += 1
                 body = os.path.join(out, ".miss-%s-%s.md" % (date, item))
                 with open(body, "w", encoding="utf-8") as fh:
@@ -336,7 +335,7 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state, release_i
                     linear(["issue", "comment", release_issue, "--body-file", body, "--verify"])
                 finally:
                     os.remove(body)
-                reported[item] = signature
+                reported[item] = miss_signature(record)
                 write_if_changed(ledger, json.dumps(reported, sort_keys=True, indent=1) + "\n")
                 results.append({"item": item, "action": "reported", "to": release_issue, "record": used,
                                 "reason": "release-path miss"})
