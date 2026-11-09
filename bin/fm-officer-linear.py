@@ -113,6 +113,7 @@ BUNDLE_FILE = "bundles.json"
 NO_FILE = "(no file)"
 BUNDLE_HEAD = re.compile(r"^### (.+)$")
 BUNDLE_LINE = re.compile(r"^- \[([ x])\] ([a-z][a-z-]*-fp):([0-9a-f]{64}) (.+)$")
+BUNDLE_START = "Start this Linear item: fix every open line of its checklist in one pull request, tested once."
 RESUME_FILE = "linear-resume-after.json"
 LEDGER_FILE = "filed-fingerprints.json"
 STATE_FILE = "review-state.json"
@@ -812,14 +813,14 @@ class Bundles:
     resolved, then write() (the Linear calls), then save().
     """
 
-    def __init__(self, filer, cap=DEFAULT_BUNDLE_CAP, recur_closed=True):
-        self.filer, self.cap, self.recur_closed = filer, max(1, cap), recur_closed
+    def __init__(self, filer, cap=DEFAULT_BUNDLE_CAP, recur_closed=True, area=None):
+        self.filer, self.cap, self.recur_closed, self.area = filer, max(1, cap), recur_closed, area
         self.path = os.path.join(filer.out, BUNDLE_FILE)
         self.state = read_json(self.path, {})
         self.bundles = self.state.setdefault("bundles", {})
         self.member_of = self.state.setdefault("member_of", {})
         self.pending = collections.OrderedDict()  # key -> [(finding, note)]
-        self.dirty, self.seen = set(), {}
+        self.dirty, self.seen, self.unkeyed = set(), {}, []
 
     def save(self):
         write_json(self.path, self.state)
@@ -829,6 +830,9 @@ class Bundles:
         return (b["family"], b["area"], b["fleet"])
 
     def key(self, f):
+        """(family, area, fleet); an area left None is asked of `area(f)` only now, once Linear is in use."""
+        if f["bundle"].get("area") is None:
+            f["bundle"]["area"] = self.area(f)
         return (f["bundle"]["family"], f["bundle"]["area"], fleet_work(self.filer.officer, f["project"]))
 
     def open_parts(self, key):
@@ -866,7 +870,7 @@ class Bundles:
             f["filing"], f["issue_hint"] = {"action": "exists", "issue": ident}, ident
             self.filer.bumps.append(f)
             return "legacy"
-        self.pending.setdefault(self.key(f), []).append((f, ""))
+        self.unkeyed.append((f, ""))
         return "queued"
 
     def requeue(self, f, old):
@@ -875,7 +879,7 @@ class Bundles:
             return False
         self.filer.ledger.pop(f["fingerprint"], None)
         f["filing"] = None
-        self.pending.setdefault(self.key(f), []).append((f, "recurred, was in %s" % old))
+        self.unkeyed.append((f, "recurred, was in %s" % old))
         return True
 
     def tick(self, fp):
@@ -886,7 +890,7 @@ class Bundles:
             self.dirty.add(b["fp"])
 
     def needs_linear(self):
-        return bool(self.pending) or any(fp in self.bundles for fp in self.dirty)
+        return bool(self.pending or self.unkeyed) or any(fp in self.bundles for fp in self.dirty)
 
     def body(self, b):
         off = self.filer.officer
@@ -989,23 +993,22 @@ class Bundles:
     def write(self, label_set):
         """Appends the queued findings to their area bundles and rewrites every changed bundle; Linear errors other than
         RATE_LIMITED and CALL_BUDGET are named on the findings concerned and the next bundle goes on."""
+        for f, note in self.unkeyed:
+            self.pending.setdefault(self.key(f), []).append((f, note))
+        self.unkeyed = []
         keys = list(self.pending) + [self.key_of(self.bundles[fp]) for fp in sorted(self.dirty) if fp in self.bundles]
         for key in list(collections.OrderedDict.fromkeys(keys)):
             queue = self.pending.pop(key, [])
             try:
                 self.write_key(key, queue, label_set)
             except LinearError as exc:
-                for f, _ in queue:
-                    f["filing"] = f["filing"] or {"action": "failed", "reason": str(exc)}
+                for f in [f for f, _ in queue] + list(self.seen.values()):
+                    if not f["filing"] or "pending" in f["filing"]:
+                        f["filing"] = {"action": "failed", "reason": str(exc)}
                 if exc.code in RATE_OR_BUDGET:
                     raise
 
     def write_key(self, key, queue, label_set):
-        labels, reason = (self.filer.item_labels(queue[0][0], label_set) if queue else (None, None))
-        if reason:
-            for f, _ in queue:
-                f["filing"] = {"action": "not-filed", "reason": reason}
-            queue[:] = []
         for b in self.open_parts(key):
             if b["fp"] not in self.dirty and not queue:
                 continue
@@ -1015,6 +1018,11 @@ class Bundles:
             self.fill(b, queue)
             if b["issue"] or b["members"]:
                 self.flush_into(b)
+        labels, reason = self.filer.item_labels(queue[0][0], label_set) if queue else (None, None)
+        if reason:
+            for f, _ in queue:
+                f["filing"] = {"action": "not-filed", "reason": reason}
+            queue[:] = []
         tries = 0
         while queue and tries < BUNDLE_PARTS_MAX:
             tries += 1
@@ -1183,6 +1191,7 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     it handled. A finding whose Found count has lifted its score to the minimum (a medium at found 3)
     starts like a new finding, which is how the found count reaches the start decision.
     A finding matched to a closed item (`closed`, set only by a bump_closed Filer) never starts.
+    A bundled finding starts its bundle: one request per bundle item (BUNDLE_START, unless the finding carries its own wording).
     A finding may carry `start_what` (the request's wording, in place of "Start this Linear item.") and `start_row`
     (extra fields for the request's evidence); `start_generation` (the merged fix it follows) gives a restart its own request id.
     `attempts` (fingerprint -> the items started for it) caps a loop: a recurrence is a new item, so once START_ATTEMPT_CAP items
@@ -1198,7 +1207,7 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             continue
         filing = f["filing"] or {}
         issue = filing.get("issue")
-        if writes == "linear" and (filing.get("action") not in ("created", "exists", "duplicate") or not issue or filing.get("closed")):
+        if writes == "linear" and (filing.get("action") not in ("created", "exists", "duplicate", "bundled") or not issue or filing.get("closed")):
             continue
         if issue and issue in seen:
             continue
@@ -1232,9 +1241,14 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             row = {"kind": "%s-finding" % officer.id, "title": f["title"], "severity": f["severity"], "score": f["score"], "found": f["found"],
                    "source": f["source"], "fingerprint": f["fingerprint"], "issue": issue, "linear_id": issue,
                    "project": f["project"], "linear_only": not f["project"], "reason": "Real %s finding admitted by the rubric" % f["severity"]}
-            rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256((f["fingerprint"] + f.get("start_generation", "")).encode("utf-8")).hexdigest()[:16])
+            # A bundle is one start whichever of its findings leads the run, so its request id is the item's.
+            seed = "bundle:" + issue if filing.get("action") == "bundled" else f["fingerprint"]
+            rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256((seed + f.get("start_generation", "")).encode("utf-8")).hexdigest()[:16])
             row.update(f.get("start_row") or {})
-            row["execute"] = execute_for(officer, row, rid, f.get("start_what") or "Start this Linear item.", main_home, start_homes)
+            if filing.get("action") == "bundled":
+                row["bundle"] = filing.get("bundle")
+            row["execute"] = execute_for(officer, row, rid, f.get("start_what") or (
+                BUNDLE_START if filing.get("action") == "bundled" else "Start this Linear item."), main_home, start_homes)
             starts.append(row)
     asks = []
     if held:
@@ -1339,6 +1353,7 @@ def add_common_args(parser, rubric_default):
     parser.add_argument("--writes", choices=["none", "linear"], default="none")
     parser.add_argument("--max-creates", type=int, default=DEFAULT_MAX_CREATES)
     parser.add_argument("--max-linear-calls", type=int, default=DEFAULT_MAX_LINEAR_CALLS)
+    parser.add_argument("--bundle-cap", type=int, default=DEFAULT_BUNDLE_CAP)
     parser.add_argument("--triage-label", default="triage")
     parser.add_argument("--rubric", default=rubric_default)
     parser.add_argument("--jev", default=JEV_DEFAULT)
@@ -1351,6 +1366,8 @@ def check_common_args(parser, args):
     """Refuses a writing run without team PC, a triage label and caps of at least 1; fixes args.now."""
     if args.writes == "linear" and (args.team != "PC" or args.max_creates < 1 or args.max_linear_calls < 1 or not args.triage_label):
         parser.error("--writes linear needs --team PC, --triage-label and --max-creates and --max-linear-calls of at least 1")
+    if args.bundle_cap < 1:
+        parser.error("--bundle-cap must be at least 1")
     args.now = int(time.time()) if args.now is None else args.now
 
 

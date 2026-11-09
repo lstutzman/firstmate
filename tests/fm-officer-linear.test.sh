@@ -256,7 +256,7 @@ elif scenario == "surgeon-clusters":
     fs = [low("p%d" % i, "infra/bicep/main%d.bicep" % i) for i in range(3)]
     fs += [low("f%d" % i, "infra/bicep/main%d.bicep" % i, "lstutzman/firstmate") for i in range(3)]
     state = {}
-    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100)
+    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100, bundle_cap=15, visual_captures="")
     surgeon.file_findings(fs, args, date, W, state, {}, surgeon.lib.Jev(os.path.join(W, "jev.py")), [])
     issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
     def marker(job, key):
@@ -264,9 +264,7 @@ elif scenario == "surgeon-clusters":
     res = {"filings": {f["key"]: [f["filing"]["action"], f["filing"].get("issue"), f["filing"].get("reason")] for f in fs},
            "items": {i: {"title": v["title"], "labels": v["labels"], "project": v["project"], "tail": v["description"].rsplit("\n", 1)[-1]}
                      for i, v in issues.items()},
-           "clusters": {c["key"] + "|" + c.get("project", ""): sorted(c) for c in state["clusters"].values()},
-           "markers": {k: marker(j, k) for k, j in (("infra/bicep", "cluster"),)}}
-    res["markers"]["fleet"] = marker("cluster-fleet", "infra/bicep")
+           "bundles": {b["issue"]: [b["area"], b["fleet"], b["part"]] for b in json.load(open(os.path.join(W, "bundles.json")))["bundles"].values()}}
 elif scenario == "verify-fail":
     mode = os.environ["FAKE_VERIFY"]
     f = find("vf", "Lint script crashes on lint.sh")
@@ -296,7 +294,7 @@ elif scenario == "cluster-reuse":
     fs = [surgeon.lib.make_finding("review", "nightly-review", "p%d" % i, "Review note p%d" % i, "summary", "real", "low", None, {},
                                    location="infra/bicep/main%d.bicep" % i) for i in range(3)]
     state = {}
-    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100)
+    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100, bundle_cap=15, visual_captures="")
     surgeon.file_findings(fs, args, date, W, state, {}, surgeon.lib.Jev(os.path.join(W, "jev.py")), [])
     issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
     res = {"filings": [[f["filing"]["action"], f["filing"].get("issue")] for f in fs], "verify": [f["filing"].get("verify") for f in fs], "ids": sorted(issues),
@@ -508,25 +506,24 @@ test_fleet_patterns_route_without_linear_writes() {
   pass "fm-officer-linear: with --writes none a fleet officer's patterns still go to the Quartermaster"
 }
 
-test_surgeon_clusters_split_fleet_from_propertycompass2() {
+test_surgeon_bundles_split_fleet_from_propertycompass2() {
   local out pc fleet
   world surgeon-clusters '{}'
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(drive surgeon-clusters) || fail "driver must succeed"
   pc=$(jq -r '.filings.p0[1]' <<<"$out"); fleet=$(jq -r '.filings.f0[1]' <<<"$out")
-  assert_equals "clustered clustered clustered" "$(jq -r '[.filings.p0, .filings.p1, .filings.p2] | map(.[0]) | join(" ")' <<<"$out")" "PropertyCompass2 low review findings are clustered"
+  assert_equals "bundled bundled bundled" "$(jq -r '[.filings.p0, .filings.p1, .filings.p2] | map(.[0]) | join(" ")' <<<"$out")" "PropertyCompass2 review findings are bundled"
   assert_equals 1 "$(jq -r --arg i "$pc" '[.filings | to_entries[] | select(.value[1] == $i)] | length / 3' <<<"$out")" "all three PropertyCompass2 findings share one item"
-  assert_equals "clustered clustered clustered" "$(jq -r '[.filings.f0, .filings.f1, .filings.f2] | map(.[0]) | join(" ")' <<<"$out")" "fleet-repository low findings are clustered too, not filed singly"
-  assert_not_contains "$pc" "$fleet" "a fleet finding in the same path never joins the PropertyCompass2 cluster"
-  assert_equals 2 "$(jq '.items | length' <<<"$out")" "two cluster items, one per side"
-  assert_equals '{"title":"Code review findings: infra bicep (infra/bicep)","labels":["Bug","scheduled-review","triage"],"project":null}' \
-    "$(jq -c --arg i "$pc" '.items[$i] | {title, labels, project}' <<<"$out")" "the PropertyCompass2 cluster keeps its title, its own area label and no Linear project"
-  assert_equals "surgeon-fp:$(jq -r '.markers["infra/bicep"]' <<<"$out")" "$(jq -r --arg i "$pc" '.items[$i].tail' <<<"$out")" "and its fingerprint is sha256(review, cluster, key), as before"
-  assert_equals '["key","members","recurrence","sha"]' "$(jq -c '.clusters["infra/bicep|"]' <<<"$out")" "its saved state has no project field"
+  assert_equals "bundled bundled bundled" "$(jq -r '[.filings.f0, .filings.f1, .filings.f2] | map(.[0]) | join(" ")' <<<"$out")" "fleet-repository findings are bundled too, not filed singly"
+  assert_not_contains "$pc" "$fleet" "a fleet finding in the same area never joins the PropertyCompass2 bundle"
+  assert_equals 2 "$(jq '.items | length' <<<"$out")" "two bundle items, one per side"
+  assert_equals '{"title":"Automated findings: infrastructure (code review)","labels":["Bug","scheduled-review","infrastructure"],"project":null}' \
+    "$(jq -c --arg i "$pc" '.items[$i] | {title, labels, project}' <<<"$out")" "the PropertyCompass2 bundle is titled by its feature area, with that area label and no Linear project"
+  assert_equals '["infrastructure",false,1]' "$(jq -c --arg i "$pc" '.bundles[$i]' <<<"$out")" "its saved state names the area, side and part"
   assert_equals '{"labels":["Bug","scheduled-review","area:fleet"],"project":"Fleet"}' \
-    "$(jq -c --arg i "$fleet" '.items[$i] | {labels, project}' <<<"$out")" "the fleet cluster is in the Fleet project with area:fleet"
-  assert_equals "surgeon-fp:$(jq -r '.markers.fleet' <<<"$out")" "$(jq -r --arg i "$fleet" '.items[$i].tail' <<<"$out")" "with its own fingerprint"
-  pass "fm-officer-linear: the Surgeon clusters fleet low findings apart, in the Fleet project with area:fleet; PropertyCompass2 clusters are unchanged"
+    "$(jq -c --arg i "$fleet" '.items[$i] | {labels, project}' <<<"$out")" "the fleet bundle is in the Fleet project with area:fleet"
+  assert_not_contains "$(jq -r --arg i "$pc" '.items[$i].tail' <<<"$out")" "$(jq -r --arg i "$fleet" '.items[$i].tail' <<<"$out" | cut -d: -f2)" "with its own fingerprint"
+  pass "fm-officer-linear: the Surgeon bundles fleet findings apart, in the Fleet project with area:fleet"
 }
 
 test_closed_item_is_never_touched() {
@@ -587,11 +584,11 @@ test_mismatched_create_is_adopted_when_title_search_misses() {
     assert_equals 0 "$(sed -n '/^issue create.*--verify/,$p' "$LDIR/calls" | grep -c '^issue search')" "$mode: no title lookup goes through issue search"
   done
   world adopt-cluster '{}'
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=nocontract FAKE_SEARCH_MISS=1 drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatched cluster create is adopted"
+  assert_equals "bundled:PC-101 bundled:PC-101 bundled:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatched bundle create is adopted"
   out=$(FAKE_SEARCH_MISS=1 drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the next run (ledger lost) updates that item"
+  assert_equals "bundled:PC-101 bundled:PC-101 bundled:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the next run (ledger lost) updates that item"
   assert_equals '["PC-101"]' "$(jq -c '.ids' <<<"$out")" "and creates nothing new"
   assert_equals 1 "$(grep -c '^issue create.*--verify' "$LDIR/calls")" "so only the first run ever created"
   pass "fm-officer-linear: a create that mismatches and whose title full-text search misses is adopted, then updated, never recreated"
@@ -600,9 +597,9 @@ test_mismatched_create_is_adopted_when_title_search_misses() {
 test_a_create_the_tool_wrote_twice_is_adopted_once() {
   local out
   world double '{}'
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=nocontract FAKE_SEARCH_MISS=1 FAKE_DOUBLE=1 drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "two same-title items from one create: the lowest is adopted, nothing is failed"
+  assert_equals "bundled:PC-101 bundled:PC-101 bundled:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "two same-title items from one create: the lowest is adopted, nothing is failed"
   assert_equals 1 "$(grep -c '^issue create.*--verify' "$LDIR/calls")" "and the officer sent one create"
   assert_equals 3 "$(jq '[.verify[] | select(test("1 more item\\(s\\) of this title: PC-102$"))] | length' <<<"$out")" "and every finding's filing names the extra item for a person to close"
   pass "fm-officer-linear: a create the tool wrote twice is adopted once and not recorded failed"
@@ -633,43 +630,43 @@ test_failed_write_is_failed_and_retried_next_run() {
 }
 
 test_cluster_reuses_the_oldest_open_item_of_its_title() {
-  local out t='Code review findings: infra bicep (infra/bicep)'
+  local out t='Automated findings: infrastructure (code review)'
   world cluster-reuse "$(jq -n --arg t "$t" '{"PC-70": {title: $t, state: "Todo", description: "x"}, "PC-50": {title: $t, state: "Todo", description: "x"},
     "PC-40": {title: $t, state: "Done", description: "x"}}')"
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-50 clustered:PC-50 clustered:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the oldest open item is reused"
-  assert_equals '["PC-40","PC-50","PC-70"]' "$(jq -c '.ids' <<<"$out")" "no new cluster item is created"
-  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "the reused item carries the cluster's findings"
+  assert_equals "bundled:PC-50 bundled:PC-50 bundled:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the oldest open item is reused"
+  assert_equals '["PC-40","PC-50","PC-70"]' "$(jq -c '.ids' <<<"$out")" "no new bundle item is created"
+  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "the reused item carries the bundle's findings"
   assert_equals 0 "$(jq -r '.body["PC-70"] + .body["PC-40"]' <<<"$out")" "the other open item and the closed one are untouched"
   pass "fm-officer-linear: a cluster reuses the oldest open item of exactly its title"
 }
 
 test_cluster_update_mismatch_is_written_and_no_json_is_failed() {
-  local out t='Code review findings: infra bicep (infra/bicep)'
+  local out t='Automated findings: infrastructure (code review)'
   world cluster-update-mismatch "$(jq -n --arg t "$t" '{"PC-50": {title: $t, state: "Todo", description: "x"}}')"
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=textappend drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-50 clustered:PC-50 clustered:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatching update --verify is recorded clustered"
-  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "with the cluster body written"
+  assert_equals "bundled:PC-50 bundled:PC-50 bundled:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatching update --verify is recorded bundled"
+  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "with the bundle body written"
   assert_equals 1 "$(grep -c '^issue update PC-50.*--verify' "$LDIR/calls")" "and never retried"
   world cluster-update-nojson "$(jq -n --arg t "$t" '{"PC-50": {title: $t, state: "Todo", description: "x"}}')"
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=nojson drive cluster-reuse) || fail "driver must succeed"
   assert_equals "failed failed failed" "$(jq -r '.filings | map(.[0]) | join(" ")' <<<"$out")" "an update that printed no JSON is failed, not taken as written"
-  pass "fm-officer-linear: a mismatching cluster update counts as written; one with no JSON is failed"
+  pass "fm-officer-linear: a mismatching bundle update counts as written; one with no JSON is failed"
 }
 
 test_cluster_never_reuses_a_same_title_item_of_the_other_project() {
-  local out t='Code review findings: infra bicep (infra/bicep)'
+  local out t='Automated findings: infrastructure (code review)'
   world cluster-cross-project "$(jq -n --arg t "$t" '{"PC-50": {title: $t, state: "Todo", project: "Fleet", description: "x"}}')"
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=nocontract drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-102 clustered:PC-102 clustered:PC-102" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a PC cluster creates its own item, even when the create mismatches"
-  assert_equals 3 "$(jq -r '.body["PC-102"]' <<<"$out")" "which carries the cluster's findings"
+  assert_equals "bundled:PC-102 bundled:PC-102 bundled:PC-102" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a PC bundle creates its own item, even when the create mismatches"
+  assert_equals 3 "$(jq -r '.body["PC-102"]' <<<"$out")" "which carries the bundle's findings"
   assert_equals 0 "$(jq -r '.body["PC-50"]' <<<"$out")" "and the same-title Fleet item is untouched"
   assert_equals 0 "$(grep -c '^issue update PC-50' "$LDIR/calls")" "with no update sent to it"
-  pass "fm-officer-linear: a PropertyCompass2 cluster never reuses a same-title Fleet item"
+  pass "fm-officer-linear: a PropertyCompass2 bundle never reuses a same-title Fleet item"
 }
 
 test_no_call_closes_or_deletes() {
@@ -791,7 +788,7 @@ test_reserved_class_becomes_one_keyed_needs_decision
 test_fleet_findings_take_the_fleet_project_and_label
 test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
 test_fleet_patterns_route_without_linear_writes
-test_surgeon_clusters_split_fleet_from_propertycompass2
+test_surgeon_bundles_split_fleet_from_propertycompass2
 test_closed_item_is_never_touched
 test_closed_item_is_bumped_not_replaced
 test_failed_verify_is_taken_as_written
