@@ -1,0 +1,62 @@
+ok - process proof reads Linux Herdr argv arrays and rejects malformed executable identities
+ok - exact stale projection closes one exact pane under task then presentation locks
+ok - successful cleanup is idempotent on repeat
+ok - malformed title preserves the candidate
+ok - missing token preserves the candidate
+ok - malformed journal preserves the candidate
+ok - duplicate token preserves the candidate
+ok - duplicate title token preserves the candidate
+ok - zero journal match preserves the candidate
+ok - multiple journal matches preserves the candidate
+ok - cross-home journal preserves the candidate
+ok - v2 workspace binding mismatch preserves the candidate
+ok - v2 tab binding mismatch preserves the candidate
+ok - v2 pane binding mismatch preserves the candidate
+ok - v2 cleanup requires and accepts the exact journal endpoint binding
+ok - current task metadata preserves the candidate
+ok - registered agent preserves the candidate
+ok - unknown agent preserves the candidate
+ok - multiple tabs preserves the candidate
+ok - multiple panes preserves the candidate
+ok - non-idle shell preserves the candidate
+ok - child process or shell job preserves the candidate
+ok - unreadable snapshot preserves the candidate
+ok - unreadable topology check preserves the candidate
+ok - revalidation race preserves the candidate
+ok - active target preserves the candidate
+ok - focus refusal preserves the candidate
+ok - finished pass: done task with no agent closes the exact pane and keeps the task record
+ok - finished pass takes every task lock in order and is idempotent on repeat
+ok - finished pass: stale registration over a shell closes the exact pane and keeps the task record
+ok - finished pass: done task waiting only on its merge handoff closes the exact pane and keeps the task record
+ok - finished pass: version 1 journal closes the exact pane and keeps the task record
+ok - finished pass: live agent preserves the workspace
+ok - finished pass never touches the locks of a task whose agent is still live
+ok - finished pass: unknown agent preserves the workspace
+ok - finished pass: paused latest event preserves the workspace
+ok - finished pass: working latest event preserves the workspace
+ok - finished pass: decision opened after done preserves the workspace
+ok - finished pass: another PR's handoff preserves the workspace
+ok - finished pass: unhandled steer preserves the workspace
+ok - finished pass: steer after done preserves the workspace
+ok - finished pass: steer handled before done closes the exact pane and keeps the task record
+ok - finished pass: secondmate preserves the workspace
+ok - finished pass: non-Herdr backend preserves the workspace
+ok - finished pass: record names another workspace preserves the workspace
+ok - finished pass: relaunch in progress preserves the workspace
+ok - finished pass: busy control lock preserves the workspace
+ok - finished pass: busy record lock preserves the workspace
+ok - finished pass: another home's journal preserves the workspace
+ok - finished pass: journal bound to another pane preserves the workspace
+ok - finished pass: non-task label preserves the workspace
+ok - finished pass: extra pane preserves the workspace
+ok - finished pass: non-idle shell preserves the workspace
+ok - finished pass: active target preserves the workspace
+ok - finished pass: stopped or unreadable session preserves the workspace
+ok - finished pass: focus refusal preserves the workspace
+ok - the no-argument session-start run also runs the finished-task pass
+ok - restored-shell pass still preserves every workspace with a task record
+ok - standalone bootstrap cannot run lock-owned stale projection cleanup
+ok - session start runs cleanup only after acquiring its home lock
+ok - the watcher's check pass runs the finished-task pass for its own home
+all fm-herdr-session-cleanup tests passed
