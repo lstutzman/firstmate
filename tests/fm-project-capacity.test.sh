@@ -948,7 +948,7 @@ test_batch_reports_a_landing_lag_deferral() {
   write_ready "$home" ready-a "$case_dir/project" 1 30
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair lagged did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project is at capacity or its landing lags, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, or its project's landing lags, so it stays queued" \
     "the batch did not report the landing-lag deferral"
   pass "a batch reports a landing-lag deferral as deferred, not failed"
 }
