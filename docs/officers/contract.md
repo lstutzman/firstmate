@@ -21,7 +21,8 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
   Without local-jev only the fingerprint decides, and the digest says so.
 - A duplicate raises the item's one machine-kept line, `Found: N times (first <date>, last <date>, by <officer-id>)`, in place, and adds one comment on that day's first sighting and no more.
 - Every Linear write is `--dry-run` and then `--verify`.
-  A failed verify is never retried blindly; the fingerprint search decides whether the item exists.
+  A failed verify is never retried blindly.
+  Linear rewrites a stored body, so a mismatch can mean the write landed: the item is taken as written when the error names it, else when an exact-title search finds one open item in the same project (Linear search does not match fingerprints), and only then recorded failed.
 - Each item has one Type, one Source (a Source label from Lee's set, named in the officer's rubric: agent, captain, bug-sweep, scheduled-review or slack-desk) and one area label.
   A fleet finding (the officer's project is `Fleet`, or the finding names firstmate, skills or fleet-app) goes in the Fleet project, and the library sets its area label to `area:fleet` whatever the officer's own labels say; `area:fleet` on any other finding stops it being filed.
   This holds for every item the library creates, an officer's grouped items included: a group never mixes fleet and PropertyCompass2 findings, and a fleet group is created like a fleet finding.

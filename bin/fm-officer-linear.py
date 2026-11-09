@@ -17,8 +17,10 @@ how it finds things. This file owns the mechanics every officer shares:
               ("same issue?"): a duplicate only above JEV_SAME (0.85), a lower near match is noted in the new item.
               A duplicate raises the item's one `Found: N times (first <date>, last <date>, by <officer>)` line in place
               (`issue update --dry-run`, then `--verify`) and adds one comment, on the day's first sighting only.
-              Every write is `--dry-run` then `--verify`. A failed verify is never retried; the fingerprint search then
-              decides whether the item exists. An item a person closed (completed or canceled) is never reopened,
+              Every write is `--dry-run` then `--verify`. A failed verify is never retried; the item is taken as written when the
+              error's data.issue.identifier names it, else when an exact-title search finds one open item (Linear search does not
+              match fingerprints), and only then recorded failed (tried again next run). open_by_title() also lets a cluster reuse
+              the oldest open item of its title. An item a person closed (completed or canceled) is never reopened,
               edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`), unless
               the Filer is built with bump_closed (the page-check officer), when it bumps the closed item and starts nothing.
               An item gets exactly one Type, one Source and one area label; fleet work
@@ -308,10 +310,17 @@ def load_rubric(path, officer):
 # ---- linear -----------------------------------------------------------------------------
 
 class LinearError(RuntimeError):
-    def __init__(self, code, message):
+    def __init__(self, code, message, doc=None):
         super().__init__("%s: %s" % (code, message))
         self.code = code
         self.message = message
+        self.doc = doc if isinstance(doc, dict) else {}
+
+    def written_ident(self):
+        """The identifier a failed --verify write names in data.issue.identifier, or None."""
+        data = self.doc.get("data")
+        issue = data.get("issue") if isinstance(data, dict) else None
+        return text(issue.get("identifier"), 20) or None if isinstance(issue, dict) else None
 
 
 class Linear:
@@ -329,12 +338,15 @@ class Linear:
         self.n += 1
         proc = subprocess.run(["linear-axi"] + args + ["--output", "json"], capture_output=True, check=False)
         try:
-            doc = json.loads(proc.stdout.decode("utf-8"))
+            # raw_decode: linear-verify may append plain text lines after the one JSON document.
+            doc, _ = json.JSONDecoder().raw_decode(proc.stdout.decode("utf-8").lstrip())
+            if not isinstance(doc, dict):
+                raise ValueError
         except ValueError:
             raise LinearError("NO_JSON", "linear-axi %s returned no JSON (exit %d)" % (" ".join(args[0:2]), proc.returncode))
         if not doc.get("ok"):
-            error = doc.get("error") or {}
-            raise LinearError(error.get("code", "unknown"), str(error.get("message", ""))[:120])
+            error = doc.get("error") if isinstance(doc.get("error"), dict) else {}
+            raise LinearError(error.get("code", "unknown"), str(error.get("message", ""))[:120], doc)
         return doc.get("data") or {}
 
 
@@ -510,18 +522,19 @@ class Filer:
                 if exc.code in RATE_OR_BUDGET:
                     raise
                 # --verify writes before it reads back, so the item may exist; a created item is never
-                # reported failed or left out of the ledger.
-                found = None
+                # reported failed or left out of the ledger. Linear search does not match the hex fingerprint,
+                # so look for it by the identifier the error names, else by its exact title.
+                found = exc.written_ident()
                 try:
-                    for wait in VERIFY_SEARCH_WAITS:
+                    for wait in VERIFY_SEARCH_WAITS if not found else ():
                         time.sleep(wait)
-                        found = self.existing_issue(fp)[0]
+                        found = self.open_by_title(title, oldest=False, fleet=fleet_work(self.officer, project))
                         if found:
                             break
                 except LinearError as search_exc:
                     if search_exc.code in RATE_OR_BUDGET:
                         raise
-                    raise LinearError(exc.code, "%s (then fingerprint search failed: %s)" % (exc.message, search_exc))
+                    raise LinearError(exc.code, "%s (then title search failed: %s)" % (exc.message, search_exc))
                 if not found:
                     raise
                 return found, True, str(exc)
@@ -533,11 +546,37 @@ class Filer:
         path = self._write_body(fp, body)
         try:
             self.lin(["issue", "update", ident, "--body-file", path, "--dry-run"])
-            self.lin(["issue", "update", ident, "--body-file", path, "--verify"])
+            try:
+                self.lin(["issue", "update", ident, "--body-file", path, "--verify"])
+            except LinearError as exc:
+                # Linear rewrites a stored body (auto-links, escapes), so a mismatch means written, not failed.
+                if not (exc.written_ident() or exc.code == "VERIFY_MISMATCH"):
+                    raise
         finally:
             if os.path.exists(path):
                 os.remove(path)
         self.cache.pop(ident, None)
+
+    def open_by_title(self, title, oldest=True, fleet=None):
+        """The open item in the team whose title equals `title` (case-insensitive), or None.
+
+        Several open hits: the lowest PC number when `oldest`, else None (the match is not unique).
+        A hit counts only after its viewed title equals and it is not closed; a closed item is never reused.
+        `fleet` (True or False) also requires the item to be in the Fleet project, or not, so a Fleet and a
+        PropertyCompass2 cluster that share a title never share an item.
+        """
+        want = title.strip().lower()
+        hits = []
+        for h in dicts(self.lin(["issue", "search", title, "--team", self.team, "--limit", "10"]).get("issues")):
+            ident = text(h.get("identifier"), 20)
+            if not ident or ("title" in h and text(h.get("title"), 300).lower() != want):
+                continue
+            issue = self.view_issue(ident)
+            in_fleet = text(issue.get("project"), 80).lower() == FLEET_PROJECT.lower()
+            if text(issue.get("title"), 300).lower() == want and not is_closed(issue) and (fleet is None or fleet == in_fleet):
+                hits.append(ident)
+        hits.sort(key=lambda i: (int(re.sub(r"\D", "", i) or 0), i))
+        return hits[0] if hits and (oldest or len(hits) == 1) else None
 
     def relate(self, ident, old):
         """Links a recurrence to the closed item it repeats; the error text, or None."""

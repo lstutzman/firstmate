@@ -49,6 +49,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - Low code-review findings are clustered by component, one Linear item per cluster, with each finding's file and fingerprint listed inside as a tick box.
   Findings from a fleet repository (firstmate, skills, fleet-app) cluster apart from PropertyCompass2 ones, and their cluster items go in the Fleet project with `area:fleet`.
   A new finding updates its cluster's item, and a finding on the reviewer's resolved list is ticked off.
+  A cluster with no ledgered item first reuses the oldest open item of the same title in the same project (Fleet or not), so a lost ledger does not file a duplicate cluster.
 - The cluster rule: group by the first 2 directory parts of the finding's file, split a group of more than 25 findings one level deeper (again while a subgroup still has more than 25), fold subgroups of fewer than 10 back into "(parent) (other)", and fold any group still under 3 findings into "(first part) (misc)".
   The code keeps these four numbers as named constants.
   The path decides the group, and the counts only decide where it splits or folds.

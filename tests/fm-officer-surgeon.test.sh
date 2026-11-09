@@ -92,10 +92,12 @@ case "\$1 \$2" in
     [ -f "\$d/search.down" ] && { err UNKNOWN "search down"; exit 1; }
     # Linear's search is fuzzy: it always returns an unrelated issue, and the real one only when it exists.
     lag=\$(cat "\$d/search.lag" 2>/dev/null || echo 0)
-    if grep -qF -- "\${3#surgeon-fp:}" "\$d/exists.txt" 2>/dev/null && [ "\$lag" -gt 0 ]; then
+    # A title query (the filer's recovery after a verify mismatch) finds the item the mismatching create made, by its exact title.
+    case "\$3" in surgeon-fp:*) q=\${3#surgeon-fp:} ;; *) [ -s "\$d/exists.txt" ] && [ "\$3" = "\$(cat "\$d/created.title" 2>/dev/null)" ] && q=\$(tr -d '\n' < "\$d/exists.txt") || q=no-match ;; esac
+    if grep -qF -- "\$q" "\$d/exists.txt" 2>/dev/null && [ "\$lag" -gt 0 ]; then
       echo \$((lag - 1)) > "\$d/search.lag"
       echo '{"ok":true,"data":{"issues":[{"identifier":"PC-9"}]}}'
-    elif grep -qF -- "\${3#surgeon-fp:}" "\$d/exists.txt" 2>/dev/null; then
+    elif grep -qF -- "\$q" "\$d/exists.txt" 2>/dev/null; then
       echo '{"ok":true,"data":{"issues":[{"identifier":"PC-9"},{"identifier":"PC-55"}]}}'
     else echo '{"ok":true,"data":{"issues":[{"identifier":"PC-9"}]}}'; fi ;;
   "issue update")
@@ -120,7 +122,7 @@ case "\$1 \$2" in
     if [ "\$3" = PC-9 ] && [ -f "\$d/pc9.desc" ]; then
       title='"title":"Older report",'; desc=\$(cat "\$d/pc9.desc")
     elif [ "\$3" = PC-55 ]; then
-      title=''; desc="Filed earlier. surgeon-fp:\$(tr -d '\n' < "\$d/exists.txt")"
+      title='"title":"'"\$(cat "\$d/created.title" 2>/dev/null)"'",'; desc="Filed earlier. surgeon-fp:\$(tr -d '\n' < "\$d/exists.txt")"
     else title=''; desc=unrelated; fi
     case " \$* " in *" --full "*) ;; *) [ \${#desc} -gt 500 ] && { desc=\${desc:0:500}; desc="\${desc%\\\\}\\\\n... (truncated, use --full)"; } ;; esac
     echo '{"ok":true,"data":{"issue":{"identifier":"'"\$3"'",'"\$meta"','"\$title"'"description":"'"\$desc"'"}}}' ;;
@@ -134,6 +136,7 @@ case "\$1 \$2" in
         [ -f "\$d/verify.fail" ] && { [ -f "\$d/search.down.after.verify" ] && touch "\$d/search.down"; err VERIFY_FAILED "not readable back"; exit 1; }
         n=\$(( \$(cat "\$d/created" 2>/dev/null || echo 100) + 1 )); echo "\$n" > "\$d/created"
         for a in "\$@"; do
+          [ "\$prev" = "--title" ] && printf '%s' "\$a" > "\$d/created.title"
           if [ "\$prev" = "--body-file" ]; then
             cat "\$a" >> "\$d/bodies"
             # Linear trims a trailing newline, so verify then mismatches, as on the real PC-4041..4045 creates.
