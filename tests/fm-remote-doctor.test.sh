@@ -56,14 +56,16 @@ exit 64
 SH
 chmod +x "$JOB_BASH5" "$JOB_BASH3"
 
-# Real socket-owner holders for the Darwin birth check: jq blocked on a fifo
-# this test keeps open, with exactly the marker environment each birth needs.
-JQ=$(command -v jq)
+# Real socket-owner holders for the Darwin birth check: a non-platform jq
+# blocked on a fifo this test keeps open, with exactly the marker environment
+# each birth needs.
+HOLDER_JQ=$(fm_test_nonplatform_binary "$(command -v jq)" "$TMP_ROOT") ||
+  fail "cannot build a non-platform jq holder on this host"
 HOLDER_FD=5
 hold() { # <marker-env...> -> HOLDER_PID
   local fifo="$TMP_ROOT/holder-$HOLDER_FD.fifo"
   mkfifo "$fifo"
-  env -i "$@" "$JQ" . "$fifo" &
+  env -i "$@" "$HOLDER_JQ" . "$fifo" &
   HOLDER_PID=$!
   HOLDER_PIDS+=("$HOLDER_PID")
   eval "exec ${HOLDER_FD}>\"\$fifo\""
