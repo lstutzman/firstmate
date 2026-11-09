@@ -77,9 +77,11 @@ which owns what counts as work, how a finding is scored and what starts. With
 --writes linear (the registry's `writes: linear`, with max-creates, max-linear-calls and
 jev) every open finding is filed in team PC as a Chore, Source label agent, in the Fleet
 project with the area:fleet label, searched for first by its `corpus-fp:<sha256>` marker and
-then by title with local-jev, and every night it is still open raises the item's Found line
-once. The item body holds only the finding's class, subject, severity and the summary built
-above from counts, timestamps and names, never a transcript, a corpus row or a memory record.
+then by title with local-jev, as a line on its class's bundle (docs/officers/contract.md
+"Bundles"), and every night it is still open raises its own found count once. The line holds
+only the finding's class, subject, severity, repository and scan-gate note (an older single
+item's body, the summary built above from counts, timestamps and names), never a transcript,
+a corpus row or a memory record.
 A finding whose item exists and whose score reaches the rubric minimum gets a start request in
 `start_requests` (and, for this home, a <date>.start-requests.sh handoff), addressed to the
 --start-home office whose dispatch list names its repository (transcript-archive for the
@@ -508,47 +510,22 @@ def description(lf, date, off, near=None, recurrence=None):
 
 
 def file_findings(lib, off, todo, args, date, out, ledger, found, jev, lin):
-    """Files the findings highest score first; returns (writes done, why Linear stopped or None)."""
+    """Files the findings highest score first, in one bundle per corpus class (lib.Bundles); returns (writes done, why
+    Linear stopped or None)."""
     filer = lib.Filer(off, lin, args.team, date, out, ledger, found, jev, args.max_creates)
-
-    def stop(reason, rate_limited=False):
-        for f in todo:
-            f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
-        if rate_limited:
-            lib.pause_for_rate_limit(out, args.now)
-        return lib.summary_rows(todo), reason
-
+    bundles = lib.Bundles(filer, args.bundle_cap, area=lambda f: f["item"]["class"])
     for f in todo:
-        if f["fingerprint"] in ledger:
-            f["filing"], f["issue_hint"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}, ledger[f["fingerprint"]]
-            filer.bumps.append(f)
-    due = [f for f in filer.bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != date]
-    if not any(not f["filing"] for f in todo) and not due:
-        return lib.summary_rows(todo), None
-    stopped = lib.paused_until(out, args.now)
-    if stopped:
-        return stop(stopped)
-    try:
-        names = lib.label_names(lin, args.team)
-    except lib.LinearError as exc:
-        return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
+        repo, gate = CLASSES[f["item"]["class"]][:2]
+        f["bundle"] = {"family": "corpus check", "area": None, "line": "repository: %s%s" % (
+            repo, "; scan gate: the fix may touch the scan gate files, so its pull request goes to Slarti" if gate else "")}
 
-    def label_set(f):
-        return lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
+    def labels_for(names):
+        return lambda f: lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
 
     def describe(f, near=None, recurrence=None):
         return description(f, date, off, near, recurrence)
 
-    try:
-        for f in todo:
-            if not f["filing"]:
-                filer.file_single(f, label_set, describe)
-        filer.settle_bumps(label_set, describe)
-    except lib.LinearError as exc:
-        if exc.code == "RATE_LIMITED":
-            return stop("Linear rate limit reached: %s" % exc, True)
-        return stop("%s; the next run continues from the ledger" % exc)
-    return lib.summary_rows(todo), None
+    return lib.file_in_bundles(filer, bundles, todo, args, labels_for, describe)
 
 
 def linear_pass(args, date, findings, offices, main_home):

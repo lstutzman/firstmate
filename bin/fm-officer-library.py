@@ -54,10 +54,11 @@ which owns what counts as work, how a finding is scored and what starts. With
 --writes linear (the registry's `writes: linear`, with max-creates, max-linear-calls and
 jev) every new code, needs-lee and safe finding is filed in team PC as a Chore, label
 scheduled-review, with the documentation area label (else the triage label), searched for
-first by its `librarian-fp:<sha256>` marker and then by title with local-jev. Hold items and
-the run's decisions item are never filed. The Filer runs on the audit run's date, so the
-Found line rises once per audit run and not once a day; the create cap (fleet rules
-section 8: 3, and a larger --max-creates is held to 3) is per audit run, not per day, and what it leaves unfiled is named in the
+first by its `librarian-fp:<sha256>` marker and then by title with local-jev, as a line on its
+audit kind's bundle (docs/officers/contract.md "Bundles"). Hold items and
+the run's decisions item are never filed. The Filer runs on the audit run's date, so a
+finding's found count rises once per audit run and not once a day; the create cap (fleet rules
+section 8: 3 new bundle items, and a larger --max-creates is held to 3) is per audit run, not per day, and what it leaves unfiled is named in the
 digest and filed by the next audit run. A safe finding is filed as medium at least, so it
 reaches the start score once the audit finds it three times (a high one at once). A safe
 finding whose item exists and whose score reaches the rubric minimum gets a start request in
@@ -240,48 +241,24 @@ def description(lf, run, off, near=None, recurrence=None):
 
 
 def file_findings(lib, off, todo, args, run, out, ledger, found, jev, lin, allowed):
-    """Files the findings highest score first, at most `allowed` new items; returns (writes done, why Linear stopped or None)."""
+    """Files the findings highest score first, in one bundle per audit kind (lib.Bundles), at most `allowed` new bundle
+    items; returns (writes done, why Linear stopped or None, items created)."""
     filer = lib.Filer(off, lin, args.team, run, out, ledger, found, jev, allowed)
-
-    def stop(reason, rate_limited=False):
-        for f in todo:
-            f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
-        if rate_limited:
-            lib.pause_for_rate_limit(out, args.now)
-        return lib.summary_rows(todo), reason, filer.creates
-
+    bundles = lib.Bundles(filer, args.bundle_cap, area=lambda f: f["item"]["kind"])
     for f in todo:
-        if f["fingerprint"] in ledger:
-            f["filing"], f["issue_hint"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}, ledger[f["fingerprint"]]
-            filer.bumps.append(f)
-    due = [f for f in filer.bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != run]
-    if not any(not f["filing"] for f in todo) and not due:
-        return lib.summary_rows(todo), None, 0
-    stopped = lib.paused_until(out, args.now)
-    if stopped:
-        return stop(stopped)
-    try:
-        names = lib.label_names(lin, args.team)
-    except lib.LinearError as exc:
-        return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
+        f["bundle"] = {"family": "librarian audit", "area": None}
 
-    def label_set(f):
-        wanted = [TYPE_LABEL, SOURCE_LABEL, AREA_LABEL if AREA_LABEL in names else args.triage_label]
-        return wanted, [w for w in wanted if w.lower() not in names]
+    def labels_for(names):
+        def label_set(f):
+            wanted = [TYPE_LABEL, SOURCE_LABEL, AREA_LABEL if AREA_LABEL in names else args.triage_label]
+            return wanted, [w for w in wanted if w.lower() not in names]
+        return label_set
 
     def describe(f, near=None, recurrence=None):
         return description(f, run, off, near, recurrence)
 
-    try:
-        for f in todo:
-            if not f["filing"]:
-                filer.file_single(f, label_set, describe)
-        filer.settle_bumps(label_set, describe)
-    except lib.LinearError as exc:
-        if exc.code == "RATE_LIMITED":
-            return stop("Linear rate limit reached: %s" % exc, True)
-        return stop("%s; the next run continues from the ledger" % exc)
-    return lib.summary_rows(todo), None, filer.creates
+    rows, reason = lib.file_in_bundles(filer, bundles, todo, args, labels_for, describe)
+    return rows, reason, filer.creates
 
 
 def linear_pass(args, run, items, unread, offices, main_home):

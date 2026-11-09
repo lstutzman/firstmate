@@ -26,8 +26,9 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - At most 3 new items per audit run (fleet rules section 8), whatever the registry's `max-creates`.
   What the cap leaves unfiled is named in the digest, highest score first, and the next audit run files it.
 - Each item carries the `librarian-fp:<sha256>` marker.
-  Duplicates, the `Found:` line, recurrences of closed items and the call budget are the shared [filing rules](contract.md#file).
-- The item body holds the audit's kind, path, title and proposed change, and no report text.
+  Each audit kind's findings share one [bundle](contract.md#bundles), grouped by path; the cap of 3 counts new bundle items.
+  Duplicates, recurrences of closed items and the call budget are the shared [filing rules](contract.md#file).
+- A line holds the finding's title and severity under its path; an older single item's body holds the audit's kind, path, title and proposed change, and no report text.
 
 ## What starts by itself
 

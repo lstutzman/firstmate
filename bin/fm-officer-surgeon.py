@@ -8,9 +8,10 @@ FIND, FILE, TRIAGE, START contract that bin/fm-officer-linear.py implements for 
 and docs/officers/surgeon-rubric.md owns what counts as work, how it is scored and what starts by itself.
 
 Usage:
+  fm-officer-surgeon.py fold --out <lane-dir> [--apply] [--team PC] [--bundle-cap 15] [--max-items 1000] ...
   fm-officer-surgeon.py run --archive <dir|host:dir> --date <YYYY-MM-DD> --out <lane-dir>
                             --app <https url> [--home <dir>]... [--hosts a,b] [--model none]
-                            [--team PC] [--writes none|linear] [--max-creates 100]
+                            [--team PC] [--writes none|linear] [--max-creates 100] [--bundle-cap 15]
                             [--max-linear-calls 450] [--triage-label triage] [--area <ignored>]
                             [--staging-repo <git remote>] [--visual-findings <file>] [--visual-captures <dir>]
                             [--rubric <file>] [--jev <jev.py>]
@@ -59,10 +60,11 @@ Each finding is classified with the tables below and no model:
                         that is missing, unreadable, of another schema_version, or unchanged since the last run is a
                         named `Coverage gap:`, as are a row without a route, rubric item or 64-hex fingerprint
                         (skipped), a non-empty errors list or a run.images_failed, run.images_deferred or
-                        run.malformed_findings_dropped above zero (the review is incomplete). The item lists each
-                        screenshot's path (resolved against --visual-captures when given and the file is there).
-                        With --visual-captures and writes: linear, a newly filed item gets each screenshot attached
-                        with `linear-attach <issue> <file> --verify` (never on a duplicate bump, each call counted
+                        run.malformed_findings_dropped above zero (the review is incomplete). The finding's bundle line
+                        carries its visual-review-fp and names its screenshots (resolved against --visual-captures when
+                        given and the file is there).
+                        With --visual-captures and writes: linear, the bundle a finding is newly added to gets each of
+                        its screenshots attached with `linear-attach <issue> <file> --verify` (never on a repeat, each call counted
                         against the Linear call budget); a missing linear-attach, a missing screenshot file, exit 3
                         (upload rights) or exit 75 (rate limited, stops the run's attaching) is a named `Coverage gap:`.
                         A screenshot not attached (other than a missing file) is kept as `pending_attach` in the
@@ -84,38 +86,33 @@ team PC, highest score first:
   1. one `label list --team PC`; Bug, the Source label (scheduled-review for the
      nightly E2E and review, bug-sweep for the sweeper) and one area label must all
      exist there. The area label comes from the finding's file path or component
-     (AREA_RULES; a nightly E2E failure tries the feature rules on its spec path and words
-     before `testing`); with no fit it is --triage-label; a label missing from team PC
+     (AREA_RULES, feature first: the feature rules on its path and then its words before
+     `testing`); with no fit it is --triage-label; a label missing from team PC
      means the finding is reported and not filed. The Surgeon never creates a label.
      Fleet work (lib.fleet_work: a finding from firstmate, skills or fleet-app) takes
-     area:fleet instead and goes in the Fleet project, and its low review findings
-     cluster apart from PropertyCompass2 ones.
-  2. medium or higher findings, and every non-review finding, each get their own
-     item. Low review findings are clustered, one item per component: the group of
-     the first CLUSTER_PARTS directory parts of the file, split one level deeper
-     (again while a subgroup still passes it) when a group passes CLUSTER_SPLIT_OVER findings, subgroups under
-     CLUSTER_MIN_SUBGROUP folded into "<parent> (other)", groups under
-     CLUSTER_MIN_GROUP folded into "<first part> (misc)". A finding keeps its
-     cluster once assigned (review-state.json), so the key stays stable. The item
-     lists every finding (fingerprint, title, file) as a tick box; a new finding
-     updates the item, and a finding on the reviewer's resolved list is ticked.
+     area:fleet instead and goes in the Fleet project, and its bundles are apart from PropertyCompass2 ones.
+  2. every finding is a line on its source family's feature-area bundle (docs/officers/contract.md "Bundles";
+     lib.Bundles): families code review, nightly E2E, bug sweeper and visual review (FAMILY), the area from
+     area_for(..., feature_first=True), grouped by file inside, at most --bundle-cap open lines a part. A finding
+     on the reviewer's resolved list is ticked. The one single item is an invalid nightly E2E run, which blocks
+     promotion: it keeps its own item (special e2e-invalid) and the steps below.
   3. dedupe, in order: the fingerprint (`issue search "surgeon-fp:<sha256>"`, read
      with `issue view`, plus the lane's filed-fingerprints.json); then a text
      search of the title, each candidate asked of local-jev ("same issue?"), a
-     duplicate only at confidence > JEV_SAME. A lower near match is noted in the
-     new item. Without local-jev, only the fingerprint decides.
-  4. a duplicate bumps the existing item's one machine-maintained line
+     duplicate only at confidence > JEV_SAME. A lower near match is noted on the
+     finding's line. Without local-jev, only the fingerprint decides. A bundle is never a match.
+  4. a duplicate bumps the existing single item's one machine-maintained line
      `Found: N times (first <date>, last <date>, by surgeon)` in place
      (`issue update --dry-run`, then `--verify`), at most once a day per item, and
-     adds one comment on that first sighting. A finding already on its own
-     cluster's list is not a new sighting.
+     adds one comment on that first sighting. A finding already on its bundle is
+     not a new sighting; it keeps its own found count.
   5. `issue create --dry-run`, then `--verify`, with exactly one Type (Bug), one
      Source and one area label. A failed verify is never retried; the item counts as created (and is ledgered)
      when the error names it (data.issue.identifier) or the team's issue list holds one new open item of exactly its title, else it is logged failed
-     and tried again next run. A cluster reuses the oldest open item of exactly its title instead of creating another.
+     and tried again next run. A bundle with no ledgered item first adopts the oldest open item of exactly its title.
 It never closes or deletes an item. Every linear-axi call is counted; --max-linear-calls
 stops the run's Linear work (the next run continues from the ledger). --max-creates bounds
-new items a run. One RATE_LIMITED answer stops every Linear call in the run, writes
+new items (bundles) a run. One RATE_LIMITED answer stops every Linear call in the run, writes
 linear-resume-after.json (one hour on) and reports the rest as not filed; later runs
 skip Linear until then. Nothing is dropped silently: the digest names what was not filed.
 
@@ -130,6 +127,9 @@ Pattern memory (review and sweeper findings): one line per bad pattern with its 
 deduped by normalised title and then by local-jev; new patterns go in one batched start
 request to the Navigator (quality-patterns.md), in the digest for memory capture (no
 scriptable memory-tier path exists), and mechanical ones get a proposed lint rule.
+
+`fold` (fold_main) is the one-off move of the Surgeon's existing open items (one per finding, or one per component
+cluster) into area bundles: a dry run unless --apply; see `fm-officer-surgeon.py fold --help`.
 
 Outputs <date>.json and <date>.md in --out and prints
 `DIGEST <date> <n-actionable> <date>.md` as its last stdout line, plus a
@@ -146,6 +146,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 
 
 def _load(name, filename):
@@ -185,11 +186,8 @@ SOURCE_NAME = {"nightly": "nightly E2E", "review": "nightly code review", "sweep
 VISUAL_JOB = "visual-review"
 VISUAL_AREA_FALLBACK = "ui-ux"
 VISUAL_SEVERITY = {"high": "high", "medium": "medium", "low": "low"}
-# Clustering of low review findings (the rule main measured on the 4 Nov findings file).
-CLUSTER_PARTS = 2
-CLUSTER_SPLIT_OVER = 25
-CLUSTER_MIN_SUBGROUP = 10
-CLUSTER_MIN_GROUP = 3
+# The source family each source's findings are bundled under (one open item per family and feature area).
+FAMILY = {"nightly": "nightly E2E", "review": "code review", "sweeper": "bug sweeper", "visual": "visual review"}
 # A screenshot left unattached is retried each run, and dropped as abandoned once it was first left this many days ago.
 ATTACH_DAYS = 7
 STAGING_REPO = "git@github.com:lstutzman/PropertyCompass2.git"
@@ -534,7 +532,7 @@ def visual_ask(held, date):
                 key, len(held), "; ".join(names[:10]) + ("; and %d more" % (len(names) - 10) if len(names) > 10 else ""))}
 
 
-# ---- area, clusters ---------------------------------------------------------------------
+# ---- area -----------------------------------------------------------------------------
 
 def area_for(location, words, names, fallback, feature_first=False):
     """The area label for a finding: from its path, else its words, else the fallback; None if the label is absent.
@@ -559,64 +557,6 @@ def area_for(location, words, names, fallback, feature_first=False):
     return hit or (fallback if fallback.lower() in names else None)
 
 
-def path_dirs(location):
-    path = re.sub(r":\d+(:\d+)?$", "", location.replace("\\", "/")).strip()
-    path = re.sub(r"^[a-z]+://[^/]+", "", path)
-    return [p for p in path.split("/") if p and p not in (".", "..")][:-1]
-
-
-def base_group(location):
-    """The path-only cluster group: the first CLUSTER_PARTS directories of the file."""
-    if not location:
-        return "(no file)"
-    return "/".join(path_dirs(location)[:CLUSTER_PARTS]) or "(root)"
-
-
-def cluster_keys(locations):
-    """{location: cluster key}: the path decides the group, the counts only split or fold it.
-
-    A group over CLUSTER_SPLIT_OVER findings splits one level deeper, again while a subgroup is still over
-    it; subgroups under CLUSTER_MIN_SUBGROUP (and files with no deeper directory) fold into "<parent> (other)";
-    a cluster still under CLUSTER_MIN_GROUP folds into "<first part> (misc)".
-    """
-    weight = collections.Counter(locations)
-    state = {}
-    for loc in weight:
-        state[loc] = ["(no file)" if not loc else "/".join(path_dirs(loc)[:CLUSTER_PARTS]) or "(root)", CLUSTER_PARTS, False]
-    progressed = True
-    while progressed:
-        progressed = False
-        groups = collections.defaultdict(list)
-        for loc, (key, level, done) in state.items():
-            if not done:
-                groups[(key, level)].append(loc)
-        for (key, level), locs in groups.items():
-            if sum(weight[l] for l in locs) <= CLUSTER_SPLIT_OVER or not any(len(path_dirs(l)) > level for l in locs):
-                for l in locs:
-                    state[l][2] = True
-                continue
-            sub = collections.Counter()
-            for l in locs:
-                dirs = path_dirs(l)
-                if len(dirs) > level:
-                    sub["/".join(dirs[:level + 1])] += weight[l]
-            for l in locs:
-                dirs = path_dirs(l)
-                if len(dirs) > level and sub["/".join(dirs[:level + 1])] >= CLUSTER_MIN_SUBGROUP:
-                    state[l][0], state[l][1] = "/".join(dirs[:level + 1]), level + 1
-                else:
-                    state[l][0], state[l][2] = key + " (other)", True
-            progressed = True
-    sizes = collections.Counter()
-    for loc, (key, _, _) in state.items():
-        sizes[key] += weight[loc]
-    return {loc: (key if sizes[key] >= CLUSTER_MIN_GROUP or key in ("(no file)", "(root)")
-                  else key.split("/")[0].replace(" (other)", "") + " (misc)") for loc, (key, _, _) in state.items()}
-
-
-def plain_words(key):
-    return " ".join(re.sub(r"[/_\-]+", " ", re.sub(r"([a-z])([A-Z])", r"\1 \2", key)).split())
-
 def description(f, date, near=None, recurrence=None):
     lines = ["Filed by the Ship's Surgeon from the %s %s results." % (date, SOURCE_NAME[f["source"]]),
              "What it is for: a finding no Linear item tracked yet, so it is not lost.",
@@ -638,25 +578,8 @@ def description(f, date, near=None, recurrence=None):
     return "\n".join(lines) + marker + "\nsurgeon-fp:%s" % f["fingerprint"]
 
 
-def cluster_fp(key, project=""):
-    """A PropertyCompass2 cluster's fingerprint is its key's; a Fleet cluster with the same key is a different item."""
-    return fingerprint("review", "cluster-fleet" if project else "cluster", key)
-
-
-def cluster_body(key, members, recurrence=None, project=""):
-    open_n = sum(1 for m in members.values() if m["state"] == "open")
-    lines = ["Filed by the Ship's Surgeon from the %s results." % SOURCE_NAME["review"],
-             "What it is for: the lower-severity code-review findings in %s, kept in one item so one change can work them together and none is lost." % plain_words(key),
-             "Epic: not assigned; whoever triages this picks one.", "",
-             "Component: %s. Open: %d of %d. A ticked box is a finding the reviewer has marked resolved." % (key, open_n, len(members))]
-    for fp, m in sorted(members.items(), key=lambda kv: (kv[1]["file"], kv[1]["title"], kv[0])):
-        lines.append("- [%s] surgeon-fp:%s %s (%s)" % ("x" if m["state"] == "fixed" else " ", fp, m["title"], m["file"] or "no file"))
-    if recurrence:
-        lines.append(recurrence)
-    return "\n".join(lines) + "\nsurgeon-fp:%s" % cluster_fp(key, project)
-
 def update_review_state(state, findings, resolved, date):
-    """Tracks every real review finding (open or fixed) for the burn-down and the cluster ticks."""
+    """Tracks every real review finding (open or fixed) for the burn-down and the bundle ticks."""
     seen = state.setdefault("review", {})
     for f in findings:
         if f["source"] == "review" and f["class"] == "real" and f["fingerprint"]:
@@ -674,51 +597,6 @@ def burn_down(state, date):
             "fixed": sum(1 for r in rows if r["fixed_on"] and iso_week(r["fixed_on"]) == week)}
 
 
-def plan_clusters(clustered, state, ledger):
-    """The cluster items to make or refresh: [{key, fp, project, members, body, sha, action, findings}].
-
-    Fleet findings (lib.fleet_work) cluster apart from PropertyCompass2 ones, so no item mixes the two.
-    """
-    clusters = state.setdefault("clusters", {})
-    project_of = {id(f): lib.FLEET_PROJECT if lib.fleet_work(OFFICER, f["project"]) else "" for f in clustered}
-    assigned = {m: cfp for cfp, c in clusters.items() for m in c["members"]}
-    keys = {p: cluster_keys([f["location"] for f in clustered if project_of[id(f)] == p]) for p in set(project_of.values())}
-    desired = {cfp: {"key": c["key"], "project": c.get("project", ""), "members": {m: dict(v) for m, v in c["members"].items()},
-                     "findings": [], "recurrence": c.get("recurrence")} for cfp, c in clusters.items()}
-    # A file keeps its cluster: a new finding in a file already listed joins that item, whatever the counts now say.
-    by_file = {}
-    for cfp, c in sorted(clusters.items()):
-        for member in c["members"].values():
-            if member["file"]:
-                by_file.setdefault((c.get("project", ""), member["file"]), cfp)
-    for f in clustered:
-        project = project_of[id(f)]
-        cfp = assigned.get(f["fingerprint"])
-        if cfp is None or desired[cfp]["project"] != project:
-            cfp = by_file.get((project, f["location"]))
-        if cfp is None:
-            key = keys[project][f["location"]]
-            cfp = cluster_fp(key, project)
-            desired.setdefault(cfp, {"key": key, "project": project, "members": {}, "findings": [], "recurrence": None})
-        member = desired[cfp]["members"].setdefault(f["fingerprint"], {"title": f["title"], "file": f["location"], "state": "open"})
-        member["title"], member["file"] = f["title"], f["location"]
-        desired[cfp]["findings"].append(f)
-    review = state.get("review", {})
-    plan = []
-    for cfp, c in sorted(desired.items(), key=lambda kv: kv[1]["key"]):
-        for m, member in c["members"].items():
-            if review.get(m, {}).get("state") == "fixed":
-                member["state"] = "fixed"
-        body = cluster_body(c["key"], c["members"], c["recurrence"], c["project"])
-        sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
-        known = clusters.get(cfp)
-        action = None if known and known.get("sha") == sha and cfp in ledger else "update" if cfp in ledger else "create"
-        if not c["members"] or (not c["findings"] and action == "create"):
-            continue
-        plan.append({"key": c["key"], "fp": cfp, "project": c["project"], "members": c["members"], "body": body, "sha": sha,
-                     "action": action, "findings": c["findings"], "recurrence": c["recurrence"]})
-    return plan
-
 # ---- filing -----------------------------------------------------------------------------
 
 OFFICER = lib.Officer("surgeon", "Ship's Surgeon", "Surgeon", RUBRIC_FILE, BUILTIN_START_SOURCES,
@@ -732,147 +610,100 @@ def found_line(count, first, last):
 
 
 def file_findings(findings, args, date, out, state, found, jev, gaps):
-    """Files the real, untracked findings; returns (writes_done, why Linear was stopped or None)."""
+    """Files the real, untracked findings; returns (writes_done, why Linear was stopped or None).
+
+    Every finding goes to its source family's feature-area bundle (lib.Bundles), except a promotion-blocking invalid
+    nightly E2E run (special e2e-invalid), which keeps its own item.
+    """
     todo = [f for f in findings if f["class"] == "real" and not f["tracked"]]
-    clustered = [f for f in todo if f["source"] == "review" and f["severity"] == "low" and f["fingerprint"]]
-    clustered_ids = {id(f) for f in clustered}
-    singles = [f for f in todo if id(f) not in clustered_ids]
     stopped = lib.paused_until(out, args.now)
     ledger_path = os.path.join(out, LEDGER_FILE)
     ledger = read_json(ledger_path, {})
     filer = lib.Filer(OFFICER, LIN, args.team, date, out, ledger, found, jev, args.max_creates)
+    names = {}
     attach = {"pending": state.pop("pending_attach", [])}
-    plan = plan_clusters(clustered, state, ledger)
-    bumps = filer.bumps
-    for c in plan:
-        if not c["action"]:
-            for f in c["findings"]:
-                f["filing"] = {"action": "clustered", "issue": ledger[c["fp"]], "cluster": c["key"], "new": False}
+
+    def area(f):
+        fallback = VISUAL_AREA_FALLBACK if f["source"] == "visual" else args.triage_label
+        return area_for(f["location"], f["title"] + " " + f["summary"], names["names"], fallback, not f.get("special")) or args.triage_label
+
+    bundles = lib.Bundles(filer, args.bundle_cap, area=area)
+    bundles_for = [f for f in todo if f["fingerprint"] and not f.get("special")]
+    for f in bundles_for:
+        f["bundle"] = {"family": FAMILY[f["source"]], "area": None}
+        if f["source"] == "visual":
+            shots = f["evidence"].get("screenshots") or []
+            f["bundle"]["line"] = "visual-review-fp:%s%s" % (f["evidence"]["visual_review_fp"], "; screenshots: %s%s" % (
+                ", ".join(shots[:3]), " and %d more" % (len(shots) - 3) if len(shots) > 3 else "") if shots else "")
+    for f in todo:
+        if not f["fingerprint"]:
+            f["filing"] = {"action": "not-filed", "reason": "no key, title or location to fingerprint"}
+    for fp, r in sorted(state.get("review", {}).items()):
+        if r["state"] == "fixed":
+            bundles.tick(fp)
+    quiet = lib.file_bundled(filer, [f for f in todo if f["fingerprint"]], None, None, bundles)
 
     def flush_attach():
         if attach["pending"]:
             state["pending_attach"] = attach["pending"]
             gaps.append("%d screenshot(s) not attached yet; the next run retries them" % len(attach["pending"]))
 
-    def attach_created(items):
+    def attach_new(items):
         for f in items:
-            if f["source"] == "visual" and args.visual_captures and (f["filing"] or {}).get("action") == "created":
-                attach["pending"] += attach_screenshots([{"issue": f["filing"]["issue"], "file": w, "first": date}
+            filing = f["filing"] or {}
+            if f["source"] == "visual" and args.visual_captures and (
+                    filing.get("action") == "created" or (filing.get("action") == "bundled" and filing.get("new"))):
+                attach["pending"] += attach_screenshots([{"issue": filing["issue"], "file": w, "first": date}
                                                          for w in f["evidence"]["screenshots"]], gaps, attach, date)
 
     def stop(reason, rate_limited=False):
-        attach_created(bumps)
+        attach_new(todo)
         flush_attach()
         for f in todo:
-            f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
+            if not f["filing"] or "pending" in f["filing"]:
+                f["filing"] = {"action": "not-filed", "reason": reason}
         if rate_limited:
             lib.pause_for_rate_limit(out, args.now)
-        save(ledger_path, ledger, state, found)
+        save(ledger_path, ledger, state, found, bundles)
         return lib.summary_rows(todo), reason
 
-    for f in singles:
-        if not f["fingerprint"]:
-            f["filing"] = {"action": "not-filed", "reason": "no key, title or location to fingerprint"}
-        elif f["fingerprint"] in ledger:
-            f["filing"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}
-            f["issue_hint"] = ledger[f["fingerprint"]]
-            bumps.append(f)
-    due = [f for f in bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != date]
-    if not any(not f["filing"] for f in todo) and not any(c["action"] for c in plan) and not due and not attach["pending"]:
+    if quiet and not attach["pending"]:
+        save(ledger_path, ledger, state, found, bundles)
         return lib.summary_rows(todo), None
     if stopped:
         return stop(stopped)
     attach["pending"] = attach_screenshots(attach["pending"], gaps, attach, date)
     try:
-        names = lib.label_names(LIN, args.team)
+        names["names"] = lib.label_names(LIN, args.team)
     except LinearError as exc:
         return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
 
-    def label_set(f, location=None, words=None):
-        location = f["location"] if location is None else location
-        words = f["title"] + " " + f["summary"] if words is None else words
-        fallback = VISUAL_AREA_FALLBACK if f["source"] == "visual" else args.triage_label
-        area = area_for(location, words, names, fallback, f["source"] == "nightly" and not f.get("special"))
-        wanted = ["Bug", SOURCE_LABEL[f["source"]], area or args.triage_label]
-        missing = [w for w in wanted if w.lower() not in names]
-        return wanted, missing
+    def label_set(f):
+        if f.get("bundle") and f["bundle"]["area"] is None:
+            f["bundle"]["area"] = area(f)
+        wanted = ["Bug", SOURCE_LABEL[f["source"]], f["bundle"]["area"] if f.get("bundle") else area(f)]
+        return wanted, [w for w in wanted if w.lower() not in names["names"]]
 
     def describe(f, near=None, recurrence=None):
         return description(f, date, near=near, recurrence=recurrence)
 
-    order = [("single", f) for f in singles if not f["filing"] and RANK[f["severity"]] <= RANK["medium"]]
-    order += [("cluster", c) for c in plan if c["action"]]
-    order += [("single", f) for f in singles if not f["filing"] and RANK[f["severity"]] > RANK["medium"]]
     try:
-        for kind, item in order:
-            if kind == "single":
-                filer.file_single(item, label_set, describe)
-                attach_created([item])
-            else:
-                c = item
-                wanted, reason = filer.item_labels({"source": "review", "project": c["project"]},
-                                                   lambda f, key=c["key"]: label_set(f, key, key))
-                title = "Code review findings: %s (%s)" % (plain_words(c["key"]), c["key"])
-                try:
-                    if reason:
-                        for f in c["findings"]:
-                            f["filing"] = {"action": "not-filed", "reason": reason}
-                        continue
-                    action, ident, old = c["action"], ledger.get(c["fp"]), None
-                    if ident and lib.is_closed(filer.view_issue(ident)):
-                        old, ident = ident, None
-                    if not ident and filer.over_cap():
-                        for f in c["findings"]:
-                            f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run"}
-                        continue
-                    if not ident:
-                        ident, closed = filer.existing_issue(c["fp"])
-                        old = old or (None if ident else closed)
-                        if not ident:
-                            ident = filer.open_by_title(title, fleet=bool(c["project"]))  # an earlier run's item whose ledger entry was lost
-                        action = "update" if ident else "create"
-                    recurrence, body, sha, verify = c["recurrence"], c["body"], c["sha"], None
-                    if old:
-                        recurrence = lib.recurrence_line(old, filer.view_issue(old))
-                        body = cluster_body(c["key"], c["members"], recurrence, c["project"])
-                        sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
-                    if action == "create":
-                        ident, _, verify = filer.create(c["fp"], title, body, wanted, "3", c["project"])
-                    else:
-                        filer.update_body(ident, c["fp"], body)
-                    ledger[c["fp"]] = ident
-                    state["clusters"][c["fp"]] = {"key": c["key"], "members": c["members"], "sha": sha, "recurrence": recurrence}
-                    if c["project"]:
-                        state["clusters"][c["fp"]]["project"] = c["project"]
-                    error = filer.relate(ident, old) if old else None
-                    for f in c["findings"]:
-                        f["filing"] = {"action": "clustered", "issue": ident, "cluster": c["key"]}
-                        if old:
-                            f["filing"]["recurrence_of"] = old
-                        if verify:
-                            f["filing"]["verify"] = verify
-                        if error:
-                            f["filing"]["relation_error"] = error
-                except LinearError as exc:
-                    for f in c["findings"]:
-                        f["filing"] = f["filing"] or {"action": "failed", "reason": str(exc)}
-                    if exc.code in lib.RATE_OR_BUDGET:
-                        raise
-        filer.settle_bumps(label_set, describe)
-        attach_created(bumps)
+        lib.file_bundled(filer, [f for f in todo if f["fingerprint"]], label_set, describe, bundles)
+        attach_new(todo)
         flush_attach()
     except LinearError as exc:
         if exc.code == "RATE_LIMITED":
             return stop("Linear rate limit reached: %s" % exc, True)
         return stop("%s; the next run continues from the ledger" % exc)
-    save(ledger_path, ledger, state, found)
+    save(ledger_path, ledger, state, found, bundles)
     return lib.summary_rows(todo), None
 
-def save(ledger_path, ledger, state, found):
+def save(ledger_path, ledger, state, found, bundles):
     out = os.path.dirname(ledger_path)
     write_json(ledger_path, ledger)
     write_json(os.path.join(out, STATE_FILE), state)
     write_json(os.path.join(out, FOUND_FILE), found)
+    bundles.save()
 
 
 
@@ -912,7 +743,187 @@ def render_md(doc, archive_md):
     return "\n".join(lines) + "\n\n## Archive pass\n" + rest
 
 
+# ---- fold ---------------------------------------------------------------------------------
+
+FOLD_OPENING = "Filed by the Ship's Surgeon from the "
+FOLD_OTHER = re.compile(r"^Filed by the (.+?) from ")
+# fleet-app's own automated item families, counted by their title (this fold does not move them yet).
+FOLD_FLEET_APP = ("Dependency a major version behind: ", "Nightly E2E: ")
+CLUSTER_TITLE = "Code review findings: "
+CLUSTER_LINE = re.compile(r"^- \[([ x])\] surgeon-fp:([0-9a-f]{64}) (.*) \((.*)\)$")
+SOURCE_OF_NAME = {name: source for source, name in SOURCE_NAME.items()}
+
+
+def fold_findings(ident, issue):
+    """(findings, why it stays single or None) for one open item the Surgeon filed; each finding is a dict the bundle
+    path takes. A component cluster gives one finding per open line; a single item gives its own finding."""
+    desc = str(issue.get("description") or "")
+    title = text(issue.get("title"), 300)
+    fleet = text(issue.get("project"), 80).lower() == lib.FLEET_PROJECT.lower()
+
+    def one(fp, source, title, location, severity, line=None):
+        return {"fingerprint": fp, "source": source, "title": text(title, 120), "summary": "", "location": text(location, 200),
+                "severity": severity, "project": lib.FLEET_PROJECT if fleet else "", "class": "real", "tracked": None,
+                "filing": None, "special": None, "fold_from": ident,
+                "bundle": dict({"family": FAMILY[source], "area": None}, **({"line": line} if line else {}))}
+    if title.startswith(CLUSTER_TITLE):
+        out = []
+        for line in desc.splitlines():
+            m = CLUSTER_LINE.match(line)
+            if m and m.group(1) == " ":
+                out.append(one(m.group(2), "review", m.group(3), "" if m.group(4) == "no file" else m.group(4), "low"))
+        return out, None if out else "no open line"
+    if "\nPromotion-blocking: yes" in desc:
+        return [], "promotion-blocking, kept single"
+    marks = re.findall(r"surgeon-fp:([0-9a-f]{64})", desc)
+    first = desc.split("\n", 1)[0]
+    source = next((s for name, s in SOURCE_OF_NAME.items() if first.endswith(" %s results." % name)), None)
+    if not marks or not source:
+        return [], "not a Surgeon finding item"
+    severity = re.search(r"^Severity: (critical|high|medium|low)\.", desc, re.M)
+    location = re.search(r"^Location: (.*)$", desc, re.M)
+    visual = re.search(r"^visual-review-fp:([0-9a-f]{64})$", desc, re.M)
+    return [one(marks[-1], source, title, location.group(1) if location else "", severity.group(1) if severity else "medium",
+                "visual-review-fp:%s" % visual.group(1) if visual else None)], None
+
+
+def fold(args):
+    """Lists the open items the Surgeon made and folds each into its feature-area bundle (lib.Bundles); see `fold --help`."""
+    LIN.reset(args.max_linear_calls)
+    out = args.out
+    ledger = read_json(os.path.join(out, LEDGER_FILE), {})
+    found = read_json(os.path.join(out, FOUND_FILE), {})
+    date = datetime.datetime.fromtimestamp(args.now, datetime.timezone.utc).strftime("%Y-%m-%d")
+    filer = lib.Filer(OFFICER, LIN, args.team, date, out, ledger, found, lib.Jev(None), args.max_creates)
+    try:
+        names = lib.label_names(LIN, args.team)
+        listed = LIN(["issue", "list", "--team", args.team, "--all", "--max-items", str(args.max_items), "--limit", "100",
+                      "--fields", "description,stateType,project"])
+    except LinearError as exc:
+        print("fm-officer-surgeon fold: Linear read failed: %s" % exc, file=sys.stderr)
+        return 1
+
+    def area(f):
+        fallback = VISUAL_AREA_FALLBACK if f["source"] == "visual" else args.triage_label
+        return area_for(f["location"], f["title"], names, fallback, True) or args.triage_label
+
+    def label_set(f):
+        wanted = ["Bug", SOURCE_LABEL[f["source"]], f["bundle"]["area"] or area(f)]
+        return wanted, [w for w in wanted if w.lower() not in names]
+
+    bundles = lib.Bundles(filer, args.bundle_cap, area=area)
+    folded = bundles.state.setdefault("folded", {})
+    items, kept, others, findings = [], [], collections.Counter(), []
+    for h in dicts(listed.get("issues")):
+        ident, desc = text(h.get("identifier"), 20), str(h.get("description") or "")
+        if not ident or lib.is_closed(h) or text(h.get("title"), 300).startswith(lib.BUNDLE_PREFIX) or ident in folded:
+            continue
+        if not desc.startswith(FOLD_OPENING):
+            other = FOLD_OTHER.match(desc)
+            title = text(h.get("title"), 300)
+            if other:
+                others["filed by the %s" % other.group(1)] += 1
+            elif title.startswith(FOLD_FLEET_APP):
+                others["fleet-app's \"%s\" items" % next(t for t in FOLD_FLEET_APP if title.startswith(t)).rstrip(": ")] += 1
+            continue
+        try:
+            fs, why = fold_findings(ident, filer.view_issue(ident))
+        except LinearError as exc:
+            print("fm-officer-surgeon fold: reading %s failed: %s" % (ident, exc), file=sys.stderr)
+            return 1
+        if why:
+            kept.append((ident, why))
+            continue
+        items.append(ident)
+        for f in fs:
+            f["bundle"]["area"] = area(f)
+            findings.append(f)
+    plan = collections.OrderedDict()
+    for f in sorted(findings, key=lambda f: (f["bundle"]["family"], f["bundle"]["area"], bool(f["project"]), f["location"], f["title"])):
+        key = bundles.key(f)
+        plan.setdefault(key, {"findings": [], "items": [], "known": 0})
+        row = plan[key]
+        if f["fingerprint"] in bundles.member_of and not bundles.bundles[bundles.member_of[f["fingerprint"]]].get("closed"):
+            row["known"] += 1
+        else:
+            row["findings"].append(f)
+        if f["fold_from"] not in row["items"]:
+            row["items"].append(f["fold_from"])
+    print("Fold %s: %d open item(s) the Surgeon made fold into %d area bundle(s); %d finding(s), cap %d a bundle." % (
+        "plan (dry run, nothing written)" if not args.apply else "run", len(items), len(plan), len(findings), bundles.cap))
+    for (family, area_name, fleet), row in plan.items():
+        open_parts = bundles.open_parts((family, area_name, fleet))
+        room = sum(bundles.room(b) for b in open_parts)
+        new_parts = max(0, -(-(len(row["findings"]) - room) // bundles.cap))
+        print("- %s%s: %d finding(s) from %d item(s) (%s)%s; %s" % (
+            lib.bundle_title(area_name, family, 1), " [Fleet]" if fleet else "", len(row["findings"]) + row["known"], len(row["items"]),
+            ", ".join(sorted(row["items"], key=lambda i: (int(re.sub(r"\D", "", i) or 0), i))), ", %d already listed" % row["known"] if row["known"] else "",
+            "%d new bundle(s)" % new_parts + (" and appends to %s" % ", ".join(b["issue"] for b in open_parts if b.get("issue")) if open_parts else "")))
+    for ident, why in kept:
+        print("- kept: %s (%s)" % (ident, why))
+    for name, n in sorted(others.items()):
+        print("- not folded yet: %d open item(s) %s; this command folds only the Surgeon's" % (n, name))
+    if not args.apply:
+        return 0
+    for f in findings:
+        if f["fingerprint"] not in bundles.member_of or bundles.bundles[bundles.member_of[f["fingerprint"]]].get("closed"):
+            bundles.unkeyed.append((f, ""))
+            bundles.seen[f["fingerprint"]] = f
+    try:
+        bundles.write(label_set)
+    except LinearError as exc:
+        print("fm-officer-surgeon fold: stopped: %s" % exc, file=sys.stderr)
+    status = 0
+    for ident in items:
+        homes = [bundles.bundles.get(bundles.member_of.get(f["fingerprint"], "")) for f in findings if f["fold_from"] == ident]
+        if not homes or not all(bundles.written(b) for b in homes):
+            print("- not folded: %s (not every finding of it is on a written bundle)" % ident)
+            status = 1
+            continue
+        targets = collections.Counter(b["issue"] for b in homes)
+        target = min(targets, key=lambda t: (-targets[t], t))
+        try:
+            for cmd in (["issue", "relation", "add", ident, "--duplicate-of", target], ["issue", "update", ident, "--state", "Duplicate"]):
+                LIN(cmd + ["--dry-run"])
+                LIN(cmd + ["--verify"])
+            folded[ident] = target
+            print("- folded: %s is a duplicate of %s" % (ident, target))
+        except LinearError as exc:
+            print("- not folded: %s (%s)" % (ident, exc))
+            status = 1
+            if exc.code in lib.RATE_OR_BUDGET:
+                break
+    bundles.save()
+    write_json(os.path.join(out, LEDGER_FILE), ledger)
+    return status
+
+
+def fold_main(argv):
+    parser = argparse.ArgumentParser(prog="fm-officer-surgeon.py fold", description=(
+        "Fold the open PC items the Surgeon made (one per finding, or one per component cluster) into feature-area bundles. "
+        "A dry run by default: it reads Linear (label list, issue list, issue view) and prints, per area bundle, the findings and "
+        "items that would go there, what stays single (an invalid nightly E2E run blocks promotion) and other officers' items it "
+        "leaves alone. With --apply it creates or updates the bundles, then marks each original a duplicate of its bundle "
+        "(`issue relation add --duplicate-of`, then state Duplicate; --dry-run before --verify). It never deletes an item."))
+    parser.add_argument("--out", required=True, help="the Surgeon's lane directory (its bundles.json and ledger)")
+    parser.add_argument("--team", default="PC")
+    parser.add_argument("--triage-label", default="triage")
+    parser.add_argument("--bundle-cap", type=int, default=lib.DEFAULT_BUNDLE_CAP)
+    parser.add_argument("--max-items", type=int, default=1000, help="newest items of the team read")
+    parser.add_argument("--max-creates", type=int, default=100)
+    parser.add_argument("--max-linear-calls", type=int, default=1500)
+    parser.add_argument("--now", type=int)
+    parser.add_argument("--apply", action="store_true", help="write: create or update bundles and mark each original Duplicate")
+    args = parser.parse_args(argv)
+    if args.team != "PC" or args.bundle_cap < 1 or args.max_items < 1 or args.max_creates < 1 or args.max_linear_calls < 1:
+        parser.error("fold needs --team PC and --bundle-cap, --max-items, --max-creates and --max-linear-calls of at least 1")
+    args.now = int(time.time()) if args.now is None else args.now
+    return fold(args)
+
+
 def main(argv):
+    if argv[:1] == ["fold"]:
+        return fold_main(argv[1:])
     parser = argparse.ArgumentParser(prog="fm-officer-surgeon.py")
     parser.add_argument("action", choices=["run"])
     parser.add_argument("--archive", required=True)

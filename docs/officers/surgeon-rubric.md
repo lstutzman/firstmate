@@ -44,24 +44,18 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 
 ## Where findings are filed
 
-- Every real finding is filed.
-  A medium or higher finding gets its own Linear item.
-- Low code-review findings are clustered by component, one Linear item per cluster, with each finding's file and fingerprint listed inside as a tick box.
-  Findings from a fleet repository (firstmate, skills, fleet-app) cluster apart from PropertyCompass2 ones, and their cluster items go in the Fleet project with `area:fleet`.
-  A new finding updates its cluster's item, and a finding on the reviewer's resolved list is ticked off.
-  A cluster with no ledgered item first reuses the oldest open item of the same title in the same project (Fleet or not), so a lost ledger does not file a duplicate cluster.
-- The cluster rule: group by the first 2 directory parts of the finding's file, split a group of more than 25 findings one level deeper (again while a subgroup still has more than 25), fold subgroups of fewer than 10 back into "(parent) (other)", and fold any group still under 3 findings into "(first part) (misc)".
-  The code keeps these four numbers as named constants.
-  The path decides the group, and the counts only decide where it splits or folds.
-  A finding keeps its cluster once assigned, so the same file keeps landing in the same item as findings come and go.
+- Every real finding is filed, as a line on its source family's feature-area bundle, under the bundle rule in [`contract.md`](contract.md#bundles).
+  The families are code review, nightly E2E, bug sweeper and visual review, each with its own bundles.
+  Findings from a fleet repository (firstmate, skills, fleet-app) are bundled apart from PropertyCompass2 ones, and their bundles go in the Fleet project with `area:fleet`.
+  A finding on the reviewer's resolved list is ticked off.
+- An invalid nightly E2E run stays a single item of its own, because it blocks promotion.
+- `bin/fm-officer-surgeon.py fold` moves the Surgeon's existing open items (one per finding, and the old component clusters' open lines) into their area bundles and marks each original a duplicate of its bundle; it is a dry run unless given `--apply`, and main runs `--apply` only on its go.
 - Each item has one Type, one Source and one area label.
-  The area label comes from the finding's file path or component, and falls back to the triage label when nothing fits.
-  A nightly E2E failure's path is always a spec file, so for it the feature labels (calculators, deal-finder, authentication, api and so on) are tried first, on the spec path and then the finding's words, and `testing` is only its fallback.
+  The area label is the bundle's feature area: the feature labels (calculators, deal-finder, authentication, api and so on) are tried first, on the finding's path and then its words, then `testing`, and the triage label when nothing fits.
   The Surgeon never creates a label.
-- A visual-review defect is one item, with the Source `scheduled-review`, the type Bug and an area label taken from its route (the same path rules), falling back to `ui-ux` and then to the triage label.
-  Its description lists every screenshot and carries `visual-review-fp:<hex>`, the findings file's own fingerprint, beside the Surgeon's.
-  The item also names each screenshot's path: the real path when the registry line names the capture directory and the file is there, else the relative path.
-  When the registry line names the capture directory, the Surgeon attaches each screenshot to a newly filed item with `linear-attach <issue> <file> --verify`, never on a duplicate bump, and counts each call against the Linear call budget.
+- A visual-review defect is one line on a visual review bundle, with the Source `scheduled-review`, the type Bug and an area label taken from its route (the same path rules), falling back to `ui-ux` and then to the triage label.
+  Its line carries `visual-review-fp:<hex>`, the findings file's own fingerprint, beside the Surgeon's, and names its screenshots: the real path when the registry line names the capture directory and the file is there, else the relative path.
+  When the registry line names the capture directory, the Surgeon attaches each screenshot to the bundle the defect is newly added to with `linear-attach <issue> <file> --verify`, never on a repeat, and counts each call against the Linear call budget.
   A missing `linear-attach`, a missing or refused screenshot file, exit 3 (the app token lacks upload rights, Lee's call) and exit 75 (rate limited, which stops attaching for the run) are each a named coverage gap; a run that attaches everything reports none.
   A screenshot that was not attached, other than a missing file, stays pending in the lane's state and is retried first on every later run within the same call budget, so exit 3 is reported again each run until Lee changes the token; one still pending 7 days after it was first left is dropped with a named coverage gap saying it was abandoned.
   When the registry line names no capture directory, nothing is attached, and every run that files one says so in a `Coverage gap:` line.
@@ -74,13 +68,12 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 
 - Before filing, the Surgeon searches for the finding's fingerprint, then searches the title and asks local-jev "is this the same issue?" about each candidate.
   Only a confidence above 0.85 counts as a duplicate.
-  Below that the finding is filed new and the near match is noted in it.
+  Below that the finding is filed and the near match is noted on its line.
   Without local-jev, only the fingerprint decides, and the digest says so.
-- A duplicate raises the existing item's one machine-maintained line, `Found: N times (first <date>, last <date>, by surgeon)`, in place.
-  The Surgeon never reopens an item a person closed: when the existing item (from the ledger, the fingerprint search or local-jev) is closed (its state type is completed or canceled), the finding is a recurrence, so a new item is filed with its own Found line, the line `Recurrence of <old id> (closed as <state>)` and a related link to the old item, and the ledger points at the new one.
-  A closed cluster item is treated the same way: it is never updated again, and the cluster's next change files a new cluster item that names it.
-  It adds one comment, on the item's first sighting of the day, and never a second the same day.
-- A finding already on its own cluster's list is not a new sighting.
+- A duplicate of an existing single item raises that item's one machine-maintained line, `Found: N times (first <date>, last <date>, by surgeon)`, in place, and adds one comment, on the item's first sighting of the day, and never a second the same day.
+  The Surgeon never reopens an item a person closed (its state type is completed, canceled or duplicate): the finding is a recurrence, so it goes to its area bundle with a line noting `recurred, was in <old id>`; a closed invalid-E2E item gets a new single item with the line `Recurrence of <old id> (closed as <state>)` and a related link to the old item.
+  A closed bundle is treated the same way: it is never updated again, and its findings still reported go to the area's open bundle naming it.
+- A finding already on its bundle is not a new sighting of the bundle, but it keeps its own found count, which rises once a day it is seen.
 - The found count is a priority lever: score = severity weight x log2(1 + found), with weights critical 8, high 4, medium 2, low 1.
   The score orders what is filed and started (highest first), and the digest shows it.
   A start also needs a score of at least the minimum below, 4.
@@ -127,8 +120,9 @@ When the reviewer's model or instructions change, replay with `no-mistakes eval 
   The office dispatches no fourth fix and files the keyed `needs-decision` `surgeon-<issue>-fix-cap`, so Lee decides the next step.
   Three separates a bad first attempt from a wrong diagnosis, and few enough that a stuck finding reaches a person within days.
   The office dispatches no more than 3 fixes for one finding either (`office-roles` "Picking work"); the test is `test_a_finding_that_keeps_coming_back_stops_at_three_starts`.
+- A finding that starts starts its whole bundle, once: the request asks for every open line in one pull request, and a line in a reserved class holds the bundle for Lee ([`contract.md`](contract.md#bundles)).
 - Nothing else starts.
-  Medium findings seen fewer than 3 times, low findings, clusters, invalid E2E runs and every visual-review finding only get filed (or, for a held visual finding, announced).
+  Medium findings seen fewer than 3 times, low findings, invalid E2E runs and every visual-review finding only get filed (or, for a held visual finding, announced).
 - A real security bug starts like any other at its severity, as the fleet rule wants high and critical security fixes started at once: a password hash compared with `==` or an API key logged in plaintext is a code fix, not a credential action.
 
 ## What only files, and holds for Lee

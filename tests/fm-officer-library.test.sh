@@ -39,6 +39,7 @@ case "$1 $2" in
     sep=''; while IFS= read -r l; do printf '%s{"name":"%s"}' "$sep" "$l"; sep=','; done < "$d/labels.txt"
     echo ']}}' ;;
   "issue search") echo '{"ok":true,"data":{"issues":[]}}' ;;
+  "issue list") echo '{"ok":true,"data":{"issues":[]}}' ;;  # no open bundle of an exact title yet
   "issue view")
     echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'","state":"Todo","stateType":"unstarted","description":"Found: 1 times (first 2026-10-24, last 2026-10-24, by library)"}}}' ;;
   "issue create")
@@ -229,36 +230,35 @@ test_findings_are_filed_capped_per_audit_run_and_found_raised() {
   log=$dir/log
   json="$(lane)/$DATE.json"
   run_library >/dev/null || fail "a writing run must succeed"
-  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "at most 3 new items are created for one audit run"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "at most 3 new bundle items are created for one audit run"
   assert_equals 3 "$(count_lines '^issue create .*--dry-run' "$log")" "every create is a dry run first"
   assert_equals 3 "$(count_lines '^issue create .*--label Chore --label scheduled-review --label documentation --verify' "$log")" \
     "each item is a Chore with the scheduled-review Source and an area label, in no Linear project"
   assert_no_grep "--project" "$log" "PropertyCompass2 work goes in no Fleet project"
-  assert_equals 3 "$(count_lines '^librarian-fp:' "$dir/bodies")" "every body carries the librarian-fp marker alone on its line"
-  assert_equals 3 "$(count_lines '^Found: 1 times (first 2026-10-31, last 2026-10-31, by library)$' "$dir/bodies")" "and its one Found line, dated by the audit run"
+  assert_equals 3 "$(count_lines '^librarian-fp:' "$dir/bodies")" "every body carries its bundle's librarian-fp marker alone on its line"
+  assert_equals 5 "$(count_lines '^- \[ \] librarian-fp:' "$dir/bodies")" "and one checklist line per finding, the findings of one audit kind sharing a bundle"
   assert_no_grep "Brief among scripts" "$dir/bodies" "an on-hold finding is never filed"
   assert_no_grep "decision(s) for Lee" "$dir/bodies" "and neither is the run's decisions item"
-  assert_equals "Propose a dated successor note." "$(grep -m1 -A0 '^Proposed: Propose a dated' "$dir/bodies" | sed 's/^Proposed: //')" "the highest-scored finding (the high conflict) is filed first"
+  assert_contains "$(grep -m1 '^issue create .*--verify' "$log")" "--title Automated findings: conflict (librarian audit)" "the highest-scored finding's bundle (the high conflict) is filed first"
   assert_contains "$(<"$(lane)/$DATE.md")" "Not filed (over max-creates for this run)" "the overflow is named in the digest"
   assert_equals 1 "$(jq '[.asks_for_lee[] | select(.key == "library-needs-lee-2026-10-31")] | length' "$json")" "needs-Lee items are one keyed needs-decision for the run"
   assert_equals 1 "$(jq '.asks_for_lee | length' "$json")" "and only that one"
 
   run_library >/dev/null || fail "a same-day re-run must succeed"
   assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "a re-run files nothing more"
-  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and raises no Found line"
+  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and rewrites no bundle"
   run_library 2026-11-02 $((NOW + 86400)) >/dev/null || fail "a next-day run must succeed"
   assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "the cap is per audit run, so the next day creates nothing"
-  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and the Found line rises once per audit run, not once a day"
+  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and nothing is rewritten for the same audit run"
   assert_equals 0 "$(jq '.asks_for_lee | length' "$(lane)/2026-11-02.json")" "the needs-decision is not repeated for the same audit run"
 
   # A newer audit run raises the filed items and files the next three.
   write_run "$RUNS/2026-11-07" ok 5
   run_library 2026-11-07 $((NOW + 7 * 86400)) >/dev/null || fail "the next audit's run must succeed"
   assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "the next audit run files the findings the cap left"
-  assert_equals 3 "$(count_lines '^UPDATE' "$dir/updates")" "and raises each filed item's Found line in place"
-  assert_equals 3 "$(count_lines '^COMMENT' "$dir/comments")" "with one comment on the day's first sighting"
-  assert_equals true "$(jq '[.items[] | select(.linear.found == 2)] | length > 0' "$(lane)/2026-11-07.json")" "the digest shows the found count"
-  pass "fm-officer library: findings are filed as Chore items, capped per audit run, and the Found line rises once per audit run"
+  assert_equals 0 "$(count_lines '^COMMENT' "$dir/comments")" "a bundle gets no per-finding comment"
+  assert_equals true "$(jq '[.items[] | select(.linear.found == 2)] | length > 0' "$(lane)/2026-11-07.json")" "each finding's own found count rises once per audit run, and the digest shows it"
+  pass "fm-officer library: findings are filed in Chore bundles, capped per audit run, and each finding's found count rises once per audit run"
 }
 
 test_rate_limit_after_a_create_keeps_the_cap() {
@@ -287,7 +287,8 @@ test_registry_max_creates_is_held_to_three() {
 
 test_safe_findings_start_and_reserved_ones_hold() {
   local json dir
-  linear_world starts
+  # bundle-cap 1 gives each finding its own bundle, so each is judged alone (a reserved line holds its whole bundle).
+  linear_world starts "; bundle-cap: 1"
   dir=$FAKE_LINEAR_DIR
   json="$(lane)/$DATE.json"
   printf '[%s,%s,%s,%s]\n' \

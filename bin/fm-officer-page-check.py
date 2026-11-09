@@ -80,11 +80,11 @@ shared officer contract (docs/officers/contract.md; bin/fm-officer-linear.py own
 mechanics) with its rubric docs/officers/page-check-rubric.md, which owns what counts
 as work, the severity of each kind and what starts. Every open finding is filed once
 in team PC, project Fleet, labels Bug, the Source label agent and area:fleet, keyed by
-its id (kind, page and object), so a finding nobody fixed raises the item's
-`Found: N times` line once a day and that count is the priority lever. A card's own
-words never go to Linear: the item names the card by id. A repeat of a closed item
-raises that item's Found line, files nothing new and never starts it (the Filer's
-bump_closed). A page-old or shown-after-done
+its id (kind, page and object), as a line on its page's bundle (docs/officers/contract.md
+"Bundles"), so a finding nobody fixed raises its own found count once a day and that count
+is the priority lever. A card's own words never go to Linear: the line names the card by id.
+A repeat of a closed item or bundle files nothing new and never starts it (the Filer's
+bump_closed; recur_closed off). A page-old or shown-after-done
 finding whose open item exists and whose score reaches the rubric minimum gets a start
 request in the digest's `start_requests` (and, for this home, a <key>.start-requests.sh
 handoff), addressed to the --start-home office that dispatches the fleet repositories
@@ -447,50 +447,22 @@ def description(lf, key, off, near=None, recurrence=None):
 
 
 def file_findings(lib, off, findings, args, key, ledger, found, jev, lin):
-    """Files every open finding, highest score first; returns (writes done, why Linear stopped or None)."""
+    """Files every open finding, highest score first, in one bundle per fleet-app page (lib.Bundles; the route is the
+    line's place); returns (writes done, why Linear stopped or None). A finding whose bundle or older item a person
+    closed is not filed again (recur_closed off, as the Filer's bump_closed)."""
     day, out = key[:10], args.out
     filer = lib.Filer(off, lin, args.team, day, out, ledger, found, jev, args.max_creates, bump_closed=True)
-
-    def stop(reason, rate_limited=False):
-        for f in findings:
-            f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
-        if rate_limited:
-            lib.pause_for_rate_limit(out, args.now)
-        return lib.summary_rows(findings), reason
-
+    bundles = lib.Bundles(filer, args.bundle_cap, recur_closed=False, area=lambda f: f["raw"]["page"])
     for f in findings:
-        if f["fingerprint"] in ledger:
-            f["filing"], f["issue_hint"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}, ledger[f["fingerprint"]]
-            if found.get("issues", {}).get(ledger[f["fingerprint"]], {}).get("closed"):
-                f["filing"]["closed"] = True
-            filer.bumps.append(f)
-    due = [f for f in filer.bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != day]
-    if not any(not f["filing"] for f in findings) and not due:
-        return lib.summary_rows(findings), None
-    stopped = lib.paused_until(out, args.now)
-    if stopped:
-        return stop(stopped)
-    try:
-        names = lib.label_names(lin, args.team)
-    except lib.LinearError as exc:
-        return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
+        f["bundle"] = {"family": "page check", "area": None}
 
-    def label_set(f):
-        return lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
+    def labels_for(names):
+        return lambda f: lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
 
     def describe(f, near=None, recurrence=None):
         return description(f, key, off, near, recurrence)
 
-    try:
-        for f in findings:
-            if not f["filing"]:
-                filer.file_single(f, label_set, describe)
-        filer.settle_bumps(label_set, describe)
-    except lib.LinearError as exc:
-        if exc.code == "RATE_LIMITED":
-            return stop("Linear rate limit reached: %s" % exc, True)
-        return stop("%s; the next run continues from the ledger" % exc)
-    return lib.summary_rows(findings), None
+    return lib.file_in_bundles(filer, bundles, findings, args, labels_for, describe)
 
 
 def linear_pass(raw, args, key):

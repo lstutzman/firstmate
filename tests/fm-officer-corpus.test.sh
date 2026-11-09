@@ -265,6 +265,7 @@ case "$1 $2" in
     sep=''; while IFS= read -r l; do printf '%s{"name":"%s"}' "$sep" "$l"; sep=','; done < "$d/labels.txt"
     echo ']}}' ;;
   "issue search") echo '{"ok":true,"data":{"issues":[]}}' ;;
+  "issue list") echo '{"ok":true,"data":{"issues":[]}}' ;;  # no open bundle of an exact title yet
   "issue view")
     echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'","state":"Todo","stateType":"unstarted","description":"Found: '"$(cat "$d/found-count" 2>/dev/null || echo 1)"' times (first 2026-11-03, last 2026-11-03, by corpus)"}}}' ;;
   "issue create")
@@ -335,21 +336,21 @@ test_findings_are_filed_in_the_fleet_project_with_counts_only() {
   assert_equals 6 "$(count_lines '^issue create .*--dry-run' "$log")" "every create is a dry run first"
   assert_equals 6 "$(count_lines '^issue create .*--label Chore --label agent --label area:fleet --project Fleet --dry-run' "$log")" \
     "each item is a Chore with the agent Source and area:fleet, in the Fleet project, in team PC"
-  assert_equals 6 "$(count_lines '^corpus-fp:' "$dir/bodies")" "every body carries the corpus-fp marker alone on its line"
-  assert_equals 6 "$(count_lines '^Found: 1 times (first 2026-11-04, last 2026-11-04, by corpus)$' "$dir/bodies")" "and its one Found line"
+  assert_equals 6 "$(count_lines '^Automated findings: ' <(grep '^issue create .*--verify' "$log" | sed 's/.*--title //'))" "each finding class is its own bundle"
+  assert_equals 6 "$(count_lines '^corpus-fp:' "$dir/bodies")" "every body carries the bundle's corpus-fp marker alone on its line"
+  assert_equals 6 "$(count_lines '^- \[ \] corpus-fp:[0-9a-f]* .*; repository: ' "$dir/bodies")" "and one checklist line per finding, naming its repository"
   assert_no_grep "SESSION-TEXT" "$dir/bodies" "no session text, error text or list item reaches a Linear item"
-  assert_grep "Scan gate: the fix may touch the scan gate files" "$dir/bodies" "an item whose fix may touch the scan gate says so"
+  assert_grep "scan gate: the fix may touch the scan gate files" "$dir/bodies" "a line whose fix may touch the scan gate says so"
   assert_equals 0 "$(jq '.asks_for_lee | length' "$json")" "nothing is held for Lee"
 
   run_corpus >/dev/null || fail "a same-day re-run must succeed"
   assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "a re-run files nothing more"
-  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and raises no Found line"
+  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and rewrites no bundle"
   run_corpus 2026-11-05 $((NOW + 86400)) >/dev/null || fail "the next night must succeed"
-  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "the next night creates nothing: the findings already have items"
-  assert_equals 6 "$(count_lines '^UPDATE' "$dir/updates")" "and raises each item's Found line in place"
-  assert_equals 6 "$(count_lines '^COMMENT' "$dir/comments")" "with one comment on the night's first sighting"
-  assert_equals 6 "$(jq '[.findings[] | select(.linear.found == 2)] | length' "$(lane)/2026-11-05.json")" "the digest shows the found count"
-  pass "fm-officer corpus: findings are filed as Fleet Chore items from counts only, and the Found line rises once a night"
+  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "the next night creates nothing: the findings are already on their bundles"
+  assert_equals 0 "$(count_lines '^UPDATE' "$dir/updates")" "and an unchanged bundle is not rewritten"
+  assert_equals 6 "$(jq '[.findings[] | select(.linear.found == 2)] | length' "$(lane)/2026-11-05.json")" "each finding's own found count rises, and the digest shows it"
+  pass "fm-officer corpus: findings are filed in Fleet Chore bundles from counts only, and each finding's found count rises once a night"
 }
 
 test_create_cap_names_the_overflow() {
@@ -386,7 +387,8 @@ test_a_medium_finding_starts_on_its_third_night() {
   linear_world third
   dir=$FAKE_LINEAR_DIR
   run_corpus >/dev/null || fail "the first writing night must succeed"
-  echo 2 > "$dir/found-count" # the items now read Found: 2 times, so the next night's raise makes it 3
+  # Each finding's own found count is now 2, so the next night makes it 3.
+  jq '.members |= map_values(.count = 2)' "$(lane)/found.json" > "$dir/found.json" && cp "$dir/found.json" "$(lane)/found.json"
   jq '.handled = {}' "$(lane)/review-state.json" > "$dir/state.json" && cp "$dir/state.json" "$(lane)/review-state.json"
   run_corpus 2026-11-05 $((NOW + 86400)) >/dev/null || fail "a later night must succeed"
   assert_equals "archive-gap,harvest-drift,harvest-failed,not-collected,prep-stale,retrain-missed" \
@@ -430,7 +432,8 @@ test_a_reserved_class_is_held() {
   line='{"started": "2026-11-05T07:00:00+00:00", "finished": "2026-11-05T07:08:54+00:00", "sources": {"deploy to production/codex": "not collected: ssh exited 1", "deepthought/claude-code": "ok"}}'
   printf '%s\n%s\n' "$line" "$line" > "$W/corpus/transcript-archive/runs.jsonl"
   run_corpus >/dev/null || fail "the first writing night must succeed"
-  echo 2 > "$FAKE_LINEAR_DIR/found-count" # the item reaches the start score on its third night
+  # the finding reaches the start score on its third night: its own found count is now 2
+  jq '.members |= map_values(.count = 2)' "$(lane)/found.json" > "$FAKE_LINEAR_DIR/found.json" && cp "$FAKE_LINEAR_DIR/found.json" "$(lane)/found.json"
   json="$(lane)/2026-11-05.json"
   run_corpus 2026-11-05 $((NOW + 86400)) >/dev/null || fail "a later night must succeed"
   assert_equals "corpus-holds-2026-11-05" "$(jq -r '.asks_for_lee[0].key' "$json")" "a finding matching a reserved class is one keyed needs-decision"

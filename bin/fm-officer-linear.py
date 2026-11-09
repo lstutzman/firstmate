@@ -19,13 +19,24 @@ how it finds things. This file owns the mechanics every officer shares:
               (`issue update --dry-run`, then `--verify`) and adds one comment, on the day's first sighting only.
               Every write is `--dry-run` then `--verify`. A failed verify is never retried; the item is taken as written when the
               error's data.issue.identifier names it, else when the team's issue list holds one new open item of exactly its title (Linear's full-text search matches
-              neither fingerprints nor these titles, so no exact-title lookup uses it; see title_index()), and only then recorded failed (tried again next run). open_by_title() also lets a cluster reuse
-              the oldest open item of its title. An item a person closed (completed or canceled) is never reopened,
+              neither fingerprints nor these titles, so no exact-title lookup uses it; see title_index()), and only then recorded failed (tried again next run). open_by_title() also lets a bundle adopt
+              the oldest open item of its title. A Duplicate item counts as closed (is_closed()). An item a person closed (completed or canceled) is never reopened,
               edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`), unless
               the Filer is built with bump_closed (the page-check officer), when it bumps the closed item and starts nothing.
               An item gets exactly one Type, one Source and one area label; fleet work
               (is_fleet: a finding's repository, else its Officer's project) goes in the Fleet project, with the area:fleet label (fleet_labels). The library never creates a label and never closes
               or deletes an item.
+  bundles     Bundles (docs/officers/contract.md "Bundles" owns the rule): one open item per (officer, source family, area,
+              fleet or not), titled bundle_title(); its body is rebuilt from the lane's bundles.json on every write, so a line
+              is never lost. place() (no Linear call) keeps a finding on its open bundle, keeps one already filed alone on that
+              older item (legacy, bumped until closed), or queues it; dedupe() bumps a queued finding an existing single item
+              tracks (fingerprint, then local-jev, never matching a bundle); write() appends the queue to the area's open part
+              with room (at most bundle-cap open lines, none on a started part), else adopts an open item of the part's exact
+              title (a lane that lost its state), else creates the next part, and reads each bundle it touches (and every
+              bundle with a finding still reported, once a day): a closed one is never written again and its reported findings
+              are queued again naming it (with recur_closed off, the page-check officer's case, they stay with it). Each
+              bundled finding keeps its own found count in found.json `members`. file_bundled() and file_in_bundles() are the
+              filing passes; plan_starts() gives a bundle one start (BUNDLE_START) and holds it whole on any reserved line.
   budget      Linear counts every linear-axi call against the officer's registry `max-linear-calls`, and Filer stops
               creating at its `max-creates`; whatever is left is reported by not_filed_lines() and filed by the next run
               from the ledger. One RATE_LIMITED answer stops every Linear call and pauses later runs for an hour.
@@ -106,6 +117,16 @@ VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
 TITLE_INDEX_ITEMS = 600  # newest items of the team read for an exact-title lookup (the list is newest first)
 TITLE_INDEX_PAGE = 100
 CLOSED_STATES = ("Done", "Canceled", "Cancelled", "Duplicate")
+CLOSED_TYPES = ("completed", "canceled", "duplicate")
+DEFAULT_BUNDLE_CAP = 15  # open findings in one bundle item (registry `bundle-cap`)
+BUNDLE_PARTS_MAX = 20  # parts one run tries for one area before it names the rest not filed
+BUNDLE_FILE = "bundles.json"
+NO_FILE = "(no file)"
+BUNDLE_HEAD = re.compile(r"^### (.+)$")
+BUNDLE_LINE = re.compile(r"^- \[([ x])\] ([a-z][a-z-]*-fp):([0-9a-f]{64}) (.+)$")
+RECUR = "recurred, was in "
+BUNDLE_PREFIX = "Automated findings: "
+BUNDLE_START = "Start this Linear item: fix every open line of its checklist in one pull request, tested once."
 RESUME_FILE = "linear-resume-after.json"
 LEDGER_FILE = "filed-fingerprints.json"
 STATE_FILE = "review-state.json"
@@ -238,11 +259,12 @@ def score_of(f):
 
 
 def apply_found(findings, found, ledger):
-    """Found count and score per finding; the list ends up highest score first."""
-    issues = found.get("issues", {})
+    """Found count and score per finding (a bundled one keeps its own count, found.json `members`); the list ends up
+    highest score first."""
+    issues, members = found.get("issues", {}), found.get("members", {})
     for f in findings:
         item = issues.get(ledger.get(f["fingerprint"]) or "", {})
-        f["found"] = max(1, item.get("count", 1))
+        f["found"] = max(1, item.get("count", 1), members.get(f["fingerprint"] or "", {}).get("count", 1))
         f["score"] = score_of(f)
     findings.sort(key=lambda f: (-f["score"], RANK[f["severity"]], f["source"], f["job"], f["key"], f["title"]))
 
@@ -358,8 +380,9 @@ def issue_id(data):
 
 
 def is_closed(issue):
+    """Done, canceled or a duplicate (Linear reports a duplicate's stateType as `duplicate`); else the state name."""
     kind = text(issue.get("stateType")).lower()
-    return kind in ("completed", "canceled") if kind else text(issue.get("state")) in CLOSED_STATES
+    return kind in CLOSED_TYPES if kind else text(issue.get("state")) in CLOSED_STATES
 
 
 def recurrence_line(old, issue):
@@ -469,6 +492,9 @@ class Filer:
         found = self.lin(["issue", "search", query, "--team", self.team, "--limit", str(limit)]).get("issues")
         return [text(h.get("identifier"), 20) for h in dicts(found) if h.get("identifier")]
 
+    def is_bundle(self, ident):
+        return text(self.view_issue(ident).get("title"), 300).startswith(BUNDLE_PREFIX)
+
     def existing_issue(self, fp):
         """(open, closed): the open Linear item whose description carries the fingerprint, and the first closed one.
 
@@ -481,7 +507,7 @@ class Filer:
         closed = None
         for ident in self.search_hits(marker, 5)[:EXISTING_VIEWS]:
             issue = self.view_issue(ident)
-            if ident and marker in str(issue.get("description") or ""):
+            if ident and marker in str(issue.get("description") or "") and not self.is_bundle(ident):
                 if not is_closed(issue):
                     return ident, closed
                 closed = closed or ident
@@ -490,7 +516,7 @@ class Filer:
     def similar_issue(self, f):
         """(issue, confidence, near): a duplicate above JEV_SAME, else the best near match (or None)."""
         best = (None, 0.0)
-        for ident in self.search_hits(f["title"], 5)[:JEV_CANDIDATES]:
+        for ident in [i for i in self.search_hits(f["title"], 5) if not self.is_bundle(i)][:JEV_CANDIDATES]:
             issue = self.view_issue(ident)
             confidence = self.jev.same(finding_text(f), "%s\n%s" % (issue.get("title") or "", str(issue.get("description") or "")[:600]))
             if confidence is None:
@@ -743,15 +769,17 @@ class Filer:
             if exc.code in RATE_OR_BUDGET:
                 raise
 
-    def settle_bumps(self, label_set, describe):
-        """Raises the Found line of every duplicate found this run; an item closed meanwhile files a recurrence,
-        or with bump_closed is bumped and marked closed."""
+    def settle_bumps(self, label_set, describe, on_closed=None):
+        """Raises the Found line of every duplicate found this run; an item closed meanwhile files a recurrence
+        (unless on_closed(f, item), when given, takes it: a bundled finding goes to its area bundle), or with bump_closed
+        is bumped and marked closed."""
         for f in self.bumps:
             ident = f["filing"]["issue"]
             try:
                 count = self.bump(ident, f)
                 if count is None:
-                    self.recur(f, ident, label_set, describe)
+                    if not (on_closed and on_closed(f, ident)):
+                        self.recur(f, ident, label_set, describe)
                     continue
                 if self.found["issues"][ident].get("closed"):
                     f["filing"]["closed"] = True
@@ -763,6 +791,421 @@ class Filer:
                 if exc.code in RATE_OR_BUDGET:
                     raise
                 f["filing"]["found_error"] = str(exc)
+
+
+# ---- bundles ------------------------------------------------------------------------------
+
+def bundle_title(area, family, part):
+    return "%s%s (%s)%s" % (BUNDLE_PREFIX, area, family, " part %d" % part if part > 1 else "")
+
+
+def bundle_lines(desc):
+    """{fingerprint: member} from a bundle body's checklist (the `### <file>` heading names each line's file)."""
+    members, where = {}, ""
+    for line in str(desc or "").splitlines():
+        head = BUNDLE_HEAD.match(line)
+        if head:
+            where = "" if head.group(1) == NO_FILE else head.group(1)
+            continue
+        m = BUNDLE_LINE.match(line)
+        if m:
+            title, severity, note = m.group(4), "low", ""
+            tail = re.match(r"^(.*) \((critical|high|medium|low)\)(?:; (.*))?$", title)
+            if tail:
+                title, severity, note = tail.group(1), tail.group(2), tail.group(3) or ""
+            members[m.group(3)] = {"title": title, "file": where, "severity": severity,
+                                   "state": "fixed" if m.group(1) == "x" else "open", **({"note": note} if note else {})}
+    return members
+
+
+class Bundles:
+    """One open Linear item per (source family, feature area): new findings are appended to it as checklist lines.
+
+    The library header owns the rule. State lives in the lane's bundles.json: each bundle's family, area, part, item,
+    labels and members (fingerprint -> title, file, severity, open or fixed), so a body is always rebuilt from state and a
+    line is never lost. A run uses place() for every bundled finding (no Linear call), tick() for a finding marked
+    resolved, then write() (the Linear calls), then save().
+    """
+
+    def __init__(self, filer, cap=DEFAULT_BUNDLE_CAP, recur_closed=True, area=None):
+        self.filer, self.cap, self.recur_closed, self.area = filer, max(1, cap), recur_closed, area
+        self.path = os.path.join(filer.out, BUNDLE_FILE)
+        self.state = read_json(self.path, {})
+        self.bundles = self.state.setdefault("bundles", {})
+        self.member_of = self.state.setdefault("member_of", {})
+        self.pending = collections.OrderedDict()  # key -> [(finding, note)]
+        self.dirty, self.seen, self.unkeyed, self.due = set(), {}, [], set()
+
+    def save(self):
+        write_json(self.path, self.state)
+
+    @staticmethod
+    def key_of(b):
+        return (b["family"], b["area"], b["fleet"])
+
+    def key(self, f):
+        """(family, area, fleet); an area left None is asked of `area(f)` only now, once Linear is in use."""
+        if f["bundle"].get("area") is None:
+            f["bundle"]["area"] = self.area(f)
+        return (f["bundle"]["family"], f["bundle"]["area"], fleet_work(self.filer.officer, f["project"]))
+
+    def open_parts(self, key):
+        return sorted((b for b in self.bundles.values() if self.key_of(b) == key and not b.get("closed")), key=lambda b: b["part"])
+
+    def filing(self, f, b, new):
+        f["filing"] = {"action": "bundled", "issue": b["issue"], "bundle": bundle_title(b["area"], b["family"], b["part"]), "new": new}
+        f["issue_hint"] = b["issue"]
+
+    def count(self, f):
+        """Raises the finding's own Found count once a day (found.json `members`), so a bundled finding still scores."""
+        old = self.filer.found.get("issues", {}).get(self.filer.ledger.get(f["fingerprint"]) or "", {}).get("count", 0)
+        rec = self.filer.found.setdefault("members", {}).setdefault(f["fingerprint"], {"count": 0, "last": None})
+        if rec["last"] != self.filer.date:
+            rec.update(count=max(rec["count"], old) + 1, last=self.filer.date)
+
+    def place(self, f):
+        """Where a bundled finding goes, with no Linear call: its open bundle, its older single item (legacy, bumped as
+        before until a person closes it), or the area's queue. Returns "bundled", "legacy" or "queued"."""
+        fp = f["fingerprint"]
+        self.seen[fp] = f
+        self.count(f)
+        b = self.bundles.get(self.member_of.get(fp, ""))
+        if b and not b.get("closed"):
+            m = b["members"][fp]
+            if (m["title"], m["file"], m["severity"]) != (f["title"], f["location"], f["severity"]):
+                m.update(title=f["title"], file=f["location"], severity=f["severity"])
+                self.dirty.add(b["fp"])
+            if b.get("issue"):
+                self.filing(f, b, False)
+                if not self.written(b):
+                    self.dirty.add(b["fp"])
+                if b.get("checked") != self.filer.date:
+                    self.due.add(b["fp"])  # read once a day, so a bundle a person closed or started is noticed
+                return "bundled"
+            self.dirty.add(b["fp"])
+            return "queued"
+        if b and b.get("closed"):
+            # Its bundle was closed by a person on an earlier run: never written again. The finding goes to the area's open
+            # bundle naming it, or (recur_closed off, the page check) stays with the closed one and is never filed again.
+            if not self.recur_closed:
+                f["filing"], f["issue_hint"] = {"action": "bundled", "issue": b["issue"], "closed": True}, b["issue"]
+                return "bundled"
+            del self.member_of[fp]
+            self.unkeyed.append((f, RECUR + b["issue"]))
+            return "queued"
+        if fp in self.filer.ledger and not b:
+            ident = self.filer.ledger[fp]
+            f["filing"], f["issue_hint"] = {"action": "exists", "issue": ident}, ident
+            if self.filer.found.get("issues", {}).get(ident, {}).get("closed"):
+                f["filing"]["closed"] = True
+            self.filer.bumps.append(f)
+            return "legacy"
+        self.unkeyed.append((f, ""))
+        return "queued"
+
+    def requeue(self, f, old):
+        """A bundled finding whose older single item a person closed: it goes to its area bundle, naming that item."""
+        if not f.get("bundle"):
+            return False
+        self.filer.ledger.pop(f["fingerprint"], None)
+        f["filing"] = None
+        self.unkeyed.append((f, RECUR + "%s" % old))
+        return True
+
+    def dedupe(self, label_set):
+        """A finding whose labels are missing is named not filed, with no Linear call. A new finding an existing single item already tracks (its fingerprint, or local-jev's "same issue") is bumped
+        there as before, never bundled; one whose item a person closed goes to the bundle naming it. Bundle items are never
+        matched. Linear calls; run before settle_bumps."""
+        keep = []
+        for f, note in self.unkeyed:
+            _, reason = self.filer.item_labels(f, label_set)
+            if reason:
+                f["filing"] = {"action": "not-filed", "reason": reason}
+                continue
+            if note:
+                keep.append((f, note))
+                continue
+            ident, closed = self.filer.existing_issue(f["fingerprint"])
+            if not ident and closed and self.filer.bump_closed:
+                ident = closed
+            if ident:
+                self.filer.ledger[f["fingerprint"]] = ident
+                f["filing"], f["issue_hint"] = {"action": "exists", "issue": ident}, ident
+                self.filer.bumps.append(f)
+                continue
+            if closed:
+                keep.append((f, RECUR + "%s" % closed))
+                continue
+            if not self.filer.jev.dead:
+                ident, confidence, near = self.filer.similar_issue(f)
+                if near:
+                    f["bundle"]["near"] = "near match %s, local-jev %.2f" % near
+                if ident:
+                    self.filer.ledger[f["fingerprint"]] = ident
+                    f["filing"], f["issue_hint"] = {"action": "duplicate", "issue": ident, "confidence": round(confidence, 2)}, ident
+                    self.filer.bumps.append(f)
+                    continue
+            keep.append((f, note))
+        self.unkeyed = keep
+
+    def tick(self, fp):
+        """Marks a finding resolved: its box is ticked, never removed."""
+        b = self.bundles.get(self.member_of.get(fp, ""))
+        if b and not b.get("closed") and b["members"][fp]["state"] != "fixed":
+            b["members"][fp]["state"] = "fixed"
+            self.dirty.add(b["fp"])
+
+    def needs_linear(self):
+        return bool(self.pending or self.unkeyed or self.due) or any(fp in self.bundles for fp in self.dirty)
+
+    def body(self, b):
+        off = self.filer.officer
+        members = b["members"]
+        open_n = sum(1 for m in members.values() if m["state"] == "open")
+        worst = min((m["severity"] for m in members.values() if m["state"] == "open"), key=lambda s: RANK[s], default="low")
+        lines = ["Filed by the %s from its automated %s findings." % (off.label, b["family"]),
+                 "What it is for: the %s findings in %s, kept in one item so one worker fixes and tests them in one pull request." % (b["family"], b["area"]),
+                 "Epic: not assigned; whoever triages this picks one.", "",
+                 "Severity: %s. Area: %s. Open: %d of %d. A new finding is added here until %d are open, then it starts the next part." % (
+                     worst, b["area"], open_n, len(members), self.cap),
+                 "A ticked box is a finding marked resolved; a line is never removed.", ""]
+        by_file = collections.OrderedDict()
+        for fp, m in sorted(members.items(), key=lambda kv: (kv[1]["file"] or "￿", kv[1]["title"], kv[0])):
+            by_file.setdefault(m["file"] or NO_FILE, []).append((fp, m))
+        for where, rows in by_file.items():
+            lines.append("### %s" % where)
+            for fp, m in rows:
+                lines.append("- [%s] %s:%s %s (%s)%s" % ("x" if m["state"] == "fixed" else " ", off.marker, fp, m["title"], m["severity"],
+                                                        "; " + m["note"] if m.get("note") else ""))
+        # No trailing newline: Linear trims it, and `create --verify` then reports a mismatch on a good create.
+        return "\n".join(lines) + "\n%s:%s" % (off.marker, b["fp"])
+
+    def new_bundle(self, key, part, labels, project):
+        family, area, fleet = key
+        serial = self.state.setdefault("serial", {})
+        n = serial["|".join((family, area, str(fleet)))] = serial.get("|".join((family, area, str(fleet))), 0) + 1
+        bfp = fingerprint("bundle", family, "%s|%s|%d" % ("fleet" if fleet else "pc", area, n))
+        b = {"fp": bfp, "family": family, "area": area, "fleet": fleet, "part": part, "issue": None, "labels": labels,
+             "project": project, "members": {}, "sha": None}
+        self.bundles[bfp] = b
+        return b
+
+    def add(self, b, f, note):
+        fp = f["fingerprint"]
+        old = self.bundles.get(self.member_of.get(fp, ""))
+        if old and old is not b:
+            del old["members"][fp]
+        extra = "; ".join(x for x in (f["bundle"].get("line"), f["bundle"].get("near"), note) if x)
+        b["members"][fp] = {"title": f["title"], "file": f["location"], "severity": f["severity"], "state": "open", **({"note": extra} if extra else {})}
+        if note.startswith(RECUR):
+            b["members"][fp]["recurred"] = note[len(RECUR):]
+        self.member_of[fp] = b["fp"]
+        self.dirty.add(b["fp"])
+
+    def room(self, b):
+        return 0 if b.get("started") else self.cap - sum(1 for m in b["members"].values() if m["state"] == "open")
+
+    def check(self, b):
+        """Reads the bundle's item: a closed one is never written again (its findings seen this run go back to the queue,
+        or stay with it when recur_closed is off); a started one takes no new line."""
+        issue = self.filer.view_issue(b["issue"])
+        b["checked"] = self.filer.date
+        self.due.discard(b["fp"])
+        if is_closed(issue):
+            b["closed"] = True
+            self.dirty.discard(b["fp"])
+            for fp, m in list(b["members"].items()):
+                f = self.seen.get(fp)
+                if f is None or m["state"] != "open":
+                    continue
+                if self.recur_closed:
+                    del self.member_of[fp]
+                    self.pending.setdefault(self.key(f), []).append((f, RECUR + "%s" % b["issue"]))
+                else:
+                    f["filing"] = {"action": "bundled", "issue": b["issue"], "closed": True}
+            return False
+        b["started"] = text(issue.get("stateType")).lower() == "started"
+        return True
+
+    def adopt(self, key, part):
+        """An open item of the part's exact title that this lane lost track of: its checklist becomes the state."""
+        family, area, fleet = key
+        ident = self.filer.open_by_title(bundle_title(area, family, part), fleet=fleet)
+        if not ident or any(b.get("issue") == ident for b in self.bundles.values()):
+            return None
+        issue = self.filer.view_issue(ident)
+        b = self.new_bundle(key, part, None, "")
+        b["issue"] = ident
+        b["started"] = text(issue.get("stateType")).lower() == "started"
+        for fp, m in bundle_lines(issue.get("description")).items():
+            if fp not in self.member_of:
+                b["members"][fp] = m
+                self.member_of[fp] = b["fp"]
+        return b
+
+    def digest(self, b):
+        return hashlib.sha256(self.body(b).encode("utf-8")).hexdigest()
+
+    def written(self, b):
+        """True when the bundle's open item holds its body as the state has it now."""
+        return bool(b and b.get("issue") and not b.get("closed") and b.get("sha") == self.digest(b))
+
+    def flush(self, b):
+        body = self.body(b)
+        sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        if b["issue"] and sha == b.get("sha"):
+            self.dirty.discard(b["fp"])
+            return None
+        verify = None
+        if b["issue"]:
+            self.filer.update_body(b["issue"], b["fp"], body)
+        else:
+            worst = min((m["severity"] for m in b["members"].values()), key=lambda s: RANK[s], default="low")
+            b["issue"], _, verify = self.filer.create(b["fp"], bundle_title(b["area"], b["family"], b["part"]), body, b["labels"],
+                                                      PRIORITY[worst], b["project"])
+        self.filer.ledger[b["fp"]] = b["issue"]
+        b["sha"] = sha
+        self.dirty.discard(b["fp"])
+        return verify
+
+    def write(self, label_set):
+        """Appends the queued findings to their area bundles and rewrites every changed bundle; Linear errors other than
+        RATE_LIMITED and CALL_BUDGET are named on the findings concerned and the next bundle goes on."""
+        for f, note in self.unkeyed:
+            self.pending.setdefault(self.key(f), []).append((f, note))
+        self.unkeyed = []
+        # Areas in the order of their best finding (seen is in score order), then any other changed bundle.
+        seen = [self.key_of(self.bundles[self.member_of[fp]]) if fp in self.member_of else self.key(f) for fp, f in self.seen.items()]
+        changed = [self.key_of(self.bundles[fp]) for fp in sorted(self.dirty | self.due) if fp in self.bundles]
+        wanted = set(self.pending) | set(changed)
+        keys = [k for k in seen if k in wanted] + list(self.pending) + changed
+        for key in list(collections.OrderedDict.fromkeys(keys)):
+            queue = self.pending.pop(key, [])
+            try:
+                self.write_key(key, queue, label_set)
+            except LinearError as exc:
+                for f in [f for f, _ in queue] + list(self.seen.values()):
+                    if not f["filing"] or "pending" in f["filing"]:
+                        f["filing"] = {"action": "failed", "reason": str(exc)}
+                if exc.code in RATE_OR_BUDGET:
+                    raise
+
+    def write_key(self, key, queue, label_set):
+        for b in self.open_parts(key):
+            if b["fp"] not in self.dirty and b["fp"] not in self.due and not queue:
+                continue
+            if not b["issue"] and self.filer.over_cap():
+                for fp in b["members"]:
+                    f = self.seen.get(fp)
+                    if f is not None and (not f["filing"] or "pending" in f["filing"]):
+                        f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run"}
+                continue
+            if b["issue"] and not self.check(b):
+                queue.extend(self.pending.pop(key, []))
+                continue
+            self.fill(b, queue)
+            if b["issue"] or b["members"]:
+                self.flush_into(b)
+        labels, reason = self.filer.item_labels(queue[0][0], label_set) if queue else (None, None)
+        if reason:
+            for f, _ in queue:
+                f["filing"] = {"action": "not-filed", "reason": reason}
+            queue[:] = []
+        tries = 0
+        while queue and tries < BUNDLE_PARTS_MAX:
+            tries += 1
+            used = {b["part"] for b in self.open_parts(key)}
+            part = next(p for p in range(1, len(used) + 2) if p not in used)
+            b = self.adopt(key, part)
+            if b is None:
+                if self.filer.over_cap():
+                    break
+                b = self.new_bundle(key, part, labels, queue[0][0]["project"])
+            elif not b["labels"]:
+                b["labels"], b["project"] = labels, queue[0][0]["project"]
+            self.fill(b, queue)
+            self.flush_into(b)
+        for f, _ in queue:
+            f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run" if self.filer.over_cap()
+                           else "no bundle with room after %d parts" % BUNDLE_PARTS_MAX}
+
+    def fill(self, b, queue):
+        while queue and self.room(b) > 0:
+            f, note = queue.pop(0)
+            self.add(b, f, note)
+            f["filing"] = {"pending": b["fp"]}
+
+    def flush_into(self, b):
+        verify = self.flush(b)
+        for fp in b["members"]:
+            f = self.seen.get(fp)
+            if f is not None and (not f["filing"] or f["filing"].get("pending") == b["fp"] or f["filing"].get("action") == "bundled"):
+                new = bool(f["filing"] and f["filing"].get("pending") == b["fp"])
+                self.filing(f, b, new)
+                if verify and new:
+                    f["filing"]["verify"] = verify
+                if b["members"][fp].get("recurred") and new:
+                    f["filing"]["recurrence_of"] = b["members"][fp]["recurred"]
+
+
+def file_bundled(filer, todo, label_set, describe, bundles):
+    """Files `todo` (highest score first): a finding with a `bundle` ({"family", "area"}) goes to its area bundle, any
+    other one is filed alone (file_single). Returns True when there is nothing to send to Linear (everything is known).
+
+    Call it twice: first with describe None (no Linear call; it only places the findings), then, when it returned False
+    and Linear may be used, with describe set. RATE_LIMITED and CALL_BUDGET are raised to the caller.
+    """
+    if describe is None:
+        for f in todo:
+            if f.get("bundle"):
+                bundles.place(f)
+            elif f["fingerprint"] in filer.ledger:
+                f["filing"], f["issue_hint"] = {"action": "exists", "issue": filer.ledger[f["fingerprint"]]}, filer.ledger[f["fingerprint"]]
+                filer.bumps.append(f)
+        due = [f for f in filer.bumps if filer.found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != filer.date]
+        return not any(not f["filing"] for f in todo if not f.get("bundle")) and not due and not bundles.needs_linear()
+    for f in todo:
+        if not f.get("bundle") and not f["filing"]:
+            filer.file_single(f, label_set, describe)
+    bundles.dedupe(label_set)
+    filer.settle_bumps(label_set, describe, on_closed=bundles.requeue)
+    bundles.write(label_set)
+    return True
+
+
+def file_in_bundles(filer, bundles, todo, args, labels_for, describe):
+    """The whole filing pass of an officer whose findings all carry a `bundle`: (writes done, why Linear stopped or None).
+
+    labels_for(team label names) -> label_set. Makes no Linear call when every finding is already known; honours a rate-limit
+    pause, names a failed label lookup, and saves the bundle state (the caller saves its ledger and found counts).
+    """
+    def stop(reason, rate_limited=False):
+        for f in todo:
+            if not f["filing"] or "pending" in f["filing"]:
+                f["filing"] = {"action": "not-filed", "reason": reason}
+        if rate_limited:
+            pause_for_rate_limit(filer.out, args.now)
+        bundles.save()
+        return summary_rows(todo), reason
+
+    if file_bundled(filer, todo, None, None, bundles):
+        bundles.save()
+        return summary_rows(todo), None
+    stopped = paused_until(filer.out, args.now)
+    if stopped:
+        return stop(stopped)
+    try:
+        names = label_names(filer.lin, args.team)
+    except LinearError as exc:
+        return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
+    try:
+        file_bundled(filer, todo, labels_for(names), describe, bundles)
+    except LinearError as exc:
+        if exc.code == "RATE_LIMITED":
+            return stop("Linear rate limit reached: %s" % exc, True)
+        return stop("%s; the next run continues from the ledger" % exc)
+    bundles.save()
+    return summary_rows(todo), None
 
 
 def triage_issue(lin, ident, issue, seen, write):
@@ -872,6 +1315,7 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     it handled. A finding whose Found count has lifted its score to the minimum (a medium at found 3)
     starts like a new finding, which is how the found count reaches the start decision.
     A finding matched to a closed item (`closed`, set only by a bump_closed Filer) never starts.
+    A bundled finding starts its bundle: one request per bundle item (BUNDLE_START, unless the finding carries its own wording).
     A finding may carry `start_what` (the request's wording, in place of "Start this Linear item.") and `start_row`
     (extra fields for the request's evidence); `start_generation` (the merged fix it follows) gives a restart its own request id.
     `attempts` (fingerprint -> the items started for it) caps a loop: a recurrence is a new item, so once START_ATTEMPT_CAP items
@@ -879,6 +1323,12 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     never into asks_for_lee, and the office dispatches no fourth fix and files the keyed needs-decision `<id>-<issue>-fix-cap` so Lee decides the next step.
     """
     starts, held, seen = [], [], set()
+    # A bundle's start fixes every line on it, so one reserved line holds the whole bundle, whatever that line's own score.
+    bundle_reserved = {}
+    for f in findings:
+        filing = f["filing"] or {}
+        if f["class"] == "real" and not f["tracked"] and filing.get("action") == "bundled" and filing.get("issue") and reserved_class(f):
+            bundle_reserved.setdefault(filing["issue"], f)
     sources = rubric.start_sources if rubric.loaded else set(officer.sources)
     severities = rubric.start_severities if rubric.loaded else set(officer.severities)
     for f in findings:
@@ -887,14 +1337,15 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             continue
         filing = f["filing"] or {}
         issue = filing.get("issue")
-        if writes == "linear" and (filing.get("action") not in ("created", "exists", "duplicate") or not issue or filing.get("closed")):
+        if writes == "linear" and (filing.get("action") not in ("created", "exists", "duplicate", "bundled") or not issue or filing.get("closed")):
             continue
         if issue and issue in seen:
             continue
         fresh = writes != "linear" or handled.get(issue) in (None, date)
-        reserved = reserved_class(f)
+        lead = bundle_reserved.get(issue, f) if filing.get("action") == "bundled" else f
+        reserved = reserved_class(lead)
         if reserved and fresh:
-            held.append({"fingerprint": f["fingerprint"], "title": f["title"], "class": reserved, "severity": f["severity"], "issue": filing.get("issue")})
+            held.append({"fingerprint": lead["fingerprint"], "title": lead["title"], "class": reserved, "severity": lead["severity"], "issue": filing.get("issue")})
             if issue:
                 handled[issue] = date
                 seen.add(issue)
@@ -921,9 +1372,14 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
             row = {"kind": "%s-finding" % officer.id, "title": f["title"], "severity": f["severity"], "score": f["score"], "found": f["found"],
                    "source": f["source"], "fingerprint": f["fingerprint"], "issue": issue, "linear_id": issue,
                    "project": f["project"], "linear_only": not f["project"], "reason": "Real %s finding admitted by the rubric" % f["severity"]}
-            rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256((f["fingerprint"] + f.get("start_generation", "")).encode("utf-8")).hexdigest()[:16])
+            # A bundle is one start whichever of its findings leads the run, so its request id is the item's.
+            seed = "bundle:" + issue if filing.get("action") == "bundled" else f["fingerprint"]
+            rid = "%s-%s-%s" % (officer.id, date, hashlib.sha256((seed + f.get("start_generation", "")).encode("utf-8")).hexdigest()[:16])
             row.update(f.get("start_row") or {})
-            row["execute"] = execute_for(officer, row, rid, f.get("start_what") or "Start this Linear item.", main_home, start_homes)
+            if filing.get("action") == "bundled":
+                row["bundle"] = filing.get("bundle")
+            row["execute"] = execute_for(officer, row, rid, f.get("start_what") or (
+                BUNDLE_START if filing.get("action") == "bundled" else "Start this Linear item."), main_home, start_homes)
             starts.append(row)
     asks = []
     if held:
@@ -1028,6 +1484,7 @@ def add_common_args(parser, rubric_default):
     parser.add_argument("--writes", choices=["none", "linear"], default="none")
     parser.add_argument("--max-creates", type=int, default=DEFAULT_MAX_CREATES)
     parser.add_argument("--max-linear-calls", type=int, default=DEFAULT_MAX_LINEAR_CALLS)
+    parser.add_argument("--bundle-cap", type=int, default=DEFAULT_BUNDLE_CAP)
     parser.add_argument("--triage-label", default="triage")
     parser.add_argument("--rubric", default=rubric_default)
     parser.add_argument("--jev", default=JEV_DEFAULT)
@@ -1040,6 +1497,8 @@ def check_common_args(parser, args):
     """Refuses a writing run without team PC, a triage label and caps of at least 1; fixes args.now."""
     if args.writes == "linear" and (args.team != "PC" or args.max_creates < 1 or args.max_linear_calls < 1 or not args.triage_label):
         parser.error("--writes linear needs --team PC, --triage-label and --max-creates and --max-linear-calls of at least 1")
+    if args.bundle_cap < 1:
+        parser.error("--bundle-cap must be at least 1")
     args.now = int(time.time()) if args.now is None else args.now
 
 

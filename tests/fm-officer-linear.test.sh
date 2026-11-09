@@ -31,6 +31,8 @@ with open(os.path.join(d, "calls"), "a") as fh:
 path = os.path.join(d, "issues.json")
 issues = json.load(open(path))
 def out(data): print(json.dumps({"ok": True, "data": data})); sys.exit(0)
+def state_type(state):  # as Linear reports it: a duplicate has its own stateType
+    return {"Done": "completed", "Canceled": "canceled", "Duplicate": "duplicate", "In Progress": "started"}.get(state, "unstarted")
 def flag(name):
     return args[args.index(name) + 1] if name in args else None
 def save(): json.dump(issues, open(path, "w"))
@@ -59,7 +61,9 @@ if args[:2] == ["label", "list"]:
 if args[:2] == ["issue", "list"]:
     # Linear data, newest first, titles and stateType as the real list prints them (no title filter exists).
     out({"issues": [{"identifier": i, "title": v["title"], "state": v["state"], "team": "PC", "project": v.get("project"),
-                     "stateType": "completed" if v["state"] == "Done" else "unstarted"}
+                     "stateType": state_type(v["state"]),
+                     **({"description": v["description"][:200] + ("\n... (truncated, %d chars total - use --full to see complete body)" % len(v["description"])
+                                                                  if len(v["description"]) > 200 else "")} if "description" in (flag("--fields") or "") else {})}
                     for i, v in sorted(issues.items(), key=lambda kv: -int(kv[0].split("-")[1]))][:int(flag("--max-items") or 30)]})
 if args[:2] == ["issue", "search"]:
     if os.environ.get("FAKE_SEARCH_MISS"): out({"issues": []})  # full-text search that never returns these titles
@@ -71,7 +75,7 @@ if args[:2] == ["issue", "search"]:
 if args[:2] == ["issue", "view"]:
     v = issues[args[2]]
     out({"issue": {"identifier": args[2], "title": v["title"], "description": v["description"],
-                   "state": v["state"], "project": v.get("project"), "stateType": "completed" if v["state"] == "Done" else "unstarted"}})
+                   "state": v["state"], "project": v.get("project"), "stateType": state_type(v["state"])}})
 dry = "--dry-run" in args
 if args[:2] == ["issue", "create"]:
     if dry: out({"dryRun": True})
@@ -86,7 +90,8 @@ if args[:2] == ["issue", "create"]:
 if args[:2] == ["issue", "update"]:
     if dry: out({"dryRun": True})
     failing()
-    issues[args[2]]["description"] = open(flag("--body-file")).read()
+    if flag("--state"): issues[args[2]]["state"] = flag("--state")
+    if flag("--body-file"): issues[args[2]]["description"] = open(flag("--body-file")).read()
     save(); written(args[2])
 if args[:2] == ["issue", "comment"]:
     if not dry: open(os.path.join(d, "comments"), "a").write(args[2] + "\n")
@@ -254,7 +259,7 @@ elif scenario == "surgeon-clusters":
     fs = [low("p%d" % i, "infra/bicep/main%d.bicep" % i) for i in range(3)]
     fs += [low("f%d" % i, "infra/bicep/main%d.bicep" % i, "lstutzman/firstmate") for i in range(3)]
     state = {}
-    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100)
+    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100, bundle_cap=15, visual_captures="")
     surgeon.file_findings(fs, args, date, W, state, {}, surgeon.lib.Jev(os.path.join(W, "jev.py")), [])
     issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
     def marker(job, key):
@@ -262,9 +267,7 @@ elif scenario == "surgeon-clusters":
     res = {"filings": {f["key"]: [f["filing"]["action"], f["filing"].get("issue"), f["filing"].get("reason")] for f in fs},
            "items": {i: {"title": v["title"], "labels": v["labels"], "project": v["project"], "tail": v["description"].rsplit("\n", 1)[-1]}
                      for i, v in issues.items()},
-           "clusters": {c["key"] + "|" + c.get("project", ""): sorted(c) for c in state["clusters"].values()},
-           "markers": {k: marker(j, k) for k, j in (("infra/bicep", "cluster"),)}}
-    res["markers"]["fleet"] = marker("cluster-fleet", "infra/bicep")
+           "bundles": {b["issue"]: [b["area"], b["fleet"], b["part"]] for b in json.load(open(os.path.join(W, "bundles.json")))["bundles"].values()}}
 elif scenario == "verify-fail":
     mode = os.environ["FAKE_VERIFY"]
     f = find("vf", "Lint script crashes on lint.sh")
@@ -294,7 +297,7 @@ elif scenario == "cluster-reuse":
     fs = [surgeon.lib.make_finding("review", "nightly-review", "p%d" % i, "Review note p%d" % i, "summary", "real", "low", None, {},
                                    location="infra/bicep/main%d.bicep" % i) for i in range(3)]
     state = {}
-    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100)
+    args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100, bundle_cap=15, visual_captures="")
     surgeon.file_findings(fs, args, date, W, state, {}, surgeon.lib.Jev(os.path.join(W, "jev.py")), [])
     issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
     res = {"filings": [[f["filing"]["action"], f["filing"].get("issue")] for f in fs], "verify": [f["filing"].get("verify") for f in fs], "ids": sorted(issues),
@@ -322,6 +325,44 @@ elif scenario in ("fleet-start", "fleet-nowrite"):
                          "lines": [p["line"] for p in r["patterns"]]} for r in pats],
            "captures": sorted(c["tags"][1] for c in captures),
            "filed": {v["title"]: v["project"] for v in json.load(open(os.path.join(os.environ["LDIR"], "issues.json"))).values()}}
+elif scenario == "bundle-hold":
+    # Three findings on one bundle: a high one that would start, a low one that asks to rotate a key (reserved, under the
+    # start score), and one more on a second bundle. The reserved line holds its whole bundle; the other bundle starts once.
+    fs = [find("a", "Null reference when saving", "high"), find("b", "Rotate SendGrid API key", "low"),
+          find("c", "Crash on login", "high"), find("d", "Crash on logout", "high")]
+    for f, issue in zip(fs, ("PC-301", "PC-301", "PC-302", "PC-302")):
+        f["filing"] = {"action": "bundled", "issue": issue, "bundle": "Automated findings: x (code review)", "new": True}
+        f["score"] = lib.score_of(f)
+    rub = lib.load_rubric(os.path.join(W, "fixture-rubric.md"), officer)
+    starts, held, asks = lib.plan_starts(officer, fs, rub, date, "linear", "/home/main", [], {})
+    res = {"starts": [[s["issue"], s["title"]] for s in starts], "held": [[h["issue"], h["title"], h["class"]] for h in held],
+           "asks": [a["key"] for a in asks], "what": starts[0]["execute"]["argv"][-1] if starts else None,
+           "rid": starts[0]["execute"]["request_id"] if starts else None}
+elif scenario == "bundle":
+    # One officer run of the shared bundle path. FINDINGS: [[key, title, severity, location, area, single?], ...];
+    # TICK: keys marked resolved; CAP: bundle-cap. The lane's ledger, found and bundle state persist in W between runs.
+    rows = json.loads(os.environ["FINDINGS"])
+    ledger = lib.read_json(os.path.join(W, "ledger.json"), {})
+    found = lib.read_json(os.path.join(W, "found.json"), {})
+    fl = lib.Filer(officer, lib.Linear(450), "PC", os.environ.get("RUN_DATE", date), W, ledger, found,
+                   lib.Jev(os.path.join(W, "jev.py")), int(os.environ.get("MAX_CREATES", "100")))
+    bundles = lib.Bundles(fl, int(os.environ.get("CAP", "15")), recur_closed=os.environ.get("RECUR_CLOSED", "1") == "1")
+    fs = []
+    for key, title, severity, location, area, *single in rows:
+        f = find(key, title, severity, location)
+        if not single:
+            f["bundle"] = {"family": "code review", "area": area}
+        fs.append(f)
+    quiet = lib.file_bundled(fl, fs, labels, None, bundles)
+    for k in json.loads(os.environ.get("TICK", "[]")):
+        bundles.tick(lib.fingerprint("scan", "job", k))
+    if not quiet or bundles.needs_linear():
+        lib.file_bundled(fl, fs, labels, describe, bundles)
+    bundles.save()
+    lib.write_json(os.path.join(W, "ledger.json"), ledger)
+    lib.write_json(os.path.join(W, "found.json"), found)
+    lib.apply_found(fs, found, ledger)
+    res = {"filings": {f["key"]: f["filing"] for f in fs}, "found": {f["key"]: f["found"] for f in fs}, "calls": fl.lin.n}
 print(json.dumps(res))
 PY
 }
@@ -481,25 +522,24 @@ test_fleet_patterns_route_without_linear_writes() {
   pass "fm-officer-linear: with --writes none a fleet officer's patterns still go to the Quartermaster"
 }
 
-test_surgeon_clusters_split_fleet_from_propertycompass2() {
+test_surgeon_bundles_split_fleet_from_propertycompass2() {
   local out pc fleet
   world surgeon-clusters '{}'
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(drive surgeon-clusters) || fail "driver must succeed"
   pc=$(jq -r '.filings.p0[1]' <<<"$out"); fleet=$(jq -r '.filings.f0[1]' <<<"$out")
-  assert_equals "clustered clustered clustered" "$(jq -r '[.filings.p0, .filings.p1, .filings.p2] | map(.[0]) | join(" ")' <<<"$out")" "PropertyCompass2 low review findings are clustered"
+  assert_equals "bundled bundled bundled" "$(jq -r '[.filings.p0, .filings.p1, .filings.p2] | map(.[0]) | join(" ")' <<<"$out")" "PropertyCompass2 review findings are bundled"
   assert_equals 1 "$(jq -r --arg i "$pc" '[.filings | to_entries[] | select(.value[1] == $i)] | length / 3' <<<"$out")" "all three PropertyCompass2 findings share one item"
-  assert_equals "clustered clustered clustered" "$(jq -r '[.filings.f0, .filings.f1, .filings.f2] | map(.[0]) | join(" ")' <<<"$out")" "fleet-repository low findings are clustered too, not filed singly"
-  assert_not_contains "$pc" "$fleet" "a fleet finding in the same path never joins the PropertyCompass2 cluster"
-  assert_equals 2 "$(jq '.items | length' <<<"$out")" "two cluster items, one per side"
-  assert_equals '{"title":"Code review findings: infra bicep (infra/bicep)","labels":["Bug","scheduled-review","triage"],"project":null}' \
-    "$(jq -c --arg i "$pc" '.items[$i] | {title, labels, project}' <<<"$out")" "the PropertyCompass2 cluster keeps its title, its own area label and no Linear project"
-  assert_equals "surgeon-fp:$(jq -r '.markers["infra/bicep"]' <<<"$out")" "$(jq -r --arg i "$pc" '.items[$i].tail' <<<"$out")" "and its fingerprint is sha256(review, cluster, key), as before"
-  assert_equals '["key","members","recurrence","sha"]' "$(jq -c '.clusters["infra/bicep|"]' <<<"$out")" "its saved state has no project field"
+  assert_equals "bundled bundled bundled" "$(jq -r '[.filings.f0, .filings.f1, .filings.f2] | map(.[0]) | join(" ")' <<<"$out")" "fleet-repository findings are bundled too, not filed singly"
+  assert_not_contains "$pc" "$fleet" "a fleet finding in the same area never joins the PropertyCompass2 bundle"
+  assert_equals 2 "$(jq '.items | length' <<<"$out")" "two bundle items, one per side"
+  assert_equals '{"title":"Automated findings: infrastructure (code review)","labels":["Bug","scheduled-review","infrastructure"],"project":null}' \
+    "$(jq -c --arg i "$pc" '.items[$i] | {title, labels, project}' <<<"$out")" "the PropertyCompass2 bundle is titled by its feature area, with that area label and no Linear project"
+  assert_equals '["infrastructure",false,1]' "$(jq -c --arg i "$pc" '.bundles[$i]' <<<"$out")" "its saved state names the area, side and part"
   assert_equals '{"labels":["Bug","scheduled-review","area:fleet"],"project":"Fleet"}' \
-    "$(jq -c --arg i "$fleet" '.items[$i] | {labels, project}' <<<"$out")" "the fleet cluster is in the Fleet project with area:fleet"
-  assert_equals "surgeon-fp:$(jq -r '.markers.fleet' <<<"$out")" "$(jq -r --arg i "$fleet" '.items[$i].tail' <<<"$out")" "with its own fingerprint"
-  pass "fm-officer-linear: the Surgeon clusters fleet low findings apart, in the Fleet project with area:fleet; PropertyCompass2 clusters are unchanged"
+    "$(jq -c --arg i "$fleet" '.items[$i] | {labels, project}' <<<"$out")" "the fleet bundle is in the Fleet project with area:fleet"
+  assert_not_contains "$(jq -r --arg i "$pc" '.items[$i].tail' <<<"$out")" "$(jq -r --arg i "$fleet" '.items[$i].tail' <<<"$out" | cut -d: -f2)" "with its own fingerprint"
+  pass "fm-officer-linear: the Surgeon bundles fleet findings apart, in the Fleet project with area:fleet"
 }
 
 test_closed_item_is_never_touched() {
@@ -560,11 +600,11 @@ test_mismatched_create_is_adopted_when_title_search_misses() {
     assert_equals 0 "$(sed -n '/^issue create.*--verify/,$p' "$LDIR/calls" | grep -c '^issue search')" "$mode: no title lookup goes through issue search"
   done
   world adopt-cluster '{}'
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=nocontract FAKE_SEARCH_MISS=1 drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatched cluster create is adopted"
+  assert_equals "bundled:PC-101 bundled:PC-101 bundled:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatched bundle create is adopted"
   out=$(FAKE_SEARCH_MISS=1 drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the next run (ledger lost) updates that item"
+  assert_equals "bundled:PC-101 bundled:PC-101 bundled:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the next run (ledger lost) updates that item"
   assert_equals '["PC-101"]' "$(jq -c '.ids' <<<"$out")" "and creates nothing new"
   assert_equals 1 "$(grep -c '^issue create.*--verify' "$LDIR/calls")" "so only the first run ever created"
   pass "fm-officer-linear: a create that mismatches and whose title full-text search misses is adopted, then updated, never recreated"
@@ -573,9 +613,9 @@ test_mismatched_create_is_adopted_when_title_search_misses() {
 test_a_create_the_tool_wrote_twice_is_adopted_once() {
   local out
   world double '{}'
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=nocontract FAKE_SEARCH_MISS=1 FAKE_DOUBLE=1 drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "two same-title items from one create: the lowest is adopted, nothing is failed"
+  assert_equals "bundled:PC-101 bundled:PC-101 bundled:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "two same-title items from one create: the lowest is adopted, nothing is failed"
   assert_equals 1 "$(grep -c '^issue create.*--verify' "$LDIR/calls")" "and the officer sent one create"
   assert_equals 3 "$(jq '[.verify[] | select(test("1 more item\\(s\\) of this title: PC-102$"))] | length' <<<"$out")" "and every finding's filing names the extra item for a person to close"
   pass "fm-officer-linear: a create the tool wrote twice is adopted once and not recorded failed"
@@ -606,43 +646,43 @@ test_failed_write_is_failed_and_retried_next_run() {
 }
 
 test_cluster_reuses_the_oldest_open_item_of_its_title() {
-  local out t='Code review findings: infra bicep (infra/bicep)'
+  local out t='Automated findings: infrastructure (code review)'
   world cluster-reuse "$(jq -n --arg t "$t" '{"PC-70": {title: $t, state: "Todo", description: "x"}, "PC-50": {title: $t, state: "Todo", description: "x"},
     "PC-40": {title: $t, state: "Done", description: "x"}}')"
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-50 clustered:PC-50 clustered:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the oldest open item is reused"
-  assert_equals '["PC-40","PC-50","PC-70"]' "$(jq -c '.ids' <<<"$out")" "no new cluster item is created"
-  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "the reused item carries the cluster's findings"
+  assert_equals "bundled:PC-50 bundled:PC-50 bundled:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the oldest open item is reused"
+  assert_equals '["PC-40","PC-50","PC-70"]' "$(jq -c '.ids' <<<"$out")" "no new bundle item is created"
+  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "the reused item carries the bundle's findings"
   assert_equals 0 "$(jq -r '.body["PC-70"] + .body["PC-40"]' <<<"$out")" "the other open item and the closed one are untouched"
   pass "fm-officer-linear: a cluster reuses the oldest open item of exactly its title"
 }
 
 test_cluster_update_mismatch_is_written_and_no_json_is_failed() {
-  local out t='Code review findings: infra bicep (infra/bicep)'
+  local out t='Automated findings: infrastructure (code review)'
   world cluster-update-mismatch "$(jq -n --arg t "$t" '{"PC-50": {title: $t, state: "Todo", description: "x"}}')"
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=textappend drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-50 clustered:PC-50 clustered:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatching update --verify is recorded clustered"
-  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "with the cluster body written"
+  assert_equals "bundled:PC-50 bundled:PC-50 bundled:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatching update --verify is recorded bundled"
+  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "with the bundle body written"
   assert_equals 1 "$(grep -c '^issue update PC-50.*--verify' "$LDIR/calls")" "and never retried"
   world cluster-update-nojson "$(jq -n --arg t "$t" '{"PC-50": {title: $t, state: "Todo", description: "x"}}')"
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=nojson drive cluster-reuse) || fail "driver must succeed"
   assert_equals "failed failed failed" "$(jq -r '.filings | map(.[0]) | join(" ")' <<<"$out")" "an update that printed no JSON is failed, not taken as written"
-  pass "fm-officer-linear: a mismatching cluster update counts as written; one with no JSON is failed"
+  pass "fm-officer-linear: a mismatching bundle update counts as written; one with no JSON is failed"
 }
 
 test_cluster_never_reuses_a_same_title_item_of_the_other_project() {
-  local out t='Code review findings: infra bicep (infra/bicep)'
+  local out t='Automated findings: infrastructure (code review)'
   world cluster-cross-project "$(jq -n --arg t "$t" '{"PC-50": {title: $t, state: "Todo", project: "Fleet", description: "x"}}')"
-  printf 'scheduled-review\n' >> "$LDIR/labels"
+  printf 'scheduled-review\ninfrastructure\n' >> "$LDIR/labels"
   out=$(FAKE_VERIFY=nocontract drive cluster-reuse) || fail "driver must succeed"
-  assert_equals "clustered:PC-102 clustered:PC-102 clustered:PC-102" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a PC cluster creates its own item, even when the create mismatches"
-  assert_equals 3 "$(jq -r '.body["PC-102"]' <<<"$out")" "which carries the cluster's findings"
+  assert_equals "bundled:PC-102 bundled:PC-102 bundled:PC-102" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a PC bundle creates its own item, even when the create mismatches"
+  assert_equals 3 "$(jq -r '.body["PC-102"]' <<<"$out")" "which carries the bundle's findings"
   assert_equals 0 "$(jq -r '.body["PC-50"]' <<<"$out")" "and the same-title Fleet item is untouched"
   assert_equals 0 "$(grep -c '^issue update PC-50' "$LDIR/calls")" "with no update sent to it"
-  pass "fm-officer-linear: a PropertyCompass2 cluster never reuses a same-title Fleet item"
+  pass "fm-officer-linear: a PropertyCompass2 bundle never reuses a same-title Fleet item"
 }
 
 test_no_call_closes_or_deletes() {
@@ -656,6 +696,251 @@ test_no_call_closes_or_deletes() {
   pass "fm-officer-linear: only search, view, create, update (the Found line), comment and relation are ever called"
 }
 
+fold_world() {  # the open items an earlier Surgeon filed one by one, a component cluster, and items it must leave alone
+  sfp() { printf 'review\0nightly-review\0%s' "$1" | sha256sum | cut -d' ' -f1; }
+  world fold "$(jq -n --arg a "$(sfp a)" --arg b "$(sfp b)" --arg c "$(sfp c)" --arg d "$(sfp d)" --arg e "$(sfp e)" --arg f "$(sfp f)" --arg g "$(sfp g)" --arg h "$(sfp h)" '
+    def surgeon($src; $sev; $loc; $fp): "Filed by the Ship'"'"'s Surgeon from the 2026-11-01 \($src) results.\nWhat it is for: a finding no Linear item tracked yet, so it is not lost.\nEpic: not assigned; whoever triages this picks one.\n\nSeverity: \($sev). Source job: job.\nFound: 1 times (first 2026-11-01, last 2026-11-01, by surgeon)\nLocation: \($loc)\nsurgeon-fp:\($fp)";
+    {"PC-1": {title: "Null check missing", state: "Todo", project: null, description: surgeon("nightly code review"; "medium"; "src/api/controllers/Foo.cs"; $a)},
+     "PC-2": {title: "stamp duty total wrong", state: "Todo", project: null, description: surgeon("nightly E2E"; "high"; "tests/e2e/calculators/stamp.spec.ts"; $b)},
+     "PC-3": {title: "Code review findings: infra bicep (infra/bicep)", state: "Todo", project: null,
+              description: ("Filed by the Ship'"'"'s Surgeon from the nightly code review results.\nWhat it is for: the lower-severity code-review findings.\n\n- [ ] surgeon-fp:\($c) unpinned one (infra/bicep/a.bicep)\n- [x] surgeon-fp:\($d) fixed one (infra/bicep/b.bicep)\n- [ ] surgeon-fp:\($e) unpinned two (infra/bicep/c.bicep)\nsurgeon-fp:\($h)")},
+     "PC-4": {title: "Nightly E2E run invalid: promotion blocked", state: "Todo", project: null,
+              description: ("Filed by the Ship'"'"'s Surgeon from the 2026-11-01 nightly E2E results.\n\nSeverity: critical. Source job: nightly-e2e.\nPromotion-blocking: yes. No nightly E2E result can be read until this run is valid again.\nsurgeon-fp:\($f)")},
+     "PC-5": {title: "Closed one", state: "Done", project: null, description: surgeon("nightly code review"; "medium"; "src/api/X.cs"; $g)},
+     "PC-6": {title: "Duplicate one", state: "Duplicate", project: null, description: surgeon("nightly code review"; "medium"; "src/api/Y.cs"; $g)},
+     "PC-7": {title: "Friction: waits on Lee", state: "Todo", project: "Fleet", description: "Filed by the friction officer from the 2026-11-01 friction events.\nfriction-fp:\($g)"},
+     "PC-8": {title: "Members cannot log in", state: "Todo", project: null, description: "Reported by a member through support."},
+     "PC-10": {title: "Nightly E2E: smoke.spec.ts › home page loads", state: "Todo", project: null, description: "The full E2E run found this test failing."},
+     "PC-9": {title: "Unused variable", state: "Todo", project: null, description: surgeon("nightly code review"; "low"; "src/api/controllers/Bar.cs"; $g)}}')"
+  printf 'scheduled-review\nbug-sweep\napi\ncalculators\ninfrastructure\ntesting\n' >> "$LDIR/labels"
+}
+
+test_fold_dry_run_plans_area_bundles_and_writes_nothing() {
+  local out
+  fold_world
+  out=$(PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --now "$NOW") || fail "fold dry run must succeed: $out"
+  assert_contains "$out" "Fold plan (dry run, nothing written): 4 open item(s) the Surgeon made fold into 3 area bundle(s); 5 finding(s), cap 15 a bundle." "the plan counts the items, bundles and findings"
+  assert_contains "$out" "- Automated findings: api (code review): 2 finding(s) from 2 item(s) (PC-1, PC-9); 1 new bundle(s)" "single code review items fold into their area bundle"
+  assert_contains "$out" "- Automated findings: infrastructure (code review): 2 finding(s) from 1 item(s) (PC-3); 1 new bundle(s)" "a component cluster's open lines fold too, its ticked line left out"
+  assert_contains "$out" "- Automated findings: calculators (nightly E2E): 1 finding(s) from 1 item(s) (PC-2); 1 new bundle(s)" "a nightly E2E item folds by the feature in its spec path"
+  assert_contains "$out" "- kept: PC-4 (promotion-blocking, kept single)" "an invalid nightly E2E run stays single"
+  assert_contains "$out" "- not folded yet: 1 open item(s) filed by the friction officer; this command folds only the Surgeon's" "another officer's items are named and left alone"
+  assert_contains "$out" "- not folded yet: 1 open item(s) fleet-app's \"Nightly E2E\" items; this command folds only the Surgeon's" "and so are fleet-app's own families"
+  assert_not_contains "$out" "PC-5" "a closed item is never folded"
+  assert_not_contains "$out" "PC-6" "nor a Duplicate one"
+  assert_not_contains "$out" "PC-8" "nor an item a person filed"
+  assert_equals "" "$(grep -v '^label list\|^issue list\|^issue view' "$LDIR/calls")" "a dry run only reads"
+  assert_equals 5 "$(grep -c '^issue view' "$LDIR/calls")" "and reads in full only the open items the Surgeon filed"
+  [ ! -e "$W/bundles.json" ] || fail "a dry run writes no bundle state"
+  pass "fm-officer-surgeon fold: a dry run lists each area bundle's findings and items, keeps the promotion blocker single and writes nothing"
+}
+
+fold_apply() {  # [fold args...]: fold --apply in the current world; prints its output.
+  PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --now "$NOW" --apply "$@"
+}
+
+test_fold_apply_marks_each_item_a_duplicate_of_its_bundle() {
+  local out api
+  fold_world
+  out=$(fold_apply) || fail "fold --apply must succeed: $out"
+  api=$(jq -r 'to_entries[] | select(.value.title == "Automated findings: api (code review)") | .key' "$LDIR/issues.json")
+  [ -n "$api" ] || fail "the api bundle is created"
+  assert_equals "Duplicate Duplicate Duplicate Duplicate" "$(jq -r '[."PC-1", ."PC-9", ."PC-2", ."PC-3"] | map(.state) | join(" ")' "$LDIR/issues.json")" \
+    "every folded item is marked Duplicate"
+  assert_contains "$(cat "$LDIR/relations")" "PC-1 --duplicate-of $api --verify" "and related as a duplicate of its area bundle"
+  assert_contains "$out" "- folded: PC-9 is a duplicate of $api" "the run names each fold"
+  assert_equals "Todo Todo Todo" "$(jq -r '[."PC-4", ."PC-7", ."PC-10"] | map(.state) | join(" ")' "$LDIR/issues.json")" \
+    "the promotion blocker and other officers' items stay open"
+  assert_equals 5 "$(jq -r '.[] | select(.title | startswith("Automated findings")) | .description' "$LDIR/issues.json" | grep -c '^- \[ \]')" \
+    "every open line of the folded items is on a bundle"
+  assert_not_contains "$(calls)" "delete" "nothing is deleted"
+  pass "fm-officer-surgeon fold --apply: each original is related as a duplicate of its area bundle and marked Duplicate"
+}
+
+test_fold_apply_keeps_an_item_whose_findings_are_not_all_written() {
+  local out
+  cfp() { printf 'review\0nightly-review\0%s' "$1" | sha256sum | cut -d' ' -f1; }
+  world fold-partial "$(jq -n --arg a "$(cfp a)" --arg b "$(cfp b)" '
+    {"PC-1": {title: "Code review findings: mixed (src)", state: "Todo", project: null,
+              description: ("Filed by the Ship'"'"'s Surgeon from the nightly code review results.\nWhat it is for: the lower-severity code-review findings.\n\n- [ ] surgeon-fp:\($a) api one (src/api/controllers/Foo.cs)\n- [ ] surgeon-fp:\($b) infra one (infra/bicep/a.bicep)")}}')"
+  printf 'scheduled-review\nbug-sweep\napi\ninfrastructure\n' >> "$LDIR/labels"
+  out=$(fold_apply --max-creates 1) && fail "a partial fold must exit non-zero: $out"
+  assert_equals 1 "$(jq -r '[.[] | select(.title | startswith("Automated findings"))] | length' "$LDIR/issues.json")" "only one bundle fits the create cap"
+  assert_contains "$out" "- not folded: PC-1 (not every finding of it is on a written bundle)" "an item with a line on no written bundle is not folded"
+  assert_equals "Todo" "$(issue PC-1 .state)" "and stays open, so its unwritten line is not lost"
+  [ ! -e "$LDIR/relations" ] || fail "no duplicate relation is written for it"
+  pass "fm-officer-surgeon fold --apply: an item is folded only when every one of its findings is on a written bundle"
+}
+
+test_a_folded_finding_keeps_raising_its_found_count() {
+  local out a
+  world bundle-folded '{"PC-50": {"title": "Alpha", "description": "x", "state": "Duplicate", "labels": [], "project": null}}'
+  bundle '[["a","Alpha","low","api/a.cs","api"]]' >/dev/null || fail "first run must succeed"
+  a=$(printf 'scan\0job\0a' | sha256sum | cut -d' ' -f1)
+  jq --arg a "$a" '.[$a] = "PC-50"' "$W/ledger.json" > "$W/l" && mv "$W/l" "$W/ledger.json"
+  jq '.issues["PC-50"] = {count: 5, last: "2026-11-01"}' "$W/found.json" > "$W/f" && mv "$W/f" "$W/found.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]' RUN_DATE=2026-11-06) || fail "second run must succeed"
+  assert_equals 6 "$(jq -r .found.a <<<"$out")" "a finding folded from an item found 5 times is found 6 times on its next day"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]' RUN_DATE=2026-11-07) || fail "third run must succeed"
+  assert_equals 7 "$(jq -r .found.a <<<"$out")" "and keeps rising on the bundle"
+  pass "fm-officer-linear: a finding folded off its old item keeps that item's found count and keeps raising it"
+}
+
+test_a_failed_bundle_update_is_retried_the_same_day() {
+  local out
+  world bundle-retry '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"]]' >/dev/null || fail "first run must succeed"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-06 FAKE_VERIFY=nowrite) || fail "second run must succeed"
+  assert_equals failed "$(jq -r .filings.b.action <<<"$out")" "the failed update is named on the finding"
+  assert_not_contains "$(body_of PC-101)" "Beta" "and the line is not on Linear yet"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-06) || fail "rerun must succeed"
+  assert_contains "$(body_of PC-101)" "Beta (low)" "a rerun the same day writes the line it reports as bundled"
+  assert_equals "bundled PC-101" "$(jq -r '.filings.b | [.action, .issue] | join(" ")' <<<"$out")" "on the same bundle"
+  pass "fm-officer-linear: a bundle whose update failed is rewritten by a rerun the same day"
+}
+
+bundle() {  # <findings json> [env...]: one bundle run in the current world; prints the result json.
+  env FINDINGS="$1" "${@:2}" bash -c "$(declare -f drive); $(declare -p FAKEBIN LDIR W LIB DATE NOW); drive bundle"
+}
+
+body_of() { jq -r --arg i "$1" '.[$i].description' "$LDIR/issues.json"; }
+
+test_a_bundle_starts_once_and_a_reserved_line_holds_it() {
+  local out
+  world bundle-hold '{}'
+  printf '## Settings the code reads\n- start-severities: high, critical\n' > "$W/fixture-rubric.md"
+  out=$(drive bundle-hold) || fail "driver must succeed"
+  assert_equals '[["PC-302","Crash on login"]]' "$(jq -c .starts <<<"$out")" "a bundle starts once, however many of its findings qualify"
+  assert_contains "$(jq -r .what <<<"$out")" "fix every open line of its checklist in one pull request" "and asks for the whole checklist in one pull request"
+  assert_equals '[["PC-301","Rotate SendGrid API key","credentials"]]' "$(jq -c .held <<<"$out")" \
+    "one reserved line holds its whole bundle, though that line is under the start score"
+  assert_equals '["fixture-holds-2026-11-05"]' "$(jq -c .asks <<<"$out")" "as one keyed needs-decision"
+  pass "fm-officer-linear: a bundle starts once, and a reserved line on it holds the whole bundle for Lee"
+}
+
+test_bundle_appends_to_the_open_bundle_and_starts_part_2_at_the_cap() {
+  local out
+  world bundle-cap '{}'
+  out=$(bundle '[["a","Null check missing","medium","api/b.cs","api"],["b","Unused variable","low","api/a.cs","api"],["c","Dead branch","low","api/a.cs","api"]]' CAP=4) \
+    || fail "bundle run must succeed"
+  assert_equals "bundled PC-101 bundled PC-101 bundled PC-101" "$(jq -r '[.filings.a, .filings.b, .filings.c] | map(.action + " " + .issue) | join(" ")' <<<"$out")" \
+    "three findings of one area go to one item"
+  assert_equals "Automated findings: api (code review)" "$(issue PC-101 .title)" "the item is titled by area and source family"
+  assert_equals "Bug scan triage" "$(issue PC-101 '.labels | join(" ")')" "with one Type, one Source and one area label"
+  out=$(bundle '[["a","Null check missing","medium","api/b.cs","api"],["b","Unused variable","low","api/a.cs","api"],["c","Dead branch","low","api/a.cs","api"],["d","Magic number","low","api/c.cs","api"],["e","Long method","low","api/c.cs","api"]]' CAP=4 RUN_DATE=2026-11-06) \
+    || fail "second bundle run must succeed"
+  assert_equals "PC-101 PC-102" "$(jq -r '[.filings.d.issue, .filings.e.issue] | join(" ")' <<<"$out")" "a new finding is appended to the open bundle, and at the cap the next one opens part 2"
+  assert_equals "true true false" "$(jq -r '[.filings.d.new, .filings.e.new, .filings.a.new] | map(tostring) | join(" ")' <<<"$out")" "only the appended findings are new"
+  assert_equals "Automated findings: api (code review) part 2" "$(issue PC-102 .title)" "the second part names itself"
+  assert_equals 2 "$(grep -c '^issue create .*--verify' "$LDIR/calls")" "two items in all, not one per finding"
+  assert_contains "$(body_of PC-101)" "Open: 4 of 4" "the first part holds the cap"
+  assert_equals "2 2 1" "$(jq -r '[.found.a, .found.b, .found.d] | map(tostring) | join(" ")' <<<"$out")" "each bundled finding keeps its own found count"
+  out=$(bundle '[["a","Null check missing","medium","api/b.cs","api"]]' CAP=4 RUN_DATE=2026-11-07 TICK='["b"]') || fail "tick run must succeed"
+  assert_contains "$(body_of PC-101)" "- [x] fixture-fp:$(printf 'scan\0job\0b' | sha256sum | cut -d' ' -f1) Unused variable (low)" "a resolved finding is ticked, not removed"
+  assert_contains "$(body_of PC-101)" "Open: 3 of 4" "and frees a place"
+  pass "fm-officer-linear: a new finding is appended to its area's open bundle, the cap opens part 2, and a resolved one is ticked"
+}
+
+test_bundle_groups_by_area_then_by_file() {
+  local out b
+  world bundle-order '{}'
+  out=$(bundle '[["z","Zeta","low","ui/z.tsx","ui-ux"],["m","Mu","medium","api/m.cs","api"],["a","Alpha","low","ui/a.tsx","ui-ux"],["n","No file","low","","ui-ux"],["k","Kappa","low","api/b.cs","api"]]') \
+    || fail "bundle run must succeed"
+  assert_equals 2 "$(jq 'keys | length' "$LDIR/issues.json")" "one item per area"
+  b=$(jq -r 'to_entries[] | select(.value.title | test("ui-ux")) | .value.description' "$LDIR/issues.json")
+  assert_equals "### ui/a.tsx|### ui/z.tsx|### (no file)" "$(grep '^### ' <<<"$b" | paste -sd'|')" "within an area the lines are grouped by file, sorted, the no-file group last"
+  assert_contains "$b" "Severity: low. Area: ui-ux." "the severity line names the worst open finding"
+  assert_contains "$(jq -r 'to_entries[] | select(.value.title | test("api")) | .value.description' "$LDIR/issues.json")" "Severity: medium. Area: api." "per bundle"
+  pass "fm-officer-linear: findings are grouped by feature area first, then by file within the area"
+}
+
+test_bundle_keeps_single_items_single() {
+  local out
+  world bundle-single '{}'
+  out=$(bundle '[["s","Run invalid: promotion blocked","critical","e2e","testing",1],["a","Alpha","low","api/a.cs","api"]]') || fail "bundle run must succeed"
+  assert_equals "created bundled" "$(jq -r '[.filings.s.action, .filings.a.action] | join(" ")' <<<"$out")" "a single finding gets its own item, a bundled one goes to the area bundle"
+  assert_equals "Run invalid: promotion blocked" "$(issue "$(jq -r .filings.s.issue <<<"$out")" .title)" "titled by the finding itself"
+  pass "fm-officer-linear: a finding the officer keeps single is filed alone, never bundled"
+}
+
+test_bundle_never_writes_a_closed_or_started_bundle() {
+  local out
+  world bundle-closed '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"]]' >/dev/null || fail "first run must succeed"
+  jq '."PC-101".state = "Done"' "$LDIR/issues.json" > "$LDIR/i" && mv "$LDIR/i" "$LDIR/issues.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-06) || fail "second run must succeed"
+  assert_equals "PC-102 PC-102" "$(jq -r '[.filings.a.issue, .filings.b.issue] | join(" ")' <<<"$out")" "a closed bundle is never reopened: its finding goes to a new open bundle"
+  assert_equals "PC-101" "$(jq -r .filings.a.recurrence_of <<<"$out")" "naming the closed one"
+  assert_contains "$(body_of PC-102)" "Alpha (low); recurred, was in PC-101" "and the line says so"
+  assert_equals 0 "$(grep -c '^issue update PC-101' "$LDIR/calls")" "the closed item is never written"
+  jq '."PC-102".state = "In Progress"' "$LDIR/issues.json" > "$LDIR/i" && mv "$LDIR/i" "$LDIR/issues.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"],["c","Gamma","low","api/c.cs","api"]]' RUN_DATE=2026-11-07) || fail "third run must succeed"
+  assert_equals "PC-103" "$(jq -r .filings.c.issue <<<"$out")" "a bundle a worker has started takes no new line: the next part does"
+  assert_equals "Automated findings: api (code review) part 2" "$(issue PC-103 .title)" "as part 2"
+  pass "fm-officer-linear: a closed bundle is never reopened and a started one takes no new line"
+}
+
+test_a_finding_back_after_its_bundle_closed() {
+  local out
+  world bundle-back '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' >/dev/null || fail "first run must succeed"
+  jq '."PC-101".state = "Done"' "$LDIR/issues.json" > "$LDIR/i" && mv "$LDIR/i" "$LDIR/issues.json"
+  bundle '[["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-06 >/dev/null || fail "second run must succeed"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-07) || fail "third run must succeed"
+  assert_equals "PC-102 PC-101" "$(jq -r '.filings.a | [.issue, .recurrence_of] | join(" ")' <<<"$out")" \
+    "a finding back on a later run, after its bundle closed, goes to the area's open bundle naming the closed one"
+  assert_contains "$(body_of PC-102)" "Alpha (low); recurred, was in PC-101" "and its line says so"
+  assert_equals 0 "$(grep -c '^issue update PC-101' "$LDIR/calls")" "the closed bundle is never written"
+  world bundle-keep '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"]]' RECUR_CLOSED=0 >/dev/null || fail "first run must succeed"
+  jq '."PC-101".state = "Done"' "$LDIR/issues.json" > "$LDIR/i" && mv "$LDIR/i" "$LDIR/issues.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]' RECUR_CLOSED=0 RUN_DATE=2026-11-06) || fail "second run must succeed"
+  assert_equals "PC-101 true" "$(jq -r '.filings.a | [.issue, .closed] | map(tostring) | join(" ")' <<<"$out")" "with recurrence off, a finding of a closed bundle stays with it"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]' RECUR_CLOSED=0 RUN_DATE=2026-11-07) || fail "third run must succeed"
+  assert_equals "PC-101 true" "$(jq -r '.filings.a | [.issue, .closed] | map(tostring) | join(" ")' <<<"$out")" "on every later run too"
+  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LDIR/calls")" "and is never filed again"
+  pass "fm-officer-linear: a finding back after its bundle closed recurs into the open bundle, or with recurrence off stays closed"
+}
+
+test_bundle_lost_state_adopts_the_open_item_by_title() {
+  local out
+  world bundle-lost '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' >/dev/null || fail "first run must succeed"
+  /usr/bin/trash "$W/bundles.json" "$W/ledger.json"
+  out=$(bundle '[["c","Gamma","low","api/c.cs","api"]]' RUN_DATE=2026-11-06) || fail "second run must succeed"
+  assert_equals "PC-101" "$(jq -r .filings.c.issue <<<"$out")" "the lane found its open bundle again by exact title"
+  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LDIR/calls")" "and created nothing new"
+  assert_equals 3 "$(body_of PC-101 | grep -c '^- \[ \]')" "and kept the lines it no longer had in state"
+  pass "fm-officer-linear: a lane that lost its bundle state adopts the open item by exact title and keeps its lines"
+}
+
+test_duplicate_items_are_closed() {
+  local out
+  world bundle-legacy '{"PC-7": {"title": "Alpha", "description": "x", "state": "Duplicate", "labels": [], "project": null}}'
+  printf '{"%s": "PC-7"}\n' "$(printf 'scan\0job\0a' | sha256sum | cut -d' ' -f1)" > "$W/ledger.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]') || fail "bundle run must succeed"
+  assert_equals "bundled PC-102 PC-7" "$(jq -r '.filings.a | [.action, .issue, .recurrence_of] | join(" ")' <<<"$out")" \
+    "an older single item marked Duplicate counts as closed: the finding goes to its area bundle, naming it"
+  assert_equals 0 "$(grep -c '^issue update PC-7' "$LDIR/calls")" "the duplicate is never written"
+  world dup-title '{"PC-7": {"title": "Automated findings: api (code review)", "description": "x", "state": "Duplicate", "labels": [], "project": null}}'
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]') || fail "bundle run must succeed"
+  assert_equals "PC-102" "$(jq -r .filings.a.issue <<<"$out")" "an exact-title lookup never adopts a Duplicate item"
+  pass "fm-officer-linear: a Duplicate item is closed for every lookup and ledger check"
+}
+
+test_fold_dry_run_plans_area_bundles_and_writes_nothing
+test_fold_apply_marks_each_item_a_duplicate_of_its_bundle
+test_fold_apply_keeps_an_item_whose_findings_are_not_all_written
+test_a_folded_finding_keeps_raising_its_found_count
+test_a_failed_bundle_update_is_retried_the_same_day
+test_a_bundle_starts_once_and_a_reserved_line_holds_it
+test_bundle_appends_to_the_open_bundle_and_starts_part_2_at_the_cap
+test_bundle_groups_by_area_then_by_file
+test_bundle_keeps_single_items_single
+test_bundle_never_writes_a_closed_or_started_bundle
+test_a_finding_back_after_its_bundle_closed
+test_bundle_lost_state_adopts_the_open_item_by_title
+test_duplicate_items_are_closed
 test_dedupe_exact_and_near_match
 test_found_count_is_raised_in_place_once_a_day
 test_score_is_the_found_count_lever
@@ -664,7 +949,7 @@ test_reserved_class_becomes_one_keyed_needs_decision
 test_fleet_findings_take_the_fleet_project_and_label
 test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
 test_fleet_patterns_route_without_linear_writes
-test_surgeon_clusters_split_fleet_from_propertycompass2
+test_surgeon_bundles_split_fleet_from_propertycompass2
 test_closed_item_is_never_touched
 test_closed_item_is_bumped_not_replaced
 test_failed_verify_is_taken_as_written
