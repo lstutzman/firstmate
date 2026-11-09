@@ -100,6 +100,12 @@ case "\$1 \$2" in
     elif grep -qF -- "\$q" "\$d/exists.txt" 2>/dev/null; then
       echo '{"ok":true,"data":{"issues":[{"identifier":"PC-9"},{"identifier":"PC-55"}]}}'
     else echo '{"ok":true,"data":{"issues":[{"identifier":"PC-9"}]}}'; fi ;;
+  "issue list")
+    # The real list reads Linear's data (no full-text index): the item a mismatching create made is there by its exact title.
+    [ -f "\$d/search.down" ] && { err UNKNOWN "search down"; exit 1; }
+    if [ -s "\$d/exists.txt" ] && [ -s "\$d/created.title" ]; then
+      echo '{"ok":true,"data":{"issues":[{"identifier":"PC-55","title":"'"\$(cat "\$d/created.title")"'","state":"Todo","stateType":"unstarted","project":null}]}}'
+    else echo '{"ok":true,"data":{"issues":[]}}'; fi ;;
   "issue update")
     case " \$* " in
       *" --verify "*)
