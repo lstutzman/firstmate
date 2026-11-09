@@ -6,7 +6,8 @@
 #                             [--note-dir DIR] [--summary]
 #
 # Reads the process table (`ps -eo pid=,etimes=,args=`, or FILE in the same format) and keeps each
-# process whose command is `claude` or `codex`. A session is flagged when it is older than
+# process whose command is `claude` or `codex`, except the long-running `codex app-server` daemons
+# (app-server as codex's first non-option argument), which are not agent sessions. A session is flagged when it is older than
 # --min-age-hours (default 24) or its --model flag matches --retired (default
 # $FM_SESSION_WEIGHT_RETIRED, else config/session-weight-retired in the home, else claude-opus-4).
 # One line per flagged session names process id, home (an fm-homes path in its --add-dir or working
