@@ -32,11 +32,13 @@ card, a page owner fixes a page). It acts on nothing itself.
                  whose keyed status line a later `resolved` line settled.
                  Two live-decision exceptions keep this from false-flagging:
                  * A merged PR stales a card only when the card's ask is the PR
-                   itself: a merge word or ask (MERGE_RE), or an approval,
-                   review or hold release (REVIEW_RE), in its question, title
-                   or id. A card that merely names a merged PR while asking
-                   for something else (a Linear status, a follow-up step) is a
-                   live decision, and so is one that asks for a production or
+                   itself: a merge word or ask (MERGE_RE) in its question,
+                   title or id, or a question that opens with approve,
+                   review or release the hold (REVIEW_RE). A card that
+                   merely names a merged PR while asking for something else
+                   (a Linear status, a follow-up step), or whose review or
+                   hold word only describes the PR, is a live decision, and
+                   so is one that asks for a production or
                    activation action without a merge word, even when worded
                    approve, review or hold: its question, title or id names
                    deploy, production or roll out (PRODUCTION_RE), its
@@ -125,8 +127,8 @@ PRODUCTION_RE = re.compile(r"\b(production|deploy\w*|roll(?:ed|s|ing)?[ -]?out)\
 # A card asks to activate or run its subject when its question or title opens with the ask, or its id carries the token.
 ACTIVATION_ASK_RE = re.compile(r"^(?:run these|run the|install|activate|enable|go live)\b", re.I)
 ACTIVATION_ID_RE = re.compile(r"-(?:install|golive|go-live|activate|run-these)(?:-|$)", re.I)
-# A card asks for a decision on a PR itself when its question, title or id carries one of these words and it names no production or activation action.
-REVIEW_RE = re.compile(r"\b(?:approve|approval|review|hold)\b", re.I)
+# A card asks for a decision on a PR itself when its question opens with one of these asks and it names no production or activation action.
+REVIEW_RE = re.compile(r"^(?:\w+,\s*)?(?:please\s+)?(?:approve|approval|review|(?:release|lift)\s+(?:the\s+)?hold)\b", re.I)
 # A resolved status line written by an answer, as opposed to a routing or reconcile acknowledgement.
 ANSWER_RE = re.compile(r"^(?:answered:|captain hold \S+: (?:answered|released))", re.I)
 RULE_RE = re.compile(r"^\s*(?:-\s*)?standing-rule\s+([a-z0-9-]+)\s+/(.+)/\s+-\s+(.+?)\s*$", re.M)
@@ -271,7 +273,7 @@ def asks_about_pr(card):
         return True
     action = (any(PRODUCTION_RE.search(h) for h in head) or ACTIVATION_ID_RE.search(head[0])
               or any(ACTIVATION_ASK_RE.search(h) for h in head[1:]))
-    return not action and any(REVIEW_RE.search(h) for h in head)
+    return not action and bool(REVIEW_RE.search(head[1]))
 
 
 def finding(kind, page, ref, title, evidence, route, severity="medium"):
