@@ -46,8 +46,8 @@
 # The script never calls workspace close. It removes only the matching journal,
 # and only after the exact pane is confirmed gone; a finished task's journal is
 # retired under bin/fm-teardown.sh's orphan rule (a version 2 binding of exactly
-# that pane, or a version 1 token whose workspace is confirmed gone), so a later
-# relaunch projects a fresh workspace. Every error warns on stderr and returns
+# that pane, or a version 1 token whose workspace is confirmed gone), since it
+# names nothing left to close. Every error warns on stderr and returns
 # success, and a successful close prints nothing, so neither session startup nor
 # the watcher's check pass is interrupted or woken by it.
 set -u
