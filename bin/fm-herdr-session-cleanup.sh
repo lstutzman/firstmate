@@ -39,8 +39,11 @@
 # relaunch or unpark proves the endpoint gone and builds a fresh one
 # (docs/agent-control.md "Reclaiming a task whose endpoint is gone").
 #
-# In both passes topology is first checked from one locked API snapshot, then
-# every mutation prerequisite is immediately rechecked before the existing
+# In both passes topology is first checked from one API snapshot (locked in the
+# restored-shell pass; the finished pass reads the agent state, the idle-shell
+# proof, and the snapshot before taking any lock, so a task whose agent is still
+# live never touches its locks), then every mutation prerequisite is rechecked
+# under the locks immediately before the existing
 # exact-pane focus-preserving close helper is called; closing the only pane is
 # what lets Herdr remove the emptied workspace.
 # The script never calls workspace close. It removes only the matching journal,
@@ -440,6 +443,25 @@ fm_herdr_cleanup_finished_one() { # <task-id> <home-real>
     [ "$bound_workspace" = "$workspace" ] && [ "$bound_pane" = "$pane" ] || return 0
   fi
 
+  state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
+  case "$state" in
+    no-agent|stale-agent) ;;
+    *) return 0 ;;
+  esac
+  if ! fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null; then
+    fm_herdr_cleanup_warn "$id preserved because its pane is not a provably idle childless shell"
+    return 0
+  fi
+  snapshot=$(fm_backend_herdr_cli "$session" api snapshot 2>/dev/null) || snapshot=
+  if [ -z "$snapshot" ] \
+    || ! fm_herdr_cleanup_snapshot_candidate \
+      "$snapshot" "$workspace" "$title" "$token" \
+      "$bound_workspace" "$bound_tab" "$bound_pane" \
+    || [ "$FM_HERDR_CLEANUP_PANE" != "$pane" ]; then
+    fm_herdr_cleanup_warn "$id preserved because its candidate snapshot was ambiguous"
+    return 0
+  fi
+  tab=$FM_HERDR_CLEANUP_TAB
   FM_HERDR_CLEANUP_HELD=()
   meta_lock=$(fm_meta_lock_path "$STATE/$id.meta" 2>/dev/null) || meta_lock=
   presentation_lock=$(fm_backend_herdr_presentation_session_lock_path "$session" 2>/dev/null) || presentation_lock=
@@ -449,31 +471,6 @@ fm_herdr_cleanup_finished_one() { # <task-id> <home-real>
     || ! fm_herdr_cleanup_take "$presentation_lock"; then
     fm_herdr_cleanup_release_all
     fm_herdr_cleanup_warn "$id skipped because a task or presentation lock is busy or unavailable"
-    return 0
-  fi
-  if ! fm_herdr_cleanup_task_still_bound "$id" "$session" "$workspace" "$pane"; then
-    fm_herdr_cleanup_release_all
-    return 0
-  fi
-  snapshot=$(fm_backend_herdr_cli "$session" api snapshot 2>/dev/null) || snapshot=
-  if [ -z "$snapshot" ] \
-    || ! fm_herdr_cleanup_snapshot_candidate \
-      "$snapshot" "$workspace" "$title" "$token" \
-      "$bound_workspace" "$bound_tab" "$bound_pane" \
-    || [ "$FM_HERDR_CLEANUP_PANE" != "$pane" ]; then
-    fm_herdr_cleanup_warn "$id preserved because its locked candidate snapshot was ambiguous"
-    fm_herdr_cleanup_release_all
-    return 0
-  fi
-  tab=$FM_HERDR_CLEANUP_TAB
-  state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
-  case "$state" in
-    no-agent|stale-agent) ;;
-    *) fm_herdr_cleanup_release_all; return 0 ;;
-  esac
-  if ! fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null; then
-    fm_herdr_cleanup_warn "$id preserved because its pane is not a provably idle childless shell"
-    fm_herdr_cleanup_release_all
     return 0
   fi
   FM_HERDR_CLEANUP_AGENT_STATE=$state
@@ -581,12 +578,16 @@ fm_herdr_session_cleanup() {
   return 0
 }
 
-if [ "${FM_HERDR_SESSION_CLEANUP_SOURCE_ONLY:-0}" != 1 ]; then
+fm_herdr_cleanup_main() { # [--finished-only]
   case "${1:-}" in
     '') fm_herdr_session_cleanup ;;
     --finished-only) ;;
-    *) echo "usage: fm-herdr-session-cleanup.sh [--finished-only]" >&2; exit 2 ;;
+    *) echo "usage: fm-herdr-session-cleanup.sh [--finished-only]" >&2; return 2 ;;
   esac
   fm_herdr_finished_cleanup
-  exit 0
+}
+
+if [ "${FM_HERDR_SESSION_CLEANUP_SOURCE_ONLY:-0}" != 1 ]; then
+  fm_herdr_cleanup_main "$@"
+  exit $?
 fi

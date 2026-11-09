@@ -222,7 +222,7 @@ write_cross_home_v2() {
 }
 
 reset_fixture() {
-  rm -rf "$FIXTURE_DIR" "$TMP_ROOT"/*.lock "${FM_STATE_OVERRIDE:?}/"*
+  rm -rf "$FIXTURE_DIR" "$TMP_ROOT"/*.lock "${FM_STATE_OVERRIDE:?}/"* "${FM_STATE_OVERRIDE:?}/".*.lock
   mkdir -p "$FIXTURE_DIR"
   : > "$LOCK_LOG"; : > "$CLOSE_LOG"
   printf '%s\n' "$TITLE" > "$FIXTURE_DIR/title"
@@ -338,6 +338,8 @@ reset_finished; write_v1 "$ID"
 assert_finished_closed "version 1 journal" no-agent
 
 reset_finished; printf 'live\n' > "$FIXTURE_DIR/agent"; printf 'agent\n' > "$FIXTURE_DIR/process-state"; assert_finished_preserved "live agent"
+[ ! -s "$LOCK_LOG" ] || fail "finished pass took a lock for a task whose agent is still live"
+pass "finished pass never touches the locks of a task whose agent is still live"
 reset_finished; printf 'unknown\n' > "$FIXTURE_DIR/agent"; assert_finished_preserved "unknown agent"
 reset_finished; printf 'paused [at=1001]: waiting on CI\n' >> "$STATUS"; assert_finished_preserved "paused latest event"
 reset_finished; printf 'working [at=1001]: fixing review\n' >> "$STATUS"; assert_finished_preserved "working latest event"
@@ -363,6 +365,10 @@ reset_finished; : > "$FIXTURE_DIR/process-unsafe"; assert_finished_preserved "no
 reset_finished; printf '%s\n' "$TAB" > "$FIXTURE_DIR/active-tab"; assert_finished_preserved "active target"
 reset_finished; : > "$FIXTURE_DIR/error-workspace-list"; assert_finished_preserved "stopped or unreadable session"
 reset_finished; : > "$FIXTURE_DIR/focus-refuse"; assert_finished_preserved "focus refusal"
+reset_finished; (fm_herdr_cleanup_main) >/dev/null 2>"$TMP_ROOT/main.err" || fail "no-argument run failed"
+[ "$(wc -l < "$CLOSE_LOG" | tr -d ' ')" = 1 ] || fail "no-argument run did not close the finished task's pane: $(cat "$CLOSE_LOG" "$TMP_ROOT/main.err" "$LOCK_LOG")"
+[ ! -e "$FM_STATE_OVERRIDE/$ID.herdr-presentation" ] || fail "no-argument run kept the finished task's journal"
+pass "the no-argument session-start run also runs the finished-task pass"
 reset_finished; fm_herdr_session_cleanup >/dev/null 2>&1
 [ ! -s "$CLOSE_LOG" ] || fail "restored-shell pass closed a workspace whose task record exists"
 pass "restored-shell pass still preserves every workspace with a task record"
