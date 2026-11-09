@@ -823,7 +823,7 @@ class Bundles:
         self.bundles = self.state.setdefault("bundles", {})
         self.member_of = self.state.setdefault("member_of", {})
         self.pending = collections.OrderedDict()  # key -> [(finding, note)]
-        self.dirty, self.seen, self.unkeyed = set(), {}, []
+        self.dirty, self.seen, self.unkeyed, self.due = set(), {}, [], set()
 
     def save(self):
         write_json(self.path, self.state)
@@ -865,6 +865,8 @@ class Bundles:
                 self.dirty.add(b["fp"])
             if b.get("issue"):
                 self.filing(f, b, False)
+                if b.get("checked") != self.filer.date:
+                    self.due.add(b["fp"])  # read once a day, so a bundle a person closed or started is noticed
                 return "bundled"
             self.dirty.add(b["fp"])
             return "queued"
@@ -929,7 +931,7 @@ class Bundles:
             self.dirty.add(b["fp"])
 
     def needs_linear(self):
-        return bool(self.pending or self.unkeyed) or any(fp in self.bundles for fp in self.dirty)
+        return bool(self.pending or self.unkeyed or self.due) or any(fp in self.bundles for fp in self.dirty)
 
     def body(self, b):
         off = self.filer.officer
@@ -982,6 +984,8 @@ class Bundles:
         """Reads the bundle's item: a closed one is never written again (its findings seen this run go back to the queue,
         or stay with it when recur_closed is off); a started one takes no new line."""
         issue = self.filer.view_issue(b["issue"])
+        b["checked"] = self.filer.date
+        self.due.discard(b["fp"])
         if is_closed(issue):
             b["closed"] = True
             self.dirty.discard(b["fp"])
@@ -1038,7 +1042,7 @@ class Bundles:
         for f, note in self.unkeyed:
             self.pending.setdefault(self.key(f), []).append((f, note))
         self.unkeyed = []
-        keys = list(self.pending) + [self.key_of(self.bundles[fp]) for fp in sorted(self.dirty) if fp in self.bundles]
+        keys = list(self.pending) + [self.key_of(self.bundles[fp]) for fp in sorted(self.dirty | self.due) if fp in self.bundles]
         for key in list(collections.OrderedDict.fromkeys(keys)):
             queue = self.pending.pop(key, [])
             try:
@@ -1052,7 +1056,7 @@ class Bundles:
 
     def write_key(self, key, queue, label_set):
         for b in self.open_parts(key):
-            if b["fp"] not in self.dirty and not queue:
+            if b["fp"] not in self.dirty and b["fp"] not in self.due and not queue:
                 continue
             if b["issue"] and not self.check(b):
                 queue.extend(self.pending.pop(key, []))

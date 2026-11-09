@@ -715,7 +715,7 @@ test_production_environment_bumps_severity_one_step() {
   assert_equals "medium high critical" "$(row "$json" sweeper p1 .severity) $(row "$json" sweeper p2 .severity) $(row "$json" sweeper p3 .severity)" "production moves a finding up one step"
   assert_equals "medium medium" "$(row "$json" sweeper p4 .severity) $(row "$json" sweeper p5 .severity)" "staging, and a payload with no environment field, get no bump"
   assert_equals low "$(row "$json" sweeper p6 .severity)" "a won't-fix finding stays low"
-  assert_contains "$(grep '^issue create .*high bug in prod.*--verify' "$LINEAR_LOG")" "--priority 1" "critical is Urgent in Linear"
+  assert_contains "$(grep '^issue create .*Automated findings: triage (bug sweeper).*--verify' "$LINEAR_LOG")" "--priority 1" "critical is Urgent in Linear: its bundle takes the worst finding's priority"
   pass "fm-officer surgeon: an environment of production bumps severity, and text alone never does"
 }
 
@@ -757,13 +757,16 @@ test_invalid_nightly_e2e_is_a_top_severity_promotion_blocker() {
 test_start_requests_follow_the_rubric_and_hold_reserved_classes() {
   local home json out
   make_world starts "$LINEAR_ON"; home=$WORLD_HOME
+  printf 'billing\n' >> "$LDIR/labels.txt"
   set_pages starts '[]' '[
     {"fp":"s1","title":"Crash on save","disposition":"new","severity":"P1"},
     {"fp":"s2","title":"Stripe payment fails for annual plan","disposition":"new","severity":"P1"},
     {"fp":"s3","title":"Wrong total","disposition":"new","severity":"P2"}]'
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals "Crash on save" "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding") | .title] | join("|")' "$json")" "only the real high finding starts"
+  assert_equals "Crash on save" "$(jq -r '[.start_requests[] | select(.kind == "surgeon-finding") | .title] | join("|")' "$json")" "only the real high finding starts, and it starts its whole bundle"
+  assert_contains "$(jq -r '.start_requests[0].execute.argv | last' "$json")" "fix every open line of its checklist in one pull request" "the request asks for the bundle in one pull request"
+  assert_equals "$(row "$json" sweeper s1 .filing.issue)" "$(row "$json" sweeper s3 .filing.issue)" "the medium finding in the same area rides in that bundle"
   assert_equals "$home" "$(jq -r '.start_requests[0].execute.env.FM_HOME' "$json")" "on the progress officer's start path"
   assert_contains "$(jq -r '.start_requests[0].execute.argv | join(" ")' "$json")" "fm-inbox.sh note --request-id surgeon-$DATE-" "through the inbox note intake"
   assert_equals "surgeon-holds-$DATE" "$(jq -r '.asks_for_lee[0].key' "$json")" "a reserved class becomes one keyed needs-decision"
@@ -877,8 +880,8 @@ test_nightly_area_tries_feature_labels_before_testing() {
     {"key":"n1","title":"stamp duty total wrong","cause":"expected 1200","where":"tests/e2e/calculators/stamp-duty.spec.ts","classification":"regression"},
     {"key":"n2","title":"home page loads","cause":"timed out","where":"tests/e2e/smoke.spec.ts","classification":"regression"}]}'
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
-  assert_contains "$(grep '^issue create .*stamp duty total wrong.*--verify' "$LINEAR_LOG")" "--label calculators" "a calculators spec gets the calculators label, not testing"
-  assert_contains "$(grep '^issue create .*home page loads.*--verify' "$LINEAR_LOG")" "--label testing" "a plain spec with no feature word falls back to testing"
+  assert_contains "$(grep '^issue create .*Automated findings: calculators (nightly E2E).*--verify' "$LINEAR_LOG")" "--label calculators" "a calculators spec goes to the calculators bundle, not testing"
+  assert_contains "$(grep '^issue create .*Automated findings: testing (nightly E2E).*--verify' "$LINEAR_LOG")" "--label testing" "a plain spec with no feature word falls back to testing"
   pass "fm-officer surgeon: a nightly E2E failure tries the feature labels before testing"
 }
 
@@ -888,7 +891,7 @@ test_unreadable_rubric_leaves_items_to_start_later() {
   set_pages laterstart '[]' '[{"fp":"l1","title":"Crash on save","disposition":"new","severity":"P1"}]'
   run_surgeon "$home" >/dev/null || fail "missing rubric run"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals created "$(row "$json" sweeper l1 .filing.action)" "the high finding is filed"
+  assert_equals bundled "$(row "$json" sweeper l1 .filing.action)" "the high finding is filed"
   assert_equals 0 "$(jq '[.start_requests[] | select(.kind == "surgeon-finding")] | length' "$json")" "but nothing starts without a rubric"
   surgeon_registry "$home" "$TMP_ROOT/laterstart/archive" "$LINEAR_ON"
   run_surgeon_next_day "$home" laterstart >/dev/null || fail "next-day run with the rubric back"
@@ -898,7 +901,8 @@ test_unreadable_rubric_leaves_items_to_start_later() {
 
 test_reserved_classes_match_the_action_not_the_word() {
   local home json
-  make_world reserved "$LINEAR_ON"; home=$WORLD_HOME
+  # bundle-cap 1 gives each finding its own bundle, so each is judged alone (a reserved line holds its whole bundle).
+  make_world reserved "${LINEAR_ON}bundle-cap: 1; "; home=$WORLD_HOME
   set_pages reserved '[]' '[
     {"fp":"r1","title":"shallow copy of list mutates cache","disposition":"new","severity":"P1"},
     {"fp":"r2","title":"password hash compared with ==","disposition":"new","severity":"P1"},
@@ -951,11 +955,10 @@ test_closed_search_hit_files_a_recurrence() {
   echo Done > "$LDIR/state.PC-55"
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals "created PC-55" "$(row "$json" sweeper h1 '[.filing.action,.filing.recurrence_of]|join(" ")')" "with no ledger entry, a closed search hit still makes a recurrence"
+  assert_equals "bundled PC-55" "$(row "$json" sweeper h1 '[.filing.action,.filing.recurrence_of]|join(" ")')" "with no ledger entry, a closed search hit still makes a recurrence"
   assert_equals 0 "$(grep -c '^issue update PC-55' "$LINEAR_LOG")" "the closed item is not edited"
-  assert_contains "$(cat "$LDIR/bodies")" "Recurrence of PC-55 (closed as Done)." "the new item names it"
-  assert_equals "RELATION PC-101 --related PC-55" "$(cat "$LDIR/relations")" "and links it as related"
-  pass "fm-officer surgeon: a closed item found by fingerprint search gets a recurrence, not a plain new item"
+  assert_contains "$(cat "$LDIR/bodies")" "Crash on save (high); recurred, was in PC-55" "the bundle line names it"
+  pass "fm-officer surgeon: a closed item found by fingerprint search makes a recurrence line, not a plain new one"
 }
 
 # --- the visual review source: the nightly findings file, filed as defects or held for Lee ---
@@ -1010,14 +1013,15 @@ test_visual_defects_are_filed_once_and_wording_is_held() {
   out=$(run_surgeon "$home") || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
   hex=$(vfp /deal-finder contradictory-numbers)
-  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "two viewports of one defect are one item, and the held finding is no item"
+  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "two viewports of one defect are one line in one item, and the held finding is no item"
+  assert_contains "$(grep '^issue create .*--verify' "$LINEAR_LOG")" "--title Automated findings: deal-finder (visual review)" "the item is the route's area bundle"
   assert_contains "$(grep '^issue create .*--verify' "$LINEAR_LOG")" "--label Bug --label scheduled-review --label deal-finder" "one Type, the Source and the route's area label"
   assert_contains "$(grep '^issue create .*--verify' "$LINEAR_LOG")" "--priority 2" "the file's severity high is Linear priority High"
   bodies=$(cat "$LDIR/bodies")
-  assert_contains "$bodies" "visual-review-fp:$hex" "the item carries the visual review's own marker"
-  assert_contains "$bodies" "surgeon-fp:$(fp visual visual-review "$hex")" "and the Surgeon's fingerprint, built from it"
-  assert_contains "$bodies" "Screenshot: $VISUAL_DIR/captures/shots/a-desktop.png" "a screenshot that is on disk is named by its real path"
-  assert_contains "$bodies" "Screenshot: shots/a-mobile.png (not found under $VISUAL_DIR/captures)" "one that is not is named with what was looked for"
+  assert_contains "$bodies" "surgeon-fp:$(fp visual visual-review "$hex") " "the line carries the Surgeon's fingerprint, built from the visual review's"
+  assert_contains "$bodies" "; visual-review-fp:$hex; screenshots: " "and the visual review's own marker"
+  assert_contains "$bodies" "$VISUAL_DIR/captures/shots/a-desktop.png" "a screenshot that is on disk is named by its real path"
+  assert_contains "$bodies" "shots/a-mobile.png (not found under $VISUAL_DIR/captures)" "one that is not is named with what was looked for"
   assert_not_contains "$bodies" "/portfolio" "the held finding is in no item"
   assert_equals "PC-101 $VISUAL_DIR/captures/shots/a-desktop.png --verify" "$(cat "$LDIR/attach.log")" "the screenshot on disk is attached to the new item, once"
   assert_contains "$out" "Coverage gap: screenshot not attached to PC-101: shots/a-mobile.png (not found under $VISUAL_DIR/captures)" "a screenshot file that is missing is a named gap"
@@ -1046,9 +1050,9 @@ test_visual_repeat_bumps_the_found_line_and_an_unchanged_file_adds_nothing() {
   run_surgeon_next_day "$home" visrep >/dev/null || fail "next night's run"
   json="$home/data/officers/surgeon/$DATE2.json"
   assert_equals 0 "$(grep -c '^issue create' "$LINEAR_LOG")" "the same fingerprint is not created twice"
-  assert_equals 1 "$(grep -c '^issue update PC-101 .*--verify' "$LINEAR_LOG")" "it bumps the existing item once"
+  assert_equals 0 "$(grep -c '^issue update PC-101' "$LINEAR_LOG")" "a finding already on its bundle does not rewrite it"
   assert_equals 1 "$(wc -l < "$LDIR/attach.log")" "a nightly re-find attaches no new screenshot"
-  assert_contains "$(cat "$LDIR/updates")" "Found: 2 times (first $DATE2, last $DATE2, by surgeon)" "the one Found line says it was seen again"
+  assert_equals 2 "$(row "$json" visual "$(vfp /deal-finder contradictory-numbers)" .found)" "the finding's own found count says it was seen again"
   assert_equals 0 "$(jq '.asks_for_lee | length' "$json")" "a held finding already put to Lee is not asked again"
   : > "$LINEAR_LOG"
   out=$(run_surgeon_next_day "$home" visrep "$DATE3" 2) || fail "a night with no new visual review"
@@ -1141,7 +1145,7 @@ test_visual_attach_failures_are_named_gaps() {
   rm "$FAKEBIN/linear-attach"
   out=$(PATH="$FAKEBIN:/usr/bin:/bin" FM_OFFICER_NOW="$NOW" FM_HOME="$home" "$OFFICER" run surgeon --date "$DATE") || fail "a missing linear-attach must not fail the run"
   assert_contains "$out" "Coverage gap: screenshots not attached: linear-attach is not available" "a missing linear-attach is a named gap"
-  assert_contains "$(cat "$LDIR/bodies")" "Screenshot: $VISUAL_DIR/captures/shots/a-desktop.png" "and the item still names the screenshot"
+  assert_contains "$(cat "$LDIR/bodies")" "screenshots: $VISUAL_DIR/captures/shots/a-desktop.png" "and the item still names the screenshot"
   pass "fm-officer surgeon: each screenshot attach failure is its own named coverage gap"
 }
 
@@ -1194,11 +1198,11 @@ test_visual_pending_attach_is_abandoned_after_seven_days() {
 
 test_visual_attach_stops_at_the_call_budget() {
   local home out
-  make_visual_world visbudget "max-linear-calls: 5; "; home=$WORLD_HOME
+  make_visual_world visbudget "max-linear-calls: 6; "; home=$WORLD_HOME
   out=$(run_surgeon "$home") || fail "a spent budget must not fail the run"
   assert_equals 1 "$(grep -c '^issue create .*--verify' "$LINEAR_LOG")" "the item is still filed within the budget"
   [ ! -s "$LDIR/attach.log" ] || fail "an attach past the budget is not made: $(cat "$LDIR/attach.log")"
-  assert_contains "$out" "Coverage gap: screenshots not attached: Linear call budget of 5 reached" "the budget stop is named"
+  assert_contains "$out" "Coverage gap: screenshots not attached: Linear call budget of 6 reached" "the budget stop is named"
   assert_contains "$out" "Coverage gap: 1 screenshot(s) not attached yet; the next run retries them" "and the screenshot is left for the next run"
   pass "fm-officer surgeon: each attach counts against the Linear call budget"
 }
@@ -1211,7 +1215,7 @@ test_visual_recurrence_of_a_closed_item_gets_its_screenshot() {
   write_visual "$VISUAL_DIR/findings.json" "$VSTAMP2"
   run_surgeon_next_day "$home" visrecur >/dev/null || fail "next night's run after the item was closed"
   json="$home/data/officers/surgeon/$DATE2.json"
-  assert_equals "created PC-102 PC-101" "$(row "$json" visual "$(vfp /deal-finder contradictory-numbers)" '[.filing.action,.filing.issue,.filing.recurrence_of]|join(" ")')" "a closed item's defect files a recurrence"
+  assert_equals "bundled PC-102 PC-101" "$(row "$json" visual "$(vfp /deal-finder contradictory-numbers)" '[.filing.action,.filing.issue,.filing.recurrence_of]|join(" ")')" "a closed bundle's defect goes to a new bundle naming it"
   assert_equals "PC-102 $VISUAL_DIR/captures/shots/a-desktop.png --verify" "$(tail -n 1 "$LDIR/attach.log")" "and the recurrence gets the screenshot attached"
   assert_equals 2 "$(wc -l < "$LDIR/attach.log")" "once"
   pass "fm-officer surgeon: a recurrence of a closed visual item gets its screenshot attached"
