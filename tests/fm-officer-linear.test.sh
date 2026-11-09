@@ -56,7 +56,13 @@ def failing():
         print(json.dumps({"ok": False, "error": {"code": "UNKNOWN", "message": "boom"}})); sys.exit(1)
 if args[:2] == ["label", "list"]:
     out({"labels": [{"name": n} for n in open(os.path.join(d, "labels")).read().split()]})
+if args[:2] == ["issue", "list"]:
+    # Linear data, newest first, titles and stateType as the real list prints them (no title filter exists).
+    out({"issues": [{"identifier": i, "title": v["title"], "state": v["state"], "team": "PC", "project": v.get("project"),
+                     "stateType": "completed" if v["state"] == "Done" else "unstarted"}
+                    for i, v in sorted(issues.items(), key=lambda kv: -int(kv[0].split("-")[1]))][:int(flag("--max-items") or 30)]})
 if args[:2] == ["issue", "search"]:
+    if os.environ.get("FAKE_SEARCH_MISS"): out({"issues": []})  # full-text search that never returns these titles
     q = args[2].lower()
     words = {w for w in q.replace("-", " ").split() if len(w) > 3}
     hits = [i for i, v in issues.items()
@@ -541,6 +547,36 @@ test_failed_verify_is_taken_as_written() {
   pass "fm-officer-linear: a failed --verify write is found again by data.issue.identifier or exact title, never recorded failed"
 }
 
+test_mismatched_create_is_adopted_when_title_search_misses() {
+  local out mode
+  for mode in nocontract textappend; do
+    world "adopt-$mode" '{}'
+    out=$(FAKE_VERIFY=$mode FAKE_SEARCH_MISS=1 drive verify-fail) || fail "driver must succeed"
+    assert_equals "created PC-101" "$(jq -r '.filing | [.action, .issue] | join(" ")' <<<"$out")" "$mode: full-text search misses the title, the item is still adopted and not recorded failed"
+    assert_equals "PC-101" "$(jq -r '.ledger | to_entries[0].value' <<<"$out")" "$mode: and ledgered with its identifier"
+    assert_equals 1 "$(grep -c '^issue create.*--verify' "$LDIR/calls")" "$mode: created once"
+    assert_equals 0 "$(sed -n '/^issue create.*--verify/,$p' "$LDIR/calls" | grep -c '^issue search')" "$mode: no title lookup goes through issue search"
+  done
+  world adopt-cluster '{}'
+  printf 'scheduled-review\n' >> "$LDIR/labels"
+  out=$(FAKE_VERIFY=nocontract FAKE_SEARCH_MISS=1 drive cluster-reuse) || fail "driver must succeed"
+  assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatched cluster create is adopted"
+  out=$(FAKE_SEARCH_MISS=1 drive cluster-reuse) || fail "driver must succeed"
+  assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "the next run (ledger lost) updates that item"
+  assert_equals '["PC-101"]' "$(jq -c '.ids' <<<"$out")" "and creates nothing new"
+  assert_equals 1 "$(grep -c '^issue create.*--verify' "$LDIR/calls")" "so only the first run ever created"
+  pass "fm-officer-linear: a create that mismatches and whose title full-text search misses is adopted, then updated, never recreated"
+}
+
+test_mismatched_creates_count_against_the_cap() {
+  local out
+  world cap-mismatch '{}'
+  out=$(FAKE_VERIFY=nocontract FAKE_SEARCH_MISS=1 drive cap) || fail "driver must succeed"
+  assert_equals "created: created: not-filed:over max-creates for this run not-filed:over max-creates for this run" "$(jq -r '.filings | join(" ")' <<<"$out")" "mismatched creates are created and count, the rest say why"
+  assert_equals 2 "$(grep -c '^issue create .*--verify' "$LDIR/calls")" "so max-creates still bounds them"
+  pass "fm-officer-linear: mismatched creates count against max-creates"
+}
+
 test_failed_write_is_failed_and_retried_next_run() {
   local out
   world retry '{}'
@@ -619,6 +655,8 @@ test_surgeon_clusters_split_fleet_from_propertycompass2
 test_closed_item_is_never_touched
 test_closed_item_is_bumped_not_replaced
 test_failed_verify_is_taken_as_written
+test_mismatched_create_is_adopted_when_title_search_misses
+test_mismatched_creates_count_against_the_cap
 test_failed_write_is_failed_and_retried_next_run
 test_cluster_reuses_the_oldest_open_item_of_its_title
 test_cluster_update_mismatch_is_written_and_no_json_is_failed

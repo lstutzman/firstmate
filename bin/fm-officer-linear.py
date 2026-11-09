@@ -18,8 +18,8 @@ how it finds things. This file owns the mechanics every officer shares:
               A duplicate raises the item's one `Found: N times (first <date>, last <date>, by <officer>)` line in place
               (`issue update --dry-run`, then `--verify`) and adds one comment, on the day's first sighting only.
               Every write is `--dry-run` then `--verify`. A failed verify is never retried; the item is taken as written when the
-              error's data.issue.identifier names it, else when an exact-title search finds one open item (Linear search does not
-              match fingerprints), and only then recorded failed (tried again next run). open_by_title() also lets a cluster reuse
+              error's data.issue.identifier names it, else when the team's issue list holds one new open item of exactly its title (Linear's full-text search matches
+              neither fingerprints nor these titles, so no exact-title lookup uses it; see title_index()), and only then recorded failed (tried again next run). open_by_title() also lets a cluster reuse
               the oldest open item of its title. An item a person closed (completed or canceled) is never reopened,
               edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`), unless
               the Filer is built with bump_closed (the page-check officer), when it bumps the closed item and starts nothing.
@@ -103,6 +103,8 @@ SEVERITY_LINE = re.compile(r"\bSeverity: (critical|high|medium|low)\b")
 FOUND_ANY = re.compile(r"^Found: (\d+) times \(first \d{4}-\d{2}-\d{2}, last \d{4}-\d{2}-\d{2}, by [a-z-]+\)$", re.M)
 EXISTING_VIEWS = 3
 VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
+TITLE_INDEX_ITEMS = 600  # newest items of the team read for an exact-title lookup (the list is newest first)
+TITLE_INDEX_PAGE = 100
 CLOSED_STATES = ("Done", "Canceled", "Cancelled", "Duplicate")
 RESUME_FILE = "linear-resume-after.json"
 LEDGER_FILE = "filed-fingerprints.json"
@@ -451,6 +453,7 @@ class Filer:
         self.bump_closed = bump_closed
         self.ledger, self.found, self.jev, self.max_creates = ledger, found, jev, max_creates
         self.cache, self.creates, self.bumps = {}, 0, []
+        self.titles = None  # the team's newest items for exact-title lookups, read once a run (title_index)
 
     def over_cap(self):
         return self.creates >= self.max_creates
@@ -516,19 +519,25 @@ class Filer:
                 cmd += ["--project", FLEET_PROJECT]
             self.lin(cmd + ["--dry-run"])
             self.creates += 1
+            # What the run already knew of the team's titles, so a mismatched create is told from older same-title items
+            # (a cluster reads the list before it creates; a single does not spend a call on it).
+            before = {h["identifier"] for h in self.titles or ()}
             try:
-                return issue_id(self.lin(cmd + ["--verify"])), True, None
+                ident = issue_id(self.lin(cmd + ["--verify"]))
+                self.note_title(ident, title, project)
+                return ident, True, None
             except LinearError as exc:
                 if exc.code in RATE_OR_BUDGET:
                     raise
                 # --verify writes before it reads back, so the item may exist; a created item is never
-                # reported failed or left out of the ledger. Linear search does not match the hex fingerprint,
-                # so look for it by the identifier the error names, else by its exact title.
+                # reported failed or left out of the ledger. Linear search matches neither the hex fingerprint nor
+                # these titles, so look for it by the identifier the error names, else for the one new open item of
+                # exactly this title in the team's list.
                 found = exc.written_ident()
                 try:
                     for wait in VERIFY_SEARCH_WAITS if not found else ():
                         time.sleep(wait)
-                        found = self.open_by_title(title, oldest=False, fleet=fleet_work(self.officer, project))
+                        found = self.open_by_title(title, oldest=False, fleet=fleet_work(self.officer, project), refresh=True, exclude=before)
                         if found:
                             break
                 except LinearError as search_exc:
@@ -537,6 +546,7 @@ class Filer:
                     raise LinearError(exc.code, "%s (then title search failed: %s)" % (exc.message, search_exc))
                 if not found:
                     raise
+                self.note_title(found, title, project)
                 return found, True, str(exc)
         finally:
             if os.path.exists(path):
@@ -557,23 +567,41 @@ class Filer:
                 os.remove(path)
         self.cache.pop(ident, None)
 
-    def open_by_title(self, title, oldest=True, fleet=None):
+    def title_index(self, refresh=False):
+        """The team's newest TITLE_INDEX_ITEMS items as dicts (identifier, title, project, stateType), read once a run.
+
+        `issue list` reads Linear's data, not its full-text index: `issue search` misses long, punctuated titles
+        (even many minutes after the write), so no exact-title lookup relies on it. One call, however many pages.
+        """
+        if self.titles is None or refresh:
+            data = self.lin(["issue", "list", "--team", self.team, "--all", "--max-items", str(TITLE_INDEX_ITEMS),
+                             "--limit", str(TITLE_INDEX_PAGE), "--fields", "project,stateType"])
+            self.titles = [h for h in dicts(data.get("issues")) if h.get("identifier")]
+        return self.titles
+
+    def note_title(self, ident, title, project):
+        """Adds an item this run wrote to the title index, so a later lookup of its title finds it."""
+        if self.titles is not None and ident not in {h["identifier"] for h in self.titles}:
+            self.titles.append({"identifier": ident, "title": title, "project": FLEET_PROJECT if fleet_work(self.officer, project) else None})
+
+    def open_by_title(self, title, oldest=True, fleet=None, refresh=False, exclude=()):
         """The open item in the team whose title equals `title` (case-insensitive), or None.
 
         Several open hits: the lowest PC number when `oldest`, else None (the match is not unique).
-        A hit counts only after its viewed title equals and it is not closed; a closed item is never reused.
+        A closed item is never reused (stateType, else state, as is_closed reads it).
         `fleet` (True or False) also requires the item to be in the Fleet project, or not, so a Fleet and a
         PropertyCompass2 cluster that share a title never share an item.
+        `refresh` reads the list again, for an item written since the run's first lookup; `exclude` skips identifiers
+        that existed before the write being looked for.
         """
         want = title.strip().lower()
         hits = []
-        for h in dicts(self.lin(["issue", "search", title, "--team", self.team, "--limit", "10"]).get("issues")):
+        for h in self.title_index(refresh):
             ident = text(h.get("identifier"), 20)
-            if not ident or ("title" in h and text(h.get("title"), 300).lower() != want):
+            if text(h.get("title"), 300).lower() != want or is_closed(h) or ident in exclude:
                 continue
-            issue = self.view_issue(ident)
-            in_fleet = text(issue.get("project"), 80).lower() == FLEET_PROJECT.lower()
-            if text(issue.get("title"), 300).lower() == want and not is_closed(issue) and (fleet is None or fleet == in_fleet):
+            in_fleet = text(h.get("project"), 80).lower() == FLEET_PROJECT.lower()
+            if fleet is None or fleet == in_fleet:
                 hits.append(ident)
         hits.sort(key=lambda i: (int(re.sub(r"\D", "", i) or 0), i))
         return hits[0] if hits and (oldest or len(hits) == 1) else None

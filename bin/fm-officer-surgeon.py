@@ -111,7 +111,7 @@ team PC, highest score first:
      cluster's list is not a new sighting.
   5. `issue create --dry-run`, then `--verify`, with exactly one Type (Bug), one
      Source and one area label. A failed verify is never retried; the item counts as created (and is ledgered)
-     when the error names it (data.issue.identifier) or an exact-title search finds one open item, else it is logged failed
+     when the error names it (data.issue.identifier) or the team's issue list holds one new open item of exactly its title, else it is logged failed
      and tried again next run. A cluster reuses the oldest open item of exactly its title instead of creating another.
 It never closes or deletes an item. Every linear-axi call is counted; --max-linear-calls
 stops the run's Linear work (the next run continues from the ledger). --max-creates bounds
