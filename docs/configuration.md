@@ -1783,6 +1783,8 @@ For a queued local task, its backlog identifies the home; a Linear-only item def
 When coverage is complete and no startable or in-flight work in the start classes remains, the officer rotates one extra bug sweep, code review, librarian pass, or ideation pass by run date.
 That filler request uses the same standing authority and firstmate intake as the ranked work.
 
+A home declines a start request by replying to its note with `fm-inbox.sh reply <id> 'declined: <why>'`; only a reply whose body starts with `declined:` counts, and an acceptance or any other reply does not. While the request's evidence is unchanged the officer does not re-send it to that home: it moves out of `start_requests` into `excluded` with the decline, the remaining starts are re-ranked, a declined filler becomes `null`, and the digest's Declined line and `declined` count record it. A decline lapses after 14 days, and the request is then sent again. Only a local home's inbox is read, so a request for a remote `start-home` is never skipped.
+
 Each run writes `<date>.md`, `<date>.json`, `<date>.start-requests.sh`, and the stable `progress-state.json` in its findings lane. A run that exhausts the Linear quota also writes `linear-resume-after.json` there.
 The dated JSON file contains the complete discovery report under [progress-run.schema.json](schemas/progress-run.schema.json), schema version 1, source `progress-officer`.
 
@@ -1795,6 +1797,7 @@ The dated JSON file contains the complete discovery report under [progress-run.s
 | `asks_for_lee` | Explicit asks of Lee, title-gated choices and work outside automatic-start authority, and merge asks whose PRs are not all merged, each with its reason; these need Captain's Log cards |
 | `excluded` | Evidence that prevents a new start, including existing cards and incomplete discovery |
 | `unclassified` | Count of open items with no recorded start class; they are not listed |
+| `declined` | Count of start requests not re-sent because their target home declined them with unchanged evidence (see below) |
 | `filler` | The extra discovery pass, or `null` |
 | `coverage` | Read failures or unsupported inputs; an empty array means all configured sources were read |
 | `top_of_mind` | One line per fresh Top of Mind ask: the ask and its start request or the reason it is listed instead |
