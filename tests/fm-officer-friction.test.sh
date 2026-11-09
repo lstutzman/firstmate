@@ -1520,6 +1520,31 @@ test_repeated_ask_words_never_reach_linear() {
   pass "fm-officer friction: a repeated ask is filed in Linear without any of Lee's words"
 }
 
+test_one_bundle_start_names_every_finding_on_it() {
+  local home
+  home="$TMP_ROOT/bundlestart/home"
+  mkdir -p "$home/state/inbox"
+  python3 -I - "$ROOT/bin/fm-officer-friction.py" "$home" <<'PY' || fail "a bundle start must read back as a start of every finding on it"
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1])
+friction = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(friction)
+group = [{"id": "missing-tool-tool-jq", "title": "jq is missing"}, {"id": "guard-hook-refused-x", "title": "A hook refuses a safe command"}]
+what = friction.bundle_start_what("PC-120", group)
+for f in group:
+    assert friction.default_start_marker(f["id"]) in what, what
+    assert "friction-%s" % f["id"] in what, what
+assert "PC-120" in what and "one pull request" in what, what
+with open(os.path.join(sys.argv[2], "state", "inbox", "1.note"), "w") as fh:
+    fh.write(what + "\n")
+home = friction.triage.Home(sys.argv[2])
+states = friction.finding_states([dict(f, key=f["id"]) for f in group] + [{"id": "other-other-z", "key": "other-other-z", "title": "z"}], [home], [])
+assert [states[f["id"]]["state"] for f in group] == ["started", "started"], states
+assert states["other-other-z"]["state"] == "open", states
+PY
+  pass "fm-officer friction: one bundle start names every finding on it, so each reads back as started"
+}
+
 test_groups_of_one_cause_reach_local_jev_apart() {
   python3 -I - "$ROOT/bin/fm-officer-friction.py" <<'PY' || fail "two groups of one cause must reach local-jev as different reports"
 import importlib.util, sys
@@ -1605,4 +1630,5 @@ test_findings_are_filed_in_linear_under_the_contract
 test_a_missing_label_or_no_writes_starts_nothing
 test_repeated_ask_words_never_reach_linear
 test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started
+test_one_bundle_start_names_every_finding_on_it
 test_groups_of_one_cause_reach_local_jev_apart

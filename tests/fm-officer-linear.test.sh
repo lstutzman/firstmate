@@ -324,6 +324,19 @@ elif scenario in ("fleet-start", "fleet-nowrite"):
                          "lines": [p["line"] for p in r["patterns"]]} for r in pats],
            "captures": sorted(c["tags"][1] for c in captures),
            "filed": {v["title"]: v["project"] for v in json.load(open(os.path.join(os.environ["LDIR"], "issues.json"))).values()}}
+elif scenario == "bundle-hold":
+    # Three findings on one bundle: a high one that would start, a low one that asks to rotate a key (reserved, under the
+    # start score), and one more on a second bundle. The reserved line holds its whole bundle; the other bundle starts once.
+    fs = [find("a", "Null reference when saving", "high"), find("b", "Rotate SendGrid API key", "low"),
+          find("c", "Crash on login", "high"), find("d", "Crash on logout", "high")]
+    for f, issue in zip(fs, ("PC-301", "PC-301", "PC-302", "PC-302")):
+        f["filing"] = {"action": "bundled", "issue": issue, "bundle": "Automated findings: x (code review)", "new": True}
+        f["score"] = lib.score_of(f)
+    rub = lib.load_rubric(os.path.join(W, "fixture-rubric.md"), officer)
+    starts, held, asks = lib.plan_starts(officer, fs, rub, date, "linear", "/home/main", [], {})
+    res = {"starts": [[s["issue"], s["title"]] for s in starts], "held": [[h["issue"], h["title"], h["class"]] for h in held],
+           "asks": [a["key"] for a in asks], "what": starts[0]["execute"]["argv"][-1] if starts else None,
+           "rid": starts[0]["execute"]["request_id"] if starts else None}
 elif scenario == "bundle":
     # One officer run of the shared bundle path. FINDINGS: [[key, title, severity, location, area, single?], ...];
     # TICK: keys marked resolved; CAP: bundle-cap. The lane's ledger, found and bundle state persist in W between runs.
@@ -726,6 +739,19 @@ bundle() {  # <findings json> [env...]: one bundle run in the current world; pri
 
 body_of() { jq -r --arg i "$1" '.[$i].description' "$LDIR/issues.json"; }
 
+test_a_bundle_starts_once_and_a_reserved_line_holds_it() {
+  local out
+  world bundle-hold '{}'
+  printf '## Settings the code reads\n- start-severities: high, critical\n' > "$W/fixture-rubric.md"
+  out=$(drive bundle-hold) || fail "driver must succeed"
+  assert_equals '[["PC-302","Crash on login"]]' "$(jq -c .starts <<<"$out")" "a bundle starts once, however many of its findings qualify"
+  assert_contains "$(jq -r .what <<<"$out")" "fix every open line of its checklist in one pull request" "and asks for the whole checklist in one pull request"
+  assert_equals '[["PC-301","Rotate SendGrid API key","credentials"]]' "$(jq -c .held <<<"$out")" \
+    "one reserved line holds its whole bundle, though that line is under the start score"
+  assert_equals '["fixture-holds-2026-11-05"]' "$(jq -c .asks <<<"$out")" "as one keyed needs-decision"
+  pass "fm-officer-linear: a bundle starts once, and a reserved line on it holds the whole bundle for Lee"
+}
+
 test_bundle_appends_to_the_open_bundle_and_starts_part_2_at_the_cap() {
   local out
   world bundle-cap '{}'
@@ -815,6 +841,7 @@ test_duplicate_items_are_closed() {
 }
 
 test_fold_dry_run_plans_area_bundles_and_writes_nothing
+test_a_bundle_starts_once_and_a_reserved_line_holds_it
 test_bundle_appends_to_the_open_bundle_and_starts_part_2_at_the_cap
 test_bundle_groups_by_area_then_by_file
 test_bundle_keeps_single_items_single
