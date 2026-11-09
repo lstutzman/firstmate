@@ -67,6 +67,21 @@ test_flags_old_and_retired_sessions_only() {
   pass 'only sessions older than 24 hours or on a retired model are listed'
 }
 
+test_app_server_word_in_a_brief_is_still_a_session() {
+  local w out
+  w=$(make_world brief)
+  {
+    printf '  900 108000 codex --model gpt-5.5 --yolo [fm-launch-brief] fix the codex app-server lifecycle in fm-busy-lib\n'
+    printf ' 1000 108000 claude --model claude-opus-5-5 app-server notes\n'
+    printf ' 1100 108000 codex -c features.code_mode_host=true app-server --listen unix://\n'
+  } > "$w/ps.txt"
+  out=$(weight "$w")
+  assert_contains "$out" "pid=900 codex home=unknown age=30.0h model=gpt-5.5 [age>24h]" "a codex worker whose launch brief mentions app-server is still a session"
+  assert_contains "$out" "pid=1000 claude home=unknown age=30.0h model=claude-opus-5-5 [age>24h]" "a claude session is never skipped as an app-server"
+  assert_not_contains "$out" "pid=1100" "the app-server subcommand after a -c pair is a daemon"
+  pass 'only the codex app-server subcommand is skipped, not the word in a brief'
+}
+
 test_context_is_account_level_and_labelled_inferred() {
   local w out
   w=$(make_world ctx)
@@ -146,6 +161,7 @@ test_never_signals_a_process() {
 
 fm_test_run \
   test_flags_old_and_retired_sessions_only \
+  test_app_server_word_in_a_brief_is_still_a_session \
   test_context_is_account_level_and_labelled_inferred \
   test_prints_nothing_private \
   test_retired_pattern_and_age_are_configurable \
