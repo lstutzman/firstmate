@@ -322,10 +322,6 @@ class LinearError(RuntimeError):
         issue = data.get("issue") if isinstance(data, dict) else None
         return text(issue.get("identifier"), 20) or None if isinstance(issue, dict) else None
 
-    def may_be_written(self):
-        """A failed --verify write that is not a rate or budget stop: the item was probably written."""
-        return self.code not in RATE_OR_BUDGET
-
 
 class Linear:
     """linear-axi calls, counted against a budget; every call asks for JSON and raises LinearError on a failure."""
@@ -528,13 +524,11 @@ class Filer:
                 # --verify writes before it reads back, so the item may exist; a created item is never
                 # reported failed or left out of the ledger. Linear search does not match the hex fingerprint,
                 # so look for it by the identifier the error names, else by its exact title.
-                if not exc.may_be_written():
-                    raise
                 found = exc.written_ident()
                 try:
                     for wait in VERIFY_SEARCH_WAITS if not found else ():
                         time.sleep(wait)
-                        found = self.open_by_title(title, oldest=False)
+                        found = self.open_by_title(title, oldest=False, fleet=fleet_work(self.officer, project))
                         if found:
                             break
                 except LinearError as search_exc:
@@ -549,23 +543,19 @@ class Filer:
                 os.remove(path)
 
     def update_body(self, ident, fp, body):
-        """Rewrites the item's description; returns the verify error text when the write was made but did not read back."""
         path = self._write_body(fp, body)
-        verify = None
         try:
             self.lin(["issue", "update", ident, "--body-file", path, "--dry-run"])
             try:
                 self.lin(["issue", "update", ident, "--body-file", path, "--verify"])
             except LinearError as exc:
                 # Linear rewrites a stored body (auto-links, escapes), so a mismatch means written, not failed.
-                if not exc.may_be_written() or not (exc.written_ident() or exc.code in ("VERIFY_MISMATCH", "NO_JSON")):
+                if not (exc.written_ident() or exc.code == "VERIFY_MISMATCH"):
                     raise
-                verify = str(exc)
         finally:
             if os.path.exists(path):
                 os.remove(path)
         self.cache.pop(ident, None)
-        return verify
 
     def open_by_title(self, title, oldest=True, fleet=None):
         """The open item in the team whose title equals `title` (case-insensitive), or None.

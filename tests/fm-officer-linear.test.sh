@@ -38,9 +38,10 @@ mode = os.environ.get("FAKE_VERIFY", "")
 def written(n):
     # What --verify prints after the write, per FAKE_VERIFY: "textappend" is the JSON error with plain text lines after it
     # (linear-verify today), "contract" the shared ok:false document naming the item, "nocontract" the same without the item,
-    # "rate" a rate limit with no write, "nowrite" a failure with no write.
+    # "rate" a rate limit with no write, "nowrite" a failure with no write, "nojson" no output at all.
     msg = "Write verification did not match intended state"
     if "--verify" not in args or not mode: out({"issue": {"identifier": n}})
+    if mode == "nojson": sys.exit(1)
     if mode == "textappend":
         print(json.dumps({"ok": False, "error": {"code": "VERIFY_MISMATCH", "message": msg}}))
         print("linear-verify: description differs (auto-linked lint.sh)"); sys.exit(1)
@@ -568,6 +569,33 @@ test_cluster_reuses_the_oldest_open_item_of_its_title() {
   pass "fm-officer-linear: a cluster reuses the oldest open item of exactly its title"
 }
 
+test_cluster_update_mismatch_is_written_and_no_json_is_failed() {
+  local out t='Code review findings: infra bicep (infra/bicep)'
+  world cluster-update-mismatch "$(jq -n --arg t "$t" '{"PC-50": {title: $t, state: "Todo", description: "x"}}')"
+  printf 'scheduled-review\n' >> "$LDIR/labels"
+  out=$(FAKE_VERIFY=textappend drive cluster-reuse) || fail "driver must succeed"
+  assert_equals "clustered:PC-50 clustered:PC-50 clustered:PC-50" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a mismatching update --verify is recorded clustered"
+  assert_equals 3 "$(jq -r '.body["PC-50"]' <<<"$out")" "with the cluster body written"
+  assert_equals 1 "$(grep -c '^issue update PC-50.*--verify' "$LDIR/calls")" "and never retried"
+  world cluster-update-nojson "$(jq -n --arg t "$t" '{"PC-50": {title: $t, state: "Todo", description: "x"}}')"
+  printf 'scheduled-review\n' >> "$LDIR/labels"
+  out=$(FAKE_VERIFY=nojson drive cluster-reuse) || fail "driver must succeed"
+  assert_equals "failed failed failed" "$(jq -r '.filings | map(.[0]) | join(" ")' <<<"$out")" "an update that printed no JSON is failed, not taken as written"
+  pass "fm-officer-linear: a mismatching cluster update counts as written; one with no JSON is failed"
+}
+
+test_cluster_never_reuses_a_same_title_item_of_the_other_project() {
+  local out t='Code review findings: infra bicep (infra/bicep)'
+  world cluster-cross-project "$(jq -n --arg t "$t" '{"PC-50": {title: $t, state: "Todo", project: "Fleet", description: "x"}}')"
+  printf 'scheduled-review\n' >> "$LDIR/labels"
+  out=$(FAKE_VERIFY=nocontract drive cluster-reuse) || fail "driver must succeed"
+  assert_equals "clustered:PC-102 clustered:PC-102 clustered:PC-102" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "a PC cluster creates its own item, even when the create mismatches"
+  assert_equals 3 "$(jq -r '.body["PC-102"]' <<<"$out")" "which carries the cluster's findings"
+  assert_equals 0 "$(jq -r '.body["PC-50"]' <<<"$out")" "and the same-title Fleet item is untouched"
+  assert_equals 0 "$(grep -c '^issue update PC-50' "$LDIR/calls")" "with no update sent to it"
+  pass "fm-officer-linear: a PropertyCompass2 cluster never reuses a same-title Fleet item"
+}
+
 test_no_call_closes_or_deletes() {
   local all
   dedupe_world audit
@@ -593,4 +621,6 @@ test_closed_item_is_bumped_not_replaced
 test_failed_verify_is_taken_as_written
 test_failed_write_is_failed_and_retried_next_run
 test_cluster_reuses_the_oldest_open_item_of_its_title
+test_cluster_update_mismatch_is_written_and_no_json_is_failed
+test_cluster_never_reuses_a_same_title_item_of_the_other_project
 test_no_call_closes_or_deletes
