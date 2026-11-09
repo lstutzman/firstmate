@@ -40,9 +40,31 @@
 # slips, including a gate whose answer a human owes; or the slip was already
 # steered this generation.
 #
+# Two guards keep that automatic start from spending review tokens on a head
+# that is about to change (the cancelled-run measurement behind them is in the
+# change that added them):
+#   settle    a start steer, and the supersede below, wait until the branch
+#             head has not moved for FM_NM_START_SETTLE_SECS (default 120): the
+#             later of the worker's done: stamp and the head commit's committer
+#             time must be at least that old. Two minutes covers the worker's
+#             last amend or rebase after its done line and stays under the
+#             stale escalation (FM_STALE_ESCALATE_SECS, 240), so the watcher
+#             holds the pane quietly instead of alarming. Exit 4 means "wait,
+#             nothing sent, nothing recorded"; 0 disables the window.
+#   supersede a run that is pending, or still at its intent or rebase step,
+#             while the worker's committed head is no longer covered by the
+#             run's head (fm_nm_head_matches_worktree: the run head is neither
+#             that head nor a descendant of it) is cancelled through
+#             `no-mistakes axi abort --run <id>` before its review step spends
+#             anything, and the worker gets the start steer for the new head.
+#             Once per task generation, only when no drive call is live, and
+#             never for a run at review or later. Unreadable or unverifiable
+#             run facts leave the run alone.
+#
 # Exit 0 when a steer was durably sent, 1 when none was sent, 2 for a usage
-# error. FM_CREW_STATE_BIN overrides the current-state reader, as for the
-# watcher. Prints nothing on stdout.
+# error, 4 when a start or supersede is waiting for the head to settle.
+# FM_CREW_STATE_BIN overrides the current-state reader, as for the watcher.
+# Prints nothing on stdout.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -133,12 +155,73 @@ elif [ "$src" = status-log ] && [ "$verb" = "done" ] \
 fi
 [ -n "$slip" ] || exit 1
 
+# Seconds since the branch head last moved: the later of the worker's done:
+# stamp (a start only) and the head commit's committer time. Unknown times
+# count as long ago, and a stamp in the future (clock skew) is ignored, so no
+# unreadable input can hold a steer back for good.
+settle_window=${FM_NM_START_SETTLE_SECS:-120}
+case "$settle_window" in ''|*[!0-9]*) settle_window=120 ;; esac
+head_quiet_secs() {  # -> seconds since the head last moved
+  local now since=0 ct at
+  now=$(date +%s) || { printf '%s' "$settle_window"; return; }
+  ct=$(git -C "$wt" log -1 --format=%ct HEAD 2>/dev/null) || ct=
+  case "$ct" in ''|*[!0-9]*) ;; *) since=$ct ;; esac
+  if [ "$slip" = start ] && at=$(status_line_at_epoch "$last") && [ "$at" -gt "$since" ]; then
+    since=$at
+  fi
+  [ "$since" -le "$now" ] || since=0
+  printf '%s' "$(( now - since ))"
+}
+
+# Run id named by crew-state's `run: <id>` detail; empty when it names none.
+run_id=$(printf '%s' "$line" | sed -n 's/.*[ ·]run: \([A-Za-z0-9]*\).*/\1/p')
+
+# 0 when run $1 has not reached its review step and its head no longer covers
+# the worker's committed head, so cancelling it forfeits no review work.
+run_is_superseded_pre_review() {  # <run-id>
+  local out rstatus rhead step
+  [ -n "$1" ] || return 1
+  out=$(fm_nm_run_checked "$wt" 10 axi status --run "$1") || return 1
+  [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" id)")" = "$1" ] || return 1
+  rstatus=$(fm_nm_strip_quotes "$(fm_nm_field "$out" status)")
+  rhead=$(fm_nm_strip_quotes "$(fm_nm_field "$out" head_sha)")
+  [ -n "$(fm_nm_resolve_commit "$wt" "$rhead")" ] || return 1
+  ! fm_nm_head_matches_worktree "$wt" "$rhead" || return 1
+  step=$(fm_nm_run_progress "$out" 2>/dev/null | cut -f4) || step=
+  case "$rstatus:$step" in
+    pending:|pending:intent|pending:rebase|running:intent|running:rebase) return 0 ;;
+  esac
+  return 1
+}
+
+if [ "$slip" = reattach ] && run_is_superseded_pre_review "$run_id"; then
+  slip=supersede
+fi
+
+case "$slip" in
+  start|supersede)
+    [ "$(head_quiet_secs)" -ge "$settle_window" ] || exit 4
+    ;;
+esac
+
 ! grep -Fxq -- "$gen $slip" "$marker" 2>/dev/null || exit 1
 printf '%s %s\n' "$gen" "$slip" >> "$marker" || exit 1
+
+if [ "$slip" = supersede ]; then
+  fm_nm_run_checked "$wt" 30 axi abort --run "$run_id" >/dev/null 2>&1 || true
+  out=$(fm_nm_run_checked "$wt" 10 axi status --run "$run_id") || exit 1
+  case "$(fm_nm_strip_quotes "$(fm_nm_field "$out" outcome)") $(fm_nm_strip_quotes "$(fm_nm_field "$out" status)")" in
+    *cancelled*) ;;
+    *) exit 1 ;;
+  esac
+fi
 
 case "$slip" in
   start)
     text="Automatic steer: your done: is the pipeline handoff, and no no-mistakes run exists for $branch, so validation has not started. Run /no-mistakes now as your brief's Definition of done says: background the drive call, declare the wait, reattach whenever it returns without a gate or outcome, and report done only with the green, non-draft PR URL."
+    ;;
+  supersede)
+    text="Automatic steer: firstmate cancelled the no-mistakes run for $branch before its review step because the branch head moved after that run started, so it would have reviewed a stale head. Run /no-mistakes now for the current head as your brief's Definition of done says: check branch_sync.next_action in \`no-mistakes axi status\` first, background the drive call, declare the wait, reattach whenever it returns without a gate or outcome, and report done only with the green, non-draft PR URL."
     ;;
   reattach)
     text="Automatic steer: the no-mistakes run for $branch is still active, but no no-mistakes axi run or respond call is running from your copy, so nothing will wake you at its next gate or outcome. Re-run \`no-mistakes axi run\` with no flags now, backgrounded as your brief's Definition of done says, and reattach the same way every time it returns without a gate or outcome."

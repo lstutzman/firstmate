@@ -3009,9 +3009,17 @@ nm_drive_steered() {  # <window> <task> <hash>
     fi
     rm -f "$grace"
   fi
+  local rc=0
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
     FM_CREW_STATE_BIN="$FM_CREW_STATE_BIN" \
-    "$SCRIPT_DIR/fm-nm-drive-steer.sh" "$task" </dev/null >/dev/null 2>&1 || return 1
+    "$SCRIPT_DIR/fm-nm-drive-steer.sh" "$task" </dev/null >/dev/null 2>&1 || rc=$?
+  # Exit 4: a start or supersede is waiting for the branch head to settle.
+  # Hold the pane quietly with no grace record, so the next poll asks again.
+  if [ "$rc" -eq 4 ]; then
+    triage_log "held stale (no-mistakes drive steer waiting for the branch head to settle): $w"
+    return 0
+  fi
+  [ "$rc" -eq 0 ] || return 1
   printf '%s %s\n' "$h" "$(date +%s)" > "$grace"
   triage_log "absorbed stale (sent the automatic no-mistakes drive steer): $w"
 }
