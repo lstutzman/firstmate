@@ -736,6 +736,40 @@ test_run_host_follows_this_home_forward() {
   pass "fm-officer corpus: a run fetches the host's code root and fast-forwards a host that is behind, then passes the code check"
 }
 
+test_run_host_imports_from_the_code_root_when_the_checkout_origin_is_stale() {
+  local out
+  follow_world stale-origin
+  git -C "$HOSTCO" reset -q --hard "$C1"
+  git clone -q --bare "$W/origin.git" "$W/stale.git"
+  git -C "$HOSTCO" remote set-url origin "$W/stale.git"
+  echo three > "$FFR/three" && git -C "$FFR" add -A && git -C "$FFR" -c user.name=t -c user.email=t@t commit -q -m c3
+  git -C "$FFR" push -q "$W/origin.git" main
+  out=$(follow_run) || fail "a host whose checkout origin lacks the commit must import it from the code root: $out"
+  assert_equals "$(git -C "$FFR" rev-parse HEAD)" "$(host_head)" "the host checkout is fast-forwarded from the code root"
+  assert_equals "$C2" "$(git -C "$W/stale.git" rev-parse main)" "and the checkout's own origin is not written"
+  assert_contains "$out" "DIGEST $DATE" "and the pass ran"
+  pass "fm-officer corpus: the commit reaches the host checkout from the host's code root, not only from the checkout's origin"
+}
+
+test_run_host_refuses_a_checkout_on_another_branch_or_with_no_code_root() {
+  local out
+  follow_world other-branch
+  git -C "$HOSTCO" checkout -q -b feature "$C1"
+  out=$(preflight_follow 2>&1) && fail "preflight must fail a host checkout on another branch: $out"
+  assert_contains "$out" "on feature, expected main" "preflight names the branch the run would refuse"
+  assert_equals "$C1" "$(host_head)" "and moves nothing"
+  refuses_and_changes_nothing other-branch "on feature, expected main"
+  assert_equals "feature" "$(git -C "$HOSTCO" symbolic-ref --short HEAD)" "and the branch is not switched"
+
+  follow_world no-code-root
+  git -C "$HOSTCO" reset -q --hard "$C1"
+  rm -rf -- "$H/Documents/GitHub/firstmate"
+  out=$(preflight_follow 2>&1) && fail "preflight must fail a host with no code root: $out"
+  assert_contains "$out" "no firstmate code root" "preflight names the missing code root"
+  refuses_and_changes_nothing no-code-root "no firstmate code root"
+  pass "fm-officer corpus: a host checkout on another branch, or a host with no code root, fails preflight and the run, and changes nothing"
+}
+
 preflight_follow() { PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW=$NOW FM_HOME="$HOME_DIR" "$FFR/bin/fm-officer.sh" preflight corpus; }
 
 test_run_host_equal_is_a_no_op() {
@@ -801,4 +835,6 @@ test_run_host_import_failure_fails_the_run
 test_preflight_checks_the_run_host_read_only
 test_run_host_follows_this_home_forward
 test_run_host_equal_is_a_no_op
+test_run_host_imports_from_the_code_root_when_the_checkout_origin_is_stale
+test_run_host_refuses_a_checkout_on_another_branch_or_with_no_code_root
 test_run_host_never_moves_a_checkout_it_must_not

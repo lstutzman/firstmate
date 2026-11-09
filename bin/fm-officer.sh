@@ -573,7 +573,7 @@ HOST_CODE_ROOT=Documents/GitHub/firstmate  # the host's firstmate code root, rel
 IFS= read -r -d '' HOST_FOLLOW_SCRIPT <<'SCRIPT' || true
 set -u
 cd "$HOME" || exit 1
-root=$1 code=$2 want=$3 mode=$4 host=$5
+root=$1 code=$HOME/$2 want=$3 mode=$4 host=$5
 bad() { printf 'host code mismatch (%s has %s, this home %s): %s\n' "$host" "${have:0:8}" "${want:0:8}" "$*"; exit 1; }
 have=$(git -C "$root" rev-parse HEAD 2>/dev/null) || { have=none; bad "$root is not a git checkout"; }
 [ "$have" != "$want" ] || { echo "current"; exit 0; }
@@ -581,6 +581,15 @@ known() { git -C "$root" cat-file -e "$want^{commit}" 2>/dev/null; }
 if [ -n "$(git -C "$root" status --porcelain 2>/dev/null | awk -v m='?? .fm-secondmate-home' '$0 != m { print; exit }')" ]; then
   bad "not moved: the host checkout has local changes"
 fi
+cur=$(git -C "$root" symbolic-ref --short HEAD 2>/dev/null) || cur=
+def=$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) && def=${def#origin/}
+for b in main master; do
+  [ -z "$def" ] || break
+  git -C "$root" show-ref --verify --quiet "refs/heads/$b" && def=$b
+done
+[ -n "$def" ] || bad "not moved: the host checkout's default branch cannot be determined"
+[ -z "$cur" ] || [ "$cur" = "$def" ] || bad "not moved: the host checkout is on $cur, expected $def"
+[ -d "$code" ] || bad "not moved: the host has no firstmate code root at $code"
 if [ "$mode" = check ]; then
   if known; then
     if git -C "$root" merge-base --is-ancestor "$want" "$have"; then bad "not moved: the host checkout is ahead of this home's commit"; fi
@@ -589,7 +598,6 @@ if [ "$mode" = check ]; then
   echo "behind: the next run fetches $host:$code from its origin, then fast-forwards $host:$root to ${want:0:8} (if that commit is on the host's origin)"
   exit 0
 fi
-[ -d "$code" ] || bad "not moved: the host has no firstmate code root at $code"
 GIT_TERMINAL_PROMPT=0 git -C "$code" fetch --quiet --no-tags origin >/dev/null 2>&1 \
   || bad "not moved: fetching the host's code root from its origin failed"
 git -C "$code" cat-file -e "$want^{commit}" 2>/dev/null \
