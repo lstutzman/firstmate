@@ -39,6 +39,7 @@ case "$1 $2" in
     sep=''; while IFS= read -r l; do printf '%s{"name":"%s"}' "$sep" "$l"; sep=','; done < "$d/labels.txt"
     echo ']}}' ;;
   "issue search") echo '{"ok":true,"data":{"issues":[]}}' ;;
+  "issue list") echo '{"ok":true,"data":{"issues":[]}}' ;;  # no open bundle of an exact title yet
   "issue view")
     echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'","state":"Todo","stateType":"unstarted","description":"Found: 1 times (first 2026-10-24, last 2026-10-24, by library)"}}}' ;;
   "issue create")

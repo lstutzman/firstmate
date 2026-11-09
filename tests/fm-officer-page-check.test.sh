@@ -53,6 +53,7 @@ case "$1 $2" in
     if [ -n "$q" ] && grep -qF -- "$q" "$d/exists.txt" 2>/dev/null; then
       echo '{"ok":true,"data":{"issues":[{"identifier":"PC-55"}]}}'
     else echo '{"ok":true,"data":{"issues":[]}}'; fi ;;
+  "issue list") echo '{"ok":true,"data":{"issues":[]}}' ;;  # no open bundle of an exact title yet
   "issue view")
     st=$(cat "$d/state.$3" 2>/dev/null || echo Todo)
     case "$st" in Done) ty=completed ;; *) ty=unstarted ;; esac
@@ -357,7 +358,7 @@ later_day() {  # <name> <key>: a run one day after the first
 }
 
 test_findings_are_filed_in_linear_under_the_contract() {
-  local home json dir log n
+  local home json dir log n b
   linear_world filing
   home=$LW_HOME
   dir=$FAKE_LINEAR_DIR
@@ -365,12 +366,14 @@ test_findings_are_filed_in_linear_under_the_contract() {
   json="$home/data/officers/page-check/$KEY.json"
   officer filing run page-check --date "$KEY" >/dev/null || fail "run must succeed"
   n=$(jq '.findings | length' "$json")
-  assert_equals "$n" "$(creates "$log")" "every open finding is filed once"
-  assert_equals "$n" "$(grep -c '^issue create .*--dry-run' "$log")" "every create is a dry run first, then a verified write"
-  assert_equals "$n" "$(count_lines '^issue create .*--label Bug --label agent --label area:fleet --project Fleet --verify' "$log")" \
-    "each item has one Type, the agent Source and area:fleet, in the Fleet project"
-  assert_equals "$n" "$(count_lines '^page-check-fp:' "$dir/bodies")" "every body carries its fingerprint marker alone on its line"
-  assert_equals "$n" "$(count_lines '^Found: 1 times (first 2026-10-31, last 2026-10-31, by page-check)$' "$dir/bodies")" "every body starts its one Found line"
+  b=$(jq '[.findings[].linear.issue] | unique | length' "$json")
+  assert_equals "$b" "$(jq '[.findings[] | .page] | unique | length' "$json")" "the open findings go to one bundle per page"
+  assert_equals "$b" "$(creates "$log")" "one item per bundle, not one per finding"
+  assert_equals "$b" "$(grep -c '^issue create .*--dry-run' "$log")" "every create is a dry run first, then a verified write"
+  assert_equals "$b" "$(count_lines '^issue create .*--title Automated findings: .* (page check) .*--label Bug --label agent --label area:fleet --project Fleet --verify' "$log")" \
+    "each item is titled by its page, with one Type, the agent Source and area:fleet, in the Fleet project"
+  assert_equals "$n" "$(count_lines '^- \[ \] page-check-fp:' "$dir/bodies")" "every finding is one checklist line carrying its fingerprint"
+  assert_equals "$b" "$(count_lines '^page-check-fp:' "$dir/bodies")" "and each bundle's own marker is alone on its line"
   assert_no_grep "Approve deleting 475" "$dir/bodies" "no card question reaches Linear"
   assert_no_grep "Which key" "$dir/bodies" "no card question reaches Linear"
   assert_no_grep "Approve deleting 475" "$log" "nor a title or search"
@@ -379,17 +382,17 @@ test_findings_are_filed_in_linear_under_the_contract() {
     "the digest shows each filed finding's found count and score"
 
   officer filing run page-check --date "$KEY" >/dev/null || fail "a same-day re-run must succeed"
-  assert_equals "$n" "$(creates "$log")" "a re-run the same day files nothing again"
-  assert_equals "0" "$(count_lines '^UPDATE' "$dir/updates")" "and raises no Found line"
+  assert_equals "$b" "$(creates "$log")" "a re-run the same day files nothing again"
+  assert_equals "0" "$(count_lines '^UPDATE' "$dir/updates")" "and rewrites no bundle"
 
   later_day filing 2026-11-01T14 >/dev/null || fail "a later-day run must succeed"
   json="$home/data/officers/page-check/2026-11-01T14.json"
-  assert_equals "" "$(grep '^page-check-fp:' "$dir/bodies" | sort | uniq -d)" "a later day files nothing twice, though pages that aged overnight add new findings"
-  assert_equals "$n" "$(count_lines '^UPDATE' "$dir/updates")" "each item filed the first day has its Found line raised once, in place"
-  assert_equals "$n" "$(count_lines '^COMMENT' "$dir/comments")" "with one comment on the day's first sighting"
+  assert_equals "" "$(grep '^issue create .*--verify' "$log" | sed 's/.*--title \(.*\) --body-file.*/\1/' | sort | uniq -d)" \
+    "a later day opens no second bundle for a page, though pages that aged overnight add new findings"
+  assert_equals "0" "$(count_lines '^COMMENT' "$dir/comments")" "a bundle gets no per-finding comment"
   assert_equals "true" "$(jq '[.findings[] | select(.id == "page-old:Velocity audit:velocity-audit")][0].linear | .found == 2 and .score == 6.34' "$json")" \
-    "the found count of 2 lifts a high finding's score from 4 to 6.34"
-  pass "fm-officer page-check: every finding is filed once in Linear, the Found line rises in place, and no card words are sent"
+    "the finding's own found count of 2 lifts a high finding's score from 4 to 6.34"
+  pass "fm-officer page-check: every finding is filed once in its page's bundle, its found count rises, and no card words are sent"
 }
 
 test_page_defects_start_and_settled_cards_do_not() {
@@ -455,15 +458,19 @@ test_no_writes_a_missing_label_and_the_cap() {
   pass "fm-officer page-check: no writes, a missing label and the create cap bound what is filed and started"
 }
 
-# raise_to_start <name> <finding id>: files the world's findings, then makes the given finding's item read Found: 2, so the
+# raise_to_start <name> <finding id>: files the world's findings, then makes the given finding's found count 2, so the
 # next day raises it to 3, which lifts a medium finding to the start minimum of 4. Prints the next day's digest path.
 raise_to_start() {
-  local name=$1 id=$2 json issue day2=2026-11-01T14
+  local name=$1 id=$2 json issue fp day2=2026-11-01T14
   officer "$name" run page-check --date "$KEY" >/dev/null || fail "run must succeed"
   json="$LW_HOME/data/officers/page-check/$KEY.json"
   issue=$(jq -r --arg i "$id" '[.findings[] | select(.id == $i)][0].linear.issue' "$json")
   assert_not_contains "$issue" "null" "the finding $id is filed"
   printf 2 > "$FAKE_LINEAR_DIR/count.$issue"
+  # A bundled finding keeps its own found count: the later day makes it 3, enough to start.
+  fp=$(printf '%s\0%s\0%s' "${id%%:*}" "$(cut -d: -f2 <<<"$id")" "$id" | sha256sum | cut -d' ' -f1)
+  jq --arg fp "$fp" '.members[$fp].count = 2' "$LW_HOME/data/officers/page-check/found.json" > "$LW_HOME/data/officers/page-check/found.tmp" \
+    && mv "$LW_HOME/data/officers/page-check/found.tmp" "$LW_HOME/data/officers/page-check/found.json"
   later_day "$name" "$day2" >/dev/null || fail "a later-day run must succeed"
   printf '%s\n' "$LW_HOME/data/officers/page-check/$day2.json"
 }
@@ -472,7 +479,7 @@ test_a_closed_item_is_bumped_and_never_started() {
   local home json dir fp n
   linear_world closedprobe
   officer closedprobe run page-check --date "$KEY" >/dev/null || fail "probe run must succeed"
-  fp=$(grep -A5 'Object: velocity-audit\.' "$FAKE_LINEAR_DIR/bodies" | sed -n 's/^.*page-check-fp://p' | head -1)
+  fp=$(sed -n 's/^- \[ \] page-check-fp:\([0-9a-f]*\) Velocity audit: page-old velocity-audit .*/\1/p' "$FAKE_LINEAR_DIR/bodies" | head -1)
   n=$(creates "$FAKE_LINEAR_DIR/log")
   assert_not_contains "$fp" " " "the probe finds the velocity-audit fingerprint"
   linear_world closedhit
