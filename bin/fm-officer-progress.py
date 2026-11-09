@@ -43,7 +43,7 @@ left unread.
 Coverage counters include both team and unblocked listings, counting each
 returned entry; team_items and unblocked_items separate those passes.
 Linear labels come from one filtered GraphQL query (linear-axi cannot read them) sent with the credential from
-`linear-token header`; an item carrying a start-class label gets that class and a failed read is a named gap.
+`linear-token header --print-to-pipe`; an item carrying a start-class label gets that class and a failed read is a named gap.
 Open PRs are listed once per repo per run; a blank answer is no open PRs, a limited one backs off 2, 8 and 30 seconds, and a repo that
 still fails holds only its own starts. A requested root that cannot be read skips only its own subtree.
 Triage. A start candidate that another officer filed (its description carries a `<officer>-fp:<sha256>` marker, the
@@ -407,7 +407,7 @@ def read_labels(team, deadline):
     """{identifier: [label names]} for open team issues carrying a start-class label; raises RuntimeError when unreadable."""
     names = sorted({"Bug"} | {n for n, _ in LABEL_CLASSES})
     try:
-        auth = subprocess.run(["linear-token", "header"], capture_output=True, timeout=30, check=False)
+        auth = subprocess.run(["linear-token", "header", "--print-to-pipe"], capture_output=True, timeout=30, check=False)
     except (OSError, subprocess.TimeoutExpired):
         raise RuntimeError("linear-token could not be executed") from None
     header = auth.stdout.decode("utf-8", "replace").strip()

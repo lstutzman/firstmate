@@ -1709,7 +1709,7 @@ A repository that still fails holds only its own starts, and its coverage entry 
 A start's repository is its project, else the one the office routing rungs name, with each configured repository standing in for an office: a linked repository, the repository's name in the text, or a team Linear id for PropertyCompass2. A team item in the Fleet project or with the `area:fleet` label is claimed by no repository for this check.
 While any repository's list is missing, a start that no repository claims is held too and named in each gap's coverage entry.
 Filler waits for complete coverage.
-The installed `linear-axi` cannot return or filter issue labels, so the officer reads them from Linear's GraphQL API with the fleet credential from `linear-token header`, never printing it.
+The installed `linear-axi` cannot return or filter issue labels, so the officer reads them from Linear's GraphQL API with the fleet credential from `linear-token header --print-to-pipe`, never printing it.
 One filtered query returns the open team issues that carry a start-class label (`security`, `security-scan`, `scheduled-review`, `Bug`, `bug-sweep`), with all of their labels.
 A failed label read is named as `Linear labels unavailable` with its cause, and filler waits for it.
 A requested root that cannot be read skips only its own subtree and is named; a stopped run (request budget, deadline, or quota) still ends the hierarchy reads.
