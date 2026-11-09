@@ -14,7 +14,10 @@
 # INSTALLED verified harness: each is launched idle in an isolated tmux server,
 # steered through the REAL fm-send (durable record + doorbell), and must both
 # ACT on the instruction (create a named file) and ACKNOWLEDGE it (the mv into
-# handled/), failing loudly with the harness name and version.
+# handled/), failing loudly with the harness name and version. A second pass per
+# harness steers a plain short message, which fm-send delivers as an inline
+# steer (the record is born taken and the doorbell carries the body after a
+# constant prefix): the worker must ACT on the body alone, with no inbox read.
 #
 # Run explicitly with FM_SEND_INBOX_LIVE_E2E=1. This test spends a small
 # number of real model tokens per installed harness (one short turn each) -
@@ -136,14 +139,14 @@ wait_ready() {  # <window>
   return 2
 }
 
-check_harness_doorbell() {  # <name>
-  local name=$1 version cmd win="hx-$1" home task acted rec handled i ready_rc
+check_harness_doorbell() {  # <name> <pointer|inline>
+  local name=$1 mode=${2:-pointer} version cmd win="hx-$1-${2:-pointer}" home task acted rec handled i ready_rc msg
   version=$(harness_version "$name")
   cmd=$(launch_cmd "$name") || { note "no launch recipe for $name"; return 0; }
-  home="$LAB/$name-home"
+  home="$LAB/$name-$mode-home"
   mkdir -p "$home/state"
   task="live-$name"
-  acted="$LAB/acted-$name"
+  acted="$LAB/acted-$name-$mode"
   tmux -L "$SOCKET" new-window -d -t "$SESSION:" -n "$win" -c "$ROOT" \
     -- bash -lc "export FM_TASK_INBOX=$(printf '%q' "$home/state/$task.inbox"); $cmd" \
     || { FAILED=1; printf 'not ok - %s (%s): could not launch in the isolated tmux server\n' "$name" "$version" >&2; return 0; }
@@ -157,9 +160,14 @@ check_harness_doorbell() {  # <name>
   fi
   [ "$ready_rc" -eq 0 ] || note "$name ($version): idle composer never classified empty; proceeding as production does (advisory check skips only on pending)"
   printf 'window=%s:%s\nkind=ship\nharness=%s\n' "$SESSION" "$win" "$name" > "$home/state/$task.meta"
-  if ! FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$ROOT/bin/fm-send.sh" "$task" \
-    "Firstmate live check: run exactly this shell command now: touch $acted - then follow the mv instruction you were given for this message. Reply with one short line." \
-    >/dev/null 2>&1; then
+  if [ "$mode" = inline ]; then
+    msg="Firstmate live check: run exactly this shell command now: touch $acted - then reply with one short line."
+  else
+    # A second line keeps the steer on the pointer doorbell.
+    msg="Firstmate live check: run exactly this shell command now: touch $acted - then follow the mv instruction you were given for this message. Reply with one short line.
+(pointer path)"
+  fi
+  if ! FM_HOME="$home" FM_ROOT_OVERRIDE="$home" "$ROOT/bin/fm-send.sh" "$task" "$msg" >/dev/null 2>&1; then
     FAILED=1
     printf 'not ok - %s (%s): fm-send refused the live steer\n' "$name" "$version" >&2
     tmux -L "$SOCKET" kill-window -t "$SESSION:$win" 2>/dev/null || true
@@ -167,12 +175,20 @@ check_harness_doorbell() {  # <name>
   fi
   rec="$home/state/$task.inbox/001.msg"
   handled="$home/state/$task.inbox/handled/001.msg"
-  [ -f "$rec" ] || {
+  if [ "$mode" = inline ]; then
+    # Born taken: handled/ from the start, never an unhandled record.
+    if [ -f "$rec" ] || [ ! -f "$handled" ]; then
+      FAILED=1
+      printf 'not ok - %s (%s): an inline steer was not recorded already taken\n' "$name" "$version" >&2
+      tmux -L "$SOCKET" kill-window -t "$SESSION:$win" 2>/dev/null || true
+      return 0
+    fi
+  elif [ ! -f "$rec" ]; then
     FAILED=1
     printf 'not ok - %s (%s): fm-send left no durable inbox record\n' "$name" "$version" >&2
     tmux -L "$SOCKET" kill-window -t "$SESSION:$win" 2>/dev/null || true
     return 0
-  }
+  fi
   i=0
   while [ "$i" -lt "$TIMEOUT" ]; do
     [ -f "$handled" ] && [ -e "$acted" ] && break
@@ -188,11 +204,11 @@ check_harness_doorbell() {  # <name>
   done
   if [ -f "$handled" ] && [ -e "$acted" ]; then
     CHECKED=$((CHECKED + 1))
-    pass "$name ($version): the doorbell reached a real worker, which acted and acked with the mv"
+    pass "$name ($version): the $mode doorbell reached a real worker, which acted$([ "$mode" = pointer ] && printf ' and acked with the mv')"
   else
     FAILED=1
-    printf 'not ok - %s (%s): doorbell not honored within %ss (acted=%s acked=%s)\n' \
-      "$name" "$version" "$TIMEOUT" "$([ -e "$acted" ] && echo yes || echo no)" \
+    printf 'not ok - %s (%s): %s doorbell not honored within %ss (acted=%s acked=%s)\n' \
+      "$name" "$version" "$mode" "$TIMEOUT" "$([ -e "$acted" ] && echo yes || echo no)" \
       "$([ -f "$handled" ] && echo yes || echo no)" >&2
     tmux -L "$SOCKET" capture-pane -p -t "$SESSION:$win" 2>/dev/null | grep '[^[:space:]]' | tail -10 | sed 's/^/#   /' >&2
   fi
@@ -202,7 +218,8 @@ check_harness_doorbell() {  # <name>
 HARNESSES=${FM_SEND_INBOX_LIVE_HARNESSES:-'claude codex opencode pi grok kimi muse'}
 for h in $HARNESSES; do
   if command -v "$h" >/dev/null 2>&1; then
-    check_harness_doorbell "$h"
+    check_harness_doorbell "$h" pointer
+    check_harness_doorbell "$h" inline
   else
     note "harness absent, not verified here: $h"
   fi

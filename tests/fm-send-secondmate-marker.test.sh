@@ -108,7 +108,7 @@ test_secondmate_target_is_marked() {
   fm_write_secondmate_meta "$home/state/domain.meta" "$home" "sess:fm-domain"
   run_send "$fb" "$home" "$log" "fm-domain" "audit the build"; rc=$?
   expect_code 0 "$rc" "send to a secondmate target should succeed"
-  got=$(record_body "$home/state/domain.inbox/001.msg")
+  got=$(record_body "$(fm_inbox_record "$home/state/domain.inbox" 001)")
   case "$got" in
     "$FM_FROMFIRST_MARK"corr=[a-f0-9][a-f0-9]*) : ;;
     *) fail "secondmate send: the recorded steer should be marker+corr+text"$'\n'"--- bytes ---"$'\n'"$(printf '%s' "$got" | od -An -c)" ;;
@@ -136,7 +136,7 @@ test_exact_secondmate_task_id_is_marked() {
   fm_write_secondmate_meta "$home/state/domain.meta" "$home" "sess:fm-domain"
   run_send "$fb" "$home" "$log" "domain" "audit the build"; rc=$?
   expect_code 0 "$rc" "send to an exact secondmate task id should succeed"
-  got=$(record_body "$home/state/domain.inbox/001.msg")
+  got=$(record_body "$(fm_inbox_record "$home/state/domain.inbox" 001)")
   case "$got" in
     "$FM_FROMFIRST_MARK"corr=[a-f0-9]*) : ;;
     *) fail "exact secondmate send: the recorded steer should be marker+corr+text"$'\n'"--- bytes ---"$'\n'"$(printf '%s' "$got" | od -An -c)" ;;
@@ -148,7 +148,7 @@ test_exact_secondmate_task_id_is_marked() {
   already_marked="${FM_FROMFIRST_MARK}corr=${corr} already routed"
   run_send "$fb" "$home" "$log" "domain" "$already_marked"; rc=$?
   expect_code 0 "$rc" "send of already-marked exact-id content should succeed"
-  got=$(record_body "$home/state/domain.inbox/002.msg")
+  got=$(record_body "$(fm_inbox_record "$home/state/domain.inbox" 002)")
   case "$got" in
     "${FM_FROMFIRST_MARK}corr=${corr} already routed") : ;;
     *) fail "exact secondmate send altered already-correlated content"$'\n'"--- bytes ---"$'\n'"$(printf '%s' "$got" | od -An -tx1)" ;;
@@ -166,12 +166,12 @@ test_crewmate_target_is_not_marked() {
     "harness=echo" "kind=ship" "mode=no-mistakes" "yolo=off"
   run_send "$fb" "$home" "$log" "fm-build" "fix the test"; rc=$?
   expect_code 0 "$rc" "send to a stable-label crewmate target should succeed"
-  got=$(record_body "$home/state/build.inbox/001.msg")
+  got=$(record_body "$(fm_inbox_record "$home/state/build.inbox" 001)")
   [ "$got" = "fix the test" ] \
     || fail "stable-label crewmate send: expected bare recorded text, got marker or other"$'\n'"--- bytes ---"$'\n'"$(printf '%s' "$got" | od -An -c)"
   run_send "$fb" "$home" "$log" "build" "fix the exact test"; rc=$?
   expect_code 0 "$rc" "send to an exact-id crewmate target should succeed"
-  got=$(record_body "$home/state/build.inbox/002.msg")
+  got=$(record_body "$(fm_inbox_record "$home/state/build.inbox" 002)")
   [ "$got" = "fix the exact test" ] \
     || fail "exact-id crewmate send: expected bare recorded text, got marker or other"$'\n'"--- bytes ---"$'\n'"$(printf '%s' "$got" | od -An -c)"
   pass "fm-send: exact-id and stable-label kind=ship selectors are sent unmarked"
@@ -256,13 +256,13 @@ test_marked_send_preserves_trailing_newlines() {
   expect_code 0 "$rc" "marked send with trailing newlines should succeed"
   # shellcheck source=/dev/null
   . "$ROOT/bin/fm-pending-reply-lib.sh"
-  corr=$(fm_pending_reply_extract_corr "$(record_body "$home/state/domain.inbox/001.msg")")
+  corr=$(fm_pending_reply_extract_corr "$(record_body "$(fm_inbox_record "$home/state/domain.inbox" 001)")")
   [ -n "$corr" ] || fail "marked send should embed a corr id"
   fm_pending_reply_embed_corr "$payload" "$corr" expected_message
   expected="$dir/expected.body"
   actual="$dir/actual.body"
   printf '%s' "$expected_message" > "$expected"
-  record_body "$home/state/domain.inbox/001.msg" > "$actual"
+  record_body "$(fm_inbox_record "$home/state/domain.inbox" 001)" > "$actual"
   cmp -s "$expected" "$actual" \
     || fail "the marked record did not preserve trailing newline bytes exactly"
   pass "fm-send: marked secondmate payload preserves trailing newline bytes in its record"

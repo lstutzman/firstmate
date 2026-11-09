@@ -705,6 +705,16 @@ inbox_steer_check() {  # <window> <task>
     verb=escalate
   fi
   case "$verb" in
+    ring|retry)
+      # The worker may have taken the record since the due check: a taken or
+      # handled message is never rung again (inline steers are born taken).
+      if [ ! -f "$rec" ]; then
+        fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
+        return 0
+      fi
+      ;;
+  esac
+  case "$verb" in
     ring)
       ring_rc=0
       FM_COMPOSER_HARNESS=$(window_harness "$w") \

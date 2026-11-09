@@ -91,7 +91,7 @@ Input splits are explicit:
 
 Key names, `send text` with flag-looking text, and `tern run` semantics were taken from Tern's help and the task brief and are **not** live-verified on this host.
 
-An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-inbox record, and only its best-effort constant doorbell passes through tern's submit machinery.
+An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-inbox record, and only its best-effort doorbell line passes through tern's submit machinery.
 On the typed plane, text is typed once; Enter is separate; retries press Enter only and never retype.
 Submit confirmation prefers a native idle baseline followed by a landed-turn signal of `working` or `waiting_input` when `tern ctl` agent state is available; when native state is `unknown`, submit falls through to the shared composer retry core exactly like cmux.
 `waiting_input` is a landed-turn signal for submit confirmation but is not a queued-Enter busy signal.

@@ -27,6 +27,10 @@
 #  10. An empty or whitespace-only text steer is refused before anything is
 #      marked, recorded, or typed - on the marked secondmate path that means
 #      no marker-only record and no pending-reply expectation.
+#  11. A plain short steer is an inline steer: recorded already taken, rung with
+#      its body after a constant prefix; 301 characters, a newline, a tab or an
+#      escape keep the pointer doorbell; an inline ring that did not land falls
+#      back to an unhandled record for the watcher's ladder.
 # Every case below that passes a literal `$...` message quotes it on purpose
 # (the point is sending an unexpanded `$` line), so SC2016 is disabled.
 # shellcheck disable=SC2016
@@ -38,6 +42,10 @@ set -u
 . "$ROOT/bin/fm-marker-lib.sh"
 
 SEND="$ROOT/bin/fm-send.sh"
+
+# A plain short steer is an inline steer (bin/fm-task-inbox-lib.sh); a second
+# line keeps a message on the pointer-doorbell path these cases pin.
+ptr() { printf '%s\n%s' "$1" "(pointer path)"; }
 
 TMP_ROOT=$(fm_test_tmproot fm-send-inbox)
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
@@ -123,13 +131,13 @@ test_text_steer_rides_inbox() {
   local dir err rc rec body typed
   dir=$(setup_case rides)
   err="$dir/send.err"
-  run_send "$dir" "$err" -- t1 "please rebase onto main"
+  run_send "$dir" "$err" -- t1 "$(ptr "please rebase onto main")"
   rc=$?
   expect_code 0 "$rc" "an inbox-plane steer should exit 0 at enqueue"
   rec="$dir/home/state/t1.inbox/001.msg"
   [ -f "$rec" ] || fail "the steer was not durably recorded at $rec"
   body=$(record_body _ "$rec")
-  [ "$body" = "please rebase onto main" ] || fail "the recorded body differs: $body"
+  [ "$body" = "$(ptr "please rebase onto main")" ] || fail "the recorded body differs: $body"
   typed=$(cat "$dir/send.log")
   assert_contains "$typed" "Firstmate instruction waiting: list \"\$FM_TASK_INBOX\"/*.msg in your 't1.inbox' steering inbox" \
     "the doorbell should direct the worker to drain the inbox"
@@ -145,7 +153,7 @@ test_text_steer_rides_inbox() {
 test_deep_home_doorbell_stays_short() {
   local shallow deep home err rest typed shallow_typed found
   shallow=$(setup_case shallow-home)
-  run_send "$shallow" "$shallow/send.err" -- t1 "please continue" || fail "the shallow-home send failed"
+  run_send "$shallow" "$shallow/send.err" -- t1 "$(ptr "please continue")" || fail "the shallow-home send failed"
   shallow_typed=$(cat "$shallow/send.log")
   deep="$TMP_ROOT/deep-home"
   home="$deep/one/two/three/four/five/six/seven/eight-secondmate-homes-nest-under-long-worktree-paths"
@@ -155,7 +163,7 @@ test_deep_home_doorbell_stays_short() {
   err="$deep/send.err"
   env PATH="$deep/fakebin:$PATH" \
     FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$deep/send.log" \
-    FM_SEND_SETTLE=0 "$SEND" t1 "please continue" >/dev/null 2>"$err" ||
+    FM_SEND_SETTLE=0 "$SEND" t1 "$(ptr "please continue")" >/dev/null 2>"$err" ||
     fail "the deep-home send failed: $(cat "$err")"
   [ -f "$home/state/t1.inbox/001.msg" ] || fail "the deep-home steer was not durably recorded"
   typed=$(cat "$deep/send.log")
@@ -180,6 +188,74 @@ test_deep_home_doorbell_stays_short() {
   pass "fm-send inbox: a deep home rings the same short doorbell naming the inbox once"
 }
 
+# An inline steer (bin/fm-task-inbox-lib.sh): a plain short steer is recorded
+# already taken and its doorbell carries the body.
+test_inline_steer_is_recorded_taken_and_rung_with_its_body() {
+  local dir err rc rec body typed
+  dir=$(setup_case inline)
+  err="$dir/send.err"
+  run_send "$dir" "$err" -- t1 "don't wait for CI; rebase onto main"
+  rc=$?
+  expect_code 0 "$rc" "an inline steer should exit 0"
+  rec="$dir/home/state/t1.inbox/handled/001.msg"
+  [ -f "$rec" ] || fail "the inline steer was not recorded already taken at $rec"
+  [ ! -e "$dir/home/state/t1.inbox/001.msg" ] || fail "an inline steer must never be unhandled"
+  body=$(record_body _ "$rec")
+  [ "$body" = "don't wait for CI; rebase onto main" ] || fail "the recorded body differs: $body"
+  typed=$(cat "$dir/send.log")
+  [ "$typed" = ": 'Firstmate inline steer, already recorded and taken, no inbox read needed: don'\''t wait for CI; rebase onto main'" ] \
+    || fail "the inline doorbell should carry the quoted body after the constant prefix, got: $typed"
+  [ "$("$ROOT/bin/fm-task-inbox.sh" take "$dir/home/state/t1.inbox")" = "inbox empty" ] \
+    || fail "an inline steer must leave nothing for take"
+  pass "fm-send inbox: a plain short steer is recorded taken and rung with its body"
+}
+
+# Eligibility edges at the send surface: exactly 300 printable characters is
+# inline; 301, a newline, a tab, an escape and a fire-and-forget delivery keep
+# the pointer doorbell and an unhandled record.
+test_inline_eligibility_edges_at_the_send_surface() {
+  local dir err long label msg
+  long=$(printf 'a%.0s' $(seq 1 300))
+  dir=$(setup_case edge-300)
+  run_send "$dir" "$dir/send.err" -- t1 "$long" || fail "a 300 character steer should send"
+  [ -f "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "exactly 300 characters should be inline"
+  case "$(cat "$dir/send.log")" in *"$long'") ;; *) fail "the 300 character body was not rung inline" ;; esac
+  for label in 301 newline tab escape; do
+    case "$label" in
+    301) msg="${long}a" ;;
+    newline) msg=$'one\ntwo' ;;
+    tab) msg=$'tab\there' ;;
+    escape) msg=$'esc\033[0m' ;;
+    esac
+    dir=$(setup_case "edge-$label")
+    run_send "$dir" "$dir/send.err" -- t1 "$msg" || fail "a $label steer should send"
+    [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a $label steer must stay an unhandled pointer record"
+    [ ! -e "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "a $label steer must not be born taken"
+    assert_contains "$(cat "$dir/send.log")" "Firstmate instruction waiting" "a $label steer should ring the pointer doorbell"
+  done
+  pass "fm-send inbox: inline holds at 300 characters; 301, newline, tab and escape keep the pointer doorbell"
+}
+
+# An inline steer is never in the ladder, so a ring that did not land is handed
+# back to it: the record turns into an ordinary unhandled one the watcher owns.
+test_inline_ring_that_does_not_land_falls_back_to_the_ladder() {
+  local dir err rc
+  dir=$(setup_case inline-fallback)
+  err="$dir/send.err"
+  run_send "$dir" "$err" FM_FAKE_TMUX_SEND_FAIL=1 -- t1 "steer into a dead pane"
+  rc=$?
+  expect_code 0 "$rc" "a failed inline doorbell must not fail the send"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a failed inline ring must leave an unhandled record"
+  [ ! -e "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "the failed inline record stayed taken"
+  grep -q '^inline=' "$dir/home/state/t1.inbox/001.msg" && fail "the fallback record kept its inline header"
+  assert_contains "$(cat "$err")" "watcher will re-ring" "the fallback should hand the record to the re-ring ladder"
+  dir=$(setup_case inline-fallback-pending)
+  run_send "$dir" "$dir/send.err" FM_FAKE_TMUX_COMPOSER=pending -- t1 "steer past a stuck composer" ||
+    fail "a skipped inline ring must not fail the send"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a skipped inline ring must leave an unhandled record"
+  pass "fm-send inbox: an inline ring that did not land falls back to an unhandled pointer record"
+}
+
 test_multiline_steer_is_legal() {
   local dir err rc body
   dir=$(setup_case multiline)
@@ -200,8 +276,8 @@ test_resend_enqueues_new_sequence() {
   local dir err doorbells typed
   dir=$(setup_case resend)
   err="$dir/send.err"
-  run_send "$dir" "$err" -- t1 "check the CI result" || fail "first send failed"
-  run_send "$dir" "$err" -- t1 "check the CI result" || fail "second send failed"
+  run_send "$dir" "$err" -- t1 "$(ptr "check the CI result")" || fail "first send failed"
+  run_send "$dir" "$err" -- t1 "$(ptr "check the CI result")" || fail "second send failed"
   [ -f "$dir/home/state/t1.inbox/001.msg" ] && [ -f "$dir/home/state/t1.inbox/002.msg" ] ||
     fail "a re-send should enqueue a new sequence:"$'\n'"$(ls "$dir/home/state/t1.inbox")"
   doorbells=$(grep -cF 'Firstmate instruction waiting' "$dir/send.log" || true)
@@ -311,9 +387,10 @@ test_harness_invocations_stay_typed() {
   dir=$(setup_case dollartext claude)
   err="$dir/send.err"
   run_send "$dir" "$err" -- t1 '$5/month is cheap' || fail "a claude \$-text send should succeed"
-  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a non-codex \$-message should ride the inbox"
+  [ -f "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "a non-codex \$-message should ride the inbox"
   case "$(cat "$dir/send.log")" in
-  *'$5/month'*) fail "a non-codex \$-message payload was typed" ;;
+  ": 'Firstmate inline steer"*"\$5/month is cheap'") ;;
+  *) fail "a non-codex \$-message should ring as a quoted inline doorbell, got: $(cat "$dir/send.log")" ;;
   esac
   pass "fm-send planes: slash and codex \$skill invocations stay typed; plain \$-text rides the inbox"
 }
@@ -506,6 +583,9 @@ test_empty_message_refused() {
 
 test_text_steer_rides_inbox
 test_deep_home_doorbell_stays_short
+test_inline_steer_is_recorded_taken_and_rung_with_its_body
+test_inline_eligibility_edges_at_the_send_surface
+test_inline_ring_that_does_not_land_falls_back_to_the_ladder
 test_multiline_steer_is_legal
 test_resend_enqueues_new_sequence
 test_pending_composer_skips_ring_advisorily

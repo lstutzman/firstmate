@@ -1428,6 +1428,121 @@ test_watcher_dead_pane_ignores_stale_busy_state() {
   pass "watcher: dead-pane recovery overrides stale busy state"
 }
 
+# Inline steer (bin/fm-task-inbox-lib.sh): a plain short steer rides the
+# doorbell itself and its record is born taken. These pin the eligibility
+# edges through the production predicate.
+test_inline_eligibility_edges() {
+  local state text mark
+  state="$TMP_ROOT/inline-edges/state"; mkdir -p "$state"
+  eligible() { inbox_lib "$state" fm_task_inbox_inline_eligible "$1"; }
+  text=$(printf 'a%.0s' $(seq 1 300))
+  eligible "$text" || fail "exactly 300 printable characters should be inline"
+  eligible "${text}a" && fail "301 characters must keep the pointer doorbell"
+  eligible "it's a plain \$HOME \`steer\`; ok" || fail "quotes and shell punctuation stay inline"
+  eligible $'two\nlines' && fail "a newline must keep the pointer doorbell"
+  eligible $'tab\there' && fail "a tab must keep the pointer doorbell"
+  eligible $'escape\033[31m' && fail "an escape sequence must keep the pointer doorbell"
+  eligible 'caf'$'\xc3\xa9' && fail "a multibyte character must keep the pointer doorbell"
+  eligible '' && fail "an empty message is never inline"
+  eligible '   ' && fail "a blank message is never inline"
+  mark=$(bash -c '. "$1"; printf "%s" "$FM_FROMFIRST_MARK"' _ "$ROOT/bin/fm-operational-input.sh")
+  eligible "${mark}corr=0123456789abcdef summarize" && fail "a from-firstmate marked request must never be inline"
+  eligible '[fm-from-firstmate] plain text' && fail "the from-firstmate label alone must never be inline"
+  eligible 'FIRSTMATE_OP: v1 launch-brief: x' && fail "an operational-input header must never be inline"
+  pass "inbox: inline eligibility holds at 300 characters and refuses 301, newline, tab, escape, multibyte and routing marks"
+}
+
+test_inline_record_is_born_taken() {
+  local state rec rec2 line sh out marker body
+  state="$TMP_ROOT/inline-taken/state"; mkdir -p "$state"
+  marker="$state/marker"
+  body="don't \$(touch $marker); \`touch $marker\`; touch $marker # x"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "$body" "" inline) \
+    || fail "inline write failed"
+  [ "$rec" = "$state/t1.inbox/handled/001.msg" ] || fail "an inline record belongs in handled/, got $rec"
+  [ ! -e "$state/t1.inbox/001.msg" ] || fail "an inline record must never be unhandled"
+  grep -qx 'inline=1' "$rec" || fail "an inline record must say so in its header"
+  [ "$(inbox_lib "$state" fm_task_inbox_body "$rec")" = "$body" ] || fail "the inline body must round-trip exact"
+  inbox_lib "$state" fm_task_inbox_is_inline "$rec" || fail "is_inline should recognise the record"
+  [ "$("$ROOT/bin/fm-task-inbox.sh" take "$state/t1.inbox")" = "inbox empty" ] \
+    || fail "take must find nothing for an inline steer"
+  rec2=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "next steer") || fail "next write failed"
+  [ "$rec2" = "$state/t1.inbox/002.msg" ] || fail "the sequence must continue past an inline record, got $rec2"
+  inbox_lib "$state" fm_task_inbox_is_inline "$rec2" && fail "a pointer record is not inline"
+  line=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec") || fail "no inline doorbell line"
+  case "$line" in
+    ": 'Firstmate inline steer, already recorded and taken, no inbox read needed: "*"'") ;;
+    *) fail "the inline doorbell should carry the constant prefix and the quoted body: $line" ;;
+  esac
+  case "$line" in *$'\n'*) fail "the inline doorbell must be a single line" ;; esac
+  for sh in sh bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    out=$(cd "$state" && "$sh" -c "$line" 2>&1) || fail "$sh failed on the inline doorbell: $out"
+    [ -z "$out" ] || fail "$sh printed while running the inline doorbell: $out"
+    [ ! -e "$marker" ] || fail "$sh executed shell syntax from an inline body"
+  done
+  pass "inbox: an inline steer is durable, born taken, sequenced, and its doorbell is a bare-shell no-op"
+}
+
+test_inline_untake_returns_a_pointer_record() {
+  local state rec back
+  state="$TMP_ROOT/inline-untake/state"; mkdir -p "$state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue" "" inline) || fail "inline write failed"
+  back=$(inbox_lib "$state" fm_task_inbox_untake "$rec") || fail "untake failed"
+  [ "$back" = "$state/t1.inbox/001.msg" ] || fail "untake should return the root record, got $back"
+  [ ! -e "$rec" ] || fail "untake left the handled copy behind"
+  grep -q '^inline=' "$back" && fail "an untaken record must drop its inline header"
+  [ "$(inbox_lib "$state" fm_task_inbox_body "$back")" = "please continue" ] || fail "untake changed the body"
+  inbox_lib "$state" fm_task_inbox_doorbell_line "$back" | grep -qF 'Firstmate instruction waiting' \
+    || fail "an untaken record rings the pointer doorbell"
+  age_path "$back"
+  [ "$(FM_TASK_INBOX_GRACE_SECS=60 inbox_lib "$state" fm_task_inbox_due_action "$state" t1)" = "ring $back" ] \
+    || fail "an untaken record belongs to the re-ring ladder"
+  [ "$(inbox_lib "$state" fm_task_inbox_untake "$back")" = "$back" ] || fail "untake of a pointer record must be a no-op"
+  pass "inbox: a failed inline ring is handed back as an ordinary unhandled record for the ladder"
+}
+
+test_inline_idempotent_write_lands_on_its_record() {
+  local state first again
+  state="$TMP_ROOT/inline-idem/state"; mkdir -p "$state"
+  first=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "same steer" "" inline) || fail "first write failed"
+  again=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "same steer" "" inline) || fail "re-run failed"
+  [ "$first" = "$again" ] || fail "a re-run must land on the same inline record: $first vs $again"
+  [ "$(find "$state/t1.inbox" -name '*.msg' | wc -l | tr -d ' ')" = 1 ] || fail "a re-run duplicated the inline record"
+  pass "inbox: the idempotent write deduplicates an inline steer like any other"
+}
+
+# The watcher never rings a message that is already taken or handled: an inline
+# steer is never in the ladder, and a record taken between the due check and the
+# ring is not rung.
+test_watcher_never_rerings_a_taken_message() {
+  local dir state log rec
+  dir=$(setup_watch_case taken-no-rering)
+  state="$dir/state"; log="$dir/send.log"; : > "$log"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue" "" inline) || fail "inline write failed"
+  age_path "$rec"
+  FM_TASK_INBOX_GRACE_SECS=1 steer_check_once "$dir"
+  [ ! -s "$log" ] || fail "the watcher rang for an inline (already taken) steer:"$'\n'"$(cat "$log")"
+  [ ! -s "$state/.wake-queue" ] || fail "an inline steer must never escalate"
+  # A due 'ring' naming a record that has since moved to handled/ is skipped,
+  # while the same decision for a record still unhandled rings (non-vacuous).
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 $'pointer\nsteer') || fail "pointer write failed"
+  rm -f "$state/t1.inbox/.ring-state"
+  taken_ring_check() {  # <record>
+    PATH="$dir/fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_SEND_LOG="$log" \
+      FM_FAKE_TMUX_CAPTURE="$(idle_capture "$dir")" REC="$1" \
+      bash -c '. "$1"; fm_task_inbox_due_action() { printf "ring %s" "$REC"; }; inbox_steer_check sess:fm-t1 t1' _ "$WATCH" >/dev/null 2>&1
+  }
+  : > "$log"
+  taken_ring_check "$rec"
+  grep -qF 'Firstmate instruction waiting' "$log" || fail "control: an unhandled record should ring"
+  : > "$log"
+  "$ROOT/bin/fm-task-inbox.sh" take "$state/t1.inbox" >/dev/null
+  taken_ring_check "$state/t1.inbox/${rec##*/}"
+  [ ! -s "$log" ] || fail "the watcher rang a record the worker had already taken:"$'\n'"$(cat "$log")"
+  pass "watcher: a taken or handled message is never rung again, inline steers included"
+}
+
 test_write_is_durable_and_exact
 test_take_prints_in_order_and_acknowledges
 test_doorbell_is_a_shell_noop
@@ -1484,3 +1599,8 @@ test_watcher_retry_keeps_a_newer_mark
 test_watcher_escalates_once_after_budget
 test_watcher_dead_pane_escalates_once_without_ringing
 test_watcher_dead_pane_ignores_stale_busy_state
+test_inline_eligibility_edges
+test_inline_record_is_born_taken
+test_inline_untake_returns_a_pointer_record
+test_inline_idempotent_write_lands_on_its_record
+test_watcher_never_rerings_a_taken_message

@@ -13,7 +13,8 @@
 #
 # Design (captain-adopted, data/fm-send-reliability-reframe-s1/report.md): the
 # payload moves to the filesystem, which is reliable; the backend endpoint carries
-# only a short constant doorbell line. While the endpoint remains available, that
+# only a short doorbell line: a constant pointer, or for an inline steer (below)
+# the short body itself. While the endpoint remains available, that
 # line does not need to be reliable because ringing it again is free. A
 # duplicated doorbell is a no-op by construction (the worker finds the inbox
 # empty or already handled), and a swallowed doorbell is detected by the
@@ -24,7 +25,8 @@
 #
 # Layout under <state-dir>:
 #   <task>.inbox/NNN.msg       one durable steer, numeric sequence, atomic rename
-#   <task>.inbox/handled/      the worker's `mv` here IS the acknowledgement
+#   <task>.inbox/handled/      the worker's `mv` here IS the acknowledgement; an
+#                              inline steer is written here directly (below)
 #   <task>.inbox/archive/      handled records older than the retention window
 #                              (see "Bounded history" below); kept, never read
 #   <task>.inbox/.seq.lock     serializes sequence allocation across writers
@@ -42,9 +44,22 @@
 #   body-terminator=1          present on records written with a synthetic final newline
 #   delivery=fire-and-forget   present only when the re-ring ladder must ignore it
 #                              (it still gets one retry ring; see below)
+#   inline=1                   present only on an inline steer (see below)
 #   --
 #   <exact message text; newlines are legal; a marked secondmate request keeps
 #    its from-firstmate marker and corr token verbatim in this body>
+#
+# Inline steer (fm_task_inbox_inline_eligible): a plain short steer - one line,
+# at most FM_TASK_INBOX_INLINE_MAX (300) printable ASCII characters, no routing
+# mark - skips the take round trip. Its record is written straight into
+# handled/ with `inline=1`, so it is durable and already taken, and the
+# doorbell carries the body itself after the constant FM_TASK_INBOX_INLINE_PREFIX
+# (the body is single-quoted so a bare shell still runs nothing). Because it is
+# never unhandled, the watcher's ladder never rings or escalates it. When the
+# ring does not land (fm_task_inbox_ring nonzero) the sender calls
+# fm_task_inbox_untake, which turns it back into an ordinary unhandled record
+# with the pointer doorbell, so a lost inline ring degrades to the ladder
+# instead of losing the steer. Everything else keeps the pointer doorbell.
 #
 # Sequence numbers are never reused within a task: allocation scans both the
 # inbox root and handled/, so a message is processed at most once per worker
@@ -129,6 +144,8 @@ FM_TASK_INBOX_BUSY_MAX_DEFAULT=2
 FM_TASK_INBOX_LOCK_WAIT_DEFAULT=5
 FM_TASK_INBOX_DEDUP_WINDOW_DEFAULT=200
 FM_TASK_INBOX_HANDLED_KEEP_DEFAULT=500
+FM_TASK_INBOX_INLINE_MAX=300
+FM_TASK_INBOX_INLINE_PREFIX=": 'Firstmate inline steer, already recorded and taken, no inbox read needed: "
 
 fm_task_inbox_grace_secs() {
   local g=${FM_TASK_INBOX_GRACE_SECS:-$FM_TASK_INBOX_GRACE_DEFAULT}
@@ -264,11 +281,12 @@ fm_task_inbox_lock_acquire() {  # <lock-path>
 
 # Write one record into the next sequence slot: temp-write, then atomic
 # rename. Prints the record path. Caller must hold .seq.lock.
-_fm_task_inbox_write_record_locked() {  # <inbox-dir> <text> [delivery-mode]
-  local dir=$1 text=$2 delivery_mode=${3:-} seq tmp rec status=0
+_fm_task_inbox_write_record_locked() {  # <inbox-dir> <text> [delivery-mode] [inline]
+  local dir=$1 text=$2 delivery_mode=${3:-} inline=${4:-} seq tmp rec status=0
   _fm_task_inbox_retain_locked "$dir"
   seq=$(fm_task_inbox_next_seq "$dir")
   rec="$dir/$seq.msg"
+  [ "$inline" != inline ] || rec="$dir/handled/$seq.msg"
   tmp=$(mktemp "$dir/.staging.XXXXXX") || return 1
   {
     printf 'schema=%s\n' "$FM_TASK_INBOX_SCHEMA"
@@ -278,6 +296,7 @@ _fm_task_inbox_write_record_locked() {  # <inbox-dir> <text> [delivery-mode]
       *) printf 'body-terminator=1\n' ;;
     esac
     [ "$delivery_mode" != fire-and-forget ] || printf 'delivery=fire-and-forget\n'
+    [ "$inline" != inline ] || printf 'inline=1\n'
     printf -- '--\n'
     case "$text" in
       *$'\n') printf '%s' "$text" ;;
@@ -290,13 +309,13 @@ _fm_task_inbox_write_record_locked() {  # <inbox-dir> <text> [delivery-mode]
 
 # Durably enqueue one steer: temp-write, then atomic rename into the next
 # sequence slot. Prints the record path. Fails without a partial record.
-fm_task_inbox_write() {  # <state-dir> <task-id> <text> [delivery-mode]
-  local state=$1 task=$2 text=$3 delivery_mode=${4:-} dir lock rec status=0
+fm_task_inbox_write() {  # <state-dir> <task-id> <text> [delivery-mode] [inline]
+  local state=$1 task=$2 text=$3 delivery_mode=${4:-} inline=${5:-} dir lock rec status=0
   dir=$(fm_task_inbox_dir "$state" "$task")
   mkdir -p "$dir/handled" || return 1
   lock="$dir/.seq.lock"
   fm_task_inbox_lock_acquire "$lock" || return 1
-  rec=$(_fm_task_inbox_write_record_locked "$dir" "$text" "$delivery_mode") || status=1
+  rec=$(_fm_task_inbox_write_record_locked "$dir" "$text" "$delivery_mode" "$inline") || status=1
   fm_lock_release "$lock"
   [ "$status" -eq 0 ] || return 1
   printf '%s' "$rec"
@@ -314,8 +333,8 @@ fm_task_inbox_write() {  # <state-dir> <task-id> <text> [delivery-mode]
 # secondmate request embeds a per-request correlation token in its body. The
 # local plane keeps plain fm_task_inbox_write: its outcome is synchronous, so
 # a repeated identical local steer is a deliberate new instruction.
-fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mode]
-  local state=$1 task=$2 text=$3 delivery_mode=${4:-} dir lock rec='' status=0
+fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mode] [inline]
+  local state=$1 task=$2 text=$3 delivery_mode=${4:-} inline=${5:-} dir lock rec='' status=0
   local window max first s f g have header is_ff body
   dir=$(fm_task_inbox_dir "$state" "$task")
   mkdir -p "$dir/handled" || return 1
@@ -354,7 +373,7 @@ fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mod
     break
   done
   if [ "$status" -eq 0 ] && [ -z "$rec" ]; then
-    rec=$(_fm_task_inbox_write_record_locked "$dir" "$text" "$delivery_mode") || status=1
+    rec=$(_fm_task_inbox_write_record_locked "$dir" "$text" "$delivery_mode" "$inline") || status=1
   fi
   fm_lock_release "$lock"
   [ "$status" -eq 0 ] || return 1
@@ -406,7 +425,14 @@ EOF
 # non-printable inbox name fails without output so terminal controls never
 # reach the pane's line discipline.
 fm_task_inbox_doorbell_line() {  # <record-path>
-  local dir=${1%/*} abs name quoted LC_ALL=C
+  local dir=${1%/*} abs name quoted body LC_ALL=C
+  if fm_task_inbox_is_inline "$1"; then
+    body=$(fm_task_inbox_body "$1") || return 1
+    fm_task_inbox_inline_eligible "$body" || return 1
+    quoted=$(printf '%s' "$body" | sed "s/'/'\\\\''/g")
+    printf "%s%s'" "$FM_TASK_INBOX_INLINE_PREFIX" "$quoted"
+    return 0
+  fi
   abs=$(cd "$dir" 2>/dev/null && pwd) || abs=$dir
   abs=${abs%/handled}
   name=${abs##*/}
@@ -416,6 +442,54 @@ fm_task_inbox_doorbell_line() {  # <record-path>
   quoted=$(printf '%s' "$name" | sed "s/'/'\\\\''/g")
   printf ": Firstmate instruction waiting: list \"\$FM_TASK_INBOX\"/*.msg in your '%s' steering inbox, read and act on each in numeric order, then mv each into its handled/." \
     "$quoted"
+}
+
+# Whether one text may ride the doorbell itself: a single line of at most
+# FM_TASK_INBOX_INLINE_MAX printable ASCII characters (so no newline, tab,
+# escape or multibyte byte) that carries no operational-input or from-firstmate
+# routing mark. Pure predicate; the caller decides the delivery mode.
+fm_task_inbox_inline_eligible() {  # <text>
+  local text=$1 LC_ALL=C
+  [ -n "$text" ] && [ "${#text}" -le "$FM_TASK_INBOX_INLINE_MAX" ] || return 1
+  case "$text" in
+    *[![:print:]]*|*FIRSTMATE_OP*|*'[fm-from-firstmate]'*) return 1 ;;
+  esac
+  [ -n "${text//[[:space:]]/}" ]
+}
+
+# Whether the record (in the root or handled/) is an inline steer.
+fm_task_inbox_is_inline() {  # <record-path>
+  local rec=$1
+  [ -f "$rec" ] || rec="${rec%/*}/handled/${rec##*/}"
+  [ -f "$rec" ] || return 1
+  awk '
+    $0 == "--" { exit }
+    $0 == "inline=1" { found=1 }
+    END { exit(found ? 0 : 1) }
+  ' "$rec"
+}
+
+# Turn an inline steer whose ring did not land back into an ordinary unhandled
+# record (same sequence, no inline header), so the pointer doorbell and the
+# watcher's ladder own it. Prints the root record path. A record that is not an
+# inline one in handled/ is left alone and its path printed.
+fm_task_inbox_untake() {  # <record-path>
+  local rec=$1 dir name tmp
+  case "$rec" in */handled/*) ;; *) printf '%s' "$rec"; return 0 ;; esac
+  fm_task_inbox_is_inline "$rec" || { printf '%s' "$rec"; return 0; }
+  dir=${rec%/handled/*}
+  name=${rec##*/}
+  tmp=$(mktemp "$dir/.staging.XXXXXX") || return 1
+  if ! awk '
+    !past && $0 == "inline=1" { next }
+    { print }
+    $0 == "--" { past=1 }
+  ' "$rec" > "$tmp" || ! mv "$tmp" "$dir/$name"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  rm -f "$rec"
+  printf '%s' "$dir/$name"
 }
 
 # Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory

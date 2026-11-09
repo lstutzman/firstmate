@@ -713,7 +713,7 @@ Explicit named-session routing and unrelated launch environment remain intact.
 ### Sending text and keys
 
 Literal text and Enter are separate operations on `fm-send.sh`'s typed plane.
-Ordinary local text steers instead use the durable steering inbox and send only its best-effort constant doorbell through this adapter.
+Ordinary local text steers instead use the durable steering inbox and send only its best-effort doorbell line through this adapter.
 Spawn-time fixed commands may use Herdr's atomic run primitive.
 Enter, Escape, and Ctrl-C are supported.
 
