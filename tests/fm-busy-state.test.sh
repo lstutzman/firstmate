@@ -28,6 +28,120 @@ new_state_dir() {  # <name>
 
 # --- writer: arm and apply ---------------------------------------------------
 
+# --- codex session-rollout source ----------------------------------------------
+
+# codex_rollout <home> <file> <cwd> [lifecycle...]: write a rollout bound to <cwd>
+# whose lifecycle records are the given payload types, in order.
+codex_rollout() {
+  local home=$1 file=$2 cwd=$3 kind n=1 path
+  shift 3
+  path="$home/sessions/2026/11/09/rollout-$file.jsonl"
+  mkdir -p "$(dirname "$path")"
+  printf '{"timestamp":"2026-11-09T08:00:00.000Z","ordinal":0,"type":"session_meta","payload":{"cwd":"%s"}}\n' "$cwd" > "$path"
+  for kind in "$@"; do
+    printf '{"timestamp":"2026-11-09T08:00:0%s.000Z","ordinal":%s,"type":"event_msg","payload":{"type":"%s"}}\n' "$n" "$n" "$kind" >> "$path"
+    n=$((n + 1))
+  done
+}
+
+codex_task() {  # <state> <worktree> [kind] [spawn_gen]
+  mkdir -p "$2"
+  printf 'harness=codex\nworktree=%s\nkind=%s\nspawn_gen=%s\n' "$2" "${3:-ship}" \
+    "${4-s$(( $(date +%s) - 60 )).1.1}" > "$1/t1.meta"
+}
+
+test_codex_rollout_source() {
+  local state home wt out
+  state=$(new_state_dir codex-rollout)
+  home="$TMP_ROOT/codex-rollout/home"
+  wt="$TMP_ROOT/codex-rollout/wt"
+  codex_task "$state" "$wt"
+  export CODEX_HOME="$home"
+  mkdir -p "$home/sessions"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "codex with no rollout must stay unknown, got '$out'"
+  codex_rollout "$home" a "$wt" task_started
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "busy codex-rollout" ] || fail "a rollout ending on task_started must be busy, got '$out'"
+  codex_rollout "$home" a "$wt" task_started task_complete
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "idle codex-rollout" ] || fail "a rollout ending on task_complete must be idle, got '$out'"
+  codex_rollout "$home" a "$wt" task_started task_complete task_started
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "busy codex-rollout" ] || fail "a new turn after a completed one must be busy, got '$out'"
+  # A rollout with no lifecycle record, or for another cwd, proves nothing.
+  codex_rollout "$home" a "$wt"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a rollout with no turn record must stay unknown, got '$out'"
+  codex_rollout "$home" a "$TMP_ROOT/elsewhere" task_started task_complete
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a rollout for another cwd must not bind, got '$out'"
+  # Every rollout bound to a reused slot must be settled; a stale open one holds unknown.
+  codex_rollout "$home" a "$wt" task_started task_complete
+  codex_rollout "$home" b "$wt" task_started task_complete task_complete
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "idle codex-rollout" ] || fail "two settled rollouts must be idle, got '$out'"
+  codex_rollout "$home" c "$wt"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "an unsettled sibling rollout must hold unknown, got '$out'"
+  # Only the newest bound rollout can read busy: an older session left mid-turn holds unknown.
+  rm -f "$home"/sessions/2026/11/09/rollout-[bc].jsonl
+  codex_rollout "$home" a "$wt" task_started
+  codex_rollout "$home" b "$wt" task_started task_complete
+  touch -t "$(( $(date +%Y) + 1 ))01010000" "$home/sessions/2026/11/09/rollout-b.jsonl"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "an older rollout left on task_started must not read busy, got '$out'"
+  touch -t "$(( $(date +%Y) + 2 ))01010000" "$home/sessions/2026/11/09/rollout-a.jsonl"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "busy codex-rollout" ] || fail "the newest rollout on task_started must read busy, got '$out'"
+  # Text that merely mentions a lifecycle record cannot close a turn.
+  rm -f "$home"/sessions/2026/11/09/rollout-b.jsonl
+  codex_rollout "$home" a "$wt" task_started
+  printf '{"timestamp":"2026-11-09T08:00:09.000Z","ordinal":9,"type":"response_item","payload":{"text":"x\\n{\\"type\\":\\"task_complete\\"}"}}\n' >> "$home/sessions/2026/11/09/rollout-a.jsonl"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "busy codex-rollout" ] || fail "quoted lifecycle text must not close a turn, got '$out'"
+  # A relaunch counts only its own rollouts: an earlier launch's interrupted or
+  # promptless rollout no longer holds a finished worker at unknown. The launch
+  # is set ~300 days ahead so rollouts written now predate it.
+  rm -f "$home"/sessions/2026/11/09/rollout-*.jsonl
+  codex_task "$state" "$wt" ship "s$(( $(date +%s) + 300 * 86400 )).1.1"
+  codex_rollout "$home" a "$wt" task_started
+  codex_rollout "$home" b "$wt"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "rollouts from an earlier launch alone must stay unknown, got '$out'"
+  codex_rollout "$home" c "$wt" task_started task_complete
+  touch -t "$(( $(date +%Y) + 2 ))01010000" "$home/sessions/2026/11/09/rollout-c.jsonl"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "idle codex-rollout" ] || fail "a settled current rollout beside an earlier interrupted one must be idle, got '$out'"
+  # A quick relaunch: the predecessor stopped mid-turn seconds before the new launch epoch.
+  rm -f "$home"/sessions/2026/11/09/rollout-*.jsonl
+  codex_task "$state" "$wt" ship "s$(( $(date +%s) + 5 )).1.1"
+  codex_rollout "$home" a "$wt" task_started
+  codex_rollout "$home" c "$wt" task_started task_complete
+  touch -t "$(( $(date +%Y) + 2 ))01010000" "$home/sessions/2026/11/09/rollout-c.jsonl"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "idle codex-rollout" ] || fail "a rollout interrupted just before a relaunch must not hold the new launch at unknown, got '$out'"
+  # Without a parsable launch epoch no rollout can be scoped, so the verdict stays unknown.
+  codex_task "$state" "$wt" ship ""
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a codex task with no spawn_gen must stay unknown, got '$out'"
+  codex_task "$state" "$wt" ship fm.lab123456
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a codex task with an unparsable spawn_gen must stay unknown, got '$out'"
+  rm -f "$home"/sessions/2026/11/09/rollout-[bc].jsonl
+  codex_task "$state" "$wt"
+  # A secondmate and a task with no meta never read a rollout.
+  codex_rollout "$home" a "$wt" task_started task_complete
+  codex_task "$state" "$wt" secondmate
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a codex secondmate must stay unknown, got '$out'"
+  rm -f "$state/t1.meta"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "a codex task with no meta must stay unknown, got '$out'"
+  unset CODEX_HOME
+  pass "codex classifies from its own launch's session rollouts: busy mid-turn, idle only when every current rollout settled, unknown otherwise"
+}
+
 test_arm_seeds_busy_spawn() {
   local state gen out
   state=$(new_state_dir arm-seed)
@@ -849,6 +963,7 @@ test_launch_prompt_never_reclassifies_an_advanced_record
 test_launch_prompt_requires_a_captured_tail
 test_grok_regex_isolated
 test_codex_unverified_gate
+test_codex_rollout_source
 test_kimi_unverified_gate
 test_pi_stream_version_floor_accepts_verified_rejects_unverified
 test_cursor_ignores_rendered_and_native_signals

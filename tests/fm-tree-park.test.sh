@@ -283,6 +283,48 @@ test_refuses_each_unsafe_copy() {
   pass "dirty, untracked, unpushed, mismatched, live-run, unreleased, steered, tmux, busy, and unstopped copies are never parked"
 }
 
+# make_codex_lab <name> <last-lifecycle|none>: a lab whose worker is Codex, with a
+# session rollout bound to the leased copy. Codex arms no busy record, so the
+# claude busy files the lab wrote are removed and CODEX_HOME points at the
+# lab's own rollouts.
+make_codex_lab() {
+  local name=$1 last=$2 dir wt day
+  dir=$(make_lab "$name")
+  wt="$dir/pool/1/project"
+  sed -i.bak -e 's/^harness=claude$/harness=codex/' \
+    -e "s/^spawn_gen=.*/spawn_gen=s$(( $(date +%s) - 60 )).1.1/" "$dir/home/state/$ID.meta"
+  rm -f "$dir/home/state/$ID.busy-state" "$dir/home/state/$ID.busy-gen" "$dir/home/state/$ID.meta.bak"
+  day="$dir/codex-home/sessions/2026/11/09"
+  mkdir -p "$day"
+  [ "$last" = none ] && { printf '%s\n' "$dir"; return 0; }
+  {
+    printf '{"timestamp":"2026-11-09T08:00:00.000Z","ordinal":0,"type":"session_meta","payload":{"cwd":"%s"}}\n' "$wt"
+    printf '{"timestamp":"2026-11-09T08:00:01.000Z","ordinal":1,"type":"event_msg","payload":{"type":"task_started","turn_id":"t1"}}\n'
+    printf '{"timestamp":"2026-11-09T08:00:02.000Z","ordinal":2,"type":"response_item","payload":{"type":"message","text":"a {\\"type\\":\\"task_complete\\"} mention"}}\n'
+    [ "$last" != task_complete ] || printf '{"timestamp":"2026-11-09T08:30:00.000Z","ordinal":3,"type":"event_msg","payload":{"type":"task_complete","turn_id":"t1"}}\n'
+  } > "$day/rollout-2026-11-09T08-00-00-aaaa.jsonl"
+  printf '%s\n' "$dir"
+}
+
+test_codex_task_parks_only_once_its_rollout_proves_it_settled() {
+  local dir
+  dir=$(make_codex_lab codex-settled task_complete)
+  CODEX_HOME="$dir/codex-home" park "$dir" >/dev/null 2>"$dir/err" \
+    || fail "codex-settled: a finished Codex ship with a merge handoff did not park: $(cat "$dir/err")"
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "codex-settled: the record is not marked parked"
+  grep -qx "$ID exit --stop-background" "$dir/control.log" || fail "codex-settled: the agent was not stopped through the control plane"
+
+  dir=$(make_codex_lab codex-midturn task_started)
+  CODEX_HOME="$dir/codex-home" park "$dir" >/dev/null 2>&1 && fail "codex-midturn: a Codex worker mid-turn was parked"
+  assert_not_parked "$dir" codex-midturn
+  [ ! -s "$dir/control.log" ] || fail "codex-midturn: a mid-turn Codex worker was stopped"
+
+  dir=$(make_codex_lab codex-norollout none)
+  CODEX_HOME="$dir/codex-home" park "$dir" >/dev/null 2>&1 && fail "codex-norollout: a Codex worker with no rollout evidence was parked"
+  assert_not_parked "$dir" codex-norollout
+  pass "a finished Codex ship parks, while a mid-turn or unevidenced Codex worker stays unparked"
+}
+
 test_transient_refusals_are_retried_on_a_later_sweep() {
   local dir head gen i
   dir=$(make_lab retry)
@@ -479,6 +521,7 @@ fm_test_run \
   test_sweep_parks_once_per_handoff \
   test_sweep_reports_a_failure_after_the_agent_stopped_once \
   test_refuses_each_unsafe_copy \
+  test_codex_task_parks_only_once_its_rollout_proves_it_settled \
   test_transient_refusals_are_retried_on_a_later_sweep \
   test_steer_unparks_on_the_recorded_head \
   test_steer_follows_a_moved_pr_head \
