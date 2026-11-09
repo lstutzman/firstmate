@@ -80,6 +80,8 @@ if args[:2] == ["issue", "create"]:
     issues[n] = {"title": flag("--title"), "description": open(flag("--body-file")).read(), "state": "Todo",
                  "labels": [args[k + 1] for k, a in enumerate(args) if a == "--label"], "project": flag("--project"),
                  "priority": flag("--priority")}
+    if "--verify" in args and os.environ.get("FAKE_DOUBLE"):  # linear-axi re-ran the create: two items, one title
+        issues["PC-%d" % (102 + len(issues) - 1)] = dict(issues[n])
     save(); written(n)
 if args[:2] == ["issue", "update"]:
     if dry: out({"dryRun": True})
@@ -568,6 +570,16 @@ test_mismatched_create_is_adopted_when_title_search_misses() {
   pass "fm-officer-linear: a create that mismatches and whose title full-text search misses is adopted, then updated, never recreated"
 }
 
+test_a_create_the_tool_wrote_twice_is_adopted_once() {
+  local out
+  world double '{}'
+  printf 'scheduled-review\n' >> "$LDIR/labels"
+  out=$(FAKE_VERIFY=nocontract FAKE_SEARCH_MISS=1 FAKE_DOUBLE=1 drive cluster-reuse) || fail "driver must succeed"
+  assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "two same-title items from one create: the lowest is adopted, nothing is failed"
+  assert_equals 1 "$(grep -c '^issue create.*--verify' "$LDIR/calls")" "and the officer sent one create"
+  pass "fm-officer-linear: a create the tool wrote twice is adopted once and not recorded failed"
+}
+
 test_mismatched_creates_count_against_the_cap() {
   local out
   world cap-mismatch '{}'
@@ -656,6 +668,7 @@ test_closed_item_is_never_touched
 test_closed_item_is_bumped_not_replaced
 test_failed_verify_is_taken_as_written
 test_mismatched_create_is_adopted_when_title_search_misses
+test_a_create_the_tool_wrote_twice_is_adopted_once
 test_mismatched_creates_count_against_the_cap
 test_failed_write_is_failed_and_retried_next_run
 test_cluster_reuses_the_oldest_open_item_of_its_title

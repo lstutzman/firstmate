@@ -521,7 +521,7 @@ class Filer:
             self.creates += 1
             # What the run already knew of the team's titles, so a mismatched create is told from older same-title items
             # (a cluster reads the list before it creates; a single does not spend a call on it).
-            before = {h["identifier"] for h in self.titles or ()}
+            before_known, before = self.titles is not None, {h["identifier"] for h in self.titles or ()}
             try:
                 ident = issue_id(self.lin(cmd + ["--verify"]))
                 self.note_title(ident, title, project)
@@ -533,12 +533,17 @@ class Filer:
                 # reported failed or left out of the ledger. Linear search matches neither the hex fingerprint nor
                 # these titles, so look for it by the identifier the error names, else for the one new open item of
                 # exactly this title in the team's list.
-                found = exc.written_ident()
+                found, extra = exc.written_ident(), []
                 try:
                     for wait in VERIFY_SEARCH_WAITS if not found else ():
                         time.sleep(wait)
-                        found = self.open_by_title(title, oldest=False, fleet=fleet_work(self.officer, project), refresh=True, exclude=before)
-                        if found:
+                        # With the list read before the write, every new same-title item came from this one create: the
+                        # tool can write it twice (linear-axi retries a create whose mismatch output looks like a 401),
+                        # so the lowest is the item and the rest are named for a person to close. Without that list,
+                        # only a unique match is this create's.
+                        hits = self.open_titles(title, fleet_work(self.officer, project), refresh=True, exclude=before)
+                        if hits and (before_known or len(hits) == 1):
+                            found, extra = hits[0], hits[1:]
                             break
                 except LinearError as search_exc:
                     if search_exc.code in RATE_OR_BUDGET:
@@ -547,7 +552,7 @@ class Filer:
                 if not found:
                     raise
                 self.note_title(found, title, project)
-                return found, True, str(exc)
+                return found, True, str(exc) + ("; the write made %d more item(s) of this title: %s" % (len(extra), ", ".join(extra)) if extra else "")
         finally:
             if os.path.exists(path):
                 os.remove(path)
@@ -584,11 +589,10 @@ class Filer:
         if self.titles is not None and ident not in {h["identifier"] for h in self.titles}:
             self.titles.append({"identifier": ident, "title": title, "project": FLEET_PROJECT if fleet_work(self.officer, project) else None})
 
-    def open_by_title(self, title, oldest=True, fleet=None, refresh=False, exclude=()):
-        """The open item in the team whose title equals `title` (case-insensitive), or None.
+    def open_titles(self, title, fleet=None, refresh=False, exclude=()):
+        """Every open item in the team whose title equals `title` (case-insensitive), lowest PC number first.
 
-        Several open hits: the lowest PC number when `oldest`, else None (the match is not unique).
-        A closed item is never reused (stateType, else state, as is_closed reads it).
+        A closed item is never listed (stateType, else state, as is_closed reads it).
         `fleet` (True or False) also requires the item to be in the Fleet project, or not, so a Fleet and a
         PropertyCompass2 cluster that share a title never share an item.
         `refresh` reads the list again, for an item written since the run's first lookup; `exclude` skips identifiers
@@ -603,7 +607,12 @@ class Filer:
             in_fleet = text(h.get("project"), 80).lower() == FLEET_PROJECT.lower()
             if fleet is None or fleet == in_fleet:
                 hits.append(ident)
-        hits.sort(key=lambda i: (int(re.sub(r"\D", "", i) or 0), i))
+        return sorted(hits, key=lambda i: (int(re.sub(r"\D", "", i) or 0), i))
+
+    def open_by_title(self, title, oldest=True, fleet=None, refresh=False, exclude=()):
+        """The open item with exactly this title (see open_titles): the lowest PC number when `oldest`, else only
+        when the match is unique."""
+        hits = self.open_titles(title, fleet, refresh, exclude)
         return hits[0] if hits and (oldest or len(hits) == 1) else None
 
     def relate(self, ident, old):
