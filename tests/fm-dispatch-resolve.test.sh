@@ -13,6 +13,18 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# Only the test's own fake keys may exist: drop every provider key variable the
+# tool reads, so an ambient real key can never reach a fake curl header or an
+# assertion's output.
+unset TYPESAFE_API_KEY TYPESAFE_API_KEY_PRIVATE OPENROUTER_API_KEY OPENROUTER_API_KEY_PRIVATE \
+  OPENAI_API_KEY OPENAI_API_KEY_PRIVATE FM_DISPATCH_API_KEY DISPATCH_API_KEY_PRIVATE KEY_PRIVATE
+
+# assert_secret_equals <expected> <actual> <label>: like assert_equals, but a
+# mismatch reports only the label, never either value, since both can carry a key.
+assert_secret_equals() {
+  [ "$1" = "$2" ] || fail "$3 (secret value mismatch; values withheld)"
+}
+
 TOOL="$ROOT/bin/fm-dispatch-resolve.sh"
 TMP_ROOT=$(fm_test_tmproot fm-dispatch-resolve)
 HOME_DIR="$TMP_ROOT/home"
@@ -463,29 +475,29 @@ printf '%s\n' "$LOCAL_JEV" > "$URL_FILE"
 reset_log
 run code out err "$BRIEF" --project pager
 expect_code 0 "$code" "a configured token file works without TYPESAFE_API_KEY"
-assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "token file contents ride as the bearer on the fd header"
+assert_secret_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "token file contents ride as the bearer on the fd header"
 assert_not_contains "$(cat "$LOG/argv")" "$LOCAL_TOKEN" "token never appears on curl argv"
 assert_not_contains "$out$err" "$LOCAL_TOKEN" "token is never printed"
 assert_equals $'curl:clean\nquota-axi:clean' "$(cat "$LOG/child-env")" "token is absent from every child environment"
 reset_log
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
-assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "the token file wins over TYPESAFE_API_KEY at a custom URL"
+assert_secret_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "the token file wins over TYPESAFE_API_KEY at a custom URL"
 rm -f "$URL_FILE"
 reset_log
 run code out err "$BRIEF" --project pager
 expect_code 0 "$code" "a token file alone turns the resolver on"
-assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "token file alone supplies the bearer"
+assert_secret_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "token file alone supplies the bearer"
 reset_log
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF" --project pager
 assert_contains "$(cat "$LOG/argv")" 'https://api.typesafe.ai/v1/systemone' "token file with the default URL keeps the hosted endpoint"
-assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "the token file wins over TYPESAFE_API_KEY at the default URL"
+assert_secret_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "the token file wins over TYPESAFE_API_KEY at the default URL"
 # shellcheck disable=SC2088  # The config line holds a literal ~/ for the resolver to expand.
 printf '%s\n' '~/jev-token-home' > "$TOKEN_FILE_CFG"
 mkdir -p "$TMP_ROOT/fakehome"
 printf '%s\n' "$LOCAL_TOKEN" > "$TMP_ROOT/fakehome/jev-token-home"
 reset_log
 HOME="$TMP_ROOT/fakehome" run code out err "$BRIEF" --project pager
-assert_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "a leading ~/ in the token file path expands to HOME"
+assert_secret_equals "Authorization: Bearer $LOCAL_TOKEN" "$(cat "$LOG/header")" "a leading ~/ in the token file path expands to HOME"
 printf '%s\n' "$TMP_ROOT/no-such-token" > "$TOKEN_FILE_CFG"
 reset_log
 run code out err "$BRIEF" --project pager
@@ -509,10 +521,10 @@ reset_log
 run code out err "$BRIEF" --project pager
 expect_code 0 "$code" ".env key resolves"
 assert_contains "$out" '  status: clear' ".env key produces a clear result"
-assert_contains "$(cat "$LOG/header")" "Authorization: Bearer $KEY" ".env key reaches curl on the fd header"
+assert_secret_equals "Authorization: Bearer $KEY" "$(cat "$LOG/header")" ".env key reaches curl on the fd header"
 reset_log
 TYPESAFE_API_KEY=env-wins run code out err "$BRIEF" --project pager
-assert_equals 'Authorization: Bearer env-wins' "$(cat "$LOG/header")" "environment key wins over .env"
+assert_secret_equals 'Authorization: Bearer env-wins' "$(cat "$LOG/header")" "environment key wins over .env"
 rm -f "$HOME_DIR/.env"
 OVERRIDE_CONFIG="$TMP_ROOT/override-config"
 mkdir -p "$OVERRIDE_CONFIG"
@@ -540,7 +552,7 @@ assert_not_contains "$argv" "$KEY" "the key never appears on curl argv"
 assert_contains "$argv" 'https://api.typesafe.ai/v1/systemone' "the request uses the fixed typesafe.ai endpoint"
 assert_contains "$argv" $'--max-time\n5' "the request uses the fixed five-second timeout"
 assert_contains "$argv" '@/dev/fd/3' "the header is read from a file descriptor"
-assert_equals "Authorization: Bearer $KEY" "$(cat "$LOG/header")" "curl receives the bearer header on fd 3"
+assert_secret_equals "Authorization: Bearer $KEY" "$(cat "$LOG/header")" "curl receives the bearer header on fd 3"
 assert_equals $'curl:clean\nquota-axi:clean' "$(cat "$LOG/child-env")" "the API key is absent from every child environment"
 body=$(cat "$LOG/body")
 printf '%s\n' "$body" > "$TMP_ROOT/typesafe-body.json"
@@ -580,7 +592,7 @@ assert_contains "$out" '  profile: --harness '\''cursor'\'' --model '\''cursor-g
 assert_contains "$(cat "$LOG/argv")" 'https://openrouter.ai/api/alpha/decisions' "OpenRouter endpoint"
 assert_contains "$(cat "$LOG/argv")" $'--max-time\n10' "OpenRouter timeout"
 assert_not_contains "$(cat "$LOG/argv")" "$OR_KEY" "OpenRouter key never appears in curl argv"
-assert_equals "Authorization: Bearer $OR_KEY" "$(cat "$LOG/header")" "OpenRouter key reaches curl only through fd 3"
+assert_secret_equals "Authorization: Bearer $OR_KEY" "$(cat "$LOG/header")" "OpenRouter key reaches curl only through fd 3"
 assert_equals $'curl:clean\nquota-axi:clean' "$(cat "$LOG/child-env")" "OpenRouter key is absent from child environments"
 assert_equals 'typesafe/jev-1.13' "$(jq -r .model "$LOG/body")" "OpenRouter model is explicit"
 assert_equals 'pager' "$(jq -r .state.task.project "$LOG/body")" "project reaches the model"
@@ -593,10 +605,10 @@ printf '%s\n' 'FM_DISPATCH_PROVIDER=openrouter' 'FM_DISPATCH_MODEL=typesafe/jev-
 reset_log
 FAKE_CURL_RESPONSE=$OR_RESPONSE run code out err "$BRIEF"
 assert_contains "$out" '  status: clear' "OpenRouter provider, model, and key work from .env"
-assert_equals "Authorization: Bearer $OR_KEY" "$(cat "$LOG/header")" ".env OpenRouter key uses fd 3"
+assert_secret_equals "Authorization: Bearer $OR_KEY" "$(cat "$LOG/header")" ".env OpenRouter key uses fd 3"
 reset_log
 OPENROUTER_API_KEY=env-wins FAKE_CURL_RESPONSE=$OR_RESPONSE run code out err "$BRIEF"
-assert_equals 'Authorization: Bearer env-wins' "$(cat "$LOG/header")" "OpenRouter environment key wins over .env"
+assert_secret_equals 'Authorization: Bearer env-wins' "$(cat "$LOG/header")" "OpenRouter environment key wins over .env"
 rm -f "$HOME_DIR/.env"
 reset_log
 printf '%s\n' 'pager' > "$HOME_DIR/config/dispatch-never-send"
@@ -669,7 +681,7 @@ run code out err "$BRIEF" --project pager
 expect_code 0 "$code" "a declared source resolves"
 assert_contains "$out" '  status: clear' "a declared source turns the tool on"
 assert_equals 'find-generic-password -s typesafe-svc -a mike -w' "$(cat "$LOG/security.argv")" "the declared service and account are the whole Keychain lookup"
-assert_equals "Authorization: Bearer $SECRET" "$(cat "$LOG/header")" "the declared key reaches curl on the fd header"
+assert_secret_equals "Authorization: Bearer $SECRET" "$(cat "$LOG/header")" "the declared key reaches curl on the fd header"
 rm -f "$CRED"
 declare_source "$CRED" typesafe typesafe-svc
 reset_log
@@ -681,12 +693,12 @@ pass "mapping: a declared macos-keychain service and optional account become the
 # precedence: environment, then .env, then the declared source
 reset_log
 TYPESAFE_API_KEY=env-wins run code out err "$BRIEF" --project pager
-assert_equals 'Authorization: Bearer env-wins' "$(cat "$LOG/header")" "the environment key wins over a declared source"
+assert_secret_equals 'Authorization: Bearer env-wins' "$(cat "$LOG/header")" "the environment key wins over a declared source"
 assert_absent "$LOG/security.argv" "the environment key wins before the declared source is read"
 printf '%s\n' 'TYPESAFE_API_KEY=dotenv-wins' > "$HOME_DIR/.env"
 reset_log
 run code out err "$BRIEF" --project pager
-assert_equals 'Authorization: Bearer dotenv-wins' "$(cat "$LOG/header")" ".env key wins over a declared source"
+assert_secret_equals 'Authorization: Bearer dotenv-wins' "$(cat "$LOG/header")" ".env key wins over a declared source"
 assert_absent "$LOG/security.argv" ".env key wins before the declared source is read"
 rm -f "$HOME_DIR/.env" "$CRED"
 printf '%s\n' '{"typesafe":' > "$CRED"
@@ -723,13 +735,13 @@ FM_DISPATCH_PROVIDER=openrouter FM_DISPATCH_MODEL=typesafe/jev-1.13 FAKE_CURL_RE
   run code out err "$BRIEF" --project pager
 assert_contains "$out" '  status: clear' "OpenRouter resolves from its own declared source"
 assert_equals 'find-generic-password -s openrouter-svc -w' "$(cat "$LOG/security.argv")" "OpenRouter reads only its own declared service"
-assert_equals "Authorization: Bearer $KC_OR_SECRET" "$(cat "$LOG/header")" "OpenRouter's declared key reaches curl, not typesafe's"
+assert_secret_equals "Authorization: Bearer $KC_OR_SECRET" "$(cat "$LOG/header")" "OpenRouter's declared key reaches curl, not typesafe's"
 assert_contains "$(cat "$LOG/argv")" 'https://openrouter.ai/api/alpha/decisions' "OpenRouter's declared key goes to OpenRouter's endpoint"
 reset_log
 write_response "$RESPONSE" rule_4 0.9
 FM_DISPATCH_PROVIDER=typesafe run code out err "$BRIEF" --project pager
 assert_equals 'find-generic-password -s typesafe-svc -w' "$(cat "$LOG/security.argv")" "typesafe reads only its own declared service"
-assert_equals "Authorization: Bearer $SECRET" "$(cat "$LOG/header")" "typesafe's declared key reaches curl, not OpenRouter's"
+assert_secret_equals "Authorization: Bearer $SECRET" "$(cat "$LOG/header")" "typesafe's declared key reaches curl, not OpenRouter's"
 assert_contains "$(cat "$LOG/argv")" 'https://api.typesafe.ai/v1/systemone' "typesafe's declared key goes to the typesafe.ai endpoint"
 rm -f "$CRED"
 pass "provider isolation: each provider reads only its own declared service, and a declaration never selects a provider"
@@ -755,7 +767,7 @@ reset_log
 FM_CONFIG_OVERRIDE=$EFFECTIVE_CONFIG run code out err "$BRIEF" --project pager
 assert_contains "$out" '  status: clear' "an overridden config directory supplies its own declaration"
 assert_equals 'find-generic-password -s effective-svc -w' "$(cat "$LOG/security.argv")" "only the effective directory's declaration is read"
-assert_equals "Authorization: Bearer $EFFECTIVE_SECRET" "$(cat "$LOG/header")" "the effective directory's key is the one sent"
+assert_secret_equals "Authorization: Bearer $EFFECTIVE_SECRET" "$(cat "$LOG/header")" "the effective directory's key is the one sent"
 rm -f "$EFFECTIVE_CONFIG/dispatch-credential-sources.json"
 reset_log
 FM_CONFIG_OVERRIDE=$EFFECTIVE_CONFIG run code out err "$BRIEF" --project pager
@@ -879,7 +891,7 @@ reset_log
 TMPDIR=$SCAN_TMP FAKE_CANARY_FILE="$TMP_ROOT/canary" FAKE_CANARY_DIRS="$SCAN_TMP $HOME_DIR" \
   run code out err "$BRIEF" --project pager
 assert_contains "$out" '  status: clear' "the containment run resolves"
-assert_equals "Authorization: Bearer $SECRET" "$(cat "$LOG/header")" "the key arrives only as the bearer header on the descriptor"
+assert_secret_equals "Authorization: Bearer $SECRET" "$(cat "$LOG/header")" "the key arrives only as the bearer header on the descriptor"
 assert_not_contains "$out" "$SECRET" "the key never reaches stdout"
 assert_not_contains "$err" "$SECRET" "the key never reaches stderr"
 assert_not_contains "$(cat "$LOG/argv")" "$SECRET" "the key never appears on curl argv"
@@ -955,7 +967,7 @@ FM_DISPATCH_PROVIDER=systemone FM_DISPATCH_MODEL=clef-flash FM_DISPATCH_BASE_URL
 assert_contains "$out" '  status: clear' "systemone with a key is clear"
 assert_contains "$(cat "$LOG/argv")" 'https://so.example.test/v1/systemone' "systemone https base URL"
 assert_not_contains "$(cat "$LOG/argv")" "$SO_KEY" "systemone key never appears in curl argv"
-assert_equals "Authorization: Bearer $SO_KEY" "$(cat "$LOG/header")" "systemone key reaches curl only through fd 3"
+assert_secret_equals "Authorization: Bearer $SO_KEY" "$(cat "$LOG/header")" "systemone key reaches curl only through fd 3"
 assert_equals $'curl:clean\nquota-axi:clean' "$(cat "$LOG/child-env")" "systemone key is absent from child environments"
 printf '%s\n' 'FM_DISPATCH_PROVIDER=systemone' 'FM_DISPATCH_MODEL=clef' 'FM_DISPATCH_BASE_URL=http://10.0.0.5:8080' \
   "FM_DISPATCH_API_KEY=$SO_KEY" > "$HOME_DIR/.env"
@@ -963,7 +975,7 @@ reset_log
 FAKE_CURL_RESPONSE=$SO_RESPONSE run code out err "$BRIEF"
 assert_contains "$out" '  status: clear' "systemone provider, model, base URL, and key work from .env"
 assert_contains "$(cat "$LOG/argv")" 'http://10.0.0.5:8080/v1/systemone' ".env base URL is used"
-assert_equals "Authorization: Bearer $SO_KEY" "$(cat "$LOG/header")" ".env systemone key uses fd 3"
+assert_secret_equals "Authorization: Bearer $SO_KEY" "$(cat "$LOG/header")" ".env systemone key uses fd 3"
 rm -f "$HOME_DIR/.env"
 pass "systemone posts the unchanged request to its base URL with an optional fd-3 key"
 
@@ -1041,7 +1053,7 @@ assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-m
 assert_contains "$(cat "$LOG/argv")" 'https://api.openai.com/v1/decisions' "openai endpoint"
 assert_contains "$(cat "$LOG/argv")" $'--max-time\n10' "openai timeout"
 assert_not_contains "$(cat "$LOG/argv")" "$OA_KEY" "openai key never appears in curl argv"
-assert_equals "Authorization: Bearer $OA_KEY" "$(cat "$LOG/header")" "openai key reaches curl only through fd 3"
+assert_secret_equals "Authorization: Bearer $OA_KEY" "$(cat "$LOG/header")" "openai key reaches curl only through fd 3"
 assert_equals $'curl:clean\nquota-axi:clean' "$(cat "$LOG/child-env")" "openai key is absent from child environments"
 body=$(cat "$LOG/body")
 assert_equals 'gpt-6-luna' "$(jq -r .model <<<"$body")" "openai model is explicit"
