@@ -376,7 +376,7 @@ cmd_relaunch() {
 }
 
 cmd_send_body() {
-  local id=$1 message=$2 delivery_mode=${3:-} rec ring_rc=0 meta meta_lock
+  local id=$1 message=$2 delivery_mode=${3:-} rec ring_rc=0 meta meta_lock inline=
   validate_id "$id"
   [ -z "$delivery_mode" ] || [ "$delivery_mode" = fire-and-forget ] || die "invalid send delivery mode"
   validate_home "$id"
@@ -397,7 +397,12 @@ cmd_send_body() {
   # the parent may safely repeat this leg. Exit 0 once the record durably
   # exists; no ring outcome changes it, because the parent transport owns any
   # retry or reply-tracking policy from here.
-  if ! rec=$(fm_task_inbox_write_idempotent "$CONTROL_STATE" "$id" "$message" "$delivery_mode"); then
+  # A plain short steer is an inline steer (bin/fm-task-inbox-lib.sh): written
+  # already taken, ringing its body. Marked secondmate requests never are.
+  if [ -z "$delivery_mode" ] && fm_task_inbox_inline_eligible "$message"; then
+    inline=inline
+  fi
+  if ! rec=$(fm_task_inbox_write_idempotent "$CONTROL_STATE" "$id" "$message" "$delivery_mode" "$inline"); then
     fm_lock_release "$meta_lock"
     die "steering-inbox record could not be written under $CONTROL_STATE/$id.inbox"
   fi
@@ -406,11 +411,20 @@ cmd_send_body() {
     */handled/*)
       # The dedup landed on a record the worker already acknowledged: the
       # steer was delivered and acted on, so there is nothing to announce.
-      printf 'notice: this steer was already delivered and acknowledged at %s; nothing re-rung\n' "$rec" >&2
-      return 0
+      # An inline record is in handled/ from birth, so it says nothing about
+      # whether its ring landed (nothing else would re-ring it): ring it again.
+      if ! fm_task_inbox_is_inline "$rec"; then
+        printf 'notice: this steer was already delivered and acknowledged at %s; nothing re-rung\n' "$rec" >&2
+        return 0
+      fi
       ;;
   esac
   fm_task_inbox_ring "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" "$rec" "fm-$id" || ring_rc=$?
+  if [ "$ring_rc" -ne 0 ] && fm_task_inbox_is_inline "$rec"; then
+    # Hand a ring that did not land back to the pointer record and its ladder.
+    rec=$(fm_task_inbox_untake "$rec") \
+      || die "inline steer recorded but its doorbell did not land and the record could not be returned to the inbox; resend"
+  fi
   case "$ring_rc" in
     1) printf 'notice: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at %s\n' "$rec" >&2 ;;
     2) printf 'notice: doorbell did not reach %s; the steer is durably recorded at %s\n' "$REMOTE_ENDPOINT_TARGET" "$rec" >&2 ;;
