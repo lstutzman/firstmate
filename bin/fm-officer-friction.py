@@ -871,20 +871,31 @@ def tool_inputs(records):
     return by_id, "\n".join(bodies)
 
 
+QUOTED_RE = re.compile(
+    r"""((?:(?<!\S)-[A-Za-z]*c|\b(?:eval|sh|bash)|\bssh(?:\s+-\S+(?:\s+[^\s'"-]\S*)?)*\s+[^\s'"-]\S*(?:\s+--)?)\s+)?"""
+    r"""('[^'\n]*'|"[^"\n]*")""")
+
+
 def plausible_tool(name, command, bodies):
     """Whether `name` from a "command not found" line is an installable command a person could add:
-    not a dotted field name, not a shell function the session itself defined (a test helper, a function
+    not a dotted field name or a name no command has, not a shell function the session itself defined (a test helper, a function
     used outside its script), and not a word the command that ran held only as a `name:` label
-    (a command that never names it reached it through a script: a real miss)."""
-    if re.fullmatch(r"[A-Za-z_]+(?:\.[A-Za-z_]+)+", name):
+    or quoted text (a command that never names it reached it through a script: a real miss)."""
+    if re.fullmatch(r"[A-Za-z_]+(?:\.[A-Za-z_]+)+", name) or not re.fullmatch(r"[A-Za-z0-9][\w+.-]*", name):
         return False
     esc = re.escape(name)
     if re.search(r"(?m)^\s*(?:function\s+%s\b|%s\s*\(\s*\))" % (esc, esc), bodies or ""):
         return False
-    word = r"(?<![\w.-])%s(?![\w.-])" % esc
+    word = r"(?<![\w.$-])%s(?![\w.-])" % esc
     if command is None or not re.search(word, command):
         return True
-    return re.search(word + "(?!:)", command) is not None
+    # shortcut: a quoted string is text unless it feeds a shell (-c, -lc, eval, sh, bash, ssh [opts] host) or holds
+    # a $( substitution; upgrade if a miss hides elsewhere.
+    text = QUOTED_RE.sub(lambda m: m.group(0) if m.group(1) or (m.group(2)[0] == '"' and "$(" in m.group(2)) else "''",
+                         command)
+    if not re.search(word, text):
+        return False
+    return re.search(word + "(?!:)", text) is not None
 
 
 def session_events(records, machine):
@@ -1158,7 +1169,7 @@ def firstmate_functions(root=None):
     root = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if root not in _FUNCTIONS:
         names = set()
-        for sub in ("bin", "tests"):
+        for sub in ("bin", "tests", ".agents/skills"):
             for dirpath, _, files in os.walk(os.path.join(root, sub)):
                 for name in files:
                     if not name.endswith((".sh", ".bash")):
@@ -1170,7 +1181,7 @@ def firstmate_functions(root=None):
                         continue
                     for a, b in SHELL_FUNCTION_RE.findall(text):
                         fn = a or b
-                        if "_" in fn or (sub == "bin" and not shutil.which(fn)):
+                        if "_" in fn or (sub != "tests" and not shutil.which(fn)):
                             names.add(fn)
         _FUNCTIONS[root] = names
     return _FUNCTIONS[root]
