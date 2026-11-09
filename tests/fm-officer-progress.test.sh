@@ -1408,6 +1408,25 @@ test_declined_requests_are_not_resent() {
   pass 'progress: declined requests are skipped until evidence changes or 14 days pass'
 }
 
+test_declined_filler_is_not_resent() {
+  make_world declinefiller
+  local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh" id kind
+  printf '## Queued\n\n## Done\n' > "$WORLD_HOME/data/backlog.md"
+  run_progress >/dev/null || fail 'filler run failed'
+  kind=$(jq -r '.filler.kind' "$lane/$DATE.json")
+  [ -n "$kind" ] && [ "$kind" != null ] || fail 'an empty backlog must propose a filler'
+  FM_HOME="$WORLD_HOME" bash "$file" >/dev/null || fail 'handoff must run'
+  id=$(FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" receipts --all-pending | jq -r '.pending[0].id')
+  [ -n "$id" ] && [ "$id" != null ] || fail 'the filler request must be pending'
+  FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" drain --ack "$id" >/dev/null || fail 'ack failed'
+  FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" reply "$id" 'declined: no capacity for discovery' >/dev/null || fail 'reply failed'
+  run_progress >/dev/null || fail 'declined filler run failed'
+  assert_equals "null 1" "$(jq -r '"\(.filler) \(.declined)"' "$lane/$DATE.json")" 'a declined filler is dropped and counted'
+  assert_not_contains "$(cat "$file")" "$kind" 'a declined filler is not re-sent'
+  assert_not_contains "$(jq -r '.asking[].question // empty' "$lane/progress-state.json")" "Start an extra $kind" 'the officer page does not ask for a declined filler'
+  pass 'progress: a declined filler is not re-sent'
+}
+
 test_start_home_decline_is_not_resent() {
   make_world startdecline
   local nav="$WORLD/navigator" lane="$WORLD_HOME/data/officers/progress" id
@@ -2066,6 +2085,7 @@ test_linear_reads_survive_one_bad_root
 test_open_pr_discovery_is_per_repo
 test_declined_requests_are_not_resent
 test_start_home_decline_is_not_resent
+test_declined_filler_is_not_resent
 test_start_home_routes_requests_by_project
 test_non_work_and_duplicates_are_dropped_and_reported
 test_top_of_mind_start
