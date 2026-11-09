@@ -871,7 +871,9 @@ def tool_inputs(records):
     return by_id, "\n".join(bodies)
 
 
-QUOTED_RE = re.compile(r"""((?:-c|\b(?:eval|sh|bash)|\bssh \S+)\s+)?('[^'\n]*'|"[^"\n]*")""")
+QUOTED_RE = re.compile(
+    r"""((?:(?<!\S)-[A-Za-z]*c|\b(?:eval|sh|bash)|\bssh(?:\s+-\S+(?:\s+[^\s'"-]\S*)?)*\s+[^\s'"-]\S*(?:\s+--)?)\s+)?"""
+    r"""('[^'\n]*'|"[^"\n]*")""")
 
 
 def plausible_tool(name, command, bodies):
@@ -887,8 +889,10 @@ def plausible_tool(name, command, bodies):
     word = r"(?<![\w.$-])%s(?![\w.-])" % esc
     if command is None or not re.search(word, command):
         return True
-    # shortcut: a quoted string is text unless it feeds a shell (-c, eval, sh, bash, ssh host); upgrade if a miss hides elsewhere.
-    text = QUOTED_RE.sub(lambda m: m.group(0) if m.group(1) else "''", command)
+    # shortcut: a quoted string is text unless it feeds a shell (-c, -lc, eval, sh, bash, ssh [opts] host) or holds
+    # a $( or backtick substitution; upgrade if a miss hides elsewhere.
+    text = QUOTED_RE.sub(lambda m: m.group(0) if m.group(1) or (m.group(2)[0] == '"' and re.search(r"\$\(|`", m.group(2)))
+                         else "''", command)
     if not re.search(word, text):
         return False
     return re.search(word + "(?!:)", text) is not None

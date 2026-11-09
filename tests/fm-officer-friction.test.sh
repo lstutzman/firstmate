@@ -841,6 +841,12 @@ test_noise_is_not_a_finding() {
   ["Bash", {"command": "echo 1+1 | bc"}, "/bin/bash: line 1: bc: command not found", true],
   ["Bash", {"command": "echo \"column pdftotext of rows\""}, "/bin/bash: line 1: pdftotext: command not found", true],
   ["Bash", {"command": "bash -c 'ruff check .'"}, "/bin/bash: line 1: ruff: command not found", true],
+  ["Bash", {"command": "ssh -t deepthought 'pc-db-ro query'"}, "bash: line 1: pc-db-ro: command not found", true],
+  ["Bash", {"command": "timeout 60 bash -lc 'dotnet test'"}, "bash: line 1: dotnet: command not found", true],
+  ["Bash", {"command": "ssh -o BatchMode=yes deepthought -- 'playwright-cli open'"}, "bash: line 1: playwright-cli: command not found", true],
+  ["Bash", {"command": "echo \"\$(fleet-axi status)\""}, "/bin/bash: line 1: fleet-axi: command not found", true],
+  ["Bash", {"command": "\"\$slopwatch\" --scan"}, "/bin/bash: line 1: slopwatch: command not found", true],
+  ["Bash", {"command": "make"}, "/bin/bash: line 1: _fm_helper: command not found\n/bin/bash: line 2: -x: command not found", true],
   ["Bash", {"command": "ssh deepthought bash -s <<'E'\njq . f\nE"}, "bash: line 1: jq: command not found", true],
   ["Edit", {"file_path": "/d.js", "old_string": "x", "new_string": "class D {\n  open() {\n  }\n}"}, "ok", false],
   ["Bash", {"command": "open report.html"}, "/bin/bash: line 1: open: command not found", true]], "raw": [
@@ -857,9 +863,27 @@ EOF
   json="$home/data/officers/friction/$DATE.json"
   assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
     "only the typed instruction repeats; guidance wrapped into it and origin-less records beside stamped ones are not asks"
-  assert_equals "bc,jq,open,ruff,yq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
-    "a shell function, a heredoc label and a dotted field are not missing tools; bc, a heredoc run as shell, a JS method name and a miss after a noise line still are"
+  assert_equals "bc,dotnet,fleet-axi,jq,open,pc-db-ro,playwright-cli,ruff,slopwatch,yq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
+    "a shell function, a heredoc label, a dotted field, echoed text and a name no command has are not missing tools; bc, a heredoc run as shell, a JS method name, a miss after a noise line, a quote run by ssh or a shell, a quoted substitution and a quoted variable still are"
   pass "fm-officer friction: injected guidance and non-installable names are classifier noise"
+}
+
+test_skill_functions_are_not_missing_tools() {
+  local root="$TMP_ROOT/skillfns"
+  mkdir -p "$root/.agents/skills/demo/scripts" "$root/bin"
+  printf 'skillhelper() {\n  :\n}\nls() {\n  command ls "$@"\n}\n' > "$root/.agents/skills/demo/scripts/run.sh"
+  python3 -I - "$ROOT/bin/fm-officer-friction.py" "$root" <<'PY' || fail "a skills-defined function must be dropped while a real binary of the same name is kept"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1])
+friction = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(friction)
+names = friction.firstmate_functions(root=sys.argv[2])
+assert "skillhelper" in names and "ls" not in names, names
+events = [{"kind": "agent-hit", "cause": "missing-tool", "tool": t} for t in ("skillhelper", "ls")]
+kept = friction.drop_test_noise({"sessions": [{"events": events}]}, names)["sessions"][0]["events"]
+assert [ev["tool"] for ev in kept] == ["ls"], kept
+PY
+  pass "fm-officer friction: a function a skill script defines is not a missing tool; a real binary of that name still is"
 }
 
 test_test_run_output_is_not_fleet_friction() {
@@ -1561,6 +1585,7 @@ test_captains_log_cards_read_only
 test_repeated_lee_asks_across_days
 test_injected_user_records_are_not_repeat_asks
 test_noise_is_not_a_finding
+test_skill_functions_are_not_missing_tools
 test_test_run_output_is_not_fleet_friction
 test_long_session_asks_dated_by_message
 test_paraphrased_upkeep_asks_cluster
