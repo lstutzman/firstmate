@@ -897,6 +897,15 @@ check_tick() {
   seen_once tick "$SLOT_KEY" "$line"
 }
 
+# check_weight: the Quartermaster's daily session-weight note (bin/fm-session-weight.sh); one line, at most once per UTC day, silent when no session is flagged. Reports only; never stops a session.
+check_weight() {
+  [ "$(line_field "$OFFICE_LINE" role || true)" = quartermaster ] || return 0
+  local day
+  day=$(date -u -d "@$(now_epoch)" +%Y-%m-%d 2>/dev/null || date -u -r "$(now_epoch)" +%Y-%m-%d)
+  [ ! -e "$DATA/session-weight/$day.txt" ] || return 0
+  bounded 20 "$SCRIPT_DIR/fm-session-weight.sh" --now "$(now_epoch)" --note-dir "$DATA/session-weight" --summary 2>/dev/null || true
+}
+
 # deliver_starts <officer>: delivers the progress, surgeon, friction, corpus, library or page-check digest's start requests addressed to this
 # office home into its own inbox, in rank order, and prints one phrase when there is news.
 deliver_starts() {
@@ -1094,7 +1103,7 @@ cmd_check() {
   sources=$(line_field "$OFFICE_LINE" sources || true)
   case ",${sources// /}," in *",$src,"*) ;; *) return 0 ;; esac
   case "$src" in
-    tick) check_tick ;;
+    tick) check_tick; check_weight ;;
     upstream) check_upstream ;;
     ratchet) check_ratchet ;;
     research) check_research ;;
