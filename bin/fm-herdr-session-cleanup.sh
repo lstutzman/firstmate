@@ -1,26 +1,55 @@
 #!/usr/bin/env bash
-# Retire stale restored-shell Herdr presentation children at locked session start.
+# Retire Herdr presentation children this home created once nothing runs in them:
+# restored-shell husks at locked session start, and finished tasks on every
+# watcher check pass.
 #
-# Usage: fm-herdr-session-cleanup.sh
+# Usage: fm-herdr-session-cleanup.sh [--finished-only]
 #
-# The caller must already own this Firstmate home's session lock. This script is
-# home-local and considers only the current named Herdr session and ordinary
-# state/*.herdr-presentation journals in the effective FM_HOME. Each candidate
-# is additionally serialized by the existing state/.spawn-<task>.lock and the
-# shared named-session Herdr presentation lock, in that order.
+# The caller must already own this Firstmate home's session lock: session start
+# runs both passes, and the watcher that session armed runs --finished-only on
+# each check pass (bin/fm-watch.sh). This script is home-local and considers only
+# ordinary state/*.herdr-presentation journals in the effective FM_HOME. Each
+# candidate is additionally serialized by the existing state/.spawn-<task>.lock
+# and the shared named-session Herdr presentation lock, in that order.
 #
-# A visible title is discovery only. Cleanup requires the exact current
+# Restored-shell pass (session start only): it reads the current named Herdr
+# session. A visible title is discovery only. Cleanup requires the exact current
 # "└ <concise-task> · p:<22-char-token>" grammar, one token occurrence across
 # the named-session snapshot, exactly one matching home-local journal, one tab,
 # one pane, absent task metadata, no registered agent, and a process proof that
 # the pane contains only one idle recognized shell with no child process. A
 # version 2 journal must also bind the exact workspace, tab, and pane.
-# Topology is first checked from one locked API snapshot, then every mutation
-# prerequisite is immediately rechecked before the existing exact-pane
-# focus-preserving close helper is called.
-# The script never closes a workspace. It removes only the matching journal,
-# and only after the exact pane is confirmed gone. Every error warns and returns
-# success so session startup continues conservatively.
+#
+# Finished-task pass: it starts from this home's own task records, not from a
+# workspace list, and reads the Herdr session each record names. A record is a
+# candidate only when it is a non-secondmate herdr task with no relaunch in
+# progress, its latest status event (ignoring merge-handoff lines) is a stamped
+# done line, its only open decision is at most its own merge-handoff wait, and
+# its steering inbox holds no unhandled message and no handled one written after
+# that done line. A parked task (bin/fm-tree-park.sh) meets this too. Its
+# recorded workspace must then pass every restored-shell ownership and topology
+# check above except absent metadata: its title must match exactly one journal
+# in this home and that journal must be the task's own, a version 2 binding must
+# equal the recorded workspace and pane, and the recorded pane must be the
+# workspace's only pane. The pane's agent must already be gone (no-agent, or a
+# stale registration over a shell) and the idle-shell proof must hold. The task's
+# control and record locks join the spawn and presentation locks, all try-only,
+# so a relaunch, unpark, park, or teardown under way is never raced.
+# The task record, its local copy, and every other file stay as they are; a later
+# relaunch or unpark proves the endpoint gone and builds a fresh one
+# (docs/agent-control.md "Reclaiming a task whose endpoint is gone").
+#
+# In both passes topology is first checked from one locked API snapshot, then
+# every mutation prerequisite is immediately rechecked before the existing
+# exact-pane focus-preserving close helper is called; closing the only pane is
+# what lets Herdr remove the emptied workspace.
+# The script never calls workspace close. It removes only the matching journal,
+# and only after the exact pane is confirmed gone; a finished task's journal is
+# retired under bin/fm-teardown.sh's orphan rule (a version 2 binding of exactly
+# that pane, or a version 1 token whose workspace is confirmed gone), so a later
+# relaunch projects a fresh workspace. Every error warns on stderr and returns
+# success, and a successful close prints nothing, so neither session startup nor
+# the watcher's check pass is interrupted or woken by it.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,6 +64,15 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 fm_backend_source herdr
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/fm-office-authority-lib.sh
+. "$SCRIPT_DIR/fm-office-authority-lib.sh"
+
+# restored (absent task metadata) or finished (a stopped finished task), and the
+# agent state the locked revalidation must read again; set by each pass.
+FM_HERDR_CLEANUP_MODE=restored
+FM_HERDR_CLEANUP_AGENT_STATE=no-agent
 
 fm_herdr_cleanup_warn() {
   printf 'warning: herdr session-start projection cleanup: %s\n' "$*" >&2
@@ -155,7 +193,11 @@ fm_herdr_cleanup_revalidate() { # <session> <workspace> <tab> <pane> <title> <to
   local session=$1 workspace=$2 tab=$3 pane=$4 title=$5 token=$6 home_real=$7
   local journal=$8 id=$9 version=${10} bound_workspace=${11} bound_tab=${12} bound_pane=${13}
   local workspaces workspace_info tabs panes focus
-  [ ! -e "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || return 1
+  if [ "$FM_HERDR_CLEANUP_MODE" = finished ]; then
+    fm_herdr_cleanup_task_still_bound "$id" "$session" "$workspace" "$pane" || return 1
+  else
+    [ ! -e "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || return 1
+  fi
   fm_herdr_cleanup_unique_match "$title" "$session" "$home_real" || return 1
   [ "$FM_HERDR_CLEANUP_JOURNAL" = "$journal" ] \
     && [ "$FM_HERDR_CLEANUP_ID" = "$id" ] \
@@ -193,7 +235,7 @@ fm_herdr_cleanup_revalidate() { # <session> <workspace> <tab> <pane> <title> <to
     and .result.panes[0].tab_id == $tab
     and .result.panes[0].pane_id == $pane
   ' >/dev/null 2>&1 || return 1
-  [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = no-agent ] || return 1
+  [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = "$FM_HERDR_CLEANUP_AGENT_STATE" ] || return 1
   fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null || return 1
   focus=$(fm_backend_herdr_projection_focus_snapshot "$session") || return 1
   [ "${focus#*$'\t'}" != "$tab" ]
@@ -292,8 +334,216 @@ fm_herdr_cleanup_one() { # <session> <workspace> <title> <home-real>
   return 0
 }
 
+# The single value of <key>= in <meta>, failing when it is absent, empty, or
+# repeated.
+fm_herdr_cleanup_meta_one() { # <meta> <key>
+  local values
+  values=$(sed -n "s/^$2=//p" "$1" 2>/dev/null) || return 1
+  [ -n "$values" ] && [ "${values#*$'\n'}" = "$values" ] || return 1
+  printf '%s' "$values"
+}
+
+# The finished-task predicate from the header, from local records only.
+fm_herdr_cleanup_task_finished() { # <task-id>
+  local id=$1 meta="$STATE/$1.meta" status="$STATE/$1.status" kind url open key _verb _note last verb done_at msg
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
+  [ "$(fm_backend_of_meta "$meta")" = herdr ] || return 1
+  kind=$(fm_office_meta_value "$meta" kind)
+  kind=${kind:-ship}
+  [ "$kind" != secondmate ] || return 1
+  [ ! -e "$STATE/$id.control-relaunch" ] && [ ! -L "$STATE/$id.control-relaunch" ] || return 1
+  [ -f "$status" ] && [ ! -L "$status" ] && [ -r "$status" ] || return 1
+  url=$(fm_office_meta_value "$meta" pr)
+  open=$(status_open_decisions "$status" "$kind") || return 1
+  while IFS=$'\t' read -r key _verb _note; do
+    [ -n "$key" ] || continue
+    [ -n "$url" ] && [ "$key" = "merge-handoff-${url##*/}" ] || return 1
+  done <<EOF
+$open
+EOF
+  last=$(_fm_status_latest_event "$status" merge-handoff-)
+  status_line_verb "$last" verb
+  [ "$verb" = "done" ] || return 1
+  done_at=$(status_line_at_epoch "$last") || return 1
+  for msg in "$STATE/$id.inbox"/*.msg; do
+    [ ! -e "$msg" ] && [ ! -L "$msg" ] || return 1
+  done
+  for msg in "$STATE/$id.inbox/handled"/*.msg; do
+    [ -e "$msg" ] || [ -L "$msg" ] || continue
+    ! fm_office_msg_after "$msg" "$done_at" || return 1
+  done
+}
+
+# Sets FM_HERDR_CLEANUP_TASK_SESSION, _WORKSPACE, and _PANE from the task
+# record's exact Herdr endpoint fields, which must agree with its window= target.
+fm_herdr_cleanup_task_binding() { # <task-id>
+  local meta="$STATE/$1.meta"
+  FM_HERDR_CLEANUP_TASK_SESSION=$(fm_herdr_cleanup_meta_one "$meta" herdr_session) || return 1
+  FM_HERDR_CLEANUP_TASK_WORKSPACE=$(fm_herdr_cleanup_meta_one "$meta" herdr_workspace_id) || return 1
+  FM_HERDR_CLEANUP_TASK_PANE=$(fm_herdr_cleanup_meta_one "$meta" herdr_pane_id) || return 1
+  case "$FM_HERDR_CLEANUP_TASK_PANE" in
+    "$FM_HERDR_CLEANUP_TASK_WORKSPACE":*) ;;
+    *) return 1 ;;
+  esac
+  [ "$(fm_backend_target_of_meta "$meta")" = "$FM_HERDR_CLEANUP_TASK_SESSION:$FM_HERDR_CLEANUP_TASK_PANE" ]
+}
+
+# The locked recheck: the task is still finished and still names this endpoint.
+fm_herdr_cleanup_task_still_bound() { # <task-id> <session> <workspace> <pane>
+  fm_herdr_cleanup_task_finished "$1" \
+    && fm_herdr_cleanup_task_binding "$1" \
+    && [ "$FM_HERDR_CLEANUP_TASK_SESSION" = "$2" ] \
+    && [ "$FM_HERDR_CLEANUP_TASK_WORKSPACE" = "$3" ] \
+    && [ "$FM_HERDR_CLEANUP_TASK_PANE" = "$4" ]
+}
+
+FM_HERDR_CLEANUP_HELD=()
+fm_herdr_cleanup_release_all() {
+  local i
+  for ((i = ${#FM_HERDR_CLEANUP_HELD[@]} - 1; i >= 0; i--)); do
+    fm_lock_release "${FM_HERDR_CLEANUP_HELD[$i]}" || true
+  done
+  FM_HERDR_CLEANUP_HELD=()
+}
+
+fm_herdr_cleanup_take() { # <lock-path>
+  [ -n "$1" ] && fm_lock_try_acquire "$1" || return 1
+  FM_HERDR_CLEANUP_HELD+=("$1")
+}
+
+fm_herdr_cleanup_finished_one() { # <task-id> <home-real>
+  local id=$1 home_real=$2 session workspace pane list title token journal version
+  local bound_workspace bound_tab bound_pane meta_lock presentation_lock snapshot tab
+  local state close_status=0 retire=0
+  fm_herdr_cleanup_task_finished "$id" || return 0
+  fm_herdr_cleanup_task_binding "$id" || return 0
+  session=$FM_HERDR_CLEANUP_TASK_SESSION
+  workspace=$FM_HERDR_CLEANUP_TASK_WORKSPACE
+  pane=$FM_HERDR_CLEANUP_TASK_PANE
+  # A stopped server or a workspace already gone leaves nothing to close; a read
+  # against a stopped session never starts it.
+  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
+  title=$(printf '%s' "$list" | jq -er --arg workspace "$workspace" '
+    [.result.workspaces[]? | select(.workspace_id == $workspace)]
+    | select(length == 1) | .[0].label
+    | select(type == "string" and length > 0)
+  ' 2>/dev/null) || return 0
+  token=$(fm_herdr_cleanup_title_token "$title") || return 0
+  fm_herdr_cleanup_unique_match "$title" "$session" "$home_real" || return 0
+  [ "$FM_HERDR_CLEANUP_ID" = "$id" ] && [ "$FM_HERDR_CLEANUP_TOKEN" = "$token" ] || return 0
+  journal=$FM_HERDR_CLEANUP_JOURNAL
+  version=$FM_HERDR_CLEANUP_VERSION
+  bound_workspace=$FM_HERDR_CLEANUP_BOUND_WORKSPACE
+  bound_tab=$FM_HERDR_CLEANUP_BOUND_TAB
+  bound_pane=$FM_HERDR_CLEANUP_BOUND_PANE
+  if [ "$version" = 2 ]; then
+    [ "$bound_workspace" = "$workspace" ] && [ "$bound_pane" = "$pane" ] || return 0
+  fi
+
+  FM_HERDR_CLEANUP_HELD=()
+  meta_lock=$(fm_meta_lock_path "$STATE/$id.meta" 2>/dev/null) || meta_lock=
+  presentation_lock=$(fm_backend_herdr_presentation_session_lock_path "$session" 2>/dev/null) || presentation_lock=
+  if ! fm_herdr_cleanup_take "$STATE/.spawn-$id.lock" \
+    || ! fm_herdr_cleanup_take "$STATE/.control-$id.lock" \
+    || ! fm_herdr_cleanup_take "$meta_lock" \
+    || ! fm_herdr_cleanup_take "$presentation_lock"; then
+    fm_herdr_cleanup_release_all
+    fm_herdr_cleanup_warn "$id skipped because a task or presentation lock is busy or unavailable"
+    return 0
+  fi
+  if ! fm_herdr_cleanup_task_still_bound "$id" "$session" "$workspace" "$pane"; then
+    fm_herdr_cleanup_release_all
+    return 0
+  fi
+  snapshot=$(fm_backend_herdr_cli "$session" api snapshot 2>/dev/null) || snapshot=
+  if [ -z "$snapshot" ] \
+    || ! fm_herdr_cleanup_snapshot_candidate \
+      "$snapshot" "$workspace" "$title" "$token" \
+      "$bound_workspace" "$bound_tab" "$bound_pane" \
+    || [ "$FM_HERDR_CLEANUP_PANE" != "$pane" ]; then
+    fm_herdr_cleanup_warn "$id preserved because its locked candidate snapshot was ambiguous"
+    fm_herdr_cleanup_release_all
+    return 0
+  fi
+  tab=$FM_HERDR_CLEANUP_TAB
+  state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
+  case "$state" in
+    no-agent|stale-agent) ;;
+    *) fm_herdr_cleanup_release_all; return 0 ;;
+  esac
+  if ! fm_backend_herdr_pane_idle_shell_pid "$session" "$pane" >/dev/null; then
+    fm_herdr_cleanup_warn "$id preserved because its pane is not a provably idle childless shell"
+    fm_herdr_cleanup_release_all
+    return 0
+  fi
+  FM_HERDR_CLEANUP_AGENT_STATE=$state
+  if ! fm_herdr_cleanup_revalidate \
+    "$session" "$workspace" "$tab" "$pane" "$title" "$token" "$home_real" \
+    "$journal" "$id" "$version" "$bound_workspace" "$bound_tab" "$bound_pane"; then
+    fm_herdr_cleanup_warn "$id preserved because immediate revalidation changed or was unreadable"
+    fm_herdr_cleanup_release_all
+    return 0
+  fi
+
+  fm_backend_herdr_projection_close_pane_focus_preserving \
+    "$session" "$pane" "$state" || close_status=$?
+  if [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = dead ]; then
+    # bin/fm-teardown.sh's orphan rule: the journal now names nothing to close.
+    if [ -f "$journal" ] && [ ! -L "$journal" ] \
+      && fm_herdr_cleanup_unique_match "$title" "$session" "$home_real" \
+      && [ "$FM_HERDR_CLEANUP_JOURNAL" = "$journal" ] \
+      && [ "$FM_HERDR_CLEANUP_ID" = "$id" ] \
+      && [ "$FM_HERDR_CLEANUP_VERSION" = "$version" ] \
+      && [ "$FM_HERDR_CLEANUP_BOUND_WORKSPACE" = "$bound_workspace" ] \
+      && [ "$FM_HERDR_CLEANUP_BOUND_TAB" = "$bound_tab" ] \
+      && [ "$FM_HERDR_CLEANUP_BOUND_PANE" = "$bound_pane" ]; then
+      if [ "$version" = 2 ]; then
+        [ "$bound_pane" = "$pane" ] && retire=1
+      elif fm_backend_herdr_projection_token_workspace_gone "$session" "$journal" "$id"; then
+        retire=1
+      fi
+    fi
+    if [ "$retire" = 1 ]; then
+      rm -f -- "$journal" || fm_herdr_cleanup_warn "$id pane closed but its journal could not be retired"
+    else
+      fm_herdr_cleanup_warn "$id pane closed but its journal was preserved for teardown"
+    fi
+  elif [ "$close_status" -ne 0 ]; then
+    fm_herdr_cleanup_warn "$id preserved because exact focus-safe pane closure was refused or unconfirmed"
+  else
+    fm_herdr_cleanup_warn "$id preserved because exact pane closure could not be confirmed"
+  fi
+  fm_herdr_cleanup_release_all
+  return 0
+}
+
+# The finished-task pass from the header: this home's own records, each read
+# against the Herdr session it names.
+fm_herdr_finished_cleanup() {
+  local home_real meta id
+  FM_HERDR_CLEANUP_MODE=finished
+  [ -d "$STATE" ] && [ ! -L "$STATE" ] || return 0
+  command -v herdr >/dev/null 2>&1 \
+    && command -v jq >/dev/null 2>&1 || return 0
+  home_real=$(fm_herdr_cleanup_home_identity) || {
+    fm_herdr_cleanup_warn 'home identity is unreadable; preserving every finished task'
+    return 0
+  }
+  for meta in "$STATE"/*.meta; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    id=$(basename "$meta" .meta)
+    fm_task_id_creation_valid "$id" || continue
+    [ -f "$STATE/$id$FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX" ] \
+      && [ ! -L "$STATE/$id$FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX" ] || continue
+    fm_herdr_cleanup_finished_one "$id" "$home_real"
+  done
+  return 0
+}
+
 fm_herdr_session_cleanup() {
   local session home_real list candidates workspace title journal found=0
+  FM_HERDR_CLEANUP_MODE=restored
+  FM_HERDR_CLEANUP_AGENT_STATE=no-agent
   [ -d "$STATE" ] && [ ! -L "$STATE" ] || return 0
   for journal in "$STATE"/*"$FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX"; do
     if [ -f "$journal" ] && [ ! -L "$journal" ]; then
@@ -332,6 +582,11 @@ fm_herdr_session_cleanup() {
 }
 
 if [ "${FM_HERDR_SESSION_CLEANUP_SOURCE_ONLY:-0}" != 1 ]; then
-  fm_herdr_session_cleanup
+  case "${1:-}" in
+    '') fm_herdr_session_cleanup ;;
+    --finished-only) ;;
+    *) echo "usage: fm-herdr-session-cleanup.sh [--finished-only]" >&2; exit 2 ;;
+  esac
+  fm_herdr_finished_cleanup
   exit 0
 fi

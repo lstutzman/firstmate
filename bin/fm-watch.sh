@@ -4321,6 +4321,10 @@ while :; do
       tree_park_reason="check: tree-park: $FM_CHECK_RESULT"
       fm_wake_append check tree-park "$tree_park_reason" || exit 1
     fi
+    # Close the Herdr workspace of each finished task whose agent has stopped,
+    # parked ones included (bin/fm-herdr-session-cleanup.sh owns the rules). It
+    # is silent on success and never wakes firstmate.
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" run_check_capture "$SCRIPT_DIR/fm-herdr-session-cleanup.sh" --finished-only || exit 1
     for c in "$STATE"/*.check.sh; do
       [ -e "$c" ] || continue
       # Each check may use its whole CHECK_TIMEOUT; with many checks the sweep

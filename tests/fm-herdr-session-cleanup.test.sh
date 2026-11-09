@@ -75,6 +75,8 @@ fm_lock_try_acquire() {
 }
 fm_lock_release() { rm -rf -- "$1"; }
 fm_backend_herdr_pane_idle_shell_pid() { [ ! -e "$FIXTURE_DIR/process-unsafe" ] && printf '67\n'; }
+# A registered agent's process view: agent (live), shell (stale registration).
+fm_backend_herdr_pane_process_state() { cat "$FIXTURE_DIR/process-state" 2>/dev/null || printf unknown; }
 fm_backend_herdr_projection_focus_snapshot() {
   [ ! -e "$FIXTURE_DIR/focus-unreadable" ] || return 1
   printf 'w1\t%s' "$(cat "$FIXTURE_DIR/active-tab")"
@@ -188,7 +190,7 @@ fm_backend_herdr_cli() {
 
 fm_backend_herdr_projection_close_pane_focus_preserving() {
   [ ! -e "$FIXTURE_DIR/focus-refuse" ] || return 1
-  [ "${3:-}" = no-agent ] || return 1
+  case "${3:-}" in no-agent|stale-agent) ;; *) return 1 ;; esac
   printf '%s\n' "$*" >> "$CLOSE_LOG"
   : > "$FIXTURE_DIR/closed"
 }
@@ -282,6 +284,89 @@ reset_fixture; : > "$FIXTURE_DIR/race"; assert_preserved "revalidation race"
 reset_fixture; printf '%s\n' "$TAB" > "$FIXTURE_DIR/active-tab"; assert_preserved "active target"
 reset_fixture; : > "$FIXTURE_DIR/focus-refuse"; assert_preserved "focus refusal"
 
+# Finished-task pass: a stopped finished task's own workspace closes; its
+# record stays.
+META="$FM_STATE_OVERRIDE/$ID.meta"
+STATUS="$FM_STATE_OVERRIDE/$ID.status"
+write_finished_meta() { # [kind] [workspace] [pane] [backend]
+  local kind=${1:-ship} workspace=${2:-$WS} pane=${3:-$PANE} backend=${4:-herdr}
+  {
+    printf 'window=test:%s\n' "$pane"
+    printf 'kind=%s\nbackend=%s\nherdr_session=test\n' "$kind" "$backend"
+    printf 'herdr_workspace_id=%s\nherdr_tab_id=%s:t1\nherdr_pane_id=%s\n' "$workspace" "$workspace" "$pane"
+    printf 'pr=https://github.com/o/r/pull/7\n'
+  } > "$META"
+}
+reset_finished() {
+  reset_fixture
+  write_v2 "$FM_HOME" "$WS" "$TAB" "$PANE"
+  write_finished_meta
+  printf 'done [at=1000]: PR https://github.com/o/r/pull/7 ready\n' > "$STATUS"
+}
+assert_finished_preserved() { # <case>
+  local name=$1
+  fm_herdr_finished_cleanup >/dev/null 2>&1
+  [ ! -s "$CLOSE_LOG" ] || fail "finished pass: $name closed the pane"
+  [ -f "$FM_STATE_OVERRIDE/$ID.herdr-presentation" ] || fail "finished pass: $name retired the journal"
+  pass "finished pass: $name preserves the workspace"
+}
+assert_finished_closed() { # <case> <agent-state>
+  local name=$1
+  fm_herdr_finished_cleanup >/dev/null 2>&1
+  [ "$(wc -l < "$CLOSE_LOG" | tr -d ' ')" = 1 ] || fail "finished pass: $name did not close exactly once"
+  grep -q " $2\$" "$CLOSE_LOG" || fail "finished pass: $name did not close under the observed agent state $2"
+  [ -f "$META" ] && [ -f "$STATUS" ] || fail "finished pass: $name did not keep the task record"
+  [ ! -e "$FM_STATE_OVERRIDE/$ID.herdr-presentation" ] || fail "finished pass: $name kept the orphaned journal"
+  pass "finished pass: $name closes the exact pane and keeps the task record"
+}
+
+reset_finished
+assert_finished_closed "done task with no agent" no-agent
+[ "$(sed -n '1p' "$LOCK_LOG")" = "$FM_STATE_OVERRIDE/.spawn-$ID.lock" ] \
+  && [ "$(sed -n '2p' "$LOCK_LOG")" = "$FM_STATE_OVERRIDE/.control-$ID.lock" ] \
+  && [ "$(sed -n '3p' "$LOCK_LOG")" = "$(fm_meta_lock_path "$META")" ] \
+  && [ "$(sed -n '4p' "$LOCK_LOG")" = "$TMP_ROOT/presentation.lock" ] \
+  || fail "finished pass did not take the spawn, control, record, then presentation locks"
+fm_herdr_finished_cleanup >/dev/null 2>&1
+[ "$(wc -l < "$CLOSE_LOG" | tr -d ' ')" = 1 ] || fail "finished pass closed again on repeat"
+pass "finished pass takes every task lock in order and is idempotent on repeat"
+reset_finished; printf 'live\n' > "$FIXTURE_DIR/agent"; printf 'shell\n' > "$FIXTURE_DIR/process-state"
+assert_finished_closed "stale registration over a shell" stale-agent
+reset_finished; printf 'needs-decision [at=1001] [key=merge-handoff-7] [cause=external]: handed off\n' >> "$STATUS"
+assert_finished_closed "done task waiting only on its merge handoff" no-agent
+reset_finished; write_v1 "$ID"
+assert_finished_closed "version 1 journal" no-agent
+
+reset_finished; printf 'live\n' > "$FIXTURE_DIR/agent"; printf 'agent\n' > "$FIXTURE_DIR/process-state"; assert_finished_preserved "live agent"
+reset_finished; printf 'unknown\n' > "$FIXTURE_DIR/agent"; assert_finished_preserved "unknown agent"
+reset_finished; printf 'paused [at=1001]: waiting on CI\n' >> "$STATUS"; assert_finished_preserved "paused latest event"
+reset_finished; printf 'working [at=1001]: fixing review\n' >> "$STATUS"; assert_finished_preserved "working latest event"
+reset_finished; printf 'needs-decision [at=1001] [key=q1] [cause=decision]: which way?\n' >> "$STATUS"; assert_finished_preserved "decision opened after done"
+reset_finished; printf 'needs-decision [at=1001] [key=merge-handoff-8] [cause=external]: other PR\n' >> "$STATUS"; assert_finished_preserved "another PR's handoff"
+reset_finished; mkdir -p "$FM_STATE_OVERRIDE/$ID.inbox"; : > "$FM_STATE_OVERRIDE/$ID.inbox/001.msg"; assert_finished_preserved "unhandled steer"
+reset_finished; mkdir -p "$FM_STATE_OVERRIDE/$ID.inbox/handled"
+printf 'schema=1\nat=1970-01-01T00:30:00Z\n' > "$FM_STATE_OVERRIDE/$ID.inbox/handled/001.msg"; assert_finished_preserved "steer after done"
+reset_finished; mkdir -p "$FM_STATE_OVERRIDE/$ID.inbox/handled"
+printf 'schema=1\nat=1970-01-01T00:10:00Z\n' > "$FM_STATE_OVERRIDE/$ID.inbox/handled/001.msg"
+assert_finished_closed "steer handled before done" no-agent
+reset_finished; write_finished_meta secondmate; assert_finished_preserved "secondmate"
+reset_finished; write_finished_meta ship "$WS" "$PANE" tmux; assert_finished_preserved "non-Herdr backend"
+reset_finished; write_finished_meta ship w9 w9:p1; assert_finished_preserved "record names another workspace"
+reset_finished; : > "$FM_STATE_OVERRIDE/$ID.control-relaunch"; assert_finished_preserved "relaunch in progress"
+reset_finished; mkdir "$FM_STATE_OVERRIDE/.control-$ID.lock"; assert_finished_preserved "busy control lock"
+reset_finished; mkdir "$(fm_meta_lock_path "$META")"; assert_finished_preserved "busy record lock"
+reset_finished; rm -f "$FM_STATE_OVERRIDE/$ID.herdr-presentation"; write_cross_home_v2; assert_finished_preserved "another home's journal"
+reset_finished; write_v2 "$FM_HOME" "$WS" "$TAB" w2:p9; assert_finished_preserved "journal bound to another pane"
+reset_finished; printf 'Terminal\n' > "$FIXTURE_DIR/title"; assert_finished_preserved "non-task label"
+reset_finished; printf '2\n' > "$FIXTURE_DIR/panes"; assert_finished_preserved "extra pane"
+reset_finished; : > "$FIXTURE_DIR/process-unsafe"; assert_finished_preserved "non-idle shell"
+reset_finished; printf '%s\n' "$TAB" > "$FIXTURE_DIR/active-tab"; assert_finished_preserved "active target"
+reset_finished; : > "$FIXTURE_DIR/error-workspace-list"; assert_finished_preserved "stopped or unreadable session"
+reset_finished; : > "$FIXTURE_DIR/focus-refuse"; assert_finished_preserved "focus refusal"
+reset_finished; fm_herdr_session_cleanup >/dev/null 2>&1
+[ ! -s "$CLOSE_LOG" ] || fail "restored-shell pass closed a workspace whose task record exists"
+pass "restored-shell pass still preserves every workspace with a task record"
+
 INTEGRATION_ROOT="$TMP_ROOT/bootstrap-integration"
 mkdir -p "$INTEGRATION_ROOT/home/state" "$INTEGRATION_ROOT/home/data" "$INTEGRATION_ROOT/home/config"
 cp -R "$ROOT/bin" "$INTEGRATION_ROOT/bin"
@@ -325,5 +410,26 @@ FM_HOME="$INTEGRATION_ROOT/home" FM_ROOT_OVERRIDE="$INTEGRATION_ROOT" \
   || fail "read-only session start failed"
 [ ! -s "$TRACE" ] || fail "read-only session start ran stale projection cleanup"
 pass "session start runs cleanup only after acquiring its home lock"
+
+# The watcher's check pass runs only the finished-task pass, for its own home.
+# The stubbed park sweep prints a line so its wake ends the watcher's cycle.
+: > "$TRACE"
+cat > "$INTEGRATION_ROOT/bin/fm-herdr-session-cleanup.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s %s\n' "${FM_HOME:?}" "$*" >> "${FM_HERDR_CLEANUP_TRACE:?}"
+SH
+cat > "$INTEGRATION_ROOT/bin/fm-tree-park.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' 'lab cycle end'
+SH
+chmod +x "$INTEGRATION_ROOT/bin/fm-herdr-session-cleanup.sh" "$INTEGRATION_ROOT/bin/fm-tree-park.sh"
+FM_HOME="$INTEGRATION_ROOT/home" FM_ROOT_OVERRIDE="$INTEGRATION_ROOT" \
+  FM_CONFIG_OVERRIDE="$INTEGRATION_ROOT/home/config" FM_STATE_OVERRIDE="$INTEGRATION_ROOT/home/state" \
+  FM_HERDR_CLEANUP_TRACE="$TRACE" FM_CHECK_INTERVAL=0 FM_POLL=0.02 FM_HEARTBEAT=999999 FM_SIGNAL_GRACE=0 \
+  perl -e 'alarm 60; exec @ARGV' "$INTEGRATION_ROOT/bin/fm-watch.sh" >/dev/null 2>"$INTEGRATION_ROOT/watch.err" \
+  || fail "watcher check pass failed: $(cat "$INTEGRATION_ROOT/watch.err")"
+[ "$(cat "$TRACE")" = "$INTEGRATION_ROOT/home --finished-only" ] \
+  || fail "watcher check pass did not run the finished-task pass for its exact home: $(cat "$TRACE")"
+pass "the watcher's check pass runs the finished-task pass for its own home"
 
 printf 'all fm-herdr-session-cleanup tests passed\n'
