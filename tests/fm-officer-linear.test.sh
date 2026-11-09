@@ -297,7 +297,7 @@ elif scenario == "cluster-reuse":
     args = argparse.Namespace(now=now, team="PC", triage_label="triage", max_creates=100)
     surgeon.file_findings(fs, args, date, W, state, {}, surgeon.lib.Jev(os.path.join(W, "jev.py")), [])
     issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
-    res = {"filings": [[f["filing"]["action"], f["filing"].get("issue")] for f in fs], "ids": sorted(issues),
+    res = {"filings": [[f["filing"]["action"], f["filing"].get("issue")] for f in fs], "verify": [f["filing"].get("verify") for f in fs], "ids": sorted(issues),
            "body": {i: v["description"].count("Review note") for i, v in issues.items()}}
 elif scenario in ("fleet-start", "fleet-nowrite"):
     offices = [lib.progress.parse_office("/home/nav=propertycompass2=navigator"), lib.progress.parse_office("/home/qm=firstmate,skills=quartermaster")]
@@ -577,6 +577,7 @@ test_a_create_the_tool_wrote_twice_is_adopted_once() {
   out=$(FAKE_VERIFY=nocontract FAKE_SEARCH_MISS=1 FAKE_DOUBLE=1 drive cluster-reuse) || fail "driver must succeed"
   assert_equals "clustered:PC-101 clustered:PC-101 clustered:PC-101" "$(jq -r '.filings | map(.[0] + ":" + .[1]) | join(" ")' <<<"$out")" "two same-title items from one create: the lowest is adopted, nothing is failed"
   assert_equals 1 "$(grep -c '^issue create.*--verify' "$LDIR/calls")" "and the officer sent one create"
+  assert_equals 3 "$(jq '[.verify[] | select(test("1 more item\\(s\\) of this title: PC-102$"))] | length' <<<"$out")" "and every finding's filing names the extra item for a person to close"
   pass "fm-officer-linear: a create the tool wrote twice is adopted once and not recorded failed"
 }
 

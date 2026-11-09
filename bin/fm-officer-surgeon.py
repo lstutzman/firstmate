@@ -831,13 +831,13 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
                         if not ident:
                             ident = filer.open_by_title(title, fleet=bool(c["project"]))  # an earlier run's item whose ledger entry was lost
                         action = "update" if ident else "create"
-                    recurrence, body, sha = c["recurrence"], c["body"], c["sha"]
+                    recurrence, body, sha, verify = c["recurrence"], c["body"], c["sha"], None
                     if old:
                         recurrence = lib.recurrence_line(old, filer.view_issue(old))
                         body = cluster_body(c["key"], c["members"], recurrence, c["project"])
                         sha = hashlib.sha256(body.encode("utf-8")).hexdigest()
                     if action == "create":
-                        ident, _, _ = filer.create(c["fp"], title, body, wanted, "3", c["project"])
+                        ident, _, verify = filer.create(c["fp"], title, body, wanted, "3", c["project"])
                     else:
                         filer.update_body(ident, c["fp"], body)
                     ledger[c["fp"]] = ident
@@ -849,6 +849,8 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
                         f["filing"] = {"action": "clustered", "issue": ident, "cluster": c["key"]}
                         if old:
                             f["filing"]["recurrence_of"] = old
+                        if verify:
+                            f["filing"]["verify"] = verify
                         if error:
                             f["filing"]["relation_error"] = error
                 except LinearError as exc:
