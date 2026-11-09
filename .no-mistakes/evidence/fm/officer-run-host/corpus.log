@@ -1,0 +1,27 @@
+ok - fm-officer corpus: a healthy corpus reads every source over ssh and reports nothing
+ok - fm-officer corpus: each finding class is found from counts alone
+ok - fm-officer corpus: an archive gap is a finding only after two Bosun nights
+ok - fm-officer corpus: a finding is reported once, reruns are identical, and a recurrence is new
+ok - fm-officer corpus: an unreachable or missing source keeps its findings reported
+ok - fm-officer corpus: the harvest is read from the fields memory_harvest.py writes
+ok - fm-officer corpus: a harvest total of 0 is not reported as missing counts
+ok - fm-officer corpus: unreachable hosts and missing files are coverage gaps
+ok - fm-officer corpus: a run writes only its lane
+ok - fm-officer corpus: the registry line needs archive:
+ok - fm-officer corpus: findings are filed as Fleet Chore items from counts only, and the Found line rises once a night
+ok - fm-officer corpus: the registry create cap holds and names what it leaves
+ok - fm-officer corpus: a high finding starts on first sight, a repeat is not asked twice, and the scan-gate route is named
+ok - fm-officer corpus: the found count lifts a medium finding to a start
+ok - fm-officer corpus: start-home in the registry sends a start request to the office that owns the repository
+ok - fm-officer corpus: the registry checks the corpus line's Linear fields
+ok - fm-officer corpus: a reserved class is held for Lee and never starts
+ok - fm-officer corpus: writes: none and a missing label file nothing
+ok - fm-officer corpus: a pass run through the run host leaves the same lane as a local run
+ok - fm-officer corpus: an unreachable run host or a host at another commit fails the attempt and runs nothing
+ok - fm-officer corpus: run-host is refused where the pass reads files in this home
+ok - fm-officer corpus: a pass that fails after writing leaves the same lane through the run host
+ok - fm-officer corpus: a scheduled run-host pass past its bound is ended on the host first and returns its lane writes
+ok - fm-officer corpus: a retry after a dropped connection starts from the lane the host kept and files nothing twice
+ok - fm-officer corpus: a retry is refused while a dropped pass still runs on the host, and none of its filings are made twice
+ok - fm-officer corpus: a lane file the run host returned that cannot be written here fails the run
+ok - fm-officer corpus: preflight checks what the pass needs on the run host, writes nothing and fails on any failed check
