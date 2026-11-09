@@ -8,7 +8,7 @@ These command-line and terminal facts apply to pane-backed sessions; for T3 Code
 
 | Fact | Value |
 |---|---|
-| Busy state | Unknown until a semantic source is live-verified: the app-server turn lifecycle is unreachable for a pane worker, and project lifecycle hooks did not fire for a Firstmate-launched worker. |
+| Busy state | `../../../bin/fm-busy-lib.sh` folds the worker's own session rollout (`${CODEX_HOME:-~/.codex}/sessions/**/rollout-*.jsonl`, bound by exact worktree cwd) as `codex-rollout`: a trailing `task_started` is busy, and idle needs every rollout bound to the worktree to end on `task_complete`. Anything else, including no rollout, a secondmate, or an interrupted turn, stays `unknown codex-unverified`. The app-server turn lifecycle is unreachable for a pane worker and project lifecycle hooks did not fire, so neither is a source. |
 | Exit command | `/quit`; its slash popup needs about one second between text and Enter, which the shared submit path used by the control plane handles. |
 | Interrupt | Single Escape. |
 | Skill invocation | `$<skill>`, for example `$no-mistakes`; `/<skill>` is Claude-only and Codex rejects it as "Unrecognized command". |

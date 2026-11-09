@@ -57,7 +57,7 @@
 #   fm-recovery      a documented recovery reset after relaunch
 # Classifier-only sources (never written into a record):
 #   endpoint-gone, herdr-native, rex-native, t3code-native, tern-native, grok-regex, rovo-regex, agy-regex, muse-session-log,
-#   cursor-transcript, missing, malformed, gen-mismatch, source-mismatch,
+#   cursor-transcript, codex-rollout, missing, malformed, gen-mismatch, source-mismatch,
 #   kimi-unverified, codex-unverified, capture-failed, no-target, launch-prompt
 #
 # Classification (fm_busy_classify): busy | idle | unknown | dead, always
@@ -142,8 +142,10 @@
 # fm_busy_codex_hooks_verified): the approved contract prefers Codex's
 # app-server turn lifecycle with capability negotiation, and sanctions its
 # stable lifecycle hooks as the intermediate. Neither is usable on the
-# installed binary, so Codex classifies unknown codex-unverified rather than
-# falling back to idle, and fm-spawn installs no Codex busy wiring.
+# installed binary, so fm-spawn installs no Codex busy wiring. Codex instead
+# folds its own session rollout (fm_busy_codex_rollout_state, source
+# codex-rollout) and classifies unknown codex-unverified whenever that proves
+# neither a turn in flight nor a settled worker, never idle by default.
 # docs/verification/supervision.md owns the evidence for both probes.
 #
 # Sourcing: set -u and set -e safe; no subshell-unfriendly globals.
@@ -1099,6 +1101,57 @@ fm_busy_gemini_launch_prompt_tail() {
   printf '%s' "$buf" | grep -qiE "${FM_BUSY_GEMINI_APIKEY_PROMPT_REGEX:-Enter Gemini API Key}"
 }
 
+# Codex session-rollout busy source (pane-backed ship and scout workers).
+#
+# codex writes an append-only JSONL rollout per session under
+# ${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/rollout-*.jsonl. Its first record is
+# a session_meta carrying the session's cwd, and every turn is bracketed by
+# event_msg records of payload type task_started and task_complete. Verified on
+# this machine's rollouts (codex-cli 0.163.0, 2026-11-09). Nothing is installed
+# and no trust grant is needed: codex writes the rollout on its own, so this
+# works under the --disable hooks launch that crewmates use.
+#
+# Binding is the exact recorded worktree= against the session cwd, so a nested
+# or sibling directory never binds. A reused pool slot can hold earlier tasks'
+# rollouts; the verdict needs EVERY rollout bound to the worktree to end on a
+# task_complete, so a stale unfinished rollout holds the answer at unknown and
+# can never produce a false idle. Lifecycle records are matched on the exact
+# top-level shape of a line, so a turn whose text mentions task_complete cannot
+# close it (a string inside JSON cannot contain a raw newline or a bare quote).
+# An interrupted turn is not known to write a close record, so it stays busy
+# rather than being guessed idle. Secondmates are excluded: they run in their own
+# home. Rollouts untouched for 30 days are not searched.
+# Prints busy | settled | none.
+fm_busy_codex_rollout_state() {  # <state-dir> <id>
+  local meta="$1/$2.meta" wt real root f cwd last found=0 busy=0 open=0
+  [ -f "$meta" ] || { printf none; return 0; }
+  command -v jq >/dev/null 2>&1 || { printf none; return 0; }
+  [ "$(LC_ALL=C awk -F= '$1 == "kind" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$meta")" != secondmate ] \
+    || { printf none; return 0; }
+  wt=$(LC_ALL=C awk -F= '$1 == "worktree" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$meta")
+  [ -n "$wt" ] && [ -d "$wt" ] || { printf none; return 0; }
+  real=$(cd "$wt" 2>/dev/null && pwd -P) || real=$wt
+  root="${CODEX_HOME:-$HOME/.codex}/sessions"
+  [ -d "$root" ] || { printf none; return 0; }
+  while IFS= read -r f; do
+    cwd=$(head -n 1 "$f" 2>/dev/null | LC_ALL=C jq -r 'select(.type? == "session_meta") | .payload.cwd? // empty' 2>/dev/null) || continue
+    [ -n "$cwd" ] || continue
+    [ "$cwd" = "$wt" ] || [ "$cwd" = "$real" ] || continue
+    found=$((found + 1))
+    last=$(LC_ALL=C grep -aE '^\{"timestamp":"[^"]*",("ordinal":[0-9]+,)?"type":"event_msg","payload":\{"type":"task_(started|complete)"' "$f" 2>/dev/null \
+      | tail -n 1 | LC_ALL=C sed -n 's/.*"payload":{"type":"\(task_[a-z]*\)".*/\1/p')
+    case "$last" in
+      task_complete) ;;
+      task_started) busy=1 ;;
+      *) open=1 ;;
+    esac
+  done < <(find "$root" -type f -name 'rollout-*.jsonl' -mtime -30 2>/dev/null)
+  if [ "$busy" = 1 ]; then printf busy
+  elif [ "$found" -ge 1 ] && [ "$open" = 0 ]; then printf settled
+  else printf none
+  fi
+}
+
 # fm_busy_launch_prompt_parked: dispatch to the signature above for <harness>,
 # or fail when this harness has none. Consumes the tail on stdin. Scoped to
 # exactly the harnesses fm-spawn.sh arms with the fm-spawn busy source
@@ -1148,7 +1201,13 @@ fm_busy_classify() {  # <backend> <target> <harness> <id> <state-dir> [tail40]
       ;;
     codex*)
       if ! fm_busy_codex_semantic_source; then
-        printf 'unknown codex-unverified'
+        # No app-server or hook source is live, so fold the worker's own session
+        # rollout; anything short of a positive busy or settled stays unknown.
+        case "$(fm_busy_codex_rollout_state "$state" "$id")" in
+          busy) printf 'busy codex-rollout' ;;
+          settled) printf 'idle codex-rollout' ;;
+          *) printf 'unknown codex-unverified' ;;
+        esac
         return 0
       fi
       ;;
