@@ -1230,6 +1230,74 @@ test_visual_registry_fields_are_validated() {
   pass "fm-officer surgeon: the visual registry fields are validated"
 }
 
+test_run_host_joins_sessions_through_the_home_mirror() {
+  local home json w=$TMP_ROOT/runhost
+  make_world runhost; home=$WORLD_HOME
+  python3 -I - "$w/spec.json" "$home" <<'PY'
+import json, sys
+path, home = sys.argv[1:3]
+brief = lambda t: "FIRSTMATE_OP: v1 launch-brief\nYour steering inbox is `%s/state/%s.inbox`." % (home, t)
+msg = {"file_path": home + "/state/operational-inbox/1.msg"}
+json.dump({"sessions": [{"machine": "alpha", "id": "s-" + t, "first_prompt": ": Firstmate operational input waiting: read 'x'",
+                         "calls": [["Read", msg, brief(t), False]]} for t in ("t-merged", "t-status", "t-report")]}, open(path, "w"))
+PY
+  officer_archive "$w/archive" "$DATE" "$w/spec.json"
+  printf 'kind=ship\nworktree=/work/t-merged\n' > "$home/state/t-merged.meta"
+  printf 'kind=ship\nworktree=/work/t-status\n' > "$home/state/t-status.meta"
+  printf 'kind=scout\nworktree=/work/t-report\n' > "$home/state/t-report.meta"
+  printf '%s\n' '{"v":1,"ts":5,"event":"task.merged","task":"t-merged","via":"local"}' > "$home/state/fleet-ledger.jsonl"
+  printf 'working [at=1]: started\nfailed [at=2]: broke\n' > "$home/state/t-status.status"
+  mkdir -p "$home/data/t-report" && printf 'report\n' > "$home/data/t-report/report.md"
+  cat > "$FAKEBIN/ssh" <<'SH'
+#!/usr/bin/env bash
+while [ "${1:-}" = -o ]; do shift 2; done
+shift
+HOME="$FAKE_HOST_HOME" exec bash -c "$*"
+SH
+  chmod +x "$FAKEBIN/ssh"
+  mkdir -p "$w/hosthome"
+  run_surgeon "$home" >/dev/null || fail "the local surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals '{"failed":1,"merged":1,"reported":1}' "$(jq -c '.. | .outcomes? // empty' "$json" | head -n 1)" "the local run resolves all three outcomes"
+  mv "$home/data/officers/surgeon" "$w/lane.local"
+  sed -i "s|model: none; added|run-host: somehost; run-host-code: $ROOT; model: none; added|" "$home/data/officers.md"
+  # The pass reads the mirror only, never the home's own files, so equal bytes show the mirror holds what the join needs.
+  FAKE_HOST_HOME="$w/hosthome" run_surgeon "$home" >/dev/null || fail "the run-host surgeon run must succeed"
+  diff -r --exclude=.run.err "$w/lane.local" "$home/data/officers/surgeon" >/dev/null \
+    || fail "the lane must be byte-identical to a local run's: $(diff -r --exclude=.run.err "$w/lane.local" "$home/data/officers/surgeon" | head -5)"
+  pass "fm-officer surgeon: a run-host pass joins sessions through the mirrored home records and leaves the local lane's bytes"
+}
+
+test_preflight_checks_what_the_surgeon_needs_on_the_run_host() {
+  local out w=$TMP_ROOT/preflight
+  mkdir -p "$w/hosthome"
+  make_world preflight "${LINEAR_ON}jev: $w/jev.py; run-host: somehost; run-host-code: $ROOT; "
+  cat > "$FAKEBIN/ssh" <<SH
+#!/usr/bin/env bash
+while [ "\${1:-}" = -o ]; do shift 2; done
+shift
+HOME="$w/hosthome" exec bash -c "\$*"
+SH
+  chmod +x "$FAKEBIN/ssh"
+  : > "$w/jev.py"
+  out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$WORLD_HOME" "$OFFICER" preflight surgeon 2>&1) || fail "every check passes on a ready host: $out"
+  assert_contains "$out" "ok code: somehost:$ROOT is at this home's commit" "the host checkout is at this home's commit"
+  assert_contains "$out" "ok linear: linear-axi reads team PC" "linear-axi works on the host"
+  assert_contains "$out" "ok jev: $w/jev.py" "a jev: field is checked as written"
+  assert_contains "$out" "ok app: the fleet app answers /api/runs" "the host reaches the fleet app"
+  assert_contains "$out" "ok repo: git ls-remote reads staging from" "the host reads the staging repo"
+  assert_not_contains "$(cat "$w/curl.calls")" "-X" "the app is read with GET only"
+  assert_equals "label list --team PC --limit 1 --output json" "$(cat "$LINEAR_LOG")" "the only Linear call is a read"
+  assert_absent "$WORLD_HOME/data/officers/surgeon" "preflight writes no lane"
+  assert_absent "$w/hosthome/fm-scratch" "preflight writes no scratch on the host"
+  touch "$LDIR/labels.fail" "$w/unreachable"
+  out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$WORLD_HOME" "$OFFICER" preflight surgeon 2>&1) && fail "a failing check must exit non-zero: $out"
+  assert_contains "$out" "FAIL linear: linear-axi cannot read team PC" "a linear-axi that cannot read fails"
+  assert_contains "$out" "FAIL app: the fleet app's /api/runs gave HTTP" "an unreachable fleet app fails"
+  assert_contains "$out" "ok repo:" "the other checks still run"
+  pass "fm-officer surgeon: preflight checks the run host's Linear, jev, fleet app and staging repo and fails on any failed check"
+}
+
 test_registry_rules
 test_classification_and_severity
 test_staging_tip_rates_the_night
@@ -1278,3 +1346,5 @@ test_visual_pending_attach_is_abandoned_after_seven_days
 test_visual_attach_stops_at_the_call_budget
 test_visual_recurrence_of_a_closed_item_gets_its_screenshot
 test_visual_registry_fields_are_validated
+test_run_host_joins_sessions_through_the_home_mirror
+test_preflight_checks_what_the_surgeon_needs_on_the_run_host
