@@ -1,0 +1,9 @@
+Sonnet scout (fm-spawn.sh op --scout --harness claude --model sonnet) claude pid 3208071
+cmdline: claude --dangerously-skip-permissions --add-dir /tmp/fm-lab.8tuKMe/state/operational-inbox --add-dir /tmp/fm-lab.8tuKMe/
+environ:
+CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false
+CLAUDE_CODE_SEND_FEEDBACK=0
+CLAUDE_CODE_DISABLE_ADVISOR_TOOL: unset
+status bar:
+▝▜██████▀  Sonnet 5.5 · API Usage Billing
+  b217eefe | 7% | Sonnet 5.5 | ❯ : Firstmate operational input waiting: read '/tmp/fm-lab.8tu…

@@ -1,0 +1,4 @@
+== out-0-haiku (var=0 model=haiku): advisor entries=1
+== out-0-sonnet (var=0 model=sonnet): advisor entries=1
+== out-1-haiku (var=1 model=haiku): advisor entries=0
+== out-1-sonnet (var=1 model=sonnet): advisor entries=0

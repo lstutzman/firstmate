@@ -1,0 +1,9 @@
+Haiku scout (fm-spawn.sh hk --scout --harness claude --model haiku) claude pid 3052861
+cmdline: claude --dangerously-skip-permissions --add-dir /tmp/fm-lab.8tuKMe/state/operational-inbox --add-dir /tmp/fm-lab.8tuKMe/
+environ:
+CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false
+CLAUDE_CODE_SEND_FEEDBACK=0
+CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1
+status bar:
+▝▜██████▀  Haiku 5.5 · API Usage Billing
+  f2cc0a51 | 7% | Haiku 5.5 | ❯ : Firstmate operational input waiting: read '/tmp/fm-lab.8tu…
