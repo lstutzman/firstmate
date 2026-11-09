@@ -15,7 +15,7 @@ Use the fallback only when neither specifies effort.
 
 Use `low` for well-understood work with an explicit bounded path and `high` for ambiguous investigation or design.
 Choose `medium` as complexity, uncertainty, blast radius, or open-ended reasoning rises between those two.
-The fallback never reaches `xhigh`; an explicit or configured `xhigh` passes through unchanged, and if an adapter lacks the requested level, cap at its highest supported non-`max` level rather than silently omitting the intent.
+The fallback never reaches `xhigh`; an explicit or configured `xhigh` passes through unchanged, and if an adapter lacks `xhigh`, cap at its highest supported non-`max` level rather than silently omitting the intent.
 Never select `max` through this fallback; only an explicit per-task or standing captain preference permits it.
 
 The explicit native `ultra` value follows the model-scoped refusal contract in `../../../bin/fm-harness.sh validate-native-effort`; it is never silently omitted or mapped to a Pi level.
