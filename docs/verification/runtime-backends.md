@@ -1194,6 +1194,7 @@ not ok - codex (codex-cli 0.163.0): pointer doorbell not honored within 150s (ac
 not ok - codex (codex-cli 0.163.0): inline doorbell not honored within 150s (acted=no acked=yes)
 ```
 
+A later run after the final change (2026-11-09, Claude only) honored both the pointer and the inline doorbell.
 Codex stayed on its folder-trust dialog for the task worktree, which is an unready state rather than a doorbell verdict, so the inline doorbell is unverified on codex and on every harness not listed here; rerun the guard on a trusted checkout to refresh them.
 
 OpenCode needed `FM_SEND_INBOX_LIVE_TIMEOUT=560` because its configured model was still mid-turn at the default 240 seconds.

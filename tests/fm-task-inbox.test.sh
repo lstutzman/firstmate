@@ -1502,14 +1502,36 @@ test_inline_untake_returns_a_pointer_record() {
   pass "inbox: a failed inline ring is handed back as an ordinary unhandled record for the ladder"
 }
 
-test_inline_idempotent_write_lands_on_its_record() {
-  local state first again
-  state="$TMP_ROOT/inline-idem/state"; mkdir -p "$state"
-  first=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "same steer" "" inline) || fail "first write failed"
-  again=$(inbox_lib "$state" fm_task_inbox_write_idempotent "$state" t1 "same steer" "" inline) || fail "re-run failed"
-  [ "$first" = "$again" ] || fail "a re-run must land on the same inline record: $first vs $again"
-  [ "$(find "$state/t1.inbox" -name '*.msg' | wc -l | tr -d ' ')" = 1 ] || fail "a re-run duplicated the inline record"
-  pass "inbox: the idempotent write deduplicates an inline steer like any other"
+# A ring of an inline record counts as landed only on an `empty` submit verdict:
+# nothing re-rings a taken record, so pending or unknown must report not landed.
+test_inline_ring_lands_only_on_an_empty_verdict() {
+  local dir state rec verdict rc ptr
+  dir="$TMP_ROOT/inline-ring-verdict"; state="$dir/state"; mkdir -p "$state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue" "" inline) || fail "inline write failed"
+  ptr=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 $'pointer\nsteer') || fail "pointer write failed"
+  ring_with_verdict() {  # <verdict> <record>
+    FM_STATE_OVERRIDE="$state" bash -c '
+      . "$1"
+      fm_backend_agent_state() { printf alive; }
+      fm_backend_composer_state() { printf empty; }
+      fm_backend_send_text_submit() { printf "%s" "$VERDICT"; }
+      fm_task_inbox_ring tmux sess:fm-t1 "$2"' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$2"
+  }
+  for verdict in empty pending pending-unproven unknown send-failed; do
+    rc=0
+    VERDICT=$verdict ring_with_verdict "$verdict" "$rec" || rc=$?
+    case "$verdict" in
+      empty) [ "$rc" = 0 ] || fail "an inline ring confirmed empty should land, got $rc" ;;
+      send-failed) [ "$rc" = 2 ] || fail "a send-failed inline ring should return 2, got $rc" ;;
+      *) [ "$rc" = 4 ] || fail "an inline ring with verdict $verdict must not count as landed, got $rc" ;;
+    esac
+  done
+  for verdict in empty pending unknown; do
+    rc=0
+    VERDICT=$verdict ring_with_verdict "$verdict" "$ptr" || rc=$?
+    [ "$rc" = 0 ] || fail "a pointer ring keeps its best-effort contract (verdict $verdict), got $rc"
+  done
+  pass "inbox: an inline ring lands only on an empty submit verdict; pointer rings stay best-effort"
 }
 
 # The watcher never rings a message that is already taken or handled: an inline
@@ -1602,5 +1624,5 @@ test_watcher_dead_pane_ignores_stale_busy_state
 test_inline_eligibility_edges
 test_inline_record_is_born_taken
 test_inline_untake_returns_a_pointer_record
-test_inline_idempotent_write_lands_on_its_record
+test_inline_ring_lands_only_on_an_empty_verdict
 test_watcher_never_rerings_a_taken_message

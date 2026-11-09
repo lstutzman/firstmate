@@ -669,33 +669,21 @@ phase=$(grep '^phase=' "$PARENT/state/pending-replies/$CORR" | cut -d= -f2-)
 [ "$phase" = resolved ] || fail "correlated remote reply did not resolve the parent expectation"
 pass "marked send and routed reply complete through the existing parent correlation owner"
 
-# A plain short steer to the remote leg is an inline steer: its record is born
-# taken (handled/, never unhandled) and the remote doorbell carries the body,
-# while a multi-line steer keeps the pointer doorbell. A re-run after an
-# ambiguous transport lands on the same record and rings it again, because
-# nothing else would.
-inline_before=$(find "$PARENT_ROUTE_INBOX/handled" -name '*.msg' 2>/dev/null | wc -l | tr -d ' ')
+# Inline steers are local only: even a plain short body sent straight to the
+# remote leg keeps the pointer doorbell and an unhandled record, and its
+# idempotent re-run lands on that same record.
 unhandled_before=$(find "$PARENT_ROUTE_INBOX" -maxdepth 1 -name '*.msg' 2>/dev/null | wc -l | tr -d ' ')
-remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh send ios 'inline remote steer' >/dev/null 2>&1 \
-  || fail "inline remote send failed"
-inline_after=$(find "$PARENT_ROUTE_INBOX/handled" -name '*.msg' | wc -l | tr -d ' ')
-[ "$inline_after" -eq $((inline_before + 1)) ] || fail "an inline remote steer must be written already taken"
-[ "$(find "$PARENT_ROUTE_INBOX" -maxdepth 1 -name '*.msg' | wc -l | tr -d ' ')" -eq "$unhandled_before" ] \
-  || fail "an inline remote steer must never be unhandled"
-assert_grep "Firstmate inline steer, already recorded and taken, no inbox read needed: inline remote steer" "$HERDR_LOG" "the remote inline doorbell never carried the body"
-rings_before=$(grep -cF 'inline remote steer' "$HERDR_LOG" || true)
-remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh send ios 'inline remote steer' >/dev/null 2>&1 \
-  || fail "inline remote re-run failed"
-[ "$(find "$PARENT_ROUTE_INBOX/handled" -name '*.msg' | wc -l | tr -d ' ')" -eq "$inline_after" ] \
-  || fail "an inline remote re-run must dedup onto its record"
-[ "$(grep -cF 'inline remote steer' "$HERDR_LOG" || true)" -gt "$rings_before" ] \
-  || fail "an inline remote re-run must ring again: its record is born taken, so no ladder would"
-remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh send ios $'pointer remote steer\nsecond line' >/dev/null 2>&1 \
-  || fail "pointer remote send failed"
+handled_before=$(find "$PARENT_ROUTE_INBOX/handled" -name '*.msg' 2>/dev/null | wc -l | tr -d ' ')
+for _ in 1 2; do
+  remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh send ios 'plain remote steer' >/dev/null 2>&1 \
+    || fail "plain remote send failed"
+done
 [ "$(find "$PARENT_ROUTE_INBOX" -maxdepth 1 -name '*.msg' | wc -l | tr -d ' ')" -eq $((unhandled_before + 1)) ] \
-  || fail "a multi-line remote steer must stay an unhandled pointer record"
-assert_no_grep 'pointer remote steer' "$HERDR_LOG" "a pointer remote steer typed its payload"
-pass "remote leg: a plain short steer is inline and born taken; a multi-line steer keeps the pointer doorbell"
+  || fail "a plain short remote steer must be one unhandled pointer record, deduplicated on re-run"
+[ "$(find "$PARENT_ROUTE_INBOX/handled" -name '*.msg' 2>/dev/null | wc -l | tr -d ' ')" -eq "$handled_before" ] \
+  || fail "a remote steer must never be written already taken"
+assert_no_grep 'plain remote steer' "$HERDR_LOG" "a plain remote steer typed its body instead of the pointer doorbell"
+pass "remote leg: a plain short steer keeps the pointer doorbell (inline is local only)"
 rm -f "$PARENT/state/.wake-queue"
 
 printf '{"revision":2}\n' > "$PARENT/config/crew-dispatch.json"

@@ -7,7 +7,7 @@
 # the self-describing doorbell line, and the watcher's re-ring ladder policy.
 # bin/fm-send.sh writes and rings locally, the host-local remote steer leg
 # (bin/fm-remote-secondmate-control.sh cmd_send) writes idempotently and rings
-# on the remote host, bin/fm-watch.sh polls and re-rings, and the brief
+# the pointer doorbell on the remote host, bin/fm-watch.sh polls and re-rings, and the brief
 # scaffold (bin/fm-brief.sh) names bin/fm-task-inbox.sh take, the worker's
 # one read-and-acknowledge command; none of them restates the format.
 #
@@ -56,10 +56,16 @@
 # doorbell carries the body itself after the constant FM_TASK_INBOX_INLINE_PREFIX
 # (the body is single-quoted so a bare shell still runs nothing). Because it is
 # never unhandled, the watcher's ladder never rings or escalates it. When the
-# ring does not land (fm_task_inbox_ring nonzero) the sender calls
-# fm_task_inbox_untake, which turns it back into an ordinary unhandled record
-# with the pointer doorbell (rung once at once, then the ladder's), so a lost
-# inline ring degrades to today's path instead of losing the steer. Everything else keeps the pointer doorbell.
+# ring does not land the sender calls fm_task_inbox_untake, which turns it back
+# into an ordinary unhandled record with the pointer doorbell (rung once at
+# once, then the ladder's), so a lost inline ring degrades to today's path
+# instead of losing the steer. For an inline record fm_task_inbox_ring counts
+# only a submit verdict of exactly `empty` as landed (return 4 otherwise), so a
+# swallowed Enter is never read as delivery; an ambiguous verdict may therefore
+# repeat the steer once through the pointer record, never lose it. Inline
+# applies to local steers only: every remote secondmate steer is marked, and a
+# marked steer is never inline, so the remote leg always rings the pointer.
+# Everything else keeps the pointer doorbell.
 #
 # Sequence numbers are never reused within a task: allocation scans both the
 # inbox root and handled/, so a message is processed at most once per worker
@@ -333,8 +339,8 @@ fm_task_inbox_write() {  # <state-dir> <task-id> <text> [delivery-mode] [inline]
 # secondmate request embeds a per-request correlation token in its body. The
 # local plane keeps plain fm_task_inbox_write: its outcome is synchronous, so
 # a repeated identical local steer is a deliberate new instruction.
-fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mode] [inline]
-  local state=$1 task=$2 text=$3 delivery_mode=${4:-} inline=${5:-} dir lock rec='' status=0
+fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mode]
+  local state=$1 task=$2 text=$3 delivery_mode=${4:-} dir lock rec='' status=0
   local window max first s f g have header is_ff body
   dir=$(fm_task_inbox_dir "$state" "$task")
   mkdir -p "$dir/handled" || return 1
@@ -373,7 +379,7 @@ fm_task_inbox_write_idempotent() {  # <state-dir> <task-id> <text> [delivery-mod
     break
   done
   if [ "$status" -eq 0 ] && [ -z "$rec" ]; then
-    rec=$(_fm_task_inbox_write_record_locked "$dir" "$text" "$delivery_mode" "$inline") || status=1
+    rec=$(_fm_task_inbox_write_record_locked "$dir" "$text" "$delivery_mode") || status=1
   fi
   fm_lock_release "$lock"
   [ "$status" -eq 0 ] || return 1
@@ -498,7 +504,8 @@ fm_task_inbox_untake() {  # <record-path>
 # Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
 # other than our own doorbell (the watcher re-rings later), 2 the backend send
 # failed, 3 skipped because the endpoint is positively dead or missing (nothing
-# typed; recovery owns the record). No return value is delivery proof; the
+# typed; recovery owns the record), 4 an inline doorbell whose submit was not
+# confirmed empty (typed, but not proven landed). No return value is delivery proof; the
 # acknowledgement move is the only delivery signal.
 # The skip is deliberately narrow: only an exact `pending` verdict can defer,
 # because there our Enter could submit someone's real half-typed content.
@@ -539,8 +546,13 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
     return 2
   fi
   # The verdict is read only to report a failed keystroke; every other value
-  # (empty, pending, unknown, ...) is deliberately ignored, never proof.
+  # (empty, pending, unknown, ...) is deliberately ignored, never proof - except
+  # for an inline record, which nothing re-rings once taken: only `empty`
+  # counts as landed, anything else returns 4 so the sender falls back.
   [ "$verdict" != send-failed ] || return 2
+  if [ "$verdict" != empty ] && fm_task_inbox_is_inline "$rec"; then
+    return 4
+  fi
   return 0
 }
 
