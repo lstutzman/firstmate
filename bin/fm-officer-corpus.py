@@ -5,7 +5,7 @@ Run only through `bin/fm-officer.sh run <id>`, which owns the officer
 contract; docs/configuration.md "Corpus officer" owns the registry fields.
 
 Usage:
-  fm-officer-corpus.py run --archive <dir|host:dir> --date <YYYY-MM-DD> --out <lane-dir>
+  fm-officer-corpus.py run|sources --archive <dir|host:dir> --date <YYYY-MM-DD> --out <lane-dir>
                            [--hosts a,b] [--harvest <path|host:path>] [--prep <path|host:path>]
                            [--local-jev <dir|host:dir>] [--now <epoch>]
                            [--writes none|linear] [--team PC] [--max-creates <n>]
@@ -93,7 +93,9 @@ needs-decision `corpus-holds-<date>`. The lane keeps filed-fingerprints.json, fo
 review-state.json only when it writes.
 
 Outputs <date>.json and <date>.md in --out, prints one `Coverage gap:` line
-per gap and `DIGEST <date> <n-new> <date>.md` last.
+per gap and `DIGEST <date> <n-new> <date>.md` last. The `sources` action takes the
+same arguments, reads nothing and prints each host the inputs name, one per line
+(`bin/fm-officer.sh preflight`).
 """
 
 import argparse
@@ -606,8 +608,8 @@ def render_md(doc):
     return "\n".join(lines) + "\n"
 
 
-def run(args):
-    now = args.now if args.now is not None else int(time.time())
+def inputs(args):
+    """Each input's (host or None, kind, path), keyed by name."""
     host, root = split(args.archive.rstrip("/"))
     harvest_host, harvest = split(args.harvest) if args.harvest else (host, root + "/memory-harvest/last-result.json")
     prep_host, prep = split(args.prep)
@@ -619,7 +621,12 @@ def run(args):
              "judge": (jev_host, "judge", jev + "/results/judge")}
     for h in [h for h in (x.strip() for x in args.hosts.split(",")) if h]:
         items["bosun:" + h] = (h, "bosun", BOSUN_RESULT)
-    facts = gather(items)
+    return items
+
+
+def run(args):
+    now = args.now if args.now is not None else int(time.time())
+    facts = gather(inputs(args))
     os.makedirs(args.out, exist_ok=True)
     nights_path = os.path.join(args.out, "nights.json")
     findings, coverage, notes, nights, unread = judge(facts, read_json(nights_path, {}), now)
@@ -648,7 +655,7 @@ def main(argv):
         json.dump(probe([tuple(a.split("=", 1)) for a in argv[1:]]), sys.stdout, sort_keys=True)
         return 0
     parser = argparse.ArgumentParser(prog="fm-officer-corpus.py")
-    parser.add_argument("action", choices=["run"])
+    parser.add_argument("action", choices=["run", "sources"])
     parser.add_argument("--archive", required=True)
     parser.add_argument("--date", required=True)
     parser.add_argument("--out", required=True)
@@ -660,6 +667,10 @@ def main(argv):
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}(T\d{2})?", args.date):
         parser.error("--date must be YYYY-MM-DD or YYYY-MM-DDTHH")
+    if args.action == "sources":
+        for host in sorted({h for h, _, _ in inputs(args).values() if h}):
+            print(host)
+        return 0
     return run(args)
 
 

@@ -1268,6 +1268,36 @@ SH
   pass "fm-officer surgeon: a run-host pass joins sessions through the mirrored home records and leaves the local lane's bytes"
 }
 
+test_preflight_checks_what_the_surgeon_needs_on_the_run_host() {
+  local out w=$TMP_ROOT/preflight
+  mkdir -p "$w/hosthome"
+  make_world preflight "${LINEAR_ON}jev: $w/jev.py; run-host: somehost; run-host-code: $ROOT; "
+  cat > "$FAKEBIN/ssh" <<SH
+#!/usr/bin/env bash
+while [ "\${1:-}" = -o ]; do shift 2; done
+shift
+HOME="$w/hosthome" exec bash -c "\$*"
+SH
+  chmod +x "$FAKEBIN/ssh"
+  : > "$w/jev.py"
+  out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$WORLD_HOME" "$OFFICER" preflight surgeon 2>&1) || fail "every check passes on a ready host: $out"
+  assert_contains "$out" "ok code: somehost:$ROOT is at this home's commit" "the host checkout is at this home's commit"
+  assert_contains "$out" "ok linear: linear-axi reads team PC" "linear-axi works on the host"
+  assert_contains "$out" "ok jev: $w/jev.py" "a jev: field is checked as written"
+  assert_contains "$out" "ok app: the fleet app answers /api/runs" "the host reaches the fleet app"
+  assert_contains "$out" "ok repo: git ls-remote reads staging from" "the host reads the staging repo"
+  assert_not_contains "$(cat "$w/curl.calls")" "-X" "the app is read with GET only"
+  assert_equals "label list --team PC --limit 1 --output json" "$(cat "$LINEAR_LOG")" "the only Linear call is a read"
+  assert_absent "$WORLD_HOME/data/officers/surgeon" "preflight writes no lane"
+  assert_absent "$w/hosthome/fm-scratch" "preflight writes no scratch on the host"
+  touch "$LDIR/labels.fail" "$w/unreachable"
+  out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$WORLD_HOME" "$OFFICER" preflight surgeon 2>&1) && fail "a failing check must exit non-zero: $out"
+  assert_contains "$out" "FAIL linear: linear-axi cannot read team PC" "a linear-axi that cannot read fails"
+  assert_contains "$out" "FAIL app: the fleet app's /api/runs gave HTTP" "an unreachable fleet app fails"
+  assert_contains "$out" "ok repo:" "the other checks still run"
+  pass "fm-officer surgeon: preflight checks the run host's Linear, jev, fleet app and staging repo and fails on any failed check"
+}
+
 test_registry_rules
 test_classification_and_severity
 test_staging_tip_rates_the_night
@@ -1317,3 +1347,4 @@ test_visual_attach_stops_at_the_call_budget
 test_visual_recurrence_of_a_closed_item_gets_its_screenshot
 test_visual_registry_fields_are_validated
 test_run_host_joins_sessions_through_the_home_mirror
+test_preflight_checks_what_the_surgeon_needs_on_the_run_host

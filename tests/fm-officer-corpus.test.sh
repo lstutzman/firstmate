@@ -480,7 +480,9 @@ test_run_host_lane_matches_a_local_run() {
     || fail "the lane must be byte-identical to a local run's: $(diff -r --exclude=.run.err "$W/lane.local" "$(lane)" | head -5)"
   assert_equals "" "$(find "$(lane)" -maxdepth 1 -name '.host-stage.*')" "no staging folder is left in the lane"
   assert_present "$W/hosts/deepthought/fm-scratch" "the pass really ran on the host"
-  assert_equals "" "$(ls -A "$W/hosts/deepthought/fm-scratch" 2>/dev/null)" "no scratch folder is left on the host"
+  assert_equals "officer-corpus" "$(ls -A "$W/hosts/deepthought/fm-scratch" 2>/dev/null)" "the host keeps only the officer's last lane"
+  run_corpus >/dev/null || fail "a second run through the run host must succeed"
+  assert_equals "officer-corpus" "$(ls -A "$W/hosts/deepthought/fm-scratch" 2>/dev/null)" "a second pass replaces the kept lane"
   pass "fm-officer corpus: a pass run through the run host leaves the same lane as a local run"
 }
 
@@ -508,6 +510,7 @@ test_run_host_registry_rules() {
   sed -i 's/role: corpus;/role: friction;/; s/model: none; added/run-host: deepthought; model: none; added/' "$HOME_DIR/data/officers.md"
   out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" "$OFFICER" run corpus --date "$DATE" 2>&1) && fail "friction cannot use a run host"
   assert_contains "$out" "run-host is supported on corpus and surgeon officers only" "other roles are refused"
+  assert_contains "$out" "friction, pagecheck and progress need the home-file mirror extended (phase 2)" "the refusal names what phase 2 needs"
   pass "fm-officer corpus: run-host is refused where the pass reads files in this home"
 }
 
@@ -533,21 +536,110 @@ SH
   pass "fm-officer corpus: a pass that fails after writing leaves the same lane through the run host"
 }
 
-test_run_host_pass_is_bounded_on_the_host() {
+test_run_host_timed_out_pass_returns_its_lane_writes() {
   local out
   run_host_world bound "run-host: deepthought; run-host-code: $ROOT; "
   cat > "$FAKEBIN/python3" <<SH
 #!/usr/bin/env bash
-case "\$*" in *fm-officer-corpus.py*) exec sleep 3007 ;; esac
+case "\$*" in *fm-officer-corpus.py\ run*) /usr/bin/python3 "\$@"; exec sleep 3007 ;; esac
 exec /usr/bin/python3 "\$@"
 SH
   chmod +x "$FAKEBIN/python3"
-  out=$(FM_OFFICER_RUN_TIMEOUT=4 run_corpus 2>&1) && fail "a pass past the bound must fail the run"
-  assert_contains "$out" "run host timed out" "the host ends the pass at its bound and the run says so"
-  # The host ends the pass at its bound; give the process a moment to go.
-  for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -f "[s]leep 300[7]" >/dev/null || break; sleep 1; done
+  # The scheduled path: the run's own bound is the outer one, so the host must end the pass before it.
+  out=$(PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW="$NOW" FM_HOME="$HOME_DIR" FM_OFFICER_RUN_TIMEOUT=12 \
+    "$OFFICER" __timed-run corpus "$DATE" 2>&1) && fail "a pass past the bound must fail the run"
+  assert_contains "$(tail -n 1 "$(lane)/runs.log")" "failed run host timed out (deepthought)" "the host ended the pass and the run logged why"
+  assert_present "$(lane)/$DATE.json" "the lane files the pass wrote before its bound come back"
+  assert_equals "" "$(find "$(lane)" -maxdepth 1 -name '.host-stage.*')" "no staging folder is left in the lane"
+  for _ in 1 2 3 4 5; do pgrep -f "[s]leep 300[7]" >/dev/null || break; sleep 1; done
   assert_equals "" "$(pgrep -f "[s]leep 300[7]" || true)" "no pass is left running"
-  pass "fm-officer corpus: a run-host pass past FM_OFFICER_RUN_TIMEOUT is ended on the host"
+  pass "fm-officer corpus: a scheduled run-host pass past its bound is ended on the host first and returns its lane writes"
+}
+
+test_run_host_dropped_connection_files_nothing_twice() {
+  local out log
+  linear_world dropped
+  log=$FAKE_LINEAR_DIR/log
+  sed -i 's|; jev: /nonexistent/jev.py;|;|' "$HOME_DIR/data/officers.md"
+  add_fields "run-host: deepthought; run-host-code: $ROOT; "
+  # The connection drops once: the host pass runs to the end but its result never arrives.
+  cat > "$FAKEBIN/ssh" <<SH
+#!/usr/bin/env bash
+while [ "\${1:-}" = -o ]; do shift 2; done
+host=\$1; shift
+[ -d "$W/hosts/\$host" ] || exit 255
+if [ -f "$W/drop" ] && [[ "\$*" == *__host-pass* ]]; then
+  rm -f "$W/drop"
+  HOME="$W/hosts/\$host" bash -c "\$*" >/dev/null
+  exit 255
+fi
+HOME="$W/hosts/\$host" exec bash -c "\$*"
+SH
+  chmod +x "$FAKEBIN/ssh"
+  touch "$W/drop"
+  out=$(run_corpus 2>&1) && fail "a dropped connection must fail the attempt"
+  assert_contains "$(tail -n 1 "$(lane)/runs.log")" "failed run host unreachable" "the drop fails the attempt"
+  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "the dropped pass filed each of the six findings on the host"
+  out=$(run_corpus 2>&1) || fail "the retry must succeed: $out"
+  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "the retry files nothing twice"
+  assert_equals 6 "$(jq 'length' "$(lane)/filed-fingerprints.json")" "the dropped pass's Linear ledger reaches the lane"
+  assert_equals "officer-corpus" "$(ls -A "$W/hosts/deepthought/fm-scratch")" "the host keeps one lane for the officer"
+  assert_contains "$(jq -r '.coverage[]' "$(lane)/$DATE.json")" \
+    "local-jev not found at $W/hosts/deepthought/.claude/skills/local-jev/jev.py" "the default jev is looked for in the run host's home"
+  pass "fm-officer corpus: a retry after a dropped connection starts from the lane the host kept and files nothing twice"
+}
+
+test_run_host_import_failure_fails_the_run() {
+  local out real_cp
+  run_host_world import "run-host: deepthought; run-host-code: $ROOT; "
+  real_cp=$(command -v cp)
+  cat > "$FAKEBIN/cp" <<SH
+#!/usr/bin/env bash
+case "\${@: -1}" in "$(lane)/./$DATE.json") echo "cp: No space left on device" >&2; exit 1 ;; esac
+exec "$real_cp" "\$@"
+SH
+  chmod +x "$FAKEBIN/cp"
+  out=$(run_corpus 2>&1) && fail "a lane file that cannot be written here must fail the run"
+  assert_contains "$(tail -n 1 "$(lane)/runs.log")" "failed cannot import $DATE.json from the run host" "the failure names the file"
+  assert_absent "$(lane)/digest" "a run whose lane was not written logs no digest"
+  pass "fm-officer corpus: a lane file the run host returned that cannot be written here fails the run"
+}
+
+# preflight_corpus [env...]: bin/fm-officer.sh preflight corpus in the current world.
+preflight_corpus() {
+  env PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW="$NOW" FM_HOME="$HOME_DIR" "$@" "$OFFICER" preflight corpus
+}
+
+test_preflight_checks_the_run_host_read_only() {
+  local out jev
+  make_world preflight
+  add_fields "writes: linear; run-host: deepthought; run-host-code: $ROOT; "
+  fake_linear "$FAKEBIN"
+  export FAKE_LINEAR_DIR="$W/linear"
+  mkdir -p "$FAKE_LINEAR_DIR"
+  printf '%s\n' Chore agent area:fleet > "$FAKE_LINEAR_DIR/labels.txt"
+  jev="$W/hosts/deepthought/.claude/skills/local-jev/jev.py"
+  mkdir -p "$(dirname "$jev")" && : > "$jev"
+  out=$(preflight_corpus LINEAR_API_KEY=lin_api_PLANTED_TOKEN 2>&1) || fail "every check passes on a ready host: $out"
+  assert_contains "$out" "ok code: deepthought:$ROOT is at this home's commit" "the host checkout is at this home's commit"
+  assert_contains "$out" "ok linear: linear-axi reads team PC" "linear-axi works on the host"
+  assert_contains "$out" "ok jev: $jev" "the jev default is resolved in the host's home, not this one's"
+  assert_contains "$out" "ok reach: ssh to slartibartfast" "the host reaches the other host its inputs name (the prep store and a Bosun)"
+  assert_not_contains "$out" "reach: ssh to deepthought" "the run host's own inputs are read in process"
+  assert_not_contains "$out" "PLANTED" "no token or environment is printed"
+  assert_equals "label list --team PC --limit 1 --output json" "$(cat "$FAKE_LINEAR_DIR/log")" "the only Linear call is a read"
+  assert_absent "$(lane)" "preflight writes no lane"
+  assert_absent "$W/hosts/deepthought/fm-scratch" "preflight writes no scratch on the host"
+  sed -i 's/hosts: slartibartfast,deepthought;/hosts: slartibartfast,deepthought,nohost;/' "$HOME_DIR/data/officers.md"
+  mv "$jev" "$jev.gone"
+  out=$(preflight_corpus 2>&1) && fail "a failing check must exit non-zero: $out"
+  assert_contains "$out" "FAIL reach: no ssh to nohost" "a host the run host cannot reach fails"
+  assert_contains "$out" "FAIL jev: no file at $jev" "a missing jev fails"
+  assert_contains "$out" "ok code:" "the other checks still run"
+  make_world preflight-local
+  out=$(preflight_corpus 2>&1) && fail "a line without run-host must be refused"
+  assert_contains "$out" "has no run-host" "preflight is for a run-host line"
+  pass "fm-officer corpus: preflight checks what the pass needs on the run host, writes nothing and fails on any failed check"
 }
 
 test_healthy_corpus_has_no_findings
@@ -572,4 +664,7 @@ test_run_host_lane_matches_a_local_run
 test_run_host_failures_never_run_locally
 test_run_host_registry_rules
 test_run_host_failed_pass_keeps_its_lane_writes
-test_run_host_pass_is_bounded_on_the_host
+test_run_host_timed_out_pass_returns_its_lane_writes
+test_run_host_dropped_connection_files_nothing_twice
+test_run_host_import_failure_fails_the_run
+test_preflight_checks_the_run_host_read_only

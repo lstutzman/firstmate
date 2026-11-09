@@ -14,6 +14,7 @@
 #   fm-officer.sh retire <id>
 #   fm-officer.sh run <id> [--date KEY] [--scheduled]
 #   fm-officer.sh check <id>
+#   fm-officer.sh preflight <id>
 #   fm-officer.sh ensure
 #
 # register writes state/officer-<id>.check.sh, binds it with
@@ -99,14 +100,26 @@
 # runs the same role script from its own checkout (it must be at this code root's commit, else the attempt
 # fails "host code mismatch"), and the changed lane files and the pass's output come back and are written
 # into this lane under .run.lock, so runs.log, digest and the check records mean what they always meant. A pass that
-# fails or times out still returns the lane files it wrote, as a local one leaves them. The host ends the pass at
-# FM_OFFICER_RUN_TIMEOUT (the ssh call has 30 s more), so a lost connection leaves nothing running there.
+# fails or times out still returns the lane files it wrote, as a local one leaves them. Every bound comes from the
+# time left of the run's own FM_OFFICER_RUN_TIMEOUT (a scheduled run's deadline is set before it starts): the host
+# ends the pass a margin (a twentieth of the time left, 2 to 30 s) before the ssh call's bound, which is that margin
+# before the deadline, so the lane files come back before the run is stopped. The host keeps the last pass's lane
+# for each officer as ~/fm-scratch/officer-<id>, with a list of the lane it was staged from; when the next pass is
+# staged from that same lane, its result never reached this home (a dropped connection or a stopped ssh call), and
+# the pass starts from the kept lane instead, so writes it recorded there (a Linear ledger) are not made twice.
 # The scheduler stays here: the host has no timer, check or registration. A host that cannot be reached
 # fails the attempt ("run host unreachable") and never falls back to a local run. Inputs on the host are read in
 # process there (a source named <run-host>:<path>); the home records the surgeon joins sessions to (each --home's
 # fleet ledger, task metas, status files and report presence) go over as a mirror, and everything else a pass
 # reads on this machine (a custom rubric, the visual review files) is refused for such a line. Absent run-host
 # the pass runs here exactly as before. __host-pass is the internal host side.
+#
+# preflight checks, read-only, that an officer's run-host can carry its pass, and prints one "ok <check>: ..." or
+# "FAIL <check>: ..." line per check, exiting 1 when any fails: the host checkout's commit against this code root's,
+# then on the host (a script sent over ssh, so a host at another commit is still checked) linear-axi with a read-only
+# label list when writes is linear, the jev path as the host resolves it, for a surgeon the fleet app's /api/runs and
+# `git ls-remote` of the staging repo, and for a corpus officer ssh from the host to each other host its inputs name.
+# It writes nothing on either machine and prints no command output, token or environment.
 #
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
@@ -150,6 +163,7 @@ Usage:
   fm-officer.sh retire <id>                  remove the check and the registry line; findings stay
   fm-officer.sh run <id> [--date KEY]        run the officer's pass for one run key (a date, or an interval officer's YYYY-MM-DDTHH slot; default yesterday or the current slot)
   fm-officer.sh check <id>                   watcher check: start a due run, report a new digest
+  fm-officer.sh preflight <id>               read-only checks that the officer's run-host can carry its pass
   fm-officer.sh ensure                       session-start health: one OFFICER: line per gap
 See docs/configuration.md "Officers (data/officers.md)" for the registry schema.
 EOF
@@ -279,7 +293,7 @@ run_host_problem() {
   line_field "$line" run-host >/dev/null || return 0
   case "$role" in
     corpus|surgeon) ;;
-    *) printf 'officer %s: run-host is supported on corpus and surgeon officers only; a %s pass reads files in this home\n' "$id" "$role"; return ;;
+    *) printf 'officer %s: run-host is supported on corpus and surgeon officers only (phase 1); a %s pass reads files in this home, and friction, pagecheck and progress need the home-file mirror extended (phase 2) before they can use run-host\n' "$id" "$role"; return ;;
   esac
   [[ "$(line_field "$line" run-host)" =~ ^[A-Za-z0-9][A-Za-z0-9._@-]*$ ]] \
     || { printf 'officer %s: run-host must be an ssh host name\n' "$id"; return; }
@@ -528,8 +542,37 @@ role_exec() {
   remote_pass "$host" "$@"
 }
 
+RUN_HOST_SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30)
+
+run_host_root() { line_field "$OFFICER_LINE" run-host-code || echo "fm-homes/$1"; }  # <host>: its firstmate checkout
+
+# host_code_check <host> <root> <seconds>: prints this code root's short commit when the host checkout is at it,
+# else prints why not and fails.
+host_code_check() {
+  local want have rc
+  want=$(git -C "$FM_ROOT" rev-parse HEAD 2>/dev/null) || { echo "host code mismatch: this code root is not a git checkout"; return 1; }
+  # shortcut: only the checkout's HEAD is compared, so an edited host checkout runs its edits; upgrade by hashing the tree.
+  have=$(fm_run_timed "$3" "${RUN_HOST_SSH[@]}" "$1" "git -C $2 rev-parse HEAD" </dev/null 2>/dev/null)
+  rc=$?
+  if [ "$rc" -eq 255 ] || fm_timed_out "$rc"; then echo "run host unreachable ($1)"; return 1; fi
+  [ "$have" = "$want" ] || { echo "host code mismatch ($1 has ${have:0:8}, this home ${want:0:8}); update the host checkout"; return 1; }
+  printf '%s\n' "${want:0:8}"
+}
+
+# jev_path: the jev: field, else the local-jev skill's jev.py in the home of the machine that runs the pass
+# (@HOSTHOME@, which the run-host resolves).
+jev_path() {
+  line_field "$OFFICER_LINE" jev && return
+  if line_field "$OFFICER_LINE" run-host >/dev/null; then
+    echo '@HOSTHOME@/.claude/skills/local-jev/jev.py'
+  else
+    echo "$HOME/.claude/skills/local-jev/jev.py"
+  fi
+}
+
 # remote_pass <host> <script> <args...>: stage the lane and the home records, run the pass on the host,
-# and import the changed lane files. Prints the pass's stdout; a failure leaves the lane untouched.
+# and import the changed lane files. Prints the pass's stdout; a host it cannot reach or a result it cannot read
+# leaves the lane untouched.
 remote_pass() {
   local stage rc
   stage=$(mktemp -d "$OFFICER_LANE/.host-stage.XXXXXX") || { echo "cannot stage a run-host pass" >&2; return 1; }
@@ -540,15 +583,18 @@ remote_pass() {
 }
 
 remote_pass_in() {  # <stage> <host> <script> <args...>
-  local stage=$1 host=$2 script=$3 root want have rc=0 i home f
-  local -a args=("${@:4}") ssh=(ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30)
-  root=$(line_field "$OFFICER_LINE" run-host-code || echo "fm-homes/$host")
-  want=$(git -C "$FM_ROOT" rev-parse HEAD 2>/dev/null) || { echo "host code mismatch: this code root is not a git checkout" >&2; return 1; }
-  # shortcut: only the checkout's HEAD is compared, so an edited host checkout runs its edits; upgrade by hashing the tree.
-  have=$(fm_run_timed 60 "${ssh[@]}" "$host" "git -C $root rev-parse HEAD" </dev/null 2>/dev/null)
-  rc=$?
-  [ "$rc" -ne 255 ] && [ "$rc" -ne 124 ] || { echo "run host unreachable ($host)" >&2; return 1; }
-  [ "$have" = "$want" ] || { echo "host code mismatch ($host has ${have:0:8}, this home ${want:0:8}); update the host checkout" >&2; return 1; }
+  local stage=$1 host=$2 script=$3 root deadline margin bound msg now rc=0 i home f
+  local -a args=("${@:4}")
+  root=$(run_host_root "$host")
+  deadline=${FM_OFFICER_RUN_DEADLINE:-}
+  case "$deadline" in ''|*[!0-9]*) deadline=$(( $(date +%s) + ${FM_OFFICER_RUN_TIMEOUT:-3600} )) ;; esac
+  margin=$(( (deadline - $(date +%s)) / 20 ))
+  [ "$margin" -ge 2 ] || margin=2
+  [ "$margin" -le 30 ] || margin=30
+  bound=$(( deadline - $(date +%s) - 2 * margin ))
+  [ "$bound" -gt 0 ] || { echo "run host timed out ($host): no time left for the pass" >&2; return 124; }
+  [ "$bound" -le 60 ] || bound=60
+  msg=$(host_code_check "$host" "$root" "$bound") || { echo "$msg" >&2; return 1; }
   mkdir -p "$stage/in/lane" "$stage/out" || return 1
   tar -C "$OFFICER_LANE" -cf - --exclude=.run.lock --exclude=.run.err --exclude='.host-stage.*' --exclude=runs.log \
     --exclude=run-output.log --exclude=digest --exclude='check-record.*' --exclude=registered . | tar -C "$stage/in/lane" -xf - || return 1
@@ -568,54 +614,70 @@ remote_pass_in() {  # <stage> <host> <script> <args...>
     fi
   done
   printf '%s\n' "$script" > "$stage/in/script"
-  # The host bounds the pass itself, so a lost ssh leaves no pass running there; the ssh bound is only a backstop 30 s later.
-  printf '%s\n' "${FM_OFFICER_RUN_TIMEOUT:-3600}" > "$stage/in/timeout"
   printf '%s\0' "${args[@]}" > "$stage/in/args"
   tar -C "$stage/in" -czf "$stage/in.tgz" . || return 1
-  fm_run_timed "$(( ${FM_OFFICER_RUN_TIMEOUT:-3600} + 30 ))" "${ssh[@]}" "$host" "bash $root/bin/fm-officer.sh __host-pass $host" \
-    < "$stage/in.tgz" > "$stage/out.tgz"
+  # The host ends the pass a margin before the ssh bound, and the ssh bound is a margin before the run's deadline.
+  now=$(date +%s)
+  bound=$(( deadline - now - 2 * margin ))
+  [ "$bound" -gt 0 ] || { echo "run host timed out ($host): no time left for the pass" >&2; return 124; }
+  fm_run_timed "$(( deadline - now - margin ))" "${RUN_HOST_SSH[@]}" "$host" \
+    "bash $root/bin/fm-officer.sh __host-pass $host $OFFICER_ID $bound" < "$stage/in.tgz" > "$stage/out.tgz"
   rc=$?
   [ "$rc" -ne 255 ] || { echo "run host unreachable ($host)" >&2; return 1; }
   # A pass that failed or timed out after writing lane files leaves them in the lane, as a local pass does.
-  if ! { tar -C "$stage/out" -xzf "$stage/out.tgz" 2>/dev/null && [ -f "$stage/out/pass-out" ]; }; then
+  if ! { tar -C "$stage/out" -xzf "$stage/out.tgz" 2>/dev/null && [ -f "$stage/out/pass-out" ] && [ -d "$stage/out/lane" ]; }; then
     if fm_timed_out "$rc"; then echo "run host timed out ($host)" >&2; return "$rc"; fi
     [ "$rc" -eq 0 ] || return "$rc"
     echo "run host returned an unreadable result ($host)" >&2; return 1
   fi
-  while IFS= read -r f; do
+  while IFS= read -r -d '' f; do
     cmp -s "$stage/out/lane/$f" "$OFFICER_LANE/$f" && continue
-    mkdir -p "$OFFICER_LANE/$(dirname "$f")" && cp -p "$stage/out/lane/$f" "$OFFICER_LANE/$f"
-  done <<EOF
-$(cd "$stage/out/lane" && find . -type f | sort)
-EOF
+    { mkdir -p "$OFFICER_LANE/$(dirname "$f")" && cp -p "$stage/out/lane/$f" "$OFFICER_LANE/$f"; } \
+      || { echo "cannot import ${f#./} from the run host ($host)" >&2; return 1; }
+  done < <(cd "$stage/out/lane" && find . -type f -print0)
   # A file the pass removed is removed here too.
-  while IFS= read -r f; do
-    [ -e "$stage/out/lane/$f" ] || rm -f -- "$OFFICER_LANE/$f"
-  done <<EOF
-$(cd "$stage/in/lane" && find . -type f | sort)
-EOF
+  while IFS= read -r -d '' f; do
+    [ -e "$stage/out/lane/$f" ] || rm -f -- "$OFFICER_LANE/$f" \
+      || { echo "cannot remove ${f#./}, which the run host's pass removed ($host)" >&2; return 1; }
+  done < <(cd "$stage/in/lane" && find . -type f -print0)
   cat "$stage/out/pass-out"
   ! fm_timed_out "$rc" || echo "run host timed out ($host)" >&2
   return "$rc"
 }
 
-# action_host_pass <host>: the run-host side of remote_pass. Reads the staged tar on stdin, runs the role
-# script in a scratch copy of the lane, and writes the lane and the pass's stdout back as a tar.
+lane_sums() { (cd "$1" && find . -type f -exec cksum {} + | LC_ALL=C sort -k3); }  # <lane>: one line per file
+
+# action_host_pass <host> <id> <seconds>: the run-host side of remote_pass. Reads the staged tar on stdin, runs the
+# role script in a scratch copy of the lane until <seconds> after this command started, keeps that lane as the
+# officer's slot, and writes the lane and the pass's stdout back as a tar.
 action_host_pass() {
-  local arg rc=0 script
+  local arg rc=0 script slot left
   local -a args=()
+  officer_id_valid "$2" || die "invalid officer id: $2" 2
+  case "$3" in ''|*[!0-9]*) die "the pass bound must be whole seconds" 2 ;; esac
+  slot=$HOME/fm-scratch/officer-$2
   mkdir -p "$HOME/fm-scratch" || die "cannot create $HOME/fm-scratch"
   HOST_SCRATCH=$(mktemp -d "$HOME/fm-scratch/officer-host.XXXXXX") || die "cannot create a scratch folder"
   trap 'rm -rf -- "$HOST_SCRATCH"' EXIT
   tar -C "$HOST_SCRATCH" -xzf - || die "cannot read the staged input"
   script=$(cat "$HOST_SCRATCH/script")
   case "$script" in fm-officer-corpus.py|fm-officer-surgeon.py) ;; *) die "run-host does not run $script" 2 ;; esac
+  lane_sums "$HOST_SCRATCH/lane" > "$HOST_SCRATCH/staged.sums" || die "cannot list the staged lane"
+  # The home staged the lane it staged the kept pass from, so that pass's result never reached it.
+  if [ -d "$slot/lane" ] && cmp -s "$slot/staged.sums" "$HOST_SCRATCH/staged.sums"; then
+    { rm -rf -- "$HOST_SCRATCH/lane" && cp -Rp "$slot/lane" "$HOST_SCRATCH/lane"; } || die "cannot resume from the kept lane $slot"
+  fi
   while IFS= read -r -d '' arg; do
     [ "$arg" = @LANE@ ] && arg=$HOST_SCRATCH/lane
-    args+=("$arg")
+    args+=("${arg/#@HOSTHOME@/$HOME}")
   done < "$HOST_SCRATCH/args"
+  left=$(( $3 - SECONDS ))
+  [ "$left" -ge 1 ] || left=1
   FM_OFFICER_ON_HOST=$1 FM_OFFICER_HOME_MIRROR=$HOST_SCRATCH/mirror \
-    fm_run_timed "$(cat "$HOST_SCRATCH/timeout")" python3 -I "$SCRIPT_DIR/$script" "${args[@]}" > "$HOST_SCRATCH/pass-out" || rc=$?
+    fm_run_timed "$left" python3 -I "$SCRIPT_DIR/$script" "${args[@]}" > "$HOST_SCRATCH/pass-out" || rc=$?
+  { rm -rf -- "$slot.new" && mkdir "$slot.new" && cp -Rp "$HOST_SCRATCH/lane" "$slot.new/lane" \
+    && cp -p "$HOST_SCRATCH/staged.sums" "$slot.new/" && rm -rf -- "$slot" && mv "$slot.new" "$slot"; } \
+    || echo "cannot keep the officer's lane in $slot" >&2
   tar -C "$HOST_SCRATCH" -czf - lane pass-out
   return "$rc"
 }
@@ -658,7 +720,7 @@ START_HOMES
     --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)" \
     --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)" \
     --triage-label "$(line_field "$OFFICER_LINE" triage-label || echo triage)" \
-    --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")" \
+    --jev "$(jev_path)" \
     --fm-home "$FM_HOME" \
     --staging-repo "$(line_field "$OFFICER_LINE" staging-repo || echo "$SURGEON_STAGING_REPO")" \
     --visual-findings "$(line_field "$OFFICER_LINE" visual-findings || true)" \
@@ -734,25 +796,29 @@ role_landing() {  # <date>
     --max-facts-age "$(line_field "$OFFICER_LINE" max-facts-age || echo 36)" --now "$(now_epoch)"
 }
 
-role_corpus() {  # <date>: counts only, read on each host by the script itself.
+corpus_args() {  # <date>: sets CORPUS_ARGS, the corpus script's run arguments.
   local field line
-  local -a args=(run --archive "$(line_field "$OFFICER_LINE" archive)" --date "$1" --out "$OFFICER_LANE"
+  CORPUS_ARGS=(run --archive "$(line_field "$OFFICER_LINE" archive)" --date "$1" --out "$OFFICER_LANE"
     --hosts "$(line_field "$OFFICER_LINE" hosts || true)" --now "$(now_epoch)"
     --team "$(line_field "$OFFICER_LINE" team || echo PC)"
     --writes "$(line_field "$OFFICER_LINE" writes || echo none)"
     --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 100)"
     --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)"
-    --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")"
+    --jev "$(jev_path)"
     --fm-home "$FM_HOME")
   for field in harvest prep local-jev rubric; do
-    if line_field "$OFFICER_LINE" "$field" >/dev/null; then args+=("--$field" "$(line_field "$OFFICER_LINE" "$field")"); fi
+    if line_field "$OFFICER_LINE" "$field" >/dev/null; then CORPUS_ARGS+=("--$field" "$(line_field "$OFFICER_LINE" "$field")"); fi
   done
   while IFS= read -r line; do
-    [ -n "$line" ] && args+=(--start-home "$line")
+    [ -n "$line" ] && CORPUS_ARGS+=(--start-home "$line")
   done <<START_HOMES
 $(start_homes)
 START_HOMES
-  role_exec fm-officer-corpus.py "${args[@]}"
+}
+
+role_corpus() {  # <date>: counts only, read on each host by the script itself.
+  corpus_args "$1"
+  role_exec fm-officer-corpus.py "${CORPUS_ARGS[@]}"
 }
 
 role_library() {  # <date>: the newest librarian audit run, read from the job's run folders.
@@ -955,11 +1021,97 @@ action_timed_run() {  # <id> <date>: the detached scheduled run, bounded.
   local before rc=0
   load_officer "$1"
   before=$(runs_for "$2")
+  export FM_OFFICER_RUN_DEADLINE=$(( $(date +%s) + ${FM_OFFICER_RUN_TIMEOUT:-3600} ))
   fm_run_timed "${FM_OFFICER_RUN_TIMEOUT:-3600}" bash "$SCRIPT_DIR/fm-officer.sh" run "$1" --date "$2" --scheduled || rc=$?
   if [ "$rc" -ne 0 ] && [ "$(runs_for "$2")" -eq "$before" ]; then
     if fm_timed_out "$rc"; then run_log "$2" failed "timed out"; else run_log "$2" failed "exited $rc"; fi
   fi
   return "$rc"
+}
+
+# action_preflight <id>: the header's read-only run-host checks; nothing here may write on either machine.
+action_preflight() {
+  local id=$1 host role root msg hosts h rc fail=0
+  local -a checks=()
+  require_primary
+  load_officer "$id"
+  host=$(line_field "$OFFICER_LINE" run-host) || die "officer $id has no run-host; preflight checks a run host" 2
+  role=$(line_field "$OFFICER_LINE" role)
+  root=$(run_host_root "$host")
+  if msg=$(host_code_check "$host" "$root" 60); then
+    echo "ok code: $host:$root is at this home's commit $msg"
+  else
+    echo "FAIL code: $msg"; fail=1
+  fi
+  # The surgeon's pattern memory asks local-jev on every run; the corpus pass asks it only when it writes Linear.
+  if [ "$(line_field "$OFFICER_LINE" writes || echo none)" = linear ]; then
+    checks+=("linear=$(line_field "$OFFICER_LINE" team || echo PC)" "jev=$(jev_path)")
+  elif [ "$role" = surgeon ]; then
+    checks+=("jev=$(jev_path)")
+  fi
+  if [ "$role" = surgeon ]; then
+    checks+=("app=$(line_field "$OFFICER_LINE" app)" "repo=$(line_field "$OFFICER_LINE" staging-repo || echo "$SURGEON_STAGING_REPO")")
+  else
+    corpus_args "$(epoch_fmt "$(now_epoch)" %Y-%m-%d)"
+    CORPUS_ARGS[0]=sources
+    if hosts=$(python3 -I "$SCRIPT_DIR/fm-officer-corpus.py" "${CORPUS_ARGS[@]}" 2>/dev/null); then
+      for h in $(printf '%s\n' "$hosts" | sort -u); do
+        [ "$h" = "$host" ] || checks+=("reach=$h")
+      done
+    else
+      echo "FAIL sources: the corpus inputs could not be read from the registry line"; fail=1
+    fi
+  fi
+  fm_run_timed 300 "${RUN_HOST_SSH[@]}" "$host" "bash -s -- $(printf '%q ' "${checks[@]}")" <<'SCRIPT'
+set -u
+fail=0
+say() { printf '%s %s\n' "$1" "$2"; [ "$1" = ok ] || fail=1; }
+bounded() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
+for check in "$@"; do
+  v=${check#*=}
+  case "$check" in
+    linear=*)
+      if bounded 60 linear-axi label list --team "$v" --limit 1 --output json </dev/null 2>/dev/null | python3 -I -c '
+import json, sys
+try:
+    doc, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if isinstance(doc, dict) and doc.get("ok") else 1)' 2>/dev/null; then
+        say ok "linear: linear-axi reads team $v"
+      else
+        say FAIL "linear: linear-axi cannot read team $v (its sign-in or access on this host)"
+      fi ;;
+    jev=*)
+      v=${v/#@HOSTHOME@/$HOME}
+      if [ -f "$v" ]; then say ok "jev: $v"; else say FAIL "jev: no file at $v"; fi ;;
+    app=*)
+      code=$(bounded 60 curl -sS --max-time 30 -w '\n%{http_code}' "${v%/}/api/runs" </dev/null 2>/dev/null | tail -n 1)
+      if [ "$code" = 200 ]; then say ok "app: the fleet app answers /api/runs"; else say FAIL "app: the fleet app's /api/runs gave HTTP ${code:-none}"; fi ;;
+    repo=*)
+      if [ -n "$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=15' \
+        bounded 60 git ls-remote "$v" refs/heads/staging </dev/null 2>/dev/null)" ]; then
+        say ok "repo: git ls-remote reads staging from $v"
+      else
+        say FAIL "repo: git ls-remote cannot read staging from $v"
+      fi ;;
+    reach=*)
+      if bounded 30 ssh -o BatchMode=yes -o ConnectTimeout=15 "$v" true </dev/null >/dev/null 2>&1; then
+        say ok "reach: ssh to $v"
+      else
+        say FAIL "reach: no ssh to $v"
+      fi ;;
+  esac
+done
+exit "$fail"
+SCRIPT
+  rc=$?
+  if [ "$rc" -eq 255 ] || fm_timed_out "$rc"; then
+    echo "FAIL reach: run host unreachable ($host)"; fail=1
+  elif [ "$rc" -ne 0 ]; then
+    fail=1
+  fi
+  return "$fail"
 }
 
 action_ensure() {
@@ -1020,7 +1172,8 @@ case "$cmd" in
   run) [ "$#" -ge 2 ] || die "usage: fm-officer.sh run <id> [--date YYYY-MM-DD]" 2; shift; action_run "$@" ;;
   check) [ "$#" -eq 2 ] || die "usage: fm-officer.sh check <id>" 2; action_check "$2" ;;
   __timed-run) [ "$#" -eq 3 ] || die "usage: internal" 2; action_timed_run "$2" "$3" ;;
-  __host-pass) [ "$#" -eq 2 ] || die "usage: internal" 2; action_host_pass "$2" ;;
+  preflight) [ "$#" -eq 2 ] || die "usage: fm-officer.sh preflight <id>" 2; action_preflight "$2" ;;
+  __host-pass) [ "$#" -eq 4 ] || die "usage: internal" 2; action_host_pass "$2" "$3" "$4" ;;
   ensure) action_ensure ;;
   -h|--help|help) usage ;;
   *) usage >&2; exit 2 ;;
