@@ -8,7 +8,8 @@ FIND, FILE, TRIAGE, START contract that bin/fm-officer-linear.py implements for 
 and docs/officers/surgeon-rubric.md owns what counts as work, how it is scored and what starts by itself.
 
 Usage:
-  fm-officer-surgeon.py fold --out <lane-dir> [--apply] [--team PC] [--bundle-cap 15] [--max-items 1000] ...
+  fm-officer-surgeon.py fold --out <lane-dir> [--friction-out <lane-dir>] [--page-check-out <lane-dir>] [--apply] [--team PC]
+                           [--bundle-cap 15] [--max-items 1000] ...
   fm-officer-surgeon.py run --archive <dir|host:dir> --date <YYYY-MM-DD> --out <lane-dir>
                             --app <https url> [--home <dir>]... [--hosts a,b] [--model none]
                             [--team PC] [--writes none|linear] [--max-creates 100] [--bundle-cap 15]
@@ -128,8 +129,10 @@ deduped by normalised title and then by local-jev; new patterns go in one batche
 request to the Navigator (quality-patterns.md), in the digest for memory capture (no
 scriptable memory-tier path exists), and mechanical ones get a proposed lint rule.
 
-`fold` (fold_main) is the one-off move of the Surgeon's existing open items (one per finding, or one per component
-cluster) into area bundles: a dry run unless --apply; see `fm-officer-surgeon.py fold --help`.
+`fold` (fold_main) is the one-off move of the existing open automated items into area bundles: the Surgeon's (one per
+finding, or one per component cluster), the friction and page-check officers', and fleet-app's "Dependency a major version
+behind" and "Nightly E2E" items (written in fleet-app's own bundle format so its filers adopt them). A dry run unless --apply;
+see `fm-officer-surgeon.py fold --help`.
 
 Outputs <date>.json and <date>.md in --out and prints
 `DIGEST <date> <n-actionable> <date>.md` as its last stdout line, plus a
@@ -146,6 +149,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -746,12 +750,23 @@ def render_md(doc, archive_md):
 # ---- fold ---------------------------------------------------------------------------------
 
 FOLD_OPENING = "Filed by the Ship's Surgeon from the "
+FRICTION_OPENING = "Filed by the friction officer from the "
+PAGE_CHECK_OPENING = "Filed by the page-check officer from the "
 FOLD_OTHER = re.compile(r"^Filed by the (.+?) from ")
-# fleet-app's own automated item families, counted by their title (this fold does not move them yet).
-FOLD_FLEET_APP = ("Dependency a major version behind: ", "Nightly E2E: ")
+# fleet-app's own automated item families (its filers keep bundles of them in their own format; see fold_fleet_app).
+DEP_TITLE = "Dependency a major version behind: "
+E2E_TITLES = ("Nightly E2E: ", "Nightly E2E flaky: ")
 CLUSTER_TITLE = "Code review findings: "
 CLUSTER_LINE = re.compile(r"^- \[([ x])\] surgeon-fp:([0-9a-f]{64}) (.*) \((.*)\)$")
 SOURCE_OF_NAME = {name: source for source, name in SOURCE_NAME.items()}
+
+
+def fold_finding(ident, fp, source, title, location, severity, family, area=None, fleet=False, line=None):
+    """One finding in the shape the bundle path takes; `fold_from` is the open item it is folded from."""
+    return {"fingerprint": fp, "source": source, "title": text(title, 120), "summary": "", "location": text(location, 200),
+            "severity": severity, "project": lib.FLEET_PROJECT if fleet else "", "class": "real", "tracked": None,
+            "filing": None, "special": None, "fold_from": ident,
+            "bundle": dict({"family": family, "area": area}, **({"line": line} if line else {}))}
 
 
 def fold_findings(ident, issue):
@@ -762,10 +777,7 @@ def fold_findings(ident, issue):
     fleet = text(issue.get("project"), 80).lower() == lib.FLEET_PROJECT.lower()
 
     def one(fp, source, title, location, severity, line=None):
-        return {"fingerprint": fp, "source": source, "title": text(title, 120), "summary": "", "location": text(location, 200),
-                "severity": severity, "project": lib.FLEET_PROJECT if fleet else "", "class": "real", "tracked": None,
-                "filing": None, "special": None, "fold_from": ident,
-                "bundle": dict({"family": FAMILY[source], "area": None}, **({"line": line} if line else {}))}
+        return fold_finding(ident, fp, source, title, location, severity, FAMILY[source], fleet=fleet, line=line)
     if title.startswith(CLUSTER_TITLE):
         out = []
         for line in desc.splitlines():
@@ -787,47 +799,117 @@ def fold_findings(ident, issue):
                 "visual-review-fp:%s" % visual.group(1) if visual else None)], None
 
 
-def fold(args):
-    """Lists the open items the Surgeon made and folds each into its feature-area bundle (lib.Bundles); see `fold --help`."""
-    LIN.reset(args.max_linear_calls)
-    out = args.out
-    ledger = read_json(os.path.join(out, LEDGER_FILE), {})
-    found = read_json(os.path.join(out, FOUND_FILE), {})
-    date = datetime.datetime.fromtimestamp(args.now, datetime.timezone.utc).strftime("%Y-%m-%d")
-    filer = lib.Filer(OFFICER, LIN, args.team, date, out, ledger, found, lib.Jev(None), args.max_creates)
-    try:
-        names = lib.label_names(LIN, args.team)
-        listed = LIN(["issue", "list", "--team", args.team, "--all", "--max-items", str(args.max_items), "--limit", "100",
-                      "--fields", "description,stateType,project"])
-    except LinearError as exc:
-        print("fm-officer-surgeon fold: Linear read failed: %s" % exc, file=sys.stderr)
-        return 1
+def fold_severity(desc, default):
+    m = re.search(r"^Severity: (critical|high|medium|low)\b", desc, re.M)
+    return m.group(1) if m else default
 
-    def area(f):
+
+def fold_friction(ident, issue):
+    """The one finding of an open item the friction officer filed (its category bundle is the area), else why it stays."""
+    desc, friction = str(issue.get("description") or ""), _load("fm_officer_friction", "fm-officer-friction.py")
+    mark = re.search(r"^friction-fp:([0-9a-f]{64})$", desc, re.M)
+    if not desc.startswith(FRICTION_OPENING) or not mark:
+        return [], "not a friction finding item"
+    root = re.search(r"Root cause: ([^\s,]+) / ([^\s,]+?)(?:, (.*))?\.$", desc, re.M)
+    cause, name = (root.group(1), root.group(3) or "") if root else ("other", "")
+    return [fold_finding(ident, mark.group(1), cause, issue.get("title"), name, fold_severity(desc, "low"), "friction",
+                         area=friction.CATEGORY.get(cause, "other"), fleet=True)], None
+
+
+def fold_page_check(ident, issue):
+    """The one finding of an open item the page-check officer filed (its page is the area), else why it stays."""
+    desc = str(issue.get("description") or "")
+    mark = re.search(r"^page-check-fp:([0-9a-f]{64})$", desc, re.M)
+    page = re.search(r"^Severity: \w+\. Kind: \S+\. Page: (.+?)\. Object: ", desc, re.M)
+    if not desc.startswith(PAGE_CHECK_OPENING) or not mark or not page:
+        return [], "not a page-check finding item"
+    return [fold_finding(ident, mark.group(1), "page-check", issue.get("title"), "", fold_severity(desc, "medium"), "page check",
+                         area=page.group(1), fleet=True)], None
+
+
+def in_hand(issue):
+    """Why an item is a person's, not a bot's: someone started it or it is assigned (the design's "stay single")."""
+    if text(issue.get("stateType")).lower() == "started" or text(issue.get("state")).lower() == "in progress":
+        return "started, kept single"
+    if issue.get("assignee"):
+        return "assigned, kept single"
+    return None
+
+
+def lane_specs(args, names):
+    """The officers whose open items fold into lib.Bundles in their own lane: the Surgeon, friction and the page check."""
+    friction = _load("fm_officer_friction", "fm-officer-friction.py")
+    page_check = _load("fm_officer_page_check", "fm-officer-page-check.py")
+
+    def surgeon_area(f):
         fallback = VISUAL_AREA_FALLBACK if f["source"] == "visual" else args.triage_label
         return area_for(f["location"], f["title"], names, fallback, True) or args.triage_label
 
-    def label_set(f):
-        wanted = ["Bug", SOURCE_LABEL[f["source"]], f["bundle"]["area"] or area(f)]
+    def surgeon_labels(f):
+        wanted = ["Bug", SOURCE_LABEL[f["source"]], f["bundle"]["area"] or surgeon_area(f)]
         return wanted, [w for w in wanted if w.lower() not in names]
 
-    bundles = lib.Bundles(filer, args.bundle_cap, area=area)
+    return [
+        {"key": "surgeon", "maker": "Surgeon", "opening": FOLD_OPENING, "out": args.out, "officer": OFFICER, "parse": fold_findings,
+         "area": surgeon_area, "labels": surgeon_labels, "recur_closed": True, "bump_closed": False, "in_hand": False},
+        {"key": "friction", "maker": "friction officer", "opening": FRICTION_OPENING, "out": args.friction_out, "flag": "--friction-out",
+         "officer": friction.officer(lib), "parse": fold_friction, "area": lambda f: f["bundle"]["area"],
+         "labels": lambda f: lib.fleet_labels(friction.SOURCE_LABEL, names, friction.TYPE_LABEL),
+         "recur_closed": True, "bump_closed": False, "in_hand": True},
+        {"key": "page-check", "maker": "page-check officer", "opening": PAGE_CHECK_OPENING, "out": args.page_check_out,
+         "flag": "--page-check-out", "officer": page_check.officer(lib), "parse": fold_page_check, "area": lambda f: f["bundle"]["area"],
+         "labels": lambda f: lib.fleet_labels(page_check.SOURCE_LABEL, names, page_check.TYPE_LABEL),
+         "recur_closed": False, "bump_closed": True, "in_hand": True},
+    ]
+
+
+def mark_duplicate(filer, ident, target):
+    """Relates an original to its bundle and moves it to Duplicate (--dry-run before --verify); never deletes.
+    A state update whose verify failed still counts when Linear now shows the item as Duplicate (relation written first)."""
+    relate, move = ["issue", "relation", "add", ident, "--duplicate-of", target], ["issue", "update", ident, "--state", "Duplicate"]
+    LIN(relate + ["--dry-run"])
+    LIN(relate + ["--verify"])
+    LIN(move + ["--dry-run"])
+    try:
+        LIN(move + ["--verify"])
+    except LinearError as exc:
+        if exc.code in lib.RATE_OR_BUDGET:
+            raise
+        filer.cache.pop(ident, None)
+        try:
+            if text(filer.view_issue(ident).get("stateType")).lower() != "duplicate":
+                raise exc
+        except LinearError:
+            raise exc
+
+
+def fold_lane(args, lane, idents, names, date, apply_ok=True):
+    """Folds the open items of one officer into its feature-area bundles (lib.Bundles, state in the officer's lane).
+    Returns the exit status. Prints the plan; with --apply writes the bundles, then marks each original a duplicate."""
+    out = lane["out"]
+    if out is None and not idents:
+        return 0
+    if out is None and args.apply:
+        print("- not folded: %d open item(s) the %s made (pass %s <its lane directory> so the officer sees the bundles)" % (
+            len(idents), lane["maker"], lane["flag"]))
+        return 1
+    if out is None:
+        out = tempfile.mkdtemp(prefix="fm-fold-")  # a dry run reads no lane state; the plan assumes a lane with no bundles
+    if args.apply:
+        os.makedirs(out, exist_ok=True)
+    ledger = read_json(os.path.join(out, LEDGER_FILE), {})
+    found = read_json(os.path.join(out, FOUND_FILE), {})
+    filer = lib.Filer(lane["officer"], LIN, args.team, date, out, ledger, found, lib.Jev(None), args.max_creates, bump_closed=lane["bump_closed"])
+    bundles = lib.Bundles(filer, args.bundle_cap, recur_closed=lane["recur_closed"], area=lane["area"])
     folded = bundles.state.setdefault("folded", {})
-    items, kept, others, findings = [], [], collections.Counter(), []
-    for h in dicts(listed.get("issues")):
-        ident, desc = text(h.get("identifier"), 20), str(h.get("description") or "")
-        if not ident or lib.is_closed(h) or text(h.get("title"), 300).startswith(lib.BUNDLE_PREFIX) or ident in folded:
-            continue
-        if not desc.startswith(FOLD_OPENING):
-            other = FOLD_OTHER.match(desc)
-            title = text(h.get("title"), 300)
-            if other:
-                others["filed by the %s" % other.group(1)] += 1
-            elif title.startswith(FOLD_FLEET_APP):
-                others["fleet-app's \"%s\" items" % next(t for t in FOLD_FLEET_APP if title.startswith(t)).rstrip(": ")] += 1
+    items, kept, findings = [], [], []
+    for ident in idents:
+        if ident in folded:
             continue
         try:
-            fs, why = fold_findings(ident, filer.view_issue(ident))
+            issue = filer.view_issue(ident)
+            held = lane["in_hand"] and in_hand(issue)
+            fs, why = ([], held) if held else lane["parse"](ident, issue)
         except LinearError as exc:
             print("fm-officer-surgeon fold: reading %s failed: %s" % (ident, exc), file=sys.stderr)
             return 1
@@ -836,7 +918,8 @@ def fold(args):
             continue
         items.append(ident)
         for f in fs:
-            f["bundle"]["area"] = area(f)
+            if f["bundle"]["area"] is None:
+                f["bundle"]["area"] = lane["area"](f)
             findings.append(f)
     plan = collections.OrderedDict()
     for f in sorted(findings, key=lambda f: (f["bundle"]["family"], f["bundle"]["area"], bool(f["project"]), f["location"], f["title"])):
@@ -845,12 +928,13 @@ def fold(args):
         row = plan[key]
         if f["fingerprint"] in bundles.member_of and not bundles.bundles[bundles.member_of[f["fingerprint"]]].get("closed"):
             row["known"] += 1
-        else:
+        elif all(g["fingerprint"] != f["fingerprint"] for g in row["findings"]):
             row["findings"].append(f)
         if f["fold_from"] not in row["items"]:
             row["items"].append(f["fold_from"])
-    print("Fold %s: %d open item(s) the Surgeon made fold into %d area bundle(s); %d finding(s), cap %d a bundle." % (
-        "plan (dry run, nothing written)" if not args.apply else "run", len(items), len(plan), len(findings), bundles.cap))
+    if items or kept or lane["key"] == "surgeon":
+        print("Fold %s: %d open item(s) the %s made fold into %d area bundle(s); %d finding(s), cap %d a bundle." % (
+            "plan (dry run, nothing written)" if not args.apply else "run", len(items), lane["maker"], len(plan), len({f["fingerprint"] for f in findings}), bundles.cap))
     for (family, area_name, fleet), row in plan.items():
         open_parts = bundles.open_parts((family, area_name, fleet))
         room = sum(bundles.room(b) for b in open_parts)
@@ -861,16 +945,21 @@ def fold(args):
             "%d new bundle(s)" % new_parts + (" and appends to %s" % ", ".join(b["issue"] for b in open_parts if b.get("issue")) if open_parts else "")))
     for ident, why in kept:
         print("- kept: %s (%s)" % (ident, why))
-    for name, n in sorted(others.items()):
-        print("- not folded yet: %d open item(s) %s; this command folds only the Surgeon's" % (n, name))
     if not args.apply:
         return 0
     for f in findings:
+        # One fingerprint is queued once, however many items carried it (those items all point at its one bundle line).
+        if f["fingerprint"] in bundles.seen:
+            continue
         if f["fingerprint"] not in bundles.member_of or bundles.bundles[bundles.member_of[f["fingerprint"]]].get("closed"):
             bundles.unkeyed.append((f, ""))
             bundles.seen[f["fingerprint"]] = f
+    # Self-heal a half-written earlier run: a bundle whose Linear body differs from its state is rewritten from state.
+    for b in bundles.bundles.values():
+        if b.get("issue") and not b.get("closed") and not bundles.written(b):
+            bundles.dirty.add(b["fp"])
     try:
-        bundles.write(label_set)
+        bundles.write(lane["labels"])
     except LinearError as exc:
         print("fm-officer-surgeon fold: stopped: %s" % exc, file=sys.stderr)
     status = 0
@@ -883,9 +972,7 @@ def fold(args):
         targets = collections.Counter(b["issue"] for b in homes)
         target = min(targets, key=lambda t: (-targets[t], t))
         try:
-            for cmd in (["issue", "relation", "add", ident, "--duplicate-of", target], ["issue", "update", ident, "--state", "Duplicate"]):
-                LIN(cmd + ["--dry-run"])
-                LIN(cmd + ["--verify"])
+            mark_duplicate(filer, ident, target)
             folded[ident] = target
             print("- folded: %s is a duplicate of %s" % (ident, target))
         except LinearError as exc:
@@ -898,19 +985,316 @@ def fold(args):
     return status
 
 
+# ---- fleet-app's own bundles ---------------------------------------------------------------
+# fleet-app keeps its dependency-major bundles (src/dependencies/scan/bundle.ts) and its nightly E2E bundles
+# (deploy/nightly-e2e/nightly_linear.py) in a body format of its own: a marker line, `Part: N`, `### <file>` headings and one
+# `- [ ] <fingerprint> — <text>` line per finding. The fold writes that format so those filers adopt the bundle and keep
+# appending to it. The ports below follow fleet-app origin/main 62e6802; nothing here changes fleet-app.
+
+FA_LINE = re.compile(r"^- \[( |x)\] (\S+) — (.*)$")
+FA_HEADING = re.compile(r"^### (.*)$")
+FA_DEP_AREA = "developer-tools"
+FA_DEP_FAMILY = "dependency majors"
+FA_AREA_TOKENS = {
+    "deal": "deal-finder", "deals": "deal-finder", "finder": "deal-finder", "dealfinder": "deal-finder", "watchlist": "watchlist", "portfolio": "portfolio",
+    "map": "maps", "maps": "maps", "calculator": "calculators", "calculators": "calculators", "calc": "calculators", "propertydata": "property-data",
+    "ingest": "ingestion", "ingestion": "ingestion", "api": "api", "infra": "infrastructure", "infrastructure": "infrastructure", "ci": "ci-cd",
+    "ui": "ui-ux", "nav": "ui-ux", "navigation": "ui-ux", "layout": "ui-ux", "banner": "ui-ux", "login": "ui-ux", "auth": "ui-ux",
+}
+
+
+def fa_area(spec_file):
+    """The feature area of a failing test, from its spec file's name (nightly_linear.py area_of); "testing" when no word names one."""
+    for token in re.split(r"[^a-z0-9]+", spec_file.lower()):
+        if token in FA_AREA_TOKENS:
+            return FA_AREA_TOKENS[token]
+    return "testing"
+
+
+def fa_title(area, family, part):
+    return "%s%s (%s)%s" % (lib.BUNDLE_PREFIX, area, family, " part %d" % part if part > 1 else "")
+
+
+def fa_marker(kind, area, family):
+    return "Bundle: dependency-major/%s" % area if kind == "dependency-major" else "Bundle: nightly-e2e/%s/%s" % (area, family.replace(" ", "-"))
+
+
+def fa_open_count(b):
+    return sum(1 for ln in b["lines"] if not ln["done"])
+
+
+def fa_parse(desc):
+    """A fleet-app bundle body as its filers read it: head, checklist lines (with their file heading), tail and part."""
+    rows = str(desc or "").split("\n")
+    is_list = [bool(FA_HEADING.match(r.strip()) or FA_LINE.match(r.strip())) for r in rows]
+    part = re.search(r"^Part: (\d+)$", str(desc or ""), re.M)
+    if not any(is_list):
+        return {"part": int(part.group(1)) if part else 1, "head": rows, "lines": [], "tail": []}
+    first, last = is_list.index(True), len(rows) - 1 - is_list[::-1].index(True)
+    lines, where = [], ""
+    for row in rows[first:last + 1]:
+        h, m = FA_HEADING.match(row.strip()), FA_LINE.match(row.strip())
+        if h:
+            where = h.group(1)
+        elif m:
+            lines.append({"fingerprint": m.group(2), "done": m.group(1) == "x", "text": m.group(3), "file": where})
+    head = rows[:first]
+    while head and not head[-1].strip():
+        head.pop()
+    return {"part": int(part.group(1)) if part else 1, "head": head, "lines": lines, "tail": rows[last + 1:]}
+
+
+def fa_render(b):
+    """The body to write: head and tail as they are, the checklist grouped by file (files and fingerprints in order)."""
+    rows = []
+    for where in sorted({ln["file"] for ln in b["lines"]}):
+        rows += ["", "### %s" % where] + ["- [%s] %s — %s" % ("x" if ln["done"] else " ", ln["fingerprint"], ln["text"])
+                                          for ln in sorted((ln for ln in b["lines"] if ln["file"] == where), key=lambda ln: ln["fingerprint"])]
+    return "\n".join(b["head"] + rows + b["tail"])
+
+
+def fa_new(key, part, cap, app_url):
+    """A new bundle with the head and tail fleet-app's own filer writes for its family."""
+    kind, area, family = key
+    marker = fa_marker(kind, area, family)
+    if kind == "dependency-major":
+        head = ["Direct packages a major version behind in %s, found by the nightly dependency scan. One bundle holds up to %d findings: the scan appends each new one here, ticks a line when its finding is fixed on staging or gone, and never removes one." % (area, cap),
+                "", marker, "Part: %d" % part]
+        tail = ["", "Rule (Lee, 21 Oct 2026): a direct package a major version behind is a High-priority item. One worker fixes the unticked lines in one PR, tested once."]
+        tail += ["Dependencies page: %s/dependencies#major" % app_url] if app_url else []
+    else:
+        head = ["Failing and flaky tests in %s from the nightly E2E run (systemd user timers nightly-e2e and nightly-e2e-midday). One bundle holds up to %d open findings: each new test is appended here, a line is ticked when a merged change fixes or quarantines its test (a pass on the same commit is not a fix), and none is removed. The release runbook needs a green nightly before a release, so these need a fix or a ruling from Lee. One worker fixes the unticked lines in one PR." % (area, cap),
+                "", marker, "Part: %d" % part]
+        tail = ["", "Per the release runbook: never quarantine, skip, retry or weaken a test. If the product is wrong, fix the product; if the test is wrong, say why in a comment."]
+    return {"part": part, "head": head, "lines": [], "tail": tail}
+
+
+def fa_labels(key):
+    kind, area, family = key
+    if kind == "dependency-major":
+        return ["Chore", "scheduled-review", FA_DEP_AREA]
+    return ["Bug", "agent", "testing"] + ([area] if area != "testing" else []) + (["flaky"] if family == "flaky tests" else [])
+
+
+def fa_dependency(ident, desc, title):
+    """(finding, why it stays single) for a "Dependency a major version behind" item, as fleet-app's lineText and fileOf write it."""
+    fp = re.search(r"^Fingerprint: (major:\S+)$", desc, re.M)
+    intro = re.search(r"found that (npm|NuGet) package \*\*(.+?)\*\* is a major version behind", desc)
+    used = re.search(r"^[*-] Versions in use: (.+)$", desc, re.M)
+    latest = re.search(r"^[*-] Newest release: (.+)$", desc, re.M)
+    state = re.search(r"^Fix state: (\S+)$", desc, re.M)
+    if not (fp and intro and used and latest and state):
+        return None, "not a major-version item fleet-app's scan can read back"
+    if state.group(1) != "unfixed":
+        return None, "fix state %s, kept single" % state.group(1)
+    projects = re.search(r"^[*-] Projects: (.+)$", desc, re.M)
+    shown = projects.group(1).strip() if projects else ""
+    page = re.search(r"(https?://[^\s\]()<>]+?)/dependencies#findings", desc)
+    return {"kind": "dependency-major", "area": FA_DEP_AREA, "family": FA_DEP_FAMILY, "fingerprint": fp.group(1), "high": True,
+            "file": "project not known" if not shown or shown == "not known" else shown, "app_url": page.group(1) if page else "",
+            "text": "%s %s to %s (%s)" % (intro.group(2), used.group(1).split(", ")[0], latest.group(1).strip(), intro.group(1))}, None
+
+
+def fa_nightly(ident, desc, title):
+    """(finding, why it stays single) for a "Nightly E2E" test item, as nightly_linear.py's line_text and area_of write it."""
+    fp = re.search(r"^fingerprint: (e2e-[0-9a-f]+)$", desc, re.M) or re.search(r"^Fingerprint: (e2e-[0-9a-f]+)$", desc, re.M)
+    test = re.search(r"^Test: (.+)$", desc, re.M)
+    if not (fp and test):
+        return None, "a night roll-up or run notice, not one test; kept single"
+    test_id = test.group(1).strip()
+    spec_file = test_id.split(" › ")[0]
+    staging = re.search(r"^Staging: (\S+) .*run on (\d{4}-\d{2}-\d{2})", desc, re.M)
+    result = re.search(r"^Result file: (.+)$", desc, re.M)
+    klass = re.search(r"^Classification: ([A-Za-z0-9_-]+)\.", desc, re.M)
+    error = re.search(r"^First error line: (.*)$", desc, re.M)
+    flaky = title.startswith("Nightly E2E flaky: ")
+    return {"kind": "nightly-e2e", "area": fa_area(spec_file), "family": "flaky tests" if flaky else "nightly E2E", "fingerprint": fp.group(1),
+            "high": not re.search(r"^Release-blocking: no$", desc, re.M), "file": spec_file, "app_url": "",
+            "text": "%s — %s: %s (first seen %s, staging %s; result %s)" % (
+                test_id.split(" › ", 1)[-1], klass.group(1) if klass else "unclassified", " ".join((error.group(1) if error else "").split())[:160],
+                staging.group(2) if staging else "unknown", staging.group(1)[:12] if staging else "unknown", result.group(1).strip() if result else "unknown")}, None
+
+
+def fa_part_of(title, base):
+    if title == base:
+        return 1
+    m = re.fullmatch(re.escape(base) + r" part (\d+)", title)
+    return int(m.group(1)) if m else None
+
+
+def fa_load(filer, key):
+    """(open bundles, every part number seen): the family's items by exact title, then those whose body holds the marker line."""
+    base, marker = fa_title(key[1], key[2], 1), fa_marker(*key)
+    seen, open_bundles = [], []
+    for h in filer.title_index():
+        ident, part = text(h.get("identifier"), 20), fa_part_of(text(h.get("title"), 300), base)
+        if part is None:
+            continue
+        seen.append(part)
+        if lib.is_closed(h):
+            continue
+        desc = str(filer.view_issue(ident).get("description") or "")
+        if marker in [row.strip() for row in desc.split("\n")]:
+            b = fa_parse(desc)
+            b.update(id=ident, dirty=False, items=[], new=False)
+            seen.append(b["part"])
+            open_bundles.append(b)
+    return sorted(open_bundles, key=lambda b: b["part"]), seen
+
+
+def fold_fleet_app(args, names, idents, date, titles):
+    """Folds fleet-app's open "Dependency a major version behind" and "Nightly E2E" items into bundles in fleet-app's own format."""
+    out = args.out
+    filer = lib.Filer(OFFICER, LIN, args.team, date, out, {}, {}, lib.Jev(None), args.max_creates)
+    filer.titles = list(titles)  # the list the fold already read, so bundle titles are looked up with no second read
+    findings, kept = [], []
+    for ident in idents:
+        try:
+            issue = filer.view_issue(ident)
+        except LinearError as exc:
+            print("fm-officer-surgeon fold: reading %s failed: %s" % (ident, exc), file=sys.stderr)
+            return 1
+        held = in_hand(issue)
+        title, desc = text(issue.get("title"), 300), str(issue.get("description") or "")
+        f, why = (None, held) if held else (fa_dependency if title.startswith(DEP_TITLE) else fa_nightly)(ident, desc, title)
+        if why:
+            kept.append((ident, why))
+            continue
+        f["fold_from"] = ident
+        findings.append(f)
+    groups = collections.OrderedDict()
+    for f in sorted(findings, key=lambda f: (f["kind"], f["area"], f["family"], f["file"], f["fingerprint"])):
+        groups.setdefault((f["kind"], f["area"], f["family"]), []).append(f)
+    app_url = next((f["app_url"] for f in findings if f["app_url"]), "")
+    homes, plan, status = {}, [], 0  # item -> its bundle (a dict) or None when the bundle could not be made
+    for key, fs in groups.items():
+        try:
+            bundles, seen = fa_load(filer, key)
+        except LinearError as exc:
+            print("fm-officer-surgeon fold: reading the %s bundles failed: %s" % (fa_title(key[1], key[2], 1), exc), file=sys.stderr)
+            return 1
+        listed = {ln["fingerprint"]: b for b in bundles for ln in b["lines"]}
+        added, appended_to, news = 0, [], []
+        for f in fs:
+            if f["fingerprint"] in listed:
+                homes[f["fold_from"]] = listed[f["fingerprint"]]
+                continue
+            target = next((b for b in bundles if fa_open_count(b) < args.bundle_cap), None)
+            if target is None:
+                target = dict(fa_new(key, max(seen + [0]) + 1, args.bundle_cap, app_url), id=None, dirty=True, items=[], new=True)
+                seen.append(target["part"])
+                bundles.append(target)
+                news.append(target)
+            target["lines"].append({"fingerprint": f["fingerprint"], "done": False, "text": f["text"], "file": f["file"]})
+            target["items"].append(f["fold_from"])
+            target["dirty"] = True
+            if target["id"] and target["id"] not in appended_to:
+                appended_to.append(target["id"])
+            listed[f["fingerprint"]] = target
+            homes[f["fold_from"]] = target
+            added += 1
+        plan.append((key, fs, bundles, news, appended_to, len(fs) - added))
+    print("Fold %s: %d open item(s) fleet-app filed fold into %d bundle(s) of its own format; %d finding(s), cap %d a bundle." % (
+        "plan (dry run, nothing written)" if not args.apply else "run", len(findings), len(plan), len(findings), args.bundle_cap))
+    for key, fs, bundles, news, appended_to, known in plan:
+        print("- %s: %d finding(s) from %d item(s) (%s)%s; %d new bundle(s)%s" % (
+            fa_title(key[1], key[2], 1), len(fs), len(fs), ", ".join(sorted((f["fold_from"] for f in fs), key=lambda i: (int(re.sub(r"\D", "", i) or 0), i))),
+            ", %d already listed" % known if known else "", len(news), " and appends to %s" % ", ".join(appended_to) if appended_to else ""))
+    for ident, why in kept:
+        print("- kept: %s (%s)" % (ident, why))
+    if not args.apply:
+        return 0
+    written = {}
+    for key, fs, bundles, news, appended_to, known in plan:
+        for b in [b for b in bundles if b["dirty"]]:
+            title, body, fp = fa_title(key[1], key[2], b["part"]), fa_render(b), "fold:%s:%s:%s:%d" % (key[0], key[1], key[2], b["part"])
+            try:
+                if b["id"]:
+                    filer.update_body(b["id"], fp, body)
+                else:
+                    wanted = fa_labels(key)
+                    missing = [w for w in wanted if w.lower() not in names]
+                    if missing:
+                        raise LinearError("LABELS", "label(s) missing in team %s: %s" % (args.team, ", ".join(missing)))
+                    if filer.over_cap():
+                        raise LinearError("CAP", "over max-creates for this run")
+                    b["id"], _, _ = filer.create(fp, title, body, wanted, "2" if key[0] == "dependency-major" or any(f["high"] for f in fs) else "3")
+                written[id(b)] = b
+            except LinearError as exc:
+                print("- not written: %s (%s)" % (title, exc))
+                status = 1
+                if exc.code in lib.RATE_OR_BUDGET:
+                    return status
+    for ident, b in homes.items():
+        if b["dirty"] and id(b) not in written:
+            print("- not folded: %s (its bundle was not written)" % ident)
+            status = 1
+            continue
+        try:
+            mark_duplicate(filer, ident, b["id"])
+            print("- folded: %s is a duplicate of %s" % (ident, b["id"]))
+        except LinearError as exc:
+            print("- not folded: %s (%s)" % (ident, exc))
+            status = 1
+            if exc.code in lib.RATE_OR_BUDGET:
+                break
+    return status
+
+
+def fold(args):
+    """Lists the open automated items the fold knows and folds each into its bundle; see `fold --help`."""
+    LIN.reset(args.max_linear_calls)
+    date = datetime.datetime.fromtimestamp(args.now, datetime.timezone.utc).strftime("%Y-%m-%d")
+    try:
+        names = lib.label_names(LIN, args.team)
+        listed = LIN(["issue", "list", "--team", args.team, "--all", "--max-items", str(args.max_items), "--limit", "100",
+                      "--fields", "description,stateType,project"])
+    except LinearError as exc:
+        print("fm-officer-surgeon fold: Linear read failed: %s" % exc, file=sys.stderr)
+        return 1
+    lanes = lane_specs(args, names)
+    mine, fleet_app, others = {lane["key"]: [] for lane in lanes}, [], collections.Counter()
+    for h in dicts(listed.get("issues")):
+        ident, desc, title = text(h.get("identifier"), 20), str(h.get("description") or ""), text(h.get("title"), 300)
+        if not ident or lib.is_closed(h) or title.startswith(lib.BUNDLE_PREFIX):
+            continue
+        lane = next((lane for lane in lanes if desc.startswith(lane["opening"])), None)
+        if lane:
+            mine[lane["key"]].append(ident)
+        elif not FOLD_OTHER.match(desc) and (title.startswith(DEP_TITLE) or title.startswith(E2E_TITLES)):
+            fleet_app.append(ident)
+        elif FOLD_OTHER.match(desc):
+            others["filed by the %s" % FOLD_OTHER.match(desc).group(1)] += 1
+    status = 0
+    for lane in lanes:
+        status = fold_lane(args, lane, mine[lane["key"]], names, date) or status
+    if fleet_app:
+        status = fold_fleet_app(args, names, fleet_app, date, dicts(listed.get("issues"))) or status
+    for name, n in sorted(others.items()):
+        print("- not folded yet: %d open item(s) %s; this command folds only the Surgeon's, friction's, page check's and fleet-app's" % (n, name))
+    return status
+
+
 def fold_main(argv):
     parser = argparse.ArgumentParser(prog="fm-officer-surgeon.py fold", description=(
-        "Fold the open PC items the Surgeon made (one per finding, or one per component cluster) into feature-area bundles. "
-        "A dry run by default: it reads Linear (label list, issue list, issue view) and prints, per area bundle, the findings and "
-        "items that would go there, what stays single (an invalid nightly E2E run blocks promotion) and other officers' items it "
-        "leaves alone. With --apply it creates or updates the bundles, then marks each original a duplicate of its bundle "
-        "(`issue relation add --duplicate-of`, then state Duplicate; --dry-run before --verify). It never deletes an item."))
+        "Fold the open PC items the automated sources made (one per finding, or one per component cluster) into feature-area bundles: "
+        "the Surgeon's, the friction officer's, the page-check officer's, and fleet-app's \"Dependency a major version behind\" and "
+        "\"Nightly E2E\" items. "
+        "A dry run by default: it reads Linear (label list, issue list, issue view) and prints, per bundle, the findings and "
+        "items that would go there, what stays single (an invalid nightly E2E run blocks promotion, a night roll-up, an item someone "
+        "started or is assigned, a fixed-on-staging dependency) and other officers' items it leaves alone. "
+        "With --apply it creates or updates the bundles, then marks each original a duplicate of its bundle "
+        "(`issue relation add --duplicate-of`, then state Duplicate; --dry-run before --verify). It never deletes an item. "
+        "The Surgeon's, friction's and page check's bundles keep their state in that officer's lane directory; fleet-app's are "
+        "written in fleet-app's own body format (marker, Part, file headings, `- [ ] <fingerprint> — <text>`) so its nightly filers adopt them."))
     parser.add_argument("--out", required=True, help="the Surgeon's lane directory (its bundles.json and ledger)")
+    parser.add_argument("--friction-out", help="the friction officer's lane directory; --apply folds friction items only with it")
+    parser.add_argument("--page-check-out", help="the page-check officer's lane directory; --apply folds page-check items only with it")
     parser.add_argument("--team", default="PC")
     parser.add_argument("--triage-label", default="triage")
     parser.add_argument("--bundle-cap", type=int, default=lib.DEFAULT_BUNDLE_CAP)
     parser.add_argument("--max-items", type=int, default=1000, help="newest items of the team read")
-    parser.add_argument("--max-creates", type=int, default=100)
+    parser.add_argument("--max-creates", type=int, default=100, help="new bundles one source (Surgeon, friction, page check, fleet-app) may create")
     parser.add_argument("--max-linear-calls", type=int, default=1500)
     parser.add_argument("--now", type=int)
     parser.add_argument("--apply", action="store_true", help="write: create or update bundles and mark each original Duplicate")

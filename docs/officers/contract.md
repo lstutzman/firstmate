@@ -34,7 +34,7 @@ Automated findings are filed in far fewer, larger items, so one worker fixes a b
 - What stays single, never bundled: a finding an officer marks single (the Surgeon's invalid nightly E2E run, which blocks promotion), and anything already tracked by an item of its own.
   An existing single item a finding was filed in keeps its Found line until a person closes it (or it is folded into its bundle as a duplicate); the finding then goes to its area bundle naming it.
   Bugs from members, Lee's own items and production incidents are not filed by these officers.
-- `bin/fm-officer-surgeon.py fold` folds the Surgeon's existing open items into bundles; it is a dry run unless given `--apply` (see its `--help`).
+- `bin/fm-officer-surgeon.py fold` folds the open automated items (the Surgeon's, and with `--friction-out` and `--page-check-out` the friction and page-check officers', plus fleet-app's dependency-majors and nightly E2E items) into bundles; it is a dry run unless given `--apply` (see its `--help`).
 
 ## File
 
@@ -52,7 +52,7 @@ Automated findings are filed in far fewer, larger items, so one worker fixes a b
   The officer's own label lookup does not cover `area:fleet`; if team PC lacked it, Linear's dry run would refuse the item and the digest would report it failed.
   An officer never creates a label; a missing label means the finding is reported and not filed.
 - An officer filing under this contract never closes or deletes an item, and never changes the state, priority, labels, assignee or title of one that exists; the one exception is the progress officer's triage below.
-  The only text it edits is the Found line and its own bundles' checklists; `fold --apply` alone also marks the Surgeon's folded originals Duplicate of their bundle.
+  The only text it edits is the Found line and its own bundles' checklists; `fold --apply` alone also marks the folded originals Duplicate of their bundle.
   An item a person closed is never reopened: a repeat finding goes to its area bundle with a line that names the closed item (a finding an officer keeps single files a new item that says `Recurrence of <id>` and links the old one).
   The page-check officer is the one exception: its repeat of a closed item or bundle raises nothing new, files nothing and never starts it ([`page-check-rubric.md`](page-check-rubric.md)).
 - The registry line sets the per-run create cap (`max-creates`, which counts bundles), the bundle size (`bundle-cap`) and the Linear call budget (`max-linear-calls`).

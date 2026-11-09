@@ -698,7 +698,7 @@ test_no_call_closes_or_deletes() {
 
 fold_world() {  # the open items an earlier Surgeon filed one by one, a component cluster, and items it must leave alone
   sfp() { printf 'review\0nightly-review\0%s' "$1" | sha256sum | cut -d' ' -f1; }
-  world fold "$(jq -n --arg a "$(sfp a)" --arg b "$(sfp b)" --arg c "$(sfp c)" --arg d "$(sfp d)" --arg e "$(sfp e)" --arg f "$(sfp f)" --arg g "$(sfp g)" --arg h "$(sfp h)" '
+  world "${1:-fold}" "$(jq -n --arg a "$(sfp a)" --arg b "$(sfp b)" --arg c "$(sfp c)" --arg d "$(sfp d)" --arg e "$(sfp e)" --arg f "$(sfp f)" --arg g "$(sfp g)" --arg h "$(sfp h)" '
     def surgeon($src; $sev; $loc; $fp): "Filed by the Ship'"'"'s Surgeon from the 2026-11-01 \($src) results.\nWhat it is for: a finding no Linear item tracked yet, so it is not lost.\nEpic: not assigned; whoever triages this picks one.\n\nSeverity: \($sev). Source job: job.\nFound: 1 times (first 2026-11-01, last 2026-11-01, by surgeon)\nLocation: \($loc)\nsurgeon-fp:\($fp)";
     {"PC-1": {title: "Null check missing", state: "Todo", project: null, description: surgeon("nightly code review"; "medium"; "src/api/controllers/Foo.cs"; $a)},
      "PC-2": {title: "stamp duty total wrong", state: "Todo", project: null, description: surgeon("nightly E2E"; "high"; "tests/e2e/calculators/stamp.spec.ts"; $b)},
@@ -712,7 +712,7 @@ fold_world() {  # the open items an earlier Surgeon filed one by one, a componen
      "PC-8": {title: "Members cannot log in", state: "Todo", project: null, description: "Reported by a member through support."},
      "PC-10": {title: "Nightly E2E: smoke.spec.ts › home page loads", state: "Todo", project: null, description: "The full E2E run found this test failing."},
      "PC-9": {title: "Unused variable", state: "Todo", project: null, description: surgeon("nightly code review"; "low"; "src/api/controllers/Bar.cs"; $g)}}')"
-  printf 'scheduled-review\nbug-sweep\napi\ncalculators\ninfrastructure\ntesting\n' >> "$LDIR/labels"
+  printf 'scheduled-review\nbug-sweep\napi\ncalculators\ninfrastructure\ntesting\nImprovement\nagent\ndeveloper-tools\nflaky\n' >> "$LDIR/labels"
 }
 
 test_fold_dry_run_plans_area_bundles_and_writes_nothing() {
@@ -724,19 +724,19 @@ test_fold_dry_run_plans_area_bundles_and_writes_nothing() {
   assert_contains "$out" "- Automated findings: infrastructure (code review): 2 finding(s) from 1 item(s) (PC-3); 1 new bundle(s)" "a component cluster's open lines fold too, its ticked line left out"
   assert_contains "$out" "- Automated findings: calculators (nightly E2E): 1 finding(s) from 1 item(s) (PC-2); 1 new bundle(s)" "a nightly E2E item folds by the feature in its spec path"
   assert_contains "$out" "- kept: PC-4 (promotion-blocking, kept single)" "an invalid nightly E2E run stays single"
-  assert_contains "$out" "- not folded yet: 1 open item(s) filed by the friction officer; this command folds only the Surgeon's" "another officer's items are named and left alone"
-  assert_contains "$out" "- not folded yet: 1 open item(s) fleet-app's \"Nightly E2E\" items; this command folds only the Surgeon's" "and so are fleet-app's own families"
+  assert_contains "$out" "- Automated findings: other (friction) [Fleet]: 1 finding(s) from 1 item(s) (PC-7); 1 new bundle(s)" "the friction officer's item folds into its category bundle"
+  assert_contains "$out" "- kept: PC-10 (a night roll-up or run notice, not one test; kept single)" "a fleet-app nightly item that is not one test stays single"
   assert_not_contains "$out" "PC-5" "a closed item is never folded"
   assert_not_contains "$out" "PC-6" "nor a Duplicate one"
   assert_not_contains "$out" "PC-8" "nor an item a person filed"
   assert_equals "" "$(grep -v '^label list\|^issue list\|^issue view' "$LDIR/calls")" "a dry run only reads"
-  assert_equals 5 "$(grep -c '^issue view' "$LDIR/calls")" "and reads in full only the open items the Surgeon filed"
+  assert_equals 7 "$(grep -c '^issue view' "$LDIR/calls")" "and reads in full only the open items the automated sources filed"
   [ ! -e "$W/bundles.json" ] || fail "a dry run writes no bundle state"
   pass "fm-officer-surgeon fold: a dry run lists each area bundle's findings and items, keeps the promotion blocker single and writes nothing"
 }
 
 fold_apply() {  # [fold args...]: fold --apply in the current world; prints its output.
-  PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --now "$NOW" --apply "$@"
+  PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --friction-out "$W/friction" --page-check-out "$W/page-check" --now "$NOW" --apply "$@"
 }
 
 test_fold_apply_marks_each_item_a_duplicate_of_its_bundle() {
@@ -749,9 +749,9 @@ test_fold_apply_marks_each_item_a_duplicate_of_its_bundle() {
     "every folded item is marked Duplicate"
   assert_contains "$(cat "$LDIR/relations")" "PC-1 --duplicate-of $api --verify" "and related as a duplicate of its area bundle"
   assert_contains "$out" "- folded: PC-9 is a duplicate of $api" "the run names each fold"
-  assert_equals "Todo Todo Todo" "$(jq -r '[."PC-4", ."PC-7", ."PC-10"] | map(.state) | join(" ")' "$LDIR/issues.json")" \
-    "the promotion blocker and other officers' items stay open"
-  assert_equals 5 "$(jq -r '.[] | select(.title | startswith("Automated findings")) | .description' "$LDIR/issues.json" | grep -c '^- \[ \]')" \
+  assert_equals "Todo Duplicate Todo" "$(jq -r '[."PC-4", ."PC-7", ."PC-10"] | map(.state) | join(" ")' "$LDIR/issues.json")" \
+    "the promotion blocker and the roll-up stay open; the friction item folds"
+  assert_equals 6 "$(jq -r '.[] | select(.title | startswith("Automated findings")) | .description' "$LDIR/issues.json" | grep -c '^- \[ \]')" \
     "every open line of the folded items is on a bundle"
   assert_not_contains "$(calls)" "delete" "nothing is deleted"
   pass "fm-officer-surgeon fold --apply: each original is related as a duplicate of its area bundle and marked Duplicate"
@@ -928,9 +928,199 @@ test_duplicate_items_are_closed() {
   pass "fm-officer-linear: a Duplicate item is closed for every lookup and ledger check"
 }
 
+# ---- fold: friction, page check and fleet-app families ----
+
+fold_more_world() {  # open friction, page-check and fleet-app items, a rolled-up night, a started test and one Lee holds
+  local ffp pfp
+  ffp=$(printf 'f%.0s' {1..64}); pfp=$(printf 'e%.0s' {1..64})
+  world fold-more "$(jq -n --arg ffp "$ffp" --arg pfp "$pfp" '
+    def e2e($id; $fp; $cls; $when): "The full E2E run found this test failing on \($when).\n\nTest: \($id)\nFingerprint: \($fp)\nProjects: chromium\nFirst error line: Error: expect(locator).toBeVisible() failed\nClassification: \($cls). Fails alone.\nRerun alone: failed (6.3 s)\nRelease-blocking: yes\nStaging: 5243caee54ca (image tree 746cb9a6), run on \($when)\nResult file: /r/\($when).md\n\nEpic: none.\nNightly E2E \($when) \\[\($fp)\\]: first failure.\nfingerprint: \($fp)";
+    {"PC-20": {title: "A tool agents need is missing: tick", state: "Todo", project: "Fleet",
+               description: ("Filed by the friction officer from the 2026-11-08 friction events.\nSeverity: low (friction severity 2, confidence 3). Root cause: missing-tool / tool, tick.\nfriction-fp:" + $ffp)},
+     "PC-21": {title: "Runs: page-old boat-warm", state: "Todo", project: "Fleet",
+               description: ("Filed by the page-check officer from the 2026-11-09T12 page check.\nSeverity: medium. Kind: page-old. Page: Runs. Object: boat-warm.\npage-check-fp:" + $pfp)},
+     "PC-22": {title: "Dependency a major version behind: jsdom 30.1.3 to 31.0.0", state: "Triage", project: null,
+               description: "The nightly dependency scan found that npm package **jsdom** is a major version behind: 30.1.3 in use, 31.0.0 is the newest release.\n\n* Versions in use: 30.1.3\n* Newest release: 31.0.0\n* Projects: src/Web/client\n* Dependencies page: [https://fleet.example:8743/dependencies#findings](<https://fleet.example:8743/dependencies#findings>)\n\nFingerprint: major:npm:jsdom\n\nFix state: unfixed\n\nRevision: 62b87b4977"},
+     "PC-23": {title: "Dependency a major version behind: CsvHelper 33.1.0 to 34.0.0", state: "Triage", project: null,
+               description: "The nightly dependency scan found that NuGet package **CsvHelper** is a major version behind: 33.1.0 in use, 34.0.0 is the newest release.\n\n* Versions in use: 33.1.0\n* Newest release: 34.0.0\n* Projects: not known\n\nFingerprint: major:nuget:CsvHelper\n\nFix state: awaiting-release\n\nRevision: 1"},
+     "PC-24": {title: "Nightly E2E: calculator-stamp.spec.ts › Stamp duty › total", state: "Todo", project: null,
+               description: e2e("calculator-stamp.spec.ts › Stamp duty › total"; "e2e-aaaaaaaaaaaa"; "test-defect"; "2026-11-09")},
+     "PC-25": {title: "Nightly E2E: project-management.spec.ts › Projects › gantt", state: "Todo", project: null,
+               description: e2e("project-management.spec.ts › Projects › gantt"; "e2e-bbbbbbbbbbbb"; "product-defect"; "2026-11-09")},
+     "PC-26": {title: "Nightly E2E flaky: calculator-stamp.spec.ts › Stamp duty › band", state: "Todo", project: null,
+               description: (e2e("calculator-stamp.spec.ts › Stamp duty › band"; "e2e-cccccccccccc"; "flake-under-load"; "2026-11-09") + "\nFlaky: yes (passed alone).")},
+     "PC-27": {title: "Nightly E2E: 2026-11-07 mass failure (14 tests)", state: "Todo", project: null, description: "14 tests failed in the nightly run on 2026-11-07."},
+     "PC-28": {title: "Nightly E2E: calculator-stamp.spec.ts › Stamp duty › Lee works on this", state: "In Progress", project: null,
+               description: e2e("calculator-stamp.spec.ts › Stamp duty › Lee works on this"; "e2e-dddddddddddd"; "test-defect"; "2026-11-09")}}')"
+  printf 'Improvement\nagent\nscheduled-review\ndeveloper-tools\ntesting\ncalculators\nflaky\nscheduled-review\n' >> "$LDIR/labels"
+}
+
+fold_more() {  # [fold args...]: fold in the current world with the three lane directories.
+  PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --friction-out "$W/friction" --page-check-out "$W/page-check" --now "$NOW" "$@"
+}
+
+# fleet_app_parse <body-file>: a Python port of fleet-app's parseBundle (bundle.ts) and nightly_linear.py parse_bundle; prints
+# part, marker and one `file|fingerprint|done` row per checklist line, after checking the head ends before the first heading.
+fleet_app_parse() {
+  python3 -I - "$1" <<'PY'
+import re, sys
+desc = open(sys.argv[1]).read()
+line_re, head_re = re.compile(r"^- \[( |x)\] (\S+) — (.*)$"), re.compile(r"^### (.*)$")
+rows = desc.split("\n")
+is_list = [bool(head_re.match(r.strip()) or line_re.match(r.strip())) for r in rows]
+first = is_list.index(True)
+part = re.search(r"^Part: (\d+)$", desc, re.M)
+marker = [r for r in rows[:first] if r.startswith("Bundle: ")]
+print("part=%s marker=%s" % (part.group(1) if part else "-", marker[0] if marker else "-"))
+file = ""
+for row in rows[first:]:
+    h, m = head_re.match(row.strip()), line_re.match(row.strip())
+    if h: file = h.group(1)
+    elif m: print("%s|%s|%s" % (file, m.group(2), "done" if m.group(1) == "x" else "open"))
+PY
+}
+
+test_fold_dry_run_plans_friction_page_check_and_fleet_app_bundles() {
+  local out
+  fold_more_world
+  out=$(fold_more) || fail "fold dry run must succeed: $out"
+  assert_contains "$out" "- Automated findings: tooling (friction) [Fleet]: 1 finding(s) from 1 item(s) (PC-20); 1 new bundle(s)" "a friction item folds into its category bundle"
+  assert_contains "$out" "- Automated findings: Runs (page check) [Fleet]: 1 finding(s) from 1 item(s) (PC-21); 1 new bundle(s)" "a page-check item folds into its page bundle"
+  assert_contains "$out" "- Automated findings: developer-tools (dependency majors): 1 finding(s) from 1 item(s) (PC-22); 1 new bundle(s)" "an unfixed dependency item folds into the dependency bundle"
+  assert_contains "$out" "- Automated findings: testing (nightly E2E): 1 finding(s) from 1 item(s) (PC-25); 1 new bundle(s)" "a test whose spec names no feature goes to testing"
+  assert_contains "$out" "- Automated findings: calculators (nightly E2E): 1 finding(s) from 1 item(s) (PC-24); 1 new bundle(s)" "a calculator spec goes to calculators"
+  assert_contains "$out" "- Automated findings: calculators (flaky tests): 1 finding(s) from 1 item(s) (PC-26); 1 new bundle(s)" "a flaky test goes to the flaky family"
+  assert_contains "$out" "- kept: PC-23 (fix state awaiting-release, kept single)" "a dependency fixed on staging stays single"
+  assert_contains "$out" "- kept: PC-27 (a night roll-up or run notice, not one test; kept single)" "a night roll-up stays single"
+  assert_contains "$out" "- kept: PC-28 (started, kept single)" "an item someone started stays single"
+  assert_equals "" "$(grep -v '^label list\|^issue list\|^issue view' "$LDIR/calls")" "a dry run only reads"
+  [ ! -e "$W/bundles.json" ] && [ ! -e "$W/friction/bundles.json" ] || fail "a dry run writes no bundle state"
+  pass "fm-officer-surgeon fold: a dry run plans friction, page-check and fleet-app bundles and keeps the roll-up, started and fixed ones single"
+}
+
+test_fold_apply_writes_fleet_app_bundles_in_fleet_apps_own_format() {
+  local out dep e2e body
+  fold_more_world
+  out=$(fold_more --apply) || fail "fold --apply must succeed: $out"
+  dep=$(jq -r 'to_entries[] | select(.value.title == "Automated findings: developer-tools (dependency majors)") | .key' "$LDIR/issues.json")
+  e2e=$(jq -r 'to_entries[] | select(.value.title == "Automated findings: calculators (nightly E2E)") | .key' "$LDIR/issues.json")
+  [ -n "$dep" ] && [ -n "$e2e" ] || fail "the dependency and calculators bundles are created"
+  jq -r --arg i "$dep" '.[$i].description' "$LDIR/issues.json" > "$W/dep.md"
+  jq -r --arg i "$e2e" '.[$i].description' "$LDIR/issues.json" > "$W/e2e.md"
+  body=$(fleet_app_parse "$W/dep.md")
+  assert_contains "$body" "part=1 marker=Bundle: dependency-major/developer-tools" "the dependency bundle carries fleet-app's marker and part"
+  assert_contains "$body" "src/Web/client|major:npm:jsdom|open" "its line sits under the project, keyed by the fingerprint fleet-app computes"
+  assert_contains "$(cat "$W/dep.md")" "- [ ] major:npm:jsdom — jsdom 30.1.3 to 31.0.0 (npm)" "and reads as fleet-app's lineText writes it"
+  assert_contains "$(cat "$W/dep.md")" "Dependencies page: https://fleet.example:8743/dependencies#major" "with the app address from the original"
+  body=$(fleet_app_parse "$W/e2e.md")
+  assert_contains "$body" "part=1 marker=Bundle: nightly-e2e/calculators/nightly-E2E" "the nightly bundle carries its marker"
+  assert_contains "$body" "calculator-stamp.spec.ts|e2e-aaaaaaaaaaaa|open" "under its spec file, keyed by the e2e fingerprint"
+  assert_contains "$(cat "$W/e2e.md")" "- [ ] e2e-aaaaaaaaaaaa — Stamp duty › total — test-defect: Error: expect(locator).toBeVisible() failed (first seen 2026-11-09, staging 5243caee54ca; result /r/2026-11-09.md)" "and reads as line_text writes it"
+  assert_contains "$(jq -r '.[] | select(.title == "Automated findings: calculators (flaky tests)") | .description' "$LDIR/issues.json")" "Bundle: nightly-e2e/calculators/flaky-tests" "a flaky test's bundle has the flaky marker"
+  assert_equals "Duplicate Duplicate Duplicate Duplicate Duplicate" "$(jq -r '[."PC-20", ."PC-21", ."PC-22", ."PC-24", ."PC-25"] | map(.state) | join(" ")' "$LDIR/issues.json")" "the folded originals are Duplicate"
+  assert_equals "Triage Triage In" "$(jq -r '[."PC-23".state, ."PC-27".state, (."PC-28".state | split(" ")[0])] | join(" ")' "$LDIR/issues.json" | sed 's/Todo/Triage/g')" "the kept ones are untouched"
+  assert_contains "$(cat "$LDIR/relations")" "PC-22 --duplicate-of $dep --verify" "and related to their bundle"
+  assert_not_contains "$(calls)" "delete" "nothing is deleted"
+  assert_equals "friction" "$(jq -r '.bundles | to_entries[0].value.family' "$W/friction/bundles.json")" "friction's bundle state is in the friction lane"
+  pass "fm-officer-surgeon fold --apply: fleet-app items fold into bundles fleet-app's own parser reads, keyed by their own fingerprints"
+}
+
+test_fold_appends_to_an_existing_fleet_app_bundle_and_is_idempotent() {
+  local out n
+  fold_more_world
+  jq '. + {"PC-30": {title: "Automated findings: calculators (nightly E2E)", state: "Todo", project: null, labels: [],
+        description: "Failing and flaky tests in calculators.\n\nBundle: nightly-e2e/calculators/nightly-E2E\nPart: 1\n\n### other.spec.ts\n- [ ] e2e-111111111111 — a test (first seen 2026-11-01)\n\nPer the release runbook: keep."}}' "$LDIR/issues.json" > "$W/i" && mv "$W/i" "$LDIR/issues.json"
+  out=$(fold_more --apply) || fail "fold --apply must succeed: $out"
+  assert_contains "$out" "- Automated findings: calculators (nightly E2E): 1 finding(s) from 1 item(s) (PC-24); 0 new bundle(s) and appends to PC-30" "the open bundle is appended to"
+  assert_equals 1 "$(jq -r '[.[] | select(.title == "Automated findings: calculators (nightly E2E)")] | length' "$LDIR/issues.json")" "no second bundle is opened"
+  jq -r '."PC-30".description' "$LDIR/issues.json" > "$W/b.md"
+  assert_contains "$(fleet_app_parse "$W/b.md")" "other.spec.ts|e2e-111111111111|open" "its earlier line is kept"
+  assert_contains "$(fleet_app_parse "$W/b.md")" "calculator-stamp.spec.ts|e2e-aaaaaaaaaaaa|open" "and the folded test is added"
+  assert_contains "$(cat "$W/b.md")" "Per the release runbook: keep." "its tail is kept as it was"
+  n=$(jq 'length' "$LDIR/issues.json")
+  out=$(fold_more --apply) || fail "a re-run must succeed: $out"
+  assert_equals "$n" "$(jq 'length' "$LDIR/issues.json")" "a re-run creates nothing"
+  pass "fm-officer-surgeon fold --apply: an open fleet-app bundle is appended to, never duplicated, and a re-run is a no-op"
+}
+
+test_fold_apply_without_a_lane_directory_folds_nothing_for_that_officer() {
+  local out
+  fold_more_world
+  out=$(PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --now "$NOW" --apply) && fail "a missing lane directory must exit non-zero"
+  assert_contains "$out" "not folded: 1 open item(s) the friction officer made (pass --friction-out" "friction is named, not folded"
+  assert_equals "Todo" "$(issue PC-20 .state)" "its item stays open"
+  pass "fm-officer-surgeon fold --apply: friction and page-check items fold only with their lane directory"
+}
+
+test_fold_apply_without_a_lane_directory_passes_when_that_officer_has_no_items() {
+  local out
+  dup_fp_world fold-no-lane
+  out=$(PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --now "$NOW" --apply) || fail "no friction or page-check items, so a missing lane directory must not fail: $out"
+  assert_not_contains "$out" "not folded" "nothing is reported unfolded"
+  assert_equals "Duplicate Duplicate Duplicate" "$(jq -r '[."PC-1", ."PC-2", ."PC-3"] | map(.state) | join(" ")' "$LDIR/issues.json")" "the Surgeon's items still fold"
+  pass "fm-officer-surgeon fold --apply: a lane with no open items needs no lane directory"
+}
+
+dup_fp_world() {  # two open Surgeon items that carry the same finding, plus a cluster line of it
+  local a b
+  a=$(printf 'review\0nightly-review\0%s' dup | sha256sum | cut -d' ' -f1)
+  b=$(printf 'review\0nightly-review\0%s' solo | sha256sum | cut -d' ' -f1)
+  world "$1" "$(jq -n --arg a "$a" --arg b "$b" '
+    def surgeon($sev; $loc; $fp): "Filed by the Ship'"'"'s Surgeon from the 2026-11-01 nightly code review results.\nSeverity: \($sev). Source job: job.\nLocation: \($loc)\nsurgeon-fp:\($fp)";
+    {"PC-1": {title: "Dup one", state: "Todo", project: null, description: surgeon("low"; "src/api/controllers/A.cs"; $a)},
+     "PC-2": {title: "Dup one again", state: "Todo", project: null, description: surgeon("low"; "src/api/controllers/A.cs"; $a)},
+     "PC-3": {title: "Solo", state: "Todo", project: null, description: surgeon("low"; "src/api/controllers/B.cs"; $b)}}')"
+  printf 'scheduled-review\nbug-sweep\napi\n' >> "$LDIR/labels"
+}
+
+test_fold_queues_a_fingerprint_once_and_marks_every_item_that_carried_it() {
+  local out
+  dup_fp_world fold-dup
+  out=$(fold_apply --bundle-cap 1) || fail "fold --apply must succeed: $out"
+  assert_contains "$out" "2 finding(s)" "a finding in two items is counted once"
+  assert_equals 2 "$(jq -r '.[] | select(.title | startswith("Automated findings")) | .description' "$LDIR/issues.json" | grep -c '^- \[ \]')" "and listed once across the bundles"
+  assert_equals "Duplicate Duplicate Duplicate" "$(jq -r '[."PC-1", ."PC-2", ."PC-3"] | map(.state) | join(" ")' "$LDIR/issues.json")" "every item that carried it is folded"
+  assert_equals "" "$(jq -r '.[] | select(.title | startswith("Automated findings")) | .description' "$LDIR/issues.json" | grep '^- \[ \]' | sort | uniq -d)" "no fingerprint is on two bundles"
+  pass "fm-officer-surgeon fold --apply: a fingerprint two items carry is queued once, and both items point at its one line"
+}
+
+test_fold_rerun_rewrites_a_bundle_whose_body_differs_from_state() {
+  local out api n
+  dup_fp_world fold-heal
+  out=$(fold_apply) || fail "first fold must succeed: $out"
+  api=$(jq -r 'to_entries[] | select(.value.title == "Automated findings: api (code review)") | .key' "$LDIR/issues.json")
+  # A half-written earlier run: the bundle's Linear body was changed behind the lane's back, and two items were never folded.
+  jq --arg i "$api" '.[$i].description = "stale body" | ."PC-1".state = "Todo" | ."PC-2".state = "Todo"' "$LDIR/issues.json" > "$W/i" && mv "$W/i" "$LDIR/issues.json"
+  jq '.folded = {} | .bundles |= map_values(.sha = "written-before-a-member-moved")' "$W/bundles.json" > "$W/b" && mv "$W/b" "$W/bundles.json"  # state moved on after the write
+  n=$(jq 'length' "$LDIR/issues.json")
+  out=$(fold_apply) || fail "the re-run must succeed: $out"
+  assert_contains "$(jq -r --arg i "$api" '.[$i].description' "$LDIR/issues.json")" "surgeon-fp:" "the bundle is rewritten from state"
+  assert_equals "$n" "$(jq 'length' "$LDIR/issues.json")" "no new bundle is created"
+  assert_equals "Duplicate Duplicate" "$(jq -r '[."PC-1", ."PC-2"] | map(.state) | join(" ")' "$LDIR/issues.json")" "and the items are folded"
+  pass "fm-officer-surgeon fold --apply: a re-run rewrites a bundle whose body differs from its state, then folds its items"
+}
+
+test_fold_counts_an_item_linear_already_shows_as_duplicate() {
+  local out
+  fold_world fold-verify
+  out=$(FAKE_VERIFY=textappend fold_apply) || fail "a failed verify on a Duplicate item must not fail the fold: $out"
+  assert_contains "$out" "- folded: PC-1 is a duplicate of" "an item whose state update verify failed but shows Duplicate is folded"
+  assert_not_contains "$out" "not folded: PC-1" "and not reported as left"
+  assert_contains "$(cat "$W/bundles.json")" '"PC-1"' "and recorded in folded"
+  pass "fm-officer-surgeon fold --apply: an item Linear shows as Duplicate counts as folded despite a verify mismatch"
+}
+
 test_fold_dry_run_plans_area_bundles_and_writes_nothing
 test_fold_apply_marks_each_item_a_duplicate_of_its_bundle
 test_fold_apply_keeps_an_item_whose_findings_are_not_all_written
+test_fold_dry_run_plans_friction_page_check_and_fleet_app_bundles
+test_fold_apply_writes_fleet_app_bundles_in_fleet_apps_own_format
+test_fold_appends_to_an_existing_fleet_app_bundle_and_is_idempotent
+test_fold_apply_without_a_lane_directory_folds_nothing_for_that_officer
+test_fold_apply_without_a_lane_directory_passes_when_that_officer_has_no_items
+test_fold_queues_a_fingerprint_once_and_marks_every_item_that_carried_it
+test_fold_rerun_rewrites_a_bundle_whose_body_differs_from_state
+test_fold_counts_an_item_linear_already_shows_as_duplicate
 test_a_folded_finding_keeps_raising_its_found_count
 test_a_failed_bundle_update_is_retried_the_same_day
 test_a_bundle_starts_once_and_a_reserved_line_holds_it
