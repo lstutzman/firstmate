@@ -547,7 +547,7 @@ test_area_label_comes_from_the_finding() {
 }
 
 test_review_findings_are_bundled_by_area_and_ticked_off() {
-  local home json bodies infra old
+  local home json bodies infra
   make_world clusters "$LINEAR_ON"; home=$WORLD_HOME
   set_pages clusters '[
     {"id":"c1","severity":"medium","file":"infra/bicep/b.bicep","summary":"unpinned api version one"},

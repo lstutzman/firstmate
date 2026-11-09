@@ -697,7 +697,6 @@ test_no_call_closes_or_deletes() {
 }
 
 fold_world() {  # the open items an earlier Surgeon filed one by one, a component cluster, and items it must leave alone
-  local sfp
   sfp() { printf 'review\0nightly-review\0%s' "$1" | sha256sum | cut -d' ' -f1; }
   world fold "$(jq -n --arg a "$(sfp a)" --arg b "$(sfp b)" --arg c "$(sfp c)" --arg d "$(sfp d)" --arg e "$(sfp e)" --arg f "$(sfp f)" --arg g "$(sfp g)" --arg h "$(sfp h)" '
     def surgeon($src; $sev; $loc; $fp): "Filed by the Ship'"'"'s Surgeon from the 2026-11-01 \($src) results.\nWhat it is for: a finding no Linear item tracked yet, so it is not lost.\nEpic: not assigned; whoever triages this picks one.\n\nSeverity: \($sev). Source job: job.\nFound: 1 times (first 2026-11-01, last 2026-11-01, by surgeon)\nLocation: \($loc)\nsurgeon-fp:\($fp)";
@@ -759,7 +758,7 @@ test_fold_apply_marks_each_item_a_duplicate_of_its_bundle() {
 }
 
 test_fold_apply_keeps_an_item_whose_findings_are_not_all_written() {
-  local out cfp
+  local out
   cfp() { printf 'review\0nightly-review\0%s' "$1" | sha256sum | cut -d' ' -f1; }
   world fold-partial "$(jq -n --arg a "$(cfp a)" --arg b "$(cfp b)" '
     {"PC-1": {title: "Code review findings: mixed (src)", state: "Todo", project: null,
