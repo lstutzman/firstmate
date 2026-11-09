@@ -32,9 +32,9 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 ## Where findings are filed
 
 - Team PC, project Fleet, label `area:fleet`, Type Chore, Source `agent`; the officer's identity is in each item's `corpus-fp:<sha256>` marker and description.
-- Each finding is one Linear item, keyed by its class and subject, so the same gap is the same item every night.
-- Duplicates, the `Found:` line, recurrences of closed items and the call budget are the shared [filing rules](contract.md#file).
-- The item body carries the class, subject, severity and the summary built from counts, timestamps and names, and the repository the fix lands in.
+- Each finding is one line on its class's [bundle](contract.md#bundles), keyed by its class and subject, so the same gap is the same line every night.
+- Duplicates, recurrences of closed items and the call budget are the shared [filing rules](contract.md#file).
+- A line carries the class, subject, severity, the repository the fix lands in and, when the fix may touch them, the scan gate files; an older single item's body carries the summary built from counts, timestamps and names.
   It never carries a transcript, a corpus row or a memory record: the officer never reads one.
 
 ## What starts by itself

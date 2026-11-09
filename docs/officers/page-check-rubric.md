@@ -8,7 +8,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 ## What counts as work
 
 - A defect on a fleet-app page: something the page shows that it should not, or fails to show.
-  Every open finding is one item, keyed by its kind, page and object, so the same defect is the same item every run.
+  Every open finding is one line on its page's bundle, keyed by its kind, page and object, so the same defect is the same line every run.
 - `standing-rule`: a card or suggestion Lee is shown that a standing rule in `data/captain-shared.md` already settles.
 - `stale-card`: a shown card past its snooze date, unanswered for a week (a card in the Later band is parked on purpose and is not aged), already answered, naming a closed PR or a merged PR whose opening ask is to merge, review, approve or release a hold on that PR (not a production or activation action on it, however worded), or whose status line was settled elsewhere.
 - `shown-after-done`: a card shown although its record was settled by a captain answer or is closed in the app's own card record.
@@ -33,8 +33,9 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 ## Where findings are filed
 
 - Team PC, project Fleet, label `area:fleet`, Type Bug, Source `agent`, the label Lee's Linear setup gives a worker filing on his behalf; the officer's identity is in each item's fingerprint marker and description.
-- Duplicates, the `Found:` line, a repeat of a closed item (which raises its Found line, files nothing new and never starts it) and the call budget are the shared [filing rules](contract.md#file).
-- The item body carries the page, the kind, the object id, the evidence and the route.
+- Each page's findings share one [bundle](contract.md#bundles), grouped by route.
+- Duplicates, a repeat of a closed item or bundle (which files nothing new and never starts it) and the call budget are the shared [filing rules](contract.md#file).
+- A line carries the page, the kind, the object id and the severity, under its route; an older single item's body carries the page, the kind, the object id, the evidence and the route.
   It carries no card question or answer, because Linear is third-party storage; the card is named by its id.
 
 ## What starts by itself

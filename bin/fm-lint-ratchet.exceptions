@@ -4,7 +4,6 @@ bin/fm-officer.sh
 tests/fm-backend-herdr.test.sh
 tests/fm-harness-liveness-drift-live-e2e.test.sh
 tests/fm-hc-lab.test.sh
-tests/fm-officer-surgeon.test.sh
 tests/fm-officer.test.sh
 tests/fm-opencode-primary-live-e2e.test.sh
 tests/fm-project-mode.test.sh

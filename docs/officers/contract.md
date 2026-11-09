@@ -9,15 +9,38 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
 
 1. Find: the officer's script reads its sources and classifies each finding as real, won't fix, or needs a decision.
    The officer's script header owns how; the contract only needs each real finding to carry a severity, a source, a stable key (or a title and location to fingerprint) and, for a bug or code-review finding, the safe form of the fix when the source gives one.
-2. File: every real finding that no Linear item tracks yet is filed once, in team PC, by the shared library.
+2. File: every real finding that no Linear item tracks yet is filed once, in team PC, by the shared library, as a line on its area's bundle item (see Bundles).
 3. Triage: the filed item gets a priority from its severity and a score from how often it has been found; the digest shows both.
 4. Start: a finding the rubric admits, whose score reaches the rubric minimum, goes to the owning office as a start request; a finding in a reserved class is held for Lee.
+
+## Bundles
+
+Automated findings are filed in far fewer, larger items, so one worker fixes a bundle in one pull request that is tested once (Lee, main chat, 2026-11-09).
+
+- A bundle is one open Linear item per officer, source family and feature area, titled `Automated findings: <area> (<source family>)`, plus ` part N` for a later part.
+  Fleet and PropertyCompass2 findings never share a bundle.
+- Its body is a checklist grouped by file (`### <file>` headings, sorted), one line per finding: its `<officer-id>-fp:<sha256>` fingerprint, a one-line title, its severity and any note.
+  Its `Severity:` line names its worst open finding, and a create takes that finding's priority.
+- A new finding is appended to its area's open bundle and never becomes an item of its own.
+  A new bundle is made only when the area has no open bundle with room.
+- A bundle holds at most the registry's `bundle-cap` open findings (default 15, roughly what one worker fixes and tests in one pull request); the next finding opens the next part.
+  A bundle a worker has started (Linear state type `started`) takes no new line, so its next finding opens the next part too.
+- A finding marked resolved is ticked, never removed.
+- A bundle a person closed is never written again: its findings still reported go to the area's open bundle, each line noting `recurred, was in <id>`.
+- Each finding keeps its own found count, so its score still rises as it is seen again; a finding already on its bundle is not a new sighting, and a bundle has no Found line.
+- An open bundle with a finding still reported is read once a day, so a bundle a person closed or started is noticed.
+- A bundle starts as one item: one start request, which asks for every open line in one pull request.
+  A line in a reserved class holds its whole bundle for Lee, whatever that line's own score.
+- What stays single, never bundled: a finding an officer marks single (the Surgeon's invalid nightly E2E run, which blocks promotion), and anything already tracked by an item of its own.
+  An existing single item a finding was filed in keeps its Found line until a person closes it (or it is folded into its bundle as a duplicate); the finding then goes to its area bundle naming it.
+  Bugs from members, Lee's own items and production incidents are not filed by these officers.
+- `bin/fm-officer-surgeon.py fold` folds the Surgeon's existing open items into bundles; it is a dry run unless given `--apply` (see its `--help`).
 
 ## File
 
 - Search before creating: the fingerprint first (`<officer-id>-fp:<sha256>` in the item's description, and the lane's `filed-fingerprints.json`), then a text search of the title.
 - Ask local-jev whether a text-search candidate is the same issue.
-  It is a duplicate only at a confidence above 0.85; a lower near match files a new item that names the near match.
+  It is a duplicate only at a confidence above 0.85; a lower near match is filed and its line names the near match.
   Without local-jev only the fingerprint decides, and the digest says so.
 - A duplicate raises the item's one machine-kept line, `Found: N times (first <date>, last <date>, by <officer-id>)`, in place, and adds one comment on that day's first sighting and no more.
 - Every Linear write is `--dry-run` and then `--verify`.
@@ -29,10 +52,10 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
   The officer's own label lookup does not cover `area:fleet`; if team PC lacked it, Linear's dry run would refuse the item and the digest would report it failed.
   An officer never creates a label; a missing label means the finding is reported and not filed.
 - An officer filing under this contract never closes or deletes an item, and never changes the state, priority, labels, assignee or title of one that exists; the one exception is the progress officer's triage below.
-  The only text it edits is the Found line (and an officer's own cluster list).
-  An item a person closed is never reopened: a repeat finding files a new item that says `Recurrence of <id>` and links the old one.
-  The page-check officer is the one exception: its repeat of a closed item raises that item's Found line and adds the day's one comment, files nothing new and never starts it ([`page-check-rubric.md`](page-check-rubric.md)).
-- The registry line sets the per-run create cap (`max-creates`) and the Linear call budget (`max-linear-calls`).
+  The only text it edits is the Found line and its own bundles' checklists; `fold --apply` alone also marks the Surgeon's folded originals Duplicate of their bundle.
+  An item a person closed is never reopened: a repeat finding goes to its area bundle with a line that names the closed item (a finding an officer keeps single files a new item that says `Recurrence of <id>` and links the old one).
+  The page-check officer is the one exception: its repeat of a closed item or bundle raises nothing new, files nothing and never starts it ([`page-check-rubric.md`](page-check-rubric.md)).
+- The registry line sets the per-run create cap (`max-creates`, which counts bundles), the bundle size (`bundle-cap`) and the Linear call budget (`max-linear-calls`).
   Whatever the cap, the budget or a rate limit leaves unfiled is named in the digest with its reason, highest score first, and the next run files it from the ledger.
   Nothing is dropped silently.
 

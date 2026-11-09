@@ -8,9 +8,10 @@ FIND, FILE, TRIAGE, START contract that bin/fm-officer-linear.py implements for 
 and docs/officers/surgeon-rubric.md owns what counts as work, how it is scored and what starts by itself.
 
 Usage:
+  fm-officer-surgeon.py fold --out <lane-dir> [--apply] [--team PC] [--bundle-cap 15] [--max-items 1000] ...
   fm-officer-surgeon.py run --archive <dir|host:dir> --date <YYYY-MM-DD> --out <lane-dir>
                             --app <https url> [--home <dir>]... [--hosts a,b] [--model none]
-                            [--team PC] [--writes none|linear] [--max-creates 100]
+                            [--team PC] [--writes none|linear] [--max-creates 100] [--bundle-cap 15]
                             [--max-linear-calls 450] [--triage-label triage] [--area <ignored>]
                             [--staging-repo <git remote>] [--visual-findings <file>] [--visual-captures <dir>]
                             [--rubric <file>] [--jev <jev.py>]
@@ -59,10 +60,11 @@ Each finding is classified with the tables below and no model:
                         that is missing, unreadable, of another schema_version, or unchanged since the last run is a
                         named `Coverage gap:`, as are a row without a route, rubric item or 64-hex fingerprint
                         (skipped), a non-empty errors list or a run.images_failed, run.images_deferred or
-                        run.malformed_findings_dropped above zero (the review is incomplete). The item lists each
-                        screenshot's path (resolved against --visual-captures when given and the file is there).
-                        With --visual-captures and writes: linear, a newly filed item gets each screenshot attached
-                        with `linear-attach <issue> <file> --verify` (never on a duplicate bump, each call counted
+                        run.malformed_findings_dropped above zero (the review is incomplete). The finding's bundle line
+                        carries its visual-review-fp and names its screenshots (resolved against --visual-captures when
+                        given and the file is there).
+                        With --visual-captures and writes: linear, the bundle a finding is newly added to gets each of
+                        its screenshots attached with `linear-attach <issue> <file> --verify` (never on a repeat, each call counted
                         against the Linear call budget); a missing linear-attach, a missing screenshot file, exit 3
                         (upload rights) or exit 75 (rate limited, stops the run's attaching) is a named `Coverage gap:`.
                         A screenshot not attached (other than a missing file) is kept as `pending_attach` in the
@@ -84,38 +86,33 @@ team PC, highest score first:
   1. one `label list --team PC`; Bug, the Source label (scheduled-review for the
      nightly E2E and review, bug-sweep for the sweeper) and one area label must all
      exist there. The area label comes from the finding's file path or component
-     (AREA_RULES; a nightly E2E failure tries the feature rules on its spec path and words
-     before `testing`); with no fit it is --triage-label; a label missing from team PC
+     (AREA_RULES, feature first: the feature rules on its path and then its words before
+     `testing`); with no fit it is --triage-label; a label missing from team PC
      means the finding is reported and not filed. The Surgeon never creates a label.
      Fleet work (lib.fleet_work: a finding from firstmate, skills or fleet-app) takes
-     area:fleet instead and goes in the Fleet project, and its low review findings
-     cluster apart from PropertyCompass2 ones.
-  2. medium or higher findings, and every non-review finding, each get their own
-     item. Low review findings are clustered, one item per component: the group of
-     the first CLUSTER_PARTS directory parts of the file, split one level deeper
-     (again while a subgroup still passes it) when a group passes CLUSTER_SPLIT_OVER findings, subgroups under
-     CLUSTER_MIN_SUBGROUP folded into "<parent> (other)", groups under
-     CLUSTER_MIN_GROUP folded into "<first part> (misc)". A finding keeps its
-     cluster once assigned (review-state.json), so the key stays stable. The item
-     lists every finding (fingerprint, title, file) as a tick box; a new finding
-     updates the item, and a finding on the reviewer's resolved list is ticked.
+     area:fleet instead and goes in the Fleet project, and its bundles are apart from PropertyCompass2 ones.
+  2. every finding is a line on its source family's feature-area bundle (docs/officers/contract.md "Bundles";
+     lib.Bundles): families code review, nightly E2E, bug sweeper and visual review (FAMILY), the area from
+     area_for(..., feature_first=True), grouped by file inside, at most --bundle-cap open lines a part. A finding
+     on the reviewer's resolved list is ticked. The one single item is an invalid nightly E2E run, which blocks
+     promotion: it keeps its own item (special e2e-invalid) and the steps below.
   3. dedupe, in order: the fingerprint (`issue search "surgeon-fp:<sha256>"`, read
      with `issue view`, plus the lane's filed-fingerprints.json); then a text
      search of the title, each candidate asked of local-jev ("same issue?"), a
-     duplicate only at confidence > JEV_SAME. A lower near match is noted in the
-     new item. Without local-jev, only the fingerprint decides.
-  4. a duplicate bumps the existing item's one machine-maintained line
+     duplicate only at confidence > JEV_SAME. A lower near match is noted on the
+     finding's line. Without local-jev, only the fingerprint decides. A bundle is never a match.
+  4. a duplicate bumps the existing single item's one machine-maintained line
      `Found: N times (first <date>, last <date>, by surgeon)` in place
      (`issue update --dry-run`, then `--verify`), at most once a day per item, and
-     adds one comment on that first sighting. A finding already on its own
-     cluster's list is not a new sighting.
+     adds one comment on that first sighting. A finding already on its bundle is
+     not a new sighting; it keeps its own found count.
   5. `issue create --dry-run`, then `--verify`, with exactly one Type (Bug), one
      Source and one area label. A failed verify is never retried; the item counts as created (and is ledgered)
      when the error names it (data.issue.identifier) or the team's issue list holds one new open item of exactly its title, else it is logged failed
-     and tried again next run. A cluster reuses the oldest open item of exactly its title instead of creating another.
+     and tried again next run. A bundle with no ledgered item first adopts the oldest open item of exactly its title.
 It never closes or deletes an item. Every linear-axi call is counted; --max-linear-calls
 stops the run's Linear work (the next run continues from the ledger). --max-creates bounds
-new items a run. One RATE_LIMITED answer stops every Linear call in the run, writes
+new items (bundles) a run. One RATE_LIMITED answer stops every Linear call in the run, writes
 linear-resume-after.json (one hour on) and reports the rest as not filed; later runs
 skip Linear until then. Nothing is dropped silently: the digest names what was not filed.
 
@@ -130,6 +127,9 @@ Pattern memory (review and sweeper findings): one line per bad pattern with its 
 deduped by normalised title and then by local-jev; new patterns go in one batched start
 request to the Navigator (quality-patterns.md), in the digest for memory capture (no
 scriptable memory-tier path exists), and mechanical ones get a proposed lint rule.
+
+`fold` (fold_main) is the one-off move of the Surgeon's existing open items (one per finding, or one per component
+cluster) into area bundles: a dry run unless --apply; see `fm-officer-surgeon.py fold --help`.
 
 Outputs <date>.json and <date>.md in --out and prints
 `DIGEST <date> <n-actionable> <date>.md` as its last stdout line, plus a
@@ -579,7 +579,7 @@ def description(f, date, near=None, recurrence=None):
 
 
 def update_review_state(state, findings, resolved, date):
-    """Tracks every real review finding (open or fixed) for the burn-down and the cluster ticks."""
+    """Tracks every real review finding (open or fixed) for the burn-down and the bundle ticks."""
     seen = state.setdefault("review", {})
     for f in findings:
         if f["source"] == "review" and f["class"] == "real" and f["fingerprint"]:

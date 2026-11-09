@@ -77,9 +77,11 @@ which owns what counts as work, how a finding is scored and what starts. With
 --writes linear (the registry's `writes: linear`, with max-creates, max-linear-calls and
 jev) every open finding is filed in team PC as a Chore, Source label agent, in the Fleet
 project with the area:fleet label, searched for first by its `corpus-fp:<sha256>` marker and
-then by title with local-jev, and every night it is still open raises the item's Found line
-once. The item body holds only the finding's class, subject, severity and the summary built
-above from counts, timestamps and names, never a transcript, a corpus row or a memory record.
+then by title with local-jev, as a line on its class's bundle (docs/officers/contract.md
+"Bundles"), and every night it is still open raises its own found count once. The line holds
+only the finding's class, subject, severity, repository and scan-gate note (an older single
+item's body, the summary built above from counts, timestamps and names), never a transcript,
+a corpus row or a memory record.
 A finding whose item exists and whose score reaches the rubric minimum gets a start request in
 `start_requests` (and, for this home, a <date>.start-requests.sh handoff), addressed to the
 --start-home office whose dispatch list names its repository (transcript-archive for the

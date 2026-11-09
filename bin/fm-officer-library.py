@@ -54,10 +54,11 @@ which owns what counts as work, how a finding is scored and what starts. With
 --writes linear (the registry's `writes: linear`, with max-creates, max-linear-calls and
 jev) every new code, needs-lee and safe finding is filed in team PC as a Chore, label
 scheduled-review, with the documentation area label (else the triage label), searched for
-first by its `librarian-fp:<sha256>` marker and then by title with local-jev. Hold items and
-the run's decisions item are never filed. The Filer runs on the audit run's date, so the
-Found line rises once per audit run and not once a day; the create cap (fleet rules
-section 8: 3, and a larger --max-creates is held to 3) is per audit run, not per day, and what it leaves unfiled is named in the
+first by its `librarian-fp:<sha256>` marker and then by title with local-jev, as a line on its
+audit kind's bundle (docs/officers/contract.md "Bundles"). Hold items and
+the run's decisions item are never filed. The Filer runs on the audit run's date, so a
+finding's found count rises once per audit run and not once a day; the create cap (fleet rules
+section 8: 3 new bundle items, and a larger --max-creates is held to 3) is per audit run, not per day, and what it leaves unfiled is named in the
 digest and filed by the next audit run. A safe finding is filed as medium at least, so it
 reaches the start score once the audit finds it three times (a high one at once). A safe
 finding whose item exists and whose score reaches the rubric minimum gets a start request in

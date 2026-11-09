@@ -19,13 +19,24 @@ how it finds things. This file owns the mechanics every officer shares:
               (`issue update --dry-run`, then `--verify`) and adds one comment, on the day's first sighting only.
               Every write is `--dry-run` then `--verify`. A failed verify is never retried; the item is taken as written when the
               error's data.issue.identifier names it, else when the team's issue list holds one new open item of exactly its title (Linear's full-text search matches
-              neither fingerprints nor these titles, so no exact-title lookup uses it; see title_index()), and only then recorded failed (tried again next run). open_by_title() also lets a cluster reuse
-              the oldest open item of its title. An item a person closed (completed or canceled) is never reopened,
+              neither fingerprints nor these titles, so no exact-title lookup uses it; see title_index()), and only then recorded failed (tried again next run). open_by_title() also lets a bundle adopt
+              the oldest open item of its title. A Duplicate item counts as closed (is_closed()). An item a person closed (completed or canceled) is never reopened,
               edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`), unless
               the Filer is built with bump_closed (the page-check officer), when it bumps the closed item and starts nothing.
               An item gets exactly one Type, one Source and one area label; fleet work
               (is_fleet: a finding's repository, else its Officer's project) goes in the Fleet project, with the area:fleet label (fleet_labels). The library never creates a label and never closes
               or deletes an item.
+  bundles     Bundles (docs/officers/contract.md "Bundles" owns the rule): one open item per (officer, source family, area,
+              fleet or not), titled bundle_title(); its body is rebuilt from the lane's bundles.json on every write, so a line
+              is never lost. place() (no Linear call) keeps a finding on its open bundle, keeps one already filed alone on that
+              older item (legacy, bumped until closed), or queues it; dedupe() bumps a queued finding an existing single item
+              tracks (fingerprint, then local-jev, never matching a bundle); write() appends the queue to the area's open part
+              with room (at most bundle-cap open lines, none on a started part), else adopts an open item of the part's exact
+              title (a lane that lost its state), else creates the next part, and reads each bundle it touches (and every
+              bundle with a finding still reported, once a day): a closed one is never written again and its reported findings
+              are queued again naming it (with recur_closed off, the page-check officer's case, they stay with it). Each
+              bundled finding keeps its own found count in found.json `members`. file_bundled() and file_in_bundles() are the
+              filing passes; plan_starts() gives a bundle one start (BUNDLE_START) and holds it whole on any reserved line.
   budget      Linear counts every linear-axi call against the officer's registry `max-linear-calls`, and Filer stops
               creating at its `max-creates`; whatever is left is reported by not_filed_lines() and filed by the next run
               from the ledger. One RATE_LIMITED answer stops every Linear call and pauses later runs for an hour.

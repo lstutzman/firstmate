@@ -80,11 +80,11 @@ shared officer contract (docs/officers/contract.md; bin/fm-officer-linear.py own
 mechanics) with its rubric docs/officers/page-check-rubric.md, which owns what counts
 as work, the severity of each kind and what starts. Every open finding is filed once
 in team PC, project Fleet, labels Bug, the Source label agent and area:fleet, keyed by
-its id (kind, page and object), so a finding nobody fixed raises the item's
-`Found: N times` line once a day and that count is the priority lever. A card's own
-words never go to Linear: the item names the card by id. A repeat of a closed item
-raises that item's Found line, files nothing new and never starts it (the Filer's
-bump_closed). A page-old or shown-after-done
+its id (kind, page and object), as a line on its page's bundle (docs/officers/contract.md
+"Bundles"), so a finding nobody fixed raises its own found count once a day and that count
+is the priority lever. A card's own words never go to Linear: the line names the card by id.
+A repeat of a closed item or bundle files nothing new and never starts it (the Filer's
+bump_closed; recur_closed off). A page-old or shown-after-done
 finding whose open item exists and whose score reaches the rubric minimum gets a start
 request in the digest's `start_requests` (and, for this home, a <key>.start-requests.sh
 handoff), addressed to the --start-home office that dispatches the fleet repositories
