@@ -31,6 +31,8 @@ with open(os.path.join(d, "calls"), "a") as fh:
 path = os.path.join(d, "issues.json")
 issues = json.load(open(path))
 def out(data): print(json.dumps({"ok": True, "data": data})); sys.exit(0)
+def state_type(state):  # as Linear reports it: a duplicate has its own stateType
+    return {"Done": "completed", "Canceled": "canceled", "Duplicate": "duplicate", "In Progress": "started"}.get(state, "unstarted")
 def flag(name):
     return args[args.index(name) + 1] if name in args else None
 def save(): json.dump(issues, open(path, "w"))
@@ -59,7 +61,7 @@ if args[:2] == ["label", "list"]:
 if args[:2] == ["issue", "list"]:
     # Linear data, newest first, titles and stateType as the real list prints them (no title filter exists).
     out({"issues": [{"identifier": i, "title": v["title"], "state": v["state"], "team": "PC", "project": v.get("project"),
-                     "stateType": "completed" if v["state"] == "Done" else "unstarted"}
+                     "stateType": state_type(v["state"])}
                     for i, v in sorted(issues.items(), key=lambda kv: -int(kv[0].split("-")[1]))][:int(flag("--max-items") or 30)]})
 if args[:2] == ["issue", "search"]:
     if os.environ.get("FAKE_SEARCH_MISS"): out({"issues": []})  # full-text search that never returns these titles
@@ -71,7 +73,7 @@ if args[:2] == ["issue", "search"]:
 if args[:2] == ["issue", "view"]:
     v = issues[args[2]]
     out({"issue": {"identifier": args[2], "title": v["title"], "description": v["description"],
-                   "state": v["state"], "project": v.get("project"), "stateType": "completed" if v["state"] == "Done" else "unstarted"}})
+                   "state": v["state"], "project": v.get("project"), "stateType": state_type(v["state"])}})
 dry = "--dry-run" in args
 if args[:2] == ["issue", "create"]:
     if dry: out({"dryRun": True})
@@ -322,6 +324,31 @@ elif scenario in ("fleet-start", "fleet-nowrite"):
                          "lines": [p["line"] for p in r["patterns"]]} for r in pats],
            "captures": sorted(c["tags"][1] for c in captures),
            "filed": {v["title"]: v["project"] for v in json.load(open(os.path.join(os.environ["LDIR"], "issues.json"))).values()}}
+elif scenario == "bundle":
+    # One officer run of the shared bundle path. FINDINGS: [[key, title, severity, location, area, single?], ...];
+    # TICK: keys marked resolved; CAP: bundle-cap. The lane's ledger, found and bundle state persist in W between runs.
+    rows = json.loads(os.environ["FINDINGS"])
+    ledger = lib.read_json(os.path.join(W, "ledger.json"), {})
+    found = lib.read_json(os.path.join(W, "found.json"), {})
+    fl = lib.Filer(officer, lib.Linear(450), "PC", os.environ.get("RUN_DATE", date), W, ledger, found,
+                   lib.Jev(os.path.join(W, "jev.py")), int(os.environ.get("MAX_CREATES", "100")))
+    bundles = lib.Bundles(fl, int(os.environ.get("CAP", "15")))
+    fs = []
+    for key, title, severity, location, area, *single in rows:
+        f = find(key, title, severity, location)
+        if not single:
+            f["bundle"] = {"family": "code review", "area": area}
+        fs.append(f)
+    quiet = lib.file_bundled(fl, fs, labels, None, bundles)
+    for k in json.loads(os.environ.get("TICK", "[]")):
+        bundles.tick(lib.fingerprint("scan", "job", k))
+    if not quiet or bundles.needs_linear():
+        lib.file_bundled(fl, fs, labels, describe, bundles)
+    bundles.save()
+    lib.write_json(os.path.join(W, "ledger.json"), ledger)
+    lib.write_json(os.path.join(W, "found.json"), found)
+    lib.apply_found(fs, found, ledger)
+    res = {"filings": {f["key"]: f["filing"] for f in fs}, "found": {f["key"]: f["found"] for f in fs}, "calls": fl.lin.n}
 print(json.dumps(res))
 PY
 }
@@ -656,6 +683,106 @@ test_no_call_closes_or_deletes() {
   pass "fm-officer-linear: only search, view, create, update (the Found line), comment and relation are ever called"
 }
 
+bundle() {  # <findings json> [env...]: one bundle run in the current world; prints the result json.
+  env FINDINGS="$1" "${@:2}" bash -c "$(declare -f drive); $(declare -p FAKEBIN LDIR W LIB DATE NOW); drive bundle"
+}
+
+body_of() { jq -r --arg i "$1" '.[$i].description' "$LDIR/issues.json"; }
+
+test_bundle_appends_to_the_open_bundle_and_starts_part_2_at_the_cap() {
+  local out
+  world bundle-cap '{}'
+  out=$(bundle '[["a","Null check missing","medium","api/b.cs","api"],["b","Unused variable","low","api/a.cs","api"],["c","Dead branch","low","api/a.cs","api"]]' CAP=4) \
+    || fail "bundle run must succeed"
+  assert_equals "bundled PC-101 bundled PC-101 bundled PC-101" "$(jq -r '[.filings.a, .filings.b, .filings.c] | map(.action + " " + .issue) | join(" ")' <<<"$out")" \
+    "three findings of one area go to one item"
+  assert_equals "Automated findings: api (code review)" "$(issue PC-101 .title)" "the item is titled by area and source family"
+  assert_equals "Bug scan triage" "$(issue PC-101 '.labels | join(" ")')" "with one Type, one Source and one area label"
+  out=$(bundle '[["a","Null check missing","medium","api/b.cs","api"],["b","Unused variable","low","api/a.cs","api"],["c","Dead branch","low","api/a.cs","api"],["d","Magic number","low","api/c.cs","api"],["e","Long method","low","api/c.cs","api"]]' CAP=4 RUN_DATE=2026-11-06) \
+    || fail "second bundle run must succeed"
+  assert_equals "PC-101 PC-102" "$(jq -r '[.filings.d.issue, .filings.e.issue] | join(" ")' <<<"$out")" "a new finding is appended to the open bundle, and at the cap the next one opens part 2"
+  assert_equals "true true false" "$(jq -r '[.filings.d.new, .filings.e.new, .filings.a.new] | map(tostring) | join(" ")' <<<"$out")" "only the appended findings are new"
+  assert_equals "Automated findings: api (code review) part 2" "$(issue PC-102 .title)" "the second part names itself"
+  assert_equals 2 "$(grep -c '^issue create .*--verify' "$LDIR/calls")" "two items in all, not one per finding"
+  assert_contains "$(body_of PC-101)" "Open: 4 of 4" "the first part holds the cap"
+  assert_equals "2 2 1" "$(jq -r '[.found.a, .found.b, .found.d] | map(tostring) | join(" ")' <<<"$out")" "each bundled finding keeps its own found count"
+  out=$(bundle '[["a","Null check missing","medium","api/b.cs","api"]]' CAP=4 RUN_DATE=2026-11-07 TICK='["b"]') || fail "tick run must succeed"
+  assert_contains "$(body_of PC-101)" "- [x] fixture-fp:$(printf 'scan\0job\0b' | sha256sum | cut -d' ' -f1) Unused variable (low)" "a resolved finding is ticked, not removed"
+  assert_contains "$(body_of PC-101)" "Open: 3 of 4" "and frees a place"
+  pass "fm-officer-linear: a new finding is appended to its area's open bundle, the cap opens part 2, and a resolved one is ticked"
+}
+
+test_bundle_groups_by_area_then_by_file() {
+  local out b
+  world bundle-order '{}'
+  out=$(bundle '[["z","Zeta","low","ui/z.tsx","ui-ux"],["m","Mu","medium","api/m.cs","api"],["a","Alpha","low","ui/a.tsx","ui-ux"],["n","No file","low","","ui-ux"],["k","Kappa","low","api/b.cs","api"]]') \
+    || fail "bundle run must succeed"
+  assert_equals 2 "$(jq 'keys | length' "$LDIR/issues.json")" "one item per area"
+  b=$(jq -r 'to_entries[] | select(.value.title | test("ui-ux")) | .value.description' "$LDIR/issues.json")
+  assert_equals "### ui/a.tsx|### ui/z.tsx|### (no file)" "$(grep '^### ' <<<"$b" | paste -sd'|')" "within an area the lines are grouped by file, sorted, the no-file group last"
+  assert_contains "$b" "Severity: low. Area: ui-ux." "the severity line names the worst open finding"
+  assert_contains "$(jq -r 'to_entries[] | select(.value.title | test("api")) | .value.description' "$LDIR/issues.json")" "Severity: medium. Area: api." "per bundle"
+  pass "fm-officer-linear: findings are grouped by feature area first, then by file within the area"
+}
+
+test_bundle_keeps_single_items_single() {
+  local out
+  world bundle-single '{}'
+  out=$(bundle '[["s","Run invalid: promotion blocked","critical","e2e","testing",1],["a","Alpha","low","api/a.cs","api"]]') || fail "bundle run must succeed"
+  assert_equals "created bundled" "$(jq -r '[.filings.s.action, .filings.a.action] | join(" ")' <<<"$out")" "a single finding gets its own item, a bundled one goes to the area bundle"
+  assert_equals "Run invalid: promotion blocked" "$(issue "$(jq -r .filings.s.issue <<<"$out")" .title)" "titled by the finding itself"
+  pass "fm-officer-linear: a finding the officer keeps single is filed alone, never bundled"
+}
+
+test_bundle_never_writes_a_closed_or_started_bundle() {
+  local out
+  world bundle-closed '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"]]' >/dev/null || fail "first run must succeed"
+  jq '."PC-101".state = "Done"' "$LDIR/issues.json" > "$LDIR/i" && mv "$LDIR/i" "$LDIR/issues.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' RUN_DATE=2026-11-06) || fail "second run must succeed"
+  assert_equals "PC-102 PC-102" "$(jq -r '[.filings.a.issue, .filings.b.issue] | join(" ")' <<<"$out")" "a closed bundle is never reopened: its finding goes to a new open bundle"
+  assert_equals "PC-101" "$(jq -r .filings.a.recurrence_of <<<"$out")" "naming the closed one"
+  assert_contains "$(body_of PC-102)" "Alpha (low); recurred, was in PC-101" "and the line says so"
+  assert_equals 0 "$(grep -c '^issue update PC-101' "$LDIR/calls")" "the closed item is never written"
+  jq '."PC-102".state = "In Progress"' "$LDIR/issues.json" > "$LDIR/i" && mv "$LDIR/i" "$LDIR/issues.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"],["c","Gamma","low","api/c.cs","api"]]' RUN_DATE=2026-11-07) || fail "third run must succeed"
+  assert_equals "PC-103" "$(jq -r .filings.c.issue <<<"$out")" "a bundle a worker has started takes no new line: the next part does"
+  assert_equals "Automated findings: api (code review) part 2" "$(issue PC-103 .title)" "as part 2"
+  pass "fm-officer-linear: a closed bundle is never reopened and a started one takes no new line"
+}
+
+test_bundle_lost_state_adopts_the_open_item_by_title() {
+  local out
+  world bundle-lost '{}'
+  bundle '[["a","Alpha","low","api/a.cs","api"],["b","Beta","low","api/b.cs","api"]]' >/dev/null || fail "first run must succeed"
+  /usr/bin/trash "$W/bundles.json" "$W/ledger.json"
+  out=$(bundle '[["c","Gamma","low","api/c.cs","api"]]' RUN_DATE=2026-11-06) || fail "second run must succeed"
+  assert_equals "PC-101" "$(jq -r .filings.c.issue <<<"$out")" "the lane found its open bundle again by exact title"
+  assert_equals 1 "$(grep -c '^issue create .*--verify' "$LDIR/calls")" "and created nothing new"
+  assert_equals 3 "$(body_of PC-101 | grep -c '^- \[ \]')" "and kept the lines it no longer had in state"
+  pass "fm-officer-linear: a lane that lost its bundle state adopts the open item by exact title and keeps its lines"
+}
+
+test_duplicate_items_are_closed() {
+  local out
+  world bundle-legacy '{"PC-7": {"title": "Alpha", "description": "x", "state": "Duplicate", "labels": [], "project": null}}'
+  printf '{"%s": "PC-7"}\n' "$(printf 'scan\0job\0a' | sha256sum | cut -d' ' -f1)" > "$W/ledger.json"
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]') || fail "bundle run must succeed"
+  assert_equals "bundled PC-102 PC-7" "$(jq -r '.filings.a | [.action, .issue, .recurrence_of] | join(" ")' <<<"$out")" \
+    "an older single item marked Duplicate counts as closed: the finding goes to its area bundle, naming it"
+  assert_equals 0 "$(grep -c '^issue update PC-7' "$LDIR/calls")" "the duplicate is never written"
+  world dup-title '{"PC-7": {"title": "Automated findings: api (code review)", "description": "x", "state": "Duplicate", "labels": [], "project": null}}'
+  out=$(bundle '[["a","Alpha","low","api/a.cs","api"]]') || fail "bundle run must succeed"
+  assert_equals "PC-102" "$(jq -r .filings.a.issue <<<"$out")" "an exact-title lookup never adopts a Duplicate item"
+  pass "fm-officer-linear: a Duplicate item is closed for every lookup and ledger check"
+}
+
+test_bundle_appends_to_the_open_bundle_and_starts_part_2_at_the_cap
+test_bundle_groups_by_area_then_by_file
+test_bundle_keeps_single_items_single
+test_bundle_never_writes_a_closed_or_started_bundle
+test_bundle_lost_state_adopts_the_open_item_by_title
+test_duplicate_items_are_closed
 test_dedupe_exact_and_near_match
 test_found_count_is_raised_in_place_once_a_day
 test_score_is_the_found_count_lever

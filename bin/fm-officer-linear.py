@@ -106,6 +106,7 @@ VERIFY_SEARCH_WAITS = (0, 0.5, 1.0)
 TITLE_INDEX_ITEMS = 600  # newest items of the team read for an exact-title lookup (the list is newest first)
 TITLE_INDEX_PAGE = 100
 CLOSED_STATES = ("Done", "Canceled", "Cancelled", "Duplicate")
+CLOSED_TYPES = ("completed", "canceled", "duplicate")
 DEFAULT_BUNDLE_CAP = 15  # open findings in one bundle item (registry `bundle-cap`)
 BUNDLE_PARTS_MAX = 20  # parts one run tries for one area before it names the rest not filed
 BUNDLE_FILE = "bundles.json"
@@ -244,10 +245,11 @@ def score_of(f):
 
 
 def apply_found(findings, found, ledger):
-    """Found count and score per finding; the list ends up highest score first."""
-    issues = found.get("issues", {})
+    """Found count and score per finding (a bundled one keeps its own count, found.json `members`); the list ends up
+    highest score first."""
+    issues, members = found.get("issues", {}), found.get("members", {})
     for f in findings:
-        item = issues.get(ledger.get(f["fingerprint"]) or "", {})
+        item = issues.get(ledger.get(f["fingerprint"]) or "") or members.get(f["fingerprint"] or "", {})
         f["found"] = max(1, item.get("count", 1))
         f["score"] = score_of(f)
     findings.sort(key=lambda f: (-f["score"], RANK[f["severity"]], f["source"], f["job"], f["key"], f["title"]))
@@ -364,8 +366,9 @@ def issue_id(data):
 
 
 def is_closed(issue):
+    """Done, canceled or a duplicate (Linear reports a duplicate's stateType as `duplicate`); else the state name."""
     kind = text(issue.get("stateType")).lower()
-    return kind in ("completed", "canceled") if kind else text(issue.get("state")) in CLOSED_STATES
+    return kind in CLOSED_TYPES if kind else text(issue.get("state")) in CLOSED_STATES
 
 
 def recurrence_line(old, issue):
