@@ -308,9 +308,22 @@ test_registry_refuses_released_as_reopen_state() {
   pass "fm-officer landing: Released is refused as a reopen state before any Linear call"
 }
 
+test_pass_refuses_released_as_reopen_state() {
+  local home out
+  make_world released-direct; home=$WORLD_HOME
+  out=$(PATH="$FAKEBIN:$PATH" python3 "$ROOT/bin/fm-officer-landing.py" run --facts "$TMP_ROOT/released-direct/facts.json" \
+    --date "$DATE" --out "$TMP_ROOT/released-direct/out" --reopen-state Released --now "$NOW" 2>&1) \
+    && fail "the landing pass itself must refuse a reopen-state of Released"
+  assert_contains "$out" "may not be In Staging, Done or Released" "the pass's refusal names the rule"
+  assert_absent "$LINEAR_LOG" "nothing reaches Linear"
+  assert_absent "$TMP_ROOT/released-direct/out/$DATE.json" "no digest is written"
+  pass "fm-officer-landing.py: Released is refused as a reopen state by the pass itself"
+}
+
 test_classes_from_facts
 test_registry_refuses_in_staging_as_reopen_state
 test_registry_refuses_released_as_reopen_state
+test_pass_refuses_released_as_reopen_state
 test_linear_failure_fails_the_run_with_its_reason
 test_run_writes_only_its_lane
 test_no_linear_writes_by_default

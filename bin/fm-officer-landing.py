@@ -43,8 +43,8 @@ routine Done writer; this officer only corrects what it misses. With
 
   close   an item not Done whose every linked PR is merged and in production,
           and that has no sub-issues, moves to Done;
-  (Released, Linear's "Live in Production" status, is finished and written only
-  by the release path: this officer never closes, reopens or raises it.)
+  (Released, Linear's "Live in Production" status, is written only by the
+  release path; this officer never writes or reverses it.)
   reopen  a Done item that a landing fact names, with a linked PR merged that
           never reached main (on_main false) or any release, moves to
           --reopen-state (In Progress by default; In Staging, Done and Released
