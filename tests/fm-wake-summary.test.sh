@@ -510,6 +510,27 @@ test_quiet_ack_lock_timeout_does_not_report_success() {
   pass "--quiet-ack exits 10, not 0, when the queue lock stays held past the presentation timeout"
 }
 
+test_quiet_ack_error_exit_after_handling_restores_downtime() {
+  local d state rc=0 token
+  d=$(make_case quiet-error); state="$d/state"
+  opt_in
+  merge_row "$state" gone
+  mkdir -p "$d/bin"
+  cp -R "$ROOT/bin/." "$d/bin/"
+  printf '\nfm_wake_print_deduped() { return 1; }\n' >> "$d/bin/fm-wake-lib.sh"
+  QUIET_OUT=$(FM_STATE_OVERRIDE="$state" "$d/bin/fm-wake-drain.sh" --quiet-ack 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a quiet drain that failed after beginning handling must not report success"
+  [ "$rc" -ne 10 ] || fail "the injected failure must take an error exit, not the classified one: $QUIET_OUT"
+  [ "$(queue_rows "$state")" = 1 ] || fail "the row must stay queued"
+  token=$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_recovery_marker_snapshot "$STATE/.watcher-down"; printf "%s" "$FM_RECOVERY_MARKER_TOKEN"' _ "$ROOT/bin/fm-wake-lib.sh")
+  case "$token" in
+    pending:downtime:*|announced:downtime:*) ;;
+    *) fail "the recovery marker must be back in downtime so the Stop hook can rewake, got: $token" ;;
+  esac
+  opt_out
+  pass "--quiet-ack that fails after beginning handling exits non-zero and leaves the recovery marker in downtime"
+}
+
 test_open_decisions_unchanged_since_last_presented() {
   local d state rc=0 out
   d=$(make_case quiet-od); state="$d/state"
@@ -619,6 +640,7 @@ test_quiet_ack_acknowledges_a_quiet_batch_and_leaves_one_record
 test_quiet_ack_mixed_batch_wakes_and_consumes_nothing
 test_quiet_ack_fresh_pause_wakes_and_consumes_nothing
 test_quiet_ack_lock_timeout_does_not_report_success
+test_quiet_ack_error_exit_after_handling_restores_downtime
 test_open_decisions_unchanged_since_last_presented
 test_open_decisions_unchanged_does_not_hide_unread_status
 test_every_classified_wake_is_counted_once
