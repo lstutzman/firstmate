@@ -58,8 +58,8 @@
 # never unhandled, the watcher's ladder never rings or escalates it. When the
 # ring does not land (fm_task_inbox_ring nonzero) the sender calls
 # fm_task_inbox_untake, which turns it back into an ordinary unhandled record
-# with the pointer doorbell, so a lost inline ring degrades to the ladder
-# instead of losing the steer. Everything else keeps the pointer doorbell.
+# with the pointer doorbell (rung once at once, then the ladder's), so a lost
+# inline ring degrades to today's path instead of losing the steer. Everything else keeps the pointer doorbell.
 #
 # Sequence numbers are never reused within a task: allocation scans both the
 # inbox root and handled/, so a message is processed at most once per worker

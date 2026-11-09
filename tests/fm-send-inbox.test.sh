@@ -62,6 +62,11 @@ set -u
 case "${1:-}" in
   send-keys)
     [ "${FM_FAKE_TMUX_SEND_FAIL:-0}" = 1 ] && exit 1
+    # FM_FAKE_TMUX_FAIL_FIRST=<marker>: fail exactly the first send-keys call.
+    if [ -n "${FM_FAKE_TMUX_FAIL_FIRST:-}" ] && [ ! -e "$FM_FAKE_TMUX_FAIL_FIRST" ]; then
+      : > "$FM_FAKE_TMUX_FAIL_FIRST"
+      exit 1
+    fi
     shift
     literal=0
     while [ $# -gt 0 ]; do
@@ -249,6 +254,18 @@ test_inline_ring_that_does_not_land_falls_back_to_the_ladder() {
   [ ! -e "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "the failed inline record stayed taken"
   grep -q '^inline=' "$dir/home/state/t1.inbox/001.msg" && fail "the fallback record kept its inline header"
   assert_contains "$(cat "$err")" "watcher will re-ring" "the fallback should hand the record to the re-ring ladder"
+  # The fallback rings the pointer once at once, so it is no slower than a
+  # pointer steer: the first (inline) ring fails, the pointer ring lands.
+  dir=$(setup_case inline-fallback-rering)
+  run_send "$dir" "$dir/send.err" FM_FAKE_TMUX_FAIL_FIRST="$dir/failed-once" -- t1 "steer past one lost ring" ||
+    fail "a failed inline ring then landed pointer ring must not fail the send"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the fallback must leave an unhandled pointer record"
+  assert_contains "$(cat "$dir/send.log")" "Firstmate instruction waiting" \
+    "the fallback should ring the pointer doorbell at once"
+  case "$(cat "$dir/send.log")" in
+  *"steer past one lost ring"*) fail "the fallback pointer ring must not carry the body" ;;
+  esac
+  assert_not_contains "$(cat "$dir/send.err")" "did not reach" "a landed pointer ring should leave no failed-ring notice"
   dir=$(setup_case inline-fallback-pending)
   run_send "$dir" "$dir/send.err" FM_FAKE_TMUX_COMPOSER=pending -- t1 "steer past a stuck composer" ||
     fail "a skipped inline ring must not fail the send"

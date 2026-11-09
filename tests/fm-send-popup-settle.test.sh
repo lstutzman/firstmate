@@ -130,7 +130,7 @@ rides_inbox() {  # <label> <harness> <message>
     FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SLEEP_LOG="$log" \
     "$SEND" fm-popupcase "$msg" 2>/dev/null; rc=$?
   expect_code 0 "$rc" "$label: send should succeed"
-  grep -qF -- "$msg" "$home/state/popupcase.inbox/001.msg" \
+  grep -qF -- "$msg" "$(fm_inbox_record "$home/state/popupcase.inbox" 001)" \
     || fail "$label: the steer should be enqueued in the task inbox"
   first=$(head -1 "$log")
   [ "$first" = "0.3" ] || fail "$label: the doorbell ring should keep the fast settle, got '$first'"$'\n'"--- sleeps ---"$'\n'"$(cat "$log")"

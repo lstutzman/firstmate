@@ -1347,10 +1347,17 @@ else
     ring_retry="the watcher will re-ring"
     if [ -n "$INBOX_INLINE" ] && [ "$ring_rc" -ne 0 ]; then
       # An inline steer is already taken, so no ladder would re-ring it:
-      # hand a ring that did not land back to the ladder as a pointer record.
+      # hand a ring that did not land back to the ladder as a pointer record,
+      # and ring that pointer once now so the fallback is no slower than a
+      # pointer steer (a dead endpoint, ring 3, takes no second attempt).
+      inline_ring_rc=$ring_rc
       if ! INBOX_RECORD=$(fm_task_inbox_untake "$INBOX_RECORD"); then
         echo "error: inline steer to $INBOX_TASK_ID was recorded at $INBOX_RECORD but its doorbell did not land and the record could not be returned to the inbox; nothing was confirmed delivered, resend" >&2
         exit 1
+      fi
+      if [ "$inline_ring_rc" -ne 3 ]; then
+        ring_rc=0
+        fm_task_inbox_ring "$TARGET_BACKEND" "$T" "$INBOX_RECORD" "$EXPECTED_LABEL" || ring_rc=$?
       fi
     fi
     if [ -n "$FIRE_AND_FORGET_ID" ] \
