@@ -61,7 +61,9 @@ if args[:2] == ["label", "list"]:
 if args[:2] == ["issue", "list"]:
     # Linear data, newest first, titles and stateType as the real list prints them (no title filter exists).
     out({"issues": [{"identifier": i, "title": v["title"], "state": v["state"], "team": "PC", "project": v.get("project"),
-                     "stateType": state_type(v["state"])}
+                     "stateType": state_type(v["state"]),
+                     **({"description": v["description"][:200] + ("\n... (truncated, %d chars total - use --full to see complete body)" % len(v["description"])
+                                                                  if len(v["description"]) > 200 else "")} if "description" in (flag("--fields") or "") else {})}
                     for i, v in sorted(issues.items(), key=lambda kv: -int(kv[0].split("-")[1]))][:int(flag("--max-items") or 30)]})
 if args[:2] == ["issue", "search"]:
     if os.environ.get("FAKE_SEARCH_MISS"): out({"issues": []})  # full-text search that never returns these titles
@@ -680,6 +682,44 @@ test_no_call_closes_or_deletes() {
   pass "fm-officer-linear: only search, view, create, update (the Found line), comment and relation are ever called"
 }
 
+fold_world() {  # the open items an earlier Surgeon filed one by one, a component cluster, and items it must leave alone
+  local sfp
+  sfp() { printf 'review\0nightly-review\0%s' "$1" | sha256sum | cut -d' ' -f1; }
+  world fold "$(jq -n --arg a "$(sfp a)" --arg b "$(sfp b)" --arg c "$(sfp c)" --arg d "$(sfp d)" --arg e "$(sfp e)" --arg f "$(sfp f)" --arg g "$(sfp g)" --arg h "$(sfp h)" '
+    def surgeon($src; $sev; $loc; $fp): "Filed by the Ship'"'"'s Surgeon from the 2026-11-01 \($src) results.\nWhat it is for: a finding no Linear item tracked yet, so it is not lost.\nEpic: not assigned; whoever triages this picks one.\n\nSeverity: \($sev). Source job: job.\nFound: 1 times (first 2026-11-01, last 2026-11-01, by surgeon)\nLocation: \($loc)\nsurgeon-fp:\($fp)";
+    {"PC-1": {title: "Null check missing", state: "Todo", project: null, description: surgeon("nightly code review"; "medium"; "src/api/controllers/Foo.cs"; $a)},
+     "PC-2": {title: "stamp duty total wrong", state: "Todo", project: null, description: surgeon("nightly E2E"; "high"; "tests/e2e/calculators/stamp.spec.ts"; $b)},
+     "PC-3": {title: "Code review findings: infra bicep (infra/bicep)", state: "Todo", project: null,
+              description: ("Filed by the Ship'"'"'s Surgeon from the nightly code review results.\nWhat it is for: the lower-severity code-review findings.\n\n- [ ] surgeon-fp:\($c) unpinned one (infra/bicep/a.bicep)\n- [x] surgeon-fp:\($d) fixed one (infra/bicep/b.bicep)\n- [ ] surgeon-fp:\($e) unpinned two (infra/bicep/c.bicep)\nsurgeon-fp:\($h)")},
+     "PC-4": {title: "Nightly E2E run invalid: promotion blocked", state: "Todo", project: null,
+              description: ("Filed by the Ship'"'"'s Surgeon from the 2026-11-01 nightly E2E results.\n\nSeverity: critical. Source job: nightly-e2e.\nPromotion-blocking: yes. No nightly E2E result can be read until this run is valid again.\nsurgeon-fp:\($f)")},
+     "PC-5": {title: "Closed one", state: "Done", project: null, description: surgeon("nightly code review"; "medium"; "src/api/X.cs"; $g)},
+     "PC-6": {title: "Duplicate one", state: "Duplicate", project: null, description: surgeon("nightly code review"; "medium"; "src/api/Y.cs"; $g)},
+     "PC-7": {title: "Friction: waits on Lee", state: "Todo", project: "Fleet", description: "Filed by the friction officer from the 2026-11-01 friction events.\nfriction-fp:\($g)"},
+     "PC-8": {title: "Members cannot log in", state: "Todo", project: null, description: "Reported by a member through support."},
+     "PC-9": {title: "Unused variable", state: "Todo", project: null, description: surgeon("nightly code review"; "low"; "src/api/controllers/Bar.cs"; $g)}}')"
+  printf 'scheduled-review\nbug-sweep\napi\ncalculators\ninfrastructure\ntesting\n' >> "$LDIR/labels"
+}
+
+test_fold_dry_run_plans_area_bundles_and_writes_nothing() {
+  local out
+  fold_world
+  out=$(PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --now "$NOW") || fail "fold dry run must succeed: $out"
+  assert_contains "$out" "Fold plan (dry run, nothing written): 4 open item(s) the Surgeon made fold into 3 area bundle(s); 5 finding(s), cap 15 a bundle." "the plan counts the items, bundles and findings"
+  assert_contains "$out" "- Automated findings: api (code review): 2 finding(s) from 2 item(s) (PC-1, PC-9); 1 new bundle(s)" "single code review items fold into their area bundle"
+  assert_contains "$out" "- Automated findings: infrastructure (code review): 2 finding(s) from 1 item(s) (PC-3); 1 new bundle(s)" "a component cluster's open lines fold too, its ticked line left out"
+  assert_contains "$out" "- Automated findings: calculators (nightly E2E): 1 finding(s) from 1 item(s) (PC-2); 1 new bundle(s)" "a nightly E2E item folds by the feature in its spec path"
+  assert_contains "$out" "- kept: PC-4 (promotion-blocking, kept single)" "an invalid nightly E2E run stays single"
+  assert_contains "$out" "- not folded here: 1 open item(s) filed by the friction officer" "another officer's items are named and left alone"
+  assert_not_contains "$out" "PC-5" "a closed item is never folded"
+  assert_not_contains "$out" "PC-6" "nor a Duplicate one"
+  assert_not_contains "$out" "PC-8" "nor an item a person filed"
+  assert_equals "" "$(grep -v '^label list\|^issue list\|^issue view' "$LDIR/calls")" "a dry run only reads"
+  assert_equals 5 "$(grep -c '^issue view' "$LDIR/calls")" "and reads in full only the open items the Surgeon filed"
+  [ ! -e "$W/bundles.json" ] || fail "a dry run writes no bundle state"
+  pass "fm-officer-surgeon fold: a dry run lists each area bundle's findings and items, keeps the promotion blocker single and writes nothing"
+}
+
 bundle() {  # <findings json> [env...]: one bundle run in the current world; prints the result json.
   env FINDINGS="$1" "${@:2}" bash -c "$(declare -f drive); $(declare -p FAKEBIN LDIR W LIB DATE NOW); drive bundle"
 }
@@ -774,6 +814,7 @@ test_duplicate_items_are_closed() {
   pass "fm-officer-linear: a Duplicate item is closed for every lookup and ledger check"
 }
 
+test_fold_dry_run_plans_area_bundles_and_writes_nothing
 test_bundle_appends_to_the_open_bundle_and_starts_part_2_at_the_cap
 test_bundle_groups_by_area_then_by_file
 test_bundle_keeps_single_items_single
