@@ -873,6 +873,8 @@ class Bundles:
         if fp in self.filer.ledger and not b:
             ident = self.filer.ledger[fp]
             f["filing"], f["issue_hint"] = {"action": "exists", "issue": ident}, ident
+            if self.filer.found.get("issues", {}).get(ident, {}).get("closed"):
+                f["filing"]["closed"] = True
             self.filer.bumps.append(f)
             return "legacy"
         self.unkeyed.append((f, ""))
@@ -1129,6 +1131,41 @@ def file_bundled(filer, todo, label_set, describe, bundles):
     filer.settle_bumps(label_set, describe, on_closed=bundles.requeue)
     bundles.write(label_set)
     return True
+
+
+def file_in_bundles(filer, bundles, todo, args, labels_for, describe):
+    """The whole filing pass of an officer whose findings all carry a `bundle`: (writes done, why Linear stopped or None).
+
+    labels_for(team label names) -> label_set. Makes no Linear call when every finding is already known; honours a rate-limit
+    pause, names a failed label lookup, and saves the bundle state (the caller saves its ledger and found counts).
+    """
+    def stop(reason, rate_limited=False):
+        for f in todo:
+            if not f["filing"] or "pending" in f["filing"]:
+                f["filing"] = {"action": "not-filed", "reason": reason}
+        if rate_limited:
+            pause_for_rate_limit(filer.out, args.now)
+        bundles.save()
+        return summary_rows(todo), reason
+
+    if file_bundled(filer, todo, None, None, bundles):
+        bundles.save()
+        return summary_rows(todo), None
+    stopped = paused_until(filer.out, args.now)
+    if stopped:
+        return stop(stopped)
+    try:
+        names = label_names(filer.lin, args.team)
+    except LinearError as exc:
+        return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
+    try:
+        file_bundled(filer, todo, labels_for(names), describe, bundles)
+    except LinearError as exc:
+        if exc.code == "RATE_LIMITED":
+            return stop("Linear rate limit reached: %s" % exc, True)
+        return stop("%s; the next run continues from the ledger" % exc)
+    bundles.save()
+    return summary_rows(todo), None
 
 
 def triage_issue(lin, ident, issue, seen, write):

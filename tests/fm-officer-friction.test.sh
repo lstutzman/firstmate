@@ -54,6 +54,7 @@ case "$1 $2" in
     if [ -n "$q" ] && grep -qF -- "$q" "$d/exists.txt" 2>/dev/null; then
       echo '{"ok":true,"data":{"issues":[{"identifier":"PC-55"}]}}'
     else echo '{"ok":true,"data":{"issues":[]}}'; fi ;;
+  "issue list") echo '{"ok":true,"data":{"issues":[]}}' ;;  # no open bundle of an exact title yet
   "issue view")
     st=$(cat "$d/state.$3" 2>/dev/null || echo Todo)
     case "$st" in Done) ty=completed ;; *) ty=unstarted ;; esac
@@ -1416,7 +1417,7 @@ creates() {  # <log>: the number of verified creates in a fake Linear log
 }
 
 test_findings_are_filed_in_linear_under_the_contract() {
-  local home json log dir real found_before
+  local home json log dir real bundles views
   linear_world filing
   home=$LW_HOME
   dir=$FAKE_LINEAR_DIR
@@ -1424,13 +1425,17 @@ test_findings_are_filed_in_linear_under_the_contract() {
   json="$home/data/officers/friction/$DATE.json"
   run_officer "$home" >/dev/null || fail "run must succeed"
   real=$(jq '[.findings[] | select(.linear.class == "real" and (.state.state | IN("settled", "started", "fixed") | not))] | length' "$json")
-  assert_equals "$real" "$(creates "$log")" "every real, untracked finding is filed once"
-  assert_equals "$real" "$(grep -c '^issue create .*--dry-run' "$log")" "every create is a dry run first, then a verified write"
-  assert_equals "$real" "$(count_lines '^issue create .*--label Improvement --label agent --label area:fleet --project Fleet --verify' "$log")" \
+  bundles=$(jq '[.findings[] | select(.linear.class == "real" and (.state.state | IN("settled", "started", "fixed") | not)) | .linear.issue] | unique | length' "$json")
+  assert_equals 3 "$bundles" "the real, untracked findings go to one bundle per friction category"
+  assert_equals "$bundles" "$(creates "$log")" "one item per bundle, not one per finding"
+  assert_equals "Automated findings: environment (friction)|Automated findings: tooling (friction)|Automated findings: waiting (friction)" \
+    "$(grep '^issue create .*--verify' "$log" | sed 's/.*--title \(.*\) --body-file.*/\1/' | sort | paste -sd'|')" "titled by category and source family"
+  assert_equals "$bundles" "$(grep -c '^issue create .*--dry-run' "$log")" "every create is a dry run first, then a verified write"
+  assert_equals "$bundles" "$(count_lines '^issue create .*--label Improvement --label agent --label area:fleet --project Fleet --verify' "$log")" \
     "each item has one Type, the agent Source and area:fleet, in the Fleet project"
-  assert_contains "$(grep 'An agent token lacks a scope' "$log" | head -1)" "--priority 2" "a card-bar finding is High priority"
-  assert_equals "$real" "$(count_lines '^friction-fp:' "$dir/bodies")" "every body carries its fingerprint marker, and the marker is alone on its line"
-  assert_equals "$real" "$(count_lines '^Found: 1 times (first 2026-10-23, last 2026-10-23, by friction)$' "$dir/bodies")" "every body starts its one Found line"
+  assert_contains "$(grep '^issue create .*Automated findings: waiting (friction)' "$log" | head -1)" "--priority 2" "a bundle holding a card-bar finding is High priority"
+  assert_equals "$real" "$(count_lines '^- \[ \] friction-fp:' "$dir/bodies")" "every finding is one checklist line carrying its fingerprint"
+  assert_equals "$bundles" "$(count_lines '^friction-fp:' "$dir/bodies")" "and each bundle's own marker is alone on its line"
   assert_no_grep "/x/swap.sh" "$dir/bodies" "no quoted command or status line reaches Linear"
   assert_no_grep "arm 2 done" "$dir/bodies" "no status text reaches Linear"
   assert_equals "none" "$(jq -r '[.findings[] | select(.id == "decision-decision")][0].linear | "\(.action // "none")"' "$json")" "a product choice is not filed"
@@ -1439,18 +1444,20 @@ test_findings_are_filed_in_linear_under_the_contract() {
     "the digest shows each filed finding's found count and score"
 
   run_officer "$home" >/dev/null || fail "a same-day re-run must succeed"
-  assert_equals "$real" "$(creates "$log")" "a re-run the same day files nothing again"
-  assert_equals "0" "$(count_lines '^UPDATE' "$dir/updates")" "and raises no Found line"
+  assert_equals "$bundles" "$(creates "$log")" "a re-run the same day files nothing again"
+  assert_equals "0" "$(count_lines '^UPDATE' "$dir/updates")" "and rewrites no bundle"
 
-  # A later night raises the Found line in place with one comment, and the score follows the found count.
-  found_before=$(jq '[.issues[]] | length' "$home/data/officers/friction/found.json")
-  jq '.issues |= map_values(.last = "2026-10-20")' "$home/data/officers/friction/found.json" > "$TMP_ROOT/found.json"
+  # A later night counts each finding again, and the score follows its own found count; an unchanged bundle is not rewritten.
+  jq '.members |= map_values(.last = "2026-10-20")' "$home/data/officers/friction/found.json" > "$TMP_ROOT/found.json"
   cp "$TMP_ROOT/found.json" "$home/data/officers/friction/found.json"
+  jq '.bundles |= map_values(.checked = "2026-10-20")' "$home/data/officers/friction/bundles.json" > "$TMP_ROOT/bundles.json"
+  cp "$TMP_ROOT/bundles.json" "$home/data/officers/friction/bundles.json"
+  views=$(count_lines '^issue view' "$log")
   run_officer "$home" >/dev/null || fail "a later-night run must succeed"
-  assert_equals "$found_before" "$(count_lines '^UPDATE' "$dir/updates")" "each filed item's Found line is raised once, in place"
-  assert_equals "$found_before" "$(count_lines '^COMMENT' "$dir/comments")" "with one comment on the day's first sighting"
-  assert_equals "$real" "$(creates "$log")" "and nothing is filed twice"
-  assert_equals "true" "$(jq '[.findings[] | select(.linear.issue != null)][0].linear | .found == 2 and .score > 6' "$json")" \
+  assert_equals "0" "$(count_lines '^UPDATE' "$dir/updates")" "an unchanged bundle is read, not rewritten"
+  assert_equals "$bundles" "$(( $(count_lines '^issue view' "$log") - views ))" "each open bundle is read once that night, so a closed one is noticed"
+  assert_equals "$bundles" "$(creates "$log")" "and nothing is filed twice"
+  assert_equals "true" "$(jq '[.findings[] | select(.linear.issue != null and .linear.severity == "high")][0].linear | .found == 2 and .score > 6' "$json")" \
     "the found count of 2 lifts a high finding's score from 4 to 6.3"
   pass "fm-officer friction: every real finding is filed once in Linear, the Found line rises in place, and no transcript text is sent"
 }
@@ -1549,7 +1556,7 @@ test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started() {
   run_officer "$home" >/dev/null || fail "a capped run must succeed"
   assert_equals "2" "$(creates "$dir/log")" "max-creates bounds the items one run creates"
   assert_contains "$(<"${json%.json}.md")" "Not filed (over max-creates for this run)" "the overflow is named in the digest, highest score first"
-  assert_equals "ok" "$(jq -r 'if ([.start_requests[].id] | all(. as $i | [.findings[] | select(.id == $i)][0].linear.issue != null)) then "ok" else "bad" end' "$json")" \
+  assert_equals "ok" "$(jq -r '. as $d | if ([$d.start_requests[].id] | all(. as $i | [$d.findings[] | select(.id == $i)][0].linear.issue != null)) then "ok" else "bad" end' "$json")" \
     "only a finding whose item exists is started"
 
   rubric="$TMP_ROOT/narrow-rubric.md"

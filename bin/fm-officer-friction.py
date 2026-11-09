@@ -275,6 +275,7 @@ and slice 1 accepts only --model none.
 """
 
 import argparse
+import collections
 import datetime
 import gzip
 import hashlib
@@ -2146,6 +2147,17 @@ def lib_findings(lib, doc, states, eligible):
     return out
 
 
+def bundle_start_what(issue, group):
+    """The start wording for several started-by-default findings on one bundle item: each one's start marker (so
+    finding_states reads every one back as started), one pull request, and every friction id to name for the merge."""
+    ids = ", ".join("friction-%s" % f["id"] for f in group)
+    return ("Linear item %s bundles %d friction findings for one pull request. %s Start this fix without a Start fix tap or "
+            "another approval question, under fleet rules section 2 ('Velocity findings go ahead by default: an agent starts the "
+            "fix unless Lee objects within a day'); Lee may Object. Name every one of %s in the task's data/backlog.md line, so "
+            "the friction officer can read each merge back. Loosening a guard or gate check is outside this authority; if Lee "
+            "objects, preserve the branch." % (issue, len(group), " ".join("%s: %s." % (default_start_marker(f["id"]), f["title"]) for f in group), ids))
+
+
 def description(lf, date, off, near=None, recurrence=None):
     """The Linear item body. It holds counts and identifiers only: no transcript line, command or quoted ask goes to Linear."""
     f = lf["raw"]
@@ -2173,48 +2185,21 @@ def description(lf, date, off, near=None, recurrence=None):
 
 
 def file_findings(lib, off, findings, args, date, out, ledger, found, jev, lin):
-    """Files the real, untracked findings, highest score first; returns (writes done, why Linear stopped or None)."""
+    """Files the real, untracked findings, highest score first, in one bundle per friction category (CATEGORY: tooling,
+    waiting, environment, other; lib.Bundles); returns (writes done, why Linear stopped or None)."""
     todo = [f for f in findings if f["class"] == "real" and not f["tracked"]]
     filer = lib.Filer(off, lin, args.team, date, out, ledger, found, jev, args.max_creates)
-
-    def stop(reason, rate_limited=False):
-        for f in todo:
-            f["filing"] = f["filing"] or {"action": "not-filed", "reason": reason}
-        if rate_limited:
-            lib.pause_for_rate_limit(out, args.now)
-        return lib.summary_rows(todo), reason
-
+    bundles = lib.Bundles(filer, args.bundle_cap, area=lambda f: CATEGORY.get(f["raw"]["cause"], "other"))
     for f in todo:
-        if f["fingerprint"] in ledger:
-            f["filing"], f["issue_hint"] = {"action": "exists", "issue": ledger[f["fingerprint"]]}, ledger[f["fingerprint"]]
-            filer.bumps.append(f)
-    due = [f for f in filer.bumps if found.get("issues", {}).get(f["filing"]["issue"], {}).get("last") != date]
-    if not any(not f["filing"] for f in todo) and not due:
-        return lib.summary_rows(todo), None
-    stopped = lib.paused_until(out, args.now)
-    if stopped:
-        return stop(stopped)
-    try:
-        names = lib.label_names(lin, args.team)
-    except lib.LinearError as exc:
-        return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
+        f["bundle"] = {"family": "friction", "area": None}
 
-    def label_set(f):
-        return lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
+    def labels_for(names):
+        return lambda f: lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
 
     def describe(f, near=None, recurrence=None):
         return description(f, date, off, near, recurrence)
 
-    try:
-        for f in todo:
-            if not f["filing"]:
-                filer.file_single(f, label_set, describe)
-        filer.settle_bumps(label_set, describe)
-    except lib.LinearError as exc:
-        if exc.code == "RATE_LIMITED":
-            return stop("Linear rate limit reached: %s" % exc, True)
-        return stop("%s; the next run continues from the ledger" % exc)
-    return lib.summary_rows(todo), None
+    return lib.file_in_bundles(filer, bundles, todo, args, labels_for, describe)
 
 
 def linear_pass(doc, states, eligible, args, offices, main_home):
@@ -2241,14 +2226,28 @@ def linear_pass(doc, states, eligible, args, offices, main_home):
     # as started (finding_states), so an office that missed one still gets it.
     handled = state.setdefault("handled", {})
     candidates = [f for f in findings if f["start"]]
+    # A bundle starts once, for every standing-work finding on it: one request whose note names each one's start marker.
+    groups = collections.defaultdict(list)
+    for f in candidates:
+        filing = f["filing"] or {}
+        if filing.get("action") == "bundled" and filing.get("issue"):
+            groups[filing["issue"]].append(f)
+    for issue, group in groups.items():
+        if len(group) > 1:
+            what = bundle_start_what(issue, group)
+            for f in group:
+                f["start_what"] = what
+                f["start_row"] = dict(f["start_row"], friction_ids=[g["id"] for g in group])
     starts, held, asks = lib.plan_starts(off, candidates, rubric, date, args.writes, main_home, offices, handled)
     by_fp = {f["fingerprint"]: f for f in candidates}
+    started_fps = set()
     for rank, row in enumerate(starts, 1):
         f = by_fp[row["fingerprint"]]
         handled.pop(row["issue"], None)
         row.update(id=f["id"], rank=rank, generation=f["start_generation"] or None, owner_home=row["execute"]["env"]["FM_HOME"])
-        states[f["id"]]["request_id"] = row["execute"]["request_id"]
-    started_fps = {r["fingerprint"] for r in starts}
+        for g in groups.get(row["issue"]) or [f]:
+            states[g["id"]]["request_id"] = row["execute"]["request_id"]
+            started_fps.add(g["fingerprint"])
     unstarted = 0
     for f in candidates:
         if f["fingerprint"] in started_fps:
