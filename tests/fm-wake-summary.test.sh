@@ -511,16 +511,22 @@ test_quiet_ack_lock_timeout_does_not_report_success() {
 }
 
 test_quiet_ack_error_exit_after_handling_restores_downtime() {
-  local d state rc=0 token
+  local d c state rc=0 token
   d=$(make_case quiet-error); state="$d/state"
+  c=$(make_case quiet-error-control)
   opt_in
   merge_row "$state" gone
+  merge_row "$c/state" gone
   mkdir -p "$d/bin"
   cp -R "$ROOT/bin/." "$d/bin/"
+  QUIET_OUT=$(FM_STATE_OVERRIDE="$c/state" "$d/bin/fm-wake-drain.sh" --quiet-ack 2>&1) || rc=$?
+  case "$rc" in 0|10) ;; *) fail "the copied drain must reach classification without the injection (rc $rc): $QUIET_OUT" ;; esac
   printf '\nfm_wake_print_deduped() { return 1; }\n' >> "$d/bin/fm-wake-lib.sh"
+  rc=0
   QUIET_OUT=$(FM_STATE_OVERRIDE="$state" "$d/bin/fm-wake-drain.sh" --quiet-ack 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "a quiet drain that failed after beginning handling must not report success"
   [ "$rc" -ne 10 ] || fail "the injected failure must take an error exit, not the classified one: $QUIET_OUT"
+  assert_not_contains "$QUIET_OUT" "wake drain:" "no earlier drain error preceded the injected dedupe failure"
   [ "$(queue_rows "$state")" = 1 ] || fail "the row must stay queued"
   token=$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_recovery_marker_snapshot "$STATE/.watcher-down"; printf "%s" "$FM_RECOVERY_MARKER_TOKEN"' _ "$ROOT/bin/fm-wake-lib.sh")
   case "$token" in
