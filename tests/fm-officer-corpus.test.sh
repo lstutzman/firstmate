@@ -680,6 +680,132 @@ test_preflight_checks_the_run_host_read_only() {
   pass "fm-officer corpus: preflight checks what the pass needs on the run host, writes nothing and fails on any failed check"
 }
 
+# follow_world <name>: a corpus world whose run host has a firstmate code root and a host checkout cloned from one
+# origin, and whose own code root (FFR, a copy of bin/) is at commit C2 (C1 is its parent), both on that origin.
+follow_world() {
+  make_world "$1"
+  H="$W/hosts/deepthought"
+  FFR="$W/fmroot"
+  mkdir -p "$FFR" "$H/Documents/GitHub" "$H/fm-homes"
+  cp -R "$ROOT/bin" "$FFR/bin"
+  git -C "$FFR" init -q -b main
+  git -C "$FFR" add -A && git -C "$FFR" -c user.name=t -c user.email=t@t commit -q -m c1
+  C1=$(git -C "$FFR" rev-parse HEAD)
+  echo two > "$FFR/two" && git -C "$FFR" add -A && git -C "$FFR" -c user.name=t -c user.email=t@t commit -q -m c2
+  C2=$(git -C "$FFR" rev-parse HEAD)
+  git clone -q --bare "$FFR" "$W/origin.git"
+  git clone -q "$W/origin.git" "$H/Documents/GitHub/firstmate"
+  git clone -q "$W/origin.git" "$H/fm-homes/deepthought"
+  HOSTCO="$H/fm-homes/deepthought"
+  add_fields "run-host: deepthought; run-host-code: $HOSTCO; "
+}
+
+follow_run() { PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW=$NOW FM_HOME="$HOME_DIR" "$FFR/bin/fm-officer.sh" run corpus --date "$DATE" 2>&1; }
+
+host_head() { git -C "$HOSTCO" rev-parse HEAD; }
+
+# refuses_and_changes_nothing <label> <expected cause>: the run fails "host code mismatch" with the cause, the host
+# checkout and its worktree are exactly as they were, and the pass ran nowhere.
+refuses_and_changes_nothing() {
+  local before status out
+  before=$(host_head)
+  status=$(git -C "$HOSTCO" status --porcelain)
+  out=$(follow_run) && fail "$1: the attempt must fail"
+  assert_contains "$out" "host code mismatch" "$1: the failure keeps the mismatch wording"
+  assert_contains "$out" "$2" "$1: and names the cause"
+  assert_equals "$before" "$(host_head)" "$1: the host checkout does not move"
+  assert_equals "$status" "$(git -C "$HOSTCO" status --porcelain)" "$1: nor does its worktree change"
+  assert_absent "$(lane)/$DATE.json" "$1: the pass runs nowhere, and never locally"
+  assert_equals "" "$(find "$H/fm-scratch" -name 'host-ff.*' 2>/dev/null)" "$1: and leaves no scratch behind"
+}
+
+test_run_host_follows_this_home_forward() {
+  local out
+  follow_world behind
+  git -C "$HOSTCO" reset -q --hard "$C1"
+  out=$(preflight_follow 2>&1) || fail "a behind host is not a preflight failure: $out"
+  assert_contains "$out" "ok code: behind: the next run fetches" "preflight says what the next run does"
+  assert_equals "$C1" "$(host_head)" "and moves nothing"
+  assert_absent "$H/fm-scratch" "and writes no scratch"
+  echo three > "$FFR/three" && git -C "$FFR" add -A && git -C "$FFR" -c user.name=t -c user.email=t@t commit -q -m c3
+  git -C "$FFR" push -q "$W/origin.git" main
+  out=$(follow_run) || fail "a run with the host behind must bring it forward and pass: $out"
+  assert_equals "$(git -C "$FFR" rev-parse HEAD)" "$(host_head)" "the host checkout is fast-forwarded to exactly this home's commit"
+  assert_contains "$out" "DIGEST $DATE" "and the pass ran"
+  assert_equals "main" "$(git -C "$HOSTCO" symbolic-ref --short HEAD)" "on its own branch"
+  pass "fm-officer corpus: a run fetches the host's code root and fast-forwards a host that is behind, then passes the code check"
+}
+
+test_run_host_imports_from_the_code_root_when_the_checkout_origin_is_stale() {
+  local out
+  follow_world stale-origin
+  git -C "$HOSTCO" reset -q --hard "$C1"
+  git clone -q --bare "$W/origin.git" "$W/stale.git"
+  git -C "$HOSTCO" remote set-url origin "$W/stale.git"
+  echo three > "$FFR/three" && git -C "$FFR" add -A && git -C "$FFR" -c user.name=t -c user.email=t@t commit -q -m c3
+  git -C "$FFR" push -q "$W/origin.git" main
+  out=$(follow_run) || fail "a host whose checkout origin lacks the commit must import it from the code root: $out"
+  assert_equals "$(git -C "$FFR" rev-parse HEAD)" "$(host_head)" "the host checkout is fast-forwarded from the code root"
+  assert_equals "$C2" "$(git -C "$W/stale.git" rev-parse main)" "and the checkout's own origin is not written"
+  assert_contains "$out" "DIGEST $DATE" "and the pass ran"
+  pass "fm-officer corpus: the commit reaches the host checkout from the host's code root, not only from the checkout's origin"
+}
+
+test_run_host_refuses_a_checkout_on_another_branch_or_with_no_code_root() {
+  local out
+  follow_world other-branch
+  git -C "$HOSTCO" checkout -q -b feature "$C1"
+  out=$(preflight_follow 2>&1) && fail "preflight must fail a host checkout on another branch: $out"
+  assert_contains "$out" "on feature, expected main" "preflight names the branch the run would refuse"
+  assert_equals "$C1" "$(host_head)" "and moves nothing"
+  refuses_and_changes_nothing other-branch "on feature, expected main"
+  assert_equals "feature" "$(git -C "$HOSTCO" symbolic-ref --short HEAD)" "and the branch is not switched"
+
+  follow_world no-code-root
+  git -C "$HOSTCO" reset -q --hard "$C1"
+  rm -rf -- "$H/Documents/GitHub/firstmate"
+  out=$(preflight_follow 2>&1) && fail "preflight must fail a host with no code root: $out"
+  assert_contains "$out" "no firstmate code root" "preflight names the missing code root"
+  refuses_and_changes_nothing no-code-root "no firstmate code root"
+  pass "fm-officer corpus: a host checkout on another branch, or a host with no code root, fails preflight and the run, and changes nothing"
+}
+
+preflight_follow() { PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW=$NOW FM_HOME="$HOME_DIR" "$FFR/bin/fm-officer.sh" preflight corpus; }
+
+test_run_host_equal_is_a_no_op() {
+  local out reflog
+  follow_world equal
+  rm -rf -- "$H/Documents/GitHub/firstmate"
+  reflog=$(git -C "$HOSTCO" reflog | wc -l)
+  out=$(follow_run) || fail "an equal host must pass: $out"
+  assert_equals "$reflog" "$(git -C "$HOSTCO" reflog | wc -l)" "an equal host is not touched"
+  assert_equals "$C2" "$(host_head)" "still at this home's commit"
+  pass "fm-officer corpus: a host already at this home's commit is left alone, and needs no fetch"
+}
+
+test_run_host_never_moves_a_checkout_it_must_not() {
+  follow_world dirty
+  git -C "$HOSTCO" reset -q --hard "$C1"
+  echo edit >> "$HOSTCO/bin/fm-officer.sh"
+  refuses_and_changes_nothing dirty "local changes"
+
+  follow_world diverged
+  git -C "$HOSTCO" reset -q --hard "$C1"
+  git -C "$HOSTCO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m local-only
+  refuses_and_changes_nothing diverged "diverged"
+
+  follow_world ahead
+  git -C "$HOSTCO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m local-ahead
+  refuses_and_changes_nothing ahead "ahead of this home's commit"
+
+  follow_world unfetchable
+  git -C "$HOSTCO" reset -q --hard "$C1"
+  echo three > "$FFR/three" && git -C "$FFR" add -A && git -C "$FFR" -c user.name=t -c user.email=t@t commit -q -m unpushed
+  refuses_and_changes_nothing unfetchable "not on the host's origin"
+  assert_equals "$(git -C "$W/origin.git" rev-parse main)" "$C2" "and nothing is pushed to the origin"
+  pass "fm-officer corpus: a dirty, diverged or ahead host checkout, or a commit not on the host's origin, changes nothing and fails the attempt"
+}
+
 test_healthy_corpus_has_no_findings
 test_each_finding_class
 test_archive_gap_needs_two_nights
@@ -707,3 +833,8 @@ test_run_host_dropped_connection_files_nothing_twice
 test_run_host_retry_waits_for_a_still_running_dropped_pass
 test_run_host_import_failure_fails_the_run
 test_preflight_checks_the_run_host_read_only
+test_run_host_follows_this_home_forward
+test_run_host_equal_is_a_no_op
+test_run_host_imports_from_the_code_root_when_the_checkout_origin_is_stale
+test_run_host_refuses_a_checkout_on_another_branch_or_with_no_code_root
+test_run_host_never_moves_a_checkout_it_must_not

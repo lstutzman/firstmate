@@ -98,7 +98,7 @@
 # checkout, default fm-homes/<run-host> under its home). run then executes the role's pass on that host and
 # nowhere else: the lane (except runs.log, digest and the check records) goes there as a scratch copy, the host
 # runs the same role script from its own checkout (it must be at this code root's commit, else the attempt
-# fails "host code mismatch"), and the changed lane files and the pass's output come back and are written
+# fails "host code mismatch"; a checkout that is behind is first brought forward, see below), and the changed lane files and the pass's output come back and are written
 # into this lane under .run.lock, so runs.log, digest and the check records mean what they always meant. A pass that
 # fails or times out still returns the lane files it wrote, as a local one leaves them. Every bound comes from the
 # time left of the run's own FM_OFFICER_RUN_TIMEOUT (a scheduled run's deadline is set before it starts): the host
@@ -109,6 +109,11 @@
 # the pass starts from the kept lane instead, so writes it recorded there (a Linear ledger) are not made twice.
 # A pass holds ~/fm-scratch/officer-<id>.lock on the host while it runs, so an attempt that starts while a dropped
 # pass is still running fails "an earlier pass for this officer is still running on <host>".
+# Before the code check a host checkout that is behind this code root's commit is fast-forwarded: the host's
+# firstmate code root (~/Documents/GitHub/firstmate on the host) is fetched from its origin, then the checkout is
+# fast-forwarded to exactly this commit by bin/fm-ff-lib.sh's ff_target (read from that commit on the host). It never
+# forces, resets, stashes or pushes: a checkout that is dirty, diverged, ahead, on another branch, or a commit that is
+# not on the host's origin changes nothing and fails the attempt "host code mismatch" with the cause.
 # The scheduler stays here: the host has no timer, check or registration. A host that cannot be reached
 # fails the attempt ("run host unreachable") and never falls back to a local run. Inputs on the host are read in
 # process there (a source named <run-host>:<path>); the home records the surgeon joins sessions to (each --home's
@@ -117,7 +122,8 @@
 # the pass runs here exactly as before. __host-pass is the internal host side.
 #
 # preflight checks, read-only, that an officer's run-host can carry its pass, and prints one "ok <check>: ..." or
-# "FAIL <check>: ..." line per check, exiting 1 when any fails: the host checkout's commit against this code root's,
+# "FAIL <check>: ..." line per check, exiting 1 when any fails: the host checkout's commit against this code root's
+# (a checkout that is behind reports what the next run would do and fetches nothing),
 # then on the host (a script sent over ssh, so a host at another commit is still checked) linear-axi with a read-only
 # label list when writes is linear, the jev path as the host resolves it, for a surgeon the fleet app's /api/runs and
 # `git ls-remote` of the staging repo, and for a corpus officer ssh from the host to each other host its inputs name.
@@ -561,6 +567,78 @@ host_code_check() {
   printf '%s\n' "${want:0:8}"
 }
 
+HOST_CODE_ROOT=Documents/GitHub/firstmate  # the host's firstmate code root, relative to its home
+
+# The host side of host_code_follow: a script sent over ssh, so a host at an older commit still runs it.
+IFS= read -r -d '' HOST_FOLLOW_SCRIPT <<'SCRIPT' || true
+set -u
+cd "$HOME" || exit 1
+root=$1 code=$HOME/$2 want=$3 mode=$4 host=$5
+bad() { printf 'host code mismatch (%s has %s, this home %s): %s\n' "$host" "${have:0:8}" "${want:0:8}" "$*"; exit 1; }
+have=$(git -C "$root" rev-parse HEAD 2>/dev/null) || { have=none; bad "$root is not a git checkout"; }
+[ "$have" != "$want" ] || { echo "current"; exit 0; }
+known() { git -C "$root" cat-file -e "$want^{commit}" 2>/dev/null; }
+if [ -n "$(git -C "$root" status --porcelain 2>/dev/null | awk -v m='?? .fm-secondmate-home' '$0 != m { print; exit }')" ]; then
+  bad "not moved: the host checkout has local changes"
+fi
+cur=$(git -C "$root" symbolic-ref --short HEAD 2>/dev/null) || cur=
+def=$(git -C "$root" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) && def=${def#origin/}
+for b in main master; do
+  [ -z "$def" ] || break
+  git -C "$root" show-ref --verify --quiet "refs/heads/$b" && def=$b
+done
+[ -n "$def" ] || bad "not moved: the host checkout's default branch cannot be determined"
+[ -z "$cur" ] || [ "$cur" = "$def" ] || bad "not moved: the host checkout is on $cur, expected $def"
+[ -d "$code" ] || bad "not moved: the host has no firstmate code root at $code"
+if [ "$mode" = check ]; then
+  if known; then
+    if git -C "$root" merge-base --is-ancestor "$want" "$have"; then bad "not moved: the host checkout is ahead of this home's commit"; fi
+    git -C "$root" merge-base --is-ancestor "$have" "$want" || bad "not moved: the host checkout has diverged from this home's commit"
+  fi
+  echo "behind: the next run fetches $host:$code from its origin, then fast-forwards $host:$root to ${want:0:8} (if that commit is on the host's origin)"
+  exit 0
+fi
+GIT_TERMINAL_PROMPT=0 git -C "$code" fetch --quiet --no-tags origin >/dev/null 2>&1 \
+  || bad "not moved: fetching the host's code root from its origin failed"
+git -C "$code" cat-file -e "$want^{commit}" 2>/dev/null \
+  || bad "not moved: this home's commit is not on the host's origin (push it first)"
+# the commit reaches the host checkout from the code root just fetched, else from the checkout's own origin (the
+# order fm-remote-secondmate-control.sh's import_home_commit uses); neither moves a ref.
+known || git -C "$root" fetch --quiet --no-tags -- "$code" "$want" >/dev/null 2>&1 || true
+known || GIT_TERMINAL_PROMPT=0 git -C "$root" fetch --quiet --no-tags -- origin "$want" >/dev/null 2>&1 || true
+known || bad "not moved: this home's commit could not be imported into the host checkout"
+if git -C "$root" merge-base --is-ancestor "$want" "$have"; then bad "not moved: the host checkout is ahead of this home's commit"; fi
+mkdir -p "$HOME/fm-scratch" && tmp=$(mktemp -d "$HOME/fm-scratch/host-ff.XXXXXX") || bad "not moved: no scratch folder on the host"
+trap 'rm -rf -- "$tmp"' EXIT
+for f in fm-ff-lib.sh fm-secondmate-registry-lib.sh fm-git-retry-lib.sh; do
+  git -C "$code" show "$want:bin/$f" > "$tmp/$f" 2>/dev/null || bad "not moved: $f is not in this home's commit"
+done
+FM_ROOT=$root FM_HOME=$root
+# shellcheck source=/dev/null
+. "$tmp/fm-ff-lib.sh"
+FF_IMPORT_FROM=$code
+ff_target "$root" "host checkout" "$want" yes yes > "$tmp/out" 2>&1
+case "$FF_STATUS" in
+  updated|current) echo "fast-forwarded: $(head -n 1 "$tmp/out")" ;;
+  *) bad "not moved: $(head -n 1 "$tmp/out" | sed 's/^host checkout: skipped: //')" ;;
+esac
+SCRIPT
+
+# host_code_follow <host> <root> <seconds> <apply|check>: brings the host checkout <root> forward to this code root's
+# commit. apply fetches the host's code root from its origin, then fast-forwards (the lib's ff_target, never forcing);
+# check only reads and says what apply would do. Prints one line; fails with a "host code mismatch" cause when the
+# checkout cannot or must not move, and changes nothing then.
+host_code_follow() {
+  local want rc out
+  want=$(git -C "$FM_ROOT" rev-parse HEAD 2>/dev/null) || { echo "host code mismatch: this code root is not a git checkout"; return 1; }
+  out=$(fm_run_timed "$3" "${RUN_HOST_SSH[@]}" "$1" "bash -s -- $(printf '%q ' "$2" "$HOST_CODE_ROOT" "$want" "$4" "$1")" <<<"$HOST_FOLLOW_SCRIPT" 2>/dev/null)
+  rc=$?
+  if [ "$rc" -eq 255 ] || fm_timed_out "$rc"; then echo "run host unreachable ($1)"; return 1; fi
+  [ -n "$out" ] || { echo "host code mismatch ($1): the host checkout could not be read or moved"; return 1; }
+  printf '%s\n' "$out"
+  return "$rc"
+}
+
 # jev_path: the jev: field, else the local-jev skill's jev.py in the home of the machine that runs the pass
 # (@HOSTHOME@, which the run-host resolves).
 jev_path() {
@@ -596,6 +674,8 @@ remote_pass_in() {  # <stage> <host> <script> <args...>
   bound=$(( deadline - $(date +%s) - 2 * margin ))
   [ "$bound" -gt 0 ] || { echo "run host timed out ($host): no time left for the pass" >&2; return 124; }
   [ "$bound" -le 60 ] || bound=60
+  msg=$(host_code_follow "$host" "$root" "$bound" apply) || { echo "$msg" >&2; return 1; }
+  case "$msg" in fast-forwarded:*) echo "run host $host: $msg" >&2 ;; esac
   msg=$(host_code_check "$host" "$root" "$bound") || { echo "$msg" >&2; return 1; }
   mkdir -p "$stage/in/lane" "$stage/out" || return 1
   tar -C "$OFFICER_LANE" -cf - --exclude=.run.lock --exclude=.run.err --exclude='.host-stage.*' --exclude=runs.log \
@@ -1047,6 +1127,10 @@ action_preflight() {
   root=$(run_host_root "$host")
   if msg=$(host_code_check "$host" "$root" 60); then
     echo "ok code: $host:$root is at this home's commit $msg"
+  elif [[ "$msg" == "run host unreachable"* ]]; then
+    echo "FAIL code: $msg"; fail=1
+  elif msg=$(host_code_follow "$host" "$root" 60 check); then
+    echo "ok code: $msg"
   else
     echo "FAIL code: $msg"; fail=1
   fi
