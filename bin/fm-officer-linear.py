@@ -1044,7 +1044,11 @@ class Bundles:
         for f, note in self.unkeyed:
             self.pending.setdefault(self.key(f), []).append((f, note))
         self.unkeyed = []
-        keys = list(self.pending) + [self.key_of(self.bundles[fp]) for fp in sorted(self.dirty | self.due) if fp in self.bundles]
+        # Areas in the order of their best finding (seen is in score order), then any other changed bundle.
+        seen = [self.key_of(self.bundles[self.member_of[fp]]) if fp in self.member_of else self.key(f) for fp, f in self.seen.items()]
+        changed = [self.key_of(self.bundles[fp]) for fp in sorted(self.dirty | self.due) if fp in self.bundles]
+        wanted = set(self.pending) | set(changed)
+        keys = [k for k in seen if k in wanted] + list(self.pending) + changed
         for key in list(collections.OrderedDict.fromkeys(keys)):
             queue = self.pending.pop(key, [])
             try:
@@ -1059,6 +1063,12 @@ class Bundles:
     def write_key(self, key, queue, label_set):
         for b in self.open_parts(key):
             if b["fp"] not in self.dirty and b["fp"] not in self.due and not queue:
+                continue
+            if not b["issue"] and self.filer.over_cap():
+                for fp in b["members"]:
+                    f = self.seen.get(fp)
+                    if f is not None and (not f["filing"] or "pending" in f["filing"]):
+                        f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run"}
                 continue
             if b["issue"] and not self.check(b):
                 queue.extend(self.pending.pop(key, []))
