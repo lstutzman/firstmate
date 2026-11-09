@@ -113,6 +113,8 @@ BUNDLE_FILE = "bundles.json"
 NO_FILE = "(no file)"
 BUNDLE_HEAD = re.compile(r"^### (.+)$")
 BUNDLE_LINE = re.compile(r"^- \[([ x])\] ([a-z][a-z-]*-fp):([0-9a-f]{64}) (.+)$")
+RECUR = "recurred, was in "
+BUNDLE_PREFIX = "Automated findings: "
 BUNDLE_START = "Start this Linear item: fix every open line of its checklist in one pull request, tested once."
 RESUME_FILE = "linear-resume-after.json"
 LEDGER_FILE = "filed-fingerprints.json"
@@ -479,6 +481,9 @@ class Filer:
         found = self.lin(["issue", "search", query, "--team", self.team, "--limit", str(limit)]).get("issues")
         return [text(h.get("identifier"), 20) for h in dicts(found) if h.get("identifier")]
 
+    def is_bundle(self, ident):
+        return text(self.view_issue(ident).get("title"), 300).startswith(BUNDLE_PREFIX)
+
     def existing_issue(self, fp):
         """(open, closed): the open Linear item whose description carries the fingerprint, and the first closed one.
 
@@ -491,7 +496,7 @@ class Filer:
         closed = None
         for ident in self.search_hits(marker, 5)[:EXISTING_VIEWS]:
             issue = self.view_issue(ident)
-            if ident and marker in str(issue.get("description") or ""):
+            if ident and marker in str(issue.get("description") or "") and not self.is_bundle(ident):
                 if not is_closed(issue):
                     return ident, closed
                 closed = closed or ident
@@ -500,7 +505,7 @@ class Filer:
     def similar_issue(self, f):
         """(issue, confidence, near): a duplicate above JEV_SAME, else the best near match (or None)."""
         best = (None, 0.0)
-        for ident in self.search_hits(f["title"], 5)[:JEV_CANDIDATES]:
+        for ident in [i for i in self.search_hits(f["title"], 5) if not self.is_bundle(i)][:JEV_CANDIDATES]:
             issue = self.view_issue(ident)
             confidence = self.jev.same(finding_text(f), "%s\n%s" % (issue.get("title") or "", str(issue.get("description") or "")[:600]))
             if confidence is None:
@@ -755,16 +760,14 @@ class Filer:
 
     def settle_bumps(self, label_set, describe, on_closed=None):
         """Raises the Found line of every duplicate found this run; an item closed meanwhile files a recurrence
-        (on_closed(f, item) instead, when given: a bundled finding goes to its area bundle), or with bump_closed is
-        bumped and marked closed."""
+        (unless on_closed(f, item), when given, takes it: a bundled finding goes to its area bundle), or with bump_closed
+        is bumped and marked closed."""
         for f in self.bumps:
             ident = f["filing"]["issue"]
             try:
                 count = self.bump(ident, f)
                 if count is None:
-                    if on_closed:
-                        on_closed(f, ident)
-                    else:
+                    if not (on_closed and on_closed(f, ident)):
                         self.recur(f, ident, label_set, describe)
                     continue
                 if self.found["issues"][ident].get("closed"):
@@ -782,7 +785,7 @@ class Filer:
 # ---- bundles ------------------------------------------------------------------------------
 
 def bundle_title(area, family, part):
-    return "Automated findings: %s (%s)%s" % (area, family, " part %d" % part if part > 1 else "")
+    return "%s%s (%s)%s" % (BUNDLE_PREFIX, area, family, " part %d" % part if part > 1 else "")
 
 
 def bundle_lines(desc):
@@ -879,8 +882,42 @@ class Bundles:
             return False
         self.filer.ledger.pop(f["fingerprint"], None)
         f["filing"] = None
-        self.unkeyed.append((f, "recurred, was in %s" % old))
+        self.unkeyed.append((f, RECUR + "%s" % old))
         return True
+
+    def dedupe(self, label_set):
+        """A finding whose labels are missing is named not filed, with no Linear call. A new finding an existing single item already tracks (its fingerprint, or local-jev's "same issue") is bumped
+        there as before, never bundled; one whose item a person closed goes to the bundle naming it. Bundle items are never
+        matched. Linear calls; run before settle_bumps."""
+        keep = []
+        for f, note in self.unkeyed:
+            _, reason = self.filer.item_labels(f, label_set)
+            if reason:
+                f["filing"] = {"action": "not-filed", "reason": reason}
+                continue
+            if note:
+                keep.append((f, note))
+                continue
+            ident, closed = self.filer.existing_issue(f["fingerprint"])
+            if not ident and closed and self.filer.bump_closed:
+                ident = closed
+            if ident:
+                self.filer.ledger[f["fingerprint"]] = ident
+                f["filing"], f["issue_hint"] = {"action": "exists", "issue": ident}, ident
+                self.filer.bumps.append(f)
+                continue
+            if closed:
+                keep.append((f, RECUR + "%s" % closed))
+                continue
+            if not self.filer.jev.dead:
+                ident, confidence, _ = self.filer.similar_issue(f)
+                if ident:
+                    self.filer.ledger[f["fingerprint"]] = ident
+                    f["filing"], f["issue_hint"] = {"action": "duplicate", "issue": ident, "confidence": round(confidence, 2)}, ident
+                    self.filer.bumps.append(f)
+                    continue
+            keep.append((f, note))
+        self.unkeyed = keep
 
     def tick(self, fp):
         """Marks a finding resolved: its box is ticked, never removed."""
@@ -929,7 +966,10 @@ class Bundles:
         old = self.bundles.get(self.member_of.get(fp, ""))
         if old and old is not b:
             del old["members"][fp]
-        b["members"][fp] = {"title": f["title"], "file": f["location"], "severity": f["severity"], "state": "open", **({"note": note} if note else {})}
+        extra = "; ".join(x for x in (f["bundle"].get("line"), note) if x)
+        b["members"][fp] = {"title": f["title"], "file": f["location"], "severity": f["severity"], "state": "open", **({"note": extra} if extra else {})}
+        if note.startswith(RECUR):
+            b["members"][fp]["recurred"] = note[len(RECUR):]
         self.member_of[fp] = b["fp"]
         self.dirty.add(b["fp"])
 
@@ -949,7 +989,7 @@ class Bundles:
                     continue
                 if self.recur_closed:
                     del self.member_of[fp]
-                    self.pending.setdefault(self.key(f), []).append((f, "recurred, was in %s" % b["issue"]))
+                    self.pending.setdefault(self.key(f), []).append((f, RECUR + "%s" % b["issue"]))
                 else:
                     f["filing"] = {"action": "bundled", "issue": b["issue"], "closed": True}
             return False
@@ -1056,8 +1096,8 @@ class Bundles:
                 self.filing(f, b, new)
                 if verify and new:
                     f["filing"]["verify"] = verify
-                if b["members"][fp].get("note", "").startswith("recurred, was in "):
-                    f["filing"]["recurrence_of"] = b["members"][fp]["note"][len("recurred, was in "):]
+                if b["members"][fp].get("recurred") and new:
+                    f["filing"]["recurrence_of"] = b["members"][fp]["recurred"]
 
 
 def file_bundled(filer, todo, label_set, describe, bundles):
@@ -1079,6 +1119,7 @@ def file_bundled(filer, todo, label_set, describe, bundles):
     for f in todo:
         if not f.get("bundle") and not f["filing"]:
             filer.file_single(f, label_set, describe)
+    bundles.dedupe(label_set)
     filer.settle_bumps(label_set, describe, on_closed=bundles.requeue)
     bundles.write(label_set)
     return True
@@ -1199,6 +1240,12 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
     never into asks_for_lee, and the office dispatches no fourth fix and files the keyed needs-decision `<id>-<issue>-fix-cap` so Lee decides the next step.
     """
     starts, held, seen = [], [], set()
+    # A bundle's start fixes every line on it, so one reserved line holds the whole bundle, whatever that line's own score.
+    bundle_reserved = {}
+    for f in findings:
+        filing = f["filing"] or {}
+        if f["class"] == "real" and not f["tracked"] and filing.get("action") == "bundled" and filing.get("issue") and reserved_class(f):
+            bundle_reserved.setdefault(filing["issue"], f)
     sources = rubric.start_sources if rubric.loaded else set(officer.sources)
     severities = rubric.start_severities if rubric.loaded else set(officer.severities)
     for f in findings:
@@ -1212,9 +1259,10 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
         if issue and issue in seen:
             continue
         fresh = writes != "linear" or handled.get(issue) in (None, date)
-        reserved = reserved_class(f)
+        lead = bundle_reserved.get(issue, f) if filing.get("action") == "bundled" else f
+        reserved = reserved_class(lead)
         if reserved and fresh:
-            held.append({"fingerprint": f["fingerprint"], "title": f["title"], "class": reserved, "severity": f["severity"], "issue": filing.get("issue")})
+            held.append({"fingerprint": lead["fingerprint"], "title": lead["title"], "class": reserved, "severity": lead["severity"], "issue": filing.get("issue")})
             if issue:
                 handled[issue] = date
                 seen.add(issue)

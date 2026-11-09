@@ -630,6 +630,10 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
     bundles_for = [f for f in todo if f["fingerprint"] and not f.get("special")]
     for f in bundles_for:
         f["bundle"] = {"family": FAMILY[f["source"]], "area": None}
+        if f["source"] == "visual":
+            shots = f["evidence"].get("screenshots") or []
+            f["bundle"]["line"] = "visual-review-fp:%s%s" % (f["evidence"]["visual_review_fp"], "; screenshots: %s%s" % (
+                ", ".join(shots[:3]), " and %d more" % (len(shots) - 3) if len(shots) > 3 else "") if shots else "")
     for f in todo:
         if not f["fingerprint"]:
             f["filing"] = {"action": "not-filed", "reason": "no key, title or location to fingerprint"}
@@ -674,6 +678,8 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
         return stop("label lookup failed: %s" % exc, exc.code == "RATE_LIMITED")
 
     def label_set(f):
+        if f.get("bundle") and f["bundle"]["area"] is None:
+            f["bundle"]["area"] = area(f)
         wanted = ["Bug", SOURCE_LABEL[f["source"]], f["bundle"]["area"] if f.get("bundle") else area(f)]
         return wanted, [w for w in wanted if w.lower() not in names["names"]]
 
