@@ -113,6 +113,14 @@ test_codex_rollout_source() {
   touch -t "$(( $(date +%Y) + 2 ))01010000" "$home/sessions/2026/11/09/rollout-c.jsonl"
   out=$(fm_busy_classify tmux w1 codex t1 "$state")
   [ "$out" = "idle codex-rollout" ] || fail "a settled current rollout beside an earlier interrupted one must be idle, got '$out'"
+  # A quick relaunch: the predecessor stopped mid-turn seconds before the new launch epoch.
+  rm -f "$home"/sessions/2026/11/09/rollout-*.jsonl
+  codex_task "$state" "$wt" ship "s$(( $(date +%s) + 5 )).1.1"
+  codex_rollout "$home" a "$wt" task_started
+  codex_rollout "$home" c "$wt" task_started task_complete
+  touch -t "$(( $(date +%Y) + 2 ))01010000" "$home/sessions/2026/11/09/rollout-c.jsonl"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "idle codex-rollout" ] || fail "a rollout interrupted just before a relaunch must not hold the new launch at unknown, got '$out'"
   # Without a parsable launch epoch no rollout can be scoped, so the verdict stays unknown.
   codex_task "$state" "$wt" ship ""
   out=$(fm_busy_classify tmux w1 codex t1 "$state")

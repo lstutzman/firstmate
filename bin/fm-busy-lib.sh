@@ -1115,7 +1115,7 @@ fm_busy_gemini_launch_prompt_tail() {
 # or sibling directory never binds. A reused pool slot can hold earlier tasks'
 # rollouts, so only rollouts of the current launch count: a bound rollout whose
 # mtime is at or after the launch epoch in the meta's spawn_gen=s<epoch>.<...>
-# (renewed by every spawn and relaunch), less a 120s clock margin. Older ones,
+# (renewed by every spawn and relaunch). Older ones,
 # even if interrupted mid-turn, are ignored; a meta without a parsable
 # spawn_gen reads none. The verdict needs EVERY counted rollout to end on a
 # task_complete, so an unfinished one holds the answer at unknown and can never
@@ -1140,7 +1140,6 @@ fm_busy_codex_rollout_state() {  # <state-dir> <id>
     *) printf none; return 0 ;;
   esac
   case "$since" in ''|*[!0-9]*) printf none; return 0 ;; esac
-  since=$((since - 120))
   if [ "$(uname)" = Darwin ]; then stat_fmt=bsd; else stat_fmt=gnu; fi
   wt=$(LC_ALL=C awk -F= '$1 == "worktree" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$meta")
   [ -n "$wt" ] && [ -d "$wt" ] || { printf none; return 0; }
