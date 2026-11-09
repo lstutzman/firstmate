@@ -25,6 +25,8 @@ make_world() {
     printf '  400   5000 claude --model=claude-opus-4-8 --secret-flag hunter2\n'
     printf '  500 900000 vim claude-notes.txt\n'
     printf '  600 900000 /usr/local/bin/claude --model claude-sonnet-5-5\n'
+    printf '  700 1700000 /usr/local/bin/codex -c features.x=true app-server --listen unix:///run/codex.sock\n'
+    printf '  800 104000 codex app-server proxy\n'
   } > "$w/ps.txt"
   python3 -I - "$w/usage.db" "$NOW" <<'PY'
 import sqlite3, sys
@@ -53,9 +55,11 @@ test_flags_old_and_retired_sessions_only() {
   local w out
   w=$(make_world flags)
   out=$(weight "$w")
-  assert_equals 4 "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "pids 200, 300, 400 and 600 qualify; 100 is young and on a current model; vim is not a session"
+  assert_equals 4 "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "pids 200, 300, 400 and 600 qualify; 100 is young and on a current model; vim and codex app-server daemons are not sessions"
   assert_not_contains "$out" "pid=100 " "a young session on a current model is not listed"
   assert_not_contains "$out" "pid=500" "a process that merely mentions claude is not a session"
+  assert_not_contains "$out" "pid=700" "a codex app-server daemon is not a session"
+  assert_not_contains "$out" "pid=800" "a codex app-server proxy daemon is not a session"
   assert_contains "$out" "pid=200 claude home=quartermaster age=27.8h model=claude-opus-5-5 [age>24h]" "an old session names pid, the home in its --add-dir (which wins over its working directory), age and model"
   assert_contains "$out" "pid=600 claude home=unknown" "no add-dir and no readable working directory: home unknown"
   assert_contains "$out" "pid=300 codex cwd=repo/pane age=55.6h model=default [age>24h]" "a codex session with no model flag and a plain working directory"

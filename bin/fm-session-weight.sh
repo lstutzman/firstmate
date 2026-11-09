@@ -67,7 +67,7 @@ for line in sys.stdin:
     if not m:
         continue
     pid, age, exe, rest = m.group(1), int(m.group(2)), m.group(3), m.group(4)
-    if os.path.basename(exe) not in ("claude", "codex"):
+    if os.path.basename(exe) not in ("claude", "codex") or re.search(r"(?:^|\s)app-server(?:\s|$)", rest):
         continue
     mm = re.search(r"(?:^|\s)--model(?:=|\s+)([A-Za-z0-9._:-]+)", rest)
     model = mm.group(1) if mm else "default"
