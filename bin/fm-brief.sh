@@ -968,11 +968,13 @@ IFS= read -r -d '' SHARED_INFRA_RULE <<'EOF' || true
 EOF
 SHARED_INFRA_RULE=${SHARED_INFRA_RULE%$'\n'}
 
-# One shared string keeps the ship and scout shell-path rule identical.
+# One shared string keeps the ship and scout shell-path rule, and its wait and diff habits, identical.
 IFS= read -r -d '' SHARED_NO_CD_RULE <<'EOF' || true
 8. Never start a shell command with `cd`, and never run a search whose path depends on the current directory.
    Use absolute paths, `git -C <abs>`, or a `( cd <abs> && ... )` subshell.
    Pass this rule to every sub-agent you launch.
+   To wait for a condition (CI, a run, a file), use one until-loop with a timeout; do not re-run the same check command turn after turn.
+   Read a diff as `git diff --stat` first, then only the paths you need.
 EOF
 SHARED_NO_CD_RULE=${SHARED_NO_CD_RULE%$'\n'}
 
