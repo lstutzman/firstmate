@@ -2994,7 +2994,8 @@ captain_call_stale_bound() {  # <window-key> <task>
 # STALE_ESCALATE_SECS (.nm-drive-grace-<key>) and leaves the stale suppressor
 # untouched, so a worker still quiet on that hash afterwards gets exactly the
 # alarm it would have got without the steer, and a new hash starts over. 0 while
-# the steer holds the hash, 1 when the ordinary stale path should decide.
+# the steer holds the hash or waits for the branch head to settle, 1 when the
+# ordinary stale path should decide.
 nm_drive_steered() {  # <window> <task> <hash>
   local w=$1 task=$2 h=$3 grace held at
   [ -n "$task" ] || return 1
