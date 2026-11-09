@@ -1,0 +1,16 @@
+Cards served (local http.server, real curl, real gh-axi; PR lstutzman/firstmate#187 is merged per GitHub):
+  pc-4996-after-released: Add a Linear status named Released, now that https://github.com/lstutzman/firstmate/pull/187 landed?
+  merge-187: Give the merge word for https://github.com/lstutzman/firstmate/pull/187?
+  review-187: Review https://github.com/lstutzman/firstmate/pull/187 before it ships?
+  approve-prod-187: Approve the production deploy of https://github.com/lstutzman/firstmate/pull/187?
+  described-hold-187: Add a Linear status? https://github.com/lstutzman/firstmate/pull/187 was on hold for review
+  closed-unmerged: Add a Linear status for https://github.com/lstutzman/firstmate/pull/1?
+== base (eb7b0c81): stale-card findings naming a PR
+  stale-card:Captain's Log:closed-unmerged:lstutzman/firstmate#1  -- names lstutzman/firstmate#1, which is merged
+  stale-card:Captain's Log:described-hold-187:lstutzman/firstmate#187  -- names lstutzman/firstmate#187, which is merged
+  stale-card:Captain's Log:merge-187:lstutzman/firstmate#187  -- names lstutzman/firstmate#187, which is merged
+  stale-card:Captain's Log:pc-4996-after-released:lstutzman/firstmate#187  -- names lstutzman/firstmate#187, which is merged
+  stale-card:Captain's Log:review-187:lstutzman/firstmate#187  -- names lstutzman/firstmate#187, which is merged
+== new (23a2db2b): stale-card findings naming a PR
+  stale-card:Captain's Log:merge-187:lstutzman/firstmate#187  -- names lstutzman/firstmate#187, which is merged
+  stale-card:Captain's Log:review-187:lstutzman/firstmate#187  -- names lstutzman/firstmate#187, which is merged

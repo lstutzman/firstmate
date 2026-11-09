@@ -1,0 +1,197 @@
+{
+ "asks_for_lee": [],
+ "coverage": [
+  "no standing-rule lines in /dev/null; the standing-rule check covers nothing",
+  "card record for source bosun was missing",
+  "no --fm-home, so nothing starts by itself"
+ ],
+ "findings": [
+  {
+   "evidence": "GET /api/runs/bosun-maintenance/results was missing",
+   "id": "page-old:Bosun:results",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 4.0,
+    "severity": "high"
+   },
+   "page": "Bosun",
+   "route": "page owner: restore the page's feed",
+   "severity": "high",
+   "title": "Bosun: never published"
+  },
+  {
+   "evidence": "GET /api/business-health was missing",
+   "id": "page-old:Business health:business-health",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 4.0,
+    "severity": "high"
+   },
+   "page": "Business health",
+   "route": "page owner: restore the page's feed",
+   "severity": "high",
+   "title": "Business health: never published"
+  },
+  {
+   "evidence": "GET /api/cost-cycle was missing",
+   "id": "page-old:Cost and cycle time:cost-cycle",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 4.0,
+    "severity": "high"
+   },
+   "page": "Cost and cycle time",
+   "route": "page owner: restore the page's feed",
+   "severity": "high",
+   "title": "Cost and cycle time: never published"
+  },
+  {
+   "evidence": "GET /api/ideation was missing",
+   "id": "page-old:Feature ideation:ideation",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 4.0,
+    "severity": "high"
+   },
+   "page": "Feature ideation",
+   "route": "page owner: restore the page's feed",
+   "severity": "high",
+   "title": "Feature ideation: never published"
+  },
+  {
+   "evidence": "GET /api/health was missing",
+   "id": "page-old:Home:health",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 4.0,
+    "severity": "high"
+   },
+   "page": "Home",
+   "route": "page owner: restore the app",
+   "severity": "high",
+   "title": "Home: app never published"
+  },
+  {
+   "evidence": "GET /api/progress-officer was missing",
+   "id": "page-old:Progress officer:progress-officer",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 4.0,
+    "severity": "high"
+   },
+   "page": "Progress officer",
+   "route": "page owner: restore the page's feed",
+   "severity": "high",
+   "title": "Progress officer: never published"
+  },
+  {
+   "evidence": "GET /api/runs was missing",
+   "id": "page-old:Runs:runs",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 4.0,
+    "severity": "high"
+   },
+   "page": "Runs",
+   "route": "page owner: restore the page's feed",
+   "severity": "high",
+   "title": "Runs: never published"
+  },
+  {
+   "evidence": "GET /api/top-of-mind was missing",
+   "id": "page-old:Top of Mind:top-of-mind",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 4.0,
+    "severity": "high"
+   },
+   "page": "Top of Mind",
+   "route": "page owner: restore the page's feed",
+   "severity": "high",
+   "title": "Top of Mind: never published"
+  },
+  {
+   "evidence": "GET /api/velocity-audit was missing",
+   "id": "page-old:Velocity audit:velocity-audit",
+   "kind": "page-old",
+   "linear": {
+    "found": 1,
+    "score": 4.0,
+    "severity": "high"
+   },
+   "page": "Velocity audit",
+   "route": "page owner: restore the page's feed",
+   "severity": "high",
+   "title": "Velocity audit: never published"
+  },
+  {
+   "evidence": "names lstutzman/firstmate#187, which is merged",
+   "id": "stale-card:Captain's Log:merge-187:lstutzman/firstmate#187",
+   "kind": "stale-card",
+   "linear": {
+    "found": 1,
+    "score": 1.0,
+    "severity": "low"
+   },
+   "page": "Captain's Log",
+   "route": "cl-keeper: close or correct",
+   "severity": "low",
+   "title": "Give the merge word for https:<token>?"
+  },
+  {
+   "evidence": "names lstutzman/firstmate#187, which is merged",
+   "id": "stale-card:Captain's Log:review-187:lstutzman/firstmate#187",
+   "kind": "stale-card",
+   "linear": {
+    "found": 1,
+    "score": 1.0,
+    "severity": "low"
+   },
+   "page": "Captain's Log",
+   "route": "cl-keeper: close or correct",
+   "severity": "low",
+   "title": "Review https:<token> before it ships?"
+  }
+ ],
+ "generated_at": "2026-11-09T10:30:00Z",
+ "held": [],
+ "key": "2026-11-09T10",
+ "linear_call_budget": 450,
+ "linear_calls": 0,
+ "linear_gaps": [
+  "no --fm-home, so nothing starts by itself"
+ ],
+ "new": [
+  "page-old:Bosun:results",
+  "page-old:Business health:business-health",
+  "page-old:Cost and cycle time:cost-cycle",
+  "page-old:Feature ideation:ideation",
+  "page-old:Home:health",
+  "page-old:Progress officer:progress-officer",
+  "page-old:Runs:runs",
+  "page-old:Top of Mind:top-of-mind",
+  "page-old:Velocity audit:velocity-audit",
+  "stale-card:Captain's Log:merge-187:lstutzman/firstmate#187",
+  "stale-card:Captain's Log:review-187:lstutzman/firstmate#187"
+ ],
+ "not_filed": [],
+ "patterns": {
+  "captures": [],
+  "lint": [],
+  "new": [],
+  "total": 0
+ },
+ "source": "page-check-officer",
+ "start_requests": [],
+ "writes": "none",
+ "writes_blocked": null,
+ "writes_done": []
+}
