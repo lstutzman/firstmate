@@ -1704,13 +1704,18 @@ EOF
 # re-checking every live condition on each attempt, rather than refusing a pull
 # request that is simply still being computed. The delay is capped at 0-10
 # seconds so the wait stays short under the lock.
+github_mergeable_retry_delay() {
+  local delay=${FM_PR_GITHUB_MERGEABLE_RETRY_DELAY:-3}
+  case "$delay" in
+    [0-9] | 10) ;;
+    *) delay=3 ;;
+  esac
+  printf '%s\n' "$delay"
+}
+
 github_verify_mergeable_with_retry() {
   local mergeable_retry_delay mergeable_attempt=1 mergeable_status
-  mergeable_retry_delay=${FM_PR_GITHUB_MERGEABLE_RETRY_DELAY:-3}
-  case "$mergeable_retry_delay" in
-    [0-9] | 10) ;;
-    *) mergeable_retry_delay=3 ;;
-  esac
+  mergeable_retry_delay=$(github_mergeable_retry_delay)
   while :; do
     mergeable_status=0
     github_verify_mergeable || mergeable_status=$?
@@ -1731,7 +1736,8 @@ github_verify_mergeable_with_retry() {
 
 github_update_behind_branch() {
   local old_head=$FM_PR_MERGE_HEAD new_head='' attempt_error status
-  local poll=${mergeable_retry_delay:-3} deadline
+  local poll deadline
+  poll=$(github_mergeable_retry_delay)
   deadline=$((SECONDS + poll * 5))
   attempt_error=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-update.XXXXXX") || return 1
   if ! gh api --method PUT "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/update-branch" \
