@@ -31,17 +31,21 @@ card, a page owner fixes a page). It acts on nothing itself.
                  (read with `gh-axi api GET`, at most MAX_PR_LOOKUPS a run), or
                  whose keyed status line a later `resolved` line settled.
                  Two live-decision exceptions keep this from false-flagging:
-                 * A merged PR alone does not stale a card that asks for a
-                   production or activation action on it: that action is
-                   still open. A production card's question, title or id
-                   names deploy, production or roll out (PRODUCTION_RE); an
-                   activation card's question or title opens with run these,
-                   run the, install, activate, enable or go live
-                   (ACTIVATION_ASK_RE), or its id carries an -install,
-                   -golive, -go-live, -activate or -run-these token
-                   (ACTIVATION_ID_RE). Neither counts when the card asks for a
-                   merge (MERGE_RE: a merge-word card is stale once its PR
-                   merged; merely mentioning the merge is not asking).
+                 * A merged PR stales a card only when the card's ask is the PR
+                   itself: a merge word or ask (MERGE_RE) in its question,
+                   title or id, or a question that opens with approve,
+                   review or release the hold (REVIEW_RE). A card that
+                   merely names a merged PR while asking for something else
+                   (a Linear status, a follow-up step), or whose review or
+                   hold word only describes the PR, is a live decision, and
+                   so is one that asks for a production or
+                   activation action without a merge word, even when worded
+                   approve, review or hold: its question, title or id names
+                   deploy, production or roll out (PRODUCTION_RE), its
+                   question or title opens with run these, run the, install,
+                   activate, enable or go live (ACTIVATION_ASK_RE), or its id
+                   carries an -install, -golive, -go-live, -activate or
+                   -run-these token (ACTIVATION_ID_RE).
                    A closed-unmerged PR still flags.
                  * A `resolved` line alone does not stale a card unless the
                    captain answered. Evidence is a card `answer`, or a
@@ -117,12 +121,14 @@ TYPE_LABEL = "Bug"
 SOURCE_LABEL = "agent"
 FACTS_SOURCES = ("bosun",)
 PR_RE = re.compile(r"https://github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)")
-# A card names a production action when its question, title or own id matches PRODUCTION_RE and does not ask for a merge.
+MERGE_RE = re.compile(r"\bmerge[ -]words?\b|^merge\s|\bmerge (?:this|it|the PR|PR)\b", re.I)
+# A card names a production action when its question, title or own id matches PRODUCTION_RE.
 PRODUCTION_RE = re.compile(r"\b(production|deploy\w*|roll(?:ed|s|ing)?[ -]?out)\b", re.I)
 # A card asks to activate or run its subject when its question or title opens with the ask, or its id carries the token.
 ACTIVATION_ASK_RE = re.compile(r"^(?:run these|run the|install|activate|enable|go live)\b", re.I)
 ACTIVATION_ID_RE = re.compile(r"-(?:install|golive|go-live|activate|run-these)(?:-|$)", re.I)
-MERGE_RE = re.compile(r"\bmerge[ -]words?\b|^merge\s|\bmerge (?:this|it|the PR|PR)\b", re.I)
+# A card asks for a decision on a PR itself when its question opens with one of these asks and it names no production or activation action.
+REVIEW_RE = re.compile(r"^(?:\w+,\s*)?(?:please\s+)?(?:approve|approval|review|(?:release|lift)\s+(?:the\s+)?hold)\b", re.I)
 # A resolved status line written by an answer, as opposed to a routing or reconcile acknowledgement.
 ANSWER_RE = re.compile(r"^(?:answered:|captain hold \S+: (?:answered|released))", re.I)
 RULE_RE = re.compile(r"^\s*(?:-\s*)?standing-rule\s+([a-z0-9-]+)\s+/(.+)/\s+-\s+(.+?)\s*$", re.M)
@@ -260,12 +266,14 @@ def words(card):
     return " ".join(str(card.get(k) or "") for k in ("question", "advice", "detail", "title", "tldr"))
 
 
-def open_production_action(card):
-    """True when the card asks for a production or activation action, which a merged PR does not close."""
+def asks_about_pr(card):
+    """True when the card's own ask is the PR itself (a merge word, or an approval, review or hold release with no production or activation action), the only ask a merged PR settles."""
     head = [str(card.get(k) or "").strip() for k in ("id", "question", "title")]
-    asks = (any(PRODUCTION_RE.search(h) for h in head) or ACTIVATION_ID_RE.search(head[0])
-            or any(ACTIVATION_ASK_RE.search(h) for h in head[1:]))
-    return bool(asks) and not any(MERGE_RE.search(h) for h in head)
+    if any(MERGE_RE.search(h) for h in head):
+        return True
+    action = (any(PRODUCTION_RE.search(h) for h in head) or ACTIVATION_ID_RE.search(head[0])
+              or any(ACTIVATION_ASK_RE.search(h) for h in head[1:]))
+    return not action and bool(REVIEW_RE.search(head[1]))
 
 
 def finding(kind, page, ref, title, evidence, route, severity="medium"):
@@ -316,7 +324,7 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
             out.append(finding("stale-card", page, cid + ":answered", title, "already answered but still shown", "cl-keeper: close", "low"))
         for repo, number in PR_RE.findall(text):
             state = pr_state(repo, number, cache, budget)
-            if state == "merged" and open_production_action(c):
+            if state == "merged" and not asks_about_pr(c):
                 continue
             if state in ("merged", "closed"):
                 out.append(finding("stale-card", page, "%s:%s#%s" % (cid, repo, number), title,

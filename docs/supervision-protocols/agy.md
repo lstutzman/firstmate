@@ -2,12 +2,12 @@
 Mode: Antigravity Stop-hook-owned supervision.
 
 When this session owns supervision and away mode is not active:
-1. Drain first with `bin/fm-wake-drain.sh`.
+1. Drain first with `bin/fm-wake-drain.sh --summary` (one verdict line per wake, with a no-action or ACTION call and the current state behind it; a home that opts in via `config/wake-auto-ack` has no-action-only batches acknowledged for it).
    After handling all emitted wakes and reconciling open decisions, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
 2. Routine watcher arm and re-arm are owned by the Stop hook (`.agents/hooks.json` running `bin/fm-turnend-guard-agy.sh`), never by you.
    Antigravity runs that hook synchronously and awaits it, so every turn end while supervision is needed parks the turn boundary open on one home-scoped watcher cycle, with no model command and no model tokens spent while parked.
 3. An actionable close wakes you as a follow-up turn carrying the `watcher` operational kind when the park emits `{"decision":"continue","reason":"..."}`.
-   On that wake, run `bin/fm-wake-drain.sh` first and handle it.
+   On that wake, run `bin/fm-wake-drain.sh --summary` first and handle it.
    Do not run `bin/fm-watch-arm.sh` after an ordinary wake; the next turn end parks again automatically when supervision is still needed.
    Do not invent a wake from an attach-status line alone; drain and act only on real wake records, the drain's `OPEN DECISIONS` entries, or a real watcher reason line.
 4. The Stop-hook park checks its tracked child every `FM_AGY_PARK_POLL` seconds (default 2) and waits on it under the 28800-second hook timeout, so an idle cycle spends no turn.

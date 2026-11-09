@@ -17,6 +17,28 @@
 # locked drain rotates such leftovers away before doing anything else.
 # FM_STATUS_PRESENTATION_LOCK_TIMEOUT sets the positive whole-second wait for
 # presentation-path locks (default 10); queue mutation locks remain blocking.
+#
+# --summary replaces the raw wake rows and per-file annotations with one line per
+# wake, each carrying the current state that decides it and a deterministic
+# `no-action` or `ACTION` verdict (bin/fm-wake-summary.sh owns the classifier), so
+# a supervisor needs no second read; every other section prints as before.
+# On a home that keeps the config/wake-auto-ack file, a --summary drain by main
+# whose rows are all `no-action` and whose presentation printed nothing else
+# (no unread status, open decision, divergence, due default, branch outcome or
+# supervision alarm) acknowledges the batch itself through the same
+# --ack-through path and prints one WAKE AUTO-ACKED line; any other batch
+# acknowledges nothing and prints the usual WAKE_ACK_REQUIRED command. Without
+# --summary the output and behavior are unchanged.
+#
+# --quiet-ack is the same decision for a caller with no model to show anything
+# to: bin/fm-claude-stop-autoarm.sh runs it before deciding to wake the
+# supervisor. It prints nothing and exits 0 when the whole batch was classified
+# no-action and acknowledged (it also leaves one line in state/.wake-auto-acked,
+# which the next --summary drain reports and clears), 10 when a model is needed
+# (nothing is acknowledged and no status presentation is consumed, so the
+# supervisor's own drain shows everything), and 11 when the mode does not apply
+# (no config/wake-auto-ack, or not the main actor). The supervision guard is not
+# consulted: the caller re-arms the watcher itself.
 set -u
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)"
@@ -223,6 +245,19 @@ presented_max_row() { # <rows-file>
   fi
 }
 
+SUMMARY=false
+PRESENT_SNAPSHOT=
+PRESENT_SNAPSHOT_SET=false
+PRESENT_NO_COMMIT=false
+case "${1:-}" in
+  --summary|--quiet-ack)
+    [ "$#" -eq 1 ] || { echo "usage: fm-wake-drain.sh [--summary | --quiet-ack | --ack-through SEQUENCE --recovery-generation GENERATION]" >&2; exit 2; }
+    SUMMARY=true
+    [ "$1" != --quiet-ack ] || SUMMARY=quiet
+    shift
+    ;;
+esac
+
 case "${1:-}" in
   '') ;;
   --ack-through)
@@ -234,8 +269,16 @@ case "${1:-}" in
     case "$ACK_GENERATION" in ''|*[!A-Za-z0-9._-]*) echo "wake drain: invalid recovery generation" >&2; exit 2 ;; esac
     [ "$#" -eq 4 ] || { echo "wake drain: unexpected acknowledgement arguments" >&2; exit 2; }
     ;;
-  *) echo "usage: fm-wake-drain.sh [--ack-through SEQUENCE --recovery-generation GENERATION]" >&2; exit 2 ;;
+  *) echo "usage: fm-wake-drain.sh [--summary | --quiet-ack | --ack-through SEQUENCE --recovery-generation GENERATION]" >&2; exit 2 ;;
 esac
+
+# --quiet-ack applies only where the home opted in and this actor is main; decide
+# that before any state is touched.
+if [ "$SUMMARY" = quiet ]; then
+  if [ "$ACTOR" != main ] || [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/wake-auto-ack" ]; then
+    exit 11
+  fi
+fi
 
 [ "$ACTOR" != branch ] || require_branch_eligible_rows || exit 1
 
@@ -837,7 +880,7 @@ print_status_sections() {
     rm -f -- "$prepared"
     return 1
   fi
-  if ! status_commit_presentation_snapshot "$STATE" "$acknowledged"; then
+  if [ "$PRESENT_NO_COMMIT" != true ] && ! status_commit_presentation_snapshot "$STATE" "$acknowledged"; then
     rm -f -- "$prepared"
     return 1
   fi
@@ -860,10 +903,14 @@ print_status_presentation() {  # [<deduped-raw-rows>]
     fi
     return 1
   fi
-  snapshot=$(status_presentation_snapshot "$STATE") || {
-    printf 'STATUS PRESENTATION INCOMPLETE: status snapshot could not be read.\n'
-    rc=1
-  }
+  if [ "$PRESENT_SNAPSHOT_SET" = true ]; then
+    snapshot=$PRESENT_SNAPSHOT
+  else
+    snapshot=$(status_presentation_snapshot "$STATE") || {
+      printf 'STATUS PRESENTATION INCOMPLETE: status snapshot could not be read.\n'
+      rc=1
+    }
+  fi
   if [ "$rc" -eq 0 ] && [ -n "$rows" ]; then
     fm_wake_print_annotations "$rows" "$snapshot" || rc=1
     if [ "$rc" -eq 0 ]; then
@@ -878,6 +925,222 @@ print_status_presentation() {  # [<deduped-raw-rows>]
   return "$rc"
 }
 
+# split_sections <mode> <sections-text>: the OPEN DECISIONS block (mode od) or every
+# other section line (mode other) of a captured presentation. A block runs from its
+# header line until the next section header.
+split_sections() {
+  printf '%s\n' "$2" | awk -v mode="$1" '
+    /^OPEN DECISIONS/ { block = "od"; if (mode == "od") print; next }
+    /^(UNREAD STATUS|STATUS OUTCOME BACKSTOP|RECORD DIVERGENCE|DEFAULTS DUE|STATUS PRESENTATION|BRANCH OUTCOMES|WAKE DRAIN|wake drain)/ { block = "other" }
+    NF { if (block == "od" && mode == "od") print; else if (block != "od" && mode == "other") print }'
+}
+
+# section_digest: a hash of stdin, for the OPEN DECISIONS block last presented.
+section_digest() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum | awk '{ print $1 }'; else shasum -a 256 | awk '{ print $1 }'; fi
+}
+
+# quiet_restore_marker: a --quiet-ack that found a wake needing a model leaves no
+# trace of having drained. The ordinary drain moves the recovery episode to
+# handling, but the Stop hook can only deliver its rewake while the episode still
+# reads downtime, so put it back (same generation while rows remain queued).
+# shellcheck disable=SC2317,SC2329 # Invoked by the cleanup trap handler.
+quiet_restore_marker() {
+  fm_recovery_marker_snapshot "$RECOVERY_MARKER" || return 0
+  case "$FM_RECOVERY_MARKER_TOKEN" in
+    pending:handling:*|announced:handling:*)
+      if [ -s "$FM_WAKE_QUEUE" ]; then
+        fm_recovery_marker_handling_settled "$RECOVERY_MARKER" || true
+      else
+        fm_recovery_marker_publish "$RECOVERY_MARKER" downtime || true
+      fi
+      ;;
+  esac
+}
+
+# quiet_outcomes_pending: 0 when the BRANCH OUTCOMES section would print something
+# (read-only: the presenting drain, not this check, advances the store's cursor).
+quiet_outcomes_pending() {
+  local config rows
+  config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
+  fm_supervision_host_outcomes_drained "$config" || return 1
+  [ -s "$STATE/branch-outcomes.jsonl" ] || return 1
+  ! fm_afk_contract_away_present "$STATE" || return 1
+  command -v jq >/dev/null 2>&1 || return 0
+  rows=$("$SCRIPT_DIR/fm-branch-outcome.sh" present 2>/dev/null) || return 0
+  [ -n "$rows" ]
+}
+
+# print_auto_ack_notice: the one line a supervisor reads on its next real drain
+# about wakes the --quiet-ack path acknowledged without waking a model. The
+# pending file is claimed by an atomic rename, so a concurrent append is never lost.
+print_auto_ack_notice() {
+  local pending="$STATE/.wake-auto-acked" claimed batches wakes kinds first
+  [ -s "$pending" ] || return 0
+  claimed="$STATE/.wake-auto-acked.reading.$$"
+  mv -f -- "$pending" "$claimed" 2>/dev/null || return 0
+  batches=$(awk 'END { print NR }' "$claimed")
+  wakes=$(awk -F '\t' '{ n += $2 } END { print n + 0 }' "$claimed")
+  first=$(awk -F '\t' 'NR == 1 { print $1 }' "$claimed")
+  kinds=$(awk -F '\t' '{ n = split($3, parts, ","); for (i = 1; i <= n; i++) { split(parts[i], kv, "="); c[kv[1]] += kv[2] } }
+    END { for (k in c) printf "%s%s=%d", (s++ ? ", " : ""), k, c[k] }' "$claimed")
+  rm -f -- "$claimed"
+  printf 'WAKE AUTO-ACKED WHILE NO MODEL WAS WOKEN: %s wake(s) in %s batch(es) since epoch %s (%s); each was classified no-action and acknowledged by the Stop hook (config/wake-auto-ack), so nothing needed you.\n' \
+    "$wakes" "$batches" "$first" "$kinds"
+}
+
+# summary_tail <deduped-rows> <ack-through|""> <generation|"">: the --summary
+# presentation. Captures what the ordinary path would print (annotations and
+# sections), prints one verdict line per wake instead of the raw rows, and, when
+# the home opted in and nothing in the whole presentation needs a reader,
+# acknowledges the batch itself. An empty ack-through means no acknowledgement is
+# owed (a drain whose rows all belong to the branch grant).
+# --quiet-ack (SUMMARY=quiet) is the same decision for a caller that has no model
+# to show anything to (the Stop hook): it prints nothing, commits no status
+# presentation until the batch is acknowledged, skips the supervision-guard
+# check (the caller re-arms the watcher itself), and reports through QUIET_EXIT
+# (0 acknowledged, 10 a model is needed with nothing consumed).
+QUIET_EXIT=10
+TAIL_SUMMARY=
+TAIL_ACKED=false
+summary_tail_run() {
+  local rows=$1 through=$2 generation=$3 presentation annotations sections outcomes outcomes_rc=0
+  local guard_out='' summary quiet=1 config ack_out ack_rc count=0 actions=0 line rows_total kinds snapshot
+  local od_block other_sections od_digest='' od_stored='' od_unchanged=false od_file="$STATE/.wake-open-decisions-presented"
+  if [ "$SUMMARY" = quiet ]; then
+    snapshot=$(status_presentation_snapshot "$STATE") || return 0
+    PRESENT_SNAPSHOT=$snapshot
+    PRESENT_SNAPSHOT_SET=true
+    PRESENT_NO_COMMIT=true
+  else
+    print_auto_ack_notice
+  fi
+  presentation=$( (print_status_presentation "$rows") ) || true
+  annotations=$(printf '%s\n' "$presentation" | grep '^wake annotation:' || true)
+  sections=$(printf '%s\n' "$presentation" | grep -v '^wake annotation:' | grep -v '^$' || true)
+  # OPEN DECISIONS re-prints every still-open decision on every drain, so with any
+  # decision open it never goes empty. It counts as quiet only when its folded text
+  # is byte-identical to the one last presented to a model (state file, one hash);
+  # every other section must be empty regardless.
+  od_block=$(split_sections od "$sections")
+  other_sections=$(split_sections other "$sections")
+  if [ -z "$od_block" ]; then
+    od_unchanged=true
+  else
+    od_digest=$(printf '%s\n' "$od_block" | section_digest)
+    od_stored=$(cat "$od_file" 2>/dev/null || true)
+    [ -n "$od_digest" ] && [ "$od_digest" = "$od_stored" ] && od_unchanged=true
+  fi
+  if [ "$SUMMARY" = quiet ]; then
+    outcomes=
+    if quiet_outcomes_pending; then outcomes=pending; fi
+  else
+    outcomes=$(print_branch_outcomes_section) || outcomes_rc=1
+    [ "$outcomes_rc" -eq 0 ] || BRANCH_OUTCOMES_RC=1
+    guard_out=$(assert_watcher_liveness 2>&1)
+  fi
+  if [ -n "$rows" ]; then
+    summary=$(printf '%s\n' "$rows" | "$SCRIPT_DIR/fm-wake-summary.sh" --annotations <(printf '%s\n' "$annotations")) && quiet=0
+    TAIL_SUMMARY=$summary
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      count=$((count + 1))
+      case "$line" in *': ACTION - '*) actions=$((actions + 1)) ;; esac
+    done <<EOF
+$summary
+EOF
+    rows_total=$(printf '%s\n' "$rows" | grep -c . || true)
+    if [ "$count" -ne "$rows_total" ]; then
+      # The classifier did not account for every row (missing, not executable, crashed).
+      # Never hide a wake behind a summary that did not cover it: show the raw rows and
+      # the annotations, and acknowledge nothing automatically.
+      quiet=1
+      if [ "$SUMMARY" != quiet ]; then
+        printf 'WAKE SUMMARY UNAVAILABLE (classified %s of %s wake rows); raw rows follow, handle each:\n%s\n' "$count" "$rows_total" "$rows"
+        [ -z "$annotations" ] || printf '%s\n' "$annotations"
+      fi
+    elif [ "$SUMMARY" != quiet ]; then
+      printf 'WAKE SUMMARY (%s wake(s), %s need action):\n%s\n' "$count" "$actions" "$summary"
+      [ -z "$annotations" ] || printf '%s\n' "$annotations"
+    fi
+  elif [ -n "$through" ]; then
+    [ "$SUMMARY" = quiet ] || printf 'WAKE SUMMARY (recovery only, no queued wake rows)\n'
+    quiet=0
+  fi
+  if [ "$SUMMARY" != quiet ]; then
+    [ -z "$sections" ] || printf '%s\n' "$sections"
+    [ -z "$outcomes" ] || printf '%s\n' "$outcomes"
+    [ -z "$guard_out" ] || printf '%s\n' "$guard_out"
+    # A model is shown this block now, so it becomes the one a later quiet drain compares with.
+    if [ -n "$od_digest" ]; then printf '%s\n' "$od_digest" > "$od_file" 2>/dev/null || true; fi
+  fi
+  [ -n "$through" ] || return 0
+  config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
+  if [ "$quiet" -eq 0 ] && [ "$ACTOR" = main ] && [ -e "$config/wake-auto-ack" ] \
+    && [ -z "$annotations" ] && [ -z "$other_sections" ] && [ "$od_unchanged" = true ] && [ -z "$outcomes" ] && [ "$outcomes_rc" -eq 0 ] && [ -z "$guard_out" ]; then
+    ack_rc=0
+    ack_out=$("$SCRIPT_DIR/fm-wake-drain.sh" --ack-through "$through" --recovery-generation "$generation" 2>&1) || ack_rc=$?
+    if [ "$ack_rc" -eq 0 ] && [ -z "$ack_out" ]; then
+      TAIL_ACKED=true
+      if [ "$SUMMARY" = quiet ]; then
+        # Consume the presentation this batch's status lines were classified on, the
+        # same snapshot, then leave the supervisor its one-line record.
+        PRESENT_NO_COMMIT=false
+        (print_status_presentation "$rows") >/dev/null 2>&1 || true
+        kinds=$(printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 { c[$3]++ } END { for (k in c) printf "%s%s=%d", (s++ ? "," : ""), k, c[k] }')
+        [ -n "$kinds" ] || kinds=recovery=1
+        printf '%s\t%s\t%s\n' "$(date +%s)" "$((count > 0 ? count : 1))" "$kinds" >> "$STATE/.wake-auto-acked" 2>/dev/null || true
+        QUIET_EXIT=0
+        return 0
+      fi
+      printf 'WAKE AUTO-ACKED: %s wake(s) classified no-action and acknowledged through %s (config/wake-auto-ack); nothing needs handling\n' "$count" "$through"
+      return 0
+    fi
+    [ "$SUMMARY" = quiet ] || { [ -z "$ack_out" ] || printf '%s\n' "$ack_out" >&2; }
+  fi
+  [ "$SUMMARY" = quiet ] && return 0
+  printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through %s --recovery-generation %s\n' \
+    "$through" "$generation" >&2
+}
+
+# record_classified <rows> <acked>: one JSON line per classified wake in
+# state/.wake-classified.jsonl (ts, seq, kind, verdict, auto_acked), so a later
+# measurement states the real no-action share. A row already recorded (the same
+# sequence seen again because it needed a model and was presented twice) is not
+# counted twice; the file is trimmed to its newest half past 40000 lines.
+record_classified() {
+  local rows=$1 acked=$2 file="$STATE/.wake-classified.jsonl" now lines
+  now=$(date +%s)
+  if [ -n "$TAIL_SUMMARY" ]; then
+    printf '%s\n' "$TAIL_SUMMARY" | awk -v now="$now" -v acked="$acked" -v file="$file" '
+      BEGIN { while ((getline line < file) > 0) if (match(line, /"seq":[0-9]+,/)) seen[substr(line, RSTART + 6, RLENGTH - 7)] = 1 }
+      /^#[0-9]+ / {
+        seq = substr($1, 2); kind = $2
+        verdict = ($0 ~ /: no-action - /) ? "no-action" : "action"
+        if (seq in seen) next
+        printf "{\"ts\":%s,\"seq\":%s,\"kind\":\"%s\",\"verdict\":\"%s\",\"auto_acked\":%s}\n", now, seq, kind, verdict, (acked == "true" && verdict == "no-action") ? "true" : "false"
+      }' >> "$file" 2>/dev/null || true
+  elif [ -z "$rows" ] && [ "$acked" = true ]; then
+    printf '{"ts":%s,"seq":0,"kind":"recovery","verdict":"no-action","auto_acked":true}\n' "$now" >> "$file" 2>/dev/null || true
+  fi
+  lines=$(awk 'END { print NR }' "$file" 2>/dev/null || echo 0)
+  if [ "${lines:-0}" -gt 40000 ]; then
+    if tail -n 20000 "$file" > "$file.tmp.$$" 2>/dev/null; then
+      mv -f -- "$file.tmp.$$" "$file" 2>/dev/null || rm -f -- "$file.tmp.$$"
+    else
+      rm -f -- "$file.tmp.$$"
+    fi
+  fi
+}
+
+summary_tail() {  # <deduped-rows> <ack-through|""> <generation|"">
+  TAIL_SUMMARY=
+  TAIL_ACKED=false
+  summary_tail_run "$@"
+  record_classified "$1" "$TAIL_ACKED"
+  return 0
+}
+
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
   local status=$?
@@ -886,9 +1149,13 @@ cleanup() {
   if [ "$DRAIN_LOCK_HELD" = true ]; then
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   fi
+  if [ "$SUMMARY" = quiet ] && [ "$status" -ne 0 ] && [ "$QUIET_LOCK_TAKEN" = true ]; then
+    quiet_restore_marker
+  fi
   exit "$status"
 }
 
+QUIET_LOCK_TAKEN=false
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -902,12 +1169,14 @@ else
   if [ "$lock_rc" -eq 124 ]; then
     printf 'WAKE DRAIN SKIPPED: queue lock remains held by live pid %s after %ss; retry on the next drain.\n' \
       "${FM_LOCK_HELD_PID:-unknown}" "$PRESENTATION_LOCK_TIMEOUT"
+    [ "$SUMMARY" != quiet ] || exit 10
     exit 0
   fi
   printf 'wake drain: queue lock could not be acquired safely\n' >&2
   exit 1
 fi
 DRAIN_LOCK_HELD=true
+QUIET_LOCK_TAKEN=true
 rotate_scratch_locked
 reclaim_stale_branch_grant_locked || exit 1
 [ "$ACTOR" != main ] || retire_unconsumable_rows_locked
@@ -1067,6 +1336,15 @@ if [ ! -s "$FM_WAKE_QUEUE" ]; then
   esac
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
+  if [ "$SUMMARY" != false ]; then
+    if [ "$RECOVERY_ACK_REQUIRED" = true ]; then
+      summary_tail "" 0 "${RECOVERY_MARKER_TOKEN##*:}"
+    else
+      summary_tail "" "" ""
+    fi
+    [ "$SUMMARY" != quiet ] || exit "$QUIET_EXIT"
+    exit "$BRANCH_OUTCOMES_RC"
+  fi
   (print_status_presentation) || true
   print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
   if [ "$RECOVERY_ACK_REQUIRED" = true ]; then
@@ -1089,6 +1367,11 @@ if [ "$ACTOR" = main ]; then
     print_branch_held_notice
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     DRAIN_LOCK_HELD=false
+    if [ "$SUMMARY" != false ]; then
+      summary_tail "" "" ""
+      [ "$SUMMARY" != quiet ] || exit "$QUIET_EXIT"
+      exit "$BRANCH_OUTCOMES_RC"
+    fi
     (print_status_presentation) || true
     print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
     assert_watcher_liveness
@@ -1138,7 +1421,7 @@ case "${FM_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT:-0}" in
   ''|*[!0-9]*) ;;
   *) sleep "$FM_WAKE_DRAIN_TEST_DELAY_BEFORE_COMMIT" ;;
 esac
-if [ -n "$RAW_ROWS" ]; then
+if [ -n "$RAW_ROWS" ] && [ "$SUMMARY" = false ]; then
   printf '%s\n' "$RAW_ROWS" || exit "$?"
 fi
 fm_recovery_marker_snapshot "$RECOVERY_MARKER" || exit 1
@@ -1149,6 +1432,11 @@ case "$RECOVERY_MARKER_TOKEN" in
 esac
 fm_lock_release "$FM_WAKE_QUEUE_LOCK"
 DRAIN_LOCK_HELD=false
+if [ "$SUMMARY" != false ]; then
+  summary_tail "$RAW_ROWS" "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}"
+  [ "$SUMMARY" != quiet ] || exit "$QUIET_EXIT"
+  exit "$BRANCH_OUTCOMES_RC"
+fi
 printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through %s --recovery-generation %s\n' \
   "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}" >&2
 

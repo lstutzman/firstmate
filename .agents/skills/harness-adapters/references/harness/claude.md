@@ -12,7 +12,7 @@ These command-line and terminal facts apply to pane-backed sessions; for T3 Code
 | Exit | `/exit`. |
 | Interrupt | Single Escape. |
 | Skill | `/<skill>`, for example `/no-mistakes`. |
-| Model | `--model <model>`; discover through the interactive `/model` picker, with alias or full-name shape documented by `claude --help`. |
+| Model | `--model <model>`; discover through the interactive `/model` picker, with alias or full-name shape documented by `claude --help`; a Haiku-tier model (`*haiku*`, case-insensitive) launches with `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1`, so Haiku workers run without the advisor tool (`launch_template()` in `../../../../../bin/fm-spawn.sh` owns the mechanics). |
 | Effort | `--effort <low\|medium\|high\|xhigh\|max>`, verified on 2.1.196. |
 | Permissions | See [`Claude permission mode`](../../../../../docs/configuration.md#claude-permission-mode-configclaude-permission-mode) and [`persistent failover`](../../../../../docs/configuration.md#persistent-managed-policy-failover); the `auto` launch shape was verified on 2.1.269. |
 

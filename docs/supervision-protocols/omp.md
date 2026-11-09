@@ -1,7 +1,7 @@
 Mode: omp (Oh My Pi) extension background wake.
 
 When this session owns supervision and away mode is not active:
-1. Drain first with `bin/fm-wake-drain.sh`.
+1. Drain first with `bin/fm-wake-drain.sh --summary` (one verdict line per wake, with a no-action or ACTION call and the current state behind it; a home that opts in via `config/wake-auto-ack` has no-action-only batches acknowledged for it).
    After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
 2. Confirm the omp primary auto-loaded both project extensions from `.omp/extensions/`; omp has no project-trust gate, so a plain `omp` started with this home as its working directory loads them with no dialog.
    If `bin/fm-session-start.sh` reported the omp extensions as not loaded, __FM_OMP_RESTART_LONG__.

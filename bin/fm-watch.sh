@@ -3009,7 +3009,8 @@ captain_call_stale_bound() {  # <window-key> <task>
 # STALE_ESCALATE_SECS (.nm-drive-grace-<key>) and leaves the stale suppressor
 # untouched, so a worker still quiet on that hash afterwards gets exactly the
 # alarm it would have got without the steer, and a new hash starts over. 0 while
-# the steer holds the hash, 1 when the ordinary stale path should decide.
+# the steer holds the hash or waits for the branch head to settle, 1 when the
+# ordinary stale path should decide.
 nm_drive_steered() {  # <window> <task> <hash>
   local w=$1 task=$2 h=$3 grace held at
   [ -n "$task" ] || return 1
@@ -3024,9 +3025,17 @@ nm_drive_steered() {  # <window> <task> <hash>
     fi
     rm -f "$grace"
   fi
+  local rc=0
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
     FM_CREW_STATE_BIN="$FM_CREW_STATE_BIN" \
-    "$SCRIPT_DIR/fm-nm-drive-steer.sh" "$task" </dev/null >/dev/null 2>&1 || return 1
+    "$SCRIPT_DIR/fm-nm-drive-steer.sh" "$task" </dev/null >/dev/null 2>&1 || rc=$?
+  # Exit 4: a start or supersede is waiting for the branch head to settle.
+  # Hold the pane quietly with no grace record, so the next poll asks again.
+  if [ "$rc" -eq 4 ]; then
+    triage_log "held stale (no-mistakes drive steer waiting for the branch head to settle): $w"
+    return 0
+  fi
+  [ "$rc" -eq 0 ] || return 1
   printf '%s %s\n' "$h" "$(date +%s)" > "$grace"
   triage_log "absorbed stale (sent the automatic no-mistakes drive steer): $w"
 }

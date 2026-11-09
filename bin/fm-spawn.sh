@@ -3053,6 +3053,10 @@ launch_template() {
   # busy hooks share that value, in state/<id>.claude-settings.json, and the
   # file also carries feedbackDrafts and attribution so those session keys
   # stay in force.
+  # __CLAUDEADVISORENV__ is empty, or CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 when
+  # the resolved model is Haiku-tier (*haiku*, case-insensitive): Haiku workers
+  # run without the advisor tool. The variable comes from the installed Claude
+  # Code 2.1.319 binary's advisor gate, not from a published doc.
   # __CLAUDEPERMFLAG__ is the permission flag config/claude-permission-mode
   # selects (header above): --dangerously-skip-permissions by default, or
   # --permission-mode auto when configured.
@@ -3070,7 +3074,7 @@ launch_template() {
   # project and fetched content. A persistent secondmate receives its own
   # supervisor contract instead, so this task-worker statement does not apply.
   claude)
-    printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 claude __CLAUDEPERMFLAG__ __CLAUDEADDDIRS__--settings __CLAUDESETTINGS__ '
+    printf '%s' 'CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 __CLAUDEADVISORENV__claude __CLAUDEPERMFLAG__ __CLAUDEADDDIRS__--settings __CLAUDESETTINGS__ '
     if [ "$kind" != secondmate ]; then
       printf '%s' "--append-system-prompt '$(spawn_claude_task_channel_statement)' "
     fi
@@ -7842,6 +7846,11 @@ if [ "$RELAUNCH" -eq 1 ]; then
 fi
 LAUNCH=${LAUNCH//__PIRESUME__/$RESUME_ARGS}
 LAUNCH=${LAUNCH//__CLAUDEPERMFLAG__/$CLAUDE_PERM_FLAG}
+CLAUDE_ADVISOR_ENV=
+case "$(printf '%s' "$MODEL" | tr '[:upper:]' '[:lower:]')" in
+*haiku*) CLAUDE_ADVISOR_ENV='CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1 ' ;;
+esac
+LAUNCH=${LAUNCH//__CLAUDEADVISORENV__/$CLAUDE_ADVISOR_ENV}
 case "$LAUNCH" in
 *__CLAUDESETTINGS__*)
   if [ "$KIND" = secondmate ]; then

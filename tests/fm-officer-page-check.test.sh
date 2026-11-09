@@ -237,6 +237,12 @@ STATUS
     {id: "mem-infra-v4-install", band: "now", question: "Go for v4? https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "skills-118-token-scope-probe-golive", band: "now", question: "Go for the probe? https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "run-these", band: "now", question: "Run these steps for https://github.com/ex/repo/pull/9?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "linear-status-released", band: "now", question: "Add a Linear status named Released? https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "approve-prod-deploy", band: "now", question: "Approve the production deploy of https://github.com/ex/repo/pull/9?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "hold-rollout", band: "now", question: "Lift the hold and roll out https://github.com/ex/repo/pull/9?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "pc-123-review-golive", band: "now", question: "Go for the probe? https://github.com/ex/repo/pull/9", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "linear-status-was-held", band: "now", question: "Add a Linear status? https://github.com/ex/repo/pull/9 was on hold for review", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
+    {id: "review-ask", band: "now", question: "Review https://github.com/ex/repo/pull/9 before it ships?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "closed-install", band: "now", question: "Install https://github.com/ex/repo/pull/10?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: "closed-deploy", band: "now", question: "Deploy https://github.com/ex/repo/pull/10 to production?", advice: "a", replies: ["a"], asked: "2026-10-31T12:00:00Z", state: "asked"},
     {id: $k3, band: "now", question: "Which category word?", advice: "a", replies: ["a"], asked: "2026-10-31T08:00:00Z", state: "asked"},
@@ -246,9 +252,9 @@ STATUS
     "$pages/_api_captains-log" > "$pages/log.tmp" && mv "$pages/log.tmp" "$pages/_api_captains-log"
   officer live run page-check --date "$KEY" >/dev/null || fail "run must succeed"
   json="$home/data/officers/page-check/$KEY.json"
-  assert_equals "approve-ci-run:ex/repo#9 approve-fix:ex/repo#9 closed-deploy:ex/repo#10 closed-install:ex/repo#10 hold-ask:ex/repo#9 hold-enables:ex/repo#9 merge-word:ex/repo#9" \
+  assert_equals "approve-ci-run:ex/repo#9 approve-fix:ex/repo#9 closed-deploy:ex/repo#10 closed-install:ex/repo#10 hold-ask:ex/repo#9 hold-enables:ex/repo#9 merge-word:ex/repo#9 review-ask:ex/repo#9" \
     "$(jq -r '[.findings[] | select(.kind == "stale-card" and (.id | test(":ex/repo#(9|10)$"))) | .id | sub("^stale-card:Captain.s Log:"; "")] | sort | join(" ")' "$json")" \
-    "a merged PR stales a merge-word, approve or hold card even when it mentions a run or what the PR enables, but not a production card or a card that asks to run, install or go live; a closed-unmerged PR still flags"
+    "a merged PR stales a merge-word, approve or hold card even when it mentions a run or what the PR enables, a review ask too, but not a production card (even one worded approve or hold), a card that asks to run, install or go live, or one that asks for a Linear status, even when a hold or review word describes the PR; a closed-unmerged PR still flags"
   assert_equals "$(printf '%s\n' "$k4:resolved" "$k5:resolved" | sort | paste -sd' ')" \
     "$(jq -r --arg a "$k3" --arg b "$k4" --arg c "$k5" --arg d "$k6" '[.findings[] | select(.kind == "stale-card" and (.id | test("(" + $a + "|" + $b + "|" + $c + "|" + $d + "):resolved$"))) | .id | sub("^stale-card:Captain.s Log:"; "")] | sort | join(" ")' "$json")" \
     "a captain answer or release stales a card, not a routing sweep or a reconcile"
