@@ -139,6 +139,76 @@ FM_HOME="$HOME_DIR" FM_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
 [ "$(focus_snapshot)" = "$BEFORE_FOCUS" ] || fail 'idempotent repeat changed focus'
 lab pane get "$(printf '%s' "$ANCHOR" | jq -r '.result.root_pane.pane_id')" >/dev/null \
   || fail 'anchor pane was touched by cleanup'
+# Finished-task pass: a done task whose agent is gone loses its workspace and
+# keeps its record; a busy pane and a task still working keep theirs.
+finished_fixture() { # <id> <token> <status-line>: prints "<workspace>\t<tab>\t<pane>"
+  local id=$1 token=$2 line=$3 title out ws tab pane
+  title="└ $id · p:$token"
+  out=$(lab workspace create --cwd "$ROOT" --label "$title" --no-focus) || return 1
+  ws=$(printf '%s' "$out" | jq -er '.result.workspace.workspace_id') || return 1
+  tab=$(printf '%s' "$out" | jq -er '.result.tab.tab_id') || return 1
+  pane=$(printf '%s' "$out" | jq -er '.result.root_pane.pane_id') || return 1
+  {
+    printf 'window=%s:%s\nkind=ship\nbackend=herdr\nherdr_session=%s\n' "$HERDR_LAB_SESSION" "$pane" "$HERDR_LAB_SESSION"
+    printf 'herdr_workspace_id=%s\nherdr_tab_id=%s\nherdr_pane_id=%s\n' "$ws" "$tab" "$pane"
+  } > "$HOME_DIR/state/$id.meta"
+  printf '%s\n' "$line" > "$HOME_DIR/state/$id.status"
+  {
+    printf 'version=2\ntask_id=%s\nprojection_id=%s\nhome=%s\n' "$id" "$token" "$HOME_DIR"
+    printf 'session=%s\nworkspace_id=%s\ntab_id=%s\npane_id=%s\n' "$HERDR_LAB_SESSION" "$ws" "$tab" "$pane"
+    printf 'parent_workspace_id=%s\nparent_label=captain-anchor\nworkspace_label=%s\ntask_label=fm-%s\n' \
+      "$(printf '%s' "$ANCHOR" | jq -r '.result.workspace.workspace_id')" "$title" "$id"
+  } > "$HOME_DIR/state/$id.herdr-presentation"
+  printf '%s\t%s\t%s' "$ws" "$tab" "$pane"
+}
+idle_shell_ready() { # <pane>
+  local attempt=0
+  while [ "$attempt" -lt 50 ]; do
+    FM_HOME="$HOME_DIR" FM_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
+      FM_HERDR_SESSION_CLEANUP_SOURCE_ONLY=1 PATH="$FAKEBIN:$HERDR_ORIGINAL_PATH" \
+      bash -c '. "$1"; fm_backend_herdr_pane_idle_shell_pid "$2" "$3" >/dev/null' \
+        _ "$ROOT/bin/fm-herdr-session-cleanup.sh" "$HERDR_LAB_SESSION" "$1" && return 0
+    sleep 0.1
+    attempt=$((attempt + 1))
+  done
+  return 1
+}
+DONE_ID=finished-done
+DONE=$(finished_fixture "$DONE_ID" BcDeFgHiJkLmNoPqRsTuVw 'done [at=1000]: PR ready') || fail 'could not create the finished task fixture'
+DONE_WS=${DONE%%$'\t'*}
+DONE_PANE=${DONE##*$'\t'}
+WORKING=$(finished_fixture finished-working CdEfGhIjKlMnOpQrStUvWx 'working [at=1000]: still building') || fail 'could not create the working task fixture'
+WORKING_WS=${WORKING%%$'\t'*}
+BUSY=$(finished_fixture finished-busy DeFgHiJkLmNoPqRsTuVwXy 'done [at=1000]: PR ready') || fail 'could not create the busy task fixture'
+BUSY_WS=${BUSY%%$'\t'*}
+BUSY_PANE=${BUSY##*$'\t'}
+idle_shell_ready "$DONE_PANE" || fail 'finished task fixture did not settle to an idle shell'
+lab pane run "$BUSY_PANE" 'sleep 600' >/dev/null || fail 'could not start a foreground command in the busy fixture'
+lab tab focus "$ANCHOR_TAB" >/dev/null || fail 'could not restore the anchor focus before the finished-task pass'
+BEFORE_FOCUS=$(focus_snapshot) || fail 'could not capture focus before the finished-task pass'
+
+FM_HOME="$HOME_DIR" FM_BACKEND=herdr HERDR_SESSION="$HERDR_LAB_SESSION" \
+  PATH="$FAKEBIN:$HERDR_ORIGINAL_PATH" "$ROOT/bin/fm-herdr-session-cleanup.sh" --finished-only \
+  > "$TMP_ROOT/finished.out" 2>"$TMP_ROOT/finished.err" || fail 'finished-task pass failed'
+[ ! -s "$TMP_ROOT/finished.out" ] || fail 'finished-task pass printed to stdout, which would wake firstmate'
+if lab workspace get "$DONE_WS" >/dev/null 2>&1; then
+  fail 'finished task workspace survived the finished-task pass'
+fi
+[ -f "$HOME_DIR/state/$DONE_ID.meta" ] && [ -f "$HOME_DIR/state/$DONE_ID.status" ] \
+  || fail 'finished-task pass did not keep the task record'
+[ ! -e "$HOME_DIR/state/$DONE_ID.herdr-presentation" ] || fail 'finished-task pass kept the orphaned journal'
+lab workspace get "$WORKING_WS" >/dev/null 2>&1 || fail 'a task still working lost its workspace'
+lab workspace get "$BUSY_WS" >/dev/null 2>&1 || fail 'a pane running a command lost its workspace'
+[ "$(focus_snapshot)" = "$BEFORE_FOCUS" ] || fail 'finished-task pass changed focus'
+pass 'real named lab finished-task pass closes only the stopped finished task and keeps its record'
+
+GONE=$(FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$HOME_DIR/state" PATH="$FAKEBIN:$HERDR_ORIGINAL_PATH" \
+  bash -c '. "$1/bin/fm-wake-lib.sh"; . "$1/bin/fm-backend.sh"; . "$1/bin/fm-busy-lib.sh"; . "$1/bin/fm-control-lib.sh"
+    fm_control_endpoint_absence_verdict herdr "$2" "$3"' \
+  _ "$ROOT" "$HERDR_LAB_SESSION:$DONE_PANE" "$HOME_DIR/state/$DONE_ID.meta" 2>/dev/null)
+[ "${GONE%%$'\t'*}" = gone ] || fail "relaunch absence proof did not read the closed endpoint as gone: $GONE"
+pass 'a relaunch or unpark proves the closed endpoint gone, so it builds a fresh one'
+
 STATUS=$(lab status --json) || fail 'could not read final named-lab version evidence'
 pass 'real named lab cleanup is idempotent and leaves the configured fleet session to the teardown tripwire'
 printf 'evidence: herdr=%s protocol=%s fleet-session-tripwire=armed\n' \

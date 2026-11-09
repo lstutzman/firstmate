@@ -1910,6 +1910,24 @@ HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
 
 Observed guarantee: one exact home-local, journal-correlated, one-tab and one-pane childless idle shell was closed after restoration while the exact non-target focus and default fleet session remained unchanged, and a repeat run was a no-op.
 
+The same test, extended with the finished-task pass, ran on 2026-11-09 against Herdr 0.9.5 protocol 22 on Linux x86_64, with the live fleet in a named session:
+
+```sh
+FM_HERDR_LAB_FLEET_SESSION=fm-remote HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
+  tests/fm-herdr-session-cleanup-e2e.test.sh
+```
+
+```text
+ok - real named lab reproduced the exact restored one-tab one-pane childless no-agent shell shape
+ok - real named lab cleanup closes only the exact stale pane and preserves exact focus
+ok - real named lab finished-task pass closes only the stopped finished task and keeps its record
+ok - a relaunch or unpark proves the closed endpoint gone, so it builds a fresh one
+ok - real named lab cleanup is idempotent and leaves the configured fleet session to the teardown tripwire
+evidence: herdr=0.9.5 protocol=22 fleet-session-tripwire=armed
+```
+
+Observed guarantee: a done task's own idle-shell workspace was removed with its record and status kept and its journal retired, while a done task whose pane ran a command and a task still working kept their workspaces, focus stayed exact, and the relaunch absence proof read the closed endpoint as gone.
+
 ### Workspace-removal focus safety
 
 The focus-flash regression ran on 2026-08-05 against both Herdr 0.7.5 protocol 17 and Herdr 0.8.0 protocol 19 on macOS aarch64, with the 0.7.5 run using the pinned upstream release binary first on `PATH`:

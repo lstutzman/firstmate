@@ -30,7 +30,9 @@
 #                       mutating step runs.
 #   1b. home role    - the resolved firstmate-repository role line
 #                      (bin/fm-role.sh report), purely local, no network.
-#   2. bootstrap      - home-local stale Herdr projection cleanup runs only
+#   2. bootstrap      - home-local stale Herdr projection cleanup (restored
+#                       husks and stopped finished tasks; the watcher repeats
+#                       the finished-task pass) runs only
 #                       when this session actually holds the lock. Detect-only
 #                       diagnostics always run. Bootstrap's six MUTATING sweeps
 #                       (same-home backlog reconciliation,

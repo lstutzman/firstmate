@@ -488,6 +488,17 @@ Any of these preserves the candidate and lets session startup continue with at m
 - An unreadable check.
 - Any error.
 
+### Closing a finished task's workspace
+
+A finished task whose agent has stopped keeps its record but not its workspace.
+The watcher's check pass, and session start after the restored-shell pass, run `bin/fm-herdr-session-cleanup.sh`'s finished-task pass over this home's own task records.
+A task qualifies only when its latest status event is a done line with nothing open but its own merge-handoff wait and no steer since, which a parked task also meets.
+Its recorded workspace must pass the same ownership, topology, focus, and process proofs as the startup cleanup above, its agent must already be gone, and the task's spawn, control, record, and presentation locks must all be free.
+The pass closes only the recorded pane, which lets Herdr remove the emptied workspace, and never touches the task record or its local copy.
+A later relaunch or unpark proves the endpoint gone and builds a fresh one ([`agent-control.md`](agent-control.md#reclaiming-a-task-whose-endpoint-is-gone)).
+A live agent, including one idle at its prompt, keeps its workspace.
+The script's header owns the exact conditions.
+
 ### Operational compromises
 
 - Grouping is best-effort; only an exact same-identity version 2 binding survives a Herdr restart in place.
@@ -505,9 +516,9 @@ Any of these preserves the candidate and lets session startup continue with at m
 - Existing layouts are not force-renamed or rearranged.
 - Missing or ambiguous restart bindings fall back to a fresh nested workspace without a journal while the old projection remains untouched.
 - Crashes, lost responses, failed exact-pane cleanup, or human renames can leave quarantined spaces.
-  Session start removes only the exact home-local, uniquely journal-correlated, childless idle-shell shape above.
+  Session start removes only the exact home-local, uniquely journal-correlated, childless idle-shell shape above, and the finished-task pass removes only a stopped finished task's own workspace.
 - Spaces have no cross-home cleanup path, and a secondmate child can clean up only from its exact home.
-- Every stale-looking space outside that narrow startup proof still requires manual cleanup in Herdr's UI after human inspection.
+- Every stale-looking space outside those two narrow proofs still requires manual cleanup in Herdr's UI after human inspection.
 - Regaining a dedicated space after degradation requires stopping the journal-free task, manually checking the stale projection, and clearing its journal before a genuinely fresh launch.
 - The visible token is only a restart-stable correlator and never substitutes for the exact binding.
 
@@ -517,7 +528,7 @@ Any of these preserves the candidate and lets session startup continue with at m
 | --- | --- |
 | `tests/fm-backend-herdr-presentation-e2e.test.sh` | Multi-home ordering, concurrency, lock contention, legacy coexistence, focus preservation, exact same-identity restart replacement, ambiguous bindings and tokens, and exact-pane cleanup through the guarded lab path. |
 | `tests/fm-herdr-session-cleanup.test.sh` | Every discovery, ownership, topology, process, locking, revalidation, focus, retirement, and continue-on-error boundary. |
-| `tests/fm-herdr-session-cleanup-e2e.test.sh` | The restored-shell cleanup in a guarded non-default named lab. |
+| `tests/fm-herdr-session-cleanup-e2e.test.sh` | The restored-shell cleanup and the finished-task pass in a guarded non-default named lab. |
 | `tests/fm-backend-herdr-focus-flash-e2e.test.sh` | Reproduces the raw explicit-close focus steal on the installed release, and proves the focus-safe emptying-close plan removes a doomed workspace with no wrong-focus interval. |
 | `tests/fm-backend-herdr-stale-active-tab-e2e.test.sh` | Proves a persisted-focused tab still closes when no foreground client is attached. |
 | `tests/fm-herdr-attached-viewer-live-e2e.test.sh` | Proves the other half against a real attached viewer, which `bin/fm-herdr-lab.sh viewer start` supplies over a pty sized before the fork. |
