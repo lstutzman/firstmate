@@ -4,7 +4,7 @@ This mode is selected only in a home that opts in with `config/codex-stop-park`,
 Other sessions retain [the foreground checkpoint protocol](codex-checkpoint.md) unchanged.
 
 When this session owns supervision:
-1. Drain first with `bin/fm-wake-drain.sh`.
+1. Drain first with `bin/fm-wake-drain.sh --summary` (one verdict line per wake, with a no-action or ACTION call and the current state behind it; a home that opts in via `config/wake-auto-ack` has no-action-only batches acknowledged for it).
    Handle every presented wake, open decision and unread status, then run the exact `WAKE_ACK_REQUIRED` acknowledgement command.
 2. End the turn when handling is complete.
    The asynchronous Stop hook owns one home-scoped watcher arm outside the model; never poll or manually re-arm a healthy park.

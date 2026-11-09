@@ -20,6 +20,7 @@
 #   fm-office.sh disarm-status
 #   fm-office.sh register-sources
 #   fm-office.sh check <source>
+#   fm-office.sh starts-handled <officer>
 #
 # list and ensure only read. publish writes only one office's authority record
 # and its receipt. status writes data/office-status.json; arm-status and
@@ -256,6 +257,7 @@ Usage:
   fm-office.sh disarm-status  retire that check
   fm-office.sh register-sources    (office home) install and trust the office's wake-source checks
   fm-office.sh check <source>      (watcher check) report a new tick or lane digest
+  fm-office.sh starts-handled <officer>    (office home) exit 0 when every start request in the lane digest addressed to this home is already acknowledged
 See docs/configuration.md "Offices (data/offices.md)" for the registry schema.
 EOF
 }
@@ -1113,6 +1115,49 @@ cmd_check() {
   return 0
 }
 
+# cmd_starts_handled <officer>: read-only. Exits 0 only when the officer's lane digest names at least one start
+# request addressed to this office home and every one of them has already been acknowledged (its note is in
+# state/inbox/handled/), the question bin/fm-wake-summary.sh asks of a "start request(s) delivered" lane wake.
+# Anything else, including an unreadable digest or a request never delivered, exits 1.
+cmd_starts_handled() {
+  local officer=$1
+  [[ "$officer" =~ ^[a-z0-9-]+$ ]] || return 2
+  [ -e "$FM_HOME/.fm-office" ] || return 1
+  office_context || return 1
+  lane_digest "$officer" || return 1
+  python3 -I - "${LANE_PATH%.md}.json" "$FM_HOME" "$STATE/inbox" <<'PY' 2>/dev/null
+import json, os, re, sys
+path, home, inbox = sys.argv[1:4]
+try:
+    doc = json.load(open(path, "rb"))
+except (OSError, ValueError):
+    sys.exit(1)
+if not isinstance(doc, dict):
+    sys.exit(1)
+home = os.path.realpath(home)
+mine = []
+for r in doc.get("start_requests") or []:
+    ex = r.get("execute") if isinstance(r, dict) else None
+    env = (ex.get("env") if isinstance(ex, dict) else None) or {}
+    if isinstance(env.get("FM_HOME"), str) and os.path.realpath(env["FM_HOME"]) == home:
+        mine.append(ex.get("request_id"))
+if not mine:
+    sys.exit(1)
+for rid in mine:
+    if not isinstance(rid, str) or not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", rid) or rid.startswith("."):
+        sys.exit(1)
+    try:
+        note = open(os.path.join(inbox, ".requests", rid)).read().split("\n")[0].strip()
+    except OSError:
+        sys.exit(1)
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", note) or ".." in note:
+        sys.exit(1)
+    if os.path.exists(os.path.join(inbox, note + ".note")) or not os.path.exists(os.path.join(inbox, "handled", note + ".note")):
+        sys.exit(1)
+sys.exit(0)
+PY
+}
+
 case "${1:-}" in
   list) cmd_list ;;
   ensure) cmd_ensure ;;
@@ -1126,6 +1171,7 @@ case "${1:-}" in
   disarm-status) cmd_disarm_status ;;
   register-sources) [ "$#" -eq 1 ] || { usage >&2; exit 2; }; cmd_register_sources ;;
   check) [ "$#" -eq 2 ] || { usage >&2; exit 2; }; cmd_check "$2" ;;
+  starts-handled) [ "$#" -eq 2 ] || { usage >&2; exit 2; }; cmd_starts_handled "$2" ;;
   -h|--help|help|'') usage ;;
   *) usage >&2; exit 2 ;;
 esac

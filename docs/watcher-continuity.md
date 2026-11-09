@@ -88,7 +88,7 @@ The hook fires on every Stop.
 On each Stop, an eligible primary with supervision need admits one home-scoped owner, which foregrounds `bin/fm-watch-arm.sh` inside the hook-owned process tree.
 If a session exits mid-cycle and leaves an orphaned Stop hook, the replacement session's first eligible Stop supersedes its claim, attaches to the running watcher through `bin/fm-watch-arm.sh`, and delivers the cycle's close.
 [`turnend-guard.md`](turnend-guard.md#auto-arm-generation-claim) owns the open-claim definition.
-While supervision is still needed and away mode remains inactive, an actionable close wakes the idle session through exit 2.
+While supervision is still needed and away mode remains inactive, an actionable close wakes the idle session through exit 2, unless the home's `config/wake-auto-ack` no-wake path acknowledges a batch of only no-action wakes first ([configuration](configuration.md#wake-auto-acknowledge-configwake-auto-ack)).
 
 ### Claude session-lock ownership
 
