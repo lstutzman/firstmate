@@ -15,6 +15,7 @@
     "asks_for_lee": {"type": "array", "items": {"$ref": "#/$defs/item"}},
     "excluded": {"type": "array", "items": {"$ref": "#/$defs/item"}},
     "unclassified": {"type": "integer", "minimum": 0},
+    "declined": {"type": "integer", "minimum": 0},
     "coverage": {"type": "array", "items": {"type": "string"}},
     "top_of_mind": {"type": "array", "items": {"type": "string"}},
     "linear_coverage": {

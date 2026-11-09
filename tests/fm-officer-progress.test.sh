@@ -1375,6 +1375,83 @@ JSON
   pass 'progress: non-work and duplicate candidates are dropped before handoff and reported with a reason'
 }
 
+test_declined_requests_are_not_resent() {
+  make_world decline
+  local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh" md="$WORLD_HOME/data/officers/progress/$DATE.md" id ok out
+  printf '## Queued\n\n- [ ] pc-crash - Fix a crash (kind: bug) (repo: firstmate)\n- [ ] pc-leak - Fix a leak (kind: bug) (repo: firstmate)\n' > "$WORLD_HOME/data/backlog.md"
+  run_progress >/dev/null || fail 'first run failed'
+  FM_HOME="$WORLD_HOME" bash "$file" >/dev/null || fail 'handoff must run'
+  out=$(FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" receipts --all-pending)
+  id=$(jq -r '.pending[] | select(.body | contains("pc-crash")) | .id' <<<"$out")
+  ok=$(jq -r '.pending[] | select(.body | contains("pc-leak")) | .id' <<<"$out")
+  [ -n "$id" ] && [ -n "$ok" ] || fail 'both requests must be pending'
+  run_progress >/dev/null || fail 'unanswered run failed'; out=$(cat "$md")
+  assert_contains "$out" '0 declined requests not re-sent' 'an unanswered request is delivered as before'
+  assert_contains "$(cat "$file")" pc-crash 'an unanswered request is re-sent'
+  FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" drain --ack "$id" "$ok" >/dev/null || fail 'ack failed'
+  FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" reply "$id" 'declined: not ours' >/dev/null || fail 'reply failed'
+  FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" reply "$ok" 'queued, will start when a lane frees' >/dev/null || fail 'accept reply failed'
+  run_progress >/dev/null || fail 'declined run failed'; out=$(cat "$md")
+  assert_contains "$out" '1 declined requests not re-sent' 'the digest counts only the declined request'
+  assert_not_contains "$(cat "$file")" pc-crash 'a declined request is not re-sent'
+  assert_contains "$(cat "$file")" pc-leak 'an acceptance reply is not a decline, so that request is still sent'
+  assert_equals "pc-leak:1" "$(jq -r '[.start_requests[] | "\(.id):\(.rank)"] | join(",")' "$lane/$DATE.json")" 'a declined request is no longer a ranked start and the rest are re-ranked'
+  assert_contains "$(jq -r '.excluded[] | select(.id == "pc-crash") | .reason' "$lane/$DATE.json")" "Declined by $WORLD_HOME" 'a declined request is listed as excluded with the decline'
+  assert_not_contains "$(jq -r '.asking[].question // empty' "$lane/progress-state.json")" 'Fix a crash' 'the officer page does not ask to start a declined request'
+  printf '## Queued\n\n- [ ] pc-crash - Fix a crash (kind: bug) (repo: firstmate) (pr: https://example.test/pull/9)\n' > "$WORLD_HOME/data/backlog.md"
+  run_progress >/dev/null || fail 'changed-evidence run failed'
+  assert_contains "$(cat "$file")" pc-crash 'changed evidence makes the request deliverable again'
+  printf '## Queued\n\n- [ ] pc-crash - Fix a crash (kind: bug) (repo: firstmate)\n' > "$WORLD_HOME/data/backlog.md"
+  NOW=$((NOW + 400 * 86400)) run_progress >/dev/null || fail 'expiry run failed'; out=$(cat "$md")
+  assert_contains "$out" '0 declined requests not re-sent' 'a decline older than 14 days no longer skips'
+  assert_contains "$(cat "$file")" pc-crash 'an expired decline is re-sent'
+  pass 'progress: declined requests are skipped until evidence changes or 14 days pass'
+}
+
+test_declined_filler_is_not_resent() {
+  make_world declinefiller
+  local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh" id kind
+  printf '## Queued\n\n## Done\n' > "$WORLD_HOME/data/backlog.md"
+  run_progress >/dev/null || fail 'filler run failed'
+  kind=$(jq -r '.filler.kind' "$lane/$DATE.json")
+  [ -n "$kind" ] && [ "$kind" != null ] || fail 'an empty backlog must propose a filler'
+  FM_HOME="$WORLD_HOME" bash "$file" >/dev/null || fail 'handoff must run'
+  id=$(FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" receipts --all-pending | jq -r '.pending[0].id')
+  [ -n "$id" ] && [ "$id" != null ] || fail 'the filler request must be pending'
+  FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" drain --ack "$id" >/dev/null || fail 'ack failed'
+  FM_HOME="$WORLD_HOME" bash "$ROOT/bin/fm-inbox.sh" reply "$id" 'declined: no capacity for discovery' >/dev/null || fail 'reply failed'
+  run_progress >/dev/null || fail 'declined filler run failed'
+  assert_equals "null 1" "$(jq -r '"\(.filler) \(.declined)"' "$lane/$DATE.json")" 'a declined filler is dropped and counted'
+  assert_not_contains "$(cat "$file")" "$kind" 'a declined filler is not re-sent'
+  assert_not_contains "$(jq -r '.asking[].question // empty' "$lane/progress-state.json")" "Start an extra $kind" 'the officer page does not ask for a declined filler'
+  pass 'progress: a declined filler is not re-sent'
+}
+
+test_start_home_decline_is_not_resent() {
+  make_world startdecline
+  local nav="$WORLD/navigator" lane="$WORLD_HOME/data/officers/progress" id
+  officer_home "$nav"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$nav/data/backlog.md"
+  printf 'navigator\n' > "$nav/.fm-office"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$WORLD_HOME" > "$nav/.fm-secondmate-parent"
+  printf -- '- navigator - nav (home: %s; scope: office; projects: PropertyCompass2; added 2026-11-04)\n' "$nav" > "$WORLD_HOME/data/secondmates.md"
+  printf -- '- navigator - nav (role: navigator; dispatch: PropertyCompass2; sources: tick,lane:progress; added 2026-11-04)\n' > "$WORLD_HOME/data/offices.md"
+  FM_HOME="$nav" "$ROOT/bin/fm-office.sh" register-sources >/dev/null || fail 'register-sources must succeed in the navigator home'
+  printf '## Queued\n\n- [ ] pc-crash - Fix a PropertyCompass crash (kind: bug) (repo: PropertyCompass2)\n' > "$WORLD_HOME/data/backlog.md"
+  sed -i 's/model: none;/start-home: navigator; model: none;/' "$WORLD_HOME/data/officers.md"
+  run_progress >/dev/null || fail 'a run with start-home must succeed'
+  FM_OFFICE_NOW=$NOW FM_HOME="$nav" bash "$ROOT/bin/fm-office.sh" check lane:progress >/dev/null
+  id=$(FM_HOME="$nav" bash "$ROOT/bin/fm-inbox.sh" receipts --all-pending | jq -r '.pending[0].id')
+  [ -n "$id" ] && [ "$id" != null ] || fail "the navigator's request must be pending"
+  FM_HOME="$nav" bash "$ROOT/bin/fm-inbox.sh" drain --ack "$id" >/dev/null || fail 'ack failed'
+  FM_HOME="$nav" bash "$ROOT/bin/fm-inbox.sh" reply "$id" 'declined: already triaged' >/dev/null || fail 'reply failed'
+  run_progress >/dev/null || fail 'declined start-home run failed'
+  assert_equals "0" "$(jq '[.start_requests[] | select(.id == "pc-crash")] | length' "$lane/$DATE.json")" "the office's declined request is not a start request"
+  assert_contains "$(jq -r '.excluded[] | select(.id == "pc-crash") | .reason' "$lane/$DATE.json")" "Declined by $nav" "the office's decline is recorded"
+  assert_equals "1" "$(jq '.declined' "$lane/$DATE.json")" 'the run counts the office decline'
+  pass "progress: a start-home office's decline stops the re-send to that office"
+}
+
 test_start_home_routes_requests_by_project() {
   make_world starthome
   local nav="$WORLD/navigator" lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.start-requests.sh"
@@ -2006,6 +2083,9 @@ JSON
 test_linear_labels_classify_starts
 test_linear_reads_survive_one_bad_root
 test_open_pr_discovery_is_per_repo
+test_declined_requests_are_not_resent
+test_start_home_decline_is_not_resent
+test_declined_filler_is_not_resent
 test_start_home_routes_requests_by_project
 test_non_work_and_duplicates_are_dropped_and_reported
 test_top_of_mind_start
