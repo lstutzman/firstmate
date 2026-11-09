@@ -134,7 +134,8 @@ PY
 SH
   cat > "$FAKEBIN/linear-token" <<'SH'
 #!/usr/bin/env bash
-[ "$1" = header ] || exit 99
+[ "$1" = header ] && [ "$2" = --print-to-pipe ] || exit 99
+printf '%s\n' "$*" >> "$PROGRESS_WORLD/linear-token-args"
 printf 'Bearer FIXTURETOKEN0123456789abcdefghijklmnop'
 SH
   chmod +x "$FAKEBIN/linear-axi" "$FAKEBIN/gh-axi" "$FAKEBIN/linear-token"
@@ -244,6 +245,7 @@ PYFIX
     "Needs a Captain's Log card: Bug: merge a fix; Outside automatic-start authority: merge" 'restricted work needs a card'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'start check PC-64: NOT_FOUND' 'unreadable candidate is named'
   assert_not_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels' 'readable labels leave no label gap'
+  assert_contains "$(cat "$WORLD/linear-token-args")" 'header --print-to-pipe' 'the officer passes --print-to-pipe to linear-token'
   assert_contains "$(jq -r '.asking[].question' "$lane/progress-state.json")" "Needs a Captain's Log card:" 'choices name the needed card'
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'partial coverage never proves idleness'
   printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKEBIN/gh-axi"
