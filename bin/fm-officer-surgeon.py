@@ -887,6 +887,8 @@ def fold_lane(args, lane, idents, names, date, apply_ok=True):
     """Folds the open items of one officer into its feature-area bundles (lib.Bundles, state in the officer's lane).
     Returns the exit status. Prints the plan; with --apply writes the bundles, then marks each original a duplicate."""
     out = lane["out"]
+    if out is None and not idents:
+        return 0
     if out is None and args.apply:
         print("- not folded: %d open item(s) the %s made (pass %s <its lane directory> so the officer sees the bundles)" % (
             len(idents), lane["maker"], lane["flag"]))

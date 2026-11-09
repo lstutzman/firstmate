@@ -1052,6 +1052,15 @@ test_fold_apply_without_a_lane_directory_folds_nothing_for_that_officer() {
   pass "fm-officer-surgeon fold --apply: friction and page-check items fold only with their lane directory"
 }
 
+test_fold_apply_without_a_lane_directory_passes_when_that_officer_has_no_items() {
+  local out
+  dup_fp_world fold-no-lane
+  out=$(PATH="$FAKEBIN:$PATH" LDIR="$LDIR" python3 -I "$ROOT/bin/fm-officer-surgeon.py" fold --out "$W" --now "$NOW" --apply) || fail "no friction or page-check items, so a missing lane directory must not fail: $out"
+  assert_not_contains "$out" "not folded" "nothing is reported unfolded"
+  assert_equals "Duplicate Duplicate Duplicate" "$(jq -r '[."PC-1", ."PC-2", ."PC-3"] | map(.state) | join(" ")' "$LDIR/issues.json")" "the Surgeon's items still fold"
+  pass "fm-officer-surgeon fold --apply: a lane with no open items needs no lane directory"
+}
+
 dup_fp_world() {  # two open Surgeon items that carry the same finding, plus a cluster line of it
   local a b
   a=$(printf 'review\0nightly-review\0%s' dup | sha256sum | cut -d' ' -f1)
@@ -1108,6 +1117,7 @@ test_fold_dry_run_plans_friction_page_check_and_fleet_app_bundles
 test_fold_apply_writes_fleet_app_bundles_in_fleet_apps_own_format
 test_fold_appends_to_an_existing_fleet_app_bundle_and_is_idempotent
 test_fold_apply_without_a_lane_directory_folds_nothing_for_that_officer
+test_fold_apply_without_a_lane_directory_passes_when_that_officer_has_no_items
 test_fold_queues_a_fingerprint_once_and_marks_every_item_that_carried_it
 test_fold_rerun_rewrites_a_bundle_whose_body_differs_from_state
 test_fold_counts_an_item_linear_already_shows_as_duplicate
