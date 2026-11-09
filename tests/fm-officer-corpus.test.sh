@@ -589,6 +589,44 @@ SH
   pass "fm-officer corpus: a retry after a dropped connection starts from the lane the host kept and files nothing twice"
 }
 
+test_run_host_retry_waits_for_a_still_running_dropped_pass() {
+  local out log lock i
+  linear_world overlap
+  log=$FAKE_LINEAR_DIR/log
+  add_fields "run-host: deepthought; run-host-code: $ROOT; "
+  lock="$W/hosts/deepthought/fm-scratch/officer-corpus.lock"
+  # The connection drops at once while the host pass keeps running, slowly, in the background.
+  cat > "$FAKEBIN/ssh" <<SH
+#!/usr/bin/env bash
+while [ "\${1:-}" = -o ]; do shift 2; done
+host=\$1; shift
+[ -d "$W/hosts/\$host" ] || exit 255
+if [ -f "$W/drop" ] && [[ "\$*" == *__host-pass* ]]; then
+  rm -f "$W/drop"
+  HOME="$W/hosts/\$host" bash -c "\$*" <&0 >/dev/null 2>&1 &
+  exit 255
+fi
+HOME="$W/hosts/\$host" exec bash -c "\$*"
+SH
+  cat > "$FAKEBIN/python3" <<SH
+#!/usr/bin/env bash
+case "\$*" in *fm-officer-corpus.py\ run*) [ ! -f "$W/slow" ] || { rm -f "$W/slow"; sleep 4; } ;; esac
+exec /usr/bin/python3 "\$@"
+SH
+  chmod +x "$FAKEBIN/ssh" "$FAKEBIN/python3"
+  touch "$W/drop" "$W/slow"
+  run_corpus >/dev/null 2>&1 && fail "a dropped connection must fail the attempt"
+  for i in 1 2 3 4 5 6 7 8 9 10; do [ -d "$lock" ] && break; sleep 0.2; done
+  out=$(run_corpus 2>&1) && fail "a retry while the dropped pass still runs must be refused: $out"
+  assert_contains "$(tail -n 1 "$(lane)/runs.log")" "an earlier pass for this officer is still running on deepthought" "the refusal names why"
+  for i in $(seq 1 50); do [ -d "$lock" ] || break; sleep 0.2; done
+  assert_absent "$lock" "the dropped pass releases the host lock when it ends"
+  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "only the dropped pass filed the six findings"
+  out=$(run_corpus 2>&1) || fail "a retry after the dropped pass ended must succeed: $out"
+  assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "the retry files nothing twice"
+  pass "fm-officer corpus: a retry is refused while a dropped pass still runs on the host, and none of its filings are made twice"
+}
+
 test_run_host_import_failure_fails_the_run() {
   local out real_cp
   run_host_world import "run-host: deepthought; run-host-code: $ROOT; "
@@ -666,5 +704,6 @@ test_run_host_registry_rules
 test_run_host_failed_pass_keeps_its_lane_writes
 test_run_host_timed_out_pass_returns_its_lane_writes
 test_run_host_dropped_connection_files_nothing_twice
+test_run_host_retry_waits_for_a_still_running_dropped_pass
 test_run_host_import_failure_fails_the_run
 test_preflight_checks_the_run_host_read_only

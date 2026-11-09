@@ -107,6 +107,8 @@
 # for each officer as ~/fm-scratch/officer-<id>, with a list of the lane it was staged from; when the next pass is
 # staged from that same lane, its result never reached this home (a dropped connection or a stopped ssh call), and
 # the pass starts from the kept lane instead, so writes it recorded there (a Linear ledger) are not made twice.
+# A pass holds ~/fm-scratch/officer-<id>.lock on the host while it runs, so an attempt that starts while a dropped
+# pass is still running fails "an earlier pass for this officer is still running on <host>".
 # The scheduler stays here: the host has no timer, check or registration. A host that cannot be reached
 # fails the attempt ("run host unreachable") and never falls back to a local run. Inputs on the host are read in
 # process there (a source named <run-host>:<path>); the home records the surgeon joins sessions to (each --home's
@@ -507,8 +509,8 @@ readable_homes() {
   done < "$DATA/secondmates.md"
 }
 
-lock_acquire() {
-  local lock="$OFFICER_LANE/.run.lock" pid
+lock_acquire() {  # [lock]: default the lane's .run.lock; a lock whose pid is gone is taken over.
+  local lock=${1:-$OFFICER_LANE/.run.lock} pid
   if mkdir "$lock" 2>/dev/null; then
     printf '%s\n' "$$" > "$lock/pid"
     return 0
@@ -657,8 +659,13 @@ action_host_pass() {
   case "$3" in ''|*[!0-9]*) die "the pass bound must be whole seconds" 2 ;; esac
   slot=$HOME/fm-scratch/officer-$2
   mkdir -p "$HOME/fm-scratch" || die "cannot create $HOME/fm-scratch"
+  # One pass per officer on the host: a dropped connection leaves its pass running, and only the lock holder
+  # reads or replaces the slot.
+  lock_acquire "$slot.lock" || die "an earlier pass for this officer is still running on $1"
+  HOST_LOCK=$slot.lock
+  HOST_SCRATCH=
+  trap 'rm -rf -- ${HOST_SCRATCH:+"$HOST_SCRATCH"} "$HOST_LOCK"' EXIT
   HOST_SCRATCH=$(mktemp -d "$HOME/fm-scratch/officer-host.XXXXXX") || die "cannot create a scratch folder"
-  trap 'rm -rf -- "$HOST_SCRATCH"' EXIT
   tar -C "$HOST_SCRATCH" -xzf - || die "cannot read the staged input"
   script=$(cat "$HOST_SCRATCH/script")
   case "$script" in fm-officer-corpus.py|fm-officer-surgeon.py) ;; *) die "run-host does not run $script" 2 ;; esac
