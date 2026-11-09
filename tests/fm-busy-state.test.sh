@@ -83,8 +83,18 @@ test_codex_rollout_source() {
   codex_rollout "$home" c "$wt"
   out=$(fm_busy_classify tmux w1 codex t1 "$state")
   [ "$out" = "unknown codex-unverified" ] || fail "an unsettled sibling rollout must hold unknown, got '$out'"
-  # Text that merely mentions a lifecycle record cannot close a turn.
+  # Only the newest bound rollout can read busy: an older session left mid-turn holds unknown.
   rm -f "$home"/sessions/2026/11/09/rollout-[bc].jsonl
+  codex_rollout "$home" a "$wt" task_started
+  codex_rollout "$home" b "$wt" task_started task_complete
+  touch -t "$(( $(date +%Y) + 1 ))01010000" "$home/sessions/2026/11/09/rollout-b.jsonl"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "unknown codex-unverified" ] || fail "an older rollout left on task_started must not read busy, got '$out'"
+  touch -t "$(( $(date +%Y) + 2 ))01010000" "$home/sessions/2026/11/09/rollout-a.jsonl"
+  out=$(fm_busy_classify tmux w1 codex t1 "$state")
+  [ "$out" = "busy codex-rollout" ] || fail "the newest rollout on task_started must read busy, got '$out'"
+  # Text that merely mentions a lifecycle record cannot close a turn.
+  rm -f "$home"/sessions/2026/11/09/rollout-b.jsonl
   codex_rollout "$home" a "$wt" task_started
   printf '{"timestamp":"2026-11-09T08:00:09.000Z","ordinal":9,"type":"response_item","payload":{"text":"x\\n{\\"type\\":\\"task_complete\\"}"}}\n' >> "$home/sessions/2026/11/09/rollout-a.jsonl"
   out=$(fm_busy_classify tmux w1 codex t1 "$state")

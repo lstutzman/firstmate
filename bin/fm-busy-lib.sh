@@ -1115,15 +1115,17 @@ fm_busy_gemini_launch_prompt_tail() {
 # or sibling directory never binds. A reused pool slot can hold earlier tasks'
 # rollouts; the verdict needs EVERY rollout bound to the worktree to end on a
 # task_complete, so a stale unfinished rollout holds the answer at unknown and
-# can never produce a false idle. Lifecycle records are matched on the exact
-# top-level shape of a line, so a turn whose text mentions task_complete cannot
-# close it (a string inside JSON cannot contain a raw newline or a bare quote).
-# An interrupted turn is not known to write a close record, so it stays busy
-# rather than being guessed idle. Secondmates are excluded: they run in their own
+# can never produce a false idle. Only the most recently modified bound rollout
+# can read busy: an older one left on task_started by a dead or stopped session
+# holds unknown instead. Lifecycle records are matched on the exact top-level
+# shape of a line, so a turn whose text mentions task_complete cannot close it
+# (a string inside JSON cannot contain a raw newline or a bare quote). An
+# interrupted turn is not known to write a close record, so it stays busy until
+# a newer rollout replaces it rather than being guessed idle. Secondmates are excluded: they run in their own
 # home. Rollouts untouched for 30 days are not searched.
 # Prints busy | settled | none.
 fm_busy_codex_rollout_state() {  # <state-dir> <id>
-  local meta="$1/$2.meta" wt real root f cwd last found=0 busy=0 open=0
+  local meta="$1/$2.meta" wt real root f cwd last newest='' newest_last='' found=0 open=0
   [ -f "$meta" ] || { printf none; return 0; }
   command -v jq >/dev/null 2>&1 || { printf none; return 0; }
   [ "$(LC_ALL=C awk -F= '$1 == "kind" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$meta")" != secondmate ] \
@@ -1140,13 +1142,12 @@ fm_busy_codex_rollout_state() {  # <state-dir> <id>
     found=$((found + 1))
     last=$(LC_ALL=C grep -aE '^\{"timestamp":"[^"]*",("ordinal":[0-9]+,)?"type":"event_msg","payload":\{"type":"task_(started|complete)"' "$f" 2>/dev/null \
       | tail -n 1 | LC_ALL=C sed -n 's/.*"payload":{"type":"\(task_[a-z]*\)".*/\1/p')
-    case "$last" in
-      task_complete) ;;
-      task_started) busy=1 ;;
-      *) open=1 ;;
-    esac
+    [ "$last" = task_complete ] || open=1
+    if [ -z "$newest" ] || [ "$f" -nt "$newest" ]; then
+      newest=$f newest_last=$last
+    fi
   done < <(find "$root" -type f -name 'rollout-*.jsonl' -mtime -30 2>/dev/null)
-  if [ "$busy" = 1 ]; then printf busy
+  if [ "$newest_last" = task_started ]; then printf busy
   elif [ "$found" -ge 1 ] && [ "$open" = 0 ]; then printf settled
   else printf none
   fi
