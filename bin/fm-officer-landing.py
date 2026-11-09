@@ -25,7 +25,8 @@ those facts plus Linear:
                      in production, no linked PR is merged, or no landing fact
                      names the item at all;
   B1 false not-done  every PR linked to the item is in production, but the
-                     item is not Done (proposed state Done); or a linked PR is
+                     item is not Done or Released (reported as a release-path
+                     miss, never written); or a linked PR is
                      on staging while the item is still before In Staging
                      (proposed state In Staging, never written here).
 
@@ -37,16 +38,23 @@ Only production-code landing is decidable from the facts; the other kinds of
 work in the audit's definition need a probe or Lee's recorded word, so an A1
 with no facts is raised for a person, never acted on.
 
-PropertyCompass2's release workflow (linear-production-done.yml) is the
-routine Done writer; this officer only corrects what it misses. With
---writes corrections (the default) it makes two corrections:
+PropertyCompass2's release path (Slarti, PC-4688) writes Released; this
+officer never writes Done or Released. With
+--writes corrections (the default) it makes two writes:
 
-  close   an item not Done whose every linked PR is merged and in production,
-          and that has no sub-issues, moves to Done;
+  report  an item not Done or Released whose every linked PR is merged and in
+          production, and that has no sub-issues, is a miss by the release
+          path: this officer no longer writes Done for it. It comments once on the release-path issue
+          (--release-issue, PC-4688 by default) naming the item, its PR URLs and
+          the production version seen, and lists the miss in its digest. The
+          same miss (item and PRs) is not commented again on a later run
+          (reported-misses.json in --out);
+  (Released, Linear's "Live in Production" status, is written only by the
+  release path; this officer never writes or reverses it.)
   reopen  a Done item that a landing fact names, with a linked PR merged that
           never reached main (on_main false) or any release, moves to
-          --reopen-state (In Progress by default; In Staging and Done are
-          refused). A Done item whose PR is on main but not yet in production
+          --reopen-state (In Progress by default; In Staging, Done and Released
+          are refused). A Done item whose PR is on main but not yet in production
           is release lag: it is reported, never written.
 
 No Linear write is made when the facts name no production_sha or their
@@ -79,7 +87,7 @@ import time
 FACT_FIELDS = ("repo", "pr", "merged_sha", "merged_at", "on_staging", "staging_deployed",
                "on_main", "main_promoted_at", "in_production", "production_release", "landed_via")
 NOT_STARTED = {"Triage", "Backlog", "Todo", "In Progress"}
-CLOSED = {"Done", "Canceled", "Cancelled", "Duplicate"}
+CLOSED = {"Done", "Released", "Canceled", "Cancelled", "Duplicate"}
 VIEWS_PER_CORRECTION = 5
 TOP_KEYS = {"schema_version", "generated_at", "staging_sha", "production_sha", "records", "items"}
 
@@ -180,6 +188,8 @@ def judge(doc, done_listed, reopen_state="In Progress"):
         if state is None and len(states) > 1:
             findings.append({"class": "conflict", "item": item, "severity": "medium",
                              "summary": "landing facts disagree on its Linear state: %s" % ", ".join(states)})
+        elif state == "Released":
+            pass  # live in production, written only by the release path: never reopened, closed or re-stated
         elif state == "Done":
             never = [p for p in merged if p.get("on_main") is False and p.get("production_release") is None]
             lag = [p for p in merged if p not in never and p.get("in_production") is False]
@@ -205,10 +215,9 @@ def judge(doc, done_listed, reopen_state="In Progress"):
         elif state is not None and state not in CLOSED and merged:
             if len(in_prod) == len(merged) == len(prs):
                 record["class"] = "B1"
-                record["proposed_state"] = "Done"
-                record["correction"] = "close"
+                record["correction"] = "report"
                 findings.append({"class": "B1", "item": item, "severity": "medium",
-                                 "summary": "%s, but %s in production (%s)" % (
+                                 "summary": "%s, but %s in production (%s); the release path missed it" % (
                                      state, pr_list(in_prod), releases(in_prod))})
             elif state in NOT_STARTED and any(p.get("on_staging") for p in merged):
                 record["class"] = "B1"
@@ -253,9 +262,7 @@ def facts_age_problem(doc, max_hours, now):
 
 
 def evidence_comment(record, doc, action, to_state):
-    why = ("every linked PR is merged and in production, but the release workflow did not set Done"
-           if action == "close" else
-           "it is Done, but a linked PR is merged and never reached main or any release")
+    why = "it is Done, but a linked PR is merged and never reached main or any release"
     lines = ["Landing officer correction: moving to %s because %s." % (to_state, why), "",
              "Landing-truth record used (schema %s, generated %s, production %s, staging %s):" % (
                  doc.get("schema_version"), doc.get("generated_at"),
@@ -265,23 +272,46 @@ def evidence_comment(record, doc, action, to_state):
     return "\n".join(lines) + "\n"
 
 
-def correct_items(view, doc, out, date, max_corrections, reopen_state):
-    """Apply the officer's two corrections; returns one result per item tried.
+def miss_signature(record):
+    return sorted("%s#%s" % (p.get("repo"), p.get("pr")) for p in record["prs"])
 
-    close:  an item not Done whose every linked PR is merged and in production
-            (the release workflow, the routine Done writer, missed it);
+
+def miss_comment(record):
+    lines = ["Release-path miss: %s has every linked PR merged and in production, but is not Released." % record["item"],
+             "Landing officer report; it changed nothing on the item. State seen: %s." % record["linear_state"], ""]
+    for p in sorted(record["prs"], key=lambda q: (str(q.get("repo")), str(q.get("pr")))):
+        lines.append("- https://github.com/%s/pull/%s, production release %s" % (
+            p.get("repo"), p.get("pr"), p.get("production_release") or "not named"))
+    return "\n".join(lines) + "\n"
+
+
+def correct_items(view, doc, out, date, max_corrections, reopen_state, release_issue="PC-4688"):
+    """Apply the officer's write and report; returns one result per item tried.
+
+    report: an item not Done or Released whose every linked PR is merged and in
+            production (the release path missed it): one comment on
+            release_issue, never repeated for the same item and PRs, no state
+            change;
     reopen: a Done item a landing fact names with a linked PR merged that never
             reached main or any release; it moves to reopen_state, never In
             Staging.
     """
     results = []
     attempts = 0
-    for record in [r for r in view if r["correction"]][:max_corrections * VIEWS_PER_CORRECTION]:
+    ledger = os.path.join(out, "reported-misses.json")
+    try:
+        with open(ledger, encoding="utf-8") as fh:
+            reported = json.load(fh)
+    except (OSError, ValueError):
+        reported = {}
+    pending = [r for r in view if r["correction"]
+               and not (r["correction"] == "report" and reported.get(r["item"]) == miss_signature(r))]
+    for record in pending[:max_corrections * VIEWS_PER_CORRECTION]:
         if attempts >= max_corrections:
             break
         item = record["item"]
         action = record["correction"]
-        to_state = "Done" if action == "close" else reopen_state
+        to_state = None if action == "report" else reopen_state
         used = {"facts_generated_at": doc.get("generated_at"),
                 "production_sha": doc.get("production_sha"), "prs": record["prs"]}
         try:
@@ -291,9 +321,24 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state):
                 results.append({"item": item, "action": "skipped", "to": to_state, "record": used,
                                 "reason": "Linear now says %s" % state})
                 continue
-            if action == "close" and current.get("subIssues"):
+            if action == "report" and current.get("subIssues"):
                 results.append({"item": item, "action": "skipped", "to": to_state, "record": used,
                                 "reason": "item has sub-issues"})
+                continue
+            if action == "report":
+                attempts += 1
+                body = os.path.join(out, ".miss-%s-%s.md" % (date, item))
+                with open(body, "w", encoding="utf-8") as fh:
+                    fh.write(miss_comment(record))
+                try:
+                    linear(["issue", "comment", release_issue, "--body-file", body, "--dry-run"])
+                    linear(["issue", "comment", release_issue, "--body-file", body, "--verify"])
+                finally:
+                    os.remove(body)
+                reported[item] = miss_signature(record)
+                write_if_changed(ledger, json.dumps(reported, sort_keys=True, indent=1) + "\n")
+                results.append({"item": item, "action": "reported", "to": release_issue, "record": used,
+                                "reason": "release-path miss"})
                 continue
             attempts += 1
             body = os.path.join(out, ".evidence-%s-%s.md" % (date, item))
@@ -306,7 +351,7 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state):
                 os.remove(body)
             linear(["issue", "update", item, "--state", to_state, "--dry-run"])
             linear(["issue", "update", item, "--state", to_state, "--verify"])
-            results.append({"item": item, "action": "reopened" if action == "reopen" else "closed",
+            results.append({"item": item, "action": "reopened",
                             "to": to_state, "record": used, "reason": "landing-truth record"})
         except RuntimeError as exc:
             results.append({"item": item, "action": "failed", "to": to_state, "record": used,
@@ -327,7 +372,7 @@ def render_md(doc):
     if doc["writes_done"]:
         lines += ["", "## Linear writes", ""]
         for w in doc["writes_done"]:
-            lines.append("- %s: %s to %s (%s; facts generated %s)" % (
+            lines.append("- %s: %s -> %s (%s; facts generated %s)" % (
                 w["item"], w["action"], w["to"], w["reason"], w["record"]["facts_generated_at"]))
     lines += ["", "## Findings", ""]
     for f in doc["findings"]:
@@ -361,11 +406,12 @@ def main(argv):
     parser.add_argument("--writes", choices=["none", "corrections"], default="corrections")
     parser.add_argument("--max-corrections", type=int, default=10)
     parser.add_argument("--reopen-state", default="In Progress")
+    parser.add_argument("--release-issue", default="PC-4688")
     parser.add_argument("--max-facts-age", type=int, default=36)
     parser.add_argument("--now", type=int)
     args = parser.parse_args(argv)
-    if args.reopen_state in ("In Staging", "Done"):
-        parser.error("--reopen-state may not be In Staging or Done")
+    if args.reopen_state in ("In Staging", "Done", "Released"):
+        parser.error("--reopen-state may not be In Staging, Done or Released")
     try:
         facts = load_facts(args.facts)
         done_listed = done_items(args.team, args.done_window) if args.done_window > 0 else []
@@ -376,7 +422,7 @@ def main(argv):
             findings.insert(0, {"class": "stale-facts", "item": "-", "severity": "high",
                                 "summary": stale + "; no Linear write made"})
         writes = correct_items(view, facts, args.out, args.date, args.max_corrections,
-                               args.reopen_state) if args.writes == "corrections" and not stale else []
+                               args.reopen_state, args.release_issue) if args.writes == "corrections" and not stale else []
     except RuntimeError as exc:
         print("fm-officer-landing: %s" % exc, file=sys.stderr)
         return 1

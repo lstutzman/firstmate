@@ -52,12 +52,16 @@ write_facts() {  # <file>
    "linear_ids": ["PC-13"], "linear_state": {"PC-13": "Done"}, "landed_via": "lone"},
   "lstutzman/PropertyCompass2#110": {"repo": "lstutzman/PropertyCompass2", "pr": 110, "head_sha": "h110", "merged_sha": "m110", "merged_at": "2026-10-18T11:00:00Z",
    "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-18T15:00:00Z", "in_production": true, "production_release": "v1.70.1",
-   "linear_ids": ["PC-14"], "linear_state": {}, "landed_via": "lone"}
+   "linear_ids": ["PC-14"], "linear_state": {}, "landed_via": "lone"},
+  "lstutzman/PropertyCompass2#111": {"repo": "lstutzman/PropertyCompass2", "pr": 111, "head_sha": "h111", "merged_sha": "m111", "merged_at": "2026-10-22T11:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": false, "main_promoted_at": null, "in_production": false, "production_release": null,
+   "linear_ids": ["PC-15"], "linear_state": {"PC-15": "Released"}, "landed_via": "lone"}
  },
  "items": {"PC-1": ["lstutzman/PropertyCompass2#101"], "PC-2": ["lstutzman/PropertyCompass2#102"], "PC-3": ["lstutzman/PropertyCompass2#103"],
   "PC-4": ["lstutzman/PropertyCompass2#104"], "PC-5": ["lstutzman/PropertyCompass2#105"], "PC-7": ["lstutzman/PropertyCompass2#106"],
   "PC-10": ["lstutzman/PropertyCompass2#107"], "PC-11": ["lstutzman/PropertyCompass2#107"],
-  "PC-12": ["lstutzman/PropertyCompass2#108"], "PC-13": ["lstutzman/PropertyCompass2#109"], "PC-14": ["lstutzman/PropertyCompass2#110"]}}
+  "PC-12": ["lstutzman/PropertyCompass2#108"], "PC-13": ["lstutzman/PropertyCompass2#109"], "PC-14": ["lstutzman/PropertyCompass2#110"],
+  "PC-15": ["lstutzman/PropertyCompass2#111"]}}
 JSON
 }
 
@@ -128,6 +132,8 @@ test_classes_from_facts() {
   assert_equals "" "$(finding "$json" PC-4)" "Done and in production is consistent"
   assert_equals "" "$(finding "$json" PC-10)" "a PR's state for one of its ids is read for that id"
   assert_equals B1 "$(finding "$json" PC-11)" "the same PR's other id keeps its own state"
+  assert_equals "" "$(finding "$json" PC-15)" "a Released item is finished: no finding even with a PR facts show off main"
+  assert_equals null "$(jq -r '.items[] | select(.item == "PC-15") | .correction' "$json")" "a Released item is never reopened or closed"
   assert_equals A1 "$(finding "$json" PC-12)" "Done with no linked PR merged is false done"
   assert_equals null "$(jq -r '.items[] | select(.item == "PC-12") | .correction' "$json")" "an unmerged Done item is left to a person"
   assert_equals A1 "$(finding "$json" PC-13)" "Done with unknown production status is reported"
@@ -136,7 +142,7 @@ test_classes_from_facts() {
   assert_equals "" "$(finding "$json" PC-14)" "an item with no recorded state is not status lag"
   assert_equals A1 "$(finding "$json" PC-9)" "Done with no landing fact is raised for a person"
   assert_equals "In Progress" "$(jq -r '.items[] | select(.item == "PC-2") | .proposed_state' "$json")" "A1 proposes reopening to In Progress"
-  assert_equals Done "$(jq -r '.items[] | select(.item == "PC-1") | .proposed_state' "$json")" "B1 in production proposes Done"
+  assert_equals null "$(jq -r '.items[] | select(.item == "PC-1") | .proposed_state' "$json")" "B1 in production proposes no state: it is reported as a release-path miss"
   pass "fm-officer landing: A1 and B1 follow the audit definitions from the facts"
 }
 
@@ -155,26 +161,33 @@ test_closes_only_fully_landed_items_with_evidence() {
   make_world closing; home=$WORLD_HOME
   run_landing "$home" >/dev/null || fail "landing run must succeed"
   json="$home/data/officers/landing/$DATE.json"
-  assert_grep "issue comment PC-1 --body-file" "$LINEAR_LOG" "the evidence is recorded on the item"
-  assert_equals 4 "$(grep -c '^issue \(comment\|update\) PC-1 ' "$LINEAR_LOG")" "comment and state each run --dry-run then --verify"
-  assert_equals "issue comment PC-1" "$(grep '^issue \(comment\|update\) PC-1 ' "$LINEAR_LOG" | sed -n 1p | cut -d' ' -f1-3)" "the comment precedes the state change"
-  assert_contains "$(grep '^issue update PC-1 ' "$LINEAR_LOG" | tail -n 1)" "--state Done --verify" "the close is verified"
-  assert_no_grep "PC-5 --body-file" "$LINEAR_LOG" "an item with sub-issues is never closed"
-  assert_equals skipped "$(jq -r '.writes_done[] | select(.item == "PC-5") | .action' "$json")" "the sub-issue skip is recorded"
+  assert_no_grep "update PC-1 " "$LINEAR_LOG" "an item in production is never moved to Done"
+  assert_no_grep "issue comment PC-1 " "$LINEAR_LOG" "the miss is not commented on the item itself"
+  assert_equals 2 "$(grep -c '^issue comment PC-4688 --body-file' "$LINEAR_LOG")" "the miss is commented on the release-path issue, --dry-run then --verify"
+  assert_contains "$(sed -n 1p "$LINEAR_LOG.bodies")" "PC-1 has every linked PR merged and in production" "the comment names the item"
+  assert_contains "$(cat "$LINEAR_LOG.bodies")" "https://github.com/lstutzman/PropertyCompass2/pull/101, production release v1.71.0" "and its PR URL and production version"
+  assert_equals reported "$(jq -r '.writes_done[] | select(.item == "PC-1") | .action' "$json")" "the miss is listed in the digest"
+  assert_contains "$(cat "$home/data/officers/landing/$DATE.md")" "PC-1: reported" "the markdown digest lists it"
+  assert_equals skipped "$(jq -r '.writes_done[] | select(.item == "PC-5") | .action' "$json")" "an item with sub-issues is skipped, not reported"
+  assert_equals 2026-10-23T23:40:00Z "$(jq -r '.writes_done[] | select(.item == "PC-1") | .record.facts_generated_at' "$json")" "the miss report names the facts run"
+  : > "$LINEAR_LOG"
+  run_landing "$home" >/dev/null || fail "a second landing run must succeed"
+  assert_no_grep "PC-4688" "$LINEAR_LOG" "the same miss is not reported again on the next run"
+  assert_no_grep "issue view PC-1 " "$LINEAR_LOG" "a miss already reported is not re-read, so it takes no re-check slot"
   assert_grep "issue update PC-2 --state In Progress --verify" "$LINEAR_LOG" "a Done item whose PR never reached main or any release is reopened"
   assert_no_grep "PC-7" "$LINEAR_LOG" "a Done item on main awaiting its release is never written"
   assert_grep "issue comment PC-2 --body-file" "$LINEAR_LOG" "the reopen is recorded on the item"
   assert_equals reopened "$(jq -r '.writes_done[] | select(.item == "PC-2") | .action' "$json")" "the reopen is logged"
   assert_equals 102 "$(jq -r '.writes_done[] | select(.item == "PC-2") | .record.prs[0].pr' "$json")" "the log names the landing-truth record used"
-  assert_equals 2026-10-23T23:40:00Z "$(jq -r '.writes_done[] | select(.item == "PC-1") | .record.facts_generated_at' "$json")" "the close log names the facts run"
   assert_no_grep "update PC-3" "$LINEAR_LOG" "In Staging is never written"
   assert_no_grep "In Staging --" "$LINEAR_LOG" "no update ever sets In Staging"
+  assert_no_grep "PC-15" "$LINEAR_LOG" "a Released item is never read or written in Linear"
   assert_no_grep "update PC-9" "$LINEAR_LOG" "a Done item no fact names is left to a person"
   assert_no_grep "update PC-4" "$LINEAR_LOG" "a consistent item is left alone"
   assert_no_grep "update PC-13" "$LINEAR_LOG" "an item with unknown production status is never written"
   assert_no_grep "PC-14" "$LINEAR_LOG" "an item with no recorded state is never written"
-  assert_contains "$(sed -n 1p "$LINEAR_LOG.bodies")" "Landing officer correction: moving to Done" "the comment states the move it is about to make"
-  pass "fm-officer landing: corrections are on by default: close what the workflow missed, reopen false done, never In Staging"
+  assert_contains "$(grep -h 'Landing officer correction' "$LINEAR_LOG.bodies")" "moving to In Progress" "the reopen comment states the move it is about to make"
+  pass "fm-officer landing: corrections are on by default: report what the release path missed, reopen false done, never In Staging"
 }
 
 test_stale_or_undated_facts_make_no_write() {
@@ -285,14 +298,38 @@ test_registry_refuses_in_staging_as_reopen_state() {
   make_world staging; home=$WORLD_HOME
   sed -i.bak "s/; model: none/; reopen-state: In Staging; model: none/" "$home/data/officers.md"
   out=$(run_landing "$home" 2>&1) && fail "a reopen-state of In Staging must be refused"
-  assert_contains "$out" "may not be In Staging" "the refusal names the rule"
-  assert_contains "$(FM_HOME="$home" "$OFFICER" ensure)" "OFFICER: officer landing: reopen-state may not be In Staging" "ensure reports it"
+  assert_contains "$out" "may not be In Staging, Done or Released" "the refusal names the rule"
+  assert_contains "$(FM_HOME="$home" "$OFFICER" ensure)" "OFFICER: officer landing: reopen-state may not be In Staging, Done or Released" "ensure reports it"
   assert_absent "$LINEAR_LOG" "nothing reaches Linear"
   pass "fm-officer landing: In Staging is refused as a reopen state before any Linear call"
 }
 
+test_registry_refuses_released_as_reopen_state() {
+  local home out
+  make_world released; home=$WORLD_HOME
+  sed -i.bak "s/; model: none/; reopen-state: Released; model: none/" "$home/data/officers.md"
+  out=$(run_landing "$home" 2>&1) && fail "a reopen-state of Released must be refused"
+  assert_contains "$out" "may not be In Staging, Done or Released" "the refusal names the rule"
+  assert_absent "$LINEAR_LOG" "nothing reaches Linear"
+  pass "fm-officer landing: Released is refused as a reopen state before any Linear call"
+}
+
+test_pass_refuses_released_as_reopen_state() {
+  local home out
+  make_world released-direct; home=$WORLD_HOME
+  out=$(PATH="$FAKEBIN:$PATH" python3 "$ROOT/bin/fm-officer-landing.py" run --facts "$TMP_ROOT/released-direct/facts.json" \
+    --date "$DATE" --out "$TMP_ROOT/released-direct/out" --reopen-state Released --now "$NOW" 2>&1) \
+    && fail "the landing pass itself must refuse a reopen-state of Released"
+  assert_contains "$out" "may not be In Staging, Done or Released" "the pass's refusal names the rule"
+  assert_absent "$LINEAR_LOG" "nothing reaches Linear"
+  assert_absent "$TMP_ROOT/released-direct/out/$DATE.json" "no digest is written"
+  pass "fm-officer-landing.py: Released is refused as a reopen state by the pass itself"
+}
+
 test_classes_from_facts
 test_registry_refuses_in_staging_as_reopen_state
+test_registry_refuses_released_as_reopen_state
+test_pass_refuses_released_as_reopen_state
 test_linear_failure_fails_the_run_with_its_reason
 test_run_writes_only_its_lane
 test_no_linear_writes_by_default

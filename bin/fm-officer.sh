@@ -286,7 +286,7 @@ line_problem() {
         ''|*[!0-9]*) printf 'officer %s: max-corrections, done-window, and max-facts-age must be whole numbers\n' "$id"; return ;;
       esac
       case "$(line_field "$line" reopen-state || echo 'In Progress')" in
-        'In Staging'|Done) printf 'officer %s: reopen-state may not be In Staging or Done\n' "$id"; return ;;
+        'In Staging'|Done|Released) printf 'officer %s: reopen-state may not be In Staging, Done or Released\n' "$id"; return ;;
       esac
       ;;
   esac

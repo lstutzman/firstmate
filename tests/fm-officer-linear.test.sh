@@ -32,7 +32,7 @@ path = os.path.join(d, "issues.json")
 issues = json.load(open(path))
 def out(data): print(json.dumps({"ok": True, "data": data})); sys.exit(0)
 def state_type(state):  # as Linear reports it: a duplicate has its own stateType
-    return {"Done": "completed", "Canceled": "canceled", "Duplicate": "duplicate", "In Progress": "started"}.get(state, "unstarted")
+    return {"Done": "completed", "Released": "completed", "Canceled": "canceled", "Duplicate": "duplicate", "In Progress": "started"}.get(state, "unstarted")
 def flag(name):
     return args[args.index(name) + 1] if name in args else None
 def save(): json.dump(issues, open(path, "w"))
@@ -211,7 +211,7 @@ elif scenario == "fleet":
     res = {"filing": f["filing"], "repo_filing": g["filing"], "pc_filing": h["filing"]}
 elif scenario == "fleet-labels":
     res = [lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[0], lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[1]]
-elif scenario == "closed":
+elif scenario in ("closed", "released"):
     f = find("old", "Previously closed finding")
     fl, lin = filer()
     run(fl, [f])
@@ -554,6 +554,26 @@ test_closed_item_is_never_touched() {
   assert_equals 0 "$(grep -c '^issue update PC-60\|^issue comment PC-60' "$LDIR/calls")" "no update or comment reaches it"
   assert_equals "PC-102 --related PC-60 --verify" "$(cat "$LDIR/relations")" "it is linked as related"
   pass "fm-officer-linear: a closed item is never reopened or edited; a recurrence names it"
+}
+
+test_released_item_is_closed() {
+  local out before
+  world released "$(jq -n --arg fp "$(printf '%s\0%s\0%s' scan job old | sha256sum | cut -d' ' -f1)" \
+    '{"PC-60": {title: "Previously closed finding", state: "Released", description: ("Live in Production.\nfixture-fp:" + $fp)}}')"
+  before=$(issue PC-60 .description)
+  out=$(drive released) || fail "driver must succeed"
+  assert_equals "created PC-102 PC-60" "$(jq -r '.filing | [.action, .issue, .recurrence_of] | join(" ")' <<<"$out")" "a repeat of a Released item is a recurrence in a new item"
+  assert_contains "$(issue PC-102 .description)" "Recurrence of PC-60 (closed as Released)." "which names the old one"
+  assert_equals "$before" "$(issue PC-60 .description)" "the Released item is not edited"
+  assert_equals 0 "$(grep -c '^issue update PC-60\|^issue comment PC-60' "$LDIR/calls")" "no update or comment reaches it"
+  assert_equals "closed closed open" "$(python3 -I - "$LIB" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("lin", sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+r = lambda i: "closed" if m.is_closed(i) else "open"
+print(r({"state": "Released"}), r({"state": "Released", "stateType": "completed"}), r({"state": "In Review"}))
+PY
+)" "Released is closed by state name when stateType is missing, and by completed type"
+  pass "fm-officer-linear: a Released item is closed like Done: never reopened or edited; a recurrence names it"
 }
 
 test_closed_item_is_bumped_not_replaced() {
@@ -1141,6 +1161,7 @@ test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
 test_fleet_patterns_route_without_linear_writes
 test_surgeon_bundles_split_fleet_from_propertycompass2
 test_closed_item_is_never_touched
+test_released_item_is_closed
 test_closed_item_is_bumped_not_replaced
 test_failed_verify_is_taken_as_written
 test_mismatched_create_is_adopted_when_title_search_misses
