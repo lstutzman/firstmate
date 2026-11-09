@@ -511,6 +511,45 @@ test_run_host_registry_rules() {
   pass "fm-officer corpus: run-host is refused where the pass reads files in this home"
 }
 
+test_run_host_failed_pass_keeps_its_lane_writes() {
+  local out
+  make_world failed
+  cat > "$FAKEBIN/python3" <<SH
+#!/usr/bin/env bash
+/usr/bin/python3 "\$@"
+rc=\$?
+case "\$*" in *fm-officer-corpus.py*) [ "\$rc" -ne 0 ] || exit 3 ;; esac
+exit \$rc
+SH
+  chmod +x "$FAKEBIN/python3"
+  run_corpus >/dev/null 2>&1 && fail "a pass that exits non-zero must fail the run"
+  assert_present "$(lane)/nights.json" "a failed local pass leaves the lane files it wrote"
+  mv "$(lane)" "$W/lane.local"
+  add_fields "run-host: deepthought; run-host-code: $ROOT; "
+  out=$(run_corpus 2>&1) && fail "a failed pass on the run host must fail the run"
+  diff -r --exclude=.run.err "$W/lane.local" "$(lane)" >/dev/null \
+    || fail "a failed run-host pass must leave the lane a local failed pass leaves: $(diff -r --exclude=.run.err "$W/lane.local" "$(lane)" | head -5)"
+  assert_contains "$(cat "$(lane)/runs.log")" "failed" "the failure is logged"
+  pass "fm-officer corpus: a pass that fails after writing leaves the same lane through the run host"
+}
+
+test_run_host_pass_is_bounded_on_the_host() {
+  local out
+  run_host_world bound "run-host: deepthought; run-host-code: $ROOT; "
+  cat > "$FAKEBIN/python3" <<SH
+#!/usr/bin/env bash
+case "\$*" in *fm-officer-corpus.py*) exec sleep 3007 ;; esac
+exec /usr/bin/python3 "\$@"
+SH
+  chmod +x "$FAKEBIN/python3"
+  out=$(FM_OFFICER_RUN_TIMEOUT=4 run_corpus 2>&1) && fail "a pass past the bound must fail the run"
+  assert_contains "$out" "run host timed out" "the host ends the pass at its bound and the run says so"
+  # The host ends the pass at its bound; give the process a moment to go.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -f "[s]leep 300[7]" >/dev/null || break; sleep 1; done
+  assert_equals "" "$(pgrep -f "[s]leep 300[7]" || true)" "no pass is left running"
+  pass "fm-officer corpus: a run-host pass past FM_OFFICER_RUN_TIMEOUT is ended on the host"
+}
+
 test_healthy_corpus_has_no_findings
 test_each_finding_class
 test_archive_gap_needs_two_nights
@@ -532,3 +571,5 @@ test_no_writes_and_a_missing_label_file_nothing
 test_run_host_lane_matches_a_local_run
 test_run_host_failures_never_run_locally
 test_run_host_registry_rules
+test_run_host_failed_pass_keeps_its_lane_writes
+test_run_host_pass_is_bounded_on_the_host

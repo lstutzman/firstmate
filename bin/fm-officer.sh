@@ -98,7 +98,9 @@
 # nowhere else: the lane (except runs.log, digest and the check records) goes there as a scratch copy, the host
 # runs the same role script from its own checkout (it must be at this code root's commit, else the attempt
 # fails "host code mismatch"), and the changed lane files and the pass's output come back and are written
-# into this lane under .run.lock, so runs.log, digest and the check records mean what they always meant.
+# into this lane under .run.lock, so runs.log, digest and the check records mean what they always meant. A pass that
+# fails or times out still returns the lane files it wrote, as a local one leaves them. The host ends the pass at
+# FM_OFFICER_RUN_TIMEOUT (the ssh call has 30 s more), so a lost connection leaves nothing running there.
 # The scheduler stays here: the host has no timer, check or registration. A host that cannot be reached
 # fails the attempt ("run host unreachable") and never falls back to a local run. Inputs on the host are read in
 # process there (a source named <run-host>:<path>); the home records the surgeon joins sessions to (each --home's
@@ -555,7 +557,10 @@ remote_pass_in() {  # <stage> <host> <script> <args...>
     if [ "${args[$i]}" = --home ] && [ -d "${args[i+1]:-}" ]; then
       home=${args[i+1]}
       mkdir -p "$stage/in/mirror$home/state" || return 1
-      cp -p "$home"/state/fleet-ledger.jsonl "$home"/state/*.meta "$home"/state/*.status "$stage/in/mirror$home/state/" 2>/dev/null || true
+      for f in "$home"/state/fleet-ledger.jsonl "$home"/state/*.meta "$home"/state/*.status; do
+        [ -e "$f" ] || continue
+        cp -p "$f" "$stage/in/mirror$home/state/" || { echo "cannot copy $f for the run host" >&2; return 1; }
+      done
       for f in "$home"/data/*/report.md; do
         [ -e "$f" ] || continue
         mkdir -p "$stage/in/mirror${f%/report.md}" && : > "$stage/in/mirror$f"
@@ -563,16 +568,20 @@ remote_pass_in() {  # <stage> <host> <script> <args...>
     fi
   done
   printf '%s\n' "$script" > "$stage/in/script"
+  # The host bounds the pass itself, so a lost ssh leaves no pass running there; the ssh bound is only a backstop 30 s later.
+  printf '%s\n' "${FM_OFFICER_RUN_TIMEOUT:-3600}" > "$stage/in/timeout"
   printf '%s\0' "${args[@]}" > "$stage/in/args"
   tar -C "$stage/in" -czf "$stage/in.tgz" . || return 1
-  fm_run_timed "${FM_OFFICER_RUN_TIMEOUT:-3600}" "${ssh[@]}" "$host" "bash $root/bin/fm-officer.sh __host-pass $host" \
+  fm_run_timed "$(( ${FM_OFFICER_RUN_TIMEOUT:-3600} + 30 ))" "${ssh[@]}" "$host" "bash $root/bin/fm-officer.sh __host-pass $host" \
     < "$stage/in.tgz" > "$stage/out.tgz"
   rc=$?
-  if fm_timed_out "$rc"; then echo "run host timed out ($host)" >&2; return "$rc"; fi
   [ "$rc" -ne 255 ] || { echo "run host unreachable ($host)" >&2; return 1; }
-  [ "$rc" -eq 0 ] || return "$rc"
-  tar -C "$stage/out" -xzf "$stage/out.tgz" 2>/dev/null && [ -f "$stage/out/pass-out" ] \
-    || { echo "run host returned an unreadable result ($host)" >&2; return 1; }
+  # A pass that failed or timed out after writing lane files leaves them in the lane, as a local pass does.
+  if ! { tar -C "$stage/out" -xzf "$stage/out.tgz" 2>/dev/null && [ -f "$stage/out/pass-out" ]; }; then
+    if fm_timed_out "$rc"; then echo "run host timed out ($host)" >&2; return "$rc"; fi
+    [ "$rc" -eq 0 ] || return "$rc"
+    echo "run host returned an unreadable result ($host)" >&2; return 1
+  fi
   while IFS= read -r f; do
     cmp -s "$stage/out/lane/$f" "$OFFICER_LANE/$f" && continue
     mkdir -p "$OFFICER_LANE/$(dirname "$f")" && cp -p "$stage/out/lane/$f" "$OFFICER_LANE/$f"
@@ -586,6 +595,8 @@ EOF
 $(cd "$stage/in/lane" && find . -type f | sort)
 EOF
   cat "$stage/out/pass-out"
+  ! fm_timed_out "$rc" || echo "run host timed out ($host)" >&2
+  return "$rc"
 }
 
 # action_host_pass <host>: the run-host side of remote_pass. Reads the staged tar on stdin, runs the role
@@ -604,7 +615,7 @@ action_host_pass() {
     args+=("$arg")
   done < "$HOST_SCRATCH/args"
   FM_OFFICER_ON_HOST=$1 FM_OFFICER_HOME_MIRROR=$HOST_SCRATCH/mirror \
-    python3 -I "$SCRIPT_DIR/$script" "${args[@]}" > "$HOST_SCRATCH/pass-out" || rc=$?
+    fm_run_timed "$(cat "$HOST_SCRATCH/timeout")" python3 -I "$SCRIPT_DIR/$script" "${args[@]}" > "$HOST_SCRATCH/pass-out" || rc=$?
   tar -C "$HOST_SCRATCH" -czf - lane pass-out
   return "$rc"
 }
