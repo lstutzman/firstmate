@@ -1001,6 +1001,12 @@ fm_git_worktree() {
 
 # --- state/<id>.meta writers ------------------------------------------------
 
+# Path of one steering-inbox record by sequence: the root when unhandled, else
+# handled/ (an inline steer is written there already taken).
+fm_inbox_record() {  # <inbox-dir> <seq>
+  if [ -e "$1/$2.msg" ]; then printf '%s/%s.msg' "$1" "$2"; else printf '%s/handled/%s.msg' "$1" "$2"; fi
+}
+
 # fm_write_meta <file> <key=val> ...: write the given key=val lines to a meta
 # file (truncating any prior content).
 fm_write_meta() {

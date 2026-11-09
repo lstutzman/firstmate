@@ -1183,6 +1183,20 @@ ok - opencode (1.18.33): the doorbell reached a real worker, which acted and ack
 # harness absent, not verified here: muse
 ```
 
+A plain short steer (one line, at most 300 printable characters, no routing mark) is an inline steer: `bin/fm-send.sh` records it already taken and the doorbell carries the body after a constant prefix, so the worker acts on the body with no inbox read.
+The guard now runs a pointer pass and an inline pass per harness.
+The run below, on 2026-11-09 on tmux 3.6, Linux, with `FM_SEND_INBOX_LIVE_HARNESSES="claude codex"` and the same command, verified the inline doorbell on Claude only:
+
+```text
+ok - claude (2.1.319 (Claude Code)): the pointer doorbell reached a real worker, which acted and acked with the mv
+ok - claude (2.1.319 (Claude Code)): the inline doorbell reached a real worker, which acted
+not ok - codex (codex-cli 0.163.0): pointer doorbell not honored within 150s (acted=no acked=no)
+not ok - codex (codex-cli 0.163.0): inline doorbell not honored within 150s (acted=no acked=yes)
+```
+
+A later run after the final change (2026-11-09, Claude only) honored both the pointer and the inline doorbell.
+Codex stayed on its folder-trust dialog for the task worktree, which is an unready state rather than a doorbell verdict, so the inline doorbell is unverified on codex and on every harness not listed here; rerun the guard on a trusted checkout to refresh them.
+
 OpenCode needed `FM_SEND_INBOX_LIVE_TIMEOUT=560` because its configured model was still mid-turn at the default 240 seconds.
 Pi 0.87.1 was installed but not verified: its configured model returned an account error (`The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account`) before it read the inbox.
 

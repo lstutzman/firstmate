@@ -496,7 +496,7 @@ FM_HOME=<primary-home> bin/fm-send.sh fm-<id> '<request>'
 ```
 
 The [`fm-send.sh` header](../bin/fm-send.sh) owns the exact delivery-status contract.
-A routed request is delivered as a durable record in the remote home's steering inbox plus a best-effort doorbell, a constant line rung into the terminal.
+A routed request is delivered as a durable record in the remote home's steering inbox plus a best-effort doorbell, a constant pointer line rung into the terminal (a remote steer is always marked, so never inline).
 It is never delivered by typing the payload into the pane.
 Exit 0 means the record durably exists.
 

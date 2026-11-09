@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Steer a task by durable record: write the message into the task's steering
-# inbox and ring a constant doorbell through its backend endpoint, best-effort.
+# inbox and ring a doorbell through its backend endpoint, best-effort.
 # Usage: fm-send.sh <target> [--resolve-key <key>]... [--fire-and-forget <delivery-id>] <text...>
 #        fm-send.sh --check-key <task-id> <key>   (prints open, closed, or unknown; sends nothing)
 # A text steer to a remote secondmate that names a path under this host's HOME
@@ -30,7 +30,10 @@
 # local task, or the remote home's host-local inbox reached through fm-on.sh
 # for a remote secondmate - and the endpoint receives only one short constant
 # self-describing doorbell, best-effort. Pane backends type its line plus Enter;
-# T3 Code starts one native turn. The durable record IS
+# T3 Code starts one native turn. A plain short steer (one line, at most 300
+# printable characters, no routing mark; bin/fm-task-inbox-lib.sh) is an inline
+# steer: its record is written already taken and the doorbell carries the body.
+# The durable record IS
 # the delivery, so the record's fate alone governs the exit: 0 = the steer is
 # durably sent (recorded); nonzero = nothing was confirmed delivered and a
 # resend is appropriate (unresolvable target, an endpoint that cannot be
@@ -1284,12 +1287,19 @@ else
       echo "error: steer not sent to $INBOX_TASK_ID: the task retired or changed endpoint during target resolution" >&2
       exit 1
     fi
+    # A plain short steer rides the doorbell itself and its record is written
+    # already taken (inline steer, bin/fm-task-inbox-lib.sh); fire-and-forget
+    # and everything else keep the pointer doorbell.
+    INBOX_INLINE=
+    if [ -z "$FIRE_AND_FORGET_ID" ] && fm_task_inbox_inline_eligible "$MESSAGE"; then
+      INBOX_INLINE=inline
+    fi
     if [ "${FM_SEND_IDEMPOTENT:-0}" = 1 ]; then
       INBOX_RECORD=$(fm_task_inbox_write_idempotent "$STATE" "$INBOX_TASK_ID" "$MESSAGE" \
         "${FIRE_AND_FORGET_ID:+fire-and-forget}") || inbox_write_rc=$?
     else
       INBOX_RECORD=$(fm_task_inbox_write "$STATE" "$INBOX_TASK_ID" "$MESSAGE" \
-        "${FIRE_AND_FORGET_ID:+fire-and-forget}") || inbox_write_rc=$?
+        "${FIRE_AND_FORGET_ID:+fire-and-forget}" "$INBOX_INLINE") || inbox_write_rc=$?
     fi
     if [ "${inbox_write_rc:-0}" -ne 0 ]; then
       fm_lock_release "$INBOX_META_LOCK"
@@ -1335,6 +1345,21 @@ else
     ring_rc=0
     fm_task_inbox_ring "$TARGET_BACKEND" "$T" "$INBOX_RECORD" "$EXPECTED_LABEL" || ring_rc=$?
     ring_retry="the watcher will re-ring"
+    if [ -n "$INBOX_INLINE" ] && [ "$ring_rc" -ne 0 ]; then
+      # An inline steer is already taken, so no ladder would re-ring it:
+      # hand a ring that did not land back to the ladder as a pointer record,
+      # and ring that pointer once now so the fallback is no slower than a
+      # pointer steer (a dead endpoint, ring 3, takes no second attempt).
+      inline_ring_rc=$ring_rc
+      if ! INBOX_RECORD=$(fm_task_inbox_untake "$INBOX_RECORD"); then
+        echo "error: inline steer to $INBOX_TASK_ID was recorded at $INBOX_RECORD but its doorbell did not land and the record could not be returned to the inbox; nothing was confirmed delivered, resend" >&2
+        exit 1
+      fi
+      if [ "$inline_ring_rc" -ne 3 ]; then
+        ring_rc=0
+        fm_task_inbox_ring "$TARGET_BACKEND" "$T" "$INBOX_RECORD" "$EXPECTED_LABEL" || ring_rc=$?
+      fi
+    fi
     if [ -n "$FIRE_AND_FORGET_ID" ] \
       && [ -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/wait-no-turns" ]; then
       case "$ring_rc" in

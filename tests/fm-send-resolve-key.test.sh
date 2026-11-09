@@ -136,9 +136,9 @@ test_answer_send_closes_open_decision() {
 
   run_send "$fb" "$home" "$log" t1 --resolve-key api-shape "go with REST"; rc=$?
   expect_code 0 "$rc" "an answer send with --resolve-key should succeed"
-  grep -qF "go with REST" "$home/state/t1.inbox/001.msg" \
+  grep -qF "go with REST" "$(fm_inbox_record "$home/state/t1.inbox" 001)" \
     || fail "the answer text should reach the worker's durable inbox record"
-  assert_contains "$(cat "$log")" "Firstmate instruction waiting" "the doorbell should be rung for the answer"
+  assert_contains "$(cat "$log")" "Firstmate inline steer" "the doorbell should be rung for the answer"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t1.status" | grep -qF 'resolved [key=api-shape]: answered: go with REST' \
     || fail "fm-send did not append the closing resolved line:"$'\n'"$(cat "$home/state/t1.status")"
   # The drain folded the worker's `working:` line but never listed it, so the
@@ -160,6 +160,28 @@ test_answer_send_closes_open_decision() {
 # session that wrote it, while any other writer's later line on the same task
 # still must. Both directions are read through the production seen-signature
 # gate the watcher's signal scan consumes (bin/fm-wake-lib.sh).
+# --resolve-key behaves the same whether the answer rides inline (the case
+# above) or keeps the pointer doorbell (a multi-line answer): the answer is
+# recorded, the doorbell rung, and the decision closed at enqueue.
+test_pointer_answer_send_closes_open_decision() {
+  local dir fb log home rc
+  dir="$TMP_ROOT/closes-pointer"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home closes-pointer)
+  fm_write_meta "$home/state/t1.meta" "window=sess:fm-t1" "kind=ship"
+  printf 'needs-decision [key=api-shape]: pick REST or RPC\n' > "$home/state/t1.status"
+
+  run_send "$fb" "$home" "$log" t1 --resolve-key api-shape $'go with REST\nkeep the old paths'; rc=$?
+  expect_code 0 "$rc" "a multi-line answer with --resolve-key should succeed"
+  [ -f "$home/state/t1.inbox/001.msg" ] || fail "a multi-line answer should stay an unhandled pointer record"
+  grep -qF "keep the old paths" "$home/state/t1.inbox/001.msg" \
+    || fail "the answer text should reach the worker's durable inbox record"
+  assert_contains "$(cat "$log")" "Firstmate instruction waiting" "the pointer doorbell should be rung for the answer"
+  sed -E 's/ \[at=[0-9]+\]//' "$home/state/t1.status" | grep -qF 'resolved [key=api-shape]: answered: go with REST' \
+    || fail "fm-send did not append the closing resolved line for a pointer answer:"$'\n'"$(cat "$home/state/t1.status")"
+  pass "fm-send --resolve-key: a pointer-doorbell answer closes the decision exactly as an inline one does"
+}
+
 test_answer_close_is_self_announced() {
   local dir fb log home rc
   dir="$TMP_ROOT/self-announced"; mkdir -p "$dir"
@@ -321,7 +343,7 @@ test_routine_steer_never_closes() {
   printf 'done: task complete\nnote: cleanup complete\n' >> "$home/state/t3.status"
   run_send "$fb" "$home" "$log" t3 --resolve-key schema "answer to a stale decision" > "$dir/terminal.out" 2> "$dir/terminal.err"; rc=$?
   expect_code 1 "$rc" "an answer to a terminally superseded decision must refuse"
-  [ ! -e "$home/state/t3.inbox/002.msg" ] || fail "a stale decision answer was delivered"
+  [ ! -e "$(fm_inbox_record "$home/state/t3.inbox" 002)" ] || fail "a stale decision answer was delivered"
   pass "fm-send preserves decisions through routine work and refuses superseded terminal decisions"
 }
 
@@ -476,7 +498,7 @@ test_failed_ring_still_closes_at_enqueue() {
     FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
     "$SEND" t5 --resolve-key creds "token is in the vault now" >/dev/null 2>&1; rc=$?
   expect_code 0 "$rc" "a failed doorbell must not fail the durably enqueued answer"
-  grep -qF 'token is in the vault now' "$home/state/t5.inbox/001.msg" \
+  grep -qF 'token is in the vault now' "$(fm_inbox_record "$home/state/t5.inbox" 001)" \
     || fail "the answer must be durably recorded despite the failed ring"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t5.status" | grep -qF 'resolved [key=creds]: answered: token is in the vault now' \
     || fail "the enqueued answer must close the decision at answer time: $(cat "$home/state/t5.status")"
@@ -579,7 +601,7 @@ test_local_secondmate_answer_marked_and_closed() {
   run_send "$fb" "$home" "$log" fm-domain --resolve-key fleet-split "shard by team"; rc=$?
   expect_code 0 "$rc" "a secondmate answer send should succeed"
   got=$(bash -c '. "$1"; fm_task_inbox_body "$2"' _ "$ROOT/bin/fm-task-inbox-lib.sh" \
-    "$home/state/domain.inbox/001.msg")
+    "$(fm_inbox_record "$home/state/domain.inbox" 001)")
   case "$got" in
     "$FM_FROMFIRST_MARK"corr=*) : ;;
     *) fail "the secondmate answer's record lost its from-firstmate marker/corr framing: $got" ;;
@@ -1024,7 +1046,7 @@ test_decision_answer_partition_relocates_under_the_record() {
   expect_code 0 "$rc" "an attended branch resolving a blocker is ordinary steering"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t1.status" | grep -qF 'resolved [key=token]: answered: refreshed the token; resume' \
     || fail "the branch's blocker answer did not close the key:"$'\n'"$(cat "$home/state/t1.status")"
-  grep -qF "refreshed the token; resume" "$home/state/t1.inbox/001.msg" \
+  grep -qF "refreshed the token; resume" "$(fm_inbox_record "$home/state/t1.inbox" 001)" \
     || fail "the branch's blocker answer did not reach the worker's inbox"
 
   # Under the record: the same decision answer is sent and closes the key.
@@ -1035,7 +1057,7 @@ test_decision_answer_partition_relocates_under_the_record() {
   assert_contains "$out" "main is parked" "the relocation did not announce itself"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t1.status" | grep -qF 'resolved [key=api-shape]: answered: go with REST' \
     || fail "the relocated answer did not close the decision:"$'\n'"$(cat "$home/state/t1.status")"
-  grep -qF "go with REST" "$home/state/t1.inbox/002.msg" \
+  grep -qF "go with REST" "$(fm_inbox_record "$home/state/t1.inbox" 002)" \
     || fail "the relocated answer did not reach the worker's inbox"
   out=$(drain_out "$home")
   if printf '%s' "$out" | grep -F '[key=api-shape]' >/dev/null; then
@@ -1081,7 +1103,7 @@ test_listed_key_closes_a_trailing_token_blocker() {
   run_send "$fb" "$home" "$log" t10 --resolve-key "$key" "restart the run"; rc=$?
   expect_code 0 "$rc" \
     "the key the listing showed ('$key') must close the entry the listing showed it for"
-  grep -qF "restart the run" "$home/state/t10.inbox/001.msg" \
+  grep -qF "restart the run" "$(fm_inbox_record "$home/state/t10.inbox" 001)" \
     || fail "the answer never reached the worker's durable inbox record"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t10.status" | grep -F "resolved [key=$key]: answered: restart the run" >/dev/null \
     || fail "the closing resolved line is missing:"$'\n'"$(cat "$home/state/t10.status")"
@@ -1130,10 +1152,10 @@ second line"
     FM_ROOT_OVERRIDE="$home" FM_HOME="$home" FM_SEND_LOG="$log" FM_SEND_SETTLE=0 \
     bash -c "$resend" >/dev/null 2>&1 \
     || fail "the resend command the refusal printed does not run: $resend"
-  grep -qF "don't restart it; \$RUN is still live" "$home/state/t11.inbox/001.msg" \
-    || fail "the preserved message lost bytes on resend: $(cat "$home/state/t11.inbox/001.msg")"
-  grep -qF 'second line' "$home/state/t11.inbox/001.msg" \
-    || fail "the preserved message lost its second line: $(cat "$home/state/t11.inbox/001.msg")"
+  grep -qF "don't restart it; \$RUN is still live" "$(fm_inbox_record "$home/state/t11.inbox" 001)" \
+    || fail "the preserved message lost bytes on resend: $(cat "$(fm_inbox_record "$home/state/t11.inbox" 001)")"
+  grep -qF 'second line' "$(fm_inbox_record "$home/state/t11.inbox" 001)" \
+    || fail "the preserved message lost its second line: $(cat "$(fm_inbox_record "$home/state/t11.inbox" 001)")"
   if grep -F 'resolved' "$home/state/t11.status" >/dev/null; then
     fail "the plain resend closed a decision it was never asked to close: $(cat "$home/state/t11.status")"
   fi
@@ -1222,7 +1244,7 @@ test_refusal_resend_carries_its_own_routing_context() {
   ( cd / && env -u FM_HOME -u FM_STATE_OVERRIDE PATH="$fb:$PATH" \
       FM_SEND_LOG="$log" FM_SEND_SETTLE=0 bash -c "$resend" ) >/dev/null 2>"$dir/resend.err" \
     || fail "the printed resend does not run outside its original context: $resend"$'\n'"$(cat "$dir/resend.err")"
-  grep -qF "$msg" "$home/state/t12.inbox/001.msg" \
+  grep -qF "$msg" "$(fm_inbox_record "$home/state/t12.inbox" 001)" \
     || fail "the resend did not deliver the preserved message to the intended home"
 
   # An explicit FM_STATE_OVERRIDE is part of that routing too: without it the
@@ -1241,7 +1263,7 @@ test_refusal_resend_carries_its_own_routing_context() {
   ( cd / && env -u FM_HOME -u FM_STATE_OVERRIDE PATH="$fb:$PATH" \
       FM_SEND_LOG="$log" FM_SEND_SETTLE=0 bash -c "$resend" ) >/dev/null 2>&1 \
     || fail "the printed resend dropped the state override: $resend"
-  grep -qF "$msg" "$state/t13.inbox/001.msg" \
+  grep -qF "$msg" "$(fm_inbox_record "$state/t13.inbox" 001)" \
     || fail "the resend delivered outside the state directory the caller was using"
   [ ! -d "$home/state/t13.inbox" ] \
     || fail "the resend answered the wrong ledger: it fell back to <home>/state"
@@ -1289,7 +1311,7 @@ refusal_keyed_resend_case() { # <name> <expected keyed args> <resolve-key>...
   ( cd / && env -u FM_HOME -u FM_STATE_OVERRIDE PATH="$fb:$PATH" \
       FM_SEND_LOG="$log" FM_SEND_SETTLE=0 bash -c "$keyed" ) >/dev/null 2>"$dir/keyed.err" \
     || fail "$name: the corrected keyed resend failed: $keyed"$'\n'"$(cat "$dir/keyed.err")"
-  grep -qF "$msg" "$home/state/t15.inbox/001.msg" \
+  grep -qF "$msg" "$(fm_inbox_record "$home/state/t15.inbox" 001)" \
     || fail "$name: the corrected resend did not deliver the preserved message"
   if drain_out "$home" | grep -F 'OPEN DECISIONS' >/dev/null; then
     fail "$name: the corrected resend left a decision open: $(drain_out "$home")"
@@ -1307,6 +1329,7 @@ test_refusal_keyed_resend_keeps_the_accepted_keys() {
 }
 
 test_answer_send_closes_open_decision
+test_pointer_answer_send_closes_open_decision
 test_answer_close_is_self_announced
 test_separate_resolve_key_answers_do_not_rewake
 test_listed_key_closes_a_trailing_token_blocker

@@ -789,13 +789,13 @@ test_peek_send_and_crew_state_route_through_orca_meta() {
     "peek/crew-state did not read the recorded Orca terminal"
   assert_not_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''read'$'\x1f''--terminal'$'\x1f'"fm-$id" \
     "crew-state should not read the stable Orca alias as a terminal handle"
-  record="$state/$id.inbox/001.msg"
+  record=$(fm_inbox_record "$state/$id.inbox" 001)
   [ -f "$record" ] || fail "send did not enqueue through the task inbox"
   body=$(bash -c '. "$1"; fm_task_inbox_body "$2"' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$record")
   [ "$body" = "hello orca" ] || fail "Orca task inbox did not preserve the send body, got '$body'"
   assert_not_contains "$(cat "$LOG")" $'--text\x1fhello orca\x1f' \
     "send typed the payload instead of recording it"
-  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''send'$'\x1f''--terminal'$'\x1f''term-io'$'\x1f''--text'$'\x1f'': Firstmate instruction waiting:' \
+  assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''send'$'\x1f''--terminal'$'\x1f''term-io'$'\x1f''--text'$'\x1f'": 'Firstmate inline steer" \
     "send did not ring the inbox doorbell through the recorded Orca terminal"
   assert_contains "$(cat "$LOG")" $'orca\x1f''terminal'$'\x1f''send'$'\x1f''--terminal'$'\x1f''term-io'$'\x1f''--text'$'\x1f\x1f''--enter'$'\x1f''--json' \
     "send did not submit the doorbell through the recorded Orca terminal"

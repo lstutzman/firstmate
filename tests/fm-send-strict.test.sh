@@ -102,10 +102,10 @@ test_exact_lane_id_send_still_works() {
     "$SEND" mpf-lane-m8 "lost dispatch" >/dev/null 2>"$err"; rc=$?
   expect_code 0 "$rc" "exact task id send should succeed when metadata exists"
   got=$(cat "$log")
-  assert_contains "$got" "target=sess:fm-mpf-lane-m8 literal=1 arg=: Firstmate instruction waiting" \
+  assert_contains "$got" "target=sess:fm-mpf-lane-m8 literal=1 arg=: 'Firstmate inline steer" \
     "exact id should ring the doorbell at the meta target"
   assert_contains "$got" "target=sess:fm-mpf-lane-m8 literal=0 arg=Enter" "exact id should submit the doorbell with Enter"
-  grep -qF 'lost dispatch' "$home/state/mpf-lane-m8.inbox/001.msg" \
+  grep -qF 'lost dispatch' "$(fm_inbox_record "$home/state/mpf-lane-m8.inbox" 001)" \
     || fail "exact id should record the steer in the task inbox"
   pass "fm-send strict: exact task/lane ids resolve through home metadata"
 }
@@ -210,10 +210,10 @@ test_healthy_fm_id_send_still_works() {
     "$SEND" fm-lane-ok "hello captain" >/dev/null 2>"$err"; rc=$?
   expect_code 0 "$rc" "healthy fm-id send should succeed"
   got=$(cat "$log")
-  assert_contains "$got" "target=sess:fm-lane-ok literal=1 arg=: Firstmate instruction waiting" \
+  assert_contains "$got" "target=sess:fm-lane-ok literal=1 arg=: 'Firstmate inline steer" \
     "healthy send should ring the doorbell at the meta target"
   assert_contains "$got" "target=sess:fm-lane-ok literal=0 arg=Enter" "healthy send should submit the doorbell with Enter"
-  grep -qF 'hello captain' "$home/state/lane-ok.inbox/001.msg" \
+  grep -qF 'hello captain' "$(fm_inbox_record "$home/state/lane-ok.inbox" 001)" \
     || fail "healthy send should record the steer in the task inbox"
   assert_contains "$(cat "$err")" "requested message WILL still be sent" "fm-send guard banner should keep send-specific continuation wording"
   pass "fm-send strict: healthy fm-<id> sends record the steer and ring once"
