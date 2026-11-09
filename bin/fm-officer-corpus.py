@@ -513,7 +513,9 @@ def file_findings(lib, off, todo, args, date, out, ledger, found, jev, lin):
     filer = lib.Filer(off, lin, args.team, date, out, ledger, found, jev, args.max_creates)
     bundles = lib.Bundles(filer, args.bundle_cap, area=lambda f: f["item"]["class"])
     for f in todo:
-        f["bundle"] = {"family": "corpus check", "area": None}
+        repo, gate = CLASSES[f["item"]["class"]][:2]
+        f["bundle"] = {"family": "corpus check", "area": None, "line": "repository: %s%s" % (
+            repo, "; scan gate: the fix may touch the scan gate files, so its pull request goes to Slarti" if gate else "")}
 
     def labels_for(names):
         return lambda f: lib.fleet_labels(SOURCE_LABEL, names, TYPE_LABEL)
