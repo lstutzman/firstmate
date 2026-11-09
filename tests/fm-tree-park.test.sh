@@ -291,7 +291,8 @@ make_codex_lab() {
   local name=$1 last=$2 dir wt day
   dir=$(make_lab "$name")
   wt="$dir/pool/1/project"
-  sed -i.bak 's/^harness=claude$/harness=codex/' "$dir/home/state/$ID.meta"
+  sed -i.bak -e 's/^harness=claude$/harness=codex/' \
+    -e "s/^spawn_gen=.*/spawn_gen=s$(( $(date +%s) - 60 )).1.1/" "$dir/home/state/$ID.meta"
   rm -f "$dir/home/state/$ID.busy-state" "$dir/home/state/$ID.busy-gen" "$dir/home/state/$ID.meta.bak"
   day="$dir/codex-home/sessions/2026/11/09"
   mkdir -p "$day"

@@ -1113,11 +1113,14 @@ fm_busy_gemini_launch_prompt_tail() {
 #
 # Binding is the exact recorded worktree= against the session cwd, so a nested
 # or sibling directory never binds. A reused pool slot can hold earlier tasks'
-# rollouts; the verdict needs EVERY rollout bound to the worktree to end on a
-# task_complete, so a stale unfinished rollout holds the answer at unknown and
-# can never produce a false idle. Only the most recently modified bound rollout
-# can read busy: an older one left on task_started by a dead or stopped session
-# holds unknown instead. Lifecycle records are matched on the exact top-level
+# rollouts, so only rollouts of the current launch count: a bound rollout whose
+# mtime is at or after the launch epoch in the meta's spawn_gen=s<epoch>.<...>
+# (renewed by every spawn and relaunch), less a 120s clock margin. Older ones,
+# even if interrupted mid-turn, are ignored; a meta without a parsable
+# spawn_gen reads none. The verdict needs EVERY counted rollout to end on a
+# task_complete, so an unfinished one holds the answer at unknown and can never
+# produce a false idle. Only the most recently modified counted rollout can
+# read busy. Lifecycle records are matched on the exact top-level
 # shape of a line, so a turn whose text mentions task_complete cannot close it
 # (a string inside JSON cannot contain a raw newline or a bare quote). An
 # interrupted turn is not known to write a close record, so it stays busy until
@@ -1126,10 +1129,19 @@ fm_busy_gemini_launch_prompt_tail() {
 # Prints busy | settled | none.
 fm_busy_codex_rollout_state() {  # <state-dir> <id>
   local meta="$1/$2.meta" wt real root f cwd last newest='' newest_last='' found=0 open=0
+  local gen since mtime stat_fmt
   [ -f "$meta" ] || { printf none; return 0; }
   command -v jq >/dev/null 2>&1 || { printf none; return 0; }
   [ "$(LC_ALL=C awk -F= '$1 == "kind" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$meta")" != secondmate ] \
     || { printf none; return 0; }
+  gen=$(LC_ALL=C awk -F= '$1 == "spawn_gen" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$meta")
+  case "$gen" in
+    s[0-9]*.*) since=${gen#s}; since=${since%%.*} ;;
+    *) printf none; return 0 ;;
+  esac
+  case "$since" in ''|*[!0-9]*) printf none; return 0 ;; esac
+  since=$((since - 120))
+  if [ "$(uname)" = Darwin ]; then stat_fmt=bsd; else stat_fmt=gnu; fi
   wt=$(LC_ALL=C awk -F= '$1 == "worktree" { sub(/^[^=]*=/, ""); v = $0 } END { print v }' "$meta")
   [ -n "$wt" ] && [ -d "$wt" ] || { printf none; return 0; }
   real=$(cd "$wt" 2>/dev/null && pwd -P) || real=$wt
@@ -1139,6 +1151,11 @@ fm_busy_codex_rollout_state() {  # <state-dir> <id>
     cwd=$(head -n 1 "$f" 2>/dev/null | LC_ALL=C jq -r 'select(.type? == "session_meta") | .payload.cwd? // empty' 2>/dev/null) || continue
     [ -n "$cwd" ] || continue
     [ "$cwd" = "$wt" ] || [ "$cwd" = "$real" ] || continue
+    if [ "$stat_fmt" = bsd ]; then mtime=$(/usr/bin/stat -f %m "$f" 2>/dev/null)
+    else mtime=$(stat -c %Y "$f" 2>/dev/null)
+    fi
+    case "$mtime" in ''|*[!0-9]*) open=1; continue ;; esac
+    [ "$mtime" -ge "$since" ] || continue
     found=$((found + 1))
     last=$(LC_ALL=C grep -aE '^\{"timestamp":"[^"]*",("ordinal":[0-9]+,)?"type":"event_msg","payload":\{"type":"task_(started|complete)"' "$f" 2>/dev/null \
       | tail -n 1 | LC_ALL=C sed -n 's/.*"payload":{"type":"\(task_[a-z]*\)".*/\1/p')
