@@ -1,0 +1,33 @@
+ok - fm-officer-surgeon fold: a dry run lists each area bundle's findings and items, keeps the promotion blocker single and writes nothing
+ok - fm-officer-surgeon fold --apply: each original is related as a duplicate of its area bundle and marked Duplicate
+ok - fm-officer-surgeon fold --apply: an item is folded only when every one of its findings is on a written bundle
+ok - fm-officer-linear: a finding folded off its old item keeps that item's found count and keeps raising it
+ok - fm-officer-linear: a bundle whose update failed is rewritten by a rerun the same day
+ok - fm-officer-linear: a bundle starts once, and a reserved line on it holds the whole bundle for Lee
+ok - fm-officer-linear: a new finding is appended to its area's open bundle, the cap opens part 2, and a resolved one is ticked
+ok - fm-officer-linear: findings are grouped by feature area first, then by file within the area
+ok - fm-officer-linear: a finding the officer keeps single is filed alone, never bundled
+ok - fm-officer-linear: a closed bundle is never reopened and a started one takes no new line
+ok - fm-officer-linear: a finding back after its bundle closed recurs into the open bundle, or with recurrence off stays closed
+ok - fm-officer-linear: a lane that lost its bundle state adopts the open item by exact title and keeps its lines
+ok - fm-officer-linear: a Duplicate item is closed for every lookup and ledger check
+ok - fm-officer-linear: an exact fingerprint and a local-jev match above 0.85 are duplicates, a lower near match is filed new and noted
+ok - fm-officer-linear: a duplicate raises the one Found line in place and comments once a day
+ok - fm-officer-linear: severity weight x log2(1 + found) orders findings
+ok - fm-officer-linear: the create cap and the call budget leave a named overflow
+ok - fm-officer-linear: a reserved class is one keyed needs-decision and never starts; a rubric only narrows
+ok - fm-officer-linear: a fleet finding goes to the Fleet project with area:fleet, dry-run then verify
+ok - fm-officer-linear: Fleet and fleet-repository findings and their patterns go to the Quartermaster; PropertyCompass2 work keeps the Navigator
+ok - fm-officer-linear: with --writes none a fleet officer's patterns still go to the Quartermaster
+ok - fm-officer-linear: the Surgeon bundles fleet findings apart, in the Fleet project with area:fleet
+ok - fm-officer-linear: a closed item is never reopened or edited; a recurrence names it
+ok - fm-officer-linear: with bump_closed a closed item is bumped, never reopened, replaced or started
+ok - fm-officer-linear: a failed --verify write is found again by data.issue.identifier or exact title, never recorded failed
+ok - fm-officer-linear: a create that mismatches and whose title full-text search misses is adopted, then updated, never recreated
+ok - fm-officer-linear: a create the tool wrote twice is adopted once and not recorded failed
+ok - fm-officer-linear: mismatched creates count against max-creates
+ok - fm-officer-linear: a failed write is retried next run; the rate-limit path is unchanged
+ok - fm-officer-linear: a cluster reuses the oldest open item of exactly its title
+ok - fm-officer-linear: a mismatching bundle update counts as written; one with no JSON is failed
+ok - fm-officer-linear: a PropertyCompass2 bundle never reuses a same-title Fleet item
+ok - fm-officer-linear: only search, view, create, update (the Found line), comment and relation are ever called

@@ -1,0 +1,12 @@
+ok - fm-officer library: each audit finding lands in one bucket
+ok - fm-officer library: a finding is reported once and reruns are identical
+ok - fm-officer library: an on-hold item is reported when it moves to a counted bucket
+ok - fm-officer library: an unreadable audit leaves the reported-once ledger alone
+ok - fm-officer library: missing and old audit runs are coverage gaps
+ok - fm-officer library: a run writes only its lane
+ok - fm-officer library: findings are filed in Chore bundles, capped per audit run, and each finding's found count rises once per audit run
+ok - fm-officer library: a rate limit after a create still counts that create against the per-audit-run cap
+ok - fm-officer library: max-creates above 3 is held to the fleet rules cap
+ok - fm-officer library: a safe finding starts, a reserved class holds, and needs-Lee items hold
+ok - fm-officer library: a start request is addressed to the office that owns the repository
+ok - fm-officer library: writes: none and a missing label file and start nothing
