@@ -110,7 +110,7 @@ LABEL_QUERY = ("query($team:String!,$after:String,$names:[String!]){issues(first
                "labels:{some:{name:{in:$names}}}}){nodes{identifier labels(first:50){nodes{name}}}"
                "pageInfo{hasNextPage endCursor}}}")
 UNSTARTED = {"backlog", "todo", "to do", "queued", "unstarted"}
-FINISHED = {"done", "completed", "canceled", "cancelled", "duplicate"}
+FINISHED = {"done", "released", "completed", "canceled", "cancelled", "duplicate"}
 OPEN_STATES = ("triage", "backlog", "unstarted", "started")
 BLOCKABLE_STATES = ("backlog", "unstarted")
 TRUNCATED = "\n... (truncated, "

@@ -52,12 +52,16 @@ write_facts() {  # <file>
    "linear_ids": ["PC-13"], "linear_state": {"PC-13": "Done"}, "landed_via": "lone"},
   "lstutzman/PropertyCompass2#110": {"repo": "lstutzman/PropertyCompass2", "pr": 110, "head_sha": "h110", "merged_sha": "m110", "merged_at": "2026-10-18T11:00:00Z",
    "on_staging": true, "staging_deployed": true, "on_main": true, "main_promoted_at": "2026-10-18T15:00:00Z", "in_production": true, "production_release": "v1.70.1",
-   "linear_ids": ["PC-14"], "linear_state": {}, "landed_via": "lone"}
+   "linear_ids": ["PC-14"], "linear_state": {}, "landed_via": "lone"},
+  "lstutzman/PropertyCompass2#111": {"repo": "lstutzman/PropertyCompass2", "pr": 111, "head_sha": "h111", "merged_sha": "m111", "merged_at": "2026-10-22T11:00:00Z",
+   "on_staging": true, "staging_deployed": true, "on_main": false, "main_promoted_at": null, "in_production": false, "production_release": null,
+   "linear_ids": ["PC-15"], "linear_state": {"PC-15": "Released"}, "landed_via": "lone"}
  },
  "items": {"PC-1": ["lstutzman/PropertyCompass2#101"], "PC-2": ["lstutzman/PropertyCompass2#102"], "PC-3": ["lstutzman/PropertyCompass2#103"],
   "PC-4": ["lstutzman/PropertyCompass2#104"], "PC-5": ["lstutzman/PropertyCompass2#105"], "PC-7": ["lstutzman/PropertyCompass2#106"],
   "PC-10": ["lstutzman/PropertyCompass2#107"], "PC-11": ["lstutzman/PropertyCompass2#107"],
-  "PC-12": ["lstutzman/PropertyCompass2#108"], "PC-13": ["lstutzman/PropertyCompass2#109"], "PC-14": ["lstutzman/PropertyCompass2#110"]}}
+  "PC-12": ["lstutzman/PropertyCompass2#108"], "PC-13": ["lstutzman/PropertyCompass2#109"], "PC-14": ["lstutzman/PropertyCompass2#110"],
+  "PC-15": ["lstutzman/PropertyCompass2#111"]}}
 JSON
 }
 
@@ -128,6 +132,8 @@ test_classes_from_facts() {
   assert_equals "" "$(finding "$json" PC-4)" "Done and in production is consistent"
   assert_equals "" "$(finding "$json" PC-10)" "a PR's state for one of its ids is read for that id"
   assert_equals B1 "$(finding "$json" PC-11)" "the same PR's other id keeps its own state"
+  assert_equals "" "$(finding "$json" PC-15)" "a Released item is finished: no finding even with a PR facts show off main"
+  assert_equals null "$(jq -r '.items[] | select(.item == "PC-15") | .correction' "$json")" "a Released item is never reopened or closed"
   assert_equals A1 "$(finding "$json" PC-12)" "Done with no linked PR merged is false done"
   assert_equals null "$(jq -r '.items[] | select(.item == "PC-12") | .correction' "$json")" "an unmerged Done item is left to a person"
   assert_equals A1 "$(finding "$json" PC-13)" "Done with unknown production status is reported"
@@ -169,6 +175,7 @@ test_closes_only_fully_landed_items_with_evidence() {
   assert_equals 2026-10-23T23:40:00Z "$(jq -r '.writes_done[] | select(.item == "PC-1") | .record.facts_generated_at' "$json")" "the close log names the facts run"
   assert_no_grep "update PC-3" "$LINEAR_LOG" "In Staging is never written"
   assert_no_grep "In Staging --" "$LINEAR_LOG" "no update ever sets In Staging"
+  assert_no_grep "PC-15" "$LINEAR_LOG" "a Released item is never read or written in Linear"
   assert_no_grep "update PC-9" "$LINEAR_LOG" "a Done item no fact names is left to a person"
   assert_no_grep "update PC-4" "$LINEAR_LOG" "a consistent item is left alone"
   assert_no_grep "update PC-13" "$LINEAR_LOG" "an item with unknown production status is never written"
@@ -285,14 +292,25 @@ test_registry_refuses_in_staging_as_reopen_state() {
   make_world staging; home=$WORLD_HOME
   sed -i.bak "s/; model: none/; reopen-state: In Staging; model: none/" "$home/data/officers.md"
   out=$(run_landing "$home" 2>&1) && fail "a reopen-state of In Staging must be refused"
-  assert_contains "$out" "may not be In Staging" "the refusal names the rule"
-  assert_contains "$(FM_HOME="$home" "$OFFICER" ensure)" "OFFICER: officer landing: reopen-state may not be In Staging" "ensure reports it"
+  assert_contains "$out" "may not be In Staging, Done or Released" "the refusal names the rule"
+  assert_contains "$(FM_HOME="$home" "$OFFICER" ensure)" "OFFICER: officer landing: reopen-state may not be In Staging, Done or Released" "ensure reports it"
   assert_absent "$LINEAR_LOG" "nothing reaches Linear"
   pass "fm-officer landing: In Staging is refused as a reopen state before any Linear call"
 }
 
+test_registry_refuses_released_as_reopen_state() {
+  local home out
+  make_world released; home=$WORLD_HOME
+  sed -i.bak "s/; model: none/; reopen-state: Released; model: none/" "$home/data/officers.md"
+  out=$(run_landing "$home" 2>&1) && fail "a reopen-state of Released must be refused"
+  assert_contains "$out" "may not be In Staging, Done or Released" "the refusal names the rule"
+  assert_absent "$LINEAR_LOG" "nothing reaches Linear"
+  pass "fm-officer landing: Released is refused as a reopen state before any Linear call"
+}
+
 test_classes_from_facts
 test_registry_refuses_in_staging_as_reopen_state
+test_registry_refuses_released_as_reopen_state
 test_linear_failure_fails_the_run_with_its_reason
 test_run_writes_only_its_lane
 test_no_linear_writes_by_default

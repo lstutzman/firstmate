@@ -43,10 +43,12 @@ routine Done writer; this officer only corrects what it misses. With
 
   close   an item not Done whose every linked PR is merged and in production,
           and that has no sub-issues, moves to Done;
+  (Released, Linear's "Live in Production" status, is finished and written only
+  by the release path: this officer never closes, reopens or raises it.)
   reopen  a Done item that a landing fact names, with a linked PR merged that
           never reached main (on_main false) or any release, moves to
-          --reopen-state (In Progress by default; In Staging and Done are
-          refused). A Done item whose PR is on main but not yet in production
+          --reopen-state (In Progress by default; In Staging, Done and Released
+          are refused). A Done item whose PR is on main but not yet in production
           is release lag: it is reported, never written.
 
 No Linear write is made when the facts name no production_sha or their
@@ -79,7 +81,7 @@ import time
 FACT_FIELDS = ("repo", "pr", "merged_sha", "merged_at", "on_staging", "staging_deployed",
                "on_main", "main_promoted_at", "in_production", "production_release", "landed_via")
 NOT_STARTED = {"Triage", "Backlog", "Todo", "In Progress"}
-CLOSED = {"Done", "Canceled", "Cancelled", "Duplicate"}
+CLOSED = {"Done", "Released", "Canceled", "Cancelled", "Duplicate"}
 VIEWS_PER_CORRECTION = 5
 TOP_KEYS = {"schema_version", "generated_at", "staging_sha", "production_sha", "records", "items"}
 
@@ -180,6 +182,8 @@ def judge(doc, done_listed, reopen_state="In Progress"):
         if state is None and len(states) > 1:
             findings.append({"class": "conflict", "item": item, "severity": "medium",
                              "summary": "landing facts disagree on its Linear state: %s" % ", ".join(states)})
+        elif state == "Released":
+            pass  # live in production, written only by the release path: never reopened, closed or re-stated
         elif state == "Done":
             never = [p for p in merged if p.get("on_main") is False and p.get("production_release") is None]
             lag = [p for p in merged if p not in never and p.get("in_production") is False]
@@ -364,8 +368,8 @@ def main(argv):
     parser.add_argument("--max-facts-age", type=int, default=36)
     parser.add_argument("--now", type=int)
     args = parser.parse_args(argv)
-    if args.reopen_state in ("In Staging", "Done"):
-        parser.error("--reopen-state may not be In Staging or Done")
+    if args.reopen_state in ("In Staging", "Done", "Released"):
+        parser.error("--reopen-state may not be In Staging, Done or Released")
     try:
         facts = load_facts(args.facts)
         done_listed = done_items(args.team, args.done_window) if args.done_window > 0 else []

@@ -1086,11 +1086,14 @@ spec = [
  ('PC-21', 'Implement pricing child', 'Todo', 'PC-13', 1),
  ('PC-22', 'Old finished work', 'Done', None, 1),
  ('PC-23', 'Implement the leaf screen', 'Todo', 'PC-13', 1),
+ ('PC-24', 'Bug: shipped and released', 'Released', None, 1),
 ]
 listed = []
 for ident, title, state, parent, priority in spec:
     doc = {'identifier':ident, 'title':title, 'state':state, 'priority':priority,
            'stateType': 'started' if state == 'In Progress' else 'completed' if state == 'Done' else 'unstarted'}
+    if state == 'Released':
+        del doc['stateType']  # no stateType: the state name alone must read as finished
     listed.append(doc)
     json.dump({'ok':True,'data':{'issue':dict(doc, parent=parent + ' Parent title' if parent else None,
                                               description='')}},
@@ -1139,6 +1142,9 @@ PY
     "a descendant waits for its ancestor's open Lee ask"
   assert_equals 'null' "$(jq -r '.filler' "$file")" 'no filler while authorised work is ready'
   assert_not_contains "$(cat "$WORLD/calls")" 'issue view PC-22' 'finished issues outside a tree are never read one by one'
+  assert_not_contains "$(cat "$WORLD/calls")" 'issue view PC-24' 'a Released issue is finished like Done and never read one by one'
+  assert_equals '0' "$(jq '[.start_requests[], .doing[], .asks_for_lee[], .excluded[]] | map(select(.id == "PC-24")) | length' "$file")" \
+    'a Released issue is never started, doing, asked or excluded work'
   assert_contains "$(cat "$WORLD/calls")" 'issue view PC-11' 'finished ancestors are still read for lineage'
   assert_equals '' "$(jq -r '.done[].id' "$file")" 'Linear history does not fill done'
   assert_contains "$(cat "$WORLD_HOME/data/officers/progress/$DATE.md")" 'PC-12' 'ranked digest includes leaf'
