@@ -93,6 +93,19 @@
 # findings file and the capture directory its screenshot paths are relative to (bin/fm-officer-surgeon.py owns how
 # they are read: only a schema_version 2 file; visual-captures needs visual-findings).
 #
+# run-host: is an optional corpus and surgeon field, an ssh host name (and run-host-code: the host's firstmate
+# checkout, default fm-homes/<run-host> under its home). run then executes the role's pass on that host and
+# nowhere else: the lane (except runs.log, digest and the check records) goes there as a scratch copy, the host
+# runs the same role script from its own checkout (it must be at this code root's commit, else the attempt
+# fails "host code mismatch"), and the changed lane files and the pass's output come back and are written
+# into this lane under .run.lock, so runs.log, digest and the check records mean what they always meant.
+# The scheduler stays here: the host has no timer, check or registration. A host that cannot be reached
+# fails the attempt ("run host unreachable") and never falls back to a local run. Inputs on the host are read in
+# process there (a source named <run-host>:<path>); the home records the surgeon joins sessions to (each --home's
+# fleet ledger, task metas, status files and report presence) go over as a mirror, and everything else a pass
+# reads on this machine (a custom rubric, the visual review files) is refused for such a line. Absent run-host
+# the pass runs here exactly as before. __host-pass is the internal host side.
+#
 # Roles: triage (bin/fm-officer-triage.py), surgeon (bin/fm-officer-surgeon.py, the
 # triage pass plus Linear intake), landing
 # (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py),
@@ -177,7 +190,7 @@ EOF
 
 # line_problem <line>: prints why a registry line is unusable, or nothing.
 line_problem() {
-  local line=$1 id role cadence model consumer
+  local line=$1 id role cadence model consumer problem
   if ! [[ "$line" =~ $REGISTRY_LINE_RE ]]; then
     printf 'malformed registry line: %s\n' "$(printf '%s' "$line" | cut -c1-80)"
     return
@@ -199,6 +212,8 @@ line_problem() {
   model=$(line_field "$line" model || true)
   [ "$model" = none ] \
     || { printf 'officer %s: model "%s" is not available yet; slice 1 officers use model: none\n' "$id" "$model"; return; }
+  problem=$(run_host_problem "$line" "$id" "$role")
+  [ -z "$problem" ] || { printf '%s\n' "$problem"; return; }
   case "$role" in
     progress)
       [ -n "$(line_field "$line" repos || true)" ] \
@@ -251,6 +266,28 @@ line_problem() {
       esac
       ;;
   esac
+}
+
+# run_host_problem <line> <id> <role>: prints why a line's run-host: or run-host-code: is unusable, or nothing.
+run_host_problem() {
+  local line=$1 id=$2 role=$3 field
+  if line_field "$line" run-host-code >/dev/null && ! line_field "$line" run-host >/dev/null; then
+    printf 'officer %s: run-host-code needs run-host\n' "$id"; return
+  fi
+  line_field "$line" run-host >/dev/null || return 0
+  case "$role" in
+    corpus|surgeon) ;;
+    *) printf 'officer %s: run-host is supported on corpus and surgeon officers only; a %s pass reads files in this home\n' "$id" "$role"; return ;;
+  esac
+  [[ "$(line_field "$line" run-host)" =~ ^[A-Za-z0-9][A-Za-z0-9._@-]*$ ]] \
+    || { printf 'officer %s: run-host must be an ssh host name\n' "$id"; return; }
+  [[ "$(line_field "$line" run-host-code || echo fm-homes/x)" =~ ^[A-Za-z0-9._/@+-]+$ ]] \
+    || { printf 'officer %s: run-host-code must be a plain path on the host\n' "$id"; return; }
+  for field in rubric visual-findings visual-captures; do
+    if line_field "$line" "$field" >/dev/null; then
+      printf 'officer %s: %s names a file in this home, which a run-host pass cannot read\n' "$id" "$field"; return
+    fi
+  done
 }
 
 SURGEON_STAGING_REPO=git@github.com:lstutzman/PropertyCompass2.git
@@ -481,6 +518,97 @@ run_log() {  # <date> <ok|failed> <detail>
   printf '%s %s %s %s\n' "$(now_epoch)" "$1" "$2" "$3" >> "$OFFICER_LANE/runs.log"
 }
 
+# role_exec <script> <args...>: the role's python pass, here or on the officer's run-host.
+role_exec() {
+  local host
+  host=$(line_field "$OFFICER_LINE" run-host || true)
+  [ -n "$host" ] || { python3 -I "$SCRIPT_DIR/$1" "${@:2}"; return; }
+  remote_pass "$host" "$@"
+}
+
+# remote_pass <host> <script> <args...>: stage the lane and the home records, run the pass on the host,
+# and import the changed lane files. Prints the pass's stdout; a failure leaves the lane untouched.
+remote_pass() {
+  local stage rc
+  stage=$(mktemp -d "$OFFICER_LANE/.host-stage.XXXXXX") || { echo "cannot stage a run-host pass" >&2; return 1; }
+  remote_pass_in "$stage" "$@"
+  rc=$?
+  rm -rf -- "$stage"
+  return "$rc"
+}
+
+remote_pass_in() {  # <stage> <host> <script> <args...>
+  local stage=$1 host=$2 script=$3 root want have rc=0 i home f
+  local -a args=("${@:4}") ssh=(ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=30)
+  root=$(line_field "$OFFICER_LINE" run-host-code || echo "fm-homes/$host")
+  want=$(git -C "$FM_ROOT" rev-parse HEAD 2>/dev/null) || { echo "host code mismatch: this code root is not a git checkout" >&2; return 1; }
+  # shortcut: only the checkout's HEAD is compared, so an edited host checkout runs its edits; upgrade by hashing the tree.
+  have=$(fm_run_timed 60 "${ssh[@]}" "$host" "git -C $root rev-parse HEAD" </dev/null 2>/dev/null)
+  rc=$?
+  [ "$rc" -ne 255 ] && [ "$rc" -ne 124 ] || { echo "run host unreachable ($host)" >&2; return 1; }
+  [ "$have" = "$want" ] || { echo "host code mismatch ($host has ${have:0:8}, this home ${want:0:8}); update the host checkout" >&2; return 1; }
+  mkdir -p "$stage/in/lane" "$stage/out" || return 1
+  tar -C "$OFFICER_LANE" -cf - --exclude=.run.lock --exclude=.run.err --exclude='.host-stage.*' --exclude=runs.log \
+    --exclude=run-output.log --exclude=digest --exclude='check-record.*' --exclude=registered . | tar -C "$stage/in/lane" -xf - || return 1
+  for ((i = 0; i < ${#args[@]}; i++)); do
+    [ "${args[$i]}" = --out ] && args[i+1]=@LANE@
+    if [ "${args[$i]}" = --home ] && [ -d "${args[i+1]:-}" ]; then
+      home=${args[i+1]}
+      mkdir -p "$stage/in/mirror$home/state" || return 1
+      cp -p "$home"/state/fleet-ledger.jsonl "$home"/state/*.meta "$home"/state/*.status "$stage/in/mirror$home/state/" 2>/dev/null || true
+      for f in "$home"/data/*/report.md; do
+        [ -e "$f" ] || continue
+        mkdir -p "$stage/in/mirror${f%/report.md}" && : > "$stage/in/mirror$f"
+      done
+    fi
+  done
+  printf '%s\n' "$script" > "$stage/in/script"
+  printf '%s\0' "${args[@]}" > "$stage/in/args"
+  tar -C "$stage/in" -czf "$stage/in.tgz" . || return 1
+  fm_run_timed "${FM_OFFICER_RUN_TIMEOUT:-3600}" "${ssh[@]}" "$host" "bash $root/bin/fm-officer.sh __host-pass $host" \
+    < "$stage/in.tgz" > "$stage/out.tgz"
+  rc=$?
+  if fm_timed_out "$rc"; then echo "run host timed out ($host)" >&2; return "$rc"; fi
+  [ "$rc" -ne 255 ] || { echo "run host unreachable ($host)" >&2; return 1; }
+  [ "$rc" -eq 0 ] || return "$rc"
+  tar -C "$stage/out" -xzf "$stage/out.tgz" 2>/dev/null && [ -f "$stage/out/pass-out" ] \
+    || { echo "run host returned an unreadable result ($host)" >&2; return 1; }
+  while IFS= read -r f; do
+    cmp -s "$stage/out/lane/$f" "$OFFICER_LANE/$f" && continue
+    mkdir -p "$OFFICER_LANE/$(dirname "$f")" && cp -p "$stage/out/lane/$f" "$OFFICER_LANE/$f"
+  done <<EOF
+$(cd "$stage/out/lane" && find . -type f | sort)
+EOF
+  # A file the pass removed is removed here too.
+  while IFS= read -r f; do
+    [ -e "$stage/out/lane/$f" ] || rm -f -- "$OFFICER_LANE/$f"
+  done <<EOF
+$(cd "$stage/in/lane" && find . -type f | sort)
+EOF
+  cat "$stage/out/pass-out"
+}
+
+# action_host_pass <host>: the run-host side of remote_pass. Reads the staged tar on stdin, runs the role
+# script in a scratch copy of the lane, and writes the lane and the pass's stdout back as a tar.
+action_host_pass() {
+  local arg rc=0 script
+  local -a args=()
+  mkdir -p "$HOME/fm-scratch" || die "cannot create $HOME/fm-scratch"
+  HOST_SCRATCH=$(mktemp -d "$HOME/fm-scratch/officer-host.XXXXXX") || die "cannot create a scratch folder"
+  trap 'rm -rf -- "$HOST_SCRATCH"' EXIT
+  tar -C "$HOST_SCRATCH" -xzf - || die "cannot read the staged input"
+  script=$(cat "$HOST_SCRATCH/script")
+  case "$script" in fm-officer-corpus.py|fm-officer-surgeon.py) ;; *) die "run-host does not run $script" 2 ;; esac
+  while IFS= read -r -d '' arg; do
+    [ "$arg" = @LANE@ ] && arg=$HOST_SCRATCH/lane
+    args+=("$arg")
+  done < "$HOST_SCRATCH/args"
+  FM_OFFICER_ON_HOST=$1 FM_OFFICER_HOME_MIRROR=$HOST_SCRATCH/mirror \
+    python3 -I "$SCRIPT_DIR/$script" "${args[@]}" > "$HOST_SCRATCH/pass-out" || rc=$?
+  tar -C "$HOST_SCRATCH" -czf - lane pass-out
+  return "$rc"
+}
+
 # role_archive <script> <date> [args...]: a pass that reads the session
 # archive and every readable home: triage and friction.
 role_archive() {
@@ -497,7 +625,7 @@ role_archive() {
   done <<EOF
 $(readable_homes)
 EOF
-  python3 -I "$SCRIPT_DIR/$script" "${args[@]}" "$@"
+  role_exec "$script" "${args[@]}" "$@"
 }
 
 role_triage() { role_archive fm-officer-triage.py "$1"; }  # <date>
@@ -613,7 +741,7 @@ role_corpus() {  # <date>: counts only, read on each host by the script itself.
   done <<START_HOMES
 $(start_homes)
 START_HOMES
-  python3 -I "$SCRIPT_DIR/fm-officer-corpus.py" "${args[@]}"
+  role_exec fm-officer-corpus.py "${args[@]}"
 }
 
 role_library() {  # <date>: the newest librarian audit run, read from the job's run folders.
@@ -881,6 +1009,7 @@ case "$cmd" in
   run) [ "$#" -ge 2 ] || die "usage: fm-officer.sh run <id> [--date YYYY-MM-DD]" 2; shift; action_run "$@" ;;
   check) [ "$#" -eq 2 ] || die "usage: fm-officer.sh check <id>" 2; action_check "$2" ;;
   __timed-run) [ "$#" -eq 3 ] || die "usage: internal" 2; action_timed_run "$2" "$3" ;;
+  __host-pass) [ "$#" -eq 2 ] || die "usage: internal" 2; action_host_pass "$2" ;;
   ensure) action_ensure ;;
   -h|--help|help) usage ;;
   *) usage >&2; exit 2 ;;

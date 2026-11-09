@@ -397,6 +397,9 @@ def scan(archive, date):
 
 
 def remote_scan(host, archive, date):
+    # On an officer's run-host (`fm-officer.sh __host-pass`) an archive named for this host is read in process.
+    if host == os.environ.get("FM_OFFICER_ON_HOST"):
+        return scan(archive, date)
     with open(os.path.abspath(__file__), "rb") as fh:
         program = fh.read()
     proc = subprocess.run(
@@ -418,9 +421,12 @@ class Home:
 
     def __init__(self, path):
         self.path = path.rstrip("/")
+        # On a run-host the records are a mirror of the home's, read from there but named by the home's own path.
+        mirror = os.environ.get("FM_OFFICER_HOME_MIRROR")
+        self.root = mirror + self.path if mirror else self.path
         self.ledger = {}
         try:
-            with open(os.path.join(self.path, "state", "fleet-ledger.jsonl"),
+            with open(os.path.join(self.root, "state", "fleet-ledger.jsonl"),
                       encoding="utf-8") as fh:
                 for line in fh:
                     try:
@@ -432,7 +438,7 @@ class Home:
         except OSError:
             pass
         self.metas = {}
-        state = os.path.join(self.path, "state")
+        state = os.path.join(self.root, "state")
         try:
             names = sorted(os.listdir(state))
         except OSError:
@@ -454,10 +460,10 @@ class Home:
             return terminal[-1], "ledger"
         if "task.cleaned_up" in names:
             return "cleaned-up", "ledger"
-        status = last_status_state(os.path.join(self.path, "state", task + ".status"))
+        status = last_status_state(os.path.join(self.root, "state", task + ".status"))
         if status:
             return status, "status"
-        if os.path.exists(os.path.join(self.path, "data", task, "report.md")):
+        if os.path.exists(os.path.join(self.root, "data", task, "report.md")):
             return "reported", "report"
         if states:
             return states[-1], "ledger"

@@ -17,7 +17,8 @@ transcript, a corpus row or a harvested memory record. A `host:path` input is
 read by sending this script to the host (`ssh -o BatchMode=yes <host> python3
 -I - probe ...`), where the probe opens each file and returns only the fields
 listed below, so nothing else leaves the host; a plain path is probed in
-process. One ssh call reads every input on a host, and an unreachable host or
+process, and so is a `host:path` naming the officer's run-host when `bin/fm-officer.sh` runs this script there
+(FM_OFFICER_ON_HOST). One ssh call reads every input on a host, and an unreachable host or
 a missing or unreadable file is a coverage gap, never a failed run.
 
 Inputs (relative paths are under the host's home directory):
@@ -117,6 +118,8 @@ DEFAULT_PREP = "slartibartfast:Documents/GitHub/local-jev/data/prep/ready.json"
 DEFAULT_LOCAL_JEV = "deepthought:Documents/GitHub/local-jev"
 OFFLINE = "not collected: host offline"
 REMOTE_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._@-]*):(.+)$")
+# Set by `fm-officer.sh __host-pass` on an officer's run-host: a source named for this host is read in process.
+ON_HOST = os.environ.get("FM_OFFICER_ON_HOST")
 INGEST_COUNTS = ("archived", "unchanged", "withheld", "errors", "sources_ok", "sources_not_collected", "hosts_offline")
 HARVEST_OUTCOMES = ("ok", "partial", "failed")
 HARVEST_COUNTS = ("listed", "tier_total", "written", "withheld", "deleted", "superseded")
@@ -261,7 +264,7 @@ def gather(items):
     results = {}
     for host, entries in by_host.items():
         pairs = [(kind, path) for _, kind, path in entries]
-        if host is None:
+        if host is None or host == ON_HOST:
             got = probe(pairs)
         else:
             cmd = "python3 -I - probe " + " ".join(shell_quote(k + "=" + p) for k, p in pairs)

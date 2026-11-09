@@ -1230,6 +1230,44 @@ test_visual_registry_fields_are_validated() {
   pass "fm-officer surgeon: the visual registry fields are validated"
 }
 
+test_run_host_joins_sessions_through_the_home_mirror() {
+  local home json w=$TMP_ROOT/runhost
+  make_world runhost; home=$WORLD_HOME
+  python3 -I - "$w/spec.json" "$home" <<'PY'
+import json, sys
+path, home = sys.argv[1:3]
+brief = lambda t: "FIRSTMATE_OP: v1 launch-brief\nYour steering inbox is `%s/state/%s.inbox`." % (home, t)
+msg = {"file_path": home + "/state/operational-inbox/1.msg"}
+json.dump({"sessions": [{"machine": "alpha", "id": "s-" + t, "first_prompt": ": Firstmate operational input waiting: read 'x'",
+                         "calls": [["Read", msg, brief(t), False]]} for t in ("t-merged", "t-status", "t-report")]}, open(path, "w"))
+PY
+  officer_archive "$w/archive" "$DATE" "$w/spec.json"
+  printf 'kind=ship\nworktree=/work/t-merged\n' > "$home/state/t-merged.meta"
+  printf 'kind=ship\nworktree=/work/t-status\n' > "$home/state/t-status.meta"
+  printf 'kind=scout\nworktree=/work/t-report\n' > "$home/state/t-report.meta"
+  printf '%s\n' '{"v":1,"ts":5,"event":"task.merged","task":"t-merged","via":"local"}' > "$home/state/fleet-ledger.jsonl"
+  printf 'working [at=1]: started\nfailed [at=2]: broke\n' > "$home/state/t-status.status"
+  mkdir -p "$home/data/t-report" && printf 'report\n' > "$home/data/t-report/report.md"
+  cat > "$FAKEBIN/ssh" <<'SH'
+#!/usr/bin/env bash
+while [ "${1:-}" = -o ]; do shift 2; done
+shift
+HOME="$FAKE_HOST_HOME" exec bash -c "$*"
+SH
+  chmod +x "$FAKEBIN/ssh"
+  mkdir -p "$w/hosthome"
+  run_surgeon "$home" >/dev/null || fail "the local surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals '{"failed":1,"merged":1,"reported":1}' "$(jq -c '.. | .outcomes? // empty' "$json" | head -n 1)" "the local run resolves all three outcomes"
+  mv "$home/data/officers/surgeon" "$w/lane.local"
+  sed -i "s|model: none; added|run-host: somehost; run-host-code: $ROOT; model: none; added|" "$home/data/officers.md"
+  # The pass reads the mirror only, never the home's own files, so equal bytes show the mirror holds what the join needs.
+  FAKE_HOST_HOME="$w/hosthome" run_surgeon "$home" >/dev/null || fail "the run-host surgeon run must succeed"
+  diff -r --exclude=.run.err "$w/lane.local" "$home/data/officers/surgeon" >/dev/null \
+    || fail "the lane must be byte-identical to a local run's: $(diff -r --exclude=.run.err "$w/lane.local" "$home/data/officers/surgeon" | head -5)"
+  pass "fm-officer surgeon: a run-host pass joins sessions through the mirrored home records and leaves the local lane's bytes"
+}
+
 test_registry_rules
 test_classification_and_severity
 test_staging_tip_rates_the_night
@@ -1278,3 +1316,4 @@ test_visual_pending_attach_is_abandoned_after_seven_days
 test_visual_attach_stops_at_the_call_budget
 test_visual_recurrence_of_a_closed_item_gets_its_screenshot
 test_visual_registry_fields_are_validated
+test_run_host_joins_sessions_through_the_home_mirror

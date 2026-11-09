@@ -459,6 +459,58 @@ test_no_writes_and_a_missing_label_file_nothing() {
   pass "fm-officer corpus: writes: none and a missing label file nothing"
 }
 
+# run_host_world <name> <registry fields>: a corpus world whose officer line also carries <fields>
+# (run-host: ...); the host's firstmate checkout is this one, so the code check passes.
+run_host_world() {
+  make_world "$1"
+  add_fields "$2"
+}
+
+add_fields() { sed -i "s|model: none; added|model: none; $1added|" "$HOME_DIR/data/officers.md"; }
+
+test_run_host_lane_matches_a_local_run() {
+  local out
+  make_world same
+  run_corpus >/dev/null || fail "the local run must succeed"
+  mv "$(lane)" "$W/lane.local"
+  add_fields "run-host: deepthought; run-host-code: $ROOT; "
+  out=$(run_corpus 2>&1) || fail "a run through the run host must succeed: $out"
+  assert_contains "$out" "DIGEST $DATE 0 data/officers/corpus/$DATE.md" "the digest line is the local one"
+  diff -r --exclude=.run.err "$W/lane.local" "$(lane)" >/dev/null \
+    || fail "the lane must be byte-identical to a local run's: $(diff -r --exclude=.run.err "$W/lane.local" "$(lane)" | head -5)"
+  assert_equals "" "$(find "$(lane)" -maxdepth 1 -name '.host-stage.*')" "no staging folder is left in the lane"
+  assert_present "$W/hosts/deepthought/fm-scratch" "the pass really ran on the host"
+  assert_equals "" "$(ls -A "$W/hosts/deepthought/fm-scratch" 2>/dev/null)" "no scratch folder is left on the host"
+  pass "fm-officer corpus: a pass run through the run host leaves the same lane as a local run"
+}
+
+test_run_host_failures_never_run_locally() {
+  local out
+  run_host_world down "run-host: nohost; run-host-code: $ROOT; "
+  out=$(run_corpus 2>&1) && fail "an unreachable run host must fail the attempt"
+  assert_contains "$out" "run host unreachable" "the failure names the unreachable host"
+  assert_contains "$(cat "$(lane)/runs.log")" "failed run host unreachable" "runs.log records the failed attempt"
+  assert_absent "$(lane)/$DATE.json" "an unreachable host never falls back to a local run"
+  run_host_world stale "run-host: deepthought; run-host-code: $TMP_ROOT/older; "
+  mkdir -p "$TMP_ROOT/older" && git -C "$TMP_ROOT/older" init -q && git -C "$TMP_ROOT/older" -c user.name=t -c user.email=t@t commit -q --allow-empty -m old
+  out=$(run_corpus 2>&1) && fail "a host at another commit must fail the attempt"
+  assert_contains "$(cat "$(lane)/runs.log")" "failed host code mismatch" "runs.log records the code mismatch"
+  assert_absent "$(lane)/$DATE.json" "a code mismatch never runs the pass anywhere"
+  pass "fm-officer corpus: an unreachable run host or a host at another commit fails the attempt and runs nothing"
+}
+
+test_run_host_registry_rules() {
+  local out
+  run_host_world rules "run-host: deepthought; rubric: /x.md; "
+  out=$(run_corpus 2>&1) && fail "a rubric file in this home cannot be read on the run host"
+  assert_contains "$out" "rubric names a file in this home" "the refusal names the field"
+  make_world roles
+  sed -i 's/role: corpus;/role: friction;/; s/model: none; added/run-host: deepthought; model: none; added/' "$HOME_DIR/data/officers.md"
+  out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" "$OFFICER" run corpus --date "$DATE" 2>&1) && fail "friction cannot use a run host"
+  assert_contains "$out" "run-host is supported on corpus and surgeon officers only" "other roles are refused"
+  pass "fm-officer corpus: run-host is refused where the pass reads files in this home"
+}
+
 test_healthy_corpus_has_no_findings
 test_each_finding_class
 test_archive_gap_needs_two_nights
@@ -477,3 +529,6 @@ test_start_requests_reach_the_owning_office
 test_registry_checks_the_linear_fields
 test_a_reserved_class_is_held
 test_no_writes_and_a_missing_label_file_nothing
+test_run_host_lane_matches_a_local_run
+test_run_host_failures_never_run_locally
+test_run_host_registry_rules
