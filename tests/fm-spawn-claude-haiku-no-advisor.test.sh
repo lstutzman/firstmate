@@ -28,6 +28,7 @@ launch_env() {
     fm_test_run_spawn "$home" "$wt" "$fakebin" "$id" "$proj" --mode no-mistakes --yolo off "$@")
   status=$?
   [ "$status" -eq 0 ] || fail "$name: spawn failed ($status): $out"
+  # shellcheck disable=SC2016 # The generated fake claude expands the variable when it runs.
   printf '#!/bin/sh\nprintf "%%s\\n" "${CLAUDE_CODE_DISABLE_ADVISOR_TOOL-unset}"\n' > "$fakebin/claude"
   chmod +x "$fakebin/claude"
   env -i HOME="$case_dir/pane-home" PATH="$fakebin:$PATH" TERM=xterm TMUX=synthetic-pane \
