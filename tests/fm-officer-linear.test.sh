@@ -28,6 +28,8 @@ d = os.environ["LDIR"]
 args = sys.argv[1:-2]  # the trailing --output json
 with open(os.path.join(d, "calls"), "a") as fh:
     fh.write(" ".join(args) + "\n")
+with open(os.path.join(d, "jobs"), "a") as fh:
+    fh.write(os.environ.get("LINEAR_JOB", "") + "\n")
 path = os.path.join(d, "issues.json")
 issues = json.load(open(path))
 def out(data): print(json.dumps({"ok": True, "data": data})); sys.exit(0)
@@ -395,6 +397,10 @@ test_dedupe_exact_and_near_match() {
   assert_contains "$(issue PC-106 .description)" "Near match (not treated as the same issue): PC-52, local-jev 0.60" "the near match is in the new item"
   assert_equals 3 "$(grep -c '^issue create .*--verify' "$LDIR/calls")" "only the three that are not duplicates are created"
   assert_not_contains "$(calls)" "--project" "a PropertyCompass2 officer files into no Linear project"
+  assert_equals officer:linear "$(sort -u "$LDIR/jobs")" "every linear-axi call is attributed to the Linear filer"
+  : > "$LDIR/jobs"
+  LINEAR_JOB=fleet:caller drive dedupe >/dev/null || fail "driver must succeed under a caller's LINEAR_JOB"
+  assert_equals fleet:caller "$(sort -u "$LDIR/jobs")" "a LINEAR_JOB the caller set is kept"
   pass "fm-officer-linear: an exact fingerprint and a local-jev match above 0.85 are duplicates, a lower near match is filed new and noted"
 }
 

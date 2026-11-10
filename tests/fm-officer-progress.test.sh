@@ -26,6 +26,7 @@ make_world() {
   cat > "$FAKEBIN/linear-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$PROGRESS_WORLD/calls"
+printf '%s\n' "${LINEAR_JOB-}" >> "$PROGRESS_WORLD/linear-jobs"
 case "$1 $2" in
   'issue list')
     python3 -I - "$PROGRESS_WORLD/linear" "$@" <<'PYLIST'
@@ -148,13 +149,14 @@ stub_python() {
 #!/usr/bin/env bash
 case "\$2" in
   *fm-officer-progress.py) exec "$real_python" -I -c '
-import io, json, os, pathlib, runpy, sys, time, urllib.error, urllib.request
+import io, json, os, pathlib, runpy, sys, time, urllib.error, urllib.request, urllib.response
 root = pathlib.Path(os.environ["PROGRESS_WORLD"])
 def graphql(request):
     body = json.loads(request.data)["variables"]
     with (root / "graphql-calls").open("a") as log: log.write(json.dumps(body) + " auth=" + str(request.get_header("Authorization")) + "\n")
+    headers = json.loads((root / "labels-headers").read_text()) if (root / "labels-headers").exists() else {}
     if (root / "labels-status").exists():
-        raise urllib.error.HTTPError(request.full_url, int((root / "labels-status").read_text()), "fixture", {}, None)
+        raise urllib.error.HTTPError(request.full_url, int((root / "labels-status").read_text()), "fixture", headers, None)
     labels = json.loads((root / "labels.json").read_text()) if (root / "labels.json").exists() else {}
     names = sorted(labels)
     size = int((root / "labels-page-size").read_text()) if (root / "labels-page-size").exists() else 100
@@ -162,7 +164,7 @@ def graphql(request):
     nodes = [{"identifier": n, "labels": {"nodes": [{"name": x} for x in labels[n]]}} for n in names[start:start + size]]
     more = start + size < len(names)
     page = {"nodes": nodes, "pageInfo": {"hasNextPage": more, "endCursor": str(start + size) if more else None}}
-    return io.BytesIO(json.dumps({"data": {"issues": page}}).encode())
+    return urllib.response.addinfourl(io.BytesIO(json.dumps({"data": {"issues": page}}).encode()), headers, request.full_url, 200)
 def fetch(url, timeout):
     if hasattr(url, "full_url"): return graphql(url)
     with (root / "fetches").open("a") as log: log.write(str(url) + " " + str(timeout) + "\n")
@@ -662,8 +664,16 @@ test_linear_labels_classify_starts() {
     'PC-74=Crash on empty watchlist' 'PC-75=Quarterly review pass'
   printf '{"PC-72":["security","agent"],"PC-73":["Bug","billing"],"PC-74":["Bug","agent"],"PC-75":["scheduled-review"]}\n' > "$WORLD/labels.json"
   printf '1\n' > "$WORLD/labels-page-size"
-  local file="$WORLD_HOME/data/officers/progress/$DATE.json" lane="$WORLD_HOME/data/officers/progress"
-  run_progress >/dev/null 2>&1 || fail 'a labelled run must publish state'
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json" lane="$WORLD_HOME/data/officers/progress" usage="$WORLD/usage/usage.jsonl"
+  # Linear's published rate-limit headers (developers.linear.app, Rate limiting).
+  printf '{"X-RateLimit-Requests-Limit":"2500","X-RateLimit-Requests-Remaining":"2400","X-RateLimit-Complexity-Limit":"3000000","X-RateLimit-Complexity-Remaining":"2990000","X-Complexity":"120"}\n' \
+    > "$WORLD/labels-headers"
+  FM_LINEAR_USAGE_DIR="$WORLD/usage" FM_LINEAR_USAGE_NO_POST=1 run_progress >/dev/null 2>&1 || fail 'a labelled run must publish state'
+  assert_equals '4' "$(wc -l < "$usage" | tr -d ' ')" 'each label page read writes one Linear usage line'
+  assert_equals 'officer:progress 200 2500 2400 3000000 2990000 120 linear-token null' \
+    "$(jq -r '[.job, .status, .requests_limit, .requests_remaining, .complexity_limit, .complexity_remaining, .complexity, .key, .retry_after] | map(tostring) | join(" ")' "$usage" | sort -u)" \
+    'a usage line names the job, the HTTP status, the rate-limit headers and only the key name'
+  assert_equals 'officer:progress' "$(sort -u "$WORLD/linear-jobs")" 'every linear-axi call is attributed to the progress officer'
   assert_equals 'PC-72 PC-74 PC-75' "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" \
     'security, bug and scheduled-review labels start work and an unlabelled item does not'
   assert_equals 'security linear-label:security' "$(jq -r '.start_requests[0] | .authorising_class + " " + .tag_source' "$file")" \
@@ -679,7 +689,13 @@ test_linear_labels_classify_starts() {
   assert_not_contains "$(cat "$file" "$lane/$DATE.md" "$lane/.run.err" 2>/dev/null)" 'FIXTURETOKEN' 'the credential never reaches the digest or the log'
   # A failed read is a named gap and classification falls back to titles and tags.
   printf '429\n' > "$WORLD/labels-status"
-  run_progress >/dev/null 2>&1 || fail 'a failed label read must still publish state'
+  printf '{"Retry-After":"60","X-RateLimit-Requests-Limit":"2500","X-RateLimit-Requests-Remaining":"0"}\n' > "$WORLD/labels-headers"
+  : > "$usage"; : > "$WORLD/linear-jobs"
+  LINEAR_JOB=fleet:caller FM_LINEAR_USAGE_DIR="$WORLD/usage" FM_LINEAR_USAGE_NO_POST=1 run_progress >/dev/null 2>&1 \
+    || fail 'a failed label read must still publish state'
+  assert_equals 'fleet:caller 429 0 60' "$(jq -r '[.job, .status, .requests_remaining, .retry_after] | map(tostring) | join(" ")' "$usage")" \
+    'a rate-limited read writes one usage line with its status and Retry-After, under the job the caller set'
+  assert_equals 'fleet:caller' "$(sort -u "$WORLD/linear-jobs")" 'a LINEAR_JOB the caller set is kept for linear-axi'
   assert_equals '0' "$(jq '.start_requests | length' "$file")" 'without labels the unlabelled items do not start'
   assert_contains "$(jq -r '.coverage[]' "$file")" 'Linear labels unavailable: Linear GraphQL answered HTTP 429 (rate limited)' \
     'the label gap names its cause'
