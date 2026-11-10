@@ -586,7 +586,26 @@ test_dispatch_receipt_records_override_and_acceptance() {
   assert_equals 'jr-accept1 rule_1 model false null' \
     "$(cat "$receipts"/*.jsonl | jq -r '"\(.receipt_id) \(.decision) \(.source) \(.overridden) \(.corrected_decision)"')" \
     "a launch that matches the clear selection is an accepted decision"
-  pass "a dispatch receipt records an override with its corrected rule and a matching launch as the model's pick, and the task keeps the receipt id"
+
+  # local-jev chooses only the rule, so another profile of the picked rule is
+  # a profile override, never an overridden pick that the replay gate scores.
+  id=profile-receipt-same-rule-z13
+  rec=$(make_spawn_case profile-receipt-same-rule claude "$id")
+  read_case_record "$rec"
+  printf '%s\n' '{"rules":[{"when":"current events","use":[{"harness":"grok","model":"grok-4","effort":"high"},{"harness":"codex","model":"gpt-5","effort":"high"}]}],"default":{"harness":"codex","model":"gpt-5","effort":"medium"}}' \
+    > "$HOME_DIR/config/crew-dispatch.json"
+  receipts="$CASE_DIR/receipts"
+  record_dispatch "$HOME_DIR" "$id" clear grok grok-4 high
+  jq -c '. + {receipt_id: "jr-samerule1", pick: "rule_1", pick_source: "pick"}' "$HOME_DIR/data/$id/dispatch-resolution.json" > "$CASE_DIR/rec.json"
+  mv "$CASE_DIR/rec.json" "$HOME_DIR/data/$id/dispatch-resolution.json"
+  out=$(FM_JEV_RECEIPTS_DIR=$receipts run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high --dispatch-override 'second profile of the rule')
+  status=$?
+  expect_code 0 "$status" "another profile of the picked rule should spawn: $out"
+  assert_equals 'rule_1 model false true null second profile of the rule' \
+    "$(cat "$receipts"/*.jsonl | jq -r '[.decision, .source, .overridden, .profile_override, .corrected_decision, .override_reason] | map(tostring) | join(" ")')" \
+    "another profile of the picked rule keeps the pick as the decision and is not an overridden pick"
+  pass "a dispatch receipt records an override with its corrected rule, a matching launch as the model's pick, and an in-rule profile change as no override"
 }
 
 test_recorded_dispatch_selection_leaves_unset_effort_unbound() {

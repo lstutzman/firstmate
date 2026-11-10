@@ -98,9 +98,11 @@ Fallback, abstain and timeout decisions are counted apart and never replayed.
 
 **Dispatch.**
 The resolver's task record (`data/<id>/dispatch-resolution.json`) carries the call's `receipt_id`, the host's `pick` and its `pick_source`, so `fm-spawn.sh` can write the decision; a run that sent nothing (off, or an error before the request) writes no receipt.
-The call's `pick` is the rule the resolver acted on: the model's own choice, a runner-up rule that cleared its own floor, `default` when the chosen rule's quota floor forced the default rule, or `abstain` when no option cleared its floor; `raw_pick` keeps the model's own choice.
-At launch, a `clear` selection that the launch matches is the decision with `source` `model`, `rule` for a runner-up, or `fallback:default-rule` for a quota floor's default.
-A launch that departs from a `clear` selection is `overridden` by `firstmate`, with `override_reason` from `--dispatch-override` and `corrected_decision` set to the one rule (or `default`) whose profiles hold the launched profile, else `null`.
+The call's `pick` is the rule the confidence floors accept: the model's own choice, a runner-up rule that cleared its own floor (`pick_source` `runner-up`), or `abstain` when no option cleared its floor; `raw_pick` keeps the model's own choice, and `pick_source` `default-floor` says a quota floor then sent the task to the default rule.
+At launch, a `clear` selection the launch follows is the decision with `source` `model`, `rule` for a runner-up, or decision `default` with `source` `fallback:default-rule` for a quota floor's default.
+A launch that departs from a `clear` selection sets `profile_override` and keeps `override_reason` from `--dispatch-override`.
+It is `overridden` by `firstmate` only when the one rule (or `default`) whose profiles hold the launched profile is not the rule acted on; `corrected_decision` is then that rule, or `null` when no single rule holds the launched profile.
+Another profile of the same rule is not an override, because local-jev chooses only the rule.
 Any other status leaves the choice to firstmate: `abstain` for `ambiguous`, `timeout` for a request that timed out, and `fallback:firstmate` for `escalate` or another error.
 The task's record keeps the receipt id as `dispatch_receipt=`, and teardown writes the outcome: `landed` when its landed-work gate passed (which does not by itself prove a merge; `pr` names the pull request), `reported` for a scout, or `cancelled` for a forced cleanup.
 Teardown cannot tell a misroute, so its `misroute` is always `false`; a cleanup that a later session start finishes writes no outcome.

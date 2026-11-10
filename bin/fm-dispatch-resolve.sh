@@ -862,12 +862,13 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
   (if $fb.to then $fb.to else $picked end) as $choice |
   (rule_at($choice)) as $rule |
   (if $sq or $rule == null then "none" else floor_state($rule.floor; $rule.floor.provider; "") end) as $rule_floor_state |
-  # What the call receipt records as the host'"'"'s pick (docs/local-jev-receipts.md):
-  # abstain when no option cleared its floor, else the rule acted on and whether
-  # it was the model'"'"'s own pick, a runner-up, or the default a quota floor forced.
+  # What the call receipt records as the pick (docs/local-jev-receipts.md): the
+  # option the confidence floors accept, or abstain, and whether it was the
+  # model'"'"'s own choice or a runner-up, and whether a quota floor then sent the
+  # task to the default rule instead.
   (if $fb.below and ($fb.to | not) then {pick: "abstain", floor: $picked_floor, source: "abstain"}
    elif $fb.to then {pick: $choice, floor: $fb.to_floor, source: "runner-up"}
-   elif $rule_floor_state == "below" then {pick: "default", floor: $picked_floor, source: "default-floor"}
+   elif $rule_floor_state == "below" then {pick: $choice, floor: $picked_floor, source: "default-floor"}
    else {pick: $choice, floor: $picked_floor, source: "pick"} end) as $receipt |
   (if $choice != "default" and $rule == null then []
    elif $rule == null then profiles($cfg.default // null)

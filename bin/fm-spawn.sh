@@ -8647,9 +8647,14 @@ if [ -n "$DISPATCH_DECISION" ]; then
        | select(any(.use[]; .harness == $harness and ((.model // null) == null or .model == $model)
            and ((.effort // null) == null or .effort == $effort))) | .key]
       | if length == 1 then .[0] else null end end) as $launched |
-    ($how == "overridden") as $over |
+    # The rule the clear selection acted on: the pick, or default when a quota
+    # floor sent the task there. A launch of another profile of that same rule
+    # departs from the profile, not from local-jev'"'"'s pick, so it is no override.
+    (if $source == "default-floor" then "default" else ($pick | opt) end) as $used |
+    ($how == "overridden" and $launched != $used) as $over |
     {receipt_id: $id, caller: "dispatch-resolve", subject: $task,
-     decision: (if $status == "clear" and ($over | not) then ($pick | opt) else $launched end),
+     decision: (if $status == "clear" and ($over | not) then $used else $launched end),
+     profile_override: ($how == "overridden"),
      source: (if $status == "clear" then
                 (if $source == "runner-up" then "rule" elif $source == "default-floor" then "fallback:default-rule" else "model" end)
               elif $status == "ambiguous" then "abstain"

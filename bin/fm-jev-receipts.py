@@ -33,13 +33,17 @@ Failure: a record that cannot be written prints one "local-jev receipt: not writ
   Exit 2 only for a usage error.
 """
 import datetime
-import fcntl
 import hashlib
 import json
 import os
 import socket
 import sys
 import uuid
+
+try:
+    import fcntl
+except ImportError:  # no flock here; the single O_APPEND write still keeps each line whole
+    fcntl = None
 
 SCHEMA = "local-jev-receipt.v1"
 KINDS = ("call", "decision", "outcome")
@@ -83,7 +87,8 @@ def _write_line(path, data):
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        if fcntl:
+            fcntl.flock(fd, fcntl.LOCK_EX)
         while data:
             data = data[os.write(fd, data):]
     finally:
