@@ -71,6 +71,7 @@ fake_linear() {
   cat > "$1/linear-axi" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$2"
+printf '%s\n' "\${LINEAR_JOB-}" >> "$2.jobs"
 [ "\$1 \$2 \$6" != "issue comment --verify" ] || cat "\$5" >> "$2.bodies"
 case "\$1 \$2" in
   "issue list") echo '{"ok":true,"data":{"issues":[{"identifier":"PC-2"},{"identifier":"PC-4"},{"identifier":"PC-9"}]}}' ;;
@@ -153,6 +154,10 @@ test_no_linear_writes_by_default() {
   assert_no_grep "issue comment" "$LINEAR_LOG" "writes: none writes no comment"
   assert_no_grep "issue update" "$LINEAR_LOG" "writes: none writes no state"
   assert_grep "issue list --team PC --state Done" "$LINEAR_LOG" "Done items are read as one paged list"
+  assert_equals officer:landing "$(sort -u "$LINEAR_LOG.jobs")" "every linear-axi call is attributed to the landing officer"
+  : > "$LINEAR_LOG.jobs"
+  LINEAR_JOB=fleet:caller run_landing "$home" >/dev/null || fail "landing run must succeed under a caller's LINEAR_JOB"
+  assert_equals fleet:caller "$(sort -u "$LINEAR_LOG.jobs")" "a LINEAR_JOB the caller set is kept"
   pass "fm-officer landing: the writes: none switch turns every Linear write off"
 }
 

@@ -120,6 +120,8 @@ TOML
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Keep tests off the host's real homes when fm-office.sh ensure looks for peer clones.
 export FM_TREEHOUSE_PEER_ROOTS=/nonexistent
+# Keep tests from writing Linear usage lines into the real ~/.local/state (an unwritable sink is a no-op).
+export FM_LINEAR_USAGE_DIR=/dev/null/linear-usage
 
 # --- reporters --------------------------------------------------------------
 

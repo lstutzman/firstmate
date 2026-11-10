@@ -1916,6 +1916,7 @@ linear_stub() {
   mkdir -p "$bin"
   cat > "$bin/linear-axi" <<'SH'
 #!/usr/bin/env bash
+[ -z "${STUB_JOB_LOG:-}" ] || printf '%s\n' "${LINEAR_JOB-}" >> "$STUB_JOB_LOG"
 [ "$1 $2" = "issue view" ] || exit 2
 case "$STUB_MODE" in
   fail) echo "Linear request failed: boom" >&2; exit 1 ;;
@@ -1964,6 +1965,14 @@ test_linear_item_is_quoted_into_the_intent() {
   assert_grep '> Entry point: not stated on PC-43' "$brief" "missing entry point not stated plainly"
   assert_grep '> Acceptance: not stated on PC-43' "$brief" "missing acceptance not stated plainly"
   pass "fm-brief.sh --linear: missing fields are named as not stated"
+
+  : > "$TMP_ROOT/linear-jobs"
+  STUB_JOB_LOG="$TMP_ROOT/linear-jobs" PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lin-job alpha --scout --linear PC-47 >/dev/null 2>&1 \
+    || fail "fm-brief.sh --linear exited non-zero for the job attribution read"
+  STUB_JOB_LOG="$TMP_ROOT/linear-jobs" LINEAR_JOB=fleet:caller PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lin-job-set alpha --scout --linear PC-48 >/dev/null 2>&1 \
+    || fail "fm-brief.sh --linear exited non-zero under a caller's LINEAR_JOB"
+  assert_equals "firstmate:fm-brief fleet:caller" "$(paste -sd' ' "$TMP_ROOT/linear-jobs")" "the item read is attributed to fm-brief, and a LINEAR_JOB the caller set is kept"
+  pass "fm-brief.sh --linear: the Linear read names its job"
 
   linear_stub "$bin" heading
   PATH="$bin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-brief.sh" lin-head alpha --mode no-mistakes --linear PC-45 >/dev/null 2>&1 \

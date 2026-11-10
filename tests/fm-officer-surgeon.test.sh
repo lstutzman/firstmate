@@ -78,6 +78,7 @@ fake_linear() {
   cat > "$1/linear-axi" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$3"
+printf '%s\n' "\${LINEAR_JOB-}" >> "$3.jobs"
 d="$2"
 printf '%s %s %s\n' "\${LINEAR_JOB:-none}" "\$1" "\$2" >> "\$d/jobs"
 err() { echo '{"ok":false,"error":{"code":"'"\$1"'","message":"'"\$2"'"}}'; }
@@ -1299,6 +1300,7 @@ SH
   assert_contains "$out" "ok repo: git ls-remote reads staging from" "the host reads the staging repo"
   assert_not_contains "$(cat "$w/curl.calls")" "-X" "the app is read with GET only"
   assert_equals "label list --team PC --limit 1 --output json" "$(cat "$LINEAR_LOG")" "the only Linear call is a read"
+  assert_equals officer:check "$(cat "$LINEAR_LOG.jobs")" "the preflight read is attributed to the officer check"
   assert_absent "$WORLD_HOME/data/officers/surgeon" "preflight writes no lane"
   assert_absent "$w/hosthome/fm-scratch" "preflight writes no scratch on the host"
   touch "$LDIR/labels.fail" "$w/unreachable"
