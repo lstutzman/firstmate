@@ -878,7 +878,7 @@ do_exit() {
   case "$composer_state" in
     empty) ;;
     pending)
-      die "task $ID's composer visibly holds pending text; refusing to type the $cmd exit command because it would concatenate onto that text. Clear or submit the pending text, then retry '$VERB'"
+      die "task $ID's composer visibly holds pending text; refusing to type the $cmd exit command because it would concatenate onto that text. Clear or submit the pending text, then retry '$VERB'; when it is firstmate's own doorbell, 'submit-pending' or 'clear-pending' does that safely"
       ;;
     *)
       die "task $ID's composer state is '$composer_state', not proven empty; refusing to type the $cmd exit command because it could concatenate onto existing text. Clear the composer, then retry '$VERB'"
