@@ -2332,9 +2332,23 @@ fm_composer_dialog_sink_release() {
 # one consumer, fm_backend_release_band_focus, proves its Escape worked by
 # re-reading this verdict and fails loudly naming the harness when it did not.
 fm_composer_band_focus() {  # <styled-screen> -> focused control label
-  local screen=${1-}
+  _fm_composer_band_scan focus "${1-}"
+}
+
+# fm_composer_band_drawn: whether a plugin band (a `[ label ]` Button row) is
+# drawn in the band rows directly above the composer's top rule, focused or
+# not. Claude gives no visible signal when a band holds the keyboard with its
+# focus ring on nothing (ctrl+x then a separate Tab), so a drawn band is the
+# only structural hint that an Enter swallowed on pending text may have gone
+# to it. Prints the first Button label and returns 0; otherwise returns 1.
+fm_composer_band_drawn() {  # <styled-screen> -> first Button label
+  _fm_composer_band_scan drawn "${1-}"
+}
+
+_fm_composer_band_scan() {  # focus|drawn <styled-screen>
+  local mode=$1 screen=${2-}
   [ -n "$screen" ] || return 1
-  printf '%s\n' "$screen" | LC_ALL=C awk '
+  printf '%s\n' "$screen" | LC_ALL=C awk -v mode="$mode" '
     function plain(s) { gsub(/\033\[[0-9;:?]*[A-Za-z]/, "", s); sub(/\r$/, "", s); return s }
     function sgr(params, inv,   n, p, k) {
       if (params == "") return 0
@@ -2370,6 +2384,10 @@ fm_composer_band_focus() {  # <styled-screen> -> focused control label
       i = composer - 2
       while (i >= 1 && txt[i] ~ /^[ \t]*$/) i--
       for (; i >= 1 && txt[i] !~ /^[ \t]*$/; i--) {
+        if (mode == "drawn") {
+          if (match(txt[i], /\[ [^]]*[^] ] \]/)) { printf "%s", substr(txt[i], RSTART + 2, RLENGTH - 4); exit 0 }
+          continue
+        }
         label = focused(raw[i])
         if (label != "") { printf "%s", label; exit 0 }
       }

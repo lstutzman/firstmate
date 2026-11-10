@@ -1739,8 +1739,12 @@ One Escape returned the focus to the prompt with the composer text intact, and t
 Typing printable text while the band held the keyboard also returned the focus to the prompt, so a freshly typed delivery is not affected; only an Enter on text that is already pending is.
 On an unfocused band, one Escape on an idle composer holding a draft left the draft in place.
 Clicks on Claude's own `[-]` collapse glyph, on a transcript row, on the blank row above the composer and on the footer did not focus the band; focus-in and focus-out reports and a wheel event did not either.
-The incident state, in which the band stayed drawn while Enter did nothing, did not reproduce; every focus route measured here put the focus on the Button.
-The band holding the keyboard is therefore the reproduced cause of the same symptom family, not a proven cause of the incident.
+The incident state is reproduced by ctrl+x followed by a separate Tab, measured 2026-11-10 on Claude Code 2.1.322, herdr 0.9.5 and lee-mods 0.7.2, whether a person types the chord or `herdr pane send-keys` sends ctrl+x and then, in a later call, tab.
+The band then holds the keyboard with its focus ring on nothing: no Button is drawn inverse, the styled viewport is byte-identical to an unfocused band, Herdr reports the agent idle, and every Enter is swallowed, so the composer keeps the text and the band stays drawn with Hide not pressed.
+One Escape followed by Enter submits the text.
+ctrl+x Tab sent in a single send-keys call focuses the Hide Button instead, drawn inverse, where Enter presses Hide; a plain Tab alone does not trap Enter.
+Skills PR 239 removed the mouse-click route, but the engine-owned ctrl+x Tab chord remains.
+Because the ring-on-nothing state has no visible signal, `fm_task_inbox_submit_pending` recovers behaviourally: after an Enter that leaves the composer holding exactly the caller's line on an agent not reported busy, while `fm_composer_band_drawn` sees a `[ label ]` row directly above the composer's top rule, it sends one Escape and then one Enter, and never a second Escape.
 The spawn's post-launch check in `bin/fm-spawn.sh` covers both: a launch doorbell that stays in the composer gets one gated submit, and one that still stays raises a check wake naming the task.
 `fm_composer_band_focus` reads the inverse span in the band, the non-blank rows directly above the composer's top rule, and takes inverse from the SGR parameters the way a terminal applies them, so a colour index or component of 7 is not inverse.
 `fm_backend_release_band_focus` sends one Escape only on that proof and re-reads it, warning with the Claude version when the focus did not move.
@@ -1750,6 +1754,8 @@ The spawn's post-launch check in `bin/fm-spawn.sh` covers both: a launch doorbel
 ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 draws a focused band Button in inverse and traps a bare Enter, leaving the text pending
 ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 submits the pending text once one Escape returns the focus from the band
 ```
+
+The same script also covers the ring-on-nothing state (ctrl+x, a pause, then a separate Tab): it asserts no inverse Button, a bare Enter that leaves the text pending with the band drawn, and then that `fm_task_inbox_submit_pending` submits it.
 
 The tmux styled read uses the same detector and is covered by `tests/fm-control.test.sh` fakes, not by a live tmux measurement.
 

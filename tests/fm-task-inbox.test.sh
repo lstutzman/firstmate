@@ -368,12 +368,16 @@ case "${1:-}" in
       printf '%s' "$1" >> "$FM_FAKE_COMPOSER"
     elif [ "${1:-}" = Escape ]; then
       printf 'ESCAPE\n' >> "$FM_SEND_LOG"
-      [ "$(cat "${FM_FAKE_BAND:-/dev/null}" 2>/dev/null)" != focused ] || printf 'shown' > "$FM_FAKE_BAND"
+      case "$(cat "${FM_FAKE_BAND:-/dev/null}" 2>/dev/null)" in
+        focused|trapped) printf 'shown' > "$FM_FAKE_BAND" ;;
+      esac
     elif [ "${1:-}" = Enter ]; then
       drops=$(cat "$FM_FAKE_DROP_ENTERS" 2>/dev/null || echo 0)
       band=$(cat "${FM_FAKE_BAND:-/dev/null}" 2>/dev/null) || band=
       if [ "$band" = focused ] || [ "$band" = sticky ]; then
         printf 'PRESS: Hide\n' >> "$FM_SEND_LOG"
+      elif [ "$band" = trapped ]; then
+        :  # ring-on-nothing: the band holds the keyboard, drawn unfocused; Enter is swallowed
       elif [ "$drops" -gt 0 ]; then
         echo $((drops - 1)) > "$FM_FAKE_DROP_ENTERS"
       elif [ -s "$FM_FAKE_COMPOSER" ]; then
@@ -386,7 +390,7 @@ case "${1:-}" in
     case "$*" in
       *cursor_y*)
         case "$(cat "${FM_FAKE_BAND:-/dev/null}" 2>/dev/null)" in
-          focused|sticky|shown) printf '4\n' ;;
+          focused|sticky|shown|trapped) printf '4\n' ;;
           *) printf '2\n' ;;
         esac
         exit 0 ;;
@@ -400,7 +404,7 @@ case "${1:-}" in
     printf '● done\n'
     case "$(cat "${FM_FAKE_BAND:-/dev/null}" 2>/dev/null)" in
       focused|sticky) printf 'acct-a  5h 0%%\n\033[1m\033[7m[ Hide ]\033[0m\n' ;;
-      shown) printf 'acct-a  5h 0%%\n\033[1m[ Hide ]\033[0m\n' ;;
+      shown|trapped) printf 'acct-a  5h 0%%\n\033[1m[ Hide ]\033[0m\n' ;;
     esac
     printf '%s\n' "$rule"
     if [ -s "$FM_FAKE_COMPOSER" ]; then
@@ -505,6 +509,46 @@ test_ring_releases_a_focused_plugin_band_before_its_enter() {
   [ "$(cat "$log")" = "SUBMIT: $doorbell" ] \
     || fail "an unfocused band should get the Enter alone:"$'\n'"$(cat "$log")"
   pass "inbox: the ring's re-submit releases a focused plugin band with one Escape, skips a band that keeps focus, and sends a bare Enter otherwise"
+}
+
+# A band can hold the keyboard with its focus ring on nothing (ctrl+x then a
+# separate Tab): drawn unfocused, every Enter swallowed. Contract: an Enter that
+# leaves the pending line in place while a band is drawn gets exactly one
+# Escape and then the retry Enter; no band drawn or a busy agent gets no Escape.
+test_submit_pending_escapes_once_for_an_invisible_band_focus() {
+  local dir state log composer band rc line=": steer line"
+  dir="$TMP_ROOT/submit-trapped"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_composer_stub "$dir"
+  log="$dir/send.log"; composer="$dir/composer"; band="$dir/band"
+  submit() {  # [busy]
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+      FM_FAKE_DROP_ENTERS="$dir/drops" FM_FAKE_BAND="$band" FM_BACKEND_BAND_FOCUS_POLLS=1 \
+      FM_TEST_BUSY="${1:-}" FM_STATE_OVERRIDE="$state" bash -c '
+        . "$1"
+        [ -z "$FM_TEST_BUSY" ] || fm_backend_busy_state() { printf busy; }
+        fm_task_inbox_submit_pending tmux sess:fm-t1 "$2" fm-t1
+      ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$line" 2>/dev/null
+  }
+
+  : > "$log"; printf '%s' "$line" > "$composer"; printf 'trapped' > "$band"
+  rc=0; submit || rc=$?
+  [ "$rc" = 0 ] || fail "an invisible band focus should be recovered, got rc $rc"
+  [ "$(cat "$log")" = "ESCAPE"$'\n'"SUBMIT: $line" ] \
+    || fail "a swallowed Enter under a drawn band should be followed by one Escape then Enter:"$'\n'"$(cat "$log")"
+
+  : > "$log"; printf '%s' "$line" > "$composer"; printf 'trapped' > "$band"
+  rc=0; submit busy || rc=$?
+  [ "$(grep -c ESCAPE "$log")" = 0 ] || fail "a busy agent must never get the behavioural Escape:"$'\n'"$(cat "$log")"
+  [ "$(cat "$composer")" = "$line" ] || fail "a busy agent's composer must be left alone"
+
+  : > "$log"; printf '%s' "$line" > "$composer"; rm -f "$band"; echo 5 > "$dir/drops"
+  rc=0; submit || rc=$?
+  [ "$(grep -c ESCAPE "$log")" = 0 ] || fail "with no band drawn a lost Enter must not get an Escape:"$'\n'"$(cat "$log")"
+  [ "$(cat "$log")" = "" ] || true
+  echo 0 > "$dir/drops"
+  pass "inbox: submit-pending escapes exactly once when a swallowed Enter leaves the line under a drawn band, never when busy or with no band"
 }
 
 test_idempotent_write_dedups_exact_body() {
@@ -1641,6 +1685,7 @@ test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
 test_ring_releases_a_focused_plugin_band_before_its_enter
+test_submit_pending_escapes_once_for_an_invisible_band_focus
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_prefilters_history
 test_idempotent_write_prefilter_preserves_exact_bodies

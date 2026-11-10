@@ -575,20 +575,36 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
 # back to the prompt when a Claude plugin band holds it
 # (fm_backend_release_band_focus), because there an Enter presses the band's
 # focused Button and leaves <line> unsubmitted. Returns 0 once the Enters are
-# sent (not delivery proof; the caller re-reads the composer when it needs
+# sent, with one more Escape before the second Enter when the first left <line>
+# pending under a drawn band on a not-busy agent (a band can hold the keyboard
+# with no visible focus ring; never a second Escape per call) (not delivery proof; the caller re-reads the composer when it needs
 # one), 1 when the band kept the focus so no Enter was sent, 2 when a key could
 # not be delivered.
 fm_task_inbox_submit_pending() {  # <backend> <target> <line> [expected-label]
-  local backend=$1 target=$2 line=$3 label=${4:-} attempt=0
+  local backend=$1 target=$2 line=$3 label=${4:-} attempt=0 escaped=0 verdict
   while [ "$attempt" -lt 2 ]; do
     if [ "$attempt" -gt 0 ]; then
       sleep 0.3
       fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 0
     fi
-    case "$(fm_backend_release_band_focus "$backend" "$target" "$label")" in
-      stuck) return 1 ;;
-      send-failed) return 2 ;;
-    esac
+    if [ "$escaped" = 0 ]; then
+      verdict=$(fm_backend_release_band_focus "$backend" "$target" "$label")
+      case "$verdict" in
+        stuck) return 1 ;;
+        send-failed) return 2 ;;
+        released) escaped=1 ;;
+      esac
+      # Ring-on-nothing: a band can hold the keyboard with no visible focus
+      # ring, so an Enter that left the line pending while a band is drawn gets
+      # one Escape before the retry (never a second one, never on a busy agent).
+      if [ "$attempt" -gt 0 ] && [ "$escaped" = 0 ] \
+        && [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" != busy ] \
+        && fm_backend_band_drawn "$backend" "$target"; then
+        fm_backend_send_key "$backend" "$target" Escape "$label" >/dev/null 2>&1 || return 2
+        escaped=1
+        sleep 0.2
+      fi
+    fi
     fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
     attempt=$((attempt + 1))
   done

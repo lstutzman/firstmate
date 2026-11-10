@@ -167,4 +167,53 @@ done
 [ "$landed" = 1 ] || fail "$WHO: the pending text was not submitted after the band focus was released"
 pass "live band focus: $WHO submits the pending text once one Escape returns the focus from the band"
 
+# 4: ring on nothing. ctrl+x and a separate Tab leave the band holding the
+# keyboard with no inverse Button, so every Enter is swallowed with no visible sign.
+i=0
+while [ "$i" -lt 60 ]; do
+  [ "$(fm_backend_busy_state herdr "$TARGET" 2>/dev/null)" != busy ] && break
+  i=$((i + 1))
+  sleep 1
+done
+TOKEN2="FMBANDRING$$_$RANDOM"
+TEXT2="Reply with exactly $TOKEN2 and nothing else."
+lab pane send-text "$PANE" "$TEXT2" >/dev/null || fail "could not type into $WHO"
+sleep 1
+fm_task_inbox_composer_holds herdr "$TARGET" "$TEXT2" || fail "$WHO: the second typed text never showed in the composer"
+lab pane send-keys "$PANE" ctrl+x >/dev/null || fail "could not send ctrl+x to $WHO"
+sleep 1
+lab pane send-keys "$PANE" tab >/dev/null || fail "could not send Tab to $WHO"
+sleep 1
+cap=$(lab pane read "$PANE" --source visible --format ansi 2>/dev/null || true)
+if fm_composer_band_focus "$cap" >/dev/null; then
+  # The fixture band can draw its Button inverse for this chord, unlike the
+  # lee-mods band measured in the verification record; the state is not present.
+  printf 'ok - live band focus # SKIP %s: ctrl+x then a separate Tab drew an inverse Button on the fixture band, so the ring-on-nothing state was not reproduced\n' "$WHO"
+  [ "$CHECKED" -gt 0 ] || fail "FM_CLAUDE_BAND_FOCUS_LIVE=1 checked no harness"
+  exit 0
+fi
+lab pane send-keys "$PANE" enter >/dev/null || fail "could not send Enter to $WHO"
+sleep 3
+fm_task_inbox_composer_holds herdr "$TARGET" "$TEXT2" \
+  || fail "$WHO: a bare Enter submitted despite the invisible band focus; the state this guard covers is gone, so refresh the verification record"
+cap=$(lab pane read "$PANE" --source visible --format ansi 2>/dev/null || true)
+fm_composer_band_drawn "$cap" >/dev/null || fail "$WHO: the band was not drawn above the composer in the ring-on-nothing state"
+pass "live band focus: $WHO swallows a bare Enter with the band drawn and no inverse Button after ctrl+x then a separate Tab"
+rc=0
+fm_task_inbox_submit_pending herdr "$TARGET" "$TEXT2" || rc=$?
+[ "$rc" = 0 ] || fail "$WHO: fm_task_inbox_submit_pending returned $rc in the ring-on-nothing state"
+landed=0
+i=0
+while [ "$i" -lt 45 ]; do
+  screen=$(lab pane read "$PANE" --source recent --lines 200 2>/dev/null || true)
+  if [ "$(printf '%s\n' "$screen" | grep -F -c "$TOKEN2" || true)" -ge 2 ]; then
+    landed=1
+    break
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+[ "$landed" = 1 ] || fail "$WHO: the pending text was not submitted after the behavioural Escape"
+pass "live band focus: $WHO submits the pending text from the ring-on-nothing state through one behavioural Escape then Enter"
+
 [ "$CHECKED" -gt 0 ] || fail "FM_CLAUDE_BAND_FOCUS_LIVE=1 checked no harness"

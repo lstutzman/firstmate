@@ -1335,6 +1335,20 @@ fm_backend_release_band_focus() {  # <backend> <target> [expected-label]
   printf 'stuck'
 }
 
+# fm_backend_band_drawn: whether a Claude plugin band is drawn above the
+# composer (fm_composer_band_drawn). Returns 0 when it is, 1 when it is not or
+# the styled viewport cannot be read.
+fm_backend_band_drawn() {  # <backend> <target>
+  local backend=$1 target=$2 cap
+  case "$backend" in
+    herdr|tmux) ;;
+    *) return 1 ;;
+  esac
+  fm_backend_source "$backend" || return 1
+  cap=$("fm_backend_${backend}_visible_capture_ansi" "$target" 2>/dev/null) && [ -n "$cap" ] || return 1
+  fm_composer_band_drawn "$cap" >/dev/null
+}
+
 # fm_backend_send_text_submit: submit and verify through the selected adapter.
 # Pane backends type once and retry only submission; T3 uses a native send.
 # Echoes the backend's verdict; callers require exact empty for confirmed delivery.

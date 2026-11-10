@@ -83,9 +83,12 @@ A Claude plugin band above the composer can hold the keyboard after a click on i
 So before its Enter, `submit-pending` sends one Escape when the band is proven to hold the focus, which returns it to the prompt; `clear-pending` does the same before its Ctrl+U presses.
 A band that keeps the focus after that Escape refuses with nothing submitted or cleared, and never receives a second Escape, because Claude's double Escape clears a draft or opens its rewind picker.
 The inbox ring's re-submit of its own pending doorbell uses the same release ([`fm_task_inbox_submit_pending`](../bin/fm-task-inbox-lib.sh)); [`fm_backend_release_band_focus`](../bin/fm-backend.sh) owns the Escape and [its verification record](verification/runtime-backends.md#claude-plugin-band-focus) the measured behavior.
-The incident behind these verbs, a relaunched worker whose launch doorbell sat unsubmitted under a drawn band while Enter did nothing, did not reproduce.
-A band holding the keyboard is the reproduced cause of the same symptom, not a proven cause of that incident.
-So every Claude spawn and relaunch on Herdr and tmux also checks, once it has committed, that its launch doorbell left the composer (`claude_launch_doorbell_check` in [`bin/fm-spawn.sh`](../bin/fm-spawn.sh)), which covers both causes.
+The incident behind these verbs, a relaunched worker whose launch doorbell sat unsubmitted under a drawn band while Enter did nothing, is reproduced by ctrl+x followed by a separate Tab (measured 2026-11-10 on Claude Code 2.1.322, herdr 0.9.5 and lee-mods 0.7.2).
+In that state the band holds the keyboard with its focus ring on nothing: no Button is drawn inverse, the styled screen is identical to an unfocused band, Herdr reports the agent idle, and every Enter is swallowed.
+Because that state has no visible signal, `submit-pending` and the ring's re-submit also act on behaviour: an Enter that leaves the doorbell as the composer's whole content, on an agent not reported busy and with a band drawn above the composer, is followed by one Escape and one more Enter, and never by a second Escape.
+Sending ctrl+x Tab in a single keypress batch focuses the Hide Button instead, which the inverse proof already covers; a plain Tab alone does not trap Enter.
+Skills PR 239 removed the mouse-click route to the band, but the engine-owned ctrl+x Tab chord remains.
+So every Claude spawn and relaunch on Herdr and tmux also checks, once it has committed, that its launch doorbell left the composer (`claude_launch_doorbell_check` in [`bin/fm-spawn.sh`](../bin/fm-spawn.sh)), which covers both states.
 A doorbell that stays in the composer gets the same gated submit once, success needs a read that shows the composer empty or holding other text, and a doorbell that still stays raises one `check: launch doorbell pending:` wake naming the task.
 The check never fails the spawn or the relaunch, because the task record is already committed.
 
