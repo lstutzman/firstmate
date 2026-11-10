@@ -1,0 +1,20 @@
+fm-linear-usage exit=0
+ok - LINEAR_JOB overrides the job and lines append
+ok - unwritable sink never raises
+FM_TEST_COMPLETE
+fm-officer-progress exit=0
+ok - progress: triage writes need writes: linear and a readable rubric, and starts do not depend on them
+ok - progress: registered remote homes are read and unavailable homes are reported
+ok - progress: fleet-app state matches the agreed schema and Slarti sample
+fm-officer-linear exit=0
+ok - fm-officer-linear: a mismatching bundle update counts as written; one with no JSON is failed
+ok - fm-officer-linear: a PropertyCompass2 bundle never reuses a same-title Fleet item
+ok - fm-officer-linear: only search, view, create, update (the Found line), comment and relation are ever called
+fm-officer-landing exit=0
+ok - fm-officer landing: a moved Linear state or the close cap stops a close
+ok - fm-officer landing: facts that are stale or undated make no Linear write and raise a finding
+ok - fm-officer landing: facts over ssh are judged alike; another schema or layout is refused
+fm-brief exit=0
+ok - fm-brief.sh --linear: a failed read stops the scaffold; a task without --linear is unchanged
+ok - fm-brief.sh: config/linear-required-projects requires --linear on listed ship briefs and allows --no-linear on scouts only
+ok - fm-brief.sh: ship brief carries the fix-forward line rule
