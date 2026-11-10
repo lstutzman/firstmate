@@ -1500,6 +1500,7 @@ test_start_home_routes_project_less_asks_by_scope() {
   cat > "$WORLD/local-jev.py" <<'PY'
 import os, sys
 text = sys.stdin.read()
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "jev-env"), "a").write(os.environ.get("LOCAL_JEV_RECEIPTS", "unset") + "\n")
 open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "jev-calls"), "a").write(sys.argv[1] + " [" + sys.argv[2] + "]: " + text + "\n")
 options = [a.split("=", 1)[0] for a in sys.argv if "=" in a and not a.startswith("-")]
 if "DOWN" in text:
@@ -1612,6 +1613,7 @@ JSON
   assert_contains "$(jq -r '.start_requests[] | select(.id == "pc-price") | .unrouted' "$file")" 'changes pricing, legal text, payments or spending, which Lee decides (0.93)' 'a pricing change that names a project is held for Lee'
   assert_contains "$(jq -r '.start_requests[] | select(.id == "pc-hold") | .unrouted' "$file")" 'a constraint, answer or decision for Lee, not a request for work (0.91)' 'a constraint that names a project is not started'
   assert_contains "$(jq -r '.start_requests[] | select(.id == "fix-price") | .unrouted' "$file")" 'changes pricing, legal text, payments or spending, which Lee decides (0.93)' 'a pricing Start fix tap is held for Lee'
+  assert_equals '0' "$(sort -u "$WORLD/jev-env")" 'jev.py runs with LOCAL_JEV_RECEIPTS=0 so officer calls are not recorded twice'
   assert_equals '' "$(grep -c ' - ' "$WORLD/jev-calls" | grep -v '^0$')" 'local-jev is sent only the ask words, never record ids'
   assert_not_contains "$(cat "$WORLD/jev-calls")" 'Top of Mind' 'no Top of Mind record text goes to local-jev'
   assert_not_contains "$(grep -E '^(choice|noul \[Does this concern)' "$WORLD/jev-calls")" 'listings page' 'an ask the evidence placed is never sent to the office or scope questions'

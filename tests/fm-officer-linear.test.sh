@@ -109,7 +109,8 @@ PY
 # "edge-me" (exactly the threshold, which is not above it), 0.6 for "near-me", else 0.1.
 fake_jev() {
   cat > "$1" <<'PY'
-import json, sys
+import json, os, sys
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "jev-env"), "a").write(os.environ.get("LOCAL_JEV_RECEIPTS", "unset") + "\n")
 state = json.loads(sys.argv[sys.argv.index("--state") + 1])
 a, b = state["report_a"], state["report_b"]
 score = 0.91 if "duplicate-me" in a and "Older save crash" in b else 0.85 if "edge-me" in a else 0.6 if "near-me" in a else 0.1
@@ -386,6 +387,7 @@ test_dedupe_exact_and_near_match() {
   out=$(drive dedupe) || fail "driver must succeed"
   assert_equals "exists PC-50" "$(jq -r '.filings.a | [.action, .issue] | join(" ")' <<<"$out")" "the fingerprint finds the item whatever the title search says"
   assert_equals "duplicate PC-51 0.91" "$(jq -r '.filings.b | [.action, .issue, (.confidence | tostring)] | join(" ")' <<<"$out")" "local-jev above 0.85 is a duplicate"
+  assert_equals 0 "$(sort -u "$W/jev-env")" "jev.py runs with LOCAL_JEV_RECEIPTS=0 so officer calls are not recorded twice"
   assert_equals created "$(jq -r '.filings.c.action' <<<"$out")" "exactly 0.85 is not above 0.85, so it is filed new"
   assert_equals "PC-52" "$(jq -r '.filings.c.near_match.issue' <<<"$out")" "and the first best near match is named"
   assert_equals "PC-52 0.6" "$(jq -r '.filings.d.near_match | [.issue, (.confidence | tostring)] | join(" ")' <<<"$out")" "a 0.6 match is recorded as near"
