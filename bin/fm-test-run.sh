@@ -393,7 +393,7 @@ family_for_basename() {
     fm-secondmate-busy-contract-live-e2e.test.sh|\
     fm-calm-claude-mod-plugin.test.sh|fm-calm-claude-mod-live-e2e.test.sh|\
     fm-calm-pi-queue-retention-live-e2e.test.sh|\
-    fm-herdr-submit-confirm-live-e2e.test.sh|\
+    fm-herdr-submit-confirm-live-e2e.test.sh|fm-claude-band-focus-live-e2e.test.sh|\
     fm-backend-rex-composer-live-e2e.test.sh|\
     fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh)
       printf '%s\n' live-harness-optin
@@ -789,6 +789,7 @@ tests/fm-ci-workflow.test.sh 15193
 tests/fm-classify-corr-token.test.sh 22239
 tests/fm-classify-decision-key.test.sh 5600
 tests/fm-claude-account-quota.test.sh 598
+tests/fm-claude-band-focus-live-e2e.test.sh 55
 tests/fm-claude-stop-autoarm-live-e2e.test.sh 60
 tests/fm-claude-stop-autoarm.test.sh 61672
 tests/fm-claude-trust.test.sh 14307

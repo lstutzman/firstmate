@@ -1284,6 +1284,57 @@ fm_backend_send_key() {  # <backend> <target> <key> [expected-label]
   esac
 }
 
+# fm_backend_release_band_focus: before an Enter meant for text already in a
+# Claude composer, return the keyboard to the prompt when a plugin band holds
+# it. While a band Button is focused, Enter presses that Button and the text
+# stays unsubmitted (bin/fm-composer-lib.sh fm_composer_band_focus owns the
+# verified behavior and its proof). Exactly one Escape is sent, only on that
+# positive proof, because the band consumes it to give the focus back; a second
+# Escape could reach the composer, where Claude's double Escape clears a draft
+# or opens its rewind picker. The caller must already have established that the
+# agent is not running a turn, because an Escape that reaches the composer
+# instead would cancel one. Prints:
+#   none         no plugin control holds the focus (nothing was sent)
+#   released     one Escape was sent and the focus is back on the prompt
+#   stuck        one Escape was sent and a control still holds the focus; a
+#                warning naming the harness version and the control goes to
+#                stderr, and no further key is sent
+#   send-failed  the Escape could not be delivered
+#   unreadable   no styled viewport could be read, so nothing was sent
+#   unsupported  the backend has no styled viewport read for this check
+# Returns 0 for every verdict; the caller decides what each one allows.
+FM_BACKEND_BAND_FOCUS_POLLS=${FM_BACKEND_BAND_FOCUS_POLLS:-5}
+fm_backend_release_band_focus() {  # <backend> <target> [expected-label]
+  local backend=$1 target=$2 label=${3:-} cap control i=0 version
+  case "$backend" in
+    herdr|tmux) ;;
+    *) printf 'unsupported'; return 0 ;;
+  esac
+  fm_backend_source "$backend" || { printf 'unreadable'; return 0; }
+  cap=$("fm_backend_${backend}_visible_capture_ansi" "$target" 2>/dev/null) && [ -n "$cap" ] \
+    || { printf 'unreadable'; return 0; }
+  control=$(fm_composer_band_focus "$cap") || { printf 'none'; return 0; }
+  if [ -n "$label" ]; then
+    fm_backend_send_key "$backend" "$target" Escape "$label" >/dev/null 2>&1 \
+      || { printf 'send-failed'; return 0; }
+  else
+    fm_backend_send_key "$backend" "$target" Escape >/dev/null 2>&1 \
+      || { printf 'send-failed'; return 0; }
+  fi
+  while [ "$i" -lt "$FM_BACKEND_BAND_FOCUS_POLLS" ]; do
+    sleep 0.2
+    cap=$("fm_backend_${backend}_visible_capture_ansi" "$target" 2>/dev/null) || cap=
+    if [ -n "$cap" ] && ! fm_composer_band_focus "$cap" >/dev/null; then
+      printf 'released'
+      return 0
+    fi
+    i=$((i + 1))
+  done
+  version=$(printf '%s\n' "$cap" | fm_composer_strip_ansi | LC_ALL=C sed -n 's/.*Claude Code v\([0-9][0-9.]*\).*/\1/p' | head -n 1)
+  echo "warning: Claude Code ${version:-of unknown version} on $backend still shows the plugin control '[ $control ]' focused after one Escape, so Enter would press it instead of submitting; no further key was sent and the pending text was left in place" >&2
+  printf 'stuck'
+}
+
 # fm_backend_send_text_submit: submit and verify through the selected adapter.
 # Pane backends type once and retry only submission; T3 uses a native send.
 # Echoes the backend's verdict; callers require exact empty for confirmed delivery.

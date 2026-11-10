@@ -50,6 +50,12 @@ fm_backend_tmux_visible_capture() {  # <target>
   tmux capture-pane -p -t "$1" -S -0
 }
 
+# fm_backend_tmux_visible_capture_ansi: the same viewport with its styling
+# (-e), for a check whose proof is a style such as inverse video.
+fm_backend_tmux_visible_capture_ansi() {  # <target>
+  tmux capture-pane -e -p -t "$1" -S -0
+}
+
 # fm_backend_tmux_send_key: one named key. Tmux can prefix-match a gone target
 # to a live neighbor, so require exact membership before sending the key.
 fm_backend_tmux_send_key() {  # <target> <key>

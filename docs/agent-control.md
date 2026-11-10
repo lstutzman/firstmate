@@ -15,7 +15,7 @@ The failure repeated across harnesses and homes, and the workaround (remember to
 
 `bin/fm-control-lib.sh` is the single executable owner of three capability tables, which have no side effects, so they can be read as a contract:
 
-- The **verb allowlist**: `interrupt`, `exit`, `relaunch`.
+- The **verb allowlist**: `interrupt`, `exit`, `relaunch`, `submit-pending`, `clear-pending`.
   There is no arbitrary-text and no generic raw-key entry point.
   A caller either names an allowlisted verb or is refused.
 - **Per-harness mechanics**: the key that cancels a running turn, how many times it must be delivered, whether the composer needs clearing afterwards, the command that exits the agent, and which task kinds the adapter is verified to run.
@@ -34,6 +34,8 @@ A recorded `harness=` is not always an exact adapter name: a task launched from 
 | --- | --- | --- |
 | `interrupt` | Deliver the harness's verified interrupt sequence while leaving the agent running. | Delivery succeeds while the endpoint still exists and the agent is still alive where the backend can classify that; cancellation is confirmed only from an adapter-owned acknowledgement and otherwise reports `cancel=unconfirmed`. |
 | `exit` | Stop the agent, preserving the endpoint, the worktree, and every uncommitted change. | The backend's recovery-grade classifier reports the agent gone. Already-stopped is idempotent success. An endpoint reading `missing` (or, on Rex, `unreadable`) goes through the same [absence proof](#reclaiming-a-task-whose-endpoint-is-gone) the reclaim uses before anything is claimed about it, and only Herdr and Rex can supply one (T3 Code refuses `exit` before reading anything): proven gone reports `endpoint-gone` (the agent went with it, and the endpoint this verb normally preserves did not survive), a pane that turns out to be there and idle is the ordinary `already-stopped`, one whose agent is back takes the ordinary interrupt-then-exit path. A tmux `missing` always refuses rather than claim a stop it cannot see. |
+| `submit-pending` | Submit text that sits unsubmitted in a Claude composer, only when it is exactly firstmate's own doorbell for this task. | The composer no longer holds the doorbell. |
+| `clear-pending` | Clear that same firstmate-owned pending doorbell with Ctrl+U instead of submitting it. | The composer reads exactly `empty`. |
 | `relaunch` | Replace the running agent with a new one in the same worktree - and the same endpoint whenever that endpoint still exists - on the exact recorded adapter or an explicitly chosen harness, model, and effort. | The new agent is alive on the endpoint the task's record now names, and that record names the harness that is actually running. |
 
 An exit that delivers lifecycle input but cannot prove the agent stopped fails with `exit=unconfirmed`, reports the observed agent state and any interrupt cancellation claim, and never claims that nothing changed.
@@ -69,6 +71,18 @@ Use it only when the work is finished; stopping the tasks is its whole effect.
 `bin/fm-teardown.sh` does not use `exit` (it closes the endpoint itself once its landed-work test passes), so the flag is for a supervisor closing a finished agent through the control plane.
 [`fm_composer_blocking_dialog`](../bin/fm-composer-lib.sh) owns the recognised set, which today is only Claude's background-task exit picker; [its verification record](verification/runtime-backends.md#claude-background-task-exit-picker) lists the dialogs that are not covered.
 T3 Code has no composer and its `/mcp` tools offer no session stop, so `exit` refuses there before sending anything ([`t3code-backend.md`](t3code-backend.md#current-lifecycle-and-safety)).
+
+### Pending launch text
+
+A doorbell that firstmate delivered can sit typed but unsubmitted in a Claude composer, and `exit` and `relaunch` then refuse because the composer holds text.
+`submit-pending` and `clear-pending` resolve that case without risking anyone else's input.
+Both act only when the composer is proven `pending` and its whole content, ignoring wrapping, is one of firstmate's own doorbells for the task: the task's constant steering-inbox doorbell, or an operational-input doorbell naming a record that exists in this home's `state/operational-inbox` (for a secondmate, also in its own home's).
+Any other text, such as a captain's or worker's draft, is refused with nothing sent, and so is a composer that is not proven pending and an agent that is running a turn.
+Both are verified for Claude on Herdr and tmux only and refuse every other pairing before reading anything.
+A Claude plugin band above the composer can hold the keyboard after a click on it or ctrl+x Tab, and while it does an Enter presses its focused Button instead of submitting.
+So before its Enter, `submit-pending` sends one Escape when the band is proven to hold the focus, which returns it to the prompt; `clear-pending` does the same before its Ctrl+U presses.
+A band that keeps the focus after that Escape refuses with nothing submitted or cleared, and never receives a second Escape, because Claude's double Escape clears a draft or opens its rewind picker.
+The inbox ring's re-submit of its own pending doorbell uses the same release ([`fm_task_inbox_submit_pending`](../bin/fm-task-inbox-lib.sh)); [`fm_backend_release_band_focus`](../bin/fm-backend.sh) owns the Escape and [its verification record](verification/runtime-backends.md#claude-plugin-band-focus) the measured behavior.
 
 **Teardown and discard are not verbs and will not become verbs.**
 `exit` stops an agent and preserves everything else.
@@ -233,6 +247,8 @@ The empirical basis for each adapter's value is the `harness-adapters` skill's v
 ## Verification
 
 - `tests/fm-control.test.sh` - the adapter contract for its verified-harness lane (adapters outside the lane pin their control mechanics in their own harness suites), the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
+- `tests/fm-control.test.sh` also covers `submit-pending` and `clear-pending`: both doorbell kinds, the band release and a band that keeps the focus, and the refusals for a draft, a foreign doorbell, an unproven composer, and a harness other than Claude.
+- `tests/fm-claude-band-focus-live-e2e.test.sh` - the opt-in live guard for the plugin band focus against real Claude Code on an isolated Herdr lab session.
 - `tests/fm-control-relaunch.test.sh` - the relaunch transaction: identity preservation, harness switching, the progress note, checkpoint refusals, rollback after a failed launch, and the endpoint-absence proof both verbs share - the Herdr reclaim of a destroyed endpoint, and tmux refusing one it cannot prove absent.
 - `tests/fm-control-herdr-smoke.test.sh` - the second state-verified backend against the real herdr binary, on an isolated throwaway lab session.
 - `tests/fm-backend-rex.test.sh` and `tests/fm-backend-rex-smoke.test.sh` - the Rex classifier and absence proof against a stateful fake CLI and a private test server; [`docs/verification/runtime-backends.md`](verification/runtime-backends.md#rex) records the live `interrupt`, `exit`, endpoint-gone, and reclaim runs.

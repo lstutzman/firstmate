@@ -2306,6 +2306,52 @@ fm_composer_dialog_sink_release() {
   fi
 }
 
+# fm_composer_band_focus: name the plugin control that holds Claude's keyboard
+# focus, from a STYLED (ANSI) screen. Claude Code's mods API draws a plugin's
+# band in the AbovePrompt slot, between the transcript and the composer, and a
+# Button there is `[ label ]`. A click on the band or the person's ctrl+x Tab
+# hands the band the keyboard; the focused Button is then drawn in SGR 7
+# inverse video, and Enter presses that Button instead of submitting the
+# composer, so text already in the composer stays unsubmitted (verified live
+# on Claude Code 2.1.322 with the lee-mods quota band: one Enter pressed its
+# Hide button, the next submitted). Escape returns the focus to the prompt and
+# leaves the composer untouched; typing printable text returns it too, so a
+# fresh typed delivery is not at risk, only an Enter on text already pending.
+# The proof is structural to Claude's own layout: the inverted `[ ` span sits
+# on a row ABOVE the composer's top rule, the solid `─` rule directly above the
+# bottom-most `❯` composer row. A bracket anywhere else - transcript output,
+# the composer itself, an unstyled read - is not this state.
+# Prints the focused control's label and returns 0; otherwise prints nothing
+# and returns 1. The SGR 7 inverse is the only surface signal the band offers
+# (docs/verification/runtime-backends.md "Claude plugin band focus"), so the
+# one consumer, fm_backend_release_band_focus, proves its Escape worked by
+# re-reading this verdict and fails loudly naming the harness when it did not.
+fm_composer_band_focus() {  # <styled-screen> -> focused control label
+  local screen=${1-}
+  [ -n "$screen" ] || return 1
+  printf '%s\n' "$screen" | LC_ALL=C awk '
+    function plain(s) { gsub(/\033\[[0-9;:?]*[A-Za-z]/, "", s); sub(/\r$/, "", s); return s }
+    { raw[NR] = $0; txt[NR] = plain($0) }
+    END {
+      composer = 0
+      for (i = NR; i > 1; i--) {
+        if (txt[i] ~ /^[ \t]*❯/ && txt[i - 1] ~ /^[ \t]*(─)+[ \t]*$/) { composer = i; break }
+      }
+      if (!composer) exit 1
+      for (i = composer - 2; i >= 1; i--) {
+        r = raw[i]
+        if (match(r, /\033\[([0-9]*;)*7(;[0-9]*)*m\[ [^]\033]*[^] \033] \]/)) {
+          span = substr(r, RSTART, RLENGTH)
+          sub(/^\033\[[0-9;]*m\[ /, "", span)
+          sub(/ \]$/, "", span)
+          printf "%s", span
+          exit 0
+        }
+      }
+      exit 1
+    }'
+}
+
 # Hermes TUI 0.21.7: profile-prefixed ❯ prompt immediately below the status
 # rule; placeholder text is dim, while typed drafts are bright. Identity is
 # required, and dialogs, wrapped drafts, non-ready status and unstyled reads

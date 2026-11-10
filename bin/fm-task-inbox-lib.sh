@@ -431,7 +431,7 @@ EOF
 # non-printable inbox name fails without output so terminal controls never
 # reach the pane's line discipline.
 fm_task_inbox_doorbell_line() {  # <record-path>
-  local dir=${1%/*} abs name quoted body LC_ALL=C
+  local body quoted LC_ALL=C
   if fm_task_inbox_is_inline "$1"; then
     body=$(fm_task_inbox_body "$1") || return 1
     fm_task_inbox_inline_eligible "$body" || return 1
@@ -439,6 +439,13 @@ fm_task_inbox_doorbell_line() {  # <record-path>
     printf "%s%s'" "$FM_TASK_INBOX_INLINE_PREFIX" "$quoted"
     return 0
   fi
+  fm_task_inbox_pointer_line "${1%/*}"
+}
+
+# The constant pointer doorbell for one inbox directory (or its handled/),
+# which fm_task_inbox_doorbell_line rings for every non-inline record.
+fm_task_inbox_pointer_line() {  # <inbox-dir>
+  local dir=$1 abs name quoted LC_ALL=C
   abs=$(cd "$dir" 2>/dev/null && pwd) || abs=$dir
   abs=${abs%/handled}
   name=${abs##*/}
@@ -502,7 +509,8 @@ fm_task_inbox_untake() {  # <record-path>
 # composer pre-check, then the backend's submit machinery with a minimal retry
 # budget, verdict discarded.
 # Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
-# other than our own doorbell (the watcher re-rings later), 2 the backend send
+# other than our own doorbell, or holds our doorbell while a Claude plugin band
+# kept the keyboard (the watcher re-rings later), 2 the backend send
 # failed, 3 skipped because the endpoint is positively dead or missing (nothing
 # typed; recovery owns the record), 4 an inline doorbell whose submit was not
 # confirmed empty (typed, but not proven landed). No return value is delivery proof; the
@@ -516,9 +524,12 @@ fm_task_inbox_untake() {  # <record-path>
 # A pending composer holding exactly our own doorbell line is a previous ring
 # whose Enter never landed, so on an agent not reported busy it is submitted
 # rather than skipped; skipping it would block every later ring. On both paths
-# a lost first Enter gets one confirmed retry.
+# a lost first Enter gets one confirmed retry. Each Enter on that pending line
+# first returns the keyboard to the prompt when a Claude plugin band holds it
+# (fm_task_inbox_submit_pending), so the Enter submits the line instead of
+# pressing a band Button.
 fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
-  local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict
+  local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict rc
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
     dead|missing) return 3 ;;
   esac
@@ -531,11 +542,13 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
       fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" \
         && [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" != busy ] \
         || return 1
-      fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
-      sleep 0.3
-      fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 0
-      fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
-      return 0
+      rc=0
+      fm_task_inbox_submit_pending "$backend" "$target" "$line" "$label" || rc=$?
+      case "$rc" in
+        0) return 0 ;;
+        2) return 2 ;;
+        *) return 1 ;;
+      esac
       ;;
   esac
   # Accepted residual race: terminal input and Enter are separate delivery
@@ -553,6 +566,32 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   if [ "$verdict" != empty ] && fm_task_inbox_is_inline "$rec"; then
     return 4
   fi
+  return 0
+}
+
+# Submit <line>, which the caller has proven is the composer's whole pending
+# content on an agent not reported busy: at most two Enters, the second only
+# while the composer still holds <line>. Before each Enter the keyboard goes
+# back to the prompt when a Claude plugin band holds it
+# (fm_backend_release_band_focus), because there an Enter presses the band's
+# focused Button and leaves <line> unsubmitted. Returns 0 once the Enters are
+# sent (not delivery proof; the caller re-reads the composer when it needs
+# one), 1 when the band kept the focus so no Enter was sent, 2 when a key could
+# not be delivered.
+fm_task_inbox_submit_pending() {  # <backend> <target> <line> [expected-label]
+  local backend=$1 target=$2 line=$3 label=${4:-} attempt=0
+  while [ "$attempt" -lt 2 ]; do
+    if [ "$attempt" -gt 0 ]; then
+      sleep 0.3
+      fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 0
+    fi
+    case "$(fm_backend_release_band_focus "$backend" "$target" "$label")" in
+      stuck) return 1 ;;
+      send-failed) return 2 ;;
+    esac
+    fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
+    attempt=$((attempt + 1))
+  done
   return 0
 }
 

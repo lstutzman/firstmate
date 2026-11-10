@@ -7,6 +7,8 @@
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
 #                                         [--effort <level>] [--account <entry>]
 #                                         (--note <text> | --note-file <path>)
+#        fm-control.sh <task-id> submit-pending
+#        fm-control.sh <task-id> clear-pending
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
 # DATA plane: conversational text for the agent to read, always routing-marked
@@ -118,6 +120,28 @@
 #              the prior durable record in place and reports the concrete
 #              state; it never leaves a half-transitioned task claiming to be
 #              running.
+#   submit-pending
+#              Submit text that sits unsubmitted in the agent's composer, but
+#              only when that text is exactly one of firstmate's own doorbells
+#              for this task: the task's constant steering-inbox doorbell, or a
+#              Firstmate operational-input doorbell naming a record that exists
+#              in this home's state/operational-inbox (for a secondmate, also
+#              its own home's). Any other pending text - a captain's or the
+#              worker's own draft - is refused untouched, as is a composer not
+#              proven `pending` and an agent running a turn. When a Claude
+#              plugin band holds the keyboard (its focused Button would take the
+#              Enter), one Escape first returns the focus to the prompt
+#              (bin/fm-backend.sh fm_backend_release_band_focus); a band that
+#              keeps the focus refuses with nothing submitted. Postcondition:
+#              the composer no longer holds the doorbell.
+#   clear-pending
+#              Clear the same firstmate-owned pending doorbell instead of
+#              submitting it, with the same refusals, by Ctrl+U presses.
+#              Postcondition: the composer reads exactly empty. Use it when the
+#              doorbell is stale, for example to let relaunch, which refuses a
+#              composer holding text, go ahead.
+#              Both verbs are Claude-only, on herdr and tmux
+#              (bin/fm-control-lib.sh fm_control_pending_text_supported).
 #
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
@@ -163,6 +187,8 @@
 #   FM_CONTROL_EXIT_WAIT         alive->dead wait after the exit command (30)
 #   FM_CONTROL_LAUNCH_WAIT       dead->alive wait after a relaunch (90)
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
+#   FM_CONTROL_PENDING_WAIT      wait for a submitted or cleared doorbell to
+#                                leave the composer (5)
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -218,6 +244,10 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-omp-profile-lib.sh"
 # shellcheck source=bin/fm-exclude-tools-lib.sh
 . "$SCRIPT_DIR/fm-exclude-tools-lib.sh"
+# shellcheck source=bin/fm-task-inbox-lib.sh
+. "$SCRIPT_DIR/fm-task-inbox-lib.sh"
+# shellcheck source=bin/fm-operational-input.sh
+. "$SCRIPT_DIR/fm-operational-input.sh"
 
 POLL=${FM_CONTROL_POLL:-0.5}
 SETTLE_WAIT=${FM_CONTROL_SETTLE_WAIT:-5}
@@ -225,6 +255,7 @@ ARM_WAIT=${FM_CONTROL_ARM_WAIT:-1.5}
 EXIT_WAIT=${FM_CONTROL_EXIT_WAIT:-30}
 LAUNCH_WAIT=${FM_CONTROL_LAUNCH_WAIT:-90}
 EXIT_RETRIES=${FM_CONTROL_EXIT_RETRIES:-3}
+PENDING_WAIT=${FM_CONTROL_PENDING_WAIT:-5}
 
 die() {  # <message>
   echo "error: $1" >&2
@@ -1367,6 +1398,137 @@ do_relaunch() {
   echo "relaunched $ID harness=$TARGET_HARNESS from=$PRIOR_RECORDED_HARNESS model=$TARGET_MODEL effort=$TARGET_EFFORT backend=$BACKEND endpoint=$T worktree=$WT"
 }
 
+# --- firstmate-owned pending text --------------------------------------------
+#
+# submit-pending and clear-pending act only on composer text that is
+# firstmate's own doorbell for this task, so a captain's or worker's draft is
+# never submitted or lost. PENDING_LINE and PENDING_KIND name what was found.
+
+PENDING_LINE=
+PENDING_KIND=
+
+# The composer's selected content, wrapped rows joined, from the same capture
+# fm_task_inbox_composer_holds reads.
+pending_composer_content() {
+  local cap
+  cap=$(fm_backend_capture "$BACKEND" "$T" "$FM_COMPOSER_CAPTURE_LINES" "$LABEL" 2>/dev/null) || return 1
+  fm_composer_extract_selected_content styled=0 "$cap"
+}
+
+# Whitespace and the invisible U+2063 operational mark removed: a wrapped
+# composer row splits a line at any column, and Claude's read-back drops the mark.
+pending_squash() {  # <text>
+  local text=$1
+  text=${text//[$' \t\r\n\v\f']/}
+  printf '%s' "${text//$'\xE2\x81\xA3'/}"
+}
+
+# The operational-inbox directories whose records are this task's doorbells.
+pending_operational_dirs() {
+  printf '%s\n' "$STATE/$FM_OPERATIONAL_RECORD_DIRNAME"
+  if [ "$KIND" = secondmate ] && [ -n "$WT" ]; then
+    printf '%s\n' "$WT/state/$FM_OPERATIONAL_RECORD_DIRNAME"
+  fi
+}
+
+# Set PENDING_LINE and PENDING_KIND when <content> is exactly one of this
+# task's firstmate doorbells; return 1 otherwise.
+pending_match_doorbell() {  # <content>
+  local held candidate dir abs rec
+  held=$(pending_squash "$1")
+  [ -n "$held" ] || return 1
+  candidate=$(fm_task_inbox_pointer_line "$(fm_task_inbox_dir "$STATE" "$ID")") || candidate=
+  if [ -n "$candidate" ] && [ "$held" = "$(pending_squash "$candidate")" ]; then
+    PENDING_LINE=$candidate
+    PENDING_KIND=steering-doorbell
+    return 0
+  fi
+  while IFS= read -r dir; do
+    abs=$(cd -P "$dir" 2>/dev/null && pwd -P) || continue
+    for rec in "$abs"/*.msg; do
+      [ -f "$rec" ] || continue
+      candidate="${FM_OPERATIONAL_DOORBELL_PREFIX}${rec}${FM_OPERATIONAL_DOORBELL_SUFFIX}"
+      if [ "$held" = "$(pending_squash "$candidate")" ]; then
+        PENDING_LINE=$candidate
+        PENDING_KIND=operational-doorbell
+        return 0
+      fi
+    done
+  done <<EOF
+$(pending_operational_dirs)
+EOF
+  return 1
+}
+
+# Every refusal shared by both verbs, before anything is sent.
+pending_preflight() {
+  local state composer_state content
+  fm_control_pending_text_supported "$HARNESS" "$BACKEND" \
+    || die "'$VERB' is verified for Claude on herdr and tmux only; task $ID runs $HARNESS on $BACKEND, so its pending text is left untouched"
+  state=$(agent_state)
+  [ "$state" = alive ] \
+    || die "task $ID's endpoint reads '$state', not a running agent; there is no composer to act on"
+  case "$(busy_verdict)" in
+    busy*) die "task $ID's agent is running a turn; '$VERB' acts only on an idle composer, because its Escape or Enter would land on the running turn" ;;
+  esac
+  composer_state=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) || composer_state=unknown
+  [ "$composer_state" = pending ] \
+    || die "task $ID's composer state is '$composer_state', not proven to hold pending text; '$VERB' acts only on a composer proven to hold firstmate's own doorbell"
+  content=$(pending_composer_content) \
+    || die "task $ID's composer could not be read; '$VERB' sent nothing"
+  pending_match_doorbell "$content" \
+    || die "task $ID's composer holds text that is not firstmate's own doorbell for this task; '$VERB' refuses so a captain's or worker's draft is never submitted or lost"
+}
+
+# Poll until the composer no longer holds the doorbell. 0 when it is gone.
+pending_wait_gone() {
+  local elapsed=0
+  while :; do
+    fm_task_inbox_composer_holds "$BACKEND" "$T" "$PENDING_LINE" "$LABEL" || return 0
+    awk -v e="$elapsed" -v t="$PENDING_WAIT" 'BEGIN{exit !(e < t)}' || return 1
+    sleep "$POLL"
+    elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')
+  done
+}
+
+do_submit_pending() {
+  local rc=0
+  pending_preflight
+  fm_task_inbox_submit_pending "$BACKEND" "$T" "$PENDING_LINE" "$LABEL" || rc=$?
+  case "$rc" in
+    0) ;;
+    1) die "task $ID's Claude plugin band kept the keyboard after one Escape, so an Enter would press its Button instead of submitting; nothing was submitted and the $PENDING_KIND is still in the composer. Press Escape in the pane once, then retry '$VERB'" ;;
+    *) die "a key could not be delivered to task $ID on $BACKEND; the $PENDING_KIND may still be in the composer" ;;
+  esac
+  pending_wait_gone \
+    || die "submit-delivered $ID doorbell=$PENDING_KIND submit=unconfirmed; the composer still holds it after ${PENDING_WAIT}s"
+  printf 'submitted doorbell=%s' "$PENDING_KIND"
+}
+
+do_clear_pending() {
+  local presses i=0 verdict
+  fm_control_backend_supports_key "$BACKEND" C-u \
+    || die "task $ID runs on the $BACKEND backend, which cannot deliver Ctrl+U, so '$VERB' cannot clear its composer"
+  pending_preflight
+  case "$(fm_backend_release_band_focus "$BACKEND" "$T" "$LABEL")" in
+    stuck) die "task $ID's Claude plugin band kept the keyboard after one Escape; nothing was cleared and the $PENDING_KIND is still in the composer. Press Escape in the pane once, then retry '$VERB'" ;;
+    send-failed) die "a key could not be delivered to task $ID on $BACKEND; nothing was cleared" ;;
+  esac
+  # Claude deletes one wrapped row per Ctrl+U, so the bound grows with the line.
+  presses=$(( ${#PENDING_LINE} / 40 + 8 ))
+  while [ "$i" -lt "$presses" ]; do
+    fm_backend_send_key "$BACKEND" "$T" C-u "$LABEL" \
+      || die "Ctrl+U could not be delivered to task $ID on $BACKEND; the $PENDING_KIND may be partly cleared"
+    i=$((i + 1))
+    verdict=$(fm_backend_composer_state "$BACKEND" "$T" "$LABEL" 2>/dev/null) || verdict=unknown
+    if [ "$verdict" = empty ]; then
+      printf 'cleared doorbell=%s' "$PENDING_KIND"
+      return 0
+    fi
+  done
+  die "clear-delivered $ID doorbell=$PENDING_KIND clear=unconfirmed; the composer reads '$verdict' after $presses Ctrl+U presses"
+}
+
 # --- verbs ------------------------------------------------------------------
 
 case "$VERB" in
@@ -1392,5 +1554,13 @@ case "$VERB" in
     ;;
   relaunch)
     do_relaunch
+    ;;
+  submit-pending)
+    result=$(do_submit_pending)
+    echo "$result $ID harness=$HARNESS backend=$BACKEND endpoint=$T"
+    ;;
+  clear-pending)
+    result=$(do_clear_pending)
+    echo "$result $ID harness=$HARNESS backend=$BACKEND endpoint=$T"
     ;;
 esac

@@ -1,0 +1,3 @@
+# Claude Code writes these when the live guard loads the fixture.
+tsconfig.json
+.claude-plugin/types/

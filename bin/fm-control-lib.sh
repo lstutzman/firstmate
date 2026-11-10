@@ -21,7 +21,8 @@
 #
 #   1. Verb allowlist. There is no arbitrary-text and no generic raw-key entry
 #      point on the control plane; a caller either names an allowlisted verb or
-#      is refused.
+#      is refused. The two pending-text verbs act only on composer text that is
+#      firstmate's own doorbell, never on arbitrary input.
 #   2. Per-harness control mechanics: which key interrupts a running turn, how
 #      many times it must be sent, whether the composer needs clearing after
 #      that key, which adapter-owned cancellation acknowledgement is observable,
@@ -50,12 +51,27 @@ fm_control_verbs() {
 interrupt
 exit
 relaunch
+submit-pending
+clear-pending
 EOF
 }
 
 fm_control_verb_allowed() {  # <verb>
   case "${1-}" in
-    interrupt|exit|relaunch) return 0 ;;
+    interrupt|exit|relaunch|submit-pending|clear-pending) return 0 ;;
+  esac
+  return 1
+}
+
+# Where submit-pending and clear-pending can act: the harness whose pending
+# launch text is verified (Claude, whose plugin band can hold the keyboard so a
+# delivered doorbell sits unsubmitted) on the backends with a styled viewport
+# read that bin/fm-backend.sh's fm_backend_release_band_focus needs. Every
+# other pairing is refused before anything is read or sent.
+fm_control_pending_text_supported() {  # <harness> <backend>
+  [ "${1-}" = claude ] || return 1
+  case "${2-}" in
+    herdr|tmux) return 0 ;;
   esac
   return 1
 }
