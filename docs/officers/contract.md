@@ -55,7 +55,7 @@ Automated findings are filed in far fewer, larger items, so one worker fixes a b
   The officer's own label lookup does not cover `area:fleet`; if team PC lacked it, Linear's dry run would refuse the item and the digest would report it failed.
   An officer never creates a label; a missing label means the finding is reported and not filed.
 - An officer filing under this contract never closes or deletes an item, and never changes the state, priority, labels, assignee or title of one that exists; the exceptions are the progress officer's triage below and the Surgeon marking its own absorbed single items Duplicate of their bundle (see [Bundles](#bundles)).
-  The only text it edits is the Found line and its own bundles' checklists; `fold --apply` alone also marks the folded originals Duplicate of their bundle.
+  The only text it edits is the Found line and its own bundles' checklists; `fold --apply` also marks the folded originals Duplicate of their bundle, and the Surgeon's filing pass marks its own absorbed single items (see [Bundles](#bundles)).
   An item a person closed is never reopened: a repeat finding goes to its area bundle with a line that names the closed item (a finding an officer keeps single files a new item that says `Recurrence of <id>` and links the old one).
   The page-check officer is the one exception: its repeat of a closed item or bundle raises nothing new, files nothing and never starts it ([`page-check-rubric.md`](page-check-rubric.md)).
 - The registry line sets the per-run create cap (`max-creates`, which counts bundles), the bundle size (`bundle-cap`) and the Linear call budget (`max-linear-calls`).
