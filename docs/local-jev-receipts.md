@@ -88,6 +88,8 @@ Fallback, abstain and timeout decisions are counted apart and never replayed.
 
 ## Callers
 
+The officers run jev.py with `LOCAL_JEV_RECEIPTS=0` so that its own receipts do not record each of their calls a second time as caller `jev-cli`.
+
 | Caller | Where | Call | Decision | Outcome |
 |---|---|---|---|---|
 | `dispatch-resolve` | `bin/fm-dispatch-resolve.sh` | One `choice` over the dispatch rules, written once the request was sent | `bin/fm-spawn.sh` at launch | `bin/fm-teardown.sh` at cleanup |

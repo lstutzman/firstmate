@@ -1173,7 +1173,8 @@ class LocalJev:
 
     def ask(self, text, *args):
         run = subprocess.run([sys.executable, "-I", self.script, *args, "--state-file", "-"],
-                             input=text, capture_output=True, text=True, timeout=20, check=False)
+                             input=text, capture_output=True, text=True, timeout=20, check=False,
+                             env=dict(os.environ, LOCAL_JEV_RECEIPTS="0"))  # this officer writes its own receipts
         if run.returncode:
             raise RuntimeError("exit %d" % run.returncode)
         return json.loads(run.stdout)

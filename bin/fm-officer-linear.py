@@ -445,7 +445,8 @@ class Jev:
         try:
             proc = subprocess.run(
                 ["python3", self.path, "noul", question, "--true", yes, "--false", no, "--state", json.dumps(state)],
-                capture_output=True, check=False, timeout=JEV_TIMEOUT, stdin=subprocess.DEVNULL)
+                capture_output=True, check=False, timeout=JEV_TIMEOUT, stdin=subprocess.DEVNULL,
+                env=dict(os.environ, LOCAL_JEV_RECEIPTS="0"))  # this officer writes its own receipts
         except (OSError, subprocess.TimeoutExpired) as exc:
             self.dead, self.gap = True, "local-jev timed out, so duplicates are found by fingerprint only"
             self.down, self.source = "local-jev-down", "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "fallback:local-jev-down"
