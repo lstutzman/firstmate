@@ -31,9 +31,8 @@ alone, in this order:
   needs-lee  a disposition naming a delete, removal, retirement or trash (fleet
              rules section 6);
   safe       kind readme, stack-drift, misplaced or cruft with a disposition
-             that archives or moves a file the finding's own text says is
-             tracked, with nothing saying untracked, not tracked, Git-ignored
-             or outside the repository, checkout or PR: one docs PR per
+             that archives or moves a file, when the finding's title, evidence
+             or disposition carries the marker `git-status: tracked`: one docs PR per
              repository can ship it, because an archive or move inside a PR
              keeps the Markdown source (fleet rules section 6);
   needs-lee  any other archive or move, which could be outside a PR;
@@ -99,9 +98,7 @@ LEE_RE = re.compile(r"\b(lee|owner|approv\w*|decides?|decision)\b", re.I)
 HOLD_RE = re.compile(r"^\s*(unresolved|keep|leave|report only|no action)\b", re.I)
 DESTRUCTIVE_RE = re.compile(r"\b(delet|remov|retir|trash)\w*", re.I)
 MOVE_RE = re.compile(r"\b(archiv\w*|mov(e|es|ed|ing))\b", re.I)
-TRACKED_RE = re.compile(r"\btracked\b", re.I)
-UNTRACKED_RE = re.compile(r"\b(untracked|not tracked|git-?ignored|ignored by (git|\.gitignore)|status:? ignored"
-                          r"|(out of|outside) (a|the) (PR|checkout|repo\w*)\b(?!\s+root))", re.I)
+TRACKED_RE = re.compile(r"\bgit-status:\s*tracked\b", re.I)
 SAFE_RE = re.compile(r"\b(propose|record|add|correct|link|point|regenerate|make sure)\w*", re.I)
 SAFE_KINDS = ("readme", "stack-drift", "misplaced")
 COUNTED = ("code", "needs-lee", "safe")
@@ -135,8 +132,7 @@ def bucket(f):
     if m:
         return "needs-lee", "the disposition says %s" % m.group(0).lower()
     if kind in SAFE_KINDS + ("cruft",) and MOVE_RE.search(disposition):
-        said = " ".join((f["title"], f["evidence"], disposition))
-        if TRACKED_RE.search(said) and not UNTRACKED_RE.search(said):
+        if TRACKED_RE.search(" ".join((f["title"], f["evidence"], disposition))):
             return "safe", "an archive or move of a tracked file one PR can ship"
         return "needs-lee", "an archive or move of a file the finding does not show is tracked could be outside a PR"
     if kind in SAFE_KINDS and SAFE_RE.search(disposition):

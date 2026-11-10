@@ -42,7 +42,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 These never start by themselves, whatever the score:
 
 - Needs-Lee findings: a conflict, an instruction or hook file, a disposition naming Lee, an owner, an approval or a decision, and any delete, removal, retirement or trash, or any move outside a PR.
-  An archive or move that happens inside a PR and keeps the Markdown source is ordinary librarian work, not Needs-Lee (fleet rules section 6, last bullet), but it starts by itself only when the finding shows the file is tracked; an archive or move of a file the finding does not show is tracked could be outside a PR, so it is Needs-Lee.
+  An archive or move that happens inside a PR and keeps the Markdown source is ordinary librarian work, not Needs-Lee (fleet rules section 6, last bullet), but it starts by itself only when the finding carries the marker `git-status: tracked`; an archive or move of a file the finding does not show is tracked could be outside a PR, so it is Needs-Lee.
   They are filed, and the digest carries one keyed needs-decision line for the run, never one per item.
 - Code work, which needs its own brief.
 - The seven reserved classes: payments or billing, legal text, product decisions, member-facing copy, credentials, production actions and data-rewriting changes.
