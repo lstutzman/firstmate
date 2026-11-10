@@ -419,6 +419,32 @@ test_corr_close_negatives() {
 }
 FM_CLASSIFY_UNKEYED_CUTOVER=500 test_corr_close_negatives
 
+# An unkeyed resolved with a corr closes every open unkeyed copy of that corr,
+# as a same-corr done does; one with no corr still closes none of several.
+test_unkeyed_corr_resolved_closes_every_copy() {
+  local dir c=c9d9b505f8244bd0
+  dir=$(case_dir unkeyed-corr-resolved-copies)
+  {
+    printf 'blocked [corr=%s] [at=1000]: ask\n' "$c"
+    printf 'blocked [corr=%s] [at=1007]: ask again\n' "$c"
+  } > "$dir/corr.status"
+  assert_fold "$dir/corr.status" "$(printf 'u-1000-%s\tblocked\task\nu-1007-%s\tblocked\task again' "$c" "$c")" \
+    "both unkeyed copies open"
+  printf 'resolved [corr=%s] [at=1100]: answered\n' "$c" >> "$dir/corr.status"
+  assert_fold "$dir/corr.status" "" "an unkeyed same-corr resolved closes both copies"
+  assert_equals "resolved" "$(status_key_closing_verb "$dir/corr.status" "u-1000-$c")" "first copy reads resolved"
+  assert_equals "resolved" "$(status_key_closing_verb "$dir/corr.status" "u-1007-$c")" "second copy reads resolved"
+  {
+    printf 'blocked [at=1000]: ask\n'
+    printf 'blocked [at=1007]: ask again\n'
+    printf 'resolved [at=1100]: answered\n'
+  } > "$dir/nocorr.status"
+  assert_fold "$dir/nocorr.status" "$(printf 'u-1000\tblocked\task\nu-1007\tblocked\task again')" \
+    "an unkeyed resolved with no corr closes neither of two open entries"
+  pass "an unkeyed same-corr resolved closes every copy; a corr-less one still needs a single open entry"
+}
+FM_CLASSIFY_UNKEYED_CUTOVER=500 test_unkeyed_corr_resolved_closes_every_copy
+
 # Deep Thought's two real cases: same-second unkeyed asks, then corr-only
 # resolutions. Each u-<epoch>-<corr> entry closes and reads as resolved.
 test_same_second_corr_asks_close_by_corr_only_resolutions() {

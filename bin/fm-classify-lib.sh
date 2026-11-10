@@ -729,9 +729,11 @@ status_event_recorded() {  # <status-file> <new-status-line>
 # ask never replaces an earlier one still open; OPEN DECISIONS prints that key
 # and fm-send --resolve-key closes exactly that ask. An unkeyed resolution,
 # stamped or not, closes the entry under its own key when one is open; otherwise
-# it closes an unkeyed entry only when exactly one is open in its scope - the
-# task, or the task plus its correlation id when it carries one - and closes none
-# when several are open, so each is closed by key. Two unkeyed asks stamped in
+# a resolved carrying a correlation id closes every open "u-<at-epoch>-<corr>"
+# entry with that corr; any other unkeyed resolution closes an unkeyed entry only
+# when exactly one is open in its scope - the task, or the task plus its
+# correlation id for a captain-held - and closes none when several are open, so
+# each is closed by key. Two unkeyed asks stamped in
 # the same second share one synthetic key, the later replacing the earlier. An open
 # entry under "u-<at-epoch>-<corr>" also closes when a later line of the same log
 # carries that corr and is a keyed needs-decision or blocked (the keyed copy
@@ -1223,7 +1225,9 @@ EOF
         0:*|*$'\n'"$key"$'\t'*) ;;
         *)
           _fm_status_corr_id "$line" corr || corr=''
-          key=$(_fm_unkeyed_close_target "$open" "$corr") || { printf '%s' "$open"; return 0; }
+          if [ -z "$corr" ] || [ "$verb" != "$resolve" ]; then
+            key=$(_fm_unkeyed_close_target "$open" "$corr") || { printf '%s' "$open"; return 0; }
+          fi
           ;;
       esac
       open=$(_fm_decision_drop "$open" "$key")
@@ -1231,7 +1235,8 @@ EOF
       ;;
   esac
   # A keyed ask, or a resolution, supersedes the unkeyed copies of its request.
-  if [ "$unkeyed" = 0 ] && [ "$verb" != "$held" ] && _fm_status_corr_id "$line" corr; then
+  if [ "$verb" != "$held" ] && { [ "$unkeyed" = 0 ] || [ "$verb" = "$resolve" ]; } &&
+    _fm_status_corr_id "$line" corr; then
     open=$(_fm_synthetic_corr_drop "$open" "$corr")
     [ -n "$open" ] && open="${open}"$'\n'
   fi
@@ -1406,8 +1411,7 @@ status_open_decisions() {  # <status-file> [<kind>]
         records[key] = serial
         values[key] = key "\t" v "\t" note
       } else {
-        if (unkeyed && !(key in records)) {
-          corr = correlation(s)
+        if (unkeyed && !(key in records) && ((corr = correlation(s)) == "" || v != resolve)) {
           count = 0
           target = ""
           for (candidate in records) {
@@ -1423,7 +1427,7 @@ status_open_decisions() {  # <status-file> [<kind>]
         }
         delete records[key]
       }
-      if (!unkeyed && v != held && (corr = correlation(s)) != "") corr_drop(corr)
+      if ((unkeyed ? v == resolve : v != held) && (corr = correlation(s)) != "") corr_drop(corr)
     }
     END {
       sep = ""
