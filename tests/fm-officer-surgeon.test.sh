@@ -127,12 +127,17 @@ case "\$1 \$2" in
     meta='"state":"'"\$st"'","stateType":"'"\$ty"'"'
     if [ "\$3" = PC-9 ] && [ -f "\$d/pc9.desc" ]; then
       title='"title":"Older report",'; desc=\$(cat "\$d/pc9.desc")
+    elif [ -f "\$d/desc.\$3" ]; then
+      title='"title":"'"\$(cat "\$d/title.\$3" 2>/dev/null || echo A single finding)"'",'; desc=\$(cat "\$d/desc.\$3")
+      [ -f "\$d/assignee.\$3" ] && meta="\$meta"',"assignee":"someone"'
+      [ -f "\$d/labels.\$3" ] && meta="\$meta"',"labels":["'"\$(cat "\$d/labels.\$3")"'"]'
     elif [ "\$3" = PC-55 ]; then
       title='"title":"'"\$(cat "\$d/created.title" 2>/dev/null)"'",'; desc="Filed earlier. surgeon-fp:\$(tr -d '\n' < "\$d/exists.txt")"
     else title=''; desc=unrelated; fi
     case " \$* " in *" --full "*) ;; *) [ \${#desc} -gt 500 ] && { desc=\${desc:0:500}; desc="\${desc%\\\\}\\\\n... (truncated, use --full)"; } ;; esac
     echo '{"ok":true,"data":{"issue":{"identifier":"'"\$3"'",'"\$meta"','"\$title"'"description":"'"\$desc"'"}}}' ;;
   "issue relation")
+    [ -f "\$d/ratelimit.relation" ] && { err RATE_LIMITED "wait"; exit 1; }
     case " \$* " in *" --verify "*) echo "RELATION \$4 \$5 \$6" >> "\$d/relations" ;; esac
     echo '{"ok":true,"data":{"dryRun":true}}' ;;
   "issue create")
@@ -1301,6 +1306,78 @@ SH
   pass "fm-officer surgeon: preflight checks the run host's Linear, jev, fleet app and staging repo and fails on any failed check"
 }
 
+# seed_single <world> <review id> <single item> [description]: the ledger says the Surgeon filed <single item> for the finding.
+seed_single() {
+  local ledger="$TMP_ROOT/$1/home/data/officers/surgeon/filed-fingerprints.json"
+  jq --arg fp "$(fp review nightly-review "$2")" --arg id "$3" '.[$fp] = $id' "$ledger" > "$ledger.new" && mv "$ledger.new" "$ledger"
+  local own="Filed by the Ship"$'\x27'"s Surgeon from the nightly review results."
+  printf '%s' "${4:-$own}" > "$LDIR/desc.$3"
+}
+
+test_absorbed_singles_are_marked_duplicate_of_their_bundle() {
+  local home json bundle state="$TMP_ROOT/dupes/home/data/officers/surgeon/bundles.json"
+  make_world dupes "$LINEAR_ON"; home=$WORLD_HOME
+  set_pages dupes '[
+    {"id":"d1","severity":"medium","file":"infra/bicep/a.bicep","summary":"unpinned api version one"},
+    {"id":"d2","severity":"medium","file":"infra/bicep/b.bicep","summary":"unpinned api version two"},
+    {"id":"d3","severity":"medium","file":"infra/bicep/c.bicep","summary":"unpinned api version three"},
+    {"id":"d4","severity":"medium","file":"infra/bicep/d.bicep","summary":"unpinned api version four"},
+    {"id":"d5","severity":"medium","file":"infra/bicep/e.bicep","summary":"change the wording shown to members on the page"},
+    {"id":"d6","severity":"medium","file":"infra/bicep/f.bicep","summary":"unpinned api version six"}]' '[]'
+  run_surgeon "$home" >/dev/null || fail "first run must succeed"
+  seed_single dupes d1 PC-201; seed_single dupes d2 PC-202 "Written by Lee by hand."
+  seed_single dupes d3 PC-203; echo Todo > "$LDIR/labels.PC-203"; printf 'payments' > "$LDIR/labels.PC-203"
+  seed_single dupes d4 PC-204; touch "$LDIR/assignee.PC-204"
+  seed_single dupes d5 PC-205
+  : > "$LINEAR_LOG"; : > "$LDIR/relations"; : > "$LDIR/comments"
+  run_surgeon "$home" >/dev/null || fail "second run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  bundle=$(grep '^RELATION PC-201' "$LDIR/relations" | awk '{print $4}')
+  assert_equals "PC-201 --duplicate-of $bundle" "$(grep '^RELATION PC-201' "$LDIR/relations" | awk '{print $2, $3, $4}')" "an absorbed Surgeon single is related duplicate of its bundle"
+  assert_equals "1" "$(grep -c '^issue update PC-201 --state Duplicate .*--verify' "$LINEAR_LOG")" "and moved to Duplicate"
+  assert_equals "COMMENT PC-201" "$(cat "$LDIR/comments")" "with one comment, on that item only"
+  assert_contains "$(grep '^issue comment PC-201 .*--verify' "$LINEAR_LOG")" "$bundle" "linking the bundle"
+  assert_equals "1 4" "$(jq -r '[(.duplicates.marked|length), (.duplicates.skipped|length)] | map(tostring) | join(" ")' "$json")" "the result counts one marked and four skipped"
+  assert_contains "$(jq -r '.duplicates.skipped[] | "\(.single) \(.why)"' "$json")" "PC-202 not filed by the Surgeon" "a person-authored item is skipped"
+  assert_contains "$(jq -r '.duplicates.skipped[] | "\(.single) \(.why)"' "$json")" "PC-203 reserved class: payments" "a reserved-label item is skipped"
+  assert_contains "$(jq -r '.duplicates.skipped[] | "\(.single) \(.why)"' "$json")" "PC-204 assigned, kept single" "an assigned item is skipped"
+  assert_contains "$(jq -r '.duplicates.skipped[] | "\(.single) \(.why)"' "$json")" "PC-205 reserved class: member-copy" "a reserved-class finding is skipped"
+  assert_equals 0 "$(grep -c '^issue update PC-20[2345] --state' "$LINEAR_LOG")" "none of the skipped items is touched"
+  assert_contains "$(cat "$LDIR/updates")" "single PC-205 kept open: reserved class member-copy" "the reserved class is named on the bundle line"
+  assert_equals PC-201 "$(jq -r '.folded | keys[]' "$state")" "the ledger records the one it marked"
+  : > "$LINEAR_LOG"; : > "$LDIR/relations"
+  run_surgeon "$home" >/dev/null || fail "third run must succeed"
+  assert_equals "issue view PC-204 --full --output json" "$(grep 'PC-20' "$LINEAR_LOG")" "a later run re-reads only the assigned item (it may be unassigned later) and touches nothing it settled"
+  assert_equals 0 "$(grep -c '^RELATION' "$LDIR/relations")" "no second relation"
+  pass "fm-officer surgeon: a single the Surgeon filed is marked Duplicate of its bundle once, and person-authored, in-hand and reserved ones stay open"
+}
+
+test_writes_none_marks_nothing_and_rate_limit_stops_marking() {
+  local home json
+  make_world dupes2 "$LINEAR_ON"; home=$WORLD_HOME
+  set_pages dupes2 '[
+    {"id":"e1","severity":"medium","file":"infra/bicep/a.bicep","summary":"unpinned api version one"},
+    {"id":"e2","severity":"medium","file":"infra/bicep/b.bicep","summary":"unpinned api version two"}]' '[]'
+  run_surgeon "$home" >/dev/null || fail "first run must succeed"
+  seed_single dupes2 e1 PC-211; seed_single dupes2 e2 PC-212
+  sed -i 's/writes: linear; team: PC; //' "$home/data/officers.md"
+  : > "$LINEAR_LOG"
+  run_surgeon "$home" >/dev/null || fail "writes none run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals 0 "$(grep -c '^' "$LINEAR_LOG")" "writes: none sends nothing to Linear"
+  assert_equals "0 2" "$(jq -r '[(.duplicates.marked|length), (.duplicates.would_mark|length)] | map(tostring) | join(" ")' "$json")" "but reports the two it would mark"
+  assert_equals "" "$(jq -r '.folded // {} | keys[]' "$home/data/officers/surgeon/bundles.json")" "and records nothing"
+  sed -i 's/^\(.*\)app: https/\1writes: linear; team: PC; app: https/' "$home/data/officers.md"
+  touch "$LDIR/ratelimit.relation"
+  run_surgeon "$home" >/dev/null || fail "rate limited run must still finish"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals 0 "$(jq -r '.duplicates.marked | length' "$json")" "a rate limit marks nothing"
+  assert_equals 1 "$(grep -c '^issue relation add PC-21' "$LINEAR_LOG")" "and stops marking at the first rate-limited call"
+  assert_contains "$(jq -r '.writes_blocked' "$json")" "duplicate marking stopped" "the digest says why"
+  test -f "$home/data/officers/surgeon/linear-resume-after.json" || fail "a rate limit pauses later runs"
+  pass "fm-officer surgeon: writes none only reports what it would mark, and a rate limit stops the marking"
+}
+
 test_registry_rules
 test_classification_and_severity
 test_staging_tip_rates_the_night
@@ -1351,3 +1428,5 @@ test_visual_recurrence_of_a_closed_item_gets_its_screenshot
 test_visual_registry_fields_are_validated
 test_run_host_joins_sessions_through_the_home_mirror
 test_preflight_checks_what_the_surgeon_needs_on_the_run_host
+test_absorbed_singles_are_marked_duplicate_of_their_bundle
+test_writes_none_marks_nothing_and_rate_limit_stops_marking

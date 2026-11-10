@@ -53,6 +53,8 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - Each item has one Type, one Source and one area label.
   The area label is the bundle's feature area: the feature labels (calculators, deal-finder, authentication, api and so on) are tried first, on the finding's path and then its words, then `testing`, and the triage label when nothing fits.
   The Surgeon never creates a label.
+- A single item the Surgeon itself filed for a finding that now sits on a bundle is marked Duplicate of that bundle, with one comment linking it, under the rule in [`contract.md`](contract.md#bundles); the run's digest counts how many were marked and how many were skipped and why.
+  Linear calls for it count toward the run's call budget, stop on a rate limit like the rest, and carry `LINEAR_JOB=officer:surgeon`.
 - A visual-review defect is one line on a visual review bundle, with the Source `scheduled-review`, the type Bug and an area label taken from its route (the same path rules), falling back to `ui-ux` and then to the triage label.
   Its line carries `visual-review-fp:<hex>`, the findings file's own fingerprint, beside the Surgeon's, and names its screenshots: the real path when the registry line names the capture directory and the file is there, else the relative path.
   When the registry line names the capture directory, the Surgeon attaches each screenshot to the bundle the defect is newly added to with `linear-attach <issue> <file> --verify`, never on a repeat, and counts each call against the Linear call budget.
