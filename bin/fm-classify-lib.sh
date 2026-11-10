@@ -729,10 +729,17 @@ status_event_recorded() {  # <status-file> <new-status-line>
 # ask never replaces an earlier one still open; OPEN DECISIONS prints that key
 # and fm-send --resolve-key closes exactly that ask. An unkeyed resolution,
 # stamped or not, closes the entry under its own key when one is open; otherwise
-# it closes an unkeyed entry only when exactly one is open in its scope - the
-# task, or the task plus its correlation id when it carries one - and closes none
-# when several are open, so each is closed by key. Two unkeyed asks stamped in
-# the same second share one synthetic key, the later replacing the earlier. Every
+# a resolved carrying a correlation id closes every open "u-<at-epoch>-<corr>"
+# entry with that corr; any other unkeyed resolution closes an unkeyed entry only
+# when exactly one is open in its scope - the task, or the task plus its
+# correlation id for a captain-held - and closes none when several are open, so
+# each is closed by key. Two unkeyed asks stamped in
+# the same second share one synthetic key, the later replacing the earlier. An open
+# entry under "u-<at-epoch>-<corr>" also closes when a later line of the same log
+# carries that corr and is a keyed needs-decision or blocked (the keyed copy
+# supersedes it), a done, or a resolved; a working or paused line, another corr,
+# and a "u-<at-epoch>" key with no corr never do, and a done never closes an entry
+# under a stated key. Every
 # other unkeyed ask - unstamped, or stamped before the cutover - keeps the
 # historical "default" key and one-open-decision-per-task behavior, so older logs
 # fold exactly as before.
@@ -1042,6 +1049,21 @@ EOF
   printf '%s' "$found"
 }
 
+# Drop every open synthetic entry carrying <corr> from a newline-terminated
+# "<key>\t..." set, keeping the set's trailing newline.
+_fm_synthetic_corr_drop() {  # <open-set> <corr>
+  local line key out=''
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key=${line%%$'\t'*}
+    case "$key" in *-"$2") _fm_is_synthetic_key "$key" && continue ;; esac
+    out="${out}${line}"$'\n'
+  done <<EOF
+$1
+EOF
+  printf '%s' "$out"
+}
+
 # Drop the record for <key> from a newline-terminated "<key>\t<verb>\t<note>" set.
 # Portable (no associative arrays) so the fold runs on bash 3.2 as well as 4+.
 _fm_decision_drop() {  # <open-set> <key>
@@ -1145,6 +1167,14 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
   case "$unstamped" in
     *:*) case "$verb:$kind" in done:ship|done:scout|failed:ship|failed:scout) return 0 ;; esac ;;
   esac
+  if [ "$verb" = "done" ]; then
+    if _fm_status_corr_id "$line" corr; then
+      open=$(_fm_synthetic_corr_drop "$open" "$corr")
+      [ -n "$open" ] && open="${open}"$'\n'
+    fi
+    printf '%s' "$open"
+    return 0
+  fi
   case "$verb" in
     needs-decision|blocked|"$resolve"|"$held") ;;
     *) printf '%s' "$open"; return 0 ;;
@@ -1195,13 +1225,21 @@ EOF
         0:*|*$'\n'"$key"$'\t'*) ;;
         *)
           _fm_status_corr_id "$line" corr || corr=''
-          key=$(_fm_unkeyed_close_target "$open" "$corr") || { printf '%s' "$open"; return 0; }
+          if [ -z "$corr" ] || [ "$verb" != "$resolve" ]; then
+            key=$(_fm_unkeyed_close_target "$open" "$corr") || { printf '%s' "$open"; return 0; }
+          fi
           ;;
       esac
       open=$(_fm_decision_drop "$open" "$key")
       [ -n "$open" ] && open="${open}"$'\n'
       ;;
   esac
+  # A keyed ask, or a resolution, supersedes the unkeyed copies of its request.
+  if [ "$verb" != "$held" ] && { [ "$unkeyed" = 0 ] || [ "$verb" = "$resolve" ]; } &&
+    _fm_status_corr_id "$line" corr; then
+    open=$(_fm_synthetic_corr_drop "$open" "$corr")
+    [ -n "$open" ] && open="${open}"$'\n'
+  fi
   printf '%s' "$open"
 }
 
@@ -1304,6 +1342,12 @@ status_open_decisions() {  # <status-file> [<kind>]
       }
       return rest ~ /^[0-9]+$/
     }
+    function corr_drop(corr,    c, n, i, doomed) {
+      n = 0
+      for (c in records)
+        if (synthetic(c) && substr(c, length(c) - length(corr)) == "-" corr) doomed[++n] = c
+      for (i = 1; i <= n; i++) delete records[doomed[i]]
+    }
     function allowed(key, note,    i, prefix) {
       for (i = 1; i <= reserved_count; i++) {
         prefix = reserved[i]
@@ -1335,6 +1379,11 @@ status_open_decisions() {  # <status-file> [<kind>]
         for (key in records) delete records[key]
         next
       }
+      if (v == "done") {
+        corr = correlation(s)
+        if (corr != "") corr_drop(corr)
+        next
+      }
       if (v != "needs-decision" && v != "blocked" && v != resolve && v != held) next
       h = head(s)
       note = has_colon ? trim_left(substr(s, has_colon + 1)) : s
@@ -1362,8 +1411,7 @@ status_open_decisions() {  # <status-file> [<kind>]
         records[key] = serial
         values[key] = key "\t" v "\t" note
       } else {
-        if (unkeyed && !(key in records)) {
-          corr = correlation(s)
+        if (unkeyed && !(key in records) && ((corr = correlation(s)) == "" || v != resolve)) {
           count = 0
           target = ""
           for (candidate in records) {
@@ -1379,6 +1427,7 @@ status_open_decisions() {  # <status-file> [<kind>]
         }
         delete records[key]
       }
+      if ((unkeyed ? v == resolve : v != held) && (corr = correlation(s)) != "") corr_drop(corr)
     }
     END {
       sep = ""
@@ -1584,6 +1633,7 @@ status_key_closing_verb() {  # <status-file> <key>
       *)
         case "$event" in
           needs-decision|blocked|"$resolve"|"$held") ;;
+          done) _fm_is_synthetic_key "$want" || continue ;;
           *) continue ;;
         esac
         # A synthetic key's opener and closers are unkeyed lines, so read them
@@ -1744,10 +1794,13 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # 10: a stamped unkeyed line after the unkeyed cutover opens its own synthetic
 # key instead of replacing "default", so cursors folded under the shared
 # default bucket are discarded.
+# 11: a later keyed ask, done or resolved line with the same corr closes an
+# open synthetic "u-<epoch>-<corr>" entry, so cursors still holding one are
+# discarded.
 # Version 4 was already spent on the bracketed-tag parser change above, and a
 # cursor persisted under that reading predates this one, so it must still be
 # discarded and rebuilt from byte 0 under the new reading.
-FM_OPEN_DECISIONS_FOLD_VERSION=10
+FM_OPEN_DECISIONS_FOLD_VERSION=11
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
