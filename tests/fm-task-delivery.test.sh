@@ -71,6 +71,61 @@ run_spawn() {  # <home> <fakebin> <spawn-args...>
     "$SPAWN" "$@" 2>&1
 }
 
+# The code-ownership line reaches the launch brief only for a Fable 5.x model
+# and a brief that carries a listed work class, after every brief rule and
+# before the intent overlay, so it never lands inside the --intent text.
+test_launch_brief_carries_the_ownership_line_only_for_fable_refactor_work() {
+  local rec home proj fakebin id out sentence launch rule_line own_line intent_line
+  sentence="This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it."
+  rec=$(make_home ownership)
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+  write_own() {  # <id> <class-line-or-empty>
+    mkdir -p "$home/data/$1"
+    {
+      printf '# Task\n## Captain'\''s intent\nTidy the parser module.\n\n## Firstmate spec\nKeep behaviour unchanged.\n'
+      [ -z "$2" ] || printf '%s\n' "$2"
+      printf '\n# Rules\nNever merge a PR.\n\n# Definition of done\nDelivery contract: mode=no-mistakes\n'
+    } > "$home/data/$1/brief.md"
+  }
+  id=own-fable-refactor
+  write_own "$id" 'Work class: refactor'
+  out=$(run_spawn "$home" "$fakebin" "$id" "$proj" claude --mode no-mistakes --yolo off --model claude-fable-5-2)
+  launch="$home/data/$id/launch-brief.md"
+  assert_present "$launch" "ownership spawn did not render a launch brief: $out"
+  assert_grep "$sentence" "$launch" "Fable plus a listed class did not carry the sentence"
+  rule_line=$(grep -n '^Never merge a PR\.$' "$launch" | cut -d: -f1)
+  own_line=$(grep -n '^# Code ownership line$' "$launch" | cut -d: -f1)
+  intent_line=$(grep -n '^## Captain intent authorized for --intent$' "$launch" | cut -d: -f1)
+  [ "$rule_line" -lt "$own_line" ] || fail "the ownership line must follow every brief rule"
+  [ "$own_line" -lt "$intent_line" ] || fail "the ownership line must not sit inside the --intent text"
+
+  id=own-opus-refactor
+  write_own "$id" 'Work class: refactor'
+  out=$(run_spawn "$home" "$fakebin" "$id" "$proj" claude --mode no-mistakes --yolo off --model claude-opus-5-5)
+  assert_no_grep "$sentence" "$home/data/$id/launch-brief.md" "an Opus worker must not carry the sentence"
+
+  id=own-fable-fix
+  write_own "$id" 'Work class: fix'
+  out=$(run_spawn "$home" "$fakebin" "$id" "$proj" claude --mode no-mistakes --yolo off --model claude-fable-5-2)
+  assert_no_grep "$sentence" "$home/data/$id/launch-brief.md" "a Fable fix outside the listed classes must not carry the sentence"
+
+  id=own-fable-unmarked
+  write_own "$id" ''
+  out=$(run_spawn "$home" "$fakebin" "$id" "$proj" claude --mode no-mistakes --yolo off --model claude-fable-5-2)
+  assert_no_grep "$sentence" "$home/data/$id/launch-brief.md" "a Fable brief without the option must not carry the sentence"
+
+  id=own-scaffold-refactor
+  FM_HOME="$home" "$BRIEF" "$id" proj --mode no-mistakes --work-class refactor >/dev/null 2>&1 \
+    || fail "fm-brief.sh --work-class refactor should scaffold"
+  fill_brief_subsections "$home/data/$id/brief.md" "Tidy the parser module." "Keep behaviour unchanged."
+  out=$(run_spawn "$home" "$fakebin" "$id" "$proj" claude --mode no-mistakes --yolo off --model claude-fable-5-2)
+  assert_present "$home/data/$id/launch-brief.md" "scaffolded ownership spawn did not render a launch brief: $out"
+  assert_grep "$sentence" "$home/data/$id/launch-brief.md" "a Fable spawn of an fm-brief.sh --work-class brief did not carry the sentence"
+  pass "launch brief carries the ownership line only for Fable refactor-class work"
+}
+
 # A ship spawn must stop when its delivery contract was never decided or cannot be
 # a task mode, and must leave no task metadata behind when it does.
 test_ship_spawn_requires_a_valid_delivery_contract() {
@@ -2167,4 +2222,5 @@ test_spawn_requires_the_brief_to_carry_the_registered_pr_text
 test_promotion_carries_the_pr_text_binding
 test_spawn_and_promote_require_filled_task_subsections
 test_project_mode_resolves_branch_prefix
+test_launch_brief_carries_the_ownership_line_only_for_fable_refactor_work
 echo "# all fm-task-delivery tests passed"

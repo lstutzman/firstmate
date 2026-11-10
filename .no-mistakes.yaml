@@ -41,6 +41,11 @@ review:
         and says "no issues" plainly when there are none.
     - path: "**"
       instructions: |
+        If a commit message or the PR body carries a line starting "Reviewer note (Fable ownership line)",
+        read the full diff against the default branch and report any changed existing behaviour the
+        change summary does not name, not only what the summary describes.
+    - path: "**"
+      instructions: |
         In a re-review, report a new finding on code the fix round did not change only if it is
         an error; otherwise report nothing.
 

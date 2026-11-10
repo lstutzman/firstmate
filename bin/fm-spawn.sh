@@ -64,6 +64,10 @@
 #   after the shared task-set and Treehouse project locks are released;
 #   docs/configuration.md owns config/spawn-setup. Failures reach the worker
 #   through the private launch brief and never prevent launch.
+#   A brief line `Work class: refactor|clean-up|tech-debt|improve`, written by
+#   bin/fm-brief.sh --work-class, adds the code-ownership line to the launch brief only
+#   when the resolved `--model` also names a Fable 5.x model;
+#   fm_brief_ownership_section in bin/fm-dod-lib.sh owns the rule and the text.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope
 #   first in the private launch-brief overlay, including the exact task-owned
 #   steering inbox. This never rewrites a project's instruction files or a
@@ -4612,6 +4616,7 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
     fm_brief_worker_role "$STATE" "$ID" "$FM_ROOT" &&
       printf '\n' &&
       cat "$SOURCE_BRIEF" &&
+      fm_brief_ownership_section "$SOURCE_BRIEF" "$MODEL" &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
         fm_brief_intent_overlay "$CAPTAIN_INTENT"
       fi

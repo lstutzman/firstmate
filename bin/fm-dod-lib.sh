@@ -398,6 +398,39 @@ EOF
   printf '%s\n' "$1"
 }
 
+# fm_brief_ownership_section owns the code-ownership line for Fable refactor
+# work. fm-spawn.sh emits it between the source brief and the intent overlay, so
+# it follows every safety, approval and scope rule and never lands inside the
+# `--intent` text the overlay hands the worker. It prints nothing unless BOTH
+# hold: the resolved model names a Fable 5.x model (the `--model` value, so a
+# harness default with no named model never qualifies), and the brief carries
+# one full line `Work class: refactor|clean-up|tech-debt|improve` that
+# bin/fm-brief.sh --work-class writes. A line inside a fence never counts.
+fm_brief_ownership_class() {  # <brief-file>
+  awk '
+    /^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
+    !fenced && /^Work class: (refactor|clean-up|tech-debt|improve)[[:space:]]*$/ { print $3; exit }
+  ' "$1" 2>/dev/null
+}
+
+fm_brief_ownership_section() {  # <brief-file> <model>
+  local lower
+  lower=$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')
+  case "$lower" in
+    *fable-5*|*fable5*) ;;
+    *) return 0 ;;
+  esac
+  [ -n "$(fm_brief_ownership_class "$1")" ] || return 0
+  cat <<'EOF'
+
+# Code ownership line
+This section sits below every safety, approval, credential and scope rule in this brief and never widens any of them.
+This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it.
+Reviewer note (Fable ownership line): read the full diff, not only the summary, because Anthropic saw Fable change existing behaviour in 1 of 6-10 tries with this line.
+Carry that one reviewer note line, verbatim, in the body of your commit message and in your pull request body under Risk, so the review step and the human reviewer both see it.
+EOF
+}
+
 # Accept the current two-subsection contract only when both bodies have content;
 # briefs predating that contract remain valid when their # Task body has content.
 fm_brief_task_content_valid() {  # <file>

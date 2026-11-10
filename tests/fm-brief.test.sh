@@ -1458,6 +1458,36 @@ test_home_brief_include_is_appended_last() {
   pass "fm-brief.sh: the home brief include lands last on ship and scout, verbatim, and fails closed"
 }
 
+# --work-class records one of the four ownership-eligible classes as the exact
+# `Work class:` line fm-spawn reads; any other value or kind is refused at scaffold.
+test_work_class_is_rendered_and_bounded() {
+  local home brief v
+  home="$TMP_ROOT/work-class-home"
+  mkdir -p "$home/data"
+  # shellcheck source=bin/fm-dod-lib.sh
+  . "$ROOT/bin/fm-dod-lib.sh"
+  for v in refactor clean-up tech-debt improve; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "wc-ok-$v" some-proj --mode no-mistakes --work-class "$v" >/dev/null 2>&1 \
+      || fail "--work-class $v should scaffold"
+    brief="$home/data/wc-ok-$v/brief.md"
+    grep -qx "Work class: $v" "$brief" || fail "--work-class $v did not write its Work class line"
+    [ "$(fm_brief_ownership_class "$brief")" = "$v" ] || fail "fm-spawn's reader did not see class $v"
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" wc-none some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "a ship brief without --work-class should scaffold"
+  if grep -q '^Work class:' "$home/data/wc-none/brief.md"; then fail "a brief without --work-class gained a Work class line"; fi
+  for v in cleanup Refactor /improve fix ""; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" wc-bad some-proj --mode no-mistakes --work-class="$v" >"$TMP_ROOT/wc-bad.err" 2>&1 \
+      && fail "--work-class '$v' was accepted"
+    assert_grep 'must be one of refactor, clean-up, tech-debt, improve' "$TMP_ROOT/wc-bad.err" "--work-class '$v' refusal did not name the classes"
+    [ ! -e "$home/data/wc-bad/brief.md" ] || fail "a brief was written despite --work-class '$v'"
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" wc-scout some-proj --scout --work-class refactor >/dev/null 2>&1 \
+    && fail "a scout brief accepted --work-class"
+  [ ! -e "$home/data/wc-scout/brief.md" ] || fail "a scout brief was written despite --work-class"
+  pass "fm-brief.sh: --work-class writes the Work class line and refuses other values and kinds"
+}
+
 # --base-branch names the branch a task starts from and a ship's PR targets. It is
 # recorded as a Base branch line under # Setup, which fm-spawn reads back, and is
 # refused where no pull request carries the work.
@@ -1812,6 +1842,7 @@ test_wait_no_turns_absent_keeps_the_previous_brief
 test_home_brief_include_is_appended_last
 test_home_brief_include_project_blocks
 test_base_branch_is_rendered_and_bounded
+test_work_class_is_rendered_and_bounded
 test_ship_branch_prefix_defaults_to_legacy_fm
 test_ship_branch_prefix_override_is_consistent_across_modes
 test_ship_branch_prefix_empty_override_yields_bare_task_id

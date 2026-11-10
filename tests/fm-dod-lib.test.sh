@@ -490,6 +490,38 @@ test_worker_role_names_skill_and_fallback_file() {
   pass "worker role names the skill and its fallback skill file"
 }
 
+# The ownership line reaches a brief only for a Fable 5.x model AND a listed
+# work class; it is absent for other models, other task classes and no class.
+test_ownership_section_needs_fable_model_and_listed_class() {
+  local brief out sentence
+  sentence="This codebase is yours: what it's for and how it's built are your call, and you'll keep building on it."
+  brief="$TMP_ROOT/own-brief.md"
+  printf '%s\n' '# Task' '## Firstmate spec' 'Work class: refactor' > "$brief"
+  out=$(fm_brief_ownership_section "$brief" claude-fable-5-2)
+  assert_contains "$out" "$sentence" "Fable 5.x plus a listed class must carry the sentence verbatim"
+  assert_contains "$out" 'never widens any of them' "the section must say it never widens a rule"
+  assert_contains "$out" 'read the full diff, not only the summary' "the reviewer note is missing"
+  [ "$(printf '%s\n' "$out" | grep -c 'Reviewer note (Fable ownership line)')" = 1 ] \
+    || fail "the reviewer note must appear exactly once"
+  for cls in clean-up tech-debt improve; do
+    printf '%s\n' 'Work class: '"$cls" > "$brief"
+    [ -n "$(fm_brief_ownership_section "$brief" fable-5.3)" ] || fail "class $cls with a Fable 5.x model lost the line"
+  done
+  printf '%s\n' 'Work class: refactor' > "$brief"
+  for m in claude-opus-5-5 gpt-5-codex claude-sonnet-5-5 default ""; do
+    [ -z "$(fm_brief_ownership_section "$brief" "$m")" ] || fail "model '$m' must not carry the line"
+  done
+  for cls in fix feature payments gate "refactor extra"; do
+    printf '%s\n' 'Work class: '"$cls" > "$brief"
+    [ -z "$(fm_brief_ownership_section "$brief" claude-fable-5-2)" ] || fail "class '$cls' must not carry the line"
+  done
+  printf '%s\n' '# Task' 'plain brief' > "$brief"
+  [ -z "$(fm_brief_ownership_section "$brief" claude-fable-5-2)" ] || fail "no work class must not carry the line"
+  printf '%s\n' '```' 'Work class: refactor' '```' > "$brief"
+  [ -z "$(fm_brief_ownership_section "$brief" claude-fable-5-2)" ] || fail "a fenced work class line must not count"
+  pass "ownership line needs a Fable 5.x model and a listed work class"
+}
+
 # forge=external: a review tool uploads its own snapshot, so nothing is pushed.
 # The fixtures name an invented tool and an RFC 6761 reserved host only.
 EXT_CFG="$TMP_ROOT/external-config"
@@ -785,5 +817,6 @@ test_external_review_done_without_backup_is_accepted_on_the_url
 test_external_review_done_with_backup_needs_the_copy
 
 test_worker_role_names_skill_and_fallback_file
+test_ownership_section_needs_fable_model_and_listed_class
 
 echo "all fm-dod-lib tests passed"

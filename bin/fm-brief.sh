@@ -14,7 +14,7 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--linear <PC-n>] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--work-class <refactor|clean-up|tech-debt|improve>] [--linear <PC-n>] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--linear <PC-n> | --no-linear "<reason>"] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #        fm-brief.sh <task-id> --secondmate --office <task-id> {<project>...|--no-projects}
@@ -81,6 +81,12 @@
 # Definition of done then targets that branch with its pull request.
 # bin/fm-dod-lib.sh's fm_base_branch_valid owns which deliveries accept one.
 # Refused on --secondmate.
+# --work-class <refactor|clean-up|tech-debt|improve> marks a ship task as one of
+# the work classes that may carry the code-ownership line. It writes a
+# "Work class: <class>" line under `# Setup`, and any other value is refused.
+# bin/fm-spawn.sh adds that line to the launch brief only when its `--model`
+# also names a Fable 5.x model; bin/fm-dod-lib.sh's fm_brief_ownership_section
+# owns the rule and the text. Refused on --scout and --secondmate.
 # --forge names the project's forge, defaults to none, and is orthogonal to --mode
 # exactly as the registry's `forge=` token is. It is the captain's confirmed
 # registry binding, read from data/projects.md at intake and passed here; this
@@ -388,6 +394,8 @@ OFFICE_SET=0
 LINEAR_ITEM=
 NO_LINEAR=
 NO_LINEAR_SET=0
+WORK_CLASS=
+WORK_CLASS_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -407,6 +415,7 @@ for a in "$@"; do
       office) OFFICE=$a; OFFICE_SET=1 ;;
       linear) LINEAR_ITEM=$a ;;
       no-linear) NO_LINEAR=$a; NO_LINEAR_SET=1 ;;
+      work-class) WORK_CLASS=$a; WORK_CLASS_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -439,6 +448,8 @@ for a in "$@"; do
     --linear=*) LINEAR_ITEM=${a#--linear=} ;;
     --no-linear) want_value=no-linear ;;
     --no-linear=*) NO_LINEAR=${a#--no-linear=}; NO_LINEAR_SET=1 ;;
+    --work-class) want_value="work-class" ;;
+    --work-class=*) WORK_CLASS=${a#--work-class=}; WORK_CLASS_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -508,6 +519,16 @@ if [ "$KIND" = ship ]; then
 elif [ "$FORGE_SET" -eq 1 ] || [ "$SHAPE_SET" -eq 1 ] || [ "$PR_TEXT_SET" -eq 1 ]; then
   echo "error: --forge, --shape, and --pr apply only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
   exit 1
+fi
+if [ "$WORK_CLASS_SET" -eq 1 ]; then
+  [ "$KIND" = ship ] || {
+    echo "error: --work-class applies only to ship briefs" >&2
+    exit 1
+  }
+  case "$WORK_CLASS" in
+    refactor|clean-up|tech-debt|improve) ;;
+    *) echo "error: --work-class must be one of refactor, clean-up, tech-debt, improve (got '$WORK_CLASS')" >&2; exit 1 ;;
+  esac
 fi
 if [ "$BASE_BRANCH_SET" -eq 1 ]; then
   if [ "$KIND" = secondmate ] || [ -z "$BASE_BRANCH" ]; then
@@ -1015,6 +1036,8 @@ Base branch: $BASE_BRANCH"
 else
   SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch."
 fi
+[ -z "$WORK_CLASS" ] || SETUP_BASE+="
+Work class: $WORK_CLASS"
 SETUP_BASE+="
 After any restart or resume of this session, before other work, run \`$WT_ASSERT $ID\`; if it exits non-zero it prints the exact directory you belong in, so \`cd\` there and rerun it before continuing."
 
