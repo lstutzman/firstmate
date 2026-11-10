@@ -114,7 +114,8 @@ team PC, highest score first:
 It never deletes an item. It marks Duplicate (relation, then state, then one comment, each dry-run first)
 only a single item it filed itself (the ledger names it and its body opens with the Surgeon's own line) once a written bundle
 lists its finding, never a started, assigned, closed, person-authored or reserved-class one; the lane's `folded` map keeps
-that to once, with writes: none it only reports (duplicates.would_mark), and every call carries LINEAR_JOB=officer:surgeon. Every linear-axi call is counted; --max-linear-calls
+that to once (a comment that failed waits in `uncommented` and is posted first next run),
+with writes: none it only reports (duplicates.would_mark), and every call carries LINEAR_JOB=officer:surgeon. Every linear-axi call is counted; --max-linear-calls
 stops the run's Linear work (the next run continues from the ledger). --max-creates bounds
 new items (bundles) a run. One RATE_LIMITED answer stops every Linear call in the run, writes
 linear-resume-after.json (one hour on) and reports the rest as not filed; later runs
@@ -651,7 +652,7 @@ def file_findings(findings, args, date, out, state, found, jev, gaps, marks=None
             bundles.tick(fp)
     quiet = lib.file_bundled(filer, [f for f in todo if f["fingerprint"]], None, None, bundles)
     by_fp = {f["fingerprint"]: f for f in todo if f["fingerprint"]}
-    quiet = quiet and not absorbed_singles(bundles, ledger, by_fp)
+    quiet = quiet and not absorbed_singles(bundles, ledger, by_fp) and not bundles.state.get("uncommented")
 
     def flush_attach():
         if attach["pending"]:
@@ -903,6 +904,7 @@ def mark_duplicate(filer, ident, target):
             raise exc
 
 
+MARK_CALLS = 7  # relation and state (dry-run, verify, and a re-read if the verify fails), then the comment (dry-run, verify)
 RESERVED_LABELS = ("payments", "billing", "legal", "member copy", "member-copy", "data-rewriting", "data rewriting", "product")
 
 
@@ -950,6 +952,27 @@ def mark_absorbed(filer, bundles, rows, by_fp, apply):
     a reserved class is named on its bundle line. Not apply: only reports what it would mark. Returns the counts."""
     res = {"marked": [], "would_mark": [], "skipped": [], "stopped": None, "noted": False}
     folded, kept = bundles.state.setdefault("folded", {}), bundles.state.setdefault("kept_single", {})
+    uncommented = bundles.state.setdefault("uncommented", {})
+
+    def comment(single, bundle):
+        body = ("Marked Duplicate of %s: the Ship's Surgeon now lists this finding on that bundle's checklist, "
+                "so one pull request fixes it with the rest. Reopen this item if it should stay on its own." % bundle)
+        call = ["issue", "comment", single, "--body", body]
+        try:
+            LIN(call + ["--dry-run"])
+            LIN(call + ["--verify"])
+            uncommented.pop(single, None)
+        except LinearError as exc:
+            if exc.code in lib.RATE_OR_BUDGET:
+                res["stopped"] = (exc.code, str(exc))
+                return
+            res["skipped"].append((single, "marked Duplicate, comment failed: %s" % exc))
+
+    if apply:
+        for single, bundle in sorted(uncommented.items()):
+            comment(single, bundle)
+            if res["stopped"]:
+                return res
     for fp, single, b in rows:
         f = by_fp.get(fp)
         reserved = lib.reserved_class(f) if f else None
@@ -974,8 +997,10 @@ def mark_absorbed(filer, bundles, rows, by_fp, apply):
                 if permanent:
                     kept[single] = why
                 continue
+            if LIN.budget - LIN.n < MARK_CALLS:
+                raise LinearError("CALL_BUDGET", "Linear call budget of %d too low to mark %s" % (LIN.budget, single))
             mark_duplicate(filer, single, b["issue"])
-            folded[single] = b["issue"]
+            folded[single] = uncommented[single] = b["issue"]
             res["marked"].append((single, b["issue"]))
         except LinearError as exc:
             if exc.code in lib.RATE_OR_BUDGET:
@@ -983,23 +1008,15 @@ def mark_absorbed(filer, bundles, rows, by_fp, apply):
                 break
             res["skipped"].append((single, "not marked: %s" % exc))
             continue
-        try:
-            body = ("Marked Duplicate of %s: the Ship's Surgeon now lists this finding on that bundle's checklist, "
-                    "so one pull request fixes it with the rest. Reopen this item if it should stay on its own." % b["issue"])
-            comment = ["issue", "comment", single, "--body", body]
-            LIN(comment + ["--dry-run"])
-            LIN(comment + ["--verify"])
-        except LinearError as exc:
-            if exc.code in lib.RATE_OR_BUDGET:
-                res["stopped"] = (exc.code, str(exc))
-                break
-            res["skipped"].append((single, "marked Duplicate, comment failed: %s" % exc))
+        comment(single, b["issue"])
+        if res["stopped"]:
+            break
     return res
 
 
 def plan_marks(findings, args, out, marks):
     """A run with writes: none changes nothing: it only reports the singles it would mark (local checks only, no Linear call)."""
-    todo = {f["fingerprint"]: f for f in findings if f["class"] == "real" and f["fingerprint"] and not f.get("special")}
+    todo = {f["fingerprint"]: f for f in findings if f["class"] == "real" and not f["tracked"] and f["fingerprint"] and not f.get("special")}
     ledger = read_json(os.path.join(out, LEDGER_FILE), {})
     filer = lib.Filer(OFFICER, LIN, args.team, args.date, out, ledger, {}, lib.Jev(None), args.max_creates)
     bundles = lib.Bundles(filer, args.bundle_cap)
