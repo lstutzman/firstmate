@@ -1,0 +1,14 @@
+-- reported: unkeyed+keyed+done
+lj-pr30-merge	blocked	ask keyed[rc=0]
+-- several unkeyed + unkeyed resolved; other corr stays
+default	blocked	other request[rc=0]
+-- captain-held keeps open
+default	blocked	ask[rc=0]
+== base.sh keyeddone
+u-1794325928-c9d9b505f8244bd0	blocked	ask
+lj-pr30-merge	blocked	ask keyed== base.sh onlyunkeyed
+u-1794325928-c9d9b505f8244bd0	blocked	ask== base.sh resolved2
+u-1794325000-AAAAAAAAAAAAAAAA	blocked	ask
+u-1794325007-AAAAAAAAAAAAAAAA	blocked	ask again== fm-classify-lib.sh keyeddone
+lj-pr30-merge	blocked	ask keyed== fm-classify-lib.sh onlyunkeyed
+== fm-classify-lib.sh resolved2
