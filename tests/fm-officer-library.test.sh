@@ -142,17 +142,20 @@ test_buckets() {
 test_archive_is_safe_but_delete_retire_and_outside_pr_need_lee() {
   make_world precedence
   write_run "$RUNS/2026-11-07" ok 0
-  printf '[%s,%s,%s,%s,%s]\n' \
+  printf '[%s,%s,%s,%s,%s,%s]\n' \
     "$(finding misplaced docs/a.md "Two stale plans" "Archive docs/a.md and delete docs/b.md.")" \
     "$(finding misplaced scripts/ops/old-runbook.md "Old runbook" "Retire scripts/ops/old-runbook.md.")" \
     "$(finding cruft .vs/cache.tmp "Untracked editor cache" "Move it out of the checkout.")" \
     "$(finding cruft docs/old-plan.md "Superseded plan" "Archive it under docs/archive in the docs PR.")" \
-    "$(finding cruft docs/notes.md "Stray notes" "Record it in the inventory.")" > "$RUNS/2026-11-07/findings.json"
+    "$(finding cruft docs/notes.md "Stray notes" "Record it in the inventory.")" \
+    "$(printf '{"kind": "cruft", "severity": "low", "title": "Old build plan", "path": "artifacts/old-plan.md", "evidence": "Status: ignored; matched by .gitignore", "disposition": "Archive it under docs/archive."}')" \
+    > "$RUNS/2026-11-07/findings.json"
   run_library 2026-11-07 $((NOW + 7 * 86400)) >/dev/null || fail "the audit run must succeed"
   assert_equals needs-lee "$(bucket_of docs/a.md 2026-11-07)" "a delete beside an archive still needs Lee"
   assert_equals needs-lee "$(bucket_of scripts/ops/old-runbook.md 2026-11-07)" "a retirement needs Lee"
   assert_equals needs-lee "$(bucket_of .vs/cache.tmp 2026-11-07)" "a move of an untracked file out of the checkout needs Lee"
   assert_equals safe "$(bucket_of docs/old-plan.md 2026-11-07)" "a cruft archive of a tracked file inside a PR is safe"
+  assert_equals needs-lee "$(bucket_of artifacts/old-plan.md 2026-11-07)" "an archive of an ignored file cannot happen inside a PR, so it needs Lee"
   assert_equals hold "$(bucket_of docs/notes.md 2026-11-07)" "a cruft finding that neither archives nor moves never ships by itself"
   pass "fm-officer library: only an archive or move inside a PR is safe; a delete, retirement or move outside a PR needs Lee"
 }
