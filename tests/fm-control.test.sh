@@ -1612,6 +1612,23 @@ test_submit_pending_refuses_when_the_band_keeps_focus() {
   pass "fm-control submit-pending: a band that keeps the focus after one Escape refuses with no Enter"
 }
 
+# The postcondition is observed, never inferred: when every read after the
+# Enter fails to find a composer (here a screen with no composer at all), the
+# doorbell is not reported submitted.
+test_submit_pending_unreadable_after_enter_is_unconfirmed() {
+  local dir out rc line
+  dir=$(pending_case submit-unread 0 placeholder)
+  line=$(steering_doorbell "$dir")
+  claude_band_screen 0 "$line" > "$dir/fake/pane"
+  printf 'Loading session...\n' > "$dir/fake/after-enter"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    FM_CONTROL_POLL=0.01 FM_CONTROL_PENDING_WAIT=0.05 "$CONTROL" t1 submit-pending 2>&1); rc=$?
+  expect_code 1 "$rc" "an unreadable composer after the Enter must not count as submitted"$'\n'"$out"
+  assert_contains "$out" "submit=unconfirmed" "the result should say the submit is unconfirmed"
+  case "$out" in *"submitted doorbell="*) fail "an unread composer was reported submitted: $out" ;; esac
+  pass "fm-control submit-pending: a composer that cannot be read after the Enter reports submit=unconfirmed"
+}
+
 test_pending_verbs_refuse_text_that_is_not_firstmates() {
   local dir out rc verb
   for verb in submit-pending clear-pending; do
@@ -1713,6 +1730,7 @@ test_fm_send_still_marks_the_same_secondmate_task
 test_submit_pending_submits_the_steering_doorbell
 test_submit_pending_returns_focus_from_a_plugin_band_first
 test_submit_pending_refuses_when_the_band_keeps_focus
+test_submit_pending_unreadable_after_enter_is_unconfirmed
 test_pending_verbs_refuse_text_that_is_not_firstmates
 test_pending_verbs_refuse_a_composer_not_proven_pending
 test_clear_pending_clears_an_operational_launch_doorbell

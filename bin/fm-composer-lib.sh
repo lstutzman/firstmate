@@ -2318,9 +2318,14 @@ fm_composer_dialog_sink_release() {
 # leaves the composer untouched; typing printable text returns it too, so a
 # fresh typed delivery is not at risk, only an Enter on text already pending.
 # The proof is structural to Claude's own layout: the inverted `[ ` span sits
-# on a row ABOVE the composer's top rule, the solid `─` rule directly above the
-# bottom-most `❯` composer row. A bracket anywhere else - transcript output,
-# the composer itself, an unstyled read - is not this state.
+# in the band, the block of non-blank rows directly above the composer's top
+# rule (the solid `─` rule above the bottom-most `❯` composer row), blank rows
+# between them skipped. Inverse is read from the SGR parameters as a terminal
+# applies them: a standalone 7 sets it, 0 or an empty parameter and 27 clear it,
+# and the colour arguments after 38, 48 and 58 (`5;n`, `2;r;g;b`) are skipped,
+# so a colour whose index or component is 7 is not inverse. A bracket anywhere
+# else - transcript rows above the band, the composer itself, an unstyled read -
+# is not this state.
 # Prints the focused control's label and returns 0; otherwise prints nothing
 # and returns 1. The SGR 7 inverse is the only surface signal the band offers
 # (docs/verification/runtime-backends.md "Claude plugin band focus"), so the
@@ -2331,6 +2336,30 @@ fm_composer_band_focus() {  # <styled-screen> -> focused control label
   [ -n "$screen" ] || return 1
   printf '%s\n' "$screen" | LC_ALL=C awk '
     function plain(s) { gsub(/\033\[[0-9;:?]*[A-Za-z]/, "", s); sub(/\r$/, "", s); return s }
+    function sgr(params, inv,   n, p, k) {
+      if (params == "") return 0
+      n = split(params, p, ";")
+      for (k = 1; k <= n; k++) {
+        if (p[k] == "" || p[k] == "0" || p[k] == "27") inv = 0
+        else if (p[k] == "7") inv = 1
+        else if (p[k] == "38" || p[k] == "48" || p[k] == "58") {
+          if (p[k + 1] == "5") k += 2
+          else if (p[k + 1] == "2") k += 4
+        }
+      }
+      return inv
+    }
+    function focused(r,   inv, seq) {
+      inv = 0
+      while (match(r, /\033\[[0-9;:?]*[A-Za-z]/)) {
+        seq = substr(r, RSTART, RLENGTH)
+        r = substr(r, RSTART + RLENGTH)
+        if (seq !~ /m$/) continue
+        inv = sgr(substr(seq, 3, length(seq) - 3), inv)
+        if (inv && match(r, /^\[ [^]\033]*[^] \033] \]/)) return substr(r, 3, RLENGTH - 4)
+      }
+      return ""
+    }
     { raw[NR] = $0; txt[NR] = plain($0) }
     END {
       composer = 0
@@ -2338,15 +2367,11 @@ fm_composer_band_focus() {  # <styled-screen> -> focused control label
         if (txt[i] ~ /^[ \t]*❯/ && txt[i - 1] ~ /^[ \t]*(─)+[ \t]*$/) { composer = i; break }
       }
       if (!composer) exit 1
-      for (i = composer - 2; i >= 1; i--) {
-        r = raw[i]
-        if (match(r, /\033\[([0-9]*;)*7(;[0-9]*)*m\[ [^]\033]*[^] \033] \]/)) {
-          span = substr(r, RSTART, RLENGTH)
-          sub(/^\033\[[0-9;]*m\[ /, "", span)
-          sub(/ \]$/, "", span)
-          printf "%s", span
-          exit 0
-        }
+      i = composer - 2
+      while (i >= 1 && txt[i] ~ /^[ \t]*$/) i--
+      for (; i >= 1 && txt[i] !~ /^[ \t]*$/; i--) {
+        label = focused(raw[i])
+        if (label != "") { printf "%s", label; exit 0 }
       }
       exit 1
     }'

@@ -1740,7 +1740,10 @@ Typing printable text while the band held the keyboard also returned the focus t
 On an unfocused band, one Escape on an idle composer holding a draft left the draft in place.
 Clicks on Claude's own `[-]` collapse glyph, on a transcript row, on the blank row above the composer and on the footer did not focus the band; focus-in and focus-out reports and a wheel event did not either.
 The incident state, in which the band stayed drawn while Enter did nothing, did not reproduce; every focus route measured here put the focus on the Button.
-`fm_composer_band_focus` reads the inverse span above the composer's top rule, and `fm_backend_release_band_focus` sends one Escape only on that proof and re-reads it, warning with the Claude version when the focus did not move.
+The band holding the keyboard is therefore the reproduced cause of the same symptom family, not a proven cause of the incident.
+The spawn's post-launch check in `bin/fm-spawn.sh` covers both: a launch doorbell that stays in the composer gets one gated submit, and one that still stays raises a check wake naming the task.
+`fm_composer_band_focus` reads the inverse span in the band, the non-blank rows directly above the composer's top rule, and takes inverse from the SGR parameters the way a terminal applies them, so a colour index or component of 7 is not inverse.
+`fm_backend_release_band_focus` sends one Escape only on that proof and re-reads it, warning with the Claude version when the focus did not move.
 `FM_CLAUDE_BAND_FOCUS_LIVE=1 tests/fm-claude-band-focus-live-e2e.test.sh` refreshes this record with the plugin-free fixture band in `tests/fixtures/claude-band-mod`; on this build it printed:
 
 ```text

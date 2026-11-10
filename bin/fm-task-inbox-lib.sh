@@ -595,6 +595,19 @@ fm_task_inbox_submit_pending() {  # <backend> <target> <line> [expected-label]
   return 0
 }
 
+# Whether a positive read shows the composer no longer holds <line>: the
+# composer classifies exactly empty, or its content reads successfully and,
+# ignoring line wrapping, is other text. A failed or unrecognised read is not
+# proof either way, so it returns 1, unlike fm_task_inbox_composer_holds.
+fm_task_inbox_composer_left() {  # <backend> <target> <line> [expected-label]
+  local cap held
+  [ "$(fm_backend_composer_state "$1" "$2" "${4:-}" 2>/dev/null)" = empty ] && return 0
+  fm_backend_source "$1" || return 1
+  cap=$(fm_backend_capture "$1" "$2" "$FM_COMPOSER_CAPTURE_LINES" "${4:-}" 2>/dev/null) || return 1
+  held=$(fm_composer_extract_selected_content styled=0 "$cap") || return 1
+  [ -n "$held" ] && [ "$(printf '%s' "$held" | tr -d '[:space:]')" != "$(printf '%s' "$3" | tr -d '[:space:]')" ]
+}
+
 # Whether the composer's content, ignoring line wrapping, is exactly <line>.
 fm_task_inbox_composer_holds() {  # <backend> <target> <line> [expected-label]
   local cap held

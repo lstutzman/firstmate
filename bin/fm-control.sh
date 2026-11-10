@@ -1480,11 +1480,13 @@ pending_preflight() {
     || die "task $ID's composer holds text that is not firstmate's own doorbell for this task; '$VERB' refuses so a captain's or worker's draft is never submitted or lost"
 }
 
-# Poll until the composer no longer holds the doorbell. 0 when it is gone.
+# Poll until a positive read shows the composer no longer holds the doorbell
+# (fm_task_inbox_composer_left); a read that fails is not that proof. 0 when
+# it is gone.
 pending_wait_gone() {
   local elapsed=0
   while :; do
-    fm_task_inbox_composer_holds "$BACKEND" "$T" "$PENDING_LINE" "$LABEL" || return 0
+    fm_task_inbox_composer_left "$BACKEND" "$T" "$PENDING_LINE" "$LABEL" && return 0
     awk -v e="$elapsed" -v t="$PENDING_WAIT" 'BEGIN{exit !(e < t)}' || return 1
     sleep "$POLL"
     elapsed=$(awk -v e="$elapsed" -v p="$POLL" 'BEGIN{printf "%.3f", e + p}')

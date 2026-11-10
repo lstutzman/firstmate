@@ -1009,6 +1009,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-kimi-trust-lib.sh"
 # shellcheck source=bin/fm-control-lib.sh
 . "$SCRIPT_DIR/fm-control-lib.sh"
+# shellcheck source=bin/fm-task-inbox-lib.sh
+. "$SCRIPT_DIR/fm-task-inbox-lib.sh"
 # shellcheck source=bin/fm-gate-refuse-lib.sh
 . "$SCRIPT_DIR/fm-gate-refuse-lib.sh"
 # shellcheck source=bin/fm-busy-lib.sh
@@ -6167,6 +6169,76 @@ opencode2_wait_for_delivery() {
   opencode2_turn_started
 }
 
+# Claude takes its launch brief as a command-line prompt, the record-backed
+# operational doorbell, and normally submits it on its own. A relaunched worker
+# was once seen with that doorbell sitting typed but unsubmitted in its composer
+# while a plugin band was drawn above it. That exact state (the band shown and
+# Enter doing nothing) did not reproduce; the reproduced cause of the same
+# symptom is a plugin band holding the keyboard, where an Enter presses the
+# band's Button instead (docs/verification/runtime-backends.md "Claude plugin
+# band focus"). So after the commit point the launch checks the outcome for
+# either cause: a composer that reads exactly empty is the submitted doorbell;
+# one that holds the doorbell on FM_CLAUDE_LAUNCH_DOORBELL_SETTLE_POLLS polls in
+# a row, on an agent not reported busy, gets the same gated submit as
+# fm-control submit-pending once (fm_task_inbox_submit_pending: one Escape only
+# when a band is proven to hold the focus, then Enter). Success needs a positive
+# read that the doorbell left (fm_task_inbox_composer_left); otherwise one
+# check wake names the task, so the stuck brief is never silent. Other text, or
+# a composer never classified within the window, is left alone, and so is a
+# pane whose viewport reads empty or fails: by the commit point a real pane
+# shows at least the typed launch line and Claude's inline banner, so an empty
+# one is not a Claude screen this check can read. The check never fails the
+# spawn or the relaunch: the record is already committed.
+claude_launch_doorbell_check() {  # <doorbell>
+  local line=$1 i=0 held=0 stuck=0 rc=0 rec screen detail
+  local max=${FM_CLAUDE_LAUNCH_DOORBELL_POLLS:-40} interval=${FM_CLAUDE_LAUNCH_DOORBELL_POLL_INTERVAL:-0.5}
+  local settle=${FM_CLAUDE_LAUNCH_DOORBELL_SETTLE_POLLS:-4}
+  while [ "$i" -lt "$max" ]; do
+    screen=$(fm_backend_capture "$BACKEND" "$T" "$FM_COMPOSER_CAPTURE_LINES" "$W" 2>/dev/null) || return 0
+    [ -n "${screen//[[:space:]]/}" ] || return 0
+    case "$(fm_backend_composer_state "$BACKEND" "$T" "$W" 2>/dev/null)" in
+      empty) return 0 ;;
+      pending)
+        fm_task_inbox_composer_holds "$BACKEND" "$T" "$line" "$W" || return 0
+        held=$((held + 1))
+        ;;
+      *) held=0 ;;
+    esac
+    if [ "$held" -ge "$settle" ] && [ "$(fm_backend_busy_state "$BACKEND" "$T" 2>/dev/null)" != busy ]; then
+      stuck=1
+      break
+    fi
+    i=$((i + 1))
+    [ "$i" -ge "$max" ] || sleep "$interval"
+  done
+  [ "$held" -gt 0 ] || return 0
+  if [ "$stuck" = 1 ]; then
+    fm_task_inbox_submit_pending "$BACKEND" "$T" "$line" "$W" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      i=0
+      while [ "$i" -lt "$max" ]; do
+        if fm_task_inbox_composer_left "$BACKEND" "$T" "$line" "$W"; then
+          echo "note: task $ID's launch doorbell sat unsubmitted in its Claude composer at $T; one gated submit sent it" >&2
+          return 0
+        fi
+        i=$((i + 1))
+        [ "$i" -ge "$max" ] || sleep "$interval"
+      done
+    fi
+  fi
+  if [ "$stuck" = 1 ]; then
+    detail="after one gated submit"
+  else
+    detail="with no submit tried, because the agent read busy or the check window ended first"
+  fi
+  rec=${line#*"read '"}
+  rec=${rec%%"'"*}
+  echo "warning: task $ID's launch doorbell is still unsubmitted in its Claude composer at $T ($detail); inspect the pane, then run bin/fm-control.sh $ID submit-pending (or clear-pending)" >&2
+  fm_wake_append check "launch-doorbell-pending:$ID:${rec##*/}" \
+    "check: launch doorbell pending: $ID - its Claude composer at $T still holds the launch-brief doorbell $detail, so the worker has not received its brief; inspect the pane, then run bin/fm-control.sh $ID submit-pending (or clear-pending)" \
+    || echo "warning: the launch-doorbell check wake for $ID could not be queued" >&2
+}
+
 # agy carries its brief on the launch command, so it needs no delivery gate,
 # but a worktree agy does not trust parks the TUI on the folder-trust dialog
 # and an unanswered dialog sends the turn into agy's scratch directory instead
@@ -7971,6 +8043,7 @@ esac
 LAUNCH=${LAUNCH//__WORKTREE__/$sq_worktree}
 # A record-backed launch brief is published into the state dir of the pane
 # receiving it, which for a secondmate is its own home, not this primary's.
+brief_doorbell=
 case "$LAUNCH" in
 *__BRIEFDOORBELL__*)
   case "$KIND" in
@@ -8615,6 +8688,10 @@ SPAWN_META_LOCK_HELD=0
 # otherwise the summary reads "live child state has no in-flight backlog item"
 # until some later event refreshes it.
 "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
+if [ "$HARNESS" = claude ] && [ "$RAW_LAUNCH" -eq 0 ] && [ -n "$brief_doorbell" ] &&
+  fm_control_pending_text_supported claude "$BACKEND"; then
+  claude_launch_doorbell_check "$brief_doorbell" || true
+fi
 
 if [ "$T3CODE_LAUNCH_UNCONFIRMED" = 1 ]; then
   echo "error: the launch brief for $ID may already have been delivered to T3 thread $T: its outcome is unproven (a lost reply or a T3 error that can follow a commit). The task record is kept; inspect the thread in T3 Code, and if the brief is absent resend only the identical brief text, which reuses its request id within the hour" >&2

@@ -407,6 +407,7 @@ family_for_basename() {
     fm-worker-account.test.sh|\
     fm-git-strip-ai-trailers.test.sh|\
     fm-spawn-setup.test.sh|fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
+    fm-spawn-claude-launch-doorbell.test.sh|\
     fm-spawn-compact-adviser-disable.test.sh|\
     fm-spawn-compact-adviser-disable-remote.test.sh|\
     fm-project-capacity.test.sh|fm-lane-capacity-integration.test.sh|\
@@ -988,6 +989,7 @@ tests/fm-sessionstart-hook-live-e2e.test.sh 56
 tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh 56
 tests/fm-sessionstart-nudge.test.sh 87615
 tests/fm-shared-captain-inheritance.test.sh 11699
+tests/fm-spawn-claude-launch-doorbell.test.sh 8012
 tests/fm-spawn-compact-adviser-disable-remote.test.sh 93752
 tests/fm-spawn-compact-adviser-disable.test.sh 45739
 tests/fm-spawn-dispatch-profile.test.sh 553563

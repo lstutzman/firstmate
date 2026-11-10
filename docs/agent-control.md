@@ -83,6 +83,11 @@ A Claude plugin band above the composer can hold the keyboard after a click on i
 So before its Enter, `submit-pending` sends one Escape when the band is proven to hold the focus, which returns it to the prompt; `clear-pending` does the same before its Ctrl+U presses.
 A band that keeps the focus after that Escape refuses with nothing submitted or cleared, and never receives a second Escape, because Claude's double Escape clears a draft or opens its rewind picker.
 The inbox ring's re-submit of its own pending doorbell uses the same release ([`fm_task_inbox_submit_pending`](../bin/fm-task-inbox-lib.sh)); [`fm_backend_release_band_focus`](../bin/fm-backend.sh) owns the Escape and [its verification record](verification/runtime-backends.md#claude-plugin-band-focus) the measured behavior.
+The incident behind these verbs, a relaunched worker whose launch doorbell sat unsubmitted under a drawn band while Enter did nothing, did not reproduce.
+A band holding the keyboard is the reproduced cause of the same symptom, not a proven cause of that incident.
+So every Claude spawn and relaunch on Herdr and tmux also checks, once it has committed, that its launch doorbell left the composer (`claude_launch_doorbell_check` in [`bin/fm-spawn.sh`](../bin/fm-spawn.sh)), which covers both causes.
+A doorbell that stays in the composer gets the same gated submit once, success needs a read that shows the composer empty or holding other text, and a doorbell that still stays raises one `check: launch doorbell pending:` wake naming the task.
+The check never fails the spawn or the relaunch, because the task record is already committed.
 
 **Teardown and discard are not verbs and will not become verbs.**
 `exit` stops an agent and preserves everything else.
@@ -247,8 +252,9 @@ The empirical basis for each adapter's value is the `harness-adapters` skill's v
 ## Verification
 
 - `tests/fm-control.test.sh` - the adapter contract for its verified-harness lane (adapters outside the lane pin their control mechanics in their own harness suites), the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
-- `tests/fm-control.test.sh` also covers `submit-pending` and `clear-pending`: both doorbell kinds, the band release and a band that keeps the focus, and the refusals for a draft, a foreign doorbell, an unproven composer, and a harness other than Claude.
+- `tests/fm-control.test.sh` also covers `submit-pending` and `clear-pending`: both doorbell kinds, the band release and a band that keeps the focus, a composer that cannot be read after the Enter, and the refusals for a draft, a foreign doorbell, an unproven composer, and a harness other than Claude.
 - `tests/fm-claude-band-focus-live-e2e.test.sh` - the opt-in live guard for the plugin band focus against real Claude Code on an isolated Herdr lab session.
+- `tests/fm-spawn-claude-launch-doorbell.test.sh` - the spawn's launch-doorbell check: a submitted doorbell left alone, a pending one submitted once, a focused band released with one Escape first, and a doorbell that stays raising one check wake.
 - `tests/fm-control-relaunch.test.sh` - the relaunch transaction: identity preservation, harness switching, the progress note, checkpoint refusals, rollback after a failed launch, and the endpoint-absence proof both verbs share - the Herdr reclaim of a destroyed endpoint, and tmux refusing one it cannot prove absent.
 - `tests/fm-control-herdr-smoke.test.sh` - the second state-verified backend against the real herdr binary, on an isolated throwaway lab session.
 - `tests/fm-backend-rex.test.sh` and `tests/fm-backend-rex-smoke.test.sh` - the Rex classifier and absence proof against a stateful fake CLI and a private test server; [`docs/verification/runtime-backends.md`](verification/runtime-backends.md#rex) records the live `interrupt`, `exit`, endpoint-gone, and reclaim runs.
