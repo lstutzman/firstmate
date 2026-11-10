@@ -1459,7 +1459,8 @@ def status_streams(home):
             streams.setdefault(task, []).append(
                 {"state": rec.get("state"), "key": rec.get("key"), "at": rec["ts"],
                  "text": (rec.get("text") or "").strip(), "source": "ledger",
-                 "stated": rec.get("cause") if rec.get("cause") in STATED_CAUSES else None})
+                 "stated": rec.get("cause") if rec.get("cause") in STATED_CAUSES else None,
+                 "dep": isinstance(rec.get("dep"), str) and bool(DEP_RE.match("dep=%s]" % rec["dep"]))})
     for events in streams.values():
         events.sort(key=lambda e: e["at"])
     return streams

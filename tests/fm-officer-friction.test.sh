@@ -368,8 +368,17 @@ needs-decision [key=sc-dep] [cause=external] [dep=pr/o/r/9] [at=$T]: waits on th
 blocked [key=sc-plain] [cause=external] [at=$T]: waiting for the vendor to restore the service
 resolved [key=sc-plain] [at=$((T + 600))]: it came back
 EOF
+  printf '%s\n' \
+    "{\"v\":1,\"ts\":$T,\"event\":\"task.status\",\"task\":\"gone-sc\",\"state\":\"needs-decision\",\"key\":\"led-dep\",\"cause\":\"external\",\"dep\":\"pr/o/r/9\",\"text\":\" waits on the other owner's merge\"}" \
+    "{\"v\":1,\"ts\":$T,\"event\":\"task.status\",\"task\":\"gone-sc\",\"state\":\"blocked\",\"key\":\"led-plain\",\"cause\":\"external\",\"text\":\" waiting for the vendor\"}" \
+    "{\"v\":1,\"ts\":$((T + 600)),\"event\":\"task.status\",\"task\":\"gone-sc\",\"state\":\"resolved\",\"key\":\"led-plain\",\"text\":\" it came back\"}" \
+    >> "$home/state/fleet-ledger.jsonl"
   run_officer "$home" >/dev/null || fail "friction run must succeed"
   json="$home/data/officers/friction/$DATE.json"
+  assert_equals "" "$(status_event "$json" gone-sc led-dep '.key // empty')" \
+    "a cleaned-up task's PR-dependency wait read from the fleet ledger is not counted"
+  assert_equals "environment external ledger" "$(status_event "$json" gone-sc led-plain '"\(.cause) \(.sub) \(.source)"')" \
+    "a ledger external wait with no dependency is still counted"
   assert_equals "" "$(status_event "$json" task-sc merge-handoff-5213 '.key // empty')" \
     "a merge-handoff wait the decision sweep closes is not counted"
   assert_equals "" "$(status_event "$json" task-sc sc-dep '.key // empty')" \
