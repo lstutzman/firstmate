@@ -79,6 +79,7 @@ fake_linear() {
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$3"
 d="$2"
+printf '%s %s %s\n' "\${LINEAR_JOB:-none}" "\$1" "\$2" >> "\$d/jobs"
 err() { echo '{"ok":false,"error":{"code":"'"\$1"'","message":"'"\$2"'"}}'; }
 case "\$1 \$2" in
   "label list")
@@ -118,6 +119,7 @@ case "\$1 \$2" in
       *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
     esac ;;
   "issue comment")
+    [ -f "\$d/budget.comment" ] && { err CALL_BUDGET "spent"; exit 1; }
     case " \$* " in *" --verify "*) echo "COMMENT \$3" >> "\$d/comments" ;; esac
     echo '{"ok":true,"data":{"dryRun":true}}' ;;
   "issue view")
@@ -1345,6 +1347,7 @@ test_absorbed_singles_are_marked_duplicate_of_their_bundle() {
   assert_equals 0 "$(grep -c '^issue update PC-20[2345] --state' "$LINEAR_LOG")" "none of the skipped items is touched"
   assert_contains "$(cat "$LDIR/updates")" "single PC-205 kept open: reserved class member-copy" "the reserved class is named on the bundle line"
   assert_equals PC-201 "$(jq -r '.folded | keys[]' "$state")" "the ledger records the one it marked"
+  assert_equals "officer:surgeon" "$(grep -E ' issue (relation|update|comment)$' "$LDIR/jobs" | awk '{print $1}' | sort -u)" "every marking call names the Surgeon's job for linear-axi's usage record"
   : > "$LINEAR_LOG"; : > "$LDIR/relations"
   run_surgeon "$home" >/dev/null || fail "third run must succeed"
   assert_equals "issue view PC-204 --full --output json" "$(grep 'PC-20' "$LINEAR_LOG")" "a later run re-reads only the assigned item (it may be unassigned later) and touches nothing it settled"
@@ -1353,7 +1356,7 @@ test_absorbed_singles_are_marked_duplicate_of_their_bundle() {
 }
 
 test_writes_none_marks_nothing_and_rate_limit_stops_marking() {
-  local home json
+  local home json first
   make_world dupes2 "$LINEAR_ON"; home=$WORLD_HOME
   set_pages dupes2 '[
     {"id":"e1","severity":"medium","file":"infra/bicep/a.bicep","summary":"unpinned api version one"},
@@ -1375,6 +1378,16 @@ test_writes_none_marks_nothing_and_rate_limit_stops_marking() {
   assert_equals 1 "$(grep -c '^issue relation add PC-21' "$LINEAR_LOG")" "and stops marking at the first rate-limited call"
   assert_contains "$(jq -r '.writes_blocked' "$json")" "duplicate marking stopped" "the digest says why"
   test -f "$home/data/officers/surgeon/linear-resume-after.json" || fail "a rate limit pauses later runs"
+  rm "$LDIR/ratelimit.relation"; rm -f "$home/data/officers/surgeon/linear-resume-after.json"; touch "$LDIR/budget.comment"; : > "$LDIR/comments"
+  run_surgeon "$home" >/dev/null || fail "a run whose comment runs out of budget must still finish"
+  first=$(jq -r '.folded | keys[]' "$home/data/officers/surgeon/bundles.json")
+  assert_equals 1 "$(printf '%s\n' "$first" | grep -c '^PC-21')" "one single is marked Duplicate before its comment runs out of budget"
+  assert_equals "" "$(cat "$LDIR/comments")" "and has no comment yet"
+  rm "$LDIR/budget.comment"; : > "$LINEAR_LOG"
+  run_surgeon "$home" >/dev/null || fail "the next run must succeed"
+  assert_equals "COMMENT $first" "$(head -1 "$LDIR/comments")" "the next run first posts the missed comment"
+  assert_equals "COMMENT PC-211|COMMENT PC-212" "$(sort "$LDIR/comments" | paste -sd'|')" "then marks and comments the other single, one comment each"
+  assert_equals 0 "$(grep -c "^issue relation add $first .*--verify" "$LINEAR_LOG")" "without relating the marked one again"
   pass "fm-officer surgeon: writes none only reports what it would mark, and a rate limit stops the marking"
 }
 
