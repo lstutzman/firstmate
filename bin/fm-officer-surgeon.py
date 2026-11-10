@@ -111,7 +111,10 @@ team PC, highest score first:
      Source and one area label. A failed verify is never retried; the item counts as created (and is ledgered)
      when the error names it (data.issue.identifier) or the team's issue list holds one new open item of exactly its title, else it is logged failed
      and tried again next run. A bundle with no ledgered item first adopts the oldest open item of exactly its title.
-It never closes or deletes an item. Every linear-axi call is counted; --max-linear-calls
+It never deletes an item. It marks Duplicate (relation, then state, then one comment, each dry-run first)
+only a single item it filed itself (the ledger names it and its body opens with the Surgeon's own line) once a written bundle
+lists its finding, never a started, assigned, closed, person-authored or reserved-class one; the lane's `folded` map keeps
+that to once, with writes: none it only reports (duplicates.would_mark), and every call carries LINEAR_JOB=officer:surgeon. Every linear-axi call is counted; --max-linear-calls
 stops the run's Linear work (the next run continues from the ledger). --max-creates bounds
 new items (bundles) a run. One RATE_LIMITED answer stops every Linear call in the run, writes
 linear-resume-after.json (one hour on) and reports the rest as not filed; later runs
@@ -173,7 +176,7 @@ read_json, write_json, write_if_changed, iso = lib.read_json, lib.write_json, li
 finding, score_of, apply_found = lib.make_finding, lib.score_of, lib.apply_found
 RANK, PRIORITY, BUMP, LinearError = lib.RANK, lib.PRIORITY, lib.BUMP, lib.LinearError
 STATE_FILE, FOUND_FILE, LEDGER_FILE, PATTERN_FILE = lib.STATE_FILE, lib.FOUND_FILE, lib.LEDGER_FILE, lib.PATTERN_FILE
-LIN = lib.Linear()
+LIN = lib.Linear(job="officer:surgeon")
 
 NOISE_WORDS = ("flaky", "load", "host", "infra")
 DECISION_WORDS = ("product", "spec", "intended")
@@ -613,13 +616,14 @@ def found_line(count, first, last):
     return OFFICER.found_line(count, first, last)
 
 
-def file_findings(findings, args, date, out, state, found, jev, gaps):
+def file_findings(findings, args, date, out, state, found, jev, gaps, marks=None):
     """Files the real, untracked findings; returns (writes_done, why Linear was stopped or None).
 
     Every finding goes to its source family's feature-area bundle (lib.Bundles), except a promotion-blocking invalid
     nightly E2E run (special e2e-invalid), which keeps its own item.
     """
     todo = [f for f in findings if f["class"] == "real" and not f["tracked"]]
+    marks = {"marked": [], "would_mark": [], "skipped": [], "stopped": None, "noted": False} if marks is None else marks
     stopped = lib.paused_until(out, args.now)
     ledger_path = os.path.join(out, LEDGER_FILE)
     ledger = read_json(ledger_path, {})
@@ -646,6 +650,8 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
         if r["state"] == "fixed":
             bundles.tick(fp)
     quiet = lib.file_bundled(filer, [f for f in todo if f["fingerprint"]], None, None, bundles)
+    by_fp = {f["fingerprint"]: f for f in todo if f["fingerprint"]}
+    quiet = quiet and not absorbed_singles(bundles, ledger, by_fp)
 
     def flush_attach():
         if attach["pending"]:
@@ -695,10 +701,20 @@ def file_findings(findings, args, date, out, state, found, jev, gaps):
         lib.file_bundled(filer, [f for f in todo if f["fingerprint"]], label_set, describe, bundles)
         attach_new(todo)
         flush_attach()
+        # Singles the Surgeon filed that a written bundle now lists are marked Duplicate of it (a reserved class is only noted on its line).
+        marks.update(mark_absorbed(filer, bundles, absorbed_singles(bundles, ledger, by_fp), by_fp, True))
+        if marks["noted"] and not marks["stopped"]:
+            bundles.write(label_set)
     except LinearError as exc:
         if exc.code == "RATE_LIMITED":
             return stop("Linear rate limit reached: %s" % exc, True)
         return stop("%s; the next run continues from the ledger" % exc)
+    if marks["stopped"]:
+        code, why = marks["stopped"]
+        if code == "RATE_LIMITED":
+            lib.pause_for_rate_limit(out, args.now)
+        save(ledger_path, ledger, state, found, bundles)
+        return lib.summary_rows(todo), "duplicate marking stopped: %s" % why
     save(ledger_path, ledger, state, found, bundles)
     return lib.summary_rows(todo), None
 
@@ -719,6 +735,10 @@ def render_md(doc, archive_md):
         ", ".join("%s %d" % kv for kv in doc["intake"]["classes"].items()) or "nothing found")]
     lines.append("Linear writes: %s%s. Linear calls: %d of %d." % (doc["writes"], " (blocked: %s)" % doc["writes_blocked"] if doc["writes_blocked"] else "",
                                                                   doc["linear_calls"], doc["linear_call_budget"]))
+    dup = doc["duplicates"]
+    if dup["marked"] or dup["would_mark"] or dup["skipped"]:
+        lines.append("Singles absorbed by a bundle: %d marked Duplicate, %d would be marked (writes: none), %d skipped%s." % (
+            len(dup["marked"]), len(dup["would_mark"]), len(dup["skipped"]), "".join("; %s: %s" % (d["single"], d["why"]) for d in dup["skipped"])))
     bd = doc["burn_down"]
     lines.append("Burn-down (reviewer findings, ISO week %s): %d open, %d new, %d fixed." % (bd["week"], bd["open"], bd["new"], bd["fixed"]))
     for gap in doc["intake"]["gaps"]:
@@ -881,6 +901,109 @@ def mark_duplicate(filer, ident, target):
                 raise exc
         except LinearError:
             raise exc
+
+
+RESERVED_LABELS = ("payments", "billing", "legal", "member copy", "member-copy", "data-rewriting", "data rewriting", "product")
+
+
+def reserved_in(*texts):
+    """The reserved class any of the texts asks for (lib.RESERVED, matched by the action), or None."""
+    return next((name for name, rx in lib.RESERVED.items() if any(rx.search(t) for t in texts if t)), None)
+
+
+def single_kept(issue):
+    """(why a single item the Surgeon filed stays open, whether that is permanent) or (None, False) when it may be marked."""
+    desc, title = str(issue.get("description") or ""), text(issue.get("title"), 300)
+    labels = issue.get("labels") or []
+    labels = [text(l.get("name") if isinstance(l, dict) else l, 60).lower() for l in (labels if isinstance(labels, list) else [labels])]
+    if lib.is_closed(issue):
+        return "already closed", True
+    if title.startswith(lib.BUNDLE_PREFIX):
+        return "is a bundle", True
+    if not desc.startswith(FOLD_OPENING):
+        return "not filed by the Surgeon (person-authored)", True
+    if "\nPromotion-blocking: yes" in desc:
+        return "promotion-blocking, kept single", True
+    reserved = next((l for l in labels if l in RESERVED_LABELS), None) or reserved_in(title, desc)
+    if reserved:
+        return "reserved class: %s" % reserved, True
+    held = in_hand(issue)
+    return (held, False) if held else (None, False)
+
+
+def absorbed_singles(bundles, ledger, fps):
+    """(fingerprint, single item, bundle state) for each finding of `fps` that sits on a written open bundle while the
+    ledger still names an older single item of its own; items already marked or kept are left out (lane state)."""
+    done = set(bundles.state.get("folded", {})) | set(bundles.state.get("kept_single", {}))
+    rows = []
+    for fp in sorted(fps):
+        b = bundles.bundles.get(bundles.member_of.get(fp, ""))
+        single = ledger.get(fp)
+        if b and single and single != b.get("issue") and single not in done and not b.get("closed") and bundles.written(b):
+            rows.append((fp, single, b))
+    return rows
+
+
+def mark_absorbed(filer, bundles, rows, by_fp, apply):
+    """Marks each single item the Surgeon filed as Duplicate of the bundle that now lists its finding, with one comment
+    on it, once (the lane's `folded` map). Person-authored items, started or assigned ones and reserved classes stay open;
+    a reserved class is named on its bundle line. Not apply: only reports what it would mark. Returns the counts."""
+    res = {"marked": [], "would_mark": [], "skipped": [], "stopped": None, "noted": False}
+    folded, kept = bundles.state.setdefault("folded", {}), bundles.state.setdefault("kept_single", {})
+    for fp, single, b in rows:
+        f = by_fp.get(fp)
+        reserved = lib.reserved_class(f) if f else None
+        if reserved:
+            note = "single %s kept open: reserved class %s" % (single, reserved)
+            m = b["members"][fp]
+            if note not in m.get("note", ""):
+                m["note"] = "; ".join(x for x in (m.get("note"), note) if x)
+                bundles.dirty.add(b["fp"])
+                res["noted"] = True
+            res["skipped"].append((single, "reserved class: %s" % reserved))
+            if apply:
+                kept[single] = "reserved class: %s" % reserved
+            continue
+        if not apply:
+            res["would_mark"].append((single, b["issue"]))
+            continue
+        try:
+            why, permanent = single_kept(filer.view_issue(single))
+            if why:
+                res["skipped"].append((single, why))
+                if permanent:
+                    kept[single] = why
+                continue
+            mark_duplicate(filer, single, b["issue"])
+            folded[single] = b["issue"]
+            res["marked"].append((single, b["issue"]))
+        except LinearError as exc:
+            if exc.code in lib.RATE_OR_BUDGET:
+                res["stopped"] = (exc.code, str(exc))
+                break
+            res["skipped"].append((single, "not marked: %s" % exc))
+            continue
+        try:
+            body = ("Marked Duplicate of %s: the Ship's Surgeon now lists this finding on that bundle's checklist, "
+                    "so one pull request fixes it with the rest. Reopen this item if it should stay on its own." % b["issue"])
+            comment = ["issue", "comment", single, "--body", body]
+            LIN(comment + ["--dry-run"])
+            LIN(comment + ["--verify"])
+        except LinearError as exc:
+            if exc.code in lib.RATE_OR_BUDGET:
+                res["stopped"] = (exc.code, str(exc))
+                break
+            res["skipped"].append((single, "marked Duplicate, comment failed: %s" % exc))
+    return res
+
+
+def plan_marks(findings, args, out, marks):
+    """A run with writes: none changes nothing: it only reports the singles it would mark (local checks only, no Linear call)."""
+    todo = {f["fingerprint"]: f for f in findings if f["class"] == "real" and f["fingerprint"] and not f.get("special")}
+    ledger = read_json(os.path.join(out, LEDGER_FILE), {})
+    filer = lib.Filer(OFFICER, LIN, args.team, args.date, out, ledger, {}, lib.Jev(None), args.max_creates)
+    bundles = lib.Bundles(filer, args.bundle_cap)
+    marks.update(mark_absorbed(filer, bundles, absorbed_singles(bundles, ledger, todo), todo, False))
 
 
 def fold_lane(args, lane, idents, names, date, apply_ok=True):
@@ -1356,7 +1479,12 @@ def main(argv):
     findings, gaps = findings + visual, gaps + visual_gaps
     update_review_state(state, findings, resolved, args.date)
     apply_found(findings, found, read_json(os.path.join(out, LEDGER_FILE), {}))
-    writes, blocked = file_findings(findings, args, args.date, out, state, found, jev, gaps) if args.writes == "linear" else ([], None)
+    marks = {"marked": [], "would_mark": [], "skipped": [], "stopped": None, "noted": False}
+    if args.writes == "linear":
+        writes, blocked = file_findings(findings, args, args.date, out, state, found, jev, gaps, marks)
+    else:
+        writes, blocked = [], None
+        plan_marks(findings, args, out, marks)
     apply_found(findings, found, read_json(os.path.join(out, LEDGER_FILE), {}))
     start_homes = lib.parse_start_homes(args.start_home)
     main_home = args.fm_home or (args.home[0] if args.home else "")
@@ -1378,6 +1506,8 @@ def main(argv):
         "archive_findings": doc["findings"], "findings": findings,
         "intake": {"classes": dict(sorted(classes.items())), "gaps": gaps},
         "writes": args.writes, "writes_done": writes, "writes_blocked": blocked,
+        "duplicates": {"marked": [dict(single=a, bundle=b) for a, b in marks["marked"]], "would_mark": [dict(single=a, bundle=b) for a, b in marks["would_mark"]],
+                       "skipped": [dict(single=a, why=w) for a, w in marks["skipped"]]},
         "linear_calls": LIN.n, "linear_call_budget": LIN.budget,
         "burn_down": burn_down(state, args.date), "start_requests": starts, "held": held, "asks_for_lee": asks,
         "patterns": {"total": len(patterns), "new": [dict(id=i, line=p["line"], count=p["count"]) for i, p in sorted(patterns.items()) if p["first"] == args.date],

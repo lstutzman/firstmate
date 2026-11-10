@@ -350,8 +350,8 @@ class LinearError(RuntimeError):
 class Linear:
     """linear-axi calls, counted against a budget; every call asks for JSON and raises LinearError on a failure."""
 
-    def __init__(self, budget=DEFAULT_MAX_LINEAR_CALLS):
-        self.n, self.budget = 0, budget
+    def __init__(self, budget=DEFAULT_MAX_LINEAR_CALLS, job=None):
+        self.n, self.budget, self.job = 0, budget, job
 
     def reset(self, budget):
         self.n, self.budget = 0, budget
@@ -360,7 +360,8 @@ class Linear:
         if self.n >= self.budget:
             raise LinearError("CALL_BUDGET", "Linear call budget of %d reached" % self.budget)
         self.n += 1
-        proc = subprocess.run(["linear-axi"] + args + ["--output", "json"], env=dict(os.environ, LINEAR_JOB=os.environ.get("LINEAR_JOB") or "officer:linear"), capture_output=True, check=False)
+        job = self.job or os.environ.get("LINEAR_JOB") or "officer:linear"  # names the job in linear-axi's per-job usage record
+        proc = subprocess.run(["linear-axi"] + args + ["--output", "json"], env=dict(os.environ, LINEAR_JOB=job), capture_output=True, check=False)
         try:
             # raw_decode: linear-verify may append plain text lines after the one JSON document.
             doc, _ = json.JSONDecoder().raw_decode(proc.stdout.decode("utf-8").lstrip())

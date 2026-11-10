@@ -33,6 +33,9 @@ Automated findings are filed in far fewer, larger items, so one worker fixes a b
   A line in a reserved class holds its whole bundle for Lee, whatever that line's own score.
 - What stays single, never bundled: a finding an officer marks single (the Surgeon's invalid nightly E2E run, which blocks promotion), and anything already tracked by an item of its own.
   An existing single item a finding was filed in keeps its Found line until a person closes it (or it is folded into its bundle as a duplicate); the finding then goes to its area bundle naming it.
+  The Surgeon marks a single item it filed itself as Duplicate of the bundle once that bundle lists its finding (the `fold` marking, run on every filing pass), with one comment on the single item linking the bundle (Lee, main chat, 2026-11-10).
+  It never marks a person-authored item (one whose body does not open with the Surgeon's own line), a started or assigned one, a closed one, or one in a reserved class; those stay open and a reserved-class single is named on its bundle line.
+  Each marked item is recorded in the lane state, so it is marked once, and a run with `writes: none` only reports what it would mark.
   Bugs from members, Lee's own items and production incidents are not filed by these officers.
 - `bin/fm-officer-surgeon.py fold` folds the open automated items (the Surgeon's, and with `--friction-out` and `--page-check-out` the friction and page-check officers', plus fleet-app's dependency-majors and nightly E2E items) into bundles; it is a dry run unless given `--apply` (see its `--help`).
 
