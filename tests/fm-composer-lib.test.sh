@@ -1900,6 +1900,49 @@ test_quoted_exit_picker_text_is_not_a_dialog() {
   pass "picker text quoted above a normal composer is not read as a live picker"
 }
 
+# A Claude plugin band's focused Button is drawn in SGR 7 inverse above the
+# composer's top rule (verified live on Claude Code 2.1.322; runtime-backends.md
+# "Claude plugin band focus"). Only that shape is focus: the same row without
+# inverse, an inverse bracket on or below the composer rule, a plain capture,
+# and a screen with no composer are not. Herdr rows end in a carriage return.
+band_screen() {  # <hide-row> [composer-row]
+  local rule
+  rule=$(printf '%0.s\xe2\x94\x80' $(seq 1 30))
+  printf 'acct-a  5h 0%%  7d 1%%\r\n%s\r\n%s\r\n%s\r\n%s\r\n' "$1" "$rule" "${2:-❯ pending doorbell}" "$rule"
+}
+
+test_band_focus_needs_inverse_above_the_composer_rule() {
+  local esc=$'\033' out rc rule
+  out=$(fm_composer_band_focus "$(band_screen "${esc}[0m${esc}[1m${esc}[7m[ Hide ]${esc}[0m")"); rc=$?
+  [ "$rc" -eq 0 ] && [ "$out" = Hide ] || fail "an inverse band Button above the composer should be focus, got rc=$rc '$out'"
+  out=$(fm_composer_band_focus "$(band_screen "${esc}[0m${esc}[1m[ Hide ]${esc}[0m")"); rc=$?
+  [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "the same Button without inverse must not be focus, got rc=$rc '$out'"
+  out=$(fm_composer_band_focus "$(band_screen '[ Hide ]')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "an unstyled capture must never prove focus"
+  out=$(fm_composer_band_focus "$(band_screen plain "${esc}[7m[ Hide ]${esc}[0m")"); rc=$?
+  [ "$rc" -eq 1 ] || fail "an inverse bracket in the composer row itself is not band focus"
+  rule=$(printf '%0.s\xe2\x94\x80' $(seq 1 30))
+  out=$(fm_composer_band_focus "$(printf '%s\n%s\n' "${esc}[7m[ Hide ]${esc}[0m" 'no composer here')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a screen with no composer below a rule is not band focus"
+  out=$(fm_composer_band_focus "$(printf '%s\n%s\n%s\n%s\n' "$rule" '❯ draft' "$rule" "${esc}[7m[ Hide ]${esc}[0m")"); rc=$?
+  [ "$rc" -eq 1 ] || fail "an inverse bracket below the composer is not band focus"
+  out=$(fm_composer_band_focus "$(band_screen "${esc}[38;5;7m[ Hide ]${esc}[0m")"); rc=$?
+  [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "a 256-colour foreground of index 7 is not inverse, got rc=$rc '$out'"
+  out=$(fm_composer_band_focus "$(band_screen "${esc}[38;2;7;100;200m[ Hide ]${esc}[0m")"); rc=$?
+  [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "a truecolour component of 7 is not inverse, got rc=$rc '$out'"
+  out=$(fm_composer_band_focus "$(band_screen "${esc}[48;5;7;7m[ Hide ]${esc}[0m")"); rc=$?
+  [ "$rc" -eq 0 ] && [ "$out" = Hide ] || fail "a standalone 7 after a colour's arguments is inverse, got rc=$rc '$out'"
+  out=$(fm_composer_band_focus "$(band_screen "${esc}[7;27m[ Hide ]${esc}[0m")"); rc=$?
+  [ "$rc" -eq 1 ] || fail "inverse cleared by 27 before the bracket is not focus"
+  out=$(fm_composer_band_focus "$(printf '%s\r\n\r\n%s\r\n%s\r\n%s\r\n%s\r\n%s\r\n' \
+    "${esc}[7m[ Run ]${esc}[0m" 'transcript reply' 'acct-a  5h 0%  7d 1%' "${esc}[1m[ Hide ]${esc}[0m" "$rule" '❯ pending doorbell')"); rc=$?
+  [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "an inverse bracket in the transcript above the band is not band focus, got rc=$rc '$out'"
+  out=$(fm_composer_band_focus "$(printf '%s\r\n%s\r\n\r\n%s\r\n%s\r\n' \
+    'acct-a  5h 0%  7d 1%' "${esc}[7m[ Hide ]${esc}[0m" "$rule" '❯ pending doorbell')"); rc=$?
+  [ "$rc" -eq 0 ] && [ "$out" = Hide ] || fail "a blank row between the band and the composer rule should not hide the band, got rc=$rc '$out'"
+  pass "plugin band focus: only an inverse [ label ] above the composer's top rule is the focused state"
+}
+
 test_background_exit_picker_stays_pending_and_blocks_retry
 test_dialog_heading_and_footer_must_be_the_recorded_lines
 test_dialog_note_skips_the_match_when_no_sink_is_set
@@ -1907,3 +1950,4 @@ test_quoted_exit_picker_text_is_not_a_dialog
 test_kiro_near_gray_ghost_is_stripped_and_real_text_survives
 test_kiro_palette_gray_ghost_is_stripped_and_chromatic_indexes_survive
 test_composer_widening_is_kiro_only
+test_band_focus_needs_inverse_above_the_composer_rule

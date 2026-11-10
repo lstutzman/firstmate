@@ -1728,6 +1728,40 @@ Pressing `1` then Enter, or Enter alone on the selected first row, ended the age
 A Herdr lab run on the same build (real Claude Code, a live `sleep 733` background shell, `/exit` typed by hand) exited at once with no picker and the shell gone, so the picker did not reproduce there; why is unconfirmed (a stop-on-exit mod or setting active on that seat is the likely cause, not checked).
 The flag's Enter path is therefore covered by `tests/fm-control.test.sh` fakes built on the recorded screen, not by a live Herdr measurement.
 
+### Claude plugin band focus
+
+Measured 2026-11-10 against Claude Code 2.1.322 on herdr 0.9.5 (Linux x86_64), in isolated Herdr lab sessions.
+A Claude Code plugin can draw a band above the composer through the mods API's `AbovePrompt` slot, and a Button there renders as `[ label ]`; the lee-mods quota band draws one labelled `Hide`.
+A launch prompt passed on the Claude command line submitted on its own both on a fresh launch and on a relaunch in the same pane, with that band showing; the band does not take the keyboard at startup.
+A mouse click on a band text row (sent as an SGR mouse report), or ctrl+x Tab, gave the band the keyboard: the focused Button then drew in SGR 7 inverse (`ESC[7m[ Hide ]`), and that was the only change in the styled viewport and in Herdr's agent record.
+With text already in the composer, one Enter then pressed the focused Button (the quota band hid) and left the text unsubmitted; a second Enter submitted it.
+One Escape returned the focus to the prompt with the composer text intact, and the next Enter submitted it.
+Typing printable text while the band held the keyboard also returned the focus to the prompt, so a freshly typed delivery is not affected; only an Enter on text that is already pending is.
+On an unfocused band, one Escape on an idle composer holding a draft left the draft in place.
+Clicks on Claude's own `[-]` collapse glyph, on a transcript row, on the blank row above the composer and on the footer did not focus the band; focus-in and focus-out reports and a wheel event did not either.
+The incident state is reproduced by ctrl+x followed by a separate Tab, measured 2026-11-10 on Claude Code 2.1.322, herdr 0.9.5 and lee-mods 0.7.2, whether a person types the chord or `herdr pane send-keys` sends ctrl+x and then, in a later call, tab.
+The band then holds the keyboard with its focus ring on nothing: no Button is drawn inverse, the styled viewport is byte-identical to an unfocused band, Herdr reports the agent idle, and every Enter is swallowed, so the composer keeps the text and the band stays drawn with Hide not pressed.
+One Escape followed by Enter submits the text.
+ctrl+x Tab sent in a single send-keys call focuses the Hide Button instead, drawn inverse, where Enter presses Hide; a plain Tab alone does not trap Enter.
+Skills PR 239 removed the mouse-click route, but the engine-owned ctrl+x Tab chord remains.
+Because the ring-on-nothing state has no visible signal, `fm_task_inbox_submit_pending` recovers behaviourally: after an Enter that leaves the composer holding exactly the caller's line on an agent not reported busy, while `fm_composer_band_drawn` sees a `[ label ]` row directly above the composer's top rule, it sends one Escape and then one Enter, and never a second Escape.
+The spawn's post-launch check in `bin/fm-spawn.sh` covers both: a launch doorbell that stays in the composer gets one gated submit, and one that still stays raises a check wake naming the task.
+`fm_composer_band_focus` reads the inverse span in the band, the non-blank rows directly above the composer's top rule, and takes inverse from the SGR parameters the way a terminal applies them, so a colour index or component of 7 is not inverse.
+`fm_backend_release_band_focus` sends one Escape only on that proof and re-reads it, warning with the Claude version when the focus did not move.
+`FM_CLAUDE_BAND_FOCUS_LIVE=1 tests/fm-claude-band-focus-live-e2e.test.sh` refreshes this record with the plugin-free fixture band in `tests/fixtures/claude-band-mod`; on this build it printed:
+
+```text
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 draws a focused band Button in inverse and traps a bare Enter, leaving the text pending
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 submits the pending text once one Escape returns the focus from the band
+```
+
+The same script also runs the ctrl+x, pause, separate Tab case on the fixture band and on the installed lee-mods band (named by its version from `claude plugin list`; reported skipped by name when lee-mods is absent).
+On Claude Code 2.1.322 and herdr 0.9.5 the fixture band draws an inverse `[ Noop ]` after that chord while lee-mods 0.7.3 draws nothing; both trap a bare Enter, and `fm_task_inbox_submit_pending` submits the text after one Escape then Enter.
+The lee-mods case also asserts that no inverse Button is drawn.
+The inbox ring re-submit, `fm-control` submit-pending and clear-pending, and the launch-doorbell verify-and-recover on spawn are covered by the portable fakes in `tests/fm-task-inbox.test.sh`, `tests/fm-control.test.sh` and `tests/fm-spawn-claude-launch-doorbell.test.sh`, not live.
+
+The tmux styled read uses the same detector and is covered by `tests/fm-control.test.sh` fakes, not by a live tmux measurement.
+
 ### Prune and respawn
 
 The real label-collision reproduction is owned by:

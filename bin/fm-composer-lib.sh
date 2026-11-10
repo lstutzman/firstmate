@@ -2306,6 +2306,95 @@ fm_composer_dialog_sink_release() {
   fi
 }
 
+# fm_composer_band_focus: name the plugin control that holds Claude's keyboard
+# focus, from a STYLED (ANSI) screen. Claude Code's mods API draws a plugin's
+# band in the AbovePrompt slot, between the transcript and the composer, and a
+# Button there is `[ label ]`. A click on the band or the person's ctrl+x Tab
+# hands the band the keyboard; the focused Button is then drawn in SGR 7
+# inverse video, and Enter presses that Button instead of submitting the
+# composer, so text already in the composer stays unsubmitted (verified live
+# on Claude Code 2.1.322 with the lee-mods quota band: one Enter pressed its
+# Hide button, the next submitted). Escape returns the focus to the prompt and
+# leaves the composer untouched; typing printable text returns it too, so a
+# fresh typed delivery is not at risk, only an Enter on text already pending.
+# The proof is structural to Claude's own layout: the inverted `[ ` span sits
+# in the band, the block of non-blank rows directly above the composer's top
+# rule (the solid `─` rule above the bottom-most `❯` composer row), blank rows
+# between them skipped. Inverse is read from the SGR parameters as a terminal
+# applies them: a standalone 7 sets it, 0 or an empty parameter and 27 clear it,
+# and the colour arguments after 38, 48 and 58 (`5;n`, `2;r;g;b`) are skipped,
+# so a colour whose index or component is 7 is not inverse. A bracket anywhere
+# else - transcript rows above the band, the composer itself, an unstyled read -
+# is not this state.
+# Prints the focused control's label and returns 0; otherwise prints nothing
+# and returns 1. The SGR 7 inverse is the only surface signal the band offers
+# (docs/verification/runtime-backends.md "Claude plugin band focus"), so the
+# one consumer, fm_backend_release_band_focus, proves its Escape worked by
+# re-reading this verdict and fails loudly naming the harness when it did not.
+fm_composer_band_focus() {  # <styled-screen> -> focused control label
+  _fm_composer_band_scan focus "${1-}"
+}
+
+# fm_composer_band_drawn: whether a plugin band (a `[ label ]` Button row) is
+# drawn in the band rows directly above the composer's top rule, focused or
+# not. Claude gives no visible signal when a band holds the keyboard with its
+# focus ring on nothing (ctrl+x then a separate Tab), so a drawn band is the
+# only structural hint that an Enter swallowed on pending text may have gone
+# to it. Prints the first Button label and returns 0; otherwise returns 1.
+fm_composer_band_drawn() {  # <styled-screen> -> first Button label
+  _fm_composer_band_scan drawn "${1-}"
+}
+
+_fm_composer_band_scan() {  # focus|drawn <styled-screen>
+  local mode=$1 screen=${2-}
+  [ -n "$screen" ] || return 1
+  printf '%s\n' "$screen" | LC_ALL=C awk -v mode="$mode" '
+    function plain(s) { gsub(/\033\[[0-9;:?]*[A-Za-z]/, "", s); sub(/\r$/, "", s); return s }
+    function sgr(params, inv,   n, p, k) {
+      if (params == "") return 0
+      n = split(params, p, ";")
+      for (k = 1; k <= n; k++) {
+        if (p[k] == "" || p[k] == "0" || p[k] == "27") inv = 0
+        else if (p[k] == "7") inv = 1
+        else if (p[k] == "38" || p[k] == "48" || p[k] == "58") {
+          if (p[k + 1] == "5") k += 2
+          else if (p[k + 1] == "2") k += 4
+        }
+      }
+      return inv
+    }
+    function focused(r,   inv, seq) {
+      inv = 0
+      while (match(r, /\033\[[0-9;:?]*[A-Za-z]/)) {
+        seq = substr(r, RSTART, RLENGTH)
+        r = substr(r, RSTART + RLENGTH)
+        if (seq !~ /m$/) continue
+        inv = sgr(substr(seq, 3, length(seq) - 3), inv)
+        if (inv && match(r, /^\[ [^]\033]*[^] \033] \]/)) return substr(r, 3, RLENGTH - 4)
+      }
+      return ""
+    }
+    { raw[NR] = $0; txt[NR] = plain($0) }
+    END {
+      composer = 0
+      for (i = NR; i > 1; i--) {
+        if (txt[i] ~ /^[ \t]*❯/ && txt[i - 1] ~ /^[ \t]*(─)+[ \t]*$/) { composer = i; break }
+      }
+      if (!composer) exit 1
+      i = composer - 2
+      while (i >= 1 && txt[i] ~ /^[ \t]*$/) i--
+      for (; i >= 1 && txt[i] !~ /^[ \t]*$/; i--) {
+        if (mode == "drawn") {
+          if (match(txt[i], /\[ [^]]*[^] ] \]/)) { printf "%s", substr(txt[i], RSTART + 2, RLENGTH - 4); exit 0 }
+          continue
+        }
+        label = focused(raw[i])
+        if (label != "") { printf "%s", label; exit 0 }
+      }
+      exit 1
+    }'
+}
+
 # Hermes TUI 0.21.7: profile-prefixed ❯ prompt immediately below the status
 # rule; placeholder text is dim, while typed drafts are bright. Identity is
 # required, and dialogs, wrapped drafts, non-ready status and unstyled reads

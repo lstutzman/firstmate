@@ -17,6 +17,10 @@
 #   6. Marker non-regression: a control command to a kind=secondmate task
 #      carries NO from-firstmate marker and opens no pending-reply expectation,
 #      while fm-send's marking of the same task is untouched.
+#   7. Pending text: submit-pending and clear-pending act only on firstmate's
+#      own doorbell, release a focused Claude plugin band with one Escape, and
+#      refuse a draft, a foreign doorbell, an unproven composer, a band that
+#      keeps the focus, and every harness but Claude.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -71,6 +75,10 @@ verified_adapter_contract() {  # <harness> -> exit command, interrupt key, repea
 #   pane     optional capture-pane override, for an adapter whose busy verdict
 #            is read from the rendered tail.
 #   key-times  every named key with its wall-clock send time.
+#   after-escape / after-cu  optional screens that replace `pane` when an
+#            Escape or a Ctrl+U is sent, for a composer or a Claude plugin band
+#            whose focus those keys change.
+#   cursor   optional cursor row for the composer read (default 1).
 #   devin    optional Devin screen model, which capture-pane renders as the
 #            rows devin 3000.11.1 draws: `running`, `armed`, `cancelled`,
 #            `idle`, `primed`, or `picker`. Escape moves running->armed (the
@@ -144,6 +152,12 @@ case "${1:-}" in
          && [ "$(grep -c '^Enter$' "$D/keys")" -ge "$(cat "$D/enter-stops-at")" ]; then
         printf 'zsh' > "$D/command"
       fi
+      if [ "$payload" = Escape ] && [ -f "$D/after-escape" ]; then
+        cp "$D/after-escape" "$D/pane"
+      fi
+      if [ "$payload" = C-u ] && [ -f "$D/after-cu" ]; then
+        cp "$D/after-cu" "$D/pane"
+      fi
       if [ "$payload" = Escape ] && [ -f "$D/devin" ]; then
         case "$(cat "$D/devin")" in
           running) printf armed > "$D/devin" ;;
@@ -179,6 +193,8 @@ case "${1:-}" in
           # A modelled Devin screen parks the cursor on its composer row.
           if [ -f "$D/devin" ]; then
             devin_screen "$(cat "$D/devin")" | awk '/^❭ /{ print NR - 1; exit }'
+          elif [ -f "$D/cursor" ]; then
+            cat "$D/cursor"
           else
             printf '1\n'
           fi
@@ -201,7 +217,11 @@ case "${1:-}" in
         exit 0
       fi
     fi
-    if [ -f "$D/devin" ]; then devin_screen "$(cat "$D/devin")"; elif [ -f "$D/pane" ]; then cat "$D/pane"; else printf '╭────╮\n│    │\n╰────╯\n'; fi
+    styled=0
+    for a in "$@"; do [ "$a" = -e ] && styled=1; done
+    {
+      if [ -f "$D/devin" ]; then devin_screen "$(cat "$D/devin")"; elif [ -f "$D/pane" ]; then cat "$D/pane"; else printf '╭────╮\n│    │\n╰────╯\n'; fi
+    } | if [ "$styled" = 1 ]; then cat; else sed $'s/\033\\[[0-9;]*m//g'; fi
     exit 0 ;;
   list-windows)
     if [ -f "$D/windows" ]; then cat "$D/windows"; fi
@@ -1506,6 +1526,171 @@ test_unverified_state_backends_refuse_stop_verbs
 test_commandcode_relaunch_off_tmux_and_herdr_refuses_before_stopping
 test_hermes_profile_refusals_preserve_running_worker
 test_state_verified_backends_are_exactly_tmux_herdr_and_rex
+# --- 7. firstmate-owned pending text ----------------------------------------
+#
+# submit-pending and clear-pending act only on a composer that holds exactly
+# firstmate's own doorbell for the task. The screen is a Claude 2.1.322-shaped
+# composer with a plugin band above it; a focused band Button is drawn in SGR 7
+# inverse, as Claude draws it after a click on the band or ctrl+x Tab, and
+# while it holds the keyboard an Enter would press the Button (verified live,
+# docs/verification/runtime-backends.md "Claude plugin band focus").
+
+# claude_band_screen <focused:0|1> <composer-text>
+claude_band_screen() {
+  local hide=$'\033[1m[ Hide ]\033[0m' rule
+  [ "$1" = 1 ] && hide=$'\033[1m\033[7m[ Hide ]\033[0m'
+  rule=$(printf '%0.s\xe2\x94\x80' $(seq 1 40))
+  printf '\xe2\x97\x8f earlier reply\n'
+  printf 'acct-a  5h 0%%  7d 1%%\n'
+  printf '%s\n' "$hide"
+  printf '%s\n' "$rule"
+  if [ -n "$2" ]; then printf '\xe2\x9d\xaf %s\n' "$2"; else printf '\xe2\x9d\xaf\n'; fi
+  printf '%s\n' "$rule"
+  printf '  \xe2\x8f\xb5\xe2\x8f\xb5 bypass permissions on (shift+tab to cycle)\n'
+}
+
+# pending_case <name> <focused> <composer-text> -> case dir with a claude task t1
+pending_case() {
+  local dir
+  dir=$(new_case "$1")
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  printf '4' > "$dir/fake/cursor"
+  claude_band_screen "$2" "$3" > "$dir/fake/pane"
+  claude_band_screen 0 '' > "$dir/fake/after-enter"
+  printf '%s\n' "$dir"
+}
+
+steering_doorbell() {  # <case-dir>
+  (
+    # shellcheck source=/dev/null
+    . "$ROOT/bin/fm-task-inbox-lib.sh"
+    fm_task_inbox_pointer_line "$1/home/state/t1.inbox"
+  )
+}
+
+test_submit_pending_submits_the_steering_doorbell() {
+  local dir out rc line
+  dir=$(pending_case submit-steer 0 placeholder)
+  line=$(steering_doorbell "$dir")
+  claude_band_screen 0 "$line" > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 submit-pending); rc=$?
+  expect_code 0 "$rc" "a pending steering doorbell should be submitted"$'\n'"$out"
+  assert_contains "$out" "submitted doorbell=steering-doorbell t1 harness=claude" "the result should name the doorbell"
+  [ "$(grep -c '^Enter$' "$dir/fake/keys")" -eq 1 ] || fail "one Enter should submit the doorbell, keys: $(cat "$dir/fake/keys")"
+  [ -z "$(keys_sent "$dir")" ] || fail "an unfocused band needs no Escape, sent: $(keys_sent "$dir")"
+  [ -z "$(literals "$dir")" ] || fail "submit-pending must type nothing"
+  pass "fm-control submit-pending: firstmate's own pending steering doorbell is submitted with one Enter"
+}
+
+test_submit_pending_returns_focus_from_a_plugin_band_first() {
+  local dir out rc line
+  dir=$(pending_case submit-band 1 placeholder)
+  line=$(steering_doorbell "$dir")
+  claude_band_screen 1 "$line" > "$dir/fake/pane"
+  claude_band_screen 0 "$line" > "$dir/fake/after-escape"
+  out=$(run_control "$dir" t1 submit-pending); rc=$?
+  expect_code 0 "$rc" "a focused band should be released and the doorbell submitted"$'\n'"$out"
+  [ "$(cat "$dir/fake/keys")" = $'Escape\nEnter' ] \
+    || fail "exactly one Escape then one Enter should be sent, got: $(cat "$dir/fake/keys")"
+  pass "fm-control submit-pending: one Escape returns the keyboard from a focused plugin band before the Enter"
+}
+
+test_submit_pending_refuses_when_the_band_keeps_focus() {
+  local dir out rc line
+  dir=$(pending_case submit-stuck 1 placeholder)
+  line=$(steering_doorbell "$dir")
+  claude_band_screen 1 "$line" > "$dir/fake/pane"
+  claude_band_screen 1 "$line" > "$dir/fake/after-escape"
+  out=$(env FM_BACKEND_BAND_FOCUS_POLLS=1 PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    FM_CONTROL_POLL=0.01 "$CONTROL" t1 submit-pending 2>&1); rc=$?
+  expect_code 1 "$rc" "a band that keeps the focus should refuse"$'\n'"$out"
+  assert_contains "$out" "kept the keyboard after one Escape" "the refusal should name the band"
+  assert_contains "$out" "'[ Hide ]' focused after one Escape" "the warning should name the focused control"
+  [ "$(cat "$dir/fake/keys")" = Escape ] \
+    || fail "only the single Escape may be sent, never an Enter or a second Escape, got: $(cat "$dir/fake/keys")"
+  pass "fm-control submit-pending: a band that keeps the focus after one Escape refuses with no Enter"
+}
+
+# The postcondition is observed, never inferred: when every read after the
+# Enter fails to find a composer (here a screen with no composer at all), the
+# doorbell is not reported submitted.
+test_submit_pending_unreadable_after_enter_is_unconfirmed() {
+  local dir out rc line
+  dir=$(pending_case submit-unread 0 placeholder)
+  line=$(steering_doorbell "$dir")
+  claude_band_screen 0 "$line" > "$dir/fake/pane"
+  printf 'Loading session...\n' > "$dir/fake/after-enter"
+  out=$(env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
+    FM_CONTROL_POLL=0.01 FM_CONTROL_PENDING_WAIT=0.05 "$CONTROL" t1 submit-pending 2>&1); rc=$?
+  expect_code 1 "$rc" "an unreadable composer after the Enter must not count as submitted"$'\n'"$out"
+  assert_contains "$out" "submit=unconfirmed" "the result should say the submit is unconfirmed"
+  case "$out" in *"submitted doorbell="*) fail "an unread composer was reported submitted: $out" ;; esac
+  pass "fm-control submit-pending: a composer that cannot be read after the Enter reports submit=unconfirmed"
+}
+
+test_pending_verbs_refuse_text_that_is_not_firstmates() {
+  local dir out rc verb
+  for verb in submit-pending clear-pending; do
+    dir=$(pending_case "draft-$verb" 0 "captain draft: please also check the docs")
+    out=$(run_control "$dir" t1 "$verb"); rc=$?
+    expect_code 1 "$rc" "$verb should refuse a draft"$'\n'"$out"
+    assert_contains "$out" "not firstmate's own doorbell" "$verb should say why"
+    [ ! -s "$dir/fake/keys" ] || fail "$verb must send no key to a draft, got: $(cat "$dir/fake/keys")"
+  done
+  pass "fm-control submit-pending and clear-pending: a captain's or worker's draft is refused untouched"
+}
+
+test_pending_verbs_refuse_a_composer_not_proven_pending() {
+  local dir out rc
+  dir=$(pending_case empty-composer 0 '')
+  out=$(run_control "$dir" t1 submit-pending); rc=$?
+  expect_code 1 "$rc" "an empty composer should refuse"$'\n'"$out"
+  assert_contains "$out" "composer state is 'empty'" "the refusal should name the verdict"
+  [ ! -s "$dir/fake/keys" ] || fail "an empty composer must receive no key"
+  pass "fm-control submit-pending: a composer not proven pending is refused"
+}
+
+test_clear_pending_clears_an_operational_launch_doorbell() {
+  local dir out rc rec line
+  dir=$(pending_case clear-op 0 placeholder)
+  mkdir -p "$dir/home/state/operational-inbox"
+  rec="$(cd -P "$dir/home/state/operational-inbox" && pwd -P)/1794285369-21d3198b0329c1e2.msg"
+  printf 'brief' > "$rec"
+  line=": Firstmate operational input waiting: read '$rec' and handle its contents as Firstmate operational input."
+  claude_band_screen 0 "$line" > "$dir/fake/pane"
+  claude_band_screen 0 '' > "$dir/fake/after-cu"
+  out=$(run_control "$dir" t1 clear-pending); rc=$?
+  expect_code 0 "$rc" "a pending launch doorbell should be cleared"$'\n'"$out"
+  assert_contains "$out" "cleared doorbell=operational-doorbell t1" "the result should name the doorbell"
+  [ "$(cat "$dir/fake/keys")" = C-u ] || fail "one Ctrl+U should clear it, got: $(cat "$dir/fake/keys")"
+  [ -f "$rec" ] || fail "clear-pending must not touch the record itself"
+  pass "fm-control clear-pending: firstmate's own pending launch doorbell is cleared, its record kept"
+}
+
+test_clear_pending_refuses_a_doorbell_for_a_record_this_home_lacks() {
+  local dir out rc
+  dir=$(pending_case clear-foreign 0 \
+    ": Firstmate operational input waiting: read '/elsewhere/state/operational-inbox/1-ab.msg' and handle its contents as Firstmate operational input.")
+  out=$(run_control "$dir" t1 clear-pending); rc=$?
+  expect_code 1 "$rc" "a doorbell naming another home's record should refuse"$'\n'"$out"
+  assert_contains "$out" "not firstmate's own doorbell" "the refusal should say why"
+  [ ! -s "$dir/fake/keys" ] || fail "a foreign doorbell must receive no key"
+  pass "fm-control clear-pending: a doorbell naming a record outside this home is refused"
+}
+
+test_pending_verbs_are_claude_only() {
+  local dir out rc
+  dir=$(new_case pending-codex)
+  add_task "$dir" t1 codex
+  alive_as "$dir" codex
+  out=$(run_control "$dir" t1 submit-pending); rc=$?
+  expect_code 1 "$rc" "submit-pending on codex should refuse"$'\n'"$out"
+  assert_contains "$out" "verified for Claude on herdr and tmux only" "the refusal should name the scope"
+  [ ! -s "$dir/fake/keys" ] || fail "a refused harness must receive no key"
+  pass "fm-control submit-pending: a harness other than Claude is refused before anything is read or sent"
+}
+
 test_window_label_is_refused_with_the_exact_id
 test_explicit_endpoint_is_refused
 test_unknown_task_is_refused
@@ -1542,3 +1727,12 @@ test_grok_interrupt_without_acknowledgement_reports_unconfirmed
 test_grok_idle_footer_does_not_confirm_cancellation
 test_secondmate_control_command_carries_no_marker
 test_fm_send_still_marks_the_same_secondmate_task
+test_submit_pending_submits_the_steering_doorbell
+test_submit_pending_returns_focus_from_a_plugin_band_first
+test_submit_pending_refuses_when_the_band_keeps_focus
+test_submit_pending_unreadable_after_enter_is_unconfirmed
+test_pending_verbs_refuse_text_that_is_not_firstmates
+test_pending_verbs_refuse_a_composer_not_proven_pending
+test_clear_pending_clears_an_operational_launch_doorbell
+test_clear_pending_refuses_a_doorbell_for_a_record_this_home_lacks
+test_pending_verbs_are_claude_only
