@@ -359,6 +359,35 @@ EOF
   pass "fm-officer friction: status-log waits on Lee are detected, measured, and grouped by root cause"
 }
 
+test_self_clearing_external_waits_are_not_friction() {
+  local home json
+  home=$(make_world selfclear)
+  cat > "$home/state/task-sc.status" <<EOF
+needs-decision [key=merge-handoff-5213] [cause=external] [at=$T]: [handoff=slarti] https://github.com/o/r/pull/5213 is ready to merge
+needs-decision [key=sc-dep] [cause=external] [dep=pr/o/r/9] [at=$T]: waits on the other owner's merge
+blocked [key=sc-plain] [cause=external] [at=$T]: waiting for the vendor to restore the service
+resolved [key=sc-plain] [at=$((T + 600))]: it came back
+EOF
+  printf '%s\n' \
+    "{\"v\":1,\"ts\":$T,\"event\":\"task.status\",\"task\":\"gone-sc\",\"state\":\"needs-decision\",\"key\":\"led-dep\",\"cause\":\"external\",\"dep\":\"pr/o/r/9\",\"text\":\" waits on the other owner's merge\"}" \
+    "{\"v\":1,\"ts\":$T,\"event\":\"task.status\",\"task\":\"gone-sc\",\"state\":\"blocked\",\"key\":\"led-plain\",\"cause\":\"external\",\"text\":\" waiting for the vendor\"}" \
+    "{\"v\":1,\"ts\":$((T + 600)),\"event\":\"task.status\",\"task\":\"gone-sc\",\"state\":\"resolved\",\"key\":\"led-plain\",\"text\":\" it came back\"}" \
+    >> "$home/state/fleet-ledger.jsonl"
+  run_officer "$home" >/dev/null || fail "friction run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals "" "$(status_event "$json" gone-sc led-dep '.key // empty')" \
+    "a cleaned-up task's PR-dependency wait read from the fleet ledger is not counted"
+  assert_equals "environment external ledger" "$(status_event "$json" gone-sc led-plain '"\(.cause) \(.sub) \(.source)"')" \
+    "a ledger external wait with no dependency is still counted"
+  assert_equals "" "$(status_event "$json" task-sc merge-handoff-5213 '.key // empty')" \
+    "a merge-handoff wait the decision sweep closes is not counted"
+  assert_equals "" "$(status_event "$json" task-sc sc-dep '.key // empty')" \
+    "a wait tagged with a PR dependency is not counted"
+  assert_equals "environment external" "$(status_event "$json" task-sc sc-plain '"\(.cause) \(.sub)"')" \
+    "an external wait with no named dependency is still counted"
+  pass "fm-officer friction: self-clearing external waits are not friction"
+}
+
 test_stated_causes_group_blocked_lines() {
   local home out json
   home=$(make_world stated)
@@ -1606,6 +1635,7 @@ test_merge_word_is_not_a_missing_tool
 test_token_scope_needs_a_token_permission_failure
 test_status_waits_and_root_causes
 test_stated_causes_group_blocked_lines
+test_self_clearing_external_waits_are_not_friction
 test_transcript_lee_steps_and_refusals
 test_velocity_findings_file
 test_velocity_ids_counts_and_states

@@ -831,6 +831,8 @@ The optional local, gitignored `config/lee-step-host` names, on its first non-bl
 It prints `bash <script>` only when the file is set and they match, because ssh to the machine one is already on has no key.
 Otherwise, including when the file is absent, it prints `ssh -t <host> '...'`, which works from any machine, so a step is never shown as a local command on the wrong machine.
 Every step also names why no agent can run it, `--cause sudo|credential|policy|tool|physical`, the same values a `blocked` or `needs-decision` line carries as `[cause=...]`.
+A `--cause sudo` step is refused unless `--no-recipe <why>` states that no `fleet-admin` recipe covers it, because root work runs as `sudo -n fleet-admin <recipe>` and a new root ability ships as a recipe; the reason is printed on the step.
+With the file unset the command prints an ssh line even for the machine the session is on, and says on stderr that `config/lee-step-host` fixes that.
 `bin/fm-worktree-assert.sh <task-id>` is the matching check for a worker session restored after a restart: it refuses, naming the exact directory, unless the current directory is the worktree the task record names.
 
 ## Fleet quota and secondmate alarm (config/fleet-alarm.json)

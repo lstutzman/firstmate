@@ -200,6 +200,27 @@ run_worker_command() {  # <command>
   env -i PATH="$PATH" HOME="$HOME_DIR/user-home" bash -c "$1"
 }
 
+test_capture_records_a_named_dependency() {
+  local out
+  make_case on-dep on
+  {
+    printf 'needs-decision [key=wait-pr] [cause=external] [dep=pr/o/r/9] [at=1790000000]: waits on the merge\n'
+    printf 'blocked [key=bad-dep] [dep=nokind] [at=1790000001]: malformed dependency\n'
+    printf 'working [at=1790000002]: no dependency\n'
+  } > "$HOME_DIR/state/$TASK.status"
+  out=$(in_home "$ROOT/bin/fm-fleet-ledger.sh" capture 2>&1) || fail "capture failed: $out"
+  assert_equals "$(cat <<'EOF2'
+["wait-pr","external","pr/o/r/9"]
+["bad-dep",null,null]
+[null,null,null]
+EOF2
+)" "$(ledger_rows '[.key, .cause, .dep]')" "ledger dependency members"
+  assert_equals '[true,false,false]' \
+    "$(jq -cs 'map(has("dep"))' "$HOME_DIR/state/fleet-ledger.jsonl")" \
+    "dep is present only when the line names a well-formed dependency"
+  pass "flag on: a status line's named dependency is recorded, and lines without one carry no dep"
+}
+
 test_worker_status_line_is_recorded_when_written() {
   local out
   make_case on-immediate on
@@ -351,6 +372,7 @@ test_dispatched_records_effort_and_skills_commit
 test_dispatched_records_unknown_skills_when_unreadable
 test_flag_on_records_a_pr_merge_once
 test_flag_on_records_a_pr_registration
+test_capture_records_a_named_dependency
 test_worker_status_line_is_recorded_when_written
 test_worker_status_line_is_recorded_under_a_state_override
 test_worker_status_line_is_recorded_under_a_relative_config_override
