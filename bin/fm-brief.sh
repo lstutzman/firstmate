@@ -258,7 +258,7 @@ fm_linear_quote() {
   esac
   case "${id#PC-}" in *[!0-9]*) echo "error: --linear takes a Property Compass item id such as PC-123 (got '$id')" >&2; return 1 ;; esac
   command -v linear-axi >/dev/null 2>&1 || { echo "error: cannot read $id: linear-axi is not installed" >&2; return 1; }
-  view=$(linear-axi issue view "$id" --full 2>&1) || {
+  view=$(LINEAR_JOB=${LINEAR_JOB:-firstmate:fm-brief} linear-axi issue view "$id" --full 2>&1) || {
     echo "error: cannot read $id for the brief's quoted acceptance: $view" >&2
     return 1
   }

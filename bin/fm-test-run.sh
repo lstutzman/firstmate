@@ -576,6 +576,7 @@ tests/fm-grok-harness.test.sh 9891
 tests/fm-herdr-lab.test.sh 18189
 tests/fm-lane-capacity-integration.test.sh 48000
 tests/fm-lane-vitals.test.sh 5077
+tests/fm-linear-usage.test.sh 3000
 tests/fm-lint.test.sh 428516
 tests/fm-pi-primary-types.test.sh 30070
 tests/fm-pr-merge.test.sh 621532
