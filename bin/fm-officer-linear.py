@@ -413,37 +413,75 @@ def pause_for_rate_limit(out, now):
 
 
 class Jev:
-    """local-jev's yes/no answer to "is this the same issue?"; None when it cannot answer."""
+    """local-jev's yes/no answer to "is this the same issue?"; None when it cannot answer.
+
+    Every answer it asks for is a `call` receipt and the caller's use of it a `decision` receipt
+    (docs/local-jev-receipts.md): same() leaves the call's receipt id in .receipt and where the answer came from in
+    .source (None when no local-jev is installed, so nothing is recorded), and decide() records the option used.
+    """
 
     def __init__(self, path):
         self.path, self.calls, self.dead, self.gap = path, 0, not path or not os.path.exists(path or ""), None
+        self.installed, self.down, self.receipt, self.source, self.caller = not self.dead, None, None, None, None
         if self.dead:
             self.gap = "local-jev not found at %s, so duplicates are found by fingerprint only" % (path or "(none)")
 
-    def same(self, a, b, what="issue"):
+    def same(self, a, b, what="issue", subject=None, caller="officer-duplicate"):
+        self.receipt, self.source, self.caller = None, None, caller
         if self.dead:
+            self.source = "fallback:" + (self.down or "local-jev-down") if self.installed else None
             return None
         if self.calls >= JEV_CALLS_MAX:
             self.gap = "local-jev call cap of %d reached; later duplicate checks used fingerprints only" % JEV_CALLS_MAX
+            self.source = "fallback:call-cap"
             return None
         self.calls += 1
+        question, yes, no = "Is report B the same %s as report A (the same defect in the same place)?" % what, "same %s" % what, "different %s" % what
+        state = {"report_a": a[:900], "report_b": b[:900]}
+        call = {"caller": caller, "subject": subject, "model": None, "route": "jev.py:noul", "served_adapter": None,
+                "request": {"state": state, "question": question, "criteria": {"true": yes, "false": no}},
+                "pick": None, "confidence": None, "probabilities": None, "floor": JEV_SAME, "latency_ms": None, "error": None}
+        started = time.monotonic()
         try:
             proc = subprocess.run(
-                ["python3", self.path, "noul", "Is report B the same %s as report A (the same defect in the same place)?" % what,
-                 "--true", "same %s" % what, "--false", "different %s" % what, "--state",
-                 json.dumps({"report_a": a[:900], "report_b": b[:900]})],
+                ["python3", self.path, "noul", question, "--true", yes, "--false", no, "--state", json.dumps(state)],
                 capture_output=True, check=False, timeout=JEV_TIMEOUT, stdin=subprocess.DEVNULL)
-        except (OSError, subprocess.TimeoutExpired):
+        except (OSError, subprocess.TimeoutExpired) as exc:
             self.dead, self.gap = True, "local-jev timed out, so duplicates are found by fingerprint only"
+            self.down, self.source = "local-jev-down", "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "fallback:local-jev-down"
+            call.update(latency_ms=int((time.monotonic() - started) * 1000), error=type(exc).__name__)
+            self.receipt = progress.jev_receipt("call", call)
             return None
+        call["latency_ms"] = int((time.monotonic() - started) * 1000)
         if proc.returncode == 3:
             self.dead, self.gap = True, "local-jev unreachable, so duplicates are found by fingerprint only"
+            self.down, self.source = "unreachable", "fallback:unreachable"
+            call["error"] = "exit 3 (unreachable)"
+            self.receipt = progress.jev_receipt("call", call)
             return None
         try:
-            return float(json.loads(proc.stdout.decode("utf-8"))["noul"])
+            answer = json.loads(proc.stdout.decode("utf-8"))
+            p = float(answer["noul"])
         except (ValueError, KeyError, TypeError):
             self.gap = "local-jev returned an unreadable answer once"
+            self.source = "fallback:unreadable"
+            call["error"] = "unreadable answer (exit %d)" % proc.returncode
+            self.receipt = progress.jev_receipt("call", call)
             return None
+        served = next((answer.get(k) for k in ("served_adapter", "adapter", "model") if isinstance(answer, dict) and answer.get(k)), None)
+        call.update(served_adapter=served, pick="true" if p > JEV_SAME else "false", confidence=max(p, 1.0 - p),
+                    probabilities={"true": p, "false": 1.0 - p})
+        self.receipt, self.source = progress.jev_receipt("call", call), "model"
+        return p
+
+    def decide(self, decision, subject=None, **extra):
+        """Records the option the caller used ("true" or "false") for the last same(), when local-jev is installed."""
+        if self.source is None:
+            return None
+        fields = {"receipt_id": self.receipt, "caller": self.caller, "subject": subject, "decision": decision,
+                  "source": self.source, "overridden": False, "override_by": None, "corrected_decision": None}
+        fields.update(extra)
+        return progress.jev_receipt("decision", fields)
 
 
 def finding_text(f):
@@ -518,7 +556,10 @@ class Filer:
         best = (None, 0.0)
         for ident in [i for i in self.search_hits(f["title"], 5) if not self.is_bundle(i)][:JEV_CANDIDATES]:
             issue = self.view_issue(ident)
-            confidence = self.jev.same(finding_text(f), "%s\n%s" % (issue.get("title") or "", str(issue.get("description") or "")[:600]))
+            confidence = self.jev.same(finding_text(f), "%s\n%s" % (issue.get("title") or "", str(issue.get("description") or "")[:600]),
+                                       subject=f["fingerprint"])
+            self.jev.decide("true" if confidence is not None and confidence > JEV_SAME else "false", f["fingerprint"],
+                            candidate=ident, officer=self.officer.id)
             if confidence is None:
                 return None, 0.0, None
             if confidence > JEV_SAME:
@@ -1415,7 +1456,9 @@ def update_patterns(officer, store, findings, jev, date):
             for overlap, q in near[:JEV_CANDIDATES]:
                 if overlap < 0.3:
                     break
-                confidence = jev.same(line, patterns[q]["line"], "bad pattern")
+                confidence = jev.same(line, patterns[q]["line"], "bad pattern", subject=f["fingerprint"], caller="officer-pattern")
+                jev.decide("true" if confidence is not None and confidence > JEV_SAME else "false", f["fingerprint"],
+                           candidate=q, officer=officer.id)
                 if confidence is None:
                     break
                 if confidence > JEV_SAME:

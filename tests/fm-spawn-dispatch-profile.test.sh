@@ -546,6 +546,49 @@ test_recorded_dispatch_selection_allows_recorded_override() {
   pass "a task override with its reason permits a different launch and is recorded"
 }
 
+# A task record that names its local-jev call receipt gets one decision receipt
+# when the worker launches (docs/local-jev-receipts.md), and the task record keeps
+# the receipt id for teardown.
+test_dispatch_receipt_records_override_and_acceptance() {
+  local rec id out status receipts
+  id=profile-receipt-override-z13
+  rec=$(make_spawn_case profile-receipt claude "$id")
+  read_case_record "$rec"
+  enable_dispatch_profile "$HOME_DIR"
+  receipts="$CASE_DIR/receipts"
+  record_dispatch "$HOME_DIR" "$id" clear claude opus high
+  jq -c '. + {receipt_id: "jr-override1", pick: "rule_1", pick_source: "pick"}' "$HOME_DIR/data/$id/dispatch-resolution.json" > "$CASE_DIR/rec.json"
+  mv "$CASE_DIR/rec.json" "$HOME_DIR/data/$id/dispatch-resolution.json"
+
+  out=$(FM_JEV_RECEIPTS_DIR=$receipts run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort medium --dispatch-override 'authorized account test')
+  status=$?
+  expect_code 0 "$status" "an overridden launch should still spawn: $out"
+  assert_not_contains "$out" 'local-jev receipt' "a written receipt prints no warning"
+  assert_equals 'decision jr-override1 dispatch-resolve profile-receipt-override-z13 default model true firstmate default authorized account test' \
+    "$(cat "$receipts"/*.jsonl | jq -r '[.kind, .receipt_id, .caller, .subject, .decision, .source, .overridden, .override_by,
+        .corrected_decision, .override_reason] | map(tostring) | join(" ")')" \
+    "an override of a clear selection is one decision naming the call, the rule whose profile was launched, and the reason"
+  assert_grep 'dispatch_receipt=jr-override1' "$HOME_DIR/state/$id.meta" "the task record keeps the receipt id for teardown"
+
+  id=profile-receipt-accept-z13
+  rec=$(make_spawn_case profile-receipt-accept claude "$id")
+  read_case_record "$rec"
+  enable_dispatch_profile "$HOME_DIR"
+  receipts="$CASE_DIR/receipts"
+  record_dispatch "$HOME_DIR" "$id" clear codex gpt-5 high
+  jq -c '. + {receipt_id: "jr-accept1", pick: "rule_1", pick_source: "pick"}' "$HOME_DIR/data/$id/dispatch-resolution.json" > "$CASE_DIR/rec.json"
+  mv "$CASE_DIR/rec.json" "$HOME_DIR/data/$id/dispatch-resolution.json"
+  out=$(FM_JEV_RECEIPTS_DIR=$receipts run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high)
+  status=$?
+  expect_code 0 "$status" "a matching launch should spawn: $out"
+  assert_equals 'jr-accept1 rule_1 model false null' \
+    "$(cat "$receipts"/*.jsonl | jq -r '"\(.receipt_id) \(.decision) \(.source) \(.overridden) \(.corrected_decision)"')" \
+    "a launch that matches the clear selection is an accepted decision"
+  pass "a dispatch receipt records an override with its corrected rule and a matching launch as the model's pick, and the task keeps the receipt id"
+}
+
 test_recorded_dispatch_selection_leaves_unset_effort_unbound() {
   local rec id out status
   id=profile-selected-fallback-z13
@@ -3015,6 +3058,7 @@ test_active_dispatch_profile_allows_explicit_harness
 test_recorded_dispatch_selection_refuses_conflicting_flags
 test_recorded_dispatch_selection_allows_matching_flags
 test_recorded_dispatch_selection_allows_recorded_override
+test_dispatch_receipt_records_override_and_acceptance
 test_recorded_dispatch_selection_leaves_unset_effort_unbound
 test_recorded_dispatch_selection_refuses_raw_launch_without_override
 test_active_dispatch_without_task_record_is_refused

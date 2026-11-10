@@ -420,6 +420,9 @@ unset _teardown_source
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
 # shellcheck source=bin/fm-backlog-transition-lib.sh
 . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
+# Optional: a missing receipt writer only skips the outcome receipt below.
+# shellcheck source=bin/fm-jev-receipt-lib.sh
+[ ! -r "$SCRIPT_DIR/fm-jev-receipt-lib.sh" ] || . "$SCRIPT_DIR/fm-jev-receipt-lib.sh"
 # Pending replies load the shared backend dispatcher and status classifier.
 # Import those graphs once rather than initializing and analyzing them twice.
 # shellcheck source=bin/fm-pending-reply-lib.sh
@@ -1304,6 +1307,8 @@ if [ "${FM_TEARDOWN_GUARD_DONE:-0}" != 1 ]; then
 fi
 HOME_PATH=$(grep '^home=' "$META" | cut -d= -f2- || true)
 PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
+# The local-jev call receipt fm-spawn.sh recorded this task's dispatch against.
+DISPATCH_RECEIPT=$(fm_meta_get "$META" dispatch_receipt)
 # tasktmp is recorded by fm-spawn for tasks that set up a per-task temp root
 # (/tmp/fm-<id>/); absent for tasks spawned before that change, so tolerate empty.
 TASK_TMP=$(grep '^tasktmp=' "$META" | cut -d= -f2- || true)
@@ -4333,4 +4338,16 @@ else
   echo "teardown $ID complete (window ${T:-none}; pool slot $WT left to task $TEARDOWN_SLOT_REASSIGNED_TO${TEARDOWN_SLOT_REASSIGNED_HOME:+ (home $TEARDOWN_SLOT_REASSIGNED_HOME)}, which it was reassigned to)"
 fi
 backlog_refresh_reminder
+# The dispatch's outcome receipt (docs/local-jev-receipts.md): landed means the
+# landed-work gate above passed, which does not by itself prove a merge.
+if [ -n "$DISPATCH_RECEIPT" ] && [ "$KIND" != secondmate ] && command -v fm_jev_receipt >/dev/null 2>&1; then
+  if [ "$FORCE" = --force ]; then dispatch_outcome=cancelled
+  elif [ "$KIND" = scout ]; then dispatch_outcome=reported
+  else dispatch_outcome=landed; fi
+  fm_jev_receipt outcome "$(jq -cn --arg id "$DISPATCH_RECEIPT" --arg task "$ID" --arg outcome "$dispatch_outcome" \
+    --arg kind "$KIND" --arg mode "$MODE" --arg pr "$PR_URL" '
+    {receipt_id: $id, caller: "dispatch-resolve", subject: $task, misroute: false, corrected_decision: null,
+     outcome: $outcome, note: "teardown of the \($kind) task \($task): \($outcome)", task_kind: $kind,
+     mode: (if $kind == "scout" then null else $mode end), pr: (if $pr == "" then null else $pr end)}')" >/dev/null
+fi
 [ "$TEARDOWN_POOL_SLOT_LOST" = 0 ] || exit "$TEARDOWN_LOST_SLOT_EXIT"

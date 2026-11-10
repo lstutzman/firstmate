@@ -812,6 +812,8 @@ esac
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
+# shellcheck source=bin/fm-jev-receipt-lib.sh
+. "$SCRIPT_DIR/fm-jev-receipt-lib.sh"
 # shellcheck source=bin/fm-tasks-axi-lib.sh
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
 # shellcheck source=bin/fm-backlog-transition-lib.sh
@@ -3409,6 +3411,7 @@ esac
 
 case "$DISPATCH_OVERRIDE" in *[![:print:]]*) echo 'error: --dispatch-override must be a printable reason' >&2; exit 1 ;; esac
 DISPATCH_RECORD="$DATA/$ID/dispatch-resolution.json"
+DISPATCH_RECEIPT='' DISPATCH_DECISION='' dispatch_pick='' dispatch_pick_source=''
 if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
   if [ ! -e "$DISPATCH_RECORD" ]; then
     echo "error: config/crew-dispatch.json is active and task $ID has no recorded dispatch resolution; run bin/fm-dispatch-resolve.sh $DATA/$ID/brief.md --project <name> first" >&2
@@ -3417,8 +3420,11 @@ if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && [ -f "$CONFIG/crew-disp
   dispatch_fields=$(jq -r --arg id "$ID" '
     select(.task == $id and (.status | IN("clear", "ambiguous", "escalate", "error", "off"))
       and (if .status == "clear" then (.profile.harness | type) == "string" and .profile.harness != "" else true end))
-    | .status, (.profile.harness // ""), (.profile.model // ""), (.profile.effort // "")' "$DISPATCH_RECORD" 2>/dev/null) || dispatch_fields=
-  { read -r dispatch_status; read -r selected_harness; read -r selected_model; read -r selected_effort; } <<<"$dispatch_fields" || true
+    | .status, (.profile.harness // ""), (.profile.model // ""), (.profile.effort // ""),
+      (.receipt_id // "" | tostring | gsub("[^A-Za-z0-9._-]"; "")), (.pick // "" | tostring | gsub("[\n\r]"; " ")),
+      (.pick_source // "" | tostring | gsub("[\n\r]"; " "))' "$DISPATCH_RECORD" 2>/dev/null) || dispatch_fields=
+  { read -r dispatch_status; read -r selected_harness; read -r selected_model; read -r selected_effort
+    read -r DISPATCH_RECEIPT; read -r dispatch_pick; read -r dispatch_pick_source; } <<<"$dispatch_fields" || true
   if [ -z "$dispatch_status" ]; then
     echo "error: malformed dispatch resolution $DISPATCH_RECORD for task $ID; rerun bin/fm-dispatch-resolve.sh $DATA/$ID/brief.md --project <name>" >&2
     exit 1
@@ -3429,6 +3435,17 @@ if [ "$KIND" != secondmate ] && [ "$RELAUNCH" -eq 0 ] && [ -f "$CONFIG/crew-disp
       || { [ -n "$selected_effort" ] && [ "${EFFORT:-}" != "$selected_effort" ]; }; }; then
     echo "error: launch flags do not match the clear dispatch selection --harness $selected_harness${selected_model:+ --model $selected_model}${selected_effort:+ --effort $selected_effort} recorded in $DISPATCH_RECORD; pass those flags with no raw launch command, or record this task's override with --dispatch-override <reason>" >&2
     exit 1
+  fi
+  # What firstmate did with the local-jev answer is written as a decision
+  # receipt once the worker launches (docs/local-jev-receipts.md owns the
+  # fields); a clear selection the launch departs from is the one override.
+  if [ -n "$DISPATCH_RECEIPT" ]; then
+    DISPATCH_DECISION=kept
+    if [ "$dispatch_status" = clear ] && { [ "$RAW_LAUNCH" -eq 1 ] || [ "$HARNESS" != "$selected_harness" ] \
+      || { [ -n "$selected_model" ] && [ "${MODEL:-}" != "$selected_model" ]; } \
+      || { [ -n "$selected_effort" ] && [ "${EFFORT:-}" != "$selected_effort" ]; }; }; then
+      DISPATCH_DECISION=overridden
+    fi
   fi
 fi
 
@@ -7629,6 +7646,9 @@ preserve_relaunch_meta() {
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
   [ -z "$DISPATCH_OVERRIDE" ] || printf 'dispatch_override=%s\n' "$DISPATCH_OVERRIDE"
+  # The local-jev call receipt this launch decided on, so teardown can record
+  # the task's outcome against it; absent when no call was made.
+  [ -z "$DISPATCH_DECISION" ] || printf 'dispatch_receipt=%s\n' "$DISPATCH_RECEIPT"
   # The detected OpenCode major, recorded so fm-control sends the exit key this
   # agent's TUI understands. Written only when a version was resolved, so a
   # non-opencode or undetectable task record stays byte-identical.
@@ -8612,4 +8632,32 @@ SPAWN_ACCOUNT=
 # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups") tag the
 # new endpoint now rather than at the next watcher poll; off costs one file test.
 [ ! -e "$CONFIG/herdr-project-groups" ] || [ "$BACKEND" != herdr ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-herdr-groups.sh" sync "$ID" || true
+if [ -n "$DISPATCH_DECISION" ]; then
+  fm_jev_receipt decision "$(jq -cn --slurpfile cfg "$CONFIG/crew-dispatch.json" --arg id "$DISPATCH_RECEIPT" \
+    --arg task "$ID" --arg how "$DISPATCH_DECISION" --arg status "$dispatch_status" --arg pick "$dispatch_pick" \
+    --arg source "$dispatch_pick_source" --arg reason "$DISPATCH_OVERRIDE" --arg harness "$HARNESS" \
+    --arg model "${MODEL:-}" --arg effort "${EFFORT:-}" --argjson raw "$RAW_LAUNCH" '
+    def opt: if . == "" then null else . end;
+    def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
+    ($cfg[0]) as $c |
+    # The one rule (or default) whose profiles hold the launched profile, else null.
+    (if $raw == 1 then null else
+      [((($c.rules // []) | to_entries[] | {key: ("rule_" + ((.key + 1) | tostring)), use: profiles(.value.use)}),
+        {key: "default", use: profiles($c.default // null)})
+       | select(any(.use[]; .harness == $harness and ((.model // null) == null or .model == $model)
+           and ((.effort // null) == null or .effort == $effort))) | .key]
+      | if length == 1 then .[0] else null end end) as $launched |
+    ($how == "overridden") as $over |
+    {receipt_id: $id, caller: "dispatch-resolve", subject: $task,
+     decision: (if $status == "clear" and ($over | not) then ($pick | opt) else $launched end),
+     source: (if $status == "clear" then
+                (if $source == "runner-up" then "rule" elif $source == "default-floor" then "fallback:default-rule" else "model" end)
+              elif $status == "ambiguous" then "abstain"
+              elif $source == "timeout" then "timeout"
+              else "fallback:firstmate" end),
+     overridden: $over, override_by: (if $over then "firstmate" else null end),
+     corrected_decision: (if $over then $launched else null end),
+     override_reason: ($reason | opt), resolver_status: $status,
+     launched: {harness: $harness, model: ($model | opt), effort: ($effort | opt), raw_launch: ($raw == 1)}}')" >/dev/null
+fi
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT$SPAWN_ACCOUNT"

@@ -130,7 +130,13 @@
 #   <data>/<id>/dispatch-resolution.json, then every outcome except exit 2 writes
 #   {"task", "status" (clear, ambiguous, escalate, error, or off), "profile"}
 #   there; profile holds harness, model, and effort on clear and is null
-#   otherwise. fm-spawn.sh reads it as the task's dispatch decision.
+#   otherwise. fm-spawn.sh reads it as the task's dispatch decision. A run
+#   that sent its request also adds "receipt_id", "pick", and "pick_source"
+#   from its local-jev call receipt (docs/local-jev-receipts.md owns them).
+#
+# Receipt: once the request was sent, the run's last exit appends one
+#   local-jev call receipt through bin/fm-jev-receipt-lib.sh; a receipt that
+#   cannot be written warns once on stderr and changes no output or exit.
 #   clear     -> pass the profile line to fm-spawn.sh unless you state a reason to override
 #   ambiguous -> confidence below the floor; decide as today from the probabilities
 #   escalate  -> the rule requires captain approval, no candidate is rankable, or a genuine tie
@@ -186,6 +192,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-brief-heading-lib.sh"
 # shellcheck source=bin/fm-credential-source-lib.sh
 . "$SCRIPT_DIR/fm-credential-source-lib.sh"
+# shellcheck source=bin/fm-jev-receipt-lib.sh
+. "$SCRIPT_DIR/fm-jev-receipt-lib.sh"
 
 CONFIDENCE_FLOOR=0.6
 TS_MODEL=$(fm_typesafe_config_line "$CONFIG" typesafe-model)
@@ -203,10 +211,38 @@ OA_TIMEOUT=10
 DEFAULT_WHEN="No listed rule applies to this task."
 
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
+# The local-jev call receipt (docs/local-jev-receipts.md): written once, after
+# the POST was attempted, by the exit that ends the run; RECEIPT_ID then rides
+# the task record so fm-spawn.sh records what firstmate did with the answer.
+CALL_SENT=0 RECEIPT_ID='' RECEIPT_SOURCE='' RECEIPT_PICK='' REQUEST='' ANSWER=null LAT_MS=null
+receipt_call() {  # <status> <error or empty> [<host pick object>]
+  local fields
+  [ "$CALL_SENT" = 1 ] && [ -z "$RECEIPT_ID" ] || return 0
+  fields=$(jq -cn --arg subject "$TASK_ID" --arg project "$PROJECT" --arg provider "$DISPATCH_PROVIDER" \
+    --arg model "$DISPATCH_MODEL" --arg status "$1" --arg error "$2" --argjson host "${3:-null}" \
+    --argjson answer "$ANSWER" --argjson latency "$LAT_MS" --argjson request "${REQUEST:-null}" '
+    {caller: "dispatch-resolve", subject: (if $subject == "" then null else $subject end),
+     project: (if $project == "" then null else $project end), provider: $provider, model: $model,
+     route: "\($provider):systemone/choice", served_adapter: $answer.served,
+     request: (if $request == null then null else
+       {state: $request.state, question: $request.questions.rule.instructions, criteria: $request.questions.rule.criteria} end),
+     raw_pick: $answer.choice, pick: $host.pick, confidence: $answer.confidence, probabilities: $answer.probabilities,
+     floor: $host.floor, status: $status, latency_ms: $latency,
+     pick_source: ($host.source // (if ($error | startswith("http 000")) then "timeout" elif $error != "" then "error" else null end)),
+     error: (if $error == "" then null else $error end)}' 2>/dev/null) \
+    || { echo "local-jev receipt: not written (could not build the call record)" >&2; return 0; }
+  RECEIPT_ID=$(fm_jev_receipt call "$fields")
+  RECEIPT_SOURCE=$(jq -r '.pick_source // empty' <<<"$fields" 2>/dev/null)
+  RECEIPT_PICK=$(jq -r '.pick // empty' <<<"$fields" 2>/dev/null)
+}
 record_task() {
   [ -n "$TASK_RECORD" ] || return 0
   if ! { jq -cn --arg task "$TASK_ID" --arg status "$1" --argjson profile "${2:-null}" \
-      '{task: $task, status: $status, profile: $profile}' > "$TASK_RECORD.tmp.$$" \
+      --arg receipt "$RECEIPT_ID" --arg source "$RECEIPT_SOURCE" --arg pick "$RECEIPT_PICK" \
+      'def opt: if . == "" then null else . end;
+       {task: $task, status: $status, profile: $profile}
+       + (if $receipt == "" then {} else {receipt_id: $receipt, pick: ($pick | opt), pick_source: ($source | opt)} end)' \
+      > "$TASK_RECORD.tmp.$$" \
       && mv -f -- "$TASK_RECORD.tmp.$$" "$TASK_RECORD"; } 2>/dev/null; then
     rm -f -- "$TASK_RECORD.tmp.$$"
     echo "dispatch-resolve: could not write $TASK_RECORD" >&2
@@ -225,6 +261,7 @@ no_rules() {
 }
 emit_error() {
   local reason=$1
+  receipt_call error "$reason"
   record_task error || true
   echo "dispatch-resolve: error ($reason)" >&2
   printf 'dispatch-resolve:\n  status: error\n  reason: %s\n' "$reason"
@@ -551,7 +588,6 @@ if [ -n "$SECTIONS" ]; then
 else
   cp "$BRIEF" "$TASK_TEXT" || die "could not read brief: $BRIEF"
 fi
-LAT_MS=null
 command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   REQUEST=$(jq -n --rawfile brief "$TASK_TEXT" --arg project "$PROJECT" --arg model "$DISPATCH_MODEL" \
     --arg none_criterion "$DEFAULT_WHEN" --slurpfile rules "$RULES" '
@@ -596,6 +632,7 @@ command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   fi
   T1=$(fm_timing_now_ms)
   LAT_MS=$(( T1 - T0 ))
+  CALL_SENT=1
   if [ "$DISPATCH_PROVIDER" = typesafe ]; then
     [ "$HTTP" = 200 ] || emit_error "http $HTTP after ${LAT_MS} ms: $(head -c 200 "$RESP_FILE" 2>/dev/null | tr '\n' ' ')"
   else
@@ -644,6 +681,7 @@ jq -e --slurpfile rules "$RULES" '
        (.usage.input_tokens | type) == "number" and
        (.usage.output_tokens | type) == "number"))' \
   "$RESP_FILE" >/dev/null 2>&1 || emit_error "response is not a rule Choice answer"
+ANSWER=$(jq -c '(.model // null) as $served | .answers.rule | {choice, confidence, probabilities, served: $served}' "$RESP_FILE" 2>/dev/null) || ANSWER=null
 
 # ---- quota evidence: one quota-axi --json snapshot, skipped entirely under the
 # ---- shared-quota opt-out (a stub keeps the slurpfile contract intact) ---------
@@ -824,6 +862,13 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
   (if $fb.to then $fb.to else $picked end) as $choice |
   (rule_at($choice)) as $rule |
   (if $sq or $rule == null then "none" else floor_state($rule.floor; $rule.floor.provider; "") end) as $rule_floor_state |
+  # What the call receipt records as the host'"'"'s pick (docs/local-jev-receipts.md):
+  # abstain when no option cleared its floor, else the rule acted on and whether
+  # it was the model'"'"'s own pick, a runner-up, or the default a quota floor forced.
+  (if $fb.below and ($fb.to | not) then {pick: "abstain", floor: $picked_floor, source: "abstain"}
+   elif $fb.to then {pick: $choice, floor: $fb.to_floor, source: "runner-up"}
+   elif $rule_floor_state == "below" then {pick: "default", floor: $picked_floor, source: "default-floor"}
+   else {pick: $choice, floor: $picked_floor, source: "pick"} end) as $receipt |
   (if $choice != "default" and $rule == null then []
    elif $rule == null then profiles($cfg.default // null)
    else profiles($rule.use)
@@ -840,7 +885,8 @@ RESULT=$(jq -n --arg floor "$CONFIDENCE_FLOOR" --argjson lat "$LAT_MS" --arg non
     model: $r.model, latency_ms: $lat, tokens: ($r.usage // null),
     rule: $picked,
     rule_when: when_of($picked),
-    confidence: $a.confidence, probabilities: $a.probabilities
+    confidence: $a.confidence, probabilities: $a.probabilities,
+    receipt: $receipt
   }
   + (if $fb.to then {fallback: "\($choice) (\(when_of($choice))) probability \($fb.p) clears its floor \($fb.to_floor); \($picked) probability \($a.probabilities[$picked]) is below its floor \($picked_floor)"} else {} end)
   as $ev |
@@ -905,6 +951,8 @@ TEXT=$(jq -r '
 STATUS=$(jq -r '.status' <<<"$RESULT") || emit_error "status rendering failed"
 PROFILE=$(jq -c 'if .chosen then .chosen.profile | {harness, model: (.model // null), effort: (.effort // null)} else null end' <<<"$RESULT") \
   || emit_error "profile rendering failed"
+receipt_call "$STATUS" "$(jq -r 'if .status == "error" then .reason // "" else "" end' <<<"$RESULT")" \
+  "$(jq -c '.receipt // null' <<<"$RESULT")"
 record_task "$STATUS" "$PROFILE" || emit_error "could not record the dispatch resolution"
 printf '%s\n' "$TEXT"
 exit 0

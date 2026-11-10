@@ -474,6 +474,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/local-jev-receipts.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/orca-backend.md",
       "audience": "operator-current"
     },

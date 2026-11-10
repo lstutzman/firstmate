@@ -1083,13 +1083,13 @@ def scope_route(row, offices, team, jev=None):
     for label, match in rungs:
         hits = {o.home: found for o in offices if (found := match(o))}
         if len(hits) == 1:
-            why = jev and jev.hold(text, title.casefold().startswith("start fix:"))
+            why = jev and jev.hold(text, title.casefold().startswith("start fix:"), subject=row_key(row))
             return (None, why) if why else (next(iter(hits)), None)
         if hits:
             return None, "ambiguous: %s names %d offices (%s)" % (
                 label, len(hits), ", ".join(sorted(n for names in hits.values() for n in names)))
     if jev:
-        return jev.place(text)
+        return jev.place(text, subject=row_key(row))
     return None, "no linked repository, project name, team Linear id or source matches an office"
 
 
@@ -1118,6 +1118,27 @@ MONEY_LEGAL_MINIMUM = 0.85
 OFFICE_MINIMUM = 0.7
 
 
+def jev_receipt(kind, fields):
+    """Appends one local-jev receipt through bin/fm-jev-receipts.py (docs/local-jev-receipts.md owns the schema) and
+    returns its receipt id; a writer that cannot load or write prints one stderr warning and returns None."""
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-jev-receipts.py")
+        mod = sys.modules.get("fm_jev_receipts")
+        if mod is None:
+            spec = importlib.util.spec_from_file_location("fm_jev_receipts", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            sys.modules["fm_jev_receipts"] = mod
+        return mod.append(kind, fields)
+    except Exception as exc:  # a receipt must never break its caller
+        sys.stderr.write("local-jev receipt: not written (%s: %s)\n" % (type(exc).__name__, exc))
+        return None
+
+
+def row_key(row):
+    return row.get("linear_id") or row.get("id") or row.get("kind")
+
+
 class LocalJev:
     """Places an ask with an office through the local-jev skill's jev.py, or leaves it with main.
 
@@ -1130,6 +1151,7 @@ class LocalJev:
     spending change for Lee at MONEY_LEGAL_MINIMUM.
     Only the ask's words are sent. Any failure, including a timeout or an unreadable answer, is remembered so the
     rest of the run stays with `home`.
+    Every ask is a `call` receipt and what the officer did with it a `decision` receipt (docs/local-jev-receipts.md).
     """
     QUESTION = "Which office should start this work?"
 
@@ -1143,6 +1165,7 @@ class LocalJev:
         else:
             self.unplaceable = None
         self.down = None
+        self.last = (None, None)
 
     def options(self):
         return {role: "%s Projects: %s." % (ROLE_SCOPES.get(role, o.mandate), ", ".join(sorted(o.projects)))
@@ -1155,21 +1178,57 @@ class LocalJev:
             raise RuntimeError("exit %d" % run.returncode)
         return json.loads(run.stdout)
 
-    def noul(self, text, question, *criteria):
+    def call(self, caller, subject, text, kind, question, criteria, floor, args):
+        """(answer, receipt id): one ask, its call receipt written whether it answers or raises."""
+        record = {"caller": caller, "subject": subject, "model": None, "route": "jev.py:" + kind, "served_adapter": None,
+                  "request": {"state": text, "question": question, "criteria": criteria}, "pick": None,
+                  "confidence": None, "probabilities": None, "floor": floor, "latency_ms": None, "error": None}
+        started = time.monotonic()
+        try:
+            answer = self.ask(text, kind, question, *args)
+            if kind == "noul":
+                p = float(answer["noul"])
+                record.update(pick="true" if p >= floor else "false", confidence=max(p, 1.0 - p),
+                              probabilities={"true": p, "false": 1.0 - p})
+            else:
+                label, confidence = answer["choice"], float(answer["confidence"])
+                record.update(pick=label if confidence >= floor else "abstain", confidence=confidence,
+                              probabilities=answer.get("probabilities"))
+            record["served_adapter"] = next((answer.get(k) for k in ("served_adapter", "adapter", "model") if answer.get(k)), None)
+        except Exception as exc:
+            record.update(latency_ms=int((time.monotonic() - started) * 1000), error=type(exc).__name__ + (": " + str(exc) if str(exc) else ""))
+            self.last = (jev_receipt("call", record), "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "fallback:main")
+            raise
+        record["latency_ms"] = int((time.monotonic() - started) * 1000)
+        return answer, jev_receipt("call", record)
+
+    def decide(self, receipt, caller, subject, decision, source):
+        return jev_receipt("decision", {"receipt_id": receipt, "caller": caller, "subject": subject, "decision": decision,
+                                        "source": source, "overridden": False, "override_by": None, "corrected_decision": None})
+
+    def noul(self, text, question, *criteria, floor=0.5, subject=None, caller="progress-hold"):
         args = [a for flag, value in zip(("--true", "--false"), criteria) for a in (flag, value)]
-        return float(self.ask(text, "noul", question, *args)["noul"])
+        named = {"true": criteria[0] if criteria else None, "false": criteria[1] if len(criteria) > 1 else None}
+        try:
+            answer, receipt = self.call(caller, subject, text, "noul", question, named, floor, args)
+        except Exception:
+            self.decide(self.last[0], caller, subject, None, self.last[1])
+            raise
+        p = float(answer["noul"])
+        self.decide(receipt, caller, subject, "true" if p >= floor else "false", "model")
+        return p
 
     def failed(self, exc):
         self.down = type(exc).__name__ + (": " + str(exc) if str(exc) else "")
         return "local-jev unavailable: " + self.down
 
-    def hold(self, text, start_fix=False):
+    def hold(self, text, start_fix=False, subject=None):
         """The reason to keep a placed ask with Lee, else None; a check that cannot run keeps it too."""
         if self.down:
             return "local-jev unavailable: " + self.down
         try:
-            not_a_start = 0.0 if start_fix else self.noul(text, *NOT_A_START)
-            money_legal = self.noul(text, *MONEY_LEGAL_QUESTION)
+            not_a_start = 0.0 if start_fix else self.noul(text, *NOT_A_START, floor=NOT_A_START_MINIMUM, subject=subject)
+            money_legal = self.noul(text, *MONEY_LEGAL_QUESTION, floor=MONEY_LEGAL_MINIMUM, subject=subject)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
             return self.failed(exc)
         if not_a_start >= NOT_A_START_MINIMUM:
@@ -1178,24 +1237,42 @@ class LocalJev:
             return "local-jev says it changes pricing, legal text, payments or spending, which Lee decides (%.2f)" % money_legal
         return None
 
-    def place(self, text):
+    def place(self, text, subject=None):
         if self.down or self.unplaceable:
             return None, "local-jev unavailable: " + (self.down or self.unplaceable)
+        receipt = None
+
+        def decide(decision, source):
+            self.decide(receipt, "progress-place", subject, decision, source)
         try:
             options = self.options()
-            answer = self.ask(text, "choice", self.QUESTION, *[a for k, v in options.items() for a in ("-o", k + "=" + v)])
+            try:
+                answer, receipt = self.call("progress-place", subject, text, "choice", self.QUESTION, options, OFFICE_MINIMUM,
+                                            [a for k, v in options.items() for a in ("-o", k + "=" + v)])
+            except Exception:
+                receipt = self.last[0]
+                decide(None, self.last[1])
+                raise
             label, confidence = answer["choice"], float(answer["confidence"])
             if label not in options:
+                decide(None, "fallback:main")
                 raise ValueError("unknown label")
             if confidence < OFFICE_MINIMUM:
+                decide(None, "abstain")
                 return None, "local-jev unsure: %s at %.2f, below %.1f" % (label, confidence, OFFICE_MINIMUM)
-            in_scope = self.noul(text, *SCOPE_QUESTION)
+            try:
+                in_scope = self.noul(text, *SCOPE_QUESTION, floor=SCOPE_MINIMUM, subject=subject, caller="progress-scope")
+            except Exception:
+                decide(None, "fallback:main")
+                raise
             if in_scope < SCOPE_MINIMUM:
+                decide(None, "rule")
                 return None, "local-jev says it fits no office scope (%.2f, below %.1f); %s was %.2f" % (
                     in_scope, SCOPE_MINIMUM, label, confidence)
         except (OSError, RuntimeError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
             return None, self.failed(exc)
-        why = self.hold(text)
+        why = self.hold(text, subject=subject)
+        decide(label if not why else None, "model" if not why else "fallback:main" if self.down else "rule")
         if why:
             return None, "%s; %s was %.2f" % (why, label, confidence)
         return self.offices[label].home, None

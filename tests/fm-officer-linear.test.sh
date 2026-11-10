@@ -396,6 +396,30 @@ test_dedupe_exact_and_near_match() {
   pass "fm-officer-linear: an exact fingerprint and a local-jev match above 0.85 are duplicates, a lower near match is filed new and noted"
 }
 
+# Every local-jev duplicate check is a call receipt and the filer's use of it a decision receipt
+# (docs/local-jev-receipts.md), with the pick unchanged.
+test_dedupe_writes_receipts() {
+  local out r
+  dedupe_world dedupe-receipts
+  out=$(FM_JEV_RECEIPTS_DIR="$W/receipts" drive dedupe) || fail "driver must succeed"
+  assert_equals "duplicate PC-51 0.91" "$(jq -r '.filings.b | [.action, .issue, (.confidence | tostring)] | join(" ")' <<<"$out")" "receipts change no pick"
+  r=$(cat "$W/receipts"/*.jsonl)
+  assert_equals 'true 0.91 0.85 jev.py:noul same issue true true' \
+    "$(jq -r 'select(.kind == "call" and (.request.state.report_b | startswith("Older save crash")) and (.request.state.report_a | contains("duplicate-me")))
+      | [.pick, .probabilities.true, .floor, .route, .request.criteria.true, (.input_hash | test("^[0-9a-f]{64}$")),
+         (.caller == "officer-duplicate")] | map(tostring) | join(" ")' <<<"$r")" \
+    "the duplicate's call receipt records the request as sent, the pick at the floor, and the probability"
+  assert_equals 'false' "$(jq -r 'select(.kind == "call" and (.request.state.report_a | contains("edge-me"))) | .pick' <<<"$r" | sort -u)" \
+    "exactly the floor is not above it, so the pick is false"
+  assert_equals 'true model false null PC-51 fixture' \
+    "$(jq -r --arg id "$(jq -r 'select(.kind == "call" and (.request.state.report_b | startswith("Older save crash")) and (.request.state.report_a | contains("duplicate-me"))) | .receipt_id' <<<"$r")" \
+      'select(.kind == "decision" and .receipt_id == $id) | [.decision, .source, .overridden, .corrected_decision, .candidate, .officer] | map(tostring) | join(" ")' <<<"$r")" \
+    "the filer's decision receipt names the option it used and the candidate item"
+  assert_equals "$(jq -c 'select(.kind == "call") | .receipt_id' <<<"$r" | sort)" "$(jq -c 'select(.kind == "decision") | .receipt_id' <<<"$r" | sort)" \
+    "every call receipt has exactly one decision receipt"
+  pass "fm-officer-linear: every local-jev duplicate check writes a call receipt and a decision receipt, and the picks are unchanged"
+}
+
 test_found_count_is_raised_in_place_once_a_day() {
   local out
   dedupe_world found
@@ -1152,6 +1176,7 @@ test_a_finding_back_after_its_bundle_closed
 test_bundle_lost_state_adopts_the_open_item_by_title
 test_duplicate_items_are_closed
 test_dedupe_exact_and_near_match
+test_dedupe_writes_receipts
 test_found_count_is_raised_in_place_once_a_day
 test_score_is_the_found_count_lever
 test_cap_overflow_is_listed_and_budget_stops_the_run
