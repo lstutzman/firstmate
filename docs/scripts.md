@@ -144,6 +144,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-backlog-transition-lib.sh` | Pair task-record changes with their backlog transitions and replay interrupted closes |
 | `fm-quota-axi-lib.sh`    | Shared `quota-axi` compatibility floor and quota snapshot schema validation           |
 | `fm-credential-source-lib.sh` | Single owner of the declared credential-source schema and its adapters, read by `fm-dispatch-resolve.sh` and checked by `fm-bootstrap.sh` |
+| `fm-jev-receipts.py` | Single owner of the local-jev receipt writer: appends `local-jev-receipt.v1` lines to the machine's receipt stream ([schema](local-jev-receipts.md)) |
+| `fm-jev-receipt-lib.sh` | The bash side of `fm-jev-receipts.py`, used by `fm-dispatch-resolve.sh`, `fm-spawn.sh` and `fm-teardown.sh` |
 | `fm-quota-choose.sh`     | Choose the first candidate with known positive quota from an ordered harness:model list |
 | `fm-vendor-auth-probe.sh`| Run one hard-bounded, non-destructive authentication probe of a named vendor CLI and report the fact |
 | `fm-wake-drain.sh`       | Present and acknowledge the current actor's claimed wake rows alongside status, outcome-backstop, decision, divergence, deadline-default, supervision-host outcome, recovery, and supervision checks |

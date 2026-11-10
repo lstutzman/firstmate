@@ -546,6 +546,124 @@ test_recorded_dispatch_selection_allows_recorded_override() {
   pass "a task override with its reason permits a different launch and is recorded"
 }
 
+# A task record that names its local-jev call receipt gets one decision receipt
+# when the worker launches (docs/local-jev-receipts.md), and the task record keeps
+# the receipt id for teardown.
+test_dispatch_receipt_records_override_and_acceptance() {
+  local rec id out status receipts
+  id=profile-receipt-override-z13
+  rec=$(make_spawn_case profile-receipt claude "$id")
+  read_case_record "$rec"
+  enable_dispatch_profile "$HOME_DIR"
+  receipts="$CASE_DIR/receipts"
+  record_dispatch "$HOME_DIR" "$id" clear claude opus high
+  jq -c '. + {receipt_id: "jr-override1", pick: "rule_1", pick_source: "pick"}' "$HOME_DIR/data/$id/dispatch-resolution.json" > "$CASE_DIR/rec.json"
+  mv "$CASE_DIR/rec.json" "$HOME_DIR/data/$id/dispatch-resolution.json"
+
+  out=$(FM_JEV_RECEIPTS_DIR=$receipts run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort medium --dispatch-override 'authorized account test')
+  status=$?
+  expect_code 0 "$status" "an overridden launch should still spawn: $out"
+  assert_not_contains "$out" 'local-jev receipt' "a written receipt prints no warning"
+  assert_equals 'decision jr-override1 dispatch-resolve profile-receipt-override-z13 default model true firstmate default authorized account test' \
+    "$(cat "$receipts"/*.jsonl | jq -r '[.kind, .receipt_id, .caller, .subject, .decision, .source, .overridden, .override_by,
+        .corrected_decision, .override_reason] | map(tostring) | join(" ")')" \
+    "an override of a clear selection is one decision naming the call, the rule whose profile was launched, and the reason"
+  assert_grep 'dispatch_receipt=jr-override1' "$HOME_DIR/state/$id.meta" "the task record keeps the receipt id for teardown"
+
+  id=profile-receipt-accept-z13
+  rec=$(make_spawn_case profile-receipt-accept claude "$id")
+  read_case_record "$rec"
+  enable_dispatch_profile "$HOME_DIR"
+  receipts="$CASE_DIR/receipts"
+  record_dispatch "$HOME_DIR" "$id" clear codex gpt-5 high
+  jq -c '. + {receipt_id: "jr-accept1", pick: "rule_1", pick_source: "pick"}' "$HOME_DIR/data/$id/dispatch-resolution.json" > "$CASE_DIR/rec.json"
+  mv "$CASE_DIR/rec.json" "$HOME_DIR/data/$id/dispatch-resolution.json"
+  out=$(FM_JEV_RECEIPTS_DIR=$receipts run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high)
+  status=$?
+  expect_code 0 "$status" "a matching launch should spawn: $out"
+  assert_equals 'jr-accept1 rule_1 model false null' \
+    "$(cat "$receipts"/*.jsonl | jq -r '"\(.receipt_id) \(.decision) \(.source) \(.overridden) \(.corrected_decision)"')" \
+    "a launch that matches the clear selection is an accepted decision"
+
+  # local-jev chooses only the rule, so another profile of the picked rule is
+  # a profile override, never an overridden pick that the replay gate scores.
+  id=profile-receipt-same-rule-z13
+  rec=$(make_spawn_case profile-receipt-same-rule claude "$id")
+  read_case_record "$rec"
+  printf '%s\n' '{"rules":[{"when":"current events","use":[{"harness":"grok","model":"grok-4","effort":"high"},{"harness":"codex","model":"gpt-5","effort":"high"}]}],"default":{"harness":"codex","model":"gpt-5","effort":"medium"}}' \
+    > "$HOME_DIR/config/crew-dispatch.json"
+  receipts="$CASE_DIR/receipts"
+  record_dispatch "$HOME_DIR" "$id" clear grok grok-4 high
+  jq -c '. + {receipt_id: "jr-samerule1", pick: "rule_1", pick_source: "pick"}' "$HOME_DIR/data/$id/dispatch-resolution.json" > "$CASE_DIR/rec.json"
+  mv "$CASE_DIR/rec.json" "$HOME_DIR/data/$id/dispatch-resolution.json"
+  out=$(FM_JEV_RECEIPTS_DIR=$receipts run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness codex --model gpt-5 --effort high --dispatch-override 'second profile of the rule')
+  status=$?
+  expect_code 0 "$status" "another profile of the picked rule should spawn: $out"
+  assert_equals 'rule_1 model false true null second profile of the rule' \
+    "$(cat "$receipts"/*.jsonl | jq -r '[.decision, .source, .overridden, .profile_override, .corrected_decision, .override_reason] | map(tostring) | join(" ")')" \
+    "another profile of the picked rule keeps the pick as the decision and is not an overridden pick"
+
+  # The launched profile is in the picked rule and in default: the picked rule
+  # still holds it, so it is no override.
+  id=profile-receipt-shared-z13
+  rec=$(make_spawn_case profile-receipt-shared claude "$id")
+  read_case_record "$rec"
+  printf '%s\n' '{"rules":[{"when":"current events","use":[{"harness":"codex","model":"gpt-5","effort":"medium"},{"harness":"claude","model":"opus","effort":"high"}]}],"default":{"harness":"claude","model":"opus","effort":"high"}}' \
+    > "$HOME_DIR/config/crew-dispatch.json"
+  receipts="$CASE_DIR/receipts"
+  record_dispatch "$HOME_DIR" "$id" clear codex gpt-5 medium
+  jq -c '. + {receipt_id: "jr-shared1", pick: "rule_1", pick_source: "pick"}' "$HOME_DIR/data/$id/dispatch-resolution.json" > "$CASE_DIR/rec.json"
+  mv "$CASE_DIR/rec.json" "$HOME_DIR/data/$id/dispatch-resolution.json"
+  out=$(FM_JEV_RECEIPTS_DIR=$receipts run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --harness claude --model opus --effort high --dispatch-override 'profile also in default')
+  status=$?
+  expect_code 0 "$status" "a profile shared by the picked rule and default should spawn: $out"
+  assert_equals 'rule_1 model false true null null' \
+    "$(cat "$receipts"/*.jsonl | jq -r '[.decision, .source, .overridden, .profile_override, .override_by, .corrected_decision] | map(tostring) | join(" ")')" \
+    "a profile of the picked rule that default also holds keeps the pick and is not an overridden pick"
+  pass "a dispatch receipt records an override with its corrected rule, a matching launch as the model's pick, and an in-rule profile change as no override"
+}
+
+# Every resolver status and pick source maps to one decision source
+# (docs/local-jev-receipts.md): only a clear pick of the model's own choice is
+# source model; the rest are counted apart from local-jev's wins.
+test_dispatch_receipt_source_for_each_resolution() {
+  local rec id out status n=0 row rstatus pick source harness model effort want
+  while IFS='|' read -r -u 3 rstatus pick source harness model effort want; do
+    n=$((n + 1))
+    id=profile-receipt-src$n-z13
+    rec=$(make_spawn_case "profile-receipt-src$n" claude "$id")
+    read_case_record "$rec"
+    enable_dispatch_profile "$HOME_DIR"
+    if [ "$rstatus" = clear ]; then
+      record_dispatch "$HOME_DIR" "$id" clear "$harness" "$model" "$effort"
+    else
+      record_dispatch "$HOME_DIR" "$id" "$rstatus"
+    fi
+    jq -c --arg pick "$pick" --arg source "$source" \
+      '. + {receipt_id: "jr-src", pick: (if $pick == "" then null else $pick end), pick_source: (if $source == "" then null else $source end)}' \
+      "$HOME_DIR/data/$id/dispatch-resolution.json" > "$CASE_DIR/rec.json"
+    mv "$CASE_DIR/rec.json" "$HOME_DIR/data/$id/dispatch-resolution.json"
+    out=$(FM_JEV_RECEIPTS_DIR="$CASE_DIR/receipts" run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR" --harness "$harness" --model "$model" --effort "$effort")
+    status=$?
+    expect_code 0 "$status" "a $rstatus/$source resolution should spawn: $out"
+    row=$(cat "$CASE_DIR/receipts"/*.jsonl | jq -r '[.resolver_status, .source, .decision, .overridden] | map(tostring) | join(" ")')
+    assert_equals "$want" "$row" "a $rstatus resolution with pick source ${source:-none} records its decision source"
+  done 3<<'CASES'
+ambiguous|abstain|abstain|codex|gpt-5|medium|ambiguous abstain default false
+escalate|||codex|gpt-5|medium|escalate fallback:firstmate default false
+error||timeout|codex|gpt-5|medium|error timeout default false
+error||error|codex|gpt-5|medium|error fallback:firstmate default false
+clear|rule_1|runner-up|grok|grok-4|high|clear rule rule_1 false
+clear|rule_1|default-floor|codex|gpt-5|medium|clear fallback:default-rule default false
+CASES
+  pass "a dispatch receipt maps abstain, escalate, timeout, error, runner-up and default-floor resolutions to their own sources, never model"
+}
+
 test_recorded_dispatch_selection_leaves_unset_effort_unbound() {
   local rec id out status
   id=profile-selected-fallback-z13
@@ -3015,6 +3133,8 @@ test_active_dispatch_profile_allows_explicit_harness
 test_recorded_dispatch_selection_refuses_conflicting_flags
 test_recorded_dispatch_selection_allows_matching_flags
 test_recorded_dispatch_selection_allows_recorded_override
+test_dispatch_receipt_records_override_and_acceptance
+test_dispatch_receipt_source_for_each_resolution
 test_recorded_dispatch_selection_leaves_unset_effort_unbound
 test_recorded_dispatch_selection_refuses_raw_launch_without_override
 test_active_dispatch_without_task_record_is_refused

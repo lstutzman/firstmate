@@ -1528,6 +1528,8 @@ for mark, wanted, conf in (("HIGHNAV", "navigator", 0.91), ("HIGHQM", "quarterma
 print('{"type":"choice","choice":"%s","confidence":%s}' % (label, confidence))
 PY
   : > "$WORLD/jev-calls"
+  local suite_receipts=$FM_JEV_RECEIPTS_DIR
+  export FM_JEV_RECEIPTS_DIR="$WORLD/receipts"
   local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json" office dir
   : > "$WORLD_HOME/data/secondmates.md"
   : > "$WORLD_HOME/data/offices.md"
@@ -1620,12 +1622,35 @@ JSON
   assert_contains "$(cat "$lane/$DATE.md")" 'unrouted, stays with this home: ambiguous' 'the Markdown digest lists the unrouted ask'
   assert_equals '25' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all twenty-four asks and the backlog row become addressed requests'
   assert_equals '0' "$(jq '.excluded | length' "$file")" 'no ask is dropped'
+  local r
+  r=$(cat "$WORLD/receipts"/*.jsonl)
+  assert_equals 'navigator 0.91 0.7 jev.py:choice navigator model false' \
+    "$(jq -r --slurp 'map(select(.subject == "jev-nav" and .caller == "progress-place")) | (map(select(.kind == "call"))[0]) as $c
+      | (map(select(.kind == "decision" and .receipt_id == $c.receipt_id))[0]) as $d
+      | [$c.pick, $c.confidence, $c.floor, $c.route, $d.decision, $d.source, $d.overridden] | map(tostring) | join(" ")' <<<"$r")" \
+    'a confident office pick is a call receipt and a model decision naming the office'
+  assert_equals 'abstain null abstain' \
+    "$(jq -r --slurp 'map(select(.subject == "jev-low" and .caller == "progress-place")) | (map(select(.kind == "call"))[0]) as $c
+      | (map(select(.kind == "decision" and .receipt_id == $c.receipt_id))[0]) as $d | [$c.pick, $d.decision, $d.source] | map(tostring) | join(" ")' <<<"$r")" \
+    'a pick below the floor is recorded as an abstention that left the ask with this home'
+  assert_equals 'rule true 0.85' \
+    "$(jq -r --slurp '[(map(select(.subject == "jev-main" and .kind == "decision" and .caller == "progress-place"))[0].source),
+      (map(select(.subject == "jev-main" and .kind == "call" and .caller == "progress-hold" and (.request.question | startswith("Which is this"))))[0] | .pick, .floor)]
+      | map(tostring) | join(" ")' <<<"$r")" \
+    'a placed ask a hold check keeps for Lee is a rule decision, and the hold check its own call'
+  assert_equals "$(jq -r 'select(.kind == "call") | .receipt_id' <<<"$r" | sort)" "$(jq -r 'select(.kind == "decision") | .receipt_id' <<<"$r" | sort)" \
+    'every progress call receipt has exactly one decision receipt'
   printf '{"rows":[{"id":"d1","words":"DOWN first ask","status":"not-started","work":[],"links":[]},{"id":"d2","words":"DOWN second ask","status":"not-started","work":[],"links":[]},{"id":"d3","words":"GARBAGE third ask","status":"not-started","work":[],"links":[]},{"id":"d4","words":"DOWN tidy the PropertyCompass2 export","status":"not-started","work":[],"links":[]}]}\n' > "$WORLD/top-of-mind.json"
   : > "$WORLD/jev-calls"
   run_progress >/dev/null || fail 'an unreachable local-jev must never fail the run'
   assert_equals '1' "$(grep -cE 'DOWN|GARBAGE' "$WORLD/jev-calls")" 'after local-jev fails the run stops asking it'
   assert_equals 'local-jev unavailable' "$(jq -r '[.start_requests[] | select(.id | test("^d[1-4]$")) | .unrouted[:21]] | unique[0]' "$file")" 'an unreachable local-jev leaves the asks with this home and says why'
   assert_equals '4 4' "$(jq -r '[.start_requests[] | select(.id | test("^d[1-4]$"))] | "\(length) \([.[] | select(.execute.env.FM_HOME == "'"$WORLD_HOME"'")] | length)"' "$file")" 'every ask is still addressed to this home'
+  assert_equals 'true fallback:main' \
+    "$(jq -r --slurp 'map(select(.subject == "d1")) | (map(select(.kind == "call"))[0]) as $c
+      | (map(select(.kind == "decision" and .receipt_id == $c.receipt_id))[0]) as $d | [($c.error != null), $d.source] | map(tostring) | join(" ")' \
+      "$WORLD/receipts"/*.jsonl)" 'an unreachable local-jev is a call receipt with its error and a fallback decision'
+  export FM_JEV_RECEIPTS_DIR=$suite_receipts
   pass 'progress: project-less asks route to the office their own evidence names, else stay with this home and are reported'
 }
 

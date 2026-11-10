@@ -166,7 +166,7 @@ if [ -n "${FAKE_CURL_MUTATE_SOURCE:-}" ]; then
   cp "$FAKE_CURL_MUTATE_SOURCE" "${FAKE_CURL_MUTATE_TARGET:?}"
 fi
 if [ "${FAKE_CURL_FAIL:-0}" = 1 ]; then
-  exit 7
+  exit "${FAKE_CURL_EXIT:-7}"
 fi
 cp "${FAKE_CURL_RESPONSE:?}" "$out"
 printf '%s' "${FAKE_CURL_HTTP:-200}"
@@ -1394,6 +1394,63 @@ assert_absent "$TASK_RECORD" "a configuration error leaves no task record to act
 mv "$RULES.keep" "$RULES"
 pass "task record: every exit-0 outcome records its decision for data/<id>/brief.md, and exit 2 records none"
 
+# --- local-jev call receipts (docs/local-jev-receipts.md) ----------------------
+SUITE_RECEIPTS_DIR=$FM_JEV_RECEIPTS_DIR
+export FM_JEV_RECEIPTS_DIR="$TMP_ROOT/receipts"
+receipts() { cat "$FM_JEV_RECEIPTS_DIR"/*.jsonl 2>/dev/null; }
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+assert_equals 1 "$(receipts | wc -l | tr -d ' ')" "one sent call writes one receipt line"
+assert_equals 'local-jev-receipt.v1 call dispatch-resolve pager-fix pager typesafe:systemone/choice jev-1.13.0 rule_4 rule_4 pick 0.9 0.96 0.6 clear null true true true true' \
+  "$(receipts | jq -r '[.schema, .kind, .caller, .subject, .project, .route, .served_adapter, .raw_pick, .pick, .pick_source,
+      .confidence, .probabilities.rule_4, .floor, .status, .error, (.request.criteria | has("rule_4") and has("default")),
+      (.request.state.task.project == "pager"), (.request.question | test("dispatch rule")), (.ts | test("^[0-9-]{10}T[0-9:.]{12}Z$"))]
+      | map(tostring) | join(" ")')" \
+  "the call receipt records the request as sent, the served adapter, the model's and the host's pick, the floor, and the status"
+assert_equals "$(receipts | jq -r '.request | tojson' | python3 -c 'import hashlib, json, sys; print(hashlib.sha256(json.dumps(json.load(sys.stdin), ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest())')" \
+  "$(receipts | jq -r .input_hash)" "input_hash is the sha256 of the canonical request"
+assert_equals "$(receipts | jq -r .receipt_id) rule_4 pick" "$(jq -r '"\(.receipt_id) \(.pick) \(.pick_source)"' "$TASK_RECORD")" \
+  "the task record carries the call's receipt id, the host's pick, and its source to fm-spawn"
+reset_log
+write_response "$RESPONSE" rule_4 0.41
+TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+assert_equals 'abstain abstain ambiguous' "$(receipts | tail -1 | jq -r '"\(.pick) \(.pick_source) \(.status)"')" \
+  "an answer below the floor is recorded as the host abstaining"
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY FAKE_CURL_HTTP=429 run code out err "$TASK_BRIEF" --project pager
+assert_equals 'error null error true' "$(receipts | tail -1 | jq -r '"\(.status) \(.raw_pick) \(.pick_source) \(.error | startswith("http 429"))"')" \
+  "a failed call still writes its receipt, with the error"
+assert_equals "$(receipts | tail -1 | jq -r .receipt_id)" "$(jq -r .receipt_id "$TASK_RECORD")" "an error after the call keeps its receipt id"
+reset_log
+TYPESAFE_API_KEY=$KEY FAKE_CURL_FAIL=1 FAKE_CURL_EXIT=28 run code out err "$TASK_BRIEF" --project pager
+assert_contains "$out" '  reason: http 000 after' "a timed-out request keeps its http 000 reason"
+assert_equals 'error timeout timeout' "$(receipts | tail -1 | jq -r '"\(.status) \(.pick_source)"') $(jq -r .pick_source "$TASK_RECORD")" \
+  "only curl's timeout exit (28) is recorded as a timeout"
+reset_log
+TYPESAFE_API_KEY=$KEY FAKE_CURL_FAIL=1 FAKE_CURL_EXIT=7 run code out err "$TASK_BRIEF" --project pager
+assert_contains "$out" '  reason: http 000 after' "a refused connection keeps its http 000 reason"
+assert_equals 'error error error' "$(receipts | tail -1 | jq -r '"\(.status) \(.pick_source)"') $(jq -r .pick_source "$TASK_RECORD")" \
+  "a refused connection is an error, never a timeout"
+before=$(receipts | wc -l | tr -d ' ')
+reset_log
+run code out err "$TASK_BRIEF" --project pager
+assert_equals "$before" "$(receipts | wc -l | tr -d ' ')" "an off run sends nothing and writes no receipt"
+assert_equals null "$(jq -r '.receipt_id // null' "$TASK_RECORD")" "an off run's task record names no receipt"
+export FM_JEV_RECEIPTS_DIR="$TMP_ROOT/receipts-unwritable/no"
+mkdir -p "$TMP_ROOT/receipts-unwritable"
+: > "$TMP_ROOT/receipts-unwritable/no"
+reset_log
+write_response "$RESPONSE" rule_4 0.9
+TYPESAFE_API_KEY=$KEY run code out err "$TASK_BRIEF" --project pager
+expect_code 0 "$code" "an unwritable receipt stream never changes the exit code"
+assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'" "an unwritable receipt stream never changes the result"
+assert_equals 1 "$(grep -c '^local-jev receipt: not written' <<<"$err")" "an unwritable receipt stream prints one warning"
+assert_equals 'clear null' "$(jq -r '"\(.status) \(.receipt_id // null)"' "$TASK_RECORD")" "an unwritten receipt leaves no receipt id"
+export FM_JEV_RECEIPTS_DIR=$SUITE_RECEIPTS_DIR
+pass "local-jev receipts: a sent call writes one call record linked from the task record, and a receipt failure changes nothing"
+
 # A home with FM_DATA_OVERRIDE keeps briefs outside $FM_HOME/data; fm-spawn.sh
 # reads the record there, so the resolver must write it there too.
 OVERRIDE_DATA="$TMP_ROOT/custom-records"
@@ -1432,6 +1489,8 @@ assert_contains "$out" '  rule: rule_2 (The task generates images.)   confidence
 assert_contains "$out" '  fallback: rule_4 (A simple bug fix with a stated root cause.) probability 0.18 clears its floor 0.1; rule_2 probability 0.76 is below its floor 0.9' "the fallback names both floors"
 assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'" "the runner-up rule's profiles are resolved"
 assert_not_contains "$(cat "$LOG/body")" 'min_confidence' "the model never sees confidence floors"
+assert_equals 'rule_2 rule_4 runner-up 0.1' "$(receipts | tail -1 | jq -r '"\(.raw_pick) \(.pick) \(.pick_source) \(.floor)"')" \
+  "the call receipt records the runner-up as the host's pick at the runner-up's own floor, and keeps the model's choice"
 
 reset_log
 write_floor_response "$RESPONSE" rule_2 0.76 0.02 0.76 0.02 0.08 0.12
@@ -1572,6 +1631,8 @@ TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
 assert_contains "$out" '  status: clear' "rule floor fall-through still resolves"
 assert_contains "$out" '  note: rule rule_1 floor model:fable below 20%: fall through to default' "rule floor fall-through is explained"
 assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-high'" "fall-through resolves among the default profiles"
+assert_equals 'rule_1 rule_1 default-floor 0.6' "$(receipts | tail -1 | jq -r '"\(.raw_pick) \(.pick) \(.pick_source) \(.floor)"')" \
+  "the call receipt keeps the model's rule as its pick at the global floor and says a quota floor sent the task to default"
 assert_not_contains "$out" 'candidate: claude:fable' "the floored rule's own profile is not a candidate"
 
 MISSING_RULE_FLOOR="$TMP_ROOT/missing-rule-floor.json"

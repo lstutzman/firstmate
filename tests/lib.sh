@@ -455,6 +455,14 @@ trap 'fm_test_cleanup; exit 143' TERM
 trap 'fm_test_cleanup; exit 129' HUP
 trap 'fm_test_cleanup; exit 131' QUIT
 
+# Keep every suite's local-jev receipts (bin/fm-jev-receipts.py) off the
+# operator's real per-machine stream: the resolver, fm-spawn, fm-teardown, and
+# the officer libraries append one whenever they run. A writable fixture
+# directory, never an unwritable path, so no suite sees a receipt warning; a
+# case that inspects receipts reads or replaces this directory itself.
+FM_JEV_RECEIPTS_DIR=$(fm_test_tmproot fm-jev-receipts) || return 1
+export FM_JEV_RECEIPTS_DIR
+
 # fm_test_reap_orphans: best-effort sweep for fixture roots left behind by a
 # prior run that was killed hard enough to skip the traps above (e.g. a
 # SIGKILL timeout). Only removes directories carrying the .fm-test-fixture

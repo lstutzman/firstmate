@@ -1471,6 +1471,7 @@ A local standalone-clone home cannot receive a primary-local commit through that
 
 An officer is a role agent the primary home owns: it reads fleet records on its own cadence, writes only its findings lane, and reports one line to its first mate.
 The `officer-roles` skill owns what an officer may and may never do and how its report is handled; `bin/fm-officer.sh`'s header owns the mechanics.
+Every local-jev question an officer asks, and what it did with the answer, is kept as a [local-jev receipt](local-jev-receipts.md) on the machine that ran the pass.
 
 Officers live locally in the primary home's `data/officers.md`, one line per officer:
 
@@ -2900,6 +2901,7 @@ Every outcome that exits 0, including off, then writes one JSON object there: `t
 On `clear`, `profile` holds `harness`, `model`, and `effort`, each `null` when the chosen profile leaves it unset; otherwise `profile` is `null`.
 A usage or configuration error (exit 2) writes no record.
 `fm-spawn.sh` reads this record as the task's decision, as "Per-launch overrides and inherited defaults" describes.
+A run that sent its request also names its local-jev call receipt there (`receipt_id`, `pick`, `pick_source`), which `fm-spawn.sh` and `fm-teardown.sh` follow with decision and outcome receipts; [local-jev receipts](local-jev-receipts.md) owns those fields.
 
 **Credential source declaration (config/dispatch-credential-sources.json)**
 
