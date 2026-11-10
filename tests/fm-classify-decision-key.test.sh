@@ -419,6 +419,47 @@ test_corr_close_negatives() {
 }
 FM_CLASSIFY_UNKEYED_CUTOVER=500 test_corr_close_negatives
 
+# Deep Thought's two real cases: same-second unkeyed asks, then corr-only
+# resolutions. Each u-<epoch>-<corr> entry closes and reads as resolved.
+test_same_second_corr_asks_close_by_corr_only_resolutions() {
+  local dir f a=15e00346d8ea0f2d b=4e92380d5e45b0f1
+  dir=$(case_dir unkeyed-corr-same-second)
+  f="$dir/deepthought.status"
+  {
+    printf 'needs-decision [corr=%s] [at=1794227607]: PC-4636 ask\n' "$a"
+    printf 'needs-decision [corr=%s] [at=1794227607]: PC-4647 ask\n' "$b"
+  } > "$f"
+  assert_fold "$f" "$(printf 'u-1794227607-%s\tneeds-decision\tPC-4636 ask\nu-1794227607-%s\tneeds-decision\tPC-4647 ask' "$a" "$b")" \
+    "both same-second asks open"
+  {
+    printf 'resolved [corr=%s] [at=1794230232]: answered 4636\n' "$a"
+    printf 'resolved [corr=%s] [at=1794230232]: answered 4647\n' "$b"
+  } >> "$f"
+  assert_fold "$f" "" "both corr-only resolutions close their entries"
+  assert_equals "resolved" "$(status_key_closing_verb "$f" "u-1794227607-$a")" "first entry reads resolved"
+  assert_equals "resolved" "$(status_key_closing_verb "$f" "u-1794227607-$b")" "second entry reads resolved"
+  pass "Deep Thought's same-second corr asks both close, each reading resolved"
+}
+FM_CLASSIFY_UNKEYED_CUTOVER=500 test_same_second_corr_asks_close_by_corr_only_resolutions
+
+# status_key_closing_verb names the verb of the same-corr line that closed an
+# unkeyed entry: a keyed needs-decision or blocked, a done, or a resolved.
+test_closing_verb_names_the_same_corr_closer() {
+  local dir f c=c9d9b505f8244bd0 closer
+  dir=$(case_dir unkeyed-corr-closing-verb)
+  for closer in 'needs-decision [corr=%s] [key=k] [at=1100]: keyed' 'blocked [corr=%s] [key=k] [at=1100]: keyed' \
+    'done [corr=%s] [at=1100]: finished' 'resolved [corr=%s] [at=1100]: answered'; do
+    f="$dir/${closer%% *}.status"
+    printf 'blocked [corr=%s] [at=1000]: ask\n' "$c" > "$f"
+    assert_equals "blocked" "$(status_key_closing_verb "$f" "u-1000-$c")" "open entry reads as its opening verb"
+    # shellcheck disable=SC2059
+    printf "$closer\n" "$c" >> "$f"
+    assert_equals "${closer%% *}" "$(status_key_closing_verb "$f" "u-1000-$c")" "closer ${closer%% *} is the closing verb"
+  done
+  pass "status_key_closing_verb returns the verb of the same-corr line that closed the entry"
+}
+FM_CLASSIFY_UNKEYED_CUTOVER=500 test_closing_verb_names_the_same_corr_closer
+
 # status_key_closing_verb reads a synthetic unkeyed key the way the fold does:
 # open while its ask is open, and the closing verb once it is closed.
 test_closing_verb_reads_a_synthetic_unkeyed_key() {
