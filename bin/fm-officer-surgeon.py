@@ -966,6 +966,7 @@ def mark_absorbed(filer, bundles, rows, by_fp, apply):
             if exc.code in lib.RATE_OR_BUDGET:
                 res["stopped"] = (exc.code, str(exc))
                 return
+            uncommented.pop(single, None)
             res["skipped"].append((single, "marked Duplicate, comment failed: %s" % exc))
 
     if apply:

@@ -120,6 +120,7 @@ case "\$1 \$2" in
     esac ;;
   "issue comment")
     [ -f "\$d/budget.comment" ] && { err CALL_BUDGET "spent"; exit 1; }
+    [ -f "\$d/fail.comment" ] && { err UNKNOWN "issue archived"; exit 1; }
     case " \$* " in *" --verify "*) echo "COMMENT \$3" >> "\$d/comments" ;; esac
     echo '{"ok":true,"data":{"dryRun":true}}' ;;
   "issue view")
@@ -1388,6 +1389,12 @@ test_writes_none_marks_nothing_and_rate_limit_stops_marking() {
   assert_equals "COMMENT $first" "$(head -1 "$LDIR/comments")" "the next run first posts the missed comment"
   assert_equals "COMMENT PC-211|COMMENT PC-212" "$(sort "$LDIR/comments" | paste -sd'|')" "then marks and comments the other single, one comment each"
   assert_equals 0 "$(grep -c "^issue relation add $first .*--verify" "$LINEAR_LOG")" "without relating the marked one again"
+  touch "$LDIR/fail.comment"; jq '.uncommented = {"PC-211": "PC-1"}' "$home/data/officers/surgeon/bundles.json" > "$TMP_ROOT/b.json" && mv "$TMP_ROOT/b.json" "$home/data/officers/surgeon/bundles.json"
+  run_surgeon "$home" >/dev/null || fail "a run whose comment fails must still finish"
+  assert_equals 0 "$(jq -r '.uncommented | length' "$home/data/officers/surgeon/bundles.json")" "a comment that fails outright is reported once and not kept for retry"
+  rm "$LDIR/fail.comment"; : > "$LINEAR_LOG"
+  run_surgeon "$home" >/dev/null || fail "the run after must succeed"
+  assert_equals 0 "$(grep -c '^issue comment' "$LINEAR_LOG")" "so a later run does not post it again"
   pass "fm-officer surgeon: writes none only reports what it would mark, and a rate limit stops the marking"
 }
 
