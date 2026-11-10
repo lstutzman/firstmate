@@ -358,6 +358,65 @@ test_unstamped_resolution_closes_a_lone_stamped_ask() {
 }
 test_unstamped_resolution_closes_a_lone_stamped_ask
 
+# An unkeyed copy (synthetic key u-<epoch>-<corr>) closes when a later line of the
+# same log carries its corr and is a keyed ask, a done, or a resolved. The
+# fixture is the alchemist channel that left a card asked for good.
+test_corr_covered_lines_close_the_unkeyed_copy() {
+  local dir f c=c9d9b505f8244bd0 d=5a511dd7007b4b7b expected
+  dir=$(case_dir unkeyed-corr-close)
+  f="$dir/alchemist.status"
+  printf 'blocked [corr=%s] [at=1794325928]: [cause=policy] [dep=pr/lstutzman/local-jev/30] PR is NOT merged\n' "$c" > "$f"
+  expected=$(printf 'u-1794325928-%s\tblocked\t[cause=policy] [dep=pr/lstutzman/local-jev/30] PR is NOT merged\n' "$c")
+  assert_fold "$f" "${expected%$'\n'}" "the unkeyed copy alone"
+  printf 'blocked [corr=%s] [key=lj-pr30-merge] [cause=policy] [dep=pr/lstutzman/local-jev/30] [at=1794325935]: PR is NOT merged\n' "$c" >> "$f"
+  expected=$(printf 'lj-pr30-merge\tblocked\tPR is NOT merged')
+  assert_fold "$f" "$expected" "the keyed copy supersedes the unkeyed one"
+  printf 'done [corr=%s] [at=1794326003]: timer installed\n' "$c" >> "$f"
+  assert_fold "$f" "$expected" "a done does not close the stated key"
+  printf 'resolved [key=lj-pr30-merge] [at=1794326100]: merged\n' >> "$f"
+  assert_fold "$f" "" "the stated key closes by its own resolution"
+  assert_equals "blocked" "$(status_key_closing_verb "$f" "u-1794325928-$c")" "the unkeyed key reads as closed by the keyed copy"
+
+  printf 'blocked [corr=%s] [at=1794345160]: ask\n' "$d" > "$dir/done.status"
+  printf 'done [corr=%s] [at=1794345200]: finished\n' "$d" >> "$dir/done.status"
+  assert_fold "$dir/done.status" "" "a same-corr done closes the unkeyed copy"
+  assert_equals "done" "$(status_key_closing_verb "$dir/done.status" "u-1794345160-$d")" \
+    "a same-corr done is the closing verb of the unkeyed key"
+
+  printf 'needs-decision [corr=%s] [at=1794345160]: ask\n' "$d" > "$dir/res.status"
+  printf 'resolved [key=other] [corr=%s] [at=1794345200]: answered\n' "$d" >> "$dir/res.status"
+  assert_fold "$dir/res.status" "" "a same-corr resolved closes the unkeyed copy"
+  pass "a later keyed ask, done or resolved with the same corr closes the unkeyed copy"
+}
+FM_CLASSIFY_UNKEYED_CUTOVER=500 test_corr_covered_lines_close_the_unkeyed_copy
+
+test_corr_close_negatives() {
+  local dir f c=c9d9b505f8244bd0 other=5a511dd7007b4b7b expected
+  dir=$(case_dir unkeyed-corr-negatives)
+  f="$dir/a.status"
+  expected=$(printf 'u-1000-%s\tblocked\task' "$c")
+  {
+    printf 'blocked [corr=%s] [at=1000]: ask\n' "$c"
+    printf 'done [corr=%s] [at=1100]: other request finished\n' "$other"
+    printf 'blocked [corr=%s] [key=k] [at=1200]: other keyed ask\n' "$other"
+    printf 'resolved [key=k] [corr=%s] [at=1300]: other answered\n' "$other"
+  } > "$f"
+  assert_fold "$f" "$expected" "lines with another corr leave it open"
+  {
+    printf 'working [corr=%s] [at=1400]: still going\n' "$c"
+    printf 'paused [corr=%s] [at=1500]: waiting\n' "$c"
+  } >> "$f"
+  assert_fold "$f" "$expected" "working and paused lines with the same corr leave it open"
+  printf 'blocked [at=1000]: no corr\n' > "$dir/b.status"
+  printf 'done [corr=%s] [at=1100]: finished\n' "$c" >> "$dir/b.status"
+  assert_fold "$dir/b.status" "$(printf 'u-1000\tblocked\tno corr')" "a synthetic key without corr keeps today's behaviour"
+  printf 'blocked [corr=%s] [key=k] [at=1000]: keyed ask\n' "$c" > "$dir/c.status"
+  printf 'done [corr=%s] [at=1100]: finished\n' "$c" >> "$dir/c.status"
+  assert_fold "$dir/c.status" "$(printf 'k\tblocked\tkeyed ask')" "a keyed decision is not closed by a same-corr done"
+  pass "corr close leaves other-corr, working, paused, corr-less and keyed entries alone"
+}
+FM_CLASSIFY_UNKEYED_CUTOVER=500 test_corr_close_negatives
+
 # status_key_closing_verb reads a synthetic unkeyed key the way the fold does:
 # open while its ask is open, and the closing verb once it is closed.
 test_closing_verb_reads_a_synthetic_unkeyed_key() {
