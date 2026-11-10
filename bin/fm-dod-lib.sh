@@ -404,8 +404,8 @@ EOF
 # `--intent` text the overlay hands the worker. It prints nothing unless BOTH
 # hold: the resolved model names a Fable 5.x model (the `--model` value, so a
 # harness default with no named model never qualifies), and the brief carries
-# one full line `Work class: refactor|clean-up|tech-debt|improve` that firstmate
-# wrote at intake. A line inside a fence never counts.
+# one full line `Work class: refactor|clean-up|tech-debt|improve` that
+# bin/fm-brief.sh --work-class writes. A line inside a fence never counts.
 fm_brief_ownership_class() {  # <brief-file>
   awk '
     /^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }

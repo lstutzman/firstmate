@@ -65,7 +65,7 @@
 #   docs/configuration.md owns config/spawn-setup. Failures reach the worker
 #   through the private launch brief and never prevent launch.
 #   A brief line `Work class: refactor|clean-up|tech-debt|improve`, written by
-#   firstmate at intake, adds the code-ownership line to the launch brief only
+#   bin/fm-brief.sh --work-class, adds the code-ownership line to the launch brief only
 #   when the resolved `--model` also names a Fable 5.x model;
 #   fm_brief_ownership_section in bin/fm-dod-lib.sh owns the rule and the text.
 #   Ship/scout launches always put fm-dod-lib.sh's current worker role scope

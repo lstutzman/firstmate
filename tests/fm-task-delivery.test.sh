@@ -115,6 +115,14 @@ EOF
   write_own "$id" ''
   out=$(run_spawn "$home" "$fakebin" "$id" "$proj" claude --mode no-mistakes --yolo off --model claude-fable-5-2)
   assert_no_grep "$sentence" "$home/data/$id/launch-brief.md" "a Fable brief without the option must not carry the sentence"
+
+  id=own-scaffold-refactor
+  FM_HOME="$home" "$BRIEF" "$id" proj --mode no-mistakes --work-class refactor >/dev/null 2>&1 \
+    || fail "fm-brief.sh --work-class refactor should scaffold"
+  fill_brief_subsections "$home/data/$id/brief.md" "Tidy the parser module." "Keep behaviour unchanged."
+  out=$(run_spawn "$home" "$fakebin" "$id" "$proj" claude --mode no-mistakes --yolo off --model claude-fable-5-2)
+  assert_present "$home/data/$id/launch-brief.md" "scaffolded ownership spawn did not render a launch brief: $out"
+  assert_grep "$sentence" "$home/data/$id/launch-brief.md" "a Fable spawn of an fm-brief.sh --work-class brief did not carry the sentence"
   pass "launch brief carries the ownership line only for Fable refactor-class work"
 }
 
