@@ -1165,7 +1165,7 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
   case "$unstamped" in
     *:*) case "$verb:$kind" in done:ship|done:scout|failed:ship|failed:scout) return 0 ;; esac ;;
   esac
-  if [ "$verb" = done ]; then
+  if [ "$verb" = "done" ]; then
     if _fm_status_corr_id "$line" corr; then
       open=$(_fm_synthetic_corr_drop "$open" "$corr")
       [ -n "$open" ] && open="${open}"$'\n'
