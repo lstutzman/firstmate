@@ -91,6 +91,7 @@ write_run() {  # <dir> <outcome> <decisions>
     finding unneeded-code src/A.cs "Duplicate figure" "Merge into one property." medium; printf ','
     finding stack-drift Directory.Packages.props "Mixed patch levels" "Record the versions. Alignment needs its own upgrade brief."; printf ','
     finding misplaced scripts/ops/brief.md "Brief among scripts" "Unresolved. Read both next run; propose docs/runbooks."; printf ','
+    finding cruft docs/old-plan.md "Superseded plan" "Archive it under docs/archive in the docs PR (git-status: tracked)."; printf ','
     finding other . "Partial inventory" "Report the assessment as partial."
     printf ']\n'
   } > "$1/findings.json"
@@ -126,15 +127,53 @@ test_buckets() {
   assert_equals needs-lee "$(bucket_of spec/loose.md)" "a move waiting on an owner needs Lee"
   assert_equals needs-lee "$(bucket_of .claude/skills/x/SKILL.md)" "an instruction file needs Lee"
   assert_equals needs-lee "$(bucket_of scripts/old.sh)" "a deletion needs Lee"
+  assert_equals safe "$(bucket_of docs/old-plan.md)" "an archive inside a PR that keeps the source is safe"
   assert_equals code "$(bucket_of src/A.cs)" "unneeded code is code work"
   assert_equals code "$(bucket_of Directory.Packages.props)" "a finding that needs its own brief is code work"
   assert_equals hold "$(bucket_of scripts/ops/brief.md)" "an unresolved finding is on hold, whatever its kind"
   assert_equals hold "$(bucket_of .)" "a report-only finding is on hold"
   assert_equals needs-lee "$(bucket_of "$RUNS/2026-10-31/report.md")" "the run's decisions are one item for Lee"
   assert_contains "$(jq -r '.items[] | select(.kind == "decisions") | .title' "$json")" "5 decision(s) for Lee" "it counts the run's decisions"
-  assert_contains "$out" "DIGEST $DATE 9 data/officers/library/$DATE.md" "new items in every bucket but hold count"
-  assert_grep "## Safe to ship (2)" "$(lane)/$DATE.md" "the digest groups items by bucket"
+  assert_contains "$out" "DIGEST $DATE 10 data/officers/library/$DATE.md" "new items in every bucket but hold count"
+  assert_grep "## Safe to ship (3)" "$(lane)/$DATE.md" "the digest groups items by bucket"
   pass "fm-officer library: each audit finding lands in one bucket"
+}
+
+test_archive_is_safe_but_delete_retire_and_outside_pr_need_lee() {
+  make_world precedence
+  write_run "$RUNS/2026-11-07" ok 0
+  printf '[%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s]\n' \
+    "$(finding misplaced docs/a.md "Two stale plans" "Archive docs/a.md and delete docs/b.md.")" \
+    "$(finding misplaced scripts/ops/old-runbook.md "Old runbook" "Retire scripts/ops/old-runbook.md.")" \
+    "$(finding cruft .vs/cache.tmp "Untracked editor cache" "Move it out of the checkout.")" \
+    "$(finding cruft docs/old-plan.md "Superseded plan" "Archive it under docs/archive in the docs PR (git-status: tracked).")" \
+    "$(finding cruft docs/notes.md "Stray notes" "Record it in the inventory.")" \
+    "$(printf '{"kind": "cruft", "severity": "low", "title": "Old build plan", "path": "artifacts/old-plan.md", "evidence": "Status: ignored; matched by .gitignore", "disposition": "Archive it under docs/archive."}')" \
+    "$(printf '{"kind": "cruft", "severity": "low", "title": "Old notes", "path": ".vs/old-notes.md", "evidence": "no consumers; superseded by docs/plan.md", "disposition": "Archive it under docs/archive."}')" \
+    "$(printf '{"kind": "cruft", "severity": "low", "title": "Old notes", "path": "docs/old-notes.md", "evidence": "git-status: tracked; no consumers", "disposition": "Archive it under docs/archive."}')" \
+    "$(printf '{"kind": "cruft", "severity": "low", "title": "Scratch plan", "path": "tmp/plan.md", "evidence": "untracked file, no consumers", "disposition": "Archive it under docs/archive."}')" \
+    "$(printf '{"kind": "cruft", "severity": "low", "title": "Scratch notes", "path": "tmp/notes.md", "evidence": "isn'"'"'t tracked, no consumers", "disposition": "Archive it under docs/archive."}')" \
+    "$(printf '{"kind": "cruft", "severity": "low", "title": "Notes", "path": ".vs/notes.md", "evidence": "Superseded; tracked in PC-4100", "disposition": "Archive it under docs/archive."}')" \
+    "$(finding misplaced docs/loose-plan.md "Loose plan" "Move it into docs/plans.")" \
+    "$(finding misplaced plan.md "Plan at the root" "Move the plan out of the repo root into docs/plans (git-status: tracked).")" \
+    "$(finding readme README.md "README undercounts the rules" "Correct the count to 29.")" \
+    > "$RUNS/2026-11-07/findings.json"
+  run_library 2026-11-07 $((NOW + 7 * 86400)) >/dev/null || fail "the audit run must succeed"
+  assert_equals needs-lee "$(bucket_of docs/a.md 2026-11-07)" "a delete beside an archive still needs Lee"
+  assert_equals needs-lee "$(bucket_of scripts/ops/old-runbook.md 2026-11-07)" "a retirement needs Lee"
+  assert_equals needs-lee "$(bucket_of .vs/cache.tmp 2026-11-07)" "a move of an untracked file out of the checkout needs Lee"
+  assert_equals safe "$(bucket_of docs/old-plan.md 2026-11-07)" "a cruft archive of a tracked file inside a PR is safe"
+  assert_equals needs-lee "$(bucket_of artifacts/old-plan.md 2026-11-07)" "an archive of an ignored file cannot happen inside a PR, so it needs Lee"
+  assert_equals needs-lee "$(bucket_of .vs/old-notes.md 2026-11-07)" "an archive of a file the finding does not show is tracked needs Lee"
+  assert_equals safe "$(bucket_of docs/old-notes.md 2026-11-07)" "an archive of a file the finding marks git-status: tracked is safe"
+  assert_equals needs-lee "$(bucket_of tmp/plan.md 2026-11-07)" "an archive of an untracked file needs Lee"
+  assert_equals needs-lee "$(bucket_of tmp/notes.md 2026-11-07)" "an archive of a file that isn't tracked needs Lee"
+  assert_equals needs-lee "$(bucket_of .vs/notes.md 2026-11-07)" "tracked in an issue is not a Git status, so the archive needs Lee"
+  assert_equals needs-lee "$(bucket_of docs/loose-plan.md 2026-11-07)" "a misplaced move with no tracked signal needs Lee"
+  assert_equals safe "$(bucket_of plan.md 2026-11-07)" "a tracked move out of the repo root into docs stays inside the PR"
+  assert_equals safe "$(bucket_of README.md 2026-11-07)" "a README correction is safe as before"
+  assert_equals hold "$(bucket_of docs/notes.md 2026-11-07)" "a cruft finding that neither archives nor moves never ships by itself"
+  pass "fm-officer library: only an archive or move inside a PR is safe; a delete, retirement or move outside a PR needs Lee"
 }
 
 test_reported_once_and_identical_rerun() {
@@ -159,7 +198,7 @@ test_hold_item_counts_once_it_can_ship() {
   make_world promote
   run_library >/dev/null || fail "first run must succeed"
   write_run "$RUNS/2026-11-07" ok 0
-  printf '[%s]\n' "$(finding misplaced scripts/ops/brief.md "Brief among scripts" "Propose moving it to docs/runbooks.")" > "$RUNS/2026-11-07/findings.json"
+  printf '[%s]\n' "$(finding misplaced scripts/ops/brief.md "Brief among scripts" "Propose moving it to docs/runbooks (git-status: tracked).")" > "$RUNS/2026-11-07/findings.json"
   out=$(run_library 2026-11-07 $((NOW + 7 * 86400))) || fail "next audit must succeed"
   assert_equals safe "$(bucket_of scripts/ops/brief.md 2026-11-07)" "the finding is now safe to ship"
   assert_contains "$out" "DIGEST 2026-11-07 1 " "an item on hold last week is new once it can ship"
@@ -348,6 +387,7 @@ test_no_writes_and_a_missing_label_file_nothing() {
 }
 
 test_buckets
+test_archive_is_safe_but_delete_retire_and_outside_pr_need_lee
 test_reported_once_and_identical_rerun
 test_hold_item_counts_once_it_can_ship
 test_unreadable_audit_keeps_the_ledger
