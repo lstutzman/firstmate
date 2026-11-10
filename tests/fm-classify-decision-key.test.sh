@@ -407,13 +407,15 @@ test_corr_close_negatives() {
     printf 'paused [corr=%s] [at=1500]: waiting\n' "$c"
   } >> "$f"
   assert_fold "$f" "$expected" "working and paused lines with the same corr leave it open"
+  printf 'captain-held [key=k] [corr=%s] [at=1600]: tracked elsewhere\n' "$c" >> "$f"
+  assert_fold "$f" "$expected" "a keyed captain-held line with the same corr leaves it open"
   printf 'blocked [at=1000]: no corr\n' > "$dir/b.status"
   printf 'done [corr=%s] [at=1100]: finished\n' "$c" >> "$dir/b.status"
   assert_fold "$dir/b.status" "$(printf 'u-1000\tblocked\tno corr')" "a synthetic key without corr keeps today's behaviour"
   printf 'blocked [corr=%s] [key=k] [at=1000]: keyed ask\n' "$c" > "$dir/c.status"
   printf 'done [corr=%s] [at=1100]: finished\n' "$c" >> "$dir/c.status"
   assert_fold "$dir/c.status" "$(printf 'k\tblocked\tkeyed ask')" "a keyed decision is not closed by a same-corr done"
-  pass "corr close leaves other-corr, working, paused, corr-less and keyed entries alone"
+  pass "corr close leaves other-corr, working, paused, captain-held, corr-less and keyed entries alone"
 }
 FM_CLASSIFY_UNKEYED_CUTOVER=500 test_corr_close_negatives
 
