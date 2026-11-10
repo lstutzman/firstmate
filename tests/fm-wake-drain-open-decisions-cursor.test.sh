@@ -417,3 +417,85 @@ test_cursor_cache_read_failure_refolds_without_replaying_unread_status
 test_pre_fix_cursor_refolds_corr_tagged_decision
 test_previous_fold_cache_is_refolded_under_current_semantics
 test_buried_decision_survives_many_growing_drains_and_resolution_clears_it
+
+# Big synthetic log: an open key early, a closed key, filler, a late open key.
+make_big_log() {  # <file> <filler-lines>
+  local file=$1 n=$2
+  {
+    printf 'needs-decision [key=early]: pick one\nblocked [key=gone]: x\n'
+    local i=0
+    while [ "$i" -lt "$n" ]; do printf 'working: filler line %05d\n' "$i"; i=$((i + 1)); done
+    printf 'resolved [key=gone]: done\nneeds-decision [key=late]: pick again\n'
+  } > "$file"
+}
+
+test_bounded_fold_matches_unbounded_and_marks_partial() {
+  local dir state status want got rc calls=0 off
+  dir=$(make_case cursor-bounded); state="$dir/state"; status="$state/task.status"
+  make_big_log "$status" 3000
+  want=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$status")
+  assert_contains "$want" 'late' "reference fold lost the late decision"
+  # One bounded call is partial: exit 3, cursor saved on a line boundary.
+  got=$(FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=4000 bash -c '. "$1"; status_open_decisions_incremental "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$status"); rc=$?
+  [ "$rc" -eq 3 ] || fail "bounded fold of a big log did not report partial (rc=$rc)"
+  off=$(sed -n 's/^offset=//p' "$state/.task.open-decisions-cursor")
+  [ "$off" -gt 0 ] && [ "$off" -le 4000 ] || fail "partial cursor offset $off outside the budget"
+  [ "$(head -c "$off" "$status" | tail -c 1 | od -An -c | tr -d ' ')" = '\n' ] || fail "partial cursor not on a line boundary"
+  # Repeated bounded calls converge on exactly the unbounded set.
+  while :; do
+    got=$(FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=4000 bash -c '. "$1"; status_open_decisions_incremental "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$status"); rc=$?
+    calls=$((calls + 1)); [ "$rc" -eq 3 ] || break
+    [ "$calls" -lt 1000 ] || fail "bounded fold never completed"
+  done
+  [ "$rc" -eq 0 ] && [ "$calls" -gt 3 ] || fail "expected several bounded calls ending in rc 0 (rc=$rc calls=$calls)"
+  [ "$got" = "$want" ] || fail "bounded fold open set differs from the unbounded fold"
+  pass "bounded calls fold a big log to the same open set and mark partial results"
+}
+
+test_killed_fold_resumes_from_saved_cursor() {
+  local dir state status probe first
+  dir=$(make_case cursor-killed); state="$dir/state"; status="$state/task.status"; probe="$dir/probe.tsv"
+  make_big_log "$status" 3000
+  : > "$probe"
+  # A caller that stops after one bounded call (a kill or time limit) leaves progress behind.
+  FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=4000 FM_OPEN_DECISIONS_READ_PROBE="$probe" \
+    bash -c '. "$1"; status_open_decisions_incremental "$2" >/dev/null; exit 0' _ "$ROOT/bin/fm-classify-lib.sh" "$status"
+  first=$(sed -n 's/^offset=//p' "$state/.task.open-decisions-cursor")
+  [ "${first:-0}" -gt 0 ] || fail "no cursor saved by the interrupted call"
+  FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=4000 FM_OPEN_DECISIONS_READ_PROBE="$probe" \
+    bash -c '. "$1"; status_open_decisions_incremental_complete "$2" >/dev/null' _ "$ROOT/bin/fm-classify-lib.sh" "$status"
+  [ "$(sed -n 1p "$probe" | cut -f2)" -le 4000 ] || fail "first call read more than its budget"
+  [ "$(awk -F'\t' '{s+=$2} END{print s}' "$probe")" = "$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')" ] \
+    || fail "resumed folds re-read bytes already folded (or skipped some)"
+  pass "a call stopped mid-way resumes from the last saved cursor"
+}
+
+test_callers_never_report_a_partial_fold_as_complete() {
+  local dir state status out
+  dir=$(make_case cursor-callers); state="$dir/state"; status="$state/task.status"
+  make_big_log "$status" 3000
+  out=$(FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=4000 bash -c '. "$1"; scan_open_decisions_incremental "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$state")
+  assert_contains "$out" 'late' "scan returned a partial set: the late decision is missing"
+  assert_contains "$out" 'early' "scan returned a partial set: the early decision is missing"
+  rm -f "$state/.task.open-decisions-cursor"
+  FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=4000 FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/drain.out" || fail "drain over a big log failed"
+  assert_contains "$(cat "$dir/drain.out")" '[key=late]' "drain OPEN DECISIONS reported a partial fold"
+  pass "scan and drain loop over partial folds and report the complete set"
+}
+
+test_fold_version_bump_still_discards_the_cursor() {
+  local dir state status
+  dir=$(make_case cursor-version); state="$dir/state"; status="$state/task.status"
+  make_big_log "$status" 50
+  bash -c '. "$1"; status_open_decisions_incremental "$2" >/dev/null' _ "$ROOT/bin/fm-classify-lib.sh" "$status"
+  sed -i 's/^version=.*/version=0:unknown/' "$state/.task.open-decisions-cursor"
+  FM_OPEN_DECISIONS_READ_PROBE="$dir/probe.tsv" bash -c '. "$1"; status_open_decisions_incremental "$2" >/dev/null' _ "$ROOT/bin/fm-classify-lib.sh" "$status"
+  [ "$(cut -f2 "$dir/probe.tsv")" = "$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')" ] \
+    || fail "a stale fold version did not refold from byte 0"
+  pass "a stale fold version still discards the cursor and refolds from byte 0"
+}
+
+test_bounded_fold_matches_unbounded_and_marks_partial
+test_killed_fold_resumes_from_saved_cursor
+test_callers_never_report_a_partial_fold_as_complete
+test_fold_version_bump_still_discards_the_cursor

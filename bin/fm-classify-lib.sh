@@ -1483,7 +1483,7 @@ EOF
 # depends on a write succeeding.
 status_open_decisions_cached() {  # <status-file>
   local f=$1 open cf cursor='' size ident expected
-  open=$(status_open_decisions_incremental "$f") || open=''
+  open=$(status_open_decisions_incremental_complete "$f") || open=''
   cf=$(_fm_open_decisions_cursor_path "$f")
   if [ -f "$cf" ] && [ ! -L "$cf" ]; then
     cursor=$(LC_ALL=C command cat "$cf" 2>/dev/null) || cursor=''
@@ -1802,6 +1802,12 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # discarded and rebuilt from byte 0 under the new reading.
 FM_OPEN_DECISIONS_FOLD_VERSION=11
 
+# Most new status-log bytes one status_open_decisions_incremental call folds
+# (env FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES overrides). The fold forks per line,
+# so this bounds one call's time; the cursor is saved after every call, and a
+# call that stops short returns 3 (partial: call again).
+FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES_DEFAULT=262144
+
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
   local f=$1 epoch birth ident
@@ -1899,7 +1905,7 @@ _fm_status_read_span() {  # <status-file> <start-offset> <byte-length>
 status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [timed]
   local f=$1 captured_end=${2:-} cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size actual_size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
-  local target_cursor kind fold_version timed=${3:-}
+  local target_cursor kind fold_version timed=${3:-} want budget cut
   case "$timed" in ''|timed) ;; *) return 2 ;; esac
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   kind=$(_fm_status_kind "$f")
@@ -1980,8 +1986,25 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
 
   if [ "$offset" -lt "$size" ]; then
     chunk_file="$cf.read.$$"
-    _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
+    want=$((size - offset))
+    budget=${FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES:-$FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES_DEFAULT}
+    case "$budget" in ''|*[!0-9]*|0*) budget=$FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES_DEFAULT ;; esac
+    [ "$want" -le "$budget" ] || want=$budget
+    _fm_status_read_span "$f" "$offset" "$want" > "$chunk_file" 2>/dev/null \
       || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+    if [ "$want" -lt "$((size - offset))" ]; then
+      # Budget cut: end the fold on a line boundary. A budget slice holding no
+      # newline (one line longer than the budget) reads through to its end.
+      cut=$(LC_ALL=C perl -0777 -ne 'my $i = rindex($_, "\n"); print $i < 0 ? "" : $i + 1' "$chunk_file" 2>/dev/null) \
+        || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+      if [ -n "$cut" ]; then
+        LC_ALL=C perl -e 'truncate($ARGV[0], $ARGV[1]) or exit 1' "$chunk_file" "$cut" 2>/dev/null \
+          || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+      else
+        _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
+          || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+      fi
+    fi
     chunk_size=$(LC_ALL=C wc -c < "$chunk_file" 2>/dev/null) \
       || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
     chunk_size=${chunk_size//[[:space:]]/}
@@ -2000,7 +2023,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
       open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind" "$timed")
     done < "$chunk_file"
     rm -f "$chunk_file"
-    offset=$size
+    offset=$((offset + chunk_size))
     cursor_dirty=1
   fi
   if [ "$cursor_dirty" -eq 1 ]; then
@@ -2014,6 +2037,22 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
     mv -f "$target_cursor" "$cf" || return 1
   fi
   printf '%s' "$open"
+  # Partial: the budget stopped the fold short of the end it was asked to reach.
+  [ "$offset" -ge "$size" ] || return 3
+}
+
+# Call status_open_decisions_incremental until its fold is complete (exit 3
+# means partial: the cursor was saved, call again), so a kill or time limit
+# between calls resumes from the saved cursor instead of restarting the log.
+# Prints the complete set; any other failure code passes through.
+status_open_decisions_incremental_complete() {  # <status-file> [<captured-end-offset>] [timed]
+  local out rc
+  while :; do
+    out=$(status_open_decisions_incremental "$@"); rc=$?
+    [ "$rc" -eq 3 ] || break
+  done
+  printf '%s' "$out"
+  return "$rc"
 }
 
 # Incremental sibling of scan_open_decisions: same fleet-wide directory walk and
@@ -2028,7 +2067,7 @@ scan_open_decisions_incremental() {  # <state>
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
     task=$(basename "$f"); task="${task%.status}"
-    open=$(status_open_decisions_incremental "$f") || continue
+    open=$(status_open_decisions_incremental_complete "$f") || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue
@@ -2515,7 +2554,7 @@ scan_open_decisions_snapshot() {  # <state> <task-and-endpoint-snapshot>
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
     f="$state/$task.status"
-    open=$(status_open_decisions_incremental "$f" "$endpoint") || return 1
+    open=$(status_open_decisions_incremental_complete "$f" "$endpoint") || return 1
     [ -n "$open" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue
