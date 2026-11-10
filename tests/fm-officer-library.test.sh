@@ -91,6 +91,7 @@ write_run() {  # <dir> <outcome> <decisions>
     finding unneeded-code src/A.cs "Duplicate figure" "Merge into one property." medium; printf ','
     finding stack-drift Directory.Packages.props "Mixed patch levels" "Record the versions. Alignment needs its own upgrade brief."; printf ','
     finding misplaced scripts/ops/brief.md "Brief among scripts" "Unresolved. Read both next run; propose docs/runbooks."; printf ','
+    finding cruft docs/old-plan.md "Superseded plan" "Archive it under docs/archive in the docs PR."; printf ','
     finding other . "Partial inventory" "Report the assessment as partial."
     printf ']\n'
   } > "$1/findings.json"
@@ -126,14 +127,15 @@ test_buckets() {
   assert_equals needs-lee "$(bucket_of spec/loose.md)" "a move waiting on an owner needs Lee"
   assert_equals needs-lee "$(bucket_of .claude/skills/x/SKILL.md)" "an instruction file needs Lee"
   assert_equals needs-lee "$(bucket_of scripts/old.sh)" "a deletion needs Lee"
+  assert_equals safe "$(bucket_of docs/old-plan.md)" "an archive inside a PR that keeps the source is safe"
   assert_equals code "$(bucket_of src/A.cs)" "unneeded code is code work"
   assert_equals code "$(bucket_of Directory.Packages.props)" "a finding that needs its own brief is code work"
   assert_equals hold "$(bucket_of scripts/ops/brief.md)" "an unresolved finding is on hold, whatever its kind"
   assert_equals hold "$(bucket_of .)" "a report-only finding is on hold"
   assert_equals needs-lee "$(bucket_of "$RUNS/2026-10-31/report.md")" "the run's decisions are one item for Lee"
   assert_contains "$(jq -r '.items[] | select(.kind == "decisions") | .title' "$json")" "5 decision(s) for Lee" "it counts the run's decisions"
-  assert_contains "$out" "DIGEST $DATE 9 data/officers/library/$DATE.md" "new items in every bucket but hold count"
-  assert_grep "## Safe to ship (2)" "$(lane)/$DATE.md" "the digest groups items by bucket"
+  assert_contains "$out" "DIGEST $DATE 10 data/officers/library/$DATE.md" "new items in every bucket but hold count"
+  assert_grep "## Safe to ship (3)" "$(lane)/$DATE.md" "the digest groups items by bucket"
   pass "fm-officer library: each audit finding lands in one bucket"
 }
 

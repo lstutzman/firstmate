@@ -28,11 +28,13 @@ alone, in this order:
              owner, an approval or a decision;
   hold       a disposition that starts unresolved, keep, leave, report only or
              no action;
-  needs-lee  a disposition naming a delete, removal, retirement or archive
-             (fleet rules section 6);
-  safe       kind readme, stack-drift or misplaced with a disposition that
-             proposes, records, adds, corrects, moves, links or regenerates: one
-             docs PR per repository can ship it;
+  needs-lee  a disposition naming a delete, removal or trash (fleet rules
+             section 6);
+  safe       kind readme, stack-drift or misplaced (or cruft, for an archive)
+             with a disposition that proposes, records, adds, corrects, moves,
+             links, archives or retires, or regenerates: one docs PR per
+             repository can ship it, because an archive or move inside a PR
+             keeps the Markdown source (fleet rules section 6);
   hold       everything else: unresolved, keep, report only, or a check still
              to make.
 The run's `counts.decisions`, Lee's calls in the report, is one needs-lee
@@ -90,9 +92,9 @@ INSTRUCTION_RE = re.compile(r"(^|/)(AGENTS\.md|CLAUDE\.md|SKILL\.md)$|(^|/)\.(cl
 CODE_RE = re.compile(r"\b(implementation|upgrade|own) (brief|scope)\b|\bits own brief\b", re.I)
 LEE_RE = re.compile(r"\b(lee|owner|approv\w*|decides?|decision)\b", re.I)
 HOLD_RE = re.compile(r"^\s*(unresolved|keep|leave|report only|no action)\b", re.I)
-DESTRUCTIVE_RE = re.compile(r"\b(delet|remov|retir|archiv|trash)\w*", re.I)
-SAFE_RE = re.compile(r"\b(propose|record|add|correct|move|link|point|regenerate|make sure)\w*", re.I)
-SAFE_KINDS = ("readme", "stack-drift", "misplaced")
+DESTRUCTIVE_RE = re.compile(r"\b(delet|remov|trash)\w*", re.I)
+SAFE_RE = re.compile(r"\b(propose|record|add|correct|move|link|point|regenerate|make sure|archiv|retir)\w*", re.I)
+SAFE_KINDS = ("readme", "stack-drift", "misplaced", "cruft")
 COUNTED = ("code", "needs-lee", "safe")
 
 
