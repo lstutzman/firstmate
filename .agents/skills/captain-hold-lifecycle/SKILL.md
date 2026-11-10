@@ -23,6 +23,7 @@ Put the question and its options in the hold reason, and keep one held task per 
 Register or re-hold through `bin/fm-captain-hold.sh hold`, which is idempotent per task id.
 When holding a call that was raised as a `needs-decision [key=<key>]` line, pass `--origin-key <key>` to `bin/fm-captain-hold.sh hold`; the script header owns what that key does.
 Pass `--cause <cause>` to `hold` when the ask is not a product or design choice (for example `policy` for an approval); it defaults to `decision`, and the script header owns the vocabulary.
+A wait on another home's work or on an external report is not a captain call: hold it with `bin/fm-tasks-axi.sh hold <id> --kind external --reason "<reason>"`, never `bin/fm-captain-hold.sh hold`, which raises a needs-decision for the captain.
 After inventorying the whole report and review surface, firstmate runs `bin/fm-captain-hold.sh complete` with every captain-held task id, or with `--none` when nothing waits on the captain.
 A scout may attest its own empty inventory only through the narrow command exception in its generated brief's Definition of done.
 For a non-empty inventory or a refused command, the scout reports to firstmate rather than writing metadata or backlog records.
