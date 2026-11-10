@@ -333,6 +333,8 @@ STATUS_RE = re.compile(r"^([a-z][a-z-]*)\b([^:]*):\s?(.*)$")
 AT_RE = re.compile(r"(?:^|[\s\[])at=(\d+)\b")
 KEY_RE = re.compile(r"(?:^|[\s\[])key=([^\]\s]+)")
 CAUSE_RE = re.compile(r"(?:^|[\s\[])cause=([^\]\s]+)")
+DEP_RE = re.compile(r"(?:^|[\s\[])dep=pr/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/\d+\]")
+MERGE_HANDOFF_KEY_RE = re.compile(r"^merge-handoff-\d+$")
 # The causes a worker may state on a blocked or needs-decision line (bin/fm-classify-lib.sh
 # status_line_cause owns the vocabulary) and the friction group each joins when no text rule
 # recognised the line; anything else reads as unstated.
@@ -1408,7 +1410,7 @@ def bosun_section(hosts):
 
 
 def parse_status_line(line):
-    """(state, key, at, text, stated cause or None) of one status line, or None."""
+    """(state, key, at, text, stated cause or None, names a PR dependency) of one status line, or None."""
     m = STATUS_RE.match(line.strip())
     if not m:
         return None
@@ -1417,7 +1419,8 @@ def parse_status_line(line):
     key = KEY_RE.search(markers)
     cause = CAUSE_RE.search(markers)
     cause = cause.group(1) if cause and cause.group(1) in STATED_CAUSES else None
-    return m.group(1), key.group(1) if key else None, int(at.group(1)) if at else None, m.group(3), cause
+    return (m.group(1), key.group(1) if key else None, int(at.group(1)) if at else None, m.group(3), cause,
+            bool(DEP_RE.search(markers + "]")))
 
 
 def status_streams(home):
@@ -1440,10 +1443,10 @@ def status_streams(home):
         for line in lines:
             parsed = parse_status_line(line)
             if parsed and parsed[2] is not None:
-                state_word, key, at, text, cause = parsed
+                state_word, key, at, text, cause, dep = parsed
                 streams.setdefault(task, []).append(
                     {"state": state_word, "key": key, "at": at, "text": text, "source": "status",
-                     "stated": cause})
+                     "stated": cause, "dep": dep})
     for task, events in sorted(home.ledger.items()):
         seen = {(e["state"], e["key"], e["text"].strip()) for e in streams.get(task, [])}
         for rec in events:
@@ -1472,6 +1475,17 @@ def waits_stated(ev):
     return ev["state"] in ("needs-decision", "blocked") and ev.get("stated") in STATED_CAUSES
 
 
+def self_clearing_external(ev):
+    """True for a stated-external wait the decision sweep closes by itself when its PR merges.
+
+    That is a merge-handoff-<n> key (bin/fm-pr-merge.sh's) or a line carrying a [dep=pr/...] tag
+    (bin/fm-decision-sweep.sh): the dependency is named and rechecked on a timer, so it is the fixed
+    state of this finding, not friction.
+    """
+    return (ev["state"] in ("needs-decision", "blocked") and ev.get("stated") == "external"
+            and (ev.get("dep") or bool(MERGE_HANDOFF_KEY_RE.match(ev.get("key") or ""))))
+
+
 def status_events(homes, date, channels):
     """Waits opened on <date>: one event per ask, re-asks of an open key marked and not re-measured."""
     start, end = day_bounds(date)
@@ -1483,6 +1497,8 @@ def status_events(homes, date, channels):
             for i, ev in enumerate(stream):
                 if ev["state"] == "resolved":
                     chains.pop(ev["key"], None)
+                    continue
+                if self_clearing_external(ev):
                     continue
                 text = clean(ev["text"])
                 cause, sub, pos = classify(text)

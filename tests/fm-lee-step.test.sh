@@ -16,10 +16,13 @@ step() { FM_HOME="$HOME_FIX" "$STEP" "$@"; }
 
 # Host-aware: the configured Lee-step host is the reader's machine.
 printf '# the machine the captain reads Lee steps on\nSlartibartfast\n' > "$HOME_FIX/config/lee-step-host"
-out=$(step --cause sudo slartibartfast /x/swap.sh c2)
+out=$(step --cause sudo --no-recipe 'no recipe swaps the disk' slartibartfast /x/swap.sh c2)
 assert_contains "$out" '[cause=sudo]' 'the step states why no agent can run it'
 assert_contains "$out" $'\nbash /x/swap.sh c2' 'a session already on the target host gets a plain bash line'
 assert_not_contains "$out" 'ssh' 'no ssh to the machine the session is already on'
+assert_contains "$out" 'No fleet-admin recipe: no recipe swaps the disk' 'the step prints why no recipe covers it'
+out=$(step --cause tool slartibartfast /x/a.sh 2>&1 >/dev/null)
+assert_not_contains "$out" 'lee-step-host is unset' 'a configured Lee-step host raises no note'
 out=$(step --cause credential lee@SLARTIBARTFAST.local /x/a.sh)
 assert_contains "$out" $'\nbash /x/a.sh' 'user@host and a domain suffix still match the Lee-step host, case-insensitively'
 out=$(step --cause policy deepthought /x/swap.sh "it's here")
@@ -36,6 +39,8 @@ self=$(hostname -s)
 out=$(step --cause tool "$self" /x/a.sh)
 assert_contains "$out" "ssh -t $self 'bash /x/a.sh'" 'with no config/lee-step-host every step is an ssh line'
 assert_not_contains "$out" $'\nbash /x/a.sh' 'with no config/lee-step-host the script host never decides'
+note=$(step --cause tool "$self" /x/a.sh 2>&1 >/dev/null)
+assert_contains "$note" 'config/lee-step-host is unset' 'an ssh-to-self line from an unset host says which file fixes it'
 pass 'lee steps are host-aware'
 
 # The cause is required and closed.
@@ -45,9 +50,15 @@ done
 step h /x/a.sh >/dev/null 2>&1 && fail 'a step with no --cause must be refused'
 step --cause physical h >/dev/null 2>&1 && fail 'a step with no script must be refused'
 step --cause sudo 'h;rm' /x/a.sh >/dev/null 2>&1 && fail 'a host with shell metacharacters must be refused'
-for ok in sudo credential policy tool physical; do
+for ok in credential policy tool physical; do
   step --cause "$ok" otherhost /x/a.sh >/dev/null || fail "cause '$ok' must be accepted"
 done
+# A sudo step is refused unless it states that no fleet-admin recipe covers it.
+err=$(step --cause sudo otherhost /x/a.sh 2>&1 >/dev/null) && fail 'a sudo step with no --no-recipe must be refused'
+assert_contains "$err" 'sudo -n fleet-admin <recipe>' 'the sudo refusal points at the recipe route'
+step --cause sudo --no-recipe '   ' otherhost /x/a.sh >/dev/null 2>&1 && fail 'a blank --no-recipe reason must be refused'
+step --cause sudo --no-recipe otherhost /x/a.sh >/dev/null 2>&1 && fail '--no-recipe with no script must be refused'
+step --cause sudo --no-recipe 'no recipe installs pam' otherhost /x/a.sh >/dev/null 2>&1 || fail 'a sudo step naming the recipe gap must be accepted'
 pass 'every lee step must name a closed-set cause'
 
 # The same vocabulary parses off a status line, physical and a paused external wait included.
