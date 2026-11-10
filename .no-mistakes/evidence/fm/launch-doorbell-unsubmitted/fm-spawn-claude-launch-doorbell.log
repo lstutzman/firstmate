@@ -1,0 +1,4 @@
+ok - claude launch doorbell: a composer that reads empty after launch is left alone
+ok - claude launch doorbell: a doorbell left in the composer gets one Enter and is confirmed gone
+ok - claude launch doorbell: a plugin band holding the keyboard gets one Escape before the Enter
+ok - claude launch doorbell: a doorbell that stays after the gated submit raises one check wake and the spawn still succeeds

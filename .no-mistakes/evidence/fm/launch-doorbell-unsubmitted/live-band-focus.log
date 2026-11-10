@@ -1,0 +1,7 @@
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 draws a focused band Button in inverse and traps a bare Enter, leaving the text pending
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 submits the pending text once one Escape returns the focus from the band
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 fixture band swallows a bare Enter with the band drawn after ctrl+x then a separate Tab
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 fixture band submits the pending text through one behavioural Escape then Enter
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 with lee-mods 0.7.3 swallows a bare Enter with the band drawn after ctrl+x then a separate Tab
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 with lee-mods 0.7.3 submits the pending text through one behavioural Escape then Enter
+live rc=0

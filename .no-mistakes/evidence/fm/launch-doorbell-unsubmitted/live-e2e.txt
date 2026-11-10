@@ -1,0 +1,3 @@
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 draws a focused band Button in inverse and traps a bare Enter, leaving the text pending
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 submits the pending text once one Escape returns the focus from the band
+ok - live band focus # SKIP Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5: ctrl+x then a separate Tab drew an inverse Button on the fixture band, so the ring-on-nothing state was not reproduced

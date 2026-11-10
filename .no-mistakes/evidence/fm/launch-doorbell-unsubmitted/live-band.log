@@ -1,0 +1,2 @@
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 draws a focused band Button in inverse and traps a bare Enter, leaving the text pending
+ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 submits the pending text once one Escape returns the focus from the band
