@@ -8639,19 +8639,18 @@ if [ -n "$DISPATCH_DECISION" ]; then
     --arg model "${MODEL:-}" --arg effort "${EFFORT:-}" --argjson raw "$RAW_LAUNCH" '
     def opt: if . == "" then null else . end;
     def profiles($v): if ($v | type) == "array" then $v elif ($v | type) == "object" then [$v] else [] end;
+    def holds_launch: $raw != 1 and any(.use[]; .harness == $harness and ((.model // null) == null or .model == $model)
+      and ((.effort // null) == null or .effort == $effort));
     ($cfg[0]) as $c |
-    # The one rule (or default) whose profiles hold the launched profile, else null.
-    (if $raw == 1 then null else
-      [((($c.rules // []) | to_entries[] | {key: ("rule_" + ((.key + 1) | tostring)), use: profiles(.value.use)}),
-        {key: "default", use: profiles($c.default // null)})
-       | select(any(.use[]; .harness == $harness and ((.model // null) == null or .model == $model)
-           and ((.effort // null) == null or .effort == $effort))) | .key]
-      | if length == 1 then .[0] else null end end) as $launched |
+    [((($c.rules // []) | to_entries[] | {key: ("rule_" + ((.key + 1) | tostring)), use: profiles(.value.use)}),
+      {key: "default", use: profiles($c.default // null)})] as $options |
     # The rule the clear selection acted on: the pick, or default when a quota
     # floor sent the task there. A launch of another profile of that same rule
     # departs from the profile, not from local-jev'"'"'s pick, so it is no override.
     (if $source == "default-floor" then "default" else ($pick | opt) end) as $used |
-    ($how == "overridden" and $launched != $used) as $over |
+    ($how == "overridden" and (any($options[]; .key == $used and holds_launch) | not)) as $over |
+    # The one rule (or default) whose profiles hold the launched profile, else null.
+    ([$options[] | select(holds_launch) | .key] | if length == 1 then .[0] else null end) as $launched |
     {receipt_id: $id, caller: "dispatch-resolve", subject: $task,
      decision: (if $status == "clear" and ($over | not) then $used else $launched end),
      profile_override: ($how == "overridden"),

@@ -420,6 +420,80 @@ test_dedupe_writes_receipts() {
   pass "fm-officer-linear: every local-jev duplicate check writes a call receipt and a decision receipt, and the picks are unchanged"
 }
 
+# jev_case <scenario> <fake jev.py body or ""> [<python setup>]: asks Jev.same twice for one scenario, recording each
+# decision as the filer would, and leaves the receipts in $W/receipts-<scenario>.
+jev_case() {
+  local body=$2
+  [ -z "$body" ] || printf '%s\n' "$body" > "$W/jev-$1.py"
+  FM_JEV_RECEIPTS_DIR="$W/receipts-$1" LIB="$LIB" JEV="$W/jev-$1.py" SETUP="${3:-}" python3 -I - <<'PY' || fail "jev case $1 failed"
+import importlib.util, os, sys
+spec = importlib.util.spec_from_file_location("lib", os.environ["LIB"])
+lib = importlib.util.module_from_spec(spec)
+sys.modules["lib"] = lib
+spec.loader.exec_module(lib)
+exec(os.environ["SETUP"])
+jev = lib.Jev(os.environ["JEV"])
+for n in (1, 2):
+    p = jev.same("report a duplicate-me", "report b Older save crash", subject="fp-%d" % n)
+    jev.decide("true" if p is not None and p > lib.JEV_SAME else "false", "fp-%d" % n, candidate="PC-51", officer="fixture")
+PY
+}
+jev_receipts() {  # <scenario>: one line per receipt, in order
+  cat "$W/receipts-$1"/*.jsonl 2>/dev/null | jq -r 'if .kind == "call" then "call \(.subject) \(.error) \(.pick)"
+    else "decision \(.subject) \(.decision) \(.source) \(.overridden)" end'
+}
+
+# A duplicate check local-jev could not answer is recorded as a fallback or a timeout, never as a model answer
+# (docs/local-jev-receipts.md), and a missing local-jev records nothing.
+test_dedupe_fallbacks_write_their_source() {
+  world jev-fallbacks '{}'
+  jev_case unreachable 'import sys; sys.exit(3)'
+  assert_equals $'call fp-1 exit 3 (unreachable) null\ndecision fp-1 false fallback:unreachable false\ndecision fp-2 false fallback:unreachable false' \
+    "$(jev_receipts unreachable)" "an unreachable local-jev is one call with its error, then fingerprint-only fallbacks"
+  jev_case timeout 'import time; time.sleep(5)' 'lib.JEV_TIMEOUT = 0.3'
+  assert_equals $'call fp-1 TimeoutExpired null\ndecision fp-1 false timeout false\ndecision fp-2 false fallback:local-jev-down false' \
+    "$(jev_receipts timeout)" "a timed-out call is a timeout, and the checks after it are local-jev-down fallbacks"
+  jev_case unreadable 'print("not json")'
+  assert_equals $'call fp-1 unreadable answer (exit 0) null\ndecision fp-1 false fallback:unreadable false\ncall fp-2 unreadable answer (exit 0) null\ndecision fp-2 false fallback:unreadable false' \
+    "$(jev_receipts unreadable)" "an unreadable answer is a fallback each time it happens"
+  jev_case cap 'import json; print(json.dumps({"type": "noul", "noul": 0.91}))' 'lib.JEV_CALLS_MAX = 1'
+  assert_equals $'call fp-1 null true\ndecision fp-1 true model false\ndecision fp-2 false fallback:call-cap false' \
+    "$(jev_receipts cap)" "past the call cap a check is a call-cap fallback with no call"
+  jev_case missing ''
+  assert_absent "$W/receipts-missing" "a missing local-jev asks nothing and records nothing"
+  pass "fm-officer-linear: unreachable, timed-out, unreadable and capped duplicate checks record their fallback source, never model"
+}
+
+# A pattern merge asked of local-jev is an officer-pattern call with its decision (docs/local-jev-receipts.md).
+test_pattern_merge_writes_receipts() {
+  local r
+  world pattern-receipts '{}'
+  printf '%s\n' 'import json; print(json.dumps({"type": "noul", "noul": 0.91}))' > "$W/jev.py"
+  FM_JEV_RECEIPTS_DIR="$W/receipts" LIB="$LIB" WORLD="$W" DATE="$DATE" python3 -I - <<'PY' || fail "pattern driver failed"
+import importlib.util, json, os, sys
+spec = importlib.util.spec_from_file_location("lib", os.environ["LIB"])
+lib = importlib.util.module_from_spec(spec)
+sys.modules["lib"] = lib
+spec.loader.exec_module(lib)
+W = os.environ["WORLD"]
+officer = lib.Officer("fixture", "Fixture Officer", "Fixture", os.path.join(W, "fixture-rubric.md"), sources=("scan",), pattern_sources=("scan",))
+fs = [lib.make_finding("scan", "job", k, t, t + " summary", "real", "medium", None, {}) for k, t in
+      (("a", "Null reference when saving the deal"), ("b", "Null reference when saving the report"))]
+store = {}
+new = lib.update_patterns(officer, store, fs, lib.Jev(os.path.join(W, "jev.py")), os.environ["DATE"])
+print(json.dumps({"new": new, "fps": [f["fingerprint"] for f in fs]}), file=open(os.path.join(W, "patterns.json"), "w"))
+PY
+  r=$(cat "$W/receipts"/*.jsonl)
+  assert_equals 1 "$(jq -r '.new | length' "$W/patterns.json")" "a 0.91 local-jev match merges the second finding into the first pattern"
+  assert_equals "call officer-pattern $(jq -r '.fps[1]' "$W/patterns.json") true jev.py:noul" \
+    "$(jq -r 'select(.kind == "call") | "\(.kind) \(.caller) \(.subject) \(.pick) \(.route)"' <<<"$r")" \
+    "the pattern check is one officer-pattern call about the new finding"
+  assert_equals "true model false $(jq -r '.new[0]' "$W/patterns.json")" \
+    "$(jq -r --arg id "$(jq -r 'select(.kind == "call") | .receipt_id' <<<"$r")" 'select(.kind == "decision" and .receipt_id == $id) | "\(.decision) \(.source) \(.overridden) \(.candidate)"' <<<"$r")" \
+    "its decision names the pattern it merged into"
+  pass "fm-officer-linear: a local-jev pattern merge writes an officer-pattern call and its decision"
+}
+
 test_found_count_is_raised_in_place_once_a_day() {
   local out
   dedupe_world found
@@ -1177,6 +1251,8 @@ test_bundle_lost_state_adopts_the_open_item_by_title
 test_duplicate_items_are_closed
 test_dedupe_exact_and_near_match
 test_dedupe_writes_receipts
+test_dedupe_fallbacks_write_their_source
+test_pattern_merge_writes_receipts
 test_found_count_is_raised_in_place_once_a_day
 test_score_is_the_found_count_lever
 test_cap_overflow_is_listed_and_budget_stops_the_run

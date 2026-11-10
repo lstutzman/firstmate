@@ -214,13 +214,13 @@ die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 # The local-jev call receipt (docs/local-jev-receipts.md): written once, after
 # the POST was attempted, by the exit that ends the run; RECEIPT_ID then rides
 # the task record so fm-spawn.sh records what firstmate did with the answer.
-CALL_SENT=0 RECEIPT_ID='' RECEIPT_SOURCE='' RECEIPT_PICK='' REQUEST='' ANSWER=null LAT_MS=null
+CALL_SENT=0 CURL_RC=0 RECEIPT_ID='' RECEIPT_SOURCE='' RECEIPT_PICK='' REQUEST='' ANSWER=null LAT_MS=null
 receipt_call() {  # <status> <error or empty> [<host pick object>]
   local fields
   [ "$CALL_SENT" = 1 ] && [ -z "$RECEIPT_ID" ] || return 0
   fields=$(jq -cn --arg subject "$TASK_ID" --arg project "$PROJECT" --arg provider "$DISPATCH_PROVIDER" \
     --arg model "$DISPATCH_MODEL" --arg status "$1" --arg error "$2" --argjson host "${3:-null}" \
-    --argjson answer "$ANSWER" --argjson latency "$LAT_MS" --argjson request "${REQUEST:-null}" '
+    --argjson answer "$ANSWER" --argjson latency "$LAT_MS" --argjson request "${REQUEST:-null}" --arg curl_rc "$CURL_RC" '
     {caller: "dispatch-resolve", subject: (if $subject == "" then null else $subject end),
      project: (if $project == "" then null else $project end), provider: $provider, model: $model,
      route: "\($provider):systemone/choice", served_adapter: $answer.served,
@@ -228,7 +228,7 @@ receipt_call() {  # <status> <error or empty> [<host pick object>]
        {state: $request.state, question: $request.questions.rule.instructions, criteria: $request.questions.rule.criteria} end),
      raw_pick: $answer.choice, pick: $host.pick, confidence: $answer.confidence, probabilities: $answer.probabilities,
      floor: $host.floor, status: $status, latency_ms: $latency,
-     pick_source: ($host.source // (if ($error | startswith("http 000")) then "timeout" elif $error != "" then "error" else null end)),
+     pick_source: ($host.source // (if $curl_rc == "28" then "timeout" elif $error != "" then "error" else null end)),
      error: (if $error == "" then null else $error end)}' 2>/dev/null) \
     || { echo "local-jev receipt: not written (could not build the call record)" >&2; return 0; }
   RECEIPT_ID=$(fm_jev_receipt call "$fields")
@@ -619,16 +619,17 @@ command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
     BODY=$REQUEST
   fi
   never_send_check
+  CURL_RC=0
   T0=$(fm_timing_now_ms)
   if [ -n "$KEY_PRIVATE" ]; then
     HTTP=$(printf '%s' "$BODY" | curl --globoff -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
       -X POST "$ENDPOINT" -H 'Content-Type: application/json' \
       -H @/dev/fd/3 3< <(printf 'Authorization: Bearer %s\n' "$KEY_PRIVATE") \
-      --data-binary @- 2>/dev/null) || HTTP=000
+      --data-binary @- 2>/dev/null) || { CURL_RC=$?; HTTP=000; }
   else
     HTTP=$(printf '%s' "$BODY" | curl --globoff -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
       -X POST "$ENDPOINT" -H 'Content-Type: application/json' \
-      --data-binary @- 2>/dev/null) || HTTP=000
+      --data-binary @- 2>/dev/null) || { CURL_RC=$?; HTTP=000; }
   fi
   T1=$(fm_timing_now_ms)
   LAT_MS=$(( T1 - T0 ))

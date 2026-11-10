@@ -8,8 +8,6 @@ Usage:
   fm-jev-receipts.py append <call|decision|outcome>
       Reads one JSON object of record fields on stdin, adds the shared fields, appends the record, and prints its
       receipt_id on stdout (nothing when the record was not written).
-  fm-jev-receipts.py new-id      prints a fresh receipt id
-  fm-jev-receipts.py path        prints the file this month's records go to
 
 Library (python callers load this file by path, as bin/fm-officer-linear.py does):
   append(kind, fields) -> receipt_id, or None when not written
@@ -131,12 +129,6 @@ def append(kind, fields):
 
 
 def main(argv):
-    if len(argv) == 2 and argv[1] == "new-id":
-        print(new_id())
-        return 0
-    if len(argv) == 2 and argv[1] == "path":
-        print(stream_path())
-        return 0
     if len(argv) == 3 and argv[1] == "append":
         try:
             fields = json.loads(sys.stdin.read())
@@ -147,7 +139,7 @@ def main(argv):
         if receipt_id:
             print(receipt_id)
         return 0
-    sys.stderr.write("usage: fm-jev-receipts.py append <call|decision|outcome> | new-id | path\n")
+    sys.stderr.write("usage: fm-jev-receipts.py append <call|decision|outcome>\n")
     return 2
 
 

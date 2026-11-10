@@ -468,8 +468,7 @@ class Jev:
             call["error"] = "unreadable answer (exit %d)" % proc.returncode
             self.receipt = progress.jev_receipt("call", call)
             return None
-        served = next((answer.get(k) for k in ("served_adapter", "adapter", "model") if isinstance(answer, dict) and answer.get(k)), None)
-        call.update(served_adapter=served, pick="true" if p > JEV_SAME else "false", confidence=max(p, 1.0 - p),
+        call.update(pick="true" if p > JEV_SAME else "false", confidence=max(p, 1.0 - p),
                     probabilities={"true": p, "false": 1.0 - p})
         self.receipt, self.source = progress.jev_receipt("call", call), "model"
         return p

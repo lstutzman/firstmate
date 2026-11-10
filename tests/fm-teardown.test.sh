@@ -783,7 +783,27 @@ test_teardown_writes_the_dispatch_outcome_receipt() {
   FM_JEV_RECEIPTS_DIR="$case_dir/receipts" run_teardown "$case_dir" > "$case_dir/stdout" 2>&1 \
     || fail "teardown failed: $(cat "$case_dir/stdout")"
   assert_absent "$case_dir/receipts" "a task with no dispatch receipt writes no outcome receipt"
-  pass "teardown writes the dispatch outcome receipt only for a task dispatched against one"
+
+  case_dir=$(make_case dispatch-outcome-forced)
+  write_meta "$case_dir" local-only ship
+  printf '%s\n' 'dispatch_receipt=jr-tear2' >> "$case_dir/state/task-x1.meta"
+  wt_commit "$case_dir" "unpushed work"
+  FM_JEV_RECEIPTS_DIR="$case_dir/receipts" run_teardown "$case_dir" --force > "$case_dir/stdout" 2>&1 \
+    || fail "forced teardown failed: $(cat "$case_dir/stdout")"
+  assert_equals 'outcome jr-tear2 task-x1 false cancelled local-only null' \
+    "$(cat "$case_dir/receipts"/*.jsonl | jq -r '[.kind, .receipt_id, .subject, .misroute, .outcome, .mode, .pr] | map(tostring) | join(" ")')" \
+    "a forced teardown records the dispatch as cancelled, never as landed"
+
+  case_dir=$(make_case dispatch-outcome-scout)
+  write_meta "$case_dir" no-mistakes scout
+  prepare_scout_teardown "$case_dir"
+  printf '%s\n' 'dispatch_receipt=jr-tear3' >> "$case_dir/state/task-x1.meta"
+  FM_JEV_RECEIPTS_DIR="$case_dir/receipts" run_teardown "$case_dir" > "$case_dir/stdout" 2>&1 \
+    || fail "scout teardown failed: $(cat "$case_dir/stdout")"
+  assert_equals 'outcome jr-tear3 task-x1 false reported scout null' \
+    "$(cat "$case_dir/receipts"/*.jsonl | jq -r '[.kind, .receipt_id, .subject, .misroute, .outcome, .task_kind, .mode] | map(tostring) | join(" ")')" \
+    "a scout's cleanup records its dispatch as reported, with no ship mode"
+  pass "teardown writes the dispatch outcome receipt only for a task dispatched against one: landed, cancelled or reported"
 }
 
 test_teardown_closes_a_gerrit_task_with_its_change_url_as_a_note() {

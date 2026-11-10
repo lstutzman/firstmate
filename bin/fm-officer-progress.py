@@ -1194,7 +1194,6 @@ class LocalJev:
                 label, confidence = answer["choice"], float(answer["confidence"])
                 record.update(pick=label if confidence >= floor else "abstain", confidence=confidence,
                               probabilities=answer.get("probabilities"))
-            record["served_adapter"] = next((answer.get(k) for k in ("served_adapter", "adapter", "model") if answer.get(k)), None)
         except Exception as exc:
             record.update(latency_ms=int((time.monotonic() - started) * 1000), error=type(exc).__name__ + (": " + str(exc) if str(exc) else ""))
             self.last = (jev_receipt("call", record), "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "fallback:main")

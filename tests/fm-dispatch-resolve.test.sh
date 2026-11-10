@@ -166,7 +166,7 @@ if [ -n "${FAKE_CURL_MUTATE_SOURCE:-}" ]; then
   cp "$FAKE_CURL_MUTATE_SOURCE" "${FAKE_CURL_MUTATE_TARGET:?}"
 fi
 if [ "${FAKE_CURL_FAIL:-0}" = 1 ]; then
-  exit 7
+  exit "${FAKE_CURL_EXIT:-7}"
 fi
 cp "${FAKE_CURL_RESPONSE:?}" "$out"
 printf '%s' "${FAKE_CURL_HTTP:-200}"
@@ -1423,6 +1423,16 @@ TYPESAFE_API_KEY=$KEY FAKE_CURL_HTTP=429 run code out err "$TASK_BRIEF" --projec
 assert_equals 'error null error true' "$(receipts | tail -1 | jq -r '"\(.status) \(.raw_pick) \(.pick_source) \(.error | startswith("http 429"))"')" \
   "a failed call still writes its receipt, with the error"
 assert_equals "$(receipts | tail -1 | jq -r .receipt_id)" "$(jq -r .receipt_id "$TASK_RECORD")" "an error after the call keeps its receipt id"
+reset_log
+TYPESAFE_API_KEY=$KEY FAKE_CURL_FAIL=1 FAKE_CURL_EXIT=28 run code out err "$TASK_BRIEF" --project pager
+assert_contains "$out" '  reason: http 000 after' "a timed-out request keeps its http 000 reason"
+assert_equals 'error timeout timeout' "$(receipts | tail -1 | jq -r '"\(.status) \(.pick_source)"') $(jq -r .pick_source "$TASK_RECORD")" \
+  "only curl's timeout exit (28) is recorded as a timeout"
+reset_log
+TYPESAFE_API_KEY=$KEY FAKE_CURL_FAIL=1 FAKE_CURL_EXIT=7 run code out err "$TASK_BRIEF" --project pager
+assert_contains "$out" '  reason: http 000 after' "a refused connection keeps its http 000 reason"
+assert_equals 'error error error' "$(receipts | tail -1 | jq -r '"\(.status) \(.pick_source)"') $(jq -r .pick_source "$TASK_RECORD")" \
+  "a refused connection is an error, never a timeout"
 before=$(receipts | wc -l | tr -d ' ')
 reset_log
 run code out err "$TASK_BRIEF" --project pager
@@ -1479,6 +1489,8 @@ assert_contains "$out" '  rule: rule_2 (The task generates images.)   confidence
 assert_contains "$out" '  fallback: rule_4 (A simple bug fix with a stated root cause.) probability 0.18 clears its floor 0.1; rule_2 probability 0.76 is below its floor 0.9' "the fallback names both floors"
 assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'" "the runner-up rule's profiles are resolved"
 assert_not_contains "$(cat "$LOG/body")" 'min_confidence' "the model never sees confidence floors"
+assert_equals 'rule_2 rule_4 runner-up 0.1' "$(receipts | tail -1 | jq -r '"\(.raw_pick) \(.pick) \(.pick_source) \(.floor)"')" \
+  "the call receipt records the runner-up as the host's pick at the runner-up's own floor, and keeps the model's choice"
 
 reset_log
 write_floor_response "$RESPONSE" rule_2 0.76 0.02 0.76 0.02 0.08 0.12
@@ -1619,6 +1631,8 @@ TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
 assert_contains "$out" '  status: clear' "rule floor fall-through still resolves"
 assert_contains "$out" '  note: rule rule_1 floor model:fable below 20%: fall through to default' "rule floor fall-through is explained"
 assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-high'" "fall-through resolves among the default profiles"
+assert_equals 'rule_1 rule_1 default-floor 0.6' "$(receipts | tail -1 | jq -r '"\(.raw_pick) \(.pick) \(.pick_source) \(.floor)"')" \
+  "the call receipt keeps the model's rule as its pick at the global floor and says a quota floor sent the task to default"
 assert_not_contains "$out" 'candidate: claude:fable' "the floored rule's own profile is not a candidate"
 
 MISSING_RULE_FLOOR="$TMP_ROOT/missing-rule-floor.json"

@@ -41,7 +41,7 @@ One `call` line is written for each question sent to local-jev, whether it answe
 | `subject` | What the question was about: a task id, or a finding's fingerprint |
 | `route` | How the question was sent and its question type, for example `typesafe:systemone/choice` or `jev.py:noul` |
 | `model` | The model the caller asked for, or `null` when the caller lets local-jev choose |
-| `served_adapter` | The model or adapter local-jev reports serving the answer, or `null` when it reports none |
+| `served_adapter` | The model or adapter local-jev reports serving the answer, or `null` when it reports none; `jev.py` callers always record `null`, because `jev.py` reports none |
 | `request` | `{state, question, criteria}` exactly as sent: `criteria` maps each option key to its description |
 | `input_hash` | The sha256 of `request` serialised as compact, key-sorted UTF-8 JSON |
 | `pick` | The option key the caller's floor accepts, or `abstain` when no option clears it; `null` when the call failed |
@@ -101,7 +101,8 @@ The resolver's task record (`data/<id>/dispatch-resolution.json`) carries the ca
 The call's `pick` is the rule the confidence floors accept: the model's own choice, a runner-up rule that cleared its own floor (`pick_source` `runner-up`), or `abstain` when no option cleared its floor; `raw_pick` keeps the model's own choice, and `pick_source` `default-floor` says a quota floor then sent the task to the default rule.
 At launch, a `clear` selection the launch follows is the decision with `source` `model`, `rule` for a runner-up, or decision `default` with `source` `fallback:default-rule` for a quota floor's default.
 A launch that departs from a `clear` selection sets `profile_override` and keeps `override_reason` from `--dispatch-override`.
-It is `overridden` by `firstmate` only when the one rule (or `default`) whose profiles hold the launched profile is not the rule acted on; `corrected_decision` is then that rule, or `null` when no single rule holds the launched profile.
+It is `overridden` by `firstmate` only when the profiles of the rule acted on do not hold the launched profile; a launch that one of that rule's profiles holds keeps that rule as the `decision`, even when another rule or `default` holds the same profile too.
+`corrected_decision` of an override is the one rule (or `default`) whose profiles hold the launched profile, or `null` when no rule or several rules hold it.
 Another profile of the same rule is not an override, because local-jev chooses only the rule.
 Any other status leaves the choice to firstmate: `abstain` for `ambiguous`, `timeout` for a request that timed out, and `fallback:firstmate` for `escalate` or another error.
 The task's record keeps the receipt id as `dispatch_receipt=`, and teardown writes the outcome: `landed` when its landed-work gate passed (which does not by itself prove a merge; `pr` names the pull request), `reported` for a scout, or `cancelled` for a forced cleanup.
