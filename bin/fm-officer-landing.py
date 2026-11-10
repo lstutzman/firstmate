@@ -144,7 +144,7 @@ def shell_quote(text):
 
 
 def linear(args):
-    proc = subprocess.run(["linear-axi"] + args + ["--output", "json"],
+    proc = subprocess.run(["linear-axi"] + args + ["--output", "json"], env=dict(os.environ, LINEAR_JOB=os.environ.get("LINEAR_JOB") or "officer:landing"),
                           capture_output=True, check=False)
     try:
         doc = json.loads(proc.stdout.decode("utf-8"))

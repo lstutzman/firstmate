@@ -319,7 +319,8 @@ class LinearDiscovery:
             timeout = min(120, self.deadline - time.monotonic())
             try:
                 proc = subprocess.run(["linear-axi", "issue"] + args + ["--output", "json"],
-                                      capture_output=True, timeout=timeout, check=False)
+                                      capture_output=True, timeout=timeout, check=False,
+                                      env=dict(os.environ, LINEAR_JOB=os.environ.get("LINEAR_JOB") or "officer:progress"))
             except subprocess.TimeoutExpired:
                 raise RuntimeError("timeout after %.0f seconds" % timeout) from None
             except OSError:
@@ -403,6 +404,18 @@ class LinearDiscovery:
         raise RuntimeError(label + ": page cap reached (100 pages)")
 
 
+def usage_record(status, headers):
+    """Best-effort Linear usage line for one direct call (bin/fm-linear-usage.py); never raises."""
+    try:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-linear-usage.py")
+        spec = importlib.util.spec_from_file_location("fm_linear_usage", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.record("officer:progress", "firstmate/bin/fm-officer-progress.py", "OfficerLabels", status, headers, "linear-token")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def read_labels(team, deadline):
     """{identifier: [label names]} for open team issues carrying a start-class label; raises RuntimeError when unreadable."""
     names = sorted({"Bug"} | {n for n, _ in LABEL_CLASSES})
@@ -420,8 +433,10 @@ def read_labels(team, deadline):
                                          headers={"Authorization": header, "Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(request, timeout=remaining(deadline)) as response:
+                usage_record(getattr(response, "status", None), getattr(response, "headers", None))
                 doc = json.load(response)
         except urllib.error.HTTPError as exc:
+            usage_record(exc.code, getattr(exc, "headers", None))
             raise RuntimeError("Linear GraphQL answered HTTP %d%s" % (exc.code, " (rate limited)" if exc.code == 429 else "")) from None
         except (OSError, ValueError, http.client.HTTPException):
             raise RuntimeError("Linear GraphQL read failed") from None

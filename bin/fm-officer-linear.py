@@ -360,7 +360,7 @@ class Linear:
         if self.n >= self.budget:
             raise LinearError("CALL_BUDGET", "Linear call budget of %d reached" % self.budget)
         self.n += 1
-        proc = subprocess.run(["linear-axi"] + args + ["--output", "json"], capture_output=True, check=False)
+        proc = subprocess.run(["linear-axi"] + args + ["--output", "json"], env=dict(os.environ, LINEAR_JOB=os.environ.get("LINEAR_JOB") or "officer:linear"), capture_output=True, check=False)
         try:
             # raw_decode: linear-verify may append plain text lines after the one JSON document.
             doc, _ = json.JSONDecoder().raw_decode(proc.stdout.decode("utf-8").lstrip())

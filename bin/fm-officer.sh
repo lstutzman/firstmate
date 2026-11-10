@@ -1170,7 +1170,7 @@ for check in "$@"; do
   v=${check#*=}
   case "$check" in
     linear=*)
-      if bounded 60 linear-axi label list --team "$v" --limit 1 --output json </dev/null 2>/dev/null | python3 -I -c '
+      if LINEAR_JOB=${LINEAR_JOB:-officer:check} bounded 60 linear-axi label list --team "$v" --limit 1 --output json </dev/null 2>/dev/null | python3 -I -c '
 import json, sys
 try:
     doc, _ = json.JSONDecoder().raw_decode(sys.stdin.read().lstrip())
