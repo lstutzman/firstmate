@@ -35,7 +35,7 @@ An officer may never:
 - spawn, steer, interrupt, relaunch, merge, land, or clean up any worker or second mate;
 - answer, hold, or close a captain call, or edit Captain's Log cards;
 - write to a project, another home, or any record outside its lane, Linear aside as above, or post its findings to fleet-app or any other service (the fleet app pulls a friction officer's velocity findings file and a progress officer's `progress-state.json` from its lane);
-- write In Staging, or make any Linear change other than the landing officer's reopen and release-miss comment, the surgeon's creates, the friction, corpus and library officers' contract filing, the page-check officer's filing and the progress officer's priority raise above (the surgeon edits only its own cluster items and a duplicate's `Found:` line, comments at most once a day on a duplicate, and never closes or deletes an item);
+- write In Staging, or make any Linear change other than the landing officer's reopen and release-miss comment, the surgeon's creates, the friction, corpus and library officers' contract filing, the page-check officer's filing and the progress officer's priority raise above (the surgeon edits only its own cluster items and a duplicate's `Found:` line, comments at most once a day on a duplicate, never deletes an item, and closes only its own absorbed single items, as Duplicate of their bundle under the contract);
 - collect landing facts itself: the fleet-app landing-truth job owns them, and the officer only judges them;
 - run crew of its own, or call a model in slice 1 (`model: none`).
 
