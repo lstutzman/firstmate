@@ -203,7 +203,7 @@ export function installCalmPendingOperationalLayout(): void {
     hidingInto = texts;
     try {
       // Pi skips the spacer and dequeue hint when nothing is left to list, so an
-      // all-operational queue draws no rows at all.
+      // all-operational queue draws no queued rows at all.
       originalUpdatePendingMessagesDisplay.call(this);
     } finally {
       hidingInto = undefined;
