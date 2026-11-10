@@ -291,6 +291,22 @@ test_timed_fold_is_incremental() {
   pass "quiet polls reuse the timed fold and only new status bytes are folded"
 }
 
+test_timed_fold_completes_under_a_small_budget() {
+  local i=0 size off
+  reset_case
+  touch "$CONFIG/open-decision-reminders"
+  while [ "$i" -lt 3000 ]; do printf 'working: filler line %05d\n' "$i"; i=$((i + 1)); done > "$STATE/worker.status"
+  printf 'needs-decision [at=1000] [key=late]: pick\n' >> "$STATE/worker.status"
+  size=$(LC_ALL=C wc -c < "$STATE/worker.status" | tr -d ' ')
+  FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=4000 open_decision_reminder_tick 1200 \
+    || fail "reminder tick failed on a log larger than one fold budget"
+  [ "$OPEN_DECISION_REMINDER" = 'check: open decision overdue: worker key=late age=200s' ] \
+    || fail "reminder tick missed the key past the first fold budget: $OPEN_DECISION_REMINDER"
+  off=$(sed -n 's/^offset=//p' "$STATE/.worker.open-decisions-cursor.timed")
+  [ "$off" = "$size" ] || fail "timed cursor stopped at $off, expected the $size-byte file end"
+  pass "the reminder tick folds a log past the per-call budget to its end"
+}
+
 test_invalid_settings() {
   reset_case
   touch "$CONFIG/open-decision-reminders"
@@ -347,4 +363,5 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_relayed_captain_hold_until_rearms test_unchanged_republish_keeps_backoff \
   test_resolved_same_text_reopen_starts_fresh test_republish_updates_until_date \
   test_unknown_times_and_keyless test_timed_fold_is_incremental \
+  test_timed_fold_completes_under_a_small_budget \
   test_invalid_settings test_timed_cursor_retirement test_watcher_loop

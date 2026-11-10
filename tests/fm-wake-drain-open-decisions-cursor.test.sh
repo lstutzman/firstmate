@@ -495,7 +495,26 @@ test_fold_version_bump_still_discards_the_cursor() {
   pass "a stale fold version still discards the cursor and refolds from byte 0"
 }
 
+test_snapshot_fold_stops_at_its_endpoint_under_a_small_budget() {
+  local dir state status ref endpoint want got off
+  dir=$(make_case cursor-snapshot); state="$dir/state"; status="$state/task.status"
+  make_big_log "$status" 3000
+  endpoint=$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')
+  printf 'needs-decision [key=after]: past the snapshot\n' >> "$status"
+  mkdir -p "$dir/ref"; ref="$dir/ref/task.status"
+  head -c "$endpoint" "$status" > "$ref"
+  want=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$ref" | sed 's/^/task\t/')
+  assert_contains "$want" 'late' "reference prefix fold lost the late decision"
+  got=$(FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=4000 bash -c '. "$1"; scan_open_decisions_snapshot "$2" "$(status_presentation_snapshot "$2" | sed "s/\t[0-9]*\t/\t$3\t/")"' \
+    _ "$ROOT/bin/fm-classify-lib.sh" "$state" "$endpoint") || fail "snapshot scan failed under a small budget"
+  [ "$got" = "$want" ] || fail "snapshot fold differs from the whole-file fold of its $endpoint-byte prefix: $got"
+  off=$(sed -n 's/^offset=//p' "$state/.task.open-decisions-cursor")
+  [ "$off" = "$endpoint" ] || fail "snapshot cursor stopped at $off, expected the $endpoint-byte endpoint"
+  pass "a snapshot fold past one budget reaches exactly its captured endpoint"
+}
+
 test_bounded_fold_matches_unbounded_and_marks_partial
 test_killed_fold_resumes_from_saved_cursor
 test_callers_never_report_a_partial_fold_as_complete
 test_fold_version_bump_still_discards_the_cursor
+test_snapshot_fold_stops_at_its_endpoint_under_a_small_budget
