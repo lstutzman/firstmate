@@ -1,0 +1,9 @@
+misplaced | Archive docs/a.md under docs/archive | git-status: tracked => safe
+cruft | Archive docs/a.md under docs/archive | git-status: tracked => safe
+misplaced | Move docs/a.md to docs/b.md | git-status: tracked => safe
+misplaced | Archive docs/a.md |  => needs-lee
+cruft | Archive it | Status: ignored => needs-lee
+misplaced | Delete docs/a.md | git-status: tracked => needs-lee
+misplaced | Retire docs/a.md | git-status: tracked => needs-lee
+misplaced | Archive docs/a.md and delete docs/b.md | git-status: tracked => needs-lee
+cruft | Archive it | tracked in PC-4100 => needs-lee
