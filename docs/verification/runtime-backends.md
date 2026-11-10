@@ -1755,7 +1755,10 @@ ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 draws a
 ok - live band focus: Claude Code (2.1.322 (Claude Code)) on herdr 0.9.5 submits the pending text once one Escape returns the focus from the band
 ```
 
-The same script also covers the ring-on-nothing state (ctrl+x, a pause, then a separate Tab): it asserts no inverse Button, a bare Enter that leaves the text pending with the band drawn, and then that `fm_task_inbox_submit_pending` submits it.
+The same script also runs the ctrl+x, pause, separate Tab case on the fixture band and on the installed lee-mods band (named by its version from `claude plugin list`; reported skipped by name when lee-mods is absent).
+On Claude Code 2.1.322 and herdr 0.9.5 the fixture band draws an inverse `[ Noop ]` after that chord while lee-mods 0.7.3 draws nothing; both trap a bare Enter, and `fm_task_inbox_submit_pending` submits the text after one Escape then Enter.
+The lee-mods case also asserts that no inverse Button is drawn.
+The inbox ring re-submit, `fm-control` submit-pending and clear-pending, and the launch-doorbell verify-and-recover on spawn are covered by the portable fakes in `tests/fm-task-inbox.test.sh`, `tests/fm-control.test.sh` and `tests/fm-spawn-claude-launch-doorbell.test.sh`, not live.
 
 The tmux styled read uses the same detector and is covered by `tests/fm-control.test.sh` fakes, not by a live tmux measurement.
 
