@@ -28,13 +28,15 @@ alone, in this order:
              owner, an approval or a decision;
   hold       a disposition that starts unresolved, keep, leave, report only or
              no action;
-  needs-lee  a disposition naming a delete, removal or trash (fleet rules
+  needs-lee  a disposition naming a delete, removal, retirement or trash, or a
+             finding on an untracked or Git-ignored path or a move out of the
+             checkout or outside a PR (fleet rules section 6);
+  safe       kind readme, stack-drift or misplaced with a disposition that
+             proposes, records, adds, corrects, moves, links, archives or
+             regenerates, or kind cruft with a disposition that archives or
+             moves: one docs PR per repository can ship it, because an archive
+             or move inside a PR keeps the Markdown source (fleet rules
              section 6);
-  safe       kind readme, stack-drift or misplaced (or cruft, for an archive)
-             with a disposition that proposes, records, adds, corrects, moves,
-             links, archives or retires, or regenerates: one docs PR per
-             repository can ship it, because an archive or move inside a PR
-             keeps the Markdown source (fleet rules section 6);
   hold       everything else: unresolved, keep, report only, or a check still
              to make.
 The run's `counts.decisions`, Lee's calls in the report, is one needs-lee
@@ -92,9 +94,11 @@ INSTRUCTION_RE = re.compile(r"(^|/)(AGENTS\.md|CLAUDE\.md|SKILL\.md)$|(^|/)\.(cl
 CODE_RE = re.compile(r"\b(implementation|upgrade|own) (brief|scope)\b|\bits own brief\b", re.I)
 LEE_RE = re.compile(r"\b(lee|owner|approv\w*|decides?|decision)\b", re.I)
 HOLD_RE = re.compile(r"^\s*(unresolved|keep|leave|report only|no action)\b", re.I)
-DESTRUCTIVE_RE = re.compile(r"\b(delet|remov|trash)\w*", re.I)
-SAFE_RE = re.compile(r"\b(propose|record|add|correct|move|link|point|regenerate|make sure|archiv|retir)\w*", re.I)
-SAFE_KINDS = ("readme", "stack-drift", "misplaced", "cruft")
+DESTRUCTIVE_RE = re.compile(r"\b(delet|remov|retir|trash)\w*", re.I)
+OUTSIDE_PR_RE = re.compile(r"\b(untracked|git-?ignored|out of the (checkout|repo\w*)|outside (a|the) PR)\b", re.I)
+SAFE_RE = re.compile(r"\b(propose|record|add|correct|move|link|point|regenerate|make sure|archiv)\w*", re.I)
+CRUFT_SAFE_RE = re.compile(r"\b(archiv|move)\w*", re.I)
+SAFE_KINDS = ("readme", "stack-drift", "misplaced")
 COUNTED = ("code", "needs-lee", "safe")
 
 
@@ -125,7 +129,10 @@ def bucket(f):
     m = DESTRUCTIVE_RE.search(disposition)
     if m:
         return "needs-lee", "the disposition says %s" % m.group(0).lower()
-    if kind in SAFE_KINDS and SAFE_RE.search(disposition):
+    m = OUTSIDE_PR_RE.search(" ".join((f["title"], f["evidence"], disposition)))
+    if m:
+        return "needs-lee", "the finding says %s" % m.group(0).lower()
+    if (kind in SAFE_KINDS and SAFE_RE.search(disposition)) or (kind == "cruft" and CRUFT_SAFE_RE.search(disposition)):
         return "safe", "a docs change one PR can ship"
     return "hold", "nothing to ship yet"
 
