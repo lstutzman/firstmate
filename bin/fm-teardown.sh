@@ -352,10 +352,11 @@
 # for the retiring task are removed. A failed commit retains those sources.
 # Task scratch: once a teardown without --force has removed the task record,
 # the task's own scratch folder <root>/<task-id> is deleted outright (fleet
-# rules name it a scratch folder), where <root> is FM_SCRATCH_ROOT, default
-# $HOME/fm-scratch. Only that one direct child is touched: a task id that does
-# not name one, a symlinked folder, or a folder that does not resolve inside
-# <root> is left alone with a note, symlinks inside it are removed and never
+# rules name it a scratch folder), where <root> is $HOME/fm-scratch. Tests may
+# point FM_SCRATCH_ROOT at a private root under FM_TEST_SEAM=1; any other root
+# is never cleared and gets a note. Only that one direct child is touched: a
+# symlinked folder or a folder that does not resolve inside <root> is left
+# alone with a note, symlinks inside it are removed and never
 # followed, and a folder holding a non-bare git repository with uncommitted,
 # unpushed, or stashed work (or one git cannot read) is kept with a note. A
 # failed removal warns and never fails the teardown. Retiring a secondmate home
@@ -3032,19 +3033,17 @@ scratch_repo_holds_work() {  # <work-tree>
 # The script header owns this contract ("Task scratch").
 teardown_clear_task_scratch() {  # <task-id>
   local id=$1 root target real_root real_target git_path
-  if [ -n "${FM_SCRATCH_ROOT:-}" ]; then
-    root=$FM_SCRATCH_ROOT
-  elif [ -n "${HOME:-}" ]; then
-    root=$HOME/fm-scratch
-  else
-    return 0
-  fi
-  case "$id" in
-    ''|.|..|-*|*/*)
-      echo "note: scratch for task '$id' not cleared: the id does not name one folder in $root" >&2
+  root=${HOME:+$HOME/fm-scratch}
+  if [ -n "${FM_SCRATCH_ROOT:-}" ] && [ "$FM_SCRATCH_ROOT" != "$root" ]; then
+    if [ "${FM_TEST_SEAM:-}" = 1 ]; then
+      root=$FM_SCRATCH_ROOT
+    elif [ -z "$root" ] || ! real_root=$(cd -P -- "$FM_SCRATCH_ROOT" 2>/dev/null && pwd -P) \
+      || [ "$real_root" != "$(cd -P -- "$root" 2>/dev/null && pwd -P)" ]; then
+      echo "note: scratch for task '$id' not cleared: $FM_SCRATCH_ROOT is not \$HOME/fm-scratch, the only folder fleet rules let teardown delete outright" >&2
       return 0
-      ;;
-  esac
+    fi
+  fi
+  [ -n "$root" ] || return 0
   target=$root/$id
   if [ -L "$target" ]; then
     echo "note: scratch $target not cleared: it is a symlink, which teardown never follows" >&2

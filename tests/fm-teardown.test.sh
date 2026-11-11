@@ -3139,6 +3139,23 @@ test_teardown_clears_only_the_task_scratch_folder() {
   run_scratch_teardown "$case_dir"
   [ -d "$case_dir/scratch/task-x1/repo" ] || fail "teardown must keep scratch holding a commit on a detached HEAD"
 
+  case_dir=$(make_landed_scratch_case scratch-stash-git)
+  git clone -q "$case_dir/origin.git" "$case_dir/scratch/task-x1/repo"
+  printf 'stashed\n' > "$case_dir/scratch/task-x1/repo/stashed.txt"
+  git -C "$case_dir/scratch/task-x1/repo" add stashed.txt
+  git -C "$case_dir/scratch/task-x1/repo" -c user.email=t@t -c user.name=t stash push -q -m only-work
+  [ -z "$(git -C "$case_dir/scratch/task-x1/repo" status --porcelain)" ] || fail "stash fixture must leave a clean work tree"
+  run_scratch_teardown "$case_dir"
+  [ -n "$(git -C "$case_dir/scratch/task-x1/repo" stash list 2>/dev/null)" ] || fail "teardown must keep scratch whose only work is a stash"
+  assert_grep "holds uncommitted, unpushed, or stashed work" "$case_dir/stderr" "a kept stash-only scratch folder must be noted"
+
+  case_dir=$(make_landed_scratch_case scratch-nondefault-root)
+  printf 'junk\n' > "$case_dir/scratch/task-x1/junk.txt"
+  FM_TEST_SEAM='' run_scratch_teardown "$case_dir"
+  [ -f "$case_dir/scratch/task-x1/junk.txt" ] || fail "outside the test seam, teardown must not clear a scratch root other than \$HOME/fm-scratch"
+  assert_grep "is not \$HOME/fm-scratch" "$case_dir/stderr" "a refused non-default scratch root must be noted"
+  assert_no_grep "scratch cleared" "$case_dir/stdout" "a refused non-default scratch root must not report a clear"
+
   case_dir=$(make_landed_scratch_case scratch-symlink)
   rmdir "$case_dir/scratch/task-x1"
   ln -s "$case_dir/outside" "$case_dir/scratch/task-x1"

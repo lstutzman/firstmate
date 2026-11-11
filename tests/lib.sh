@@ -470,6 +470,7 @@ export FM_JEV_RECEIPTS_DIR
 # Keep every suite's teardown off the operator's real ~/fm-scratch: teardown
 # deletes the folder named for the task id it retires (bin/fm-teardown.sh "Task
 # scratch"), and fixture ids such as task-x1 could match a real folder there.
+# FM_SCRATCH_ROOT is a test-only seam, honored only under FM_TEST_SEAM=1.
 FM_SCRATCH_ROOT=$(fm_test_tmproot fm-scratch-root) || return 1
 export FM_SCRATCH_ROOT
 

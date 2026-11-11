@@ -4397,7 +4397,6 @@ FM_LOCK_STALE_AFTER=2   # grace seconds for missing or nonnumeric lock-owner PID
 FM_GUARD_GRACE=300      # beacon freshness threshold for guard verdicts, arm health checks, and the primary turn-end guard; see docs/turnend-guard.md for model-aware exceptions
 FM_CLAUDE_AUTOARM_ATTEMPTS=2   # bounded hook-owned arm attempts per Claude auto-arm cycle; accepted values are 1, 2, or 3
 FM_WATCH_BACKSTOP_STALE_SECS=900   # watcher beacon age at which the out-of-session backstop (bin/fm-watch-backstop.sh) treats a home that needs supervision as down and rings its session
-FM_SCRATCH_ROOT="$HOME/fm-scratch"   # folder whose <task-id> child a task cleanup deletes once the task's work is landed; contract: bin/fm-teardown.sh header "Task scratch"
 FM_CLAUDE_STOPFAILURE_REWAKE_COOLDOWN=300   # minimum seconds between StopFailure-driven exit-2 continuations; nonnegative integers accepted, invalid or empty values use 300; pacing mechanics: bin/fm-claude-stop-autoarm.sh header
 FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=800   # milliseconds the --claude turn-end guard waits for watcher health, an open Stop auto-arm generation claim, or a fresh epoch before deciding recovery ownership or failure progression
 FM_CLAUDE_AUTOARM_EPOCH_FRESH=15   # seconds a recorded auto-arm outcome remains eligible for the current event epoch's recovery or failure decision

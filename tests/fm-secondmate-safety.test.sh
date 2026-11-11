@@ -1610,12 +1610,14 @@ test_fm_send_refuses_bare_window_without_home_meta() {
   pass "fm-send refuses a bare firstmate window with no metadata in this home"
 }
 
-test_secondmate_teardown_retires_empty_home() {
-  local home subhome subhome_abs fakebin log lease fmroot platform sched_dir other sched_log tool sub_units kept_units unit
+# <prefix> <ok|fail>: retire an empty secondmate home with a scheduler fake that
+# confirms (ok) or refuses (fail) the backstop timer stop.
+run_secondmate_retirement_case() {
+  local p=$1 sched=$2 home subhome subhome_abs fakebin log lease fmroot platform sched_dir other sched_log tool sub_units kept_units unit err
   local -a sched_env
-  home="$TMP_ROOT/teardown-home"
-  subhome="$TMP_ROOT/teardown-subhome"
-  fmroot="$TMP_ROOT/teardown-fmroot"
+  home="$TMP_ROOT/$p-home"
+  subhome="$TMP_ROOT/$p-subhome"
+  fmroot="$TMP_ROOT/$p-fmroot"
   make_firstmate_git_root "$fmroot"
   git -C "$fmroot" worktree add --quiet --detach "$subhome" HEAD
   mkdir -p "$home/state" "$home/data" "$subhome/state"
@@ -1633,36 +1635,51 @@ home=$subhome
 projects=alpha
 EOF
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
-  fakebin=$(make_fake_tmux "$TMP_ROOT/teardown-fake")
-  log="$TMP_ROOT/teardown-fake/tmux.log"
-  lease="$TMP_ROOT/teardown-fake/lease"
+  fakebin=$(make_fake_tmux "$TMP_ROOT/$p-fake")
+  log="$TMP_ROOT/$p-fake/tmux.log"
+  lease="$TMP_ROOT/$p-fake/lease"
   printf 'domain\n' > "$lease"
   # Watcher backstop timers for the retiring home, its parent, and an unrelated
   # home, in a private scheduler directory driven by a logging scheduler fake.
   case "$(uname -s)" in
-    Darwin) platform=darwin; sched_env=(HOME="$TMP_ROOT/teardown-user"); sched_dir="$TMP_ROOT/teardown-user/Library/LaunchAgents" ;;
-    *) platform=linux; sched_env=(XDG_CONFIG_HOME="$TMP_ROOT/teardown-user/.config"); sched_dir="$TMP_ROOT/teardown-user/.config/systemd/user" ;;
+    Darwin) platform=darwin; sched_env=(HOME="$TMP_ROOT/$p-user"); sched_dir="$TMP_ROOT/$p-user/Library/LaunchAgents" ;;
+    *) platform=linux; sched_env=(XDG_CONFIG_HOME="$TMP_ROOT/$p-user/.config"); sched_dir="$TMP_ROOT/$p-user/.config/systemd/user" ;;
   esac
-  other="$TMP_ROOT/teardown-otherhome"
+  other="$TMP_ROOT/$p-otherhome"
   mkdir -p "$other"
-  sched_log="$TMP_ROOT/teardown-fake/scheduler.log"
+  sched_log="$TMP_ROOT/$p-fake/scheduler.log"
   : > "$sched_log"
   for tool in systemctl launchctl; do
-    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> %q\nexit 0\n' "$sched_log" > "$fakebin/$tool"
+    if [ "$sched" = ok ]; then
+      printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> %q\nexit 0\n' "$sched_log" > "$fakebin/$tool"
+    else
+      printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> %q\n[ "$1" = print ] && exit 0\nexit 1\n' "$sched_log" > "$fakebin/$tool"
+    fi
     chmod +x "$fakebin/$tool"
   done
   sub_units=$(FM_HOME="$subhome" "$ROOT/bin/fm-watch-backstop.sh" timer-files "$platform" "$sched_dir") || fail "could not write the retiring home's timer"
   kept_units="$(FM_HOME="$home" "$ROOT/bin/fm-watch-backstop.sh" timer-files "$platform" "$sched_dir")
 $(FM_HOME="$other" "$ROOT/bin/fm-watch-backstop.sh" timer-files "$platform" "$sched_dir")" || fail "could not write the kept homes' timers"
-  env "${sched_env[@]}" PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$fmroot" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-fake/pane.txt" \
+  env "${sched_env[@]}" PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$fmroot" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/$p-fake/pane.txt" \
     FM_FAKE_TREEHOUSE_LEASE_FILE="$lease" \
-    "$ROOT/bin/fm-teardown.sh" domain >/dev/null 2>/dev/null \
-    || fail "teardown failed for empty secondmate home"
+    "$ROOT/bin/fm-teardown.sh" domain >/dev/null 2>"$TMP_ROOT/$p-fake/stderr" \
+    || fail "teardown failed for empty secondmate home ($sched scheduler): $(cat "$TMP_ROOT/$p-fake/stderr")"
+  err=$(cat "$TMP_ROOT/$p-fake/stderr")
   while IFS= read -r unit; do
-    [ ! -e "$sched_dir/$unit" ] || fail "retirement left the retired home's backstop file $unit"
+    if [ "$sched" = ok ]; then
+      [ ! -e "$sched_dir/$unit" ] || fail "retirement left the retired home's backstop file $unit"
+    else
+      [ -f "$sched_dir/$unit" ] || fail "retirement removed backstop file $unit although the scheduler did not confirm the stop"
+    fi
   done <<EOF
 $sub_units
 EOF
+  if [ "$sched" = fail ]; then
+    case "$err" in
+      *"warning: could not remove the watcher backstop timer"*"FM_HOME=$(printf '%q' "$subhome_abs") "*"fm-watch-backstop.sh uninstall"*) ;;
+      *) fail "a failed backstop removal must warn with the uninstall retry for $subhome_abs: $err" ;;
+    esac
+  fi
   while IFS= read -r unit; do
     [ -f "$sched_dir/$unit" ] || fail "retirement removed another home's backstop file $unit"
     grep -F "${unit%.*}" "$sched_log" >/dev/null && fail "retirement asked the scheduler about another home's unit ${unit%.*}"
@@ -1676,7 +1693,17 @@ EOF
   [ ! -d "$subhome" ] || fail "teardown did not remove the retired secondmate home"
   [ ! -e "$home/state/domain.meta" ] || fail "teardown did not clear parent meta"
   grep -F -- '- domain ' "$home/data/secondmates.md" >/dev/null && fail "teardown did not remove secondmate registry route"
+  return 0
+}
+
+test_secondmate_teardown_retires_empty_home() {
+  run_secondmate_retirement_case teardown ok
   pass "secondmate teardown retires empty homes, releases routing, and removes only the retired home's backstop timer"
+}
+
+test_secondmate_teardown_survives_a_failed_backstop_removal() {
+  run_secondmate_retirement_case teardown-schedfail fail
+  pass "secondmate retirement still succeeds when the backstop stop fails, keeps the unit files, and names the uninstall retry"
 }
 
 # A second mate's status log relays child outcomes, so a merged child PR there
@@ -3412,6 +3439,7 @@ test_secondmate_spawn_requires_seeded_matching_home
 test_secondmate_spawn_refuses_operational_dirs_outside_subhome
 test_fm_send_refuses_bare_window_without_home_meta
 test_secondmate_teardown_retires_empty_home
+test_secondmate_teardown_survives_a_failed_backstop_removal
 test_branch_actor_cannot_retire_secondmate
 test_secondmate_teardown_refuses_ambiguous_and_mismatched_registry_bindings
 test_secondmate_teardown_sweeps_process_events_before_removal
