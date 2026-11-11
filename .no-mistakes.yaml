@@ -79,3 +79,9 @@ test:
   evidence:
     store_in_repo: false
     attach_media: false
+
+# On this public fork the PR body carries only the one-line risk and the
+# pipeline attestation, never test evidence. no-mistakes reads pr.appendix only
+# from the default branch, so this takes effect once it merges.
+pr:
+  appendix: minimal
