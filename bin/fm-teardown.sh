@@ -3014,12 +3014,16 @@ t3code_secondmate_home_shutdown_barrier() {  # <home> <task-id>
 }
 
 # A scratch git repository holds work when it has uncommitted or untracked
-# changes, commits on no remote, or stashes. Any git failure counts as work.
+# changes, commits on no remote (branches or a detached HEAD), or stashes. Any git failure counts as work.
 scratch_repo_holds_work() {  # <work-tree>
   local out
   out=$(git -c core.fsmonitor=false -C "$1" status --porcelain --untracked-files=all 2>/dev/null) || return 0
   [ -z "$out" ] || return 0
-  out=$(git -c core.fsmonitor=false -C "$1" log --oneline --branches --not --remotes 2>/dev/null) || return 0
+  if git -c core.fsmonitor=false -C "$1" rev-parse -q --verify HEAD >/dev/null 2>&1; then
+    out=$(git -c core.fsmonitor=false -C "$1" log --oneline HEAD --branches --not --remotes 2>/dev/null) || return 0
+  else
+    out=$(git -c core.fsmonitor=false -C "$1" log --oneline --branches --not --remotes 2>/dev/null) || return 0
+  fi
   [ -z "$out" ] || return 0
   out=$(git -c core.fsmonitor=false -C "$1" stash list 2>/dev/null) || return 0
   [ -n "$out" ]
@@ -3074,7 +3078,7 @@ teardown_clear_task_scratch() {  # <task-id>
 retire_firstmate_home_backstop() {  # <physical-home-path> <label>
   local out
   out=$(FM_HOME="$1" "$SCRIPT_DIR/fm-watch-backstop.sh" uninstall 2>&1) \
-    || echo "warning: could not remove the watcher backstop timer of $2 $1: $out" >&2
+    || echo "warning: could not remove the watcher backstop timer of $2 $1: $out; retry with: FM_HOME=$(printf '%q' "$1") $(printf '%q' "$SCRIPT_DIR/fm-watch-backstop.sh") uninstall" >&2
 }
 
 remove_firstmate_home() {  # <home> <label> <task-id> <backend>

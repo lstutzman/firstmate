@@ -3132,6 +3132,13 @@ test_teardown_clears_only_the_task_scratch_folder() {
   run_scratch_teardown "$case_dir"
   [ -d "$case_dir/scratch/task-x1/repo" ] || fail "teardown must keep scratch holding unpushed git commits"
 
+  case_dir=$(make_landed_scratch_case scratch-detached-git)
+  git clone -q "$case_dir/origin.git" "$case_dir/scratch/task-x1/repo"
+  git -C "$case_dir/scratch/task-x1/repo" checkout -q --detach
+  git -C "$case_dir/scratch/task-x1/repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m detached
+  run_scratch_teardown "$case_dir"
+  [ -d "$case_dir/scratch/task-x1/repo" ] || fail "teardown must keep scratch holding a commit on a detached HEAD"
+
   case_dir=$(make_landed_scratch_case scratch-symlink)
   rmdir "$case_dir/scratch/task-x1"
   ln -s "$case_dir/outside" "$case_dir/scratch/task-x1"

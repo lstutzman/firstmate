@@ -264,6 +264,14 @@ test_uninstall_removes_only_this_homes_timer() {
   : > "$st/calls.log"
   # The retired home is gone; uninstall names it by the path it had.
   mv "$home" "$home.gone"
+  touch "$st/unreachable"
+  status=0
+  PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" uninstall >/dev/null 2>&1 || status=$?
+  [ "$status" -ne 0 ] || fail "uninstall must fail when the scheduler cannot stop the timer"
+  [ -f "$dir/$unit.timer" ] && [ -f "$dir/$unit.service" ] \
+    || fail "uninstall must keep the files for a rerun when the scheduler cannot stop the timer"
+  rm -f "$st/unreachable"
+  : > "$st/calls.log"
   out=$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" uninstall) || fail "uninstall failed: $out"
   assert_contains "$out" "uninstalled: $dir/$unit" "uninstall must name the units it removed"
   assert_absent "$dir/$unit.timer" "uninstall must remove the home's timer file"

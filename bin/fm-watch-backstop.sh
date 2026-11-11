@@ -48,8 +48,9 @@
 #       FM_HOME may name a directory already removed when it is the absolute
 #       physical path the home had (bin/fm-teardown.sh's home retirement passes
 #       it after removal). Does nothing, and never asks the scheduler, when this
-#       home has no scheduler file. Prints one outcome line; exits non-zero
-#       only when a scheduler file it found could not be removed.
+#       home has no scheduler file. Prints one outcome line; exits non-zero,
+#       keeping the files, when the scheduler cannot confirm the stop, or when
+#       a file it found could not be removed.
 #   fm-watch-backstop.sh -h|--help
 #
 # FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state directory.
@@ -381,14 +382,20 @@ uninstall_timer() {
     return 0
   fi
   # Stop and disable while the files exist: disable reads the timer's [Install]
-  # section to find the link it removes. A scheduler that cannot be asked does
-  # not keep the files, which the scheduler never runs once they are gone.
+  # section to find the link it removes. When the scheduler cannot confirm the
+  # stop, the files are kept so a rerun still finds and stops this unit.
   case "$platform" in
     linux)
-      systemctl --user disable --now "$name.timer" >/dev/null 2>&1 || true
+      systemctl --user disable --now "$name.timer" >/dev/null 2>&1 \
+        || { echo "error: could not disable $name.timer; kept its files in $dir for a rerun" >&2; return 1; }
       systemctl --user stop "$name.service" >/dev/null 2>&1 || true
       ;;
-    darwin) launchctl bootout "gui/$(id -u)/$name" >/dev/null 2>&1 || true ;;
+    darwin)
+      if launchctl print "gui/$(id -u)/$name" >/dev/null 2>&1; then
+        launchctl bootout "gui/$(id -u)/$name" >/dev/null 2>&1 \
+          || { echo "error: could not boot out $name; kept its file in $dir for a rerun" >&2; return 1; }
+      fi
+      ;;
   esac
   for f in "${files[@]}"; do
     rm -f -- "$f" || rc=1
