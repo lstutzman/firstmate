@@ -3156,6 +3156,25 @@ test_teardown_clears_only_the_task_scratch_folder() {
   assert_grep "is not \$HOME/fm-scratch" "$case_dir/stderr" "a refused non-default scratch root must be noted"
   assert_no_grep "scratch cleared" "$case_dir/stdout" "a refused non-default scratch root must not report a clear"
 
+  local spelling rc
+  for spelling in unset symlink; do
+    case_dir=$(make_landed_scratch_case "scratch-home-root-$spelling")
+    mkdir -p "$case_dir/home/fm-scratch/task-x1" "$case_dir/home/fm-scratch/task-x2"
+    printf 'junk\n' > "$case_dir/home/fm-scratch/task-x1/junk.txt"
+    printf 'sibling\n' > "$case_dir/home/fm-scratch/task-x2/keep.txt"
+    ln -s "$case_dir/home/fm-scratch" "$case_dir/scratch-link"
+    rc=0
+    (
+      if [ "$spelling" = unset ]; then unset FM_SCRATCH_ROOT; else export FM_SCRATCH_ROOT="$case_dir/scratch-link"; fi
+      HOME="$case_dir/home" FM_TEST_SEAM='' run_teardown "$case_dir"
+    ) > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    expect_code 0 "$rc" "teardown with the \$HOME/fm-scratch root ($spelling FM_SCRATCH_ROOT) must succeed: $(cat "$case_dir/stderr")"
+    assert_absent "$case_dir/home/fm-scratch/task-x1" "teardown must clear \$HOME/fm-scratch/<task-id> outside the test seam ($spelling FM_SCRATCH_ROOT)"
+    assert_grep sibling "$case_dir/home/fm-scratch/task-x2/keep.txt" "teardown must keep a sibling folder in \$HOME/fm-scratch ($spelling FM_SCRATCH_ROOT)"
+    assert_grep "scratch cleared: " "$case_dir/stdout" "teardown must report clearing \$HOME/fm-scratch/<task-id> ($spelling FM_SCRATCH_ROOT)"
+    [ -d "$case_dir/scratch/task-x1" ] || fail "teardown must not clear the unused fixture root ($spelling FM_SCRATCH_ROOT)"
+  done
+
   case_dir=$(make_landed_scratch_case scratch-symlink)
   rmdir "$case_dir/scratch/task-x1"
   ln -s "$case_dir/outside" "$case_dir/scratch/task-x1"
