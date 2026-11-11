@@ -26,6 +26,7 @@ UNIT
   cat > "$d/fakebin/systemctl" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$d/systemctl.log"
+case "\$*" in *"show -p MainPID --value"*) [ -f "$d/mainpid" ] && cat "$d/mainpid" ;; esac
 exit 0
 SH
   chmod +x "$d/fakebin/systemctl"
@@ -37,6 +38,21 @@ run() {  # <case dir> <verb>
 }
 
 DROPIN() { printf '%s/units/no-mistakes-daemon-aaaa1111.service.d/firstmate-cache-ttl.conf' "$1"; }
+
+# unit_settings <file>: the file read as systemd.syntax(7) does, one Section.Key=Value
+# per assignment, comments and blank lines skipped, one pair of surrounding quotes removed.
+unit_settings() {
+  awk '
+    /^[ \t]*([#;]|$)/ { next }
+    /^\[.*\]$/ { sec = substr($0, 2, length($0) - 2); next }
+    {
+      i = index($0, "="); if (i == 0) { print "UNPARSED:" $0; next }
+      k = substr($0, 1, i - 1); v = substr($0, i + 1)
+      gsub(/^[ \t]+|[ \t]+$/, "", k); gsub(/^[ \t]+|[ \t]+$/, "", v)
+      if (v ~ /^".*"$/) v = substr(v, 2, length(v) - 2)
+      print (sec == "" ? "NOSECTION" : sec) "." k "=" v
+    }' "$1"
+}
 
 test_check_reports_a_missing_drop_in_and_writes_nothing() {
   local d out rc
@@ -55,8 +71,7 @@ test_install_writes_the_exact_drop_in_and_never_restarts() {
   local d out
   d=$(make_case install)
   out=$(run "$d" install) || fail "install failed: $out"
-  assert_contains "$(cat "$(DROPIN "$d")")" 'Environment="CLAUDE_CODE_PROMPT_CACHE_TTL=5m"' "drop-in lacks the variable"
-  assert_contains "$(cat "$(DROPIN "$d")")" "[Service]" "drop-in lacks the [Service] section"
+  assert_equals "$(unit_settings "$(DROPIN "$d")")" "Service.Environment=CLAUDE_CODE_PROMPT_CACHE_TTL=5m" "drop-in must set only Service.Environment to the 5m TTL"
   assert_absent "$d/units/no-mistakes-daemon-bbbb2222.service.d" "install touched another root's unit"
   assert_equals "$(cat "$d/systemctl.log")" "--user daemon-reload" "install may only reload systemd"
   assert_contains "$out" "the running daemon was not touched" "install must say it did not restart"
@@ -110,9 +125,30 @@ test_status_and_usage() {
   pass "status reports the drop-in state and an unknown verb is a usage error"
 }
 
+test_status_reads_the_running_daemon_environment() {
+  local d with without
+  if [ ! -r /proc/self/environ ]; then
+    pass "status running-daemon check skipped: no /proc on this host"
+    return
+  fi
+  d=$(make_case running)
+  env CLAUDE_CODE_PROMPT_CACHE_TTL=5m sleep 30 & with=$!
+  env -u CLAUDE_CODE_PROMPT_CACHE_TTL CLAUDE_CODE_PROMPT_CACHE_TTL_X=5m sleep 30 & without=$!
+  echo "$with" > "$d/mainpid"
+  assert_contains "$(run "$d" status)" "carries CLAUDE_CODE_PROMPT_CACHE_TTL=5m: yes" "daemon started with the variable"
+  echo "$without" > "$d/mainpid"
+  assert_contains "$(run "$d" status)" "carries CLAUDE_CODE_PROMPT_CACHE_TTL=5m: no" "daemon started without the variable"
+  echo 0 > "$d/mainpid"
+  assert_contains "$(run "$d" status)" "carries CLAUDE_CODE_PROMPT_CACHE_TTL=5m: unknown" "a stopped daemon (MainPID 0)"
+  kill "$with" "$without" 2>/dev/null
+  wait "$with" "$without" 2>/dev/null
+  pass "status reports yes, no and unknown from the running daemon's own environment"
+}
+
 fm_test_run test_check_reports_a_missing_drop_in_and_writes_nothing \
   test_install_writes_the_exact_drop_in_and_never_restarts \
   test_install_is_idempotent \
   test_check_reports_a_different_drop_in_and_install_repairs_it \
   test_no_matching_unit_is_silent \
-  test_status_and_usage
+  test_status_and_usage \
+  test_status_reads_the_running_daemon_environment
