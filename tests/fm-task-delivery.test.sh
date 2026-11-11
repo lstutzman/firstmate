@@ -326,6 +326,12 @@ test_promote_requires_and_records_the_delivery_contract() {
   assert_grep 'yolo=on' "$meta" "promotion did not record the decided merge posture"
   assert_contains "$out" "ship instructions for mode=direct-PR" "promotion hint did not carry the decided mode"
   [ "$(grep -c '^mode=' "$meta")" = 1 ] || fail "promotion left more than one mode= line in the task record"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'use the `ui-hill-climb` skill and put its score table and before/after images in the PR' \
+    "$instructions_path" "promoted ship instructions lost the ui-hill-climb line"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'use the `ui-hill-climb` skill and put its score table and before/after images in the PR' \
+    "$home/data/promote-d1/brief.md" "promoted brief lost the ui-hill-climb line"
   pass "fm-promote: promotion requires the delivery contract and records it exactly once"
 }
 

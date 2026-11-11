@@ -1123,6 +1123,7 @@ case "$MODE" in
     ;;
 esac
 RULE1=$(fm_ship_rule_one "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
+UI_HILL_CLIMB_RULE=$(fm_ui_hill_climb_rule 10)
 DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT") || exit 1
 
 cat > "$BRIEF" <<EOF
@@ -1172,6 +1173,7 @@ $ASK_USER_BLOCK
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, \`Fixes-regression-from: <full PR URL>\`, naming that earlier PR.
+$UI_HILL_CLIMB_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 
