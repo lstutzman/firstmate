@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fm-evidence-secrets.sh - find and redact secret-bearing URLs in evidence
-# files, such as the browser captures a no-mistakes run publishes to the
-# orphan no-mistakes/evidence branch. docs/secret-scan.md owns the policy.
+# files, such as the browser captures a no-mistakes run saves as test
+# evidence. docs/secret-scan.md owns the policy.
 #
 # Usage:
 #   fm-evidence-secrets.sh check <file-or-dir>...

@@ -13,8 +13,8 @@ The script header owns modes, exit codes, and the redaction rule; this page owns
   A commit the ci step adds later, while it repairs a failed check, is pushed after lint and is covered only by CI and the task hook below.
 - `bin/fm-spawn.sh` installs a pre-push hook in every task worktree of this repository (through `bin/fm-git-strip-ai-trailers.sh install --secret-scan`) that refuses a push when any pushed commit adds a finding.
   The hook runs beside the forge=external push guard, then chains to the repository's own pre-push hook.
-- The `Evidence secret scan` workflow reads the orphan `no-mistakes/evidence` branch daily, because no workflow can run on that branch and no-mistakes publishes to it directly.
-  It can only report: it turns red after a secret has already been published.
+- The `Evidence secret scan` workflow reads the orphan `no-mistakes/evidence` branch daily through [`bin/fm-evidence-branch-scan.sh`](../bin/fm-evidence-branch-scan.sh), because no workflow can run on that branch.
+  It is a backstop (see [Evidence](#evidence)) and can only report: it turns red after a secret has already been published.
 
 Every layer needs gitleaks at the version pinned in the script; `bin/fm-install-gitleaks.sh <destination-directory>` installs the checksum-verified build.
 A missing or older gitleaks refuses the push or fails the job instead of passing.
@@ -52,17 +52,21 @@ That is the captain's call: if it can, revoke the board.
 
 ## Evidence
 
-The no-mistakes evidence step writes browser captures and logs into the run's evidence directory and, because `.no-mistakes.yaml` sets `test.evidence.store_in_repo`, publishes them to the public orphan `no-mistakes/evidence` branch.
-Nothing under `.no-mistakes/` is tracked on a code branch: it is gitignored, and CI rejects a tracked entry.
+[`.no-mistakes.yaml`](../.no-mistakes.yaml) sets `test.evidence.store_in_repo` to false, so no-mistakes keeps each run's test evidence on local disk under its own home and no longer publishes it to the public orphan `no-mistakes/evidence` branch.
+That is the route taken because browser captures holding URLs with tokens reached that branch (the Lavish entry above), and no-mistakes offers no way to stop it short of not publishing.
 The publish is done by the no-mistakes binary, which this repository does not control.
-Its evidence settings (`store_in_repo`, `attach_media`, `dir`, `branch`, `commit_message`, `local_root`, `retention`, `max_runs`) have no exclude or redact option, and it passes no evidence directory to configured commands.
-Nothing here can therefore refuse a publish, and the controls are detection and instruction:
+Its evidence settings (`store_in_repo`, `attach_media`, `dir`, `branch`, `commit_message`, `local_root`, `retention`, `max_runs`) have no exclude or redact option, and it passes no evidence directory to configured commands, so nothing here could refuse a publish.
+The cost is that pull request bodies no longer link the evidence.
+Nothing under `.no-mistakes/` is tracked on a code branch either: it is gitignored, and CI rejects a tracked entry.
+History is not rewritten and nothing already on the evidence branch is deleted.
 
-- The test-step instructions in `.no-mistakes.yaml` tell the gate to run `bin/fm-evidence-secrets.sh redact` then `check` on its evidence directory before finishing.
+The remaining controls:
+
+- The test-step instructions in `.no-mistakes.yaml` tell the gate to run `bin/fm-evidence-secrets.sh redact` then `check` on its evidence directory before finishing, as local hygiene for evidence that may be shared.
   That is an instruction to an agent, not an enforcement point.
 - `bin/fm-evidence-secrets.sh check` fails on any URL in a text file whose query string has a parameter named like token, key, secret, auth, sig, password or credential with a value other than `REDACTED`.
   It never prints a value, and it skips binary files, so a URL drawn in a screenshot is out of its reach.
-- The daily `Evidence secret scan` workflow runs both scans over the last two days of the evidence branch.
+- The daily `Evidence secret scan` workflow stays as a backstop for the existing branch and for any later re-enable of `store_in_repo`.
+  `bin/fm-evidence-branch-scan.sh` runs both scans over the last two days of that branch, and passes with a notice where the branch does not exist.
 
-Setting `test.evidence.store_in_repo` to false would stop publishing evidence to the public branch altogether, at the cost of the evidence links in pull request bodies.
-That is a policy choice for the captain and is not made here.
+Turning `store_in_repo` back on publishes evidence again, with only that daily detection behind it.
