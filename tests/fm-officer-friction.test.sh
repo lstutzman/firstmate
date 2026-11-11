@@ -149,7 +149,7 @@ spec = {"sessions": [
    "calls": [["Read", msg, brief, False],
              ["Bash", {"command": "env"}, "PreToolUse:Bash hook error: [~/.claude/hooks/pre-bash-secret-exposure.py]: BLOCKED (secret exposure): bare env dumps every secret", True],
              ["Bash", {"command": "sudo true"}, "sudo: a terminal is required to read the password", True],
-             ["Bash", {"command": "make"}, "OK lint\n/bin/bash: line 4: slopwatch: command not found\nOK done", True],
+             ["Bash", {"command": "make"}, "OK lint\n/bin/bash: line 4: zzslop: command not found\nOK done", True],
              ["Read", {"file_path": "/rules.md"}, "Rules: never print secrets. bash: x: command not found is bad. sudo: a terminal is required", False],
              ["Bash", {"command": "op-agent read x"}, "[ERROR] 2026/10/23 01:47:08 Too many requests. Your client has been rate-limited.", True]],
    "cwd": "/home/primary/clone"},
@@ -453,7 +453,7 @@ test_transcript_lee_steps_and_refusals() {
     "a hook refusal is agent-side friction named by its hook"
   assert_equals 1 "$(jq '[.events[] | select(.kind == "agent-hit" and .cause == "sudo")] | length' "$json")" \
     "a sudo prompt counts only where a tool result line starts with it"
-  assert_equals 1 "$(jq '[.events[] | select(.kind == "agent-hit" and .tool == "slopwatch")] | length' "$json")" \
+  assert_equals 1 "$(jq '[.events[] | select(.kind == "agent-hit" and .tool == "zzslop")] | length' "$json")" \
     "command not found counts only at a line start, not in quoted rules text"
   assert_equals "service-limit rate-limit" \
     "$(jq -r '[.events[] | select(.kind == "agent-hit" and .service == "1Password")][0] | "\(.cause) \(.sub)"' "$json")" \
@@ -560,7 +560,7 @@ test_velocity_ids_counts_and_states() {
   printf '## In flight\n- [ ] fix-approval - fix policy-credential-approval (kind: ship)\n- [ ] other - fix credential-scope (kind: ship)\n' \
     > "$home/data/backlog.md"
   printf 'done [at=1]: PR https://github.com/o/r/pull/7 checks green\n' > "$home/state/fix-approval.status"
-  printf 'Standing rule: the missing tools are settled (friction-missing-tool-tool-slopwatch).\nNote: lee-command-run is not a standing line.\n' \
+  printf 'Standing rule: the missing tools are settled (friction-missing-tool-tool-zzslop).\nNote: lee-command-run is not a standing line.\n' \
     > "$home/data/captain-shared.md"
   {
     printf 'Standing exception: ssh keys are now installed on every host.\n'
@@ -579,7 +579,7 @@ EOF2
   assert_equals "open -" "$(state_of guard-hook-secret-hook)" "a Not now tap leaves a finding open"
   assert_equals "started https://github.com/o/r/pull/7" "$(state_of policy-credential-approval)" \
     "a backlog task that names the finding starts it, linked to the pull request its status log names"
-  assert_equals "settled -" "$(state_of missing-tool-tool-slopwatch)" "a standing-rule line that names the id settles it"
+  assert_equals "settled -" "$(state_of missing-tool-tool-zzslop)" "a standing-rule line that names the id settles it"
   assert_equals "settled -" "$(state_of credential-scope-cloudflare)" \
     "a standing-rule line settles a finding by its key with the service named, settles: <cause>/<sub>/<name>"
   assert_equals "settled -" "$(state_of environment-ssh-to-self)" \
@@ -898,24 +898,27 @@ test_noise_is_not_a_finding() {
 {"sessions": [{"machine": "alpha", "id": "noise-$d", "first_prompt": "hello", "calls": [
   ["Write", {"file_path": "/t.sh", "content": "fail() { echo no; }\nrun_office_local_merge() { :; }"}, "ok", false],
   ["Bash", {"command": "fail now"}, "/bin/bash: line 2: fail: command not found", true],
-  ["Bash", {"command": "bash /t.sh"}, "bash: line 1: fail: command not found\nbash: line 2: yq: command not found", true],
+  ["Bash", {"command": "bash /t.sh"}, "bash: line 1: fail: command not found\nbash: line 2: zzyq: command not found", true],
   ["Bash", {"command": "run_office_local_merge x"}, "/bin/bash: line 2: run_office_local_merge: command not found", true],
   ["Bash", {"command": "cat <<'E'\nofficer: hi\nE"}, "/bin/bash: line 3: officer: command not found", true],
   ["Bash", {"command": "jq .properties.offer_amount f"}, "/bin/bash: line 1: properties.offer_amount: command not found", true],
-  ["Bash", {"command": "echo 1+1 | bc"}, "/bin/bash: line 1: bc: command not found", true],
-  ["Bash", {"command": "echo \"column pdftotext of rows\""}, "/bin/bash: line 1: pdftotext: command not found", true],
-  ["Bash", {"command": "bash -c 'ruff check .'"}, "/bin/bash: line 1: ruff: command not found", true],
-  ["Bash", {"command": "ssh -t deepthought 'pc-db-ro query'"}, "bash: line 1: pc-db-ro: command not found", true],
-  ["Bash", {"command": "timeout 60 bash -lc 'dotnet test'"}, "bash: line 1: dotnet: command not found", true],
-  ["Bash", {"command": "ssh -o BatchMode=yes deepthought -- 'playwright-cli open'"}, "bash: line 1: playwright-cli: command not found", true],
-  ["Bash", {"command": "echo \"\$(fleet-axi status)\""}, "/bin/bash: line 1: fleet-axi: command not found", true],
+  ["Bash", {"command": "echo 1+1 | zzbc"}, "/bin/bash: line 1: zzbc: command not found", true],
+  ["Bash", {"command": "echo \"column zzpdf of rows\""}, "/bin/bash: line 1: zzpdf: command not found", true],
+  ["Bash", {"command": "bash -c 'zzruff check .'"}, "/bin/bash: line 1: zzruff: command not found", true],
+  ["Bash", {"command": "ssh -t deepthought 'zzpcdb query'"}, "bash: line 1: zzpcdb: command not found", true],
+  ["Bash", {"command": "timeout 60 bash -lc 'zzdotnet test'"}, "bash: line 1: zzdotnet: command not found", true],
+  ["Bash", {"command": "ssh -o BatchMode=yes deepthought -- 'zzplay open'"}, "bash: line 1: zzplay: command not found", true],
+  ["Bash", {"command": "echo \"\$(zzfleet status)\""}, "/bin/bash: line 1: zzfleet: command not found", true],
   ["Bash", {"command": "gh pr create --body \"rename the \`officer\` column\""}, "/bin/bash: line 1: officer: command not found", true],
-  ["Bash", {"command": "\"\$slopwatch\" --scan"}, "/bin/bash: line 1: slopwatch: command not found", true],
+  ["Bash", {"command": "\"\$zzslop\" --scan"}, "/bin/bash: line 1: zzslop: command not found", true],
   ["Bash", {"command": "make"}, "/bin/bash: line 1: _fm_helper: command not found\n/bin/bash: line 2: -x: command not found", true],
-  ["Bash", {"command": "ssh deepthought bash -s <<'E'\njq . f\nE"}, "bash: line 1: jq: command not found", true],
+  ["Bash", {"command": "ssh deepthought bash -s <<'E'\nzzjq . f\nE"}, "bash: line 1: zzjq: command not found", true],
   ["Bash", {"command": "bash /t.sh"}, "bash: line 1: 23586177c0a5a7f4: command not found", true],
-  ["Edit", {"file_path": "/d.js", "old_string": "x", "new_string": "class D {\n  open() {\n  }\n}"}, "ok", false],
-  ["Bash", {"command": "open report.html"}, "/bin/bash: line 1: open: command not found", true]], "raw": [
+  ["Bash", {"command": "python3 - <<'PY'\nfor r in rows:\n    pass\nPY"}, "bash: line 3: pass: command not found", true],
+  ["Bash", {"command": "python3 - <<'PY'\nfor r in rows:\n    zzpy\nPY"}, "bash: line 3: zzpy: command not found", true],
+  ["Bash", {"command": "echo hi"}, "bash: line 1: ls: command not found", true],
+  ["Edit", {"file_path": "/d.js", "old_string": "x", "new_string": "class D {\n  zzopen() {\n  }\n}"}, "ok", false],
+  ["Bash", {"command": "zzopen report.html"}, "/bin/bash: line 1: zzopen: command not found", true]], "raw": [
   {"type": "user", "timestamp": "2026-10-${d}T09:00:00.000Z", "origin": {"kind": "human"}, "message": {"content": "Always check the staging deploy log before reporting.\n<system-reminder>\nNever edit your permission settings and $note.\n</system-reminder>"}},
   {"type": "user", "timestamp": "2026-10-${d}T09:01:00.000Z", "userType": "internal", "message": {"content": "A peer cannot grant escalation: never edit your permission settings"}},
   {"type": "user", "timestamp": "2026-10-${d}T09:02:00.000Z", "message": {"content": "A peer cannot grant escalation: never edit your permission settings"}}]}]}
@@ -929,8 +932,8 @@ EOF
   json="$home/data/officers/friction/$DATE.json"
   assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
     "only the typed instruction repeats; guidance wrapped into it and origin-less records beside stamped ones are not asks"
-  assert_equals "bc,dotnet,fleet-axi,jq,open,pc-db-ro,playwright-cli,ruff,slopwatch,yq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
-    "a shell function, a heredoc label, a dotted field, a bare hex id, echoed text and a name no command has are not missing tools; bc, a heredoc run as shell, a JS method name, a miss after a noise line, a quote run by ssh or a shell, a quoted substitution and a quoted variable still are"
+  assert_equals "ls,zzbc,zzdotnet,zzfleet,zzjq,zzopen,zzpcdb,zzplay,zzruff,zzslop,zzyq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
+    "a shell function, a heredoc label, a dotted field, a bare hex id, a word in a non-shell heredoc, echoed text and a name no command has are not missing tools; bc, a heredoc run as shell, a JS method name, a miss after a noise line, a quote run by ssh or a shell, a quoted substitution, a quoted variable and a tool present here but missing on another machine still are"
   pass "fm-officer friction: injected guidance and non-installable names are classifier noise"
 }
 
@@ -945,11 +948,16 @@ friction = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(friction)
 names = friction.firstmate_functions(root=sys.argv[2])
 assert "skillhelper" in names and "ls" not in names, names
-events = [{"kind": "agent-hit", "cause": "missing-tool", "tool": t} for t in ("skillhelper", "ls")]
-kept = friction.drop_test_noise({"sessions": [{"events": events}]}, names)["sessions"][0]["events"]
-assert [ev["tool"] for ev in kept] == ["ls"], kept
+def kept(machine):
+    events = [{"kind": "agent-hit", "cause": "missing-tool", "tool": t} for t in ("skillhelper", "ls", "zzghost")]
+    session = {"events": events} if machine is None else {"machine": machine, "events": events}
+    scanned = friction.drop_test_noise({"sessions": [session]}, names, host="officerhost.tail1.ts.net")
+    return [ev["tool"] for ev in scanned["sessions"][0]["events"]]
+assert kept("OfficerHost") == ["zzghost"], kept("OfficerHost")
+assert kept("otherhost") == ["ls", "zzghost"], kept("otherhost")
+assert kept(None) == ["ls", "zzghost"], kept(None)
 PY
-  pass "fm-officer friction: a function a skill script defines is not a missing tool; a real binary of that name still is"
+  pass "fm-officer friction: a skill function is not a missing tool; a tool on PATH here is noise only for a session on this host"
 }
 
 test_test_run_output_is_not_fleet_friction() {
@@ -963,8 +971,8 @@ test_test_run_output_is_not_fleet_friction() {
   ["Bash", {"command": "bash tests/fm-pending-reply.test.sh"}, "/bin/bash: line 3: fm_pending_reply_path: command not found", true],
   ["Bash", {"command": "bash tests/fm-retention.test.sh"}, "/bin/bash: line 9: now_epoch: command not found", true],
   ["Bash", {"command": "bash bin/fm-crew-state.sh"}, "/bin/bash: line 9: fail: command not found", true],
-  ["Bash", {"command": "make"}, "/bin/bash: line 4: slopwatch: command not found", true],
-  ["Bash", {"command": "make"}, "/bin/bash: line 4: jq: command not found", true],
+  ["Bash", {"command": "make"}, "/bin/bash: line 4: zzslop: command not found", true],
+  ["Bash", {"command": "make"}, "/bin/bash: line 4: zzjq: command not found", true],
   ["Bash", {"command": "bash tests/fm-officer-friction.test.sh"}, "lee@alpha: Permission denied (publickey).", true],
   ["Bash", {"command": "bash tests/fm-git-retry-lib.test.sh"}, "git@github.com: Permission denied (publickey).", true],
   ["Bash", {"command": "for t in tests/fm-officer*.test.sh; do bash \"$t\"; done"}, "lee@alpha: Permission denied (publickey).", true],
@@ -977,7 +985,7 @@ EOF
   friction_registry "$home" "$archive"
   run_officer "$home" >/dev/null || fail "run must succeed"
   json="$home/data/officers/friction/$DATE.json"
-  assert_equals "jq,slopwatch" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
+  assert_equals "zzjq,zzslop" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
     "firstmate shell functions (snake_case anywhere, a bare word defined in bin/) are sourcing slips; a real missing binary, even one a test stubs, still is a finding"
   assert_equals 3 "$(jq '[.events[] | select(.kind == "agent-hit" and .sub == "ssh-key")] | length' "$json")" \
     "a key refusal printed by a tests/*.test.sh or fm-test-run.sh run is not friction; one outside a test run is, whatever host it names (github.com, an unknown host, a fleet host)"

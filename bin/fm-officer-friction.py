@@ -45,7 +45,8 @@ wait for Lee to do. One day's friction events come from three sources:
                `command not found` is agent-side friction; a not-found name
                that is no installable tool (plausible_tool) is skipped, and so is
                one firstmate defines as a shell function in its own bin/ or
-               tests/ (a sourcing slip). An ssh key refusal printed by a
+               tests/ (a sourcing slip), or one that now resolves on PATH when
+               the session ran on the officer's own host. An ssh key refusal printed by a
                firstmate test run in the same tool call (a tests/*.test.sh
                script or bin/fm-test-run.sh) is test output, not friction; a
                refusal outside a test run, whatever host it names, is kept.
@@ -881,6 +882,19 @@ QUOTED_RE = re.compile(
     r"""('[^'\n]*'|"[^"\n]*")""")
 
 
+HEREDOC_RE = re.compile(r"<<-?[ \t]*(['\"]?)([A-Za-z_]\w*)\1([^\n]*)\n.*?(?:\n|\A)[ \t]*\2[ \t]*(?=\n|\Z)", re.S)
+
+
+def drop_text_heredocs(command):
+    """The command without the body of every heredoc that feeds a program other than a shell: a Python or
+    JS script or a cat'd document holds words (`pass`), not commands. A heredoc into sh, bash, zsh or ssh stays."""
+    def keep(m):
+        head = command[command.rfind("\n", 0, m.start()) + 1:m.start()]
+        shell = re.search(r"(?<![\w.-])(?:ba|z|da)?sh(?![\w.-])|(?<![\w.-])ssh(?![\w.-])", head + m.group(3))
+        return m.group(0) if shell else m.group(0).split("\n", 1)[0] + "\n"
+    return HEREDOC_RE.sub(keep, command)
+
+
 def plausible_tool(name, command, bodies):
     """Whether `name` from a "command not found" line is an installable command a person could add:
     not a dotted field name or a name no command has, not a shell function the session itself defined (a test helper, a function
@@ -899,7 +913,7 @@ def plausible_tool(name, command, bodies):
     # shortcut: a quoted string is text unless it feeds a shell (-c, -lc, eval, sh, bash, ssh [opts] host) or holds
     # a $( substitution; upgrade if a miss hides elsewhere.
     text = QUOTED_RE.sub(lambda m: m.group(0) if m.group(1) or (m.group(2)[0] == '"' and "$(" in m.group(2)) else "''",
-                         command)
+                         drop_text_heredocs(command))
     if not re.search(word, text):
         return False
     return re.search(word + "(?!:)", text) is not None
@@ -1208,23 +1222,28 @@ def firstmate_functions(root=None):
     return _FUNCTIONS[root]
 
 
-def drop_test_noise(scanned, functions=None):
+def drop_test_noise(scanned, functions=None, host=None):
     """Drop agent-hit events that are output of a firstmate test run, not fleet friction: a not-found name
     firstmate defines as a shell function, and an ssh key refusal printed by a firstmate test run. A refusal
     outside a test run is kept whatever host it names."""
     functions = firstmate_functions() if functions is None else functions
+    host = (socket.gethostname() if host is None else host).split(".")[0].lower()
 
-    def noise(ev):
+    def noise(ev, machine):
         if ev.get("kind") != "agent-hit":
             return False
         if ev.get("cause") == "missing-tool":
-            return ev.get("tool") in functions
+            if ev.get("tool") in functions:
+                return True
+            # PATH here proves nothing about another machine, so only a session that ran on this host is checked
+            same_host = bool(machine) and str(machine).split(".")[0].lower() == host
+            return bool(ev.get("tool") and same_host and shutil.which(ev["tool"]))
         if ev.get("sub") == "ssh-key":
             return bool(ev.get("in_test_run"))
         return False
 
     for s in scanned["sessions"]:
-        s["events"] = [ev for ev in s["events"] if not noise(ev)]
+        s["events"] = [ev for ev in s["events"] if not noise(ev, s.get("machine"))]
     return scanned
 
 
