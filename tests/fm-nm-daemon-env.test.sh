@@ -269,6 +269,28 @@ max_concurrent_runs: 2" "claude must join the existing block"
   pass "launchd install adds claude to an existing agent_path_override block"
 }
 
+test_mac_install_matches_the_existing_block_indentation() {
+  local d out rc
+  d=$(make_mac_case mac-indent)
+  printf 'agent_path_override:\n    # mine\n    codex: /opt/codex\nagent: auto\n' > "$d/nmroot/config.yaml"
+  mac_run "$d" install >/dev/null || fail "install failed"
+  assert_equals "$(cat "$d/nmroot/config.yaml")" "agent_path_override:
+    claude: \"$d/nmroot/firstmate/claude-cache-ttl\"
+    # mine
+    codex: /opt/codex
+agent: auto" "claude must use the block's four-space indentation"
+  if python3 -c 'import yaml' 2>/dev/null; then
+    assert_equals "$(python3 -c 'import sys, yaml; print(sorted(yaml.safe_load(open(sys.argv[1]))["agent_path_override"]))' "$d/nmroot/config.yaml")" "['claude', 'codex']" "the config must stay valid YAML"
+  fi
+  [ -z "$(mac_run "$d" check)" ] || fail "check is not silent after install"
+  printf 'agent_path_override:\n\tcodex: /opt/codex\n' > "$d/nmroot/config.yaml"
+  assert_contains "$(mac_run "$d" check)" "is not a plain mapping" "a tab-indented block must show as unsupported"
+  out=$(mac_run "$d" install); rc=$?
+  [ "$rc" -ne 0 ] || fail "install must refuse a tab-indented block: $out"
+  assert_equals "$(cat "$d/nmroot/config.yaml")" "$(printf 'agent_path_override:\n\tcodex: /opt/codex')" "install changed a tab-indented block"
+  pass "launchd install copies the existing block's indentation and refuses tabs"
+}
+
 test_mac_install_leaves_a_foreign_claude_override_alone() {
   local d out rc
   d=$(make_mac_case mac-foreign)
@@ -328,6 +350,7 @@ fm_test_run test_check_reports_a_missing_drop_in_and_writes_nothing \
   test_mac_install_sets_only_the_claude_override_and_never_touches_launchd \
   test_mac_install_is_idempotent_and_survives_a_plist_rewrite \
   test_mac_install_adds_claude_to_an_existing_override_block \
+  test_mac_install_matches_the_existing_block_indentation \
   test_mac_install_leaves_a_foreign_claude_override_alone \
   test_mac_wrapper_drift_is_reported_and_repaired \
   test_mac_status_and_plist_matching

@@ -134,7 +134,7 @@ matching_plists() {
 }
 
 # none (no override) | block (agent_path_override: exists, no claude entry) |
-# ours | foreign (another claude path) | unsupported (not a block mapping)
+# ours | foreign (another claude path) | unsupported (not a block mapping, or tab-indented)
 config_state() {
   [ -f "$config_file" ] || { echo none; return; }
   awk -v want="$wrapper_path" '
@@ -148,6 +148,7 @@ config_state() {
       inblk = 1; state = "block"; next
     }
     inblk && /^[^ \t#]/ { inblk = 0 }
+    inblk && /^[ \t]+[^ \t#]/ && !seen { seen = 1; if ($0 ~ /^ *\t/) { state = "unsupported"; exit } }
     inblk && /^[ \t]+claude:/ {
       v = $0; sub(/^[ \t]+claude:/, "", v)
       state = (unq(v) == want ? "ours" : "foreign")
@@ -253,7 +254,15 @@ install_launchd() {
   if [ "$state" != ours ]; then
     {
       if [ "$state" = block ]; then
-        awk -v line="  claude: \"$wrapper_path\"" '{ print } /^agent_path_override:/ && !done { print line; done = 1 }' "$config_file"
+        awk -v line="claude: \"$wrapper_path\"" '
+          NR == FNR {
+            if (/^agent_path_override:/) { inblk = 1; next }
+            if (inblk && /^[^ \t#]/) inblk = 0
+            if (inblk && ind == "" && match($0, /^ +[^ #]/)) ind = substr($0, 1, RLENGTH - 1)
+            next
+          }
+          { print } /^agent_path_override:/ && !done { print (ind == "" ? "  " : ind) line; done = 1 }
+        ' "$config_file" "$config_file"
       else
         if [ -s "$config_file" ]; then
           cat "$config_file"
