@@ -158,8 +158,8 @@ A fork can set the repository variable `FM_CI_SKIP_PUSH` to `1` to skip the push
 A scheduled nightly run does nothing unless the repository variable `FM_CI_NIGHTLY` is `1`; then it is a full run of `main`, so a fork that skips the push run still gets a daily check.
 The stock macOS Bash job keeps its usual triggers unless `FM_CI_MACOS_SCOPE` is `nightly-main`, which limits it to `main` pushes and the nightly run.
 A fork can set the repository variable `FM_CI_RUNS_ON` to a JSON string or array of runner labels (for example `["self-hosted","fm-ci"]`) to move every Linux job onto its own runners; unset, they run on `ubuntu-24.04`.
-Only attach self-hosted runners to a private repository, because a public one would run outside pull requests on them.
-Each skip is a job-level condition, so a skipped job reports success rather than leaving the pull request pending, and with neither variable set every job runs on upstream and on every fork exactly as before.
+Only attach self-hosted runners to a private repository, because a public one would let outside pull requests run code on them.
+Each skip is a job-level condition, so a skipped job reports success rather than leaving the pull request pending, and with none of these variables set every job runs on upstream and on every fork exactly as before.
 Use `bin/fm-test-run.sh --list-lanes` for exact lane names and `--help` for `--jobs` rules and required gate-skip flags when reproducing a lane locally.
 Leave the `sleep 0.1` cadence in the suites' bounded condition waits alone.
 Those sleeps look like recoverable overhead - the watch-triage suite (`fm-watch-triage.test.sh`, `fm-watch-triage-pause.test.sh`, and `fm-watch-triage-wedge-defer.test.sh`) issues about 1,900 of them, each paying a flat ~100ms scheduler wake-up penalty on macOS - but they are not overhead added to the clock; they are how a test waits for a subject that only moves on `fm-watch.sh`'s own one-second `FM_POLL` cadence.
