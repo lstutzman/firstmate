@@ -14,6 +14,10 @@
 # against what Part A measured about this very release.
 # On a future release whose explicit close preserves focus, Part A records
 # that and Parts B and C keep outcome-only assertions, so no version is guessed.
+# Part C records focus from Herdr's own event log instead of polling: a polling
+# sampler can step over a short wrong-focus interval, but Herdr logs every focus
+# change it makes and delivers the log in order, so a closing sentinel focus
+# change proves the recorder has seen everything the operation did.
 # Every CLI operation is routed through one guarded named non-default lab, and
 # lab teardown verifies that the configured fleet session is byte-identical.
 set -u
@@ -219,6 +223,73 @@ read -r C_ANCHOR_WS C_ANCHOR_TAB _ <<<"$(mkws flash-c-anchor)" || fail 'could no
 read -r C_DOOMED_WS _ C_DOOMED_PANE <<<"$(mkws flash-c-doomed)" || fail 'could not create the Part C doomed workspace'
 read -r C_SPACER_WS _ _ <<<"$(mkws flash-c-spacer)" || fail 'could not create the Part C spacer workspace'
 read -r _ _ _ <<<"$(mkws flash-c-tail)" || fail 'could not create the Part C tail workspace'
+read -r C_SENTINEL_WS C_SENTINEL_TAB _ <<<"$(mkws flash-c-sentinel)" || fail 'could not create the Part C sentinel workspace'
+C_CALL_LOG="$TMP_ROOT/call-c.log"
+C_FOCUS_EVENTS="$TMP_ROOT/focus-c.events"
+C_LAB_SOCKET=$(lab session list --json | jq -er --arg session "$HERDR_LAB_SESSION" '.sessions[] | select(.name == $session) | .socket_path') \
+  || fail 'could not read the Part C lab session socket path'
+C_RECORDER_READY="$TMP_ROOT/recorder-c.ready"
+SAMPLER_STOP="$TMP_ROOT/recorder-c.stop"
+: > "$C_CALL_LOG"
+: > "$C_FOCUS_EVENTS"
+# The recorder subscribes before Part C focuses its anchor. Herdr reports every
+# focus change in order (a release may also replay earlier ones, slowly, first),
+# so Part C's own pre-close focus is the first row naming its anchor and a focus
+# change onto the sentinel after the close is the last row to wait for;
+# everything between them is exactly what the operation did to focus.
+cat > "$TMP_ROOT/focus-events.py" <<'PY'
+import json, os, socket, sys, time
+
+sock_path, out_path, ready_path, stop_path = sys.argv[1:5]
+budget = float(sys.argv[5])
+sock = socket.socket(socket.AF_UNIX)
+sock.connect(sock_path)
+sock.sendall((json.dumps({"id": "focus-events", "method": "events.subscribe", "params": {"subscriptions": [
+    {"type": "workspace.focused"}, {"type": "tab.focused"}]}}) + "\n").encode())
+buf = b""
+deadline = time.monotonic() + budget
+subscribed = False
+with open(out_path, "a") as out:
+    while time.monotonic() < deadline and not os.path.exists(stop_path):
+        sock.settimeout(0.2)
+        try:
+            chunk = sock.recv(65536)
+        except socket.timeout:
+            continue
+        if not chunk:
+            sys.exit(4)
+        buf += chunk
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            try:
+                message = json.loads(line)
+            except ValueError:
+                continue
+            if not subscribed:
+                if (message.get("result") or {}).get("type") != "subscription_started":
+                    sys.exit(3)
+                subscribed = True
+                open(ready_path, "w").close()
+                continue
+            data = message.get("data") or {}
+            kind = message.get("event")
+            if kind == "tab_focused":
+                row = "focus\t%s\t%s" % (data.get("workspace_id"), data.get("tab_id"))
+            elif kind == "workspace_focused":
+                row = "workspace\t%s" % data.get("workspace_id")
+            else:
+                continue
+            out.write(row + "\n")
+            out.flush()
+PY
+python3 "$TMP_ROOT/focus-events.py" "$C_LAB_SOCKET" "$C_FOCUS_EVENTS" "$C_RECORDER_READY" "$SAMPLER_STOP" 60 &
+SAMPLER_PID=$!
+C_READY_ATTEMPT=0
+while [ ! -e "$C_RECORDER_READY" ] && [ "$C_READY_ATTEMPT" -lt 100 ]; do
+  sleep 0.05
+  C_READY_ATTEMPT=$((C_READY_ATTEMPT + 1))
+done
+[ -e "$C_RECORDER_READY" ] || fail 'the Part C focus event recorder did not subscribe'
 lab tab focus "$C_ANCHOR_TAB" >/dev/null || fail 'could not focus the Part C anchor'
 C_BEFORE=$(focus_snapshot) || fail 'could not capture the Part C pre-close focus'
 [ "$C_BEFORE" = "$(printf '%s\t%s' "$C_ANCHOR_WS" "$C_ANCHOR_TAB")" ] \
@@ -266,33 +337,6 @@ while [ "$C_CHILD_ATTEMPT" -lt 100 ]; do
 done
 [ "$C_CHILD_STABLE" -ge 2 ] || fail 'the Part C doomed pane never reported a stable persistent child process'
 
-C_CALL_LOG="$TMP_ROOT/call-c.log"
-C_FOCUS_SAMPLES="$TMP_ROOT/focus-c.samples"
-C_OPERATION_ACTIVE="$TMP_ROOT/operation-c.active"
-C_SAMPLER_READY="$TMP_ROOT/sampler-c.ready"
-SAMPLER_STOP="$TMP_ROOT/sampler-c.stop"
-: > "$C_CALL_LOG"
-: > "$C_FOCUS_SAMPLES"
-(
-  : > "$C_SAMPLER_READY"
-  while [ ! -e "$SAMPLER_STOP" ]; do
-    if [ -e "$C_OPERATION_ACTIVE" ]; then
-      if C_SAMPLE=$(focus_snapshot); then
-        printf '%s\n' "$C_SAMPLE" >> "$C_FOCUS_SAMPLES"
-      else
-        printf '%s\n' UNREADABLE >> "$C_FOCUS_SAMPLES"
-      fi
-    fi
-  done
-) &
-SAMPLER_PID=$!
-C_READY_ATTEMPT=0
-while [ ! -e "$C_SAMPLER_READY" ] && [ "$C_READY_ATTEMPT" -lt 100 ]; do
-  sleep 0.01
-  C_READY_ATTEMPT=$((C_READY_ATTEMPT + 1))
-done
-[ -e "$C_SAMPLER_READY" ] || fail 'the Part C focus sampler did not start'
-: > "$C_OPERATION_ACTIVE"
 # A short proof budget keeps the exhausted-proof path fast; the count below is
 # what proves the proof was exhausted rather than skipped.
 C_PROOF_POLLS=3
@@ -308,10 +352,19 @@ C_OUT=$(PATH="$FAKEBIN:$HERDR_ORIGINAL_PATH" FM_FLASH_CALL_LOG="$C_CALL_LOG" \
   fm_backend_herdr_projection_close_pane_focus_preserving "$2" "$3"
 ' _ "$ROOT" "$HERDR_LAB_SESSION" "$C_DOOMED_PANE" 2>&1)
 C_STATUS=$?
-rm -f "$C_OPERATION_ACTIVE"
+C_AFTER=$(focus_snapshot) || fail 'could not capture the Part C post-close focus'
+C_SENTINEL_ROW=$(printf 'focus\t%s\t%s' "$C_SENTINEL_WS" "$C_SENTINEL_TAB")
+lab tab focus "$C_SENTINEL_TAB" >/dev/null || fail 'could not write the Part C sentinel focus change'
+C_END_ATTEMPT=0
+while ! grep -Fqx -- "$C_SENTINEL_ROW" "$C_FOCUS_EVENTS" && [ "$C_END_ATTEMPT" -lt 300 ]; do
+  sleep 0.05
+  C_END_ATTEMPT=$((C_END_ATTEMPT + 1))
+done
+grep -Fqx -- "$C_SENTINEL_ROW" "$C_FOCUS_EVENTS" || fail 'the Part C event recorder never reached the sentinel focus change'
 : > "$SAMPLER_STOP"
 wait "$SAMPLER_PID" 2>/dev/null || true
 SAMPLER_PID=
+lab tab focus "$C_ANCHOR_TAB" >/dev/null || fail 'could not restore the Part C anchor focus'
 [ "$C_STATUS" -eq 0 ] || fail "the production focus-preserving close failed (status $C_STATUS): $C_OUT"
 wait_ws_gone "$C_DOOMED_WS" || fail 'the fallback close left the doomed workspace behind'
 if lab pane get "$C_DOOMED_PANE" >/dev/null 2>&1; then
@@ -330,10 +383,21 @@ grep -q '^pane close' "$C_CALL_LOG" \
   || fail 'Part C never reached the plain explicit close, so the fallback branch was not exercised'
 pass 'fallback: a doomed pane holding a persistent child exhausts the proof and takes the plain explicit close'
 
-C_AFTER=$(focus_snapshot) || fail 'could not capture the Part C post-close focus'
 [ "$C_AFTER" = "$C_BEFORE" ] \
   || fail "the fallback close left focus off the anchor ($C_BEFORE -> $C_AFTER)"
-C_WRONG=$(grep -Fvxc -- "$C_BEFORE" "$C_FOCUS_SAMPLES" || true)
+C_ANCHOR_TAB_ID=${C_BEFORE#*$'\t'}
+C_WINDOW="$TMP_ROOT/focus-c.window"
+grep -Fqx -- "focus"$'\t'"$C_BEFORE" "$C_FOCUS_EVENTS" || fail 'the Part C event recorder never saw the anchor focus change'
+awk -F'\t' -v anchor="$C_BEFORE" -v sentinel="$C_SENTINEL_ROW" -v sentinel_ws="$C_SENTINEL_WS" '
+  { row = $0 }
+  !started && row == "focus\t" anchor { started = 1; next }
+  started && row == sentinel { exit }
+  started && row != "workspace\t" sentinel_ws { print }
+' "$C_FOCUS_EVENTS" > "$C_WINDOW"
+C_WRONG=$(awk -F'\t' -v ws="$C_ANCHOR_WS" -v tab="$C_ANCHOR_TAB_ID" '
+  ($1 == "workspace" && $2 != ws) || ($1 == "focus" && ($2 != ws || $3 != tab)) { n++ }
+  END { print n + 0 }
+' "$C_WINDOW")
 if [ "$STEAL_LIVE" = 1 ]; then
   # A defective release cannot make this path focus-safe, which is precisely why
   # default-on projection is floored above it. The wrong-focus window is
@@ -341,11 +405,14 @@ if [ "$STEAL_LIVE" = 1 ]; then
   # must have put the anchor back exactly, and the whole exposure must end with
   # the operation rather than parking the captain somewhere else.
   [ "$C_WRONG" -ge 1 ] \
-    || fail 'Part C reached the fallback on a defective release but observed no wrong-focus sample at all, so the sampler proved nothing'
-  pass "fallback on a defective release: a bounded wrong-focus window of $C_WRONG samples was fully restored to the anchor"
+    || fail 'Part C reached the fallback on a defective release but Herdr reported no wrong-focus event at all, so the recorder proved nothing'
+  C_LAST_FOCUS=$(awk -F'\t' '$1 == "focus" { last = $2 "\t" $3 } END { print last }' "$C_WINDOW")
+  [ "$C_LAST_FOCUS" = "$C_BEFORE" ] \
+    || fail "the last focus event of the fallback close was not the anchor ($C_BEFORE -> $C_LAST_FOCUS)"
+  pass "fallback on a defective release: a bounded wrong-focus window of $C_WRONG focus events was fully restored to the anchor"
 else
   [ "$C_WRONG" -eq 0 ] \
-    || fail "a focus-preserving release exposed $C_WRONG wrong-focus samples on the fallback path"
+    || fail "a focus-preserving release reported $C_WRONG wrong-focus events on the fallback path"
   pass 'fallback on a focus-preserving release: the plain explicit close preserved exact focus throughout'
 fi
 

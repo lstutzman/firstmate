@@ -2001,6 +2001,8 @@ It reported `steal_live=0 floor_verdict=0 default-session-tripwire=armed`, with 
 
 Part C is the case the suite could not reach before: a doomed pane whose shell holds a persistent background child fails the lone-idle-shell proof on every sample, so the plan takes the plain explicit close, in the geometry where the closing workspace's right neighbour is a spacer rather than the focused anchor.
 On 0.7.5 that fallback exposed a bounded four-sample wrong-focus window and restored the anchor exactly; on 0.8.0 the same fallback exposed none, which is why default-on projection is floored at 0.8.0 rather than mitigated further below it.
+Since 2026-11-11 Part C reads wrong focus from Herdr's own focus event log, closed by a sentinel focus change, instead of polling, because a polling sampler step slower than the short wrong-focus window missed it and failed the check intermittently in CI.
+On the pinned Herdr 0.7.4 protocol 16 it reports two wrong-focus events (the neighbour's workspace and tab) followed by the anchor restore, and on Herdr 0.9.5 protocol 22 it reports none.
 The suite also cross-checks its own Part A measurement against the floor classifier on whatever release it runs, so a drifted protocol-to-release mapping fails there rather than silently gating on the wrong thing.
 
 ### Attached foreground viewer
