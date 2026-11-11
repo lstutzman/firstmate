@@ -126,7 +126,7 @@ case "${1:-} ${2:-}" in
     ;;
   "api --paginate")
     case " $* " in
-      *merge_queue*) ;;
+      *merge_queue*|*/commits*) ;;
       *) printf '%s\n' '[]' ;;
     esac
     ;;
