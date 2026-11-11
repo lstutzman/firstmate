@@ -337,7 +337,7 @@ puts YAML.load_file(ARGV[0]).fetch("jobs").fetch(ARGV[1]).fetch("timeout-minutes
 # must join a tier, and a job-level value outside these tiers is exactly the
 # one-off number the policy removed.
 FAST_TIER_JOBS='test-coverage invariants tests-timing-aggregate full-suite'
-NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 tests-portable-serial macos-stock-bash'
+NORMAL_TIER_JOBS='lint tests-portable-parallel-1 tests-portable-parallel-2 tests-portable-parallel-3 tests-portable-serial macos-stock-bash'
 HEAVY_TIER_JOBS='tests-herdr tests-hc'
 
 # Print the one timeout every listed job shares; fail on any disagreement.
@@ -781,6 +781,23 @@ roots = parts.flat_map do |p|
   output, result = Open3.capture2(File.join(root, "bin/fm-lint.sh"), "--partition", "#{p}of#{parts.length}", "--list-files")
   raise "unsupported lint partition" unless result.success?
   output.lines.map(&:strip)
+end
+# The lane that holds the Pi typecheck test must run with the guard that turns
+# its missing-prerequisite skip into a failure, whichever lane it is assigned to.
+pi_test = "tests/fm-pi-primary-types.test.sh"
+holders = (1..3).select do |n|
+  out, st = Open3.capture2(File.join(root, "bin/fm-test-run.sh"), "--list", "--lane", "portable-parallel-#{n}")
+  raise "cannot list portable parallel lane #{n}" unless st.success?
+  out.lines.map(&:strip).include?(pi_test)
+end
+raise "the Pi typecheck test must be in exactly one parallel lane" unless holders.length == 1
+guard = "Pi extension typecheck prerequisite not found"
+(1..3).each do |n|
+  steps = jobs.fetch("tests-portable-parallel-#{n}").fetch("steps")
+  run = steps.map { |step| step["run"].to_s }.find { |r| r.include?("--lane portable-parallel-#{n}") }
+  raise "parallel lane #{n} has no runner step" unless run
+  guarded = run.include?("--fail-on-gate-skip '#{guard}'")
+  raise "lane #{n} guard mismatch: lane holding the Pi test must carry the gate-skip guard and no other may" unless guarded == holders.include?(n)
 end
 canonical, result = Open3.capture2({"CI" => "true"}, File.join(root, "bin/fm-lint.sh"), "--list-files")
 raise "lint matrix loses or duplicates canonical roots" unless result.success? && roots.sort == canonical.lines.map(&:strip).sort

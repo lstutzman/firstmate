@@ -62,14 +62,16 @@ The new `tests/fm-remote-herdr-identity.test.sh` serial hint is provisionally 61
 
 ## Parallel lanes
 
-The two parallel lanes use longest-processing-time assignment over those hints.
+The three parallel lanes use longest-processing-time assignment over those hints.
+Two lanes modeled at 26 minutes of script time and ran 22 to 28 minutes of job time on CI, the slowest job of the whole run; three model at 17.4 minutes each with the same members.
 [`tests/fm-pi-primary-types.test.sh`](../tests/fm-pi-primary-types.test.sh) owns its typecheck dependencies, so neither parallel lane installs the Pi package.
-[`bin/fm-test-run.sh`](../bin/fm-test-run.sh) holds the duration values in `portable_parallel_weight_hints` and the ordered memberships and lane-specific prerequisite constraints beside `list_portable_parallel_1` and `list_portable_parallel_2`.
+[`bin/fm-test-run.sh`](../bin/fm-test-run.sh) holds the duration values in `portable_parallel_weight_hints` and the ordered memberships and lane-specific prerequisite constraints beside `list_portable_parallel_1`, `list_portable_parallel_2` and `list_portable_parallel_3`.
+Lane 1 carries `tests/fm-pi-primary-types.test.sh`, so its CI job is the one that passes `--fail-on-gate-skip` for the Pi extension typecheck prerequisite; moving that test to another lane moves the flag with it.
 Read the derived packing estimates with that runner's `--check-coverage`; its header and `--help` own the output fields and the selection-specific `--list-scheduled` weight rules.
 The largest individual hint sets a lower bound on the estimated duration of any split, regardless of how evenly the remaining work is assigned.
 The CI cap follows the three-tier timeout policy in [Timeouts](#timeouts) below.
 
-[`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_parallel_lanes_stay_duration_balanced`, requires every parallel member to have a hint and the lane sums to differ by no more than five percent of the larger sum.
+[`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_parallel_lanes_stay_duration_balanced`, requires every parallel member to have a hint and the largest and smallest lane sums to differ by no more than five percent of the largest.
 Its scheduling regressions also check stored parallel lane order and preserve serial-weight scheduling for other selections.
 These checks do not detect a script outgrowing an existing hint or establish measured job headroom.
 Refresh `portable_parallel_weight_hints` with the slowest completed `duration_ms` per script from several green CI runs' `fm-test-timing-portable-parallel-*` artifacts whenever the parallel set gains scripts or a member grows materially.
@@ -142,17 +144,23 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 
 ## Lint partitions and end-to-end latency
 
-`bin/fm-lint.sh` owns the canonical CI partitions (`<k>of<n>`; CI runs four), each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
+`bin/fm-lint.sh` owns the canonical CI partitions (`<k>of<n>`; CI runs seven), each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
 Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
-The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, and host contention.
+The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, cache hits, and host contention.
 No fast mode, path skips, or paid runner provisioning is part of this layout.
-Measured before the four-way split (main run of 2026-11-06, 638 roots, one ShellCheck process per runner because each analysis peaks near 8 GiB): per-root time summed to 3192 seconds, so two byte-balanced partitions took 1461 and 1737 seconds of lint (Lint 2 finished the job in 29m10s on a passing run and hit the 30-minute limit on later runs).
-Root time tracks the sourced library closure, not file size, so byte weight is only a scheduling proxy; the same packing at four partitions models at 743 to 841 seconds, which keeps every job well under the limit without touching the timeout tier.
+A root's cost tracks the sourced library closure, not its own size, so partitions are packed on the byte total of each root plus every file ShellCheck can follow from it: that proxy correlates 0.65 with measured per-root time against 0.43 for the root's own bytes, and it is a scheduling weight only, never a skip rule.
+Measured on three green main-branch PR runs of 2026-11-11 (678 roots, one ShellCheck process per runner because each analysis peaks near 8 GiB), per-root time summed to 4170 to 4740 seconds.
+Byte-packed into four partitions that left runners at 700 to 1430 seconds of lint; the same measurements packed on closure weight model at 667 to 783 seconds for the worst of seven partitions (six models 780 to 878), so no partition passes the 14-minute target or nears the limit without touching the timeout tier.
+
+Each partition restores `actions/cache` data keyed `fm-lint-cache-v1-<k>of<n>-<sha>` with the same prefix as the restore key, which starts it from the newest earlier run of that partition.
+What that data holds and when a root may be skipped belongs to the `bin/fm-lint.sh` header: a root is skipped only when a marker for the exact key (lint definition, ShellCheck version, analysis mode, ratchet listing, and path plus content hash of the root and every sourced file) exists, and a marker is written only for a root that passed with reason `ok`.
+Roots that pass only after the memory fallback are never stored, so they run on every invocation; they were 8 of 680 roots and about 15 percent of measured lint time on 2026-11-11, and shrinking their memory demand is what would let the cache cover them.
+`tests/fm-lint.test.sh` proves the closure against the real ShellCheck, including a change two sources deep that must break a root and a changed definition that must miss.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the three watch-triage members still sum to about 26 minutes of CI test time.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses twenty-two long-lived Linux jobs (fifteen serial, two parallel, Herdr, four lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses twenty-six long-lived Linux jobs (fifteen serial, three parallel, Herdr, seven lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession and keeps only the newest of close main pushes' runs, without changing the compliance workflow's event semantics.
 
