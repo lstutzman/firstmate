@@ -181,6 +181,18 @@ SH
   cat > "$case_dir/fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
+# Serve a raw API response (the file, else the default JSON) through the
+# caller's --jq filter as gh does, so the script's own filter is exercised.
+gh_api_jq() {
+  local file=$1 default=$2 filter='' prev=''
+  shift 2
+  for arg in "$@"; do
+    [ "$prev" != --jq ] || filter=$arg
+    prev=$arg
+  done
+  if [ -f "$file" ]; then cat "$file"; else printf '%s\n' "$default"; fi \
+    | if [ -n "$filter" ]; then jq -r "$filter"; else cat; fi
+}
 case "${1:-} ${2:-}" in
   "pr view")
     case " $* " in
@@ -332,18 +344,18 @@ case "${1:-} ${2:-}" in
         exit $?
         ;;
       *" repos/"*"/pulls/"*"/commits"*)
-        # The merge commits of the pull request, as the script's own --jq
-        # filter leaves them: "<sha> <extra parent shas, comma separated>".
+        # GitHub's "List commits on a pull request" response: an array of
+        # {sha, parents: [{sha}]}, oldest first, through the caller's --jq.
         [ ! -f "${FM_TEST_GH_COMMITS_FAIL:-}" ] || exit 1
-        [ ! -f "${FM_TEST_GH_COMMITS:-}" ] || cat "$FM_TEST_GH_COMMITS"
-        exit 0
+        gh_api_jq "${FM_TEST_GH_COMMITS:-}" '[]' "$@"
+        exit $?
         ;;
       *" repos/"*"/compare/"*)
-        # How the base relates to an extra parent: ahead (history the base
-        # lacks), behind or identical (already in the base).
+        # GitHub's "Compare two commits" response for base...extra-parent:
+        # status behind or identical means the parent is already in the base.
         [ ! -f "${FM_TEST_GH_COMPARE_FAIL:-}" ] || exit 1
-        cat "${FM_TEST_GH_COMPARE:-/dev/null}" 2>/dev/null || printf 'ahead\n'
-        exit 0
+        gh_api_jq "${FM_TEST_GH_COMPARE:-}" '{"status":"diverged","ahead_by":3,"behind_by":2}' "$@"
+        exit $?
         ;;
       *" repos/"*"/pulls/"*)
         if [ -f "${FM_TEST_GH_PULL:-}" ]; then
@@ -5205,12 +5217,18 @@ test_allow_red_is_refused_while_away() {
 MERGE_COMMIT_SHA=1234567890abcdef1234567890abcdef12345678
 MERGE_COMMIT_PARENT=fedcba0987654321fedcba0987654321fedcba09
 
+MERGE_COMMIT_FIRST_PARENT=abababababababababababababababababababab
+
+# A pull request whose commits, in GitHub's list-commits shape, end in a merge
+# commit whose second parent is the upstream history being brought in.
 make_merge_commit_case() {
   local name=$1 case_dir
   case_dir=$(make_case "$name")
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
-  printf '%s\n' "$MERGE_COMMIT_SHA $MERGE_COMMIT_PARENT" > "$case_dir/github-commits"
+  printf '[{"sha":"%s","parents":[{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' \
+    "$MERGE_COMMIT_FIRST_PARENT" "$MERGE_COMMIT_PARENT" \
+    "$MERGE_COMMIT_SHA" "$MERGE_COMMIT_FIRST_PARENT" "$MERGE_COMMIT_PARENT" > "$case_dir/github-commits"
   : > "$case_dir/gh-axi.log"
   printf '%s\n' "$case_dir"
 }
@@ -5291,35 +5309,79 @@ test_merge_commit_guard() {
   set -e
   expect_code 2 "$rc" "merge-commit-override-bare: --allow-flatten without a reason must be refused"
 
-  # A base-update merge (the extra parent is already in the base) is not counted.
-  case_dir=$(make_merge_commit_case github-merge-commit-base-update)
-  printf 'behind\n' > "$case_dir/github-compare"
+  # The override is recorded only once the forge accepts the merge.
+  case_dir=$(make_merge_commit_case github-merge-commit-override-merge-fails)
+  printf '1\n' > "$case_dir/github-merge-rc"
   set +e
-  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  run_pr_merge "$case_dir" task-x1 "$url" --allow-flatten 'upstream sync already squashed' -- --squash \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
-  expect_code 0 "$rc" "merge-commit-base-update: a base-update merge commit must not block the default squash"
-  assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+  expect_code 1 "$rc" "merge-commit-override-merge-fails: a failed forge merge must fail the run"
+  assert_no_grep 'merge_flatten_override=' "$case_dir/state/task-x1.meta" \
+    "merge-commit-override-merge-fails: an override was recorded for a merge that never happened"
 
-  # An unreadable commit list (or reachability read): one warning, and the merge proceeds.
-  case_dir=$(make_merge_commit_case github-merge-commit-unreadable)
-  : > "$case_dir/github-commits-fail"
+  # A base-update merge (the extra parent is already in the base) is not
+  # counted, whether GitHub reports it behind or identical.
+  for status in behind identical; do
+    case_dir=$(make_merge_commit_case "github-merge-commit-base-update-$status")
+    printf '{"status":"%s","ahead_by":0,"behind_by":4}\n' "$status" > "$case_dir/github-compare"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 0 "$rc" "merge-commit-base-update: a $status base-update merge commit must not block the default squash"
+    assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+    assert_grep "compare/main...$MERGE_COMMIT_PARENT" "$case_dir/gh.log" \
+      "merge-commit-base-update: the extra parent was not compared against the base"
+  done
+
+  # An upstream parent the base lacks (ahead) still counts.
+  case_dir=$(make_merge_commit_case github-merge-commit-ahead)
+  printf '{"status":"ahead","ahead_by":3,"behind_by":0}\n' > "$case_dir/github-compare"
   set +e
   run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
-  expect_code 0 "$rc" "merge-commit-unreadable: an unreadable commit list must not block the merge"
-  assert_logged_gh_merge "$case_dir" 91 example/repo --squash
-  [ "$(grep -c '^warning: could not read the commit list' "$case_dir/stderr")" -eq 1 ] \
-    || fail "merge-commit-unreadable: expected exactly one warning, got: $(cat "$case_dir/stderr")"
-  case_dir=$(make_merge_commit_case github-merge-commit-compare-unreadable)
-  : > "$case_dir/github-compare-fail"
+  expect_code 1 "$rc" "merge-commit-ahead: an extra parent ahead of the base must be refused"
+
+  # An unreadable commit list or reachability read refuses the default method
+  # and asks for an explicit one; an explicit method proceeds after one warning.
+  for fail in commits compare; do
+    case_dir=$(make_merge_commit_case "github-merge-commit-unreadable-$fail")
+    : > "$case_dir/github-$fail-fail"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "merge-commit-unreadable-$fail: the default method must be refused when the list cannot be read"
+    assert_grep 'explicit method' "$case_dir/stderr" "merge-commit-unreadable-$fail: refusal did not ask for an explicit method"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-unreadable-$fail: gh pr merge ran despite the refusal"
+
+    case_dir=$(make_merge_commit_case "github-merge-commit-unreadable-$fail-explicit")
+    : > "$case_dir/github-$fail-fail"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" -- --squash > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 0 "$rc" "merge-commit-unreadable-$fail-explicit: an explicit method must still merge"
+    assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+    [ "$(grep -c '^warning: could not read the full commit list' "$case_dir/stderr")" -eq 1 ] \
+      || fail "merge-commit-unreadable-$fail-explicit: expected exactly one warning, got: $(cat "$case_dir/stderr")"
+  done
+
+  # GitHub lists at most 250 commits of a pull request, so a sync whose merge
+  # commit falls past that cap reads as 250 ordinary commits: the list may be
+  # cut short, and the default squash is refused.
+  case_dir=$(make_merge_commit_case github-merge-commit-capped)
+  jq -nc '[range(250) | {sha: ("c" + (. | tostring)), parents: [{sha: "p"}]}]' > "$case_dir/github-commits"
   set +e
   run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
-  expect_code 0 "$rc" "merge-commit-compare-unreadable: an unreadable reachability read must not block the merge"
-  assert_grep 'warning: could not read the commit list' "$case_dir/stderr" "merge-commit-compare-unreadable: no warning"
+  expect_code 1 "$rc" "merge-commit-capped: a commit list at GitHub's 250 cap must refuse the default squash"
+  assert_grep 'explicit method' "$case_dir/stderr" "merge-commit-capped: refusal did not ask for an explicit method"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-capped: gh pr merge ran despite the refusal"
   pass "fm-pr-merge refuses to flatten a pull request's merge commits unless merged or overridden"
 }
 

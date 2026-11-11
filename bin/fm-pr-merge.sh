@@ -28,9 +28,14 @@
 # extra parents the base already contains (the base merged into the branch to
 # update it) does not count. An attended --allow-flatten <reason>, given once,
 # permits the flattening and records the reason as merge_flatten_override= in
-# the task's meta; it is refused while the away-posture record exists, for an
-# office, and for --stack. When the forge's commit list cannot be read, one
-# warning is printed and the merge proceeds as before.
+# the task's meta once the forge accepts the merge; it is refused while the
+# away-posture record exists, for an office, and for --stack. A --stack merge
+# applies the same check to every member before anything merges, and refuses
+# the whole stack, naming the member, unless it is merged with "-- --merge".
+# When the forge's commit list cannot be read (GitHub lists at most 250 commits
+# of a pull request, so a longer one counts as unreadable), the default method
+# is refused and an explicit method is asked for; an explicitly named method
+# proceeds after one warning.
 # On Forgejo the merge style defaults to the repository's own
 # default_merge_style, read live, and a merge is refused when it cannot be read.
 # A GitHub merge is refused unless every pre-merge condition holds, each read
@@ -356,6 +361,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 STACK_MODE=false
 STACK_GATED_HEAD=
 STACK_MERGE_METHOD=squash
+STACK_METHOD_EXPLICIT=false
 STACK_IDS=()
 STACK_URLS=()
 STACK_LOCKS=()
@@ -586,6 +592,7 @@ stack_validate_request() {
   case "$#" in
     0) ;;
     1)
+      STACK_METHOD_EXPLICIT=true
       case "$1" in
         --squash) STACK_MERGE_METHOD=squash ;;
         --merge) STACK_MERGE_METHOD=merge ;;
@@ -2207,6 +2214,7 @@ require_current_away_authority() {
   fi
 }
 
+FM_PR_FLATTEN_RECORD=
 persist_accepted_merge_authority() {
   local status=0
   MERGE_META_LOCK=$(fm_meta_lock_path "$META") || return 1
@@ -2214,6 +2222,9 @@ persist_accepted_merge_authority() {
   fm_merge_authority_persist "$STATE" "$ID" "$META" \
     "$PROVIDER" "$PR_HOST" "$PR_PATH" "$PR_NUMBER" "$FM_PR_MERGE_AUTHORITY" \
     || status=1
+  if [ "$status" -eq 0 ] && [ -n "$FM_PR_FLATTEN_RECORD" ]; then
+    printf 'merge_flatten_override=%s\n' "$FM_PR_FLATTEN_RECORD" >> "$META" || status=1
+  fi
   fm_lock_release "$MERGE_META_LOCK" || status=1
   MERGE_META_LOCK=
   if [ "$status" -eq 0 ]; then
@@ -2533,6 +2544,8 @@ stack_verify_members() {
       printf 'error: refusing to merge the stack: the top %s is at %s, not the gated head %s\n' \
         "$URL" "$FM_PR_MERGE_HEAD" "$STACK_GATED_HEAD" >&2
       failed=1
+    elif ! github_guard_merge_commits "$STACK_MERGE_METHOD" "$STACK_METHOD_EXPLICIT"; then
+      failed=1
     fi
     STACK_BASES[i]=$FM_PR_GITHUB_BASE
     i=$((i + 1))
@@ -2781,6 +2794,74 @@ stack_merge() {
   stack_verify_merged_tree || return 1
 }
 
+# Merge commits in the pull request's own range whose extra parents the base
+# branch does not already contain, one short sha per line in
+# FM_PR_GITHUB_MERGE_COMMITS. A merge commit whose extra parents are all
+# reachable from the base (the base merged into the branch to update it)
+# flattens harmlessly and is not listed. Returns 1 when the forge's commit list
+# or a reachability read cannot be read, or when the list may be cut short:
+# GitHub lists at most 250 commits of a pull request.
+FM_PR_GITHUB_MERGE_COMMITS=
+github_read_merge_commits() {
+  local listed line sha parents parent status unique count=0
+  FM_PR_GITHUB_MERGE_COMMITS=
+  listed=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/commits?per_page=100" \
+    --jq '.[] | "\(.sha) \(.parents[1:] | map(.sha) | join(","))"' 2>/dev/null) || return 1
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    count=$((count + 1))
+    [ "$count" -lt 250 ] || return 1
+    sha=${line%% *}
+    parents=${line#* }
+    [ -n "$parents" ] || continue
+    unique=false
+    while IFS= read -r parent; do
+      [ -n "$parent" ] || continue
+      status=$(gh api "repos/$PR_OWNER/$PR_REPO/compare/$FM_PR_GITHUB_BASE...$parent" --jq .status 2>/dev/null) || return 1
+      case "$status" in
+        behind|identical) ;;
+        *) unique=true ;;
+      esac
+    done <<PARENTS
+${parents//,/$'\n'}
+PARENTS
+    [ "$unique" = false ] || FM_PR_GITHUB_MERGE_COMMITS="${FM_PR_GITHUB_MERGE_COMMITS:+$FM_PR_GITHUB_MERGE_COMMITS$'\n'}${sha:0:12}"
+  done <<LISTED
+$listed
+LISTED
+}
+
+# Refuse a squash or rebase of the selected pull request when it carries a
+# merge commit with history the base lacks, unless --allow-flatten names a
+# reason, which is recorded in the task's meta once the forge accepts the
+# merge. Args: <method> <explicit: true when the caller named the method>. An
+# unreadable commit list refuses the default method and only warns for an
+# explicit one.
+github_guard_merge_commits() {
+  local method=$1 explicit=$2 listed hint
+  [ "$method" != merge ] || return 0
+  if ! github_read_merge_commits; then
+    if [ "$explicit" = true ]; then
+      echo "warning: could not read the full commit list of $URL from the forge, so its merge commits were not checked before the requested $method merge" >&2
+      return 0
+    fi
+    echo "error: refusing the default $method merge of $URL: its full commit list could not be read from the forge, so whether it carries merge commits is unknown; re-run with an explicit method: -- --merge to keep any merge commits, or -- --$method to flatten" >&2
+    return 1
+  fi
+  [ -n "$FM_PR_GITHUB_MERGE_COMMITS" ] || return 0
+  listed=${FM_PR_GITHUB_MERGE_COMMITS//$'\n'/, }
+  if [ -n "$ALLOW_FLATTEN" ]; then
+    FM_PR_FLATTEN_RECORD=$ALLOW_FLATTEN
+    printf 'warning: %s carries merge commit(s) %s and is being %s-merged under --allow-flatten: %s\n' \
+      "$URL" "$listed" "$method" "$ALLOW_FLATTEN" >&2
+    return 0
+  fi
+  hint=', or pass --allow-flatten <reason> to flatten it deliberately'
+  [ "$STACK_MODE" != true ] || hint=
+  echo "error: refusing a $method merge of $URL: it carries merge commit(s) $listed, and $method would flatten that history away; re-run with -- --merge$hint" >&2
+  return 1
+}
+
 if [ "$STACK_MODE" = true ]; then
   stack_status=0
   stack_merge || stack_status=$?
@@ -2807,68 +2888,6 @@ forgejo_confirm_merged() {
   [ "$merged" = true ]
 }
 
-# Merge commits in the pull request's own range whose extra parents the base
-# branch does not already contain, one short sha per line in
-# FM_PR_GITHUB_MERGE_COMMITS. A merge commit whose extra parents are all
-# reachable from the base (the base merged into the branch to update it)
-# flattens harmlessly and is not listed. Returns 1 when the forge's commit list
-# or a reachability read cannot be read.
-FM_PR_GITHUB_MERGE_COMMITS=
-github_read_merge_commits() {
-  local listed line sha parents parent status unique
-  FM_PR_GITHUB_MERGE_COMMITS=
-  listed=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/commits?per_page=100" \
-    --jq '.[] | select((.parents | length) > 1) | "\(.sha) \(.parents[1:] | map(.sha) | join(","))"' 2>/dev/null) || return 1
-  while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    sha=${line%% *}
-    parents=${line#* }
-    unique=false
-    while IFS= read -r parent; do
-      [ -n "$parent" ] || continue
-      status=$(gh api "repos/$PR_OWNER/$PR_REPO/compare/$FM_PR_GITHUB_BASE...$parent" --jq .status 2>/dev/null) || return 1
-      case "$status" in
-        behind|identical) ;;
-        *) unique=true ;;
-      esac
-    done <<PARENTS
-${parents//,/$'\n'}
-PARENTS
-    [ "$unique" = false ] || FM_PR_GITHUB_MERGE_COMMITS="${FM_PR_GITHUB_MERGE_COMMITS:+$FM_PR_GITHUB_MERGE_COMMITS$'\n'}${sha:0:12}"
-  done <<LISTED
-$listed
-LISTED
-}
-
-# Refuse a squash or rebase (the default included) of a pull request that
-# carries a merge commit with history the base lacks, unless --allow-flatten
-# names a reason, which is recorded in the task's meta. An unreadable commit
-# list warns once and lets the merge continue.
-github_guard_merge_commits() {
-  local method listed
-  method=$(caller_merge_method "$@")
-  [ -n "$method" ] || method=squash
-  [ "$method" != merge ] || return 0
-  if ! github_read_merge_commits; then
-    echo "warning: could not read the commit list of $URL from the forge, so its merge commits were not checked before a $method merge" >&2
-    return 0
-  fi
-  [ -n "$FM_PR_GITHUB_MERGE_COMMITS" ] || return 0
-  listed=${FM_PR_GITHUB_MERGE_COMMITS//$'\n'/, }
-  if [ -n "$ALLOW_FLATTEN" ]; then
-    MERGE_META_LOCK=$(fm_meta_lock_path "$META") || return 1
-    fm_lock_acquire_wait "$MERGE_META_LOCK" || return 1
-    printf 'merge_flatten_override=%s\n' "$ALLOW_FLATTEN" >> "$META" || { fm_lock_release "$MERGE_META_LOCK" || true; MERGE_META_LOCK=; return 1; }
-    fm_lock_release "$MERGE_META_LOCK" || true
-    MERGE_META_LOCK=
-    printf 'warning: %s carries merge commit(s) %s and is being %s-merged under --allow-flatten: %s\n' \
-      "$URL" "$listed" "$method" "$ALLOW_FLATTEN" >&2
-    return 0
-  fi
-  echo "error: refusing a $method merge of $URL: it carries merge commit(s) $listed, and $method would flatten that history away; re-run with -- --merge, or pass --allow-flatten <reason> to flatten it deliberately" >&2
-  return 1
-}
-
 # Record before either forge call. This arms the merge poll without claiming a
 # landed outcome, so even a provider read failure after a real merge cannot
 # leave teardown without the PR identity it needs to verify the result.
@@ -2892,7 +2911,9 @@ case "$PROVIDER" in
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
     github_verify_mergeable_with_retry || exit 1
-    github_guard_merge_commits "$@" || exit 1
+    github_merge_explicit=false
+    [ -z "$FM_PR_GITHUB_CALLER_METHOD" ] || github_merge_explicit=true
+    github_guard_merge_commits "${FM_PR_GITHUB_CALLER_METHOD:-squash}" "$github_merge_explicit" || exit 1
     require_admission_answers "$FM_PR_MERGE_HEAD" || exit 1
     # The away record is locked first, so this last presence and authority read
     # and the forge command below share one live-owner critical section.
