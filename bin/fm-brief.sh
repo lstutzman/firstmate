@@ -1172,6 +1172,7 @@ $ASK_USER_BLOCK
 $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, \`Fixes-regression-from: <full PR URL>\`, naming that earlier PR.
+10. When your task changes how a page, screen or component looks, use the \`ui-hill-climb\` skill and put its score table and before/after images in the PR.
 
 $WAIT_BLOCK$INBOX_SECTION
 

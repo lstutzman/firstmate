@@ -1807,6 +1807,22 @@ test_ship_brief_carries_the_fix_forward_rule() {
   pass "fm-brief.sh: ship brief carries the fix-forward line rule"
 }
 
+test_ship_brief_carries_the_ui_hill_climb_rule() {
+  local home
+  home="$TMP_ROOT/ui-hc-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ui-ship some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "fm-brief.sh ship scaffold exited non-zero"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'use the `ui-hill-climb` skill and put its score table and before/after images in the PR' \
+    "$home/data/brief-ui-ship/brief.md" "ship brief lost the ui-hill-climb line"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-ui-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh scout scaffold exited non-zero"
+  assert_no_grep "ui-hill-climb" "$home/data/brief-ui-scout/brief.md" \
+    "a scout opens no PR and must not carry the line"
+  pass "fm-brief.sh: ship brief carries the ui-hill-climb line"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -2064,3 +2080,4 @@ test_linear_required_projects_gate_briefs() {
 
 test_linear_required_projects_gate_briefs
 test_ship_brief_carries_the_fix_forward_rule
+test_ship_brief_carries_the_ui_hill_climb_rule
