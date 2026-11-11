@@ -3086,6 +3086,109 @@ test_fractional_legacy_retry_wait_refuses_without_arithmetic_error() {
   pass "fractional legacy retry wait remains supported without arithmetic"
 }
 
+# Build a landed local-only ship case whose task scratch root is <case>/scratch.
+make_landed_scratch_case() {  # <name>
+  local case_dir wt_head
+  case_dir=$(make_case "$1")
+  write_meta "$case_dir" local-only ship
+  wt_commit "$case_dir" "merged work"
+  wt_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  git -C "$case_dir/project" update-ref refs/heads/main "$wt_head"
+  mkdir -p "$case_dir/scratch/task-x1" "$case_dir/scratch/task-x2" "$case_dir/outside"
+  printf 'sibling\n' > "$case_dir/scratch/task-x2/keep.txt"
+  printf 'outside\n' > "$case_dir/outside/keep.txt"
+  printf '%s\n' "$case_dir"
+}
+
+run_scratch_teardown() {  # <case-dir> [extra args...]
+  local case_dir=$1 rc=0
+  shift
+  FM_SCRATCH_ROOT="$case_dir/scratch" run_teardown "$case_dir" "$@" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "scratch teardown must succeed: $(cat "$case_dir/stderr")"
+}
+
+test_teardown_clears_only_the_task_scratch_folder() {
+  local case_dir
+  case_dir=$(make_landed_scratch_case scratch-clear)
+  printf 'junk\n' > "$case_dir/scratch/task-x1/junk.txt"
+  ln -s "$case_dir/outside" "$case_dir/scratch/task-x1/link-out"
+  git clone -q "$case_dir/origin.git" "$case_dir/scratch/task-x1/clean-clone"
+  run_scratch_teardown "$case_dir"
+  assert_absent "$case_dir/scratch/task-x1" "teardown must clear the torn-down task's scratch folder"
+  assert_grep "scratch cleared: " "$case_dir/stdout" "teardown must say it cleared the scratch folder"
+  assert_grep sibling "$case_dir/scratch/task-x2/keep.txt" "teardown must keep a sibling task's scratch folder"
+  assert_grep outside "$case_dir/outside/keep.txt" "teardown must never follow a symlink out of the scratch folder"
+
+  case_dir=$(make_landed_scratch_case scratch-dirty-git)
+  git init -q "$case_dir/scratch/task-x1/repo"
+  printf 'unsaved\n' > "$case_dir/scratch/task-x1/repo/work.txt"
+  run_scratch_teardown "$case_dir"
+  assert_grep unsaved "$case_dir/scratch/task-x1/repo/work.txt" "teardown must keep scratch holding uncommitted git work"
+  assert_grep "holds uncommitted, unpushed, or stashed work" "$case_dir/stderr" "a kept dirty scratch folder must be noted"
+
+  case_dir=$(make_landed_scratch_case scratch-unpushed-git)
+  git clone -q "$case_dir/origin.git" "$case_dir/scratch/task-x1/repo"
+  git -C "$case_dir/scratch/task-x1/repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m local
+  run_scratch_teardown "$case_dir"
+  [ -d "$case_dir/scratch/task-x1/repo" ] || fail "teardown must keep scratch holding unpushed git commits"
+
+  case_dir=$(make_landed_scratch_case scratch-detached-git)
+  git clone -q "$case_dir/origin.git" "$case_dir/scratch/task-x1/repo"
+  git -C "$case_dir/scratch/task-x1/repo" checkout -q --detach
+  git -C "$case_dir/scratch/task-x1/repo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m detached
+  run_scratch_teardown "$case_dir"
+  [ -d "$case_dir/scratch/task-x1/repo" ] || fail "teardown must keep scratch holding a commit on a detached HEAD"
+
+  case_dir=$(make_landed_scratch_case scratch-stash-git)
+  git clone -q "$case_dir/origin.git" "$case_dir/scratch/task-x1/repo"
+  printf 'stashed\n' > "$case_dir/scratch/task-x1/repo/stashed.txt"
+  git -C "$case_dir/scratch/task-x1/repo" add stashed.txt
+  git -C "$case_dir/scratch/task-x1/repo" -c user.email=t@t -c user.name=t stash push -q -m only-work
+  [ -z "$(git -C "$case_dir/scratch/task-x1/repo" status --porcelain)" ] || fail "stash fixture must leave a clean work tree"
+  run_scratch_teardown "$case_dir"
+  [ -n "$(git -C "$case_dir/scratch/task-x1/repo" stash list 2>/dev/null)" ] || fail "teardown must keep scratch whose only work is a stash"
+  assert_grep "holds uncommitted, unpushed, or stashed work" "$case_dir/stderr" "a kept stash-only scratch folder must be noted"
+
+  case_dir=$(make_landed_scratch_case scratch-nondefault-root)
+  printf 'junk\n' > "$case_dir/scratch/task-x1/junk.txt"
+  FM_TEST_SEAM='' run_scratch_teardown "$case_dir"
+  [ -f "$case_dir/scratch/task-x1/junk.txt" ] || fail "outside the test seam, teardown must not clear a scratch root other than \$HOME/fm-scratch"
+  assert_grep "is not \$HOME/fm-scratch" "$case_dir/stderr" "a refused non-default scratch root must be noted"
+  assert_no_grep "scratch cleared" "$case_dir/stdout" "a refused non-default scratch root must not report a clear"
+
+  local spelling rc
+  for spelling in unset symlink; do
+    case_dir=$(make_landed_scratch_case "scratch-home-root-$spelling")
+    mkdir -p "$case_dir/home/fm-scratch/task-x1" "$case_dir/home/fm-scratch/task-x2"
+    printf 'junk\n' > "$case_dir/home/fm-scratch/task-x1/junk.txt"
+    printf 'sibling\n' > "$case_dir/home/fm-scratch/task-x2/keep.txt"
+    ln -s "$case_dir/home/fm-scratch" "$case_dir/scratch-link"
+    rc=0
+    (
+      if [ "$spelling" = unset ]; then unset FM_SCRATCH_ROOT; else export FM_SCRATCH_ROOT="$case_dir/scratch-link"; fi
+      HOME="$case_dir/home" FM_TEST_SEAM='' run_teardown "$case_dir"
+    ) > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    expect_code 0 "$rc" "teardown with the \$HOME/fm-scratch root ($spelling FM_SCRATCH_ROOT) must succeed: $(cat "$case_dir/stderr")"
+    assert_absent "$case_dir/home/fm-scratch/task-x1" "teardown must clear \$HOME/fm-scratch/<task-id> outside the test seam ($spelling FM_SCRATCH_ROOT)"
+    assert_grep sibling "$case_dir/home/fm-scratch/task-x2/keep.txt" "teardown must keep a sibling folder in \$HOME/fm-scratch ($spelling FM_SCRATCH_ROOT)"
+    assert_grep "scratch cleared: " "$case_dir/stdout" "teardown must report clearing \$HOME/fm-scratch/<task-id> ($spelling FM_SCRATCH_ROOT)"
+    [ -d "$case_dir/scratch/task-x1" ] || fail "teardown must not clear the unused fixture root ($spelling FM_SCRATCH_ROOT)"
+  done
+
+  case_dir=$(make_landed_scratch_case scratch-symlink)
+  rmdir "$case_dir/scratch/task-x1"
+  ln -s "$case_dir/outside" "$case_dir/scratch/task-x1"
+  run_scratch_teardown "$case_dir"
+  [ -L "$case_dir/scratch/task-x1" ] || fail "teardown must leave a symlinked scratch folder alone"
+  assert_grep outside "$case_dir/outside/keep.txt" "teardown must not clear a symlinked scratch folder's target"
+
+  case_dir=$(make_landed_scratch_case scratch-force)
+  printf 'junk\n' > "$case_dir/scratch/task-x1/junk.txt"
+  run_scratch_teardown "$case_dir" --force
+  [ -f "$case_dir/scratch/task-x1/junk.txt" ] || fail "--force skips the landed-work checks, so it must not clear scratch"
+  pass "teardown clears only the landed task's own scratch folder and keeps dirty git work, symlinks, and forced cases"
+}
+
 test_local_only_force_overrides_unpushed() {
   local case_dir rc
   case_dir=$(make_case force-override)
@@ -6530,6 +6633,7 @@ test_teardown_closes_a_gitlab_task_with_its_merge_request_url_as_a_note
 test_teardown_manual_backend_leaves_the_backlog_to_the_operator
 test_local_only_truly_unpushed_refuses
 test_local_only_merged_to_local_main_allows
+test_teardown_clears_only_the_task_scratch_folder
 test_landed_on_other_origin_branch_with_stale_refs_allows
 test_refresh_failure_does_not_read_as_landed
 test_refreshed_refs_still_refuse_unreachable_commits
