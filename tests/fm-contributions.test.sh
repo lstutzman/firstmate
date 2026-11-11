@@ -2053,6 +2053,11 @@ test_author_human_comment_is_kept() {
   out=$(with_home "$home" "$ROOT/bin/fm-contributions.sh" pending)
   printf '%s' "$out" | jq -e 'length == 2 and all(.[]; .author == "author")' >/dev/null \
     || fail "a human comment by the PR author's login must stay a pending signal: $out"
+  jq -n '[{id:43,user:{login:"author",type:"User"},author_association:"NONE",body:"untrusted association",
+    html_url:"https://github.com/o/r/pull/8#issuecomment-43",updated_at:"2026-09-16T08:03:00Z"}]' > "$home/forge/comments.json"
+  registered_checks "$home" >/dev/null
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" pending | jq -e 'length == 2' >/dev/null \
+    || fail 'an author comment without a maintainer association must not be admitted'
   pass "a human review comment under the PR author's own login is kept"
 }
 

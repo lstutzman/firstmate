@@ -109,7 +109,8 @@
 # New maintainer comments/reviews (OWNER, MEMBER, COLLABORATOR) and issue
 # transitions to ready-for-pr persist as pending before any wake. Fleet PRs are
 # opened under the owner's own login, so a human comment by the contribution
-# author is admitted on a PR too. What is dropped under that login is the
+# author is admitted on a PR too, when its association is OWNER, MEMBER or
+# COLLABORATOR like any other maintainer's. What is dropped under that login is the
 # author's own machinery: an account of type Bot or a login ending [bot], a body
 # carrying the no-mistakes pipeline marker, a review with an empty body (the
 # wrapper of an inline reply), and an inline reply inside a thread, which is the
@@ -509,7 +510,7 @@ observe() { # canonical GitHub URL -> normalized JSON
               conclusion:(if .state == "pending" then null else .state end)} ]),
           events:((($issue_comments | map(. + {_signal:"comment"})) + ($reviews | map(. + {_signal:"review"})) + ($inline_comments | map(. + {_signal:"review-comment"})))
             | map(select(if .user.login == $c.user.login
-                  then (automated | not) and (._signal != "review" or (.body // "") != "") and (.in_reply_to_id == null)
+                  then (.author_association | IN("OWNER","MEMBER","COLLABORATOR")) and (automated | not) and (._signal != "review" or (.body // "") != "") and (.in_reply_to_id == null)
                   else ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.login | IN($bots[]))) end)
               | (.created_at // .submitted_at // "") as $at | (.in_reply_to_id // .id) as $root | . as $e
               | {token:((._signal + ":") + (.id|tostring) + ":" + (.updated_at // .submitted_at // "") + ":" + (.state // "")),
