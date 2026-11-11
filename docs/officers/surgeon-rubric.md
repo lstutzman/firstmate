@@ -31,8 +31,9 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 | Nightly E2E run invalid | always | | | |
 | Nightly visual review defect | none | file severity high | file severity medium | file severity low |
 
-- Production bump: when the sweeper's payload says the bug was seen in production (its `environment` field), the finding moves up one step, low to medium to high to critical.
-  The code never infers production from a bug's text, so a payload with no `environment` field gets no bump.
+- Production bump: when the sweeper says the cluster was seen in production (its `environment` field, on the bug or in the sweeper's own run bundle), the finding moves up one step, low to medium to high to critical.
+  The code never infers production from a bug's text, so a cluster with no `environment` from either source gets no bump and the digest names a coverage gap.
+- Stale cluster: a sweeper cluster whose newest `last_seen` is more than 3 days before the run is won't fix, never offered as fresh, and returns to the queue the day it is seen again.
 - A visual-review defect takes the severity the findings file gives it, and a finding with none stated is medium.
   A held visual-review finding is always low, so it never raises the high-severity wake.
 - A won't-fix finding is always low.
