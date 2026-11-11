@@ -1,0 +1,5 @@
+ok - progress: Linear labels classify starts, reserved labels do not, and a failed read is a named gap
+ok - progress: open PR discovery retries limits, reads a blank list as no PRs, and holds only the failed repo and unclaimed work
+ok - progress: Top of Mind failure never reuses stale data or blocks other discovery
+fm-officer: officer progress run for 2026-10-25 failed: KeyError: 'tag_source'
+not ok - a finished merge ask from Top of Mind broke the run
