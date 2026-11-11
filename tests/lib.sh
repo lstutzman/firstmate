@@ -467,6 +467,13 @@ trap 'fm_test_cleanup; exit 131' QUIT
 FM_JEV_RECEIPTS_DIR=$(fm_test_tmproot fm-jev-receipts) || return 1
 export FM_JEV_RECEIPTS_DIR
 
+# Keep every suite's teardown off the operator's real ~/fm-scratch: teardown
+# deletes the folder named for the task id it retires (bin/fm-teardown.sh "Task
+# scratch"), and fixture ids such as task-x1 could match a real folder there.
+# FM_SCRATCH_ROOT is a test-only seam, honored only under FM_TEST_SEAM=1.
+FM_SCRATCH_ROOT=$(fm_test_tmproot fm-scratch-root) || return 1
+export FM_SCRATCH_ROOT
+
 # fm_test_reap_orphans: best-effort sweep for fixture roots left behind by a
 # prior run that was killed hard enough to skip the traps above (e.g. a
 # SIGKILL timeout). Only removes directories carrying the .fm-test-fixture
