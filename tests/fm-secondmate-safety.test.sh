@@ -1653,6 +1653,7 @@ EOF
     if [ "$sched" = ok ]; then
       printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> %q\nexit 0\n' "$sched_log" > "$fakebin/$tool"
     else
+      # shellcheck disable=SC2016
       printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> %q\n[ "$1" = print ] && exit 0\nexit 1\n' "$sched_log" > "$fakebin/$tool"
     fi
     chmod +x "$fakebin/$tool"
