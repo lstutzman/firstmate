@@ -62,8 +62,6 @@ review:
 commands:
   lint: 'bin/fm-lint.sh && bash tests/fm-pi-primary-types.test.sh'
 
-# Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
-# The evidence is not committed to the feature or default branch.
 test:
   instructions: |
     Run live Herdr scenarios only through bin/fm-herdr-lab.sh with a named non-default fm-lab-* session, following that helper's prepare, provision, run, and teardown contract exactly.
