@@ -385,8 +385,12 @@ def judge_sweeper(doc, history=None, bundle=None):
     items.update({text(i.get("fp"), 100): text(i.get("id"), 20)
                   for k in ("filed", "updated", "cancelled", "dismissed") for i in dicts(linear_doc.get(k)) if i.get("fp")})
     started = utc_epoch(run.get("started_at"))
-    if started is None and SWEEP_RUN_ID.fullmatch(text(run.get("run_id"), 64)):
-        started = datetime.datetime.strptime(run["run_id"], "sweep-%Y%m%dT%H%MZ").replace(tzinfo=datetime.timezone.utc).timestamp()
+    run_id = text(run.get("run_id"), 64)
+    if started is None and SWEEP_RUN_ID.fullmatch(run_id):
+        try:
+            started = datetime.datetime.strptime(run_id, "sweep-%Y%m%dT%H%MZ").replace(tzinfo=datetime.timezone.utc).timestamp()
+        except ValueError:
+            pass
     out = []
     for b in dicts(intake_doc.get("bugs")):
         disposition = text(b.get("disposition")).lower()
