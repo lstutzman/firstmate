@@ -42,6 +42,14 @@
 #       as not installed or not enabled; silent when there is no endpoint to
 #       ring, the timer is enabled, or the scheduler cannot be asked.
 #       Run by bin/fm-bootstrap.sh at session start. Always exits 0.
+#   fm-watch-backstop.sh uninstall
+#       Stops, disables, and removes this home's own scheduler files, named by
+#       the same per-home hash install uses, and never matches another home's.
+#       FM_HOME may name a directory already removed when it is the absolute
+#       physical path the home had (bin/fm-teardown.sh's home retirement passes
+#       it after removal). Does nothing, and never asks the scheduler, when this
+#       home has no scheduler file. Prints one outcome line; exits non-zero
+#       only when a scheduler file it found could not be removed.
 #   fm-watch-backstop.sh -h|--help
 #
 # FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state directory.
@@ -71,6 +79,7 @@ Usage: fm-watch-backstop.sh record-endpoint
        fm-watch-backstop.sh timer-files <linux|darwin> <dir>
        fm-watch-backstop.sh install
        fm-watch-backstop.sh verify
+       fm-watch-backstop.sh uninstall
        fm-watch-backstop.sh -h|--help
 
 record-endpoint  record this session's endpoint for the home (run in-session)
@@ -78,6 +87,7 @@ check            one poll: ring the recorded endpoint once per stale episode
 timer-files      write this home's systemd user or launchd files into <dir>
 install          write and enable this home's timer (idempotent)
 verify           report when this home's timer is not installed or enabled
+uninstall        stop and remove this home's own timer (for a retired home)
 FM_HOME selects the home. FM_WATCH_BACKSTOP_STALE_SECS (default 900) is the
 watcher beacon age treated as supervision down.
 EOF
@@ -95,7 +105,7 @@ case "$STALE_SECS" in ''|*[!0-9]*|0) STALE_SECS=900 ;; esac
 ACTION=${1:-}
 case "$ACTION" in
   -h|--help) usage; exit 0 ;;
-  record-endpoint|check|install|verify) [ "$#" -eq 1 ] || { usage >&2; exit 2; } ;;
+  record-endpoint|check|install|verify|uninstall) [ "$#" -eq 1 ] || { usage >&2; exit 2; } ;;
   timer-files) [ "$#" -eq 3 ] || { usage >&2; exit 2; } ;;
   *) usage >&2; exit 2 ;;
 esac
@@ -237,9 +247,9 @@ xml() { local v=${1//&/&amp;}; v=${v//</&lt;}; v=${v//>/&gt;}; printf '%s' "$v";
 
 # This home's resolved path and its per-home scheduler name.
 home_path() { cd -P "$FM_HOME" 2>/dev/null && pwd -P; }
-unit_name() {  # <linux|darwin>
-  local home slug
-  home=$(home_path) || { echo "error: FM_HOME $FM_HOME is not a directory" >&2; return 1; }
+unit_name() {  # <linux|darwin> [<physical-home-path>]
+  local home=${2:-} slug
+  [ -n "$home" ] || home=$(home_path) || { echo "error: FM_HOME $FM_HOME is not a directory" >&2; return 1; }
   slug=$(printf '%s' "$home" | { shasum -a 256 2>/dev/null || sha256sum; } | cut -c1-12)
   case "$1" in
     linux) printf 'firstmate-watch-backstop-%s' "$slug" ;;
@@ -346,10 +356,53 @@ verify_timer() {
     "$name" "$home" "$SCRIPT_DIR/fm-watch-backstop.sh"
 }
 
+# A home that still exists resolves physically; a retired one is named only by
+# the absolute path it had, which its caller resolved before removing it.
+uninstall_home_path() {
+  if [ -d "$FM_HOME" ]; then home_path; return; fi
+  case "$FM_HOME" in
+    /*) printf '%s' "${FM_HOME%/}" ;;
+    *) echo "error: FM_HOME $FM_HOME is neither a directory nor an absolute path" >&2; return 1 ;;
+  esac
+}
+
+uninstall_timer() {
+  local platform dir home name files=() f rc=0
+  platform=$(host_platform) || { echo "error: no systemd user timer or launchd agent on $(uname -s 2>/dev/null)" >&2; return 2; }
+  dir=$(scheduler_dir "$platform")
+  home=$(uninstall_home_path) || return 1
+  name=$(unit_name "$platform" "$home") || return 1
+  case "$platform" in
+    linux) for f in "$dir/$name.timer" "$dir/$name.service"; do [ -e "$f" ] || [ -L "$f" ] && files+=("$f"); done ;;
+    darwin) f="$dir/$name.plist"; { [ -e "$f" ] || [ -L "$f" ]; } && files+=("$f") ;;
+  esac
+  if [ "${#files[@]}" -eq 0 ]; then
+    printf 'not installed: %s\n' "$name"
+    return 0
+  fi
+  # Stop and disable while the files exist: disable reads the timer's [Install]
+  # section to find the link it removes. A scheduler that cannot be asked does
+  # not keep the files, which the scheduler never runs once they are gone.
+  case "$platform" in
+    linux)
+      systemctl --user disable --now "$name.timer" >/dev/null 2>&1 || true
+      systemctl --user stop "$name.service" >/dev/null 2>&1 || true
+      ;;
+    darwin) launchctl bootout "gui/$(id -u)/$name" >/dev/null 2>&1 || true ;;
+  esac
+  for f in "${files[@]}"; do
+    rm -f -- "$f" || rc=1
+  done
+  [ "$platform" != linux ] || systemctl --user daemon-reload >/dev/null 2>&1 || true
+  [ "$rc" -eq 0 ] || { echo "error: could not remove every scheduler file of $name in $dir" >&2; return 1; }
+  printf 'uninstalled: %s/%s\n' "$dir" "$name"
+}
+
 case "$ACTION" in
   record-endpoint) record_endpoint >/dev/null 2>&1; exit 0 ;;
   check) check ;;
   timer-files) timer_files "$2" "$3" ;;
   install) install_timer ;;
   verify) verify_timer; exit 0 ;;
+  uninstall) uninstall_timer ;;
 esac

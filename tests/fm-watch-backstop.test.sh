@@ -177,6 +177,7 @@ printf '%s\n' "$*" >> "$ST/calls.log"
 case "$2" in
   daemon-reload) exit 0 ;;
   enable) [ "$3" = --now ] && touch "$ST/enabled" ;;
+  disable) [ "$3" = --now ] && rm -f "$ST/enabled" ;;
   is-enabled) if [ -e "$ST/enabled" ]; then echo enabled; else echo not-found; exit 4; fi ;;
 esac
 SH
@@ -188,6 +189,7 @@ printf '%s\n' "$*" >> "$ST/calls.log"
 case "$1" in
   print) [ -e "$ST/enabled" ] ;;
   bootstrap) [ -f "$3" ] && touch "$ST/enabled" ;;
+  bootout) rm -f "$ST/enabled" ;;
   *) exit 1 ;;
 esac
 SH
@@ -240,6 +242,56 @@ test_install_is_idempotent_and_verify_reports_a_missing_timer() {
   [ "$(grep -c '^bootstrap ' "$st/calls.log")" -eq 1 ] || fail "a loaded agent must not be bootstrapped again: $(cat "$st/calls.log")"
   [ -z "$(PATH="$fb:$PATH" HOME="$user" run_backstop "$home" verify)" ] || fail "verify must be silent once the agent is loaded"
   pass "backstop: install is one idempotent command, and verify names it while the timer is missing"
+}
+
+test_uninstall_removes_only_this_homes_timer() {
+  local home other st fb user out unit other_unit dir status=0
+  home=$(make_home "$TMP_ROOT/uninstall-linux")
+  other=$(make_home "$TMP_ROOT/uninstall-linux-other")
+  st="$TMP_ROOT/uninstall-linux-sched"
+  user="$TMP_ROOT/uninstall-linux-user"
+  dir="$user/.config/systemd/user"
+  mkdir -p "$user"
+  fb=$(make_scheduler_fakes "$st" Linux)
+  out=$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" uninstall) || status=$?
+  expect_code 0 "$status" "uninstall on a home with no timer must succeed"
+  assert_contains "$out" 'not installed' "uninstall must say a home had no timer"
+  [ ! -s "$st/calls.log" ] || fail "uninstall asked the scheduler for a home with no timer: $(cat "$st/calls.log")"
+  PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" install >/dev/null || fail "install failed"
+  PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$other" install >/dev/null || fail "second home's install failed"
+  unit=$(PATH="$fb:$PATH" run_backstop "$home" timer-files linux "$dir" | sed -n '1s/\.service$//p')
+  other_unit=$(PATH="$fb:$PATH" run_backstop "$other" timer-files linux "$dir" | sed -n '1s/\.service$//p')
+  : > "$st/calls.log"
+  # The retired home is gone; uninstall names it by the path it had.
+  mv "$home" "$home.gone"
+  out=$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" uninstall) || fail "uninstall failed: $out"
+  assert_contains "$out" "uninstalled: $dir/$unit" "uninstall must name the units it removed"
+  assert_absent "$dir/$unit.timer" "uninstall must remove the home's timer file"
+  assert_absent "$dir/$unit.service" "uninstall must remove the home's service file"
+  [ -f "$dir/$other_unit.timer" ] && [ -f "$dir/$other_unit.service" ] \
+    || fail "uninstall removed another home's units"
+  assert_contains "$(cat "$st/calls.log")" "--user disable --now $unit.timer" "uninstall must disable and stop the timer"
+  assert_contains "$(cat "$st/calls.log")" "--user daemon-reload" "uninstall must reload the user scheduler"
+  if grep -F "$other_unit" "$st/calls.log" >/dev/null; then
+    fail "uninstall touched another home's unit: $(cat "$st/calls.log")"
+  fi
+  status=0
+  PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$TMP_ROOT/never-a-home" uninstall >/dev/null 2>&1 || status=$?
+  expect_code 0 "$status" "an absolute path with no timer is a no-op"
+  status=0
+  PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "not-absolute" uninstall >/dev/null 2>&1 || status=$?
+  [ "$status" -ne 0 ] || fail "uninstall must refuse a relative path that names no directory"
+
+  home=$(make_home "$TMP_ROOT/uninstall-darwin")
+  st="$TMP_ROOT/uninstall-darwin-sched"
+  user="$TMP_ROOT/uninstall-darwin-user"
+  mkdir -p "$user"
+  fb=$(make_scheduler_fakes "$st" Darwin)
+  PATH="$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null || fail "macOS install failed"
+  PATH="$fb:$PATH" HOME="$user" run_backstop "$home" uninstall >/dev/null || fail "macOS uninstall failed"
+  [ -z "$(find "$user/Library/LaunchAgents" -name '*.plist')" ] || fail "macOS uninstall left the agent file"
+  grep -q '^bootout ' "$st/calls.log" || fail "macOS uninstall did not boot the agent out: $(cat "$st/calls.log")"
+  pass "backstop: uninstall stops and removes only this home's own timer, even after the home is gone"
 }
 
 # A Herdr CLI stand-in scoped to one session and pane: it answers only calls
@@ -454,6 +506,7 @@ fm_test_run \
   test_check_without_endpoint_reports_and_retries \
   test_timer_files \
   test_install_is_idempotent_and_verify_reports_a_missing_timer \
+  test_uninstall_removes_only_this_homes_timer \
   test_ring_herdr_from_bare_unit_env \
   test_ring_once_per_stale_episode \
   test_ring_typed_input_for_other_harnesses \

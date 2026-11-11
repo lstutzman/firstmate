@@ -350,6 +350,17 @@
 # Opt-in config/record-export-root delegates the record archive transaction to
 # bin/fm-record-export.sh immediately before status, metadata, or inbox records
 # for the retiring task are removed. A failed commit retains those sources.
+# Task scratch: once a teardown without --force has removed the task record,
+# the task's own scratch folder <root>/<task-id> is deleted outright (fleet
+# rules name it a scratch folder), where <root> is FM_SCRATCH_ROOT, default
+# $HOME/fm-scratch. Only that one direct child is touched: a task id that does
+# not name one, a symlinked folder, or a folder that does not resolve inside
+# <root> is left alone with a note, symlinks inside it are removed and never
+# followed, and a folder holding a non-bare git repository with uncommitted,
+# unpushed, or stashed work (or one git cannot read) is kept with a note. A
+# failed removal warns and never fails the teardown. Retiring a secondmate home
+# also removes that home's own watcher backstop timer
+# (bin/fm-watch-backstop.sh uninstall); a task teardown never touches one.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -3002,6 +3013,70 @@ t3code_secondmate_home_shutdown_barrier() {  # <home> <task-id>
   reap_task_worktree_processes "secondmate home" "$1"
 }
 
+# A scratch git repository holds work when it has uncommitted or untracked
+# changes, commits on no remote, or stashes. Any git failure counts as work.
+scratch_repo_holds_work() {  # <work-tree>
+  local out
+  out=$(git -c core.fsmonitor=false -C "$1" status --porcelain --untracked-files=all 2>/dev/null) || return 0
+  [ -z "$out" ] || return 0
+  out=$(git -c core.fsmonitor=false -C "$1" log --oneline --branches --not --remotes 2>/dev/null) || return 0
+  [ -z "$out" ] || return 0
+  out=$(git -c core.fsmonitor=false -C "$1" stash list 2>/dev/null) || return 0
+  [ -n "$out" ]
+}
+
+# The script header owns this contract ("Task scratch").
+teardown_clear_task_scratch() {  # <task-id>
+  local id=$1 root target real_root real_target git_path
+  if [ -n "${FM_SCRATCH_ROOT:-}" ]; then
+    root=$FM_SCRATCH_ROOT
+  elif [ -n "${HOME:-}" ]; then
+    root=$HOME/fm-scratch
+  else
+    return 0
+  fi
+  case "$id" in
+    ''|.|..|-*|*/*)
+      echo "note: scratch for task '$id' not cleared: the id does not name one folder in $root" >&2
+      return 0
+      ;;
+  esac
+  target=$root/$id
+  if [ -L "$target" ]; then
+    echo "note: scratch $target not cleared: it is a symlink, which teardown never follows" >&2
+    return 0
+  fi
+  [ -d "$target" ] || return 0
+  real_root=$(cd -P -- "$root" 2>/dev/null && pwd -P) || return 0
+  real_target=$(cd -P -- "$target" 2>/dev/null && pwd -P) || return 0
+  if [ "$real_target" != "$real_root/$id" ]; then
+    echo "note: scratch $target not cleared: it does not resolve inside $real_root" >&2
+    return 0
+  fi
+  while IFS= read -r -d '' git_path; do
+    if scratch_repo_holds_work "${git_path%/.git}"; then
+      echo "note: scratch $real_target kept: git repository ${git_path%/.git} holds uncommitted, unpushed, or stashed work" >&2
+      return 0
+    fi
+  done < <(find "$real_target" -name .git -prune -print0 2>/dev/null)
+  if rm -rf -- "$real_target"; then
+    echo "scratch cleared: $real_target"
+  else
+    echo "warning: could not clear scratch $real_target; teardown is otherwise complete" >&2
+  fi
+  return 0
+}
+
+# A removed home's out-of-session watcher backstop timer (bin/fm-watch-backstop.sh
+# uninstall) would otherwise fire every five minutes for a home that is gone.
+# Runs only after the home was returned or removed, names the units by the
+# physical path the home had, and never fails the retirement.
+retire_firstmate_home_backstop() {  # <physical-home-path> <label>
+  local out
+  out=$(FM_HOME="$1" "$SCRIPT_DIR/fm-watch-backstop.sh" uninstall 2>&1) \
+    || echo "warning: could not remove the watcher backstop timer of $2 $1: $out" >&2
+}
+
 remove_firstmate_home() {  # <home> <label> <task-id> <backend>
   local home=$1 label=$2 expected_id=${3:-} backend=${4:-} abs_home_path process_event_backup
   [ -n "$home" ] || return 0
@@ -3038,10 +3113,12 @@ remove_firstmate_home() {  # <home> <label> <task-id> <backend>
       return 1
     }
     [ -z "$process_event_backup" ] || rm -rf -- "$process_event_backup"
+    retire_firstmate_home_backstop "$abs_home_path" "$label"
     return 0
   fi
   if safe_rm_rf "$abs_home_path" "$label"; then
     [ -z "$process_event_backup" ] || rm -rf -- "$process_event_backup"
+    retire_firstmate_home_backstop "$abs_home_path" "$label"
     return 0
   fi
   restore_firstmate_home_process_events "$abs_home_path" "$label" "$process_event_backup" || return $?
@@ -4320,6 +4397,7 @@ else
 fi
 fm_lock_release "$META_LOCK"
 META_LOCK_HELD=0
+[ "$FORCE" = --force ] || teardown_clear_task_scratch "$ID"
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi

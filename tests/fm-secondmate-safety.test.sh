@@ -1611,7 +1611,8 @@ test_fm_send_refuses_bare_window_without_home_meta() {
 }
 
 test_secondmate_teardown_retires_empty_home() {
-  local home subhome subhome_abs fakebin log lease fmroot
+  local home subhome subhome_abs fakebin log lease fmroot platform sched_dir other sched_log tool sub_units kept_units unit
+  local -a sched_env
   home="$TMP_ROOT/teardown-home"
   subhome="$TMP_ROOT/teardown-subhome"
   fmroot="$TMP_ROOT/teardown-fmroot"
@@ -1636,16 +1637,46 @@ EOF
   log="$TMP_ROOT/teardown-fake/tmux.log"
   lease="$TMP_ROOT/teardown-fake/lease"
   printf 'domain\n' > "$lease"
-  PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$fmroot" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-fake/pane.txt" \
+  # Watcher backstop timers for the retiring home, its parent, and an unrelated
+  # home, in a private scheduler directory driven by a logging scheduler fake.
+  case "$(uname -s)" in
+    Darwin) platform=darwin; sched_env=(HOME="$TMP_ROOT/teardown-user"); sched_dir="$TMP_ROOT/teardown-user/Library/LaunchAgents" ;;
+    *) platform=linux; sched_env=(XDG_CONFIG_HOME="$TMP_ROOT/teardown-user/.config"); sched_dir="$TMP_ROOT/teardown-user/.config/systemd/user" ;;
+  esac
+  other="$TMP_ROOT/teardown-otherhome"
+  mkdir -p "$other"
+  sched_log="$TMP_ROOT/teardown-fake/scheduler.log"
+  : > "$sched_log"
+  for tool in systemctl launchctl; do
+    printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> %q\nexit 0\n' "$sched_log" > "$fakebin/$tool"
+    chmod +x "$fakebin/$tool"
+  done
+  sub_units=$(FM_HOME="$subhome" "$ROOT/bin/fm-watch-backstop.sh" timer-files "$platform" "$sched_dir") || fail "could not write the retiring home's timer"
+  kept_units="$(FM_HOME="$home" "$ROOT/bin/fm-watch-backstop.sh" timer-files "$platform" "$sched_dir")
+$(FM_HOME="$other" "$ROOT/bin/fm-watch-backstop.sh" timer-files "$platform" "$sched_dir")" || fail "could not write the kept homes' timers"
+  env "${sched_env[@]}" PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$fmroot" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/teardown-fake/pane.txt" \
     FM_FAKE_TREEHOUSE_LEASE_FILE="$lease" \
     "$ROOT/bin/fm-teardown.sh" domain >/dev/null 2>/dev/null \
     || fail "teardown failed for empty secondmate home"
+  while IFS= read -r unit; do
+    [ ! -e "$sched_dir/$unit" ] || fail "retirement left the retired home's backstop file $unit"
+  done <<EOF
+$sub_units
+EOF
+  while IFS= read -r unit; do
+    [ -f "$sched_dir/$unit" ] || fail "retirement removed another home's backstop file $unit"
+    grep -F "${unit%.*}" "$sched_log" >/dev/null && fail "retirement asked the scheduler about another home's unit ${unit%.*}"
+  done <<EOF
+$kept_units
+EOF
+  unit=$(printf '%s\n' "$sub_units" | head -n 1)
+  grep -F "${unit%.*}" "$sched_log" >/dev/null || fail "retirement did not stop the retired home's timer: $(cat "$sched_log")"
   grep -F "treehouse return --force $subhome_abs" "$log" >/dev/null || fail "teardown did not release the secondmate home lease via treehouse return"
   [ ! -e "$lease" ] || fail "teardown left the secondmate home lease held after retirement"
   [ ! -d "$subhome" ] || fail "teardown did not remove the retired secondmate home"
   [ ! -e "$home/state/domain.meta" ] || fail "teardown did not clear parent meta"
   grep -F -- '- domain ' "$home/data/secondmates.md" >/dev/null && fail "teardown did not remove secondmate registry route"
-  pass "secondmate teardown retires empty homes and releases routing"
+  pass "secondmate teardown retires empty homes, releases routing, and removes only the retired home's backstop timer"
 }
 
 # A second mate's status log relays child outcomes, so a merged child PR there
