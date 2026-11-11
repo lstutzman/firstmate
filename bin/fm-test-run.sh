@@ -395,7 +395,8 @@ family_for_basename() {
     fm-calm-pi-queue-retention-live-e2e.test.sh|\
     fm-herdr-submit-confirm-live-e2e.test.sh|fm-claude-band-focus-live-e2e.test.sh|\
     fm-backend-rex-composer-live-e2e.test.sh|\
-    fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh)
+    fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh|\
+    fm-claude-tool-exclude-live.test.sh)
       printf '%s\n' live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
@@ -794,6 +795,7 @@ tests/fm-claude-account-quota.test.sh 598
 tests/fm-claude-band-focus-live-e2e.test.sh 55
 tests/fm-claude-stop-autoarm-live-e2e.test.sh 60
 tests/fm-claude-stop-autoarm.test.sh 61672
+tests/fm-claude-tool-exclude-live.test.sh 75
 tests/fm-claude-trust.test.sh 14307
 tests/fm-cmux-claude-composer-live-e2e.test.sh 52
 tests/fm-codex-continuity-live-e2e.test.sh 91
@@ -866,6 +868,7 @@ tests/fm-kimi-trust-prompt-live-e2e.test.sh 98
 tests/fm-kiro-harness.test.sh 38261
 tests/fm-kiro-signals-live-e2e.test.sh 56
 tests/fm-launch-prompt-signals-live-e2e.test.sh 89
+tests/fm-lavish-url.test.sh 30000
 tests/fm-lee-step.test.sh 324
 tests/fm-lint-workflows.test.sh 1439
 tests/fm-live-gate.test.sh 10688
@@ -945,6 +948,7 @@ tests/fm-remote-delta-read.test.sh 5503
 tests/fm-remote-doctor.test.sh 23704
 tests/fm-remote-entrypoint.test.sh 209
 tests/fm-remote-herdr-guard.test.sh 3222
+tests/fm-remote-herdr-identity.test.sh 6158
 tests/fm-remote-job-claim-reap.test.sh 3659
 tests/fm-remote-job-claim-retention.test.sh 223
 tests/fm-remote-job-launchagent.test.sh 59935
@@ -1009,6 +1013,7 @@ tests/fm-startup-memory-budget.test.sh 11896
 tests/fm-startup-network.test.sh 80314
 tests/fm-stat-shadowing.test.sh 56
 tests/fm-stow-cascade.test.sh 3340
+tests/fm-stow-guard.test.sh 30000
 tests/fm-subagent-pretool-check.test.sh 1146
 tests/fm-supervision-events.test.sh 1503
 tests/fm-supervision-host-attended-live-e2e.test.sh 91
@@ -1776,6 +1781,9 @@ families_for_changed_path() {
       printf '%s\n' __script__:fm-read-repetition-live.test.sh
       printf '%s\n' __script__:fm-pi-primary-types.test.sh
       ;;
+    tests/fixtures/fm-claude-request-capture.py)
+      printf '%s\n' __script__:fm-claude-tool-exclude-live.test.sh
+      ;;
     .pi/extensions/fm-branch-supervision.ts|.pi/extensions/lib/fm-async-exec.ts|\
     .pi/extensions/lib/fm-branch-dispatch.ts|.pi/extensions/lib/fm-native-contract.ts)
       # The portable suites that actually load these files, named one by one.
@@ -1938,6 +1946,10 @@ families_for_changed_path() {
     .agents/skills/harness-adapters/SKILL.md|.agents/skills/harness-adapters/references/*)
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
+      ;;
+    .agents/skills/lavish-url/assets/*|.agents/skills/lavish-url/enhancers/*)
+      # The layers bin/fm-lavish-url.sh injects into every snapshot.
+      printf '%s\n' "__script__:fm-lavish-url.test.sh"
       ;;
     .agents/skills/*/SKILL.md)
       printf '%s\n' pure-contract-unit
