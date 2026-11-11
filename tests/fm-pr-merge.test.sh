@@ -5416,6 +5416,70 @@ test_merge_commit_guard() {
   pass "fm-pr-merge refuses to flatten a pull request's merge commits unless merged or overridden"
 }
 
+# The merge commit this script's own --update-branch puts on the pull request
+# (GitHub's update-branch merges the base tip into the head) must not block a
+# plain re-run's default squash once its checks pass; a different merge commit
+# pushed on top of that update still must.
+test_update_branch_merge_commit_reruns_with_default() {
+  local case_dir rc old_head new_head base_tip top url=https://github.com/example/repo/pull/6191 scenario
+  old_head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  new_head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  base_tip=9999999999999999999999999999999999999999
+  top=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  for scenario in plain merged-on-top; do
+    case_dir=$(make_case "github-update-branch-rerun-$scenario")
+    add_gh_mocks "$case_dir" "$old_head"
+    write_github_required "$case_dir" classic:ci
+    jq --arg tip "$base_tip" '.commit = {sha: $tip}' "$case_dir/github-branch.json" > "$case_dir/branch.tmp"
+    mv "$case_dir/branch.tmp" "$case_dir/github-branch.json"
+    jq '.mergeStateStatus = "BEHIND"' "$case_dir/github-view.json" > "$case_dir/view.tmp"
+    mv "$case_dir/view.tmp" "$case_dir/github-view.json"
+    jq --arg head "$new_head" '.mergeStateStatus = "CLEAN" | .headRefOid = $head | .statusCheckRollup[0].conclusion = "FAILURE"' \
+      "$case_dir/github-view.json" > "$case_dir/github-view-after-update.json"
+    printf '%s\n' "$new_head" > "$case_dir/github-head-after-update"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" --update-branch > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "update-branch-rerun-$scenario: the first run must stop on the updated head's red check"
+    grep -qxF "merge_update_branch=$new_head $base_tip" "$case_dir/state/task-x1.meta" \
+      || fail "update-branch-rerun-$scenario: the update's merge commit was not recorded: $(cat "$case_dir/state/task-x1.meta")"
+
+    # GitHub's list-commits shape: the PR's own commit, then the update's
+    # merge of the base tip into it.
+    if [ "$scenario" = plain ]; then
+      printf '[{"sha":"%s","parents":[{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' \
+        "$old_head" "$MERGE_COMMIT_FIRST_PARENT" "$new_head" "$old_head" "$base_tip" > "$case_dir/github-commits"
+      jq '.statusCheckRollup[0].conclusion = "SUCCESS"' "$case_dir/github-view-after-update.json" > "$case_dir/view.tmp"
+    else
+      printf '[{"sha":"%s","parents":[{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' \
+        "$old_head" "$MERGE_COMMIT_FIRST_PARENT" "$new_head" "$old_head" "$base_tip" \
+        "$top" "$new_head" "$MERGE_COMMIT_PARENT" > "$case_dir/github-commits"
+      jq --arg head "$top" '.statusCheckRollup[0].conclusion = "SUCCESS" | .headRefOid = $head' \
+        "$case_dir/github-view-after-update.json" > "$case_dir/view.tmp"
+      printf '%s\n' "$top" > "$case_dir/github-head-after-update"
+      cp "$case_dir/github-head-after-update" "$case_dir/github-server-head"
+    fi
+    mv "$case_dir/view.tmp" "$case_dir/github-view-after-update.json"
+    cp "$case_dir/github-view-after-update.json" "$case_dir/github-view.json"
+    : > "$case_dir/gh.log"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    if [ "$scenario" = plain ]; then
+      expect_code 0 "$rc" "update-branch-rerun-plain: a plain re-run after the script's own update must merge: $(cat "$case_dir/stderr")"
+      assert_logged_gh_merge "$case_dir" 6191 example/repo --squash
+    else
+      expect_code 1 "$rc" "update-branch-rerun-merged-on-top: a merge commit on top of the update must refuse the default"
+      assert_grep "${top:0:12}" "$case_dir/stderr" "update-branch-rerun-merged-on-top: refusal did not name the later merge commit"
+      assert_no_grep "${new_head:0:12}" "$case_dir/stderr" "update-branch-rerun-merged-on-top: the recorded update was counted"
+      assert_no_grep 'pr merge' "$case_dir/gh.log" "update-branch-rerun-merged-on-top: gh pr merge ran despite the refusal"
+    fi
+  done
+  pass "fm-pr-merge does not count its own recorded --update-branch merge commit, and still counts any other"
+}
+
 # A quiet-mode record is a present captain, not an away posture: the attended
 # red-check waiver still works and the merge is recorded as attended.
 test_quiet_record_keeps_merges_attended() {
@@ -6607,6 +6671,7 @@ test_undated_runs_never_supersede
 test_allow_red_still_waives_only_the_current_failure
 test_allow_red_is_refused_while_away
 test_merge_commit_guard
+test_update_branch_merge_commit_reruns_with_default
 test_quiet_record_keeps_merges_attended
 test_allow_red_requires_one_separate_name
 test_away_record_permits_any_green_merge_under_away_authority

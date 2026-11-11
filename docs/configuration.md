@@ -698,6 +698,7 @@ Task meta records `backend=` only for a non-default backend; an absent `backend=
 - A tern task additionally records `tern_session_id=`, `tern_tab_id=`, and `tern_block_id=`.
 - For hc endpoint fields and automatic-selection provenance, see [Task shape and metadata](hc-backend.md#task-shape-and-metadata).
 
+- A `bin/fm-pr-merge.sh --update-branch` whose update lands appends `merge_update_branch=<new head> <base tip>`, so a later merge run does not count that one merge commit against the default squash.
 - A merge that flattened merge commits under an attended `bin/fm-pr-merge.sh --allow-flatten <reason>` appends `merge_flatten_override=<reason>` to the task record.
 - An adopted task, written by `bin/fm-pr-adopt.sh <task-id> <pr-url> --mode no-mistakes --yolo <on|off> [--project <dir>]` for an open GitHub PR that has no task record in this home, records only `worktree=` (a path under `state/` that never exists), `project=`, `kind=ship`, `mode=`, `yolo=`, `adopted=1`, and `adopted_at=`, then `bin/fm-pr-check.sh` adds `pr=` and `pr_head=` from the forge.
   It has no window, endpoint, branch, incarnation, or `office=`, so `bin/fm-pr-merge.sh` decides its merge under every unchanged guard, an office home refuses it, and `bin/fm-teardown.sh` cleans it as a windowless record; the script's header owns the field inventory and its refusals.

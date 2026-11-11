@@ -33,6 +33,12 @@
 # the merge; it is refused while the away-posture record exists, for an office,
 # and for --stack. A --stack merge applies the same check to every member
 # before anything merges, and refuses the whole stack, naming the member.
+# The one exception is the merge commit this script's own --update-branch
+# created for the task: when the update lands, it appends
+# merge_update_branch=<new head> <base tip> to the task's meta, the base tip
+# read just before the update was requested, and a merge commit whose sha is
+# that new head and whose only extra parent is that base tip does not count.
+# Any other merge commit, including one pushed on top of the update, still does.
 # When the forge's commit list cannot be read (GitHub lists at most 250 commits
 # of a pull request, so a longer one counts as unreadable), the default method
 # is refused and an explicit method is asked for; an explicitly named method
@@ -116,7 +122,9 @@
 # The REST update is bound to the verified old head with expected_head_sha;
 # a concurrent push refuses the update without changing that replacement head,
 # and this request never retries against the newly observed head.
-# An accepted update uses GitHub's merge-commit default. Under the merge and
+# An accepted update uses GitHub's merge-commit default, recorded as
+# merge_update_branch= so a later run's merge-commit check does not count it
+# (see the merge-method paragraph above). Under the merge and
 # away locks, a shared polling budget (15 seconds by default) covers waiting for
 # the new head to appear, recording it, and waiting for its checks and a transient
 # UNKNOWN mergeable state to settle. Every poll repeats the full preflight,
@@ -1775,10 +1783,13 @@ github_verify_mergeable_with_retry() {
 
 github_update_behind_branch() {
   local old_head=$FM_PR_MERGE_HEAD new_head='' attempt_error status
-  local poll deadline
+  local poll deadline base_tip meta_lock recorded
   poll=$(github_mergeable_retry_delay)
   deadline=$((SECONDS + poll * 5))
   attempt_error=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-update.XXXXXX") || return 1
+  base_tip=$(gh api "repos/$PR_OWNER/$PR_REPO/branches/$(github_urlencode_path_segment "$FM_PR_GITHUB_BASE")" 2>/dev/null \
+    | jq -r '.commit.sha // empty' 2>/dev/null) || base_tip=
+  fm_pr_head_valid "$base_tip" || base_tip=
   if ! gh api --method PUT "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/update-branch" \
     -f "expected_head_sha=$old_head"; then
     rm -f "$attempt_error"
@@ -1798,6 +1809,21 @@ github_update_behind_branch() {
         echo "error: could not record the updated GitHub head $new_head" >&2
         rm -f "$attempt_error"
         return 1
+      fi
+      if [ -n "$base_tip" ]; then
+        if ! meta_lock=$(fm_meta_lock_path "$META") || ! fm_lock_acquire_wait "$meta_lock"; then
+          echo "error: could not record the branch update $new_head" >&2
+          rm -f "$attempt_error"
+          return 1
+        fi
+        recorded=true
+        printf 'merge_update_branch=%s %s\n' "$new_head" "$base_tip" >> "$META" || recorded=false
+        fm_lock_release "$meta_lock" || recorded=false
+        if [ "$recorded" != true ]; then
+          echo "error: could not record the branch update $new_head" >&2
+          rm -f "$attempt_error"
+          return 1
+        fi
       fi
     fi
     if [ -n "$new_head" ] && [ "$FM_PR_GITHUB_LIVE_HEAD" != "$new_head" ]; then
@@ -2795,7 +2821,8 @@ stack_merge() {
   stack_verify_merged_tree || return 1
 }
 
-# Every merge commit in the pull request's own range, one short sha per line in
+# Every merge commit in the pull request's own range except one this script's
+# --update-branch recorded for the task, one short sha per line in
 # FM_PR_GITHUB_MERGE_COMMITS, and those whose extra parents the base branch
 # does not already contain in FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS. Returns 1
 # when the forge's commit list or a reachability read cannot be read, or when
@@ -2803,9 +2830,10 @@ stack_merge() {
 FM_PR_GITHUB_MERGE_COMMITS=
 FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS=
 github_read_merge_commits() {
-  local listed line sha parents parent status unique count=0
+  local listed line sha parents parent status unique updates count=0
   FM_PR_GITHUB_MERGE_COMMITS=
   FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS=
+  updates=$(sed -n 's/^merge_update_branch=//p' "$META" 2>/dev/null) || updates=
   listed=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/commits?per_page=100" \
     --jq '.[] | "\(.sha) \(.parents[1:] | map(.sha) | join(","))"' 2>/dev/null) || return 1
   while IFS= read -r line; do
@@ -2815,6 +2843,7 @@ github_read_merge_commits() {
     sha=${line%% *}
     parents=${line#* }
     [ -n "$parents" ] || continue
+    ! printf '%s\n' "$updates" | grep -qxF "$sha $parents" || continue
     FM_PR_GITHUB_MERGE_COMMITS="${FM_PR_GITHUB_MERGE_COMMITS:+$FM_PR_GITHUB_MERGE_COMMITS$'\n'}${sha:0:12}"
     unique=false
     while IFS= read -r parent; do
