@@ -2029,8 +2029,112 @@ test_arm_plumbs_the_reply_age_into_the_check_shim() {
   pass 'arm copies a configured reply age into the generated check'
 }
 
+# Fleet PRs are opened under the owner's own login, so the PR author's human
+# review comments must survive while the fleet's own automated writes do not.
+author_home() { # name -> a registered delivery home owned by author "author"
+  local home
+  home=$(new_home "$1")
+  forge_home "$home"
+  with_home "$home" "$ROOT/bin/fm-pr-check.sh" delivery https://github.com/o/r/pull/8 >/dev/null \
+    || fail 'could not register the owned delivery'
+  registered_checks "$home" >/dev/null
+  printf '%s\n' "$home"
+}
+
+test_author_human_comment_is_kept() {
+  local home out
+  home=$(author_home author-human)
+  jq -n '[{id:41,user:{login:"author",type:"User"},author_association:"OWNER",body:"Please rename this flag",
+    html_url:"https://github.com/o/r/pull/8#issuecomment-41",updated_at:"2026-09-16T08:01:00Z"}]' > "$home/forge/comments.json"
+  jq -n --arg head "$HEAD_A" '[{id:42,user:{login:"author",type:"User"},author_association:"OWNER",commit_id:$head,
+    body:"Inline: this loop is wrong",html_url:"https://github.com/o/r/pull/8#discussion_r42",
+    created_at:"2026-09-16T08:02:00Z",updated_at:"2026-09-16T08:02:00Z"}]' > "$home/forge/inline.json"
+  registered_checks "$home" >/dev/null
+  out=$(with_home "$home" "$ROOT/bin/fm-contributions.sh" pending)
+  printf '%s' "$out" | jq -e 'length == 2 and all(.[]; .author == "author")' >/dev/null \
+    || fail "a human comment by the PR author's login must stay a pending signal: $out"
+  pass "a human review comment under the PR author's own login is kept"
+}
+
+test_author_automated_writes_are_dropped() {
+  local home out
+  home=$(author_home author-automated)
+  jq -n '[{id:51,user:{login:"author",type:"Bot"},author_association:"OWNER",body:"build bot says hi",
+      html_url:"https://github.com/o/r/pull/8#issuecomment-51",updated_at:"2026-09-16T08:01:00Z"},
+    {id:52,user:{login:"author",type:"User"},author_association:"OWNER",
+      body:"Updates from [git push no-mistakes](https://example.test)\n<!-- no-mistakes-pipeline-attestation:v1 {} -->",
+      html_url:"https://github.com/o/r/pull/8#issuecomment-52",updated_at:"2026-09-16T08:01:00Z"}]' > "$home/forge/comments.json"
+  jq -n --arg head "$HEAD_A" '[{id:54,user:{login:"author",type:"User"},author_association:"OWNER",commit_id:$head,
+    state:"COMMENTED",body:"",submitted_at:"2026-09-16T08:02:00Z"}]' > "$home/forge/reviews.json"
+  jq -n --arg head "$HEAD_A" '[{id:53,user:{login:"author",type:"User"},author_association:"OWNER",commit_id:$head,
+    in_reply_to_id:1,body:"thanks, fixed",html_url:"https://github.com/o/r/pull/8#discussion_r53",
+    created_at:"2026-09-16T08:02:00Z",updated_at:"2026-09-16T08:02:00Z"}]' > "$home/forge/inline.json"
+  registered_checks "$home" >/dev/null
+  out=$(with_home "$home" "$ROOT/bin/fm-contributions.sh" pending)
+  printf '%s' "$out" | jq -e 'length == 0' >/dev/null \
+    || fail "the fleet's own automated writes must not become signals: $out"
+  pass "bot, pipeline-marked, in-thread reply and empty-review writes under the author's login are dropped"
+}
+
+# A live task whose pr= matches gets the comment in its steering inbox.
+routing_home() { # name [pr] -> author_home with a live ship task whose meta names pr
+  local home pr=${2:-https://github.com/o/r/pull/8}
+  home=$(author_home "$1")
+  cat > "$home/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  display-message)
+    for a in "$@"; do case "$a" in *cursor_y*) printf '1\n'; exit 0 ;; esac; done
+    printf 'fakepane\n'; exit 0 ;;
+  capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
+  list-windows) printf 'fm-delivery\nwin\n'; exit 0 ;;
+esac
+exit 0
+SH
+  printf '#!/bin/sh\nexit 0\n' > "$home/fakebin/sleep"
+  chmod +x "$home/fakebin/tmux" "$home/fakebin/sleep"
+  fm_write_meta "$home/state/delivery.meta" "window=sess:fm-delivery" "worktree=$home/wt" "kind=ship" "harness=claude" "pr=$pr"
+  printf '%s\n' "$home"
+}
+
+route_comment() { # home: a maintainer comment arrives, then one poll
+  jq -n '[{id:61,user:{login:"maintainer",type:"User"},author_association:"OWNER",body:"Please tighten the retry bound",
+    html_url:"https://github.com/o/r/pull/8#issuecomment-61",updated_at:"2026-09-16T08:01:00Z"}]' > "$1/forge/comments.json"
+  FM_SEND_SETTLE=0 registered_checks "$1" >/dev/null
+}
+
+test_comment_routes_to_owning_task_inbox() {
+  local home rec wake
+  home=$(routing_home route-owner)
+  route_comment "$home"
+  rec="$home/state/delivery.inbox/001.msg"
+  [ -f "$rec" ] || fail 'a comment on a live task'"'"'s PR must land in its steering inbox'
+  for want in 'PR REVIEW COMMENT' 'https://github.com/o/r/pull/8' 'https://github.com/o/r/pull/8#issuecomment-61' \
+    'maintainer' 'Please tighten the retry bound' "task's accepted intent"; do
+    grep -qF -- "$want" "$rec" || fail "the routed message lacks '$want': $(cat "$rec")"
+  done
+  wake=$(cat "$home/state/.wake-queue")
+  case "$wake" in *'check: contributions delivery '*' routed https://github.com/o/r/pull/8#issuecomment-61'*) ;; *) fail "firstmate must still get a one-line wake naming the routing: $wake" ;; esac
+  with_home "$home" "$ROOT/bin/fm-contributions.sh" pending | jq -e 'length == 1' >/dev/null \
+    || fail 'routing must leave the signal pending for firstmate'
+  FM_SEND_SETTLE=0 registered_checks "$home" >/dev/null
+  [ ! -f "$home/state/delivery.inbox/002.msg" ] || fail 'a re-poll must not route the same comment twice'
+  pass 'a comment on a live task'"'"'s PR is steered into its inbox once and still wakes firstmate'
+}
+
+test_comment_without_owner_wakes_firstmate_only() {
+  local home wake
+  home=$(routing_home route-nobody https://github.com/o/r/pull/99)
+  route_comment "$home"
+  [ ! -e "$home/state/delivery.inbox" ] || fail 'a task whose pr= differs must not be steered'
+  wake=$(cat "$home/state/.wake-queue")
+  case "$wake" in *'check: contributions delivery '*) ;; *) fail "firstmate must still be woken: $wake" ;; esac
+  case "$wake" in *routed*) fail "a wake with no routing must not claim it: $wake" ;; esac
+  pass 'with no live owning task the comment keeps waking firstmate only'
+}
+
 failures=0
-for test_name in test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_review_bot_inline_wake test_review_bot_watching_is_opt_in test_review_bot_allowlist_is_configurable test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_unsupported_poll_is_silent_and_clears_legacy_errors test_legacy_cleanup_preserves_supported_failure test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_http_500_once_retries_without_waking test_http_500_twice_records_the_failed_read test_http_404_is_not_retried test_real_gh_errors_drive_retry_and_summary test_next_url_does_not_inherit_a_forge_diagnostic test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_many_settled_records_keep_the_poll_inside_the_check_bound test_many_settled_records_beside_a_malformed_one_keep_the_poll_inside_the_check_bound test_record_without_trailing_newline_does_not_join_its_neighbour test_records_beyond_one_read_batch_are_all_read test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs test_unanswered_thread_is_raised_again_under_hold test_resolved_thread_is_answered test_reply_rules test_reply_age_is_configurable_and_validated test_closed_pull_request_drops_its_threads test_unanswered_reraise_is_off_unless_configured test_arm_plumbs_the_reply_age_into_the_check_shim test_many_reviews_stay_readable; do
+for test_name in test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_review_bot_inline_wake test_review_bot_watching_is_opt_in test_review_bot_allowlist_is_configurable test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_unsupported_poll_is_silent_and_clears_legacy_errors test_legacy_cleanup_preserves_supported_failure test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_http_500_once_retries_without_waking test_http_500_twice_records_the_failed_read test_http_404_is_not_retried test_real_gh_errors_drive_retry_and_summary test_next_url_does_not_inherit_a_forge_diagnostic test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_many_settled_records_keep_the_poll_inside_the_check_bound test_many_settled_records_beside_a_malformed_one_keep_the_poll_inside_the_check_bound test_record_without_trailing_newline_does_not_join_its_neighbour test_records_beyond_one_read_batch_are_all_read test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs test_unanswered_thread_is_raised_again_under_hold test_resolved_thread_is_answered test_reply_rules test_reply_age_is_configurable_and_validated test_closed_pull_request_drops_its_threads test_unanswered_reraise_is_off_unless_configured test_arm_plumbs_the_reply_age_into_the_check_shim test_many_reviews_stay_readable test_author_human_comment_is_kept test_author_automated_writes_are_dropped test_comment_routes_to_owning_task_inbox test_comment_without_owner_wakes_firstmate_only; do
   ( "$test_name" ) || failures=$((failures + 1))
 done
 [ "$failures" -eq 0 ] || fail "$failures contribution regressions"
