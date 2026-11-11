@@ -483,14 +483,15 @@ test_full_ci_label_runs_the_whole_suite() {
 test_trusted_runs_are_unchanged() {
   local all context actual out
   all=$(workflow_jobs | tr '\n' ' ') || fail "could not list ci.yml jobs"
-  all_but_macos=$(workflow_jobs | grep -vx macos-stock-bash | tr '\n' ' ') || fail "could not list ci.yml jobs"
-  for context in event=push association=OWNER association=MEMBER association=COLLABORATOR head=kunchenguid/firstmate; do
-    actual=$(jobs_running_under "$context" | tr '\n' ' ') || fail "could not resolve jobs for $context"
+  for context in event=push association=OWNER association=MEMBER association=COLLABORATOR head=kunchenguid/firstmate 'event=schedule nightly=1'; do
+    # shellcheck disable=SC2086  # a context may hold several KEY=VALUE words
+    actual=$(jobs_running_under $context | tr '\n' ' ') || fail "could not resolve jobs for $context"
     [ "$actual" = "$all" ] || fail "$context must run every job as before, ran: $actual"
-    out=$(run_full_suite_verdict "$context") \
+    # shellcheck disable=SC2086
+    out=$(run_full_suite_verdict $context) \
       || fail "the Full suite verdict must pass for $context when its lanes passed:"$'\n'"$out"
   done
-  pass "main pushes, own branches and write-access authors still run every job and pass the verdict"
+  pass "main pushes, own branches, write-access authors and the opted-in nightly run every job and pass the verdict"
 }
 
 # DOP-167: another label neither starts nor cancels a run: no job runs, not
@@ -660,7 +661,7 @@ LANES
 # FM_CI_MACOS_SCOPE=nightly-main limits the macOS job to main pushes and the
 # nightly run. A "-" in the table means the variable is unset.
 test_fork_switches_are_opt_in() {
-  local all event skip_push skip_macos nightly scope expected want actual
+  local all event skip_push skip_macos nightly scope expected want actual association
   all=$(workflow_jobs) || fail "could not list ci.yml jobs"
   printf '%s\n' "$all" | grep -qx macos-stock-bash \
     || fail "the macOS job is missing from ci.yml, so the table below would prove nothing"
@@ -675,7 +676,9 @@ test_fork_switches_are_opt_in() {
       all-but-macos) want=$(printf '%s\n' "$all" | grep -vx macos-stock-bash) ;;
       *) fail "unknown expectation $expected" ;;
     esac
-    actual=$(jobs_running_under event="$event" association=OWNER skip_push="$skip_push" skip_macos="$skip_macos" nightly="$nightly" macos_scope="$scope") \
+    association=
+    [ "$event" != pull_request ] || association=OWNER
+    actual=$(jobs_running_under event="$event" association="$association" skip_push="$skip_push" skip_macos="$skip_macos" nightly="$nightly" macos_scope="$scope") \
       || fail "could not resolve the job conditions for $event"
     [ "$actual" = "$want" ] \
       || fail "$event skip_push=$skip_push skip_macos=$skip_macos nightly=$nightly macos_scope=$scope must run $expected jobs"$'\n'"ran: $(printf '%s' "$actual" | tr '\n' ' ')"$'\n'"wanted: $(printf '%s' "$want" | tr '\n' ' ')"
