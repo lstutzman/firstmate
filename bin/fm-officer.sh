@@ -1037,7 +1037,7 @@ attempts() { awk -v d="$1" -v s="$2" '$2 == d && $3 == "failed" && $1 >= s {n++}
 finished() { awk -v d="$1" -v s="$2" '$2 == d && $3 == "ok" && $1 >= s {f=1} END {exit !f}' "$OFFICER_LANE/runs.log" 2>/dev/null; }
 last_attempt() { awk -v d="$1" '$2 == d {t=$1} END {print t + 0}' "$OFFICER_LANE/runs.log" 2>/dev/null || echo 0; }
 
-runs_for() { cat "$OFFICER_LANE/runs.log" 2>/dev/null | awk -v d="$1" '$2 == d {n++} END {print n + 0}'; }
+runs_for() { local f="$OFFICER_LANE/runs.log"; [ -r "$f" ] || f=/dev/null; awk -v d="$1" '$2 == d {n++} END {print n + 0}' "$f"; }
 
 # report_once <digest|failure> <line> [stamp]: prints the line unless its stamp (default the line)
 # is the last one reported; an interval officer's failure stamp leaves out the slot, so one
