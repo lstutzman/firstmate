@@ -2234,7 +2234,7 @@ test_cache_hit_is_the_same_pass_on_identical_inputs() {
   [ "$counts" = "1 0 0" ] || fail "restored bytes did not hit the cache: $counts"
 
   # A different analysis mode, a changed root and a changed lint definition each miss.
-  counts=$(fm_lint_cache_counts "$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" --fast bin/root.sh 2>&1)")
+  counts=$(fm_lint_cache_counts "$(env -u CI -u GITHUB_ACTIONS FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" --fast bin/root.sh 2>&1)")
   [ "$counts" = "0 1 0" ] || fail "fast mode reused a full-analysis pass: $counts"
   printf '# edited\n' >> "$repo/bin/root.sh"
   counts=$(fm_lint_cache_counts "$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1)")
