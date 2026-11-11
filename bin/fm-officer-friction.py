@@ -63,7 +63,8 @@ wait for Lee to do. One day's friction events come from three sources:
 
 Repeated asks are a fourth kind of event. Lee's typed messages in the last
 --days days (default 7), from the archive's interactive and worker sessions
-and never a worker's launch brief, which quotes him, are cut into sentences
+and never a worker's launch brief, which quotes him, nor a print-mode (`claude -p`, entrypoint sdk-*) or eval-scratch
+session, whose prompts are test queries, are cut into sentences
 (a long dictated run-on into clauses) that give an instruction (keep, make
 sure, always, never, don't, should, must, ...). The instruction words
 themselves and common dictated-speech words are not content words. Two instructions on different
@@ -887,6 +888,8 @@ def plausible_tool(name, command, bodies):
     or quoted text (a command that never names it reached it through a script: a real miss)."""
     if re.fullmatch(r"[A-Za-z_]+(?:\.[A-Za-z_]+)+", name) or not re.fullmatch(r"[A-Za-z0-9][\w+.-]*", name):
         return False
+    if re.fullmatch(r"[0-9a-fA-F]{8,}", name):  # a hex id (a run or session id), not a command
+        return False
     esc = re.escape(name)
     if re.search(r"(?m)^\s*(?:function\s+%s\b|%s\s*\(\s*\))" % (esc, esc), bodies or ""):
         return False
@@ -1058,6 +1061,18 @@ def lee_instructions(records, worker):
     return out
 
 
+EVAL_SCRATCH_RE = re.compile(r"/fm-scratch/(?:skill-trigger-eval|fleet-ideation-eval)(?:/|$)")
+
+
+def typed_by_lee(entry, records):
+    """False for a session that is not Lee typing: a print-mode run (`claude -p`, the SDK; its records carry an
+    `entrypoint` of sdk-cli or sdk-py, while interactive sessions and workers carry `cli`) or one run in an
+    eval's scratch project, whose prompts are test queries."""
+    if any(str(rec.get("entrypoint") or "").startswith("sdk-") for rec in records):
+        return False
+    return not EVAL_SCRATCH_RE.search(entry.get("cwd") or "")
+
+
 def scan_asks(archive, date, days):
     """Lee's instruction sentences over the `days` days ending at <date>, from interactive and worker sessions."""
     out, seen = [], set()
@@ -1078,6 +1093,8 @@ def scan_asks(archive, date, days):
             if kind not in ("other", "worker"):
                 continue
             records = records_of(os.path.join(folder, "transcript.jsonl.gz"))
+            if not typed_by_lee(entry, records or []):
+                continue
             session = "%s:%s" % (entry.get("machine"), entry.get("session_id") or entry.get("name"))
             for at, sentence in lee_instructions(records or [], kind == "worker"):
                 said = datetime.datetime.fromtimestamp(at, tz).date().isoformat() if at is not None else day
