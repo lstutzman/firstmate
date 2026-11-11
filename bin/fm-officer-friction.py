@@ -45,7 +45,8 @@ wait for Lee to do. One day's friction events come from three sources:
                `command not found` is agent-side friction; a not-found name
                that is no installable tool (plausible_tool) is skipped, and so is
                one firstmate defines as a shell function in its own bin/ or
-               tests/ (a sourcing slip). An ssh key refusal printed by a
+               tests/ (a sourcing slip), or one that now resolves on PATH when
+               the session ran on the officer's own host. An ssh key refusal printed by a
                firstmate test run in the same tool call (a tests/*.test.sh
                script or bin/fm-test-run.sh) is test output, not friction; a
                refusal outside a test run, whatever host it names, is kept.
