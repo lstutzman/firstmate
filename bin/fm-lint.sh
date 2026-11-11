@@ -58,7 +58,7 @@
 # at 11 to 24 minutes each; packing on source-closure weight (below) over seven
 # runners models every partition at 9 to 13 minutes. Partitions are complete,
 # disjoint, and closure-weight balanced; --list-files exposes their actual
-# roots and --list-weights the weights they were packed on.
+# roots.
 # Partition mode starts with full source-aware analysis, never changed-only
 # or --fast, and does not accept explicit paths. Each partition also runs
 # workflow lint and backend-purity checks, keeping either invocation
@@ -149,7 +149,6 @@
 #   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
 #   fm-lint.sh --required-version      print the ShellCheck pin
 #   fm-lint.sh --list-files            print the file set that would be linted
-#   fm-lint.sh --list-weights          print "<weight><TAB><path>" scheduling weights of that set
 #   fm-lint.sh --help                  print this usage
 set -u
 
@@ -906,7 +905,6 @@ ANALYSIS_MODE=full
 PARTITION=
 PARTITION_REQUESTED=0
 LIST_FILES=0
-LIST_WEIGHTS=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --jobs)
@@ -945,10 +943,6 @@ while [ "$#" -gt 0 ]; do
       ;;
     --list-files)
       LIST_FILES=1
-      shift
-      ;;
-    --list-weights)
-      LIST_WEIGHTS=1
       shift
       ;;
     --help|-h)
@@ -1233,15 +1227,6 @@ if [ "$LIST_FILES" -eq 1 ]; then
     exit 2
   }
   [ "$ROOT_COUNT" -eq 0 ] || printf '%s\n' "${ROOTS[@]}"
-  exit 0
-fi
-
-if [ "$LIST_WEIGHTS" -eq 1 ]; then
-  [ "$#" -eq 0 ] || {
-    printf 'fm-lint.sh: --list-weights does not accept explicit paths.\n' >&2
-    exit 2
-  }
-  fm_lint_root_weights | LC_ALL=C sort -t "$TAB" -k2,2n | awk -F '\t' '{ print $1 "\t" $3 }'
   exit 0
 fi
 

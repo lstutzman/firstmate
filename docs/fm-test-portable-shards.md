@@ -142,7 +142,7 @@ Portable shards, each portable serial shard, and the Herdr lane upload runner-ge
 
 `bin/fm-lint.sh` owns the canonical CI partitions (`<k>of<n>`; CI runs seven), each attempting full source-aware ShellCheck analysis and running workflow validation and backend-purity checks.
 CI requires its per-root bounds, so an unenforceable deadline or address-space limit refuses lint rather than running uncapped; the script header owns the envelope, per-root execution contract, and memory fallback.
-Its `--list-files` interface exposes partition membership and `--list-weights` the scheduling weights; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
+Its `--list-files` interface exposes partition membership; `tests/fm-lint.test.sh` verifies complete/disjoint executed roots, initial analysis flags, and fallback reporting.
 The workflow uploads each partition's quiet telemetry plus its per-root lifecycle sidecar to distinguish analysis cost, memory use, cache hits, and host contention.
 No fast mode, path skips, or paid runner provisioning is part of this layout.
 A root's cost tracks the sourced library closure, not its own size, so partitions are packed on the byte total of each root plus every file ShellCheck can follow from it: that proxy correlates 0.65 with measured per-root time against 0.43 for the root's own bytes, and it is a scheduling weight only, never a skip rule.

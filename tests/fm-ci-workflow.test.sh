@@ -718,6 +718,23 @@ roots = parts.flat_map do |p|
   raise "unsupported lint partition" unless result.success?
   output.lines.map(&:strip)
 end
+# The lane that holds the Pi typecheck test must run with the guard that turns
+# its missing-prerequisite skip into a failure, whichever lane it is assigned to.
+pi_test = "tests/fm-pi-primary-types.test.sh"
+holders = (1..3).select do |n|
+  out, st = Open3.capture2(File.join(root, "bin/fm-test-run.sh"), "--list", "--lane", "portable-parallel-#{n}")
+  raise "cannot list portable parallel lane #{n}" unless st.success?
+  out.lines.map(&:strip).include?(pi_test)
+end
+raise "the Pi typecheck test must be in exactly one parallel lane" unless holders.length == 1
+guard = "Pi extension typecheck prerequisite not found"
+(1..3).each do |n|
+  steps = jobs.fetch("tests-portable-parallel-#{n}").fetch("steps")
+  run = steps.map { |step| step["run"].to_s }.find { |r| r.include?("--lane portable-parallel-#{n}") }
+  raise "parallel lane #{n} has no runner step" unless run
+  guarded = run.include?("--fail-on-gate-skip '#{guard}'")
+  raise "lane #{n} guard mismatch: lane holding the Pi test must carry the gate-skip guard and no other may" unless guarded == holders.include?(n)
+end
 canonical, result = Open3.capture2({"CI" => "true"}, File.join(root, "bin/fm-lint.sh"), "--list-files")
 raise "lint matrix loses or duplicates canonical roots" unless result.success? && roots.sort == canonical.lines.map(&:strip).sort
 RUBY

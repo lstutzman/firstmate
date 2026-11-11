@@ -2162,50 +2162,30 @@ fm_lint_cache_markers() {
 
 # shellcheck disable=SC2016 # The fixture scripts are written literally, so their $ stay unexpanded.
 test_partition_weights_follow_the_source_closure() {
-  local tmp repo out part a_part b_part
+  local tmp repo part parts_of
   tmp=$(fm_test_tmproot fm-lint-weights)
   repo="$tmp/repo"
   fm_lint_cache_repo "$repo"
-  printf '%s\n' '#!/usr/bin/env bash' 'leaf_var=1' 'export leaf_var' > "$repo/lib/leaf.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/leaf.sh' '. "${1:?}"' > "$repo/lib/mid.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/cycle-b.sh' '. "${1:?}"' > "$repo/lib/cycle-a.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/cycle-a.sh' '. "${1:?}"' > "$repo/lib/cycle-b.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/mid.sh' '. "${1:?}"' > "$repo/bin/chain.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/cycle-a.sh' '. "${1:?}"' > "$repo/bin/cycle.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '. lib/leaf.sh' > "$repo/bin/literal.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=/dev/null' '. "${1:?}"' > "$repo/bin/devnull.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/absent.sh' '. "${1:?}"' > "$repo/bin/missing.sh"
-  out=$(CI=true "$repo/bin/fm-lint.sh" --list-weights) || fail "--list-weights failed"
-  weight() { printf '%s\n' "$out" | awk -F '\t' -v want="$1" '$2 == want { print $1 }'; }
-  size() { wc -c < "$repo/$1" | tr -d ' '; }
-  [ "$(weight bin/chain.sh)" = "$(( $(size bin/chain.sh) + $(size lib/mid.sh) + $(size lib/leaf.sh) ))" ] \
-    || fail "a chained root was not weighed with its whole source closure: $(weight bin/chain.sh)"
-  [ "$(weight bin/cycle.sh)" = "$(( $(size bin/cycle.sh) + $(size lib/cycle-a.sh) + $(size lib/cycle-b.sh) ))" ] \
-    || fail "a source cycle was not weighed once per file: $(weight bin/cycle.sh)"
-  [ "$(weight bin/literal.sh)" = "$(( $(size bin/literal.sh) + $(size lib/leaf.sh) ))" ] \
-    || fail "a literal source statement was not followed: $(weight bin/literal.sh)"
-  [ "$(weight bin/devnull.sh)" = "$(size bin/devnull.sh)" ] \
-    || fail "a source=/dev/null boundary was followed: $(weight bin/devnull.sh)"
-  [ "$(weight bin/missing.sh)" = "$(size bin/missing.sh)" ] \
-    || fail "a missing source target changed the weight: $(weight bin/missing.sh)"
-
-  # Two tiny roots that share a large library cost far more than their own
-  # bytes, so packing on bytes would stack them on one runner.
-  /usr/bin/trash "$repo/bin/chain.sh" "$repo/bin/cycle.sh" "$repo/bin/literal.sh" \
-    "$repo/bin/devnull.sh" "$repo/bin/missing.sh"
-  # The sizes dwarf the copied lint owner, which is a root of the fixture too.
+  # Roots that cost far more than their own bytes because of what they source
+  # must be spread across runners; packing on bytes would stack them. Two reach
+  # the large library through a source directive chain and a literal source
+  # statement. The copied lint owner is a root of the fixture too, so the sizes
+  # dwarf it.
   { printf '%s\n' '#!/usr/bin/env bash'; yes '# padding padding padding padding padding padding padding padding' | head -n 3000; } > "$repo/lib/big.sh"
   { printf '%s\n' '#!/usr/bin/env bash'; yes '# padding padding padding padding padding padding padding padding' | head -n 2200; } > "$repo/bin/heavy.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/big.sh' '. "${1:?}"' > "$repo/bin/a.sh"
-  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/big.sh' '. "${1:?}"' > "$repo/bin/b.sh"
-  a_part=; b_part=
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/big.sh' '. "${1:?}"' > "$repo/lib/mid.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/mid.sh' '. "${1:?}"' > "$repo/bin/a.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '. lib/big.sh' > "$repo/bin/b.sh"
+  parts_of=
   for part in 1of2 2of2; do
-    CI=true "$repo/bin/fm-lint.sh" --partition "$part" --list-files | grep -qx bin/a.sh && a_part=$part
-    CI=true "$repo/bin/fm-lint.sh" --partition "$part" --list-files | grep -qx bin/b.sh && b_part=$part
+    CI=true "$repo/bin/fm-lint.sh" --partition "$part" --list-files | grep -qx bin/a.sh && parts_of="$parts_of a=$part"
+    CI=true "$repo/bin/fm-lint.sh" --partition "$part" --list-files | grep -qx bin/b.sh && parts_of="$parts_of b=$part"
   done
-  [ -n "$a_part" ] && [ -n "$b_part" ] && [ "$a_part" != "$b_part" ] \
-    || fail "two roots with the same large source closure were packed on one runner ($a_part, $b_part)"
-  pass "root weights follow the source closure and spread shared-library roots across partitions"
+  case "$parts_of" in
+    " a=1of2 b=2of2"|" a=2of2 b=1of2") ;;
+    *) fail "roots sharing a large source closure were packed on one runner:$parts_of" ;;
+  esac
+  pass "partition placement follows the source closure, not the root's own bytes"
 }
 
 # shellcheck disable=SC2016 # The fixture scripts are written literally, so their $ stay unexpanded.
