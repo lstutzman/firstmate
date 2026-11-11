@@ -52,15 +52,44 @@
 # or exit selection.
 # --partition <k>of<n> (1 <= k <= n <= 8) splits the entire canonical
 # inventory across n CI runners, each with those same concurrency-limited
-# workers. CI uses four: measured per-root time sums to about 53 minutes of
-# serial ShellCheck work, which two runners could not hold under the 30-minute
-# job limit (main's last passing run took 29m10s), and a four-way split of the
-# same measurements leaves each runner near 14 minutes. Partitions are complete,
-# disjoint, and byte-weight balanced; --list-files exposes their actual roots.
+# workers. CI uses seven: measured per-root time sums to about 75 minutes of
+# serial ShellCheck work (main's last passing runs: 4170 to 4740 seconds), which
+# two runners could not hold under the 30-minute job limit and four held only
+# at 11 to 24 minutes each; packing on source-closure weight (below) over seven
+# runners models every partition at 9 to 13 minutes. Partitions are complete,
+# disjoint, and closure-weight balanced; --list-files exposes their actual
+# roots and --list-weights the weights they were packed on.
 # Partition mode starts with full source-aware analysis, never changed-only
 # or --fast, and does not accept explicit paths. Each partition also runs
 # workflow lint and backend-purity checks, keeping either invocation
 # independently useful.
+#
+# Scheduling weight of a root is the byte total of the root plus every file
+# ShellCheck can follow from it (its `# shellcheck source=` directives and its
+# source statements, transitively; fm_lint_closure_source owns the scan). A
+# root's cost tracks that closure
+# (correlation 0.65 against measured time, 0.43 for the root's own bytes), so
+# packing on it keeps partitions near equal. A weight is a scheduling proxy,
+# never a skip rule; local runs fall back to root bytes when the closure
+# helper fails, and a partition run refuses instead, because partitions packed
+# on different weights could drop or repeat a root.
+#
+# With FM_LINT_CACHE_DIR set (CI does), a root whose last run passed on
+# identical inputs is not run again. Each cacheable root gets a key: the sha256 of
+# this file, the resolved ShellCheck version, the analysis mode, whether the root
+# is on the ratchet exception list, the root's path, and the path plus content
+# hash of every file in its source closure (a missing file hashes as missing, so
+# creating it changes the key). A marker named by that key is written only when
+# the main and ratchet checks both finished with reason ok and status 0, so
+# findings, memory fallbacks, timeouts and stale exception entries are never
+# cached. A hit is therefore the same pass on identical bytes; a miss, an
+# unusable cache or an uncomputable key runs the full check. Backend purity,
+# the stale-exception scan and workflow lint still run on every invocation. A
+# run that checked every root of its set and passed prunes markers it did not
+# use, so the directory holds only current inputs. A root's closure is read from
+# the same directives ShellCheck follows, resolved from the working directory
+# like ShellCheck does; tests/fm-lint.test.sh proves that against the real
+# ShellCheck, including a source-path directive, which makes a root uncacheable.
 #
 # With FM_LINT_REQUIRE_BOUNDS=1, which CI sets, every per-root ShellCheck
 # process runs under an enforced envelope: a wall deadline
@@ -96,8 +125,10 @@
 # log is retained at
 # <telemetry-without-.tsv>.roots.tsv (or <telemetry>.roots.tsv if there is no
 # .tsv suffix); otherwise it lives only in the
-# run's scratch dir. Reason values are ok, findings, memory-fallback,
-# timeout, memory, signal:<sig>, limit-unavailable, or error:<rc>.
+# run's scratch dir. Reason values are ok, cached (a result-cache hit),
+# findings, memory-fallback, timeout, memory, signal:<sig>,
+# limit-unavailable, or error:<rc>; with the cache on, a `cache` record per
+# root says hit, miss or uncacheable.
 # Memory requires process-level evidence (a GHC exhaustion status or runtime
 # error on stderr), not an echoed source excerpt or an OOM phrase in a
 # filename. In partition mode begin/end
@@ -118,6 +149,7 @@
 #   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
 #   fm-lint.sh --required-version      print the ShellCheck pin
 #   fm-lint.sh --list-files            print the file set that would be linted
+#   fm-lint.sh --list-weights          print "<weight><TAB><path>" scheduling weights of that set
 #   fm-lint.sh --help                  print this usage
 set -u
 
@@ -341,6 +373,25 @@ fm_lint_ratchet_root() {  # <path> <file-stem> <shard-output> <seconds-left>
   esac
 }
 
+# Result cache (see the header). The parent writes a path-to-key table and the
+# workers consult it; a marker file named by the key is the whole entry.
+fm_lint_cache_key() {  # <path>: prints the root's key, or nothing when it has none
+  [ -n "${FM_LINT_INTERNAL_CACHE_DIR:-}" ] && [ -f "${FM_LINT_INTERNAL_CACHE_KEYS:-}" ] || return 0
+  P=$1 awk -F '\t' '$1 == ENVIRON["P"] { print $2; exit }' "$FM_LINT_INTERNAL_CACHE_KEYS"
+}
+
+# Record a passing root. The marker is written whole and moved into place, so a
+# killed run never leaves a half-written entry that a later run could trust.
+fm_lint_cache_store() {  # <key> <path>
+  local tmp="$FM_LINT_INTERNAL_CACHE_DIR/.tmp.$$.$1"
+  if printf 'ok\t%s\n' "$2" > "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "$FM_LINT_INTERNAL_CACHE_DIR/$1" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  else
+    rm -f "$tmp" 2>/dev/null
+  fi
+  return 0
+}
+
 # Run one selected root, retry memory failures without source following, record
 # its lifecycle in the roots log, and append the final diagnostics.
 fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
@@ -354,6 +405,7 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
   local start_ms end_ms duration_ms invocation_rc=0 reason rss_kib initial_rc initial_reason
   local fallback_secs
   local final_follow_sources=${FM_LINT_INTERNAL_FOLLOW_SOURCES:-1}
+  local cache_key cache_state=
   local -a fallback_args
   start_ms=$(fm_lint_now_ms)
   if [ -n "${FM_LINT_INTERNAL_ROOTS_LOG:-}" ]; then
@@ -364,6 +416,35 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
   if [ "${FM_LINT_INTERNAL_PROGRESS:-0}" = 1 ]; then
     printf 'fm-lint: begin %s (shard %s, %s mode)\n' \
       "$path" "$shard_index" "${FM_LINT_INTERNAL_MODE:-unknown}" >&2
+  fi
+  if [ -n "${FM_LINT_INTERNAL_CACHE_DIR:-}" ]; then
+    cache_key=$(fm_lint_cache_key "$path")
+    if [ -z "$cache_key" ]; then
+      cache_state=uncacheable
+    elif [ -f "$FM_LINT_INTERNAL_CACHE_DIR/$cache_key" ]; then
+      # Same inputs, same pinned analysis, last time passed with reason ok:
+      # this is that pass, so nothing is run and nothing is skipped.
+      printf '%s\n' "$cache_key" >> "$FM_LINT_INTERNAL_CACHE_USED"
+      end_ms=$(fm_lint_now_ms)
+      if [ -n "${FM_LINT_INTERNAL_ROOTS_LOG:-}" ]; then
+        printf 'cache\t%s\t%s\t%s\thit\n' "$index" "$path" "$shard_index" >> "$FM_LINT_INTERNAL_ROOTS_LOG"
+        printf 'end\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t0\tcached\tunavailable\t%s\n' \
+          "$index" "$path" "$shard_index" "${FM_LINT_INTERNAL_MODE:-}" \
+          "$start_ms" "$end_ms" "$((end_ms - start_ms))" "$final_follow_sources" \
+          >> "$FM_LINT_INTERNAL_ROOTS_LOG"
+      fi
+      if [ "${FM_LINT_INTERNAL_PROGRESS:-0}" = 1 ]; then
+        printf 'fm-lint: end %s reason=cached rc=0 duration_ms=%s rss_kib=unavailable\n' \
+          "$path" "$((end_ms - start_ms))" >&2
+      fi
+      return 0
+    else
+      cache_state=miss
+    fi
+    if [ -n "${FM_LINT_INTERNAL_ROOTS_LOG:-}" ]; then
+      printf 'cache\t%s\t%s\t%s\t%s\n' "$index" "$path" "$shard_index" "$cache_state" \
+        >> "$FM_LINT_INTERNAL_ROOTS_LOG"
+    fi
   fi
   fm_lint_exec_root "$path" "$root_out" "$root_err" "$rss_file" \
     "$FM_LINT_INTERNAL_ROOT_SECS" "${FM_LINT_WORKER_ARGS[@]}"
@@ -424,6 +505,10 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
       fi
       ;;
   esac
+  if [ "$cache_state" = miss ] && [ "$reason" = ok ] && [ "$invocation_rc" -eq 0 ]; then
+    fm_lint_cache_store "$cache_key" "$path"
+    printf '%s\n' "$cache_key" >> "$FM_LINT_INTERNAL_CACHE_USED"
+  fi
   end_ms=$(fm_lint_now_ms)
   duration_ms=$((end_ms - start_ms))
   if [ -n "${FM_LINT_INTERNAL_ROOTS_LOG:-}" ]; then
@@ -565,7 +650,7 @@ fm_lint_run_workflows() {
 }
 
 # Entries naming a file that no longer exists are stale too; one partition
-# reports them so a four-way CI split does not repeat the message. The per-root
+# reports them so a partitioned CI split does not repeat the message. The per-root
 # ratchet check itself runs inside the workers (fm_lint_ratchet_root).
 fm_lint_run_ratchet() {
   local list entry rc=0
@@ -821,6 +906,7 @@ ANALYSIS_MODE=full
 PARTITION=
 PARTITION_REQUESTED=0
 LIST_FILES=0
+LIST_WEIGHTS=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --jobs)
@@ -859,6 +945,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --list-files)
       LIST_FILES=1
+      shift
+      ;;
+    --list-weights)
+      LIST_WEIGHTS=1
       shift
       ;;
     --help|-h)
@@ -977,8 +1067,123 @@ fi
 # Stable largest-first packing is shared by cross-runner partition selection
 # and the two local workers. Weights are a scheduling proxy, never a skip rule.
 TAB=$(printf '\t')
+
+# The source-closure helper, in Perl because Perl is already required here. Mode
+# `weights <root>...` prints "<closure bytes><TAB><index><TAB><root>" per root;
+# mode `keys <salt> <self> <ratchet-list> <repo-root> <root>...` prints
+# "<root><TAB><cache key>" per cacheable root. The closure of a root is the root
+# plus every file named by a `# shellcheck source=` directive (not /dev/null) or
+# a literal source statement in it or in any file reached that way. ShellCheck
+# resolves those names from the working directory, and so does this. The scan
+# deliberately over-approximates (a word after "source" or "." in a comment-free
+# line counts), because an extra file only narrows what a key can reuse. A
+# `source-path=` directive can add search directories this scan does not model,
+# so such a root gets no key and is always linted.
+fm_lint_closure_source() {
+  cat <<'PERL'
+use strict;
+use warnings;
+my $mode = shift @ARGV;
+my (%data, %deps);
+sub slurp {
+  my ($p) = @_;
+  return $data{$p} if exists $data{$p};
+  my $d;
+  if (-f $p && open(my $fh, '<:raw', $p)) { local $/; $d = <$fh>; close $fh; }
+  return $data{$p} = $d;
+}
+sub norm { my ($p) = @_; $p =~ s{^(?:\./)+}{}; $p =~ s{/{2,}}{/}g; return $p; }
+sub direct {
+  my ($p) = @_;
+  return $deps{$p} if $deps{$p};
+  my (%found, $uncacheable);
+  my $c = slurp($p);
+  if (defined $c) {
+    (my $joined = $c) =~ s/\\\n/ /g;
+    for my $line (split /\n/, $joined) {
+      if ($line =~ /^\s*#\s*shellcheck\s+(.*)$/) {
+        for my $tok (split ' ', $1) {
+          last if $tok =~ /^#/;
+          if ($tok =~ /^source=(.+)$/) { $found{norm($1)} = 1 unless $1 eq '/dev/null'; }
+          elsif ($tok =~ /^source-path=/) { $uncacheable = 1; }
+        }
+        next;
+      }
+      next if $line =~ /^\s*#/;
+      # ShellCheck follows `. word` when the word is literal, and also when it
+      # is an expansion followed by a literal tail ("$ROOT/bin/x.sh" is tried
+      # as ./bin/x.sh). Every path-like run in the rest of the line is taken,
+      # as written and from after each of its slashes, which covers both (the
+      # variable's own name sits in the run before the first slash).
+      next unless $line =~ /(?:^|[\s;&|({])(?:source|\.)(?=\s)(.*)$/;
+      my $rest = $1;
+      while ($rest =~ m{([A-Za-z0-9_.,+\@%=:/-]+)}g) {
+        my $run = $1;
+        next unless $run =~ m{/} || $run =~ /\.[A-Za-z0-9]+$/;
+        $found{norm($run)} = 1;
+        my $tail = $run;
+        while ($tail =~ s{^[^/]*/+}{}) { $found{norm($tail)} = 1 if length $tail; }
+      }
+    }
+  }
+  return $deps{$p} = [[sort keys %found], $uncacheable ? 1 : 0];
+}
+sub closure {
+  my ($root) = @_;
+  my (%seen, @queue, $unc);
+  @queue = (norm($root));
+  while (@queue) {
+    my $p = shift @queue;
+    next if $seen{$p}++;
+    my ($d, $u) = @{ direct($p) };
+    $unc ||= $u;
+    push @queue, @$d;
+  }
+  return ([sort keys %seen], $unc);
+}
+if ($mode eq 'weights') {
+  my $i = 0;
+  for my $r (@ARGV) {
+    $i++;
+    my ($files) = closure($r);
+    my $w = 0;
+    for my $p (@$files) { my $d = slurp($p); $w += length($d) if defined $d; }
+    $w = 1 if $w < 1;
+    print "$w\t$i\t$r\n";
+  }
+} elsif ($mode eq 'keys') {
+  require Digest::SHA;
+  my ($salt, $self, $list, $repo, @roots) = @ARGV;
+  my %listed;
+  if (open(my $fh, '<', $list)) {
+    while (my $l = <$fh>) { chomp $l; next if $l =~ /^\s*(?:#|$)/; $listed{$l} = 1; }
+    close $fh;
+  }
+  my $selfhash = Digest::SHA::sha256_hex(slurp($self) // '');
+  for my $r (@roots) {
+    my ($files, $unc) = closure($r);
+    next if $unc;
+    next unless defined slurp(norm($r));
+    (my $rel = norm($r)) =~ s{^\Q$repo\E/}{};
+    my @parts = ('fm-lint-cache-v1', $selfhash, $salt, $listed{$rel} ? 'listed' : 'enforced');
+    for my $p (@$files) {
+      my $d = slurp($p);
+      push @parts, $p, defined $d ? Digest::SHA::sha256_hex($d) : 'missing';
+    }
+    print "$r\t", Digest::SHA::sha256_hex(join("\0", @parts)), "\n";
+  }
+} else {
+  die "unknown mode $mode\n";
+}
+PERL
+}
+
+# Scheduling weight per root: the byte total of its source closure. A partition
+# run must not guess: if the helper fails, partitions could be packed on
+# different weights and drop or repeat a root, so it refuses; every other
+# caller falls back to the root's own bytes.
 fm_lint_root_weights() {
-  local index=1 path weight
+  local index=1 path weight perl_bin out
   for path in "${ROOTS[@]}"; do
     case "$path" in
       *"$TAB"*|*$'\n'*)
@@ -986,6 +1191,19 @@ fm_lint_root_weights() {
         return 2
         ;;
     esac
+  done
+  [ "${#ROOTS[@]}" -gt 0 ] || return 0
+  if perl_bin=$(command -v perl) \
+    && out=$("$perl_bin" -e "$(fm_lint_closure_source)" weights "${ROOTS[@]}" 2>/dev/null) \
+    && [ "$(printf '%s\n' "$out" | grep -c .)" -eq "${#ROOTS[@]}" ]; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+  if [ -n "$PARTITION" ]; then
+    printf 'fm-lint.sh: could not compute source-closure weights; partitions need identical weights on every runner (perl required).\n' >&2
+    return 2
+  fi
+  for path in "${ROOTS[@]}"; do
     weight=1
     if [ -f "$path" ]; then
       weight=$(wc -c < "$path" 2>/dev/null | tr -d '[:space:]')
@@ -1015,6 +1233,15 @@ if [ "$LIST_FILES" -eq 1 ]; then
     exit 2
   }
   [ "$ROOT_COUNT" -eq 0 ] || printf '%s\n' "${ROOTS[@]}"
+  exit 0
+fi
+
+if [ "$LIST_WEIGHTS" -eq 1 ]; then
+  [ "$#" -eq 0 ] || {
+    printf 'fm-lint.sh: --list-weights does not accept explicit paths.\n' >&2
+    exit 2
+  }
+  fm_lint_root_weights | LC_ALL=C sort -t "$TAB" -k2,2n | awk -F '\t' '{ print $1 "\t" $3 }'
   exit 0
 fi
 
@@ -1205,6 +1432,35 @@ fi
   printf 'meta\t%s\t%s\n' 'timing_mechanism' "$BOUND_MECH"
 } >> "$ROOTS_LOG"
 
+# Result cache setup (header). Anything that stops the keys from being computed
+# leaves the cache off, so every root is linted.
+CACHE_DIR=
+CACHE_KEYS=
+CACHE_USED="$TMP_ROOT/cache.used"
+CACHE_ENABLED=0
+: > "$CACHE_USED"
+fm_lint_cache_setup() {
+  local salt keys_out
+  if ! mkdir -p "$FM_LINT_CACHE_DIR" 2>/dev/null || [ ! -w "$FM_LINT_CACHE_DIR" ]; then
+    printf 'fm-lint.sh: result cache %s is not writable; linting every root.\n' "$FM_LINT_CACHE_DIR" >&2
+    return 0
+  fi
+  salt="$resolved|$REQUIRED_SHELLCHECK|$ANALYSIS_MODE|follow=$FOLLOW_SOURCES|fast=$FAST|exclude=$EXCLUDE_CODES|nox=$LOCAL_NOX_EXCLUDE|ratchet=$RATCHET_ENABLE,$RATCHET_INCLUDE"
+  CACHE_KEYS="$TMP_ROOT/cache.keys"
+  if ! keys_out=$("$PERL_BIN" -e "$(fm_lint_closure_source)" keys "$salt" "$SELF" \
+    "$(fm_lint_ratchet_list)" "$ROOT" "${ROOTS[@]}" 2>/dev/null); then
+    printf 'fm-lint.sh: result cache keys could not be computed; linting every root.\n' >&2
+    CACHE_KEYS=
+    return 0
+  fi
+  if [ -n "$keys_out" ]; then printf '%s\n' "$keys_out" > "$CACHE_KEYS"; else : > "$CACHE_KEYS"; fi
+  CACHE_DIR=$FM_LINT_CACHE_DIR
+  CACHE_ENABLED=1
+  printf 'fm-lint.sh: result cache %s (%s of %s roots have keys)\n' \
+    "$CACHE_DIR" "$(grep -c . "$CACHE_KEYS" || true)" "$ROOT_COUNT" >&2
+}
+[ -z "${FM_LINT_CACHE_DIR:-}" ] || fm_lint_cache_setup
+
 SHARD_COUNT=2
 worker=0
 while [ "$worker" -lt "$SHARD_COUNT" ]; do
@@ -1285,6 +1541,9 @@ fm_lint_run_worker() {  # <worker-index>
     FM_LINT_INTERNAL_MODE="$ANALYSIS_MODE"
     FM_LINT_INTERNAL_PROGRESS="$PROGRESS"
     FM_LINT_INTERNAL_RATCHET_LIST="$(fm_lint_ratchet_list)"
+    FM_LINT_INTERNAL_CACHE_DIR="$CACHE_DIR"
+    FM_LINT_INTERNAL_CACHE_KEYS="$CACHE_KEYS"
+    FM_LINT_INTERNAL_CACHE_USED="$CACHE_USED"
     FM_LINT_SHELLCHECK="$SHELLCHECK_BIN"
     FM_LINT_PERL_BIN="$PERL_BIN"
   )
@@ -1358,6 +1617,29 @@ while [ "$worker" -lt "$SHARD_COUNT" ]; do
   worker=$((worker + 1))
 done
 
+# Cache outcome. Pruning needs a run that covered its whole set and passed, so
+# markers for roots this run did not use (an older content) can go; an explicit
+# or changed-only run covers part of a set and never prunes.
+cache_hits=0
+cache_misses=0
+cache_uncacheable=0
+if [ "$CACHE_ENABLED" -eq 1 ]; then
+  cache_hits=$(awk -F '\t' '$1 == "cache" && $5 == "hit" { n++ } END { print n + 0 }' "$ROOTS_LOG")
+  cache_misses=$(awk -F '\t' '$1 == "cache" && $5 == "miss" { n++ } END { print n + 0 }' "$ROOTS_LOG")
+  cache_uncacheable=$(awk -F '\t' '$1 == "cache" && $5 == "uncacheable" { n++ } END { print n + 0 }' "$ROOTS_LOG")
+  if [ "$overall_rc" -eq 0 ] && [ "$EXPLICIT_PATHS" -eq 0 ] && [ "$CHANGED_MODE" -eq 0 ]; then
+    for cache_file in "$CACHE_DIR"/* "$CACHE_DIR"/.tmp.*; do
+      [ -f "$cache_file" ] || continue
+      case "${cache_file##*/}" in
+        .tmp.*) rm -f "$cache_file" ;;
+        *) grep -Fxq -- "${cache_file##*/}" "$CACHE_USED" || rm -f "$cache_file" ;;
+      esac
+    done
+  fi
+  printf 'fm-lint.sh: result cache: %s hits, %s misses, %s uncacheable\n' \
+    "$cache_hits" "$cache_misses" "$cache_uncacheable" >&2
+fi
+
 # Close the roots log with completion counts so a mid-run kill leaves
 # begun-but-unfinished roots attributable by name. result_exit is appended
 # after the purity and workflow checks so it records the run's final status.
@@ -1374,6 +1656,8 @@ EOF
     printf 'meta\t%s\t%s\n' 'roots_begun' "$roots_begun"
     printf 'meta\t%s\t%s\n' 'roots_completed' "$roots_completed"
     printf 'meta\t%s\t%s\n' 'roots_unfinished' "$roots_unfinished"
+    printf 'meta\t%s\t%s\n' 'cache_hits' "$cache_hits"
+    printf 'meta\t%s\t%s\n' 'cache_misses' "$cache_misses"
   } >> "$ROOTS_LOG"
 fi
 
@@ -1489,6 +1773,10 @@ EOF
     printf 'root_memory_limit_kib\t%s\n' "$root_memory_meta"
     printf 'root_timing_mechanism\t%s\n' "$BOUND_MECH"
     printf 'root_count\t%s\n' "$ROOT_COUNT"
+    printf 'cache_enabled\t%s\n' "$CACHE_ENABLED"
+    printf 'cache_hits\t%s\n' "$cache_hits"
+    printf 'cache_misses\t%s\n' "$cache_misses"
+    printf 'cache_uncacheable\t%s\n' "$cache_uncacheable"
     printf 'direct_lines\t%s\n' "$direct_lines"
     printf 'direct_bytes\t%s\n' "$direct_bytes"
     printf 'source_directives\t%s\n' "$source_directives"

@@ -59,13 +59,14 @@ jobs:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Lint ${{ matrix.partition }}
     runs-on: ubuntu-24.04
     if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
-    # Normal tier (see the timeout policy above). Four partitions hold each
-    # runner near 14 minutes of measured ShellCheck time; two held 24 to 29.
+    # Normal tier (see the timeout policy above). Seven partitions packed on
+    # source-closure weight model every runner at 9 to 13 minutes of measured
+    # ShellCheck time; four byte-packed partitions took 11 to 24 and two 24 to 29.
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        partition: [1, 2, 3, 4]
+        partition: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v6
       - name: Install pinned ShellCheck
@@ -78,6 +79,18 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # Result cache: bin/fm-lint.sh owns what a key covers and when a marker
+      # is written (only for a root that passed on identical inputs, so a hit is
+      # that same pass and a miss runs the full check). The key below only picks
+      # which earlier partition cache to start from: the newest one for this
+      # partition, since a marker is keyed by the root's own content.
+      - name: Restore ShellCheck result cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/fm-lint-cache
+          key: fm-lint-cache-v1-${{ matrix.partition }}of${{ strategy.job-total }}-${{ github.sha }}
+          restore-keys: |
+            fm-lint-cache-v1-${{ matrix.partition }}of${{ strategy.job-total }}-
       # Single owner of the lint definition (shell file set, config, version,
       # and GitHub workflow lint). Do not re-spell the checks here; keep CI
       # and the pre-push gate on this script so a self-broken ci.yml still
@@ -88,6 +101,7 @@ jobs:
           # bound (wall deadline or memory rlimit) cannot be enforced here.
           FM_LINT_REQUIRE_BOUNDS: '1'
           FM_LINT_JOBS: '1'
+          FM_LINT_CACHE_DIR: ${{ runner.temp }}/fm-lint-cache
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-lint"
@@ -117,7 +131,7 @@ jobs:
       - name: Prove complete regression partition
         run: bin/fm-test-run.sh --check-coverage
 
-  # Two duration-balanced portable parallel shards of the Phase 2 proven-isolated
+  # Three duration-balanced portable parallel shards of the Phase 2 proven-isolated
   # set only. Composition owner: bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
   tests-portable-parallel-1:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable parallel 1
@@ -149,6 +163,7 @@ jobs:
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
           bin/fm-test-run.sh --lane portable-parallel-1 \
+            --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-1.json"
       - name: Upload shard 1 timing artifact
         if: always()
@@ -188,7 +203,6 @@ jobs:
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
           bin/fm-test-run.sh --lane portable-parallel-2 \
-            --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-2.json"
       - name: Upload shard 2 timing artifact
         if: always()
@@ -196,6 +210,45 @@ jobs:
         with:
           name: fm-test-timing-portable-parallel-2
           path: ${{ runner.temp }}/fm-test/fm-test-timing-portable-parallel-2.json
+          if-no-files-found: warn
+
+  tests-portable-parallel-3:
+    name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable parallel 3
+    runs-on: ubuntu-24.04
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    # Normal tier (see the timeout policy above).
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install pinned ShellCheck
+        run: |
+          set -eu
+          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Install pinned actionlint
+        run: |
+          set -eu
+          bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Install tasks-axi
+        run: |
+          set -eu
+          npm install -g tasks-axi
+          tasks-axi --version
+      - name: Run portable parallel shard 3
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/fm-test"
+          bin/fm-test-run.sh --lane portable-parallel-3 \
+            --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-3.json"
+      - name: Upload shard 3 timing artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fm-test-timing-portable-parallel-3
+          path: ${{ runner.temp }}/fm-test/fm-test-timing-portable-parallel-3.json
           if-no-files-found: warn
 
   # Required portable serial remainder: watcher, lock, AFK, tmux, daemon,
@@ -493,6 +546,7 @@ jobs:
     needs:
       - tests-portable-parallel-1
       - tests-portable-parallel-2
+      - tests-portable-parallel-3
       - tests-portable-serial
       - tests-herdr
       - tests-hc
@@ -631,6 +685,7 @@ jobs:
       - test-coverage
       - tests-portable-parallel-1
       - tests-portable-parallel-2
+      - tests-portable-parallel-3
       - tests-portable-serial
       - tests-herdr
       - tests-hc

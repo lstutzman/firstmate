@@ -185,7 +185,7 @@ test_canonical_partitions_preserve_full_lint() {
   mkdir -p "$fakebin"
   all=$(CI=true "$LINT" --list-files | LC_ALL=C sort)
   : > "$tmp/union"
-  for part in 1of4 2of4 3of4 4of4; do
+  for part in 1of7 2of7 3of7 4of7 5of7 6of7 7of7; do
     selected=$(CI=false GITHUB_ACTIONS=false "$LINT" --partition "$part" --list-files) \
       || fail "partition $part must select full canonical roots even on a local branch"
     [ -n "$selected" ] || fail "empty lint partition $part"
@@ -225,7 +225,7 @@ test_canonical_partitions_preserve_full_lint() {
   rc=0
   "$LINT" --partition 1of2 bin/fm-lint.sh > "$tmp/refused" 2>&1 || rc=$?
   [ "$rc" = 2 ] || fail "partition accepted an explicit subset"
-  pass "four canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
+  pass "seven canonical lint partitions preserve complete source-aware coverage and reject weakened modes"
 }
 
 # fm_lint_stub_git <fakebin-dir>: install a git stub for the changed-file mode
@@ -2135,6 +2135,271 @@ test_roots_sidecar_records_per_root_lifecycle() {
   pass "the retained sidecar records each root's lifecycle with a mode, reason, and duration"
 }
 
+# fm_lint_cache_repo <dir>: a minimal repository root that carries its own copy
+# of the lint owner, so a test can steer which files exist, what they source,
+# and which ratchet exceptions apply without touching the real tree. The
+# workflow-lint step is a stub because the fixture carries no workflows.
+fm_lint_cache_repo() {
+  mkdir -p "$1/bin/backends" "$1/tests" "$1/lib"
+  cp "$LINT" "$1/bin/fm-lint.sh"
+  cp "$ROOT/bin/fm-timeout-lib.sh" "$1/bin/fm-timeout-lib.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$1/bin/fm-lint-workflows.sh"
+  chmod +x "$1/bin/fm-lint-workflows.sh"
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$1/bin/backends/b.sh"
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$1/tests/t.sh"
+}
+
+# fm_lint_cache_counts <output>: "<hits> <misses> <uncacheable>" from the
+# result-cache summary line, or "none" when the run printed no such line.
+fm_lint_cache_counts() {
+  printf '%s\n' "$1" | sed -n 's/^fm-lint.sh: result cache: \([0-9]*\) hits, \([0-9]*\) misses, \([0-9]*\) uncacheable$/\1 \2 \3/p' | tail -n 1
+}
+
+# fm_lint_cache_markers <dir>: how many result markers the cache holds.
+fm_lint_cache_markers() {
+  find "$1" -maxdepth 1 -type f ! -name '.*' 2>/dev/null | wc -l | tr -d ' '
+}
+
+# shellcheck disable=SC2016 # The fixture scripts are written literally, so their $ stay unexpanded.
+test_partition_weights_follow_the_source_closure() {
+  local tmp repo out part a_part b_part
+  tmp=$(fm_test_tmproot fm-lint-weights)
+  repo="$tmp/repo"
+  fm_lint_cache_repo "$repo"
+  printf '%s\n' '#!/usr/bin/env bash' 'leaf_var=1' 'export leaf_var' > "$repo/lib/leaf.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/leaf.sh' '. "${1:?}"' > "$repo/lib/mid.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/cycle-b.sh' '. "${1:?}"' > "$repo/lib/cycle-a.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/cycle-a.sh' '. "${1:?}"' > "$repo/lib/cycle-b.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/mid.sh' '. "${1:?}"' > "$repo/bin/chain.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/cycle-a.sh' '. "${1:?}"' > "$repo/bin/cycle.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '. lib/leaf.sh' > "$repo/bin/literal.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=/dev/null' '. "${1:?}"' > "$repo/bin/devnull.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/absent.sh' '. "${1:?}"' > "$repo/bin/missing.sh"
+  out=$(CI=true "$repo/bin/fm-lint.sh" --list-weights) || fail "--list-weights failed"
+  weight() { printf '%s\n' "$out" | awk -F '\t' -v want="$1" '$2 == want { print $1 }'; }
+  size() { wc -c < "$repo/$1" | tr -d ' '; }
+  [ "$(weight bin/chain.sh)" = "$(( $(size bin/chain.sh) + $(size lib/mid.sh) + $(size lib/leaf.sh) ))" ] \
+    || fail "a chained root was not weighed with its whole source closure: $(weight bin/chain.sh)"
+  [ "$(weight bin/cycle.sh)" = "$(( $(size bin/cycle.sh) + $(size lib/cycle-a.sh) + $(size lib/cycle-b.sh) ))" ] \
+    || fail "a source cycle was not weighed once per file: $(weight bin/cycle.sh)"
+  [ "$(weight bin/literal.sh)" = "$(( $(size bin/literal.sh) + $(size lib/leaf.sh) ))" ] \
+    || fail "a literal source statement was not followed: $(weight bin/literal.sh)"
+  [ "$(weight bin/devnull.sh)" = "$(size bin/devnull.sh)" ] \
+    || fail "a source=/dev/null boundary was followed: $(weight bin/devnull.sh)"
+  [ "$(weight bin/missing.sh)" = "$(size bin/missing.sh)" ] \
+    || fail "a missing source target changed the weight: $(weight bin/missing.sh)"
+
+  # Two tiny roots that share a large library cost far more than their own
+  # bytes, so packing on bytes would stack them on one runner.
+  /usr/bin/trash "$repo/bin/chain.sh" "$repo/bin/cycle.sh" "$repo/bin/literal.sh" \
+    "$repo/bin/devnull.sh" "$repo/bin/missing.sh"
+  # The sizes dwarf the copied lint owner, which is a root of the fixture too.
+  { printf '%s\n' '#!/usr/bin/env bash'; yes '# padding padding padding padding padding padding padding padding' | head -n 3000; } > "$repo/lib/big.sh"
+  { printf '%s\n' '#!/usr/bin/env bash'; yes '# padding padding padding padding padding padding padding padding' | head -n 2200; } > "$repo/bin/heavy.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/big.sh' '. "${1:?}"' > "$repo/bin/a.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/big.sh' '. "${1:?}"' > "$repo/bin/b.sh"
+  a_part=; b_part=
+  for part in 1of2 2of2; do
+    CI=true "$repo/bin/fm-lint.sh" --partition "$part" --list-files | grep -qx bin/a.sh && a_part=$part
+    CI=true "$repo/bin/fm-lint.sh" --partition "$part" --list-files | grep -qx bin/b.sh && b_part=$part
+  done
+  [ -n "$a_part" ] && [ -n "$b_part" ] && [ "$a_part" != "$b_part" ] \
+    || fail "two roots with the same large source closure were packed on one runner ($a_part, $b_part)"
+  pass "root weights follow the source closure and spread shared-library roots across partitions"
+}
+
+# shellcheck disable=SC2016 # The fixture scripts are written literally, so their $ stay unexpanded.
+test_cache_hit_is_the_same_pass_on_identical_inputs() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): result cache equivalence check"
+    return
+  fi
+  local tmp repo cache out rc counts
+  tmp=$(fm_test_tmproot fm-lint-cache)
+  repo="$tmp/repo"
+  cache="$tmp/cache"
+  fm_lint_cache_repo "$repo"
+  printf '%s\n' '#!/usr/bin/env bash' 'leaf_var=1' 'export leaf_var' > "$repo/lib/leaf.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/leaf.sh' '. "${1:?}"' > "$repo/lib/mid.sh"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/mid.sh' '. "${1:?}"' \
+    'printf "%s\n" "$leaf_var"' > "$repo/bin/root.sh"
+
+  rc=0; out=$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "the fixture root must pass with its dataflow context: $out"
+  [ "$(fm_lint_cache_counts "$out")" = "0 1 0" ] || fail "the first run was not a miss: $out"
+  [ "$(fm_lint_cache_markers "$cache")" = 1 ] || fail "a passing root left no cache marker"
+
+  rc=0; out=$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] && [ "$(fm_lint_cache_counts "$out")" = "1 0 0" ] \
+    || fail "identical inputs did not hit the cache: $out"
+
+  # The dataflow fact the root depends on lives two sources deep. If ShellCheck
+  # did not follow the chain this change could not alter the root's result, and
+  # a stale pass would be indistinguishable from a correct one.
+  printf '%s\n' '#!/usr/bin/env bash' 'other_var=1' 'export other_var' > "$repo/lib/leaf.sh"
+  rc=0; out=$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a change two sources deep that breaks the root was served from the cache"
+  assert_contains "$out" "SC2154" "the transitive change did not reach ShellCheck's dataflow"
+  [ "$(fm_lint_cache_counts "$out")" = "0 1 0" ] || fail "the changed closure was not a miss: $out"
+
+  # Findings are never stored, so the same defect fails again.
+  rc=0; out=$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] && [ "$(fm_lint_cache_counts "$out")" = "0 1 0" ] \
+    || fail "a failing root was cached: $out"
+  [ "$(fm_lint_cache_markers "$cache")" = 1 ] || fail "a failing root left a marker"
+
+  # Restoring the exact bytes is a hit again: the entry is content addressed.
+  printf '%s\n' '#!/usr/bin/env bash' 'leaf_var=1' 'export leaf_var' > "$repo/lib/leaf.sh"
+  counts=$(fm_lint_cache_counts "$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1)")
+  [ "$counts" = "1 0 0" ] || fail "restored bytes did not hit the cache: $counts"
+
+  # A different analysis mode, a changed root and a changed lint definition each miss.
+  counts=$(fm_lint_cache_counts "$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" --fast bin/root.sh 2>&1)")
+  [ "$counts" = "0 1 0" ] || fail "fast mode reused a full-analysis pass: $counts"
+  printf '# edited\n' >> "$repo/bin/root.sh"
+  counts=$(fm_lint_cache_counts "$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1)")
+  [ "$counts" = "0 1 0" ] || fail "an edited root hit the cache: $counts"
+  printf '# edited lint definition\n' >> "$repo/bin/fm-lint.sh"
+  counts=$(fm_lint_cache_counts "$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1)")
+  [ "$counts" = "0 1 0" ] || fail "an edited lint definition reused an older pass: $counts"
+  pass "a cache hit is the same pass on identical inputs, including bytes two sources deep"
+}
+
+# shellcheck disable=SC2016 # The fixture scripts are written literally, so their $ stay unexpanded.
+test_cache_missing_source_target_is_part_of_the_key() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): result cache missing-target check"
+    return
+  fi
+  local tmp repo cache out rc
+  tmp=$(fm_test_tmproot fm-lint-cache-missing)
+  repo="$tmp/repo"
+  cache="$tmp/cache"
+  fm_lint_cache_repo "$repo"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source=lib/late.sh disable=SC1091' '. "${1:?}"' \
+    'printf "%s\n" "${late_var:-}"' > "$repo/bin/root.sh"
+  rc=0; out=$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "the missing-target fixture must pass: $out"
+  # Creating the file ShellCheck could not find before changes what it sees.
+  printf '%s\n' '#!/usr/bin/env bash' 'late_var=1' 'export late_var' > "$repo/lib/late.sh"
+  out=$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/root.sh 2>&1) || true
+  [ "$(fm_lint_cache_counts "$out")" = "0 1 0" ] || fail "creating a missing source target hit the cache: $out"
+  pass "creating a previously missing source target invalidates the key"
+}
+
+# shellcheck disable=SC2016 # The fixture scripts are written literally, so their $ stay unexpanded.
+test_cache_never_stores_a_weaker_or_unproven_result() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): result cache storage rules"
+    return
+  fi
+  local tmp repo cache list out rc fakebin
+  tmp=$(fm_test_tmproot fm-lint-cache-rules)
+  repo="$tmp/repo"
+  cache="$tmp/cache"
+  list="$tmp/list"
+  fm_lint_cache_repo "$repo"
+
+  # A stale ratchet exception is reported every run and never cached.
+  fm_lint_ratchet_fixture "$repo/bin/fixed.sh" passing
+  printf 'bin/fixed.sh\n' > "$list"
+  for _ in 1 2; do
+    rc=0; out=$(FM_LINT_RATCHET_LIST="$list" FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/fixed.sh 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] && [ "$(fm_lint_cache_counts "$out")" = "0 1 0" ] \
+      || fail "a stale ratchet exception was served from the cache: $out"
+  done
+  [ "$(fm_lint_cache_markers "$cache")" = 0 ] || fail "a stale ratchet exception left a marker"
+
+  # Whether a root is on the exception list is part of its key.
+  fm_lint_ratchet_fixture "$repo/bin/listed.sh" failing
+  printf 'bin/listed.sh\n' > "$list"
+  rc=0; out=$(FM_LINT_RATCHET_LIST="$list" FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/listed.sh 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "a listed failing root must pass: $out"
+  : > "$list"
+  rc=0; out=$(FM_LINT_RATCHET_LIST="$list" FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/listed.sh 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "removing a root from the ratchet list still passed from the cache"
+  assert_contains "$out" "SC2248" "the ratchet finding did not return once the exception was removed"
+
+  # A root that lints only after the memory fallback ran a weaker check, so it
+  # is not stored.
+  /usr/bin/trash "$cache"
+  fakebin=$(fm_fakebin "$tmp")
+  cat > "$fakebin/shellcheck" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --version ]; then
+  printf 'ShellCheck - shell script analysis tool\nversion: 0.11.0\n'
+  exit 0
+fi
+case " $* " in *" --include="*) exit 0 ;; esac
+printf 'call\n' >> "$FM_TEST_CALL_LOG"
+case " $* " in
+  *" --external-sources "*) printf 'shellcheck: Heap exhausted;\n' >&2; exit 251 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/shellcheck"
+  : > "$tmp/calls"
+  for _ in 1 2; do
+    rc=0; out=$(PATH="$fakebin:$PATH" FM_TEST_CALL_LOG="$tmp/calls" FM_LINT_CACHE_DIR="$cache" \
+      "$repo/bin/fm-lint.sh" bin/fixed.sh 2>&1) || rc=$?
+  done
+  [ "$(wc -l < "$tmp/calls" | tr -d ' ')" = 4 ] || fail "a memory-fallback root was not re-linted on the second run"
+  [ "$(fm_lint_cache_markers "$cache")" = 0 ] || fail "a memory-fallback pass left a marker"
+
+  # A source-path directive adds search directories the closure scan does not
+  # model, so such a root is always linted.
+  /usr/bin/trash "$cache"
+  printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source-path=SCRIPTDIR' 'exit 0' > "$repo/bin/searchpath.sh"
+  for _ in 1 2; do
+    out=$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/searchpath.sh 2>&1) || true
+    [ "$(fm_lint_cache_counts "$out")" = "0 0 1" ] || fail "a source-path root was cacheable: $out"
+  done
+  [ "$(fm_lint_cache_markers "$cache")" = 0 ] || fail "a source-path root left a marker"
+  pass "the cache never stores findings, stale exceptions, weaker fallbacks or unmodelled roots"
+}
+
+test_cache_unusable_directory_lints_every_root() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): unusable result cache check"
+    return
+  fi
+  local tmp repo out rc
+  tmp=$(fm_test_tmproot fm-lint-cache-off)
+  repo="$tmp/repo"
+  fm_lint_cache_repo "$repo"
+  : > "$tmp/not-a-dir"
+  rc=0; out=$(FM_LINT_CACHE_DIR="$tmp/not-a-dir/cache" "$repo/bin/fm-lint.sh" tests/t.sh 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "an unusable cache directory broke the lint: $out"
+  assert_contains "$out" "linting every root" "an unusable cache directory was not disclosed"
+  [ -z "$(fm_lint_cache_counts "$out")" ] || fail "an unusable cache reported cache results: $out"
+  pass "an unusable result cache directory leaves every root linted"
+}
+
+test_cache_prune_keeps_only_markers_the_run_used() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): result cache prune check"
+    return
+  fi
+  local tmp repo cache out rc
+  tmp=$(fm_test_tmproot fm-lint-cache-prune)
+  repo="$tmp/repo"
+  cache="$tmp/cache"
+  fm_lint_cache_repo "$repo"
+  rc=0; out=$(CI=true FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "the fixture inventory must pass: $out"
+  [ "$(fm_lint_cache_counts "$out")" = "0 5 0" ] || fail "the first full run was not five misses: $out"
+  [ "$(fm_lint_cache_markers "$cache")" = 5 ] || fail "five passing roots did not leave five markers"
+  printf '# edited\n' >> "$repo/tests/t.sh"
+  rc=0; out=$(CI=true FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] && [ "$(fm_lint_cache_counts "$out")" = "4 1 0" ] \
+    || fail "an edit to one root was not one miss and four hits: $out"
+  [ "$(fm_lint_cache_markers "$cache")" = 5 ] || fail "the superseded marker was not pruned"
+  # An explicit-path run covers part of a set and never prunes the rest.
+  FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" tests/t.sh >/dev/null 2>&1
+  [ "$(fm_lint_cache_markers "$cache")" = 5 ] || fail "a partial run pruned markers it did not own"
+  pass "a full passing run prunes superseded markers and a partial run leaves them"
+}
+
 test_seeded_module_boundary_parity() {
   if ! pinned_ready; then
     pass "SKIP (ShellCheck $REQUIRED not resolved): seeded source-boundary parity check"
@@ -2239,6 +2504,12 @@ test_require_bounds_refuses_when_enforcement_is_missing
 test_pinned_shellcheck_memory_limit
 test_sidecar_result_exit_reflects_final_status
 test_roots_sidecar_records_per_root_lifecycle
+test_partition_weights_follow_the_source_closure
+test_cache_hit_is_the_same_pass_on_identical_inputs
+test_cache_missing_source_target_is_part_of_the_key
+test_cache_never_stores_a_weaker_or_unproven_result
+test_cache_unusable_directory_lints_every_root
+test_cache_prune_keeps_only_markers_the_run_used
 test_seeded_module_boundary_parity
 test_changed_mode_lints_only_the_changed_file
 test_ci_forces_full_lint_even_with_empty_diff
