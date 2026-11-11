@@ -30,6 +30,7 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 CI_WORKFLOW="$ROOT/.github/workflows/ci.yml"
+TMP_ROOT=$(fm_test_tmproot fm-ci-workflow)
 
 assert_present "$CI_WORKFLOW" ".github/workflows/ci.yml is missing"
 command -v ruby >/dev/null 2>&1 \
@@ -184,6 +185,7 @@ def simulated_context(workflow_name, overrides)
     "labels" => "", "association" => "NONE", "head" => "contributor/firstmate",
     "number" => "108", "run_id" => "900001", "skip_push" => "", "skip_macos" => "",
     "needs" => "success", "outcome" => "success",
+    "base_sha" => "", "head_sha" => "", "before" => "", "sha" => "",
   }
   if overrides.any? { |pair| pair == "event=push" }
     o.merge!("action" => "", "association" => "", "head" => "", "number" => "")
@@ -204,6 +206,10 @@ def simulated_context(workflow_name, overrides)
     "github.event.pull_request.head.repo.full_name" => o["head"],
     "github.event.pull_request.number" => o["number"],
     "github.run_id" => o["run_id"],
+    "github.event.pull_request.base.sha" => o["base_sha"],
+    "github.event.pull_request.head.sha" => o["head_sha"],
+    "github.event.before" => o["before"],
+    "github.sha" => o["sha"],
     "vars.FM_CI_SKIP_PUSH" => o["skip_push"],
     "vars.FM_CI_SKIP_MACOS" => o["skip_macos"],
     "needs.status" => o["needs"],
@@ -693,6 +699,64 @@ TABLE
   pass "the timing aggregate still runs after a failed lane unless the push run is skipped"
 }
 
+# Run every step of the Repo invariants job under one simulated context in a
+# sandbox whose bin/fm-install-gitleaks.sh and bin/fm-secret-scan.sh are fakes
+# that log their arguments, the way the runner would: the checkout step is
+# checked for full history instead of run, each run step gets its resolved env
+# plus RUNNER_TEMP and GITHUB_PATH. Prints the call log, then a line
+# "GITHUB_PATH <entry>" per added PATH entry.
+run_invariants_steps() {  # <sandbox> [KEY=VALUE]...
+  local sandbox=$1 script
+  shift
+  mkdir -p "$sandbox/bin" "$sandbox/runner-temp"
+  : >"$sandbox/calls.log"
+  : >"$sandbox/github-path"
+  printf '#!/usr/bin/env bash\nprintf "install-gitleaks %%s\\n" "$*" >>"%s"\n' "$sandbox/calls.log" >"$sandbox/bin/fm-install-gitleaks.sh"
+  printf '#!/usr/bin/env bash\nprintf "secret-scan %%s\\n" "$*" >>"%s"\n' "$sandbox/calls.log" >"$sandbox/bin/fm-secret-scan.sh"
+  chmod +x "$sandbox/bin/fm-install-gitleaks.sh" "$sandbox/bin/fm-secret-scan.sh"
+  script=$(ruby -ryaml -rshellwords -e "$EXPRESSION_RUBY" -e "$CONTEXT_RUBY" -e '
+doc = YAML.load_file(ARGV.shift)
+context = simulated_context(doc.fetch("name"), ARGV)
+steps = doc.fetch("jobs").fetch("invariants").fetch("steps")
+first = steps.first
+abort "the first invariants step must be actions/checkout" unless first["uses"].to_s.start_with?("actions/checkout@")
+abort "the invariants checkout must fetch full history (fetch-depth 0), got #{first.dig("with", "fetch-depth").inspect}" unless first.dig("with", "fetch-depth").to_s == "0"
+steps.drop(1).each do |step|
+  abort "only the first invariants step may be a checkout" if step["uses"].to_s.start_with?("actions/checkout@")
+  next unless step["run"]
+  env = step.fetch("env", {}).map { |k, v| "#{k}=#{interpolate(v, context).shellescape}" }.join(" ")
+  puts "#{env} bash -c #{interpolate(step.fetch("run"), context).shellescape} >/dev/null 2>&1"
+end
+' "$CI_WORKFLOW" "$@") || fail "could not resolve the Repo invariants steps"
+  (cd "$sandbox" && RUNNER_TEMP="$sandbox/runner-temp" GITHUB_PATH="$sandbox/github-path" bash -c "$script")
+  cat "$sandbox/calls.log"
+  sed 's/^/GITHUB_PATH /' "$sandbox/github-path"
+}
+
+# The blocking CI secret scan must see the commits each event adds: a pull
+# request scans its base..head and a main push scans before..sha, after a
+# full-history checkout and the pinned gitleaks install put on PATH. The
+# expected calls come from bin/fm-secret-scan.sh's documented modes and
+# GitHub's event payload fields; distinct SHAs catch a swapped variable.
+test_invariants_secret_scan_reads_the_event_range() {
+  local sandbox out want
+  sandbox="$TMP_ROOT/invariants-pr"
+  out=$(run_invariants_steps "$sandbox" event=pull_request association=OWNER head=kunchenguid/firstmate \
+    base_sha=1111111 head_sha=2222222 before=3333333 sha=4444444) || fail "Repo invariants steps did not resolve"
+  want="install-gitleaks $sandbox/runner-temp/bin
+secret-scan --range 1111111..2222222
+GITHUB_PATH $sandbox/runner-temp/bin"
+  [ "$out" = "$want" ] || fail "pull_request: the invariants job must install gitleaks onto PATH, then scan base..head"$'\n'"got:"$'\n'"$out"$'\n'"want:"$'\n'"$want"
+  sandbox="$TMP_ROOT/invariants-push"
+  out=$(run_invariants_steps "$sandbox" event=push \
+    base_sha=1111111 head_sha=2222222 before=3333333 sha=4444444) || fail "Repo invariants steps did not resolve"
+  want="install-gitleaks $sandbox/runner-temp/bin
+secret-scan --push-range 3333333 4444444
+GITHUB_PATH $sandbox/runner-temp/bin"
+  [ "$out" = "$want" ] || fail "push: the invariants job must install gitleaks onto PATH, then scan before..sha"$'\n'"got:"$'\n'"$out"$'\n'"want:"$'\n'"$want"
+  pass "the Repo invariants secret scan checks out full history, installs gitleaks, and scans exactly the commits each event adds"
+}
+
 test_ci_matrices_match_executable_partitions() {
   ruby -ryaml -ropen3 - "$CI_WORKFLOW" "$ROOT" <<'RUBY' || fail "CI partition contract"
 jobs = YAML.load_file(ARGV[0]).fetch("jobs")
@@ -725,6 +789,7 @@ RUBY
 }
 
 test_ci_matrices_match_executable_partitions
+test_invariants_secret_scan_reads_the_event_range
 test_pr_pushes_supersede_within_one_pr
 test_separate_prs_do_not_cancel_each_other
 test_main_pushes_keep_only_the_newest_run
