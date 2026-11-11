@@ -27,7 +27,9 @@
 #                 "OFFICE: office <id>: <gap>", "OFFICE: approved office <role> not provisioned (...)",
 #                 "OFFICE: deferral <role> ...", or "OFFICE: pool: <gap>" (clones of one project
 #                 that differ on treehouse max_trees) (bin/fm-office.sh ensure owns the cases),
-#                 "FMX: X mode on ..." or "FMX: X mode off ...".
+#                 "FMX: X mode on ..." or "FMX: X mode off ...",
+#                 "NM_DAEMON_ENV: the cache-TTL drop-in for <unit> is missing|different, ..."
+#                 (bin/fm-nm-daemon-env.sh owns the check and its install).
 #          When a RUNNING secondmate home is fast-forwarded, its target is
 #          firstmate's own current default-branch commit. A local worktree uses
 #          a purely local fast-forward with no origin fetch; a remote route hands
@@ -1609,6 +1611,7 @@ detect_local_config() {
     echo "MISSING_MANUAL: cursor-agent (instructions: $(manual_install_url cursor-agent))"
   fi
   crew_dispatch_validate
+  "$SCRIPT_DIR/fm-nm-daemon-env.sh" check 2>/dev/null || true
   if [ "${FM_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ] \
     && ! fm_backlog_backend_manual "$CONFIG" && fm_tasks_axi_compatible; then
     echo "BOOTSTRAP_INFO: tasks-axi available"

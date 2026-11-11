@@ -1044,6 +1044,24 @@ test_bootstrap_reports_office_gaps() {
   pass "bootstrap prints an OFFICE: line for an office the second mate registry does not know"
 }
 
+test_bootstrap_reports_a_missing_nm_daemon_drop_in() {
+  local fixture root home fakebin units out
+  fixture=$(make_routine_bootstrap_fixture "$TMP_ROOT/nm-daemon-env")
+  root=${fixture%%|*}
+  fixture=${fixture#*|}
+  home=${fixture%%|*}
+  fakebin=${fixture#*|}
+  units="$TMP_ROOT/nm-daemon-env/units"
+  mkdir -p "$units"
+  printf '[Service]\nExecStart=/x/no-mistakes daemon run --root %s\n' "$TMP_ROOT/nm-daemon-env/nmroot" \
+    > "$units/no-mistakes-daemon-cccc3333.service"
+  out=$(PATH="$fakebin:$BASE_PATH" FM_BACKEND=tmux FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 FM_NM_DAEMON_UNIT_DIR="$units" NM_HOME="$TMP_ROOT/nm-daemon-env/nmroot" \
+    bash "$ROOT/bin/fm-bootstrap.sh") || fail "bootstrap must exit 0 with a missing drop-in"
+  assert_contains "$out" "NM_DAEMON_ENV: the cache-TTL drop-in for no-mistakes-daemon-cccc3333.service is missing" "bootstrap NM_DAEMON_ENV line"
+  pass "bootstrap prints an NM_DAEMON_ENV: line, without failing, for a daemon unit with no cache-TTL drop-in"
+}
+
 test_routine_bootstrap_contract_runs_under_system_bash() {
   local out
   [ -x /bin/bash ] || { pass "bootstrap routine contract skipped without /bin/bash"; return; }
@@ -1623,6 +1641,7 @@ test_fleet_sync_timeout_is_computed_before_launch
 test_routine_bootstrap_confirmations_are_silent
 test_routine_bootstrap_contract_runs_under_system_bash
 test_bootstrap_reports_office_gaps
+test_bootstrap_reports_a_missing_nm_daemon_drop_in
 test_network_phase_partitions_the_run
 test_network_sweeps_recheck_lock_ownership
 test_network_phases_record_per_step_elapsed_times
