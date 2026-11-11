@@ -826,7 +826,7 @@ test_print_mode_and_eval_sessions_are_not_repeat_asks() {
   archive="$TMP_ROOT/printmode/archive"
   officer_home "$home"
   home=$(cd "$home" && pwd -P)
-  # The same query run as `claude -p` (entrypoint sdk-cli) and in an eval scratch project, beside one typed by Lee
+  # The same query run as `claude -p` (entrypoint sdk-cli) and in eval scratch projects, beside one typed by Lee
   # in an interactive (cli) session, on three days.
   for d in 21 22 23; do
     cat > "$TMP_ROOT/printmode/day$d.json" <<EOF
@@ -835,6 +835,8 @@ test_print_mode_and_eval_sessions_are_not_repeat_asks() {
   {"type": "user", "entrypoint": "sdk-cli", "timestamp": "2026-10-${d}T09:00:00.000Z", "message": {"content": "Research whether we should adopt a different ORM and compare options with sources."}}]},
  {"machine": "alpha", "id": "evalcwd-$d", "first_prompt": "hello", "cwd": "/home/lee/fm-scratch/skill-trigger-eval", "calls": [], "raw": [
   {"type": "user", "timestamp": "2026-10-${d}T09:01:00.000Z", "message": {"content": "Research whether we should adopt a different ORM and compare options with sources."}}]},
+ {"machine": "alpha", "id": "ideation-$d", "first_prompt": "hello", "cwd": "/home/lee/fm-scratch/fleet-ideation-eval/grader-run-5ab8cf1", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-${d}T09:01:30.000Z", "message": {"content": "Always rank the fleet ideas against the rubric before reporting."}}]},
  {"machine": "alpha", "id": "lee-$d", "first_prompt": "hello", "calls": [], "raw": [
   {"type": "user", "entrypoint": "cli", "timestamp": "2026-10-${d}T09:02:00.000Z", "message": {"content": "Always check the staging deploy log before reporting."}}]}]}
 EOF
