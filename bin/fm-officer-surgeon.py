@@ -15,7 +15,7 @@ Usage:
                             [--team PC] [--writes none|linear] [--max-creates 100] [--bundle-cap 15]
                             [--max-linear-calls 450] [--triage-label triage] [--area <ignored>]
                             [--staging-repo <git remote>] [--visual-findings <file>] [--visual-captures <dir>]
-                            [--rubric <file>] [--jev <jev.py>]
+                            [--rubric <file>] [--jev <jev.py>] [--sweeper-runs <dir>]
                             [--fm-home <dir>] [--start-home <home>=<project,...>]... [--now <epoch>]
 
 Pass 1 is bin/fm-officer-triage.py's session join, unchanged (that script stays: the
@@ -44,11 +44,20 @@ Each finding is classified with the tables below and no model:
                         unknown disposition: needs a decision; duplicate,
                         fixed-live, noise: won't fix; fixed-staging-only:
                         needs a decision. Severity P1/critical/high: high;
-                        P2/medium: medium; else low. When the bug (or the run's
-                        intake) carries `environment: production` a non-won't-fix
+                        P2/medium: medium; else low. When the cluster's
+                        `environment` is production a non-won't-fix
                         finding moves up one step (low, medium, high, critical).
-                        Production is never inferred from text; a payload with
-                        no environment field gets no bump.
+                        Production is never inferred from text. The environment
+                        comes from the bug, the run's intake, or the cluster in the
+                        sweeper's own run bundle (<--sweeper-runs>/<run id>/bundle.json;
+                        default $PC_SWEEPER_RUNS, then ~/services/pc-sweeper/runs):
+                        /api/sweeper-results carries neither `environment` nor
+                        `environments` ({env: {count, first_seen, last_seen}}),
+                        so with no bundle readable there is no bump and a
+                        named `Coverage gap:`. A cluster whose newest last_seen is
+                        more than SWEEP_STALE_DAYS (3) before the run started is
+                        stale: won't fix, never offered as fresh, and back in the
+                        queue the day it is seen again.
 
   visual review         with --visual-findings, the nightly visual review's findings file (PropertyCompass2
                         scripts/visual-review/README.md owns the format; only schema_version 2 is read, and each
@@ -74,7 +83,9 @@ Each finding is classified with the tables below and no model:
 
 A won't-fix finding is always low. A finding the source already put in Linear (an
 `issue` on the nightly failure, a filing on the review finding, a Linear item
-or `duplicate_of` on the sweeper bug) is `tracked`: reported, never filed again.
+or `duplicate_of` on the sweeper bug) is `tracked`: reported, never filed again. A sweeper
+Linear item counts from any earlier run too: each earlier run that filed or updated one is
+read once (GET /api/sweeper-results/<run id>) and kept in the lane state (`sweeper_items`).
 A real finding whose source gave no key is fingerprinted from its normalised
 title plus location (digits dropped), and filed like any other.
 Each finding also carries `found` (times seen, from the item's Found line) and
@@ -186,6 +197,11 @@ SWEEP_DECISION = ("unclear", "idea", "fixed-staging-only")
 SWEEP_NOISE = ("duplicate", "fixed-live", "noise")
 SWEEP_HIGH = ("p1", "critical", "high")
 SWEEP_MEDIUM = ("p2", "medium")
+# A sweeper cluster with no sighting in this many days is stale, not fresh (the sweeper's 14-day window keeps counting old events).
+SWEEP_STALE_DAYS = 3
+SWEEP_RUN_ID = re.compile(r"sweep-[0-9]{8}T[0-9]{4}Z")
+# Earlier sweeper runs read per Surgeon run to learn the Linear items the sweeper filed before; the rest wait for the next run.
+SWEEP_HISTORY_READS = 45
 REVIEW_SEVERITY = {"critical": "high", "high": "medium", "medium": "low"}
 SOURCE_LABEL = {"nightly": "scheduled-review", "review": "scheduled-review", "sweeper": "bug-sweep", "visual": "scheduled-review"}
 SOURCE_NAME = {"nightly": "nightly E2E", "review": "nightly code review", "sweeper": "bug sweeper", "visual": "nightly visual review"}
@@ -316,29 +332,82 @@ def judge_review(job, detail):
     return out, [fingerprint("review", job["id"], r) for r in sorted(resolved)]
 
 
-def judge_sweeper(doc):
+def sweeper_runs_dir(arg):
+    """The sweeper's run directory: --sweeper-runs, else $PC_SWEEPER_RUNS, else ~/services/pc-sweeper/runs."""
+    return arg or os.environ.get("PC_SWEEPER_RUNS") or os.path.expanduser("~/services/pc-sweeper/runs")
+
+
+def sweeper_bundle(runs_dir, run_id):
+    """{fp: {environment, environments}} from the sweeper's own <runs_dir>/<run_id>/bundle.json, or None when unreadable.
+
+    The fleet app's /api/sweeper-results keeps neither field, but the bundle the sweeper writes carries each cluster's
+    `environment` and `environments` ({env: {count, first_seen, last_seen}}).
+    """
+    if not SWEEP_RUN_ID.fullmatch(text(run_id, 64)):
+        return None
+    doc = read_json(os.path.join(runs_dir, run_id, "bundle.json"), None)
+    if not isinstance(doc, dict) or not isinstance(doc.get("clusters"), list):
+        return None
+    return {text(c.get("fp"), 100): {"environment": text(c.get("environment")).lower(), "environments": c.get("environments")}
+            for c in dicts(doc["clusters"]) if c.get("fp")}
+
+
+def utc_epoch(stamp):
+    """Epoch seconds of an ISO-8601 UTC stamp (any fraction), or None."""
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})", text(stamp, 40))
+    if not m:
+        return None
+    return datetime.datetime(*(int(g) for g in m.groups()), tzinfo=datetime.timezone.utc).timestamp()
+
+
+def sweeper_last_seen(environments):
+    """({env: last_seen}, newest last_seen epoch or None) from a cluster's `environments` map."""
+    seen = {text(name, 30): text(v.get("last_seen"), 40) for name, v in (environments if isinstance(environments, dict) else {}).items()
+            if isinstance(v, dict) and utc_epoch(v.get("last_seen")) is not None}
+    return seen, max((utc_epoch(v) for v in seen.values()), default=None)
+
+
+def judge_sweeper(doc, history=None, bundle=None):
+    """The sweeper's clusters as findings.
+
+    history: {fp: Linear id} from earlier runs' linear lists; this run's lists win over it. bundle: sweeper_bundle(), the
+    source of `environment` and last-seen when the bug itself carries none. A cluster last seen more than SWEEP_STALE_DAYS
+    before the run started is won't fix (stale), never a fresh finding.
+    """
     latest = doc.get("latest")
     run = latest.get("run") if isinstance(latest, dict) else None
     intake_doc = run.get("intake") if isinstance(run, dict) else None
     if not isinstance(intake_doc, dict):
         return []
     linear_doc = intake_doc.get("linear") if isinstance(intake_doc.get("linear"), dict) else {}
-    items = {text(i.get("fp"), 100): text(i.get("id"), 20)
-             for k in ("filed", "updated", "cancelled", "dismissed") for i in dicts(linear_doc.get(k)) if i.get("fp")}
+    items = dict(history or {})
+    items.update({text(i.get("fp"), 100): text(i.get("id"), 20)
+                  for k in ("filed", "updated", "cancelled", "dismissed") for i in dicts(linear_doc.get(k)) if i.get("fp")})
+    started = utc_epoch(run.get("started_at"))
     out = []
     for b in dicts(intake_doc.get("bugs")):
         disposition = text(b.get("disposition")).lower()
         severity = text(b.get("severity")).lower()
+        key = text(b.get("fp"), 100)
+        extra = (bundle or {}).get(key) or {}
         klass = ("real" if disposition in SWEEP_REAL else "wont-fix" if disposition in SWEEP_NOISE else "needs-decision")
         level = "high" if severity in SWEEP_HIGH else "medium" if severity in SWEEP_MEDIUM else "low"
-        env = text(b.get("environment") or intake_doc.get("environment") or run.get("environment")).lower()
+        env = text(b.get("environment") or intake_doc.get("environment") or run.get("environment") or extra.get("environment")).lower()
+        seen, newest = sweeper_last_seen(b.get("environments") if isinstance(b.get("environments"), dict) else extra.get("environments"))
+        idle = round((started - newest) / 86400, 1) if started is not None and newest is not None else None
+        stale = klass != "wont-fix" and idle is not None and idle > SWEEP_STALE_DAYS
+        if stale:
+            klass = "wont-fix"
         if env in ("production", "prod") and klass != "wont-fix":
             level = BUMP[level]
-        key = text(b.get("fp"), 100)
+        if klass == "wont-fix":
+            level = "low"
         evidence = {"disposition": disposition, "severity": b.get("severity"), "occurrences": b.get("occurrences"),
-                    "cause": text(b.get("cause")), "run": run.get("run_id"), "environment": env or None}
+                    "cause": text(b.get("cause")), "run": run.get("run_id"), "environment": env or None,
+                    "last_seen": seen or None, "stale_days": idle if stale else None}
+        label = "%s, %s" % (disposition or "no disposition", b.get("severity") or "no severity")
         out.append(finding("sweeper", "pc-sweeper-intake", key, b.get("title"),
-                           "%s (%s, %s)" % (text(b.get("title"), 140), disposition or "no disposition", b.get("severity") or "no severity"),
+                           "%s (%s%s)" % (text(b.get("title"), 140), label, ", stale: last seen %s days before the run" % idle if stale else ""),
                            klass, level, items.get(key) or text(b.get("duplicate_of"), 20) or None, evidence,
                            location=b.get("file") or b.get("url") or b.get("page") or b.get("route") or "",
                            project=b.get("repo") or b.get("project") or "",
@@ -346,8 +415,48 @@ def judge_sweeper(doc):
     return out
 
 
-def intake(app, staging_repo):
-    """(findings, coverage gaps, fingerprints the reviewer marked resolved); every read is a GET."""
+def sweeper_history(app, sweeps, state, gaps):
+    """{fp: Linear id} the sweeper filed or updated in earlier runs, kept in the lane state so each run reads only new ones.
+
+    The latest run's own linear lists name only that run's filings, so a cluster filed days ago (PC-3659 on 2026-10-25) looked
+    untracked. Each earlier run that filed or updated something is one GET of /api/sweeper-results/<run id>, oldest first so the
+    newest item for a fingerprint wins; a run that cannot be read is a named gap and tried again next run.
+    """
+    items = state.setdefault("sweeper_items", {})
+    done = set(state.setdefault("sweeper_runs_read", []))
+    latest = ((sweeps.get("latest") or {}).get("run") or {}).get("run_id") if isinstance(sweeps.get("latest"), dict) else None
+    todo = sorted((r for r in dicts(sweeps.get("runs")) if r.get("mode") == "intake" and (r.get("filed") or r.get("updated"))
+                   and SWEEP_RUN_ID.fullmatch(text(r.get("runId"), 64)) and r["runId"] not in done and r["runId"] != latest),
+                  key=lambda r: text(r.get("startedAt"), 40))
+    failed = 0
+    for row in todo[:SWEEP_HISTORY_READS]:
+        got, doc = fetch(app, "/api/sweeper-results/%s" % row["runId"])
+        if got == "missing":
+            done.add(row["runId"])
+            continue
+        run = doc.get("run") if got == "read" and isinstance(doc.get("run"), dict) else None
+        lists = ((run or {}).get("intake") or {}).get("linear") if isinstance((run or {}).get("intake"), dict) else None
+        if not isinstance(lists, dict):
+            failed += 1
+            continue
+        for kind in ("filed", "updated"):
+            for i in dicts(lists.get(kind)):
+                if i.get("fp") and i.get("id"):
+                    items[text(i["fp"], 100)] = text(i["id"], 20)
+        done.add(row["runId"])
+    if failed:
+        gaps.append("fleet app: %d earlier sweeper run(s) unreadable, so their Linear items are not joined yet" % failed)
+    if len(todo) > SWEEP_HISTORY_READS:
+        gaps.append("sweeper history: %d earlier run(s) wait for the next run (at most %d read a run)" % (len(todo) - SWEEP_HISTORY_READS, SWEEP_HISTORY_READS))
+    state["sweeper_runs_read"] = sorted(done)
+    return items
+
+
+def intake(app, staging_repo, lane=None, runs_dir=""):
+    """(findings, coverage gaps, fingerprints the reviewer marked resolved); every read is a GET.
+
+    lane: the lane state, where the sweeper's earlier Linear items are kept. runs_dir: the sweeper's run directory (sweeper_runs_dir).
+    """
     findings, gaps, resolved, tip = [], [], [], False
     state, runs = fetch(app, "/api/runs")
     if state != "read":
@@ -390,7 +499,15 @@ def intake(app, staging_repo):
     if state != "read":
         gaps.append("fleet app /api/sweeper-results %s" % state)
     else:
-        findings += judge_sweeper(sweeps)
+        latest = sweeps.get("latest") if isinstance(sweeps.get("latest"), dict) else {}
+        run = latest.get("run") if isinstance(latest.get("run"), dict) else {}
+        history = sweeper_history(app, sweeps, lane if lane is not None else {}, gaps)
+        bundle = sweeper_bundle(runs_dir or sweeper_runs_dir(""), run.get("run_id"))
+        bugs = dicts((run.get("intake") or {}).get("bugs")) if isinstance(run.get("intake"), dict) else []
+        if bugs and bundle is None and not any(b.get("environment") or isinstance(b.get("environments"), dict) for b in bugs):
+            gaps.append("sweeper environment and last-seen: /api/sweeper-results carries neither field and %s/%s/bundle.json is unreadable, "
+                        "so no cluster is rated by environment or judged stale" % (runs_dir or sweeper_runs_dir(""), text(run.get("run_id"), 64)))
+        findings += judge_sweeper(sweeps, history, bundle)
     return findings, gaps, resolved
 
 def visual_severity(row):
@@ -1462,6 +1579,7 @@ def main(argv):
     parser.add_argument("--area", default="", help="ignored: the area label now comes from each finding")
     parser.add_argument("--staging-repo", default=STAGING_REPO)
     parser.add_argument("--visual-findings", default="", help="the nightly visual review's findings file; empty leaves the source off")
+    parser.add_argument("--sweeper-runs", default="", help="the sweeper's run directory (<run id>/bundle.json); default $PC_SWEEPER_RUNS, then ~/services/pc-sweeper/runs")
     parser.add_argument("--visual-captures", default="", help="the capture directory that file's screenshot paths are relative to")
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", args.date):
@@ -1485,11 +1603,11 @@ def main(argv):
     hosts = [h for h in (x.strip() for x in args.hosts.split(",")) if h]
     doc = triage.summarise(scanned, homes, hosts, args.model)
     archive_md = triage.render_md(doc)
-    findings, gaps, resolved = intake(args.app, args.staging_repo)
-    rubric = lib.load_rubric(args.rubric, OFFICER)
-    jev = lib.Jev(args.jev)
     out = args.out
     state = read_json(os.path.join(out, STATE_FILE), {})
+    findings, gaps, resolved = intake(args.app, args.staging_repo, state, args.sweeper_runs)
+    rubric = lib.load_rubric(args.rubric, OFFICER)
+    jev = lib.Jev(args.jev)
     found = read_json(os.path.join(out, FOUND_FILE), {})
     store = read_json(os.path.join(out, PATTERN_FILE), {})
     visual, visual_held, visual_gaps = visual_intake(args.visual_findings, args.visual_captures, state,

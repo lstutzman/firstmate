@@ -25,6 +25,8 @@ set -u
 
 OFFICER="$ROOT/bin/fm-officer.sh"
 TMP_ROOT=$(fm_test_tmproot fm-officer-surgeon)
+# The sweeper bundle is read from this directory (never the machine's real one); tests that need a bundle set it.
+export PC_SWEEPER_RUNS="$TMP_ROOT/no-sweeper-runs"
 DATE=2026-10-23
 NOW=1792823400
 TIP=0123456789abcdef0123456789abcdef01234567
@@ -728,6 +730,91 @@ test_production_environment_bumps_severity_one_step() {
   pass "fm-officer surgeon: an environment of production bumps severity, and text alone never does"
 }
 
+# The 2026-11-10 digest's two faults, with fixtures shaped like the live payload: the fleet app's /api/sweeper-results
+# bugs carry no environment and its latest run's linear lists name only that run's filings, while the sweeper's own
+# bundle.json carries environment and environments.<env>.last_seen, and an earlier run's linear.filed names PC-3659.
+sweeper_world() {  # <world>: a latest run of 2026-11-11 with three clusters, one earlier run that filed, and the run bundle.
+  local name=$1 d
+  make_world "$name" "$LINEAR_ON"; d="$TMP_ROOT/$name"
+  jq -n '{runs: [
+      {runId: "sweep-20261111T0517Z", mode: "intake", startedAt: "2026-11-11T05:17:04.000Z", filed: 0, updated: 0},
+      {runId: "plan-20261110T0717Z", mode: "plan-review", filed: null, updated: null},
+      {runId: "sweep-20261025T0517Z", mode: "intake", startedAt: "2026-10-25T05:17:04.000Z", filed: 3, updated: 0}],
+    latestPlan: null,
+    latest: {run: {run_id: "sweep-20261111T0517Z", started_at: "2026-11-11T05:17:04.000Z", intake: {bugs: [
+      {fp: "fp-minio", title: "Minio.Exceptions.UnexpectedMinioException in PutAsync", disposition: "unclear", severity: "medium", occurrences: 29, notes: "29 prod-only failures"},
+      {fp: "fp-fresh", title: "Worker job failed in prod", disposition: "unclear", severity: "low", occurrences: 3},
+      {fp: "fp-stage", title: "Staging only error", disposition: "new", severity: "medium", occurrences: 2}],
+      linear: {filed: [], updated: [], cancelled: [], dismissed: [], failures: []}}}}}' > "$d/pages/_api_sweeper-results"
+  jq -n '{run: {run_id: "sweep-20261025T0517Z", intake: {bugs: [], linear: {filed: [{id: "PC-3659", fp: "fp-minio", title: "Production PropertyData capture writes fail"}, {id: "PC-3660", fp: "fp-other"}], updated: [], cancelled: [], dismissed: []}}}}' \
+    > "$d/pages/_api_sweeper-results_sweep-20261025T0517Z"
+  mkdir -p "$d/sweeper-runs/sweep-20261111T0517Z"
+  jq -n '{run_id: "sweep-20261111T0517Z", clusters: [
+    {fp: "fp-minio", environment: "production", environments: {prod: {count: 29, first_seen: "2026-10-24T16:23:14.6716597Z", last_seen: "2026-11-03T06:15:54.4204642Z"}}},
+    {fp: "fp-fresh", environment: "production", environments: {prod: {count: 3, first_seen: "2026-11-09T01:00:00Z", last_seen: "2026-11-11T04:00:00.1234567Z"}}},
+    {fp: "fp-stage", environment: "staging", environments: {staging: {count: 2, first_seen: "2026-11-10T01:00:00Z", last_seen: "2026-11-11T05:00:00Z"}}}]}' \
+    > "$d/sweeper-runs/sweep-20261111T0517Z/bundle.json"
+}
+
+test_sweeper_environment_and_tracked_come_from_the_bundle_and_earlier_runs() {
+  local home json out
+  sweeper_world swept; home=$WORLD_HOME
+  out=$(PC_SWEEPER_RUNS="$TMP_ROOT/swept/sweeper-runs" run_surgeon "$home") || fail "surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "production PC-3659" "$(row "$json" sweeper fp-minio '[.evidence.environment,.tracked]|join(" ")')" "the environment comes from the sweeper bundle and the item from the run that filed it"
+  assert_equals "production needs-decision medium" "$(row "$json" sweeper fp-fresh '[.evidence.environment,.class,.severity]|join(" ")')" "a fresh production cluster is rated up one step (low to medium)"
+  assert_equals "staging real null" "$(row "$json" sweeper fp-stage '[.evidence.environment,.class,(.tracked|tostring)]|join(" ")')" "a staging cluster gets no bump and no invented item"
+  assert_equals "" "$(row "$json" sweeper fp-stage '.evidence.stale_days // empty')" "and is not stale"
+  assert_not_contains "$out" "sweeper environment and last-seen" "a readable bundle leaves no coverage gap"
+  assert_not_contains "$(cat "$TMP_ROOT/swept/curl.calls")" "-X" "the app is read with GET only"
+  assert_equals "PC-3659 PC-3660" "$(jq -r '[.sweeper_items["fp-minio"], .sweeper_items["fp-other"]] | join(" ")' "$home/data/officers/surgeon/review-state.json")" "the lane state keeps the earlier items"
+  pass "fm-officer surgeon: a sweeper cluster's environment and earlier Linear item are joined"
+}
+
+test_sweeper_stale_cluster_is_not_offered_as_fresh() {
+  local home json
+  sweeper_world stale; home=$WORLD_HOME
+  PC_SWEEPER_RUNS="$TMP_ROOT/stale/sweeper-runs" run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "wont-fix low 8" "$(row "$json" sweeper fp-minio '[.class,.severity,(.evidence.stale_days|floor|tostring)]|join(" ")')" "a cluster last seen 8 days before the run is won't fix, not fresh"
+  assert_contains "$(row "$json" sweeper fp-minio .summary)" "stale: last seen 8.0 days before the run" "and its line says why"
+  assert_equals "2026-11-03T06:15:54.4204642Z" "$(row "$json" sweeper fp-minio '.evidence.last_seen.prod')" "the last sighting is evidence"
+  assert_equals "" "$(row "$json" sweeper fp-minio '.filing // "" | tostring | select(. != "")')" "nothing is filed for it (it is tracked, and stale)"
+  pass "fm-officer surgeon: a cluster with no sighting in the window is not offered as fresh"
+}
+
+# Once /api/sweeper-results forwards the bundle's fields on each bug, the Surgeon needs no bundle (it runs on another host).
+test_sweeper_bug_fields_in_the_payload_need_no_bundle() {
+  local home json out
+  sweeper_world fields; home=$WORLD_HOME
+  jq '.latest.run.intake.bugs |= map(if .fp == "fp-minio" then . + {environment: "production", environments: {prod: {last_seen: "2026-11-03T06:15:54Z"}}}
+      elif .fp == "fp-fresh" then . + {environment: "production", environments: {prod: {last_seen: "2026-11-11T04:00:00Z"}}} else . end)' \
+    "$TMP_ROOT/fields/pages/_api_sweeper-results" > "$TMP_ROOT/fields/pages/next" && mv "$TMP_ROOT/fields/pages/next" "$TMP_ROOT/fields/pages/_api_sweeper-results"
+  out=$(PC_SWEEPER_RUNS="$TMP_ROOT/fields/no-bundle-here" run_surgeon "$home") || fail "surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "wont-fix production" "$(row "$json" sweeper fp-minio '[.class,.evidence.environment]|join(" ")')" "the bug's own fields rate it stale and production"
+  assert_equals "needs-decision medium" "$(row "$json" sweeper fp-fresh '[.class,.severity]|join(" ")')" "and bump a fresh one"
+  assert_not_contains "$out" "sweeper environment and last-seen" "bug fields in the payload leave no gap"
+  pass "fm-officer surgeon: environment and last-seen on the payload's bugs are used without the bundle"
+}
+
+test_sweeper_history_is_read_once_and_gaps_are_named() {
+  local home out
+  sweeper_world hist; home=$WORLD_HOME
+  PC_SWEEPER_RUNS="$TMP_ROOT/hist/sweeper-runs" run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
+  assert_equals 1 "$(grep -c 'sweeper-results/sweep-20261025T0517Z' "$TMP_ROOT/hist/curl.calls")" "the earlier run is read once"
+  PC_SWEEPER_RUNS="$TMP_ROOT/hist/sweeper-runs" run_surgeon "$home" >/dev/null || fail "a second run must succeed"
+  assert_equals 1 "$(grep -c 'sweeper-results/sweep-20261025T0517Z' "$TMP_ROOT/hist/curl.calls")" "the lane state means it is not read again"
+  # no bundle and an unreadable earlier run: both are named gaps, and nothing is invented
+  sweeper_world gaps; home=$WORLD_HOME
+  /usr/bin/trash "$TMP_ROOT/gaps/pages/_api_sweeper-results_sweep-20261025T0517Z"
+  out=$(PC_SWEEPER_RUNS="$TMP_ROOT/gaps/no-bundle-here" run_surgeon "$home") || fail "surgeon run must succeed"
+  assert_contains "$out" "Coverage gap: sweeper environment and last-seen: /api/sweeper-results carries neither field" "a missing bundle is a named gap"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "null null needs-decision medium" "$(row "$json" sweeper fp-minio '[(.evidence.environment|tostring),(.tracked|tostring),.class,.severity]|join(" ")')" "with neither source the cluster keeps its plain rating"
+  pass "fm-officer surgeon: earlier sweeper runs are read once and unreadable sources are named gaps"
+}
+
 test_invalid_nightly_e2e_is_a_top_severity_promotion_blocker() {
   local home json
   make_world invalid "$LINEAR_ON"; home=$WORLD_HOME
@@ -1420,6 +1507,10 @@ test_review_findings_are_bundled_by_area_and_ticked_off
 test_duplicates_bump_the_found_count_through_local_jev
 test_local_jev_unreachable_files_by_fingerprint_only
 test_production_environment_bumps_severity_one_step
+test_sweeper_environment_and_tracked_come_from_the_bundle_and_earlier_runs
+test_sweeper_stale_cluster_is_not_offered_as_fresh
+test_sweeper_bug_fields_in_the_payload_need_no_bundle
+test_sweeper_history_is_read_once_and_gaps_are_named
 test_invalid_nightly_e2e_is_a_top_severity_promotion_blocker
 test_start_requests_follow_the_rubric_and_hold_reserved_classes
 test_call_budget_stops_the_run_and_the_next_run_continues
