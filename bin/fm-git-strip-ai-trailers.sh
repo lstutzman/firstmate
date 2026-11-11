@@ -6,7 +6,7 @@
 #   fm-git-strip-ai-trailers.sh <msgfile>
 #       Commit-msg hook mode. Git passes the proposed message file as $1.
 #       Rewrites that file in place, then exits 0 so the commit proceeds.
-#   fm-git-strip-ai-trailers.sh install [--no-strip] [--push-guard <guard-file>] <hooks-dir> <worktree>
+#   fm-git-strip-ai-trailers.sh install [--no-strip] [--push-guard <guard-file>] [--secret-scan] <hooks-dir> <worktree>
 #       Recreate <hooks-dir> as a core.hooksPath for this launch: a commit-msg
 #       hook that runs this strip, plus one wrapper per client-side hook name
 #       git documents except reference-transaction and post-index-change,
@@ -31,6 +31,11 @@
 #       the pre-push wrapper run bin/fm-git-push-guard.sh on it first, with
 #       git's arguments and ref lines, chaining to the repository's pre-push
 #       hook only when the guard passes (that script owns the rules).
+#       --secret-scan makes the pre-push wrapper run bin/fm-secret-scan.sh
+#       pre-push with the same arguments and ref lines (after the push guard
+#       when both are given), refusing the push on a finding or when the scan
+#       cannot run, and chaining to the repository's pre-push hook only when
+#       it passes (that script owns the rules).
 #   fm-git-strip-ai-trailers.sh env-file <hooks-dir> <out-file>
 #       Write <out-file> as one plain export statement that appends
 #       core.hooksPath=<hooks-dir> after the GIT_CONFIG_COUNT entries this
@@ -82,7 +87,7 @@ usage() {
   cat >&2 <<'EOF'
 usage:
   fm-git-strip-ai-trailers.sh <msgfile>
-  fm-git-strip-ai-trailers.sh install [--no-strip] [--push-guard <guard-file>] <hooks-dir> <worktree>
+  fm-git-strip-ai-trailers.sh install [--no-strip] [--push-guard <guard-file>] [--secret-scan] <hooks-dir> <worktree>
   fm-git-strip-ai-trailers.sh env-file <hooks-dir> <out-file>
 EOF
   exit 2
@@ -282,7 +287,7 @@ write_env_file() {
 }
 
 install_hooks() {
-  local hooks_dir=$1 wt=$2 strip=${3:-1} guard_src=${4:-} name strip_line guard_file guard_cmd
+  local hooks_dir=$1 wt=$2 strip=${3:-1} guard_src=${4:-} scan=${5:-0} name strip_line guard_file guard_cmd checks
   [ -n "$hooks_dir" ] && [ -n "$wt" ] || usage
   if [ -n "$guard_src" ] && { [ ! -f "$guard_src" ] || [ ! -r "$guard_src" ]; }; then
     echo "error: push guard file is not a readable regular file: $guard_src" >&2
@@ -311,21 +316,36 @@ $strip_line
 $(runtime_chain_body "$hooks_dir")
 EOF
 
+  checks=
   if [ -n "$guard_src" ]; then
     guard_file="$hooks_dir/fm-push-guard"
     { cp "$guard_src" "$guard_file" && chmod 400 "$guard_file"; } || return 1
     guard_cmd="$(quote_for_hook "${SELF%/*}/fm-git-push-guard.sh") $(quote_for_hook "$guard_file")"
-    # git passes the refs being pushed on stdin; the guard reads them, so they
-    # are captured once and replayed to the repository's own pre-push hook.
+    checks="  run_check $guard_cmd \"\$@\" || exit 1"
+  fi
+  if [ "$scan" = 1 ]; then
+    checks="${checks:+$checks
+}  run_check $(quote_for_hook "${SELF%/*}/fm-secret-scan.sh") pre-push \"\$@\" || exit 1"
+  fi
+  if [ -n "$checks" ]; then
+    # git passes the refs being pushed on stdin; each check reads them, so
+    # they are captured once, fed to every check, and replayed to the
+    # repository's own pre-push hook.
     write_executable "$hooks_dir/pre-push" <<EOF
 #!/usr/bin/env bash
 set -u
 refs=\$(cat)
+run_check() {
+  if [ -n "\$refs" ]; then
+    printf '%s\\n' "\$refs" | "\$@"
+  else
+    "\$@" </dev/null
+  fi
+}
+$checks
 if [ -n "\$refs" ]; then
-  printf '%s\\n' "\$refs" | $guard_cmd "\$@" || exit 1
   exec 0<<<"\$refs"
 else
-  $guard_cmd "\$@" </dev/null || exit 1
   exec 0</dev/null
 fi
 $(runtime_chain_body "$hooks_dir")
@@ -333,7 +353,7 @@ EOF
   fi
 
   for name in $FM_GIT_CLIENT_HOOKS; do
-    [ -z "$guard_src" ] || [ "$name" != pre-push ] || continue
+    [ -z "$checks" ] || [ "$name" != pre-push ] || continue
     write_executable "$hooks_dir/$name" <<EOF
 #!/usr/bin/env bash
 set -u
@@ -347,7 +367,7 @@ CMD=${1:-}
 case "$CMD" in
 install)
   shift
-  strip=1 guard=
+  strip=1 scan=0 guard=
   while [ "$#" -gt 2 ]; do
     case "$1" in
     --no-strip)
@@ -359,12 +379,16 @@ install)
       guard=$2
       shift 2
       ;;
+    --secret-scan)
+      scan=1
+      shift
+      ;;
     *) usage ;;
     esac
   done
   [ "$#" -eq 2 ] || usage
   unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
-  install_hooks "$1" "$2" "$strip" "$guard"
+  install_hooks "$1" "$2" "$strip" "$guard" "$scan"
   ;;
 env-file)
   [ "$#" -eq 3 ] || usage

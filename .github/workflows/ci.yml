@@ -139,6 +139,13 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # tests/fm-secret-scan.test.sh runs real gitleaks, so every lane that can
+      # draw it installs the same pinned build the invariants job uses.
+      - name: Install pinned gitleaks
+        run: |
+          set -eu
+          bin/fm-install-gitleaks.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Install tasks-axi
         run: |
           set -eu
@@ -177,6 +184,13 @@ jobs:
         run: |
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # tests/fm-secret-scan.test.sh runs real gitleaks, so every lane that can
+      # draw it installs the same pinned build the invariants job uses.
+      - name: Install pinned gitleaks
+        run: |
+          set -eu
+          bin/fm-install-gitleaks.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Install tasks-axi
         run: |
@@ -228,6 +242,13 @@ jobs:
         run: |
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # tests/fm-secret-scan.test.sh runs real gitleaks, so every lane that can
+      # draw it installs the same pinned build the invariants job uses.
+      - name: Install pinned gitleaks
+        run: |
+          set -eu
+          bin/fm-install-gitleaks.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Require tmux for e2e tests
         run: |
@@ -590,10 +611,39 @@ jobs:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Repo invariants
     runs-on: ubuntu-24.04
     if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
-    # Fast tier: the invariant checks are seconds-long file comparisons.
+    # Fast tier: the invariant checks are seconds-long file comparisons and
+    # one gitleaks scan of the commits this event adds (see docs/secret-scan.md).
     timeout-minutes: 5
     steps:
+      # Full history: the secret scan below reads the commits between the
+      # event's base and head, which a shallow checkout does not have.
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Install pinned gitleaks
+        run: |
+          set -eu
+          bin/fm-install-gitleaks.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # Blocking secret scan. bin/fm-secret-scan.sh owns the scan and
+      # .gitleaks.toml owns the reviewed allowlist; this step only picks the
+      # commits the event adds, so old history is not re-scanned. A finding is
+      # printed redacted and fails this job, which fails Full suite and the
+      # merge gate (.github/required-checks.list lists Repo invariants).
+      - name: Secret scan (commits this event adds)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = pull_request ]; then
+            bin/fm-secret-scan.sh --range "$PR_BASE_SHA..$PR_HEAD_SHA"
+          else
+            bin/fm-secret-scan.sh --push-range "$PUSH_BEFORE" "$PUSH_SHA"
+          fi
       - name: Compatibility pointers must stay intact
         run: |
           set -eu

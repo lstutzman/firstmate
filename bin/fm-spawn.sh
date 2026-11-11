@@ -7601,8 +7601,16 @@ EOF
 # A forge=external ship always gets this directory, because its pre-push
 # wrapper carries the guard that keeps task branches off the shared origin; a
 # home that keeps trailers gets a commit-msg wrapper that only chains.
+# A worktree whose project carries the secret scan (.gitleaks.toml and
+# bin/fm-secret-scan.sh, the firstmate repository) always gets this directory
+# too, because its pre-push wrapper refuses a push that adds a secret
+# (docs/secret-scan.md); the wrapper runs this home's own scan script.
 GIT_HOOKS_DIR="$STATE_REAL/$ID.git-hooks"
 GIT_HOOKS_INSTALLED=0
+SECRET_SCAN_ARGS=()
+if [ -f "$WT/.gitleaks.toml" ] && [ -f "$WT/bin/fm-secret-scan.sh" ]; then
+  SECRET_SCAN_ARGS=(--secret-scan)
+fi
 if [ "$EXTERNAL_REVIEW" = 1 ]; then
   PUSH_GUARD_FILE="$STATE_REAL/$ID.push-guard"
   guard_args=("$PUSH_GUARD_FILE" "$WT" "$BRANCH" "$(fm_ship_branch_prefix "$BRANCH" "$ID")")
@@ -7611,14 +7619,18 @@ if [ "$EXTERNAL_REVIEW" = 1 ]; then
   [ "$KEEP_AI_TRAILERS" = 0 ] || strip_args=(--no-strip)
   { "$FM_ROOT/bin/fm-git-push-guard.sh" write "${guard_args[@]}" \
     && "$FM_ROOT/bin/fm-git-strip-ai-trailers.sh" install "${strip_args[@]+"${strip_args[@]}"}" \
+      "${SECRET_SCAN_ARGS[@]+"${SECRET_SCAN_ARGS[@]}"}" \
       --push-guard "$PUSH_GUARD_FILE" "$GIT_HOOKS_DIR" "$WT"; } || {
     echo "error: could not install the external-review push guard hooks for $ID" >&2
     exit 1
   }
   GIT_HOOKS_INSTALLED=1
-elif [ "$KEEP_AI_TRAILERS" = 0 ]; then
-  "$FM_ROOT/bin/fm-git-strip-ai-trailers.sh" install "$GIT_HOOKS_DIR" "$WT" || {
-    echo "error: could not install the AI-trailer strip hooks for $ID" >&2
+elif [ "$KEEP_AI_TRAILERS" = 0 ] || [ "${#SECRET_SCAN_ARGS[@]}" -gt 0 ]; then
+  strip_args=()
+  [ "$KEEP_AI_TRAILERS" = 0 ] || strip_args=(--no-strip)
+  "$FM_ROOT/bin/fm-git-strip-ai-trailers.sh" install "${strip_args[@]+"${strip_args[@]}"}" \
+    "${SECRET_SCAN_ARGS[@]+"${SECRET_SCAN_ARGS[@]}"}" "$GIT_HOOKS_DIR" "$WT" || {
+    echo "error: could not install the git hooks (AI-trailer strip, secret scan) for $ID" >&2
     exit 1
   }
   GIT_HOOKS_INSTALLED=1
