@@ -28,7 +28,7 @@
 #                 "OFFICE: deferral <role> ...", or "OFFICE: pool: <gap>" (clones of one project
 #                 that differ on treehouse max_trees) (bin/fm-office.sh ensure owns the cases),
 #                 "FMX: X mode on ..." or "FMX: X mode off ...",
-#                 "NM_DAEMON_ENV: the cache-TTL drop-in for <unit> is missing|different, ..."
+#                 "NM_DAEMON_ENV: the cache-TTL drop-in|override|wrapper for <unit> ..."
 #                 (bin/fm-nm-daemon-env.sh owns the check and its install).
 #          When a RUNNING secondmate home is fast-forwarded, its target is
 #          firstmate's own current default-branch commit. A local worktree uses

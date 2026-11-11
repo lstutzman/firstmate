@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Behavior tests for fm-nm-daemon-env.sh: the systemd drop-in that puts the
-# no-mistakes daemon's claude -p agents on a 5m prompt-cache TTL. A fake unit
-# directory and a fake systemctl stand in for the host; nothing real is touched.
+# Behavior tests for fm-nm-daemon-env.sh: the systemd drop-in (Linux) and the
+# agent_path_override wrapper (macOS launchd) that put the no-mistakes daemon's
+# claude -p agents on a 5m prompt-cache TTL. Fake unit and LaunchAgents
+# directories and fake systemctl, launchctl and claude stand in for the host;
+# nothing real is touched.
 set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091
@@ -153,10 +155,179 @@ test_status_reads_the_running_daemon_environment() {
   pass "status reports yes, no and unknown from the running daemon's own environment"
 }
 
+# ---- macOS launchd route: a fake LaunchAgents directory, a fake launchctl and a fake claude ----
+
+# make_mac_case <name>: a LaunchAgents dir with a plist for the case's root and one for another root.
+make_mac_case() {
+  local d=$TMP_ROOT/$1
+  mkdir -p "$d/agents" "$d/fakebin" "$d/nmroot"
+  for pair in "aaaa1111:$d/nmroot" "bbbb2222:$d/other-root"; do
+    cat > "$d/agents/com.kunchenguid.no-mistakes.daemon.${pair%%:*}.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/x/no-mistakes</string>
+    <string>daemon</string>
+    <string>run</string>
+    <string>--root</string>
+    <string>${pair#*:}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>HTTP_PROXY</key><string>http://p:1</string></dict>
+</dict>
+</plist>
+PLIST
+  done
+  cat > "$d/fakebin/claude" <<'SH'
+#!/bin/sh
+printf 'claude-ran ttl=%s args=%s\n' "${CLAUDE_CODE_PROMPT_CACHE_TTL:-unset}" "$*"
+SH
+  cat > "$d/fakebin/launchctl" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$d/launchctl.log"
+exit 0
+SH
+  chmod +x "$d/fakebin/claude" "$d/fakebin/launchctl"
+  printf '%s\n' "$d"
+}
+
+mac_run() {  # <case dir> <verb>
+  PATH="$1/fakebin:$PATH" FM_NM_DAEMON_UNIT_DIR="$1/no-systemd" FM_NM_DAEMON_LAUNCHD_DIR="$1/agents" NM_HOME="$1/nmroot" bash "$SCRIPT" "$2" 2>&1
+}
+
+PLIST_SUM() { cat "$1"/agents/*.plist | cksum; }
+
+test_mac_check_reports_a_missing_override_and_writes_nothing() {
+  local d out rc before
+  d=$(make_mac_case mac-missing)
+  printf 'agent: auto\n' > "$d/nmroot/config.yaml"
+  before=$(PLIST_SUM "$d")
+  out=$(mac_run "$d" check); rc=$?
+  [ "$rc" -eq 0 ] || fail "check must exit 0, got $rc"
+  assert_contains "$out" "NM_DAEMON_ENV: the cache-TTL override for com.kunchenguid.no-mistakes.daemon.aaaa1111.plist (launchd) is missing" "missing override line"
+  assert_not_contains "$out" "bbbb2222" "a plist for another root was reported"
+  assert_equals "$(cat "$d/nmroot/config.yaml")" "agent: auto" "check changed the config"
+  assert_absent "$d/nmroot/firstmate" "check wrote the wrapper"
+  assert_equals "$(PLIST_SUM "$d")" "$before" "check changed a plist"
+  pass "launchd check reports a missing override as one actionable line and writes nothing"
+}
+
+test_mac_install_sets_only_the_claude_override_and_never_touches_launchd() {
+  local d out wrapper before
+  d=$(make_mac_case mac-install)
+  printf '# my config\nagent: auto\nmax_concurrent_runs: 2\n' > "$d/nmroot/config.yaml"
+  chmod 0600 "$d/nmroot/config.yaml"
+  before=$(PLIST_SUM "$d")
+  out=$(mac_run "$d" install) || fail "install failed: $out"
+  wrapper=$d/nmroot/firstmate/claude-cache-ttl
+  assert_equals "$(PLIST_SUM "$d")" "$before" "install edited a plist"
+  [ ! -e "$d/launchctl.log" ] || fail "install ran launchctl: $(cat "$d/launchctl.log")"
+  assert_equals "$(sed -n '1,3p' "$d/nmroot/config.yaml")" "# my config
+agent: auto
+max_concurrent_runs: 2" "install rewrote existing config lines"
+  assert_equals "$(tail -n 2 "$d/nmroot/config.yaml")" "agent_path_override:
+  claude: \"$wrapper\"" "the override block"
+  assert_equals "$(stat -c %a "$d/nmroot/config.yaml" 2>/dev/null || stat -f %Lp "$d/nmroot/config.yaml")" "600" "install changed the config's mode"
+  [ -x "$wrapper" ] || fail "wrapper is not executable"
+  assert_equals "$(PATH=/usr/bin:/bin "$wrapper" -p hi)" "claude-ran ttl=5m args=-p hi" "the wrapper must run the baked claude with the TTL set and its args passed through"
+  assert_contains "$out" "the running daemon was not touched" "install must say it did not restart"
+  [ -z "$(mac_run "$d" check)" ] || fail "check is not silent after install"
+  assert_absent "$d/nmroot/other-root" "install touched another root"
+  pass "launchd install writes the wrapper and one config key, leaves plists and launchctl alone"
+}
+
+test_mac_install_is_idempotent_and_survives_a_plist_rewrite() {
+  local d out before after
+  d=$(make_mac_case mac-idem)
+  : > "$d/nmroot/config.yaml"
+  mac_run "$d" install >/dev/null
+  before=$(cat "$d/nmroot/config.yaml"; cat "$d/nmroot/firstmate/claude-cache-ttl")
+  out=$(mac_run "$d" install)
+  after=$(cat "$d/nmroot/config.yaml"; cat "$d/nmroot/firstmate/claude-cache-ttl")
+  assert_equals "$after" "$before" "second install changed files"
+  assert_contains "$out" "already current" "second install should report current"
+  # no-mistakes rewrites the plist on every daemon start or update: only the proxy variables come back.
+  sed -i.bak 's#http://p:1#http://p:2#' "$d/agents/com.kunchenguid.no-mistakes.daemon.aaaa1111.plist"
+  [ -z "$(mac_run "$d" check)" ] || fail "a rewritten plist must not make the setting look lost"
+  assert_equals "$(grep -c '^agent_path_override:' "$d/nmroot/config.yaml")" "1" "override block duplicated"
+  pass "launchd install is idempotent and a regenerated plist does not undo it"
+}
+
+test_mac_install_adds_claude_to_an_existing_override_block() {
+  local d
+  d=$(make_mac_case mac-block)
+  printf 'agent: auto\nagent_path_override:\n  codex: /opt/codex\nmax_concurrent_runs: 2\n' > "$d/nmroot/config.yaml"
+  mac_run "$d" install >/dev/null || fail "install failed"
+  assert_equals "$(cat "$d/nmroot/config.yaml")" "agent: auto
+agent_path_override:
+  claude: \"$d/nmroot/firstmate/claude-cache-ttl\"
+  codex: /opt/codex
+max_concurrent_runs: 2" "claude must join the existing block"
+  [ -z "$(mac_run "$d" check)" ] || fail "check is not silent after install"
+  pass "launchd install adds claude to an existing agent_path_override block"
+}
+
+test_mac_install_leaves_a_foreign_claude_override_alone() {
+  local d out rc
+  d=$(make_mac_case mac-foreign)
+  printf 'agent_path_override:\n  claude: /opt/my-claude # mine\n' > "$d/nmroot/config.yaml"
+  out=$(mac_run "$d" check)
+  assert_contains "$out" "NM_DAEMON_ENV:" "foreign override must show as a gap"
+  assert_contains "$out" "already set to something else" "foreign override reason"
+  out=$(mac_run "$d" install); rc=$?
+  [ "$rc" -ne 0 ] || fail "install must refuse a foreign override"
+  assert_equals "$(cat "$d/nmroot/config.yaml")" "agent_path_override:
+  claude: /opt/my-claude # mine" "install changed a foreign override"
+  assert_absent "$d/nmroot/firstmate" "install wrote a wrapper it could not wire up"
+  printf 'agent_path_override: {codex: /opt/codex}\n' > "$d/nmroot/config.yaml"
+  out=$(mac_run "$d" install); rc=$?
+  [ "$rc" -ne 0 ] || fail "install must refuse an inline mapping"
+  assert_equals "$(cat "$d/nmroot/config.yaml")" "agent_path_override: {codex: /opt/codex}" "install changed an inline mapping"
+  pass "launchd install refuses to overwrite an override it does not own"
+}
+
+test_mac_wrapper_drift_is_reported_and_repaired() {
+  local d out
+  d=$(make_mac_case mac-drift)
+  : > "$d/nmroot/config.yaml"
+  mac_run "$d" install >/dev/null
+  printf '#!/bin/sh\nexec /bin/true\n' > "$d/nmroot/firstmate/claude-cache-ttl"
+  assert_contains "$(mac_run "$d" check)" "wrapper for com.kunchenguid.no-mistakes.daemon.aaaa1111.plist (launchd) is different" "edited wrapper"
+  mac_run "$d" install >/dev/null
+  [ -z "$(mac_run "$d" check)" ] || fail "install did not repair the wrapper"
+  mv "$d/fakebin/claude" "$d/claude.gone"
+  assert_contains "$(PATH=/usr/bin:/bin mac_run "$d" check)" "is stale" "wrapper whose claude is gone"
+  pass "launchd check reports an edited or stale wrapper and install repairs it"
+}
+
+test_mac_status_and_plist_matching() {
+  local d out
+  d=$(make_mac_case mac-status)
+  out=$(mac_run "$d" status)
+  assert_contains "$out" "com.kunchenguid.no-mistakes.daemon.aaaa1111.plist: launchd route missing" "status before install"
+  : > "$d/nmroot/config.yaml"
+  mac_run "$d" install >/dev/null
+  assert_contains "$(mac_run "$d" status)" "launchd route current" "status after install"
+  # a plist with no --root belongs to the default root; none of these plists name nmroot
+  out=$(PATH="$d/fakebin:$PATH" FM_NM_DAEMON_UNIT_DIR="$d/no-systemd" FM_NM_DAEMON_LAUNCHD_DIR="$d/agents" NM_HOME="$d/no-such-root" bash "$SCRIPT" check 2>&1)
+  [ -z "$out" ] || fail "a root with no plist must be silent, got: $out"
+  [ ! -e "$d/launchctl.log" ] || fail "something ran launchctl"
+  pass "launchd status reports the route and only this root's plist matches"
+}
+
 fm_test_run test_check_reports_a_missing_drop_in_and_writes_nothing \
   test_install_writes_the_exact_drop_in_and_never_restarts \
   test_install_is_idempotent \
   test_check_reports_a_different_drop_in_and_install_repairs_it \
   test_no_matching_unit_is_silent \
   test_status_and_usage \
-  test_status_reads_the_running_daemon_environment
+  test_status_reads_the_running_daemon_environment \
+  test_mac_check_reports_a_missing_override_and_writes_nothing \
+  test_mac_install_sets_only_the_claude_override_and_never_touches_launchd \
+  test_mac_install_is_idempotent_and_survives_a_plist_rewrite \
+  test_mac_install_adds_claude_to_an_existing_override_block \
+  test_mac_install_leaves_a_foreign_claude_override_alone \
+  test_mac_wrapper_drift_is_reported_and_repaired \
+  test_mac_status_and_plist_matching
