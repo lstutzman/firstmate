@@ -2302,7 +2302,7 @@ test_cache_never_stores_a_weaker_or_unproven_result() {
 
   # A root that lints only after the memory fallback ran a weaker check, so it
   # is not stored.
-  /usr/bin/trash "$cache"
+  cache="$tmp/cache-fallback"
   fakebin=$(fm_fakebin "$tmp")
   cat > "$fakebin/shellcheck" <<'SH'
 #!/usr/bin/env bash
@@ -2328,7 +2328,7 @@ SH
 
   # A source-path directive adds search directories the closure scan does not
   # model, so such a root is always linted.
-  /usr/bin/trash "$cache"
+  cache="$tmp/cache-searchpath"
   printf '%s\n' '#!/usr/bin/env bash' '# shellcheck source-path=SCRIPTDIR' 'exit 0' > "$repo/bin/searchpath.sh"
   for _ in 1 2; do
     out=$(FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" bin/searchpath.sh 2>&1) || true
