@@ -2074,6 +2074,26 @@ JSON
   pass 'progress: matched Top of Mind asks keep owner homes and actual reasons'
 }
 
+test_finished_merge_ask_row_renders() {
+  make_world finished-merge-ask
+  cat > "$WORLD_HOME/data/backlog.md" <<'MD'
+## Queued
+
+- [ ] merge-run - Merge word for the production run (kind: captain) (hold: merge word) (hold-kind: captain) (pr: https://github.com/example/project/pull/4467)
+MD
+  printf '{"state":"closed","merged":true}\n' > "$WORLD/pr-4467.json"
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[{"id":"merge-run-ask","words":"Merge word for the production run","status":"waiting","work":[],"links":[{"url":"https://github.com/example/project/pull/4467"}]}]}
+JSON
+  run_progress >/dev/null || fail 'a finished merge ask from Top of Mind broke the run'
+  local lane="$WORLD_HOME/data/officers/progress" file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  assert_equals 'Done/unknown: linked merge request is completed' \
+    "$(jq -r '.excluded[] | select(.id == "merge-run") | .reason' "$file")" 'the finished merge ask is excluded with its reason'
+  assert_equals 'null' "$(jq -c '.excluded[] | select(.id == "merge-run") | .tag_source' "$file")" 'every excluded row carries a tag_source'
+  [ -s "$lane/$DATE.md" ] || fail 'the Markdown digest was not written'
+  pass 'progress: a finished merge ask from Top of Mind renders'
+}
+
 test_top_of_mind_failure() {
   make_world top-failure
   stub_sleep
@@ -2144,6 +2164,7 @@ test_top_of_mind_kind
 test_top_of_mind_dispositions
 test_top_of_mind_matched_dispositions
 test_top_of_mind_failure
+test_finished_merge_ask_row_renders
 test_backlog_asks_require_a_request
 test_ancestor_asks_hold_only_routed_asks
 test_linear_rate_limit_recovers
