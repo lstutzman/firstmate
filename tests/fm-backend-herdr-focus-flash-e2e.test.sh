@@ -223,7 +223,8 @@ read -r C_ANCHOR_WS C_ANCHOR_TAB _ <<<"$(mkws flash-c-anchor)" || fail 'could no
 read -r C_DOOMED_WS _ C_DOOMED_PANE <<<"$(mkws flash-c-doomed)" || fail 'could not create the Part C doomed workspace'
 read -r C_SPACER_WS _ _ <<<"$(mkws flash-c-spacer)" || fail 'could not create the Part C spacer workspace'
 read -r _ _ _ <<<"$(mkws flash-c-tail)" || fail 'could not create the Part C tail workspace'
-read -r C_SENTINEL_WS C_SENTINEL_TAB _ <<<"$(mkws flash-c-sentinel)" || fail 'could not create the Part C sentinel workspace'
+read -r C_START_WS C_START_TAB _ <<<"$(mkws flash-c-start)" || fail 'could not create the Part C start sentinel workspace'
+read -r C_SENTINEL_WS C_SENTINEL_TAB _ <<<"$(mkws flash-c-end)" || fail 'could not create the Part C end sentinel workspace'
 C_CALL_LOG="$TMP_ROOT/call-c.log"
 C_FOCUS_EVENTS="$TMP_ROOT/focus-c.events"
 C_LAB_SOCKET=$(lab session list --json | jq -er --arg session "$HERDR_LAB_SESSION" '.sessions[] | select(.name == $session) | .socket_path') \
@@ -233,10 +234,11 @@ SAMPLER_STOP="$TMP_ROOT/recorder-c.stop"
 : > "$C_CALL_LOG"
 : > "$C_FOCUS_EVENTS"
 # The recorder subscribes before Part C focuses its anchor. Herdr reports every
-# focus change in order (a release may also replay earlier ones, slowly, first),
-# so Part C's own pre-close focus is the first row naming its anchor and a focus
-# change onto the sentinel after the close is the last row to wait for;
-# everything between them is exactly what the operation did to focus.
+# focus change in order (a release may also replay earlier ones, slowly, first).
+# Just before the production close the test focuses a start sentinel and then the
+# anchor again, and just after it focuses an end sentinel; the rows between the
+# anchor row that follows the start sentinel and the end sentinel are exactly
+# what the close did to focus.
 cat > "$TMP_ROOT/focus-events.py" <<'PY'
 import json, os, socket, sys, time
 
@@ -282,7 +284,7 @@ with open(out_path, "a") as out:
             out.write(row + "\n")
             out.flush()
 PY
-python3 "$TMP_ROOT/focus-events.py" "$C_LAB_SOCKET" "$C_FOCUS_EVENTS" "$C_RECORDER_READY" "$SAMPLER_STOP" 60 &
+python3 "$TMP_ROOT/focus-events.py" "$C_LAB_SOCKET" "$C_FOCUS_EVENTS" "$C_RECORDER_READY" "$SAMPLER_STOP" 180 &
 SAMPLER_PID=$!
 C_READY_ATTEMPT=0
 while [ ! -e "$C_RECORDER_READY" ] && [ "$C_READY_ATTEMPT" -lt 100 ]; do
@@ -337,6 +339,10 @@ while [ "$C_CHILD_ATTEMPT" -lt 100 ]; do
 done
 [ "$C_CHILD_STABLE" -ge 2 ] || fail 'the Part C doomed pane never reported a stable persistent child process'
 
+C_START_ROW=$(printf 'focus\t%s\t%s' "$C_START_WS" "$C_START_TAB")
+lab tab focus "$C_START_TAB" >/dev/null || fail 'could not write the Part C start sentinel focus change'
+lab tab focus "$C_ANCHOR_TAB" >/dev/null || fail 'could not refocus the Part C anchor after the start sentinel'
+[ "$(focus_snapshot)" = "$C_BEFORE" ] || fail 'Part C focus is not back on the anchor after the start sentinel'
 # A short proof budget keeps the exhausted-proof path fast; the count below is
 # what proves the proof was exhausted rather than skipped.
 C_PROOF_POLLS=3
@@ -387,13 +393,16 @@ pass 'fallback: a doomed pane holding a persistent child exhausts the proof and 
   || fail "the fallback close left focus off the anchor ($C_BEFORE -> $C_AFTER)"
 C_ANCHOR_TAB_ID=${C_BEFORE#*$'\t'}
 C_WINDOW="$TMP_ROOT/focus-c.window"
-grep -Fqx -- "focus"$'\t'"$C_BEFORE" "$C_FOCUS_EVENTS" || fail 'the Part C event recorder never saw the anchor focus change'
-awk -F'\t' -v anchor="$C_BEFORE" -v sentinel="$C_SENTINEL_ROW" -v sentinel_ws="$C_SENTINEL_WS" '
+awk -F'\t' -v anchor="$C_BEFORE" -v start="$C_START_ROW" -v sentinel="$C_SENTINEL_ROW" \
+  -v start_ws="$C_START_WS" -v sentinel_ws="$C_SENTINEL_WS" '
   { row = $0 }
-  !started && row == "focus\t" anchor { started = 1; next }
-  started && row == sentinel { exit }
-  started && row != "workspace\t" sentinel_ws { print }
-' "$C_FOCUS_EVENTS" > "$C_WINDOW"
+  phase == 0 && row == start { phase = 1; next }
+  phase == 1 && row == "focus\t" anchor { phase = 2; next }
+  phase == 2 && row == sentinel { phase = 3; exit }
+  phase == 2 && row != "workspace\t" sentinel_ws && row != "workspace\t" start_ws { print }
+  END { exit phase == 3 ? 0 : 3 }
+' "$C_FOCUS_EVENTS" > "$C_WINDOW" \
+  || fail 'the Part C event recorder did not see the start sentinel, the anchor refocus and the end sentinel in order'
 C_WRONG=$(awk -F'\t' -v ws="$C_ANCHOR_WS" -v tab="$C_ANCHOR_TAB_ID" '
   ($1 == "workspace" && $2 != ws) || ($1 == "focus" && ($2 != ws || $3 != tab)) { n++ }
   END { print n + 0 }
