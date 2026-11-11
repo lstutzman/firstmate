@@ -877,6 +877,7 @@ tests/fm-mail.test.sh 11507
 tests/fm-merge-local.test.sh 10277
 tests/fm-muse-harness.test.sh 57488
 tests/fm-muse-signals-live-e2e.test.sh 59
+tests/fm-nm-daemon-env.test.sh 400
 tests/fm-nm-drive-steer.test.sh 63137
 tests/fm-nm-test-contract.test.sh 144
 tests/fm-no-mistakes-required.test.sh 354

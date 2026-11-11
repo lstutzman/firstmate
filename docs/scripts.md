@@ -129,6 +129,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-claude-limit-lib.sh` | Own what Claude Code's usage-limit prompt says on a pane: the stated reset time and the instant it means |
 | `fm-limit-resume.sh`     | Recover one crewmate stalled on Claude Code's usage-limit prompt once its stated reset has passed |
 | `fm-nm-drive-steer.sh`   | Send a quiet no-mistakes ship one fixed steer when its validation never started or nothing drives its active run, waiting for a settled head and cancelling a pre-review run on a stale head |
+| `fm-nm-daemon-env.sh`    | Check, install and report the systemd drop-in that puts the no-mistakes daemon's claude -p agents on a 5m prompt-cache TTL, never restarting the daemon |
 | `fm-nm-run-lib.sh`       | Single owner of shared no-mistakes run-attribution primitives and rules             |
 | `fm-pipeline-spend.sh`   | Attribute a task's no-mistakes pipeline spend to the task and keep it in the private spend ledger |
 | `fm-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
