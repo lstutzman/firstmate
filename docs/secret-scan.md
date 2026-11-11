@@ -13,8 +13,6 @@ The script header owns modes, exit codes, and the redaction rule; this page owns
   A commit the ci step adds later, while it repairs a failed check, is pushed after lint and is covered only by CI and the task hook below.
 - `bin/fm-spawn.sh` installs a pre-push hook in every task worktree of this repository (through `bin/fm-git-strip-ai-trailers.sh install --secret-scan`) that refuses a push when any pushed commit adds a finding.
   The hook runs beside the forge=external push guard, then chains to the repository's own pre-push hook.
-- The `Evidence secret scan` workflow reads the orphan `no-mistakes/evidence` branch daily through [`bin/fm-evidence-branch-scan.sh`](../bin/fm-evidence-branch-scan.sh), because no workflow can run on that branch.
-  It is a backstop (see [Evidence](#evidence)) and can only report: it turns red after a secret has already been published.
 
 Every layer needs gitleaks at the version pinned in the script; `bin/fm-install-gitleaks.sh <destination-directory>` installs the checksum-verified build.
 A missing or older gitleaks refuses the push or fails the job instead of passing.
@@ -66,7 +64,7 @@ The remaining controls:
   That is an instruction to an agent, not an enforcement point.
 - `bin/fm-evidence-secrets.sh check` fails on any URL in a text file whose query string has a parameter named like token, key, secret, auth, sig, password or credential with a value other than `REDACTED`.
   It never prints a value, and it skips binary files, so a URL drawn in a screenshot is out of its reach.
-- The daily `Evidence secret scan` workflow stays as a backstop for the existing branch and for any later re-enable of `store_in_repo`.
-  `bin/fm-evidence-branch-scan.sh` runs both scans over the last two days of that branch, and passes with a notice where the branch does not exist.
+- There is no daily scan of the evidence branch: with `store_in_repo` false nothing new lands on it, so a scan of its recent commits would have nothing to read.
+  The existing branch and its history are left as they are.
 
-Turning `store_in_repo` back on publishes evidence again, with only that daily detection behind it.
+Turning `store_in_repo` back on publishes evidence again with nothing behind it that can refuse a secret, so do not do it without a new control.

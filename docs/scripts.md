@@ -78,7 +78,6 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-git-push-guard.sh`  | Refuse a forge=external task's pushes to the shared origin and of task-prefixed branches, and write its per-task guard record ([design](external-review-forge.md)) |
 | [`fm-secret-scan.sh`](../bin/fm-secret-scan.sh) | Run the pinned gitleaks scan over the commits a CI event, a branch or a push adds, with the reviewed `.gitleaks.toml` allowlist and no secret value in its output ([policy](secret-scan.md)) |
 | `fm-install-gitleaks.sh` | Install CI's checksum-verified, pinned gitleaks build into a destination directory |
-| `fm-evidence-branch-scan.sh` | Run the daily backstop scan of the last two days of the `no-mistakes/evidence` branch: the secret scan plus the evidence URL check |
 | `fm-evidence-secrets.sh` | Find and redact URL query values named like token, key, secret, auth or sig in evidence text files, never printing a value |
 | `fm-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |
 | `fm-backend-hometag-lib.sh` | Shared per-installation home-tag derivation for zellij tab, cmux workspace, and tern session titles |

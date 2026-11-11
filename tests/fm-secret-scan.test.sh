@@ -3,8 +3,7 @@
 # allowlist in .gitleaks.toml, its pre-push hook (installed through
 # bin/fm-git-strip-ai-trailers.sh --secret-scan, the way bin/fm-spawn.sh does),
 # the hook wiring bin/fm-spawn.sh does for a firstmate-shaped worktree, the
-# evidence URL check bin/fm-evidence-secrets.sh, and the daily evidence-branch
-# scan bin/fm-evidence-branch-scan.sh. Every case runs real gitleaks and real
+# evidence URL check bin/fm-evidence-secrets.sh. Every case runs real gitleaks and real
 # git against throwaway repositories. Fake secrets are built
 # at run time so this file never carries a literal the scan itself would flag.
 # gitleaks is required: an absent or too old gitleaks fails the suite, the same
@@ -21,7 +20,6 @@ unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_PARAMETERS
 SCAN="$ROOT/bin/fm-secret-scan.sh"
 EVIDENCE="$ROOT/bin/fm-evidence-secrets.sh"
 STRIP="$ROOT/bin/fm-git-strip-ai-trailers.sh"
-BRANCH_SCAN="$ROOT/bin/fm-evidence-branch-scan.sh"
 TMP_ROOT=$(fm_test_tmproot fm-secret-scan)
 fm_git_identity fmtest fmtest@example.invalid
 ZERO=0000000000000000000000000000000000000000
@@ -331,86 +329,6 @@ test_spawn_installs_the_scan_hook_in_a_firstmate_worktree() {
   pass "fm-spawn: a firstmate worktree gets a pre-push hook that refuses a secret, with or without keep-ai-trailers; other worktrees that keep trailers get none"
 }
 
-# evidence_repo <name>: a repository whose origin-tracking ref
-# refs/remotes/origin/no-mistakes/evidence points at an orphan evidence branch
-# with one old commit (ten days ago) carrying both a key-shaped secret and a
-# token URL. Sets REPO and EV_TOKEN; the evidence worktree is REPO itself.
-evidence_repo() {
-  local old
-  new_repo "$1"
-  EV_TOKEN=$(random_secret)
-  git -C "$REPO" checkout -q --orphan no-mistakes/evidence
-  git -C "$REPO" rm -q -rf --cached . >/dev/null 2>&1
-  mkdir -p "$REPO/fm/old"
-  printf 'OLD_API_KEY="%s"\n' "$EV_TOKEN" >"$REPO/fm/old/run.env"
-  printf 'opened https://board.example.invalid/b?artifact_load_token=%s\n' "$EV_TOKEN" >"$REPO/fm/old/capture.txt"
-  git -C "$REPO" add -A
-  old="@$(($(date +%s) - 10 * 86400)) +0000"
-  GIT_COMMITTER_DATE=$old GIT_AUTHOR_DATE=$old git -C "$REPO" commit -q -m 'old evidence'
-  git -C "$REPO" update-ref refs/remotes/origin/no-mistakes/evidence HEAD
-}
-
-# evidence_commit <path> <line>: add a recent evidence commit and move the
-# origin-tracking ref to it.
-evidence_commit() {
-  mkdir -p "$REPO/$(dirname "$1")"
-  printf '%s\n' "$2" >"$REPO/$1"
-  git -C "$REPO" add -A
-  git -C "$REPO" commit -q -m 'recent evidence'
-  git -C "$REPO" update-ref refs/remotes/origin/no-mistakes/evidence HEAD
-}
-
-test_evidence_branch_scan_skips_a_repository_without_the_branch() {
-  local fake out rc
-  new_repo no-evidence
-  # A gitleaks the scan would refuse proves the skip never reaches the scan.
-  fake="$TMP_ROOT/old-gitleaks"
-  mkdir -p "$fake"
-  printf '#!/bin/sh\necho 8.0.1\n' >"$fake/gitleaks"
-  chmod +x "$fake/gitleaks"
-  out=$(PATH="$fake:$PATH" "$BRANCH_SCAN" --repo "$REPO" 2>&1)
-  rc=$?
-  expect_code 0 "$rc" "a repository without the evidence branch must pass: $out"
-  assert_contains "$out" "No no-mistakes/evidence branch" "the skip must say why"
-  pass "evidence branch scan: a repository without the evidence branch passes with a notice and runs no scan"
-}
-
-test_evidence_branch_scan_reads_only_the_last_two_days() {
-  local out rc path
-  evidence_repo evidence-window
-  evidence_commit fm/new/log.txt 'nothing secret here'
-  out=$("$BRANCH_SCAN" --repo "$REPO" 2>&1)
-  rc=$?
-  expect_code 0 "$rc" "a secret and a token URL older than two days must not be re-scanned: $out"
-
-  # A token URL in a recent capture whose path is quoted by git (non-ASCII and
-  # a space) is still read and found.
-  path='fm/café run/capture.txt'
-  evidence_commit "$path" "opened https://board.example.invalid/b?artifact_load_token=$EV_TOKEN&round=2"
-  out=$("$BRANCH_SCAN" --repo "$REPO" 2>&1)
-  rc=$?
-  expect_code 1 "$rc" "a recent token URL must fail the scan: $out"
-  assert_contains "$out" "café run/capture.txt:1: artifact_load_token" "the URL check must name the quoted path, line and parameter"
-  assert_not_contains "$out" "fm/old/capture.txt" "an evidence file not touched in the last two days must not be checked"
-  assert_not_contains "$out" "$EV_TOKEN" "no value may be printed"
-  pass "evidence branch scan: only the last two days are scanned, and a quoted non-ASCII path is still checked"
-}
-
-test_evidence_branch_scan_runs_the_secret_scan() {
-  local out rc secret
-  evidence_repo evidence-secret
-  secret=$(random_secret)
-  evidence_commit fm/new/run.env "DEPLOY_API_KEY=\"${secret}X\""
-  out=$("$BRANCH_SCAN" --repo "$REPO" 2>&1)
-  rc=$?
-  expect_code 1 "$rc" "a recent key-shaped secret must fail the scan: $out"
-  assert_contains "$out" "fm-secret-scan: refused" "the refusal must come from the secret scan"
-  assert_contains "$out" "fm/new/run.env" "the finding must name the file"
-  assert_not_contains "$out" "fm/old/run.env" "a secret older than two days must not be re-scanned"
-  assert_not_contains "$out" "$secret" "no value may be printed"
-  pass "evidence branch scan: a recent secret on the evidence branch fails the secret scan"
-}
-
 test_scan_cannot_pass_without_a_usable_gitleaks() {
   local out rc fake
   new_repo no-tool
@@ -487,7 +405,4 @@ fm_test_run \
   test_spawn_installs_the_scan_hook_in_a_firstmate_worktree \
   test_scan_cannot_pass_without_a_usable_gitleaks \
   test_evidence_urls_are_found_and_redacted_without_printing_values \
-  test_evidence_branch_scan_skips_a_repository_without_the_branch \
-  test_evidence_branch_scan_reads_only_the_last_two_days \
-  test_evidence_branch_scan_runs_the_secret_scan \
   test_code_branches_carry_no_evidence
