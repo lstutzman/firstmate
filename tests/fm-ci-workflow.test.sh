@@ -19,6 +19,8 @@
 # They also hold the fork opt-out: the repository variables FM_CI_SKIP_PUSH and
 # FM_CI_SKIP_MACOS let a fork skip the push run and the macOS job through a
 # job-level condition, while with neither set every job runs exactly as before.
+# FM_CI_NIGHTLY and FM_CI_MACOS_SCOPE are opt-in too, and FM_CI_RUNS_ON moves
+# the Linux jobs onto a fork's own runners.
 #
 # The workflow is parsed as YAML and its concurrency and job-level `if`
 # expressions are resolved against simulated pull_request and push contexts,
@@ -180,7 +182,8 @@ end
 # fork variables unset, and needed jobs successful. Short keys: event, action,
 # label (the label an event adds), labels (comma-separated labels on the PR),
 # association, head (head repository), number, run_id, skip_push, skip_macos,
-# runs_on (the FM_CI_RUNS_ON repository variable),
+# runs_on, nightly, macos_scope (the FM_CI_RUNS_ON, FM_CI_NIGHTLY and
+# FM_CI_MACOS_SCOPE repository variables),
 # needs (success, failure, or cancelled: the needed jobs' results that job
 # conditions and the Full suite verdict read), outcome (how every job that runs
 # concludes, read only by published_checks). A push event clears the PR fields,
@@ -191,7 +194,7 @@ def simulated_context(workflow_name, overrides)
   o = {
     "event" => "pull_request", "action" => "synchronize", "label" => "",
     "labels" => "", "association" => "NONE", "head" => "contributor/firstmate",
-    "number" => "108", "run_id" => "900001", "skip_push" => "", "skip_macos" => "", "runs_on" => "",
+    "number" => "108", "run_id" => "900001", "skip_push" => "", "skip_macos" => "", "runs_on" => "", "nightly" => "", "macos_scope" => "",
     "needs" => "success", "outcome" => "success",
     "base_sha" => "", "head_sha" => "", "before" => "", "sha" => "",
   }
@@ -221,6 +224,8 @@ def simulated_context(workflow_name, overrides)
     "vars.FM_CI_SKIP_PUSH" => o["skip_push"],
     "vars.FM_CI_SKIP_MACOS" => o["skip_macos"],
     "vars.FM_CI_RUNS_ON" => o["runs_on"],
+    "vars.FM_CI_NIGHTLY" => o["nightly"],
+    "vars.FM_CI_MACOS_SCOPE" => o["macos_scope"],
     "needs.status" => o["needs"],
     "needs.*.result" => [o["needs"]],
     "simulated.outcome" => o["outcome"],
@@ -457,8 +462,7 @@ test_outside_pr_without_label_runs_only_quick_checks() {
 # verdict then follows the lanes.
 test_full_ci_label_runs_the_whole_suite() {
   local all actual out
-  # Pull requests never run the macOS job (main pushes and the nightly run do).
-  all=$(workflow_jobs | grep -vx macos-stock-bash | tr '\n' ' ') || fail "could not list ci.yml jobs"
+  all=$(workflow_jobs | tr '\n' ' ') || fail "could not list ci.yml jobs"
   actual=$(jobs_running_under action=labeled label=full-ci labels=full-ci | tr '\n' ' ') \
     || fail "could not resolve full-ci label jobs"
   [ "$actual" = "$all" ] || fail "adding full-ci must run every job, ran: $actual"
@@ -477,19 +481,16 @@ test_full_ci_label_runs_the_whole_suite() {
 
 # DOP-167: main, own branches and write-access authors run everything as today.
 test_trusted_runs_are_unchanged() {
-  local all all_but_macos want context actual out
+  local all context actual out
   all=$(workflow_jobs | tr '\n' ' ') || fail "could not list ci.yml jobs"
   all_but_macos=$(workflow_jobs | grep -vx macos-stock-bash | tr '\n' ' ') || fail "could not list ci.yml jobs"
-  for context in event=push event=schedule association=OWNER association=MEMBER association=COLLABORATOR head=kunchenguid/firstmate; do
-    # Main pushes and the nightly run add the macOS job; pull requests skip it.
-    want=$all_but_macos
-    case $context in event=*) want=$all ;; esac
+  for context in event=push association=OWNER association=MEMBER association=COLLABORATOR head=kunchenguid/firstmate; do
     actual=$(jobs_running_under "$context" | tr '\n' ' ') || fail "could not resolve jobs for $context"
-    [ "$actual" = "$want" ] || fail "$context must run its usual jobs, ran: $actual"
+    [ "$actual" = "$all" ] || fail "$context must run every job as before, ran: $actual"
     out=$(run_full_suite_verdict "$context") \
       || fail "the Full suite verdict must pass for $context when its lanes passed:"$'\n'"$out"
   done
-  pass "main pushes, the nightly run, own branches and write-access authors run their jobs and pass the verdict"
+  pass "main pushes, own branches and write-access authors still run every job and pass the verdict"
 }
 
 # DOP-167: another label neither starts nor cancels a run: no job runs, not
@@ -537,8 +538,6 @@ test_unrelated_label_never_masks_an_earlier_failure() {
     # conclusion, so the label run below has a real failure to mask.
     while IFS=$'\t' read -r name conclusion; do
       case "$expect:$name" in
-        # Pull requests never run the macOS job, so it reads skipped there.
-        all-failed:'Stock macOS Bash snapshot compatibility') want=skipped ;;
         all-failed:*) want=failure ;;
         waiting:'Full suite') want=failure ;;
         waiting:'Test coverage guard'|waiting:'Repo invariants') want=success ;;
@@ -654,46 +653,56 @@ LANES
   pass "each heavy lane keeps a 20 minute step tripwire under a $heavy minute job backstop"
 }
 
-# The fork opt-out is opt-in: with neither variable set every job runs on main
-# pushes and the nightly run, and every job but macOS runs on a pull request;
-# FM_CI_SKIP_PUSH=1 empties only the push run (the nightly run still happens),
-# and FM_CI_SKIP_MACOS=1 removes only the macOS job. A "-" in the table means the variable is unset.
-test_fork_skip_variables_are_opt_in() {
-  local all event skip_push skip_macos expected want actual
+# The fork switches are opt-in: with none set every job runs on main pushes and
+# pull requests, and a scheduled run does nothing. FM_CI_SKIP_PUSH=1 empties
+# only the push run, FM_CI_SKIP_MACOS=1 removes only the macOS job,
+# FM_CI_NIGHTLY=1 turns the nightly run into a full run, and
+# FM_CI_MACOS_SCOPE=nightly-main limits the macOS job to main pushes and the
+# nightly run. A "-" in the table means the variable is unset.
+test_fork_switches_are_opt_in() {
+  local all event skip_push skip_macos nightly scope expected want actual
   all=$(workflow_jobs) || fail "could not list ci.yml jobs"
   printf '%s\n' "$all" | grep -qx macos-stock-bash \
     || fail "the macOS job is missing from ci.yml, so the table below would prove nothing"
-  while read -r event skip_push skip_macos expected; do
+  while read -r event skip_push skip_macos nightly scope expected; do
     [ "$skip_push" != - ] || skip_push=
     [ "$skip_macos" != - ] || skip_macos=
+    [ "$nightly" != - ] || nightly=
+    [ "$scope" != - ] || scope=
     case $expected in
       all) want=$all ;;
       none) want= ;;
       all-but-macos) want=$(printf '%s\n' "$all" | grep -vx macos-stock-bash) ;;
       *) fail "unknown expectation $expected" ;;
     esac
-    actual=$(jobs_running_under event="$event" association=OWNER skip_push="$skip_push" skip_macos="$skip_macos") \
-      || fail "could not resolve the job conditions for $event FM_CI_SKIP_PUSH=$skip_push FM_CI_SKIP_MACOS=$skip_macos"
+    actual=$(jobs_running_under event="$event" association=OWNER skip_push="$skip_push" skip_macos="$skip_macos" nightly="$nightly" macos_scope="$scope") \
+      || fail "could not resolve the job conditions for $event"
     [ "$actual" = "$want" ] \
-      || fail "$event with FM_CI_SKIP_PUSH=$skip_push FM_CI_SKIP_MACOS=$skip_macos must run $expected jobs"$'\n'"ran: $(printf '%s' "$actual" | tr '\n' ' ')"$'\n'"wanted: $(printf '%s' "$want" | tr '\n' ' ')"
+      || fail "$event skip_push=$skip_push skip_macos=$skip_macos nightly=$nightly macos_scope=$scope must run $expected jobs"$'\n'"ran: $(printf '%s' "$actual" | tr '\n' ' ')"$'\n'"wanted: $(printf '%s' "$want" | tr '\n' ' ')"
   done <<'TABLE'
-push         - - all
-schedule     - - all
-pull_request - - all-but-macos
-push         1 - none
-schedule     1 - all
-pull_request 1 - all-but-macos
-pull_request - 1 all-but-macos
-push         - 1 all-but-macos
-schedule     - 1 all-but-macos
+push         - - - - all
+pull_request - - - - all
+schedule     - - - - none
+schedule     1 - - - none
+push         1 - - - none
+pull_request 1 - - - all
+pull_request - 1 - - all-but-macos
+push         - 1 - - all-but-macos
+schedule     - - 1 - all
+schedule     1 - 1 - all
+schedule     - 1 1 - all-but-macos
+push         - - - nightly-main all
+pull_request - - - nightly-main all-but-macos
+schedule     - - 1 nightly-main all
+pull_request - - 1 nightly-main all-but-macos
 TABLE
-  pass "the fork skip variables change nothing unless set, and each skips only its own run or job"
+  pass "the fork switches change nothing unless set, and each switches only its own behaviour"
 }
 
-# The nightly run is a full run of main: the schedule trigger exists, and the
-# run neither joins a PR group nor shares the main push group, so a nightly
+# The schedule trigger exists (the table above proves it does nothing unless
+# FM_CI_NIGHTLY=1), and the run neither joins a PR group nor shares the main push group, so a nightly
 # never cancels or is cancelled by a merge.
-test_nightly_schedule_is_a_full_run_of_main() {
+test_nightly_schedule_has_its_own_concurrency_group() {
   local cron nightly push
   cron=$(ruby -ryaml -e '
 doc = YAML.load_file(ARGV[0])
@@ -908,8 +917,8 @@ test_trusted_runs_are_unchanged
 test_unrelated_label_starts_no_job
 test_late_unrelated_label_run_never_masks_a_full_ci_pass
 test_unrelated_label_never_masks_an_earlier_failure
-test_fork_skip_variables_are_opt_in
-test_nightly_schedule_is_a_full_run_of_main
+test_fork_switches_are_opt_in
+test_nightly_schedule_has_its_own_concurrency_group
 test_linux_jobs_follow_the_runs_on_variable
 test_npm_jobs_set_up_a_pinned_node_first
 test_timing_aggregate_still_runs_after_a_failed_lane
