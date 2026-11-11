@@ -915,6 +915,7 @@ test_noise_is_not_a_finding() {
   ["Bash", {"command": "ssh deepthought bash -s <<'E'\nzzjq . f\nE"}, "bash: line 1: zzjq: command not found", true],
   ["Bash", {"command": "bash /t.sh"}, "bash: line 1: 23586177c0a5a7f4: command not found", true],
   ["Bash", {"command": "python3 - <<'PY'\nfor r in rows:\n    pass\nPY"}, "bash: line 3: pass: command not found", true],
+  ["Bash", {"command": "python3 - <<'PY'\nfor r in rows:\n    zzpy\nPY"}, "bash: line 3: zzpy: command not found", true],
   ["Bash", {"command": "echo hi"}, "bash: line 1: ls: command not found", true],
   ["Edit", {"file_path": "/d.js", "old_string": "x", "new_string": "class D {\n  zzopen() {\n  }\n}"}, "ok", false],
   ["Bash", {"command": "zzopen report.html"}, "/bin/bash: line 1: zzopen: command not found", true]], "raw": [
@@ -931,8 +932,8 @@ EOF
   json="$home/data/officers/friction/$DATE.json"
   assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
     "only the typed instruction repeats; guidance wrapped into it and origin-less records beside stamped ones are not asks"
-  assert_equals "zzbc,zzdotnet,zzfleet,zzjq,zzopen,zzpcdb,zzplay,zzruff,zzslop,zzyq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
-    "a shell function, a heredoc label, a dotted field, a bare hex id, a Python keyword in a heredoc, a tool on this host now, echoed text and a name no command has are not missing tools; bc, a heredoc run as shell, a JS method name, a miss after a noise line, a quote run by ssh or a shell, a quoted substitution and a quoted variable still are"
+  assert_equals "ls,zzbc,zzdotnet,zzfleet,zzjq,zzopen,zzpcdb,zzplay,zzruff,zzslop,zzyq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
+    "a shell function, a heredoc label, a dotted field, a bare hex id, a word in a non-shell heredoc, echoed text and a name no command has are not missing tools; bc, a heredoc run as shell, a JS method name, a miss after a noise line, a quote run by ssh or a shell, a quoted substitution, a quoted variable and a tool present here but missing on another machine still are"
   pass "fm-officer friction: injected guidance and non-installable names are classifier noise"
 }
 
@@ -947,11 +948,16 @@ friction = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(friction)
 names = friction.firstmate_functions(root=sys.argv[2])
 assert "skillhelper" in names and "ls" not in names, names
-events = [{"kind": "agent-hit", "cause": "missing-tool", "tool": t} for t in ("skillhelper", "ls", "zzghost")]
-kept = friction.drop_test_noise({"sessions": [{"events": events}]}, names)["sessions"][0]["events"]
-assert [ev["tool"] for ev in kept] == ["zzghost"], kept  # ls resolves on this host now, so it is dropped too
+def kept(machine):
+    events = [{"kind": "agent-hit", "cause": "missing-tool", "tool": t} for t in ("skillhelper", "ls", "zzghost")]
+    session = {"events": events} if machine is None else {"machine": machine, "events": events}
+    scanned = friction.drop_test_noise({"sessions": [session]}, names, host="officerhost.tail1.ts.net")
+    return [ev["tool"] for ev in scanned["sessions"][0]["events"]]
+assert kept("OfficerHost") == ["zzghost"], kept("OfficerHost")
+assert kept("otherhost") == ["ls", "zzghost"], kept("otherhost")
+assert kept(None) == ["ls", "zzghost"], kept(None)
 PY
-  pass "fm-officer friction: a function a skill script defines, and a tool on this host now, are not missing tools; an absent one still is"
+  pass "fm-officer friction: a skill function is not a missing tool; a tool on PATH here is noise only for a session on this host"
 }
 
 test_test_run_output_is_not_fleet_friction() {

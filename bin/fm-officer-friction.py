@@ -1221,24 +1221,28 @@ def firstmate_functions(root=None):
     return _FUNCTIONS[root]
 
 
-def drop_test_noise(scanned, functions=None):
+def drop_test_noise(scanned, functions=None, host=None):
     """Drop agent-hit events that are output of a firstmate test run, not fleet friction: a not-found name
     firstmate defines as a shell function, and an ssh key refusal printed by a firstmate test run. A refusal
     outside a test run is kept whatever host it names."""
     functions = firstmate_functions() if functions is None else functions
+    host = (socket.gethostname() if host is None else host).split(".")[0].lower()
 
-    def noise(ev):
+    def noise(ev, machine):
         if ev.get("kind") != "agent-hit":
             return False
         if ev.get("cause") == "missing-tool":
-            # a name that resolves on this host now was missing only on the machine or shell that ran it
-            return ev.get("tool") in functions or bool(ev.get("tool") and shutil.which(ev["tool"]))
+            if ev.get("tool") in functions:
+                return True
+            # PATH here proves nothing about another machine, so only a session that ran on this host is checked
+            same_host = bool(machine) and str(machine).split(".")[0].lower() == host
+            return bool(ev.get("tool") and same_host and shutil.which(ev["tool"]))
         if ev.get("sub") == "ssh-key":
             return bool(ev.get("in_test_run"))
         return False
 
     for s in scanned["sessions"]:
-        s["events"] = [ev for ev in s["events"] if not noise(ev)]
+        s["events"] = [ev for ev in s["events"] if not noise(ev, s.get("machine"))]
     return scanned
 
 
