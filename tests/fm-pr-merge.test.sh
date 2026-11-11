@@ -331,6 +331,20 @@ case "${1:-} ${2:-}" in
         cat "$FM_TEST_GH_FILES"
         exit $?
         ;;
+      *" repos/"*"/pulls/"*"/commits"*)
+        # The merge commits of the pull request, as the script's own --jq
+        # filter leaves them: "<sha> <extra parent shas, comma separated>".
+        [ ! -f "${FM_TEST_GH_COMMITS_FAIL:-}" ] || exit 1
+        [ ! -f "${FM_TEST_GH_COMMITS:-}" ] || cat "$FM_TEST_GH_COMMITS"
+        exit 0
+        ;;
+      *" repos/"*"/compare/"*)
+        # How the base relates to an extra parent: ahead (history the base
+        # lacks), behind or identical (already in the base).
+        [ ! -f "${FM_TEST_GH_COMPARE_FAIL:-}" ] || exit 1
+        cat "${FM_TEST_GH_COMPARE:-/dev/null}" 2>/dev/null || printf 'ahead\n'
+        exit 0
+        ;;
       *" repos/"*"/pulls/"*)
         if [ -f "${FM_TEST_GH_PULL:-}" ]; then
           cat "$FM_TEST_GH_PULL"
@@ -787,6 +801,10 @@ run_pr_merge() {
   FM_TEST_GH_REQUIRED_LIST="$case_dir/github-required-list" \
   FM_TEST_GH_REQUIRED_LIST_FAIL="$case_dir/github-required-list-fail" \
   FM_TEST_GH_FILES="$case_dir/github-files.json" \
+  FM_TEST_GH_COMMITS="$case_dir/github-commits" \
+  FM_TEST_GH_COMMITS_FAIL="$case_dir/github-commits-fail" \
+  FM_TEST_GH_COMPARE="$case_dir/github-compare" \
+  FM_TEST_GH_COMPARE_FAIL="$case_dir/github-compare-fail" \
   FM_TEST_GH_PULL="$case_dir/github-pull.json" \
   FM_TEST_META_AT_MERGE="$case_dir/meta-at-merge" \
   FM_TEST_AWAY_RECORD_AFTER_VIEW="$case_dir/away-record-after-view" \
@@ -5181,6 +5199,130 @@ test_allow_red_is_refused_while_away() {
   pass "fm-pr-merge rechecks away presence before an attended red merge"
 }
 
+# A pull request that carries a merge commit with history the base lacks (an
+# upstream sync) must not be flattened by the default squash, the explicit
+# squash or rebase; only a merge, or a named reason, lets it through.
+MERGE_COMMIT_SHA=1234567890abcdef1234567890abcdef12345678
+MERGE_COMMIT_PARENT=fedcba0987654321fedcba0987654321fedcba09
+
+make_merge_commit_case() {
+  local name=$1 case_dir
+  case_dir=$(make_case "$name")
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
+  printf '%s\n' "$MERGE_COMMIT_SHA $MERGE_COMMIT_PARENT" > "$case_dir/github-commits"
+  : > "$case_dir/gh-axi.log"
+  printf '%s\n' "$case_dir"
+}
+
+test_merge_commit_guard() {
+  local case_dir rc url=https://github.com/example/repo/pull/91
+
+  # No merge commits: the default squash is unchanged.
+  case_dir=$(make_case github-merge-commit-none)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-none: an ordinary PR should still merge"
+  assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+  assert_no_grep 'warning:' "$case_dir/stderr" "merge-commit-none: an ordinary PR printed a warning"
+
+  # Merge commit, no method: refused, names the commit and --merge.
+  case_dir=$(make_merge_commit_case github-merge-commit-default)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-commit-default: the default squash of a merge commit must be refused"
+  assert_grep "${MERGE_COMMIT_SHA:0:12}" "$case_dir/stderr" "merge-commit-default: refusal did not name the merge commit"
+  assert_grep '-- --merge' "$case_dir/stderr" "merge-commit-default: refusal did not say to re-run with --merge"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-default: gh pr merge ran despite the refusal"
+
+  # Merge commit with --merge: merges.
+  case_dir=$(make_merge_commit_case github-merge-commit-merge)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" -- --merge > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-merge: an explicit --merge must be allowed"
+  assert_logged_gh_merge "$case_dir" 91 example/repo --merge
+
+  # Merge commit with an explicit --squash or --rebase: refused without the override.
+  for method in --squash --rebase; do
+    case_dir=$(make_merge_commit_case "github-merge-commit-explicit${method#--}")
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" -- "$method" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "merge-commit-explicit: $method of a merge commit must be refused"
+    assert_grep '--allow-flatten' "$case_dir/stderr" "merge-commit-explicit: refusal did not name the override"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-explicit: gh pr merge ran despite the refusal"
+  done
+
+  # The override flattens, with its reason recorded in the task's meta.
+  case_dir=$(make_merge_commit_case github-merge-commit-override)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" --allow-flatten 'upstream sync already squashed' -- --squash \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-override: --allow-flatten with a reason must allow the squash"
+  assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+  grep -qxF 'merge_flatten_override=upstream sync already squashed' "$case_dir/state/task-x1.meta" \
+    || fail "merge-commit-override: the reason was not recorded in the task meta"
+
+  # The override is attended-only and needs a reason.
+  case_dir=$(make_merge_commit_case github-merge-commit-override-away)
+  write_away_record "$case_dir" --words 'merge task-x1 when green'
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" --allow-flatten reason > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "merge-commit-override-away: --allow-flatten must be refused while away"
+  assert_grep '--allow-flatten is attended-only' "$case_dir/stderr" "merge-commit-override-away: refusal did not name attended-only"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-override-away: gh pr merge ran"
+  case_dir=$(make_merge_commit_case github-merge-commit-override-bare)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" --allow-flatten > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "merge-commit-override-bare: --allow-flatten without a reason must be refused"
+
+  # A base-update merge (the extra parent is already in the base) is not counted.
+  case_dir=$(make_merge_commit_case github-merge-commit-base-update)
+  printf 'behind\n' > "$case_dir/github-compare"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-base-update: a base-update merge commit must not block the default squash"
+  assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+
+  # An unreadable commit list (or reachability read): one warning, and the merge proceeds.
+  case_dir=$(make_merge_commit_case github-merge-commit-unreadable)
+  : > "$case_dir/github-commits-fail"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-unreadable: an unreadable commit list must not block the merge"
+  assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+  [ "$(grep -c '^warning: could not read the commit list' "$case_dir/stderr")" -eq 1 ] \
+    || fail "merge-commit-unreadable: expected exactly one warning, got: $(cat "$case_dir/stderr")"
+  case_dir=$(make_merge_commit_case github-merge-commit-compare-unreadable)
+  : > "$case_dir/github-compare-fail"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-compare-unreadable: an unreadable reachability read must not block the merge"
+  assert_grep 'warning: could not read the commit list' "$case_dir/stderr" "merge-commit-compare-unreadable: no warning"
+  pass "fm-pr-merge refuses to flatten a pull request's merge commits unless merged or overridden"
+}
+
 # A quiet-mode record is a present captain, not an away posture: the attended
 # red-check waiver still works and the merge is recorded as attended.
 test_quiet_record_keeps_merges_attended() {
@@ -6371,6 +6513,7 @@ test_supersession_never_crosses_check_names
 test_undated_runs_never_supersede
 test_allow_red_still_waives_only_the_current_failure
 test_allow_red_is_refused_while_away
+test_merge_commit_guard
 test_quiet_record_keeps_merges_attended
 test_allow_red_requires_one_separate_name
 test_away_record_permits_any_green_merge_under_away_authority

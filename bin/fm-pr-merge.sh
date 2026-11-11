@@ -16,11 +16,21 @@
 #   fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch]
 #     [--expected-head <full-sha>]
 #     [--allow-red <check>] [--allow-missing <check>] [--allow-no-pipeline]
-#     [-- <forge merge flags>]
+#     [--allow-flatten <reason>] [-- <forge merge flags>]
 #   fm-pr-merge.sh -h | --help
 #
 # Merge method on GitHub defaults to --squash when the caller passes none of
 # --squash, --merge, --rebase, or --method after the optional -- separator.
+# A GitHub pull request whose commits include a merge commit that brings in
+# history the base branch lacks (an upstream sync) is refused when the method
+# would squash or rebase it, the default included, because that flattens the
+# merge and loses its ancestry: re-run with "-- --merge". A merge commit whose
+# extra parents the base already contains (the base merged into the branch to
+# update it) does not count. An attended --allow-flatten <reason>, given once,
+# permits the flattening and records the reason as merge_flatten_override= in
+# the task's meta; it is refused while the away-posture record exists, for an
+# office, and for --stack. When the forge's commit list cannot be read, one
+# warning is printed and the merge proceeds as before.
 # On Forgejo the merge style defaults to the repository's own
 # default_merge_style, read live, and a merge is refused when it cannot be read.
 # A GitHub merge is refused unless every pre-merge condition holds, each read
@@ -301,7 +311,7 @@
 # its verification and the merge is not refused by the forge; that tree check is
 # what detects any such unverified content reaching the trunk.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch] [--expected-head <full-sha>] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch] [--expected-head <full-sha>] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [--allow-flatten <reason>] [-- <extra forge merge args>]
 #        fm-pr-merge.sh --stack <gated-head-sha> <top-task-id> <top-pr-url> --member <task-id> <pr-url> [--member <task-id> <pr-url>]... [-- --squash|--merge|--rebase]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
@@ -408,6 +418,7 @@ shift 2
 ATTENDED_OVERRIDE=false
 UPDATE_BRANCH=false
 ALLOW_NO_PIPELINE=false
+ALLOW_FLATTEN=
 ALLOW_RED=()
 ALLOW_MISSING=()
 EXPECTED_HEAD=
@@ -456,6 +467,21 @@ while [ "$#" -gt 0 ]; do
       STACK_URLS+=("$3")
       shift 3
       ;;
+    --allow-flatten)
+      [ -z "$ALLOW_FLATTEN" ] || { echo "error: --allow-flatten may be specified only once" >&2; exit 2; }
+      case "${2:-}" in
+        ''|--*) echo "error: --allow-flatten requires a reason as a separate argument" >&2; exit 2 ;;
+      esac
+      case "$2" in
+        *[![:print:]]*) echo "error: --allow-flatten reason must be one printable line" >&2; exit 2 ;;
+      esac
+      ALLOW_FLATTEN=$2
+      shift 2
+      ;;
+    --allow-flatten=*)
+      echo "error: --allow-flatten requires a separate reason argument" >&2
+      exit 2
+      ;;
     --allow-no-pipeline)
       ALLOW_NO_PIPELINE=true
       shift
@@ -488,6 +514,10 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$UPDATE_BRANCH" = true ] && [ "$PROVIDER" != github ]; then
   echo "error: --update-branch applies only to GitHub" >&2
+  exit 2
+fi
+if [ -n "$ALLOW_FLATTEN" ] && [ "$PROVIDER" != github ]; then
+  echo "error: --allow-flatten applies only to GitHub" >&2
   exit 2
 fi
 if [ -n "$EXPECTED_HEAD" ] && ! fm_pr_head_valid "$EXPECTED_HEAD"; then
@@ -541,8 +571,8 @@ stack_validate_request() {
     echo "error: --stack merges only a GitHub stacked pull request set" >&2
     return 1
   fi
-  if [ "$ATTENDED_OVERRIDE" = true ] || [ "${#ALLOW_RED[@]}" -gt 0 ] || [ "${#ALLOW_MISSING[@]}" -gt 0 ]; then
-    echo "error: --stack does not accept --attended-override, --allow-red, or --allow-missing; every guard stays absolute for a stack" >&2
+  if [ "$ATTENDED_OVERRIDE" = true ] || [ "${#ALLOW_RED[@]}" -gt 0 ] || [ "${#ALLOW_MISSING[@]}" -gt 0 ] || [ -n "$ALLOW_FLATTEN" ]; then
+    echo "error: --stack does not accept --attended-override, --allow-red, --allow-missing, or --allow-flatten; every guard stays absolute for a stack" >&2
     return 1
   fi
   if [ -n "$EXPECTED_HEAD" ]; then
@@ -826,6 +856,7 @@ if [ -n "$FM_OFFICE_ID" ]; then
   [ "$ATTENDED_OVERRIDE" = false ] || office_refuse "is never an attended captain, so --attended-override is refused"
   [ "${#ALLOW_RED[@]}" -eq 0 ] || office_refuse "is never an attended captain, so --allow-red is refused"
   [ "${#ALLOW_MISSING[@]}" -eq 0 ] || office_refuse "is never an attended captain, so --allow-missing is refused"
+  [ -z "$ALLOW_FLATTEN" ] || office_refuse "is never an attended captain, so --allow-flatten is refused"
   MERGE_OFFICE_PROJECT=$(basename "${MERGE_PROJECT:-}")
   { [ -n "$MERGE_PROJECT" ] && fm_office_in "$MERGE_OFFICE_PROJECT" "$FM_OFFICE_MERGE"; } \
     || office_refuse "may merge only ${FM_OFFICE_MERGE:-no project} (its authority record's merge=), not ${MERGE_OFFICE_PROJECT:-a task with no recorded project}"
@@ -2166,6 +2197,10 @@ require_current_away_authority() {
     echo "error: --allow-missing is attended-only; while the away-posture record exists every required check must report" >&2
     return 2
   fi
+  if [ "$FM_PR_AWAY_POSTURE" = true ] && [ -n "$ALLOW_FLATTEN" ]; then
+    echo "error: --allow-flatten is attended-only; while the away-posture record exists a squash or rebase of merge commits is refused" >&2
+    return 2
+  fi
   if [ "$FM_PR_AWAY_POSTURE" = true ] && [ "$ALLOW_NO_PIPELINE" = true ]; then
     echo "error: --allow-no-pipeline is attended-only; while the away-posture record exists a GitLab merge requires a successful head pipeline" >&2
     return 2
@@ -2772,6 +2807,68 @@ forgejo_confirm_merged() {
   [ "$merged" = true ]
 }
 
+# Merge commits in the pull request's own range whose extra parents the base
+# branch does not already contain, one short sha per line in
+# FM_PR_GITHUB_MERGE_COMMITS. A merge commit whose extra parents are all
+# reachable from the base (the base merged into the branch to update it)
+# flattens harmlessly and is not listed. Returns 1 when the forge's commit list
+# or a reachability read cannot be read.
+FM_PR_GITHUB_MERGE_COMMITS=
+github_read_merge_commits() {
+  local listed line sha parents parent status unique
+  FM_PR_GITHUB_MERGE_COMMITS=
+  listed=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/commits?per_page=100" \
+    --jq '.[] | select((.parents | length) > 1) | "\(.sha) \(.parents[1:] | map(.sha) | join(","))"' 2>/dev/null) || return 1
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    sha=${line%% *}
+    parents=${line#* }
+    unique=false
+    while IFS= read -r parent; do
+      [ -n "$parent" ] || continue
+      status=$(gh api "repos/$PR_OWNER/$PR_REPO/compare/$FM_PR_GITHUB_BASE...$parent" --jq .status 2>/dev/null) || return 1
+      case "$status" in
+        behind|identical) ;;
+        *) unique=true ;;
+      esac
+    done <<PARENTS
+${parents//,/$'\n'}
+PARENTS
+    [ "$unique" = false ] || FM_PR_GITHUB_MERGE_COMMITS="${FM_PR_GITHUB_MERGE_COMMITS:+$FM_PR_GITHUB_MERGE_COMMITS$'\n'}${sha:0:12}"
+  done <<LISTED
+$listed
+LISTED
+}
+
+# Refuse a squash or rebase (the default included) of a pull request that
+# carries a merge commit with history the base lacks, unless --allow-flatten
+# names a reason, which is recorded in the task's meta. An unreadable commit
+# list warns once and lets the merge continue.
+github_guard_merge_commits() {
+  local method listed
+  method=$(caller_merge_method "$@")
+  [ -n "$method" ] || method=squash
+  [ "$method" != merge ] || return 0
+  if ! github_read_merge_commits; then
+    echo "warning: could not read the commit list of $URL from the forge, so its merge commits were not checked before a $method merge" >&2
+    return 0
+  fi
+  [ -n "$FM_PR_GITHUB_MERGE_COMMITS" ] || return 0
+  listed=${FM_PR_GITHUB_MERGE_COMMITS//$'\n'/, }
+  if [ -n "$ALLOW_FLATTEN" ]; then
+    MERGE_META_LOCK=$(fm_meta_lock_path "$META") || return 1
+    fm_lock_acquire_wait "$MERGE_META_LOCK" || return 1
+    printf 'merge_flatten_override=%s\n' "$ALLOW_FLATTEN" >> "$META" || { fm_lock_release "$MERGE_META_LOCK" || true; MERGE_META_LOCK=; return 1; }
+    fm_lock_release "$MERGE_META_LOCK" || true
+    MERGE_META_LOCK=
+    printf 'warning: %s carries merge commit(s) %s and is being %s-merged under --allow-flatten: %s\n' \
+      "$URL" "$listed" "$method" "$ALLOW_FLATTEN" >&2
+    return 0
+  fi
+  echo "error: refusing a $method merge of $URL: it carries merge commit(s) $listed, and $method would flatten that history away; re-run with -- --merge, or pass --allow-flatten <reason> to flatten it deliberately" >&2
+  return 1
+}
+
 # Record before either forge call. This arms the merge poll without claiming a
 # landed outcome, so even a provider read failure after a real merge cannot
 # leave teardown without the PR identity it needs to verify the result.
@@ -2795,6 +2892,7 @@ case "$PROVIDER" in
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
     github_verify_mergeable_with_retry || exit 1
+    github_guard_merge_commits "$@" || exit 1
     require_admission_answers "$FM_PR_MERGE_HEAD" || exit 1
     # The away record is locked first, so this last presence and authority read
     # and the forge command below share one live-owner critical section.
