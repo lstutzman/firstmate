@@ -1,0 +1,26 @@
+## check (before)
+NM_DAEMON_ENV: the cache-TTL drop-in for no-mistakes-daemon-x.service is missing, so its claude -p runs keep the 1h prompt-cache TTL; install: "{run-worktree}/bin/fm-nm-daemon-env.sh" install (written now, applied at the next daemon restart, never restarts it)
+rc=0
+## install
+no-mistakes-daemon-x.service: wrote /tmp/tmp.wFt4ZtcFqf/u/no-mistakes-daemon-x.service.d/firstmate-cache-ttl.conf
+takes effect at the next daemon restart; the running daemon was not touched
+rc=0
+## install again
+no-mistakes-daemon-x.service: drop-in already current
+takes effect at the next daemon restart; the running daemon was not touched
+## check (after)
+rc=0
+## files
+/u/no-mistakes-daemon-other.service
+/u/no-mistakes-daemon-x.service
+/u/no-mistakes-daemon-x.service.d/firstmate-cache-ttl.conf
+# Managed by firstmate (bin/fm-nm-daemon-env.sh); do not edit.
+# The no-mistakes daemon passes its environment to every claude -p agent it starts.
+# 5m stops those runs paying the 1h cache-write premium for reads that never come.
+[Service]
+Environment="CLAUDE_CODE_PROMPT_CACHE_TTL=5m"
+## tamper
+NM_DAEMON_ENV: the cache-TTL drop-in for no-mistakes-daemon-x.service is different, so its claude -p runs keep the 1h prompt-cache TTL; install: "{run-worktree}/bin/fm-nm-daemon-env.sh" install (written now, applied at the next daemon restart, never restarts it)
+## usage
+usage: fm-nm-daemon-env.sh check|install|status
+rc=2

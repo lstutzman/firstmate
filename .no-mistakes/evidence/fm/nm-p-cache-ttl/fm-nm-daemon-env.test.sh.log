@@ -1,0 +1,9 @@
+1..7
+ok - check reports a missing drop-in as one actionable line and writes nothing
+ok - install writes the exact drop-in, reloads systemd only, and leaves other roots alone
+ok - install is idempotent
+ok - check reports a different drop-in and install repairs it
+ok - check is silent when no systemd unit matches the root
+ok - status reports the drop-in state and an unknown verb is a usage error
+ok - status reports yes, no and unknown from the running daemon's own environment
+FM_TEST_COMPLETE
