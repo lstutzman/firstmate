@@ -39,6 +39,8 @@ When any diagnostic needs captain attention, report the plain consequence and re
   This is the only sanctioned firstmate-initiated git write to the primary, and it is a non-destructive branch switch that strands nothing.
 - `NM_DAEMON_ENV: the cache-TTL drop-in for <unit> is missing|different` - the no-mistakes daemon unit has no current `CLAUDE_CODE_PROMPT_CACHE_TTL=5m` drop-in, so its `claude -p` runs keep paying for the 1h prompt-cache TTL.
   Run the printed `bin/fm-nm-daemon-env.sh install`; it writes the drop-in and reloads systemd but never restarts the daemon, so it takes effect at the next restart `no-mistakes update` or firstmate already performs, and `bin/fm-nm-daemon-env.sh status` shows whether the running daemon carries it yet.
+  On macOS the same line names the launchd plist and says the override or wrapper is missing, different or stale: `install` writes a wrapper and one `agent_path_override.claude` key in the no-mistakes `config.yaml` (the plist is never edited, because no-mistakes regenerates it), and never runs `launchctl`.
+  When the line says that key is already set to something else, or that `agent_path_override` is not a plain mapping (inline or tab-indented), `install` refuses and leaves it; decide by hand whether to wrap it or edit it.
   Never restart the daemon yourself to apply it while runs are active.
 - `STARTUP_MEMORY_BUDGET: invalid config/startup-memory-budget - <reason>` - the visible startup-memory budget is not a safe one-line positive decimal file; do not infer the default or propagate it.
   Correct the local primary file, then rerun session start so the normal convergence path can deliver the validated value to secondmate homes.
