@@ -780,6 +780,14 @@ test_sweeper_stale_cluster_is_not_offered_as_fresh() {
   assert_contains "$(row "$json" sweeper fp-minio .summary)" "stale: last seen 8.0 days before the run" "and its line says why"
   assert_equals "2026-11-03T06:15:54.4204642Z" "$(row "$json" sweeper fp-minio '.evidence.last_seen.prod')" "the last sighting is evidence"
   assert_equals "" "$(row "$json" sweeper fp-minio '.filing // "" | tostring | select(. != "")')" "nothing is filed for it (it is tracked, and stale)"
+  # with no started_at on the run, the time in its run id (sweep-20261111T0517Z) dates it
+  sweeper_world nostart; home=$WORLD_HOME
+  jq 'del(.latest.run.started_at)' "$TMP_ROOT/nostart/pages/_api_sweeper-results" > "$TMP_ROOT/nostart/pages/next" \
+    && mv "$TMP_ROOT/nostart/pages/next" "$TMP_ROOT/nostart/pages/_api_sweeper-results"
+  PC_SWEEPER_RUNS="$TMP_ROOT/nostart/sweeper-runs" run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
+  json="$home/data/officers/surgeon/$DATE.json"
+  assert_equals "wont-fix 8" "$(row "$json" sweeper fp-minio '[.class,(.evidence.stale_days|floor|tostring)]|join(" ")')" "a run with no started_at is dated by its run id"
+  assert_equals "needs-decision" "$(row "$json" sweeper fp-fresh '.class')" "and a cluster seen that morning stays fresh"
   pass "fm-officer surgeon: a cluster with no sighting in the window is not offered as fresh"
 }
 
@@ -812,6 +820,13 @@ test_sweeper_history_is_read_once_and_gaps_are_named() {
   assert_contains "$out" "Coverage gap: sweeper environment and last-seen: /api/sweeper-results carries neither field" "a missing bundle is a named gap"
   json="$home/data/officers/surgeon/$DATE.json"
   assert_equals "null null needs-decision medium" "$(row "$json" sweeper fp-minio '[(.evidence.environment|tostring),(.tracked|tostring),.class,.severity]|join(" ")')" "with neither source the cluster keeps its plain rating"
+  assert_contains "$out" "Coverage gap: fleet app: 1 earlier sweeper run(s) unreadable" "an earlier run that answers 404 is a named gap"
+  jq -n '{run: {run_id: "sweep-20261025T0517Z", intake: {bugs: [], linear: {filed: [{id: "PC-3659", fp: "fp-minio"}], updated: []}}}}' \
+    > "$TMP_ROOT/gaps/pages/_api_sweeper-results_sweep-20261025T0517Z"
+  out=$(PC_SWEEPER_RUNS="$TMP_ROOT/gaps/no-bundle-here" run_surgeon "$home") || fail "a second run must succeed"
+  assert_equals 2 "$(grep -c 'sweeper-results/sweep-20261025T0517Z' "$TMP_ROOT/gaps/curl.calls")" "the unreadable run is read again on the next run"
+  assert_equals "PC-3659" "$(row "$json" sweeper fp-minio '.tracked')" "and its Linear item is joined once it reads"
+  assert_not_contains "$out" "earlier sweeper run(s) unreadable" "and the gap clears"
   pass "fm-officer surgeon: earlier sweeper runs are read once and unreadable sources are named gaps"
 }
 

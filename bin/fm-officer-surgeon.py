@@ -55,7 +55,8 @@ Each finding is classified with the tables below and no model:
                         `environments` ({env: {count, first_seen, last_seen}}),
                         so with no bundle readable there is no bump and a
                         named `Coverage gap:`. A cluster whose newest last_seen is
-                        more than SWEEP_STALE_DAYS (3) before the run started is
+                        more than SWEEP_STALE_DAYS (3) before the run started
+                        (its started_at, else the time in its run id) is
                         stale: won't fix, never offered as fresh, and back in the
                         queue the day it is seen again.
 
@@ -372,7 +373,7 @@ def judge_sweeper(doc, history=None, bundle=None):
 
     history: {fp: Linear id} from earlier runs' linear lists; this run's lists win over it. bundle: sweeper_bundle(), the
     source of `environment` and last-seen when the bug itself carries none. A cluster last seen more than SWEEP_STALE_DAYS
-    before the run started is won't fix (stale), never a fresh finding.
+    before the run started (its started_at, else the time in its run id) is won't fix (stale), never a fresh finding.
     """
     latest = doc.get("latest")
     run = latest.get("run") if isinstance(latest, dict) else None
@@ -384,6 +385,8 @@ def judge_sweeper(doc, history=None, bundle=None):
     items.update({text(i.get("fp"), 100): text(i.get("id"), 20)
                   for k in ("filed", "updated", "cancelled", "dismissed") for i in dicts(linear_doc.get(k)) if i.get("fp")})
     started = utc_epoch(run.get("started_at"))
+    if started is None and SWEEP_RUN_ID.fullmatch(text(run.get("run_id"), 64)):
+        started = datetime.datetime.strptime(run["run_id"], "sweep-%Y%m%dT%H%MZ").replace(tzinfo=datetime.timezone.utc).timestamp()
     out = []
     for b in dicts(intake_doc.get("bugs")):
         disposition = text(b.get("disposition")).lower()
@@ -431,9 +434,6 @@ def sweeper_history(app, sweeps, state, gaps):
     failed = 0
     for row in todo[:SWEEP_HISTORY_READS]:
         got, doc = fetch(app, "/api/sweeper-results/%s" % row["runId"])
-        if got == "missing":
-            done.add(row["runId"])
-            continue
         run = doc.get("run") if got == "read" and isinstance(doc.get("run"), dict) else None
         lists = ((run or {}).get("intake") or {}).get("linear") if isinstance((run or {}).get("intake"), dict) else None
         if not isinstance(lists, dict):
