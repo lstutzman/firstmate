@@ -19,6 +19,8 @@
 # They also hold the fork opt-out: the repository variables FM_CI_SKIP_PUSH and
 # FM_CI_SKIP_MACOS let a fork skip the push run and the macOS job through a
 # job-level condition, while with neither set every job runs exactly as before.
+# FM_CI_NIGHTLY and FM_CI_MACOS_SCOPE are opt-in too, and FM_CI_RUNS_ON moves
+# the Linux jobs onto a fork's own runners.
 #
 # The workflow is parsed as YAML and its concurrency and job-level `if`
 # expressions are resolved against simulated pull_request and push contexts,
@@ -38,7 +40,8 @@ command -v ruby >/dev/null 2>&1 \
 
 # Evaluate the subset of GitHub's expression language that ci.yml uses -
 # string literals, context lookups (including object filters such as
-# labels.*.name, simulated as arrays), the status functions, contains(), !,
+# labels.*.name, simulated as arrays), the status functions, contains(),
+# fromJSON(), !,
 # ==, !=, &&, ||, and parentheses - against a simulated context hash, following the
 # documented operator precedence, the case-insensitive string comparison, and
 # the `a || b` fallback that returns the first truthy operand rather than a
@@ -49,6 +52,7 @@ command -v ruby >/dev/null 2>&1 \
 # shellcheck disable=SC2016  # the ${{ }} below is Ruby text, not a shell expansion
 EXPRESSION_RUBY='
 require "strscan"
+require "json"
 class Expression
   def self.evaluate(source, context)
     new(source, context).parse
@@ -154,6 +158,11 @@ class Expression
       status = @context.fetch("needs.status", "success")
       return value == "always()" || value == "#{status}()"
     end
+    if value == "fromJSON" && take?("(")
+      argument = parse_or
+      raise "missing closing parenthesis" unless take?(")")
+      return JSON.parse(argument.to_s)
+    end
     if value == "contains" && take?("(")
       haystack = parse_or
       raise "contains() takes two arguments" unless take?(",")
@@ -173,6 +182,8 @@ end
 # fork variables unset, and needed jobs successful. Short keys: event, action,
 # label (the label an event adds), labels (comma-separated labels on the PR),
 # association, head (head repository), number, run_id, skip_push, skip_macos,
+# runs_on, nightly, macos_scope (the FM_CI_RUNS_ON, FM_CI_NIGHTLY and
+# FM_CI_MACOS_SCOPE repository variables),
 # needs (success, failure, or cancelled: the needed jobs' results that job
 # conditions and the Full suite verdict read), outcome (how every job that runs
 # concludes, read only by published_checks). A push event clears the PR fields,
@@ -183,11 +194,11 @@ def simulated_context(workflow_name, overrides)
   o = {
     "event" => "pull_request", "action" => "synchronize", "label" => "",
     "labels" => "", "association" => "NONE", "head" => "contributor/firstmate",
-    "number" => "108", "run_id" => "900001", "skip_push" => "", "skip_macos" => "",
+    "number" => "108", "run_id" => "900001", "skip_push" => "", "skip_macos" => "", "runs_on" => "", "nightly" => "", "macos_scope" => "",
     "needs" => "success", "outcome" => "success",
     "base_sha" => "", "head_sha" => "", "before" => "", "sha" => "",
   }
-  if overrides.any? { |pair| pair == "event=push" }
+  if overrides.any? { |pair| pair == "event=push" || pair == "event=schedule" }
     o.merge!("action" => "", "association" => "", "head" => "", "number" => "")
   end
   overrides.each do |pair|
@@ -212,6 +223,9 @@ def simulated_context(workflow_name, overrides)
     "github.sha" => o["sha"],
     "vars.FM_CI_SKIP_PUSH" => o["skip_push"],
     "vars.FM_CI_SKIP_MACOS" => o["skip_macos"],
+    "vars.FM_CI_RUNS_ON" => o["runs_on"],
+    "vars.FM_CI_NIGHTLY" => o["nightly"],
+    "vars.FM_CI_MACOS_SCOPE" => o["macos_scope"],
     "needs.status" => o["needs"],
     "needs.*.result" => [o["needs"]],
     "simulated.outcome" => o["outcome"],
@@ -469,13 +483,15 @@ test_full_ci_label_runs_the_whole_suite() {
 test_trusted_runs_are_unchanged() {
   local all context actual out
   all=$(workflow_jobs | tr '\n' ' ') || fail "could not list ci.yml jobs"
-  for context in event=push association=OWNER association=MEMBER association=COLLABORATOR head=kunchenguid/firstmate; do
-    actual=$(jobs_running_under "$context" | tr '\n' ' ') || fail "could not resolve jobs for $context"
+  for context in event=push association=OWNER association=MEMBER association=COLLABORATOR head=kunchenguid/firstmate 'event=schedule nightly=1'; do
+    # shellcheck disable=SC2086  # a context may hold several KEY=VALUE words
+    actual=$(jobs_running_under $context | tr '\n' ' ') || fail "could not resolve jobs for $context"
     [ "$actual" = "$all" ] || fail "$context must run every job as before, ran: $actual"
-    out=$(run_full_suite_verdict "$context") \
+    # shellcheck disable=SC2086
+    out=$(run_full_suite_verdict $context) \
       || fail "the Full suite verdict must pass for $context when its lanes passed:"$'\n'"$out"
   done
-  pass "main pushes, own branches and write-access authors still run every job and pass the verdict"
+  pass "main pushes, own branches, write-access authors and the opted-in nightly run every job and pass the verdict"
 }
 
 # DOP-167: another label neither starts nor cancels a run: no job runs, not
@@ -638,36 +654,123 @@ LANES
   pass "each heavy lane keeps a 20 minute step tripwire under a $heavy minute job backstop"
 }
 
-# The fork opt-out is opt-in: with neither variable set every job runs on both
-# events, FM_CI_SKIP_PUSH=1 empties only the push run, and FM_CI_SKIP_MACOS=1
-# removes only the macOS job. A "-" in the table means the variable is unset.
-test_fork_skip_variables_are_opt_in() {
-  local all event skip_push skip_macos expected want actual
+# The fork switches are opt-in: with none set every job runs on main pushes and
+# pull requests, and a scheduled run does nothing. FM_CI_SKIP_PUSH=1 empties
+# only the push run, FM_CI_SKIP_MACOS=1 removes only the macOS job,
+# FM_CI_NIGHTLY=1 turns the nightly run into a full run, and
+# FM_CI_MACOS_SCOPE=nightly-main limits the macOS job to main pushes and the
+# nightly run. A "-" in the table means the variable is unset.
+test_fork_switches_are_opt_in() {
+  local all event skip_push skip_macos nightly scope expected want actual association
   all=$(workflow_jobs) || fail "could not list ci.yml jobs"
   printf '%s\n' "$all" | grep -qx macos-stock-bash \
     || fail "the macOS job is missing from ci.yml, so the table below would prove nothing"
-  while read -r event skip_push skip_macos expected; do
+  while read -r event skip_push skip_macos nightly scope expected; do
     [ "$skip_push" != - ] || skip_push=
     [ "$skip_macos" != - ] || skip_macos=
+    [ "$nightly" != - ] || nightly=
+    [ "$scope" != - ] || scope=
     case $expected in
       all) want=$all ;;
       none) want= ;;
       all-but-macos) want=$(printf '%s\n' "$all" | grep -vx macos-stock-bash) ;;
       *) fail "unknown expectation $expected" ;;
     esac
-    actual=$(jobs_running_under event="$event" association=OWNER skip_push="$skip_push" skip_macos="$skip_macos") \
-      || fail "could not resolve the job conditions for $event FM_CI_SKIP_PUSH=$skip_push FM_CI_SKIP_MACOS=$skip_macos"
+    association=
+    [ "$event" != pull_request ] || association=OWNER
+    actual=$(jobs_running_under event="$event" association="$association" skip_push="$skip_push" skip_macos="$skip_macos" nightly="$nightly" macos_scope="$scope") \
+      || fail "could not resolve the job conditions for $event"
     [ "$actual" = "$want" ] \
-      || fail "$event with FM_CI_SKIP_PUSH=$skip_push FM_CI_SKIP_MACOS=$skip_macos must run $expected jobs"$'\n'"ran: $(printf '%s' "$actual" | tr '\n' ' ')"$'\n'"wanted: $(printf '%s' "$want" | tr '\n' ' ')"
+      || fail "$event skip_push=$skip_push skip_macos=$skip_macos nightly=$nightly macos_scope=$scope must run $expected jobs"$'\n'"ran: $(printf '%s' "$actual" | tr '\n' ' ')"$'\n'"wanted: $(printf '%s' "$want" | tr '\n' ' ')"
   done <<'TABLE'
-push         - - all
-pull_request - - all
-push         1 - none
-pull_request 1 - all
-pull_request - 1 all-but-macos
-push         - 1 all-but-macos
+push         - - - - all
+pull_request - - - - all
+schedule     - - - - none
+schedule     1 - - - none
+push         1 - - - none
+pull_request 1 - - - all
+pull_request - 1 - - all-but-macos
+push         - 1 - - all-but-macos
+schedule     - - 1 - all
+schedule     1 - 1 - all
+schedule     - 1 1 - all-but-macos
+push         - - - nightly-main all
+pull_request - - - nightly-main all-but-macos
+schedule     - - 1 nightly-main all
+pull_request - - 1 nightly-main all-but-macos
 TABLE
-  pass "the fork skip variables change nothing unless set, and each skips only its own run or job"
+  pass "the fork switches change nothing unless set, and each switches only its own behaviour"
+}
+
+# The schedule trigger exists (the table above proves it does nothing unless
+# FM_CI_NIGHTLY=1), and the run neither joins a PR group nor shares the main push group, so a nightly
+# never cancels or is cancelled by a merge.
+test_nightly_schedule_has_its_own_concurrency_group() {
+  local cron nightly push
+  cron=$(ruby -ryaml -e '
+doc = YAML.load_file(ARGV[0])
+puts Array((doc[true] || doc["on"]).fetch("schedule", nil)).map { |entry| entry.fetch("cron") }
+' "$CI_WORKFLOW") || fail "could not read the schedule trigger"
+  [ -n "$cron" ] || fail "ci.yml has no schedule trigger for the nightly full run"
+  nightly=$(resolve_concurrency event=schedule run_id=900020) || fail "could not resolve schedule concurrency"
+  push=$(resolve_concurrency event=push run_id=900021) || fail "could not resolve push concurrency"
+  [ "$(group_of "$nightly")" != "$(group_of "$push")" ] \
+    || fail "the nightly run must not share the main push group ($(group_of "$push"))"
+  pass "a nightly schedule runs the full suite in its own concurrency group"
+}
+
+# Print the runs-on value every Linux job (all but the macOS one) resolves to
+# under one simulated FM_CI_RUNS_ON, one "<job> <labels>" line per job.
+runs_on_under() {  # [KEY=VALUE]...
+  ruby -ryaml -rjson -e "$EXPRESSION_RUBY" -e "$CONTEXT_RUBY" -e '
+doc = YAML.load_file(ARGV.shift)
+context = simulated_context(doc.fetch("name"), ARGV)
+doc.fetch("jobs").each do |name, job|
+  next if name == "macos-stock-bash"
+  puts "#{name} #{JSON.generate(Expression.evaluate(job.fetch("runs-on").to_s.sub(/\A\$\{\{(.*)\}\}\z/m) { Regexp.last_match(1) }, context))}"
+end
+' "$CI_WORKFLOW" "$@"
+}
+
+# With FM_CI_RUNS_ON unset every Linux job stays on ubuntu-24.04, so this can
+# merge while the repository is public; set, every Linux job follows it and
+# the macOS job stays on its GitHub-hosted runner.
+test_linux_jobs_follow_the_runs_on_variable() {
+  local unset_out set_out jobs
+  jobs=$(workflow_jobs | grep -vx macos-stock-bash) || fail "could not list ci.yml jobs"
+  unset_out=$(runs_on_under) || fail "could not resolve runs-on with FM_CI_RUNS_ON unset"
+  [ "$(printf '%s\n' "$unset_out" | grep -c .)" -eq "$(printf '%s\n' "$jobs" | grep -c .)" ] \
+    || fail "every Linux job must resolve a runs-on: $unset_out"
+  ! printf '%s\n' "$unset_out" | grep -qv ' "ubuntu-24.04"$' \
+    || fail "with FM_CI_RUNS_ON unset every Linux job must run on ubuntu-24.04: $unset_out"
+  set_out=$(runs_on_under 'runs_on=["self-hosted","fm-ci"]') || fail "could not resolve runs-on with FM_CI_RUNS_ON set"
+  ! printf '%s\n' "$set_out" | grep -qv ' \["self-hosted","fm-ci"\]$' \
+    || fail "with FM_CI_RUNS_ON set every Linux job must follow it: $set_out"
+  ruby -ryaml -e '
+exit(YAML.load_file(ARGV[0]).fetch("jobs").fetch("macos-stock-bash").fetch("runs-on") == "macos-latest" ? 0 : 1)
+' "$CI_WORKFLOW" || fail "the macOS job must stay on its GitHub-hosted runner"
+  pass "Linux jobs default to ubuntu-24.04 and follow FM_CI_RUNS_ON; macOS stays hosted"
+}
+
+# Self-hosted runners have no Node, so every job that installs an npm package
+# globally sets up a pinned Node first (Pi needs 22.19 or newer); the hosted
+# macOS runner brings its own.
+test_npm_jobs_set_up_a_pinned_node_first() {
+  local bad
+  bad=$(ruby -ryaml -e '
+doc = YAML.load_file(ARGV[0])
+doc.fetch("jobs").each do |name, job|
+  next if name == "macos-stock-bash"
+  steps = job.fetch("steps", [])
+  first_npm = steps.index { |step| step["run"].to_s.include?("npm install -g") } or next
+  node = steps.index { |step| step["uses"].to_s.start_with?("actions/setup-node@") }
+  version = node && steps[node].dig("with", "node-version").to_s
+  next if node && node < first_npm && version =~ /\A\d+\.\d+\.\d+\z/ && Gem::Version.new(version) >= Gem::Version.new("22.19.0")
+  puts name
+end
+' "$CI_WORKFLOW") || fail "could not inspect ci.yml steps"
+  [ -z "$bad" ] || fail "jobs that run npm install -g without an earlier pinned setup-node (22.19 or newer): $bad"
+  pass "every Linux job that installs npm packages pins Node first"
 }
 
 # Print true or false: whether one job's job-level `if` resolves true under
@@ -817,7 +920,10 @@ test_trusted_runs_are_unchanged
 test_unrelated_label_starts_no_job
 test_late_unrelated_label_run_never_masks_a_full_ci_pass
 test_unrelated_label_never_masks_an_earlier_failure
-test_fork_skip_variables_are_opt_in
+test_fork_switches_are_opt_in
+test_nightly_schedule_has_its_own_concurrency_group
+test_linux_jobs_follow_the_runs_on_variable
+test_npm_jobs_set_up_a_pinned_node_first
 test_timing_aggregate_still_runs_after_a_failed_lane
 test_every_job_has_a_finite_timeout
 test_every_job_belongs_to_exactly_one_timeout_tier
