@@ -108,14 +108,16 @@
 #
 # New maintainer comments/reviews (OWNER, MEMBER, COLLABORATOR) and issue
 # transitions to ready-for-pr persist as pending before any wake. Fleet PRs are
-# opened under the owner's own login, so a human comment by the contribution
-# author is admitted on a PR too, when its association is OWNER, MEMBER or
-# COLLABORATOR like any other maintainer's. What is dropped under that login is the
-# author's own machinery: an account of type Bot or a login ending [bot], a body
-# carrying the no-mistakes pipeline marker, a review with an empty body (the
-# wrapper of an inline reply), and an inline reply inside a thread, which is the
-# author answering and never an arrival. An author's signal is never tracked as
-# an unanswered thread. On a PR, comments, reviews and inline review comments whose
+# opened under the owner's own login, and agents post conversation comments under
+# that same login, so under the contribution author's login only formal review
+# activity is admitted, with an OWNER, MEMBER or COLLABORATOR association: a
+# submitted review with a non-empty body, and a root inline review comment.
+# Dropped under that login: every top-level conversation comment, a review with
+# an empty body (the wrapper of an inline reply), an inline reply inside a
+# thread (the author answering, never an arrival), an account of type Bot or a
+# login ending [bot], and a body carrying the no-mistakes pipeline marker. An
+# author's signal is never tracked as an unanswered thread. On a PR, comments,
+# reviews and inline review comments whose
 # author login is listed in the effective config/contribution-review-bots (one
 # exact login per line; blank and # lines ignored) are admitted too, marked
 # review_bot:true. Review-bot watching is opt-in: an absent or empty file admits
@@ -130,9 +132,10 @@
 # the URL, not parked), through fm-send.sh into its steering inbox. The message
 # names the PR, the comment URL and the author, tells the worker to act only
 # within its task's accepted intent, and carries the body as reviewer data. The
-# wake still goes to firstmate and names the routing. Review-bot findings are
-# never routed, a task that is parked or gone is never relaunched, and with no
-# live owner the wake alone remains. A routing that fails leaves the wake alone.
+# wake still goes to firstmate and names the routing. Review-bot findings and
+# unanswered re-raises are never routed, a task that is parked or gone is never
+# relaunched, and with no live owner the wake alone remains. A routing that fails leaves the wake alone.
+# A crash after the steer but before its wake is queued can steer it once more.
 # poll appends ordinary durable check wakes through fm-wake-lib and emits only
 # newly durable signals for the authenticated check to surface.
 # ack removes only the named pending token.
@@ -510,7 +513,8 @@ observe() { # canonical GitHub URL -> normalized JSON
               conclusion:(if .state == "pending" then null else .state end)} ]),
           events:((($issue_comments | map(. + {_signal:"comment"})) + ($reviews | map(. + {_signal:"review"})) + ($inline_comments | map(. + {_signal:"review-comment"})))
             | map(select(if .user.login == $c.user.login
-                  then (.author_association | IN("OWNER","MEMBER","COLLABORATOR")) and (automated | not) and (._signal != "review" or (.body // "") != "") and (.in_reply_to_id == null)
+                  then (.author_association | IN("OWNER","MEMBER","COLLABORATOR")) and (automated | not)
+                and ((._signal == "review" and (.body // "") != "") or (._signal == "review-comment" and .in_reply_to_id == null))
                   else ((.author_association | IN("OWNER","MEMBER","COLLABORATOR")) or (.user.login | IN($bots[]))) end)
               | (.created_at // .submitted_at // "") as $at | (.in_reply_to_id // .id) as $root | . as $e
               | {token:((._signal + ":") + (.id|tostring) + ":" + (.updated_at // .submitted_at // "") + ":" + (.state // "")),
@@ -589,7 +593,8 @@ publish_pending() { # task canonical-url record-file
     if fm_wake_queued_keys_locked check | grep -Fx "contribution-$key" >/dev/null; then queued=1; fi
     fm_lock_release "$FM_WAKE_QUEUE_LOCK" || return 1
     # Route before the wake so the wake can say so. A wake already queued means
-    # an earlier poll routed this signal, so a crash re-run never steers twice.
+    # an earlier poll routed this signal, so a re-poll does not steer it again;
+    # a crash between the steer and the wake append can still steer it twice.
     if [ "$queued" -eq 0 ] && route_to_owner "$task" "$url" "$record" "$token"; then
       reason="$reason routed $source"
     fi
