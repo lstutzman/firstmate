@@ -132,16 +132,24 @@ test_status_reads_the_running_daemon_environment() {
     return
   fi
   d=$(make_case running)
-  env CLAUDE_CODE_PROMPT_CACHE_TTL=5m sleep 30 & with=$!
-  env -u CLAUDE_CODE_PROMPT_CACHE_TTL CLAUDE_CODE_PROMPT_CACHE_TTL_X=5m sleep 30 & without=$!
-  echo "$with" > "$d/mainpid"
-  assert_contains "$(run "$d" status)" "carries CLAUDE_CODE_PROMPT_CACHE_TTL=5m: yes" "daemon started with the variable"
-  echo "$without" > "$d/mainpid"
-  assert_contains "$(run "$d" status)" "carries CLAUDE_CODE_PROMPT_CACHE_TTL=5m: no" "daemon started without the variable"
-  echo 0 > "$d/mainpid"
-  assert_contains "$(run "$d" status)" "carries CLAUDE_CODE_PROMPT_CACHE_TTL=5m: unknown" "a stopped daemon (MainPID 0)"
+  env CLAUDE_CODE_PROMPT_CACHE_TTL=5m sleep 30 </dev/null >/dev/null 2>&1 & with=$!
+  env -u CLAUDE_CODE_PROMPT_CACHE_TTL CLAUDE_CODE_PROMPT_CACHE_TTL_X=5m sleep 30 </dev/null >/dev/null 2>&1 & without=$!
+  local pid tries
+  for pid in "$with" "$without"; do
+    tries=0
+    while [ "$(cat "/proc/$pid/comm" 2>/dev/null)" != sleep ] && [ "$tries" -lt 100 ]; do
+      sleep 0.05; tries=$((tries + 1))
+    done
+  done
+  local out_with out_without out_stopped
+  echo "$with" > "$d/mainpid"; out_with=$(run "$d" status)
+  echo "$without" > "$d/mainpid"; out_without=$(run "$d" status)
+  echo 0 > "$d/mainpid"; out_stopped=$(run "$d" status)
   kill "$with" "$without" 2>/dev/null
   wait "$with" "$without" 2>/dev/null
+  assert_contains "$out_with" "carries CLAUDE_CODE_PROMPT_CACHE_TTL=5m: yes" "daemon started with the variable"
+  assert_contains "$out_without" "carries CLAUDE_CODE_PROMPT_CACHE_TTL=5m: no" "daemon started without the variable"
+  assert_contains "$out_stopped" "carries CLAUDE_CODE_PROMPT_CACHE_TTL=5m: unknown" "a stopped daemon (MainPID 0)"
   pass "status reports yes, no and unknown from the running daemon's own environment"
 }
 
