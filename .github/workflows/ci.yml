@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+  # Nightly full run of main; see the nightly and macOS note below.
+  schedule:
+    - cron: '17 3 * * *'
   pull_request:
     # fm/** covers PRs stacked on another ship branch (the fm/ default prefix).
     branches: [main, 'fm/**']
@@ -31,6 +34,18 @@ concurrency:
 # tiers and their rationale; tests/fm-ci-workflow.test.sh guards this workflow.
 # Each job comment identifies the tier implemented by its executable value.
 
+# Fork runners: every Linux job reads its runner from the repository variable
+# FM_CI_RUNS_ON, a JSON string or array of labels (for example
+# ["self-hosted","fm-ci"]); unset, it is ubuntu-24.04 as before. Self-hosted
+# runners carry no Node, so each job that runs npm install -g sets up a pinned
+# Node first (Pi needs 22.19 or newer). Only attach self-hosted runners to a
+# private repository: a public one would run outside pull requests on them.
+#
+# Nightly: a schedule run is a full run of main, so a fork that skips the push
+# run with FM_CI_SKIP_PUSH still gets a daily check. The macOS job runs on main
+# pushes and the nightly run only, never on a pull request, and
+# FM_CI_SKIP_MACOS still removes it everywhere.
+#
 # Fork opt-out: a fork sets the repository variable FM_CI_SKIP_PUSH to 1 to
 # skip the push run, and FM_CI_SKIP_MACOS to 1 to skip the macOS job, without
 # a tracked edit that drifts from upstream; with neither set, every job runs
@@ -57,8 +72,8 @@ concurrency:
 jobs:
   lint:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Lint ${{ matrix.partition }}
-    runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     # Normal tier (see the timeout policy above). Seven partitions packed on
     # source-closure weight model every runner at 9 to 13 minutes of measured
     # ShellCheck time; four byte-packed partitions took 11 to 24 and two 24 to 29.
@@ -122,7 +137,7 @@ jobs:
   # and that the portable serial CI shards partition that serial lane exactly.
   test-coverage:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Test coverage guard
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
     if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
     # Fast tier: the coverage guard is a seconds-long local computation.
     timeout-minutes: 5
@@ -135,8 +150,8 @@ jobs:
   # set only. Composition owner: bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
   tests-portable-parallel-1:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable parallel 1
-    runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     steps:
@@ -160,6 +175,9 @@ jobs:
           set -eu
           bin/fm-install-gitleaks.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.5'
       - name: Install tasks-axi
         run: |
           set -eu
@@ -182,8 +200,8 @@ jobs:
 
   tests-portable-parallel-2:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable parallel 2
-    runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     steps:
@@ -207,6 +225,9 @@ jobs:
           set -eu
           bin/fm-install-gitleaks.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.5'
       - name: Install tasks-axi
         run: |
           set -eu
@@ -228,8 +249,8 @@ jobs:
 
   tests-portable-parallel-3:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable parallel 3
-    runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     steps:
@@ -246,6 +267,9 @@ jobs:
           set -eu
           bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.5'
       - name: Install tasks-axi
         run: |
           set -eu
@@ -273,8 +297,8 @@ jobs:
   # whose "ofN" disagrees with it (docs/fm-test-portable-shards.md).
   tests-portable-serial:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable serial ${{ matrix.shard }}
-    runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     strategy:
@@ -311,6 +335,9 @@ jobs:
             exit 1
           }
           tmux -V
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.23.5'
       - name: Install tasks-axi for backlog-handoff delegation
         run: |
           set -eu
@@ -351,8 +378,8 @@ jobs:
   # the failure evidence and move the job to macOS rather than skip assertions.
   tests-herdr:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior tests (Herdr)
-    runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     # Heavy tier (see the timeout policy above): the last-resort job backstop.
     # The family-run step below owns the hang tripwire, so a wedged suite fails
     # there with the always() cleanup and timing upload still running.
@@ -476,8 +503,8 @@ jobs:
   # tripwire, and a serve/hold daemon sweep at teardown.
   tests-hc:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior tests (herdr-core)
-    runs-on: ubuntu-24.04
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     # Heavy tier (see the timeout policy above): the last-resort job backstop.
     # The family-run step below owns the hang tripwire, so a wedged suite fails
     # there with the always() cleanup and timing upload still running.
@@ -561,7 +588,7 @@ jobs:
   # Aggregate per-lane timing into one summary artifact for critical-path review.
   tests-timing-aggregate:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior timing aggregate
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
     # Fast tier: aggregation is seconds of work over lane artifacts.
     timeout-minutes: 5
     needs:
@@ -571,7 +598,7 @@ jobs:
       - tests-portable-serial
       - tests-herdr
       - tests-hc
-    if: ${{ always() && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ always() && !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     steps:
       - uses: actions/checkout@v6
       - name: Download lane timing artifacts
@@ -604,7 +631,7 @@ jobs:
   macos-stock-bash:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Stock macOS Bash snapshot compatibility
     runs-on: macos-latest
-    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && vars.FM_CI_SKIP_MACOS != '1' && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+    if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && vars.FM_CI_SKIP_MACOS != '1' && (github.event_name == 'push' || github.event_name == 'schedule') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     # Normal tier (see the timeout policy above).
     timeout-minutes: 30
     steps:
@@ -663,7 +690,7 @@ jobs:
 
   invariants:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Repo invariants
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
     if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
     # Fast tier: the invariant checks are seconds-long file comparisons and
     # one gitleaks scan of the commits this event adds (see docs/secret-scan.md).
@@ -727,7 +754,7 @@ jobs:
   # from its older event could finish after, and mask, a later full-ci pass.
   full-suite:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Full suite
-    runs-on: ubuntu-24.04
+    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
     # Fast tier: the verdict reads its needed jobs' results.
     timeout-minutes: 5
     needs:
@@ -745,7 +772,7 @@ jobs:
     steps:
       - name: Require the full-ci go-ahead and passing lanes
         env:
-          FM_CI_FULL: ${{ (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
+          FM_CI_FULL: ${{ (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
           FM_CI_LANES_FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: |
           set -eu

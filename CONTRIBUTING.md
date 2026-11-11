@@ -155,6 +155,10 @@ Family selection is the ordinary local path; `--all` is deliberate full regressi
 CI owns broad regression across required portable parallel shards, the portable serial lane's separate-runner shards, the Herdr lane, lint, invariants, the coverage guard, and stock macOS Bash compatibility in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 Pushing a new head to a pull request cancels that pull request's still-running CI so only the current head is validated, and a newer push to `main` cancels the older `main` run so only the newest merge's run finishes; the workflow owns that contract, the `full-ci` gate described under [The `full-ci` label](#the-full-ci-label), and their rationale.
 A fork can set the repository variable `FM_CI_SKIP_PUSH` to `1` to skip the push run of `CI`, and `FM_CI_SKIP_MACOS` to `1` to skip the stock macOS Bash job, without a tracked edit that drifts from upstream.
+A nightly schedule runs the full suite on `main`, so a fork that skips the push run still gets a daily check.
+The stock macOS Bash job runs on `main` pushes and the nightly run only, never on a pull request.
+A fork can set the repository variable `FM_CI_RUNS_ON` to a JSON string or array of runner labels (for example `["self-hosted","fm-ci"]`) to move every Linux job onto its own runners; unset, they run on `ubuntu-24.04`.
+Only attach self-hosted runners to a private repository, because a public one would run outside pull requests on them.
 Each skip is a job-level condition, so a skipped job reports success rather than leaving the pull request pending, and with neither variable set every job runs on upstream and on every fork exactly as before.
 Use `bin/fm-test-run.sh --list-lanes` for exact lane names and `--help` for `--jobs` rules and required gate-skip flags when reproducing a lane locally.
 Leave the `sleep 0.1` cadence in the suites' bounded condition waits alone.
