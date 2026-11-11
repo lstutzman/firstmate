@@ -158,7 +158,7 @@ def item(identifier, title, home, text, tags=None):
     ids = sorted(set(LINEAR_ID.findall(text)))
     return {"id": identifier, "title": title, "owner_home": home,
             "linear_id": ids[0] if len(ids) == 1 else None,
-            "linear_ids": ids, "authorising_class": None, "reason": "",
+            "linear_ids": ids, "authorising_class": None, "tag_source": None, "reason": "",
             "evidence": [], "priority": 0, "rank": None, "execute": None, "tags": tags}
 
 
