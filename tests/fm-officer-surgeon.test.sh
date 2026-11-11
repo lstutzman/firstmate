@@ -815,7 +815,7 @@ test_sweeper_history_is_read_once_and_gaps_are_named() {
   assert_equals 1 "$(grep -c 'sweeper-results/sweep-20261025T0517Z' "$TMP_ROOT/hist/curl.calls")" "the lane state means it is not read again"
   # no bundle and an unreadable earlier run: both are named gaps, and nothing is invented
   sweeper_world gaps; home=$WORLD_HOME
-  /usr/bin/trash "$TMP_ROOT/gaps/pages/_api_sweeper-results_sweep-20261025T0517Z"
+  mv "$TMP_ROOT/gaps/pages/_api_sweeper-results_sweep-20261025T0517Z" "$TMP_ROOT/gaps/unreadable-run-page"
   out=$(PC_SWEEPER_RUNS="$TMP_ROOT/gaps/no-bundle-here" run_surgeon "$home") || fail "surgeon run must succeed"
   assert_contains "$out" "Coverage gap: sweeper environment and last-seen: /api/sweeper-results carries neither field" "a missing bundle is a named gap"
   json="$home/data/officers/surgeon/$DATE.json"
