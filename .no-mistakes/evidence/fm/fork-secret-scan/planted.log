@@ -1,0 +1,5 @@
+fm-secret-scan: refused: possible secret in commits HEAD --not --remotes=origin (values never printed):
+  leak.txt:2  github-pat  commit 3be3fa62
+
+fm-secret-scan: rotate a real secret and remove it from the branch; never allowlist it (docs/secret-scan.md).
+planted exit=1
