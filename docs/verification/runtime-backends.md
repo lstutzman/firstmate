@@ -2001,6 +2001,18 @@ It reported `steal_live=0 floor_verdict=0 default-session-tripwire=armed`, with 
 
 Part C is the case the suite could not reach before: a doomed pane whose shell holds a persistent background child fails the lone-idle-shell proof on every sample, so the plan takes the plain explicit close, in the geometry where the closing workspace's right neighbour is a spacer rather than the focused anchor.
 On 0.7.5 that fallback exposed a bounded four-sample wrong-focus window and restored the anchor exactly; on 0.8.0 the same fallback exposed none, which is why default-on projection is floored at 0.8.0 rather than mitigated further below it.
+Part C reads wrong focus from Herdr's own focus event log, bracketed by start and end sentinel focus changes, instead of polling the focus.
+Nine focus changes made back to back about ten milliseconds apart produced nine `workspace_focused` events in order with none coalesced, on Herdr 0.7.4 protocol 16 (delivered about ten a second, after a replay of the session's earlier focus changes) and on Herdr 0.9.5 protocol 22 (delivered live).
+The same guarded named-lab command ran on 2026-11-11 on Linux x86_64, with the pinned 0.7.4 binary from `bin/fm-install-herdr.sh` first on `PATH` and then with 0.9.5.
+It reported the following lines, where the two wrong-focus events on 0.7.4 are the closing workspace's neighbour and its tab taking focus:
+
+```text
+ok - fallback on a defective release: a bounded wrong-focus window of 2 focus events was fully restored to the anchor
+evidence: herdr=0.7.4 protocol=16 steal_live=1 floor_verdict=1 fleet-session-tripwire=armed
+ok - fallback on a focus-preserving release: the plain explicit close preserved exact focus throughout
+evidence: herdr=0.9.5 protocol=22 steal_live=0 floor_verdict=0 fleet-session-tripwire=armed
+```
+
 The suite also cross-checks its own Part A measurement against the floor classifier on whatever release it runs, so a drifted protocol-to-release mapping fails there rather than silently gating on the wrong thing.
 
 ### Attached foreground viewer
