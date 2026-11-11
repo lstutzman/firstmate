@@ -16,11 +16,33 @@
 #   fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch]
 #     [--expected-head <full-sha>]
 #     [--allow-red <check>] [--allow-missing <check>] [--allow-no-pipeline]
-#     [-- <forge merge flags>]
+#     [--allow-flatten <reason>] [-- <forge merge flags>]
 #   fm-pr-merge.sh -h | --help
 #
 # Merge method on GitHub defaults to --squash when the caller passes none of
 # --squash, --merge, --rebase, or --method after the optional -- separator.
+# A GitHub pull request whose commits include any merge commit is refused under
+# the default method, because a squash flattens the merge and loses its
+# ancestry, and its parents cannot tell an upstream sync from the base merged in
+# to update the branch: re-run with "-- --merge" to keep the history, or with
+# "-- --squash" when the merge only brought the base in. An explicit squash or
+# rebase is still refused when a merge commit brings in history the base branch
+# lacks (an extra parent the base does not contain). An attended
+# --allow-flatten <reason>, given once, permits the flattening and records the
+# reason as merge_flatten_override= in the task's meta once the forge accepts
+# the merge; it is refused while the away-posture record exists, for an office,
+# and for --stack. A --stack merge applies the same check to every member
+# before anything merges, and refuses the whole stack, naming the member.
+# The one exception is the merge commit this script's own --update-branch
+# created for the task: when the update lands, it appends
+# merge_update_branch=<new head> <base tip> to the task's meta, the base tip
+# read just before the update was requested, and a merge commit whose sha is
+# that new head and whose only extra parent is that base tip does not count.
+# Any other merge commit, including one pushed on top of the update, still does.
+# When the forge's commit list cannot be read (GitHub lists at most 250 commits
+# of a pull request, so a longer one counts as unreadable), the default method
+# is refused and an explicit method is asked for; an explicitly named method
+# proceeds after one warning.
 # On Forgejo the merge style defaults to the repository's own
 # default_merge_style, read live, and a merge is refused when it cannot be read.
 # A GitHub merge is refused unless every pre-merge condition holds, each read
@@ -100,7 +122,9 @@
 # The REST update is bound to the verified old head with expected_head_sha;
 # a concurrent push refuses the update without changing that replacement head,
 # and this request never retries against the newly observed head.
-# An accepted update uses GitHub's merge-commit default. Under the merge and
+# An accepted update uses GitHub's merge-commit default, recorded as
+# merge_update_branch= so a later run's merge-commit check does not count it
+# (see the merge-method paragraph above). Under the merge and
 # away locks, a shared polling budget (15 seconds by default) covers waiting for
 # the new head to appear, recording it, and waiting for its checks and a transient
 # UNKNOWN mergeable state to settle. Every poll repeats the full preflight,
@@ -301,7 +325,7 @@
 # its verification and the merge is not refused by the forge; that tree check is
 # what detects any such unverified content reaching the trunk.
 #
-# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch] [--expected-head <full-sha>] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [-- <extra forge merge args>]
+# Usage: fm-pr-merge.sh <task-id> <pr-url> [--attended-override] [--update-branch] [--expected-head <full-sha>] [--allow-red <check-name>] [--allow-missing <check-name>] [--allow-no-pipeline] [--allow-flatten <reason>] [-- <extra forge merge args>]
 #        fm-pr-merge.sh --stack <gated-head-sha> <top-task-id> <top-pr-url> --member <task-id> <pr-url> [--member <task-id> <pr-url>]... [-- --squash|--merge|--rebase]
 #
 # On GitLab, this script confirms the MR is actually merged before reporting it;
@@ -346,6 +370,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 STACK_MODE=false
 STACK_GATED_HEAD=
 STACK_MERGE_METHOD=squash
+STACK_METHOD_EXPLICIT=false
 STACK_IDS=()
 STACK_URLS=()
 STACK_LOCKS=()
@@ -408,6 +433,7 @@ shift 2
 ATTENDED_OVERRIDE=false
 UPDATE_BRANCH=false
 ALLOW_NO_PIPELINE=false
+ALLOW_FLATTEN=
 ALLOW_RED=()
 ALLOW_MISSING=()
 EXPECTED_HEAD=
@@ -456,6 +482,21 @@ while [ "$#" -gt 0 ]; do
       STACK_URLS+=("$3")
       shift 3
       ;;
+    --allow-flatten)
+      [ -z "$ALLOW_FLATTEN" ] || { echo "error: --allow-flatten may be specified only once" >&2; exit 2; }
+      case "${2:-}" in
+        ''|--*) echo "error: --allow-flatten requires a reason as a separate argument" >&2; exit 2 ;;
+      esac
+      case "$2" in
+        *[![:print:]]*) echo "error: --allow-flatten reason must be one printable line" >&2; exit 2 ;;
+      esac
+      ALLOW_FLATTEN=$2
+      shift 2
+      ;;
+    --allow-flatten=*)
+      echo "error: --allow-flatten requires a separate reason argument" >&2
+      exit 2
+      ;;
     --allow-no-pipeline)
       ALLOW_NO_PIPELINE=true
       shift
@@ -488,6 +529,10 @@ while [ "$#" -gt 0 ]; do
 done
 if [ "$UPDATE_BRANCH" = true ] && [ "$PROVIDER" != github ]; then
   echo "error: --update-branch applies only to GitHub" >&2
+  exit 2
+fi
+if [ -n "$ALLOW_FLATTEN" ] && [ "$PROVIDER" != github ]; then
+  echo "error: --allow-flatten applies only to GitHub" >&2
   exit 2
 fi
 if [ -n "$EXPECTED_HEAD" ] && ! fm_pr_head_valid "$EXPECTED_HEAD"; then
@@ -541,8 +586,8 @@ stack_validate_request() {
     echo "error: --stack merges only a GitHub stacked pull request set" >&2
     return 1
   fi
-  if [ "$ATTENDED_OVERRIDE" = true ] || [ "${#ALLOW_RED[@]}" -gt 0 ] || [ "${#ALLOW_MISSING[@]}" -gt 0 ]; then
-    echo "error: --stack does not accept --attended-override, --allow-red, or --allow-missing; every guard stays absolute for a stack" >&2
+  if [ "$ATTENDED_OVERRIDE" = true ] || [ "${#ALLOW_RED[@]}" -gt 0 ] || [ "${#ALLOW_MISSING[@]}" -gt 0 ] || [ -n "$ALLOW_FLATTEN" ]; then
+    echo "error: --stack does not accept --attended-override, --allow-red, --allow-missing, or --allow-flatten; every guard stays absolute for a stack" >&2
     return 1
   fi
   if [ -n "$EXPECTED_HEAD" ]; then
@@ -556,6 +601,7 @@ stack_validate_request() {
   case "$#" in
     0) ;;
     1)
+      STACK_METHOD_EXPLICIT=true
       case "$1" in
         --squash) STACK_MERGE_METHOD=squash ;;
         --merge) STACK_MERGE_METHOD=merge ;;
@@ -826,6 +872,7 @@ if [ -n "$FM_OFFICE_ID" ]; then
   [ "$ATTENDED_OVERRIDE" = false ] || office_refuse "is never an attended captain, so --attended-override is refused"
   [ "${#ALLOW_RED[@]}" -eq 0 ] || office_refuse "is never an attended captain, so --allow-red is refused"
   [ "${#ALLOW_MISSING[@]}" -eq 0 ] || office_refuse "is never an attended captain, so --allow-missing is refused"
+  [ -z "$ALLOW_FLATTEN" ] || office_refuse "is never an attended captain, so --allow-flatten is refused"
   MERGE_OFFICE_PROJECT=$(basename "${MERGE_PROJECT:-}")
   { [ -n "$MERGE_PROJECT" ] && fm_office_in "$MERGE_OFFICE_PROJECT" "$FM_OFFICE_MERGE"; } \
     || office_refuse "may merge only ${FM_OFFICE_MERGE:-no project} (its authority record's merge=), not ${MERGE_OFFICE_PROJECT:-a task with no recorded project}"
@@ -1736,10 +1783,13 @@ github_verify_mergeable_with_retry() {
 
 github_update_behind_branch() {
   local old_head=$FM_PR_MERGE_HEAD new_head='' attempt_error status
-  local poll deadline
+  local poll deadline base_tip meta_lock recorded
   poll=$(github_mergeable_retry_delay)
   deadline=$((SECONDS + poll * 5))
   attempt_error=$(mktemp "${TMPDIR:-/tmp}/fm-pr-merge-update.XXXXXX") || return 1
+  base_tip=$(gh api "repos/$PR_OWNER/$PR_REPO/branches/$(github_urlencode_path_segment "$FM_PR_GITHUB_BASE")" 2>/dev/null \
+    | jq -r '.commit.sha // empty' 2>/dev/null) || base_tip=
+  fm_pr_head_valid "$base_tip" || base_tip=
   if ! gh api --method PUT "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/update-branch" \
     -f "expected_head_sha=$old_head"; then
     rm -f "$attempt_error"
@@ -1759,6 +1809,21 @@ github_update_behind_branch() {
         echo "error: could not record the updated GitHub head $new_head" >&2
         rm -f "$attempt_error"
         return 1
+      fi
+      if [ -n "$base_tip" ]; then
+        if ! meta_lock=$(fm_meta_lock_path "$META") || ! fm_lock_acquire_wait "$meta_lock"; then
+          echo "error: could not record the branch update $new_head" >&2
+          rm -f "$attempt_error"
+          return 1
+        fi
+        recorded=true
+        printf 'merge_update_branch=%s %s\n' "$new_head" "$base_tip" >> "$META" || recorded=false
+        fm_lock_release "$meta_lock" || recorded=false
+        if [ "$recorded" != true ]; then
+          echo "error: could not record the branch update $new_head" >&2
+          rm -f "$attempt_error"
+          return 1
+        fi
       fi
     fi
     if [ -n "$new_head" ] && [ "$FM_PR_GITHUB_LIVE_HEAD" != "$new_head" ]; then
@@ -2166,12 +2231,17 @@ require_current_away_authority() {
     echo "error: --allow-missing is attended-only; while the away-posture record exists every required check must report" >&2
     return 2
   fi
+  if [ "$FM_PR_AWAY_POSTURE" = true ] && [ -n "$ALLOW_FLATTEN" ]; then
+    echo "error: --allow-flatten is attended-only; while the away-posture record exists a squash or rebase of merge commits is refused" >&2
+    return 2
+  fi
   if [ "$FM_PR_AWAY_POSTURE" = true ] && [ "$ALLOW_NO_PIPELINE" = true ]; then
     echo "error: --allow-no-pipeline is attended-only; while the away-posture record exists a GitLab merge requires a successful head pipeline" >&2
     return 2
   fi
 }
 
+FM_PR_FLATTEN_RECORD=
 persist_accepted_merge_authority() {
   local status=0
   MERGE_META_LOCK=$(fm_meta_lock_path "$META") || return 1
@@ -2179,6 +2249,9 @@ persist_accepted_merge_authority() {
   fm_merge_authority_persist "$STATE" "$ID" "$META" \
     "$PROVIDER" "$PR_HOST" "$PR_PATH" "$PR_NUMBER" "$FM_PR_MERGE_AUTHORITY" \
     || status=1
+  if [ "$status" -eq 0 ] && [ -n "$FM_PR_FLATTEN_RECORD" ]; then
+    printf 'merge_flatten_override=%s\n' "$FM_PR_FLATTEN_RECORD" >> "$META" || status=1
+  fi
   fm_lock_release "$MERGE_META_LOCK" || status=1
   MERGE_META_LOCK=
   if [ "$status" -eq 0 ]; then
@@ -2498,6 +2571,8 @@ stack_verify_members() {
       printf 'error: refusing to merge the stack: the top %s is at %s, not the gated head %s\n' \
         "$URL" "$FM_PR_MERGE_HEAD" "$STACK_GATED_HEAD" >&2
       failed=1
+    elif ! github_guard_merge_commits "$STACK_MERGE_METHOD" "$STACK_METHOD_EXPLICIT"; then
+      failed=1
     fi
     STACK_BASES[i]=$FM_PR_GITHUB_BASE
     i=$((i + 1))
@@ -2746,6 +2821,84 @@ stack_merge() {
   stack_verify_merged_tree || return 1
 }
 
+# Every merge commit in the pull request's own range except one this script's
+# --update-branch recorded for the task, one short sha per line in
+# FM_PR_GITHUB_MERGE_COMMITS, and those whose extra parents the base branch
+# does not already contain in FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS. Returns 1
+# when the forge's commit list or a reachability read cannot be read, or when
+# the list may be cut short: GitHub lists at most 250 commits of a pull request.
+FM_PR_GITHUB_MERGE_COMMITS=
+FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS=
+github_read_merge_commits() {
+  local listed line sha parents parent status unique updates count=0
+  FM_PR_GITHUB_MERGE_COMMITS=
+  FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS=
+  updates=$(sed -n 's/^merge_update_branch=//p' "$META" 2>/dev/null) || updates=
+  listed=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/commits?per_page=100" \
+    --jq '.[] | "\(.sha) \(.parents[1:] | map(.sha) | join(","))"' 2>/dev/null) || return 1
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    count=$((count + 1))
+    [ "$count" -lt 250 ] || return 1
+    sha=${line%% *}
+    parents=${line#* }
+    [ -n "$parents" ] || continue
+    ! printf '%s\n' "$updates" | grep -qxF "$sha $parents" || continue
+    FM_PR_GITHUB_MERGE_COMMITS="${FM_PR_GITHUB_MERGE_COMMITS:+$FM_PR_GITHUB_MERGE_COMMITS$'\n'}${sha:0:12}"
+    unique=false
+    while IFS= read -r parent; do
+      [ -n "$parent" ] || continue
+      status=$(gh api "repos/$PR_OWNER/$PR_REPO/compare/$FM_PR_GITHUB_BASE...$parent" --jq .status 2>/dev/null) || return 1
+      case "$status" in
+        behind|identical) ;;
+        *) unique=true ;;
+      esac
+    done <<PARENTS
+${parents//,/$'\n'}
+PARENTS
+    [ "$unique" = false ] || FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS="${FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS:+$FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS$'\n'}${sha:0:12}"
+  done <<LISTED
+$listed
+LISTED
+}
+
+# Refuse the default method for the selected pull request when it carries any
+# merge commit, and an explicit squash or rebase when a merge commit brings in
+# history the base lacks, unless --allow-flatten names a reason, which is
+# recorded in the task's meta once the forge accepts the merge. Args: <method>
+# <explicit: true when the caller named the method>. An unreadable commit list
+# refuses the default method and only warns for an explicit one.
+github_guard_merge_commits() {
+  local method=$1 explicit=$2 listed hint
+  [ "$method" != merge ] || return 0
+  if ! github_read_merge_commits; then
+    if [ "$explicit" = true ]; then
+      echo "warning: could not read the full commit list of $URL from the forge, so its merge commits were not checked before the requested $method merge" >&2
+      return 0
+    fi
+    echo "error: refusing the default $method merge of $URL: its full commit list could not be read from the forge, so whether it carries merge commits is unknown; re-run with an explicit method: -- --merge to keep any merge commits, or -- --$method to flatten" >&2
+    return 1
+  fi
+  [ -n "$FM_PR_GITHUB_MERGE_COMMITS" ] || return 0
+  listed=${FM_PR_GITHUB_MERGE_COMMITS//$'\n'/, }
+  hint=', or pass --allow-flatten <reason> to flatten it deliberately'
+  [ "$STACK_MODE" != true ] || hint=
+  if [ "$explicit" != true ] && [ -z "$ALLOW_FLATTEN" ]; then
+    echo "error: refusing the default $method merge of $URL: it carries merge commit(s) $listed, and $method would flatten that history away; re-run with an explicit method: -- --merge to keep the history (an upstream sync), or -- --$method if the merge only brought the base in and flattening is intended$hint" >&2
+    return 1
+  fi
+  [ "$explicit" != true ] || [ -n "$FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS" ] || return 0
+  if [ -n "$ALLOW_FLATTEN" ]; then
+    FM_PR_FLATTEN_RECORD=$ALLOW_FLATTEN
+    printf 'warning: %s carries merge commit(s) %s and is being %s-merged under --allow-flatten: %s\n' \
+      "$URL" "$listed" "$method" "$ALLOW_FLATTEN" >&2
+    return 0
+  fi
+  listed=${FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS//$'\n'/, }
+  echo "error: refusing a $method merge of $URL: it carries merge commit(s) $listed that bring in history the base lacks, and $method would flatten that history away; re-run with -- --merge$hint" >&2
+  return 1
+}
+
 if [ "$STACK_MODE" = true ]; then
   stack_status=0
   stack_merge || stack_status=$?
@@ -2795,6 +2948,9 @@ case "$PROVIDER" in
     fi
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
     github_verify_mergeable_with_retry || exit 1
+    github_merge_explicit=false
+    [ -z "$FM_PR_GITHUB_CALLER_METHOD" ] || github_merge_explicit=true
+    github_guard_merge_commits "${FM_PR_GITHUB_CALLER_METHOD:-squash}" "$github_merge_explicit" || exit 1
     require_admission_answers "$FM_PR_MERGE_HEAD" || exit 1
     # The away record is locked first, so this last presence and authority read
     # and the forge command below share one live-owner critical section.

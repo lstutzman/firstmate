@@ -20,6 +20,7 @@ H3=3333333333333333333333333333333333333333
 MERGE_COMMIT=4444444444444444444444444444444444444444
 GATED_TREE=5555555555555555555555555555555555555555
 OTHER_TREE=6666666666666666666666666666666666666666
+UPSTREAM=7777777777777777777777777777777777777777
 
 # One live pull request view. Args: file head base [rollup-json] [draft]
 write_pr_view() {
@@ -104,6 +105,18 @@ add_stack_gh_mock() {
 C=$FM_TEST_CASE
 printf '%s\n' "$*" >> "$C/gh.log"
 number_of() { printf '%s' "${1##*/}"; }
+# Serve a raw API response (the file, else the default JSON) through the
+# caller's --jq filter as gh does.
+gh_api_jq() {
+  local file=$1 default=$2 filter='' prev=''
+  shift 2
+  for arg in "$@"; do
+    [ "$prev" != --jq ] || filter=$arg
+    prev=$arg
+  done
+  if [ -f "$file" ]; then cat "$file"; else printf '%s\n' "$default"; fi \
+    | if [ -n "$filter" ]; then jq -r "$filter"; else cat; fi
+}
 case "${1:-} ${2:-}" in
   "pr view")
     n=$(number_of "$3")
@@ -140,6 +153,12 @@ case " $* " in
     exit 0
     ;;
   *"/stacks?pull_request="*) cat "$C/stacks.json"; exit 0 ;;
+  *"/compare/"*"...7777777777777777777777777777777777777777"*)
+    # The upstream history a member's merge commit brings in, which no
+    # member's base contains.
+    gh_api_jq "$C/compare-upstream.json" '{"status":"diverged","ahead_by":5,"behind_by":1}' "$@"
+    exit $?
+    ;;
   *"/compare/"*) cat "$C/compare.json"; exit 0 ;;
   *"/contents/.github/required-checks.list"*)
     for arg in "$@"; do
@@ -151,6 +170,13 @@ case " $* " in
     ;;
   *"/rules/branches/"*) cat "$C/rules.json"; exit 0 ;;
   *"/branches/"*) cat "$C/branch.json"; exit 0 ;;
+  *"/pulls/"*"/commits"*)
+    for arg in "$@"; do
+      case "$arg" in repos/*/pulls/*/commits*) n=${arg#*/pulls/}; n=${n%%/*} ;; esac
+    done
+    gh_api_jq "$C/commits-$n.json" '[]' "$@"
+    exit $?
+    ;;
   *"/pulls/"*"/files"*)
     for arg in "$@"; do
       case "$arg" in repos/*/pulls/*/files*) n=${arg#*/pulls/}; n=${n%%/*} ;; esac
@@ -527,6 +553,40 @@ SH
   pass "a stack member whose changes flag an admission class needs the captain's answer for that PR and class set"
 }
 
+
+# A member carrying a merge commit that brings in history its base lacks (an
+# upstream sync) would be flattened by the stack's squash or rebase, so the
+# whole stack is refused before any merge request, naming that member; only an
+# explicit --merge lets it through.
+test_stack_member_with_an_upstream_merge_commit_refuses_the_whole_stack() {
+  local case_dir rc method
+  for method in '' --squash --rebase; do
+    case_dir=$(make_stack_case "upstream-merge${method:-default}")
+    printf '[{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' "$H2" "$H1" "$UPSTREAM" > "$case_dir/commits-2.json"
+    rc=0
+    if [ -n "$method" ]; then
+      run_default_stack "$case_dir" -- "$method" || rc=$?
+    else
+      run_default_stack "$case_dir" || rc=$?
+    fi
+    expect_code 1 "$rc" "upstream-merge ${method:-default}: a flattening stack member must refuse the stack"
+    assert_grep "$REPO_URL/pull/2: it carries merge commit(s) ${H2:0:12}" "$case_dir/stderr" \
+      "upstream-merge ${method:-default}: the refusal did not name the member and its merge commit"
+    assert_grep '-- --merge' "$case_dir/stderr" "upstream-merge ${method:-default}: the refusal did not offer --merge"
+    assert_no_grep 'allow-flatten <reason>' "$case_dir/stderr" \
+      "upstream-merge ${method:-default}: the refusal offered --allow-flatten, which a stack refuses"
+    assert_no_merge_request "$case_dir" "upstream-merge ${method:-default}"
+  done
+
+  case_dir=$(make_stack_case upstream-merge-merge)
+  printf '[{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' "$H2" "$H1" "$UPSTREAM" > "$case_dir/commits-2.json"
+  rc=0
+  run_default_stack "$case_dir" -- --merge || rc=$?
+  expect_code 0 "$rc" "upstream-merge-merge: an explicit --merge must merge the stack ($(cat "$case_dir/stderr"))"
+  assert_grep "-f merge_method=merge" "$case_dir/gh.log" "upstream-merge-merge: --merge was not forwarded"
+  pass "a stack member carrying an upstream merge commit refuses the whole stack unless merged with --merge"
+}
+
 test_stack_merges_and_records_every_member
 test_stack_merge_method_flag_is_forwarded
 test_top_head_must_equal_gated_head
@@ -547,3 +607,4 @@ test_merged_tree_mismatch_is_actionable
 test_away_record_refuses_stack_mode
 test_invalid_stack_requests_refuse_before_any_read
 test_stack_member_with_a_flagged_class_needs_the_captains_answer
+test_stack_member_with_an_upstream_merge_commit_refuses_the_whole_stack

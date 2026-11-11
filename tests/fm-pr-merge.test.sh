@@ -181,6 +181,18 @@ SH
   cat > "$case_dir/fakebin/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
+# Serve a raw API response (the file, else the default JSON) through the
+# caller's --jq filter as gh does, so the script's own filter is exercised.
+gh_api_jq() {
+  local file=$1 default=$2 filter='' prev=''
+  shift 2
+  for arg in "$@"; do
+    [ "$prev" != --jq ] || filter=$arg
+    prev=$arg
+  done
+  if [ -f "$file" ]; then cat "$file"; else printf '%s\n' "$default"; fi \
+    | if [ -n "$filter" ]; then jq -r "$filter"; else cat; fi
+}
 case "${1:-} ${2:-}" in
   "pr view")
     case " $* " in
@@ -329,6 +341,20 @@ case "${1:-} ${2:-}" in
         ;;
       *" repos/"*"/pulls/"*"/files"*)
         cat "$FM_TEST_GH_FILES"
+        exit $?
+        ;;
+      *" repos/"*"/pulls/"*"/commits"*)
+        # GitHub's "List commits on a pull request" response: an array of
+        # {sha, parents: [{sha}]}, oldest first, through the caller's --jq.
+        [ ! -f "${FM_TEST_GH_COMMITS_FAIL:-}" ] || exit 1
+        gh_api_jq "${FM_TEST_GH_COMMITS:-}" '[]' "$@"
+        exit $?
+        ;;
+      *" repos/"*"/compare/"*)
+        # GitHub's "Compare two commits" response for base...extra-parent:
+        # status behind or identical means the parent is already in the base.
+        [ ! -f "${FM_TEST_GH_COMPARE_FAIL:-}" ] || exit 1
+        gh_api_jq "${FM_TEST_GH_COMPARE:-}" '{"status":"diverged","ahead_by":3,"behind_by":2}' "$@"
         exit $?
         ;;
       *" repos/"*"/pulls/"*)
@@ -787,6 +813,10 @@ run_pr_merge() {
   FM_TEST_GH_REQUIRED_LIST="$case_dir/github-required-list" \
   FM_TEST_GH_REQUIRED_LIST_FAIL="$case_dir/github-required-list-fail" \
   FM_TEST_GH_FILES="$case_dir/github-files.json" \
+  FM_TEST_GH_COMMITS="$case_dir/github-commits" \
+  FM_TEST_GH_COMMITS_FAIL="$case_dir/github-commits-fail" \
+  FM_TEST_GH_COMPARE="$case_dir/github-compare" \
+  FM_TEST_GH_COMPARE_FAIL="$case_dir/github-compare-fail" \
   FM_TEST_GH_PULL="$case_dir/github-pull.json" \
   FM_TEST_META_AT_MERGE="$case_dir/meta-at-merge" \
   FM_TEST_AWAY_RECORD_AFTER_VIEW="$case_dir/away-record-after-view" \
@@ -5181,6 +5211,275 @@ test_allow_red_is_refused_while_away() {
   pass "fm-pr-merge rechecks away presence before an attended red merge"
 }
 
+# A pull request that carries a merge commit with history the base lacks (an
+# upstream sync) must not be flattened by the default squash, the explicit
+# squash or rebase; only a merge, or a named reason, lets it through.
+MERGE_COMMIT_SHA=1234567890abcdef1234567890abcdef12345678
+MERGE_COMMIT_PARENT=fedcba0987654321fedcba0987654321fedcba09
+
+MERGE_COMMIT_FIRST_PARENT=abababababababababababababababababababab
+
+# A pull request whose commits, in GitHub's list-commits shape, end in a merge
+# commit whose second parent is the upstream history being brought in.
+make_merge_commit_case() {
+  local name=$1 case_dir
+  case_dir=$(make_case "$name")
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
+  printf '[{"sha":"%s","parents":[{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' \
+    "$MERGE_COMMIT_FIRST_PARENT" "$MERGE_COMMIT_PARENT" \
+    "$MERGE_COMMIT_SHA" "$MERGE_COMMIT_FIRST_PARENT" "$MERGE_COMMIT_PARENT" > "$case_dir/github-commits"
+  : > "$case_dir/gh-axi.log"
+  printf '%s\n' "$case_dir"
+}
+
+test_merge_commit_guard() {
+  local case_dir rc url=https://github.com/example/repo/pull/91
+
+  # No merge commits: the default squash is unchanged.
+  case_dir=$(make_case github-merge-commit-none)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-none: an ordinary PR should still merge"
+  assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+  assert_no_grep 'warning:' "$case_dir/stderr" "merge-commit-none: an ordinary PR printed a warning"
+
+  # Merge commit, no method: refused, names the commit and --merge.
+  case_dir=$(make_merge_commit_case github-merge-commit-default)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-commit-default: the default squash of a merge commit must be refused"
+  assert_grep "${MERGE_COMMIT_SHA:0:12}" "$case_dir/stderr" "merge-commit-default: refusal did not name the merge commit"
+  assert_grep '-- --merge' "$case_dir/stderr" "merge-commit-default: refusal did not say to re-run with --merge"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-default: gh pr merge ran despite the refusal"
+
+  # Merge commit with --merge: merges.
+  case_dir=$(make_merge_commit_case github-merge-commit-merge)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" -- --merge > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-merge: an explicit --merge must be allowed"
+  assert_logged_gh_merge "$case_dir" 91 example/repo --merge
+
+  # Merge commit with an explicit --squash or --rebase: refused without the override.
+  for method in --squash --rebase; do
+    case_dir=$(make_merge_commit_case "github-merge-commit-explicit${method#--}")
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" -- "$method" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "merge-commit-explicit: $method of a merge commit must be refused"
+    assert_grep '--allow-flatten' "$case_dir/stderr" "merge-commit-explicit: refusal did not name the override"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-explicit: gh pr merge ran despite the refusal"
+  done
+
+  # The override flattens, with its reason recorded in the task's meta.
+  case_dir=$(make_merge_commit_case github-merge-commit-override)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" --allow-flatten 'upstream sync already squashed' -- --squash \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-override: --allow-flatten with a reason must allow the squash"
+  assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+  grep -qxF 'merge_flatten_override=upstream sync already squashed' "$case_dir/state/task-x1.meta" \
+    || fail "merge-commit-override: the reason was not recorded in the task meta"
+
+  # The override is attended-only and needs a reason.
+  case_dir=$(make_merge_commit_case github-merge-commit-override-away)
+  write_away_record "$case_dir" --words 'merge task-x1 when green'
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" --allow-flatten reason > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "merge-commit-override-away: --allow-flatten must be refused while away"
+  assert_grep '--allow-flatten is attended-only' "$case_dir/stderr" "merge-commit-override-away: refusal did not name attended-only"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-override-away: gh pr merge ran"
+  case_dir=$(make_merge_commit_case github-merge-commit-override-bare)
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" --allow-flatten > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "merge-commit-override-bare: --allow-flatten without a reason must be refused"
+
+  # The override is recorded only once the forge accepts the merge.
+  case_dir=$(make_merge_commit_case github-merge-commit-override-merge-fails)
+  printf '1\n' > "$case_dir/github-merge-rc"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" --allow-flatten 'upstream sync already squashed' -- --squash \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-commit-override-merge-fails: a failed forge merge must fail the run"
+  assert_no_grep 'merge_flatten_override=' "$case_dir/state/task-x1.meta" \
+    "merge-commit-override-merge-fails: an override was recorded for a merge that never happened"
+
+  # A base-update merge (the extra parent is already in the base, reported
+  # behind or identical) still refuses the default squash, since parents
+  # cannot tell it from a sync, and proceeds with an explicit -- --squash.
+  for status in behind identical; do
+    case_dir=$(make_merge_commit_case "github-merge-commit-base-update-$status")
+    printf '{"status":"%s","ahead_by":0,"behind_by":4}\n' "$status" > "$case_dir/github-compare"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "merge-commit-base-update: a $status base-update merge commit must refuse the default squash"
+    assert_grep "${MERGE_COMMIT_SHA:0:12}" "$case_dir/stderr" "merge-commit-base-update: refusal did not name the merge commit"
+    assert_grep '-- --squash' "$case_dir/stderr" "merge-commit-base-update: refusal did not offer an explicit squash"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-base-update: gh pr merge ran despite the refusal"
+
+    case_dir=$(make_merge_commit_case "github-merge-commit-base-update-$status-squash")
+    printf '{"status":"%s","ahead_by":0,"behind_by":4}\n' "$status" > "$case_dir/github-compare"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" -- --squash > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 0 "$rc" "merge-commit-base-update: an explicit --squash of a $status base-update merge must proceed"
+    assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+    assert_grep "compare/main...$MERGE_COMMIT_PARENT" "$case_dir/gh.log" \
+      "merge-commit-base-update: the extra parent was not compared against the base"
+  done
+
+  # A sync built in reverse: the head merge's first parent is the upstream tip
+  # and its only extra parent is the base tip, which compares identical. The
+  # default squash must still be refused.
+  case_dir=$(make_case github-merge-commit-reverse-sync)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
+  printf '[{"sha":"%s","parents":[{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' \
+    "$MERGE_COMMIT_FIRST_PARENT" "$MERGE_COMMIT_PARENT" \
+    "$MERGE_COMMIT_SHA" "$MERGE_COMMIT_FIRST_PARENT" cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd > "$case_dir/github-commits"
+  printf '{"status":"identical","ahead_by":0,"behind_by":0}\n' > "$case_dir/github-compare"
+  : > "$case_dir/gh-axi.log"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-commit-reverse-sync: the default squash of a reverse-built sync must be refused"
+  assert_grep "${MERGE_COMMIT_SHA:0:12}" "$case_dir/stderr" "merge-commit-reverse-sync: refusal did not name the merge commit"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-reverse-sync: gh pr merge ran despite the refusal"
+
+  # An upstream parent the base lacks (ahead) still counts.
+  case_dir=$(make_merge_commit_case github-merge-commit-ahead)
+  printf '{"status":"ahead","ahead_by":3,"behind_by":0}\n' > "$case_dir/github-compare"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-commit-ahead: an extra parent ahead of the base must be refused"
+
+  # An unreadable commit list or reachability read refuses the default method
+  # and asks for an explicit one; an explicit method proceeds after one warning.
+  for fail in commits compare; do
+    case_dir=$(make_merge_commit_case "github-merge-commit-unreadable-$fail")
+    : > "$case_dir/github-$fail-fail"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "merge-commit-unreadable-$fail: the default method must be refused when the list cannot be read"
+    assert_grep 'explicit method' "$case_dir/stderr" "merge-commit-unreadable-$fail: refusal did not ask for an explicit method"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-unreadable-$fail: gh pr merge ran despite the refusal"
+
+    case_dir=$(make_merge_commit_case "github-merge-commit-unreadable-$fail-explicit")
+    : > "$case_dir/github-$fail-fail"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" -- --squash > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 0 "$rc" "merge-commit-unreadable-$fail-explicit: an explicit method must still merge"
+    assert_logged_gh_merge "$case_dir" 91 example/repo --squash
+    [ "$(grep -c '^warning: could not read the full commit list' "$case_dir/stderr")" -eq 1 ] \
+      || fail "merge-commit-unreadable-$fail-explicit: expected exactly one warning, got: $(cat "$case_dir/stderr")"
+  done
+
+  # GitHub lists at most 250 commits of a pull request, so a sync whose merge
+  # commit falls past that cap reads as 250 ordinary commits: the list may be
+  # cut short, and the default squash is refused.
+  case_dir=$(make_merge_commit_case github-merge-commit-capped)
+  jq -nc '[range(250) | {sha: ("c" + (. | tostring)), parents: [{sha: "p"}]}]' > "$case_dir/github-commits"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-commit-capped: a commit list at GitHub's 250 cap must refuse the default squash"
+  assert_grep 'explicit method' "$case_dir/stderr" "merge-commit-capped: refusal did not ask for an explicit method"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-capped: gh pr merge ran despite the refusal"
+  pass "fm-pr-merge refuses to flatten a pull request's merge commits unless merged or overridden"
+}
+
+# The merge commit this script's own --update-branch puts on the pull request
+# (GitHub's update-branch merges the base tip into the head) must not block a
+# plain re-run's default squash once its checks pass; a different merge commit
+# pushed on top of that update still must.
+test_update_branch_merge_commit_reruns_with_default() {
+  local case_dir rc old_head new_head base_tip top url=https://github.com/example/repo/pull/6191 scenario
+  old_head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  new_head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  base_tip=9999999999999999999999999999999999999999
+  top=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+  for scenario in plain merged-on-top; do
+    case_dir=$(make_case "github-update-branch-rerun-$scenario")
+    add_gh_mocks "$case_dir" "$old_head"
+    write_github_required "$case_dir" classic:ci
+    jq --arg tip "$base_tip" '.commit = {sha: $tip}' "$case_dir/github-branch.json" > "$case_dir/branch.tmp"
+    mv "$case_dir/branch.tmp" "$case_dir/github-branch.json"
+    jq '.mergeStateStatus = "BEHIND"' "$case_dir/github-view.json" > "$case_dir/view.tmp"
+    mv "$case_dir/view.tmp" "$case_dir/github-view.json"
+    jq --arg head "$new_head" '.mergeStateStatus = "CLEAN" | .headRefOid = $head | .statusCheckRollup[0].conclusion = "FAILURE"' \
+      "$case_dir/github-view.json" > "$case_dir/github-view-after-update.json"
+    printf '%s\n' "$new_head" > "$case_dir/github-head-after-update"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" --update-branch > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "update-branch-rerun-$scenario: the first run must stop on the updated head's red check"
+    grep -qxF "merge_update_branch=$new_head $base_tip" "$case_dir/state/task-x1.meta" \
+      || fail "update-branch-rerun-$scenario: the update's merge commit was not recorded: $(cat "$case_dir/state/task-x1.meta")"
+
+    # GitHub's list-commits shape: the PR's own commit, then the update's
+    # merge of the base tip into it.
+    if [ "$scenario" = plain ]; then
+      printf '[{"sha":"%s","parents":[{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' \
+        "$old_head" "$MERGE_COMMIT_FIRST_PARENT" "$new_head" "$old_head" "$base_tip" > "$case_dir/github-commits"
+      jq '.statusCheckRollup[0].conclusion = "SUCCESS"' "$case_dir/github-view-after-update.json" > "$case_dir/view.tmp"
+    else
+      printf '[{"sha":"%s","parents":[{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' \
+        "$old_head" "$MERGE_COMMIT_FIRST_PARENT" "$new_head" "$old_head" "$base_tip" \
+        "$top" "$new_head" "$MERGE_COMMIT_PARENT" > "$case_dir/github-commits"
+      jq --arg head "$top" '.statusCheckRollup[0].conclusion = "SUCCESS" | .headRefOid = $head' \
+        "$case_dir/github-view-after-update.json" > "$case_dir/view.tmp"
+      printf '%s\n' "$top" > "$case_dir/github-head-after-update"
+      cp "$case_dir/github-head-after-update" "$case_dir/github-server-head"
+    fi
+    mv "$case_dir/view.tmp" "$case_dir/github-view-after-update.json"
+    cp "$case_dir/github-view-after-update.json" "$case_dir/github-view.json"
+    : > "$case_dir/gh.log"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    if [ "$scenario" = plain ]; then
+      expect_code 0 "$rc" "update-branch-rerun-plain: a plain re-run after the script's own update must merge: $(cat "$case_dir/stderr")"
+      assert_logged_gh_merge "$case_dir" 6191 example/repo --squash
+    else
+      expect_code 1 "$rc" "update-branch-rerun-merged-on-top: a merge commit on top of the update must refuse the default"
+      assert_grep "${top:0:12}" "$case_dir/stderr" "update-branch-rerun-merged-on-top: refusal did not name the later merge commit"
+      assert_no_grep "${new_head:0:12}" "$case_dir/stderr" "update-branch-rerun-merged-on-top: the recorded update was counted"
+      assert_no_grep 'pr merge' "$case_dir/gh.log" "update-branch-rerun-merged-on-top: gh pr merge ran despite the refusal"
+    fi
+  done
+  pass "fm-pr-merge does not count its own recorded --update-branch merge commit, and still counts any other"
+}
+
 # A quiet-mode record is a present captain, not an away posture: the attended
 # red-check waiver still works and the merge is recorded as attended.
 test_quiet_record_keeps_merges_attended() {
@@ -6371,6 +6670,8 @@ test_supersession_never_crosses_check_names
 test_undated_runs_never_supersede
 test_allow_red_still_waives_only_the_current_failure
 test_allow_red_is_refused_while_away
+test_merge_commit_guard
+test_update_branch_merge_commit_reruns_with_default
 test_quiet_record_keeps_merges_attended
 test_allow_red_requires_one_separate_name
 test_away_record_permits_any_green_merge_under_away_authority
