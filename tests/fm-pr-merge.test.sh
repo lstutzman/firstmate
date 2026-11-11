@@ -5321,8 +5321,9 @@ test_merge_commit_guard() {
   assert_no_grep 'merge_flatten_override=' "$case_dir/state/task-x1.meta" \
     "merge-commit-override-merge-fails: an override was recorded for a merge that never happened"
 
-  # A base-update merge (the extra parent is already in the base) is not
-  # counted, whether GitHub reports it behind or identical.
+  # A base-update merge (the extra parent is already in the base, reported
+  # behind or identical) still refuses the default squash, since parents
+  # cannot tell it from a sync, and proceeds with an explicit -- --squash.
   for status in behind identical; do
     case_dir=$(make_merge_commit_case "github-merge-commit-base-update-$status")
     printf '{"status":"%s","ahead_by":0,"behind_by":4}\n' "$status" > "$case_dir/github-compare"
@@ -5330,11 +5331,41 @@ test_merge_commit_guard() {
     run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
     rc=$?
     set -e
-    expect_code 0 "$rc" "merge-commit-base-update: a $status base-update merge commit must not block the default squash"
+    expect_code 1 "$rc" "merge-commit-base-update: a $status base-update merge commit must refuse the default squash"
+    assert_grep "${MERGE_COMMIT_SHA:0:12}" "$case_dir/stderr" "merge-commit-base-update: refusal did not name the merge commit"
+    assert_grep '-- --squash' "$case_dir/stderr" "merge-commit-base-update: refusal did not offer an explicit squash"
+    assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-base-update: gh pr merge ran despite the refusal"
+
+    case_dir=$(make_merge_commit_case "github-merge-commit-base-update-$status-squash")
+    printf '{"status":"%s","ahead_by":0,"behind_by":4}\n' "$status" > "$case_dir/github-compare"
+    set +e
+    run_pr_merge "$case_dir" task-x1 "$url" -- --squash > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 0 "$rc" "merge-commit-base-update: an explicit --squash of a $status base-update merge must proceed"
     assert_logged_gh_merge "$case_dir" 91 example/repo --squash
     assert_grep "compare/main...$MERGE_COMMIT_PARENT" "$case_dir/gh.log" \
       "merge-commit-base-update: the extra parent was not compared against the base"
   done
+
+  # A sync built in reverse: the head merge's first parent is the upstream tip
+  # and its only extra parent is the base tip, which compares identical. The
+  # default squash must still be refused.
+  case_dir=$(make_case github-merge-commit-reverse-sync)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
+  printf '[{"sha":"%s","parents":[{"sha":"%s"}]},{"sha":"%s","parents":[{"sha":"%s"},{"sha":"%s"}]}]\n' \
+    "$MERGE_COMMIT_FIRST_PARENT" "$MERGE_COMMIT_PARENT" \
+    "$MERGE_COMMIT_SHA" "$MERGE_COMMIT_FIRST_PARENT" cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd > "$case_dir/github-commits"
+  printf '{"status":"identical","ahead_by":0,"behind_by":0}\n' > "$case_dir/github-compare"
+  : > "$case_dir/gh-axi.log"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$url" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-commit-reverse-sync: the default squash of a reverse-built sync must be refused"
+  assert_grep "${MERGE_COMMIT_SHA:0:12}" "$case_dir/stderr" "merge-commit-reverse-sync: refusal did not name the merge commit"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" "merge-commit-reverse-sync: gh pr merge ran despite the refusal"
 
   # An upstream parent the base lacks (ahead) still counts.
   case_dir=$(make_merge_commit_case github-merge-commit-ahead)

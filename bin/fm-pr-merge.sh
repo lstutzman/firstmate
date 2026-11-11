@@ -21,17 +21,18 @@
 #
 # Merge method on GitHub defaults to --squash when the caller passes none of
 # --squash, --merge, --rebase, or --method after the optional -- separator.
-# A GitHub pull request whose commits include a merge commit that brings in
-# history the base branch lacks (an upstream sync) is refused when the method
-# would squash or rebase it, the default included, because that flattens the
-# merge and loses its ancestry: re-run with "-- --merge". A merge commit whose
-# extra parents the base already contains (the base merged into the branch to
-# update it) does not count. An attended --allow-flatten <reason>, given once,
-# permits the flattening and records the reason as merge_flatten_override= in
-# the task's meta once the forge accepts the merge; it is refused while the
-# away-posture record exists, for an office, and for --stack. A --stack merge
-# applies the same check to every member before anything merges, and refuses
-# the whole stack, naming the member, unless it is merged with "-- --merge".
+# A GitHub pull request whose commits include any merge commit is refused under
+# the default method, because a squash flattens the merge and loses its
+# ancestry, and its parents cannot tell an upstream sync from the base merged in
+# to update the branch: re-run with "-- --merge" to keep the history, or with
+# "-- --squash" when the merge only brought the base in. An explicit squash or
+# rebase is still refused when a merge commit brings in history the base branch
+# lacks (an extra parent the base does not contain). An attended
+# --allow-flatten <reason>, given once, permits the flattening and records the
+# reason as merge_flatten_override= in the task's meta once the forge accepts
+# the merge; it is refused while the away-posture record exists, for an office,
+# and for --stack. A --stack merge applies the same check to every member
+# before anything merges, and refuses the whole stack, naming the member.
 # When the forge's commit list cannot be read (GitHub lists at most 250 commits
 # of a pull request, so a longer one counts as unreadable), the default method
 # is refused and an explicit method is asked for; an explicitly named method
@@ -2794,17 +2795,17 @@ stack_merge() {
   stack_verify_merged_tree || return 1
 }
 
-# Merge commits in the pull request's own range whose extra parents the base
-# branch does not already contain, one short sha per line in
-# FM_PR_GITHUB_MERGE_COMMITS. A merge commit whose extra parents are all
-# reachable from the base (the base merged into the branch to update it)
-# flattens harmlessly and is not listed. Returns 1 when the forge's commit list
-# or a reachability read cannot be read, or when the list may be cut short:
-# GitHub lists at most 250 commits of a pull request.
+# Every merge commit in the pull request's own range, one short sha per line in
+# FM_PR_GITHUB_MERGE_COMMITS, and those whose extra parents the base branch
+# does not already contain in FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS. Returns 1
+# when the forge's commit list or a reachability read cannot be read, or when
+# the list may be cut short: GitHub lists at most 250 commits of a pull request.
 FM_PR_GITHUB_MERGE_COMMITS=
+FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS=
 github_read_merge_commits() {
   local listed line sha parents parent status unique count=0
   FM_PR_GITHUB_MERGE_COMMITS=
+  FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS=
   listed=$(gh api --paginate "repos/$PR_OWNER/$PR_REPO/pulls/$PR_NUMBER/commits?per_page=100" \
     --jq '.[] | "\(.sha) \(.parents[1:] | map(.sha) | join(","))"' 2>/dev/null) || return 1
   while IFS= read -r line; do
@@ -2814,6 +2815,7 @@ github_read_merge_commits() {
     sha=${line%% *}
     parents=${line#* }
     [ -n "$parents" ] || continue
+    FM_PR_GITHUB_MERGE_COMMITS="${FM_PR_GITHUB_MERGE_COMMITS:+$FM_PR_GITHUB_MERGE_COMMITS$'\n'}${sha:0:12}"
     unique=false
     while IFS= read -r parent; do
       [ -n "$parent" ] || continue
@@ -2825,18 +2827,18 @@ github_read_merge_commits() {
     done <<PARENTS
 ${parents//,/$'\n'}
 PARENTS
-    [ "$unique" = false ] || FM_PR_GITHUB_MERGE_COMMITS="${FM_PR_GITHUB_MERGE_COMMITS:+$FM_PR_GITHUB_MERGE_COMMITS$'\n'}${sha:0:12}"
+    [ "$unique" = false ] || FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS="${FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS:+$FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS$'\n'}${sha:0:12}"
   done <<LISTED
 $listed
 LISTED
 }
 
-# Refuse a squash or rebase of the selected pull request when it carries a
-# merge commit with history the base lacks, unless --allow-flatten names a
-# reason, which is recorded in the task's meta once the forge accepts the
-# merge. Args: <method> <explicit: true when the caller named the method>. An
-# unreadable commit list refuses the default method and only warns for an
-# explicit one.
+# Refuse the default method for the selected pull request when it carries any
+# merge commit, and an explicit squash or rebase when a merge commit brings in
+# history the base lacks, unless --allow-flatten names a reason, which is
+# recorded in the task's meta once the forge accepts the merge. Args: <method>
+# <explicit: true when the caller named the method>. An unreadable commit list
+# refuses the default method and only warns for an explicit one.
 github_guard_merge_commits() {
   local method=$1 explicit=$2 listed hint
   [ "$method" != merge ] || return 0
@@ -2850,15 +2852,21 @@ github_guard_merge_commits() {
   fi
   [ -n "$FM_PR_GITHUB_MERGE_COMMITS" ] || return 0
   listed=${FM_PR_GITHUB_MERGE_COMMITS//$'\n'/, }
+  hint=', or pass --allow-flatten <reason> to flatten it deliberately'
+  [ "$STACK_MODE" != true ] || hint=
+  if [ "$explicit" != true ] && [ -z "$ALLOW_FLATTEN" ]; then
+    echo "error: refusing the default $method merge of $URL: it carries merge commit(s) $listed, and $method would flatten that history away; re-run with an explicit method: -- --merge to keep the history (an upstream sync), or -- --$method if the merge only brought the base in and flattening is intended$hint" >&2
+    return 1
+  fi
+  [ "$explicit" != true ] || [ -n "$FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS" ] || return 0
   if [ -n "$ALLOW_FLATTEN" ]; then
     FM_PR_FLATTEN_RECORD=$ALLOW_FLATTEN
     printf 'warning: %s carries merge commit(s) %s and is being %s-merged under --allow-flatten: %s\n' \
       "$URL" "$listed" "$method" "$ALLOW_FLATTEN" >&2
     return 0
   fi
-  hint=', or pass --allow-flatten <reason> to flatten it deliberately'
-  [ "$STACK_MODE" != true ] || hint=
-  echo "error: refusing a $method merge of $URL: it carries merge commit(s) $listed, and $method would flatten that history away; re-run with -- --merge$hint" >&2
+  listed=${FM_PR_GITHUB_UPSTREAM_MERGE_COMMITS//$'\n'/, }
+  echo "error: refusing a $method merge of $URL: it carries merge commit(s) $listed that bring in history the base lacks, and $method would flatten that history away; re-run with -- --merge$hint" >&2
   return 1
 }
 
