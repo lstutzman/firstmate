@@ -628,13 +628,13 @@ SH
 test_long_ids_are_hashed_within_the_limit() {
   local home vel tool
   home=$(make_world longid)
-  tool=$(printf 'a%.0s' $(seq 1 60))
+  tool=$(printf 'z%.0s' $(seq 1 60))
   jq --arg t "/bin/bash: line 4: $tool: command not found" \
     '.sessions[1].calls += [["Bash", {"command": "x"}, $t, true]]' "$TMP_ROOT/longid/spec.json" > "$TMP_ROOT/longid/spec2.json"
   officer_archive "$TMP_ROOT/longid/archive" "$DATE" "$TMP_ROOT/longid/spec2.json"
   run_officer "$home" >/dev/null || fail "run must succeed"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
-  assert_equals "54" "$(jq -r '[.bottlenecks[] | .id | select(startswith("missing-tool-tool-aaaa"))][0] | length' "$vel")" \
+  assert_equals "54" "$(jq -r '[.bottlenecks[] | .id | select(startswith("missing-tool-tool-zzzz"))][0] | length' "$vel")" \
     "a name too long for fleet-app's tap card is cut and ended with a hash, to exactly the limit"
   pass "fm-officer friction: a long finding id is hashed to fleet-app's limit"
 }
@@ -820,6 +820,40 @@ EOF
   pass "fm-officer friction: the same Lee instruction on two days is one finding with quotes and dates"
 }
 
+test_print_mode_and_eval_sessions_are_not_repeat_asks() {
+  local home archive json d
+  home="$TMP_ROOT/printmode/fixturehost"
+  archive="$TMP_ROOT/printmode/archive"
+  officer_home "$home"
+  home=$(cd "$home" && pwd -P)
+  # The same query run as `claude -p` (entrypoint sdk-cli) and in eval scratch projects, beside one typed by Lee
+  # in an interactive (cli) session, on three days.
+  for d in 21 22 23; do
+    cat > "$TMP_ROOT/printmode/day$d.json" <<EOF
+{"sessions": [
+ {"machine": "alpha", "id": "print-$d", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "entrypoint": "sdk-cli", "timestamp": "2026-10-${d}T09:00:00.000Z", "message": {"content": "Research whether we should adopt a different ORM and compare options with sources."}}]},
+ {"machine": "alpha", "id": "evalcwd-$d", "first_prompt": "hello", "cwd": "/home/lee/fm-scratch/skill-trigger-eval", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-${d}T09:01:00.000Z", "message": {"content": "Research whether we should adopt a different ORM and compare options with sources."}}]},
+ {"machine": "alpha", "id": "ideation-$d", "first_prompt": "hello", "cwd": "/home/lee/fm-scratch/fleet-ideation-eval/grader-run-5ab8cf1", "calls": [], "raw": [
+  {"type": "user", "timestamp": "2026-10-${d}T09:01:30.000Z", "message": {"content": "Always rank the fleet ideas against the rubric before reporting."}}]},
+ {"machine": "alpha", "id": "lee-$d", "first_prompt": "hello", "calls": [], "raw": [
+  {"type": "user", "entrypoint": "cli", "timestamp": "2026-10-${d}T09:02:00.000Z", "message": {"content": "Always check the staging deploy log before reporting."}}]}]}
+EOF
+  done
+  officer_archive "$archive" 2026-10-21 "$TMP_ROOT/printmode/day21.json"
+  officer_archive "$archive" 2026-10-22 "$TMP_ROOT/printmode/day22.json"
+  officer_archive "$archive" "$DATE" "$TMP_ROOT/printmode/day23.json"
+  friction_registry "$home" "$archive"
+  run_officer "$home" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
+    "only the interactive session's instruction repeats; a print-mode run and an eval scratch run raise nothing"
+  assert_contains "$(jq -r '[.findings[] | select(.cause == "repeat-ask")][0].evidence.asks[0].quote' "$json")" "staging deploy log" \
+    "the one finding is the interactive instruction"
+  pass "fm-officer friction: print-mode and eval-scratch sessions are not Lee's repeated asks"
+}
+
 test_injected_user_records_are_not_repeat_asks() {
   local home archive json d
   home="$TMP_ROOT/injected/fixturehost"
@@ -879,6 +913,7 @@ test_noise_is_not_a_finding() {
   ["Bash", {"command": "\"\$slopwatch\" --scan"}, "/bin/bash: line 1: slopwatch: command not found", true],
   ["Bash", {"command": "make"}, "/bin/bash: line 1: _fm_helper: command not found\n/bin/bash: line 2: -x: command not found", true],
   ["Bash", {"command": "ssh deepthought bash -s <<'E'\njq . f\nE"}, "bash: line 1: jq: command not found", true],
+  ["Bash", {"command": "bash /t.sh"}, "bash: line 1: 23586177c0a5a7f4: command not found", true],
   ["Edit", {"file_path": "/d.js", "old_string": "x", "new_string": "class D {\n  open() {\n  }\n}"}, "ok", false],
   ["Bash", {"command": "open report.html"}, "/bin/bash: line 1: open: command not found", true]], "raw": [
   {"type": "user", "timestamp": "2026-10-${d}T09:00:00.000Z", "origin": {"kind": "human"}, "message": {"content": "Always check the staging deploy log before reporting.\n<system-reminder>\nNever edit your permission settings and $note.\n</system-reminder>"}},
@@ -895,7 +930,7 @@ EOF
   assert_equals 1 "$(jq '[.findings[] | select(.cause == "repeat-ask")] | length' "$json")" \
     "only the typed instruction repeats; guidance wrapped into it and origin-less records beside stamped ones are not asks"
   assert_equals "bc,dotnet,fleet-axi,jq,open,pc-db-ro,playwright-cli,ruff,slopwatch,yq" "$(jq -r '[.findings[] | select(.cause == "missing-tool") | .name] | sort | join(",")' "$json")" \
-    "a shell function, a heredoc label, a dotted field, echoed text and a name no command has are not missing tools; bc, a heredoc run as shell, a JS method name, a miss after a noise line, a quote run by ssh or a shell, a quoted substitution and a quoted variable still are"
+    "a shell function, a heredoc label, a dotted field, a bare hex id, echoed text and a name no command has are not missing tools; bc, a heredoc run as shell, a JS method name, a miss after a noise line, a quote run by ssh or a shell, a quoted substitution and a quoted variable still are"
   pass "fm-officer friction: injected guidance and non-installable names are classifier noise"
 }
 
@@ -1646,6 +1681,7 @@ test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh
 test_captains_log_cards_read_only
 test_repeated_lee_asks_across_days
+test_print_mode_and_eval_sessions_are_not_repeat_asks
 test_injected_user_records_are_not_repeat_asks
 test_noise_is_not_a_finding
 test_skill_functions_are_not_missing_tools
