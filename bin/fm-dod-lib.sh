@@ -294,6 +294,10 @@ fm_brief_base_branches() {  # <brief>
   ' "$1"
 }
 
+fm_ui_hill_climb_rule() {  # <rule-number>
+  printf '%s\n' "$1. When your task changes how a page, screen or component looks, use the \`ui-hill-climb\` skill and put its score table and before/after images in the PR."
+}
+
 fm_ship_rule_one() {  # <no-mistakes|direct-PR|local-only> <task-id> [branch] [<forge>] [<base>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-}
   local branch=${3:-fm/$id} target='the default branch'
