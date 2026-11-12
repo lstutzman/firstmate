@@ -88,8 +88,19 @@ REAL_GIT_FOR_TEST=$(command -v git)
 export REAL_GIT_FOR_TEST
 REAL_PS_FOR_TEST=$(command -v ps)
 export REAL_PS_FOR_TEST
-REAL_LSOF_FOR_TEST=$(command -v lsof)
+REAL_LSOF_FOR_TEST=$(command -v lsof || true)
 export REAL_LSOF_FOR_TEST
+
+# require_host_lsof: a case that proves teardown reaps a process by its cwd
+# needs the host's own lsof. A host without one (slartibartfast ships no lsof)
+# takes teardown's process-group fallback instead, which
+# test_lsof_absent_reaps_tmux_process_group covers, so these cases skip there.
+# Usage: require_host_lsof || return 0
+require_host_lsof() {
+  [ -n "$REAL_LSOF_FOR_TEST" ] && return 0
+  printf 'note: %s skipped: lsof is missing on this host, so teardown reaps only the tmux pane process group and cwd-based reaping is not exercised here\n' "${FUNCNAME[1]}"
+  return 1
+}
 
 # Build a fresh sandbox for one test case. Sets up:
 #   $CASE/state/        - firstmate state dir (with a fresh watcher beacon)
@@ -5424,6 +5435,7 @@ test_own_autonomous_run_is_left_alone() {
 }
 
 test_leaked_worktree_process_is_reaped() {
+  require_host_lsof || return 0
   local case_dir rc pid
   case_dir=$(make_case leaked-process-reap)
   write_meta "$case_dir" no-mistakes ship
@@ -5456,6 +5468,7 @@ test_leaked_worktree_process_is_reaped() {
 # init, like a Colima VM a worker started there - is shared infrastructure, not
 # a leaked worker process: teardown reports it and leaves it running.
 test_daemonised_worktree_process_is_reported_not_reaped() {
+  require_host_lsof || return 0
   local case_dir rc pid=''
   case_dir=$(make_case daemon-not-reaped)
   write_meta "$case_dir" no-mistakes ship
@@ -5482,6 +5495,7 @@ test_daemonised_worktree_process_is_reported_not_reaped() {
 }
 
 test_leaked_tasktmp_process_is_reaped() {
+  require_host_lsof || return 0
   local case_dir rc pid
   case_dir=$(make_case leaked-tasktmp-reap)
   write_meta "$case_dir" no-mistakes ship
@@ -5620,6 +5634,7 @@ SH
 }
 
 test_exec_changed_process_is_still_reaped() {
+  require_host_lsof || return 0
   local case_dir rc pid marker done_flag survived=0
   case_dir=$(make_case exec-changed-process)
   write_meta "$case_dir" no-mistakes ship
@@ -5682,6 +5697,7 @@ SH
 }
 
 test_process_spawned_during_grace_is_reaped_on_later_pass() {
+  require_host_lsof || return 0
   local case_dir rc pid child_file child_pid="" parent_survived=0 child_survived=0
   case_dir=$(make_case grace-spawn-convergence)
   write_meta "$case_dir" no-mistakes ship
@@ -5799,6 +5815,7 @@ EOF
 }
 
 test_run_abort_precedes_process_reap_precedes_worktree_removal() {
+  require_host_lsof || return 0
   local case_dir rc head pid abort_log
   case_dir=$(make_case abort-then-reap-then-remove-order)
   write_meta "$case_dir" no-mistakes ship

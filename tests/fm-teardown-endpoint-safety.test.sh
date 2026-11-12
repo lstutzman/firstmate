@@ -1271,6 +1271,19 @@ cd '$dir'
 exec '$real' -S '$socket' "\$@"
 SH
   chmod +x "$dir/fakebin/tmux"
+  # These cases are about the endpoint close, never about reaping leaked
+  # processes. Without an lsof on PATH, teardown falls back to killing the
+  # tmux pane's process group, which closes the very window the case needs to
+  # survive (slartibartfast ships no lsof). A stub whose cwd scan finds nothing
+  # keeps the outcome the same on hosts with and without a real lsof.
+  cat > "$dir/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *" -d cwd "*) exit 0 ;;
+esac
+exit 1
+SH
+  chmod +x "$dir/fakebin/lsof"
 }
 
 # write_endpoint_close_meta: a task record whose worktree and project do not
