@@ -38,6 +38,24 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - A line carries the page, the kind, the object id and the severity, under its route; an older single item's body carries the page, the kind, the object id, the evidence and the route.
   It carries no card question or answer, because Linear is third-party storage; the card is named by its id.
 
+## Closing its own items
+
+This is the one close any officer makes (Lee, main chat, 2026-11-12), and [the contract](contract.md#file) names it as the single exception.
+
+- It covers only a single item this officer filed itself: its body opens with the officer's own `Filed by the page-check officer` line, carries its `Kind` line and its own `page-check-fp` marker for that finding, and is not a bundle.
+  A person-authored item, an edited-into-another-shape item and a bundle are never closed.
+- It never closes an item that is closed already (a person's close stands and nothing reopens it), started, assigned, or in a reserved class.
+- Rule (a), card settled: a `standing-rule`, `stale-card` or `shown-after-done` item closes at once when its finding is gone from the check and the Captain's Log no longer shows the card it names.
+- Rule (b), not recurred: any item, a `page-old` one included, closes when its finding was absent from this check and the check before it.
+  A check counts only if the page the finding concerns was read in it, so an unreachable app never closes anything, and, for a card finding, every input its kind needs was read too: the standing rules file for `standing-rule`, every PR the cards name for `stale-card`, and the app's card records for `shown-after-done`; a Captain's Log with no card list counts for no card finding.
+  A check in which the finding is present clears its count, even when filing stopped early.
+- A close whose comment landed but whose move to Done failed retries only the move, so an item never gets a second close comment.
+- A `page-old` item closes on rule (b) only.
+- Each close posts one comment first (`Closed by the page-check officer: card <id> settled at <time>.` or `... not recurred in two checks: <check keys>.`) and then moves the item to Done.
+  The comment and the move count against the Linear call budget.
+- Without `writes: linear` nothing is closed.
+- A finding that comes back after its item was closed is not filed again: a repeat of a closed item raises nothing new (see Where findings are filed).
+
 ## What starts by itself
 
 - A `page-old` or `shown-after-done` finding starts once its item exists and its score reaches the minimum below: a high finding on first sight (4 at found 1), a medium finding at found 3.

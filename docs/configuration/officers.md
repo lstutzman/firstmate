@@ -156,7 +156,7 @@ The page-check officer keeps the fleet app's pages current without Lee asking.
 It is a role of its own rather than part of the friction officer because it reads live pages every few hours, while the friction officer needs a harvested archive day and so can only run once a day; the friction officer still owns Lee's repeated asks (below).
 `bin/fm-officer-page-check.py`'s header owns the checks and the table of pages with their normal gaps.
 It only reads: one `GET` per page through `curl`, this home's status logs, and `gh-axi api GET` for the state of a PR a card names.
-Its one write is the Linear filing described under [Page-check officer and Linear](#page-check-officer-and-linear), and only with `writes: linear`.
+Its only writes are the Linear filing and the closing of its own settled or unrecurred items, described under [Page-check officer and Linear](#page-check-officer-and-linear), and only with `writes: linear`.
 
 Its findings are one of four kinds, each naming the page and the object so firstmate can route the fix:
 
@@ -186,7 +186,8 @@ A `page-old` or `shown-after-done` finding whose item exists is handed to the Qu
 A `standing-rule` or `stale-card` finding is filed so its card is cleared and never starts a fix.
 The reserved-class check judges what the started fix would change, so it reads the finding's own kind, page, evidence and route, and the object id only when the object is the fix target (a page or a Runs job), never a card's id or question; a finding whose fix is in a reserved class is held as one keyed `needs-decision` line in the digest.
 A `page-old` or `shown-after-done` finding is a bug, so its bad pattern (the kind and the page or Runs job, with the route as the safe form, and no timestamps or card id) is remembered once and handed on in the digest's `patterns` and one batched pattern-memory start request.
-Without `writes: linear` nothing is filed and nothing starts.
+The officer also closes a single item it filed itself once its card settles or its finding has not recurred for two checks; [the rubric](../officers/page-check-rubric.md#closing-its-own-items) owns the conditions.
+Without `writes: linear` nothing is filed, closed or started.
 `bin/fm-officer-page-check.py`'s header owns the filing and the start requests.
 
 ### Friction officer and Linear

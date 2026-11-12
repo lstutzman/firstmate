@@ -55,6 +55,7 @@ case "$1 $2" in
     else echo '{"ok":true,"data":{"issues":[]}}'; fi ;;
   "issue list") echo '{"ok":true,"data":{"issues":[]}}' ;;  # no open bundle of an exact title yet
   "issue view")
+    if [ -f "$d/view.$3" ]; then echo '{"ok":true,"data":{"issue":'"$(cat "$d/view.$3")"'}}'; exit 0; fi
     st=$(cat "$d/state.$3" 2>/dev/null || echo Todo)
     case "$st" in Done) ty=completed ;; *) ty=unstarted ;; esac
     desc="Found: $(cat "$d/count.$3" 2>/dev/null || echo 1) times (first 2026-10-20, last 2026-10-20, by page-check)"
@@ -69,6 +70,7 @@ case "$1 $2" in
       *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
     esac ;;
   "issue update")
+    if [ -f "$d/fail-update.$3" ]; then echo '{"ok":false,"error":{"code":"UNKNOWN","message":"move refused"}}'; exit 1; fi
     case " $* " in *" --verify "*) echo "UPDATE $3" >> "$d/updates" ;; esac
     echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'"}}}' ;;
   "issue comment")
@@ -579,6 +581,202 @@ test_a_page_defect_pattern_is_remembered_once() {
   pass "fm-officer page-check: a page defect's bad pattern is remembered once, with its route as the safe form"
 }
 
+
+# seed_own_item <id> <kind> <page> <ref> [opening] [extra issue json fields] [evidence]: a single item the officer
+# filed on an earlier day, as its ledger and the fake Linear hold it. Sets SEED_FP; the lane state is the world's.
+seed_own_item() {
+  local id=$1 kind=$2 page=$3 ref=$4 opening=${5:-Filed by the page-check officer from the 2026-11-07T10 page check.} extra=${6:-\{\}} evidence=${7:-the card was open}
+  local lane="$LW_HOME/data/officers/page-check" desc
+  SEED_FP=$(printf '%s\0%s\0%s' "$kind" "$page" "$kind:$page:$ref" | sha256sum | cut -c1-64)
+  desc="$opening
+What it is for: a fleet-app page that shows a card a rule already settles, a stale card, a card shown after it was settled, or an old page.
+Epic: not assigned; whoever triages this picks one.
+
+Severity: low. Kind: $kind. Page: $page. Object: $ref.
+Found: 1 times (first 2026-11-07, last 2026-11-07, by page-check)
+Evidence: $evidence.
+Route: cl-keeper: close.
+page-check-fp:$SEED_FP"
+  mkdir -p "$lane"
+  jq -n --arg id "$id" --arg d "$desc" --argjson x "$extra" '{identifier: $id, title: "Captain'"'"'s Log: seeded", state: "Todo", stateType: "unstarted", description: $d} + $x' \
+    > "$FAKE_LINEAR_DIR/view.$id"
+  [ -f "$lane/filed-fingerprints.json" ] || echo '{}' > "$lane/filed-fingerprints.json"
+  jq --arg fp "$SEED_FP" --arg id "$id" '.[$fp] = $id' "$lane/filed-fingerprints.json" > "$lane/l.tmp" && mv "$lane/l.tmp" "$lane/filed-fingerprints.json"
+}
+
+closes_of() {  # <id>: the verified close moves of an item in the fake Linear log
+  count_lines "^issue update $1 --state Done --verify" "$FAKE_LINEAR_DIR/log"
+}
+
+test_the_officer_closes_its_own_items_when_the_finding_is_over() {
+  local dir log lc ln
+  linear_world autoclose
+  dir=$FAKE_LINEAR_DIR
+  log=$dir/log
+  seed_own_item PC-71 stale-card "Captain's Log" "gone-card:unanswered"
+  seed_own_item PC-72 page-old "Business health" "business-health-old"
+  seed_own_item PC-73 stale-card "Captain's Log" "fine:unanswered"
+  officer autoclose run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  assert_equals "1" "$(closes_of PC-71)" "an item whose card is gone from the Captain's Log closes at once"
+  lc=$(grep -n '^issue comment PC-71 .*--verify' "$log" | head -1 | cut -d: -f1)
+  ln=$(grep -n '^issue update PC-71 --state Done --verify' "$log" | cut -d: -f1)
+  assert_equals "true" "$([ -n "$lc" ] && [ -n "$ln" ] && [ "$lc" -lt "$ln" ] && echo true || echo false)" "the reason comment is posted before the move to Done"
+  assert_contains "$(grep '^issue comment PC-71 .*--dry-run' "$log" | head -1)" "card gone-card settled at" "the comment says the card settled, and when"
+  assert_equals "0" "$(closes_of PC-72)" "a page-old item does not close on its first absent check"
+  assert_equals "0" "$(closes_of PC-73)" "a stale-card item whose card is still shown does not close on rule (a)"
+  assert_contains "$(<"$LW_HOME/data/officers/page-check/$KEY.md")" "Closed own item PC-71: card gone-card settled" "the digest names the close"
+  officer autoclose run page-check --date "$KEY" >/dev/null || fail "a same-key re-run must succeed"
+  assert_equals "0" "$(closes_of PC-72)" "a re-run of the same check is not a second check"
+  assert_equals "1" "$(closes_of PC-71)" "and a closed item is not closed again"
+  later_day autoclose 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "1" "$(closes_of PC-72)" "an item closes once its finding is absent from two checks"
+  assert_equals "1" "$(closes_of PC-73)" "and so does a card item whose card is still shown"
+  assert_contains "$(grep '^issue comment PC-72 .*--dry-run' "$log" | head -1)" "not recurred in two checks: $KEY, 2026-11-01T14" "the comment names the two checks"
+  assert_equals "0" "$(count_lines 'delete' "$log")" "nothing is ever deleted"
+  pass "fm-officer page-check: an own item closes when its card settles or its finding is absent from two checks, comment first"
+}
+
+test_the_officer_leaves_items_it_may_not_close() {
+  local dir fp id
+  linear_world keepopen
+  dir=$FAKE_LINEAR_DIR
+  seed_own_item PC-81 stale-card "Captain's Log" "gone-card:a" "A person wrote this item."
+  seed_own_item PC-82 stale-card "Captain's Log" "gone-card:b" "" '{"stateType":"started","state":"In Progress"}'
+  seed_own_item PC-83 stale-card "Captain's Log" "gone-card:c" "" '{"assignee":"lee"}'
+  seed_own_item PC-84 stale-card "Captain's Log" "gone-card:d" "" '{}' "rotate the signing keys"
+  seed_own_item PC-85 stale-card "Captain's Log" "gone-card:e" "" '{"stateType":"completed","state":"Done"}'
+  # An item whose finding is still in the check: the Business health page is old, so its finding recurs.
+  id="page-old:Business health:business-health"
+  seed_own_item PC-86 page-old "Business health" "business-health"
+  fp=$(printf '%s\0%s\0%s' page-old "Business health" "$id" | sha256sum | cut -c1-64)
+  jq --arg fp "$fp" '.[$fp] = "PC-86"' "$LW_HOME/data/officers/page-check/filed-fingerprints.json" > "$dir/l.tmp" && mv "$dir/l.tmp" "$LW_HOME/data/officers/page-check/filed-fingerprints.json"
+  jq --arg fp "$fp" '.description |= sub("page-check-fp:.*$"; "page-check-fp:" + $fp)' "$dir/view.PC-86" > "$dir/v.tmp" && mv "$dir/v.tmp" "$dir/view.PC-86"
+  officer keepopen run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  later_day keepopen 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  for id in PC-81 PC-82 PC-83 PC-84 PC-85 PC-86; do
+    assert_equals "0" "$(closes_of "$id")" "$id is not closed"
+  done
+  assert_equals "0" "$(count_lines '^issue comment PC-8[1-6] --body Closed by' "$dir/log")" "and gets no close comment"
+  assert_contains "$(<"$LW_HOME/data/officers/page-check/2026-11-01T14.md")" "PC-82 is started" "a started item is named, not closed"
+  assert_contains "$(<"$LW_HOME/data/officers/page-check/2026-11-01T14.md")" "PC-84 is in a reserved class" "a reserved-class item is named, not closed"
+  pass "fm-officer page-check: a person's, started, assigned, reserved-class, person-closed or still-recurring item is never closed"
+}
+
+test_closing_needs_writes_linear_and_budget() {
+  local home dir
+  linear_world nowriteclose
+  home=$LW_HOME
+  dir=$FAKE_LINEAR_DIR
+  seed_own_item PC-91 stale-card "Captain's Log" "gone-card:a"
+  printf -- '- page-check - Checks pages (role: pagecheck; cadence: every 2h; app: https://app.test; model: none; added 2026-10-31)\n' > "$home/data/officers.md"
+  officer nowriteclose run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  later_day nowriteclose 2026-11-01T14 >/dev/null || fail "a later run must succeed"
+  assert_absent "$dir/log" "without writes: linear no Linear call is made, so nothing is closed"
+
+  linear_world budgetclose "; max-linear-calls: 3"
+  dir=$FAKE_LINEAR_DIR
+  seed_own_item PC-92 stale-card "Captain's Log" "gone-card:a"
+  officer budgetclose run page-check --date "$KEY" >/dev/null || fail "a run that exhausts its budget must succeed"
+  assert_equals "0" "$(closes_of PC-92)" "an exhausted call budget closes nothing"
+  assert_equals "true" "$([ "$(wc -l < "$dir/log" | tr -d ' ')" -le 3 ] && echo true || echo false)" "and no call goes past the budget"
+  pass "fm-officer page-check: no close without writes: linear, and none past the call budget"
+}
+
+test_a_check_that_could_not_see_the_finding_does_not_count() {
+  local dir pages fakebin
+  linear_world unreadclose
+  dir=$FAKE_LINEAR_DIR
+  pages="$TMP_ROOT/unreadclose/pages"
+  fakebin="$TMP_ROOT/unreadclose/fakebin"
+  seed_own_item PC-93 page-old "Business health" "business-health-old"
+  seed_own_item PC-94 stale-card "Captain's Log" "pr-card:ex/repo#7" "" '{}' "names ex/repo#7, which is merged"
+  mv "$pages/_api_business-health" "$pages/business-health.saved"
+  cp "$fakebin/gh-axi" "$fakebin/gh-axi.saved"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/gh-axi"
+  officer unreadclose run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  later_day unreadclose 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "0" "$(closes_of PC-93)" "two checks that could not read the item's page do not close it"
+  assert_equals "0" "$(closes_of PC-94)" "two checks that could not read the PR a stale-card item names do not close it"
+  assert_equals "0" "$(count_lines '^issue comment PC-9[34] ' "$dir/log")" "and neither item gets a close comment"
+  mv "$pages/business-health.saved" "$pages/_api_business-health"
+  mv "$fakebin/gh-axi.saved" "$fakebin/gh-axi"
+  later_day unreadclose 2026-11-01T16 >/dev/null || fail "a readable check must succeed"
+  assert_equals "0" "$(closes_of PC-93)" "the first check that read the page is only one check"
+  later_day unreadclose 2026-11-01T18 >/dev/null || fail "a second readable check must succeed"
+  assert_equals "1" "$(closes_of PC-93)" "the second check that read the page closes the item"
+  assert_equals "0" "$(closes_of PC-94)" "a stale-card item whose PR finding recurs once the PR is read stays open"
+  pass "fm-officer page-check: a check that could not read a finding's page or PR does not count toward closing it"
+}
+
+test_an_unread_rules_file_or_card_record_does_not_count() {
+  local dir home pages
+  linear_world unreadinputs
+  dir=$FAKE_LINEAR_DIR
+  home=$LW_HOME
+  pages="$TMP_ROOT/unreadinputs/pages"
+  seed_own_item PC-96 standing-rule "Captain's Log" "cleanup:routine-cleanup"
+  seed_own_item PC-97 shown-after-done "Captain's Log" "bosun-ep"
+  mv "$home/data/captain-shared.md" "$home/data/captain-shared.saved"
+  mv "$pages/_api_captains-log_facts_source_bosun" "$pages/facts.saved"
+  officer unreadinputs run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  later_day unreadinputs 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "0" "$(closes_of PC-96)" "two checks that could not read the standing rules do not close a standing-rule item"
+  assert_equals "0" "$(closes_of PC-97)" "two checks that could not read the card record do not close a shown-after-done item"
+  assert_equals "0" "$(count_lines '^issue comment PC-9[67] ' "$dir/log")" "and neither item gets a close comment"
+  pass "fm-officer page-check: an unread rules file or card record does not count toward closing a card item"
+}
+
+test_a_log_without_cards_does_not_count() {
+  local dir pages
+  linear_world nocards
+  dir=$FAKE_LINEAR_DIR
+  pages="$TMP_ROOT/nocards/pages"
+  seed_own_item PC-99 stale-card "Captain's Log" "old-ask:unanswered"
+  jq '.value = null' "$pages/_api_captains-log" > "$pages/log.tmp" && mv "$pages/log.tmp" "$pages/_api_captains-log"
+  officer nocards run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  later_day nocards 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "0" "$(closes_of PC-99)" "two checks of a Captain's Log with no card list do not close a card item"
+  assert_equals "0" "$(count_lines '^issue comment PC-99 ' "$dir/log")" "and it gets no close comment"
+  pass "fm-officer page-check: a Captain's Log read without a card list does not count toward closing a card item"
+}
+
+test_a_recurrence_in_a_blocked_check_resets_the_count() {
+  local dir home pages reg
+  linear_world blockedreset
+  dir=$FAKE_LINEAR_DIR
+  home=$LW_HOME
+  pages="$TMP_ROOT/blockedreset/pages"
+  reg=$(<"$home/data/officers.md")
+  seed_own_item PC-98 page-old "Business health" "business-health"
+  jq -n '{value: {generated_at: "2026-10-31T14:00:00Z"}}' > "$pages/_api_business-health"
+  officer blockedreset run page-check --date "$KEY" >/dev/null || fail "a check without the finding must succeed"
+  jq -n '{value: {generated_at: "2026-10-29T06:00:00Z"}}' > "$pages/_api_business-health"
+  printf '%s\n' "${reg/; model:/; max-linear-calls: 1; model:}" > "$home/data/officers.md"
+  later_day blockedreset 2026-11-01T14 >/dev/null || fail "a check whose filing stops must succeed"
+  assert_contains "$(<"$home/data/officers/page-check/2026-11-01T14.md")" "stopped:" "the check with the finding back stops on its call budget"
+  printf '%s\n' "$reg" > "$home/data/officers.md"
+  jq -n '{value: {generated_at: "2026-11-01T14:00:00Z"}}' > "$pages/_api_business-health"
+  later_day blockedreset 2026-11-01T16 >/dev/null || fail "a third check must succeed"
+  assert_equals "0" "$(closes_of PC-98)" "a finding absent, back in a stopped check, then absent again has one absent check, not two"
+  pass "fm-officer page-check: a finding present in a check whose filing stopped still resets its absent count"
+}
+
+test_a_failed_move_is_retried_without_a_second_comment() {
+  local dir
+  linear_world retryclose
+  dir=$FAKE_LINEAR_DIR
+  seed_own_item PC-95 stale-card "Captain's Log" "gone-card:a"
+  touch "$dir/fail-update.PC-95"
+  officer retryclose run page-check --date "$KEY" >/dev/null || fail "a run whose move fails must succeed"
+  assert_equals "1" "$(count_lines '^issue comment PC-95 .*--verify' "$dir/log")" "the reason comment lands before the failed move"
+  assert_equals "0" "$(closes_of PC-95)" "the move did not land"
+  mv "$dir/fail-update.PC-95" "$dir/fail-update.off"
+  later_day retryclose 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "1" "$(closes_of PC-95)" "the next check retries the move"
+  assert_equals "1" "$(count_lines '^issue comment PC-95 .*--verify' "$dir/log")" "and posts no second close comment"
+  pass "fm-officer page-check: a close whose move failed is retried without a second comment"
+}
+
 test_registry_needs_an_https_app
 test_findings_of_every_kind
 test_live_decisions_are_not_stale
@@ -593,3 +791,11 @@ test_a_closed_item_is_bumped_and_never_started
 test_a_settled_production_card_shown_again_starts_its_page_fix
 test_a_fix_in_a_reserved_class_is_held_for_lee
 test_a_page_defect_pattern_is_remembered_once
+test_the_officer_closes_its_own_items_when_the_finding_is_over
+test_the_officer_leaves_items_it_may_not_close
+test_closing_needs_writes_linear_and_budget
+test_a_check_that_could_not_see_the_finding_does_not_count
+test_a_failed_move_is_retried_without_a_second_comment
+test_an_unread_rules_file_or_card_record_does_not_count
+test_a_recurrence_in_a_blocked_check_resets_the_count
+test_a_log_without_cards_does_not_count

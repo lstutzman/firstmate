@@ -24,8 +24,9 @@ how it finds things. This file owns the mechanics every officer shares:
               edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`), unless
               the Filer is built with bump_closed (the page-check officer), when it bumps the closed item and starts nothing.
               An item gets exactly one Type, one Source and one area label; fleet work
-              (is_fleet: a finding's repository, else its Officer's project) goes in the Fleet project, with the area:fleet label (fleet_labels). The library never creates a label and never closes
-              or deletes an item.
+              (is_fleet: a finding's repository, else its Officer's project) goes in the Fleet project, with the area:fleet label (fleet_labels). The library never creates a label and never deletes an item; the one
+              close is close_with_comment(), which only the page-check officer calls, on an item it filed itself
+              (docs/officers/contract.md "File").
   bundles     Bundles (docs/officers/contract.md "Bundles" owns the rule): one open item per (officer, source family, area,
               fleet or not), titled bundle_title(); its body is rebuilt from the lane's bundles.json on every write, so a line
               is never lost. place() (no Linear call) keeps a finding on its open bundle, keeps one already filed alone on that
@@ -1248,6 +1249,21 @@ def file_in_bundles(filer, bundles, todo, args, labels_for, describe):
         return stop("%s; the next run continues from the ledger" % exc)
     bundles.save()
     return summary_rows(todo), None
+
+
+def close_with_comment(lin, ident, reason, commented):
+    """The one close an officer may make (the page-check officer's own items; docs/officers/contract.md "File"): one
+    comment giving the reason, then the move to Done, each `--dry-run` then `--verify`. The comment lands first, so an
+    item is never closed without its reason; a failure on the move leaves the comment and raises. `commented` (the
+    caller's saved state) holds the items whose comment landed but whose move did not, so a retry posts no second
+    comment. Never deletes. Raises LinearError."""
+    if ident not in commented:
+        for flag in ("--dry-run", "--verify"):
+            lin(["issue", "comment", ident, "--body", reason, flag])
+        commented[ident] = reason
+    for flag in ("--dry-run", "--verify"):
+        lin(["issue", "update", ident, "--state", "Done", flag])
+    commented.pop(ident, None)
 
 
 def triage_issue(lin, ident, issue, seen, write):
