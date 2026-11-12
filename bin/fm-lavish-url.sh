@@ -82,6 +82,8 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bin/fm-atomic-lib.sh
+. "$SCRIPT_DIR/fm-atomic-lib.sh"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
@@ -414,7 +416,7 @@ cmd_route() {
 
   claim="$STATE/lavish-url/filed/$sid.$seq"
   mkdir -p "$STATE/lavish-url/filed" || die "cannot create $STATE/lavish-url/filed"
-  if ! mkdir "$claim" 2>/dev/null; then
+  if ! fm_atomic_mkdir "$claim" 2>/dev/null; then
     filed=$(cat "$claim/task" 2>/dev/null || true)
     [ -n "$filed" ] || die "an earlier filing of $sid $seq was interrupted; check the backlog for it, then remove $claim"
     printf 'already-filed: %s\n' "$filed"

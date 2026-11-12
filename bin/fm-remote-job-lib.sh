@@ -101,6 +101,8 @@
 # bin/fm-remote-job-reap-orphans.sh uses it to reap workers that were already
 # orphaned that way.
 
+# shellcheck source=bin/fm-atomic-lib.sh
+. "$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fm-atomic-lib.sh"
 FM_REMOTE_JOB_LABEL=dev.firstmate.remote-job
 FM_REMOTE_JOB_MAX_BYTES=${FM_REMOTE_JOB_MAX_BYTES:-1048576}
 FM_REMOTE_JOB_QUEUE_TIMEOUT=${FM_REMOTE_JOB_QUEUE_TIMEOUT:-360}
@@ -403,7 +405,7 @@ fm_remote_job_safe_child_dir() { # <canonical-parent> <single child basename>
   if [ -e "$candidate" ] || [ -L "$candidate" ]; then
     [ -d "$candidate" ] && [ ! -L "$candidate" ] || return 1
   else
-    (umask 077; mkdir "$candidate") || return 1
+    (umask 077; fm_atomic_mkdir "$candidate") || return 1
   fi
   chmod 700 "$candidate" 2>/dev/null || return 1
   physical=$(CDPATH='' cd -- "$candidate" 2>/dev/null && pwd -P) || return 1
@@ -610,7 +612,7 @@ fm_remote_job_next_seq() { # [stage-dir destination]
     attempt=$((attempt + 1))
     value=$((value + 1))
     claim="$FM_REMOTE_JOB_SEQ_CLAIMS/$value"
-    if (umask 077; mkdir "$claim") 2>/dev/null; then
+    if (umask 077; fm_atomic_mkdir "$claim") 2>/dev/null; then
       chmod 700 "$claim" || return 1
       fm_remote_job_advance_seq_hint "$value" || true
       if [ -n "$stage" ]; then
@@ -1309,7 +1311,7 @@ fm_remote_job_reload_lock_acquire() { # <lock-link>
   name="${lock##*/}.owner.$pid.$RANDOM$RANDOM"
   owner="$dir/$name"
   FM_REMOTE_JOB_RELOAD_OWNER=
-  (umask 077; mkdir "$owner") 2>/dev/null || return 1
+  (umask 077; fm_atomic_mkdir "$owner") 2>/dev/null || return 1
   if ! printf '%s\n' "$pid" > "$owner/pid" ||
     ! fm_remote_job_process_start "$pid" > "$owner/start" ||
     ! fm_remote_job_process_command "$pid" > "$owner/command"; then

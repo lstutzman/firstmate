@@ -152,6 +152,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/officers.md"
 OFFICER_ROLES="triage surgeon landing friction progress pagecheck corpus library"
 
+# shellcheck source=bin/fm-atomic-lib.sh
+. "$SCRIPT_DIR/fm-atomic-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-check-lib.sh
@@ -520,7 +522,7 @@ readable_homes() {
 
 lock_acquire() {  # [lock]: default the lane's .run.lock; a lock whose pid is gone is taken over.
   local lock=${1:-$OFFICER_LANE/.run.lock} pid
-  if mkdir "$lock" 2>/dev/null; then
+  if fm_atomic_mkdir "$lock" 2>/dev/null; then
     printf '%s\n' "$$" > "$lock/pid"
     return 0
   fi
@@ -529,7 +531,7 @@ lock_acquire() {  # [lock]: default the lane's .run.lock; a lock whose pid is go
     return 1
   fi
   rm -rf -- "$lock"
-  mkdir "$lock" 2>/dev/null || return 1
+  fm_atomic_mkdir "$lock" 2>/dev/null || return 1
   printf '%s\n' "$$" > "$lock/pid"
 }
 
