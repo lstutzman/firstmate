@@ -44,8 +44,11 @@
 # --stale-handoffs (opt-in; a dry run lists candidates, --apply retires them)
 # retires an escalated record whose delivery was never confirmed, the one class
 # --key refuses, when every condition holds, each read live at that moment:
-#   - its request names at least one PR URL (request_prs, else the summary,
-#     which must not have been cut short with a trailing "...");
+#   - its request names at least one PR URL (request_prs; for an older record
+#     without it, the full request text recovered by corr id from the parent
+#     status log's corr= lines and the task's steering-inbox relay message
+#     files, plus a summary not cut short with a trailing "..."; the record is
+#     never edited to backfill the field);
 #   - every named PR is CLOSED or MERGED on its forge (gh pr view, read-only);
 #   - the record is at least --min-age-days old (default 3) by created_epoch;
 #   - no backlog-handoff wake still names it, and its parent status log lies in
@@ -55,10 +58,10 @@
 # Any other undelivered record is left untouched and printed with
 # verdict=stale-handoff-kept and its reason (no-pr, pr-open, pr-unreadable,
 # too-young, wake-named, outside-home, decision-never-recorded,
-# summary-truncated). Delivered
+# full-request-unavailable: a cut summary and no recoverable full text). Delivered
 # records keep their ordinary verdicts. Retiring appends one resolved line to the
 # record's parent status log with via=sweep-stale-handoff and the PR states as
-# evidence (skipped when the decision was already closed), then settles the
+# evidence (and recovered-from=<source> when the PRs came from recovered text) (skipped when the decision was already closed), then settles the
 # record through fm_pending_reply_settle_closed_escalation. It never sends a
 # message to the mate, never resends the request, and never edits or deletes a
 # record file. Dry-run candidates print verdict=stale-handoff-candidate; applied
@@ -140,6 +143,34 @@ summary_prs() {  # <summary>
   printf '%s\n' "$s" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true
 }
 
+# Full request text of a record with no request_prs, from durable sources keyed
+# by its corr id: the corr= lines of its parent status log (leaving out the
+# library's own escalation and close lines, whose request= is the cut summary),
+# then every marked relay message file for that corr in the task's steering
+# inbox (root, handled/, archive/). Prints the PR URLs found (comma list) and
+# sets RECOVERED_PRS (comma list) and RECOVERED_SRC (the sources that held the
+# text), both empty when no full text exists. Sets globals, so call it without
+# a command substitution. Read-only.
+RECOVERED_SRC='' RECOVERED_PRS=''
+recover_full_prs() {  # <corr> <task> <parent_status>
+  local corr=$1 task=$2 pstatus=$3 text='' src='' f lines own
+  own="[key=$(fm_pending_reply_escalation_key "$corr")]"
+  RECOVERED_SRC='' RECOVERED_PRS=''
+  if [ -f "$pstatus" ]; then
+    lines=$(grep -aF -- "$(fm_pending_reply_corr_token "$corr")" "$pstatus" 2>/dev/null | grep -avF -- "$own" || true)
+    if [ -n "$lines" ]; then text=$lines; src=status-log; fi
+  fi
+  for f in "$STATE/$task.inbox"/*.msg "$STATE/$task.inbox"/handled/*.msg "$STATE/$task.inbox"/archive/*.msg; do
+    [ -f "$f" ] || continue
+    grep -qaF -- "$(fm_pending_reply_corr_token "$corr")" "$f" 2>/dev/null || continue
+    text="$text"$'\n'"$(cat "$f")"
+    case ",$src," in *,relay-message,*) ;; *) src="$src${src:+,}relay-message" ;; esac
+  done
+  [ -n "$src" ] || return 0
+  RECOVERED_SRC=$src
+  RECOVERED_PRS=$(printf '%s\n' "$text" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true)
+}
+
 escalated=0 settled=0 keyed=0 review=0 unproven=0 skipped=0 failed=0 stale_retired=0 stale_kept=0
 NOW=$(fm_pending_reply_now)
 
@@ -148,7 +179,7 @@ NOW=$(fm_pending_reply_now)
 stale_check() {  # <rec> <corr> <key> <parent_status> <prs-csv> <summary-cut>
   local rec=$1 corr=$2 key=$3 pstatus=$4 prs=$5 created states
   if fm_pending_reply_wake_marker_names "$STATE" "$corr"; then echo wake-named; return 1; fi
-  if [ "$6" = 1 ]; then echo summary-truncated; return 1; fi
+  if [ "$6" = 1 ]; then echo full-request-unavailable; return 1; fi
   if [ -z "$prs" ]; then echo no-pr; return 1; fi
   if [ -z "$pstatus" ] || ! [ "${pstatus%/*}" -ef "$STATE" ]; then echo outside-home; return 1; fi
   created=$(fm_pending_reply_get "$rec" created_epoch)
@@ -195,10 +226,20 @@ for rec in "$STATE"/pending-replies/*; do
 
   if [ "$STALE" -eq 1 ] && [ -z "$(fm_pending_reply_get "$rec" delivered_epoch)" ]; then
     sprs=$(fm_pending_reply_get "$rec" request_prs) scut=0
+    ssrc=''
     if [ -z "$sprs" ]; then
       summary=$(fm_pending_reply_get "$rec" request_summary)
-      case "$summary" in *...) scut=1 ;; esac
-      sprs=$(summary_prs "$summary")
+      recover_full_prs "$corr" "$task" "$parent_status"
+      sprs=$RECOVERED_PRS
+      if [ -n "$RECOVERED_SRC" ]; then
+        ssrc=$RECOVERED_SRC
+        # A cut summary may still name PRs the recovered text lacks; none are lost
+        # by taking the union, and an open one among them keeps the record.
+        sprs=$(printf '%s,%s' "$sprs" "$(summary_prs "$summary")" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, - || true)
+      else
+        case "$summary" in *...) scut=1 ;; esac
+        sprs=$(summary_prs "$summary")
+      fi
     fi
     HANDLED="$HANDLED$key,"
     if ! evidence=$(stale_check "$rec" "$corr" "$key" "$parent_status" "$sprs" "$scut"); then
@@ -207,13 +248,14 @@ for rec in "$STATE"/pending-replies/*; do
       ! listed "$key" || refuse "$key" "delivery was never confirmed"
       continue
     fi
+    rsrc=${ssrc:+ recovered-from=$ssrc}
     if [ "$APPLY" -eq 0 ]; then
-      echo "$line verdict=stale-handoff-candidate prs=$evidence"
+      echo "$line verdict=stale-handoff-candidate prs=$evidence$rsrc"
       stale_retired=$((stale_retired + 1))
       continue
     fi
     if key_open "$parent_status" "$key"; then
-      fm_cap_line_var "resolved [key=$key]: $(fm_pending_reply_resolved_note "$task" "$corr" sweep-stale-handoff "prs=$evidence")" "$CLOSE_MAX"
+      fm_cap_line_var "resolved [key=$key]: $(fm_pending_reply_resolved_note "$task" "$corr" sweep-stale-handoff "${ssrc:+recovered-from=$ssrc }prs=$evidence")" "$CLOSE_MAX"
       rc=0
       fm_wake_status_append_self_announced "$STATE" "$parent_status" "$FM_LINE_CAP_LINE" || rc=$?
       if [ "$rc" -eq 2 ]; then
@@ -225,7 +267,7 @@ for rec in "$STATE"/pending-replies/*; do
         || "$SCRIPT_DIR/fm-fleet-ledger.sh" appended "$CONFIG" "$parent_status" >/dev/null 2>&1 || true
     fi
     if fm_pending_reply_settle_closed_escalation "$STATE" "$corr" sweep-stale-handoff allow-undelivered; then
-      echo "$line verdict=stale-handoff-retired prs=$evidence"
+      echo "$line verdict=stale-handoff-retired prs=$evidence$rsrc"
       stale_retired=$((stale_retired + 1))
     else
       echo "error: record $corr could not be retired" >&2
