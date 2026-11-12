@@ -215,6 +215,33 @@ test_rerun_is_a_noop() {
   pass "fm-config-split.py --forkonly: re-running on a split tree is a no-op"
 }
 
+test_rerun_keeps_sibling_links() {
+  local d="$TMP_ROOT/sibling"
+  build_fixture "$d"
+  split --forkonly --no-rewrite --root "$d" >/dev/null || fail "forkonly failed"
+  local line='See [Fork](fork.md), [a gap](fork.md#no-such-anchor) and <a href="fork.md">fork</a>.'
+  printf '\n%s\n' "$line" >> "$d/docs/configuration/main.md"
+  out=$(split --forkonly --no-rewrite --root "$d" 2>&1) || fail "second forkonly failed: $out"
+  grep -qxF "$line" "$d/docs/configuration/main.md" || fail "forkonly re-run changed a sibling link: $(grep -F 'See [Fork]' "$d/docs/configuration/main.md")"
+  out=$(split --full --no-rewrite --root "$d" 2>&1) || fail "full failed: $out"
+  grep -qxF "$line" "$d/docs/configuration/main.md" || fail "full re-split changed a sibling link: $(grep -F 'See [Fork]' "$d/docs/configuration/main.md")"
+  pass "fm-config-split.py: a sibling link inside docs/configuration/ survives a re-run byte for byte"
+}
+
+test_emptied_file_fails_before_writing() {
+  local d="$TMP_ROOT/emptied"
+  build_fixture "$d"
+  split --forkonly --root "$d" >/dev/null || fail "forkonly failed"
+  sed -i 's/^h2\tfork\.md\t/h2\tmain.md\t/' "$d/docs/config-split/fork-local-map.tsv"
+  local before
+  before=$(tree_digest "$d")
+  out=$(split --forkonly --root "$d" 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail "forkonly accepted a layout that empties fork.md"
+  assert_contains "$out" "docs/configuration/fork.md would be left empty" "the emptied file is named"
+  assert_equals "$before" "$(tree_digest "$d")" "a refused layout writes nothing"
+  pass "fm-config-split.py: a layout that empties a file fails before writing anything"
+}
+
 test_full_resplits_a_partly_split_tree() {
   local d="$TMP_ROOT/full"
   build_fixture "$d"
@@ -248,5 +275,7 @@ fm_test_run \
   test_forkonly_moves_and_conserves \
   test_forkonly_rewrites_citations \
   test_rerun_is_a_noop \
+  test_rerun_keeps_sibling_links \
+  test_emptied_file_fails_before_writing \
   test_full_resplits_a_partly_split_tree \
   test_real_tree_is_mapped

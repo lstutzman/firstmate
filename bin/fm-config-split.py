@@ -31,7 +31,8 @@ A tree made by --full has no pointers, so --forkonly refuses it; --full accepts 
 
 Documented fix-ups (everything else moves byte for byte, heading levels included):
   * a moved file starts with '# Title' and a link back to the index;
-  * relative link and src/href targets inside a moved unit gain one '../';
+  * relative link and src/href targets inside a moved unit gain one '../', except targets
+    under configuration/, which lose that prefix;
   * '](#anchor)' links that cross a file boundary point at the file holding the anchor;
   * docs/configuration.md "Name" citations anywhere in the repository except AGENTS.md
     name the file that now holds Name (an ambiguous name is skipped and listed);
@@ -319,16 +320,22 @@ def canonical(u, fnames, anchors):
     names = "|".join(map(re.escape, fnames or ["\0"]))
     pat = rf"\]\((?:\.\./configuration\.md|{names})#([^)\s]+)\)"
     text = re.sub(pat, lambda m: f"](#{m.group(1)})" if m.group(1) in anchors else m.group(0), text)
+    text = re.sub(rf"\]\(((?:{names})(?:#[^)\s]*)?)\)", r"](configuration/\1)", text)
+    text = re.sub(rf"""\b(href|src)=(["'])((?:{names})(?:#[^"']*)?)\2""", r"\1=\2configuration/\3\2", text)
     text = re.sub(r"\]\(\.\./([^)\s]+)\)", lambda m: f"]({m.group(1)})", text)
     text = re.sub(r"""\b(href|src)=(["'])\.\./([^"']+)\2""", lambda m: f'{m.group(1)}={m.group(2)}{m.group(3)}{m.group(2)}', text)
     return text
 
 
+def down(target):
+    return target[len("configuration/"):] if target.startswith("configuration/") else "../" + target
+
+
 def to_file_frame(text, here, anchor_file):
-    text = re.sub(r"\]\((?!https?:|mailto:|#|/)([^)\s]+)\)", lambda m: f"](../{m.group(1)})", text)
+    text = re.sub(r"\]\((?!https?:|mailto:|#|/)([^)\s]+)\)", lambda m: f"]({down(m.group(1))})", text)
     text = re.sub(
         r"""\b(href|src)=(["'])(?!https?:|#|/|mailto:)([^"']+)\2""",
-        lambda m: f'{m.group(1)}={m.group(2)}../{m.group(3)}{m.group(2)}',
+        lambda m: f'{m.group(1)}={m.group(2)}{down(m.group(3))}{m.group(2)}',
         text,
     )
 
@@ -600,6 +607,9 @@ def run_split(root, maps, mode, rewrite):
     units = units + stray
     require_mapped(maps, units)
     out, targets, anchor_file = render(root, mode, maps, pre, pre_gap, units)
+    live = {rel.split("/")[-1] for rel in out if rel != DOC_REL}
+    for name in sorted(fnames - live):
+        raise Fail(f"{DIR_REL}/{name} would be left empty by this layout; nothing was written")
     changed = 0
     for rel, text in out.items():
         p = root / rel
@@ -607,9 +617,6 @@ def run_split(root, maps, mode, rewrite):
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(text, encoding="utf-8")
             changed += 1
-    live = {rel.split("/")[-1] for rel in out if rel != DOC_REL}
-    for name in sorted(fnames - live):
-        raise Fail(f"{DIR_REL}/{name} would be left empty by this layout; remove it by hand after review")
     stats = {"quoted": 0, "anchor": 0, "files": 0, "inventory": 0}
     skipped = []
     if rewrite:
