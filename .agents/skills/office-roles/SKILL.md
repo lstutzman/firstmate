@@ -9,7 +9,7 @@ metadata:
 # Office roles
 
 An office is a second mate whose home carries `.fm-office` and is registered in the main home's `data/offices.md`; it runs a standing role mandate instead of idling.
-Its charter (`bin/fm-brief.sh --secondmate --office`) owns the wake cycle, `config/office-authority` owns what it may dispatch and merge, [`docs/configuration.md`](../../../docs/configuration.md) "Offices (data/offices.md)" owns the registry schema, and [`docs/office-provisioning.md`](../../../docs/office-provisioning.md) owns the steps that create one.
+Its charter (`bin/fm-brief.sh --secondmate --office`) owns the wake cycle, `config/office-authority` owns what it may dispatch and merge, [`docs/configuration/secondmates-and-offices.md`](../../../docs/configuration/secondmates-and-offices.md) "Offices (data/offices.md)" owns the registry schema, and [`docs/office-provisioning.md`](../../../docs/office-provisioning.md) owns the steps that create one.
 This skill owns each role's mandate and the office's decision policy.
 Everything in the second-mate contract still applies: the parent channel is the only way the captain is reached, and the captain is never addressed in chat.
 
@@ -47,7 +47,7 @@ All four run on slartibartfast or Deep Thought only, never the MacBook, and run 
 Work the main firstmate routes to the office comes first and is ordinary routed work.
 On a tick or lane wake with a free place, start only what a standing start authority already covers:
 
-- progress starts under the captain's standing authority of 2026-10-26 ([Progress officer](../../../docs/configuration.md#progress-officer));
+- progress starts under the captain's standing authority of 2026-10-26 ([Progress officer](../../../docs/configuration/officers-progress.md#progress-officer));
 - velocity findings, which go ahead by default;
 - Top 10 bugs, security and infrastructure items, and dependency upgrades members cannot see, which start by default;
 - high or critical security fixes, which start at once.
@@ -57,7 +57,7 @@ Skip a candidate that is not a startable work item (a shell command, a note such
 A product choice is never a standing start; it goes to the captain as below.
 A fix that fails again never chains into another start on its own, and the office dispatches at most 3 fixes for one finding; the Surgeon's own start cap delivers the capped repeat to the office lane as a `surgeon-fix-cap` request instead of a fourth dispatch, and the office dispatches no fourth fix and files the keyed `needs-decision` `surgeon-<issue>-fix-cap` so Lee decides the next step.
 
-When the progress, surgeon, friction, corpus or library officer's `start-home:` names this office, its `lane:progress`, `lane:surgeon:high`, `lane:friction`, `lane:corpus` or `lane:library` source delivers each start request addressed to this home straight into this home's inbox ([Progress officer](../../../docs/configuration.md#progress-officer)); judge each such inbox note as above and dispatch it as ordinary routed work without asking main or the captain.
+When the progress, surgeon, friction, corpus or library officer's `start-home:` names this office, its `lane:progress`, `lane:surgeon:high`, `lane:friction`, `lane:corpus` or `lane:library` source delivers each start request addressed to this home straight into this home's inbox ([Progress officer](../../../docs/configuration/officers-progress.md#progress-officer)); judge each such inbox note as above and dispatch it as ordinary routed work without asking main or the captain.
 Never run a `<date>.start-requests.sh`: it holds only the main home's requests, and the main firstmate runs it.
 
 ## Designing a standing task or start source

@@ -2,7 +2,7 @@
 """fm-officer-page-check.py - the page-check officer's timed pass over the fleet app.
 
 Run only through `bin/fm-officer.sh run <id>`, which owns the officer
-contract; docs/configuration.md "Page-check officer" owns the registry fields.
+contract; docs/configuration/officers.md "Page-check officer" owns the registry fields.
 
 Usage:
   fm-officer-page-check.py run --key <YYYY-MM-DDTHH> --out <lane-dir> --app <https-url>

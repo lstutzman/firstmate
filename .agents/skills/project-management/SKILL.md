@@ -63,17 +63,17 @@ A forge composes with `no-mistakes`, `direct-PR`, and `no-mistakes-prod-only` (`
 The optional `pr=manual` token marks a `no-mistakes` project whose PR title and body a person writes, so the pipeline's `pr` step must not rewrite them; register it only on the captain's confirmation, with no `forge=` token (`docs/configuration.md` "PR text selection").
 
 The optional `merger=<home>` token names the one home that merges the project's PRs, by its secondmate id or `main` for the primary home; `bin/fm-pr-merge.sh` refuses every other home.
-Register it only on the captain's instruction, and leave it off a project every home may merge; `docs/configuration.md` "Merger home" owns its meaning.
+Register it only on the captain's instruction, and leave it off a project every home may merge; `docs/configuration/projects-and-forges.md` "Merger home" owns its meaning.
 The registry is not inherited, so every home that could merge the project must carry the same `merger=<home>` token on its own registry line.
 A home's id is its `.fm-secondmate-home` marker, else `main`, and a fleet has one primary home.
 
 The optional `landing-lag=<hours>` token holds back new ships for the project while its oldest ready PR on this machine has waited longer than that to land; register it only on the captain's instruction, on every home that dispatches the project.
-`docs/configuration.md` "Landing lag" owns its meaning, and a fix or landing work is spawned with `--landing-exempt`.
+`docs/configuration/projects-and-forges.md` "Landing lag" owns its meaning, and a fix or landing work is spawned with `--landing-exempt`.
 
-The optional `admission=<config>` token makes `bin/fm-pr-merge.sh` refuse a PR whose changes the project's own classifier flags in a class that needs the captain's word, until the captain's answer is recorded; register it only on the captain's instruction, and `docs/configuration.md` "Admission by class" owns the config and its meaning.
+The optional `admission=<config>` token makes `bin/fm-pr-merge.sh` refuse a PR whose changes the project's own classifier flags in a class that needs the captain's word, until the captain's answer is recorded; register it only on the captain's instruction, and `docs/configuration/projects-and-forges.md` "Admission by class" owns the config and its meaning.
 
 The optional `ready-evidence=<name>` token names the command set `config/ready-evidence/<name>` that must pass when a ship's PR or review is registered, before its ready `done:` is accepted.
-Register it only on the captain's instruction, together with that file, and never on a local-only project; `docs/configuration.md` "Ready evidence" owns its meaning, and a project with no token keeps today's done gate.
+Register it only on the captain's instruction, together with that file, and never on a local-only project; `docs/configuration/projects-and-forges.md` "Ready evidence" owns its meaning, and a project with no token keeps today's done gate.
 
 ## Add or clone an existing project
 

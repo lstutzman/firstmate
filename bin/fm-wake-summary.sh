@@ -31,7 +31,7 @@
 #     request in the lane digest is already acknowledged.
 # FM_WAKE_SUMMARY_CREW_STATE and FM_WAKE_SUMMARY_OFFICE override the two helper scripts (a test
 # seam). The verdict is the whole handling of a `no-action` row: the drain's --summary mode may
-# acknowledge a batch of only those rows when the home opts in (docs/configuration.md "Wake
+# acknowledge a batch of only those rows when the home opts in (docs/configuration/supervision.md "Wake
 # auto-acknowledge").
 set -u
 

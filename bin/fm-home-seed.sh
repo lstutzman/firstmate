@@ -29,7 +29,7 @@
 #       and scope are derived from the filled charter brief.
 #   fm-home-seed.sh <id> <home|-> {<project>...|--no-projects} --office <id>
 #       Seed <home> as an office: a second mate that runs a standing role
-#       mandate (docs/configuration.md "Offices (data/offices.md)"). <id> must
+#       mandate (docs/configuration/secondmates-and-offices.md "Offices (data/offices.md)"). <id> must
 #       equal the secondmate id and name exactly one line in this home's
 #       data/offices.md with an office role (any other role is refused), whose
 #       runs-on lists this host (FM_OFFICE_HOST, default hostname -s) and never

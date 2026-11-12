@@ -4521,7 +4521,7 @@ fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$LANDING_EXEMPT" -eq 0 ]; then
   SPAWN_LANDING_LAG=$("$FM_ROOT/bin/fm-project-mode.sh" --landing-lag "$(basename "$PROJ_ABS")" 2>/dev/null) || {
     "$FM_ROOT/bin/fm-project-mode.sh" --landing-lag "$(basename "$PROJ_ABS")" >/dev/null || true
-    echo "error: spawn refused: the landing-lag limit registered for $(basename "$PROJ_ABS") in $DATA/projects.md is unreadable; correct it so the captain's limit is known (docs/configuration.md \"Landing lag\")" >&2
+    echo "error: spawn refused: the landing-lag limit registered for $(basename "$PROJ_ABS") in $DATA/projects.md is unreadable; correct it so the captain's limit is known (docs/configuration/projects-and-forges.md \"Landing lag\")" >&2
     exit 1
   }
   if [ -n "$SPAWN_LANDING_LAG" ]; then

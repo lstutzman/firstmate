@@ -9,7 +9,7 @@ The reserved classes below are fixed in `bin/fm-officer-linear.py`, so no line h
 
 - The officer finds no work of its own.
   It starts work that is already authorised and unstarted, and it files nothing in Linear.
-- Authorised, unstarted work is the existing classes in [Progress officer](../configuration.md#progress-officer): `security` and `cve`, `code-review` and `bug`, and `requested-feature` and `requested-fleet`, by tag, title prefix, Linear label or requested root.
+- Authorised, unstarted work is the existing classes in [Progress officer](../configuration/officers-progress.md#progress-officer): `security` and `cve`, `code-review` and `bug`, and `requested-feature` and `requested-fleet`, by tag, title prefix, Linear label or requested root.
   This rubric does not change what starts; the code owns that list, and Lee's standing authority of 2026-10-26 is its source.
 - Work is excluded, never started, when it is held, blocked, carded, already in flight, finished, covered by an open PR in `repos`, or waiting on an ask to Lee.
 - An item another officer filed is recognised by its `<officer-id>-fp:<sha256>` marker in the description, the shared [officer contract](contract.md#file).
@@ -42,7 +42,7 @@ The reserved classes below are fixed in `bin/fm-officer-linear.py`, so no line h
 - An officer-filed item starts exactly as any item of its class does today, after triage.
 - The seven reserved classes never start by themselves: payments or billing, legal text, product decisions, member-facing copy, credentials, production actions and data-rewriting changes.
   An officer-filed item that asks for one (matched by the action, in its title and description) is held, and the digest carries one keyed needs-decision line for the run, `progress-holds-<date>`.
-  The existing checks on titles of other items (the `asks_for_lee` rules in [Progress officer](../configuration.md#progress-officer)) are unchanged.
+  The existing checks on titles of other items (the `asks_for_lee` rules in [Progress officer](../configuration/officers-progress.md#progress-officer)) are unchanged.
 
 ## Settings the code reads
 

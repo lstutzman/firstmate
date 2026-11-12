@@ -2,7 +2,7 @@
 """fm-officer-landing.py - the landing (records) officer's daily pass.
 
 Run only through `bin/fm-officer.sh run <id>`, which owns the officer
-contract; docs/configuration.md "Officers" owns the registry schema.
+contract; docs/configuration/officers.md "Officers" owns the registry schema.
 
 Usage:
   fm-officer-landing.py run --facts <path|host:path|https-url> --date <YYYY-MM-DD>

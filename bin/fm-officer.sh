@@ -5,7 +5,7 @@
 # on its own cadence (daily at a time, or every N hours), writes only its findings lane data/officers/<id>/,
 # and reports one line to its first mate. It never acts on the fleet. The
 # officer-roles skill owns the authority list and digest handling;
-# docs/configuration.md "Officers (data/officers.md)" owns the registry schema.
+# docs/configuration/officers.md "Officers (data/officers.md)" owns the registry schema.
 # This header owns the mechanics.
 #
 # Usage:
@@ -175,7 +175,7 @@ Usage:
   fm-officer.sh check <id>                   watcher check: start a due run, report a new digest
   fm-officer.sh preflight <id>               read-only checks that the officer's run-host can carry its pass
   fm-officer.sh ensure                       session-start health: one OFFICER: line per gap
-See docs/configuration.md "Officers (data/officers.md)" for the registry schema.
+See docs/configuration/officers.md "Officers (data/officers.md)" for the registry schema.
 EOF
 }
 

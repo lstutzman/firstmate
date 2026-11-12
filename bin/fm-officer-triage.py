@@ -2,7 +2,7 @@
 """fm-officer-triage.py - the triage officer's deterministic daily pass.
 
 Run only through `bin/fm-officer.sh run <id>`, which owns the officer
-contract (registry, write lane, schedule, report line); docs/configuration.md
+contract (registry, write lane, schedule, report line); docs/configuration/officers.md
 "Officers" owns the registry schema.
 
 Usage:

@@ -2,7 +2,7 @@
 """fm-officer-corpus.py - the corpus officer's daily pass over the agent training corpus.
 
 Run only through `bin/fm-officer.sh run <id>`, which owns the officer
-contract; docs/configuration.md "Corpus officer" owns the registry fields.
+contract; docs/configuration/officers.md "Corpus officer" owns the registry fields.
 
 Usage:
   fm-officer-corpus.py run|sources --archive <dir|host:dir> --date <YYYY-MM-DD> --out <lane-dir>

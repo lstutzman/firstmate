@@ -1,0 +1,96 @@
+# Sections that exist in upstream kunchenguid/firstmate docs/configuration.md, each with its target file.
+# Columns are tab separated; see the header of bin/fm-config-split.py.
+file	home-and-state.md	Home and state
+file	backlog-and-decisions.md	Backlog and decisions
+file	runtime-backend.md	Runtime backend
+file	supervision.md	Supervision
+file	away-and-alarms.md	Away mode and alarms
+file	dispatch.md	Dispatch
+file	capacity.md	Capacity
+file	harnesses.md	Harnesses
+file	worker-launch.md	Worker launch
+file	projects-and-forges.md	Projects and forges
+file	prs-and-pipeline.md	PRs and pipeline
+file	secondmates-and-offices.md	Secondmates and offices
+file	tools.md	Tools
+file	relay-and-intake.md	Relay and intake
+file	process-events.md	Process events
+file	lavish-review-boards.md	Lavish review boards
+file	environment-variables.md	Environment variables reference
+h2	index	Find a setting
+h2	index	Orchestrator behavior
+h2	home-and-state.md	FM_HOME
+h2	home-and-state.md	Operational home layout and state
+h2	home-and-state.md	Captain Preferences
+h2	home-and-state.md	Operational learnings
+h2	home-and-state.md	External memory tiers
+h2	home-and-state.md	Startup memory budget
+h2	home-and-state.md	Stow pass horizon
+h2	home-and-state.md	Self-update source
+h2	home-and-state.md	Firstmate role
+h2	home-and-state.md	Record export
+h2	home-and-state.md	Task status archive
+h2	home-and-state.md	Fleet activity ledger
+h2	home-and-state.md	Trace context propagation
+h2	home-and-state.md	Stow guard
+h2	backlog-and-decisions.md	Backlog backend
+h2	backlog-and-decisions.md	Open-decision reminders
+h2	runtime-backend.md	Runtime backend
+h2	supervision.md	Calm preference
+h2	supervision.md	Pi repeated-read containment
+h2	supervision.md	Pi supervision branch
+h2	supervision.md	Pi supervision branch model and effort
+h2	supervision.md	Supervision host
+h2	supervision.md	Codex native Stop park
+h2	supervision.md	Warm-cache compaction
+h2	supervision.md	Waiting worker spends no turns
+h2	away-and-alarms.md	Away-mode supervisor backend
+h2	away-and-alarms.md	Away-mode wedge alarm channels
+h2	away-and-alarms.md	Turn-end pane-churn absorb
+h2	away-and-alarms.md	Parked-gate wait deferral
+h2	away-and-alarms.md	Wedge evidence guards
+h2	away-and-alarms.md	Worker-declared wait deferral
+h2	away-and-alarms.md	Validating-run deferral
+h2	away-and-alarms.md	Pause ceiling
+h2	away-and-alarms.md	Superseded declared-wait wake
+h2	away-and-alarms.md	Silent paused rechecks
+h2	dispatch.md	Crew dispatch profiles
+h2	dispatch.md	Typed dispatch resolution
+h2	capacity.md	Lane capacity
+h2	capacity.md	Project capacity
+h2	harnesses.md	Harness support
+h2	harnesses.md	Claude permission mode
+h2	harnesses.md	Codex permission mode
+h2	harnesses.md	Persistent managed-policy failover
+h2	harnesses.md	Worker tool exclusions
+h2	worker-launch.md	Worker account pin
+h2	worker-launch.md	Worker launch environment
+h2	worker-launch.md	Spawn base from the primary checkout
+h2	worker-launch.md	Herdr lifecycle spawn guard
+h2	worker-launch.md	Home brief include
+h2	worker-launch.md	Home branch prompt include
+h2	projects-and-forges.md	Forge selection
+h2	projects-and-forges.md	PR text selection
+h2	projects-and-forges.md	GitHub Enterprise hosts
+h2	projects-and-forges.md	External review tool
+h2	prs-and-pipeline.md	PR health monitor
+h2	prs-and-pipeline.md	PR registration scan
+h2	prs-and-pipeline.md	No-mistakes pipeline spend
+h2	prs-and-pipeline.md	No-mistakes home resolver
+h2	prs-and-pipeline.md	PR-ready line after green
+h2	prs-and-pipeline.md	Gate defaults
+h2	prs-and-pipeline.md	Contribution review bots
+h2	prs-and-pipeline.md	Degraded PR watch
+h2	secondmates-and-offices.md	Secondmate routes
+h2	tools.md	Toolchain
+h2	tools.md	Watched tool updates
+h2	tools.md	Local Claude usage warner
+h2	tools.md	Lavish server address
+h2	tools.md	Lavish URL domain map
+h2	relay-and-intake.md	Mail plane
+h2	relay-and-intake.md	Relay
+h2	relay-and-intake.md	Spoken interface and captain inbox
+h2	process-events.md	Trusted external process-event adapters
+h2	process-events.md	Process-to-event sources
+h2	environment-variables.md	Environment variables
+h3	lavish-review-boards.md	Process-to-event sources	Crew-hosted Lavish review boards

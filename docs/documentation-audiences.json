@@ -370,6 +370,42 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/configuration/away-and-alarms.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/backlog-and-decisions.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/officers-progress.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/officers.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/projects-and-forges.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/relay-and-intake.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/secondmates-and-offices.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/supervision.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/worker-launch.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/officers/contract.md",
       "audience": "operator-current"
     },

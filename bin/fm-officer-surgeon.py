@@ -2,7 +2,7 @@
 """fm-officer-surgeon.py - the Ship's Surgeon's daily pass: triage, then intake.
 
 Run only through `bin/fm-officer.sh run <id>`, which owns the officer contract;
-docs/configuration.md "Officers" owns the registry schema, the officer-roles
+docs/configuration/officers.md "Officers" owns the registry schema, the officer-roles
 skill owns what the Surgeon may and may never do, docs/officers/contract.md owns the
 FIND, FILE, TRIAGE, START contract that bin/fm-officer-linear.py implements for every officer,
 and docs/officers/surgeon-rubric.md owns what counts as work, how it is scored and what starts by itself.

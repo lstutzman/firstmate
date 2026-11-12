@@ -291,7 +291,7 @@ family_for_basename() {
     fm-classify-decision-key.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
     fm-crew-state.test.sh|fm-captain-hold-lifecycle.test.sh|fm-limit-resume.test.sh|\
-    fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
+    fm-config-split.test.sh|fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-forge-detect.test.sh|fm-grok-harness.test.sh|\
     fm-fork-free-helpers.test.sh|\
     fm-harness-precedence.test.sh|fm-install-herdr.test.sh|\
     fm-kimi-harness.test.sh|fm-devin-harness.test.sh|fm-commandcode-harness.test.sh|fm-cortex-harness.test.sh|fm-hermes-harness.test.sh|fm-muse-harness.test.sh|fm-rovo-harness.test.sh|fm-agy-harness.test.sh|fm-kiro-harness.test.sh|fm-omp-harness.test.sh|fm-polytoken-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
@@ -814,6 +814,7 @@ tests/fm-commandcode-harness.test.sh 16692
 tests/fm-commandcode-signals-live-e2e.test.sh 401
 tests/fm-composer-codex-idle-live-e2e.test.sh 397
 tests/fm-composer-matrix-live-e2e.test.sh 346
+tests/fm-config-split.test.sh 3500
 tests/fm-contributions.test.sh 225054
 tests/fm-control-relaunch.test.sh 286750
 tests/fm-control.test.sh 108599
@@ -1905,6 +1906,9 @@ families_for_changed_path() {
     bin/fm-fleet-alarm.py)
       printf '%s\n' __script__:fm-fleet-alarm.test.sh
       ;;
+    bin/fm-config-split.py|docs/config-split/*)
+      printf '%s\n' __script__:fm-config-split.test.sh
+      ;;
     bin/fm-teardown.sh)
       printf '%s\n' pr-forge
       printf '%s\n' "__script__:fm-backend-t3code.test.sh"
@@ -2001,7 +2005,7 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       ;;
     .github/*|.gitattributes|.tasks.toml|AGENTS.md|CLAUDE.md|CONTRIBUTING.md|\
-    docs/configuration.md|docs/supervision-protocols/*)
+    docs/configuration.md|docs/configuration/*|docs/supervision-protocols/*)
       printf '%s\n' pure-contract-unit
       ;;
     tests/git-config-helpers.sh)

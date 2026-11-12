@@ -2,7 +2,7 @@
 """fm-officer-friction.py - the friction officer's deterministic daily pass.
 
 Run only through `bin/fm-officer.sh run <id>`, which owns the officer
-contract; docs/configuration.md "Officers" owns the registry schema.
+contract; docs/configuration/officers.md "Officers" owns the registry schema.
 
 Usage:
   fm-officer-friction.py scan --archive <dir> --date <YYYY-MM-DD>
@@ -262,7 +262,7 @@ nothing is started by default and the digest names the gap.
 Each card carries `actions`: open and reported-again offer start-fix, a
 started-by-default card offers object, a started card with no link or task
 offers reopen, and the rest offer none, so a standing-work card never offers a
-bare Start fix. docs/configuration.md "Officers" lists the card fields.
+bare Start fix. docs/configuration/officers.md "Officers" lists the card fields.
 
 Velocity taps. A Captain's Log reply on a `velocity-vs-<id>` card (the fleet app's velocity audit page) is read from the
 same replies feed and handled by bin/fm-velocity-taps.py, which owns the five choices and the older words: it files the

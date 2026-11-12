@@ -91,7 +91,7 @@ The hook fires on every Stop and StopFailure, covering API-error turn ends that 
 On either event, an eligible primary with supervision need admits one home-scoped owner, which foregrounds `bin/fm-watch-arm.sh` inside the hook-owned process tree.
 If a session exits mid-cycle and leaves an orphaned auto-arm hook, the replacement session's first eligible Stop or StopFailure supersedes its claim, attaches to the running watcher through `bin/fm-watch-arm.sh`, and delivers the cycle's close.
 [`turnend-guard.md`](turnend-guard.md#auto-arm-generation-claim) owns the open-claim definition.
-While supervision is still needed and away mode remains inactive, an actionable close wakes the idle session through exit 2, unless the home's `config/wake-auto-ack` no-wake path acknowledges a batch of only no-action wakes first ([configuration](configuration.md#wake-auto-acknowledge-configwake-auto-ack)).
+While supervision is still needed and away mode remains inactive, an actionable close wakes the idle session through exit 2, unless the home's `config/wake-auto-ack` no-wake path acknowledges a batch of only no-action wakes first ([configuration](configuration/supervision.md#wake-auto-acknowledge-configwake-auto-ack)).
 StopFailure-driven continuations are paced rather than dropped during persistent API errors; after waiting, the hook stands down silently if away mode appeared or supervision is no longer needed.
 The script header owns the storm-bound mechanics, [configuration](configuration.md#environment-variables) lists the cooldown override, and [StopFailure verification](verification/supervision.md#stopfailure-auto-arm) records the Herdr-hosted evidence and deterministic regression entry point.
 
@@ -141,7 +141,7 @@ A session killed mid-cycle and relaunched with `claude --resume <id>` comes back
 Session start and every resume, reload, or fork record the session's endpoint, and a per-home user timer runs one `check` every five minutes.
 When the home needs supervision, no healthy watcher holds its lock, and the beacon is older than 15 minutes, the check rings that endpoint once per stale episode with a `watcher` operational input, so the next turn and its turn end restore supervision through the ordinary owner.
 It types only into an affirmatively empty idle composer and never starts, stops, or kills a session or watcher.
-Its header owns the record gate, the episode key, and the ring guards, and [configuration](configuration.md#watcher-backstop-timer) owns installation.
+Its header owns the record gate, the episode key, and the ring guards, and [configuration](configuration/supervision.md#watcher-backstop-timer) owns installation.
 
 ## Actionable wake ordering
 
