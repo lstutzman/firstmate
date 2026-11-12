@@ -449,9 +449,15 @@ run_alarm check >/dev/null
 now=$(date +%s)
 mate 1 0 7200
 printf 'paused [corr=8afb4eff68548715] [at=%s] [cause=external]: no work in flight. Waiting until 2026-11-13: the watch checks after the next run\n' "$((now - 30000))" > "$HOME_FIX/state/mate.status"
-[ -z "$(run_alarm check)" ] || fail 'an undated paused [cause=external] wait older than the ceiling is a live declared wait'
+[ -z "$(run_alarm check)" ] || fail 'an undated paused [cause=external] wait past the 6h ceiling but under 24h is a live declared wait'
 printf 'paused [at=%s]: waiting on something\n' "$((now - 30000))" > "$HOME_FIX/state/mate.status"
 assert_contains "$(run_alarm check)" 'holding work silent' 'an undated pause without cause=external past the ceiling still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+now=$(date +%s)
+mate 1 0 7200
+printf 'paused [at=%s] [cause=external]: waiting on vendor\n' "$((now - 90000))" > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'an undated paused [cause=external] wait older than 24 hours alarms again'
 mate 0 0 0
 run_alarm check >/dev/null
 MATE_LINE="working" mate 1 0 7200

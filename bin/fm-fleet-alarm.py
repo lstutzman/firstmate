@@ -7,7 +7,8 @@ FM_HOME selects the primary home. config/fleet-alarm.json accepts seven_day
 read), pool_remaining (.1, mean remaining
 weekly capacity across non-stale Claude readings), silent_minutes
 (60), stale_minutes (120), persist_polls (2), budget_seconds (24), carrying_reset_hours (6),
-carrying_pool_floor (.4), and working_ceiling_multiple (6). cpa-usage-host selects local
+carrying_pool_floor (.4), working_ceiling_multiple (6), and external_wait_ceiling_hours (24).
+cpa-usage-host selects local
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Each Claude account's carrying threshold comes from the proxy config's routing.quota-threshold
 (default 100) and routing.quota-thresholds (per lower-cased account email), percent values read on
@@ -37,7 +38,8 @@ silent_minutes past, while it holds work (in flight, an active child or a parked
 nothing open, and has no status-source ask (one on a task it also holds as a captain-hold row
 does not count) and a complete decision list, is working a long task and
 is not silent either. A `paused [cause=external]` line with no `until` time is a declared wait
-that stays live while it is the mate's latest line, however old; its prose is never parsed for a date.
+that counts instead while younger than external_wait_ceiling_hours (24), then alarms again; only an
+`until <YYYY-MM-DDTHH:MMZ>` token in a line is read as its `until` time, never a date-only phrase.
 A secondmate waiting on an open captain decision is healthy waiting and is never silent: no
 open decision row has source status unless the mate also holds that task id as a captain-hold row
 (no child is asking it anything), its
@@ -192,7 +194,7 @@ def settings():
     values = dict(seven_day=.9, pool_remaining=.1, silent_minutes=60,
                   stale_minutes=120, persist_polls=2, budget_seconds=24,
                   carrying_reset_hours=6, carrying_pool_floor=.4,
-                  working_ceiling_multiple=6)
+                  working_ceiling_multiple=6, external_wait_ceiling_hours=24)
     path = CONFIG / 'fleet-alarm.json'
     if path.exists():
         supplied = json.loads(path.read_text())
@@ -312,7 +314,8 @@ def working_on_task(summary, counts, open_decisions, last_verb, paused_until, ag
     # The mate's own latest line says it is working, or paused for work it still holds, and
     # nobody is waiting on it: a long task that reports sparingly, not a mate gone quiet. A
     # declared pause is quiet again once its clearing time is more than the silence window
-    # past; any other line once it is older than working_ceiling_multiple silence windows.
+    # past; an undated external wait once it is older than external_wait_ceiling_hours; any
+    # other line once it is older than working_ceiling_multiple silence windows.
     if last_verb not in ('working', 'paused') or open_decisions != '0' or child_asking(summary, counts):
         return False
     if not (counts.get('in_flight', 0) or counts['active_children'] or counts['holds']):
@@ -320,11 +323,10 @@ def working_on_task(summary, counts, open_decisions, last_verb, paused_until, ag
     window = cfg['silent_minutes'] * 60
     if paused_until:
         return time.time() <= int(paused_until) + window
+    ceiling = cfg['working_ceiling_multiple'] * window
     if last_verb == 'paused' and cause == 'external':
-        # A declared external wait with no `until` tag is live for as long as it is the
-        # mate's latest line; the date in its prose is never parsed.
-        return True
-    return age != 'null' and float(age) < cfg['working_ceiling_multiple'] * window
+        ceiling = cfg['external_wait_ceiling_hours'] * 3600
+    return age != 'null' and float(age) < ceiling
 
 
 def mate_findings(read, cfg, not_collected):
