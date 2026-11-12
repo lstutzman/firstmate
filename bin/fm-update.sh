@@ -84,6 +84,11 @@
 # fm-procevent-when.sh rebind-all to republish those bindings against the new
 # bytes; a failure there is swallowed rather than failing the update.
 #
+# One pass runs per home at a time: a per-home lock (state/.fm-update.lock) makes
+# a manual /updatefirstmate and the detached post-merge run
+# (bin/fm-post-merge-update.sh) wait for each other, up to FM_UPDATE_LOCK_WAIT
+# seconds (default 900); a pass that times out moves nothing and exits 1.
+#
 # Usage: fm-update.sh [--help]
 set -eu
 
@@ -154,6 +159,21 @@ EOF
 }
 
 read_self_update_source
+
+# --- one pass per home -----------------------------------------------------
+# A manual /updatefirstmate and the detached post-merge run
+# (bin/fm-post-merge-update.sh) share this per-home lock, so their fetches and
+# fast-forwards never race. The wait is bounded; a timeout moves nothing.
+
+UPDATE_LOCK="$STATE/.fm-update.lock"
+UPDATE_LOCK_WAIT="${FM_UPDATE_LOCK_WAIT:-900}"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+if ! fm_lock_acquire_wait_max "$UPDATE_LOCK" "$UPDATE_LOCK_WAIT"; then
+  echo "error: another fm-update.sh pass still holds $UPDATE_LOCK after ${UPDATE_LOCK_WAIT}s; nothing was updated" >&2
+  exit 1
+fi
+trap 'fm_lock_release "$UPDATE_LOCK"' EXIT
 
 # --- main firstmate repo ---------------------------------------------------
 

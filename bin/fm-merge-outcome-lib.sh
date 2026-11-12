@@ -29,8 +29,10 @@
 # its captain-held task is no longer an open status decision, so the hold stays
 # governed by its own lifecycle.
 #
-# A first-time record in the primary home also starts bin/fm-post-merge-update.sh,
-# which fast-forwards every home when the merge was firstmate's own.
+# A first-time record also calls bin/fm-post-merge-update.sh, which
+# fast-forwards every home when the merge was firstmate's own and this is the
+# primary home; a secondmate or office home's merge reaches the primary through
+# the parent-channel line above, which the primary's watcher scans.
 #
 # Sourced by bin/fm-pr-merge.sh, bin/fm-watch.sh, and tests. No side effects on
 # source beyond its sourced libraries.
@@ -140,10 +142,10 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin> [autho
   fi
   fm_lock_release "$lock"
   [ "$status" -ne 0 ] || fm_merge_outcome_close_asks "$state" "$id" "$FM_PR_URL" || true
-  # A newly recorded merge in the primary home may be a firstmate merge: start
-  # the detached fast-forward of every home (bin/fm-post-merge-update.sh owns
-  # the gates and the failure report). Never slows or fails the merge.
-  [ "$status" -ne 0 ] || [ -n "$destination" ] || "$_FM_MERGE_OUTCOME_LIB_DIR/fm-post-merge-update.sh" launch "$home" "$state" "$id" >/dev/null 2>&1 || true
+  # A newly recorded merge may be a firstmate merge: start the detached
+  # fast-forward of every home (bin/fm-post-merge-update.sh owns the home,
+  # project and per-PR gates and the failure report). Never slows or fails the merge.
+  [ "$status" -ne 0 ] || "$_FM_MERGE_OUTCOME_LIB_DIR/fm-post-merge-update.sh" launch "$home" "$state" "$id" "$FM_PR_URL" >/dev/null 2>&1 || true
   # Opt-in fleet activity ledger (docs/fleet-ledger.md); off costs one file test.
   [ ! -e "${FM_CONFIG_OVERRIDE:-$home/config}/fleet-ledger" ] || [ "$status" -ne 0 ] || FM_HOME=$home FM_STATE_OVERRIDE=$state "$_FM_MERGE_OUTCOME_LIB_DIR/fm-fleet-ledger.sh" merged "$id" pr "$FM_PR_URL" || true
   return "$status"

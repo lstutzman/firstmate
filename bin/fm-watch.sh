@@ -4350,6 +4350,10 @@ while :; do
   # Opt-in fleet activity ledger (docs/fleet-ledger.md): pick up newly appended
   # status lines before this cycle can exit on a wake. Off costs one file test.
   [ ! -e "$CONFIG/fleet-ledger" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-fleet-ledger.sh" capture || true
+  # Post-merge update (docs/configuration.md "Post-merge update"): a child's
+  # merged firstmate PR fast-forwards every home. Silent and detached; a no-op
+  # outside the primary home or when opted out.
+  FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-post-merge-update.sh" scan "$FM_HOME" "$STATE" >/dev/null 2>&1 || true
   # Opt-in Herdr project groups (docs/herdr-backend.md "Project groups"):
   # display-only tags and agents view, never a wake. Off costs one file test.
   [ ! -e "$CONFIG/herdr-project-groups" ] || FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG "$SCRIPT_DIR/fm-herdr-groups.sh" sync || true
