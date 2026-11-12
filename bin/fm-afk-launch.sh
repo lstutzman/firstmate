@@ -181,13 +181,21 @@ fm_afk_launch_lock_owned() { # [lock-dir]: default the launcher lock
   [ -n "$expected" ] && [ "$actual" = "$expected" ]
 }
 
-# The lock <dir> still has no live owner (see fm_afk_launch_lock_owned).
-fm_afk_launch_lock_unowned() { # <dir>
-  ! fm_afk_launch_lock_owned "$1"
+# The lock <dir> still records the pid and pid-identity seen earlier and has no
+# live owner (see fm_afk_launch_lock_owned). A lock missing either file is stale
+# only once it is a second old, so a claim still being written is never taken.
+fm_afk_launch_lock_unowned() { # <dir> <pid-seen> <identity-seen>
+  local lock=$1 pid identity
+  pid=$(cat "$lock/pid" 2>/dev/null || true)
+  identity=$(cat "$lock/pid-identity" 2>/dev/null || true)
+  [ "$pid" = "${2-}" ] && [ "$identity" = "${3-}" ] || return 1
+  fm_afk_launch_lock_owned "$lock" && return 1
+  [ -n "$pid" ] && [ -n "$identity" ] && return 0
+  python3 -I -c 'import os, sys, time; sys.exit(time.time() - os.stat(sys.argv[1]).st_mtime < 1)' "$lock" 2>/dev/null
 }
 
 fm_afk_launch_lock_acquire() {
-  local attempt=0 incomplete=0 identity
+  local attempt=0 incomplete=0 identity seen_pid seen_identity
   mkdir -p "$FM_AFK_LAUNCH_STATE" || return 1
   while [ "$attempt" -lt 200 ]; do
     attempt=$((attempt + 1))
@@ -215,10 +223,12 @@ fm_afk_launch_lock_acquire() {
     else
       incomplete=0
     fi
+    seen_pid=$(cat "$FM_AFK_LAUNCH_LOCK/pid" 2>/dev/null || true)
+    seen_identity=$(cat "$FM_AFK_LAUNCH_LOCK/pid-identity" 2>/dev/null || true)
     if ! fm_afk_launch_lock_owned; then
       # Only one racer can complete the takeover; the others go round to see
       # the new owner.
-      fm_atomic_takeover "$FM_AFK_LAUNCH_LOCK" fm_afk_launch_lock_unowned || true
+      fm_atomic_takeover "$FM_AFK_LAUNCH_LOCK" fm_afk_launch_lock_unowned "$seen_pid" "$seen_identity" || true
       incomplete=0
       continue
     fi

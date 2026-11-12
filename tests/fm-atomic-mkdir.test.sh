@@ -199,6 +199,17 @@ POLL_ROUNDS=3
     load_fn fm-afk-launch.sh "$fn"
   done
   FM_AFK_LAUNCH_STATE=$TMP_ROOT/afk-state
+  # A claim still being written (pid but no pid-identity yet) is never taken
+  # over; the same lock left that way for over a second is; and a lock that
+  # changed since the caller looked is not.
+  d=$TMP_ROOT/afk-partial; mkdir -p "$d"; p=$(dead_pid); printf '%s' "$p" > "$d/pid"
+  fm_atomic_takeover "$d" fm_afk_launch_lock_unowned "$p" "" && fail "afk takeover removed a claim still being written"
+  [ "$(cat "$d/pid" 2>/dev/null)" = "$p" ] || fail "a refused afk takeover disturbed the claim being written"
+  touch -t 200001010000 "$d"
+  fm_atomic_takeover "$d" fm_afk_launch_lock_unowned "$p" "" || fail "afk takeover did not remove an old incomplete lock"
+  d=$TMP_ROOT/afk-changed; mkdir -p "$d"; p=$(dead_pid); printf '%s' "$p" > "$d/pid"; printf 'no-such-identity' > "$d/pid-identity"
+  fm_atomic_takeover "$d" fm_afk_launch_lock_unowned "$(dead_pid)" "other-identity" && fail "afk takeover removed a lock that changed since it was seen"
+  fm_atomic_takeover "$d" fm_afk_launch_lock_unowned "$p" "no-such-identity" || fail "afk takeover did not remove a dead owner's lock"
   jitter_after fm_afk_launch_lock_unowned
   afk_claim() { FM_AFK_LAUNCH_LOCK=$1; fm_afk_launch_lock_acquire; }
   for r in $(seq 1 "$POLL_ROUNDS"); do
