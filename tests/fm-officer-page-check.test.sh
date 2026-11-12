@@ -609,7 +609,7 @@ closes_of() {  # <id>: the verified close moves of an item in the fake Linear lo
 }
 
 test_the_officer_closes_its_own_items_when_the_finding_is_over() {
-  local dir log a b c lc ln
+  local dir log lc ln
   linear_world autoclose
   dir=$FAKE_LINEAR_DIR
   log=$dir/log
