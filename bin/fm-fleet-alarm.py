@@ -3,11 +3,18 @@
 
 Usage: fm-fleet-alarm.py check | timer | arm | timer-files <linux|darwin> <dir>
 FM_HOME selects the primary home. config/fleet-alarm.json accepts seven_day
-(default .9, carrying-account threshold), pool_remaining (.1, mean remaining
+(default .9, carrying-account threshold used only when the proxy's own thresholds cannot be
+read), pool_remaining (.1, mean remaining
 weekly capacity across non-stale Claude readings), silent_minutes
 (60), stale_minutes (120), persist_polls (2), budget_seconds (24), carrying_reset_hours (6),
 carrying_pool_floor (.4), and working_ceiling_multiple (6). cpa-usage-host selects local
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
+Each Claude account's carrying threshold comes from the proxy config's routing.quota-threshold
+(default 100) and routing.quota-thresholds (per lower-cased account email), percent values read on
+the same host as the quota reads from ~/.config/cli-proxy-api/config.yaml (~ is that host's
+home). Only those routing keys are extracted, on the host, and
+nothing else of that secret-bearing file is returned, logged or stored. Unreadable or invalid, the
+seven_day setting is the fallback and the alarm text says so.
 Both readers share FM_CHECK_TIMEOUT (default 30); budget must leave 5 seconds.
 Secondmate inventory reads published home summaries (bounded remote reads fall
 back to the parent cache); no full fleet snapshot runs here. Unreachable homes
@@ -46,10 +53,11 @@ captain-hold-<id>-<n>) is waiting on the captain too. A blocked line never exemp
 truncated endpoint list or one uncovered in-flight item keeps the silence check live.
 The Claude quota context line shows the proxy's view: the accounts serving now (successful Claude
 traffic in the last 15 minutes, from `cpa-usage-axi models --hours 0.25`), pooled 7d headroom across
-non-stale accounts, and accounts over the seven_day threshold labelled rotated out. A carrying
-account (successful traffic in the last 60 minutes) over seven_day raises a quota decision only when
-no non-stale account under the threshold is serving; once the proxy has rotated, nothing needs the
-captain. The line is appended only to
+non-stale accounts, and accounts at or above their own proxy threshold labelled rotated out. A
+carrying account (successful traffic in the last 60 minutes) at or above its own threshold raises a
+quota decision only when no non-stale account below its own threshold is serving, and only after
+the finding persists for persist_polls polls (traffic failed to move); once the proxy has rotated,
+nothing needs the captain. The line is appended only to
 cards whose alarms include a quota alarm (quota:, stale:, pool, ignored:, quota-read); on other
 alarms it is left off.
 A carrying-account finding alarms once. While its weekly reset is within carrying_reset_hours
@@ -97,7 +105,9 @@ def cause_of(alarms):
 
 
 def is_inventory(key):
-    return key == 'mate-read' or key.startswith('mate-read:')
+    # quota: carrying findings persist too, so the moment an account crosses its threshold
+    # (before the proxy has moved traffic) raises nothing.
+    return key == 'mate-read' or key.startswith(('mate-read:', 'quota:'))
 SERVING_MINUTES = 15
 QUOTA_PREFIX = 'Claude quota context (not an alarm; proxy view): '
 SERVING_HOURS = str(SERVING_MINUTES / 60)
@@ -120,6 +130,61 @@ def run(argv, seconds):
     if result.returncode:
         raise ReaderUnavailable(result.returncode)
     return result.stdout
+
+
+PROXY_CONFIG = '~/.config/cli-proxy-api/config.yaml'
+# Runs on the proxy host. Prints only the routing threshold numbers, never any other config text.
+PROXY_READER = r"""
+import json, math, os, re, sys
+def clean(text):
+    return re.sub(r'\s+#.*$', '', text).strip().strip('"\'').strip()
+rows = open(os.path.expanduser(sys.argv[1])).read().splitlines()
+out = {'default': None, 'accounts': {}}
+found = False
+block = child = sub = acct = None
+for row in rows:
+    text = row.strip()
+    if not text or text.startswith('#'):
+        continue
+    indent = len(row) - len(row.lstrip(' '))
+    if indent == 0:
+        block = 'routing' if clean(text) == 'routing:' else None
+        found = found or block is not None
+        child = sub = acct = None
+        continue
+    if block is None:
+        continue
+    key, _, value = text.partition(':')
+    key, value = clean(key), clean(value)
+    if child is None:
+        child = indent
+    if indent <= child:
+        sub = acct = None
+        if key == 'quota-thresholds':
+            if value:
+                sys.exit(5)
+            sub = key
+        elif key == 'quota-threshold' and value:
+            out['default'] = float(value)
+    elif sub:
+        acct = indent if acct is None else acct
+        if indent != acct or not value:
+            sys.exit(5)
+        out['accounts'][key.lower()] = float(value)
+if not found:
+    sys.exit(3)
+for v in [out['default'], *out['accounts'].values()]:
+    if v is not None and not (math.isfinite(v) and 0 < v <= 100):
+        sys.exit(4)
+print(json.dumps(out))
+"""
+
+
+def proxy_thresholds(text):
+    data = json.loads(text)
+    default = 100.0 if data['default'] is None else float(data['default'])
+    accounts = {str(name).lower(): float(pct) / 100 for name, pct in data['accounts'].items()}
+    return default / 100, accounts
 
 
 def settings():
@@ -409,6 +474,9 @@ def collect(cfg):
                'cpa-usage-axi']
     else:
         raise ValueError('invalid cpa-usage-host')
+    proxy_cmd = ['python3', '-I', '-c', PROXY_READER, PROXY_CONFIG]
+    if cpa[0] == 'ssh':
+        proxy_cmd = [*cpa[:-1], *(shlex.quote(a) for a in proxy_cmd)]
     try:
         rows = accounts(read([*cpa, 'accounts'], 4))
 
@@ -422,6 +490,20 @@ def collect(cfg):
                     names.add(row['account'])
             return names
 
+        try:
+            proxy = proxy_thresholds(read(proxy_cmd, 8))
+        except (ValueError, KeyError, TypeError, AttributeError, OSError):
+            proxy = None
+
+        def threshold(name):
+            return proxy[1].get(name.lower(), proxy[0]) if proxy else cfg['seven_day']
+
+        def past(row):
+            # The proxy moves traffic once an account reaches its threshold; the fallback keeps seven_day's strict test.
+            return row['used_7d'] >= threshold(row['account']) if proxy else row['used_7d'] > threshold(row['account'])
+
+        source = ('proxy config' if proxy else
+                  f"seven_day fallback {cfg['seven_day']:.0%}: proxy config unreadable")
         carrying = served('1', 3)
         serving = served(SERVING_HOURS, 2)
         live = [row for row in rows if row['used_7d'] is not None and row['age_min'] is not None
@@ -429,15 +511,18 @@ def collect(cfg):
         live_pool = [row['used_7d'] for row in live]
         pooled = (f"{sum(1 - Decimal(str(used)) for used in live_pool) / len(live_pool):.0%} mean 7d headroom "
                   f"across {len(live_pool)} non-stale accounts") if live_pool else 'no non-stale readings'
-        rotated = sorted(f"{row['account']} 7d {row['used_7d']:.0%}" for row in live if row['used_7d'] > cfg['seven_day'])
-        # The proxy has rotated when a non-stale account with headroom is serving current traffic.
-        rotated_away = any(row['account'] in serving and row['used_7d'] <= cfg['seven_day'] for row in live)
+        rotated = sorted(f"{row['account']} 7d {row['used_7d']:.0%}" + (f" (threshold {threshold(row['account']):.0%})" if proxy else '')
+                         for row in live if past(row))
+        # The proxy has rotated when a non-stale account below its own threshold is serving current traffic.
+        rotated_away = any(row['account'] in serving and not past(row) for row in live)
         live_used = {row['account']: row['used_7d'] for row in live}
         servers = ', '.join(f"{name} 7d {live_used[name]:.0%}" if name in live_used else f'{name} reading stale/unknown'
                             for name in sorted(serving)) or f'none (no successful Claude traffic in last {SERVING_MINUTES} minutes)'
         quota_info = (f'{QUOTA_PREFIX}Serving Claude accounts '
                       f'(successful traffic in last {SERVING_MINUTES} minutes): {servers}; pooled: {pooled}; '
-                      f"rotated out (over {cfg['seven_day']:.0%} 7d): {', '.join(rotated) if rotated else 'none'}")
+                      + (f"rotated out (at or above own proxy threshold): {', '.join(rotated) if rotated else 'none'}" if proxy else
+                         f"rotated out (over {cfg['seven_day']:.0%} 7d): {', '.join(rotated) if rotated else 'none'}; "
+                         f"threshold source: {source}"))
         pool, ignored, carrying_keys = [], 0, {}
         for row in rows:
             name = row['account']
@@ -451,7 +536,7 @@ def collect(cfg):
                 findings['stale:' + name] = f'Claude quota reading stale: {name}'
             else:
                 pool.append(row['used_7d'])
-            if name in carrying and row['used_7d'] > cfg['seven_day'] and not rotated_away:
+            if name in carrying and past(row) and not rotated_away:
                 reset = row['reset_7d']
                 # cpa-usage-axi's reset time drifts a minute between reads; key on the nearest hour.
                 try:
@@ -460,7 +545,7 @@ def collect(cfg):
                 except ValueError:
                     pass
                 key = 'quota:' + name + ':' + reset
-                findings[key] = f"Carrying Claude account {name} 7d {row['used_7d']:.0%} (resets {row['reset_7d']})"
+                findings[key] = f"Carrying Claude account {name} 7d {row['used_7d']:.0%} (resets {row['reset_7d']}; threshold {threshold(name):.0%} from {source})"
                 carrying_keys[key] = row['reset_7d']
         # A carrying account about to reset while the pool has ample headroom is not worth repeating.
         if pool and carrying_keys:
