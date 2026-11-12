@@ -44,7 +44,8 @@
 # --stale-handoffs (opt-in; a dry run lists candidates, --apply retires them)
 # retires an escalated record whose delivery was never confirmed, the one class
 # --key refuses, when every condition holds, each read live at that moment:
-#   - its request names at least one PR URL (request_prs, else the summary);
+#   - its request names at least one PR URL (request_prs, else the summary,
+#     which must not have been cut short with a trailing "...");
 #   - every named PR is CLOSED or MERGED on its forge (gh pr view, read-only);
 #   - the record is at least --min-age-days old (default 3) by created_epoch;
 #   - no backlog-handoff wake still names it, and its parent status log lies in
@@ -53,7 +54,8 @@
 #     closed in the owning library's vocabulary.
 # Any other undelivered record is left untouched and printed with
 # verdict=stale-handoff-kept and its reason (no-pr, pr-open, pr-unreadable,
-# too-young, wake-named, outside-home, decision-never-recorded). Delivered
+# too-young, wake-named, outside-home, decision-never-recorded,
+# summary-truncated). Delivered
 # records keep their ordinary verdicts. Retiring appends one resolved line to the
 # record's parent status log with via=sweep-stale-handoff and the PR states as
 # evidence (skipped when the decision was already closed), then settles the
@@ -131,14 +133,22 @@ pr_states() {  # <comma-separated-urls>
   printf '%s' "$out"
 }
 
+# PR URLs in a request summary, leaving out any URL that runs into a "..." cut.
+summary_prs() {  # <summary>
+  local s=$1
+  case "$s" in *...) s=${s%...}; case "$s" in *' '*) s=${s% *} ;; *) s='' ;; esac ;; esac
+  printf '%s\n' "$s" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true
+}
+
 escalated=0 settled=0 keyed=0 review=0 unproven=0 skipped=0 failed=0 stale_retired=0 stale_kept=0
 NOW=$(fm_pending_reply_now)
 
 # Stale-handoff verdict for one undelivered record: prints the kept reason and
 # returns 1, or prints the PR evidence and returns 0 when every condition holds.
-stale_check() {  # <rec> <corr> <key> <parent_status> <prs-csv>
+stale_check() {  # <rec> <corr> <key> <parent_status> <prs-csv> <summary-cut>
   local rec=$1 corr=$2 key=$3 pstatus=$4 prs=$5 created states
   if fm_pending_reply_wake_marker_names "$STATE" "$corr"; then echo wake-named; return 1; fi
+  if [ "$6" = 1 ]; then echo summary-truncated; return 1; fi
   if [ -z "$prs" ]; then echo no-pr; return 1; fi
   if [ -z "$pstatus" ] || ! [ "${pstatus%/*}" -ef "$STATE" ]; then echo outside-home; return 1; fi
   created=$(fm_pending_reply_get "$rec" created_epoch)
@@ -184,10 +194,14 @@ for rec in "$STATE"/pending-replies/*; do
   fi
 
   if [ "$STALE" -eq 1 ] && [ -z "$(fm_pending_reply_get "$rec" delivered_epoch)" ]; then
-    sprs=$(fm_pending_reply_get "$rec" request_prs)
-    [ -n "$sprs" ] || sprs=$(fm_pending_reply_get "$rec" request_summary | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true)
+    sprs=$(fm_pending_reply_get "$rec" request_prs) scut=0
+    if [ -z "$sprs" ]; then
+      summary=$(fm_pending_reply_get "$rec" request_summary)
+      case "$summary" in *...) scut=1 ;; esac
+      sprs=$(summary_prs "$summary")
+    fi
     HANDLED="$HANDLED$key,"
-    if ! evidence=$(stale_check "$rec" "$corr" "$key" "$parent_status" "$sprs"); then
+    if ! evidence=$(stale_check "$rec" "$corr" "$key" "$parent_status" "$sprs" "$scut"); then
       echo "$line verdict=stale-handoff-kept reason=$evidence"
       stale_kept=$((stale_kept + 1))
       ! listed "$key" || refuse "$key" "delivery was never confirmed"
@@ -230,7 +244,7 @@ for rec in "$STATE"/pending-replies/*; do
   delivered=$(fm_pending_reply_get "$rec" delivered_epoch)
   prs=$(fm_pending_reply_get "$rec" request_prs)
   summary=$(fm_pending_reply_get "$rec" request_summary)
-  [ -n "$prs" ] || prs=$(printf '%s\n' "$summary" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true)
+  [ -n "$prs" ] || prs=$(summary_prs "$summary")
   if grep -qaF -- "$(fm_pending_reply_corr_token "$corr")" "$parent_status" 2>/dev/null; then
     reason='corr-line-unmatched'
   elif [ -z "$delivered" ]; then
