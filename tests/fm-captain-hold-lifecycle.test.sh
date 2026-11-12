@@ -1858,6 +1858,20 @@ test_hold_answer_closes_originating_decision_key() {
   printf '%s\n' "$open" | grep -Fq 'gates-work' \
     && fail "a re-hold reused the earlier hold's origin key and left the task-id key open: $open"
 
+  # The published hold line carries the origin key as a bracket token only when
+  # --origin-key was passed, and the open-decision fold is unchanged by it.
+  grep -F 'needs-decision [key=captain-hold-gates-work-1] [origin-key=recorded-key]' "$channel" >/dev/null \
+    || fail "an origin-key hold did not publish the [origin-key=...] token: $(cat "$channel")"
+  grep -F 'needs-decision [key=captain-hold-pillow-calls-1]' "$channel" | grep -F 'origin-key' >/dev/null \
+    && fail "a hold without --origin-key published an origin-key token"
+  printf '%s\n' 'needs-decision [key=captain-hold-fold-1] [origin-key=fold-key] [cause=decision]: captain hold fold: pending' \
+    > "$mate/fold.status"
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$mate/fold.status")
+  printf '%s\n' "$open" | grep -Fq 'captain-hold-fold-1' \
+    || fail "the origin-key token hid the hold from the open-decision fold: $open"
+  printf '%s\n' "$open" | grep -Fq 'fold-key' \
+    && fail "the origin-key token was read as a decision key: $open"
+
   run_captain "$mate" answer pillow-calls --decision-file "$decision" >/dev/null \
     || fail "answer retry failed"
   [ "$(sed -E 's/ \[at=[0-9]+\]//' "$channel" | grep -c '^resolved \[key=pillow-calls\]')" = 1 ] \
