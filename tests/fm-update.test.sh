@@ -691,6 +691,29 @@ test_self_update_source_rewrite_is_skipped() {
   pass "T15 a non-fast-forward self-update source is skipped, never forced"
 }
 
+# --- T16: a pass already running holds the per-home lock --------------------
+# Spec: docs/configuration.md "Post-merge update": a manual pass and the
+# post-merge run wait for each other, and a pass that times out moves nothing.
+test_concurrent_pass_waits_and_moves_nothing() {
+  local w before holder rc=0 err
+  w=$(new_world t16)
+  bump_origin "$w" readme
+  before=$(git -C "$w/main" rev-parse HEAD)
+  STATE="$w/home/state" bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_acquire_wait "$2" && : > "$3" && exec sleep 60' \
+    _ "$ROOT" "$w/home/state/.fm-update.lock" "$w/holder-ready" &
+  holder=$!
+  for _ in $(seq 1 100); do [ -e "$w/holder-ready" ] && break; sleep 0.1; done
+  [ -e "$w/holder-ready" ] || fail "T16 lock holder never acquired the lock"
+  err=$(PATH="$w/fakebin:$PATH" FM_FAKE_DIR="$w/fake" FM_UPDATE_LOCK_WAIT=1 \
+    FM_ROOT_OVERRIDE="$w/main" FM_HOME="$w/home" "$UPDATE" 2>&1 >/dev/null) || rc=$?
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  [ "$rc" -ne 0 ] || fail "T16 a pass ran while another held the lock"
+  assert_contains "$err" "error: another fm-update.sh pass" "T16 the refused pass must say why"
+  assert_equals "$(git -C "$w/main" rev-parse HEAD)" "$before" "T16 a refused pass moved the primary"
+  assert_contains "$(run_update "$w")" "firstmate: updated " "T16 the next pass after the holder exits must update"
+  pass "T16 a concurrent pass waits on the per-home lock and moves nothing on timeout"
+}
+
 test_updates_main_and_secondmate
 test_reread_gate_is_instruction_only
 test_bin_only_advance_restarts
@@ -710,5 +733,6 @@ test_primary_update_rebinds_local_watch
 test_self_update_source_follows_branch
 test_self_update_source_refuses_unusable_config
 test_self_update_source_rewrite_is_skipped
+test_concurrent_pass_waits_and_moves_nothing
 
 echo "# all fm-update tests passed"

@@ -441,6 +441,20 @@ The file is local to each home and is not inherited by secondmate homes.
 
 <a id="wake-auto-acknowledge-configwake-auto-ack"></a>Moved to [Wake auto-acknowledge (config/wake-auto-ack)](configuration/supervision.md#wake-auto-acknowledge-configwake-auto-ack).
 
+## Post-merge update (config/no-post-merge-update)
+
+When a firstmate pull request merges, the primary home starts `bin/fm-update.sh` detached through `bin/fm-post-merge-update.sh`, so every local and remote secondmate home and code root fast-forwards without waiting for `/updatefirstmate`.
+Two paths start it:
+
+- the primary home records the merge itself, and the task's project shares firstmate's repository lineage;
+- a secondmate or office home records the merge and reports `done [key=merged-<id>]: merged <id> <pr-url>` on its parent channel. The primary's watcher reads the newly appended status lines and checks the pull request itself: the URL must name the repository `fm-update.sh` fetches from (the code root's origin or its `config/self-update-source` remote), and a read-only `gh` or `gh-axi` read must show it merged. The first scan in a home only records where each status log ends, so merges reported earlier start nothing.
+
+A durable per-PR marker under `state/.post-merge-update/` means a pull request seen by both paths, or reported twice, starts one update; merges in other projects start nothing, and a secondmate or office home never starts one itself.
+`fm-update.sh` holds a per-home lock, so this run and a manual `/updatefirstmate` wait for each other (up to `FM_UPDATE_LOCK_WAIT` seconds, default 900) instead of racing.
+It carries every guard `fm-update.sh` has (clean tree, ancestry, branch, self-update source) and never forces, stashes, restarts, or relaunches a session; restarts stay with `/updatefirstmate`.
+Success is silent; a skipped home, a failed update, or a child-reported merge that `gh` could not read raises one `check:` wake in the primary home.
+Create the empty, home-local `config/no-post-merge-update` file to opt that home out.
+
 ## Warm-cache compaction (config/warm-compact)
 
 Create the home-local `config/warm-compact` file to compact an idle Claude primary and the supervision host's engine conversation before their prompt cache expires.
