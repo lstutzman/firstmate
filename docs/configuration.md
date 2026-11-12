@@ -1277,7 +1277,7 @@ On each poll, the watcher queues at most one `check: open decision overdue: <tas
 Declared `paused:` waits and tasks already held for the captain are exempt.
 A `captain-hold-<task>-<n>` key, which a secondmate's `bin/fm-captain-hold.sh hold` relays on its parent channel, is exempt by that key prefix alone, because the captain already holds that decision.
 When that hold was set with `--until YYYY-MM-DD`, the relayed line carries a structured `[until=YYYY-MM-DD]` field before its first colon, and the key re-arms from 00:00 UTC on that date; a malformed field re-arms it at once.
-A hold set with `--origin-key <key>` also carries a structured `[origin-key=<key>]` field there, naming the plain `needs-decision` key the open hold already covers so a consumer can card the hold alone; the key fold and every other reader ignore the field, and a hold without `--origin-key` carries none.
+A hold set with `--origin-key <key>` also carries a structured `[origin-key=<key>]` field there, naming the plain `needs-decision` key the open hold already covers so a consumer can card the hold alone; the key fold and every other reader ignore the field, and a hold with no origin key recorded for its occurrence carries none (a re-hold of the same occurrence keeps the recorded key).
 Note text never decides either exemption.
 Resolving a key stops its reminders, and a later opening starts a new reminder episode.
 Republishing a still-open key with a new `[at=<epoch>]` but the same verb and note keeps its first opened time and reminder schedule instead of restarting them, while a changed verb or note, or a resolution followed by a reopen with the same text, starts a new episode.

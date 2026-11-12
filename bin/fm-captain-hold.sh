@@ -278,7 +278,8 @@
 # no new persisted state, and an exact retry republishes the same line, which
 # the channel deduplicates against that key's latest line, so a hold re-dated
 # back to an earlier `--until` is still delivered. A `hold --origin-key <key>` adds
-# the structured `[origin-key=<key>]` field to that line (and nothing without it),
+# the structured `[origin-key=<key>]` field to that line (a re-hold of the same occurrence
+# keeps the recorded key; a hold with none recorded adds nothing),
 # so a consumer can tell which plain needs-decision key the open hold already
 # covers and card only the hold; the key fold ignores the field. A `hold --until` adds the
 # structured `[until=YYYY-MM-DD]` field to that line, which the parent watcher's
