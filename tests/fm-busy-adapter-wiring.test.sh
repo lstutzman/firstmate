@@ -965,7 +965,15 @@ case "\${1:-}" in
     esac
     ;;
   capture-pane) printf 'working\n' ;;
-  display-message) printf '0\n' ;;
+  display-message)
+    # An empty pane tty means no foreground process group to inspect. A
+    # numeric tty would name a real terminal on the host (ps -t 0 is pts/0),
+    # and a shell there would read as a confirmed-dead agent.
+    case "\$*" in
+      *pane_tty*) printf '\n' ;;
+      *) printf '0\n' ;;
+    esac
+    ;;
   *) exit 0 ;;
 esac
 SH
