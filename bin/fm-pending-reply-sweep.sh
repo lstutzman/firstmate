@@ -2,6 +2,7 @@
 # fm-pending-reply-sweep.sh - settle or list escalated parent pending-reply records.
 #
 # Usage: FM_HOME=<home> fm-pending-reply-sweep.sh [--apply [--key <key>[,<key>...]]...]
+#        [--stale-handoffs [--min-age-days <n>]]
 #
 # An escalated record (bin/fm-pending-reply-lib.sh) stays escalated until a
 # correlated report lands, and the watcher re-checks it on every poll. This
@@ -40,6 +41,29 @@
 # the fleet ledger when config/fleet-ledger exists, then settles the record. A
 # key that is still open after its append is reported and makes the exit status 1.
 #
+# --stale-handoffs (opt-in; a dry run lists candidates, --apply retires them)
+# retires an escalated record whose delivery was never confirmed, the one class
+# --key refuses, when every condition holds, each read live at that moment:
+#   - its request names at least one PR URL (request_prs, else the summary,
+#     which must not have been cut short with a trailing "...");
+#   - every named PR is CLOSED or MERGED on its forge (gh pr view, read-only);
+#   - the record is at least --min-age-days old (default 3) by created_epoch;
+#   - no backlog-handoff wake still names it, and its parent status log lies in
+#     this home's state directory;
+#   - its escalation decision is open in the parent status log, or was already
+#     closed in the owning library's vocabulary.
+# Any other undelivered record is left untouched and printed with
+# verdict=stale-handoff-kept and its reason (no-pr, pr-open, pr-unreadable,
+# too-young, wake-named, outside-home, decision-never-recorded,
+# summary-truncated). Delivered
+# records keep their ordinary verdicts. Retiring appends one resolved line to the
+# record's parent status log with via=sweep-stale-handoff and the PR states as
+# evidence (skipped when the decision was already closed), then settles the
+# record through fm_pending_reply_settle_closed_escalation. It never sends a
+# message to the mate, never resends the request, and never edits or deletes a
+# record file. Dry-run candidates print verdict=stale-handoff-candidate; applied
+# ones print verdict=stale-handoff-retired; a rerun finds nothing left.
+#
 # Environment: FM_HOME (required), FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE.
 # Exit: 0 done, 1 a close did not take effect or a --key was refused,
 # 2 usage or setup error.
@@ -47,12 +71,17 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-usage() { echo "usage: FM_HOME=<home> fm-pending-reply-sweep.sh [--apply [--key <key>[,<key>...]]...]" >&2; exit 2; }
-APPLY=0 KEYS=''
+usage() { echo "usage: FM_HOME=<home> fm-pending-reply-sweep.sh [--apply [--key <key>[,<key>...]]...] [--stale-handoffs [--min-age-days <n>]]" >&2; exit 2; }
+APPLY=0 KEYS='' STALE=0 MIN_AGE_DAYS=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
     --key) [ "$#" -ge 2 ] && [ -n "$2" ] || usage; KEYS="$KEYS,$2"; shift ;;
+    --stale-handoffs) STALE=1 ;;
+    --min-age-days)
+      [ "$#" -ge 2 ] || usage
+      case "$2" in '' | *[!0-9]*) usage ;; esac
+      MIN_AGE_DAYS=$2; shift ;;
     -h | --help) sed -n '2,/^set -eu/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     *) usage ;;
   esac
@@ -60,6 +89,8 @@ while [ "$#" -gt 0 ]; do
 done
 KEYS="$KEYS,"
 [ "$KEYS" = , ] || [ "$APPLY" -eq 1 ] || usage
+[ -z "$MIN_AGE_DAYS" ] || [ "$STALE" -eq 1 ] || usage
+MIN_AGE_DAYS=${MIN_AGE_DAYS:-3}
 
 if [ -z "${FM_HOME:-}" ] || [ ! -d "$FM_HOME" ]; then
   echo "error: FM_HOME must name an existing firstmate home" >&2
@@ -102,7 +133,37 @@ pr_states() {  # <comma-separated-urls>
   printf '%s' "$out"
 }
 
-escalated=0 settled=0 keyed=0 review=0 unproven=0 skipped=0 failed=0
+# PR URLs in a request summary, leaving out any URL that runs into a "..." cut.
+summary_prs() {  # <summary>
+  local s=$1
+  case "$s" in *...) s=${s%...}; case "$s" in *' '*) s=${s% *} ;; *) s='' ;; esac ;; esac
+  printf '%s\n' "$s" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true
+}
+
+escalated=0 settled=0 keyed=0 review=0 unproven=0 skipped=0 failed=0 stale_retired=0 stale_kept=0
+NOW=$(fm_pending_reply_now)
+
+# Stale-handoff verdict for one undelivered record: prints the kept reason and
+# returns 1, or prints the PR evidence and returns 0 when every condition holds.
+stale_check() {  # <rec> <corr> <key> <parent_status> <prs-csv> <summary-cut>
+  local rec=$1 corr=$2 key=$3 pstatus=$4 prs=$5 created states
+  if fm_pending_reply_wake_marker_names "$STATE" "$corr"; then echo wake-named; return 1; fi
+  if [ "$6" = 1 ]; then echo summary-truncated; return 1; fi
+  if [ -z "$prs" ]; then echo no-pr; return 1; fi
+  if [ -z "$pstatus" ] || ! [ "${pstatus%/*}" -ef "$STATE" ]; then echo outside-home; return 1; fi
+  created=$(fm_pending_reply_get "$rec" created_epoch)
+  case "$created" in '' | *[!0-9]*) echo too-young; return 1 ;; esac
+  if [ $((NOW - created)) -lt $((MIN_AGE_DAYS * 86400)) ]; then echo too-young; return 1; fi
+  states=$(pr_states "$prs")
+  case ",$states," in
+    *=unreadable,*) echo pr-unreadable; return 1 ;;
+    *=OPEN,*) echo pr-open; return 1 ;;
+  esac
+  if ! key_open "$pstatus" "$key" && [ -z "$(fm_pending_reply_escalation_close_line "$pstatus" "$corr")" ]; then
+    echo decision-never-recorded; return 1
+  fi
+  printf '%s' "$states"
+}
 REVIEW_OUT=''
 
 for rec in "$STATE"/pending-replies/*; do
@@ -132,6 +193,46 @@ for rec in "$STATE"/pending-replies/*; do
     continue
   fi
 
+  if [ "$STALE" -eq 1 ] && [ -z "$(fm_pending_reply_get "$rec" delivered_epoch)" ]; then
+    sprs=$(fm_pending_reply_get "$rec" request_prs) scut=0
+    if [ -z "$sprs" ]; then
+      summary=$(fm_pending_reply_get "$rec" request_summary)
+      case "$summary" in *...) scut=1 ;; esac
+      sprs=$(summary_prs "$summary")
+    fi
+    HANDLED="$HANDLED$key,"
+    if ! evidence=$(stale_check "$rec" "$corr" "$key" "$parent_status" "$sprs" "$scut"); then
+      echo "$line verdict=stale-handoff-kept reason=$evidence"
+      stale_kept=$((stale_kept + 1))
+      ! listed "$key" || refuse "$key" "delivery was never confirmed"
+      continue
+    fi
+    if [ "$APPLY" -eq 0 ]; then
+      echo "$line verdict=stale-handoff-candidate prs=$evidence"
+      stale_retired=$((stale_retired + 1))
+      continue
+    fi
+    if key_open "$parent_status" "$key"; then
+      fm_cap_line_var "resolved [key=$key]: $(fm_pending_reply_resolved_note "$task" "$corr" sweep-stale-handoff "prs=$evidence")" "$CLOSE_MAX"
+      rc=0
+      fm_wake_status_append_self_announced "$STATE" "$parent_status" "$FM_LINE_CAP_LINE" || rc=$?
+      if [ "$rc" -eq 2 ]; then
+        echo "error: could not append to $parent_status" >&2
+        failed=$((failed + 1))
+        continue
+      fi
+      [ ! -e "$CONFIG/fleet-ledger" ] \
+        || "$SCRIPT_DIR/fm-fleet-ledger.sh" appended "$CONFIG" "$parent_status" >/dev/null 2>&1 || true
+    fi
+    if fm_pending_reply_settle_closed_escalation "$STATE" "$corr" sweep-stale-handoff allow-undelivered; then
+      echo "$line verdict=stale-handoff-retired prs=$evidence"
+      stale_retired=$((stale_retired + 1))
+    else
+      echo "error: record $corr could not be retired" >&2
+      failed=$((failed + 1))
+    fi
+    continue
+  fi
   if fm_pending_reply_wake_marker_names "$STATE" "$corr" || ! key_open "$parent_status" "$key"; then
     echo "$line verdict=unproven"
     ! listed "$key" || refuse "$key" "verdict is unproven"
@@ -143,7 +244,7 @@ for rec in "$STATE"/pending-replies/*; do
   delivered=$(fm_pending_reply_get "$rec" delivered_epoch)
   prs=$(fm_pending_reply_get "$rec" request_prs)
   summary=$(fm_pending_reply_get "$rec" request_summary)
-  [ -n "$prs" ] || prs=$(printf '%s\n' "$summary" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true)
+  [ -n "$prs" ] || prs=$(summary_prs "$summary")
   if grep -qaF -- "$(fm_pending_reply_corr_token "$corr")" "$parent_status" 2>/dev/null; then
     reason='corr-line-unmatched'
   elif [ -z "$delivered" ]; then
@@ -198,7 +299,8 @@ if [ -n "$REVIEW_OUT" ]; then
   echo "review: the escalation is still open and nothing proves the request was answered; read each and close with --apply --key <key>"
   printf '%s' "$REVIEW_OUT"
 fi
-mode=dry-run
+mode=dry-run stale_totals=''
+[ "$STALE" -eq 0 ] || stale_totals=" stale-handoff-$([ "$APPLY" -eq 1 ] && echo retired || echo candidates)=$stale_retired stale-handoff-kept=$stale_kept"
 [ "$APPLY" -eq 0 ] || mode=apply
-echo "totals mode=$mode escalated=$escalated settled=$settled closed-by-key=$keyed review=$review unproven=$unproven other-phase=$skipped refused-key=$refused failed=$failed"
+echo "totals mode=$mode escalated=$escalated settled=$settled closed-by-key=$keyed review=$review unproven=$unproven other-phase=$skipped refused-key=$refused failed=$failed$stale_totals"
 [ "$failed" -eq 0 ] && [ "$refused" -eq 0 ]
