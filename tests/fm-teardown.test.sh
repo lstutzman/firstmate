@@ -98,7 +98,7 @@ export REAL_LSOF_FOR_TEST
 # Usage: require_host_lsof || return 0
 require_host_lsof() {
   [ -n "$REAL_LSOF_FOR_TEST" ] && return 0
-  printf 'note: %s skipped: this host has no lsof to scan process working directories\n' "${FUNCNAME[1]}"
+  printf 'note: %s skipped: lsof is missing on this host, so teardown reaps only the tmux pane process group and cwd-based reaping is not exercised here\n' "${FUNCNAME[1]}"
   return 1
 }
 
@@ -6505,7 +6505,6 @@ test_status_archive_nested_secondmate_children() {
 # A fake lsof marks the first reaper scan and writes the worker's last change
 # after the initial landed-work proof. No real endpoint or pool is touched.
 test_work_written_at_reap_boundary_is_preserved() {
-  require_host_lsof || return 0
   local backend change case_dir rc before kind replay_rc failed=0
   for backend in orca tmux; do
     for change in reap-refusal tracked untracked commit clean force scout; do
