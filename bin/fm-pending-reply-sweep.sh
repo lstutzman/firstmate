@@ -45,10 +45,11 @@
 # retires an escalated record whose delivery was never confirmed, the one class
 # --key refuses, when every condition holds, each read live at that moment:
 #   - its request names at least one PR URL (request_prs; for an older record
-#     without it, the full request text recovered by corr id from the parent
-#     status log's corr= lines and the task's steering-inbox relay message
-#     files, plus a summary not cut short with a trailing "..."; the record is
-#     never edited to backfill the field);
+#     without it, the summary, or when that was cut short with a trailing "..."
+#     the full request text recovered by corr id from the parent status log's
+#     corr= lines and the task's steering-inbox relay message files, each counted
+#     only when it holds the summary's pre-cut text and is not itself cut; the
+#     record is never edited to backfill the field);
 #   - every named PR is CLOSED or MERGED on its forge (gh pr view, read-only);
 #   - the record is at least --min-age-days old (default 3) by created_epoch;
 #   - no backlog-handoff wake still names it, and its parent status log lies in
@@ -143,27 +144,42 @@ summary_prs() {  # <summary>
   printf '%s\n' "$s" | grep -oE "$FM_PENDING_REPLY_PR_URL_RE" | awk '!seen[$0]++' | paste -sd, - || true
 }
 
-# Full request text of a record with no request_prs, from durable sources keyed
-# by its corr id: the corr= lines of its parent status log (leaving out the
-# library's own escalation and close lines, whose request= is the cut summary),
-# then every marked relay message file for that corr in the task's steering
-# inbox (root, handled/, archive/). Prints the PR URLs found (comma list) and
-# sets RECOVERED_PRS (comma list) and RECOVERED_SRC (the sources that held the
-# text), both empty when no full text exists. Sets globals, so call it without
-# a command substitution. Read-only.
+# Full request text of a record with no request_prs and a cut summary, from
+# durable sources keyed by its corr id: each corr= line of its parent status log
+# (leaving out the library's own escalation and close lines), then every relay
+# message file for that corr in the task's steering inbox (root, handled/,
+# archive/). A source counts only when its whitespace-normalised text holds the
+# summary's pre-cut prefix and is not itself cut (no trailing "..." and no
+# " [truncated]" marker), so an echo, a partial quote or a repost of the cut
+# summary is never taken for the request. Sets RECOVERED_PRS (comma list) and
+# RECOVERED_SRC (the sources that held the text), both empty when no full text
+# exists. Sets globals, so call it without a command substitution. Read-only.
 RECOVERED_SRC='' RECOVERED_PRS=''
-recover_full_prs() {  # <corr> <task> <parent_status>
-  local corr=$1 task=$2 pstatus=$3 text='' src='' f lines own
+norm_ws() { tr '\t\r\n' '   ' | tr -s ' ' | sed 's/^ //;s/ $//'; }
+full_request_text() {  # <prefix> <text>
+  local t
+  t=$(printf '%s' "$2" | norm_ws)
+  case "$t" in *"$1"*) ;; *) return 1 ;; esac
+  case "$t" in *...|*"$FM_LINE_CAP_SUFFIX"*) return 1 ;; esac
+}
+recover_full_prs() {  # <corr> <task> <parent_status> <summary>
+  local corr=$1 task=$2 pstatus=$3 prefix text='' src='' f l own token
   own="[key=$(fm_pending_reply_escalation_key "$corr")]"
+  token=$(fm_pending_reply_corr_token "$corr")
+  prefix=$(printf '%s' "${4%...}" | norm_ws)
   RECOVERED_SRC='' RECOVERED_PRS=''
   if [ -f "$pstatus" ]; then
-    lines=$(grep -aF -- "$(fm_pending_reply_corr_token "$corr")" "$pstatus" 2>/dev/null | grep -avF -- "$own" || true)
-    if [ -n "$lines" ]; then text=$lines; src=status-log; fi
+    while IFS= read -r l; do
+      full_request_text "$prefix" "$l" || continue
+      text="$text"$'\n'"$l"; src='status-log'
+    done < <(grep -aF -- "$token" "$pstatus" 2>/dev/null | grep -avF -- "$own" || true)
   fi
   for f in "$STATE/$task.inbox"/*.msg "$STATE/$task.inbox"/handled/*.msg "$STATE/$task.inbox"/archive/*.msg; do
     [ -f "$f" ] || continue
-    grep -qaF -- "$(fm_pending_reply_corr_token "$corr")" "$f" 2>/dev/null || continue
-    text="$text"$'\n'"$(cat "$f")"
+    grep -qaF -- "$token" "$f" 2>/dev/null || continue
+    l=$(cat "$f")
+    full_request_text "$prefix" "$l" || continue
+    text="$text"$'\n'"$l"
     case ",$src," in *,relay-message,*) ;; *) src="$src${src:+,}relay-message" ;; esac
   done
   [ -n "$src" ] || return 0
@@ -229,17 +245,15 @@ for rec in "$STATE"/pending-replies/*; do
     ssrc=''
     if [ -z "$sprs" ]; then
       summary=$(fm_pending_reply_get "$rec" request_summary)
-      recover_full_prs "$corr" "$task" "$parent_status"
-      sprs=$RECOVERED_PRS
-      if [ -n "$RECOVERED_SRC" ]; then
-        ssrc=$RECOVERED_SRC
-        # A cut summary may still name PRs the recovered text lacks; none are lost
-        # by taking the union, and an open one among them keeps the record.
-        sprs=$(printf '%s,%s' "$sprs" "$(summary_prs "$summary")" | tr ',' '\n' | awk 'NF && !seen[$0]++' | paste -sd, - || true)
-      else
-        case "$summary" in *...) scut=1 ;; esac
-        sprs=$(summary_prs "$summary")
-      fi
+      sprs=$(summary_prs "$summary")
+      case "$summary" in *...)
+        recover_full_prs "$corr" "$task" "$parent_status" "$summary"
+        if [ -n "$RECOVERED_SRC" ]; then
+          ssrc=$RECOVERED_SRC sprs=$RECOVERED_PRS
+        else
+          scut=1
+        fi ;;
+      esac
     fi
     HANDLED="$HANDLED$key,"
     if ! evidence=$(stale_check "$rec" "$corr" "$key" "$parent_status" "$sprs" "$scut"); then

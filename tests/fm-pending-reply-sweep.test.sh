@@ -210,6 +210,9 @@ S_OLD=a0000000000000b1 S_OPEN=a0000000000000b2 S_NOPR=a0000000000000b3 S_UNREAD=
 S_YOUNG=a0000000000000b5 S_CLOSEDKEY=a0000000000000b6 S_MARKED=a0000000000000b7 S_MIXED=a0000000000000b8
 S_OUTSIDE=a0000000000000b9 S_NEVER=a0000000000000ba S_SUMMARY=a0000000000000bb S_CUT=a0000000000000bc
 S_LEGLOG=a0000000000000bd S_LEGOPEN=a0000000000000be S_LEGRELAY=a0000000000000bf
+S_LEGECHO=a0000000000000c0 S_LEGREPOST=a0000000000000c1
+LEG_SUMMARY="please land the old pile in order, the long list first ..."
+LEG_FULL="please land the old pile in order, the long list first, then"
 printf 'OPEN\n' > "$PRS/https___github.com_o_r_pull_8"
 printf 'OPEN\n' > "$PRS/https___github.com_o_r_pull_98"
 # A pre-request_prs summary cut by the 120-character cap inside PR 98's URL, so
@@ -237,16 +240,21 @@ mkstale() {  # <name>
   rec "$h" "$S_CUT" escalated delivered_epoch= created_epoch="$OLD" "request_summary=$CUT_SUMMARY"
   # Legacy records (no request_prs, summary cut before the PR URLs): the full
   # request is recovered by corr id from the parent status log or the relay file.
-  for c in "$S_LEGLOG" "$S_LEGOPEN" "$S_LEGRELAY"; do
-    rec "$h" "$c" escalated delivered_epoch= created_epoch="$OLD" "request_summary=please land the old pile in order, the long list first ..."
+  # An echo of the corr naming one closed PR, and a repost carrying only the cut
+  # summary, are not the full request and must not stand in for it.
+  for c in "$S_LEGLOG" "$S_LEGOPEN" "$S_LEGRELAY" "$S_LEGECHO"; do
+    rec "$h" "$c" escalated delivered_epoch= created_epoch="$OLD" "request_summary=$LEG_SUMMARY"
   done
-  mkdir -p "$h/state/t.inbox/handled"
-  printf 'schema=fm-task-inbox.v1\n--\n%scorr=%s land %s and %s\n' "$FM_FROMFIRST_MARK" "$S_LEGOPEN" "$(U 7)" "$(U 8)" > "$h/state/t.inbox/handled/1.msg"
-  printf 'schema=fm-task-inbox.v1\n--\n%scorr=%s land %s\n' "$FM_FROMFIRST_MARK" "$S_LEGRELAY" "$(U 9)" > "$h/state/t.inbox/2.msg"
+  rec "$h" "$S_LEGREPOST" escalated delivered_epoch= created_epoch="$OLD" "request_summary=please land $(U 9) first, then the rest of the old pile in order ..."
+  mkdir -p "$h/state/t.inbox/handled" "$h/state/t.inbox/archive"
+  printf 'schema=fm-task-inbox.v1\n--\n%scorr=%s %s\n%s and %s\n' "$FM_FROMFIRST_MARK" "$S_LEGOPEN" "$LEG_FULL" "$(U 7)" "$(U 8)" > "$h/state/t.inbox/handled/1.msg"
+  printf 'schema=fm-task-inbox.v1\n--\n%scorr=%s %s %s\n' "$FM_FROMFIRST_MARK" "$S_LEGRELAY" "$LEG_FULL" "$(U 9)" > "$h/state/t.inbox/2.msg"
+  printf 'schema=fm-task-inbox.v1\n--\n%s%s\n' "$FM_FROMFIRST_MARK" "$(fm_pending_reply_recovery_message "$h/state/pending-replies/$S_LEGREPOST")" > "$h/state/t.inbox/archive/3.msg"
   printf 'pending:%s\n' "$S_MARKED" > "$h/state/.backlog-handoff-t.wake-pending"
   {
-    for c in "$S_LEGLOG" "$S_LEGOPEN" "$S_LEGRELAY"; do held "$c"; done
-    printf 'working [at=1790000020]: corr=%s handoff text: land %s and %s\n' "$S_LEGLOG" "$(U 7)" "$(U 9)"
+    for c in "$S_LEGLOG" "$S_LEGOPEN" "$S_LEGRELAY" "$S_LEGECHO" "$S_LEGREPOST"; do held "$c"; done
+    printf 'working [at=1790000020]: corr=%s handoff text: %s %s and %s\n' "$S_LEGLOG" "$LEG_FULL" "$(U 7)" "$(U 9)"
+    printf 'working [at=1790000030]: corr=%s picking up %s\n' "$S_LEGECHO" "$(U 7)"
     for c in "$S_OLD" "$S_OPEN" "$S_NOPR" "$S_UNREAD" "$S_YOUNG" "$S_CLOSEDKEY" "$S_MARKED" "$S_MIXED" "$S_SUMMARY" "$S_CUT"; do held "$c"; done
     printf 'resolved [key=pending-reply-%s] [at=1790000100]: pending-reply-resolved: task=t pending-reply-id=%s via=operator-resolve-key ack\n' "$S_CLOSEDKEY" "$S_CLOSEDKEY"
   } > "$h/state/t.status"
@@ -272,7 +280,9 @@ test_stale_dry_run_changes_nothing() {
   assert_contains "$out" "key=pending-reply-$S_LEGLOG verdict=stale-handoff-candidate prs=$(U 7)=MERGED,$(U 9)=CLOSED recovered-from=status-log" "a legacy record whose status corr line names only closed PRs is a candidate"
   assert_contains "$out" "key=pending-reply-$S_LEGRELAY verdict=stale-handoff-candidate prs=$(U 9)=CLOSED recovered-from=relay-message" "a legacy record is recovered from its relay message file"
   assert_contains "$out" "key=pending-reply-$S_LEGOPEN verdict=stale-handoff-kept reason=pr-open" "a recovered open PR keeps a legacy record"
-  assert_contains "$out" "stale-handoff-candidates=5 stale-handoff-kept=9" "totals"
+  assert_contains "$out" "key=pending-reply-$S_LEGECHO verdict=stale-handoff-kept reason=full-request-unavailable" "a status line that only echoes the corr is not the full request"
+  assert_contains "$out" "key=pending-reply-$S_LEGREPOST verdict=stale-handoff-kept reason=full-request-unavailable" "a repost carrying the cut summary is not the full request"
+  assert_contains "$out" "stale-handoff-candidates=5 stale-handoff-kept=11" "totals"
   [ "$(snapshot "$h")" = "$before" ] || fail "a stale dry run changed the home"
   pass "--stale-handoffs without --apply lists candidates and changes nothing"
 }
@@ -282,11 +292,11 @@ test_stale_apply_retires_only_proven() {
   h=$(mkstale stale-apply)
   out=$(sweep "$h" --apply --stale-handoffs) || fail "stale apply failed: $out"
   assert_contains "$out" "key=pending-reply-$S_OLD verdict=stale-handoff-retired" "retired"
-  assert_contains "$out" "stale-handoff-retired=5 stale-handoff-kept=9" "totals"
+  assert_contains "$out" "stale-handoff-retired=5 stale-handoff-kept=11" "totals"
   for c in "$S_OLD" "$S_CLOSEDKEY" "$S_SUMMARY" "$S_LEGLOG" "$S_LEGRELAY"; do
     [ "$(field "$h" "$c" phase)" = resolved ] && [ "$(field "$h" "$c" resolved_via)" = sweep-stale-handoff ] || fail "$c must be retired"
   done
-  for c in "$S_OPEN" "$S_NOPR" "$S_UNREAD" "$S_YOUNG" "$S_MARKED" "$S_MIXED" "$S_OUTSIDE" "$S_NEVER" "$S_CUT" "$S_LEGOPEN"; do
+  for c in "$S_OPEN" "$S_NOPR" "$S_UNREAD" "$S_YOUNG" "$S_MARKED" "$S_MIXED" "$S_OUTSIDE" "$S_NEVER" "$S_CUT" "$S_LEGOPEN" "$S_LEGECHO" "$S_LEGREPOST"; do
     [ "$(field "$h" "$c" phase)" = escalated ] || fail "$c must stay escalated"
   done
   n=$(grep -c "pending-reply-id=$S_OLD via=sweep-stale-handoff prs=" "$h/state/t.status")
@@ -296,18 +306,18 @@ test_stale_apply_retires_only_proven() {
   grep -q "^request_prs=$" "$h/state/pending-replies/$S_LEGLOG" || fail "a legacy record is never backfilled"
   n=$(grep -c "^resolved .*pending-reply-id=$S_CLOSEDKEY" "$h/state/t.status")
   [ "$n" = 1 ] || fail "an already-closed decision gets no second line"
-  [ "$(wc -l < "$h/state/t.status" | tr -d ' ')" = 19 ] || fail "one line appended per open decision: $(wc -l < "$h/state/t.status")"
+  [ "$(wc -l < "$h/state/t.status" | tr -d ' ')" = 22 ] || fail "one line appended per open decision: $(wc -l < "$h/state/t.status")"
   [ "$(wc -l < "$h-other/state/t.status" | tr -d ' ')" = 1 ] || fail "the sweep wrote into another home"
-  [ "$(find "$h/state/t.inbox" -type f | wc -l | tr -d " ")" = 2 ] || fail "nothing is sent to the mate"
+  [ "$(find "$h/state/t.inbox" -type f | wc -l | tr -d " ")" = 3 ] || fail "nothing is sent to the mate"
   case " $(open_keys "$h") " in *" pending-reply-$S_OLD "*) fail "the key stays open" ;; esac
   out=$(sweep "$h" --apply --stale-handoffs) || fail "rerun failed: $out"
-  assert_contains "$out" "stale-handoff-retired=0 stale-handoff-kept=9" "a rerun retires nothing"
-  [ "$(wc -l < "$h/state/t.status" | tr -d ' ')" = 19 ] || fail "a rerun appended a line"
+  assert_contains "$out" "stale-handoff-retired=0 stale-handoff-kept=11" "a rerun retires nothing"
+  [ "$(wc -l < "$h/state/t.status" | tr -d ' ')" = 22 ] || fail "a rerun appended a line"
   printf 'phase=escalated\n' >> "$h/state/pending-replies/$S_OLD"
   out=$(sweep "$h" --apply --stale-handoffs) || fail "retry failed: $out"
   assert_contains "$out" "key=pending-reply-$S_OLD verdict=stale-handoff-retired" "a record whose settle failed is retired on retry"
   [ "$(field "$h" "$S_OLD" phase)" = resolved ] || fail "the retry settles the record"
-  [ "$(wc -l < "$h/state/t.status" | tr -d ' ')" = 19 ] || fail "a retry after its resolved line appended a second one"
+  [ "$(wc -l < "$h/state/t.status" | tr -d ' ')" = 22 ] || fail "a retry after its resolved line appended a second one"
   pass "--stale-handoffs --apply retires only proven records, once"
 }
 
