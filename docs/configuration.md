@@ -441,6 +441,14 @@ The file is local to each home and is not inherited by secondmate homes.
 
 <a id="wake-auto-acknowledge-configwake-auto-ack"></a>Moved to [Wake auto-acknowledge (config/wake-auto-ack)](configuration/supervision.md#wake-auto-acknowledge-configwake-auto-ack).
 
+## Post-merge update (config/no-post-merge-update)
+
+When the primary home records a merged firstmate pull request, `bin/fm-post-merge-update.sh` starts `bin/fm-update.sh` detached, so every local and remote secondmate home and code root fast-forwards without waiting for `/updatefirstmate`.
+The merge command returns at once, a merge recorded a second time starts nothing, and merges in other projects or in a secondmate or office home start nothing.
+It carries every guard `fm-update.sh` has (clean tree, ancestry, branch, self-update source) and never forces, stashes, restarts, or relaunches a session; restarts stay with `/updatefirstmate`.
+Success is silent; a skipped home or a failed update raises one `check:` wake in the primary home.
+Create the empty, home-local `config/no-post-merge-update` file to opt that home out.
+
 ## Warm-cache compaction (config/warm-compact)
 
 Create the home-local `config/warm-compact` file to compact an idle Claude primary and the supervision host's engine conversation before their prompt cache expires.
