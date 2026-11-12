@@ -37,9 +37,9 @@ A silent second mate whose home becomes unreachable, or whose inventory cannot b
 A question line that loses every alarm except silent second mates is resolved and replaced by the paused wait.
 The quota alarm fires when mean remaining weekly capacity across non-stale Claude readings falls below the pool threshold, or a carrying account is at or above its own proxy threshold while no non-stale account below its own threshold is serving and the finding has persisted for `persist_polls` polls (traffic failed to move).
 Each account's threshold comes from the quota proxy's own routing settings: `routing.quota-threshold` (default 100) and the per-account `routing.quota-thresholds` (account emails compared lower-case), in percent.
-The alarm reads them from `config/cpa-proxy-config` (first non-comment line, default `~/.config/cli-proxy-api/config.yaml`) on the same host as the quota reads, local or over SSH.
+The alarm reads them from the proxy's fixed config file, `~/.config/cli-proxy-api/config.yaml` in the home directory of the host that serves the quota reads, local or over SSH.
 Only those routing keys are extracted on that host; the rest of the file holds secrets and is never returned, printed, logged or stored.
-When the file cannot be read or has no valid routing block, `seven_day` (default .9) is the fallback for every account, and the alarm text says `seven_day fallback` and that the proxy config is unreadable.
+When the file cannot be read, has no valid routing block, or writes the thresholds in a form the reader does not parse (an inline map such as `quota-thresholds: {...}`, or an account whose value sits on its own line), `seven_day` (default .9) is the fallback for every account, and the alarm text says `seven_day fallback` and that the proxy config is unreadable.
 A carrying-account finding alarms once, and stays quiet while its weekly reset is within `carrying_reset_hours` (default 6) and mean remaining weekly capacity stays above `carrying_pool_floor` (default 0.4).
 It alerts again when either condition stops holding; the pool-near-empty alarm is unaffected.
 Every Claude account with successful Claude-model requests in the last 60 minutes is carrying; several accounts can qualify, and failed-only traffic does not qualify.

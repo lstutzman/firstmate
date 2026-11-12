@@ -6,8 +6,11 @@ set -eu
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-fleet-alarm)
 HOME_FIX="$TMP_ROOT/home"
+# HOME points at a fixture so the alarm reads a synthetic proxy config, never the real one.
+USER_FIX="$TMP_ROOT/user"
+PROXY_FIX="$USER_FIX/.config/cli-proxy-api/config.yaml"
 BIN_FIX="$TMP_ROOT/bin"
-mkdir -p "$HOME_FIX/state" "$HOME_FIX/config" "$HOME_FIX/data" "$TMP_ROOT/mate/state" "$BIN_FIX"
+mkdir -p "$HOME_FIX/state" "$HOME_FIX/config" "$HOME_FIX/data" "$TMP_ROOT/mate/state" "$BIN_FIX" "${PROXY_FIX%/*}"
 cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-env-lib.sh" "$ROOT/bin/fm-classify-lib.sh" "$ROOT/bin/fm-secondmate-registry-lib.sh" "$BIN_FIX/"
 cat > "$BIN_FIX/cpa-usage-axi" <<'SH'
 #!/usr/bin/env bash
@@ -65,7 +68,7 @@ PY_MATE
 }
 
 run_alarm() {
-  ROOT="$ROOT" FM_HOME="$HOME_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" \
+  ROOT="$ROOT" FM_HOME="$HOME_FIX" HOME="$USER_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" \
     python3 "$BIN_FIX/fm-fleet-alarm.py" "$@"
 }
 cat > "$HOME_FIX/models" <<'ROWS'
@@ -75,8 +78,7 @@ ROWS
 # Most fixtures below test one poll, so inventory findings alarm at once here;
 # the race and persistence cases near the end restore the default of two polls.
 printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
-# Existing cases run on the seven_day fallback: the proxy config is absent, and the real one is never read.
-printf '%s\n' "$TMP_ROOT/absent-proxy.yaml" > "$HOME_FIX/config/cpa-proxy-config"
+# Existing cases run on the seven_day fallback: the fixture HOME has no proxy config yet.
 quota 0.2
 mate 0 0 9000
 out=$(run_alarm check)
@@ -691,7 +693,7 @@ routing:
     "Reserve95@example.invalid": 95
     reserve80@example.invalid: 80 # reserve
 YAML
-printf '%s\n' "$TMP_ROOT/proxy.yaml" > "$HOME_FIX/config/cpa-proxy-config"
+cp "$TMP_ROOT/proxy.yaml" "$PROXY_FIX"
 proxy_stale=0
 proxy_accounts() { # primary_used reserve95_used reserve80_used; a fresh stale account each call keeps a card coming
   proxy_stale=$((proxy_stale + 1))
@@ -731,20 +733,51 @@ assert_contains "$(run_alarm check)" 'Carrying Claude account reserve80@example.
 printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
 proxy_accounts 0.2 0.5 0.5
 run_alarm check >/dev/null
+# Over SSH the reader runs on the cpa-usage-host, whose HOME holds the proxy config.
+SSH_BIN="$TMP_ROOT/ssh-bin"
+mkdir -p "$SSH_BIN"
+cat > "$SSH_BIN/ssh" <<'SH'
+#!/usr/bin/env bash
+while [ "$1" != -- ]; do shift; done
+printf '%s\n' "$2" >> "$FM_HOME/ssh-hosts"
+shift 2
+exec sh -c "$*"
+SH
+chmod +x "$SSH_BIN/ssh"
+printf '%s\n' quota-host > "$HOME_FIX/config/cpa-usage-host"
+proxy_accounts 0.2 0.5 0.8
+out=$(PATH="$SSH_BIN:$PATH" run_alarm check)
+grep -qx quota-host "$HOME_FIX/ssh-hosts" || fail 'the quota and proxy reads go to the cpa-usage-host'
+assert_contains "$out" 'rotated out (at or above own proxy threshold): reserve80@example.invalid 7d 80% (threshold 80%)' 'the remote proxy read applies per-account thresholds'
+assert_not_contains "$out" 'synthetic-secret' 'the remote proxy read returns no config secrets'
+mv "$HOME_FIX/config/cpa-usage-host" "$HOME_FIX/ssh-host-config-cleared"
+proxy_accounts 0.2 0.5 0.5
+run_alarm check >/dev/null
+# Threshold forms the reader does not parse fall back visibly instead of defaulting every account to 100.
+printf '%s\n' 'models[1]{account,model,requests,failed}:' '  reserve80@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models"
+printf '%s\n' 'routing:' '  quota-threshold: 100' '  quota-thresholds: {reserve80@example.invalid: 80}' > "$PROXY_FIX"
+proxy_accounts 0.2 0.5 0.91
+assert_contains "$(run_alarm check)" 'threshold 90% from seven_day fallback' 'an inline threshold map falls back'
+proxy_accounts 0.2 0.5 0.5
+run_alarm check >/dev/null
+printf '%s\n' 'routing:' '  quota-thresholds:' '    reserve80@example.invalid:' '      80' > "$PROXY_FIX"
+proxy_accounts 0.2 0.5 0.91
+assert_contains "$(run_alarm check)" 'threshold 90% from seven_day fallback' 'an account value on its own line falls back'
+proxy_accounts 0.2 0.5 0.5
+run_alarm check >/dev/null
 # Unreadable proxy config: seven_day is the fallback and the text says so.
-printf '%s\n' "$TMP_ROOT/absent-proxy.yaml" > "$HOME_FIX/config/cpa-proxy-config"
+mv "$PROXY_FIX" "$TMP_ROOT/proxy-off.yaml"
 printf '%s\n' 'models[1]{account,model,requests,failed}:' '  primary@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models"
 proxy_accounts 0.91 0.5 0.5
 out=$(run_alarm check)
 assert_contains "$out" 'Carrying Claude account primary@example.invalid 7d 91% (resets window9; threshold 90% from seven_day fallback 90%: proxy config unreadable)' 'fallback finding names its source'
 assert_contains "$out" 'threshold source: seven_day fallback 90%: proxy config unreadable' 'fallback context names its source'
-printf '%s\n' 'routing: [' > "$TMP_ROOT/bad.yaml"
-printf '%s\n' "$TMP_ROOT/bad.yaml" > "$HOME_FIX/config/cpa-proxy-config"
+printf '%s\n' 'routing: [' > "$PROXY_FIX"
 proxy_accounts 0.2 0.5 0.5
 run_alarm check >/dev/null
 proxy_accounts 0.91 0.5 0.5
 assert_contains "$(run_alarm check)" 'seven_day fallback' 'a config without a routing block falls back'
-printf '%s\n' "$TMP_ROOT/absent-proxy.yaml" > "$HOME_FIX/config/cpa-proxy-config"
+mv "$PROXY_FIX" "$TMP_ROOT/proxy-bad-off.yaml"
 proxy_accounts 0.2 0.5 0.5
 run_alarm check >/dev/null
 pass 'quota alarm uses the proxy per-account thresholds and falls back to seven_day when unreadable'
@@ -1261,7 +1294,7 @@ out=$(python3 -c 'import fcntl, subprocess, sys
 lock = open(sys.argv[1], "a")
 fcntl.flock(lock, fcntl.LOCK_EX)
 subprocess.run(sys.argv[2:], check=True)' "$HOME_FIX/state/.fleet-alarm.lock" \
-  env ROOT="$ROOT" FM_HOME="$HOME_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" \
+  env ROOT="$ROOT" FM_HOME="$HOME_FIX" HOME="$USER_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" \
   python3 "$BIN_FIX/fm-fleet-alarm.py" timer)
 printf '%s\n' "${out#RUN-RESULT }" | jq -e '.outcome == "skipped" and .counts.alerts == 0' >/dev/null \
   || fail 'a timer run blocked by the lock reports a skipped run result'

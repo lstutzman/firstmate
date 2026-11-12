@@ -11,8 +11,8 @@ carrying_pool_floor (.4), and working_ceiling_multiple (6). cpa-usage-host selec
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Each Claude account's carrying threshold comes from the proxy config's routing.quota-threshold
 (default 100) and routing.quota-thresholds (per lower-cased account email), percent values read on
-the same host as the quota reads from config/cpa-proxy-config (default
-~/.config/cli-proxy-api/config.yaml). Only those routing keys are extracted, on the host, and
+the same host as the quota reads from ~/.config/cli-proxy-api/config.yaml (~ is that host's
+home). Only those routing keys are extracted, on the host, and
 nothing else of that secret-bearing file is returned, logged or stored. Unreadable or invalid, the
 seven_day setting is the fallback and the alarm text says so.
 Both readers share FM_CHECK_TIMEOUT (default 30); budget must leave 5 seconds.
@@ -132,7 +132,7 @@ def run(argv, seconds):
     return result.stdout
 
 
-PROXY_CONFIG_DEFAULT = '~/.config/cli-proxy-api/config.yaml'
+PROXY_CONFIG = '~/.config/cli-proxy-api/config.yaml'
 # Runs on the proxy host. Prints only the routing threshold numbers, never any other config text.
 PROXY_READER = r"""
 import json, math, os, re, sys
@@ -141,7 +141,7 @@ def clean(text):
 rows = open(os.path.expanduser(sys.argv[1])).read().splitlines()
 out = {'default': None, 'accounts': {}}
 found = False
-block = child = sub = None
+block = child = sub = acct = None
 for row in rows:
     text = row.strip()
     if not text or text.startswith('#'):
@@ -150,7 +150,7 @@ for row in rows:
     if indent == 0:
         block = 'routing' if clean(text) == 'routing:' else None
         found = found or block is not None
-        child = sub = None
+        child = sub = acct = None
         continue
     if block is None:
         continue
@@ -159,10 +159,17 @@ for row in rows:
     if child is None:
         child = indent
     if indent <= child:
-        sub = key if key == 'quota-thresholds' and not value else None
-        if key == 'quota-threshold' and value:
+        sub = acct = None
+        if key == 'quota-thresholds':
+            if value:
+                sys.exit(5)
+            sub = key
+        elif key == 'quota-threshold' and value:
             out['default'] = float(value)
-    elif sub == 'quota-thresholds' and value:
+    elif sub:
+        acct = indent if acct is None else acct
+        if indent != acct or not value:
+            sys.exit(5)
         out['accounts'][key.lower()] = float(value)
 if not found:
     sys.exit(3)
@@ -467,11 +474,7 @@ def collect(cfg):
                'cpa-usage-axi']
     else:
         raise ValueError('invalid cpa-usage-host')
-    proxy_path = read(['bash', '-c', '. "$1/fm-env-lib.sh"; fm_config_line "$2" cpa-proxy-config',
-                       'fleet-alarm', BIN, CONFIG]).rstrip('\n') or PROXY_CONFIG_DEFAULT
-    if not all(c.isalnum() or c in './_~-' for c in proxy_path) or proxy_path.startswith('-'):
-        raise ValueError('invalid cpa-proxy-config')
-    proxy_cmd = ['python3', '-I', '-c', PROXY_READER, proxy_path]
+    proxy_cmd = ['python3', '-I', '-c', PROXY_READER, PROXY_CONFIG]
     if cpa[0] == 'ssh':
         proxy_cmd = [*cpa[:-1], *(shlex.quote(a) for a in proxy_cmd)]
     try:
@@ -487,12 +490,10 @@ def collect(cfg):
                     names.add(row['account'])
             return names
 
-        proxy = None
-        if proxy_path:
-            try:
-                proxy = proxy_thresholds(read([*proxy_cmd], 8))
-            except (ValueError, KeyError, TypeError, AttributeError, OSError):
-                proxy = None
+        try:
+            proxy = proxy_thresholds(read(proxy_cmd, 8))
+        except (ValueError, KeyError, TypeError, AttributeError, OSError):
+            proxy = None
 
         def threshold(name):
             return proxy[1].get(name.lower(), proxy[0]) if proxy else cfg['seven_day']
