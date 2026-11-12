@@ -70,6 +70,8 @@ EOF
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-busy-lib.sh
 . "$SCRIPT_DIR/fm-busy-lib.sh"
+# shellcheck source=bin/fm-atomic-lib.sh
+. "$SCRIPT_DIR/fm-atomic-lib.sh"
 
 CMD=${1:-}
 case "$CMD" in
@@ -158,7 +160,7 @@ lock_acquire() {
   case "$stale" in ''|*[!0-9]*) stale=5 ;; esac
   stale=$((10#$stale))
   start=$(date +%s)
-  while ! mkdir "$LOCK" 2>/dev/null; do
+  while ! fm_atomic_mkdir "$LOCK" 0777 2>/dev/null; do
     now=$(date +%s)
     mtime=$(lock_mtime "$LOCK" || true)
     # Anything unreadable or non-numeric reads as "just created", so an
@@ -167,8 +169,10 @@ lock_acquire() {
     case "$mtime" in ''|*[!0-9]*) mtime=$now ;; esac
     age=$((now - mtime))
     if [ "$age" -ge "$stale" ]; then
-      rmdir "$LOCK" 2>/dev/null || rm -rf "$LOCK" 2>/dev/null || true
-      mkdir "$LOCK" 2>/dev/null && break
+      # Only one waiter can complete the takeover; the others keep polling, so
+      # a stale lock never lets two writers in.
+      fm_atomic_takeover "$LOCK" lock_is_stale "$stale" || true
+      fm_atomic_mkdir "$LOCK" 0777 2>/dev/null && break
     fi
     # Whole-second clocks: once stale + 2 seconds have passed since the wait
     # began, any lock that already existed then has crossed the stale bound
@@ -180,6 +184,13 @@ lock_acquire() {
     sleep 0.05
   done
   return 0
+}
+# lock_is_stale <lock-dir> <stale-seconds>: the lock is at least that old.
+lock_is_stale() {
+  local mtime
+  mtime=$(lock_mtime "$1" || true)
+  case "$mtime" in ''|*[!0-9]*) return 1 ;; esac
+  [ $(( $(date +%s) - mtime )) -ge "$2" ]
 }
 lock_release() { rmdir "$LOCK" 2>/dev/null || true; }
 

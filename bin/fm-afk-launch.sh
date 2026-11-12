@@ -148,6 +148,8 @@ FM_AFK_LAUNCH_RECORD="$FM_AFK_LAUNCH_STATE/.afk-daemon-terminal"
 FM_AFK_LAUNCH_LOCK="$FM_AFK_LAUNCH_STATE/.afk-launch.lock"
 FM_AFK_LAUNCH_WS_LABEL="firstmate-afk-daemon"
 
+# shellcheck source=bin/fm-atomic-lib.sh
+. "$FM_AFK_LAUNCH_DIR/fm-atomic-lib.sh"
 # shellcheck source=bin/fm-backend.sh
 . "$FM_AFK_LAUNCH_DIR/fm-backend.sh"
 # shellcheck source=bin/fm-supervisor-target-lib.sh
@@ -170,13 +172,18 @@ FM_AFK_CONTRACT_CMD="$FM_AFK_LAUNCH_DIR/fm-afk-contract.sh"
 
 fm_afk_launch_log() { printf 'fm-afk-launch: %s\n' "$*" >&2; }
 
-fm_afk_launch_lock_owned() {
-  local pid expected actual
-  [ -d "$FM_AFK_LAUNCH_LOCK" ] || return 1
-  pid=$(cat "$FM_AFK_LAUNCH_LOCK/pid" 2>/dev/null) || return 1
-  expected=$(cat "$FM_AFK_LAUNCH_LOCK/pid-identity" 2>/dev/null) || return 1
+fm_afk_launch_lock_owned() { # [lock-dir]: default the launcher lock
+  local lock=${1:-$FM_AFK_LAUNCH_LOCK} pid expected actual
+  [ -d "$lock" ] || return 1
+  pid=$(cat "$lock/pid" 2>/dev/null) || return 1
+  expected=$(cat "$lock/pid-identity" 2>/dev/null) || return 1
   actual=$(fm_pid_identity "$pid" 2>/dev/null) || return 1
   [ -n "$expected" ] && [ "$actual" = "$expected" ]
+}
+
+# The lock <dir> still has no live owner (see fm_afk_launch_lock_owned).
+fm_afk_launch_lock_unowned() { # <dir>
+  ! fm_afk_launch_lock_owned "$1"
 }
 
 fm_afk_launch_lock_acquire() {
@@ -184,7 +191,7 @@ fm_afk_launch_lock_acquire() {
   mkdir -p "$FM_AFK_LAUNCH_STATE" || return 1
   while [ "$attempt" -lt 200 ]; do
     attempt=$((attempt + 1))
-    if mkdir "$FM_AFK_LAUNCH_LOCK" 2>/dev/null; then
+    if fm_atomic_mkdir "$FM_AFK_LAUNCH_LOCK" 0777 2>/dev/null; then
       if ! printf '%s' "$$" > "$FM_AFK_LAUNCH_LOCK/pid"; then
         rm -rf "$FM_AFK_LAUNCH_LOCK"
         return 1
@@ -209,7 +216,9 @@ fm_afk_launch_lock_acquire() {
       incomplete=0
     fi
     if ! fm_afk_launch_lock_owned; then
-      rm -rf "$FM_AFK_LAUNCH_LOCK" 2>/dev/null || return 1
+      # Only one racer can complete the takeover; the others go round to see
+      # the new owner.
+      fm_atomic_takeover "$FM_AFK_LAUNCH_LOCK" fm_afk_launch_lock_unowned || true
       incomplete=0
       continue
     fi
