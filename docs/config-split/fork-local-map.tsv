@@ -1,0 +1,20 @@
+# Sections only this fork has (the h2 is absent upstream). Files used only by these rows are titled here.
+# Columns are tab separated; see the header of bin/fm-config-split.py.
+file	officers.md	Officers
+file	officers-progress.md	Progress officer reference
+h2	backlog-and-decisions.md	Captain-hold deadline defaults
+h2	supervision.md	Wake auto-acknowledge
+h2	supervision.md	Watcher backstop timer
+h2	away-and-alarms.md	Fleet quota and secondmate alarm
+h2	away-and-alarms.md	Lee-step host
+h2	worker-launch.md	Worker dependency setup
+h2	projects-and-forges.md	Merger home
+h2	projects-and-forges.md	Landing lag
+h2	projects-and-forges.md	Admission by class
+h2	projects-and-forges.md	Ready evidence
+h2	projects-and-forges.md	Linear-required projects
+h2	secondmates-and-offices.md	Offices
+h2	officers.md	Officers
+h2	relay-and-intake.md	Machine-service intake
+h3	officers-progress.md	Officers	Progress officer
+h3	officers-progress.md	Officers	Progress officer triage
