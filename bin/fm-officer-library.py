@@ -2,7 +2,7 @@
 """fm-officer-library.py - the library officer's daily judgement of the weekly librarian audit.
 
 Run only through `bin/fm-officer.sh run <id>`, which owns the officer
-contract; docs/configuration.md "Library officer" owns the registry fields.
+contract; docs/configuration/officers.md "Library officer" owns the registry fields.
 
 Usage:
   fm-officer-library.py run --audit <runs-dir> --date <YYYY-MM-DD> --out <lane-dir> [--now <epoch>]

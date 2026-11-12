@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """fm-office-status.py - project an office home's backlog onto data/office-status.json.
 
-Called by `fm-office.sh status`; docs/configuration.md "Office status
+Called by `fm-office.sh status`; docs/configuration/secondmates-and-offices.md "Office status
 (data/office-status.json)" owns the schema and the lane rules. This file owns
 the mechanics.
 

@@ -86,7 +86,7 @@
 #   - No-wake path: on a home that does not run the supervision host and keeps
 #     config/wake-auto-ack, an actionable close first runs
 #     `bin/fm-wake-drain.sh --quiet-ack`. When it acknowledged a batch of only
-#     no-action wakes (docs/configuration.md "Wake auto-acknowledge") the hook
+#     no-action wakes (docs/configuration/supervision.md "Wake auto-acknowledge") the hook
 #     re-arms in the same process and wakes no model; otherwise it translates the
 #     close as below, with nothing consumed.
 #   - Translation: while supervision is still needed and AFK remains inactive,

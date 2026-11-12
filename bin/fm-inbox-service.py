@@ -2,7 +2,7 @@
 """Validate and render machine-service inbox bodies; never read evidence files.
 
 Usage: fm-inbox-service.py validate|request-id|wake|relay < record.json
-The record schema is owned by docs/configuration.md (Machine-service intake).
+The record schema is owned by docs/configuration/relay-and-intake.md (Machine-service intake).
 Invalid records exit 1 with a field diagnostic, never the supplied value.
 """
 

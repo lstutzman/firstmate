@@ -2005,7 +2005,7 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       ;;
     .github/*|.gitattributes|.tasks.toml|AGENTS.md|CLAUDE.md|CONTRIBUTING.md|\
-    docs/configuration.md|docs/supervision-protocols/*)
+    docs/configuration.md|docs/configuration/*|docs/supervision-protocols/*)
       printf '%s\n' pure-contract-unit
       ;;
     tests/git-config-helpers.sh)

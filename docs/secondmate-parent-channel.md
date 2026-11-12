@@ -47,7 +47,7 @@ A missed-reply escalation includes the complete first sighting path and line num
 ## Machine-service handling
 
 On a `check: machine service` notification, drain the wake queue first, then read `bin/fm-inbox.sh drain`.
-The [configuration reference](configuration.md#machine-service-intake-stateinbox) owns the record schema and durability contract.
+The [configuration reference](configuration/relay-and-intake.md#machine-service-intake-stateinbox) owns the record schema and durability contract.
 Handle each pending record according to its kind:
 
 - `dispatch`: Resolve the named item and its evidence, confirm the source's applicable authorization, then use the normal task lifecycle to dispatch or route the work.

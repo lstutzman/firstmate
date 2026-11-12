@@ -11,7 +11,7 @@ metadata:
 An officer is a role agent owned by the primary home.
 It reads fleet records on its own cadence (daily, or every N hours), writes only its findings lane, and reports one line to its first mate.
 It never acts on the fleet.
-[`docs/configuration.md`](../../../docs/configuration.md) "Officers (data/officers.md)" owns the registry schema, and `bin/fm-officer.sh`'s header owns the mechanics.
+[`docs/configuration/officers.md`](../../../docs/configuration/officers.md) "Officers (data/officers.md)" owns the registry schema, and `bin/fm-officer.sh`'s header owns the mechanics.
 
 ## Authority
 
@@ -67,7 +67,7 @@ The officer's `consumer:` field decides who that digest wakes: main only when `m
 Main leaves a digest it is not a consumer of to that office.
 
 1. Read the digest file it names; the `.json` beside it holds every session fact behind each finding.
-2. Treat ordinary findings as evidence, not authorization; progress start requests use the standing authority and execution contract in [Progress officer](../../../docs/configuration.md#progress-officer), and surgeon start requests the same execution contract under [`docs/officers/surgeon-rubric.md`](../../../docs/officers/surgeon-rubric.md).
+2. Treat ordinary findings as evidence, not authorization; progress start requests use the standing authority and execution contract in [Progress officer](../../../docs/configuration/officers-progress.md#progress-officer), and surgeon start requests the same execution contract under [`docs/officers/surgeon-rubric.md`](../../../docs/officers/surgeon-rubric.md).
 3. Route work the evidence supports through ordinary intake; file a tracker item only under the captain's standing rules for findings, and hold a real captain call through `bin/fm-captain-hold.sh hold`.
 4. Do not re-wake the captain for a digest with nothing new; the check already stays silent on repeats and empty digests.
 5. An office captures its outcome for each finding it acts on under `office-roles` "Capturing officer-finding outcomes".

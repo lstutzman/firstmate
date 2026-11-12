@@ -3843,7 +3843,7 @@ event_wait_or_sleep() {
 
 # An approved office with no data/offices.md line and no valid deferral wakes
 # firstmate at most once a day until it is provisioned or deferred
-# (bin/fm-office.sh unprovisioned owns the check, docs/configuration.md "Offices").
+# (bin/fm-office.sh unprovisioned owns the check, docs/configuration/secondmates-and-offices.md "Offices").
 # Only a primary home runs the check, at most once an hour.
 office_unprovisioned_tick() {
   local gaps reason data=${FM_DATA_OVERRIDE:-$FM_HOME/data}

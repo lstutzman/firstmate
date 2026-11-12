@@ -4,7 +4,7 @@
 # home's work onto its status file.
 #
 # An office is a second mate that runs a standing role mandate (navigator,
-# quartermaster, alchemist or librarian) instead of idling. docs/configuration.md "Offices
+# quartermaster, alchemist or librarian) instead of idling. docs/configuration/secondmates-and-offices.md "Offices
 # (data/offices.md)" owns the registry schema; this header owns the mechanics.
 #
 # Usage:
@@ -102,7 +102,7 @@
 #
 # status (run inside an office home, as its silent watcher check) projects that
 # home's backlog and in-flight task records onto data/office-status.json for the
-# fleet app's Status page; docs/configuration.md "Office status
+# fleet app's Status page; docs/configuration/secondmates-and-offices.md "Office status
 # (data/office-status.json)" owns the schema and lane rules, and
 # bin/fm-office-status.py owns the mechanics. It reads only data/backlog.md and
 # state/*.meta, writes only data/office-status.json and
@@ -258,7 +258,7 @@ Usage:
   fm-office.sh register-sources    (office home) install and trust the office's wake-source checks
   fm-office.sh check <source>      (watcher check) report a new tick or lane digest
   fm-office.sh starts-handled <officer>    (office home) exit 0 when every start request in the lane digest addressed to this home is already acknowledged
-See docs/configuration.md "Offices (data/offices.md)" for the registry schema.
+See docs/configuration/secondmates-and-offices.md "Offices (data/offices.md)" for the registry schema.
 EOF
 }
 

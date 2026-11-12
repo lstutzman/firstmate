@@ -626,7 +626,7 @@ if [ "$OFFICE_SET" -eq 1 ]; then
   case $office_line_rc in
     0) ;;
     2) echo "error: $DATA/offices.md has more than one line for office $ID" >&2; exit 1 ;;
-    *) echo "error: $DATA/offices.md has no line for office $ID; add it first (docs/configuration.md \"Offices (data/offices.md)\")" >&2; exit 1 ;;
+    *) echo "error: $DATA/offices.md has no line for office $ID; add it first (docs/configuration/secondmates-and-offices.md \"Offices (data/offices.md)\")" >&2; exit 1 ;;
   esac
   [[ "$office_line" =~ $REGISTRY_LINE_RE ]] || { echo "error: the line for office $ID in $DATA/offices.md is malformed" >&2; exit 1; }
   OFFICE_MANDATE=${BASH_REMATCH[2]}

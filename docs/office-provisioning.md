@@ -1,7 +1,7 @@
 # Office provisioning
 
 These are the ordered steps the main firstmate runs, in its own home on slartibartfast, to create the Navigator and Quartermaster offices.
-[Offices](configuration.md#offices-dataofficesmd) owns the registry schema, each script's header owns its checks, and the `office-roles` skill owns each role's mandate.
+[Offices](configuration/secondmates-and-offices.md#offices-dataofficesmd) owns the registry schema, each script's header owns its checks, and the `office-roles` skill owns each role's mandate.
 The order matters: `bin/fm-officer.sh register` refuses a `consumer:` office whose lane check is not registered yet, so the officer edits come after the offices are seeded.
 Run every step from the main home's firstmate checkout.
 
@@ -140,7 +140,7 @@ FM_HOME=$MAIN bin/fm-officer.sh register page-check
 
 ## 8. Confirm nothing is out of place
 
-Each command prints nothing, except that the main home's `ensure` prints `OFFICE: approved office <role> not provisioned` for each approved role that has no office line yet and no deferral, and any home's `ensure` prints an `OFFICE: pool:` line while clones of one project on the host differ on treehouse `max_trees` ([Offices](configuration.md#offices-dataofficesmd) owns both checks).
+Each command prints nothing, except that the main home's `ensure` prints `OFFICE: approved office <role> not provisioned` for each approved role that has no office line yet and no deferral, and any home's `ensure` prints an `OFFICE: pool:` line while clones of one project on the host differ on treehouse `max_trees` ([Offices](configuration/secondmates-and-offices.md#offices-dataofficesmd) owns both checks).
 
 ```sh
 FM_HOME=$MAIN bin/fm-office.sh ensure
@@ -184,7 +184,7 @@ Today such a PR waits, held for the captain, until the captain defines its route
 
 ## 10. Arm the lint ratchet's daily clock
 
-Add `ratchet` to the Quartermaster's sources so its home wakes once per UTC day with the next file on `bin/fm-lint-ratchet.exceptions` ([Offices](configuration.md#offices-dataofficesmd) owns what the source prints); the Quartermaster then dispatches one ship worker for that file unless a ratchet PR for it is still open.
+Add `ratchet` to the Quartermaster's sources so its home wakes once per UTC day with the next file on `bin/fm-lint-ratchet.exceptions` ([Offices](configuration/secondmates-and-offices.md#offices-dataofficesmd) owns what the source prints); the Quartermaster then dispatches one ship worker for that file unless a ratchet PR for it is still open.
 
 ```sh
 sed -i.bak '/^- quartermaster - /{/sources:\([^;]*[ ,]\)\{0,1\}ratchet[,;]/!s/sources: \([^;]*\);/sources: \1,ratchet;/;}' "$MAIN/data/offices.md"
@@ -194,7 +194,7 @@ FM_HOME=$MAIN bin/fm-office.sh ensure
 
 ## 11. Feed the weekly tooling research to the Quartermaster
 
-Add `research` to the Quartermaster's sources so each complete weekly tooling-research run reaches its home with the run's knowledge lines placed and its proposals digested ([Offices](configuration.md#offices-dataofficesmd) owns what the source does); the Quartermaster then judges each proposal under its standing authority and files a keyed `needs-decision` for any call only Lee can make.
+Add `research` to the Quartermaster's sources so each complete weekly tooling-research run reaches its home with the run's knowledge lines placed and its proposals digested ([Offices](configuration/secondmates-and-offices.md#offices-dataofficesmd) owns what the source does); the Quartermaster then judges each proposal under its standing authority and files a keyed `needs-decision` for any call only Lee can make.
 If the runs are not under the Slarti home's `data/tooling-research/runs` on this machine, first write their directory to the Quartermaster home's `config/tooling-research-runs`.
 
 ```sh

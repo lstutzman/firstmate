@@ -130,6 +130,6 @@ An officer adopts it in one change:
 
 - add its `docs/officers/<id>-rubric.md`, using the headings above;
 - load `bin/fm-officer-linear.py`, declare an `Officer` with its id, label, rubric file, allowed sources and project, and file through `Filer` (`file_single`, or `item_labels` and `create` with the item's project for anything it groups); a finding's own repository, else the officer's project, decides both filing and routing: Fleet work (the `Fleet` project or a fleet repository) is filed in the Fleet project and its starts and patterns go to the Quartermaster, and anything else is filed with no Linear project;
-- add `writes: linear`, `max-creates`, `max-linear-calls` and `start-home` to its registry line ([Officers](../configuration.md#officers-dataofficersmd)), and have `bin/fm-officer.sh` pass them to its script as it does for the Surgeon;
+- add `writes: linear`, `max-creates`, `max-linear-calls` and `start-home` to its registry line ([Officers](../configuration/officers.md#officers-dataofficersmd)), and have `bin/fm-officer.sh` pass them to its script as it does for the Surgeon;
 - name its Source label in the rubric, one of Lee's set, so it exists in team PC; the library sets `area:fleet` and the Fleet project for fleet work itself;
 - prove it with tests that run the officer through `bin/fm-officer.sh` against a fake `linear-axi`, as `tests/fm-officer-surgeon.test.sh` does.
