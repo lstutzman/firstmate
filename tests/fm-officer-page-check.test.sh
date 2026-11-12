@@ -708,6 +708,45 @@ test_a_check_that_could_not_see_the_finding_does_not_count() {
   pass "fm-officer page-check: a check that could not read a finding's page or PR does not count toward closing it"
 }
 
+test_an_unread_rules_file_or_card_record_does_not_count() {
+  local dir home pages
+  linear_world unreadinputs
+  dir=$FAKE_LINEAR_DIR
+  home=$LW_HOME
+  pages="$TMP_ROOT/unreadinputs/pages"
+  seed_own_item PC-96 standing-rule "Captain's Log" "cleanup:routine-cleanup"
+  seed_own_item PC-97 shown-after-done "Captain's Log" "bosun-ep"
+  mv "$home/data/captain-shared.md" "$home/data/captain-shared.saved"
+  mv "$pages/_api_captains-log_facts_source_bosun" "$pages/facts.saved"
+  officer unreadinputs run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  later_day unreadinputs 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "0" "$(closes_of PC-96)" "two checks that could not read the standing rules do not close a standing-rule item"
+  assert_equals "0" "$(closes_of PC-97)" "two checks that could not read the card record do not close a shown-after-done item"
+  assert_equals "0" "$(count_lines '^issue comment PC-9[67] ' "$dir/log")" "and neither item gets a close comment"
+  pass "fm-officer page-check: an unread rules file or card record does not count toward closing a card item"
+}
+
+test_a_recurrence_in_a_blocked_check_resets_the_count() {
+  local dir home pages reg
+  linear_world blockedreset
+  dir=$FAKE_LINEAR_DIR
+  home=$LW_HOME
+  pages="$TMP_ROOT/blockedreset/pages"
+  reg=$(<"$home/data/officers.md")
+  seed_own_item PC-98 page-old "Business health" "business-health"
+  jq -n '{value: {generated_at: "2026-10-31T14:00:00Z"}}' > "$pages/_api_business-health"
+  officer blockedreset run page-check --date "$KEY" >/dev/null || fail "a check without the finding must succeed"
+  jq -n '{value: {generated_at: "2026-10-29T06:00:00Z"}}' > "$pages/_api_business-health"
+  printf '%s\n' "${reg/; model:/; max-linear-calls: 1; model:}" > "$home/data/officers.md"
+  later_day blockedreset 2026-11-01T14 >/dev/null || fail "a check whose filing stops must succeed"
+  assert_contains "$(<"$home/data/officers/page-check/2026-11-01T14.md")" "stopped:" "the check with the finding back stops on its call budget"
+  printf '%s\n' "$reg" > "$home/data/officers.md"
+  jq -n '{value: {generated_at: "2026-11-01T14:00:00Z"}}' > "$pages/_api_business-health"
+  later_day blockedreset 2026-11-01T16 >/dev/null || fail "a third check must succeed"
+  assert_equals "0" "$(closes_of PC-98)" "a finding absent, back in a stopped check, then absent again has one absent check, not two"
+  pass "fm-officer page-check: a finding present in a check whose filing stopped still resets its absent count"
+}
+
 test_a_failed_move_is_retried_without_a_second_comment() {
   local dir
   linear_world retryclose
@@ -743,3 +782,5 @@ test_the_officer_leaves_items_it_may_not_close
 test_closing_needs_writes_linear_and_budget
 test_a_check_that_could_not_see_the_finding_does_not_count
 test_a_failed_move_is_retried_without_a_second_comment
+test_an_unread_rules_file_or_card_record_does_not_count
+test_a_recurrence_in_a_blocked_check_resets_the_count
