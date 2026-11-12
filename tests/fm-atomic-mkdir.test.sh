@@ -38,6 +38,23 @@ done
 winners=$(race "$TMP_ROOT/plain" stub_claim)
 [ "$winners" -gt 1 ] || fail "stub mkdir produced only $winners winners; the race test would be vacuous"
 
+# The remote job sequence claim, under the same stub: 20 concurrent allocators
+# must get the 20 distinct sequence numbers 1..20.
+mkdir -p "$TMP_ROOT/account"
+mkdir -p "$TMP_ROOT/seq-out"
+export FM_REMOTE_JOB_STATE_ROOT="$TMP_ROOT/remote-job"
+# shellcheck source=bin/fm-remote-job-lib.sh
+. "$ROOT/bin/fm-remote-job-lib.sh"
+fm_remote_job_prepare_state "$TMP_ROOT/account" || fail "$FM_REMOTE_JOB_ERROR"
+pids=()
+for i in $(seq 1 "$N"); do
+  fm_remote_job_next_seq > "$TMP_ROOT/seq-out/$i" &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do wait "$pid" || fail "a concurrent sequence allocator failed"; done
+[ "$(cat "$TMP_ROOT"/seq-out/* | sort -n)" = "$(seq 1 "$N")" ] \
+  || fail "concurrent sequence claims were not distinct: $(cat "$TMP_ROOT"/seq-out/* | sort -n | tr '\n' ' ')"
+
 # Contract: mode 0700, existing dir loses, bad parent fails, bad usage fails.
 ( umask 022; fm_atomic_mkdir "$TMP_ROOT/mode" ) || fail "fresh claim failed"
 [ "$(stat -c %a "$TMP_ROOT/mode" 2>/dev/null || stat -f %Lp "$TMP_ROOT/mode")" = 700 ] || fail "claim is not mode 0700"
