@@ -36,7 +36,8 @@ working_ceiling_multiple (6) times silent_minutes, or `paused` with an `until` t
 silent_minutes past, while it holds work (in flight, an active child or a parked child), has asked main
 nothing open, and has no status-source ask (one on a task it also holds as a captain-hold row
 does not count) and a complete decision list, is working a long task and
-is not silent either.
+is not silent either. A `paused [cause=external]` line with no `until` time is a declared wait
+that stays live while it is the mate's latest line, however old; its prose is never parsed for a date.
 A secondmate waiting on an open captain decision is healthy waiting and is never silent: no
 open decision row has source status unless the mate also holds that task id as a captain-hold row
 (no child is asking it anything), its
@@ -307,7 +308,7 @@ def held_terminal_complete(summary, counts):
     return all(item in held and item in done for item in ids)
 
 
-def working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg):
+def working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg, cause=''):
     # The mate's own latest line says it is working, or paused for work it still holds, and
     # nobody is waiting on it: a long task that reports sparingly, not a mate gone quiet. A
     # declared pause is quiet again once its clearing time is more than the silence window
@@ -319,6 +320,10 @@ def working_on_task(summary, counts, open_decisions, last_verb, paused_until, ag
     window = cfg['silent_minutes'] * 60
     if paused_until:
         return time.time() <= int(paused_until) + window
+    if last_verb == 'paused' and cause == 'external':
+        # A declared external wait with no `until` tag is live for as long as it is the
+        # mate's latest line; the date in its prose is never parsed.
+        return True
     return age != 'null' and float(age) < cfg['working_ceiling_multiple'] * window
 
 
@@ -352,10 +357,11 @@ while IFS= read -r line || [ -n "$line" ]; do
       verb=$(status_line_verb "$line")
       case "$verb" in working|paused) ;; *) verb=other ;; esac
       until=$(status_paused_until "$line" || true)
+      cause=$(status_line_cause "$line")
       folded=$(status_open_decisions "$window" secondmate)
       open=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" || $2 == "blocked"' | LC_ALL=C wc -l | tr -d ' ')
       asks=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" { printf "%s%s", sep, $1; sep = " " }')
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks" "$cause"
       ;;
   esac
 done < "$2"
@@ -363,7 +369,7 @@ done < "$2"
     seen = set()
     routes = list(csv.reader(io.StringIO(roster), delimiter='\t'))
     for index, row in enumerate(routes):
-        name, host, home, age, open_decisions, last_verb, paused_until, asks = row
+        name, host, home, age, open_decisions, last_verb, paused_until, asks, cause = row
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name) or name in seen or not Path(home).is_absolute():
             raise ValueError('invalid or duplicate secondmate route')
         seen.add(name)
@@ -427,7 +433,7 @@ done < "$2"
                 continue
             if asks and work[0] and waiting_on_open_ask(summary, counts, asks.split()):
                 continue
-            if working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg):
+            if working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg, cause):
                 continue
             ages = [] if age == 'null' else [float(age)]
             meta = STATE / (name + '.meta')
