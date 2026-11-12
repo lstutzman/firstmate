@@ -620,8 +620,32 @@ PYFAIL
   pass "snapshot reservation errors fail promptly before capture or arming"
 }
 
+test_concurrent_filings_file_once_under_a_non_atomic_mkdir() {
+  local home out snap sid i
+  home=$(make_home filing-race)
+  printf 'portal.example.test portal-app\n' > "$home/config/lavish-url-domains"
+  odoo_page "$home/pages/www.portal.example.test.html"
+  out=$(lu "$home" snapshot "https://www.portal.example.test/" 2>&1) || fail "the capture failed: $out"
+  snap=$(field "$out" snapshot)
+  sid=$(field "$out" source-id)
+  feedback_result "$home/lavish-state/poll-result.1" "$snap"
+  wait_for_result "$home" "$sid" 1
+
+  mkdir -p "$home/stub-mkdir" "$home/race"
+  printf '#!/bin/sh\nfor a; do last=$a; done\n/bin/mkdir -p -- "$last"\nexit 0\n' > "$home/stub-mkdir/mkdir"
+  chmod +x "$home/stub-mkdir/mkdir"
+  for i in $(seq 1 8); do
+    PATH="$home/stub-mkdir:$PATH" lu "$home" route "$sid" 1 --file > "$home/race/$i" 2>&1 &
+  done
+  wait
+  assert_equals 1 "$(cat "$home"/race/* | grep -c '^filed: ')" "concurrent route --file calls filed more than once"
+  assert_equals 1 "$(grep -c 'Lavish review feedback' "$home/data/backlog.md")" "concurrent filings left a duplicate item"
+  pass "concurrent route --file calls file the feedback once even when the system mkdir is not atomic"
+}
+
 fm_test_run \
   test_snapshot_reservation_failure \
+  test_concurrent_filings_file_once_under_a_non_atomic_mkdir \
   test_overlapping_captures_keep_pages_and_names_distinct \
   test_cssom_and_reserved_markup \
   test_generic_url_capture_sanitizes_layers_and_arms \

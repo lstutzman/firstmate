@@ -55,6 +55,33 @@ for pid in "${pids[@]}"; do wait "$pid" || fail "a concurrent sequence allocator
 [ "$(cat "$TMP_ROOT"/seq-out/* | sort -n)" = "$(seq 1 "$N")" ] \
   || fail "concurrent sequence claims were not distinct: $(cat "$TMP_ROOT"/seq-out/* | sort -n | tr '\n' ' ')"
 
+# The officer lane lock and the remote worker's job claim and worker lock, run
+# from their own scripts (which dispatch on load, so each function is loaded alone).
+load_fn() { eval "$(sed -n "/^$2() *{/,/^}/p" "$ROOT/bin/$1")"; }
+load_fn fm-officer.sh lock_acquire
+for fn in worker_claim worker_acquire_lock worker_publish_lock_owner worker_publish_identity worker_lock_recent; do
+  load_fn fm-remote-job-worker.sh "$fn"
+done
+for fn in lock_acquire worker_claim worker_acquire_lock; do
+  declare -F "$fn" >/dev/null || fail "could not load $fn"
+done
+job_claim() { mkdir -p "$1"; worker_claim "$1"; }
+for r in $(seq 1 "$ROUNDS"); do
+  winners=$(race "$TMP_ROOT/officer.$r" lock_acquire)
+  [ "$winners" = 1 ] || fail "round $r: officer lock_acquire gave $winners winners, want exactly 1"
+  winners=$(race "$TMP_ROOT/job.$r" job_claim)
+  [ "$winners" = 1 ] || fail "round $r: worker_claim gave $winners winners, want exactly 1"
+done
+# shellcheck disable=SC2034
+WORKER_LOCK=$(fm_remote_job_worker_lock_path)
+mkdir -p "$TMP_ROOT/worker-out"
+for i in $(seq 1 "$N"); do
+  ( if worker_acquire_lock "$TMP_ROOT/account" "identity-$i"; then : > "$TMP_ROOT/worker-out/win.$i"; sleep 3; fi ) &
+done
+wait
+[ "$(find "$TMP_ROOT/worker-out" -name 'win.*' | wc -l | tr -d ' ')" = 1 ] \
+  || fail "worker_acquire_lock gave $(find "$TMP_ROOT/worker-out" -name 'win.*' | wc -l | tr -d ' ') winners, want exactly 1"
+
 # Contract: mode 0700, existing dir loses, bad parent fails, bad usage fails.
 ( umask 022; fm_atomic_mkdir "$TMP_ROOT/mode" ) || fail "fresh claim failed"
 [ "$(stat -c %a "$TMP_ROOT/mode" 2>/dev/null || stat -f %Lp "$TMP_ROOT/mode")" = 700 ] || fail "claim is not mode 0700"
