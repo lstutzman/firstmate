@@ -1,6 +1,5 @@
 # Files that fail the ratchet check (see bin/fm-lint.sh); one repo-relative path per line.
 # Remove a line only after fixing the file. bin/fm-lint-ratchet.sh next picks the first entry.
-tests/fm-backend-herdr.test.sh
 tests/fm-harness-liveness-drift-live-e2e.test.sh
 tests/fm-hc-lab.test.sh
 tests/fm-officer.test.sh
