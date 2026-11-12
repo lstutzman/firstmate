@@ -697,6 +697,9 @@ def run(args):
     log = docs["Captain's Log"]
     if log is not None:
         doc = log.get("value")
+        if not isinstance(doc, dict):
+            unread_kinds.update(CARD_KINDS)
+            coverage.append("the Captain's Log has no card list, so no card was checked")
         known_closed = set()
         for source in FACTS_SOURCES:
             fstate, facts = fetch(args.app, "/api/captains-log/facts?source=" + source)

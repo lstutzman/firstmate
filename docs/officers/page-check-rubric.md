@@ -47,7 +47,7 @@ This is the one close any officer makes (Lee, main chat, 2026-11-12), and [the c
 - It never closes an item that is closed already (a person's close stands and nothing reopens it), started, assigned, or in a reserved class.
 - Rule (a), card settled: a `standing-rule`, `stale-card` or `shown-after-done` item closes at once when its finding is gone from the check and the Captain's Log no longer shows the card it names.
 - Rule (b), not recurred: any item, a `page-old` one included, closes when its finding was absent from this check and the check before it.
-  A check counts only if the page the finding concerns was read in it, so an unreachable app never closes anything, and, for a card finding, every input its kind needs was read too: the standing rules file for `standing-rule`, every PR the cards name for `stale-card`, and the app's card records for `shown-after-done`.
+  A check counts only if the page the finding concerns was read in it, so an unreachable app never closes anything, and, for a card finding, every input its kind needs was read too: the standing rules file for `standing-rule`, every PR the cards name for `stale-card`, and the app's card records for `shown-after-done`; a Captain's Log with no card list counts for no card finding.
   A check in which the finding is present clears its count, even when filing stopped early.
 - A close whose comment landed but whose move to Done failed retries only the move, so an item never gets a second close comment.
 - A `page-old` item closes on rule (b) only.

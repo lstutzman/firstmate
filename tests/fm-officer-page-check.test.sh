@@ -726,6 +726,20 @@ test_an_unread_rules_file_or_card_record_does_not_count() {
   pass "fm-officer page-check: an unread rules file or card record does not count toward closing a card item"
 }
 
+test_a_log_without_cards_does_not_count() {
+  local dir pages
+  linear_world nocards
+  dir=$FAKE_LINEAR_DIR
+  pages="$TMP_ROOT/nocards/pages"
+  seed_own_item PC-99 stale-card "Captain's Log" "old-ask:unanswered"
+  jq '.value = null' "$pages/_api_captains-log" > "$pages/log.tmp" && mv "$pages/log.tmp" "$pages/_api_captains-log"
+  officer nocards run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  later_day nocards 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "0" "$(closes_of PC-99)" "two checks of a Captain's Log with no card list do not close a card item"
+  assert_equals "0" "$(count_lines '^issue comment PC-99 ' "$dir/log")" "and it gets no close comment"
+  pass "fm-officer page-check: a Captain's Log read without a card list does not count toward closing a card item"
+}
+
 test_a_recurrence_in_a_blocked_check_resets_the_count() {
   local dir home pages reg
   linear_world blockedreset
@@ -784,3 +798,4 @@ test_a_check_that_could_not_see_the_finding_does_not_count
 test_a_failed_move_is_retried_without_a_second_comment
 test_an_unread_rules_file_or_card_record_does_not_count
 test_a_recurrence_in_a_blocked_check_resets_the_count
+test_a_log_without_cards_does_not_count
