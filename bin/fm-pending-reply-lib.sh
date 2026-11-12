@@ -1366,13 +1366,16 @@ fm_pending_reply_escalation_close_line() {  # <status-file> <corr_id>
 # open-decision fold. Any other record - another phase, a decision still open,
 # no such close, one a backlog-handoff wake still names, or one never confirmed
 # delivered (that request stays its owner's to resend; see the retryable
-# undelivered escalation note above) - returns 1. Read-only.
-fm_pending_reply_closed_escalation_line() {  # <state-dir> <corr_id>
+# undelivered escalation note above) - returns 1. The optional third argument
+# allow-undelivered lifts only the never-confirmed-delivery refusal; its sole
+# caller is bin/fm-pending-reply-sweep.sh --stale-handoffs, which proves the
+# request stale itself. Read-only.
+fm_pending_reply_closed_escalation_line() {  # <state-dir> <corr_id> [allow-undelivered]
   local state=$1 corr=$2 rec parent_status close
   rec=$(fm_pending_reply_path "$state" "$corr")
   [ -f "$rec" ] || return 1
   [ "$(fm_pending_reply_get "$rec" phase)" = escalated ] || return 1
-  [ -n "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || return 1
+  [ "${3-}" = allow-undelivered ] || [ -n "$(fm_pending_reply_get "$rec" delivered_epoch)" ] || return 1
   ! fm_pending_reply_wake_marker_names "$state" "$corr" || return 1
   parent_status=$(fm_pending_reply_get "$rec" parent_status)
   [ -n "$parent_status" ] || return 1
@@ -1387,7 +1390,7 @@ fm_pending_reply_closed_escalation_line() {  # <state-dir> <corr_id>
 # Settle an escalated record that fm_pending_reply_closed_escalation_line proves
 # settled, so the watcher stops re-checking it every poll. Returns 0 only when
 # this call settled the record.
-fm_pending_reply_settle_closed_escalation() {  # <state-dir> <corr_id> <via>
+fm_pending_reply_settle_closed_escalation() {  # <state-dir> <corr_id> <via> [allow-undelivered]
   # Lock handling as in fm_pending_reply_try_resolve.
   local state=$1 corr=$2 lock rc=0
   local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
@@ -1402,9 +1405,9 @@ fm_pending_reply_settle_closed_escalation() {  # <state-dir> <corr_id> <via>
   return "$rc"
 }
 
-_fm_pending_reply_settle_closed_escalation_locked() {  # <state-dir> <corr_id> <via>
+_fm_pending_reply_settle_closed_escalation_locked() {  # <state-dir> <corr_id> <via> [allow-undelivered]
   local state=$1 corr=$2 via=$3 rec close at
-  close=$(fm_pending_reply_closed_escalation_line "$state" "$corr") || return 1
+  close=$(fm_pending_reply_closed_escalation_line "$state" "$corr" "${4-}") || return 1
   rec=$(fm_pending_reply_path "$state" "$corr")
   at=$(status_line_at_epoch "$close") || at=$(fm_pending_reply_now)
   # phase is written last, so a failed write leaves a record the sweep retries.

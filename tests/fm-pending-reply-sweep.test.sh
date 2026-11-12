@@ -204,3 +204,85 @@ test_key_closes_review_records
 test_key_refuses_everything_else
 test_key_refuses_undelivered
 test_key_refuses_status_outside_home
+
+# Stale-handoff mode: undelivered records whose named PRs are all closed or merged.
+S_OLD=a0000000000000b1 S_OPEN=a0000000000000b2 S_NOPR=a0000000000000b3 S_UNREAD=a0000000000000b4
+S_YOUNG=a0000000000000b5 S_CLOSEDKEY=a0000000000000b6 S_MARKED=a0000000000000b7 S_MIXED=a0000000000000b8
+printf 'OPEN\n' > "$PRS/https___github.com_o_r_pull_8"
+printf 'CLOSED\n' > "$PRS/https___github.com_o_r_pull_9"
+OLD=$(( $(date +%s) - 10 * 86400 ))
+mkstale() {  # <name>
+  local h="$TMP_ROOT/$1"
+  mkdir -p "$h/state"
+  rec "$h" "$S_OLD" escalated delivered_epoch= created_epoch="$OLD" "request_prs=$(U 7),$(U 9)"
+  rec "$h" "$S_OPEN" escalated delivered_epoch= created_epoch="$OLD" "request_prs=$(U 7),$(U 8)"
+  rec "$h" "$S_NOPR" escalated delivered_epoch= created_epoch="$OLD"
+  rec "$h" "$S_UNREAD" escalated delivered_epoch= created_epoch="$OLD" "request_prs=$(U 77)"
+  rec "$h" "$S_YOUNG" escalated delivered_epoch= created_epoch="$(( $(date +%s) - 3600 ))" "request_prs=$(U 7)"
+  rec "$h" "$S_CLOSEDKEY" escalated delivered_epoch= created_epoch="$OLD" "request_prs=$(U 7)"
+  rec "$h" "$S_MARKED" escalated delivered_epoch= created_epoch="$OLD" "request_prs=$(U 7)"
+  rec "$h" "$S_MIXED" escalated created_epoch="$OLD" "request_prs=$(U 7)"
+  printf 'pending:%s\n' "$S_MARKED" > "$h/state/.backlog-handoff-t.wake-pending"
+  {
+    for c in "$S_OLD" "$S_OPEN" "$S_NOPR" "$S_UNREAD" "$S_YOUNG" "$S_CLOSEDKEY" "$S_MARKED" "$S_MIXED"; do held "$c"; done
+    printf 'resolved [key=pending-reply-%s] [at=1790000100]: pending-reply-resolved: task=t pending-reply-id=%s via=operator-resolve-key ack\n' "$S_CLOSEDKEY" "$S_CLOSEDKEY"
+  } > "$h/state/t.status"
+  printf '%s' "$h"
+}
+
+test_stale_dry_run_changes_nothing() {
+  local h out before
+  h=$(mkstale stale-dry)
+  before=$(snapshot "$h")
+  out=$(sweep "$h" --stale-handoffs) || fail "stale dry run failed: $out"
+  assert_contains "$out" "key=pending-reply-$S_OLD verdict=stale-handoff-candidate" "an old all-closed handoff is a candidate"
+  assert_contains "$out" "key=pending-reply-$S_CLOSEDKEY verdict=stale-handoff-candidate" "an already-closed decision is a candidate"
+  assert_contains "$out" "key=pending-reply-$S_OPEN verdict=stale-handoff-kept reason=pr-open" "an open PR is kept"
+  assert_contains "$out" "key=pending-reply-$S_NOPR verdict=stale-handoff-kept reason=no-pr" "no PR is kept"
+  assert_contains "$out" "key=pending-reply-$S_UNREAD verdict=stale-handoff-kept reason=pr-unreadable" "an unreadable PR is kept"
+  assert_contains "$out" "key=pending-reply-$S_YOUNG verdict=stale-handoff-kept reason=too-young" "a young record is kept"
+  assert_contains "$out" "key=pending-reply-$S_MARKED verdict=stale-handoff-kept reason=wake-named" "a wake-named record is kept"
+  assert_contains "$out" "stale-handoff-candidates=2 stale-handoff-kept=5" "totals"
+  [ "$(snapshot "$h")" = "$before" ] || fail "a stale dry run changed the home"
+  pass "--stale-handoffs without --apply lists candidates and changes nothing"
+}
+
+test_stale_apply_retires_only_proven() {
+  local h out c n
+  h=$(mkstale stale-apply)
+  out=$(sweep "$h" --apply --stale-handoffs) || fail "stale apply failed: $out"
+  assert_contains "$out" "key=pending-reply-$S_OLD verdict=stale-handoff-retired" "retired"
+  assert_contains "$out" "stale-handoff-retired=2 stale-handoff-kept=5" "totals"
+  for c in "$S_OLD" "$S_CLOSEDKEY"; do
+    [ "$(field "$h" "$c" phase)" = resolved ] && [ "$(field "$h" "$c" resolved_via)" = sweep-stale-handoff ] || fail "$c must be retired"
+  done
+  for c in "$S_OPEN" "$S_NOPR" "$S_UNREAD" "$S_YOUNG" "$S_MARKED" "$S_MIXED"; do
+    [ "$(field "$h" "$c" phase)" = escalated ] || fail "$c must stay escalated"
+  done
+  n=$(grep -c "pending-reply-id=$S_OLD via=sweep-stale-handoff prs=" "$h/state/t.status")
+  [ "$n" = 1 ] || fail "exactly one resolved line for $S_OLD, got $n"
+  grep -q "$(U 7)=MERGED" "$h/state/t.status" || fail "the line carries PR states"
+  n=$(grep -c "^resolved .*pending-reply-id=$S_CLOSEDKEY" "$h/state/t.status")
+  [ "$n" = 1 ] || fail "an already-closed decision gets no second line"
+  [ "$(wc -l < "$h/state/t.status" | tr -d ' ')" = 10 ] || fail "only one line appended: $(wc -l < "$h/state/t.status")"
+  [ ! -e "$h/state/t.inbox" ] || fail "nothing is sent to the mate"
+  case " $(open_keys "$h") " in *" pending-reply-$S_OLD "*) fail "the key stays open" ;; esac
+  out=$(sweep "$h" --apply --stale-handoffs) || fail "rerun failed: $out"
+  assert_contains "$out" "stale-handoff-retired=0 stale-handoff-kept=5" "a rerun retires nothing"
+  [ "$(wc -l < "$h/state/t.status" | tr -d ' ')" = 10 ] || fail "a rerun appended a line"
+  pass "--stale-handoffs --apply retires only proven records, once"
+}
+
+test_stale_min_age_and_usage() {
+  local h out rc
+  h=$(mkstale stale-age)
+  out=$(sweep "$h" --stale-handoffs --min-age-days 30) || fail "failed: $out"
+  assert_contains "$out" "key=pending-reply-$S_OLD verdict=stale-handoff-kept reason=too-young" "the age floor is overridable"
+  sweep "$h" --min-age-days 5 > /dev/null 2>&1; rc=$?
+  expect_code 2 "$rc" "--min-age-days needs --stale-handoffs"
+  pass "--min-age-days overrides the floor"
+}
+
+test_stale_dry_run_changes_nothing
+test_stale_apply_retires_only_proven
+test_stale_min_age_and_usage
