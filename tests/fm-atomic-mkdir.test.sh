@@ -83,11 +83,22 @@ mkdir -p "$TMP_ROOT/officer-dead"
 ( exit 0 ) & dead=$!; wait "$dead"
 printf '%s\n' "$dead" > "$TMP_ROOT/officer-dead/pid"
 lock_acquire "$TMP_ROOT/officer-dead" || fail "officer lock_acquire did not take over a lock whose pid is gone"
+# hold_until_losers_done <out-dir> <racers>: a winner of a worker lock keeps its
+# pid alive until every other racer has given up. A fixed sleep is shorter than a
+# loaded host's racer loops, and once the winner exits its lock is a dead owner's,
+# which a still-polling loser then rightly takes over (a second "winner").
+hold_until_losers_done() {
+  local waited=0
+  while [ "$(find "$1" -name 'done.*' | wc -l | tr -d ' ')" -lt $(($2 - 1)) ] && [ "$waited" -lt 1200 ]; do
+    waited=$((waited + 1))
+    sleep 0.1
+  done
+}
 # shellcheck disable=SC2034
 WORKER_LOCK=$(fm_remote_job_worker_lock_path)
 mkdir -p "$TMP_ROOT/worker-out"
 for i in $(seq 1 "$N"); do
-  ( if worker_acquire_lock "$TMP_ROOT/account" "identity-$i"; then : > "$TMP_ROOT/worker-out/win.$i"; sleep 3; fi ) &
+  ( if worker_acquire_lock "$TMP_ROOT/account" "identity-$i"; then : > "$TMP_ROOT/worker-out/win.$i"; hold_until_losers_done "$TMP_ROOT/worker-out" "$N"; else : > "$TMP_ROOT/worker-out/done.$i"; fi ) &
 done
 wait
 [ "$(find "$TMP_ROOT/worker-out" -name 'win.*' | wc -l | tr -d ' ')" = 1 ] \
@@ -108,8 +119,16 @@ start_racers() { # <dir> <fn>: N background racers on <dir>/claim; a success lea
     RACE_PIDS+=("$!")
   done
 }
-stop_racers() { # <dir> <settle-seconds>: let the race settle, stop losers that keep polling (by pid), print winners
-  local dir=$1 p
+stop_racers() { # <dir> <settle-seconds>: wait for a first winner, let the race settle, stop losers that keep polling (by pid), print winners
+  local dir=$1 p waited=0
+  # A takeover spawns a flock helper per racer, so on a loaded host the first
+  # claim can land after any fixed settle time; zero winners then means "not yet",
+  # not "stuck". Wait (bounded) for the first winner, and only then give the
+  # race <settle-seconds> to show a second one.
+  while [ "$waited" -lt 600 ] && [ -z "$(find "$dir/out" -name 'win.*' 2>/dev/null | head -n 1)" ]; do
+    waited=$((waited + 1))
+    sleep 0.1
+  done
   sleep "$2"
   for p in "${RACE_PIDS[@]}"; do kill "$p" 2>/dev/null || true; done
   for p in "${RACE_PIDS[@]}"; do wait "$p" 2>/dev/null || true; done
@@ -254,7 +273,7 @@ for r in $(seq 1 3); do
   rm -f -- "$(fm_remote_job_worker_ready_path)"
   d=$TMP_ROOT/worker-stale.$r; mkdir -p "$d/out"
   for i in $(seq 1 "$N"); do
-    ( if worker_acquire_lock "$TMP_ROOT/account" "identity-$i"; then : > "$d/out/win.$i"; sleep 2; fi ) &
+    ( if worker_acquire_lock "$TMP_ROOT/account" "identity-$i"; then : > "$d/out/win.$i"; hold_until_losers_done "$d/out" "$N"; else : > "$d/out/done.$i"; fi ) &
   done
   wait
   expect_one "round $r: worker_acquire_lock taking over a dead owner" "$(find "$d/out" -name 'win.*' | wc -l | tr -d ' ')"
