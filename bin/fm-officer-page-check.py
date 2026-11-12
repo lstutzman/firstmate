@@ -98,8 +98,10 @@ A page-old or shown-after-done finding is a bug in fleet code, so its bad patter
 kind, the page or Runs job, and the route as the safe form, with no timestamps and no
 card id) is remembered once through the shared pattern memory, a repeat on another card
 or day raising its count, and handed on in the digest's `patterns` and one batched
-pattern-memory start request. Without writes: linear nothing is filed and
-nothing starts. What the create cap, call budget or a rate limit leaves unfiled is named
+pattern-memory start request. The officer also closes its own single items
+once their finding is over (auto_close: the card settled, or the finding absent from two checks), each after one
+Linear comment giving the reason (docs/officers/page-check-rubric.md "Closing its own items" owns the rules). Without writes: linear nothing is filed,
+closed or started. What the create cap, call budget or a rate limit leaves unfiled is named
 in the digest.
 """
 
@@ -281,14 +283,19 @@ def finding(kind, page, ref, title, evidence, route, severity="medium"):
             "evidence": evidence, "route": route, "severity": severity}
 
 
-def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
-    out, cache, budget, unread = [], {}, [MAX_PR_LOOKUPS], set()
-    page = "Captain's Log"
+def shown_cards(log):
+    """The cards the Captain's Log shows Lee: asked or snoozed cards, suggested top-10 items and open choices."""
     shown = [c for c in items(log, "cards") if c.get("state") in ("asked", "snoozed")]
     shown += [dict(s, id="top10-%s" % s.get("id")) for s in items(log, "suggestions") if s.get("state") == "suggested"]
     shown += [dict(c, id="choice-%s" % c.get("id")) for c in items(log, "choice")
               if c.get("ask") and c.get("status") != "landed"]
-    for c in shown:
+    return shown
+
+
+def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
+    out, cache, budget, unread = [], {}, [MAX_PR_LOOKUPS], set()
+    page = "Captain's Log"
+    for c in shown_cards(log):
         cid, title = str(c.get("id")), c.get("question") or c.get("title") or ""
         text = words(c)
         for rid, pattern, rule_text in rules:
@@ -363,6 +370,7 @@ def page_findings(app, now):
                                    ("%g" % limit), time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(at))),
                                "page owner: fix the feed"))
     state, runs = fetch(app, "/api/runs")
+    docs["Runs"] = runs if state == "read" else None
     if state != "read":
         out.append(finding("page-old", "Runs", "runs", "Runs: %s" % WHY[state], "GET /api/runs was %s" % state,
                            "page owner: restore the page's feed", "high"))
@@ -385,7 +393,8 @@ def page_findings(app, now):
                                    "officer %s: latest finished run at %s has no summary" % (
                                        job.get("officer"), last.get("finishedAt") or last.get("startedAt")),
                                    "page owner: fix the job's result"))
-    state, _ = fetch(app, "/api/health")
+    state, health = fetch(app, "/api/health")
+    docs["Home"] = health if state == "read" else None
     if state != "read":
         out.append(finding("page-old", "Home", "health", "Home: app %s" % WHY[state], "GET /api/health was %s" % state,
                            "page owner: restore the app", "high"))
@@ -446,6 +455,131 @@ def description(lf, key, off, near=None, recurrence=None):
     return "\n".join(lines) + "\n%s:%s" % (off.marker, lf["fingerprint"])
 
 
+CARD_KINDS = ("standing-rule", "stale-card", "shown-after-done")
+CLOSE_CHECKS = 2
+OWN_OPENING = re.compile(r"\AFiled by the page-check officer from the \S+ page check\.\n")
+OWN_SHAPE = re.compile(r"^Severity: \w+\. Kind: ([a-z-]+)\. Page: (.+)\. Object: (.+)\.$", re.M)
+
+
+def own_item(lib, ident, fp, issue):
+    """(kind, page, object) when the item is one this officer filed itself and nobody reshaped, else None: not a bundle,
+    the officer's own opening line, its Kind line, and its own fingerprint marker for this very finding."""
+    desc = str(issue.get("description") or "")
+    shape = OWN_SHAPE.search(desc)
+    if (str(issue.get("title") or "").startswith(lib.BUNDLE_PREFIX) or not OWN_OPENING.match(desc) or not shape
+            or desc.count("page-check-fp:") != 1 or not desc.rstrip().endswith("page-check-fp:" + fp)):
+        return None
+    return shape.group(1), shape.group(2), shape.group(3)
+
+
+def settled_card(log, ref):
+    """(settled, when): a card finding's object names a card id, optionally followed by `:<detail>`; the card is settled
+    when no card the log shows matches it. `when` is the answer time the log records, else None."""
+    shown = {str(c.get("id")) for c in shown_cards(log)}
+    if any(ref == i or ref.startswith(i + ":") for i in shown):
+        return False, None
+    for c in items(log, "cards"):
+        cid = str(c.get("id"))
+        answer = c.get("answer") if isinstance(c.get("answer"), dict) else {}
+        if (ref == cid or ref.startswith(cid + ":")) and friction.epoch_of(answer.get("at")):
+            return True, friction.epoch_of(answer.get("at"))
+    return True, None
+
+
+def auto_close(lib, lin, args, key, ledger, found, state, findings, docs, done, notes):
+    """Closes the page-check officer's own single items whose finding is over (docs/officers/contract.md "File" names
+    this the one close an officer makes; docs/officers/page-check-rubric.md "Closing its own items" owns the rules).
+
+    An item is closed only when it is open, filed by this officer in its own shape, not started or assigned, in no
+    reserved class, and its finding is not in this check, and either (a) its card is settled (a card finding only) or (b) the
+    finding was absent from this and the check before it. A check counts for a finding only when the page it concerns
+    was read. One comment giving the reason goes first. Appends to `done` (closes) and `notes` (items it left open and why);
+    RATE_LIMITED and CALL_BUDGET stop the pass and are raised, with `done` and `state` holding what was finished.
+    """
+    ac = state.setdefault("autoclose", {})
+    absent, never, closed_rows = ac.setdefault("absent", {}), ac.setdefault("never", {}), ac.setdefault("closed", {})
+    ac.setdefault("info", {})
+    members = lib.read_json(os.path.join(args.out, lib.BUNDLE_FILE), {}).get("member_of", {})
+    present = {f["fingerprint"] for f in findings}
+    log = docs.get("Captain's Log")
+    log = log.get("value") if isinstance(log, dict) and isinstance(log.get("value"), dict) else None
+    todo = []
+    for fp, ident in sorted(ledger.items(), key=lambda kv: kv[1]):
+        if fp in members or ident in never or ident in closed_rows or not re.fullmatch(r"[0-9a-f]{64}", fp):
+            continue
+        if fp in present:
+            absent.pop(fp, None)
+            continue
+        todo.append((fp, ident))
+    fresh = {}
+
+    def view(ident):
+        if ident not in fresh:
+            issue = lin(["issue", "view", ident, "--full"]).get("issue")
+            fresh[ident] = issue if isinstance(issue, dict) else {}
+        return fresh[ident]
+
+    for fp, ident in todo:
+        try:
+            _close_one(lib, lin, args, key, fp, ident, ac, log, docs, view, found, done, notes)
+        except lib.LinearError as exc:
+            if exc.code in lib.RATE_OR_BUDGET:
+                raise
+            notes.append("%s: %s" % (ident, exc))
+
+
+def _close_one(lib, lin, args, key, fp, ident, ac, log, docs, view, found, done, notes):
+    """One ledger item's close decision (see auto_close)."""
+    absent, info, never, closed_rows = ac["absent"], ac["info"], ac["never"], ac["closed"]
+    if fp not in info:
+        issue = view(ident)
+        if lib.is_closed(issue):
+            never[ident] = "closed by a person"
+            return
+        shape = own_item(lib, ident, fp, issue)
+        if shape is None:
+            never[ident] = "not filed by the page-check officer in its own shape"
+            return
+        info[fp] = {"kind": shape[0], "page": shape[1], "ref": shape[2]}
+    meta = info[fp]
+    if docs.get(meta["page"]) is None:
+        return  # the page was not read, so its absence says nothing
+    seen = absent.setdefault(fp, [])
+    if key not in seen:
+        seen.append(key)
+        del seen[:-CLOSE_CHECKS]
+    reason = None
+    if meta["kind"] in CARD_KINDS and meta["page"] == "Captain's Log" and log is not None:
+        settled, when = settled_card(log, meta["ref"])
+        if settled:
+            reason = "card %s settled at %s" % (meta["ref"].split(":")[0], lib.iso(when or args.now))
+    if not reason and len(seen) >= CLOSE_CHECKS:
+        reason = "not recurred in two checks: %s" % ", ".join(seen)
+    if not reason:
+        return
+    issue = view(ident)
+    if lib.is_closed(issue):
+        never[ident] = "closed by a person"
+        return
+    if own_item(lib, ident, fp, issue) is None:
+        never[ident] = "not filed by the page-check officer in its own shape"
+        return
+    desc = str(issue.get("description") or "")
+    judged = lib.make_finding(meta["kind"], meta["page"], meta["ref"], "%s: %s" % (meta["page"], meta["kind"]),
+                              " ".join(l for l in desc.splitlines() if l.startswith(("Evidence: ", "Route: "))),
+                              "real", "low", False, {})
+    held = ("started" if str(issue.get("stateType") or "").lower() == "started" else "assigned" if issue.get("assignee")
+            else "in a reserved class" if lib.reserved_class(judged) else None)
+    if held:
+        notes.append("%s is %s, so the page-check officer does not close it" % (ident, held))
+        return
+    lib.close_with_comment(lin, ident, "Closed by the page-check officer: %s." % reason)
+    closed_rows[ident] = {"fingerprint": fp, "reason": reason, "at": lib.iso(args.now)}
+    found.setdefault("issues", {}).setdefault(ident, {})["closed"] = True
+    absent.pop(fp, None)
+    done.append({"issue": ident, "reason": reason})
+
+
 def file_findings(lib, off, findings, args, key, ledger, found, jev, lin):
     """Files every open finding, highest score first, in one bundle per fleet-app page (lib.Bundles; the route is the
     line's place); returns (writes done, why Linear stopped or None). A finding whose bundle or older item a person
@@ -465,7 +599,7 @@ def file_findings(lib, off, findings, args, key, ledger, found, jev, lin):
     return lib.file_in_bundles(filer, bundles, findings, args, labels_for, describe)
 
 
-def linear_pass(raw, args, key):
+def linear_pass(raw, args, key, docs):
     """Files the findings in Linear (writes: linear) and hands the page defects to the owning office.
 
     Returns (the digest's Linear fields, the library findings). A start needs the finding's Linear item, so without
@@ -483,6 +617,14 @@ def linear_pass(raw, args, key):
     lib.apply_found(findings, found, ledger)
     writes, blocked = file_findings(lib, off, findings, args, key, ledger, found, jev, lin) if linear else ([], None)
     lib.apply_found(findings, found, ledger)
+    closes, close_notes = [], []
+    if linear and not blocked:
+        try:
+            auto_close(lib, lin, args, key, ledger, found, state, findings, docs, closes, close_notes)
+        except lib.LinearError as exc:
+            if exc.code == "RATE_LIMITED":
+                lib.pause_for_rate_limit(out, args.now)
+            blocked = "closing own items stopped: %s" % exc
     handled = state.setdefault("handled", {})
     gaps = rubric.gaps + ([jev.gap] if jev.gap and linear else [])
     if args.fm_home:
@@ -512,7 +654,7 @@ def linear_pass(raw, args, key):
         lf["raw"]["linear"] = {"severity": lf["severity"], "found": lf["found"], "score": lf["score"],
                                **{k: v for k, v in (lf["filing"] or {}).items() if k in ("action", "issue", "reason", "found", "recurrence_of")}}
     return {"source": "page-check-officer", "generated_at": lib.iso(args.now), "writes": args.writes, "writes_done": writes,
-            "writes_blocked": blocked, "linear_calls": lin.n, "linear_call_budget": lin.budget, "linear_gaps": gaps,
+            "writes_blocked": blocked, "closed_own_items": closes, "close_notes": close_notes, "linear_calls": lin.n, "linear_call_budget": lin.budget, "linear_gaps": gaps,
             "not_filed": lib.not_filed_lines(findings), "held": held, "asks_for_lee": asks, "start_requests": starts,
             "patterns": {"total": len(patterns), "new": [dict(id=i, line=p["line"], count=p["count"]) for i, p in sorted(patterns.items()) if p["first"] == day],
                          "captures": captures, "lint": lint}}
@@ -524,6 +666,8 @@ def render_md(key, findings, new_ids, coverage, linear):
     lines += ["- Linear: writes %s; %d of %d call(s) used%s." % (
         linear["writes"], linear["linear_calls"], linear["linear_call_budget"],
         "; stopped: " + linear["writes_blocked"] if linear["writes_blocked"] else "")]
+    lines += ["- Closed own item %s: %s" % (c["issue"], c["reason"]) for c in linear["closed_own_items"]]
+    lines += ["- Linear: " + n for n in linear["close_notes"]]
     lines += ["- Linear: " + g for g in linear["linear_gaps"]] + ["- " + n for n in linear["not_filed"]]
     lines += ["- " + a["line"] for a in linear["asks_for_lee"]]
     pat = linear["patterns"]
@@ -559,7 +703,7 @@ def run(args):
                                   now, args.stale_days, coverage)
     findings.sort(key=lambda f: f["id"])
     os.makedirs(args.out, exist_ok=True)
-    linear = linear_pass(findings, args, args.key)
+    linear = linear_pass(findings, args, args.key, docs)
     coverage.extend(linear["linear_gaps"])
     seen_path = os.path.join(args.out, "state.json")
     try:
