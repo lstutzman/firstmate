@@ -75,6 +75,8 @@ ROWS
 # Most fixtures below test one poll, so inventory findings alarm at once here;
 # the race and persistence cases near the end restore the default of two polls.
 printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+# Existing cases run on the seven_day fallback: the proxy config is absent, and the real one is never read.
+printf '%s\n' "$TMP_ROOT/absent-proxy.yaml" > "$HOME_FIX/config/cpa-proxy-config"
 quota 0.2
 mate 0 0 9000
 out=$(run_alarm check)
@@ -677,6 +679,75 @@ rm -f "$HOME_FIX/models-recent"
 rotation_accounts 0.2 0.2
 run_alarm check >/dev/null
 pass 'quota alarm follows the proxy view: rotated accounts raise nothing, all-exhausted serving still does'
+
+# Proxy thresholds (synthetic config; only the routing keys are ever extracted): 91% under a 100 threshold is not rotated out.
+cat > "$TMP_ROOT/proxy.yaml" <<'YAML'
+api-keys:
+  - "synthetic-secret-must-never-appear"
+routing:
+  strategy: quota-aware
+  quota-threshold: 100
+  quota-thresholds:
+    "Reserve95@example.invalid": 95
+    reserve80@example.invalid: 80 # reserve
+YAML
+printf '%s\n' "$TMP_ROOT/proxy.yaml" > "$HOME_FIX/config/cpa-proxy-config"
+proxy_stale=0
+proxy_accounts() { # primary_used reserve95_used reserve80_used; a fresh stale account each call keeps a card coming
+  proxy_stale=$((proxy_stale + 1))
+  printf '%s\n' 'accounts[4]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:' \
+    "  primary@example.invalid,claude,0.0,,$1,window9,,1,0" \
+    "  reserve95@example.invalid,claude,0.0,,$2,window9,,1,0" \
+    "  reserve80@example.invalid,claude,0.0,,$3,window9,,1,0" \
+    "  old$proxy_stale@example.invalid,claude,0.0,,0.5,window9,,200,0" > "$HOME_FIX/accounts"
+}
+printf '%s\n' 'models[1]{account,model,requests,failed}:' '  primary@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models"
+proxy_accounts 0.91 0.5 0.5
+out=$(run_alarm check)
+assert_not_contains "$out" 'Carrying Claude account' '91% under a 100 threshold raises no finding'
+assert_contains "$out" 'rotated out (at or above own proxy threshold): none' '91% under a 100 threshold is not rotated out'
+assert_not_contains "$out" 'synthetic-secret' 'the proxy config secrets never reach output'
+# Reserve accounts use their own thresholds: 95% is below 100 but a reserve at 95 is rotated out, 94% is not.
+proxy_accounts 0.2 0.95 0.8
+out=$(run_alarm check)
+assert_contains "$out" 'reserve95@example.invalid 7d 95% (threshold 95%)' 'a reserve at its 95 threshold is rotated out (emails compared lower-case)'
+assert_contains "$out" 'reserve80@example.invalid 7d 80% (threshold 80%)' 'a reserve at its 80 threshold is rotated out'
+proxy_accounts 0.2 0.94 0.79
+assert_contains "$(run_alarm check)" 'rotated out (at or above own proxy threshold): none' 'reserves just below their thresholds are not rotated out'
+# Past its own threshold and still serving: a finding that names the source (reserve80 is the only server).
+printf '%s\n' 'models[1]{account,model,requests,failed}:' '  reserve80@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models"
+proxy_accounts 0.2 0.5 0.85
+out=$(run_alarm check)
+assert_contains "$out" 'Carrying Claude account reserve80@example.invalid 7d 85% (resets window9; threshold 80% from proxy config)' 'past its own threshold and still serving raises a finding'
+# The proxy moved: an account below its threshold also serves, so nothing is raised.
+printf '%s\n' 'models[2]{account,model,requests,failed}:' '  reserve80@example.invalid,claude-opus-5-5,9,0' '  primary@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models"
+proxy_accounts 0.2 0.5 0.85
+assert_not_contains "$(run_alarm check)" 'Carrying Claude account' 'a below-threshold account serving means the proxy moved'
+# Traffic that fails to move must persist for persist_polls polls before it alarms.
+printf '%s\n' '{"persist_polls":2}' > "$HOME_FIX/config/fleet-alarm.json"
+printf '%s\n' 'models[1]{account,model,requests,failed}:' '  reserve80@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models"
+assert_not_contains "$(run_alarm check)" 'Carrying Claude account' 'a first poll past the threshold waits for persistence'
+assert_contains "$(run_alarm check)" 'Carrying Claude account reserve80@example.invalid' 'the second consecutive poll alarms'
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+proxy_accounts 0.2 0.5 0.5
+run_alarm check >/dev/null
+# Unreadable proxy config: seven_day is the fallback and the text says so.
+printf '%s\n' "$TMP_ROOT/absent-proxy.yaml" > "$HOME_FIX/config/cpa-proxy-config"
+printf '%s\n' 'models[1]{account,model,requests,failed}:' '  primary@example.invalid,claude-opus-5-5,9,0' > "$HOME_FIX/models"
+proxy_accounts 0.91 0.5 0.5
+out=$(run_alarm check)
+assert_contains "$out" 'Carrying Claude account primary@example.invalid 7d 91% (resets window9; threshold 90% from seven_day fallback 90%: proxy config unreadable)' 'fallback finding names its source'
+assert_contains "$out" 'threshold source: seven_day fallback 90%: proxy config unreadable' 'fallback context names its source'
+printf '%s\n' 'routing: [' > "$TMP_ROOT/bad.yaml"
+printf '%s\n' "$TMP_ROOT/bad.yaml" > "$HOME_FIX/config/cpa-proxy-config"
+proxy_accounts 0.2 0.5 0.5
+run_alarm check >/dev/null
+proxy_accounts 0.91 0.5 0.5
+assert_contains "$(run_alarm check)" 'seven_day fallback' 'a config without a routing block falls back'
+printf '%s\n' "$TMP_ROOT/absent-proxy.yaml" > "$HOME_FIX/config/cpa-proxy-config"
+proxy_accounts 0.2 0.5 0.5
+run_alarm check >/dev/null
+pass 'quota alarm uses the proxy per-account thresholds and falls back to seven_day when unreadable'
 
 # Carrying-account repeats are suppressed while the reset is near and the pool has headroom.
 soon=$(date -u -d '+2 hours' +%Y-%m-%dT%H:%M:%SZ)
