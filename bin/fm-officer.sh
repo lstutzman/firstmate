@@ -152,6 +152,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/officers.md"
 OFFICER_ROLES="triage surgeon landing friction progress pagecheck corpus library"
 
+# shellcheck source=bin/fm-atomic-lib.sh
+. "$SCRIPT_DIR/fm-atomic-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-check-lib.sh
@@ -518,18 +520,20 @@ readable_homes() {
   done < "$DATA/secondmates.md"
 }
 
-lock_acquire() {  # [lock]: default the lane's .run.lock; a lock whose pid is gone is taken over.
+lock_acquire() {  # [lock]: default the lane's .run.lock; a lock whose pid is gone, or that stayed a minute with no pid, is taken over.
   local lock=${1:-$OFFICER_LANE/.run.lock} pid
-  if mkdir "$lock" 2>/dev/null; then
+  if fm_atomic_mkdir "$lock" 2>/dev/null; then
     printf '%s\n' "$$" > "$lock/pid"
     return 0
   fi
   pid=$(cat "$lock/pid" 2>/dev/null || true)
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+  if [ -n "$pid" ]; then
+    kill -0 "$pid" 2>/dev/null && return 1
+  elif [ -n "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ]; then
     return 1
   fi
   rm -rf -- "$lock"
-  mkdir "$lock" 2>/dev/null || return 1
+  fm_atomic_mkdir "$lock" 2>/dev/null || return 1
   printf '%s\n' "$$" > "$lock/pid"
 }
 
