@@ -474,6 +474,9 @@ export FM_JEV_RECEIPTS_DIR
 FM_SCRATCH_ROOT=$(fm_test_tmproot fm-scratch-root) || return 1
 export FM_SCRATCH_ROOT
 
+TREEHOUSE_ROOT=$(fm_test_tmproot fm-treehouse-pool)
+export TREEHOUSE_ROOT
+
 # fm_test_reap_orphans: best-effort sweep for fixture roots left behind by a
 # prior run that was killed hard enough to skip the traps above (e.g. a
 # SIGKILL timeout). Only removes directories carrying the .fm-test-fixture
