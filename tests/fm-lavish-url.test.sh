@@ -632,6 +632,7 @@ test_concurrent_filings_file_once_under_a_non_atomic_mkdir() {
   wait_for_result "$home" "$sid" 1
 
   mkdir -p "$home/stub-mkdir" "$home/race"
+  # shellcheck disable=SC2016 # the stub script body must keep $a/$last literal
   printf '#!/bin/sh\nfor a; do last=$a; done\n/bin/mkdir -p -- "$last"\nexit 0\n' > "$home/stub-mkdir/mkdir"
   chmod +x "$home/stub-mkdir/mkdir"
   for i in $(seq 1 8); do

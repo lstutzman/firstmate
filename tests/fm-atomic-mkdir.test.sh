@@ -13,6 +13,7 @@ trap 'rm -rf -- "$TMP_ROOT"' EXIT
 # A mkdir that reports success even when the directory exists: the worst case of
 # a non-atomic system mkdir, put first on PATH.
 mkdir -p "$TMP_ROOT/stub"
+# shellcheck disable=SC2016 # the stub script body must keep $a/$last literal
 printf '#!/bin/sh\nfor a; do last=$a; done\n/bin/mkdir -p -- "$last"\nexit 0\n' > "$TMP_ROOT/stub/mkdir"
 chmod +x "$TMP_ROOT/stub/mkdir"
 PATH="$TMP_ROOT/stub:$PATH"
