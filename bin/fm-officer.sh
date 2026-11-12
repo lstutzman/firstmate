@@ -527,14 +527,25 @@ lock_acquire() {  # [lock]: default the lane's .run.lock; a lock whose pid is go
     return 0
   fi
   pid=$(cat "$lock/pid" 2>/dev/null || true)
-  if [ -n "$pid" ]; then
-    kill -0 "$pid" 2>/dev/null && return 1
-  elif [ -n "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ]; then
-    return 1
-  fi
-  rm -rf -- "$lock"
+  lock_is_stale "$lock" "$pid" || return 1
+  # Only one racer can complete the takeover.
+  # A lock released since the check above is simply claimed below.
+  fm_atomic_takeover "$lock" lock_is_stale "$pid" || [ ! -e "$lock" ] || return 1
   fm_atomic_mkdir "$lock" 2>/dev/null || return 1
   printf '%s\n' "$$" > "$lock/pid"
+}
+
+# lock_is_stale <lock-dir> <pid-seen-earlier>: the lock still records that pid
+# and it is dead, or still records none and is over a minute old.
+lock_is_stale() {
+  local lock=$1 seen=$2 pid
+  pid=$(cat "$lock/pid" 2>/dev/null || true)
+  [ "$pid" = "$seen" ] || return 1
+  if [ -n "$pid" ]; then
+    ! kill -0 "$pid" 2>/dev/null
+  else
+    [ -z "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ]
+  fi
 }
 
 lock_release() { rm -rf -- "$OFFICER_LANE/.run.lock"; }

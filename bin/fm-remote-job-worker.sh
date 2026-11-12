@@ -194,8 +194,12 @@ worker_publish_lock_owner() {
 }
 
 worker_lock_recent() {
+  worker_dir_recent "$WORKER_LOCK"
+}
+
+worker_dir_recent() { # <dir>
   local mtime now
-  mtime=$(fm_remote_job_path_mtime "$WORKER_LOCK" 2>/dev/null || true)
+  mtime=$(fm_remote_job_path_mtime "$1" 2>/dev/null || true)
   case "$mtime" in ''|*[!0-9]*) return 0 ;; esac
   now=$(date +%s)
   [ $((now - mtime)) -le 10 ]
@@ -249,10 +253,43 @@ worker_acquire_lock() { # <account-home> <identity>
       continue
     fi
     [ ! -L "$WORKER_LOCK/pid" ] && [ ! -L "$WORKER_LOCK/start" ] && [ ! -L "$WORKER_LOCK/command" ] || return 1
-    rm -f -- "$WORKER_LOCK/pid" "$WORKER_LOCK/start" "$WORKER_LOCK/command" || return 1
-    rmdir "$WORKER_LOCK" || return 1
+    # An unexpected entry in the lock is not ours to remove (as before: refuse).
+    worker_lock_holds_only_owner_files "$WORKER_LOCK" || return 1
+    # Only one racer can complete the takeover. A racer that loses it, or finds
+    # the lock no longer stale, goes round again and sees the new owner or
+    # claims the free path.
+    fm_atomic_takeover "$WORKER_LOCK" worker_lock_is_stale "$account_home" || {
+      attempt=$((attempt + 1))
+      sleep 0.05
+    }
   done
   return 1
+}
+
+# The lock <dir> holds nothing but, at most, the owner's pid, start and command
+# files (regular files, not links).
+worker_lock_holds_only_owner_files() { # <dir>
+  local dir=$1 entry
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
+  for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+    [ -e "$entry" ] || [ -L "$entry" ] || continue
+    case "${entry##*/}" in
+      pid|start|command) [ ! -L "$entry" ] || return 1 ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
+# The lock <dir> still shows what worker_acquire_lock saw: only the
+# owner's files, no live owner, no fresh heartbeat and no recent change.
+worker_lock_is_stale() { # <dir> <account-home>
+  local dir=$1 account_home=$2
+  worker_lock_holds_only_owner_files "$dir" || return 1
+  [ ! -e "$dir/quarantine" ] || return 1
+  fm_remote_job_recorded_owner_alive "$dir" && return 1
+  fm_remote_job_probe "$account_home" && return 1
+  worker_dir_recent "$dir" && return 1
+  return 0
 }
 
 # Open the lock directory this process still owns and remember a path that
