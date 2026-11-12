@@ -194,6 +194,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-pr-state.sh`         | Read-only: print one line per GitHub pull-request blocker it can see, reporting on checks that have reported rather than verdicting merge-readiness |
 | `fm-pr-reviewers.sh`     | Read-only: suggest reviewers from GitHub's own author mapping of recent commits on a pull request's changed files, never requesting one |
 | `fm-merge-outcome-lib.sh` | Publish a confirmed merge's durable, role-routed supervision outcome                 |
+| `fm-post-merge-update.sh` | Start a detached, once-per-PR `fm-update.sh` pass after a firstmate merge ([configuration](configuration.md#post-merge-update-configno-post-merge-update)) |
 | `fm-merge-authority-lib.sh` | Resolve merge authority at the gate, persist it against the accepted canonical PR, and identity-check its later poll consumption |
 | `fm-admission-lib.sh`    | Load a project's admission config and run its own diff classifier for the merge-time check that flagged classes carry the captain's recorded answer, or are handed to the merger home a route names |
 | `fm-reserved-classify.sh` | Generic path-rule admission classifier: map changed paths to class words from a home-local `<glob> <class>` rules file ([configuration](configuration/projects-and-forges.md#path-rule-classifier-binfm-reserved-classifysh)) |
