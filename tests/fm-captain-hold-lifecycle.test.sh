@@ -1871,6 +1871,13 @@ test_hold_answer_closes_originating_decision_key() {
     || fail "the origin-key token hid the hold from the open-decision fold: $open"
   printf '%s\n' "$open" | grep -Fq 'fold-key' \
     && fail "the origin-key token was read as a decision key: $open"
+  run_captain "$mate" hold deferred-call --title "Deferred call" --reason "deferred choice" \
+    --repo sample --origin-key deferred-key >/dev/null || fail "deferred origin-key hold failed"
+  run_captain "$mate" hold deferred-call --reason "deferred choice" --until 2099-01-01 >/dev/null \
+    || fail "captain deferral re-hold failed"
+  grep -F '[key=captain-hold-deferred-call-1]' "$channel" | tail -n 1 | grep -F '[until=2099-01-01]' \
+    | grep -F '[origin-key=deferred-key]' >/dev/null \
+    || fail "a re-hold without --origin-key dropped the stored origin key from the hold line: $(cat "$channel")"
 
   run_captain "$mate" answer pillow-calls --decision-file "$decision" >/dev/null \
     || fail "answer retry failed"

@@ -1489,6 +1489,8 @@ command_hold() {
     { mkdir -p "$(dirname "$(origin_key_path "$id" "$occurrence")")" \
       && printf '%s\n' "$origin_key" > "$(origin_key_path "$id" "$occurrence")"; } \
       || fail "could not record the origin key for $id"
+  else
+    origin_key=$(cat "$(origin_key_path "$id" "$occurrence")" 2>/dev/null || true)
   fi
   if [ -n "$DEFAULT_BY" ]; then
     write_default_record "$id" "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" \
