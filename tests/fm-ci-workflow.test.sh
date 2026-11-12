@@ -20,7 +20,8 @@
 # FM_CI_SKIP_MACOS let a fork skip the push run and the macOS job through a
 # job-level condition, while with neither set every job runs exactly as before.
 # FM_CI_NIGHTLY and FM_CI_MACOS_SCOPE are opt-in too, and FM_CI_RUNS_ON moves
-# the Linux jobs onto a fork's own runners.
+# the Linux jobs onto a fork's own runners, with FM_CI_LINT_RUNS_ON overriding
+# it for the lint job alone.
 #
 # The workflow is parsed as YAML and its concurrency and job-level `if`
 # expressions are resolved against simulated pull_request and push contexts,
@@ -182,8 +183,8 @@ end
 # fork variables unset, and needed jobs successful. Short keys: event, action,
 # label (the label an event adds), labels (comma-separated labels on the PR),
 # association, head (head repository), number, run_id, skip_push, skip_macos,
-# runs_on, nightly, macos_scope (the FM_CI_RUNS_ON, FM_CI_NIGHTLY and
-# FM_CI_MACOS_SCOPE repository variables),
+# runs_on, lint_runs_on, nightly, macos_scope (the FM_CI_RUNS_ON,
+# FM_CI_LINT_RUNS_ON, FM_CI_NIGHTLY and FM_CI_MACOS_SCOPE repository variables),
 # needs (success, failure, or cancelled: the needed jobs' results that job
 # conditions and the Full suite verdict read), outcome (how every job that runs
 # concludes, read only by published_checks). A push event clears the PR fields,
@@ -194,7 +195,7 @@ def simulated_context(workflow_name, overrides)
   o = {
     "event" => "pull_request", "action" => "synchronize", "label" => "",
     "labels" => "", "association" => "NONE", "head" => "contributor/firstmate",
-    "number" => "108", "run_id" => "900001", "skip_push" => "", "skip_macos" => "", "runs_on" => "", "nightly" => "", "macos_scope" => "",
+    "number" => "108", "run_id" => "900001", "skip_push" => "", "skip_macos" => "", "runs_on" => "", "lint_runs_on" => "", "nightly" => "", "macos_scope" => "",
     "needs" => "success", "outcome" => "success",
     "base_sha" => "", "head_sha" => "", "before" => "", "sha" => "",
   }
@@ -224,6 +225,7 @@ def simulated_context(workflow_name, overrides)
     "vars.FM_CI_SKIP_PUSH" => o["skip_push"],
     "vars.FM_CI_SKIP_MACOS" => o["skip_macos"],
     "vars.FM_CI_RUNS_ON" => o["runs_on"],
+    "vars.FM_CI_LINT_RUNS_ON" => o["lint_runs_on"],
     "vars.FM_CI_NIGHTLY" => o["nightly"],
     "vars.FM_CI_MACOS_SCOPE" => o["macos_scope"],
     "needs.status" => o["needs"],
@@ -752,6 +754,25 @@ exit(YAML.load_file(ARGV[0]).fetch("jobs").fetch("macos-stock-bash").fetch("runs
   pass "Linux jobs default to ubuntu-24.04 and follow FM_CI_RUNS_ON; macOS stays hosted"
 }
 
+# FM_CI_LINT_RUNS_ON moves the lint job alone; unset, lint follows
+# FM_CI_RUNS_ON, and with neither set it stays on ubuntu-24.04.
+test_lint_job_follows_its_own_runs_on_variable() {
+  local only_lint both fallback
+  only_lint=$(runs_on_under 'lint_runs_on=["self-hosted","fm-lint"]') || fail "could not resolve runs-on with FM_CI_LINT_RUNS_ON set"
+  [ "$(printf '%s\n' "$only_lint" | grep -c '^lint ')" -eq 1 ] || fail "expected exactly one lint job: $only_lint"
+  printf '%s\n' "$only_lint" | grep -qx 'lint \["self-hosted","fm-lint"\]' \
+    || fail "FM_CI_LINT_RUNS_ON must move the lint job: $only_lint"
+  ! printf '%s\n' "$only_lint" | grep -v '^lint ' | grep -qv ' "ubuntu-24.04"$' \
+    || fail "FM_CI_LINT_RUNS_ON must not move any other job: $only_lint"
+  both=$(runs_on_under 'runs_on=["self-hosted","fm-ci"]' 'lint_runs_on=["self-hosted","fm-lint"]') || fail "could not resolve runs-on with both variables set"
+  printf '%s\n' "$both" | grep -qx 'lint \["self-hosted","fm-lint"\]' || fail "FM_CI_LINT_RUNS_ON must win over FM_CI_RUNS_ON for lint: $both"
+  ! printf '%s\n' "$both" | grep -v '^lint ' | grep -qv ' \["self-hosted","fm-ci"\]$' \
+    || fail "other Linux jobs must keep following FM_CI_RUNS_ON: $both"
+  fallback=$(runs_on_under 'runs_on=["self-hosted","fm-ci"]') || fail "could not resolve runs-on with only FM_CI_RUNS_ON set"
+  printf '%s\n' "$fallback" | grep -qx 'lint \["self-hosted","fm-ci"\]' || fail "lint must fall back to FM_CI_RUNS_ON: $fallback"
+  pass "the lint job follows FM_CI_LINT_RUNS_ON, then FM_CI_RUNS_ON, then ubuntu-24.04"
+}
+
 # Self-hosted runners have no Node, so every job that installs an npm package
 # globally sets up a pinned Node first (Pi needs 22.19 or newer); the hosted
 # macOS runner brings its own.
@@ -923,6 +944,7 @@ test_unrelated_label_never_masks_an_earlier_failure
 test_fork_switches_are_opt_in
 test_nightly_schedule_has_its_own_concurrency_group
 test_linux_jobs_follow_the_runs_on_variable
+test_lint_job_follows_its_own_runs_on_variable
 test_npm_jobs_set_up_a_pinned_node_first
 test_timing_aggregate_still_runs_after_a_failed_lane
 test_every_job_has_a_finite_timeout

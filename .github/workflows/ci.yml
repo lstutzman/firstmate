@@ -40,6 +40,9 @@ concurrency:
 # runners carry no Node, so each job that runs npm install -g sets up a pinned
 # Node first (Pi needs 22.19 or newer). Only attach self-hosted runners to a
 # private repository: a public one would run outside pull requests on them.
+# The lint job alone reads FM_CI_LINT_RUNS_ON first (same format), falling back
+# to FM_CI_RUNS_ON, so a fork can give lint (which peaks well above the other
+# jobs' memory) its own runner pool.
 #
 # Nightly (opt-in): the schedule trigger always exists, but a scheduled run
 # does nothing unless the repository variable FM_CI_NIGHTLY is 1; then it is a
@@ -75,7 +78,7 @@ concurrency:
 jobs:
   lint:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Lint ${{ matrix.partition }}
-    runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
+    runs-on: ${{ fromJSON(vars.FM_CI_LINT_RUNS_ON || vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
     if: ${{ !(github.event_name == 'push' && vars.FM_CI_SKIP_PUSH == '1') && !(github.event_name == 'schedule' && vars.FM_CI_NIGHTLY != '1') && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') && (github.event_name == 'push' || github.event_name == 'schedule' || github.event.pull_request.head.repo.full_name == github.repository || github.event.pull_request.author_association == 'OWNER' || github.event.pull_request.author_association == 'MEMBER' || github.event.pull_request.author_association == 'COLLABORATOR' || contains(github.event.pull_request.labels.*.name, 'full-ci')) }}
     # Normal tier (see the timeout policy above). Seven partitions packed on
     # source-closure weight model every runner at 9 to 13 minutes of measured
