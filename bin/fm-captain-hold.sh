@@ -277,7 +277,11 @@
 # a released and re-held task opens and closes a distinct parent decision with
 # no new persisted state, and an exact retry republishes the same line, which
 # the channel deduplicates against that key's latest line, so a hold re-dated
-# back to an earlier `--until` is still delivered. A `hold --until` adds the
+# back to an earlier `--until` is still delivered. A `hold --origin-key <key>` adds
+# the structured `[origin-key=<key>]` field to that line (a re-hold of the same occurrence
+# keeps the recorded key; a hold with none recorded adds nothing),
+# so a consumer can tell which plain needs-decision key the open hold already
+# covers and card only the hold; the key fold ignores the field. A `hold --until` adds the
 # structured `[until=YYYY-MM-DD]` field to that line, which the parent watcher's
 # open-decision reminders read to keep the relayed key quiet until that date
 # (bin/fm-watch.sh open_decision_reminder_tick). A main home has no channel and
@@ -320,13 +324,14 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-afk-contract.sh"
 
 PARENT_HOLD_PUBLISHED=0
-publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [<cause>] [until-date]
-  local id=$1 occurrence=$2 verb=$3 note=$4 cause=${5:-} until=${6:-} rc=0 tag='' head body destination line rest latest='' key
+publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [<cause>] [until-date] [origin-key]
+  local id=$1 occurrence=$2 verb=$3 note=$4 cause=${5:-} until=${6:-} origin_key=${7:-} rc=0 tag='' head body destination line rest latest='' key
   PARENT_HOLD_PUBLISHED=0
   key="captain-hold-$id-$occurrence"
   [ -z "$cause" ] || tag=" [cause=$cause]"
   head="$verb [key=$key]"
   [ -z "$until" ] || head="$head [until=$until]"
+  [ -z "$origin_key" ] || head="$head [origin-key=$origin_key]"
   body=": captain hold $id: $(fm_parent_channel_clean_note "$note")"
   # Only the key's latest line decides a repeat, so a hold re-dated back to an
   # earlier --until is still delivered; the cause tag is ignored in the match.
@@ -1485,6 +1490,8 @@ command_hold() {
     { mkdir -p "$(dirname "$(origin_key_path "$id" "$occurrence")")" \
       && printf '%s\n' "$origin_key" > "$(origin_key_path "$id" "$occurrence")"; } \
       || fail "could not record the origin key for $id"
+  else
+    origin_key=$(cat "$(origin_key_path "$id" "$occurrence")" 2>/dev/null || true)
   fi
   if [ -n "$DEFAULT_BY" ]; then
     write_default_record "$id" "$(body_hold_set_timestamp "$(show_field_value "$show" body)")" \
@@ -1497,7 +1504,7 @@ command_hold() {
     fi
     reason="$reason (default cleared: captain deferred to $until)"
   fi
-  publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$cause" "$until"
+  publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$cause" "$until" "$origin_key"
   if [ -n "$origin" ]; then
     write_hold_origin "$id" "$(show_field "$show" body)" "$origin" || exit $?
   fi
