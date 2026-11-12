@@ -70,6 +70,7 @@ case "$1 $2" in
       *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
     esac ;;
   "issue update")
+    if [ -f "$d/fail-update.$3" ]; then echo '{"ok":false,"error":{"code":"UNKNOWN","message":"move refused"}}'; exit 1; fi
     case " $* " in *" --verify "*) echo "UPDATE $3" >> "$d/updates" ;; esac
     echo '{"ok":true,"data":{"issue":{"identifier":"'"$3"'"}}}' ;;
   "issue comment")
@@ -681,6 +682,48 @@ test_closing_needs_writes_linear_and_budget() {
   pass "fm-officer page-check: no close without writes: linear, and none past the call budget"
 }
 
+test_a_check_that_could_not_see_the_finding_does_not_count() {
+  local dir pages fakebin
+  linear_world unreadclose
+  dir=$FAKE_LINEAR_DIR
+  pages="$TMP_ROOT/unreadclose/pages"
+  fakebin="$TMP_ROOT/unreadclose/fakebin"
+  seed_own_item PC-93 page-old "Business health" "business-health-old"
+  seed_own_item PC-94 stale-card "Captain's Log" "pr-card:ex/repo#7" "" '{}' "names ex/repo#7, which is merged"
+  mv "$pages/_api_business-health" "$pages/business-health.saved"
+  cp "$fakebin/gh-axi" "$fakebin/gh-axi.saved"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/gh-axi"
+  officer unreadclose run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  later_day unreadclose 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "0" "$(closes_of PC-93)" "two checks that could not read the item's page do not close it"
+  assert_equals "0" "$(closes_of PC-94)" "two checks that could not read the PR a stale-card item names do not close it"
+  assert_equals "0" "$(count_lines '^issue comment PC-9[34] ' "$dir/log")" "and neither item gets a close comment"
+  mv "$pages/business-health.saved" "$pages/_api_business-health"
+  mv "$fakebin/gh-axi.saved" "$fakebin/gh-axi"
+  later_day unreadclose 2026-11-01T16 >/dev/null || fail "a readable check must succeed"
+  assert_equals "0" "$(closes_of PC-93)" "the first check that read the page is only one check"
+  later_day unreadclose 2026-11-01T18 >/dev/null || fail "a second readable check must succeed"
+  assert_equals "1" "$(closes_of PC-93)" "the second check that read the page closes the item"
+  assert_equals "0" "$(closes_of PC-94)" "a stale-card item whose PR finding recurs once the PR is read stays open"
+  pass "fm-officer page-check: a check that could not read a finding's page or PR does not count toward closing it"
+}
+
+test_a_failed_move_is_retried_without_a_second_comment() {
+  local dir
+  linear_world retryclose
+  dir=$FAKE_LINEAR_DIR
+  seed_own_item PC-95 stale-card "Captain's Log" "gone-card:a"
+  touch "$dir/fail-update.PC-95"
+  officer retryclose run page-check --date "$KEY" >/dev/null || fail "a run whose move fails must succeed"
+  assert_equals "1" "$(count_lines '^issue comment PC-95 .*--verify' "$dir/log")" "the reason comment lands before the failed move"
+  assert_equals "0" "$(closes_of PC-95)" "the move did not land"
+  mv "$dir/fail-update.PC-95" "$dir/fail-update.off"
+  later_day retryclose 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "1" "$(closes_of PC-95)" "the next check retries the move"
+  assert_equals "1" "$(count_lines '^issue comment PC-95 .*--verify' "$dir/log")" "and posts no second close comment"
+  pass "fm-officer page-check: a close whose move failed is retried without a second comment"
+}
+
 test_registry_needs_an_https_app
 test_findings_of_every_kind
 test_live_decisions_are_not_stale
@@ -698,3 +741,5 @@ test_a_page_defect_pattern_is_remembered_once
 test_the_officer_closes_its_own_items_when_the_finding_is_over
 test_the_officer_leaves_items_it_may_not_close
 test_closing_needs_writes_linear_and_budget
+test_a_check_that_could_not_see_the_finding_does_not_count
+test_a_failed_move_is_retried_without_a_second_comment

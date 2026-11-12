@@ -1251,14 +1251,19 @@ def file_in_bundles(filer, bundles, todo, args, labels_for, describe):
     return summary_rows(todo), None
 
 
-def close_with_comment(lin, ident, reason):
+def close_with_comment(lin, ident, reason, commented):
     """The one close an officer may make (the page-check officer's own items; docs/officers/contract.md "File"): one
     comment giving the reason, then the move to Done, each `--dry-run` then `--verify`. The comment lands first, so an
-    item is never closed without its reason; a failure on the move leaves the comment and raises. Never deletes.
-    Raises LinearError."""
-    for cmd in (["issue", "comment", ident, "--body", reason], ["issue", "update", ident, "--state", "Done"]):
-        lin(cmd + ["--dry-run"])
-        lin(cmd + ["--verify"])
+    item is never closed without its reason; a failure on the move leaves the comment and raises. `commented` (the
+    caller's saved state) holds the items whose comment landed but whose move did not, so a retry posts no second
+    comment. Never deletes. Raises LinearError."""
+    if ident not in commented:
+        for flag in ("--dry-run", "--verify"):
+            lin(["issue", "comment", ident, "--body", reason, flag])
+        commented[ident] = reason
+    for flag in ("--dry-run", "--verify"):
+        lin(["issue", "update", ident, "--state", "Done", flag])
+    commented.pop(ident, None)
 
 
 def triage_issue(lin, ident, issue, seen, write):

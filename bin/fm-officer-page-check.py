@@ -292,7 +292,7 @@ def shown_cards(log):
     return shown
 
 
-def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
+def card_findings(log, rules, settled, known_closed, now, stale_days, coverage, unread_kinds):
     out, cache, budget, unread = [], {}, [MAX_PR_LOOKUPS], set()
     page = "Captain's Log"
     for c in shown_cards(log):
@@ -339,6 +339,7 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage):
             elif state is None:
                 unread.add("%s#%s" % (repo, number))
     if unread:
+        unread_kinds.add("stale-card")
         coverage.append("PR state unreadable (budget %d lookups a run) for %s" % (MAX_PR_LOOKUPS, ", ".join(sorted(unread)[:8])))
     return out
 
@@ -486,14 +487,14 @@ def settled_card(log, ref):
     return True, None
 
 
-def auto_close(lib, lin, args, key, ledger, found, state, findings, docs, done, notes):
+def auto_close(lib, lin, args, key, ledger, found, state, findings, docs, unread_kinds, done, notes):
     """Closes the page-check officer's own single items whose finding is over (docs/officers/contract.md "File" names
     this the one close an officer makes; docs/officers/page-check-rubric.md "Closing its own items" owns the rules).
 
     An item is closed only when it is open, filed by this officer in its own shape, not started or assigned, in no
     reserved class, and its finding is not in this check, and either (a) its card is settled (a card finding only) or (b) the
     finding was absent from this and the check before it. A check counts for a finding only when the page it concerns
-    was read. One comment giving the reason goes first. Appends to `done` (closes) and `notes` (items it left open and why);
+    was read and its kind is not in `unread_kinds` (an input that kind needs was not read in this check). One comment giving the reason goes first. Appends to `done` (closes) and `notes` (items it left open and why);
     RATE_LIMITED and CALL_BUDGET stop the pass and are raised, with `done` and `state` holding what was finished.
     """
     ac = state.setdefault("autoclose", {})
@@ -508,7 +509,6 @@ def auto_close(lib, lin, args, key, ledger, found, state, findings, docs, done, 
         if fp in members or ident in never or ident in closed_rows or not re.fullmatch(r"[0-9a-f]{64}", fp):
             continue
         if fp in present:
-            absent.pop(fp, None)
             continue
         todo.append((fp, ident))
     fresh = {}
@@ -521,14 +521,14 @@ def auto_close(lib, lin, args, key, ledger, found, state, findings, docs, done, 
 
     for fp, ident in todo:
         try:
-            _close_one(lib, lin, args, key, fp, ident, ac, log, docs, view, found, done, notes)
+            _close_one(lib, lin, args, key, fp, ident, ac, log, docs, unread_kinds, view, found, done, notes)
         except lib.LinearError as exc:
             if exc.code in lib.RATE_OR_BUDGET:
                 raise
             notes.append("%s: %s" % (ident, exc))
 
 
-def _close_one(lib, lin, args, key, fp, ident, ac, log, docs, view, found, done, notes):
+def _close_one(lib, lin, args, key, fp, ident, ac, log, docs, unread_kinds, view, found, done, notes):
     """One ledger item's close decision (see auto_close)."""
     absent, info, never, closed_rows = ac["absent"], ac["info"], ac["never"], ac["closed"]
     if fp not in info:
@@ -545,7 +545,7 @@ def _close_one(lib, lin, args, key, fp, ident, ac, log, docs, view, found, done,
     if docs.get(meta["page"]) is None:
         return  # the page was not read, so its absence says nothing
     seen = absent.setdefault(fp, [])
-    if key not in seen:
+    if meta["kind"] not in unread_kinds and key not in seen:
         seen.append(key)
         del seen[:-CLOSE_CHECKS]
     reason = None
@@ -573,7 +573,7 @@ def _close_one(lib, lin, args, key, fp, ident, ac, log, docs, view, found, done,
     if held:
         notes.append("%s is %s, so the page-check officer does not close it" % (ident, held))
         return
-    lib.close_with_comment(lin, ident, "Closed by the page-check officer: %s." % reason)
+    lib.close_with_comment(lin, ident, "Closed by the page-check officer: %s." % reason, ac.setdefault("commented", {}))
     closed_rows[ident] = {"fingerprint": fp, "reason": reason, "at": lib.iso(args.now)}
     found.setdefault("issues", {}).setdefault(ident, {})["closed"] = True
     absent.pop(fp, None)
@@ -599,7 +599,7 @@ def file_findings(lib, off, findings, args, key, ledger, found, jev, lin):
     return lib.file_in_bundles(filer, bundles, findings, args, labels_for, describe)
 
 
-def linear_pass(raw, args, key, docs):
+def linear_pass(raw, args, key, docs, unread_kinds):
     """Files the findings in Linear (writes: linear) and hands the page defects to the owning office.
 
     Returns (the digest's Linear fields, the library findings). A start needs the finding's Linear item, so without
@@ -618,9 +618,13 @@ def linear_pass(raw, args, key, docs):
     writes, blocked = file_findings(lib, off, findings, args, key, ledger, found, jev, lin) if linear else ([], None)
     lib.apply_found(findings, found, ledger)
     closes, close_notes = [], []
+    if linear:
+        absent = state.setdefault("autoclose", {}).setdefault("absent", {})
+        for f in findings:
+            absent.pop(f["fingerprint"], None)
     if linear and not blocked:
         try:
-            auto_close(lib, lin, args, key, ledger, found, state, findings, docs, closes, close_notes)
+            auto_close(lib, lin, args, key, ledger, found, state, findings, docs, unread_kinds, closes, close_notes)
         except lib.LinearError as exc:
             if exc.code == "RATE_LIMITED":
                 lib.pause_for_rate_limit(out, args.now)
@@ -688,6 +692,7 @@ def render_md(key, findings, new_ids, coverage, linear):
 def run(args):
     now = args.now
     rules, coverage = load_rules(args.rules) if args.rules else ([], ["no standing rules file"])
+    unread_kinds = {"standing-rule"} if coverage else set()
     findings, docs = page_findings(args.app, now)
     log = docs["Captain's Log"]
     if log is not None:
@@ -698,12 +703,13 @@ def run(args):
             if fstate == "read":
                 known_closed |= {c.get("id") for c in items(facts, "cards") if c.get("lifecycle") == "closed"}
             else:
+                unread_kinds.add("shown-after-done")
                 coverage.append("card record for source %s was %s" % (source, fstate))
         findings += card_findings(doc if isinstance(doc, dict) else {}, rules, settled_by_status(args.home), known_closed,
-                                  now, args.stale_days, coverage)
+                                  now, args.stale_days, coverage, unread_kinds)
     findings.sort(key=lambda f: f["id"])
     os.makedirs(args.out, exist_ok=True)
-    linear = linear_pass(findings, args, args.key, docs)
+    linear = linear_pass(findings, args, args.key, docs, unread_kinds)
     coverage.extend(linear["linear_gaps"])
     seen_path = os.path.join(args.out, "state.json")
     try:
