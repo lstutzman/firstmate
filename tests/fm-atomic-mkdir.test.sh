@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # fm_atomic_mkdir must give exactly one winner per directory however the system
 # mkdir behaves (uutils coreutils 0.10.0 lets several racers win).
+# shellcheck disable=SC2329,SC2034 # the race bodies run as functions and variables consumed by sourced library code under test.
 set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

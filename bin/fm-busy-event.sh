@@ -186,6 +186,7 @@ lock_acquire() {
   return 0
 }
 # lock_is_stale <lock-dir> <stale-seconds>: the lock is at least that old.
+# shellcheck disable=SC2329 # Invoked by name through fm_atomic_takeover.
 lock_is_stale() {
   local mtime
   mtime=$(lock_mtime "$1" || true)
