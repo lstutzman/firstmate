@@ -16,6 +16,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Role agents that report on the fleet | [Officers](configuration/officers.md#officers-dataofficersmd) |
 | Review bots on owned GitHub pull requests | [Contribution review bots](#contribution-review-bots-configcontribution-review-bots) |
+| Stopping idle workers while a PR awaits review, and cleanup on merge | [Park on review](#park-on-review) |
 | Per-run overrides and tuning | [Environment variables](#environment-variables) |
 
 <a id="worker-dependency-setup-configspawn-setup"></a>Moved to [Worker dependency setup (`config/spawn-setup/<project>/`)](configuration/worker-launch.md#worker-dependency-setup-configspawn-setup).
@@ -856,6 +857,14 @@ The monitor only notifies; worker briefs and waiting rules are unchanged by the 
 With the file absent, nothing is armed and an already armed check prints nothing.
 Creating the flag takes effect at the next session start, or immediately after `bin/fm-pr-health.sh arm`.
 The flag is a home-local preference and is not inherited by secondmate homes.
+
+## Park on review
+
+The optional local, gitignored `config/park-on-review` presence flag opts this home into stopping the idle agent of a ship lane whose PR or merge request only awaits human review.
+`config/auto-land` opts into merge-time cleanup of unparked ship lanes.
+Either flag also lets `bin/fm-teardown.sh` accept a merged GitLab merge request, including a squash or merge-train merge, as landed work when the merge request's head contains the lane's work; with neither flag, teardown does not read GitLab merge requests.
+Both flags are home-local and not inherited by secondmate homes.
+The full behavior contract and command details are owned by [`bin/fm-park.sh`](../bin/fm-park.sh); the watcher calls its `tick` command on each check sweep.
 
 ## PR registration scan (config/pr-register-scan)
 

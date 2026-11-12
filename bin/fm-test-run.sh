@@ -415,7 +415,7 @@ family_for_basename() {
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
       ;;
-    fm-check-unregister.test.sh|fm-pipeline-spend.test.sh|fm-pr-adopt.test.sh|fm-pr-check-security.test.sh|\
+    fm-check-unregister.test.sh|fm-park.test.sh|fm-pipeline-spend.test.sh|fm-pr-adopt.test.sh|fm-pr-check-security.test.sh|\
     fm-pr-health.test.sh|fm-pr-merge.test.sh|fm-pr-merge-stack.test.sh|fm-pr-reviewers.test.sh|fm-pr-state.test.sh|\
     fm-review-diff.test.sh|fm-teardown.test.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge
@@ -542,6 +542,7 @@ tests/fm-ensure-agents-md.test.sh
 tests/fm-grok-harness.test.sh
 tests/fm-herdr-lab.test.sh
 tests/fm-lint.test.sh
+tests/fm-park.test.sh
 tests/fm-pi-primary-types.test.sh
 tests/fm-pr-merge.test.sh
 tests/fm-review-diff.test.sh
@@ -580,6 +581,7 @@ tests/fm-lane-capacity-integration.test.sh 48000
 tests/fm-lane-vitals.test.sh 5077
 tests/fm-linear-usage.test.sh 3000
 tests/fm-lint.test.sh 428516
+tests/fm-park.test.sh 70085
 tests/fm-pi-primary-types.test.sh 30070
 tests/fm-pr-merge.test.sh 621532
 tests/fm-review-diff.test.sh 17723
@@ -632,6 +634,7 @@ list_portable_parallel_2() {
 tests/fm-pr-merge.test.sh
 tests/fm-backend-t3code.test.sh
 tests/fm-backend-herdr.test.sh
+tests/fm-arm-pretool-check.test.sh
 tests/fm-x-mode.test.sh
 tests/fm-composer-lib.test.sh
 tests/fm-herdr-lab.test.sh
