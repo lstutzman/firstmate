@@ -53,6 +53,9 @@ SH
 echo "\$*" >> "$w/gh-calls"
 case "\$(cat "$w/gh-mode")" in
   merged) printf 'state=MERGED\nmerged=true\n' ;;
+  block)
+    while [ ! -e "$w/gh-release" ]; do sleep 0.1; done
+    printf 'state=MERGED\nmerged=true\n' ;;
   open) printf 'state=OPEN\nmerged=false\n' ;;
   *) exit 1 ;;
 esac
@@ -241,10 +244,33 @@ test_watcher_cycle_starts_child_update() {
   pass "the live watcher starts one update for a child-reported firstmate merge"
 }
 
+# A child PR's gh read can hang; a merge the primary records meanwhile must
+# neither wait on that read nor lose its own update (docs/configuration.md
+# "Post-merge update": the merge command returns at once).
+test_hung_child_read_does_not_hold_up_launch() {
+  local w start elapsed; w=$(new_world j)
+  echo block > "$w/gh-mode"
+  PATH="$w/fakebin:$PATH" "$w/root/bin/fm-post-merge-update.sh" child "$w/home" "$w/home/state" "$FM_URL/20" \
+    >/dev/null 2>&1 &
+  for _ in $(seq 1 100); do [ "$(gh_calls "$w")" -ge 1 ] && break; sleep 0.1; done
+  [ "$(gh_calls "$w")" = 1 ] || fail "the child never started its gh read"
+  start=$SECONDS
+  report "$w" "$w/home" "$w/fmproject" "$FM_URL/21" || fail "report failed"
+  elapsed=$((SECONDS - start))
+  [ "$elapsed" -lt 5 ] || fail "recording a merge waited ${elapsed}s on a hung child gh read"
+  wait_calls "$w" 1 || fail "the primary's merge started no update while a child read hung"
+  : > "$w/gh-release"
+  wait_calls "$w" 2 || fail "the child's PR started no update once its read returned"
+  settle
+  [ "$(calls "$w")" = 2 ] || fail "expected one update per PR, got $(calls "$w")"
+  pass "a hung child gh read never holds up a merge the primary records"
+}
+
 fm_test_run test_firstmate_merge_starts_one_update \
   test_child_reported_merge_starts_one_update \
   test_same_pr_via_both_paths_starts_one \
   test_other_repo_unmerged_and_old_lines_start_none \
   test_opt_out_starts_none \
   test_problems_raise_one_check_wake \
-  test_watcher_cycle_starts_child_update
+  test_watcher_cycle_starts_child_update \
+  test_hung_child_read_does_not_hold_up_launch
