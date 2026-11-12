@@ -201,9 +201,50 @@ test_problems_raise_one_check_wake() {
   pass "a skipped home, failed update, or unreadable child PR raises a check wake"
 }
 
+# The live watcher drives the child path: each cycle scans the primary's status
+# logs. The first cycle sets the baseline; a secondmate's merged line written
+# after it (the same bytes a remote mate's channel is mirrored with) then starts
+# one update without anyone running scan by hand. Each cycle ends at its first
+# wake, so the watcher is re-armed while it runs, as firstmate does.
+start_watcher() {  # <world>
+  fm_test_track_watcher_state "$1/home/state"
+  env PATH="$1/fakebin:$PATH" FM_HOME="$1/home" FM_STATE_OVERRIDE="$1/home/state" \
+    FM_CONFIG_OVERRIDE="$1/home/config" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
+    FM_HEARTBEAT=999999 "$1/root/bin/fm-watch.sh" >/dev/null 2>&1 &
+  # shellcheck disable=SC2031
+  printf '%s\n' "$!" > "$1/watch.pid"
+}
+rearm_watcher() {  # <world>
+  ! kill -0 "$(cat "$1/watch.pid")" 2>/dev/null || return 0
+  start_watcher "$1"
+}
+
+test_watcher_cycle_starts_child_update() {
+  local w i; w=$(new_world i)
+  start_watcher "$w"
+  i=0
+  while [ "$i" -lt 200 ] && [ ! -e "$w/home/state/.post-merge-update/scanned" ]; do
+    rearm_watcher "$w"; sleep 0.1; i=$((i + 1))
+  done
+  [ -e "$w/home/state/.post-merge-update/scanned" ] || fail "the watcher never scanned the primary's status logs"
+  report "$w" "$w/sm" "$w/fmproject" "$FM_URL/12" || fail "secondmate report failed"
+  i=0
+  while [ "$i" -lt 200 ] && [ "$(calls "$w")" -lt 1 ]; do
+    rearm_watcher "$w"; sleep 0.1; i=$((i + 1))
+  done
+  settle
+  rearm_watcher "$w"
+  settle
+  FM_HOME="$w/home" FM_STATE_OVERRIDE="$w/home/state" "$w/root/bin/fm-watch-arm.sh" --stop >/dev/null 2>&1 || true
+  [ "$(calls "$w")" = 1 ] || fail "expected one watcher-driven update, got $(calls "$w")"
+  grep -qx "$w/home" "$w/calls" || fail "update not scoped to the primary home"
+  pass "the live watcher starts one update for a child-reported firstmate merge"
+}
+
 fm_test_run test_firstmate_merge_starts_one_update \
   test_child_reported_merge_starts_one_update \
   test_same_pr_via_both_paths_starts_one \
   test_other_repo_unmerged_and_old_lines_start_none \
   test_opt_out_starts_none \
-  test_problems_raise_one_check_wake
+  test_problems_raise_one_check_wake \
+  test_watcher_cycle_starts_child_update

@@ -19,7 +19,9 @@
 #     status log ends, so merges reported before this existed start nothing.
 # Both paths claim the PR under one lock with a durable per-PR marker in
 # state/.post-merge-update/, so a PR seen by both paths, or reported twice,
-# starts one update.
+# starts one update. The lock covers only the marker check and write (the gh
+# read happens before it) and every wait for it is bounded, so launch, which
+# runs inside a merge record, is never held up by a slow forge read.
 #
 #   fm-post-merge-update.sh launch <home> <state> <task-id> <pr-url>
 #   fm-post-merge-update.sh scan <home> <state>
@@ -122,7 +124,7 @@ case "$cmd" in
     pr_parse "$5" || exit 0
     load_wake
     mkdir -p "$dir" || exit 1
-    fm_lock_acquire_wait "$dir/claim.lock" || exit 1
+    fm_lock_acquire_wait_max "$dir/claim.lock" 10 || exit 1
     if [ -e "$dir/$key.launched" ]; then
       fm_lock_release "$dir/claim.lock"
       exit 0
@@ -171,19 +173,22 @@ EOF
     pr_parse "$url" || exit 0
     [ "$FM_PR_PROVIDER" = github ] || exit 0
     pr_is_firstmate || exit 0
+    [ ! -e "$dir/$key.launched" ] || exit 0
     load_wake
     mkdir -p "$dir" || exit 1
-    fm_lock_acquire_wait "$dir/claim.lock" || exit 1
     verdict=no
-    if [ ! -e "$dir/$key.launched" ]; then
-      if fm_pr_github_read_record "$FM_PR_HOST" "$FM_PR_OWNER" "$FM_PR_REPO" "$FM_PR_NUMBER"; then
-        [ "$FM_PR_RECORD_MERGED" != true ] || verdict=yes
-      else
-        verdict=unread
-      fi
+    if fm_pr_github_read_record "$FM_PR_HOST" "$FM_PR_OWNER" "$FM_PR_REPO" "$FM_PR_NUMBER"; then
+      [ "$FM_PR_RECORD_MERGED" != true ] || verdict=yes
+    else
+      verdict=unread
     fi
-    [ "$verdict" != yes ] || printf '%s\n' "$url" > "$dir/$key.launched" || verdict=no
-    fm_lock_release "$dir/claim.lock"
+    if [ "$verdict" = yes ]; then
+      fm_lock_acquire_wait_max "$dir/claim.lock" 10 || exit 1
+      if [ -e "$dir/$key.launched" ] || ! printf '%s\n' "$url" > "$dir/$key.launched"; then
+        verdict=no
+      fi
+      fm_lock_release "$dir/claim.lock"
+    fi
     case "$verdict" in
       yes) start_run "post-merge-update-pr-$FM_PR_NUMBER-$(date +%s)" ;;
       unread)
