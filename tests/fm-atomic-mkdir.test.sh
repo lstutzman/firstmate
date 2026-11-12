@@ -72,6 +72,14 @@ for r in $(seq 1 "$ROUNDS"); do
   winners=$(race "$TMP_ROOT/job.$r" job_claim)
   [ "$winners" = 1 ] || fail "round $r: worker_claim gave $winners winners, want exactly 1"
 done
+mkdir -p "$TMP_ROOT/officer-nopid"
+lock_acquire "$TMP_ROOT/officer-nopid" && fail "officer lock_acquire took over a fresh lock whose owner has not written its pid"
+touch -t 200001010000 "$TMP_ROOT/officer-nopid"
+lock_acquire "$TMP_ROOT/officer-nopid" || fail "officer lock_acquire did not take over an old lock with no pid"
+mkdir -p "$TMP_ROOT/officer-dead"
+( exit 0 ) & dead=$!; wait "$dead"
+printf '%s\n' "$dead" > "$TMP_ROOT/officer-dead/pid"
+lock_acquire "$TMP_ROOT/officer-dead" || fail "officer lock_acquire did not take over a lock whose pid is gone"
 # shellcheck disable=SC2034
 WORKER_LOCK=$(fm_remote_job_worker_lock_path)
 mkdir -p "$TMP_ROOT/worker-out"

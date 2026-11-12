@@ -520,14 +520,16 @@ readable_homes() {
   done < "$DATA/secondmates.md"
 }
 
-lock_acquire() {  # [lock]: default the lane's .run.lock; a lock whose pid is gone is taken over.
+lock_acquire() {  # [lock]: default the lane's .run.lock; a lock whose pid is gone, or that stayed a minute with no pid, is taken over.
   local lock=${1:-$OFFICER_LANE/.run.lock} pid
   if fm_atomic_mkdir "$lock" 2>/dev/null; then
     printf '%s\n' "$$" > "$lock/pid"
     return 0
   fi
   pid=$(cat "$lock/pid" 2>/dev/null || true)
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+  if [ -n "$pid" ]; then
+    kill -0 "$pid" 2>/dev/null && return 1
+  elif [ -n "$(find "$lock" -maxdepth 0 -mmin -1 2>/dev/null)" ]; then
     return 1
   fi
   rm -rf -- "$lock"
