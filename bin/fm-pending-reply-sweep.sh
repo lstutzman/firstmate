@@ -62,7 +62,8 @@
 # full-request-unavailable: a cut summary and no recoverable full text). Delivered
 # records keep their ordinary verdicts. Retiring appends one resolved line to the
 # record's parent status log with via=sweep-stale-handoff and the PR states as
-# evidence (and recovered-from=<source> when the PRs came from recovered text) (skipped when the decision was already closed), then settles the
+# evidence, plus recovered-from=<source> when the PRs came from recovered text
+# (skipped when the decision was already closed), then settles the
 # record through fm_pending_reply_settle_closed_escalation. It never sends a
 # message to the mate, never resends the request, and never edits or deletes a
 # record file. Dry-run candidates print verdict=stale-handoff-candidate; applied
