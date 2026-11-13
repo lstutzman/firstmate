@@ -45,13 +45,17 @@
 # validated prints the unset prefix, logs the refusal and exits 1: the variable
 # is never set from a record that is not whole.
 #
+# Every edit under the grant is logged at its end: revoke lists the commits that
+# touched the granted files since the default branch (committed edits only, and
+# best effort when the task's worktree is already gone) as `edits` lines.
+#
 # The grant ends in two places. bin/fm-pr-check.sh revokes it when the task's PR
 # is registered, and bin/fm-teardown.sh revokes it at cleanup; `revoke` is
 # idempotent and logs only when it removes something; `--forget-carry` (the
 # cleanup path) also removes the carried marker. A revoke stops every later
 # launch from carrying the grant; it cannot reach into an agent that is already
 # running, which keeps the environment it was launched with until its next
-# relaunch or its cleanup.
+# relaunch or its cleanup; revoke says so on stderr, except at cleanup.
 #
 # Delivery to a running worker is a relaunch: grant, then
 # `bin/fm-control.sh <task> relaunch`, which rebuilds the launch through
@@ -184,6 +188,31 @@ cmd_grant() {
   echo "gate grant recorded for $id: $kind, files $files, pr $pr; it reaches the worker on its next launch (fm-control.sh $id relaunch)"
 }
 
+# Commits on the task's branch that touched the granted files: the edits made
+# under the grant, as far as git can tell. Best effort; never fails a revoke.
+log_edits() { # <task> <comma list>
+  local id=$1 files=$2 wt base b out
+  local -a paths
+  wt=$(grep '^worktree=' "$STATE/$id.meta" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+  if [ -z "$wt" ] || ! git -C "$wt" rev-parse --git-dir >/dev/null 2>&1; then
+    log_line edits "worktree unavailable; edits under the grant are not listed" || true
+    return 0
+  fi
+  base=
+  for b in refs/remotes/origin/HEAD refs/remotes/origin/main refs/remotes/origin/master refs/heads/main refs/heads/master; do
+    if git -C "$wt" rev-parse --verify -q "$b" >/dev/null 2>&1; then base=$b; break; fi
+  done
+  [ -n "$base" ] || { log_line edits "no default branch found; edits under the grant are not listed" || true; return 0; }
+  IFS=, read -r -a paths <<< "$files"
+  out=$(git -C "$wt" log --format='commit %h %s' --name-only "$base..HEAD" -- "${paths[@]}" 2>/dev/null) || out=
+  if [ -z "$out" ]; then
+    log_line edits "no commit touched the granted files" || true
+  else
+    log_line edits "commits that touched the granted files:" || true
+    printf '%s\n' "$out" | sed 's/^/    edit| /' >> "$LOG" || true
+  fi
+}
+
 cmd_revoke() {
   local id=$1 reason=revoked forget=0
   shift
@@ -201,6 +230,10 @@ cmd_revoke() {
     return 0
   fi
   local detail
+  [ ! -f "$RECORD" ] || ! record_valid || log_edits "$id" "$G_FILES"
+  if [ "$forget" = 0 ] && [ -e "$CARRIED" ]; then
+    echo "actionable: the worker of $id was launched with the gate-edit grant and keeps it until it is relaunched or cleaned up" >&2
+  fi
   detail="kind=$(record_get kind) files=$(record_get files) pr=$(record_get pr) reason=$(printf '%s' "$reason" | tr '\n' ' ')"
   rm -f -- "$RECORD" "$DECISION" || die "cannot remove the gate grant for $id"
   log_line revoke "$detail" || echo "fm-gate-grant: the grant for $id is removed but its log $LOG could not be written" >&2

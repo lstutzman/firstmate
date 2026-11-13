@@ -8298,10 +8298,17 @@ LAUNCH="export FM_TASK_INBOX=$(shell_quote "$STATE_REAL/$ID.inbox"); $LAUNCH"
 # compound raw launch and the launch-env-allowlist `env -i` wrapper, and a
 # relaunch rebuilds it here, so it never depends on a gate-protected settings
 # file. A grant record that is not whole carries nothing.
+# The t3code backend never runs this launch command (its thread starts from the
+# brief alone), so it carries nothing and logs no carry.
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
-  GATE_GRANT_ENV=$("$FM_ROOT/bin/fm-gate-grant.sh" env "$ID") \
-    || echo "warning: the gate grant for $ID is not whole; its launch carries no gate-edit variable" >&2
-  LAUNCH="$GATE_GRANT_ENV$LAUNCH"
+  if [ "$BACKEND" = t3code ]; then
+    ! "$FM_ROOT/bin/fm-gate-grant.sh" show "$ID" 2>/dev/null | grep -q '^gate grant for' \
+      || echo "warning: backend=t3code cannot carry the gate grant for $ID; its worker starts without the gate-edit variable" >&2
+  else
+    GATE_GRANT_ENV=$("$FM_ROOT/bin/fm-gate-grant.sh" env "$ID") \
+      || echo "warning: the gate grant for $ID is not whole; its launch carries no gate-edit variable" >&2
+    LAUNCH="$GATE_GRANT_ENV$LAUNCH"
+  fi
 fi
 LAUNCH="export COMPACT_ADVISER_DISABLE=1; $LAUNCH"
 # When the live-harness gate has exported DISABLE_AUTOUPDATER into this spawn's

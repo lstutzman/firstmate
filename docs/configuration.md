@@ -2004,8 +2004,8 @@ A running worker picks a new grant up on `bin/fm-control.sh <task> relaunch`; no
 The decision file is firstmate's own statement for a `tighten` grant and the captain's quoted words, with where and when, for a `signoff` grant; an empty or missing decision refuses the grant.
 The fleet rules own who may grant which kind.
 
-The grant ends when the task's PR is registered (`fm-pr-check.sh`) and at cleanup (`fm-teardown.sh`), and every grant, carry, refused carry and revoke is appended to `data/<task>/gate-grant.log`, which keeps the decision text after the task is gone.
-A revoke stops later launches carrying the grant; an agent that is already running keeps the environment it started with until its next relaunch or cleanup.
+The grant ends when the task's PR is registered (`fm-pr-check.sh`) and at cleanup (`fm-teardown.sh`), and every grant, carry, refused carry and revoke is appended to `data/<task>/gate-grant.log`, which keeps the decision text and lists the commits that touched the granted files, and which outlives the task.
+A revoke stops later launches carrying the grant and says so when a worker was launched with it; that worker keeps the environment it started with until its next relaunch or cleanup.
 The t3code backend delivers launch environment through the worker's settings file instead of the launch command, so it carries no grant.
 The script header owns the exact contract, with regression coverage in [`tests/fm-gate-grant.test.sh`](../tests/fm-gate-grant.test.sh).
 

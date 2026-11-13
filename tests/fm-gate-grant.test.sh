@@ -134,7 +134,7 @@ test_grant_survives_the_launch_env_allowlist() {
 }
 
 test_relaunch_keeps_a_live_grant_and_drops_a_revoked_one() {
-  local home dir id=gg-relaunch out status seen launch
+  local home dir id=gg-relaunch out status seen launch err
   home=$(make_home relaunch "$id")
   dir="$TMP_ROOT/relaunch"
   mkdir -p "$dir/fake" "$dir/user-home"
@@ -178,7 +178,8 @@ test_relaunch_keeps_a_live_grant_and_drops_a_revoked_one() {
   seen=$(relaunch)
   assert_equals '1|gate.sh' "$seen" "a second relaunch must still keep it"
   [ "$(grep -c ' carry ' "$home/data/$id/gate-grant.log")" -ge 2 ] || fail "each relaunch carry must be logged"
-  grant_cmd "$home" revoke "$id" --reason test >/dev/null || fail "revoke failed"
+  err=$(grant_cmd "$home" revoke "$id" --reason test 2>&1 >/dev/null) || fail "revoke failed"
+  assert_contains "$err" 'actionable: the worker of gg-relaunch' "revoking a carried grant must say the running worker still holds it"
   seen=$(relaunch)
   assert_equals 'unset|unset' "$seen" "a relaunch after a revoke must carry nothing, and must drop the variable a pane shell kept"
   pass "relaunch keeps a live grant and drops a revoked one"
@@ -257,7 +258,10 @@ test_env_prefix_follows_the_grant_lifecycle() {
   grant_cmd "$home" revoke gg-prefix >/dev/null || fail "revoke failed"
   assert_equals 'unset ALLOW_GATE_EDIT ALLOW_GATE_EDIT_FILES; ' "$(grant_cmd "$home" env gg-prefix)" \
     "a carried then revoked grant must drop the variable a pane shell kept"
-  grant_cmd "$home" revoke gg-prefix --reason 'task cleanup' --forget-carry >/dev/null || fail "cleanup revoke failed"
+  grant_cmd "$home" grant gg-prefix --files gate.sh --pr none --kind tighten --decision-file "$dir/decision" >/dev/null \
+    || fail "second grant refused"
+  [ -z "$(grant_cmd "$home" revoke gg-prefix --reason 'task cleanup' --forget-carry 2>&1 >/dev/null)" ] \
+    || fail "a cleanup revoke must not warn about the worker it is retiring"
   [ -z "$(grant_cmd "$home" env gg-prefix)" ] || fail "cleanup left the carried marker behind"
   pass "the launch prefix follows the grant: nothing, export, unset, then nothing after cleanup"
 }
