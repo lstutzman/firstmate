@@ -790,6 +790,19 @@ sync_project_registry() {
   mv "$tmp" "$sub_reg"
 }
 
+# Run a newly created clone's declared hooks= installer (bin/fm-project-hooks.sh),
+# whatever its delivery mode. A preexisting clone is left to fleet sync's repair.
+initialize_project_hooks() {
+  local home=$1 project=$2 created=$3 dst
+  [ "$created" = 1 ] || return 0
+  dst=$(validate_project_destination "$home" "$project") || return 1
+  FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' \
+    "$FM_ROOT/bin/fm-project-hooks.sh" ensure "$dst" >&2 || {
+    echo "error: failed to run the declared git hooks installer for $project at $dst" >&2
+    return 1
+  }
+}
+
 initialize_no_mistakes_project() {
   local home=$1 project=$2 created=$3 mode dst
   mode=$(project_mode_in_home "$home" "$project") || return 1
@@ -1225,6 +1238,7 @@ seed_home() {
     project_dst=$(validate_project_destination "$home" "$project") || return 1
     if seed_project_was_created "$project_dst"; then
       initialize_no_mistakes_project "$home" "$project" 1
+      initialize_project_hooks "$home" "$project" 1
     else
       initialize_no_mistakes_project "$home" "$project" 0
     fi

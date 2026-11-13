@@ -26,6 +26,8 @@
 # killed mid-write - e.g. a timed-out bootstrap sync or a teardown process kill),
 # it is retried with a bounded wait and removed only when provably stale; see
 # fetch_with_packed_refs_lock_guard and the FM_FLEET_SYNC_PACKED_REFS_LOCK_* knobs.
+# After a successful refresh of a project that declares a hooks= installer, it also
+# repairs inert project git hooks (bin/fm-project-hooks.sh) and prints one line.
 # Usage: fm-fleet-sync.sh [<project-dir-or-name>]
 # The single-project form accepts either a path (absolute, or relative to the
 # caller's cwd) or a bare "<name>"/"projects/<name>" form, resolved against
@@ -301,7 +303,7 @@ report_stuck() {
   echo "$label: STUCK: on $state, $behind commits behind $BASE - needs attention"
 }
 
-sync_project() {
+sync_project_refresh() {
   PROJ=$1
   label=$(project_label)
 
@@ -415,6 +417,7 @@ sync_project() {
     return 0
   }
   if [ "$local_rev" = "$remote_rev" ]; then
+    REFRESH_OK=yes
     if [ "$recovered" = yes ]; then
       echo "$label: recovered: re-attached $DEFAULT (already current)"
     else
@@ -439,6 +442,7 @@ sync_project() {
     echo "$label: skipped: $reason"
     return 0
   fi
+  REFRESH_OK=yes
   after=$(git -C "$PROJ" rev-parse --short "$DEFAULT") || {
     echo "$label: skipped: fast-forward completed but cannot read local $DEFAULT"
     return 0
@@ -449,6 +453,16 @@ sync_project() {
     echo "$label: synced $before..$after"
   fi
   return 0
+}
+
+# Refresh one clone, then, only after a successful refresh, make sure a declared
+# hooks= installer's hooks are live (bin/fm-project-hooks.sh owns the check and
+# the repair; it only sets git config and discards nothing).
+sync_project() {
+  REFRESH_OK=no
+  sync_project_refresh "$1"
+  [ "$REFRESH_OK" = yes ] || return 0
+  "$FM_ROOT/bin/fm-project-hooks.sh" ensure "$PROJ" || true
 }
 
 if [ $# -eq 1 ]; then
