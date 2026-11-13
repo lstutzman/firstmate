@@ -65,7 +65,7 @@ test_mode_reads_hooks_token_and_refuses_malformed() {
   pass "the hooks= token is read back, leaves posture alone, and malformed values are refused"
 }
 
-test_init_makes_hooks_live() {
+test_ensure_makes_hooks_live() {
   local h out
   h=$(new_home "hooks=$INSTALLER")
   [ -z "$(local_hooks_path "$h/projects/hooked")" ] || fail "fixture clone starts with hooks set"
@@ -75,7 +75,7 @@ test_init_makes_hooks_live() {
   [ "$(local_hooks_path "$h/projects/hooked")" = scripts/git-hooks ] || fail "core.hooksPath not set in the clone"
   out=$(hooks "$h" ensure hooked)
   [ -z "$out" ] || fail "second ensure was not a silent no-op: $out"
-  pass "project init (ensure) makes declared hooks live and is a no-op once live"
+  pass "ensure makes declared hooks live and is a no-op once live"
 }
 
 test_injected_git_config_does_not_hide_an_inert_clone() {
@@ -156,12 +156,49 @@ test_untracked_installer_fails_without_touching_the_tree() {
   pass "a missing or untracked installer fails with a reason and leaves the tree alone"
 }
 
+test_diagnose_reports_a_refused_token() {
+  local h out
+  h=$(new_home "hooks=/etc/x.sh")
+  out=$(hooks "$h" diagnose)
+  case "$out" in *"HOOKS_INERT: hooked: "*"refused"*) ;; *) fail "diagnose was silent on a refused hooks= token: $out" ;; esac
+  case "$out" in *plain*) fail "diagnose named a project with no token: $out" ;; esac
+  pass "diagnose reports a refused hooks= token instead of skipping the clone"
+}
+
+test_fleet_sync_leaves_a_dirty_clone_alone() {
+  local h out
+  h=$(new_home "hooks=$INSTALLER")
+  printf '# local edit\n' >> "$h/projects/hooked/scripts/git-hooks/pre-commit"
+  out=$(FM_HOME="$h" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" 2>/dev/null)
+  case "$out" in *"hooked: hooks:"*) fail "fleet sync ran the hooks repair on a dirty clone: $out" ;; esac
+  [ -z "$(local_hooks_path "$h/projects/hooked")" ] || fail "fleet sync set core.hooksPath in a dirty clone"
+  grep -q '# local edit' "$h/projects/hooked/scripts/git-hooks/pre-commit" || fail "fleet sync disturbed the dirty clone's edit"
+  pass "fleet sync leaves a dirty clone's hooks alone and prints no hooks line"
+}
+
+test_home_seed_runs_the_installer_in_a_new_clone() {
+  local h child
+  h=$(new_home "hooks=$INSTALLER")
+  mkdir -p "$h/state"
+  printf -- '- hooked [direct-PR hooks=%s] - hooked project (added 2026-11-13)\n' "$INSTALLER" > "$h/data/projects.md"
+  child="$TMP_ROOT/seeded-child"
+  FM_HOME="$h" FM_BACKEND=tmux FM_SECONDMATE_CHARTER='hooks work for hooked' FM_SECONDMATE_SCOPE='hooks work for hooked' \
+    "$ROOT/bin/fm-home-seed.sh" kid "$child" hooked >/dev/null 2>&1 || fail "home seed failed"
+  [ -d "$child/projects/hooked" ] || fail "home seed did not clone the project"
+  [ "$(local_hooks_path "$child/projects/hooked")" = scripts/git-hooks ] || fail "home seed did not run the declared installer in the new clone"
+  [ -z "$(local_hooks_path "$h/projects/hooked")" ] || fail "home seed touched the parent's clone"
+  pass "seeding a home runs the declared hooks installer in the new clone"
+}
+
 fm_test_run \
   test_mode_reads_hooks_token_and_refuses_malformed \
-  test_init_makes_hooks_live \
+  test_ensure_makes_hooks_live \
   test_injected_git_config_does_not_hide_an_inert_clone \
   test_fleet_sync_repairs_inert_and_is_silent_on_live \
   test_project_without_token_is_untouched \
   test_diagnose_fires_on_inert_and_is_silent_on_live \
   test_bootstrap_surfaces_the_diagnostic \
-  test_untracked_installer_fails_without_touching_the_tree
+  test_untracked_installer_fails_without_touching_the_tree \
+  test_diagnose_reports_a_refused_token \
+  test_fleet_sync_leaves_a_dirty_clone_alone \
+  test_home_seed_runs_the_installer_in_a_new_clone

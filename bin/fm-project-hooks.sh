@@ -20,7 +20,8 @@
 #                        "<name>: hooks: failed: <reason>". Exit 1 on failure.
 #                        It never stashes, resets or discards anything.
 #   diagnose             print one "HOOKS_INERT: ..." line per registered clone under
-#                        this home's projects dir whose declared hooks are inert
+#                        this home's projects dir whose declared hooks are inert or
+#                        whose hooks= token is refused
 # Callers: bin/fm-fleet-sync.sh (repair after a successful refresh), project
 # initialization (the project-management skill, bin/fm-home-seed.sh), and
 # bin/fm-bootstrap.sh (session-start diagnostic).
@@ -103,9 +104,12 @@ case "$cmd" in
       [ -d "$dir" ] || continue
       clean_git -C "$dir" rev-parse --git-dir >/dev/null 2>&1 || continue
       CLONE=$dir; NAME=$(basename "$dir")
-      INSTALLER=$("$FM_ROOT/bin/fm-project-mode.sh" --hooks "$NAME" 2>/dev/null) || continue
+      INSTALLER=$("$FM_ROOT/bin/fm-project-mode.sh" --hooks "$NAME" 2>/dev/null) || {
+        echo "HOOKS_INERT: $NAME: the registry hooks= token is refused, so this clone's git hooks are never checked or repaired; correct its data/projects.md line (run: bin/fm-project-mode.sh --hooks $NAME)"
+        continue
+      }
       [ -n "$INSTALLER" ] || continue
-      is_live || echo "HOOKS_INERT: $NAME: declared git hooks ($INSTALLER) are not live in this clone, so commits skip the project's own pre-commit; the next fleet sync repairs it, or run: bin/fm-project-hooks.sh ensure $NAME"
+      is_live || echo "HOOKS_INERT: $NAME: declared git hooks ($INSTALLER) are not live in this clone, so commits skip the project's own pre-commit; the next fleet sync repairs it only if the clone is clean on its default branch and refreshes successfully, otherwise run: bin/fm-project-hooks.sh ensure $NAME"
     done ;;
   -h|--help) usage ;;
   *) usage; exit 1 ;;
