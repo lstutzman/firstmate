@@ -54,9 +54,13 @@ make_world() {
   cat > "$fakebin/gh" <<SH
 #!/usr/bin/env bash
 # The base branch's required checks: gh.branch.json (unprotected by default,
-# gh.branch.fail fails the read), with no rulesets.
+# gh.branch.fail fails the read), with no rulesets; .github/required-checks.list
+# is gh.required-list, absent (404) by default.
 case "\$*" in
   *"/rules/branches/"*) echo '[]'; exit 0 ;;
+  *"/contents/.github/required-checks.list"*)
+    [ -f "$world/gh.required-list" ] || { echo 'gh: Not Found (HTTP 404)' >&2; exit 1; }
+    cat "$world/gh.required-list"; exit 0 ;;
   *"/branches/"*) [ ! -e "$world/gh.branch.fail" ] || exit 1; cat "$world/gh.branch.json" 2>/dev/null || echo '{"protected":false}'; exit 0 ;;
 esac
 # Serves gh.<n>.json for the n-th GraphQL read, repeating the last one.
@@ -275,6 +279,20 @@ test_github_gate_refuses_until_every_required_check_reports() {
   : > "$w/gh.branch.fail"
   expect_unclean "$w" required-unreadable "the required checks of the base branch could not be read"
   pass "github gate refuses while a required check of the base branch has not reported on the head, or the requirement cannot be read"
+}
+
+test_github_gate_refuses_until_every_listed_check_reports() {
+  local w
+  w=$(make_world gh-listed "$GH_URL")
+  gh_fixture "$w/gh.1.json"
+  # The forge requires nothing, but the base branch's
+  # .github/required-checks.list names validate, which the merge wrapper
+  # enforces and which has not reported on the head.
+  printf '%s\n' '# required' 'ci' 'validate' > "$w/gh.required-list"
+  expect_unclean "$w" listed-missing "required check(s) validate have not reported on head"
+  printf '%s\n' 'ci' > "$w/gh.required-list"
+  expect_clean "$w" listed-reported
+  pass "github gate refuses while a check listed in the base branch's required-checks.list has not reported on the head"
 }
 
 test_github_gate_waits_for_review_bots_or_quiet_window() {
@@ -1204,6 +1222,7 @@ test_land_waits_for_an_action_under_way() {
 fm_test_run \
   test_github_gate_clean_and_each_unclean_condition \
   test_github_gate_refuses_until_every_required_check_reports \
+  test_github_gate_refuses_until_every_listed_check_reports \
   test_github_gate_waits_for_review_bots_or_quiet_window \
   test_gitlab_gate_clean_and_unclean_conditions \
   test_park_stops_agent_records_lane_and_leases_slot \
