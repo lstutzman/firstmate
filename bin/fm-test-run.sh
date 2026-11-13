@@ -411,6 +411,7 @@ family_for_basename() {
     fm-spawn-claude-launch-doorbell.test.sh|\
     fm-spawn-compact-adviser-disable.test.sh|\
     fm-spawn-compact-adviser-disable-remote.test.sh|\
+    fm-gate-grant.test.sh|\
     fm-project-capacity.test.sh|fm-lane-capacity-integration.test.sh|\
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
@@ -843,6 +844,7 @@ tests/fm-fleet-snapshot-view.test.sh 49073
 tests/fm-fleet-sync.test.sh 59216
 tests/fm-forge-detect.test.sh 458
 tests/fm-fork-free-helpers.test.sh 1271
+tests/fm-gate-grant.test.sh 15000
 tests/fm-gate-refuse.test.sh 15400
 tests/fm-gemini-harness.test.sh 1557
 tests/fm-git-push-guard.test.sh 1541

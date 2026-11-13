@@ -775,6 +775,29 @@ test_teardown_closes_the_backlog_item_itself() {
   pass "teardown closes its own backlog item before reporting success"
 }
 
+# The task's gate-edit grant (bin/fm-gate-grant.sh) ends with its cleanup; the
+# log that records the decision stays under data/<id>/.
+test_teardown_removes_the_gate_grant() {
+  local case_dir
+  case_dir=$(make_case gate-grant)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
+  seed_backlog_in_flight "$case_dir"
+  printf 'Lee, main chat, 2026-11-13: "yes, edit gate.sh for task-x1"\n' > "$case_dir/decision"
+  FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" \
+    "$ROOT/bin/fm-gate-grant.sh" grant task-x1 --files gate.sh --pr none --kind signoff \
+    --decision-file "$case_dir/decision" >/dev/null || fail "could not seed a gate grant"
+  [ -f "$case_dir/state/task-x1.gate-grant" ] || fail "the seeded grant is missing"
+  run_teardown "$case_dir" > "$case_dir/stdout" 2>&1 || fail "teardown failed: $(cat "$case_dir/stdout")"
+  assert_absent "$case_dir/state/task-x1.gate-grant" "cleanup left the gate grant live"
+  assert_absent "$case_dir/state/task-x1.gate-grant.decision" "cleanup left the grant's decision file"
+  grep -q ' revoke .*reason=task cleanup' "$case_dir/data/task-x1/gate-grant.log" \
+    || fail "cleanup did not log the revoke"
+  grep -q 'decision| Lee, main chat' "$case_dir/data/task-x1/gate-grant.log" \
+    || fail "the log lost the captain's recorded words"
+  pass "cleanup removes the task's gate grant and keeps its log"
+}
+
 # A task fm-spawn.sh dispatched against a local-jev call receipt gets one outcome
 # receipt at cleanup (docs/local-jev-receipts.md); a task without one gets none.
 test_teardown_writes_the_dispatch_outcome_receipt() {
@@ -6787,6 +6810,7 @@ test_forced_secondmate_own_missing_adapter_sibling_refuses_before_child_cleanup
 test_retained_sources_still_reach_the_ordinary_refusal
 test_local_only_fork_remote_allows
 test_teardown_closes_the_backlog_item_itself
+test_teardown_removes_the_gate_grant
 test_teardown_writes_the_dispatch_outcome_receipt
 test_teardown_closes_a_gerrit_task_with_its_change_url_as_a_note
 test_teardown_closes_a_gitlab_task_with_its_merge_request_url_as_a_note

@@ -4383,6 +4383,10 @@ chmod u+w "$STATE/$ID.git-hooks" 2>/dev/null || true
 # and the git-hooks dir rather than the flat file list above.
 # state/<id>.cortex-plugin is the per-task Cortex Code plugin directory
 # (bin/fm-cortex-plugin.sh) carrying the busy-state hooks.
+# The task's gate-edit grant ends with the task (bin/fm-gate-grant.sh header);
+# its log under data/<id>/ stays.
+"$SCRIPT_DIR/fm-gate-grant.sh" revoke "$ID" --reason "task cleanup" --forget-carry >/dev/null \
+  || echo "warning: could not remove the gate grant for $ID; remove state/$ID.gate-grant by hand" >&2
 rm -rf "$STATE/$ID.inbox" "$STATE/$ID.git-hooks" "$STATE/$ID.push-guard" \
   "$STATE/$ID.cortex-plugin" "$STATE/$ID.hermes-hooks" \
   "$STATE/$ID.polytoken-config" \

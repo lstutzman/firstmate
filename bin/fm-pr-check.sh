@@ -700,6 +700,10 @@ if [ -n "${BASELINE_BACKUP:-}" ]; then
   BASELINE_BACKUP_COMPLETE=0
   rm -rf -- "$OBSOLETE_BASELINE_BACKUP"
 fi
+# A registered PR ends the task's gate-edit grant (bin/fm-gate-grant.sh header);
+# it stops every later launch carrying it, and a refusal never undoes the PR.
+"$SCRIPT_DIR/fm-gate-grant.sh" revoke "$ID" --reason "PR registered: $URL" >/dev/null \
+  || printf 'actionable: PR %s is registered but the gate grant for %s could not be removed; run fm-gate-grant.sh revoke %s\n' "$URL" "$ID" "$ID" >&2
 # Opt-in fleet activity ledger (docs/fleet-ledger.md); off costs one file test.
 # The merge-time re-record is not a new review-ready PR, so it writes nothing.
 [ ! -e "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/fleet-ledger" ] || [ "${FM_PR_CHECK_MERGE:-}" = 1 ] \

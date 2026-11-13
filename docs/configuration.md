@@ -1996,6 +1996,19 @@ This applies only to agents Firstmate launches; the captain's own primary Firstm
 
 [`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the delivery mechanics, with focused regression coverage in [`tests/fm-spawn-compact-adviser-disable.test.sh`](../tests/fm-spawn-compact-adviser-disable.test.sh) and [`tests/fm-spawn-compact-adviser-disable-remote.test.sh`](../tests/fm-spawn-compact-adviser-disable-remote.test.sh).
 
+### Gate-edit grant for one task
+
+A project can protect gate files and refuse an edit to them unless `ALLOW_GATE_EDIT=1` (optionally narrowed by `ALLOW_GATE_EDIT_FILES`, a comma-separated list of repo-relative paths) is in the editing session's environment.
+A worker cannot set that itself, so a grant lives in the task's own state instead: `bin/fm-gate-grant.sh grant <task> --files <f1,f2> --pr <url|none> --kind tighten|signoff --decision-file <file>` writes `state/<task>.gate-grant`, and every launch of a ship or scout worker, a relaunch included, starts with `ALLOW_GATE_EDIT=1` and `ALLOW_GATE_EDIT_FILES=<files>` exported.
+A running worker picks a new grant up on `bin/fm-control.sh <task> relaunch`; nothing is written into the worker's settings files, and a task with no grant starts with neither variable.
+The decision file is firstmate's own statement for a `tighten` grant and the captain's quoted words, with where and when, for a `signoff` grant; an empty or missing decision refuses the grant.
+The fleet rules own who may grant which kind.
+
+The grant ends when the task's PR is registered (`fm-pr-check.sh`) and at cleanup (`fm-teardown.sh`), and every grant, carry, refused carry and revoke is appended to `data/<task>/gate-grant.log`, which keeps the decision text after the task is gone.
+A revoke stops later launches carrying the grant; an agent that is already running keeps the environment it started with until its next relaunch or cleanup.
+The t3code backend delivers launch environment through the worker's settings file instead of the launch command, so it carries no grant.
+The script header owns the exact contract, with regression coverage in [`tests/fm-gate-grant.test.sh`](../tests/fm-gate-grant.test.sh).
+
 ### Commit attribution
 
 The optional local, gitignored `config/keep-ai-trailers` presence flag opts this home into keeping AI co-author trailers on its launched workers.
