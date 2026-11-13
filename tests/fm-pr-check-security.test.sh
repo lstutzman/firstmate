@@ -811,7 +811,7 @@ test_pr_registration_revokes_the_gate_grant() {
   dir=$(make_case gate-grant-revoke)
   write_task_meta "$dir"
   printf 'firstmate grants the edit of gate.sh for the PR under test\n' > "$dir/decision"
-  FM_HOME="$dir/home" "$ROOT/bin/fm-gate-grant.sh" grant task-a --files gate.sh --pr none --kind tighten \
+  env -u FM_TASK_INBOX FM_HOME="$dir/home" "$ROOT/bin/fm-gate-grant.sh" grant task-a --files gate.sh --pr none --kind tighten \
     --decision-file "$dir/decision" > /dev/null || fail "could not seed a gate grant"
   printf 'gate\n' > "$dir/wt/gate.sh"
   printf 'other\n' > "$dir/wt/other.sh"

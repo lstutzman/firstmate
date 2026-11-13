@@ -33,7 +33,7 @@ make_home() {
 grant_cmd() { # <home> <args...>
   local home=$1
   shift
-  FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" "$GRANT" "$@"
+  env -u FM_TASK_INBOX FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" "$GRANT" "$@"
 }
 
 write_decision() { printf '%s\n' "$2" > "$1/decision"; }
@@ -266,7 +266,31 @@ test_env_prefix_follows_the_grant_lifecycle() {
   pass "the launch prefix follows the grant: nothing, export, unset, then nothing after cleanup"
 }
 
+# A worker cannot grant itself the gate edit: a launched worker carries
+# FM_TASK_INBOX, and one that dropped it still runs inside its task worktree.
+test_a_worker_cannot_grant_itself() {
+  local home dir out
+  home=$(make_home selfgrant gg-self)
+  dir="$TMP_ROOT/selfgrant"
+  mkdir -p "$dir/wt/sub"
+  echo "worktree=$dir/wt" >> "$home/state/gg-self.meta"
+  write_decision "$dir" 'firstmate grants gate.sh'
+  out=$(FM_TASK_INBOX="$home/state/gg-self.inbox" FM_HOME="$home" FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE="$home/state" \
+    FM_DATA_OVERRIDE="$home/data" "$GRANT" grant gg-self --files gate.sh --pr none --kind tighten \
+    --decision-file "$dir/decision" 2>&1) && fail "a caller with FM_TASK_INBOX set was granted: $out"
+  assert_contains "$out" 'FM_TASK_INBOX' "the refusal must name why"
+  [ ! -e "$home/state/gg-self.gate-grant" ] || fail "a refused self-grant left a record"
+  out=$(cd "$dir/wt/sub" && grant_cmd "$home" grant gg-self --files gate.sh --pr none --kind tighten \
+    --decision-file "$dir/decision" 2>&1) && fail "a caller inside a task worktree was granted: $out"
+  [ ! -e "$home/state/gg-self.gate-grant" ] || fail "a grant from inside a task worktree left a record"
+  [ "$(grep -c ' grant-refused ' "$home/data/gg-self/gate-grant.log")" = 2 ] || fail "each refused self-grant must be logged"
+  (cd "$home" && grant_cmd "$home" grant gg-self --files gate.sh --pr none --kind tighten \
+    --decision-file "$dir/decision" >/dev/null) || fail "a grant from firstmate's home was refused"
+  pass "a task worker cannot grant itself the gate edit, and each refusal is logged"
+}
+
 test_task_without_a_grant_gets_no_variable
+test_a_worker_cannot_grant_itself
 test_env_prefix_follows_the_grant_lifecycle
 test_spawn_carries_a_live_grant
 test_grant_survives_the_launch_env_allowlist

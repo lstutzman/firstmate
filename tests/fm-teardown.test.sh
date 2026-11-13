@@ -784,7 +784,7 @@ test_teardown_removes_the_gate_grant() {
   printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
   seed_backlog_in_flight "$case_dir"
   printf 'Lee, main chat, 2026-11-13: "yes, edit gate.sh for task-x1"\n' > "$case_dir/decision"
-  FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" \
+  env -u FM_TASK_INBOX FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" \
     "$ROOT/bin/fm-gate-grant.sh" grant task-x1 --files gate.sh --pr none --kind signoff \
     --decision-file "$case_dir/decision" >/dev/null || fail "could not seed a gate grant"
   [ -f "$case_dir/state/task-x1.gate-grant" ] || fail "the seeded grant is missing"
@@ -796,6 +796,37 @@ test_teardown_removes_the_gate_grant() {
   grep -q 'decision| Lee, main chat' "$case_dir/data/task-x1/gate-grant.log" \
     || fail "the log lost the captain's recorded words"
   pass "cleanup removes the task's gate grant and keeps its log"
+}
+
+# A worker launched with the grant keeps it after its PR registers (the record
+# is gone by then), so cleanup lists the edits from the carried file list, and
+# does it while the task branch still exists.
+test_teardown_logs_edits_made_after_the_pr_registered() {
+  local case_dir log
+  case_dir=$(make_case gate-grant-after-pr)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
+  seed_backlog_in_flight "$case_dir"
+  printf 'firstmate grants the edit of gate.sh\n' > "$case_dir/decision"
+  gg() { env -u FM_TASK_INBOX FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" \
+    "$ROOT/bin/fm-gate-grant.sh" "$@"; }
+  gg grant task-x1 --files gate.sh --pr none --kind tighten --decision-file "$case_dir/decision" >/dev/null \
+    || fail "could not seed a gate grant"
+  gg env task-x1 >/dev/null || fail "the grant was not carried"
+  wt_commit_file "$case_dir" gate.sh before "tighten before the PR"
+  gg revoke task-x1 --reason "PR registered: https://github.com/example/repo/pull/7" >/dev/null 2>&1 \
+    || fail "the registration revoke failed"
+  wt_commit_file "$case_dir" gate.sh after "fix round after the PR"
+  wt_commit_file "$case_dir" other.sh x "unrelated change"
+  land_task_commits_from_other_clone "$case_dir" release
+  run_teardown "$case_dir" > "$case_dir/stdout" 2>&1 || fail "teardown failed: $(cat "$case_dir/stdout")"
+  log="$case_dir/data/task-x1/gate-grant.log"
+  grep -q 'edit| commit [0-9a-f]* fix round after the PR' "$log" \
+    || fail "cleanup did not log the edit made after the PR registered: $(cat "$log")"
+  grep -q ' carry-ended files=gate.sh reason=task cleanup' "$log" || fail "cleanup did not log the end of the carry"
+  grep -q 'unrelated change' "$log" && fail "a commit outside the granted files was logged"
+  assert_absent "$case_dir/state/task-x1.gate-grant.carried" "cleanup left the carried marker"
+  pass "cleanup logs the edits a carried grant made after its PR registered"
 }
 
 # A task fm-spawn.sh dispatched against a local-jev call receipt gets one outcome
@@ -6811,6 +6842,7 @@ test_retained_sources_still_reach_the_ordinary_refusal
 test_local_only_fork_remote_allows
 test_teardown_closes_the_backlog_item_itself
 test_teardown_removes_the_gate_grant
+test_teardown_logs_edits_made_after_the_pr_registered
 test_teardown_writes_the_dispatch_outcome_receipt
 test_teardown_closes_a_gerrit_task_with_its_change_url_as_a_note
 test_teardown_closes_a_gitlab_task_with_its_merge_request_url_as_a_note
