@@ -1996,6 +1996,22 @@ This applies only to agents Firstmate launches; the captain's own primary Firstm
 
 [`fm-spawn.sh --help`](../bin/fm-spawn.sh) owns the delivery mechanics, with focused regression coverage in [`tests/fm-spawn-compact-adviser-disable.test.sh`](../tests/fm-spawn-compact-adviser-disable.test.sh) and [`tests/fm-spawn-compact-adviser-disable-remote.test.sh`](../tests/fm-spawn-compact-adviser-disable-remote.test.sh).
 
+### Gate-edit grant for one task
+
+A project can protect gate files and refuse an edit to them unless `ALLOW_GATE_EDIT=1` (optionally narrowed by `ALLOW_GATE_EDIT_FILES`, a comma-separated list of repo-relative paths) is in the editing session's environment.
+A worker cannot set that itself, so a grant lives in the task's own state instead: `bin/fm-gate-grant.sh grant <task> --files <f1,f2> --pr <url|none> --kind tighten|signoff --decision-file <file>` writes `state/<task>.gate-grant`, and every launch of a ship or scout worker, a relaunch included, starts with `ALLOW_GATE_EDIT=1` and `ALLOW_GATE_EDIT_FILES=<files>` exported.
+A running worker picks a new grant up on `bin/fm-control.sh <task> relaunch`; nothing is written into the worker's settings files, and a task with no grant starts with neither variable.
+The decision file is firstmate's own statement for a `tighten` grant and the captain's quoted words, with where and when, for a `signoff` grant; an empty or missing decision refuses the grant.
+The fleet rules own who may grant which kind.
+
+`grant` refuses, and logs the refusal, when it is called by a task worker (`FM_TASK_INBOX` names an inbox in this home's state, so a secondmate home's own firstmate still grants, or the working directory is inside a task worktree a `state/*.meta` record names); this stops an accidental or casual self-grant, while a full-access worker that forges local records stays outside this safeguard, as elsewhere in firstmate.
+
+The grant ends when the task's PR is registered (`fm-pr-check.sh`) and at cleanup (`fm-teardown.sh`, before the task's branch and worktree are retired), and every grant, carry, refused carry and revoke is appended to `data/<task>/gate-grant.log`, which keeps the decision text and lists the commits that touched the granted files, and which outlives the task.
+The grant record is removed at PR registration, so a relaunch after registration carries nothing; a worker that is already running keeps the environment it started with (the same PR, the same named files) until its next relaunch or cleanup, and a revoke says so.
+Each carry also records its file list and the worktree's merge base with the task's base branch in `state/<task>.gate-grant.carried`, so the cleanup revoke lists the commits that touched those files again from that base, covering edits made after the PR registered even once the work has merged; teardown removes the marker only after every refusal point, so a retried teardown lists them again.
+The t3code backend starts the agent with its provider instance's environment and never runs the launch command, so it carries no grant.
+The script header owns the exact contract, with regression coverage in [`tests/fm-gate-grant.test.sh`](../tests/fm-gate-grant.test.sh).
+
 ### Commit attribution
 
 The optional local, gitignored `config/keep-ai-trailers` presence flag opts this home into keeping AI co-author trailers on its launched workers.

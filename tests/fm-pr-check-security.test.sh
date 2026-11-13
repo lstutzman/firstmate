@@ -804,6 +804,37 @@ test_draft_pull_request_is_not_armed() {
   pass "arming refuses a draft pull request, naming it, and arms a ready or unreadable one"
 }
 
+# Registering the task's PR ends its gate-edit grant (bin/fm-gate-grant.sh); the
+# decision stays in the task's log, and a refused registration keeps the grant.
+test_pr_registration_revokes_the_gate_grant() {
+  local dir
+  dir=$(make_case gate-grant-revoke)
+  write_task_meta "$dir"
+  printf 'firstmate grants the edit of gate.sh for the PR under test\n' > "$dir/decision"
+  env -u FM_TASK_INBOX FM_HOME="$dir/home" "$ROOT/bin/fm-gate-grant.sh" grant task-a --files gate.sh --pr none --kind tighten \
+    --decision-file "$dir/decision" > /dev/null || fail "could not seed a gate grant"
+  printf 'gate\n' > "$dir/wt/gate.sh"
+  printf 'other\n' > "$dir/wt/other.sh"
+  git -C "$dir/wt" add gate.sh other.sh
+  git -C "$dir/wt" commit -q -m "tighten the gate"
+  FM_TEST_GH_DRAFT=true run_check_entry "$dir" task-a https://github.com/o/r/pull/9 \
+    > "$dir/stdout" 2> "$dir/stderr" && fail "a draft pull request was registered"
+  [ -f "$dir/home/state/task-a.gate-grant" ] || fail "a refused registration removed the gate grant"
+  FM_TEST_GH_DRAFT=false run_check_entry "$dir" task-a https://github.com/o/r/pull/9 \
+    > "$dir/stdout" 2> "$dir/stderr" || fail "registration failed: $(cat "$dir/stderr")"
+  [ ! -e "$dir/home/state/task-a.gate-grant" ] || fail "registering the PR left the gate grant live"
+  [ ! -e "$dir/home/state/task-a.gate-grant.decision" ] || fail "registering the PR left the grant's decision file"
+  grep -q ' revoke .*reason=PR registered: https://github.com/o/r/pull/9' "$dir/home/data/task-a/gate-grant.log" \
+    || fail "the revoke was not logged with its reason"
+  grep -q 'edit| gate.sh' "$dir/home/data/task-a/gate-grant.log" \
+    || fail "the edits under the grant were not logged"
+  grep -q 'edit| other.sh' "$dir/home/data/task-a/gate-grant.log" \
+    && fail "an edit to a file outside the grant was logged as under it"
+  grep -q 'decision| firstmate grants the edit' "$dir/home/data/task-a/gate-grant.log" \
+    || fail "the log lost the grant's decision text"
+  pass "registering a task's PR revokes its gate grant and logs it"
+}
+
 # A secondmate is a persistent worker, not a delivery lane: it never owns a
 # pull request of its own. A URL relayed onto its status channel belongs to a
 # task in the mate's own home, which arms its own watch, so arming one here is
@@ -5993,6 +6024,7 @@ test_retirement_queue_failure_and_receipt_tampering
 test_gitlab_merged_poll_retires
 test_invalid_entrypoints_have_zero_side_effects
 test_draft_pull_request_is_not_armed
+test_pr_registration_revokes_the_gate_grant
 test_secondmate_record_refuses_a_pr_watch
 test_unpushed_named_head_refuses_registration
 test_ready_evidence_gates_registration_on_the_forge_head
