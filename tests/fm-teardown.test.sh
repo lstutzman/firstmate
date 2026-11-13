@@ -800,7 +800,8 @@ test_teardown_removes_the_gate_grant() {
 
 # A worker launched with the grant keeps it after its PR registers (the record
 # is gone by then), so cleanup lists the edits from the carried file list, and
-# does it while the task branch still exists.
+# does it while the task branch still exists, after the work merged into the
+# default branch, and again on a retry after a cleanup that stopped short.
 test_teardown_logs_edits_made_after_the_pr_registered() {
   local case_dir log
   case_dir=$(make_case gate-grant-after-pr)
@@ -816,9 +817,11 @@ test_teardown_logs_edits_made_after_the_pr_registered() {
   wt_commit_file "$case_dir" gate.sh before "tighten before the PR"
   gg revoke task-x1 --reason "PR registered: https://github.com/example/repo/pull/7" >/dev/null 2>&1 \
     || fail "the registration revoke failed"
+  gg revoke task-x1 --reason "task cleanup" --cleanup >/dev/null 2>&1 || fail "a first cleanup revoke failed"
+  [ -e "$case_dir/state/task-x1.gate-grant.carried" ] || fail "a cleanup revoke that teardown may still refuse after dropped the carried marker"
   wt_commit_file "$case_dir" gate.sh after "fix round after the PR"
   wt_commit_file "$case_dir" other.sh x "unrelated change"
-  land_task_commits_from_other_clone "$case_dir" release
+  land_task_commits_from_other_clone "$case_dir" main
   run_teardown "$case_dir" > "$case_dir/stdout" 2>&1 || fail "teardown failed: $(cat "$case_dir/stdout")"
   log="$case_dir/data/task-x1/gate-grant.log"
   grep -q 'edit| commit [0-9a-f]* fix round after the PR' "$log" \

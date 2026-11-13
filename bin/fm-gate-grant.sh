@@ -31,7 +31,9 @@
 # first, so a grant is never widened silently.
 #
 # `grant` also refuses, and logs the refusal, when its caller is a task worker:
-# FM_TASK_INBOX is set (every launch exports it), or the working directory is
+# FM_TASK_INBOX names an inbox in this home's state (every launch exports it;
+# a secondmate home's own firstmate holds its parent's inbox and may grant), or
+# the working directory is
 # inside a task worktree that a state/*.meta record names. This stops an
 # accidental or casual self-grant; a full-access worker that forges local
 # records stays outside this safeguard, as elsewhere in firstmate.
@@ -43,7 +45,8 @@
 #
 # `env` prints the shell prefix the launch command starts with: for a live grant
 # `export ALLOW_GATE_EDIT=1; export ALLOW_GATE_EDIT_FILES='<files>'; ` (logged as
-# a carry, and its file list appended to state/<task>.gate-grant.carried). For a task that never
+# a carry, and its file list, with the worktree's merge base with the task's
+# base branch, appended to state/<task>.gate-grant.carried). For a task that never
 # held a grant it prints nothing, so its launch is unchanged. For a task whose
 # grant was carried and has since been revoked it prints `unset ALLOW_GATE_EDIT
 # ALLOW_GATE_EDIT_FILES; `, so a pane shell that kept the earlier export cannot
@@ -52,14 +55,18 @@
 # is never set from a record that is not whole.
 #
 # Every edit under the grant is logged: revoke lists the commits that touched
-# the granted files since the default branch (committed edits only, and best
-# effort when the task's worktree is already gone) as `edits` lines.
+# the granted files since the merge base the first carry recorded (else the
+# task's base branch or the default branch), so the list survives the work
+# landing on that branch; committed edits only, and best effort when the task's
+# worktree is already gone, as `edits` lines.
 #
 # The grant ends in two places. bin/fm-pr-check.sh revokes it when the task's PR
 # is registered, and bin/fm-teardown.sh revokes it at cleanup, before the task's
 # branch and worktree are retired; `revoke` is idempotent and logs only when it
-# removes something; `--forget-carry` (the cleanup path) also removes the
-# carried marker. The grant record is removed at PR registration, and every
+# removes something. `--cleanup` (the teardown path) also lists the edits from
+# the carried marker when no record is left, and keeps the marker, which
+# teardown removes only once nothing can refuse, so a refused teardown's retry
+# lists them again. The grant record is removed at PR registration, and every
 # later launch, a relaunch included, carries nothing. A revoke cannot reach into
 # an agent that is already running: it keeps the environment it was launched
 # with (the same PR, the same named files) until its next relaunch or its
@@ -104,9 +111,26 @@ log_line() { # <event> <detail...>: one timestamped line in the task's log
   printf '%s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$event" "$*" >> "$LOG"
 }
 
-carried_files() { # the union of the file lists ever carried for the task
+union_files() { # <comma list>...: one comma list of every distinct path
+  printf '%s\n' "$@" | tr ',' '\n' | grep -v '^$' | sort -u | paste -sd, - || true
+}
+
+carried_get() { # <key>: every value the carried marker recorded, oldest first
   [ -f "$CARRIED" ] && [ ! -L "$CARRIED" ] || return 0
-  grep '^files=' "$CARRIED" 2>/dev/null | cut -d= -f2- | tr ',' '\n' | grep -v '^$' | sort -u | paste -sd, - || true
+  grep "^$1=" "$CARRIED" 2>/dev/null | cut -d= -f2- || true
+}
+
+task_worktree() { # <task>
+  grep '^worktree=' "$STATE/$1.meta" 2>/dev/null | tail -1 | cut -d= -f2- || true
+}
+
+base_ref() { # <task> <worktree>: the task's base branch, else the default branch
+  local b bb
+  bb=$(grep '^base_branch=' "$STATE/$1.meta" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+  for b in ${bb:+refs/remotes/origin/$bb refs/heads/$bb} refs/remotes/origin/HEAD refs/remotes/origin/main \
+      refs/remotes/origin/master refs/heads/main refs/heads/master; do
+    if git -C "$2" rev-parse --verify -q "$b" >/dev/null 2>&1; then printf '%s\n' "$b"; return 0; fi
+  done
 }
 
 record_get() { # <key>
@@ -152,8 +176,12 @@ sha256_of() {
 # working directory inside a recorded task worktree marks one that dropped it.
 refuse_worker_caller() { # <task>
   local why='' here m wt
-  if [ -n "${FM_TASK_INBOX:-}" ]; then
-    why="the caller is a task worker (FM_TASK_INBOX is set)"
+  local inbox_dir state_dir
+  state_dir=$(cd "$STATE" 2>/dev/null && pwd -P) || state_dir=$STATE
+  inbox_dir=
+  [ -z "${FM_TASK_INBOX:-}" ] || inbox_dir=$(cd "$(dirname "$FM_TASK_INBOX")" 2>/dev/null && pwd -P) || inbox_dir=$(dirname "$FM_TASK_INBOX")
+  if [ -n "$inbox_dir" ] && [ "$inbox_dir" = "$state_dir" ]; then
+    why="the caller is a task worker of this home (FM_TASK_INBOX is set)"
   else
     here=$(pwd -P 2>/dev/null) || here=$PWD
     for m in "$STATE"/*.meta; do
@@ -228,17 +256,17 @@ cmd_grant() {
 # Commits on the task's branch that touched the granted files: the edits made
 # under the grant, as far as git can tell. Best effort; never fails a revoke.
 log_edits() { # <task> <comma list>
-  local id=$1 files=$2 wt base b out
+  local id=$1 files=$2 wt base out
   local -a paths
-  wt=$(grep '^worktree=' "$STATE/$id.meta" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+  wt=$(task_worktree "$id")
   if [ -z "$wt" ] || ! git -C "$wt" rev-parse --git-dir >/dev/null 2>&1; then
     log_line edits "worktree unavailable; edits under the grant are not listed" || true
     return 0
   fi
-  base=
-  for b in refs/remotes/origin/HEAD refs/remotes/origin/main refs/remotes/origin/master refs/heads/main refs/heads/master; do
-    if git -C "$wt" rev-parse --verify -q "$b" >/dev/null 2>&1; then base=$b; break; fi
-  done
+  base=$(carried_get base | head -1)
+  case "$base" in *[!0-9a-f]* | '') base= ;; esac
+  [ -z "$base" ] || git -C "$wt" rev-parse --verify -q "$base^{commit}" >/dev/null 2>&1 || base=
+  [ -n "$base" ] || base=$(base_ref "$id" "$wt")
   [ -n "$base" ] || { log_line edits "no default branch found; edits under the grant are not listed" || true; return 0; }
   IFS=, read -r -a paths <<< "$files"
   out=$(git -C "$wt" log --format='commit %h %s' --name-only "$base..HEAD" -- "${paths[@]}" 2>/dev/null) || out=
@@ -251,35 +279,37 @@ log_edits() { # <task> <comma list>
 }
 
 cmd_revoke() {
-  local id=$1 reason=revoked forget=0
+  local id=$1 reason=revoked cleanup=0
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --reason) [ "$#" -ge 2 ] || usage; reason=$2; shift 2 ;;
-      --forget-carry) forget=1; shift ;;
+      --cleanup) cleanup=1; shift ;;
       *) usage ;;
     esac
   done
   paths_for "$id"
   local detail carried
-  carried=$(carried_files)
+  carried=$(union_files "$(carried_get files)")
+  files_valid "$carried" || carried=
   reason=$(printf '%s' "$reason" | tr '\n' ' ')
   if [ ! -e "$RECORD" ] && [ ! -L "$RECORD" ] && [ ! -e "$DECISION" ] && [ ! -L "$DECISION" ]; then
-    if [ "$forget" = 1 ] && [ -n "$carried" ] && files_valid "$carried"; then
+    if [ "$cleanup" = 1 ] && [ -n "$carried" ]; then
       log_edits "$id" "$carried"
       log_line carry-ended "files=$carried reason=$reason" \
         || echo "fm-gate-grant: could not append the end of the carry to $LOG" >&2
     fi
-    [ "$forget" = 0 ] || rm -f -- "$CARRIED" || die "cannot remove the carried marker for $id"
     echo "no gate grant for $id"
     return 0
   fi
-  [ ! -f "$RECORD" ] || ! record_valid || log_edits "$id" "$G_FILES"
-  if [ "$forget" = 0 ] && [ -e "$CARRIED" ]; then
+  if [ -f "$RECORD" ] && record_valid; then
+    if [ "$cleanup" = 1 ]; then log_edits "$id" "$(union_files "$G_FILES" "$carried")"
+    else log_edits "$id" "$G_FILES"; fi
+  fi
+  if [ "$cleanup" = 0 ] && [ -e "$CARRIED" ]; then
     echo "actionable: the worker of $id was launched with the gate-edit grant and keeps it until it is relaunched or cleaned up" >&2
   fi
   detail="kind=$(record_get kind) files=$(record_get files) pr=$(record_get pr) reason=$reason"
-  [ "$forget" = 0 ] || rm -f -- "$CARRIED" || die "cannot remove the carried marker for $id"
   rm -f -- "$RECORD" "$DECISION" || die "cannot remove the gate grant for $id"
   log_line revoke "$detail" || echo "fm-gate-grant: the grant for $id is removed but its log $LOG could not be written" >&2
   echo "gate grant revoked for $id"
@@ -315,7 +345,13 @@ cmd_env() {
     return 1
   fi
   # Quoting: the validated file list holds only characters safe inside quotes.
-  printf 'files=%s\n' "$G_FILES" >> "$CARRIED" || { echo "fm-gate-grant: cannot mark the carry for $id; the launch carries no gate-edit variable" >&2; return 1; }
+  local wt ref base=
+  wt=$(task_worktree "$id")
+  if [ -n "$wt" ] && git -C "$wt" rev-parse --git-dir >/dev/null 2>&1; then
+    ref=$(base_ref "$id" "$wt")
+    [ -z "$ref" ] || base=$(git -C "$wt" merge-base HEAD "$ref" 2>/dev/null) || base=
+  fi
+  { printf 'files=%s\n' "$G_FILES"; [ -z "$base" ] || printf 'base=%s\n' "$base"; } >> "$CARRIED" || { echo "fm-gate-grant: cannot mark the carry for $id; the launch carries no gate-edit variable" >&2; return 1; }
   printf "export ALLOW_GATE_EDIT=1; export ALLOW_GATE_EDIT_FILES='%s'; " "$G_FILES"
   log_line carry "kind=$G_KIND files=$G_FILES pr=$G_PR" 2>/dev/null \
     || echo "fm-gate-grant: could not append the carry to $LOG" >&2

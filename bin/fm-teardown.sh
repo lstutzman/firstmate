@@ -4204,8 +4204,10 @@ if [ "$BACKEND" = t3code ]; then
 fi
 # The task's gate-edit grant ends with the task (bin/fm-gate-grant.sh header),
 # here while the branch and worktree still exist so the edits made under it can
-# be listed; its log under data/<id>/ stays.
-"$SCRIPT_DIR/fm-gate-grant.sh" revoke "$ID" --reason "task cleanup" --forget-carry >/dev/null \
+# be listed; its log under data/<id>/ stays. The carried marker goes only with
+# the flat state removal below, after every refusal, so a retried teardown
+# lists the edits again.
+"$SCRIPT_DIR/fm-gate-grant.sh" revoke "$ID" --reason "task cleanup" --cleanup >/dev/null \
   || echo "warning: could not remove the gate grant for $ID; remove state/$ID.gate-grant by hand" >&2
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
 if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
@@ -4369,6 +4371,7 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.progress" "$STATE/$ID.merge-handoff" "
   "$STATE/$ID.reconcile-nudged" "$STATE/$ID.gemini-settings.json" \
   "$STATE/$ID.claude-settings.json" "$STATE/$ID.devin-config.json" \
   "$STATE/$ID.polytoken-busy.sh" "$STATE/$ID.pr-register-refused" \
+  "$STATE/$ID.gate-grant.carried" \
   "$STATE/$ID.review-park" "$STATE/.review-park-closed-$ID" \
   "$STATE/$ID.pr-register-timed-out" \
   "$STATE/.$ID.branch-outcome-index" \

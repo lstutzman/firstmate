@@ -260,10 +260,11 @@ test_env_prefix_follows_the_grant_lifecycle() {
     "a carried then revoked grant must drop the variable a pane shell kept"
   grant_cmd "$home" grant gg-prefix --files gate.sh --pr none --kind tighten --decision-file "$dir/decision" >/dev/null \
     || fail "second grant refused"
-  [ -z "$(grant_cmd "$home" revoke gg-prefix --reason 'task cleanup' --forget-carry 2>&1 >/dev/null)" ] \
+  [ -z "$(grant_cmd "$home" revoke gg-prefix --reason 'task cleanup' --cleanup 2>&1 >/dev/null)" ] \
     || fail "a cleanup revoke must not warn about the worker it is retiring"
-  [ -z "$(grant_cmd "$home" env gg-prefix)" ] || fail "cleanup left the carried marker behind"
-  pass "the launch prefix follows the grant: nothing, export, unset, then nothing after cleanup"
+  assert_equals 'unset ALLOW_GATE_EDIT ALLOW_GATE_EDIT_FILES; ' "$(grant_cmd "$home" env gg-prefix)" \
+    "a cleanup revoke must still drop the variable from a launch before teardown finishes"
+  pass "the launch prefix follows the grant: nothing, export, unset, and unset after a cleanup revoke"
 }
 
 # A worker cannot grant itself the gate edit: a launched worker carries
@@ -284,9 +285,14 @@ test_a_worker_cannot_grant_itself() {
     --decision-file "$dir/decision" 2>&1) && fail "a caller inside a task worktree was granted: $out"
   [ ! -e "$home/state/gg-self.gate-grant" ] || fail "a grant from inside a task worktree left a record"
   [ "$(grep -c ' grant-refused ' "$home/data/gg-self/gate-grant.log")" = 2 ] || fail "each refused self-grant must be logged"
+  out=$(FM_TASK_INBOX="$TMP_ROOT/selfgrant/parent-home/state/mate.inbox" FM_HOME="$home" FM_ROOT_OVERRIDE='' \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" "$GRANT" grant gg-self --files gate.sh --pr none \
+    --kind tighten --decision-file "$dir/decision" 2>&1) \
+    || fail "a secondmate home's firstmate, holding its parent's inbox, was refused: $out"
+  grant_cmd "$home" revoke gg-self >/dev/null || fail "revoke failed"
   (cd "$home" && grant_cmd "$home" grant gg-self --files gate.sh --pr none --kind tighten \
     --decision-file "$dir/decision" >/dev/null) || fail "a grant from firstmate's home was refused"
-  pass "a task worker cannot grant itself the gate edit, and each refusal is logged"
+  pass "a task worker cannot grant itself the gate edit, each refusal is logged, and a secondmate home's firstmate can grant"
 }
 
 test_task_without_a_grant_gets_no_variable
