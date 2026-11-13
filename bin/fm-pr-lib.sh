@@ -1232,6 +1232,8 @@ github_required_checks_missing() {
 # 404) keeps the forge-only behavior; any other read failure refuses.
 FM_PR_REQUIRED_LIST_PATH=.github/required-checks.list
 FM_PR_LISTED_ERROR=
+# FM_PR_LISTED_ERROR is read by fm-pr-merge.sh, which sources this library.
+# shellcheck disable=SC2034
 github_read_listed_contexts() {
   local base=$1 ref body listed err_file err_text
   FM_PR_LISTED_ERROR=
