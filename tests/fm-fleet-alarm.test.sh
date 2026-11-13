@@ -609,6 +609,45 @@ mate 0 0 0
 run_alarm check >/dev/null
 pass 'a captain-held in-flight item with a done child counts as complete; other terminal items still alarm'
 
+# A done child whose PR is recorded and under an armed merge watch is waiting on merge, not an
+# inventory contradiction; no PR, or a PR whose watch is gone (closed unmerged), still alarms.
+merge_watch_done() { # ids that are done children; ids that carry a waiting_on_merge row with a PR
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" "$2" <<'PY_MERGE'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1]); value=json.loads(path.read_text())
+ids=sys.argv[2].split(); merging=sys.argv[3].split()
+value.update(valid=False, state='unknown',
+             invalidity=dict(kind='terminal_in_flight', ids=ids),
+             reason='in-flight backlog item has terminal child state: '+','.join(ids),
+             counts=dict(in_flight=len(ids), held_in_flight=0, active_children=0, decisions_open=0, holds=0,
+                         endpoints=len(ids), waiting_on_merge=len(merging)),
+             decisions_open=[], endpoints=[dict(id=i, state='done') for i in ids], holds=[],
+             waiting_on_merge=[dict(id=i, pr='https://github.com/o/r/pull/1') for i in merging])
+path.write_text(json.dumps(value))
+PY_MERGE
+}
+mate 0 0 3601
+merge_watch_done 'item-a' 'item-a'
+[ -z "$(run_alarm check)" ] || fail 'a done child with an open registered PR under a merge watch is healthy'
+mate 0 0 3601
+merge_watch_done 'item-a' ''
+assert_contains "$(run_alarm check)" 'home inventory incomplete' 'a done child with no recorded PR still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+merge_watch_done 'item-a' ''
+edit_mate_summary "value['waiting_on_merge']=[dict(id='item-a',pr='')]"
+assert_contains "$(run_alarm check)" 'home inventory incomplete' 'a done child whose PR is closed unmerged (watch dropped, no PR) still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+merge_watch_done 'item-a item-b' 'item-a'
+assert_contains "$(run_alarm check)" 'home inventory incomplete' 'one done child without a PR keeps the alarm for the mix'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'a done child with an open PR under a merge watch is healthy; missing or closed PRs still alarm'
+
 # cl-keeper and Deep Thought: every in-flight item waits on the mate's own needs-decision for Lee.
 open_ask_mate() { # status lines (one per argument, each stamped 3601 seconds ago)
   mate 0 0 3601

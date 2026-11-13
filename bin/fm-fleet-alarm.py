@@ -294,9 +294,11 @@ def waiting_on_open_ask(summary, counts, asks):
 
 def held_terminal_complete(summary, counts):
     # An in-flight item whose child is done is complete when the mate holds that same task as a
-    # captain-hold row: it is waiting on the captain's call, not a contradiction in the inventory.
-    # Every id in the invalidity must be a done child with a captain-hold row, the decision list
-    # must be complete, and endpoints (the structured child state) decide done; prose never does.
+    # captain-hold row (waiting on the captain's call), or when its PR is recorded and under an
+    # armed merge watch (a waiting_on_merge row with a PR url; the producer drops the row once the
+    # watch is gone or the PR closes, so a missing or closed PR keeps the alarm). Every id in the
+    # invalidity must be a done child with one of those, the decision list must be complete, and
+    # endpoints (the structured child state) decide done; prose never does.
     invalidity = summary.get('invalidity')
     if not isinstance(invalidity, dict) or invalidity.get('kind') != 'terminal_in_flight':
         return False
@@ -306,8 +308,10 @@ def held_terminal_complete(summary, counts):
     if counts['decisions_open'] > len(decisions):
         return False
     held = {row.get('id') for row in decisions if isinstance(row, dict) and row.get('verb') == 'captain-hold'}
+    merging = {row.get('id') for row in summary.get('waiting_on_merge', [])
+               if isinstance(row, dict) and isinstance(row.get('pr'), str) and row['pr'].strip()}
     done = {row.get('id') for row in endpoints if isinstance(row, dict) and row.get('state') == 'done'}
-    return all(item in held and item in done for item in ids)
+    return all((item in held or item in merging) and item in done for item in ids)
 
 
 def working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg, cause=''):
