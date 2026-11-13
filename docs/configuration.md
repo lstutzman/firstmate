@@ -2580,6 +2580,8 @@ A project whose reviews are created by a review tool that uploads its own snapsh
 
 <a id="admission-by-class-dataprojectsmd-admission-token-configadmission"></a><a id="path-rule-classifier-binfm-reserved-classifysh"></a>Moved to [Admission by class (data/projects.md admission= token, config/admission/)](configuration/projects-and-forges.md#admission-by-class-dataprojectsmd-admission-token-configadmission).
 
+<a id="project-git-hooks-dataprojectsmd-hooks-token"></a>Moved to [Project git hooks (data/projects.md hooks= token)](configuration/projects-and-forges.md#project-git-hooks-dataprojectsmd-hooks-token).
+
 <a id="ready-evidence-dataprojectsmd-ready-evidence-token-configready-evidence"></a>Moved to [Ready evidence (data/projects.md ready-evidence= token, config/ready-evidence/)](configuration/projects-and-forges.md#ready-evidence-dataprojectsmd-ready-evidence-token-configready-evidence).
 
 ## PR text selection (data/projects.md pr= token)

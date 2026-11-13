@@ -20,6 +20,9 @@
 #                 (only with config/record-hygiene present),
 #                 "BACKLOG_RECONCILE: code-root <file> is not this home's <file>; ...",
 #                 "TANGLE: <remediation>",
+#                 "HOOKS_INERT: <project>: declared git hooks ... are not live in this clone ..."
+#                 (a registered project with a hooks= token whose clone has no live core.hooksPath;
+#                 bin/fm-project-hooks.sh owns the check),
 #                 "SECONDMATE_SYNC: secondmate <id>: skipped: <reason>",
 #                 "NUDGE_SECONDMATES: secondmate <id>: send failed: <reason>",
 #                 "BOOTSTRAP_INFO: nudged fm-<id> with '<message>'",
@@ -354,6 +357,7 @@ fleet_sync_relay_filtered_output() {
       *': skipped:'*) echo "FLEET_SYNC: $line" ;;
       *': STUCK:'*) echo "FLEET_SYNC: $line" ;;
       *': recovered:'*) echo "FLEET_SYNC: $line" ;;
+      *': hooks:'*) echo "FLEET_SYNC: $line" ;;
     esac
   done < "$tmp"
 }
@@ -1692,6 +1696,8 @@ detect_local_config() {
       echo "TANGLE: primary checkout on feature branch '$tangle_branch' (expected '$tangle_default'); the work is safe on that ref - restore the primary with: git -C $FM_ROOT checkout $tangle_default, then re-validate the branch in a proper worktree"
     fi
   fi
+  # Registered projects whose declared git hooks (hooks= token) are inert in their clone.
+  FM_PROJECTS_OVERRIDE="$PROJECTS" "$SCRIPT_DIR/fm-project-hooks.sh" diagnose 2>/dev/null || true
   crew=
   [ -f "$CONFIG/crew-harness" ] && crew=$(tr -d '[:space:]' < "$CONFIG/crew-harness" || true)
   if [ "${FM_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ] && [ -n "$crew" ] && [ "$crew" != "default" ]; then

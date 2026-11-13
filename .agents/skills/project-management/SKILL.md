@@ -104,6 +104,8 @@ Run no-mistakes initialization only for `no-mistakes` and `no-mistakes-prod-only
 (cd projects/<name> && no-mistakes init && no-mistakes doctor)
 ```
 
+When the project's registry entry carries a `hooks=<installer>` token, run its declared git hook installer once after the clone exists, for every delivery mode: `bin/fm-project-hooks.sh ensure projects/<name>`.
+It runs only the tracked installer, which sets the clone's `core.hooksPath`, prints nothing when the hooks are already live, and the next fleet sync repairs any clone it missed.
 Initialization configures the local gate and does not vendor a no-mistakes skill into the project.
 Do not create a commit merely because initialization ran.
 If doctor reports an environment, authentication, or daemon problem, resolve that blocker before dispatching work and never restart the shared daemon from a project operation.

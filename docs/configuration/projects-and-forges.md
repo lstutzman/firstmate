@@ -93,6 +93,18 @@ A rules file that is missing, has a line that is not exactly `<glob> <class>`, h
 A path rule sees only paths, never content, so it cannot tell a data-rewriting change from an additive one; such classes stay with the captain.
 `bin/fm-reserved-classify.sh`'s header owns the glob syntax and the refusal rules.
 
+## Project git hooks (data/projects.md hooks= token)
+
+A project entry may declare its own git hook installer with `hooks=<repo-relative path>`, for example `- PropertyCompass2 [no-mistakes +yolo hooks=scripts/install-git-hooks.sh] - ...`.
+The installer must be a tracked file in the clone and only set the clone's `core.hooksPath`; only the token declares it, and firstmate never infers an installer from file names.
+A clone whose installer never ran has no project hooks, so every commit made there skips the project's own pre-commit checks.
+Project initialization runs the installer once after the clone exists, and `bin/fm-fleet-sync.sh` runs it after a successful refresh of any clone whose hooks are not live, printing one `<project>: hooks: repaired` or `<project>: hooks: failed: <reason>` line.
+Fleet sync skips a clone it does not refresh (dirty, off its default branch, stuck, offline, or with no origin), so its hooks stay inert until `bin/fm-project-hooks.sh ensure <project>` runs by hand.
+Session start prints a `HOOKS_INERT:` diagnostic for each registered clone whose declared hooks are not live, naming that command, and for each clone whose `hooks=` token is refused.
+Live means the clone's own config sets `core.hooksPath` and the directory it names exists; the check ignores the `GIT_CONFIG_*` override that every firstmate-launched session injects.
+A project with no `hooks=` token is never touched, and the registry is not inherited, so every home that clones the project must carry the token.
+`bin/fm-project-mode.sh --hooks <name>` reads the binding back and refuses a malformed value, and `bin/fm-project-hooks.sh`'s header owns the check and repair.
+
 ## Ready evidence (data/projects.md ready-evidence= token, config/ready-evidence/)
 
 A project entry may name a ready-evidence command set with `ready-evidence=<name>`, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti ready-evidence=pc-ready] - ...`.

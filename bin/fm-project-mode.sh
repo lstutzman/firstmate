@@ -49,10 +49,11 @@
 #   - <name> [<mode> admission=<config>] - <desc> (added <date>)     -> <mode> off, --admission <config>
 #   - <name> [<mode> ready-evidence=<n>] - <desc> (added <date>)     -> <mode> off, --ready-evidence <n>
 #   - <name> [no-mistakes pr=manual] - <desc> (added <date>)         -> no-mistakes off, --pr manual
+#   - <name> [<mode> hooks=<path>] - <desc> (added <date>)           -> <mode> off, --hooks <path>
 #   <name> may contain spaces; it ends at the literal " [" or " - " that follows it.
 #   Bracket tokens are order-independent: +yolo, branch=<prefix>, forge=<value>,
-#   merger=<home>, landing-lag=<hours>, admission=<config>, ready-evidence=<n>, and
-#   pr=<value> are recognized by
+#   merger=<home>, landing-lag=<hours>, admission=<config>, ready-evidence=<n>,
+#   hooks=<path>, and pr=<value> are recognized by
 #   their own shape wherever they appear, and whichever token is
 #   left over is the mode. <prefix> must not contain a space; an empty override
 #   ("branch=") resolves to "" for a bare "<task-id>" ship branch instead of the
@@ -130,6 +131,17 @@
 #   empty or non-id value is refused with exit status 3 like merger=, because
 #   reading it as "no evidence" would accept the done the binding exists to check.
 #
+# hooks=<path> (orthogonal) = the repo-relative path of the project's own git
+#   hook installer script, which only sets the clone's core.hooksPath. It is
+#   declared, never inferred from file names. bin/fm-project-hooks.sh owns what
+#   runs it (project init, fleet sync) and the session-start diagnostic. Under
+#   --hooks the value prints, or nothing when the project registers none, is
+#   unregistered, or the registry is absent. An empty value, an absolute path, a
+#   path with a ".." segment, or a character outside [A-Za-z0-9._/-] is refused
+#   with exit status 3, because reading it as "no hooks" would leave a clone
+#   unguarded and reading it as a path would run a script outside the clone;
+#   the other output forms ignore the token.
+#
 # pr (orthogonal) = who writes the pull request's title and body. Absent means
 #   `auto`, today's behavior: the no-mistakes pipeline's pr step writes and
 #   refreshes them. `manual` is for a project whose PR text a person writes
@@ -174,7 +186,7 @@
 # to the forge binding, so it prints even when the forge token is malformed;
 # every path that reads the forge binding (default, --forge, and spawn's
 # forge-agreement check) still refuses.
-# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--admission|--ready-evidence] <project-name>
+# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--admission|--ready-evidence|--hooks] <project-name>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -190,6 +202,7 @@ WANT_LANDING_LAG=0
 WANT_ADMISSION=0
 WANT_EVIDENCE=0
 WANT_PR=0
+WANT_HOOKS=0
 case "${1:-}" in
   --raw) RAW=1; shift ;;
   --branch-prefix) BRANCH_PREFIX_QUERY=1; shift ;;
@@ -199,12 +212,13 @@ case "${1:-}" in
   --admission) WANT_ADMISSION=1; shift ;;
   --ready-evidence) WANT_EVIDENCE=1; shift ;;
   --pr) WANT_PR=1; shift ;;
+  --hooks) WANT_HOOKS=1; shift ;;
 esac
-NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--admission|--ready-evidence] <project-name>}
+NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--admission|--ready-evidence|--hooks] <project-name>}
 
 if [ ! -f "$REG" ]; then
   echo "warn: no registry at $REG; defaulting $NAME to no-mistakes off" >&2
-  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] || exit 0
+  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] && [ "$WANT_HOOKS" -eq 0 ] || exit 0
   if [ "$BRANCH_PREFIX_QUERY" -eq 1 ]; then
     echo "fm/"
   elif [ "$WANT_FORGE" -eq 1 ]; then echo none
@@ -214,7 +228,7 @@ fi
 
 # awk emits one "near <token>" line per keyed token whose key is a near miss of
 # `forge`, then
-# "posture <mode> <yolo> <forge> <merger> <landing-lag> <admission> <evidence> <pr> <branch-prefix>" (branch-prefix is
+# "posture <mode> <yolo> <forge> <merger> <landing-lag> <admission> <evidence> <pr> <hooks> <branch-prefix>" (branch-prefix is
 # the raw prefix, defaulting to "fm/"; forge, merger, landing-lag, admission, and evidence are `none` or the whole
 # `<key>=<value>` token and pr is `auto` or the whole `pr=<value>` token, so an empty value survives the split),
 # or nothing if the project is
@@ -244,7 +258,7 @@ parsed=$(awk -v n="$NAME" '
     if (substr($0, 1, plen) != prefix) next
     after = substr($0, plen + 1);
     if (after != "" && substr(after, 1, 2) != " [" && substr(after, 1, 3) != " - ") next
-    mode="no-mistakes"; yolo="off"; branch="fm/"; forge="none"; merger="none"; lag="none"; admission="none"; evidence="none"; pr="auto";
+    mode="no-mistakes"; yolo="off"; branch="fm/"; forge="none"; merger="none"; lag="none"; admission="none"; evidence="none"; pr="auto"; hooks="none";
     if (substr(after, 1, 2) == " [") {
       s="";
       nk = split(after, rest, " ");
@@ -264,6 +278,7 @@ parsed=$(awk -v n="$NAME" '
         if (a[j] ~ /^landing-lag=/) { lag = a[j]; continue }
         if (a[j] ~ /^admission=/) { admission = a[j]; continue }
         if (a[j] ~ /^ready-evidence=/) { evidence = a[j]; continue }
+        if (a[j] ~ /^hooks=/) { hooks = a[j]; continue }
         if (a[j] ~ /^pr=/) { pr = a[j]; continue }
         if (a[j] ~ /^[^=]+=/) {
           key = substr(a[j], 1, index(a[j], "=") - 1);
@@ -277,13 +292,13 @@ parsed=$(awk -v n="$NAME" '
     }
     # branch is printed LAST: an empty branch= override must survive as an
     # empty final field, which only holds when nothing follows it.
-    print "posture", mode, yolo, forge, merger, lag, admission, evidence, pr, branch; exit
+    print "posture", mode, yolo, forge, merger, lag, admission, evidence, pr, hooks, branch; exit
   }
 ' "$REG")
 
 if [ -z "$parsed" ]; then
   echo "warn: project \"$NAME\" not in registry; defaulting to no-mistakes off" >&2
-  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] || exit 0
+  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] && [ "$WANT_HOOKS" -eq 0 ] || exit 0
   if [ "$BRANCH_PREFIX_QUERY" -eq 1 ]; then
     echo "fm/"
   elif [ "$WANT_FORGE" -eq 1 ]; then echo none
@@ -300,8 +315,8 @@ while IFS=' ' read -r kind rest; do
 done <<EOF
 $parsed
 EOF
-while IFS=' ' read -r m y f r l a e p b; do
-  mode=$m; yolo=$y; rest_forge=$f; merger=$r; lag=$l; admission=$a; evidence=$e; rest_pr=$p; branch=$b
+while IFS=' ' read -r m y f r l a e p h b; do
+  mode=$m; yolo=$y; rest_forge=$f; merger=$r; lag=$l; admission=$a; evidence=$e; rest_pr=$p; hooks=$h; branch=$b
 done <<EOF
 $posture
 EOF
@@ -343,6 +358,16 @@ if [ "$WANT_ADMISSION" -eq 1 ]; then
       echo "refused: admission binding \"$admission\" registered for $NAME in $REG is not a config name; name a file in config/admission/, or drop the token" >&2
       exit 3 ;;
     *) echo "${admission#admission=}" ;;
+  esac
+  exit 0
+fi
+if [ "$WANT_HOOKS" -eq 1 ]; then
+  case "$hooks" in
+    none) ;;
+    hooks=|hooks=/*|hooks=../*|hooks=*/../*|hooks=*/..|hooks=..|hooks=*[!A-Za-z0-9._/-]*)
+      echo "refused: hooks binding \"$hooks\" registered for $NAME in $REG is not a repo-relative installer path; write hooks=<path inside the clone, no .. segment>, or drop the token" >&2
+      exit 3 ;;
+    *) echo "${hooks#hooks=}" ;;
   esac
   exit 0
 fi
