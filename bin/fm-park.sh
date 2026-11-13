@@ -26,7 +26,8 @@
 #     head commit; GitLab head_pipeline success with its sha the MR's sha); no
 #     CI reported on the current head is not green; on GitHub every check the
 #     base branch requires has also reported on the head, read with
-#     bin/fm-pr-merge.sh's required-check reading (bin/fm-pr-lib.sh), because
+#     bin/fm-pr-merge.sh's required-check reading (bin/fm-pr-lib.sh), the
+#     base branch's .github/required-checks.list included, because
 #     the rollup holds only checks that reported; an unreadable requirement
 #     is unclean;
 #   - no changes requested (GitHub reviewDecision; GitLab requested_changes);
@@ -389,7 +390,8 @@ github_required_unreported() {  # <graphql-json>
   missing=$(fm_run_timed "$secs" bash -c '
     . "$1/fm-pr-lib.sh"
     PR_OWNER=$2 PR_REPO=$3
-    github_read_required_contexts "$4" && github_read_required_producers "$5" \
+    github_read_required_contexts "$4" && github_read_listed_contexts "$4" \
+      && github_read_required_producers "$5" \
       && github_required_checks_missing "$6" "$FM_PR_GITHUB_REQUIRED" "$FM_PR_GITHUB_PRODUCERS"' \
     _ "$SCRIPT_DIR" "$FM_PR_OWNER" "$FM_PR_REPO" "$base" "$head" "$rollup" 2>/dev/null) || return 1
   printf '%s' "$missing" | jq -Rsc 'split("\n") | map(select(length > 0))'
