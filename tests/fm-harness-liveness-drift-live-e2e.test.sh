@@ -128,6 +128,7 @@ for harness in claude codex opencode pi pi-signed grok kimi cursor muse; do
   launch_args=""
   [ "$harness" = cursor ] && launch_args="--trust"
   # shellcheck disable=SC2086  # deliberate: an empty value must add no argument
+  # shellcheck disable=SC2248 # launch_args is empty or one flag; it must word-split away when empty
   "$REAL_TMUX" -L "$SOCKET" new-window -d -t "$SESSION:" -n "$harness" -c "$LAB/wt" -- "$bin_path" $launch_args \
     || fail "$harness ($version): could not launch a window for the liveness probe"
 
