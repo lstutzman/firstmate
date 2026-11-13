@@ -39,6 +39,7 @@ The remote secondmate lifecycle suite is two serial members so neither fills a C
 The single file ran 1679557 ms in the cancelled 2026-11-07 CI shard (run [42419007195](https://github.com/lstutzman/firstmate/actions/runs/42419007195)).
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` capability-skips on the portable Ubuntu shards, so its hint is that skip's duration; its native-Windows cost is measured through the focused Git Bash runner instead.
 `test_portable_serial_packing_budget_boundary` pins every other fixture script to 1 ms, so packing exactly at the budget is accepted and one millisecond above it is refused even when real serial members have no hint.
+`tests/fm-park.test.sh` is a portable parallel member in lane 1, and `tests/fm-arm-pretool-check.test.sh` runs in parallel lane 2.
 The coverage-guard test owns modeled real-hint headroom under that budget.
 Do not discount a local speedup from CI packing weights; refresh from CI artifacts instead.
 `tests/fm-backend-t3code.test.sh` and `tests/fm-t3-mcp.test.sh` run in the portable parallel lanes, so their hints sit in `portable_parallel_weight_hints` and follow the 2026-11-07 parallel refresh above: every case id the backend suite spawns carries a per-run suffix and its cleanup removes only the `/tmp/fm-<id>` directories that run created, and both suites passed running concurrently with each other and beside another parallel suite (see [`fm-test-isolation-proof.md`](fm-test-isolation-proof.md)).
