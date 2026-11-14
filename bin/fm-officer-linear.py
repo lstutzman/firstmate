@@ -1461,8 +1461,7 @@ LINE_VERSION = 2  # a stored pattern line built by whole_sentence(); older store
 def whole_sentence(value, limit=PATTERN_SENTENCE):
     """The text as one complete sentence ending in a full stop: never cut mid-word.
 
-    Text over the limit is cut at its last sentence end, else its last clause break, before the limit; text with
-    neither is kept whole rather than cut.
+    Text over the limit is cut at its last sentence end, else its last clause break, else its last space, before the limit.
     """
     s = " ".join(str(value or "").split())
     if len(s) > limit:
@@ -1472,6 +1471,8 @@ def whole_sentence(value, limit=PATTERN_SENTENCE):
             s = s[:ends[-1]]
         elif clauses:
             s = s[:clauses[-1]]
+        elif " " in s[:limit + 1]:
+            s = s[:s.rindex(" ", 0, limit + 1)]
     s = s.rstrip(" ;:,-\u2013\u2014.!?")
     return s + "." if s else ""
 
@@ -1481,9 +1482,14 @@ def pattern_safe(f):
     return whole_sentence(f.get("full_fix") or f.get("fix"))
 
 
+def pattern_anti(f):
+    """The finding's full title as one whole sentence: the anti-pattern a pattern line and its lint proposal name."""
+    return whole_sentence(f.get("full_title") or f["title"])
+
+
 def pattern_line(f):
     """Anti-pattern sentence, plus the safe form only when the source states one; never a placeholder."""
-    line = "Anti-pattern: %s" % whole_sentence(f.get("full_title") or f["title"])
+    line = "Anti-pattern: %s" % pattern_anti(f)
     safe = pattern_safe(f)
     return "%s Safe form: %s" % (line, safe) if safe else line
 
@@ -1522,11 +1528,13 @@ def update_patterns(officer, store, findings, jev, date):
             entry["count"] += 1
             entry["last"] = date
             # A line stored before whole-sentence lines, or without a safe form, is rebuilt from this finding.
+            if entry.get("line_v") != LINE_VERSION:
+                entry["reported"] = entry["captured"] = None
             if entry.get("line_v") != LINE_VERSION or (safe and not entry.get("safe")):
                 entry["line"], entry["line_v"] = line, LINE_VERSION
-                entry["safe"] = safe
+                entry["safe"], entry["anti"] = safe, pattern_anti(f)
         else:
-            entry = {"title": f["title"], "line": line, "line_v": LINE_VERSION, "safe": safe, "count": 1, "first": date, "last": date, "project": owning_project(officer, f["project"]),
+            entry = {"title": f["title"], "anti": pattern_anti(f), "line": line, "line_v": LINE_VERSION, "safe": safe, "count": 1, "first": date, "last": date, "project": owning_project(officer, f["project"]),
                      "source": f["source"], "reported": None, "captured": None, "mechanical": bool(MECHANICAL.search(f["title"]))}
             patterns[pid] = entry
             new.append(pid)
@@ -1573,7 +1581,7 @@ def pattern_outputs(officer, store, rubric, date, main_home, start_homes):
     captures = [{"id": pid, "content": p["line"], "tags": ["pattern", "project:" + p["project"]], "count": p["count"]} for pid, p in capture]
     for _, p in capture:
         p["captured"] = date
-    lint = [{"id": pid, "line": p["line"], "proposal": "Add an analyzer or lint rule that flags: %s" % p["title"]}
+    lint = [{"id": pid, "line": p["line"], "proposal": "Add an analyzer or lint rule that flags this anti-pattern: %s" % p["anti"]}
             for pid, p in capture if p["mechanical"]]
     return requests, captures, lint
 

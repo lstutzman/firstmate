@@ -336,6 +336,7 @@ elif scenario == "pattern-rules":
     rub = lib.load_rubric(rubric_file, officer)
     jev = lib.Jev(os.path.join(W, "jev.py"))
     long_title = "Retry button stays disabled after any \"Try again\" that does not throw an error, " + "and the page keeps showing a stale spinner " * 12
+    bare_title = "alpha beta gamma delta " * 40
     store = {}
     def run(fs, d):
         lib.update_patterns(officer, store, fs, jev, d)
@@ -345,17 +346,20 @@ elif scenario == "pattern-rules":
     # day 1: a one-off with a fix, a recurring pair with no fix at all, and a long title
     out["d1"] = run([find("a1", "SQL built from user input", fix="use parameterised queries"),
                      find("b1", "Dialog loses focus on close"), find("b2", "Dialog loses focus on close"),
-                     find("c1", long_title, fix="Catch the error and re-enable the button")], "2026-11-01")
+                     find("c1", long_title, fix="Catch the error and re-enable the button"),
+                     find("e1", bare_title, fix="Name each step")], "2026-11-01")
     # day 2: the one-off recurs; the fix-less pair stays unsent; the long title recurs
     out["d2"] = run([find("a2", "SQL built from user input", fix="use parameterised queries"),
-                     find("c2", long_title, fix="Catch the error and re-enable the button")], "2026-11-02")
-    # a stored legacy line (clipped, placeholder, reported before) keeps its mark and is rebuilt only by the next match
+                     find("c2", long_title, fix="Catch the error and re-enable the button"),
+                     find("e2", bare_title, fix="Name each step")], "2026-11-02")
+    # a stored legacy line (clipped, placeholder, reported before) stays unsent until the next match rebuilds it
     pid = next(k for k, v in store["patterns"].items() if v["title"].startswith("Dialog loses"))
     store["patterns"][pid].update({"line": "Anti-pattern: Dialog loses fo. Safe form: not stated by the source; see the linked item",
                                    "reported": "2026-10-01", "captured": "2026-10-01", "count": 5})
     del store["patterns"][pid]["line_v"]
     out["legacy_unsent"] = run([], "2026-11-03")
     out["legacy_rebuilt"] = run([find("b3", "Dialog loses focus on close", fix="Restore focus to the trigger")], "2026-11-04")
+    out["legacy_again"] = run([], "2026-11-05")
     out["legacy_entry"] = {k: store["patterns"][pid][k] for k in ("line", "reported", "captured")}
     res = out
 elif scenario == "bundle-hold":
@@ -660,8 +664,12 @@ test_pattern_lines_are_whole_recurring_and_have_a_safe_form() {
   assert_equals 'true' "$(jq '[.d2[0][], .d2[1][]] | all(test("[.]$"))' <<<"$out")" "every handed-on line ends on a full stop"
   assert_equals 'true' "$(jq '.d2[0] | map(select(startswith("Anti-pattern: Retry button"))) | length == 1 and (.[0] | test("Safe form: Catch the error and re-enable the button[.]$")) and (.[0] | test("[.] Safe form"))' <<<"$out")" "a long title is cut at a sentence or clause boundary, never mid-word"
   assert_equals '[]' "$(jq -c '.legacy_unsent[0]' <<<"$out")" "a stored clipped placeholder line is not re-sent"
-  assert_equals '[]' "$(jq -c '.legacy_rebuilt[0]' <<<"$out")" "a rebuilt line that was already reported keeps its reported mark and is not re-sent"
-  assert_equals '["Anti-pattern: Dialog loses focus on close. Safe form: Restore focus to the trigger.","2026-10-01","2026-10-01"]' "$(jq -c '[.legacy_entry.line, .legacy_entry.reported, .legacy_entry.captured]' <<<"$out")" "the legacy line is rebuilt from the next matching finding"
+  assert_equals 'true' "$(jq '.d2[0] | map(select(startswith("Anti-pattern: alpha"))) | length == 1 and (.[0] | ltrimstr("Anti-pattern: ") | split(". Safe form:")[0] | (length <= 300) and (split(" ") | all(IN("alpha","beta","gamma","delta"))))' <<<"$out")" "a long title with no sentence or clause boundary is cut at a space, never mid-word"
+  local rebuilt='Anti-pattern: Dialog loses focus on close. Safe form: Restore focus to the trigger.'
+  assert_equals "[\"$rebuilt\"]" "$(jq -c '.legacy_rebuilt[0]' <<<"$out")" "a rebuilt legacy line is handed on once"
+  assert_equals "[\"$rebuilt\"]" "$(jq -c '.legacy_rebuilt[1]' <<<"$out")" "and captured once"
+  assert_equals '[[],[]]' "$(jq -c '.legacy_again' <<<"$out")" "and not again on the next run"
+  assert_equals "[\"$rebuilt\",\"2026-11-04\",\"2026-11-04\"]" "$(jq -c '[.legacy_entry.line, .legacy_entry.reported, .legacy_entry.captured]' <<<"$out")" "the legacy line is rebuilt from the next matching finding"
   pass "fm-officer-linear: pattern lines are whole sentences with a safe form, handed on only once recurring"
 }
 
