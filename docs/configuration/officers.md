@@ -115,7 +115,7 @@ The `officer-roles` skill states the rule the session follows.
 
 The optional local, gitignored `config/officer-session-quota-ceiling` file holds one integer from 1 to 100: the highest share of its weekly use an account may have when a named officer session is placed on it.
 An officer session must not be placed on an account whose weekly use is above that value, and a session already running above it is not started again on that account.
-With the file absent no ceiling applies and nothing changes, and a malformed value is reported as invalid rather than guessed.
+With the file absent no ceiling applies and nothing changes, and the phase-3 reader of this file must reject a non-integer or out-of-range value as invalid rather than guess one.
 Account use is read from the same quota view dispatch already uses (`quota-axi`), and a report of any account above the ceiling is the home's to arrange.
 The file is a per-home choice and is not inherited by secondmate homes; no fleet-wide number is set here.
 
