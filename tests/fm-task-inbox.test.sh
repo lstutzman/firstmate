@@ -39,6 +39,7 @@ TMP_ROOT=$(fm_test_tmproot fm-task-inbox)
 # The doorbell line canonicalizes its paths, so keep the fixture root
 # canonical too (a trailing-slash TMPDIR otherwise yields a double slash).
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
+export FM_TASK_INBOX_RING_LOCK_DIR="$TMP_ROOT/ring-locks"
 
 # Run one library function against a state dir through a subshell that sources
 # the production library, so the tests exercise the executable surface rather
@@ -396,7 +397,7 @@ ring_overlap_probe() {  # <function> <record> <mark-dir> <out-file>
 }
 
 test_concurrent_rings_into_one_pane_are_serialized() {
-  local dir state rec mark i out
+  local dir state rec rec_b mark i out
   dir="$TMP_ROOT/ring-concurrent"; state="$dir/state"; mkdir -p "$state"
   rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
   mark="$dir/unlocked"; mkdir -p "$mark"
@@ -410,6 +411,15 @@ test_concurrent_rings_into_one_pane_are_serialized() {
   out=$(sort -u "$dir/locked.out")
   [ "$out" = '0|' ] || fail "every serialized ring should land, got: $out"
   [ "$(wc -l < "$dir/locked.out")" -eq 3 ] || fail "all three rings should report"
+  # Rings whose records live in different homes' inboxes still share the pane.
+  mkdir -p "$dir/state-b"
+  rec_b=$(inbox_lib "$dir/state-b" fm_task_inbox_write "$dir/state-b" t1 "please continue")
+  mark="$dir/cross"; mkdir -p "$mark"
+  ring_overlap_probe fm_task_inbox_ring "$rec" "$mark" "$dir/cross.out" &
+  ring_overlap_probe fm_task_inbox_ring "$rec_b" "$mark" "$dir/cross.out" &
+  wait
+  [ ! -e "$mark/overlap" ] || fail "rings from two different inboxes typed into one pane at the same time"
+  [ "$(sort -u "$dir/cross.out")" = '0|' ] || fail "both cross-inbox rings should land: $(cat "$dir/cross.out")"
   pass "inbox: concurrent rings into one pane are serialized and all land"
 }
 
@@ -605,12 +615,13 @@ test_ring_submits_its_own_stuck_doorbell() {
   pass "inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths"
 }
 
-# An idle Claude with a quota plugin band drawn above an EMPTY composer is idle
-# for delivery: neither the ring's pre-checks nor the rendered busy footer read
-# the band as activity. The screen is the real capture from a Claude Code pane
-# in an isolated Herdr lab (2026-11-14, Claude Code 2.1.325, herdr 0.9.5, quota band), idle,
-# composer empty. Measured in that lab over 45 samples the native status, the
-# rendered busy check and the composer all read idle with the band drawn.
+# Regression pin, not a fix: an idle Claude with a quota plugin band drawn above
+# an EMPTY composer is rung, and the Claude rendered busy-footer check does not
+# match the band. The screen is a real capture from a Claude Code pane in an
+# isolated Herdr lab (2026-11-14, Claude Code 2.1.325, herdr 0.9.5), idle with
+# the composer empty; over 45 samples there the native status, the rendered
+# busy check and the composer all read idle. This passed before the ring
+# change too: a band read as activity was not reproduced in the lab.
 test_idle_agent_with_a_plugin_band_over_an_empty_composer_is_rung() {
   local dir state rec doorbell log composer band rc screen
   screen=$(cat <<'EOS'
@@ -645,7 +656,7 @@ EOS
   [ "$rc" = 0 ] || fail "an idle agent with a band over an empty composer should be rung, got rc $rc"
   [ "$(cat "$log")" = "SUBMIT: $doorbell" ] \
     || fail "the doorbell should be typed and submitted once:"$'\n'"$(cat "$log")"
-  pass "inbox: an idle agent with a plugin band over an empty composer is rung, and the busy footer check does not read the band as activity"
+  pass "inbox: an idle agent with a plugin band over an empty composer is rung and the busy footer check does not match the band"
 }
 
 # The ring's re-submit of its own pending doorbell goes through

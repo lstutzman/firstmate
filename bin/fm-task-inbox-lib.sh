@@ -130,6 +130,7 @@
 # Tunables (env):
 #   FM_TASK_INBOX_GRACE_SECS   default 90; delivery-attempt grace and spacing
 #   FM_TASK_INBOX_RING_LOCK_WAIT_SECS default 8; how long a ring waits for a concurrent ring into the same pane
+#   FM_TASK_INBOX_RING_LOCK_DIR default /tmp/fm-ring-locks-<uid>; the host-wide directory of per-pane ring locks
 #   FM_TASK_INBOX_RING_MAX     default 3; delivery attempts before escalation
 #   FM_TASK_INBOX_BUSY_MAX     default 2; consecutive busy-deferred due polls before escalation
 #   FM_TASK_INBOX_DEDUP_WINDOW default 200; newest sequence numbers the idempotent write compares
@@ -514,9 +515,9 @@ fm_task_inbox_untake() {  # <record-path>
 
 # Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory
 # composer pre-check, then the backend's submit machinery with a minimal retry
-# budget, verdict discarded. Rings into one pane are serialized on the task's
-# inbox (.ring.lock, FM_TASK_INBOX_RING_LOCK_WAIT_SECS); a ring that cannot get
-# the lock defers.
+# budget, verdict discarded. Rings into one pane are serialized host-wide on a
+# lock keyed by backend and target (FM_TASK_INBOX_RING_LOCK_DIR,
+# FM_TASK_INBOX_RING_LOCK_WAIT_SECS); a ring that cannot get the lock defers.
 # Returns 0 rang, 1 DEFERRED to the watcher's re-ring with nothing typed or
 # submitted: the composer PROVENLY holds pending text other than our own
 # doorbell, or holds our doorbell while a Claude plugin band kept the keyboard,
@@ -550,18 +551,13 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   FM_TASK_INBOX_RING_STEP=
   FM_TASK_INBOX_RING_REASON=
   case "$wait" in ''|*[!0-9]*) wait=$FM_TASK_INBOX_RING_LOCK_WAIT_DEFAULT ;; esac
-  dir=${3%/*}
-  [ "${dir##*/}" != handled ] || dir=${dir%/*}
-  lock=$dir/.ring.lock
-  # Rings into one pane are serialized on the task's inbox. Two ringers typing
-  # into the same composer at once (the remote steer leg and the worker's own
-  # watcher, or two steers back to back) interleave their keystrokes: each then
-  # sees the other's text in the composer, fails its pre-send or payload check
-  # and clears the line, so neither doorbell lands. A ringer that cannot get
-  # the lock within the bound defers to the watcher's re-ring. An inbox that
-  # does not exist has no concurrent ringer to serialize against, so it rings
-  # unlocked as before.
-  if [ -d "$dir" ]; then
+  # Rings into one pane are serialized. Two ringers typing into the same
+  # composer at once (the remote steer leg and another watcher or home on the
+  # same host, or two steers back to back) interleave their keystrokes: each
+  # then sees the other's text in the composer, fails its pre-send or payload
+  # check and clears the line, so neither doorbell lands. A ringer that cannot
+  # get the lock within the bound defers to the watcher's re-ring.
+  if lock=$(_fm_task_inbox_ring_lock_path "$1" "$2" "$3"); then
     if ! FM_TASK_INBOX_LOCK_WAIT_SECS=$wait fm_task_inbox_lock_acquire "$lock"; then
       _fm_task_inbox_ring_note ring-in-progress 'another ring into this pane holds the ring lock; the watcher re-rings'
       return 1
@@ -570,7 +566,30 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
     fm_lock_release "$lock" || true
     return "$rc"
   fi
+  # No lock location is usable (no lock directory and no inbox), so there is
+  # nothing to serialize against: ring unlocked as before.
   _fm_task_inbox_ring_locked "$@"
+}
+
+# The ring lock is keyed by the pane (backend and target), in one host-wide
+# directory, so every ringer on the host shares it whichever home or inbox its
+# record lives in. FM_TASK_INBOX_RING_LOCK_DIR overrides the directory; when it
+# cannot be used (not ours, a symlink) the record's own inbox directory holds
+# the lock instead, and a missing inbox means no lock.
+_fm_task_inbox_ring_lock_path() {  # <backend> <target> <record-path>
+  local base=${FM_TASK_INBOX_RING_LOCK_DIR:-/tmp/fm-ring-locks-$(id -u)} key dir=${3%/*}
+  key=$(printf '%s|%s' "$1" "$2" | cksum | awk '{print $1}')
+  case "$key" in ''|*[!0-9]*) key= ;; esac
+  if [ -n "$key" ]; then
+    mkdir -p "$base" 2>/dev/null && chmod 700 "$base" 2>/dev/null
+    if [ -d "$base" ] && [ ! -L "$base" ] && [ -O "$base" ]; then
+      printf '%s/%s.lock' "$base" "$key"
+      return 0
+    fi
+  fi
+  [ "${dir##*/}" != handled ] || dir=${dir%/*}
+  [ -d "$dir" ] || return 1
+  printf '%s/.ring.lock' "$dir"
 }
 
 _fm_task_inbox_ring_locked() {  # <backend> <target> <record-path> [expected-label]
