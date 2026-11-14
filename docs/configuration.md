@@ -2004,6 +2004,10 @@ A running worker picks a new grant up on `bin/fm-control.sh <task> relaunch`; no
 The decision file is firstmate's own statement for a `tighten` grant and the captain's quoted words, with where and when, for a `signoff` grant; an empty or missing decision refuses the grant.
 The fleet rules own who may grant which kind.
 
+A ship brief states the gate-file scope at dispatch: `bin/fm-brief.sh --gate-files <f1,f2>` names the protected files the task may edit and points at the grant script, and a brief without the flag says gate files are out of scope.
+Both forms tell the worker that a gate-integrity or protected-file refusal is not to be retried or worked around: it appends one `blocked [cause=policy]` line naming the file and the edit wanted, so firstmate can grant it or route it, and carries on with the rest of the task.
+The brief cannot say whether a grant is in place, because a grant is recorded after the task exists.
+
 `grant` refuses, and logs the refusal, when it is called by a task worker (`FM_TASK_INBOX` names an inbox in this home's state, so a secondmate home's own firstmate still grants, or the working directory is inside a task worktree a `state/*.meta` record names); this stops an accidental or casual self-grant, while a full-access worker that forges local records stays outside this safeguard, as elsewhere in firstmate.
 
 The grant ends when the task's PR is registered (`fm-pr-check.sh`) and at cleanup (`fm-teardown.sh`, before the task's branch and worktree are retired), and every grant, carry, refused carry and revoke is appended to `data/<task>/gate-grant.log`, which keeps the decision text and lists the commits that touched the granted files, and which outlives the task.

@@ -1458,6 +1458,41 @@ test_home_brief_include_is_appended_last() {
   pass "fm-brief.sh: the home brief include lands last on ship and scout, verbatim, and fails closed"
 }
 
+# The ship brief states gate-file scope at dispatch: named files when firstmate
+# passes --gate-files, out of scope otherwise, and the same refusal instruction in both.
+test_gate_file_scope_is_rendered_and_bounded() {
+  local home brief v
+  home="$TMP_ROOT/gate-scope-home"
+  mkdir -p "$home/data"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" gs-named some-proj --mode no-mistakes --gate-files "scripts/gate.sh,.githooks/pre-commit" >/dev/null 2>&1     || fail "--gate-files should scaffold"
+  brief="$home/data/gs-named/brief.md"
+  assert_grep '# Gate-file scope' "$brief" "named scope lost its section"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'in scope for this task: `scripts/gate.sh,.githooks/pre-commit`' "$brief" "named scope did not list the files"
+  assert_grep 'fm-gate-grant.sh' "$brief" "named scope did not point at the grant script"
+  assert_no_grep 'out of scope' "$brief" "named scope also claimed gate files are out of scope"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" gs-none some-proj --mode no-mistakes >/dev/null 2>&1 \
+    || fail "a ship brief without --gate-files should scaffold"
+  brief="$home/data/gs-none/brief.md"
+  assert_grep 'Protected gate files are out of scope for this task' "$brief" "absent scope did not say gate files are out of scope"
+  assert_no_grep 'are in scope for this task' "$brief" "absent scope named files"
+  for brief in "$home/data/gs-named/brief.md" "$home/data/gs-none/brief.md"; do
+    assert_grep 'do not retry it and do not work around it' "$brief" "refusal instruction missing in $brief"
+    assert_grep 'blocked [at=<epoch>] [cause=policy]: {file} - {the edit wanted}' "$brief" "blocked line shape missing in $brief"
+    assert_grep 'carry on with the rest of the task' "$brief" "carry-on instruction missing in $brief"
+  done
+  for v in "" ",a" "a," "a,,b" "../x" "a/../x" "/abs" "a b" "a*" "a'b" "..,a" "a,..,b" "./x" "a/"; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" gs-bad some-proj --mode no-mistakes --gate-files="$v" >"$TMP_ROOT/gs-bad.err" 2>&1 \
+      && fail "--gate-files '$v' was accepted"
+    assert_grep 'plain repo-relative paths' "$TMP_ROOT/gs-bad.err" "--gate-files '$v' refusal did not explain the form"
+    [ ! -e "$home/data/gs-bad/brief.md" ] || fail "a brief was written despite --gate-files '$v'"
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" gs-scout some-proj --scout --gate-files a >/dev/null 2>&1 \
+    && fail "a scout brief accepted --gate-files"
+  [ ! -e "$home/data/gs-scout/brief.md" ] || fail "a scout brief was written despite --gate-files"
+  pass "fm-brief.sh: gate-file scope is named or absent, carries the refusal rule, and refuses bad input"
+}
+
 # --work-class records one of the four ownership-eligible classes as the exact
 # `Work class:` line fm-spawn reads; any other value or kind is refused at scaffold.
 test_work_class_is_rendered_and_bounded() {
@@ -1859,6 +1894,7 @@ test_home_brief_include_is_appended_last
 test_home_brief_include_project_blocks
 test_base_branch_is_rendered_and_bounded
 test_work_class_is_rendered_and_bounded
+test_gate_file_scope_is_rendered_and_bounded
 test_ship_branch_prefix_defaults_to_legacy_fm
 test_ship_branch_prefix_override_is_consistent_across_modes
 test_ship_branch_prefix_empty_override_yields_bare_task_id
