@@ -14,7 +14,7 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--work-class <refactor|clean-up|tech-debt|improve>] [--linear <PC-n>] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--work-class <refactor|clean-up|tech-debt|improve>] [--gate-files <f1,f2,...>] [--linear <PC-n>] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--linear <PC-n> | --no-linear "<reason>"] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #        fm-brief.sh <task-id> --secondmate --office <task-id> {<project>...|--no-projects}
@@ -87,6 +87,18 @@
 # bin/fm-spawn.sh adds that line to the launch brief only when its `--model`
 # also names a Fable 5.x model; bin/fm-dod-lib.sh's fm_brief_ownership_section
 # owns the rule and the text. Refused on --scout and --secondmate.
+# --gate-files <f1,f2,...> names the protected gate files a ship task is in
+# scope to edit, as comma-separated repo-relative paths (the form
+# bin/fm-gate-grant.sh --files takes: no `..`, glob, space or quote). It renders
+# a `# Gate-file scope` section that names them and says firstmate grants the
+# edit through bin/fm-gate-grant.sh, which the launch carries into the worker's
+# environment; the grant itself is recorded after the task exists, so the brief
+# cannot state it. Without the flag the section says gate files are out of
+# scope. Both forms tell the worker what to do on a gate-integrity or
+# protected-file refusal: do not retry or work around it, append one
+# `blocked [cause=policy]` line naming the file and the edit wanted, and carry
+# on. What a grant allows is owned by bin/fm-gate-grant.sh and the fleet rules.
+# Refused on --scout and --secondmate.
 # --forge names the project's forge, defaults to none, and is orthogonal to --mode
 # exactly as the registry's `forge=` token is. It is the captain's confirmed
 # registry binding, read from data/projects.md at intake and passed here; this
@@ -396,6 +408,8 @@ NO_LINEAR=
 NO_LINEAR_SET=0
 WORK_CLASS=
 WORK_CLASS_SET=0
+GATE_FILES=
+GATE_FILES_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -416,6 +430,7 @@ for a in "$@"; do
       linear) LINEAR_ITEM=$a ;;
       no-linear) NO_LINEAR=$a; NO_LINEAR_SET=1 ;;
       work-class) WORK_CLASS=$a; WORK_CLASS_SET=1 ;;
+      gate-files) GATE_FILES=$a; GATE_FILES_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -450,6 +465,8 @@ for a in "$@"; do
     --no-linear=*) NO_LINEAR=${a#--no-linear=}; NO_LINEAR_SET=1 ;;
     --work-class) want_value="work-class" ;;
     --work-class=*) WORK_CLASS=${a#--work-class=}; WORK_CLASS_SET=1 ;;
+    --gate-files) want_value="gate-files" ;;
+    --gate-files=*) GATE_FILES=${a#--gate-files=}; GATE_FILES_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -529,6 +546,22 @@ if [ "$WORK_CLASS_SET" -eq 1 ]; then
     refactor|clean-up|tech-debt|improve) ;;
     *) echo "error: --work-class must be one of refactor, clean-up, tech-debt, improve (got '$WORK_CLASS')" >&2; exit 1 ;;
   esac
+fi
+if [ "$GATE_FILES_SET" -eq 1 ]; then
+  [ "$KIND" = ship ] || {
+    echo "error: --gate-files applies only to ship briefs" >&2
+    exit 1
+  }
+  # Same shape bin/fm-gate-grant.sh accepts: plain repo-relative paths, comma separated.
+  gate_ok=1
+  [ -n "$GATE_FILES" ] || gate_ok=0
+  case "$GATE_FILES" in
+    ,*|*,|*,,*|*[!A-Za-z0-9._/,+@-]*|/*|*,/*|../*|*/../*|*/..|..|*,..|*,../*) gate_ok=0 ;;
+  esac
+  [ "$gate_ok" -eq 1 ] || {
+    echo "error: --gate-files takes comma-separated plain repo-relative paths with no '..', glob, space or quote (got '$GATE_FILES')" >&2
+    exit 1
+  }
 fi
 if [ "$BASE_BRANCH_SET" -eq 1 ]; then
   if [ "$KIND" = secondmate ] || [ -z "$BASE_BRANCH" ]; then
@@ -1124,6 +1157,16 @@ case "$MODE" in
 esac
 RULE1=$(fm_ship_rule_one "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH") || exit 1
 UI_HILL_CLIMB_RULE=$(fm_ui_hill_climb_rule 10)
+if [ -n "$GATE_FILES" ]; then
+  GATE_SCOPE_LINE="Protected gate files are in scope for this task: \`$GATE_FILES\`.
+Firstmate grants the edit through \`$FM_ROOT/bin/fm-gate-grant.sh\`, and the grant reaches you as ALLOW_GATE_EDIT_FILES in your launch environment; it covers only those files."
+else
+  GATE_SCOPE_LINE="Protected gate files are out of scope for this task; edit none of them."
+fi
+GATE_SCOPE_SECTION="# Gate-file scope
+$GATE_SCOPE_LINE
+If a gate-integrity guard or protected-file check refuses an edit, do not retry it and do not work around it.
+Append one \`blocked [at=<epoch>] [cause=policy]: {file} - {the edit wanted}\` line to the status file so firstmate can grant it through \`fm-gate-grant.sh\` or route it, and carry on with the rest of the task."
 DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT") || exit 1
 
 cat > "$BRIEF" <<EOF
@@ -1174,6 +1217,8 @@ $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 9. When your PR fixes a regression that an earlier merged PR introduced, its body carries one line, \`Fixes-regression-from: <full PR URL>\`, naming that earlier PR.
 $UI_HILL_CLIMB_RULE
+
+$GATE_SCOPE_SECTION
 
 $WAIT_BLOCK$INBOX_SECTION
 
