@@ -2,7 +2,8 @@
 # Behavior tests for bin/fm-nm-stall-check.sh, over a fake `no-mistakes` whose run
 # state is stubbed per task copy. Covers the pending-with-no-steps condition (and
 # its run-slot exemption), the gate condition and its owner routing, the once-only
-# rule, the clear when a run moves, and unreadable reads.
+# rule, the clear when a run moves, unreadable reads, and the watcher sweep that
+# turns the line into one `check: nm-stall:` wake.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -266,6 +267,50 @@ SH
   pass "the sweep only reads"
 }
 
+ack_wakes() {  # <root>: drain and acknowledge the queue as firstmate does
+  local root=$1 seq gen
+  FM_STATE_OVERRIDE="$root/state" "$ROOT/bin/fm-wake-drain.sh" >/dev/null 2>"$root/drain.err" || return 1
+  seq=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation .*$/\1/p' "$root/drain.err")
+  gen=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--recovery-generation \([A-Za-z0-9._-][A-Za-z0-9._-]*\)$/\1/p' "$root/drain.err")
+  [ -n "$seq" ] && [ -n "$gen" ] || return 1
+  FM_STATE_OVERRIDE="$root/state" "$ROOT/bin/fm-wake-drain.sh" --ack-through "$seq" --recovery-generation "$gen" >/dev/null
+}
+
+watch_once() {  # <root> <now> <alarm secs>
+  local root=$1
+  mkdir -p "$root/config"
+  FAKE_DIR="$root/fake" PATH="$root/bin:$PATH" NM_HOME="$root/nmhome" FM_HOME="$root" \
+    FM_STATE_OVERRIDE="$root/state" FM_CONFIG_OVERRIDE="$root/config" FM_NM_STALL_NOW="$2" \
+    FM_CHECK_INTERVAL=0 FM_POLL=0.02 FM_HEARTBEAT=999999 FM_SIGNAL_GRACE=0 \
+    perl -e 'alarm shift; exec @ARGV' "$3" "$ROOT/bin/fm-watch.sh" 2>"$root/watch.err"
+}
+
+test_watcher_sweep_wakes_once_on_a_stalled_run() {
+  local root out
+  root=$(make_world watch 4)
+  for cli in herdr gh treehouse; do printf '#!/usr/bin/env bash\nexit 1\n' > "$root/bin/$cli"; chmod +x "$root/bin/$cli"; done
+  add_task "$root" t1
+  set_status "$root" t1 "$(gate_toon t1 RUN1 review ask-user 1m)"
+  sweep "$root" 1000 >/dev/null
+  out=$(watch_once "$root" 2900 60) || fail "watch: the watcher failed: $(cat "$root/watch.err")"
+  [ "$(printf '%s\n' "$out" | grep -c 'check: nm-stall: ')" = 1 ] \
+    || fail "watch: the stalled run did not wake the home exactly once: $out"
+  assert_contains "$out" "check: nm-stall: t1 run RUN1 parked at review" "the wake carries the stall line"
+  [ "$(grep -c 'check: nm-stall: ' "$root/state/.wake-queue" 2>/dev/null)" = 1 ] \
+    || fail "watch: the stall was not queued as exactly one wake: $(cat "$root/state/.wake-queue" 2>/dev/null)"
+  # Firstmate read the queue. A second task stalls, so the next sweep has a wake
+  # of its own; the first task's stall must not ride along with it.
+  ack_wakes "$root" || fail "watch: the first wake could not be acknowledged: $(cat "$root/drain.err")"
+  add_task "$root" t2
+  set_status "$root" t2 "$(gate_toon t2 RUN2 review auto-fix 1m)"
+  sweep "$root" 2900 >/dev/null
+  out=$(watch_once "$root" 9000 60) || fail "watch: the second watcher failed: $(cat "$root/watch.err")"
+  assert_contains "$out" "check: nm-stall: t2 run RUN2 parked at review" "the second sweep wakes on the new stall"
+  case "$out" in *"RUN1"*) fail "watch: the second sweep woke again on the first stall: $out" ;; esac
+  ! grep -q 'RUN1' "$root/state/.wake-queue" 2>/dev/null || fail "watch: the second sweep queued the first stall again"
+  pass "the watcher's check sweep wakes once on a stalled run"
+}
+
 fm_test_run \
   test_pending_with_no_steps_wakes_once_after_five_minutes \
   test_pending_run_that_started_a_step_clears_and_a_new_stall_wakes_again \
@@ -278,4 +323,5 @@ fm_test_run \
   test_unreadable_read_keeps_the_clock_and_never_wakes \
   test_other_tasks_and_other_branches_are_ignored \
   test_two_tasks_wake_in_one_line_and_a_torn_down_task_drops_its_row \
-  test_sweep_never_drives_a_run
+  test_sweep_never_drives_a_run \
+  test_watcher_sweep_wakes_once_on_a_stalled_run
