@@ -62,7 +62,7 @@ This is the one close any officer makes (Lee, main chat, 2026-11-12), and [the c
 - The request goes to the Quartermaster, who owns the fleet repositories; fleet-app merges stay with Slarti through the existing merge handoff.
 - A request is repeated on every run of the same day until the day ends, and a later day never asks twice.
 - A page-old or shown-after-done finding is a bug in fleet code, so once its item exists its bad pattern is remembered once: the kind and the page or Runs job as the anti-pattern and the route as the safe form, with no timestamps and never a card's id or words.
-  A new pattern goes to the Quartermaster in one batched pattern-memory start request and in the digest's `patterns` for memory capture; a repeat of the same finding adds no second line, and the same defect on another card or page sighting raises the pattern's count.
+  A pattern goes to the Quartermaster in one batched pattern-memory start request and in the digest's `patterns` for memory capture once the same defect has been seen on at least two findings (another card or page sighting raises the count); a repeat of the same finding adds no second line.
   `standing-rule` and `stale-card` findings are not bug patterns and are never remembered.
 
 ## What only files, and holds for Lee

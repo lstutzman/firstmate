@@ -104,9 +104,9 @@ Automated findings are filed in far fewer, larger items, so one worker fixes a b
 
 For a bug or code-review finding, the specific bad pattern is remembered so it is not repeated.
 
-- One line per pattern: the anti-pattern and the safe form.
+- One line per pattern: the anti-pattern and, where the source states one, the safe form, in whole sentences.
 - Patterns are deduped like findings (normalised title, then local-jev above 0.85), and a repeat raises the pattern's count.
-- A new pattern leaves in three ways: a batched start request, the digest for capture to the memory tier tagged `pattern` and the project, and, for a mechanical pattern, a proposed analyzer or lint rule.
+- A pattern is handed on only once it has a stated safe form and has been seen on at least two findings. It leaves in three ways: a batched start request, the digest for capture to the memory tier tagged `pattern` and the project, and, for a mechanical pattern, a proposed analyzer or lint rule.
   A PropertyCompass2 pattern's request goes to the Navigator to append the lines to PropertyCompass2's `.agents/skills/sdlc-review/references/quality-patterns.md` through a normal PR.
   A pattern from fleet code never goes to that file: its request goes to the Quartermaster, to add the lines to the review guidance of the repository it came from, or a check, through a normal PR; it is tagged with the named repository, or `Fleet` when none is named.
   The officer never writes either repository itself.

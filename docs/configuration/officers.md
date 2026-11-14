@@ -125,7 +125,7 @@ The digest adds a weekly burn-down line (open, new and fixed reviewer findings),
 Pattern memory keeps every bad pattern in `patterns.json` but hands one on (the Navigator start request, the memory capture and the lint proposal) only once it has a stated safe form and has been seen on at least two findings.
 A pattern line is whole sentences, built from the finding's full title and fix and cut at a sentence or clause boundary, never at a character count, and it never carries a placeholder for a missing fix.
 A one-off pattern, or one whose findings never state a fix, stays in the store and counts up; it is handed on the run it first recurs with a fix.
-A stored pattern keeps its reported or captured mark, and a line stored by an older version (clipped or placeholder) is rebuilt from the next matching finding, never re-sent as it was.
+A line stored by an older version (clipped or placeholder) is rebuilt from the next matching finding and its reported and captured marks are cleared, so it is handed on once it qualifies, never re-sent as it was.
 Real critical and high findings, and medium findings found at least 3 times, that the rubric admits are written as `start_requests` in the dated JSON, the same shape the progress officer uses, so `start-home:` offices deliver their own and this home's go in the adjacent `<date>.start-requests.sh`.
 
 ### Corpus officer
