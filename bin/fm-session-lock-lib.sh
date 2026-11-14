@@ -748,7 +748,7 @@ fm_boot_id() {
   if [ -r /proc/sys/kernel/random/boot_id ]; then
     id=$(head -n 1 /proc/sys/kernel/random/boot_id 2>/dev/null) || id=
   else
-    id=$(sysctl -n kern.boottime 2>/dev/null | head -n 1) || id=
+    id=$(sysctl -n kern.bootsessionuuid 2>/dev/null | head -n 1) || id=
   fi
   [ -n "$id" ] || return 1
   printf '%s\n' "$id"

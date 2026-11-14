@@ -21,6 +21,20 @@ FAKEBIN=$(fm_fakebin "$TMP_ROOT/fakebin")
 ln -s /bin/bash "$FAKEBIN/claude"
 FAKE_CLAUDE="$FAKEBIN/claude"
 
+# A ps that gives no answer about FM_TEST_UNREADABLE_PID and defers to the real
+# ps for every other pid, so that one live pid gets the unreadable verdict.
+REAL_PS=$(command -v ps) || { echo "FAIL: no ps on PATH" >&2; exit 1; }
+PSBIN="$TMP_ROOT/psbin"
+mkdir -p "$PSBIN"
+cat > "$PSBIN/ps" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  [ "\$a" = "\${FM_TEST_UNREADABLE_PID:-}" ] && exit 2
+done
+exec "$REAL_PS" "\$@"
+SH
+chmod +x "$PSBIN/ps"
+
 HOLDER_PIDS=
 reap_holders() {
   local pid
@@ -80,11 +94,13 @@ start_holder() {  # <dir>
   tr -d '[:space:]' < "$dir/state/holder-pid"
 }
 
-# Run status then acquire as <session-id> (empty for none) under boot <boot>.
-run_session() {  # <dir> <session-id> <boot>
-  local dir=$1 sid=$2 boot=$3
+# Run status then acquire as <session-id> (empty for none) under boot <boot>,
+# with ps unable to read pid <unreadable-pid> when one is given.
+run_session() {  # <dir> <session-id> <boot> [unreadable-pid]
+  local dir=$1 sid=$2 boot=$3 unreadable=${4:-}
   local -a idenv=()
   [ -z "$sid" ] || idenv+=("CLAUDE_CODE_SESSION_ID=$sid")
+  [ -z "$unreadable" ] || idenv+=("PATH=$PSBIN:$PATH" "FM_TEST_UNREADABLE_PID=$unreadable")
   env -u CLAUDE_CODE_SESSION_ID -u CLAUDE_PID ${idenv[@]+"${idenv[@]}"} \
     FM_HOME="$dir" FM_BOOT_ID_OVERRIDE="$boot" \
     bash -c '"$0" "$1" &' "$FAKE_CLAUDE" "$dir/session.sh"
@@ -180,7 +196,43 @@ test_legacy_lock_without_a_boot_record_behaves_as_before() {
   pass "fm-lock: a lock with no boot record behaves exactly as before"
 }
 
+# The reported sequence: line 1 names a pid that a live process outside the
+# session's ancestry took over, and that process's identity cannot be read.
+# Within one boot (or with no boot record) acquisition must refuse such an
+# owner and status must say so rather than call it stale; once the record
+# names an earlier boot, the same session reclaims it.
+test_unreadable_reused_pid_is_refused_in_one_boot_and_reclaimed_after_reboot() {
+  local dir holder session
+  dir=$TMP_ROOT/unreadable-same-boot
+  make_taken_home "$dir" de6f5348 "$BOOT_NEW"
+  holder=$(lock_line1 "$dir")
+  run_session "$dir" de6f5348 "$BOOT_NEW" "$holder"
+  expect_code 1 "$(lock_rc "$dir")" "a live owner with an unreadable identity must be refused within one boot"
+  assert_contains "$(cat "$dir/state/lock.out")" "another live firstmate session holds the lock" "refusal message"
+  [ "$(lock_line1 "$dir")" = "$holder" ] || fail "a refused acquisition rewrote line 1"
+  assert_contains "$(cat "$dir/state/status.out")" "lock: held by live pid $holder (identity unreadable)" "status must agree with the refusal"
+
+  dir=$TMP_ROOT/unreadable-legacy
+  make_taken_home "$dir" de6f5348 ""
+  holder=$(lock_line1 "$dir")
+  run_session "$dir" de6f5348 "$BOOT_NEW" "$holder"
+  expect_code 1 "$(lock_rc "$dir")" "a legacy lock whose live owner is unreadable must still be refused"
+  assert_contains "$(cat "$dir/state/status.out")" "lock: held by live pid $holder (identity unreadable)" "legacy status must agree with the refusal"
+
+  dir=$TMP_ROOT/unreadable-after-reboot
+  make_taken_home "$dir" de6f5348 "$BOOT_OLD"
+  holder=$(lock_line1 "$dir")
+  run_session "$dir" de6f5348 "$BOOT_NEW" "$holder"
+  expect_code 0 "$(lock_rc "$dir")" "the restarted session must reclaim a pid from an earlier boot even when its identity is unreadable: $(cat "$dir/state/lock.out")"
+  session=$(tr -d '[:space:]' < "$dir/state/session-pid")
+  [ "$(lock_line1 "$dir")" = "$session" ] || fail "line 1 is $(lock_line1 "$dir"), expected the restarted session pid $session"
+  assert_contains "$(cat "$dir/state/status.out")" "lock: stale" "status must call a pid from an earlier boot stale"
+  kill -0 "$holder" 2>/dev/null || fail "the unrelated live process was disturbed"
+  pass "fm-lock: an unreadable reused pid is refused within one boot and reclaimed after a reboot"
+}
+
 test_same_session_reclaims_a_pid_reused_after_reboot
+test_unreadable_reused_pid_is_refused_in_one_boot_and_reclaimed_after_reboot
 test_status_reports_stale_for_a_pid_from_an_earlier_boot
 test_a_different_session_also_reclaims_after_reboot
 test_different_live_session_in_the_same_boot_is_refused

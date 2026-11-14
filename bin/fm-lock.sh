@@ -44,7 +44,7 @@
 # re-anchors.
 #
 # The boot identity is recorded in state/.lock-boot beside the lock (the boot id
-# on Linux, kern.boottime on macOS), written under the claim lock before line 1
+# on Linux, kern.bootsessionuuid on macOS), written under the claim lock before line 1
 # on every acquisition and confirmation. A recorded boot that differs from the
 # current one means the pid on line 1 was recorded before a reboot, so the
 # session that wrote it is gone and a process now holding that number is
