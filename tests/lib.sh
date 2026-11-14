@@ -474,6 +474,12 @@ export FM_JEV_RECEIPTS_DIR
 FM_SCRATCH_ROOT=$(fm_test_tmproot fm-scratch-root) || return 1
 export FM_SCRATCH_ROOT
 
+# Keep every suite's doorbell rings off the host-wide ring lock directory
+# (bin/fm-task-inbox-lib.sh), so parallel shards ringing the same fixture
+# target never block each other or a live ring on this machine.
+FM_TASK_INBOX_RING_LOCK_DIR=$(fm_test_tmproot fm-ring-locks) || return 1
+export FM_TASK_INBOX_RING_LOCK_DIR
+
 TREEHOUSE_ROOT=$(fm_test_tmproot fm-treehouse-pool)
 export TREEHOUSE_ROOT
 

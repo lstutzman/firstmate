@@ -39,7 +39,6 @@ TMP_ROOT=$(fm_test_tmproot fm-task-inbox)
 # The doorbell line canonicalizes its paths, so keep the fixture root
 # canonical too (a trailing-slash TMPDIR otherwise yields a double slash).
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd)
-export FM_TASK_INBOX_RING_LOCK_DIR="$TMP_ROOT/ring-locks"
 
 # Run one library function against a state dir through a subshell that sources
 # the production library, so the tests exercise the executable surface rather
@@ -386,7 +385,7 @@ ring_overlap_probe() {  # <function> <record> <mark-dir> <out-file>
     fm_backend_composer_state() { echo empty; }
     fm_backend_send_text_submit() {
       if ! mkdir "$RING_MARK/busy" 2>/dev/null; then : > "$RING_MARK/overlap"; fi
-      sleep 0.4
+      sleep 1.5
       rmdir "$RING_MARK/busy" 2>/dev/null
       printf empty
     }
@@ -613,50 +612,6 @@ test_ring_submits_its_own_stuck_doorbell() {
     || fail "the retry Enter should submit the doorbell once:"$'\n'"$(cat "$log")"
   [ ! -s "$composer" ] || fail "a lost Enter left the doorbell unsubmitted"
   pass "inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths"
-}
-
-# Regression pin, not a fix: an idle Claude with a quota plugin band drawn above
-# an EMPTY composer is rung, and the Claude rendered busy-footer check does not
-# match the band. The screen is a real capture from a Claude Code pane in an
-# isolated Herdr lab (2026-11-14, Claude Code 2.1.325, herdr 0.9.5), idle with
-# the composer empty; over 45 samples there the native status, the rendered
-# busy check and the composer all read idle. This passed before the ring
-# change too: a band read as activity was not reproduced in the lab.
-test_idle_agent_with_a_plugin_band_over_an_empty_composer_is_rung() {
-  local dir state rec doorbell log composer band rc screen
-  screen=$(cat <<'EOS'
-misterrobot  5h 0%  7d 100% (2d)                                                                                   [-]
-marleycrittendom  5h 0%  7d 28% (3d)
-lee  5h 0%  7d 51% (6d)
-lstutzman  5h 0%  7d 80% (3d)
-engineering  5h 0%  7d 99% (40h10m)
-[ Hide ]
-                                                                                                   ◐ medium · /effort
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-❯
-───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-  080ecd8e | -% | Opus 5.5
-  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents
-EOS
-)
-  bash -c '. "$1"; printf "%s\n" "$2" | fm_busy_lines_match claude' _ "$ROOT/bin/fm-composer-lib.sh" "$screen" \
-    && fail "the Claude rendered busy check read an idle band screen as busy"
-  dir="$TMP_ROOT/ring-idle-band"
-  state="$dir/state"
-  mkdir -p "$state"
-  make_composer_stub "$dir"
-  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
-  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
-  log="$dir/send.log"; composer="$dir/composer"; band="$dir/band"
-  : > "$log"; : > "$composer"; printf 'shown' > "$band"
-  rc=0
-  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
-    FM_FAKE_DROP_ENTERS="$dir/drops" FM_FAKE_BAND="$band" FM_BACKEND_BAND_FOCUS_POLLS=1 \
-    inbox_lib "$state" fm_task_inbox_ring tmux sess:fm-t1 "$rec" fm-t1 2>/dev/null || rc=$?
-  [ "$rc" = 0 ] || fail "an idle agent with a band over an empty composer should be rung, got rc $rc"
-  [ "$(cat "$log")" = "SUBMIT: $doorbell" ] \
-    || fail "the doorbell should be typed and submitted once:"$'\n'"$(cat "$log")"
-  pass "inbox: an idle agent with a plugin band over an empty composer is rung and the busy footer check does not match the band"
 }
 
 # The ring's re-submit of its own pending doorbell goes through
@@ -1877,7 +1832,6 @@ test_concurrent_rings_into_one_pane_are_serialized
 test_ring_defers_when_another_ring_holds_the_pane
 test_ring_submits_its_own_stuck_doorbell
 test_ring_releases_a_focused_plugin_band_before_its_enter
-test_idle_agent_with_a_plugin_band_over_an_empty_composer_is_rung
 test_submit_pending_escapes_once_for_an_invisible_band_focus
 test_idempotent_write_dedups_exact_body
 test_idempotent_write_prefilters_history

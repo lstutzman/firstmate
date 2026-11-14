@@ -1143,6 +1143,46 @@ test_projection_cleanup_exact_succeeds_only_when_the_task_pane_closed() {
   pass "herdr projection abort cleanup reports success only when the task pane closed"
 }
 
+# Regression pin, not a fix: an idle Claude with a quota plugin band drawn above
+# an EMPTY composer must never read busy on the path that decides Herdr busy
+# deferral. The fixture (tests/fixtures/herdr-idle-band) is an isolated Herdr
+# lab capture (2026-11-14, Herdr 0.9.5, Claude Code 2.1.325): the visible screen
+# with the band rows, "[ Hide ]", the empty composer and footer, and the
+# `agent get` reply, which read agent_status "idle" in 45 of 45 samples over
+# about 70 seconds. A band read as activity was not reproduced in the lab. The
+# watcher's busy deferral (window_is_busy / inbox_steer_busy in bin/fm-watch.sh)
+# is driven through its classifier, fm_busy_classify, with no adapter record so
+# the Herdr native verdict decides.
+test_idle_band_over_an_empty_composer_never_reads_busy() {
+  local dir fb fixture out tail40 state
+  fixture="$ROOT/tests/fixtures/herdr-idle-band"
+  dir="$TMP_ROOT/idle-band"; fb="$dir/fakebin"; state="$dir/state"; mkdir -p "$fb" "$state"
+  cat > "$fb/herdr" <<'SH'
+#!/usr/bin/env bash
+case "${1:-} ${2:-}" in
+  'status --json') printf '{"client":{"version":"0.9.5","protocol":14},"server":{"running":true}}\n' ;;
+  'agent get') cat "$FM_IDLE_BAND_FIXTURE/agent-get.json" ;;
+  'pane read') cat "$FM_IDLE_BAND_FIXTURE/screen.txt" ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fb/herdr"
+  tail40=$(cat "$fixture/screen.txt")
+  out=$(PATH="$fb:$PATH" FM_IDLE_BAND_FIXTURE="$fixture" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_busy_state default:w1:p2' "$ROOT")
+  [ "$out" = idle ] || fail "the lab idle band screen must read idle on Herdr native status, got '$out'"
+  out=$(PATH="$fb:$PATH" FM_IDLE_BAND_FIXTURE="$fixture" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_composer_state default:w1:p2' "$ROOT")
+  [ "$out" = empty ] || fail "the composer under the band must read empty, got '$out'"
+  out=$(PATH="$fb:$PATH" FM_IDLE_BAND_FIXTURE="$fixture" \
+    bash -c '. "$0/bin/fm-backend.sh"; . "$0/bin/fm-busy-lib.sh"; fm_busy_classify herdr default:w1:p2 claude t1 "$1" "$2"' \
+    "$ROOT" "$state" "$tail40")
+  case "$out" in
+    busy\ *) fail "the watcher's busy classifier deferred an idle band screen as busy: '$out'" ;;
+  esac
+  pass "herdr idle band pin: an idle Claude with a plugin band over an empty composer reads idle, empty, and never busy to the watcher"
+}
+
 test_busy_state_never_reports_a_shell_only_pane_busy() {
   local sleep_bin shell_pid dir resp log fb out
   sleep_bin=$(command -v sleep) || fail "sleep not found"
@@ -7173,6 +7213,7 @@ test_process_state_jq_calls_do_not_grow_with_foreground_processes
 test_projection_reclaim_rollback_refuses_a_stale_registration
 test_projection_cleanup_exact_succeeds_only_when_the_task_pane_closed
 test_busy_state_never_reports_a_shell_only_pane_busy
+test_idle_band_over_an_empty_composer_never_reads_busy
 test_cli_caches_the_selected_client_within_a_process
 test_cli_scopes_the_selected_client_to_its_session
 test_cli_unrelated_failure_never_triggers_reselection
