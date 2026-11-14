@@ -44,8 +44,8 @@ reap_holders() {
 }
 trap 'reap_holders; fm_test_cleanup' EXIT
 
-BOOT_OLD=boot-before-reboot
-BOOT_NEW=boot-after-reboot
+BOOT_OLD="boot-before-reboot"
+BOOT_NEW="boot-after-reboot"
 
 make_home() {  # <dir>
   local dir=$1
