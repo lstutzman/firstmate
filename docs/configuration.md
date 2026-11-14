@@ -566,6 +566,7 @@ Linking the code-root copy into the home therefore forks the queue on the first 
 
 Run every routine Firstmate backlog command through [`bin/fm-tasks-axi.sh`](../bin/fm-tasks-axi.sh).
 Like lifecycle transitions, it addresses this home's backlog and archive from any working directory.
+It also guards note edits: an `update` that sets a body is refused when the existing note cannot be read or the new body drops its text, unless `--replace` or `--archive-body` is given, and `--append <text>` adds a line after the existing note ([body-edit contract](../bin/fm-tasks-axi.sh)).
 Bootstrap reports a code-root `data/backlog.md` or `data/done-archive.md` that is not this home's own file as a `BACKLOG_RECONCILE: code-root ...` line, even in a read-only session.
 
 ## Runtime backend (config/backend / FM_BACKEND)
