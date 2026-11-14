@@ -262,7 +262,8 @@ REPEAT_OUT=$(
       [ "$rverb" = "$PAUSED_VERB" ] || [ "$rverb" = blocked ] || [ "$rverb" = needs-decision ] || continue
       [ "$(status_line_cause "$line")" = external ] || continue
       d=$(status_line_dep "$line") || continue
-      case "${d%%/*}" in task | pr) continue ;; esac
+      [ "${d%%/*}" != task ] || continue
+      [ "${d%%/*}" != pr ] || continue
       printf '%s\t%s\n' "$d" "${f##*/}"
     done
   done | awk -F'\t' '
