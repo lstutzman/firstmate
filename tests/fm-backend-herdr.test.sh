@@ -5617,6 +5617,62 @@ test_send_text_submit_preexisting_working_pending_is_queued_enter() {
   pass "fm_backend_herdr_send_text_submit: native working + proven pending after retries reports empty (queued Enter)"
 }
 
+# Each send-failed exit names its step on stderr so the doorbell ring
+# (bin/fm-task-inbox-lib.sh) can tell a busy composer, which defers, from a
+# transport error, which fails. The verdict is unchanged.
+test_send_text_submit_names_the_failing_step_on_stderr() {
+  local dir log resp fb out err text
+  # leftover content in a Claude composer: nothing is typed
+  dir="$TMP_ROOT/submit-step-leftover"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  text=$(herdr_long_payload 1492)
+  printf '{"result":{"agent":{"agent":"claude","agent_status":"idle"}}}\n' > "$resp/1.out"
+  printf '  \xe2\x9d\xaf %s\n' "${text: -480}" > "$resp/2.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" 2>"$dir/err" )
+  err=$(cat "$dir/err")
+  [ "$out" = send-failed ] || fail "leftover composer: expected send-failed, got '$out'"
+  case "$err" in *'send-failed step: composer-not-empty'*) ;; *) fail "leftover composer: stderr should name composer-not-empty, got '$err'" ;; esac
+  case "$err" in *"${text: -40}"*) fail "leftover composer: stderr must not echo composer text" ;; esac
+  # a composer that kept only the suffix, then cleared
+  dir="$TMP_ROOT/submit-step-suffix"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  herdr_submit_claude_prefix "$resp" "$text"
+  printf '  \xe2\x9d\xaf %s\n' "${text: -480}" > "$resp/4.out"
+  printf '  \xe2\x9d\xaf\n' > "$resp/6.out"
+  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/7.out"
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "$1" 3 0.01 0.01' "$ROOT" "$text" 2>"$dir/err" )
+  err=$(cat "$dir/err")
+  [ "$out" = send-failed ] || fail "refused suffix: expected send-failed, got '$out'"
+  case "$err" in *'send-failed step: payload-not-shown'*) ;; *) fail "refused suffix: stderr should name payload-not-shown, got '$err'" ;; esac
+  # the literal send itself errors
+  dir="$TMP_ROOT/submit-step-literal"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '1\n' > "$resp/1.exit"
+  herdr_submit_identity_prefix "$resp" codex
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_BACKEND_HERDR_SUBMIT_POLLS=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "x" 2 0.01 0.01' "$ROOT" 2>"$dir/err" )
+  err=$(cat "$dir/err")
+  [ "$out" = send-failed ] || fail "literal send error: expected send-failed, got '$out'"
+  case "$err" in *'send-failed step: send-text-error'*) ;; *) fail "literal send error: stderr should name send-text-error, got '$err'" ;; esac
+  # Enter never delivered
+  dir="$TMP_ROOT/submit-step-enter"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
+  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/2.out"
+  printf '  ready\n' > "$resp/3.out"
+  printf '1\n' > "$resp/4.exit"
+  printf '  \xe2\x9d\xaf hello captain\n' > "$resp/5.out"
+  printf '{"result":{"agent":{"agent_status":"working"}}}\n' > "$resp/6.out"
+  herdr_submit_identity_prefix "$resp" codex
+  fb=$(make_herdr_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_send_text_submit default:w1:p2 "hello captain" 1 0.01 0.01' "$ROOT" 2>"$dir/err" )
+  err=$(cat "$dir/err")
+  [ "$out" = send-failed ] || fail "failed Enter: expected send-failed, got '$out'"
+  case "$err" in *'send-failed step: enter-not-delivered'*) ;; *) fail "failed Enter: stderr should name enter-not-delivered, got '$err'" ;; esac
+  pass "fm_backend_herdr_send_text_submit: every send-failed exit names its step on stderr without echoing composer text"
+}
+
 test_send_text_submit_preexisting_working_does_not_confirm_failed_enter() {
   local dir log resp fb out enter_count
   dir="$TMP_ROOT/submit-preexisting-working-enter-failed"; mkdir -p "$dir/responses"; log="$dir/log"; resp="$dir/responses"; : > "$log"
@@ -7314,6 +7370,7 @@ test_composer_state_codex_dynamic_idle_tip_reads_empty_when_faint
 test_composer_state_guard_still_refuses_real_pending_text_after_submit_confirmation_change
 test_send_text_submit_slow_transition_within_one_enter_needs_no_extra_enter
 test_send_text_submit_send_failed
+test_send_text_submit_names_the_failing_step_on_stderr
 test_send_text_submit_unknown_on_capture_failure
 test_send_text_submit_unknown_on_composer_capture_failure
 test_send_text_submit_long_literal_submits_when_composer_holds_every_byte

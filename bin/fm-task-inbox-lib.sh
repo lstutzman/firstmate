@@ -129,6 +129,7 @@
 #
 # Tunables (env):
 #   FM_TASK_INBOX_GRACE_SECS   default 90; delivery-attempt grace and spacing
+#   FM_TASK_INBOX_RING_LOCK_WAIT_SECS default 8; how long a ring waits for a concurrent ring into the same pane
 #   FM_TASK_INBOX_RING_MAX     default 3; delivery attempts before escalation
 #   FM_TASK_INBOX_BUSY_MAX     default 2; consecutive busy-deferred due polls before escalation
 #   FM_TASK_INBOX_DEDUP_WINDOW default 200; newest sequence numbers the idempotent write compares
@@ -148,6 +149,7 @@ FM_TASK_INBOX_GRACE_DEFAULT=90
 FM_TASK_INBOX_RING_MAX_DEFAULT=3
 FM_TASK_INBOX_BUSY_MAX_DEFAULT=2
 FM_TASK_INBOX_LOCK_WAIT_DEFAULT=5
+FM_TASK_INBOX_RING_LOCK_WAIT_DEFAULT=8
 FM_TASK_INBOX_DEDUP_WINDOW_DEFAULT=200
 FM_TASK_INBOX_HANDLED_KEEP_DEFAULT=500
 FM_TASK_INBOX_INLINE_MAX=300
@@ -512,13 +514,23 @@ fm_task_inbox_untake() {  # <record-path>
 
 # Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory
 # composer pre-check, then the backend's submit machinery with a minimal retry
-# budget, verdict discarded.
-# Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
-# other than our own doorbell, or holds our doorbell while a Claude plugin band
-# kept the keyboard (the watcher re-rings later), 2 the backend send
-# failed, 3 skipped because the endpoint is positively dead or missing (nothing
-# typed; recovery owns the record), 4 an inline doorbell whose submit was not
-# confirmed empty (typed, but not proven landed). No return value is delivery proof; the
+# budget, verdict discarded. Rings into one pane are serialized on the task's
+# inbox (.ring.lock, FM_TASK_INBOX_RING_LOCK_WAIT_SECS); a ring that cannot get
+# the lock defers.
+# Returns 0 rang, 1 DEFERRED to the watcher's re-ring with nothing typed or
+# submitted: the composer PROVENLY holds pending text other than our own
+# doorbell, or holds our doorbell while a Claude plugin band kept the keyboard,
+# or a recognised dialog is on screen, or the composer held other content
+# before the send or did not show the typed line (which was then cleared), or
+# another ring holds the pane; 2 the backend send
+# failed (the doorbell line could not be built, the backend errored, or a key
+# could not be delivered), 3 skipped because the endpoint is positively
+# dead or missing (nothing typed; recovery owns the record), 4 an inline
+# doorbell whose submit was not confirmed empty (typed, but not proven landed).
+# After every call FM_TASK_INBOX_RING_STEP is a short stable code for the
+# outcome and FM_TASK_INBOX_RING_REASON a one-line sentence (both empty after a
+# ring that landed); they never carry message text, and callers print them so a
+# deferral or failure names its step. No return value is delivery proof; the
 # acknowledgement move is the only delivery signal.
 # The skip is deliberately narrow: only an exact `pending` verdict can defer,
 # because there our Enter could submit someone's real half-typed content.
@@ -534,25 +546,69 @@ fm_task_inbox_untake() {  # <record-path>
 # (fm_task_inbox_submit_pending), so the Enter submits the line instead of
 # pressing a band Button.
 fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
-  local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict rc
+  local dir lock rc=0 wait=${FM_TASK_INBOX_RING_LOCK_WAIT_SECS:-$FM_TASK_INBOX_RING_LOCK_WAIT_DEFAULT}
+  FM_TASK_INBOX_RING_STEP=
+  FM_TASK_INBOX_RING_REASON=
+  case "$wait" in ''|*[!0-9]*) wait=$FM_TASK_INBOX_RING_LOCK_WAIT_DEFAULT ;; esac
+  dir=${3%/*}
+  [ "${dir##*/}" != handled ] || dir=${dir%/*}
+  lock=$dir/.ring.lock
+  # Rings into one pane are serialized on the task's inbox. Two ringers typing
+  # into the same composer at once (the remote steer leg and the worker's own
+  # watcher, or two steers back to back) interleave their keystrokes: each then
+  # sees the other's text in the composer, fails its pre-send or payload check
+  # and clears the line, so neither doorbell lands. A ringer that cannot get
+  # the lock within the bound defers to the watcher's re-ring. An inbox that
+  # does not exist has no concurrent ringer to serialize against, so it rings
+  # unlocked as before.
+  if [ -d "$dir" ]; then
+    if ! FM_TASK_INBOX_LOCK_WAIT_SECS=$wait fm_task_inbox_lock_acquire "$lock"; then
+      _fm_task_inbox_ring_note ring-in-progress 'another ring into this pane holds the ring lock; the watcher re-rings'
+      return 1
+    fi
+    _fm_task_inbox_ring_locked "$@" || rc=$?
+    fm_lock_release "$lock" || true
+    return "$rc"
+  fi
+  _fm_task_inbox_ring_locked "$@"
+}
+
+_fm_task_inbox_ring_locked() {  # <backend> <target> <record-path> [expected-label]
+  local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict rc errf send_rc body=
+  FM_TASK_INBOX_RING_STEP=
+  FM_TASK_INBOX_RING_REASON=
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
-    dead|missing) return 3 ;;
+    dead|missing)
+      _fm_task_inbox_ring_note agent-gone 'the agent is dead or missing'
+      return 3
+      ;;
   esac
   if ! line=$(fm_task_inbox_doorbell_line "$rec"); then
+    _fm_task_inbox_ring_note doorbell-line-build 'the doorbell line could not be built from the record'
     return 2
   fi
   cstate=$(fm_backend_composer_state "$backend" "$target" "$label" 2>/dev/null) || cstate=unknown
   case "$cstate" in
     pending)
-      fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" \
-        && [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" != busy ] \
-        || return 1
+      if ! fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" \
+        || [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" = busy ]; then
+        _fm_task_inbox_ring_note composer-pending 'the composer holds pending text that is not this doorbell, or the agent is busy'
+        return 1
+      fi
       rc=0
+      FM_TASK_INBOX_SUBMIT_PENDING_STEP=
       fm_task_inbox_submit_pending "$backend" "$target" "$line" "$label" || rc=$?
       case "$rc" in
         0) return 0 ;;
-        2) return 2 ;;
-        *) return 1 ;;
+        2)
+          _fm_task_inbox_ring_note "submit-pending-${FM_TASK_INBOX_SUBMIT_PENDING_STEP:-key}" \
+            "a key for the pending doorbell could not be delivered (${FM_TASK_INBOX_SUBMIT_PENDING_STEP:-key})"
+          return 2
+          ;;
+        *)
+          _fm_task_inbox_ring_note band-focus 'a Claude plugin band kept the keyboard, so Enter was not sent'
+          return 1
+          ;;
       esac
       ;;
   esac
@@ -560,16 +616,95 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   # steps, so an agent exiting after the liveness check could leave a bare
   # shell only a suffix; the `: ` prefix protects complete lines only. Do not
   # add process-bound atomic delivery here unless an incident reopens this.
-  if ! verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 2 0.4 0.3 "$label" 2>/dev/null); then
-    return 2
+  # The submit's stderr is kept (a private temp file, never the caller's
+  # stream) so the failing step can be named; it is sanitized before it is
+  # surfaced, because an inline doorbell line carries the steer body.
+  errf=$(mktemp "${TMPDIR:-/tmp}/fm-ring-err.XXXXXX" 2>/dev/null) || errf=
+  send_rc=0
+  if [ -n "$errf" ]; then
+    verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 2 0.4 0.3 "$label" 2>"$errf") || send_rc=$?
+  else
+    verdict=$(fm_backend_send_text_submit "$backend" "$target" "$line" 2 0.4 0.3 "$label" 2>/dev/null) || send_rc=$?
   fi
+  if fm_task_inbox_is_inline "$rec"; then body=$(fm_task_inbox_body "$rec" 2>/dev/null) || body=; fi
+  rc=0
+  _fm_task_inbox_ring_classify "$send_rc" "$verdict" "$errf" "$line" "$body" || rc=$?
+  [ -z "$errf" ] || rm -f "$errf"
+  [ "$rc" -eq 0 ] || return "$rc"
   # The verdict is read only to report a failed keystroke; every other value
   # (empty, pending, unknown, ...) is deliberately ignored, never proof - except
   # for an inline record, which nothing re-rings once taken: only `empty`
   # counts as landed, anything else returns 4 so the sender falls back.
-  [ "$verdict" != send-failed ] || return 2
   if [ "$verdict" != empty ] && fm_task_inbox_is_inline "$rec"; then
+    _fm_task_inbox_ring_note inline-unconfirmed "the inline doorbell was typed but the submit verdict was '$verdict', not empty"
     return 4
+  fi
+  return 0
+}
+
+# Record why the latest fm_task_inbox_ring returned what it did, in two
+# globals the caller reads right after the call (the ring runs in the caller's
+# shell, so they survive): FM_TASK_INBOX_RING_STEP is a short stable code and
+# FM_TASK_INBOX_RING_REASON a one-line sentence. Neither ever carries message
+# text: the reason is built here from fixed words plus a sanitized adapter
+# note, never from the doorbell line or the record body.
+_fm_task_inbox_ring_note() {  # <step> <reason>
+  FM_TASK_INBOX_RING_STEP=$1
+  FM_TASK_INBOX_RING_REASON=$2
+}
+
+# Make adapter stderr safe to print: drop the doorbell line and the steer body
+# wherever they appear, replace control bytes, collapse blanks, cap the length.
+_fm_task_inbox_ring_clean() {  # <text> <line> <body>
+  local text=$1 line=$2 body=${3:-}
+  [ -z "$line" ] || text=${text//"$line"/[doorbell]}
+  [ -z "$body" ] || text=${text//"$body"/[body]}
+  text=$(printf '%s' "$text" | LC_ALL=C tr '\n\t' '  ' | LC_ALL=C tr -d '\000-\037\177' | LC_ALL=C awk '{$1=$1; print substr($0, 1, 200)}')
+  printf '%s' "$text"
+}
+
+# Classify one send_text_submit outcome into the ring's return codes.
+# Returns 0 to let the ring read the verdict as before; otherwise the ring's
+# code with the step noted. A busy-but-healthy agent is DEFERRED (1), not
+# failed (2): a recognised dialog on screen, or a composer that held other
+# content before anything was typed or that did not show the typed line and
+# was cleared, leaves nothing typed, so the watcher's re-ring owns the record.
+# Only an error the adapter raised (the endpoint rejected the text or a key) is
+# a failure.
+_fm_task_inbox_ring_classify() {  # <send-rc> <verdict> <stderr-file> <line> <body>
+  local send_rc=$1 verdict=$2 errf=$3 line=$4 body=$5 err='' first
+  if [ -n "$errf" ] && [ -s "$errf" ]; then
+    err=$(cat "$errf" 2>/dev/null) || err=
+  fi
+  if [ "$send_rc" -ne 0 ]; then
+    case "$err" in
+      *'blocked on a prompt'*)
+        first=$(printf '%s\n' "$err" | grep -m1 'blocked on a prompt') || first=
+        _fm_task_inbox_ring_note dialog-on-screen \
+          "the agent is blocked on a prompt ($(_fm_task_inbox_ring_clean "${first#*blocked on a prompt: }" "$line" "$body")); nothing typed"
+        return 1
+        ;;
+    esac
+    first=$(printf '%s\n' "$err" | grep -m1 .) || first=
+    _fm_task_inbox_ring_note send-text-submit \
+      "the backend send errored${first:+: $(_fm_task_inbox_ring_clean "$first" "$line" "$body")}"
+    return 2
+  fi
+  if [ "$verdict" = send-failed ]; then
+    case "$err" in
+      *'send-failed step: composer-not-empty'*)
+        _fm_task_inbox_ring_note composer-not-empty 'the composer held other content before the send; nothing typed'
+        return 1
+        ;;
+      *'send-failed step: payload-not-shown'*)
+        _fm_task_inbox_ring_note payload-not-shown 'the typed line did not show in the composer and was cleared; nothing submitted'
+        return 1
+        ;;
+    esac
+    first=$(printf '%s\n' "$err" | grep -m1 'send-failed step:') || first=
+    _fm_task_inbox_ring_note send-failed \
+      "the backend reported send-failed${first:+ ($(_fm_task_inbox_ring_clean "${first#*send-failed step: }" "$line" "$body"))}"
+    return 2
   fi
   return 0
 }
@@ -596,7 +731,7 @@ fm_task_inbox_submit_pending() {  # <backend> <target> <line> [expected-label]
       verdict=$(fm_backend_release_band_focus "$backend" "$target" "$label")
       case "$verdict" in
         stuck) return 1 ;;
-        send-failed) return 2 ;;
+        send-failed) FM_TASK_INBOX_SUBMIT_PENDING_STEP=band-escape; return 2 ;;
         released) escaped=1 ;;
       esac
       # Ring-on-nothing: a band can hold the keyboard with no visible focus
@@ -605,12 +740,14 @@ fm_task_inbox_submit_pending() {  # <backend> <target> <line> [expected-label]
       if [ "$attempt" -gt 0 ] && [ "$escaped" = 0 ] \
         && [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" != busy ] \
         && fm_backend_band_drawn "$backend" "$target"; then
-        fm_backend_send_key "$backend" "$target" Escape "$label" >/dev/null 2>&1 || return 2
+        fm_backend_send_key "$backend" "$target" Escape "$label" >/dev/null 2>&1 \
+          || { FM_TASK_INBOX_SUBMIT_PENDING_STEP=escape; return 2; }
         escaped=1
         sleep 0.2
       fi
     fi
-    fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
+    fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 \
+      || { FM_TASK_INBOX_SUBMIT_PENDING_STEP=enter; return 2; }
     attempt=$((attempt + 1))
   done
   return 0

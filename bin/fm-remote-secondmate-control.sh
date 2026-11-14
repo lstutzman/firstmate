@@ -428,10 +428,15 @@ cmd_send_body() {
       ;;
   esac
   fm_task_inbox_ring "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" "$rec" "fm-$id" || ring_rc=$?
+  # The ring names its step and a sanitized reason (never message text) in
+  # FM_TASK_INBOX_RING_STEP / _REASON; print them so a failure is diagnosable.
+  ring_why=
+  [ -z "${FM_TASK_INBOX_RING_STEP:-}" ] || ring_why=" [step=$FM_TASK_INBOX_RING_STEP: ${FM_TASK_INBOX_RING_REASON:-no reason recorded}]"
   case "$ring_rc" in
-    1) printf 'notice: doorbell skipped (composer visibly holds pending text); the steer is durably recorded at %s\n' "$rec" >&2 ;;
-    2) printf 'notice: doorbell did not reach %s; the steer is durably recorded at %s\n' "$REMOTE_ENDPOINT_TARGET" "$rec" >&2 ;;
+    1) printf 'notice: doorbell deferred%s; the steer is durably recorded at %s and the watcher will re-ring it\n' "$ring_why" "$rec" >&2 ;;
+    2) printf 'notice: doorbell did not reach %s%s; the steer is durably recorded at %s\n' "$REMOTE_ENDPOINT_TARGET" "$ring_why" "$rec" >&2 ;;
     3) printf 'notice: doorbell not typed because the agent in %s has exited; the steer is durably recorded at %s for recovery\n' "$REMOTE_ENDPOINT_TARGET" "$rec" >&2 ;;
+    4) printf 'notice: doorbell typed but not confirmed delivered%s; the steer is durably recorded at %s\n' "$ring_why" "$rec" >&2 ;;
   esac
 }
 
