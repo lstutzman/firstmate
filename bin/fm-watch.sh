@@ -180,6 +180,12 @@
 #                          its PR waits on another home's merger failed after
 #                          it changed something; each line names the task and
 #                          what to do, once (bin/fm-tree-park.sh)
+#   check: nm-stall: <lines>
+#                          a no-mistakes run sat pending with no step started
+#                          for 5 minutes with a run slot free, or parked at a
+#                          gate for 30 minutes with no answer; each line names
+#                          the task, the run, and for a gate who owes the
+#                          answer, once per run and state (bin/fm-nm-stall-check.sh)
 #   check: record hygiene: <lines>
 #                          with config/record-hygiene present, the heartbeat's
 #                          background record-hygiene scan found a new set of
@@ -4521,6 +4527,15 @@ while :; do
       tree_park_reason="check: tree-park: $FM_CHECK_RESULT"
       fm_wake_append check tree-park "$tree_park_reason" || exit 1
     fi
+    # Report a no-mistakes run that sat pending with no step started, or parked
+    # at a gate with no answer (bin/fm-nm-stall-check.sh owns the rules). It only
+    # reports; it never cancels or restarts a run.
+    nm_stall_reason=
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" run_check_capture "$SCRIPT_DIR/fm-nm-stall-check.sh" sweep || exit 1
+    if [ -n "$FM_CHECK_RESULT" ]; then
+      nm_stall_reason="check: nm-stall: $FM_CHECK_RESULT"
+      fm_wake_append check nm-stall "$nm_stall_reason" || exit 1
+    fi
     # Close the Herdr workspace of each finished task whose agent has stopped,
     # parked ones included (bin/fm-herdr-session-cleanup.sh owns the rules). It
     # is silent on success and never wakes firstmate.
@@ -4743,6 +4758,7 @@ EOF
     [ -z "$pr_register_reason" ] || wake "$pr_register_reason"
     [ -z "$nm_release_reason" ] || wake "$nm_release_reason"
     [ -z "$tree_park_reason" ] || wake "$tree_park_reason"
+    [ -z "$nm_stall_reason" ] || wake "$nm_stall_reason"
     if [ -n "$contribution_check_output" ]; then
       wake "$contribution_check_output"
     fi
