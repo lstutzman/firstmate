@@ -883,7 +883,7 @@ test_start_requests_follow_the_rubric_and_hold_reserved_classes() {
   assert_equals "surgeon-holds-$DATE" "$(jq -r '.asks_for_lee[0].key' "$json")" "a reserved class becomes one keyed needs-decision"
   assert_equals "payments-billing" "$(jq -r '.held[0].class' "$json")" "naming its class"
   assert_contains "$(cat "$home/data/officers/surgeon/$DATE.md")" "needs-decision [key=surgeon-holds-$DATE]" "in the digest"
-  assert_equals 2 "$(grep -c 'fm-inbox.sh' "$home/data/officers/surgeon/$DATE.start-requests.sh")" "and the hand-off script carries this home's requests (the start and the pattern batch)"
+  assert_equals 1 "$(grep -c 'fm-inbox.sh' "$home/data/officers/surgeon/$DATE.start-requests.sh")" "and the hand-off script carries this home's start request, with no pattern batch for one-off findings"
   assert_equals 0 "$(jq '[.start_requests[] | select(.title == "Wrong total")] | length' "$json")" "a medium finding only files"
   # A rubric can only narrow: asking for more is ignored and named.
   printf '## Settings the code reads\n- start-severities: low, high\n- start-sources: sweeper, invented\n- hold-classes: legal\n' > "$TMP_ROOT/starts/rubric.md"
@@ -935,17 +935,22 @@ test_patterns_are_deduped_handed_on_and_proposed_as_rules() {
   set_pages patterns '[
     {"id":"q1","severity":"critical","file":"A.cs","summary":"SQL built from user input","fix":"use parameterised queries"},
     {"id":"q2","severity":"critical","file":"B.cs","summary":"SQL built from user input"},
-    {"id":"q3","severity":"high","file":"C.cs","summary":"Dialog loses focus on close"}]' '[]'
+    {"id":"q3","severity":"high","file":"C.cs","summary":"Dialog loses focus on close"},
+    {"id":"q4","severity":"high","file":"D.cs","summary":"Retry button stays disabled after any Try again that does not throw an error, and the page keeps a stale spinner","fix":"Catch the error and re-enable the button"},
+    {"id":"q5","severity":"high","file":"E.cs","summary":"Retry button stays disabled after any Try again that does not throw an error, and the page keeps a stale spinner"}]' '[]'
   run_surgeon "$home" >/dev/null || fail "surgeon run must succeed"
   json="$home/data/officers/surgeon/$DATE.json"
-  assert_equals "3 2 2" "$(jq -r '[(.findings|length), .patterns.total, (.patterns.new|length)] | map(tostring) | join(" ")' "$json")" "equal titles are one pattern"
+  assert_contains "$(cat "$home/data/officers/surgeon/$DATE.start-requests.sh")" "Anti-pattern: SQL built from user input. Safe form: use parameterised queries." "the hand-off script carries the recurring pattern with its safe form"
+  assert_contains "$(cat "$home/data/officers/surgeon/$DATE.start-requests.sh")" "Anti-pattern: Retry button stays disabled after any Try again that does not throw an error, and the page keeps a stale spinner. Safe form: Catch the error and re-enable the button." "a title over 120 characters reaches the hand-off whole"
+  assert_not_contains "$(cat "$home/data/officers/surgeon/$DATE.start-requests.sh")" "Dialog loses focus" "a one-off pattern is not handed on"
+  assert_equals "5 3 3" "$(jq -r '[(.findings|length), .patterns.total, (.patterns.new|length)] | map(tostring) | join(" ")' "$json")" "equal titles are one pattern"
   assert_equals 2 "$(jq -r '.patterns.new[] | select(.line | startswith("Anti-pattern: SQL built")) | .count' "$json")" "whose count goes up"
   assert_contains "$(jq -r '.patterns.new[].line' "$json")" "Safe form: use parameterised queries" "a line carries the anti-pattern and the safe form"
   assert_equals pattern-memory "$(jq -r '[.start_requests[] | select(.kind == "pattern-memory")][0].kind' "$json")" "new patterns go to the Navigator in one batched start request"
   assert_contains "$(jq -r '[.start_requests[] | select(.kind == "pattern-memory")][0].execute.argv | join(" ")' "$json")" "quality-patterns.md" "naming the target file"
   assert_equals "pattern project:PropertyCompass2" "$(jq -r '.patterns.captures[0].tags | join(" ")' "$json")" "captures are tagged pattern plus project"
   assert_contains "$(cat "$home/data/officers/surgeon/$DATE.md")" "no scriptable path to the memory tier" "and the digest says why the office must capture them"
-  assert_contains "$(jq -r '.patterns.lint[].proposal' "$json")" "SQL built from user input" "a mechanical pattern gets a proposed lint rule"
+  assert_equals "Add an analyzer or lint rule that flags this anti-pattern: SQL built from user input." "$(jq -r '.patterns.lint[] | select(.line | startswith("Anti-pattern: SQL")) | .proposal' "$json")" "a mechanical pattern gets a proposed lint rule naming its whole anti-pattern"
   assert_not_contains "$(jq -r '.patterns.lint[].proposal' "$json")" "Dialog loses focus" "and a non-mechanical one does not"
   pass "fm-officer surgeon: bad patterns are deduped, handed to the Navigator, captured and proposed as rules"
 }

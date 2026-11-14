@@ -190,6 +190,9 @@ def dicts(value):
     return [v for v in value if isinstance(v, dict)] if isinstance(value, list) else []
 
 
+FULL_TEXT = 600  # the unclipped title and fix a pattern line is built from (filing keeps its own shorter clips)
+
+
 def text(value, limit=300):
     return " ".join(str(value if value is not None else "").split())[:limit]
 
@@ -251,7 +254,7 @@ def make_finding(source, job, key, title, summary, klass, severity, tracked, evi
     return {"kind": "intake", "source": source, "job": job, "key": key, "keyless": not key, "title": text(title, 120),
             "summary": text(summary, 240), "class": klass, "severity": severity, "tracked": tracked,
             "fingerprint": fp, "evidence": evidence, "location": text(location, 200), "project": text(project, 80),
-            "fix": text(fix, 200), "special": special, "found": 1, "score": 0.0, "filing": None}
+            "fix": text(fix, 200), "full_title": text(title, FULL_TEXT), "full_fix": text(fix, FULL_TEXT), "special": special, "found": 1, "score": 0.0, "filing": None}
 
 
 def score_of(f):
@@ -1449,8 +1452,46 @@ def plan_starts(officer, findings, rubric, date, writes, main_home, start_homes,
 
 # ---- pattern memory -----------------------------------------------------------------------
 
+PATTERN_SENTENCE = 300  # a pattern clause longer than this is cut back to its last whole sentence or clause
+SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+CLAUSE_END = re.compile(r"[;:,](?=\s)|\s[-\u2013\u2014]+\s")
+LINE_VERSION = 2  # a stored pattern line built by whole_sentence(); older stored lines may be clipped mid-word
+
+
+def whole_sentence(value, limit=PATTERN_SENTENCE):
+    """The text as one complete sentence ending in a full stop: never cut mid-word.
+
+    Text over the limit is cut at its last sentence end, else its last clause break, else its last space, before the limit.
+    """
+    s = " ".join(str(value or "").split())
+    if len(s) > limit:
+        ends = [m.end() for m in SENTENCE_END.finditer(s[:limit + 1])]
+        clauses = [m.start() for m in CLAUSE_END.finditer(s[:limit]) if m.start() >= 40]
+        if ends:
+            s = s[:ends[-1]]
+        elif clauses:
+            s = s[:clauses[-1]]
+        elif " " in s[:limit + 1]:
+            s = s[:s.rindex(" ", 0, limit + 1)]
+    s = s.rstrip(" ;:,-\u2013\u2014.!?")
+    return s + "." if s else ""
+
+
+def pattern_safe(f):
+    """The finding's stated fix as one whole sentence, or "" when the source gave none."""
+    return whole_sentence(f.get("full_fix") or f.get("fix"))
+
+
+def pattern_anti(f):
+    """The finding's full title as one whole sentence: the anti-pattern a pattern line and its lint proposal name."""
+    return whole_sentence(f.get("full_title") or f["title"])
+
+
 def pattern_line(f):
-    return "Anti-pattern: %s. Safe form: %s" % (f["title"].rstrip("."), f["fix"] or "not stated by the source; see the linked item")
+    """Anti-pattern sentence, plus the safe form only when the source states one; never a placeholder."""
+    line = "Anti-pattern: %s" % pattern_anti(f)
+    safe = pattern_safe(f)
+    return "%s Safe form: %s" % (line, safe) if safe else line
 
 
 def tokens(s):
@@ -1481,12 +1522,19 @@ def update_patterns(officer, store, findings, jev, date):
                 if confidence > JEV_SAME:
                     pid = q
                     break
+        safe = pattern_safe(f)
         if pid in patterns:
             entry = patterns[pid]
             entry["count"] += 1
             entry["last"] = date
+            # A line stored before whole-sentence lines, or without a safe form, is rebuilt from this finding.
+            if entry.get("line_v") != LINE_VERSION:
+                entry["reported"] = entry["captured"] = None
+            if entry.get("line_v") != LINE_VERSION or (safe and not entry.get("safe")):
+                entry["line"], entry["line_v"] = line, LINE_VERSION
+                entry["safe"], entry["anti"] = safe, pattern_anti(f)
         else:
-            entry = {"title": f["title"], "line": line, "count": 1, "first": date, "last": date, "project": owning_project(officer, f["project"]),
+            entry = {"title": f["title"], "anti": pattern_anti(f), "line": line, "line_v": LINE_VERSION, "safe": safe, "count": 1, "first": date, "last": date, "project": owning_project(officer, f["project"]),
                      "source": f["source"], "reported": None, "captured": None, "mechanical": bool(MECHANICAL.search(f["title"]))}
             patterns[pid] = entry
             new.append(pid)
@@ -1503,8 +1551,10 @@ def pattern_outputs(officer, store, rubric, date, main_home, start_homes):
     patterns = store.get("patterns", {})
     # A pattern handed on today stays in today's outputs, so a same-day rerun rewrites the same digest.
     ordered = sorted(patterns.items(), key=lambda kv: (kv[1]["first"], kv[0]))
-    pending = [(pid, p) for pid, p in ordered if p["reported"] in (None, date)][:PATTERN_BATCH]
-    capture = [(pid, p) for pid, p in ordered if p["captured"] in (None, date)][:PATTERN_BATCH]
+    # Handed on only once recurring (count >= 2 distinct findings) and with a stated safe form on a whole-sentence line.
+    ready = [(pid, p) for pid, p in ordered if p.get("line_v") == LINE_VERSION and p.get("safe") and p["count"] >= 2]
+    pending = [(pid, p) for pid, p in ready if p["reported"] in (None, date)][:PATTERN_BATCH]
+    capture = [(pid, p) for pid, p in ready if p["captured"] in (None, date)][:PATTERN_BATCH]
     requests = []
     if pending and rubric.loaded and rubric.pattern_memory:
         groups = collections.OrderedDict()
@@ -1531,7 +1581,7 @@ def pattern_outputs(officer, store, rubric, date, main_home, start_homes):
     captures = [{"id": pid, "content": p["line"], "tags": ["pattern", "project:" + p["project"]], "count": p["count"]} for pid, p in capture]
     for _, p in capture:
         p["captured"] = date
-    lint = [{"id": pid, "line": p["line"], "proposal": "Add an analyzer or lint rule that flags: %s" % p["title"]}
+    lint = [{"id": pid, "line": p["line"], "proposal": "Add an analyzer or lint rule that flags this anti-pattern: %s" % p["anti"]}
             for pid, p in capture if p["mechanical"]]
     return requests, captures, lint
 

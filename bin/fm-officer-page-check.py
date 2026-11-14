@@ -421,8 +421,13 @@ def fix_view(lf):
 
 def pattern_findings(lib, findings):
     """The bad pattern of each filed page or card-source defect: its kind and fix target, with the route as the safe form."""
-    return [dict(lf, title=lib.text("%s on %s (route: %s)" % (lf["source"], fix_target(lf), lf["raw"]["route"]), 120),
-                 fix=lib.text(lf["raw"]["route"], 200)) for lf in findings if (lf["filing"] or {}).get("issue")]
+    out = []
+    for lf in findings:
+        if (lf["filing"] or {}).get("issue"):
+            full = lib.text("%s on %s (route: %s)" % (lf["source"], fix_target(lf), lf["raw"]["route"]), lib.FULL_TEXT)
+            out.append(dict(lf, title=full[:120], full_title=full, fix=lib.text(lf["raw"]["route"], 200),
+                            full_fix=lib.text(lf["raw"]["route"], lib.FULL_TEXT)))
+    return out
 
 
 def lib_findings(lib, findings):

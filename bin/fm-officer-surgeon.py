@@ -140,10 +140,11 @@ to its action, e.g. rotating a credential, rewording member-facing text) becomes
 home, `execute` entries for each --start-home office); the reserved classes become one
 keyed needs-decision line (asks_for_lee). The rubric can only narrow.
 
-Pattern memory (review and sweeper findings): one line per bad pattern with its safe form,
-deduped by normalised title and then by local-jev; new patterns go in one batched start
-request to the Navigator (quality-patterns.md), in the digest for memory capture (no
-scriptable memory-tier path exists), and mechanical ones get a proposed lint rule.
+Pattern memory (review and sweeper findings): one whole-sentence line per bad pattern, built from the finding's
+full title and fix, deduped by normalised title and then by local-jev. Every pattern is stored and counted, but one
+is handed on only once it has a stated safe form and was seen on at least two findings: then it goes in one batched
+start request to the Navigator (quality-patterns.md), in the digest for memory capture (no scriptable memory-tier
+path exists), and a mechanical one gets a proposed lint rule. A one-off, or a pattern with no fix, stays in the store.
 
 `fold` (fold_main) is the one-off move of the existing open automated items into area bundles: the Surgeon's (one per
 finding, or one per component cluster), the friction and page-check officers', and fleet-app's "Dependency a major version

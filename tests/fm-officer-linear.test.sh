@@ -145,9 +145,9 @@ scenario, W, date, now = sys.argv[1], os.environ["W"], os.environ["DATE"], int(o
 rubric_file = os.path.join(W, "fixture-rubric.md")
 officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), pattern_sources=("scan",))
 
-def find(key, title, severity="medium", location="", cause="", project="", found=1):
+def find(key, title, severity="medium", location="", cause="", project="", found=1, fix=""):
     f = lib.make_finding("scan", "job", key, title, title + " summary", "real", severity, None, {"cause": cause},
-                         location=location, project=project)
+                         location=location, project=project, fix=fix)
     f["found"] = found
     return f
 
@@ -321,6 +321,9 @@ elif scenario in ("fleet-start", "fleet-nowrite"):
     starts, held, asks = lib.plan_starts(officer, fs, rub, date, "linear" if scenario == "fleet-start" else "none", "/home/main", offices, {})
     store = {}
     lib.update_patterns(officer, store, fs, lib.Jev(os.path.join(W, "jev.py")), date)
+    # Each pattern recurs on a second finding that states a fix, so it is handed on.
+    twins = [find(f["key"] + "2", f["title"], "high", project=f["project"], fix="Add a guard.") for f in fs]
+    lib.update_patterns(officer, store, twins, lib.Jev(os.path.join(W, "jev.py")), date)
     pats, captures, lint = lib.pattern_outputs(officer, store, rub, date, "/home/main", offices)
     res = {"starts": {s["title"]: [s["execute"]["env"]["FM_HOME"], s["project"], s["linear_only"]] for s in starts},
            "body": starts[0]["execute"]["argv"][-1] if starts else None,
@@ -328,6 +331,37 @@ elif scenario in ("fleet-start", "fleet-nowrite"):
                          "lines": [p["line"] for p in r["patterns"]]} for r in pats],
            "captures": sorted(c["tags"][1] for c in captures),
            "filed": {v["title"]: v["project"] for v in json.load(open(os.path.join(os.environ["LDIR"], "issues.json"))).values()}}
+elif scenario == "pattern-rules":
+    officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), pattern_sources=("scan",))
+    rub = lib.load_rubric(rubric_file, officer)
+    jev = lib.Jev(os.path.join(W, "jev.py"))
+    long_title = "Retry button stays disabled after any \"Try again\" that does not throw an error, " + "and the page keeps showing a stale spinner " * 12
+    bare_title = "alpha beta gamma delta " * 40
+    store = {}
+    def run(fs, d):
+        lib.update_patterns(officer, store, fs, jev, d)
+        pats, captures, lint = lib.pattern_outputs(officer, store, rub, d, "/home/main", [])
+        return [p["line"] for r in pats for p in r["patterns"]], [c["content"] for c in captures]
+    out = {}
+    # day 1: a one-off with a fix, a recurring pair with no fix at all, and a long title
+    out["d1"] = run([find("a1", "SQL built from user input", fix="use parameterised queries"),
+                     find("b1", "Dialog loses focus on close"), find("b2", "Dialog loses focus on close"),
+                     find("c1", long_title, fix="Catch the error and re-enable the button"),
+                     find("e1", bare_title, fix="Name each step")], "2026-11-01")
+    # day 2: the one-off recurs; the fix-less pair stays unsent; the long title recurs
+    out["d2"] = run([find("a2", "SQL built from user input", fix="use parameterised queries"),
+                     find("c2", long_title, fix="Catch the error and re-enable the button"),
+                     find("e2", bare_title, fix="Name each step")], "2026-11-02")
+    # a stored legacy line (clipped, placeholder, reported before) stays unsent until the next match rebuilds it
+    pid = next(k for k, v in store["patterns"].items() if v["title"].startswith("Dialog loses"))
+    store["patterns"][pid].update({"line": "Anti-pattern: Dialog loses fo. Safe form: not stated by the source; see the linked item",
+                                   "reported": "2026-10-01", "captured": "2026-10-01", "count": 5})
+    del store["patterns"][pid]["line_v"]
+    out["legacy_unsent"] = run([], "2026-11-03")
+    out["legacy_rebuilt"] = run([find("b3", "Dialog loses focus on close", fix="Restore focus to the trigger")], "2026-11-04")
+    out["legacy_again"] = run([], "2026-11-05")
+    out["legacy_entry"] = {k: store["patterns"][pid][k] for k in ("line", "reported", "captured")}
+    res = out
 elif scenario == "bundle-hold":
     # Three findings on one bundle: a high one that would start, a low one that asks to rotate a key (reserved, under the
     # start score), and one more on a second bundle. The reserved line holds its whole bundle; the other bundle starts once.
@@ -609,12 +643,34 @@ test_fleet_finding_starts_and_patterns_go_to_the_quartermaster() {
   assert_equals '{"Bosun backup check crashes":"Fleet","Skill sync drops manifest entries":"Fleet","Null reference when saving":null}' "$(jq -c '.filed' <<<"$out")" "fleet work is filed in the Fleet project; a PropertyCompass2 finding under a Fleet officer is not"
   assert_contains "$(jq -r '.body' <<<"$out")" "word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z)." "only Lee's words are inside the quotation marks"
   assert_equals '[["/home/qm","Fleet"],["/home/nav","PropertyCompass2"],["/home/qm","skills"]]' "$(jq -c '.patterns | sort_by(.project) | map([.home, .project])' <<<"$out")" "fleet patterns go to the Quartermaster, a PropertyCompass2 one to the Navigator"
-  assert_equals "Anti-pattern: Bosun backup check crashes. Safe form: not stated by the source; see the linked item" "$(jq -r '.patterns[] | select(.project == "Fleet") | .lines | join("|")' <<<"$out")" "the Fleet request carries only the Fleet pattern"
+  assert_equals "Anti-pattern: Bosun backup check crashes. Safe form: Add a guard." "$(jq -r '.patterns[] | select(.project == "Fleet") | .lines | join("|")' <<<"$out")" "the Fleet request carries only the Fleet pattern"
   assert_not_contains "$(jq -r '.patterns | map(select(.project != "PropertyCompass2") | .target + .body) | join(" ")' <<<"$out")" "quality-patterns.md" "a fleet pattern never goes to PropertyCompass2's quality-patterns.md"
   assert_not_contains "$(jq -r '.patterns[] | select(.project == "Fleet") | .body' <<<"$out")" "firstmate" "no repository is invented for a Fleet item"
   assert_contains "$(jq -r '.patterns[] | select(.project == "PropertyCompass2") | .target' <<<"$out")" ".agents/skills/sdlc-review/references/quality-patterns.md in PropertyCompass2" "a PropertyCompass2 pattern still targets quality-patterns.md"
   assert_equals '["project:Fleet","project:PropertyCompass2","project:skills"]' "$(jq -c '.captures' <<<"$out")" "each pattern goes to the memory tier tagged with its own project"
   pass "fm-officer-linear: Fleet and fleet-repository findings and their patterns go to the Quartermaster; PropertyCompass2 work keeps the Navigator"
+}
+
+test_pattern_lines_are_whole_recurring_and_have_a_safe_form() {
+  local out
+  world pattern-rules '{}'
+  fleet_rubric
+  out=$(drive pattern-rules) || fail "driver must succeed"
+  assert_equals '[]' "$(jq -c '.d1[0]' <<<"$out")" "a first sighting (count 1) with a safe form is kept but not handed on"
+  assert_equals '[]' "$(jq -c '.d1[1]' <<<"$out")" "nor is it captured"
+  assert_equals '["Anti-pattern: SQL built from user input. Safe form: use parameterised queries."]' "$(jq -c '[.d2[0][] | select(startswith("Anti-pattern: SQL"))]' <<<"$out")" "a pattern is handed on the run it first recurs"
+  assert_equals 'false' "$(jq '[.d2[0][], .d2[1][]] | any(contains("not stated by the source"))' <<<"$out")" "no handed-on line carries the placeholder"
+  assert_equals 'false' "$(jq '[.d2[0][] | select(startswith("Anti-pattern: Dialog"))] | length > 0' <<<"$out")" "a recurring pattern with no stated fix is not handed on"
+  assert_equals 'true' "$(jq '[.d2[0][], .d2[1][]] | all(test("[.]$"))' <<<"$out")" "every handed-on line ends on a full stop"
+  assert_equals 'true' "$(jq '.d2[0] | map(select(startswith("Anti-pattern: Retry button"))) | length == 1 and (.[0] | test("Safe form: Catch the error and re-enable the button[.]$")) and (.[0] | test("[.] Safe form"))' <<<"$out")" "a long title is cut at a sentence or clause boundary, never mid-word"
+  assert_equals '[]' "$(jq -c '.legacy_unsent[0]' <<<"$out")" "a stored clipped placeholder line is not re-sent"
+  assert_equals 'true' "$(jq '.d2[0] | map(select(startswith("Anti-pattern: alpha"))) | length == 1 and (.[0] | ltrimstr("Anti-pattern: ") | split(". Safe form:")[0] | (length <= 300) and (split(" ") | all(IN("alpha","beta","gamma","delta"))))' <<<"$out")" "a long title with no sentence or clause boundary is cut at a space, never mid-word"
+  local rebuilt='Anti-pattern: Dialog loses focus on close. Safe form: Restore focus to the trigger.'
+  assert_equals "[\"$rebuilt\"]" "$(jq -c '.legacy_rebuilt[0]' <<<"$out")" "a rebuilt legacy line is handed on once"
+  assert_equals "[\"$rebuilt\"]" "$(jq -c '.legacy_rebuilt[1]' <<<"$out")" "and captured once"
+  assert_equals '[[],[]]' "$(jq -c '.legacy_again' <<<"$out")" "and not again on the next run"
+  assert_equals "[\"$rebuilt\",\"2026-11-04\",\"2026-11-04\"]" "$(jq -c '[.legacy_entry.line, .legacy_entry.reported, .legacy_entry.captured]' <<<"$out")" "the legacy line is rebuilt from the next matching finding"
+  pass "fm-officer-linear: pattern lines are whole sentences with a safe form, handed on only once recurring"
 }
 
 test_fleet_patterns_route_without_linear_writes() {
@@ -1268,6 +1324,7 @@ test_reserved_class_becomes_one_keyed_needs_decision
 test_fleet_findings_take_the_fleet_project_and_label
 test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
 test_fleet_patterns_route_without_linear_writes
+test_pattern_lines_are_whole_recurring_and_have_a_safe_form
 test_surgeon_bundles_split_fleet_from_propertycompass2
 test_closed_item_is_never_touched
 test_released_item_is_closed
