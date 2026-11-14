@@ -99,6 +99,26 @@ The officer itself reads a copy's `git status --porcelain` before it answers del
 The Bosun reading `bosun-answers.json` is a fleet-app follow-up.
 The triage and friction officers read this home and each local second mate home in `data/secondmates.md`, read-only; turning on the [fleet activity ledger](../configuration.md#fleet-activity-ledger-configfleet-ledger) and [trace context](../configuration.md#trace-context-propagation-configtrace-context--fm_trace_context) lets them resolve tasks that were already cleaned up.
 
+### Officer session memory (named sessions)
+
+Officers today are scheduled passes with no session, so this contract applies only to an officer that has a named session; nothing here changes a pass.
+A named officer session keeps its judgment memory (decisions with their rationale, its own mistakes, references) in its own partition of the existing mcp-memory-service, plus its lane files.
+The store is named `officer-<id>`, where `<id>` is the registry id.
+The lane files in `data/officers/<id>/` stay the deterministic record, and the memory store never replaces them.
+On every launch or relaunch the session first reads its lane's latest state, then runs one bounded `memory_search` in its own store.
+It writes only to its own store, and it may read the shared mistake notes.
+A store appears on its first write; nothing is pre-seeded and no home provisions one.
+The per-agent bootstrap profile (`MCP_BOOTSTRAP_ENABLED`) is not part of this contract and stays off.
+The `officer-roles` skill states the rule the session follows.
+
+### Officer session quota ceiling (config/officer-session-quota-ceiling)
+
+The optional local, gitignored `config/officer-session-quota-ceiling` file holds one integer from 1 to 100: the highest share of its weekly use an account may have when a named officer session is placed on it.
+An officer session must not be placed on an account whose weekly use is above that value, and a session already running above it is not started again on that account.
+With the file absent no ceiling applies and nothing changes, and a malformed value is reported as invalid rather than guessed.
+Account use is read from the same quota view dispatch already uses (`quota-axi`), and a report of any account above the ceiling is the home's to arrange.
+The file is a per-home choice and is not inherited by secondmate homes; no fleet-wide number is set here.
+
 ### Surgeon
 
 The Ship's Surgeon is the triage pass plus intake.

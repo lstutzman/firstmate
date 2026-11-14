@@ -60,6 +60,12 @@ The answers to 5 and the duplicate question already exist: the stable key or fin
 A new officer points at them and states only what it adds.
 (Adapted from mattpocock/skills, MIT, the software-factory skill.)
 
+## Session memory and quota ceiling
+
+An officer with a named session follows [Officer session memory](../../../docs/configuration/officers.md#officer-session-memory-named-sessions), which owns the contract.
+In short: store `officer-<id>`, read the lane's latest state and run one bounded `memory_search` in that store on every launch or relaunch, write only to that store, and treat the lane files as the record.
+Before placing an officer session on a Claude account, honour `config/officer-session-quota-ceiling` when the home has one ([Officer session quota ceiling](../../../docs/configuration/officers.md#officer-session-quota-ceiling-configofficer-session-quota-ceiling)).
+
 ## Handling an officer wake
 
 A `check:` wake from `state/officer-<id>.check.sh` reading `officer <id>: <date>: <n> actionable finding(s) in <path>` is one new digest.
