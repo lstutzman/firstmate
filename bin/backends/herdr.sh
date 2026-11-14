@@ -3873,18 +3873,25 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
   [ "${identity%%$'\t'*}" != polytoken ] || busy_harness=polytoken
   if [ "${identity%%$'\t'*}" = claude ]; then
     proof=1
+    # Each send-failed exit names its step on stderr (the ring in
+    # bin/fm-task-inbox-lib.sh reads it to tell a busy composer, which defers,
+    # from a transport error, which fails); the verdict itself is unchanged.
     content=$(fm_backend_herdr_composer_content "$target") \
-      || { printf 'send-failed'; return 0; }
-    [ -z "${content//[$' \t\r\n\v\f']/}" ] || { printf 'send-failed'; return 0; }
+      || { echo 'send-failed step: composer-unreadable' >&2; printf 'send-failed'; return 0; }
+    [ -z "${content//[$' \t\r\n\v\f']/}" ] \
+      || { echo 'send-failed step: composer-not-empty (nothing typed)' >&2; printf 'send-failed'; return 0; }
   fi
-  fm_backend_herdr_send_literal "$target" "$text" || { printf 'send-failed'; return 0; }
+  fm_backend_herdr_send_literal "$target" "$text" \
+    || { echo 'send-failed step: send-text-error' >&2; printf 'send-failed'; return 0; }
   sleep "$settle"
   if [ "$proof" = 1 ]; then
     if ! content=$(fm_backend_herdr_composer_content "$target") \
       || ! fm_backend_herdr_composer_payload_shown "$text" "$content"; then
       if fm_backend_herdr_composer_clear "$target" "$text"; then
+        echo 'send-failed step: payload-not-shown (typed line cleared)' >&2
         printf 'send-failed'
       else
+        echo 'note: payload-not-shown and the composer could not be cleared' >&2
         printf 'unknown'
       fi
       return 0
@@ -3906,6 +3913,7 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
     elif [ "$enter_sent" -eq 0 ]; then
       i=$((i + 1))
       if [ "$i" -ge "$retries" ]; then
+        echo 'send-failed step: enter-not-delivered' >&2
         printf 'send-failed'
         return 0
       fi
@@ -3953,6 +3961,7 @@ fm_backend_herdr_send_text_submit() {  # <target> <text> <retries> <enter-sleep>
     i=$((i + 1))
     if [ "$i" -ge "$retries" ]; then
       if [ "$enter_sent" -eq 0 ]; then
+        echo 'send-failed step: enter-not-delivered' >&2
         printf 'send-failed'
       else
         fm_composer_queued_enter_verdict "$verdict" \

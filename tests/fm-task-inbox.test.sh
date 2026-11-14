@@ -299,6 +299,149 @@ test_doorbell_rejects_terminal_controls() {
   pass "inbox: terminal-control inbox names are rejected without typing"
 }
 
+# The ring names why it did not land. Each case stubs only the backend
+# primitives (liveness, composer read, the adapter's submit with its stderr and
+# verdict) and reads the ring's public result: its return code plus
+# FM_TASK_INBOX_RING_STEP / _REASON. A busy-but-healthy agent (dialog on screen,
+# composer holding other content, an echo that never showed the typed line) is
+# DEFERRED with 1 and nothing typed; only a transport error is a failure 2.
+ring_outcome() {  # <scenario> <record> [composer-state] -> "<rc>|<step>|<reason>"
+  RING_SCENARIO=$1 RING_COMPOSER=${3:-empty} FM_STATE_OVERRIDE="$TMP_ROOT" bash -c '
+    . "$1"
+    fm_backend_agent_state() { case "$RING_SCENARIO" in dead) echo dead ;; *) echo alive ;; esac; }
+    fm_backend_composer_state() { echo "$RING_COMPOSER"; }
+    fm_backend_busy_state() { echo idle; }
+    fm_task_inbox_composer_holds() { return 1; }
+    fm_backend_send_text_submit() {
+      case "$RING_SCENARIO" in
+        dialog) echo "error: blocked on a prompt: Claude background-task exit picker" >&2; return 1 ;;
+        not-empty) echo "send-failed step: composer-not-empty (nothing typed)" >&2; printf send-failed ;;
+        not-shown) echo "send-failed step: payload-not-shown (typed line cleared)" >&2; printf send-failed ;;
+        enter) echo "send-failed step: enter-not-delivered" >&2; printf send-failed ;;
+        literal) echo "send-failed step: send-text-error" >&2; printf send-failed ;;
+        errored) echo "error: herdr: connection refused" >&2; return 1 ;;
+        echoes) echo "error: cannot type $3" >&2; return 1 ;;
+        pending) printf pending ;;
+        *) printf empty ;;
+      esac
+    }
+    rc=0
+    fm_task_inbox_ring herdr sess:p "$2" lbl || rc=$?
+    printf "%s|%s|%s" "$rc" "$FM_TASK_INBOX_RING_STEP" "$FM_TASK_INBOX_RING_REASON"
+  ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$2"
+}
+
+test_ring_names_its_step_and_defers_a_busy_healthy_agent() {
+  local dir state rec out ctl
+  dir="$TMP_ROOT/ring-reasons"; state="$dir/state"; mkdir -p "$state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  out=$(ring_outcome empty "$rec")
+  [ "$out" = '0||' ] || fail "a landed ring should return 0 with no step, got '$out'"
+  out=$(ring_outcome dialog "$rec")
+  case "$out" in '1|dialog-on-screen|'*'Claude background-task exit picker'*'nothing typed'*) ;; *) fail "a dialog on screen should defer with the dialog name, got '$out'" ;; esac
+  out=$(ring_outcome not-empty "$rec")
+  case "$out" in '1|composer-not-empty|'*) ;; *) fail "a composer holding other content should defer, got '$out'" ;; esac
+  out=$(ring_outcome not-shown "$rec")
+  case "$out" in '1|payload-not-shown|'*) ;; *) fail "an echo that never showed the typed line should defer, got '$out'" ;; esac
+  out=$(ring_outcome empty "$rec" pending)
+  case "$out" in '1|composer-pending|'*) ;; *) fail "a composer holding someone else's draft should defer, got '$out'" ;; esac
+  out=$(ring_outcome errored "$rec")
+  case "$out" in '2|send-text-submit|'*'connection refused'*) ;; *) fail "a backend error should fail with its stderr, got '$out'" ;; esac
+  out=$(ring_outcome enter "$rec")
+  case "$out" in '2|send-failed|'*'enter-not-delivered'*) ;; *) fail "an undeliverable Enter should fail naming the step, got '$out'" ;; esac
+  out=$(ring_outcome literal "$rec")
+  case "$out" in '2|send-failed|'*'send-text-error'*) ;; *) fail "an undeliverable text send should fail naming the step, got '$out'" ;; esac
+  out=$(ring_outcome dead "$rec")
+  case "$out" in '3|agent-gone|'*) ;; *) fail "a dead agent must still fail with 3, got '$out'" ;; esac
+  ctl=$'\003'
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" "${ctl}bad" "please continue")
+  out=$(ring_outcome empty "$rec")
+  case "$out" in '2|doorbell-line-build|'*) ;; *) fail "an unbuildable doorbell line should fail naming its build step, got '$out'" ;; esac
+  pass "inbox: the ring names its step; a busy healthy agent defers (1) and only a transport error or a dead agent fails"
+}
+
+test_ring_reason_never_carries_the_steer_body() {
+  local dir state rec out
+  dir="$TMP_ROOT/ring-reason-secret"; state="$dir/state"; mkdir -p "$state"
+  rec=$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_task_inbox_write "$2" t1 "rotate nothing SECRETBODY-9917" "" inline' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$state")
+  out=$(ring_outcome echoes "$rec")
+  case "$out" in '2|send-text-submit|'*) ;; *) fail "an echoing backend error should fail, got '$out'" ;; esac
+  case "$out" in *SECRETBODY-9917*|*'Firstmate inline steer'*) fail "the ring reason leaked the steer body: $out" ;; esac
+  out=$(ring_outcome pending "$rec")
+  case "$out" in '4|inline-unconfirmed|'*) ;; *) fail "an unconfirmed inline submit should return 4 naming its step, got '$out'" ;; esac
+  case "$out" in *SECRETBODY-9917*) fail "the ring reason leaked the steer body: $out" ;; esac
+  pass "inbox: a ring reason is built from fixed words plus sanitized adapter notes and never carries the steer body"
+}
+
+# Two rings typing into one composer at once interleave their keystrokes, so
+# each fails its own pre-send or payload check and neither doorbell lands (the
+# live Herdr failure behind "doorbell did not reach"). The ring serializes on
+# the task's inbox. The stub submit flags any overlap; running the unlocked
+# core concurrently proves the harness can see the overlap at all.
+ring_overlap_probe() {  # <function> <record> <mark-dir> <out-file>
+  RING_FN=$1 RING_MARK=$3 bash -c '
+    . "$1"
+    fm_backend_agent_state() { echo alive; }
+    fm_backend_composer_state() { echo empty; }
+    fm_backend_send_text_submit() {
+      if ! mkdir "$RING_MARK/busy" 2>/dev/null; then : > "$RING_MARK/overlap"; fi
+      sleep 1.5
+      rmdir "$RING_MARK/busy" 2>/dev/null
+      printf empty
+    }
+    rc=0
+    "$RING_FN" herdr sess:p "$2" lbl || rc=$?
+    printf "%s|%s\n" "$rc" "$FM_TASK_INBOX_RING_STEP" >> "$3"
+  ' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$2" "$4"
+}
+
+test_concurrent_rings_into_one_pane_are_serialized() {
+  local dir state rec rec_b mark i out
+  dir="$TMP_ROOT/ring-concurrent"; state="$dir/state"; mkdir -p "$state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  mark="$dir/unlocked"; mkdir -p "$mark"
+  for i in 1 2 3; do ring_overlap_probe _fm_task_inbox_ring_locked "$rec" "$mark" "$dir/unlocked.out" & done
+  wait
+  [ -e "$mark/overlap" ] || fail "the unlocked ring core should overlap under concurrency, so the probe can detect it"
+  mark="$dir/locked"; mkdir -p "$mark"
+  for i in 1 2 3; do ring_overlap_probe fm_task_inbox_ring "$rec" "$mark" "$dir/locked.out" & done
+  wait
+  [ ! -e "$mark/overlap" ] || fail "concurrent rings into one pane typed at the same time"
+  out=$(sort -u "$dir/locked.out")
+  [ "$out" = '0|' ] || fail "every serialized ring should land, got: $out"
+  [ "$(wc -l < "$dir/locked.out")" -eq 3 ] || fail "all three rings should report"
+  # Rings whose records live in different homes' inboxes still share the pane.
+  mkdir -p "$dir/state-b"
+  rec_b=$(inbox_lib "$dir/state-b" fm_task_inbox_write "$dir/state-b" t1 "please continue")
+  mark="$dir/cross"; mkdir -p "$mark"
+  ring_overlap_probe fm_task_inbox_ring "$rec" "$mark" "$dir/cross.out" &
+  ring_overlap_probe fm_task_inbox_ring "$rec_b" "$mark" "$dir/cross.out" &
+  wait
+  [ ! -e "$mark/overlap" ] || fail "rings from two different inboxes typed into one pane at the same time"
+  [ "$(sort -u "$dir/cross.out")" = '0|' ] || fail "both cross-inbox rings should land: $(cat "$dir/cross.out")"
+  pass "inbox: concurrent rings into one pane are serialized and all land"
+}
+
+test_ring_defers_when_another_ring_holds_the_pane() {
+  local dir state rec out holder
+  dir="$TMP_ROOT/ring-lock-timeout"; state="$dir/state"; mkdir -p "$state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  ( FM_STATE_OVERRIDE="$state" bash -c '
+      . "$1"
+      fm_backend_agent_state() { echo alive; }
+      fm_backend_composer_state() { echo empty; }
+      fm_backend_send_text_submit() { sleep 3; printf empty; }
+      fm_task_inbox_ring herdr sess:p "$2" lbl' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$rec" ) &
+  holder=$!
+  sleep 0.6
+  out=$(FM_TASK_INBOX_RING_LOCK_WAIT_SECS=1 ring_outcome empty "$rec")
+  wait "$holder"
+  case "$out" in '1|ring-in-progress|'*) ;; *) fail "a ring that cannot get the pane lock in time should defer, got '$out'" ;; esac
+  out=$(ring_outcome empty "$rec")
+  [ "$out" = '0||' ] || fail "the lock must be released after the holder finished, got '$out'"
+  pass "inbox: a ring that cannot get the pane lock within the bound defers to the watcher, and the lock is released after"
+}
+
 # fm_task_inbox_ring against a backend whose agent classifies dead or missing:
 # nothing is typed and the distinct return code lets callers route to recovery.
 # An unreadable endpoint still rings, so a blind classifier never starves a
@@ -1683,6 +1826,10 @@ test_take_prints_in_order_and_acknowledges
 test_doorbell_is_a_shell_noop
 test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
+test_ring_names_its_step_and_defers_a_busy_healthy_agent
+test_ring_reason_never_carries_the_steer_body
+test_concurrent_rings_into_one_pane_are_serialized
+test_ring_defers_when_another_ring_holds_the_pane
 test_ring_submits_its_own_stuck_doorbell
 test_ring_releases_a_focused_plugin_band_before_its_enter
 test_submit_pending_escapes_once_for_an_invisible_band_focus

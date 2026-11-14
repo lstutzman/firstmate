@@ -259,6 +259,7 @@ Stalled escalation delivery writes `state/.subsuper-inject-wedged` and attempts 
 On an unmarked return, `bin/fm-afk-return.sh` owns ordered shutdown, the record archive, durable catch-up evidence, the return brief, and the fail-closed gate that keeps ordinary work behind every live firstmate-actionable blocker the away session could not fix.
 `fm-send.sh` delivers every remote text steer and ordinary local text steer as a durable steering-inbox record plus a best-effort doorbell line (a constant pointer, or the body itself for a plain short local steer recorded already taken) (`bin/fm-task-inbox-lib.sh`).
 The doorbell line is a shell no-op for pane backends and is never delivered to an endpoint classified as dead or missing; that record surfaces once for recovery instead of walking the re-ring ladder (`bin/fm-task-inbox-lib.sh` header).
+Rings into one pane are serialized, a busy but healthy agent defers the doorbell to the watcher's re-ring, and every deferral or failure names its step in the notice (`bin/fm-task-inbox-lib.sh` header).
 The [`fm-send.sh` header](../bin/fm-send.sh) owns the local-only direct-submit plane and its pane-specific timing; [T3 native delivery](t3code-backend.md#current-lifecycle-and-safety) owns its request-id retry policy.
 
 Text for a worker to read and commands that drive a worker's process are separate planes.

@@ -282,6 +282,8 @@ test_remote_steer_lands_in_remote_inbox() {
   # never fails the send, and the notice still names the durable record.
   assert_contains "$err" "durably recorded" \
     "a failed doorbell must be reported as a notice on a durably sent steer"
+  assert_contains "$err" "[step=" \
+    "the doorbell notice must name the step that did not land, not only that it failed"
   assert_not_contains "$err" "error:" "a durably recorded steer must not carry an error report"
   pend=$(pending_record "$home")
   [ -n "$pend" ] || fail "the marked remote steer must keep its pending-reply expectation"
