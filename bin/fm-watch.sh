@@ -197,6 +197,13 @@
 #                          because the pull request each one handed off or
 #                          named as its dependency merged; tell whoever waited
 #                          to go on
+#   check: external-wait: cleared|overdue: file=<status> dep=<dep> ...; repeat: dep=<dep> count=<n> tasks=<ids>
+#                          the detached external-wait re-check found a declared
+#                          dependency answering again (cleared), its stated
+#                          recovery time passed (overdue), or one dependency
+#                          named by repeated waits (repeat); each is sent once;
+#                          tell whoever waited to go on, or fix the repeat
+#                          outage at source
 #   check: inactive-outcome bounded poll-loop reconciliation found a suspicious
 #                          inactive terminal outcome that still lacks its durable
 #                          upstream receipt
@@ -4218,6 +4225,46 @@ decision_sweep_tick() {
   ) </dev/null >/dev/null 2>&1 &
 }
 
+# Declared external waits: re-check each dependency a paused or blocked
+# [cause=external] line names, report an overdue recovery time, and count
+# repeat outages per dependency (bin/fm-external-wait-recheck.sh's header owns
+# the line grammar, the re-check kinds and the once-only markers). Detached and
+# bounded like decision_sweep_tick, and the report is handed over the same way
+# through state/.external-wait-recheck.out; only findings new to this run wake
+# firstmate, each once, so whoever waited is told to go on.
+external_wait_tick() {
+  local interval found reason
+  if [ -f "$STATE/.external-wait-recheck.out" ]; then
+    found=$(awk '
+      / verdict=(cleared|overdue) / && / new=1( |$)/ {
+        v = $0; sub(/.* verdict=/, "", v); sub(/ .*/, "", v)
+        for (i = 1; i <= NF; i++) if ($i ~ /^(file|dep)=/) w = w (w ? " " : "") $i
+        printf "%s%s: %s", (n++ ? "; " : ""), v, w; w = ""
+      }
+      /^repeat / && / new=1( |$)/ {
+        for (i = 2; i <= NF; i++) if ($i ~ /^(dep|count|tasks)=/) w = w (w ? " " : "") $i
+        printf "%srepeat: %s", (n++ ? "; " : ""), w; w = ""
+      }' "$STATE/.external-wait-recheck.out" 2>/dev/null) || found=
+    rm -f "$STATE/.external-wait-recheck.out"
+    if [ -n "$found" ]; then
+      reason="check: external-wait: $found"
+      fm_wake_append check external-wait "$reason" || exit 1
+      wake "$reason"
+    fi
+  fi
+  interval=${FM_EXTERNAL_WAIT_RECHECK_INTERVAL_SECS:-300}
+  case "$interval" in '' | *[!0-9]*) interval=300 ;; esac
+  [ "$interval" -gt 0 ] || return 0
+  [ "$(age_of "$STATE/.external-wait-recheck-last-run")" -ge "$interval" ] || return 0
+  touch "$STATE/.external-wait-recheck-last-run"
+  (
+    fm_run_timed 300 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+      "$SCRIPT_DIR/fm-external-wait-recheck.sh" --apply \
+      </dev/null >"$STATE/.external-wait-recheck.out.tmp" 2>/dev/null || true
+    mv -f "$STATE/.external-wait-recheck.out.tmp" "$STATE/.external-wait-recheck.out"
+  ) </dev/null >/dev/null 2>&1 &
+}
+
 # Opt-in lane capacity facts (docs/configuration.md "Lane capacity"): publish
 # state/lane-capacity.json detached for the same beacon-freshness reason as the
 # home summary above. bin/fm-capacity.sh's header owns the document.
@@ -4407,6 +4454,7 @@ while :; do
   fm_pending_reply_tick "$STATE" || true
 
   decision_sweep_tick
+  external_wait_tick
   office_unprovisioned_tick
 
   # Daily archive pass for the grow-only process-event inbox (handled
