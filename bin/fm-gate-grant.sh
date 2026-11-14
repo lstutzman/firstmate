@@ -86,6 +86,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-gate-files-lib.sh
+. "$SCRIPT_DIR/fm-gate-files-lib.sh"
 
 UNSET_PREFIX='unset ALLOW_GATE_EDIT ALLOW_GATE_EDIT_FILES; '
 MAX_DECISION_BYTES=8192
@@ -139,21 +141,6 @@ record_get() { # <key>
 
 # Whole means: regular files that are not links, every field well formed, a
 # non-empty decision, and a file list that is still a list of plain paths.
-files_valid() { # <comma list>
-  local list=$1 f rest
-  [ -n "$list" ] || return 1
-  case "$list" in ,* | *, | *,,*) return 1 ;; esac
-  rest=$list
-  while [ -n "$rest" ]; do
-    f=${rest%%,*}
-    case "$rest" in *,*) rest=${rest#*,} ;; *) rest= ;; esac
-    case "$f" in
-      '' | /* | ./* | ../* | */../* | */.. | .. | */./* | */. | *//* | */) return 1 ;;
-    esac
-    case "$f" in *[!A-Za-z0-9._/@+-]*) return 1 ;; esac
-  done
-}
-
 record_valid() { # sets G_KIND G_FILES G_PR on success
   [ -f "$RECORD" ] && [ ! -L "$RECORD" ] && [ -f "$DECISION" ] && [ ! -L "$DECISION" ] || return 1
   [ "$(record_get version)" = 1 ] || return 1
@@ -161,7 +148,7 @@ record_valid() { # sets G_KIND G_FILES G_PR on success
   G_FILES=$(record_get files)
   G_PR=$(record_get pr)
   case "$G_KIND" in tighten | signoff) ;; *) return 1 ;; esac
-  files_valid "$G_FILES" || return 1
+  fm_gate_files_valid "$G_FILES" || return 1
   case "$G_PR" in none | https://*[!\ ]*) ;; *) return 1 ;; esac
   [ -n "$(tr -d '[:space:]' < "$DECISION")" ] || return 1
   [ "$(record_get decision_sha256)" = "$(sha256_of "$DECISION")" ] || return 1
@@ -216,7 +203,7 @@ cmd_grant() {
   task_kind=$(grep '^kind=' "$meta" | tail -1 | cut -d= -f2- || true)
   case "${task_kind:-ship}" in ship | scout) ;; *) die "task $id is a ${task_kind}, not a ship or scout worker" ;; esac
   case "$kind" in tighten | signoff) ;; *) die "--kind must be tighten or signoff" ;; esac
-  files_valid "$files" || die "--files must be comma-separated plain repo-relative paths (letters, digits and ._/@+- only; no .., glob or space)"
+  fm_gate_files_valid "$files" || die "--files must be comma-separated plain repo-relative paths (letters, digits and ._/@+- only; no .., glob or space)"
   case "$pr" in none | https://*[!\ ]*) ;; *) die "--pr must be a full https:// pull request URL, or none" ;; esac
   [ -n "$dfile" ] || die "--decision-file is required: the grant records the decision it rests on"
   [ ! -e "$RECORD" ] && [ ! -L "$RECORD" ] || die "task $id already holds a gate grant; revoke it first"
@@ -291,7 +278,7 @@ cmd_revoke() {
   paths_for "$id"
   local detail carried
   carried=$(union_files "$(carried_get files)")
-  files_valid "$carried" || carried=
+  fm_gate_files_valid "$carried" || carried=
   reason=$(printf '%s' "$reason" | tr '\n' ' ')
   if [ ! -e "$RECORD" ] && [ ! -L "$RECORD" ] && [ ! -e "$DECISION" ] && [ ! -L "$DECISION" ]; then
     if [ "$cleanup" = 1 ] && [ -n "$carried" ]; then

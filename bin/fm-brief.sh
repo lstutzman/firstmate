@@ -246,6 +246,8 @@ esac
 . "$SCRIPT_DIR/fm-dod-lib.sh"
 # shellcheck source=bin/fm-role-lib.sh
 . "$SCRIPT_DIR/fm-role-lib.sh"
+# shellcheck source=bin/fm-gate-files-lib.sh
+. "$SCRIPT_DIR/fm-gate-files-lib.sh"
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - only when waiting on a condition you cannot advance yourself: a running gate or CI run, a deploy, another owner's PR head, a captain decision, an unreachable service, machine or agent, or your own background job, pipeline run or validation round that is actually live.
@@ -552,14 +554,8 @@ if [ "$GATE_FILES_SET" -eq 1 ]; then
     echo "error: --gate-files applies only to ship briefs" >&2
     exit 1
   }
-  # Same shape bin/fm-gate-grant.sh accepts: plain repo-relative paths, comma separated.
-  gate_ok=1
-  [ -n "$GATE_FILES" ] || gate_ok=0
-  case "$GATE_FILES" in
-    ,*|*,|*,,*|*[!A-Za-z0-9._/,+@-]*|/*|*,/*|../*|*/../*|*/..|..|*,..|*,../*) gate_ok=0 ;;
-  esac
-  [ "$gate_ok" -eq 1 ] || {
-    echo "error: --gate-files takes comma-separated plain repo-relative paths with no '..', glob, space or quote (got '$GATE_FILES')" >&2
+  fm_gate_files_valid "$GATE_FILES" || {
+    echo "error: --gate-files takes comma-separated plain repo-relative paths with no '.' or '..' segment, trailing slash, glob, space or quote (got '$GATE_FILES')" >&2
     exit 1
   }
 fi

@@ -1481,7 +1481,7 @@ test_gate_file_scope_is_rendered_and_bounded() {
     assert_grep 'blocked [at=<epoch>] [cause=policy]: {file} - {the edit wanted}' "$brief" "blocked line shape missing in $brief"
     assert_grep 'carry on with the rest of the task' "$brief" "carry-on instruction missing in $brief"
   done
-  for v in "" ",a" "a," "a,,b" "../x" "a/../x" "/abs" "a b" "a*" "a'b"; do
+  for v in "" ",a" "a," "a,,b" "../x" "a/../x" "/abs" "a b" "a*" "a'b" "..,a" "a,..,b" "./x" "a/"; do
     FM_HOME="$home" "$ROOT/bin/fm-brief.sh" gs-bad some-proj --mode no-mistakes --gate-files="$v" >"$TMP_ROOT/gs-bad.err" 2>&1 \
       && fail "--gate-files '$v' was accepted"
     assert_grep 'plain repo-relative paths' "$TMP_ROOT/gs-bad.err" "--gate-files '$v' refusal did not explain the form"
