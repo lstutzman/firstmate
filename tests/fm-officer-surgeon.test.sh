@@ -883,7 +883,7 @@ test_start_requests_follow_the_rubric_and_hold_reserved_classes() {
   assert_equals "surgeon-holds-$DATE" "$(jq -r '.asks_for_lee[0].key' "$json")" "a reserved class becomes one keyed needs-decision"
   assert_equals "payments-billing" "$(jq -r '.held[0].class' "$json")" "naming its class"
   assert_contains "$(cat "$home/data/officers/surgeon/$DATE.md")" "needs-decision [key=surgeon-holds-$DATE]" "in the digest"
-  assert_equals 2 "$(grep -c 'fm-inbox.sh' "$home/data/officers/surgeon/$DATE.start-requests.sh")" "and the hand-off script carries this home's requests (the start and the pattern batch)"
+  assert_equals 1 "$(grep -c 'fm-inbox.sh' "$home/data/officers/surgeon/$DATE.start-requests.sh")" "and the hand-off script carries this home's start request, with no pattern batch for one-off findings"
   assert_equals 0 "$(jq '[.start_requests[] | select(.title == "Wrong total")] | length' "$json")" "a medium finding only files"
   # A rubric can only narrow: asking for more is ignored and named.
   printf '## Settings the code reads\n- start-severities: low, high\n- start-sources: sweeper, invented\n- hold-classes: legal\n' > "$TMP_ROOT/starts/rubric.md"

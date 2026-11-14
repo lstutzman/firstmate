@@ -561,8 +561,8 @@ test_a_page_defect_pattern_is_remembered_once() {
   assert_equals "0" "$(jq '[.patterns.new[].line | select(test("[0-9]{4}-[0-9]{2}-[0-9]{2}|[0-9]+ hour"))] | length' "$json")" "a pattern carries no timestamp or age"
   assert_equals "1 2" "$(jq -r '[.patterns.new[] | select(.line | startswith("Anti-pattern: shown-after-done on "))] | "\(length) \(.[0].count)"' "$json")" \
     "two cards re-shown on the same page are one pattern, counted twice"
-  assert_equals "$(jq '.patterns.total' "$json")" "$(jq '[.start_requests[] | select(.kind == "pattern-memory") | .patterns[]] | length' "$json")" \
-    "the new patterns go on in one pattern-memory start request"
+  assert_equals "$(jq '[.patterns.new[] | select(.count >= 2)] | length' "$json")" "$(jq '[.start_requests[] | select(.kind == "pattern-memory") | .patterns[]] | length' "$json")" \
+    "the recurring patterns (not the count-1 ones) go on in one pattern-memory start request, each with its route as the safe form"
   officer patterns run page-check --date "$KEY" >/dev/null || fail "a same-day re-run must succeed"
   assert_equals "1" "$(jq '[.patterns.new[] | select(.line | contains("Velocity audit"))] | length' "$json")" "a same-day re-run adds no second line"
   day2=2026-11-01T14
