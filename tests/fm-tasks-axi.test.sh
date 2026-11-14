@@ -12,6 +12,9 @@
 # that the command refuses addressing it cannot keep correct, and that bootstrap
 # reports any code-root copy that is not this home's own file while staying
 # silent for a link into the home, an absent copy, and the single-home layout.
+# It also proves the body-edit guard (PC-3268): an update that sets a body is
+# refused when the existing note cannot be read or the new body drops it,
+# unless --replace or --archive-body says so, and --append adds a line.
 set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091
@@ -239,6 +242,151 @@ test_wrapper_single_home() {
   pass "fm-tasks-axi.sh keeps the single-home layout addressing its own code-root backlog"
 }
 
+# Prints the task's stored body as show renders it: line breaks stay as the
+# two characters \n, and the quotes show adds around some bodies are dropped.
+body_of() {  # <case-dir> <id>
+  wrapper_from_code "$1" show "$2" --full | sed -e '/^  body: /!d' -e 's/^  body: //' -e 's/^"\(.*\)"$/\1/'
+}
+
+test_body_guard_refuses_drop_and_allows_intended_edits() {
+  local dir out rc before
+  dir=$(make_split body-guard)
+  wrapper_from_code "$dir" add note-1 "noted" --body "keep this existing note" >/dev/null || fail "add note-1 failed"
+  before=$(cat "$dir/home/data/backlog.md")
+
+  out=$(wrapper_from_code "$dir" update note-1 --body "only the new line" 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "update --body that drops the note"
+  assert_contains "$out" "drops the existing note text" "the drop refusal did not explain itself"
+  assert_contains "$out" "--append" "the drop refusal did not name --append"
+  assert_equals "$before" "$(cat "$dir/home/data/backlog.md")" "a refused body drop still changed the backlog"
+
+  printf 'a different note\n' > "$dir/code/new.md"
+  out=$(wrapper_from_code "$dir" update note-1 --body-file new.md 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "update --body-file that drops the note"
+  assert_equals "$before" "$(cat "$dir/home/data/backlog.md")" "a refused --body-file drop still changed the backlog"
+
+  out=$(wrapper_from_code "$dir" update note-1 --body="only the new line" 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "update --body= that drops the note"
+
+  wrapper_from_code "$dir" update note-1 --body "keep this existing note, plus more" >/dev/null \
+    || fail "a body that keeps the existing text was refused"
+  assert_equals "keep this existing note, plus more" "$(body_of "$dir" note-1)" "a body that keeps the text was not written"
+
+  wrapper_from_code "$dir" update note-1 --body "replaced on purpose" --replace >/dev/null \
+    || fail "--replace was refused"
+  assert_equals "replaced on purpose" "$(body_of "$dir" note-1)" "--replace did not write the new body"
+  assert_no_grep "--replace" "$dir/home/data/backlog.md" "--replace reached tasks-axi's output"
+
+  wrapper_from_code "$dir" update note-1 --body "archived swap" --archive-body >/dev/null \
+    || fail "--archive-body was refused"
+  assert_equals "archived swap" "$(body_of "$dir" note-1)" "--archive-body did not write the new body"
+  assert_grep "replaced on purpose" "$dir/home/data/note-archive.md" "--archive-body did not archive the old body"
+
+  out=$(wrapper_from_code "$dir" update note-1 --replace --title "x" 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "--replace without a body"
+
+  wrapper_from_code "$dir" update note-1 --title "retitled" >/dev/null || fail "a title-only update was refused"
+  assert_equals "archived swap" "$(body_of "$dir" note-1)" "a title-only update changed the body"
+  pass "fm-tasks-axi.sh refuses a body that drops the note unless it keeps it, --replace, or --archive-body is given"
+}
+
+test_body_guard_empty_existing_body_and_missing_task() {
+  local dir out rc
+  dir=$(make_split body-guard-empty)
+  wrapper_from_code "$dir" add blank-1 "no note yet" >/dev/null || fail "add blank-1 failed"
+  wrapper_from_code "$dir" update blank-1 --body "first note" >/dev/null \
+    || fail "setting a body on a task with an empty note was refused"
+  assert_equals "first note" "$(body_of "$dir" blank-1)" "the first note was not written"
+  out=$(wrapper_from_code "$dir" update ghost-1 --body "x" 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "update of a task that does not exist"
+  assert_contains "$out" "nothing written" "a missing task was not refused as an unreadable note"
+  pass "fm-tasks-axi.sh allows a first note on an empty body and refuses a body write to a missing task"
+}
+
+test_body_guard_append() {
+  local dir out rc
+  dir=$(make_split body-guard-append)
+  wrapper_from_code "$dir" add app-1 "appendable" --body "line one" >/dev/null || fail "add app-1 failed"
+  wrapper_from_code "$dir" update app-1 --append "line two" >/dev/null || fail "--append was refused"
+  assert_equals 'line one\nline two' "$(body_of "$dir" app-1)" "--append did not add a new line after the body"
+  wrapper_from_code "$dir" update app-1 --append="line three with é" >/dev/null || fail "--append= was refused"
+  assert_equals 'line one\nline two\nline three with é' "$(body_of "$dir" app-1)" "--append= lost earlier lines or text"
+
+  wrapper_from_code "$dir" add app-2 "empty" >/dev/null || fail "add app-2 failed"
+  wrapper_from_code "$dir" update app-2 --append "only line" >/dev/null || fail "--append on an empty body was refused"
+  assert_equals "only line" "$(body_of "$dir" app-2)" "--append on an empty body did not become the body"
+
+  for combo in "--body x" "--replace" "--archive-body"; do
+    # shellcheck disable=SC2086
+    out=$(wrapper_from_code "$dir" update app-1 --append "z" $combo 2>&1)
+    rc=$?
+    expect_code 2 "$rc" "--append with $combo"
+  done
+  out=$(wrapper_from_code "$dir" update ghost-1 --append "z" 2>&1)
+  rc=$?
+  expect_code 2 "$rc" "--append to a missing task"
+  assert_equals 'line one\nline two\nline three with é' "$(body_of "$dir" app-1)" "a refused --append changed the body"
+  pass "fm-tasks-axi.sh --append adds a line, starts an empty body, and refuses combinations and missing tasks"
+}
+
+# A failed or empty read must never be treated as an empty existing note: that
+# is the 19 Oct wipe. A stub tasks-axi fails or answers with nothing for
+# `show` and records every other call, so the test sees whether an update ran.
+test_body_guard_refuses_failed_read() {
+  local dir stub mode out rc before
+  dir=$(make_split body-guard-failed-read)
+  wrapper_from_code "$dir" add fr-1 "kept" --body "the precious note" >/dev/null || fail "add fr-1 failed"
+  before=$(cat "$dir/home/data/backlog.md")
+  stub="$dir/stub"
+  mkdir -p "$stub"
+  cat > "$stub/tasks-axi" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  show)
+    case "$STUB_SHOW" in
+      fail) echo 'error: "backend unreachable"' >&2; exit 1 ;;
+      empty) exit 0 ;;
+      nobody) printf 'task:\n  id: fr-1\n  title: kept\n'; exit 0 ;;
+    esac
+    ;;
+esac
+printf '%s\n' "$*" >> "$STUB_LOG"
+exit 0
+STUB
+  chmod +x "$stub/tasks-axi"
+  for mode in fail empty nobody; do
+    : > "$dir/stub.log"
+    out=$(cd "$dir/code" && PATH="$stub:$PATH" STUB_SHOW=$mode STUB_LOG="$dir/stub.log" \
+      FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$dir/code" "$WRAPPER" update fr-1 --body "only the new line" 2>&1)
+    rc=$?
+    expect_code 2 "$rc" "update after a $mode read"
+    assert_contains "$out" "nothing written" "the $mode-read refusal did not say nothing was written"
+    assert_equals "" "$(cat "$dir/stub.log")" "an update still ran after a $mode read"
+    out=$(cd "$dir/code" && PATH="$stub:$PATH" STUB_SHOW=$mode STUB_LOG="$dir/stub.log" \
+      FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$dir/code" "$WRAPPER" update fr-1 --append "a line" --title t 2>&1)
+    rc=$?
+    expect_code 2 "$rc" "append after a $mode read"
+    assert_equals "" "$(cat "$dir/stub.log")" "an append still ran after a $mode read"
+    out=$(cd "$dir/code" && PATH="$stub:$PATH" STUB_SHOW=$mode STUB_LOG="$dir/stub.log" \
+      FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$dir/code" "$WRAPPER" update fr-1 --body "new" --replace 2>&1)
+    rc=$?
+    expect_code 2 "$rc" "--replace after a $mode read"
+    assert_equals "" "$(cat "$dir/stub.log")" "--replace still ran an update after a $mode read"
+  done
+  assert_equals "$before" "$(cat "$dir/home/data/backlog.md")" "a refused update changed the backlog"
+  : > "$dir/stub.log"
+  (cd "$dir/code" && PATH="$stub:$PATH" STUB_SHOW=fail STUB_LOG="$dir/stub.log" \
+    FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$dir/code" "$WRAPPER" update fr-1 --title "retitled") >/dev/null \
+    || fail "a title-only update needlessly depended on the body read"
+  assert_contains "$(cat "$dir/stub.log")" "update fr-1 --title retitled" "a title-only update did not pass through"
+  pass "fm-tasks-axi.sh refuses a body update or append when the existing note cannot be read, and leaves other updates alone"
+}
+
 test_guard_reports_regular_code_root_backlog
 test_guard_reports_foreign_link_and_archive
 test_guard_silent_for_single_home
@@ -249,6 +397,10 @@ if [ "$HAVE_TASKS_AXI" = 1 ]; then
   test_wrapper_refusals
   test_wrapper_refuses_add_start
   test_wrapper_single_home
+  test_body_guard_refuses_drop_and_allows_intended_edits
+  test_body_guard_empty_existing_body_and_missing_task
+  test_body_guard_append
+  test_body_guard_refuses_failed_read
 else
   echo "skip: tasks-axi not found; home-addressing cases not run"
 fi

@@ -149,7 +149,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-atomic-lib.sh`       | `fm_atomic_mkdir`: python3 os.mkdir directory claim with exactly one winner, immune to a non-atomic system mkdir; `fm_atomic_takeover`: serialized stale-lock removal so only one racer takes over a dead owner's lock |
 | `fm-lock-lib.sh`         | Shared "is this git lock provably abandoned?" proof used by teardown and fleet-sync   |
 | `fm-config-inherit-lib.sh` | Shared primary-to-secondmate inherited local-material propagation and config-reread delivery |
-| `fm-tasks-axi.sh`        | Run `tasks-axi` against this home's backlog from any working directory               |
+| `fm-tasks-axi.sh`        | Run `tasks-axi` against this home's backlog from any working directory, guarding note edits |
 | `fm-tasks-axi-lib.sh`    | Shared backlog-backend selector and `tasks-axi` compatibility probe                  |
 | `fm-backlog-transition-lib.sh` | Pair task-record changes with their backlog transitions and replay interrupted closes |
 | `fm-quota-axi-lib.sh`    | Shared `quota-axi` compatibility floor and quota snapshot schema validation           |
