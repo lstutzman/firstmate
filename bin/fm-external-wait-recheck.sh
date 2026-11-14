@@ -259,7 +259,7 @@ REPEAT_OUT=$(
     grep -aF -- 'cause=external' "$f" 2>/dev/null | sort -u | while IFS= read -r line; do
       rverb=
       status_line_verb "$line" rverb
-      case "$rverb" in "$PAUSED_VERB" | blocked | needs-decision) ;; *) continue ;; esac
+      [ "$rverb" = "$PAUSED_VERB" ] || [ "$rverb" = blocked ] || [ "$rverb" = needs-decision ] || continue
       [ "$(status_line_cause "$line")" = external ] || continue
       d=$(status_line_dep "$line") || continue
       case "${d%%/*}" in task | pr) continue ;; esac
