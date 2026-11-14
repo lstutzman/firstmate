@@ -668,7 +668,9 @@ _fm_task_inbox_ring_locked() {  # <backend> <target> <record-path> [expected-lab
 # text: the reason is built here from fixed words plus a sanitized adapter
 # note, never from the doorbell line or the record body.
 _fm_task_inbox_ring_note() {  # <step> <reason>
+  # shellcheck disable=SC2034 # read by the caller after the ring returns
   FM_TASK_INBOX_RING_STEP=$1
+  # shellcheck disable=SC2034 # read by the caller after the ring returns
   FM_TASK_INBOX_RING_REASON=$2
 }
 

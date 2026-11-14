@@ -1162,12 +1162,12 @@ test_idle_band_over_an_empty_composer_never_reads_busy() {
 case "${1:-} ${2:-}" in
   'status --json') printf '{"client":{"version":"0.9.5","protocol":14},"server":{"running":true}}\n' ;;
   'agent get') cat "$FM_IDLE_BAND_FIXTURE/agent-get.json" ;;
-  'pane read') cat "$FM_IDLE_BAND_FIXTURE/screen.txt" ;;
+  'pane read') cat "$FM_IDLE_BAND_FIXTURE/screen.capture" ;;
   *) exit 1 ;;
 esac
 SH
   chmod +x "$fb/herdr"
-  tail40=$(cat "$fixture/screen.txt")
+  tail40=$(cat "$fixture/screen.capture")
   out=$(PATH="$fb:$PATH" FM_IDLE_BAND_FIXTURE="$fixture" \
     bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_busy_state default:w1:p2' "$ROOT")
   [ "$out" = idle ] || fail "the lab idle band screen must read idle on Herdr native status, got '$out'"
