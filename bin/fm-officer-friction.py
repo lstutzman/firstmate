@@ -34,7 +34,9 @@ wait for Lee to do. One day's friction events come from three sources:
                classify it first; a line they leave unclassified joins the group
                of its stated [cause=...] tag (policy, credential, sudo, tool,
                decision, physical, external), and each finding tallies its lines by stated
-               cause, with untagged ones as unstated.
+               cause, with untagged ones as unstated. The digest also counts the
+               asks that name Lee by stated cause over the --days window
+               (lee_steps_by_cause; one line in the .md), untagged ones as unstated.
   archive     each claude-code session of the archive day: a <bash-input>
                record is a command Lee ran himself (ssh to the session's own
                host is flagged); an assistant text block asking Lee to run or
@@ -2381,7 +2383,24 @@ def coverage(scanned, homes, hosts, log):
             "sessions_analysed": len(scanned["sessions"]), "notes": notes}
 
 
-def summarise(scanned, homes, hosts, model, cards, log, channels):
+def lee_steps_by_cause(homes, date, days, channels):
+    """Counts of asks that name Lee, by stated cause, over the `days` days ending at <date>.
+
+    A blocked or needs-decision line with no (or an unknown) [cause=...] tag counts as unstated, so the
+    line shows how many asks still say nothing about why an agent could not go on.
+    """
+    end = datetime.date.fromisoformat(date)
+    counts = {}
+    for back in range(max(1, days)):
+        day = (end - datetime.timedelta(days=back)).isoformat()
+        for ev in status_events(homes, day, channels):
+            if ev["kind"] == "status-wait" and ev["lee"] and ev["state"] in ("blocked", "needs-decision"):
+                key = ev.get("stated") or "unstated"
+                counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def summarise(scanned, homes, hosts, model, cards, log, channels, days=7):
     events = all_events(scanned, homes, scanned["date"], cards, channels)
     if log["state"] == "read":
         log = dict(log, cards=len(cards), card_only=sum(1 for e in events if e["kind"] == "card-only"))
@@ -2397,6 +2416,7 @@ def summarise(scanned, homes, hosts, model, cards, log, channels):
         "coverage": coverage(scanned, homes, hosts, log),
         "events": events,
         "findings": findings,
+        "lee_steps_by_cause": {"days": days, "counts": lee_steps_by_cause(homes, scanned["date"], days, channels)},
         "actionable": sum(1 for f in findings if f["carded"]),
     }
 
@@ -2407,6 +2427,9 @@ def render_md(doc):
         doc["actionable"], doc["scorer"]))
     lines.append("%d friction event(s), %d naming Lee." % (
         len(doc["events"]), sum(1 for e in doc["events"] if e["lee"])))
+    steps = doc["lee_steps_by_cause"]
+    lines.append("Lee steps by cause, last %d days: %s." % (steps["days"], ", ".join(
+        "%s %d" % kv for kv in steps["counts"].items()) or "none"))
     lines += ["", "## Coverage", ""]
     cov = doc["coverage"]
     lines.append("- Hosts present: %s (expected: %s)." % (
@@ -2542,7 +2565,7 @@ def main(argv):
                 replies = load_replies(args.captains_log, now)
             except RuntimeError as exc:
                 replies_gap = exc
-        doc = summarise(scanned, homes, hosts, args.model, cards, log, CHANNEL_LOGS | set(args.channel))
+        doc = summarise(scanned, homes, hosts, args.model, cards, log, CHANNEL_LOGS | set(args.channel), args.days)
         if bosun_hosts:
             doc["bosun"] = bosun_section(bosun_hosts)
         if replies_gap:

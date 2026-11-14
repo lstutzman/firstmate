@@ -427,6 +427,36 @@ EOF
   pass "fm-officer friction: blocked lines group by their stated cause, and lines without one stay unstated"
 }
 
+test_lee_steps_are_counted_by_cause() {
+  local home out json unstated
+  home=$(make_world bycause)
+  # One ask naming Lee per cause, a second credential ask three days earlier, one with no tag, and one
+  # outside the 7-day window; the line a worker writes carries the same [cause=...] tag fm-lee-step.sh prints.
+  cat > "$home/state/task-bc.status" <<EOF
+blocked [at=$T] [cause=sudo] [key=bc-sudo]: Lee must run the pam install
+blocked [at=$T] [cause=credential] [key=bc-cred]: Lee must sign in to the vendor
+needs-decision [at=$((T + 60))] [cause=policy] [key=bc-pol]: Lee must approve the drop
+blocked [at=$T] [cause=tool] [key=bc-tool]: Lee must run the one-off script, the tool is missing
+blocked [at=$T] [cause=physical] [key=bc-phys]: Lee must plug in the device
+blocked [at=$((T - 3 * 86400))] [cause=credential] [key=bc-cred2]: Lee must paste the token
+blocked [at=$T] [key=bc-none]: Lee must run something by hand
+blocked [at=$((T - 9 * 86400))] [cause=sudo] [key=bc-old]: Lee must run the old install
+EOF
+  out=$(run_officer "$home") || fail "friction run must succeed: $out"
+  json="$home/data/officers/friction/$DATE.json"
+  # The world's own fixture lines add untagged asks, so the stated causes are compared apart from unstated.
+  assert_equals '{"credential":2,"physical":1,"policy":1,"sudo":1,"tool":1}' \
+    "$(jq -c '.lee_steps_by_cause.counts | del(.unstated)' "$json")" \
+    "Lee asks are counted by stated cause over the last 7 days"
+  unstated=$(jq '.lee_steps_by_cause.counts.unstated' "$json")
+  [ "$unstated" -ge 1 ] || fail "an ask with no cause tag must count as unstated"
+  assert_equals 7 "$(jq '.lee_steps_by_cause.days' "$json")" "the count names its window"
+  assert_contains "$(cat "$home/data/officers/friction/$DATE.md")" \
+    "Lee steps by cause, last 7 days: credential 2, physical 1, policy 1, sudo 1, tool 1, unstated $unstated." \
+    "the digest carries one line with the count"
+  pass "fm-officer friction: Lee steps are counted by cause over the last 7 days"
+}
+
 test_transcript_lee_steps_and_refusals() {
   local home json md
   home=$(make_world transcript)
@@ -1678,6 +1708,7 @@ test_merge_word_is_not_a_missing_tool
 test_token_scope_needs_a_token_permission_failure
 test_status_waits_and_root_causes
 test_stated_causes_group_blocked_lines
+test_lee_steps_are_counted_by_cause
 test_self_clearing_external_waits_are_not_friction
 test_transcript_lee_steps_and_refusals
 test_velocity_findings_file
