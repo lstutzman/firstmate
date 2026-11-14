@@ -88,8 +88,50 @@ EOF
   assert_contains "$out" "verdict=cleared new=1" "the first applying run reports it as new"
   out=$(recheck "$h" --apply)
   assert_contains "$out" "verdict=cleared new=0" "the second run does not report it as new again"
-  assert_contains "$(calls)" "ssh -o BatchMode=yes -o ConnectTimeout=5 -- hostA true" "the re-check is the bounded read-only ssh probe"
+  assert_contains "$(calls)" "ssh -F /dev/null -o BatchMode=yes -o ConnectTimeout=5 -o ForwardAgent=no -o ForwardX11=no -o ClearAllForwardings=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -- hostA true" \
+    "the re-check is the bounded read-only ssh probe with no config, forwarding or unknown host keys"
   pass "a cleared dependency is reported new exactly once"
+}
+
+test_flapping_dependency_wakes_once() {
+  local h out
+  h=$(mkhome flap)
+  addlog "$h" t <<EOF
+paused [at=1790000001] [cause=external] [dep=ssh/hostF]: hostF unreachable; until $FUTURE
+EOF
+  up ssh_hostF
+  out=$(recheck "$h" --apply)
+  assert_contains "$out" "dep=ssh/hostF verdict=cleared new=1" "the first clear is new"
+  rm -f "$UP/ssh_hostF"
+  out=$(recheck "$h" --apply)
+  assert_contains "$out" "dep=ssh/hostF verdict=waiting new=0" "a brief failure turns the verdict back to waiting"
+  up ssh_hostF
+  out=$(recheck "$h" --apply)
+  assert_contains "$out" "dep=ssh/hostF verdict=cleared new=0" "clearing again on the same wait line is not new"
+  printf 'paused [at=1790000009] [cause=external] [dep=ssh/hostF]: hostF unreachable again; until %s\n' "$FUTURE" >> "$h/state/t.status"
+  out=$(recheck "$h" --apply)
+  assert_contains "$out" "dep=ssh/hostF verdict=cleared new=1" "a new wait line on the same dependency is new"
+  assert_equals 1 "$(wc -l < "$h/state/.external-wait-recheck.seen" | tr -d ' ')" "the marker of the replaced wait line is pruned"
+  pass "a flapping dependency is reported once per wait line"
+}
+
+test_pass_cap_and_cache() {
+  local h out i
+  h=$(mkhome cap)
+  for i in 01 02 03 04 05 06 07 08 09 10 11 12 13; do
+    addlog "$h" "t$i" <<EOF
+paused [at=1790000001] [cause=external] [dep=ssh/cap$i]: cap$i unreachable
+EOF
+  done
+  addlog "$h" t00 <<EOF
+paused [at=1790000001] [cause=external] [dep=ssh/cap01]: cap01 unreachable too
+EOF
+  : > "$UP/.calls"
+  out=$(recheck "$h")
+  assert_equals 12 "$(grep -c '^ssh ' "$UP/.calls")" "a pass runs at most twelve probes, and two waits on one host share a probe"
+  assert_contains "$out" "file=t13.status dep=ssh/cap13 verdict=unchecked new=0 detail=pass cap reached" "the dependency past the cap is unchecked"
+  assert_contains "$out" "waits=14 cleared=0 overdue=0 waiting=13 unchecked=1" "the totals count the capped wait"
+  pass "a pass is capped and probes each dependency once"
 }
 
 test_overdue_once() {
@@ -157,6 +199,23 @@ EOF
   pass "ssh, https, pull request and task dependencies are re-checked read-only"
 }
 
+test_https_refuses_internal_hosts() {
+  local h out host n
+  h=$(mkhome internal)
+  n=0
+  for host in 169.254.169.254 127.0.0.1 localhost metadata api.localhost 10.0.0.1 0x7f.0.0.1 example.org.; do
+    n=$((n + 1))
+    addlog "$h" "h$n" <<EOF
+paused [at=1790000001] [cause=external] [dep=https/$host/latest]: down
+EOF
+  done
+  : > "$UP/.calls"
+  out=$(recheck "$h")
+  assert_equals "" "$(calls)" "no request is made to an IP, localhost or single-label host"
+  assert_equals "$n" "$(grep -c 'detail=not a public DNS name' <<<"$out")" "each internal host is refused"
+  pass "an https dependency must be a dotted public DNS name"
+}
+
 test_hostile_names_are_never_run() {
   local h out
   h=$(mkhome hostile)
@@ -211,6 +270,34 @@ EOF
   assert_contains "$out" "repeat dep=ssh/flaky count=4 tasks=four,one,three,two new=1" "a grown count is reported again"
   assert_contains "$out" "repeats=1" "totals count the repeat dependency"
   pass "repeat waits are counted per dependency and reported when the count grows"
+}
+
+test_fan_in_is_not_a_repeat() {
+  local h out t
+  h=$(mkhome fanin)
+  for t in a b c; do
+    addlog "$h" "$t" <<EOF
+paused [at=1790000001] [cause=external] [dep=task/build-x]: waiting on build-x
+blocked [at=1790000002] [cause=external] [dep=pr/o/r/5]: waiting on the other owner's merge
+EOF
+  done
+  out=$(recheck "$h")
+  assert_not_contains "$out" "repeat dep=" "several tasks waiting on one task or pull request are not a repeat outage"
+  assert_contains "$out" "repeats=0" "no repeat is counted for fan-in waits"
+  pass "fan-in waits on a task or pull request are never repeats"
+}
+
+test_custom_paused_verb_counts_repeats() {
+  local h out t
+  h=$(mkhome verb)
+  for t in a b c; do
+    addlog "$h" "$t" <<EOF
+waiting-on [at=1790000001] [cause=external] [dep=ssh/hostV]: hostV unreachable ($t)
+EOF
+  done
+  out=$(FM_CLASSIFY_PAUSED_VERB=waiting-on recheck "$h")
+  assert_contains "$out" "repeat dep=ssh/hostV count=3 tasks=a,b,c" "a home's own paused verb counts toward repeats"
+  pass "the repeat count honours FM_CLASSIFY_PAUSED_VERB"
 }
 
 test_status_logs_are_never_written() {
@@ -276,12 +363,48 @@ EOF
   pass "the watcher wakes once when a declared dependency clears"
 }
 
+test_watcher_wakes_once_on_overdue_and_repeat() {
+  local h i t
+  h=$(mkhome watch-overdue)
+  for t in a b c; do
+    addlog "$h" "$t" <<EOF
+paused [at=1790000001] [cause=external] [dep=ssh/hostO]: hostO unreachable; until $PAST
+EOF
+  done
+  mkdir -p "$h/config"
+  start_watcher "$h" FM_EXTERNAL_WAIT_RECHECK_INTERVAL_SECS=1
+  i=0
+  while [ "$i" -lt 200 ] && ! grep -qs 'check: external-wait' "$h/wake.out"; do
+    rearm_watcher "$h" FM_EXTERNAL_WAIT_RECHECK_INTERVAL_SECS=1
+    sleep 0.1
+    i=$((i + 1))
+  done
+  i=0
+  while [ "$i" -lt 40 ]; do
+    rearm_watcher "$h" FM_EXTERNAL_WAIT_RECHECK_INTERVAL_SECS=1
+    sleep 0.1
+    i=$((i + 1))
+  done
+  stop_watcher "$h"
+  for t in a b c; do
+    assert_equals 1 "$(grep -o "overdue: file=$t.status dep=ssh/hostO" "$h/wake.out" | wc -l | tr -d ' ')" "the watcher woke once on task $t's passed recovery time"
+  done
+  assert_equals 1 "$(grep -o 'repeat: dep=ssh/hostO count=3 tasks=a,b,c' "$h/wake.out" | wc -l | tr -d ' ')" "the watcher woke once on the repeat dependency"
+  pass "the watcher wakes once on an overdue wait and once on a repeat dependency"
+}
+
 test_declaration_parse
 test_cleared_once
+test_flapping_dependency_wakes_once
+test_pass_cap_and_cache
 test_overdue_once
 test_dependency_kinds
+test_https_refuses_internal_hosts
 test_hostile_names_are_never_run
 test_resolved_wait_is_not_rechecked
 test_repeat_count
+test_fan_in_is_not_a_repeat
+test_custom_paused_verb_counts_repeats
 test_status_logs_are_never_written
 test_watcher_wakes_once_on_clear
+test_watcher_wakes_once_on_overdue_and_repeat
