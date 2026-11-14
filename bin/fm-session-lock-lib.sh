@@ -732,6 +732,41 @@ fm_session_pid_identity() {  # <value>
   fm_pid_identity "$1"
 }
 
+# --- boot identity ---------------------------------------------------------------
+# A pid recorded before a reboot can be handed to an unrelated live process after
+# it, so pid liveness alone cannot say whether a lock line 1 still names its
+# owner. bin/fm-lock.sh records the boot identity in state/.lock-boot beside the
+# lock, and a recorded boot that differs from the current one means every
+# process that recorded pid died with that boot. FM_BOOT_ID_OVERRIDE replaces
+# the probe for tests only.
+fm_boot_id() {
+  local id
+  if [ -n "${FM_BOOT_ID_OVERRIDE:-}" ]; then
+    printf '%s\n' "$FM_BOOT_ID_OVERRIDE"
+    return 0
+  fi
+  if [ -r /proc/sys/kernel/random/boot_id ]; then
+    id=$(head -n 1 /proc/sys/kernel/random/boot_id 2>/dev/null) || id=
+  else
+    id=$(sysctl -n kern.bootsessionuuid 2>/dev/null | head -n 1) || id=
+  fi
+  [ -n "$id" ] || return 1
+  printf '%s\n' "$id"
+}
+
+# True when state dir $1 records a boot identity for its lock that differs from
+# the current boot. A lock written before this record existed (no sidecar), an
+# unreadable sidecar, or a boot identity this host cannot read is never stale
+# by this test, so those keep the pid-only behavior.
+fm_session_lock_boot_stale() {  # <state>
+  local state=$1 recorded current
+  [ -f "$state/.lock-boot" ] && [ ! -L "$state/.lock-boot" ] || return 1
+  recorded=$(head -n 1 "$state/.lock-boot" 2>/dev/null) || return 1
+  [ -n "$recorded" ] || return 1
+  current=$(fm_boot_id) || return 1
+  [ "$recorded" != "$current" ]
+}
+
 # True when session-lock pid $1 must not be reclaimed: a readable harness owner
 # that still matches holds the lock, and an unreadable-but-live owner is refused
 # rather than guessed at. A dead record, a reused pid whose readable identity is
@@ -879,6 +914,7 @@ fm_session_lock_owned_by_self() {
   local state=$1 lock_pid pids
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   fm_session_pid_valid "$lock_pid" || return 1
+  fm_session_lock_boot_stale "$state" && return 1
   pids=$(fm_harness_ancestry_pids) || return 1
   fm_harness_pid_listed "$lock_pid" "$pids" && return 0
   fm_session_lock_same_session "$state" "$pids" || return 1
@@ -900,6 +936,7 @@ fm_session_lock_foreign_owner_live() {
   [ -f "$state/.lock" ] && [ ! -L "$state/.lock" ] || return 1
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   fm_session_pid_valid "$lock_pid" || return 1
+  fm_session_lock_boot_stale "$state" && return 1
   fm_session_lock_pid_blocks_reclaim "$lock_pid" || return 1
   pids=$(fm_harness_ancestry_pids) || return 1
   fm_harness_pid_listed "$lock_pid" "$pids" && return 1
@@ -953,6 +990,15 @@ fm_session_lock_inspect() {  # <state>
   # shellcheck disable=SC2034 # Output global, read by lock status and inbox ready.
   FM_LOCK_INSPECT_PID=$pid
   fm_session_pid_valid "$pid" || return 0
+  if fm_session_lock_boot_stale "$state"; then
+    # Recorded before the current boot: that owner died with it, whatever
+    # process holds the pid now.
+    # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
+    FM_LOCK_INSPECT_STATE=stale
+    # shellcheck disable=SC2034 # Output globals, read by lock status and inbox ready.
+    FM_LOCK_INSPECT_LIVE_HARNESS=false
+    return 0
+  fi
   # One verdict for every identity form. A tagged Windows pid is resolved by
   # this same call through the Windows table, so the match below is the single
   # place "live verified harness" is decided; deciding it a second time ahead
