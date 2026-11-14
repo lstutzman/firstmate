@@ -904,6 +904,7 @@ tests/fm-muse-harness.test.sh 67485
 tests/fm-muse-signals-live-e2e.test.sh 303
 tests/fm-nm-daemon-env.test.sh 786
 tests/fm-nm-drive-steer.test.sh 72628
+tests/fm-nm-stall-check.test.sh 4410
 tests/fm-nm-test-contract.test.sh 1004
 tests/fm-no-mistakes-required.test.sh 607
 tests/fm-office-authority.test.sh 2974
