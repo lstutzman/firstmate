@@ -18,9 +18,9 @@
 #   unchecked   no re-check was run this pass (the per-pass cap was reached).
 # Only these dependency kinds are re-checked, each one read-only and bounded in
 # time, because a status line is worker text and is never run as a command:
-#   ssh/<host>                  `ssh -o BatchMode=yes <host> true` succeeds, with no ssh
-#                               config, no forwarding, default identities only and
-#                               a known host key
+#   ssh/<host>                  `ssh -o BatchMode=yes <host> true` succeeds, through the
+#                               user's ssh config (so Host aliases and their keys
+#                               work), with no forwarding and a known host key
 #   https/<host>[/<path>]       a GET of https://<host>/<path> answers without an error status;
 #                               <host> must be a dotted DNS name, never a literal IP,
 #                               localhost or a single label
@@ -118,8 +118,8 @@ probe() {  # <dep>
   case "$kind" in
     ssh)
       part_ok "$rest" && [ "$rest" = "${rest%%/*}" ] || { printf 'skip\tmalformed'; return 0; }
-      fm_run_timed "$CHECK_TIMEOUT" ssh -F /dev/null -o BatchMode=yes -o ConnectTimeout=5 \
-        -o ForwardAgent=no -o ForwardX11=no -o ClearAllForwardings=yes -o IdentitiesOnly=yes \
+      fm_run_timed "$CHECK_TIMEOUT" ssh -o BatchMode=yes -o ConnectTimeout=5 \
+        -o ForwardAgent=no -o ForwardX11=no -o ClearAllForwardings=yes \
         -o StrictHostKeyChecking=yes -- "$rest" true \
         </dev/null >/dev/null 2>&1 && printf 'up\treachable over ssh' || printf 'down\tssh failed'
       ;;

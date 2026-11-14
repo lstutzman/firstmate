@@ -88,8 +88,8 @@ EOF
   assert_contains "$out" "verdict=cleared new=1" "the first applying run reports it as new"
   out=$(recheck "$h" --apply)
   assert_contains "$out" "verdict=cleared new=0" "the second run does not report it as new again"
-  assert_contains "$(calls)" "ssh -F /dev/null -o BatchMode=yes -o ConnectTimeout=5 -o ForwardAgent=no -o ForwardX11=no -o ClearAllForwardings=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -- hostA true" \
-    "the re-check is the bounded read-only ssh probe with no config, forwarding or unknown host keys"
+  assert_contains "$(calls)" "ssh -o BatchMode=yes -o ConnectTimeout=5 -o ForwardAgent=no -o ForwardX11=no -o ClearAllForwardings=yes -o StrictHostKeyChecking=yes -- hostA true" \
+    "the re-check is the bounded read-only ssh probe with no forwarding or unknown host keys"
   pass "a cleared dependency is reported new exactly once"
 }
 
