@@ -32,6 +32,19 @@ printf 'curl %s\n' "$*" >> "$FAKE_UP/.calls"
 url=${*: -1}
 [ -f "$FAKE_UP/$(printf '%s' "$url" | tr '/:' '__')" ]
 SH
+cat > "$FAKEBIN/getent" <<'SH'
+#!/usr/bin/env bash
+# getent ahosts <host>: answers from $FAKE_UP/dns_<host> (one address per line);
+# a host with no such file resolves to one public address, "nxdomain.example.org" fails.
+printf 'getent %s\n' "$*" >> "$FAKE_UP/.calls"
+host=${*: -1}
+if [ -f "$FAKE_UP/dns_$host" ]; then
+  while IFS= read -r a; do printf '%s STREAM %s\n' "$a" "$host"; done < "$FAKE_UP/dns_$host"
+  exit 0
+fi
+[ "$host" != nxdomain.example.org ] || exit 2
+printf '93.184.216.34 STREAM %s\n' "$host"
+SH
 cat > "$FAKEBIN/gh" <<'SH'
 #!/usr/bin/env bash
 printf 'gh %s\n' "$*" >> "$FAKE_UP/.calls"
@@ -39,7 +52,7 @@ f="$FAKE_UP/$(printf '%s' "$3" | tr '/:' '__')"
 [ -f "$f" ] || exit 1
 cat "$f"
 SH
-chmod +x "$FAKEBIN/ssh" "$FAKEBIN/curl" "$FAKEBIN/gh"
+chmod +x "$FAKEBIN/ssh" "$FAKEBIN/curl" "$FAKEBIN/getent" "$FAKEBIN/gh"
 export FAKE_UP="$UP"
 export PATH="$FAKEBIN:$PATH"
 
@@ -195,7 +208,7 @@ EOF
   assert_contains "$out" "file=web.status dep=https/api.example.org/health verdict=cleared" "an http dependency that answers clears"
   assert_contains "$out" "file=pr.status dep=pr/o/r/5 verdict=cleared" "a merged pull request clears the pause"
   assert_contains "$out" "file=waiter.status dep=task/finisher verdict=cleared" "a task that is done clears"
-  assert_contains "$(calls)" "curl -fsS --max-time 15 --max-redirs 0 -o /dev/null -- https://api.example.org/health" "the http re-check is a bounded GET"
+  assert_contains "$(calls)" "curl -fsS --max-time 15 --max-redirs 0 --resolve api.example.org:443:93.184.216.34 -o /dev/null -- https://api.example.org/health" "the http re-check is a bounded GET pinned to the vetted address"
   pass "ssh, https, pull request and task dependencies are re-checked read-only"
 }
 
@@ -214,6 +227,55 @@ EOF
   assert_equals "" "$(calls)" "no request is made to an IP, localhost or single-label host"
   assert_equals "$n" "$(grep -c 'detail=not a public DNS name' <<<"$out")" "each internal host is refused"
   pass "an https dependency must be a dotted public DNS name"
+}
+
+test_https_refuses_non_public_resolution() {
+  local h out n=0 case_ addr
+  h=$(mkhome nonpublic)
+  # name:address pairs a worker-written tag could point at through DNS.
+  for case_ in loop.example.org:127.0.0.1 meta.example.org:169.254.169.254 rfc1918.example.org:10.1.2.3 \
+    rfc172.example.org:172.20.0.5 rfc192.example.org:192.168.1.1 ula.example.org:fd12:3456::1 \
+    ll6.example.org:fe80::1 lo6.example.org:::1 cgnat.example.org:100.64.0.1 zero.example.org:0.0.0.0 \
+    mapped.example.org:::ffff:127.0.0.1 nxdomain.example.org:; do
+    n=$((n + 1))
+    addr=${case_#*:}
+    [ -z "$addr" ] || printf '%s\n' "$addr" > "$UP/dns_${case_%%:*}"
+    addlog "$h" "r$n" <<EOF
+paused [at=1790000001] [cause=external] [dep=https/${case_%%:*}/x]: down
+EOF
+  done
+  # a mixed answer is refused too: one bad address among public ones poisons the host
+  n=$((n + 1))
+  printf '93.184.216.34\n10.0.0.9\n' > "$UP/dns_mixed.example.org"
+  addlog "$h" "r$n" <<EOF
+paused [at=1790000001] [cause=external] [dep=https/mixed.example.org/x]: down
+EOF
+  : > "$UP/.calls"
+  out=$(recheck "$h")
+  assert_not_contains "$(calls)" "curl " "no request is made when a host resolves to a non-public address or not at all"
+  assert_equals "$n" "$(grep -c 'verdict=unchecked' <<<"$out")" "each refused host is reported unchecked"
+  pass "an https host that resolves to a non-public address, or fails to resolve, is refused before any request"
+}
+
+test_https_pins_public_address() {
+  local h out
+  h=$(mkhome pinned)
+  printf '93.184.216.34\n2606:2800:220:1:248:1893:25c8:1946\n' > "$UP/dns_pub.example.org"
+  printf '2606:2800:220:1:248:1893:25c8:1946\n' > "$UP/dns_v6.example.org"
+  addlog "$h" a <<EOF
+paused [at=1790000001] [cause=external] [dep=https/pub.example.org/h]: down
+EOF
+  addlog "$h" b <<EOF
+paused [at=1790000001] [cause=external] [dep=https/v6.example.org/h]: down
+EOF
+  up https___pub.example.org_h
+  up https___v6.example.org_h
+  : > "$UP/.calls"
+  out=$(recheck "$h")
+  assert_contains "$out" "file=a.status dep=https/pub.example.org/h verdict=cleared" "a host resolving only to public addresses is checked"
+  assert_contains "$(calls)" "--resolve pub.example.org:443:[2606:2800:220:1:248:1893:25c8:1946] " "curl is pinned to a vetted address, not left to look the name up again"
+  assert_contains "$(calls)" "--resolve v6.example.org:443:[2606:2800:220:1:248:1893:25c8:1946] " "an IPv6 pin is bracketed"
+  pass "a public https host is checked through curl pinned to its vetted address"
 }
 
 test_hostile_names_are_never_run() {
@@ -400,6 +462,8 @@ test_pass_cap_and_cache
 test_overdue_once
 test_dependency_kinds
 test_https_refuses_internal_hosts
+test_https_refuses_non_public_resolution
+test_https_pins_public_address
 test_hostile_names_are_never_run
 test_resolved_wait_is_not_rechecked
 test_repeat_count

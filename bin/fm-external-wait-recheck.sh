@@ -15,7 +15,8 @@
 #               (or names no re-check firstmate can run);
 #   waiting     a re-check ran and the dependency is still down, or the stated
 #               recovery time has not passed yet;
-#   unchecked   no re-check was run this pass (the per-pass cap was reached).
+#   unchecked   no re-check was run this pass (the per-pass cap was reached, or an
+#               https host was refused before any request, see below).
 # Only these dependency kinds are re-checked, each one read-only and bounded in
 # time, because a status line is worker text and is never run as a command:
 #   ssh/<host>                  `ssh -o BatchMode=yes <host> true` succeeds, through the
@@ -23,7 +24,14 @@
 #                               work), with no forwarding and a known host key
 #   https/<host>[/<path>]       a GET of https://<host>/<path> answers without an error status;
 #                               <host> must be a dotted DNS name, never a literal IP,
-#                               localhost or a single label
+#                               localhost or a single label. The host is resolved first and
+#                               refused (verdict unchecked, no request) when resolution fails
+#                               or any address is loopback, unspecified, link-local (169.254/16,
+#                               fe80::/10, so cloud metadata), private (10/8, 172.16/12,
+#                               192.168/16), carrier-grade NAT (100.64/10) or unique-local
+#                               (fc00::/7); an IPv4-mapped IPv6 address is judged as its IPv4.
+#                               curl is pinned to the vetted address with --resolve, so a
+#                               second lookup cannot change the target; redirects are not followed
 #   pr/<owner>/<repo>/<number>  that GitHub pull request is no longer open (a paused wait only;
 #                               a blocked or needs-decision wait on a PR is closed by bin/fm-decision-sweep.sh)
 #   task/<id>                   state/<id>.status ends in a `done` line
@@ -109,10 +117,59 @@ dns_name_ok() {  # <host>: a dotted DNS name whose last label starts with a lett
   case "${1##*.}" in [A-Za-z]*) ;; *) return 1 ;; esac
 }
 
+# Print the addresses <host> resolves to, one per line, or fail. getent where
+# the host has it, else python3 (macOS has no getent).
+resolve_host() {  # <host>
+  if command -v getent >/dev/null 2>&1; then
+    fm_run_timed "$CHECK_TIMEOUT" getent ahosts "$1" </dev/null 2>/dev/null | awk '{ print $1 }' | sort -u
+  elif command -v python3 >/dev/null 2>&1; then
+    fm_run_timed "$CHECK_TIMEOUT" python3 -I -c 'import socket, sys
+for r in socket.getaddrinfo(sys.argv[1], 443, proto=socket.IPPROTO_TCP):
+    print(r[4][0])' "$1" </dev/null 2>/dev/null | sort -u
+  else
+    return 1
+  fi
+}
+
+# Succeeds only for a globally routable address; every other shape fails closed.
+addr_public_ok() {  # <address>
+  local a o1 o2 o3 o4
+  a=$(printf '%s' "$1" | tr 'A-F' 'a-f')
+  a=${a%%%*}
+  case "$a" in
+    ::ffff:*.*) a=${a#::ffff:} ;;
+    64:ff9b:*) return 1 ;;
+  esac
+  case "$a" in
+    *:*)
+      case "$a" in
+        :: | ::1 | fe[89ab]* | f[cd]* | ::ffff:*) return 1 ;;
+      esac
+      case "$a" in *[!0-9a-f:]*) return 1 ;; esac
+      ;;
+    *.*.*.*)
+      IFS=. read -r o1 o2 o3 o4 <<<"$a"
+      for o in "$o1" "$o2" "$o3" "$o4"; do
+        case "$o" in '' | *[!0-9]*) return 1 ;; esac
+        [ "${#o}" -le 3 ] && [ "$((10#$o))" -le 255 ] || return 1
+      done
+      o1=$((10#$o1)) o2=$((10#$o2))
+      case "$o1" in 0 | 10 | 127) return 1 ;; esac
+      [ "$o1" -lt 224 ] || return 1
+      [ "$o1.$o2" != 169.254 ] || return 1
+      [ "$o1.$o2" != 192.168 ] || return 1
+      { [ "$o1" -ne 172 ] || [ "$o2" -lt 16 ] || [ "$o2" -gt 31 ]; } || return 1
+      { [ "$o1" -ne 100 ] || [ "$o2" -lt 64 ] || [ "$o2" -gt 127 ]; } || return 1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 # Run one bounded read-only re-check. Prints up, down or skip (no re-check this
-# dependency kind has, or the pass cap was reached) plus a detail after a tab.
+# dependency kind has, or the pass cap was reached) or refuse (the https host
+# resolves to a non-public address or not at all) plus a detail after a tab.
 probe() {  # <dep>
-  local dep=$1 kind rest host path url state f
+  local dep=$1 kind rest host path url state f addrs addr o
   kind=${dep%%/*}
   rest=${dep#*/}
   case "$kind" in
@@ -130,7 +187,13 @@ probe() {  # <dep>
       path=
       [ "$rest" = "$host" ] || path=${rest#*/}
       url="https://$host/$path"
-      fm_run_timed "$CHECK_TIMEOUT" curl -fsS --max-time "$CHECK_TIMEOUT" --max-redirs 0 -o /dev/null -- "$url" \
+      addrs=$(resolve_host "$host") && [ -n "$addrs" ] || { printf 'refuse\tdoes not resolve'; return 0; }
+      while IFS= read -r addr; do
+        addr_public_ok "$addr" || { printf 'refuse\tresolves to a non-public address'; return 0; }
+      done <<<"$addrs"
+      addr=$(head -n 1 <<<"$addrs")
+      case "$addr" in *:*) addr="[$addr]" ;; esac
+      fm_run_timed "$CHECK_TIMEOUT" curl -fsS --max-time "$CHECK_TIMEOUT" --max-redirs 0 --resolve "$host:443:$addr" -o /dev/null -- "$url" \
         </dev/null >/dev/null 2>&1 && printf 'up\tanswers' || printf 'down\tno answer'
       ;;
     pr)
@@ -223,7 +286,7 @@ for f in "$STATE"/*.status; do
       detail=${RESULT#*	}
       case "${RESULT%%	*}" in
         up) verdict=cleared ;;
-        capped) verdict=unchecked ;;
+        capped | refuse) verdict=unchecked ;;
       esac
     fi
   fi
