@@ -1384,8 +1384,8 @@ _wedge_cap_int FM_ROLLBACK_SENTINEL_TTL_SECS "$FM_ROLLBACK_SENTINEL_TTL_SECS" 36
 # scratch rather than inheriting a window an earlier episode left silent. The
 # cap-fire route is the one caller that keeps these markers instead of calling it
 # here: they are the ceiling it has just published, so the episode it ends must
-# leave them standing. The away-posture first sight is the one caller that
-# releases them WITHOUT ending an episode, and says so at its own call site.
+# leave them standing. The away-posture first sight and the first-sight landing
+# skips are the callers that release them WITHOUT ending an episode.
 # _wedge_cap_markers_clear <window-key>
 _wedge_cap_markers_clear() {
   local key=$1
@@ -1404,13 +1404,16 @@ _wedge_cap_markers_clear() {
 # sites to keep in step - a new episode-ending route is one call, and it cannot
 # drop the episode marker without dropping the cap with it.
 #
-# One first-sight route is not an episode end: the away-posture branch, where the
-# away daemon owns the one-shot per stale hash. It classifies a fresh render
+# Two first-sight routes are not an episode end. The away-posture branch, where
+# the away daemon owns the one-shot per stale hash, classifies a fresh render
 # without arming or dropping any wedge timer - the first poll after the
 # away-posture record goes picks the episode it was already in back up on that
 # hash - so it releases the cap markers alone, through
 # _wedge_cap_markers_clear. Dropping the timer and count there would leave a hash
-# the daemon already surfaced with no wedge timer behind it at all.
+# the daemon already surfaced with no wedge timer behind it at all. The landing
+# skip on first sight, in either posture, releases the cap markers alone too:
+# wedge_skip_landing has just restarted the idle timer, and that timer is what
+# keeps the ladder re-checking the hash once the task stops being landing.
 #
 # Non-zero when a reset could not be written, so a caller that has to undo an
 # absorb of its own on a failed reset (signal_turnend_panes_churned) can see it.
