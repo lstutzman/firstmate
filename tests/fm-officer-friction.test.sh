@@ -204,6 +204,29 @@ status_event() {  # <json> <task> <key|null> <jq-path>
     "[.events[] | select(.kind == \"status-wait\" and .task == \$t and ((.key // \"null\") == \$k))][0] | $4" "$1"
 }
 
+test_create_denied_needs_a_secret_object() {
+  python3 -I - "$ROOT/bin/fm-officer-friction.py" <<'PY' || fail "create-denied must need a secret object and keep the real refused creates"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1])
+friction = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(friction)
+CD = ("credential", "create-denied")
+# Words from the real status lines of the three misfired keys (must not be create-denied) and two real refused creates.
+cases = [
+    ("pc-4552-guide-copy", "Progress from the Navigator (the worker cannot write Linear).", False),
+    ("admit-193-authority", "so the office cannot merge it. A failed --verify write is now kept when the result names the item", False),
+    ("gilligan-pc4954-check-widening", "widening a check cannot invalidate or rewrite any existing row). (B) Treat it as data-rewriting", False),
+    ("azure-agent-reader", "the script called 'op item create ... -o json', and 1Password's tool has no -o flag", True),
+    ("stripe-test-key ask", "agents cannot create a Stripe test key, so Lee creates it", True),
+    ("secret items title", "Agents cannot create secret items", True),
+]
+for name, text, want in cases:
+    got = friction.classify(friction.clean(text))[:2]
+    assert (got == CD) == want, (name, got)
+PY
+  pass "fm-officer friction: create-denied needs a secret object near the refused create"
+}
+
 test_merge_word_is_not_a_missing_tool() {
   local home json
   local DATE=2026-10-26 T=1793033657 NOW=1793077200
@@ -1704,6 +1727,7 @@ test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started() {
   pass "fm-officer friction: the create cap and the rubric bound what is filed and what starts"
 }
 
+test_create_denied_needs_a_secret_object
 test_merge_word_is_not_a_missing_tool
 test_token_scope_needs_a_token_permission_failure
 test_status_waits_and_root_causes
