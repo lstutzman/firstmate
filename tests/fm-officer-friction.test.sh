@@ -84,14 +84,18 @@ SH
 LINEAR_BIN="$TMP_ROOT/linear-bin"
 mkdir -p "$LINEAR_BIN"
 fake_linear "$LINEAR_BIN"
-# A gh that answers only for the pull requests in $FAKE_GH_MERGED (url=epoch lines) and otherwise fails, so no test reaches GitHub.
+# A gh that answers only for the pull requests in $FAKE_GH_MERGED (url=merge-time, or url=OPEN / url=CLOSED for one
+# not merged) and otherwise fails, so no test reaches GitHub.
 cat > "$LINEAR_BIN/gh" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "${FAKE_GH_LOG:-/dev/null}"
 [ "$1 $2" = "pr view" ] && [ -n "${FAKE_GH_MERGED:-}" ] && [ -f "$FAKE_GH_MERGED" ] || exit 1
 at=$(sed -n "s|^$3=||p" "$FAKE_GH_MERGED")
 [ -n "$at" ] || exit 1
-echo "{\"state\":\"MERGED\",\"mergedAt\":\"$at\"}"
+case "$at" in
+  OPEN|CLOSED) echo "{\"state\":\"$at\",\"mergedAt\":null}" ;;
+  *) echo "{\"state\":\"MERGED\",\"mergedAt\":\"$at\"}" ;;
+esac
 SH
 chmod +x "$LINEAR_BIN/gh"
 export PATH="$LINEAR_BIN:$PATH"
@@ -1485,6 +1489,40 @@ test_pr_merged_outside_the_ledger_reads_reported_again() {
   pass "fm-officer friction: a PR merged outside the ledger reads reported-again with its merge date, and GitHub being unreachable degrades to the ledger"
 }
 
+test_a_standing_work_fix_that_merged_and_did_not_hold() {
+  local home vel pr=https://github.com/o/r/pull/95 vdir card
+  linear_world ghdefault
+  home=$LW_HOME
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  vdir="$TMP_ROOT/ghdefault/gh"
+  mkdir -p "$vdir"
+  printf -- '- [x] fix-lcr - fix lee-command-run %s\n' "$pr" > "$home/data/backlog.md"
+  # GitHub says the pull request is still open: the start stays current, nothing is cached, and the next run asks again.
+  printf '%s=OPEN\n' "$pr" > "$vdir/merged"
+  FAKE_GH_MERGED="$vdir/merged" FAKE_GH_LOG="$vdir/log" run_officer "$home" >/dev/null || fail "run with an open PR must succeed"
+  assert_equals "started $pr" "$(jq -r '[.bottlenecks[] | select(.id == "lee-command-run")][0] | "\(.state) \(.link)"' "$vel")" \
+    "a start linked to a PR GitHub reports open stays started"
+  [ ! -e "$home/data/officers/friction/pr-merges.json" ] || fail "an open PR must not be cached as merged"
+  FAKE_GH_MERGED="$vdir/merged" FAKE_GH_LOG="$vdir/log" run_officer "$home" >/dev/null || fail "re-run with an open PR must succeed"
+  assert_equals "2" "$(grep -c "pr view $pr" "$vdir/log" || true)" "an open PR is asked of GitHub again on the next run"
+  printf '%s=CLOSED\n' "$pr" > "$vdir/merged"
+  FAKE_GH_MERGED="$vdir/merged" FAKE_GH_LOG="$vdir/log" run_officer "$home" >/dev/null || fail "run with a closed PR must succeed"
+  assert_equals "started" "$(jq -r '[.bottlenecks[] | select(.id == "lee-command-run")][0].state' "$vel")" \
+    "a start linked to a PR GitHub reports closed unmerged stays started"
+  [ ! -e "$home/data/officers/friction/pr-merges.json" ] || fail "a closed PR must not be cached as merged"
+  # The fixture's two lee-command-run events are at 10:00:00 and 10:08:20; the PR merged at 10:00:00, with the first, so only the second is after it.
+  printf '%s=2026-10-23T10:00:00Z\n' "$pr" > "$vdir/merged"
+  FAKE_GH_MERGED="$vdir/merged" FAKE_GH_LOG="$vdir/log" run_officer "$home" >/dev/null || fail "run with a merged PR must succeed"
+  assert_equals "started-by-default $pr 2026-10-23T10:00:00Z" \
+    "$(jq -r '[.bottlenecks[] | select(.id == "lee-command-run")][0] | "\(.state) \(.fixed.link) \(.fixed.merged_at)"' "$vel")" \
+    "a standing-work finding seen again after its PR merged on GitHub starts again by default, naming the merged fix"
+  card=$(jq -r '[.bottlenecks[] | select(.id == "lee-command-run")][0] | .improvement + " | " + .evidence' "$vel")
+  assert_contains "$card" "The previous fix ($pr, merged 2026-10-23) did not hold" "the standing-work card says the previous fix did not hold"
+  assert_contains "$card" "Fix $pr merged 2026-10-23 and did not stop it: 1 event(s) since." \
+    "the evidence counts only the events after the merge"
+  pass "fm-officer friction: an open or closed PR keeps a start current and uncached, and a standing-work fix that merged and recurred says it did not hold"
+}
+
 test_fixed_reported_again_and_settled_states() {
   local home json vel first
   linear_world fixed
@@ -1772,6 +1810,7 @@ test_bosun_unsure_class
 test_standing_work_is_started_by_default_with_an_object_action
 test_fixed_reported_again_and_settled_states
 test_pr_merged_outside_the_ledger_reads_reported_again
+test_a_standing_work_fix_that_merged_and_did_not_hold
 test_findings_are_filed_in_linear_under_the_contract
 test_a_missing_label_or_no_writes_starts_nothing
 test_repeated_ask_words_never_reach_linear
