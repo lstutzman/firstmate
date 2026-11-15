@@ -397,10 +397,32 @@ test_area_label_is_one_team_pc_has() {
   assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "findings are filed"
   assert_equals 0 "$(count_lines 'label.*documentation\|label.*triage' "$log")" "no label the team lacks is requested"
   assert_no_grep "not found in team PC" "$(lane)/$DATE.json" "no finding is reported with a missing label"
+  linear_world noarea
+  dir=$FAKE_LINEAR_DIR
+  log=$dir/log
   printf '%s\n' Bug Chore scheduled-review > "$dir/labels.txt"
-  run_library 2026-11-02 $((NOW + 86400)) >/dev/null || fail "a run with no area label at all must succeed"
-  assert_no_grep "not found in team PC" "$(lane)/2026-11-02.json" "with no area label in the team the item is filed without one"
+  run_library >/dev/null || fail "a run with no area label at all must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "findings are filed on a team with no area label"
+  assert_equals 3 "$(count_lines '^issue create .*--label Chore --label scheduled-review --verify' "$log")" \
+    "with no area label in the team each item is filed with no third label"
+  assert_no_grep "not found in team PC" "$(lane)/$DATE.json" "no finding is reported with a missing label"
   pass "fm-officer library: the area label is one team PC has, never documentation or triage unasked"
+}
+
+test_unneeded_code_is_filed_under_refactoring() {
+  local log
+  linear_world refactor
+  log=$FAKE_LINEAR_DIR/log
+  printf '[%s,%s]\n' \
+    "$(finding unneeded-code src/A.cs "Duplicate figure" "Merge into one property." medium)" \
+    "$(finding readme README.md "README undercounts the rules" "Propose changing the count to 29.")" \
+    > "$RUNS/2026-10-31/findings.json"
+  run_library >/dev/null || fail "a writing run must succeed"
+  assert_equals 1 "$(count_lines '^issue create .*unneeded-code.*--label Chore --label scheduled-review --label refactoring --verify' "$log")" \
+    "an unneeded-code bundle is filed under refactoring"
+  assert_equals 1 "$(count_lines '^issue create .*readme.*--label Chore --label scheduled-review --label developer-tools --verify' "$log")" \
+    "any other kind's bundle is filed under developer-tools"
+  pass "fm-officer library: unneeded-code findings are filed under refactoring"
 }
 
 test_buckets
@@ -417,3 +439,4 @@ test_safe_findings_start_and_reserved_ones_hold
 test_start_requests_reach_the_owning_office
 test_no_writes_and_a_missing_label_file_nothing
 test_area_label_is_one_team_pc_has
+test_unneeded_code_is_filed_under_refactoring
