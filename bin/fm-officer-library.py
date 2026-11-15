@@ -59,7 +59,8 @@ bin/fm-officer-linear.py owns the mechanics) with its rubric docs/officers/libra
 which owns what counts as work, how a finding is scored and what starts. With
 --writes linear (the registry's `writes: linear`, with max-creates, max-linear-calls and
 jev) every new code, needs-lee and safe finding is filed in team PC as a Chore, label
-scheduled-review, with the documentation area label (else the triage label), searched for
+scheduled-review, with one area label that team PC has (the finding kind's label from
+AREA_BY_KIND, else --area-label, default developer-tools, else none), searched for
 first by its `librarian-fp:<sha256>` marker and then by title with local-jev, as a line on its
 audit kind's bundle (docs/officers/contract.md "Bundles"). Hold items and
 the run's decisions item are never filed. The Filer runs on the audit run's date, so a
@@ -144,7 +145,9 @@ RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "do
 SOURCE = "audit"
 TYPE_LABEL = "Chore"
 SOURCE_LABEL = "scheduled-review"
-AREA_LABEL = "documentation"
+# Team PC has no documentation or triage label; only labels the team lookup returned are ever used.
+AREA_BY_KIND = {"unneeded-code": "refactoring"}
+DEFAULT_AREA = "developer-tools"
 MARKER = "librarian-fp"
 MAX_CREATES = 3
 
@@ -262,7 +265,9 @@ def file_findings(lib, off, todo, args, run, out, ledger, found, jev, lin, allow
 
     def labels_for(names):
         def label_set(f):
-            wanted = [TYPE_LABEL, SOURCE_LABEL, AREA_LABEL if AREA_LABEL in names else args.triage_label]
+            kind_area = AREA_BY_KIND.get(f["item"]["kind"], args.area_label)
+            area = [a for a in (kind_area, args.area_label) if a.lower() in names][:1]
+            wanted = [TYPE_LABEL, SOURCE_LABEL] + area
             return wanted, [w for w in wanted if w.lower() not in names]
         return label_set
 
@@ -388,6 +393,7 @@ def main(argv):
     parser.add_argument("--date", required=True)
     parser.add_argument("--out", required=True)
     _lib().add_common_args(parser, RUBRIC_FILE)
+    parser.add_argument("--area-label", default=DEFAULT_AREA)
     parser.set_defaults(max_creates=MAX_CREATES)
     args = parser.parse_args(argv)
     if not re.fullmatch(r"\d{4}-\d{2}-\d{2}(T\d{2})?", args.date):

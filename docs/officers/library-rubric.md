@@ -22,7 +22,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 
 ## Where findings are filed
 
-- Team PC, Type Chore, Source `scheduled-review` (the weekly audit), label `documentation`, else the team's triage label; no Linear project for PropertyCompass2 work.
+- Team PC, Type Chore, Source `scheduled-review` (the weekly audit), one area label that team PC has: `refactoring` for unneeded-code findings, else the registry's `area-label` (default `developer-tools`), and none when the team lacks both; no Linear project for PropertyCompass2 work.
 - At most 3 new items per audit run (fleet rules section 8), whatever the registry's `max-creates`.
   What the cap leaves unfiled is named in the digest, highest score first, and the next audit run files it.
 - Each item carries the `librarian-fp:<sha256>` marker.

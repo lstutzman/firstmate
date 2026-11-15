@@ -259,7 +259,7 @@ linear_world() {
   sed -i.bak "s|; model: none;|; writes: linear; jev: /nonexistent/jev.py${2:-}; model: none;|" "$HOME_DIR/data/officers.md"
   export FAKE_LINEAR_DIR="$TMP_ROOT/$1/linear"
   mkdir -p "$FAKE_LINEAR_DIR"
-  printf '%s\n' Bug Chore scheduled-review documentation triage > "$FAKE_LINEAR_DIR/labels.txt"
+  printf '%s\n' Bug Chore scheduled-review developer-tools refactoring > "$FAKE_LINEAR_DIR/labels.txt"
 }
 
 test_findings_are_filed_capped_per_audit_run_and_found_raised() {
@@ -271,7 +271,7 @@ test_findings_are_filed_capped_per_audit_run_and_found_raised() {
   run_library >/dev/null || fail "a writing run must succeed"
   assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "at most 3 new bundle items are created for one audit run"
   assert_equals 3 "$(count_lines '^issue create .*--dry-run' "$log")" "every create is a dry run first"
-  assert_equals 3 "$(count_lines '^issue create .*--label Chore --label scheduled-review --label documentation --verify' "$log")" \
+  assert_equals 3 "$(count_lines '^issue create .*--label Chore --label scheduled-review --label developer-tools --verify' "$log")" \
     "each item is a Chore with the scheduled-review Source and an area label, in no Linear project"
   assert_no_grep "--project" "$log" "PropertyCompass2 work goes in no Fleet project"
   assert_equals 3 "$(count_lines '^librarian-fp:' "$dir/bodies")" "every body carries its bundle's librarian-fp marker alone on its line"
@@ -386,6 +386,45 @@ test_no_writes_and_a_missing_label_file_nothing() {
   pass "fm-officer library: writes: none and a missing label file and start nothing"
 }
 
+test_area_label_is_one_team_pc_has() {
+  local dir log
+  linear_world arealabel
+  dir=$FAKE_LINEAR_DIR
+  log=$dir/log
+  # Team PC has neither documentation nor triage: findings must still be filed, with labels that exist.
+  printf '%s\n' Bug Chore scheduled-review developer-tools > "$dir/labels.txt"
+  run_library >/dev/null || fail "a run on a team without documentation or triage labels must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "findings are filed"
+  assert_equals 0 "$(count_lines 'label.*documentation\|label.*triage' "$log")" "no label the team lacks is requested"
+  assert_no_grep "not found in team PC" "$(lane)/$DATE.json" "no finding is reported with a missing label"
+  linear_world noarea
+  dir=$FAKE_LINEAR_DIR
+  log=$dir/log
+  printf '%s\n' Bug Chore scheduled-review > "$dir/labels.txt"
+  run_library >/dev/null || fail "a run with no area label at all must succeed"
+  assert_equals 3 "$(count_lines '^issue create .*--verify' "$log")" "findings are filed on a team with no area label"
+  assert_equals 3 "$(count_lines '^issue create .*--label Chore --label scheduled-review --verify' "$log")" \
+    "with no area label in the team each item is filed with no third label"
+  assert_no_grep "not found in team PC" "$(lane)/$DATE.json" "no finding is reported with a missing label"
+  pass "fm-officer library: the area label is one team PC has, never documentation or triage unasked"
+}
+
+test_unneeded_code_is_filed_under_refactoring() {
+  local log
+  linear_world refactor
+  log=$FAKE_LINEAR_DIR/log
+  printf '[%s,%s]\n' \
+    "$(finding unneeded-code src/A.cs "Duplicate figure" "Merge into one property." medium)" \
+    "$(finding readme README.md "README undercounts the rules" "Propose changing the count to 29.")" \
+    > "$RUNS/2026-10-31/findings.json"
+  run_library >/dev/null || fail "a writing run must succeed"
+  assert_equals 1 "$(count_lines '^issue create .*unneeded-code.*--label Chore --label scheduled-review --label refactoring --verify' "$log")" \
+    "an unneeded-code bundle is filed under refactoring"
+  assert_equals 1 "$(count_lines '^issue create .*readme.*--label Chore --label scheduled-review --label developer-tools --verify' "$log")" \
+    "any other kind's bundle is filed under developer-tools"
+  pass "fm-officer library: unneeded-code findings are filed under refactoring"
+}
+
 test_buckets
 test_archive_is_safe_but_delete_retire_and_outside_pr_need_lee
 test_reported_once_and_identical_rerun
@@ -399,3 +438,5 @@ test_registry_max_creates_is_held_to_three
 test_safe_findings_start_and_reserved_ones_hold
 test_start_requests_reach_the_owning_office
 test_no_writes_and_a_missing_label_file_nothing
+test_area_label_is_one_team_pc_has
+test_unneeded_code_is_filed_under_refactoring
