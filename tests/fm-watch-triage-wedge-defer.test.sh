@@ -1027,6 +1027,77 @@ test_wedge_threshold_skips_a_landing_task() {
   pass "a landing task's wedge alarm is skipped, and one not handed off or steered since done still alarms"
 }
 
+# First sight: a repaint (a new pane hash) on a finished ship whose PR waits on
+# another home's merger must not wake, while the same pane in any other state
+# still surfaces. The suppressor holds a different hash, so the round is the
+# first sight of the pane's hash.
+landing_first_sight_fixture() {  # <name> [handoff]
+  local dir state key
+  dir=$(landing_fixture "$@")
+  state="$dir/state"
+  key=$(watch_window_key "test:fm-wedge")
+  printf '%s' "older-hash" > "$state/.stale-$key"
+  rm -f "$state/.stale-since-$key"
+  printf '%s\n' "$dir"
+}
+
+test_first_sight_skips_a_landing_task() {
+  local dir state fakebin out capture window key
+  local idle='state: done · source: status-log'
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
+
+  dir=$(landing_first_sight_fixture landing-first)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" absorb \
+    || fail "a landing task's repaint woke the watcher on first sight: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a landing task's repaint queued a stale wake: $(cat "$state/.wake-queue")"
+  [ -e "$state/.stale-since-$key" ] \
+    || fail "a landing task's first-sight skip dropped the idle timer the ladder re-checks on"
+
+  # Away mode (the daemon owns triage): a landing task's repaint still wakes no one.
+  dir=$(landing_first_sight_fixture landing-first-away)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  date +%s > "$state/.afk"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" absorb \
+    || fail "a landing task's repaint woke the away watcher on first sight: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a landing task's repaint queued an away stale wake: $(cat "$state/.wake-queue")"
+
+  # Away mode, not handed off: still surfaces.
+  dir=$(landing_first_sight_fixture landing-first-away-own none)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  date +%s > "$state/.afk"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" exit \
+    || fail "a finished PR not handed off stopped surfacing on first sight while away"
+
+  # Not handed to another home's merger (its own merger's home): still surfaces.
+  dir=$(landing_first_sight_fixture landing-first-own none)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" exit \
+    || fail "a finished PR not handed off stopped surfacing on first sight"
+  [ "$(wedge_stale_wakes "$state" "$window")" -ge 1 ] \
+    || fail "a finished PR not handed off queued no stale wake"
+
+  # Steered back into fix work after its done line: surfaces.
+  dir=$(landing_first_sight_fixture landing-first-steered)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  mkdir -p "$state/wedge.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nfix the review comment\n' \
+    "$(iso_utc_at "$(( $(date +%s) - 60 ))")" > "$state/wedge.inbox/handled/001.msg"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" exit \
+    || fail "a landing task steered since done stopped surfacing on first sight"
+
+  # A finished ship with no PR-ready line (not landing): surfaces.
+  dir=$(wedge_threshold_fixture plain-done "done [at=$(( $(date +%s) - 600 ))]: finished" 0 5)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  printf '%s' "older-hash" > "$state/.stale-$key"
+  rm -f "$state/.stale-since-$key"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" exit \
+    || fail "a finished ship with no PR stopped surfacing on first sight"
+  pass "first sight skips a landing task's repaint, and every other finished pane still surfaces"
+}
+
 if [ -n "${FM_TEST_ONLY:-}" ]; then
   "$FM_TEST_ONLY"
   exit 0
@@ -1046,4 +1117,5 @@ fm_test_run \
   test_wedge_threshold_defers_to_an_executing_validation_run \
   test_wedge_threshold_escalates_when_no_run_is_executing \
   test_wedge_threshold_validating_run_is_off_until_armed \
-  test_wedge_threshold_skips_a_landing_task
+  test_wedge_threshold_skips_a_landing_task \
+  test_first_sight_skips_a_landing_task

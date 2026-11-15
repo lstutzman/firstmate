@@ -72,7 +72,8 @@
 #                          deferred to that same long recheck cadence instead
 #                          (wedge_wait_evidence); a landing task, whose finished
 #                          PR waits only on another home's merger, is skipped
-#                          with no wake at all (wedge_skip_landing, which reads
+#                          with no wake at all, on the first sight of a new pane
+#                          hash as well (wedge_skip_landing, which reads
 #                          fm_office_task_landing); and a pane whose own task
 #                          worktree was written during the quiet window is
 #                          deferred rather than escalated (wedge_defer_writing),
@@ -1383,8 +1384,8 @@ _wedge_cap_int FM_ROLLBACK_SENTINEL_TTL_SECS "$FM_ROLLBACK_SENTINEL_TTL_SECS" 36
 # scratch rather than inheriting a window an earlier episode left silent. The
 # cap-fire route is the one caller that keeps these markers instead of calling it
 # here: they are the ceiling it has just published, so the episode it ends must
-# leave them standing. The away-posture first sight is the one caller that
-# releases them WITHOUT ending an episode, and says so at its own call site.
+# leave them standing. The away-posture first sight and the first-sight landing
+# skips are the callers that release them WITHOUT ending an episode.
 # _wedge_cap_markers_clear <window-key>
 _wedge_cap_markers_clear() {
   local key=$1
@@ -1403,13 +1404,16 @@ _wedge_cap_markers_clear() {
 # sites to keep in step - a new episode-ending route is one call, and it cannot
 # drop the episode marker without dropping the cap with it.
 #
-# One first-sight route is not an episode end: the away-posture branch, where the
-# away daemon owns the one-shot per stale hash. It classifies a fresh render
+# Two first-sight routes are not an episode end. The away-posture branch, where
+# the away daemon owns the one-shot per stale hash, classifies a fresh render
 # without arming or dropping any wedge timer - the first poll after the
 # away-posture record goes picks the episode it was already in back up on that
 # hash - so it releases the cap markers alone, through
 # _wedge_cap_markers_clear. Dropping the timer and count there would leave a hash
-# the daemon already surfaced with no wedge timer behind it at all.
+# the daemon already surfaced with no wedge timer behind it at all. The landing
+# skip on first sight, in either posture, releases the cap markers alone too:
+# wedge_skip_landing has just restarted the idle timer, and that timer is what
+# keeps the ladder re-checking the hash once the task stops being landing.
 #
 # Non-zero when a reset could not be written, so a caller that has to undo an
 # absorb of its own on a failed reset (signal_turnend_panes_churned) can see it.
@@ -5009,11 +5013,16 @@ EOF
             printf '%s' "$h" > "$sf"
             triage_log "absorbed stale (captain-held, never rechecked while the away-posture record exists): $w"
           elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            stale_reason=$(stale_reason_naming_dialog "stale: $w" "$dialog")
-            fm_wake_append stale "$w" "$stale_reason" || exit 1
-            printf '%s' "$h" > "$sf"
-            _wedge_cap_markers_clear "$key"
-            wake "$stale_reason"
+            if wedge_skip_landing "$w" "$ssf" "stale (landing, first sight, away)" 0 "$task"; then
+              printf '%s' "$h" > "$sf"
+              _wedge_cap_markers_clear "$key"
+            else
+              stale_reason=$(stale_reason_naming_dialog "stale: $w" "$dialog")
+              fm_wake_append stale "$w" "$stale_reason" || exit 1
+              printf '%s' "$h" > "$sf"
+              _wedge_cap_markers_clear "$key"
+              wake "$stale_reason"
+            fi
           fi
         elif fm_pause_ceiling_enabled && [ -e "$STATE/.paused-overdue-$task" ]; then
           printf '%s' "$h" > "$sf"
@@ -5042,6 +5051,13 @@ EOF
               date +%s > "$ssf"
               clear_write_tracking "$key"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
+            elif wedge_skip_landing "$w" "$ssf" "stale (landing, first sight)" 0 "$task"; then
+              # A finished ship whose PR waits only on another home's merger:
+              # its repaint-driven new hashes (status-line countdowns) have
+              # nothing to add. Same skip the escalation ladder applies, here on
+              # first sight; the timer it arms keeps the ladder's re-check.
+              printf '%s' "$h" > "$sf"
+              _wedge_cap_markers_clear "$key"
             elif captain_call_stale_bound "$key" "$task"; then
               # The line is captain-relevant and stays so, but the backlog says
               # the captain already holds this work: further NEW pane hashes with
