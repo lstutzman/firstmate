@@ -32,6 +32,19 @@ printf 'curl %s\n' "$*" >> "$FAKE_UP/.calls"
 url=${*: -1}
 [ -f "$FAKE_UP/$(printf '%s' "$url" | tr '/:' '__')" ]
 SH
+cat > "$FAKEBIN/getent" <<'SH'
+#!/usr/bin/env bash
+# getent ahosts <host>: answers from $FAKE_UP/dns_<host> (one address per line);
+# a host with no such file resolves to one public address, "nxdomain.example.org" fails.
+printf 'getent %s\n' "$*" >> "$FAKE_UP/.calls"
+host=${*: -1}
+if [ -f "$FAKE_UP/dns_$host" ]; then
+  while IFS= read -r a; do printf '%s STREAM %s\n' "$a" "$host"; done < "$FAKE_UP/dns_$host"
+  exit 0
+fi
+[ "$host" != nxdomain.example.org ] || exit 2
+printf '93.184.216.34 STREAM %s\n' "$host"
+SH
 cat > "$FAKEBIN/gh" <<'SH'
 #!/usr/bin/env bash
 printf 'gh %s\n' "$*" >> "$FAKE_UP/.calls"
@@ -39,7 +52,7 @@ f="$FAKE_UP/$(printf '%s' "$3" | tr '/:' '__')"
 [ -f "$f" ] || exit 1
 cat "$f"
 SH
-chmod +x "$FAKEBIN/ssh" "$FAKEBIN/curl" "$FAKEBIN/gh"
+chmod +x "$FAKEBIN/ssh" "$FAKEBIN/curl" "$FAKEBIN/getent" "$FAKEBIN/gh"
 export FAKE_UP="$UP"
 export PATH="$FAKEBIN:$PATH"
 
@@ -195,7 +208,7 @@ EOF
   assert_contains "$out" "file=web.status dep=https/api.example.org/health verdict=cleared" "an http dependency that answers clears"
   assert_contains "$out" "file=pr.status dep=pr/o/r/5 verdict=cleared" "a merged pull request clears the pause"
   assert_contains "$out" "file=waiter.status dep=task/finisher verdict=cleared" "a task that is done clears"
-  assert_contains "$(calls)" "curl -fsS --max-time 15 --max-redirs 0 -o /dev/null -- https://api.example.org/health" "the http re-check is a bounded GET"
+  assert_contains "$(calls)" "curl -q -fsS --noproxy * --max-time 10 --max-redirs 0 --resolve api.example.org:443:93.184.216.34 -o /dev/null -- https://api.example.org/health" "the http re-check is a bounded GET pinned to the vetted address"
   pass "ssh, https, pull request and task dependencies are re-checked read-only"
 }
 
@@ -214,6 +227,131 @@ EOF
   assert_equals "" "$(calls)" "no request is made to an IP, localhost or single-label host"
   assert_equals "$n" "$(grep -c 'detail=not a public DNS name' <<<"$out")" "each internal host is refused"
   pass "an https dependency must be a dotted public DNS name"
+}
+
+test_https_refuses_non_public_resolution() {
+  local h out case_ name addr
+  printf '93.184.216.34\n10.0.0.9\n' > "$UP/dns_mixed.example.org"
+  # name:address pairs a worker-written tag could point at through DNS; mixed has
+  # one bad address among public ones, which poisons the host. One home each, so
+  # the per-pass cap cannot stand in for a refusal.
+  for case_ in loop.example.org:127.0.0.1 meta.example.org:169.254.169.254 rfc1918.example.org:10.1.2.3 \
+    rfc172.example.org:172.20.0.5 rfc192.example.org:192.168.1.1 ula.example.org:fd12:3456::1 \
+    ll6.example.org:fe80::1 lo6.example.org:::1 cgnat.example.org:100.64.0.1 zero.example.org:0.0.0.0 \
+    mapped.example.org:::ffff:127.0.0.1 bench.example.org:198.18.0.1 bench2.example.org:198.19.255.1 \
+    ietf.example.org:192.0.0.8 doc1.example.org:192.0.2.1 doc2.example.org:198.51.100.1 \
+    doc3.example.org:203.0.113.1 sixtofour.example.org:2002:c000:201::1 doc6.example.org:2001:db8::1 \
+    teredo.example.org:2001:0:4136:e378::1 nat64.example.org:64:ff9b::a00:1 compat.example.org:::a00:1 \
+    site6.example.org:fec0::1 mcast6.example.org:ff02::1 mixed.example.org: nxdomain.example.org:; do
+    name=${case_%%:*}
+    addr=${case_#*:}
+    [ -z "$addr" ] || printf '%s\n' "$addr" > "$UP/dns_$name"
+    h=$(mkhome "nonpublic-$name")
+    addlog "$h" t <<EOF
+paused [at=1790000001] [cause=external] [dep=https/$name/x]: down
+EOF
+    : > "$UP/.calls"
+    out=$(recheck "$h")
+    assert_not_contains "$(calls)" "curl " "no request is made for $name (${addr:-no address})"
+    if [ "$name" = nxdomain.example.org ]; then
+      assert_contains "$out" "verdict=unchecked new=0 detail=does not resolve" "$name is refused as unresolvable"
+    else
+      assert_contains "$out" "verdict=unchecked new=0 detail=resolves to a non-public address" "$name (${addr:-mixed}) is refused as non-public"
+    fi
+  done
+  pass "an https host that resolves to a non-public address, or fails to resolve, is refused before any request"
+}
+
+test_https_pins_public_address() {
+  local h out
+  h=$(mkhome pinned)
+  printf '93.184.216.34\n2606:2800:220:1:248:1893:25c8:1946\n' > "$UP/dns_pub.example.org"
+  printf '2606:2800:220:1:248:1893:25c8:1946\n' > "$UP/dns_v6.example.org"
+  printf '2001:4860:4860::8888\n' > "$UP/dns_g6.example.org"
+  addlog "$h" a <<EOF
+paused [at=1790000001] [cause=external] [dep=https/pub.example.org/h]: down
+EOF
+  addlog "$h" b <<EOF
+paused [at=1790000001] [cause=external] [dep=https/v6.example.org/h]: down
+EOF
+  addlog "$h" c <<EOF
+paused [at=1790000001] [cause=external] [dep=https/g6.example.org/h]: down
+EOF
+  up https___pub.example.org_h
+  up https___v6.example.org_h
+  up https___g6.example.org_h
+  : > "$UP/.calls"
+  out=$(recheck "$h")
+  assert_contains "$out" "file=a.status dep=https/pub.example.org/h verdict=cleared" "a host resolving only to public addresses is checked"
+  assert_contains "$(calls)" "--resolve pub.example.org:443:[2606:2800:220:1:248:1893:25c8:1946],93.184.216.34 " "curl is pinned to every vetted address of a dual-stack host, so either family can answer"
+  assert_contains "$(calls)" "--resolve v6.example.org:443:[2606:2800:220:1:248:1893:25c8:1946] " "an IPv6 pin is bracketed"
+  assert_contains "$out" "file=c.status dep=https/g6.example.org/h verdict=cleared" "a global unicast 2001: address outside Teredo and documentation space is checked"
+  pass "a public https host is checked through curl pinned to its vetted addresses"
+}
+
+test_https_ignores_proxy_and_curlrc() {
+  local h line
+  h=$(mkhome proxied)
+  addlog "$h" t <<EOF
+paused [at=1790000001] [cause=external] [dep=https/api.example.org/p]: down
+EOF
+  : > "$UP/.calls"
+  https_proxy=http://10.0.0.1:3128 HTTPS_PROXY=http://10.0.0.1:3128 ALL_PROXY=http://10.0.0.1:3128 recheck "$h" >/dev/null
+  line=$(grep '^curl ' "$UP/.calls")
+  assert_contains "$line" "curl -q " "curl reads no curlrc: -q comes first"
+  assert_contains "$line" " --noproxy * " "curl ignores proxy variables, so the pinned address is the one reached"
+  pass "the https re-check cannot be routed through a proxy or a curlrc"
+}
+
+test_https_python_resolver_fallback() {
+  local h out real_py nogetent pybin
+  real_py=$(type -P python3) || { pass "skip: python3 absent, the getaddrinfo fallback cannot run"; return 0; }
+  h=$(mkhome pyresolve)
+  nogetent=$(fm_test_base_path_sans "$PATH" getent python3)
+  pybin="$TMP_ROOT/pybin"
+  mkdir -p "$pybin"
+  # Runs the script's own resolver program with socket.getaddrinfo answering from $FAKE_UP/dns_<host>.
+  cat > "$pybin/python3" <<SH
+#!/usr/bin/env bash
+printf 'python3 %s\n' "\${*: -1}" >> "\$FAKE_UP/.calls"
+exec "$real_py" -I -c "import os, socket
+def _fake(host, *a, **k):
+    f = os.path.join(os.environ['FAKE_UP'], 'dns_' + host)
+    if not os.path.exists(f):
+        raise socket.gaierror(socket.EAI_NONAME, 'no such host')
+    out = []
+    for addr in open(f).read().split():
+        if ':' in addr:
+            out.append((socket.AF_INET6, socket.SOCK_STREAM, 6, '', (addr, 443, 0, 0)))
+        else:
+            out.append((socket.AF_INET, socket.SOCK_STREAM, 6, '', (addr, 443)))
+    return out
+socket.getaddrinfo = _fake
+\$3" "\${@:4}"
+SH
+  chmod +x "$pybin/python3"
+  printf '93.184.216.34\n2606:2800:220:1:248:1893:25c8:1946\n93.184.216.34\n' > "$UP/dns_pyok.example.org"
+  printf 'fe80::1%%eth0\n' > "$UP/dns_pyzone.example.org"
+  addlog "$h" ok <<EOF
+paused [at=1790000001] [cause=external] [dep=https/pyok.example.org/h]: down
+EOF
+  addlog "$h" zone <<EOF
+paused [at=1790000001] [cause=external] [dep=https/pyzone.example.org/h]: down
+EOF
+  addlog "$h" gone <<EOF
+paused [at=1790000001] [cause=external] [dep=https/pygone.example.org/h]: down
+EOF
+  up https___pyok.example.org_h
+  : > "$UP/.calls"
+  out=$(PATH="$pybin:$nogetent" recheck "$h")
+  assert_not_contains "$(calls)" "getent " "with no getent the resolver falls back to python3"
+  assert_contains "$(calls)" "python3 pyok.example.org" "python3 resolves the host"
+  assert_contains "$(calls)" "--resolve pyok.example.org:443:[2606:2800:220:1:248:1893:25c8:1946],93.184.216.34 " "the fallback's addresses are pinned, deduplicated"
+  assert_contains "$out" "file=ok.status dep=https/pyok.example.org/h verdict=cleared" "a public host resolved by python3 is checked"
+  assert_contains "$out" "file=zone.status dep=https/pyzone.example.org/h verdict=unchecked" "a link-local answer with a %zone is refused"
+  assert_contains "$out" "file=gone.status dep=https/pygone.example.org/h verdict=unchecked" "a name python3 cannot resolve is refused"
+  assert_not_contains "$(calls)" "https://pyzone.example.org" "no request is made for the refused host"
+  pass "the python3 getaddrinfo fallback resolves, deduplicates, strips zones and refuses"
 }
 
 test_hostile_names_are_never_run() {
@@ -400,6 +538,10 @@ test_pass_cap_and_cache
 test_overdue_once
 test_dependency_kinds
 test_https_refuses_internal_hosts
+test_https_refuses_non_public_resolution
+test_https_pins_public_address
+test_https_ignores_proxy_and_curlrc
+test_https_python_resolver_fallback
 test_hostile_names_are_never_run
 test_resolved_wait_is_not_rechecked
 test_repeat_count
