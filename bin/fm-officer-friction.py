@@ -1761,6 +1761,7 @@ def group_findings(events, model):
                                                 for e in evs if e["kind"] == "status-wait").items())),
             "severity": severity, "confidence": confidence, "carded": carded,
             "last_seen_at": max((e["at"] for e in evs if e.get("at")), default=None),
+            "event_ats": sorted(e["at"] for e in evs if e.get("at")),
             "owner": None, "title": None, "lee_did": None, "fix": None, "effort": None,
             "category": CATEGORY.get(cause, "other"),
             "evidence": {"tasks": tasks, "sessions": sessions, "status_keys": keys, "cards": cards,
@@ -1958,7 +1959,48 @@ def settled_by(f, rx, homes):
     return None
 
 
-def finding_states(findings, homes, replies, date="1970-01-01", eligible=()):
+def github_merge_lookup(cache_path, gaps):
+    """A merged_at(link) for finding_states: the epoch a GitHub pull request merged, or None (open, closed, unknown).
+
+    Merged pull requests are cached in cache_path (a merge never changes), so a daily run asks GitHub once per pull
+    request that has not merged yet. When gh cannot answer, the link is skipped and one note is added to gaps.
+    """
+    try:
+        with open(cache_path) as fh:
+            cache = json.load(fh)
+    except (OSError, ValueError):
+        cache = {}
+    cache = cache if isinstance(cache, dict) else {}
+    asked = {}
+
+    def merged_at(link):
+        if link in cache:
+            return cache[link]
+        if link not in asked:
+            out = _read(["gh", "pr", "view", link, "--json", "state,mergedAt"], None)
+            try:
+                got = json.loads(out) if out is not None else None
+            except ValueError:
+                got = None
+            if not isinstance(got, dict):
+                asked[link] = None
+                if not gaps:
+                    gaps.append("GitHub could not be read, so a fix pull request that merged outside the fleet ledger"
+                                " still reads as started.")
+            else:
+                asked[link] = epoch_of(got.get("mergedAt")) if got.get("state") == "MERGED" else None
+                if asked[link]:
+                    cache[link] = asked[link]
+                    try:
+                        with open(cache_path, "w") as fh:
+                            json.dump(cache, fh, sort_keys=True)
+                    except OSError:
+                        pass
+        return asked[link]
+    return merged_at
+
+
+def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), merged_at=lambda link: None):
     """{finding id: state record}: what the velocity page draws for each finding, as of the run.
 
     A record holds state (one of STATES), link (a pull request or https URL), task (the task that holds the fix),
@@ -1978,6 +2020,9 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=()):
       started-by-default  the finding is in `eligible` (a carded standing-work group; see STANDING_START), nothing
                         started it (or it was reported again after a merged fix), and Lee did not Object;
       open              anything else.
+
+    A start whose link is a GitHub pull request also counts as merged when merged_at(link) gives a merge epoch, so a
+    fix that merged outside the ledger is not current forever.
 
     A start is current unless it merged. A tap or note is also not current when a merge is known and it is no newer
     than the merge (one with no stamp is then older); a backlog line or branch is judged by its own task's merge. An `Object` tap (inbox note or reply) on a finding keeps it from starting by default.
@@ -2032,6 +2077,8 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=()):
             hit["link"] = https_link(hit["link"])
             stamps = [by_pr[hit["link"]]] if hit["link"] in by_pr else []
             stamps += [by_task[hit["task"]]] if hit["task"] in by_task else []
+            if not stamps and hit["link"] and PULL_URL_RE.fullmatch(hit["link"]):
+                stamps = [merged_at(hit["link"])] if merged_at(hit["link"]) else []
             hit["merged"] = max(stamps) if stamps else None
         latest = max((h["merged"] for h in hits if h["merged"]), default=None)
         current = [h for h in hits if not h["merged"]
@@ -2095,10 +2142,29 @@ def bottleneck(f, date):
     }
 
 
+def say_not_held(card, f, fixed, date):
+    """A card whose fix merged and was seen again says so, and no longer repeats the proposal that preceded the fix."""
+    merged = epoch_of(fixed["merged_at"])
+    since = sum(1 for at in f.get("event_ats", []) if at > merged)
+    where = fixed["link"] or "a merged fix"
+    seen = "%d event(s) since" % since if since else "seen again on %s" % date
+    card["evidence"] = clip("Fix %s merged %s and did not stop it: %s. %s" % (
+        where, fixed["merged_at"][:10], seen, card["evidence"]), 400)
+    card["improvement"] = clip("The previous fix (%s, merged %s) did not hold. The next start must first find why it"
+                               " did not stop this, then fix that. Earlier proposal: %s" % (
+                                   where, fixed["merged_at"][:10], f["fix"]), 400)
+
+
 def velocity_doc(doc, now, states=None):
     start, end = day_bounds(doc["date"])
     # findings are sorted carded first, so the cap drops the least important
-    cards = [bottleneck(f, doc["date"]) for f in card_findings(doc)]
+    cards = []
+    for f in card_findings(doc):
+        card = bottleneck(f, doc["date"])
+        rec = (states or {}).get(f["id"]) or {}
+        if rec.get("state") in ("reported-again", "started-by-default") and rec.get("fixed"):
+            say_not_held(card, f, rec["fixed"], date=doc["date"])
+        cards.append(card)
     for card in cards:
         rec = (states or {}).get(card["id"]) or {"state": "open", "link": None, "task": None, "reopen": False,
                                                  "rule": None, "fixed": None, "actions": STATE_ACTIONS["open"]}
@@ -2590,7 +2656,10 @@ def main(argv):
         target = None
     eligible = {f["id"] for f in card_findings(doc) if f["carded"] and (f["cause"], f["sub"]) in STANDING_START} \
         if target else set()
-    states = finding_states(doc["findings"], homes, replies, args.date, eligible)
+    gh_gaps = []
+    states = finding_states(doc["findings"], homes, replies, args.date, eligible,
+                            github_merge_lookup(os.path.join(args.out, "pr-merges.json"), gh_gaps))
+    doc["coverage"]["notes"].extend(gh_gaps)
     # The end of the digest's day, not the clock: a re-run stays byte-identical, and an office delivers the start
     # requests only within 36 hours of it (bin/fm-office.sh), so a digest for a long-past day starts nothing.
     doc["source"], doc["generated_at"] = "friction-officer", iso_utc(day_bounds(args.date)[1])

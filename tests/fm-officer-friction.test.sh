@@ -84,6 +84,16 @@ SH
 LINEAR_BIN="$TMP_ROOT/linear-bin"
 mkdir -p "$LINEAR_BIN"
 fake_linear "$LINEAR_BIN"
+# A gh that answers only for the pull requests in $FAKE_GH_MERGED (url=epoch lines) and otherwise fails, so no test reaches GitHub.
+cat > "$LINEAR_BIN/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FAKE_GH_LOG:-/dev/null}"
+[ "$1 $2" = "pr view" ] && [ -n "${FAKE_GH_MERGED:-}" ] && [ -f "$FAKE_GH_MERGED" ] || exit 1
+at=$(sed -n "s|^$3=||p" "$FAKE_GH_MERGED")
+[ -n "$at" ] || exit 1
+echo "{\"state\":\"MERGED\",\"mergedAt\":\"$at\"}"
+SH
+chmod +x "$LINEAR_BIN/gh"
 export PATH="$LINEAR_BIN:$PATH"
 
 write_status() {  # <home>
@@ -1445,6 +1455,36 @@ test_standing_work_is_started_by_default_with_an_object_action() {
   pass "fm-officer friction: standing-work findings start by default with an Object action, never a bare Start fix"
 }
 
+test_pr_merged_outside_the_ledger_reads_reported_again() {
+  local home vel pr=https://github.com/o/r/pull/94 vdir
+  linear_world ghmerge
+  home=$LW_HOME
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  vdir="$TMP_ROOT/ghmerge/gh"
+  mkdir -p "$vdir"
+  printf -- '- [x] fix-ghm - fix credential-scope-cloudflare %s\n' "$pr" > "$home/data/backlog.md"
+  # GitHub unreachable (the fake gh fails): ledger-only behaviour, the start stays current, and the run says so.
+  FAKE_GH_LOG="$vdir/log" run_officer "$home" >/dev/null || fail "run with GitHub unreachable must succeed"
+  assert_equals "started" "$(jq -r '[.bottlenecks[] | select(.id == "credential-scope-cloudflare")][0].state' "$vel")" \
+    "with GitHub unreachable a start with no ledger record stays started"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$home/data/officers/friction/$DATE.json")" "GitHub could not be read" \
+    "the gap is a coverage note"
+  # The PR merged on GitHub before the finding's events on the run's day, and the ledger has no record of it.
+  printf '%s=2026-10-01T09:00:00Z\n' "$pr" > "$vdir/merged"
+  FAKE_GH_MERGED="$vdir/merged" FAKE_GH_LOG="$vdir/log" run_officer "$home" >/dev/null || fail "run with a merged PR must succeed"
+  assert_equals "reported-again $pr 2026-10-01T09:00:00Z" \
+    "$(jq -r '[.bottlenecks[] | select(.id == "credential-scope-cloudflare")][0] | "\(.state) \(.fixed.link) \(.fixed.merged_at)"' "$vel")" \
+    "a start linked to a PR GitHub reports merged is reported-again with that PR and merge date"
+  local card
+  card=$(jq -r '[.bottlenecks[] | select(.id == "credential-scope-cloudflare")][0] | .improvement + " | " + .evidence' "$vel")
+  assert_contains "$card" "The previous fix ($pr, merged 2026-10-01) did not hold" "the card says the previous fix did not hold"
+  assert_contains "$card" "merged 2026-10-01 and did not stop it" "the evidence names the merge and the repeat"
+  assert_equals "2" "$(grep -c "pr view $pr" "$vdir/log" || true)" "a merged PR is asked of GitHub once and cached for the next run"
+  FAKE_GH_MERGED="$vdir/merged" FAKE_GH_LOG="$vdir/log" run_officer "$home" >/dev/null || fail "re-run must succeed"
+  assert_equals "2" "$(grep -c "pr view $pr" "$vdir/log" || true)" "a re-run reads the cache, not GitHub"
+  pass "fm-officer friction: a PR merged outside the ledger reads reported-again with its merge date, and GitHub being unreachable degrades to the ledger"
+}
+
 test_fixed_reported_again_and_settled_states() {
   local home json vel first
   linear_world fixed
@@ -1731,6 +1771,7 @@ test_registry_and_unharvested_day
 test_bosun_unsure_class
 test_standing_work_is_started_by_default_with_an_object_action
 test_fixed_reported_again_and_settled_states
+test_pr_merged_outside_the_ledger_reads_reported_again
 test_findings_are_filed_in_linear_under_the_contract
 test_a_missing_label_or_no_writes_starts_nothing
 test_repeated_ask_words_never_reach_linear
