@@ -56,6 +56,10 @@ Older home-summary producers without `counts.in_flight` use their active-worker,
 Update second mates before relying on coverage of those programs.
 Not-collected homes preserve their own prior silence and inventory-failure receipts; only such a kept receipt stops the timer from resolving an open alarm.
 
+Each poll also reads the [PR drain](projects-and-forges.md#pr-drain-open-pr-drain-rule) state of every clone under the home's `projects/`, inside the same reader budget, and announces only a change from what that channel last announced: the check prints one line, which reaches main as its check wake, and the timer appends a `working [key=pr-drain-<owner>-<repo>]` line on drain-on and a `resolved` line with the same key on drain-off, each naming the repository and its count and asking main to relay the change to every home.
+Repeated polls in one state stay quiet, and an unknown read keeps the last announced state.
+Each clone's read gets an equal share of the reader budget still left, and a clone whose read failed, ran out of budget or found GitHub unreadable is named after `PR drain unread:` at the end of the timer's `RUN-RESULT` summary; an undecided history (no 0 or 20 in the window) is a normal answer and is not named.
+
 `bin/fm-fleet-alarm.py` owns the configuration keys, defaults, command syntax, reader budget, deduplication receipts, and timer-file generation.
 `tests/fm-fleet-alarm.test.sh` exercises the alarm with offline quota and summary fixtures and the real fleet-ledger publisher.
 The alarm uses the custom-check contract on every primary tool; its independent timer runs the same check without starting another fleet supervisor.

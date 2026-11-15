@@ -1313,3 +1313,60 @@ subprocess.run(sys.argv[2:], check=True)' "$HOME_FIX/state/.fleet-alarm.lock" \
 printf '%s\n' "${out#RUN-RESULT }" | jq -e '.outcome == "skipped" and .counts.alerts == 0' >/dev/null \
   || fail 'a timer run blocked by the lock reports a skipped run result'
 pass 'a timer run blocked by the lock prints a skipped RUN-RESULT line'
+
+# PR drain: a stubbed bin/fm-pr-drain.py answers from drain-state, so each poll's
+# state is set directly; the alarm announces only changes, once per channel.
+mkdir -p "$HOME_FIX/projects/r"
+cat > "$BIN_FIX/fm-pr-drain.py" <<'PY'
+import os, sys
+print(open(os.path.join(os.environ['FM_HOME'], 'drain-state')).read().strip())
+PY
+drain() { printf '%s\n' "$1" > "$HOME_FIX/drain-state"; }
+drain 'off o/r 3'
+[ -z "$(run_alarm check)" ] || fail 'a repository out of drain must be silent'
+drain 'on o/r 20'
+assert_contains "$(run_alarm check)" 'PR drain on: o/r has 20 open PRs' 'reaching 20 open PRs must announce drain-on'
+for state in 'on o/r 19' 'on o/r 1' 'unknown o/r GitHub unreadable: HTTP 502'; do
+  drain "$state"
+  out=$(run_alarm check)
+  [ -z "$out" ] || fail "a poll in the same drain state must be quiet ($state): $out"
+done
+drain 'off o/r 0'
+assert_contains "$(run_alarm check)" 'PR drain off: o/r has 0 open PRs' 'reaching 0 open PRs must announce drain-off'
+[ -z "$(run_alarm check)" ] || fail 'a second poll at 0 must be quiet'
+pass 'check announces drain-on and drain-off once each, and an unknown read keeps the state'
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+drain 'on o/r 25'
+run_alarm timer >/dev/null
+run_alarm timer >/dev/null
+lines=$(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status")
+[ "$(printf '%s\n' "$lines" | wc -l)" -eq 1 ] || fail "the timer must write one drain-on line: $lines"
+case "$lines" in
+  'working [at='*'] [key=pr-drain-o-r]: PR drain on: o/r has 25 open PRs'*'relay drain-on to every home') ;;
+  *) fail "the drain-on line must be keyed and name the repository and count: $lines" ;;
+esac
+drain 'off o/r 0'
+run_alarm timer >/dev/null
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=pr-drain-o-r\]: PR drain off: o/r has 0 open PRs' \
+  || fail 'the timer must resolve the drain key with one drain-off line'
+pass 'timer writes one keyed line per drain transition, independent of the check channel'
+
+# One hung drain read must not starve the clones after it: each clone gets an equal
+# share of the budget left, and the clone that could not be read is named.
+mkdir -p "$HOME_FIX/projects/a" "$HOME_FIX/projects/b" "$HOME_FIX/projects/c"
+mv "$HOME_FIX/projects/r" "$TMP_ROOT/projects-r"
+cat > "$BIN_FIX/fm-pr-drain.py" <<'PY'
+import os, sys, time
+name = os.path.basename(sys.argv[2])
+if name == 'a':
+    time.sleep(60)
+print('on o/b 22' if name == 'b' else 'unknown o/c open count stayed between 1 and 19 for 14 days')
+PY
+printf '%s\n' '{"budget_seconds":4,"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+out=$(run_alarm timer)
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^working \[at=[0-9]*\] \[key=pr-drain-o-b\]: PR drain on: o/b has 22 open PRs' \
+  || fail "a hung drain read on one clone starved the next clone: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
+printf '%s\n' "${out##*RUN-RESULT }" | jq -e '.summary | (length <= 200) and test("; Serving Claude accounts ") and endswith("; PR drain unread: a")' >/dev/null \
+  || fail "the run result must keep the quota and end by naming only the clone whose drain read timed out: $out"
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+pass 'drain reads share the budget, and only a failed read, not an undecided one, is named after the quota'

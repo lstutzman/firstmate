@@ -44,6 +44,17 @@ A project with no `landing-lag=` token is never held, and the token is read from
 Two parts of the admission rule are known limits, by the captain's decision, until firstmate has a signal for them: a paused landing is not read, and a ready PR held for a release day counts like any other. A merged PR also counts until its task is cleaned up, so choose a limit with those in mind.
 [`bin/fm-project-capacity-lib.sh`](../../bin/fm-project-capacity-lib.sh) owns which records count and how an unreadable signal is handled, and `bin/fm-project-mode.sh --landing-lag <name>` reads the limit back.
 
+## PR drain (open-PR drain rule)
+
+A project whose clone's origin is on github.com is in PR drain from the moment its repository has 20 or more open PRs until its open count reaches 0.
+The state is derived from GitHub on every read, so every home on every machine sees the same answer with no shared marker: below 20 and above 0, the PRs closed in the last 14 days are walked back from now to whichever of 20 or 0 came last, and no write ever reaches the repository.
+While a repository is in drain, `bin/fm-spawn.sh` launches no fresh ship for it unless the brief declares a class with `bin/fm-brief.sh --pr-drain <class>`: an exemption class (`production-outage`, `cve`, `wolverine`, `lee-research`, `officer`, `scheduled`) or a landing job (`restack`, `red-gate-fix`, `returned-pr-fix`, `review`).
+An undeclared ship is deferred exactly like a [project capacity](../configuration.md#project-capacity-configproject-capacity) deferral: one `deferred:` line naming the repository, its open count and the flag, exit 75, nothing created and the item still queued.
+When GitHub cannot be read, or 14 days of history hold neither 20 nor 0 (or hold 1000 or more closed PRs, the GitHub search cap), the state is unknown and the spawn launches with one `warning:` line; scouts, relaunches and secondmates are never held.
+Every ship brief that opens a pull request (no-mistakes or direct-PR on a forge with pull requests) and declares no `--pr-drain` class carries a PR drain check in its Definition of done: just before opening a new pull request the worker runs `bin/fm-pr-drain.py state` in its worktree, and while that prints `on` it pushes its branch only, opens no pull request and reports the branch; at `off`, `unknown` or `none` it opens the pull request as usual. A worker whose branch already has an open pull request, such as an unclassed fix to a returned or red PR, skips the check and finishes through its Definition of done, /no-mistakes included.
+A ship brief scaffolded with `--project` while its repository is in drain also gets a `# PR drain` section saying so, unless its class is `production-outage`, `cve` or a landing job; for the other exemption classes that section carries the same check.
+[`bin/fm-pr-drain.py`](../../bin/fm-pr-drain.py) owns the state, the window and the accepted classes, and the fleet alarm announces each change ([Fleet quota and secondmate alarm](away-and-alarms.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)).
+
 ## Admission by class (data/projects.md admission= token, config/admission/)
 
 A project entry may name an admission config with `admission=<config>`, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti admission=pc2] - ...`, so that `bin/fm-pr-merge.sh` merges a PR only after the captain has answered for every class of change that needs the captain's word.

@@ -348,6 +348,10 @@ EOF
   fi
   printf '\n'
   fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT"
+  case "$MODE:$FORGE" in
+    local-only:* | *:gerrit | *:external) ;;
+    *) printf '%s\n' "$(fm_pr_drain_rule "$FM_ROOT" "$BRANCH")" ;;
+  esac
 }
 mkdir -p "$DATA/$ID"
 [ ! -d "$INSTRUCTIONS" ] || { echo "error: ship instructions path is a directory: $INSTRUCTIONS" >&2; exit 1; }

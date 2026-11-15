@@ -74,6 +74,14 @@ locked record, but independent delivery receipts, so a check cannot consume the
 timer's Captain's Log notification. timer requires config/fleet-ledger enabled.
 arm registers the private check shim. timer-files only writes scheduler files;
 it never loads or starts a scheduler. See docs/configuration.md for installation.
+PR drain: each poll also reads the drain state of every clone under the home's projects/
+(bin/fm-pr-drain.py owns the state, inside the same reader budget) and announces only a change
+from what that channel last announced, so repeated polls in one state stay quiet and an unknown
+read keeps the previous state. Each clone gets an equal share of the budget left, and a clone whose
+read failed or found GitHub unreadable is named at the end of the timer's RUN-RESULT summary. check prints one line per change, which reaches main as its check
+wake; timer appends a `working [key=pr-drain-<owner>-<repo>]` line on drain-on and a `resolved`
+line with the same key on drain-off to state/fleet-alarm.status, each asking main to relay the
+change to every home.
 """
 import csv
 import hashlib
@@ -577,7 +585,20 @@ def collect(cfg):
         findings.update(mate_findings(read, cfg, not_collected))
     except (ValueError, KeyError, TypeError, OSError) as error:
         findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
-    return findings, quota_info, not_collected, eased
+    drain, unread = {}, []
+    projects = HOME / 'projects'
+    clones = sorted(projects.iterdir()) if projects.is_dir() else []
+    for left, project in zip(range(len(clones), 0, -1), clones):
+        try:
+            verdict = read(['python3', BIN / 'fm-pr-drain.py', 'state', project], left).strip().split(maxsplit=2)
+        except ValueError:
+            unread.append(project.name)
+            continue
+        if len(verdict) == 3 and verdict[0] in ('on', 'off'):
+            drain[verdict[1]] = (verdict[0], verdict[2])
+        elif verdict[:1] not in (['none'], ['unknown']) or verdict[-1].startswith('GitHub unreadable'):
+            unread.append(project.name)
+    return findings, quota_info, not_collected, eased, (drain, unread)
 
 
 def check(channel):
@@ -596,8 +617,9 @@ def check(channel):
         timer_open = stored.get('timer_open', False)
         try:
             cfg = settings()
-            raw, quota_info, not_collected, eased = collect(cfg)
+            raw, quota_info, not_collected, eased, (drain, drain_unread) = collect(cfg)
         except (ValueError, OSError) as error:
+            drain, drain_unread = {}, []
             cfg = {'persist_polls': 1}
             raw = {'config': f'Fleet alarm configuration invalid: {error}'}
             quota_info = ''
@@ -688,20 +710,45 @@ def check(channel):
                 timer_open = not cleared
             else:
                 print(text)
+        announced = dict(stored.get('drain', {}).get(channel, {}))
+        changes = []
+        for repo, (side, count) in sorted(drain.items()):
+            if side == announced.get(repo, 'off'):
+                continue
+            announced[repo] = side
+            changes.append((repo, side, f'PR drain {side}: {repo} has {count} open PRs '
+                            + ('(20 or more); only exempt work and PR landing may run there until it is back to 0'
+                               if side == 'on' else '(back to 0); ordinary ship work may resume there')
+                            + f'; relay drain-{side} to every home'))
+        if changes and channel == 'timer':
+            if not (CONFIG / 'fleet-ledger').exists():
+                raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
+            status_path = STATE / 'fleet-alarm.status'
+            with status_path.open('a') as status:
+                for repo, side, text in changes:
+                    # Drain-on opens a keyed phase for the repository and drain-off resolves it.
+                    slug = re.sub(r'[^a-z0-9]+', '-', repo.lower())
+                    verb = 'working' if side == 'on' else 'resolved'
+                    status.write(f'{verb} [at={int(now)}] [key=pr-drain-{slug}]: {text}\n')
+            run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG, status_path], 3)
+        elif changes:
+            print('\n'.join(text for _, _, text in changes))
         new = {key: sorted(set(old.get(key, [])) | ({channel} if key in fresh else set()))
                for key in current}
         new.update(preserved)
         with tempfile.NamedTemporaryFile(mode='w', dir=STATE, prefix='.fleet-alarm-', delete=False) as file:
             json.dump({'conditions': new, 'timer_open': timer_open, 'timer_state': timer_state,
                        'wait': wait_record, 'not_collected': not_collected, 'eased': sorted(eased | {key for key in stored.get('eased', []) if key not in current and key in preserved}),
-                       'suspect': {**stored.get('suspect', {}), channel: suspect}}, file)
+                       'suspect': {**stored.get('suspect', {}), channel: suspect},
+                       'drain': {**stored.get('drain', {}), channel: announced}}, file)
             temporary = file.name
         os.replace(temporary, record)
         if channel == 'timer':
             quota = ('quota unreadable' if 'quota-read' in raw
                      else quota_info.removeprefix(QUOTA_PREFIX) or 'quota not read')
             open_alerts = len(holding)
-            summary = ((f'{open_alerts} alert(s) open' if open_alerts else 'no alerts') + f'; {quota}')[:200]
+            unread = f"; PR drain unread: {', '.join(drain_unread)}"[:60] if drain_unread else ''
+            summary = ((f'{open_alerts} alert(s) open' if open_alerts else 'no alerts') + f'; {quota}')[:200 - len(unread)] + unread
             print('RUN-RESULT ' + json.dumps({'summary': summary, 'counts': {'alerts': open_alerts}}))
 
 
