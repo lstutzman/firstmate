@@ -72,7 +72,8 @@
 #                          deferred to that same long recheck cadence instead
 #                          (wedge_wait_evidence); a landing task, whose finished
 #                          PR waits only on another home's merger, is skipped
-#                          with no wake at all (wedge_skip_landing, which reads
+#                          with no wake at all, on the first sight of a new pane
+#                          hash as well (wedge_skip_landing, which reads
 #                          fm_office_task_landing); and a pane whose own task
 #                          worktree was written during the quiet window is
 #                          deferred rather than escalated (wedge_defer_writing),
@@ -5042,6 +5043,13 @@ EOF
               date +%s > "$ssf"
               clear_write_tracking "$key"
               triage_log "absorbed stale (provably working, overriding a stale captain-relevant status): $w"
+            elif wedge_skip_landing "$w" "$ssf" "stale (landing, first sight)" 0 "$task"; then
+              # A finished ship whose PR waits only on another home's merger:
+              # its repaint-driven new hashes (status-line countdowns) have
+              # nothing to add. Same skip the escalation ladder applies, here on
+              # first sight; the timer it arms keeps the ladder's re-check.
+              printf '%s' "$h" > "$sf"
+              wedge_episode_end "$key" 0 1
             elif captain_call_stale_bound "$key" "$task"; then
               # The line is captain-relevant and stays so, but the backlog says
               # the captain already holds this work: further NEW pane hashes with
