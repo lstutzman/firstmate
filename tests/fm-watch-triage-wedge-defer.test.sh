@@ -1052,6 +1052,24 @@ test_first_sight_skips_a_landing_task() {
     || fail "a landing task's repaint woke the watcher on first sight: $(cat "$out")"
   [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
     || fail "a landing task's repaint queued a stale wake: $(cat "$state/.wake-queue")"
+  [ -e "$state/.stale-since-$key" ] \
+    || fail "a landing task's first-sight skip dropped the idle timer the ladder re-checks on"
+
+  # Away mode (the daemon owns triage): a landing task's repaint still wakes no one.
+  dir=$(landing_first_sight_fixture landing-first-away)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  date +%s > "$state/.afk"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" absorb \
+    || fail "a landing task's repaint woke the away watcher on first sight: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a landing task's repaint queued an away stale wake: $(cat "$state/.wake-queue")"
+
+  # Away mode, not handed off: still surfaces.
+  dir=$(landing_first_sight_fixture landing-first-away-own none)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  date +%s > "$state/.afk"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" exit \
+    || fail "a finished PR not handed off stopped surfacing on first sight while away"
 
   # Not handed to another home's merger (its own merger's home): still surfaces.
   dir=$(landing_first_sight_fixture landing-first-own none)

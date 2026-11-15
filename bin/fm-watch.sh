@@ -5010,11 +5010,16 @@ EOF
             printf '%s' "$h" > "$sf"
             triage_log "absorbed stale (captain-held, never rechecked while the away-posture record exists): $w"
           elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
-            stale_reason=$(stale_reason_naming_dialog "stale: $w" "$dialog")
-            fm_wake_append stale "$w" "$stale_reason" || exit 1
-            printf '%s' "$h" > "$sf"
-            _wedge_cap_markers_clear "$key"
-            wake "$stale_reason"
+            if wedge_skip_landing "$w" "$ssf" "stale (landing, first sight, away)" 0 "$task"; then
+              printf '%s' "$h" > "$sf"
+              _wedge_cap_markers_clear "$key"
+            else
+              stale_reason=$(stale_reason_naming_dialog "stale: $w" "$dialog")
+              fm_wake_append stale "$w" "$stale_reason" || exit 1
+              printf '%s' "$h" > "$sf"
+              _wedge_cap_markers_clear "$key"
+              wake "$stale_reason"
+            fi
           fi
         elif fm_pause_ceiling_enabled && [ -e "$STATE/.paused-overdue-$task" ]; then
           printf '%s' "$h" > "$sf"
@@ -5049,7 +5054,7 @@ EOF
               # nothing to add. Same skip the escalation ladder applies, here on
               # first sight; the timer it arms keeps the ladder's re-check.
               printf '%s' "$h" > "$sf"
-              wedge_episode_end "$key" 0 1
+              _wedge_cap_markers_clear "$key"
             elif captain_call_stale_bound "$key" "$task"; then
               # The line is captain-relevant and stays so, but the backlog says
               # the captain already holds this work: further NEW pane hashes with
