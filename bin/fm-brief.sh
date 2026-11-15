@@ -14,7 +14,7 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--work-class <refactor|clean-up|tech-debt|improve>] [--gate-files <f1,f2,...>] [--linear <PC-n>] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo|external> [--shape squash]] [--pr <auto|manual>] [--work-class <refactor|clean-up|tech-debt|improve>] [--pr-drain <class>] [--gate-files <f1,f2,...>] [--linear <PC-n>] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--linear <PC-n> | --no-linear "<reason>"] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #        fm-brief.sh <task-id> --secondmate --office <task-id> {<project>...|--no-projects}
@@ -87,6 +87,15 @@
 # bin/fm-spawn.sh adds that line to the launch brief only when its `--model`
 # also names a Fable 5.x model; bin/fm-dod-lib.sh's fm_brief_ownership_section
 # owns the rule and the text. Refused on --scout and --secondmate.
+# --pr-drain <class> declares why a ship may launch while its repository is in PR
+# drain: an exemption class or a landing job that bin/fm-pr-drain.py's class
+# command accepts. It writes a "PR drain: <class>" line under `# Setup`, which
+# bin/fm-spawn.sh reads before refusing a ship on a drained repository. When
+# --project names a GitHub clone whose repository is in drain at scaffold time
+# (bin/fm-pr-drain.py owns the state), the brief also gets a `# PR drain`
+# section telling a publishing worker to push its branch without opening a pull
+# request, unless the class is production-outage or cve. Refused on --scout and
+# --secondmate.
 # --gate-files <f1,f2,...> names the protected gate files a ship task is in
 # scope to edit, as comma-separated repo-relative paths (the form
 # bin/fm-gate-grant.sh --files takes: no `..`, glob, space or quote). It renders
@@ -412,6 +421,8 @@ NO_LINEAR=
 NO_LINEAR_SET=0
 WORK_CLASS=
 WORK_CLASS_SET=0
+PR_DRAIN=
+PR_DRAIN_SET=0
 GATE_FILES=
 GATE_FILES_SET=0
 POS=()
@@ -434,6 +445,7 @@ for a in "$@"; do
       linear) LINEAR_ITEM=$a ;;
       no-linear) NO_LINEAR=$a; NO_LINEAR_SET=1 ;;
       work-class) WORK_CLASS=$a; WORK_CLASS_SET=1 ;;
+      pr-drain) PR_DRAIN=$a; PR_DRAIN_SET=1 ;;
       gate-files) GATE_FILES=$a; GATE_FILES_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
@@ -469,6 +481,8 @@ for a in "$@"; do
     --no-linear=*) NO_LINEAR=${a#--no-linear=}; NO_LINEAR_SET=1 ;;
     --work-class) want_value="work-class" ;;
     --work-class=*) WORK_CLASS=${a#--work-class=}; WORK_CLASS_SET=1 ;;
+    --pr-drain) want_value="pr-drain" ;;
+    --pr-drain=*) PR_DRAIN=${a#--pr-drain=}; PR_DRAIN_SET=1 ;;
     --gate-files) want_value="gate-files" ;;
     --gate-files=*) GATE_FILES=${a#--gate-files=}; GATE_FILES_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's merge authority, not a
@@ -550,6 +564,16 @@ if [ "$WORK_CLASS_SET" -eq 1 ]; then
     refactor|clean-up|tech-debt|improve) ;;
     *) echo "error: --work-class must be one of refactor, clean-up, tech-debt, improve (got '$WORK_CLASS')" >&2; exit 1 ;;
   esac
+fi
+if [ "$PR_DRAIN_SET" -eq 1 ]; then
+  [ "$KIND" = ship ] || {
+    echo "error: --pr-drain applies only to ship briefs; a scout is never held by a PR drain" >&2
+    exit 1
+  }
+  python3 "$SCRIPT_DIR/fm-pr-drain.py" class "$PR_DRAIN" || {
+    echo "error: --pr-drain must be an exemption class (production-outage, cve, wolverine, lee-research, officer, scheduled) or a landing job (restack, red-gate-fix, returned-pr-fix, review) (got '$PR_DRAIN')" >&2
+    exit 1
+  }
 fi
 if [ "$GATE_FILES_SET" -eq 1 ]; then
   [ "$KIND" = ship ] || {
@@ -1072,6 +1096,8 @@ else
 fi
 [ -z "$WORK_CLASS" ] || SETUP_BASE+="
 Work class: $WORK_CLASS"
+[ -z "$PR_DRAIN" ] || SETUP_BASE+="
+PR drain: $PR_DRAIN"
 SETUP_BASE+="
 After any restart or resume of this session, before other work, run \`$WT_ASSERT $ID\`; if it exits non-zero it prints the exact directory you belong in, so \`cd\` there and rerun it before continuing."
 
@@ -1169,6 +1195,18 @@ $GATE_SCOPE_LINE
 If a gate-integrity guard or protected-file check refuses an edit, do not retry it and do not work around it.
 Append one \`blocked [at=<epoch>] [cause=policy]: {file} - {the edit wanted}\` line to the status file so firstmate can grant it through \`fm-gate-grant.sh\` or route it, and carry on with the rest of the task."
 DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT") || exit 1
+# A repository in PR drain takes branches, not new PRs, except from urgent production-outage and cve fixes.
+PR_DRAIN_SECTION=
+if [ "$MODE" != local-only ] && [ -n "$PROJECT_DIR" ] && [ "$PR_DRAIN" != production-outage ] && [ "$PR_DRAIN" != cve ]; then
+  read -r PR_DRAIN_STATE PR_DRAIN_REPO PR_DRAIN_OPEN _ < <(python3 "$SCRIPT_DIR/fm-pr-drain.py" state "$PROJECT_DIR") || true
+  [ "$PR_DRAIN_STATE" != on ] || PR_DRAIN_SECTION="
+
+# PR drain
+$PR_DRAIN_REPO is in PR drain ($PR_DRAIN_OPEN open PRs when this brief was written): it takes no new pull requests until its open PRs are merged down to 0.
+This section overrides the Definition of done wherever they differ: do not open a pull request and do not run /no-mistakes, which opens one.
+When the work is committed, push the branch with \`git push -u origin $BRANCH_Q\`, then append \`done [at=<epoch>]: branch $BRANCH pushed, no PR (PR drain)\` and stop; firstmate opens the pull request after the drain.
+Pushing to the branch of a pull request that already exists, such as a restack or a review fix, is still allowed."
+fi
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -1227,7 +1265,7 @@ $WAIT_BLOCK$INBOX_SECTION
 A project's \`AGENTS.md\` or \`CLAUDE.md\` is loaded into every agent session in that project, so edit it only to correct information that is factually wrong - including information your own change made wrong - and never to add knowledge because it is missing.
 A correction edits only the wrong text: do not run \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`, create either file, or add sections, headings, or pointers alongside it.
 
-$DOD
+$DOD$PR_DRAIN_SECTION
 EOF
 append_brief_include
 if [ "$PR_TEXT" = manual ]; then

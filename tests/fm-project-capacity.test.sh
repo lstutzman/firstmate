@@ -578,7 +578,7 @@ test_batch_reports_a_deferred_pair() {
   write_live "$home" live-a "$case_dir/project"
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair was deferred did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, or its project's landing lags, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, its project's landing lags, or its repository is in PR drain, so it stays queued" \
     "the batch did not report the deferral"
   assert_not_contains "$out" "batch: FAILED" "the batch reported a deferral as a failure"
   pass "a batch reports a capacity deferral as deferred, not failed"
@@ -948,7 +948,7 @@ test_batch_reports_a_landing_lag_deferral() {
   write_ready "$home" ready-a "$case_dir/project" 1 30
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair lagged did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, or its project's landing lags, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, its project's landing lags, or its repository is in PR drain, so it stays queued" \
     "the batch did not report the landing-lag deferral"
   pass "a batch reports a landing-lag deferral as deferred, not failed"
 }
@@ -1185,6 +1185,74 @@ test_lane_capacity_gate_refuses_an_unreadable_opt_in() {
   pass "a malformed lane capacity refuses spawns only when it asks for the gate, and one that cannot be read always refuses"
 }
 
+# --- PR drain ----------------------------------------------------------------
+
+# Point the project at a GitHub origin and answer bin/fm-pr-drain.py's reads:
+# <open> open PRs created an hour ago and no recent closes, or a failing gh for
+# "fail". Every other gh call still exits 0.
+drain_gh() {  # <case-dir> <open|fail>
+  # Fetches still reach the local bare origin; only the configured URL names GitHub.
+  git -C "$1/project" config "url.$(git -C "$1/project" remote get-url origin).insteadOf" git@github.com:o/r.git
+  git -C "$1/project" remote set-url origin git@github.com:o/r.git
+  python3 -I -c 'import json, sys, time
+stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 3600))
+json.dump([{"createdAt": stamp}] * int(sys.argv[1]), sys.stdout)' "${2/fail/0}" > "$1/open.json"
+  cat > "$1/fakebin/gh" <<SH
+#!/usr/bin/env bash
+[ "\$1 \$2" = "pr list" ] || exit 0
+[ "$2" != fail ] || { echo "HTTP 502" >&2; exit 1; }
+case "\$*" in *"--state open"*) cat "$1/open.json" ;; *) echo '[]' ;; esac
+SH
+  chmod +x "$1/fakebin/gh"
+}
+
+test_pr_drain_defers_a_ship_without_a_class() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case drain-refused task-c)
+  home="$case_dir/home"
+  drain_gh "$case_dir" 25
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a ship spawn on a drained repository was not deferred: $out"
+  assert_contains "$out" "deferred: o/r is in PR drain with 25 open PRs" "the deferral did not name the repository and its count: $out"
+  assert_contains "$out" "bin/fm-brief.sh --pr-drain <class>" "the deferral did not name the flag: $out"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  pass "a ship spawn on a repository in PR drain with no declared class is deferred before anything exists"
+}
+
+test_pr_drain_admits_every_class_and_landing_job() {
+  local case_dir home out rc class
+  case_dir=$(make_case drain-classes)
+  home="$case_dir/home"
+  drain_gh "$case_dir" 25
+  for class in production-outage cve wolverine lee-research officer scheduled restack red-gate-fix returned-pr-fix review; do
+    write_brief "$home" "d-$class"
+    printf 'PR drain: %s\n' "$class" >> "$home/data/d-$class/brief.md"
+    add_item "$home" "d-$class"
+    rc=0
+    out=$(spawn_ship "$case_dir" "d-$class") || rc=$?
+    expect_code 0 "$rc" "a $class ship on a drained repository was refused: $out"
+    assert_contains "$out" "spawned d-$class" "a $class ship on a drained repository did not launch"
+  done
+  pass "every exemption class and landing job launches on a repository in PR drain"
+}
+
+test_pr_drain_unknown_or_off_launches() {
+  local case_dir out rc=0
+  case_dir=$(make_case drain-unknown task-c task-d)
+  drain_gh "$case_dir" fail
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a ship spawn with an unreadable drain state was refused: $out"
+  assert_contains "$out" "warning: PR drain state of o/r is unknown (GitHub unreadable: HTTP 502); launching task task-c anyway" \
+    "an unknown drain state did not warn once: $out"
+  drain_gh "$case_dir" 0
+  out=$(spawn_ship "$case_dir" task-d) || rc=$?
+  expect_code 0 "$rc" "a ship spawn outside drain was refused: $out"
+  assert_not_contains "$out" "PR drain" "a ship spawn outside drain mentioned the drain: $out"
+  pass "an unknown drain state warns and launches, and a repository out of drain launches silently"
+}
+
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_exhausted_capacity_defers_without_leaving_anything_behind
@@ -1223,3 +1291,6 @@ test_office_landing_keeps_project_capacity_and_landing_lag
 test_lane_capacity_gate_is_opt_in
 test_lane_capacity_gate_defers_without_leaving_anything_behind
 test_lane_capacity_gate_refuses_an_unreadable_opt_in
+test_pr_drain_defers_a_ship_without_a_class
+test_pr_drain_admits_every_class_and_landing_job
+test_pr_drain_unknown_or_off_launches

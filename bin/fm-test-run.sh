@@ -1914,6 +1914,11 @@ families_for_changed_path() {
     bin/fm-fleet-alarm.py)
       printf '%s\n' __script__:fm-fleet-alarm.test.sh
       ;;
+    bin/fm-pr-drain.py)
+      printf '%s\n' __script__:fm-pr-drain.test.sh
+      printf '%s\n' __script__:fm-project-capacity.test.sh
+      printf '%s\n' __script__:fm-fleet-alarm.test.sh
+      ;;
     bin/fm-config-split.py|docs/config-split/*)
       printf '%s\n' __script__:fm-config-split.test.sh
       ;;

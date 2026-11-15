@@ -1313,3 +1313,40 @@ subprocess.run(sys.argv[2:], check=True)' "$HOME_FIX/state/.fleet-alarm.lock" \
 printf '%s\n' "${out#RUN-RESULT }" | jq -e '.outcome == "skipped" and .counts.alerts == 0' >/dev/null \
   || fail 'a timer run blocked by the lock reports a skipped run result'
 pass 'a timer run blocked by the lock prints a skipped RUN-RESULT line'
+
+# PR drain: a stubbed bin/fm-pr-drain.py answers from drain-state, so each poll's
+# state is set directly; the alarm announces only changes, once per channel.
+mkdir -p "$HOME_FIX/projects/r"
+cat > "$BIN_FIX/fm-pr-drain.py" <<'PY'
+import os, sys
+print(open(os.path.join(os.environ['FM_HOME'], 'drain-state')).read().strip())
+PY
+drain() { printf '%s\n' "$1" > "$HOME_FIX/drain-state"; }
+drain 'off o/r 3'
+[ -z "$(run_alarm check)" ] || fail 'a repository out of drain must be silent'
+drain 'on o/r 20'
+assert_contains "$(run_alarm check)" 'PR drain on: o/r has 20 open PRs' 'reaching 20 open PRs must announce drain-on'
+for state in 'on o/r 19' 'on o/r 1' 'unknown o/r GitHub unreadable: HTTP 502'; do
+  drain "$state"
+  out=$(run_alarm check)
+  [ -z "$out" ] || fail "a poll in the same drain state must be quiet ($state): $out"
+done
+drain 'off o/r 0'
+assert_contains "$(run_alarm check)" 'PR drain off: o/r has 0 open PRs' 'reaching 0 open PRs must announce drain-off'
+[ -z "$(run_alarm check)" ] || fail 'a second poll at 0 must be quiet'
+pass 'check announces drain-on and drain-off once each, and an unknown read keeps the state'
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+drain 'on o/r 25'
+run_alarm timer >/dev/null
+run_alarm timer >/dev/null
+lines=$(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status")
+[ "$(printf '%s\n' "$lines" | wc -l)" -eq 1 ] || fail "the timer must write one drain-on line: $lines"
+case "$lines" in
+  'working [at='*'] [key=pr-drain-o-r]: PR drain on: o/r has 25 open PRs'*'relay drain-on to every home') ;;
+  *) fail "the drain-on line must be keyed and name the repository and count: $lines" ;;
+esac
+drain 'off o/r 0'
+run_alarm timer >/dev/null
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^working \[at=[0-9]*\] \[key=pr-drain-o-r\]: PR drain off: o/r has 0 open PRs' \
+  || fail 'the timer must write one keyed drain-off line'
+pass 'timer writes one keyed line per drain transition, independent of the check channel'

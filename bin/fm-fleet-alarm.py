@@ -74,6 +74,12 @@ locked record, but independent delivery receipts, so a check cannot consume the
 timer's Captain's Log notification. timer requires config/fleet-ledger enabled.
 arm registers the private check shim. timer-files only writes scheduler files;
 it never loads or starts a scheduler. See docs/configuration.md for installation.
+PR drain: each poll also reads the drain state of every clone under the home's projects/
+(bin/fm-pr-drain.py owns the state, inside the same reader budget) and announces only a change
+from what that channel last announced, so repeated polls in one state stay quiet and an unknown
+read keeps the previous state. check prints one line per change; timer appends one
+`working [key=pr-drain-<owner>-<repo>]` line per change to state/fleet-alarm.status, asking main
+to relay drain-on or drain-off to every home.
 """
 import csv
 import hashlib
@@ -577,7 +583,16 @@ def collect(cfg):
         findings.update(mate_findings(read, cfg, not_collected))
     except (ValueError, KeyError, TypeError, OSError) as error:
         findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
-    return findings, quota_info, not_collected, eased
+    drain = {}
+    projects = HOME / 'projects'
+    for project in sorted(projects.iterdir()) if projects.is_dir() else []:
+        try:
+            verdict = read(['python3', BIN / 'fm-pr-drain.py', 'state', project]).strip().split(maxsplit=2)
+        except ValueError:
+            continue
+        if len(verdict) == 3 and verdict[0] in ('on', 'off'):
+            drain[verdict[1]] = (verdict[0], verdict[2])
+    return findings, quota_info, not_collected, eased, drain
 
 
 def check(channel):
@@ -596,8 +611,9 @@ def check(channel):
         timer_open = stored.get('timer_open', False)
         try:
             cfg = settings()
-            raw, quota_info, not_collected, eased = collect(cfg)
+            raw, quota_info, not_collected, eased, drain = collect(cfg)
         except (ValueError, OSError) as error:
+            drain = {}
             cfg = {'persist_polls': 1}
             raw = {'config': f'Fleet alarm configuration invalid: {error}'}
             quota_info = ''
@@ -688,13 +704,35 @@ def check(channel):
                 timer_open = not cleared
             else:
                 print(text)
+        announced = dict(stored.get('drain', {}).get(channel, {}))
+        changes = []
+        for repo, (side, count) in sorted(drain.items()):
+            if side == announced.get(repo, 'off'):
+                continue
+            announced[repo] = side
+            changes.append((repo, side, f'PR drain {side}: {repo} has {count} open PRs '
+                            + ('(20 or more); only exempt work and PR landing may run there until it is back to 0'
+                               if side == 'on' else '(back to 0); ordinary ship work may resume there')
+                            + f'; relay drain-{side} to every home'))
+        if changes and channel == 'timer':
+            if not (CONFIG / 'fleet-ledger').exists():
+                raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
+            status_path = STATE / 'fleet-alarm.status'
+            with status_path.open('a') as status:
+                for repo, _, text in changes:
+                    slug = re.sub(r'[^a-z0-9]+', '-', repo.lower())
+                    status.write(f'working [at={int(now)}] [key=pr-drain-{slug}]: {text}\n')
+            run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG, status_path], 3)
+        elif changes:
+            print('\n'.join(text for _, _, text in changes))
         new = {key: sorted(set(old.get(key, [])) | ({channel} if key in fresh else set()))
                for key in current}
         new.update(preserved)
         with tempfile.NamedTemporaryFile(mode='w', dir=STATE, prefix='.fleet-alarm-', delete=False) as file:
             json.dump({'conditions': new, 'timer_open': timer_open, 'timer_state': timer_state,
                        'wait': wait_record, 'not_collected': not_collected, 'eased': sorted(eased | {key for key in stored.get('eased', []) if key not in current and key in preserved}),
-                       'suspect': {**stored.get('suspect', {}), channel: suspect}}, file)
+                       'suspect': {**stored.get('suspect', {}), channel: suspect},
+                       'drain': {**stored.get('drain', {}), channel: announced}}, file)
             temporary = file.name
         os.replace(temporary, record)
         if channel == 'timer':
