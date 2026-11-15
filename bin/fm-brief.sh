@@ -1199,10 +1199,7 @@ If a gate-integrity guard or protected-file check refuses an edit, do not retry 
 Append one \`blocked [at=<epoch>] [cause=policy]: {file} - {the edit wanted}\` line to the status file so firstmate can grant it through \`fm-gate-grant.sh\` or route it, and carry on with the rest of the task."
 DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT") || exit 1
 # A repository in PR drain takes branches, not new PRs; the worker reads the live state just before it opens one.
-PR_DRAIN_RULE="PR drain check: just before you open a new pull request (in no-mistakes mode, before you run /no-mistakes, which opens one), run \`python3 $(shell_quote "$FM_ROOT/bin/fm-pr-drain.py") state .\` from your worktree.
-While it prints \`on\`, the repository is in PR drain and takes no new pull requests, and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $BRANCH_Q\`, append \`done [at=<epoch>]: branch $BRANCH pushed, no PR (PR drain)\` and stop; firstmate decides when that branch's pull request opens.
-When it prints \`off\`, \`unknown\` or \`none\`, open the pull request as the Definition of done says.
-If your branch already has an open pull request, skip this check and finish through the Definition of done, /no-mistakes included."
+PR_DRAIN_RULE=$(fm_pr_drain_rule "$FM_ROOT" "$BRANCH")
 PR_DRAIN_DOD=
 case "$MODE:$FORGE" in
   local-only:* | *:gerrit | *:external) ;;

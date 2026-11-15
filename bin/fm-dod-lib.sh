@@ -603,6 +603,20 @@ If you deliberately keep the PR a draft, append \`paused [at=<epoch>]: {why the 
 EOF
 }
 
+# The PR drain check a ship worker runs just before it opens a new pull request;
+# an ordinary brief and a promotion both append it to their Definition of done.
+fm_pr_drain_rule() {  # <fm-root> <branch>
+  local root=$1 branch=$2 root_q branch_q
+  printf -v root_q '%q' "$root/bin/fm-pr-drain.py"
+  printf -v branch_q '%q' "$branch"
+  cat <<EOF
+PR drain check: just before you open a new pull request (in no-mistakes mode, before you run /no-mistakes, which opens one), run \`python3 $root_q state .\` from your worktree.
+While it prints \`on\`, the repository is in PR drain and takes no new pull requests, and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $branch_q\`, append \`done [at=<epoch>]: branch $branch pushed, no PR (PR drain)\` and stop; firstmate decides when that branch's pull request opens.
+When it prints \`off\`, \`unknown\` or \`none\`, open the pull request as the Definition of done says.
+If your branch already has an open pull request, skip this check and finish through the Definition of done, /no-mistakes included.
+EOF
+}
+
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<pr>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} pr=${7:-auto}
   local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check adapter
