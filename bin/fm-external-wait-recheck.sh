@@ -26,12 +26,18 @@
 #                               <host> must be a dotted DNS name, never a literal IP,
 #                               localhost or a single label. The host is resolved first and
 #                               refused (verdict unchecked, no request) when resolution fails
-#                               or any address is loopback, unspecified, link-local (169.254/16,
-#                               fe80::/10, so cloud metadata), private (10/8, 172.16/12,
-#                               192.168/16), carrier-grade NAT (100.64/10) or unique-local
-#                               (fc00::/7); an IPv4-mapped IPv6 address is judged as its IPv4.
-#                               curl is pinned to the vetted address with --resolve, so a
-#                               second lookup cannot change the target; redirects are not followed
+#                               or any address is not globally routable. IPv4 refuses 0/8,
+#                               10/8, 100.64/10 (carrier-grade NAT), 127/8, 169.254/16
+#                               (link-local, so cloud metadata), 172.16/12, 192.0.0/24,
+#                               192.0.2/24, 192.168/16, 198.18/15, 198.51.100/24,
+#                               203.0.113/24 and 224/3. IPv6 accepts only global unicast
+#                               2000::/3 and inside it refuses 2001::/32 (Teredo),
+#                               2001:db8::/32 and 2002::/16 (6to4), so loopback, link-local,
+#                               unique-local, site-local and 64:ff9b::/96 are refused; an
+#                               IPv4-mapped ::ffff:a.b.c.d is judged as its IPv4. curl is
+#                               pinned to every vetted address with --resolve, ignores any
+#                               curlrc (-q) and proxy (--noproxy), so a second lookup or a
+#                               proxy cannot change the target; redirects are not followed
 #   pr/<owner>/<repo>/<number>  that GitHub pull request is no longer open (a paused wait only;
 #                               a blocked or needs-decision wait on a PR is closed by bin/fm-decision-sweep.sh)
 #   task/<id>                   state/<id>.status ends in a `done` line
@@ -60,8 +66,9 @@
 #
 # bin/fm-watch.sh runs it with --apply on its own cadence
 # (FM_EXTERNAL_WAIT_RECHECK_INTERVAL_SECS, default 300 seconds, 0 turns it off).
-# One pass runs at most 12 re-checks of at most 15 seconds each, so it ends well
-# inside the watcher's 300-second bound.
+# One pass runs at most 12 re-checks of at most 15 seconds each (an https
+# re-check spends at most 5 of them resolving the host and 10 on the request),
+# so it ends well inside the watcher's 300-second bound.
 # Environment: FM_HOME (required), FM_STATE_OVERRIDE, FM_CONFIG_OVERRIDE.
 # Exit: 0 done, 2 usage or setup error.
 set -eu
@@ -96,6 +103,8 @@ num_or() {  # <value> <default>
 }
 MAX_CHECKS=12
 CHECK_TIMEOUT=15
+RESOLVE_TIMEOUT=5
+REQUEST_TIMEOUT=$((CHECK_TIMEOUT - RESOLVE_TIMEOUT))
 REPEAT_MIN=3
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 SEEN="$STATE/.external-wait-recheck.seen"
@@ -117,35 +126,39 @@ dns_name_ok() {  # <host>: a dotted DNS name whose last label starts with a lett
   case "${1##*.}" in [A-Za-z]*) ;; *) return 1 ;; esac
 }
 
-# Print the addresses <host> resolves to, one per line, or fail. getent where
-# the host has it, else python3 (macOS has no getent).
+# Print the addresses <host> resolves to, one per line with any %zone removed,
+# or fail. getent where the host has it, else python3 (macOS has no getent).
 resolve_host() {  # <host>
   if command -v getent >/dev/null 2>&1; then
-    fm_run_timed "$CHECK_TIMEOUT" getent ahosts "$1" </dev/null 2>/dev/null | awk '{ print $1 }' | sort -u
+    fm_run_timed "$RESOLVE_TIMEOUT" getent ahosts "$1" </dev/null 2>/dev/null | awk '{ print $1 }'
   elif command -v python3 >/dev/null 2>&1; then
-    fm_run_timed "$CHECK_TIMEOUT" python3 -I -c 'import socket, sys
+    fm_run_timed "$RESOLVE_TIMEOUT" python3 -I -c 'import socket, sys
 for r in socket.getaddrinfo(sys.argv[1], 443, proto=socket.IPPROTO_TCP):
-    print(r[4][0])' "$1" </dev/null 2>/dev/null | sort -u
+    print(r[4][0])' "$1" </dev/null 2>/dev/null
   else
     return 1
-  fi
+  fi | sed 's/%.*//' | sort -u
 }
 
 # Succeeds only for a globally routable address; every other shape fails closed.
 addr_public_ok() {  # <address>
-  local a o1 o2 o3 o4
+  local a o o1 o2 o3 o4 h1 h2
   a=$(printf '%s' "$1" | tr 'A-F' 'a-f')
-  a=${a%%%*}
-  case "$a" in
-    ::ffff:*.*) a=${a#::ffff:} ;;
-    64:ff9b:*) return 1 ;;
-  esac
+  case "$a" in ::ffff:*.*) a=${a#::ffff:} ;; esac
   case "$a" in
     *:*)
-      case "$a" in
-        :: | ::1 | fe[89ab]* | f[cd]* | ::ffff:*) return 1 ;;
-      esac
-      case "$a" in *[!0-9a-f:]*) return 1 ;; esac
+      case "$a" in *[!0-9a-f:]* | *:::*) return 1 ;; esac
+      h1=${a%%:*}
+      h2=${a#*:}
+      h2=${h2%%:*}
+      [ -n "$h2" ] || h2=0
+      for o in "$h1" "$h2"; do
+        case "$o" in '' | ?????*) return 1 ;; esac
+      done
+      h1=$((16#$h1)) h2=$((16#$h2))
+      [ "$h1" -ge 8192 ] && [ "$h1" -le 16383 ] || return 1
+      [ "$h1" -ne 8194 ] || return 1
+      { [ "$h1" -ne 8193 ] || { [ "$h2" -ne 0 ] && [ "$h2" -ne 3512 ]; }; } || return 1
       ;;
     *.*.*.*)
       IFS=. read -r o1 o2 o3 o4 <<<"$a"
@@ -153,11 +166,11 @@ addr_public_ok() {  # <address>
         case "$o" in '' | *[!0-9]*) return 1 ;; esac
         [ "${#o}" -le 3 ] && [ "$((10#$o))" -le 255 ] || return 1
       done
-      o1=$((10#$o1)) o2=$((10#$o2))
+      o1=$((10#$o1)) o2=$((10#$o2)) o3=$((10#$o3))
       case "$o1" in 0 | 10 | 127) return 1 ;; esac
       [ "$o1" -lt 224 ] || return 1
-      [ "$o1.$o2" != 169.254 ] || return 1
-      [ "$o1.$o2" != 192.168 ] || return 1
+      case "$o1.$o2" in 169.254 | 192.168 | 198.18 | 198.19) return 1 ;; esac
+      case "$o1.$o2.$o3" in 192.0.0 | 192.0.2 | 198.51.100 | 203.0.113) return 1 ;; esac
       { [ "$o1" -ne 172 ] || [ "$o2" -lt 16 ] || [ "$o2" -gt 31 ]; } || return 1
       { [ "$o1" -ne 100 ] || [ "$o2" -lt 64 ] || [ "$o2" -gt 127 ]; } || return 1
       ;;
@@ -169,7 +182,7 @@ addr_public_ok() {  # <address>
 # dependency kind has, or the pass cap was reached) or refuse (the https host
 # resolves to a non-public address or not at all) plus a detail after a tab.
 probe() {  # <dep>
-  local dep=$1 kind rest host path url state f addrs addr o
+  local dep=$1 kind rest host path url state f addrs addr pin
   kind=${dep%%/*}
   rest=${dep#*/}
   case "$kind" in
@@ -188,12 +201,14 @@ probe() {  # <dep>
       [ "$rest" = "$host" ] || path=${rest#*/}
       url="https://$host/$path"
       addrs=$(resolve_host "$host") && [ -n "$addrs" ] || { printf 'refuse\tdoes not resolve'; return 0; }
+      pin=
       while IFS= read -r addr; do
         addr_public_ok "$addr" || { printf 'refuse\tresolves to a non-public address'; return 0; }
+        case "$addr" in *:*) addr="[$addr]" ;; esac
+        pin="$pin${pin:+,}$addr"
       done <<<"$addrs"
-      addr=$(head -n 1 <<<"$addrs")
-      case "$addr" in *:*) addr="[$addr]" ;; esac
-      fm_run_timed "$CHECK_TIMEOUT" curl -fsS --max-time "$CHECK_TIMEOUT" --max-redirs 0 --resolve "$host:443:$addr" -o /dev/null -- "$url" \
+      fm_run_timed "$REQUEST_TIMEOUT" curl -q -fsS --noproxy '*' --max-time "$REQUEST_TIMEOUT" --max-redirs 0 \
+        --resolve "$host:443:$pin" -o /dev/null -- "$url" \
         </dev/null >/dev/null 2>&1 && printf 'up\tanswers' || printf 'down\tno answer'
       ;;
     pr)
