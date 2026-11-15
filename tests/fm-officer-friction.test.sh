@@ -220,6 +220,9 @@ cases = [
     ("stripe-test-key ask", "agents cannot create a Stripe test key, so Lee creates it", True),
     ("secret items title", "Agents cannot create secret items", True),
     ("service account subject first", "the agents' service account cannot create items, so Lee creates them", True),
+    ("service account then unrelated refusal", "Service account check passed, but the worker cannot write Linear", False),
+    ("1Password then unrelated refusal", "1Password is fine, the office cannot save the draft", False),
+    ("vault then unrelated refusal", "the vault is ok but cannot create the PR", False),
     ("1Password item create refused", "1Password item create was refused for the service account", True),
 ]
 for name, text, want in cases:
