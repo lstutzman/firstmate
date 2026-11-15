@@ -77,9 +77,10 @@ it never loads or starts a scheduler. See docs/configuration.md for installation
 PR drain: each poll also reads the drain state of every clone under the home's projects/
 (bin/fm-pr-drain.py owns the state, inside the same reader budget) and announces only a change
 from what that channel last announced, so repeated polls in one state stay quiet and an unknown
-read keeps the previous state. check prints one line per change; timer appends one
-`working [key=pr-drain-<owner>-<repo>]` line per change to state/fleet-alarm.status, asking main
-to relay drain-on or drain-off to every home.
+read keeps the previous state. check prints one line per change, which reaches main as its check
+wake; timer appends a `working [key=pr-drain-<owner>-<repo>]` line on drain-on and a `resolved`
+line with the same key on drain-off to state/fleet-alarm.status, each asking main to relay the
+change to every home.
 """
 import csv
 import hashlib
@@ -719,9 +720,11 @@ def check(channel):
                 raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
             status_path = STATE / 'fleet-alarm.status'
             with status_path.open('a') as status:
-                for repo, _, text in changes:
+                for repo, side, text in changes:
+                    # Drain-on opens a keyed phase for the repository and drain-off resolves it.
                     slug = re.sub(r'[^a-z0-9]+', '-', repo.lower())
-                    status.write(f'working [at={int(now)}] [key=pr-drain-{slug}]: {text}\n')
+                    verb = 'working' if side == 'on' else 'resolved'
+                    status.write(f'{verb} [at={int(now)}] [key=pr-drain-{slug}]: {text}\n')
             run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG, status_path], 3)
         elif changes:
             print('\n'.join(text for _, _, text in changes))

@@ -4475,6 +4475,20 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   echo "error: spawn refused: project $PROJ_ABS has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C $PROJ_ABS commit --allow-empty -m \"chore: initial commit\"', then spawn again" >&2
   exit 1
 fi
+# PR-drain admission (bin/fm-pr-drain.py owns the state and the classes): a fresh
+# ship for a repository in drain launches only with a declared exemption class or
+# landing job, and is otherwise deferred like a capacity deferral. It runs
+# before the shared project lock, so a slow GitHub read never holds it.
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
+  read -r SPAWN_DRAIN_STATE SPAWN_DRAIN_REPO SPAWN_DRAIN_REST < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
+  SPAWN_DRAIN_CLASS=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$BRIEF" 2>/dev/null | head -n 1)
+  if [ "$SPAWN_DRAIN_STATE" = unknown ]; then
+    echo "warning: PR drain state of $SPAWN_DRAIN_REPO is unknown ($SPAWN_DRAIN_REST); launching task $ID anyway" >&2
+  elif [ "$SPAWN_DRAIN_STATE" = on ] && ! { [ -n "$SPAWN_DRAIN_CLASS" ] && python3 "$FM_ROOT/bin/fm-pr-drain.py" class "$SPAWN_DRAIN_CLASS"; }; then
+    echo "deferred: $SPAWN_DRAIN_REPO is in PR drain with $SPAWN_DRAIN_REST open PRs (drain holds from 20 open until 0), so new ship work is refused; task $ID was not launched and its backlog item stays queued - dispatch it again once the drain ends, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, wolverine, lee-research, officer, scheduled) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
+    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+  fi
+fi
 # Project capacity admission (bin/fm-project-capacity-lib.sh owns the
 # declaration, what holds a place, and why this is race-safe). A fresh worker
 # for a project whose declared capacity is already held is deferred here, before
@@ -4544,19 +4558,6 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$LANDING_EXEMPT" -eq 0 ]; t
     elif [ "$FM_PROJECT_LANDING_UNTIMED_COUNT" -gt 0 ]; then
       echo "warning: landing lag for project $(basename "$PROJ_ABS") is unknown: $FM_PROJECT_LANDING_UNTIMED_COUNT ready PR(s) have an unknown wait ($FM_PROJECT_LANDING_UNTIMED); launching task $ID anyway" >&2
     fi
-  fi
-fi
-# PR-drain admission (bin/fm-pr-drain.py owns the state and the classes): a fresh
-# ship for a repository in drain launches only with a declared exemption class or
-# landing job, and is otherwise deferred like a capacity deferral.
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
-  read -r SPAWN_DRAIN_STATE SPAWN_DRAIN_REPO SPAWN_DRAIN_REST < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
-  SPAWN_DRAIN_CLASS=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$BRIEF" 2>/dev/null | head -n 1)
-  if [ "$SPAWN_DRAIN_STATE" = unknown ]; then
-    echo "warning: PR drain state of $SPAWN_DRAIN_REPO is unknown ($SPAWN_DRAIN_REST); launching task $ID anyway" >&2
-  elif [ "$SPAWN_DRAIN_STATE" = on ] && ! { [ -n "$SPAWN_DRAIN_CLASS" ] && python3 "$FM_ROOT/bin/fm-pr-drain.py" class "$SPAWN_DRAIN_CLASS"; }; then
-    echo "deferred: $SPAWN_DRAIN_REPO is in PR drain with $SPAWN_DRAIN_REST open PRs (drain holds from 20 open until 0), so new ship work is refused; task $ID was not launched and its backlog item stays queued - dispatch it again once the drain ends, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, wolverine, lee-research, officer, scheduled) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
-    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi
 # Lane capacity admission (opt-in; bin/fm-capacity.sh owns the verdict and

@@ -1204,7 +1204,7 @@ if [ "$MODE" != local-only ] && [ -n "$PROJECT_DIR" ] && [ "$PR_DRAIN" != produc
 # PR drain
 $PR_DRAIN_REPO is in PR drain ($PR_DRAIN_OPEN open PRs when this brief was written): it takes no new pull requests until its open PRs are merged down to 0.
 This section overrides the Definition of done wherever they differ: do not open a pull request and do not run /no-mistakes, which opens one.
-When the work is committed, push the branch with \`git push -u origin $BRANCH_Q\`, then append \`done [at=<epoch>]: branch $BRANCH pushed, no PR (PR drain)\` and stop; firstmate opens the pull request after the drain.
+When the work is committed, push the branch with \`git push -u origin $BRANCH_Q\`, then append \`done [at=<epoch>]: branch $BRANCH pushed, no PR (PR drain)\` and stop; firstmate decides when that branch's pull request opens.
 Pushing to the branch of a pull request that already exists, such as a restack or a review fix, is still allowed."
 fi
 

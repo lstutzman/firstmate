@@ -59,11 +59,11 @@ test_twenty_open_turns_drain_on() {
 
 test_drain_holds_from_nineteen_down_to_one() {
   local n
-  for n in 19 10 1; do
+  for n in 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
     peak_then "$n"
     assert_equals "on o/r $n" "$("$DRAIN" state "$PROJECT")" "$n open PRs after a peak of 20 did not stay in drain"
   done
-  pass "after a peak of 20 the drain holds at 19, 10 and 1 open PRs"
+  pass "after a peak of 20 the drain holds at every count from 19 down to 1"
 }
 
 test_zero_open_turns_drain_off() {

@@ -1347,6 +1347,6 @@ case "$lines" in
 esac
 drain 'off o/r 0'
 run_alarm timer >/dev/null
-tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^working \[at=[0-9]*\] \[key=pr-drain-o-r\]: PR drain off: o/r has 0 open PRs' \
-  || fail 'the timer must write one keyed drain-off line'
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=pr-drain-o-r\]: PR drain off: o/r has 0 open PRs' \
+  || fail 'the timer must resolve the drain key with one drain-off line'
 pass 'timer writes one keyed line per drain transition, independent of the check channel'
