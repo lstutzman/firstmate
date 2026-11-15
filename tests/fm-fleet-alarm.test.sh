@@ -1353,19 +1353,20 @@ pass 'timer writes one keyed line per drain transition, independent of the check
 
 # One hung drain read must not starve the clones after it: each clone gets an equal
 # share of the budget left, and the clone that could not be read is named.
-mkdir -p "$HOME_FIX/projects/a" "$HOME_FIX/projects/b"
+mkdir -p "$HOME_FIX/projects/a" "$HOME_FIX/projects/b" "$HOME_FIX/projects/c"
 mv "$HOME_FIX/projects/r" "$TMP_ROOT/projects-r"
 cat > "$BIN_FIX/fm-pr-drain.py" <<'PY'
 import os, sys, time
-if os.path.basename(sys.argv[2]) == 'a':
+name = os.path.basename(sys.argv[2])
+if name == 'a':
     time.sleep(60)
-print('on o/b 22')
+print('on o/b 22' if name == 'b' else 'unknown o/c open count stayed between 1 and 19 for 14 days')
 PY
 printf '%s\n' '{"budget_seconds":4,"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
 out=$(run_alarm timer)
 tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^working \[at=[0-9]*\] \[key=pr-drain-o-b\]: PR drain on: o/b has 22 open PRs' \
   || fail "a hung drain read on one clone starved the next clone: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
-printf '%s\n' "${out##*RUN-RESULT }" | jq -e '.summary | test("PR drain unread: a \\(")' >/dev/null \
-  || fail "the clone whose drain read timed out is not named in the run result: $out"
+printf '%s\n' "${out##*RUN-RESULT }" | jq -e '.summary | (length <= 200) and test("; Serving Claude accounts ") and endswith("; PR drain unread: a")' >/dev/null \
+  || fail "the run result must keep the quota and end by naming only the clone whose drain read timed out: $out"
 printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
-pass 'drain reads share the budget, and an unread clone is named in the timer run result'
+pass 'drain reads share the budget, and only a failed read, not an undecided one, is named after the quota'

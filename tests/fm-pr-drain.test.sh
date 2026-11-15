@@ -143,6 +143,8 @@ test_brief_tells_workers_to_check_drain_before_a_pr() {
     brief "${id%%:*}" "${id#*:}" || fail "the ${id#*:} brief did not scaffold: $(cat "$TMP_ROOT/brief.out")"
     check=$(drain_check "${id%%:*}")
     [ -n "$check" ] || fail "a ${id#*:} brief written outside drain has no PR drain check"
+    assert_grep "If your branch already has an open pull request, skip this check and finish through the Definition of done, /no-mistakes included." \
+      "$home/data/${id%%:*}/brief.md" "the ${id#*:} drain check does not spare a branch that already has a pull request"
     assert_no_regex "^# PR drain$" "$home/data/${id%%:*}/brief.md" "a brief written outside drain has a PR drain section"
   done
   # The command the brief hands the worker reads the live state from the worktree.

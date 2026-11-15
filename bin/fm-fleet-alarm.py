@@ -77,8 +77,8 @@ it never loads or starts a scheduler. See docs/configuration.md for installation
 PR drain: each poll also reads the drain state of every clone under the home's projects/
 (bin/fm-pr-drain.py owns the state, inside the same reader budget) and announces only a change
 from what that channel last announced, so repeated polls in one state stay quiet and an unknown
-read keeps the previous state. Each clone gets an equal share of the budget left, and a GitHub clone
-whose state could not be read is named in the timer's RUN-RESULT summary. check prints one line per change, which reaches main as its check
+read keeps the previous state. Each clone gets an equal share of the budget left, and a clone whose
+read failed or found GitHub unreadable is named at the end of the timer's RUN-RESULT summary. check prints one line per change, which reaches main as its check
 wake; timer appends a `working [key=pr-drain-<owner>-<repo>]` line on drain-on and a `resolved`
 line with the same key on drain-off to state/fleet-alarm.status, each asking main to relay the
 change to every home.
@@ -591,12 +591,13 @@ def collect(cfg):
     for left, project in zip(range(len(clones), 0, -1), clones):
         try:
             verdict = read(['python3', BIN / 'fm-pr-drain.py', 'state', project], left).strip().split(maxsplit=2)
-        except ValueError as error:
-            verdict = ['unknown', project.name, str(error)]
+        except ValueError:
+            unread.append(project.name)
+            continue
         if len(verdict) == 3 and verdict[0] in ('on', 'off'):
             drain[verdict[1]] = (verdict[0], verdict[2])
-        elif verdict != ['none']:
-            unread.append(f"{project.name} ({' '.join(verdict[1:]) or 'no answer'})")
+        elif verdict[:1] not in (['none'], ['unknown']) or verdict[-1].startswith('GitHub unreadable'):
+            unread.append(project.name)
     return findings, quota_info, not_collected, eased, (drain, unread)
 
 
@@ -746,8 +747,8 @@ def check(channel):
             quota = ('quota unreadable' if 'quota-read' in raw
                      else quota_info.removeprefix(QUOTA_PREFIX) or 'quota not read')
             open_alerts = len(holding)
-            unread = f"; PR drain unread: {', '.join(drain_unread)}" if drain_unread else ''
-            summary = ((f'{open_alerts} alert(s) open' if open_alerts else 'no alerts') + unread + f'; {quota}')[:200]
+            unread = f"; PR drain unread: {', '.join(drain_unread)}"[:60] if drain_unread else ''
+            summary = ((f'{open_alerts} alert(s) open' if open_alerts else 'no alerts') + f'; {quota}')[:200 - len(unread)] + unread
             print('RUN-RESULT ' + json.dumps({'summary': summary, 'counts': {'alerts': open_alerts}}))
 
 
