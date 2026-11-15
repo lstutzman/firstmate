@@ -834,6 +834,7 @@ tests/fm-devin-signals-live-e2e.test.sh 364
 tests/fm-dispatch-resolve.test.sh 56601
 tests/fm-documentation-audiences.test.sh 3385
 tests/fm-dod-lib.test.sh 9417
+tests/fm-external-wait-recheck.test.sh 12552
 tests/fm-extension-binding.test.sh 29861
 tests/fm-fix-forward-count.test.sh 740
 tests/fm-fleet-alarm.test.sh 54263

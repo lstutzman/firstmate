@@ -162,6 +162,8 @@
 # command), never for a step it can perform itself; a secondmate charter pauses
 # for a known external wait expected to clear on its own. The first-sight alert
 # remains; repeats use the long cadence.
+# An external wait also names its dependency with a [dep=<kind>/<ref>] tag that
+# bin/fm-external-wait-recheck.sh re-checks on a timer (its header owns the kinds).
 # Every scaffold also has blocked and needs-decision lines state a [cause=<cause>]
 # tag (policy, credential, sudo, tool, decision, physical, external); bin/fm-classify-lib.sh
 # status_line_cause owns that vocabulary and its fallback to "unstated".
@@ -765,6 +767,8 @@ IFS= read -r -d '' CAUSE_INSTRUCTIONS <<EOF || true
    Every \`blocked\` and \`needs-decision\` line also states why you cannot go on, as a \`[cause=<cause>]\` tag before the colon, next to the stamp: \`policy\` (a rule or approval reserved to a human), \`credential\` (a login, token or secret you lack), \`sudo\` (needs root), \`tool\` (a tool is missing or broken), \`decision\` (a product or design choice), \`physical\` (needs a person at a machine or device), or \`external\` (a service, machine or other agent you wait on).
    Pick the one that fits best, for example \`blocked [at=<epoch>] [cause=sudo]: {why}\`; a line without it still works but is recorded as unstated.
    A service, machine or agent that is merely unreachable is a wait, not a block: append \`$PAUSED_VERB [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until <YYYY-MM-DDTHH:MMZ>\` and firstmate rechecks it then. Use \`blocked\` for it only when firstmate must act.
+   Tag that wait with what it depends on as \`[dep=<kind>/<ref>]\` before the colon, for example \`[dep=ssh/<host>]\`, \`[dep=https/<host>/<path>]\`, \`[dep=pr/<owner>/<repo>/<number>]\` or \`[dep=task/<id>]\`: firstmate re-checks those on a timer, read-only, and tells you once when the dependency answers, so you are not held on it; any other dependency name needs the \`until\` time, and firstmate reports once when that time passes.
+   The same tag goes on a \`blocked [cause=external]\` line, and firstmate counts repeat waits on one dependency, so a dependency that keeps failing is reported by name instead of re-held each time.
    When a keyed \`blocked\` or \`needs-decision\` line waits only for another owner to merge a pull request, also tag it \`[dep=pr/<owner>/<repo>/<number>]\` before the colon; firstmate closes it on its own once that pull request merges and then tells you to go on.
    When the captain must run a command by hand, print it with \`$LEE_STEP --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]\`, which picks \`bash <script>\` or \`ssh -t <host> ...\` for where the captain's session runs (root work runs as \`sudo -n fleet-admin <recipe>\` yourself; a sudo step is refused unless you add \`--no-recipe '<why no recipe covers it>'\` before the host), and put its output and the same cause tag in your line.
 EOF
@@ -930,6 +934,7 @@ Substitute \`<epoch>\` with the current Unix time in seconds - run \`date +%s\` 
 Use \`$PAUSED_VERB: {why}\` (distinct from \`blocked:\`) only when your domain is deliberately idling on a known external wait you expect to clear on its own, naming when it clears with \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) when you know; use \`blocked:\` when you are stuck and need firstmate to act.
 Give every \`blocked\` and \`needs-decision\` line a \`[cause=<cause>]\` tag before the colon saying why you cannot go on (policy, credential, sudo, tool, decision, physical or external; a missing tag is recorded as unstated).
 A service, machine or agent that is merely unreachable is a wait: declare it with \`$PAUSED_VERB [at=<epoch>] [cause=external]: {dependency} unreachable, expected back {when}; until <YYYY-MM-DDTHH:MMZ>\` rather than \`blocked\`.
+Name its dependency with \`[dep=<kind>/<ref>]\` as above (\`ssh/<host>\`, \`https/<host>/<path>\`, \`pr/<owner>/<repo>/<number>\`, \`task/<id>\`) so the parent re-checks it on a timer and reports it once when it clears or its \`until\` time passes.
 When a keyed \`blocked\` or \`needs-decision\` line waits only for another home to merge a pull request, such as an adopt or merge handoff, also tag it \`[dep=pr/<owner>/<repo>/<number>]\` before the colon; the parent's monitoring then closes it on its own once that pull request merges.
 When the captain must run a command by hand, print it with \`$LEE_STEP --cause <sudo|credential|policy|tool|physical> <host> <script> [arg...]\`, which picks \`bash <script>\` or \`ssh -t <host> ...\` for where the captain's session runs (root work runs as \`sudo -n fleet-admin <recipe>\` yourself; a sudo step is refused unless you add \`--no-recipe '<why no recipe covers it>'\` before the host), and carry the same cause tag on the line asking for it.
 Use this only for material phase changes, a captain decision, a real blocker, a failure, work ready for review, or work you landed.
