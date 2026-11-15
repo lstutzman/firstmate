@@ -411,9 +411,11 @@ RULES = [
     ("policy", "credential-approval", re.compile(
         r"credential change|(?:credential|secret)\b.{0,80}Lee'?s (?:own )?words?|credential[- ]naming", re.I)),
     ("credential", "create-denied", re.compile(
-        r"(?:can'?t|cannot|not permitted to|no permission to|do not have permission to)[^.;()\[\]]{0,60}"
-        r"\b(?:create|write|save)\b[^.;()\[\]]{0,40}\b(?:secrets?|credentials?|keys?|tokens?|passwords?"
-        r"|1Password|vault|service accounts?|op items?)\b|\bop\b[^.;]{0,20}\bitem create\b", re.I)),
+        r"%(neg)s[^.;()\[\]]{0,60}\b(?:create|write|save)\b[^.;()\[\]]{0,40}\b(?:secrets?|credentials?|keys?"
+        r"|tokens?|passwords?|1Password|vault|service accounts?|op items?)\b"
+        r"|\b(?:service accounts?|1Password|op|vault)\b[^.;()\[\]]{0,40}%(neg)s[^.;()\[\]]{0,20}"
+        r"\b(?:create|write|save)\b|\b(?:op|1Password)\b[^.;]{0,20}\bitem create\b"
+        % {"neg": r"(?:can'?t|cannot|not permitted to|no permission to|do not have permission to)"}, re.I)),
     ("credential", "scope", re.compile(
         r"authentication error|code 10000|insufficient (?:permission|privilege)s?"
         r"|(?<![\w-])(?:403|forbidden)(?![\w-]).{0,60}(?:token|credential|api key|service account|%(svc)s)"

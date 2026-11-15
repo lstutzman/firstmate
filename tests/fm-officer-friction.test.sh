@@ -211,7 +211,7 @@ spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1]
 friction = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(friction)
 CD = ("credential", "create-denied")
-# Words from the real status lines of the three misfired keys (must not be create-denied) and two real refused creates.
+# Words from the real status lines of the three misfired keys (must not be create-denied) and real refused creates.
 cases = [
     ("pc-4552-guide-copy", "Progress from the Navigator (the worker cannot write Linear).", False),
     ("admit-193-authority", "so the office cannot merge it. A failed --verify write is now kept when the result names the item", False),
@@ -219,6 +219,8 @@ cases = [
     ("azure-agent-reader", "the script called 'op item create ... -o json', and 1Password's tool has no -o flag", True),
     ("stripe-test-key ask", "agents cannot create a Stripe test key, so Lee creates it", True),
     ("secret items title", "Agents cannot create secret items", True),
+    ("service account subject first", "the agents' service account cannot create items, so Lee creates them", True),
+    ("1Password item create refused", "1Password item create was refused for the service account", True),
 ]
 for name, text, want in cases:
     got = friction.classify(friction.clean(text))[:2]
