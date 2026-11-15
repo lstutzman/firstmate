@@ -946,6 +946,7 @@ START_HOMES
     --max-creates "$(line_field "$OFFICER_LINE" max-creates || echo 3)" \
     --max-linear-calls "$(line_field "$OFFICER_LINE" max-linear-calls || echo 450)" \
     --bundle-cap "$(line_field "$OFFICER_LINE" bundle-cap || echo 15)" \
+    --area-label "$(line_field "$OFFICER_LINE" area-label || echo developer-tools)" \
     --jev "$(line_field "$OFFICER_LINE" jev || echo "$HOME/.claude/skills/local-jev/jev.py")" \
     --fm-home "$FM_HOME" ${extra[@]+"${extra[@]}"}
 }
