@@ -77,7 +77,8 @@ it never loads or starts a scheduler. See docs/configuration.md for installation
 PR drain: each poll also reads the drain state of every clone under the home's projects/
 (bin/fm-pr-drain.py owns the state, inside the same reader budget) and announces only a change
 from what that channel last announced, so repeated polls in one state stay quiet and an unknown
-read keeps the previous state. check prints one line per change, which reaches main as its check
+read keeps the previous state. Each clone gets an equal share of the budget left, and a GitHub clone
+whose state could not be read is named in the timer's RUN-RESULT summary. check prints one line per change, which reaches main as its check
 wake; timer appends a `working [key=pr-drain-<owner>-<repo>]` line on drain-on and a `resolved`
 line with the same key on drain-off to state/fleet-alarm.status, each asking main to relay the
 change to every home.
@@ -584,16 +585,19 @@ def collect(cfg):
         findings.update(mate_findings(read, cfg, not_collected))
     except (ValueError, KeyError, TypeError, OSError) as error:
         findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
-    drain = {}
+    drain, unread = {}, []
     projects = HOME / 'projects'
-    for project in sorted(projects.iterdir()) if projects.is_dir() else []:
+    clones = sorted(projects.iterdir()) if projects.is_dir() else []
+    for left, project in zip(range(len(clones), 0, -1), clones):
         try:
-            verdict = read(['python3', BIN / 'fm-pr-drain.py', 'state', project]).strip().split(maxsplit=2)
-        except ValueError:
-            continue
+            verdict = read(['python3', BIN / 'fm-pr-drain.py', 'state', project], left).strip().split(maxsplit=2)
+        except ValueError as error:
+            verdict = ['unknown', project.name, str(error)]
         if len(verdict) == 3 and verdict[0] in ('on', 'off'):
             drain[verdict[1]] = (verdict[0], verdict[2])
-    return findings, quota_info, not_collected, eased, drain
+        elif verdict != ['none']:
+            unread.append(f"{project.name} ({' '.join(verdict[1:]) or 'no answer'})")
+    return findings, quota_info, not_collected, eased, (drain, unread)
 
 
 def check(channel):
@@ -612,9 +616,9 @@ def check(channel):
         timer_open = stored.get('timer_open', False)
         try:
             cfg = settings()
-            raw, quota_info, not_collected, eased, drain = collect(cfg)
+            raw, quota_info, not_collected, eased, (drain, drain_unread) = collect(cfg)
         except (ValueError, OSError) as error:
-            drain = {}
+            drain, drain_unread = {}, []
             cfg = {'persist_polls': 1}
             raw = {'config': f'Fleet alarm configuration invalid: {error}'}
             quota_info = ''
@@ -742,7 +746,8 @@ def check(channel):
             quota = ('quota unreadable' if 'quota-read' in raw
                      else quota_info.removeprefix(QUOTA_PREFIX) or 'quota not read')
             open_alerts = len(holding)
-            summary = ((f'{open_alerts} alert(s) open' if open_alerts else 'no alerts') + f'; {quota}')[:200]
+            unread = f"; PR drain unread: {', '.join(drain_unread)}" if drain_unread else ''
+            summary = ((f'{open_alerts} alert(s) open' if open_alerts else 'no alerts') + unread + f'; {quota}')[:200]
             print('RUN-RESULT ' + json.dumps({'summary': summary, 'counts': {'alerts': open_alerts}}))
 
 

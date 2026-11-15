@@ -93,9 +93,12 @@
 # bin/fm-spawn.sh reads before refusing a ship on a drained repository. When
 # --project names a GitHub clone whose repository is in drain at scaffold time
 # (bin/fm-pr-drain.py owns the state), the brief also gets a `# PR drain`
-# section telling a publishing worker to push its branch without opening a pull
-# request, unless the class is production-outage or cve. Refused on --scout and
-# --secondmate.
+# section saying so, unless the class is production-outage, cve or a landing
+# job. Every PR-opening ship brief (no-mistakes or direct-PR on a forge with
+# pull requests) without --pr-drain carries a PR drain check in its Definition
+# of done: just before opening a pull request the worker reads the live state
+# with bin/fm-pr-drain.py and, while it is on, pushes its branch only and
+# reports it. Refused on --scout and --secondmate.
 # --gate-files <f1,f2,...> names the protected gate files a ship task is in
 # scope to edit, as comma-separated repo-relative paths (the form
 # bin/fm-gate-grant.sh --files takes: no `..`, glob, space or quote). It renders
@@ -1195,18 +1198,31 @@ $GATE_SCOPE_LINE
 If a gate-integrity guard or protected-file check refuses an edit, do not retry it and do not work around it.
 Append one \`blocked [at=<epoch>] [cause=policy]: {file} - {the edit wanted}\` line to the status file so firstmate can grant it through \`fm-gate-grant.sh\` or route it, and carry on with the rest of the task."
 DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT") || exit 1
-# A repository in PR drain takes branches, not new PRs, except from urgent production-outage and cve fixes.
+# A repository in PR drain takes branches, not new PRs; the worker reads the live state just before it opens one.
+PR_DRAIN_RULE="PR drain check: just before you open a pull request (in no-mistakes mode, before you run /no-mistakes, which opens one), run \`python3 $(shell_quote "$FM_ROOT/bin/fm-pr-drain.py") state .\` from your worktree.
+While it prints \`on\`, the repository is in PR drain and takes no new pull requests, and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $BRANCH_Q\`, append \`done [at=<epoch>]: branch $BRANCH pushed, no PR (PR drain)\` and stop; firstmate decides when that branch's pull request opens.
+When it prints \`off\`, \`unknown\` or \`none\`, open the pull request as the Definition of done says.
+Pushing to the branch of a pull request that already exists is still allowed."
+PR_DRAIN_DOD=
+case "$MODE:$FORGE" in
+  local-only:* | *:gerrit | *:external) ;;
+  *) [ -n "$PR_DRAIN" ] || PR_DRAIN_DOD="
+$PR_DRAIN_RULE" ;;
+esac
 PR_DRAIN_SECTION=
-if [ "$MODE" != local-only ] && [ -n "$PROJECT_DIR" ] && [ "$PR_DRAIN" != production-outage ] && [ "$PR_DRAIN" != cve ]; then
-  read -r PR_DRAIN_STATE PR_DRAIN_REPO PR_DRAIN_OPEN _ < <(python3 "$SCRIPT_DIR/fm-pr-drain.py" state "$PROJECT_DIR") || true
-  [ "$PR_DRAIN_STATE" != on ] || PR_DRAIN_SECTION="
+case "$PR_DRAIN" in
+  production-outage | cve | restack | red-gate-fix | returned-pr-fix | review) ;;
+  *)
+    if [ "$MODE" != local-only ] && [ -n "$PROJECT_DIR" ]; then
+      read -r PR_DRAIN_STATE PR_DRAIN_REPO PR_DRAIN_OPEN _ < <(python3 "$SCRIPT_DIR/fm-pr-drain.py" state "$PROJECT_DIR") || true
+      [ "$PR_DRAIN_STATE" != on ] || PR_DRAIN_SECTION="
 
 # PR drain
-$PR_DRAIN_REPO is in PR drain ($PR_DRAIN_OPEN open PRs when this brief was written): it takes no new pull requests until its open PRs are merged down to 0.
-This section overrides the Definition of done wherever they differ: do not open a pull request and do not run /no-mistakes, which opens one.
-When the work is committed, push the branch with \`git push -u origin $BRANCH_Q\`, then append \`done [at=<epoch>]: branch $BRANCH pushed, no PR (PR drain)\` and stop; firstmate decides when that branch's pull request opens.
-Pushing to the branch of a pull request that already exists, such as a restack or a review fix, is still allowed."
-fi
+$PR_DRAIN_REPO was in PR drain ($PR_DRAIN_OPEN open PRs) when this brief was written: it takes no new pull requests until its open PRs are merged down to 0.
+${PR_DRAIN_DOD:+Follow the PR drain check in the Definition of done before you open a pull request.}${PR_DRAIN_DOD:-$PR_DRAIN_RULE}"
+    fi
+    ;;
+esac
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
@@ -1265,7 +1281,7 @@ $WAIT_BLOCK$INBOX_SECTION
 A project's \`AGENTS.md\` or \`CLAUDE.md\` is loaded into every agent session in that project, so edit it only to correct information that is factually wrong - including information your own change made wrong - and never to add knowledge because it is missing.
 A correction edits only the wrong text: do not run \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`, create either file, or add sections, headings, or pointers alongside it.
 
-$DOD$PR_DRAIN_SECTION
+$DOD$PR_DRAIN_DOD$PR_DRAIN_SECTION
 EOF
 append_brief_include
 if [ "$PR_TEXT" = manual ]; then

@@ -29,7 +29,7 @@ import sys
 
 THRESHOLD = 20
 WINDOW_DAYS = 14
-CLOSED_LIMIT = 2000
+CLOSED_LIMIT = 1000
 EXEMPT = ('production-outage', 'cve', 'wolverine', 'lee-research', 'officer', 'scheduled')
 LANDING = ('restack', 'red-gate-fix', 'returned-pr-fix', 'review')
 ORIGIN = re.compile(r'^(?:git@github\.com:|ssh://git@github\.com/|https://github\.com/)'
@@ -69,7 +69,7 @@ def state(project):
         closed = gh(repo, '--state', 'closed', '--search', f"closed:>={since:%Y-%m-%dT%H:%M:%SZ}",
                     '--limit', str(CLOSED_LIMIT), '--json', 'createdAt,closedAt')
         if len(closed) >= CLOSED_LIMIT:
-            return f'unknown {repo} more than {CLOSED_LIMIT} PRs closed in {WINDOW_DAYS} days'
+            return f'unknown {repo} {CLOSED_LIMIT} or more PRs closed in {WINDOW_DAYS} days (the GitHub search cap)'
         steps = {}
         for pr in opened + closed:
             if when(pr['createdAt']) >= since:
