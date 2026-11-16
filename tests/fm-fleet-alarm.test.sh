@@ -478,6 +478,15 @@ run_alarm check >/dev/null
 now=$(date +%s)
 mate 1 0 7200
 {
+  printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 20000))" "$(date -u -d "@$((now - 7200))" +%Y-%m-%dT%H:%MZ)"
+  printf 'done [at=%s]: relay noted\n' "$((now - 600))"
+} > "$HOME_FIX/state/mate.status"
+[ -z "$(run_alarm check)" ] || fail 'a recent done line after an expired paused wait is not silence'
+mate 0 0 0
+run_alarm check >/dev/null
+now=$(date +%s)
+mate 1 0 7200
+{
   printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
   printf 'done [at=%s]: relay noted\n' "$((now - 7000))"
   printf 'working [at=%s]: resumed\n' "$((now - 6800))"

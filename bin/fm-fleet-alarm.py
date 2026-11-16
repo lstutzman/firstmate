@@ -365,6 +365,7 @@ while IFS= read -r line || [ -n "$line" ]; do
       fi
       line=$(status_agent_event_line "$3/$id.status" "$3/$id.status" "$4") || exit 1
       verb=$(status_line_verb "$line")
+      state_age=$age
       # A plain informational done line does not end a declared pause: the most recent earlier
       # working, paused, blocked or needs-decision line decides, and only a paused one stands in.
       if [ "$verb" = done ]; then
@@ -376,7 +377,7 @@ while IFS= read -r line || [ -n "$line" ]; do
         if [ -n "$held" ] && [ "$(status_line_verb "$held")" = paused ] && _fm_status_at_epoch "$held" held_at; then
           line=$held
           verb=paused
-          age=$(( $4 - held_at )); [ "$age" -ge 0 ] || age=0
+          state_age=$(( $4 - held_at )); [ "$state_age" -ge 0 ] || state_age=0
         fi
       fi
       case "$verb" in working|paused) ;; *) verb=other ;; esac
@@ -385,7 +386,7 @@ while IFS= read -r line || [ -n "$line" ]; do
       folded=$(status_open_decisions "$window" secondmate)
       open=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" || $2 == "blocked"' | LC_ALL=C wc -l | tr -d ' ')
       asks=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" { printf "%s%s", sep, $1; sep = " " }')
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks" "$cause"
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks" "$cause" "$state_age"
       ;;
   esac
 done < "$2"
@@ -393,7 +394,7 @@ done < "$2"
     seen = set()
     routes = list(csv.reader(io.StringIO(roster), delimiter='\t'))
     for index, row in enumerate(routes):
-        name, host, home, age, open_decisions, last_verb, paused_until, asks, cause = row
+        name, host, home, age, open_decisions, last_verb, paused_until, asks, cause, state_age = row
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name) or name in seen or not Path(home).is_absolute():
             raise ValueError('invalid or duplicate secondmate route')
         seen.add(name)
@@ -457,7 +458,7 @@ done < "$2"
                 continue
             if asks and work[0] and waiting_on_open_ask(summary, counts, asks.split()):
                 continue
-            if working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg, cause):
+            if working_on_task(summary, counts, open_decisions, last_verb, paused_until, state_age, cfg, cause):
                 continue
             ages = [] if age == 'null' else [float(age)]
             meta = STATE / (name + '.meta')
