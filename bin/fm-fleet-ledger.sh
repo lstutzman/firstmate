@@ -11,7 +11,8 @@
 # Producers:
 #   bin/fm-brief.sh              appended (in every worker's status command,
 #                                right after its unchanged plain append)
-#   bin/fm-spawn.sh              dispatched (fresh spawns only, never relaunch)
+#   bin/fm-spawn.sh              dispatched (fresh spawns only), relaunched (a
+#                                relaunch of an existing task)
 #   bin/fm-watch.sh              capture, once per poll cycle
 #   bin/fm-pr-check.sh           pr_ready (a PR registered for review, not the
 #                                merge-time re-record from bin/fm-pr-merge.sh)
@@ -21,6 +22,7 @@
 #
 # Usage:
 #   fm-fleet-ledger.sh dispatched <task> <kind> <project> <harness> <model> [<effort>]
+#   fm-fleet-ledger.sh relaunched <task> <kind> <project> <harness> <model> [<effort>]
 #   fm-fleet-ledger.sh pr_ready <task> <url>
 #   fm-fleet-ledger.sh merged <task> pr <url>
 #   fm-fleet-ledger.sh merged <task> local
@@ -44,6 +46,9 @@
 # records precede them. cleaned_up then deletes the task's offset, because teardown
 # retires that status log right after. dispatched deletes any leftover offset
 # so a reused task id starts at byte 0 of its fresh log.
+# relaunched records the same members as dispatched, for the harness, model and
+# effort a replacement agent launched with, and leaves the status offset alone
+# because the task's status log continues.
 # dispatched also records the effort the worker launched with ("default" when
 # none was given) and skills_commit, the skills the session loads, read from
 # FM_SKILLS_DIR (default $HOME/.agents/skills; set but empty means not
@@ -72,7 +77,7 @@ LOCK="$STATE/.fleet-ledger.lock"
 TEXT_MAX_CHARS=2000
 
 usage() {
-  echo "usage: fm-fleet-ledger.sh dispatched <task> <kind> <project> <harness> <model> [<effort>] | pr_ready <task> <url> | merged <task> pr <url> | merged <task> local | cleaned_up <task> | capture | appended <config> <state>/<task>.status" >&2
+  echo "usage: fm-fleet-ledger.sh dispatched|relaunched <task> <kind> <project> <harness> <model> [<effort>] | pr_ready <task> <url> | merged <task> pr <url> | merged <task> local | cleaned_up <task> | capture | appended <config> <state>/<task>.status" >&2
   exit 2
 }
 
@@ -82,7 +87,7 @@ task_ok() {
 
 cmd=${1:-}
 case "$cmd" in
-  dispatched) { [ "$#" -ge 6 ] && [ "$#" -le 7 ] && task_ok "$2"; } || usage ;;
+  dispatched|relaunched) { [ "$#" -ge 6 ] && [ "$#" -le 7 ] && task_ok "$2"; } || usage ;;
   pr_ready) { [ "$#" -eq 3 ] && task_ok "$2" && [ -n "$3" ]; } || usage ;;
   merged)
     task_ok "${2:-}" || usage
@@ -241,7 +246,9 @@ if [ "$cmd" = capture ]; then
 fi
 
 SKILLS_COMMIT=
-[ "$cmd" != dispatched ] || SKILLS_COMMIT=$(skills_commit 2>/dev/null) || SKILLS_COMMIT=unknown
+case "$cmd" in
+  dispatched|relaunched) SKILLS_COMMIT=$(skills_commit 2>/dev/null) || SKILLS_COMMIT=unknown ;;
+esac
 load_libs || exit 1
 fm_lock_acquire_wait "$LOCK" || exit 1
 trap 'fm_lock_release "$LOCK"' EXIT
@@ -259,6 +266,12 @@ case "$cmd" in
   dispatched)
     rm -f -- "$(offset_path "$2")"
     append task.dispatched "$2" \
+      '{kind: ($kind | n), project: ($project | n), harness: ($harness | n), model: ($model | n), effort: ($effort | n), skills_commit: ($skills | n)}' \
+      --arg kind "$3" --arg project "$4" --arg harness "$5" --arg model "$6" \
+      --arg effort "${7:-default}" --arg skills "${SKILLS_COMMIT:-unknown}" || rc=1
+    ;;
+  relaunched)
+    append task.relaunched "$2" \
       '{kind: ($kind | n), project: ($project | n), harness: ($harness | n), model: ($model | n), effort: ($effort | n), skills_commit: ($skills | n)}' \
       --arg kind "$3" --arg project "$4" --arg harness "$5" --arg model "$6" \
       --arg effort "${7:-default}" --arg skills "${SKILLS_COMMIT:-unknown}" || rc=1
