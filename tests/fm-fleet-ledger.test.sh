@@ -357,6 +357,24 @@ test_dispatched_records_unknown_skills_when_unreadable() {
   pass "dispatched records skills_commit unknown, and still succeeds, when the skills cannot be read"
 }
 
+test_relaunched_records_the_launch_without_a_dispatch() {
+  make_case relaunched on
+  printf '7\n' > "$HOME_DIR/state/.t1.fleet-ledger-offset"
+  in_home env FM_SKILLS_DIR="" "$ROOT/bin/fm-fleet-ledger.sh" dispatched t1 ship sample claude "" high || fail "dispatched record failed"
+  printf '7\n' > "$HOME_DIR/state/.t1.fleet-ledger-offset"
+  in_home env FM_SKILLS_DIR="" "$ROOT/bin/fm-fleet-ledger.sh" relaunched t1 ship sample codex gpt-5 xhigh || fail "relaunched record failed"
+  in_home env FM_SKILLS_DIR="" "$ROOT/bin/fm-fleet-ledger.sh" relaunched t1 ship sample codex "" || fail "relaunched record without effort failed"
+  assert_equals "$(cat <<'EOF2'
+["task.dispatched","claude",null,"high"]
+["task.relaunched","codex","gpt-5","xhigh"]
+["task.relaunched","codex",null,"default"]
+EOF2
+)" "$(ledger_rows '[.event, .harness, .model, .effort]')" "a relaunch records its own harness, model and effort and leaves dispatched alone"
+  [ -s "$HOME_DIR/state/.t1.fleet-ledger-offset" ] || fail "a relaunch must keep the status offset"
+  if in_home "$ROOT/bin/fm-fleet-ledger.sh" relaunched t1 ship sample 2>/dev/null; then fail "relaunched must refuse missing arguments"; fi
+  pass "relaunched records harness, model and effort, keeps the status offset, and leaves dispatch counts alone"
+}
+
 test_spawn_records_the_requested_effort() {
   local out
   make_case spawn-effort on
@@ -368,6 +386,7 @@ test_spawn_records_the_requested_effort() {
 
 test_flag_on_records_the_task_lifecycle
 test_spawn_records_the_requested_effort
+test_relaunched_records_the_launch_without_a_dispatch
 test_dispatched_records_effort_and_skills_commit
 test_dispatched_records_unknown_skills_when_unreadable
 test_flag_on_records_a_pr_merge_once

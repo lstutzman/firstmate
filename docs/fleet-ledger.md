@@ -29,13 +29,14 @@ Readers must ignore members and events they do not recognize, so later versions 
 
 | Event              | Extra members                                  | Written when |
 | ------------------ | ---------------------------------------------- | ------------ |
-| `task.dispatched`  | `kind`, `project`, `harness`, `model`, `effort`, `skills_commit` | A new worker or second mate is launched. A relaunch of an existing task is not recorded. |
+| `task.dispatched`  | `kind`, `project`, `harness`, `model`, `effort`, `skills_commit` | A new worker or second mate is launched. A relaunch of an existing task is not recorded here (see `task.relaunched`). |
+| `task.relaunched`  | `kind`, `project`, `harness`, `model`, `effort`, `skills_commit` | A replacement agent is launched for an existing task, so the harness, model and effort the task finished on are on record. Dispatch counts are unchanged. |
 | `task.status`      | `state`, `key`, `text`, `cause` and `dep` (when stated) | A complete, nonblank line in the task's status log is captured. |
 | `task.pr_ready`    | `pr`                                           | Firstmate records the task's PR as ready for review. |
 | `task.merged`      | `via` (`"pr"` or `"local"`), plus `pr` when `via` is `"pr"` | The task's PR merge is recorded, or its local-only branch landed. |
 | `task.cleaned_up`  | none                                           | The task's worker and local copy were removed. |
 
-`task.dispatched` members: `kind` is `ship`, `scout`, or `secondmate`; `project` is the project directory name, or `null` for a remote second mate; `harness` names the agent tool; `model` is the requested model, or `null` for the tool's default; `effort` is the reasoning effort the worker launched with, or `"default"` when none was set; `skills_commit` names the skills the worker's session loads: `commit:<sha>` when the skills directory (`$FM_SKILLS_DIR`, default `~/.agents/skills`) is a git checkout or carries a `.skills-commit` marker, `hash:<sha256>` of its installed `SKILL.md` files and their paths relative to that directory otherwise, and `unknown` when neither can be read. A remote second mate runs on another host whose skills the dispatcher cannot read, so it records `unknown`.
+`task.dispatched` and `task.relaunched` share the same members: `kind` is `ship`, `scout`, or `secondmate`; `project` is the project directory name, or `null` for a remote second mate; `harness` names the agent tool; `model` is the requested model, or `null` for the tool's default; `effort` is the reasoning effort the worker launched with, or `"default"` when no effort was resolved for the launch; `skills_commit` names the skills the worker's session loads: `commit:<sha>` when the skills directory (`$FM_SKILLS_DIR`, default `~/.agents/skills`) is a git checkout or carries a `.skills-commit` marker, `hash:<sha256>` of its installed `SKILL.md` files and their paths relative to that directory otherwise, and `unknown` when neither can be read. A remote second mate runs on another host whose skills the dispatcher cannot read, so it records `unknown`.
 Records written before `effort` and `skills_commit` existed lack them, and readers must treat a missing member as unknown.
 
 `task.pr_ready` members: `pr` is the PR's full URL.
@@ -82,7 +83,6 @@ Example:
 These are possible follow-ups, deliberately left out of this version:
 
 - session start, away-mode, and quiet-mode events;
-- relaunch events;
 - whether a worker is currently working or idle, and when a turn ends; see the [runtime backend event sources](architecture.md#runtime-session-backends) for native activity observations;
 - sequence numbers and gap detection;
 - rotation and continuity across rotated files;

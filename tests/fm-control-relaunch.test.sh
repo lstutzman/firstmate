@@ -1340,6 +1340,20 @@ test_explicit_model_wins_over_the_recorded_one() {
   pass "fm-control relaunch: explicit model and effort win over the recorded ones"
 }
 
+test_relaunch_records_the_new_launch_in_the_fleet_ledger() {
+  local dir out rc
+  dir=$(new_case ledger rl73)
+  add_ship_task "$dir" rl73 claude
+  mkdir -p "$dir/home/config"
+  : > "$dir/home/config/fleet-ledger"
+  out=$(run_control "$dir" rl73 relaunch --model sonnet --effort low --note "dialling down"); rc=$?
+  expect_code 0 "$rc" "relaunch with the fleet ledger on should succeed"$'\n'"$out"
+  assert_equals '["task.relaunched","rl73","claude","sonnet","low"]' \
+    "$(jq -c '[.event, .task, .harness, .model, .effort]' "$dir/home/state/fleet-ledger.jsonl")" \
+    "a relaunch records one task.relaunched row carrying the relaunch flags and no task.dispatched row"
+  pass "fm-control relaunch: the fleet ledger records the relaunch's harness, model and effort"
+}
+
 test_relaunch_onto_an_unverified_harness_is_refused() {
   local dir out rc
   dir=$(new_case badharness rl8)
@@ -3303,6 +3317,7 @@ test_pi_exclude_tools_follow_the_relaunch
 test_claude_exclude_tools_follow_the_relaunch
 test_exclude_tools_refusals_happen_before_the_agent_stops
 test_explicit_model_wins_over_the_recorded_one
+test_relaunch_records_the_new_launch_in_the_fleet_ledger
 test_relaunch_onto_an_unverified_harness_is_refused
 test_prior_harness_turnend_registry_entry_is_cleared
 test_wiring_removal_failure_refuses_before_replacement_arm
