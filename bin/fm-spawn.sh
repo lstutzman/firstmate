@@ -4482,10 +4482,16 @@ fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   read -r SPAWN_DRAIN_STATE SPAWN_DRAIN_REPO SPAWN_DRAIN_REST < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
   SPAWN_DRAIN_CLASS=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$BRIEF" 2>/dev/null | head -n 1)
+  if [ "$SPAWN_DRAIN_CLASS" = lee-explicit ]; then
+    fm_brief_task_heading_body "$BRIEF" "## Captain's intent" | python3 "$FM_ROOT/bin/fm-pr-drain.py" evidence || {
+      echo "error: spawn refused: task $ID declares PR drain class lee-explicit without the captain's quoted word and timestamp; add them to the brief and spawn again" >&2
+      exit 1
+    }
+  fi
   if [ "$SPAWN_DRAIN_STATE" = unknown ]; then
     echo "warning: PR drain state of $SPAWN_DRAIN_REPO is unknown ($SPAWN_DRAIN_REST); launching task $ID anyway" >&2
   elif [ "$SPAWN_DRAIN_STATE" = on ] && ! { [ -n "$SPAWN_DRAIN_CLASS" ] && python3 "$FM_ROOT/bin/fm-pr-drain.py" class "$SPAWN_DRAIN_CLASS"; }; then
-    echo "deferred: $SPAWN_DRAIN_REPO is in PR drain with $SPAWN_DRAIN_REST open PRs (drain holds from 20 open until 0), so new ship work is refused; task $ID was not launched and its backlog item stays queued - dispatch it again once the drain ends, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, wolverine, lee-research, officer, scheduled) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
+    echo "deferred: $SPAWN_DRAIN_REPO is in PR drain with $SPAWN_DRAIN_REST open PRs (drain holds from 20 open until 0), so new ship work is refused; task $ID was not launched and its backlog item stays queued - dispatch it again once the drain ends, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, wolverine, lee-research, lee-explicit, officer, scheduled) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi

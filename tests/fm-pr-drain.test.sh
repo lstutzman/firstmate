@@ -116,7 +116,7 @@ test_non_github_origin_is_not_applicable() {
 
 test_classes_are_validated() {
   local value
-  for value in production-outage cve wolverine lee-research officer scheduled restack red-gate-fix returned-pr-fix review; do
+  for value in production-outage cve wolverine lee-research lee-explicit officer scheduled restack red-gate-fix returned-pr-fix review; do
     "$DRAIN" class "$value" || fail "$value was not accepted as a drain class"
   done
   "$DRAIN" class feature && fail "an unknown drain class was accepted"
@@ -173,6 +173,44 @@ test_brief_tells_workers_to_check_drain_before_a_pr() {
   pass "PR-opening briefs carry a live drain check, landing jobs and cve skip it, and --pr-drain is validated"
 }
 
+# shellcheck source=bin/fm-brief-heading-lib.sh
+. "$ROOT/bin/fm-brief-heading-lib.sh"
+
+# A brief file whose `## Captain's intent` section holds the given lines.
+intent_brief() {  # <name> <intent-line>...
+  local file="$TMP_ROOT/intent-$1.md"
+  shift
+  { printf '# Task\n## Captain'"'"'s intent\n'; printf '%s\n' "$@"; printf '\n## Firstmate spec\nLee (x, 2026-11-16T18:19:06Z): "outside the section"\n'; } >"$file"
+  printf '%s' "$file"
+}
+
+# Run the evidence check on a brief the way bin/fm-spawn.sh does.
+brief_evidence() {  # <brief-file>
+  fm_brief_task_heading_body "$1" "## Captain's intent" | "$DRAIN" evidence
+}
+
+test_lee_explicit_evidence_needs_a_quote_and_a_timestamp() {
+  local file
+  file=$(intent_brief same 'Lee (main chat, 2026-11-16T18:19:06Z): "build the gate"')
+  brief_evidence "$file" 2>/dev/null || fail "a quote with a timestamp on its line was refused"
+  file=$(intent_brief prev 'Lee, main chat 2026-11-16T18:19:06Z:' '"build the gate"')
+  brief_evidence "$file" 2>/dev/null || fail "a quote with a timestamp on the line before was refused"
+  file=$(intent_brief noquote 'Lee (main chat, 2026-11-16T18:19:06Z): build the gate')
+  brief_evidence "$file" 2>"$TMP_ROOT/err" && fail "a brief with no quote was accepted"
+  assert_grep "double-quoted" "$TMP_ROOT/err" "the refusal did not name the missing quote"
+  file=$(intent_brief nostamp 'Lee (main chat): "build the gate"')
+  brief_evidence "$file" 2>"$TMP_ROOT/err" && fail "a brief with no timestamp was accepted"
+  assert_grep "timestamp" "$TMP_ROOT/err" "the refusal did not name the missing timestamp"
+  file=$(intent_brief far '2026-11-16T18:19:06Z' 'context' 'Lee: "build the gate"')
+  brief_evidence "$file" 2>/dev/null && fail "a timestamp two lines before the quote was accepted"
+  file=$(intent_brief fenced 'Lee pasted:' '```sh' '# rerun the gate' 'make gate' '```' 'Lee (main chat, 2026-11-16T18:19:06Z): "build the gate"')
+  brief_evidence "$file" 2>/dev/null || fail "a quote after a fenced block with a # comment was refused"
+  file="$TMP_ROOT/intent-outside.md"
+  printf '# Task\n## Captain'"'"'s intent\nbuild the gate\n\n# Notes\n## Captain'"'"'s intent\nLee (x, 2026-11-16T18:19:06Z): "outside the task"\n' >"$file"
+  brief_evidence "$file" 2>/dev/null && fail "a quote under a second intent heading outside # Task was accepted"
+  pass "lee-explicit evidence needs a quoted instruction and a UTC timestamp in the captain's intent, and names what is missing"
+}
+
 fm_test_run \
   test_twenty_open_turns_drain_on \
   test_drain_holds_from_nineteen_down_to_one \
@@ -182,4 +220,5 @@ fm_test_run \
   test_closed_list_at_the_search_cap_is_unknown \
   test_non_github_origin_is_not_applicable \
   test_classes_are_validated \
+  test_lee_explicit_evidence_needs_a_quote_and_a_timestamp \
   test_brief_tells_workers_to_check_drain_before_a_pr

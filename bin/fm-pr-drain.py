@@ -3,6 +3,7 @@
 
 Usage: fm-pr-drain.py state <project-dir>
        fm-pr-drain.py class <value>
+       fm-pr-drain.py evidence < <captain's-intent-text>
 
 A repository enters drain at 20 or more open PRs and leaves it only when its open count reaches 0.
 state prints one line and exits 0:
@@ -16,9 +17,13 @@ last 14 days are walked back from now (a close adds one PR, a creation removes o
 20 or more (on) or 0 (off). Read-only: one `gh pr list` of open PRs, plus one of recently closed PRs only
 in that 1..19 band. FM_PR_DRAIN_TIMEOUT (default 20) bounds each read in seconds.
 class exits 0 when <value> is a recognised drain declaration: an exemption class (production-outage,
-cve, wolverine, lee-research, officer, scheduled) or a landing job (restack, red-gate-fix,
-returned-pr-fix, review), and 2 otherwise. bin/fm-brief.sh --pr-drain writes it into a brief and
-bin/fm-spawn.sh reads it back.
+cve, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack,
+red-gate-fix, returned-pr-fix, review), and 2 otherwise. bin/fm-brief.sh --pr-drain writes it into a
+brief and bin/fm-spawn.sh reads it back.
+evidence reads a brief's `## Captain's intent` section body on stdin (bin/fm-spawn.sh extracts it with
+bin/fm-brief-heading-lib.sh) and exits 0 when it holds a quoted captain instruction with a timestamp,
+the proof a `lee-explicit` brief needs: at least one double-quoted span, and an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ) on the same line as a quote or on the line before it.
+It exits 2 and names what is missing otherwise. It does not check that the quote is real.
 """
 from datetime import datetime, timedelta, timezone
 import json
@@ -30,8 +35,10 @@ import sys
 THRESHOLD = 20
 WINDOW_DAYS = 14
 CLOSED_LIMIT = 1000
-EXEMPT = ('production-outage', 'cve', 'wolverine', 'lee-research', 'officer', 'scheduled')
+EXEMPT = ('production-outage', 'cve', 'wolverine', 'lee-research', 'lee-explicit', 'officer', 'scheduled')
 LANDING = ('restack', 'red-gate-fix', 'returned-pr-fix', 'review')
+STAMP = re.compile(r'\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z\b')
+QUOTE = re.compile(r'"[^"\n]+"')
 ORIGIN = re.compile(r'^(?:git@github\.com:|ssh://git@github\.com/|https://github\.com/)'
                     r'([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$')
 
@@ -88,11 +95,28 @@ def state(project):
         return f'unknown {repo} GitHub unreadable: {error}'.replace('\n', ' ')
 
 
+def evidence(text):
+    """What a lee-explicit brief's `## Captain's intent` text lacks, as a list (empty when complete)."""
+    lines = text.splitlines()
+    if not text.strip():
+        return ["a '## Captain's intent' section"]
+    quoted = [i for i, line in enumerate(lines) if QUOTE.search(line)]
+    if not quoted:
+        return ['a double-quoted captain instruction']
+    if not any(STAMP.search(lines[i]) or (i and STAMP.search(lines[i - 1])) for i in quoted):
+        return ['an ISO-8601 UTC timestamp (for example 2026-11-16T18:19:06Z) on the quote line or the line before it']
+    return []
+
 if __name__ == '__main__':
     if len(sys.argv) == 3 and sys.argv[1] == 'state':
         print(state(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'class':
         sys.exit(0 if sys.argv[2] in EXEMPT + LANDING else 2)
+    elif len(sys.argv) == 2 and sys.argv[1] == 'evidence':
+        missing = evidence(sys.stdin.read())
+        if missing:
+            print('lee-explicit needs, in the brief\'s "## Captain\'s intent" section: ' + '; '.join(missing), file=sys.stderr)
+            sys.exit(2)
     else:
         print(__doc__, file=sys.stderr)
         sys.exit(2)
