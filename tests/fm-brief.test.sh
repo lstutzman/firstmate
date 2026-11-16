@@ -2115,7 +2115,7 @@ test_linear_required_projects_gate_briefs() {
 }
 
 test_briefs_end_with_the_complaint_step() {
-  local home mode brief want
+  local home mode brief want cmd
   home="$TMP_ROOT/complain-home"
   mkdir -p "$home/data"
   want="Before your final report, ask yourself: did anything about the system annoy you? If yes, run"
@@ -2135,6 +2135,12 @@ test_briefs_end_with_the_complaint_step() {
   brief="$home/data/brief-cs-no-mistakes/brief.md"
   [ "$(grep -n 'did anything about the system annoy you' "$brief" | cut -d: -f1)" -gt "$(grep -n '^# Definition of done' "$brief" | cut -d: -f1)" ] \
     || fail "the complaint step must sit inside the Definition of done"
+  cmd=$(sed -n 's/^Before your final report.* run `\(.*\) "<one sentence>"` with one sentence.*/\1/p' "$brief")
+  [ -n "$cmd" ] || fail "the complaint step must name a runnable command"
+  (cd "$TMP_ROOT" && env -u FM_HOME FM_TASK_ID=brief-cs-no-mistakes bash -c "$cmd 'the brief was fine'") >/dev/null \
+    || fail "the brief's complaint command must run without FM_HOME in the environment"
+  assert_grep '"sentence":"the brief was fine"' "$home/data/agent-complaints.jsonl" \
+    "a worker without FM_HOME must still file its complaint in the brief's home"
   pass "fm-brief.sh: ship and scout briefs end with the complaint step, charters do not"
 }
 

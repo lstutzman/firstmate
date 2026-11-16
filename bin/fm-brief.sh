@@ -787,7 +787,7 @@ INBOX_DIR=$(shell_quote "$STATE/$ID.inbox")
 INBOX_TAKE=$(shell_quote "$FM_ROOT/bin/fm-task-inbox.sh")
 LEE_STEP=$(shell_quote "$FM_ROOT/bin/fm-lee-step.sh")
 WT_ASSERT=$(shell_quote "$FM_ROOT/bin/fm-worktree-assert.sh")
-COMPLAIN_STEP=$(fm_complaint_step "$(shell_quote "$FM_ROOT/bin/fm-complain.sh")")
+COMPLAIN_STEP=$(fm_complaint_step "FM_HOME=$(shell_quote "$FM_HOME") $(shell_quote "$FM_ROOT/bin/fm-complain.sh")")
 
 # Every blocked and needs-decision line states why the agent cannot go on; the
 # vocabulary and its parser are owned by status_line_cause in bin/fm-classify-lib.sh.

@@ -69,8 +69,9 @@ Agent complaints are a fifth kind of event. Each --home's data/agent-complaints.
 project, sentence) is read like that home's other records: a missing or
 unreadable file is skipped, and so is a line that is not a JSON object with a
 text sentence and a parseable UTC at stamp. A complaint made on the run's day
-becomes an agent-complaint event whose evidence example is the scrubbed
-sentence, carrying its task id and home. No model reads it, and the existing
+becomes an agent-complaint event whose signature is the scrubbed sentence,
+carrying its task id and home; a finding's evidence lists every complaint
+sentence, and its card and report show them. No model reads it, and the existing
 grouping and scoring apply unchanged.
 
 Repeated asks are a fourth kind of event. Lee's typed messages in the last
@@ -1815,7 +1816,8 @@ def group_findings(events, model):
             "category": CATEGORY.get(cause, "other"),
             "evidence": {"tasks": tasks, "sessions": sessions, "status_keys": keys, "cards": cards,
                          "example": sorted(e["signature"] for e in evs)[0],
-                         "asks": [a for e in evs for a in e.get("asks") or []]},
+                         "asks": [a for e in evs for a in e.get("asks") or []],
+                         "complaints": sorted({e["signature"] for e in evs if e["kind"] == "agent-complaint"})},
             "where": dict(sorted(places.items())),
         }
         if fix:
@@ -2166,6 +2168,8 @@ def bottleneck(f, date):
     parts.append("e.g. " + ev["example"])
     if ev["asks"]:
         parts.append("asked " + "; ".join('%s "%s"' % (a["date"], clip(a["quote"], 60)) for a in ev["asks"][:4]))
+    if ev["complaints"]:
+        parts.append("complaints " + "; ".join('"%s"' % clip(c, 80) for c in ev["complaints"][:6]))
     if f["wait_total_s"] is not None:
         saved = "about %s a day: %d measured wait(s) on %s totalling %s, from ask to answer" % (
             human_span(f["wait_total_s"]), f["waits_measured"], date, human_span(f["wait_total_s"]))
@@ -2621,6 +2625,8 @@ def render_md(doc):
             ", ".join(ev["sessions"][:6]) or "none", ev["example"].replace("`", "'")))
         for a in ev["asks"]:
             lines.append("- Asked %s (%s): \"%s\"" % (a["date"], a["session"], a["quote"].replace("`", "'")))
+        for c in ev["complaints"]:
+            lines.append("- Complaint: \"%s\"" % c.replace("`", "'"))
         lines.append("")
     return "\n".join(lines).rstrip("\n") + "\n"
 

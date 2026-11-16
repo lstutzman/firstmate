@@ -348,7 +348,7 @@ EOF
   fi
   printf '\n'
   fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT"
-  fm_complaint_step "\"$FM_ROOT/bin/fm-complain.sh\""
+  fm_complaint_step "FM_HOME=$(printf '%q' "$FM_HOME") $(printf '%q' "$FM_ROOT/bin/fm-complain.sh")"
   case "$MODE:$FORGE" in
     local-only:* | *:gerrit | *:external) ;;
     *) printf '%s\n' "$(fm_pr_drain_rule "$FM_ROOT" "$BRANCH")" ;;

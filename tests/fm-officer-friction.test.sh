@@ -238,6 +238,17 @@ test_agent_complaints_become_events() {
     "the event carries the task id and its own cause"
   assert_equals "the brief never says where the status file is" "$(finding "$json" complaint agent '.evidence.example')" \
     "the sentence is the finding's evidence example"
+  {
+    printf '%s\n' '{"at":"2026-10-23T12:00:00Z","task":"task-c2","home":"/h","project":"p","sentence":"fm-test-run is slow"}'
+    printf '%s\n' '{"at":"2026-10-23T13:00:00Z","task":"task-c3","home":"/h","project":"p","sentence":"herdr label wrong"}'
+  } >> "$home/data/agent-complaints.jsonl"
+  run_officer "$home" >/dev/null || fail "friction run must succeed with several complaints"
+  assert_equals '["fm-test-run is slow","herdr label wrong","the brief never says where the status file is"]' \
+    "$(finding "$json" complaint agent '.evidence.complaints' | jq -c .)" \
+    "every complaint sentence of the day is in the finding's evidence"
+  for sentence in "fm-test-run is slow" "herdr label wrong" "the brief never says where the status file is"; do
+    assert_grep "Complaint: \"$sentence\"" "$home/data/officers/friction/$DATE.md" "the report lost the complaint '$sentence'"
+  done
   pass "fm-officer friction: agent complaints fold into findings"
 }
 
