@@ -520,6 +520,25 @@ readable_homes() {
   done < "$DATA/secondmates.md"
 }
 
+# friction_homes: readable_homes, then each remote-form second mate home: in place when its directory exists on
+# this machine, else as host:/dir for the friction pass to mirror over ssh. Friction only; triage and surgeon
+# keep readable_homes.
+friction_homes() {
+  local line home
+  readable_homes
+  [ -f "$DATA/secondmates.md" ] || return 0
+  while IFS= read -r line; do
+    secondmate_registry_parse_line "$line" || continue
+    [ "$SECONDMATE_REGISTRY_REMOTE" = 1 ] || continue
+    home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
+    if [ -d "$home/state" ]; then
+      (CDPATH='' cd -- "$home" && pwd -P)
+    else
+      printf '%s:%s\n' "$SECONDMATE_REGISTRY_HOST" "$home"
+    fi
+  done < "$DATA/secondmates.md"
+}
+
 lock_acquire() {  # [lock]: default the lane's .run.lock; a lock whose pid is gone, or that stayed a minute with no pid, is taken over.
   local lock=${1:-$OFFICER_LANE/.run.lock} pid
   if fm_atomic_mkdir "$lock" 2>/dev/null; then
@@ -788,7 +807,7 @@ action_host_pass() {
 }
 
 # role_archive <script> <date> [args...]: a pass that reads the session
-# archive and every readable home: triage and friction.
+# archive and every readable home (HOMES_FN, default readable_homes): triage and friction.
 role_archive() {
   local -a args
   local script=$1 home hosts
@@ -801,7 +820,7 @@ role_archive() {
   while IFS= read -r home; do
     [ -n "$home" ] && args+=(--home "$home")
   done <<EOF
-$(readable_homes)
+$(${HOMES_FN:-readable_homes})
 EOF
   role_exec "$script" "${args[@]}" "$@"
 }
@@ -862,7 +881,7 @@ START_HOMES
     done < "$DATA/secondmates.md"
   fi
   args+=(--days "$(line_field "$OFFICER_LINE" ask-days || echo 7)")
-  role_archive fm-officer-friction.py "$1" "${args[@]}"
+  HOMES_FN=friction_homes role_archive fm-officer-friction.py "$1" "${args[@]}"
 }
 
 # role_pagecheck <key>: reads the fleet app's pages (GET only) and this home's records; the standing

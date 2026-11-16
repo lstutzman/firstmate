@@ -98,6 +98,9 @@ case "$at" in
 esac
 SH
 chmod +x "$LINEAR_BIN/gh"
+# A second mate on another host is read over ssh; every test that does not stub ssh itself finds that host unreachable.
+printf '#!/usr/bin/env bash\nexit 255\n' > "$LINEAR_BIN/ssh"
+chmod +x "$LINEAR_BIN/ssh"
 export PATH="$LINEAR_BIN:$PATH"
 
 write_status() {  # <home>
@@ -822,6 +825,57 @@ SH
     "$(jq -r '[.events[] | select(.kind == "lee-command" and (.signature | startswith("ssh")))][0] | "\(.cause) \(.sub)"' \
       "$home/data/officers/friction/$DATE.json")" "the remote scan carries the triage helpers it imports"
   pass "fm-officer friction: a host:dir archive is scanned over ssh"
+}
+
+test_remote_form_homes_are_read() {
+  local home fakebin json mirror samehost
+  home=$(make_world remotehomes)
+  fakebin=$(fm_fakebin "$TMP_ROOT/remotehomes")
+  mirror="$TMP_ROOT/remotehomes/macmirror"          # what the stub ssh serves as the MacBook home /Users/x/gil
+  samehost="$TMP_ROOT/remotehomes/samehome"          # a remote-form home whose directory is on this machine
+  mkdir -p "$mirror/state" "$mirror/data" "$samehost/state" "$samehost/data"
+  printf '%s\n' '{"at":"2026-10-23T10:00:00Z","task":"task-mac","sentence":"the macbook brief hides the inbox path"}' \
+    > "$mirror/data/agent-complaints.jsonl"
+  printf '%s\n' '{"at":"2026-10-23T11:00:00Z","task":"task-same","sentence":"the same-host brief hides the lane path"}' \
+    > "$samehost/data/agent-complaints.jsonl"
+  printf 'kind=ship\n' > "$mirror/state/task-mac.meta"
+  printf 'working [at=%s]: going\n' "$T" > "$mirror/state/task-mac.status"
+  { printf '{"task":"task-old","pad":"'; head -c 6000000 /dev/zero | tr '\0' x; printf '"}\n'; } > "$mirror/state/fleet-ledger.jsonl"
+  printf '%s\n' \
+    "- mac - macbook mate (host: macbook; root: /Users/x/fm; home: /Users/x/gil; scope: fixture work; projects: alpha; added 2026-10-24)" \
+    "- same - same-host mate (host: slartibartfast; root: /r; home: $samehost; scope: fixture work; projects: alpha; added 2026-10-24)" \
+    "- down - dead mate (host: deadhost; root: /r; home: /home/x/down; scope: fixture work; projects: alpha; added 2026-10-24)" \
+    >> "$home/data/secondmates.md"
+  cat > "$fakebin/ssh" <<SH
+#!/usr/bin/env bash
+printf '%s\\n' "\$*" >> "$fakebin/ssh.calls"
+while [ "\$#" -gt 0 ]; do case "\$1" in -o) shift 2 ;; *) break ;; esac; done
+host=\$1
+shift
+[ "\$host" = macbook ] || exit 255
+cmd=\$*
+exec bash -c "\${cmd//\\/Users\\/x\\/gil/$mirror}"
+SH
+  chmod +x "$fakebin/ssh"
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "a run with remote-form homes must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals "the macbook brief hides the inbox path|the same-host brief hides the lane path" \
+    "$(jq -r '[.events[] | select(.kind == "agent-complaint") | .signature] | sort | join("|")' "$json")" \
+    "a complaint in a MacBook home read over ssh and one in a same-machine remote-form home both become events"
+  assert_equals "macbook" "$(jq -r '[.coverage.homes[] | select(.path == "/Users/x/gil")][0].host' "$json")" \
+    "the mirrored home is named by its real path and host, never the scratch copy"
+  assert_equals "1" "$(jq '[.coverage.homes[] | select(.path == "/Users/x/gil" and .status_logs == 1)] | length' "$json")" \
+    "the mirror's status log is counted"
+  assert_equals "true" "$(jq -r '[.coverage.homes[] | select(.path == "/Users/x/gil")][0].ledger' "$json")" \
+    "a fleet ledger over 4 MB is still mirrored"
+  assert_equals "true" "$(jq -r 'any(.coverage.homes[]; .path == "'"$samehost"'" and .host == null)' "$json")" \
+    "a remote-form home that exists on this machine is read in place, as a local home"
+  assert_grep "Home down on host deadhost was not read: host deadhost is unreachable" "$home/data/officers/friction/$DATE.md" \
+    "an unreachable host is a coverage note"
+  assert_equals "0" "$(grep -c slartibartfast "$fakebin/ssh.calls")" "a same-machine home is never read over ssh"
+  assert_equals "0" "$(find "$HOME/fm-scratch" -maxdepth 1 -name 'officer-friction-*' -newer "$home/data/officers.md" 2>/dev/null | wc -l)" \
+    "the scratch mirror is removed when the run ends"
+  pass "fm-officer friction: remote-form homes are mirrored read-only, in place on this host, and a dead host is a coverage note"
 }
 
 test_captains_log_cards_read_only() {
@@ -1860,6 +1914,7 @@ test_retired_tool_gets_no_install_proposal
 test_rerun_digest_is_byte_identical
 test_boundary_reads_only_and_writes_only_its_lane
 test_remote_archive_reads_over_ssh
+test_remote_form_homes_are_read
 test_captains_log_cards_read_only
 test_repeated_lee_asks_across_days
 test_print_mode_and_eval_sessions_are_not_repeat_asks

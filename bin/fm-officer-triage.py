@@ -419,11 +419,14 @@ def shell_quote(text):
 class Home:
     """Read-only view of one firstmate home's task records."""
 
-    def __init__(self, path):
+    def __init__(self, path, root=None, host=None):
         self.path = path.rstrip("/")
-        # On a run-host the records are a mirror of the home's, read from there but named by the home's own path.
+        # host: the ssh host a mirrored home lives on, None for a home on this machine.
+        self.host = host
+        # On a run-host the records are a mirror of the home's, read from there but named by the home's own path;
+        # root names a mirror of a home on another host the same way.
         mirror = os.environ.get("FM_OFFICER_HOME_MIRROR")
-        self.root = mirror + self.path if mirror else self.path
+        self.root = root or (mirror + self.path if mirror else self.path)
         self.ledger = {}
         try:
             with open(os.path.join(self.root, "state", "fleet-ledger.jsonl"),
