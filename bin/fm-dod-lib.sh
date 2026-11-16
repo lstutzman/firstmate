@@ -789,6 +789,12 @@ EOF
   esac
 }
 
+# The last Definition-of-done step of every ship and scout brief: one complaint, or nothing.
+# <command> is the already shell-quoted path of bin/fm-complain.sh; its header owns the record.
+fm_complaint_step() {  # <quoted-fm-complain-path>
+  printf '%s\n' "Before your final report, ask yourself: did anything about the system annoy you? If yes, run \`$1 \"<one sentence>\"\` with one sentence; if no, write nothing."
+}
+
 # 0 when <sha> is contained in a ref under <namespace> in <repo>, ignoring
 # refs that match the optional <excluded-ref-glob>.
 # --contains tests that exact commit, so a branch that moved to a different

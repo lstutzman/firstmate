@@ -2114,6 +2114,31 @@ test_linear_required_projects_gate_briefs() {
   pass "fm-brief.sh: config/linear-required-projects requires --linear on listed ship briefs and allows --no-linear on scouts only"
 }
 
+test_briefs_end_with_the_complaint_step() {
+  local home mode brief want
+  home="$TMP_ROOT/complain-home"
+  mkdir -p "$home/data"
+  want="Before your final report, ask yourself: did anything about the system annoy you? If yes, run"
+  for mode in no-mistakes direct-PR local-only; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-cs-$mode" some-proj --mode "$mode" >/dev/null 2>&1 \
+      || fail "fm-brief.sh $mode scaffold exited non-zero"
+    assert_grep "$want" "$home/data/brief-cs-$mode/brief.md" "$mode ship brief lost the complaint step"
+    assert_grep "$ROOT/bin/fm-complain.sh" "$home/data/brief-cs-$mode/brief.md" "$mode ship brief lost the complaint path"
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-cs-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "fm-brief.sh scout scaffold exited non-zero"
+  assert_grep "$want" "$home/data/brief-cs-scout/brief.md" "scout brief lost the complaint step"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-cs-mate --secondmate --no-projects >/dev/null 2>&1 \
+    || fail "fm-brief.sh secondmate scaffold exited non-zero"
+  assert_no_grep "did anything about the system annoy you" "$home/data/brief-cs-mate/brief.md" \
+    "a secondmate charter must not carry the complaint step"
+  brief="$home/data/brief-cs-no-mistakes/brief.md"
+  [ "$(grep -n 'did anything about the system annoy you' "$brief" | cut -d: -f1)" -gt "$(grep -n '^# Definition of done' "$brief" | cut -d: -f1)" ] \
+    || fail "the complaint step must sit inside the Definition of done"
+  pass "fm-brief.sh: ship and scout briefs end with the complaint step, charters do not"
+}
+
 test_linear_required_projects_gate_briefs
 test_ship_brief_carries_the_fix_forward_rule
 test_ship_brief_carries_the_ui_hill_climb_rule
+test_briefs_end_with_the_complaint_step

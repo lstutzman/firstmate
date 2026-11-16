@@ -64,6 +64,15 @@ wait for Lee to do. One day's friction events come from three sources:
                An unreachable endpoint is a coverage gap in the digest, and
                the pass continues on the other two sources.
 
+Agent complaints are a fifth kind of event. Each --home's data/agent-complaints.jsonl
+(written by bin/fm-complain.sh, one JSON line per complaint: at, task, home,
+project, sentence) is read like that home's other records: a missing or
+unreadable file is skipped, and so is a line that is not a JSON object with a
+text sentence and a parseable UTC at stamp. A complaint made on the run's day
+becomes an agent-complaint event whose evidence example is the scrubbed
+sentence, carrying its task id and home. No model reads it, and the existing
+grouping and scoring apply unchanged.
+
 Repeated asks are a fourth kind of event. Lee's typed messages in the last
 --days days (default 7), from the archive's interactive and worker sessions
 and never a worker's launch brief, which quotes him, nor a print-mode (`claude -p`, entrypoint sdk-*) or eval-scratch
@@ -460,7 +469,8 @@ COMMAND_RULES = [
 
 CATEGORY = {"guard-hook": "tooling", "missing-tool": "tooling", "credential": "waiting", "sudo": "waiting",
             "policy": "waiting", "decision": "waiting", "environment": "environment",
-            "service-limit": "environment", "lee-command": "waiting", "repeat-ask": "waiting", "other": "other"}
+            "service-limit": "environment", "lee-command": "waiting", "repeat-ask": "waiting", "complaint": "tooling",
+            "other": "other"}
 
 # (cause, sub) -> title, what Lee had to do, the fix, owner, effort.
 # {service}, {tool} and {machine} are filled from the group, never in a title, so a
@@ -597,6 +607,12 @@ FIXES = {
         "repeat an instruction he has already given",
         "Turn the instruction into automatic work: a scheduled officer check, a hook, or a standing rule in"
         " captain-shared.md that firstmate applies without being told, and say so to Lee once.",
+        "main (firstmate)", "S"),
+    ("complaint", "agent"): (
+        "Workers complain about the system",
+        "nothing directly (agent-side friction)",
+        "Read each complaint sentence in this group's evidence, find the script, brief line or rule it names,"
+        " and fix or reword it so the next worker does not hit the same annoyance.",
         "main (firstmate)", "S"),
     ("policy", "approval"): (
         "Routine steps wait on Lee's explicit word",
@@ -1676,6 +1692,34 @@ def wrong_cwd_events(scanned, homes):
     return out
 
 
+def complaint_events(homes, date):
+    """One event per complaint a worker filed on <date> in a home's data/agent-complaints.jsonl."""
+    start, end = day_bounds(date)
+    out = []
+    for home in homes:
+        try:
+            with open(os.path.join(home.path, "data", "agent-complaints.jsonl"), encoding="utf-8",
+                      errors="replace") as fh:
+                lines = fh.read().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(rec, dict) or not isinstance(rec.get("sentence"), str) or not rec["sentence"].strip():
+                continue
+            at = epoch_of(rec.get("at"))
+            if at is None or not start <= at < end:
+                continue
+            task = rec.get("task") if isinstance(rec.get("task"), str) else None
+            out.append({"kind": "agent-complaint", "at": at, "home": home.path, "task": task,
+                        "cause": "complaint", "sub": "agent", "lee": False, "service": None, "tool": None,
+                        "signature": scrub(rec["sentence"]), "wait_s": None, "measured_by": None})
+    return out
+
+
 def all_events(scanned, homes, date, cards, channels):
     events = []
     wrong_cwd_events(scanned, homes)
@@ -1686,6 +1730,7 @@ def all_events(scanned, homes, date, cards, channels):
                                home=join.get("home")))
     events.extend(status_events(homes, date, channels))
     events.extend(card_events(cards, homes, date))
+    events.extend(complaint_events(homes, date))
     events.extend(repeat_ask_events(scanned.get("lee_asks") or [], date))
     events.sort(key=lambda e: (e.get("at") or 0, e["kind"],
                                e.get("session") or e.get("task") or e.get("card") or "", e["signature"]))

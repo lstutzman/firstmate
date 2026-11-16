@@ -218,6 +218,29 @@ status_event() {  # <json> <task> <key|null> <jq-path>
     "[.events[] | select(.kind == \"status-wait\" and .task == \$t and ((.key // \"null\") == \$k))][0] | $4" "$1"
 }
 
+test_agent_complaints_become_events() {
+  local home json
+  home=$(make_world complaints)
+  run_officer "$home" >/dev/null || fail "friction run must succeed without a complaints file"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals "0" "$(jq '[.events[] | select(.kind == "agent-complaint")] | length' "$json")" \
+    "a home with no complaints file yields no complaint events"
+  {
+    printf '%s\n' '{"at":"2026-10-23T10:00:00Z","task":"task-c1","home":"/h","project":"p","sentence":"the brief never says where the status file is"}'
+    printf '%s\n' '{"at":"2026-10-22T10:00:00Z","task":"task-c0","home":"/h","project":"p","sentence":"yesterday complaint"}'
+    printf '%s\n' 'not json at all' '{"at":"bad","sentence":"no stamp"}' '{"at":"2026-10-23T11:00:00Z","sentence":"   "}'
+  } > "$home/data/agent-complaints.jsonl"
+  run_officer "$home" >/dev/null || fail "friction run must succeed with a complaints file"
+  assert_equals "1" "$(jq '[.events[] | select(.kind == "agent-complaint")] | length' "$json")" \
+    "only the run day's well-formed complaint becomes an event"
+  assert_equals "task-c1 complaint agent" \
+    "$(jq -r '[.events[] | select(.kind == "agent-complaint")][0] | "\(.task) \(.cause) \(.sub)"' "$json")" \
+    "the event carries the task id and its own cause"
+  assert_equals "the brief never says where the status file is" "$(finding "$json" complaint agent '.evidence.example')" \
+    "the sentence is the finding's evidence example"
+  pass "fm-officer friction: agent complaints fold into findings"
+}
+
 test_create_denied_needs_a_secret_object() {
   python3 -I - "$ROOT/bin/fm-officer-friction.py" <<'PY' || fail "create-denied must need a secret object and keep the real refused creates"
 import importlib.util, sys
@@ -1810,6 +1833,7 @@ test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started() {
   pass "fm-officer friction: the create cap and the rubric bound what is filed and what starts"
 }
 
+test_agent_complaints_become_events
 test_create_denied_needs_a_secret_object
 test_merge_word_is_not_a_missing_tool
 test_token_scope_needs_a_token_permission_failure
