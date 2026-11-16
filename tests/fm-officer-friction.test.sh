@@ -840,6 +840,7 @@ test_remote_form_homes_are_read() {
     > "$samehost/data/agent-complaints.jsonl"
   printf 'kind=ship\n' > "$mirror/state/task-mac.meta"
   printf 'working [at=%s]: going\n' "$T" > "$mirror/state/task-mac.status"
+  { printf '{"task":"task-old","pad":"'; head -c 6000000 /dev/zero | tr '\0' x; printf '"}\n'; } > "$mirror/state/fleet-ledger.jsonl"
   printf '%s\n' \
     "- mac - macbook mate (host: macbook; root: /Users/x/fm; home: /Users/x/gil; scope: fixture work; projects: alpha; added 2026-10-24)" \
     "- same - same-host mate (host: slartibartfast; root: /r; home: $samehost; scope: fixture work; projects: alpha; added 2026-10-24)" \
@@ -865,6 +866,8 @@ SH
     "the mirrored home is named by its real path and host, never the scratch copy"
   assert_equals "1" "$(jq '[.coverage.homes[] | select(.path == "/Users/x/gil" and .status_logs == 1)] | length' "$json")" \
     "the mirror's status log is counted"
+  assert_equals "true" "$(jq -r '[.coverage.homes[] | select(.path == "/Users/x/gil")][0].ledger' "$json")" \
+    "a fleet ledger over 4 MB is still mirrored"
   assert_equals "true" "$(jq -r 'any(.coverage.homes[]; .path == "'"$samehost"'" and .host == null)' "$json")" \
     "a remote-form home that exists on this machine is read in place, as a local home"
   assert_grep "Home down on host deadhost was not read: host deadhost is unreachable" "$home/data/officers/friction/$DATE.md" \

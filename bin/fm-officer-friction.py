@@ -2477,7 +2477,7 @@ REMOTE_HOME_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._@-]*):(/[A-Za-z0-9._/@+-]
 # The files a pass reads from a home; a mirror holds only these (state/ at most three levels down).
 REMOTE_HOME_FILES = (
     "find state -maxdepth 3 -type f \\( -name '*.status' -o -name '*.meta' -o -name fleet-ledger.jsonl -o -name '*.note' \\)"
-    " -size -4096k -print0; for f in data/agent-complaints.jsonl data/backlog.md data/captain-shared.md;"
+    " -print0; for f in data/agent-complaints.jsonl data/backlog.md data/captain-shared.md;"
     " do [ -f \"$f\" ] && printf '%s\\0' \"$f\"; done")
 
 
