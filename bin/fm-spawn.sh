@@ -4483,7 +4483,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   read -r SPAWN_DRAIN_STATE SPAWN_DRAIN_REPO SPAWN_DRAIN_REST < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
   SPAWN_DRAIN_CLASS=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$BRIEF" 2>/dev/null | head -n 1)
   if [ "$SPAWN_DRAIN_CLASS" = lee-explicit ]; then
-    python3 "$FM_ROOT/bin/fm-pr-drain.py" evidence "$BRIEF" || {
+    fm_brief_task_heading_body "$BRIEF" "## Captain's intent" | python3 "$FM_ROOT/bin/fm-pr-drain.py" evidence || {
       echo "error: spawn refused: task $ID declares PR drain class lee-explicit without the captain's quoted word and timestamp; add them to the brief and spawn again" >&2
       exit 1
     }
