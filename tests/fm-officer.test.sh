@@ -191,6 +191,7 @@ test_unreachable_host_is_silent_until_attempts_run_out() {
 
 wait_for_attempts() {  # <home> <n>: until <n> attempts for $DATE are logged and no run holds the lock.
   local i=0
+  # shellcheck disable=SC2002 # cat keeps a missing runs.log counting as 0 attempts (awk on a missing file would print nothing).
   until [ "$(cat "$1/data/officers/triage/runs.log" 2>/dev/null | awk -v d="$DATE" '$2 == d {n++} END {print n + 0}')" -ge "$2" ] \
     && [ ! -d "$1/data/officers/triage/.run.lock" ]; do
     i=$((i + 1))
