@@ -7,7 +7,7 @@ contract; docs/configuration/officers.md "Officers" owns the registry schema.
 Usage:
   fm-officer-friction.py scan --archive <dir> --date <YYYY-MM-DD>
   fm-officer-friction.py run --archive <dir|host:dir> --date <YYYY-MM-DD>
-                             --out <lane-dir> [--home <dir>]... [--hosts a,b]
+                             --out <lane-dir> [--home <dir|host:/dir>]... [--hosts a,b]
                              [--captains-log <https-url>] [--channel <mate-id>]...
                              [--days <n>] [--model none] [--now <epoch>]
                              [--bosun-hosts a,b] [--fm-home <dir>]
@@ -290,11 +290,13 @@ and slice 1 accepts only --model none.
 """
 
 import argparse
+import atexit
 import collections
 import datetime
 import gzip
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import re
@@ -303,6 +305,8 @@ import shutil
 import socket
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 import zoneinfo
 
@@ -1485,7 +1489,7 @@ def parse_status_line(line):
 def status_streams(home):
     """Per task, its status lines in order as dicts, from the live log and the ledger."""
     streams = {}
-    state = os.path.join(home.path, "state")
+    state = os.path.join(home.root, "state")
     try:
         names = sorted(os.listdir(state))
     except OSError:
@@ -1527,7 +1531,7 @@ def status_streams(home):
 
 def host_names(home):
     """Names the home's own machine answers to: its directory name and this host's short name."""
-    return {place(home.path), socket.gethostname().split(".")[0]}
+    return {place(home.path), home.host or socket.gethostname().split(".")[0]}
 
 
 def waits_stated(ev):
@@ -1699,7 +1703,7 @@ def complaint_events(homes, date):
     out = []
     for home in homes:
         try:
-            with open(os.path.join(home.path, "data", "agent-complaints.jsonl"), encoding="utf-8",
+            with open(os.path.join(home.root, "data", "agent-complaints.jsonl"), encoding="utf-8",
                       errors="replace") as fh:
                 lines = fh.read().splitlines()
         except OSError:
@@ -1918,7 +1922,7 @@ def read_lines(path):
 
 def inbox_notes(home):
     """The text of every note in a home's inbox, waiting or handled; read-only."""
-    inbox = os.path.join(home.path, "state", "inbox")
+    inbox = os.path.join(home.root, "state", "inbox")
     out = []
     for folder in (inbox, os.path.join(inbox, "handled")):
         try:
@@ -1937,7 +1941,7 @@ def inbox_notes(home):
 
 def task_link(home, task):
     """The newest pull request URL a task's status log names, or None."""
-    for line in reversed(read_lines(os.path.join(home.path, "state", task + ".status"))):
+    for line in reversed(read_lines(os.path.join(home.root, "state", task + ".status"))):
         m = PULL_URL_RE.search(line)
         if m:
             return m.group(0)
@@ -2002,7 +2006,7 @@ def note_at(text):
 def settled_by(f, rx, homes):
     """The first standing-rule line of a home's data/captain-shared.md that covers the finding, quoted with its source."""
     for home in homes:
-        path = os.path.join(home.path, "data", "captain-shared.md")
+        path = os.path.join(home.root, "data", "captain-shared.md")
         for number, line in enumerate(read_lines(path), 1):
             if STANDING_RE.search(line) and settles(line.lower(), f, rx):
                 return {"text": clip(line.strip().lstrip("-* ").strip(), 300),
@@ -2080,7 +2084,7 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), mer
     """
     day_start, _ = day_bounds(date)
     notes = [(t.lower(), note_at(t)) for h in homes for t in inbox_notes(h)]
-    backlog = [(h, l) for h in homes for l in read_lines(os.path.join(h.path, "data", "backlog.md"))]
+    backlog = [(h, l) for h in homes for l in read_lines(os.path.join(h.root, "data", "backlog.md"))]
     by_pr, by_task = merge_index(homes)
     out = {}
     for f in findings:
@@ -2469,6 +2473,72 @@ def velocity_taps(replies, args, offices, doc):
     return {"report": report, "rows": rows}
 
 
+REMOTE_HOME_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._@-]*):(/[A-Za-z0-9._/@+-]+)$")
+# The files a pass reads from a home; a mirror holds only these (state/ at most three levels down).
+REMOTE_HOME_FILES = (
+    "find state -maxdepth 3 -type f \\( -name '*.status' -o -name '*.meta' -o -name fleet-ledger.jsonl -o -name '*.note' \\)"
+    " -size -4096k -print0; for f in data/agent-complaints.jsonl data/backlog.md data/captain-shared.md;"
+    " do [ -f \"$f\" ] && printf '%s\\0' \"$f\"; done")
+
+
+def fetch_remote_home(host, path, dest):
+    """Copy the records a pass reads from <path> on <host> into <dest>, read-only over ssh; raises RuntimeError.
+
+    A task's report.md is only tested for, so its mirror is an empty file.
+    """
+    ssh = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", host]
+    cd = "cd " + shlex.quote(path) + " && "
+    try:
+        got = subprocess.run(ssh + [cd + "{ " + REMOTE_HOME_FILES + "; } | tar -cf - --null -T -"],
+                             capture_output=True, timeout=300)
+        names = subprocess.run(ssh + [cd + "find data -maxdepth 2 -name report.md"], capture_output=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("%s: %s" % (host, exc))
+    if got.returncode == 255 or names.returncode == 255:
+        raise RuntimeError("host %s is unreachable over ssh" % host)
+    if got.returncode != 0:
+        raise RuntimeError("home %s could not be read on host %s (exit %d)" % (path, host, got.returncode))
+    try:
+        with tarfile.open(fileobj=io.BytesIO(got.stdout)) as tar:
+            for member in tar.getmembers():
+                parts = member.name.split("/")
+                if not member.isreg() or member.name.startswith("/") or ".." in parts:
+                    continue
+                target = os.path.join(dest, member.name)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                with open(target, "wb") as fh:
+                    fh.write(tar.extractfile(member).read())
+    except (tarfile.TarError, OSError) as exc:
+        raise RuntimeError("home %s on host %s returned an unreadable copy: %s" % (path, host, exc))
+    for name in names.stdout.decode("utf-8", "replace").splitlines():
+        if name.startswith("data/") and ".." not in name.split("/"):
+            os.makedirs(os.path.dirname(os.path.join(dest, name)), exist_ok=True)
+            open(os.path.join(dest, name), "w").close()
+
+
+def load_homes(specs):
+    """(homes, gaps): a --home that is host:/dir is mirrored from that host; one that cannot be read is a gap."""
+    homes, gaps, scratch = [], [], None
+    for spec in specs:
+        remote = REMOTE_HOME_RE.match(spec)
+        if not remote:
+            homes.append(triage.Home(spec))
+            continue
+        host, path = remote.groups()
+        if scratch is None:
+            base = os.path.expanduser("~/fm-scratch")
+            scratch = tempfile.mkdtemp(prefix="officer-friction-", dir=base if os.path.isdir(base) else None)
+            atexit.register(shutil.rmtree, scratch, True)
+        dest = os.path.join(scratch, str(len(homes)))
+        try:
+            fetch_remote_home(host, path, dest)
+        except RuntimeError as exc:
+            gaps.append("Home %s on host %s was not read: %s." % (place(path), host, exc))
+            continue
+        homes.append(triage.Home(path, root=dest, host=host))
+    return homes, gaps
+
+
 def coverage(scanned, homes, hosts, log):
     present = sorted({s["machine"] for s in scanned["sessions"] if s.get("machine")})
     home_rows = []
@@ -2476,11 +2546,11 @@ def coverage(scanned, homes, hosts, log):
     for home in homes:
         logs = 0
         try:
-            logs = sum(1 for n in os.listdir(os.path.join(home.path, "state")) if n.endswith(".status"))
+            logs = sum(1 for n in os.listdir(os.path.join(home.root, "state")) if n.endswith(".status"))
         except OSError:
             pass
-        ledger = os.path.exists(os.path.join(home.path, "state", "fleet-ledger.jsonl"))
-        home_rows.append({"path": home.path, "status_logs": logs, "ledger": ledger})
+        ledger = os.path.exists(os.path.join(home.root, "state", "fleet-ledger.jsonl"))
+        home_rows.append({"path": home.path, "host": home.host, "status_logs": logs, "ledger": ledger})
         if not ledger:
             notes.append("Home %s keeps no fleet ledger, so status lines of tasks already cleaned up there"
                          " are not read." % place(home.path))
@@ -2556,8 +2626,8 @@ def render_md(doc):
     lines.append("- Sessions analysed: %d; archive harvester last ran %s." % (
         cov["sessions_analysed"], cov["harvester_last_run"] or "never"))
     for home in cov["homes"]:
-        lines.append("- Home %s: %d status log(s), fleet ledger %s." % (
-            place(home["path"]), home["status_logs"], "read" if home["ledger"] else "absent"))
+        lines.append("- Home %s%s: %d status log(s), fleet ledger %s." % (
+            place(home["path"]), " (host %s)" % home["host"] if home.get("host") else "", home["status_logs"], "read" if home["ledger"] else "absent"))
     if cov["captains_log"]["state"] == "read":
         lines.append("- Captain's Log: %d card(s) read, %d Lee step(s) seen only as a card." % (
             cov["captains_log"]["cards"], cov["captains_log"]["card_only"]))
@@ -2671,7 +2741,7 @@ def main(argv):
         else:
             scanned = scan(args.archive, args.date, args.days)
         triage.require_harvested(scanned)
-        homes = [triage.Home(h) for h in args.home]
+        homes, home_gaps = load_homes(args.home)
         drop_test_noise(scanned)
         triage.join_sessions(scanned, homes)
         triage.classify_mates(scanned, homes)
@@ -2687,6 +2757,7 @@ def main(argv):
             except RuntimeError as exc:
                 replies_gap = exc
         doc = summarise(scanned, homes, hosts, args.model, cards, log, CHANNEL_LOGS | set(args.channel), args.days)
+        doc["coverage"]["notes"].extend(home_gaps)
         if bosun_hosts:
             doc["bosun"] = bosun_section(bosun_hosts)
         if replies_gap:
