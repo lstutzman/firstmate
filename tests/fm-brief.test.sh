@@ -2135,6 +2135,7 @@ test_briefs_end_with_the_complaint_step() {
   brief="$home/data/brief-cs-no-mistakes/brief.md"
   [ "$(grep -n 'did anything about the system annoy you' "$brief" | cut -d: -f1)" -gt "$(grep -n '^# Definition of done' "$brief" | cut -d: -f1)" ] \
     || fail "the complaint step must sit inside the Definition of done"
+  # shellcheck disable=SC2016 # the backticks are literal sed pattern text
   cmd=$(sed -n 's/^Before your final report.* run `\(.*\) "<one sentence>"` with one sentence.*/\1/p' "$brief")
   [ -n "$cmd" ] || fail "the complaint step must name a runnable command"
   (cd "$TMP_ROOT" && env -u FM_HOME FM_TASK_ID=brief-cs-no-mistakes bash -c "$cmd 'the brief was fine'") >/dev/null \
