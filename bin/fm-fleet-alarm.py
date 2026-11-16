@@ -365,6 +365,20 @@ while IFS= read -r line || [ -n "$line" ]; do
       fi
       line=$(status_agent_event_line "$3/$id.status" "$3/$id.status" "$4") || exit 1
       verb=$(status_line_verb "$line")
+      # A plain informational done line does not end a declared pause: the most recent earlier
+      # working, paused, blocked or needs-decision line decides, and only a paused one stands in.
+      if [ "$verb" = done ]; then
+        held=
+        while IFS= read -r prior; do
+          pverb=$(status_line_verb "$prior")
+          case "$pverb" in working|paused|blocked|needs-decision) held=$prior ;; esac
+        done < "$window"
+        if [ -n "$held" ] && [ "$(status_line_verb "$held")" = paused ] && _fm_status_at_epoch "$held" held_at; then
+          line=$held
+          verb=paused
+          age=$(( $4 - held_at )); [ "$age" -ge 0 ] || age=0
+        fi
+      fi
       case "$verb" in working|paused) ;; *) verb=other ;; esac
       until=$(status_paused_until "$line" || true)
       cause=$(status_line_cause "$line")

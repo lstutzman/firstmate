@@ -460,6 +460,48 @@ printf 'paused [at=%s] [cause=external]: waiting on vendor\n' "$((now - 90000))"
 assert_contains "$(run_alarm check)" 'holding work silent' 'an undated paused [cause=external] wait older than 24 hours alarms again'
 mate 0 0 0
 run_alarm check >/dev/null
+# A plain done line after a declared pause does not end the pause.
+now=$(date +%s)
+mate 1 0 7200
+{
+  printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
+  printf 'done [at=%s]: relay noted\n' "$((now - 7000))"
+} > "$HOME_FIX/state/mate.status"
+[ -z "$(run_alarm check)" ] || fail 'a done line after a paused wait with a future until keeps the wait in force'
+{
+  printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 20000))" "$(date -u -d "@$((now - 7200))" +%Y-%m-%dT%H:%MZ)"
+  printf 'done [at=%s]: relay noted\n' "$((now - 7000))"
+} > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a done line after a paused wait whose until is long past still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+now=$(date +%s)
+mate 1 0 7200
+{
+  printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
+  printf 'done [at=%s]: relay noted\n' "$((now - 7000))"
+  printf 'working [at=%s]: resumed\n' "$((now - 6800))"
+} > "$HOME_FIX/state/mate.status"
+[ -z "$(run_alarm check)" ] || fail 'paused then done then a fresh working line follows the working line'
+{
+  printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 30000))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
+  printf 'done [at=%s]: relay noted\n' "$((now - 7000))"
+  printf 'working [at=%s]: resumed\n' "$((now - 25000))"
+  printf 'done [at=%s]: relay noted again\n' "$((now - 6900))"
+} > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a done line after a stale working line does not revive an earlier superseded pause'
+mate 0 0 0
+run_alarm check >/dev/null
+now=$(date +%s)
+mate 1 0 7200
+{
+  printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
+  printf 'blocked [at=%s] [cause=tool]: stuck\n' "$((now - 5000))"
+  printf 'done [at=%s]: relay noted\n' "$((now - 7000))"
+} > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'paused then blocked then done is not a live pause'
+mate 0 0 0
+run_alarm check >/dev/null
 MATE_LINE="working" mate 1 0 7200
 python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_IDLE'
 from pathlib import Path
