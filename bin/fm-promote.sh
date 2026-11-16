@@ -325,6 +325,12 @@ If these promotion steps were already completed before a relaunch, preserve the 
 6. Treat the scout-time Firstmate spec and any unmarked legacy \`# Task\` text as investigation context, not captain intent or current ship-time instructions.
 7. Everything else in your original instructions carries over unchanged: the status protocol; the instruction inbox and its acknowledgement; the escalation rules, including ask-user; and every safety rule, except where the current delivery contract below explicitly replaces scout-only delivery rules.
 EOF
+promote_shell_quote() {  # same single-quoting as shell_quote in fm-brief.sh
+  printf "'"
+  printf '%s' "$1" | sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
 promote_delivery_contract() {
   cat <<EOF
 # Current delivery mode contract
@@ -348,6 +354,7 @@ EOF
   fi
   printf '\n'
   fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT"
+  fm_complaint_step "FM_HOME=$(promote_shell_quote "$FM_HOME") $(promote_shell_quote "$FM_ROOT/bin/fm-complain.sh")"
   case "$MODE:$FORGE" in
     local-only:* | *:gerrit | *:external) ;;
     *) printf '%s\n' "$(fm_pr_drain_rule "$FM_ROOT" "$BRANCH")" ;;

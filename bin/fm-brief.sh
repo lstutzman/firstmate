@@ -787,6 +787,7 @@ INBOX_DIR=$(shell_quote "$STATE/$ID.inbox")
 INBOX_TAKE=$(shell_quote "$FM_ROOT/bin/fm-task-inbox.sh")
 LEE_STEP=$(shell_quote "$FM_ROOT/bin/fm-lee-step.sh")
 WT_ASSERT=$(shell_quote "$FM_ROOT/bin/fm-worktree-assert.sh")
+COMPLAIN_STEP=$(fm_complaint_step "FM_HOME=$(shell_quote "$FM_HOME") $(shell_quote "$FM_ROOT/bin/fm-complain.sh")")
 
 # Every blocked and needs-decision line states why the agent cannot go on; the
 # vocabulary and its parser are owned by status_line_cause in bin/fm-classify-lib.sh.
@@ -1159,6 +1160,7 @@ Only when the reviewed inventory is empty, run \`FM_HOME=$(shell_quote "$FM_HOME
 This exception permits only that command, not direct metadata edits, another task, or any backlog write.
 If any captain call remains, ask firstmate to register the inventory and attest completion before you report done.
 If the command refuses, report the refusal to firstmate and stop rather than bypassing the completion gate.
+$COMPLAIN_STEP
 When the report is complete, append \`done [at=<epoch>]: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; firstmate may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
 EOF
@@ -1278,7 +1280,8 @@ $WAIT_BLOCK$INBOX_SECTION
 A project's \`AGENTS.md\` or \`CLAUDE.md\` is loaded into every agent session in that project, so edit it only to correct information that is factually wrong - including information your own change made wrong - and never to add knowledge because it is missing.
 A correction edits only the wrong text: do not run \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`, create either file, or add sections, headings, or pointers alongside it.
 
-$DOD$PR_DRAIN_DOD$PR_DRAIN_SECTION
+$DOD
+$COMPLAIN_STEP$PR_DRAIN_DOD$PR_DRAIN_SECTION
 EOF
 append_brief_include
 if [ "$PR_TEXT" = manual ]; then

@@ -104,6 +104,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Project and secondmate registries.
 - Captain preferences and optional shared captain preferences.
 - Learnings, backlog, briefs, scout reports, optional task status archives, and the optional per-task no-mistakes pipeline-spend ledger.
+- Worker complaints in `data/agent-complaints.jsonl`, one JSON line per `bin/fm-complain.sh` call (`bin/fm-complain.sh` owns the fields); the friction officer reads it from each scanned home.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 
 `state/` holds runtime records:
