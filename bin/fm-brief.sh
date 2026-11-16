@@ -574,7 +574,7 @@ if [ "$PR_DRAIN_SET" -eq 1 ]; then
     exit 1
   }
   python3 "$SCRIPT_DIR/fm-pr-drain.py" class "$PR_DRAIN" || {
-    echo "error: --pr-drain must be an exemption class (production-outage, cve, wolverine, lee-research, officer, scheduled) or a landing job (restack, red-gate-fix, returned-pr-fix, review) (got '$PR_DRAIN')" >&2
+    echo "error: --pr-drain must be an exemption class (production-outage, cve, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack, red-gate-fix, returned-pr-fix, review) (got '$PR_DRAIN')" >&2
     exit 1
   }
 fi

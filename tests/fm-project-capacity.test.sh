@@ -1238,6 +1238,28 @@ test_pr_drain_admits_every_class_and_landing_job() {
   pass "every exemption class and landing job launches on a repository in PR drain"
 }
 
+test_pr_drain_lee_explicit_needs_the_quoted_word() {
+  local case_dir home out rc=0
+  case_dir=$(make_case drain-lee-explicit lx-ok lx-bare)
+  home="$case_dir/home"
+  drain_gh "$case_dir" 25
+  write_brief "$home" lx-ok
+  sed -i "s|^Run the project's heavy suite.*|Lee (main chat, 2026-11-16T18:19:06Z): \"build it\"|" "$home/data/lx-ok/brief.md"
+  printf 'PR drain: lee-explicit\n' >> "$home/data/lx-ok/brief.md"
+  add_item "$home" lx-ok
+  out=$(spawn_ship "$case_dir" lx-ok) || rc=$?
+  expect_code 0 "$rc" "a lee-explicit ship with a quote and timestamp was refused: $out"
+  write_brief "$home" lx-bare
+  printf 'PR drain: lee-explicit\n' >> "$home/data/lx-bare/brief.md"
+  add_item "$home" lx-bare
+  rc=0
+  out=$(spawn_ship "$case_dir" lx-bare) || rc=$?
+  expect_code 1 "$rc" "a lee-explicit ship with no quote was not refused: $out"
+  assert_contains "$out" "double-quoted" "the refusal did not name the missing quote: $out"
+  assert_absent "$home/state/lx-bare.meta" "a refused lee-explicit spawn published a task record"
+  pass "a lee-explicit ship launches with the captain's quoted word and timestamp and is refused without them"
+}
+
 test_pr_drain_unknown_or_off_launches() {
   local case_dir out rc=0
   case_dir=$(make_case drain-unknown task-c task-d)
@@ -1293,4 +1315,5 @@ test_lane_capacity_gate_defers_without_leaving_anything_behind
 test_lane_capacity_gate_refuses_an_unreadable_opt_in
 test_pr_drain_defers_a_ship_without_a_class
 test_pr_drain_admits_every_class_and_landing_job
+test_pr_drain_lee_explicit_needs_the_quoted_word
 test_pr_drain_unknown_or_off_launches
