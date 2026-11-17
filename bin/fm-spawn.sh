@@ -4488,10 +4488,21 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
       exit 1
     }
   fi
+  if [ "$SPAWN_DRAIN_STATE" = on ] && [ "$SPAWN_DRAIN_CLASS" = security ]; then
+    SPAWN_SECURITY_ITEM=$(sed -n 's/^> Quoted from Linear \(PC-[0-9][0-9]*\) (read-only.*$/\1/p' "$BRIEF" | head -n 1)
+    [ -n "$SPAWN_SECURITY_ITEM" ] || {
+      echo "error: spawn refused: task $ID declares PR drain class security but its brief names no Linear item; rescaffold it with bin/fm-brief.sh --pr-drain security --linear <PC-n>" >&2
+      exit 1
+    }
+    python3 "$FM_ROOT/bin/fm-pr-drain.py" security "$SPAWN_SECURITY_ITEM" || {
+      echo "error: spawn refused: task $ID declares PR drain class security but $SPAWN_SECURITY_ITEM does not qualify (see above); the task was not launched" >&2
+      exit 1
+    }
+  fi
   if [ "$SPAWN_DRAIN_STATE" = unknown ]; then
     echo "warning: PR drain state of $SPAWN_DRAIN_REPO is unknown ($SPAWN_DRAIN_REST); launching task $ID anyway" >&2
   elif [ "$SPAWN_DRAIN_STATE" = on ] && ! { [ -n "$SPAWN_DRAIN_CLASS" ] && python3 "$FM_ROOT/bin/fm-pr-drain.py" class "$SPAWN_DRAIN_CLASS"; }; then
-    echo "deferred: $SPAWN_DRAIN_REPO is in PR drain with $SPAWN_DRAIN_REST open PRs (drain holds from 20 open until 0), so new ship work is refused; task $ID was not launched and its backlog item stays queued - dispatch it again once the drain ends, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, wolverine, lee-research, lee-explicit, officer, scheduled) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
+    echo "deferred: $SPAWN_DRAIN_REPO is in PR drain with $SPAWN_DRAIN_REST open PRs (drain holds from 20 open until 0), so new ship work is refused; task $ID was not launched and its backlog item stays queued - dispatch it again once the drain ends, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi

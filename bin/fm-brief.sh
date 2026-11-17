@@ -93,7 +93,7 @@
 # bin/fm-spawn.sh reads before refusing a ship on a drained repository. When
 # --project names a GitHub clone whose repository is in drain at scaffold time
 # (bin/fm-pr-drain.py owns the state), the brief also gets a `# PR drain`
-# section saying so, unless the class is production-outage, cve or a landing
+# section saying so, unless the class is production-outage, cve, security or a landing
 # job. Every PR-opening ship brief (no-mistakes or direct-PR on a forge with
 # pull requests) without --pr-drain carries a PR drain check in its Definition
 # of done: just before opening a new pull request the worker reads the live state
@@ -574,9 +574,13 @@ if [ "$PR_DRAIN_SET" -eq 1 ]; then
     exit 1
   }
   python3 "$SCRIPT_DIR/fm-pr-drain.py" class "$PR_DRAIN" || {
-    echo "error: --pr-drain must be an exemption class (production-outage, cve, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack, red-gate-fix, returned-pr-fix, review) (got '$PR_DRAIN')" >&2
+    echo "error: --pr-drain must be an exemption class (production-outage, cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack, red-gate-fix, returned-pr-fix, review) (got '$PR_DRAIN')" >&2
     exit 1
   }
+  if [ "$PR_DRAIN" = security ] && [ -z "$LINEAR_ITEM" ]; then
+    echo "error: --pr-drain security needs --linear <PC-n>: the Linear item labelled security with Urgent or High priority is the proof, and bin/fm-spawn.sh checks it before launch" >&2
+    exit 1
+  fi
 fi
 if [ "$GATE_FILES_SET" -eq 1 ]; then
   [ "$KIND" = ship ] || {
@@ -1210,7 +1214,7 @@ $PR_DRAIN_RULE" ;;
 esac
 PR_DRAIN_SECTION=
 case "$PR_DRAIN" in
-  production-outage | cve | restack | red-gate-fix | returned-pr-fix | review) ;;
+  production-outage | cve | security | restack | red-gate-fix | returned-pr-fix | review) ;;
   *)
     if [ "$MODE" != local-only ] && [ -n "$PROJECT_DIR" ]; then
       read -r PR_DRAIN_STATE PR_DRAIN_REPO PR_DRAIN_OPEN _ < <(python3 "$SCRIPT_DIR/fm-pr-drain.py" state "$PROJECT_DIR") || true

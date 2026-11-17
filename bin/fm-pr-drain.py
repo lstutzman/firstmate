@@ -4,6 +4,7 @@
 Usage: fm-pr-drain.py state <project-dir>
        fm-pr-drain.py class <value>
        fm-pr-drain.py evidence < <captain's-intent-text>
+       fm-pr-drain.py security <PC-n>
 
 A repository enters drain at 20 or more open PRs and leaves it only when its open count reaches 0.
 state prints one line and exits 0:
@@ -17,13 +18,21 @@ last 14 days are walked back from now (a close adds one PR, a creation removes o
 20 or more (on) or 0 (off). Read-only: one `gh pr list` of open PRs, plus one of recently closed PRs only
 in that 1..19 band. FM_PR_DRAIN_TIMEOUT (default 20) bounds each read in seconds.
 class exits 0 when <value> is a recognised drain declaration: an exemption class (production-outage,
-cve, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack,
+cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack,
 red-gate-fix, returned-pr-fix, review), and 2 otherwise. bin/fm-brief.sh --pr-drain writes it into a
 brief and bin/fm-spawn.sh reads it back.
 evidence reads a brief's `## Captain's intent` section body on stdin (bin/fm-spawn.sh extracts it with
 bin/fm-brief-heading-lib.sh) and exits 0 when it holds a quoted captain instruction with a timestamp,
 the proof a `lee-explicit` brief needs: at least one double-quoted span, and an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ) on the same line as a quote or on the line before it.
 It exits 2 and names what is missing otherwise. It does not check that the quote is real.
+security reads the Linear item <PC-n> (read-only) and exits 0 when it carries the label `security` (any case)
+and its priority is Urgent (1) or High (2), the proof a `security` brief needs (fleet rules s3: high or critical
+security fixes start at once). It exits 2 and names the item and what is missing otherwise, including when Linear
+cannot be read. Linear is read through one helper, read_item: a read-only GraphQL query authenticated by
+`linear-token header --print-to-pipe` (the credential linear-axi uses; never printed or stored).
+FM_PR_DRAIN_LINEAR_READER names an executable that replaces it (tests): it gets the item id as its argument and
+prints JSON such as {"priority": 1, "labels": ["Bug", "security"]}. FM_PR_DRAIN_LINEAR_URL replaces the GraphQL
+endpoint (tests).
 """
 from datetime import datetime, timedelta, timezone
 import json
@@ -31,13 +40,16 @@ import os
 import re
 import subprocess
 import sys
+import urllib.request
 
 THRESHOLD = 20
 WINDOW_DAYS = 14
 CLOSED_LIMIT = 1000
-EXEMPT = ('production-outage', 'cve', 'wolverine', 'lee-research', 'lee-explicit', 'officer', 'scheduled')
+EXEMPT = ('production-outage', 'cve', 'security', 'wolverine', 'lee-research', 'lee-explicit', 'officer', 'scheduled')
 LANDING = ('restack', 'red-gate-fix', 'returned-pr-fix', 'review')
 STAMP = re.compile(r'\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z\b')
+ITEM = re.compile(r'^PC-[0-9]+$')
+PRIORITIES = {1: 'Urgent', 2: 'High'}
 QUOTE = re.compile(r'"[^"\n]+"')
 ORIGIN = re.compile(r'^(?:git@github\.com:|ssh://git@github\.com/|https://github\.com/)'
                     r'([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?$')
@@ -107,6 +119,59 @@ def evidence(text):
         return ['an ISO-8601 UTC timestamp (for example 2026-11-16T18:19:06Z) on the quote line or the line before it']
     return []
 
+
+
+def read_item(item):
+    """The one Linear read: {'priority': int, 'labels': [names]} for a PC item. Raises ValueError with the reason."""
+    reader = os.environ.get('FM_PR_DRAIN_LINEAR_READER')
+    timeout = float(os.environ.get('FM_PR_DRAIN_TIMEOUT', 20))
+    try:
+        if reader:
+            out = subprocess.run([reader, item], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                                 timeout=timeout, check=False)
+            if out.returncode:
+                raise ValueError((out.stderr.strip().splitlines() or ['reader failed'])[0][:160])
+            return json.loads(out.stdout)
+        token = subprocess.run(['linear-token', 'header', '--print-to-pipe'], stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True, timeout=timeout, check=False)
+        if token.returncode or not token.stdout.strip():
+            raise ValueError('no Linear credential from linear-token')
+        query = 'query($id:String!){issue(id:$id){identifier priority labels{nodes{name}}}}'
+        request = urllib.request.Request(os.environ.get('FM_PR_DRAIN_LINEAR_URL', 'https://api.linear.app/graphql'),
+                                         data=json.dumps({'query': query, 'variables': {'id': item}}).encode(),
+                                         headers={'Authorization': token.stdout.strip(), 'Content-Type': 'application/json'})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                body = json.load(response)
+        except Exception:
+            # Never echo the exception: a header error can quote the Authorization value.
+            raise ValueError('Linear GraphQL read failed') from None
+        issue = (body.get('data') or {}).get('issue')
+        if not issue:
+            raise ValueError('no such item or Linear refused the read')
+        return {'priority': issue['priority'], 'labels': [n['name'] for n in issue['labels']['nodes']]}
+    except (KeyError, TypeError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
+        raise ValueError(f'Linear unreadable: {type(error).__name__}') from None
+
+
+def security(item):
+    """What a `security` brief's Linear item lacks, as a list (empty when it qualifies)."""
+    if not ITEM.match(item or ''):
+        return [f"a Property Compass item id such as PC-123 (got '{item}')"]
+    try:
+        data = read_item(item)
+        labels = {str(name).lower() for name in data['labels']}
+        priority = data['priority']
+    except (ValueError, KeyError, TypeError) as error:
+        return [f'a readable Linear item ({error})']
+    missing = []
+    if 'security' not in labels:
+        missing.append('the label `security`')
+    if priority not in PRIORITIES:
+        missing.append(f'priority Urgent or High (it is {priority!r})')
+    return missing
+
+
 if __name__ == '__main__':
     if len(sys.argv) == 3 and sys.argv[1] == 'state':
         print(state(sys.argv[2]))
@@ -116,6 +181,11 @@ if __name__ == '__main__':
         missing = evidence(sys.stdin.read())
         if missing:
             print('lee-explicit needs, in the brief\'s "## Captain\'s intent" section: ' + '; '.join(missing), file=sys.stderr)
+            sys.exit(2)
+    elif len(sys.argv) == 3 and sys.argv[1] == 'security':
+        missing = security(sys.argv[2])
+        if missing:
+            print(f"security needs Linear item {sys.argv[2]} to have: " + '; '.join(missing), file=sys.stderr)
             sys.exit(2)
     else:
         print(__doc__, file=sys.stderr)
