@@ -34,7 +34,7 @@ the recovery it was expected by, even when its home is unreadable by then; it
 resolves when the condition clears.
 A secondmate whose own latest line is `working`, or `paused` with no `until` time, younger than
 working_ceiling_multiple (6) times silent_minutes, or `paused` with an `until` time less than
-silent_minutes past, while it holds work (in flight, an active child or a parked child), has asked main
+silent_minutes past, while it holds work (in flight, an active child or a parked child; a queued backlog item that is merely held is not work), has asked main
 nothing open (a `needs-decision [key=merge-handoff-<n>]` whose text starts `[handoff=<home>]` is not a question to main), and has no status-source ask (one on a task it also holds as a captain-hold row
 does not count) and a complete decision list, is working a long task and
 is not silent either. A `paused [cause=external]` line with no `until` time is a declared wait
@@ -318,6 +318,17 @@ def held_terminal_complete(summary, counts):
     return all(item in held and item in done for item in ids)
 
 
+def held_work(summary, counts):
+    # Held work is a parked, paused or blocked child (a child-state hold row). A queued backlog item
+    # that is merely held (time, load, external, parked) is nothing under way, and an in-flight item is
+    # already counted by in_flight. Rows the summary truncated cannot be classified, so they count.
+    rows = summary.get('holds', [])
+    if not isinstance(rows, list):
+        return counts['holds']
+    backlog = sum(1 for row in rows if isinstance(row, dict) and row.get('source') == 'backlog')
+    return max(0, counts['holds'] - backlog)
+
+
 def working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg, cause=''):
     # The mate's own latest line says it is working, or paused for work it still holds, and
     # nobody is waiting on it: a long task that reports sparingly, not a mate gone quiet. A
@@ -326,7 +337,7 @@ def working_on_task(summary, counts, open_decisions, last_verb, paused_until, ag
     # other line once it is older than working_ceiling_multiple silence windows.
     if last_verb not in ('working', 'paused') or open_decisions != '0' or child_asking(summary, counts):
         return False
-    if not (counts.get('in_flight', 0) or counts['active_children'] or counts['holds']):
+    if not (counts.get('in_flight', 0) or counts['active_children'] or held_work(summary, counts)):
         return False
     window = cfg['silent_minutes'] * 60
     if paused_until:
@@ -435,6 +446,7 @@ done < "$2"
             work = [counts.get('in_flight', 0), counts['active_children'], counts['decisions_open'], counts['holds']]
             if any(type(n) is not int or n < 0 for n in work):
                 raise ValueError('invalid work counts')
+            work[3] = held_work(summary, counts)
             # A done child with a recorded PR is waiting on merge, not silent work.
             waiting = counts.get('waiting_on_merge', 0)
             if type(waiting) is not int or waiting < 0:

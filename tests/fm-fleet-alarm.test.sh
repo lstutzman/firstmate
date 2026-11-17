@@ -418,6 +418,33 @@ set_mate_work 3 0 2 0 0
 [ -z "$(run_alarm check)" ] || fail 'in-flight work beside an open captain decision is healthy waiting'
 set_mate_work 3 0 0 0
 assert_contains "$(run_alarm check)" 'holding work silent' 'in-flight work with no open captain decision still alarms'
+# A queued backlog item that is merely held (the Librarian shape) is not held work.
+set_mate_backlog_hold() { # in_flight parked_children
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$@" <<'PY_BH'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1])
+in_flight,parked=map(int,sys.argv[2:4])
+value=json.loads(path.read_text())
+rows=[dict(id='queued-0',source='backlog')]+[dict(id=f'child-{n}',source='child-state',state='parked') for n in range(parked)]
+value['counts'].update(in_flight=in_flight,active_children=0,decisions_open=0,holds=len(rows))
+value['counts'].pop('held_in_flight',None)
+value['decisions_open']=[]
+value['holds']=rows
+value['queued']=[dict(id='queued-0',hold_kind='external',captain_actionable=False)]
+path.write_text(json.dumps(value))
+PY_BH
+}
+mate 0 0 3601
+set_mate_backlog_hold 0 0
+[ -z "$(run_alarm check)" ] || fail 'one queued backlog hold with nothing in flight is idle, not silent'
+set_mate_backlog_hold 1 0
+assert_contains "$(run_alarm check)" 'holding work silent' 'in-flight work beside a queued backlog hold still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_backlog_hold 0 1
+assert_contains "$(run_alarm check)" 'holding work silent' 'a parked child beside a queued backlog hold still counts'
 mate 0 0 0
 run_alarm check >/dev/null
 edit_mate_summary() { # python statements over value
