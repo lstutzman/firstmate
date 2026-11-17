@@ -521,6 +521,9 @@ needs-decision [at=$T] [cause=policy] [key=billing-pr]: the billing change needs
 needs-decision [at=$T] [cause=policy] [key=pr-412]: PR 412 can't change billing without Lee's word
 needs-decision [at=$T] [cause=policy] [key=release-go]: No staging check needed: deploy release 3.2.1 to production; needs Lee's go
 needs-decision [at=$T] [cause=policy] [key=no-billing]: needs Lee's word to rename the job; it does not touch billing
+needs-decision [at=$T] [cause=policy] [key=no-prod-data]: needs Lee's word to rename the helper; no change to production data
+needs-decision [at=$T] [cause=policy] [key=no-prod-affect]: needs Lee's word to rename the helper; it does not affect any production data
+needs-decision [at=$T] [cause=policy] [key=no-billing-here]: needs Lee's word to rename the helper; nothing here touches billing
 needs-decision [at=$T] [cause=policy] [key=rotate-key]: rotate the named Stripe API key; needs Lee's word
 needs-decision [at=$T] [cause=credential] [key=licence-cred]: needs Lee's word on the licence
 needs-decision [at=$T] [cause=policy] [key=routine-rename]: rename the helper script; needs Lee's word
@@ -533,7 +536,7 @@ EOF
   md="$home/data/officers/friction/$DATE.md"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
   # A bare keyword (authority) or a denied one ("nothing touches production") is no reserved subject: still friction.
-  assert_equals "no-billing,rename-helper,restack-12,routine-rename" \
+  assert_equals "no-billing,no-billing-here,no-prod-affect,no-prod-data,rename-helper,restack-12,routine-rename" \
     "$(finding "$json" policy approval '.evidence.status_keys | map(split("@")[0]) | sort | join(",")')" \
     "only the asks a standing yes could cover are counted as friction"
   assert_equals 11 "$(finding "$json" policy approval '.reserved_to_lee')" "the finding shows how many asks the rules reserve to Lee"

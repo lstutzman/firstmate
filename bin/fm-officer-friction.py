@@ -428,8 +428,8 @@ RESERVED_RULES = [
 # A reserved phrase a negator directly governs ("no production change", "nothing touches billing", "does not touch
 # billing", "isn't a production deploy") names no ask; "can't deploy to production without Lee's go" still does.
 RESERVED_NEGATION_RE = re.compile(
-    r"(?:\b(?:no|nothing|none|neither|nor)\b(?:\s+[\w'-]+)?|(?:\bnot|n't)\s+(?:a|an|any|touch\w*|affect\w*|involv\w*|need\w*))"
-    r"\s+$", re.I)
+    r"(?:\b(?:no|nothing|none|neither|nor)\b|(?:\bnot|n't)\s+(?:a|an|any|touch\w*|affect\w*|involv\w*|need\w*))"
+    r"(?:\s+[\w'-]+){0,3}?\s+$", re.I)
 URL_RE = re.compile(r"https?://\S+")
 CORR_RE = re.compile(r"\bcorr=[0-9a-f]+\s*")
 SSH_HOST_RE = re.compile(r"\bssh (?:-\w+ )*(?:[\w.-]+@)?([\w.-]+) '")
