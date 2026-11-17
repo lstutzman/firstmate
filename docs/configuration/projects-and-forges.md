@@ -57,6 +57,22 @@ A brief declaring `lee-explicit` (the captain's own explicit instruction) is ref
 A brief declaring `security` (a high or critical security fix, which starts at once) must name its Linear item with `bin/fm-brief.sh --linear <PC-n>`, and while the repository is in drain `bin/fm-spawn.sh` refuses it unless a read-only Linear query shows that item carries the label `security` (any case) and priority Urgent (1) or High (2); the refusal names the item and what is missing, including when Linear cannot be read, and no launch happens on an unverified item. Out of drain, or when the drain state is unknown, it launches like any other brief with no Linear read.
 [`bin/fm-pr-drain.py`](../../bin/fm-pr-drain.py) owns the state, the window and the accepted classes, and the fleet alarm announces each change ([Fleet quota and secondmate alarm](away-and-alarms.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)).
 
+## CI slots (config/ci-slots)
+
+The optional local, gitignored `config/ci-slots` declares, per project, the total concurrent gate and admission slots across every host (S), so the open-PR queue (P) never outgrows them, because a longer queue drains slower as its branches fall behind staging.
+It holds one `<project> <slots>` line per project, in the same format as [project capacity](../configuration.md#project-capacity-configproject-capacity): the project's registered name, then a positive whole number, with `#` comments and blank lines ignored.
+The main home writes it (for PropertyCompass2 today, `PropertyCompass2 4`, Slarti's 2 slots plus Deep Thought's 2; to be confirmed with Slarti), and the inherited-local-material push copies it to every second-mate home, local and remote, so each dispatching home reads its own copy.
+A project with no line is never held.
+For a fresh ship of a project with S, `bin/fm-spawn.sh` counts P as the open PRs on the project's GitHub repository plus the ships in flight with no PR recorded yet in every local home on this machine, and a ship whose PR is recorded is counted once, through GitHub.
+When P is at or above S it prints one `deferred:` line naming the repository, the open count, the in-flight count and S, creates nothing and exits 75, exactly like a [project capacity](../configuration.md#project-capacity-configproject-capacity) deferral, so the item stays queued.
+A brief declaring one of these `bin/fm-brief.sh --pr-drain` classes is exempt: `production-outage`, `cve`, `security` (the same Linear label and priority check, read only when the cap would otherwise defer the ship), `lee-explicit` (the same quote and timestamp check), and the landing jobs `restack`, `red-gate-fix`, `returned-pr-fix` and `review`, which open no new PR.
+The other drain classes (`wolverine`, `lee-research`, `officer`, `scheduled`) are held by the cap, and a scout, a relaunch and a second mate never are.
+When GitHub or this machine's task records cannot be read, the spawn launches with one `warning:` line.
+A malformed file refuses every fresh ship spawn for the project until it is fixed, as landing lag does.
+Ships in flight in remote homes are not counted, a known limit.
+The fleet alarm announces a change only: a `working [key=ci-slots-over-<owner>-<repo>]` line when P exceeds S and a `resolved` line with that key once P is back at or under S, each naming P and S ([Fleet quota and secondmate alarm](away-and-alarms.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)).
+[`bin/fm-project-capacity-lib.sh`](../../bin/fm-project-capacity-lib.sh) owns the file format and the in-flight count, [`bin/fm-pr-drain.py`](../../bin/fm-pr-drain.py) owns the open count and the exempt classes, and `bin/fm-project-mode.sh --ci-slots <name>` reads S back.
+
 ## Admission by class (data/projects.md admission= token, config/admission/)
 
 A project entry may name an admission config with `admission=<config>`, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti admission=pc2] - ...`, so that `bin/fm-pr-merge.sh` merges a PR only after the captain has answered for every class of change that needs the captain's word.

@@ -578,7 +578,7 @@ test_batch_reports_a_deferred_pair() {
   write_live "$home" live-a "$case_dir/project"
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair was deferred did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, its project's landing lags, or its repository is in PR drain, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, its project's landing lags, its repository is in PR drain, or its open PRs fill its CI slots, so it stays queued" \
     "the batch did not report the deferral"
   assert_not_contains "$out" "batch: FAILED" "the batch reported a deferral as a failure"
   pass "a batch reports a capacity deferral as deferred, not failed"
@@ -948,7 +948,7 @@ test_batch_reports_a_landing_lag_deferral() {
   write_ready "$home" ready-a "$case_dir/project" 1 30
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair lagged did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, its project's landing lags, or its repository is in PR drain, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, its project's landing lags, its repository is in PR drain, or its open PRs fill its CI slots, so it stays queued" \
     "the batch did not report the landing-lag deferral"
   pass "a batch reports a landing-lag deferral as deferred, not failed"
 }
@@ -1349,6 +1349,232 @@ test_pr_drain_unknown_or_off_launches() {
   pass "an unknown drain state warns and launches, and a repository out of drain launches silently"
 }
 
+# --- CI slots (config/ci-slots) ----------------------------------------------
+
+declare_slots() {  # <home> <line>...
+  local home=$1
+  shift
+  printf '%s\n' "$@" > "$home/config/ci-slots"
+}
+
+test_ci_slots_absent_or_undeclared_keeps_dispatch_uncapped() {
+  local case_dir home out rc=0
+  case_dir=$(make_case slots-none task-c task-d)
+  home="$case_dir/home"
+  drain_gh "$case_dir" 9
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a ship with no config/ci-slots was refused: $out"
+  assert_not_contains "$out" "CI slot" "a ship with no config/ci-slots mentioned CI slots: $out"
+  declare_slots "$home" "# another project only" "other-project 1"
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d) || rc=$?
+  expect_code 0 "$rc" "a ship whose project has no ci-slots line was refused: $out"
+  assert_not_contains "$out" "CI slot" "a ship whose project has no line mentioned CI slots: $out"
+  pass "no config/ci-slots, or no line for the project, never holds a ship"
+}
+
+test_ci_slots_malformed_declaration_refuses_the_spawn() {
+  local case_dir home out rc=0 line
+  case_dir=$(make_case slots-malformed task-c)
+  home="$case_dir/home"
+  drain_gh "$case_dir" 0
+  for line in "project four" "project 0" "project" "project 4x"; do
+    declare_slots "$home" "$line"
+    rc=0
+    out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+    expect_code 1 "$rc" "a ship with the malformed ci-slots line '$line' was not refused: $out"
+    assert_contains "$out" "error: spawn refused: the CI slots declaration is unreadable" "the refusal did not name the declaration for '$line': $out"
+    assert_absent "$home/state/task-c.meta" "a refused spawn published a task record for '$line'"
+  done
+  declare_slots "$home" "project 4" "project 5"
+  rc=0
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code 1 "$rc" "a project named twice in ci-slots was not refused: $out"
+  pass "a malformed or ambiguous config/ci-slots refuses every fresh ship spawn"
+}
+
+test_ci_slots_under_the_slots_admits_and_at_the_slots_defers() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case slots-gate task-c task-d)
+  home="$case_dir/home"
+  declare_slots "$home" "project 4"
+  drain_gh "$case_dir" 3
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a ship with 3 open PRs against 4 slots was refused: $out"
+  assert_contains "$out" "spawned task-c" "a ship under the slots did not launch"
+  # task-c now holds a slot with no PR recorded yet, so 3 open + 1 in flight is 4 of 4.
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a ship at the slots was not deferred: $out"
+  assert_contains "$out" "deferred: o/r has 3 open PR(s) and 1 ship(s) in flight with no PR yet (task-c) against 4 CI slot(s)" \
+    "the deferral did not name the repository, P, the in-flight count and S: $out"
+  assert_contains "$out" "task task-d was not launched and its backlog item stays queued" "the deferral did not say the task stays queued: $out"
+  assert_nothing_created "$case_dir" "$home" task-d "$before" "$worktrees"
+  pass "a ship is admitted under S and deferred, leaving nothing behind, once open PRs plus ships in flight reach S"
+}
+
+test_ci_slots_count_a_ship_once_its_pr_is_open() {
+  local case_dir home out rc=0
+  case_dir=$(make_case slots-once task-c)
+  home="$case_dir/home"
+  declare_slots "$home" "project 4"
+  drain_gh "$case_dir" 3
+  # A ship whose PR is recorded is one of GitHub's open PRs already; a scout holds no CI slot.
+  write_live "$home" live-pr "$case_dir/project" "pr=https://github.com/o/r/pull/1"
+  write_live "$home" live-scout "$case_dir/project" "kind=scout"
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a ship with its PR recorded, or a scout, was counted as a second slot: $out"
+  assert_contains "$out" "spawned task-c" "the ship did not launch with 3 open PRs and no unrecorded ships: $out"
+  pass "a ship with an open PR counts once through GitHub, and a scout counts nowhere"
+}
+
+test_ci_slots_count_ships_in_every_local_home() {
+  local case_dir root mate out rc=0 mate_project
+  case_dir=$(make_case slots-homes)
+  root="$case_dir/home"
+  mate="$case_dir/mate"
+  make_home "$mate" task-m
+  mate_project="$mate/projects/project"
+  git clone -q "$(git -C "$case_dir/project" remote get-url origin)" "$mate_project"
+  printf '%s\n' schema=fm-secondmate-parent.v1 route=local "parent_home=$root" > "$mate/.fm-secondmate-parent"
+  printf -- '- mate - a local mate (home: %s; scope: project work; projects: project; added 2026-09-01)\n' "$mate" \
+    > "$root/data/secondmates.md"
+  printf -- '- far - a remote mate (host: far.example; root: /srv/fm; home: %s/remote-home; scope: other; projects: project; added 2026-09-01)\n' "$case_dir" \
+    >> "$root/data/secondmates.md"
+  mkdir -p "$case_dir/remote-home/state"
+  fm_write_meta "$case_dir/remote-home/state/far-x.meta" "window=w" "project=$case_dir/project" "kind=ship"
+  # The mate reads its own (inherited) copy of the declaration; the open PRs come from GitHub.
+  drain_gh "$case_dir" 3
+  git -C "$mate_project" config "url.$(git -C "$mate_project" remote get-url origin).insteadOf" git@github.com:o/r.git
+  git -C "$mate_project" remote set-url origin git@github.com:o/r.git
+  declare_slots "$mate" "project 4"
+  write_live "$root" live-a "$case_dir/project"
+  git -C "$mate_project" worktree add --quiet -b wt-m "$case_dir/wt-m"
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a local secondmate launched past the slots its root home's ship fills: $out"
+  assert_contains "$out" "deferred: o/r has 3 open PR(s) and 1 ship(s) in flight with no PR yet (live-a in $root) against 4 CI slot(s)" \
+    "the secondmate did not count the root home's ship (and not the remote home's) against its slots: $out"
+  printf 'pr=%s\n' "https://github.com/o/r/pull/8" >> "$root/state/live-a.meta"
+  rc=0
+  out=$(run_spawn "$case_dir" "$mate" "$case_dir/wt-m" task-m "$mate_project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code 0 "$rc" "the remote home's ship, or one whose PR is recorded, held a slot: $out"
+  pass "ships in flight in every local home count toward the slots, remote homes do not, and a recorded PR frees the count"
+}
+
+test_ci_slots_exempt_classes_launch_at_the_slots() {
+  local case_dir home out rc class
+  case_dir=$(make_case slots-exempt)
+  home="$case_dir/home"
+  declare_slots "$home" "project 2"
+  drain_gh "$case_dir" 9
+  for class in production-outage cve restack red-gate-fix returned-pr-fix review; do
+    write_brief "$home" "e-$class"
+    printf 'PR drain: %s\n' "$class" >> "$home/data/e-$class/brief.md"
+    add_item "$home" "e-$class"
+    rc=0
+    out=$(spawn_ship "$case_dir" "e-$class") || rc=$?
+    expect_code 0 "$rc" "a $class ship over the slots was refused: $out"
+    assert_contains "$out" "spawned e-$class" "a $class ship over the slots did not launch"
+  done
+  write_brief "$home" e-lee
+  sed -i "s|^Run the project's heavy suite.*|Lee (main chat, 2026-11-17T16:00:50Z): \"build it\"|" "$home/data/e-lee/brief.md"
+  printf 'PR drain: lee-explicit\n' >> "$home/data/e-lee/brief.md"
+  add_item "$home" e-lee
+  rc=0
+  out=$(spawn_ship "$case_dir" e-lee) || rc=$?
+  expect_code 0 "$rc" "a lee-explicit ship with the quoted word was refused over the slots: $out"
+  write_brief "$home" e-bare
+  printf 'PR drain: lee-explicit\n' >> "$home/data/e-bare/brief.md"
+  add_item "$home" e-bare
+  rc=0
+  out=$(spawn_ship "$case_dir" e-bare) || rc=$?
+  expect_code 1 "$rc" "a lee-explicit ship without the quoted word was not refused: $out"
+  pass "production-outage, cve, lee-explicit and the landing jobs launch over the slots, and lee-explicit still needs its quote"
+}
+
+test_ci_slots_hold_the_other_drain_classes() {
+  local case_dir home out rc class before worktrees
+  case_dir=$(make_case slots-held)
+  home="$case_dir/home"
+  declare_slots "$home" "project 2"
+  drain_gh "$case_dir" 9
+  for class in wolverine lee-research officer scheduled; do
+    write_brief "$home" "h-$class"
+    printf 'PR drain: %s\n' "$class" >> "$home/data/h-$class/brief.md"
+    add_item "$home" "h-$class"
+    before=$(call_count "$case_dir")
+    worktrees=$(worktree_list "$case_dir")
+    rc=0
+    out=$(spawn_ship "$case_dir" "h-$class" "$case_dir/unused") || rc=$?
+    expect_code "$DEFER_EXIT" "$rc" "a $class ship over the slots was not deferred: $out"
+    assert_contains "$out" "deferred: o/r has 9 open PR(s)" "the $class deferral did not name the repository and P: $out"
+    assert_nothing_created "$case_dir" "$home" "h-$class" "$before" "$worktrees"
+  done
+  pass "wolverine, lee-research, officer and scheduled ships are held by the slots like any other ship"
+}
+
+test_ci_slots_security_class_needs_a_qualifying_item_only_when_it_would_defer() {
+  local case_dir home out rc reader id
+  case_dir=$(make_case slots-security sec-ok sec-low sec-free)
+  home="$case_dir/home"
+  declare_slots "$home" "project 2"
+  reader="$case_dir/linear-reader"
+  cat > "$reader" <<'STUB'
+#!/usr/bin/env bash
+echo called >> "$FAKE_LINEAR_LOG"
+printf %s "$FAKE_LINEAR_JSON"
+STUB
+  chmod +x "$reader"
+  export FM_PR_DRAIN_LINEAR_READER="$reader" FAKE_LINEAR_LOG="$case_dir/linear-called"
+  for id in sec-ok sec-low sec-free; do
+    write_brief "$home" "$id"
+    printf 'PR drain: security\n> Quoted from Linear PC-5174 (read-only, verbatim). Stub.\n' >> "$home/data/$id/brief.md"
+  done
+  drain_gh "$case_dir" 1
+  out=$(FAKE_LINEAR_JSON='{"priority": 3, "labels": []}' spawn_ship "$case_dir" sec-free) || rc=$?
+  expect_code 0 "${rc:-0}" "a security ship under the slots was refused: $out"
+  assert_absent "$FAKE_LINEAR_LOG" "a security ship under the slots read Linear"
+  drain_gh "$case_dir" 9
+  rc=0
+  out=$(FAKE_LINEAR_JSON='{"priority": 1, "labels": ["security"]}' spawn_ship "$case_dir" sec-ok) || rc=$?
+  expect_code 0 "$rc" "a qualifying security ship over the slots was refused: $out"
+  rc=0
+  out=$(FAKE_LINEAR_JSON='{"priority": 3, "labels": ["Bug"]}' spawn_ship "$case_dir" sec-low "$case_dir/unused") || rc=$?
+  expect_code 1 "$rc" "a security ship over the slots with a non-qualifying item was not refused: $out"
+  assert_contains "$out" "does not qualify" "the refusal did not say the item does not qualify: $out"
+  assert_absent "$home/state/sec-low.meta" "a refused security spawn published a task record"
+  unset FM_PR_DRAIN_LINEAR_READER FAKE_LINEAR_LOG
+  pass "a security ship over the slots launches only with a qualifying Linear item, and reads Linear only when the slots would defer it"
+}
+
+test_ci_slots_unreadable_github_warns_and_launches() {
+  local case_dir home out rc=0
+  case_dir=$(make_case slots-unreadable task-c task-d)
+  home="$case_dir/home"
+  declare_slots "$home" "project 1"
+  drain_gh "$case_dir" fail
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a ship with GitHub unreadable was refused: $out"
+  assert_contains "$out" "warning: CI slots for project project cannot be counted (GitHub unreadable: HTTP 502); launching task task-c anyway" \
+    "an unreadable open count did not warn once: $out"
+  assert_contains "$out" "spawned task-c" "the ship did not launch with GitHub unreadable"
+  pass "an unreadable open PR count warns once and launches"
+}
+
+test_ci_slots_never_hold_a_scout_or_a_relaunch() {
+  local case_dir home out rc=0
+  case_dir=$(make_case slots-scout task-s)
+  home="$case_dir/home"
+  declare_slots "$home" "project 1"
+  drain_gh "$case_dir" 9
+  out=$(run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" task-s)" task-s "$case_dir/project" --scout) || rc=$?
+  expect_code 0 "$rc" "a scout over the slots was refused: $out"
+  assert_not_contains "$out" "CI slot" "a scout over the slots mentioned CI slots: $out"
+  pass "a scout is never held by the slots"
+}
+
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_exhausted_capacity_defers_without_leaving_anything_behind
@@ -1393,3 +1619,13 @@ test_pr_drain_lee_explicit_needs_the_quoted_word
 test_pr_drain_security_needs_a_qualifying_linear_item
 test_pr_drain_security_out_of_drain_reads_no_linear
 test_pr_drain_unknown_or_off_launches
+test_ci_slots_absent_or_undeclared_keeps_dispatch_uncapped
+test_ci_slots_malformed_declaration_refuses_the_spawn
+test_ci_slots_under_the_slots_admits_and_at_the_slots_defers
+test_ci_slots_count_a_ship_once_its_pr_is_open
+test_ci_slots_count_ships_in_every_local_home
+test_ci_slots_exempt_classes_launch_at_the_slots
+test_ci_slots_hold_the_other_drain_classes
+test_ci_slots_security_class_needs_a_qualifying_item_only_when_it_would_defer
+test_ci_slots_unreadable_github_warns_and_launches
+test_ci_slots_never_hold_a_scout_or_a_relaunch

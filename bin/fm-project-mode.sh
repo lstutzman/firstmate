@@ -13,6 +13,11 @@
 # when the project registers none, is unregistered, or the registry is absent.
 # With --landing-lag it prints the project's registered landing-lag limit in
 # hours, or nothing under those same conditions.
+# With --ci-slots it prints the project's declared CI slots (S) from config/ci-slots
+# in this home's config directory (bin/fm-project-capacity-lib.sh owns the format),
+# or nothing when the project declares none or the file is absent; a malformed file
+# refuses with exit 3. It reads no registry, so it answers even when data/projects.md
+# is absent.
 # With --admission it prints the project's registered admission config name the
 # same way.
 # With --ready-evidence it prints the project's registered ready-evidence name the
@@ -32,7 +37,8 @@
 # bin/fm-promote.sh, which takes the forge binding from here because it is a
 # project fact rather than a task choice, --merger and --admission for
 # bin/fm-pr-merge.sh's merger-home and admission refusals, --landing-lag for
-# bin/fm-spawn.sh's landing-lag admission, --ready-evidence for
+# bin/fm-spawn.sh's landing-lag admission, --ci-slots for its CI-slots admission
+# and bin/fm-fleet-alarm.py's open-PR alarm, --ready-evidence for
 # bin/fm-dod-lib.sh's ready gate, and --pr for bin/fm-spawn.sh's PR-text
 # agreement and bin/fm-promote.sh.
 #
@@ -186,7 +192,7 @@
 # to the forge binding, so it prints even when the forge token is malformed;
 # every path that reads the forge binding (default, --forge, and spawn's
 # forge-agreement check) still refuses.
-# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--admission|--ready-evidence|--hooks] <project-name>
+# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--ci-slots|--admission|--ready-evidence|--hooks] <project-name>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -199,6 +205,7 @@ BRANCH_PREFIX_QUERY=0
 WANT_FORGE=0
 WANT_MERGER=0
 WANT_LANDING_LAG=0
+WANT_CI_SLOTS=0
 WANT_ADMISSION=0
 WANT_EVIDENCE=0
 WANT_PR=0
@@ -209,12 +216,24 @@ case "${1:-}" in
   --forge) WANT_FORGE=1; shift ;;
   --merger) WANT_MERGER=1; shift ;;
   --landing-lag) WANT_LANDING_LAG=1; shift ;;
+  --ci-slots) WANT_CI_SLOTS=1; shift ;;
   --admission) WANT_ADMISSION=1; shift ;;
   --ready-evidence) WANT_EVIDENCE=1; shift ;;
   --pr) WANT_PR=1; shift ;;
   --hooks) WANT_HOOKS=1; shift ;;
 esac
-NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--admission|--ready-evidence|--hooks] <project-name>}
+NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--ci-slots|--admission|--ready-evidence|--hooks] <project-name>}
+
+if [ "$WANT_CI_SLOTS" -eq 1 ]; then
+  # shellcheck source=bin/fm-project-capacity-lib.sh
+  . "$SCRIPT_DIR/fm-project-capacity-lib.sh"
+  fm_ci_slots_lookup "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$NAME" || {
+    echo "refused: the CI slots declaration is unreadable ($FM_CI_SLOTS_ERROR); write one '<project-name> <slots>' line per project with a positive whole number, or remove the file" >&2
+    exit 3
+  }
+  [ -z "$FM_CI_SLOTS" ] || echo "$FM_CI_SLOTS"
+  exit 0
+fi
 
 if [ ! -f "$REG" ]; then
   echo "warn: no registry at $REG; defaulting $NAME to no-mistakes off" >&2

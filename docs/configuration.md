@@ -2586,6 +2586,8 @@ A project whose reviews are created by a review tool that uploads its own snapsh
 
 <a id="pr-drain-open-pr-drain-rule"></a>Moved to [PR drain (open-PR drain rule)](configuration/projects-and-forges.md#pr-drain-open-pr-drain-rule).
 
+<a id="ci-slots-configci-slots"></a>Moved to [CI slots (config/ci-slots)](configuration/projects-and-forges.md#ci-slots-configci-slots).
+
 <a id="admission-by-class-dataprojectsmd-admission-token-configadmission"></a><a id="path-rule-classifier-binfm-reserved-classifysh"></a>Moved to [Admission by class (data/projects.md admission= token, config/admission/)](configuration/projects-and-forges.md#admission-by-class-dataprojectsmd-admission-token-configadmission).
 
 <a id="project-git-hooks-dataprojectsmd-hooks-token"></a>Moved to [Project git hooks (data/projects.md hooks= token)](configuration/projects-and-forges.md#project-git-hooks-dataprojectsmd-hooks-token).

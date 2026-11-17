@@ -1491,3 +1491,56 @@ printf '%s\n' "${out##*RUN-RESULT }" | jq -e '.summary | (length <= 200) and tes
   || fail "the run result must keep the quota and end by naming only the clone whose drain read timed out: $out"
 printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
 pass 'drain reads share the budget, and only a failed read, not an undecided one, is named after the quota'
+
+# CI slots: the real bin/fm-project-mode.sh --ci-slots reads config/ci-slots, and a stubbed
+# bin/fm-pr-drain.py answers `open` from open-state. The alarm announces only a change between
+# open PRs above the slots (over) and at or under them, keyed per repository, with P and S.
+rm -rf "$HOME_FIX/projects"
+mkdir -p "$HOME_FIX/projects/r" "$HOME_FIX/projects/free"
+cp "$ROOT/bin/fm-project-mode.sh" "$ROOT/bin/fm-project-capacity-lib.sh" "$BIN_FIX/"
+cat > "$BIN_FIX/fm-pr-drain.py" <<'PY'
+import os, sys
+if sys.argv[1] == 'open':
+    print(open(os.path.join(os.environ['FM_HOME'], 'open-state')).read().strip())
+else:
+    print('off o/r 0')
+PY
+slots_open() { printf '%s\n' "$1" > "$HOME_FIX/open-state"; }
+printf '%s\n' 'r 4' > "$HOME_FIX/config/ci-slots"
+slots_open 'open o/r 4'
+[ -z "$(run_alarm check)" ] || fail 'open PRs equal to the slots must be silent'
+slots_open 'open o/r 5'
+assert_contains "$(run_alarm check)" 'CI slots over: o/r has 5 open PRs against 4 CI slots' 'open PRs above the slots must announce over, with P and S'
+for state in 'open o/r 9' 'open o/r 5' 'unknown o/r GitHub unreadable: HTTP 502' 'none'; do
+  slots_open "$state"
+  out=$(run_alarm check)
+  [ -z "$out" ] || fail "a poll in the same over state, or an unreadable count, must be quiet ($state): $out"
+done
+slots_open 'open o/r 4'
+assert_contains "$(run_alarm check)" 'CI slots back within: o/r has 4 open PRs against 4 CI slots' 'open PRs back at the slots must announce within'
+[ -z "$(run_alarm check)" ] || fail 'a second poll within the slots must be quiet'
+pass 'check announces over and back-within once each, and an unreadable count keeps the state'
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+slots_open 'open o/r 6'
+run_alarm timer >/dev/null
+run_alarm timer >/dev/null
+lines=$(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status")
+[ "$(printf '%s\n' "$lines" | wc -l)" -eq 1 ] || fail "the timer must write one over line: $lines"
+case "$lines" in
+  'working [at='*'] [key=ci-slots-over-o-r]: CI slots over: o/r has 6 open PRs against 4 CI slots'*) ;;
+  *) fail "the over line must be a keyed working line naming P and S: $lines" ;;
+esac
+slots_open 'open o/r 3'
+run_alarm timer >/dev/null
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=ci-slots-over-o-r\]: CI slots back within: o/r has 3 open PRs against 4 CI slots' \
+  || fail 'the timer must resolve the ci-slots key with one back-within line'
+pass 'timer writes one keyed working line when P exceeds S and one resolved line when it is back'
+rm "$HOME_FIX/config/ci-slots"
+slots_open 'open o/r 40'
+out=$(run_alarm check)
+[ -z "$out" ] || fail "a clone with no declared slots must never alarm: $out"
+printf '%s\n' 'r four' > "$HOME_FIX/config/ci-slots"
+out=$(run_alarm check)
+[ -z "$out" ] || fail "a malformed ci-slots file must be skipped quietly by the alarm: $out"
+rm "$HOME_FIX/config/ci-slots"
+pass 'a clone with no slots, or a malformed declaration, is skipped quietly'

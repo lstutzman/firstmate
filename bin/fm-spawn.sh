@@ -282,6 +282,17 @@
 #   exactly like a capacity deferral unless its brief carries a valid
 #   "PR drain: <class>" line (bin/fm-brief.sh --pr-drain). An unknown state prints
 #   one `warning:` line and launches; scouts are never held.
+#   CI slots: when config/ci-slots declares S for the project
+#   (bin/fm-project-capacity-lib.sh owns the declaration; bin/fm-project-mode.sh
+#   --ci-slots reads it), a fresh ship is deferred exactly like a capacity
+#   deferral when the repository's open PRs plus this machine's ships in flight
+#   with no PR recorded yet reach S. Exempt: a brief declaring one of the PR
+#   drain classes production-outage, cve, security, lee-explicit, restack,
+#   red-gate-fix, returned-pr-fix or review (bin/fm-pr-drain.py slots-class;
+#   security and lee-explicit run the same evidence checks as PR drain); the
+#   other drain classes are held. An unreadable count warns once and launches, a
+#   malformed declaration refuses, and scouts, relaunches and secondmates are
+#   never held. Ships in flight in remote homes are not counted.
 #   Office authority: in an office home (bin/fm-office-authority-lib.sh owns
 #   detection and the authority record) every spawn is refused when the home's
 #   office signals disagree or its published authority record is missing or
@@ -2376,7 +2387,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     pair_rc=0
     FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair_args[@]}" || pair_rc=$?
     if [ "$pair_rc" -eq "$FM_PROJECT_CAPACITY_DEFER_EXIT" ]; then
-      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project or this machine's lanes are at capacity, its project's landing lags, or its repository is in PR drain, so it stays queued" >&2
+      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project or this machine's lanes are at capacity, its project's landing lags, its repository is in PR drain, or its open PRs fill its CI slots, so it stays queued" >&2
       [ "$rc" -ne 0 ] || rc=$FM_PROJECT_CAPACITY_DEFER_EXIT
     elif [ "$pair_rc" -ne 0 ]; then
       echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2
@@ -4475,6 +4486,20 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   echo "error: spawn refused: project $PROJ_ABS has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C $PROJ_ABS commit --allow-empty -m \"chore: initial commit\"', then spawn again" >&2
   exit 1
 fi
+# A brief declaring PR drain class security must name a Linear item that is
+# labelled security with Urgent or High priority (bin/fm-pr-drain.py security
+# reads it); a refusal exits the spawn. Shared by the PR-drain and CI-slots gates.
+spawn_require_security_item() {
+  SPAWN_SECURITY_ITEM=$(sed -n 's/^> Quoted from Linear \(PC-[0-9][0-9]*\) (read-only.*$/\1/p' "$BRIEF" | head -n 1)
+  [ -n "$SPAWN_SECURITY_ITEM" ] || {
+    echo "error: spawn refused: task $ID declares PR drain class security but its brief names no Linear item; rescaffold it with bin/fm-brief.sh --pr-drain security --linear <PC-n>" >&2
+    exit 1
+  }
+  python3 "$FM_ROOT/bin/fm-pr-drain.py" security "$SPAWN_SECURITY_ITEM" || {
+    echo "error: spawn refused: task $ID declares PR drain class security but $SPAWN_SECURITY_ITEM does not qualify (see above); the task was not launched" >&2
+    exit 1
+  }
+}
 # PR-drain admission (bin/fm-pr-drain.py owns the state and the classes): a fresh
 # ship for a repository in drain launches only with a declared exemption class or
 # landing job, and is otherwise deferred like a capacity deferral. It runs
@@ -4489,21 +4514,44 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
     }
   fi
   if [ "$SPAWN_DRAIN_STATE" = on ] && [ "$SPAWN_DRAIN_CLASS" = security ]; then
-    SPAWN_SECURITY_ITEM=$(sed -n 's/^> Quoted from Linear \(PC-[0-9][0-9]*\) (read-only.*$/\1/p' "$BRIEF" | head -n 1)
-    [ -n "$SPAWN_SECURITY_ITEM" ] || {
-      echo "error: spawn refused: task $ID declares PR drain class security but its brief names no Linear item; rescaffold it with bin/fm-brief.sh --pr-drain security --linear <PC-n>" >&2
-      exit 1
-    }
-    python3 "$FM_ROOT/bin/fm-pr-drain.py" security "$SPAWN_SECURITY_ITEM" || {
-      echo "error: spawn refused: task $ID declares PR drain class security but $SPAWN_SECURITY_ITEM does not qualify (see above); the task was not launched" >&2
-      exit 1
-    }
+    spawn_require_security_item
   fi
   if [ "$SPAWN_DRAIN_STATE" = unknown ]; then
     echo "warning: PR drain state of $SPAWN_DRAIN_REPO is unknown ($SPAWN_DRAIN_REST); launching task $ID anyway" >&2
   elif [ "$SPAWN_DRAIN_STATE" = on ] && ! { [ -n "$SPAWN_DRAIN_CLASS" ] && python3 "$FM_ROOT/bin/fm-pr-drain.py" class "$SPAWN_DRAIN_CLASS"; }; then
     echo "deferred: $SPAWN_DRAIN_REPO is in PR drain with $SPAWN_DRAIN_REST open PRs (drain holds from 20 open until 0), so new ship work is refused; task $ID was not launched and its backlog item stays queued - dispatch it again once the drain ends, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+  fi
+fi
+# CI-slots read (bin/fm-project-capacity-lib.sh owns config/ci-slots): a fresh
+# ship for a project that declares S reads the repository's open PR count (P)
+# here, before the shared project lock, so a slow GitHub read never holds it.
+# The in-flight count and the verdict follow under that lock. A ship whose
+# brief declares an exempt PR drain class (bin/fm-pr-drain.py slots-class) skips
+# the cap entirely, except security, which still counts and proves its Linear
+# item only when the cap would defer it; an unreadable count warns once and launches; a malformed
+# declaration refuses, like landing lag.
+SPAWN_CI_SLOTS=
+SPAWN_CI_OPEN=
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
+  SPAWN_CI_NAME=$(basename "$PROJ_ABS")
+  SPAWN_CI_SLOTS=$(FM_HOME=$FM_HOME FM_CONFIG_OVERRIDE=$CONFIG "$FM_ROOT/bin/fm-project-mode.sh" --ci-slots "$SPAWN_CI_NAME" 2>/dev/null) || {
+    SPAWN_CI_ERROR=$(FM_HOME=$FM_HOME FM_CONFIG_OVERRIDE=$CONFIG "$FM_ROOT/bin/fm-project-mode.sh" --ci-slots "$SPAWN_CI_NAME" 2>&1 >/dev/null) || true
+    SPAWN_CI_ERROR=${SPAWN_CI_ERROR#refused: }
+    echo "error: spawn refused: ${SPAWN_CI_ERROR:-the CI slots declaration for $SPAWN_CI_NAME is unreadable}; correct config/ci-slots so the captain's slot count is known (docs/configuration/projects-and-forges.md \"CI slots\")" >&2
+    exit 1
+  }
+  if [ -n "$SPAWN_CI_SLOTS" ] && [ -n "${SPAWN_DRAIN_CLASS:-}" ] && [ "$SPAWN_DRAIN_CLASS" != security ] && python3 "$FM_ROOT/bin/fm-pr-drain.py" slots-class "$SPAWN_DRAIN_CLASS"; then
+    SPAWN_CI_SLOTS=
+  fi
+  if [ -n "$SPAWN_CI_SLOTS" ]; then
+    read -r SPAWN_CI_KIND SPAWN_CI_REPO SPAWN_CI_REST < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" open "$PROJ_ABS") || true
+    if [ "${SPAWN_CI_KIND:-}" = open ]; then
+      SPAWN_CI_OPEN=$SPAWN_CI_REST
+    else
+      echo "warning: CI slots for project $SPAWN_CI_NAME cannot be counted (${SPAWN_CI_REST:-origin is not on github.com}); launching task $ID anyway" >&2
+      SPAWN_CI_SLOTS=
+    fi
   fi
 fi
 # Project capacity admission (bin/fm-project-capacity-lib.sh owns the
@@ -4527,7 +4575,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   SPAWN_PROJECT_CAPACITY_ANY=$FM_PROJECT_CAPACITY_ANY
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
-  { [ "$BACKEND" != orca ] || [ -n "$SPAWN_PROJECT_CAPACITY_ANY" ]; }; then
+  { [ "$BACKEND" != orca ] || [ -n "$SPAWN_PROJECT_CAPACITY_ANY" ] || [ -n "$SPAWN_CI_SLOTS" ]; }; then
   SPAWN_TREEHOUSE_PROJECT_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS") || {
     echo "error: could not resolve the shared Treehouse project lock for $PROJ_ABS" >&2
     exit 1
@@ -4574,6 +4622,27 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$LANDING_EXEMPT" -eq 0 ]; t
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     elif [ "$FM_PROJECT_LANDING_UNTIMED_COUNT" -gt 0 ]; then
       echo "warning: landing lag for project $(basename "$PROJ_ABS") is unknown: $FM_PROJECT_LANDING_UNTIMED_COUNT ready PR(s) have an unknown wait ($FM_PROJECT_LANDING_UNTIMED); launching task $ID anyway" >&2
+    fi
+  fi
+fi
+# CI-slots admission (bin/fm-project-capacity-lib.sh owns the declaration and
+# the in-flight count): a fresh ship whose project's open PRs (read above) plus
+# its ships in flight with no PR recorded yet reach the declared slots is
+# deferred here, at the same point and with the same exit as a capacity
+# deferral. Only a security class that would otherwise be deferred reads Linear.
+if [ -n "$SPAWN_CI_SLOTS" ]; then
+  SPAWN_CI_LOCK=${SPAWN_TREEHOUSE_PROJECT_LOCK:-}
+  [ -n "$SPAWN_CI_LOCK" ] || SPAWN_CI_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS" 2>/dev/null) || SPAWN_CI_LOCK=
+  if [ -z "$SPAWN_CI_LOCK" ]; then
+    echo "warning: CI slots for project $SPAWN_CI_NAME cannot be counted: its project identity cannot be resolved; launching task $ID anyway" >&2
+  elif ! fm_ci_slots_inflight "$SPAWN_CI_LOCK" "$PROJ_ABS" "$STATE" "$ID"; then
+    echo "warning: CI slots for project $SPAWN_CI_NAME cannot be counted: $FM_PROJECT_CAPACITY_ERROR; launching task $ID anyway" >&2
+  elif [ $((SPAWN_CI_OPEN + FM_CI_SLOTS_INFLIGHT)) -ge "$SPAWN_CI_SLOTS" ]; then
+    if [ "${SPAWN_DRAIN_CLASS:-}" = security ]; then
+      spawn_require_security_item
+    else
+      echo "deferred: $SPAWN_CI_REPO has $SPAWN_CI_OPEN open PR(s) and $FM_CI_SLOTS_INFLIGHT ship(s) in flight with no PR yet${FM_CI_SLOTS_INFLIGHT_IDS:+ ($FM_CI_SLOTS_INFLIGHT_IDS)} against $SPAWN_CI_SLOTS CI slot(s) (config/ci-slots), so the PR queue is full; task $ID was not launched and its backlog item stays queued - dispatch it again once PRs merge, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, security, lee-explicit) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
+      exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
   fi
 fi
