@@ -116,7 +116,7 @@ test_non_github_origin_is_not_applicable() {
 
 test_classes_are_validated() {
   local value
-  for value in production-outage cve wolverine lee-research lee-explicit officer scheduled restack red-gate-fix returned-pr-fix review; do
+  for value in production-outage cve security wolverine lee-research lee-explicit officer scheduled restack red-gate-fix returned-pr-fix review; do
     "$DRAIN" class "$value" || fail "$value was not accepted as a drain class"
   done
   "$DRAIN" class feature && fail "an unknown drain class was accepted"
@@ -211,6 +211,53 @@ test_lee_explicit_evidence_needs_a_quote_and_a_timestamp() {
   pass "lee-explicit evidence needs a quoted instruction and a UTC timestamp in the captain's intent, and names what is missing"
 }
 
+# A stub Linear reader: prints the JSON in $FAKE_LINEAR_JSON, or fails when FAKE_LINEAR_FAIL is set.
+cat > "$TMP_ROOT/linear-reader" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FAKE_LINEAR_FAIL:-}" ] || { echo "Linear request failed: boom" >&2; exit 1; }
+printf '%s' "$FAKE_LINEAR_JSON"
+SH
+chmod +x "$TMP_ROOT/linear-reader"
+
+security_check() {  # <item> <json>
+  FM_PR_DRAIN_LINEAR_READER="$TMP_ROOT/linear-reader" FAKE_LINEAR_JSON=$2 "$DRAIN" security "$1" 2>"$TMP_ROOT/err"
+}
+
+test_security_needs_the_label_and_urgent_or_high_priority() {
+  security_check PC-5174 '{"priority": 1, "labels": ["Bug", "agent", "Security"]}' || fail "an Urgent item labelled Security was refused"
+  security_check PC-5174 '{"priority": 2, "labels": ["security"]}' || fail "a High item labelled security was refused"
+  security_check PC-5174 '{"priority": 1, "labels": ["Bug", "agent"]}' && fail "an item with no security label was accepted"
+  assert_grep "PC-5174" "$TMP_ROOT/err" "the refusal did not name the item"
+  assert_grep "label \`security\`" "$TMP_ROOT/err" "the refusal did not name the missing label"
+  security_check PC-5174 '{"priority": 3, "labels": ["security"]}' && fail "a Medium item was accepted"
+  assert_grep "priority Urgent or High" "$TMP_ROOT/err" "the refusal did not name the priority"
+  security_check PC-5174 '{"priority": 4, "labels": ["security"]}' && fail "a Low item was accepted"
+  security_check PC-5174 '{"priority": 0, "labels": ["security"]}' && fail "an item with no priority was accepted"
+  security_check PC-5174 '{"priority": 1, "labels": ["security-review"]}' && fail "a similarly named label was accepted"
+  security_check PC-5174 'not json' && fail "an unreadable answer was accepted"
+  FAKE_LINEAR_FAIL=1 security_check PC-5174 '' && fail "an unreadable Linear was accepted"
+  assert_grep "readable Linear item" "$TMP_ROOT/err" "the refusal did not say Linear could not be read"
+  security_check 'PC-5174; x' '{"priority": 1, "labels": ["security"]}' && fail "a malformed item id was accepted"
+  FM_PR_DRAIN_LINEAR_READER="$TMP_ROOT/nowhere" "$DRAIN" security PC-1 2>/dev/null && fail "a missing reader was accepted"
+  pass "security needs the label (any case) and Urgent or High priority, and names what is missing or unreadable"
+}
+
+test_security_brief_needs_a_linear_item() {
+  local home="$TMP_ROOT/home"
+  mkdir -p "$home/data"
+  peak_then 0
+  brief sec-none no-mistakes --pr-drain security && fail "a security brief with no --linear was scaffolded"
+  assert_grep "needs --linear" "$TMP_ROOT/brief.out" "the refusal did not name --linear"
+  printf '#!/usr/bin/env bash\nprintf '"'"'issue:\\n  identifier: %%s\\n  description: "Acceptance:\\\\n- fixed"\\n'"'"' "$3"\n' > "$FAKEBIN/linear-axi"
+  chmod +x "$FAKEBIN/linear-axi"
+  peak_then 7
+  brief sec-ok no-mistakes --pr-drain security --linear PC-5174 || fail "a security brief with --linear did not scaffold: $(cat "$TMP_ROOT/brief.out")"
+  assert_grep "PR drain: security" "$home/data/sec-ok/brief.md" "--pr-drain did not record security"
+  assert_no_grep "PR drain check" "$home/data/sec-ok/brief.md" "a security brief was told to check the drain"
+  assert_no_regex "^# PR drain$" "$home/data/sec-ok/brief.md" "a security brief in drain was told not to open a PR"
+  pass "a security brief refuses to scaffold without --linear and skips the drain wording with it"
+}
+
 fm_test_run \
   test_twenty_open_turns_drain_on \
   test_drain_holds_from_nineteen_down_to_one \
@@ -221,4 +268,6 @@ fm_test_run \
   test_non_github_origin_is_not_applicable \
   test_classes_are_validated \
   test_lee_explicit_evidence_needs_a_quote_and_a_timestamp \
+  test_security_needs_the_label_and_urgent_or_high_priority \
+  test_security_brief_needs_a_linear_item \
   test_brief_tells_workers_to_check_drain_before_a_pr

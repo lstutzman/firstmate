@@ -1260,6 +1260,50 @@ test_pr_drain_lee_explicit_needs_the_quoted_word() {
   pass "a lee-explicit ship launches with the captain's quoted word and timestamp and is refused without them"
 }
 
+test_pr_drain_security_needs_a_qualifying_linear_item() {
+  local case_dir home out rc reader id json
+  case_dir=$(make_case drain-security sec-ok sec-nolabel sec-low sec-noitem sec-down)
+  home="$case_dir/home"
+  drain_gh "$case_dir" 25
+  reader="$case_dir/linear-reader"
+  printf '#!/usr/bin/env bash\n[ -z "${FAKE_LINEAR_FAIL:-}" ] || { echo boom >&2; exit 1; }\nprintf %%s "$FAKE_LINEAR_JSON"\n' > "$reader"
+  chmod +x "$reader"
+  export FM_PR_DRAIN_LINEAR_READER="$reader"
+  for id in sec-ok sec-nolabel sec-low sec-noitem sec-down; do
+    write_brief "$home" "$id"
+    printf 'PR drain: security\n' >> "$home/data/$id/brief.md"
+    [ "$id" = sec-noitem ] || printf '> Quoted from Linear PC-5174 (read-only, verbatim). Stub.\n' >> "$home/data/$id/brief.md"
+    add_item "$home" "$id"
+  done
+  rc=0
+  out=$(FAKE_LINEAR_JSON='{"priority": 1, "labels": ["Bug", "agent", "security"]}' spawn_ship "$case_dir" sec-ok) || rc=$?
+  expect_code 0 "$rc" "a security ship with a qualifying item was refused: $out"
+  assert_contains "$out" "spawned sec-ok" "a qualifying security ship did not launch in drain"
+  rc=0
+  out=$(FAKE_LINEAR_JSON='{"priority": 1, "labels": ["Bug"]}' spawn_ship "$case_dir" sec-nolabel) || rc=$?
+  expect_code 1 "$rc" "a security ship without the label was not refused: $out"
+  assert_contains "$out" "PC-5174" "the refusal did not name the item: $out"
+  assert_contains "$out" "label" "the refusal did not name the missing label: $out"
+  rc=0
+  out=$(FAKE_LINEAR_JSON='{"priority": 3, "labels": ["security"]}' spawn_ship "$case_dir" sec-low) || rc=$?
+  expect_code 1 "$rc" "a security ship at Medium priority was not refused: $out"
+  assert_contains "$out" "priority Urgent or High" "the refusal did not name the priority: $out"
+  rc=0
+  json='{"priority": 1, "labels": ["security"]}'
+  out=$(FAKE_LINEAR_JSON=$json spawn_ship "$case_dir" sec-noitem) || rc=$?
+  expect_code 1 "$rc" "a security ship with no Linear item was not refused: $out"
+  assert_contains "$out" "names no Linear item" "the refusal did not name the missing item: $out"
+  rc=0
+  out=$(FAKE_LINEAR_FAIL=1 FAKE_LINEAR_JSON=$json spawn_ship "$case_dir" sec-down) || rc=$?
+  expect_code 1 "$rc" "a security ship with Linear unreadable was not refused: $out"
+  assert_contains "$out" "readable Linear item" "the refusal did not say Linear was unreadable: $out"
+  unset FM_PR_DRAIN_LINEAR_READER
+  for id in sec-nolabel sec-low sec-noitem sec-down; do
+    assert_absent "$home/state/$id.meta" "a refused security spawn published a task record for $id"
+  done
+  pass "a security ship launches in drain only when its Linear item has the label and Urgent or High priority"
+}
+
 test_pr_drain_unknown_or_off_launches() {
   local case_dir out rc=0
   case_dir=$(make_case drain-unknown task-c task-d)
@@ -1316,4 +1360,5 @@ test_lane_capacity_gate_refuses_an_unreadable_opt_in
 test_pr_drain_defers_a_ship_without_a_class
 test_pr_drain_admits_every_class_and_landing_job
 test_pr_drain_lee_explicit_needs_the_quoted_word
+test_pr_drain_security_needs_a_qualifying_linear_item
 test_pr_drain_unknown_or_off_launches
