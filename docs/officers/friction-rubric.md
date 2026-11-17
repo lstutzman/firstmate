@@ -13,6 +13,8 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - Every finding is filed once in Linear, whether or not it clears the card bar or a rule names a fix for it, so its found count can grow.
 - Not work: a missing tool the fleet no longer uses (counted in the digest, never filed or fixed) and a finding already settled by a standing rule, started, or fixed.
 - A group that is a product or design choice (`decision`) is Lee's to make, so it is not filed and is listed in the digest.
+- Not work: an ask the fleet rules reserve to Lee by design is counted as "reserved to Lee by the rules", never as friction, because no standing yes could cover it (`bin/fm-officer-friction.py`'s header owns the classes).
+- A finding whose fix has shipped is recorded in `docs/officers/friction-fixes.json` by pull request, so a recurrence reads "fixed on <date> by <link>, still seen N times since" and never offers a fresh Start fix.
 
 ## How severity and priority are scored
 
