@@ -882,7 +882,7 @@ GITHUB_PATH $sandbox/runner-temp/bin"
 }
 
 test_ci_matrices_match_executable_partitions() {
-  ruby -ryaml -ropen3 - "$CI_WORKFLOW" "$ROOT" <<'RUBY' || fail "CI partition contract"
+  ruby -ryaml -ropen3 -rshellwords - "$CI_WORKFLOW" "$ROOT" <<'RUBY' || fail "CI partition contract"
 jobs = YAML.load_file(ARGV[0]).fetch("jobs")
 root = ARGV[1]
 serial = jobs.fetch("tests-portable-serial").fetch("strategy")
@@ -916,13 +916,35 @@ holders = (1..3).select do |n|
 end
 raise "the Pi typecheck test must be in exactly one parallel lane" unless holders.length == 1
 guard = "Pi extension typecheck prerequisite not found"
+proven_out, st = Open3.capture2(File.join(root, "bin/fm-test-isolation-proof.sh"), "--list")
+raise "cannot list the proven-isolated set" unless st.success?
+proven = proven_out.lines.map(&:strip)
 (1..3).each do |n|
   steps = jobs.fetch("tests-portable-parallel-#{n}").fetch("steps")
   run = steps.map { |step| step["run"].to_s }.find { |r| r.include?("--lane portable-parallel-#{n}") }
   raise "parallel lane #{n} has no runner step" unless run
-  # The proven-isolated lanes run their scripts two at a time; serial lanes never do.
-  raise "parallel lane #{n} must run with --jobs 2" unless run.include?("--lane portable-parallel-#{n} --jobs 2")
-  guarded = run.include?("--fail-on-gate-skip '#{guard}'")
+  words = Shellwords.split(run.gsub("\\\n", " "))
+  args = words.drop(words.index("bin/fm-test-run.sh") + 1).take_while { |w| !["&&", ";", "||", "|"].include?(w) }
+  opts = {}
+  i = 0
+  while i < args.length
+    raise "lane #{n} runner argument #{args[i]} is not an option" unless args[i].start_with?("--")
+    opts[args[i]] = args[i + 1]
+    i += 2
+  end
+  raise "parallel lane #{n} must name its own lane" unless opts["--lane"] == "portable-parallel-#{n}"
+  raise "parallel lane #{n} must run its scripts two at a time" unless opts["--jobs"] == "2"
+  check = args.dup
+  j = check.index("--json")
+  check.slice!(j, 2) if j
+  scheduled, st = Open3.capture2(File.join(root, "bin/fm-test-run.sh"), *check, "--list-scheduled")
+  raise "runner rejects the CI arguments of parallel lane #{n}" unless st.success?
+  members, st = Open3.capture2(File.join(root, "bin/fm-test-run.sh"), "--list", "--lane", "portable-parallel-#{n}")
+  raise "cannot list portable parallel lane #{n}" unless st.success?
+  raise "CI arguments of lane #{n} schedule other scripts than the lane" unless scheduled.lines.map(&:strip).sort == members.lines.map(&:strip).sort
+  unproven = members.lines.map(&:strip) - proven
+  raise "lane #{n} runs --jobs 2 over unproven scripts: #{unproven.join(' ')}" unless unproven.empty?
+  guarded = opts["--fail-on-gate-skip"] == guard
   raise "lane #{n} guard mismatch: lane holding the Pi test must carry the gate-skip guard and no other may" unless guarded == holders.include?(n)
 end
 canonical, result = Open3.capture2({"CI" => "true"}, File.join(root, "bin/fm-lint.sh"), "--list-files")
