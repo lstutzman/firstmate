@@ -5621,6 +5621,139 @@ test_leaked_worktree_process_is_reaped() {
   pass "a leaked descendant process rooted under the task's worktree is reaped by teardown, not left surviving"
 }
 
+# Start a worker-shaped process family: a session leader (the endpoint's shell)
+# with a child that runs somewhere that is not under the task's copy, so the
+# cwd-based reap cannot see it. Writes the pids to <dir>/family.pids as
+# "leader child". Args: dir
+start_task_family() {
+  local dir=$1
+  cat > "$dir/family.sh" <<'SH'
+#!/usr/bin/env bash
+(cd / && exec sleep 311) &
+echo "$$ $!" > "$1/family.pids"
+wait
+SH
+  setsid bash "$dir/family.sh" "$dir" >/dev/null 2>&1 &
+  disown
+  for _ in $(seq 50); do [ -s "$dir/family.pids" ] && break; sleep 0.1; done
+  [ -s "$dir/family.pids" ] || fail "setup: the process family did not start"
+}
+
+# A process of a different session with the same command line as the family's
+# child: teardown must never match by name. Prints its pid. Args: dir
+start_outside_sleeper() {
+  ( cd / && exec setsid sleep 311 ) >/dev/null 2>&1 &
+  echo $!
+}
+
+test_family_stop_leaves_an_outside_same_named_process_untouched() {
+  local case_dir rc leader child outside identity
+  case_dir=$(make_case family-stop)
+  land_shippable_commit "$case_dir"
+  start_task_family "$case_dir"
+  read -r leader child < "$case_dir/family.pids"
+  outside=$(start_outside_sleeper)
+  identity=$(python3 -I "$ROOT/bin/fm-proc-family.py" capture "$leader") || fail "family-stop: the setup leader has no session identity"
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "proc_root=$leader" "proc_root_id=$identity" >> "$case_dir/state/task-x1.meta"
+  sleep 0.3
+  kill -0 "$child" 2>/dev/null || fail "family-stop: setup child did not start"
+  kill -0 "$outside" 2>/dev/null || fail "family-stop: setup outside process did not start"
+
+  rc=0
+  FM_PROC_FAMILY_GRACE=1 run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "family-stop: teardown should succeed: $(cat "$case_dir/stderr")"
+  sleep 0.3
+  if kill -0 "$child" 2>/dev/null || kill -0 "$leader" 2>/dev/null; then
+    kill -KILL "$child" "$leader" "$outside" 2>/dev/null || true
+    fail "family-stop: a process of the worker's own family survived teardown"
+  fi
+  if ! kill -0 "$outside" 2>/dev/null; then
+    fail "family-stop: teardown stopped a same-named process outside the worker's family"
+  fi
+  kill -KILL "$outside" 2>/dev/null || true
+  assert_grep "stopping the worker process family" "$case_dir/stderr" \
+    "family-stop: teardown did not report stopping the family"
+  pass "teardown stops the worker's own process family and leaves an outside same-named process untouched"
+}
+
+# The stop must never signal the caller or anything it cannot prove is outside the
+# caller's own lineage: run from inside the family it refuses and signals nothing.
+test_family_stop_refuses_when_the_caller_is_inside_the_family() {
+  local dir leader child rc survived=1
+  dir="$TMP_ROOT/family-caller-inside"
+  mkdir -p "$dir"
+  cat > "$dir/inside.sh" <<'SH'
+#!/usr/bin/env bash
+(cd / && exec sleep 311) &
+echo "$$ $!" > "$1/family.pids"
+id=$(python3 -I "$2/bin/fm-proc-family.py" capture "$$")
+rc=0
+python3 -I "$2/bin/fm-proc-family.py" stop worker "$$" "$id" 2> "$1/stop.err" || rc=$?
+echo "$rc" > "$1/stop.rc"
+wait
+SH
+  setsid bash "$dir/inside.sh" "$dir" "$ROOT" >/dev/null 2>&1 &
+  disown
+  for _ in $(seq 50); do [ -s "$dir/stop.rc" ] && break; sleep 0.1; done
+  [ -s "$dir/stop.rc" ] || fail "family-caller-inside: the in-family stop never returned"
+  read -r leader child < "$dir/family.pids"
+  rc=$(cat "$dir/stop.rc")
+  kill -0 "$leader" 2>/dev/null && kill -0 "$child" 2>/dev/null || survived=0
+  kill -KILL "$child" "$leader" 2>/dev/null || true
+  [ "$rc" = 4 ] || fail "family-caller-inside: a stop run from inside the family must refuse (exit 4), got $rc"
+  [ "$survived" = 1 ] || fail "family-caller-inside: a refused stop still signalled the family"
+  assert_grep "refusing to stop the worker process family" "$dir/stop.err" \
+    "family-caller-inside: the refusal was not reported"
+  pass "a stop run from inside the family refuses and signals nothing"
+}
+
+test_family_stop_refuses_a_reused_root_pid() {
+  local case_dir rc leader child
+  case_dir=$(make_case family-pid-reuse)
+  land_shippable_commit "$case_dir"
+  start_task_family "$case_dir"
+  read -r leader child < "$case_dir/family.pids"
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "proc_root=$leader" "proc_root_id=starttime=1" >> "$case_dir/state/task-x1.meta"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "family-pid-reuse: teardown should still succeed: $(cat "$case_dir/stderr")"
+  local survived=1
+  kill -0 "$child" 2>/dev/null && kill -0 "$leader" 2>/dev/null || survived=0
+  kill -KILL "$child" "$leader" 2>/dev/null || true
+  [ "$survived" = 1 ] || fail "family-pid-reuse: teardown signalled a root whose identity did not match the record"
+  assert_grep "no longer the recorded session root" "$case_dir/stderr" \
+    "family-pid-reuse: the refusal was not reported"
+  pass "teardown signals nothing when the recorded root pid is a different process than recorded"
+}
+
+test_family_stop_without_a_boundary_warns_and_skips() {
+  local case_dir rc outside
+  case_dir=$(make_case family-no-boundary)
+  land_shippable_commit "$case_dir"
+  write_meta "$case_dir" no-mistakes ship
+  outside=$(start_outside_sleeper)
+  sleep 0.3
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "family-no-boundary: teardown should succeed: $(cat "$case_dir/stderr")"
+  local alive=1
+  kill -0 "$outside" 2>/dev/null || alive=0
+  kill -KILL "$outside" 2>/dev/null || true
+  [ "$alive" = 1 ] || fail "family-no-boundary: teardown stopped a process with no recorded family boundary"
+  assert_grep "no recorded process family boundary for task-x1" "$case_dir/stderr" \
+    "family-no-boundary: teardown did not warn that it skipped the family stop"
+  [ "$(grep -c 'no recorded process family boundary' "$case_dir/stderr")" -eq 1 ] \
+    || fail "family-no-boundary: the skip must be one warning line"
+  pass "a task whose backend recorded no process boundary warns once and stops nothing"
+}
+
 # A daemon started from the task's copy - its own session leader, reparented to
 # init, like a Colima VM a worker started there - is shared infrastructure, not
 # a leaked worker process: teardown reports it and leaves it running.
@@ -6975,6 +7108,10 @@ test_not_found_status_after_abort_confirms_completion
 test_another_branchs_parked_run_is_never_touched
 test_own_autonomous_run_is_left_alone
 test_leaked_worktree_process_is_reaped
+test_family_stop_leaves_an_outside_same_named_process_untouched
+test_family_stop_refuses_when_the_caller_is_inside_the_family
+test_family_stop_refuses_a_reused_root_pid
+test_family_stop_without_a_boundary_warns_and_skips
 test_daemonised_worktree_process_is_reported_not_reaped
 test_leaked_tasktmp_process_is_reaped
 test_lsof_absent_reaps_tmux_process_group

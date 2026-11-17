@@ -74,6 +74,15 @@ locked record, but independent delivery receipts, so a check cannot consume the
 timer's Captain's Log notification. timer requires config/fleet-ledger enabled.
 arm registers the private check shim. timer-files only writes scheduler files;
 it never loads or starts a scheduler. See docs/configuration.md for installation.
+Orphaned build and test processes: each poll also scans this host's own process table, read-only,
+and never stops anything. A process counts when it is a dotnet build or test process (dotnet running
+MSBuild or VBCSCompiler, MSBuild, VBCSCompiler, testhost), node running vitest, jest or playwright,
+or a browser started by Playwright (its ms-playwright cache or playwright_*dev_profile directory),
+its parent is PID 1 or its session leader is gone, and it is older than orphan_proc_hours (3). A
+change in that count is announced once per channel: check prints one line, timer appends a
+`working [key=orphan-procs-<host>]` line with the count, resident memory and oldest age, and a
+`resolved` line with the same key once the count is back to zero. An unreadable process table
+keeps the previous state. FM_ORPHAN_PS replaces the ps command (tests).
 PR drain: each poll also reads the drain state of every clone under the home's projects/
 (bin/fm-pr-drain.py owns the state, inside the same reader budget) and announces only a change
 from what that channel last announced, so repeated polls in one state stay quiet and an unknown
@@ -206,7 +215,8 @@ def settings():
     values = dict(seven_day=.9, pool_remaining=.1, silent_minutes=60,
                   stale_minutes=120, persist_polls=2, budget_seconds=24,
                   carrying_reset_hours=6, carrying_pool_floor=.4,
-                  working_ceiling_multiple=6, external_wait_ceiling_hours=24)
+                  working_ceiling_multiple=6, external_wait_ceiling_hours=24,
+                  orphan_proc_hours=3)
     path = CONFIG / 'fleet-alarm.json'
     if path.exists():
         supplied = json.loads(path.read_text())
@@ -500,6 +510,73 @@ done < "$2"
     return findings
 
 
+ORPHAN_ARGS = (
+    # dotnet build and test processes, with or without the dotnet host in front.
+    re.compile(r'(?:^|[\s/])(?:MSBuild|VBCSCompiler|testhost)(?:\.dll|\.exe)?(?=\s|$)'),
+    # node running a test runner.
+    re.compile(r'^(?:\S*/)?node(?:\.exe)?\s.*[/\s@](?:vitest|jest|playwright|playwright-core)(?=[/\s.]|$)'),
+    # a browser Playwright launched from its own cache or profile directory.
+    re.compile(r'ms-playwright|playwright_(?:chromium|firefox|webkit)dev_profile'),
+)
+
+
+def etime_seconds(text):
+    days, _, clock = text.rpartition('-')
+    parts = [int(part) for part in clock.split(':')]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    return int(days or 0) * 86400 + parts[0] * 3600 + parts[1] * 60 + parts[2]
+
+
+def orphan_scan(hours):
+    """(count, rss_kib, oldest_seconds) of orphaned build or test processes; None when unreadable."""
+    for fields in ('pid=,ppid=,sid=,etime=,rss=,args=', 'pid=,ppid=,etime=,rss=,args='):
+        result = subprocess.run([os.environ.get('FM_ORPHAN_PS', 'ps'), '-A', '-ww', '-o', fields],
+                                capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            break
+    else:
+        return None
+    has_sid = fields.startswith('pid=,ppid=,sid=')
+    rows = []
+    skip = 3 if has_sid else 2
+    for line in result.stdout.splitlines():
+        parts = line.split(None, skip + 2)
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+            sid = int(parts[2]) if has_sid else None
+            age, rss = etime_seconds(parts[skip]), int(parts[skip + 1])
+            args = parts[skip + 2] if len(parts) > skip + 2 else ''
+        except (ValueError, IndexError):
+            continue
+        rows.append((pid, ppid, sid, age, rss, args))
+    alive = {row[0] for row in rows}
+    found = [row for row in rows
+             if row[3] >= hours * 3600 and row[5] and any(rx.search(row[5]) for rx in ORPHAN_ARGS)
+             and (row[1] == 1 or (row[2] is not None and row[2] > 1 and row[2] not in alive))]
+    return len(found), sum(row[4] for row in found), max((row[3] for row in found), default=0)
+
+
+def duration(seconds):
+    days, rest = divmod(int(seconds), 86400)
+    hours, rest = divmod(rest, 3600)
+    return f'{days}d {hours}h' if days else f'{hours}h {rest // 60}m'
+
+
+def orphan_change(announced, scan, hours, host):
+    """(key, opens, text) when the orphan count differs from the last announced one, else None."""
+    count, rss_kib, oldest = scan
+    if count == announced:
+        return None
+    key = 'orphan-procs-' + (re.sub(r'[^a-z0-9]+', '-', host.lower()).strip('-') or 'host')
+    if not count:
+        return key, False, f'Orphaned build or test processes on {host} cleared'
+    return key, True, (
+        f'Orphaned build or test processes on {host}: {count} older than {hours:g}h '
+        f'(parent is init or its session is gone), {rss_kib / 1048576:.1f} GiB resident, '
+        f'oldest {duration(oldest)}; read-only, nothing was stopped')
+
+
 def collect(cfg):
     findings = {}
     not_collected = {}
@@ -641,7 +718,7 @@ def collect(cfg):
             continue
         if declared.isdigit() and len(counted) == 3 and counted[0] == 'open' and counted[2].isdigit():
             slots[counted[1]] = (int(counted[2]), int(declared))
-    return findings, quota_info, not_collected, eased, (drain, unread, slots)
+    return findings, quota_info, not_collected, eased, (drain, unread, slots), orphan_scan(cfg['orphan_proc_hours'])
 
 
 def check(channel):
@@ -660,9 +737,9 @@ def check(channel):
         timer_open = stored.get('timer_open', False)
         try:
             cfg = settings()
-            raw, quota_info, not_collected, eased, (drain, drain_unread, slots) = collect(cfg)
+            raw, quota_info, not_collected, eased, (drain, drain_unread, slots), orphans = collect(cfg)
         except (ValueError, OSError) as error:
-            drain, drain_unread, slots = {}, [], {}
+            drain, drain_unread, slots, orphans = {}, [], {}, None
             cfg = {'persist_polls': 1}
             raw = {'config': f'Fleet alarm configuration invalid: {error}'}
             quota_info = ''
@@ -774,6 +851,13 @@ def check(channel):
                             f'CI slots over: {repo} has {open_prs} open PRs against {declared} CI slots; only exempt work and PR landing '
                             f'should start there until its open PRs are back to {declared} or fewer' if side == 'over' else
                             f'CI slots back within: {repo} has {open_prs} open PRs against {declared} CI slots; ordinary ship work may resume there'))
+        announced_orphans = stored.get('orphans', {}).get(channel, 0)
+        if orphans is not None:
+            host = os.uname().nodename.split('.')[0]
+            change = orphan_change(announced_orphans, orphans, cfg.get('orphan_proc_hours', 3), host)
+            if change:
+                changes.append(change)
+            announced_orphans = orphans[0]
         if changes and channel == 'timer':
             if not (CONFIG / 'fleet-ledger').exists():
                 raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
@@ -795,7 +879,8 @@ def check(channel):
                        'wait': wait_record, 'not_collected': not_collected, 'eased': sorted(eased | {key for key in stored.get('eased', []) if key not in current and key in preserved}),
                        'suspect': {**stored.get('suspect', {}), channel: suspect},
                        'drain': {**stored.get('drain', {}), channel: announced},
-                       'ci_slots': {**stored.get('ci_slots', {}), channel: slots_announced}}, file)
+                       'ci_slots': {**stored.get('ci_slots', {}), channel: slots_announced},
+                       'orphans': {**stored.get('orphans', {}), channel: announced_orphans}}, file)
             temporary = file.name
         os.replace(temporary, record)
         if channel == 'timer':

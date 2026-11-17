@@ -65,6 +65,45 @@ run_spawn() {
     "$id" "$PROJECT_DIR" "$@"
 }
 
+# The endpoint's shell is recorded as the worker's process-family root only when it leads
+# its own session; a pane pid that does not (or none) leaves the record without the lines.
+test_spawn_records_the_endpoint_session_as_the_process_family_root() {
+  local rec id out status leader identity
+  id='pool-proc-root-r14'
+  rec=$(make_case proc-root "$id")
+  read_case_record "$rec"
+  setsid sleep 312 >/dev/null 2>&1 &
+  leader=$!
+  disown
+  # Answer only the pane-shell question; every other tmux call keeps the case's own fake.
+  mv "$FAKEBIN_DIR/tmux" "$FAKEBIN_DIR/tmux.case"
+  cat > "$FAKEBIN_DIR/tmux" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *pane_pid*) printf '%s\\n' '$leader'; exit 0 ;;
+esac
+exec "$FAKEBIN_DIR/tmux.case" "\$@"
+SH
+  chmod +x "$FAKEBIN_DIR/tmux"
+
+  out=$(run_spawn "$id" --scout)
+  status=$?
+  expect_code 0 "$status" "spawn with a session-leading pane shell should succeed"$'\n'"$out"
+  identity=$(python3 -I "$ROOT/bin/fm-proc-family.py" capture "$leader") || fail "setup: the leader has no session identity"
+  assert_grep "proc_root=$leader" "$HOME_DIR/state/$id.meta" "spawn did not record the session-leading shell"
+  assert_grep "proc_root_id=$identity" "$HOME_DIR/state/$id.meta" "spawn did not record the shell's start identity"
+  kill "$leader" 2>/dev/null || true
+
+  id='pool-proc-root-r15'
+  rec=$(make_case proc-root-none "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$id" --scout)
+  status=$?
+  expect_code 0 "$status" "spawn with no recorded pane shell should succeed"$'\n'"$out"
+  assert_no_grep 'proc_root' "$HOME_DIR/state/$id.meta" "a pane with no session-leading shell must leave no process-family record"
+  pass "spawn records the endpoint's session-leading shell as the process-family root, and nothing otherwise"
+}
+
 test_remote_seeded_home_spawns_from_treehouse_pool() {
   local rec id out status lock
   id='pool-remote-seeded-r13'
@@ -1618,6 +1657,7 @@ test_originless_pool_launches_without_a_freshness_fetch
 test_originless_dirty_pool_refuses_without_discarding_work
 test_origin_config_without_url_refuses_pool
 test_empty_origin_config_section_refuses_pool
+test_spawn_records_the_endpoint_session_as_the_process_family_root
 test_empty_only_included_origin_config_section_launches_pool
 test_inactive_conditional_origin_include_launches_pool
 test_stale_submodule_pin_explains_itself
