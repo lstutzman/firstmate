@@ -242,6 +242,70 @@ test_security_needs_the_label_and_urgent_or_high_priority() {
   pass "security needs the label (any case) and Urgent or High priority, and names what is missing or unreadable"
 }
 
+test_security_reads_linear_graphql_without_echoing_the_credential() {
+  local server="$TMP_ROOT/linear-server.py" port pid token='Bearer lin_api_test_SECRET_9f3c' answer
+  cat > "$FAKEBIN/linear-token" <<SH
+#!/usr/bin/env bash
+[ "\$*" = "header --print-to-pipe" ] || exit 2
+printf '%s\n' '$token'
+SH
+  chmod +x "$FAKEBIN/linear-token"
+  cat > "$server" <<'SERVER'
+import http.server, json, os, sys
+root = sys.argv[1]
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+        with open(f'{root}/linear-request.json', 'w') as f:
+            json.dump({'authorization': self.headers.get('Authorization'), 'body': body}, f)
+        with open(f'{root}/linear-answer') as f:
+            status, answer = f.read().split('\n', 1)
+        self.send_response(int(status))
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(answer.encode())
+    def log_message(self, *args):
+        pass
+server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+with open(f'{root}/linear-port.tmp', 'w') as f:
+    f.write(str(server.server_port))
+os.rename(f'{root}/linear-port.tmp', f'{root}/linear-port')
+server.serve_forever()
+SERVER
+  python3 -I "$server" "$TMP_ROOT" &
+  pid=$!
+  for _ in $(seq 50); do [ -s "$TMP_ROOT/linear-port" ] && break; sleep 0.1; done
+  port=$(cat "$TMP_ROOT/linear-port") || { kill "$pid"; fail "the stub Linear server did not start"; }
+  live() {  # <status> <answer>
+    printf '%s\n%s' "$1" "$2" > "$TMP_ROOT/linear-answer"
+    FM_PR_DRAIN_LINEAR_URL="http://127.0.0.1:$port/graphql" "$DRAIN" security PC-5174 2>"$TMP_ROOT/err"
+  }
+  live 200 '{"data":{"issue":{"identifier":"PC-5174","priority":1,"labels":{"nodes":[{"name":"Bug"},{"name":"agent"},{"name":"security"}]}}}}' ||
+    { kill "$pid"; fail "an Urgent item labelled security was refused over GraphQL: $(cat "$TMP_ROOT/err")"; }
+  python3 -I -c 'import json, sys
+r = json.load(open(sys.argv[1]))
+assert r["authorization"] == sys.argv[2], "the linear-token header was not sent"
+assert r["body"]["variables"] == {"id": "PC-5174"}, r["body"]["variables"]' "$TMP_ROOT/linear-request.json" "$token" ||
+    { kill "$pid"; fail "the GraphQL request did not carry the credential and the item id"; }
+  live 200 '{"data":{"issue":{"identifier":"PC-5174","priority":3,"labels":{"nodes":[{"name":"security"}]}}}}' &&
+    { kill "$pid"; fail "a Medium item was accepted over GraphQL"; }
+  assert_grep "priority Urgent or High" "$TMP_ROOT/err" "the GraphQL refusal did not name the priority"
+  for answer in '{"data":{"issue":null}}' '{"data":null,"errors":[{"message":"Entity not found"}]}' 'not json'; do
+    live 200 "$answer" && { kill "$pid"; fail "an unusable GraphQL answer was accepted: $answer"; }
+    assert_grep "readable Linear item" "$TMP_ROOT/err" "the refusal did not say Linear was unreadable for: $answer"
+    assert_no_grep "SECRET" "$TMP_ROOT/err" "the credential reached stderr for: $answer"
+  done
+  live 401 '{"errors":[{"message":"Authentication required, got Bearer lin_api_test_SECRET_9f3c"}]}' &&
+    { kill "$pid"; fail "a refused GraphQL read was accepted"; }
+  assert_grep "readable Linear item" "$TMP_ROOT/err" "the 401 refusal did not say Linear was unreadable"
+  assert_no_grep "SECRET" "$TMP_ROOT/err" "the credential reached stderr on a 401"
+  kill "$pid"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKEBIN/linear-token"
+  live 200 '' && fail "a security item was accepted with no Linear credential"
+  assert_grep "readable Linear item" "$TMP_ROOT/err" "a missing credential did not refuse as unreadable"
+  pass "security reads the item over Linear GraphQL with the linear-token header, refuses null, errors, non-JSON and 401 answers, and never echoes the credential"
+}
+
 test_security_brief_needs_a_linear_item() {
   local home="$TMP_ROOT/home"
   mkdir -p "$home/data"
@@ -269,5 +333,6 @@ fm_test_run \
   test_classes_are_validated \
   test_lee_explicit_evidence_needs_a_quote_and_a_timestamp \
   test_security_needs_the_label_and_urgent_or_high_priority \
+  test_security_reads_linear_graphql_without_echoing_the_credential \
   test_security_brief_needs_a_linear_item \
   test_brief_tells_workers_to_check_drain_before_a_pr

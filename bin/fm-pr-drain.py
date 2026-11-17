@@ -31,7 +31,8 @@ security fixes start at once). It exits 2 and names the item and what is missing
 cannot be read. Linear is read through one helper, read_item: a read-only GraphQL query authenticated by
 `linear-token header --print-to-pipe` (the credential linear-axi uses; never printed or stored).
 FM_PR_DRAIN_LINEAR_READER names an executable that replaces it (tests): it gets the item id as its argument and
-prints JSON such as {"priority": 1, "labels": ["Bug", "security"]}.
+prints JSON such as {"priority": 1, "labels": ["Bug", "security"]}. FM_PR_DRAIN_LINEAR_URL replaces the GraphQL
+endpoint (tests).
 """
 from datetime import datetime, timedelta, timezone
 import json
@@ -136,7 +137,7 @@ def read_item(item):
         if token.returncode or not token.stdout.strip():
             raise ValueError('no Linear credential from linear-token')
         query = 'query($id:String!){issue(id:$id){identifier priority labels{nodes{name}}}}'
-        request = urllib.request.Request('https://api.linear.app/graphql',
+        request = urllib.request.Request(os.environ.get('FM_PR_DRAIN_LINEAR_URL', 'https://api.linear.app/graphql'),
                                          data=json.dumps({'query': query, 'variables': {'id': item}}).encode(),
                                          headers={'Authorization': token.stdout.strip(), 'Content-Type': 'application/json'})
         try:

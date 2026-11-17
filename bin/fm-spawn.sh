@@ -4488,7 +4488,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
       exit 1
     }
   fi
-  if [ "$SPAWN_DRAIN_CLASS" = security ]; then
+  if [ "$SPAWN_DRAIN_STATE" = on ] && [ "$SPAWN_DRAIN_CLASS" = security ]; then
     SPAWN_SECURITY_ITEM=$(sed -n 's/^> Quoted from Linear \(PC-[0-9][0-9]*\) (read-only.*$/\1/p' "$BRIEF" | head -n 1)
     [ -n "$SPAWN_SECURITY_ITEM" ] || {
       echo "error: spawn refused: task $ID declares PR drain class security but its brief names no Linear item; rescaffold it with bin/fm-brief.sh --pr-drain security --linear <PC-n>" >&2

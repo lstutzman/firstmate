@@ -1304,6 +1304,32 @@ test_pr_drain_security_needs_a_qualifying_linear_item() {
   pass "a security ship launches in drain only when its Linear item has the label and Urgent or High priority"
 }
 
+test_pr_drain_security_out_of_drain_reads_no_linear() {
+  local case_dir home out rc reader id
+  case_dir=$(make_case drain-security-off sec-off sec-unknown)
+  home="$case_dir/home"
+  reader="$case_dir/linear-reader"
+  printf '#!/usr/bin/env bash\ntouch "%s/linear-called"\nexit 1\n' "$case_dir" > "$reader"
+  chmod +x "$reader"
+  for id in sec-off sec-unknown; do
+    write_brief "$home" "$id"
+    printf 'PR drain: security\n> Quoted from Linear PC-5174 (read-only, verbatim). Stub.\n' >> "$home/data/$id/brief.md"
+    add_item "$home" "$id"
+  done
+  drain_gh "$case_dir" 0
+  rc=0
+  out=$(FM_PR_DRAIN_LINEAR_READER="$reader" spawn_ship "$case_dir" sec-off) || rc=$?
+  expect_code 0 "$rc" "a security ship out of drain was refused: $out"
+  assert_contains "$out" "spawned sec-off" "a security ship out of drain did not launch: $out"
+  drain_gh "$case_dir" fail
+  rc=0
+  out=$(FM_PR_DRAIN_LINEAR_READER="$reader" spawn_ship "$case_dir" sec-unknown) || rc=$?
+  expect_code 0 "$rc" "a security ship with an unknown drain state was refused: $out"
+  assert_contains "$out" "spawned sec-unknown" "a security ship with an unknown drain state did not launch: $out"
+  assert_absent "$case_dir/linear-called" "a security ship outside drain read Linear"
+  pass "a security ship out of drain or with an unknown drain state launches with no Linear read"
+}
+
 test_pr_drain_unknown_or_off_launches() {
   local case_dir out rc=0
   case_dir=$(make_case drain-unknown task-c task-d)
@@ -1361,4 +1387,5 @@ test_pr_drain_defers_a_ship_without_a_class
 test_pr_drain_admits_every_class_and_landing_job
 test_pr_drain_lee_explicit_needs_the_quoted_word
 test_pr_drain_security_needs_a_qualifying_linear_item
+test_pr_drain_security_out_of_drain_reads_no_linear
 test_pr_drain_unknown_or_off_launches
