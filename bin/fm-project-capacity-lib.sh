@@ -320,25 +320,34 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
 }
 
 # Count one project's ships in flight toward its CI slots: every
-# fm_project_records record that is not a scout (a record with no kind is a ship)
-# and has no recorded pr= handoff. A ship
-# whose PR is recorded is already one of the project's open PRs on GitHub, so it
-# is never counted twice; scouts and secondmates hold no CI slot.
+# fm_project_records record that is not a scout (a record with no kind is a ship),
+# has no recorded pr= handoff, and whose brief declares no landing job ("PR
+# drain: <class>" with a bin/fm-pr-drain.py landing-class). A ship whose PR is
+# recorded, or a landing job working on an already open PR, is one of the
+# project's open PRs on GitHub already, so it is never counted twice; scouts and
+# secondmates hold no CI slot. A record in <first-state> reads its brief from
+# <first-data>; one in another local home reads that home's data/.
 # Sets FM_CI_SLOTS_INFLIGHT to the count and FM_CI_SLOTS_INFLIGHT_IDS to a
 # comma-separated list of the task labels. Returns 1 with
 # FM_PROJECT_CAPACITY_ERROR when fm_project_records does.
-fm_ci_slots_inflight() {  # <project-lock> <project-dir> <first-state> <own-id>
-  local i=0
+fm_ci_slots_inflight() {  # <project-lock> <project-dir> <first-state> <own-id> <first-data>
+  local first=$3 i=0 meta state data class
   FM_CI_SLOTS_INFLIGHT=0
   FM_CI_SLOTS_INFLIGHT_IDS=
-  fm_project_records "$@" || return 1
+  fm_project_records "$1" "$2" "$3" "$4" || return 1
   while [ "$i" -lt "${#FM_PROJECT_RECORDS[@]}" ]; do
-    if [ "$(fm_meta_get "${FM_PROJECT_RECORDS[$i]}" kind)" != scout ] &&
-      [ -z "$(fm_meta_get "${FM_PROJECT_RECORDS[$i]}" pr)" ]; then
-      FM_CI_SLOTS_INFLIGHT=$((FM_CI_SLOTS_INFLIGHT + 1))
-      FM_CI_SLOTS_INFLIGHT_IDS="${FM_CI_SLOTS_INFLIGHT_IDS:+$FM_CI_SLOTS_INFLIGHT_IDS, }${FM_PROJECT_RECORD_LABELS[$i]}"
-    fi
+    meta=${FM_PROJECT_RECORDS[$i]}
     i=$((i + 1))
+    [ "$(fm_meta_get "$meta" kind)" != scout ] && [ -z "$(fm_meta_get "$meta" pr)" ] || continue
+    state=$(dirname "$meta")
+    data=$5
+    [ "$state" = "$first" ] || data="$(dirname "$state")/data"
+    class=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$data/$(basename "$meta" .meta)/brief.md" 2>/dev/null | head -n 1)
+    if [ -n "$class" ] && python3 "$(dirname "${BASH_SOURCE[0]}")/fm-pr-drain.py" landing-class "$class"; then
+      continue
+    fi
+    FM_CI_SLOTS_INFLIGHT=$((FM_CI_SLOTS_INFLIGHT + 1))
+    FM_CI_SLOTS_INFLIGHT_IDS="${FM_CI_SLOTS_INFLIGHT_IDS:+$FM_CI_SLOTS_INFLIGHT_IDS, }${FM_PROJECT_RECORD_LABELS[$i - 1]}"
   done
   return 0
 }

@@ -5,6 +5,7 @@ Usage: fm-pr-drain.py state <project-dir>
        fm-pr-drain.py open <project-dir>
        fm-pr-drain.py class <value>
        fm-pr-drain.py slots-class <value>
+       fm-pr-drain.py landing-class <value>
        fm-pr-drain.py evidence < <captain's-intent-text>
        fm-pr-drain.py security <PC-n>
 
@@ -31,6 +32,9 @@ brief and bin/fm-spawn.sh reads it back.
 slots-class exits 0 when <value> is a drain declaration that also bypasses the CI-slots cap: production-outage, cve,
 security, lee-explicit and the four landing jobs; wolverine, lee-research, officer and scheduled stay held. It is
 bin/fm-spawn.sh's one list of those classes.
+landing-class exits 0 when <value> is one of the four landing jobs (restack, red-gate-fix, returned-pr-fix, review),
+which work on a PR that is already open, and 2 otherwise; bin/fm-project-capacity-lib.sh leaves such a ship out of
+the ships in flight it counts toward the CI slots, since GitHub's open count already holds its PR.
 evidence reads a brief's `## Captain's intent` section body on stdin (bin/fm-spawn.sh extracts it with
 bin/fm-brief-heading-lib.sh) and exits 0 when it holds a quoted captain instruction with a timestamp,
 the proof a `lee-explicit` brief needs: at least one double-quoted span, and an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ) on the same line as a quote or on the line before it.
@@ -209,6 +213,8 @@ if __name__ == '__main__':
         print(open_count(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'slots-class':
         sys.exit(0 if sys.argv[2] in SLOTS_EXEMPT else 2)
+    elif len(sys.argv) == 3 and sys.argv[1] == 'landing-class':
+        sys.exit(0 if sys.argv[2] in LANDING else 2)
     elif len(sys.argv) == 3 and sys.argv[1] == 'class':
         sys.exit(0 if sys.argv[2] in EXEMPT + LANDING else 2)
     elif len(sys.argv) == 2 and sys.argv[1] == 'evidence':

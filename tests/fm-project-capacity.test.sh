@@ -1430,6 +1430,27 @@ test_ci_slots_count_a_ship_once_its_pr_is_open() {
   pass "a ship with an open PR counts once through GitHub, and a scout counts nowhere"
 }
 
+test_ci_slots_never_count_a_landing_job_twice() {
+  local case_dir home out rc=0
+  case_dir=$(make_case slots-landing task-c task-d)
+  home="$case_dir/home"
+  declare_slots "$home" "project 4"
+  drain_gh "$case_dir" 3
+  # A restack works on one of the 3 open PRs before its pr= is recorded, so the queue is 3 of 4.
+  write_live "$home" live-restack "$case_dir/project"
+  write_brief "$home" live-restack
+  printf 'PR drain: restack\n' >> "$home/data/live-restack/brief.md"
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a landing job on an open PR was counted again as a ship in flight: $out"
+  assert_contains "$out" "spawned task-c" "a ship did not launch with 3 open PRs and only a landing job in flight: $out"
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a fresh ship in flight stopped counting beside a landing job: $out"
+  assert_contains "$out" "1 ship(s) in flight with no PR yet (task-c) against 4 CI slot(s)" \
+    "the deferral counted the landing job or missed the fresh ship: $out"
+  pass "a landing job's open PR counts once through GitHub, while a fresh ship in flight still counts"
+}
+
 test_ci_slots_count_ships_in_every_local_home() {
   local case_dir root mate out rc=0 mate_project
   case_dir=$(make_case slots-homes)
@@ -1623,6 +1644,7 @@ test_ci_slots_absent_or_undeclared_keeps_dispatch_uncapped
 test_ci_slots_malformed_declaration_refuses_the_spawn
 test_ci_slots_under_the_slots_admits_and_at_the_slots_defers
 test_ci_slots_count_a_ship_once_its_pr_is_open
+test_ci_slots_never_count_a_landing_job_twice
 test_ci_slots_count_ships_in_every_local_home
 test_ci_slots_exempt_classes_launch_at_the_slots
 test_ci_slots_hold_the_other_drain_classes

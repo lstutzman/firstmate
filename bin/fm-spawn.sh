@@ -4635,7 +4635,7 @@ if [ -n "$SPAWN_CI_SLOTS" ]; then
   [ -n "$SPAWN_CI_LOCK" ] || SPAWN_CI_LOCK=$(fm_treehouse_project_lock_path "$PROJ_ABS" 2>/dev/null) || SPAWN_CI_LOCK=
   if [ -z "$SPAWN_CI_LOCK" ]; then
     echo "warning: CI slots for project $SPAWN_CI_NAME cannot be counted: its project identity cannot be resolved; launching task $ID anyway" >&2
-  elif ! fm_ci_slots_inflight "$SPAWN_CI_LOCK" "$PROJ_ABS" "$STATE" "$ID"; then
+  elif ! fm_ci_slots_inflight "$SPAWN_CI_LOCK" "$PROJ_ABS" "$STATE" "$ID" "$DATA"; then
     echo "warning: CI slots for project $SPAWN_CI_NAME cannot be counted: $FM_PROJECT_CAPACITY_ERROR; launching task $ID anyway" >&2
   elif [ $((SPAWN_CI_OPEN + FM_CI_SLOTS_INFLIGHT)) -ge "$SPAWN_CI_SLOTS" ]; then
     if [ "${SPAWN_DRAIN_CLASS:-}" = security ]; then
