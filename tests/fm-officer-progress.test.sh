@@ -2148,10 +2148,12 @@ PY
 {"id":"imp-skip","words":"Skip flaky e2e retries in CI for PC-1234","status":"not-started","work":[]},
 {"id":"imp-drop","words":"Drop the unused Redis cache","status":"not-started","work":[]},
 {"id":"imp-do","words":"Do the PC-4321 calculator rework next","status":"not-started","work":[]},
-{"id":"imp-merge","words":"Merge the two dashboards into one view","status":"not-started","work":[]}]}
+{"id":"imp-merge","words":"Merge the two dashboards into one view","status":"not-started","work":[]},
+{"id":"imp-release","words":"Merge release-2 branch into main","status":"not-started","work":[]},
+{"id":"imp-gpt","words":"Approve gpt-4 for the summariser","status":"not-started","work":[]}]}
 JSON
   run_progress >/dev/null || fail 'skip run failed'
-  assert_equals 'logs sur' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'only real asks start, once each'
+  assert_equals 'imp-gpt logs sur' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'only real asks start, once each'
   local reasons
   reasons="$(jq -r '.excluded[] | .id + "=" + .reason' "$file")"
   assert_contains "$reasons" 'ign=Not a work item: an answer or dismissal' 'a dismissal is skipped'
@@ -2168,7 +2170,7 @@ JSON
   assert_contains "$reasons" 'sur2=Duplicate of another Top of Mind ask' 'a same-run duplicate is skipped'
   local imp
   imp="$(jq -r '.top_of_mind[] | select(startswith("imp-"))' "$file")"
-  assert_equals 4 "$(printf '%s\n' "$imp" | grep -c '^imp-')" 'every imperative ask gets a disposition'
+  assert_equals 6 "$(printf '%s\n' "$imp" | grep -c '^imp-')" 'every imperative ask gets a disposition'
   assert_not_contains "$imp" 'Not a work item' 'an imperative is never read as an answer or question'
   assert_not_contains "$imp" 'Not a new start' 'an imperative merge is never read as an approval'
   assert_not_contains "$reasons" 'appr-join=' 'an approval naming linked work joins it instead of being listed'
