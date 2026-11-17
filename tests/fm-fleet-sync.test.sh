@@ -316,6 +316,65 @@ test_dirty_is_stuck_untouched() {
   pass "dirty working tree is reported STUCK and left untouched"
 }
 
+test_untracked_root_treehouse_toml_is_not_stuck() {
+  local home clone out
+  home=$(new_home)
+  clone=$(build_pair "$home" tomlok)
+  advance_origin "$home" tomlok C1
+  printf 'x\n' > "$clone/treehouse.toml"
+
+  out=$(run_sync "$home" "$clone")
+
+  assert_contains "$out" "tomlok: synced" "untracked root treehouse.toml still syncs"
+  assert_not_contains "$out" "STUCK" "untracked root treehouse.toml is not STUCK"
+  [ -f "$clone/treehouse.toml" ] || fail "treehouse.toml was removed"
+  pass "untracked root treehouse.toml does not make a clone STUCK"
+}
+
+test_treehouse_toml_plus_other_untracked_is_stuck() {
+  local home clone out
+  home=$(new_home)
+  clone=$(build_pair "$home" tomlmix)
+  advance_origin "$home" tomlmix C1
+  printf 'x\n' > "$clone/treehouse.toml"
+  printf 'y\n' > "$clone/other.txt"
+
+  out=$(run_sync "$home" "$clone")
+
+  assert_contains "$out" "tomlmix: STUCK:" "treehouse.toml plus another untracked file is STUCK"
+  pass "treehouse.toml plus another untracked file is still STUCK"
+}
+
+test_untracked_subdir_treehouse_toml_is_stuck() {
+  local home clone out
+  home=$(new_home)
+  clone=$(build_pair "$home" tomlsub)
+  advance_origin "$home" tomlsub C1
+  mkdir "$clone/sub"
+  printf 'x\n' > "$clone/sub/treehouse.toml"
+
+  out=$(run_sync "$home" "$clone")
+
+  assert_contains "$out" "tomlsub: STUCK:" "subdirectory treehouse.toml is STUCK"
+  pass "untracked treehouse.toml in a subdirectory is still STUCK"
+}
+
+test_modified_tracked_treehouse_toml_is_stuck() {
+  local home clone out
+  home=$(new_home)
+  clone=$(build_pair "$home" tomlmod)
+  commit_file "$home/work-tomlmod" treehouse.toml x toml
+  git -C "$home/work-tomlmod" push -q origin main
+  git -C "$clone" pull -q --ff-only
+  advance_origin "$home" tomlmod C1
+  printf 'changed\n' >> "$clone/treehouse.toml"
+
+  out=$(run_sync "$home" "$clone")
+
+  assert_contains "$out" "tomlmod: STUCK:" "modified tracked treehouse.toml is STUCK"
+  pass "modified tracked treehouse.toml is still STUCK"
+}
+
 test_non_default_branch_is_stuck_untouched() {
   local home clone out
   home=$(new_home)
@@ -751,6 +810,10 @@ test_detached_clean_ancestor_recovers
 test_detached_unique_commit_is_stuck_untouched
 test_detached_clean_ancestor_with_diverged_local_default_is_stuck_untouched
 test_dirty_is_stuck_untouched
+test_untracked_root_treehouse_toml_is_not_stuck
+test_treehouse_toml_plus_other_untracked_is_stuck
+test_untracked_subdir_treehouse_toml_is_stuck
+test_modified_tracked_treehouse_toml_is_stuck
 test_non_default_branch_is_stuck_untouched
 test_diverged_is_stuck_untouched
 test_on_default_clean_behind_fast_forwards

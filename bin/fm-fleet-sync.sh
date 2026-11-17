@@ -371,7 +371,9 @@ sync_project_refresh() {
 
   cur=$(git -C "$PROJ" symbolic-ref --short HEAD 2>/dev/null || echo "")
   dirty=no
-  [ -z "$(git -C "$PROJ" status --porcelain 2>/dev/null | head -1)" ] || dirty=yes
+  # An untracked treehouse.toml at the clone root is the one sanctioned local
+  # file (captain-approved) and never counts as dirty; every other change does.
+  [ -z "$(git -C "$PROJ" status --porcelain 2>/dev/null | grep -vx '?? treehouse\.toml' | head -1)" ] || dirty=yes
   recovered=no
 
   if [ "$cur" != "$DEFAULT" ]; then
