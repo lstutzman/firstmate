@@ -2139,6 +2139,9 @@ PY
 {"id":"sur","words":"surgeon weaknesses start now","status":"not-started","work":[]},
 {"id":"sur2","words":"Surgeon weaknesses start now","status":"not-started","work":[]},
 {"id":"logs","words":"keep every local session log; do NOT let the Bosun trash archived local logs","status":"not-started","work":[]},
+{"id":"appr-bare","words":"approved","status":"not-started","work":[]},
+{"id":"appr-thanks","words":"Approved, thanks","status":"not-started","work":[]},
+{"id":"merge-it","words":"Merge it","status":"not-started","work":[]},
 {"id":"appr-join","words":"approve PR 77 for PC-97","status":"not-started","work":[]},
 {"id":"imp-skip","words":"Skip flaky e2e retries in CI for PC-1234","status":"not-started","work":[]},
 {"id":"imp-drop","words":"Drop the unused Redis cache","status":"not-started","work":[]},
@@ -2153,6 +2156,9 @@ JSON
   assert_contains "$reasons" 'yes=Not a work item: an answer or dismissal' 'a bare yes is skipped'
   assert_contains "$reasons" 'why=Not a work item: a question' 'a question is skipped'
   assert_contains "$reasons" 'appr=Not a new start: an approval or merge word for existing work' 'an unmatched approval is listed, not started'
+  assert_contains "$reasons" 'appr-bare=Not a new start: an approval' 'a bare approval reply is listed, not started'
+  assert_contains "$reasons" 'appr-thanks=Not a new start: an approval' 'an approval with thanks is listed, not started'
+  assert_contains "$reasons" 'merge-it=Not a new start: an approval' 'a bare merge word is listed, not started'
   assert_contains "$reasons" 'fix1=Routed to the friction lane' 'a Start fix row is routed to the friction lane'
   assert_contains "$reasons" 'fix2=Routed to the friction lane' 'every Start fix row is routed'
   assert_contains "$reasons" 'sur2=Duplicate of another Top of Mind ask' 'a same-run duplicate is skipped'
