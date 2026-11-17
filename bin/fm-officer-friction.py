@@ -85,8 +85,8 @@ secret, key, token or password; member-facing copy, a copy word, release notes, 
 video or post to publish; deleting, discarding or dropping named work, or a force-push),
 or when its stated cause is credential or decision (a product or design choice). A bare
 keyword (authority, prod, token, password, video, publish, wording) is never enough, and a
-phrase in a clause that denies it (no, not, nothing, never, without, outside: "nothing
-touches production") does not count. RESERVED_RULES owns the text rules. A standing yes could not cover such
+phrase a negator directly governs ("no production change", "nothing touches billing",
+"does not touch billing") does not count, while "can't merge without Lee's merge word" does. RESERVED_RULES owns the text rules. A standing yes could not cover such
 an ask, so it is left out of the events and findings and counted instead: doc
 reserved_to_lee {events, lee_events, by_class}, each finding's reserved_to_lee, the
 digest's "Reserved to Lee by the rules" lines and "reserved to Lee by the rules: N" in a
@@ -411,7 +411,7 @@ RESERVED_RULES = [
     ("production", re.compile(
         r"\bprod(?:uction)?[- ](?:deploy\w*|writes?|changes?|flags?|releases?|data|config\w*|settings?|go|promotion"
         r"|migrations?|restarts?)\b|\b(?:deploy|releas|promot|turn|flip|enabl|disabl|writ|appl|roll)\w*\b"
-        r"[^.;:?!]{0,40}?\b(?:on|to|in|into) prod(?:uction)?\b", re.I)),
+        r"(?:[^.;:?!]|(?<=\d)\.(?=\d)){0,40}?\b(?:on|to|in|into) prod(?:uction)?\b", re.I)),
     ("credential", re.compile(
         r"\b(?:creat|rotat|revok|roll|mint|re-?mint|widen|issu|regenerat|chang|updat)\w*\s+(?:\S+\s+){0,3}?"
         r"(?:credentials?|secrets?|api[- ]keys?|tokens?|passwords?)\b"
@@ -425,8 +425,11 @@ RESERVED_RULES = [
         r"|\b(?:delet(?:e|es|ed|ing)|discard\w*|drop(?:s|ped|ping)?|purg(?:e|es|ed|ing)|wip(?:e|es|ed|ing)|trash\w*)"
         r"\s+(?:the|a|an|this|that|these|those|its|all|every|named|unpushed|unlanded|\d+)\b", re.I)),
 ]
-# A reserved phrase in a clause that denies it ("nothing touches production", "no production change") names no ask.
-RESERVED_NEGATION_RE = re.compile(r"\b(?:no|not|nothing|never|without|none|neither|nor|outside)\b|n't\b", re.I)
+# A reserved phrase a negator directly governs ("no production change", "nothing touches billing", "does not touch
+# billing", "isn't a production deploy") names no ask; "can't deploy to production without Lee's go" still does.
+RESERVED_NEGATION_RE = re.compile(
+    r"(?:\b(?:no|nothing|none|neither|nor)\b(?:\s+[\w'-]+)?|(?:\bnot|n't)\s+(?:a|an|any|touch\w*|affect\w*|involv\w*|need\w*))"
+    r"\s+$", re.I)
 URL_RE = re.compile(r"https?://\S+")
 CORR_RE = re.compile(r"\bcorr=[0-9a-f]+\s*")
 SSH_HOST_RE = re.compile(r"\bssh (?:-\w+ )*(?:[\w.-]+@)?([\w.-]+) '")
@@ -1622,7 +1625,7 @@ def reserved_class(key, stated, text):
     if key and RESERVED_KEY_RE.search(key):
         return "merge-class"
     for name, pattern in RESERVED_RULES:
-        if any(not RESERVED_NEGATION_RE.search(re.split(r"[;:.,?!]", (text or "")[:m.start()])[-1])
+        if any(not RESERVED_NEGATION_RE.search((text or "")[:m.start()])
                for m in pattern.finditer(text or "")):
             return name
     return {"credential": "credential", "decision": "product-choice"}.get(stated)

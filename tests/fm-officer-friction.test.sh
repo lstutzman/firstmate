@@ -518,6 +518,9 @@ needs-decision [at=$T] [cause=policy] [key=copy-word]: Copy word for refer-a-fri
 needs-decision [at=$T] [cause=policy] [key=acrpull]: Optional cleanup: delete the redundant AcrPull assignments
 needs-decision [at=$T] [cause=decision] [key=drain-class]: For PC-5120, which do you want? 1. Launch it under the lee-research drain class; Lee's word on it
 needs-decision [at=$T] [cause=policy] [key=billing-pr]: the billing change needs Lee's word
+needs-decision [at=$T] [cause=policy] [key=pr-412]: PR 412 can't change billing without Lee's word
+needs-decision [at=$T] [cause=policy] [key=release-go]: No staging check needed: deploy release 3.2.1 to production; needs Lee's go
+needs-decision [at=$T] [cause=policy] [key=no-billing]: needs Lee's word to rename the job; it does not touch billing
 needs-decision [at=$T] [cause=policy] [key=rotate-key]: rotate the named Stripe API key; needs Lee's word
 needs-decision [at=$T] [cause=credential] [key=licence-cred]: needs Lee's word on the licence
 needs-decision [at=$T] [cause=policy] [key=routine-rename]: rename the helper script; needs Lee's word
@@ -530,17 +533,17 @@ EOF
   md="$home/data/officers/friction/$DATE.md"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
   # A bare keyword (authority) or a denied one ("nothing touches production") is no reserved subject: still friction.
-  assert_equals "rename-helper,restack-12,routine-rename" \
+  assert_equals "no-billing,rename-helper,restack-12,routine-rename" \
     "$(finding "$json" policy approval '.evidence.status_keys | map(split("@")[0]) | sort | join(",")')" \
     "only the asks a standing yes could cover are counted as friction"
-  assert_equals 9 "$(finding "$json" policy approval '.reserved_to_lee')" "the finding shows how many asks the rules reserve to Lee"
-  assert_equals '{"credential":2,"destructive":1,"member-copy":1,"merge-class":3,"product-choice":1,"production":1}' \
+  assert_equals 11 "$(finding "$json" policy approval '.reserved_to_lee')" "the finding shows how many asks the rules reserve to Lee"
+  assert_equals '{"credential":2,"destructive":1,"member-copy":1,"merge-class":4,"product-choice":1,"production":2}' \
     "$(jq -c '.reserved_to_lee.by_class' "$json")" "each reserved ask is counted under its class: key, text or stated cause"
   assert_equals 0 "$(jq '[.events[] | select(.key == "admit-351-authority" or .key == "prod-flag")] | length' "$json")" \
     "a reserved ask is not among the friction events"
-  assert_grep "Reserved to Lee by the rules, not counted as friction: 9 event(s)" "$md" "the digest states the reserved total"
-  assert_grep "Reserved to Lee by the rules: 9 (not counted above" "$md" "the finding states its reserved count"
-  assert_contains "$(jq -r '[.bottlenecks[] | select(.id == "policy-approval")][0].evidence' "$vel")" "reserved to Lee by the rules: 9" \
+  assert_grep "Reserved to Lee by the rules, not counted as friction: 11 event(s)" "$md" "the digest states the reserved total"
+  assert_grep "Reserved to Lee by the rules: 11 (not counted above" "$md" "the finding states its reserved count"
+  assert_contains "$(jq -r '[.bottlenecks[] | select(.id == "policy-approval")][0].evidence' "$vel")" "reserved to Lee by the rules: 11" \
     "the card's evidence carries the reserved count, not a Start fix reason"
   # A day on which every approval ask is reserved leaves no finding to start, only the count.
   cat > "$home/state/task-rsv.status" <<EOF
