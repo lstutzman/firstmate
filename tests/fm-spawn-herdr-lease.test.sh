@@ -70,6 +70,12 @@ case "${1:-} ${2:-}" in
     [ ! -f "$D/session-lockable" ] || printf '{"sessions":[{"name":"default","running":true,"socket_path":"%s/herdr.sock"}]}\n' "$D"
     exit 0 ;;
   'pane close') : > "$D/pane-gone"; exit 0 ;;
+  'pane process-info')
+    [ -f "$D/shell-pid" ] || exit 0
+    info_pane=$(cat "$D/info-pane" 2>/dev/null || printf '%s' "${4:-}")
+    printf '{"result":{"type":"pane_process_info","process_info":{"pane_id":"%s","shell_pid":%s}}}\n' \
+      "$info_pane" "$(cat "$D/shell-pid")"
+    exit 0 ;;
   'pane get')
     [ ! -f "$D/pane-gone" ] || { printf '{"error":{"code":"pane_not_found"}}\n'; exit 0; }
     if [ -f "$D/cd-sent" ] && [ -f "$D/delay-reads" ]; then
@@ -252,6 +258,38 @@ test_abort_keeps_the_lease_while_the_pane_is_present() {
   pass "an abort whose pane is still present keeps the lease and names it"
 }
 
+# Herdr names the pane's shell through `pane process-info`. A session-leading
+# shell of the requested pane becomes the process-family root; a reply about a
+# different pane records nothing. Either way the ship pane gets its own
+# process-family marker, exported before launch and recorded in the task meta.
+test_spawn_records_the_herdr_shell_as_the_process_family_root() {
+  local id=lease-proc-root dir out status leader identity marker
+  dir=$(make_lease_case "$id")
+  setsid sleep 314 >/dev/null 2>&1 &
+  leader=$!
+  disown
+  sleep 0.2
+  printf '%s' "$leader" > "$dir/fake/shell-pid"
+  out=$(run_lease_spawn "$dir" "$id"); status=$?
+  expect_code 0 "$status" "spawn with a session-leading Herdr shell should succeed"$'\n'"$out"
+  identity=$(python3 -I "$ROOT/bin/fm-proc-family.py" capture "$leader") || fail "setup: the leader has no session identity"
+  assert_grep "proc_root=$leader" "$dir/home/state/$id.meta" "spawn did not record the Herdr pane's session-leading shell"
+  assert_grep "proc_root_id=$identity" "$dir/home/state/$id.meta" "spawn did not record the shell's start identity"
+  marker=$(sed -n 's/^proc_family=//p' "$dir/home/state/$id.meta")
+  case "$marker" in "$id".s*) ;; *) fail "spawn did not record a process-family marker of its own: '$marker'" ;; esac
+  assert_grep "export FM_PROC_FAMILY=$marker" "$dir/fake/herdr-log" "the pane did not receive the recorded process-family marker"
+
+  id=lease-proc-root-other
+  dir=$(make_lease_case "$id")
+  printf '%s' "$leader" > "$dir/fake/shell-pid"
+  printf '%%77' > "$dir/fake/info-pane"
+  out=$(run_lease_spawn "$dir" "$id"); status=$?
+  kill "$leader" 2>/dev/null || true
+  expect_code 0 "$status" "spawn whose process-info names another pane should succeed"$'\n'"$out"
+  assert_no_grep 'proc_root' "$dir/home/state/$id.meta" "a process-info reply about another pane must record no process-family root"
+  pass "a herdr spawn records its own pane's session-leading shell as the process-family root, and nothing for another pane"
+}
+
 test_delayed_worktree_entry() {
   local id=lease-delayed-cd dir out status
   dir=$(make_lease_case "$id")
@@ -289,6 +327,7 @@ test_never_moving_worktree_entry() {
   pass "Herdr refuses a never-moving pane with diagnostic context and no launch"
 }
 
+test_spawn_records_the_herdr_shell_as_the_process_family_root
 test_delayed_worktree_entry
 test_dropped_worktree_entry
 test_never_moving_worktree_entry

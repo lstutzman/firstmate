@@ -531,6 +531,9 @@ normalize_meta() {  # <meta>
     -e 's|^herdr_tab_id=.*$|herdr_tab_id=<herdr-container-id>|' \
     -e 's|^herdr_pane_id=.*$|herdr_pane_id=<herdr-container-id>|' \
     -e 's|^spawn_gen=.*$|spawn_gen=<spawn-incarnation>|' \
+    -e 's|^proc_root=.*$|proc_root=<spawn-process-root>|' \
+    -e 's|^proc_root_id=.*$|proc_root_id=<spawn-process-root>|' \
+    -e 's|^proc_family=.*$|proc_family=<spawn-process-family>|' \
     "$1"
 }
 

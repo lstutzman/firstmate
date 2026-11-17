@@ -11,7 +11,7 @@ USER_FIX="$TMP_ROOT/user"
 PROXY_FIX="$USER_FIX/.config/cli-proxy-api/config.yaml"
 BIN_FIX="$TMP_ROOT/bin"
 mkdir -p "$HOME_FIX/state" "$HOME_FIX/config" "$HOME_FIX/data" "$TMP_ROOT/mate/state" "$BIN_FIX" "${PROXY_FIX%/*}"
-cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-env-lib.sh" "$ROOT/bin/fm-classify-lib.sh" "$ROOT/bin/fm-secondmate-registry-lib.sh" "$BIN_FIX/"
+cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm_build_procs.py" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-env-lib.sh" "$ROOT/bin/fm-classify-lib.sh" "$ROOT/bin/fm-secondmate-registry-lib.sh" "$BIN_FIX/"
 cat > "$BIN_FIX/cpa-usage-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_HOME/quota-calls"
@@ -67,9 +67,16 @@ verb=__import__('os').environ.get('MATE_LINE','done')
 PY_MATE
 }
 
+# The orphan scan reads a fixture table, never this machine's real processes, so
+# no case below depends on what happens to be running; ORPHAN_PS=ps reads the real one.
+cat > "$BIN_FIX/ps-fixture" <<'SH'
+#!/usr/bin/env bash
+[ ! -f "$FM_HOME/ps-fixture" ] || cat "$FM_HOME/ps-fixture"
+SH
+chmod +x "$BIN_FIX/ps-fixture"
 run_alarm() {
   ROOT="$ROOT" FM_HOME="$HOME_FIX" HOME="$USER_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" \
-    python3 "$BIN_FIX/fm-fleet-alarm.py" "$@"
+    FM_ORPHAN_PS="${ORPHAN_PS:-$BIN_FIX/ps-fixture}" python3 "$BIN_FIX/fm-fleet-alarm.py" "$@"
 }
 cat > "$HOME_FIX/models" <<'ROWS'
 models[1]{account,model,requests,failed}:
@@ -1429,7 +1436,7 @@ out=$(python3 -c 'import fcntl, subprocess, sys
 lock = open(sys.argv[1], "a")
 fcntl.flock(lock, fcntl.LOCK_EX)
 subprocess.run(sys.argv[2:], check=True)' "$HOME_FIX/state/.fleet-alarm.lock" \
-  env ROOT="$ROOT" FM_HOME="$HOME_FIX" HOME="$USER_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" \
+  env ROOT="$ROOT" FM_HOME="$HOME_FIX" HOME="$USER_FIX" PATH="$BIN_FIX:$PATH" TMPDIR="$TMP_ROOT" FM_ORPHAN_PS="$BIN_FIX/ps-fixture" \
   python3 "$BIN_FIX/fm-fleet-alarm.py" timer)
 printf '%s\n' "${out#RUN-RESULT }" | jq -e '.outcome == "skipped" and .counts.alerts == 0' >/dev/null \
   || fail 'a timer run blocked by the lock reports a skipped run result'
@@ -1544,3 +1551,81 @@ out=$(run_alarm check)
 [ -z "$out" ] || fail "a malformed ci-slots file must be skipped quietly by the alarm: $out"
 rm "$HOME_FIX/config/ci-slots"
 pass 'a clone with no slots, or a malformed declaration, is skipped quietly'
+
+# Orphaned build and test processes: a fixture process table (pid ppid sid etime rss args)
+# drives the scan. Row 1 is a 4-hour-old MSBuild node whose parent is init; row 2 a 5-hour-old
+# vitest worker whose session leader (pid 999) is not in the table; row 3 a 2-hour-old
+# Playwright browser, orphaned but under the default 3 hours.
+# The rows after them must never count: a live parent and live session, a plain dotnet service
+# under init, and an unrelated old process under init.
+ps_rows() { printf '%s\n' "$@" > "$HOME_FIX/ps-fixture"; }
+ps_rows \
+  '  500     1   500    04:00:10   150000 /home/u/.dotnet/dotnet /home/u/.dotnet/sdk/10/MSBuild.dll /nodemode:1' \
+  '  501   800   999  0-05:00:00    90000 node /w/node_modules/vitest/vitest.mjs run' \
+  '  502     1   502    02:00:00    60000 /home/u/.cache/ms-playwright/chromium-1/chrome --headless' \
+  '  503   800   800  0-09:00:00   100000 node /w/node_modules/vitest/vitest.mjs run' \
+  '  504     1   504  3-00:00:00   100000 /usr/bin/dotnet /srv/app/App.dll' \
+  '  505     1   505  3-00:00:00   100000 /usr/sbin/cron -f' \
+  '  800   700   800  1-00:00:00     5000 bash' \
+  '  700     1   700  1-00:00:00     5000 sshd: lee'
+out=$(run_alarm check)
+assert_contains "$out" ': 2 older than 3h' 'the orphan alarm counts the init-parented and dead-session processes older than the age setting'
+assert_contains "$out" '0.2 GiB resident, oldest 5h 0m' 'the orphan line names total memory and the oldest age'
+case "$out" in *'read-only, nothing was stopped'*) ;; *) fail "the orphan line must say it stops nothing: $out" ;; esac
+[ -z "$(run_alarm check)" ] || fail 'a poll with an unchanged orphan count must be quiet'
+printf '%s\n' '{"persist_polls":1,"orphan_proc_hours":1}' > "$HOME_FIX/config/fleet-alarm.json"
+assert_contains "$(run_alarm check)" ': 3 older than 1h' 'a lower orphan_proc_hours counts the younger orphan too'
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+assert_contains "$(run_alarm check)" ': 2 older than 3h' 'the default age setting is three hours'
+pass 'check announces an orphan count change once, applies the age setting, and ignores live or unrelated processes'
+
+# The timer keeps its own receipt: one keyed working line for the count, a resolved line for zero.
+before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
+run_alarm timer >/dev/null
+line=$(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")
+printf '%s\n' "$line" | grep -Eq '^working \[at=[0-9]+\] \[key=orphan-procs-[a-z0-9-]+\]: Orphaned build or test processes on .*: 2 older than 3h' \
+  || fail "the timer must write one keyed working line with the orphan count: $line"
+[ "$(( $(wc -l < "$HOME_FIX/state/fleet-alarm.status") - before ))" -eq 1 ] || fail 'the timer must write exactly one orphan line'
+run_alarm timer >/dev/null
+[ "$(wc -l < "$HOME_FIX/state/fleet-alarm.status")" -eq "$((before + 1))" ] || fail 'an unchanged orphan count must not write a second line'
+key=$(printf '%s\n' "$line" | sed -n 's/.*\[key=\(orphan-procs-[a-z0-9-]*\)\].*/\1/p')
+: > "$HOME_FIX/ps-fixture"
+run_alarm timer >/dev/null
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -Eq "^resolved \[at=[0-9]+\] \[key=$key\]: Orphaned build or test processes on .* cleared" \
+  || fail "the timer must resolve the orphan key when the count drops to zero: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
+assert_contains "$(run_alarm check)" 'cleared' 'the check announces the drop to zero on its own channel'
+pass 'timer writes one keyed working line per orphan count change and a resolved line at zero'
+
+# The real ps output parses: a real process whose session leader exited is counted once it is
+# older than the setting, and not before. Only the count's change is asserted, so any orphan
+# already on this machine cannot affect the result.
+cat > "$TMP_ROOT/orphan-inner.sh" <<'SH'
+#!/usr/bin/env bash
+echo $$ > "$1"
+exec -a 'chromium --user-data-dir=/x/ms-playwright/fixture' sleep 120
+SH
+cat > "$TMP_ROOT/orphan-outer.sh" <<'SH'
+#!/usr/bin/env bash
+bash "$2" "$1" &
+exit 0
+SH
+scan_count() {
+  FM_ORPHAN_PS="ps" python3 -I -c 'import importlib.util, sys
+spec = importlib.util.spec_from_file_location("alarm", sys.argv[1])
+alarm = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(alarm)
+print(alarm.orphan_scan(float(sys.argv[2]))[0])' "$BIN_FIX/fm-fleet-alarm.py" "$1"
+}
+young_before=$(scan_count 0.0003)
+old_before=$(scan_count 3)
+setsid bash "$TMP_ROOT/orphan-outer.sh" "$TMP_ROOT/orphan.pid" "$TMP_ROOT/orphan-inner.sh" >/dev/null 2>&1
+for _ in $(seq 50); do [ -s "$TMP_ROOT/orphan.pid" ] && break; sleep 0.1; done
+[ -s "$TMP_ROOT/orphan.pid" ] || fail "the fixture orphan never started"
+sleep 2
+orphan_pid=$(cat "$TMP_ROOT/orphan.pid")
+young_after=$(scan_count 0.0003)
+old_after=$(scan_count 3)
+kill "$orphan_pid" 2>/dev/null || true
+[ "$young_after" -eq "$((young_before + 1))" ] || fail "a real orphan older than the setting must be counted once ($young_before -> $young_after)"
+[ "$old_after" -eq "$old_before" ] || fail "a real orphan younger than the setting must not be counted ($old_before -> $old_after)"
+pass 'the scan counts a real process whose session leader exited, and only once it is older than the setting'
