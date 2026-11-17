@@ -82,6 +82,10 @@ read failed or found GitHub unreadable is named at the end of the timer's RUN-RE
 wake; timer appends a `working [key=pr-drain-<owner>-<repo>]` line on drain-on and a `resolved`
 line with the same key on drain-off to state/fleet-alarm.status, each asking main to relay the
 change to every home.
+CI slots: a clone whose project declares S in config/ci-slots (bin/fm-project-mode.sh --ci-slots; bin/fm-project-capacity-lib.sh
+owns the file) has its open PR count P read with `bin/fm-pr-drain.py open` and announced the same way, a change only: the timer
+appends `working [key=ci-slots-over-<owner>-<repo>]` when P > S and a `resolved` line with that key when P <= S again, each
+naming P and S; check prints one line per change. A clone with no S, or whose slots or count cannot be read, is skipped quietly.
 """
 import csv
 import hashlib
@@ -626,7 +630,18 @@ def collect(cfg):
             drain[verdict[1]] = (verdict[0], verdict[2])
         elif verdict[:1] not in (['none'], ['unknown']) or verdict[-1].startswith('GitHub unreadable'):
             unread.append(project.name)
-    return findings, quota_info, not_collected, eased, (drain, unread)
+    # CI slots: a clone with a declared S (bin/fm-project-mode.sh --ci-slots) is compared with its
+    # open PR count; a clone with no S, or whose slots or count cannot be read, is skipped quietly.
+    slots = {}
+    for left, project in zip(range(len(clones), 0, -1), clones):
+        try:
+            declared = read([BIN / 'fm-project-mode.sh', '--ci-slots', project.name], left).strip()
+            counted = read(['python3', BIN / 'fm-pr-drain.py', 'open', project], left).strip().split(maxsplit=2) if declared else []
+        except ValueError:
+            continue
+        if declared.isdigit() and len(counted) == 3 and counted[0] == 'open' and counted[2].isdigit():
+            slots[counted[1]] = (int(counted[2]), int(declared))
+    return findings, quota_info, not_collected, eased, (drain, unread, slots)
 
 
 def check(channel):
@@ -645,9 +660,9 @@ def check(channel):
         timer_open = stored.get('timer_open', False)
         try:
             cfg = settings()
-            raw, quota_info, not_collected, eased, (drain, drain_unread) = collect(cfg)
+            raw, quota_info, not_collected, eased, (drain, drain_unread, slots) = collect(cfg)
         except (ValueError, OSError) as error:
-            drain, drain_unread = {}, []
+            drain, drain_unread, slots = {}, [], {}
             cfg = {'persist_polls': 1}
             raw = {'config': f'Fleet alarm configuration invalid: {error}'}
             quota_info = ''
@@ -744,20 +759,31 @@ def check(channel):
             if side == announced.get(repo, 'off'):
                 continue
             announced[repo] = side
-            changes.append((repo, side, f'PR drain {side}: {repo} has {count} open PRs '
+            changes.append((f'pr-drain-{repo}', side == 'on', f'PR drain {side}: {repo} has {count} open PRs '
                             + ('(20 or more); only exempt work and PR landing may run there until it is back to 0'
                                if side == 'on' else '(back to 0); ordinary ship work may resume there')
                             + f'; relay drain-{side} to every home'))
+        # CI slots: announce only a change between over (open PRs P above the slots S) and within.
+        slots_announced = dict(stored.get('ci_slots', {}).get(channel, {}))
+        for repo, (open_prs, declared) in sorted(slots.items()):
+            side = 'over' if open_prs > declared else 'within'
+            if side == slots_announced.get(repo, 'within'):
+                continue
+            slots_announced[repo] = side
+            changes.append((f'ci-slots-over-{repo}', side == 'over',
+                            f'CI slots over: {repo} has {open_prs} open PRs against {declared} CI slots; only exempt work and PR landing '
+                            f'should start there until its open PRs are back to {declared} or fewer' if side == 'over' else
+                            f'CI slots back within: {repo} has {open_prs} open PRs against {declared} CI slots; ordinary ship work may resume there'))
         if changes and channel == 'timer':
             if not (CONFIG / 'fleet-ledger').exists():
                 raise ValueError('timer requires config/fleet-ledger for Captain\'s Log delivery')
             status_path = STATE / 'fleet-alarm.status'
             with status_path.open('a') as status:
-                for repo, side, text in changes:
-                    # Drain-on opens a keyed phase for the repository and drain-off resolves it.
-                    slug = re.sub(r'[^a-z0-9]+', '-', repo.lower())
-                    verb = 'working' if side == 'on' else 'resolved'
-                    status.write(f'{verb} [at={int(now)}] [key=pr-drain-{slug}]: {text}\n')
+                for key, opens, text in changes:
+                    # The first change of a repository opens a keyed phase for it and the reverse change resolves it.
+                    slug = re.sub(r'[^a-z0-9]+', '-', key.lower())
+                    verb = 'working' if opens else 'resolved'
+                    status.write(f'{verb} [at={int(now)}] [key={slug}]: {text}\n')
             run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG, status_path], 3)
         elif changes:
             print('\n'.join(text for _, _, text in changes))
@@ -768,7 +794,8 @@ def check(channel):
             json.dump({'conditions': new, 'timer_open': timer_open, 'timer_state': timer_state,
                        'wait': wait_record, 'not_collected': not_collected, 'eased': sorted(eased | {key for key in stored.get('eased', []) if key not in current and key in preserved}),
                        'suspect': {**stored.get('suspect', {}), channel: suspect},
-                       'drain': {**stored.get('drain', {}), channel: announced}}, file)
+                       'drain': {**stored.get('drain', {}), channel: announced},
+                       'ci_slots': {**stored.get('ci_slots', {}), channel: slots_announced}}, file)
             temporary = file.name
         os.replace(temporary, record)
         if channel == 'timer':

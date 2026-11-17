@@ -95,6 +95,18 @@
 # counts like any other. A merged PR also counts until its task is cleaned up,
 # and remote homes are never walked.
 #
+# CI slots: config/ci-slots in the spawning home's own config/ (inherited from
+# the primary by bin/fm-config-inherit-lib.sh, so every dispatching home reads
+# the same file) holds one `<project-name> <slots>` line per project, in the
+# same format as project-capacity, where <slots> (S) is the total concurrent
+# gate and admission slots across every host. bin/fm-spawn.sh defers a fresh
+# ship for such a project, exactly like a capacity deferral, when its open PRs
+# on GitHub (P) plus its ships in flight (fm_ci_slots_inflight below) reach S,
+# so the open-PR queue never outgrows the slots. A project with no line is
+# never held; a malformed file refuses every fresh ship spawn. Ships in flight
+# in remote homes are not walked (a known limit). bin/fm-project-mode.sh
+# --ci-slots reads one project's S back; bin/fm-fleet-alarm.py announces P > S.
+#
 # Requires bin/fm-wake-lib.sh (root home, local homes, project lock path),
 # bin/fm-secondmate-registry-lib.sh (which the local-homes walk reads),
 # bin/fm-backend.sh (fm_meta_get), and bin/fm-tasks-axi-lib.sh with
@@ -121,22 +133,25 @@ fm_project_capacity_config_dir() {  # <spawning-home> <spawning-config-dir>
   fi
 }
 
-# Read the declared capacity for one project.
-# Sets FM_PROJECT_CAPACITY_FILE to the declaration path, FM_PROJECT_CAPACITY
-# to the project's capacity, or to empty when the project declares none, and
-# FM_PROJECT_CAPACITY_ANY to 1 when the declaration caps any project at all.
-# Returns 1 with FM_PROJECT_CAPACITY_ERROR when the declaration is unreadable.
-fm_project_capacity_lookup() {  # <config-dir> <project-name>
-  local name=$2 line lineno=0 pname pcap seen='|'
-  FM_PROJECT_CAPACITY_FILE="$1/project-capacity"
-  FM_PROJECT_CAPACITY=
-  FM_PROJECT_CAPACITY_ANY=
-  FM_PROJECT_CAPACITY_ERROR=
-  if [ ! -e "$FM_PROJECT_CAPACITY_FILE" ] && [ ! -L "$FM_PROJECT_CAPACITY_FILE" ]; then
+# Read one project's number from a `<project-name> <number>` declaration file
+# (the shared parser behind config/project-capacity and config/ci-slots; the
+# format is described in this file's header).
+# Sets FM_DECLARED_FILE to the declaration path, FM_DECLARED to the project's
+# number or to empty when the project declares none, and FM_DECLARED_ANY to 1
+# when the declaration names any project at all. Returns 1 with
+# FM_DECLARED_ERROR when the declaration is unreadable. <noun> words the
+# refusal ("capacity", "slot count").
+fm_declared_number_lookup() {  # <declaration-file> <project-name> <noun>
+  local name=$2 noun=$3 line lineno=0 pname pcap seen='|'
+  FM_DECLARED_FILE=$1
+  FM_DECLARED=
+  FM_DECLARED_ANY=
+  FM_DECLARED_ERROR=
+  if [ ! -e "$FM_DECLARED_FILE" ] && [ ! -L "$FM_DECLARED_FILE" ]; then
     return 0
   fi
-  if [ ! -f "$FM_PROJECT_CAPACITY_FILE" ] || [ ! -r "$FM_PROJECT_CAPACITY_FILE" ]; then
-    FM_PROJECT_CAPACITY_ERROR="$FM_PROJECT_CAPACITY_FILE is not a readable regular file"
+  if [ ! -f "$FM_DECLARED_FILE" ] || [ ! -r "$FM_DECLARED_FILE" ]; then
+    FM_DECLARED_ERROR="$FM_DECLARED_FILE is not a readable regular file"
     return 1
   fi
   while IFS= read -r line || [ -n "$line" ]; do
@@ -156,39 +171,67 @@ fm_project_capacity_lookup() {  # <config-dir> <project-name>
         esac
         ;;
     esac
-    # The capacity is the last field, so the name before it may hold spaces.
+    # The number is the last field, so the name before it may hold spaces.
     pcap=${line##*[[:space:]]}
     pname=${line%"$pcap"}
     pname=${pname%"${pname##*[![:space:]]}"}
     if [ -z "$pname" ]; then
-      FM_PROJECT_CAPACITY_ERROR="$FM_PROJECT_CAPACITY_FILE line $lineno is not '<project-name> <capacity>'"
-      FM_PROJECT_CAPACITY=
+      FM_DECLARED_ERROR="$FM_DECLARED_FILE line $lineno is not '<project-name> <$noun>'"
+      FM_DECLARED=
       return 1
     fi
     case "$pcap" in
       '' | *[!0-9]* | 0*)
-        FM_PROJECT_CAPACITY_ERROR="$FM_PROJECT_CAPACITY_FILE line $lineno gives $pname a capacity that is not a positive integer"
-        FM_PROJECT_CAPACITY=
+        FM_DECLARED_ERROR="$FM_DECLARED_FILE line $lineno gives $pname a $noun that is not a positive integer"
+        FM_DECLARED=
         return 1
         ;;
     esac
     if [ "${#pcap}" -gt 6 ]; then
-      FM_PROJECT_CAPACITY_ERROR="$FM_PROJECT_CAPACITY_FILE line $lineno gives $pname a capacity longer than six digits"
-      FM_PROJECT_CAPACITY=
+      FM_DECLARED_ERROR="$FM_DECLARED_FILE line $lineno gives $pname a $noun longer than six digits"
+      FM_DECLARED=
       return 1
     fi
     case "$seen" in
       *"|$pname|"*)
-        FM_PROJECT_CAPACITY_ERROR="$FM_PROJECT_CAPACITY_FILE line $lineno names $pname a second time"
-        FM_PROJECT_CAPACITY=
+        FM_DECLARED_ERROR="$FM_DECLARED_FILE line $lineno names $pname a second time"
+        FM_DECLARED=
         return 1
         ;;
     esac
     seen="$seen$pname|"
-    [ "$pname" != "$name" ] || FM_PROJECT_CAPACITY=$pcap
-  done < "$FM_PROJECT_CAPACITY_FILE"
-  [ "$seen" = '|' ] || FM_PROJECT_CAPACITY_ANY=1
+    [ "$pname" != "$name" ] || FM_DECLARED=$pcap
+  done < "$FM_DECLARED_FILE"
+  [ "$seen" = '|' ] || FM_DECLARED_ANY=1
   return 0
+}
+
+# Read the declared capacity for one project.
+# Sets FM_PROJECT_CAPACITY_FILE to the declaration path, FM_PROJECT_CAPACITY
+# to the project's capacity, or to empty when the project declares none, and
+# FM_PROJECT_CAPACITY_ANY to 1 when the declaration caps any project at all.
+# Returns 1 with FM_PROJECT_CAPACITY_ERROR when the declaration is unreadable.
+fm_project_capacity_lookup() {  # <config-dir> <project-name>
+  local rc=0
+  fm_declared_number_lookup "$1/project-capacity" "$2" capacity || rc=$?
+  FM_PROJECT_CAPACITY_FILE=$FM_DECLARED_FILE
+  FM_PROJECT_CAPACITY=$FM_DECLARED
+  FM_PROJECT_CAPACITY_ANY=$FM_DECLARED_ANY
+  FM_PROJECT_CAPACITY_ERROR=$FM_DECLARED_ERROR
+  return "$rc"
+}
+
+# Read the declared CI slots (S) for one project from <config-dir>/ci-slots, the
+# same format as project-capacity but read from the spawning home's own config/.
+# Sets FM_CI_SLOTS_FILE, FM_CI_SLOTS (the project's S, or empty when it declares
+# none) and FM_CI_SLOTS_ERROR; returns 1 when the declaration is unreadable.
+fm_ci_slots_lookup() {  # <config-dir> <project-name>
+  local rc=0
+  fm_declared_number_lookup "$1/ci-slots" "$2" "slot count" || rc=$?
+  FM_CI_SLOTS_FILE=$FM_DECLARED_FILE
+  FM_CI_SLOTS=$FM_DECLARED
+  FM_CI_SLOTS_ERROR=$FM_DECLARED_ERROR
+  return "$rc"
 }
 
 # Collect this machine's worker task records for one project identity.
@@ -272,6 +315,39 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
       FM_PROJECT_CAPACITY_OCCUPANT_IDS="${FM_PROJECT_CAPACITY_OCCUPANT_IDS:+$FM_PROJECT_CAPACITY_OCCUPANT_IDS, }${FM_PROJECT_RECORD_LABELS[$i]}"
     fi
     i=$((i + 1))
+  done
+  return 0
+}
+
+# Count one project's ships in flight toward its CI slots: every
+# fm_project_records record that is not a scout (a record with no kind is a ship),
+# has no recorded pr= handoff, and whose brief declares no landing job ("PR
+# drain: <class>" with a bin/fm-pr-drain.py landing-class). A ship whose PR is
+# recorded, or a landing job working on an already open PR, is one of the
+# project's open PRs on GitHub already, so it is never counted twice; scouts and
+# secondmates hold no CI slot. A record in <first-state> reads its brief from
+# <first-data>; one in another local home reads that home's data/.
+# Sets FM_CI_SLOTS_INFLIGHT to the count and FM_CI_SLOTS_INFLIGHT_IDS to a
+# comma-separated list of the task labels. Returns 1 with
+# FM_PROJECT_CAPACITY_ERROR when fm_project_records does.
+fm_ci_slots_inflight() {  # <project-lock> <project-dir> <first-state> <own-id> <first-data>
+  local first=$3 i=0 meta state data class
+  FM_CI_SLOTS_INFLIGHT=0
+  FM_CI_SLOTS_INFLIGHT_IDS=
+  fm_project_records "$1" "$2" "$3" "$4" || return 1
+  while [ "$i" -lt "${#FM_PROJECT_RECORDS[@]}" ]; do
+    meta=${FM_PROJECT_RECORDS[$i]}
+    i=$((i + 1))
+    [ "$(fm_meta_get "$meta" kind)" != scout ] && [ -z "$(fm_meta_get "$meta" pr)" ] || continue
+    state=$(dirname "$meta")
+    data=$5
+    [ "$state" = "$first" ] || data="$(dirname "$state")/data"
+    class=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$data/$(basename "$meta" .meta)/brief.md" 2>/dev/null | head -n 1)
+    if [ -n "$class" ] && python3 "$(dirname "${BASH_SOURCE[0]}")/fm-pr-drain.py" landing-class "$class"; then
+      continue
+    fi
+    FM_CI_SLOTS_INFLIGHT=$((FM_CI_SLOTS_INFLIGHT + 1))
+    FM_CI_SLOTS_INFLIGHT_IDS="${FM_CI_SLOTS_INFLIGHT_IDS:+$FM_CI_SLOTS_INFLIGHT_IDS, }${FM_PROJECT_RECORD_LABELS[$i - 1]}"
   done
   return 0
 }

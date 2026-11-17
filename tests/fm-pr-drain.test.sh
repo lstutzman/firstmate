@@ -327,6 +327,30 @@ STUB
   pass "a security brief refuses to scaffold without --linear and skips the drain wording with it"
 }
 
+test_open_count_reads_one_repository() {
+  local other="$TMP_ROOT/other-open"
+  timeline 1 2 3 --
+  assert_equals "open o/r 3" "$("$DRAIN" open "$PROJECT")" "the open PR count was not read"
+  peak_then 0
+  assert_equals "open o/r 0" "$("$DRAIN" open "$PROJECT")" "an empty repository did not read as 0 open PRs"
+  assert_contains "$(FAKE_GH_FAIL=1 "$DRAIN" open "$PROJECT")" "unknown o/r GitHub unreadable: HTTP 502" "an unreadable GitHub was not reported"
+  fm_git_init_commit "$other"
+  git -C "$other" remote add origin "file://$TMP_ROOT/nowhere.git"
+  assert_equals "none" "$(FAKE_GH_FAIL=1 "$DRAIN" open "$other")" "a non-GitHub origin was queried"
+  pass "open prints the open PR count, unknown when GitHub is unreadable, and none off github.com"
+}
+
+test_slots_classes_are_the_urgent_and_landing_ones() {
+  local value
+  for value in production-outage cve security lee-explicit restack red-gate-fix returned-pr-fix review; do
+    "$DRAIN" slots-class "$value" || fail "$value was not accepted as exempt from the CI-slots cap"
+  done
+  for value in wolverine lee-research officer scheduled feature ""; do
+    "$DRAIN" slots-class "$value" && fail "'$value' was accepted as exempt from the CI-slots cap"
+  done
+  pass "only the urgent classes, lee-explicit and the landing jobs are exempt from the CI-slots cap"
+}
+
 fm_test_run \
   test_twenty_open_turns_drain_on \
   test_drain_holds_from_nineteen_down_to_one \
@@ -336,6 +360,8 @@ fm_test_run \
   test_closed_list_at_the_search_cap_is_unknown \
   test_non_github_origin_is_not_applicable \
   test_classes_are_validated \
+  test_open_count_reads_one_repository \
+  test_slots_classes_are_the_urgent_and_landing_ones \
   test_lee_explicit_evidence_needs_a_quote_and_a_timestamp \
   test_security_needs_the_label_and_urgent_or_high_priority \
   test_security_reads_linear_graphql_without_echoing_the_credential \

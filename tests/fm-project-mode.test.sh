@@ -278,4 +278,28 @@ err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --pr hand-direct 2>&1 >/dev/null)
 assert_contains "$err" "only a no-mistakes ship takes it" "the direct-PR refusal did not say why"
 pass "fm-project-mode: pr=manual refuses another mode, a bound forge, an empty value, and an unknown value, but leaves --forge answerable"
 
+# --ci-slots reads config/ci-slots (not the registry), prints S, nothing when undeclared, and refuses a malformed file.
+CI_CONFIG="$TMP_ROOT/ci-config"
+mkdir -p "$CI_CONFIG"
+run_slots() {  # <project> -> prints S; the status stays the caller's
+  FM_DATA_OVERRIDE="$TMP_ROOT/no-registry" FM_CONFIG_OVERRIDE="$CI_CONFIG" "$PROJECT_MODE" --ci-slots "$1" 2>/dev/null
+}
+[ -z "$(run_slots shared)" ] || fail "--ci-slots printed a value with no config/ci-slots"
+printf '%s\n' '# comment' 'shared 4' 'spaced name 2' 'other 7' > "$CI_CONFIG/ci-slots"
+[ "$(run_slots shared)" = "4" ] || fail "--ci-slots did not read the declared slots: $(run_slots shared)"
+[ "$(run_slots 'spaced name')" = "2" ] || fail "--ci-slots did not read a spaced project name"
+[ -z "$(run_slots absent)" ] || fail "--ci-slots printed a value for a project with no line"
+for bad in 'shared four' 'shared 0' 'shared' 'shared 1234567'; do
+  printf '%s\n' "$bad" > "$CI_CONFIG/ci-slots"
+  status=0
+  out=$(run_slots shared) || status=$?
+  [ "$status" -eq 3 ] || fail "--ci-slots did not refuse '$bad' (status $status)"
+  [ -z "$out" ] || fail "--ci-slots printed '$out' for the malformed line '$bad'"
+done
+printf '%s\n' 'shared 4' 'shared 5' > "$CI_CONFIG/ci-slots"
+status=0
+run_slots shared >/dev/null || status=$?
+[ "$status" -eq 3 ] || fail "--ci-slots did not refuse a project named twice (status $status)"
+pass "fm-project-mode: --ci-slots reads config/ci-slots, prints nothing when undeclared, and refuses a malformed or duplicated declaration"
+
 echo "# fm-project-mode.test.sh: all assertions passed"

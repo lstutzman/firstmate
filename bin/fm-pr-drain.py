@@ -2,7 +2,10 @@
 """PR-drain state of one project's GitHub repository (the captain's open-PR drain rule).
 
 Usage: fm-pr-drain.py state <project-dir>
+       fm-pr-drain.py open <project-dir>
        fm-pr-drain.py class <value>
+       fm-pr-drain.py slots-class <value>
+       fm-pr-drain.py landing-class <value>
        fm-pr-drain.py evidence < <captain's-intent-text>
        fm-pr-drain.py security <PC-n>
 
@@ -17,10 +20,21 @@ shared marker: the open list gives the count now, and when it is between 1 and 1
 last 14 days are walked back from now (a close adds one PR, a creation removes one) until the count was
 20 or more (on) or 0 (off). Read-only: one `gh pr list` of open PRs, plus one of recently closed PRs only
 in that 1..19 band. FM_PR_DRAIN_TIMEOUT (default 20) bounds each read in seconds.
+open prints one line, the open PR count (P) that bin/fm-spawn.sh and bin/fm-fleet-alarm.py compare with a project's
+CI slots (config/ci-slots; bin/fm-project-capacity-lib.sh owns it), from one `gh pr list` read:
+  open <owner/repo> <n>        the repository has n open PRs
+  unknown <owner/repo> <why>   GitHub could not be read
+  none                         the clone's origin is not on github.com
 class exits 0 when <value> is a recognised drain declaration: an exemption class (production-outage,
 cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack,
 red-gate-fix, returned-pr-fix, review), and 2 otherwise. bin/fm-brief.sh --pr-drain writes it into a
 brief and bin/fm-spawn.sh reads it back.
+slots-class exits 0 when <value> is a drain declaration that also bypasses the CI-slots cap: production-outage, cve,
+security, lee-explicit and the four landing jobs; wolverine, lee-research, officer and scheduled stay held. It is
+bin/fm-spawn.sh's one list of those classes.
+landing-class exits 0 when <value> is one of the four landing jobs (restack, red-gate-fix, returned-pr-fix, review),
+which work on a PR that is already open, and 2 otherwise; bin/fm-project-capacity-lib.sh leaves such a ship out of
+the ships in flight it counts toward the CI slots, since GitHub's open count already holds its PR.
 evidence reads a brief's `## Captain's intent` section body on stdin (bin/fm-spawn.sh extracts it with
 bin/fm-brief-heading-lib.sh) and exits 0 when it holds a quoted captain instruction with a timestamp,
 the proof a `lee-explicit` brief needs: at least one double-quoted span, and an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ) on the same line as a quote or on the line before it.
@@ -47,6 +61,9 @@ WINDOW_DAYS = 14
 CLOSED_LIMIT = 1000
 EXEMPT = ('production-outage', 'cve', 'security', 'wolverine', 'lee-research', 'lee-explicit', 'officer', 'scheduled')
 LANDING = ('restack', 'red-gate-fix', 'returned-pr-fix', 'review')
+# The classes that bypass the CI-slots cap (config/ci-slots): drain exemptions that carry real urgency or the
+# captain's word, and the landing jobs, which open no new PR. wolverine, lee-research, officer and scheduled stay held.
+SLOTS_EXEMPT = ('production-outage', 'cve', 'security', 'lee-explicit') + LANDING
 STAMP = re.compile(r'\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?Z\b')
 ITEM = re.compile(r'^PC-[0-9]+$')
 PRIORITIES = {1: 'Urgent', 2: 'High'}
@@ -68,16 +85,33 @@ def when(stamp):
     return datetime.fromisoformat(stamp.replace('Z', '+00:00'))
 
 
-def state(project):
+def repo_of(project):
+    """The clone's origin as owner/repo, or None when it is not on github.com."""
     # The configured URL first, then its insteadOf expansion, so either spelling of a GitHub origin counts.
     match = None
     for argv in (['config', '--get', 'remote.origin.url'], ['remote', 'get-url', 'origin']):
         origin = subprocess.run(['git', '-C', project, *argv], capture_output=True, text=True,
                                 check=False).stdout.strip()
         match = match or ORIGIN.match(origin)
-    if not match:
+    return match.group(1) if match else None
+
+
+def open_count(project):
+    """The open PR count of the clone's repository, as one line like state: `open <owner/repo> <n>`,
+    `unknown <owner/repo> <why>` when GitHub cannot be read, or `none` off github.com."""
+    repo = repo_of(project)
+    if not repo:
         return 'none'
-    repo = match.group(1)
+    try:
+        return f"open {repo} {len(gh(repo, '--state', 'open', '--limit', '1000', '--json', 'createdAt'))}"
+    except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
+        return f'unknown {repo} GitHub unreadable: {error}'.replace('\n', ' ')
+
+
+def state(project):
+    repo = repo_of(project)
+    if not repo:
+        return 'none'
     try:
         # The open read (no --search) proves the repository is readable; a search answers [] when it is not.
         opened = gh(repo, '--state', 'open', '--limit', '1000', '--json', 'createdAt')
@@ -175,6 +209,12 @@ def security(item):
 if __name__ == '__main__':
     if len(sys.argv) == 3 and sys.argv[1] == 'state':
         print(state(sys.argv[2]))
+    elif len(sys.argv) == 3 and sys.argv[1] == 'open':
+        print(open_count(sys.argv[2]))
+    elif len(sys.argv) == 3 and sys.argv[1] == 'slots-class':
+        sys.exit(0 if sys.argv[2] in SLOTS_EXEMPT else 2)
+    elif len(sys.argv) == 3 and sys.argv[1] == 'landing-class':
+        sys.exit(0 if sys.argv[2] in LANDING else 2)
     elif len(sys.argv) == 3 and sys.argv[1] == 'class':
         sys.exit(0 if sys.argv[2] in EXEMPT + LANDING else 2)
     elif len(sys.argv) == 2 and sys.argv[1] == 'evidence':
