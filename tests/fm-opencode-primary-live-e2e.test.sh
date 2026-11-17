@@ -306,6 +306,7 @@ run_native_ahoy_regressions() {
 
   status=0
   (
+    # shellcheck disable=SC2248 # OC_PRIVATE is empty or one flag; unquoted so empty adds no argument
     cd "$AHOY_PROJECT" &&
       OPENCODE_DB="$first_db" FM_HOME="$first_home" \
         OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1 \
@@ -347,6 +348,7 @@ run_native_ahoy_regressions() {
 
   status=0
   (
+    # shellcheck disable=SC2248 # OC_PRIVATE is empty or one flag; unquoted so empty adds no argument
     cd "$AHOY_PROJECT" &&
       OPENCODE_DB="$later_db" FM_HOME="$later_home" \
         OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1 \
