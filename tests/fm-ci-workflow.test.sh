@@ -937,11 +937,13 @@ proven = proven_out.lines.map(&:strip)
   check = args.dup
   j = check.index("--json")
   check.slice!(j, 2) if j
+  # List mode parses the CI arguments and resolves the selection; it does not run --jobs admission.
   scheduled, st = Open3.capture2(File.join(root, "bin/fm-test-run.sh"), *check, "--list-scheduled")
-  raise "runner rejects the CI arguments of parallel lane #{n}" unless st.success?
+  raise "runner cannot parse or select with the CI arguments of parallel lane #{n}" unless st.success?
   members, st = Open3.capture2(File.join(root, "bin/fm-test-run.sh"), "--list", "--lane", "portable-parallel-#{n}")
   raise "cannot list portable parallel lane #{n}" unless st.success?
   raise "CI arguments of lane #{n} schedule other scripts than the lane" unless scheduled.lines.map(&:strip).sort == members.lines.map(&:strip).sort
+  # List mode exits before the runner's --jobs admission, so admission is checked here against the published proven-isolated set.
   unproven = members.lines.map(&:strip) - proven
   raise "lane #{n} runs --jobs 2 over unproven scripts: #{unproven.join(' ')}" unless unproven.empty?
   guarded = opts["--fail-on-gate-skip"] == guard
