@@ -49,3 +49,7 @@ Before acting on the report, verify that its claimed cause explains the end-user
 If a load-bearing element is missing, route a focused follow-up investigation instead of treating confidence or implementation detail as proof.
 A diagnosis or implementation-ready recommendation is evidence, not authorization to change code.
 Implementation still requires the captain's request or another existing lifecycle authority, and the reproduction should become the regression test when a fix is authorized.
+
+When a bug is confirmed and its fix is scoped, search every path that should share the fix: the same entry kind, the same effect, the same caller pattern.
+Fix each confirmed match in the same PR, or record it on the same work item.
+List the paths checked, and the ones that already work, in the PR's Testing section.
