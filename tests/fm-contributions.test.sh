@@ -2248,7 +2248,9 @@ test_forge_settles_only_declared_holds() {
       id="question-$action"
       with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" add "$id" 'Decide this PR' --pr https://github.com/o/r/pull/8 >/dev/null || fail 'add failed'
       with_home "$home" "$ROOT/bin/fm-captain-hold.sh" hold "$id" --reason 'Decide this PR' >/dev/null || fail 'hold failed'
-      with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy "$id" https://github.com/o/r/pull/8 terminal "$action" $([ "$action" = release ] && printf -- --no-phases) >/dev/null || fail 'policy failed'
+      policy_extra=()
+      [ "$action" = release ] && policy_extra=(--no-phases)
+      with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy "$id" https://github.com/o/r/pull/8 terminal "$action" ${policy_extra[@]+"${policy_extra[@]}"} >/dev/null || fail 'policy failed'
     done
     with_home "$home" "$ROOT/bin/fm-captain-hold.sh" hold delivery --reason 'Unrelated unfinished work' >/dev/null || fail 'unrelated hold failed'
     with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" add bystander 'Work without a captain hold' --pr https://github.com/o/r/pull/8 >/dev/null || fail 'bystander add failed'
@@ -2414,7 +2416,7 @@ test_forge_release_names_its_filed_phases() {
   with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-none "$pr" merged release --no-phases >/dev/null || fail 'no-phases policy failed'
   with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-filed "$pr" merged release --phases-filed live-a >/dev/null || fail 'filed-phase policy failed'
   with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-stale "$pr" merged release --phases-filed live-b >/dev/null || fail 'stale-phase policy failed'
-  with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" done live-b >/dev/null || fail 'could not finish live-b'
+  with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" "done" live-b >/dev/null || fail 'could not finish live-b'
   printf 'merged\n' > "$home/forge/state"
   out=$(with_home "$home" "$ROOT/bin/fm-contributions.sh" poll) || fail 'merged poll failed'
   for id in q-none q-filed; do
