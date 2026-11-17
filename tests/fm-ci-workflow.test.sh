@@ -920,6 +920,8 @@ guard = "Pi extension typecheck prerequisite not found"
   steps = jobs.fetch("tests-portable-parallel-#{n}").fetch("steps")
   run = steps.map { |step| step["run"].to_s }.find { |r| r.include?("--lane portable-parallel-#{n}") }
   raise "parallel lane #{n} has no runner step" unless run
+  # The proven-isolated lanes run their scripts two at a time; serial lanes never do.
+  raise "parallel lane #{n} must run with --jobs 2" unless run.include?("--lane portable-parallel-#{n} --jobs 2")
   guarded = run.include?("--fail-on-gate-skip '#{guard}'")
   raise "lane #{n} guard mismatch: lane holding the Pi test must carry the gate-skip guard and no other may" unless guarded == holders.include?(n)
 end
