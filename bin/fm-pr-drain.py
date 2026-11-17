@@ -133,14 +133,18 @@ def read_item(item):
             return json.loads(out.stdout)
         token = subprocess.run(['linear-token', 'header', '--print-to-pipe'], stdin=subprocess.DEVNULL,
                                capture_output=True, text=True, timeout=timeout, check=False)
-        if token.returncode or not token.stdout:
+        if token.returncode or not token.stdout.strip():
             raise ValueError('no Linear credential from linear-token')
         query = 'query($id:String!){issue(id:$id){identifier priority labels{nodes{name}}}}'
         request = urllib.request.Request('https://api.linear.app/graphql',
                                          data=json.dumps({'query': query, 'variables': {'id': item}}).encode(),
-                                         headers={'Authorization': token.stdout, 'Content-Type': 'application/json'})
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = json.load(response)
+                                         headers={'Authorization': token.stdout.strip(), 'Content-Type': 'application/json'})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                body = json.load(response)
+        except Exception:
+            # Never echo the exception: a header error can quote the Authorization value.
+            raise ValueError('Linear GraphQL read failed') from None
         issue = (body.get('data') or {}).get('issue')
         if not issue:
             raise ValueError('no such item or Linear refused the read')
