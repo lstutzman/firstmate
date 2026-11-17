@@ -141,6 +141,29 @@ def non_work(text, free_text=False):
     return None
 
 
+FRICTION_ASK = re.compile(r"^start fix\s*:\s*(?:a (?:tool|cli|command)\b[^:]*\bmissing\b|(?:missing|no) (?:tool|cli|command)\b)", re.I)
+ANSWER_ASK = re.compile(r"^(?:(?:yes|no|yep|nope|ok|okay|sure|thanks|thank you|fine|agreed|noted|ack|lgtm|done)[\s.!,]*$"
+                        r"|(?:never ?mind|(?:ignore|disregard|skip|drop)\s+(?:this|that|it|these|those))\s*(?:[.!,;:]|$))", re.I)
+QUESTION_ASK = re.compile(r"^(?:(?:why|what|how|when|where|who)\s+(?:is|are|was|were|do|does|did|can|could|should|would|will)"
+                          r"|(?:is|are|should)\s+(?:we|you|i|they|it|this|that|there))\b", re.I)
+APPROVAL_ASK = re.compile(r"^(?:(?:approved?|merged?)\s+(?:the\s+)?(?:pr\b|#\d|[0-9a-f]{7,40}\b|(?-i:[A-Z][A-Z0-9]*-\d+)\b)|lgtm\b|ship it\b"
+                          r"|(?:approved?|merged?)(?:\s+(?:it|this|that))?[\s.!,]*(?:(?:thanks|thank you|ok|okay)[\s.!]*)?$)", re.I)
+
+
+def ask_skip(text):
+    """Why a Top of Mind ask is not startable work: (reason, kind) or (None, None); approvals may still join work."""
+    text = " ".join(text.split())
+    if FRICTION_ASK.match(text):
+        return "Routed to the friction lane: a tool or CLI gap finding is not a requested feature", "friction"
+    if ANSWER_ASK.match(text):
+        return "Not a work item: an answer or dismissal, not an ask", "answer"
+    if text.endswith("?") or QUESTION_ASK.match(text):
+        return "Not a work item: a question", "question"
+    if APPROVAL_ASK.match(text):
+        return "Not a new start: an approval or merge word for existing work", "approval"
+    return None, None
+
+
 def title_key(title):
     return re.sub(r"[^0-9a-z]+", " ", TAG.sub("", title).casefold()).strip()
 
@@ -805,6 +828,9 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
         if not matches:
             if ask.get("kind") == "statement":
                 continue  # a statement is evidence only; it never becomes new work
+            if ask_skip(ask["words"])[1] == "approval":
+                ask["unjoined"] = True  # an approval joins existing work or is listed, never started
+                continue
             owner = scanned.get(owners[0], homes[0]) if owners and not others else homes[0]
             row = item(ask["id"], ask["words"], owner, text)
             row.update(section="queued", origin="top-of-mind")
@@ -819,7 +845,8 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
             row["evidence"].append("Top of Mind: " + ask["id"] + " - " + ask["words"])
             if links:
                 row["links"] = sorted(set(row.get("links", [])) | set(links))
-            if ask.get("kind") != "statement" and not classify(row)[0]:
+            if (ask.get("kind") != "statement" and ask_skip(ask["words"])[1] != "approval"
+                    and not classify(row)[0]):
                 row["origin"] = "top-of-mind"
                 row["tags"] = dict(row["tags"], kind="feature", **{"requested-by": "Lee"})
             matching_prs = [pr for pr in prs if pr.get("html_url") in links
@@ -846,16 +873,35 @@ def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers
     rows = [row for snapshot in snapshots for row in snapshot["rows"]]
     homes = [snapshot["home"] for snapshot in snapshots] or ["unknown"]
     asks = []
-    for ask in top_of_mind:
-        reason = non_work(ask["words"], free_text=True)
-        if not reason:
-            asks.append(ask)
-            continue
-        # Dropped before matching, so non-work never joins, reclassifies, or starts other work.
+    seen_titles = set()
+
+    def exclude(ask, reason):
         row = item(ask["id"], ask["words"], homes[0], "")
         row.update(reason=reason, tag_source=None, evidence=["Top of Mind: " + ask["id"] + " - " + ask["words"]])
         doc["excluded"].append(row)
+
+    for ask in top_of_mind:
+        reason = non_work(ask["words"], free_text=True)
+        kind = None
+        if not reason and ask.get("kind") != "statement":
+            reason, kind = ask_skip(ask["words"])
+        if kind == "approval":
+            reason = None
+        if not reason:
+            key = title_key(ask["words"])
+            if kind != "approval" and ask.get("kind") != "statement" and key:
+                if key in seen_titles:
+                    exclude(ask, "Duplicate of another Top of Mind ask in this run")
+                    continue
+                seen_titles.add(key)
+            asks.append(ask)
+            continue
+        # Dropped before matching, so non-work never joins, reclassifies, or starts other work.
+        exclude(ask, reason)
     rows += top_of_mind_items(asks, rows, issues, prs, homes)
+    for ask in asks:
+        if ask.get("unjoined"):
+            exclude(ask, ask_skip(ask["words"])[0] + "; it matches no recorded work")
     category = {}
     linked = {}
     for row in rows:
@@ -1715,6 +1761,7 @@ def main(argv):
         problems.append("Top of Mind coverage-incomplete: fresh HTTPS fetch or payload validation failed")
     requested = set(filter(None, args.requested.split(",")))
     requested.update(i for ask in top_of_mind if ask.get("kind") != "statement" and not non_work(ask["words"], free_text=True)
+                     and not ask_skip(ask["words"])[0]
                      for i in LINEAR_ID.findall(json.dumps(ask))
                      if re.fullmatch(re.escape(args.team) + r"-\d+", i))
     for snapshot in snapshots:

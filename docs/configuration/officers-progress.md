@@ -11,6 +11,13 @@ Each run reads Top of Mind once over HTTPS; the progress script's header owns en
 A fetch or payload failure adds a `Top of Mind coverage-incomplete` entry and contributes no asks from that source; the officer never reuses cached asks or blocks other discovery on that failure.
 Each row's `kind` is `ask` or `statement`; a row without `kind` is an ask, and any other value fails payload validation.
 A statement never becomes a start candidate, supplies no `requested-feature` authority, and names no requested roots; it only adds evidence to work it matches.
+Before any ask can become a start candidate, deterministic rules (no model) list it as excluded with a reason when it is one of these:
+- A `Start fix: a tool agents need is missing ...` ask (a tool or CLI gap) is a friction finding: it is listed as routed to the friction lane and never starts as a requested feature.
+- An answer or dismissal, not an ask: a bare yes, no or ok, `never mind`, or ignore, disregard, skip or drop followed by this, that, it, these or those and then punctuation or the end (for example `Ignore this, its not a big deal`); `Skip flaky retries` or `Drop the unused cache` is an ordinary ask.
+- A question: text that ends with `?`, opens with why, what, how, when, where or who followed by a verb such as is, are, do or can, or opens with is, are or should followed by a subject such as we, you, it or this; an imperative such as `Do the calculator rework next` is an ordinary ask.
+- An approval or merge word (approve or merge followed by `PR`, `#<number>`, a Linear identifier such as `PC-123` or a commit SHA, a whole reply such as `approved`, `Approved, thanks` or `Merge it`, `lgtm`, or `ship it`; `Merge the two dashboards` is an ordinary ask): it joins the PR or work it matches as evidence and supplies no authority, and one that matches nothing is listed, never started.
+- A duplicate: a later ask in the same run whose normalised title equals an earlier ask's (work already recorded is covered by the join rules below).
+When a rule is unsure, the ask is listed rather than started.
 Every `not-started` ask and every `under-way` or `waiting` ask is checked against current home records and open PRs.
 A waiting ask is listed with the reason `waiting (Top of Mind status)` and is never automatically started.
 A not-started or under-way ask with no recorded work in flight becomes a start candidate under the existing classes and exclusions; a matching task, Linear identifier, work title (ignoring punctuation and case), or link joins the ask to that work instead of creating another start, and a matching Linear issue joins the ask to every home record that links that issue.

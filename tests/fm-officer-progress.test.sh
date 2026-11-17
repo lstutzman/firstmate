@@ -2119,6 +2119,66 @@ JSON
   pass 'progress: Top of Mind failure never reuses stale data or blocks other discovery'
 }
 
+test_top_of_mind_skips() {
+  make_world top-skips
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  printf '## Queued\n\n- [ ] export-row - Build export dashboard (linear: PC-97)\n' > "$WORLD_HOME/data/backlog.md"
+  python3 -I - "$WORLD" <<'PY'
+import json, sys
+issue = {'identifier':'PC-97','title':'Build export dashboard','state':'Todo','stateType':'unstarted','priority':0}
+json.dump({'ok':True,'data':{'issues':[issue]}},open(sys.argv[1]+'/linear/list.json','w'))
+json.dump({'ok':True,'data':{'issue':dict(issue,parent=None,description='')}},open(sys.argv[1]+'/linear/PC-97.json','w'))
+PY
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[{"id":"ign","words":"Ignore this, its not a big deal","status":"not-started","work":[]},
+{"id":"yes","words":"yes","status":"not-started","work":[]},
+{"id":"why","words":"Why are we worried about this?","status":"not-started","work":[]},
+{"id":"appr","words":"approve PR 5269 at 45c238aa51","status":"not-started","work":[]},
+{"id":"fix1","words":"Start fix: a tool agents need is missing: bc","status":"not-started","work":[]},
+{"id":"fix2","words":"Start fix: a tool agents need is missing: dig","status":"not-started","work":[]},
+{"id":"sur","words":"surgeon weaknesses start now","status":"not-started","work":[]},
+{"id":"sur2","words":"Surgeon weaknesses start now","status":"not-started","work":[]},
+{"id":"logs","words":"keep every local session log; do NOT let the Bosun trash archived local logs","status":"not-started","work":[]},
+{"id":"appr-bare","words":"approved","status":"not-started","work":[]},
+{"id":"appr-thanks","words":"Approved, thanks","status":"not-started","work":[]},
+{"id":"appr-linear","words":"Approved PC-555","status":"not-started","work":[]},
+{"id":"appr-linear-sha","words":"approve PC-123 at 45c238aa51","status":"not-started","work":[]},
+{"id":"merge-it","words":"Merge it","status":"not-started","work":[]},
+{"id":"appr-join","words":"approve PR 77 for PC-97","status":"not-started","work":[]},
+{"id":"imp-skip","words":"Skip flaky e2e retries in CI for PC-1234","status":"not-started","work":[]},
+{"id":"imp-drop","words":"Drop the unused Redis cache","status":"not-started","work":[]},
+{"id":"imp-do","words":"Do the PC-4321 calculator rework next","status":"not-started","work":[]},
+{"id":"imp-merge","words":"Merge the two dashboards into one view","status":"not-started","work":[]},
+{"id":"imp-release","words":"Merge release-2 branch into main","status":"not-started","work":[]},
+{"id":"imp-gpt","words":"Approve gpt-4 for the summariser","status":"not-started","work":[]}]}
+JSON
+  run_progress >/dev/null || fail 'skip run failed'
+  assert_equals 'imp-gpt logs sur' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'only real asks start, once each'
+  local reasons
+  reasons="$(jq -r '.excluded[] | .id + "=" + .reason' "$file")"
+  assert_contains "$reasons" 'ign=Not a work item: an answer or dismissal' 'a dismissal is skipped'
+  assert_contains "$reasons" 'yes=Not a work item: an answer or dismissal' 'a bare yes is skipped'
+  assert_contains "$reasons" 'why=Not a work item: a question' 'a question is skipped'
+  assert_contains "$reasons" 'appr=Not a new start: an approval or merge word for existing work' 'an unmatched approval is listed, not started'
+  assert_contains "$reasons" 'appr-bare=Not a new start: an approval' 'a bare approval reply is listed, not started'
+  assert_contains "$reasons" 'appr-thanks=Not a new start: an approval' 'an approval with thanks is listed, not started'
+  assert_contains "$reasons" 'appr-linear=Not a new start: an approval' 'an approval naming a Linear issue is listed, not started'
+  assert_contains "$reasons" 'appr-linear-sha=Not a new start: an approval' 'an approval naming a Linear issue and SHA is listed, not started'
+  assert_contains "$reasons" 'merge-it=Not a new start: an approval' 'a bare merge word is listed, not started'
+  assert_contains "$reasons" 'fix1=Routed to the friction lane' 'a Start fix row is routed to the friction lane'
+  assert_contains "$reasons" 'fix2=Routed to the friction lane' 'every Start fix row is routed'
+  assert_contains "$reasons" 'sur2=Duplicate of another Top of Mind ask' 'a same-run duplicate is skipped'
+  local imp
+  imp="$(jq -r '.top_of_mind[] | select(startswith("imp-"))' "$file")"
+  assert_equals 6 "$(printf '%s\n' "$imp" | grep -c '^imp-')" 'every imperative ask gets a disposition'
+  assert_not_contains "$imp" 'Not a work item' 'an imperative is never read as an answer or question'
+  assert_not_contains "$imp" 'Not a new start' 'an imperative merge is never read as an approval'
+  assert_not_contains "$reasons" 'appr-join=' 'an approval naming linked work joins it instead of being listed'
+  assert_not_contains "$(jq -r '.start_requests[].id' "$file")" 'export-row' \
+    'an approval never makes the work it joins a Lee-requested start'
+  pass 'progress: Top of Mind skips answers, questions, approvals, friction asks and duplicates'
+}
+
 test_top_of_mind_kind() {
   make_world top-kind
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
@@ -2161,6 +2221,7 @@ test_start_home_routes_requests_by_project
 test_non_work_and_duplicates_are_dropped_and_reported
 test_top_of_mind_start
 test_top_of_mind_kind
+test_top_of_mind_skips
 test_top_of_mind_dispositions
 test_top_of_mind_matched_dispositions
 test_top_of_mind_failure
