@@ -154,6 +154,9 @@ jobs:
 
   # Three duration-balanced portable parallel shards of the Phase 2 proven-isolated
   # set only. Composition owner: bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
+  # Each shard runs its proven-isolated scripts two at a time (--jobs 2), so a
+  # shard's wall time is its longest script rather than the sum of its scripts;
+  # the runner refuses --jobs for any script outside the proven set.
   tests-portable-parallel-1:
     name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Behavior portable parallel 1
     runs-on: ${{ fromJSON(vars.FM_CI_RUNS_ON || '"ubuntu-24.04"') }}
@@ -193,7 +196,7 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
-          bin/fm-test-run.sh --lane portable-parallel-1 \
+          bin/fm-test-run.sh --lane portable-parallel-1 --jobs 2 \
             --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-1.json"
       - name: Upload shard 1 timing artifact
@@ -243,7 +246,7 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
-          bin/fm-test-run.sh --lane portable-parallel-2 \
+          bin/fm-test-run.sh --lane portable-parallel-2 --jobs 2 \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-2.json"
       - name: Upload shard 2 timing artifact
         if: always()
@@ -285,7 +288,7 @@ jobs:
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
-          bin/fm-test-run.sh --lane portable-parallel-3 \
+          bin/fm-test-run.sh --lane portable-parallel-3 --jobs 2 \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-3.json"
       - name: Upload shard 3 timing artifact
         if: always()

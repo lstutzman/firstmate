@@ -55,6 +55,11 @@ Read the derived packing estimates with that runner's `--check-coverage`; its he
 The largest individual hint sets a lower bound on the estimated duration of any split, regardless of how evenly the remaining work is assigned.
 The CI cap follows the three-tier timeout policy in [Timeouts](#timeouts) below.
 
+CI runs each parallel lane with `--jobs 2`, which the runner admits only because every member is individually proven isolated.
+Measured on 150 green or failed CI runs from 2026-11-08 to 2026-11-17, the parallel jobs ran serially and were the slowest job of the run in 99 runs (lane 1 in 55, lane 2 in 44): median wall 25.2 minutes against a median slowest-job runtime of 23.4, so runner queueing was not the cost.
+With two workers a lane's wall time is bounded by its longest script (`tests/fm-pr-merge.test.sh`, `tests/fm-captain-hold-lifecycle.test.sh` and `tests/fm-test-run.test.sh`, 7 to 11 minutes at the median) instead of the 15 to 18 minutes of summed script time.
+Portable serial shards stay at one worker (the runner refuses `--jobs` there), so after this change the longest serial shard sets the run's wall time.
+
 [`tests/fm-test-run.test.sh`](../tests/fm-test-run.test.sh), in `test_portable_parallel_lanes_stay_duration_balanced`, requires every parallel member to have a hint and the largest and smallest lane sums to differ by no more than five percent of the largest.
 Its scheduling regressions also check stored parallel lane order and preserve serial-weight scheduling for other selections.
 These checks do not detect a script outgrowing an existing hint or establish measured job headroom.

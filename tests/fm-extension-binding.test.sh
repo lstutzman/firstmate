@@ -2315,7 +2315,13 @@ while :; do
   for orphan_runner in "${orphan_runners[@]+"${orphan_runners[@]}"}"; do
     kill -0 -"${orphan_runner#*:}" 2>/dev/null && orphan_live+=("$orphan_runner")
   done
-  [ "${#orphan_live[@]}" -gt 0 ] && [ "$SECONDS" -lt "$orphan_deadline" ] || break
+  # A claim not yet written leaves its runner unrecorded, so also wait for each
+  # source's handled marker rather than trusting an empty runner list.
+  orphan_pending=${#orphan_live[@]}
+  for orphan_source in orphan-first orphan-second; do
+    [ -e "$H_ORPHAN_READY/state/procevent-inbox/$orphan_source.1.handled" ] || orphan_pending=$((orphan_pending + 1))
+  done
+  [ "$orphan_pending" -gt 0 ] && [ "$SECONDS" -lt "$orphan_deadline" ] || break
   sleep 0.1
 done
 if [ "${#orphan_live[@]}" -gt 0 ]; then
