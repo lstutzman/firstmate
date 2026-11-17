@@ -2693,21 +2693,24 @@ EOF
 # Stop the processes of this worker's own process family that outlived it (test
 # hosts, Playwright browsers, node workers, dotnet children, dev servers): the
 # session bin/fm-spawn.sh recorded as proc_root=/proc_root_id= for the endpoint's
-# shell, and everything below it. bin/fm-proc-family.py owns the boundary and the
+# shell, every process carrying its recorded proc_family= marker, and everything
+# below them. bin/fm-proc-family.py owns the boundary and the
 # signalling; it never matches by name. Advisory only: it never refuses a
 # teardown, so the landed-work gates and the reap that follows stay as they were.
 # A task with no recorded root (a backend that cannot name one, or a record from
 # before the boundary was recorded) is skipped with one warning line.
 stop_task_process_family() {  # <label>
-  local root root_id rc=0
+  local root root_id marker rc=0
   root=$(fm_meta_get "$META" proc_root)
   root_id=$(fm_meta_get "$META" proc_root_id)
+  marker=$(fm_meta_get "$META" proc_family)
   case "$root" in ''|*[!0-9]*) root='' ;; esac
+  case "$marker" in *[!A-Za-z0-9._-]*) marker='' ;; esac
   if [ -z "$root" ] || [ -z "$root_id" ]; then
     echo "warning: no recorded process family boundary for $ID (backend ${BACKEND:-tmux}); skipping the process-family stop" >&2
     return 0
   fi
-  python3 -I "$SCRIPT_DIR/fm-proc-family.py" stop "$1" "$root" "$root_id" || rc=$?
+  python3 -I "$SCRIPT_DIR/fm-proc-family.py" stop "$1" "$root" "$root_id" ${marker:+"$marker"} || rc=$?
   case "$rc" in
     0) ;;
     3) echo "warning: no recorded process family boundary for $ID; skipping the process-family stop" >&2 ;;

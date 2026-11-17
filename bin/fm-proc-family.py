@@ -3,7 +3,7 @@
 
 Usage:
   fm-proc-family.py capture <pid>
-  fm-proc-family.py stop <label> <root-pid> <root-identity>
+  fm-proc-family.py stop <label> <root-pid> <root-identity> [<marker>]
 
 The family boundary is the session a runtime backend created for the worker's
 endpoint: every process whose session id is the recorded root pid, plus every
@@ -12,6 +12,11 @@ outlive it (reparented to init) keep the session id and stay inside the
 boundary. A pid cannot be reused while any process still carries it as a
 session id, so a leaderless family is certain to be the original one; a live
 root must also match its recorded start identity or nothing is signalled.
+With a <marker>, the boundary also takes in every process of this user whose
+environment carries exactly FM_PROC_FAMILY=<marker> (bin/fm-spawn.sh exports a
+unique one into the worker's pane), with its descendants, so a process that left
+the session (a detached browser whose runner died) is still the worker's own. A
+process whose environment cannot be read is left out.
 
 capture prints the root's start identity (one line, `starttime=<n>` on Linux or
 `lstart=<text>` elsewhere) and exits 0 only when <pid> is alive and leads its
@@ -84,6 +89,17 @@ def pgid_of(pid):
         return None
 
 
+def carries(pid, entry):
+    """True when pid belongs to this user and its environment holds exactly entry."""
+    try:
+        if os.stat(f'/proc/{pid}').st_uid != os.getuid():
+            return False
+        with open(f'/proc/{pid}/environ', 'rb') as env:
+            return entry in env.read().split(b'\0')
+    except OSError:
+        return False
+
+
 def ancestors(rows, pid):
     chain = set()
     while pid > 1 and pid not in chain:
@@ -92,9 +108,11 @@ def ancestors(rows, pid):
     return chain
 
 
-def family(rows, root):
-    """Pids of the session led by root plus their descendants, minus protected infrastructure."""
-    members = {pid for pid in rows if sid_of(pid) == root}
+def family(rows, root, marker):
+    """Pids of the session led by root and of the marker's carriers, plus their descendants,
+    minus protected infrastructure."""
+    entry = f'FM_PROC_FAMILY={marker}'.encode() if marker else None
+    members = {pid for pid in rows if sid_of(pid) == root or (entry and carries(pid, entry))}
     children = {}
     for pid, (ppid, _) in rows.items():
         children.setdefault(ppid, []).append(pid)
@@ -127,7 +145,7 @@ def say(text):
     print(text, file=sys.stderr)
 
 
-def stop(label, root, recorded):
+def stop(label, root, recorded, marker=''):
     if root <= 1:
         return 3
     rows = table()
@@ -140,7 +158,7 @@ def stop(label, root, recorded):
             say(f'teardown: refusing to stop the {label} process family: pid {root} is no longer the recorded '
                 'session root (the pid was reused)')
             return 4
-    found = {pid for pid in family(rows, root) if pid > 1}
+    found = {pid for pid in family(rows, root, marker) if pid > 1}
     if found & own:
         # An ancestor of this process (the supervisor, a wrapper) is inside the family, so
         # the boundary cannot be told apart from the caller: signal nothing.
@@ -177,8 +195,8 @@ def main(argv):
     try:
         if len(argv) == 3 and argv[1] == 'capture':
             return capture(int(argv[2]))
-        if len(argv) == 5 and argv[1] == 'stop':
-            return stop(argv[2], int(argv[3]), argv[4])
+        if len(argv) in (5, 6) and argv[1] == 'stop':
+            return stop(argv[2], int(argv[3]), *argv[4:])
     except ValueError:
         pass
     say((__doc__ or '').split('\n\n')[0])

@@ -5754,6 +5754,76 @@ test_family_stop_without_a_boundary_warns_and_skips() {
   pass "a task whose backend recorded no process boundary warns once and stops nothing"
 }
 
+# A process that left the worker's session and lost its parent (a detached
+# Playwright browser whose runner died) is still the worker's own when it carries
+# the recorded proc_family= marker; a same-named process with another marker or
+# none is not, and a caller carrying the marker refuses and signals nothing.
+# Starts `setsid sleep 313` orphaned in its own session with the given environment
+# marker (empty: none) and prints its pid. Args: dir name marker
+start_detached_orphan() {
+  local dir=$1 name=$2 marker=$3
+  if [ -n "$marker" ]; then
+    ( ( cd / && exec env FM_PROC_FAMILY="$marker" setsid sleep 313 ) >/dev/null 2>&1 & echo $! > "$dir/$name.pid" )
+  else
+    ( ( cd / && exec env -u FM_PROC_FAMILY setsid sleep 313 ) >/dev/null 2>&1 & echo $! > "$dir/$name.pid" )
+  fi
+  cat "$dir/$name.pid"
+}
+
+test_family_stop_reaches_a_marked_process_that_left_the_session() {
+  local case_dir rc leader child leaked other unmarked identity marker
+  case_dir=$(make_case family-marker)
+  land_shippable_commit "$case_dir"
+  start_task_family "$case_dir"
+  read -r leader child < "$case_dir/family.pids"
+  marker='task-x1.s1.2.3'
+  leaked=$(start_detached_orphan "$case_dir" leaked "$marker")
+  other=$(start_detached_orphan "$case_dir" other 'task-x2.s1.2.3')
+  unmarked=$(start_detached_orphan "$case_dir" unmarked '')
+  identity=$(python3 -I "$ROOT/bin/fm-proc-family.py" capture "$leader") || fail "family-marker: the setup leader has no session identity"
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "proc_root=$leader" "proc_root_id=$identity" "proc_family=$marker" >> "$case_dir/state/task-x1.meta"
+  sleep 0.3
+  for pid in "$leaked" "$other" "$unmarked"; do
+    kill -0 "$pid" 2>/dev/null || fail "family-marker: setup process $pid did not start"
+    [ "$(ps -o ppid= -p "$pid" | tr -d ' ')" != "$leader" ] || fail "family-marker: setup process $pid is not detached"
+    [ "$(python3 -c 'import os,sys; print(os.getsid(int(sys.argv[1])))' "$pid")" = "$pid" ] \
+      || fail "family-marker: setup process $pid does not lead its own session"
+  done
+
+  rc=0
+  FM_PROC_FAMILY_GRACE=1 run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "family-marker: teardown should succeed: $(cat "$case_dir/stderr")"
+  sleep 0.3
+  local leaked_alive=0 other_alive=0 unmarked_alive=0
+  kill -0 "$leaked" 2>/dev/null && leaked_alive=1
+  kill -0 "$other" 2>/dev/null && other_alive=1
+  kill -0 "$unmarked" 2>/dev/null && unmarked_alive=1
+  kill -KILL "$leaked" "$other" "$unmarked" "$child" "$leader" 2>/dev/null || true
+  [ "$leaked_alive" = 0 ] || fail "family-marker: a detached process carrying the worker's marker survived teardown"
+  [ "$other_alive" = 1 ] || fail "family-marker: teardown stopped a same-named process carrying another task's marker"
+  [ "$unmarked_alive" = 1 ] || fail "family-marker: teardown stopped a same-named process carrying no marker"
+  pass "teardown stops a detached process that carries the worker's marker and leaves other markers and unmarked processes alone"
+}
+
+test_family_stop_refuses_a_caller_that_carries_the_marker() {
+  local dir leaked rc=0 alive=1 identity
+  dir="$TMP_ROOT/family-marker-caller"
+  mkdir -p "$dir"
+  leaked=$(start_detached_orphan "$dir" leaked 'task-x3.s1.2.3')
+  identity=$(python3 -I "$ROOT/bin/fm-proc-family.py" capture "$leaked") || fail "family-marker-caller: setup has no identity"
+  sleep 0.3
+  FM_PROC_FAMILY='task-x3.s1.2.3' FM_PROC_FAMILY_GRACE=1 python3 -I "$ROOT/bin/fm-proc-family.py" \
+    stop worker 999999 "$identity" 'task-x3.s1.2.3' 2> "$dir/stop.err" || rc=$?
+  kill -0 "$leaked" 2>/dev/null || alive=0
+  kill -KILL "$leaked" 2>/dev/null || true
+  [ "$rc" = 4 ] || fail "family-marker-caller: a caller carrying the marker must refuse (exit 4), got $rc"
+  [ "$alive" = 1 ] || fail "family-marker-caller: a refused stop still signalled a marked process"
+  assert_grep "this process descends from it" "$dir/stop.err" "family-marker-caller: the refusal was not reported"
+  pass "a stop whose caller carries the marker refuses and signals nothing"
+}
+
 # A daemon started from the task's copy - its own session leader, reparented to
 # init, like a Colima VM a worker started there - is shared infrastructure, not
 # a leaked worker process: teardown reports it and leaves it running.
@@ -7112,6 +7182,8 @@ test_family_stop_leaves_an_outside_same_named_process_untouched
 test_family_stop_refuses_when_the_caller_is_inside_the_family
 test_family_stop_refuses_a_reused_root_pid
 test_family_stop_without_a_boundary_warns_and_skips
+test_family_stop_reaches_a_marked_process_that_left_the_session
+test_family_stop_refuses_a_caller_that_carries_the_marker
 test_daemonised_worktree_process_is_reported_not_reaped
 test_leaked_tasktmp_process_is_reaped
 test_lsof_absent_reaps_tmux_process_group
