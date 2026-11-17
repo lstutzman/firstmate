@@ -473,6 +473,49 @@ mate 1 0 7200
   printf 'done [at=%s]: relay noted\n' "$((now - 7000))"
 } > "$HOME_FIX/state/mate.status"
 assert_contains "$(run_alarm check)" 'holding work silent' 'a done line after a paused wait whose until is long past still alarms'
+# Librarian shape: an open external merge handoff on the channel, then a dated pause.
+mate 0 0 0
+run_alarm check >/dev/null
+handoff_line() { printf 'needs-decision [at=%s] [key=merge-handoff-5948] [cause=external]: [handoff=slarti] https://example.invalid/pr/5948 is ready to merge\n' "$1"; }
+now=$(date +%s)
+mate 1 0 7200
+{
+  handoff_line "$((now - 9000))"
+  printf 'paused [at=%s] [cause=external] [key=merge-wait-5948] [dep=pr/o/r/5948]: waiting on merge until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
+} > "$HOME_FIX/state/mate.status"
+[ -z "$(run_alarm check)" ] || fail 'a dated pause that has not cleared is healthy beside an open external merge handoff'
+{
+  handoff_line "$((now - 20000))"
+  printf 'paused [at=%s] [cause=external] [key=merge-wait-5948] [dep=pr/o/r/5948]: waiting on merge until %s\n' "$((now - 19000))" "$(date -u -d "@$((now - 7200))" +%Y-%m-%dT%H:%MZ)"
+} > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'the same pause past its until plus the silence window alarms despite the handoff'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 7200
+{
+  printf 'blocked [at=%s] [key=merge-handoff-5948]: [handoff=slarti] cannot reach the merger\n' "$((now - 9000))"
+  printf 'paused [at=%s] [cause=external]: waiting on merge until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
+} > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked line whose text starts with [handoff= still blocks the paused exemption'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 7200
+{
+  printf 'needs-decision [at=%s] [key=pick-one]: [handoff=slarti] which option\n' "$((now - 9000))"
+  printf 'paused [at=%s] [cause=external]: waiting on merge until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
+} > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a [handoff= needs-decision under any other key still blocks the paused exemption'
+mate 0 0 0
+run_alarm check >/dev/null
+now=$(date +%s)
+# A real open captain decision with no pause still keeps the mate out of the working exemption.
+mate 1 0 7200
+{
+  printf 'needs-decision [at=%s] [key=pick-one] [cause=decision]: which option\n' "$((now - 7000))"
+  printf 'working [at=%s]: carrying on\n' "$((now - 6000))"
+} > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'an open captain decision still blocks the working exemption'
+mate 0 0 0
 mate 0 0 0
 run_alarm check >/dev/null
 now=$(date +%s)
