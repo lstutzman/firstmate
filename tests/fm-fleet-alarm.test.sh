@@ -11,7 +11,7 @@ USER_FIX="$TMP_ROOT/user"
 PROXY_FIX="$USER_FIX/.config/cli-proxy-api/config.yaml"
 BIN_FIX="$TMP_ROOT/bin"
 mkdir -p "$HOME_FIX/state" "$HOME_FIX/config" "$HOME_FIX/data" "$TMP_ROOT/mate/state" "$BIN_FIX" "${PROXY_FIX%/*}"
-cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-env-lib.sh" "$ROOT/bin/fm-classify-lib.sh" "$ROOT/bin/fm-secondmate-registry-lib.sh" "$BIN_FIX/"
+cp "$ROOT/bin/fm-fleet-alarm.py" "$ROOT/bin/fm_build_procs.py" "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-env-lib.sh" "$ROOT/bin/fm-classify-lib.sh" "$ROOT/bin/fm-secondmate-registry-lib.sh" "$BIN_FIX/"
 cat > "$BIN_FIX/cpa-usage-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_HOME/quota-calls"

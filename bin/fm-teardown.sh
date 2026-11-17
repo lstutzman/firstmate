@@ -2693,9 +2693,10 @@ EOF
 # Stop the processes of this worker's own process family that outlived it (test
 # hosts, Playwright browsers, node workers, dotnet children, dev servers): the
 # session bin/fm-spawn.sh recorded as proc_root=/proc_root_id= for the endpoint's
-# shell, every process carrying its recorded proc_family= marker, and everything
-# below them. bin/fm-proc-family.py owns the boundary and the
-# signalling; it never matches by name. Advisory only: it never refuses a
+# shell and everything below it, plus, on Linux only, a build or test process
+# outside that session that carries its recorded proc_family= marker (other
+# marked processes are reported and left running). bin/fm-proc-family.py owns
+# the boundary and the signalling; it never selects a process by name alone. Advisory only: it never refuses a
 # teardown, so the landed-work gates and the reap that follows stay as they were.
 # A task with no recorded root (a backend that cannot name one, or a record from
 # before the boundary was recorded) is skipped with one warning line.

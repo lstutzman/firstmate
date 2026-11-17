@@ -12,11 +12,16 @@ outlive it (reparented to init) keep the session id and stay inside the
 boundary. A pid cannot be reused while any process still carries it as a
 session id, so a leaderless family is certain to be the original one; a live
 root must also match its recorded start identity or nothing is signalled.
-With a <marker>, the boundary also takes in every process of this user whose
-environment carries exactly FM_PROC_FAMILY=<marker> (bin/fm-spawn.sh exports a
-unique one into the worker's pane), with its descendants, so a process that left
-the session (a detached browser whose runner died) is still the worker's own. A
-process whose environment cannot be read is left out.
+With a <marker> (Linux only: it is read from /proc/<pid>/environ), a process of
+this user that left the session but whose environment carries exactly
+FM_PROC_FAMILY=<marker> (bin/fm-spawn.sh exports a unique one into the worker's
+pane), or a descendant of one, is stopped too when its command line is one of
+the build or test classes in bin/fm_build_procs.py (a detached Playwright
+browser whose runner died). Any other such process (gpg-agent, a credential or
+browser-session daemon other sessions now share) is reported in one line and
+left running. A process whose environment cannot be read is left out, and on a
+host without /proc a marker only prints one warning that detached processes
+outside the session are not checked.
 
 capture prints the root's start identity (one line, `starttime=<n>` on Linux or
 `lstart=<text>` elsewhere) and exits 0 only when <pid> is alive and leads its
@@ -41,6 +46,11 @@ import signal
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fm_build_procs import is_build_or_test  # noqa: E402
+
+PROC = os.environ.get('FM_PROC_FAMILY_PROC', '/proc')
 
 # Shared infrastructure that can be started from a worker's pane but is never
 # the worker's own process: AGENTS.md rule 7 and the harness safety rules.
@@ -92,12 +102,20 @@ def pgid_of(pid):
 def carries(pid, entry):
     """True when pid belongs to this user and its environment holds exactly entry."""
     try:
-        if os.stat(f'/proc/{pid}').st_uid != os.getuid():
+        if os.stat(f'{PROC}/{pid}').st_uid != os.getuid():
             return False
-        with open(f'/proc/{pid}/environ', 'rb') as env:
+        with open(f'{PROC}/{pid}/environ', 'rb') as env:
             return entry in env.read().split(b'\0')
     except OSError:
         return False
+
+
+def command_line(pid):
+    try:
+        with open(f'{PROC}/{pid}/cmdline', 'rb') as cmdline:
+            return cmdline.read().rstrip(b'\0').replace(b'\0', b' ').decode(errors='replace')
+    except OSError:
+        return ''
 
 
 def ancestors(rows, pid):
@@ -109,10 +127,10 @@ def ancestors(rows, pid):
 
 
 def family(rows, root, marker):
-    """Pids of the session led by root and of the marker's carriers, plus their descendants,
-    minus protected infrastructure."""
+    """(session, marked): pids of the session led by root and their descendants, and pids
+    outside it that carry the marker or descend from a carrier; both minus protected
+    infrastructure and everything under it."""
     entry = f'FM_PROC_FAMILY={marker}'.encode() if marker else None
-    members = {pid for pid in rows if sid_of(pid) == root or (entry and carries(pid, entry))}
     children = {}
     for pid, (ppid, _) in rows.items():
         children.setdefault(ppid, []).append(pid)
@@ -126,9 +144,10 @@ def family(rows, root, marker):
                     queue.append(child)
         return found
 
-    everyone = below(members)
-    shielded = below({pid for pid in everyone if PROTECTED.match(rows[pid][1])})
-    return everyone - shielded
+    session = below({pid for pid in rows if sid_of(pid) == root})
+    marked = below({pid for pid in rows if entry and carries(pid, entry)}) - session
+    shielded = below({pid for pid in session | marked if PROTECTED.match(rows[pid][1])})
+    return session - shielded, marked - shielded
 
 
 def capture(pid):
@@ -158,14 +177,23 @@ def stop(label, root, recorded, marker=''):
             say(f'teardown: refusing to stop the {label} process family: pid {root} is no longer the recorded '
                 'session root (the pid was reused)')
             return 4
-    found = {pid for pid in family(rows, root, marker) if pid > 1}
+    if marker and not os.path.isdir(f'{PROC}/self'):
+        say(f'teardown: warning: this host has no {PROC}, so detached processes outside the {label} '
+            'session are not checked')
+    session, marked = family(rows, root, marker)
+    found = {pid for pid in session | marked if pid > 1}
     if found & own:
         # An ancestor of this process (the supervisor, a wrapper) is inside the family, so
         # the boundary cannot be told apart from the caller: signal nothing.
         say(f'teardown: refusing to stop the {label} process family: this process descends from it')
         return 4
     own_group = pgid_of(os.getpid())
-    members = sorted(pid for pid in found if pgid_of(pid) not in (None, own_group))
+    kept = sorted(pid for pid in marked if pid > 1 and not is_build_or_test(command_line(pid)))
+    if kept:
+        say(f'teardown: leaving process(es) that carry the {label} marker outside its session running: '
+            f'{" ".join(map(str, kept))} (not a build or test process; stop them by hand if they belong '
+            'only to this task)')
+    members = sorted(pid for pid in found - set(kept) if pgid_of(pid) not in (None, own_group))
     if not members:
         return 0
     seen = {pid: identity(pid) for pid in members}

@@ -7838,8 +7838,9 @@ META_WINDOW=$T
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
 # A ship or scout pane's process-family marker: exported into the pane shell
 # before launch, so every process the worker starts inherits it, and recorded
-# as proc_family= so bin/fm-teardown.sh can also stop the worker's processes
-# that left its session (a detached browser whose runner died). A relaunch keeps
+# as proc_family= so bin/fm-teardown.sh can also stop the worker's build and
+# test processes that left its session (a detached browser whose runner died);
+# Linux only, because the marker is read from /proc. A relaunch keeps
 # the recorded marker, so processes an earlier incarnation leaked stay inside it.
 SPAWN_PROC_FAMILY=
 if { [ "$KIND" = ship ] || [ "$KIND" = scout ]; } && [ "$BACKEND" != t3code ]; then

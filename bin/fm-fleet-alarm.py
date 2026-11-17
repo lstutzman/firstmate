@@ -115,6 +115,8 @@ import tempfile
 import time
 
 BIN = Path(__file__).resolve().parent
+sys.path.insert(0, str(BIN))
+from fm_build_procs import is_build_or_test  # noqa: E402
 HOME = Path(os.environ.get('FM_HOME', BIN.parent)).resolve()
 STATE = Path(os.environ.get('FM_STATE_OVERRIDE', HOME / 'state'))
 CONFIG = Path(os.environ.get('FM_CONFIG_OVERRIDE', HOME / 'config'))
@@ -510,16 +512,6 @@ done < "$2"
     return findings
 
 
-ORPHAN_ARGS = (
-    # dotnet build and test processes, with or without the dotnet host in front.
-    re.compile(r'(?:^|[\s/])(?:MSBuild|VBCSCompiler|testhost)(?:\.dll|\.exe)?(?=\s|$)'),
-    # node running a test runner.
-    re.compile(r'^(?:\S*/)?node(?:\.exe)?\s.*[/\s@](?:vitest|jest|playwright|playwright-core)(?=[/\s.]|$)'),
-    # a browser Playwright launched from its own cache or profile directory.
-    re.compile(r'ms-playwright|playwright_(?:chromium|firefox|webkit)dev_profile'),
-)
-
-
 def etime_seconds(text):
     days, _, clock = text.rpartition('-')
     parts = [int(part) for part in clock.split(':')]
@@ -552,7 +544,7 @@ def orphan_scan(hours):
         rows.append((pid, ppid, sid, age, rss, args))
     alive = {row[0] for row in rows}
     found = [row for row in rows
-             if row[3] >= hours * 3600 and row[5] and any(rx.search(row[5]) for rx in ORPHAN_ARGS)
+             if row[3] >= hours * 3600 and is_build_or_test(row[5])
              and (row[1] == 1 or (row[2] is not None and row[2] > 1 and row[2] not in alive))]
     return len(found), sum(row[4] for row in found), max((row[3] for row in found), default=0)
 
